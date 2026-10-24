@@ -11,6 +11,8 @@
 // 1. Clear LOCAL cell counts (not shared buffer - avoids mid-clear race)
 // 2. Insert ALL active entities into grid (only to owned rows)
 // 3. Copy local counts to shared gridCounts (single write per cell)
+//    (1-3 when physics moved few bodies, E-126: rewrite only the cells of the entities that
+//    changed, to the same bytes: _rebuildGrid chooses, _rebuildMovedRows rewrites)
 // 4. For each entity in owned rows: find visual-range neighbors
 //    (Box2D owns contacts; no collision-candidate partition)
 //
@@ -52,6 +54,7 @@ import { EntityIdArray, packSpatialPairStamp as packSpatialPairStampImport, SPAT
 import { bindSpatialGather, bindSpatialPublish } from './spatialPublishClient.js';
 import { SPATIAL_MAX_CELL_RADIUS } from '../util/spatialPublishMemory.js';
 import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRangeImport, _boundsResult as _boundsResultImport, _cellRangeResult as _cellRangeResultImport, SHAPE_CIRCLE as SHAPE_CIRCLEImport } from '../util/colliderUtils.js';
+import { readMovedBodiesHeader, copyMovedBodies } from '../box2d/box2dMovedBodies.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -67,6 +70,22 @@ const getCellRange = getCellRangeImport;
 const _boundsResult = _boundsResultImport;
 const _cellRangeResult = _cellRangeResultImport;
 const SHAPE_CIRCLE = SHAPE_CIRCLEImport;
+
+// E-126 (grid movers only). In a frame where physics moved at most this share of the active
+// entities, the grid is rewritten for the entities that changed (_rebuildMovedRows) instead of
+// rebuilt for all of them (rebuildOwnedRows). It belongs at the crossover of
+// tests/bench/spatialGridMoversMicrobench.mjs (cases 35 % and 50 %); 0.35 is the old path's value.
+const MOVERS_MAX_FRACTION = 0.35;
+// SpatialWorker._gridMoversMode.
+const GRID_MOVERS_AUTO = 0; // by the moved fraction
+const GRID_MOVERS_OFF = 1; // the full rebuild every frame
+const GRID_MOVERS_FORCE = 2; // the movers path whenever its state allows (kernels, tests)
+// SpatialWorker._mvState bits: each entity as the grid holds it.
+const MV_PRESENT = 1; // in the active list the state was built from
+const MV_IN_GRID = 2; // binned, with the cell range in _mvRange
+const MV_OWNED = 4; // home row owned here: in _ownedEntityList
+const MV_LOOSE = 8; // no collider, so no physics list reports it: compared every frame
+const MV_SPRITE = 16; // a loose entity's SpriteRenderer.active when it was binned
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -162,6 +181,47 @@ class SpatialWorker extends AbstractWorker {
     this._neighborCandidateTruncated = null;
     this._entityFramesSinceBuild = null;
 
+    // E-126: when physics moved few bodies, the grid is rewritten for the entities that changed.
+    /** GRID_MOVERS_AUTO, GRID_MOVERS_OFF (the full rebuild only) or GRID_MOVERS_FORCE (kernels, tests). */
+    this._gridMoversMode = GRID_MOVERS_AUTO;
+    /** 1 when this frame's grid was rewritten for the entities that changed (SPATIAL_STATS.GRID_MOVERS). */
+    this._gridMoversThisFrame = 0;
+    /** The state below matches the grid, so the next frame can rewrite it for what changed. */
+    this._mvSeeded = false;
+    /** Physics' moved-list generation and the active-query version the state includes. */
+    this._mvGen = 0;
+    this._mvVersion = 0;
+    /** Latches given up with no rewrite since, and full-rebuild frames left before the next latch. */
+    this._mvFailures = 0;
+    this._mvBackoff = 0;
+    /** readMovedBodiesHeader's [generation, count, sequence]. */
+    this._mvHead = new Int32Array(3);
+    // Sized on the first latch (_allocMovers). Per entity:
+    this._mvState = new Uint8Array(0);
+    /** [minCol, maxCol, minRow, maxRow] per entity, as binned. */
+    this._mvRange = new Int32Array(0);
+    /** [x, y] a loose entity was binned at. */
+    this._mvLoosePos = new Float64Array(0);
+    this._mvLoose = new Int32Array(0);
+    this._mvLooseCount = 0;
+    /** The active list the state was built from, [count, ids…], and the next one. */
+    this._mvActive = new Int32Array(0);
+    this._mvActiveNext = new Int32Array(0);
+    this._mvDirty = new Uint8Array(0);
+    this._mvDirtyIds = new Int32Array(0);
+    /** This frame's copy of physics' moved list. */
+    this._mvMoved = new Int32Array(0);
+    // Per cell:
+    /** Entities that cover the cell, uncapped (the cell holds the first maxEntitiesPerCell). */
+    this._mvTrue = new Int32Array(0);
+    this._mvLeaves = new Int32Array(0);
+    this._mvCellMark = new Uint8Array(0);
+    this._mvTouched = new Int32Array(0);
+    /** Entities joining each cell this frame, ascending: a list per cell through _mvJoinNext. */
+    this._mvJoinHead = new Int32Array(0);
+    this._mvJoinNext = new Int32Array(0);
+    this._mvJoinId = new Int32Array(0);
+    this._mvCellScratch = new Int32Array(0);
   }
 
   /**
@@ -420,10 +480,10 @@ class SpatialWorker extends AbstractWorker {
     this.neighborsReusedThisFrame = 0;
     this.sleepNeighborSkipsThisFrame = 0;
 
-    // STEP 1: Rebuild grid (only owned rows)
+    // STEP 1: Rebuild grid (only owned rows), or rewrite it for what changed (E-126)
     const detail = this.collectDetailedStats;
     let startTime = detail ? performance.now() : 0;
-    this.rebuildOwnedRows();
+    this._rebuildGrid();
     if (detail) {
       this.rebuildTimeThisFrame = performance.now() - startTime;
     }
@@ -582,6 +642,621 @@ class SpatialWorker extends AbstractWorker {
     }
     this._noBodyCount = noBody;
     this._ownedEntityCount = ownedCount;
+  }
+
+  /**
+   * E-126. This frame's grid: rewritten for the entities that changed (_rebuildMovedRows) when
+   * physics moved at most MOVERS_MAX_FRACTION of the active entities, rebuilt otherwise. Chosen here,
+   * before either loop. The rewrite starts from the state a latched rebuild leaves and needs
+   * physics' moved list of every publish since; a publish missed or torn, or a frame the rewrite
+   * gives up on, rebuilds and latches again (after a backoff when that keeps happening).
+   */
+  _rebuildGrid() {
+    const mode = this._gridMoversMode;
+    const head = this._mvHead;
+    const activeData = this.activeEntitiesData;
+    this._gridMoversThisFrame = 0;
+    // No physics worker (no moved list): nothing tells which bodies moved.
+    if (mode === GRID_MOVERS_OFF || !activeData || !readMovedBodiesHeader(head)) {
+      this._mvSeeded = false;
+      this.rebuildOwnedRows();
+      return;
+    }
+    const gen = head[0];
+    const count = head[1];
+    const seq = head[2];
+    const auto = mode === GRID_MOVERS_AUTO;
+    const limit = auto ? activeData[0] * MOVERS_MAX_FRACTION : this.globalEntityCount;
+    if (this._mvSeeded) {
+      // Bodies physics moved since the state: none when it has not published since, its list
+      // when it published once (and not while the header was being written).
+      const moved = gen === this._mvGen ? 0 : gen === ((this._mvGen + 1) | 0) && seq >= 0 ? count : -1;
+      if (moved >= 0 && moved <= limit && this._rebuildMovedRows(moved, seq, limit)) {
+        this._mvGen = gen;
+        this._gridMoversThisFrame = 1;
+        this._mvFailures = 0;
+        return;
+      }
+      // The state is spent, and the grid may be half rewritten: the rebuild below writes all of it.
+      this._mvSeeded = false;
+      // One rewrite after a latch already pays for it. A latch that gets none costs a rebuild and
+      // more for nothing: when that repeats, wait 2, 4, … 128 frames before the next latch.
+      if (auto) {
+        this._mvFailures++;
+        this._mvBackoff = this._mvFailures < 2 ? 0 : this._mvFailures > 8 ? 128 : 1 << (this._mvFailures - 1);
+      }
+    }
+    if (this._mvBackoff > 0 || count > limit) {
+      if (this._mvBackoff > 0) this._mvBackoff--;
+      this.rebuildOwnedRows();
+      return;
+    }
+    this._allocMovers();
+    this._mvGen = gen;
+    this._mvSeeded = this._rebuildOwnedRowsLatched();
+  }
+
+  /** E-126. The movers state, sized once, on the first latch (a scene that never takes the path pays nothing). */
+  _allocMovers() {
+    const n = this.globalEntityCount;
+    const cells = this.totalCells;
+    if (this._mvState.length === n && this._mvTrue.length === cells) return;
+    this._mvState = new Uint8Array(n);
+    this._mvRange = new Int32Array(n * 4);
+    this._mvLoosePos = new Float64Array(n * 2);
+    this._mvLoose = new Int32Array(n);
+    this._mvActive = new Int32Array(n + 1);
+    this._mvActiveNext = new Int32Array(n + 1);
+    this._mvDirty = new Uint8Array(n);
+    this._mvDirtyIds = new Int32Array(n);
+    this._mvMoved = new Int32Array(n);
+    this._mvTrue = new Int32Array(cells);
+    this._mvLeaves = new Int32Array(cells);
+    this._mvCellMark = new Uint8Array(cells);
+    this._mvTouched = new Int32Array(cells);
+    this._mvJoinHead = new Int32Array(cells).fill(-1);
+    this._mvJoinNext = new Int32Array(n * 2 + 64);
+    this._mvJoinId = new Int32Array(n * 2 + 64);
+    this._mvCellScratch = new Int32Array(Grid.maxEntitiesPerCell);
+  }
+
+  /**
+   * E-126. rebuildOwnedRows, latching the state _rebuildMovedRows starts from: each entity's cell
+   * range and whether it is binned and owned here, where an entity without a collider was binned,
+   * each owned cell's uncapped count, the active list read. Latched with the values the cells are
+   * written from, so the state is this grid's even while physics writes poses. A copy of the loop,
+   * not a branch in rebuildOwnedRows (hot loops: R8); tests/node/spatialGridMovers.test.js holds the
+   * two to the same bytes.
+   * @returns {boolean} false when the active list read was not strictly ascending (torn): the grid
+   *   is still this frame's, but the state cannot be rewritten from
+   */
+  _rebuildOwnedRowsLatched() {
+    const x = Transform.x;
+    const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const colliderActive = Collider.active;
+    const spriteRendererActive = SpriteRenderer.active;
+    const rigidActive = RigidBody.active;
+    const countNoBody = this.collectDetailedStats;
+    let noBody = 0;
+
+    const gridWidth = this.gridWidth;
+    const invCellSize = this.invCellSize;
+    const workerId = this.workerId;
+
+    const entityPosData = this.entityPosData;
+    const gridCounts = Grid._gridCounts;
+    const gridEntities = Grid._gridEntities;
+    const cellStride = Grid._cellIdStride;
+    const cellHeader = Grid._headerIds;
+
+    const maxCol = gridWidth - 1;
+    const maxRow = this.gridHeight - 1;
+
+    const ownedRows = this.ownedRows;
+    const ownedRowCount = this.ownedRowCount;
+    const rowOwnership = this.rowOwnership;
+
+    const localCounts = this._localCellCounts;
+    const ownedList = this._ownedEntityList;
+    let ownedCount = 0;
+
+    const n = this.globalEntityCount;
+    const state = this._mvState;
+    const range = this._mvRange;
+    const loosePos = this._mvLoosePos;
+    const loose = this._mvLoose;
+    let looseCount = 0;
+    const trueCount = this._mvTrue;
+    const snapshot = this._mvActive;
+    // Scratch a given-up frame may have left behind.
+    state.fill(0);
+    this._mvDirty.fill(0);
+    this._mvCellMark.fill(0);
+    this._mvLeaves.fill(0);
+    this._mvJoinHead.fill(-1);
+    // Before the list is read: a population change after this read moves the version again.
+    this._mvVersion = this.queryVersionData ? Atomics.load(this.queryVersionData, 0) : 0;
+
+    for (let r = 0; r < ownedRowCount; r++) {
+      const row = ownedRows[r];
+      const rowBase = row * gridWidth;
+
+      for (let col = 0; col < gridWidth; col++) {
+        localCounts[rowBase + col] = 0;
+        trueCount[rowBase + col] = 0;
+      }
+    }
+
+    const activeEntitiesData = this.activeEntitiesData;
+    const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
+    snapshot[0] = totalActiveEntities;
+    let previous = -1;
+    let ascending = true;
+
+    for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
+      const i = activeEntitiesData[1 + activeIdx];
+      snapshot[1 + activeIdx] = i;
+      if (i <= previous || i >= n) ascending = false;
+      previous = i;
+      let s = MV_PRESENT;
+
+      // rebuildOwnedRows' bounds; without a collider the position is read once, for the bin and
+      // for the latch _rebuildMovedRows compares with.
+      let posX;
+      let posY;
+      let halfW = 0;
+      let halfH = 0;
+      if (colliderActive[i] && shapeType[i] === SHAPE_CIRCLE) {
+        // Same math as getColliderBounds' circle branch, without the call.
+        posX = x[i] + (offsetX[i] || 0);
+        posY = y[i] + (offsetY[i] || 0);
+        halfW = radius[i] || 0;
+        halfH = halfW;
+      } else if (colliderActive[i]) {
+        getColliderBounds(i, _boundsResult);
+        posX = _boundsResult.posX;
+        posY = _boundsResult.posY;
+        halfW = _boundsResult.halfW;
+        halfH = _boundsResult.halfH;
+      } else {
+        posX = x[i] + offsetX[i];
+        posY = y[i] + offsetY[i];
+        s |= MV_LOOSE;
+        loosePos[i * 2] = posX;
+        loosePos[i * 2 + 1] = posY;
+        loose[looseCount++] = i;
+        if (!spriteRendererActive[i]) {
+          state[i] = s;
+          continue;
+        }
+        s |= MV_SPRITE;
+        if (countNoBody && !(rigidActive && rigidActive[i])) noBody++;
+      }
+      state[i] = s;
+
+      if (posX !== posX || posY !== posY) continue;
+
+      const maxHalfExtent = halfW > halfH ? halfW : halfH;
+      // Home row from the Float32 Y that findNeighbors reads back from entityPosData.
+      let homeRow = (Math.fround(posY) * invCellSize) | 0;
+      homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
+      if (rowOwnership[homeRow] === workerId) {
+        ownedList[ownedCount++] = i;
+        s |= MV_OWNED;
+      }
+
+      getCellRange(posX, posY, halfW, halfH, invCellSize, maxCol, maxRow, _cellRangeResult);
+      const minCol = _cellRangeResult.minCol;
+      const maxColBB = _cellRangeResult.maxCol;
+      const minRow = _cellRangeResult.minRow;
+      const maxRowBB = _cellRangeResult.maxRow;
+      const r4 = i * 4;
+      range[r4] = minCol;
+      range[r4 + 1] = maxColBB;
+      range[r4 + 2] = minRow;
+      range[r4 + 3] = maxRowBB;
+      state[i] = s | MV_IN_GRID;
+
+      let wroteEntityPos = false;
+      for (let row = minRow; row <= maxRowBB; row++) {
+        if (rowOwnership[row] !== workerId) continue;
+
+        if (!wroteEntityPos) {
+          const baseIdx = i * 4;
+          entityPosData[baseIdx] = posX;
+          entityPosData[baseIdx + 1] = posY;
+          entityPosData[baseIdx + 2] = maxHalfExtent;
+          wroteEntityPos = true;
+        }
+
+        const rowBase = row * gridWidth;
+
+        for (let col = minCol; col <= maxColBB; col++) {
+          const cellIndex = rowBase + col;
+          const localCount = localCounts[cellIndex];
+          trueCount[cellIndex]++;
+
+          if (localCount < Grid.maxEntitiesPerCell) {
+            gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
+            localCounts[cellIndex] = localCount + 1;
+          }
+        }
+      }
+    }
+
+    for (let r = 0; r < ownedRowCount; r++) {
+      const row = ownedRows[r];
+      const rowBase = row * gridWidth;
+      for (let col = 0; col < gridWidth; col++) {
+        const cellIndex = rowBase + col;
+        const byteOffset = cellIndex * Grid.cellByteSize;
+        gridCounts[byteOffset] = localCounts[cellIndex];
+      }
+    }
+    this._noBodyCount = noBody;
+    this._ownedEntityCount = ownedCount;
+    this._mvLooseCount = looseCount;
+    return ascending;
+  }
+
+  /**
+   * E-126. The grid rewritten for the entities that changed since the state was latched, to the
+   * bytes rebuildOwnedRows would write: each owned cell lists the entities that cover it in active-
+   * list (ascending id) order, the first maxEntitiesPerCell of them, and keeps its bytes past the
+   * count; the pose of an entity that covers an owned row; the owned list in active-list order.
+   * The entities that changed: physics' list (bodies moved, teleported, created, destroyed or
+   * reshaped), the active list's spawns and despawns (read when the query version or the count
+   * moved), and the entities without a collider whose bin position, sprite or collider changed.
+   * @param {number} movedCount entries of physics' list to read (0: it has not published since)
+   * @param {number} seq the sequence readMovedBodiesHeader returned with that count
+   * @param {number} limit more changed entities than this and the full rebuild is cheaper
+   * @returns {boolean} false when the state is spent: the list copy was torn, the active list is not
+   *   ascending, more changed than `limit`, a full cell loses an entity it holds (the one that takes
+   *   its place is not known here), or the join list is full. The caller then rebuilds the grid,
+   *   which may be half rewritten.
+   */
+  _rebuildMovedRows(movedCount, seq, limit) {
+    const n = this.globalEntityCount;
+    const state = this._mvState;
+    const dirty = this._mvDirty;
+    const dirtyIds = this._mvDirtyIds;
+    let nd = 0;
+
+    // 1. Physics' list.
+    if (movedCount > 0) {
+      const moved = this._mvMoved;
+      if (!copyMovedBodies(moved, movedCount, seq)) return false;
+      for (let k = 0; k < movedCount; k++) {
+        const e = moved[k];
+        if (e < 0 || e >= n || dirty[e] !== 0) continue;
+        dirty[e] = 1;
+        dirtyIds[nd++] = e;
+      }
+    }
+
+    // 2. Spawns and despawns: the active list against the one the state was built from.
+    const activeData = this.activeEntitiesData;
+    const versionData = this.queryVersionData;
+    const version = versionData ? Atomics.load(versionData, 0) : 0;
+    const prev = this._mvActive;
+    const curCount = activeData[0];
+    if (!versionData || version !== this._mvVersion || curCount !== prev[0]) {
+      const next = this._mvActiveNext;
+      const prevCount = prev[0];
+      let p = 1;
+      let last = -1;
+      for (let j = 1; j <= curCount; j++) {
+        const b = activeData[j];
+        if (b <= last || b >= n) return false;
+        last = b;
+        next[j] = b;
+        while (p <= prevCount && prev[p] < b) {
+          const a = prev[p++];
+          state[a] &= ~MV_PRESENT;
+          if (dirty[a] === 0) {
+            dirty[a] = 1;
+            dirtyIds[nd++] = a;
+          }
+        }
+        if (p <= prevCount && prev[p] === b) {
+          p++;
+        } else {
+          state[b] |= MV_PRESENT;
+          if (dirty[b] === 0) {
+            dirty[b] = 1;
+            dirtyIds[nd++] = b;
+          }
+        }
+      }
+      while (p <= prevCount) {
+        const a = prev[p++];
+        state[a] &= ~MV_PRESENT;
+        if (dirty[a] === 0) {
+          dirty[a] = 1;
+          dirtyIds[nd++] = a;
+        }
+      }
+      next[0] = curCount;
+      this._mvActive = next;
+      this._mvActiveNext = prev;
+      this._mvVersion = version;
+    }
+
+    const x = Transform.x;
+    const y = Transform.y;
+    const offsetX = Collider.offsetX;
+    const offsetY = Collider.offsetY;
+    const shapeType = Collider.shapeType;
+    const radius = Collider.radius;
+    const colliderActive = Collider.active;
+    const spriteRendererActive = SpriteRenderer.active;
+
+    // 3. Entities without a collider, which no physics list reports: where they would bin now.
+    const loose = this._mvLoose;
+    const loosePos = this._mvLoosePos;
+    let looseCount = 0;
+    const looseBefore = this._mvLooseCount;
+    for (let k = 0; k < looseBefore; k++) {
+      const e = loose[k];
+      const s = state[e];
+      if ((s & MV_LOOSE) === 0) continue;
+      loose[looseCount++] = e;
+      if (dirty[e] !== 0) continue;
+      const px = x[e] + offsetX[e];
+      const py = y[e] + offsetY[e];
+      const lx = loosePos[e * 2];
+      const ly = loosePos[e * 2 + 1];
+      if (
+        colliderActive[e] !== 0 ||
+        (spriteRendererActive[e] !== 0) !== ((s & MV_SPRITE) !== 0) ||
+        // Changed bits: two NaNs bin alike, 0 and -0 do not (the pose keeps the sign).
+        (px !== lx ? px === px || lx === lx : px === 0 && 1 / px !== 1 / lx) ||
+        (py !== ly ? py === py || ly === ly : py === 0 && 1 / py !== 1 / ly)
+      ) {
+        dirty[e] = 1;
+        dirtyIds[nd++] = e;
+      }
+    }
+    if (nd > limit) return false;
+
+    // 4. Each changed entity binned again: its pose, its state, and the owned cells it leaves and joins.
+    const gridWidth = this.gridWidth;
+    const invCellSize = this.invCellSize;
+    const workerId = this.workerId;
+    const maxCol = gridWidth - 1;
+    const maxRow = this.gridHeight - 1;
+    const rowOwnership = this.rowOwnership;
+    const entityPosData = this.entityPosData;
+    const range = this._mvRange;
+    const leaves = this._mvLeaves;
+    const mark = this._mvCellMark;
+    const touched = this._mvTouched;
+    let touchedCount = 0;
+    const joinHead = this._mvJoinHead;
+    const joinNext = this._mvJoinNext;
+    const joinId = this._mvJoinId;
+    const joinCap = joinId.length;
+    let joinCount = 0;
+    let ownedChanged = false;
+
+    for (let d = 0; d < nd; d++) {
+      const i = dirtyIds[d];
+      const s = state[i];
+      let ns = s & MV_PRESENT;
+      const r4 = i * 4;
+      const wasIn = (s & MV_IN_GRID) !== 0;
+      const oMinCol = range[r4];
+      const oMaxCol = range[r4 + 1];
+      const oMinRow = range[r4 + 2];
+      const oMaxRow = range[r4 + 3];
+      let isIn = false;
+      let minCol = 0;
+      let maxColBB = -1;
+      let minRow = 0;
+      let maxRowBB = -1;
+
+      if (ns !== 0) {
+        // rebuildOwnedRows' bounds; without a collider the position is read once, for the bin and
+        // for the latch step 3 compares with.
+        let posX;
+        let posY;
+        let halfW = 0;
+        let halfH = 0;
+        let binned = true;
+        if (colliderActive[i] && shapeType[i] === SHAPE_CIRCLE) {
+          posX = x[i] + (offsetX[i] || 0);
+          posY = y[i] + (offsetY[i] || 0);
+          halfW = radius[i] || 0;
+          halfH = halfW;
+        } else if (colliderActive[i]) {
+          getColliderBounds(i, _boundsResult);
+          posX = _boundsResult.posX;
+          posY = _boundsResult.posY;
+          halfW = _boundsResult.halfW;
+          halfH = _boundsResult.halfH;
+        } else {
+          posX = x[i] + offsetX[i];
+          posY = y[i] + offsetY[i];
+          ns |= MV_LOOSE;
+          loosePos[i * 2] = posX;
+          loosePos[i * 2 + 1] = posY;
+          if ((s & MV_LOOSE) === 0) loose[looseCount++] = i;
+          if (spriteRendererActive[i]) ns |= MV_SPRITE;
+          else binned = false;
+        }
+        if (binned) {
+          if (posX === posX && posY === posY) {
+            isIn = true;
+            const maxHalfExtent = halfW > halfH ? halfW : halfH;
+            let homeRow = (Math.fround(posY) * invCellSize) | 0;
+            homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
+            if (rowOwnership[homeRow] === workerId) ns |= MV_OWNED;
+            getCellRange(posX, posY, halfW, halfH, invCellSize, maxCol, maxRow, _cellRangeResult);
+            minCol = _cellRangeResult.minCol;
+            maxColBB = _cellRangeResult.maxCol;
+            minRow = _cellRangeResult.minRow;
+            maxRowBB = _cellRangeResult.maxRow;
+            for (let row = minRow; row <= maxRowBB; row++) {
+              if (rowOwnership[row] !== workerId) continue;
+              entityPosData[r4] = posX;
+              entityPosData[r4 + 1] = posY;
+              entityPosData[r4 + 2] = maxHalfExtent;
+              break;
+            }
+          }
+        }
+      }
+
+      // Owned cells it covered and no longer covers.
+      if (wasIn) {
+        for (let row = oMinRow; row <= oMaxRow; row++) {
+          if (rowOwnership[row] !== workerId) continue;
+          const rowStays = isIn && row >= minRow && row <= maxRowBB;
+          const rowBase = row * gridWidth;
+          for (let col = oMinCol; col <= oMaxCol; col++) {
+            if (rowStays && col >= minCol && col <= maxColBB) continue;
+            const cell = rowBase + col;
+            leaves[cell]++;
+            if (mark[cell] === 0) {
+              mark[cell] = 1;
+              touched[touchedCount++] = cell;
+            }
+          }
+        }
+      }
+      // Owned cells it covers and did not cover: into each cell's joins, in ascending id order.
+      if (isIn) {
+        for (let row = minRow; row <= maxRowBB; row++) {
+          if (rowOwnership[row] !== workerId) continue;
+          const rowStayed = wasIn && row >= oMinRow && row <= oMaxRow;
+          const rowBase = row * gridWidth;
+          for (let col = minCol; col <= maxColBB; col++) {
+            if (rowStayed && col >= oMinCol && col <= oMaxCol) continue;
+            const cell = rowBase + col;
+            if (joinCount === joinCap) return false;
+            joinId[joinCount] = i;
+            let before = -1;
+            let at = joinHead[cell];
+            while (at >= 0 && joinId[at] < i) {
+              before = at;
+              at = joinNext[at];
+            }
+            joinNext[joinCount] = at;
+            if (before < 0) joinHead[cell] = joinCount;
+            else joinNext[before] = joinCount;
+            joinCount++;
+            if (mark[cell] === 0) {
+              mark[cell] = 1;
+              touched[touchedCount++] = cell;
+            }
+          }
+        }
+        range[r4] = minCol;
+        range[r4 + 1] = maxColBB;
+        range[r4 + 2] = minRow;
+        range[r4 + 3] = maxRowBB;
+        ns |= MV_IN_GRID;
+      }
+      if (((s ^ ns) & MV_OWNED) !== 0) ownedChanged = true;
+      state[i] = ns;
+    }
+
+    // 5. Each touched cell: what it holds minus the entities that left, merged with the ones that
+    // joined, both ascending; the first maxEntitiesPerCell written, the bytes past them kept.
+    const gridCounts = Grid._gridCounts;
+    const gridEntities = Grid._gridEntities;
+    const cellStride = Grid._cellIdStride;
+    const cellHeader = Grid._headerIds;
+    const cellByteSize = Grid.cellByteSize;
+    const maxPerCell = Grid.maxEntitiesPerCell;
+    const localCounts = this._localCellCounts;
+    const trueCount = this._mvTrue;
+    const scratch = this._mvCellScratch;
+    for (let t = 0; t < touchedCount; t++) {
+      const cell = touched[t];
+      const byteOffset = cell * cellByteSize;
+      const held = gridCounts[byteOffset];
+      const total = trueCount[cell];
+      const base = cell * cellStride + cellHeader;
+      const row = (cell / gridWidth) | 0;
+      const col = cell - row * gridWidth;
+      let node = joinHead[cell];
+      let joins = 0;
+      let heldLeaves = 0;
+      let merged = 0;
+      for (let k = 0; k < held; k++) {
+        const id = gridEntities[base + k];
+        if (dirty[id] !== 0) {
+          const r = id * 4;
+          if (
+            (state[id] & MV_IN_GRID) === 0 ||
+            col < range[r] ||
+            col > range[r + 1] ||
+            row < range[r + 2] ||
+            row > range[r + 3]
+          ) {
+            heldLeaves++;
+            continue;
+          }
+        }
+        while (node >= 0 && joinId[node] < id) {
+          if (merged < maxPerCell) scratch[merged] = joinId[node];
+          merged++;
+          joins++;
+          node = joinNext[node];
+        }
+        if (merged < maxPerCell) scratch[merged] = id;
+        merged++;
+      }
+      while (node >= 0) {
+        if (merged < maxPerCell) scratch[merged] = joinId[node];
+        merged++;
+        joins++;
+        node = joinNext[node];
+      }
+      // Over the cap the cell holds the first maxEntitiesPerCell only: one of those leaving needs
+      // the next one, which is not known here. Under it, every leave is an entity it holds.
+      if (total > maxPerCell ? heldLeaves !== 0 : heldLeaves !== leaves[cell]) return false;
+      const count = merged < maxPerCell ? merged : maxPerCell;
+      for (let k = 0; k < count; k++) gridEntities[base + k] = scratch[k];
+      gridCounts[byteOffset] = count;
+      localCounts[cell] = count;
+      trueCount[cell] = total - leaves[cell] + joins;
+      leaves[cell] = 0;
+      joinHead[cell] = -1;
+      mark[cell] = 0;
+    }
+
+    // 6. The owned list, in active-list order, when an entity entered or left it.
+    if (ownedChanged) {
+      const snapshot = this._mvActive;
+      const total = snapshot[0];
+      const ownedList = this._ownedEntityList;
+      let ownedCount = 0;
+      for (let a = 1; a <= total; a++) {
+        const e = snapshot[a];
+        if ((state[e] & MV_OWNED) !== 0) ownedList[ownedCount++] = e;
+      }
+      this._ownedEntityCount = ownedCount;
+    }
+
+    for (let d = 0; d < nd; d++) dirty[dirtyIds[d]] = 0;
+    this._mvLooseCount = looseCount;
+    let noBody = 0;
+    if (this.collectDetailedStats) {
+      // rebuildOwnedRows' count: listed entities with a sprite, no collider and no rigid body.
+      const rigidActive = RigidBody.active;
+      for (let k = 0; k < looseCount; k++) {
+        const e = loose[k];
+        if ((state[e] & MV_LOOSE) !== 0 && spriteRendererActive[e] && !(rigidActive && rigidActive[e])) noBody++;
+      }
+    }
+    this._noBodyCount = noBody;
+    return true;
   }
 
   /**
@@ -1031,6 +1706,7 @@ class SpatialWorker extends AbstractWorker {
     this._writeFrameMeters(SPATIAL_STATS);
     this.stats[SPATIAL_STATS.NEIGHBORS_REUSED] = this.neighborsReusedThisFrame;
     this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
+    this.stats[SPATIAL_STATS.GRID_MOVERS] = this._gridMoversThisFrame;
     if (!this.collectDetailedStats) return;
     this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
     this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;

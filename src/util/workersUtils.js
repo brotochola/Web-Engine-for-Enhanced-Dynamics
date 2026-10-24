@@ -237,6 +237,8 @@ export const SPATIAL_STATS = Object.freeze({
   WAIT_MS: 11,
   /** Wall ms between the end of the previous frame and the start of this one. See E-01/E-06. */
   IDLE_MS: 12,
+  /** 1 when the frame's grid was rewritten for the bodies that moved, 0 when it was rebuilt (E-126). */
+  GRID_MOVERS: 13,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });
