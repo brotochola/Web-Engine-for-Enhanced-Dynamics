@@ -9,10 +9,10 @@
  *   wasm        integrateParticlesWasm (src/workers/particleIntegrateClient.js): integrate_batch
  *               (wasm/particleIntegrate.c), then returnToPool for its dead list, in order, and
  *               Math.cos / Math.sin for its trig list
- *   wasm-f32    the same wrapper around integrate_batch_f32 (wasm/test/particleIntegrateF32.c, a test
- *               module): float32 arithmetic where integrateF32Tolerance holds, scalar
- *   wasm-f32x4  integrate_batch_f32x4: the same operations, f32x4 on runs of four slots in the position
- *               passes and on the staged rotations (bit-identical to wasm-f32)
+ *   wasm-f32x4  the same wrapper around integrate_batch_f32x4 (wasm/particleIntegrate.c): float32
+ *               arithmetic where integrateF32Tolerance holds, f32x4 on runs of four slots in the position
+ *               passes and on the staged rotations. (The float32 pass also timed a scalar float32
+ *               integrate: +1.8 % tween, +5.7 % spin against integrate_batch, under f32x4's spin +24.3 %.)
  *
  * Both run on the particle memory the scene builds (createParticleMemory: ParticleComponent from
  * byte 0 of a shared WebAssembly.Memory, the lists and the kernel's scratch after it). One variant per process: runKernelVariants.mjs
@@ -26,12 +26,12 @@
  * integrateF32Tolerance(1)), and the run goes on from the shipped kernel's state. Its checksum is the hash
  * of those shipped states, which is wasm's checksum, when every frame was within the tolerance, and a
  * string naming the first value outside it when one was not. So the checksum of base and wasm is as
- * strict as before, and `--variants wasm,wasm-f32,wasm-f32x4` compares the float32 variants on the same
+ * strict as before, and `--variants wasm,wasm-f32x4` compares the float32 variant on the same
  * value. The timed calls run the variant alone. (This bench's frames all have dtRatio 1, where the float32
  * positions are the shipped ones bit for bit; the test drifts them.)
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleIntegrateWasmMicrobench.mjs --variants base,wasm --rounds 5
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleIntegrateWasmMicrobench.mjs --variants wasm,wasm-f32,wasm-f32x4 --rounds 5 [-- --case spin]
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleIntegrateWasmMicrobench.mjs --variants wasm,wasm-f32x4 --rounds 5 [-- --case spin]
  *   node tests/bench/particleIntegrateWasmMicrobench.mjs --variant wasm [--case tween|spin] [--check] [--output path]
  *
  * --check runs the 60 checksum frames only and prints the checksum: no timing.
@@ -55,9 +55,9 @@ const DT = 1000 / 60;
 const EASES = ['lerp', 'quad.out', 'cubic.in', 'quad.inout', 'expo.out', 'back.in', 'bounce.out'];
 export const PARTICLE_EASES = EASES;
 
-/** The float32 kernels: tests/fixtures/wasm/particleIntegrateF32.wasm, by variant name. */
-export const INTEGRATE_F32_MODULE = 'particleIntegrateF32';
-export const INTEGRATE_F32_EXPORTS = Object.freeze({ 'wasm-f32': 'integrate_batch_f32', 'wasm-f32x4': 'integrate_batch_f32x4' });
+/** The float32 kernel of the shipped module (wasm/particleIntegrate.c), by variant name. */
+export const INTEGRATE_F32_MODULE = 'particleIntegrate';
+export const INTEGRATE_F32_EXPORTS = Object.freeze({ 'wasm-f32x4': 'integrate_batch_f32x4' });
 
 export function emitConfig(mix, count, ease, area) {
   const cfg = {
@@ -123,8 +123,8 @@ export function ulp32(v) {
 
 /**
  * What a float32 integrate may differ by from the shipped kernel after `frames` frames from the same state
- * (1: the bench's lock-step frame; tests/node/particleIntegrateF32.test.js runs 60). wasm/test/
- * particleIntegrateF32.c says where its arithmetic is float32. Integers are exact: the `exact` columns, the
+ * (1: the bench's lock-step frame; tests/node/particleIntegrateF32.test.js runs 60). wasm/
+ * particleIntegrate.c (integrate_batch_f32x4) says where its arithmetic is float32. Integers are exact: the `exact` columns, the
  * free list (every death, in order) and, in the test, the lists and stamps. A column of `float` is within
  * max(abs, ulps · ulp32(shipped value)), NaN exactly where the shipped value is NaN; a channel of an `rgb`
  * column within `channel`.

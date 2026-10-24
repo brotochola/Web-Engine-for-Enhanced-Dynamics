@@ -70,7 +70,8 @@
       "source": "wasm/particleIntegrate.c",
       "output": "src/workers/particleIntegrate.wasm",
       "exports": [
-        "integrate_batch"
+        "integrate_batch",
+        "integrate_batch_f32x4"
       ],
       "maxMemoryPages": 8192
     },
@@ -304,17 +305,6 @@
         "order_batch_by_cell",
         "gather_batch_f32",
         "gather_batch_f32x4"
-      ],
-      "maxMemoryPages": 8192,
-      "test": true
-    },
-    {
-      "name": "particleIntegrateF32",
-      "source": "wasm/test/particleIntegrateF32.c",
-      "output": "tests/fixtures/wasm/particleIntegrateF32.wasm",
-      "exports": [
-        "integrate_batch_f32",
-        "integrate_batch_f32x4"
       ],
       "maxMemoryPages": 8192,
       "test": true

@@ -1,5 +1,5 @@
-// E-76 W12, float32: integrate_batch_f32 and integrate_batch_f32x4 (wasm/test/particleIntegrateF32.c) against
-// the shipped integrate_batch, which particleIntegrateWasm.test.js ties to the JS integrate bit for bit. Each
+// E-76 W12, float32: integrate_batch_f32x4 (wasm/particleIntegrate.c) against integrate_batch, its double
+// integrate, which particleIntegrateWasm.test.js ties to the JS integrate bit for bit. Each
 // variant runs its own population for 60 frames from the same seeds through the shipped client wrapper
 // (integrateParticlesWasm: the dead list back to the pool, Math.cos / Math.sin for the trig list), with frame
 // times that make dtRatio 1, 1.37, 0.83, 2.5, 0.5 and 1.1 over and over, so float32 rounding has room to
@@ -11,8 +11,7 @@
 //   positions and velocities within max(1e-3 px, 60 float32 steps), one step a frame (0.015 px at 3 000 px);
 //   alpha and scale within max(1e-6, 8 steps); rotC and rotS within 2.5e-7; a tint channel within 1. None of
 //   it shows: positions move on a float32 grid the shipped kernel already rounds to every frame, a 256 px
-//   sprite turned 2.5e-7 rad moves its corner 6e-5 px, an alpha of 1e-6 is 1/4000 of one 8-bit step;
-// - integrate_batch_f32x4 the same bytes as integrate_batch_f32 in the whole component.
+//   sprite turned 2.5e-7 rad moves its corner 6e-5 px, an alpha of 1e-6 is 1/4000 of one 8-bit step.
 // The mixes: the stress scene's (heighted, seven eases) and its spin case (rotation and tint tweens, an
 // angular velocity: angles to 3e4 rad, a few past 2^20 * pi/2 for the trig list and a few NaN), particles that
 // land within the run (despawn, stay and stamp, fade on the floor), and flat ones (emitFlat: a rotation tween
@@ -112,7 +111,6 @@ function runMix(rig, mix, kernels, { dtSkew = {} } = {}) {
     stamp: null,
   }]));
   const worst = {};
-  const componentBytes = pc.getBufferSize(N);
   let violation = null;
   let rotated = 0;
   let trigListed = 0;
@@ -160,13 +158,6 @@ function runMix(rig, mix, kernels, { dtSkew = {} } = {}) {
         break;
       }
     }
-    if (!violation && sides['wasm-f32'] && sides['wasm-f32x4']) {
-      const a = sides['wasm-f32'].state.bytes.subarray(0, componentBytes);
-      const c = sides['wasm-f32x4'].state.bytes.subarray(0, componentBytes);
-      if (Buffer.compare(a, c) !== 0) {
-        violation = `frame ${f}: integrate_batch_f32x4 differs from integrate_batch_f32 at component byte ${a.findIndex((x, k) => x !== c[k])}`;
-      }
-    }
   }
   return { violation, worst, rotated, trigListed, stamped, dead, flatMoved, alive: sides.wasm.list.length };
 }
@@ -212,7 +203,7 @@ function patchFloat(bytes, from, to) {
 
 test('the tolerance catches a wrong sine coefficient, a wrong ease constant and a drifting dtRatio', async () => {
   const rig = await rigPromise;
-  const original = new Uint8Array(fs.readFileSync(path.join(root, 'tests/fixtures/wasm/particleIntegrateF32.wasm')));
+  const original = new Uint8Array(fs.readFileSync(path.join(root, 'src/workers/particleIntegrate.wasm')));
   const mutants = [
     { from: -1.6666654611e-1, to: -1.6666e-1, mix: 'spin', caught: /rot[CS]\[/, minHits: 2, what: 'the sine coefficient' },
     // floor: lifespans of 0.3–3 s, so back.in runs to the end of its curve within the 60 frames.
@@ -227,6 +218,6 @@ test('the tolerance catches a wrong sine coefficient, a wrong ease constant and 
       assert.match(String(r.violation), m.caught, `${v} with ${m.what} changed`);
     }
   }
-  const r = runMix(rig, 'tween', { wasm: rig.kernels.wasm, 'wasm-f32': rig.kernels['wasm-f32'] }, { dtSkew: { 'wasm-f32': 1 + 2e-5 } });
+  const r = runMix(rig, 'tween', { wasm: rig.kernels.wasm, 'wasm-f32x4': rig.kernels['wasm-f32x4'] }, { dtSkew: { 'wasm-f32x4': 1 + 2e-5 } });
   assert.match(String(r.violation), /\b[xyz]\[|v[xyz]\[/, 'a dtRatio off by 2e-5');
 });
