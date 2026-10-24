@@ -683,7 +683,8 @@
       "next": "With E-85: allocation sites first (heap pass), then the batched casts.",
       "records": [
         "R-0582",
-        "R-0587"
+        "R-0587",
+        "R-0620"
       ]
     },
     {
@@ -13557,6 +13558,19 @@
       "commits": [
         "dee52a69",
         "12f47683"
+      ]
+    },
+    {
+      "id": "R-0620",
+      "date": "2026-10-24",
+      "time": "18:55",
+      "timeFrom": "recorded",
+      "title": "The bullet tick at 32-bit ids and past 65 535 bullets, and the owner column's width, close-out group B, E-76",
+      "verdict": "kept-hygiene",
+      "text": "**kept (coverage, close-out group B), with a bug fixed on the way.**\n\n**The bug (`dfffe49b`):** `BulletComponent.ownerId` stayed a `Uint16Array` at 32-bit entity ids, so a shooter past index 65 535 was cut. The cast excludes the owner by index, so its own bullets could hit it, and impacts named another owner. It now takes `EntityIdArray()` in `getBufferSize` and `initializeArrays`, as `DecorationComponent.parentEntityIndex` does; `bulletOwnerWidth.test.js` checks that owner 70 000 is kept at 32-bit ids.\n\n**The coverage (`25f118f1`):** the kernel read 16-bit grid ids and owners and wrote a 16-bit active list, so 32-bit ids or a pool past 65 535 bullets ran the JS tick. Two constant flags (`wideIds`, `wideSlots`) give `bullet_tick_lean` three more exports: `_ids32`, `_slots32` and `_u32`. The client binds the one the scene's widths need, the active list is laid at the pool's slot width, the 65 535-bullet gate in the scene spec is gone, and `BulletPool.tick` hands the kernel a list of its width.\n- Parity, `bulletTickWasm.test.js`: the three forms leave what `BulletPool.tick` leaves, bit for bit, at 70 000 entities (with hits on entities past 65 535) and 70 000 bullets.\n- The 16-bit variants: `bullet_tick` and `bullet_tick_hoist` compile byte for byte as before; the two stampless ones have one local read moved (13 bytes).\n- Kernel A/B, `bulletTickWasmMicrobench --variant wasm_lean` against the parent, 5 alternating rounds: storm 385.5 → 369.9 ops/s median (paired −8.6, +1.8, +3.4, −0.3, −5.1 %), sparse 2 719 → 2 868 ops/s: a tie. A first sitting, before the owner reads went back where the 16-bit tick had them, read storm −9.2 %.",
+      "commits": [
+        "dfffe49b",
+        "25f118f1"
       ]
     }
   ],
