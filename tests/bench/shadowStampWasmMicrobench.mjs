@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W23 screen): pre-render's shadow-caster stamp in WASM (wasm/test/shadowStamp.c, a test
- * module) against the shipped stampLightRange, on the Predator fixture as shadowStampMicrobench sets it
+ * Kernel (E-76 W23, E-114): pre-render's shadow-caster stamp in WASM (wasm/shadowStamp.c,
+ * src/render/shadowStamp.wasm) against the shipped stampLightRange, on the Predator fixture as shadowStampMicrobench sets it
  * up: the 48 lights nearest the caster centroid, maxShadowsPerLight 512, maxShadowsPerEntity 3, casters
  * packed as GPU_CASTER_FLOATS rows.
  *
@@ -28,17 +28,12 @@ import { checksumFloats, checksumInts, isCli, parseArgs, timeIt, warmNormalCompi
 import { loadPredatorFixture } from './predatorFixture.mjs';
 import { setupStamp } from './shadowStampMicrobench.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
 
-const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../fixtures/wasm/shadowStamp.wasm'));
+const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/render/shadowStamp.wasm'));
 const LIGHT_DOUBLES = 5;
 /** shadowStamp.c's table, slot for slot. */
-const SLOTS = [
-  'sun', 'sunN', 'sunFloats', 'lights', 'lightBegin', 'lightEnd', 'lightStride', 'maxPL', 'maxPE',
-  'tmpIdx', 'dist', 'order', 'keep', 'tmpCap',
-  'gridCounts', 'gridStarts', 'gridItems', 'gridCountsCap', 'gridItemsCap',
-  'stamp', 'stampFloats', 'stampCap', 'stampBase', 'stampLightIdx', 'lightFloat',
-  'nearDist', 'nearSlot', 'nearCount', 'pairDist',
-];
+const SLOTS = STAMP_SLOTS;
 const SLOT = Object.fromEntries(SLOTS.map((name, k) => [name, k]));
 
 /** The fixture's spec with every array moved into one shared memory. */
@@ -57,7 +52,6 @@ async function setupKernel(opts) {
     { name: 'nearDist', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
     { name: 'nearSlot', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
     { name: 'nearCount', owner: 'pre-render', bytes: Math.max(1, s.sunN) },
-    { name: 'pairDist', owner: 'pre-render', bytes: Math.max(1, s.sunN) * 4 },
     { name: 'table', owner: 'pre-render', bytes: SLOTS.length * 4 },
   );
   const layout = layoutRegions(regions);
@@ -101,7 +95,6 @@ async function setupKernel(opts) {
   put('nearDist', R.nearDist.byte);
   put('nearSlot', R.nearSlot.byte);
   put('nearCount', R.nearCount.byte);
-  put('pairDist', R.pairDist.byte);
 
   const { stamp_light_range: stampRange } = await loadWasmKernel('shadowStamp', KERNEL_URL, memory, ['stamp_light_range']);
   /** The product wrapper: the light objects into the table, then one call. */

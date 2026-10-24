@@ -1,8 +1,9 @@
-/* W23 screen (E-76): stampLightRange (src/render/gpuShadowCasters.js) in C, the whole call: the stamp
+/* The shadow-caster stamp (E-76 W23, E-114): stampLightRange (src/render/gpuShadowCasters.js) in C, the whole call: the stamp
    grid over the sun caster rows, each light's gather (grid walk or full scan), the index sort that only
    runs without a per-entity cap, takeClosest's quickselect + quicksort, the per-caster nearest lights
    with maxShadowsPerEntity, and the append of caster rows with the light vec4. Every array is a byte
-   offset into the imported shared memory, through a table of u32 slots; the lights are a table of five
+   offset into the render-queue memory (src/render/shadowStampClient.js writes the table: the sun rows and the
+   stamp output are GPU-queue regions, the scratch and the lights the stamp regions); the lights are a table of five
    doubles each (x, y, intensity, rangeSq, maxShadows), NaN rangeSq for an empty slot. Arithmetic as the
    JS does it: positions and distances in double, stored as float where the JS stores into a
    Float32Array, Math.floor(..) | 0 through an exact ToInt32. Returns the stamp cursor. */
@@ -17,7 +18,7 @@ enum {
   T_TMP_IDX, T_DIST, T_ORDER, T_KEEP, T_TMP_CAP,
   T_GRID_COUNTS, T_GRID_STARTS, T_GRID_ITEMS, T_GRID_COUNTS_CAP, T_GRID_ITEMS_CAP,
   T_STAMP, T_STAMP_FLOATS, T_STAMP_CAP, T_STAMP_BASE, T_STAMP_LIGHT_IDX, T_LIGHT_FLOAT,
-  T_NEAR_DIST, T_NEAR_SLOT, T_NEAR_COUNT, T_PAIR_DIST,
+  T_NEAR_DIST, T_NEAR_SLOT, T_NEAR_COUNT,
   SLOT_COUNT
 };
 

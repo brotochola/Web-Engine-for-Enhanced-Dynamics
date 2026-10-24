@@ -118,13 +118,12 @@
     },
     {
       "name": "shadowStamp",
-      "source": "wasm/test/shadowStamp.c",
-      "output": "tests/fixtures/wasm/shadowStamp.wasm",
+      "source": "wasm/shadowStamp.c",
+      "output": "src/render/shadowStamp.wasm",
       "exports": [
         "stamp_light_range"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 8192
     }
   ]
 }
