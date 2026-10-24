@@ -976,6 +976,12 @@ default `packGpuSprites: 'preRender'` those rows come from pre-render's WASM pac
 copies them in `_commitPackedBatch`, so the split needs the packer to write a pose stream and a static stream
 and Pixi a two-buffer geometry for the plain path; `staticGen` already says when statics changed. It pays only
 on persist frames, which a moving camera rarely gives (Predator), so measure it on a static high-count scene.
+*Design note (2026-10-24):* a split in Pixi alone (the pose batch with the previous pose equal to the current)
+would cost the frames whose statics change: Pixi would pack in JS what pre-render packed in C, and upload
+68 bytes a sprite instead of 60. That is every frame of a moving camera (Predator). So the split belongs in the
+packer: `gpuPack.wasm` writes a pose stream and a static stream into the GPU queue, and Pixi copies both and
+uploads the statics only when `staticGen` moves. Owner scene: `BunnyMarkStressCScene` (100 000 bunnies,
+default renderer, still camera), renderer; Predator renderer as the guard.
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **kept (hygiene), 2026-10-23**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls
