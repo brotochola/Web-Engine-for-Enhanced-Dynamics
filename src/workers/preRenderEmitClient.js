@@ -3,8 +3,9 @@
 // blocks, both queue buffers, the collector, the animation state; see renderQueueMemoryRegions). emit_rows
 // writes the full emit's sprite and decoration rows with the JS's bits; the rows of other types, the
 // play-once ends and the missing textures come back as lists, and pre-render acts on them in JS.
-// W4c: persist_check, persist_poses and persist_remember are the entity queue's persist path, on the same
-// table with the rows each queue buffer last held (writePersistColumns).
+// W4c: persist_frame (the check and the poses-only pass in one walk, E-116) and persist_remember are the
+// entity queue's persist path, on the same table with the rows each queue buffer last held
+// (writePersistColumns).
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
@@ -38,7 +39,7 @@ export const EMIT_TILES_DIRTY = 4;
 export const EMIT_BOUNDS = 8;
 /** What JS reads back from emit_rows when it declined the frame (u32 0xffffffff as an i32). */
 export const EMIT_DECLINED = -1;
-/** What persist_check returns when the rows are not the ones the buffer last held (W4c). */
+/** What persist_frame returns when the rows are not the ones the buffer last held (W4c). */
 export const EMIT_PERSIST_MISS = -1;
 /** Warning kinds in the warns list. */
 export const EMIT_WARN_NO_ANIM = 0;
@@ -78,7 +79,7 @@ export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
  * @param {Record<string, number>} emit createRenderQueueMemory's layout.emit
  */
 export async function bindPreRenderEmit(memory, emit) {
-  const k = await loadWasmKernel('preRenderEmit', wasmUrl, memory, ['emit_rows', 'persist_check', 'persist_poses', 'persist_remember']);
+  const k = await loadWasmKernel('preRenderEmit', wasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_remember']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, emit.tableByte, EMIT_SLOTS.length);
   table[SLOT.rEnds] = emit.endsByte;
@@ -93,8 +94,7 @@ export async function bindPreRenderEmit(memory, emit) {
   return {
     buffer,
     emitRows: k.emit_rows,
-    persistCheck: k.persist_check,
-    persistPoses: k.persist_poses,
+    persistFrame: k.persist_frame,
     persistRemember: k.persist_remember,
     layout: emit,
     table,

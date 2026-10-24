@@ -2974,17 +2974,17 @@ class PreRenderWorker extends AbstractWorker {
         const emitWasm = this._emitWasm !== null && !!stashPx && this._writeEmitTable(source);
         const persistWasm = emitWasm && persistBuf >= 0 && writePersistColumns(this._emitWasm, this, SpriteRenderer, persistBuf);
         let persistHit = false;
-        if (persistBuf >= 0) {
-            persistHit = persistWasm
-                ? this._type0PersistHitWasm(persistBuf, count, maxItems)
-                : this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
-        }
         // Rows other than sprites are rewritten in full on a persist frame too (E-82 staticGen).
         let persistOthers = 0;
-        if (persistHit) {
-            persistOthers = persistWasm
-                ? this._writeType0PosesWasm(count, maxItems, deltaTime)
-                : this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime);
+        if (persistWasm) {
+            persistOthers = this._persistFrameWasm(persistBuf, count, maxItems, deltaTime);
+            persistHit = persistOthers >= 0;
+            if (!persistHit) persistOthers = 0;
+        } else if (persistBuf >= 0) {
+            persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
+            if (persistHit) {
+                persistOthers = this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime);
+            }
         }
         // E-98b. On a persist frame of sprites only, the loop below would only count the rows.
         let loopCount = count;
@@ -3394,31 +3394,26 @@ class PreRenderWorker extends AbstractWorker {
         return b.texturesReady && writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source);
     }
 
-    /** W4c. _type0PersistHit in preRenderEmit.wasm (persist_check), on this frame's table. */
-    _type0PersistHitWasm(bufIdx, count, maxItems) {
-        if (this._persistCount[bufIdx] !== count) return false;
-        this._persistFramesRepaired = 0;
-        const b = this._emitWasm;
-        const repaired = b.persistCheck(b.tableByte, count, maxItems);
-        if (repaired === EMIT_PERSIST_MISS) return false;
-        this._persistFramesRepaired = repaired;
-        return true;
-    }
-
     /**
-     * W4c. _writeType0PosesOnly in preRenderEmit.wasm (persist_poses). Returns the rows of other types;
-     * the sprites whose frame moved go to _persistFramesMoved, the play-once ends through the
-     * entity-type filter, as the JS sends them.
+     * W4c, E-116. _type0PersistHit and _writeType0PosesOnly in one preRenderEmit.wasm walk (persist_frame),
+     * on this frame's table: the rows of other types when the rows are the ones this buffer last held,
+     * else -1 (the full emit that follows rewrites the pose columns the walk wrote). The repairs go to
+     * _persistFramesRepaired, the sprites whose frame moved to _persistFramesMoved, the play-once ends
+     * through the entity-type filter, as the JS sends them.
      */
-    _writeType0PosesWasm(count, maxItems, deltaTime) {
+    _persistFrameWasm(bufIdx, count, maxItems, deltaTime) {
+        if (this._persistCount[bufIdx] !== count) return -1;
+        this._persistFramesRepaired = 0;
         const b = this._emitWasm;
         const writeSortKey = !!(this.renderQueueSortKey && this._queueHasOrder());
         const ySort = writeSortKey && this._entityYSort();
         const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
         const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0) | (bounds ? EMIT_BOUNDS : 0);
-        const others = b.persistPoses(b.tableByte, count, maxItems, flags, deltaTime / 1000, this._zBand);
+        const others = b.persistFrame(b.tableByte, count, maxItems, flags, deltaTime / 1000, this._zBand);
+        if (others === EMIT_PERSIST_MISS) return -1;
         const results = b.results;
         this._persistFramesMoved = results[1];
+        this._persistFramesRepaired = results[2];
         const ends = results[0];
         const u32 = b.u32;
         for (let k = 0, at = b.endsAt; k < ends; k++, at += 2) {

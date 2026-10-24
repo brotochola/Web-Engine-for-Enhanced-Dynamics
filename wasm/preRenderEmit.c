@@ -8,10 +8,10 @@
    Adobe root or a LiquidFun row is declined (0xffffffff) before anything is written. Play-once ends and
    missing animations come back as lists too: the end message, its entity-type filter and the warnings
    stay JS.
-   W4c: the persist path of the entity queue, from the same table. persist_check is _type0PersistHit (with
-   _repairPersistFrame), persist_poses is _writeType0PosesOnly (with _writeQueueShadow and
-   _advancePersistFrame) and persist_remember is _rememberType0Set; the rows a queue buffer last held are
-   the P_ columns, the slots of that buffer. */
+   W4c: the persist path of the entity queue, from the same table. persist_frame is _type0PersistHit (with
+   _repairPersistFrame) and _writeType0PosesOnly (with _writeQueueShadow and _advancePersistFrame) in one
+   walk (E-116), persist_remember is _rememberType0Set; the rows a queue buffer last held are the P_
+   columns, the slots of that buffer. */
 #include <stdint.h>
 
 #define INLINE static inline __attribute__((always_inline))
@@ -343,66 +343,21 @@ INLINE int32_t global_anim(const int32_t *proxy, uint32_t nSheets, uint32_t shee
   return sheet < nSheets ? proxy[sheet * PROXY_STATES + anim] : -1;
 }
 
-/* _type0PersistHit, once the JS has matched the buffer's count: PERSIST_MISS when a row's type or entity
-   is not the one this buffer last held, when a row is an Adobe root, or when a sprite is dirty or changed
-   its animation; else the sprites whose frame moved since, each given its current frame's texture
-   (_repairPersistFrame, which misses when that frame has no texture). */
-__attribute__((export_name("persist_check")))
-uint32_t persist_check(uint32_t table, uint32_t count, uint32_t maxItems) {
-  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
-  const uint8_t *cType = PTR(const uint8_t, C_TYPE);
-  const int32_t *cIndex = PTR(const int32_t, C_INDEX);
-  const uint8_t *pType = PTR(const uint8_t, P_TYPE);
-  const int32_t *pEntity = PTR(const int32_t, P_ENTITY);
-  uint16_t *pFrame = PTR(uint16_t, P_FRAME);
-  const uint16_t *pAnim = PTR(const uint16_t, P_ANIM);
-  const uint8_t *sDirty = PTR(const uint8_t, S_DIRTY);
-  const uint8_t *sSheet = PTR(const uint8_t, S_SHEET);
-  const uint8_t *sAnim = PTR(const uint8_t, S_ANIM);
-  const uint16_t *aFrame = PTR(const uint16_t, A_FRAME);
-  uint16_t *aLastTex = PTR(uint16_t, A_LAST_TEX);
-  const int32_t *proxy = PTR(const int32_t, T_PROXY);
-  const uint32_t nSheets = t[T_SHEETS];
-  const int32_t *frameCount = PTR(const int32_t, T_FRAME_COUNT);
-  const int32_t *frameStart = PTR(const int32_t, T_FRAME_START);
-  const uint32_t nAnims = t[T_ANIMS];
-  uint16_t *qTexture = PTR(uint16_t, Q_TEXTURE);
-
-  /* Rows past the buffer pass: the JS reads undefined on both sides of each comparison there. */
-  const uint32_t n = count < maxItems ? count : maxItems;
-  uint32_t repaired = 0;
-  for (uint32_t i = 0; i < n; i++) {
-    const uint32_t ty = cType[i];
-    const int32_t idx = cIndex[i];
-    if (pType[i] != ty || pEntity[i] != idx) return PERSIST_MISS;
-    if (ty == 6) return PERSIST_MISS;
-    if (ty != 0) continue;
-    if (sDirty && sDirty[idx]) return PERSIST_MISS;
-    const uint32_t anim = sAnim[idx];
-    if (pAnim[i] != anim) return PERSIST_MISS;
-    const uint32_t frame = aFrame[idx];
-    if (pFrame[i] != frame) {
-      const int32_t g = global_anim(proxy, nSheets, sSheet[idx], anim);
-      if (g < 0 || (uint32_t)g >= nAnims) return PERSIST_MISS;
-      if ((int32_t)frame >= frameCount[g]) return PERSIST_MISS;
-      const uint32_t tex = (uint32_t)(frameStart[g] + (int32_t)frame);
-      qTexture[i] = (uint16_t)tex;
-      if (aLastTex) aLastTex[idx] = (uint16_t)tex;
-      pFrame[i] = (uint16_t)frame;
-      repaired++;
-    }
-  }
-  return repaired;
-}
-
-/* _writeType0PosesOnly on a frame persist_check took: each sprite row's pose (only the rotation of a
-   sprite drawn with its own facing when the collect wrote the poses into the queue), sort key and shadow
-   terms, and the animation clock of the animated ones (_advancePersistFrame, which advances on
-   !(clock < duration), where the full emit advances on clock >= duration). Returns the rows of other
-   types; R_COUNTS gets the play-once ends ([entity, state] pairs in R_ENDS) and the sprites whose frame
-   moved. */
-__attribute__((export_name("persist_poses")))
-uint32_t persist_poses(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags,
+/* _type0PersistHit and _writeType0PosesOnly in one walk (W4c, E-116), once the JS has matched the buffer's
+   count. A row misses when its type or entity is not the one this buffer last held, when it is an Adobe
+   root, or when a sprite is dirty or changed its animation; a sprite whose frame moved since gets its
+   current frame's texture (_repairPersistFrame, which misses when that frame has none). As the walk passes
+   a sprite it writes what _writeType0PosesOnly writes but the clock: the rotation of a sprite drawn with
+   its own facing (the pose too when the collect did not write it into the queue), the sort key and the
+   shadow terms (_writeQueueShadow). On a miss the full emit that follows rewrites every one of those, so
+   the frame ends as the two JS passes leave it. The clocks, which that full emit would advance a second
+   time, wait until every row has passed: the animated sprites' rows are listed in R_FOREIGN (unused on a
+   persist frame) and advanced in row order after it (_advancePersistFrame, which advances on
+   !(clock < duration), where the full emit advances on clock >= duration).
+   Returns PERSIST_MISS or the rows of other types; R_COUNTS gets [play-once ends ([entity, state] pairs in
+   R_ENDS), sprites whose frame moved, repairs]. */
+__attribute__((export_name("persist_frame")))
+uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t flags,
                        double deltaSeconds, double band) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
   const uint8_t *cType = PTR(const uint8_t, C_TYPE);
@@ -425,6 +380,7 @@ uint32_t persist_poses(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   const float *sSpeed = PTR(const float, S_SPEED);
   const uint8_t *sLoop = PTR(const uint8_t, S_LOOP);
   const int16_t *sZ = PTR(const int16_t, S_Z);
+  const uint8_t *sDirty = PTR(const uint8_t, S_DIRTY);
   const uint8_t *scActive = PTR(const uint8_t, SC_ACTIVE);
   const float *scH = PTR(const float, SC_H);
   const float *scOx = PTR(const float, SC_OFF_X);
@@ -449,26 +405,49 @@ uint32_t persist_poses(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   float *qShadowH = PTR(float, Q_SHADOW_H);
   float *qShadowOffX = PTR(float, Q_SHADOW_OFF_X);
   float *qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
+  const uint8_t *pType = PTR(const uint8_t, P_TYPE);
+  const int32_t *pEntity = PTR(const int32_t, P_ENTITY);
   uint16_t *pFrame = PTR(uint16_t, P_FRAME);
+  const uint16_t *pAnim = PTR(const uint16_t, P_ANIM);
   uint32_t *ends = PTR(uint32_t, R_ENDS);
+  uint32_t *animated = PTR(uint32_t, R_FOREIGN);
   uint32_t *counts = PTR(uint32_t, R_COUNTS);
 
   const int sortKey = (flags & F_SORT_KEY) != 0;
   const int ySort = (flags & F_Y_SORT) != 0;
   const int bounds = (flags & F_BOUNDS) != 0;
+  const int shadows = qShadowH != 0;
   /* E-98d: the collect wrote the poses into this queue's columns. */
   const int inQueue = stX == qX;
+  /* Rows past the buffer pass the check (the JS reads undefined on both sides of each comparison there)
+     and count as other types (their type reads undefined). */
   const uint32_t n = count < maxItems ? count : maxItems;
-  /* The JS counts the rows past the buffer as other types (their type reads undefined). */
   uint32_t others = count - n;
-  uint32_t moved = 0;
-  uint32_t nEnds = 0;
+  uint32_t repaired = 0;
+  uint32_t nAnimated = 0;
   for (uint32_t i = 0; i < n; i++) {
-    if (cType[i] != 0) {
+    const uint32_t ty = cType[i];
+    const int32_t idx = cIndex[i];
+    if (pType[i] != ty || pEntity[i] != idx) return PERSIST_MISS;
+    if (ty == 6) return PERSIST_MISS;
+    if (ty != 0) {
       others++;
       continue;
     }
-    const int32_t idx = cIndex[i];
+    if (sDirty && sDirty[idx]) return PERSIST_MISS;
+    const uint32_t anim = sAnim[idx];
+    if (pAnim[i] != anim) return PERSIST_MISS;
+    const uint32_t frame = aFrame[idx];
+    if (pFrame[i] != frame) {
+      const int32_t g = global_anim(proxy, nSheets, sSheet[idx], anim);
+      if (g < 0 || (uint32_t)g >= nAnims) return PERSIST_MISS;
+      if ((int32_t)frame >= frameCount[g]) return PERSIST_MISS;
+      const uint32_t tex = (uint32_t)(frameStart[g] + (int32_t)frame);
+      qTexture[i] = (uint16_t)tex;
+      if (aLastTex) aLastTex[idx] = (uint16_t)tex;
+      pFrame[i] = (uint16_t)frame;
+      repaired++;
+    }
     if (inQueue) {
       if (!sInherit[idx]) {
         qRotC[i] = sRotC[idx];
@@ -489,14 +468,21 @@ uint32_t persist_poses(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       const double z = sZ ? (double)sZ[idx] : 0.0;
       qSortKey[i] = (float)(ySort ? z * band + (double)cY[i] : z);
     }
-    if (qShadowH) {
+    if (shadows) {
       const int cast = scActive && scActive[idx];
       qShadowH[i] = cast ? (scH ? or0(scH[idx]) : 0.0f) : 0.0f;
       if (qShadowOffX) qShadowOffX[i] = cast ? (scOx ? or0(scOx[idx]) : 0.0f) : 0.0f;
       if (qShadowOffY) qShadowOffY[i] = cast ? (scOy ? or0(scOy[idx]) : 0.0f) : 0.0f;
     }
-    if (!sAnimated[idx]) continue;
-    /* _advancePersistFrame */
+    if (sAnimated[idx]) animated[nAnimated++] = i;
+  }
+
+  /* Every row passed: the clocks, in row order. */
+  uint32_t moved = 0;
+  uint32_t nEnds = 0;
+  for (uint32_t a = 0; a < nAnimated; a++) {
+    const uint32_t i = animated[a];
+    const int32_t idx = cIndex[i];
     const uint32_t anim = sAnim[idx];
     const int32_t g = global_anim(proxy, nSheets, sSheet[idx], anim);
     if (g < 0) continue;
@@ -538,6 +524,7 @@ uint32_t persist_poses(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   }
   counts[0] = nEnds;
   counts[1] = moved;
+  counts[2] = repaired;
   return others;
 }
 
