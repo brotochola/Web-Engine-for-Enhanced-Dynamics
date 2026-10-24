@@ -276,7 +276,8 @@
       "aliases": [],
       "next": "The agent's JS and kernel variants, then the kernel sitting and the meshApi gate.",
       "records": [
-        "R-0535"
+        "R-0535",
+        "R-0567"
       ]
     },
     {
@@ -319,7 +320,8 @@
       ],
       "next": "A decal memory (tiles at byte 0, textures copied in), the client, the wiring; decalStampStressScene particle.",
       "records": [
-        "R-0535"
+        "R-0535",
+        "R-0566"
       ]
     },
     {
@@ -339,7 +341,8 @@
       ],
       "next": "E-118 first; the mesh memory, the client, the wiring; meshApiStressScene renderer.",
       "records": [
-        "R-0535"
+        "R-0535",
+        "R-0567"
       ]
     },
     {
@@ -440,7 +443,8 @@
       "rank": 9,
       "records": [
         "R-0140",
-        "R-0508"
+        "R-0508",
+        "R-0572"
       ]
     },
     {
@@ -589,7 +593,8 @@
       "aliases": [],
       "records": [
         "R-0532",
-        "R-0536"
+        "R-0536",
+        "R-0571"
       ]
     },
     {
@@ -607,7 +612,8 @@
       ],
       "aliases": [],
       "records": [
-        "R-0492"
+        "R-0492",
+        "R-0566"
       ]
     },
     {
@@ -679,7 +685,11 @@
         "WASM_HYPOTHESES.md#W11",
         "WASM_HYPOTHESES.md#Results"
       ],
-      "aliases": []
+      "aliases": [],
+      "records": [
+        "R-0567",
+        "R-0571"
+      ]
     },
     {
       "id": "W21c",
@@ -694,7 +704,10 @@
         "WASM_HYPOTHESES.md#W21c"
       ],
       "aliases": [],
-      "rank": 5
+      "rank": 5,
+      "records": [
+        "R-0565"
+      ]
     },
     {
       "id": "W2a",
@@ -709,7 +722,10 @@
         "WASM_HYPOTHESES.md#W2a"
       ],
       "aliases": [],
-      "rank": 6
+      "rank": 6,
+      "records": [
+        "R-0569"
+      ]
     },
     {
       "id": "W1",
@@ -724,7 +740,10 @@
         "WASM_HYPOTHESES.md#W1"
       ],
       "aliases": [],
-      "rank": 7
+      "rank": 7,
+      "records": [
+        "R-0568"
+      ]
     },
     {
       "id": "W10",
@@ -739,7 +758,10 @@
         "WASM_HYPOTHESES.md#W10"
       ],
       "aliases": [],
-      "rank": 8
+      "rank": 8,
+      "records": [
+        "R-0570"
+      ]
     },
     {
       "id": "W23",
@@ -758,7 +780,8 @@
       "records": [
         "R-0453",
         "R-0521",
-        "R-0522"
+        "R-0522",
+        "R-0571"
       ]
     },
     {
@@ -807,7 +830,8 @@
       "next": "W4b, the collect chain (collectVisibleEntities, _displayPose, _storeEntitySortY): 69.9 % self of BunnyMark pre-render after E-117 (R-0562), about 20 % of Predator pre-render. Needs Transform in the kernel memory: Phase 4, with W4b as its first mover.",
       "rank": 13,
       "records": [
-        "R-0562"
+        "R-0562",
+        "R-0564"
       ]
     },
     {
@@ -1395,7 +1419,8 @@
       "records": [
         "R-0455",
         "R-0456",
-        "R-0527"
+        "R-0527",
+        "R-0571"
       ]
     },
     {
@@ -1417,7 +1442,8 @@
       "records": [
         "R-0454",
         "R-0529",
-        "R-0530"
+        "R-0530",
+        "R-0571"
       ]
     },
     {
@@ -1439,7 +1465,8 @@
       "records": [
         "R-0416",
         "R-0417",
-        "R-0435"
+        "R-0435",
+        "R-0571"
       ]
     },
     {
@@ -7931,7 +7958,9 @@
     {
       "aliases": [],
       "refs": [],
-      "records": [],
+      "records": [
+        "R-0573"
+      ],
       "id": "E-130",
       "title": "Mesh vertices past 65 535: 32-bit triangle indices when maxMeshVerts asks for them",
       "status": "open",
@@ -12717,6 +12746,134 @@
       "commits": [
         "6d9c7258",
         "365c4b60"
+      ]
+    },
+    {
+      "id": "R-0564",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "The sprite collect in C for scenes without physics, W4b kernel",
+      "verdict": "note",
+      "text": "**kernel win (W4b, scenes without physics).** `wasm/preRenderCollect.c` is `collectVisibleEntities`' per-entity loop for sprites with no body (straight camera with or without the cull, and E-51's turned copy), writing the main collector as the JS does; a sprite with a layer mask is handed back to `collectRenderable` at its place in the walk. Bit for bit in seven cases (`preRenderCollectWasm.test.js`; an `or0` mutant without the NaN case fails all seven). Wired (`a3ca6cc7`, `44d3ce66`): with physics off, Transform, its pose and Collider move into the render-queue memory (E-112's `componentDataByte` path), and the shipped collect takes the kernel when every column is there and no body or Y-sort needs the JS loop. Kernel, `preRenderCollectWasmMicrobench` (250 000 sprites, the shipped collect with and without the kernel bound, Node 22, 5 alternating rounds): BunnyMark (skipCull, the sprite query's list) **350.6 → 489.4 ops/s, +39.6 %**; a culled camera over a world five times the view 232.4 → 298.9, **+28.6 %**; turned 212.8 → 252.0, **+18.4 %**; each 25/25. BunnyMark's owner pair follows in the scene batch.",
+      "commits": [
+        "3d330df3",
+        "a3ca6cc7",
+        "44d3ce66"
+      ]
+    },
+    {
+      "id": "R-0565",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "The decal tile premultiply in C, W21c kernel and wiring",
+      "verdict": "note",
+      "text": "**kernel win.** `wasm/decalPremultiply.c` is `copyPremultiplyRgba` bit for bit: each colour byte `(c·a·257 + 32896) >> 16`, which is c at a = 255 and 0 at a = 0, so the JS's two fast cases are the general one and the SIMD loop has no branch; in 16-bit lanes `(t + (t >> 8)) >> 8` with t = c·a + 128, equal for all 65 536 (c, a) pairs (checked exhaustively). Wired in Pixi (`a49710ac`): each dirty tile is premultiplied from the decal memory (W26) into a scratch tile and copied into the tile's own array, which is uploaded (E-123: no upload from shared memory). Kernel, `decalPremultiplyWasmMicrobench` (decalStampStressScene's 40 tiles of 128 px after eight frames of its stamps, Node 22, 5 alternating rounds, the copy-out included): `copyPremultiplyRgba` **463.5 → 1 873.3 ops/s, +304.2 %** (SIMD, the shipped path), scalar 1 477.7 (+218.8 %), each 25/25.",
+      "commits": [
+        "46809a46",
+        "a49710ac"
+      ]
+    },
+    {
+      "id": "R-0566",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "Decal stamping wired on a decal memory, W26 kernel on the shipped path",
+      "verdict": "note",
+      "text": "**kernel win confirmed on the shipped path.** E-120's kernel (`wasm/decalStamp.c`, exact) is wired (`72853643`): the decal tiles move into a WebAssembly.Memory of their own at byte 0 (every worker views them as before), with a copy of each decal texture, the stamp records and the kernel's scratch after them, made once the textures are loaded (`installDecalMemory`). `stampParticleToTile` writes each stamp as a 64-byte record and `flushDecalStamps` stamps the frame's records in one call, then sets the dirty flags of the tiles they touched. `decalStampWired.test.js`: tiles and flags byte for byte against the JS over three frames (one past a flush's capacity, a texture outside the memory). Kernel, `decalStampWasmMicrobench` now through the worker's shipped path (768 stamps a frame, Node 22, 5 rounds): `Decal.stampToTileBuffers` **307.2 → 1 454.4 ops/s, +373.5 %** (25/25; E-120 read +377.9 % on its own wrapper); the scalar loop −10.6 %. The owner pair follows.",
+      "commits": [
+        "72853643"
+      ]
+    },
+    {
+      "id": "R-0567",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "The mesh corner kernel with the UV generation, wired, W11 and E-118 kernels",
+      "verdict": "note",
+      "text": "**kernel win.** W11's wiring (the mesh memory, the corner kernel in Pixi's MESH layers) and E-118's UV generation are finished and merged (`3937589c`..`63c5f3c8`); both mesh batches now upload arrays of their own, copied out of the mesh memory (E-123). `meshCornersWasmMicrobench` (Node 22, 5 rounds, 25/25 each): the shipped JS rewrite 706.7 ops/s; with E-118's UV generation **877.3 (+24.1 %)**; the kernel 937.1 (+32.6 %); the kernel with the UV generation, the product's call, **1 050.6 (+48.7 %)**, so W11 over E-118 alone is +19.8 %. At a 32-bit arena (E-130) the same call reads 992.5 (−5.5 % against 16-bit). E-130's arena past 65 535 vertices lets meshApiStressScene load the renderer past the 3 ms floor; its owner pair follows.",
+      "commits": [
+        "3937589c",
+        "63c5f3c8"
+      ]
+    },
+    {
+      "id": "R-0568",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "The compound-solid raster in C without atan2, W1 kernel",
+      "verdict": "note",
+      "text": "**kernel win; a pseudo-angle replaces atan2.** An agent's `wasm/test/solidSegments.c` (`bc58a3ac`) ports `collectSolidSegments` with its raster. The polar bins are uniform in angle, so an end's bin comes from its octant and a table of tan(kπ/256), with no `atan2`; the cutoff and the wrap are cross/dot tests. Every variant stamps with the JS's own double `raySegT`, so a bin is identical or flipped: 0 flips on 8 stress-scene frames (98 304 bins) and a 257-light corpus; 468 flips only on 1 040 ends constructed on bin edges, within 1e-16 rad. `solidSegmentsWasmMicrobench` (compoundVisPoly `ringSegments=64` frames, Node 22, 5 rounds, 25/25 each): JS 273.3 frames/s; `f64` (fdlibm atan2) 320.1 (+17.1 %); `pseudo` 415.4 (+52.0 %); `fast` 484.2 (+77.1 %); `f64x2` 501.1 (+83.3 %); **`f32x4` 516.2 (+88.9 %)**. Chrome chooses between them next; not wired.",
+      "commits": [
+        "bc58a3ac",
+        "8e75fda9"
+      ]
+    },
+    {
+      "id": "R-0569",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "The per-light visibility sweep in C, W2a kernel",
+      "verdict": "note",
+      "text": "**kernel win.** An agent's `wasm/test/visibilitySweep.c` (`0af5dd10`): one call per light covers `buildVisibilityPolygon`, `clipVisibilityToPolar`, `mergeSweep` and `markSeenPolarOwners`. Variants: `f64` (the JS's arithmetic, fdlibm trig), `pseudo` (events ordered by `pseudoAngle`, no atan2/asin per occluder), `pre` (ray-independent edge terms once per light), `simd` (a box's 4 edges as f64x2), `f32` (float32 edge terms, f32x4 box test, double kept for edges whose line passes next to the light). Gate: vertices within 1e-4 plus a float32 ulp (f32: 1e-4 of the distance from the light); 6 000 random scenes, double variants bit-identical except 5 seam ties (area within 1e-5); f32 worst move 6.2e-3 world units. `visibilitySweepWasmMicrobench` (visPolyStressScene's frame, 360 lights, Node 22, 4 rounds, 16/16 each): JS 391.7 frames/s; f64 588.2 (+50.2 %); pseudo 640.0 (+63.4 %); pre 599.6 (+53.1 %); simd 829.5 (+111.8 %); **f32 917.4 (+134.2 %)**. Chrome chooses next; not wired.",
+      "commits": [
+        "0af5dd10",
+        "94f67373"
+      ]
+    },
+    {
+      "id": "R-0570",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "The painter sort in C, W10 kernel",
+      "verdict": "note",
+      "text": "**kernel win.** An agent's `wasm/test/painterRadix.c` (`9f2ba4ce`): `radixSortIndicesBySortKey`, `radixPainterOrder` and `reinsertChangedSlots`, every variant bit-exact (27 key families × 5 slot-list kinds, 8 mutants caught). `painterRadixWasmMicrobench` (Node 22, 5 rounds, 25/25 each), JS → best variant: predator-rebuild 2 826.8 → **11 426.6 ops/s (simd, +304.2 %)**; predator-reinsert 2 337.1 → 4 738.8 (inplace, +102.8 %; simd +100.0 %); stress-rebuild (300 000 rows) 130.9 → 404.8 (simd, +209.2 %); stress-static 2 672.1 → 3 768.3 (inplace, +41.0 %; simd +30.4 %); stress-move 270.3 → 392.9 (simd, +45.4 %). The scalar port alone: +31 to +181 %. The keys must live in WASM memory for the wiring (they are on the queue SAB today). Chrome chooses next.",
+      "commits": [
+        "9f2ba4ce",
+        "ba8aaf0a"
+      ]
+    },
+    {
+      "id": "R-0571",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "The float32 pass over six shipped kernels",
+      "verdict": "answered",
+      "text": "**the float32 pass on the shipped kernels (the owner's question: what do the kernels gain without the double conversions?).** Two agents wrote float32 and f32x4 variants of six shipped kernels as test modules, each held to a stated tolerance by a test (shipped binaries untouched). Node 22, 5 alternating rounds, against the shipped double kernel: **particle integrate** (W12) tween mix f32 +1.8 %, f32x4 +1.2 % (ties); spin mix f32 +5.7 %, **f32x4 +24.3 %** (25/25; a rotating particle's angle must stay double: `av·currentLife` reaches 3e4 rad); **particle lists** (W13) f32 scalar −22.9 to −26.6 % (0/25, worse), **f32x4 +49.1 % stress, +49.2 % zoomed, +59.9 % turned** (25/25), sparse +2.6 % (tie); **decoration sway** (W22) f32 −3.6 %, **f32x4 +12.9 %** (25/25); **shadow stamp** (W23) f32 +5.8 %, f32x4 +7.3 % (23/25; float reaches only the candidate test); **candidate gather** (W5) f32 −2.0 %, f32x4 −1.2 % (0/25: the gather waits on memory, as W8a found); **mesh corners** (W11) do no arithmetic, the variants only change stores: f32 stores +7.4 % over the shipped kernel, f32x4 −6.3 %. Float32 pays where four lanes replace two over contiguous data (lists, the spin integrate, sway), and not in gathers. These benches have no Chrome entry yet; each winner is decided by its scene pair in Chrome."
+    },
+    {
+      "id": "R-0572",
+      "date": "2026-10-24",
+      "time": "08:04",
+      "timeFrom": "recorded",
+      "title": "The movers-only grid on today's grid, E-126 kernel and its crossover",
+      "verdict": "note",
+      "text": "**kernel win under 20 % movers; restored and redesigned for exact bytes.** An agent restored the path of 57d30b14 onto today's grid (`028bc5c6`..`096295a3`): cells kept in id order and merged per touched cell, the per-cell cap handled exactly, the owned list in active-list order, spawns and despawns from the active list, physics' moved list read under a sequence (`e9255fb1`), created, destroyed and reshaped bodies added to it (`580dc881`; so `BODY_MOVED_COUNT` now counts those too). `spatialGridMovers.test.js`: three real spatial workers, 90 frames, the whole publish memory hashed every frame, identical to the full rebuild in four modes; seven one-line mutants caught. `spatialGridMoversMicrobench` (60 000 bodies, one worker, Node 22, 5 rounds, 25/25 or 0/25): the movers path against the full rebuild +778 911 % at 0 %, **+639.2 % at 5 %**, +188.6 % at 10 %, +72.4 % at 15 %, +17.5 % at 20 %, −10.1 % at 25 %, −34.9 % at 35 %, −51.5 % at 50 %, −72.8 % at 100 %. The old 0.35 threshold sat past the crossover (~23 %): `d8f41eb7` sets it to 0.2. Above it the shipped choice ties the full rebuild (50 % −0.5 %, 100 % +0.6 %). The owner pair follows.",
+      "commits": [
+        "096295a3",
+        "d8f41eb7"
+      ]
+    },
+    {
+      "id": "R-0573",
+      "date": "2026-10-24",
+      "time": "07:40",
+      "timeFrom": "recorded",
+      "title": "Mesh vertices past 65 535 with 32-bit indices, E-130 built",
+      "verdict": "note",
+      "text": "**built (reach), untimed in a scene.** An agent's `89d93fcc`..`f20949e6`: `renderer.maxMeshVerts` past 65 535 gives the MeshGeometry arena Uint32 vertex counts and triangle indices (`meshIndexWidth`, chosen once from the config on every thread), up to 1 048 576 vertices; `maxMeshIndices` stays capped at 4 194 304 (the mesh memory must fit the kernel's 512 MB). A config of up to 65 535 vertices binds exactly the old layout (class, offset and length of all 21 columns, checked across 8 configs and through createSceneSharedBuffers). MeshRenderer, triangulation, saves and the corner kernel handle both widths (`rewrite_corners_u32`, the export chosen at bind; the 16-bit function body is byte-identical in the disassembly). The GPU never sees mesh indices: Pixi's MESH batches draw instanced triangles whose corners are resolved on the CPU. `meshIndexWidth.test.js` (9) and `meshCornersWide.test.js` (4), including Pixi's real MESH path on a 66 306-vertex plane. Kernel at 32-bit: −5.5 % against 16-bit on the same meshes (R-0567). meshApiStressScene's `maxVerts`/`maxIndices` knobs now load the renderer past the 3 ms floor (W11's owner pair).",
+      "commits": [
+        "89d93fcc",
+        "2b39540b",
+        "0acb17c6",
+        "f20949e6"
       ]
     }
   ],
