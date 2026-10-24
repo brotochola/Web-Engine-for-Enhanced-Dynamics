@@ -20,15 +20,68 @@
 // A missing or unreadable stamp blocks the run. That is deliberate: a dist/
 // built by an older buildBundle.js has no stamp and we cannot tell what it
 // contains. A false block costs one rebuild; a false pass costs a wrong verdict.
+//
+// Since 2026-10-24 the stamp that decides is a hash of the bundle's inputs
+// (dist/.build-inputs), not the version. The version moved on every commit, so
+// a docs commit made dist/ "stale", and an uncommitted src/ edit passed as
+// fresh. The hash changes when, and only when, something the bundles are built
+// from changes; dist/.build-version still records the version, for display.
 
+import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 
 /** Bundle the bench importmap points at when src=1 is absent. */
 export const DEFAULT_DIST_BUNDLE = 'weed.bundle.esm.min.js';
 
-/** Written by scripts/buildBundle.js. See BUILD_STAMP_FILE there. */
+/** Written by scripts/buildBundle.js: the version dist/ was built as (display only). */
 export const BUILD_STAMP_FILE = '.build-version';
+/** Written by scripts/buildBundle.js: bundleInputsHash() at build time. Decides freshness. */
+export const BUILD_INPUTS_FILE = '.build-inputs';
+
+/** What the bundles are built from. Generated files (src/index.bundle.js) are gitignored. */
+export const BUNDLE_INPUTS = [
+  'src',
+  'scripts/buildBundle.js',
+  'scripts/bundle-test',
+  'webpack.config.js',
+  'webpack.bundle.config.js',
+];
+
+/**
+ * Hash of the bundle inputs as they are on disk: tracked files and new ones git does not ignore,
+ * uncommitted edits included, line endings normalized. Null outside a git checkout.
+ */
+export function bundleInputsHash(repoRoot) {
+  let listing;
+  try {
+    listing = execFileSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard', '-z', '--', ...BUNDLE_INPUTS],
+      { cwd: repoRoot, maxBuffer: 1 << 26, stdio: ['ignore', 'pipe', 'ignore'] },
+    ).toString();
+  } catch {
+    return null;
+  }
+  const hash = crypto.createHash('sha256');
+  for (const rel of [...new Set(listing.split('\0').filter(Boolean))].sort()) {
+    const abs = path.join(repoRoot, rel);
+    if (!fs.existsSync(abs)) continue; // deleted on disk, still in the index
+    hash.update(`${rel}\0`);
+    hash.update(fs.readFileSync(abs).toString('latin1').replace(/\r\n/g, '\n'), 'latin1');
+    hash.update('\0');
+  }
+  return hash.digest('hex').slice(0, 16);
+}
+
+/** Contents of dist/.build-inputs, or null when absent or empty. */
+export function readDistInputs(repoRoot) {
+  const file = path.join(repoRoot, 'dist', BUILD_INPUTS_FILE);
+  if (!fs.existsSync(file)) return null;
+  const value = fs.readFileSync(file, 'utf8').trim();
+  return value || null;
+}
 
 const SRC_VERSION_FILE = path.join('src', 'version.js');
 
@@ -55,67 +108,73 @@ export function readDistStamp(repoRoot) {
 
 /**
  * @returns {{ok: boolean, srcVersion: string|null, distVersion: string|null,
+ *            inputs: string|null, distInputs: string|null,
  *            reason: 'fresh'|'missing'|'unstamped'|'stale'|'src-version-unreadable',
  *            message: string}}
  */
 export function checkDistFresh(repoRoot, bundleName = DEFAULT_DIST_BUNDLE) {
   const srcVersion = readSrcVersion(repoRoot);
+  const distVersion = readDistStamp(repoRoot);
   const distPath = path.join(repoRoot, 'dist', bundleName);
+  const base = { srcVersion, distVersion, inputs: null, distInputs: null };
 
   if (!fs.existsSync(distPath)) {
     return {
+      ...base,
       ok: false,
-      srcVersion,
-      distVersion: null,
       reason: 'missing',
       message: `dist/${bundleName} does not exist.\n  Run: npm run make_bundle`,
     };
   }
 
-  const distVersion = readDistStamp(repoRoot);
+  const distInputs = readDistInputs(repoRoot);
+  const inputs = bundleInputsHash(repoRoot);
 
-  if (!srcVersion) {
-    // Cannot judge. Do not block the run on a missing reader.
+  if (!inputs) {
+    // Not a git checkout: cannot judge. Do not block the run on a missing reader.
     return {
+      ...base,
+      distInputs,
       ok: true,
-      srcVersion: null,
-      distVersion,
       reason: 'src-version-unreadable',
-      message: `Could not read VERSION from ${SRC_VERSION_FILE}; dist freshness not checked.`,
+      message: 'Not a git checkout; dist freshness not checked.',
     };
   }
 
-  if (!distVersion) {
+  if (!distInputs) {
     return {
+      ...base,
+      inputs,
       ok: false,
-      srcVersion,
-      distVersion: null,
       reason: 'unstamped',
       message:
-        `dist/${BUILD_STAMP_FILE} is missing or empty, so this tree cannot prove which engine\n` +
+        `dist/${BUILD_INPUTS_FILE} is missing or empty, so this tree cannot prove which sources\n` +
         `  dist/ was built from (bundles predating the stamp). Run: npm run make_bundle`,
     };
   }
 
-  if (distVersion !== srcVersion) {
+  if (distInputs !== inputs) {
     return {
+      ...base,
+      inputs,
+      distInputs,
       ok: false,
-      srcVersion,
-      distVersion,
       reason: 'stale',
       message:
-        `dist/ was built from version ${distVersion}, src/version.js is ${srcVersion}.\n` +
-        `  A run without --src would measure ${distVersion}, not the working tree.\n` +
+        `dist/ was built from other sources than the working tree has (src/, the build script, its\n` +
+        `  test page or a webpack config changed since: inputs ${distInputs}, now ${inputs}).\n` +
+        `  A run without --src would measure the old engine, not the working tree.\n` +
         `  Fix: npm run make_bundle   (or pass --src to measure src/ directly)`,
     };
   }
 
   return {
+    ...base,
+    inputs,
+    distInputs,
     ok: true,
-    srcVersion,
-    distVersion,
     reason: 'fresh',
-    message: `dist ${distVersion} matches src ${srcVersion}.`,
+    message: `dist (built as ${distVersion}) matches the working tree's sources (inputs ${inputs}).`,
   };
 }
 

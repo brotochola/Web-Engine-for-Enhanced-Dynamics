@@ -1,4 +1,5 @@
-// assertDistFresh.js - fail when dist/ does not match src/version.js.
+// assertDistFresh.js - fail when dist/ was not built from the working tree's sources
+// (a hash of the bundle inputs, distVersion.js).
 //
 // Wired into prepublishOnly so a stale bundle cannot be published, and callable
 // on its own for a pre-flight check.
@@ -17,11 +18,7 @@ const result = checkDistFresh(repoRoot);
 
 if (result.ok) {
   if (!quiet) {
-    console.log(
-      result.reason === 'src-version-unreadable'
-        ? `[distVersion] ${result.message}`
-        : `[distVersion] dist ${result.distVersion} matches src ${result.srcVersion}.`,
-    );
+    console.log(`[distVersion] ${result.message}`);
   }
 } else {
   console.error(`[distVersion] Stale dist bundle (${result.reason}).\n\n${result.message}`);

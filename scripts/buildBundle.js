@@ -17,6 +17,7 @@ import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
+import { BUILD_INPUTS_FILE, bundleInputsHash } from './distVersion.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -597,10 +598,13 @@ function copySmokeTest() {
 function main() {
     console.log('🌿 Building WeedJS single-file bundles (debug + prod, raw + compressed)...\n');
 
-    // The stamp says dist/ matches src/version.js. Drop it before writing
+    // The stamps say what dist/ was built from. Drop them before writing
     // anything, so a build that fails halfway leaves no stamp, and distVersion
     // refuses the half-new dist/ instead of trusting the previous stamp.
     fs.rmSync(path.join(distDir, BUILD_STAMP_FILE), { force: true });
+    fs.rmSync(path.join(distDir, BUILD_INPUTS_FILE), { force: true });
+    // Hashed before the build reads them: what distVersion.js compares the working tree against.
+    const inputs = bundleInputsHash(rootDir);
 
     console.log('📦 Preparing shared Box2D embed (gzip → base64)...');
     const box2dWorkerSource = buildBox2dWorkerSource();
@@ -643,6 +647,11 @@ function main() {
         path.join(distDir, BUILD_STAMP_FILE),
         `${stampedVersion}\n`,
     );
+    if (inputs) {
+        fs.writeFileSync(path.join(distDir, BUILD_INPUTS_FILE), `${inputs}\n`);
+    } else {
+        console.warn('   Not a git checkout: dist/' + BUILD_INPUTS_FILE + ' not written; freshness cannot be checked.');
+    }
 
     console.log('\n✅ Single-file bundles created!');
     console.log('\n📊 Bundle sizes:');
