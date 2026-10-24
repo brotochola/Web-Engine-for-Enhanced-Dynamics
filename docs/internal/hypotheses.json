@@ -368,10 +368,10 @@
     {
       "id": "E-123",
       "title": "Pixi's plain sprite pack through gpuPack.wasm, re-gated without the side bias (W9d)",
-      "status": "open",
-      "statusText": "reopened 2026-10-24 (W9d was rejected 2026-10-23)",
+      "status": "kept",
+      "statusText": "kept 2026-10-24 (R-0563)",
       "date": "2026-10-24",
-      "result": "W9d made Predator's renderer 9.1 % cheaper (better in 8 of 8 pairs) and was rejected for logic +5.9 % (worse 7/8), a worker it cannot reach. That sitting served side B from the main folder, which M13 later found runs slower than a worktree on the same code; the layout-only control (kernel off) already read logic +2.7 % (5/8), and Predator's logic spreads 8 to 13 % run to run, so the flag is within what that setup produced on its own.",
+      "result": "Predator renderer 4.864 → 3.980 ms, −10.6 % (3/4), −5.4 % against the unreachable workers (4/4), one build with wasmOff=pixiPack. Uploading straight from the shared rows cost every other worker about 6 % (physics +9.5 %, spatial +6.3 %, 4/4); copying the rows into a private array first removed it.",
       "area": "pixi",
       "kind": "wasm",
       "refs": [
@@ -380,11 +380,11 @@
       "aliases": [
         "W9d"
       ],
-      "next": "Rebase the diff (D:\\tmp\\e85prof\\w9d.diff and w9d.test.js, base 3e2dc99c, outside the repo) onto main behind a `wasm.*` switch. Renderer owner, as same-build switch pairs or with both sides from worktrees (`--hyp-rev`): a plain-sprite scene with `packGpuSprites: 'pixi'` for the claim, Predator as the guard.",
-      "rank": 3,
+      "next": "none; a load knob for renderQueueStressScene would let the owner scene judge Pixi packs.",
       "records": [
         "R-0495",
-        "R-0534"
+        "R-0534",
+        "R-0563"
       ]
     },
     {
@@ -463,8 +463,8 @@
     {
       "id": "E-128",
       "title": "The cull loop's share of BunnyMark's pre-render, against W3's reopen trigger",
-      "status": "open",
-      "statusText": "reopened 2026-10-24 (W3 was screened, ceiling, 2026-10-22)",
+      "status": "answered",
+      "statusText": "answered 2026-10-24 (R-0562): the trigger is met; W3 folds into W4b",
       "date": "2026-10-24",
       "result": "W3 was parked on Predator, where the cull loop is 7.2 % self of pre-render (a 1.2 % ceiling), with its own trigger: reopen when a cull-dominated scene shows the loop at 18 % or more. After the persist series (E-115 to E-117) BunnyMark's pre-render is 5.17 ms at 250 000 sprites, all on screen, and the collect walks every one of them: the likeliest scene to meet it, and one Predator's profile cannot speak for.",
       "area": "pre-render",
@@ -475,11 +475,11 @@
       "aliases": [
         "W3"
       ],
-      "next": "A CPU profile of BunnyMark (detailed stats off): the loop's self share. At 18 % or more, run Q3's floor and fold W3 into W4b (Phase 4: Transform lives in Box2D's heap). Shares the scene work with E-127.",
-      "rank": 11,
+      "next": "W4b (the collect chain in C) with Phase 4.",
       "records": [
         "R-0433",
-        "R-0537"
+        "R-0537",
+        "R-0562"
       ]
     },
     {
@@ -804,8 +804,11 @@
         "WASM_HYPOTHESES.md#W4"
       ],
       "aliases": [],
-      "next": "W4b, the collect chain (collectVisibleEntities, _displayPose, _storeEntitySortY), after Phase 4; W4a is E-112.",
-      "rank": 13
+      "next": "W4b, the collect chain (collectVisibleEntities, _displayPose, _storeEntitySortY): 69.9 % self of BunnyMark pre-render after E-117 (R-0562), about 20 % of Predator pre-render. Needs Transform in the kernel memory: Phase 4, with W4b as its first mover.",
+      "rank": 13,
+      "records": [
+        "R-0562"
+      ]
     },
     {
       "id": "W4c",
@@ -7717,20 +7720,20 @@
     {
       "id": "E-98",
       "title": "Pre-render's full emit at 250 000 sprites takes more than a frame",
-      "status": "open",
-      "statusText": "E-98a–g kept, E-98h dropped; open",
+      "status": "kept",
+      "statusText": "E-98a–g kept, E-98h dropped; closed 2026-10-24 (R-0562)",
       "date": "2026-10-23",
-      "result": "bunnyMarkScene pre-render 21.1 → 6.1 ms per new queue (E-98a–f: no sort line without Y-sort −36.4 %, no emit loop on a sprites-only persist frame −3.7 %, unmasked sprites straight to the collector −14.2 %, poses straight into the queue −14.1 %, the collect writes its rows −15.8 %, bodiless poses inline −18.4 %). E-98g: a frame the other buffer moved is repaired, not a full emit: animatedSpriteStressScene pre-render 8.887 → 7.098 ms, −19.3 %. E-98h (one walk for the persist check and the pose pass) tied: BunnyMark pre-render 6.174 → 6.244 ms, −0.3 %.",
+      "result": "bunnyMarkScene pre-render 21.1 → 5.17 ms per new queue at 250 000 sprites, under a frame (E-98a–g in JS, then E-115 to E-117 in C). E-98a–f: no sort line without Y-sort −36.4 %, no emit loop on a sprites-only persist frame −3.7 %, unmasked sprites straight to the collector −14.2 %, poses straight into the queue −14.1 %, the collect writes its rows −15.8 %, bodiless poses inline −18.4 %. E-98g: a frame the other buffer moved is repaired, not a full emit (animatedSpriteStressScene −19.3 %). E-98h tied. What is left is the collect, 69.9 % of BunnyMark pre-render: W4b.",
       "area": "preRender",
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#E-98"
       ],
       "aliases": [],
-      "next": "W4a (E-112) for the emit, W4b for the collect. Predator profile 2026-10-23: emitSpriteQueue 17.2 %, collectVisibleEntities 9.6 %, _storeEntitySortY 5.1 %, _displayPose 5.0 %, _writeQueueShadow 4.1 % of pre-render; the shadow stamp chain 37 % (W23).",
-      "rank": 1,
+      "next": "W4b, the collect in C (needs Phase 4: Transform in the kernel memory).",
       "records": [
-        "R-0511"
+        "R-0511",
+        "R-0562"
       ]
     },
     {
@@ -7836,16 +7839,17 @@
     {
       "id": "W9d",
       "title": "Pixi's plain sprite pack through gpuPack.wasm",
-      "status": "rejected",
-      "statusText": "rejected 2026-10-23 (logic regression in Predator)",
+      "status": "kept",
+      "statusText": "kept 2026-10-24 (E-123): rejected 2026-10-23, re-gated on one build with the rows copied before the upload",
       "date": "2026-10-23",
-      "result": "Pixi's entity rows in the render-queue memory, packed by the W9 kernel: Predator renderer −9.1 % (0/8) but logic +5.9 % (7/8), a worker it cannot reach; layout-only control NEUTRAL, A/A logic −0.9 %. A faster Pixi changes the workers' overlap.",
+      "result": "Predator renderer 4.864 → 3.980 ms, −10.6 % (3/4), −5.4 % against the unreachable workers (4/4), one build with wasmOff=pixiPack. Uploading straight from the shared rows cost every other worker about 6 % (physics +9.5 %, spatial +6.3 %, 4/4); copying the rows into a private array first removed it.",
       "area": "pixi",
       "kind": "wasm",
       "aliases": [],
       "next": "Reopened as E-123 (2026-10-24).",
       "records": [
-        "R-0495"
+        "R-0495",
+        "R-0563"
       ]
     },
     {
@@ -12649,6 +12653,41 @@
       "title": "Box2D's memory sized per scene, DX-MEM",
       "verdict": "kept-hygiene",
       "text": "**kept (hygiene); not timed.** `physics.wasmMemoryMB` (default 128 MB, was 512 fixed) needs the Box2D link with `ALLOW_MEMORY_GROWTH` + `IMPORTED_MEMORY` so the import takes a range; the memory itself never grows. That flag left the `.wasm` code and data sections byte-identical (only the import's limits changed) and added growth checks to 22 glue heap reads, none per step. The per-step JS gained one export call (`sbrk(0)` for `MEMORY_PEAK_KB`) and one compare. Nothing for an ABAB to resolve, so none was run (BM-9). Peaks per scene: [`reports/DX-MEM-box2d-memory.md`](./reports/DX-MEM-box2d-memory.md)."
+    },
+    {
+      "id": "R-0561",
+      "date": "2026-10-24",
+      "time": "05:36",
+      "timeFrom": "recorded",
+      "title": "A/A of Predator on exact windows, the session's noise reference",
+      "verdict": "note",
+      "text": "The session's noise reference, and the first sitting on exact windows (`34bc7229`, `630526e7`: every frame of the window counted, primary `STEP_MS − WAIT_MS`). `runPredatorAbab --name aa-2026-10-24 --vs 6d9c7258 --hyp-rev 6d9c7258`, Predator, headed, source, detailed stats off, 4 pairs, both sides in worktrees of one commit. **NEUTRAL**: logic 4.771 → 4.626 ms (−1.1 %), spatial 5.549 → 5.472 (+0.9 %), physics 8.206 → 7.857 (−2.1 %), renderer 4.307 → 4.109 (+0.1 %), pre-render 5.837 → 5.508 (−2.3 %), each worse in 2 of 4 pairs; presented 60.0 both sides; load within 0.5 %. The paired deltas move together across workers within a run: pairs 1 and 2 read side B +4 to +11 % on every worker, pairs 3 and 4 −6 to −15 %. So the run-to-run swing is the machine's, shared by all workers, and per-worker detection limits at 4 pairs are wide (2.5 × paired sd / √4): logic 9.7 %, spatial 12.2 %, physics 14.5 %, renderer 14.1 %, pre-render 14.8 %. Read a Predator owner against the workers the change cannot reach in the same runs (HOW_WE_MEASURE's drift rule), not against these limits alone.",
+      "commits": [
+        "34bc7229",
+        "630526e7"
+      ]
+    },
+    {
+      "id": "R-0562",
+      "date": "2026-10-24",
+      "time": "05:47",
+      "timeFrom": "recorded",
+      "title": "BunnyMark's pre-render after the persist series: the collect is 70 %, E-128 and E-98",
+      "verdict": "answered",
+      "text": "A CPU profile of `bunnyMarkScene` (250 000 sprites, all on screen) after the persist series (E-115 to E-117): `runIntegratedWorkerBenchmark --headed --trace-cpu --src --no-collect-detailed-stats`, summarised from 10 s. Pre-render (239 ms/s busy, GC 0): `collectVisibleEntities` **69.9 % self**, its hot lines the row writes inlined there since E-98e/f (`rY[n] = keyY` 10 %, `cPx[n] = pose[0]` 9 %, `cRotS` 8 %, `rIndex` 8 %, `cPy` 7 %, `rType` 7 % of that self time); the persist kernel (`persist_frame`, W4c) 26.1 %; nothing else over 1 %. Pixi (196 ms/s): `_packPoseOnly` 68 %, `updateBuffer` 13 %. **E-128 answered:** the cull-and-collect loop is far past W3's reopen trigger (18 %), so W3 folds into W4b, the collect in C, whose rows and poses need Transform in the kernel's memory: Phase 4, with the collect as its first mover (the plan named spatial first, but W6 screened at 1.4 %). **E-98 closed:** the question in its title is answered, pre-render's full emit at 250 000 sprites takes 21.1 → 5.17 ms per new queue (E-98a–g, then E-115 to E-117), under a frame; what is left of the worker is the collect, W4b."
+    },
+    {
+      "id": "R-0563",
+      "date": "2026-10-24",
+      "time": "05:57",
+      "timeFrom": "recorded",
+      "title": "Pixi's sprite pack in C on one build, with the rows copied before the upload, E-123 (W9d)",
+      "verdict": "kept",
+      "text": "**kept (product).** W9d, Pixi's plain sprite pack through `gpuPack.wasm`, rebased onto the emit, stamp and sway regions behind `wasm.pixiPack` (`6d9c7258`) and timed on one build: `runPredatorAbab --vs <rev> --query-a wasmOff=pixiPack --owner renderer`, side A the JavaScript pack, side B the kernel, one worktree for both (no side bias), exact windows, headed, source, detailed stats off, 4 pairs.\n\n**Owner scene first:** `renderQueueStressScene` (48 000 plain sprites, 18 880 in view) puts the renderer at 1.438 → 1.183 ms (−17.7 %, 4/4), under the 3 ms floor, so it is not judged there; the scene has no load knob yet. Predator's renderer (4–5 ms, Pixi packs its sprites) is the owner instead.\n\n**First Predator sitting** (the batch's rows were the shared rows themselves, so the Pixi buffer uploaded from the WebAssembly.Memory): renderer 4.126 → 3.937 ms, **−5.1 %, worse 0/4**, but every worker the change cannot reach slower on the kernel side in every pair: physics +9.5 % (4/4), spatial +6.3 % (4/4), pre-render +6.1 % (3/4), logic +4.7 % (3/4); verdict REGRESSION. The same shape as W9d's 2026-10-23 sitting (logic +5.9 %, 7/8), now with no second directory to blame. The one thing besides the kernel that set W9d apart from the default path was the upload: `_commitPackedBatch` copies pre-render's rows into a private array first.\n\n**Second sitting, with that copy** (`365c4b60`: the kernel packs into the shared rows, the batch copies them into its own array, the buffer uploads that): renderer 4.864 → 3.980 ms, **−10.6 %, worse 1/4**, cv 12/10 %; logic +2.7 % (2/4), spatial −6.1 %, physics −9.5 %, pre-render −3.9 %; presented 60.0 both; load within 0.1 %. Verdict KEPT (product). The runs swung with the machine (pairs 1 and 4 read every worker 4–20 % cheaper on side B, as in the session's A/A), so read against the workers the change cannot reach in the same run: renderer −6.5, −3.9, −11.4, −4.4 % (median **−5.4 %, 4/4**), while those workers' own per-pair median was −9.6, +6.6, +6.3, −15.7 % (no consistent penalty). In the first sitting the same reading was −13.7, −15.4, −7.3, −9.7 % for the renderer with the others +8.8, +7.6, +3.0, +4.4 % in every pair.\n\nSo an upload straight from shared memory cost the rest of the engine about 6 % in Predator (most likely Chrome copying shared-memory uploads on other threads; not traced), and the copy removes it while the kernel keeps the renderer's gain. `wasm.pixiPack` stays on. W11's wiring (mesh batches in a mesh memory) uploads from shared views too: it needs the same copy, or a sitting that shows it does not matter.",
+      "commits": [
+        "6d9c7258",
+        "365c4b60"
+      ]
     }
   ],
   "leads": [
