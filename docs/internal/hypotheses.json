@@ -37,7 +37,8 @@
       "aliases": [],
       "next": "The Predator gate (pre-render packs its sun casters).",
       "records": [
-        "R-0432"
+        "R-0432",
+        "R-0622"
       ]
     },
     {
@@ -13588,6 +13589,18 @@
         "d0b0528e",
         "d054b48e",
         "dd0f2459"
+      ]
+    },
+    {
+      "id": "R-0622",
+      "date": "2026-10-24",
+      "time": "19:40",
+      "timeFrom": "recorded",
+      "title": "gpuPack's slow path in the kernel (type filter, screen space, pixel snap), close-out group B, E-76",
+      "verdict": "kept-hygiene",
+      "text": "**kept (coverage, close-out group B), not timed.** `c608c925`. `packInstancedRowsWasm` declined screen-space queues, a pixel-snapped atlas and a type filter, and `packInstancedRows`' slow path packed them in JS. `pack_sprites_general` and `pack_casters_general` (gpuPack.wasm) do that loop:\n- the type filter before the capacity check;\n- the depth and the particle count by the rows written;\n- the camera's transform and turn on position, scale and rotation;\n- pixel snap in world or screen space, Math.round as V8 rounds;\n- each value stored as a Float32Array stores it.\n\nTheir sixteen parameters (flags, camera, snap, types) sit 16 bytes into the pack's results region, pre-render's and Pixi's, which grew from 16 to 144 bytes. The six fast exports compile byte for byte as before, so no fast path's speed moved. `gpuPackWasm.test.js`: eight slow-path cases (screen, turned, snapped in world and in screen, include and exclude filters, a mix), for sprites and casters, dense and listed, under capacity: every row bit for bit as `packInstancedRows`. What stays JS in the pack (item 6b): the Pixi batches that call `packInstancedRows` directly in Pixi-pack mode (glow, shadow, caster, custom layers) and the pose-interpolation batches, whose rows are not in the render-queue memory.",
+      "commits": [
+        "c608c925"
       ]
     }
   ],
