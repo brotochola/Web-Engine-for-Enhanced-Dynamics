@@ -51,6 +51,8 @@ export {
 export class DecorationPool extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'DecorationPool';
+  // E-129: 32-bit slot ids past 65 535 decorations.
+  static slotIdsFromMax = true;
 
   // Compact list of active decoration indices [count, idx0, idx1, ...]
   // Maintained incrementally by spawn/despawn, read by particle_worker

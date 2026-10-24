@@ -12,6 +12,8 @@ import { Ray } from './ray.js';
 
 export class BulletPool extends SharedAtomicPool {
   static poolName = 'BulletPool';
+  // E-129: 32-bit slot ids past 65 535 bullets.
+  static slotIdsFromMax = true;
   static _warnedPoolExhausted = false;
   static _warnedMissingTextures = new Set();
   static _tickResult = { activeCount: 0, impactWrite: 0 };

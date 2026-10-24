@@ -52,6 +52,9 @@ import {
   resolveParticleOp,
   resolveParticleColorOp,
 } from '../util/particleTween.js';
+/** The emit's batch of acquired slots: 16-bit, or 32-bit for a pool past 65 535 slots (E-129). */
+const ACQUIRE_BATCH_U16 = new Uint16Array(256);
+
 export const DECAL_STAMPS_BLEND_MODE = Object.freeze({
   normal: 0,
   multiply: 1,
@@ -60,6 +63,8 @@ export const DECAL_STAMPS_BLEND_MODE = Object.freeze({
 export class ParticleEmitter extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'ParticleEmitter';
+  // E-129: 32-bit slot ids past 65 535 particles.
+  static slotIdsFromMax = true;
   static _warnedPoolExhausted = false;
   static _opA = { from: 0, to: 0, tween: false, ease: 0 };
   static _opB = { from: 0, to: 0, tween: false, ease: 0 };
@@ -79,7 +84,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'blendMode', 'layer', 'layers', 'renderOnly', 'lightIntensity',
   ];
   static _alongLineScratch = Object.create(null);
-  static _acquireBatch = new Uint16Array(256);
+  static _acquireBatch = ACQUIRE_BATCH_U16;
   static _topdownOverrides = { flat: 0, viewMode: CAMERA_TYPES.TOPDOWN };
   static _zenithalOverrides = { flat: 0, viewMode: CAMERA_TYPES.ZENITHAL };
   static _flatOverrides = {
@@ -98,6 +103,11 @@ export class ParticleEmitter extends SharedAtomicPool {
     // Call base class initialize with the count
     super.initialize(maxParticles);
     this._warnedPoolExhausted = false;
+  }
+
+  static initializeFreeList(freeListBuffer, freeListTopBuffer) {
+    super.initializeFreeList(freeListBuffer, freeListTopBuffer);
+    this._acquireBatch = this.freeList instanceof Uint32Array ? new Uint32Array(256) : ACQUIRE_BATCH_U16;
   }
 
   static returnToPool(index) {
@@ -538,5 +548,6 @@ export class ParticleEmitter extends SharedAtomicPool {
   static reset() {
     super.reset();
     this._warnedPoolExhausted = false;
+    this._acquireBatch = ACQUIRE_BATCH_U16;
   }
 }
