@@ -777,6 +777,65 @@ function edgeTableGrow() {
   }
 }
 
+// E-135. The fill's shared vertices: a soup vertex joins an earlier one only when both of its floats are the same
+// bits, so the triangles drawn from them, and every attribute Pixi computes from a vertex, are the soup's.
+// Open addressing over the bits; the slot holds a shared vertex's id, its first soup vertex says its bits.
+let _vertSlot = new Int32Array(512).fill(-1);
+let _vertFirst = new Int32Array(256);
+
+/**
+ * solid.fillPts (the distinct vertices, x and y), solid.fillPtCount and solid.fillIdx (per soup vertex, its shared
+ * vertex: the triangles in the soup's order) from solid.fill.
+ */
+function indexFill(solid, n) {
+  const fill = solid.fill;
+  const bits = new Uint32Array(fill.buffer, fill.byteOffset, n * 2);
+  solid.fillPts = growFloats(solid.fillPts, n * 2);
+  if (solid.fillIdx.length < n) {
+    let cap = solid.fillIdx.length || 64;
+    while (cap < n) cap *= 2;
+    solid.fillIdx = new Uint32Array(cap);
+  }
+  let slots = _vertSlot.length;
+  if (slots < n * 2) {
+    while (slots < n * 2) slots *= 2;
+    _vertSlot = new Int32Array(slots);
+  }
+  if (_vertFirst.length < n) _vertFirst = new Int32Array(slots >> 1);
+  _vertSlot.fill(-1);
+  const slot = _vertSlot;
+  const first = _vertFirst;
+  const mask = slots - 1;
+  const pts = solid.fillPts;
+  const idx = solid.fillIdx;
+  let m = 0;
+  for (let v = 0; v < n; v++) {
+    const bx = bits[v * 2];
+    const by = bits[v * 2 + 1];
+    let h = Math.imul(bx, 0x9e3779b1) ^ Math.imul(by, 0x85ebca77);
+    h ^= h >>> 15;
+    h = Math.imul(h, 0x2c1b3c6d);
+    h = (h ^ (h >>> 12)) & mask;
+    let id;
+    for (;;) {
+      id = slot[h];
+      if (id < 0) {
+        id = m++;
+        slot[h] = id;
+        first[id] = v;
+        pts[id * 2] = fill[v * 2];
+        pts[id * 2 + 1] = fill[v * 2 + 1];
+        break;
+      }
+      const f = first[id];
+      if (bits[f * 2] === bx && bits[f * 2 + 1] === by) break;
+      h = (h + 1) & mask;
+    }
+    idx[v] = id;
+  }
+  solid.fillPtCount = m;
+}
+
 /**
  * Count one edge by its quantized ends, in canonical order, and return its id.
  * A new edge gets id === the count before the call; the caller stores its
@@ -814,7 +873,9 @@ function edgeCount(qax, qay, qbx, qby) {
  * Edges shared by two triangles are interior and dropped, so a canyon stays a hole.
  * `wantFill` false skips the fill triangles: pre-render reads only the segments,
  * and each worker keeps its own cache (review D1).
- * @returns {{ revision: number, seg: Float32Array, segCount: number, fill: Float32Array, fillVerts: number, hasFill: boolean, chain: Int32Array, chainValid: boolean }}
+ * With the fill, its shared vertices too (E-135): `fillPts` (x, y), `fillPtCount`, and `fillIdx`, the shared vertex of
+ * each of the `fillVerts` soup vertices.
+ * @returns {{ revision: number, seg: Float32Array, segCount: number, fill: Float32Array, fillVerts: number, fillPts: Float32Array, fillPtCount: number, fillIdx: Uint32Array, hasFill: boolean, chain: Int32Array, chainValid: boolean }}
  */
 export function ensureCompoundSolid(
   entityIdx, revision,
@@ -830,6 +891,9 @@ export function ensureCompoundSolid(
       segCount: 0,
       fill: new Float32Array(64),
       fillVerts: 0,
+      fillPts: new Float32Array(64),
+      fillPtCount: 0,
+      fillIdx: new Uint32Array(64),
       hasFill: false,
       // Pre-render's walk order over seg (E-61), built on its first use.
       chain: new Int32Array(64),
@@ -850,6 +914,7 @@ export function ensureCompoundSolid(
   }
   solid.segCount = 0;
   solid.fillVerts = 0;
+  solid.fillPtCount = 0;
   solid.chainValid = false;
   edgeTableClear();
   if (head && next && active && vertX && vertY && headIdx != null && headIdx !== FIXTURE_NONE) {
@@ -906,6 +971,7 @@ export function ensureCompoundSolid(
       cur = next[cur];
     }
     solid.fillVerts = fillN;
+    if (wantFill && fillN > 0) indexFill(solid, fillN);
     let segN = 0;
     for (let id = 0; id < _edgeCount; id++) {
       if (_edgeN[id] !== 1) continue;

@@ -234,4 +234,6 @@ test('the self-lit batch draws the same triangles with the same attributes (gold
   px._buildSelfLitBatch(0);
   const second = drawnTriangles(px._selfLitBatch);
   assert.deepEqual(second, { triangles: 142, hash: 1672745060 }, 'golden, after the remesh');
+  // E-135: each compound's shared vertices once per light (the soup wrote 352: three per fill triangle).
+  assert.equal(px._selfLitBatch.uploadedBytes / (FLOATS * 4), 152, 'vertices written');
 });

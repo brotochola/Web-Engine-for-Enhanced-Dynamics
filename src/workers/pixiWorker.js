@@ -3358,9 +3358,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const occluderBlock = LightOccluder.block;
     const wedgePos = this._wedgePositions;
     const wedgeScale = this._wedgeScales;
-    // The most one light writes: its fills, then its wedges.
+    // The most one light writes: its fills, then its wedges. E-135: a compound's fill is indexed, so it can take
+    // more than three indices a vertex; every shape stops the light at either budget.
+    const maxIdx = maxVerts * 3;
     const lightVerts = maxVerts + WEDGE_MAX_QUADS * 4;
-    const lightIndices = maxVerts * 3 + WEDGE_MAX_QUADS * 6;
+    const lightIndices = maxIdx + WEDGE_MAX_QUADS * 6;
     let batch = this._ensureSelfLitBatch(lightVerts, lightIndices, 0, 0);
     let data = batch.data;
     let indices = batch.indices;
@@ -3394,6 +3396,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
       // This light's vertices start here; its fills stop at maxVerts of them, as its own mesh did.
       const lightBase = vtx;
+      const lightIdxBase = iCount;
       this._wedgeVerts = 0;
 
       for (let e = i; e < j; e++) {
@@ -3436,7 +3439,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             ColliderFixture.vertCount, ColliderFixture.vertexX, ColliderFixture.vertexY,
             ColliderFixture.head[entityIdx], ColliderFixture.maxCount | 0
           );
-          const fill = solid.fill;
+          // E-135: the shared vertices once, then the soup's triangles by index.
+          const pts = solid.fillPts;
+          const fillIdx = solid.fillIdx;
+          const m = solid.fillPtCount | 0;
           const n = solid.fillVerts | 0;
           const lcx = Collider.polyCentroidX ? Collider.polyCentroidX[entityIdx] : 0;
           const lcy = Collider.polyCentroidY ? Collider.polyCentroidY[entityIdx] : 0;
@@ -3444,30 +3450,21 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const bodyCy = ey + s * (ox + lcx) + c * (oy + lcy);
           const originX = ex + c * ox - s * oy;
           const originY = ey + s * ox + c * oy;
-          let stopFill = false;
-          for (let v = 0; v + 3 <= n; v += 3) {
-            if (vtx - lightBase + 3 > maxVerts) {
-              stopFill = true;
-              break;
-            }
-            const baseV = vtx;
-            for (let k = 0; k < 3; k++) {
-              const lxocal = fill[(v + k) * 2];
-              const lyocal = fill[(v + k) * 2 + 1];
-              const o = vtx * SELF_LIT_BATCH_FLOATS;
-              data[o] = originX + c * lxocal - s * lyocal;
-              data[o + 1] = originY + s * lxocal + c * lyocal;
-              data[o + 9] = VIS_REST;
-              data[o + 10] = bodyCx;
-              data[o + 11] = bodyCy;
-              data[o + 12] = 0;
-              vtx++;
-            }
-            indices[iCount++] = baseV;
-            indices[iCount++] = baseV + 1;
-            indices[iCount++] = baseV + 2;
+          if (vtx - lightBase + m > maxVerts || iCount - lightIdxBase + n > maxIdx) break;
+          const baseV = vtx;
+          for (let p = 0; p < m; p++) {
+            const lxocal = pts[p * 2];
+            const lyocal = pts[p * 2 + 1];
+            const o = vtx * SELF_LIT_BATCH_FLOATS;
+            data[o] = originX + c * lxocal - s * lyocal;
+            data[o + 1] = originY + s * lxocal + c * lyocal;
+            data[o + 9] = VIS_REST;
+            data[o + 10] = bodyCx;
+            data[o + 11] = bodyCy;
+            data[o + 12] = 0;
+            vtx++;
           }
-          if (stopFill) break;
+          for (let v = 0; v < n; v++) indices[iCount++] = baseV + fillIdx[v];
           continue;
         }
 
@@ -3479,7 +3476,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const ldx = lx - cx;
           const ldy = ly - cy;
           if (ldx * ldx + ldy * ldy <= r * r) continue;
-          if (vtx - lightBase + segs + 1 > maxVerts) break;
+          if (vtx - lightBase + segs + 1 > maxVerts || iCount - lightIdxBase + segs * 3 > maxIdx) break;
           const center = vtx;
           for (let si = -1; si < segs; si++) {
             const o = vtx * SELF_LIT_BATCH_FLOATS;
@@ -3524,7 +3521,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             }
           }
           if (pointInConvex(lx, ly, boxX, boxY, vc)) continue;
-          if (vtx - lightBase + vc > maxVerts) break;
+          if (vtx - lightBase + vc > maxVerts || iCount - lightIdxBase + (vc - 2) * 3 > maxIdx) break;
           const baseV = vtx;
           const bodyCx = ex + ox;
           const bodyCy = ey + oy;
