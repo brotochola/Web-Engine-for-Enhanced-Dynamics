@@ -178,8 +178,9 @@ function regionList(tex) {
   col('tFrameH', Uint16Array, tex.meta.totalFrames);
   col('rEnds', Uint32Array, 2 * MAX_ITEMS);
   col('rWarns', Uint32Array, 2 * MAX_ITEMS);
-  col('rForeign', Uint32Array, MAX_ITEMS);
-  col('rCounts', Uint32Array, 4);
+  // [collector row, queue row] pairs (W27), and the kernel's eight counts.
+  col('rForeign', Uint32Array, 2 * MAX_ITEMS);
+  col('rCounts', Uint32Array, 8);
   col('table', Uint32Array, SLOTS.length);
   return list.map((r) => ({ ...r, owner: 'preRender' }));
 }
