@@ -18,6 +18,12 @@ const PHYSICS = (() => {
   }
 })();
 
+/** ?physics=0: the props are colliders without a body (RigidBody needs the physics worker). */
+class ColliderProp extends RayStressEntity {
+  static components = [WEED.Collider, WEED.SpriteRenderer];
+}
+const Prop = PHYSICS ? RayStressEntity : ColliderProp;
+
 /** Dense in-world bullets: walls so they die inside, driver keeps the pool full. */
 export class BulletStressScene extends Scene {
   static config = {
@@ -57,7 +63,7 @@ export class BulletStressScene extends Scene {
   };
 
   static entities = [
-    [RayStressEntity, INTERIOR + 4],
+    [Prop, INTERIOR + 4],
     [BulletStressDriver, 8],
   ];
 
@@ -71,28 +77,28 @@ export class BulletStressScene extends Scene {
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
 
-    RayStressEntity.spawn({
+    Prop.spawn({
       x: WORLD_W * 0.5,
       y: WALL * 0.5,
       shape: 'box',
       width: WORLD_W,
       height: WALL,
     });
-    RayStressEntity.spawn({
+    Prop.spawn({
       x: WORLD_W * 0.5,
       y: WORLD_H - WALL * 0.5,
       shape: 'box',
       width: WORLD_W,
       height: WALL,
     });
-    RayStressEntity.spawn({
+    Prop.spawn({
       x: WALL * 0.5,
       y: WORLD_H * 0.5,
       shape: 'box',
       width: WALL,
       height: WORLD_H,
     });
-    RayStressEntity.spawn({
+    Prop.spawn({
       x: WORLD_W - WALL * 0.5,
       y: WORLD_H * 0.5,
       shape: 'box',
@@ -102,7 +108,7 @@ export class BulletStressScene extends Scene {
 
     const inner = WALL + 80;
     for (let i = 0; i < INTERIOR; i++) {
-      RayStressEntity.spawn({
+      Prop.spawn({
         x: inner + rng() * (WORLD_W - 2 * inner),
         y: inner + rng() * (WORLD_H - 2 * inner),
         shape: rng() >= 0.7 ? 'box' : 'circle',
