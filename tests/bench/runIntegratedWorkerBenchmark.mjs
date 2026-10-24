@@ -354,6 +354,22 @@ async function sleep(ms) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Put the page's browser window back to normal if it is minimized. */
+async function restoreMinimizedWindow(page) {
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    const { windowId } = await cdp.send('Browser.getWindowForTarget');
+    const { bounds } = await cdp.send('Browser.getWindowBounds', { windowId });
+    if (bounds.windowState === 'minimized') {
+      await cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
+      console.log('The benchmark window opened minimized; restored it before loading the page');
+    }
+    await cdp.detach();
+  } catch {
+    // Not a Chromium window (or no CDP): nothing to restore.
+  }
+}
+
 /**
  * Read the browser window's state through CDP every 250 ms while a headed run measures. A minimized window
  * is restored at once; the polls that found it minimized are counted (minimizedMs ≈ polls × 250).
@@ -551,6 +567,10 @@ async function main() {
   try {
     const page = await browser.newPage();
     page.setDefaultTimeout(180000);
+    // A headed run starts with its window up. A browser launched from a background process can open its
+    // first window minimized, and a minimized window is throttled (watchWindowState): put it back before
+    // anything loads.
+    if (headed) await restoreMinimizedWindow(page);
 
     page.on('pageerror', (error) => {
       console.error('[benchmark page error]', error);
