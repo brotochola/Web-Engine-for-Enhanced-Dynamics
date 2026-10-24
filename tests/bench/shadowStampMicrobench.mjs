@@ -9,87 +9,14 @@
  *   node tests/bench/shadowStampMicrobench.mjs
  *   node tests/bench/shadowStampMicrobench.mjs --output out.json
  */
-import { GPU_CASTER_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import { stampLightRange, takeClosest } from '../../src/render/gpuShadowCasters.js';
 import { checksumFloats, checksumInts, isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
+import { setupStamp } from './shadowStampKernel.mjs';
 
 const TAKE = { base: takeClosest };
 
-export function setupStamp(fx, opts = {}) {
-  const { x, y, active, shadowActive, shadowH, lightActive, visualRange } = fx.arrays;
-  const n = fx.meta.n;
-  const sf = GPU_CASTER_FLOATS;
-  const casters = [];
-  for (let i = 0; i < n; i++) if (active[i] && shadowActive[i] && shadowH[i] > 0) casters.push(i);
-  const sunN = casters.length;
-  const sun = new Float32Array(sunN * sf);
-  let cx = 0;
-  let cy = 0;
-  for (let c = 0; c < sunN; c++) {
-    const i = casters[c];
-    sun[c * sf] = x[i];
-    sun[c * sf + 1] = y[i];
-    sun[c * sf + 2] = 1;
-    sun[c * sf + 3] = 1;
-    cx += x[i];
-    cy += y[i];
-  }
-  cx /= sunN || 1;
-  cy /= sunN || 1;
-  const lightsAll = [];
-  for (let i = 0; i < n; i++) {
-    if (!active[i] || !lightActive[i]) continue;
-    const range = visualRange[i] > 0 ? visualRange[i] : 400;
-    lightsAll.push({ id: i, x: x[i], y: y[i], intensity: 1, rangeSq: range * range, maxShadows: 0, d: (x[i] - cx) ** 2 + (y[i] - cy) ** 2 });
-  }
-  lightsAll.sort((a, b) => a.d - b.d || a.id - b.id);
-  const lights = lightsAll.slice(0, opts.maxLights ?? fx.meta.lighting?.maxShadowCastingLights ?? 48);
-  const maxPL = opts.maxPerLight ?? fx.meta.lighting?.maxShadowsPerLight ?? 512;
-  const maxPE = opts.maxPerEntity ?? fx.meta.lighting?.maxShadowsPerEntity ?? 3;
-  const stampCap = 30000;
-  const spec = {
-    sun,
-    sunN,
-    sunFloats: sf,
-    lights,
-    lightBegin: 0,
-    lightEnd: lights.length,
-    lightStride: 1,
-    maxPerLight: maxPL,
-    maxPerEntity: maxPE,
-    used: new Uint8Array(sunN),
-    tmpIdx: new Uint32Array(sunN),
-    dist: new Float32Array(sunN),
-    order: new Uint32Array(sunN),
-    keepIdx: new Uint32Array(sunN),
-    gridCounts: new Int32Array(128 * 128),
-    gridStarts: new Int32Array(128 * 128 + 1),
-    gridItems: new Uint32Array(sunN),
-    stamp: new Float32Array(stampCap * sf),
-    stampFloats: sf,
-    stampCap,
-    stampBase: 0,
-    stampLightIdx: new Uint16Array(stampCap),
-    lightVec: new Float32Array(4),
-  };
-  // Per-light candidate sets (every caster within range), for the takeClosest case.
-  const candidates = lights.map((L) => {
-    const ids = [];
-    const d = [];
-    for (let c = 0; c < sunN; c++) {
-      const dx = sun[c * sf] - L.x;
-      const dy = sun[c * sf + 1] - L.y;
-      const d2 = dx * dx + dy * dy;
-      if (d2 <= L.rangeSq) {
-        ids.push(c);
-        d.push(d2);
-      }
-    }
-    return { idx: Uint32Array.from(ids), dist: Float32Array.from(d) };
-  });
-  return { spec, sunN, lights, candidates, maxPL };
-}
+export { setupStamp } from './shadowStampKernel.mjs';
 
 async function main() {
   const args = parseArgs();

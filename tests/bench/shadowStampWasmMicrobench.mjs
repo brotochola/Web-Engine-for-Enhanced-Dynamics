@@ -32,16 +32,14 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
+import { GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
 import { stampLightRange } from '../../src/render/gpuShadowCasters.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
-import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { checksumFloats, checksumInts, isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
-import { setupStamp } from './shadowStampMicrobench.mjs';
+import { createStampKernel } from './shadowStampKernel.mjs';
 import { compareStamps } from './shadowStampTolerance.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
-import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
 
 const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/render/shadowStamp.wasm'));
 const F32_URL = pathToFileURL(path.resolve(import.meta.dirname, '../fixtures/wasm/shadowStampF32.wasm'));
@@ -52,99 +50,20 @@ export const STAMP_VARIANTS = {
   'wasm-f32': { url: F32_URL, name: 'shadowStampF32', fn: 'stamp_light_range_f32' },
   'wasm-f32x4': { url: F32_URL, name: 'shadowStampF32', fn: 'stamp_light_range_f32x4' },
 };
-const LIGHT_DOUBLES = 5;
-/** shadowStamp.c's table, slot for slot. */
-const SLOTS = STAMP_SLOTS;
-const SLOT = Object.fromEntries(SLOTS.map((name, k) => [name, k]));
 
-/** The fixture's spec with every array moved into one shared memory. */
+/** The fixture's spec in one shared memory (shadowStampKernel.mjs), and each variant's export on it. */
 async function setupKernel(opts) {
   const fx = loadPredatorFixture();
   if (!fx) throw new Error('missing tests/fixtures/predator-frame.bin (run capturePredatorFixture.mjs)');
-  const s = setupStamp(fx, opts);
-  const spec = s.spec;
-  const maxPE = spec.maxPerEntity | 0;
-  const arrays = ['sun', 'used', 'tmpIdx', 'dist', 'order', 'keepIdx', 'gridCounts', 'gridStarts', 'gridItems', 'stamp', 'stampLightIdx'];
-  const regions = [{ name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES }];
-  for (const a of arrays) regions.push({ name: a, owner: 'pre-render', bytes: spec[a].byteLength });
-  regions.push(
-    { name: 'lightVec', owner: 'pre-render', bytes: 16 },
-    { name: 'lights', owner: 'pre-render', bytes: spec.lights.length * LIGHT_DOUBLES * 8 },
-    { name: 'nearDist', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
-    { name: 'nearSlot', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
-    { name: 'nearCount', owner: 'pre-render', bytes: Math.max(1, s.sunN) },
-    { name: 'table', owner: 'pre-render', bytes: SLOTS.length * 4 },
-  );
-  const layout = layoutRegions(regions);
-  const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
-  const buffer = memory.buffer;
-  const R = layout.regions;
-  for (const a of arrays) {
-    const view = new spec[a].constructor(buffer, R[a].byte, spec[a].length);
-    view.set(spec[a]);
-    spec[a] = view;
-  }
-  spec.lightVec = new Float32Array(buffer, R.lightVec.byte, 4);
-  const lights = new Float64Array(buffer, R.lights.byte, spec.lights.length * LIGHT_DOUBLES);
-  const t = new Uint32Array(buffer, R.table.byte, SLOTS.length);
-  const put = (slot, v) => { t[SLOT[slot]] = v; };
-  put('sun', spec.sun.byteOffset);
-  put('sunN', spec.sunN);
-  put('sunFloats', spec.sunFloats);
-  put('lights', R.lights.byte);
-  put('lightBegin', spec.lightBegin);
-  put('lightEnd', spec.lightEnd);
-  put('lightStride', spec.lightStride);
-  put('maxPL', spec.maxPerLight);
-  put('maxPE', maxPE);
-  put('tmpIdx', spec.tmpIdx.byteOffset);
-  put('dist', spec.dist.byteOffset);
-  put('order', spec.order.byteOffset);
-  put('keep', spec.keepIdx.byteOffset);
-  put('tmpCap', spec.tmpIdx.length);
-  put('gridCounts', spec.gridCounts.byteOffset);
-  put('gridStarts', spec.gridStarts.byteOffset);
-  put('gridItems', spec.gridItems.byteOffset);
-  put('gridCountsCap', spec.gridCounts.length);
-  put('gridItemsCap', spec.gridItems.length);
-  put('stamp', spec.stamp.byteOffset);
-  put('stampFloats', spec.stampFloats);
-  put('stampCap', spec.stampCap);
-  put('stampBase', spec.stampBase);
-  put('stampLightIdx', spec.stampLightIdx.byteOffset);
-  put('lightFloat', GPU_CASTER_LIGHT_FLOAT);
-  put('nearDist', R.nearDist.byte);
-  put('nearSlot', R.nearSlot.byte);
-  put('nearCount', R.nearCount.byte);
-
-  const { stamp_light_range: stampRange } = await loadWasmKernel('shadowStamp', KERNEL_URL, memory, ['stamp_light_range']);
-  /** The product wrapper: the light objects into the table, then one call of `fn` (a variant's export). */
-  const stampWith = (fn) => {
-    const L = spec.lights;
-    const n = spec.lightEnd | 0;
-    for (let i = 0, at = 0; i < n; i++, at += LIGHT_DOUBLES) {
-      const light = L[i];
-      if (!light) {
-        lights[at + 3] = NaN;
-        continue;
-      }
-      lights[at] = light.x;
-      lights[at + 1] = light.y;
-      lights[at + 2] = light.intensity;
-      lights[at + 3] = light.rangeSq;
-      lights[at + 4] = light.maxShadows;
-    }
-    return fn(R.table.byte);
-  };
-  const stampWasm = () => stampWith(stampRange);
+  const k = await createStampKernel(fx, opts, KERNEL_URL);
   /** A variant's export, instantiated on this memory (null for the JS). */
   const kernelOf = async (variant) => {
     const v = STAMP_VARIANTS[variant];
     if (!v) return null;
-    if (v.url === KERNEL_URL) return stampRange;
-    return (await loadWasmKernel(v.name, v.url, memory, [v.fn]))[v.fn];
+    if (v.url === KERNEL_URL) return k.stampRange;
+    return (await loadWasmKernel(v.name, v.url, k.memory, [v.fn]))[v.fn];
   };
-  return { ...s, spec, stampWasm, stampWith, stampRange, kernelOf };
+  return { ...k, kernelOf };
 }
 
 /** What runKernelVariants compares: the cursor, the rows written and their light indices. */

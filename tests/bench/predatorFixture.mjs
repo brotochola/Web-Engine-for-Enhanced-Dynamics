@@ -11,10 +11,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { parsePredatorFixture } from './predatorFixtureParse.mjs';
+
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 export const PREDATOR_FIXTURE_PATH = path.join(repoRoot, 'tests/fixtures/predator-frame.bin');
-
-const TYPES = { Float32Array, Uint8Array, Uint16Array, Uint32Array, Int32Array };
 
 export function writeFixture(file, meta, arrays) {
   const entries = Object.entries(arrays);
@@ -41,18 +41,5 @@ export function writeFixture(file, meta, arrays) {
 /** @returns {null | { meta: object, arrays: Record<string, ArrayBufferView> }} */
 export function loadPredatorFixture(file = PREDATOR_FIXTURE_PATH) {
   if (!fs.existsSync(file)) return null;
-  const buf = fs.readFileSync(file);
-  const headerLen = buf.readUInt32LE(0);
-  const header = JSON.parse(buf.subarray(4, 4 + headerLen).toString('utf8').replace(/\0+$/, ''));
-  const body = buf.subarray(4 + headerLen);
-  const arrays = {};
-  for (const a of header.arrays) {
-    const T = TYPES[a.type];
-    const bytes = a.length * T.BYTES_PER_ELEMENT;
-    const copy = new ArrayBuffer(bytes);
-    new Uint8Array(copy).set(body.subarray(a.offset, a.offset + bytes));
-    arrays[a.name] = new T(copy);
-  }
-  const { arrays: _layout, ...meta } = header;
-  return { meta, arrays };
+  return parsePredatorFixture(fs.readFileSync(file));
 }
