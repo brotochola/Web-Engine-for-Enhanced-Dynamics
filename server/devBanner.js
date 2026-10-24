@@ -3,6 +3,7 @@
  * is running and how (headers or weed-sw.js, hot reload). In colour when the terminal has it: the
  * logo in a diagonal leaf-green to yellow gradient, as printLogo() paints it in the browser.
  */
+import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -85,13 +86,30 @@ export function terminalPaint(stream = process.stdout) {
  *   paint?: ReturnType<typeof terminalPaint> }} options
  * @returns {string}
  */
-export function devBanner({ port, swMode, hotReload, logRequests = false, root, paint = terminalPaint() }) {
+/**
+ * The commit the tree is at, and whether it has uncommitted changes: the version only moves on
+ * release, so the commit tells two builds apart. Null outside a git checkout.
+ */
+export function gitCommitLabel(cwd = ROOT) {
+  try {
+    const git = (args) => execFileSync('git', args, { cwd, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
+    const head = git(['rev-parse', '--short', 'HEAD']);
+    return git(['status', '--porcelain']) ? `${head}+` : head;
+  } catch {
+    return null;
+  }
+}
+
+export function devBanner({ port, swMode, hotReload, logRequests = false, root, paint = terminalPaint(), commit = gitCommitLabel() }) {
   const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const url = `http://localhost:${port}/`;
   const out = [''];
   for (const line of paint.gradient(WEED_LOGO_ART.split('\n'))) out.push(line);
   out.push('');
-  out.push(`  ${paint.bold(`WeedJS ${version}`)}  ${paint.dim('·')}  ${swMode ? 'dev server, service worker mode' : 'dev server'}`);
+  out.push(
+    `  ${paint.bold(`WeedJS ${version}`)}${commit ? ` ${paint.dim(`(${commit})`)}` : ''}  ${paint.dim('·')}  ` +
+      (swMode ? 'dev server, service worker mode' : 'dev server'),
+  );
   out.push('');
   out.push(`  ${paint.green('➜')}  Server running at ${paint.cyan(url)}`);
   out.push(`  ${paint.green('➜')}  Demos: ${paint.cyan(`${url}demos/`)}`);

@@ -14,9 +14,12 @@ const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 const plain = terminalPaint({ isTTY: false });
 
 test('npm run dev: the logo, the version, the URLs, the headers and hot reload', () => {
-  const text = devBanner({ port: 8000, swMode: false, hotReload: true, root: '/games', paint: plain });
+  const text = devBanner({ port: 8000, swMode: false, hotReload: true, root: '/games', paint: plain, commit: 'abc1234+' });
   assert.ok(text.includes(WEED_LOGO_ART), 'the logo, unchanged');
-  assert.match(text, new RegExp(`WeedJS ${version.replace(/\./g, '\\.')}  ·  dev server\n`));
+  // The version moves only on release; the commit (+ for uncommitted changes) tells builds apart.
+  assert.match(text, new RegExp(`WeedJS ${version.replace(/\./g, '\\.')} \\(abc1234\\+\\)  ·  dev server\n`));
+  const outsideGit = devBanner({ port: 8000, swMode: false, hotReload: true, root: '/games', paint: plain, commit: null });
+  assert.match(outsideGit, new RegExp(`WeedJS ${version.replace(/\./g, '\\.')}  ·  dev server\n`));
   // The hot-reload test waits for this line to know the server is up.
   assert.match(text, /Server running at http:\/\/localhost:8000\//);
   assert.match(text, /Demos: http:\/\/localhost:8000\/demos\//);
