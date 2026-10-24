@@ -90,10 +90,27 @@ export function packSpatialPairStamp16(frame, entityA) {
   return ((frame & 0xffff) << 16) | (entityA & 0xffff);
 }
 
-export function resolveEntityIdWidth(config) {
+/**
+ * The scene's id width. `entityIdWidth` 16 or 32 is the developer's choice; 'auto' (the default) and anything
+ * else is 16-bit ids while `entityCount` (every pool the scene declares) fits them and 32 past that.
+ */
+export function resolveEntityIdWidth(config, entityCount = 0) {
   const raw = config?.entityIdWidth;
   if (raw === 32 || raw === '32' || raw === ENTITY_ID_WIDTH_32) return ENTITY_ID_WIDTH_32;
-  return ENTITY_ID_WIDTH_16;
+  if (raw === 16 || raw === '16') return ENTITY_ID_WIDTH_16;
+  return entityCount > MAX_ENTITIES_U16 ? ENTITY_ID_WIDTH_32 : ENTITY_ID_WIDTH_16;
+}
+
+/**
+ * Every entity a scene declares before it registers them: its static `entities` pools and the Flash pool
+ * lighting adds (`lighting.maxFlashes`). What 'auto' decides from.
+ * @param {Array<[Function, number]>} entities
+ * @param {number} maxFlashes
+ */
+export function declaredEntityCount(entities, maxFlashes = 0) {
+  let n = maxFlashes > 0 ? maxFlashes | 0 : 0;
+  for (const entry of entities || []) n += entry[1] > 0 ? entry[1] | 0 : 0;
+  return n;
 }
 
 export function bindEntityIdWidth(nextWidth) {

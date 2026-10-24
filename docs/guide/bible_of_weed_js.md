@@ -6,9 +6,8 @@ Engine-focused notes for the current `src/` architecture.
 
 | Resource | Current Limit |
 |---|---|
-| Entity indices, default | `0..65534` (`config.entityIdWidth` **16**, `Uint16`) |
-| Total pooled entities, default | `65535` |
-| Entity indices, opt-in | `config.entityIdWidth: 32`, ceiling **300000**. A scene with `physics.enabled` (the default) throws if `totalEntityCount > 65535` |
+| Entity indices | `config.entityIdWidth` **'auto'** (default): `Uint16` (`0..65534`) while the scene's pools hold at most 65535 entities, `Uint32` past that, ceiling **300000**. `16` or `32` forces one |
+| Total pooled entities | `65535` at 16-bit ids, `300000` at 32. A scene with `physics.enabled` (the default) throws if `totalEntityCount > 65535` |
 | Particle / decoration / bullet pool indices | `0..65534`. Those slot stacks stay `Uint16` at either width |
 | QuerySystem component mask width | `64` components |
 | QuerySystem entity-type mask width | `64` entity types |
@@ -27,7 +26,7 @@ Engine-focused notes for the current `src/` architecture.
 | Audio playback rate range | `0.25..4` |
 | Sound ID type | `Int32` (index into per-name ID map) |
 
-`entityIdWidth` is bound once when the scene allocates shared buffers. Width 32 widens active lists, queries, grid slots, and neighbor lists to 4 bytes. Bunny mark uses it with physics off. Width 16 is what every other demo uses.
+`entityIdWidth` is decided when the scene is built, from every pool it declares (its `static entities` and the Flash pool lighting adds), and bound once when the scene allocates shared buffers. Width 32 widens active lists, queries, grid slots, and neighbor lists to 4 bytes; a scene of up to 65535 entities keeps 16-bit ids and pays nothing for it. Bunny mark (250 001 entities, physics off) gets 32.
 
 ---
 

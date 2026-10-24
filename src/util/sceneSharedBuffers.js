@@ -120,7 +120,7 @@ export function validateSceneSharedBufferConfig(scene) {
     );
     if (width !== 32 && registration.count > MAX_ENTITIES_U16) {
       throw new RangeError(
-        `${label} count ${registration.count} requires config.entityIdWidth = 32`,
+        `${label} count ${registration.count} needs 32-bit ids: config.entityIdWidth 'auto' (the default) or 32, not 16`,
       );
     }
   }

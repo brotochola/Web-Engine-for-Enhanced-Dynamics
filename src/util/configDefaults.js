@@ -296,8 +296,11 @@ export const SCENE_DEFAULTS = Object.freeze({
   worldWidth: 1000,
   worldHeight: 1000,
   seed: 1,
-  /** 16 = Uint16 entity ids (max 65535). 32 = Uint32 lists (max 300000). */
-  entityIdWidth: 16,
+  /**
+   * 'auto' = Uint16 entity ids while the scene's pools hold at most 65535 entities, Uint32 past that (the
+   * engine decides when the scene is built). 16 or 32 forces one: 16 = max 65535, 32 = Uint32 lists (max 300000).
+   */
+  entityIdWidth: 'auto',
   /**
    * When true, Scene.init does not start the main rAF loop or worker loops.
    * Drive simulation with scene.stepFrame(dtMs) / stepFrames(n, dtMs).

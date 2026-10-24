@@ -66,7 +66,7 @@ import {
   getSharedBufferSize as getSharedBufferSizeFromBuffers,
 } from '../util/sceneBufferMemory.js';
 import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
-import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray } from '../util/entityIdWidth.js';
+import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
 import { createSceneWorkers } from '../util/sceneWorkerBootstrap.js';
 import {
   bindFrameClock,
@@ -202,7 +202,13 @@ class Scene {
 
     // Apply all default config values
     this._applyConfigDefaults();
-    bindEntityIdWidth(resolveEntityIdWidth(this.config));
+    // The id width before any pool registers ('auto': from every entity the scene declares), written back so
+    // the shared buffers and every worker bind the same one.
+    this.config.entityIdWidth = resolveEntityIdWidth(
+      this.config,
+      declaredEntityCount(this.constructor.entities, this.config.lighting?.maxFlashes),
+    );
+    bindEntityIdWidth(this.config.entityIdWidth);
 
     this.seed = this.config.seed;
     this.rng = seededRandom(this.seed, 'main');
