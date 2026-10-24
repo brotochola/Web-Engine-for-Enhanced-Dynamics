@@ -225,6 +225,17 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "decalPremultiply",
+      "source": "wasm/test/decalPremultiply.c",
+      "output": "tests/fixtures/wasm/decalPremultiply.wasm",
+      "exports": [
+        "premultiply_scalar",
+        "premultiply_simd"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
