@@ -205,10 +205,46 @@ const THROUGHPUT_FAMILY = { FLOWFIELDS_COMPUTED: ['FLOWFIELDS_SERVICED'] };
 const LOAD_GATE_BAND_PCT = 5;
 const LOAD_CV_FAIL = 0.5;
 
-/** Max STEP_MS per worker kind plus the load keys. */
+/**
+ * A worker's primary over the window from its running totals (src/util/frameTotals.js): STEP_MS minus WAIT_MS,
+ * plus QUERY_WAKE_MS on physics (sync queries answered between steps), HOW_WE_MEASURE "What counts as faster".
+ */
+function exactPrimary(kind, exact) {
+  return exact.workMs + (kind === 'physics' ? exact.extraMs : 0);
+}
+
+/**
+ * Max STEP_MS per worker kind plus the load keys.
+ *
+ * `<kind>_STEP_MS_EXACT` is the primary over every frame of the window, when every worker of that kind kept
+ * running totals; `<kind>_STEP_MS_SAMPLED` is the mean of the 100 ms samples of STEP_MS, one frame in six.
+ * `<kind>_STEP_MS` is the exact one when there is one. decideAbab reads exact only when every pair has it on
+ * both sides (a baseline revision older than the totals has none).
+ */
 export function predatorMetrics(report) {
   const out = {};
-  for (const kind of KINDS) out[`${kind}_STEP_MS`] = 0;
+  for (const kind of KINDS) {
+    out[`${kind}_STEP_MS`] = 0;
+    out[`${kind}_STEP_MS_SAMPLED`] = 0;
+  }
+  const exactWorst = {};
+  const exactMissing = new Set();
+  for (const w of report.workers || []) {
+    const kind = w.type === 'pixi' ? 'renderer' : w.type;
+    if (!KINDS.includes(kind)) continue;
+    if (!w.exact) {
+      exactMissing.add(kind);
+      continue;
+    }
+    const primary = exactPrimary(kind, w.exact);
+    if (!exactWorst[kind] || primary > exactWorst[kind].primary) exactWorst[kind] = { primary, exact: w.exact };
+  }
+  for (const [kind, worst] of Object.entries(exactWorst)) {
+    if (exactMissing.has(kind)) continue;
+    out[`${kind}_STEP_MS_EXACT`] = worst.primary;
+    out[`${kind}_P95_MS`] = worst.exact.p95Ms;
+    out[`${kind}_FRAMES`] = worst.exact.frames;
+  }
   // Generic, not a hand-listed if-chain.
   //
   // The hand-listed version was a landmine: I added ACTIVE_DECORATIONS,
@@ -227,15 +263,24 @@ export function predatorMetrics(report) {
   for (const w of report.workers || []) {
     const avg = w.statsSamplesAverage || {};
     const kind = w.type === 'pixi' ? 'renderer' : w.type;
-    const key = `${kind}_STEP_MS`;
+    const key = `${kind}_STEP_MS_SAMPLED`;
     if (key in out && (avg.STEP_MS ?? 0) > out[key]) out[key] = avg.STEP_MS;
     for (const lk of LOAD_KEYS) {
       if (lk in avg) published[lk] = Math.max(published[lk] ?? 0, avg[lk]);
     }
   }
   for (const lk of LOAD_KEYS) if (lk in published) out[lk] = published[lk];
+  for (const kind of KINDS) {
+    const exact = out[`${kind}_STEP_MS_EXACT`];
+    out[`${kind}_STEP_MS`] = Number.isFinite(exact) ? exact : out[`${kind}_STEP_MS_SAMPLED`];
+  }
+  // Presented frames: the main thread's frames over the window's length when counted, else the sampled mean.
   const mainFps = report.mainThread?.averageFPS;
-  if (Number.isFinite(mainFps)) out[PRESENTED_KEY] = mainFps;
+  const mainFpsExact = report.mainThread?.exactFPS;
+  if (Number.isFinite(mainFps)) out[`${PRESENTED_KEY}_SAMPLED`] = mainFps;
+  if (Number.isFinite(mainFpsExact)) out[`${PRESENTED_KEY}_EXACT`] = mainFpsExact;
+  if (Number.isFinite(mainFpsExact)) out[PRESENTED_KEY] = mainFpsExact;
+  else if (Number.isFinite(mainFps)) out[PRESENTED_KEY] = mainFps;
 
   // Sub-timers, namespaced by worker kind so two workers can publish the same
   // one without colliding (`preRender_EMIT_MS` is not `renderer_EMIT_MS`).
@@ -266,7 +311,7 @@ function parseOverrides(raw) {
 function sittingStamp(scene, opts, args, baseline, hypSide = null) {
   const git = (argv, encoding) => execFileSync('git', argv, { cwd: repoRoot, encoding, maxBuffer: 1 << 28 });
   return {
-    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS, presented: PRESENTED_KEY },
+    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS, presented: PRESENTED_KEY, primary: 'exact-or-sampled' },
     scene: { path: scene.path, exportName: scene.exportName },
     protocol: {
       headed: opts.headed,
@@ -311,10 +356,21 @@ export function appendMismatches(prev, stamp) {
   return out;
 }
 
+/**
+ * Which of a pair's keys a sitting reads: `<base>_EXACT` when every side of every pair has it, else
+ * `<base>_SAMPLED` when every side has that, else `<base>` (sittings written before the totals).
+ */
+export function sittingKey(pairs, base) {
+  const all = (key) => pairs.length > 0 && pairs.every((p) => Number.isFinite(p.A?.[key]) && Number.isFinite(p.B?.[key]));
+  if (all(`${base}_EXACT`)) return { key: `${base}_EXACT`, source: 'exact' };
+  if (all(`${base}_SAMPLED`)) return { key: `${base}_SAMPLED`, source: 'sampled' };
+  return { key: base, source: 'sampled' };
+}
+
 export function decideAbab(pairs, owner, metric = null) {
   const kinds = {};
   for (const kind of KINDS) {
-    const key = `${kind}_STEP_MS`;
+    const { key, source } = sittingKey(pairs, `${kind}_STEP_MS`);
     const a = pairs.map((p) => p.A[key]);
     const b = pairs.map((p) => p.B[key]);
     const deltas = pairs.map((p) => pctDelta(p.B[key], p.A[key])).filter(Number.isFinite);
@@ -336,6 +392,7 @@ export function decideAbab(pairs, owner, metric = null) {
     // the same rule: an idle owner cannot be shown to have been improved.
     const interpretable = baseMedian >= STEP_MS_FLOOR;
     kinds[kind] = {
+      source,
       baseMedian,
       hypMedian: median(b),
       pairedDeltaPct,
@@ -426,11 +483,13 @@ export function decideAbab(pairs, owner, metric = null) {
   // Higher is better here. Judged only when every pair has it (sittings written
   // before it was collected are re-decided without it).
   let presented = null;
-  const fa = pairs.map((p) => p.A?.[PRESENTED_KEY]).filter(Number.isFinite);
-  const fb = pairs.map((p) => p.B?.[PRESENTED_KEY]).filter(Number.isFinite);
+  const presentedKey = sittingKey(pairs, PRESENTED_KEY);
+  const fa = pairs.map((p) => p.A?.[presentedKey.key]).filter(Number.isFinite);
+  const fb = pairs.map((p) => p.B?.[presentedKey.key]).filter(Number.isFinite);
   if (pairs.length && fa.length === pairs.length && fb.length === pairs.length) {
-    const deltas = pairs.map((p) => pctDelta(p.B[PRESENTED_KEY], p.A[PRESENTED_KEY]));
+    const deltas = pairs.map((p) => pctDelta(p.B[presentedKey.key], p.A[presentedKey.key]));
     presented = {
+      source: presentedKey.source,
       baseMedian: median(fa),
       hypMedian: median(fb),
       pairedDeltaPct: median(deltas),
@@ -720,7 +779,8 @@ function printDecision(name, decision) {
       continue;
     }
     console.log(
-      `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%`
+      `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%` +
+        (k.source === 'exact' ? '' : '  (sampled)'),
     );
   }
   if (decision.throughput) {

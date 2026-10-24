@@ -16,6 +16,13 @@ then reads every worker's stats for the measured window and writes one JSON repo
   …). The runner samples them every 100 ms (`--sample-interval-ms`) and reports, per worker, the average of
   the samples (`statsSamplesAverage`), grouped by kind (`workersByType`). A sample is the last frame's
   value: one frame in six at 60 Hz.
+- **Exact windows.** Every worker also adds each frame it publishes to running totals
+  ([`src/util/frameTotals.js`](../../src/util/frameTotals.js), one slot per worker, the main thread included),
+  and the runner reads them at the window's two ends: per worker, `exact` holds the window's frame count, its
+  mean `STEP_MS`, `WAIT_MS` and physics' `QUERY_WAKE_MS`, and the median and p95 of `STEP_MS − WAIT_MS`;
+  `mainThread.exactFPS` is the frames presented over the window's length. `runPredatorAbab.mjs` decides on these
+  when both sides of every pair have them, and on the samples otherwise (a base revision older than the totals),
+  which its printout marks `(sampled)`.
 - **Load%.** `STEP_MS / (1000 / 60) * 100`, or against `1000 / fixedFps` for a worker with `fixedFps`
   (`workerLoadPct` in `src/util/workersUtils.js`). An uncapped worker can read above 100 %.
 - **Defaults** ([`benchmarkDefaults.mjs`](./benchmarkDefaults.mjs)): warm-up 10 s, measured window 10 s,

@@ -289,9 +289,14 @@ verdict reads the median of those deltas.
 
 ## Known limits of the harness today
 
-- **The runner samples one frame in six.** Workers publish the step of their last frame; the runner reads
-  it every 100 ms (`DEFAULT_SAMPLE_INTERVAL_MS`), one frame in six at 60 Hz, at a phase that can keep
-  landing on the same frame of a staggered cycle. Read older numbers as that.
+- **Sittings before 2026-10-24 sampled one frame in six.** Workers publish the step of their last frame and
+  the runner read it every 100 ms (`DEFAULT_SAMPLE_INTERVAL_MS`), one frame in six at 60 Hz, at a phase
+  that can keep landing on the same frame of a staggered cycle: on one 4-second headless Predator run the
+  samples read logic 5 % and spatial 6 % under the mean of every frame. Since then every worker adds each frame it publishes
+  to running totals ([`src/util/frameTotals.js`](../../src/util/frameTotals.js)) and the gate's primary is
+  the window's exact mean (`STEP_MS − WAIT_MS`, plus `QUERY_WAKE_MS` on physics), with a median and a p95.
+  A sitting whose base revision predates the totals falls back to the samples on both sides, and its
+  printout says `(sampled)`. Read older numbers as samples.
 - **Same-build comparisons need two worktrees.** `--query` applies to both sides; there is no per-side
   query, so a runtime switch (`wasm.*`, config keys) cannot yet be compared within one build.
 - **Gates run headed.** Worker primaries would be as valid headless and leave the screen free; that is
@@ -299,8 +304,9 @@ verdict reads the median of those deltas.
 
 Planned tools, each in its own commit before the measurements that use it:
 
-1. Running totals and a step histogram per worker in the stats buffer, so a window is measured exactly
-   (every frame, a mean and a p95), and the 3 ms floor and detection limits recalibrated from it.
+1. Running totals and a step histogram per worker, so a window is measured exactly (every frame, a mean
+   and a p95): **built 2026-10-24** (`frameTotals.js`). Left: the 3 ms floor and the detection limits
+   recalibrated from exact A/A sittings.
 2. Per-side queries (`--query-a`, `--query-b`) and multi-arm sittings on one build (all off, kernel 1,
    kernel 2, all on), which also measure whether gains add up.
 3. Headless gates for worker owners, once a same-build sitting per scene shows headless and headed agree.
