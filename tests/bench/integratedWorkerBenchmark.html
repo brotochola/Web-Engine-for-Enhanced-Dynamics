@@ -222,6 +222,20 @@
       return { bodies, live, maxDelta, ready };
     }
 
+    /** How many entities have at least one neighbour in the rows spatial publishes, of how many; null without. */
+    function neighborRowsCheck(scene) {
+      const b = scene.buffers;
+      const meta = scene.gridMetadata;
+      const n = scene.totalEntityCount | 0;
+      if (!b.neighborData || !meta || !(n > 0)) return null;
+      const stride = 1 + (meta.maxNeighbors | 0);
+      const Ids = meta.entityIdBytes === 4 ? Uint32Array : Uint16Array;
+      const rows = new Ids(b.neighborData, meta.neighborByte | 0, n * stride);
+      let withNeighbors = 0;
+      for (let i = 0; i < n; i++) if (rows[i * stride] > 0) withNeighbors++;
+      return { entities: n, withNeighbors };
+    }
+
     function summarizeFromSession(
       startSnapshot,
       endSnapshot,
@@ -254,9 +268,11 @@
           fatalError: fatalErrorText(),
           wasmRan: { spatialPublish: Boolean(scene.spatialPublish) },
           // Phase 4: the block of Box2D's memory the render-queue regions sit in, or null (separate memories).
-          box2dBlock: scene.box2dBlock ? { byte: scene.box2dBlock.byte, bytes: scene.box2dBlock.bytes, inBlock: scene.renderQueueMemory?.memory === scene.box2dBlock.memory, bodies: (scene.renderQueueMemory?.layout.collect?.bodyPoseAByte ?? -1) >= 0 } : null,
+          box2dBlock: scene.box2dBlock ? { byte: scene.box2dBlock.byte, bytes: scene.box2dBlock.bytes, inBlock: scene.renderQueueMemory?.memory === scene.box2dBlock.memory, bodies: (scene.renderQueueMemory?.layout.collect?.bodyPoseAByte ?? -1) >= 0, spatial: Boolean(scene.spatialPublish) && scene.spatialPublish.memory === scene.box2dBlock.memory } : null,
           // The published poses read back where they live: a body whose pose never lands reads as not live.
           publishedPose: publishedPoseCheck(scene),
+          // Entities with a published neighbour row (spatial's output, where logic reads it).
+          neighborRows: neighborRowsCheck(scene),
           worldWidth: config.worldWidth,
           worldHeight: config.worldHeight,
           warmupMs: config.warmupMs,
