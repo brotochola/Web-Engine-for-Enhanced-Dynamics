@@ -869,6 +869,14 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
+### E-114 The shadow-caster stamp in WASM (E-76 W23) — **kernel +99.8 % (25/25); wiring next**
+`wasm/test/shadowStamp.c` is `stampLightRange` whole, bit for bit on the Predator fixture: 897.7 → 1 794.0 ops/s
+(+99.8 %, 25/25, Node 22), and 2.27× on the plain path. The stamp's call tree was 32 % of Predator pre-render before
+E-112, so about 16 % of it. Wiring: the stamp scratch (candidates, distances, order, kept list, the grid, the
+per-caster nearest lights) and a light table become regions of the render-queue memory, where the sun rows and the
+stamp output already are; a randomized parity test (NaN and far positions, ties, light budgets, the grid's fallback,
+stride and begin, a full stamp) before the switch `wasm.shadowStamp`; then the Predator gate, owner pre-render.
+
 ### E-113 Queue columns a multiple of 4 KB apart alias in cache — **open (found in E-112)**
 At a render-queue capacity that is a multiple of 1 024 every float column of a row falls in one L1 set: in E-112's
 kernel, capacity 32 768 against 33 000 moved the JS emit +11 % and the C emit 2.4×. Predator's capacity (119 298)
