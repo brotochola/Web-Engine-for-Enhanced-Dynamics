@@ -198,6 +198,20 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "solidSegments",
+      "source": "wasm/test/solidSegments.c",
+      "output": "tests/fixtures/wasm/solidSegments.wasm",
+      "exports": [
+        "collect_solid_f64",
+        "collect_solid_pseudo",
+        "collect_solid_fast",
+        "collect_solid_f64x2",
+        "collect_solid_f32x4"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
