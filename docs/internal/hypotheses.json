@@ -939,7 +939,8 @@
         "R-0455",
         "R-0458",
         "R-0460",
-        "R-0471"
+        "R-0471",
+        "R-0607"
       ]
     },
     {
@@ -13339,6 +13340,13 @@
       "commits": [
         "b25528f1"
       ]
+    },
+    {
+      "id": "R-0607",
+      "date": "2026-10-24",
+      "title": "Predator's CPU profile after the day's work (shadow stamp half of pre-render, the component getter a tenth of logic)",
+      "verdict": "note",
+      "text": "**note: Predator's CPU profile after the day's work.** `profileSceneSweep --pass cpu --only predatorScene`: headed, source, detailed stats off, an 8 s window after 6 s. Self time by worker; engine code unless marked.\n\n| worker (busy) | top self time |\n|---|---|\n| pre-render (416 ms/s) | `stamp_light_range` (shadowStamp.wasm) **46.7 %**, `emit_rows` 15.1 %, `collect_sprites` 9.9 %, `pack_casters_scatter` 8.1 %, `quicksort_order` 3.1 % |\n| pixi (415 ms/s) | `pack_sprites_split` 18.3 %, Pixi's `updateBuffer` 13.2 %, `_commitPackedBatch` 7.7 %, `_uploadSplit` 5.0 %, `radix_simd` 3.2 % |\n| logic (2 × ~400 ms/s) | GameObject's component getter (`gameObject.js:612`, 95 % on the `_componentCache[name]` load) **10.4 %**, game code (`findACivilianToShoot` 9.1 %, `Person.tick` 7.3 %), `neighborCount` 6.9 %, `_tickIntervalBucket` 6.3 %, `fsm.tick` 5.8 %, `getNeighbor` 5.4 %, ray `_circleRayDistance` 4.2 %, `_checkCellEntities` 3.2 %, `_processBox2dCollisionCallbacks` 3.2 % |\n| spatial (411 ms/s) | `gather_batch` 38.1 %, `publish_batch` 33.9 % (both C), `rebuildOwnedRows` (JS) **13.9 %**, `_findNeighborsWasmGather` (JS glue) 8.0 % |\n| physics (Box2D, 4 threads) | Box2D's own functions; three task threads at 1000 ms/s (its workers wait busy); `_emscripten_get_now` 3.2 % (E-55) |\n| particle (80 ms/s) | light: decoration visibility 17.5 %, sway 15.2 % |\n\nLeads it gives, in the order they can move Predator's frame:\n1. The shadow stamp is nearly half of pre-render, in C already: its algorithm (casters a light walks, the sort) is what is left.\n2. The component getter is a tenth of logic. Two engine fixes lost in Predator: L4's pre-filled caches (R-0284) and E-69's slot array (R-0400). The engine's own methods and the demo call the four core components most (`spriteRenderer`, `collider`, `rigidBody`). Explicit getters on fields the constructor declares are the one shape not tried.\n3. `rebuildOwnedRows` and the gather glue are a fifth of spatial; W7 takes the glue at the grouping step.\n4. Pixi's sprite pack and upload in Predator write statics every frame, because Pixi sorts there (`sortSprites: 'pixi'`), so E-82b cannot skip them."
     }
   ],
   "leads": [
