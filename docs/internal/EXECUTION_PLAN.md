@@ -872,6 +872,16 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
+### E-127 Static scenery culled through a grid — **KEPT (product), 2026-10-24**
+The collect tested every sprite every frame, so its cost followed the world (R-0610: 2.03 → 3.70 ms at a fixed
+visible count when the world doubled). The owner chose an opt-in flag: `static isStatic = true` on a type that does
+not move after onSpawned. Pre-render bins those entities in its own grid (`staticSceneryGrid.js`) when the scene's
+static counter moves (`staticScenery.js`: spawns, despawns, and the setters' moves, resizes and sprite changes),
+and the collect walks the moving sprites plus the static ones in the cells in view, in entity order, testing each as
+before. Parity `staticSceneryCull.test.js` (both collects, seven cameras). 500 000 sprites, 2.5 % in view, 4 pairs:
+pre-render **4.230 → 1.346 ms, −68.0 %**. Left: the view box is widened by the largest static half extent (bin huge
+sprites apart); spatial and physics still treat static scenery like the rest (E-126 is the spatial half).
+
 ### E-135 The self-lit fill of a compound occluder as shared vertices — **KEPT (product), 2026-10-24**
 Found in W21a's trace (R-0612): in `compoundVisPolyStressScene?remeshEvery=1&ringSegments=64` Pixi's `_buildSelfLitBatch`
 was 43.8 % of Pixi and `updateBuffer` 27.3 %, because every fill triangle of every (light, compound) pair went out as
