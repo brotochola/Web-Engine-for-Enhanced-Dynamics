@@ -193,6 +193,8 @@ class Scene {
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
     this.imageUrls = { ...this.constructor.assets };
+    /** The Adobe Animate assets init fetched and compiled (prepareAdobeAnimateAssets), until preloadAssets takes them. */
+    this._preparedAdobeAssets = null;
     this.audioUrls = this.constructor.audios || [];
     this.loadedAudioNames = [];
 
@@ -1026,6 +1028,10 @@ class Scene {
       throw new Error(isolationError);
     }
 
+    // N-73: the Adobe Animate assets are fetched and compiled from here, alongside the audio and the scripts, and
+    // awaited before the render queue is sized: its auto size counts each character's largest frame of pieces.
+    const adobePrepare = this.prepareAdobeAnimateAssets(this.imageUrls?.AdobeAnimateAnimations || {});
+
     // Initialize AudioWorklet mixer and autoplay gate
     const audioConfig = this.config.audio || {};
     await SoundManager.initializeAudioWorklet(
@@ -1042,6 +1048,8 @@ class Scene {
 
     await this.loadEntityScriptsInMainThread();
     this._loadStep('scripts');
+
+    this._preparedAdobeAssets = await adobePrepare;
 
     // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
     // render-queue regions the shared buffers make are laid in it.
@@ -1629,7 +1637,9 @@ class Scene {
     const textures = imageUrls?.textures || {};
     const sceneSpritesheets = imageUrls?.spritesheets || {};
     const adobeAnimateAnimations = imageUrls?.AdobeAnimateAnimations || {};
-    const preparedAdobeAssets = await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
+    // Prepared in init (N-73), else here.
+    const preparedAdobeAssets = this._preparedAdobeAssets || await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
+    this._preparedAdobeAssets = null;
     this._loadStep('adobe');
     const step = (stage) => (value) => {
       this._loadStep(stage);

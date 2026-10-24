@@ -451,6 +451,18 @@ function initializeBulletBuffers(scene) {
   BulletPool.initializeFreeList(buffers.bulletFreeList, buffers.bulletFreeListTop);
 }
 
+/** The larger of `max` and the most pieces any frame of a compiled Adobe Animate asset draws. */
+function maxFramePieces(asset, max) {
+  const counts = asset?.framePieceCount;
+  if (!counts) return max;
+  let m = max;
+  for (let i = 0; i < counts.length; i++) {
+    const c = counts[i] | 0;
+    if (c > m) m = c;
+  }
+  return m;
+}
+
 /**
  * Never-overflow floor for the main ENTITIES render queue:
  * entities + particles + decorations + bullets×2 (+ trails) + glow worst-case + Adobe piece expansion.
@@ -468,14 +480,11 @@ export function computeAutoMaxVisibleRenderables(scene) {
   const lightingEnabled = !!config.lighting?.enabled;
 
   let maxPieces = 1;
-  for (const asset of AdobeAnimRegistry.assets.values()) {
-    const counts = asset.framePieceCount;
-    if (!counts) continue;
-    for (let i = 0; i < counts.length; i++) {
-      const c = counts[i] | 0;
-      if (c > maxPieces) maxPieces = c;
-    }
-  }
+  for (const asset of AdobeAnimRegistry.assets.values()) maxPieces = maxFramePieces(asset, maxPieces);
+  // N-73: the registry fills after the atlas, long after the queue is sized; the assets init compiled for it
+  // (Scene._preparedAdobeAssets) hold the same piece counts.
+  const prepared = scene._preparedAdobeAssets?.compiledAssets;
+  if (prepared) for (const asset of Object.values(prepared)) maxPieces = maxFramePieces(asset, maxPieces);
 
   let adobePieceBonus = 0;
   const registered = scene.registeredClasses || [];
