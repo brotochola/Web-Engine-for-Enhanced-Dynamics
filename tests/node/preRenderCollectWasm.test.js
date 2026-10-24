@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
-import { bindCollect, collectMemory } from '../bench/preRenderCollectKernel.mjs';
+import { bindCollect, collectMemory, useBodies, useSortY } from '../bench/preRenderCollectKernel.mjs';
 import { Query } from '../../src/core/query.js';
 import { Layer } from '../../src/core/layer.js';
 
 // E-76 W4b, the sprite collect kernel (wasm/preRenderCollect.c). On the same bytes, the worker's collect through
 // the kernel must leave the main collector, a custom layer's collector, the visible count and the overflow warning
-// exactly as the shipped collectVisibleEntities leaves them: every sprite with no body and no layer mask
-// written by the kernel, every masked one through collectRenderable at its place in the walk.
+// exactly as the shipped collectVisibleEntities leaves them: every sprite with no layer mask written by the
+// kernel (with a body, its published pose; with Y-sort, its foot line), every masked one, and every one whose
+// sort line needs a frame not resolved yet, through collectRenderable at its place in the walk.
 
 const N = 3000;
 
@@ -33,6 +34,43 @@ function fill(m, seed, { masked }) {
     v.anchorX[i] = 0.5;
     v.anchorY[i] = 1;
     if (v.mask) v.mask[i] = 0;
+  }
+  // The bodies' two generations: unit rotations, a few never published (zeros), some unturned between them.
+  const unit = (a) => [Math.cos(a), Math.sin(a)];
+  for (let i = 0; i < N; i++) {
+    v.rb[i] = rng() < 0.6 ? 1 : 0;
+    const dead = rng() < 0.05;
+    const [c, s] = unit(rng() * 6.3);
+    v.px[i] = v.x[i] + (rng() - 0.5) * 8;
+    v.py[i] = v.y[i] + (rng() - 0.5) * 8;
+    v.pc[i] = dead ? 0 : c;
+    v.ps[i] = dead ? 0 : s;
+    const still = rng() < 0.3;
+    const [c0, s0] = still ? [c, s] : unit(rng() * 6.3);
+    const unborn = rng() < 0.05;
+    v.qx[i] = v.px[i] + (rng() - 0.5) * 6;
+    v.qy[i] = v.py[i] + (rng() - 0.5) * 6;
+    v.qc[i] = unborn ? 0 : c0;
+    v.qs[i] = unborn ? 0 : s0;
+  }
+  // The sort line: feet-anchored sprites and others, flipped ones, own facings, unresolved and unknown frames.
+  const anchors = [[0.5, 1], [0.5, 0.5], [0.5, 0.98], [1, 0.5], [0, 0.66]];
+  const frames = v.frameW.length;
+  for (let f = 0; f < frames; f++) {
+    v.frameW[f] = 1 + ((rng() * 200) | 0);
+    v.frameH[f] = 1 + ((rng() * 200) | 0);
+  }
+  for (let i = 0; i < N; i++) {
+    const [ax, ay] = anchors[(rng() * anchors.length) | 0];
+    v.anchorX[i] = ax;
+    v.anchorY[i] = ay;
+    v.scaleX[i] = 0.3 + rng() * 2;
+    v.scaleY[i] = (rng() < 0.2 ? -1 : 1) * (0.3 + rng() * 2);
+    v.inherit[i] = rng() < 0.5 ? 1 : 0;
+    const [fc, fs] = unit(rng() * 6.3);
+    v.faceC[i] = fc;
+    v.faceS[i] = fs;
+    v.lastTexture[i] = rng() < 0.05 ? 0xFFFF : (rng() * (frames + 4)) | 0;
   }
   if (masked && v.mask) {
     for (let i = 0; i < N; i++) {
@@ -100,7 +138,29 @@ const CASES = [
   { name: 'a full collector', skipCull: true, rot: 0, maxItems: 1000 },
   { name: 'the sprite query\'s list', skipCull: false, rot: 0.3, masked: true, list: true },
   { name: 'no layer mask and no visual range columns', skipCull: false, rot: 0, bare: true },
+  { name: 'bodies, the latched pose', skipCull: false, rot: 0, bodies: {} },
+  { name: 'bodies, interpolated', skipCull: false, rot: 0, bodies: { interpolate: true, alpha: 0.37 } },
+  { name: 'bodies, the first publish', skipCull: false, rot: 0, bodies: { interpolate: true, alpha: 0.6, prev: false } },
+  { name: 'Y-sort, with frames handed back', skipCull: false, rot: 0, sortY: true },
+  { name: 'Y-sort and bodies, a turned camera', skipCull: false, rot: 0.6, sortY: true, bodies: { interpolate: true, alpha: 0.81 } },
+  { name: 'Y-sort and bodies, the list, masked', skipCull: false, rot: 0, masked: true, list: true, sortY: true, bodies: {} },
+  { name: 'Y-sort, a full collector', skipCull: true, rot: 0, maxItems: 1000, sortY: true },
+  { name: 'Y-sort on halves and negative zeros (Math.round)', skipCull: true, rot: 0, sortY: true, halves: true },
 ];
+
+// Feet-anchored sprites whose sort line is the pose itself, on the values Math.round treats apart.
+const HALVES = [-0.5, -1.5, -2.5, -0.25, -0, 0, 0.5, 1.5, 2.5, -0.75, 8388607.5, -8388607.5, 1e-30, -1e-30];
+
+function halves(m) {
+  const v = m.views;
+  for (let i = 0; i < N; i++) {
+    if (i % 3) continue;
+    v.y[i] = HALVES[(i / 3) % HALVES.length];
+    v.anchorX[i] = 0.5;
+    v.anchorY[i] = 1;
+    v.rb[i] = 0;
+  }
+}
 
 for (const c of CASES) {
   test(`the collect kernel leaves the collectors as the JS does: ${c.name}`, async () => {
@@ -113,6 +173,9 @@ for (const c of CASES) {
       const fx = Layer.get('fx').id;
       fill(m, 1234 + CASES.indexOf(c), { masked: c.masked ? { fx } : null });
       camera(pre, c);
+      if (c.bodies) useBodies(pre, m, c.bodies);
+      if (c.sortY) useSortY(pre, m, (i) => (i * 7) % m.views.frameW.length);
+      if (c.halves) halves(m);
       if (c.list) {
         const rng = mulberry32(99);
         const ids = Uint16Array.from({ length: N }, (_, i) => i).filter(() => rng() < 0.7).sort(() => rng() - 0.5);
@@ -139,6 +202,7 @@ for (const c of CASES) {
       const wasm = snapshot(pre, m, fx);
 
       assert.ok(calls > 0, 'the collect took the kernel');
+      if (c.sortY && !c.maxItems) assert.ok(calls > 3, `unresolved frames went back to the JS (${calls} calls)`);
       assert.ok(js.n > 100, `the case queues sprites (${js.n})`);
       if (c.masked) assert.ok(js.fx.count > 10, 'masked sprites reached the fx collector');
       if (c.maxItems) assert.equal(js.warned, true, 'the collector filled');

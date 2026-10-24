@@ -1634,10 +1634,9 @@ class PreRenderWorker extends AbstractWorker {
      */
     collectVisibleEntities() {
         if (this.globalEntityCount === 0 || !SpriteRenderer.active || !this.cameraData) return;
-        // W4b: the kernel walks the sprites when every column is in the render-queue memory and nothing needs
-        // the JS loop: no body's published pose (a scene without physics), no Y-sort key, the queue on.
-        if (this._collectWasm !== null && this.renderQueueEnabled && !this._entitySortY
-            && !(this._poseX && this._rbActive)
+        // W4b: the kernel walks the sprites when every column is in the render-queue memory and the queue is on;
+        // with physics (Phase 4) the bodies' published poses are there too, and with Y-sort the frame sizes.
+        if (this._collectWasm !== null && this.renderQueueEnabled
             && writeCollectColumns(this._collectWasm, this, Transform, SpriteRenderer, Collider)) {
             this._collectVisibleEntitiesWasm();
             return;
@@ -1906,14 +1905,16 @@ class PreRenderWorker extends AbstractWorker {
             limW = halfCw + this.canvasWidth * this.cullingRatio * marginScale;
             limH = halfCh + this.canvasHeight * this.cullingRatio * marginScale;
         }
+        const mode = b.mode;
+        const alpha = this._poseAlpha;
         let visible = 0;
         let from = 0;
         for (;;) {
             const stop = turned
                 ? b.collectSpritesTurned(b.tableByte, from, count, maxItems, keyY, zoom, cb.cameraOffsetX,
-                    cb.cameraOffsetY, halfCw, halfCh, rc, rs, limW, limH)
+                    cb.cameraOffsetY, halfCw, halfCh, rc, rs, limW, limH, mode, alpha, Y_SORT_K)
                 : b.collectSprites(b.tableByte, from, count, maxItems, this.skipCull ? 1 : 0, keyY, zoom,
-                    cb.cameraOffsetX, cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY);
+                    cb.cameraOffsetX, cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY, mode, alpha, Y_SORT_K);
             if (stop >= count) break;
             this._renderableCount = res[0];
             this.collectRenderable(0, listed > 0 ? spriteEntities[stop] : stop);

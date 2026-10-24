@@ -265,7 +265,7 @@ export function painterStateLayout(regions, prefix, rows) {
 }
 
 /** Room for the collect kernel's column table (preRenderCollectClient.js COLLECT_SLOTS). */
-export const COLLECT_TABLE_SLOTS = 32;
+export const COLLECT_TABLE_SLOTS = 64;
 
 /** The decorations the sway kernel lets through its early continues at a time (its chunk list). */
 export const SWAY_LIST_CAP = 1024;
