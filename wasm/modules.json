@@ -211,6 +211,20 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "visibilitySweep",
+      "source": "wasm/test/visibilitySweep.c",
+      "output": "tests/fixtures/wasm/visibilitySweep.wasm",
+      "exports": [
+        "sweep_light_f64",
+        "sweep_light_pseudo",
+        "sweep_light_pre",
+        "sweep_light_simd",
+        "sweep_light_f32"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
