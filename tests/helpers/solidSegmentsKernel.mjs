@@ -25,7 +25,7 @@ import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { NULL_GUARD_BYTES, layoutRegions } from '../../src/util/wasmMemoryMap.js';
 import { mulberry32 } from '../bench/benchMath.js';
 
-export const KERNEL_URL = new URL('../fixtures/wasm/solidSegments.wasm', import.meta.url);
+export const KERNEL_URL = new URL('../fixtures/wasm/solidSegmentsVariants.wasm', import.meta.url);
 
 /** Variant name -> export. */
 export const WASM_VARIANTS = {
@@ -113,7 +113,7 @@ export async function createSolidSegmentsKernel(opts = {}) {
   new Float64Array(buffer, R.tan.byte, 65).set(tables.tan);
   const ctx = new Uint32Array(buffer, R.ctx.byte, CTX_SLOTS.length);
   for (const name of CTX_SLOTS) ctx[C[name]] = R[name].byte;
-  const fns = await loadWasmKernel('solidSegments', opts.wasmUrl ?? KERNEL_URL, memory, Object.values(WASM_VARIANTS));
+  const fns = await loadWasmKernel('solidSegmentsVariants', opts.wasmUrl ?? KERNEL_URL, memory, Object.values(WASM_VARIANTS));
   const byVariant = Object.fromEntries(Object.entries(WASM_VARIANTS).map(([v, name]) => [v, fns[name]]));
   const dist = new Float32Array(buffer, R.dist.byte, POLAR_BINS);
   const owner = new Int32Array(buffer, R.owner.byte, POLAR_BINS);

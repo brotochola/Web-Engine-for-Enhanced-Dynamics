@@ -200,9 +200,9 @@
       "maxMemoryPages": 32768
     },
     {
-      "name": "solidSegments",
+      "name": "solidSegmentsVariants",
       "source": "wasm/test/solidSegments.c",
-      "output": "tests/fixtures/wasm/solidSegments.wasm",
+      "output": "tests/fixtures/wasm/solidSegmentsVariants.wasm",
       "exports": [
         "collect_solid_f64",
         "collect_solid_pseudo",
@@ -214,9 +214,9 @@
       "test": true
     },
     {
-      "name": "visibilitySweep",
+      "name": "visibilitySweepVariants",
       "source": "wasm/test/visibilitySweep.c",
-      "output": "tests/fixtures/wasm/visibilitySweep.wasm",
+      "output": "tests/fixtures/wasm/visibilitySweepVariants.wasm",
       "exports": [
         "sweep_light_f64",
         "sweep_light_pseudo",

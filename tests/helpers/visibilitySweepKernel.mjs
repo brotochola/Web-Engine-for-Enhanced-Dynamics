@@ -16,7 +16,7 @@ import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { mulberry32 } from '../bench/benchMath.js';
 
-export const KERNEL_URL = new URL('../fixtures/wasm/visibilitySweep.wasm', import.meta.url);
+export const KERNEL_URL = new URL('../fixtures/wasm/visibilitySweepVariants.wasm', import.meta.url);
 
 /** visibilitySweep.c's table, slot for slot. */
 export const SWEEP_SLOTS = [
@@ -202,7 +202,7 @@ export async function createSweepKernel({
     };
   });
 
-  const fns = await loadWasmKernel('visibilitySweep', url, memory, Object.values(SWEEP_VARIANTS));
+  const fns = await loadWasmKernel('visibilitySweepVariants', url, memory, Object.values(SWEEP_VARIANTS));
   const variants = Object.fromEntries(Object.entries(SWEEP_VARIANTS).map(([v, name]) => [v, fns[name]]));
   const results = view(Uint32Array, 'results', SWEEP_RESULTS.length);
   const resultsI32 = view(Int32Array, 'results', SWEEP_RESULTS.length);
