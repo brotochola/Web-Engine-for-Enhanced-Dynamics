@@ -23,10 +23,16 @@ const BLOCK_SLACK_BYTES = 1 << 20;
 export function box2dBlockPlan(scene) {
   if (!scene._physicsEnabled || scene.config.wasm?.box2dBlock === false) return null;
   const queueBytes = (renderQueueBlockBytes(scene) + 63) & ~63;
-  const spatialBytes = spatialBlockBytes(scene);
+  const box2dPages = box2dMemoryPages(scene.config.physics);
+  const pagesFor = (bytes) => box2dPages + Math.ceil((bytes + BLOCK_SLACK_BYTES) / 65536);
+  // A spatial part that would take the block past the limit (many neighbours: a row and a candidate list of
+  // maxNeighbors ids per entity) stays out of it, in a memory of its own or the JS path, and the render-queue
+  // part keeps its place.
+  let spatialBytes = spatialBlockBytes(scene);
+  if (spatialBytes > 0 && pagesFor(queueBytes + spatialBytes) > BOX2D_MAX_PAGES) spatialBytes = 0;
   const bytes = queueBytes + spatialBytes;
   if (!(bytes > 0)) return null;
-  const pages = box2dMemoryPages(scene.config.physics) + Math.ceil((bytes + BLOCK_SLACK_BYTES) / 65536);
+  const pages = pagesFor(bytes);
   return pages <= BOX2D_MAX_PAGES ? { bytes, pages, queueBytes, spatialBytes } : null;
 }
 

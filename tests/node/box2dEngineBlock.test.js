@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createRenderQueueMemory, renderQueueMemoryBytes } from '../../src/util/renderQueueMemory.js';
 import { box2dBlockPlan } from '../../src/util/box2dEngineBlock.js';
 import { box2dMemoryPages } from '../../src/box2d/box2dMemory.js';
+import { bindEntityIdWidth } from '../../src/util/entityIdWidth.js';
 
 // Phase 4: with physics on, the render-queue regions are laid in a block of Box2D's memory. These check the
 // two halves that do not need a browser: the regions placed in a given memory at a byte, and the plan that sizes
@@ -52,6 +53,28 @@ test('the block plan: physics on and the switch on, Box2D grown by the block', (
   assert.equal(box2dBlockPlan({ ...scene(), _physicsEnabled: false }), null, 'no physics, no block');
   assert.equal(box2dBlockPlan(scene({ wasm: { box2dBlock: false } })), null, 'the switch off');
   assert.equal(box2dBlockPlan(scene({ physics: { wasmMemoryMB: 2048 } })), null, 'past 2 GB the memories stay apart');
+
+  // A spatial part that would take the block past 2 GB stays out of it, and the render-queue part keeps its place.
+  const spatial = (maxNeighbors, entityIdWidth = 16) => ({
+    ...scene({
+      entityIdWidth,
+      worldWidth: 4096,
+      worldHeight: 4096,
+      spatial: { numberOfSpatialWorkers: 2, cellSize: 128, maxEntitiesPerCell: 64, maxNeighbors },
+    }),
+    totalEntityCount: 60000,
+  });
+  try {
+    const fits = box2dBlockPlan(spatial(64));
+    assert.ok(fits && fits.spatialBytes > 60000 * 65 * 2 * 2, 'a spatial part that fits is in the block');
+    const big = box2dBlockPlan(spatial(9000));
+    assert.ok(big, 'the block stays');
+    assert.equal(big.spatialBytes, 0, 'the spatial part past 2 GB stays out');
+    assert.equal(big.queueBytes, fits.queueBytes, 'the render-queue part keeps its place');
+    assert.equal(big.bytes, big.queueBytes);
+  } finally {
+    bindEntityIdWidth(16);
+  }
 });
 
 test('in the block, the collect keeps RigidBody and the two published pose buffers instead of the Weed pose', () => {
