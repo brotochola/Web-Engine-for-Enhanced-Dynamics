@@ -151,6 +151,16 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "decalStamp",
+      "source": "wasm/test/decalStamp.c",
+      "output": "tests/fixtures/wasm/decalStamp.wasm",
+      "exports": [
+        "stamp_tiles"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
