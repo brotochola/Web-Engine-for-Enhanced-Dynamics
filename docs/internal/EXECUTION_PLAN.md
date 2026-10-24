@@ -935,8 +935,10 @@ multiple of 1 024 (queryChurn, spawnStorm: 8 193). Candidate: each queue column 
 a scene at an aliased capacity.
 **Done (2026-10-24, the queue):** each column starts a line past a line boundary (`renderQueueLayout.js`).
 The shipped emit at 32 768: C 900.8 → 2 162.0 ops/s (2.4×), JS +11.7 %; at Predator's 119 298 +1.4 % and +0.8 %.
-Left: the component columns (with `physicsHostImpl.js`'s mirrored layouts), and a scene at an aliased capacity
-with the next Predator gate.
+The component columns, screened the same day on the shipped collect at 262 144 sprites (each column on its
+boundary against a line past it): C −0.7 to +3.3 %, JS −1.0 to +1.9 %. Not taken: the collect reads its columns,
+and the queue's 2.4× came from the emit writing twenty. Left: a scene at an aliased queue capacity, with the
+next Predator gate.
 
 ### E-112 Pre-render's emit in WASM (E-76 W4a) — **KEPT (product), 2026-10-23**
 `wasm/preRenderEmit.c` writes `emitSpriteQueue`'s full-emit rows for sprites and decorations on the render-queue
