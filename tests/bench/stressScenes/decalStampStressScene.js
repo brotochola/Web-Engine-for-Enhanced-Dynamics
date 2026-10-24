@@ -5,6 +5,21 @@ const { Scene, Camera } = WEED;
 
 const SEED = 0xdec411;
 
+/**
+ * `?resolution=` sets decalsResolution, the tile pixels per world unit: 1 gives each tile four times the pixels
+ * of the default 0.5, which loads Pixi's per-tile premultiply and upload past the 3 ms floor (W21c's owner pair).
+ */
+function decalQueryNumber(name, fallback) {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get(name);
+    const n = Number(raw);
+    return raw !== null && Number.isFinite(n) && n > 0 ? n : fallback;
+  } catch {
+    return fallback;
+  }
+}
+const DECAL_RESOLUTION = decalQueryNumber('resolution', 0.5);
+
 /** L2 intermediate bench: seeded blood-decal stamp flood each tick. */
 export class DecalStampStressScene extends Scene {
   static config = {
@@ -14,7 +29,7 @@ export class DecalStampStressScene extends Scene {
       maxParticles: 4000,
       decals: true,
       decalsTileSize: 256,
-      decalsResolution: 0.5,
+      decalsResolution: DECAL_RESOLUTION,
     },
     logic: {
       noLimitFPS: false,
