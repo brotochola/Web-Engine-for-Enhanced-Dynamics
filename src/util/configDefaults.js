@@ -443,6 +443,8 @@ export const WASM_DEFAULTS = Object.freeze({
    * live in the render-queue memory with the emit's state, so the kernel reads every column there.
    */
   preRenderEmit: true,
+  /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
+  shadowStamp: true,
 });
 
 // ============================================================================

@@ -16,7 +16,7 @@ import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 class Entity extends GameObject {}
 Entity.components = [RigidBody, Collider, SpriteRenderer];
 
-function buildScene(wasm) {
+function buildScene(wasm, lightingOverride = null) {
   const previousLog = console.log;
   console.log = () => {};
   try {
@@ -41,7 +41,7 @@ function buildScene(wasm) {
         bullet: { maxBullets: 0 },
         physics: { maxJoints: 0 },
         spatial: { cellSize: 100, maxNeighbors: 32, maxEntitiesPerCell: 64, rowsPerBlock: 2, numberOfSpatialWorkers: 2 },
-        lighting: { enabled: false, maxLights: 10, shadowsEnabled: false, maxFlashes: 0, raycasted: false },
+        lighting: { enabled: false, maxLights: 10, shadowsEnabled: false, maxFlashes: 0, raycasted: false, ...lightingOverride },
         logic: { staggeredUpdates: false },
         debug: { maxDebugDrawEntries: 1 },
         navigation: { enabled: false },
@@ -115,4 +115,20 @@ test('wasm.preRenderEmit puts SpriteRenderer and the emit state in the render-qu
   const none = buildScene({ gpuPack: false, preRenderEmit: false });
   assert.equal(none.renderQueueMemory, null);
   assert.ok(none.buffers.renderQueueDataA instanceof SharedArrayBuffer);
+});
+
+test('wasm.shadowStamp puts the stamp scratch in the render-queue memory when shadows are on', () => {
+  assert.equal(WASM_DEFAULTS.shadowStamp, true);
+  const shadows = { enabled: true, shadowsEnabled: true, maxShadowCastingLights: 12, maxShadowsPerEntity: 3, maxShadowsPerLight: 64 };
+  const on = buildScene({}, shadows);
+  const s = on.renderQueueMemory?.layout.stamp;
+  assert.ok(s, 'the stamp regions');
+  assert.equal(s.maxSun, on.gpuQueueCaps.maxSun);
+  assert.equal(s.maxPerEntity, 3);
+  assert.equal(s.maxLights, 12);
+
+  assert.equal(buildScene({ shadowStamp: false }, shadows).renderQueueMemory.layout.stamp, null, 'off');
+  assert.equal(buildScene({}, null).renderQueueMemory.layout.stamp, null, 'no shadows, no stamp regions');
+  const stampOnly = buildScene({ gpuPack: false, preRenderEmit: false }, shadows);
+  assert.ok(stampOnly.renderQueueMemory?.layout.stamp, 'the stamp alone still makes the memory');
 });

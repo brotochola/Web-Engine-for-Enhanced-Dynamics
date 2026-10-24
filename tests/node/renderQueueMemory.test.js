@@ -7,7 +7,7 @@ import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { GPU_PACK_COLUMNS } from '../../src/render/gpuPackClient.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
-import { EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
+import { EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_TABLE_SLOTS, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
 
 // E-76 W9: the render queue's and the GPU queue's buffers as regions of one shared memory. Every
 // view a worker makes from the payload's (buffer, byte) pairs lies in its own region.
@@ -135,4 +135,42 @@ test('with the emit spec, the component blocks and the emit state are regions ap
 test('without the emit spec the layout has no emit regions', () => {
   const { m } = setup();
   assert.equal(m.layout.emit, null);
+});
+
+test('with the stamp spec, the shadow stamp scratch and light table are regions apart from the rest', () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true, shadowsEnabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const stamp = { maxSun: MAX, maxPerEntity: 3, maxLights: 20 };
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, null, stamp);
+  const L = m.layout;
+  const s = L.stamp;
+  assert.equal(L.emit, null);
+  assert.equal(s.maxSun, MAX);
+  assert.equal(s.maxPerEntity, 3);
+  assert.equal(s.maxLights, 20);
+  const spans = [
+    ['queueA', L.queueAByte, queueBytes],
+    ['queueB', L.queueBByte, queueBytes],
+    ['gpuA', L.gpuAByte, gpuBytes],
+    ['gpuB', L.gpuBByte, gpuBytes],
+    ['tmpIdx', s.tmpIdxByte, MAX * 4],
+    ['dist', s.distByte, MAX * 4],
+    ['order', s.orderByte, MAX * 4],
+    ['keep', s.keepByte, MAX * 4],
+    ['gridCounts', s.gridCountsByte, STAMP_GRID_CELLS * 4],
+    ['gridStarts', s.gridStartsByte, (STAMP_GRID_CELLS + 1) * 4],
+    ['gridItems', s.gridItemsByte, MAX * 4],
+    ['nearDist', s.nearDistByte, MAX * 3 * 4],
+    ['nearSlot', s.nearSlotByte, MAX * 3 * 4],
+    ['nearCount', s.nearCountByte, MAX],
+    ['lights', s.lightsByte, 20 * STAMP_LIGHT_DOUBLES * 8],
+    ['table', s.tableByte, STAMP_TABLE_SLOTS * 4],
+  ].sort((a, b) => a[1] - b[1]);
+  for (let k = 0; k < spans.length; k++) {
+    const [name, at, bytes] = spans[k];
+    assert.equal(at % 64, 0, `${name} starts on a line`);
+    assert.ok(at + bytes <= m.buffer.byteLength, `${name} fits`);
+    if (k > 0) assert.ok(at >= spans[k - 1][1] + spans[k - 1][2], `${name} overlaps ${spans[k - 1][0]}`);
+  }
 });

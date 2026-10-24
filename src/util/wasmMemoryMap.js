@@ -74,13 +74,18 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  *   flat tables, written when it arrives (i32 per sheet and state, i32 and u16 per animation and frame);
  * - emitEnds, emitWarns: [entity, value] u32 pairs the kernel hands back; emitForeign: the rows it
  *   leaves to the JS (u32); emitResults: its counts; emitTable: its column table (u32 byte offsets).
+ * With `stamp` (E-114, the shadow stamp `shadowStamp.wasm`, which reads the sun rows and writes the stamp
+ * rows where the GPU queues hold them), its scratch: the candidates, their distances, order and the kept
+ * list (one entry per sun caster each), the stamp grid's counts, starts and items, the nearest lights per
+ * caster (maxShadowsPerEntity slots each), the light table (five doubles a light) and its column table.
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {number} maxItems the queue's rows
  * @param {number} tableBytes packTables' size
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number }} [emit]
+ * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp]
  */
-export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null) {
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null) {
   const n = maxItems | 0;
   const regions = [
     { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
@@ -117,8 +122,33 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitTable', owner: 'pre-render', bytes: EMIT_TABLE_SLOTS * 4 },
     );
   }
+  if (stamp) {
+    const sun = stamp.maxSun | 0;
+    const near = sun * (stamp.maxPerEntity | 0);
+    regions.push(
+      { name: 'stampTmpIdx', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampDist', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampOrder', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampKeep', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampGridCounts', owner: 'pre-render', bytes: STAMP_GRID_CELLS * 4 },
+      { name: 'stampGridStarts', owner: 'pre-render', bytes: (STAMP_GRID_CELLS + 1) * 4 },
+      { name: 'stampGridItems', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampNearDist', owner: 'pre-render', bytes: near * 4 },
+      { name: 'stampNearSlot', owner: 'pre-render', bytes: near * 4 },
+      { name: 'stampNearCount', owner: 'pre-render', bytes: sun },
+      { name: 'stampLights', owner: 'pre-render', bytes: (stamp.maxLights | 0) * STAMP_LIGHT_DOUBLES * 8 },
+      { name: 'stampTable', owner: 'pre-render', bytes: STAMP_TABLE_SLOTS * 4 },
+    );
+  }
   return layoutRegions(regions);
 }
+
+/** The stamp grid's cells: gpuShadowCasters.js's STAMP_GRID_MAX_CELLS, the length of its counts array. */
+export const STAMP_GRID_CELLS = 128 * 128;
+/** A light in the stamp's light table: x, y, intensity, rangeSq, maxShadows (doubles). */
+export const STAMP_LIGHT_DOUBLES = 5;
+/** Room for the stamp kernel's column table (shadowStampClient.js STAMP_SLOTS). */
+export const STAMP_TABLE_SLOTS = 32;
 
 /** The emit's texture tables (E-112): spritesheetId and animationState are u8, texture ids u16. */
 export const EMIT_PROXY_SHEETS = 256;

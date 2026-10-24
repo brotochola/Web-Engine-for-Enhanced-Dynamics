@@ -502,12 +502,22 @@ function initializeRenderQueueMemory(scene) {
   scene.gpuQueueCaps = gpuCaps;
   const pack = config.wasm?.gpuPack !== false;
   const emit = config.wasm?.preRenderEmit !== false ? emitBlocks(scene) : null;
-  scene.renderQueueMemory = pack || emit
+  // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
+  const lighting = config.lighting || {};
+  const stamp = config.wasm?.shadowStamp !== false && lighting.shadowsEnabled && (gpuCaps.maxSun | 0) > 0
+    ? {
+        maxSun: gpuCaps.maxSun | 0,
+        maxPerEntity: lighting.maxShadowsPerEntity | 0,
+        maxLights: lighting.maxShadowCastingLights | 0,
+      }
+    : null;
+  scene.renderQueueMemory = pack || emit || stamp
     ? createRenderQueueMemory(
         maxVisibleRenderables,
         computeRenderQueueBufferSize(maxVisibleRenderables),
         computeGpuQueueBufferSize(gpuCaps),
         emit,
+        stamp,
       )
     : null;
   const e = scene.renderQueueMemory?.layout.emit;
