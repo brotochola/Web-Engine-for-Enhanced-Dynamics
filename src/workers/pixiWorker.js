@@ -94,6 +94,7 @@ import {
 import { viewWorldBounds } from '../util/viewBounds.js';
 import {
   InstancedSpriteBatch,
+  INSTANCED_SPRITE_FLOATS,
   BATCH_SPACE,
   BATCH_DEPTH,
   buildTextureLut,
@@ -245,6 +246,7 @@ import {
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
+import { bindGpuPack } from '../render/gpuPackClient.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
 
 // Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
@@ -506,6 +508,10 @@ class PixiRenderer extends AbstractWorker {
     // _pacedTick marks a tick that submitted nothing, which publishes no stats.
     this._framePacer = new GpuFramePacer();
     this._pacedTick = false;
+    // W9d. With packGpuSprites 'pixi' and no pose interpolation, the entity batch's rows live in the
+    // render-queue memory (the view below) and gpuPack.wasm packs them, on Pixi's own scratch.
+    this._pixiGpuPack = null;
+    this._pixiInstanceRows = null;
     this._pendingResizeW = null;
     this._pendingResizeH = null;
     this._surfaceUnconfigured = false;
@@ -1871,6 +1877,29 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
+  /** W9d: gpuPack.wasm on Pixi's regions of the render-queue memory, when the scene laid them out. */
+  async _bindPixiGpuPack(data) {
+    const memory = data.renderQueueMemory;
+    const layout = data.renderQueueLayout;
+    const rows = layout ? layout.pixiInstanceRows | 0 : 0;
+    if (!memory || rows <= 0 || this._queueInterp || rows < (this.renderQueueMaxItems | 0)) return;
+    try {
+      this._pixiGpuPack = await bindGpuPack(memory, {
+        tableByte: layout.pixiTableByte,
+        tableSlots: layout.tableSlots,
+        indexByte: layout.pixiIndexByte,
+        indexCap: layout.indexCap,
+        particlesByte: layout.pixiParticlesByte,
+        inverseByte: 0,
+      });
+      this._pixiInstanceRows = new Float32Array(memory.buffer, layout.pixiInstanceByte, rows * INSTANCED_SPRITE_FLOATS);
+    } catch (err) {
+      console.warn('[PIXI WORKER] gpuPack.wasm did not load; packing sprites in JS', err);
+      this._pixiGpuPack = null;
+      this._pixiInstanceRows = null;
+    }
+  }
+
   createEntitiesInstancedBatch(maxItems) {
     this._rqIdxEntity = new Uint32Array(maxItems);
     this._rqIdxGlow = new Uint32Array(maxItems);
@@ -1888,6 +1917,8 @@ class PixiRenderer extends AbstractWorker {
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       poseInterp: this._queueInterp,
+      data: this._pixiInstanceRows,
+      gpuPack: this._pixiGpuPack,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -5973,6 +6004,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
     if (this.renderQueueEnabled) {
+      await this._bindPixiGpuPack(data);
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';

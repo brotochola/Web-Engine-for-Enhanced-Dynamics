@@ -519,6 +519,10 @@ function initializeRenderQueueMemory(scene) {
   const sway = config.wasm?.decorationSway !== false && emit && emit.decorationBytes > 0 && buckets > 1
     ? { decorations: config.decoration.maxDecorations | 0, buckets }
     : null;
+  // W9d: Pixi packs the plain sprite rows itself (packGpuSprites 'pixi', no pose interpolation), with the
+  // pack kernel, on rows of its own in this memory.
+  const pixiPack = pack && config.wasm?.pixiPack !== false && config.preRender?.packGpuSprites === 'pixi'
+    && config.renderer?.interpolation !== true;
   scene.renderQueueMemory = pack || emit || stamp
     ? createRenderQueueMemory(
         maxVisibleRenderables,
@@ -527,6 +531,7 @@ function initializeRenderQueueMemory(scene) {
         emit,
         stamp,
         sway,
+        pixiPack,
       )
     : null;
   const e = scene.renderQueueMemory?.layout.emit;

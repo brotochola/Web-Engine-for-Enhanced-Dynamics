@@ -445,6 +445,11 @@ export const WASM_DEFAULTS = Object.freeze({
   /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */
   gpuPack: true,
   /**
+   * Pixi's plain sprite pack through `gpuPack.wasm` (W9d, E-123), with `packGpuSprites: 'pixi'` and no pose
+   * interpolation: the entity batch's rows live in the render-queue memory (so it needs gpuPack).
+   */
+  pixiPack: true,
+  /**
    * Pre-render's emit (`preRenderEmit.wasm`, E-112): SpriteRenderer, ShadowCaster and DecorationComponent
    * live in the render-queue memory with the emit's state, so the kernel reads every column there.
    */

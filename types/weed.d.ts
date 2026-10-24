@@ -306,6 +306,8 @@ export type SceneConfig = Record<string, unknown> & {
     particleLists?: boolean;
     /** Instanced-row pack in pre-render (the render queues live in one WebAssembly.Memory). */
     gpuPack?: boolean;
+    /** The same pack for Pixi's sprite rows, with packGpuSprites 'pixi' and no pose interpolation. Needs gpuPack. */
+    pixiPack?: boolean;
   };
 };
 

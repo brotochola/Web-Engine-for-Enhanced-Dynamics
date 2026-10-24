@@ -92,8 +92,9 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number }} [emit]
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp]
  * @param {null | { decorations: number, buckets: number }} [sway]
+ * @param {number} [pixiRows] rows of Pixi's plain sprite batch when Pixi packs it with gpuPack.wasm (W9d), else 0
  */
-export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null) {
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0) {
   const n = maxItems | 0;
   const regions = [
     { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
@@ -167,6 +168,16 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'swayTrig', owner: 'particle', bytes: d * 4 },
       { name: 'swayTrigValue', owner: 'particle', bytes: d * 8 },
       { name: 'swayTable', owner: 'particle', bytes: SWAY_TABLE_SLOTS * 4 },
+    );
+  }
+  if ((pixiRows | 0) > 0) {
+    // W9d: Pixi's instance rows (15 floats each) and its own pack scratch, apart from pre-render's: the two
+    // pack at the same time.
+    regions.push(
+      { name: 'pixiInstances', owner: 'Pixi packs and uploads', bytes: (pixiRows | 0) * 15 * 4 },
+      { name: 'pixiPackIndices', owner: 'Pixi', bytes: n * 4 },
+      { name: 'pixiPackTables', owner: 'Pixi', bytes: tableBytes },
+      { name: 'pixiPackResults', owner: 'Pixi', bytes: 16 },
     );
   }
   return layoutRegions(regions);

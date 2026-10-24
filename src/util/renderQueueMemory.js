@@ -24,13 +24,15 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  *   the emit's regions too (renderQueueMemoryRegions); a component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
+ * @param {boolean} [pixiPack] Pixi's plain sprite rows and pack scratch too (W9d), one row per queue row
  * @returns {null | { memory: WebAssembly.Memory, buffer: SharedArrayBuffer, layout: Record<string, any> }}
  */
-export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null) {
+export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emit = null, stamp = null, sway = null, pixiPack = false) {
   const n = maxItems | 0;
   if (n <= 0) return null;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
-  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway);
+  const pixiRows = pixiPack ? n : 0;
+  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows);
   if (map.pages > WASM_MAX_PAGES) return null;
   const r = map.regions;
   try {
@@ -53,6 +55,12 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         emit: emit ? emitLayout(r, emit.entities | 0, n) : null,
         stamp: stamp ? stampLayout(r, stamp) : null,
         sway: sway ? swayLayout(r, sway) : null,
+        // W9d: Pixi's instance rows and pack scratch (0 rows: Pixi does not pack plain rows here).
+        pixiInstanceRows: pixiRows,
+        pixiInstanceByte: pixiRows > 0 ? r.pixiInstances.byte : -1,
+        pixiIndexByte: pixiRows > 0 ? r.pixiPackIndices.byte : -1,
+        pixiTableByte: pixiRows > 0 ? r.pixiPackTables.byte : -1,
+        pixiParticlesByte: pixiRows > 0 ? r.pixiPackResults.byte : -1,
       },
     };
   } catch {

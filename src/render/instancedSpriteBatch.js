@@ -29,6 +29,7 @@ import {
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
 import { packInstancedRows } from './gpuQueueLayout.js';
+import { packInstancedRowsWasm } from './gpuPackClient.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -243,6 +244,8 @@ export class InstancedSpriteBatch {
     shaders = null,
     poseInterp = false,
     shadowCast = false,
+    data = null,
+    gpuPack = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
@@ -250,8 +253,13 @@ export class InstancedSpriteBatch {
     this._floats = this.poseInterp ? POSE_DYN_FLOATS : INSTANCED_SPRITE_FLOATS;
     if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
-    this.data = new Float32Array(this.capacity * this._floats);
-    this.dataU32 = new Uint32Array(this.data.buffer);
+    // W9d: a plain sprite batch may take its rows from the render-queue memory, where gpuPack.wasm
+    // writes them; `gpuPack` is that kernel's binding (gpuPackClient.bindGpuPack).
+    const shared = !this.poseInterp && !this.shadowCast && data instanceof Float32Array
+      && data.length >= this.capacity * this._floats ? data : null;
+    this.data = shared || new Float32Array(this.capacity * this._floats);
+    this.dataU32 = new Uint32Array(this.data.buffer, this.data.byteOffset, this.data.length);
+    this._gpuPack = shared && gpuPack ? gpuPack : null;
     // A pose batch's static stream (E-82): its CPU copy, the key of what it holds, and the version
     // each ring slot's GPU copy holds (-1: none).
     this.staticData = new Float32Array(this.poseInterp ? this.capacity * POSE_STATIC_FLOATS : 0);
@@ -666,15 +674,22 @@ export class InstancedSpriteBatch {
     if (this.poseInterp) return this._uploadPose(q, opts);
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
-    const out = packInstancedRows(
-      q,
-      ctx,
-      this.data,
-      this.dataU32,
-      this._floats,
-      this.capacity,
-      this.shadowCast
-    );
+    // W9d: the kernel packs what packInstancedRows' fast paths pack, bit for bit, and declines (-1)
+    // the rest.
+    let out = this._gpuPack !== null
+      ? packInstancedRowsWasm(this._gpuPack, q, ctx, this.data, this._floats, this.capacity, this.shadowCast)
+      : -1;
+    if (out < 0) {
+      out = packInstancedRows(
+        q,
+        ctx,
+        this.data,
+        this.dataU32,
+        this._floats,
+        this.capacity,
+        this.shadowCast
+      );
+    }
     return this._finishUpload(out, this._strideBytes);
   }
 

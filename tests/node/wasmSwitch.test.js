@@ -165,3 +165,16 @@ test('wasm.navFlowfield puts the nav buffer in the navigation memory', () => {
   assert.ok(off.buffers.navigationData instanceof SharedArrayBuffer);
   assert.equal(buildScene({}, null).navigationMemory ?? null, null, 'no navigation, no memory');
 });
+
+test('wasm.pixiPack gives Pixi its own sprite rows and pack scratch in the render-queue memory (W9d)', () => {
+  assert.equal(WASM_DEFAULTS.pixiPack, true);
+  const pixi = { preRender: { packGpuSprites: 'pixi' } };
+  const l = buildScene({}, null, pixi).renderQueueMemory.layout;
+  assert.equal(l.pixiInstanceRows, 100, 'one row per queue row');
+  assert.ok(l.pixiInstanceByte > 0 && l.pixiIndexByte > l.pixiInstanceByte && l.pixiTableByte > 0 && l.pixiParticlesByte > 0);
+  assert.equal(buildScene({ pixiPack: false }, null, pixi).renderQueueMemory.layout.pixiInstanceRows, 0, 'off');
+  assert.equal(buildScene({}, null).renderQueueMemory.layout.pixiInstanceRows, 0, 'pre-render packs: no Pixi rows');
+  const interp = { ...pixi, renderer: { maxVisibleRenderables: 100, interpolation: true } };
+  assert.equal(buildScene({}, null, interp).renderQueueMemory.layout.pixiInstanceRows, 0, 'pose interpolation packs its own way');
+  assert.equal(buildScene({ gpuPack: false, preRenderEmit: false }, null, pixi).renderQueueMemory, null, 'needs gpuPack');
+});
