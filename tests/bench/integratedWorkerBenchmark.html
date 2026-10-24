@@ -185,6 +185,43 @@
       return overlay ? overlay.textContent.replace(/\s+/g, ' ').trim() : null;
     }
 
+    /**
+     * The physics pose buffers as the engine publishes them, read where the scene keeps them (Phase 4: regions of
+     * Box2D's block): active bodies, how many have a live pose in the current generation, and the largest
+     * distance between that pose and Transform's. Null without physics.
+     */
+    function publishedPoseCheck(scene) {
+      const b = scene.buffers;
+      const n = b.poseCapacity | 0;
+      const rb = globalThis.RigidBody?.active;
+      const tx = globalThis.Transform?.x;
+      const ty = globalThis.Transform?.y;
+      if (!scene._physicsEnabled || !b.poseSync || !(n > 0) || !rb || !tx) return null;
+      const ready = Atomics.load(new Int32Array(b.poseSync), 0);
+      if (!(ready > 0)) return { bodies: 0, live: 0, maxDelta: null, ready };
+      const cur = (ready - 1) & 1;
+      const sab = cur ? b.poseDataB : b.poseDataA;
+      const at = (cur ? b.poseDataBByte : b.poseDataAByte) | 0;
+      const px = new Float32Array(sab, at, n);
+      const py = new Float32Array(sab, at + n * 4, n);
+      const rc = new Float32Array(sab, at + n * 8, n);
+      const rs = new Float32Array(sab, at + n * 12, n);
+      let bodies = 0;
+      let live = 0;
+      let maxDelta = 0;
+      for (let i = 0; i < n && i < rb.length; i++) {
+        if (!rb[i]) continue;
+        bodies++;
+        if (rc[i] * rc[i] + rs[i] * rs[i] <= 0.25) continue;
+        live++;
+        const dx = px[i] - tx[i];
+        const dy = py[i] - ty[i];
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > maxDelta) maxDelta = d;
+      }
+      return { bodies, live, maxDelta, ready };
+    }
+
     function summarizeFromSession(
       startSnapshot,
       endSnapshot,
@@ -217,7 +254,9 @@
           fatalError: fatalErrorText(),
           wasmRan: { spatialPublish: Boolean(scene.spatialPublish) },
           // Phase 4: the block of Box2D's memory the render-queue regions sit in, or null (separate memories).
-          box2dBlock: scene.box2dBlock ? { byte: scene.box2dBlock.byte, bytes: scene.box2dBlock.bytes, inBlock: scene.renderQueueMemory?.memory === scene.box2dBlock.memory } : null,
+          box2dBlock: scene.box2dBlock ? { byte: scene.box2dBlock.byte, bytes: scene.box2dBlock.bytes, inBlock: scene.renderQueueMemory?.memory === scene.box2dBlock.memory, bodies: (scene.renderQueueMemory?.layout.collect?.bodyPoseAByte ?? -1) >= 0 } : null,
+          // The published poses read back where they live: a body whose pose never lands reads as not live.
+          publishedPose: publishedPoseCheck(scene),
           worldWidth: config.worldWidth,
           worldHeight: config.worldHeight,
           warmupMs: config.warmupMs,
