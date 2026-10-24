@@ -195,7 +195,7 @@ INLINE int32_t stamp_light_range_with(uint32_t table, const int simd) {
     /* takeClosest moves only `order`: a kept caster's distance is dist[order[k]] after a selection, dist[k]
        without one. */
     const int selected = lim > 0 && m > (uint32_t)lim;
-    m = take_closest(tmpIdx, dist, order, m, lim, keep);
+    m = take_closest(tmpIdx, dist, order, m, lim, keep, maxPE == 0);
     if (maxPE > 0) {
       for (uint32_t k = 0; k < m; k++) {
         note_nearest_f32(nearDist, nearSlot, nearCount, keep[k], i, selected ? dist[order[k]] : dist[k], maxPE);

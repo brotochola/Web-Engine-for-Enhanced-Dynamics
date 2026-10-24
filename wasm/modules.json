@@ -329,6 +329,8 @@
       "exports": [
         "gather_batch",
         "order_batch_by_cell",
+        "gather_batch_u32",
+        "order_batch_by_cell_u32",
         "gather_batch_f32",
         "gather_batch_f32x4"
       ],
