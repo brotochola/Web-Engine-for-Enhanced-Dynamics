@@ -1336,6 +1336,23 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
   ```
 - Keep `collider.visualRange` tight to reduce neighbor pressure.
 - Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
+- A type that never moves after `onSpawned` (props, buildings, decor on a large map) can declare `static isStatic = true`.
+  Pre-render then bins its sprites in a grid and tests only the ones near the view, so 500 000 props with 2.5 % of them
+  on screen cost what the view holds instead of every sprite every frame. The drawn set and order are the same as
+  without the flag. Moving one through `x`, `y`, scale or `setSprite` re-bins the scenery (fine now and then, not every
+  frame); writing `Transform.x[i]` directly is not seen, and a body on a static type should be static too.
+
+  ```js
+  class Tree extends GameObject {
+    static components = [SpriteRenderer];
+    static isStatic = true;
+    onSpawned({ x, y }) {
+      this.x = x;
+      this.y = y;
+      this.setSprite('tree');
+    }
+  }
+  ```
 - Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
 - Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. If both `tick` and `tickAll` exist, instance `tick` wins.
 - Use particles/decorations for short-lived or static visuals instead of full entities.

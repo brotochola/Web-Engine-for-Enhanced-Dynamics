@@ -68,6 +68,7 @@ import {
   resolveForceProcessOnLogicWorker,
 } from '../util/logicOwner.js';
 import { isXyOnlySpawnConfig } from '../util/createSpawnBatch.js';
+import { staticSceneryChanged, staticSceneryChangedAt } from './staticScenery.js';
 import { isSpawnCommandRingBound, tryPushSpawn } from '../util/spawnCommandRing.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
@@ -161,6 +162,14 @@ export class GameObject {
    * Scene gate: if no registered type opts in, the hypot loop does not run.
    */
   static deriveSpeed = false;
+
+  /**
+   * E-127. Static scenery: entities of this type do not move after onSpawned (props, buildings, terrain decor).
+   * Pre-render bins their sprites in a grid and culls them by the cells in view, so a large world of them costs what
+   * the view holds. Moving one through the setters (x, y, scale, sprite) bins them all again; writing its Transform
+   * columns directly is not seen. A body on a static type should be static too (a moving one is not followed).
+   */
+  static isStatic = false;
 
   // Neighbor data (from spatial worker)
   static neighborData = null;
@@ -673,6 +682,7 @@ export class GameObject {
     const i = this.index;
     if (Transform.x[i] === value) return;
     Transform.x[i] = value;
+    staticSceneryChangedAt(i);
     if (isCommandRingBound() && this._hasBox2dBody()) {
       enqueueSetTransform(
         i,
@@ -694,6 +704,7 @@ export class GameObject {
     const i = this.index;
     if (Transform.y[i] === value) return;
     Transform.y[i] = value;
+    staticSceneryChangedAt(i);
     if (isCommandRingBound() && this._hasBox2dBody()) {
       enqueueSetTransform(
         i,
@@ -2163,6 +2174,7 @@ export class GameObject {
    */
   static _deactivateSlotComponents(i) {
     Transform.active[i] = 0;
+    staticSceneryChangedAt(i);
     Messages.bumpGeneration(i);
     Tween.cancelForDespawn(i);
     if (RigidBody.active) RigidBody.active[i] = 0;
@@ -2996,6 +3008,14 @@ export class GameObject {
     Transform.active[i] = 1;
     if (has.MeshRenderer) MeshRenderer.active[i] = 1;
     if (hasBody) markBodyDirty(i, BODY_DIRTY.LIFECYCLE, true);
+    // E-127: pre-render bins the static scenery again, now that this one is active where onSpawned put it.
+    if (EntityClass.isStatic === true) {
+      staticSceneryChanged();
+      if (has.RigidBody && RigidBody.active[i] && !RigidBody.static[i] && !EntityClass._staticBodyWarned) {
+        EntityClass._staticBodyWarned = true;
+        console.warn(`[GameObject] ${EntityClass.name} is static scenery (isStatic) with a moving body: pre-render culls it where it spawned`);
+      }
+    }
 
     // ========================================
     // LIST UPDATES (QUEUED - processed by logic0)

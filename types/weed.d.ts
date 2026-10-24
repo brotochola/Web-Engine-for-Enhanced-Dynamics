@@ -1125,6 +1125,12 @@ export declare class GameObject {
    */
   static deriveSpeed: boolean;
   /**
+   * Static scenery: entities of this type do not move after onSpawned. Pre-render culls their sprites through a grid, so a
+   * large world of them costs what the view holds. Moving one through the setters (x, y, scale, sprite) re-bins them;
+   * writing its Transform columns directly is not seen. Default false.
+   */
+  static isStatic: boolean;
+  /**
    * After initializeArrays: Int16 per entity. Worker index that must run this
    * entity’s logic. FORCE_PROCESS_ON_LOGIC_WORKER_NONE (−1) means stride.
    * Not the LogicWorker instance (`this.logicWorker`).

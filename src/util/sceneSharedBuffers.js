@@ -87,6 +87,7 @@ import {
   BODY_DIRTY,
   bindBodySyncBuffers,
 } from '../box2d/box2dBodySync.js';
+import { bindStaticSceneryGen, bindStaticTypes } from '../core/staticScenery.js';
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
 import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } from './poolSlotWidth.js';
@@ -947,6 +948,10 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
   buffers.bodyDirtyWords = new SharedArrayBuffer(dirtyWordCount * 4);
   buffers.bodyGeneration = new SharedArrayBuffer(totalEntityCount * 4);
   buffers.bodyGenEpoch = new SharedArrayBuffer(4);
+  // E-127: moved when static scenery spawns, despawns or changes; pre-render bins it again then.
+  buffers.staticSceneryGen = new SharedArrayBuffer(4);
+  bindStaticSceneryGen(buffers.staticSceneryGen);
+  bindStaticTypes(registeredClasses);
   const bodySync = bindBodySyncBuffers(buffers);
   if (bodySync) {
     bodySync.dirtyFlags.fill(BODY_DIRTY.LIFECYCLE);
@@ -1367,6 +1372,8 @@ export function teardownSceneSharedState(scene) {
   GameObject.entityTypeHasForcedLogicWorker = null;
   GameObject.entityTypeForcedLogicWorkerCount = null;
   bindBodySyncBuffers(null);
+  bindStaticSceneryGen(null);
+  bindStaticTypes(null);
   GameObject.instances = [];
   GameObject._globalAnimationCache = Object.create(null);
   GameObject._animIndexBySheet = [];

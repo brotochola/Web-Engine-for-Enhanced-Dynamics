@@ -68,6 +68,7 @@ import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { bindBodySyncBuffers, bindPoseSlotBuffers } from '../box2d/box2dBodySync.js';
+import { bindStaticSceneryGen, bindStaticTypes } from '../core/staticScenery.js';
 
 import { Component } from '../core/component.js';
 import { Transform } from '../components/transform.js';
@@ -475,6 +476,9 @@ export class AbstractWorker {
     this.reportLog('initializing common buffers');
     this.globalEntityCount = data.globalEntityCount;
     this.bodySyncViews = bindBodySyncBuffers(data.buffers);
+    // E-127: static scenery's counter, and which types are static (their spawns, moves and despawns move it).
+    bindStaticSceneryGen(data.buffers?.staticSceneryGen || null);
+    bindStaticTypes(data.registeredClasses);
     Decal.bindStampRing(data.buffers?.decalStampRing || null);
     bindSpawnCommandRing(data.buffers?.spawnCommandRing || null);
     {

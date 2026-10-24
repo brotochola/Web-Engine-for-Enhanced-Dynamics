@@ -123,9 +123,9 @@ export function writeCollectColumns(b, worker, Transform, SpriteRenderer, Collid
 }
 
 /** Point the table at the sprite query's list, copied into the memory, or at none (a scan of every index). */
-export function writeCollectList(b, ids) {
-  if (ids && ids.length > 0) {
-    b.list.set(ids);
+export function writeCollectList(b, ids, n = ids ? ids.length : 0) {
+  if (ids && n > 0) {
+    b.list.set(n === ids.length ? ids : ids.subarray(0, n));
     b.table[SLOT.list] = b.listByte;
     return ids.length;
   }

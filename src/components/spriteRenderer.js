@@ -4,6 +4,7 @@
 import { Component } from '../core/component.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { SPRITE_TILE_MODE } from '../util/configDefaults.js';
+import { staticSceneryChangedAt } from '../core/staticScenery.js';
 
 /** GLSL-style fract (works for negatives). */
 export function fract01(x) {
@@ -149,6 +150,8 @@ export class SpriteRenderer extends Component {
     const sy = Math.abs(SpriteRenderer.scaleY[entityIndex]) || 1;
     SpriteRenderer.boundsHalfW[entityIndex] = (w * sx) * 0.5;
     SpriteRenderer.boundsHalfH[entityIndex] = (h * sy) * 0.5;
+    // E-127: a static entity's extent is in pre-render's grid.
+    staticSceneryChangedAt(entityIndex);
   }
 
   /** Radians API (storage is spriteRotC/S). */

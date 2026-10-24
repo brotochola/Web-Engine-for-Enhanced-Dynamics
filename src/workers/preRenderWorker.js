@@ -134,6 +134,8 @@ import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
+import { staticSceneryGen } from '../core/staticScenery.js';
+import { StaticSceneryGrid } from '../render/staticSceneryGrid.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -536,6 +538,8 @@ class PreRenderWorker extends AbstractWorker {
         // Pre-allocated query arrays
         this._queryLightEmitter = null;
         this._querySpriteRenderer = null;
+        // E-127. The static scenery's grid; empty without static types.
+        this._staticGrid = new StaticSceneryGrid();
         this._queryAdobeAnim = null;
 
         // Per-frame cached query results (avoids duplicate queryActiveEntities calls)
@@ -931,6 +935,7 @@ class PreRenderWorker extends AbstractWorker {
                     : new Float32Array(this.globalEntityCount);
             }
             this._bindAnimationEndTypes(data.registeredClasses);
+            this._staticGrid.bindTypes(data.registeredClasses, this.globalEntityCount);
 
             // Pre-allocate renderable collector buffers
             this._renderableY = emitLayout
@@ -1718,7 +1723,12 @@ class PreRenderWorker extends AbstractWorker {
         // hot loop below stays allocation-free and the index load stays inlineable.
         let iterCount, iterSource;
         const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
-        if (spriteEntities && spriteEntities.length > 0) {
+        const walked = this._staticSceneryWalk(spriteEntities, cameraBounds);
+        if (walked >= 0) {
+            // E-127: the moving sprites and the static ones in the cells in view, in the list's order.
+            iterCount = walked;
+            iterSource = this._staticGrid.list;
+        } else if (spriteEntities && spriteEntities.length > 0) {
             iterCount = spriteEntities.length;
             iterSource = spriteEntities;
         } else {
@@ -1932,8 +1942,11 @@ class PreRenderWorker extends AbstractWorker {
         if (!cb) return;
         const b = this._collectWasm;
         const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
-        const listed = writeCollectList(b, spriteEntities);
-        const count = listed > 0 ? listed : this.globalEntityCount;
+        // E-127: with static scenery, the walk of the moving sprites and the static ones in the cells in view.
+        const walked = this._staticSceneryWalk(spriteEntities, cb);
+        const walk = walked >= 0 ? this._staticGrid.list : spriteEntities;
+        const listed = walked >= 0 ? writeCollectList(b, walk, walked) : writeCollectList(b, spriteEntities);
+        const count = walked >= 0 ? walked : listed > 0 ? listed : this.globalEntityCount;
         const res = b.results;
         res[0] = this._renderableCount;
         res[1] = 0;
@@ -1970,7 +1983,7 @@ class PreRenderWorker extends AbstractWorker {
                     cb.cameraOffsetX, cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY, mode, alpha, Y_SORT_K);
             if (stop >= count) break;
             this._renderableCount = res[0];
-            this.collectRenderable(0, listed > 0 ? spriteEntities[stop] : stop);
+            this.collectRenderable(0, listed > 0 ? walk[stop] : stop);
             res[0] = this._renderableCount;
             visible++;
             from = stop + 1;
@@ -1980,6 +1993,54 @@ class PreRenderWorker extends AbstractWorker {
         this.visibleEntitiesCount += visible + res[1];
         this._collectEntityGlow(Transform.x, Transform.y, Collider.visualRange, zoom, cb.cameraOffsetX,
             cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY);
+    }
+
+    /**
+     * E-127. The collect's walk with the static scenery culled by its grid: the published sprite list's moving
+     * entities and the static ones in the cells that meet the view (widened by the largest static half extent), in
+     * entity order, in this._staticGrid.list. Returns its length, or -1 when the collect walks the list as given
+     * (no static types, the cull off, or no published list). The grid is binned again when the static counter moved;
+     * the counter is read after the list, so a static entity the list holds was binned.
+     */
+    _staticSceneryWalk(spriteEntities, cb) {
+        const grid = this._staticGrid;
+        if (!grid.enabled || this.skipCull || !cb || !spriteEntities || spriteEntities.length === 0) return -1;
+        const gen = staticSceneryGen();
+        if (gen !== grid.builtGen) {
+            grid.build(gen, this.config?.worldWidth || 0, this.config?.worldHeight || 0, Transform.active,
+                Transform.x, Transform.y, SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH, Collider.visualRange);
+        }
+        const zoom = cb.zoom;
+        const half = grid.maxHalf;
+        const rot = this._frameCameraRot || 0;
+        let minX;
+        let maxX;
+        let minY;
+        let maxY;
+        if (rot) {
+            // The turned camera's test (collectVisibleEntities) in view space, its box turned back into the world.
+            const rc = Math.abs(Math.cos(rot));
+            const rs = Math.abs(Math.sin(rot));
+            const marginScale = zoom < 1 ? zoom : 1;
+            const halfCw = this.canvasWidth * 0.5;
+            const halfCh = this.canvasHeight * 0.5;
+            const w = halfCw + this.canvasWidth * this.cullingRatio * marginScale + half * zoom;
+            const h = halfCh + this.canvasHeight * this.cullingRatio * marginScale + half * zoom;
+            const cx = (cb.cameraOffsetX + halfCw) / zoom;
+            const cy = (cb.cameraOffsetY + halfCh) / zoom;
+            const hx = (rc * w + rs * h) / zoom + 1;
+            const hy = (rs * w + rc * h) / zoom + 1;
+            minX = cx - hx;
+            maxX = cx + hx;
+            minY = cy - hy;
+            maxY = cy + hy;
+        } else {
+            minX = (cb.minX + cb.cameraOffsetX) / zoom - half - 1;
+            maxX = (cb.maxX + cb.cameraOffsetX) / zoom + half + 1;
+            minY = (cb.minY + cb.cameraOffsetY) / zoom - half - 1;
+            maxY = (cb.maxY + cb.cameraOffsetY) / zoom + half + 1;
+        }
+        return grid.walk(spriteEntities, spriteEntities.length, minX, minY, maxX, maxY);
     }
 
     _collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
