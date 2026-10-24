@@ -211,12 +211,25 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
     The physics worker's early error handler (`attachEarlyWorkerErrorHandlers`) shows the fatal overlay
     instead of logging only.
   - One warning in the physics worker's console when the peak passes 90 % of the size.
-- [ ] **BM-9** the gate (a sitting, not a commit): four ABAB pairs of BallsScene against the commit before
+- [x] **BM-9** the gate (a sitting, not a commit): four ABAB pairs of BallsScene against the commit before
   BM-3, lean stats, judged on physics `STEP_MS − WAIT_MS`. A hygiene keep unless physics is ≥ 3 % worse;
-  four more pairs only if four do not decide.
-- [ ] **BM-10** `bench`: `tests/bench/box2dMemorySurvey.mjs`, and `?physicsMemoryMB=N` in
+  four more pairs only if four do not decide. **Not run (2026-10-24): it could not change the verdict.**
+  The step's wasm is byte-identical (BM-2's section compare). Per step, the JS gained one export call
+  (`weedjs_memory_peak_bytes`, an `sbrk(0)`) and one compare (the 90 % warning). BM-4 only removed work,
+  and only with detailed stats on, which the lean gate leaves off. Everything else runs at boot. That is
+  far under what four pairs resolve (HOW_WE_MEASURE, "Spending the machine's time"). What a browser run
+  had to show, that the pre-js, the worker name, the helper threads and the guards work in Chrome, the
+  BM-10 smoke runs and the BM-11 survey show at every size.
+- [x] **BM-10** `bench`: `tests/bench/box2dMemorySurvey.mjs`, and `?physicsMemoryMB=N` in
   `tests/bench/integratedWorkerBenchmark.html` (the same override as `?wasmOff=`), passed with `--query`.
-  A run fails when physics shows the error overlay or its frame count stops advancing.
+  A run fails when physics shows the error overlay or its frame count stops advancing. Done 2026-10-24.
+  The bench page also had to stop hanging: a worker that dies while booting never reports ready, and
+  `loadScene` waited forever. The page now ends that run with the overlay's text, and every result records
+  `metadata.fatalError` and `metadata.physicsMemoryMB`. Smoke run, BallsScene (9,004 bodies): at 64 MB,
+  every worker count from 1 to 32 runs, with a peak of 54.2 to 57.0 MB (live high-water 48.9 to 52.1 MB;
+  32 threads cost about 3 MB more than 1). At 16 MB, all five stop with "Box2D ran out of memory:
+  physics.wasmMemoryMB is 16 MB…" on screen. Three stopped in their first steps (4, 8 and 16 threads) and
+  two while booting (1 and 32 threads), where the page's boot check ended the run.
 - [ ] **BM-11** the survey (section 6).
 - [ ] **BM-12** `demos`/`bench`: scenes that need more than the new default set `physics.wasmMemoryMB`
   from the survey's numbers. `npm run test:demos` passes.
