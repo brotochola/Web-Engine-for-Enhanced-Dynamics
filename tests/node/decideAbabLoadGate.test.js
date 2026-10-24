@@ -351,3 +351,26 @@ test('a zero baseline against a non-zero hypothesis fails the sitting', () => {
   assert.ok(d.reasons.includes('load ENTITIES_PROCESSED 0 -> 500'), JSON.stringify(d.reasons));
   assert.equal(d.verdict, 'FAIL (load)');
 });
+
+// ---------------------------------------------------------------------------
+// A load key as the owner (E-122): a deadline-bound search computes more per frame, its STEP_MS holds
+
+test('a load key named as the owner is the claim: judged higher-is-better, out of the drift check', () => {
+  // navStress: the particle worker runs to its 8 ms deadline either way; the flowfields it fits rise 6x.
+  const pairs = pairsWithLoad('particle', [8.5, 8.6, 8.4, 8.5], [8.4, 8.5, 8.5, 8.4],
+    'FLOWFIELDS_COMPUTED', [6.0, 6.1, 5.9, 6.0], [36.0, 37.5, 35.8, 36.4]);
+  const asLoad = decideAbab(pairs, 'particle');
+  assert.equal(asLoad.verdict, 'FAIL (load)', 'with a worker as the owner the count is load, and it moved');
+  const owned = decideAbab(pairs, 'FLOWFIELDS_COMPUTED');
+  assert.equal(owned.verdict, 'KEPT (product)');
+  assert.ok(owned.throughput.pairedDeltaPct > 400);
+  assert.equal(owned.throughput.higherFraction, 1);
+  assert.equal(owned.load.FLOWFIELDS_COMPUTED.mutedBy, 'owner');
+
+  const fewer = pairsWithLoad('particle', [8.5, 8.6, 8.4, 8.5], [8.4, 8.5, 8.5, 8.4],
+    'FLOWFIELDS_COMPUTED', [6.0, 6.1, 5.9, 6.0], [5.0, 5.1, 4.9, 5.2]);
+  assert.equal(decideAbab(fewer, 'FLOWFIELDS_COMPUTED').verdict, 'REGRESSION', 'fewer flowfields a frame');
+  const flat = pairsWithLoad('particle', [8.5, 8.6, 8.4, 8.5], [8.4, 8.5, 8.5, 8.4],
+    'FLOWFIELDS_COMPUTED', [6.0, 6.1, 5.9, 6.0], [6.1, 6.0, 6.0, 6.1]);
+  assert.equal(decideAbab(flat, 'FLOWFIELDS_COMPUTED').verdict, 'NEUTRAL');
+});

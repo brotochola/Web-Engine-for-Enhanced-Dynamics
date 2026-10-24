@@ -10,6 +10,10 @@
  *   node tests/bench/runPredatorAbab.mjs --name branch-vs-main --vs main --pairs 8
  *   node tests/bench/runPredatorAbab.mjs --name X2 --vs 1cbc02b1 --hyp-rev HEAD --owner preRender
  *
+ * --owner <LOAD_KEY> (FLOWFIELDS_COMPUTED, say): the claim is a throughput, higher is better, as with
+ * `--owner presented`: KEPT when it rises ≥ 3 % in ≥ 75 % of the pairs, REGRESSION when it falls as much; it
+ * is the claim, so it is left out of the load-drift check (a deadline-bound worker's STEP_MS cannot fall).
+ *
  * --hyp-rev <rev>: B is src/ from that revision in a worktree of its own, not the working tree, so
  * edits in the main folder while the sitting runs (another session's, an agent's) cannot reach it;
  * `--vs X --hyp-rev X` is an A/A of two directories.
@@ -370,6 +374,12 @@ export function decideAbab(pairs, owner, metric = null) {
     };
     load[key] = entry;
     if (belowFloor) continue;
+    // The owner's own key is the claim, not the load (see --owner <LOAD_KEY>).
+    if (key === owner) {
+      entry.gated = false;
+      entry.mutedBy = 'owner';
+      continue;
+    }
     if (!bothPresent) {
       reasons.push(`load ${key} missing`);
       continue;
@@ -430,6 +440,25 @@ export function decideAbab(pairs, owner, metric = null) {
       );
     }
   }
+  // --owner <LOAD_KEY>: a throughput, judged like the presented frames (higher is better).
+  let throughput = null;
+  if (owner && LOAD_KEYS.includes(owner) && load[owner] && !load[owner].belowFloor) {
+    const deltas = pairs.map((p) => pctDelta(p.B[owner], p.A[owner])).filter(Number.isFinite);
+    if (deltas.length === pairs.length && pairs.length > 0) {
+      throughput = {
+        key: owner,
+        baseMedian: load[owner].base,
+        hypMedian: load[owner].hyp,
+        pairedDeltaPct: median(deltas),
+        deltas,
+        higherFraction: deltas.filter((d) => d > 0).length / deltas.length,
+        lowerFraction: deltas.filter((d) => d < 0).length / deltas.length,
+      };
+      if (throughput.pairedDeltaPct <= -3 && throughput.lowerFraction >= CONSISTENT) {
+        regress.push(`${owner} ${throughput.pairedDeltaPct.toFixed(1)}% (${Math.round(throughput.lowerFraction * deltas.length)}/${deltas.length} pairs lower)`);
+      }
+    }
+  }
   let verdict = 'NEUTRAL';
   const o = owner && owner !== 'presented' ? kinds[owner] : null;
   // An owner below the floor cannot earn a KEPT verdict. It is not that the
@@ -443,6 +472,8 @@ export function decideAbab(pairs, owner, metric = null) {
     verdict = 'KEPT (product)';
   } else if (owner === 'presented' && presented && presented.pairedDeltaPct >= 3
     && presented.higherFraction >= CONSISTENT) {
+    verdict = 'KEPT (product)';
+  } else if (throughput && throughput.pairedDeltaPct >= 3 && throughput.higherFraction >= CONSISTENT) {
     verdict = 'KEPT (product)';
   }
 
@@ -478,7 +509,7 @@ export function decideAbab(pairs, owner, metric = null) {
     }
   }
 
-  return { verdict, owner, ownerJudged, metric, attributed, kinds, presented, load, reasons, muted, regress, noisy, belowFloor };
+  return { verdict, owner, ownerJudged, metric, attributed, kinds, presented, throughput, load, reasons, muted, regress, noisy, belowFloor };
 }
 
 async function main() {
@@ -684,6 +715,13 @@ function printDecision(name, decision) {
     }
     console.log(
       `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%`
+    );
+  }
+  if (decision.throughput) {
+    const tp = decision.throughput;
+    console.log(
+      `owner ${tp.key} ${tp.baseMedian.toFixed(1)} → ${tp.hypMedian.toFixed(1)}  paired ${tp.pairedDeltaPct >= 0 ? '+' : ''}${tp.pairedDeltaPct.toFixed(1)}%  ` +
+        `higher ${Math.round(tp.higherFraction * tp.deltas.length)}/${tp.deltas.length}`,
     );
   }
   if (decision.presented) {
