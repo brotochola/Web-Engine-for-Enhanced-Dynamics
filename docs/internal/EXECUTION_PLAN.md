@@ -926,13 +926,17 @@ Kernel +99.8 % (25/25, Node); Chrome `SHADOW_Q_MS` 2.6–2.8 → 1.9–2.0 ms. *
 pre-render 5.287 → 4.692 ms, −10.3 %, worse 0/4**, every other worker within the session's A/A.
 Report: [`reports/E-114-shadow-stamp-wasm.md`](./reports/E-114-shadow-stamp-wasm.md).
 
-### E-113 Queue columns a multiple of 4 KB apart alias in cache — **open (found in E-112)**
+### E-113 Queue columns a multiple of 4 KB apart alias in cache — **kept (kernel), 2026-10-24**
 At a render-queue capacity that is a multiple of 1 024 every float column of a row falls in one L1 set: in E-112's
 kernel, capacity 32 768 against 33 000 moved the JS emit +11 % and the C emit 2.4×. Predator's capacity (119 298)
 does not alias; proceduralTree's 8 192 does, and component columns do the same at entity totals at or next to a
 multiple of 1 024 (queryChurn, spawnStorm: 8 193). Candidate: each queue column starts a cache line after the last
 (`renderQueueLayout` is the one layout), and `Component.initializeArrays` likewise if a scene shows it. Measure on
 a scene at an aliased capacity.
+**Done (2026-10-24, the queue):** each column starts a line past a line boundary (`renderQueueLayout.js`).
+The shipped emit at 32 768: C 900.8 → 2 162.0 ops/s (2.4×), JS +11.7 %; at Predator's 119 298 +1.4 % and +0.8 %.
+Left: the component columns (with `physicsHostImpl.js`'s mirrored layouts), and a scene at an aliased capacity
+with the next Predator gate.
 
 ### E-112 Pre-render's emit in WASM (E-76 W4a) — **KEPT (product), 2026-10-23**
 `wasm/preRenderEmit.c` writes `emitSpriteQueue`'s full-emit rows for sprites and decorations on the render-queue
