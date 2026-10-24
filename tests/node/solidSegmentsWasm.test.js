@@ -26,6 +26,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { POLAR_BINS } from '../../src/render/visibility/angularSweep.js';
+import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { gridCompound } from '../bench/compoundSolidMicrobench.mjs';
 import { mulberry32 } from '../bench/benchMath.js';
 import {
@@ -39,6 +40,7 @@ import {
   createSolidSegmentsKernel,
   jsLightReference,
   ringTriangles,
+  sceneFrames,
   sceneGate,
   spanEdgeBins,
   trianglesCompound,
@@ -455,6 +457,24 @@ test('mutant: an owner off by one is caught', () => {
     assert.equal(s.flips, 0, v);
     assert.ok(s.ownerMismatch > 0, `${v}: ${s.ownerMismatch}`);
   }
+});
+
+test('the shipped solidSegments.wasm writes the screening module\'s f32x4 bits', async () => {
+  const k = await createSolidSegmentsKernel({ solidBytes: 8 << 20 });
+  const url = new URL('../../src/render/visibility/solidSegments.wasm', import.meta.url);
+  const shipped = (await loadWasmKernel('solidSegments', url, k.memory, ['collect_solid_f32x4'])).collect_solid_f32x4;
+  const cases = [...corpus(), ...binEdgeCases(), ...slackCases(200)];
+  for (const frame of sceneFrames({ entityBase: 2000 }).frames) {
+    frame.forEach(({ light, calls }, l) => cases.push({ name: `scene light ${l}`, light, calls }));
+  }
+  let stamped = 0;
+  for (const c of cases) {
+    const ref = wasmLight(k, k.fns.f32x4, c.light, c.calls);
+    const got = wasmLight(k, shipped, c.light, c.calls);
+    assert.deepEqual(got, ref, c.name);
+    if (ref.active) stamped++;
+  }
+  assert.ok(stamped > 1000, `${stamped} of ${cases.length} lights stamped bins`);
 });
 
 test('an empty solid and n = 0 return 0 and stamp nothing', () => {

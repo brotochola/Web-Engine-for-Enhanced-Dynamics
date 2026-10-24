@@ -238,6 +238,15 @@
       "maxMemoryPages": 8192
     },
     {
+      "name": "solidSegments",
+      "source": "wasm/solidSegments.c",
+      "output": "src/render/visibility/solidSegments.wasm",
+      "exports": [
+        "collect_solid_f32x4"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
       "name": "decalPremultiply",
       "source": "wasm/decalPremultiply.c",
       "output": "src/render/decalPremultiply.wasm",

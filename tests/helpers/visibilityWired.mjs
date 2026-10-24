@@ -2,7 +2,8 @@
 // visibility kernels (E-76 W2a, W1): the worker initialized through its own init path with raycasted lighting
 // and a config's wasm switches, a scene of lights, boxes, circles, convex polygons and compound rings (the
 // fixture pool) written into the component arrays and the neighbour rows, one buildVisibilityPolygons, and
-// what it published: every light's polygon slot and the self-lit list.
+// what it published: every light's polygon slot and the self-lit list. makeScene's `ringSegments` may be a
+// list (one entry per ring, cycled).
 //
 // Users: tests/node/visibilityKernelsWired.test.js.
 import { Collider } from '../../src/components/collider.js';
@@ -25,7 +26,7 @@ export const WORLD_W = 2400;
 export const WORLD_H = 1800;
 
 /** compoundVisIsland's ring: `segments` quads between innerR and outerR, two CCW triangles each. */
-function ringTriangles(segments, outerR, innerR) {
+export function ringTriangles(segments, outerR, innerR) {
   const pt = (i, r) => {
     const a = ((i % segments) / segments) * Math.PI * 2;
     return [Math.cos(a) * r, Math.sin(a) * r];
@@ -72,7 +73,8 @@ export function makeScene(seed, {
     }
     occ('polygon', { px, py });
   }
-  for (let i = 0; i < rings; i++) occ('ring', { tris: ringTriangles(ringSegments, 80, 32) });
+  const segs = [].concat(ringSegments);
+  for (let i = 0; i < rings; i++) occ('ring', { tris: ringTriangles(segs[i % segs.length], 80, 32) });
   const fixtures = ents.reduce((n, e) => n + (e.tris ? e.tris.length : 0), 0);
   return { ents, lights, entities: ents.length, fixtures };
 }
@@ -87,12 +89,16 @@ function bounce(x0, v, t, lo, hi) {
 
 /**
  * The worker, initialized for `scene` with `wasm` (merged over the defaults the worker reads: a switch left
- * out is on). `maxVerts` is lighting.maxPolygonVertices; `maxNeighbors` the neighbour rows' width.
+ * out is on). `maxVerts` is lighting.maxPolygonVertices; `maxNeighbors` the neighbour rows' width;
+ * `fixtureSlack` fixtures past the scene's in the pool; `fixtures: false` no fixture pool at all.
  */
-export async function bootPreRender(scene, { wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, raycasted = true } = {}) {
+export async function bootPreRender(scene, {
+  wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, raycasted = true, fixtureSlack = 16, fixtures: withPool = true,
+} = {}) {
   const N = scene.entities;
   const maxLights = Math.max(1, scene.lights);
-  const fixturePool = Math.max(16, scene.fixtures + 16);
+  const fixturePool = Math.max(16, scene.fixtures + fixtureSlack);
+  if (!withPool) ColliderFixture.reset();
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const { buffers, gridMetadata } = spatialBuffers({
     worldWidth: WORLD_W, worldHeight: WORLD_H, cellSize: 128, maxEntitiesPerCell: 64, maxNeighbors,
@@ -130,13 +136,13 @@ export async function bootPreRender(scene, { wasm = {}, maxVerts = 512, maxNeigh
       worldWidth: WORLD_W,
       worldHeight: WORLD_H,
       lighting: { enabled: true, raycasted, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit },
-      physics: { maxFixturePoolSize: fixturePool },
+      physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
       wasm,
     },
     globalEntityCount: N,
     buffers,
     gridMetadata,
-    extra: { visibilityPolygons: raycasted ? vp : null, fixtures },
+    extra: { visibilityPolygons: raycasted ? vp : null, fixtures: withPool ? fixtures : null },
   });
   bindPoseColumns(N);
   // The frame loop's selectWriteBuffers picks the write slots; a first init leaves the self-lit one unset.
@@ -144,17 +150,21 @@ export async function bootPreRender(scene, { wasm = {}, maxVerts = 512, maxNeigh
   return { pre, scene, maxVerts, maxNeighbors, slotBytes };
 }
 
-/** Write the scene at time t into the component arrays, the fixture pool and the neighbour rows. */
-export function writeFrame(boot, t) {
-  const { pre, scene, maxNeighbors } = boot;
+/**
+ * Write the scene at time t into the component arrays, the fixture pool and the neighbour rows. `scene` (the
+ * boot's by default, the same entity count) and `revision` (the fixture pool's) model a remesh between frames.
+ */
+export function writeFrame(boot, t, { scene = boot.scene, revision = 7 } = {}) {
+  const { pre, maxNeighbors } = boot;
   const { ents } = scene;
   const N = scene.entities;
+  if (N !== boot.scene.entities) throw new Error('writeFrame: another entity count');
   for (const C of [Transform, Collider, LightEmitter, LightOccluder]) C.active.fill(0);
   Collider.fixtureCount.fill(0);
   ColliderFixture.active.fill(0);
   ColliderFixture.next.fill(NONE);
   ColliderFixture.head.fill(NONE);
-  ColliderFixture.revision[0] = 7;
+  ColliderFixture.revision[0] = revision;
   let fixture = 0;
   const pos = [];
   ents.forEach((e, i) => {

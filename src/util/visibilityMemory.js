@@ -10,9 +10,16 @@
 // (lighting.maxPolygonVertices), angularSweep.js' own event, cache and active caps (SWEEP_CAPS: the kernel
 // gives up where the JS does), the entity count (seen stamps). The per-light scratch is reused light after
 // light, so lighting.maxLights does not size anything here.
+//
+// W1 adds solidSegments.wasm's context table and bin tables, and the compound solids' copies of their
+// outline (solid.seg) and walk order (solid.chain), 20 bytes an edge. An outline edge is a fixture's edge
+// seen once, so every solid together holds at most the fixture pool's vertices: physics.maxFixturePoolSize x
+// MAX_POLYGON_VERTICES edges (capped at SOLID_REGION_CAP; a solid that does not fit rasters in JS, on the
+// same bins). No fixture pool, no compound solid, no W1 regions.
 
 import { POLAR_BINS, SWEEP_CAPS } from '../render/visibility/angularSweep.js';
-import { NULL_GUARD_BYTES, layoutRegions } from './wasmMemoryMap.js';
+import { MAX_POLYGON_VERTICES } from './configDefaults.js';
+import { NULL_GUARD_BYTES, alignToLine, layoutRegions } from './wasmMemoryMap.js';
 
 // The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
 const WASM_MAX_PAGES = 8192;
@@ -21,16 +28,32 @@ export const VISIBILITY_SWEEP_TABLE_SLOTS = 58;
 export const VISIBILITY_SWEEP_RESULT_WORDS = 11;
 /** Doubles at the sweep's consts region. */
 const SWEEP_CONSTS = 3;
+/** solidSegments.c's context table slots (solidSegmentsClient.js names them). */
+export const SOLID_CTX_SLOTS = 8;
+/** One outline edge's copy: four floats of solid.seg and its solid.chain entry. */
+export const SOLID_EDGE_BYTES = 20;
+/** The solids' copies stop here (64 MB); past it a solid rasters in JS. */
+export const SOLID_REGION_CAP = 64 << 20;
+/** The float cos/sin tables carry four entries past the last bin (four-lane loads at bin 511). */
+const SOLID_F32_PAD = 4;
+
+/** The solids region for a fixture pool: every outline edge it can make, capped. */
+export function solidRegionBytes(fixtures) {
+  const edges = Math.max(0, fixtures | 0) * MAX_POLYGON_VERTICES;
+  return Math.min(alignToLine(edges * SOLID_EDGE_BYTES), SOLID_REGION_CAP);
+}
 
 /**
  * The visibility memory's regions, in order, each on a cache line.
- * @param {{ maxOccluders: number, poolVerts: number, maxVerts: number, entities: number }} opts
+ * @param {{ maxOccluders: number, poolVerts: number, maxVerts: number, entities: number, fixtures?: number }} opts
+ *   fixtures: the fixture pool (ColliderFixture.maxCount); 0 leaves the compound raster's regions out
  */
-export function visibilityMemoryRegions({ maxOccluders, poolVerts, maxVerts, entities }) {
+export function visibilityMemoryRegions({ maxOccluders, poolVerts, maxVerts, entities, fixtures = 0 }) {
   const occ = Math.max(1, maxOccluders | 0);
   const pool = Math.max(4, poolVerts | 0);
   const out = Math.max(1, maxVerts | 0);
   const owners = Math.max(1, entities | 0);
+  const solidBytes = solidRegionBytes(fixtures);
   const { maxEvents, occCache, maxActive, fullCircleSegs } = SWEEP_CAPS;
   const angles = POLAR_BINS * 2 + 1;
   const list = [{ name: 'guard', owner: 'nobody (address 0)', bytes: NULL_GUARD_BYTES }];
@@ -79,14 +102,25 @@ export function visibilityMemoryRegions({ maxOccluders, poolVerts, maxVerts, ent
   add('polarCos', angles * 8);
   add('polarSin', angles * 8);
   add('polarPseudo', angles * 8);
+  if (solidBytes > 0) {
+    // W1: the compound raster's context, its active word, its bin tables, the solids' copies.
+    add('solidCtx', SOLID_CTX_SLOTS * 4);
+    add('solidActive', 4);
+    add('solidCos', POLAR_BINS * 8);
+    add('solidSin', POLAR_BINS * 8);
+    add('solidCosF', (POLAR_BINS + SOLID_F32_PAD) * 4);
+    add('solidSinF', (POLAR_BINS + SOLID_F32_PAD) * 4);
+    add('solidTan', 65 * 8);
+    add('solids', solidBytes);
+  }
   const map = layoutRegions(list);
-  return { ...map, sizes: { occ, pool, out, owners } };
+  return { ...map, sizes: { occ, pool, out, owners, solidBytes } };
 }
 
 /**
  * The memory, its layout and the JS views pre-render binds its scratch to. null when it would pass the
  * module's page limit or cannot be made (no SharedArrayBuffer): pre-render then sweeps in JS.
- * @param {{ maxOccluders: number, poolVerts: number, maxVerts: number, entities: number }} opts
+ * @param {{ maxOccluders: number, poolVerts: number, maxVerts: number, entities: number, fixtures?: number }} opts
  */
 export function createVisibilityMemory(opts) {
   const map = visibilityMemoryRegions(opts);
@@ -99,9 +133,9 @@ export function createVisibilityMemory(opts) {
   }
   const buffer = memory.buffer;
   const r = map.regions;
-  const { occ, pool, out, owners } = map.sizes;
+  const { occ, pool, out, owners, solidBytes } = map.sizes;
   const view = (Ctor, name, n) => new Ctor(buffer, r[name].byte, n);
-  const layout = { maxOccluders: occ, poolVerts: pool, maxVerts: out, entities: owners };
+  const layout = { maxOccluders: occ, poolVerts: pool, maxVerts: out, entities: owners, solidBytes };
   for (const [name, region] of Object.entries(r)) layout[`${name}Byte`] = region.byte;
   return {
     memory,

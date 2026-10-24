@@ -327,6 +327,8 @@ export type SceneConfig = Record<string, unknown> & {
     visibilitySweep?: boolean;
     /** The sweep in float32 (default) or, false, in double precision. Needs visibilitySweep. */
     visibilitySweepF32?: boolean;
+    /** Pre-render's raster of compound occluders (fixture pools) into the visibility bins. Needs visibilitySweep. */
+    solidSegments?: boolean;
   };
 };
 

@@ -506,6 +506,12 @@ export const WASM_DEFAULTS = Object.freeze({
    * vertex's distance from the light); false runs its double SIMD export instead. Needs visibilitySweep.
    */
   visibilitySweepF32: true,
+  /**
+   * Pre-render's compound-solid raster into the polar bins (`solidSegments.wasm`, W1), with a fixture pool: each
+   * solid's outline copied into the visibility memory when it is built. Runs in the sweep's light loop, so it
+   * needs visibilitySweep.
+   */
+  solidSegments: true,
 });
 
 // ============================================================================

@@ -834,6 +834,13 @@ export function ensureCompoundSolid(
       // Pre-render's walk order over seg (E-61), built on its first use.
       chain: new Int32Array(64),
       chainValid: false,
+      // W1: where pre-render's solid raster kernel has its copy of seg and chain (solidSegmentsClient.js):
+      // the byte offsets, the edges the slot holds, and the revision and memory epoch it was copied at.
+      wasmSegByte: 0,
+      wasmChainByte: 0,
+      wasmCap: 0,
+      wasmRevision: -1,
+      wasmEpoch: -1,
     };
     // Fill the gap so the array stays packed: a first write past ~1024 empty
     // slots turns it into a dictionary, and every cache hit then costs a hash
@@ -986,6 +993,11 @@ function chainSolidSegments(solid) {
   solid.chainValid = true;
 }
 
+/** W1. The solid's walk order (solid.chain), built if it is not, for a kernel that copies it. */
+export function ensureSolidChain(solid) {
+  if (!solid.chainValid) chainSolidSegments(solid);
+}
+
 /**
  * World-space boundary edges of a solid that overlap the light disc.
  * `owner` is the id the bins this solid wins record (N-19): an integer, passed
@@ -1093,6 +1105,22 @@ export function clearPolarBins(radius) {
 
 export function polarBinsActive() {
   return _polarActive;
+}
+
+/** W1. A kernel stamped the bins (solidSegments.wasm's active word): what rasterPolarSpan records. */
+export function markPolarBinsActive() {
+  _polarActive = 1;
+}
+
+/** W1. Each bin's centre ray (stampPolarBin's _polarCos / _polarSin at 2b + 1), copied for a kernel. */
+export function polarCentreTables() {
+  const cos = new Float64Array(POLAR_BINS);
+  const sin = new Float64Array(POLAR_BINS);
+  for (let b = 0; b < POLAR_BINS; b++) {
+    cos[b] = _polarCos[2 * b + 1];
+    sin[b] = _polarSin[2 * b + 1];
+  }
+  return { cos, sin };
 }
 
 /**

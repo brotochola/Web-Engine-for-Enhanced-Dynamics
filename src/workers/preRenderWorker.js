@@ -44,6 +44,13 @@ import {
     SWEEP_R_SEEN_VALID,
     SWEEP_R_STAMP,
 } from '../render/visibility/visibilitySweepClient.js';
+import {
+    SOLID_ARGS,
+    bindSolidSegments,
+    collectSolidJs,
+    collectSolidWasm,
+    unbindSolidSegments,
+} from '../render/visibility/solidSegmentsClient.js';
 import { createVisibilityMemory } from '../util/visibilityMemory.js';
 import { Grid as GridImport } from '../core/grid.js';
 import { Sun } from '../core/sun.js';
@@ -610,6 +617,8 @@ class PreRenderWorker extends AbstractWorker {
         // memory pre-render makes for it; null sweeps in JS.
         this._visSweep = null;
         this._visMemory = null;
+        // W1: the swept light loop's compound raster, solidSegments.wasm (collectSolidWasm) or the JS.
+        this._visCollectSolid = collectSolidJs;
         this._decorationZoomAlpha = 1;
         this._emitWriteCount = 0;
         this._emptyAdobeEntities = null;
@@ -1144,6 +1153,8 @@ class PreRenderWorker extends AbstractWorker {
         // so a scene on the JS path binds what it always did.
         this._visSweep = null;
         this._visMemory = null;
+        this._visCollectSolid = collectSolidJs;
+        unbindSolidSegments();
         bindPolarBins(null, null);
         if (
             data.visibilityPolygons &&
@@ -1233,6 +1244,8 @@ class PreRenderWorker extends AbstractWorker {
      * bins, the seen stamps, the sweep's scratch) and bind visibilitySweep.wasm on it (wasm.visibilitySweepF32
      * picks the float32 sweep or the double SIMD one). Returns the views the scratch binds to, or null: the
      * memory could not be made or the module did not load, and the JS sweep runs on plain arrays.
+     * W1: with a fixture pool and wasm.solidSegments on, the memory also holds the compound solids' outlines
+     * and solidSegments.wasm rasters them into its bins (the swept loop only: W1 needs W2a).
      */
     async _bindVisibilitySweep(maxOccluders, poolVerts, maxVerts) {
         const vm = createVisibilityMemory({
@@ -1240,6 +1253,7 @@ class PreRenderWorker extends AbstractWorker {
             poolVerts,
             maxVerts,
             entities: this.globalEntityCount,
+            fixtures: this.config?.wasm?.solidSegments !== false ? (ColliderFixture.maxCount | 0) : 0,
         });
         if (!vm) {
             console.warn('[PRE_RENDER] the visibility memory could not be made; sweeping in JS');
@@ -1255,6 +1269,13 @@ class PreRenderWorker extends AbstractWorker {
         this._visSweep = sweep;
         this._visMemory = vm.memory;
         bindPolarBins(vm.views.polarDist, vm.views.polarOwner);
+        if (vm.layout.solidBytes > 0) {
+            try {
+                if (await bindSolidSegments(vm)) this._visCollectSolid = collectSolidWasm;
+            } catch (err) {
+                console.warn('[PRE_RENDER] solidSegments.wasm did not load; compound solids raster in JS', err);
+            }
+        }
         return vm.views;
     }
 
@@ -4939,6 +4960,8 @@ class PreRenderWorker extends AbstractWorker {
         const sweepTableByte = sweepK.tableByte;
         const sweepResults = sweepK.results;
         const ownerSeenByte = sweepK.ownerSeenByte;
+        // W1: solidSegments.wasm or collectSolidSegments, bound at init; the doubles go through SOLID_ARGS.
+        const collectSolid = this._visCollectSolid;
 
         const entityLastTextureId = this.entityLastTextureId;
         const maxSelfLit = this._selfLitMax || 0;
@@ -4977,6 +5000,9 @@ class PreRenderWorker extends AbstractWorker {
             const lx = pose[0];
             const ly = pose[1];
             const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
+            SOLID_ARGS[6] = lx;
+            SOLID_ARGS[7] = ly;
+            SOLID_ARGS[8] = influenceRadius * influenceRadius;
 
             let occCount = 0;
             let vertPool = 0;
@@ -5029,10 +5055,13 @@ class PreRenderWorker extends AbstractWorker {
                             fixtureHead[nIdx], fixturePoolMax,
                             false // segments only: the fill is pixi's (self-lit)
                         );
-                        const hit = collectSolidSegments(
-                            solid, wx, wy, c, s, ox, oy,
-                            lx, ly, influenceRadius * influenceRadius, nIdx
-                        );
+                        SOLID_ARGS[0] = wx;
+                        SOLID_ARGS[1] = wy;
+                        SOLID_ARGS[2] = c;
+                        SOLID_ARGS[3] = s;
+                        SOLID_ARGS[4] = ox;
+                        SOLID_ARGS[5] = oy;
+                        const hit = collectSolid(solid, nIdx);
                         if (hit > 0 && selfLitI32 && selfLitCount < maxSelfLit) {
                             const byteOff = 4 + selfLitCount * selfLitItemBytes;
                             const i32Off = byteOff >> 2;
