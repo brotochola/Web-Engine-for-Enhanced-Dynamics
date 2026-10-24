@@ -805,7 +805,7 @@ so completions counted against submissions pace it without a closure per frame. 
 (`e55c15a0`): presented frames **43.4 → 60.0 fps, +38.4 %, 4/4**. The renderer's mean step rose 29 %; a CPU
 trace puts Pixi at 3.2 → 2.9 ms per presented frame (it draws 46 % more of them).
 
-### E-98 Pre-render's full emit at 250 000 sprites takes more than a frame — **E-98a kept; open**
+### E-98 Pre-render's full emit at 250 000 sprites takes more than a frame — **closed 2026-10-24: 21.1 → 5.17 ms**
 Paced, `bunnyMarkScene`'s Pixi draws 60 frames a second and pre-render's step per worked frame is
 ~21 ms (a detailed run: `COLLECT_MS` 14.3, `EMIT_MS` 4.7), so fewer new queues than frames. The CPU
 profile: `_writeRenderable` 18 %, `_writeType0PosesOnly` 13 %, `_storeEntitySortY` 12 %,
@@ -848,6 +848,9 @@ after every row passed, so a walk that misses late does not advance them twice):
 Predator's chain after it (fresh profile, 2026-10-23: `emitSpriteQueue` 17.2 %, `collectVisibleEntities` 9.6 %,
 `_storeEntitySortY` 5.1 %, `_displayPose` 5.0 %, `_writeQueueShadow` 4.1 % of pre-render; the shadow stamp
 chain 37 %).
+**Closed (2026-10-24):** after the persist series in C (E-115 to E-117) BunnyMark's pre-render is 5.17 ms per new queue,
+under a frame. A CPU profile then put `collectVisibleEntities` at 69.9 % self of pre-render (its inlined row writes) and
+the persist kernel at 26.1 %: the rest is W4b, the collect in C (E-128 answered: W3 folds into it).
 
 ### E-104 Query type masks walked in BigInt — **KEPT (hygiene)** (`564fccc4`)
 Every frame the logic worker publishes the precomputed queries, and `copyActiveMatchesToBuffer` walked each
@@ -868,6 +871,13 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
+
+### E-123 Pixi's plain sprite pack in WASM, re-gated on one build (E-76 W9d) — **KEPT (product), 2026-10-24**
+W9d behind `wasm.pixiPack` (`6d9c7258`), timed with `--query-a wasmOff=pixiPack` on one worktree. Uploading from the
+shared rows cost every worker the change cannot reach about 6 % in Predator (physics +9.5 %, spatial +6.3 %, 4/4), the
+flag that had sunk W9d. With the rows copied into the batch's own array before the upload (`365c4b60`): Predator renderer
+4.864 → 3.980 ms, −10.6 % (3/4), −5.4 % against the unreachable workers (4/4), nothing regressed. Lesson for every GPU
+upload: copy out of shared memory first (W11's mesh batches upload from shared views).
 
 ### E-122 The flowfield search in WASM (E-76 W14) — **KEPT (product), 2026-10-24**
 An agent's `wasm/test/navFlowfield.c` (`f0237dd0`): `computeFlowfield`'s search, walls' pass and smoothing,
