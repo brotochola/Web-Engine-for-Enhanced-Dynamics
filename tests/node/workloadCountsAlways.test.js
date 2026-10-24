@@ -72,6 +72,18 @@ test('physics writes HEAP_USED_KB before the detailed-stats gate', () => {
   assert.ok(heap >= 0 && gate >= 0 && heap < gate);
 });
 
+test('physics reads mallinfo, the awake count and the moved list once per stats write (BM-4)', () => {
+  // The detailed block used to read all three again after the always-on block had written them;
+  // mallinfo walks every chunk under the heap lock.
+  const src = readSrc('src/box2d/weedjsPost.js');
+  const start = src.indexOf('function writePhysicsStats');
+  const fn = src.slice(start, src.indexOf('\n  function ', start + 1));
+  const count = (needle) => fn.split(needle).length - 1;
+  assert.equal(count('weedjsHeapBytesUsed()'), 1);
+  assert.equal(count('_getAwakeBodyCount('), 1);
+  assert.equal(count('getMovedBodiesViews()'), 1);
+});
+
 test('preRender writes VISIBLE_ENTITIES before the detailed-stats gate', () => {
   const block = reportBlock(readSrc('src/workers/preRenderWorker.js'), 'reportFPS() {');
   const visible = block.indexOf('PRE_RENDER_STATS.VISIBLE_ENTITIES');

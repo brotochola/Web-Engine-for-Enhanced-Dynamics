@@ -155,9 +155,11 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   is `hot.sab.byteLength`, already in the report, so there is no total stat. Done 2026-10-24:
   `tests/node/box2dMemoryPeak.wasm.test.js` runs the real export (the break starts above zero, rises past
   an 8 MB block, and a free does not lower it); the report test reads a 2 GB peak, past int32.
-- [ ] **BM-4** `refactor(physics)`: with detailed stats on, `writePhysicsStats` calls mallinfo (a walk
+- [x] **BM-4** `refactor(physics)`: with detailed stats on, `writePhysicsStats` calls mallinfo (a walk
   of every chunk under the heap lock) a second time per step for the two values the always-on block has
-  just written (both in `writePhysicsStats`, `weedjsPost.js`). The second call goes.
+  just written (both in `writePhysicsStats`, `weedjsPost.js`). The second call goes. Done 2026-10-24: the
+  detailed block also re-read the awake count and the moved list the same way; all three copies went, and
+  `workloadCountsAlways.test.js` checks each is read once per stats write.
 - [ ] **BM-5** `build(box2d)`: ship BM-2's artifacts. The default stays 512 MB, so behaviour does not
   change. A Node test checks that the shipped `.wasm` imports a shared memory of [256, 32768] pages, that
   it links at 1024 pages, and that the pre-js block of the shipped glue, run in a `vm` context, sizes the

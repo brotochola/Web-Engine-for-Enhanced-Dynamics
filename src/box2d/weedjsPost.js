@@ -2594,27 +2594,6 @@
     } else {
       statsF32[PS.WEED_JOINTS] = 0;
     }
-    if (typeof weedjsHeapBytesUsed === 'function') {
-      const usedKb = ((weedjsHeapBytesUsed() | 0) / 1024) | 0;
-      if (usedKb > heapHighWaterKb) heapHighWaterKb = usedKb;
-      statsF32[PS.HEAP_USED_KB] = usedKb;
-      statsF32[PS.HEAP_HIGH_WATER_KB] = heapHighWaterKb;
-    } else {
-      statsF32[PS.HEAP_USED_KB] = 0;
-      statsF32[PS.HEAP_HIGH_WATER_KB] = heapHighWaterKb;
-    }
-
-    const movedViews =
-      typeof Box2dMovedBodies !== 'undefined' && Box2dMovedBodies.getMovedBodiesViews
-        ? Box2dMovedBodies.getMovedBodiesViews()
-        : null;
-    statsF32[PS.BODY_MOVED_COUNT] = movedViews ? movedViews.count | 0 : 0;
-
-    if (world && typeof world._getAwakeBodyCount === 'function') {
-      statsF32[PS.AWAKE_COUNT] = world._getAwakeBodyCount(world.worldId) | 0;
-    } else {
-      statsF32[PS.AWAKE_COUNT] = 0;
-    }
 
     const profile = world && world._profile;
     if (profile && profile.length >= 5) {
