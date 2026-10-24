@@ -164,6 +164,17 @@
         "compute_flowfield"
       ],
       "maxMemoryPages": 8192
+    },
+    {
+      "name": "preRenderCollect",
+      "source": "wasm/test/preRenderCollect.c",
+      "output": "tests/fixtures/wasm/preRenderCollect.wasm",
+      "exports": [
+        "collect_sprites",
+        "collect_sprites_turned"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
