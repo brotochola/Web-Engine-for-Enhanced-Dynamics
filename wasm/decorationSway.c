@@ -1,10 +1,10 @@
-/* Decoration sway (E-76 W22, a candidate kernel): the per-decoration loop of
+/* Decoration sway (E-76 W22): the per-decoration loop of
    ParticleWorker._updateDecorationSwayBuckets (src/workers/particleWorker.js) over the frame's active
    snapshot, with its bucket cache (bucketFromSwayFrequency on a miss) and the impulse phase step
    (advanceImpulsePhase). Every array is a byte offset into the imported shared memory, read from a table
-   of u32 offsets (SWAY_SLOTS in tests/bench/decorationSwayWasmMicrobench.mjs): the DecorationComponent
-   columns, which the product keeps in a region of the render-queue memory (E-112), and the particle
-   worker's snapshot, phase tables, bucket tables and cache. What stays JS: the frame's per-bucket
+   of u32 offsets (SWAY_SLOTS in src/workers/decorationSwayClient.js): the DecorationComponent columns,
+   which the scene keeps in a region of the render-queue memory (E-112), and the particle worker's
+   snapshot, phase tables, bucket tables and cache, in its sway regions there. What stays JS: the frame's per-bucket
    Math.sin / Math.cos and the cache reset when the bucket count changes (before the call), and every
    Math.sin / Math.cos the loop takes per decoration (after it). Those decorations come back in the trig
    list with their angle, and the kernel writes neither rotC nor rotS for them: an impulse with a finite,

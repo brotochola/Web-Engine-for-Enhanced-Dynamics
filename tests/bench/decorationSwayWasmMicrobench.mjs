@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W22): the particle worker's decoration sway in WASM (wasm/test/decorationSway.c, a test
+ * Kernel (E-76 W22): the particle worker's decoration sway in WASM (wasm/decorationSway.c, src/workers/decorationSway.wasm, a
  * module) against the shipped ParticleWorker._updateDecorationSwayBuckets, on a real particle worker with
  * Predator's grass.
  *
  *   js    ParticleWorker.updateDecorationSway (shipped), as update() calls it every frame: its bucket
  *         path, _updateDecorationSwayBuckets
- *   wasm  swayDecorationsWasm below, what a product wrapper would do per call: the same guards, the
- *         per-bucket Math.sin / Math.cos and the cache reset in JS, one sway_decorations call, then
- *         Math.sin / Math.cos for the decorations the kernel lists (none of Predator's)
+ *   wasm  the same call with the kernel bound (worker._swayWasm, as its initialize binds it on the
+ *         render-queue memory): the per-bucket Math.sin / Math.cos and the cache reset in JS, then
+ *         _swayFrameWasm (the column table, one sway_decorations call, Math.sin / Math.cos for the
+ *         decorations the kernel lists, none of Predator's). swayDecorationsWasm below is the same
+ *         around a fixed table, for the parity test.
  *
  * Predator's decorations: 20 000 grass blades spawned through the shipped DecorationPool.spawn (what
  * Decoration.spawn calls) with predatorScene.js's spawnGrass config: SWAY_LOOP_SKEW, amplitude 0.05–0.08,
@@ -34,30 +36,19 @@
  *
  * --on-screen is the share of the world's width in view (1: every blade on screen, Q3's fixture).
  */
-import path from 'node:path';
-import { pathToFileURL } from 'node:url';
-
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
 import { SWAY_ANGLE_PER_MS, swayFrequencyForBucket } from '../../src/util/decorationSway.js';
-import { loadWasmKernel } from '../../src/util/wasmKernel.js';
+import { bindDecorationSway, SWAY_SLOTS, TRIG_IMPULSE } from '../../src/workers/decorationSwayClient.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
-const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../fixtures/wasm/decorationSway.wasm'));
 
-/** decorationSway.c's table, slot for slot. */
-export const SWAY_SLOTS = [
-  'snapshot', 'active', 'parent', 'parentWide', 'noParent', 'onScreen', 'sway', 'amplitude', 'frequency', 'phase',
-  'rotC', 'rotS', 'baseRotC', 'baseRotS', 'phaseSin', 'phaseCos', 'bucketSin', 'bucketCos', 'bucketOf', 'bucketFreq',
-  'list', 'listCap', 'trig', 'trigValue',
-];
+export { SWAY_SLOTS, TRIG_IMPULSE };
 const SLOT = Object.fromEntries(SWAY_SLOTS.map((name, k) => [name, k]));
-/** decorationSway.c's TRIG_IMPULSE: the trig-list bit of an impulse, whose value is its phase. */
-export const TRIG_IMPULSE = 0x10000;
 /** The decorations the kernel lets through its early continues at a time: the list region's length. */
 export const SWAY_LIST_CAP = 1024;
 
@@ -178,21 +169,18 @@ export async function setupSwayKernel(opts = {}) {
   return { worker, memory, buffer, layout, regions: R, b, n, k, onScreen };
 }
 
-/** Load the kernel onto `memory` and write its table. */
+/** Load the kernel onto `memory` through the client, on a layout of the bench's regions, and write its table. */
 export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIST_CAP) {
   if (!(listCap >= 1 && listCap * 2 <= regions.list.bytes)) throw new Error(`sway: a list of ${listCap} does not fit its region`);
-  const { sway_decorations: sway } = await loadWasmKernel('decorationSway', KERNEL_URL, memory, ['sway_decorations']);
-  const buffer = memory.buffer;
-  const b = {
-    sway,
-    buffer,
-    tableByte: regions.table.byte,
-    table: new Uint32Array(buffer, regions.table.byte, SWAY_SLOTS.length),
-    listByte: regions.list.byte,
+  const b = await bindDecorationSway(memory, {
+    decorations: regions.trig.bytes / 4,
+    buckets: regions.bucketSin.bytes / 4,
     listCap,
-    trig: new Uint32Array(buffer, regions.trig.byte, regions.trig.bytes / 4),
-    trigValue: new Float64Array(buffer, regions.trigValue.byte, regions.trigValue.bytes / 8),
-  };
+    listByte: regions.list.byte,
+    trigByte: regions.trig.byte,
+    trigValueByte: regions.trigValue.byte,
+    tableByte: regions.table.byte,
+  });
   writeSwayTable(b, worker);
   return b;
 }
@@ -313,12 +301,16 @@ async function main() {
   const s = await setupSwayKernel({ n: Number(args.n ?? GRASS), onScreen: Number(args['on-screen'] ?? ON_SCREEN) });
   const { worker, b } = s;
   let listed = 0;
-  const sway = variant === 'wasm'
-    ? () => {
-        const n = swayDecorationsWasm(b, worker, DT);
-        if (n > 0) listed += n;
-      }
-    : () => worker.updateDecorationSway(DT);
+  // The shipped path either way: with the kernel bound, updateDecorationSway runs _swayFrameWasm. Over the
+  // checksum frames the kernel's call counts what it lists; the timed frames call it bare.
+  worker._swayWasm = variant === 'wasm' ? b : null;
+  const kernel = b.sway;
+  b.sway = (...callArgs) => {
+    const n = kernel(...callArgs);
+    if (n > 0) listed += n;
+    return n;
+  };
+  const sway = () => worker.updateDecorationSway(DT);
   const frame = () => {
     worker.accumulatedTime += DT;
     sway();
@@ -331,6 +323,7 @@ async function main() {
     checksum = hashSwayState(checksum, worker);
   }
   const checkedListed = listed;
+  b.sway = kernel;
   const line = `checksum ${checksum} (${CHECK_FRAMES} frames, ${s.n} decorations, ${s.onScreen} on screen${variant === 'wasm' ? `, ${checkedListed} listed for Math.sin / Math.cos` : ''})`;
   if (args.check) {
     console.log(line);
