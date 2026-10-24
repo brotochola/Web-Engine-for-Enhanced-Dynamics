@@ -5,6 +5,9 @@ import { chromium } from 'playwright';
 import { BUNDLE_ARTIFACTS } from './buildBundle.js';
 import { createStaticBenchmarkServer } from '../tests/helpers/createStaticBenchmarkServer.mjs';
 import { analyzePng, captureCanvasPng } from '../tests/helpers/visualPngCompare.mjs';
+import { BOX2D_MEMORY_MB_DEFAULT } from '../src/box2d/box2dMemory.js';
+
+const MB = 1024 * 1024;
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -88,6 +91,18 @@ try {
       }
     }
 
+    // Box2D's memory size travels in the physics worker's name (physics.wasmMemoryMB); a bundle that
+    // lost it would get the glue's 512 MB fallback.
+    if (result?.ok) {
+      const reserved = await page.evaluate(() => window.game?.currentScene?.box2dHotFields?.sab?.byteLength ?? 0);
+      if (reserved !== BOX2D_MEMORY_MB_DEFAULT * MB) {
+        result.ok = false;
+        result.text = `${result.text || ''} (Box2D memory ${reserved / MB} MB, expected ${BOX2D_MEMORY_MB_DEFAULT})`;
+      } else {
+        console.log(`  Box2D memory ${BOX2D_MEMORY_MB_DEFAULT} MB OK`);
+      }
+    }
+
     await page.close();
 
     if (srcRequests.length && result) {
@@ -115,6 +130,33 @@ try {
     } else {
       console.log('  OK');
     }
+  }
+
+  // physics.wasmMemoryMB through a bundle: a size of its own, and one too small for the scene, which
+  // must stop with the error that names the key rather than silently.
+  const sized = BUNDLE_ARTIFACTS[0];
+  for (const [mb, expectOutOfMemory] of [[64, false], [16, true]]) {
+    const page = await browser.newPage();
+    const url = `http://127.0.0.1:${server.port}/dist/index.html?bundle=${encodeURIComponent(sized)}&physicsMemoryMB=${mb}`;
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    let ok;
+    let detail;
+    if (expectOutOfMemory) {
+      ok = await page
+        .waitForFunction(() => /Box2D ran out of memory: physics\.wasmMemoryMB is 16 MB/.test(
+          document.getElementById('fatal-error-overlay')?.textContent || ''), undefined, { timeout: 60000 })
+        .then(() => true, () => false);
+      detail = ok ? 'out-of-memory error on screen' : 'no out-of-memory error within 60 s';
+    } else {
+      const reserved = await page
+        .waitForFunction(() => window.game?.currentScene?.box2dHotFields?.sab?.byteLength, undefined, { timeout: 60000 })
+        .then((h) => h.jsonValue(), () => 0);
+      ok = reserved === mb * MB;
+      detail = `Box2D memory ${reserved / MB} MB`;
+    }
+    await page.close();
+    console.log(`${sized} ?physicsMemoryMB=${mb}: ${detail} ${ok ? 'OK' : 'FAIL'}`);
+    if (!ok) failed = true;
   }
 } finally {
   await browser.close();
