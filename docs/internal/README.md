@@ -86,7 +86,8 @@ results are records of the register.
 [E-97](./reports/E-97-gpu-frame-pacing.md) ·
 [E-112](./reports/E-112-preRender-emit-wasm.md) ·
 [E-114](./reports/E-114-shadow-stamp-wasm.md) ·
-[E-115 to E-117](./reports/E-115-preRender-persist-wasm.md)
+[E-115 to E-117](./reports/E-115-preRender-persist-wasm.md) ·
+[DX-MEM](./reports/DX-MEM-box2d-memory.md)
 
 **Finished campaigns** (dated by when each was first written):
 

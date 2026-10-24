@@ -179,6 +179,12 @@
       };
     }
 
+    /** The engine's fatal error overlay as one line of text, or null when there is none. */
+    function fatalErrorText() {
+      const overlay = document.getElementById('fatal-error-overlay');
+      return overlay ? overlay.textContent.replace(/\s+/g, ' ').trim() : null;
+    }
+
     function summarizeFromSession(
       startSnapshot,
       endSnapshot,
@@ -205,6 +211,9 @@
           logicWorkers: scene.config.logic.numberOfLogicWorkers,
           // Which WASM kernels this run used (E-76 T7): the switches, and what actually ran.
           wasm: { ...(scene.config.wasm || {}) },
+          physicsMemoryMB: scene.config.physics?.wasmMemoryMB ?? null,
+          // The fatal overlay's text if a worker died during the run (null when none did).
+          fatalError: fatalErrorText(),
           wasmRan: { spatialPublish: Boolean(scene.spatialPublish) },
           worldWidth: config.worldWidth,
           worldHeight: config.worldHeight,
@@ -233,6 +242,8 @@
 
       // ?wasmOff=spatialPublish[,…] runs those WASM kernels' JavaScript paths (E-76 T7).
       const wasmOff = (new URLSearchParams(location.search).get('wasmOff') || '').split(',').filter(Boolean);
+      // ?physicsMemoryMB=N runs the scene with that physics.wasmMemoryMB (BOX2D_MEMORY_PLAN BM-10).
+      const physicsMemoryMB = Number(new URLSearchParams(location.search).get('physicsMemoryMB')) || 0;
 
       // Override scene debug flags before Scene applies defaults / boots workers
       SceneClass.config = {
@@ -244,6 +255,9 @@
         },
         ...(wasmOff.length
           ? { wasm: { ...(SceneClass.config.wasm || {}), ...Object.fromEntries(wasmOff.map((name) => [name, false])) } }
+          : {}),
+        ...(physicsMemoryMB > 0
+          ? { physics: { ...(SceneClass.config.physics || {}), wasmMemoryMB: physicsMemoryMB } }
           : {}),
       };
 
@@ -260,7 +274,20 @@
       });
       currentGame = game;
 
-      await game.loadScene(config.sceneModule, { export: config.sceneExport });
+      // A worker that dies while booting never reports ready, and loadScene would wait forever.
+      // Its error shows as the fatal overlay: end the run with that text instead.
+      let fatalWatch = 0;
+      const fatalDuringBoot = new Promise((_, reject) => {
+        fatalWatch = setInterval(() => {
+          const text = fatalErrorText();
+          if (text) reject(new Error(`Fatal engine error while the scene booted: ${text}`));
+        }, 100);
+      });
+      try {
+        await Promise.race([game.loadScene(config.sceneModule, { export: config.sceneExport }), fatalDuringBoot]);
+      } finally {
+        clearInterval(fatalWatch);
+      }
       const scene = game.currentScene;
       // loadScene resolves after the scene's create(), so this zoom stays.
       if (config.cameraZoom != null) {

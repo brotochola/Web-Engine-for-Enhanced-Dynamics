@@ -13,12 +13,12 @@ import { createPhysicsWorker } from '../../src/util/sceneWorkerBootstrap.js';
 // physics worker's name carries it as pages of 64 KB, which the glue's pre-js reads before any
 // message can arrive.
 
-test('the default is 512 MB, the size Box2D always had', () => {
-  assert.equal(BOX2D_MEMORY_MB_DEFAULT, 512);
+test('the default is 128 MB, which runs every scene the engine ships (BM-13)', () => {
+  assert.equal(BOX2D_MEMORY_MB_DEFAULT, 128);
   assert.equal(PHYSICS_DEFAULTS.wasmMemoryMB, BOX2D_MEMORY_MB_DEFAULT);
-  assert.equal(box2dMemoryPages(PHYSICS_DEFAULTS), 8192);
-  assert.equal(box2dMemoryPages(undefined), 8192);
-  assert.equal(box2dMemoryPages({}), 8192);
+  assert.equal(box2dMemoryPages(PHYSICS_DEFAULTS), 2048);
+  assert.equal(box2dMemoryPages(undefined), 2048);
+  assert.equal(box2dMemoryPages({}), 2048);
 });
 
 test('whole megabytes become 16 pages each, inside 16..2048 MB', () => {
@@ -37,7 +37,7 @@ test('a size out of range or not whole is clamped and rounded, with one warning'
     assert.equal(box2dMemoryPages({ wasmMemoryMB: 8 }), 256);
     assert.equal(box2dMemoryPages({ wasmMemoryMB: 4096 }), 32768);
     assert.equal(box2dMemoryPages({ wasmMemoryMB: 100.4 }), 1600);
-    assert.equal(box2dMemoryPages({ wasmMemoryMB: 'lots' }), 8192);
+    assert.equal(box2dMemoryPages({ wasmMemoryMB: 'lots' }), 2048);
   } finally {
     console.warn = warn;
   }

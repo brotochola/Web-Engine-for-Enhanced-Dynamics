@@ -220,7 +220,7 @@ function buildBox2dHeapInsight(scene) {
 
   const reservedBytes = hot.sab.byteLength || 0;
   const bodyCapacity = hot.bodyCapacity | 0;
-  // 6× f32 state channels + 1× u8 sleeping
+  // STATE_CHANNEL_COUNT (8) f32 state channels + 1× u8 sleeping
   const bodyChannelBytes =
     bodyCapacity > 0
       ? bodyCapacity * STATE_CHANNEL_COUNT * 4 + bodyCapacity

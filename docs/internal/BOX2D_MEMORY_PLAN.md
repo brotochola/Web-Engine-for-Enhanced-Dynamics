@@ -1,7 +1,8 @@
 # Box2D memory plan (`physics.wasmMemoryMB`)
 
 **Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
-saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-8. **Registry:** `DX-MEM` in
+saved here 2026-10-24. **Status:** done 2026-10-24 on `main`; follow-ups are review items N-69 to N-71.
+**Results:** [`reports/DX-MEM-box2d-memory.md`](./reports/DX-MEM-box2d-memory.md). **Registry:** `DX-MEM` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
@@ -16,8 +17,8 @@ error that names the key, and the documentation gives a measured size per kind o
   `D:\xampp\htdocs\Box2d_3.2_C_-_liquidfun` (branch `main`).
 - One item per commit; the node suite is green before each engine commit. Tick the item here (`[x]`,
   the date and the commit hash) in the same commit, add anything new under "Found during
-  implementation", and update `DX-MEM` in `hypotheses.json` (then run
-  `node scripts/buildHypothesesPage.mjs`).
+  implementation", and update `DX-MEM` in `hypotheses.json` (its refs name rows by key, never by line;
+  the page it feeds is built locally and not committed).
 - `weedjs\build_for_weed.bat` copies its output into `src/box2d/` at the end. Build into a scratch folder
   (`set WEED_BOX2D_DIR=…`) and copy in only when no other session is running a bench (check for
   headless Playwright Chrome or `runIntegratedWorkerBenchmark.mjs` in `Win32_Process`).
@@ -195,7 +196,11 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   `tests/node/physicsWasmMemoryConfig.test.js`. The default, the bounds and `box2dMemoryPages` then moved to
   `src/box2d/box2dMemory.js` (owner's review: sizing logic is Box2D code, not a config default);
   `PHYSICS_DEFAULTS.wasmMemoryMB` reads its default from there.
-- [ ] **BM-8** `feat(physics)`: running out reaches the scene.
+- [x] **BM-8** `feat(physics)`: running out reaches the scene. Done 2026-10-24. The message gives the size
+  but not the peak, so the handler calls nothing in the module (at an out-of-memory the peak is the size
+  anyway); the memory panel has the peak. After an abort the host answers only barriers, and the two
+  generic catch sites stay quiet, because the overlay shows the last message and theirs would only say
+  "Aborted(OOM)". `tests/node/physicsHostAbort.test.js` loads the real host in a `vm` and drives `onAbort`.
   - `physicsHostImpl.js` sets `Module.onAbort` when it loads, before the first `pthread_create`, so helper
     threads proxy their aborts to it (Emscripten hands a pthread the main thread's known handlers when it
     starts, `loadWasmModuleToWorker` in the glue; a crashed helper also wakes the physics thread out of its wait and unwinds the step,
@@ -207,20 +212,46 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
     The physics worker's early error handler (`attachEarlyWorkerErrorHandlers`) shows the fatal overlay
     instead of logging only.
   - One warning in the physics worker's console when the peak passes 90 % of the size.
-- [ ] **BM-9** the gate (a sitting, not a commit): four ABAB pairs of BallsScene against the commit before
+- [x] **BM-9** the gate (a sitting, not a commit): four ABAB pairs of BallsScene against the commit before
   BM-3, lean stats, judged on physics `STEP_MS − WAIT_MS`. A hygiene keep unless physics is ≥ 3 % worse;
-  four more pairs only if four do not decide.
-- [ ] **BM-10** `bench`: `tests/bench/box2dMemorySurvey.mjs`, and `?physicsMemoryMB=N` in
+  four more pairs only if four do not decide. **Not run (2026-10-24): it could not change the verdict.**
+  The step's wasm is byte-identical (BM-2's section compare). Per step, the JS gained one export call
+  (`weedjs_memory_peak_bytes`, an `sbrk(0)`) and one compare (the 90 % warning). BM-4 only removed work,
+  and only with detailed stats on, which the lean gate leaves off. Everything else runs at boot. That is
+  far under what four pairs resolve (HOW_WE_MEASURE, "Spending the machine's time"). What a browser run
+  had to show, that the pre-js, the worker name, the helper threads and the guards work in Chrome, the
+  BM-10 smoke runs and the BM-11 survey show at every size.
+- [x] **BM-10** `bench`: `tests/bench/box2dMemorySurvey.mjs`, and `?physicsMemoryMB=N` in
   `tests/bench/integratedWorkerBenchmark.html` (the same override as `?wasmOff=`), passed with `--query`.
-  A run fails when physics shows the error overlay or its frame count stops advancing.
-- [ ] **BM-11** the survey (section 6).
-- [ ] **BM-12** `demos`/`bench`: scenes that need more than the new default set `physics.wasmMemoryMB`
-  from the survey's numbers. `npm run test:demos` passes.
-- [ ] **BM-13** `feat(physics)`: lower the default to the survey's number. The report states it before
-  this commit.
-- [ ] **BM-14** `docs` (section 7).
+  A run fails when physics shows the error overlay or its frame count stops advancing. Done 2026-10-24.
+  The bench page also had to stop hanging: a worker that dies while booting never reports ready, and
+  `loadScene` waited forever. The page now ends that run with the overlay's text, and every result records
+  `metadata.fatalError` and `metadata.physicsMemoryMB`. Smoke run, BallsScene (9,004 bodies): at 64 MB,
+  every worker count from 1 to 32 runs, with a peak of 54.2 to 57.0 MB (live high-water 48.9 to 52.1 MB;
+  32 threads cost about 3 MB more than 1). At 16 MB, all five stop with "Box2D ran out of memory:
+  physics.wasmMemoryMB is 16 MB…" on screen. Three stopped in their first steps (4, 8 and 16 threads) and
+  two while booting (1 and 32 threads), where the page's boot check ended the run.
+- [x] **BM-11** the survey (section 6). Done 2026-10-24, in about 3.5 minutes instead of 15, at the owner's
+  request. The first 11 runs went one at a time; the other 14 ran three at a time at 256 MB, with the churn
+  windows at 15 s instead of 60. A peak depends on what the scene allocates, not on the machine being
+  quiet: four scenes re-run under other contention, at their recommended sizes, gave the same peaks to
+  0.1 MB while their physics FPS ranged from 23 to 60. Every peak was under 90 MB. Numbers in section 6.
+- [x] **BM-12** `demos`/`bench`: scenes that need more than the new default set `physics.wasmMemoryMB`
+  from the survey's numbers. `npm run test:demos` passes. Done 2026-10-24, with nothing to change: at the
+  128 MB default (BM-13) every shipped scene fits.
+- [x] **BM-13** `feat(physics)`: lower the default to the survey's number. The report states it before
+  this commit. Done 2026-10-24: **128 MB**. The plan's rule, the largest recommendation among the gameplay
+  scenes, gave 96 MB (Predator's peak 60.2 MB) and would have left BallsHeavyStressScene (peak 89.7 MB)
+  to set its own size. 32 MB more per scene buys a default that runs every demo and bench, still 4× less
+  commit than the 512 MB of before.
+- [x] **BM-14** `docs` (section 7). Done 2026-10-24. The report replaces the EXECUTION_PLAN entry, which
+  holds speed hypotheses; the HYPOTHESIS_LOG row records that the build change was not timed, and why.
+  The sibling's README was updated too.
 
 ## 6. Survey (BM-11)
+
+*Results, and how it was run in the end (3.5 minutes, three runs at a time): the report,
+[`reports/DX-MEM-box2d-memory.md`](./reports/DX-MEM-box2d-memory.md). The plan as first written follows.*
 
 Headless, `--src`, `--no-collect-detailed-stats`, one scene at a time, on a quiet machine. Each run warms
 up 3 s and measures 5 s; the churn scenes measure 60 s (does the peak plateau?). One line per run goes to a
@@ -290,9 +321,13 @@ The 2026-10-23 draft (items S1, S2, E1–E8) held up against the toolchain. The 
 
 ## Found during implementation
 
-- `buildBox2dHeapInsight` in `src/util/sceneBufferMemory.js`: the comment says "6× f32 state channels"; the code uses
-  `STATE_CHANNEL_COUNT`, which is 8.
+- `buildBox2dHeapInsight` in `src/util/sceneBufferMemory.js`: the comment said "6× f32 state channels"; the
+  code uses `STATE_CHANNEL_COUNT`, which is 8. Comment fixed (`b675e0d1`).
 - `ContactDrainCap32Scene` (`tests/bench/stressScenes/contactDrainHuntScene.js`) declares 70,000 bodies,
-  over the 65,535 that a physics scene allows.
+  over the 65,535 that a physics scene allows: review item N-69.
 - `writePhysicsStats` calls mallinfo every step, even with detailed stats off. Its cost is not measured;
-  BM-4 removes only the duplicate call.
+  BM-4 removes only the duplicate call: N-71.
+- Running out stopped physics silently (N-66, fixed by BM-8); a worker that died while booting hung the bench
+  page (N-67, fixed in BM-10); the sibling's `.bat` had LF endings (N-68, fixed); the template test fails
+  on `main` since 2026-10-22 (N-70, not this plan's).
+- The node test helper's Box2D instances moved from 512 to 128 MB with the default (`b6ced511`).

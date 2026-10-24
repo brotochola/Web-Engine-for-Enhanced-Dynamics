@@ -434,6 +434,12 @@ physics gets a stand-in memory with the same regions; a scene whose regions do n
 memories and the JS paths. Kernels still own nothing (T6). Particles and audio keep their own memories:
 they read no physics state. First mover: spatial (W6 + W7), then W4.
 
+*Since 2026-10-24 ([`BOX2D_MEMORY_PLAN.md`](./BOX2D_MEMORY_PLAN.md)):* the size is per scene,
+`physics.wasmMemoryMB` (16 MB to 2 GB, default 128 MB), still fixed while the scene runs. Buffers moved into
+it now add their bytes. The engine puts its regions on top of the developer's number: `box2dMemoryPages`
+(`src/box2d/box2dMemory.js`) gains the region size when Phase 4 is built, and "do not fit" then only means
+past 2 GB.
+
 **Implementation notes (2026-10-23).** Box2D's memory exists only once the physics worker's Emscripten module
 has run, after the main thread made the component buffers and every worker bound them at init, and nothing
 waits for `box2dReady` before `start` today. So the move needs a boot barrier: physics mallocs the engine

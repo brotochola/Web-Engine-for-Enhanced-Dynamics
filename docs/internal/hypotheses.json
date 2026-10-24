@@ -7422,20 +7422,23 @@
     {
       "id": "DX-MEM",
       "title": "`physics.wasmMemoryMB`: the developer chooses the size of Box2D's memory, per scene",
-      "status": "running",
-      "statusText": "BM-1 to BM-5 done 2026-10-24: the build imports a 16 MB to 2 GB memory that the pre-js sizes from the worker name, and the stats publish its peak; BM-6 next",
+      "status": "kept-hygiene",
+      "statusText": "Done 2026-10-24: physics.wasmMemoryMB, default 128 MB (was 512 fixed)",
       "date": "2026-10-23",
-      "result": "Today every physics scene commits one fixed 512 MB shared memory and running out stops physics with nothing on screen. The plan keeps the memory fixed (views onto it are bound once, in every worker) but lets the scene choose its size: the worker's name carries the page count, a pre-js creates the memory with initial = maximum, and the module's import accepts 16 MB to 2 GB. Adds a peak stat (sbrk), an out-of-memory overlay that names the key, and a survey that sizes the demos and lowers the default.",
+      "result": "Box2D's memory is sized per scene and stays fixed while it runs: the worker's name carries the size, the glue's pre-js creates the memory with initial = maximum, and the module's import accepts 16 MB to 2 GB. Running out shows an error that names the key; the stats and the memory panel publish the peak (sbrk). Survey of 25 runs: largest peak 89.7 MB (BallsHeavyStressScene), Predator 60.2 MB, so the default dropped to 128 MB and every shipped scene fits. Not timed: the .wasm code and data are byte-identical, and the per-step JS gained one export call.",
       "area": "engine",
       "kind": "dx",
       "refs": [
-        "BOX2D_MEMORY_PLAN.md"
+        "BOX2D_MEMORY_PLAN.md",
+        "reports/DX-MEM-box2d-memory.md"
       ],
       "aliases": [
         "box2d memory size",
         "wasmMemoryMB"
       ],
-      "next": "BM-6 (the host refuses a heap of the wrong size), BM-7 (the physics.wasmMemoryMB key), BM-8 (out-of-memory on screen), then the survey."
+      "records": [
+        "R-0560"
+      ]
     },
     {
       "id": "E-86",
@@ -12637,6 +12640,15 @@
       "title": "Report: A full-picture upload is the renderer cost; a dirty row is not",
       "verdict": "note",
       "text": "The texture upload trace: a full-picture upload is the renderer's cost; a dirty row is not. The report was first committed then and is kept in [`reports/TEXTURE_UPLOAD_TRACE.md`](./reports/TEXTURE_UPLOAD_TRACE.md); its results are in the records of its sittings."
+    },
+    {
+      "id": "R-0560",
+      "date": "2026-10-24",
+      "time": "04:09",
+      "timeFrom": "recorded",
+      "title": "Box2D's memory sized per scene, DX-MEM",
+      "verdict": "kept-hygiene",
+      "text": "**kept (hygiene); not timed.** `physics.wasmMemoryMB` (default 128 MB, was 512 fixed) needs the Box2D link with `ALLOW_MEMORY_GROWTH` + `IMPORTED_MEMORY` so the import takes a range; the memory itself never grows. That flag left the `.wasm` code and data sections byte-identical (only the import's limits changed) and added growth checks to 22 glue heap reads, none per step. The per-step JS gained one export call (`sbrk(0)` for `MEMORY_PEAK_KB`) and one compare. Nothing for an ABAB to resolve, so none was run (BM-9). Peaks per scene: [`reports/DX-MEM-box2d-memory.md`](./reports/DX-MEM-box2d-memory.md)."
     }
   ],
   "leads": [

@@ -42,6 +42,8 @@ Taken on 2026-10-22 unless noted.
    - The reason: Predator and littleCity take 3 to 5 s to load fully, up to 10 s on a
      busy machine. That is the author's observation, not a measured row; ED-39 measures
      it.
+   - `physics.wasmMemoryMB` is part of the setup that must match: Box2D's memory is sized
+     when the physics worker starts and never grows (BOX2D_MEMORY_PLAN.md, 2026-10-24).
 3. **Changing scene despawns everything:** entities (including ones the old scene
    spawned itself), bullets, particles, decals, decorations, joints, LiquidFun
    particles. Then the new scene spawns its content. State that crosses scenes travels

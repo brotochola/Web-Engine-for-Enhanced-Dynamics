@@ -490,6 +490,8 @@
     workerPorts: new Map(),
     timeoutId: 0,
     collectDetailedStats: false,
+    // Box2D aborted (out of memory, first of all): the error is on screen and the module is dead.
+    box2dAborted: false,
   };
 
   function reportReady() {
@@ -520,6 +522,35 @@
       stack: err && err.stack,
       when: Date.now(),
     });
+  }
+
+  // bm8-abort-start
+  // The text the scene shows when Box2D aborts. "OOM" is the glue's abort when Box2D's memory is
+  // full; the memory never grows, so name the key that sizes it.
+  function box2dAbortMessage(what, heapBytes) {
+    if (String(what) === 'OOM') {
+      return (
+        'Box2D ran out of memory: physics.wasmMemoryMB is ' + Math.round(heapBytes / 1048576) +
+        ' MB. Raise physics.wasmMemoryMB in the scene config; the memory panel shows the Box2D peak.'
+      );
+    }
+    return 'Box2D aborted: ' + what;
+  }
+  // bm8-abort-end
+
+  // An abort (out of memory, first of all) stops physics with the scene's fatal error. Set at load,
+  // before the first pthread_create: Emscripten hands a helper thread the main thread's onAbort when
+  // the helper starts, so a helper's abort is proxied here too (and the crash wakes this thread out
+  // of its wait). Nothing here calls into Box2D: the abort may come from inside malloc.
+  if (typeof Module !== 'undefined') {
+    Module.onAbort = function (what) {
+      if (state.box2dAborted) return;
+      state.box2dAborted = true;
+      state.isPaused = true;
+      clearSchedulers();
+      var heapBytes = Module.HEAPF32 ? Module.HEAPF32.buffer.byteLength : 0;
+      reportError('Box2D stopped', new Error(box2dAbortMessage(what, heapBytes)));
+    };
   }
 
   function writeFPS() {
@@ -1016,7 +1047,8 @@
         reportReady();
       } catch (err) {
         console.error('[physics_host] boot failed', err);
-        reportError('Physics host boot failed', err);
+        // After an abort the error on screen is onAbort's; this one only says "Aborted(OOM)".
+        if (!state.box2dAborted) reportError('Physics host boot failed', err);
       }
     });
   }
@@ -1241,6 +1273,8 @@
   self.onmessage = function (event) {
     var data = event.data;
     if (!data || !data.msg) return;
+    // A dead module answers nothing that would call into it; a barrier needs no Box2D.
+    if (state.box2dAborted && data.msg !== 'barrier') return;
     var t0 = state.collectDetailedStats ? performance.now() : 0;
     try {
       if (data.msg === 'init') {
@@ -1296,7 +1330,8 @@
       }
     } catch (err) {
       console.error('[physics_host]', err);
-      reportError('Physics host message failed', err);
+      // A step that aborted throws here too; the error on screen is onAbort's.
+      if (!state.box2dAborted) reportError('Physics host message failed', err);
     }
     if (state.collectDetailedStats) {
       state.messageTimeThisFrame += performance.now() - t0;
