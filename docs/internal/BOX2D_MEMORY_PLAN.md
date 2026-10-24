@@ -32,14 +32,14 @@ error that names the key, and the documentation gives a measured size per kind o
   `-sALLOW_MEMORY_GROWTH=0 -sINITIAL_MEMORY=512MB`. The comment above it still says 256 MB, the size
   until f05c9065 (2026-10-17, UChainScene).
 - **Where it is baked in.** The glue's `initMemory()` creates the memory from a literal
-  (`src/box2d/box2dWasm.js:266-279`), and the `.wasm` import declares min = max = 8192 pages. No scene
+  (`initMemory` in `src/box2d/box2dWasm.js`), and the `.wasm` import declares min = max = 8192 pages. No scene
   can change it, and every physics scene commits all 512 MB at boot.
 - **What is measured.** The physics stats carry `HEAP_USED_KB` and `HEAP_HIGH_WATER_KB`, both from
   `mallinfo().uordblks` (live bytes). Gitignored runs showed Balls ~49 MiB, Predator 56–61 MiB and
   LiquidFun ~8.5 MiB. Live bytes undercount the need: they miss static data (~1.7 MB), stacks,
   fragmentation, and the moment an array doubles (old and new copies are both alive).
 - **Running out.** dlmalloc asks to grow, the glue aborts (`abort("OOM")`), the exception leaves
-  `gameLoop` (try/finally only, `physicsHostImpl.js:1134`) and physics stops. The main thread logs the
+  `gameLoop` (try/finally only, in `physicsHostImpl.js`) and physics stops. The main thread logs the
   worker error to the console; nothing reaches the screen.
 
 ## 2. Why the memory stays fixed
@@ -69,14 +69,14 @@ for (BM-6).
 **The worker's name carries it.** Emscripten creates the memory in `initMemory()` while `box2dWasm.js` is
 being evaluated, before any message can arrive. At that point a classic worker knows its URL and its
 `name`. A query on the URL cannot work in the bundle (a `blob:` URL with a query is not found). The name
-is also how Emscripten itself tells a pthread worker what it is (`em-pthread`, glue :36 and :733).
+is also how Emscripten itself tells a pthread worker what it is (`em-pthread`: `ENVIRONMENT_IS_PTHREAD` and `allocateUnusedWorker` in the glue).
 
-- **Engine side.** `createPhysicsWorker` (`src/util/sceneWorkerBootstrap.js:34-42`) passes
+- **Engine side.** `createPhysicsWorker` (`src/util/sceneWorkerBootstrap.js`) passes
   `{ name: 'physics pages=N' }` to the `Worker` constructor, for the src URL and the bundle's blob URL.
-  The main-side expando `worker.name = 'physics'` (`:61`) is a different thing (it keys step waiters and
+  The main-side expando `worker.name = 'physics'` (set in `createSceneWorkerInstances`) is a different thing (it keys step waiters and
   logs) and stays.
 - **Sibling side: `weedjs/weed_pre.js`, a `--pre-js`.** Pre-js code runs after the glue defines
-  `ENVIRONMENT_IS_PTHREAD` (glue :36-39). When it is false, the pre-js reads `pages=N` from
+  `ENVIRONMENT_IS_PTHREAD` (the glue defines it just above where pre-js code goes). When it is false, the pre-js reads `pages=N` from
   `globalThis.name` (8192 without one), rejects a value outside 256..32768, and sets
   `Module.wasmMemory = new WebAssembly.Memory({ initial: N, maximum: N, shared: true })`. A failed
   allocation throws with the size and the key's name. Pthread helpers receive the memory by message and
@@ -84,10 +84,10 @@ is also how Emscripten itself tells a pthread worker what it is (`em-pthread`, g
 - **Link flags (Weed branch).** `-sIMPORTED_MEMORY=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=16MB
   -sMAXIMUM_MEMORY=2GB -sABORTING_MALLOC=1 -Wno-pthreads-mem-growth --pre-js=…/weedjs/weed_pre.js`.
   - `IMPORTED_MEMORY=1` must be explicit: emsdk 6.0.4 adds `wasmMemory` to the incoming Module API only
-    when it is set before `-pthread` sets it (`tools/link.py:1366` against `:1638`). The shipped
+    when it is set before `-pthread` sets it (in `tools/link.py`, `INCOMING_MODULE_JS_API` takes `wasmMemory` before the `PTHREADS` branch sets `IMPORTED_MEMORY`). The shipped
     `initMemory` has no `Module.wasmMemory` read.
   - Growth must be on for the import to accept a range: without it, link.py sets
-    `MAXIMUM_MEMORY = INITIAL_MEMORY` (`:580-584`) and passes `--no-growable-memory` to wasm-ld, which
+    `MAXIMUM_MEMORY = INITIAL_MEMORY` (`set_max_memory`) and passes `--no-growable-memory` to wasm-ld, which
     rejects `--max-memory` next to it ("--max-memory is incompatible with --no-growable-memory").
     Patching the import of the linked `.wasm` instead would be a custom step for no speed.
   - `ABORTING_MALLOC=1`: with growth on, Emscripten would otherwise return NULL from malloc, and Box2D
@@ -96,14 +96,14 @@ is also how Emscripten itself tells a pthread worker what it is (`em-pthread`, g
   - The cap is 2 GB: above it the glue switches to unsigned pointers (`CAN_ADDRESS_2GB`), and the
     engine's `>> 2` pointer arithmetic would need an audit.
 - **What the growth flag costs.** Emscripten rewrites the glue's own heap reads to check for growth
-  (`link.py:2396`). Those are pthread spawn, the mailbox, `fd_write` and the string helpers; none runs per
+  (`apply_wasm_memory_growth` in link.py). Those are pthread spawn, the mailbox, `fd_write` and the string helpers; none runs per
   step. The per-step imports touch no heap: `_emscripten_get_now`, and the `cwrap`'d body setters, which
   are the raw exports because their arguments are numbers. `weedjsPost.js` and `physicsHostImpl.js` are
-  loaded with `importScripts` (glue :1652-1661; the bundle prepends them, `scripts/buildBundle.js:134-237`),
+  loaded with `importScripts` (the post-js at the end of the glue; the bundle prepends them, `buildBox2dWorkerSource` in `scripts/buildBundle.js`),
   so the rewrite never reaches them. The wasm code should not change at all: BM-2 compares the sections of
   the two builds.
 - **The peak.** `sbrk(0)`: static data, stacks and the highest heap address reached. Emscripten's
-  dlmalloc never trims (`MORECORE_CANNOT_TRIM 1`, `system/lib/dlmalloc.c:12`), so it is the peak; it is
+  dlmalloc never trims (`MORECORE_CANNOT_TRIM 1` at the top of `system/lib/dlmalloc.c`), so it is the peak; it is
   O(1) and takes no lock, so the abort handler can call it (mallinfo cannot: an abort can come from inside
   malloc, with the heap lock held).
 
@@ -157,7 +157,7 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   an 8 MB block, and a free does not lower it); the report test reads a 2 GB peak, past int32.
 - [ ] **BM-4** `refactor(physics)`: with detailed stats on, `writePhysicsStats` calls mallinfo (a walk
   of every chunk under the heap lock) a second time per step for the two values the always-on block has
-  just written (`weedjsPost.js:2540-2548` and `:2593-2600`). The second call goes.
+  just written (both in `writePhysicsStats`, `weedjsPost.js`). The second call goes.
 - [ ] **BM-5** `build(box2d)`: ship BM-2's artifacts. The default stays 512 MB, so behaviour does not
   change. A Node test checks that the shipped `.wasm` imports a shared memory of [256, 32768] pages, that
   it links at 1024 pages, and that the pre-js block of the shipped glue, run in a `vm` context, sizes the
@@ -176,7 +176,7 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
 - [ ] **BM-8** `feat(physics)`: running out reaches the scene.
   - `physicsHostImpl.js` sets `Module.onAbort` when it loads, before the first `pthread_create`, so helper
     threads proxy their aborts to it (Emscripten hands a pthread the main thread's known handlers when it
-    starts, glue :713; a crashed helper also wakes the physics thread out of its wait and unwinds the step,
+    starts, `loadWasmModuleToWorker` in the glue; a crashed helper also wakes the physics thread out of its wait and unwinds the step,
     `emscripten_yield.c`). The handler stops the loop and posts the existing `msg:'error'`: "Box2D ran out
     of memory: physics.wasmMemoryMB is N MB, peak P MB. Raise physics.wasmMemoryMB in the scene config."
     The peak comes from `weedjs_memory_peak_bytes`, never from mallinfo.
@@ -268,7 +268,7 @@ The 2026-10-23 draft (items S1, S2, E1–E8) held up against the toolchain. The 
 
 ## Found during implementation
 
-- `src/util/sceneBufferMemory.js:221`: the comment says "6× f32 state channels"; the code uses
+- `buildBox2dHeapInsight` in `src/util/sceneBufferMemory.js`: the comment says "6× f32 state channels"; the code uses
   `STATE_CHANNEL_COUNT`, which is 8.
 - `ContactDrainCap32Scene` (`tests/bench/stressScenes/contactDrainHuntScene.js`) declares 70,000 bodies,
   over the 65,535 that a physics scene allows.
