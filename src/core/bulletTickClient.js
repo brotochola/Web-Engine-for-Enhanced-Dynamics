@@ -11,7 +11,7 @@ const wasmUrl = new URL('./bulletTick.wasm', import.meta.url);
 
 /** The kernel's variants (one walk, the same bytes): the shipped tick takes BULLET_TICK_VARIANT. */
 export const BULLET_TICK_VARIANTS = ['bullet_tick', 'bullet_tick_hoist', 'bullet_tick_nostamp', 'bullet_tick_lean'];
-export const BULLET_TICK_VARIANT = 'bullet_tick';
+export const BULLET_TICK_VARIANT = 'bullet_tick_lean';
 
 /** wasm/bulletTick.c's column table, slot for slot. */
 export const BULLET_TICK_SLOTS = [
