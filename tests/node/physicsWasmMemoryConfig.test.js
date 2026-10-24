@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { PHYSICS_DEFAULTS } from '../../src/util/configDefaults.js';
 import {
-  PHYSICS_DEFAULTS,
+  BOX2D_MEMORY_MB_DEFAULT,
   BOX2D_MEMORY_MB_MIN,
   BOX2D_MEMORY_MB_MAX,
   box2dMemoryPages,
-} from '../../src/util/configDefaults.js';
+} from '../../src/box2d/box2dMemory.js';
 import { createPhysicsWorker } from '../../src/util/sceneWorkerBootstrap.js';
 
 // BM-7 (docs/internal/BOX2D_MEMORY_PLAN.md). physics.wasmMemoryMB sizes Box2D's memory; the
@@ -13,7 +14,8 @@ import { createPhysicsWorker } from '../../src/util/sceneWorkerBootstrap.js';
 // message can arrive.
 
 test('the default is 512 MB, the size Box2D always had', () => {
-  assert.equal(PHYSICS_DEFAULTS.wasmMemoryMB, 512);
+  assert.equal(BOX2D_MEMORY_MB_DEFAULT, 512);
+  assert.equal(PHYSICS_DEFAULTS.wasmMemoryMB, BOX2D_MEMORY_MB_DEFAULT);
   assert.equal(box2dMemoryPages(PHYSICS_DEFAULTS), 8192);
   assert.equal(box2dMemoryPages(undefined), 8192);
   assert.equal(box2dMemoryPages({}), 8192);

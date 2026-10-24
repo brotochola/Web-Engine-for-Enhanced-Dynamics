@@ -192,7 +192,9 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   `box2dMemoryPages(physics)` (whole MB, clamped to 16..2048 with one warning, × 16); `createPhysicsWorker`
   passes the name on both URLs; `types/weed.d.ts` documents the key. Tests: the default, the clamp and
   its single warning, the pages, and a stubbed `Worker` that receives `physics pages=N`. Done 2026-10-24:
-  `box2dMemoryPages` lives in `src/util/configDefaults.js`; `tests/node/physicsWasmMemoryConfig.test.js`.
+  `tests/node/physicsWasmMemoryConfig.test.js`. The default, the bounds and `box2dMemoryPages` then moved to
+  `src/box2d/box2dMemory.js` (owner's review: sizing logic is Box2D code, not a config default);
+  `PHYSICS_DEFAULTS.wasmMemoryMB` reads its default from there.
 - [ ] **BM-8** `feat(physics)`: running out reaches the scene.
   - `physicsHostImpl.js` sets `Module.onAbort` when it loads, before the first `pthread_create`, so helper
     threads proxy their aborts to it (Emscripten hands a pthread the main thread's known handlers when it

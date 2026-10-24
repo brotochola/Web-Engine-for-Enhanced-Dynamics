@@ -14,7 +14,7 @@ import { collectWorkerScriptsToLoad } from './sceneScript.js';
 import { frameClockSlot } from './frameClock.js';
 import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
-import { box2dMemoryPages } from './configDefaults.js';
+import { box2dMemoryPages } from '../box2d/box2dMemory.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
