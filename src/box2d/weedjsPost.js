@@ -260,6 +260,9 @@
   let heapHighWaterKb = 0;
   let weedjsHeapBytesUsed = null;
   let weedjsMemoryPeakBytes = null;
+  // 90 % of Box2D's memory, in KB (0 = unknown): past it, one warning to raise physics.wasmMemoryMB.
+  let memoryWarnKb = 0;
+  let memoryWarned = false;
 
   function viewFromDesc(desc, TypedArray) {
     return new TypedArray(desc.sab, desc.byteOffset, desc.length);
@@ -2549,8 +2552,17 @@
       statsF32[PS.HEAP_HIGH_WATER_KB] = heapHighWaterKb;
     }
     // The break reaches 2 GB at most, which the i32 export returns negative: >>> 0.
-    statsF32[PS.MEMORY_PEAK_KB] =
+    const peakKb =
       typeof weedjsMemoryPeakBytes === 'function' ? ((weedjsMemoryPeakBytes() >>> 0) / 1024) | 0 : 0;
+    statsF32[PS.MEMORY_PEAK_KB] = peakKb;
+    if (peakKb > memoryWarnKb && memoryWarnKb > 0 && !memoryWarned) {
+      memoryWarned = true;
+      console.warn(
+        `[weedjs-box2d] Box2D's memory is ${Math.round((peakKb / memoryWarnKb) * 90)} % full: peak ` +
+          `${Math.round(peakKb / 1024)} MB of ${Math.round(memoryWarnKb / 0.9 / 1024)} MB. Raise ` +
+          'physics.wasmMemoryMB in the scene config; running out stops physics.',
+      );
+    }
     if (!collectDetailedStats) return;
     statsF32[PS.JOINT_COUNT] = world ? world.getJointCount() : 0;
     statsF32[PS.BODY_SYNC_MS] = bodySyncMs;
@@ -2856,6 +2868,8 @@
       typeof Module._weedjs_memory_peak_bytes === 'function'
         ? Module._weedjs_memory_peak_bytes
         : null;
+    memoryWarnKb = Module.HEAPF32 ? (Module.HEAPF32.buffer.byteLength / 1024) * 0.9 : 0;
+    memoryWarned = false;
     heapHighWaterKb = 0;
     hostEntityCount = data.entityCount | 0;
     hostSubSteps = Math.max(1, data.subSteps | 0 || 4);

@@ -90,7 +90,14 @@ function attachEarlyWorkerErrorHandlers(scene) {
   };
 
   if (scene.workers.physics) {
-    scene.workers.physics.onerror = earlyErrorHandler('physics');
+    // The glue's pre-js throws while the script loads when Box2D's memory cannot be made (a size
+    // out of range, or more than the browser will reserve). That happens before onmessage is
+    // attached, so the error event is the only way it reaches the page: show it.
+    const logPhysicsError = earlyErrorHandler('physics');
+    scene.workers.physics.onerror = (e) => {
+      logPhysicsError(e);
+      scene._showFatalErrorMessage('physics', 'Physics worker failed to start', e.message || String(e));
+    };
   }
   scene.workers.renderer.onerror = earlyErrorHandler('renderer');
   scene.workers.particle.onerror = earlyErrorHandler('particle');

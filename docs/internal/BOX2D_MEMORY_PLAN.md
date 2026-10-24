@@ -1,7 +1,7 @@
 # Box2D memory plan (`physics.wasmMemoryMB`)
 
 **Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
-saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-8. **Registry:** `DX-MEM` in
+saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-9. **Registry:** `DX-MEM` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
@@ -195,7 +195,11 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
   `tests/node/physicsWasmMemoryConfig.test.js`. The default, the bounds and `box2dMemoryPages` then moved to
   `src/box2d/box2dMemory.js` (owner's review: sizing logic is Box2D code, not a config default);
   `PHYSICS_DEFAULTS.wasmMemoryMB` reads its default from there.
-- [ ] **BM-8** `feat(physics)`: running out reaches the scene.
+- [x] **BM-8** `feat(physics)`: running out reaches the scene. Done 2026-10-24. The message gives the size
+  but not the peak, so the handler calls nothing in the module (at an out-of-memory the peak is the size
+  anyway); the memory panel has the peak. After an abort the host answers only barriers, and the two
+  generic catch sites stay quiet, because the overlay shows the last message and theirs would only say
+  "Aborted(OOM)". `tests/node/physicsHostAbort.test.js` loads the real host in a `vm` and drives `onAbort`.
   - `physicsHostImpl.js` sets `Module.onAbort` when it loads, before the first `pthread_create`, so helper
     threads proxy their aborts to it (Emscripten hands a pthread the main thread's known handlers when it
     starts, `loadWasmModuleToWorker` in the glue; a crashed helper also wakes the physics thread out of its wait and unwinds the step,
