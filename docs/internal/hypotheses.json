@@ -7912,6 +7912,36 @@
       "records": [
         "R-0503"
       ]
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [],
+      "id": "E-129",
+      "title": "Particle, decoration and bullet pools past 65 535: 32-bit slot ids when the configured maximum asks for them",
+      "status": "open",
+      "statusText": "opened 2026-10-24 (owner request)",
+      "date": "2026-10-24",
+      "area": "particle",
+      "kind": "reach",
+      "rank": 23,
+      "result": "maxParticles, maxDecorations and maxBullets are asserted at 65 535 or less (sceneSharedBuffers.js), and the free lists, the active and visible lists, the decoration spatial cells (EMPTY = 0xffff), the sway snapshot and the particle and sway kernels hold 16-bit slot ids. As entity ids do since 2026-10-24 (entityIdWidth auto), each pool would pick 16-bit ids up to 65 535 and 32-bit past that, once at boot from its own maximum, so a scene under the cap runs the code it runs today. A reach claim (like W8b), not a speed claim; it also lifts the protocol ceiling that kept W22 under the 3 ms floor.",
+      "next": "After the float32 pass on particleIntegrate/particleLists/decorationSway (it edits their benches): an agent widens every list and kernel per pool (one export per width, chosen at the caller), with parity tests at both widths, the 16-bit kernels shown not to regress, and a 200 000-particle scene that boots and runs."
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [],
+      "id": "E-130",
+      "title": "Mesh vertices past 65 535: 32-bit triangle indices when maxMeshVerts asks for them",
+      "status": "open",
+      "statusText": "opened 2026-10-24 (owner request)",
+      "date": "2026-10-24",
+      "area": "pixi",
+      "kind": "reach",
+      "rank": 24,
+      "result": "MeshGeometry is one arena capped at 65 535 vertices (meshGeometry.js MAX_VERTS) because its triangle indices are 16-bit; MeshRenderer and meshTriangulate clamp to it, and wasm/meshCorners.c follows the arena layout. WebGL2 takes 32-bit index buffers natively. With 32-bit indices when renderer.maxMeshVerts passes 65 535, meshApiStressScene could load the renderer past the 3 ms floor (W11 is a protocol ceiling today).",
+      "next": "After the float32 pass on meshCorners: an agent widens the arena indices and the corner kernel per width, parity tests at both widths, a meshApi load knob past 65 535 vertices."
     }
   ],
   "records": [
