@@ -164,10 +164,10 @@
     {
       "id": "E-113",
       "title": "Queue columns a multiple of 4 KB apart alias in cache",
-      "status": "open",
+      "status": "kept-kernel",
       "statusText": "open (found in E-112), 2026-10-23",
       "date": "2026-10-23",
-      "result": "At a render-queue capacity that is a multiple of 1 024 every float column of a row falls in one L1 set: capacity 32 768 against 33 000 moved E-112's JS emit +11 % and its C emit 2.4×. Predator's 119 298 spreads them; proceduralTree's 8 192 does not; component columns alias at entity totals at or next to a multiple of 1 024.",
+      "result": "Each queue column starts a line past a boundary: at capacity 32 768 the C emit 2.4x (900.8 -> 2162.0 ops/s, 5/5) and the JS +11.7 %; at Predator's 119 298 +1.4 % / +0.8 %. Component columns not done.",
       "area": "engine",
       "kind": "js",
       "refs": [
@@ -175,9 +175,9 @@
       ],
       "aliases": [],
       "next": "Each queue column a cache line after the last in renderQueueLayout; measure on a scene at an aliased capacity.",
-      "rank": 20,
       "records": [
-        "R-0518"
+        "R-0518",
+        "R-0583"
       ]
     },
     {
@@ -12996,6 +12996,18 @@
         "81ae305d",
         "50eafd1a",
         "9bc70782"
+      ]
+    },
+    {
+      "id": "R-0583",
+      "date": "2026-10-24",
+      "time": "10:26",
+      "timeFrom": "recorded",
+      "title": "Render-queue columns a cache line apart, E-113 kernel A/B",
+      "verdict": "kept-kernel",
+      "text": "**Kept (kernel).** Each render-queue column now starts at the next 64-byte boundary plus one line, measured from the queue's base, in `computeBufferSize` and `createViews`. That is the one layout every reader takes; the kernels take it through their tables. It adds about 1.6 KB per queue.\n\nAt a capacity that is a multiple of 1 024, every column of a row now falls in its own L1 set. `renderQueueColumnSkew.test.js` checks this; it fails on the old layout. At other capacities a set holds at most four columns.\n\n`preRenderEmitWasmMicrobench`: the old layout from a worktree at HEAD against the new one, alternating processes, 5 rounds, checksums equal. Node; agents' builds and tests were on the machine.\n\n| capacity | emit | old ops/s | new ops/s | | rounds won |\n|---|---|---|---|---|---|\n| 32 768 (aliased) | C | 900.8 | 2 162.0 | **+140 % (2.4×)** | 5/5 |\n| 32 768 | JS | 863.0 | 964.2 | +11.7 % | 4/5 |\n| 119 298 (Predator) | C | 2 144.9 | 2 175.5 | +1.4 % | 5/5 |\n| 119 298 | JS | 971.5 | 979.3 | +0.8 % | 4/5 |\n\nThe aliased capacity now runs as fast as Predator's. The numbers reproduce the finding (R-0518: 882 → 2 150 C, +11 % JS for 32 768 against 33 000).\n\nStill open:\n- The component columns alias in the same way at entity totals at or near a multiple of 1 024. Their layout is mirrored by hand in `physicsHostImpl.js`, and both move together, so it is not done here.\n- A scene check at an aliased capacity (proceduralTree's 8 192) and the Predator gate go in the next batch.\n\nCommit 85edd25a.",
+      "commits": [
+        "85edd25a"
       ]
     }
   ],
