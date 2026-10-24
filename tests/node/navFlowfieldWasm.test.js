@@ -14,6 +14,8 @@ import assert from 'node:assert/strict';
 import { NavGrid } from '../../src/core/navGrid.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import { roomWalls, setupFlowfieldKernel, STRESS_NAVIGATION } from '../bench/navFlowfieldWasmMicrobench.mjs';
+import { createNavigationMemory } from '../../src/util/navigationMemory.js';
+import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
 // Few slots: the parity is per flowfield, and a 256 × 256 slot is 128 KB.
 const NAVIGATION = { ...STRESS_NAVIGATION, maxFlowfields: 4, maxPaths: 2, maxPathLength: 16 };
@@ -218,4 +220,70 @@ test("the bench's warm-up leaves the grid as it found it", async () => {
     assert.equal(NavGrid._u32[header + 2], 0, `slot ${i} is not empty`);
   }
   assertParity(k, 33 * 64 + 21, 'after warm-up');
+});
+
+// W14 wired: a particle worker booted on the navigation memory as the scene makes it (the nav buffer at
+// byte 0, the flowfield's scratch after it) binds the kernel at init; computeFlowfield with the kernel
+// and without it must fill each target's slot with the same vectors and count the same cached flowfields.
+// The targets stay under the slots, so no eviction (whose stamps are whole seconds) can tell the runs apart.
+test('computeFlowfield through the kernel the worker binds fills the slots the JS fills', async (t) => {
+  const navigation = { ...STRESS_NAVIGATION };
+  for (const map of ['open', 'rooms']) {
+    const gridWidth = 64;
+    const gridHeight = 64;
+    const cells = gridWidth * gridHeight;
+    const m = createNavigationMemory(NavGrid.calculateSABSize(navigation, gridWidth, gridHeight), cells);
+    assert.ok(m, 'the navigation memory is made');
+    NavGrid.writeHeader(m.buffer, navigation, gridWidth, gridHeight);
+    const walk = new Uint8Array(m.buffer, NavGrid._HEADER_SIZE, cells).fill(1);
+    if (map === 'rooms') roomWalls(walk, gridWidth, gridHeight);
+    const worker = await loadWorker('particleWorker.js', 'particleWorker');
+    await initWorker(worker, {
+      config: {
+        worldWidth: gridWidth * navigation.cellSize,
+        worldHeight: gridHeight * navigation.cellSize,
+        navigation,
+        particle: { maxParticles: 0, decals: false },
+      },
+      globalEntityCount: 0,
+      buffers: { navigationData: m.buffer },
+      extra: { navigationMemory: m.memory, navigationLayout: m.layout },
+    });
+    const bound = worker._flowWasm;
+    assert.ok(bound, `${map}: the worker bound the kernel at init`);
+    let calls = 0;
+    const compute = bound.compute;
+    bound.compute = (...args) => {
+      calls++;
+      return compute(...args);
+    };
+    const r = mulberry32(map === 'open' ? 0xf10 : 0xf11);
+    const targets = [];
+    while (targets.length < navigation.maxFlowfields - 4) {
+      const cell = Math.floor(r() * cells);
+      if (!targets.includes(cell)) targets.push(cell);
+    }
+    const slotBytes = (cell) => {
+      const slot = worker._findExistingFlowfieldSlot(cell);
+      assert.ok(slot >= 0, `${map}: a READY flowfield for cell ${cell}`);
+      const byte = NavGrid._flowfieldHeadersOffset + slot * NavGrid._flowfieldSlotSize + NavGrid._FLOWFIELD_HEADER_SIZE;
+      return Buffer.from(new Uint8Array(m.buffer, byte, cells * 2));
+    };
+    const run = (kernel) => {
+      NavGrid.invalidate();
+      worker.cachedFlowfieldsCount = 0;
+      worker._flowWasm = kernel;
+      for (const cell of targets) worker.computeFlowfield(cell);
+      return { slots: targets.map(slotBytes), cached: worker.cachedFlowfieldsCount };
+    };
+    const js = run(null);
+    const wasm = run(bound);
+    assert.equal(calls, targets.length, `${map}: the kernel took every flowfield`);
+    assert.equal(wasm.cached, js.cached, `${map}: cached flowfields`);
+    targets.forEach((cell, k) => {
+      const at = wasm.slots[k].findIndex((x, i) => x !== js.slots[k][i]);
+      assert.equal(at, -1, `${map}: target ${cell}: the slot differs at byte ${at}`);
+    });
+    t.diagnostic(`${map}: ${targets.length} flowfields, ${walk.reduce((n, w) => n + (w === 0 ? 1 : 0), 0)} walls`);
+  }
 });

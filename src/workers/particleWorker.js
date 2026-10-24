@@ -45,6 +45,7 @@ import {
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
 import { bindDecorationSway, writeSwayColumns, TRIG_IMPULSE } from './decorationSwayClient.js';
+import { bindNavFlowfield } from './navFlowfieldClient.js';
 import {
   getColliderBounds as getColliderBoundsImport,
   getCellRange as getCellRangeImport,
@@ -393,6 +394,8 @@ class ParticleWorker extends AbstractWorker {
     // Navigation
     this.navEnabled = false;
     this.scratch = null;
+    // W14: navFlowfield.wasm on the navigation memory, or null (the JS search).
+    this._flowWasm = null;
     this.flowfieldRequests = null;
     this.pathRequests = null;
     this._pathRequestTmp = { key: 0, fromCell: 0, toCell: 0 };
@@ -644,6 +647,22 @@ class ParticleWorker extends AbstractWorker {
         this.gridWidth,
         this.gridHeight
       );
+
+      // W14: the flowfield search in WASM, when the nav buffer is the navigation memory's.
+      if (data.navigationMemory && data.navigationLayout && this.config?.wasm?.navFlowfield !== false
+        && data.navigationMemory.buffer === data.buffers.navigationData) {
+        try {
+          this._flowWasm = await bindNavFlowfield(data.navigationMemory, data.navigationLayout, {
+            walkability: NavGrid.getWalkabilityArray(),
+            gridWidth: this.gridWidth,
+            gridHeight: this.gridHeight,
+            maxDistance: this.scratch.maxDistance,
+          });
+        } catch (err) {
+          console.warn('[particle] navFlowfield.wasm did not load; searching in JS', err);
+          this._flowWasm = null;
+        }
+      }
 
       const flowfieldQueueCapacity = Math.max(32, this.maxFlowfields * 8);
       const pathQueueCapacity = Math.max(64, this.maxPaths * 8);
@@ -1663,6 +1682,11 @@ class ParticleWorker extends AbstractWorker {
   }
 
   computeFlowfield(targetCell) {
+    // W14. The search, the walls' pass and the smoothing in navFlowfield.wasm; the slot as below.
+    if (this._flowWasm !== null) {
+      this._computeFlowfieldWasm(targetCell);
+      return;
+    }
     const willUseEmptySlot = this._hasEmptyFlowfieldSlot();
 
     const scratch = this.scratch;
@@ -1805,6 +1829,18 @@ class ParticleWorker extends AbstractWorker {
     const slot = NavGrid.allocateFlowfieldSlot(targetCell);
     NavGrid.writeFlowfieldData(slot, smoothed);
 
+    if (willUseEmptySlot) {
+      this.cachedFlowfieldsCount++;
+    }
+  }
+
+  /** W14. computeFlowfield with the kernel for the search and the smoothing, then the slot as the JS fills it. */
+  _computeFlowfieldWasm(targetCell) {
+    const willUseEmptySlot = this._hasEmptyFlowfieldSlot();
+    const f = this._flowWasm;
+    f.compute(f.tableByte, targetCell);
+    const slot = NavGrid.allocateFlowfieldSlot(targetCell);
+    NavGrid.writeFlowfieldData(slot, f.vectors);
     if (willUseEmptySlot) {
       this.cachedFlowfieldsCount++;
     }
