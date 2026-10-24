@@ -21,6 +21,7 @@ Engine-focused notes for the current `src/` architecture.
 | Audio buses | `8` (`SoundManager.MAX_CHANNELS`) |
 | Max rendering layers | `16` (`Layer.MAX_LAYERS`) |
 | ColliderFixture pool | `physics.maxFixturePoolSize` (global slots, default `0`) |
+| Explicit mesh vertices | `renderer.maxMeshVerts`, default `0`. `Uint16` vertex counts and indices up to `65535`, `Uint32` past that, cap `1048576`. `renderer.maxMeshIndices` caps at `4194304` |
 | Box2D memory | `physics.wasmMemoryMB`, `16..2048` MB, default `128`. Fixed while the scene runs; running out stops physics with an error that names the key. Sizes: [PHYSICS.md](./PHYSICS.md#physics-memory-physicswasmmemorymb) |
 | Default custom layer maxItems | `5000` |
 | Audio playback rate range | `0.25..4` |

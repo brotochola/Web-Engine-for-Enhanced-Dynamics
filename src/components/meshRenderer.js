@@ -282,7 +282,7 @@ export class MeshRenderer extends Component {
 
   /**
    * Subdivided quad centered on the local origin, UVs 0..1.
-   * segX / segY are cell counts (at least 1).
+   * segX / segY are cell counts (at least 1; at most 254, or 1023 when renderer.maxMeshVerts passes 65535).
    * @returns {this}
    */
   setPlane(width, height, segX, segY) {
@@ -291,14 +291,16 @@ export class MeshRenderer extends Component {
     let sx = segX | 0;
     let sy = segY | 0;
     if (!(w > 0) || !(h > 0) || !Number.isFinite(w) || !Number.isFinite(h)) return this;
+    // E-130: the arena's width bounds the cells and the vertices.
+    const segMax = MeshGeometry.planeSegments;
     if (sx < 1) sx = 1;
     if (sy < 1) sy = 1;
-    if (sx > 254) sx = 254;
-    if (sy > 254) sy = 254;
+    if (sx > segMax) sx = segMax;
+    if (sy > segMax) sy = segMax;
     const vx = sx + 1;
     const vy = sy + 1;
     const vertN = vx * vy;
-    if (vertN > 65535) return this;
+    if (vertN > MeshGeometry.vertLimit) return this;
     const pos = MeshGeometry.scratchXY(vertN * 2);
     const uv = MeshGeometry.scratchUV(vertN * 2);
     const idx = MeshGeometry.scratchIdx(sx * sy * 6);
@@ -420,7 +422,7 @@ export class MeshRenderer extends Component {
     if (n < 3) return this;
     const xy = _pointXY;
     const idx = MeshGeometry.scratchIdx((n - 2) * 3);
-    const ic = triangulateSimplePolygon(xy, n, idx);
+    const ic = triangulateSimplePolygon(xy, n, idx, MeshGeometry.vertLimit);
     if (ic < 0) {
       MeshGeometry.warnPolygon();
       return this;

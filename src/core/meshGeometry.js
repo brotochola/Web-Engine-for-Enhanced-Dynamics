@@ -4,8 +4,36 @@
 //
 // ponytail: first-fit spans fragment if replace churns different sizes.
 // Upgrade: one shared asset id when many entities draw the same mesh.
+//
+// E-130: the per-mesh vertex counts and the triangle indices are Uint16 while the vertex arena
+// (renderer.maxMeshVerts) is at most 65535, and Uint32 past that, up to MAX_MESH_VERTS_U32. Every thread
+// that binds the arena derives the width from the same maxVerts (meshIndexWidth), once; the code that reads
+// the columns is the same for both widths.
 
-const MAX_VERTS = 65535;
+export const MESH_INDEX_WIDTH_16 = 16;
+export const MESH_INDEX_WIDTH_32 = 32;
+/** The largest vertex arena with 16-bit counts and indices, and the most vertices one mesh has there. */
+export const MAX_MESH_VERTS_U16 = 65535;
+/** The largest vertex arena at 32 bits, and the most vertices one mesh has there. */
+export const MAX_MESH_VERTS_U32 = 1048576;
+/**
+ * renderer.maxMeshIndices' cap at either width. At the 32-bit vertex cap with these indices, one MESH layer's
+ * batches and the arena still fit the corner kernel's memory (meshMemory.js, 512 MB).
+ */
+export const MAX_MESH_INDICES = 4194304;
+/** setPlane's cells per axis: (254 + 1)^2 vertices fit 16 bits, and (1023 + 1)^2 is MAX_MESH_VERTS_U32. */
+export const MAX_PLANE_SEGMENTS_U16 = 254;
+export const MAX_PLANE_SEGMENTS_U32 = 1023;
+
+/** The arena's index width for a vertex arena of `maxVerts`: 16 up to 65535, 32 past it. */
+export function meshIndexWidth(maxVerts) {
+  return (maxVerts | 0) > MAX_MESH_VERTS_U16 ? MESH_INDEX_WIDTH_32 : MESH_INDEX_WIDTH_16;
+}
+
+/** The width an arena binds: meshIndexWidth(maxVerts), or 32 when the caller asks for it (tests do). */
+function arenaWidth(maxVerts, indexWidth) {
+  return indexWidth === MESH_INDEX_WIDTH_32 ? MESH_INDEX_WIDTH_32 : meshIndexWidth(maxVerts);
+}
 
 let _warnedPool = false;
 let _warnedIndices = false;
@@ -42,12 +70,15 @@ function align4(o) {
 
 /**
  * @param {ArrayBuffer|SharedArrayBuffer|null} buffer null = size only
+ * @param {number} width 16 or 32 (arenaWidth): the class of vertCount and indices
  */
-function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount) {
+function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount, width) {
   const V = maxVerts | 0;
   const I = maxIndices | 0;
   const E = entityCount | 0;
   const F = (E + 1) | 0;
+  const IndexArray = width === MESH_INDEX_WIDTH_32 ? Uint32Array : Uint16Array;
+  const ib = IndexArray.BYTES_PER_ELEMENT;
   let offset = 0;
   const view = (ctor, count, bytes) => {
     const v = buffer ? new ctor(buffer, offset, count) : null;
@@ -55,7 +86,7 @@ function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount) {
     return v;
   };
   const vertOffset = view(Int32Array, E, E * 4);
-  const vertCount = view(Uint16Array, E, E * 2);
+  const vertCount = view(IndexArray, E, E * ib);
   offset = align4(offset);
   const indexOffset = view(Int32Array, E, E * 4);
   const indexCount = view(Uint32Array, E, E * 4);
@@ -65,7 +96,7 @@ function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount) {
   const vertexY = view(Float32Array, V, V * 4);
   const uvU = view(Float32Array, V, V * 4);
   const uvV = view(Float32Array, V, V * 4);
-  const indices = view(Uint16Array, I, I * 2);
+  const indices = view(IndexArray, I, I * ib);
   offset = align4(offset);
   const revision = view(Uint32Array, 1, 4);
   const vertEpoch = view(Uint32Array, 1, 4);
@@ -106,6 +137,8 @@ function bindMeshGeom(buffer, maxVerts, maxIndices, entityCount) {
     maxIndices: I,
     entityCount: E,
     maxFree: F,
+    indexWidth: width === MESH_INDEX_WIDTH_32 ? MESH_INDEX_WIDTH_32 : MESH_INDEX_WIDTH_16,
+    IndexArray,
   };
 }
 
@@ -144,13 +177,31 @@ export class MeshGeometry {
   static _xy = null;
   static _uv = null;
   static _idx = null;
+  /** E-130: 16 or 32, the width of vertCount and indices; what an unbound arena reports is 16. */
+  static indexWidth = MESH_INDEX_WIDTH_16;
+  /** The class of vertCount and indices. */
+  static IndexArray = Uint16Array;
+  /** The most vertices replace takes for one mesh at this width. */
+  static vertLimit = MAX_MESH_VERTS_U16;
+  /** setPlane's cells per axis at this width. */
+  static planeSegments = MAX_PLANE_SEGMENTS_U16;
+  /** renderer.maxMeshVerts' and renderer.maxMeshIndices' caps (sceneSharedBuffers asserts them). */
+  static VERT_CAP = MAX_MESH_VERTS_U32;
+  static INDEX_CAP = MAX_MESH_INDICES;
 
-  static getBufferSize(maxVerts, maxIndices, entityCount) {
-    return bindMeshGeom(null, maxVerts, maxIndices, entityCount).byteLength;
+  /**
+   * @param {number} maxVerts
+   * @param {number} maxIndices
+   * @param {number} entityCount
+   * @param {number} [indexWidth] 32 binds 32-bit columns below 65536 vertices too (tests); omitted, the width
+   *   is meshIndexWidth(maxVerts), as every thread of a scene binds it
+   */
+  static getBufferSize(maxVerts, maxIndices, entityCount, indexWidth) {
+    return bindMeshGeom(null, maxVerts, maxIndices, entityCount, arenaWidth(maxVerts, indexWidth)).byteLength;
   }
 
-  static initializeArrays(buffer, maxVerts, maxIndices, entityCount) {
-    const g = bindMeshGeom(buffer, maxVerts, maxIndices, entityCount);
+  static initializeArrays(buffer, maxVerts, maxIndices, entityCount, indexWidth) {
+    const g = bindMeshGeom(buffer, maxVerts, maxIndices, entityCount, arenaWidth(maxVerts, indexWidth));
     this.vertOffset = g.vertOffset;
     this.vertCount = g.vertCount;
     this.indexOffset = g.indexOffset;
@@ -176,6 +227,11 @@ export class MeshGeometry {
     this.maxIndices = g.maxIndices;
     this.entityCount = g.entityCount;
     this._maxFree = g.maxFree;
+    const wide = g.indexWidth === MESH_INDEX_WIDTH_32;
+    this.indexWidth = g.indexWidth;
+    this.IndexArray = g.IndexArray;
+    this.vertLimit = wide ? MAX_MESH_VERTS_U32 : MAX_MESH_VERTS_U16;
+    this.planeSegments = wide ? MAX_PLANE_SEGMENTS_U32 : MAX_PLANE_SEGMENTS_U16;
 
     this.vertOffset.fill(-1);
     this.vertCount.fill(0);
@@ -221,6 +277,10 @@ export class MeshGeometry {
     this.maxIndices = 0;
     this.entityCount = 0;
     this._maxFree = 0;
+    this.indexWidth = MESH_INDEX_WIDTH_16;
+    this.IndexArray = Uint16Array;
+    this.vertLimit = MAX_MESH_VERTS_U16;
+    this.planeSegments = MAX_PLANE_SEGMENTS_U16;
     resetMeshGeometryWarns();
   }
 
@@ -395,7 +455,7 @@ export class MeshGeometry {
       floats = vertN * 2;
       if ((positions.length | 0) < floats) return false;
     }
-    if (vertN < 3 || vertN > MAX_VERTS) return false;
+    if (vertN < 3 || vertN > this.vertLimit) return false;
     if (!finitePairs(positions, floats)) return false;
 
     let indexN = 0;

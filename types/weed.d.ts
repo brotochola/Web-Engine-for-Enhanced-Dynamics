@@ -3204,7 +3204,10 @@ export declare class MeshRenderer extends Component {
   setVertices(positions: ArrayLike<number>): this;
   /** Drop the explicit mesh and fall back to collider fill. */
   clearMesh(): this;
-  /** Subdivided quad, local origin at the center. segX / segY are cell counts. */
+  /**
+   * Subdivided quad, local origin at the center. segX / segY are cell counts: at most 254, or 1023 when
+   * renderer.maxMeshVerts passes 65535 (a 32-bit vertex arena).
+   */
   setPlane(width: number, height: number, segX: number, segY: number): this;
   /** Textured strip. points is flat x,y or {x,y}[]. */
   setRope(

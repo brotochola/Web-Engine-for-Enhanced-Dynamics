@@ -207,7 +207,7 @@ Same Treiber stack as joints.
 
 ### `meshGeomData`
 
-Explicit visual mesh, one span per entity. Off unless `renderer.maxMeshVerts` > 0. Layout: `MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, entityCount)` — per entity `vertOffset` (`-1` = none), `vertCount`, `indexOffset` (`-1` = convex fan), `indexCount`, `hasUv`; arenas `vertexX/Y`, `uvU/V`, `indices` (`Uint16`, so `maxMeshVerts` ≤ 65535); one `revision`. The free-span table sits in the same SAB behind a spin lock so logic workers can allocate. Pixi only reads. The Box2D worker does not bind it.
+Explicit visual mesh, one span per entity. Off unless `renderer.maxMeshVerts` > 0. Layout: `MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, entityCount)` — per entity `vertOffset` (`-1` = none), `vertCount`, `indexOffset` (`-1` = convex fan), `indexCount`, `hasUv`; arenas `vertexX/Y`, `uvU/V`, `indices`. `vertCount` and `indices` are `Uint16` while `maxMeshVerts` ≤ 65535 and `Uint32` past that (cap 1048576), chosen from `maxMeshVerts` when each worker binds the block; one `revision`. The free-span table sits in the same SAB behind a spin lock so logic workers can allocate. Pixi only reads. The Box2D worker does not bind it.
 
 | Writer | Reader |
 | ------ | ------ |

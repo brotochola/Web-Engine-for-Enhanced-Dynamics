@@ -142,17 +142,18 @@ export function validateSceneSharedBufferConfig(scene) {
     0,
     1 << 20,
   );
+  // E-130: up to 65535 vertices the arena is 16-bit; past that 32-bit, up to MeshGeometry.VERT_CAP (2^20).
   assertIntegerInRange(
     'renderer.maxMeshVerts',
     config.renderer?.maxMeshVerts ?? 0,
     0,
-    65535,
+    MeshGeometry.VERT_CAP,
   );
   assertIntegerInRange(
     'renderer.maxMeshIndices',
     config.renderer?.maxMeshIndices ?? 0,
     0,
-    4194304,
+    MeshGeometry.INDEX_CAP,
   );
   assertIntegerInRange('spatial.maxNeighbors', config.spatial.maxNeighbors, 0, MAX_ENTITIES);
   assertIntegerInRange('spatial.maxEntitiesPerCell', config.spatial.maxEntitiesPerCell, 1, 255);
@@ -843,6 +844,7 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
   const maxMeshIndices = config.renderer?.maxMeshIndices | 0;
   scene.meshMemory = null;
   if (maxMeshVerts > 0) {
+    // E-130: the block's index width follows maxMeshVerts (16-bit up to 65535), as every worker derives it.
     const meshGeomBytes = MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, totalEntityCount);
     // E-76 W11: with the corner kernel on, the block is byte 0 of the mesh memory, which also holds every MESH
     // layer's batches the way Pixi sizes them (meshMemory.js). No MESH layer, or the switch off: a buffer of its own.

@@ -214,7 +214,8 @@ export function packMeshes(entityIndices) {
     const indexN = MeshGeometry.indexCount[entityIndex] >>> 0;
     const indexOff = MeshGeometry.indexOffset[entityIndex] | 0;
     if (indexN > 0 && indexOff >= 0 && MeshGeometry.indices) {
-      indices = new Uint16Array(indexN);
+      // The arena's width (E-130): Uint16 up to 65535 vertices, Uint32 past that.
+      indices = new MeshGeometry.IndexArray(indexN);
       copyInto(indices, MeshGeometry.indices.subarray(indexOff), indexN);
     }
     out.push({ entityIndex, xy, uv, indices });

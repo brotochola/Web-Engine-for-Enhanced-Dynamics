@@ -639,11 +639,12 @@ export const RENDERER_DEFAULTS = Object.freeze({
    */
   interpolation: false,
   /**
-   * Explicit MeshRenderer vertex arena (local x,y). 0 = off.
-   * Indices are Uint16, so this caps at 65535.
+   * Explicit MeshRenderer vertex arena (local x,y). 0 = off. Up to 65535 the vertex counts and
+   * triangle indices are Uint16; past that they are Uint32, up to 1048576 (2^20). One mesh may
+   * take the whole arena.
    */
   maxMeshVerts: 0,
-  /** Explicit MeshRenderer index arena. 0 = convex fans only. Caps at 2^22. */
+  /** Explicit MeshRenderer index arena. 0 = convex fans only. Caps at 2^22 at either width. */
   maxMeshIndices: 0,
 });
 
