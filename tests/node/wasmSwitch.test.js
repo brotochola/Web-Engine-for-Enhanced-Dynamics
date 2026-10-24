@@ -80,3 +80,39 @@ test('wasm.spatialPublish chooses between the publish memory and the JS path', (
   assert.equal(off.buffers.neighborData.byteLength, 1000 * 33 * 2, 'plain neighbour rows');
   assert.equal(off.gridMetadata.candByte, 0, 'the spatial worker binds no WASM publish');
 });
+
+test('wasm.preRenderEmit puts SpriteRenderer and the emit state in the render-queue memory', () => {
+  assert.equal(WASM_DEFAULTS.preRenderEmit, true);
+
+  const on = buildScene({});
+  const rqm = on.renderQueueMemory;
+  assert.ok(rqm?.layout.emit, 'the memory carries the emit regions');
+  const e = rqm.layout.emit;
+  assert.equal(on.buffers.componentData.SpriteRenderer, rqm.buffer);
+  assert.equal(on.buffers.componentDataByte.SpriteRenderer, e.spriteRendererByte);
+  assert.equal(SpriteRenderer.active.buffer, rqm.buffer, 'the main thread binds it there');
+  assert.equal(SpriteRenderer.active.byteOffset, e.spriteRendererByte);
+  // The scene has no ShadowCaster and no decorations: no blocks, nothing bound at an offset.
+  assert.equal(e.shadowCasterByte, -1);
+  assert.equal(e.decorationByte, -1);
+  assert.equal(on.buffers.componentDataByte.ShadowCaster, undefined);
+  assert.equal(on.buffers.entityTextureData, rqm.buffer);
+  assert.equal(on.buffers.entityTextureByte, e.lastTextureByte);
+  // Other components keep buffers of their own.
+  assert.ok(on.buffers.componentData.Transform instanceof SharedArrayBuffer);
+  assert.notEqual(on.buffers.componentData.Transform, rqm.buffer);
+
+  const off = buildScene({ preRenderEmit: false });
+  assert.equal(off.renderQueueMemory.layout.emit, null, 'the pack memory without the emit regions');
+  assert.notEqual(off.buffers.componentData.SpriteRenderer, off.renderQueueMemory.buffer);
+  assert.equal(SpriteRenderer.active.byteOffset, 0);
+  assert.deepEqual(off.buffers.componentDataByte, {});
+  assert.equal(off.buffers.entityTextureByte, 0);
+
+  const emitOnly = buildScene({ gpuPack: false });
+  assert.ok(emitOnly.renderQueueMemory?.layout.emit, 'the emit alone still makes the memory');
+
+  const none = buildScene({ gpuPack: false, preRenderEmit: false });
+  assert.equal(none.renderQueueMemory, null);
+  assert.ok(none.buffers.renderQueueDataA instanceof SharedArrayBuffer);
+});

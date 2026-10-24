@@ -5952,7 +5952,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // Entity texture lookup buffer (separate SAB)
       // Maps entityIndex -> last computed globalTextureId for shadow system
       if (data.renderQueue.entityTextureData) {
-        this.entityLastTextureId = new Uint16Array(data.renderQueue.entityTextureData);
+        this.entityLastTextureId = new Uint16Array(
+          data.renderQueue.entityTextureData,
+          data.renderQueue.entityTextureByte | 0,
+          this.globalEntityCount
+        );
       }
 
       this._rqPrevCount = 0;

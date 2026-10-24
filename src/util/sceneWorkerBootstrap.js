@@ -312,6 +312,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       cameraB: scene.buffers.renderQueueCameraB,
       sync: scene.buffers.renderQueueSync,
       entityTextureData: scene.buffers.entityTextureData,
+      // Its byte offset there: the emit memory's emitLastTexture region (E-112), or 0.
+      entityTextureByte: scene.buffers.entityTextureByte | 0,
       maxItems: scene.maxVisibleRenderables,
       itemSize: 48,
     },

@@ -5,6 +5,9 @@ import { computeBufferSize, createViews } from '../../src/render/renderQueueLayo
 import { computeGpuQueueBufferSize, createGpuQueueViews, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { GPU_PACK_COLUMNS } from '../../src/render/gpuPackClient.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { DecorationComponent } from '../../src/components/decorationComponent.js';
+import { EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
 
 // E-76 W9: the render queue's and the GPU queue's buffers as regions of one shared memory. Every
 // view a worker makes from the payload's (buffer, byte) pairs lies in its own region.
@@ -71,4 +74,65 @@ test('each queue views its own region, and writing one leaves the others alone',
   assert.equal(qb.x.reduce((s, x) => s + x, 0), 0, 'queue B untouched');
   assert.equal(gb.sprites.reduce((s, x) => s + x, 0), 0, 'GPU queue B untouched');
   assert.equal(new Uint8Array(m.buffer, 0, L.queueAByte).reduce((s, x) => s + x, 0), 0, 'nothing before queue A');
+});
+
+test('with the emit spec, the component blocks and the emit state are regions apart from the queues', () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const entities = 3000;
+  const decorations = 700;
+  const spriteBytes = SpriteRenderer.getBufferSize(entities);
+  const decorationBytes = DecorationComponent.getBufferSize(decorations);
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, { entities, spriteBytes, casterBytes: 0, decorationBytes });
+  assert.ok(m?.layout.emit);
+  const L = m.layout;
+  const e = L.emit;
+  assert.equal(e.entities, entities);
+  assert.equal(e.shadowCasterByte, -1, 'no ShadowCaster block');
+  const spans = [
+    ['queueA', L.queueAByte, queueBytes],
+    ['queueB', L.queueBByte, queueBytes],
+    ['gpuA', L.gpuAByte, gpuBytes],
+    ['gpuB', L.gpuBByte, gpuBytes],
+    ['spriteRenderer', e.spriteRendererByte, spriteBytes],
+    ['decorations', e.decorationByte, decorationBytes],
+    ['frame', e.frameByte, entities * 2],
+    ['accum', e.accumByte, entities * 4],
+    ['lastTexture', e.lastTextureByte, entities * 2],
+    ['collectorType', e.collectorTypeByte, MAX],
+    ['collectorIndex', e.collectorIndexByte, MAX * 4],
+    ['collectorY', e.collectorYByte, MAX * 4],
+    ['proxy', e.proxyByte, EMIT_PROXY_SHEETS * EMIT_PROXY_STATES * 4],
+    ['frameCount', e.frameCountByte, EMIT_MAX_ANIMATIONS * 4],
+    ['frameStart', e.frameStartByte, EMIT_MAX_ANIMATIONS * 4],
+    ['frameWidth', e.frameWidthByte, EMIT_MAX_FRAMES * 2],
+    ['frameHeight', e.frameHeightByte, EMIT_MAX_FRAMES * 2],
+    ['ends', e.endsByte, MAX * 8],
+    ['warns', e.warnsByte, MAX * 8],
+    ['foreign', e.foreignByte, MAX * 4],
+    ['results', e.resultsByte, 16],
+    ['table', e.tableByte, EMIT_TABLE_SLOTS * 4],
+  ].sort((a, b) => a[1] - b[1]);
+  for (let k = 0; k < spans.length; k++) {
+    const [name, at, bytes] = spans[k];
+    assert.equal(at % 64, 0, `${name} starts on a line`);
+    assert.ok(at + bytes <= m.buffer.byteLength, `${name} fits`);
+    if (k > 0) assert.ok(at >= spans[k - 1][1] + spans[k - 1][2], `${name} overlaps ${spans[k - 1][0]}`);
+  }
+  // A component bound in its block writes only there.
+  SpriteRenderer.initializeArrays(m.buffer, entities, e.spriteRendererByte);
+  for (const v of Object.values(SpriteRenderer)) if (ArrayBuffer.isView(v)) v.fill(1);
+  const all = new Uint8Array(m.buffer);
+  let outside = 0;
+  for (let i = 0; i < all.length; i++) {
+    if (i >= e.spriteRendererByte && i < e.spriteRendererByte + spriteBytes) continue;
+    outside += all[i];
+  }
+  assert.equal(outside, 0, 'nothing written outside the SpriteRenderer block');
+});
+
+test('without the emit spec the layout has no emit regions', () => {
+  const { m } = setup();
+  assert.equal(m.layout.emit, null);
 });

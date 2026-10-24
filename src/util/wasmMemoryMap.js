@@ -64,24 +64,69 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * - packInverse: the scatter pack's inverse of the index list, one u32 per queue row (W9b);
  * - packTables: one column table per queue the pack reads (u32 byte offsets, gpuPackClient.js);
  * - packResults: the kernel's particle count (u32).
+ * With `emit` (E-112, the emit kernel `preRenderEmit.wasm`), what pre-render's emit reads and writes:
+ * - spriteRenderer, shadowCaster, decorations: those components' blocks (Component.initializeArrays at
+ *   the region's byte, in every worker and on the main thread); 0 bytes when the scene has none;
+ * - emitFrame, emitAccum: pre-render's animation frame (u16) and clock (f32) per entity;
+ * - emitLastTexture: the texture each entity last drew (u16), pre-render writes it, Pixi reads it;
+ * - emitCollectorType, emitCollectorIndex, emitCollectorY: the main collector's rows (u8, i32, f32);
+ * - emitProxy, emitFrameCount, emitFrameStart, emitFrameWidth, emitFrameHeight: the texture metadata as
+ *   flat tables, written when it arrives (i32 per sheet and state, i32 and u16 per animation and frame);
+ * - emitEnds, emitWarns: [entity, value] u32 pairs the kernel hands back; emitForeign: the rows it
+ *   leaves to the JS (u32); emitResults: its counts; emitTable: its column table (u32 byte offsets).
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {number} maxItems the queue's rows
  * @param {number} tableBytes packTables' size
+ * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number }} [emit]
  */
-export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes) {
-  return layoutRegions([
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null) {
+  const n = maxItems | 0;
+  const regions = [
     { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
     { name: 'queueA', owner: 'pre-render writes; Pixi reads', bytes: queueBytes },
     { name: 'queueB', owner: 'pre-render writes; Pixi reads', bytes: queueBytes },
     { name: 'gpuA', owner: 'pre-render packs; Pixi uploads', bytes: gpuQueueBytes },
     { name: 'gpuB', owner: 'pre-render packs; Pixi uploads', bytes: gpuQueueBytes },
-    { name: 'packIndices', owner: 'pre-render', bytes: (maxItems | 0) * 4 },
-    { name: 'packInverse', owner: 'pre-render', bytes: (maxItems | 0) * 4 },
+    { name: 'packIndices', owner: 'pre-render', bytes: n * 4 },
+    { name: 'packInverse', owner: 'pre-render', bytes: n * 4 },
     { name: 'packTables', owner: 'pre-render', bytes: tableBytes },
     { name: 'packResults', owner: 'pre-render', bytes: 16 },
-  ]);
+  ];
+  if (emit) {
+    const e = emit.entities | 0;
+    regions.push(
+      { name: 'spriteRenderer', owner: 'every worker (SpriteRenderer)', bytes: emit.spriteBytes | 0 },
+      { name: 'shadowCaster', owner: 'every worker (ShadowCaster)', bytes: emit.casterBytes | 0 },
+      { name: 'decorations', owner: 'every worker (DecorationComponent)', bytes: emit.decorationBytes | 0 },
+      { name: 'emitFrame', owner: 'pre-render', bytes: e * 2 },
+      { name: 'emitAccum', owner: 'pre-render', bytes: e * 4 },
+      { name: 'emitLastTexture', owner: 'pre-render writes; Pixi reads', bytes: e * 2 },
+      { name: 'emitCollectorType', owner: 'pre-render', bytes: n },
+      { name: 'emitCollectorIndex', owner: 'pre-render', bytes: n * 4 },
+      { name: 'emitCollectorY', owner: 'pre-render', bytes: n * 4 },
+      { name: 'emitProxy', owner: 'pre-render', bytes: EMIT_PROXY_SHEETS * EMIT_PROXY_STATES * 4 },
+      { name: 'emitFrameCount', owner: 'pre-render', bytes: EMIT_MAX_ANIMATIONS * 4 },
+      { name: 'emitFrameStart', owner: 'pre-render', bytes: EMIT_MAX_ANIMATIONS * 4 },
+      { name: 'emitFrameWidth', owner: 'pre-render', bytes: EMIT_MAX_FRAMES * 2 },
+      { name: 'emitFrameHeight', owner: 'pre-render', bytes: EMIT_MAX_FRAMES * 2 },
+      { name: 'emitEnds', owner: 'pre-render', bytes: n * 8 },
+      { name: 'emitWarns', owner: 'pre-render', bytes: n * 8 },
+      { name: 'emitForeign', owner: 'pre-render', bytes: n * 4 },
+      { name: 'emitResults', owner: 'pre-render', bytes: 16 },
+      { name: 'emitTable', owner: 'pre-render', bytes: EMIT_TABLE_SLOTS * 4 },
+    );
+  }
+  return layoutRegions(regions);
 }
+
+/** The emit's texture tables (E-112): spritesheetId and animationState are u8, texture ids u16. */
+export const EMIT_PROXY_SHEETS = 256;
+export const EMIT_PROXY_STATES = 256;
+export const EMIT_MAX_ANIMATIONS = 65536;
+export const EMIT_MAX_FRAMES = 65536;
+/** Room for the emit kernel's column table (preRenderEmitClient.js EMIT_SLOTS). */
+export const EMIT_TABLE_SLOTS = 96;
 
 /**
  * The particle memory (E-79 `particleIntegrate.wasm`, E-80 `particleLists.wasm`, created by

@@ -248,8 +248,12 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     const bufferSize = ComponentClass.getBufferSize(totalEntityCount);
     if (bufferSize === 0) continue;
 
-    buffers.componentData[componentName] = new SharedArrayBuffer(bufferSize);
-    ComponentClass.initializeArrays(buffers.componentData[componentName], totalEntityCount, buffers.componentDataByte?.[componentName] | 0);
+    // E-112: a block of the render-queue memory when it holds this component, else a buffer of its own.
+    const at = buffers.componentDataByte?.[componentName];
+    buffers.componentData[componentName] = at !== undefined
+      ? scene.renderQueueMemory.buffer
+      : new SharedArrayBuffer(bufferSize);
+    ComponentClass.initializeArrays(buffers.componentData[componentName], totalEntityCount, at | 0);
   }
 }
 
@@ -325,8 +329,11 @@ function initializeDecorationBuffers(scene) {
   if (maxDecorations <= 0) return;
 
   const decorationBufferSize = DecorationComponent.getBufferSize(maxDecorations);
-  buffers.componentData.DecorationComponent = new SharedArrayBuffer(decorationBufferSize);
-  DecorationComponent.initializeArrays(buffers.componentData.DecorationComponent, maxDecorations, buffers.componentDataByte?.DecorationComponent | 0);
+  const decorationAt = buffers.componentDataByte?.DecorationComponent;
+  buffers.componentData.DecorationComponent = decorationAt !== undefined
+    ? scene.renderQueueMemory.buffer
+    : new SharedArrayBuffer(decorationBufferSize);
+  DecorationComponent.initializeArrays(buffers.componentData.DecorationComponent, maxDecorations, decorationAt | 0);
   DecorationComponent.decorationCount = maxDecorations;
 
   const { freeList, freeListTop } = createUint16FreeListBuffers(
@@ -480,6 +487,49 @@ export function resolveMaxVisibleRenderables(scene) {
   return maxVisibleRenderables;
 }
 
+/**
+ * The render queue's size and its memory (E-76 W9), made before the component buffers: with the emit
+ * kernel on (E-112) the memory also holds the SpriteRenderer, ShadowCaster and DecorationComponent
+ * blocks, which those components are then bound in (buffers.componentDataByte), and pre-render's emit
+ * state. Without the memory (both switches off, or too big) every component keeps a buffer of its own.
+ */
+function initializeRenderQueueMemory(scene) {
+  const { buffers, config } = scene;
+  buffers.componentDataByte = {};
+  const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
+  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
+  scene.maxVisibleRenderables = maxVisibleRenderables;
+  scene.gpuQueueCaps = gpuCaps;
+  const pack = config.wasm?.gpuPack !== false;
+  const emit = config.wasm?.preRenderEmit !== false ? emitBlocks(scene) : null;
+  scene.renderQueueMemory = pack || emit
+    ? createRenderQueueMemory(
+        maxVisibleRenderables,
+        computeRenderQueueBufferSize(maxVisibleRenderables),
+        computeGpuQueueBufferSize(gpuCaps),
+        emit,
+      )
+    : null;
+  const e = scene.renderQueueMemory?.layout.emit;
+  if (!e) return;
+  if (e.spriteRendererByte >= 0) buffers.componentDataByte.SpriteRenderer = e.spriteRendererByte;
+  if (e.shadowCasterByte >= 0) buffers.componentDataByte.ShadowCaster = e.shadowCasterByte;
+  if (e.decorationByte >= 0) buffers.componentDataByte.DecorationComponent = e.decorationByte;
+}
+
+/** The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster and decorations. */
+function emitBlocks(scene) {
+  const pools = scene.componentPools || {};
+  const n = scene.totalEntityCount;
+  const maxDecorations = scene.config.decoration?.maxDecorations | 0;
+  return {
+    entities: n,
+    spriteBytes: pools.SpriteRenderer?.ComponentClass ? SpriteRenderer.getBufferSize(n) : 0,
+    casterBytes: pools.ShadowCaster?.ComponentClass ? ShadowCaster.getBufferSize(n) : 0,
+    decorationBytes: maxDecorations > 0 ? DecorationComponent.getBufferSize(maxDecorations) : 0,
+  };
+}
+
 function initializeLightingAndRenderBuffers(scene) {
   const { buffers, config } = scene;
 
@@ -538,17 +588,11 @@ function initializeLightingAndRenderBuffers(scene) {
     scene.decalsTotalTiles = totalTiles;
   }
 
-  const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
+  // initializeRenderQueueMemory sized the queues and made the memory before the component buffers.
+  const maxVisibleRenderables = scene.maxVisibleRenderables;
   const renderQueueBufferSize = computeRenderQueueBufferSize(maxVisibleRenderables);
-  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
+  const gpuCaps = scene.gpuQueueCaps;
   const gpuQueueBufferSize = computeGpuQueueBufferSize(gpuCaps);
-
-  // E-76 W9: both queues in one WebAssembly.Memory, so pre-render's pack kernel reads the rows
-  // where it wrote them. Each key still holds a buffer, now with a byte offset beside it (0 for a
-  // plain SharedArrayBuffer).
-  scene.renderQueueMemory = config.wasm?.gpuPack === false
-    ? null
-    : createRenderQueueMemory(maxVisibleRenderables, renderQueueBufferSize, gpuQueueBufferSize);
   const rqm = scene.renderQueueMemory;
   buffers.renderQueueDataA = rqm ? rqm.buffer : new SharedArrayBuffer(renderQueueBufferSize);
   buffers.renderQueueDataB = rqm ? rqm.buffer : new SharedArrayBuffer(renderQueueBufferSize);
@@ -559,13 +603,11 @@ function initializeLightingAndRenderBuffers(scene) {
   buffers.renderQueueSync = new SharedArrayBuffer(8);
   new Int32Array(buffers.renderQueueSync)[0] = 0;
   new Int32Array(buffers.renderQueueSync)[1] = 0;
-  scene.maxVisibleRenderables = maxVisibleRenderables;
 
   buffers.gpuQueueDataA = rqm ? rqm.buffer : new SharedArrayBuffer(gpuQueueBufferSize);
   buffers.gpuQueueDataB = rqm ? rqm.buffer : new SharedArrayBuffer(gpuQueueBufferSize);
   buffers.gpuQueueDataAByte = rqm ? rqm.layout.gpuAByte : 0;
   buffers.gpuQueueDataBByte = rqm ? rqm.layout.gpuBByte : 0;
-  scene.gpuQueueCaps = gpuCaps;
 
   // Physics pose publish (post-step snapshot for visuals) — SoA x,y,rotC,rotS × 2 buffers
   const poseN = scene.totalEntityCount;
@@ -610,8 +652,11 @@ function initializeLightingAndRenderBuffers(scene) {
     };
   }
 
-  const entityTextureBufferSize = scene.totalEntityCount * 2;
-  buffers.entityTextureData = new SharedArrayBuffer(entityTextureBufferSize);
+  // The texture each entity last drew: pre-render writes it, Pixi reads it. In the emit memory it is
+  // the kernel's emitLastTexture region (E-112).
+  const emitLayout = rqm?.layout.emit;
+  buffers.entityTextureData = emitLayout ? rqm.buffer : new SharedArrayBuffer(scene.totalEntityCount * 2);
+  buffers.entityTextureByte = emitLayout ? emitLayout.lastTextureByte : 0;
 }
 
 function initializeNavigationAndQueryBuffers(scene) {
@@ -985,6 +1030,7 @@ function spatialGridSpec(config) {
 export function createSceneSharedBuffers(scene) {
   bindEntityIdWidth(resolveEntityIdWidth(scene.config));
   validateSceneSharedBufferConfig(scene);
+  initializeRenderQueueMemory(scene);
   initializeCoreEntityAndComponentBuffers(scene);
   initializeParticleBuffers(scene);
   initializeLiquidFunRenderBuffer(scene);

@@ -826,23 +826,44 @@ class PreRenderWorker extends AbstractWorker {
             // Set initial write buffer (will be updated each frame)
             this._setWriteBuffer(0);
 
+            // E-112: in the emit memory the emit's state is regions of it, where its kernel reads them.
+            const emitLayout = data.renderQueueLayout?.emit && data.renderQueueMemory
+                && data.renderQueueLayout.emit.entities === this.globalEntityCount
+                ? data.renderQueueLayout.emit
+                : null;
+            const emitBuffer = emitLayout ? data.renderQueueMemory.buffer : null;
+
             // Entity texture lookup buffer
             if (data.renderQueue.entityTextureData) {
-                this.entityLastTextureId = new Uint16Array(data.renderQueue.entityTextureData);
+                this.entityLastTextureId = new Uint16Array(
+                    data.renderQueue.entityTextureData,
+                    data.renderQueue.entityTextureByte | 0,
+                    this.globalEntityCount
+                );
                 this.entityLastTextureId.fill(INVALID_TEXTURE_ID);
             }
 
             // Animation state buffers
             if (this.globalEntityCount > 0) {
-                this.entityFrameIndex = new Uint16Array(this.globalEntityCount);
-                this.entityFrameAccumulator = new Float32Array(this.globalEntityCount);
+                this.entityFrameIndex = emitLayout
+                    ? new Uint16Array(emitBuffer, emitLayout.frameByte, this.globalEntityCount)
+                    : new Uint16Array(this.globalEntityCount);
+                this.entityFrameAccumulator = emitLayout
+                    ? new Float32Array(emitBuffer, emitLayout.accumByte, this.globalEntityCount)
+                    : new Float32Array(this.globalEntityCount);
             }
             this._bindAnimationEndTypes(data.registeredClasses);
 
             // Pre-allocate renderable collector buffers
-            this._renderableY = new Float32Array(maxItems);
-            this._renderableType = new Uint8Array(maxItems);
-            this._renderableIndex = new Int32Array(maxItems);
+            this._renderableY = emitLayout
+                ? new Float32Array(emitBuffer, emitLayout.collectorYByte, maxItems)
+                : new Float32Array(maxItems);
+            this._renderableType = emitLayout
+                ? new Uint8Array(emitBuffer, emitLayout.collectorTypeByte, maxItems)
+                : new Uint8Array(maxItems);
+            this._renderableIndex = emitLayout
+                ? new Int32Array(emitBuffer, emitLayout.collectorIndexByte, maxItems)
+                : new Int32Array(maxItems);
             this._renderablePx = new Float32Array(maxItems);
             this._renderablePy = new Float32Array(maxItems);
             this._renderableRotC = new Float32Array(maxItems);
@@ -877,7 +898,7 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuPackOpts = {};
                 this._gpuCookieQ = null;
                 // E-76 W9: pack in WASM where both queues live in the render-queue memory.
-                if (data.renderQueueMemory && data.renderQueueLayout) {
+                if (data.renderQueueMemory && data.renderQueueLayout && this.config?.wasm?.gpuPack !== false) {
                     try {
                         this._gpuPackWasm = await bindGpuPack(data.renderQueueMemory, data.renderQueueLayout);
                     } catch (err) {

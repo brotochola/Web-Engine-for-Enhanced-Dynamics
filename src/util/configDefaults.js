@@ -438,6 +438,11 @@ export const WASM_DEFAULTS = Object.freeze({
   particleLists: true,
   /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */
   gpuPack: true,
+  /**
+   * Pre-render's emit (`preRenderEmit.wasm`, E-112): SpriteRenderer, ShadowCaster and DecorationComponent
+   * live in the render-queue memory with the emit's state, so the kernel reads every column there.
+   */
+  preRenderEmit: true,
 });
 
 // ============================================================================
