@@ -551,6 +551,55 @@ leave-one-out table. The migration's total is the number of these sittings, neve
 kernels' records ([HOW_WE_MEASURE](./HOW_WE_MEASURE.md#how-a-sitting-decides): a total is measured, not
 added).
 
+## Close-out plan (2026-10-24)
+
+Every hypothesis is decided or parked (W7 belongs to the grouping step; E-136 is a narrow lead). Decision 7's order
+holds: Phase 6, then the JS paths leave `src/`, then the kernels are grouped.
+
+**What is shipped.** 18 kernels, 191 KB, 69 exports with no name in two modules. Every one imports only
+`env.memory` and has no globals and no data segments, so no two can collide in a shared memory (L1 holds), and
+all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` and `wasm-opt -O3` steps).
+
+| Worker | Kernels | Memory |
+| --- | --- | --- |
+| spatial | spatialPublish, spatialGather | the spatial publish memory (in Box2D's block with physics) |
+| pre-render | preRenderCollect, preRenderEmit, gpuPack, painterRadix, shadowStamp | the render-queue memory (in the block with physics) |
+| pre-render | visibilitySweep, solidSegments, visibilityGather | the visibility memory (in the block with physics; the gather only there) |
+| particle | particleIntegrate, particleLists | the particle memory |
+| particle | decorationSway, bulletTick | the render-queue memory (bulletTick only in the block) |
+| particle | decalStamp; navFlowfield | the decal memory; the navigation memory |
+| pixi | gpuPack, painterRadix, meshCorners, decalPremultiply | Pixi's regions of the render-queue memory; the mesh memory; the decal memory |
+
+**Which JS paths can leave `src/` (the inventory of 2026-10-24).**
+
+- *A, the JS runs only with the switch off or a failed bind:* spatial publish and gather, particle integrate and
+  lists, navFlowfield, shadowStamp, painterRadix, meshCorners, decalStamp and decalPremultiply, gpuPack's entity
+  batch. Their JS moves under `tests/` as the parity reference (L12), the switch goes, and a failed bind becomes an
+  error that names it (L7).
+- *B, the JS still runs in a real configuration:* bulletTick and visibilityGather without physics (they live only in
+  Box2D's block) and at 32-bit ids or past 65 535 bullets (bulletTick); gpuPack for a nearest atlas, pose
+  interpolation and Pixi's glow, shadow, caster and custom-layer batches; the emit's foreign rows (particles,
+  glows, bullets, trails), LiquidFun frames and some Adobe frames; decorationSway at `swayFrequencyBuckets <= 1`;
+  solidSegments' oversized outlines; decal textures left out of the decal memory; any memory past its 512 MB cap.
+  Each needs the kernel to cover the case first (or the JS stays for that case).
+
+**Steps.**
+
+1. Phase 6 sitting: all JS against all WASM on Predator and the winners' owner scenes, four pairs each; leave-one-out
+   only for the winners whose solo gain was under 10 % (a large solo gain cannot vanish below 3 % when combined
+   without the all-JS pair showing it). Correctness together (every parity test in one process: the node suite),
+   L3 (commit after 20 scene loads), L4 (boot to steady step times), L7 (every scene boots once in Firefox and
+   WebKit). About two hours of machine time, unattended.
+2. Group A leaves `src/`, one kernel per commit, each with its parity test now reading the reference under `tests/`.
+3. Group B: the cases a kernel can take over, one at a time (the no-physics placement of bulletTick and
+   visibilityGather is the largest), then their JS leaves too.
+4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
+   fdlibm sin/cos), compiled with clang and linked by `wasm-ld` into one `engine.wasm`; the main thread compiles it
+   once and posts the `WebAssembly.Module` to the workers, each of which instantiates it once per memory it uses.
+   Not `wasm-merge`: a source merge lets W7 call gather, publish and rebuild in one unit and removes the duplicate
+   helpers. Each merged kernel passes its parity test bit for bit, ties a Node kernel A/B against its separate
+   build, and gets one Chrome check on its owner scene.
+
 ## Open decisions
 
 Taken on 2026-10-22 as this plan proposed them (the owner asked for the plan to be executed with its
