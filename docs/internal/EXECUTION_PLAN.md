@@ -872,6 +872,16 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
+### E-135 The self-lit fill of a compound occluder as shared vertices — **KEPT (product), 2026-10-24**
+Found in W21a's trace (R-0612): in `compoundVisPolyStressScene?remeshEvery=1&ringSegments=64` Pixi's `_buildSelfLitBatch`
+was 43.8 % of Pixi and `updateBuffer` 27.3 %, because every fill triangle of every (light, compound) pair went out as
+three fresh 13-float vertices. `ensureCompoundSolid` now builds the fill's shared vertices (same bits only, so the
+drawn triangles and attributes are the soup's) and Pixi writes them once per light, the triangles by index; each
+shape stops a light at the vertex or the index budget. Golden `selfLitFillTriangles.test.js`: the same 142 triangles
+from 152 vertices instead of 352. `ringSegments=128`, 4 pairs, worktrees: Pixi **3.361 → 2.875 ms, −15.6 %**, −16.2 %
+against the other workers (4/4). Left: the transmit wedges and the circle fan are already indexed; nothing else in
+the batch writes a vertex per triangle.
+
 ### E-123 Pixi's plain sprite pack in WASM, re-gated on one build (E-76 W9d) — **KEPT (product), 2026-10-24**
 W9d behind `wasm.pixiPack` (`6d9c7258`), timed with `--query-a wasmOff=pixiPack` on one worktree. Uploading from the
 shared rows cost every worker the change cannot reach about 6 % in Predator (physics +9.5 %, spatial +6.3 %, 4/4), the
