@@ -21,8 +21,8 @@ import { POLAR_BINS, SWEEP_CAPS } from '../render/visibility/angularSweep.js';
 import { MAX_POLYGON_VERTICES } from './configDefaults.js';
 import { NULL_GUARD_BYTES, alignToLine, layoutRegions } from './wasmMemoryMap.js';
 
-// The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 8192;
+// The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
+const WASM_MAX_PAGES = 32768;
 /** visibilitySweep.c's table slots and result words (visibilitySweepClient.js names them). */
 export const VISIBILITY_SWEEP_TABLE_SLOTS = 58;
 export const VISIBILITY_SWEEP_RESULT_WORDS = 11;

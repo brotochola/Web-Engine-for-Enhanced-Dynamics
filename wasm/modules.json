@@ -78,7 +78,7 @@
         "integrate_batch_u32",
         "integrate_batch_f32x4_u32"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "particleLists",
@@ -96,7 +96,7 @@
         "build_lists_f32x4_u32",
         "build_lists_turned_f32x4_u32"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "gpuPack",
@@ -162,7 +162,7 @@
       "exports": [
         "stamp_tiles"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "meshCorners",
@@ -172,7 +172,7 @@
         "rewrite_corners",
         "rewrite_corners_u32"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "navFlowfield",
@@ -181,7 +181,7 @@
       "exports": [
         "compute_flowfield"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "preRenderCollect",
@@ -295,7 +295,7 @@
         "premultiply_scalar",
         "premultiply_simd"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "shadowStampF32",

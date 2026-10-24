@@ -7,8 +7,8 @@
 import { Decal } from '../core/decal.js';
 import { DECAL_MAX_STAMPS, decalMemoryRegions } from './wasmMemoryMap.js';
 
-// The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 8192;
+// The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
+const WASM_MAX_PAGES = 32768;
 
 /**
  * @param {{ totalTiles: number, tilePixelSize: number, textures: Record<string, { width: number, height: number, rgba: ArrayBufferLike }> | null }} opts

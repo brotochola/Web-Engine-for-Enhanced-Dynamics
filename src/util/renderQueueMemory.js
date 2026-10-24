@@ -12,8 +12,8 @@
 import { painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
 import { GPU_PACK_COLUMNS } from '../render/gpuPackClient.js';
 
-// The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 8192;
+// The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
+const WASM_MAX_PAGES = 32768;
 
 /** Column tables the pack keeps: the two queue buffers, with room to spare. */
 export const GPU_PACK_TABLE_SLOTS = 4;

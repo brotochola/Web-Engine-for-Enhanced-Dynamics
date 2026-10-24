@@ -9,8 +9,8 @@ import { PARTICLE_DEFAULTS } from './configDefaults.js';
 import { MAX_POOL_SLOTS, poolSlotBytes } from './poolSlotWidth.js';
 import { particleMemoryRegions } from './wasmMemoryMap.js';
 
-// The module's import accepts up to 8192 pages (512 MB): wasm/modules.json maxMemoryPages.
-const WASM_MAX_PAGES = 8192;
+// The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
+const WASM_MAX_PAGES = 32768;
 
 /** Entries in each EXPO ease table (particleTween.js builds three of expoLutSize + 1). */
 export const PARTICLE_LUT_ENTRIES = (PARTICLE_DEFAULTS.expoLutSize | 0) + 1;
