@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 /**
  * Kernel (E-76 W4b): pre-render's sprite collect in WASM (wasm/preRenderCollect.c) against the JS loop of the
- * shipped PreRenderWorker.collectVisibleEntities, on a real worker, 250 000 sprites with no body in a scene
- * without physics, every column in one shared memory (preRenderCollectKernel.mjs).
+ * shipped PreRenderWorker.collectVisibleEntities, on a real worker, 250 000 sprites, every column in one shared
+ * memory (preRenderCollectKernel.mjs).
  *
- *   bunny   BunnyMark: skipCull, every sprite queued, the sprite query's list (copied into the memory)
- *   cull    a straight camera at zoom 0.5 over a world five times the view: about a fifth queued
- *   turned  the same camera turned 0.4 rad (E-51's copy of the loop)
+ *   bunny     BunnyMark: skipCull, every sprite queued, the sprite query's list (copied into the memory)
+ *   cull      a straight camera at zoom 0.5 over a world five times the view: about a fifth queued
+ *   turned    the same camera turned 0.4 rad (E-51's copy of the loop)
+ *   predator  Predator's collect (Phase 4): 60 % of the sprites on bodies, their published pose interpolated,
+ *             Y-sort on the foot line of anchors that are mostly not the feet; a straight camera over a world
+ *             twice the view, about a quarter queued
  *
  *   js    the shipped collectVisibleEntities with no kernel bound (its JS loop)
  *   wasm  the same with the kernel bound (_collectVisibleEntitiesWasm)
@@ -18,7 +21,7 @@ import { Query } from '../../src/core/query.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { loadWorker, quietly } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
-import { bindCollect, collectMemory } from './preRenderCollectKernel.mjs';
+import { bindCollect, collectMemory, useBodies, useSortY } from './preRenderCollectKernel.mjs';
 
 const ARGS = parseArgs();
 const SCALE = Number(ARGS.scale ?? 1);
@@ -28,7 +31,11 @@ const CASES = {
   bunny: { skipCull: true, rot: 0, zoom: 1, world: 1, list: true },
   cull: { skipCull: false, rot: 0, zoom: 0.5, world: 5, list: false },
   turned: { skipCull: false, rot: 0.4, zoom: 0.5, world: 5, list: false },
+  predator: { skipCull: false, rot: 0, zoom: 1, world: 2, list: false, bodies: true, sortY: true },
 };
+
+/** Predator's anchors: boids and clouds at the centre, people near the feet, rocks, grass at the feet. */
+const ANCHORS = [[0.5, 0.5], [0.5, 0.5], [0.5, 0.98], [0.5, 0.66], [0.5, 1]];
 
 export async function setupCollectKernel(caseName, seed = 0xb0b) {
   const c = CASES[caseName];
@@ -67,6 +74,41 @@ export async function setupCollectKernel(caseName, seed = 0xb0b) {
   pre._collectEntityGlow = () => {};
   pre._poseX = null;
   pre._rbActive = null;
+  if (c.bodies) {
+    for (let i = 0; i < N; i++) {
+      v.rb[i] = rng() < 0.6 ? 1 : 0;
+      const a = rng() * 6.3;
+      v.px[i] = v.x[i] + (rng() - 0.5) * 4;
+      v.py[i] = v.y[i] + (rng() - 0.5) * 4;
+      v.pc[i] = Math.cos(a);
+      v.ps[i] = Math.sin(a);
+      const a0 = rng() < 0.3 ? a : a + (rng() - 0.5) * 0.2;
+      v.qx[i] = v.px[i] + (rng() - 0.5) * 4;
+      v.qy[i] = v.py[i] + (rng() - 0.5) * 4;
+      v.qc[i] = Math.cos(a0);
+      v.qs[i] = Math.sin(a0);
+    }
+    useBodies(pre, m, { interpolate: true, alpha: 0.5 });
+  }
+  if (c.sortY) {
+    const frames = v.frameW.length;
+    for (let f = 0; f < frames; f++) {
+      v.frameW[f] = 16 + ((rng() * 112) | 0);
+      v.frameH[f] = 16 + ((rng() * 112) | 0);
+    }
+    for (let i = 0; i < N; i++) {
+      const [ax, ay] = ANCHORS[(rng() * ANCHORS.length) | 0];
+      v.anchorX[i] = ax;
+      v.anchorY[i] = ay;
+      v.scaleX[i] = 1;
+      v.scaleY[i] = 1;
+      v.inherit[i] = rng() < 0.5 ? 1 : 0;
+      v.faceC[i] = 1;
+      v.faceS[i] = 0;
+      v.lastTexture[i] = (rng() * frames) | 0;
+    }
+    useSortY(pre, m, (i) => i % frames);
+  }
   // BunnyMark's sprite query lists every bunny (32-bit ids past 65 535); the other cases scan every index.
   const ids = Uint32Array.from({ length: N }, (_, i) => i);
   let listLength = N;
