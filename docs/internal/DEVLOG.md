@@ -6,6 +6,18 @@ Every entry here is something I wanted: more speed, an easier API, a feature tha
 
 Demos are how the engine gets tested. They are not the product. The engine is the product.
 
+## Friday 23 October 2026 (late night) — The Emit in C
+
+Pre-render's emit writes the render queue: every visible sprite and grass blade gets its pose, scale, tint, texture and shadow terms copied into the columns Pixi draws from, and every animated sprite's clock moves on. In Predator that is about a fifth of pre-render, and E-98 had already taken the JavaScript as far as it went. The next step was C.
+
+The first kernel sitting tied: 882 against 885 calls a second, both sides stuck at 47 nanoseconds a row. The same kernel on a small population was twice as fast as the JavaScript, so something in memory was eating it. It was the queue itself. My bench gave it 32 768 rows, a power of two, which puts every float column exactly 128 KB from the next, and every column of a row in the same cache set. At 33 000 rows the JavaScript got 11 % faster and the C 2.4 times faster. Predator's real capacity, 119 298 rows, does not alias; the bench now uses it, and the C runs the emit 2.17 times as fast as the JavaScript, with the same bits out.
+
+What made it doable tonight is that the emit needs no physics memory: the collect already writes the poses into the queue, and the queue already lives in a WebAssembly memory for the pack kernel. What had to move were the components the emit reads, SpriteRenderer, ShadowCaster and the decorations, and a component could only bind from byte 0 of its own buffer. Now it binds at an offset, and those three live in the render-queue memory with the emit's own state beside them. The kernel writes the sprite and decoration rows; particles, glows and bullets are listed and written after it in JavaScript, so a frame with a few bullets still goes through C. Thirty frames with and without the kernel come out byte for byte the same.
+
+In Chrome the emit went from 1.24 to 0.92 ms, less than in Node, because in the game those columns arrive cold from the logic workers. Predator's pre-render went from 5.05 to 4.67 ms over eight pairs. The gate called it a regression on spatial, which barely reads what moved; a pair with only the kernel switched off did not reproduce it, and an A/A, the same code on both sides, called a regression too, on the renderer, at 6.6 %. Tonight this machine moves one worker or another by 4 to 8 % for no reason, so the owner's sign across sittings is what I read, and finding out why the gate drifts is now on the list.
+
+The next prize is in plain sight: the shadow pass is half of Predator's pre-render.
+
 ## Friday 23 October 2026 (night) — Animated Sprites Keep Their Persist Frames
 
 The render queue has two buffers that alternate. When one buffer's frame moved an animated sprite on to its next frame, the other still remembered the old one, and its persist check gave up: in a scene of animated sprites nearly every frame was a full emit. A test with two sprites on different periods kept 20 frames of 60 on the persist path. The check now gives that row the current frame's texture, the one the full emit would write, and carries on: 58 of 60, and the two full emits are each buffer's first frame. A new stress scene, 100 000 civilians walking on the spot at different speeds, all in view: pre-render 8.89 → 7.10 ms, −19.3 %.

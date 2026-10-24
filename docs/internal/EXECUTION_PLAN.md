@@ -877,15 +877,15 @@ multiple of 1 024 (queryChurn, spawnStorm: 8 193). Candidate: each queue column 
 (`renderQueueLayout` is the one layout), and `Component.initializeArrays` likewise if a scene shows it. Measure on
 a scene at an aliased capacity.
 
-### E-112 Pre-render's emit in WASM (E-76 W4a) — **kernel +117.5 % (25/25); wiring next**
-`wasm/test/preRenderEmit.c` writes `emitSpriteQueue`'s full-emit rows for sprites and decorations. On Predator's
-mix at its queue capacity, every column the emit reads moved into one memory with both queue buffers, checksums
-equal over 45 frames: 976.7 → 2 124.5 ops/s (+117.5 %, 25/25, Node 22). The emit and its shadow write are 21.3 % of
-Predator pre-render, so about 11.5 % of it. Wiring: SpriteRenderer, ShadowCaster and DecorationComponent bound at
-byte offsets inside the render-queue memory, with pre-render's animation state, collector and texture tables; the
-kernel writes sprite and decoration rows and lists the others (particles, bullets, glows), which the JS writes after
-it; Adobe and LiquidFun frames, custom layers and the persist path stay JS; switch `wasm.preRenderEmit`. Then the
-Predator gate, owner pre-render.
+### E-112 Pre-render's emit in WASM (E-76 W4a) — **KEPT (product), 2026-10-23**
+`wasm/preRenderEmit.c` writes `emitSpriteQueue`'s full-emit rows for sprites and decorations on the render-queue
+memory, where SpriteRenderer, ShadowCaster and DecorationComponent now live (bound at byte offsets) with the
+emit's state; the rows of other types are written after it by a copy of their branches. Kernel +117.5 % (25/25,
+Node); through the worker the queue is the JS one byte for byte. Chrome: `EMIT_MS` 1.24 → 0.92 ms. Predator gate,
+8 pairs: **pre-render 5.054 → 4.666 ms, −4.6 %, worse 2/8**; spatial's +5.1 % flag did not reproduce in a
+same-build pair (+1.0 %). Next in this line: W4c, the persist path (`_type0PersistHit`, `_writeType0PosesOnly`,
+`_rememberType0Set`) in the kernel, for BunnyMark's pre-render; W4b, the collect, after Phase 4.
+Report: [`reports/E-112-preRender-emit-wasm.md`](./reports/E-112-preRender-emit-wasm.md).
 
 ### E-111 The stamp grid's cell computed once — **open (kernel tie by the rounds rule, 2026-10-23)**
 `buildStampGrid` bins each caster in its count pass and again in its fill pass. Keeping the first pass's cell in a

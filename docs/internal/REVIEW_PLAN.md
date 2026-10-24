@@ -114,6 +114,7 @@ Baseline before any change: node suite **1169/1169** in 10.3 s at `80464dc1`.
 - [x] **M10 ✓ Pair-key "never boxed" comment is wrong in Chrome** — fixed `14f7198f` (E-10's premise was backwards; Chrome cost is E-54) ([`entityIdWidth.js:60-69`](../../src/util/entityIdWidth.js)) — 31-bit Smis under pointer compression; E-10/E-27 ran in Node.
 - [x] **M11 `PAIR_COUNT` includes foreign pairs** — fixed `539256dc` (PAIR_OWN beside it; PAIR_COUNT doc says not to sum it) (`logicWorker.js:2134`).
 - [x] **M12 `buildBundle.js` temp files** — fixed `5a44cb17` (finally cleanup, stamp dropped first, rmSync retries, drive-case run check; not exercised with a full build: dist/ is tracked) — unlink `src/index.bundle.js` in `finally`; stamp; Windows `rmSync` retries; `isCli()`.
+- [ ] **M13** — found 2026-10-23 (night). **The Predator gate flags one-sided 4–8 % drifts on workers a change cannot reach.** After a restart, an A/A (HEAD on both sides, 4 pairs) read REGRESSION (renderer +6.6 %, 4/4), and a same-build pair whose only difference was pre-render's emit kernel flagged physics +7.7 % (4/4) and logic +8.5 % (3/4); which worker drifts changes from sitting to sitting (HYPOTHESIS_LOG, the night's noise row). A 4-pair verdict at 3 % on a worker other than the owner cannot be read on this machine as it is: find what differs between the two sides (the worktree against the main folder, launch order, window placement, thermal state) before the next gate has to decide on one.
 
 ## Phase 3 — Dead code (hygiene)
 
