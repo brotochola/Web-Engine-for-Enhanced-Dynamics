@@ -122,10 +122,10 @@
     {
       "id": "E-111",
       "title": "The stamp grid's cell computed once",
-      "status": "open",
+      "status": "superseded",
       "statusText": "open: kernel tie by the rounds rule in four sittings, 2026-10-23",
       "date": "2026-10-23",
-      "result": "buildStampGrid keeps the count pass's cell for the fill pass. shadowStampMicrobench +10.5 to +17.7 % in four sittings, 72–86 % of rounds won (the rule is 90 %), checksums equal; the machine was loaded each time.",
+      "result": "superseded 2026-10-24 by E-114 (W23): shadowStamp.wasm builds the stamp grid; the JS buildStampGrid is the fallback",
       "area": "preRender",
       "kind": "js",
       "refs": [
@@ -133,9 +133,9 @@
       ],
       "aliases": [],
       "next": "Rerun shadowStampMicrobench on a quiet machine (diff D:\\tmp\\p4\\e111.patch); W23's port would absorb it.",
-      "rank": 19,
       "records": [
-        "R-0517"
+        "R-0517",
+        "R-0605"
       ]
     },
     {
@@ -871,10 +871,10 @@
     {
       "id": "W18",
       "title": "contact begin/stay classification in `logicWorker.js`",
-      "status": "open",
+      "status": "dropped",
       "statusText": "open, blocked on Phase 4",
       "date": null,
-      "result": "WASM classification beats JS; callbacks stay JS. Q1: 11.3 % inclusive of Predator logic (2.6–3.7 % ceiling). E-54 per-slot stamp already −9.5 %. Inputs in four SABs plus the ring",
+      "result": "dropped 2026-10-24: on its owner scene the classifier's cost was the game callbacks (stay JS) and the generation check's Atomics.load, which E-131 removed in JS (hunt logic −12.9 %); what C could still take is a few % of logic",
       "area": "logic",
       "kind": "wasm",
       "refs": [
@@ -882,18 +882,18 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 16,
       "records": [
-        "R-0601"
+        "R-0601",
+        "R-0606"
       ]
     },
     {
       "id": "W2b",
       "title": "the whole `buildVisibilityPolygons` frame, neighbour gather included",
-      "status": "open",
+      "status": "kept",
       "statusText": "open, blocked on Phase 4",
       "date": null,
-      "result": "One call per frame beats JS. the gather reads ~10 SABs and Box2D's heap (`_displayPose` 13.7 % of visPoly pre-render, the gather loop 26 %)",
+      "result": "kept (product) 2026-10-24: visPoly pre-render 3.765 → 2.839 ms (−24.3 %, 0/4), on top of W2a; compoundVisPoly ringSegments=64 under the floor, not worse",
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
@@ -901,7 +901,9 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 17
+      "records": [
+        "R-0602"
+      ]
     },
     {
       "id": "E-76",
@@ -7995,6 +7997,23 @@
       "kind": "reach",
       "result": "kept-hygiene 2026-10-24: the old layout and the 16-bit kernel body unchanged, meshApi on 262 144 vertices in Chrome (W11's pair, R-0575), the gate R-0577 NEUTRAL",
       "next": "After the float32 pass on meshCorners: an agent widens the arena indices and the corner kernel per width, parity tests at both widths, a meshApi load knob past 65 535 vertices."
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [
+        "R-0603",
+        "R-0604"
+      ],
+      "id": "E-131",
+      "title": "The contact stay loop reads the body generations plainly, not through Atomics.load",
+      "status": "kept",
+      "statusText": "opened 2026-10-24 (from W18's Q1b on the contact drain hunt scene)",
+      "date": "2026-10-24",
+      "area": "logic",
+      "kind": "js",
+      "result": "kept (product) 2026-10-24: ContactDrainHuntScene logic 4.123 → 3.590 ms (−12.9 %, 0/4); Predator NEUTRAL; kernel contact +31.0 %, dense +29.0 %",
+      "next": "The owner pair (ContactDrainHuntScene, logic) and the Predator guard (logic)."
     }
   ],
   "records": [
@@ -13259,6 +13278,67 @@
       "title": "Contact classification on its owner scene: the dispatch stays JS, the generation check is the port's ceiling, W18 Q1b",
       "verdict": "note",
       "text": "**note (Q1b on the owner scene).** One headed CPU trace each, source, detailed stats off, 8 s window after 6 s.\n\n| scene | logic busy | `_processBox2dCollisionCallbacks` self | the game's `onCollisionStay` |\n|---|---|---|---|\n| `ContactDrainStressScene` (2 048 balls) | 42 ms/s | 65.4 % | 11.7 % |\n| `ContactDrainHuntScene` (4 096 balls; logic0 STEP 5.36 ms) | 332 ms/s | 62.8 % | 31.8 % |\n\nThe default scene is under the floor, so the hunt scene is the owner. Inside the function, by line (hunt scene):\n- 39 % and 16 % on the two dispatch lines (`gameObjects[minE]?.onCollisionStay(maxE)` and its mirror);\n- 35 % on the generation check (`Atomics.load(gen, minE)` and `maxE`, two random entities per pair);\n- 3 % and 2 % on the listen flags.\n\nA C classification cannot take the dispatch: the callbacks are game code and stay JS, so a kernel would hand back a list the JS still walks and calls. What it could take is the generation check and the bookkeeping, at most about 40 % of the function: about a quarter of logic in the hunt scene, and 1 to 1.5 % of Predator's (Q1's 2.6 to 3.7 % ceiling). The generation check reads two scattered words per pair, which C would also wait on.\n\nNext, before any port: a JS screen of that line on `contactsMicrobench` (a plain read of `gen`, or the generations copied beside the pair slots). It is cheaper, it tells whether the line is the load or the memory, and the port's ceiling follows from it."
+    },
+    {
+      "id": "R-0602",
+      "date": "2026-10-24",
+      "time": "13:56",
+      "timeFrom": "recorded",
+      "title": "The per-light occluder gather in C, visPoly and compoundVisPoly pairs, W2b",
+      "verdict": "kept",
+      "text": "**kept (product).** Each light's neighbour gather in C (`visibilityGather.wasm`, `wasm.visibilityGather`, default on), with physics and raycasted lighting.\n\n**Q1 after W2a** (a headed CPU trace of visPolyStressScene, 261 ms/s busy in pre-render):\n- `_buildVisibilityPolygonsSwept`'s JS gather: 35.6 %;\n- the sweep, already in C: 29.7 %;\n- `_displayPose`: 19.2 %;\n- `clearPolarBins`: 4.6 %.\n\n**Built** (87864b65, a7a2156f, 00f2825a, aa94a7db, reworded as 4a937081):\n- `createVisibilityMemory` takes a place, so W2a's memory can be laid in Box2D's block. `visibilitySweep` and `solidSegments` import up to 32 768 pages.\n- With physics and raycasted lighting, the render-queue spec lays in the block LightOccluder's block, the visibility memory's region (sized by `visibilityMemoryOpts`, which pre-render places it with) and the gather's table, results and 48-byte event records.\n- The kernel walks one light's neighbour row. It takes the display pose (preRenderCollect.c's), the active and block checks, the reach cull, and packs circles, boxes and convex polygons as `writeOrientedBoxVerts` and `writePolygonVerts` do.\n- Compound solids and self-lit candidates come back as events in neighbour order. JS rasters the solids (W1) and writes the self-lit items.\n- The polar bins are cleared before a light's first solid, not for every light (`skipPolarBins`).\n- Without physics, or with a column outside the memory, the JS gather runs.\n\n`visibilityGatherWired.test.js`: on a real worker with every column in one memory, the kernel's polygons and self-lit lists are the JS gather's bit for bit. That holds over six frames of a mixed scene, a self-lit cap of 40, a scene with no compound solid, and W1 off.\n\n**Pairs.** One build (4a937081 as aa94a7db), side A `wasmOff=visibilityGather`, headed, source, detailed stats off, exact windows, 4 pairs, `--owner preRender`:\n- `visPolyStressScene`: pre-render 3.765 → 2.839 ms, **−24.3 %**, worse 0/4, cv 1/1 %. The other workers are under the floor and unchanged; 1 060 bodies.\n- `compoundVisPolyStressScene?ringSegments=64`: pre-render 1.986 → 1.964 ms (−1.1 %), under the floor. The W1 raster dominates there; not worse.\n\nThe headless smoke had read 3.860 → 2.755 ms. Screenshots of visPoly look the same on and off. Predator does not run raycasted lighting, so no gate.",
+      "commits": [
+        "87864b65",
+        "a7a2156f",
+        "00f2825a",
+        "4a937081"
+      ]
+    },
+    {
+      "id": "R-0603",
+      "date": "2026-10-24",
+      "time": "14:02",
+      "timeFrom": "recorded",
+      "title": "The contact stay loop without Atomics.load, contactsMicrobench, E-131",
+      "verdict": "kept-kernel",
+      "text": "**kept-kernel (the scene pairs follow).** From W18's Q1b (R-0601): in ContactDrainHuntScene, the stay loop's generation check (`Atomics.load(gen, minE)` and `maxE`) was 35 % of `_processBox2dCollisionCallbacks`. That record guessed the cost was the scattered reads; the screen says it was the atomic loads.\n\n`contactsMicrobench` gained a `plainGen` variant (9eac8461): the shipped method with `gen[minE]` and `gen[maxE]` read plainly. Real LogicWorker, Predator fixture pairs, `runKernelVariants --variants base,plainGen`, 5 alternating rounds, checksums equal (341220998):\n\n| case | base | plainGen | | won |\n|---|---|---|---|---|\n| contact (bodies touching) | 6 619.6 ops/s | 8 674.5 | **+31.0 %** | 5/5 |\n| dense (+24 px reach) | 1 125.5 | 1 452.1 | **+29.0 %** | 4/5 |\n\nThe kernel's whole frame (ring drain, begins and ends, the stay walk and its callbacks) loses 22 to 24 % of its time.\n\nWhy a plain read is safe: physics bumps a generation when it recreates a body. A bump the walk misses is caught on the next frame's walk, exactly as one landing just after an `Atomics.load` would be. The value is an aligned 32-bit word, so it cannot tear.\n\nApplied to the stay loop only (b25528f1). The foreign sweep (`_foreignValid`, every 30 frames) and the begin path's `_entityGen` keep `Atomics.load`.",
+      "commits": [
+        "9eac8461"
+      ]
+    },
+    {
+      "id": "R-0604",
+      "date": "2026-10-24",
+      "time": "14:22",
+      "timeFrom": "recorded",
+      "title": "The contact stay loop without Atomics.load, the hunt pair, its A/A and Predator, E-131",
+      "verdict": "kept",
+      "text": "**kept (product).** Both sides from worktrees (`--vs 9eac8461 --hyp-rev b25528f1`), headed, source, detailed stats off, exact windows, 4 pairs.\n\n**Owner: ContactDrainHuntScene (4 096 balls), logic.** Logic went from 4.123 to 3.590 ms: **−12.9 %**, worse 0/4, cv 14/10 %. Moved, awake and bodies are 4 096 on every side.\n\n**Predator (logic), the guard:** NEUTRAL.\n- logic +0.1 % paired (2/4), −0.3 % against the others;\n- no worker 3 % worse in 3 of 4 (physics +3.9 % in 2/4, cv 11/13 %);\n- load within 0.3 %.\n\n**The hunt pair's flag.** The runner read physics +3.1 % (3/4, cv 7/6 %).\n- Per pair: +3.8, +2.5, +5.8 and −0.2 %.\n- Both sides' physics rose together through the run, from about 3.6 to 4.1 ms. Moved bodies are equal, so there is no load key to fit.\n- An A/A of the scene right after (9eac8461 against itself, 4 pairs) read physics −0.4 % (1/4, cv 1/1 %) and logic −2.6 % (2/4, cv 6/4 %). Physics is quiet on a quiet machine, so the pair's drift is the run's.\n- The change only removes two atomic loads from logic's read of an array physics writes; there is no path from it to physics' step.\n- Logic's −12.9 % is five times the A/A's logic reading. The physics flag is written down; if it is real it is +0.11 ms against logic's −0.53 ms.\n\nCommits: 9eac8461 (the bench variant), b25528f1 (the change).",
+      "commits": [
+        "9eac8461",
+        "b25528f1"
+      ]
+    },
+    {
+      "id": "R-0605",
+      "date": "2026-10-24",
+      "time": "14:25",
+      "timeFrom": "recorded",
+      "title": "The stamp grid cell computed once: the grid is built in C now (E-114), E-111",
+      "verdict": "superseded",
+      "text": "**superseded by E-114 (W23).** The stamp grid is built in C now: `shadowStamp.wasm`'s `build_grid`, on by default with `wasm.shadowStamp`. `buildStampGrid` in `gpuShadowCasters.js` runs only when that switch is off or the module did not load.\n\nE-111's change (the count pass's cell kept for the fill pass) would speed up that fallback alone. Its four sittings were ties by the rounds rule on a loaded machine (+10.5 to +17.7 %, 72 to 86 % of rounds), and a fallback does not earn a quiet-machine sitting. The diff stays at `D:\\tmp\\p4\\e111.patch`.\n\nNot checked: whether `build_grid` in C also bins each caster twice. If a stamp profile ever shows the grid, the same idea applies there."
+    },
+    {
+      "id": "R-0606",
+      "date": "2026-10-24",
+      "time": "14:26",
+      "timeFrom": "recorded",
+      "title": "Contact classification in C dropped: E-131 took the generation check in JS, W18",
+      "verdict": "dropped",
+      "text": "**dropped.** On its owner scene (R-0601) the classifier was 62.8 % of logic. 55 % of that function is the game's `onCollisionStay` dispatch, which stays JS whatever classifies; 35 % was the generation check, and that was `Atomics.load` itself: E-131 reads the generations plainly in JS (contactsMicrobench +29 to +31 %, ContactDrainHuntScene logic −12.9 %, R-0604). What a C classifier could still take is the listen flags and the slot bookkeeping, a few % of logic in the hunt scene and under 1 % in Predator, against a C hash table for the pair map and a boundary per frame. Not worth a port.",
+      "commits": [
+        "b25528f1"
+      ]
     }
   ],
   "leads": [
