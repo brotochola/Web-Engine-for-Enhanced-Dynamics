@@ -869,6 +869,16 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
+### E-111 The stamp grid's cell computed once — **open (kernel tie by the rounds rule, 2026-10-23)**
+`buildStampGrid` bins each caster in its count pass and again in its fill pass. Keeping the first pass's cell in a
+module `Int32Array` (and multiplying by the exact 1/256 instead of dividing) read +10.5 to +17.7 % in
+`shadowStampMicrobench` over four sittings, 72–86 % of rounds won, checksums equal: never the 90 %. Rerun on a
+quiet machine (diff `D:\tmp\p4\e111.patch`); W23's port would absorb it.
+
+### E-110 The per-entity stamp skips the per-light index sort — **KEPT** (`5b392b7b`)
+With `maxShadowsPerEntity` the order of one light's candidates changes nothing, so the comparator sort is skipped.
+Kernel 672 → 916 ops/s (+36.4 %); Predator pair NEUTRAL (pre-render +0.9 %).
+
 ### E-109 Leads from the 2026-10-23 heap pass — **open**
 GameObject instance fields that hold fractional doubles allocate per write in Chrome (`painterMoveStressScene`
 21 MB/s, `bichosScene` 7 MB/s in game code): a guide note, or an engine-side per-entity scratch. Pixi's
