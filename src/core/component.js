@@ -26,8 +26,9 @@
 // will still get auto-generated accessors.
 
 export class Component {
-  // Shared memory buffer for this component type
+  // Shared memory buffer for this component type, and where its block starts in it
   static sharedBuffer = null;
+  static sharedBufferByte = 0;
   static globalEntityCount = 0;
   static componentId = null;
 
@@ -35,13 +36,6 @@ export class Component {
   // Must be overridden in subclasses
   static ARRAY_SCHEMA = {};
 
-  /**
-   * Initialize static arrays from SharedArrayBuffer
-   * Called by Scene and by each worker
-   *
-   * @param {SharedArrayBuffer} buffer - The shared memory
-   * @param {number} count - Total number of component instances
-   */
   /**
    * Resolve ARRAY_SCHEMA entry: TypedArray ctor, or `{ type, length, entityId }`
    * for per-entity multi-element fields (e.g. polygon verts: length = 8).
@@ -60,11 +54,25 @@ export class Component {
     return { type: typeOrSpec, length: 1, entityId: false };
   }
 
-  static initializeArrays(buffer, count) {
+  /**
+   * Initialize static arrays from SharedArrayBuffer
+   * Called by Scene and by each worker
+   *
+   * @param {SharedArrayBuffer} buffer - The shared memory
+   * @param {number} count - Total number of component instances
+   * @param {number} [byteOffset] - Where the component's block starts in `buffer`: a region of a
+   *   shared WebAssembly.Memory (E-112), or 0 for a buffer of its own. A multiple of 8, so every
+   *   column keeps the alignment getBufferSize gave it.
+   */
+  static initializeArrays(buffer, count, byteOffset = 0) {
+    if (byteOffset % 8 !== 0) {
+      throw new Error(`${this.name}: byte offset ${byteOffset} is not a multiple of 8`);
+    }
     this.sharedBuffer = buffer;
+    this.sharedBufferByte = byteOffset;
     this.globalEntityCount = count;
 
-    let offset = 0;
+    let offset = byteOffset;
 
     // Create typed array views for each property defined in schema
     for (const [name, typeOrSpec] of Object.entries(this.ARRAY_SCHEMA)) {
@@ -92,6 +100,7 @@ export class Component {
    */
   static clearArrays() {
     this.sharedBuffer = null;
+    this.sharedBufferByte = 0;
     this.globalEntityCount = 0;
     for (const name of Object.keys(this.ARRAY_SCHEMA)) {
       this[name] = null;

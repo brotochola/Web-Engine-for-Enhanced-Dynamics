@@ -104,8 +104,8 @@ async function sampleMode(browser, baseUrl, mode) {
         const maxItems = scene.maxVisibleRenderables;
         const rqSync = new Int32Array(scene.buffers.renderQueueSync);
         const rqViewsByIdx = [
-          RenderQueueLayout.createViews(scene.buffers.renderQueueDataA, maxItems),
-          RenderQueueLayout.createViews(scene.buffers.renderQueueDataB, maxItems),
+          RenderQueueLayout.createViews(scene.buffers.renderQueueDataA, maxItems, scene.buffers.renderQueueDataAByte | 0),
+          RenderQueueLayout.createViews(scene.buffers.renderQueueDataB, maxItems, scene.buffers.renderQueueDataBByte | 0),
         ];
 
         const samples = [];

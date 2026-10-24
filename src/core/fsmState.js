@@ -40,8 +40,9 @@ export class FSMState {
    * @param {GameObject} owner - The entity instance (stateless accessor)
    * @param {number} i - Entity index for direct array access
    * @param {number} dt - Delta time ratio (1.0 = 16.67ms frame)
+   * @param {number} [timeInState] - Time in this state, in whole milliseconds
    */
-  static onUpdate(owner, i, dt) {
+  static onUpdate(owner, i, dt, timeInState) {
     // Override in subclass
   }
 }

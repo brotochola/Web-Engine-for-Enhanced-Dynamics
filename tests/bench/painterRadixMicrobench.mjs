@@ -4,6 +4,8 @@
  * set changes) on Predator-sized queues, keys as the engine writes them.
  *   - sprites: every key is spriteYSortKey(footY, 128) = round(y) * 128.
  *   - mixed: 20 % fractional y * 128 keys (decorations, particles share the list).
+ *   - pieces: rows in runs of 5 to 25 equal keys, as an Adobe Animate character writes its pieces
+ *     (one key per character, its pieces in consecutive slots).
  * Foot-Y comes from the Predator fixture; slot order is the fixture's entity order.
  *
  *   node tests/bench/painterRadixMicrobench.mjs
@@ -15,6 +17,22 @@ import { loadPredatorFixture } from './predatorFixture.mjs';
 
 // Hypotheses: radixPainterOrder variants.
 const VARIANTS = { base: radixPainterOrder };
+
+/** Keys in runs: one foot-Y key per character, repeated for its 5 to 25 consecutive piece slots. */
+export function pieceKeys(fx, n, seed) {
+  const { y, active } = fx.arrays;
+  const rng = mulberry32(seed);
+  const keys = new Float32Array(n);
+  let j = 0;
+  for (let i = 0; i < fx.meta.n && j < n; i++) {
+    if (!active[i]) continue;
+    const key = spriteYSortKey(y[i], 128);
+    const len = 5 + ((rng() * 21) | 0);
+    for (let k = 0; k < len && j < n; k++) keys[j++] = key;
+  }
+  for (; j < n; j++) keys[j] = spriteYSortKey(rng() * fx.meta.worldHeight, 128);
+  return new Uint32Array(keys.buffer);
+}
 
 export function painterKeys(fx, n, fractionalShare, seed) {
   const { y, active } = fx.arrays;
@@ -40,8 +58,8 @@ async function main() {
   const cases = {};
   const regimes = {};
   let checksum = 0;
-  for (const [name, share] of [['sprites', 0], ['mixed', 0.2]]) {
-    const keys = painterKeys(fx, n, share, 0x9a1e7);
+  for (const [name, share] of [['sprites', 0], ['mixed', 0.2], ['pieces', -1]]) {
+    const keys = share < 0 ? pieceKeys(fx, n, 0x9a1e7) : painterKeys(fx, n, share, 0x9a1e7);
     const state = createPainterState(n);
     const out = order(state, null, n, keys);
     const h = checksumInts(out, n);

@@ -8,10 +8,21 @@
  *     --override src/workers/logicWorker.js=tests/results/hyp-baselines/L1.logicWorker.js
  *   node tests/bench/runPredatorAbab.mjs --name X1 --override ... --pairs 4 --owner pixi
  *   node tests/bench/runPredatorAbab.mjs --name branch-vs-main --vs main --pairs 8
+ *   node tests/bench/runPredatorAbab.mjs --name X2 --vs 1cbc02b1 --hyp-rev HEAD --owner preRender
+ *
+ * --owner <LOAD_KEY> (FLOWFIELDS_COMPUTED, say): the claim is a throughput, higher is better, as with
+ * `--owner presented`: KEPT when it rises ≥ 3 % in ≥ 75 % of the pairs, REGRESSION when it falls as much; it
+ * is the claim, so it is left out of the load-drift check (a deadline-bound worker's STEP_MS cannot fall).
+ *
+ * --hyp-rev <rev>: B is src/ from that revision in a worktree of its own, not the working tree, so
+ * edits in the main folder while the sitting runs (another session's, an agent's) cannot reach it;
+ * `--vs X --hyp-rev X` is an A/A of two directories.
  *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
- * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), or a load key
- * drifts more than 5 %. KEPT (product) if the owner kind is ≤ −3 %.
+ * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), if the frames
+ * the page presents (main-thread FPS) drop ≥ 3 % in ≥ 75 % of the pairs, or a
+ * load key drifts more than 5 %. KEPT (product) if the owner kind is ≤ −3 %, or
+ * with `--owner presented` if the presented frames rise ≥ 3 %.
  * Otherwise NEUTRAL: with a kernel win that is `kept (kernel, producto neutro)`.
  */
 import fs from 'node:fs';
@@ -169,7 +180,25 @@ const SUB_TIMERS = [
 // band on a count of ~1 is one tile of rounding. Mute only when BOTH medians
 // are under the floor. One side at or above the floor is a normal 5% check,
 // so 100 particles versus 5000 still fails.
-const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8 };
+// The nav keys (E-37) likewise: Predator computes a flow field about once per window, so in the
+// E-78 sitting (2026-10-22) one flow field in one baseline run of twelve (0.03 a frame, median 0
+// on both sides) read as a 245 % cv and failed a pair the change could not reach. A nav
+// hypothesis runs NavStress, far above one a frame, where the band and the cv apply.
+/**
+ * Presented frames: the main thread's rAF rate, which runs at the rate the compositor
+ * produces frames. E-82 is why it is judged: Pixi's step fell 76 % while the page
+ * went from 55 to 44 frames a second, because a GPU-bound scene then got more frames
+ * submitted than it could finish. No worker's STEP_MS shows that.
+ */
+const PRESENTED_KEY = 'MAIN_FPS';
+
+const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8, FLOWFIELDS_COMPUTED: 1, FLOWFIELDS_SERVICED: 1, PATHS_COMPUTED: 1 };
+/**
+ * A throughput owner's family: the keys that move with it when it does, muted from the load-drift check with
+ * it. The serviced flowfields are the computed ones plus the cache hits (E-37): with every request a miss, as
+ * in navStress, they are the same count.
+ */
+const THROUGHPUT_FAMILY = { FLOWFIELDS_COMPUTED: ['FLOWFIELDS_SERVICED'] };
 
 // HOW_WE_MEASURE: a load key outside 5% fails the pair. A coefficient of
 // variation at or above 50% fails the pair. The band does not widen with cv.
@@ -205,6 +234,8 @@ export function predatorMetrics(report) {
     }
   }
   for (const lk of LOAD_KEYS) if (lk in published) out[lk] = published[lk];
+  const mainFps = report.mainThread?.averageFPS;
+  if (Number.isFinite(mainFps)) out[PRESENTED_KEY] = mainFps;
 
   // Sub-timers, namespaced by worker kind so two workers can publish the same
   // one without colliding (`preRender_EMIT_MS` is not `renderer_EMIT_MS`).
@@ -232,10 +263,10 @@ function parseOverrides(raw) {
 // Review M9. What a sitting's pairs were measured with. --append pools new
 // pairs with old ones, which is only a median of one measurement when the
 // metric set, scene, protocol, baseline and both trees are the same.
-function sittingStamp(scene, opts, args, baseline) {
+function sittingStamp(scene, opts, args, baseline, hypSide = null) {
   const git = (argv, encoding) => execFileSync('git', argv, { cwd: repoRoot, encoding, maxBuffer: 1 << 28 });
   return {
-    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS },
+    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS, presented: PRESENTED_KEY },
     scene: { path: scene.path, exportName: scene.exportName },
     protocol: {
       headed: opts.headed,
@@ -246,6 +277,7 @@ function sittingStamp(scene, opts, args, baseline) {
       extraArgs: opts.extraArgs,
     },
     vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
+    hypRev: hypSide ? { rev: hypSide.rev, sha: hypSide.sha } : null,
     overrides: baseline.overrides ?? null,
     // B is the working tree, and A is built from its HEAD: both change with these.
     tree: {
@@ -348,6 +380,12 @@ export function decideAbab(pairs, owner, metric = null) {
     };
     load[key] = entry;
     if (belowFloor) continue;
+    // The owner's own key is the claim, not the load (see --owner <LOAD_KEY>), and so are the keys that move with it.
+    if (key === owner || (THROUGHPUT_FAMILY[owner] || []).includes(key)) {
+      entry.gated = false;
+      entry.mutedBy = key === owner ? 'owner' : 'owner family';
+      continue;
+    }
     if (!bothPresent) {
       reasons.push(`load ${key} missing`);
       continue;
@@ -385,8 +423,50 @@ export function decideAbab(pairs, owner, metric = null) {
     if (consistent && (quiet || kind === owner)) regress.push(tag);
     else noisy.push(`${tag}, not blocking`);
   }
+  // Higher is better here. Judged only when every pair has it (sittings written
+  // before it was collected are re-decided without it).
+  let presented = null;
+  const fa = pairs.map((p) => p.A?.[PRESENTED_KEY]).filter(Number.isFinite);
+  const fb = pairs.map((p) => p.B?.[PRESENTED_KEY]).filter(Number.isFinite);
+  if (pairs.length && fa.length === pairs.length && fb.length === pairs.length) {
+    const deltas = pairs.map((p) => pctDelta(p.B[PRESENTED_KEY], p.A[PRESENTED_KEY]));
+    presented = {
+      baseMedian: median(fa),
+      hypMedian: median(fb),
+      pairedDeltaPct: median(deltas),
+      deltas,
+      lowerFraction: deltas.filter((d) => d < 0).length / deltas.length,
+      higherFraction: deltas.filter((d) => d > 0).length / deltas.length,
+      cvBase: cv(fa),
+      cvHyp: cv(fb),
+    };
+    if (presented.pairedDeltaPct <= -3 && presented.lowerFraction >= CONSISTENT) {
+      regress.push(
+        `presented frames ${presented.pairedDeltaPct.toFixed(1)}% (${Math.round(presented.lowerFraction * deltas.length)}/${deltas.length} pairs fewer)`,
+      );
+    }
+  }
+  // --owner <LOAD_KEY>: a throughput, judged like the presented frames (higher is better).
+  let throughput = null;
+  if (owner && LOAD_KEYS.includes(owner) && load[owner] && !load[owner].belowFloor) {
+    const deltas = pairs.map((p) => pctDelta(p.B[owner], p.A[owner])).filter(Number.isFinite);
+    if (deltas.length === pairs.length && pairs.length > 0) {
+      throughput = {
+        key: owner,
+        baseMedian: load[owner].base,
+        hypMedian: load[owner].hyp,
+        pairedDeltaPct: median(deltas),
+        deltas,
+        higherFraction: deltas.filter((d) => d > 0).length / deltas.length,
+        lowerFraction: deltas.filter((d) => d < 0).length / deltas.length,
+      };
+      if (throughput.pairedDeltaPct <= -3 && throughput.lowerFraction >= CONSISTENT) {
+        regress.push(`${owner} ${throughput.pairedDeltaPct.toFixed(1)}% (${Math.round(throughput.lowerFraction * deltas.length)}/${deltas.length} pairs lower)`);
+      }
+    }
+  }
   let verdict = 'NEUTRAL';
-  const o = owner ? kinds[owner] : null;
+  const o = owner && owner !== 'presented' ? kinds[owner] : null;
   // An owner below the floor cannot earn a KEPT verdict. It is not that the
   // improvement is unmeasured - it is that the protocol forbids judging it, so
   // the honest verdict is NEUTRAL-with-reasons rather than a keep.
@@ -395,6 +475,11 @@ export function decideAbab(pairs, owner, metric = null) {
   else if (!ownerJudged && o) verdict = 'NEUTRAL (below floor)';
   else if (regress.length) verdict = 'REGRESSION';
   else if (ownerJudged && o.pairedDeltaPct <= -3 && 1 - o.worseFraction >= CONSISTENT) {
+    verdict = 'KEPT (product)';
+  } else if (owner === 'presented' && presented && presented.pairedDeltaPct >= 3
+    && presented.higherFraction >= CONSISTENT) {
+    verdict = 'KEPT (product)';
+  } else if (throughput && throughput.pairedDeltaPct >= 3 && throughput.higherFraction >= CONSISTENT) {
     verdict = 'KEPT (product)';
   }
 
@@ -430,7 +515,7 @@ export function decideAbab(pairs, owner, metric = null) {
     }
   }
 
-  return { verdict, owner, ownerJudged, metric, attributed, kinds, load, reasons, muted, regress, noisy, belowFloor };
+  return { verdict, owner, ownerJudged, metric, attributed, kinds, presented, throughput, load, reasons, muted, regress, noisy, belowFloor };
 }
 
 async function main() {
@@ -478,6 +563,9 @@ async function main() {
     extraArgs: [
       ...(args['canvas-width'] ? ['--canvas-width', String(Number(args['canvas-width']))] : []),
       ...(args['canvas-height'] ? ['--canvas-height', String(Number(args['canvas-height']))] : []),
+      // The camera zoom the runner sets (min, or a number): adobeAnimateScene draws all 10 000
+      // characters only at the minimum zoom, and saturates pre-render there.
+      ...(args['camera-zoom'] ? ['--camera-zoom', String(args['camera-zoom'])] : []),
     ],
   };
   const scene = resolveScene(args);
@@ -510,9 +598,13 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     ? ensureRevWorktree(String(args.vs))
     : ensureOverlayWorktree(name, parseOverrides(rawOverrides));
   console.log(`baseline worktree ${baseline.root}`);
+  // --hyp-rev <rev>: B from its own worktree, apart from the main folder (see the header).
+  const hypSide = args['hyp-rev'] ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b' }) : null;
+  const hypRoot = hypSide ? hypSide.root : repoRoot;
+  if (hypSide) console.log(`hypothesis worktree ${hypSide.root}`);
   // --append: add pairs to the previous sitting of the same hypothesis, only when
   // that sitting was measured the same way (review M9).
-  const stamp = sittingStamp(scene, opts, args, baseline);
+  const stamp = sittingStamp(scene, opts, args, baseline, hypSide);
   let pairs = [];
   if (args.append && fs.existsSync(summaryPath)) {
     const prev = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
@@ -530,7 +622,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     const pair = {};
     // Counterbalanced: odd pairs run B first, so drift inside a pair
     // (heat, background) does not always land on the same side.
-    const order = p % 2 === 0 ? [['A', baseline.root], ['B', repoRoot]] : [['B', repoRoot], ['A', baseline.root]];
+    const order = p % 2 === 0 ? [['A', baseline.root], ['B', hypRoot]] : [['B', hypRoot], ['A', baseline.root]];
     for (const [side, root] of order) {
       console.log(`\n======== ${name} pair ${p + 1}/${first + nPairs} side ${side} ========`);
       const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root });
@@ -595,6 +687,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     probe: probeVerdict,
     protocol: { ...opts, pairs: pairs.length, order: 'AB BA AB BA', seed: 123456 },
     vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
+    hypRev: hypSide ? { rev: hypSide.rev, sha: hypSide.sha } : null,
     overrides: baseline.overrides ?? null,
     stamp,
     pairs,
@@ -628,6 +721,22 @@ function printDecision(name, decision) {
     }
     console.log(
       `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%`
+    );
+  }
+  if (decision.throughput) {
+    const tp = decision.throughput;
+    console.log(
+      `owner ${tp.key} ${tp.baseMedian.toFixed(1)} → ${tp.hypMedian.toFixed(1)}  paired ${tp.pairedDeltaPct >= 0 ? '+' : ''}${tp.pairedDeltaPct.toFixed(1)}%  ` +
+        `higher ${Math.round(tp.higherFraction * tp.deltas.length)}/${tp.deltas.length}`,
+    );
+  }
+  if (decision.presented) {
+    const pr = decision.presented;
+    console.log(
+      `${'presented'.padEnd(10)} ${pr.baseMedian.toFixed(1)} → ${pr.hypMedian.toFixed(1)} fps  ` +
+        `paired ${pr.pairedDeltaPct >= 0 ? '+' : ''}${pr.pairedDeltaPct.toFixed(1)}%  ` +
+        `fewer ${Math.round(pr.lowerFraction * pr.deltas.length)}/${pr.deltas.length}  ` +
+        `cv ${(pr.cvBase * 100).toFixed(0)}/${(pr.cvHyp * 100).toFixed(0)}%`,
     );
   }
   // E-32. A muted key prints its numbers, its cv and the band it was measured

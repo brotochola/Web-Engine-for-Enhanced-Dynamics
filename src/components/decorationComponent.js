@@ -61,9 +61,9 @@ export class DecorationComponent extends Component {
     return super.getBufferSize(count);
   }
 
-  static initializeArrays(buffer, count) {
+  static initializeArrays(buffer, count, byteOffset = 0) {
     this.ARRAY_SCHEMA.parentEntityIndex = EntityIdArray();
-    super.initializeArrays(buffer, count);
+    super.initializeArrays(buffer, count, byteOffset);
     // Fresh buffers default to 0; 0 is a valid entity index — use sentinel for "no parent"
     if (this.parentEntityIndex) {
       this.parentEntityIndex.fill(entityIdNone);

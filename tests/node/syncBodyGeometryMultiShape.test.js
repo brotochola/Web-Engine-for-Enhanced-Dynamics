@@ -101,6 +101,5 @@ test('a single-shape body is resized in place, never cleared', () => {
 test('body creation records how many shapes it made', () => {
   const body = post.slice(post.indexOf('function createBodyForEntity'), post.indexOf('// sync-body-geometry-start'));
   assert.match(body, /multiShape\[i\] = 0;\s*try \{/, 'reset before any create');
-  assert.match(body, /world\.create\(opts\);\s*multiShape\[i\] = 1;\s*if \(!addAllFixtures\(i\)\)/);
-  assert.match(body, /world\.create\(opts\);\s*multiShape\[i\] = 1;\s*if \(!syncChain\(i\)\)/);
+  assert.match(body, /multiShape\[i\] = 1;\s*if \(!\(extras > 0 \? addAllFixtures\(i\) : syncChain\(i\)\)\)/);
 });

@@ -39,6 +39,19 @@ test('buildMemoryUsageSummary summarizes nested SharedArrayBuffer trees', () => 
   assert.equal(summary.categories.inputData.children, null);
 });
 
+test('buildMemoryUsageSummary counts a buffer held under several keys once', () => {
+  // The spatial memory is the neighbour, position and grid buffer at once (E-78).
+  const memory = new SharedArrayBuffer(4096);
+  const summary = buildMemoryUsageSummary({
+    neighborData: memory,
+    gridBuffer: memory,
+    componentData: { Particle: new SharedArrayBuffer(64), Alias: memory },
+  });
+  assert.equal(summary.totalBytes, 4096 + 64);
+  assert.equal(summary.bufferCount, 2);
+  assert.deepEqual(summary.flatBreakdown, { neighborData: 4096, 'componentData.Particle': 64 });
+});
+
 test('buildMemoryUsageSummary returns the empty summary for missing buffers', () => {
   assert.deepEqual(buildMemoryUsageSummary(null), {
     totalBytes: 0,

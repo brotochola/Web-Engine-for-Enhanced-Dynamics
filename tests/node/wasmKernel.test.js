@@ -1,0 +1,62 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { pathToFileURL } from 'node:url';
+
+import { compileWasmKernel, loadWasmKernel } from '../../src/util/wasmKernel.js';
+import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
+import { initWorker, loadWorker, spatialBuffers } from '../bench/workerHarness.mjs';
+
+// E-76 T5: the shared kernel loader links env.memory and nothing else, compiles each module once,
+// and loads from a file URL (Node), a data URL (the bundle) or fetch (the browser).
+
+const SHIPPED = new URL('../../src/workers/spatialPublish.wasm', import.meta.url);
+const EMCC = new URL('../fixtures/spatialPublish.emcc.wasm', import.meta.url);
+
+test('loadWasmKernel links the shipped spatial module from a file URL and a data URL', async () => {
+  const mem = createSpatialPublishMemory(64, 4, 1);
+  const fromFile = await loadWasmKernel('spatialPublish', SHIPPED, mem.memory, ['publish_batch']);
+  assert.equal(typeof fromFile.publish_batch, 'function');
+  const dataUrl = `data:application/wasm;base64,${fs.readFileSync(SHIPPED).toString('base64')}`;
+  const fromData = await loadWasmKernel('spatialPublish', dataUrl, mem.memory, ['publish_batch']);
+  assert.equal(typeof fromData.publish_batch, 'function');
+  assert.equal(compileWasmKernel('spatialPublish', SHIPPED), compileWasmKernel('spatialPublish', SHIPPED), 'compiled once');
+});
+
+test('loadWasmKernel refuses a module with other imports, and a missing export', async () => {
+  const memory = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
+  await assert.rejects(
+    loadWasmKernel('spatialPublishEmcc', EMCC, memory, ['publish_batch']),
+    /imports wasi_snapshot_preview1\.\w+ \(function\); a kernel may import only env\.memory/,
+  );
+  await assert.rejects(loadWasmKernel('spatialPublish', SHIPPED, memory, ['nope']), /no function export nope/);
+  await assert.rejects(loadWasmKernel('missing', pathToFileURL('missing.wasm'), memory, []), /ENOENT/);
+});
+
+test('the spatial worker binds the publish module through the loader', async () => {
+  const cfg = { worldWidth: 2048, worldHeight: 1024, cellSize: 128, maxEntitiesPerCell: 16, maxNeighbors: 8 };
+  const n = 256;
+  const mem = createSpatialPublishMemory(n, cfg.maxNeighbors, 2);
+  const { buffers, gridMetadata } = spatialBuffers(cfg, n);
+  buffers.entityPosData = mem.buffer;
+  buffers.neighborData = mem.buffer;
+  Object.assign(gridMetadata, {
+    posByte: mem.posByte,
+    rangeByte: mem.rangeByte,
+    neighborByte: mem.neighborByte,
+    candByte: mem.candByte,
+    listByte: mem.listByte,
+    listStride: mem.listStride,
+  });
+  const worker = await loadWorker('spatialWorker.js', 'spatialWorker');
+  await initWorker(worker, {
+    config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg },
+    globalEntityCount: n,
+    buffers,
+    gridMetadata,
+    extra: { workerIndex: 1, totalSpatialWorkers: 2, spatialPublishMemory: mem.memory },
+  });
+  assert.ok(worker._wasmPub, 'WASM publish bound');
+  assert.equal(worker._wasmPub.listByte, mem.listByte + mem.listStride, 'worker 1 owns the second list slice');
+  assert.equal(worker._neighborCandidateData.buffer, mem.buffer, 'candidates live in the publish memory');
+});

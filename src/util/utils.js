@@ -1636,13 +1636,16 @@ export function collectAllComponentsFromClasses(registeredClasses, globalRef) {
  * @param {Object} componentBuffers - Object containing SABs: { componentName: SharedArrayBuffer }
  * @param {Object} componentPools - Object containing pool info: { componentName: { count, componentId } }
  * @param {number} defaultEntityCount - Default entity count if pool.count is not set
+ * @param {Object} [componentBytes] - Each component's byte offset in its buffer: { componentName: number }
+ *   (a region of a shared WebAssembly.Memory; absent is 0)
  * @returns {number} Number of components successfully initialized
  */
 export function initializeComponentViews(
   componentMap,
   componentBuffers,
   componentPools,
-  defaultEntityCount
+  defaultEntityCount,
+  componentBytes = null
 ) {
   let initializedCount = 0;
 
@@ -1675,7 +1678,7 @@ export function initializeComponentViews(
     if (buffer) {
       const count = pool?.count || defaultEntityCount;
       if (count > 0) {
-        ComponentClass.initializeArrays(buffer, count);
+        ComponentClass.initializeArrays(buffer, count, (componentBytes && componentBytes[componentName]) | 0);
         initializedCount++;
       }
     }

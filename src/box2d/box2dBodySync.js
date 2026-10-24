@@ -16,6 +16,13 @@ export const BODY_DIRTY = Object.freeze({
 
 let dirtyFlags = null;
 let dirtyWords = null;
+/**
+ * The same bytes as dirtyWords, 16 bits a word (E-87). Chrome runs Atomics as builtins that return
+ * a Number, so a word with bit 30 or 31 set came back as a new heap number on every mark; a 16-bit
+ * word is always a Smi. Little-endian: entity i is bit i & 15 of half i >> 4, which is bit i & 31 of
+ * word i >> 5, so physics and the scene's initial fill read the same layout.
+ */
+let dirtyHalves = null;
 let generation = null;
 let epoch = null;
 let pendingFlags = null;
@@ -79,6 +86,7 @@ export function bindBodySyncBuffers(buffers) {
   ) {
     dirtyFlags = null;
     dirtyWords = null;
+    dirtyHalves = null;
     generation = null;
     epoch = null;
     pendingFlags = null;
@@ -91,6 +99,7 @@ export function bindBodySyncBuffers(buffers) {
 
   dirtyFlags = new Int32Array(buffers.bodyDirtyFlags);
   dirtyWords = new Int32Array(buffers.bodyDirtyWords);
+  dirtyHalves = new Uint16Array(buffers.bodyDirtyWords);
   generation = new Int32Array(buffers.bodyGeneration);
   epoch = buffers.bodyGenEpoch ? new Int32Array(buffers.bodyGenEpoch) : null;
   pendingFlags = new Int32Array(dirtyFlags.length);
@@ -145,13 +154,25 @@ function flushPendingBodyDirty() {
 }
 
 export function withBodyDirtyDeferred(fn) {
-  dirtyDeferDepth++;
+  beginBodyDirtyDeferred();
   try {
     return fn();
   } finally {
-    dirtyDeferDepth--;
-    if (dirtyDeferDepth === 0) flushPendingBodyDirty();
+    endBodyDirtyDeferred();
   }
+}
+
+/**
+ * The same window without a closure, for the per-spawn path (E-92: a closure per spawn was
+ * 8.6 MB/s in spawnStormScene). Pair every call with endBodyDirtyDeferred in a `finally`.
+ */
+export function beginBodyDirtyDeferred() {
+  dirtyDeferDepth++;
+}
+
+export function endBodyDirtyDeferred() {
+  dirtyDeferDepth--;
+  if (dirtyDeferDepth === 0) flushPendingBodyDirty();
 }
 
 function publishBodyDirty(i, flags) {
@@ -161,7 +182,7 @@ function publishBodyDirty(i, flags) {
     pendingFlags[i] = 0;
   }
   Atomics.or(dirtyFlags, i, (flags | extra) | 0);
-  Atomics.or(dirtyWords, i >>> 5, 1 << (i & 31));
+  Atomics.or(dirtyHalves, i >>> 4, 1 << (i & 15));
   return true;
 }
 

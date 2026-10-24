@@ -105,6 +105,8 @@
             ? true
             : Boolean(options.collectDetailedStats),
         collectGpuStats: Boolean(options.collectGpuStats),
+        // --camera-zoom: min (Camera.minZoom) or a zoom, set once the scene has been created.
+        cameraZoom: options.cameraZoom === 'min' || Number(options.cameraZoom) > 0 ? options.cameraZoom : null,
       };
     }
 
@@ -201,6 +203,9 @@
           canvasHeight: config.canvasHeight,
           spatialWorkers: scene.config.spatial.numberOfSpatialWorkers,
           logicWorkers: scene.config.logic.numberOfLogicWorkers,
+          // Which WASM kernels this run used (E-76 T7): the switches, and what actually ran.
+          wasm: { ...(scene.config.wasm || {}) },
+          wasmRan: { spatialPublish: Boolean(scene.spatialPublish) },
           worldWidth: config.worldWidth,
           worldHeight: config.worldHeight,
           warmupMs: config.warmupMs,
@@ -226,6 +231,9 @@
         summarizeWorkerBenchmarkWindow,
       } = await loadModules(config.sceneModule, config.sceneExport);
 
+      // ?wasmOff=spatialPublish[,…] runs those WASM kernels' JavaScript paths (E-76 T7).
+      const wasmOff = (new URLSearchParams(location.search).get('wasmOff') || '').split(',').filter(Boolean);
+
       // Override scene debug flags before Scene applies defaults / boots workers
       SceneClass.config = {
         ...SceneClass.config,
@@ -234,6 +242,9 @@
           collectDetailedStats: config.collectDetailedStats,
           collectGpuStats: config.collectGpuStats,
         },
+        ...(wasmOff.length
+          ? { wasm: { ...(SceneClass.config.wasm || {}), ...Object.fromEntries(wasmOff.map((name) => [name, false])) } }
+          : {}),
       };
 
       await cleanupCurrentGame();
@@ -251,6 +262,10 @@
 
       await game.loadScene(config.sceneModule, { export: config.sceneExport });
       const scene = game.currentScene;
+      // loadScene resolves after the scene's create(), so this zoom stays.
+      if (config.cameraZoom != null) {
+        WEED.Camera.setZoom(config.cameraZoom === 'min' ? WEED.Camera.minZoom : Number(config.cameraZoom));
+      }
       const reader = createWorkerBenchmarkReader(scene);
 
       session = {

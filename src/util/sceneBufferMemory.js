@@ -7,9 +7,14 @@ import {
 import { Query } from '../core/query.js';
 import { STATE_CHANNEL_COUNT } from '../box2d/box2dConstants.js';
 import { PHYSICS_STATS } from './workersUtils.js';
+import { DecorationComponent } from '../components/decorationComponent.js';
 
-function summarizeBufferNode(value, path, flatBreakdown) {
+function summarizeBufferNode(value, path, flatBreakdown, seen) {
   if (value instanceof SharedArrayBuffer) {
+    // A WASM memory's buffer sits under several keys (its regions: E-78, E-79). Count it once,
+    // at the first key that holds it.
+    if (seen.has(value)) return null;
+    seen.add(value);
     const bytes = value.byteLength;
     flatBreakdown[path] = bytes;
     return {
@@ -32,7 +37,7 @@ function summarizeBufferNode(value, path, flatBreakdown) {
   for (const [rawKey, childValue] of entries) {
     const key = String(rawKey);
     const childPath = `${path}.${key}`;
-    const childSummary = summarizeBufferNode(childValue, childPath, flatBreakdown);
+    const childSummary = summarizeBufferNode(childValue, childPath, flatBreakdown, seen);
     if (!childSummary) continue;
 
     children[key] = childSummary;
@@ -76,9 +81,10 @@ export function buildMemoryUsageSummary(buffers) {
 
   let totalBytes = 0;
   let bufferCount = 0;
+  const seen = new Set();
 
   for (const [key, value] of Object.entries(buffers)) {
-    const summary = summarizeBufferNode(value, key, flatBreakdown);
+    const summary = summarizeBufferNode(value, key, flatBreakdown, seen);
     if (!summary) continue;
     categories[key] = summary;
     totalBytes += summary.totalBytes;
@@ -139,6 +145,19 @@ function countEntityTypesUsingComponent(scene, componentName) {
   return { entityTypeCount: count, entityPoolSlots: totalPoolSlots };
 }
 
+/**
+ * The bytes a component's block takes: its own buffer, or its region of a shared memory when it is
+ * bound at a byte offset there (E-112: SpriteRenderer, ShadowCaster and decorations in the render-queue
+ * memory, whose byteLength is the whole memory's).
+ */
+function componentBlockBytes(scene, componentName, buffer, capacity) {
+  if (scene.buffers?.componentDataByte?.[componentName] === undefined) return buffer.byteLength;
+  const ComponentClass = componentName === 'DecorationComponent'
+    ? DecorationComponent
+    : scene.componentPools?.[componentName]?.ComponentClass;
+  return ComponentClass ? ComponentClass.getBufferSize(capacity) : buffer.byteLength;
+}
+
 export function buildSceneMemoryUsageReport(scene) {
   const summary = buildMemoryUsageSummary(scene.buffers);
   const componentAllocations = {};
@@ -149,7 +168,8 @@ export function buildSceneMemoryUsageReport(scene) {
 
     const usage = countEntityTypesUsingComponent(scene, componentName);
     const capacity = getComponentPoolCapacity(scene, componentName);
-    const bytesPerSlot = capacity > 0 ? buffer.byteLength / capacity : 0;
+    const blockBytes = componentBlockBytes(scene, componentName, buffer, capacity);
+    const bytesPerSlot = capacity > 0 ? blockBytes / capacity : 0;
     const estimatedUsedSlots = isDedicatedPoolComponent(componentName)
       ? capacity
       : usage.entityPoolSlots;
@@ -157,8 +177,8 @@ export function buildSceneMemoryUsageReport(scene) {
     const estimatedUnusedBytes = Math.round(estimatedUnusedSlots * bytesPerSlot);
 
     componentAllocations[componentName] = {
-      bytes: buffer.byteLength,
-      formatted: formatBytes(buffer.byteLength),
+      bytes: blockBytes,
+      formatted: formatBytes(blockBytes),
       capacity,
       entityTypeCount: usage.entityTypeCount,
       entityPoolSlots: usage.entityPoolSlots,

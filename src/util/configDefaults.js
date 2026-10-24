@@ -406,10 +406,55 @@ export const SPATIAL_DEFAULTS = Object.freeze({
    */
   neighborTickInterval: 1,
   /**
+   * The WASM candidate gather walks each frame's rebuild batch in home-cell order: the same
+   * neighbours, with the cells each entity walks still in cache (E-81: +21.7 % on a frame that
+   * rebuilds every list). Needs the WASM gather.
+   */
+  gatherCellOrder: true,
+  /**
    * Particle worker writes Grid.cellSleepingData each frame (Sleep Cells overlay).
    * Production spatial does not read it. Off skips that full-grid scan.
    */
   cellSleeping: false,
+});
+
+// ============================================================================
+// WASM KERNEL DEFAULTS
+// ============================================================================
+
+/**
+ * WebAssembly kernels (E-76), one switch per module. `false` runs that module's JavaScript path,
+ * the one the engine also takes when the module cannot run (the spatial publish needs 16-bit
+ * entity ids). Benches flip a switch with `?wasmOff=<name>` to time both paths in one build.
+ */
+export const WASM_DEFAULTS = Object.freeze({
+  /** Spatial neighbour publish (`spatialPublish.wasm`). */
+  spatialPublish: true,
+  /** Spatial candidate gather (`spatialGather.wasm`, E-78); needs spatialPublish's memory. */
+  spatialGather: true,
+  /** Particle integrate (`particleIntegrate.wasm`, E-79): ParticleComponent in a WebAssembly.Memory. */
+  particleIntegrate: true,
+  /** Particle list build (`particleLists.wasm`, E-80): the active and visible lists in that memory. */
+  particleLists: true,
+  /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */
+  gpuPack: true,
+  /**
+   * Pre-render's emit (`preRenderEmit.wasm`, E-112): SpriteRenderer, ShadowCaster and DecorationComponent
+   * live in the render-queue memory with the emit's state, so the kernel reads every column there.
+   */
+  preRenderEmit: true,
+  /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
+  shadowStamp: true,
+  /**
+   * The particle worker's decoration sway (`decorationSway.wasm`, W22): its arrays in the render-queue memory,
+   * next to the decorations block the emit puts there (so it needs preRenderEmit), with a sway bucket grid.
+   */
+  decorationSway: true,
+  /**
+   * The particle worker's flowfield search (`navFlowfield.wasm`, W14): the nav buffer at byte 0 of a
+   * WebAssembly.Memory, the search's scratch after it.
+   */
+  navFlowfield: true,
 });
 
 // ============================================================================

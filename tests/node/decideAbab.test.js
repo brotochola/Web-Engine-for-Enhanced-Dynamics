@@ -147,3 +147,37 @@ test('a report with no workers yields zeros, not a crash', () => {
   const m = predatorMetrics({});
   for (const k of KINDS) assert.equal(m[`${k}_STEP_MS`], 0);
 });
+test('fewer presented frames is a regression even when the owner wins (E-82)', () => {
+  // The E-82 sitting: Pixi 13.6 -> 3.2 ms while the page went from ~55 to ~44 fps.
+  const pairs = pairsWith('renderer', [13.6, 14.4, 11.7, 16.1], [3.4, 3.0, 2.9, 3.8]);
+  [55.1, 54.2, 55.4, 54.8].forEach((f, i) => { pairs[i].A.MAIN_FPS = f; });
+  [44.2, 43.7, 44.4, 44.2].forEach((f, i) => { pairs[i].B.MAIN_FPS = f; });
+  const d = decideAbab(pairs, 'renderer');
+  assert.equal(d.verdict, 'REGRESSION');
+  assert.ok(d.regress.some((r) => r.startsWith('presented frames -')), JSON.stringify(d.regress));
+  assert.equal(d.presented.lowerFraction, 1);
+});
+
+test('--owner presented keeps a consistent rise in presented frames', () => {
+  const pairs = pairsWith('renderer', [13.6, 14.4, 11.7, 16.1], [4.4, 4.5, 4.3, 4.6]);
+  [55.1, 54.2, 55.4, 54.8].forEach((f, i) => { pairs[i].A.MAIN_FPS = f; });
+  [59.9, 60.0, 59.8, 59.9].forEach((f, i) => { pairs[i].B.MAIN_FPS = f; });
+  const d = decideAbab(pairs, 'presented');
+  assert.equal(d.verdict, 'KEPT (product)');
+  assert.ok(d.presented.pairedDeltaPct > 8);
+});
+
+test('presented frames are judged only when every pair has them', () => {
+  const pairs = pairsWith('renderer', [13.6, 14.4, 11.7, 16.1], [3.4, 3.0, 2.9, 3.8]);
+  pairs[0].A.MAIN_FPS = 55;
+  pairs[0].B.MAIN_FPS = 30;
+  const d = decideAbab(pairs, 'renderer');
+  assert.equal(d.presented, null);
+  assert.equal(d.verdict, 'KEPT (product)');
+});
+
+test('predatorMetrics reads the main thread\'s FPS as the presented frames', () => {
+  const m = predatorMetrics({ workers: [], mainThread: { averageFPS: 57.5 } });
+  assert.equal(m.MAIN_FPS, 57.5);
+  assert.equal('MAIN_FPS' in predatorMetrics({ workers: [] }), false);
+});

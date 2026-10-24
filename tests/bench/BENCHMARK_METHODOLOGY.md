@@ -6,9 +6,11 @@ BallsScene starts with a **dense spawn**; the first seconds are not representati
 
 ## Defaults (see `benchmarkDefaults.mjs`)
 
-- **Warmup 25 s** — not measured; lets the pile relax before sampling.
-- **Measure 18 s** — averages FPS and stats over a longer steady(ish) interval.
-- Override anytime: `--warmup-ms`, `--duration-ms`.
+- **Warmup 10 s** — not measured; lets the pile relax before sampling.
+- **Measure 10 s** — averages FPS and stats over a steady(ish) interval.
+- Override anytime: `--warmup-ms`, `--duration-ms`. The old 25 s / 18 s schedule is retired.
+
+The protocol (layers, floors, pairs, when Predator gates a change) is [`docs/internal/HOW_WE_MEASURE.md`](../../docs/internal/HOW_WE_MEASURE.md). This file is the harness: what the runner measures and how to point it at a scene.
 
 ## Scientific method (local / manual experiments)
 
@@ -16,8 +18,8 @@ BallsScene starts with a **dense spawn**; the first seconds are not representati
 2. **Constants** — same branch, same `pnpm`/Node, same headed flags, **don’t minimize** the browser, avoid heavy background load.
 3. **Primary response variables** — physics `statsSamplesAverage.STEP_MS` and derived **Load%** (`STEP_MS / (1000/60) * 100`, or `1000/fixedFps` when `fixedFps > 0`). Equivalence: `BODY_COUNT`. FPS is **secondary** (with capped `noLimitFPS: false`, FPS ≈ 60 is expected and uninformative). Diagnose `STEP_MS` with `BODY_SYNC_MS`, `JOINT_SYNC_MS`, `COMMAND_MS`, `FORCE_MS`, `BOX2D_MS`, and `POST_MS`; also compare `BODY_SYNC_VISITED` / `BODY_SYNC_CHANGES`, `BODY_MOVED_COUNT`, `AWAKE_COUNT` so workload remains equivalent. Stress A/B: if a primary ms metric is under **3 ms**, the pair **fails** (`STEP_MS_FLOOR` in `benchmarkDefaults.mjs`) — raise load; do not keep/drop. Gameplay skips this floor. Kernel `timeIt` uses the same 3 ms sample floor.
 4. **Equivalence check** — if `BODY_COUNT` shifts a lot between baseline and the change, the runs are **not comparable** (different simulation state). Do **not** attribute STEP_MS/Load% delta to the code change. `BODY_COUNT`, `AWAKE_COUNT`, `BODY_MOVED_COUNT`, and `ACTIVE_PARTICLES` are written even when `collectDetailedStats` is off. Protocol: [`docs/internal/HOW_WE_MEASURE.md`](../../docs/internal/HOW_WE_MEASURE.md).
-5. **Replication** — `pnpm bench:headed:median` (or `runHeadedMedian.mjs`): use **≥5 runs**, report **median** and **CV** (coefficient of variation). Lower CV on body counts usually means more comparable load. Prints **spatial** `STEP_MS` / Load% / `NEIGHBOR_MS` / `GRID_CELLS_CHECKED` medians when present. Keep `COMMAND_OVERFLOW_TOTAL`, `CONTACT_DROPPED`, and `SENSOR_DROPPED` at zero. Optional JSON: `pnpm bench:headed:spatial-confirm` (writes `tests/results/research-spatial-headed.json`).
-6. **Paired comparison** — same machine, back-to-back: **baseline → N runs → change → N runs**. Prefer conclusions only when **BODY_COUNT medians** agree within a few percent **and** STEP_MS / Load% move consistently.
+5. **Replication** — `pnpm bench:headed:median` (or `runHeadedMedian.mjs`): 2 runs by default (`--runs`), report **median** and **CV** (coefficient of variation). A keep or drop comes from a paired sitting (`runPredatorAbab.mjs`), not from medians of separate runs. Lower CV on body counts usually means more comparable load. Prints **spatial** `STEP_MS` / Load% / `NEIGHBOR_MS` / `GRID_CELLS_CHECKED` medians when present. Keep `COMMAND_OVERFLOW_TOTAL`, `CONTACT_DROPPED`, and `SENSOR_DROPPED` at zero. Optional JSON: `pnpm bench:headed:spatial-confirm` (writes `tests/results/research-spatial-headed.json`).
+6. **Paired comparison** — same machine, same sitting, the sides alternating and counterbalanced (AB, BA, …) with `runPredatorAbab.mjs` (`--scene` for any scene, `--vs <rev>` for the baseline worktree). Conclusions need the load keys within 5 % and the paired deltas to agree (see the protocol).
 
 ## Worker Load%
 

@@ -66,8 +66,27 @@ function reader(bytes, start, end) {
   return { u8, uleb, name, limits, seek, get pos() { return pos; } };
 }
 
+/** The "name" custom section: subsection 0 is the module name, 1 the function names. */
+function readNameSection(r, end) {
+  const names = { module: null, functions: new Map() };
+  while (r.pos < end) {
+    const sub = r.u8();
+    const subEnd = r.uleb() + r.pos;
+    if (sub === 0) names.module = r.name();
+    else if (sub === 1) {
+      const n = r.uleb();
+      for (let i = 0; i < n; i++) {
+        const index = r.uleb();
+        names.functions.set(index, r.name());
+      }
+    }
+    r.seek(subEnd);
+  }
+  return names;
+}
+
 /**
- * Read the parts of a module the kernel rules look at.
+ * Read the parts of a module the kernel rules and mapWasmFunctions.mjs look at.
  * @param {Uint8Array} bytes
  */
 export function readWasmStructure(bytes) {
@@ -81,6 +100,11 @@ export function readWasmStructure(bytes) {
     counts: {},
     hasStart: false,
     customSections: [],
+    // Body size in bytes of each defined function, in order.
+    codeSizes: [],
+    // From the "name" section: the module's name and function names by function index (imports
+    // first, the index Chrome prints as wasm-function[N]). Null without a name section.
+    names: null,
     size: u8.length,
   };
   const top = reader(u8, 8, u8.length);
@@ -91,7 +115,17 @@ export function readWasmStructure(bytes) {
     const end = start + size;
     const r = reader(u8, start, end);
     if (id === SECTION.custom) {
-      out.customSections.push(r.name());
+      const sectionName = r.name();
+      out.customSections.push(sectionName);
+      if (sectionName === 'name') out.names = readNameSection(r, end);
+    } else if (id === SECTION.code) {
+      const n = r.uleb();
+      out.counts.code = n;
+      for (let i = 0; i < n; i++) {
+        const bodySize = r.uleb();
+        out.codeSizes.push(bodySize);
+        r.seek(r.pos + bodySize);
+      }
     } else if (id === SECTION.import) {
       const n = r.uleb();
       for (let i = 0; i < n; i++) {

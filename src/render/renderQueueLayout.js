@@ -44,6 +44,10 @@ const FIELDS = [
     ['shadowH',     Float32Array,           4,   0],
     ['shadowOffX',  Float32Array,           4,   0],
     ['shadowOffY',  Float32Array,           4,   0],
+    // E-82: pre-render's count of full rewrites of the main queue's sprite statics (scale, anchor,
+    // tint, alpha, texture, tile terms, row set and order). Unchanged across frames that only moved
+    // poses, so Pixi can keep the statics it uploaded. 0: unknown (a layer queue), always rewrite.
+    ['staticGen',   Uint32Array,            4,   1],
 ];
 
 /** Sibling SAB: Float32 zoom/x/y/rotation + Int32 poseReady (not stuffed in a float). */
@@ -101,9 +105,10 @@ export function computeBufferSize(maxItems) {
     return offset;
 }
 
-export function createViews(sab, maxItems) {
+/** The queue's views on `sab`, from byte `base` (a region of the render-queue memory, or 0). */
+export function createViews(sab, maxItems, base = 0) {
     const views = {};
-    let offset = 0;
+    let offset = base | 0;
     for (let i = 0; i < FIELDS.length; i++) {
         const [name, TypedArrayCtor, bpe, fixed] = FIELDS[i];
         const count = fixed || maxItems;

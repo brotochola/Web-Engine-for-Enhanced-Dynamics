@@ -79,8 +79,8 @@ class Collider extends Component {
     fixtureCount: Uint16Array,
   };
 
-  static initializeArrays(buffer, count) {
-    super.initializeArrays(buffer, count);
+  static initializeArrays(buffer, count, byteOffset = 0) {
+    super.initializeArrays(buffer, count, byteOffset);
     if (this.layerMask) this.layerMask.fill(0);
     if (this.fixtureCount) this.fixtureCount.fill(0);
   }

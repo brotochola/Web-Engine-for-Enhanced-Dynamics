@@ -219,6 +219,9 @@ export function createPainterState(maxItems) {
     prevKey: new Uint32Array(n),
     stamp: new Int32Array(n),
     slotMoved: new Uint8Array(n),
+    // E-103: the runs' first slots, and each run's length by its first slot.
+    runHeads: new Uint32Array(n),
+    runLen: new Uint32Array(n),
     hist: new Uint32Array(256),
     ready: false,
     n: 0,
@@ -257,6 +260,48 @@ export function painterSameSet(state, idxE, ne) {
 }
 
 /**
+ * E-103. Sort `order` by key as runs: a run is consecutive slots under one key (an Adobe Animate
+ * character's pieces). A stable sort of every row keeps a run together, at its first row's place among
+ * equal keys, so sorting the runs' first slots with the same stable radix and expanding each run in
+ * place gives the same order. Returns false, with `order` untouched, when the runs do not halve the
+ * rows (checked after the first 1024 rows and at the end): the caller sorts the rows.
+ * @param {Uint32Array} order
+ * @param {number} ne
+ * @param {Uint32Array} keysU32
+ * @param {ReturnType<typeof createPainterState>} state
+ * @returns {boolean}
+ */
+function radixSortRuns(order, ne, keysU32, state) {
+  const heads = state.runHeads;
+  const lens = state.runLen;
+  let r = 0;
+  let i = 0;
+  let checked = false;
+  while (i < ne) {
+    const first = order[i];
+    const key = keysU32[first];
+    let j = i + 1;
+    while (j < ne && order[j] === first + (j - i) && keysU32[order[j]] === key) j++;
+    heads[r++] = first;
+    lens[first] = j - i;
+    i = j;
+    if (!checked && i >= 1024) {
+      checked = true;
+      if (r * 2 > i) return false;
+    }
+  }
+  if (r * 2 > ne) return false;
+  radixSortIndicesBySortKey(heads, r, keysU32, state.scratch, state.hist);
+  let w = 0;
+  for (let k = 0; k < r; k++) {
+    const first = heads[k];
+    const end = first + lens[first];
+    for (let slot = first; slot < end; slot++) order[w++] = slot;
+  }
+  return true;
+}
+
+/**
  * Full radix rebuild into `state.order`. `idxE === null` fills the dense
  * range [0, ne) first (custom layer); a real array copies that filtered list
  * (main queue).
@@ -272,7 +317,9 @@ export function radixPainterOrder(state, idxE, ne, keysU32) {
   } else {
     for (let i = 0; i < ne; i++) order[i] = i;
   }
-  radixSortIndicesBySortKey(order, ne, keysU32, state.scratch, state.hist);
+  if (!radixSortRuns(order, ne, keysU32, state)) {
+    radixSortIndicesBySortKey(order, ne, keysU32, state.scratch, state.hist);
+  }
   const prev = state.prevKey;
   let live = false;
   for (let i = 0; i < ne; i++) {

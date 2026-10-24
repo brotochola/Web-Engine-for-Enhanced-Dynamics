@@ -6,7 +6,7 @@
  *
  *   node tests/bench/heapSampleWorkers.mjs --scene /demos/predatorScene/predatorScene.js \
  *     --scene-export PredatorScene --workers preRenderWorker,logicWorker [--query k=v] \
- *     [--warmup-ms 10000] [--sample-ms 8000] [--output heap.json]
+ *     [--warmup-ms 10000] [--sample-ms 8000] [--camera-zoom min|<zoom>] [--output heap.json]
  *
  * From Git Bash set MSYS_NO_PATHCONV=1, as for the benchmark runner. Prints, per
  * worker, the top allocating functions in KB/s and their callers. Sampling, so a
@@ -83,6 +83,8 @@ try {
       sessions.set(sessionId, targetInfo.url.split('/').pop().split('?')[0]);
     }
   });
+  // A worker that ends (a short-lived helper) detaches; sampling it again would throw.
+  cdp.on('Target.detachedFromTarget', ({ sessionId }) => sessions.delete(sessionId));
   await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: false, flatten: false });
 
   const qs = ['src=1'];
@@ -95,24 +97,44 @@ try {
   }, { sceneModule, sceneExport });
   await page.setViewportSize({ width: 1280, height: 720 });
   const run = page.evaluate((o) => window.__WEED_BENCHMARK__.run(o), {
-    warmupMs: warmupMs + sampleMs, durationMs: 2000, sampleIntervalMs: 250, sceneModule, sceneExport,
+    // The scene must outlive the stops below (a busy worker's profile takes seconds to come back);
+    // the browser closes once they are in, so the long window costs nothing.
+    warmupMs: warmupMs + sampleMs, durationMs: 60000, sampleIntervalMs: 250, sceneModule, sceneExport,
     collectDetailedStats: false, collectGpuStats: false, canvasWidth: 1280, canvasHeight: 720,
     worldWidth: dims.width, worldHeight: dims.height,
+    // --camera-zoom min|<zoom>, as the benchmark runner takes it.
+    ...(args['camera-zoom'] ? { cameraZoom: args['camera-zoom'] } : {}),
   });
+  // Ends when the browser closes; attached now, so an error below is the one reported.
+  run.catch(() => {});
 
   await new Promise((r) => setTimeout(r, warmupMs));
-  for (const sid of sessions.keys()) {
-    await sendTo(sid, 'HeapProfiler.enable');
-    await sendTo(sid, 'HeapProfiler.startSampling', {
-      samplingInterval: 1024, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true,
-    });
+  for (const sid of [...sessions.keys()]) {
+    try {
+      await sendTo(sid, 'HeapProfiler.enable');
+      await sendTo(sid, 'HeapProfiler.startSampling', {
+        samplingInterval: 1024, includeObjectsCollectedByMajorGC: true, includeObjectsCollectedByMinorGC: true,
+      });
+    } catch (err) {
+      console.warn(`[heap] ${sessions.get(sid)}: not sampled (${err.message})`);
+      sessions.delete(sid);
+    }
   }
   await new Promise((r) => setTimeout(r, sampleMs));
 
   const report = {};
   const perS = (bytes) => +(bytes / 1024 / (sampleMs / 1000)).toFixed(1);
-  for (const [sid, name] of sessions) {
-    const { profile } = await sendTo(sid, 'HeapProfiler.stopSampling');
+  // Every worker stops at once: one after another, the scene had ended (and its workers with it)
+  // before the last stops of bulletStressScene came back (E-88).
+  const live = [...sessions];
+  const stops = await Promise.allSettled(live.map(([sid]) => sendTo(sid, 'HeapProfiler.stopSampling')));
+  for (let k = 0; k < live.length; k++) {
+    const [sid, name] = live[k];
+    if (stops[k].status === 'rejected') {
+      console.warn(`[heap] ${name}: ended before the sample stopped (${stops[k].reason.message})`);
+      continue;
+    }
+    const { profile } = stops[k].value;
     const rows = new Map();
     let total = 0;
     const walk = (node, parent) => {
@@ -144,7 +166,6 @@ try {
       console.log(`${String(t.kbPerS).padStart(9)} KB/s  ${t.site}   <- ${t.from.map((f) => `${f.caller} (${f.kbPerS})`).join(' | ')}`);
     }
   }
-  await run.catch(() => {});
 } finally {
   await browser.close();
   await server.close();

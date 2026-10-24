@@ -124,15 +124,15 @@ export class MeshRenderer extends Component {
     return super.getBufferSize(count) + 8;
   }
 
-  static initializeArrays(buffer, count) {
-    super.initializeArrays(buffer, count);
+  static initializeArrays(buffer, count, byteOffset = 0) {
+    super.initializeArrays(buffer, count, byteOffset);
     if (this.layerMask) this.layerMask.fill(0);
     if (this.tint) this.tint.fill(0xffffff);
     if (this.alpha) this.alpha.fill(1);
     if (this.renderVisible) this.renderVisible.fill(1);
     if (this.renderDirty) this.renderDirty.fill(1);
     if (this.textureId) this.textureId.fill(MESH_NO_TEXTURE);
-    const tail = super.getBufferSize(count);
+    const tail = byteOffset + super.getBufferSize(count);
     this.paintEpoch = new Uint32Array(buffer, tail, 1);
     this.outsetEpoch = new Uint32Array(buffer, tail + 4, 1);
   }

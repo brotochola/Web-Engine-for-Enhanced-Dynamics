@@ -15,13 +15,16 @@ const WORLD_H = 3000;
 const MARGIN = 64;
 // `tween` (scene `?tween=1`, E-59): every particle fades and shrinks over its
 // life, one ease per particle, so the integrate loop runs the ease each step.
+// `spin` (scene `?spin=1`, E-80): every particle also turns (a rotation tween
+// and an angular velocity) and changes colour (a tint tween), so the integrate
+// runs its sin/cos and the tint lerp per particle: more particle-worker load.
 const EASES = ['lerp', 'quad.out', 'cubic.in', 'quad.inout', 'expo.out', 'back.in', 'bounce.out'];
 
 /** Emits a large heighted population (gravity + despawnOnGroundContact) once, then trickles. */
 export class ParticleIntegrateDriver extends GameObject {
   static components = [];
 
-  onSpawned({ seed = 0xc0de1234, tween = 0 } = {}) {
+  onSpawned({ seed = 0xc0de1234, tween = 0, spin = 0 } = {}) {
     this.x = -10000;
     this.y = -10000;
     this._seed = seed >>> 0;
@@ -29,16 +32,19 @@ export class ParticleIntegrateDriver extends GameObject {
     this._sink = 0;
     this._burstDone = false;
     this._tween = tween | 0;
+    this._spin = spin | 0;
     this._ticks = 0;
   }
 
-  /** Spawn-time scale, or a fade-and-shrink tween with the given ease. */
+  /** Spawn-time scale, or a fade-and-shrink tween with the given ease; with spin, turning and tinting too. */
   _look(ease) {
-    if (!this._tween) return { scale: { min: 0.4, max: 1 }, alpha: undefined };
-    return {
-      scale: { from: { min: 0.4, max: 1 }, to: 0.2, ease },
-      alpha: { from: 1, to: 0, ease },
-    };
+    const look = this._tween
+      ? { scale: { from: { min: 0.4, max: 1 }, to: 0.2, ease }, alpha: { from: 1, to: 0, ease } }
+      : { scale: { min: 0.4, max: 1 }, alpha: undefined };
+    look.rotation = this._spin ? { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease } : undefined;
+    look.angularVelocity = this._spin ? { from: -90, to: 90, ease } : undefined;
+    look.tint = this._spin ? { from: 0xff2040, to: 0x20ff80, ease } : undefined;
+    return look;
   }
 
   _mulberry32(seed) {
@@ -57,7 +63,7 @@ export class ParticleIntegrateDriver extends GameObject {
     // guaranteed ready in this worker context — same lazy-init pattern as RayStressDriver.
     if (!this._burstDone) {
       this._burstDone = true;
-      const chunks = this._tween ? EASES.length : 1;
+      const chunks = this._tween || this._spin ? EASES.length : 1;
       for (let k = 0; k < chunks; k++) {
         const look = this._look(EASES[k]);
         this._sink += ParticleEmitter.emit({
@@ -73,6 +79,9 @@ export class ParticleIntegrateDriver extends GameObject {
           lifespan: { min: 8000, max: 20000 },
           scale: look.scale,
           alpha: look.alpha,
+          rotation: look.rotation,
+          angularVelocity: look.angularVelocity,
+          tint: look.tint,
         });
       }
     }
@@ -95,6 +104,9 @@ export class ParticleIntegrateDriver extends GameObject {
       lifespan: { min: 8000, max: 20000 },
       scale: look.scale,
       alpha: look.alpha,
+      rotation: look.rotation,
+      angularVelocity: look.angularVelocity,
+      tint: look.tint,
     });
   }
 }

@@ -7,6 +7,23 @@ const { Scene, Camera } = WEED;
 const OBSTACLE_COUNT = 2000;
 const SEED = 0xc0ffee;
 
+/**
+ * `?casts=N`: casts per logic tick (default 3072, a quarter each of line of sight, entity linecast,
+ * cast and castAll). After E-85 the default left logic under the 3 ms floor; raise it (E-90).
+ */
+export const CASTS = (() => {
+  try {
+    const n = Number(new URLSearchParams(globalThis.location?.search || '').get('casts'));
+    return n > 0 ? Math.min(n | 0, 65536) : 3072;
+  } catch {
+    return 3072;
+  }
+})();
+
+export const stressSceneConfig = {
+  requested: { casts: CASTS },
+};
+
 /** L2 intermediate bench: dense static colliders + deterministic ray flood each tick. */
 export class RayStressScene extends Scene {
   static config = {
@@ -83,7 +100,7 @@ export class RayStressScene extends Scene {
       });
     }
 
-    RayStressDriver.spawn({ seed: SEED });
+    RayStressDriver.spawn({ seed: SEED, casts: CASTS });
 
     Camera.centerOn(worldW * 0.5, worldH * 0.5);
     Camera.setZoom(0.45);

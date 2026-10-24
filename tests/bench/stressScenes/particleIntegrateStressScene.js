@@ -19,6 +19,20 @@ export const TWEEN = (() => {
 })();
 
 /**
+ * `?spin=1`: every particle also turns and changes colour over its life (a
+ * rotation tween, an angular velocity and a tint tween), so the integrate runs
+ * sin/cos and the tint lerp per particle. A load knob for the particle worker
+ * (E-80). Default 0.
+ */
+export const SPIN = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('spin') === '1' ? 1 : 0;
+  } catch {
+    return 0;
+  }
+})();
+
+/**
  * `?camRot=<radians>` turns the camera. A turned view culls particles with the
  * box around it, about twice the view at 45° on 16:9 (review E-51b). Default 0.
  */
@@ -33,7 +47,7 @@ export const CAM_ROT = (() => {
 })();
 
 export const stressSceneConfig = {
-  requested: { tween: TWEEN, camRot: CAM_ROT },
+  requested: { tween: TWEEN, spin: SPIN, camRot: CAM_ROT },
 };
 
 /** L2 intermediate bench: large heighted (gravity + despawnOnGroundContact) population. No decals. */
@@ -76,7 +90,7 @@ export class ParticleIntegrateStressScene extends Scene {
   static entities = [[ParticleIntegrateDriver, 1]];
 
   create() {
-    ParticleIntegrateDriver.spawn({ seed: SEED, tween: TWEEN });
+    ParticleIntegrateDriver.spawn({ seed: SEED, tween: TWEEN, spin: SPIN });
 
     Camera.centerOn(this.config.worldWidth * 0.5, this.config.worldHeight * 0.5);
     Camera.setZoom(0.3);

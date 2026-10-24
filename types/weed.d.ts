@@ -285,6 +285,22 @@ export type SceneConfig = Record<string, unknown> & {
     /** @deprecated one-release alias of maxFixturePoolSize */
     maxFixtures?: number;
   };
+  /**
+   * WebAssembly kernels, one switch per module (default true). false runs that module's
+   * JavaScript path instead, for example to time one against the other in the same build.
+   */
+  wasm?: {
+    /** Spatial neighbour publish. Needs 16-bit entity ids; at 32 the JavaScript path runs anyway. */
+    spatialPublish?: boolean;
+    /** Spatial candidate gather (the cell walk before the publish). Runs only with spatialPublish. */
+    spatialGather?: boolean;
+    /** Particle integrate (lifetime, tweens, motion, floor) for the CPU particle pool. */
+    particleIntegrate?: boolean;
+    /** Particle active and visible lists (the per-frame sweep of the pool and the screen test). */
+    particleLists?: boolean;
+    /** Instanced-row pack in pre-render (the render queues live in one WebAssembly.Memory). */
+    gpuPack?: boolean;
+  };
 };
 
 export interface DebugFlagConstants {
@@ -960,6 +976,8 @@ export declare const VERSION: string;
 
 export declare class Component {
   static sharedBuffer: SharedArrayBuffer | null;
+  /** Where the component's block starts in `sharedBuffer` (0 for a buffer of its own). */
+  static sharedBufferByte: number;
   static globalEntityCount: number;
   static componentId: number | null;
   static ARRAY_SCHEMA: Record<
@@ -973,7 +991,8 @@ export declare class Component {
   >;
   index: number;
   owner?: GameObject;
-  static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
+  /** `byteOffset`: the block's start in `buffer`, a multiple of 8 (default 0). */
+  static initializeArrays(buffer: SharedArrayBuffer, count: number, byteOffset?: number): void;
 }
 
 /**
@@ -1714,7 +1733,7 @@ export declare class FSM extends Component {
   changeState(StateClass: typeof FSMState): void;
   forceChangeState(StateClass: typeof FSMState): void;
 
-  static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
+  static initializeArrays(buffer: SharedArrayBuffer, count: number, byteOffset?: number): void;
   static changeState(i: number, StateClass: typeof FSMState): void;
   static getStateName(i: number): string | null;
   static isInState(i: number, StateClass: typeof FSMState): boolean;
@@ -1732,6 +1751,7 @@ export declare class FSMState {
   static stateIndex: number;
   static onEnter(owner: GameObject, i: number, fromState: string | null): void;
   static onExit(owner: GameObject, i: number, toState: string): void;
+  /** `timeInState`: time in this state, in whole milliseconds. */
   static onUpdate(owner: GameObject, i: number, dt: number, timeInState?: number): void;
 }
 

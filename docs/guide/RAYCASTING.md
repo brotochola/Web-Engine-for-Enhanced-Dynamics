@@ -185,10 +185,11 @@ The ray checks `(1 << (entity.collisionLayer & 31)) & mask` per entity -- one bi
 
 - **DDA grid traversal**: rays step through spatial grid cells, only testing entities in cells the ray actually crosses.
 - **Cell-exit early-out**: once the closest hit distance is not past the current cell's DDA exit boundary (`min(tMaxX, tMaxY)`), traversal stops. Valid because spatial workers insert each entity into **every** cell its AABB overlaps — a closer hit cannot appear in a later cell. Used in `_traverseGrid` and the inlined `cast` loop.
-- **Two internal functions**: `_checkCellEntities` (finds closest hit per cell) and `_collectCellHits` (collects all hits for `castAll`).
-- `_traverseGrid`: shared DDA loop used by `cast`, `castWithInfo`, and `linecast`. Returns a borrowed static `{ entityIndex, distance }` consumed immediately by callers.
+- **Two internal functions**: `_checkCellEntities` (finds closest hit per cell) and `_collectCellHitsTopN` (keeps the closest `maxHits` hits for `castAll`).
+- `_traverseGrid`: shared DDA loop used by `castWithInfo` and the linecasts. It writes the hit into typed arrays its callers read at once.
+- **No double crosses a call** inside a cast: the caller writes the ray (origin, direction, length, end, bounds) into one module `Float64Array`, and the traversal, cell and shape functions read it there and pass only integers. TurboFan does not inline them all, and a double passed to a function it did not inline, or returned from one, became a heap number per ray, cell and candidate (E-85). Circles and boxes are tested by Ray's own copies of `rayCircleIntersect` and `rayBoxIntersect` for the same reason; `tests/node/rayShapeParity.test.js` holds them equal.
 - `cast` and `castAll` have their own inlined DDA loops for performance.
-- All temp objects (`_tempResult`, `_tempHitInfo`, `_tempLinecastResult`, `_tempHitsArray`, `_traverseResult`) are static and reused across calls unless you pass an explicit `out`.
+- The result objects (`_tempHitInfo`, `_tempLinecastResult`, `_tempHitsArray`) are static and reused across calls unless you pass an explicit `out`.
 
 ---
 

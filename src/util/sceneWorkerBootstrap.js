@@ -166,6 +166,8 @@ function buildSceneSharedBuffers(scene) {
     frameRateData: scene.buffers.frameRateData,
     frameClock: scene.buffers.frameClock || null,
     componentData: scene.buffers.componentData,
+    // Each component's byte offset in its buffer (a region of the render-queue memory, E-112), or none.
+    componentDataByte: scene.buffers.componentDataByte || null,
     gridBuffer: scene.buffers.gridBuffer,
     cellSleepingBuffer: scene.buffers.cellSleepingBuffer,
     entityPosData: scene.buffers.entityPosData,
@@ -264,6 +266,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     particleFreeListTop: scene.buffers.particleFreeListTop || null,
     activeParticlesData: scene.buffers.activeParticlesData || null,
     visibleParticlesData: scene.buffers.visibleParticlesData || null,
+    activeParticlesByte: scene.buffers.activeParticlesByte | 0,
+    visibleParticlesByte: scene.buffers.visibleParticlesByte | 0,
     maxDecorations: scene.config.decoration.maxDecorations,
     maxAttachedDecorationsPerEntity: scene.config.decoration.maxAttachedDecorationsPerEntity,
     decorationFreeList: scene.buffers.decorationFreeList || null,
@@ -300,10 +304,16 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     renderQueue: {
       dataA: scene.buffers.renderQueueDataA,
       dataB: scene.buffers.renderQueueDataB,
+      // Byte offsets of the two buffers in their SharedArrayBuffers (the render-queue memory's
+      // regions, or 0).
+      dataAByte: scene.buffers.renderQueueDataAByte | 0,
+      dataBByte: scene.buffers.renderQueueDataBByte | 0,
       cameraA: scene.buffers.renderQueueCameraA,
       cameraB: scene.buffers.renderQueueCameraB,
       sync: scene.buffers.renderQueueSync,
       entityTextureData: scene.buffers.entityTextureData,
+      // Its byte offset there: the emit memory's emitLastTexture region (E-112), or 0.
+      entityTextureByte: scene.buffers.entityTextureByte | 0,
       maxItems: scene.maxVisibleRenderables,
       itemSize: 48,
     },
@@ -311,6 +321,8 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       ? {
           dataA: scene.buffers.gpuQueueDataA,
           dataB: scene.buffers.gpuQueueDataB,
+          dataAByte: scene.buffers.gpuQueueDataAByte | 0,
+          dataBByte: scene.buffers.gpuQueueDataBByte | 0,
           caps: scene.gpuQueueCaps,
         }
       : null,
@@ -423,6 +435,14 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     // Boot payload: pose SAB when physics is off. Workers bind once; ticks do not re-read this.
     weedPose: scene.weedPose || null,
     spatialPublishMemory: scene.spatialPublish?.memory || null,
+    particleMemory: scene.particleMemory?.memory || null,
+    particleLayout: scene.particleMemory?.layout || null,
+    // E-76 W9: the render-queue memory, for pre-render's pack kernel.
+    renderQueueMemory: scene.renderQueueMemory?.memory || null,
+    renderQueueLayout: scene.renderQueueMemory?.layout || null,
+    // W14: the navigation memory (the nav buffer and the flowfield's scratch), for the particle worker.
+    navigationMemory: scene.navigationMemory?.memory || null,
+    navigationLayout: scene.navigationMemory?.layout || null,
   };
 }
 

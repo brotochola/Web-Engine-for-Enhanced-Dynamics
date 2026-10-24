@@ -4,7 +4,7 @@
 on branch `isolation_sw` (from 2026-10-23); the four decisions are taken (see "Decisions").
 **Next step:** phase 3 (load time; Predator through the worker) and the phase 2 rows not run yet
 (Firefox, hot reload, audio, the allowed frame). SW-1 to SW-8 are done. **Registry:** `DX-SW` in
-`hypotheses.json`, which lives on the `wasm_hyp` branch until that branch is merged.
+[`hypotheses.json`](./hypotheses.json).
 
 The goal: WeedJS runs exactly as it does today, with SharedArrayBuffers and Box2D's 4 threads,
 on hosts that cannot send the two isolation headers (GitHub Pages, a plain static host,

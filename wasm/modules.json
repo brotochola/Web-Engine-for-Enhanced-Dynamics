@@ -1,15 +1,168 @@
 {
-  "comment": "WebAssembly kernel modules (E-76). Built by scripts/buildWasm.mjs; rules in scripts/wasmKernelRules.mjs.",
+  "comment": "WebAssembly kernel modules (E-76). Built by scripts/buildWasm.mjs; rules in scripts/wasmKernelRules.mjs. \"test\": true modules are built and checked the same way but never shipped (tests/fixtures/wasm/).",
   "toolchain": {
-    "clang": ["clang version 24.0.0git", "c050c487e9edb97ef44f53cb29fe1d8bcddb8f76"],
-    "wasmOpt": ["wasm-opt version 131", "version_131-18-gbbeae83f8"]
+    "clang": [
+      "clang version 24.0.0git",
+      "c050c487e9edb97ef44f53cb29fe1d8bcddb8f76"
+    ],
+    "wasmOpt": [
+      "wasm-opt version 131",
+      "version_131-18-gbbeae83f8"
+    ]
   },
   "modules": [
     {
       "name": "spatialPublish",
       "source": "wasm/spatialPublish.c",
       "output": "src/workers/spatialPublish.wasm",
-      "exports": ["publish_batch"],
+      "exports": [
+        "publish_batch"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
+      "name": "coexistScale",
+      "source": "wasm/test/coexistScale.c",
+      "output": "tests/fixtures/wasm/coexistScale.wasm",
+      "exports": [
+        "scale_f32"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "coexistHistogram",
+      "source": "wasm/test/coexistHistogram.c",
+      "output": "tests/fixtures/wasm/coexistHistogram.wasm",
+      "exports": [
+        "histogram_u16"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "callCost",
+      "source": "wasm/test/callCost.c",
+      "output": "tests/fixtures/wasm/callCost.wasm",
+      "exports": [
+        "nop0",
+        "sum4i",
+        "sum8i",
+        "sum4d",
+        "sum8d",
+        "load1"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "spatialGather",
+      "source": "wasm/spatialGather.c",
+      "output": "src/workers/spatialGather.wasm",
+      "exports": [
+        "gather_batch",
+        "order_batch_by_cell"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
+      "name": "particleIntegrate",
+      "source": "wasm/particleIntegrate.c",
+      "output": "src/workers/particleIntegrate.wasm",
+      "exports": [
+        "integrate_batch"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
+      "name": "particleLists",
+      "source": "wasm/particleLists.c",
+      "output": "src/workers/particleLists.wasm",
+      "exports": [
+        "build_lists",
+        "build_lists_turned",
+        "build_active"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
+      "name": "gpuPack",
+      "source": "wasm/gpuPack.c",
+      "output": "src/render/gpuPack.wasm",
+      "exports": [
+        "pack_sprites",
+        "pack_casters",
+        "pack_sprites_scatter",
+        "pack_casters_scatter"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
+      "name": "spatialRebuild",
+      "source": "wasm/test/spatialRebuild.c",
+      "output": "tests/fixtures/wasm/spatialRebuild.wasm",
+      "exports": [
+        "rebuild_rows"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "preRenderEmit",
+      "source": "wasm/preRenderEmit.c",
+      "output": "src/workers/preRenderEmit.wasm",
+      "exports": [
+        "emit_rows",
+        "persist_frame",
+        "persist_remember"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
+      "name": "shadowStamp",
+      "source": "wasm/shadowStamp.c",
+      "output": "src/render/shadowStamp.wasm",
+      "exports": [
+        "stamp_light_range"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
+      "name": "decorationSway",
+      "source": "wasm/decorationSway.c",
+      "output": "src/workers/decorationSway.wasm",
+      "exports": [
+        "sway_decorations"
+      ],
+      "maxMemoryPages": 8192
+    },
+    {
+      "name": "decalStamp",
+      "source": "wasm/test/decalStamp.c",
+      "output": "tests/fixtures/wasm/decalStamp.wasm",
+      "exports": [
+        "stamp_tiles"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "meshCorners",
+      "source": "wasm/test/meshCorners.c",
+      "output": "tests/fixtures/wasm/meshCorners.wasm",
+      "exports": [
+        "rewrite_corners"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "navFlowfield",
+      "source": "wasm/navFlowfield.c",
+      "output": "src/workers/navFlowfield.wasm",
+      "exports": [
+        "compute_flowfield"
+      ],
       "maxMemoryPages": 8192
     }
   ]

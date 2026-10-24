@@ -49,7 +49,8 @@ import {
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
 import { EntityIdArray, packSpatialPairStamp as packSpatialPairStampImport, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
-import { bindSpatialPublish } from './spatialPublishClient.js';
+import { bindSpatialGather, bindSpatialPublish } from './spatialPublishClient.js';
+import { SPATIAL_MAX_CELL_RADIUS } from '../util/spatialPublishMemory.js';
 import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRangeImport, _boundsResult as _boundsResultImport, _cellRangeResult as _cellRangeResultImport, SHAPE_CIRCLE as SHAPE_CIRCLEImport } from '../util/colliderUtils.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
@@ -107,8 +108,8 @@ class SpatialWorker extends AbstractWorker {
 
     // O(1) duplicate detection for multi-cell entities
     // processedMarker[entityB] = (frameStamp | entityA) encodes both frame and source entity
-    // Upper 16 bits = frame counter, lower 16 bits = entityA. Avoids fill() every frame.
-    this.processedMarker = null; // Uint32Array
+    // Top 13 bits = frame counter, low 19 bits = entityA (packSpatialPairStamp). Avoids fill() every frame.
+    this.processedMarker = null; // Int32Array
     this._processedFrameCounter = 0;
     // Local cell counts for race-free grid rebuilding
     // We build counts locally, then copy to grid at the end (avoids mid-clear races)
@@ -119,7 +120,8 @@ class SpatialWorker extends AbstractWorker {
     this._entityLastVisualRange = null;
     this._entityReuseInitialized = null;
 
-    this._maxCellRadius = 12; // Support visual ranges up to ~1500px with cellSize=128
+    // Visual ranges up to ~1500 px at cellSize 128; the WASM gather's pattern table is sized by it.
+    this._maxCellRadius = SPATIAL_MAX_CELL_RADIUS;
     // Precomputed circle patterns: cellRadius -> Int32Array of [dr, dc, dr, dc, ...]
     this._circlePatterns = new Array(this._maxCellRadius + 1);
     // Pattern lengths cache: cellRadius -> length (number of cell pairs)
@@ -130,6 +132,8 @@ class SpatialWorker extends AbstractWorker {
     this._cellIndexArray = Uint16Array;
     this._cellNeighborCache = new Map();
     this._maxNeighborCacheEntries = 8192;
+    // The WASM candidate gather (E-78), bound in initialize when the publish memory has its regions.
+    this._wasmGather = null;
 
     // Performance stats
     this.entitiesProcessedThisFrame = 0;
@@ -144,6 +148,8 @@ class SpatialWorker extends AbstractWorker {
     this._neighborReuseSkin = 0;
     /** Full candidate rebuild every N frames (1 = every frame). */
     this._neighborTickInterval = 1;
+    // spatial.gatherCellOrder: the WASM gather walks its batch in home-cell order.
+    this._gatherCellOrder = false;
     /** Countdown to next full rebuild when neighborTickInterval > 1. */
     this._entityNeighborNextTick = null;
     /** Per-entity expanded candidate lists: [count, id0, ...] stride = 1+maxNeighbors */
@@ -215,7 +221,10 @@ class SpatialWorker extends AbstractWorker {
     }
     // Initialize duplicate detection marker for neighbors (entityB)
     // Uint32Array: upper 16 bits = frame counter, lower 16 bits = entityA
-    this.processedMarker = new Uint32Array(this.globalEntityCount);
+    // Int32Array, as packSpatialPairStamp is an int32: from stamp frame 4096 its top bit is set,
+    // and a Uint32Array element read back as unsigned never equalled it, so the dedup failed for
+    // half of every 8191-frame cycle and candidates in several cells were appended once per cell.
+    this.processedMarker = new Int32Array(this.globalEntityCount);
 
     // Initialize local cell counts array for race-free grid rebuilding
     this._localCellCounts = new Uint8Array(this.totalCells);
@@ -232,6 +241,7 @@ class SpatialWorker extends AbstractWorker {
     this._maxReuseFrames = maxFrames > 0 ? maxFrames | 0 : this._neighborReuseSkin > 0 ? 15 : 0;
     const tickInterval = Number(spatialCfg.neighborTickInterval);
     this._neighborTickInterval = tickInterval > 1 ? tickInterval | 0 : 1;
+    this._gatherCellOrder = spatialCfg.gatherCellOrder !== false;
     if (this._neighborTickInterval > 1) {
       const nextTick = new Uint8Array(this.globalEntityCount);
       const interval = this._neighborTickInterval;
@@ -271,6 +281,27 @@ class SpatialWorker extends AbstractWorker {
 
     // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius)
     this._precomputeCirclePatterns();
+
+    // E-78: the candidate gather in WASM, on the publish memory's grid, markers, flags and lists.
+    // Its marker and flags are the ones the JS reads (the fill on stamp wrap, _canReuseNeighbors).
+    this._wasmGather = null;
+    if (this._wasmPub && this.config?.wasm?.spatialGather !== false && data.gridMetadata?.patternByte) {
+      try {
+        this._wasmGather = await bindSpatialGather(
+          data.spatialPublishMemory,
+          data.gridMetadata,
+          this.workerId | 0,
+          this.globalEntityCount,
+          this._circlePatterns,
+          this._maxCellRadius,
+        );
+        this.processedMarker = this._wasmGather.marker;
+        this._neighborCandidateTruncated = this._wasmGather.truncated;
+      } catch (err) {
+        console.error('[spatial] gather wasm unavailable', err);
+        this._wasmGather = null;
+      }
+    }
 
     if (this.ownedRowCount > 0) {
       debugWorkerLog(
@@ -399,7 +430,8 @@ class SpatialWorker extends AbstractWorker {
 
     // STEP 2: Find neighbors (only for entities in owned rows)
     startTime = detail ? performance.now() : 0;
-    this.findNeighborsForOwnedEntities();
+    if (this._wasmGather) this._findNeighborsWasmGather();
+    else this.findNeighborsForOwnedEntities();
     if (detail) {
       this.neighborSearchTimeThisFrame = performance.now() - startTime;
     }
@@ -813,6 +845,140 @@ class SpatialWorker extends AbstractWorker {
         }
       }
     }
+    this._flushWasmPublish();
+  }
+
+  /**
+   * findNeighborsForOwnedEntities with the candidate gather in WASM (E-78). The per-entity
+   * decisions (stagger, skin reuse) stay here; every list to rebuild goes to one gather_batch call
+   * (wasm/spatialGather.c: the JS arithmetic in double, this worker's circle patterns in order);
+   * then the bookkeeping, then the publish. Taken when the publish memory has the gather's regions
+   * and wasm.spatialGather is on. It publishes exactly what the JS gather publishes
+   * (tests/node/spatialGatherWasm.test.js).
+   */
+  _findNeighborsWasmGather() {
+    const visualRange = Collider.visualRange;
+    const active = Transform.active;
+    const maxNeighbors = Grid.maxNeighbors;
+    const stride = Grid._stride;
+    const skinFrac = this._neighborReuseSkin;
+    const tickInterval = this._neighborTickInterval;
+    const nextTick = this._entityNeighborNextTick;
+    const maxReuseFrames = this._maxReuseFrames;
+    const framesSinceBuild = this._entityFramesSinceBuild;
+    const candCountOf = this._candidateCountOf;
+    const neighborData = Grid.neighborData;
+    const entityPosData = this.entityPosData;
+    const pub = this._wasmPub;
+    const g = this._wasmGather;
+    const rebuild = g.rebuild;
+
+    this._processedFrameCounter++;
+    if (this._processedFrameCounter > SPATIAL_STAMP_FRAME_MASK) {
+      this._processedFrameCounter = 1;
+      this.processedMarker.fill(0);
+    }
+    const stampFrame = this._processedFrameCounter;
+
+    let rebuilds = 0;
+    const ownedList = this._ownedEntityList;
+    const ownedCount = this._ownedEntityCount;
+    for (let oi = 0; oi < ownedCount; oi++) {
+      const entityA = ownedList[oi];
+      if (!active[entityA]) continue;
+
+      const baseIdxA = entityA * 4;
+      const myX = entityPosData[baseIdxA];
+      const myY = entityPosData[baseIdxA + 1];
+      const myHalfExtent = entityPosData[baseIdxA + 2];
+
+      this.entitiesProcessedThisFrame++;
+
+      const myVisualRange = visualRange[entityA];
+      if (myVisualRange <= 0) {
+        neighborData[entityA * stride] = 0;
+        continue;
+      }
+
+      // Schedule stagger, as in findNeighborsForOwnedEntities.
+      let scheduleSkipRebuild = false;
+      if (tickInterval > 1) {
+        if (--nextTick[entityA] > 0) {
+          scheduleSkipRebuild = true;
+        } else {
+          nextTick[entityA] = tickInterval;
+        }
+      }
+      if (
+        scheduleSkipRebuild &&
+        candCountOf[entityA] > 0 &&
+        framesSinceBuild[entityA] < maxReuseFrames
+      ) {
+        this.neighborsReusedThisFrame++;
+        framesSinceBuild[entityA]++;
+        continue;
+      }
+
+      // The publish and the gather both read the range from the memory.
+      pub.range[entityA] = myVisualRange;
+      if (skinFrac > 0 && this._canReuseNeighbors(entityA, myX, myY, myHalfExtent, myVisualRange)) {
+        this.neighborsReusedThisFrame++;
+        framesSinceBuild[entityA]++;
+        pub.list[pub.queued++] = entityA;
+      } else {
+        rebuild[rebuilds++] = entityA;
+      }
+    }
+
+    if (rebuilds) {
+      const meta = this._wasmMeta;
+      // The same results in any order; in cell order the cells each entity walks are still in cache.
+      if (this._gatherCellOrder && g.order) {
+        g.order(rebuilds, g.rebuildByte, meta.posByte, this.invCellSize, this.gridWidth, this.gridHeight, g.orderByte);
+      }
+      this.cellsCheckedThisFrame += g.gather(
+        rebuilds,
+        g.rebuildByte,
+        meta.posByte,
+        meta.rangeByte,
+        meta.candByte,
+        maxNeighbors,
+        meta.gridByte,
+        Grid.cellByteSize,
+        Grid._cellIdStride,
+        Grid._headerIds,
+        this.gridWidth,
+        this.gridHeight,
+        this.invCellSize,
+        skinFrac,
+        this._maxCellRadius,
+        g.patternByte,
+        g.patternIndexByte,
+        g.markerByte,
+        stampFrame,
+        g.truncatedByte,
+      );
+      const cand = pub.cand;
+      const truncatedOf = this._neighborCandidateTruncated;
+      for (let k = 0; k < rebuilds; k++) {
+        const entityA = rebuild[k];
+        candCountOf[entityA] = cand[entityA * stride];
+        pub.list[pub.queued++] = entityA;
+        if (!truncatedOf[entityA]) {
+          const b = entityA * 4;
+          this._storeNeighborReuseSignature(entityA, entityPosData[b], entityPosData[b + 1], entityPosData[b + 2], visualRange[entityA]);
+        } else {
+          // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
+          this._entityReuseInitialized[entityA] = 0;
+          framesSinceBuild[entityA] = 0;
+        }
+      }
+    }
+    this._flushWasmPublish();
+  }
+
+  /** The WASM publish of every entity queued this frame (both gathers end here). */
+  _flushWasmPublish() {
     if (this._wasmPub && this._wasmPub.queued) {
       const n = this._wasmPub.queued;
       this._wasmPub.queued = 0;
@@ -828,8 +994,8 @@ class SpatialWorker extends AbstractWorker {
       );
       // E-02. This recount is a SECOND full pass over the neighbor array after
       // the WASM publish, and it exists only to fill `neighborsFoundThisFrame`.
-      // The WASM kernel returns nothing and this tree has no C toolchain to make
-      // it return the count, so the count is read back here instead.
+      // The WASM kernel returns nothing (it could: scripts/buildWasm.mjs builds it
+      // since E-76), so the count is read back here instead.
       //
       // The read-back is not free and not local: `stride` is `1 + maxNeighbors`
       // (2050 bytes at Predator's 1024), so n rows touch n * 2 KB of address

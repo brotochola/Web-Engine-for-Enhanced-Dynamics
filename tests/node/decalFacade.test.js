@@ -140,3 +140,24 @@ test('Decal.getColor samples atlas world coords', { concurrency: false }, () => 
   Decal.bindAtlas(null);
   assert.equal(Decal.getColor(0, 0), 0);
 });
+
+// E-108. Decal.stamp resolves plain numbers without the scratch op objects and enqueues its doubles
+// through a module array; the ring must carry what the config said, numbers and ranges alike.
+test('Decal.stamp enqueues each field as configured', { concurrency: false }, () => {
+  Decal.bindStampApply(null);
+  Decal.bindStampRing(Decal.createStampRingSab(64));
+  const f32 = (v) => Math.fround(v);
+  assert.equal(Decal.stamp({ x: 10.25, y: 20.5, scaleX: 1.5, scaleY: 0.75, tint: 0x336699, alpha: 0.3, blendMode: 1 }), 1);
+  assert.equal(Decal.stamp({ x: 7.1, y: 8.2, scale: 2.2, alpha: { min: 0.5, max: 0.5 } }), 1);
+  assert.equal(Decal.stamp({ x: 1, y: 2 }), 1);
+  const got = [];
+  Decal.drainStampRing((x, y, tint, scaleX, scaleY, textureId, alpha, blendMode) => {
+    got.push({ x, y, tint, scaleX, scaleY, alpha, blendMode });
+  });
+  assert.deepEqual(got, [
+    { x: f32(10.25), y: f32(20.5), tint: 0x336699, scaleX: f32(1.5), scaleY: f32(0.75), alpha: f32(0.3), blendMode: 1 },
+    { x: f32(7.1), y: f32(8.2), tint: 0xffffff, scaleX: f32(2.2), scaleY: f32(2.2), alpha: f32(0.5), blendMode: 0 },
+    { x: 1, y: 2, tint: 0xffffff, scaleX: 1, scaleY: 1, alpha: 1, blendMode: 0 },
+  ]);
+  Decal.bindStampRing(null);
+});

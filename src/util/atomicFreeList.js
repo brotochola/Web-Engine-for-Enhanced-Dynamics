@@ -4,6 +4,9 @@
 //
 // Slots (particles, decorations, bullets, joint/fixture pools): Uint16 links,
 // head Int32 (tag << 16) | (local+1). SharedAtomicPool calls popU16 / pushU16.
+// The tag is 15 bits (16..30) and bit 31 copies bit 30 (`(x << 1) >> 1`), so the head is always
+// in the Smi range: Chrome runs Atomics as builtins, and a head outside it came back as a heap
+// number from every load and exchange, ~14 ns per op (E-87). Tag window 32768 ops.
 //
 // Entities: popEntity / pushEntity / resetEntity, bound once in bindEntityIdWidth.
 // Width 16 uses the same u16 Treiber. Width 32 uses FL4: one Int32 CAS,
@@ -42,7 +45,7 @@ export function popU16(top, links, startIndex = 0) {
     if (plusOne === 0) return -1;
     const local = plusOne - 1;
     const next = links[local];
-    const newHead = ((head + 0x10000) & ~0xffff) | next;
+    const newHead = ((((head + 0x10000) << 1) >> 1) & ~0xffff) | next;
     if (Atomics.compareExchange(top, 0, head, newHead) === head) {
       Atomics.sub(top, 1, 1);
       return startIndex + local;
@@ -63,7 +66,7 @@ export function popIndicesU16(top, links, maxToPop, outArray, outOffset = 0, sta
       cur = links[cur - 1];
       popped++;
     }
-    const newHead = ((head + 0x10000) & ~0xffff) | cur;
+    const newHead = ((((head + 0x10000) << 1) >> 1) & ~0xffff) | cur;
     if (Atomics.compareExchange(top, 0, head, newHead) === head) {
       Atomics.sub(top, 1, popped);
       return popped;
@@ -76,7 +79,7 @@ export function pushU16(top, links, index, startIndex = 0) {
   for (;;) {
     const head = Atomics.load(top, 0);
     links[local] = head & 0xffff;
-    const newHead = ((head + 0x10000) & ~0xffff) | (local + 1);
+    const newHead = ((((head + 0x10000) << 1) >> 1) & ~0xffff) | (local + 1);
     if (Atomics.compareExchange(top, 0, head, newHead) === head) {
       Atomics.add(top, 1, 1);
       return;

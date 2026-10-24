@@ -18,8 +18,9 @@ const MARGIN = 64;
 export class RayStressDriver extends GameObject {
   static components = [];
 
-  onSpawned({ seed = 0xc0de1234, backend = 'weedjs', singleCasts = SINGLE_CASTS_PER_TICK } = {}) {
+  onSpawned({ seed = 0xc0de1234, backend = 'weedjs', singleCasts = SINGLE_CASTS_PER_TICK, casts = CASTS_PER_TICK } = {}) {
     this._singleCasts = singleCasts | 0;
+    this._casts = casts > 0 ? casts | 0 : CASTS_PER_TICK;
     this.x = -10000;
     this.y = -10000;
     this._seed = seed >>> 0;
@@ -37,8 +38,8 @@ export class RayStressDriver extends GameObject {
       hitX: 0,
       hitY: 0,
     };
-    this._batchRays = new Float32Array(CASTS_PER_TICK * 4);
-    this._batchEnt = new Int32Array(CASTS_PER_TICK);
+    this._batchRays = new Float32Array(this._casts * 4);
+    this._batchEnt = new Int32Array(this._casts);
   }
 
   _mulberry32(seed) {
@@ -186,7 +187,7 @@ export class RayStressDriver extends GameObject {
     const pairs = this._pairs;
     const rays = this._longRays;
     const cursor = this._cursor;
-    const half = CASTS_PER_TICK >> 2;
+    const half = this._casts >> 2;
 
     if (this._backend === 'box2d-single') {
       this._tickBox2dSingle(pairs, cursor);

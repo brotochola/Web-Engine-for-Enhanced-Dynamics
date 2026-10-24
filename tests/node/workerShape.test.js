@@ -68,7 +68,7 @@ test('pre-render: the first full-queue and missing-texture warnings keep the wor
   const keys = Object.keys(pre);
   quietly(() => {
     // A fresh worker has renderQueueMaxItems 0, so the first row is an overflow.
-    pre._writeRenderable(0, 1, 0, 0);
+    pre._writeRenderable(0, 1, 0);
     pre._warnMissingTexture('n32', 'missing');
   });
   assert.equal(pre._renderQueueOverflowWarned, true, 'the overflow path ran');

@@ -49,7 +49,8 @@ export class BunnyMarkScene extends Scene {
             decals: false,
         },
         renderer: {
-            backend: 'webgl',
+            // ?backend=webgpu runs Pixi's WebGPU backend (E-97b paces its frames).
+            backend: bunnySearchParam('backend') === 'webgpu' ? 'webgpu' : 'webgl',
             noLimitFPS: false,
             ySort: false,
             maxVisibleRenderables: INITIAL_BUNNIES,

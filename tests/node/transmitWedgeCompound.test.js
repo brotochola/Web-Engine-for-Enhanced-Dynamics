@@ -26,13 +26,16 @@ import {
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 const pixi = readFileSync(join(root, 'src/workers/pixiWorker.js'), 'utf8');
 
+// The emitter reads its doubles from WEDGE_IN and hands each wedge's to _pushWedge the same way (E-96c).
+const WEDGE_IN = new Float64Array(15);
+
 function wedgeEmitter(wedges) {
   const start = pixi.indexOf('// transmit-wedge-start');
   const end = pixi.indexOf('// transmit-wedge-end');
   assert.ok(start >= 0 && end > start, 'transmit wedge method missing in pixiWorker.js');
   const Emitter = new Function(
     'Collider', 'ColliderFixture', 'ShapeType', 'MAX_POLYGON_VERTICES', 'VIS_REST',
-    'ensureCompoundSolid', 'segmentDistSq', 'segmentFacesPoint',
+    'ensureCompoundSolid', 'segmentDistSq', 'segmentFacesPoint', 'WEDGE_IN',
     `return class {
       constructor(out) {
         this._wedgeTan = new Float32Array(4);
@@ -40,11 +43,21 @@ function wedgeEmitter(wedges) {
         this._wedgePolyY = new Float32Array(MAX_POLYGON_VERTICES);
         this.out = out;
       }
-      _pushWedge(lx, ly, lightR, ax, ay, bx, by, scale) { this.out.push({ lx, ly, lightR, ax, ay, bx, by, scale }); }
+      _pushWedge() {
+        const [lx, ly, lightR] = WEDGE_IN;
+        const [scale, ax, ay, bx, by] = WEDGE_IN.subarray(10);
+        this.out.push({ lx, ly, lightR, ax, ay, bx, by, scale });
+      }
       ${pixi.slice(start, end)}
     };`,
-  )(Collider, ColliderFixture, ShapeType, MAX_POLYGON_VERTICES, 0.67, ensureCompoundSolid, segmentDistSq, segmentFacesPoint);
+  )(Collider, ColliderFixture, ShapeType, MAX_POLYGON_VERTICES, 0.67, ensureCompoundSolid, segmentDistSq, segmentFacesPoint, WEDGE_IN);
   return new Emitter(wedges);
+}
+
+/** The light, the occluder's pose and block, as the self-lit batch writes them before the call. */
+function emit(px, entityIdx, lx, ly, lightR, ex, ey, c, s, ox, oy, block) {
+  WEDGE_IN.set([lx, ly, lightR, ex, ey, c, s, ox, oy, block]);
+  px._emitTransmitWedge(entityIdx);
 }
 
 function initPools(n = 2, maxFixtures = 8) {
@@ -89,7 +102,7 @@ test('a point behind a compound occluder is covered by one transmit wedge', () =
   assert.equal(ColliderFixture.replaceForEntityFlat(0, xy, new Uint8Array([4, 4]), 2), true);
   const wedges = [];
   const px = wedgeEmitter(wedges);
-  px._emitTransmitWedge(-50, 5, 300, 0, 0, 0, 1, 0, 0, 0, 0.5);
+  emit(px, 0, -50, 5, 300, 0, 0, 1, 0, 0, 0, 0.5);
   assert.ok(wedges.length >= 1);
   for (const [x, y] of [[40, 5], [30, 2], [60, 8]]) {
     const n = wedges.filter((w) => covers(w, x, y)).length;

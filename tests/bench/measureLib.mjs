@@ -248,16 +248,34 @@ export function runIntegratedOnce(scene, outPath, opts) {
   return JSON.parse(fs.readFileSync(outPath, 'utf8'));
 }
 
+/** About how long a headed run's window was minimized (runIntegratedWorkerBenchmark's windowState); 0 when not. */
+export function minimizedMsOf(report) {
+  return Number(report?.metadata?.windowState?.minimizedMs) || 0;
+}
+
+/**
+ * One run of the integrated benchmark, again after a Playwright failure (once) or after a run whose window
+ * was minimized: on 2026-10-23 such runs read 4–18 % one-sided deltas on workers the change could not
+ * reach. Three minimized runs in a row fail the sitting.
+ */
 export function runIntegratedWithRetry(scene, outPath, opts) {
-  try {
-    return { ok: true, report: runIntegratedOnce(scene, outPath, opts) };
-  } catch (e) {
-    console.warn(`Playwright fail; retry 1x (${e.message || e})`);
+  let failed = 0;
+  let hidden = 0;
+  for (;;) {
+    let report;
     try {
-      return { ok: true, report: runIntegratedOnce(scene, outPath, opts), retried: true };
-    } catch (e2) {
-      return { ok: false, error: String(e2.message || e2), retried: true };
+      report = runIntegratedOnce(scene, outPath, opts);
+    } catch (e) {
+      failed++;
+      if (failed > 1) return { ok: false, error: String(e.message || e), retried: true };
+      console.warn(`Playwright fail; retry 1x (${e.message || e})`);
+      continue;
     }
+    const ms = minimizedMsOf(report);
+    if (ms <= 0) return { ok: true, report, retried: failed + hidden > 0 };
+    hidden++;
+    if (hidden >= 3) return { ok: false, error: `the window was minimized in ${hidden} runs in a row (about ${ms} ms in the last): keep it visible`, retried: true };
+    console.warn(`The window was minimized for about ${ms} ms: this run does not count, running it again`);
   }
 }
 

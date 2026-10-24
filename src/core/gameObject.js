@@ -60,7 +60,8 @@ import {
   advanceBodyGeneration,
   bumpBodyGeneration,
   markBodyDirty,
-  withBodyDirtyDeferred,
+  beginBodyDirtyDeferred,
+  endBodyDirtyDeferred,
 } from '../box2d/box2dBodySync.js';
 import {
   FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
@@ -234,7 +235,8 @@ export class GameObject {
     this.globalEntityCount = count;
 
     // Initialize neighbor data if provided.
-    // neighborByte skips a wasm stack header when the buffer is a WebAssembly.Memory.
+    // neighborByte is the rows region's offset when the buffer is the spatial publish memory
+    // (wasmMemoryMap.js).
     this.neighborData = neighborBuffer
       ? new (EntityIdArray())(neighborBuffer, neighborByte | 0)
       : null;
@@ -1915,14 +1917,14 @@ export class GameObject {
     // Static sprites use bigAtlas directly
     const sheetName = 'bigAtlas';
 
-    // PERFORMANCE: Global cache keyed by "bigAtlas:spriteName"
-    // Avoids repeated registry lookups for the same sprite
+    // PERFORMANCE: Global cache of bigAtlas animation indices, keyed by the sprite name alone: the
+    // sheet is always bigAtlas here, and a "bigAtlas:name" key built per call was a new string per
+    // spawn (E-93). No prototype, so a sprite named "constructor" is an ordinary key.
     if (!GameObject._globalAnimationCache) {
-      GameObject._globalAnimationCache = {};
+      GameObject._globalAnimationCache = Object.create(null);
     }
 
-    const cacheKey = `${sheetName}:${spriteName}`;
-    let animIndex = GameObject._globalAnimationCache[cacheKey];
+    let animIndex = GameObject._globalAnimationCache[spriteName];
 
     if (animIndex === undefined) {
       // First time this sprite is used - look it up in bigAtlas
@@ -1938,7 +1940,7 @@ export class GameObject {
       }
 
       // Cache it globally for future use
-      GameObject._globalAnimationCache[cacheKey] = animIndex;
+      GameObject._globalAnimationCache[spriteName] = animIndex;
     }
 
     // Store which spritesheet to use (bigAtlas for static sprites)
@@ -2885,7 +2887,8 @@ export class GameObject {
     // saved marks; the LIFECYCLE published after activation (below) carries
     // any this entity still holds, so a child spawned from a parent's
     // onSpawned gets a body with the real shape.
-    withBodyDirtyDeferred(() => {
+    beginBodyDirtyDeferred();
+    try {
       // Size before other spawnConfig keys (and before onSpawned damping/static).
       // Skip active — Transform.active stays 0 until the bump below.
       if (has.Collider) {
@@ -2949,7 +2952,9 @@ export class GameObject {
       if (spawnConfig && spawnConfig._saveRestore) {
         applyEntitySaveRestore(i, EntityClass, spawnConfig._saveRestore);
       }
-    });
+    } finally {
+      endBodyDirtyDeferred();
+    }
 
     // Initialize tick decimation countdown (if staggeredUpdates enabled)
     // Stagger entities across frames using index offset: (index % tickInterval) + 1

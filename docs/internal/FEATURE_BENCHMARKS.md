@@ -10,7 +10,7 @@ pnpm bench:scoreboard --vs 0695a8d
 
 That writes [`tests/results/scoreboard/report.md`](../../tests/results/scoreboard/report.md) and updates [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Artistic demos are not scoreboard rows. Vis-poly uses `visPolyStressScene` (`lighting.raycasted: true`). Combat-class particle + spatial load uses `steadyCombatScene` (seeded, constant emit). Do not patch `demos/predatorScene` so a bench can close. Human map of each row: [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md). Night diary: [`CAMPANA_NOCHE_RESULTADOS.md`](./CAMPANA_NOCHE_RESULTADOS.md).
 
-`--headed-only box2d,visPoly,steadyCombat` opens a window only for those ids (5 × 25 s / 18 s). Compute and zenithal stay on the stress protocol even though the catalog marks them headed. A scoreboard with **no** flags would head those GPU scenes; `--headless` would un-head Balls and vis-poly too.
+`--headed-only box2d,visPoly,steadyCombat` opens a window only for those ids (the scoreboard's gameplay schedule, 10 s / 10 s per run). Compute and zenithal stay on the stress protocol even though the catalog marks them headed. A scoreboard with **no** flags would head those GPU scenes; `--headless` would un-head Balls and vis-poly too.
 
 First smoke versus `0695a8d` (5 rows: emit, spatial, box2d, visPoly, steadyCombat) is in that report. Load closed on every row, including the new bench scenes. The tree is **not** claimed faster than main: box2d and visPoly were WORSE on n=1 smoke. That smoke **does not** override the headed 5-run Balls confirm (physics −5.2%, `BODY_COUNT` 9004/9004). Re-run without `--smoke` before a product claim.
 
@@ -20,9 +20,9 @@ Older docs said **L1 / L2 / L3**. Those names mean **kernel / stress scene / gam
 |-------|------------------|-----|------|
 | **Kernel microbenchmark** | Algorithm throughput (ops/s, ms) plus correctness | `node tests/bench/<feature>-microbench.mjs` — no workers, fake SoA/SAB | Changed DDA / Dijkstra / query math / grid loop / emit |
 | **Stress scene** | Feature inside the engine (workers, real grid, SAB stats) on a synthetic scene | Playwright `runIntegratedWorkerBenchmark.mjs --scene /tests/bench/stressScenes/...` | Does the win survive integration? Headless is fine for screening |
-| **Gameplay scene** | Real gameplay load | `demos/<demo>/` (Balls, Predator, …), Chromium with a visible window, 5 runs | End-to-end claim that a demo got cheaper |
+| **Gameplay scene** | Real gameplay load | `demos/<demo>/` (Balls, Predator, …), Chromium with a visible window, 2 runs of 10 s / 10 s | End-to-end claim that a demo got cheaper |
 
-Always compare with the **same flags**, prefer `pnpm bench:headed:median` (5 runs, warmup 25 s, measure 18 s), and check load (`BODY_COUNT`, and `ACTIVE_PARTICLES` on Predator) within 5 percent.
+Always compare with the **same flags**, prefer `pnpm bench:headed:median` (2 runs, warmup 10 s, measure 10 s), a paired sitting for a verdict, and check load (`BODY_COUNT`, and `ACTIVE_PARTICLES` on Predator) within 5 percent.
 
 A stress A/B whose primary median is **below 3 ms** is not comparable. The harness fails the row (`step floor:`). Raise that scene's load before reading keep/drop. Gameplay rows skip the floor. Kernel samples use the same 3 ms `timeIt` floor. Protocol: [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md).
 
