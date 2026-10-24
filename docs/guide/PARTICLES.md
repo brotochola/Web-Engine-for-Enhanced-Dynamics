@@ -115,7 +115,7 @@ Reads per-particle `viewMode` / `flat`:
 
 | Key | Role |
 | --- | --- |
-| `maxParticles` | Pool size |
+| `maxParticles` | Pool size, up to 524287. Past 65535 particle slot ids are 32-bit (the lists, the free list and the WebAssembly kernels follow); up to 65535 they are 16-bit |
 | `decals` / `decalsTileSize` / `decalsResolution` | Floor stamp tilemap |
 | `zenithalMaxHeight` | Reference height for full zenithal scale boost |
 | `zenithalScaleFactor` | How hard scale grows with height |

@@ -13,7 +13,7 @@ lighting: {
   baseAmbient: 0.3,
   particleLights: {
     enabled: true,
-    max: 256, // hard cap of quads per frame (at most 65535; larger warns and is capped)
+    max: 256, // hard cap of quads per frame (at most 524287, the particle pool's ceiling; larger warns and is capped)
   },
 },
 ```

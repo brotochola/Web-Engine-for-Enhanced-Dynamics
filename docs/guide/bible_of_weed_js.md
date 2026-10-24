@@ -8,7 +8,7 @@ Engine-focused notes for the current `src/` architecture.
 |---|---|
 | Entity indices | `config.entityIdWidth` **'auto'** (default): `Uint16` (`0..65534`) while the scene's pools hold at most 65535 entities, `Uint32` past that, ceiling **300000**. `16` or `32` forces one |
 | Total pooled entities | `65535` at 16-bit ids, `300000` at 32. A scene with `physics.enabled` (the default) throws if `totalEntityCount > 65535` |
-| Particle / decoration / bullet pool indices | `0..65534`. Those slot stacks stay `Uint16` at either width |
+| Particle / decoration / bullet pools | `particle.maxParticles`, `decoration.maxDecorations`, `bullet.maxBullets`, each up to **524287**. A pool of at most 65535 keeps `Uint16` slot ids (`0..65534`); past that it takes `Uint32` ones, decided per pool from its own maximum, whatever `entityIdWidth` is |
 | QuerySystem component mask width | `64` components |
 | QuerySystem entity-type mask width | `64` entity types |
 | Spatial grid cells | No 65535 cap. The neighbor-cell cache is `Uint16` until `totalCells > 65535`, then `Uint32` |
@@ -173,6 +173,7 @@ When `decoration.maxDecorations > 0`, world-owned decorations (no parent) are in
 
 ```javascript
 // Allocate out once (module scope or onSpawned), not inside tick().
+// A Uint32Array when decoration.maxDecorations is past 65535: its pool indices do not fit 16 bits.
 const out = new Uint16Array(64);
 const n = Decoration.queryCircle(worldX, worldY, 100, out);
 for (let i = 0; i < n; i++) {
