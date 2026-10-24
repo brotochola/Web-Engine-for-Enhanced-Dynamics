@@ -550,3 +550,76 @@ test('a LiquidFun row still declines the frame', async () => {
   assert.ok(k.worker._writeEmitTable(k.source()));
   assert.equal(b.emitRows(b.tableByte, k.count, k.maxItems, 0, DT / 1000, 1, k.worker._zBand), EMIT_DECLINED);
 });
+
+/**
+ * advanceAdobeAnimations through adobe_advance and through its JS loop, from the same clocks: AdobeAnimComponent's
+ * time and playing flags after every frame, and the ended clips in the order the JS reports them.
+ */
+function compareAdvance(k, frames) {
+  const { worker } = k;
+  const a = AdobeAnimComponent;
+  const bound = worker._emitWasm;
+  const ids = Uint16Array.from({ length: ROOTS }, (_, i) => (i * 7) % ROOTS);
+  const start = { time: a.time.slice(), playing: a.playing.slice() };
+  const realEnded = worker._adobeAnimationEnded;
+  const calls = [];
+  const realAdvance = bound.adobeAdvance;
+  bound.adobeAdvance = (...args) => {
+    const got = realAdvance(...args);
+    calls.push(got);
+    return got;
+  };
+  const run = (kernel) => {
+    a.time.set(start.time);
+    a.playing.set(start.playing);
+    worker._emitWasm = kernel ? bound : null;
+    const out = [];
+    for (let f = 0; f < frames; f++) {
+      const ended = [];
+      worker._adobeAnimationEnded = (i) => ended.push(i);
+      worker._frameAdobeEntities = ids;
+      // Long and short frames, and one with no time at all (the JS returns before its loop).
+      worker.advanceAdobeAnimations(f % 9 === 4 ? 0 : DT * (f % 5 === 2 ? 7 : 1));
+      // A copy of the clocks' bytes (Buffer.from of a typed array copies; of its buffer it would be a view).
+      out.push({ time: Buffer.from(new Uint8Array(a.time.buffer, a.time.byteOffset, a.time.byteLength)), playing: [...a.playing], ended });
+    }
+    worker._adobeAnimationEnded = realEnded;
+    return out;
+  };
+  const js = run(false);
+  calls.length = 0;
+  const wasm = run(true);
+  bound.adobeAdvance = realAdvance;
+  worker._emitWasm = bound;
+  for (let f = 0; f < frames; f++) {
+    assert.deepEqual(wasm[f].time, js[f].time, `frame ${f}: the clocks`);
+    assert.deepEqual(wasm[f].playing, js[f].playing, `frame ${f}: playing`);
+    assert.deepEqual(wasm[f].ended, js[f].ended, `frame ${f}: the clips that ended, in order`);
+  }
+  return { calls, ended: js.reduce((s, x) => s + x.ended.length, 0) };
+}
+
+test('adobe_advance advances the clips as advanceAdobeAnimations does, the ended ones in order', async (t) => {
+  const k = await setup({ seed: 0xadc });
+  const a = AdobeAnimComponent;
+  for (let i = 0; i < ROOTS; i++) {
+    // Backwards now and then (a play-once clip then ends at 0), paused, inactive.
+    if (i % 9 === 0) a.playbackRate[i] = -(0.5 + (i % 4));
+    if (i % 13 === 0) a.playing[i] = 0;
+    if (i % 31 === 0) a.active[i] = 0;
+  }
+  const { calls, ended } = compareAdvance(k, 40);
+  assert.ok(calls.length > 0 && calls.every((c) => c !== EMIT_DECLINED), `the kernel took the frames (${calls.length})`);
+  assert.ok(ended > 5, `clips ended (${ended})`);
+  t.diagnostic(`${calls.length} frames through the kernel, ${ended} clips ended`);
+});
+
+test('adobe_advance declines a frame where a playing clock reads an asset the tables do not hold', async () => {
+  const k = await setup({ seed: 0xadd, plain: true });
+  const { calls } = compareAdvance(k, 6);
+  assert.ok(calls.length > 0 && calls.every((c) => c === EMIT_DECLINED));
+  // Paused, the plain asset's clocks are not read: the kernel takes the frame.
+  for (let i = 0; i < ROOTS; i++) if (AdobeAnimComponent.assetId[i] === 4) AdobeAnimComponent.playing[i] = 0;
+  const again = compareAdvance(k, 6);
+  assert.ok(again.calls.length > 0 && again.calls.every((c) => c !== EMIT_DECLINED));
+});

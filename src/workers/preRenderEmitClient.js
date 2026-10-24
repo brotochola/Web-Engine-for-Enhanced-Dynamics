@@ -7,7 +7,8 @@
 // entity queue's persist path, on the same table with the rows each queue buffer last held
 // (writePersistColumns).
 // W27: with the Adobe regions, emit_rows also expands Adobe Animate roots into their pieces, from
-// AdobeAnimComponent (writeEmitAdobeColumns) and a copy of the registry's assets (writeEmitAdobeAssets).
+// AdobeAnimComponent (writeEmitAdobeColumns) and a copy of the registry's assets (writeEmitAdobeAssets), and
+// adobe_advance advances their clips (advanceAdobeAnimations).
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import {
@@ -109,7 +110,7 @@ export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
  * @param {Record<string, number>} emit createRenderQueueMemory's layout.emit
  */
 export async function bindPreRenderEmit(memory, emit) {
-  const k = await loadWasmKernel('preRenderEmit', wasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_remember']);
+  const k = await loadWasmKernel('preRenderEmit', wasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_remember', 'adobe_advance']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, emit.tableByte, EMIT_SLOTS.length);
   table[SLOT.rEnds] = emit.endsByte;
@@ -126,6 +127,7 @@ export async function bindPreRenderEmit(memory, emit) {
     emitRows: k.emit_rows,
     persistFrame: k.persist_frame,
     persistRemember: k.persist_remember,
+    adobeAdvance: k.adobe_advance,
     layout: emit,
     table,
     tableByte: emit.tableByte,
@@ -146,6 +148,9 @@ export async function bindPreRenderEmit(memory, emit) {
     adobeFrom: null,
     adobeAssets: 0,
     adobeDirByte: 0,
+    // The frame's Adobe entities for adobe_advance (u32), which lists the ended clips' entities there after.
+    adobeList: new Uint32Array(0),
+    adobeListCap: 0,
   };
 }
 
@@ -158,6 +163,8 @@ export function bindEmitAdobe(b, emit) {
   if (!(emit.adobeAssetsByte >= 0) || !(emit.adobeListByte >= 0)) return false;
   b.adobe = true;
   b.table[SLOT.adList] = emit.adobeListByte;
+  b.adobeList = new Uint32Array(b.buffer, emit.adobeListByte, emit.entities);
+  b.adobeListCap = emit.entities;
   return true;
 }
 

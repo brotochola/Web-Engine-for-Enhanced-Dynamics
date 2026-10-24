@@ -124,7 +124,8 @@
       "exports": [
         "emit_rows",
         "persist_frame",
-        "persist_remember"
+        "persist_remember",
+        "adobe_advance"
       ],
       "maxMemoryPages": 32768
     },

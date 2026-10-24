@@ -676,6 +676,59 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   return w;
 }
 
+/* advanceAdobeAnimations: the clocks of the frame's Adobe entities (AD_LIST, listCount of them). Returns how
+   many play-once clips ended, their entities listed in order at the start of the same list (for the JS's end
+   message), or DECLINED, before anything is written, when a playing clock's asset is not in the tables. */
+__attribute__((export_name("adobe_advance")))
+uint32_t adobe_advance(uint32_t table, uint32_t listCount, double deltaSeconds) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const AdobeAsset *dir = PTR(const AdobeAsset, AD_DIR);
+  const uint32_t nAssets = t[AD_ASSETS];
+  uint32_t *list = PTR(uint32_t, AD_LIST);
+  const uint8_t *active = PTR(const uint8_t, AA_ACTIVE);
+  uint8_t *playing = PTR(uint8_t, AA_PLAYING);
+  const float *rate = PTR(const float, AA_RATE);
+  float *time = PTR(float, AA_TIME);
+  const uint8_t *loop = PTR(const uint8_t, AA_LOOP);
+  const uint16_t *asset = PTR(const uint16_t, AA_ASSET);
+  const uint16_t *clip = PTR(const uint16_t, AA_CLIP);
+  if (!dir) return DECLINED;
+  for (uint32_t k = 0; k < listCount; k++) {
+    const uint32_t i = list[k];
+    if (!active[i] || !playing[i]) continue;
+    const uint32_t id = asset[i];
+    if (id < nAssets && dir[id].kind == ASSET_JS) return DECLINED;
+  }
+  uint32_t ended = 0;
+  for (uint32_t k = 0; k < listCount; k++) {
+    const uint32_t i = list[k];
+    if (!active[i] || !playing[i]) continue;
+    const uint32_t id = asset[i];
+    if (id >= nAssets || dir[id].kind != ASSET_IN) continue;
+    const AdobeAsset *as = &dir[id];
+    const uint32_t c = clip[i];
+    const int32_t frameCount = c < as->clipCountLen ? (int32_t)AT(uint16_t, as->clipCount)[c] : 0;
+    const double frameRate = c < as->clipRateLen ? (double)AT(float, as->clipRate)[c] : 0.0;
+    if (frameCount <= 0 || frameRate <= 0.0) continue;
+    const double duration = (double)frameCount / frameRate;
+    const double nextTime = (double)time[i] + deltaSeconds * (double)rate[i];
+    if (loop[i]) {
+      time[i] = (float)(duration > 0.0 ? js_fmod(js_fmod(nextTime, duration) + duration, duration) : 0.0);
+    } else if (nextTime >= duration) {
+      time[i] = (float)duration;
+      playing[i] = 0;
+      list[ended++] = i;
+    } else if (nextTime <= 0.0) {
+      time[i] = 0.0f;
+      playing[i] = 0;
+      list[ended++] = i;
+    } else {
+      time[i] = (float)nextTime;
+    }
+  }
+  return ended;
+}
+
 /* What persist_check returns when the rows are not the ones this buffer last held. */
 #define PERSIST_MISS 0xffffffffu
 

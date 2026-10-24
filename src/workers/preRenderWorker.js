@@ -2036,6 +2036,8 @@ class PreRenderWorker extends AbstractWorker {
 
         const adobeEntities = this._frameAdobeEntities;
         if (!adobeEntities || adobeEntities.length === 0) return;
+        // W27: in preRenderEmit.wasm when its tables hold every asset a playing clock reads.
+        if (this._emitWasm !== null && this._emitWasm.adobe && this._advanceAdobeWasm(adobeEntities, deltaSeconds)) return;
 
         for (let n = 0; n < adobeEntities.length; n++) {
             const i = adobeEntities[n];
@@ -2062,6 +2064,26 @@ class PreRenderWorker extends AbstractWorker {
                 time[i] = nextTime;
             }
         }
+    }
+
+    /**
+     * W27. advanceAdobeAnimations' loop in preRenderEmit.wasm (adobe_advance), on the frame's Adobe entities copied
+     * into its list; the ended play-once clips come back in order and get their end message here. False when the
+     * kernel cannot take the frame (AdobeAnimComponent or an asset a playing clock reads not in its tables): the JS
+     * loop runs it.
+     */
+    _advanceAdobeWasm(adobeEntities, deltaSeconds) {
+        const b = this._emitWasm;
+        const assets = AdobeAnimRegistry.assetById;
+        if (assets !== b.adobeFrom || assets.length !== b.adobeAssets) this._copyEmitAdobeAssets();
+        const n = adobeEntities.length;
+        if (n > b.adobeListCap || !writeEmitAdobeColumns(b, AdobeAnimComponent, true)) return false;
+        const list = b.adobeList;
+        list.set(adobeEntities);
+        const ended = b.adobeAdvance(b.tableByte, n, deltaSeconds);
+        if (ended === EMIT_DECLINED) return false;
+        for (let k = 0; k < ended; k++) this._adobeAnimationEnded(list[k]);
+        return true;
     }
 
     collectVisibleAdobeAnimations() {
