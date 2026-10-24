@@ -8,6 +8,11 @@
  *     --override src/workers/logicWorker.js=tests/results/hyp-baselines/L1.logicWorker.js
  *   node tests/bench/runPredatorAbab.mjs --name X1 --override ... --pairs 4 --owner pixi
  *   node tests/bench/runPredatorAbab.mjs --name branch-vs-main --vs main --pairs 8
+ *   node tests/bench/runPredatorAbab.mjs --name X2 --vs 1cbc02b1 --hyp-rev HEAD --owner preRender
+ *
+ * --hyp-rev <rev>: B is src/ from that revision in a worktree of its own, not the working tree, so
+ * edits in the main folder while the sitting runs (another session's, an agent's) cannot reach it;
+ * `--vs X --hyp-rev X` is an A/A of two directories.
  *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
  * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), if the frames
@@ -248,7 +253,7 @@ function parseOverrides(raw) {
 // Review M9. What a sitting's pairs were measured with. --append pools new
 // pairs with old ones, which is only a median of one measurement when the
 // metric set, scene, protocol, baseline and both trees are the same.
-function sittingStamp(scene, opts, args, baseline) {
+function sittingStamp(scene, opts, args, baseline, hypSide = null) {
   const git = (argv, encoding) => execFileSync('git', argv, { cwd: repoRoot, encoding, maxBuffer: 1 << 28 });
   return {
     schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS, presented: PRESENTED_KEY },
@@ -262,6 +267,7 @@ function sittingStamp(scene, opts, args, baseline) {
       extraArgs: opts.extraArgs,
     },
     vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
+    hypRev: hypSide ? { rev: hypSide.rev, sha: hypSide.sha } : null,
     overrides: baseline.overrides ?? null,
     // B is the working tree, and A is built from its HEAD: both change with these.
     tree: {
@@ -555,9 +561,13 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     ? ensureRevWorktree(String(args.vs))
     : ensureOverlayWorktree(name, parseOverrides(rawOverrides));
   console.log(`baseline worktree ${baseline.root}`);
+  // --hyp-rev <rev>: B from its own worktree, apart from the main folder (see the header).
+  const hypSide = args['hyp-rev'] ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b' }) : null;
+  const hypRoot = hypSide ? hypSide.root : repoRoot;
+  if (hypSide) console.log(`hypothesis worktree ${hypSide.root}`);
   // --append: add pairs to the previous sitting of the same hypothesis, only when
   // that sitting was measured the same way (review M9).
-  const stamp = sittingStamp(scene, opts, args, baseline);
+  const stamp = sittingStamp(scene, opts, args, baseline, hypSide);
   let pairs = [];
   if (args.append && fs.existsSync(summaryPath)) {
     const prev = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
@@ -575,7 +585,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     const pair = {};
     // Counterbalanced: odd pairs run B first, so drift inside a pair
     // (heat, background) does not always land on the same side.
-    const order = p % 2 === 0 ? [['A', baseline.root], ['B', repoRoot]] : [['B', repoRoot], ['A', baseline.root]];
+    const order = p % 2 === 0 ? [['A', baseline.root], ['B', hypRoot]] : [['B', hypRoot], ['A', baseline.root]];
     for (const [side, root] of order) {
       console.log(`\n======== ${name} pair ${p + 1}/${first + nPairs} side ${side} ========`);
       const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root });
@@ -640,6 +650,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     probe: probeVerdict,
     protocol: { ...opts, pairs: pairs.length, order: 'AB BA AB BA', seed: 123456 },
     vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
+    hypRev: hypSide ? { rev: hypSide.rev, sha: hypSide.sha } : null,
     overrides: baseline.overrides ?? null,
     stamp,
     pairs,

@@ -115,14 +115,15 @@ function overlayWorkingTree(root, includeSrc = false) {
 /**
  * Create (or refresh) the baseline worktree for `rev`.
  * @param {string} rev
- * @param {{ srcOnly?: boolean, workloadCounts?: boolean }} [opts]
+ * @param {{ srcOnly?: boolean, workloadCounts?: boolean, tag?: string }} [opts] `tag` names a second worktree of
+ *   the same revision (runPredatorAbab's --hyp-rev side), so the two sides of an A/A are two directories
  * @returns {{ root: string, rev: string, sha: string, headSha: string, overlay: string[], countsPatched: boolean }}
  */
 export function ensureRevWorktree(rev, opts = {}) {
   const srcOnly = opts.srcOnly !== false;
   const sha = resolveRev(rev);
   const headSha = resolveRev('HEAD');
-  const root = path.join(worktreeParent, `${safeName(rev)}-${sha.slice(0, 8)}`);
+  const root = path.join(worktreeParent, `${safeName(rev)}-${sha.slice(0, 8)}${opts.tag ? `-${safeName(opts.tag)}` : ''}`);
   const base = srcOnly ? headSha : sha;
 
   fs.mkdirSync(worktreeParent, { recursive: true });
