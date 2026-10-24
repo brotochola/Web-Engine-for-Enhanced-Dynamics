@@ -158,13 +158,12 @@
     },
     {
       "name": "navFlowfield",
-      "source": "wasm/test/navFlowfield.c",
-      "output": "tests/fixtures/wasm/navFlowfield.wasm",
+      "source": "wasm/navFlowfield.c",
+      "output": "src/workers/navFlowfield.wasm",
       "exports": [
         "compute_flowfield"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 8192
     }
   ]
 }

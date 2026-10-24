@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W14): the particle worker's flowfield in WASM (wasm/test/navFlowfield.c, a test module)
+ * Kernel (E-76 W14): the particle worker's flowfield in WASM (wasm/navFlowfield.c, src/workers/navFlowfield.wasm)
  * against the shipped ParticleWorker.computeFlowfield, on a real particle worker with navStressScene's
  * grid: a 2048 × 2048 world in 32 px cells (64 × 64), no walls, 64 flowfield slots.
  *
  *   js    ParticleWorker.computeFlowfield (shipped): the search, the walls' pass and the smoothing in the
  *         worker's NavScratch, then the slot (allocateFlowfieldSlot, writeFlowfieldData)
- *   wasm  compute_flowfield, one call per flowfield, then the slot as computeFlowfield fills it: what a
- *         product wrapper does per call
+ *   wasm  the same method with the kernel bound (worker._flowWasm, as the worker binds it on the navigation
+ *         memory): compute_flowfield, then the slot as computeFlowfield fills it (_computeFlowfieldWasm).
+ *         flowfieldWasm below is the same around a table of the caller's, for the warm-up and the test
  *
  * The search reads the walkability and both sides write the slot, all in the nav buffer, which here is
  * the shared WebAssembly.Memory the kernel imports: NavGrid reads its header at byte 0 of the buffer it is
@@ -34,13 +35,13 @@ import { pathToFileURL } from 'node:url';
 import { NavGrid } from '../../src/core/navGrid.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
+import { FLOWFIELD_SLOTS } from '../../src/workers/navFlowfieldClient.js';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, TIMING_MARKER, warmWasm } from './wasmKernelHelpers.mjs';
 
-const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../fixtures/wasm/navFlowfield.wasm'));
-/** navFlowfield.c's table, slot for slot. */
-export const FLOWFIELD_SLOTS = ['walk', 'width', 'height', 'maxDist', 'state', 'dist', 'dir', 'next', 'prev', 'head', 'sums', 'quotient', 'out'];
+const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/workers/navFlowfield.wasm'));
+export { FLOWFIELD_SLOTS };
 /** navFlowfield.c's QUOTIENT_BYTES. */
 const QUOTIENT_BYTES = 190;
 /** The bucket heads: scratch.maxDistance is at most 65535. */
@@ -214,6 +215,8 @@ export async function setupFlowfieldKernel({ gridWidth, gridHeight, navigation =
     computeFlowfield,
     flowfieldJs,
     flowfieldWasm,
+    /** What the worker binds as _flowWasm (navFlowfieldClient.js bindNavFlowfield), on this memory's table. */
+    shipped: { compute: computeFlowfield, tableByte: R.table.byte, vectors },
     slotVectors,
     warmJs,
     warmKernel,
@@ -256,7 +259,9 @@ async function main() {
     navigation: { ...STRESS_NAVIGATION, cellSize },
     walls: map === 'rooms' ? roomWalls : null,
   });
-  const flowfield = variant === 'wasm' ? k.flowfieldWasm : k.flowfieldJs;
+  // The shipped method either way: with the kernel bound, computeFlowfield runs _computeFlowfieldWasm.
+  if (variant === 'wasm') k.worker._flowWasm = k.shipped;
+  const flowfield = k.flowfieldJs;
   const walls = k.walk.reduce((n, w) => n + (w === 0 ? 1 : 0), 0);
   const label = `${gridWidth} × ${gridHeight} ${map}`;
 

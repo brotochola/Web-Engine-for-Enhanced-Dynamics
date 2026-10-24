@@ -1,4 +1,4 @@
-/* The particle worker's flowfield (E-76 W14, a candidate kernel): ParticleWorker.computeFlowfield
+/* The particle worker's flowfield (E-76 W14): ParticleWorker.computeFlowfield
    (src/workers/particleWorker.js) for one target cell, from scratch.reset() to the smoothed vectors. The
    same search: Dijkstra over distance buckets (bucket min(distance, maxDistance), the last one a catch-all
    popped in list order), a cell joining a bucket at its head and leaving it from where it is, the head of
@@ -18,7 +18,7 @@
 
 #define INLINE static inline __attribute__((always_inline))
 
-/* u32 slots of the table (navFlowfieldWasmMicrobench.mjs lays them out in the same order). */
+/* u32 slots of the table (FLOWFIELD_SLOTS in src/workers/navFlowfieldClient.js, in the same order). */
 enum {
   T_WALK,     /* u8 per cell: NavGrid's walkability, 0 = blocked */
   T_WIDTH,    /* gridWidth */
