@@ -67,6 +67,17 @@ const URL_COUNT = (() => {
 
 export const DECORATION_COUNT = URL_COUNT || 40000;
 
+/** `?buckets=` (default 3): particle.swayFrequencyBuckets; 0 is the engine's default, the sway without a grid. */
+export const SWAY_BUCKETS = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('buckets');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n >= 0 ? n : 3;
+  } catch {
+    return 3;
+  }
+})();
+
 /**
  * F-07. What this scene resolved, so the runner can refuse a sweep that never
  * happened.
@@ -110,7 +121,7 @@ export class DecorationSwayStressScene extends Scene {
       decals: false,
       // Spread spawns across the 1..3 frequency grid so the bucket walk and
       // `bucketFromSwayFrequency` do real work instead of degenerating.
-      swayFrequencyBuckets: 3,
+      swayFrequencyBuckets: SWAY_BUCKETS,
     },
     renderer: { backend: 'webgl', noLimitFPS: false, maxVisibleRenderables: 256 },
     lighting: { enabled: false },
