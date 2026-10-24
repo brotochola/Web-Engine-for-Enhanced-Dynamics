@@ -14,8 +14,8 @@
 // W1 adds solidSegments.wasm's context table and bin tables, and the compound solids' copies of their
 // outline (solid.seg) and walk order (solid.chain), 20 bytes an edge. An outline edge is a fixture's edge
 // seen once, so every solid together holds at most the fixture pool's vertices: physics.maxFixturePoolSize x
-// MAX_POLYGON_VERTICES edges (capped at SOLID_REGION_CAP; a solid that does not fit rasters in JS, on the
-// same bins). No fixture pool, no compound solid, no W1 regions.
+// MAX_POLYGON_VERTICES edges, and the region holds that many, so every outline fits (a scene whose memory would
+// pass 2 GB gets no visibility memory). No fixture pool, no compound solid, no W1 regions.
 
 import { POLAR_BINS, SWEEP_CAPS } from '../render/visibility/angularSweep.js';
 import { MAX_POLYGON_VERTICES } from './configDefaults.js';
@@ -32,8 +32,6 @@ const SWEEP_CONSTS = 3;
 export const SOLID_CTX_SLOTS = 8;
 /** One outline edge's copy: four floats of solid.seg and its solid.chain entry. */
 export const SOLID_EDGE_BYTES = 20;
-/** The solids' copies stop here (64 MB); past it a solid rasters in JS. */
-export const SOLID_REGION_CAP = 64 << 20;
 /** The float cos/sin tables carry four entries past the last bin (four-lane loads at bin 511). */
 const SOLID_F32_PAD = 4;
 
@@ -59,7 +57,7 @@ export function visibilityMemoryOpts({ maxVerts, entities, fixtures }) {
 /** The solids region for a fixture pool: every outline edge it can make, capped. */
 export function solidRegionBytes(fixtures) {
   const edges = Math.max(0, fixtures | 0) * MAX_POLYGON_VERTICES;
-  return Math.min(alignToLine(edges * SOLID_EDGE_BYTES), SOLID_REGION_CAP);
+  return alignToLine(edges * SOLID_EDGE_BYTES);
 }
 
 /**
