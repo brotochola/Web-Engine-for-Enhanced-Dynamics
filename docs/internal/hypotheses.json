@@ -946,7 +946,8 @@
         "R-0458",
         "R-0460",
         "R-0471",
-        "R-0607"
+        "R-0607",
+        "R-0618"
       ]
     },
     {
@@ -13534,6 +13535,15 @@
       "title": "WASM W17, the command ring drain's premise, E-76",
       "verdict": "screened",
       "text": "**screened (premise), no change.** Q1b's SpawnStorm trace (`spawnStormScene`, the one scene where the drain shows): `drainCommandRing` is 10.0 % of physics (138 ms over the window), and its hot lines are the ring protocol, not the export call: `Atomics.store(i32, base, read + cap)` 23 %, `Atomics.store(i32, HDR_READ, read + 1)` 23 %, `Atomics.load(i32, base)` 22 %, `Atomics.load(i32, HDR_READ)` 15 %, together 83 % of the function. Q4 put a JS → WASM call at about 4 ns, and `bodyForceCallMicrobench` (R-0614) put one call with Box2D's own work at 5.1 ns. A drain in C would turn those four atomics into plain wasm atomic instructions, but only if every handler moved into C with it (they call Box2D exports from JS and some keep JS-side state: joints, particles), which is a Box2D rebuild in both builds for a ceiling of a few percent of one stress scene's physics. In JS, only the `Atomics.load(HDR_READ)` per command is redundant (physics is the single consumer); the read index must still be published per command, since producers drop a command when they see the ring full. That is about 2 % of SpawnStorm physics, left as a note. The same trace's other lead, `syncBodySlot`'s warning, was a bug and is fixed (R-0615)."
+    },
+    {
+      "id": "R-0618",
+      "date": "2026-10-24",
+      "time": "17:53",
+      "timeFrom": "recorded",
+      "title": "WASM Phase 6, all JS against all WASM on four multi-kernel scenes, E-76",
+      "verdict": "passed",
+      "text": "**passed: the kernels live together and their gains add up.** Phase 6, shortened at the owner's request (2026-10-24: \"make it shorter\"): all JS against all WASM, one build (`--vs HEAD`, side A `wasmOff=` every switch including `box2dBlock`, `pixiPack` and `gpuPackSplit`), Chrome, headed, source, detailed stats off, 4 pairs per scene, on four scenes where several kernels run at once. Leave-one-out was skipped: every winner has its own solo pair on record, and the all-JS pair shows no worker giving its gain back.\n\n| Scene | Worker | All JS → all WASM | Paired | Worse |\n|---|---|---|---|---|\n| Predator | pre-render | 5.397 → 3.715 ms | −31.0 % | 0/4 |\n| | spatial | 6.041 → 4.935 ms | −17.8 % | 0/4 |\n| | Pixi | 3.859 → 3.534 ms | −9.8 % | 0/4 |\n| | physics | 6.995 → 6.693 ms | −4.5 % | 1/4 (cv 14 %) |\n| | logic (no WASM) | 3.976 → 4.033 ms | +1.4 % | 3/4, inside its A/A limit (9.7 %) |\n| compoundVisPoly | pre-render | 1.987 → 1.312 ms | −34 %, under the floor | |\n| particleIntegrateStress `tween=1` | particle | 5.027 → 2.376 ms | −52.6 % | 0/4 |\n| | pre-render | 3.718 → 3.485 ms | −6.3 % | 0/4 |\n| BunnyMarkStressC `bunnies=250000` | Pixi | 6.087 → 2.005 ms | −67.0 % | 0/4 |\n| | pre-render | 14.054 → 8.754 ms | −37.4 % | 0/4 |\n\nLoad keys equal on every scene (Predator's bodies, casters, shadow lights, visible entities, 20 000 decorations; 65 000 particles within 0.3 %; 250 000 bunnies). No page errors in the 32 runs. Correctness together is the node suite (every parity test in one process, 1944 tests green). Left from Phase 6 for before the JS paths leave `src/`: L3 (commit after 20 scene loads), L4 (boot to steady step times) and L7 (every scene boots once in Firefox and WebKit). Plan: WASM_HYPOTHESES.md, \"Close-out plan\"."
     }
   ],
   "leads": [
