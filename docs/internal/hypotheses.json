@@ -264,8 +264,8 @@
     {
       "id": "E-118",
       "title": "A UV generation for the mesh corners",
-      "status": "running",
-      "statusText": "being built (with W11's wiring), 2026-10-24",
+      "status": "kept-kernel",
+      "statusText": "kept (kernel) 2026-10-24: the JS rewrite +24.1 % with the UV generation (R-0567); in the product with W11",
       "date": "2026-10-24",
       "result": "setVertices writes positions only, yet the UV batch rewrites every corner's UVs each frame: half of 9.5 MB of writes in meshApiStressScene. A UV generation lets the JS and the kernel skip them, bit-identical.",
       "area": "renderer",
@@ -306,10 +306,10 @@
     {
       "id": "E-120",
       "title": "Decal stamping in WASM with SIMD (W26)",
-      "status": "running",
+      "status": "kept",
       "statusText": "kernel +377.9 % (25/25), wiring next, 2026-10-24",
       "date": "2026-10-24",
-      "result": "An agent's exact SIMD port: 304.1 → 1 453.0 ops/s; the scalar port 269.3 (−11.4 %). Wiring needs the tiles in a memory of their own.",
+      "result": "decalStampStressScene particle 4.590 → 1.681 ms, −63.7 % (4/4); kernel +373.5 % on the shipped path; the flush also removes redundant tile uploads (DECAL_TILES_DIRTY moved for that reason).",
       "area": "particle",
       "kind": "wasm",
       "refs": [
@@ -321,16 +321,17 @@
       "next": "A decal memory (tiles at byte 0, textures copied in), the client, the wiring; decalStampStressScene particle.",
       "records": [
         "R-0535",
-        "R-0566"
+        "R-0566",
+        "R-0576"
       ]
     },
     {
       "id": "E-121",
       "title": "The mesh corner rewrite in WASM (W11)",
-      "status": "running",
+      "status": "kept",
       "statusText": "kernel +35.7 % (25/25), wiring by an agent, 2026-10-24",
       "date": "2026-10-24",
-      "result": "An agent's rewriteExplicitMeshCorners in C: 688.7 → 934.9 ops/s. 53.1 % of Pixi in meshApiStressScene.",
+      "result": "meshApiStressScene at 4× load (E-130's arena): renderer 36.445 → 34.028 ms, −7.1 % (3/4); kernel +19.8 % over E-118's JS.",
       "area": "renderer",
       "kind": "wasm",
       "refs": [
@@ -342,7 +343,8 @@
       "next": "E-118 first; the mesh memory, the client, the wiring; meshApiStressScene renderer.",
       "records": [
         "R-0535",
-        "R-0567"
+        "R-0567",
+        "R-0575"
       ]
     },
     {
@@ -600,10 +602,10 @@
     {
       "id": "W26",
       "title": "decal stamping `stampToTileBuffers` in decal.js (new from Q1b)",
-      "status": "running",
+      "status": "kept",
       "statusText": "kernel +377.9 % (E-120), wiring next",
       "date": null,
-      "result": "A bit-exact C port of stampToTileBuffers over a batch wrote the same bytes and ran ×0.99 of JS in Node (49.9 vs 50.2 ms, 5 000 stamps). The loop is byte traffic and branches.",
+      "result": "decalStampStressScene particle 4.590 → 1.681 ms, −63.7 % (4/4); kernel +373.5 % on the shipped path; the flush also removes redundant tile uploads (DECAL_TILES_DIRTY moved for that reason).",
       "area": "particle",
       "kind": "wasm",
       "refs": [
@@ -613,7 +615,8 @@
       "aliases": [],
       "records": [
         "R-0492",
-        "R-0566"
+        "R-0566",
+        "R-0576"
       ]
     },
     {
@@ -675,10 +678,10 @@
     {
       "id": "W11",
       "title": "`rewriteExplicitMeshCorners`, `uploadPoseTable` (colliderFillBatch.js)",
-      "status": "running",
+      "status": "kept",
       "statusText": "kernel +35.7 % (E-121), wiring by an agent",
       "date": null,
-      "result": "WASM mesh writes beat JS. `writeExplicitTriCorners`, first named here, was folded into `rewriteExplicitMeshCorners` in `d72c638c` (meshApi renderer 3.779 → 2.896 ms); the 25.3 % share predates that",
+      "result": "meshApiStressScene at 4× load (E-130's arena): renderer 36.445 → 34.028 ms, −7.1 % (3/4); kernel +19.8 % over E-118's JS.",
       "area": "pixi",
       "kind": "wasm",
       "refs": [
@@ -688,7 +691,8 @@
       "aliases": [],
       "records": [
         "R-0567",
-        "R-0571"
+        "R-0571",
+        "R-0575"
       ]
     },
     {
@@ -818,7 +822,7 @@
       "id": "W4",
       "title": "`emitSpriteQueue`, `_displayPose`, `_writeQueueShadow`, with W3's collect chain",
       "status": "open",
-      "statusText": "split 2026-10-23: W4a (the emit) kept (E-112, Predator pre-render −4.6 %); W4c (the persist path) open; W4b (the collect) blocked on Phase 4",
+      "statusText": "W4a kept (E-112), W4c kept (E-115 to E-117), W4b kept for scenes without physics 2026-10-24 (BunnyMark pre-render −9.4 %); W4b with physics waits on Phase 4",
       "date": null,
       "result": "A WASM render-queue build beats JS. Q1: emit 28.7 % inclusive of Predator pre-render, the collect chain 32.1 %. E-66 removed the boxing, E-71/E-72 typed the columns, E-77 the imports",
       "area": "pre-render",
@@ -827,11 +831,12 @@
         "WASM_HYPOTHESES.md#W4"
       ],
       "aliases": [],
-      "next": "W4b, the collect chain (collectVisibleEntities, _displayPose, _storeEntitySortY): 69.9 % self of BunnyMark pre-render after E-117 (R-0562), about 20 % of Predator pre-render. Needs Transform in the kernel memory: Phase 4, with W4b as its first mover.",
+      "next": "W4b with bodies (Predator): Phase 4, the render-queue block inside Box2D's memory (WASM_HYPOTHESES Phase 4 design).",
       "rank": 13,
       "records": [
         "R-0562",
-        "R-0564"
+        "R-0564",
+        "R-0574"
       ]
     },
     {
@@ -12874,6 +12879,56 @@
         "2b39540b",
         "0acb17c6",
         "f20949e6"
+      ]
+    },
+    {
+      "id": "R-0574",
+      "date": "2026-10-24",
+      "time": "08:13",
+      "timeFrom": "recorded",
+      "title": "The sprite collect in C, BunnyMark pair, W4b",
+      "verdict": "kept",
+      "text": "**kept (product).** BunnyMark (250 000 sprites, physics off), one build (`d8f41eb7`), `--query-a wasmOff=preRenderCollect` (side A the JS collect, side B the kernel), exact windows, headed, source, detailed stats off, 4 pairs: pre-render **5.252 → 4.741 ms, −9.4 %, worse 0/4**, cv 1/1 %; renderer −0.4 % (2/4); presented 60.0 both; VISIBLE_ENTITIES and RENDER_QUEUE_SIZE 250 000 both sides. The kernel (R-0564) is +39.6 % on BunnyMark's collect, which is about a third of pre-render after the move, so a ~10 % worker drop is what it should give.",
+      "commits": [
+        "44d3ce66"
+      ]
+    },
+    {
+      "id": "R-0575",
+      "date": "2026-10-24",
+      "time": "08:28",
+      "timeFrom": "recorded",
+      "title": "The mesh corner kernel in meshApi at four times the meshes, W11",
+      "verdict": "kept",
+      "text": "**kept (product).** meshApiStressScene loaded past the floor with E-130's 32-bit arena (`count=4&maxVerts=262144&maxIndices=1310720`: four times the meshes, 5 280 entities), one build (`d8f41eb7`), `--query-a wasmOff=meshCorners` (side A the JS rewrite with E-118's UV generation, side B the kernel), exact windows, headed, source, 4 pairs: renderer **36.445 → 34.028 ms, −7.1 %, worse 1/4**, cv 1/9 %; logic +1.1 % (3/4); load equal (BODY_COUNT 800, ENTITIES_PROCESSED 5 280). Presented frames 51.3 → 50.1 (−1.8 %, fewer in 4/4): under the 3 % regression bar, and the scene is past what the GPU draws at 60 at this load; noted, as E-82 is the reason the guard exists. The kernel (R-0567) is +19.8 % over E-118's JS on the rewrite.",
+      "commits": [
+        "3937589c",
+        "63c5f3c8"
+      ]
+    },
+    {
+      "id": "R-0576",
+      "date": "2026-10-24",
+      "time": "08:18",
+      "timeFrom": "recorded",
+      "title": "Decal stamping in C, decalStampStressScene pair, W26",
+      "verdict": "kept",
+      "text": "**kept (product), with a load key that moved because of the change.** decalStampStressScene (768 seeded stamps a tick, 40 tiles of 128 px), one build (`d8f41eb7`), side A `wasmOff=decalStamp,decalPremultiply` (the JS stamp, no decal memory), side B `wasmOff=decalPremultiply` (the kernel), exact windows, headed, source, 4 pairs: particle **4.590 → 1.681 ms, −63.7 %, worse 0/4**, cv 12/3 %; renderer 2.821 → 2.159 ms (under the floor, not judged). The gate said FAIL (load) on DECAL_TILES_DIRTY 37.0 → 23.0 (−37.7 %). The stamping work is the same on both sides (the driver's seeded stamps; the sampled PARTICLES_STAMPED averages 579 and 577 a frame). What moved is what Pixi sees at its sweep: the JS path sets a tile's dirty flag after every stamp, so Pixi's claims raced the stamping and re-dirtied tiles came back the same frame; side A uploaded exactly its cap, 32 tiles, every frame. The kernel publishes each touched tile once, after the frame's batch: about 22 uploads from about 24 dirty. The tiles end in the same bytes (decalStampWired.test.js), so the batch also removes redundant uploads, which is the renderer's drop. Recorded as kept on the particle owner with this explanation rather than as a load failure.",
+      "commits": [
+        "72853643"
+      ]
+    },
+    {
+      "id": "R-0577",
+      "date": "2026-10-24",
+      "time": "08:54",
+      "timeFrom": "recorded",
+      "title": "Predator gate for the batch of 2026-10-24",
+      "verdict": "passed",
+      "text": "**passed (NEUTRAL at 8 pairs).** The Predator gate for the batch of 2026-10-24: every engine change since the gate reading (`5b3b3633`: W9d's copy is in it) against `d8f41eb7` (W11 with E-118, W4b's memory and collect, W26, W21c, E-126, E-130, entityIdWidth auto), both sides in worktrees, exact windows, headed, source, 8 pairs (4, then `--append` 4: the first 4 flagged pre-render +6.6 %, 3/4, which \"vs the others\" read +4.4 %, inside the session's 4.8 % relative limit). At 8 pairs: logic +3.8 % paired (5/8 worse) / −0.5 % vs the others; spatial −0.9 % / −2.0 %; physics +0.8 % / −1.2 %; renderer −0.6 % / **−1.8 % (7/8 lower)**; pre-render +2.6 % (5/8) / +1.7 % (2/8 lower); presented 60.0 both; load within 0.2 %. No worker past its limit.",
+      "commits": [
+        "5b3b3633",
+        "d8f41eb7"
       ]
     }
   ],
