@@ -16,6 +16,7 @@ These files are for us: how a speed claim gets kept or dropped, what was already
 | [`REVIEW_LIVE_REPORT.md`](./REVIEW_LIVE_REPORT.md) | Progress log for that review, newest first. |
 | [`VISUAL_EDITOR_PLAN.md`](./VISUAL_EDITOR_PLAN.md) | The visual editor: goals, design, stages and items (ED-xx), open decisions. |
 | [`ISOLATION_SERVICE_WORKER_PLAN.md`](./ISOLATION_SERVICE_WORKER_PLAN.md) | SharedArrayBuffer without COOP/COEP headers: our own service worker, test plan, items (SW-xx), open decisions. |
+| [`BOX2D_MEMORY_PLAN.md`](./BOX2D_MEMORY_PLAN.md) | `physics.wasmMemoryMB`: a per-scene size for Box2D's memory, the out-of-memory error, the sizing survey, items (BM-xx). |
 | [`reports/`](./reports/) | One-sitting reports, one per hypothesis. |
 
 The rest of this folder is campaign notes: hypothesis lists, audit logs, and one-sitting reports. A public subsystem guide, when one of those campaigns changed an API, lives in [`../guide/`](../guide/README.md).

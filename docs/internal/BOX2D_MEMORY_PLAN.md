@@ -1,0 +1,272 @@
+# Box2D memory plan (`physics.wasmMemoryMB`)
+
+**Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
+saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-1. **Registry:** `DX-MEM` in
+[`hypotheses.json`](./hypotheses.json).
+
+The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
+`physics.wasmMemoryMB`. Today every physics scene gets one fixed 512 MB shared memory, committed up
+front (review N-7), and running out aborts inside the step with nothing on screen. After this plan, the
+size is the developer's, the memory panel shows how much of it the scene used, running out shows an
+error that names the key, and the documentation gives a measured size per kind of scene.
+
+**For the agent executing this plan:**
+- Read `CLAUDE.md`, `docs/internal/HOW_WE_MEASURE.md` and this whole file before the first commit.
+- Work in this folder (no worktrees). The sibling Box2D repository is
+  `D:\xampp\htdocs\Box2d_3.2_C_-_liquidfun` (branch `main`).
+- One item per commit; the node suite is green before each engine commit. Tick the item here (`[x]`,
+  the date and the commit hash) in the same commit, add anything new under "Found during
+  implementation", and update `DX-MEM` in `hypotheses.json` (then run
+  `node scripts/buildHypothesesPage.mjs`).
+- `weedjs\build_for_weed.bat` copies its output into `src/box2d/` at the end. Build into a scratch folder
+  (`set WEED_BOX2D_DIR=…`) and copy in only when no other session is running a bench (check for
+  headless Playwright Chrome or `runIntegratedWorkerBenchmark.mjs` in `Win32_Process`).
+- The glue `src/box2d/box2dWasm.js` is committed with CRLF line endings and the build writes LF:
+  convert it after each copy. `physicsHostImpl.js` and `weedjsPost.js` are LF.
+
+---
+
+## 1. Today
+
+- **Where the size is set.** The sibling build, `wasm/CMakeLists.txt` (Weed branch):
+  `-sALLOW_MEMORY_GROWTH=0 -sINITIAL_MEMORY=512MB`. The comment above it still says 256 MB, the size
+  until f05c9065 (2026-10-17, UChainScene).
+- **Where it is baked in.** The glue's `initMemory()` creates the memory from a literal
+  (`src/box2d/box2dWasm.js:266-279`), and the `.wasm` import declares min = max = 8192 pages. No scene
+  can change it, and every physics scene commits all 512 MB at boot.
+- **What is measured.** The physics stats carry `HEAP_USED_KB` and `HEAP_HIGH_WATER_KB`, both from
+  `mallinfo().uordblks` (live bytes). Gitignored runs showed Balls ~49 MiB, Predator 56–61 MiB and
+  LiquidFun ~8.5 MiB. Live bytes undercount the need: they miss static data (~1.7 MB), stacks,
+  fragmentation, and the moment an array doubles (old and new copies are both alive).
+- **Running out.** dlmalloc asks to grow, the glue aborts (`abort("OOM")`), the exception leaves
+  `gameLoop` (try/finally only, `physicsHostImpl.js:1134`) and physics stops. The main thread logs the
+  worker error to the console; nothing reaches the screen.
+
+## 2. Why the memory stays fixed
+
+WeedJS binds views onto Box2D's memory once, at boot, and hands them to every worker: Transform and
+RigidBody pose and velocity, contacts, queries, LiquidFun particles. Pre-render, spatial and logic read
+them every frame without asking physics.
+
+A shared memory that grows does not detach its old buffer, so those views stay correct for the range they
+cover. What breaks is everything Box2D allocates after the growth: it lands in pages the existing views
+do not cover. A buffer that Box2D or LiquidFun reallocates (the particle arrays when the count grows)
+moves out of the other workers' reach, and `Module.HEAPF32` in `weedjsPost.js` stays short until the glue
+refreshes it. Reads return `undefined` or `NaN`, writes are lost, and nothing reports an error. Committing
+memory on demand would need an audit of every view of Box2D's memory in every worker and a rebind
+protocol; this plan keeps the size fixed and lets the developer choose it.
+
+In this plan the memory still never grows. The link flag `ALLOW_MEMORY_GROWTH=1` is there only so the
+module's import accepts a range of sizes (section 3). The memory itself is created with
+`initial === maximum`, and WebAssembly cannot grow a memory past its maximum: Box2D's attempt to grow
+fails and ends in `abort("OOM")`, which BM-8 turns into a message on screen. Two guards cover a build that
+lost the pre-js (the only way the glue would make a growable memory of its own): `build_for_weed.bat`
+refuses such a glue (BM-2), and the physics host refuses to start when the heap is not the size it asked
+for (BM-6).
+
+## 3. Design: how the size reaches Box2D
+
+**The worker's name carries it.** Emscripten creates the memory in `initMemory()` while `box2dWasm.js` is
+being evaluated, before any message can arrive. At that point a classic worker knows its URL and its
+`name`. A query on the URL cannot work in the bundle (a `blob:` URL with a query is not found). The name
+is also how Emscripten itself tells a pthread worker what it is (`em-pthread`, glue :36 and :733).
+
+- **Engine side.** `createPhysicsWorker` (`src/util/sceneWorkerBootstrap.js:34-42`) passes
+  `{ name: 'physics pages=N' }` to the `Worker` constructor, for the src URL and the bundle's blob URL.
+  The main-side expando `worker.name = 'physics'` (`:61`) is a different thing (it keys step waiters and
+  logs) and stays.
+- **Sibling side: `weedjs/weed_pre.js`, a `--pre-js`.** Pre-js code runs after the glue defines
+  `ENVIRONMENT_IS_PTHREAD` (glue :36-39). When it is false, the pre-js reads `pages=N` from
+  `globalThis.name` (8192 without one), rejects a value outside 256..32768, and sets
+  `Module.wasmMemory = new WebAssembly.Memory({ initial: N, maximum: N, shared: true })`. A failed
+  allocation throws with the size and the key's name. Pthread helpers receive the memory by message and
+  skip all of this.
+- **Link flags (Weed branch).** `-sIMPORTED_MEMORY=1 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=16MB
+  -sMAXIMUM_MEMORY=2GB -sABORTING_MALLOC=1 -Wno-pthreads-mem-growth --pre-js=…/weedjs/weed_pre.js`.
+  - `IMPORTED_MEMORY=1` must be explicit: emsdk 6.0.4 adds `wasmMemory` to the incoming Module API only
+    when it is set before `-pthread` sets it (`tools/link.py:1366` against `:1638`). The shipped
+    `initMemory` has no `Module.wasmMemory` read.
+  - Growth must be on for the import to accept a range: without it, link.py sets
+    `MAXIMUM_MEMORY = INITIAL_MEMORY` (`:580-584`) and passes `--no-growable-memory` to wasm-ld, which
+    rejects `--max-memory` next to it ("--max-memory is incompatible with --no-growable-memory").
+    Patching the import of the linked `.wasm` instead would be a custom step for no speed.
+  - `ABORTING_MALLOC=1`: with growth on, Emscripten would otherwise return NULL from malloc, and Box2D
+    and LiquidFun do not check for NULL in Release. With it, a failed grow ends in
+    `abortOnCannotGrowMemory`.
+  - The cap is 2 GB: above it the glue switches to unsigned pointers (`CAN_ADDRESS_2GB`), and the
+    engine's `>> 2` pointer arithmetic would need an audit.
+- **What the growth flag costs.** Emscripten rewrites the glue's own heap reads to check for growth
+  (`link.py:2396`). Those are pthread spawn, the mailbox, `fd_write` and the string helpers; none runs per
+  step. The per-step imports touch no heap: `_emscripten_get_now`, and the `cwrap`'d body setters, which
+  are the raw exports because their arguments are numbers. `weedjsPost.js` and `physicsHostImpl.js` are
+  loaded with `importScripts` (glue :1652-1661; the bundle prepends them, `scripts/buildBundle.js:134-237`),
+  so the rewrite never reaches them. The wasm code should not change at all: BM-2 compares the sections of
+  the two builds.
+- **The peak.** `sbrk(0)`: static data, stacks and the highest heap address reached. Emscripten's
+  dlmalloc never trims (`MORECORE_CANNOT_TRIM 1`, `system/lib/dlmalloc.c:12`), so it is the peak; it is
+  O(1) and takes no lock, so the abort handler can call it (mallinfo cannot: an abort can come from inside
+  malloc, with the heap lock held).
+
+## 4. Decisions
+
+Taken 2026-10-23, kept in the 2026-10-24 review.
+
+1. **The key is `physics.wasmMemoryMB`**, in whole megabytes, clamped to 16..2048 with one warning. It is
+   boot-only and read on the main thread, so it lives in `PHYSICS_DEFAULTS`
+   (`src/util/configDefaults.js`) next to `maxJoints` and `maxFixturePoolSize`, not in
+   `PHYSICS_SIM_DEFAULTS` / `validatePhysicsConfig`, the simulation whitelist the host reads.
+2. **The default drops after the survey** (BM-13). Proposed rule: the largest recommended size among the
+   gameplay scenes (SteadyCombat, Predator); stress and capacity scenes set their own.
+3. **The engine adds its own Phase 4 regions on top of the developer's number** (WASM_HYPOTHESES Phase 4,
+   e6574827). Phase 4 is not built yet, so `box2dMemoryPages` takes no region parameter until it is.
+4. **Order:** the build change first (one rebuild gives the per-scene size and the exact peak metric),
+   then the survey, which confirms each scene runs at its recommended size, then the docs, written from
+   the survey's numbers.
+
+## 5. Items (one commit each)
+
+- [x] **BM-0** `docs`: this file, its row in `README.md`, and `DX-MEM` in `hypotheses.json`. Done
+  2026-10-24.
+
+**Sibling repository** (one rebuild per commit):
+
+- [ ] **BM-1** `wasm_wrapper.c`: `size_t weedjs_memory_peak_bytes(void) { return (size_t)sbrk(0); }`, added
+  to `EXPORTED_FUNCTIONS` in `wasm/CMakeLists.txt`.
+- [ ] **BM-2** the Weed build: the link flags and `weedjs/weed_pre.js` of section 3; the stale 256 MB
+  comment fixed; `build_for_weed.bat` fails when the glue lacks the pre-js, as it already fails when the
+  glue does not load `weedjsPost.js`. Checks on the new glue:
+  - `initMemory` reads `Module["wasmMemory"]`;
+  - `_emscripten_resize_heap` ends in `abortOnCannotGrowMemory`;
+  - the pre-js sits before the glue's own code;
+  - the `importScripts` lines are unchanged (the bundle's regexes match them);
+  - the `assignWasmImports` letters are unchanged, or the benches that map the clock by letter are
+    updated;
+  - the functions the growth rewrite touched are listed, and none of them runs per step;
+  - the `.wasm` sections are compared with BM-1's build: only the memory import should differ.
+
+**Engine:**
+
+- [ ] **BM-3** `feat(physics)`: ship BM-1's artifacts. `MEMORY_PEAK_KB` is appended to `PHYSICS_STATS`
+  (`src/util/workersUtils.js`, index 50; `STRIDE_FLOATS` 51) and to its mirror in `weedjsPost.js`, written
+  every step next to `HEAP_USED_KB`. The memory report (`buildBox2dHeapInsight`,
+  `src/util/sceneBufferMemory.js`) gains the peak, and the memory panel shows "peak X of Y". The size Y
+  is `hot.sab.byteLength`, already in the report, so there is no total stat.
+- [ ] **BM-4** `refactor(physics)`: with detailed stats on, `writePhysicsStats` calls mallinfo (a walk
+  of every chunk under the heap lock) a second time per step for the two values the always-on block has
+  just written (`weedjsPost.js:2540-2548` and `:2593-2600`). The second call goes.
+- [ ] **BM-5** `build(box2d)`: ship BM-2's artifacts. The default stays 512 MB, so behaviour does not
+  change. A Node test checks that the shipped `.wasm` imports a shared memory of [256, 32768] pages, that
+  it links at 1024 pages, and that the pre-js block of the shipped glue, run in a `vm` context, sizes the
+  memory from a worker name, skips pthreads and rejects bad sizes. The test helper
+  (`tests/helpers/box2dWasmInstance.mjs`) takes a `pages` option (default 8192), maps imports by name
+  from the glue's `assignWasmImports` (today the clock is the hardcoded `a.b`), and makes
+  `_emscripten_resize_heap` throw, so a test that runs out of memory fails loudly instead of handing Box2D
+  a NULL.
+- [ ] **BM-6** `fix(physics)`: the host refuses a heap of the wrong size. Before booting the world,
+  `physicsHostImpl.js` reads the requested pages from `self.name` itself (8192 without one) and compares
+  them with `Module.HEAPF32.buffer.byteLength`; a mismatch posts `msg:'error'` and physics does not start.
+- [ ] **BM-7** `feat(physics)`: the key. `PHYSICS_DEFAULTS.wasmMemoryMB: 512`;
+  `box2dMemoryPages(physics)` (whole MB, clamped to 16..2048 with one warning, × 16); `createPhysicsWorker`
+  passes the name on both URLs; `types/weed.d.ts` documents the key. Tests: the default, the clamp and
+  its single warning, the pages, and a stubbed `Worker` that receives `physics pages=N`.
+- [ ] **BM-8** `feat(physics)`: running out reaches the scene.
+  - `physicsHostImpl.js` sets `Module.onAbort` when it loads, before the first `pthread_create`, so helper
+    threads proxy their aborts to it (Emscripten hands a pthread the main thread's known handlers when it
+    starts, glue :713; a crashed helper also wakes the physics thread out of its wait and unwinds the step,
+    `emscripten_yield.c`). The handler stops the loop and posts the existing `msg:'error'`: "Box2D ran out
+    of memory: physics.wasmMemoryMB is N MB, peak P MB. Raise physics.wasmMemoryMB in the scene config."
+    The peak comes from `weedjs_memory_peak_bytes`, never from mallinfo.
+  - A failed allocation in the pre-js throws while the worker script is evaluated, before the main thread
+    attaches `onmessage` (`createSceneWorkers` awaits the assets first), so a posted message would be lost.
+    The physics worker's early error handler (`attachEarlyWorkerErrorHandlers`) shows the fatal overlay
+    instead of logging only.
+  - One warning in the physics worker's console when the peak passes 90 % of the size.
+- [ ] **BM-9** the gate (a sitting, not a commit): four ABAB pairs of BallsScene against the commit before
+  BM-3, lean stats, judged on physics `STEP_MS − WAIT_MS`. A hygiene keep unless physics is ≥ 3 % worse;
+  four more pairs only if four do not decide.
+- [ ] **BM-10** `bench`: `tests/bench/box2dMemorySurvey.mjs`, and `?physicsMemoryMB=N` in
+  `tests/bench/integratedWorkerBenchmark.html` (the same override as `?wasmOff=`), passed with `--query`.
+  A run fails when physics shows the error overlay or its frame count stops advancing.
+- [ ] **BM-11** the survey (section 6).
+- [ ] **BM-12** `demos`/`bench`: scenes that need more than the new default set `physics.wasmMemoryMB`
+  from the survey's numbers. `npm run test:demos` passes.
+- [ ] **BM-13** `feat(physics)`: lower the default to the survey's number. The report states it before
+  this commit.
+- [ ] **BM-14** `docs` (section 7).
+
+## 6. Survey (BM-11)
+
+Headless, `--src`, `--no-collect-detailed-stats`, one scene at a time, on a quiet machine. Each run warms
+up 3 s and measures 5 s; the churn scenes measure 60 s (does the peak plateau?). One line per run goes to a
+log that a minimized PowerShell window tails. It reads `workers.physics.statsEnd`: `MEMORY_PEAK_KB`,
+`HEAP_HIGH_WATER_KB`, `BODY_COUNT` and the other counts. About 15 minutes, plus about 5 for the verify runs.
+
+| Kind | Scenes |
+| --- | --- |
+| Small-game floor | SteadyCombatScene (204 bodies) |
+| Contact piles | BallsScene 9k (also with `numberOfPhysicsWorkers` 1/4/8/16/32), BallsHeavyStressScene 12k, WaterAndBoxesScene 4k |
+| Crowds, sensors | PredatorScene 17.5k, BoidsScene 40k |
+| Capacity | MovedBodiesAwakeScene, MovedBodiesStillScene (60k each) |
+| Fixtures | CompoundFixtureSpatialScene 60k, CompoundGeometryDirtyScene (60 s), DestructibleTerrainScene |
+| Joints | ConstraintBoxScene, WeldBreakScene, MamushkaDigScene (32k joints + 32k particles) |
+| Chains | GearChainScene, UChainScene |
+| LiquidFun | LiquidFunStressScene, LiquidFunQueryStressScene, BadPiggiesScene (65,534 particle capacity, idle) |
+| Churn | SpawnStormScene, QueryChurnScene (60 s each) |
+
+- **Recommended size** = peak × 1.25, rounded up to one of 16/32/48/64/96/128/192/256/384/512/768/1024/
+  1536/2048 MB.
+- **Verify runs:** every scene passes at its recommended size; three scenes run below their peak show the
+  out-of-memory overlay.
+- **Per-unit costs**, fitted from the rows with their caveats: per dynamic body in contact, per static
+  body, per fixture, per joint, per particle of capacity, per physics thread.
+- **What the knob saves:** `\Memory\Committed Bytes` with BallsScene at 512 MB against its recommended
+  size.
+
+## 7. Docs (BM-14)
+
+- `docs/guide/PHYSICS.md`, a new section "Physics memory (`physics.wasmMemoryMB`)": what lives there; the
+  default, the range, and that it is read once at boot (a fast swap that keeps Box2D keeps its size); the
+  engine's own regions on top; the sizing table and per-unit costs; sizing from the memory panel (peak ×
+  1.25); the 90 % warning and the out-of-memory overlay; why not set it high (every physics scene commits
+  the whole size). The "Worker stats" table gains `HEAP_USED_KB`, `HEAP_HIGH_WATER_KB` and
+  `MEMORY_PEAK_KB`.
+- `docs/guide/bible_of_weed_js.md`: a row in "Practical Limits". `src/box2d/README.md`: the rebuild
+  section (flags, pre-js). The sibling's CMake comment and README.
+- Internal: a report `reports/E-xx-box2d-memory.md` (the next free number) with the survey and the gate;
+  an EXECUTION_PLAN entry; a HYPOTHESIS_LOG row; `DX-MEM` closed in `hypotheses.json`.
+- `WASM_HYPOTHESES.md` Phase 4: the decision text says buffers moved into Box2D's memory "add nothing"
+  because 512 MB is committed anyway. With a lower default they add their bytes, which the engine puts on
+  top of the developer's number (`box2dMemoryPages` gains the region size then).
+- `VISUAL_EDITOR_PLAN.md` D3: `physics.wasmMemoryMB` is part of the "setup matches" key of a fast swap.
+
+## 8. Verification
+
+- **Node:** the suite is green at every engine commit, with the tests listed in the items.
+- **Browser, src path:** BallsScene runs at 64 MB and DevTools names the worker `physics pages=1024`; the
+  memory panel shows the peak out of 64 MB; `numberOfPhysicsWorkers: 8` at 64 MB boots (the helper threads
+  share the memory); at 16 MB the out-of-memory overlay appears instead of a silent stop.
+- **Bundle:** `npm run make_bundle`, then `dist/index.html?bundle=…` at a size other than the default;
+  `tests/node/box2dBundleSiblings.test.js` and `scripts/smokeBundleEmbed.mjs` pass. `make_bundle`
+  rewrites tracked `dist/` files: restore them unless a commit asks for them.
+- **Measurements:** the BM-9 gate and the BM-11 verify runs.
+
+## Review of the first draft (2026-10-24)
+
+The 2026-10-23 draft (items S1, S2, E1–E8) held up against the toolchain. The review changed:
+- the coordination section (the other session's `wasm_hyp` work is merged into `main`, f2a261a0);
+- the pre-js, which tests `ENVIRONMENT_IS_PTHREAD` and must always set the memory (section 2);
+- where the key lives (`PHYSICS_DEFAULTS` only), and what `onAbort` must do and must not call;
+- the early-error path for a failed allocation (a posted message would arrive before `onmessage`);
+- `MEMORY_TOTAL_KB` dropped (the size is already known), the duplicate mallinfo call removed (BM-4), a new
+  runner flag replaced by the bench page's existing override, and a gate of 4 + 4 pairs for the batch;
+- a draft note that `sceneBufferMemory.js` counts 6 state channels: it counts `STATE_CHANNEL_COUNT` (8);
+  only the comment says 6.
+
+## Found during implementation
+
+- `src/util/sceneBufferMemory.js:221`: the comment says "6× f32 state channels"; the code uses
+  `STATE_CHANNEL_COUNT`, which is 8.
+- `ContactDrainCap32Scene` (`tests/bench/stressScenes/contactDrainHuntScene.js`) declares 70,000 bodies,
+  over the 65,535 that a physics scene allows.
+- `writePhysicsStats` calls mallinfo every step, even with detailed stats off. Its cost is not measured;
+  BM-4 removes only the duplicate call.
