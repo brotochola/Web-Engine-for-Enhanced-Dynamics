@@ -10,15 +10,20 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 - **Engine or demo?** If a request could mean either ("fix the camera", "make it faster"), ask.
   Engine work stays generic: no special case for one demo inside `src/`. Demo work uses public
   APIs. (`.cursor/rules/engine-vs-demo.mdc`)
-- **Speed claims:** read `docs/internal/HYPOTHESIS_LOG.md` first, then follow
-  `docs/internal/HOW_WE_MEASURE.md`. A row is evidence about one sitting, not a ban.
+- **Speed claims:** read what was already tried first (`node scripts/hypotheses.mjs find <words>`),
+  then follow `docs/internal/HOW_WE_MEASURE.md`. A record is evidence about one sitting, not a ban.
+- **The register:** `docs/internal/hypotheses.json` holds every hypothesis (status, one-line result,
+  rank while pending) and every record of the work on it (each sitting, kernel run, gate and decision,
+  with its date, its time when known, its verdict and its numbers). After a sitting, the same day:
+  `node scripts/hypotheses.mjs record --hyp <id> --title "…" --verdict <word> [--status <word>]
+  --text-file <note.md>`; `show <id>` and `log` read it, and `node scripts/buildHypothesesPage.mjs --open`
+  builds the page with its timeline (`hypotheses.html`, not committed). Its links into the docs name a row
+  by key, never by line (`EXECUTION_PLAN.md#E-82b`); a node test fails when a key finds no row or several.
+  `HYPOTHESIS_LOG.md` is only a pointer now: its rows are records.
 - **Plans and open items:** `docs/internal/EXECUTION_PLAN.md` (speed hypotheses E-xx),
-  `docs/internal/REVIEW_PLAN.md` (review items B/M/D/R/G/V/N/DOC). New findings go there.
-- **Index of every hypothesis:** `docs/internal/hypotheses.json`, one short entry each (status, result,
-  rank when pending, links to the evidence). After a sitting, update its entry. Links name a row by key,
-  never by line (`HYPOTHESIS_LOG.md#W9d`: the id, or the start of the row's title when the id finds
-  several), so new rows above it do not move it; a node test fails when a key finds no row or several.
-  `node scripts/buildHypothesesPage.mjs --open` builds the page to read it (`hypotheses.html`, not committed).
+  `docs/internal/WASM_HYPOTHESES.md` (the WASM migration), `docs/internal/REVIEW_PLAN.md` (review items
+  B/M/D/R/G/V/N/DOC). New findings go there. `docs/internal/README.md` indexes every internal doc;
+  finished campaigns are in `docs/internal/reports/`.
 
 ## Commands
 
@@ -89,21 +94,26 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
 - Kernel: calls the shipped function, never writes `src/`, reports ops/s with a checksum, warms up
   through short calls so the timed code is a normal compile, not OSR (say which tier it timed;
   `warmNormalCompile` in `microbenchHelpers.mjs`, and `tests/bench/kernelTierAudit.mjs` checks).
-- Scene pair: ABAB against a worktree of the base rev, headless, `--src`, detailed stats off.
-  Primary = the owning worker's `STEP_MS − WAIT_MS`; baseline ≥ 3 ms or the row fails (raise the
-  scene's own load knob). Speed keep: ≥ 3 % and ≥ 75 % of pairs, load keys within 5 %.
-  A kernel claim needs the kernel win and the scene must not get 3 % worse.
+- Scene pair: ABAB with both sides from worktrees (`runPredatorAbab.mjs --vs <base> --hyp-rev <rev>`,
+  never the main folder: M13), `--src`, detailed stats off, the window visible. Primary = the owning
+  worker's `STEP_MS − WAIT_MS`; baseline ≥ 3 ms or the row fails (raise the scene's own load knob).
+  Speed keep: ≥ 3 % and ≥ 75 % of pairs, load keys within 5 %. A kernel claim needs the kernel win and
+  the scene must not get 3 % worse. Predator is a regression guard (8–13 % run to run per worker), not
+  the ruler for a 3 % claim: that is the owner scene's job.
 - Hygiene keep (bug fix, dead code): stays unless a primary worker is ≥ 3 % worse.
 - A worker the change cannot reach "regresses": run an A/A, and in emergent scenes fit its time
   against its own load key before calling it (review E-50: physics vs `BODY_MOVED_COUNT`). When every
   unreachable worker moved the same way, that is drift: read the owner against it.
 - Spend the machine's time: pairs start at 4 and grow by 4 (`--append`) only when they do not
   decide; Predator gates only changes on its hot path or shared infrastructure, and one gate can
-  cover a batch of kept changes; one A/A per session is the noise reference; quiet machine, and no
-  edits to the working tree while a sitting reads it.
+  cover a batch of kept changes; one A/A per session is the noise reference and gives each scene its
+  detection limit (it replaced the old 8 ms floor); quiet machine, one benchmark at a time.
 - WASM kernels: Node screens, Chrome decides between variants; time TurboFan, not Liftoff; one
   boundary call per batch; every kernel gets the flags/SIMD/float32 pass (HOW_WE_MEASURE).
-- After measuring, update `HYPOTHESIS_LOG.md` / `EXECUTION_PLAN.md`; reports in full prose.
+- After measuring, write the record (`node scripts/hypotheses.mjs record …`) with the numbers that
+  decided it, and update `EXECUTION_PLAN.md` when the plan changes. Raw results under `tests/results/`
+  are not kept: never link them. A report (full prose, `docs/internal/reports/`) only when the sitting
+  needs the story.
 
 ## Where things are
 
