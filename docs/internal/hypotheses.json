@@ -8082,6 +8082,21 @@
       "kind": "js",
       "result": "kept (product) 2026-10-24: compoundVisPoly ringSegments=128 Pixi 3.361 → 2.875 ms (−15.6 % paired, −16.2 % against the others, 4/4); 152 vertices instead of 352 for the same triangles",
       "next": "Owner: compoundVisPolyStressScene (ringSegments raised until Pixi ≥ 3 ms), Pixi; a parity test on the drawn triangles."
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [],
+      "id": "E-136",
+      "title": "Spatial does not republish the rows of all-static neighbourhoods",
+      "status": "open",
+      "statusText": "opened 2026-10-24 (a lead from the stationarySpatialWideScene trace, not measured)",
+      "date": "2026-10-24",
+      "area": "spatial",
+      "kind": "js",
+      "rank": 20,
+      "result": "In stationarySpatialWideScene (70 000 stationary entities, 32-bit ids, a CPU trace after W8b), spatial is publish_batch_u32 60.6 %, gather_batch_u32 14.8 %, rebuildOwnedRows 14.2 %: the publish refilters rows nobody's movement changed. With static isStatic (E-127), a row whose entity and every candidate are static is unchanged while its candidate list is reused; the worker could leave it out of the publish batch (no kernel change) and clear the marks when the static counter moves. Pays only where static entities have large visual ranges (Predator's props have 0 or 50), so the regime is narrow.",
+      "next": "Only if a real scene has static entities with large visual ranges: the owner scene with isStatic on the stationary type; a parity test on the published rows."
     }
   ],
   "records": [
