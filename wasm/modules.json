@@ -71,7 +71,9 @@
       "output": "src/workers/particleIntegrate.wasm",
       "exports": [
         "integrate_batch",
-        "integrate_batch_f32x4"
+        "integrate_batch_f32x4",
+        "integrate_batch_u32",
+        "integrate_batch_f32x4_u32"
       ],
       "maxMemoryPages": 8192
     },

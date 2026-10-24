@@ -731,3 +731,425 @@ void integrate_batch_f32x4(
   results[2] = (int32_t)deadCount;
   results[3] = (int32_t)trigCount;
 }
+
+/* E-129: the same integrates for a pool past 65 535 slots, whose lists are u32 (the particle memory lays the
+   active list, the stamp, dead and trig lists and the flat and heighted scratch out at 4 bytes a slot; the
+   client binds these exports when it does). Copies of integrate_batch and integrate_batch_f32x4 with the slot
+   lists widened: the same arithmetic, the same writes, each list entry a uint32. The u16 columns (lifetimes,
+   floor times, texture ids, tween masks, animation frames) are not slot ids and stay u16. integrate_batch_u32
+   takes the always-inlined helpers of the float32 section (to_u16_x4, to_i32_x4 and ease_f64, the same
+   functions as to_u16, to_i32 and apply_ease), so integrate_batch's own helpers keep one caller and it
+   compiles as it did. */
+
+/* lerp_rgb, always inlined. */
+INLINE uint32_t lerp_rgb_x4(uint32_t from, uint32_t to, double t) {
+  const int32_t fr = (int32_t)((from >> 16) & 0xff), fg = (int32_t)((from >> 8) & 0xff), fb = (int32_t)(from & 0xff);
+  const int32_t tr = (int32_t)((to >> 16) & 0xff), tg = (int32_t)((to >> 8) & 0xff), tb = (int32_t)(to & 0xff);
+  int32_t r = to_i32_x4(fr + (tr - fr) * t + 0.5);
+  int32_t g = to_i32_x4(fg + (tg - fg) * t + 0.5);
+  int32_t b = to_i32_x4(fb + (tb - fb) * t + 0.5);
+  r = r < 0 ? 0 : r > 255 ? 255 : r;
+  g = g < 0 ? 0 : g > 255 ? 255 : g;
+  b = b < 0 ? 0 : b > 255 ? 255 : b;
+  return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
+}
+
+/* Four entries of a u32 list from k that are four consecutive slots. */
+INLINE int run_of_four_u32(const uint32_t *list, uint32_t k) {
+  const v128_t got = wasm_v128_load(list + k);
+  const v128_t want = wasm_i32x4_add(wasm_i32x4_splat((int32_t)list[k]), wasm_i32x4_make(0, 1, 2, 3));
+  return wasm_i32x4_all_true(wasm_i32x4_eq(got, want));
+}
+
+/* integrate_batch on u32 slot lists. */
+__attribute__((export_name("integrate_batch_u32")))
+void integrate_batch_u32(
+    uint32_t columnsByte,    /* u32 per column, the enum's order */
+    uint32_t indicesByte,    /* u32 active list */
+    uint32_t count,
+    double deltaTime,
+    double dtRatio,
+    uint32_t stampEnabled,   /* decalsEnabled && particlesToStamp */
+    uint32_t skipRenderOnly, /* renderOnlyLive > 0 */
+    uint32_t stampByte,      /* u32 out: stayOnTheFloor stamps */
+    uint32_t flatByte,       /* u32 scratch */
+    uint32_t heightedByte,   /* u32 scratch */
+    uint32_t deadByte,       /* u32 out: returnToPool, in order */
+    uint32_t trigByte,       /* u32 out: indices whose angle needs Math.cos / Math.sin */
+    uint32_t trigAngleByte,  /* f64 out: those angles */
+    uint32_t lutByte,        /* f32: EXPO_IN, EXPO_OUT, EXPO_INOUT, lutSize + 1 entries each */
+    uint32_t lutSize,
+    uint32_t resultsByte) {  /* i32 out: activeCount, stampedCount, deadCount, trigCount */
+  const uint32_t *cols = (const uint32_t *)(uintptr_t)columnsByte;
+  const uint32_t *indices = (const uint32_t *)(uintptr_t)indicesByte;
+  uint8_t *active = COL(uint8_t, ACTIVE);
+  float *x = COL(float, X), *y = COL(float, Y), *z = COL(float, Z);
+  float *vx = COL(float, VX), *vy = COL(float, VY), *vz = COL(float, VZ);
+  const uint16_t *lifespan = COL(uint16_t, LIFESPAN);
+  uint16_t *currentLife = COL(uint16_t, CURRENT_LIFE);
+  const float *gravity = COL(float, GRAVITY);
+  float *scaleX = COL(float, SCALE_X), *scaleY = COL(float, SCALE_Y), *alpha = COL(float, ALPHA);
+  uint32_t *tint = COL(uint32_t, TINT), *baseTint = COL(uint32_t, BASE_TINT);
+  uint16_t *textureId = COL(uint16_t, TEXTURE_ID);
+  float *rotC = COL(float, ROT_C), *rotS = COL(float, ROT_S);
+  const uint16_t *fadeOnTheFloor = COL(uint16_t, FADE_ON_FLOOR);
+  uint16_t *timeOnFloor = COL(uint16_t, TIME_ON_FLOOR);
+  float *initialAlpha = COL(float, INITIAL_ALPHA);
+  const uint8_t *stayOnTheFloor = COL(uint8_t, STAY_ON_FLOOR);
+  const uint8_t *despawnOnGroundContact = COL(uint8_t, DESPAWN_ON_GROUND);
+  const uint16_t *tweenMask = COL(uint16_t, TWEEN_MASK);
+  const uint8_t *easeId = COL(uint8_t, EASE_ID);
+  const float *alphaFrom = COL(float, ALPHA_FROM), *alphaTo = COL(float, ALPHA_TO);
+  const float *scaleXFrom = COL(float, SCALE_X_FROM), *scaleXTo = COL(float, SCALE_X_TO);
+  const float *scaleYFrom = COL(float, SCALE_Y_FROM), *scaleYTo = COL(float, SCALE_Y_TO);
+  const uint32_t *tintFrom = COL(uint32_t, TINT_FROM), *tintTo = COL(uint32_t, TINT_TO);
+  const float *rotFrom = COL(float, ROT_FROM), *rotTo = COL(float, ROT_TO);
+  const float *angFrom = COL(float, ANG_FROM), *angTo = COL(float, ANG_TO);
+  const uint8_t *hasAngularVel = COL(uint8_t, HAS_ANG);
+  const uint8_t *animCount = COL(uint8_t, ANIM_COUNT), *animMode = COL(uint8_t, ANIM_MODE);
+  const uint16_t *animFrames = COL(uint16_t, ANIM_FRAMES);
+  const uint8_t *flat = COL(uint8_t, FLAT);
+  const uint8_t *renderOnly = COL(uint8_t, RENDER_ONLY);
+  uint32_t *stamp = (uint32_t *)(uintptr_t)stampByte;
+  uint32_t *flatList = (uint32_t *)(uintptr_t)flatByte;
+  uint32_t *heightedList = (uint32_t *)(uintptr_t)heightedByte;
+  uint32_t *dead = (uint32_t *)(uintptr_t)deadByte;
+  uint32_t *trig = (uint32_t *)(uintptr_t)trigByte;
+  double *trigAngle = (double *)(uintptr_t)trigAngleByte;
+  const float *lut = (const float *)(uintptr_t)lutByte;
+  int32_t *results = (int32_t *)(uintptr_t)resultsByte;
+
+  uint32_t flatCount = 0, heightedCount = 0, stampedCount = 0, deadCount = 0, trigCount = 0;
+
+  for (uint32_t idx = 0; idx < count; idx++) {
+    const uint32_t i = indices[idx];
+    const uint16_t life = to_u16_x4((double)currentLife[i] + deltaTime);
+    currentLife[i] = life;
+    if (lifespan[i] > 0 && life >= lifespan[i]) {
+      active[i] = 0;
+      dead[deadCount++] = i;
+      continue;
+    }
+    if (skipRenderOnly && renderOnly[i]) continue;
+
+    const uint32_t mask = tweenMask[i];
+    const int spinning = hasAngularVel[i] != 0;
+    const int cycling = animMode[i] != 0;
+    if (mask || spinning || cycling) {
+      const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
+      const double eased = mask || spinning ? ease_f64(lifeProgress, easeId[i], lut, lutSize) : lifeProgress;
+      if (mask & TWEEN_ALPHA) alpha[i] = (float)((double)alphaFrom[i] + ((double)alphaTo[i] - (double)alphaFrom[i]) * eased);
+      if (mask & TWEEN_SCALEX) scaleX[i] = (float)((double)scaleXFrom[i] + ((double)scaleXTo[i] - (double)scaleXFrom[i]) * eased);
+      if (mask & TWEEN_SCALEY) scaleY[i] = (float)((double)scaleYFrom[i] + ((double)scaleYTo[i] - (double)scaleYFrom[i]) * eased);
+      if (mask & TWEEN_TINT) {
+        const uint32_t c = lerp_rgb_x4(tintFrom[i], tintTo[i], eased);
+        tint[i] = c;
+        baseTint[i] = c;
+      }
+      double angle = (double)rotFrom[i];
+      if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eased;
+      if (spinning) {
+        const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eased;
+        angle += av * (double)currentLife[i];
+      }
+      if ((mask & TWEEN_ROT) || spinning) {
+        double s, c;
+        if (weed_sincos(angle, &s, &c)) {
+          rotC[i] = (float)c;
+          rotS[i] = (float)s;
+        } else {
+          trig[trigCount] = i;
+          trigAngle[trigCount] = angle;
+          trigCount++;
+        }
+      }
+      if (cycling && animMode[i] == 1 && animCount[i] > 0) {
+        const int32_t n = animCount[i];
+        int32_t fi = to_i32_x4(lifeProgress * n);
+        if (fi >= n) fi = n - 1;
+        textureId[i] = animFrames[i * 8u + (uint32_t)fi];
+      }
+    }
+    if (flat[i]) flatList[flatCount++] = i;
+    else heightedList[heightedCount++] = i;
+  }
+
+  /* Flat pass: XY + gravity on vy. */
+  for (uint32_t k = 0; k < flatCount; k++) {
+    const uint32_t i = flatList[k];
+    vy[i] = (float)((double)vy[i] + (double)gravity[i] * dtRatio);
+    x[i] = (float)((double)x[i] + (double)vx[i] * dtRatio);
+    y[i] = (float)((double)y[i] + (double)vy[i] * dtRatio);
+  }
+
+  /* Heighted pass: gravity + air / ground / floor fade / despawn. */
+  uint32_t survivors = 0;
+  for (uint32_t k = 0; k < heightedCount; k++) {
+    const uint32_t i = heightedList[k];
+    vz[i] = (float)((double)vz[i] + (double)gravity[i] * dtRatio);
+    if (z[i] < 0) {
+      x[i] = (float)((double)x[i] + (double)vx[i] * dtRatio);
+      y[i] = (float)((double)y[i] + (double)vy[i] * dtRatio);
+      z[i] = (float)((double)z[i] + (double)vz[i] * dtRatio);
+      survivors++;
+      continue;
+    }
+    z[i] = 0;
+    vx[i] = 0;
+    vy[i] = 0;
+    vz[i] = 0;
+    if (despawnOnGroundContact[i]) {
+      active[i] = 0;
+      dead[deadCount++] = i;
+      continue;
+    }
+    if (stayOnTheFloor[i]) {
+      active[i] = 0;
+      if (stampEnabled) stamp[stampedCount++] = i;
+      else dead[deadCount++] = i;
+      continue;
+    }
+    if (fadeOnTheFloor[i] > 0) {
+      if (timeOnFloor[i] == 0) initialAlpha[i] = alpha[i];
+      const uint16_t onFloor = to_u16_x4((double)timeOnFloor[i] + deltaTime);
+      timeOnFloor[i] = onFloor;
+      double fadeProgress = (double)onFloor / (double)fadeOnTheFloor[i];
+      if (fadeProgress > 1) fadeProgress = 1;
+      alpha[i] = (float)((double)initialAlpha[i] * (1 - fadeProgress));
+      if (alpha[i] <= 0) {
+        active[i] = 0;
+        dead[deadCount++] = i;
+        continue;
+      }
+    }
+    survivors++;
+  }
+
+  results[0] = (int32_t)(flatCount + survivors);
+  results[1] = (int32_t)stampedCount;
+  results[2] = (int32_t)deadCount;
+  results[3] = (int32_t)trigCount;
+}
+
+/* integrate_batch_f32x4 on u32 slot lists. */
+__attribute__((export_name("integrate_batch_f32x4_u32")))
+void integrate_batch_f32x4_u32(
+    uint32_t columnsByte, uint32_t indicesByte, uint32_t count, double deltaTime, double dtRatio,
+    uint32_t stampEnabled, uint32_t skipRenderOnly, uint32_t stampByte, uint32_t flatByte,
+    uint32_t heightedByte, uint32_t deadByte, uint32_t trigByte, uint32_t trigAngleByte, uint32_t lutByte,
+    uint32_t lutSize, uint32_t resultsByte) {
+  const uint32_t *cols = (const uint32_t *)(uintptr_t)columnsByte;
+  const uint32_t *indices = (const uint32_t *)(uintptr_t)indicesByte;
+  uint8_t *active = COL(uint8_t, ACTIVE);
+  float *x = COL(float, X), *y = COL(float, Y), *z = COL(float, Z);
+  float *vx = COL(float, VX), *vy = COL(float, VY), *vz = COL(float, VZ);
+  const uint16_t *lifespan = COL(uint16_t, LIFESPAN);
+  uint16_t *currentLife = COL(uint16_t, CURRENT_LIFE);
+  const float *gravity = COL(float, GRAVITY);
+  float *scaleX = COL(float, SCALE_X), *scaleY = COL(float, SCALE_Y), *alpha = COL(float, ALPHA);
+  uint32_t *tint = COL(uint32_t, TINT), *baseTint = COL(uint32_t, BASE_TINT);
+  uint16_t *textureId = COL(uint16_t, TEXTURE_ID);
+  float *rotC = COL(float, ROT_C), *rotS = COL(float, ROT_S);
+  const uint16_t *fadeOnTheFloor = COL(uint16_t, FADE_ON_FLOOR);
+  uint16_t *timeOnFloor = COL(uint16_t, TIME_ON_FLOOR);
+  float *initialAlpha = COL(float, INITIAL_ALPHA);
+  const uint8_t *stayOnTheFloor = COL(uint8_t, STAY_ON_FLOOR);
+  const uint8_t *despawnOnGroundContact = COL(uint8_t, DESPAWN_ON_GROUND);
+  const uint16_t *tweenMask = COL(uint16_t, TWEEN_MASK);
+  const uint8_t *easeId = COL(uint8_t, EASE_ID);
+  const float *alphaFrom = COL(float, ALPHA_FROM), *alphaTo = COL(float, ALPHA_TO);
+  const float *scaleXFrom = COL(float, SCALE_X_FROM), *scaleXTo = COL(float, SCALE_X_TO);
+  const float *scaleYFrom = COL(float, SCALE_Y_FROM), *scaleYTo = COL(float, SCALE_Y_TO);
+  const uint32_t *tintFrom = COL(uint32_t, TINT_FROM), *tintTo = COL(uint32_t, TINT_TO);
+  const float *rotFrom = COL(float, ROT_FROM), *rotTo = COL(float, ROT_TO);
+  const float *angFrom = COL(float, ANG_FROM), *angTo = COL(float, ANG_TO);
+  const uint8_t *hasAngularVel = COL(uint8_t, HAS_ANG);
+  const uint8_t *animCount = COL(uint8_t, ANIM_COUNT), *animMode = COL(uint8_t, ANIM_MODE);
+  const uint16_t *animFrames = COL(uint16_t, ANIM_FRAMES);
+  const uint8_t *flat = COL(uint8_t, FLAT);
+  const uint8_t *renderOnly = COL(uint8_t, RENDER_ONLY);
+  uint32_t *stamp = (uint32_t *)(uintptr_t)stampByte;
+  uint32_t *flatList = (uint32_t *)(uintptr_t)flatByte;
+  uint32_t *heightedList = (uint32_t *)(uintptr_t)heightedByte;
+  uint32_t *dead = (uint32_t *)(uintptr_t)deadByte;
+  uint32_t *trig = (uint32_t *)(uintptr_t)trigByte;
+  double *trigAngle = (double *)(uintptr_t)trigAngleByte;
+  const float *lut = (const float *)(uintptr_t)lutByte;
+  int32_t *results = (int32_t *)(uintptr_t)resultsByte;
+  const float dt = (float)dtRatio;
+
+  uint32_t flatCount = 0, heightedCount = 0, stampedCount = 0, deadCount = 0, trigCount = 0;
+  uint32_t staged = count; /* the staged rotations are trig[staged, count) */
+
+  for (uint32_t idx = 0; idx < count; idx++) {
+    const uint32_t i = indices[idx];
+    const uint16_t life = to_u16_x4((double)currentLife[i] + deltaTime);
+    currentLife[i] = life;
+    if (lifespan[i] > 0 && life >= lifespan[i]) {
+      active[i] = 0;
+      dead[deadCount++] = i;
+      continue;
+    }
+    if (skipRenderOnly && renderOnly[i]) continue;
+
+    const uint32_t mask = tweenMask[i];
+    const int spinning = hasAngularVel[i] != 0;
+    const int cycling = animMode[i] != 0;
+    if (mask || spinning || cycling) {
+      const int rotates = (mask & TWEEN_ROT) || spinning;
+      double eased = 0;
+      float easedF;
+      if (rotates) {
+        const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
+        eased = ease_f64(lifeProgress, easeId[i], lut, lutSize);
+        easedF = (float)eased;
+      } else {
+        const float lifeProgress = lifespan[i] > 0 ? (float)life / (float)lifespan[i] : 1.0f;
+        easedF = mask ? ease_f32(lifeProgress, easeId[i], lut, lutSize) : lifeProgress;
+      }
+      if (mask & TWEEN_ALPHA) alpha[i] = alphaFrom[i] + (alphaTo[i] - alphaFrom[i]) * easedF;
+      if (mask & TWEEN_SCALEX) scaleX[i] = scaleXFrom[i] + (scaleXTo[i] - scaleXFrom[i]) * easedF;
+      if (mask & TWEEN_SCALEY) scaleY[i] = scaleYFrom[i] + (scaleYTo[i] - scaleYFrom[i]) * easedF;
+      if (mask & TWEEN_TINT) {
+        const uint32_t c = lerp_rgb_f32(tintFrom[i], tintTo[i], easedF);
+        tint[i] = c;
+        baseTint[i] = c;
+      }
+      if (rotates) {
+        double angle = (double)rotFrom[i];
+        if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eased;
+        if (spinning) {
+          const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eased;
+          angle += av * (double)currentLife[i];
+        }
+        const uint32_t ix = hi_bits(angle);
+        if (ix < 0x413921fbu) {
+          staged--;
+          trig[staged] = i;
+          trigAngle[staged] = angle;
+        } else {
+          float s, c;
+          if (sincos_f32(angle, &s, &c)) {
+            rotC[i] = c;
+            rotS[i] = s;
+          } else {
+            trig[trigCount] = i;
+            trigAngle[trigCount] = angle;
+            trigCount++;
+          }
+        }
+      }
+      if (cycling && animMode[i] == 1 && animCount[i] > 0) {
+        const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
+        const int32_t n = animCount[i];
+        int32_t fi = to_i32_x4(lifeProgress * n);
+        if (fi >= n) fi = n - 1;
+        textureId[i] = animFrames[i * 8u + (uint32_t)fi];
+      }
+    }
+    if (flat[i]) flatList[flatCount++] = i;
+    else heightedList[heightedCount++] = i;
+  }
+
+  /* The staged rotations, four at a time, then the rest one by one. */
+  uint32_t e = staged;
+  for (; e + 4 <= count; e += 4) {
+    v128_t s, c;
+    sincos4(wasm_v128_load(trigAngle + e), wasm_v128_load(trigAngle + e + 2), &s, &c);
+    const uint32_t i0 = trig[e], i1 = trig[e + 1], i2 = trig[e + 2], i3 = trig[e + 3];
+    rotC[i0] = wasm_f32x4_extract_lane(c, 0);
+    rotS[i0] = wasm_f32x4_extract_lane(s, 0);
+    rotC[i1] = wasm_f32x4_extract_lane(c, 1);
+    rotS[i1] = wasm_f32x4_extract_lane(s, 1);
+    rotC[i2] = wasm_f32x4_extract_lane(c, 2);
+    rotS[i2] = wasm_f32x4_extract_lane(s, 2);
+    rotC[i3] = wasm_f32x4_extract_lane(c, 3);
+    rotS[i3] = wasm_f32x4_extract_lane(s, 3);
+  }
+  for (; e < count; e++) {
+    float s, c;
+    sincos_f32(trigAngle[e], &s, &c);
+    rotC[trig[e]] = c;
+    rotS[trig[e]] = s;
+  }
+
+  /* Flat pass: XY + gravity on vy. */
+  const v128_t dt4 = wasm_f32x4_splat(dt);
+  for (uint32_t k = 0; k < flatCount;) {
+    if (k + 4 <= flatCount && run_of_four_u32(flatList, k)) {
+      const uint32_t i = flatList[k];
+      const v128_t vy4 = wasm_f32x4_add(wasm_v128_load(vy + i), wasm_f32x4_mul(wasm_v128_load(gravity + i), dt4));
+      wasm_v128_store(vy + i, vy4);
+      wasm_v128_store(x + i, wasm_f32x4_add(wasm_v128_load(x + i), wasm_f32x4_mul(wasm_v128_load(vx + i), dt4)));
+      wasm_v128_store(y + i, wasm_f32x4_add(wasm_v128_load(y + i), wasm_f32x4_mul(vy4, dt4)));
+      k += 4;
+      continue;
+    }
+    const uint32_t i = flatList[k++];
+    vy[i] = vy[i] + gravity[i] * dt;
+    x[i] = x[i] + vx[i] * dt;
+    y[i] = y[i] + vy[i] * dt;
+  }
+
+  /* Heighted pass: gravity + air / ground / floor fade / despawn. */
+  uint32_t survivors = 0;
+  for (uint32_t k = 0; k < heightedCount;) {
+    if (k + 4 <= heightedCount && run_of_four_u32(heightedList, k)) {
+      const uint32_t i = heightedList[k];
+      const v128_t z4 = wasm_v128_load(z + i);
+      if (wasm_i32x4_all_true(wasm_f32x4_lt(z4, wasm_f32x4_splat(0.0f)))) {
+        const v128_t vz4 = wasm_f32x4_add(wasm_v128_load(vz + i), wasm_f32x4_mul(wasm_v128_load(gravity + i), dt4));
+        wasm_v128_store(vz + i, vz4);
+        wasm_v128_store(x + i, wasm_f32x4_add(wasm_v128_load(x + i), wasm_f32x4_mul(wasm_v128_load(vx + i), dt4)));
+        wasm_v128_store(y + i, wasm_f32x4_add(wasm_v128_load(y + i), wasm_f32x4_mul(wasm_v128_load(vy + i), dt4)));
+        wasm_v128_store(z + i, wasm_f32x4_add(z4, wasm_f32x4_mul(vz4, dt4)));
+        survivors += 4;
+        k += 4;
+        continue;
+      }
+    }
+    const uint32_t i = heightedList[k++];
+    vz[i] = vz[i] + gravity[i] * dt;
+    if (z[i] < 0) {
+      x[i] = x[i] + vx[i] * dt;
+      y[i] = y[i] + vy[i] * dt;
+      z[i] = z[i] + vz[i] * dt;
+      survivors++;
+      continue;
+    }
+    z[i] = 0;
+    vx[i] = 0;
+    vy[i] = 0;
+    vz[i] = 0;
+    if (despawnOnGroundContact[i]) {
+      active[i] = 0;
+      dead[deadCount++] = i;
+      continue;
+    }
+    if (stayOnTheFloor[i]) {
+      active[i] = 0;
+      if (stampEnabled) stamp[stampedCount++] = i;
+      else dead[deadCount++] = i;
+      continue;
+    }
+    if (fadeOnTheFloor[i] > 0) {
+      if (timeOnFloor[i] == 0) initialAlpha[i] = alpha[i];
+      const uint16_t onFloor = to_u16_x4((double)timeOnFloor[i] + deltaTime);
+      timeOnFloor[i] = onFloor;
+      float fadeProgress = (float)onFloor / (float)fadeOnTheFloor[i];
+      if (fadeProgress > 1) fadeProgress = 1;
+      alpha[i] = initialAlpha[i] * (1 - fadeProgress);
+      if (alpha[i] <= 0) {
+        active[i] = 0;
+        dead[deadCount++] = i;
+        continue;
+      }
+    }
+    survivors++;
+  }
+
+  results[0] = (int32_t)(flatCount + survivors);
+  results[1] = (int32_t)stampedCount;
+  results[2] = (int32_t)deadCount;
+  results[3] = (int32_t)trigCount;
+}
