@@ -24,6 +24,18 @@ Weed `cwrap` is numeric, so those are raw exports), thread start and mailbox, pr
 teardown. The BM-9 timing gate was therefore not run: four ABAB pairs cannot resolve one export call per
 step.
 
+**Against the build before this plan** (`f2a261a0`), function by function
+(`tests/bench/wasmSameCode.mjs`): all 461 functions of the old `.wasm` have the same body in the new one
+once call targets are mapped. wasm-opt reordered some functions, and the added export shifted indices,
+so 22 bodies differ only in `call` operands. The one new function is `weedjs_memory_peak_bytes` (5 lines).
+V8 therefore compiles the same machine code for every Box2D and LiquidFun function, and no physics
+microbenchmark can tell the builds apart; none was timed. The JS that does change per step (the peak
+write and the 90 % compare in `writePhysicsStats`) runs in no Node kernel.
+
+**Tests:** the node suite, `npm run test:demos`, and `npm run test:bundle:build` (all 8 bundles: the embed
+check and BallsScene booting in Chrome) pass. `npm run test:node:bundle` fails 5 tests of the E-76 kernels,
+none of them Box2D's: review item N-72.
+
 ## The survey
 
 `tests/bench/box2dMemorySurvey.mjs`, headless, `--src`, detailed stats on (for the contact counts), one
