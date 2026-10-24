@@ -161,6 +161,16 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "meshCorners",
+      "source": "wasm/test/meshCorners.c",
+      "output": "tests/fixtures/wasm/meshCorners.wasm",
+      "exports": [
+        "rewrite_corners"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
