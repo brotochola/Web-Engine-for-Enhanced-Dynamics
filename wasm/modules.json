@@ -84,7 +84,12 @@
         "build_lists_turned",
         "build_active",
         "build_lists_f32x4",
-        "build_lists_turned_f32x4"
+        "build_lists_turned_f32x4",
+        "build_lists_u32",
+        "build_lists_turned_u32",
+        "build_active_u32",
+        "build_lists_f32x4_u32",
+        "build_lists_turned_f32x4_u32"
       ],
       "maxMemoryPages": 8192
     },

@@ -379,3 +379,252 @@ uint32_t build_lists_turned_f32x4(uint32_t activeByte, uint32_t xByte, uint32_t 
   vl[0] = (uint16_t)vc;
   return ac;
 }
+
+/* E-129: the same builds for a pool past 65 535 slots, whose lists are u32 [count, index, ...] (the particle
+   memory lays them out at 4 bytes a slot; the client binds these exports when it does). Copies of the 16-bit
+   builds above with the list type widened: the same tests, the same writes, each list entry a uint32. A full
+   block's 16 active indices go out as four i32x4 stores. */
+
+/* A full block's lists and flags from its 16-lane mask, into u32 lists. */
+INLINE void emit_full_block_u32(uint32_t i, v128_t m16, uint8_t *on, uint32_t *al, uint32_t *vl, uint32_t *ac,
+                                uint32_t *vc) {
+  wasm_v128_store(on + i, wasm_v128_and(m16, wasm_i8x16_splat(1)));
+  const v128_t base = wasm_i32x4_splat((int32_t)i);
+  uint32_t *a = al + 1 + *ac;
+  wasm_v128_store(a, wasm_i32x4_add(base, wasm_i32x4_make(0, 1, 2, 3)));
+  wasm_v128_store(a + 4, wasm_i32x4_add(base, wasm_i32x4_make(4, 5, 6, 7)));
+  wasm_v128_store(a + 8, wasm_i32x4_add(base, wasm_i32x4_make(8, 9, 10, 11)));
+  wasm_v128_store(a + 12, wasm_i32x4_add(base, wasm_i32x4_make(12, 13, 14, 15)));
+  *ac += 16;
+  const uint32_t vm = wasm_i8x16_bitmask(m16);
+  uint32_t c = *vc;
+  for (uint32_t j = 0; j < 16; j++) {
+    vl[1 + c] = i + j;
+    c += (vm >> j) & 1u;
+  }
+  *vc = c;
+}
+
+/* build_lists into u32 lists. */
+__attribute__((export_name("build_lists_u32")))
+uint32_t build_lists_u32(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
+                         uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
+                         double minX, double maxX, double minY, double maxY) {
+  const uint8_t *active = (const uint8_t *)activeByte;
+  const float *x = (const float *)xByte;
+  const float *y = (const float *)yByte;
+  uint8_t *on = (uint8_t *)onScreenByte;
+  uint32_t *al = (uint32_t *)activeListByte;
+  uint32_t *vl = (uint32_t *)visibleListByte;
+  const v128_t Z = wasm_f64x2_splat(zoom), OX = wasm_f64x2_splat(offX), OY = wasm_f64x2_splat(offY);
+  const v128_t X0 = wasm_f64x2_splat(minX), X1 = wasm_f64x2_splat(maxX);
+  const v128_t Y0 = wasm_f64x2_splat(minY), Y1 = wasm_f64x2_splat(maxY);
+  uint32_t ac = 0, vc = 0, i = 0;
+  for (; i + 16 <= n; i += 16) {
+    uint32_t mask = live_mask(active, i);
+    if (mask == 0) continue;
+    if (mask == 0xffff) {
+      const v128_t m16 = to_m16(box_mask4(x, y, i, Z, OX, OY, X0, X1, Y0, Y1),
+                                box_mask4(x, y, i + 4, Z, OX, OY, X0, X1, Y0, Y1),
+                                box_mask4(x, y, i + 8, Z, OX, OY, X0, X1, Y0, Y1),
+                                box_mask4(x, y, i + 12, Z, OX, OY, X0, X1, Y0, Y1));
+      emit_full_block_u32(i, m16, on, al, vl, &ac, &vc);
+      continue;
+    }
+    do {
+      const uint32_t k = i + (uint32_t)__builtin_ctz(mask);
+      mask &= mask - 1;
+      const uint32_t v = on_box(x, y, k, zoom, offX, offY, minX, maxX, minY, maxY);
+      al[1 + ac++] = k;
+      on[k] = (uint8_t)v;
+      vl[1 + vc] = k;
+      vc += v;
+    } while (mask);
+  }
+  for (; i < n; i++) {
+    if (!active[i]) continue;
+    const uint32_t v = on_box(x, y, i, zoom, offX, offY, minX, maxX, minY, maxY);
+    al[1 + ac++] = i;
+    on[i] = (uint8_t)v;
+    vl[1 + vc] = i;
+    vc += v;
+  }
+  al[0] = ac;
+  vl[0] = vc;
+  return ac;
+}
+
+/* build_lists_turned into u32 lists. */
+__attribute__((export_name("build_lists_turned_u32")))
+uint32_t build_lists_turned_u32(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
+                                uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
+                                double halfCw, double halfCh, double rc, double rs, double limW, double limH) {
+  const uint8_t *active = (const uint8_t *)activeByte;
+  const float *x = (const float *)xByte;
+  const float *y = (const float *)yByte;
+  uint8_t *on = (uint8_t *)onScreenByte;
+  uint32_t *al = (uint32_t *)activeListByte;
+  uint32_t *vl = (uint32_t *)visibleListByte;
+  const v128_t Z = wasm_f64x2_splat(zoom), OX = wasm_f64x2_splat(offX), OY = wasm_f64x2_splat(offY);
+  const v128_t HW = wasm_f64x2_splat(halfCw), HH = wasm_f64x2_splat(halfCh);
+  const v128_t RC = wasm_f64x2_splat(rc), RS = wasm_f64x2_splat(rs);
+  const v128_t LW = wasm_f64x2_splat(limW), LH = wasm_f64x2_splat(limH);
+  const v128_t NW = wasm_f64x2_splat(-limW), NH = wasm_f64x2_splat(-limH);
+  uint32_t ac = 0, vc = 0, i = 0;
+  for (; i + 16 <= n; i += 16) {
+    uint32_t mask = live_mask(active, i);
+    if (mask == 0) continue;
+    if (mask == 0xffff) {
+      const v128_t m16 = to_m16(turned_mask4(x, y, i, Z, OX, OY, HW, HH, RC, RS, LW, LH, NW, NH),
+                                turned_mask4(x, y, i + 4, Z, OX, OY, HW, HH, RC, RS, LW, LH, NW, NH),
+                                turned_mask4(x, y, i + 8, Z, OX, OY, HW, HH, RC, RS, LW, LH, NW, NH),
+                                turned_mask4(x, y, i + 12, Z, OX, OY, HW, HH, RC, RS, LW, LH, NW, NH));
+      emit_full_block_u32(i, m16, on, al, vl, &ac, &vc);
+      continue;
+    }
+    do {
+      const uint32_t k = i + (uint32_t)__builtin_ctz(mask);
+      mask &= mask - 1;
+      const uint32_t v = on_turned(x, y, k, zoom, offX, offY, halfCw, halfCh, rc, rs, limW, limH);
+      al[1 + ac++] = k;
+      on[k] = (uint8_t)v;
+      vl[1 + vc] = k;
+      vc += v;
+    } while (mask);
+  }
+  for (; i < n; i++) {
+    if (!active[i]) continue;
+    const uint32_t v = on_turned(x, y, i, zoom, offX, offY, halfCw, halfCh, rc, rs, limW, limH);
+    al[1 + ac++] = i;
+    on[i] = (uint8_t)v;
+    vl[1 + vc] = i;
+    vc += v;
+  }
+  al[0] = ac;
+  vl[0] = vc;
+  return ac;
+}
+
+/* build_active into a u32 list. */
+__attribute__((export_name("build_active_u32")))
+uint32_t build_active_u32(uint32_t activeByte, uint32_t n, uint32_t activeListByte, uint32_t visibleListByte) {
+  const uint8_t *active = (const uint8_t *)activeByte;
+  uint32_t *al = (uint32_t *)activeListByte;
+  uint32_t ac = 0, i = 0;
+  for (; i + 16 <= n; i += 16) {
+    uint32_t mask = live_mask(active, i);
+    while (mask) {
+      al[1 + ac++] = i + (uint32_t)__builtin_ctz(mask);
+      mask &= mask - 1;
+    }
+  }
+  for (; i < n; i++) {
+    if (active[i]) al[1 + ac++] = i;
+  }
+  al[0] = ac;
+  ((uint32_t *)visibleListByte)[0] = 0;
+  return ac;
+}
+
+/* build_lists_f32x4 into u32 lists. */
+__attribute__((export_name("build_lists_f32x4_u32")))
+uint32_t build_lists_f32x4_u32(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
+                               uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
+                               double minX, double maxX, double minY, double maxY) {
+  const uint8_t *active = (const uint8_t *)activeByte;
+  const float *x = (const float *)xByte;
+  const float *y = (const float *)yByte;
+  uint8_t *on = (uint8_t *)onScreenByte;
+  uint32_t *al = (uint32_t *)activeListByte;
+  uint32_t *vl = (uint32_t *)visibleListByte;
+  const BoxF32 c = { (float)zoom, (float)offX, (float)offY, (float)minX, (float)maxX, (float)minY, (float)maxY };
+  const v128_t Z = wasm_f32x4_splat(c.zoom), OX = wasm_f32x4_splat(c.offX), OY = wasm_f32x4_splat(c.offY);
+  const v128_t X0 = wasm_f32x4_splat(c.minX), X1 = wasm_f32x4_splat(c.maxX);
+  const v128_t Y0 = wasm_f32x4_splat(c.minY), Y1 = wasm_f32x4_splat(c.maxY);
+  uint32_t ac = 0, vc = 0, i = 0;
+  for (; i + 16 <= n; i += 16) {
+    uint32_t mask = live_mask(active, i);
+    if (mask == 0) continue;
+    if (mask == 0xffff) {
+      const v128_t m16 = to_m16(box_mask4_f32(x, y, i, Z, OX, OY, X0, X1, Y0, Y1),
+                                box_mask4_f32(x, y, i + 4, Z, OX, OY, X0, X1, Y0, Y1),
+                                box_mask4_f32(x, y, i + 8, Z, OX, OY, X0, X1, Y0, Y1),
+                                box_mask4_f32(x, y, i + 12, Z, OX, OY, X0, X1, Y0, Y1));
+      emit_full_block_u32(i, m16, on, al, vl, &ac, &vc);
+      continue;
+    }
+    do {
+      const uint32_t k = i + (uint32_t)__builtin_ctz(mask);
+      mask &= mask - 1;
+      const uint32_t v = on_box_f32(x, y, k, c);
+      al[1 + ac++] = k;
+      on[k] = (uint8_t)v;
+      vl[1 + vc] = k;
+      vc += v;
+    } while (mask);
+  }
+  for (; i < n; i++) {
+    if (!active[i]) continue;
+    const uint32_t v = on_box_f32(x, y, i, c);
+    al[1 + ac++] = i;
+    on[i] = (uint8_t)v;
+    vl[1 + vc] = i;
+    vc += v;
+  }
+  al[0] = ac;
+  vl[0] = vc;
+  return ac;
+}
+
+/* build_lists_turned_f32x4 into u32 lists. */
+__attribute__((export_name("build_lists_turned_f32x4_u32")))
+uint32_t build_lists_turned_f32x4_u32(uint32_t activeByte, uint32_t xByte, uint32_t yByte, uint32_t onScreenByte, uint32_t n,
+                                      uint32_t activeListByte, uint32_t visibleListByte, double zoom, double offX, double offY,
+                                      double halfCw, double halfCh, double rc, double rs, double limW, double limH) {
+  const uint8_t *active = (const uint8_t *)activeByte;
+  const float *x = (const float *)xByte;
+  const float *y = (const float *)yByte;
+  uint8_t *on = (uint8_t *)onScreenByte;
+  uint32_t *al = (uint32_t *)activeListByte;
+  uint32_t *vl = (uint32_t *)visibleListByte;
+  const TurnedF32 c = { (float)zoom, (float)offX, (float)offY, (float)halfCw, (float)halfCh, (float)rc, (float)rs,
+                        (float)limW, (float)limH };
+  const v128_t Z = wasm_f32x4_splat(c.zoom), OX = wasm_f32x4_splat(c.offX), OY = wasm_f32x4_splat(c.offY);
+  const v128_t HW = wasm_f32x4_splat(c.halfCw), HH = wasm_f32x4_splat(c.halfCh);
+  const v128_t RC = wasm_f32x4_splat(c.rc), RS = wasm_f32x4_splat(c.rs);
+  const v128_t LW = wasm_f32x4_splat(c.limW), LH = wasm_f32x4_splat(c.limH);
+  const v128_t NW = wasm_f32x4_splat(-c.limW), NH = wasm_f32x4_splat(-c.limH);
+  uint32_t ac = 0, vc = 0, i = 0;
+  for (; i + 16 <= n; i += 16) {
+    uint32_t mask = live_mask(active, i);
+    if (mask == 0) continue;
+    if (mask == 0xffff) {
+      const v128_t m16 = to_m16(turned_mask4_f32(x, y, i, Z, OX, OY, HW, HH, RC, RS, LW, LH, NW, NH),
+                                turned_mask4_f32(x, y, i + 4, Z, OX, OY, HW, HH, RC, RS, LW, LH, NW, NH),
+                                turned_mask4_f32(x, y, i + 8, Z, OX, OY, HW, HH, RC, RS, LW, LH, NW, NH),
+                                turned_mask4_f32(x, y, i + 12, Z, OX, OY, HW, HH, RC, RS, LW, LH, NW, NH));
+      emit_full_block_u32(i, m16, on, al, vl, &ac, &vc);
+      continue;
+    }
+    do {
+      const uint32_t k = i + (uint32_t)__builtin_ctz(mask);
+      mask &= mask - 1;
+      const uint32_t v = on_turned_f32(x, y, k, c);
+      al[1 + ac++] = k;
+      on[k] = (uint8_t)v;
+      vl[1 + vc] = k;
+      vc += v;
+    } while (mask);
+  }
+  for (; i < n; i++) {
+    if (!active[i]) continue;
+    const uint32_t v = on_turned_f32(x, y, i, c);
+    al[1 + ac++] = i;
+    on[i] = (uint8_t)v;
+    vl[1 + vc] = i;
+    vc += v;
+  }
+  al[0] = ac;
+  vl[0] = vc;
+  return ac;
+}
