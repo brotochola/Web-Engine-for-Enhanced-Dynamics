@@ -18,6 +18,11 @@
  * edits in the main folder while the sitting runs (another session's, an agent's) cannot reach it;
  * `--vs X --hyp-rev X` is an A/A of two directories.
  *
+ * --query-a <q>, --query-b <q>: scene parameters for one side only, on top of --query (a key the side names
+ * replaces the shared one). Without --hyp-rev, both sides then run the --vs worktree: one build, one
+ * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=gpuPack` times the pack's
+ * JavaScript path against its kernel).
+ *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
  * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), if the frames
  * the page presents (main-thread FPS) drop ≥ 3 % in ≥ 75 % of the pairs, or a
@@ -294,6 +299,16 @@ export function predatorMetrics(report) {
   return out;
 }
 
+/** `--query` with one side's parameters on top: a key the side names replaces the shared one. */
+export function sideQuery(shared, side) {
+  const base = String(shared || '').replace(/^\?/, '');
+  if (!side) return base;
+  const out = new URLSearchParams(base);
+  for (const [k, v] of new URLSearchParams(String(side).replace(/^\?/, ''))) out.set(k, v);
+  // Lists stay readable (wasmOff=a,b); the page's URLSearchParams reads either form.
+  return out.toString().replace(/%2C/gi, ',');
+}
+
 function parseOverrides(raw) {
   const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
   const out = {};
@@ -319,6 +334,8 @@ function sittingStamp(scene, opts, args, baseline, hypSide = null) {
       warmupMs: opts.warmupMs,
       durationMs: opts.durationMs,
       query: opts.query,
+      queryA: opts.queryA,
+      queryB: opts.queryB,
       extraArgs: opts.extraArgs,
     },
     vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
@@ -606,6 +623,9 @@ async function main() {
     warmupMs: Number(args['warmup-ms'] ?? DEFAULT_WARMUP_MS),
     durationMs: Number(args['duration-ms'] ?? DEFAULT_DURATION_MS),
     query: typeof args.query === 'string' ? args.query : '',
+    // The query each side runs with (--query plus --query-a or --query-b).
+    queryA: sideQuery(typeof args.query === 'string' ? args.query : '', typeof args['query-a'] === 'string' ? args['query-a'] : ''),
+    queryB: sideQuery(typeof args.query === 'string' ? args.query : '', typeof args['query-b'] === 'string' ? args['query-b'] : ''),
     // Canvas size, forwarded as extra args rather than as new options.
     //
     // `runIntegratedOnce` already accepts `extraArgs` and forwards them verbatim,
@@ -659,8 +679,15 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   console.log(`baseline worktree ${baseline.root}`);
   // --hyp-rev <rev>: B from its own worktree, apart from the main folder (see the header).
   const hypSide = args['hyp-rev'] ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b' }) : null;
-  const hypRoot = hypSide ? hypSide.root : repoRoot;
+  // Per-side queries without --hyp-rev: B runs A's worktree, so the two sides are one build.
+  const perSide = opts.queryA !== opts.queryB;
+  if (perSide && !hypSide && !args.vs) {
+    throw new Error('--query-a/--query-b compare one build: pass --vs <rev> (both sides run its worktree), or --hyp-rev too.');
+  }
+  const hypRoot = hypSide ? hypSide.root : perSide ? baseline.root : repoRoot;
   if (hypSide) console.log(`hypothesis worktree ${hypSide.root}`);
+  else if (perSide) console.log('one build: both sides run the baseline worktree');
+  if (perSide) console.log(`side A query "${opts.queryA}", side B query "${opts.queryB}"`);
   // --append: add pairs to the previous sitting of the same hypothesis, only when
   // that sitting was measured the same way (review M9).
   const stamp = sittingStamp(scene, opts, args, baseline, hypSide);
@@ -684,7 +711,8 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     const order = p % 2 === 0 ? [['A', baseline.root], ['B', hypRoot]] : [['B', hypRoot], ['A', baseline.root]];
     for (const [side, root] of order) {
       console.log(`\n======== ${name} pair ${p + 1}/${first + nPairs} side ${side} ========`);
-      const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root });
+      const query = side === 'A' ? opts.queryA : opts.queryB;
+      const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root, query });
       if (!res.ok) throw new Error(`${side} p${p}: ${res.error}`);
       pair[side] = predatorMetrics(res.report);
     }

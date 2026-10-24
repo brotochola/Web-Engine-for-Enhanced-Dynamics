@@ -22,9 +22,9 @@ Plans, this document, records and reports are written in English, in full senten
 2. **The primary is the step of the worker that runs the changed code** (`STEP_MS`, minus `WAIT_MS` when
    it blocks), named before the run. Frame rate at a 60 Hz cap is never the primary; the frames the page
    presents are a guard on every sitting.
-3. **Both sides come from worktrees of committed revisions** (`--vs <base> --hyp-rev <rev>`), never from
-   the main folder, which ran slower than a worktree on the same code and is edited by other sessions
-   while sittings run.
+3. **Both sides come from worktrees of committed revisions** (`--vs <base> --hyp-rev <rev>`), or from one
+   worktree with a switch on one side (`--vs <rev> --query-a …`), never from the main folder, which ran
+   slower than a worktree on the same code and is edited by other sessions while sittings run.
 4. **Pairs, counterbalanced:** 4 pairs to start (AB, BA, AB, BA), 4 more with `--append` only when the
    first 4 do not decide. Detailed stats off. The window stays visible and unminimized.
 5. **The load must match:** every load key within 5 % and a coefficient of variation under 50 %, or the
@@ -297,8 +297,11 @@ verdict reads the median of those deltas.
   the window's exact mean (`STEP_MS − WAIT_MS`, plus `QUERY_WAKE_MS` on physics), with a median and a p95.
   A sitting whose base revision predates the totals falls back to the samples on both sides, and its
   printout says `(sampled)`. Read older numbers as samples.
-- **Same-build comparisons need two worktrees.** `--query` applies to both sides; there is no per-side
-  query, so a runtime switch (`wasm.*`, config keys) cannot yet be compared within one build.
+- **Same-build comparisons since 2026-10-24.** `--query-a` and `--query-b` add parameters to one side only;
+  without `--hyp-rev` both sides then run the `--vs` worktree, so a runtime switch (`wasmOff=<kernel>`, a
+  scene knob) is the only difference between them: no second directory, no side bias. Prefer it whenever
+  the change sits behind a switch. Multi-arm sittings (several configurations in one rotation) are not
+  built yet.
 - **Gates run headed.** Worker primaries would be as valid headless and leave the screen free; that is
   checked once before it changes.
 
@@ -307,8 +310,8 @@ Planned tools, each in its own commit before the measurements that use it:
 1. Running totals and a step histogram per worker, so a window is measured exactly (every frame, a mean
    and a p95): **built 2026-10-24** (`frameTotals.js`). Left: the 3 ms floor and the detection limits
    recalibrated from exact A/A sittings.
-2. Per-side queries (`--query-a`, `--query-b`) and multi-arm sittings on one build (all off, kernel 1,
-   kernel 2, all on), which also measure whether gains add up.
+2. Per-side queries (`--query-a`, `--query-b`): **built 2026-10-24**. Left: multi-arm sittings on one build
+   (all off, kernel 1, kernel 2, all on), which also measure whether gains add up.
 3. Headless gates for worker owners, once a same-build sitting per scene shows headless and headed agree.
 4. The sequential decision of [How a sitting decides](#how-a-sitting-decides) in the runner, reading the
    session's A/A for the detection limits.
@@ -389,6 +392,9 @@ MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name E-81 --vs <base> 
   --scene /demos/boidsScene/boidsScene.js --scene-export BoidsScene
 MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name E-81 --vs <base> --hyp-rev <rev> --owner spatial \
   --scene /demos/boidsScene/boidsScene.js --scene-export BoidsScene --append --pairs 4
+
+# One build, a switch on one side only (the kernel's JavaScript path on A, the kernel on B)
+node tests/bench/runPredatorAbab.mjs --name W9d --vs HEAD --query-a wasmOff=gpuPack --owner renderer --scene …
 
 # A throughput owner, a frame-rate owner
 node tests/bench/runPredatorAbab.mjs --name E-122 --vs <base> --hyp-rev <rev> --owner FLOWFIELDS_COMPUTED --scene …

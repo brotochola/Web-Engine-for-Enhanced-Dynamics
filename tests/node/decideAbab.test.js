@@ -226,3 +226,12 @@ test('decideAbab reads the exact primary only when every side of every pair has 
   assert.equal(d.kinds.preRender.baseMedian, 8);
   assert.equal(d.verdict, 'KEPT (product)');
 });
+
+test('sideQuery: a side\'s parameters on top of the shared query', async () => {
+  const { sideQuery } = await import('../../tests/bench/runPredatorAbab.mjs');
+  assert.equal(sideQuery('sprites=250000', ''), 'sprites=250000');
+  assert.equal(sideQuery('?sprites=250000', null), 'sprites=250000');
+  assert.equal(sideQuery('sprites=250000', 'wasmOff=gpuPack,shadowStamp'), 'sprites=250000&wasmOff=gpuPack,shadowStamp');
+  assert.equal(sideQuery('sprites=250000&wasmOff=gpuPack', 'wasmOff=shadowStamp'), 'sprites=250000&wasmOff=shadowStamp');
+  assert.equal(sideQuery('', 'wasmOff=gpuPack'), 'wasmOff=gpuPack');
+});
