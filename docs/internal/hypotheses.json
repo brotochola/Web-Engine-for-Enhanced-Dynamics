@@ -684,7 +684,8 @@
       "records": [
         "R-0582",
         "R-0587",
-        "R-0620"
+        "R-0620",
+        "R-0621"
       ]
     },
     {
@@ -910,7 +911,8 @@
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
       "records": [
-        "R-0602"
+        "R-0602",
+        "R-0621"
       ]
     },
     {
@@ -13571,6 +13573,21 @@
       "commits": [
         "dfffe49b",
         "25f118f1"
+      ]
+    },
+    {
+      "id": "R-0621",
+      "date": "2026-10-24",
+      "time": "19:34",
+      "timeFrom": "recorded",
+      "title": "The engine block without physics (the bullet tick and the visibility gather in WASM there), and spawns of RigidBody types without physics, close-out group B, E-76",
+      "verdict": "kept",
+      "text": "**kept (product), close-out group B, with an engine bug fixed on the way.**\n\n**The block (`d0b0528e`):** Phase 4's engine block (the render-queue regions, then the spatial ones) existed only in Box2D's memory. A scene without physics kept its render-queue and spatial memories apart, and the kernels that read both in one memory ran in JS: the bullet tick and the visibility gather. `standaloneBlock` lays the same two parts in a shared memory of its own after a null guard, `reserveBox2dBlock` takes it when there is no physics worker, and the spec lays the bullet and gather regions in it. In a block the collect now takes its own variant when it has no body variant; it took none before, which would have dropped the collect. `standaloneEngineBlock.test.js`: without physics the render-queue and spatial memories are the block's, with the bullet tick's regions, Transform and Collider in the first part and the grid in the second.\n\n**The bug (`d054b48e`):** a scene with physics off could not spawn a type with a RigidBody. The spawn reset wrote `vx`, `vy`, `angularVelocity` and `sleeping`, which only Box2D's heap binds, and logic threw \"Cannot set properties of undefined\" on the first spawn; that happened before this work too. `spawnNoPhysics.test.js` fails on the old reset. Measuring it took `bulletStressScene ?physics=0` (`eaf323ea`; collider-only props tried in `22090890` kept their RigidBody, since components are inherited, and were dropped again in `dd0f2459`).\n\n**The pair:** one build, side A `wasmOff=box2dBlock` (no block: separate memories and the JS tick, as before the change), 40 000 bullets, Chrome, headed, source, 4 pairs: particle **5.089 → 3.285 ms, −35.7 %, worse 0/4**, cv 4/1 %; pre-render −0.5 %; `VISIBLE_ENTITIES` and `ENTITIES_PROCESSED` equal; no page errors. A 4 s smoke had read the JS side at 31 ms while it warmed up.",
+      "commits": [
+        "eaf323ea",
+        "d0b0528e",
+        "d054b48e",
+        "dd0f2459"
       ]
     }
   ],
