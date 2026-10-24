@@ -12,7 +12,8 @@ import {
 
 // P4: reused across calls (single-threaded per worker module instance, same
 // non-reentrancy assumption as ParticleEmitter's other hot-path scratches).
-// Sized to the particle index type range (Uint16 free-list links).
+// Sized to the particle index type range (Uint16 free-list links). A pool past
+// 65 535 slots (E-129) passes lists of its own (particleClassifyLists).
 const _flatScratch = new Uint16Array(65536);
 const _heightedScratch = new Uint16Array(65536);
 const _physicsResult = { activeCount: 0, stampedCount: 0 };
@@ -32,6 +33,9 @@ const _listResult = { activeCount: 0, visibleCount: 0 };
  * @param {number} dtRatio
  * @param {boolean} decalsEnabled
  * @param {Uint16Array|null} particlesToStamp
+ * @param {Uint16Array|Uint32Array} [flatList] the classify scratch: the module's 16-bit lists unless given
+ *   (particleClassifyLists gives 32-bit ones for a pool past 65 535 slots)
+ * @param {Uint16Array|Uint32Array} [heightedList]
  * @returns {{ activeCount: number, stampedCount: number }}
  */
 export function updateParticlePhysicsBuffers(
@@ -42,6 +46,8 @@ export function updateParticlePhysicsBuffers(
   dtRatio,
   decalsEnabled,
   particlesToStamp,
+  flatList = _flatScratch,
+  heightedList = _heightedScratch,
 ) {
   const {
     active,
@@ -158,15 +164,15 @@ export function updateParticlePhysicsBuffers(
     }
 
     if (flat[i]) {
-      _flatScratch[flatCount++] = i;
+      flatList[flatCount++] = i;
     } else {
-      _heightedScratch[heightedCount++] = i;
+      heightedList[heightedCount++] = i;
     }
   }
 
   // Flat pass: XY + gravity on vy. No ground/floor/collision.
   for (let k = 0; k < flatCount; k++) {
-    const i = _flatScratch[k];
+    const i = flatList[k];
     vy[i] += gravity[i] * dtRatio;
     x[i] += vx[i] * dtRatio;
     y[i] += vy[i] * dtRatio;
@@ -175,7 +181,7 @@ export function updateParticlePhysicsBuffers(
   // Heighted pass: gravity + air / ground / floor fade / despawn.
   let heightedSurvivors = 0;
   for (let k = 0; k < heightedCount; k++) {
-    const i = _heightedScratch[k];
+    const i = heightedList[k];
 
     vz[i] += gravity[i] * dtRatio;
 
@@ -232,6 +238,18 @@ export function updateParticlePhysicsBuffers(
   _physicsResult.activeCount = flatCount + heightedSurvivors;
   _physicsResult.stampedCount = stampedCount;
   return _physicsResult;
+}
+
+/**
+ * E-129: updateParticlePhysicsBuffers' classify lists for a pool of `maxParticles` slots: the module's
+ * 16-bit lists up to 65 535 (what it takes when none are given), else 32-bit lists of the pool's size.
+ * @param {number} maxParticles
+ * @returns {[Uint16Array, Uint16Array] | [Uint32Array, Uint32Array]} the flat and heighted lists
+ */
+export function particleClassifyLists(maxParticles) {
+  const n = maxParticles | 0;
+  if (n <= 65535) return [_flatScratch, _heightedScratch];
+  return [new Uint32Array(n), new Uint32Array(n)];
 }
 
 /**
