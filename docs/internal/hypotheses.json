@@ -882,7 +882,10 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 16
+      "rank": 16,
+      "records": [
+        "R-0601"
+      ]
     },
     {
       "id": "W2b",
@@ -13249,6 +13252,13 @@
         "0acb17c6",
         "f20949e6"
       ]
+    },
+    {
+      "id": "R-0601",
+      "date": "2026-10-24",
+      "title": "Contact classification on its owner scene: the dispatch stays JS, the generation check is the port's ceiling, W18 Q1b",
+      "verdict": "note",
+      "text": "**note (Q1b on the owner scene).** One headed CPU trace each, source, detailed stats off, 8 s window after 6 s.\n\n| scene | logic busy | `_processBox2dCollisionCallbacks` self | the game's `onCollisionStay` |\n|---|---|---|---|\n| `ContactDrainStressScene` (2 048 balls) | 42 ms/s | 65.4 % | 11.7 % |\n| `ContactDrainHuntScene` (4 096 balls; logic0 STEP 5.36 ms) | 332 ms/s | 62.8 % | 31.8 % |\n\nThe default scene is under the floor, so the hunt scene is the owner. Inside the function, by line (hunt scene):\n- 39 % and 16 % on the two dispatch lines (`gameObjects[minE]?.onCollisionStay(maxE)` and its mirror);\n- 35 % on the generation check (`Atomics.load(gen, minE)` and `maxE`, two random entities per pair);\n- 3 % and 2 % on the listen flags.\n\nA C classification cannot take the dispatch: the callbacks are game code and stay JS, so a kernel would hand back a list the JS still walks and calls. What it could take is the generation check and the bookkeeping, at most about 40 % of the function: about a quarter of logic in the hunt scene, and 1 to 1.5 % of Predator's (Q1's 2.6 to 3.7 % ceiling). The generation check reads two scattered words per pair, which C would also wait on.\n\nNext, before any port: a JS screen of that line on `contactsMicrobench` (a plain read of `gen`, or the generations copied beside the pair slots). It is cheaper, it tells whether the line is the load or the memory, and the port's ceiling follows from it."
     }
   ],
   "leads": [
