@@ -204,7 +204,10 @@
         "bullet_tick",
         "bullet_tick_hoist",
         "bullet_tick_nostamp",
-        "bullet_tick_lean"
+        "bullet_tick_lean",
+        "bullet_tick_lean_ids32",
+        "bullet_tick_lean_slots32",
+        "bullet_tick_lean_u32"
       ],
       "maxMemoryPages": 32768
     },

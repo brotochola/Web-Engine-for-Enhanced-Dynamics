@@ -4,6 +4,7 @@
 // chain is handed back for the JS tick.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
+import { entityIdBytes } from '../util/entityIdWidth.js';
 import { ShapeType } from '../box2d/box2dConstants.js';
 import { BULLET_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
 
@@ -41,7 +42,16 @@ if (ShapeType.Box !== 0 || ShapeType.Circle !== 1 || ShapeType.Polygon !== 2 || 
  */
 export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIANT) {
   if (!BULLET_TICK_VARIANTS.includes(variant)) throw new Error(`bulletTick: no variant ${variant}`);
-  const k = await loadWasmKernel('bulletTick', wasmUrl, memory, BULLET_TICK_VARIANTS);
+  // 32-bit entity ids (the grid's ids, the owners) and a pool past 65 535 bullets (the active list) take the lean
+  // tick's 32-bit forms; the other variants are 16-bit (benches).
+  const wideIds = entityIdBytes() === 4;
+  const wideSlots = (layout.bullets | 0) > 65535;
+  let name = variant;
+  if (wideIds || wideSlots) {
+    if (variant !== 'bullet_tick_lean') throw new Error(`bulletTick: ${variant} has no 32-bit form`);
+    name = wideIds && wideSlots ? 'bullet_tick_lean_u32' : wideIds ? 'bullet_tick_lean_ids32' : 'bullet_tick_lean_slots32';
+  }
+  const k = await loadWasmKernel('bulletTick', wasmUrl, memory, [...BULLET_TICK_VARIANTS, name]);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, layout.tableByte, BULLET_TICK_SLOTS.length);
   table[SLOT.results] = layout.resultsByte;
@@ -52,14 +62,15 @@ export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIA
   table[SLOT.gGen] = 0;
   return {
     buffer,
-    tick: k[variant],
+    tick: k[name],
+    wideIds,
     table,
     tableByte: layout.tableByte,
     results: new Int32Array(buffer, layout.resultsByte, 4),
     returned: new Uint32Array(buffer, layout.returnedByte, layout.bullets),
     stamp: new Uint32Array(buffer, layout.stampByte, layout.entities),
     // The active list ([0] unused here: the count is results[0] - 1) and the impacts, 6 floats each.
-    activeOut: new Uint16Array(buffer, layout.activeByte, layout.bullets + 1),
+    activeOut: new (wideSlots ? Uint32Array : Uint16Array)(buffer, layout.activeByte, layout.bullets + 1),
     impacts: new Float32Array(buffer, layout.impactsByte, layout.impacts * 6),
     impactCap: layout.impacts | 0,
   };
@@ -67,7 +78,7 @@ export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIA
 
 /**
  * The column table for this frame. False when a column the tick reads or writes is not in the memory (or the
- * grid's ids or the owners are not 16-bit), and the JS tick runs instead.
+ * grid's ids or the owners are not at the bound width), and the JS tick runs instead.
  */
 export function writeBulletColumns(b, BulletComponent, Transform, Collider, Grid) {
   const t = b.table;
@@ -97,7 +108,8 @@ export function writeBulletColumns(b, BulletComponent, Transform, Collider, Grid
   put('bDamage', bc.damage, true);
   put('bOwner', bc.ownerId, true);
   put('bShooter', bc.shooterEntityType, true);
-  if (!(bc.ownerId instanceof Uint16Array)) ok = false;
+  const Ids = b.wideIds ? Uint32Array : Uint16Array;
+  if (!(bc.ownerId instanceof Ids)) ok = false;
   put('tActive', Transform.active, true);
   put('tX', Transform.x, true);
   put('tY', Transform.y, true);
@@ -118,7 +130,7 @@ export function writeBulletColumns(b, BulletComponent, Transform, Collider, Grid
   put('cPnx', Collider.polyNormalX, true);
   put('cPny', Collider.polyNormalY, true);
   const counts = Grid._gridCounts;
-  if (!counts || counts.buffer !== buffer || !(Grid._gridEntities instanceof Uint16Array)) ok = false;
+  if (!counts || counts.buffer !== buffer || !(Grid._gridEntities instanceof Ids)) ok = false;
   else t[SLOT.gGrid] = counts.byteOffset;
   return ok;
 }

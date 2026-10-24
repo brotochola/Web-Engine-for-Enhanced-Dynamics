@@ -236,7 +236,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
     if (b) {
       regions.push(
         { name: 'bulletComponent', owner: 'every worker (BulletComponent)', bytes: b.componentBytes | 0 },
-        { name: 'bulletActive', owner: 'particle', bytes: ((b.bullets | 0) + 1) * 2 },
+        // The active list at the pool's slot width (u32 past 65 535 bullets).
+        { name: 'bulletActive', owner: 'particle', bytes: ((b.bullets | 0) + 1) * ((b.bullets | 0) > 65535 ? 4 : 2) },
         { name: 'bulletImpacts', owner: 'particle', bytes: (b.impacts | 0) * 6 * 4 },
         { name: 'bulletReturned', owner: 'particle', bytes: (b.bullets | 0) * 4 },
         { name: 'bulletStamp', owner: 'particle', bytes: (b.entities | 0) * 4 },

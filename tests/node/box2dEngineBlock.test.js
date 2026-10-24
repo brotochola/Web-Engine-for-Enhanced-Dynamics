@@ -227,7 +227,7 @@ test('the block plan sizes the spatial part after the render-queue part', () => 
   assert.equal(withSpatial.bytes, withSpatial.queueBytes + withSpatial.spatialBytes);
 });
 
-test('W19: with physics the bodies part carries the bullet tick regions, for a 16-bit pool with the spatial grid', async () => {
+test('W19: with physics the bodies part carries the bullet tick regions, for any pool with the spatial grid', async () => {
   const { renderQueueMemorySpec } = await import('../../src/util/sceneSharedBuffers.js');
   const { Transform } = await import('../../src/components/transform.js');
   const { RigidBody } = await import('../../src/components/rigidBody.js');
@@ -256,7 +256,8 @@ test('W19: with physics the bodies part carries the bullet tick regions, for a 1
   assert.equal(b.bullets, 4000);
   assert.equal(b.impacts, 128);
   assert.equal(renderQueueMemorySpec(scene({ wasm: { bulletTick: false } })).collect, null, 'the switch off');
-  assert.equal(renderQueueMemorySpec(scene({ maxBullets: 70000 })).collect, null, 'a 32-bit pool keeps the JS');
+  // Past 65 535 bullets the kernel's 32-bit form runs (close-out group B): the regions are laid for it too.
+  assert.equal(renderQueueMemorySpec(scene({ maxBullets: 70000 })).collect?.bullets?.bullets, 70000, 'a 32-bit pool gets the kernel');
   assert.equal(renderQueueMemorySpec(scene({ spatial: 0 })).collect, null, 'no spatial grid, no cast');
   assert.equal(renderQueueMemorySpec(scene({ wasm: { box2dBlock: false } })).collect, null, 'no block');
 

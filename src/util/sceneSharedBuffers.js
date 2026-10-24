@@ -572,9 +572,9 @@ export function renderQueueMemorySpec(scene) {
   const physics = config.physics?.enabled !== false;
   const inBlock = physics && config.wasm?.box2dBlock !== false && Boolean(pools.RigidBody?.ComponentClass);
   // W19: the bullet tick reads the pool, Transform, Collider and the spatial grid in Box2D's block, so with
-  // physics its regions ride with these blocks; a 16-bit pool only (its lists are u16).
+  // physics its regions ride with these blocks; any pool size and id width (the kernel's _u32 forms).
   const maxBullets = config.bullet?.maxBullets | 0;
-  const bullets = inBlock && config.wasm?.bulletTick !== false && maxBullets > 0 && maxBullets <= 65535
+  const bullets = inBlock && config.wasm?.bulletTick !== false && maxBullets > 0
     && spatialPublishSpec(scene) !== null
     ? {
         bullets: maxBullets,

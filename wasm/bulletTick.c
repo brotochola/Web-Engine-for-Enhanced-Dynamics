@@ -7,21 +7,23 @@
    Arithmetic as the JS does it: doubles from float32 inputs, each value stored as the typed array stores it.
    A bullet whose cast meets a compound polygon or a chain goes back to the JS (its fixtures and chain points
    stay there): the tick stops before writing anything for it and returns its position; the JS ticks that one
-   bullet and calls again from the next. */
+   bullet and calls again from the next. The shipped lean variant also comes in 32-bit forms (close-out group B):
+   _ids32 when entity ids are 32-bit (the grid's ids and the owners), _slots32 past 65 535 bullets (the active list),
+   _u32 both. */
 #include <stdint.h>
 
 #define INLINE static inline __attribute__((always_inline))
 
 enum {
   B_ACTIVE, B_X, B_Y, B_PREV_X, B_PREV_Y, B_VX, B_VY, B_SPEED, B_ROT_C, B_ROT_S, B_DAMAGE, B_OWNER, B_SHOOTER,
-  O_ACTIVE,    /* the active list, u16: [0] the count, then the bullets that stay */
+  O_ACTIVE,    /* the active list, u16 (u32 with wideSlots): [0] the count, then the bullets that stay */
   O_IMPACTS,   /* f32 × 6 per impact: entity, damage, x, y, owner, shooter type */
   O_RETURNED,  /* u32: the bullets that hit, in the walk's order, for returnToPool */
   R_RESULTS,   /* i32: [0] the active list's next slot, [1] impacts written, [2] their cap, [3] returned */
   T_ACTIVE, T_X, T_Y, T_ROT_C, T_ROT_S,
   C_ACTIVE, C_SHAPE, C_LAYER, C_OFF_X, C_OFF_Y, C_RADIUS, C_WIDTH, C_HEIGHT,
   C_POLY_COUNT, C_FIXTURE_COUNT, C_PVX, C_PVY, C_PNX, C_PNY,
-  G_GRID,      /* the grid's first cell: [count:u8, pad:3, ids:u16 × maxEntitiesPerCell] per cell */
+  G_GRID,      /* the grid's first cell: [count:u8, pad:3, ids × maxEntitiesPerCell] per cell (u16, u32 with wideIds) */
   G_STAMP,     /* u32 per entity: the ray that last tested it (Ray._rayGenStamp's role) */
   G_GEN,       /* a value: the last ray's number, kept here between calls */
   SLOT_COUNT
@@ -172,7 +174,7 @@ INLINE double shape_distance(const world_t *w, const ray_t *r, uint32_t e, doubl
 
 /* _traverseGrid with _checkCellEntities: the closest hit's entity (-1 for none, -2 when the JS must cast) and its
    distance in *dist. */
-INLINE int32_t cast(const world_t *w, const ray_t *r, int32_t excludeA, double *dist, const int hoist,
+INLINE int32_t cast(const world_t *w, const ray_t *r, int32_t excludeA, double *dist, const int hoist, const int wideIds,
                     const int stamps) {
   uint32_t gen = 0;
   if (stamps) {
@@ -220,11 +222,12 @@ INLINE int32_t cast(const world_t *w, const ray_t *r, int32_t excludeA, double *
       const uint32_t cellIndex = (uint32_t)cy * (uint32_t)cols + (uint32_t)cx;
       const uint8_t *c = w->grid + (uintptr_t)cellIndex * w->cellByteSize;
       const uint32_t count = c[0];
-      const uint16_t *ids = (const uint16_t *)(c + 4);
+      const uint16_t *ids16 = (const uint16_t *)(c + 4);
+      const uint32_t *ids32 = (const uint32_t *)(c + 4);
       int32_t cellHit = -1;
       double cellDist = closestDist;
       for (uint32_t k = 0; k < count; k++) {
-        const uint32_t e = ids[k];
+        const uint32_t e = wideIds ? ids32[k] : (uint32_t)ids16[k];
         /* The stamps only skip a test: a repeated test gives the same distance, which is not closer. */
         if (stamps) {
           if (w->stamp[e] == gen) continue;
@@ -266,7 +269,7 @@ INLINE int32_t cast(const world_t *w, const ray_t *r, int32_t excludeA, double *
    ray; stamps: skip an entity a ray already tested (Ray._rayGenStamp). Every variant writes the same bytes. */
 INLINE uint32_t tick(uint32_t table, uint32_t from, uint32_t count, double dt, double invCellSize, double cellSize,
                      int32_t gridCols, int32_t gridRows, uint32_t cellByteSize, int32_t rayMask, const int hoist,
-                     const int stamps) {
+                     const int stamps, const int wideIds, const int wideSlots) {
   uint32_t *t = (uint32_t *)(uintptr_t)table;
   uint8_t *active = PTR(uint8_t, B_ACTIVE);
   float *x = PTR(float, B_X);
@@ -279,9 +282,13 @@ INLINE uint32_t tick(uint32_t table, uint32_t from, uint32_t count, double dt, d
   const float *rotC = PTR(const float, B_ROT_C);
   const float *rotS = PTR(const float, B_ROT_S);
   const float *damage = PTR(const float, B_DAMAGE);
-  const uint16_t *owner = PTR(const uint16_t, B_OWNER);
+  const uint16_t *owner16 = PTR(const uint16_t, B_OWNER);
+  const uint32_t *owner32 = PTR(const uint32_t, B_OWNER);
+  /* Read where the 16-bit tick always read it, so that tick compiles as it did. */
+#define OWNER(i) (wideIds ? owner32[i] : (uint32_t)owner16[i])
   const uint8_t *shooter = PTR(const uint8_t, B_SHOOTER);
-  uint16_t *activeOut = PTR(uint16_t, O_ACTIVE);
+  uint16_t *activeOut16 = PTR(uint16_t, O_ACTIVE);
+  uint32_t *activeOut32 = PTR(uint32_t, O_ACTIVE);
   float *impacts = PTR(float, O_IMPACTS);
   uint32_t *returned = PTR(uint32_t, O_RETURNED);
   int32_t *res = PTR(int32_t, R_RESULTS);
@@ -335,7 +342,7 @@ INLINE uint32_t tick(uint32_t table, uint32_t from, uint32_t count, double dt, d
         r.invX = rdx != 0 ? 1 / rdx : INF;
         r.invY = rdy != 0 ? 1 / rdy : INF;
       }
-      hit = cast(&w, &r, owner[i], &distance, hoist, stamps);
+      hit = cast(&w, &r, (int32_t)OWNER(i), &distance, hoist, wideIds, stamps);
       if (hit == -2) {
         res[0] = activeWrite;
         res[1] = impactWrite;
@@ -355,7 +362,7 @@ INLINE uint32_t tick(uint32_t table, uint32_t from, uint32_t count, double dt, d
         o[1] = damage[i];
         o[2] = (float)(px + dx * tt);
         o[3] = (float)(py + dy * tt);
-        o[4] = (float)owner[i];
+        o[4] = (float)OWNER(i);
         o[5] = (float)shooter[i];
         impactWrite++;
       }
@@ -363,7 +370,8 @@ INLINE uint32_t tick(uint32_t table, uint32_t from, uint32_t count, double dt, d
       returned[back++] = i;
       continue;
     }
-    activeOut[activeWrite++] = (uint16_t)i;
+    if (wideSlots) activeOut32[activeWrite++] = i;
+    else activeOut16[activeWrite++] = (uint16_t)i;
   }
   res[0] = activeWrite;
   res[1] = impactWrite;
@@ -371,9 +379,18 @@ INLINE uint32_t tick(uint32_t table, uint32_t from, uint32_t count, double dt, d
   return count;
 }
 
-#define BULLET_TICK(name, hoist, stamps)                                                                           __attribute__((export_name(#name))) uint32_t name(uint32_t table, uint32_t from, uint32_t count, double dt,                                                       double invCellSize, double cellSize, int32_t gridCols,                                                          int32_t gridRows, uint32_t cellByteSize, int32_t rayMask) {     return tick(table, from, count, dt, invCellSize, cellSize, gridCols, gridRows, cellByteSize, rayMask,                      hoist, stamps);                                                                                  }
+#define BULLET_TICK(name, hoist, stamps, wideIds, wideSlots)                                                  \
+  __attribute__((export_name(#name))) uint32_t name(uint32_t table, uint32_t from, uint32_t count, double dt,      \
+                                                    double invCellSize, double cellSize, int32_t gridCols,         \
+                                                    int32_t gridRows, uint32_t cellByteSize, int32_t rayMask) {    \
+    return tick(table, from, count, dt, invCellSize, cellSize, gridCols, gridRows, cellByteSize, rayMask,         \
+                hoist, stamps, wideIds, wideSlots);                                                               \
+  }
 
-BULLET_TICK(bullet_tick, 0, 1)
-BULLET_TICK(bullet_tick_hoist, 1, 1)
-BULLET_TICK(bullet_tick_nostamp, 0, 0)
-BULLET_TICK(bullet_tick_lean, 1, 0)
+BULLET_TICK(bullet_tick, 0, 1, 0, 0)
+BULLET_TICK(bullet_tick_hoist, 1, 1, 0, 0)
+BULLET_TICK(bullet_tick_nostamp, 0, 0, 0, 0)
+BULLET_TICK(bullet_tick_lean, 1, 0, 0, 0)
+BULLET_TICK(bullet_tick_lean_ids32, 1, 0, 1, 0)
+BULLET_TICK(bullet_tick_lean_slots32, 1, 0, 0, 1)
+BULLET_TICK(bullet_tick_lean_u32, 1, 0, 1, 1)

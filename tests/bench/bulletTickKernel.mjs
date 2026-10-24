@@ -3,7 +3,8 @@
  *
  * `bulletWorld` lays every column BulletPool.tick and its Ray.linecastDir read and write in one shared
  * WebAssembly.Memory, as Phase 4's block holds them: the bullets, Transform, Collider, the spatial grid (16-bit
- * ids), and the kernel's own regions (the active list and impacts it writes, the returned list, its stamps,
+ * ids, or 32-bit with `idBytes` 4, the owners too), and the kernel's own regions (the active list at the pool's
+ * slot width: u32 past 65 535 bullets) (the active list and impacts it writes, the returned list, its stamps,
  * results and table). It binds them where the shipped code reads them, so BulletPool.tick runs the JS on the
  * same bytes the kernel reads; `bind` points them back at this world.
  */
@@ -18,15 +19,17 @@ const MAX_POLYGON_VERTICES = 8;
 
 /**
  * @param {{ bullets: number, entities: number, cols: number, rows: number, cellSize: number, perCell: number,
- *   impacts: number }} size
+ *   impacts: number, idBytes?: number }} size
  */
-export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, impacts }) {
-  const cellByteSize = 4 + perCell * 2;
+export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, impacts, idBytes = 2 }) {
+  const Ids = idBytes === 4 ? Uint32Array : Uint16Array;
+  const Slots = bullets > 65535 ? Uint32Array : Uint16Array;
+  const cellByteSize = 4 + perCell * idBytes;
   const parts = [
     ['bActive', Uint8Array, bullets], ['bX', Float32Array, bullets], ['bY', Float32Array, bullets],
     ['bPrevX', Float32Array, bullets], ['bPrevY', Float32Array, bullets], ['bVx', Float32Array, bullets],
     ['bVy', Float32Array, bullets], ['bSpeed', Float32Array, bullets], ['bRotC', Float32Array, bullets],
-    ['bRotS', Float32Array, bullets], ['bDamage', Float32Array, bullets], ['bOwner', Uint16Array, bullets],
+    ['bRotS', Float32Array, bullets], ['bDamage', Float32Array, bullets], ['bOwner', Ids, bullets],
     ['bShooter', Uint8Array, bullets],
     ['tActive', Uint8Array, entities], ['tX', Float32Array, entities], ['tY', Float32Array, entities],
     ['tRotC', Float32Array, entities], ['tRotS', Float32Array, entities],
@@ -37,7 +40,7 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
     ['cPvx', Float32Array, entities * MAX_POLYGON_VERTICES], ['cPvy', Float32Array, entities * MAX_POLYGON_VERTICES],
     ['cPnx', Float32Array, entities * MAX_POLYGON_VERTICES], ['cPny', Float32Array, entities * MAX_POLYGON_VERTICES],
     ['grid', Uint8Array, cols * rows * cellByteSize],
-    ['activeOut', Uint16Array, bullets + 1], ['impacts', Float32Array, impacts * 6],
+    ['activeOut', Slots, bullets + 1], ['impacts', Float32Array, impacts * 6],
     ['returned', Uint32Array, bullets], ['stamp', Uint32Array, entities],
     ['results', Int32Array, 4], ['table', Uint32Array, BULLET_TICK_SLOTS.length],
   ];
@@ -95,10 +98,10 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
     Grid.totalCells = cols * rows;
     Grid.maxEntitiesPerCell = perCell;
     Grid.cellByteSize = cellByteSize;
-    Grid._cellIdStride = cellByteSize / 2;
-    Grid._headerIds = 2;
+    Grid._cellIdStride = cellByteSize / idBytes;
+    Grid._headerIds = 4 / idBytes;
     Grid._gridCounts = v.grid;
-    Grid._gridEntities = new Uint16Array(memory.buffer, offsets.grid, (cols * rows * cellByteSize) / 2);
+    Grid._gridEntities = new Ids(memory.buffer, offsets.grid, (cols * rows * cellByteSize) / idBytes);
     BulletPool.maxCount = bullets;
   };
   bind();
@@ -114,7 +117,7 @@ export function bulletWorld({ bullets, entities, cols, rows, cellSize, perCell, 
         const cell = r * cols + c;
         const n = v.grid[cell * cellByteSize];
         if (n >= perCell) continue;
-        Grid._gridEntities[cell * (cellByteSize / 2) + 2 + n] = e;
+        Grid._gridEntities[cell * (cellByteSize / idBytes) + 4 / idBytes + n] = e;
         v.grid[cell * cellByteSize] = n + 1;
       }
     }

@@ -9,6 +9,7 @@ import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { Grid } from '../../src/core/grid.js';
 import { BULLET_TICK_VARIANTS, readyBulletStamps, writeBulletColumns } from '../../src/core/bulletTickClient.js';
+import { bindEntityIdWidth } from '../../src/util/entityIdWidth.js';
 
 // E-76 W19, the bullet tick kernel (wasm/bulletTick.c). On the same bytes, one bullet_tick over the pool must
 // leave the bullets, the active list, the impact records and the order of the returned slots exactly as the
@@ -16,9 +17,10 @@ import { BULLET_TICK_VARIANTS, readyBulletStamps, writeBulletColumns } from '../
 // chain is handed back at its position.
 
 const SIZE = { bullets: 4000, entities: 1500, cols: 24, rows: 16, cellSize: 128, perCell: 96, impacts: 256 };
+const SIZE_16 = SIZE;
 const SHAPES = { box: 0, circle: 1, polygon: 2, chain: 3 };
 
-function fill(w, seed, { odd = false } = {}) {
+function fill(w, seed, { odd = false } = {}, SIZE = SIZE_16) {
   const rng = mulberry32(seed);
   const v = w.views;
   const W = SIZE.cols * SIZE.cellSize;
@@ -116,16 +118,17 @@ function state(w, active, impacts, nImpacts, returned) {
   };
 }
 
-async function compare(seed, { dtRatio = 1, odd = false, variant } = {}) {
+async function compare(seed, { dtRatio = 1, odd = false, variant, size = SIZE } = {}) {
+  const SIZE = size;
   const w = bulletWorld(SIZE);
-  fill(w, seed, { odd });
+  fill(w, seed, { odd }, SIZE);
   const start = save(w);
   const realReturn = BulletPool.returnToPool;
   try {
     // JS: the shipped tick.
     const jsReturned = [];
     BulletPool.returnToPool = (i) => jsReturned.push(i);
-    const activeJs = new Uint16Array(SIZE.bullets + 1);
+    const activeJs = new (SIZE.bullets > 65535 ? Uint32Array : Uint16Array)(SIZE.bullets + 1);
     const header = new Int32Array(2);
     const impactsJs = new Float32Array(SIZE.impacts * 6);
     BulletPool.tick(dtRatio, activeJs, header, impactsJs, SIZE.impacts);
@@ -145,7 +148,7 @@ async function compare(seed, { dtRatio = 1, odd = false, variant } = {}) {
       Grid.gridWidth, Grid.gridHeight, Grid.cellByteSize, -1);
     w.views.activeOut[0] = res[0] - 1;
     const wasm = state(w, w.views.activeOut, w.views.impacts, res[1], Array.from(b.returned.subarray(0, res[3])));
-    return { js, wasm, stop, header };
+    return { js, wasm, stop, header, b };
   } finally {
     BulletPool.returnToPool = realReturn;
   }
@@ -158,6 +161,34 @@ test('bullet_tick leaves the bullets, the active list, the impacts and the retur
     assert.ok(js.returned.length > 50, `the case hits (${js.returned.length})`);
     assert.ok(header[0] > 10, 'impacts were written');
     assert.deepEqual(wasm, js);
+  }
+});
+
+// Close-out group B: the lean tick's 32-bit forms. Entity ids past 65 535 (32-bit grid ids and owners), a pool
+// past 65 535 bullets (a 32-bit active list), and both: the same bytes as BulletPool.tick.
+test('the 32-bit forms of bullet_tick_lean leave what BulletPool.tick leaves', async () => {
+  const cases = [
+    ['ids32', { ...SIZE, entities: 70000, cols: 96, rows: 64, idBytes: 4 }],
+    ['slots32', { ...SIZE, bullets: 70000 }],
+    ['u32', { ...SIZE, entities: 70000, bullets: 70000, cols: 96, rows: 64, idBytes: 4 }],
+  ];
+  try {
+    for (const [label, size] of cases) {
+      bindEntityIdWidth(size.idBytes === 4 ? 32 : 16);
+      const { js, wasm, stop, header, b } = await compare(41, { size, variant: 'bullet_tick_lean' });
+      assert.equal(b.wideIds, size.idBytes === 4, `${label}: the 32-bit ids`);
+      assert.equal(b.activeOut.BYTES_PER_ELEMENT, size.bullets > 65535 ? 4 : 2, `${label}: the active list's width`);
+      assert.equal(stop, size.bullets, `${label}: no bullet went back to the JS`);
+      assert.ok(js.returned.length > 50, `${label}: the case hits (${js.returned.length})`);
+      assert.ok(header[0] > 10, `${label}: impacts were written`);
+      if (size.idBytes === 4) {
+        const owners = Array.from(js.impacts.length ? new Float32Array(new Uint32Array(js.impacts).buffer) : []);
+        assert.ok(owners.some((v, k) => k % 6 === 0 && v > 65535), `${label}: an entity past 65 535 was hit`);
+      }
+      assert.deepEqual(wasm, js, label);
+    }
+  } finally {
+    bindEntityIdWidth(16);
   }
 });
 

@@ -202,9 +202,10 @@ export class BulletPool extends SharedAtomicPool {
    */
   static tick(dtRatio, activeData, impactHeader, impactData, maxImpacts, opts) {
     // W19: the kernel takes the frame when it is bound, the call is the worker's own (no kernel options), the
-    // lists are 16-bit, its impact region holds the cap, and every column is in its memory.
+    // pool's list is at the kernel's width, its impact region holds the cap, and every column is in its memory.
     const k = this._wasm;
-    if (k !== null && opts === undefined && activeData instanceof Uint16Array && (maxImpacts | 0) <= k.impactCap
+    if (k !== null && opts === undefined && activeData.BYTES_PER_ELEMENT === k.activeOut.BYTES_PER_ELEMENT
+      && (maxImpacts | 0) <= k.impactCap
       && writeBulletColumns(k, BulletComponent, Transform, Collider, Grid)) {
       return this._tickWasm(dtRatio, activeData, impactHeader, impactData, maxImpacts);
     }
