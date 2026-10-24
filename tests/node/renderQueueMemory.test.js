@@ -7,7 +7,7 @@ import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { GPU_PACK_COLUMNS } from '../../src/render/gpuPackClient.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
-import { EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_TABLE_SLOTS, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
+import { EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_TABLE_SLOTS, STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS, SWAY_LIST_CAP, SWAY_TABLE_SLOTS } from '../../src/util/wasmMemoryMap.js';
 
 // E-76 W9: the render queue's and the GPU queue's buffers as regions of one shared memory. Every
 // view a worker makes from the payload's (buffer, byte) pairs lies in its own region.
@@ -179,4 +179,42 @@ test('with the stamp spec, the shadow stamp scratch and light table are regions 
     assert.ok(at + bytes <= m.buffer.byteLength, `${name} fits`);
     if (k > 0) assert.ok(at >= spans[k - 1][1] + spans[k - 1][2], `${name} overlaps ${spans[k - 1][0]}`);
   }
+});
+
+test("with the sway spec, the particle worker's sway arrays are regions of their own (W22)", () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const d = 1500;
+  const k = 100;
+  const emit = { entities: 300, spriteBytes: 0, casterBytes: 0, decorationBytes: DecorationComponent.getBufferSize(d) };
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, emit, null, { decorations: d, buckets: k });
+  const L = m.layout;
+  const w = L.sway;
+  assert.equal(w.decorations, d);
+  assert.equal(w.buckets, k);
+  assert.equal(w.listCap, SWAY_LIST_CAP);
+  const spans = [
+    ['queueA', L.queueAByte, queueBytes],
+    ['queueB', L.queueBByte, queueBytes],
+    ['decorations', L.emit.decorationByte, emit.decorationBytes],
+    ['snapshot', w.snapshotByte, d * 2],
+    ['phaseSin', w.phaseSinByte, d * 4],
+    ['phaseCos', w.phaseCosByte, d * 4],
+    ['bucketSin', w.bucketSinByte, k * 4],
+    ['bucketCos', w.bucketCosByte, k * 4],
+    ['bucketOf', w.bucketOfByte, d * 2],
+    ['bucketFreq', w.bucketFreqByte, d * 4],
+    ['list', w.listByte, SWAY_LIST_CAP * 2],
+    ['trig', w.trigByte, d * 4],
+    ['trigValue', w.trigValueByte, d * 8],
+    ['table', w.tableByte, SWAY_TABLE_SLOTS * 4],
+  ].sort((a, b) => a[1] - b[1]);
+  for (let i = 0; i < spans.length; i++) {
+    const [name, at, bytes] = spans[i];
+    assert.equal(at % 64, 0, `${name} starts on a line`);
+    assert.ok(at + bytes <= m.buffer.byteLength, `${name} fits`);
+    if (i > 0) assert.ok(at >= spans[i - 1][1] + spans[i - 1][2], `${name} overlaps ${spans[i - 1][0]}`);
+  }
+  assert.equal(createRenderQueueMemory(MAX, queueBytes, gpuBytes, emit).layout.sway, null, 'no spec, no regions');
 });

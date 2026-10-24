@@ -80,14 +80,20 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * rows where the GPU queues hold them), its scratch: the candidates, their distances, order and the kept
  * list (one entry per sun caster each), the stamp grid's counts, starts and items, the nearest lights per
  * caster (maxShadowsPerEntity slots each), the light table (five doubles a light) and its column table.
+ * With `sway` (W22, the decoration sway `decorationSway.wasm`, which the particle worker runs on the
+ * decorations block above), the particle worker's sway arrays: the frame's active snapshot (u16), the
+ * phase tables (f32 per decoration), this frame's sin and cos per bucket (f32), the bucket cache (u16
+ * bucket, f32 frequency per decoration), the kernel's chunk list (u16), its trig list (u32 entries, f64
+ * values, one per decoration at most) and its column table.
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {number} maxItems the queue's rows
  * @param {number} tableBytes packTables' size
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number }} [emit]
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp]
+ * @param {null | { decorations: number, buckets: number }} [sway]
  */
-export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null) {
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null) {
   const n = maxItems | 0;
   const regions = [
     { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
@@ -146,8 +152,30 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampTable', owner: 'pre-render', bytes: STAMP_TABLE_SLOTS * 4 },
     );
   }
+  if (sway) {
+    const d = sway.decorations | 0;
+    const k = sway.buckets | 0;
+    regions.push(
+      { name: 'swaySnapshot', owner: 'particle', bytes: d * 2 },
+      { name: 'swayPhaseSin', owner: 'particle', bytes: d * 4 },
+      { name: 'swayPhaseCos', owner: 'particle', bytes: d * 4 },
+      { name: 'swayBucketSin', owner: 'particle', bytes: k * 4 },
+      { name: 'swayBucketCos', owner: 'particle', bytes: k * 4 },
+      { name: 'swayBucketOf', owner: 'particle', bytes: d * 2 },
+      { name: 'swayBucketFreq', owner: 'particle', bytes: d * 4 },
+      { name: 'swayList', owner: 'particle', bytes: SWAY_LIST_CAP * 2 },
+      { name: 'swayTrig', owner: 'particle', bytes: d * 4 },
+      { name: 'swayTrigValue', owner: 'particle', bytes: d * 8 },
+      { name: 'swayTable', owner: 'particle', bytes: SWAY_TABLE_SLOTS * 4 },
+    );
+  }
   return layoutRegions(regions);
 }
+
+/** The decorations the sway kernel lets through its early continues at a time (its chunk list). */
+export const SWAY_LIST_CAP = 1024;
+/** Room for the sway kernel's column table (decorationSwayClient.js SWAY_SLOTS). */
+export const SWAY_TABLE_SLOTS = 32;
 
 /** The stamp grid's cells: gpuShadowCasters.js's STAMP_GRID_MAX_CELLS, the length of its counts array. */
 export const STAMP_GRID_CELLS = 128 * 128;

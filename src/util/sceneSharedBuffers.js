@@ -511,6 +511,12 @@ function initializeRenderQueueMemory(scene) {
         maxLights: lighting.maxShadowCastingLights | 0,
       }
     : null;
+  // W22: the particle worker's decoration sway, on the decorations block (so only with the emit's), for
+  // a bucket grid (without one every decoration takes a Math.sin and the loop stays JS).
+  const buckets = config.particle?.swayFrequencyBuckets | 0;
+  const sway = config.wasm?.decorationSway !== false && emit && emit.decorationBytes > 0 && buckets > 1
+    ? { decorations: config.decoration.maxDecorations | 0, buckets }
+    : null;
   scene.renderQueueMemory = pack || emit || stamp
     ? createRenderQueueMemory(
         maxVisibleRenderables,
@@ -518,6 +524,7 @@ function initializeRenderQueueMemory(scene) {
         computeGpuQueueBufferSize(gpuCaps),
         emit,
         stamp,
+        sway,
       )
     : null;
   const e = scene.renderQueueMemory?.layout.emit;

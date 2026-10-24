@@ -16,7 +16,7 @@ import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 class Entity extends GameObject {}
 Entity.components = [RigidBody, Collider, SpriteRenderer];
 
-function buildScene(wasm, lightingOverride = null) {
+function buildScene(wasm, lightingOverride = null, configOverride = {}) {
   const previousLog = console.log;
   console.log = () => {};
   try {
@@ -48,6 +48,7 @@ function buildScene(wasm, lightingOverride = null) {
         renderer: { maxVisibleRenderables: 100 },
         layers: {},
         wasm: { ...WASM_DEFAULTS, ...wasm },
+        ...configOverride,
       },
       buffers: { componentData: {} },
       views: {},
@@ -131,4 +132,22 @@ test('wasm.shadowStamp puts the stamp scratch in the render-queue memory when sh
   assert.equal(buildScene({}, null).renderQueueMemory.layout.stamp, null, 'no shadows, no stamp regions');
   const stampOnly = buildScene({ gpuPack: false, preRenderEmit: false }, shadows);
   assert.ok(stampOnly.renderQueueMemory?.layout.stamp, 'the stamp alone still makes the memory');
+});
+
+test('wasm.decorationSway puts the sway arrays in the render-queue memory, next to the decorations', () => {
+  assert.equal(WASM_DEFAULTS.decorationSway, true);
+  const grass = { decoration: { maxDecorations: 800 }, particle: { maxParticles: 0, swayFrequencyBuckets: 100 } };
+  const on = buildScene({}, null, grass);
+  const w = on.renderQueueMemory?.layout.sway;
+  assert.ok(w, 'the sway regions');
+  assert.equal(w.decorations, 800);
+  assert.equal(w.buckets, 100);
+  assert.ok(on.renderQueueMemory.layout.emit.decorationByte >= 0, 'next to the decorations block');
+
+  assert.equal(buildScene({ decorationSway: false }, null, grass).renderQueueMemory.layout.sway, null, 'off');
+  const noGrid = { ...grass, particle: { maxParticles: 0, swayFrequencyBuckets: 0 } };
+  assert.equal(buildScene({}, null, noGrid).renderQueueMemory.layout.sway, null, 'no bucket grid, the loop stays JS');
+  assert.equal(buildScene({}, null).renderQueueMemory.layout.sway, null, 'no decorations');
+  const noEmit = buildScene({ preRenderEmit: false }, null, grass);
+  assert.equal(noEmit.renderQueueMemory.layout.sway, null, 'without the emit the decorations are not in the memory');
 });

@@ -445,6 +445,11 @@ export const WASM_DEFAULTS = Object.freeze({
   preRenderEmit: true,
   /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
   shadowStamp: true,
+  /**
+   * The particle worker's decoration sway (`decorationSway.wasm`, W22): its arrays in the render-queue memory,
+   * next to the decorations block the emit puts there (so it needs preRenderEmit), with a sway bucket grid.
+   */
+  decorationSway: true,
 });
 
 // ============================================================================
