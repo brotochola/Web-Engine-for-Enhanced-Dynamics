@@ -1,4 +1,4 @@
-/* Decal tile premultiply (E-76 W21c), a test module: copyPremultiplyRgba (src/render/webgpu/pinGpuTexture.js), the
+/* Decal tile premultiply (E-76 W21c): copyPremultiplyRgba (src/render/webgpu/pinGpuTexture.js), the
    straight-to-premultiplied copy Pixi makes of each dirty decal tile before its upload, for a run of pixels of
    the decal memory. Bit for bit the JS: every colour byte is (c * a * 257 + 32896) >> 16 and the alpha byte is a.
    That formula gives c itself at a = 255 and 0 at a = 0, so the JS's two fast cases are the general one, and

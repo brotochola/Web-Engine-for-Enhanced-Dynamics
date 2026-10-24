@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W21c): Pixi's decal tile premultiply in WASM (wasm/test/decalPremultiply.c, a test module) against
+ * Kernel (E-76 W21c): Pixi's decal tile premultiply in WASM (wasm/decalPremultiply.c) against
  * the shipped copyPremultiplyRgba, on decalStampStressScene's tiles: the 40 tiles of 128 px that eight frames of
  * DecalStampDriver's stamps leave (decalStampWasmMicrobench's fixture), all of them premultiplied per op, as Pixi
  * does for each dirty tile.
  *
  *   js           copyPremultiplyRgba from the tile's view of the decal memory into the tile's own array, with the
  *                word views Pixi caches (E-107)
- *   wasm         premultiply_simd from the tile into a scratch region of the memory, then the copy into the tile's
- *                own array (an upload from shared memory cost the other workers, E-123)
+ *   wasm         premultiplyDecalTile (shipped): premultiply_simd from the tile into the memory's scratch tile,
+ *                then the copy into the tile's own array (an upload from shared memory cost the other workers, E-123)
  *   wasm-scalar  the same with premultiply_scalar (the JS line for line)
  *
  * One variant per process, through runKernelVariants.mjs (it rejects a variant whose checksum differs: the bytes
@@ -21,14 +21,15 @@ import { pathToFileURL } from 'node:url';
 
 import { copyPremultiplyRgba } from '../../src/render/webgpu/pinGpuTexture.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
-import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
+import { createDecalMemory } from '../../src/util/decalMemory.js';
+import { bindDecalPremultiply, premultiplyDecalTile } from '../../src/render/decalPremultiplyClient.js';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 import { quietly } from './workerHarness.mjs';
 import { setupDecalKernel } from './decalStampWasmMicrobench.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'tests/fixtures/wasm/decalPremultiply.wasm'));
+const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/render/decalPremultiply.wasm'));
 const TILE_PIXELS = 128;
 const TILE_BYTES = TILE_PIXELS * TILE_PIXELS * 4;
 
@@ -39,16 +40,14 @@ export async function setupPremultiplyKernel() {
   const stamped = new Uint8Array(stamp.worker.decalsTilesRGBA.buffer, 0, stamp.worker.decalsTilesRGBA.length);
   const tiles = stamped.length / TILE_BYTES;
 
-  // A decal memory with those tiles from byte 0 and a tile of scratch for the kernel's output.
-  const map = layoutRegions([
-    { name: 'tiles', owner: 'particle writes; Pixi reads', bytes: tiles * TILE_BYTES },
-    { name: 'premultiplied', owner: 'Pixi', bytes: TILE_BYTES },
-  ]);
-  const memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
+  // The decal memory as the scene makes it, those tiles from byte 0, and Pixi's binding of the kernel on it.
+  const m = createDecalMemory({ totalTiles: tiles, tilePixelSize: TILE_PIXELS, textures: null });
+  const memory = m.memory;
   const buffer = memory.buffer;
   new Uint8Array(buffer, 0, stamped.length).set(stamped);
+  const bound = await bindDecalPremultiply(memory, m.layout);
   const k = await loadWasmKernel('decalPremultiply', KERNEL_URL, memory, ['premultiply_scalar', 'premultiply_simd']);
-  const scratchByte = map.regions.premultiplied.byte;
+  const scratchByte = m.layout.premultipliedByte;
   const scratch = new Uint8ClampedArray(buffer, scratchByte, TILE_BYTES);
 
   // Pixi's per-tile state: the view of the tile in the memory and the tile's own array, with their word views.
@@ -80,7 +79,12 @@ export async function setupPremultiplyKernel() {
   };
   let partial = 0;
   for (let i = 3; i < stamped.length; i += 4) if (stamped[i] !== 0 && stamped[i] !== 255) partial++;
-  return { tiles, runJs, runSimd: runWith(k.premultiply_simd), runScalar: runWith(k.premultiply_scalar), k, hash, partial };
+  // wasm: the shipped path (premultiplyDecalTile, as Pixi's dirty-tile sweep calls it).
+  const runShipped = (n = tiles) => {
+    for (let t = 0; t < n; t++) premultiplyDecalTile(bound, t, own[t]);
+    return n;
+  };
+  return { tiles, runJs, runSimd: runShipped, runScalar: runWith(k.premultiply_scalar), k: { ...k, premultiply_simd: bound.premultiply }, hash, partial };
 }
 
 async function main() {

@@ -416,5 +416,7 @@ export function decalMemoryRegions(tileBytes, totalTiles, textureBytes, tilePixe
     // decalStamp.c's column map: two arrays of column_stride(tilePixels) u32.
     { name: 'columns', owner: 'particle', bytes: ((tilePixels + 6) & ~3) * 4 * 2 },
     { name: 'table', owner: 'particle', bytes: DECAL_TABLE_SLOTS * 4 },
+    // W21c: the premultiply kernel's output, one tile, which Pixi copies into the tile's own array.
+    { name: 'premultiplied', owner: 'Pixi', bytes: tilePixels * tilePixels * 4 },
   ]);
 }

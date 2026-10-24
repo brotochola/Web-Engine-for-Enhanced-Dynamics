@@ -1,4 +1,4 @@
-// E-76 W21c: the decal tile premultiply kernel (wasm/test/decalPremultiply.c, a test module) against the shipped
+// E-76 W21c: the decal tile premultiply kernel (wasm/decalPremultiply.c) against the shipped
 // copyPremultiplyRgba, byte for byte: random bytes, decal-like tiles (mostly alpha 0 and 255, partial edges),
 // every alpha for every colour, and pixel counts that leave a scalar tail. Nothing outside dst is written.
 import { test } from 'node:test';
@@ -11,7 +11,7 @@ import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'tests/fixtures/wasm/decalPremultiply.wasm'));
+const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/render/decalPremultiply.wasm'));
 
 async function bind(maxPixels) {
   const bytes = maxPixels * 4;
@@ -75,4 +75,23 @@ test('the premultiply kernel writes what copyPremultiplyRgba writes, scalar and 
       assert.deepEqual(Buffer.from(u8.subarray(b.srcByte, b.srcByte + src.length)), Buffer.from(src), `${v}: ${name} changed src`);
     }
   }
+});
+
+test('premultiplyDecalTile premultiplies a tile of the decal memory into the tile\'s own array', async () => {
+  const { createDecalMemory } = await import('../../src/util/decalMemory.js');
+  const { bindDecalPremultiply, premultiplyDecalTile } = await import('../../src/render/decalPremultiplyClient.js');
+  const m = createDecalMemory({ totalTiles: 6, tilePixelSize: 64, textures: null });
+  const b = await bindDecalPremultiply(m.memory, m.layout);
+  const tileBytes = 64 * 64 * 4;
+  const rng = mulberry32(42);
+  const tiles = new Uint8Array(m.buffer, 0, 6 * tileBytes);
+  for (let i = 0; i < tiles.length; i++) tiles[i] = (i & 3) === 3 ? [0, 255, (rng() * 256) | 0][(rng() * 3) | 0] : (rng() * 256) | 0;
+  for (let t = 0; t < 6; t++) {
+    const own = new Uint8ClampedArray(tileBytes);
+    const want = new Uint8ClampedArray(tileBytes);
+    premultiplyDecalTile(b, t, own);
+    copyPremultiplyRgba(want, new Uint8ClampedArray(m.buffer, t * tileBytes, tileBytes));
+    assert.deepEqual(Buffer.from(own), Buffer.from(want), `tile ${t}`);
+  }
+  assert.ok(m.layout.premultipliedByte >= 6 * tileBytes, 'the scratch tile is past the tiles');
 });

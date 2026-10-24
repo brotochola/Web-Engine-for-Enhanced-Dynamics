@@ -317,6 +317,8 @@ export type SceneConfig = Record<string, unknown> & {
     preRenderCollect?: boolean;
     /** The particle worker's decal stamping (the decal tiles live in a WebAssembly.Memory of their own). */
     decalStamp?: boolean;
+    /** Pixi's premultiply of each dirty decal tile, on that decal memory. */
+    decalPremultiply?: boolean;
     /** Pixi's mesh corner rewrite for MESH layers (the meshes and the mesh batches live in one WebAssembly.Memory). */
     meshCorners?: boolean;
   };

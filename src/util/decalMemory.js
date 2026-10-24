@@ -58,6 +58,7 @@ export function createDecalMemory({ totalTiles, tilePixelSize, textures }) {
       columnsByte: r.columns.byte,
       columnsCap: pixels,
       tableByte: r.table.byte,
+      premultipliedByte: r.premultiplied.byte,
       textures: textureLayout,
     },
   };

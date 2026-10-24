@@ -228,6 +228,7 @@ function applyComputeTexSizeUniform(cl) {
   );
 }
 import { writeRgba32Float, writeRgba8, copyPremultiplyRgba } from '../render/webgpu/pinGpuTexture.js';
+import { bindDecalPremultiply, premultiplyDecalTile } from '../render/decalPremultiplyClient.js';
 import { createSharedTextureSource, createWorldRectMesh } from '../render/worldTextureMesh.js';
 import { uploadSharedImage } from '../render/sharedTextureUpload.js';
 import { SharedResource } from '../core/sharedResource.js';
@@ -991,6 +992,8 @@ class PixiRenderer extends AbstractWorker {
     // Uint32Array views of the two above, per tile, for copyPremultiplyRgba (E-107).
     this._decalSharedWords = null;
     this._decalCopyWords = null;
+    /** W21c: the decal premultiply kernel, bound when the tiles live in the decal memory. */
+    this._decalPremultiply = null;
     this._visBatchProgramOpts = null;
     this._selfLitSpriteProgramOpts = null;
     this._selfLitBatchProgramOpts = null;
@@ -2426,7 +2429,8 @@ class PixiRenderer extends AbstractWorker {
         );
         copyWords = this._decalCopyWords[tileIndex] = new Uint32Array(tileRGBA.buffer, 0, bytesPerTile >> 2);
       }
-      copyPremultiplyRgba(tileRGBA, tileRGBAShared, copyWords, sharedWords);
+      if (this._decalPremultiply !== null) premultiplyDecalTile(this._decalPremultiply, tileIndex, tileRGBA);
+      else copyPremultiplyRgba(tileRGBA, tileRGBAShared, copyWords, sharedWords);
 
       const sprite = this.decalTileSprites[tileIndex];
       let source = this.decalTileTextureSources[tileIndex];
@@ -5991,6 +5995,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // The tiles' bytes only: with W26 their buffer is the decal memory, the kernel's scratch after them.
       this.decalsTilesRGBA = new Uint8ClampedArray(
         data.decals.tilesRGBA, 0, data.decals.totalTiles * data.decals.tilePixelSize * data.decals.tilePixelSize * 4);
+      // W21c: dirty tiles premultiplied by decalPremultiply.wasm, when they live in the decal memory.
+      this._decalPremultiply = null;
+      if (data.decals.memory && data.decals.memoryLayout && this.config?.wasm?.decalPremultiply !== false) {
+        try {
+          this._decalPremultiply = await bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout);
+        } catch (err) {
+          console.warn('[PIXI WORKER] decalPremultiply.wasm did not load; premultiplying decal tiles in JS', err);
+          this._decalPremultiply = null;
+        }
+      }
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
 
       // Create decal tile container (renders between background and entities)
