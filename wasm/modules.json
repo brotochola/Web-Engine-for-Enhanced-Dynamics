@@ -143,7 +143,9 @@
       "output": "src/workers/decorationSway.wasm",
       "exports": [
         "sway_decorations",
-        "sway_decorations_f32x4"
+        "sway_decorations_f32x4",
+        "sway_decorations_u32",
+        "sway_decorations_f32x4_u32"
       ],
       "maxMemoryPages": 32768
     },

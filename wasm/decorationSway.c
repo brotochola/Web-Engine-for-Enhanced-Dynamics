@@ -402,3 +402,322 @@ uint32_t sway_decorations_f32x4(uint32_t table, uint32_t count, uint32_t k, doub
   }
   return nTrig;
 }
+
+/* E-129: the same sways for a pool past 65 535 decorations, whose snapshot and chunk list are u32 (the sway
+   regions lay them out at 4 bytes a slot; the client binds these exports when they do). Copies of
+   sway_decorations and sway_decorations_f32x4 with those lists widened, and the trig list's impulse bit at
+   bit 31 (TRIG_IMPULSE_U32), above any slot index, where the 16-bit sways keep it at bit 16. The bucket cache
+   holds bucket ids, not slots, and stays u16. */
+
+/* A u32 trig-list entry: the decoration's index, with this bit for an impulse. */
+#define TRIG_IMPULSE_U32 0x80000000u
+
+/* let_through on a u32 snapshot into a u32 list. */
+INLINE uint32_t let_through_u32(const uint32_t *snapshot, uint32_t begin, uint32_t end, const uint8_t *active,
+                                const uint16_t *parent16, const uint32_t *parent32, int wide, uint32_t noParent,
+                                const uint8_t *onScreen, const uint8_t *sway, uint32_t *list) {
+  uint32_t n = 0;
+  for (uint32_t idx = begin; idx < end; idx++) {
+    const uint32_t i = snapshot[idx];
+    const uint32_t p = wide ? parent32[i] : (uint32_t)parent16[i];
+    list[n] = i;
+    n += (uint32_t)(active[i] != 0) & (uint32_t)(p == noParent) & (uint32_t)(onScreen[i] != 0) &
+         (uint32_t)(sway[i] != SWAY_OFF);
+  }
+  return n;
+}
+
+/* sway_decorations on a u32 snapshot and list. */
+__attribute__((export_name("sway_decorations_u32")))
+uint32_t sway_decorations_u32(uint32_t table, uint32_t count, uint32_t k, double deltaTime) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  /* Every pointer is read once: the stores below may alias the table as far as the compiler knows. */
+  const uint32_t *snapshot = PTR(const uint32_t, T_SNAPSHOT);
+  const uint8_t *active = PTR(const uint8_t, T_ACTIVE);
+  const uint16_t *parent16 = PTR(const uint16_t, T_PARENT);
+  const uint32_t *parent32 = PTR(const uint32_t, T_PARENT);
+  const int wide = t[T_PARENT_WIDE] != 0;
+  const uint32_t noParent = t[T_NO_PARENT];
+  const uint8_t *onScreen = PTR(const uint8_t, T_ON_SCREEN);
+  uint8_t *sway = PTR(uint8_t, T_SWAY);
+  const float *amplitude = PTR(const float, T_AMPLITUDE);
+  const float *frequency = PTR(const float, T_FREQUENCY);
+  float *phase = PTR(float, T_PHASE);
+  float *rotC = PTR(float, T_ROT_C);
+  float *rotS = PTR(float, T_ROT_S);
+  const float *baseRotC = PTR(const float, T_BASE_ROT_C);
+  const float *baseRotS = PTR(const float, T_BASE_ROT_S);
+  const float *phaseSin = PTR(const float, T_PHASE_SIN);
+  const float *phaseCos = PTR(const float, T_PHASE_COS);
+  const float *bucketSin = PTR(const float, T_BUCKET_SIN);
+  const float *bucketCos = PTR(const float, T_BUCKET_COS);
+  uint16_t *bucketOf = PTR(uint16_t, T_BUCKET_OF);
+  float *bucketFreq = PTR(float, T_BUCKET_FREQ);
+  uint32_t *list = PTR(uint32_t, T_LIST);
+  const uint32_t cap = t[T_LIST_CAP];
+  uint32_t *trig = PTR(uint32_t, T_TRIG);
+  double *trigValue = PTR(double, T_TRIG_VALUE);
+
+  /* bucketFromSwayFrequency's step and last bucket, advanceImpulsePhase's deltaTimeMs * SWAY_ANGLE_PER_MS:
+     the same operations on the same values as in each call. */
+  const double step = 2.0 / (double)(k - 1);
+  const double last = (double)(k - 1);
+  const double dtAngle = deltaTime * SWAY_ANGLE_PER_MS;
+  uint32_t nTrig = 0;
+
+  for (uint32_t begin = 0; begin < count; begin += cap) {
+    const uint32_t end = count - begin > cap ? begin + cap : count;
+    const uint32_t n = wide
+      ? let_through_u32(snapshot, begin, end, active, parent16, parent32, 1, noParent, onScreen, sway, list)
+      : let_through_u32(snapshot, begin, end, active, parent16, parent32, 0, noParent, onScreen, sway, list);
+    for (uint32_t e = 0; e < n; e++) {
+      const uint32_t i = list[e];
+      const uint32_t mode = sway[i];
+      double delta = 0.0;
+      if (mode == SWAY_LOOP || mode == SWAY_LOOP_SKEW) {
+        const float f = frequency[i];
+        double sa;
+        double ca;
+        if (bucketFreq[i] != f) {
+          /* A miss: bucketFromSwayFrequency(f, k), whose bucket is an integer in [0, k - 1], -0 or (for a
+             NaN f) NaN. bucketSin[NaN] is undefined in the JS, which makes the angle NaN. */
+          const double x = ((double)f - 1.0) / step;
+          double b = __builtin_ceil(x);
+          if (b - 0.5 > x) b -= 1.0;
+          if (b < 0.0) b = 0.0;
+          if (b > last) b = last;
+          const uint32_t bi = b == b ? (uint32_t)b : 0u;
+          bucketOf[i] = (uint16_t)bi; /* ToUint16: NaN and -0 store 0, a bucket past 65535 wraps */
+          bucketFreq[i] = f;
+          if (b == b) {
+            sa = bucketSin[bi];
+            ca = bucketCos[bi];
+          } else {
+            sa = b;
+            ca = b;
+          }
+        } else {
+          /* A hit. The JS resets bucketFreq to -1 when k changes but keeps bucketOf, so a frequency of -1
+             hits a bucket of the old grid, which past the new one is undefined (NaN) in the JS. */
+          const uint32_t bi = bucketOf[i];
+          if (bi < k) {
+            sa = bucketSin[bi];
+            ca = bucketCos[bi];
+          } else {
+            sa = __builtin_nan("");
+            ca = sa;
+          }
+        }
+        delta = (sa * (double)phaseCos[i] + ca * (double)phaseSin[i]) * (double)amplitude[i];
+        if (mode == SWAY_LOOP_SKEW) {
+          rotC[i] = SWAY_SKEW_C;
+          rotS[i] = (float)delta;
+          continue;
+        }
+      } else if (mode == SWAY_IMPULSE) {
+        /* advanceImpulsePhase, then the JS's test against IMPULSE_DONE (which a phase of -1 also meets). */
+        const double next = (double)phase[i] + dtAngle * (double)frequency[i];
+        if (next >= JS_PI || next == IMPULSE_DONE) {
+          sway[i] = SWAY_OFF;
+          phase[i] = 0.0f;
+          rotC[i] = baseRotC[i];
+          rotS[i] = baseRotS[i];
+          continue;
+        }
+        phase[i] = (float)next;
+        if (next != 0.0 && next - next == 0.0) {
+          trig[nTrig] = i | TRIG_IMPULSE_U32;
+          trigValue[nTrig] = next;
+          nTrig++;
+          continue;
+        }
+        /* Math.sin of +-0 is that zero, of NaN or -Infinity NaN. */
+        delta = (next == 0.0 ? next : next - next) * (double)amplitude[i];
+      }
+      if (delta != 0.0) {
+        const double ad = delta < 0.0 ? -delta : delta;
+        double dc;
+        double ds;
+        if (ad < SMALL_ANGLE) {
+          dc = 1.0;
+          ds = delta;
+        } else if (ad - ad == 0.0) {
+          trig[nTrig] = i;
+          trigValue[nTrig] = delta;
+          nTrig++;
+          continue;
+        } else {
+          /* Math.cos and Math.sin of NaN or +-Infinity are NaN. */
+          dc = delta - delta;
+          ds = dc;
+        }
+        const double bc = baseRotC[i];
+        const double bs = baseRotS[i];
+        rotC[i] = (float)(bc * dc - bs * ds);
+        rotS[i] = (float)(bs * dc + bc * ds);
+      } else {
+        rotC[i] = baseRotC[i];
+        rotS[i] = baseRotS[i];
+      }
+    }
+  }
+  return nTrig;
+}
+
+/* sway_decorations_f32x4 on a u32 snapshot and list. */
+__attribute__((export_name("sway_decorations_f32x4_u32")))
+uint32_t sway_decorations_f32x4_u32(uint32_t table, uint32_t count, uint32_t k, double deltaTime) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  /* Every pointer is read once: the stores below may alias the table as far as the compiler knows. */
+  const uint32_t *snapshot = PTR(const uint32_t, T_SNAPSHOT);
+  const uint8_t *active = PTR(const uint8_t, T_ACTIVE);
+  const uint16_t *parent16 = PTR(const uint16_t, T_PARENT);
+  const uint32_t *parent32 = PTR(const uint32_t, T_PARENT);
+  const int wide = t[T_PARENT_WIDE] != 0;
+  const uint32_t noParent = t[T_NO_PARENT];
+  const uint8_t *onScreen = PTR(const uint8_t, T_ON_SCREEN);
+  uint8_t *swayMode = PTR(uint8_t, T_SWAY);
+  const float *amplitude = PTR(const float, T_AMPLITUDE);
+  const float *frequency = PTR(const float, T_FREQUENCY);
+  float *phase = PTR(float, T_PHASE);
+  float *rotC = PTR(float, T_ROT_C);
+  float *rotS = PTR(float, T_ROT_S);
+  const float *baseRotC = PTR(const float, T_BASE_ROT_C);
+  const float *baseRotS = PTR(const float, T_BASE_ROT_S);
+  const float *phaseSin = PTR(const float, T_PHASE_SIN);
+  const float *phaseCos = PTR(const float, T_PHASE_COS);
+  const float *bucketSin = PTR(const float, T_BUCKET_SIN);
+  const float *bucketCos = PTR(const float, T_BUCKET_COS);
+  uint16_t *bucketOf = PTR(uint16_t, T_BUCKET_OF);
+  float *bucketFreq = PTR(float, T_BUCKET_FREQ);
+  uint32_t *list = PTR(uint32_t, T_LIST);
+  const uint32_t cap = t[T_LIST_CAP];
+  uint32_t *trig = PTR(uint32_t, T_TRIG);
+  double *trigValue = PTR(double, T_TRIG_VALUE);
+
+  const double step = 2.0 / (double)(k - 1);
+  const double last = (double)(k - 1);
+  const double dtAngle = deltaTime * SWAY_ANGLE_PER_MS;
+  uint32_t nTrig = 0;
+
+  for (uint32_t begin = 0; begin < count; begin += cap) {
+    const uint32_t end = count - begin > cap ? begin + cap : count;
+    const uint32_t n = wide
+      ? let_through_u32(snapshot, begin, end, active, parent16, parent32, 1, noParent, onScreen, swayMode, list)
+      : let_through_u32(snapshot, begin, end, active, parent16, parent32, 0, noParent, onScreen, swayMode, list);
+    for (uint32_t e = 0; e < n;) {
+      if (e + 4 <= n) {
+        const uint32_t i0 = list[e], i1 = list[e + 1], i2 = list[e + 2], i3 = list[e + 3];
+        if (swayMode[i0] == SWAY_LOOP_SKEW && swayMode[i1] == SWAY_LOOP_SKEW && swayMode[i2] == SWAY_LOOP_SKEW &&
+            swayMode[i3] == SWAY_LOOP_SKEW) {
+          const v128_t f4 = gather4(frequency, i0, i1, i2, i3);
+          const uint32_t b0 = bucketOf[i0], b1 = bucketOf[i1], b2 = bucketOf[i2], b3 = bucketOf[i3];
+          if (wasm_i32x4_all_true(wasm_f32x4_eq(gather4(bucketFreq, i0, i1, i2, i3), f4)) &&
+              b0 < k && b1 < k && b2 < k && b3 < k) {
+            const v128_t sa = gather4(bucketSin, b0, b1, b2, b3);
+            const v128_t ca = gather4(bucketCos, b0, b1, b2, b3);
+            const v128_t d = wasm_f32x4_mul(
+                wasm_f32x4_add(wasm_f32x4_mul(sa, gather4(phaseCos, i0, i1, i2, i3)),
+                               wasm_f32x4_mul(ca, gather4(phaseSin, i0, i1, i2, i3))),
+                gather4(amplitude, i0, i1, i2, i3));
+            rotC[i0] = SWAY_SKEW_C;
+            rotS[i0] = wasm_f32x4_extract_lane(d, 0);
+            rotC[i1] = SWAY_SKEW_C;
+            rotS[i1] = wasm_f32x4_extract_lane(d, 1);
+            rotC[i2] = SWAY_SKEW_C;
+            rotS[i2] = wasm_f32x4_extract_lane(d, 2);
+            rotC[i3] = SWAY_SKEW_C;
+            rotS[i3] = wasm_f32x4_extract_lane(d, 3);
+            e += 4;
+            continue;
+          }
+        }
+      }
+      const uint32_t i = list[e++];
+      const uint32_t mode = swayMode[i];
+      float delta = 0.0f;
+      if (mode == SWAY_LOOP || mode == SWAY_LOOP_SKEW) {
+        const float f = frequency[i];
+        float sa;
+        float ca;
+        if (bucketFreq[i] != f) {
+          /* A miss: bucketFromSwayFrequency(f, k) in double, as decorationSway.c. */
+          const double x = ((double)f - 1.0) / step;
+          double b = __builtin_ceil(x);
+          if (b - 0.5 > x) b -= 1.0;
+          if (b < 0.0) b = 0.0;
+          if (b > last) b = last;
+          const uint32_t bi = b == b ? (uint32_t)b : 0u;
+          bucketOf[i] = (uint16_t)bi;
+          bucketFreq[i] = f;
+          if (b == b) {
+            sa = bucketSin[bi];
+            ca = bucketCos[bi];
+          } else {
+            sa = (float)b;
+            ca = sa;
+          }
+        } else {
+          const uint32_t bi = bucketOf[i];
+          if (bi < k) {
+            sa = bucketSin[bi];
+            ca = bucketCos[bi];
+          } else {
+            sa = __builtin_nanf("");
+            ca = sa;
+          }
+        }
+        delta = (sa * phaseCos[i] + ca * phaseSin[i]) * amplitude[i];
+        if (mode == SWAY_LOOP_SKEW) {
+          rotC[i] = SWAY_SKEW_C;
+          rotS[i] = delta;
+          continue;
+        }
+      } else if (mode == SWAY_IMPULSE) {
+        /* advanceImpulsePhase and the test against IMPULSE_DONE, in double as decorationSway.c. */
+        const double next = (double)phase[i] + dtAngle * (double)frequency[i];
+        if (next >= JS_PI || next == IMPULSE_DONE) {
+          swayMode[i] = SWAY_OFF;
+          phase[i] = 0.0f;
+          rotC[i] = baseRotC[i];
+          rotS[i] = baseRotS[i];
+          continue;
+        }
+        phase[i] = (float)next;
+        if (next != 0.0 && next - next == 0.0) {
+          trig[nTrig] = i | TRIG_IMPULSE_U32;
+          trigValue[nTrig] = next;
+          nTrig++;
+          continue;
+        }
+        /* Math.sin of +-0 is that zero, of NaN or -Infinity NaN: a zero or NaN product, exact in float. */
+        delta = (float)((next == 0.0 ? next : next - next) * (double)amplitude[i]);
+      }
+      if (delta != 0.0f) {
+        const float ad = delta < 0.0f ? -delta : delta;
+        float dc;
+        float ds;
+        if ((double)ad < SMALL_ANGLE) {
+          dc = 1.0f;
+          ds = delta;
+        } else if (ad - ad == 0.0f) {
+          trig[nTrig] = i;
+          trigValue[nTrig] = (double)delta;
+          nTrig++;
+          continue;
+        } else {
+          dc = delta - delta;
+          ds = dc;
+        }
+        const float bc = baseRotC[i];
+        const float bs = baseRotS[i];
+        rotC[i] = bc * dc - bs * ds;
+        rotS[i] = bs * dc + bc * ds;
+      } else {
+        rotC[i] = baseRotC[i];
+        rotS[i] = baseRotS[i];
+      }
+    }
+  }
+  return nTrig;
+}

@@ -56,7 +56,7 @@ import { bindDecorationSway, SWAY_SLOTS, TRIG_IMPULSE } from '../../src/workers/
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
-import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { instantiateKernel, machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
 /** The float32 sway of the shipped module (wasm/decorationSway.c), by variant name. */
 export const SWAY_F32_MODULE = 'decorationSway';
@@ -106,9 +106,11 @@ function close(a, b, slack) {
  * (cos 0.08 against 1). A decoration whose inputs leave nothing to compare (swayF32Free) may differ in
  * both. Counts the step crossings in stats.stepFlips, the free decorations that differ in stats.free, the
  * largest rotation error as a share of its slack in stats.worst and absolute, for amplitudes up to 1 rad, in
- * stats.worstAbs; returns the first difference, or null.
+ * stats.worstAbs; returns the first difference, or null. The last argument reads the trig entries of a u32
+ * sway (E-129: the impulse at bit 31).
  */
-export function compareSwayStates(views, ref, got, refTrig, gotTrig, stats = { stepFlips: 0, worst: 0 }) {
+export function compareSwayStates(views, ref, got, refTrig, gotTrig, stats = { stepFlips: 0, worst: 0 },
+  { indexMask = 0xffff, impulseBit = TRIG_IMPULSE } = {}) {
   const at = (bytes, name) => {
     const v = views.find(([n]) => n === name)[1];
     return new v.constructor(bytes.buffer, v.byteOffset, v.length);
@@ -126,8 +128,8 @@ export function compareSwayStates(views, ref, got, refTrig, gotTrig, stats = { s
   const gotList = entries(gotTrig);
   const stepped = new Set();
   for (const key of new Set([...refList.keys(), ...gotList.keys()])) {
-    const i = key & 0xffff;
-    const impulse = (key & TRIG_IMPULSE) !== 0;
+    const i = key & indexMask;
+    const impulse = (key & impulseBit) !== 0;
     const a = refList.get(key);
     const b = gotList.get(key);
     const slack = 2 ** -21 * (1 + Math.abs(amp[i]));
@@ -189,9 +191,9 @@ const CHECK_FRAMES = 8;
 /** The scene clock at the first frame (the Predator fixture's 12 s warm-up). */
 const START_MS = 12000;
 
-/** A view of the same kind as `from` at `region`, holding what `from` holds. */
-function moved(buffer, region, from) {
-  const view = new from.constructor(buffer, region.byte, from.length);
+/** A view of the same kind as `from` (or of `Type`) at `region`, holding what `from` holds. */
+function moved(buffer, region, from, Type = from.constructor) {
+  const view = new Type(buffer, region.byte, from.length);
   view.set(from);
   return view;
 }
@@ -199,24 +201,26 @@ function moved(buffer, region, from) {
 /**
  * A real particle worker whose sway arrays all live in one shared memory, Predator's grass spawned and
  * the kernel bound. `kMax` sizes the bucket tables for a grid larger than the one the worker starts with.
- * @param {{ n?: number, k?: number, kMax?: number, listCap?: number, onScreen?: number, seed?: number }} [opts]
+ * `slotBytes` 4 lays the snapshot and the chunk list out as u32 and binds the u32 sway (E-129).
+ * @param {{ n?: number, k?: number, kMax?: number, listCap?: number, onScreen?: number, seed?: number, slotBytes?: number }} [opts]
  */
 export async function setupSwayKernel(opts = {}) {
   const n = opts.n ?? GRASS;
   const k = opts.k ?? BUCKETS;
   const kMax = Math.max(k, opts.kMax ?? k);
   const listCap = opts.listCap ?? SWAY_LIST_CAP;
+  const slotBytes = opts.slotBytes ?? 2;
   const layout = layoutRegions([
     { name: 'guard', bytes: NULL_GUARD_BYTES },
     { name: 'decorations', bytes: DecorationComponent.getBufferSize(n) },
-    { name: 'snapshot', bytes: n * 2 },
+    { name: 'snapshot', bytes: n * slotBytes },
     { name: 'phaseSin', bytes: n * 4 },
     { name: 'phaseCos', bytes: n * 4 },
     { name: 'bucketSin', bytes: kMax * 4 },
     { name: 'bucketCos', bytes: kMax * 4 },
     { name: 'bucketOf', bytes: n * 2 },
     { name: 'bucketFreq', bytes: n * 4 },
-    { name: 'list', bytes: listCap * 2 },
+    { name: 'list', bytes: listCap * slotBytes },
     { name: 'trig', bytes: n * 4 },
     { name: 'trigValue', bytes: n * 8 },
     // The parent column as entityIdWidth 32 lays it out, for the parity test.
@@ -247,7 +251,7 @@ export async function setupSwayKernel(opts = {}) {
   if (worker._swayBuckets !== k) throw new Error(`the worker has ${worker._swayBuckets} sway buckets, not ${k}`);
 
   // The worker's own sway arrays, moved into the memory with what its init put in them.
-  worker._activeDecorationSnapshot = moved(buffer, R.snapshot, worker._activeDecorationSnapshot);
+  worker._activeDecorationSnapshot = moved(buffer, R.snapshot, worker._activeDecorationSnapshot, slotBytes === 4 ? Uint32Array : undefined);
   worker._phaseSin = moved(buffer, R.phaseSin, worker._phaseSin);
   worker._phaseCos = moved(buffer, R.phaseCos, worker._phaseCos);
   worker._bucketSin = moved(buffer, R.bucketSin, worker._bucketSin);
@@ -291,16 +295,17 @@ export async function setupSwayKernel(opts = {}) {
   if (worker._activeDecorationSnapshotCount !== n) throw new Error(`the snapshot holds ${worker._activeDecorationSnapshotCount} of ${n}`);
   worker.accumulatedTime = START_MS;
 
-  const b = await bindSwayKernel(memory, R, worker, listCap);
-  return { worker, memory, buffer, layout, regions: R, b, n, k, onScreen };
+  const b = await bindSwayKernel(memory, R, worker, listCap, { slotBytes });
+  return { worker, memory, buffer, layout, regions: R, b, n, k, onScreen, slotBytes };
 }
 
 /**
  * Load the kernel onto `memory` through the client, on a layout of the bench's regions, and write its table.
- * `f32`: bindDecorationSway's (wasm.decorationSwayF32), off by default here: the double sway.
+ * `f32`: bindDecorationSway's (wasm.decorationSwayF32), off by default here: the double sway. `slotBytes` 4: the
+ * u32 sway on a u32 snapshot and list (E-129), with the trig list's impulse at bit 31.
  */
-export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIST_CAP, { f32 = false } = {}) {
-  if (!(listCap >= 1 && listCap * 2 <= regions.list.bytes)) throw new Error(`sway: a list of ${listCap} does not fit its region`);
+export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIST_CAP, { f32 = false, slotBytes = 2 } = {}) {
+  if (!(listCap >= 1 && listCap * slotBytes <= regions.list.bytes)) throw new Error(`sway: a list of ${listCap} does not fit its region`);
   const b = await bindDecorationSway(memory, {
     decorations: regions.trig.bytes / 4,
     buckets: regions.bucketSin.bytes / 4,
@@ -310,6 +315,11 @@ export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIS
     trigValueByte: regions.trigValue.byte,
     tableByte: regions.table.byte,
   }, { f32 });
+  if (slotBytes === 4) {
+    b.sway = instantiateKernel('decorationSway', memory)[f32 ? 'sway_decorations_f32x4_u32' : 'sway_decorations_u32'];
+    b.trigIndexMask = 0x7fffffff;
+    b.trigImpulse = 0x80000000;
+  }
   writeSwayTable(b, worker);
   return b;
 }
@@ -349,7 +359,7 @@ export function writeSwayTable(b, worker) {
 }
 
 /** The rest of the JS loop body for the decorations the kernel listed: Math.sin / Math.cos, then the rotation. */
-function finishTrig(trig, trigValue, n) {
+function finishTrig(trig, trigValue, n, indexMask = 0xffff, impulseBit = TRIG_IMPULSE) {
   const D = DecorationComponent;
   const rotC = D.rotC;
   const rotS = D.rotS;
@@ -358,9 +368,9 @@ function finishTrig(trig, trigValue, n) {
   const swayAmplitude = D.swayAmplitude;
   for (let t = 0; t < n; t++) {
     const e = trig[t];
-    const i = e & 0xffff;
+    const i = e & indexMask;
     let delta = trigValue[t];
-    if ((e & TRIG_IMPULSE) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
+    if ((e & impulseBit) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
     const bc = baseRotC[i];
     const bs = baseRotS[i];
     if (delta !== 0) {
@@ -404,7 +414,7 @@ export function swayDecorationsWasm(b, worker, deltaTime = 0) {
     worker._swayBucketFreq.fill(-1);
   }
   const n = b.sway(b.tableByte, activeCount, k, deltaTime);
-  if (n > 0) finishTrig(b.trig, b.trigValue, n);
+  if (n > 0) finishTrig(b.trig, b.trigValue, n, b.trigIndexMask ?? 0xffff, b.trigImpulse ?? TRIG_IMPULSE);
   return n;
 }
 
