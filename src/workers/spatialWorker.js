@@ -73,9 +73,10 @@ const SHAPE_CIRCLE = SHAPE_CIRCLEImport;
 
 // E-126 (grid movers only). In a frame where physics moved at most this share of the active
 // entities, the grid is rewritten for the entities that changed (_rebuildMovedRows) instead of
-// rebuilt for all of them (rebuildOwnedRows). It belongs at the crossover of
-// tests/bench/spatialGridMoversMicrobench.mjs (cases 35 % and 50 %); 0.35 is the old path's value.
-const MOVERS_MAX_FRACTION = 0.35;
+// rebuilt for all of them (rebuildOwnedRows). Under the crossover of tests/bench/spatialGridMoversMicrobench.mjs
+// (60 000 bodies, Node, 2026-10-24): against the full rebuild the path is +188.6 % at 10 % movers, +17.5 % at
+// 20 %, -10.1 % at 25 % and -34.9 % at 35 % (the old path's 0.35), so the crossover is near 23 %.
+const MOVERS_MAX_FRACTION = 0.2;
 // SpatialWorker._gridMoversMode.
 const GRID_MOVERS_AUTO = 0; // by the moved fraction
 const GRID_MOVERS_OFF = 1; // the full rebuild every frame
