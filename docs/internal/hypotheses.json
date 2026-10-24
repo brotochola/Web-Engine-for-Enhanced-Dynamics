@@ -1353,16 +1353,19 @@
     {
       "id": "W21a",
       "title": "`ensureCompoundSolid`",
-      "status": "open",
+      "status": "screened",
       "statusText": "open",
       "date": null,
-      "result": "Faster compound rebuilds. per frame only in remesh scenes (`compoundGeometryDirtyScene`, compoundVisPoly `?remeshEvery=`)",
+      "result": "screened 2026-10-24: 0.6 % of pre-render at remeshEvery=1, ringSegments=64 (one CPU trace); not worth a kernel",
       "area": "rebuild",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#W21a"
       ],
-      "aliases": []
+      "aliases": [],
+      "records": [
+        "R-0612"
+      ]
     },
     {
       "id": "E-55",
@@ -8051,6 +8054,23 @@
       "kind": "js",
       "result": "screened 2026-10-24: a tie on spatialGridMoversMicrobench's full rebuild (+0.8 to +4.2 % against an A/A of ±5 %); the profile's 16 % on that line is the cell stores, not the static read; reverted",
       "next": ""
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [
+        "R-0612"
+      ],
+      "id": "E-135",
+      "title": "The self-lit fill of a compound occluder as indexed vertices, not a triangle soup",
+      "status": "open",
+      "statusText": "opened 2026-10-24 (from W21a's trace, R-0612: `_buildSelfLitBatch` 43.8 % of Pixi in compoundVisPoly ringSegments=64)",
+      "date": "2026-10-24",
+      "area": "pixi",
+      "kind": "js",
+      "rank": 11,
+      "result": "Pixi writes each fill triangle of each (light, compound) pair as three fresh 13-float vertices; a ring's vertex is in about three triangles. Shared vertices (exact float equality, so the triangles and every attribute are the same) cut the vertices written and uploaded about 3×: the fill loop is ~54 % of the batch and `updateBuffer` 27 % of Pixi.",
+      "next": "Owner: compoundVisPolyStressScene (ringSegments raised until Pixi ≥ 3 ms), Pixi; a parity test on the drawn triangles."
     }
   ],
   "records": [
@@ -13419,6 +13439,15 @@
       "title": "WASM W8b, the 32-bit spatial publish and gather, E-76",
       "verdict": "kept",
       "text": "**kept (product).** `wasm/spatialPublish.c` and `wasm/spatialGather.c` are written once over the id width (always_inline, a constant flag) and export `publish_batch_u32`, `gather_batch_u32` and `order_batch_by_cell_u32` beside the 16-bit ones (`5dcff194`). The memory map sizes the rows, lists, rebuild lists and order scratch by the id width; `createSpatialPublishMemory` accepts 4-byte ids and the modules' 2 GB import; the clients bind the `_u32` exports when `entityIdBytes()` is 4. Before this, a scene past 65 535 entities took the JS publish and gather silently. Owner pair, `stationarySpatialWideScene` (new, `79088100`: 70 000 stationary entities, 32-bit ids by 'auto', two spatial workers, physics off), Chrome, headed, source, 4 pairs, one build, `wasmOff=spatialPublish,spatialGather` on side A: spatial **18.648 → 12.234 ms, −33.0 % paired, worse 0/4**, cv 3/6 %; every other worker under the 3 ms floor; `ENTITIES_PROCESSED` 70 000 and `VISIBLE_ENTITIES` 21 318 on both sides. The JS side ran at 104–106 % load (FPS 57–58), so the gap is a floor. Parity: `spatialGatherWasm.test.js` runs 70 000 entities on three real spatial workers at 32-bit ids, and the WASM publish, the WASM gather and the gather in cell order publish what the plain buffers' JS path publishes, rows and counters, on every frame (detailed stats on, so the WASM publish's E-02 recount fills `neighborsFoundThisFrame`). The 16-bit kernels are unchanged (Node, `kernelAB2`, 5 alternating rounds against the parent): publish WASM 6 292 → 6 218 ops/s median, the gather frame 252 → 255 frames/s, both inside the rounds' spread. Found on the way and fixed first (`7b91a58b`): `box2dBlockPlan` returned null when the spatial part took Box2D's block past 2 GB, so the render-queue part lost the block too. The spatial part now stays out alone. A scene whose rows do not fit 2 GB (`count × (1 + maxNeighbors) × 4` bytes, twice: rows and candidates) still runs the JS path."
+    },
+    {
+      "id": "R-0612",
+      "date": "2026-10-24",
+      "time": "15:51",
+      "timeFrom": "recorded",
+      "title": "WASM W21a, ensureCompoundSolid's premise in the remesh scene, E-76",
+      "verdict": "screened",
+      "text": "**screened (premise), no change.** One headed CPU trace (source, detailed stats off, 6 s warm-up, 8 s window) of `compoundVisPolyStressScene?remeshEvery=1&ringSegments=64`, the worst case on record: island 0 re-applies its polygons every tick, the pool-wide fixture revision moves, and every lit compound rebuilds its outline every frame. `ensureCompoundSolid` was **8.7 ms of pre-render's 1 490 ms busy (0.6 %)**, and it does not appear among Pixi's top functions (Pixi also rebuilds the fill there). Pre-render's time is W1's `collect_solid_f32x4` (74.1 %) and `sweep_light_f32` (9.6 %). A WASM rebuild cannot move a 0.6 % share. What the trace showed instead: Pixi's `_buildSelfLitBatch` was 43.8 % of Pixi's busy time (106 ms/s) and Pixi's `updateBuffer` 27.3 %. The fill loop (lines `data[o] = originX + …`, `fill[(v + k) * 2]`) is about 54 % of the batch: each fill triangle of each (light, compound) pair is written as three fresh 13-float vertices, though a ring's vertices are shared by about three triangles. Opened as E-135."
     }
   ],
   "leads": [
