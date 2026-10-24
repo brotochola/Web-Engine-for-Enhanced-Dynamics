@@ -309,7 +309,7 @@ export function stampLightRange({
       sortPairsByIndex(tmpIdx, dist, m, order, keepIdx);
     }
     if (m <= 0) continue;
-    m = takeClosest(tmpIdx, dist, order, m, lim, keepIdx);
+    m = takeClosest(tmpIdx, dist, order, m, lim, keepIdx, maxPE <= 0);
     if (maxPE > 0) {
       for (let k = 0; k < m; k++) {
         const c = keepIdx[k];
@@ -430,11 +430,16 @@ function quicksortOrder(order, dist, left, right) {
   }
 }
 
-export function takeClosest(tmpIdx, tmpDist, order, m, limit, outIdx) {
+/**
+ * The `limit` closest of m candidates into outIdx. `ordered` false (maxPerEntity, E-133): the kept casters only go
+ * into their own nearest-light slots, which order by (distance, light) whatever order they come in, so the
+ * kept slice is not sorted; it holds the same casters.
+ */
+export function takeClosest(tmpIdx, tmpDist, order, m, limit, outIdx, ordered = true) {
   if (limit > 0 && m > limit) {
     for (let k = 0; k < m; k++) order[k] = k;
     quickselectOrder(order, tmpDist, 0, m - 1, limit - 1);
-    quicksortOrder(order, tmpDist, 0, limit - 1);
+    if (ordered) quicksortOrder(order, tmpDist, 0, limit - 1);
     for (let k = 0; k < limit; k++) outIdx[k] = tmpIdx[order[k]];
     return limit;
   }

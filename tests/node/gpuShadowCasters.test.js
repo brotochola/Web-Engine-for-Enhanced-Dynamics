@@ -33,6 +33,25 @@ test('takeClosest keeps the N smallest dist entries', () => {
   assert.equal(out[1], 11);
 });
 
+test('takeClosest unordered (maxPerEntity, E-133) keeps the casters it keeps ordered, ties included', () => {
+  let a = 0x133;
+  const rng = () => ((a = (Math.imul(a, 1103515245) + 12345) >>> 0) / 4294967296);
+  for (let round = 0; round < 200; round++) {
+    const m = 20 + Math.floor(rng() * 900);
+    const limit = 1 + Math.floor(rng() * m);
+    const tmpIdx = Uint32Array.from({ length: m }, (_, k) => k * 7 + 3);
+    // Coarse distances, so the boundary of the kept set often falls in a tie.
+    const tmpDist = Float32Array.from({ length: m }, () => Math.floor(rng() * 64));
+    const order = new Uint32Array(m);
+    const a1 = new Uint32Array(m);
+    const a2 = new Uint32Array(m);
+    const n1 = takeClosest(tmpIdx, tmpDist, order, m, limit, a1);
+    const n2 = takeClosest(tmpIdx, tmpDist, order, m, limit, a2, false);
+    assert.equal(n2, n1);
+    assert.deepEqual(Array.from(a2.subarray(0, n2)).sort((x, y) => x - y), Array.from(a1.subarray(0, n1)).sort((x, y) => x - y));
+  }
+});
+
 test('copyTypedRange copies without wrapping a view', () => {
   const src = new Float32Array([9, 8, 7, 6, 5]);
   const dst = new Float32Array(6);
