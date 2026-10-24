@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W10): the painter sort in WASM (wasm/test/painterRadix.c, a test module,
- * tests/fixtures/wasm/painterRadix.wasm) against the shipped radixPainterOrder and reinsertChangedSlots
- * (src/util/sortIndexByKey.js), on the bytes both read: the float32 sort key columns live in one shared
- * WebAssembly.Memory (pre-render writes them to a queue SharedArrayBuffer), the JS keeps its
- * createPainterState arrays and its own copy of the slot list, the kernel its state in the memory
- * (painterRadixWasmClient.mjs).
+ * Kernel (E-76 W10): the painter sort in WASM (wasm/painterRadix.c, src/render/painterRadix.wasm) against the
+ * JS radixPainterOrder and reinsertChangedSlots (src/util/sortIndexByKey.js), on the bytes both read: the
+ * float32 sort key columns live in one shared WebAssembly.Memory (as in the render-queue memory, where
+ * pre-render writes them), the JS keeps its createPainterState arrays and its own copy of the slot list, the
+ * kernel its state in the memory (src/render/painterRadixClient.js; the workers bind PAINTER_VARIANT there).
  *
  * Cases, one op each (keys are spriteYSortKey(foot y, 128) as pre-render writes them):
  *   predator-rebuild    radixPainterOrder on Predator's queue: the first 13 000 active entities of the
@@ -42,15 +41,9 @@
  * least `minMs` (default 20); args: variants, cases, rounds, minMs, stressRows.
  */
 import { createPainterState, radixPainterOrder, reinsertChangedSlots, spriteYSortKey } from '../../src/util/sortIndexByKey.js';
-import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
+import { layoutRegions, NULL_GUARD_BYTES, painterStateLayout, painterStateRegions } from '../../src/util/wasmMemoryMap.js';
 import { mulberry32 } from './benchMath.js';
-import {
-  VARIANTS,
-  loadPainterRadix,
-  painterRadixVariant,
-  painterStateRegions,
-  wasmPainterState,
-} from './painterRadixWasmClient.mjs';
+import { VARIANTS, loadPainterRadix, painterRadixVariant, wasmPainterState } from '../../src/render/painterRadixClient.js';
 
 export const SEED = 0x9a1e7;
 export const PREDATOR_ROWS = 13000;
@@ -192,9 +185,9 @@ export async function setupPainterBench({ fixtureBytes, stressRows = STRESS_ROWS
     const s = spec[c];
     regions.push({ name: `${c}.keys`, owner: 'pre-render writes the sort keys', bytes: s.frames.length * s.rows * 4 });
     regions.push({ name: `${c}.list`, owner: 'the type-filtered slot list', bytes: s.list.length * 4 });
-    regions.push(...painterStateRegions(`${c}.`, s.rows));
+    regions.push(...painterStateRegions(`${c}.`, s.rows, 'the case\'s kernel state'));
   }
-  regions.push(...painterStateRegions('warm.', WARM_CAP));
+  regions.push(...painterStateRegions('warm.', WARM_CAP, 'the warm-up calls\' kernel state'));
   const layout = layoutRegions(regions);
   const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
   const buffer = memory.buffer;
@@ -222,13 +215,13 @@ export async function setupPainterBench({ fixtureBytes, stressRows = STRESS_ROWS
       listJs: Uint32Array.from(s.list),
       warmListJs: Uint32Array.from(warmList),
       // Shared by every WASM variant (they leave the same state), and the JS's own.
-      wasmState: wasmPainterState(buffer, R, `${c}.`, s.rows),
+      wasmState: wasmPainterState(buffer, painterStateLayout(R, `${c}.`, s.rows)),
       jsState: null,
       wasmFrame: { f: 0 },
       jsFrame: { f: 0 },
     };
   }
-  const warmWasmState = wasmPainterState(buffer, R, 'warm.', WARM_CAP);
+  const warmWasmState = wasmPainterState(buffer, painterStateLayout(R, 'warm.', WARM_CAP));
   const warmJsState = createPainterState(WARM_CAP);
 
   function jsCase(d) {
@@ -320,7 +313,7 @@ export async function setupPainterBench({ fixtureBytes, stressRows = STRESS_ROWS
   /** One side's cases. */
   function side(name) {
     if (!SIDES.includes(name)) throw new Error(`painterRadix bench: no variant ${name}`);
-    const v = name === 'base' ? null : painterRadixVariant(kernel, name);
+    const v = name === 'base' ? null : painterRadixVariant(kernel, name, buffer);
     const out = {};
     for (const c of cases) {
       const d = data[c];

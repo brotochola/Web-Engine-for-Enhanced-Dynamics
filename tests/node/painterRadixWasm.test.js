@@ -1,6 +1,7 @@
-// E-76 W10: the painter sort kernel (wasm/test/painterRadix.c, a test module) against the shipped
+// E-76 W10: the painter sort kernel (wasm/painterRadix.c, src/render/painterRadix.wasm) against the JS
 // radixSortIndicesBySortKey, radixPainterOrder, reinsertChangedSlots and orderPainterSlots
-// (src/util/sortIndexByKey.js), bit for bit, every variant. Keys are float32 bits as pre-render writes
+// (src/util/sortIndexByKey.js), bit for bit, every variant, and the client's orderPainterSlotsWasm and
+// radixSortIndicesWasm (what packSpriteLayer calls) on each. Keys are float32 bits as pre-render writes
 // them: round(y) * 128 sprite keys (Predator's world, the painter stress scenes' grid with its five foot
 // offsets), fractional keys, keys above the world origin (negative Y), zIndex bands with negative bands,
 // -0, all equal, all zero, a few distinct values, ascending and descending, raw bits (NaN, infinities,
@@ -26,19 +27,21 @@ import {
   spriteYSortKey,
   zSortBand,
 } from '../../src/util/sortIndexByKey.js';
-import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
+import { layoutRegions, NULL_GUARD_BYTES, painterStateLayout, painterStateRegions } from '../../src/util/wasmMemoryMap.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import {
   CORES,
   INPLACE_VARIANTS,
+  PAINTER_VARIANT,
   VARIANTS,
   loadPainterRadix,
+  orderPainterSlotsWasm,
   painterRadixVariant,
-  painterStateRegions,
+  radixSortIndicesWasm,
   resetWasmPainterState,
   variantCore,
   wasmPainterState,
-} from '../bench/painterRadixWasmClient.mjs';
+} from '../../src/render/painterRadixClient.js';
 
 const CAP = 20480;
 
@@ -47,9 +50,9 @@ const layout = layoutRegions([
   { name: 'keys', owner: 'pre-render writes the sort keys', bytes: CAP * 4 },
   { name: 'idx', owner: 'the radix input and output', bytes: (CAP + 16) * 4 },
   { name: 'idxE', owner: 'the type-filtered slot list', bytes: CAP * 4 },
-  ...painterStateRegions('w.', CAP),
+  ...painterStateRegions('w.', CAP, 'the worker that sorts'),
   // Never passed to a call: must stay as it is.
-  ...painterStateRegions('other.', 64),
+  ...painterStateRegions('other.', 64, 'nobody'),
 ]);
 const memory = new WebAssembly.Memory({ initial: layout.pages, maximum: layout.pages, shared: true });
 const buffer = memory.buffer;
@@ -57,15 +60,15 @@ const R = layout.regions;
 const keys = new Uint32Array(buffer, R.keys.byte, CAP);
 const idx = new Uint32Array(buffer, R.idx.byte, CAP + 16);
 const idxE = new Uint32Array(buffer, R.idxE.byte, CAP);
-const ws = wasmPainterState(buffer, R, 'w.', CAP);
-wasmPainterState(buffer, R, 'other.', 64);
+const ws = wasmPainterState(buffer, painterStateLayout(R, 'w.', CAP));
+wasmPainterState(buffer, painterStateLayout(R, 'other.', 64));
 const kernel = await loadPainterRadix(memory);
-const variants = Object.fromEntries(VARIANTS.map((v) => [v, painterRadixVariant(kernel, v)]));
+const variants = Object.fromEntries(VARIANTS.map((v) => [v, painterRadixVariant(kernel, v, buffer)]));
 
 const ALL_REGIONS = Object.keys(R);
-const RADIX_WRITES = ['idx', 'w.scratch', 'w.hist', 'w.ordsA', 'w.ordsB'];
-const ORDER_WRITES = ['w.order', 'w.scratch', 'w.hist', 'w.ordsA', 'w.ordsB', 'w.runHeads', 'w.runLen', 'w.prevKey'];
-const REINSERT_WRITES = ['w.order', 'w.scratch', 'w.hist', 'w.ordsA', 'w.ordsB', 'w.moved', 'w.merge', 'w.prevKey', 'w.slotMoved'];
+const RADIX_WRITES = ['idx', 'w.Scratch', 'w.Hist', 'w.OrdsA', 'w.OrdsB'];
+const ORDER_WRITES = ['w.Order', 'w.Scratch', 'w.Hist', 'w.OrdsA', 'w.OrdsB', 'w.RunHeads', 'w.RunLen', 'w.PrevKey'];
+const REINSERT_WRITES = ['w.Order', 'w.Scratch', 'w.Hist', 'w.OrdsA', 'w.OrdsB', 'w.Moved', 'w.Merge', 'w.PrevKey', 'w.SlotMoved'];
 
 /** Run `call`; every region outside `writes` must be byte for byte as before. */
 function writesOnly(writes, call) {
@@ -399,11 +402,12 @@ test('reinsert_* on an order that is not a permutation: the same -1 and the same
   }
 });
 
-test('orderPainterSlots with the kernel = the shipped orderPainterSlots, frame after frame', () => {
+test('orderPainterSlotsWasm with each variant = orderPainterSlots, frame after frame', () => {
   const r = mulberry32(0xf4a3e);
   for (const variant of VARIANTS) {
     const js = freshPair();
-    const v = variants[variant];
+    const { k, calls } = counted(variants[variant]);
+    ws.kernel = k;
     keys.fill(0);
     const frames = [];
     // Cold (every key 0), then keys land, then they move; the slot count changes; a filtered list, the
@@ -419,6 +423,13 @@ test('orderPainterSlots with the kernel = the shipped orderPainterSlots, frame a
     const listB = listA.map((s) => s + 1);
     frames.push({ ne: listB.length, list: listB, edit: mover(CAP, 0.2, 3, r) });
     frames.push({ ne: listB.length, list: listB, edit: () => {} });
+    // A list that repeats slot 5: the same set every frame, so reinsert runs, and returns -1 (the rebuild) once
+    // slot 5's key changes.
+    const listR = [...LISTS.inOrder(1200), 5, 5, 9];
+    frames.push({ ne: listR.length, list: listR, edit: () => {} });
+    frames.push({ ne: listR.length, list: listR, edit: mover(1200, 0.1, 2, r) });
+    frames.push({ ne: listR.length, list: listR, edit: () => { asF32[5] += 128 * 7; } });
+    frames.push({ ne: listR.length, list: listR, edit: () => { asF32[9] -= 128 * 3; } });
     frames.push({ ne: 1, list: null, edit: () => {} });
     frames.push({ ne: 1, list: [42], edit: () => {} });
     frames.push({ ne: 0, list: null, edit: () => {} });
@@ -429,7 +440,7 @@ test('orderPainterSlots with the kernel = the shipped orderPainterSlots, frame a
       if (list) idxE.set(list);
       const view = list ? idxE : null;
       const want = orderPainterSlots(js, view, ne, keys);
-      const got = v.orderPainterSlots(ws, view, list ? R.idxE.byte : 0, ne, R.keys.byte);
+      const got = orderPainterSlotsWasm(ws, view, ne, keys);
       const label = `${variant} frame ${f}`;
       assert.equal(got === ws.order, want === js.order, `${label}: returned array`);
       assert.equal(got === view, want === view, `${label}: returned idxE`);
@@ -438,5 +449,72 @@ test('orderPainterSlots with the kernel = the shipped orderPainterSlots, frame a
       assert.equal(ws.frame, js.frame, `${label} frame`);
       assert.equal(ws.gen, js.gen, `${label} gen`);
     });
+    assert.ok(calls.order >= 4 && calls.reinsert >= 8, `${variant}: the kernel rebuilt ${calls.order} times, reinserted ${calls.reinsert}`);
   }
+  ws.kernel = null;
+});
+
+/** A variant whose calls are counted, as a state's kernel. */
+function counted(v) {
+  const calls = { radix: 0, order: 0, reinsert: 0 };
+  const k = {
+    ...v,
+    radix: (...a) => {
+      calls.radix++;
+      return v.radix(...a);
+    },
+    reinsert: (...a) => {
+      calls.reinsert++;
+      return v.reinsert(...a);
+    },
+    painterOrder: (...a) => {
+      calls.order++;
+      return v.painterOrder(...a);
+    },
+  };
+  return { k, calls };
+}
+
+test('a kernel state has createPainterState\'s shape; off the memory the wrappers sort in JS on its arrays', () => {
+  const js = createPainterState(CAP);
+  assert.deepEqual(Object.keys(ws), Object.keys(js), 'the same fields in the same order');
+  for (const [name, value] of Object.entries(js)) {
+    if (ArrayBuffer.isView(value)) assert.equal(ws[name].constructor, value.constructor, `${name}'s class`);
+    else assert.equal(typeof ws[name], name === 'kernel' ? 'object' : typeof value, `${name}'s type`);
+  }
+  assert.ok(VARIANTS.includes(PAINTER_VARIANT), `the workers bind ${PAINTER_VARIANT}`);
+
+  const r = mulberry32(0x9e1);
+  keys.fill(0);
+  keys.set(FAMILIES.sprite(CAP, r));
+  const slots = LISTS.shuffled(5000, r);
+  const ref = Uint32Array.from(slots);
+  radixSortIndicesBySortKey(ref, 5000, keys, new Uint32Array(5000), new Uint32Array(256));
+  const { k, calls } = counted(variants[PAINTER_VARIANT]);
+  ws.kernel = k;
+  // The glow rows' radix: a list in the memory goes to the kernel, a list of its own to the JS.
+  idx.set(slots);
+  radixSortIndicesWasm(ws, idx, 5000, keys);
+  sameArray(idx, ref, 5000, 'the kernel radix');
+  assert.equal(calls.radix, 1, 'through the kernel');
+  const own = Uint32Array.from(slots);
+  radixSortIndicesWasm(ws, own, 5000, keys);
+  sameArray(own, ref, 5000, 'the JS radix');
+  assert.equal(calls.radix, 1, 'a list outside the memory: JS');
+  radixSortIndicesWasm(ws, idx, 1, keys);
+  assert.equal(calls.radix, 1, 'one row: nothing to sort');
+
+  // Keys outside the memory (a custom layer's queue): orderPainterSlots on the state's arrays.
+  const ownKeys = Uint32Array.from(keys);
+  const jsState = freshPair();
+  ws.kernel = k;
+  for (let f = 0; f < 3; f++) {
+    if (f > 0) for (let s = 0; s < 3000; s++) if (r() < 0.2) ownKeys[s] += 128 * 256;
+    const want = orderPainterSlots(jsState, null, 3000, ownKeys);
+    const got = orderPainterSlotsWasm(ws, null, 3000, ownKeys);
+    sameArray(got, want, 3000, `JS on the kernel state, frame ${f}`);
+    sameState(jsState, PAINTER_VARIANT, `JS on the kernel state, frame ${f}`);
+  }
+  assert.equal(calls.order + calls.reinsert, 0, 'keys outside the memory: no kernel call');
+  ws.kernel = null;
 });

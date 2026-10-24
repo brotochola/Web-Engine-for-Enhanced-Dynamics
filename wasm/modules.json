@@ -176,8 +176,8 @@
     },
     {
       "name": "painterRadix",
-      "source": "wasm/test/painterRadix.c",
-      "output": "tests/fixtures/wasm/painterRadix.wasm",
+      "source": "wasm/painterRadix.c",
+      "output": "src/render/painterRadix.wasm",
       "exports": [
         "radix_sort_scalar",
         "radix_sort_kv8",
@@ -197,8 +197,7 @@
         "reinsert_inplace",
         "reinsert_simd_inplace"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 8192
     },
     {
       "name": "solidSegments",

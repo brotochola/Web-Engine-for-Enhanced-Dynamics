@@ -207,6 +207,8 @@ export function reinsertChangedSlots(order, n, keysU32, prevKey, slotMoved, move
  * or one custom layer). Every array is sized once, reused every frame — no
  * per-frame allocation. `ready`/`n`/`gen`/`frame` are bookkeeping written by
  * `orderPainterSlots` and friends; callers do not touch them directly.
+ * `kernel` and `table` are the WASM sort's (W10, render/painterRadixClient.js): a state made there has
+ * these fields in this order, its arrays on the render-queue memory, and its kernel here; this one has none.
  * @param {number} maxItems
  */
 export function createPainterState(maxItems) {
@@ -227,6 +229,8 @@ export function createPainterState(maxItems) {
     n: 0,
     gen: 0,
     frame: 0,
+    kernel: null,
+    table: 0,
   };
 }
 

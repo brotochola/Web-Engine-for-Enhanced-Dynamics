@@ -62,6 +62,7 @@ import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_S
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import { bindGpuPack, packInstancedRowsWasm } from '../render/gpuPackClient.js';
+import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
 import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
 import {
@@ -404,6 +405,10 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueType = EMPTY_U8;
         /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
         this._gpuPackWasm = null;
+        /** The main queue's painter state (createPainterState's shape), with ySort on and a GPU queue. */
+        this._gpuPainter = null;
+        /** The painter sort kernel (W10) on pre-render's painter regions of the render-queue memory, when laid out. */
+        this._gpuPainterWasm = null;
         /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
         this._emitWasm = null;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
@@ -937,8 +942,22 @@ class PreRenderWorker extends AbstractWorker {
                     createGpuQueueViews(data.gpuQueue.dataA, caps, data.gpuQueue.dataAByte | 0),
                     createGpuQueueViews(data.gpuQueue.dataB, caps, data.gpuQueue.dataBByte | 0),
                 ];
-                this._gpuIdxEntity = new Uint32Array(maxItems);
-                this._gpuIdxGlow = new Uint32Array(maxItems);
+                // W10: the painter sort in WASM on pre-render's painter state, next to the keys it writes; the
+                // slot lists it sorts are regions there too.
+                this._gpuPainterWasm = null;
+                const painterLayout = data.renderQueueLayout?.preRenderPainter || null;
+                if (this._ySort && data.renderQueueMemory && painterLayout && painterLayout.rows >= maxItems
+                    && this.config?.wasm?.painterRadix !== false) {
+                    try {
+                        this._gpuPainterWasm = await bindPainterRadix(data.renderQueueMemory, painterLayout);
+                    } catch (err) {
+                        console.warn('[PRE_RENDER] painterRadix.wasm did not load; sorting in JS', err);
+                        this._gpuPainterWasm = null;
+                    }
+                }
+                const painterWasm = this._gpuPainterWasm;
+                this._gpuIdxEntity = painterWasm ? painterSlotList(painterWasm, 'entity', maxItems) : new Uint32Array(maxItems);
+                this._gpuIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
                 this._gpuPackCtx = {};
                 this._gpuCasterIdx = new Uint32Array(Math.max(1, caps.maxSun | 0, maxItems));
                 this._gpuStampTmp = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
@@ -991,7 +1010,11 @@ class PreRenderWorker extends AbstractWorker {
                     };
                 }
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
-                if (this._ySort) this._gpuPainter = createPainterState(maxItems);
+                if (this._ySort) {
+                    this._gpuPainter = this._gpuPainterWasm
+                        ? createWasmPainterState(this._gpuPainterWasm)
+                        : createPainterState(maxItems);
+                }
                 this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
             }
 

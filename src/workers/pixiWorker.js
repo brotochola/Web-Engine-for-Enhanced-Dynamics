@@ -102,6 +102,7 @@ import {
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { createPainterState } from '../util/sortIndexByKey.js';
+import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../render/painterRadixClient.js';
 import { LiquidFunDensitySplat, LF_SPLAT_STRIDE } from '../render/liquidFunDensitySplat.js';
 import { packParticleLights, resolveParticleLights } from '../render/particleLightSplat.js';
 import {
@@ -515,6 +516,9 @@ class PixiRenderer extends AbstractWorker {
     // render-queue memory (the view below) and gpuPack.wasm packs them, on Pixi's own scratch.
     this._pixiGpuPack = null;
     this._pixiInstanceRows = null;
+    // W10. With sortSprites 'pixi', the ENTITIES painter state and its slot lists live in the render-queue
+    // memory and painterRadix.wasm sorts them there (painterRadixClient.bindPainterRadix).
+    this._painterWasm = null;
     this._pendingResizeW = null;
     this._pendingResizeH = null;
     this._surfaceUnconfigured = false;
@@ -1883,7 +1887,26 @@ class PixiRenderer extends AbstractWorker {
     const active = this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
     if (!active) this._painter = null;
     else if (!this._painter && this.renderQueueMaxItems) {
-      this._painter = createPainterState(this.renderQueueMaxItems);
+      this._painter = this._newEntityPainter(this.renderQueueMaxItems);
+    }
+  }
+
+  /** The ENTITIES queue's painter state: on the render-queue memory, sorted by its kernel, when bound (W10). */
+  _newEntityPainter(maxItems) {
+    return this._painterWasm ? createWasmPainterState(this._painterWasm) : createPainterState(maxItems);
+  }
+
+  /** W10: painterRadix.wasm on Pixi's painter regions of the render-queue memory, when the scene laid them out. */
+  async _bindPainterRadix(data) {
+    this._painterWasm = null;
+    const memory = data.renderQueueMemory;
+    const layout = data.renderQueueLayout?.pixiPainter || null;
+    if (!memory || !layout || layout.rows < (this.renderQueueMaxItems | 0) || this.config?.wasm?.painterRadix === false) return;
+    try {
+      this._painterWasm = await bindPainterRadix(memory, layout);
+    } catch (err) {
+      console.warn('[PIXI WORKER] painterRadix.wasm did not load; sorting in JS', err);
+      this._painterWasm = null;
     }
   }
 
@@ -1911,9 +1934,10 @@ class PixiRenderer extends AbstractWorker {
   }
 
   createEntitiesInstancedBatch(maxItems) {
-    this._rqIdxEntity = new Uint32Array(maxItems);
-    this._rqIdxGlow = new Uint32Array(maxItems);
-    this._painter = this._ySort ? createPainterState(maxItems) : null;
+    const painterWasm = this._painterWasm;
+    this._rqIdxEntity = painterWasm ? painterSlotList(painterWasm, 'entity', maxItems) : new Uint32Array(maxItems);
+    this._rqIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
+    this._painter = this._ySort ? this._newEntityPainter(maxItems) : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -6088,6 +6112,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
     if (this.renderQueueEnabled) {
       await this._bindPixiGpuPack(data);
+      await this._bindPainterRadix(data);
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';

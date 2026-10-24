@@ -1,7 +1,8 @@
-/* The painter sort (E-76 W10), a test module: radixSortIndicesBySortKey, radixPainterOrder (with its
-   radixSortRuns) and reinsertChangedSlots of src/util/sortIndexByKey.js, on arrays in the imported shared
-   memory. A painter state is a table of u32 byte offsets (P_*), one array per createPainterState field
-   plus the histograms (the JS module's radixHist4) and two ordinal buffers for the key-value variants;
+/* The painter sort (E-76 W10): radixSortIndicesBySortKey, radixPainterOrder (with its radixSortRuns) and
+   reinsertChangedSlots of src/util/sortIndexByKey.js, on arrays in the imported shared memory (the
+   render-queue memory: src/render/painterRadixClient.js binds simd_inplace there). A painter state is a
+   table of u32 byte offsets (P_*), one array per createPainterState field plus the histograms (the JS
+   module's radixHist4) and two ordinal buffers for the key-value variants (wasmMemoryMap.js PAINTER_SLOTS);
    the sort keys are float32 bits by slot, passed by offset with each call. Offset 0 is the memory's null
    guard, so an idxE of 0 is the JS `null` (the dense [0, ne) layer queue).
 
@@ -35,7 +36,7 @@
 #define INLINE static inline __attribute__((always_inline))
 #define NOINLINE static __attribute__((noinline))
 
-/* u32 slots of a painter state's table (PAINTER_SLOTS in tests/bench/painterRadixWasmClient.mjs). */
+/* u32 slots of a painter state's table (PAINTER_SLOTS in src/util/wasmMemoryMap.js). */
 enum {
   P_ORDER,      /* u32 per row: the draw order (state.order) */
   P_SCRATCH,    /* u32 per row: the radix's other id buffer (state.scratch) */
@@ -51,7 +52,8 @@ enum {
   P_SLOT_COUNT
 };
 
-/* The largest histogram set: three 11-bit digits (kv11, and adaptive at a span of 23 bits or more). */
+/* The largest histogram set: three 11-bit digits (kv11, and adaptive at a span of 23 bits or more);
+   wasmMemoryMap.js PAINTER_HIST_WORDS. */
 #define HIST_WORDS 6144u
 
 #define CORE_SCALAR 0

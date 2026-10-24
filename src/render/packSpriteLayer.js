@@ -1,7 +1,20 @@
 import { fillQueueIndices } from './gpuQueueLayout.js';
+import { orderPainterSlotsWasm, radixSortIndicesWasm } from './painterRadixClient.js';
 import { orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
 
 const packResult = { sprite: 0, glow: 0, splitParticles: 0, flags: 0 };
+
+/** The painter's order: through its kernel when the state carries one (W10, painterRadixClient.js), else JS. */
+function painterOrder(painter, idxE, n, keysU32) {
+    if (painter.kernel) return orderPainterSlotsWasm(painter, idxE, n, keysU32);
+    return orderPainterSlots(painter, idxE, n, keysU32);
+}
+
+/** The glow rows by key, with the painter's kernel and scratch. */
+function sortGlowRows(painter, idxG, ng, keysU32) {
+    if (painter.kernel) radixSortIndicesWasm(painter, idxG, ng, keysU32);
+    else radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist);
+}
 
 function orderSpriteIndices(opts, painter, keysU32, indices, n, dense, addSortMs, sortedFlag) {
     if (!painter || !keysU32 || n < 2) {
@@ -16,10 +29,10 @@ function orderSpriteIndices(opts, painter, keysU32, indices, n, dense, addSortMs
     }
     if (addSortMs) {
         const t0 = performance.now();
-        opts.indices = orderPainterSlots(painter, dense ? null : indices, n, keysU32);
+        opts.indices = painterOrder(painter, dense ? null : indices, n, keysU32);
         addSortMs(performance.now() - t0);
     } else {
-        opts.indices = orderPainterSlots(painter, dense ? null : indices, n, keysU32);
+        opts.indices = painterOrder(painter, dense ? null : indices, n, keysU32);
     }
     opts.indexCount = n;
     return sortedFlag | 0;
@@ -66,10 +79,10 @@ export function packSpriteLayer(spec) {
             if (canSort && ng > 1) {
                 if (spec.timeGlowSort && addSortMs) {
                     const t0 = performance.now();
-                    radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist);
+                    sortGlowRows(painter, idxG, ng, keysU32);
                     addSortMs(performance.now() - t0);
                 } else {
-                    radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist);
+                    sortGlowRows(painter, idxG, ng, keysU32);
                 }
             }
             opts.sortKey = null;
