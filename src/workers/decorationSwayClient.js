@@ -3,7 +3,9 @@
 // sway regions). sway_decorations is the per-decoration loop of _updateDecorationSwayBuckets with its
 // bucket cache and impulse step; the frame's per-bucket Math.sin / Math.cos and the cache reset stay JS
 // before it, and the decorations that need a Math.sin or Math.cos of their own (an impulse's phase, a sway
-// angle of 0.08 rad or more) come back in the trig list for the JS to finish.
+// angle of 0.08 rad or more) come back in the trig list for the JS to finish. With `f32`
+// (wasm.decorationSwayF32, the particle worker's default) the kernel's float32 sway, sway_decorations_f32x4,
+// is bound in sway_decorations' place, once; the table, the call and the JS around it are the same.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { SWAY_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
@@ -38,13 +40,16 @@ const WORKER_COLUMNS = [
  * Bind the kernel to the render-queue memory.
  * @param {WebAssembly.Memory} memory
  * @param {Record<string, number>} sway createRenderQueueMemory's layout.sway
+ * @param {{ f32?: boolean }} [options] f32: the float32 sway (`f32` on the binding says which)
  */
-export async function bindDecorationSway(memory, sway) {
-  const k = await loadWasmKernel('decorationSway', wasmUrl, memory, ['sway_decorations']);
+export async function bindDecorationSway(memory, sway, { f32 = false } = {}) {
+  const exportName = f32 ? 'sway_decorations_f32x4' : 'sway_decorations';
+  const k = await loadWasmKernel('decorationSway', wasmUrl, memory, [exportName]);
   const buffer = memory.buffer;
   return {
     buffer,
-    sway: k.sway_decorations,
+    sway: k[exportName],
+    f32: Boolean(f32),
     layout: sway,
     tableByte: sway.tableByte,
     table: new Uint32Array(buffer, sway.tableByte, SWAY_SLOTS.length),

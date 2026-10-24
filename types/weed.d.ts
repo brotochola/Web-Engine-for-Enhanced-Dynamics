@@ -341,6 +341,13 @@ export type SceneConfig = Record<string, unknown> & {
     visibilitySweepF32?: boolean;
     /** Pre-render's raster of compound occluders (fixture pools) into the visibility bins. Needs visibilitySweep. */
     solidSegments?: boolean;
+    /** The particle worker's decoration sway (with particle.swayFrequencyBuckets above 1 and preRenderEmit on). */
+    decorationSway?: boolean;
+    /**
+     * The decoration sway in float32 (default true): faster; a sway rotation within a float32 rounding or so of the
+     * double one. false: the double sway, the JavaScript sway's results exactly.
+     */
+    decorationSwayF32?: boolean;
   };
 };
 

@@ -588,7 +588,10 @@ class ParticleWorker extends AbstractWorker {
       }
       if (swayLayout) {
         try {
-          this._swayWasm = await bindDecorationSway(data.renderQueueMemory, swayLayout);
+          // wasm.decorationSwayF32 (default on) takes the kernel's float32 sway, chosen once here.
+          this._swayWasm = await bindDecorationSway(data.renderQueueMemory, swayLayout, {
+            f32: this.config?.wasm?.decorationSwayF32 !== false,
+          });
         } catch (err) {
           console.warn('[particle] decorationSway.wasm did not load; swaying in JS', err);
           this._swayWasm = null;

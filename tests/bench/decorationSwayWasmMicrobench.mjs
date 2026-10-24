@@ -28,8 +28,9 @@
  * the worker's own arrays after it, so the JS and the kernel read and write the same bytes.
  *
  *   wasm-f32x4  the same call with sway_decorations_f32x4 (wasm/decorationSway.c) bound in the kernel's
- *               place: the sway angle and its rotation in float32, four skew decorations per f32x4. (The
- *               float32 pass also timed a scalar float32 sway: -3.6 % against sway_decorations.)
+ *               place, as the worker binds it by default (wasm.decorationSwayF32): the sway angle and its
+ *               rotation in float32, four skew decorations per f32x4. (The float32 pass also timed a scalar
+ *               float32 sway: -3.6 % against sway_decorations.) wasm is the double sway (the switch off).
  *
  * One variant per process, through runKernelVariants.mjs, which rejects a variant whose checksum differs.
  * The checksum covers rotC, rotS, sway, swayPhase, the bucket tables and the cache after each of the first
@@ -55,17 +56,12 @@ import { bindDecorationSway, SWAY_SLOTS, TRIG_IMPULSE } from '../../src/workers/
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
-import { instantiateKernel, machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
 /** The float32 sway of the shipped module (wasm/decorationSway.c), by variant name. */
 export const SWAY_F32_MODULE = 'decorationSway';
 export const SWAY_F32_EXPORTS = Object.freeze({ 'wasm-f32x4': 'sway_decorations_f32x4' });
 
-/** The float32 sway functions on `memory`, by variant name. */
-export function swayF32Kernels(memory) {
-  const exports = instantiateKernel(SWAY_F32_MODULE, memory);
-  return Object.fromEntries(Object.entries(SWAY_F32_EXPORTS).map(([variant, name]) => [variant, exports[name]]));
-}
 
 /** Away from 0.08 rad by at most this, a float32 angle can take the other side of the JS's small-angle step. */
 const SWAY_STEP_COS = 1 - Math.cos(0.08) + (0.08 - Math.sin(0.08));
@@ -299,8 +295,11 @@ export async function setupSwayKernel(opts = {}) {
   return { worker, memory, buffer, layout, regions: R, b, n, k, onScreen };
 }
 
-/** Load the kernel onto `memory` through the client, on a layout of the bench's regions, and write its table. */
-export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIST_CAP) {
+/**
+ * Load the kernel onto `memory` through the client, on a layout of the bench's regions, and write its table.
+ * `f32`: bindDecorationSway's (wasm.decorationSwayF32), off by default here: the double sway.
+ */
+export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIST_CAP, { f32 = false } = {}) {
   if (!(listCap >= 1 && listCap * 2 <= regions.list.bytes)) throw new Error(`sway: a list of ${listCap} does not fit its region`);
   const b = await bindDecorationSway(memory, {
     decorations: regions.trig.bytes / 4,
@@ -310,7 +309,7 @@ export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIS
     trigByte: regions.trig.byte,
     trigValueByte: regions.trigValue.byte,
     tableByte: regions.table.byte,
-  });
+  }, { f32 });
   writeSwayTable(b, worker);
   return b;
 }
@@ -453,7 +452,8 @@ async function main() {
   // checksum frames the kernel's call counts what it lists; the timed frames call it bare.
   worker._swayWasm = variant === 'js' ? null : b;
   const shipped = b.sway;
-  const kernel = f32 ? swayF32Kernels(s.memory)[variant] : shipped;
+  // wasm-f32x4: the function the worker binds with wasm.decorationSwayF32 on (bindDecorationSway's `f32`).
+  const kernel = f32 ? (await bindSwayKernel(s.memory, s.regions, worker, b.listCap, { f32: true })).sway : shipped;
   const counted = (fn, count) => (...callArgs) => {
     const n = fn(...callArgs);
     lastListed = n;

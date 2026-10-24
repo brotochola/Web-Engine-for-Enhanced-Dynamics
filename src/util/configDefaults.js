@@ -498,6 +498,13 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   decorationSway: true,
   /**
+   * The sway in float32, four skew decorations per f32x4 (`sway_decorations_f32x4`, the float32 pass): a sway
+   * rotation within 2^-21 · (1 + |amplitude|) · (1 + |base rotation|) of the double one (1.2e-6 for Predator's
+   * grass); buckets, impulse phases and modes exact. false: the double sway (`sway_decorations`), the JS
+   * sway's bits.
+   */
+  decorationSwayF32: true,
+  /**
    * The particle worker's decal stamping (`decalStamp.wasm`, W26): the decal tiles at byte 0 of a WebAssembly.Memory
    * of their own, with the decal textures and the kernel's scratch after them.
    */

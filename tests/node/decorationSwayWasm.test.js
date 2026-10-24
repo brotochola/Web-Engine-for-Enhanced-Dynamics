@@ -1,4 +1,4 @@
-// E-76 W22: the sway kernel (tests/fixtures/wasm/decorationSway.wasm, from wasm/test/decorationSway.c) against
+// E-76 W22: the double sway kernel (sway_decorations in src/workers/decorationSway.wasm, from wasm/decorationSway.c) against
 // the shipped ParticleWorker.updateDecorationSway (its bucket path, _updateDecorationSwayBuckets) on a real
 // particle worker, every array the sway reads in one shared memory as decorationSwayWasmMicrobench lays it
 // out, the kernel run through that bench's wrapper (swayDecorationsWasm: the per-bucket Math.sin / Math.cos
@@ -24,7 +24,8 @@ import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQue
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import { bucketFromSwayFrequency, SWAY_IMPULSE, SWAY_LOOP, SWAY_LOOP_SKEW, SWAY_OFF } from '../../src/util/decorationSway.js';
-import { setupSwayKernel, SWAY_SLOTS, swayDecorationsWasm, TRIG_IMPULSE } from '../bench/decorationSwayWasmMicrobench.mjs';
+import { compareSwayStates, setupSwayKernel, SWAY_SLOTS, swayDecorationsWasm, TRIG_IMPULSE } from '../bench/decorationSwayWasmMicrobench.mjs';
+import { bindDecorationSway } from '../../src/workers/decorationSwayClient.js';
 import {
   DT,
   frameDelta,
@@ -156,19 +157,19 @@ test('the sway kernel writes what _updateDecorationSwayBuckets writes, frame aft
   t.diagnostic(`${frame} frames: ${JSON.stringify(cov)}`);
 });
 
-// W22 wired: a particle worker booted on a render-queue memory with the sway regions (as the scene makes it:
-// the decorations block, then the sway arrays) binds the kernel itself and keeps its sway arrays there.
-// updateDecorationSway with the kernel and without it must leave the same bytes, frame after frame, on the
-// random frames above: the worker's own path (writeSwayColumns, sway_decorations, _finishSwayTrig).
-test('updateDecorationSway through the kernel the worker binds writes what the JS writes', async (t) => {
-  const k = 100;
+
+/**
+ * A particle worker booted on a render-queue memory with the sway regions (as the scene makes it: the
+ * decorations block, then the sway arrays), with `wasm` as its config's wasm block.
+ */
+async function bootWired(k, wasm) {
   const caps = gpuQueueCaps(64, { enabled: false });
   const m = createRenderQueueMemory(64, computeBufferSize(64), computeGpuQueueBufferSize(caps),
     { entities: 16, spriteBytes: 0, casterBytes: 0, decorationBytes: DecorationComponent.getBufferSize(N) }, null,
     { decorations: N, buckets: k });
   const worker = await loadWorker('particleWorker.js', 'particleWorker');
   await initWorker(worker, {
-    config: { particle: { swayFrequencyBuckets: k }, decoration: { maxDecorations: N } },
+    config: { particle: { swayFrequencyBuckets: k }, decoration: { maxDecorations: N }, ...(wasm ? { wasm } : {}) },
     globalEntityCount: 16,
     buffers: {
       componentData: { DecorationComponent: m.buffer },
@@ -184,8 +185,19 @@ test('updateDecorationSway through the kernel the worker binds writes what the J
       renderQueueLayout: m.layout,
     },
   });
+  return { m, worker };
+}
+
+// W22 wired: the worker binds the kernel itself and keeps its sway arrays in the memory.
+// updateDecorationSway with the kernel and without it must leave the same bytes, frame after frame, on the
+// random frames above: the worker's own path (writeSwayColumns, sway_decorations, _finishSwayTrig), with
+// wasm.decorationSwayF32 off (the double sway).
+test('updateDecorationSway through the kernel the worker binds writes what the JS writes', async (t) => {
+  const k = 100;
+  const { m, worker } = await bootWired(k, { decorationSwayF32: false });
   const bound = worker._swayWasm;
   assert.ok(bound, 'the worker bound the kernel at init');
+  assert.equal(bound.f32, false, 'wasm.decorationSwayF32 false binds sway_decorations');
   for (const name of ['_activeDecorationSnapshot', '_phaseSin', '_phaseCos', '_bucketSin', '_bucketCos', '_swayBucketOf', '_swayBucketFreq']) {
     assert.equal(worker[name].buffer, m.buffer, `${name} is in the memory`);
   }
@@ -222,4 +234,56 @@ test('updateDecorationSway through the kernel the worker binds writes what the J
   }
   assert.ok(calls >= 50 && listed > 0, `the kernel ran (${calls} calls) and listed decorations for the JS (${listed})`);
   t.diagnostic(`${calls} kernel calls, ${listed} decorations finished in JS`);
+});
+
+// The default, wasm.decorationSwayF32 on: the worker binds sway_decorations_f32x4, and its frames on the
+// worker's own path stay within compareSwayStates' tolerance (decorationSwayF32.test.js) of the same path
+// with the double sway, which the test above ties to the JS.
+test('wasm.decorationSwayF32 (default on) binds the float32 sway, within its tolerance on the worker path', async (t) => {
+  const k = 100;
+  const { m, worker } = await bootWired(k, null);
+  const bound = worker._swayWasm;
+  assert.ok(bound, 'the worker bound the kernel at init');
+  assert.equal(bound.f32, true, 'the default binds sway_decorations_f32x4');
+  const f32 = bound.sway;
+  const f64 = (await bindDecorationSway(m.memory, m.layout.sway, { f32: false })).sway;
+  let trig = null;
+  const run = (fn) => (...args) => {
+    const n = fn(...args);
+    trig = { trig: bound.trig.slice(0, n), value: bound.trigValue.slice(0, n) };
+    return n;
+  };
+  const st = { worker };
+  const r = rng(0x5ee2);
+  const mem = new Uint8Array(m.buffer);
+  const stats = { stepFlips: 0, worst: 0 };
+  let frames = 0;
+  for (let f = 0; f < 60; f++) {
+    scramble(r, st, k, f === 0 ? 1 : 0.25, false);
+    pickSnapshot(r, st);
+    const deltaTime = frameDelta(r);
+    worker.accumulatedTime += DT;
+    const before = mem.slice();
+    const cacheK = worker._swayBucketCacheK;
+    trig = null;
+    bound.sway = run(f64);
+    worker.updateDecorationSway(deltaTime);
+    const ref = mem.slice();
+    const refTrig = trig;
+    const refCacheK = worker._swayBucketCacheK;
+    mem.set(before);
+    worker._swayBucketCacheK = cacheK;
+    trig = null;
+    bound.sway = run(f32);
+    worker.updateDecorationSway(deltaTime);
+    if (!refTrig) continue;
+    frames++;
+    assert.equal(worker._swayBucketCacheK, refCacheK, `frame ${f}: the cache grid`);
+    // The trig lists are compared as the kernels returned them; the bytes after the JS finished them.
+    const bad = compareSwayStates(stateViews(st), ref, mem.slice(), refTrig, trig, stats);
+    assert.equal(bad, null, `frame ${f}`);
+  }
+  bound.sway = f32;
+  assert.ok(frames >= 50, `${frames} frames swayed`);
+  t.diagnostic(`${frames} frames: rotation error at most ${(stats.worst * 100).toFixed(0)} % of its slack, ${stats.stepFlips} across the 0.08 rad step`);
 });
