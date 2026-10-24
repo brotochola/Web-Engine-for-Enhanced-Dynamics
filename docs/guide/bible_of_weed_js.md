@@ -1315,6 +1315,24 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 ## Performance Notes
 
 - Prefer component-array reads in hot loops.
+- A per-entity number with a fractional part that changes every tick (a phase, a timer, an angle, a speed) belongs
+  in a component column, not in a field of the entity. Chrome keeps such a field as a pointer to a boxed number,
+  so every write allocates a new one: one `this._phase += …` per entity per tick made 21 MB/s of garbage in a
+  stress scene. A component column is a typed array, and writing to it allocates nothing. Integer fields
+  (counters, indices, flags) do not box. Declare the column and write it through the component's accessor:
+
+  ```js
+  class Spin extends Component {
+    static ARRAY_SCHEMA = { phase: Float32Array };
+  }
+
+  class Fan extends GameObject {
+    static components = [Spin];
+    tick(dtRatio) {
+      this.spin.phase += 0.05 * dtRatio; // a float32 store, no allocation
+    }
+  }
+  ```
 - Keep `collider.visualRange` tight to reduce neighbor pressure.
 - Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
 - Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
