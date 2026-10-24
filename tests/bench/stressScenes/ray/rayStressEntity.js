@@ -21,8 +21,7 @@ export class RayStressEntity extends GameObject {
     this.y = y;
     this.rotation = 0;
 
-    // A collider-only subclass (no physics) has no RigidBody: its collider alone is the static obstacle.
-    if (this.rigidBody) this.rigidBody.static = 1;
+    this.rigidBody.static = 1;
 
     if (shape === 'box') {
       this.collider.shapeType = ShapeType.Box;
