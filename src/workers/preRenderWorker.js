@@ -63,6 +63,18 @@ import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import { bindGpuPack, packInstancedRowsWasm } from '../render/gpuPackClient.js';
 import {
+    bindPreRenderEmit,
+    writeEmitColumns,
+    writeEmitTextures,
+    EMIT_BOUNDS,
+    EMIT_DECLINED,
+    EMIT_SORT_KEY,
+    EMIT_TILES_DIRTY,
+    EMIT_WARN_NO_ANIM,
+    EMIT_WARN_NO_START,
+    EMIT_Y_SORT,
+} from './preRenderEmitClient.js';
+import {
     GPU_SPRITE_FLOATS,
     GPU_CASTER_FLOATS,
     GPU_SPACE_WORLD,
@@ -387,6 +399,10 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueType = EMPTY_U8;
         /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
         this._gpuPackWasm = null;
+        /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
+        this._emitWasm = null;
+        /** Whether the kernel's last frame wrote a repeating sprite (emitSpriteQueue's tiledRows). */
+        this._emitTiledRows = false;
         this.renderQueueSortKey = EMPTY_F32;
         this.renderQueueSortKeyU32 = EMPTY_U32;
         this.renderQueueRepeatX = EMPTY_U16;
@@ -864,6 +880,16 @@ class PreRenderWorker extends AbstractWorker {
             this._renderableIndex = emitLayout
                 ? new Int32Array(emitBuffer, emitLayout.collectorIndexByte, maxItems)
                 : new Int32Array(maxItems);
+            // E-112: the full emit's sprite and decoration rows in WASM, where it reads every column.
+            this._emitWasm = null;
+            if (emitLayout && this.config?.wasm?.preRenderEmit !== false) {
+                try {
+                    this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
+                } catch (err) {
+                    console.warn('[PRE_RENDER] preRenderEmit.wasm did not load; emitting in JS', err);
+                    this._emitWasm = null;
+                }
+            }
             this._renderablePx = new Float32Array(maxItems);
             this._renderablePy = new Float32Array(maxItems);
             this._renderableRotC = new Float32Array(maxItems);
@@ -980,6 +1006,10 @@ class PreRenderWorker extends AbstractWorker {
             this.animationNameToIndex = data.textureMetadata.animationNameToIndex;
             this.frameWidth = data.textureMetadata.frameWidth;   // Uint16Array[textureId]
             this.frameHeight = data.textureMetadata.frameHeight; // Uint16Array[textureId]
+            // E-112: the kernel's copy of it; metadata that does not fit its tables keeps the JS emit.
+            if (this._emitWasm !== null && !writeEmitTextures(this._emitWasm, data.textureMetadata)) {
+                this._emitWasm = null;
+            }
         }
 
         // Component SoA views are per-scene. Drop the cached sort-line binding
@@ -2930,6 +2960,17 @@ class PreRenderWorker extends AbstractWorker {
             writeCount = count < maxItems ? count : maxItems;
             loopCount = 0;
         }
+        // E-112. A full emit's sprite and decoration rows are written by preRenderEmit.wasm, the rows of
+        // other types after it; a frame it does not take (an Adobe root, a LiquidFun row, a column
+        // outside its memory) runs the loop below.
+        if (this._emitWasm !== null && !persistHit && loopCount > 0 && stashPx) {
+            const written = this._emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty);
+            if (written >= 0) {
+                writeCount = written;
+                loopCount = 0;
+                tiledRows = this._emitTiledRows;
+            }
+        }
 
         for (let i = 0; i < loopCount && writeCount < maxItems; i++) {
             const type = collectorType[i];
@@ -3309,6 +3350,282 @@ class PreRenderWorker extends AbstractWorker {
             if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;
         }
         return writeCount;
+    }
+
+    /**
+     * E-112. The full emit's rows through preRenderEmit.wasm: it writes the sprite and decoration rows,
+     * then the rows of other types it listed are written here, its play-once ends sent through the
+     * entity-type filter and its missing textures warned as the JS emit warns them.
+     * Returns the rows written, or -1 when the kernel cannot take the frame (the JS loop does).
+     */
+    _emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty) {
+        const b = this._emitWasm;
+        if (!b.texturesReady) return -1;
+        if (!writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return -1;
+        const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
+        const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0)
+            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0);
+        const written = b.emitRows(b.tableByte, source.count, source.maxItems, flags,
+            deltaTime / 1000, this._decorationZoomAlpha, this._zBand);
+        if (written === EMIT_DECLINED) return -1;
+        const results = b.results;
+        const u32 = b.u32;
+        if (results[3] > 0) this._emitForeignRows(b.foreignAt, results[3], source, writeSortKey, ySort, tilesDirty);
+        const ends = results[0];
+        for (let k = 0, at = b.endsAt; k < ends; k++, at += 2) {
+            const idx = u32[at];
+            if (this._animEndByType[Transform.entityType[idx]] === 1) this._spriteAnimationEnded(idx, u32[at + 1]);
+        }
+        const warns = results[1];
+        for (let k = 0, at = b.warnsAt; k < warns; k++, at += 2) this._emitWarn(u32[at], u32[at + 1]);
+        this._emitTiledRows = results[2] !== 0;
+        return written;
+    }
+
+    /**
+     * E-112. The rows preRenderEmit.wasm left to the JS (particles, glows, bullets and their trails), at
+     * their collector rows: the full emit's branches for those types, copied (the emit loop is too hot to
+     * share them). Row i is queue row i: a frame the kernel took has no Adobe root to expand.
+     */
+    _emitForeignRows(listAt, listCount, source, writeSortKey, ySort, tilesDirty) {
+        const list = this._emitWasm.u32;
+        const collectorY = source.collectorY;
+        const collectorType = source.collectorType;
+        const collectorIndex = source.collectorIndex;
+        const ref = this._emitRef;
+        const rqX = this.renderQueueX;
+        const rqY = this.renderQueueY;
+        const rqScaleX = this.renderQueueScaleX;
+        const rqScaleY = this.renderQueueScaleY;
+        const rqRotC = this.renderQueueRotC;
+        const rqRotS = this.renderQueueRotS;
+        const rqAlpha = this.renderQueueAlpha;
+        const rqTint = this.renderQueueTint;
+        const rqTextureId = this.renderQueueTextureId;
+        const rqAnchorX = this.renderQueueAnchorX;
+        const rqAnchorY = this.renderQueueAnchorY;
+        const rqSortKey = this.renderQueueSortKey;
+        const rqRepeatX = this.renderQueueRepeatX;
+        const rqRepeatY = this.renderQueueRepeatY;
+
+        const entityX = Transform.x;
+        const entityY = Transform.y;
+
+        const particleX = ParticleComponent.x;
+        const particleY = ParticleComponent.y;
+        const particleZ = ParticleComponent.z;
+        const particleScaleX = ParticleComponent.scaleX;
+        const particleScaleY = ParticleComponent.scaleY;
+        const particleFlipX = ParticleComponent.flipX;
+        const particleFlipY = ParticleComponent.flipY;
+        const particleRotC = ParticleComponent.rotC;
+        const particleRotS = ParticleComponent.rotS;
+        const particleAlpha = ParticleComponent.alpha;
+        const particleTint = ParticleComponent.tint;
+        const particleTextureId = ParticleComponent.textureId;
+        const particleFlat = ParticleComponent.flat;
+        const particleViewMode = ParticleComponent.viewMode;
+
+        const lightColor = LightEmitter.lightColor;
+        const lightIntensity = LightEmitter.lightIntensity;
+        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+        const glowHeightOffset = LightEmitter.glowHeightOffset;
+        const glowSprite = LightEmitter.hasGlowSprite;
+        const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
+        const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
+
+        const bulletX = BulletComponent.x;
+        const bulletY = BulletComponent.y;
+        const bulletStartX = BulletComponent.startX ?? BulletComponent.prevX;
+        const bulletStartY = BulletComponent.startY ?? BulletComponent.prevY;
+        const bulletOffsetY = BulletComponent.offsetY;
+        const bulletScale = BulletComponent.scale;
+        const bulletAlpha = BulletComponent.alpha;
+        const bulletTint = BulletComponent.tint;
+        const bulletTextureId = BulletComponent.textureId;
+        const bulletSpriteRotC = BulletComponent.spriteRotC;
+        const bulletSpriteRotS = BulletComponent.spriteRotS;
+        const bulletRotC = BulletComponent.bulletRotC;
+        const bulletRotS = BulletComponent.bulletRotS;
+        const bulletTrailWidth = BulletComponent.trailWidth;
+        const bulletAnchorX = BulletComponent.anchorX;
+        const bulletAnchorY = BulletComponent.anchorY;
+        const bulletActive = BulletComponent.active;
+
+        const bulletTrailTextureId = this._resolveBuiltinTextureId('_bulletTrail');
+        const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
+
+        for (let k = 0; k < listCount; k++) {
+            const i = list[listAt + k];
+            const type = collectorType[i];
+            const idx = collectorIndex[i];
+            const yKey = collectorY[i];
+            const sk = writeSortKey ? this._orderKey(type, idx, yKey, ySort) : yKey;
+            const out = i;
+            if (writeSortKey) rqSortKey[out] = sk;
+            if (tilesDirty) {
+                if (rqRepeatX) rqRepeatX[out] = 0;
+                if (rqRepeatY) rqRepeatY[out] = 0;
+                clearTileFields(ref, out);
+            }
+            clearQueueShadow(ref, out);
+            if (type === 1) {
+                // === PARTICLE ===
+                rqX[out] = particleX[idx];
+                // Zenithal: height → scale (and alpha). Never fold z into Y.
+                // Flat: y only. Else (topdown): screenY = y + z.
+                if (particleViewMode && particleViewMode[idx] === CAMERA_TYPES.ZENITHAL && !(particleFlat && particleFlat[idx])) {
+                    rqY[out] = particleY[idx];
+                    const height = -particleZ[idx];
+                    const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
+                    rqScaleX[out] = particleScaleX[idx] * heightFactor * (particleFlipX[idx] ? -1 : 1);
+                    rqScaleY[out] = particleScaleY[idx] * heightFactor * (particleFlipY[idx] ? -1 : 1);
+                    let a = particleAlpha[idx];
+                    if (this.zenithalAlphaFade > 0) {
+                        const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
+                        a *= Math.max(0, 1 - alphaFade);
+                    }
+                    rqAlpha[out] = a;
+                } else if (particleFlat && particleFlat[idx]) {
+                    rqY[out] = particleY[idx];
+                    rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
+                    rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
+                    rqAlpha[out] = particleAlpha[idx];
+                } else {
+                    rqY[out] = particleY[idx] + particleZ[idx];
+                    rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
+                    rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
+                    rqAlpha[out] = particleAlpha[idx];
+                }
+                rqRotC[out] = particleRotC[idx];
+                rqRotS[out] = particleRotS[idx];
+                rqTint[out] = particleTint[idx];
+                const pAnimIdx = particleTextureId[idx];
+                rqTextureId[out] = pAnimIdx === 0
+                    ? whiteCircleTextureId
+                    : this._resolveAnimFrameStart(pAnimIdx, ANIM_LABEL_TAG.PARTICLE);
+                rqAnchorX[out] = 0.5;
+                rqAnchorY[out] = 0.5;
+                this._setQueueType(ref, out, 1, idx);
+            } else if (type === 4) {
+                // === BULLET ===
+                if (!bulletActive[idx]) {
+                    rqAlpha[out] = 0;
+                    rqScaleX[out] = 0;
+                    rqScaleY[out] = 0;
+                    rqX[out] = -10000;
+                    rqY[out] = -10000;
+                } else {
+                    rqX[out] = bulletX[idx];
+                    rqY[out] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                    rqScaleX[out] = bulletScale[idx];
+                    rqScaleY[out] = bulletScale[idx];
+                    rqRotC[out] = bulletSpriteRotC[idx];
+                    rqRotS[out] = bulletSpriteRotS[idx];
+                    rqAlpha[out] = bulletAlpha[idx];
+                    rqTint[out] = bulletTint[idx];
+                    const bAnimIdx = bulletTextureId[idx];
+                    rqTextureId[out] = this._resolveAnimFrameStart(bAnimIdx, ANIM_LABEL_TAG.BULLET);
+                    rqAnchorX[out] = bulletAnchorX[idx];
+                    rqAnchorY[out] = bulletAnchorY[idx];
+                }
+                this._setQueueType(ref, out, 4, idx);
+            } else if (type === 5) {
+                // === BULLET TRAIL (line from start to curr, 0-alpha at start) ===
+                if (!bulletActive[idx]) {
+                    rqAlpha[out] = 0;
+                    rqScaleX[out] = 0;
+                    rqScaleY[out] = 0;
+                    rqX[out] = -10000;
+                    rqY[out] = -10000;
+                } else {
+                    const currX = bulletX[idx];
+                    const currY = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
+                    const startX = bulletStartX[idx];
+                    const startY = bulletStartY[idx] + (bulletOffsetY[idx] ?? 0);
+                    const dx = currX - startX;
+                    const dy = currY - startY;
+                    const lenSq = dx * dx + dy * dy;
+
+                    if (lenSq < BULLET_TRAIL_MIN_LENGTH_SQ) {
+                        rqAlpha[out] = 0;
+                        rqScaleX[out] = 0;
+                        rqScaleY[out] = 0;
+                        rqX[out] = -10000;
+                        rqY[out] = -10000;
+                    } else {
+                        const adx = dx < 0 ? -dx : dx;
+                        const ady = dy < 0 ? -dy : dy;
+                        const max = adx > ady ? adx : ady;
+                        const min = adx > ady ? ady : adx;
+                        const lengthApprox = 0.96 * max + 0.4 * min;
+
+                        rqX[out] = (startX + currX) * 0.5;
+                        rqY[out] = (startY + currY) * 0.5;
+                        rqScaleX[out] = lengthApprox / 10;
+                        rqScaleY[out] = bulletTrailWidth[idx];
+                        // Flight dir already in bulletRotC/S (straight bullets)
+                        rqRotC[out] = bulletRotC[idx];
+                        rqRotS[out] = bulletRotS[idx];
+                        rqAlpha[out] = bulletAlpha[idx] * 0.9;
+                        rqTint[out] = 0xffffff;
+                    }
+                }
+                rqTextureId[out] = bulletTrailTextureId;
+                rqAnchorX[out] = 0.5;
+                rqAnchorY[out] = 0.5;
+                this._setQueueType(ref, out, 5, idx);
+            } else {
+                // === LIGHT GLOW (type=3) ===
+                const scale = lightGlowScale(sqrtLightIntensity[idx]);
+                // hasGlowSprite 0.5 → /50000; 1 → /25000
+                const glowAlpha = lightIntensity[idx] * glowSprite[idx] * (1 / 25000);
+
+                if (scale < 0.1 || glowAlpha < 0.001) {
+                    rqAlpha[out] = 0;
+                    rqScaleX[out] = 0;
+                    rqScaleY[out] = 0;
+                    rqX[out] = -10000;
+                    rqY[out] = -10000;
+                } else {
+                    rqX[out] = entityX[idx];
+                    rqY[out] = entityY[idx] - (glowHeightOffset[idx] || 0);
+                    rqScaleX[out] = scale;
+                    rqScaleY[out] = scale;
+                    rqAlpha[out] = glowAlpha;
+                    rqTint[out] = lightColor[idx];
+                }
+                rqRotC[out] = 1;
+                rqRotS[out] = 0;
+                rqTextureId[out] = lightGradientTextureId;
+                rqAnchorX[out] = 0.5;
+                rqAnchorY[out] = 0.5;
+                if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
+                this._setQueueType(ref, out, 3, idx);
+            }
+        }
+    }
+
+    /** E-112. A missing texture the kernel met, warned under the key and text the JS emit uses. */
+    _emitWarn(idx, kind) {
+        if (kind === EMIT_WARN_NO_ANIM || kind === EMIT_WARN_NO_START) {
+            const sheetId = SpriteRenderer.spritesheetId[idx];
+            const animState = SpriteRenderer.animationState[idx];
+            if (kind === EMIT_WARN_NO_ANIM) {
+                this._warnMissingTexture(
+                    `sprite:${sheetId}:${animState}`,
+                    `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
+                );
+                return;
+            }
+            const globalAnimIdx = this.proxyToGlobalAnim?.[sheetId]?.[animState];
+            this._warnMissingTexture(
+                `animStart:${globalAnimIdx}`,
+                `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${idx}`
+            );
+            return;
+        }
+        this._resolveAnimFrameStart(DecorationComponent.textureId[idx], ANIM_LABEL_TAG.DECORATION);
     }
 
     /**

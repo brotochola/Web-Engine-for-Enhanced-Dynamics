@@ -262,7 +262,9 @@ async function runCase(t, opts) {
   const n = Math.min(count, maxItems);
   const start = k.snapshot();
 
-  // The JS: 30 frames, the queue and the state after each, the ends and warnings it made.
+  // The JS: 30 frames, the queue and the state after each, the ends and warnings it made. The worker
+  // bound the kernel at init; unbound, emitSpriteQueue is the JS loop.
+  worker._emitWasm = null;
   const jsFrames = [];
   const ends = [];
   const warns = [];
@@ -403,4 +405,56 @@ test('a column outside the memory makes the table refuse, so the JS emits', asyn
   assert.equal(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), false);
   SpriteRenderer.alpha = saved;
   assert.equal(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), true);
+});
+
+test('emitSpriteQueue through the kernel writes every row the JS loop writes, other types included', async (t) => {
+  for (const ySort of [true, false]) {
+    const k = await setup({ ySort, seed: ySort ? 0xc0ffee : 0xdecade });
+    const { worker, source } = k;
+    const bound = worker._emitWasm;
+    assert.ok(bound, 'the worker bound the kernel at init');
+    assert.ok(bound.texturesReady, 'and wrote the metadata tables');
+    let kernelCalls = 0;
+    const realRows = bound.emitRows;
+    bound.emitRows = (...args) => {
+      kernelCalls++;
+      return realRows(...args);
+    };
+    const start = k.snapshot();
+    const realEnded = worker._spriteAnimationEnded;
+    const realWarn = worker._warnMissingTexture;
+    const run = (kernel) => {
+      worker._emitWasm = kernel;
+      const frames = [];
+      for (let f = 0; f < FRAMES; f++) {
+        const ends = [];
+        const warns = [];
+        worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+        worker._warnMissingTexture = (key) => warns.push(key);
+        const written = worker.emitSpriteQueue(DT, source);
+        frames.push({ written, snap: k.snapshot(), ends, warns: warns.sort() });
+      }
+      worker._spriteAnimationEnded = realEnded;
+      worker._warnMissingTexture = realWarn;
+      return frames;
+    };
+    const js = run(null);
+    k.restore(start);
+    const wasm = run(bound);
+    assert.equal(kernelCalls, FRAMES, 'the kernel took every frame');
+    for (let f = 0; f < FRAMES; f++) {
+      assert.equal(wasm[f].written, js[f].written, `frame ${f}: rows`);
+      const a = wasm[f].snap.queue;
+      const b = js[f].snap.queue;
+      const at = a.findIndex((x, i) => x !== b[i]);
+      assert.equal(at, -1, `frame ${f}: the queue differs at byte ${at}`);
+      wasm[f].snap.state.forEach((v, s2) => {
+        assert.deepEqual(Buffer.from(v.buffer, v.byteOffset, v.byteLength), Buffer.from(js[f].snap.state[s2].buffer, js[f].snap.state[s2].byteOffset, js[f].snap.state[s2].byteLength), `frame ${f}: state ${s2}`);
+      });
+      assert.deepEqual([...wasm[f].snap.tiled], [...js[f].snap.tiled], `frame ${f}: tiled columns`);
+      assert.deepEqual(wasm[f].ends, js[f].ends, `frame ${f}: play-once ends, in order`);
+      assert.deepEqual(wasm[f].warns, js[f].warns, `frame ${f}: warnings`);
+    }
+    t.diagnostic(`ySort ${ySort}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
+  }
 });
