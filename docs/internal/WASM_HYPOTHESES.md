@@ -457,6 +457,32 @@ after E-98 (pre-render's collect went 21 → 6 ms in JS). A cheaper boot than th
 worker before the scene buffers exist, have it `_malloc` the engine block as soon as its module is ready, and build
 the moved buffers inside that block, so nothing binds twice.
 
+**Design for the build (2026-10-24, from W4b's needs).** BunnyMark's collect is 70 % of its pre-render
+(E-128), and the collect is what Phase 4 moves first. What one kernel must see together:
+
+- *Scenes without physics:* Transform's pose is the Weed buffer `scene.weedPose` (`createWeedPosePayload`,
+  main thread, before any worker), its state block (`active`, `entityType`, `isItOnScreen`) is a component
+  buffer, and the physics host does not run. Both, and Collider, can be regions of the render-queue memory
+  through E-112's `componentDataByte` path, with no barrier and no host change: **W4b goes first there**
+  (kernel screen `3d330df3`, `wasm/test/preRenderCollect.c`).
+- *Physics scenes:* a body's display pose comes from the published pose buffers (`poseDataA/B`, made on the
+  main thread, filled by the physics host's `publishPose`), a bodiless sprite's from Transform in Box2D's
+  heap. So the kernel needs Box2D's memory, the pose buffers and the render-queue regions in one memory.
+- *The barrier, cheapest form:* the main thread already sizes the render-queue memory from the config before
+  any worker (`initializeRenderQueueMemory`). With physics on it starts the physics worker first, posts it
+  the block size; the host `_malloc`s the block once its module is ready (Box2D's memory carries the
+  developer's `physics.wasmMemoryMB` plus the block, `box2dMemoryPages`) and posts back the
+  `WebAssembly.Memory` and the block's byte. `createRenderQueueMemory` then lays its regions at that byte of
+  Box2D's memory instead of making a memory of its own, the pose buffers become two more regions there, and
+  every other worker boots as today with buffers that happen to be views of Box2D's memory. Nothing binds
+  twice and no worker waits on `box2dReady` before `start`. A scene whose block does not fit keeps today's
+  separate memories and the JS paths.
+- *What the physics host must learn:* honour byte offsets for the pose buffers it writes (today plain SABs),
+  and keep its mirrored schemas (`physicsHostImpl.js`) reading Transform and Collider where
+  `componentDataByte` puts them, if those blocks move too.
+- *Unblocks:* W4b with bodies (Predator's collect, ~20 % of its pre-render), W19 (the bullet casts read
+  Transform, Collider and the grid), W7, W18, W2b, W28.
+
 **Phase 5 — Product wiring, per winner, one at a time.** T7 switch first. Scene pair, then the Predator
 gate. Boot cost and dist sizes on record. One commit per port. Winners land in sequence, so each one's
 scene pair runs against a base that already has the earlier ones.
