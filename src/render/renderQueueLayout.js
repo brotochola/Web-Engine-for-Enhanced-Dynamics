@@ -31,7 +31,7 @@ const FIELDS = [
     ['type',        Uint8Array,             1,   0],
     // Composite collector key (worldY*K+innerZ / -z / glow bias) — CPU painter when the layer y-sorts
     ['sortKey',     Float32Array,           4,   0],
-    // World-space tile period in px; 0 = stretch. Packed u16 pair, then align4.
+    // World-space tile period in px; 0 = stretch. A u16 pair.
     ['repeatX',     Uint16Array,            2,   0],
     ['repeatY',     Uint16Array,            2,   0],
     // SPRITE_TILE_MODE; offset 0..65535 = UV 0..1; signed mul written by pre_render.
@@ -92,7 +92,13 @@ export function readQueueCamera(sync, a, b, out) {
     return 0;
 }
 
-function align4(n) { return (n + 3) & ~3; }
+/**
+ * E-113: where the next column starts, from the queue's base. Each column begins one cache line past a
+ * line boundary: at a capacity that is a multiple of 1 024 the float columns are a multiple of 4 KB apart,
+ * and starting each on the boundary put every column of a row in one L1 set (the C emit ran 2.4× slower
+ * at 32 768 rows than at 33 000).
+ */
+function nextColumn(offset) { return ((offset + 63) & ~63) + 64; }
 
 export function computeBufferSize(maxItems) {
     let offset = 0;
@@ -100,7 +106,7 @@ export function computeBufferSize(maxItems) {
         const [, , bpe, fixed] = FIELDS[i];
         const count = fixed || maxItems;
         offset += count * bpe;
-        if (bpe < 4) offset = align4(offset);
+        if (i < FIELDS.length - 1) offset = nextColumn(offset);
     }
     return offset;
 }
@@ -108,13 +114,14 @@ export function computeBufferSize(maxItems) {
 /** The queue's views on `sab`, from byte `base` (a region of the render-queue memory, or 0). */
 export function createViews(sab, maxItems, base = 0) {
     const views = {};
-    let offset = base | 0;
+    const at = base | 0;
+    let offset = 0;
     for (let i = 0; i < FIELDS.length; i++) {
         const [name, TypedArrayCtor, bpe, fixed] = FIELDS[i];
         const count = fixed || maxItems;
-        views[name] = new TypedArrayCtor(sab, offset, count);
+        views[name] = new TypedArrayCtor(sab, at + offset, count);
         offset += count * bpe;
-        if (bpe < 4) offset = align4(offset);
+        if (i < FIELDS.length - 1) offset = nextColumn(offset);
     }
     // The CPU painter sorts the keys' bit patterns. One alias per queue, made
     // here: building it at pack time made one per frame (review G3).
