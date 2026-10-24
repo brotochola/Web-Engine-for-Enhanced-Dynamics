@@ -30,7 +30,7 @@
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#L159",
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L737",
         "reports/E-94-gpu-pack-wasm.md"
       ],
@@ -47,7 +47,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L21"
+        "HYPOTHESIS_LOG.md#L25"
       ],
       "aliases": []
     },
@@ -61,7 +61,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L19"
+        "HYPOTHESIS_LOG.md#L23"
       ],
       "aliases": []
     },
@@ -75,7 +75,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17"
+        "HYPOTHESIS_LOG.md#L21"
       ],
       "aliases": []
     },
@@ -89,12 +89,12 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L23",
-        "EXECUTION_PLAN.md#L882"
+        "HYPOTHESIS_LOG.md#L27",
+        "EXECUTION_PLAN.md#L900"
       ],
       "aliases": [],
       "next": "A guide note on per-entity doubles (components, not instance fields); then the Box2D clock and updateLighting.",
-      "rank": 19
+      "rank": 20
     },
     {
       "id": "E-110",
@@ -106,8 +106,8 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L15",
-        "EXECUTION_PLAN.md#L878"
+        "HYPOTHESIS_LOG.md#L19",
+        "EXECUTION_PLAN.md#L896"
       ],
       "aliases": []
     },
@@ -121,12 +121,49 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
+        "HYPOTHESIS_LOG.md#L17",
+        "EXECUTION_PLAN.md#L890"
+      ],
+      "aliases": [],
+      "next": "Rerun shadowStampMicrobench on a quiet machine (diff D:\\tmp\\p4\\e111.patch); W23's port would absorb it.",
+      "rank": 21
+    },
+    {
+      "id": "E-112",
+      "title": "Pre-render's emit in WASM (W4a)",
+      "status": "open",
+      "statusText": "kernel +117.5 % (25/25), wiring next, 2026-10-23",
+      "date": "2026-10-23",
+      "result": "wasm/test/preRenderEmit.c writes emitSpriteQueue's full-emit rows for sprites and decorations. Predator's mix at its queue capacity, every column the emit reads in one memory, checksums equal over 45 frames: 976.7 → 2 124.5 ops/s (+117.5 %, 25/25, Node 22). The emit and its shadow write are 21.3 % of Predator pre-render: about 11.5 % of it.",
+      "area": "preRender",
+      "kind": "wasm",
+      "refs": [
+        "HYPOTHESIS_LOG.md#L15",
+        "EXECUTION_PLAN.md#L880",
+        "WASM_HYPOTHESES.md#L821"
+      ],
+      "aliases": [
+        "W4a"
+      ],
+      "next": "Wiring: SpriteRenderer, ShadowCaster and DecorationComponent at byte offsets in the render-queue memory; the kernel lists particle, bullet and glow rows for the JS; switch wasm.preRenderEmit; Predator gate, owner pre-render.",
+      "rank": 1
+    },
+    {
+      "id": "E-113",
+      "title": "Queue columns a multiple of 4 KB apart alias in cache",
+      "status": "open",
+      "statusText": "open (found in E-112), 2026-10-23",
+      "date": "2026-10-23",
+      "result": "At a render-queue capacity that is a multiple of 1 024 every float column of a row falls in one L1 set: capacity 32 768 against 33 000 moved E-112's JS emit +11 % and its C emit 2.4×. Predator's 119 298 spreads them; proceduralTree's 8 192 does not; component columns alias at entity totals at or next to a multiple of 1 024.",
+      "area": "engine",
+      "kind": "js",
+      "refs": [
         "HYPOTHESIS_LOG.md#L13",
         "EXECUTION_PLAN.md#L872"
       ],
       "aliases": [],
-      "next": "Rerun shadowStampMicrobench on a quiet machine (diff D:\\tmp\\p4\\e111.patch); W23's port would absorb it.",
-      "rank": 20
+      "next": "Each queue column a cache line after the last in renderQueueLayout; measure on a scene at an aliased capacity.",
+      "rank": 22
     },
     {
       "id": "E-104",
@@ -138,7 +175,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L27",
+        "HYPOTHESIS_LOG.md#L31",
         "EXECUTION_PLAN.md#L852"
       ],
       "aliases": []
@@ -153,7 +190,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L29",
+        "HYPOTHESIS_LOG.md#L33",
         "EXECUTION_PLAN.md#L857"
       ],
       "aliases": [
@@ -170,7 +207,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L31",
+        "HYPOTHESIS_LOG.md#L35",
         "WASM_HYPOTHESES.md#L155"
       ],
       "aliases": [],
@@ -202,7 +239,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L638",
         "reports/E-82-split-instance-upload.md"
       ],
@@ -234,7 +271,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "WASM_HYPOTHESES.md#L180"
       ],
       "aliases": [],
@@ -251,7 +288,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L45",
+        "HYPOTHESIS_LOG.md#L49",
         "WASM_HYPOTHESES.md#L164"
       ],
       "aliases": [],
@@ -268,9 +305,9 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L21",
+        "HYPOTHESIS_LOG.md#L25",
+        "HYPOTHESIS_LOG.md#L27",
         "HYPOTHESIS_LOG.md#L23",
-        "HYPOTHESIS_LOG.md#L19",
         "EXECUTION_PLAN.md#L657",
         "reports/E-85-ray-path-boxing.md"
       ],
@@ -396,7 +433,7 @@
         "WASM_HYPOTHESES.md#L181"
       ],
       "aliases": [],
-      "rank": 15
+      "rank": 16
     },
     {
       "id": "W28",
@@ -411,23 +448,24 @@
         "WASM_HYPOTHESES.md#L182"
       ],
       "aliases": [],
-      "rank": 16
+      "rank": 17
     },
     {
       "id": "W4",
       "title": "`emitSpriteQueue`, `_displayPose`, `_writeQueueShadow`, with W3's collect chain",
       "status": "open",
-      "statusText": "open, blocked on Phase 4",
+      "statusText": "split 2026-10-23: W4a (the emit) kernel +117.5 % (E-112); W4b (the collect) blocked on Phase 4",
       "date": null,
       "result": "A WASM render-queue build beats JS. Q1: emit 28.7 % inclusive of Predator pre-render, the collect chain 32.1 %. E-66 removed the boxing, E-71/E-72 typed the columns, E-77 the imports",
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "WASM_HYPOTHESES.md#L153"
+        "WASM_HYPOTHESES.md#L153",
+        "WASM_HYPOTHESES.md#L821"
       ],
       "aliases": [],
-      "next": "Measure its premise again first: Q1 predates E-98 (BunnyMark collect 21 → 6 ms in JS). A Predator and BunnyMark profile of what the emit and collect chain costs now; if it still holds, it is the first reason for the Phase 4 move (physics starts first and mallocs the engine block, the moved buffers are built inside it).",
-      "rank": 2
+      "next": "W4b, the collect chain (collectVisibleEntities, _displayPose, _storeEntitySortY), after Phase 4; W4a is E-112.",
+      "rank": 15
     },
     {
       "id": "W18",
@@ -443,7 +481,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 17
+      "rank": 18
     },
     {
       "id": "W2b",
@@ -459,7 +497,7 @@
       ],
       "aliases": [],
       "next": "Unblocked by the Phase 4 decision.",
-      "rank": 18
+      "rank": 19
     },
     {
       "id": "E-76",
@@ -471,13 +509,13 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L27",
-        "HYPOTHESIS_LOG.md#L29",
         "HYPOTHESIS_LOG.md#L31",
         "HYPOTHESIS_LOG.md#L33",
         "HYPOTHESIS_LOG.md#L35",
         "HYPOTHESIS_LOG.md#L37",
         "HYPOTHESIS_LOG.md#L39",
+        "HYPOTHESIS_LOG.md#L41",
+        "HYPOTHESIS_LOG.md#L43",
         "EXECUTION_PLAN.md#L577",
         "WASM_HYPOTHESES.md#L157"
       ],
@@ -500,8 +538,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L117",
-        "EXECUTION_PLAN.md#L1173"
+        "HYPOTHESIS_LOG.md#L121",
+        "EXECUTION_PLAN.md#L1191"
       ],
       "aliases": []
     },
@@ -543,7 +581,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L191"
+        "HYPOTHESIS_LOG.md#L195"
       ],
       "aliases": []
     },
@@ -557,7 +595,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L193"
+        "HYPOTHESIS_LOG.md#L197"
       ],
       "aliases": []
     },
@@ -571,7 +609,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L235"
+        "HYPOTHESIS_LOG.md#L239"
       ],
       "aliases": []
     },
@@ -585,7 +623,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L247"
+        "HYPOTHESIS_LOG.md#L251"
       ],
       "aliases": []
     },
@@ -599,7 +637,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L291"
+        "HYPOTHESIS_LOG.md#L295"
       ],
       "aliases": []
     },
@@ -613,7 +651,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L305"
+        "HYPOTHESIS_LOG.md#L309"
       ],
       "aliases": [
         "D2"
@@ -629,7 +667,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L319"
+        "HYPOTHESIS_LOG.md#L323"
       ],
       "aliases": []
     },
@@ -643,7 +681,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L343"
+        "HYPOTHESIS_LOG.md#L347"
       ],
       "aliases": []
     },
@@ -657,7 +695,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L665"
+        "HYPOTHESIS_LOG.md#L669"
       ],
       "aliases": []
     },
@@ -671,7 +709,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L642"
+        "HYPOTHESIS_LOG.md#L646"
       ],
       "aliases": []
     },
@@ -685,7 +723,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L628"
+        "HYPOTHESIS_LOG.md#L632"
       ],
       "aliases": []
     },
@@ -699,7 +737,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L599"
+        "HYPOTHESIS_LOG.md#L603"
       ],
       "aliases": []
     },
@@ -713,7 +751,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L601"
+        "HYPOTHESIS_LOG.md#L605"
       ],
       "aliases": []
     },
@@ -727,7 +765,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L572"
+        "HYPOTHESIS_LOG.md#L576"
       ],
       "aliases": []
     },
@@ -741,7 +779,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L577"
+        "HYPOTHESIS_LOG.md#L581"
       ],
       "aliases": []
     },
@@ -755,7 +793,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L581"
+        "HYPOTHESIS_LOG.md#L585"
       ],
       "aliases": []
     },
@@ -769,7 +807,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L555"
+        "HYPOTHESIS_LOG.md#L559"
       ],
       "aliases": []
     },
@@ -783,7 +821,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L492"
+        "HYPOTHESIS_LOG.md#L496"
       ],
       "aliases": []
     },
@@ -797,7 +835,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L460"
+        "HYPOTHESIS_LOG.md#L464"
       ],
       "aliases": []
     },
@@ -854,7 +892,7 @@
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L655",
-        "HYPOTHESIS_LOG.md#L19"
+        "HYPOTHESIS_LOG.md#L23"
       ],
       "aliases": []
     },
@@ -910,7 +948,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "EXECUTION_PLAN.md#L1302"
+        "EXECUTION_PLAN.md#L1320"
       ],
       "aliases": []
     },
@@ -925,8 +963,8 @@
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#L178",
-        "HYPOTHESIS_LOG.md#L19",
-        "EXECUTION_PLAN.md#L1362"
+        "HYPOTHESIS_LOG.md#L23",
+        "EXECUTION_PLAN.md#L1380"
       ],
       "aliases": [
         "E-55",
@@ -943,7 +981,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L630",
         "WASM_HYPOTHESES.md#L179"
       ],
@@ -961,7 +999,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L19",
+        "HYPOTHESIS_LOG.md#L23",
         "EXECUTION_PLAN.md#L617",
         "WASM_HYPOTHESES.md#L163"
       ],
@@ -979,7 +1017,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L21",
+        "HYPOTHESIS_LOG.md#L25",
         "EXECUTION_PLAN.md#L603",
         "WASM_HYPOTHESES.md#L162"
       ],
@@ -997,7 +1035,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L23",
+        "HYPOTHESIS_LOG.md#L27",
         "EXECUTION_PLAN.md#L590",
         "WASM_HYPOTHESES.md#L154"
       ],
@@ -1015,8 +1053,8 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L53",
-        "EXECUTION_PLAN.md#L1693"
+        "HYPOTHESIS_LOG.md#L57",
+        "EXECUTION_PLAN.md#L1711"
       ],
       "aliases": []
     },
@@ -1030,7 +1068,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L59"
+        "HYPOTHESIS_LOG.md#L63"
       ],
       "aliases": []
     },
@@ -1044,7 +1082,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L65"
+        "HYPOTHESIS_LOG.md#L69"
       ],
       "aliases": []
     },
@@ -1058,7 +1096,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L67"
+        "HYPOTHESIS_LOG.md#L71"
       ],
       "aliases": []
     },
@@ -1072,8 +1110,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L73",
-        "EXECUTION_PLAN.md#L1504"
+        "HYPOTHESIS_LOG.md#L77",
+        "EXECUTION_PLAN.md#L1522"
       ],
       "aliases": []
     },
@@ -1087,8 +1125,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L81",
-        "EXECUTION_PLAN.md#L1619"
+        "HYPOTHESIS_LOG.md#L85",
+        "EXECUTION_PLAN.md#L1637"
       ],
       "aliases": [
         "E-72"
@@ -1104,8 +1142,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L85",
-        "EXECUTION_PLAN.md#L1538"
+        "HYPOTHESIS_LOG.md#L89",
+        "EXECUTION_PLAN.md#L1556"
       ],
       "aliases": []
     },
@@ -1119,7 +1157,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L87",
+        "HYPOTHESIS_LOG.md#L91",
         "EXECUTION_PLAN.md#L446"
       ],
       "aliases": []
@@ -1134,8 +1172,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L93",
-        "EXECUTION_PLAN.md#L1492"
+        "HYPOTHESIS_LOG.md#L97",
+        "EXECUTION_PLAN.md#L1510"
       ],
       "aliases": []
     },
@@ -1149,8 +1187,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L95",
-        "EXECUTION_PLAN.md#L1468"
+        "HYPOTHESIS_LOG.md#L99",
+        "EXECUTION_PLAN.md#L1486"
       ],
       "aliases": []
     },
@@ -1164,8 +1202,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L97",
-        "EXECUTION_PLAN.md#L1053"
+        "HYPOTHESIS_LOG.md#L101",
+        "EXECUTION_PLAN.md#L1071"
       ],
       "aliases": []
     },
@@ -1179,8 +1217,8 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L99",
-        "EXECUTION_PLAN.md#L1455"
+        "HYPOTHESIS_LOG.md#L103",
+        "EXECUTION_PLAN.md#L1473"
       ],
       "aliases": []
     },
@@ -1194,8 +1232,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L103",
-        "EXECUTION_PLAN.md#L1403"
+        "HYPOTHESIS_LOG.md#L107",
+        "EXECUTION_PLAN.md#L1421"
       ],
       "aliases": []
     },
@@ -1209,7 +1247,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L111"
+        "HYPOTHESIS_LOG.md#L115"
       ],
       "aliases": []
     },
@@ -1223,8 +1261,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L115",
-        "EXECUTION_PLAN.md#L1219"
+        "HYPOTHESIS_LOG.md#L119",
+        "EXECUTION_PLAN.md#L1237"
       ],
       "aliases": []
     },
@@ -1238,8 +1276,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L123",
-        "EXECUTION_PLAN.md#L1038"
+        "HYPOTHESIS_LOG.md#L127",
+        "EXECUTION_PLAN.md#L1056"
       ],
       "aliases": []
     },
@@ -1253,8 +1291,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L125",
-        "EXECUTION_PLAN.md#L1014"
+        "HYPOTHESIS_LOG.md#L129",
+        "EXECUTION_PLAN.md#L1032"
       ],
       "aliases": []
     },
@@ -1268,9 +1306,9 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L127",
+        "HYPOTHESIS_LOG.md#L131",
         "EXECUTION_PLAN.md#L410",
-        "EXECUTION_PLAN.md#L1677"
+        "EXECUTION_PLAN.md#L1695"
       ],
       "aliases": []
     },
@@ -1284,7 +1322,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L472"
+        "HYPOTHESIS_LOG.md#L476"
       ],
       "aliases": []
     },
@@ -1298,7 +1336,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1094"
+        "EXECUTION_PLAN.md#L1112"
       ],
       "aliases": []
     },
@@ -1312,8 +1350,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L129",
-        "EXECUTION_PLAN.md#L1314"
+        "HYPOTHESIS_LOG.md#L133",
+        "EXECUTION_PLAN.md#L1332"
       ],
       "aliases": []
     },
@@ -1327,7 +1365,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L135"
+        "HYPOTHESIS_LOG.md#L139"
       ],
       "aliases": []
     },
@@ -1341,8 +1379,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L167",
-        "EXECUTION_PLAN.md#L973"
+        "HYPOTHESIS_LOG.md#L171",
+        "EXECUTION_PLAN.md#L991"
       ],
       "aliases": [
         "E-16",
@@ -1359,7 +1397,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L169"
+        "HYPOTHESIS_LOG.md#L173"
       ],
       "aliases": []
     },
@@ -1373,7 +1411,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L177",
+        "HYPOTHESIS_LOG.md#L181",
         "EXECUTION_PLAN.md#L501"
       ],
       "aliases": []
@@ -1388,7 +1426,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L201"
+        "HYPOTHESIS_LOG.md#L205"
       ],
       "aliases": []
     },
@@ -1402,7 +1440,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L205"
+        "HYPOTHESIS_LOG.md#L209"
       ],
       "aliases": []
     },
@@ -1416,7 +1454,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L211"
+        "HYPOTHESIS_LOG.md#L215"
       ],
       "aliases": []
     },
@@ -1430,7 +1468,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L219"
+        "HYPOTHESIS_LOG.md#L223"
       ],
       "aliases": []
     },
@@ -1444,7 +1482,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L221"
+        "HYPOTHESIS_LOG.md#L225"
       ],
       "aliases": []
     },
@@ -1458,7 +1496,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L229"
+        "HYPOTHESIS_LOG.md#L233"
       ],
       "aliases": []
     },
@@ -1472,7 +1510,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L231"
+        "HYPOTHESIS_LOG.md#L235"
       ],
       "aliases": []
     },
@@ -1486,7 +1524,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L263"
+        "HYPOTHESIS_LOG.md#L267"
       ],
       "aliases": []
     },
@@ -1500,7 +1538,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L279"
+        "HYPOTHESIS_LOG.md#L283"
       ],
       "aliases": []
     },
@@ -1514,7 +1552,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L323"
+        "HYPOTHESIS_LOG.md#L327"
       ],
       "aliases": []
     },
@@ -1528,7 +1566,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L357"
+        "HYPOTHESIS_LOG.md#L361"
       ],
       "aliases": []
     },
@@ -1542,7 +1580,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L359"
+        "HYPOTHESIS_LOG.md#L363"
       ],
       "aliases": []
     },
@@ -1556,7 +1594,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L361"
+        "HYPOTHESIS_LOG.md#L365"
       ],
       "aliases": []
     },
@@ -1570,7 +1608,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L419"
+        "HYPOTHESIS_LOG.md#L423"
       ],
       "aliases": []
     },
@@ -1584,7 +1622,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L427"
+        "HYPOTHESIS_LOG.md#L431"
       ],
       "aliases": []
     },
@@ -1598,7 +1636,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L431"
+        "HYPOTHESIS_LOG.md#L435"
       ],
       "aliases": []
     },
@@ -1612,7 +1650,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L397"
+        "HYPOTHESIS_LOG.md#L401"
       ],
       "aliases": []
     },
@@ -1626,7 +1664,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L405"
+        "HYPOTHESIS_LOG.md#L409"
       ],
       "aliases": []
     },
@@ -1640,7 +1678,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L409"
+        "HYPOTHESIS_LOG.md#L413"
       ],
       "aliases": []
     },
@@ -1654,7 +1692,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L373"
+        "HYPOTHESIS_LOG.md#L377"
       ],
       "aliases": []
     },
@@ -1668,7 +1706,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L653"
+        "HYPOTHESIS_LOG.md#L657"
       ],
       "aliases": []
     },
@@ -1682,7 +1720,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L658"
+        "HYPOTHESIS_LOG.md#L662"
       ],
       "aliases": []
     },
@@ -1696,7 +1734,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L662"
+        "HYPOTHESIS_LOG.md#L666"
       ],
       "aliases": []
     },
@@ -1710,7 +1748,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L663"
+        "HYPOTHESIS_LOG.md#L667"
       ],
       "aliases": []
     },
@@ -1724,7 +1762,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L668"
+        "HYPOTHESIS_LOG.md#L672"
       ],
       "aliases": []
     },
@@ -1738,7 +1776,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L669"
+        "HYPOTHESIS_LOG.md#L673"
       ],
       "aliases": []
     },
@@ -1752,7 +1790,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L670"
+        "HYPOTHESIS_LOG.md#L674"
       ],
       "aliases": []
     },
@@ -1766,7 +1804,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L671"
+        "HYPOTHESIS_LOG.md#L675"
       ],
       "aliases": []
     },
@@ -1780,7 +1818,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L672"
+        "HYPOTHESIS_LOG.md#L676"
       ],
       "aliases": []
     },
@@ -1794,7 +1832,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L637"
+        "HYPOTHESIS_LOG.md#L641"
       ],
       "aliases": []
     },
@@ -1808,7 +1846,7 @@
       "area": "particle",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L641"
+        "HYPOTHESIS_LOG.md#L645"
       ],
       "aliases": []
     },
@@ -1822,7 +1860,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L644"
+        "HYPOTHESIS_LOG.md#L648"
       ],
       "aliases": []
     },
@@ -1836,7 +1874,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L603"
+        "HYPOTHESIS_LOG.md#L607"
       ],
       "aliases": []
     },
@@ -1850,7 +1888,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L604"
+        "HYPOTHESIS_LOG.md#L608"
       ],
       "aliases": []
     },
@@ -1864,7 +1902,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L607"
+        "HYPOTHESIS_LOG.md#L611"
       ],
       "aliases": []
     },
@@ -1878,7 +1916,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L609"
+        "HYPOTHESIS_LOG.md#L613"
       ],
       "aliases": []
     },
@@ -1892,7 +1930,7 @@
       "area": "spatial",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L615"
+        "HYPOTHESIS_LOG.md#L619"
       ],
       "aliases": []
     },
@@ -1906,7 +1944,7 @@
       "area": "pre-render",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L616"
+        "HYPOTHESIS_LOG.md#L620"
       ],
       "aliases": []
     },
@@ -1920,7 +1958,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L617"
+        "HYPOTHESIS_LOG.md#L621"
       ],
       "aliases": []
     },
@@ -1934,7 +1972,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L618"
+        "HYPOTHESIS_LOG.md#L622"
       ],
       "aliases": []
     },
@@ -1948,7 +1986,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L622"
+        "HYPOTHESIS_LOG.md#L626"
       ],
       "aliases": []
     },
@@ -1962,7 +2000,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L623"
+        "HYPOTHESIS_LOG.md#L627"
       ],
       "aliases": []
     },
@@ -1976,7 +2014,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L624"
+        "HYPOTHESIS_LOG.md#L628"
       ],
       "aliases": []
     },
@@ -1990,7 +2028,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L627"
+        "HYPOTHESIS_LOG.md#L631"
       ],
       "aliases": []
     },
@@ -2004,7 +2042,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L629"
+        "HYPOTHESIS_LOG.md#L633"
       ],
       "aliases": []
     },
@@ -2018,7 +2056,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L630"
+        "HYPOTHESIS_LOG.md#L634"
       ],
       "aliases": []
     },
@@ -2032,7 +2070,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L633"
+        "HYPOTHESIS_LOG.md#L637"
       ],
       "aliases": []
     },
@@ -2046,7 +2084,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L636"
+        "HYPOTHESIS_LOG.md#L640"
       ],
       "aliases": []
     },
@@ -2060,7 +2098,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L590"
+        "HYPOTHESIS_LOG.md#L594"
       ],
       "aliases": []
     },
@@ -2074,7 +2112,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L591"
+        "HYPOTHESIS_LOG.md#L595"
       ],
       "aliases": []
     },
@@ -2088,7 +2126,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L592"
+        "HYPOTHESIS_LOG.md#L596"
       ],
       "aliases": []
     },
@@ -2102,7 +2140,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L598"
+        "HYPOTHESIS_LOG.md#L602"
       ],
       "aliases": []
     },
@@ -2116,7 +2154,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L600"
+        "HYPOTHESIS_LOG.md#L604"
       ],
       "aliases": []
     },
@@ -2130,7 +2168,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L574"
+        "HYPOTHESIS_LOG.md#L578"
       ],
       "aliases": []
     },
@@ -2144,7 +2182,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L575"
+        "HYPOTHESIS_LOG.md#L579"
       ],
       "aliases": []
     },
@@ -2158,7 +2196,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L576"
+        "HYPOTHESIS_LOG.md#L580"
       ],
       "aliases": []
     },
@@ -2172,7 +2210,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L579"
+        "HYPOTHESIS_LOG.md#L583"
       ],
       "aliases": []
     },
@@ -2186,7 +2224,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L580"
+        "HYPOTHESIS_LOG.md#L584"
       ],
       "aliases": []
     },
@@ -2200,7 +2238,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L582"
+        "HYPOTHESIS_LOG.md#L586"
       ],
       "aliases": []
     },
@@ -2214,7 +2252,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L584"
+        "HYPOTHESIS_LOG.md#L588"
       ],
       "aliases": []
     },
@@ -2228,7 +2266,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L586"
+        "HYPOTHESIS_LOG.md#L590"
       ],
       "aliases": []
     },
@@ -2242,7 +2280,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L548"
+        "HYPOTHESIS_LOG.md#L552"
       ],
       "aliases": []
     },
@@ -2256,7 +2294,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L549"
+        "HYPOTHESIS_LOG.md#L553"
       ],
       "aliases": []
     },
@@ -2270,7 +2308,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L553"
+        "HYPOTHESIS_LOG.md#L557"
       ],
       "aliases": []
     },
@@ -2284,7 +2322,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L556"
+        "HYPOTHESIS_LOG.md#L560"
       ],
       "aliases": []
     },
@@ -2298,7 +2336,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L558"
+        "HYPOTHESIS_LOG.md#L562"
       ],
       "aliases": []
     },
@@ -2312,7 +2350,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L559"
+        "HYPOTHESIS_LOG.md#L563"
       ],
       "aliases": []
     },
@@ -2326,7 +2364,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L561"
+        "HYPOTHESIS_LOG.md#L565"
       ],
       "aliases": []
     },
@@ -2340,7 +2378,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L563"
+        "HYPOTHESIS_LOG.md#L567"
       ],
       "aliases": []
     },
@@ -2354,7 +2392,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L564"
+        "HYPOTHESIS_LOG.md#L568"
       ],
       "aliases": []
     },
@@ -2368,7 +2406,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L565"
+        "HYPOTHESIS_LOG.md#L569"
       ],
       "aliases": []
     },
@@ -2382,7 +2420,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L566"
+        "HYPOTHESIS_LOG.md#L570"
       ],
       "aliases": []
     },
@@ -2396,7 +2434,7 @@
       "area": "pre-render",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L569"
+        "HYPOTHESIS_LOG.md#L573"
       ],
       "aliases": []
     },
@@ -2410,7 +2448,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L570"
+        "HYPOTHESIS_LOG.md#L574"
       ],
       "aliases": []
     },
@@ -2424,7 +2462,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L536"
+        "HYPOTHESIS_LOG.md#L540"
       ],
       "aliases": []
     },
@@ -2438,7 +2476,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L538"
+        "HYPOTHESIS_LOG.md#L542"
       ],
       "aliases": []
     },
@@ -2452,7 +2490,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L540"
+        "HYPOTHESIS_LOG.md#L544"
       ],
       "aliases": []
     },
@@ -2466,7 +2504,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L541"
+        "HYPOTHESIS_LOG.md#L545"
       ],
       "aliases": []
     },
@@ -2480,7 +2518,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L542"
+        "HYPOTHESIS_LOG.md#L546"
       ],
       "aliases": []
     },
@@ -2494,7 +2532,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L543"
+        "HYPOTHESIS_LOG.md#L547"
       ],
       "aliases": []
     },
@@ -2508,7 +2546,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L545"
+        "HYPOTHESIS_LOG.md#L549"
       ],
       "aliases": []
     },
@@ -2522,7 +2560,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L515"
+        "HYPOTHESIS_LOG.md#L519"
       ],
       "aliases": []
     },
@@ -2536,7 +2574,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L522"
+        "HYPOTHESIS_LOG.md#L526"
       ],
       "aliases": []
     },
@@ -2550,7 +2588,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L523"
+        "HYPOTHESIS_LOG.md#L527"
       ],
       "aliases": []
     },
@@ -2564,7 +2602,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L525"
+        "HYPOTHESIS_LOG.md#L529"
       ],
       "aliases": []
     },
@@ -2578,7 +2616,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L526"
+        "HYPOTHESIS_LOG.md#L530"
       ],
       "aliases": []
     },
@@ -2592,7 +2630,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L533"
+        "HYPOTHESIS_LOG.md#L537"
       ],
       "aliases": []
     },
@@ -2606,7 +2644,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L535"
+        "HYPOTHESIS_LOG.md#L539"
       ],
       "aliases": []
     },
@@ -2620,7 +2658,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L516"
+        "HYPOTHESIS_LOG.md#L520"
       ],
       "aliases": []
     },
@@ -2634,7 +2672,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L517"
+        "HYPOTHESIS_LOG.md#L521"
       ],
       "aliases": []
     },
@@ -2648,7 +2686,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L518"
+        "HYPOTHESIS_LOG.md#L522"
       ],
       "aliases": []
     },
@@ -2662,7 +2700,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L519"
+        "HYPOTHESIS_LOG.md#L523"
       ],
       "aliases": []
     },
@@ -2676,7 +2714,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L520"
+        "HYPOTHESIS_LOG.md#L524"
       ],
       "aliases": []
     },
@@ -2690,7 +2728,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L521"
+        "HYPOTHESIS_LOG.md#L525"
       ],
       "aliases": []
     },
@@ -2704,7 +2742,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L527"
+        "HYPOTHESIS_LOG.md#L531"
       ],
       "aliases": []
     },
@@ -2718,7 +2756,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L528"
+        "HYPOTHESIS_LOG.md#L532"
       ],
       "aliases": []
     },
@@ -2732,7 +2770,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L481"
+        "HYPOTHESIS_LOG.md#L485"
       ],
       "aliases": []
     },
@@ -2746,7 +2784,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L482"
+        "HYPOTHESIS_LOG.md#L486"
       ],
       "aliases": []
     },
@@ -2760,7 +2798,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L483"
+        "HYPOTHESIS_LOG.md#L487"
       ],
       "aliases": []
     },
@@ -2774,7 +2812,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L484"
+        "HYPOTHESIS_LOG.md#L488"
       ],
       "aliases": []
     },
@@ -2788,7 +2826,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L485"
+        "HYPOTHESIS_LOG.md#L489"
       ],
       "aliases": []
     },
@@ -2802,7 +2840,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L486"
+        "HYPOTHESIS_LOG.md#L490"
       ],
       "aliases": []
     },
@@ -2816,7 +2854,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L487"
+        "HYPOTHESIS_LOG.md#L491"
       ],
       "aliases": []
     },
@@ -2830,7 +2868,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L490"
+        "HYPOTHESIS_LOG.md#L494"
       ],
       "aliases": []
     },
@@ -2844,7 +2882,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L493"
+        "HYPOTHESIS_LOG.md#L497"
       ],
       "aliases": []
     },
@@ -2858,7 +2896,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L494"
+        "HYPOTHESIS_LOG.md#L498"
       ],
       "aliases": []
     },
@@ -2872,7 +2910,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L495"
+        "HYPOTHESIS_LOG.md#L499"
       ],
       "aliases": []
     },
@@ -2886,7 +2924,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L496"
+        "HYPOTHESIS_LOG.md#L500"
       ],
       "aliases": []
     },
@@ -2900,7 +2938,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L499"
+        "HYPOTHESIS_LOG.md#L503"
       ],
       "aliases": []
     },
@@ -2914,7 +2952,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L501"
+        "HYPOTHESIS_LOG.md#L505"
       ],
       "aliases": []
     },
@@ -2928,7 +2966,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L502"
+        "HYPOTHESIS_LOG.md#L506"
       ],
       "aliases": []
     },
@@ -2942,7 +2980,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L503"
+        "HYPOTHESIS_LOG.md#L507"
       ],
       "aliases": []
     },
@@ -2956,7 +2994,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L504"
+        "HYPOTHESIS_LOG.md#L508"
       ],
       "aliases": []
     },
@@ -2970,7 +3008,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L506"
+        "HYPOTHESIS_LOG.md#L510"
       ],
       "aliases": []
     },
@@ -2984,7 +3022,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L508"
+        "HYPOTHESIS_LOG.md#L512"
       ],
       "aliases": []
     },
@@ -2998,7 +3036,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L510"
+        "HYPOTHESIS_LOG.md#L514"
       ],
       "aliases": []
     },
@@ -3012,7 +3050,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L513"
+        "HYPOTHESIS_LOG.md#L517"
       ],
       "aliases": []
     },
@@ -3026,7 +3064,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L465"
+        "HYPOTHESIS_LOG.md#L469"
       ],
       "aliases": []
     },
@@ -3040,7 +3078,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L468"
+        "HYPOTHESIS_LOG.md#L472"
       ],
       "aliases": []
     },
@@ -3054,7 +3092,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L469"
+        "HYPOTHESIS_LOG.md#L473"
       ],
       "aliases": []
     },
@@ -3068,7 +3106,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L473"
+        "HYPOTHESIS_LOG.md#L477"
       ],
       "aliases": []
     },
@@ -3082,7 +3120,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L476"
+        "HYPOTHESIS_LOG.md#L480"
       ],
       "aliases": []
     },
@@ -3096,7 +3134,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L447"
+        "HYPOTHESIS_LOG.md#L451"
       ],
       "aliases": []
     },
@@ -3110,7 +3148,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L448"
+        "HYPOTHESIS_LOG.md#L452"
       ],
       "aliases": []
     },
@@ -3124,7 +3162,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L450"
+        "HYPOTHESIS_LOG.md#L454"
       ],
       "aliases": [
         "P2"
@@ -3140,7 +3178,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L451"
+        "HYPOTHESIS_LOG.md#L455"
       ],
       "aliases": [
         "P6"
@@ -3156,7 +3194,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L458"
+        "HYPOTHESIS_LOG.md#L462"
       ],
       "aliases": []
     },
@@ -3170,7 +3208,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L461"
+        "HYPOTHESIS_LOG.md#L465"
       ],
       "aliases": []
     },
@@ -3184,7 +3222,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L682"
+        "HYPOTHESIS_LOG.md#L686"
       ],
       "aliases": [
         "D2"
@@ -3200,7 +3238,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L683"
+        "HYPOTHESIS_LOG.md#L687"
       ],
       "aliases": [
         "P4",
@@ -3217,7 +3255,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L681"
+        "HYPOTHESIS_LOG.md#L685"
       ],
       "aliases": []
     },
@@ -3231,7 +3269,7 @@
       "area": "liquidfun",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L686"
+        "HYPOTHESIS_LOG.md#L690"
       ],
       "aliases": []
     },
@@ -3245,7 +3283,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L684"
+        "HYPOTHESIS_LOG.md#L688"
       ],
       "aliases": []
     },
@@ -3273,7 +3311,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "EXECUTION_PLAN.md#L1634"
+        "EXECUTION_PLAN.md#L1652"
       ],
       "aliases": []
     },
@@ -3287,8 +3325,8 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L119",
-        "EXECUTION_PLAN.md#L1152"
+        "HYPOTHESIS_LOG.md#L123",
+        "EXECUTION_PLAN.md#L1170"
       ],
       "aliases": []
     },
@@ -3302,7 +3340,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L137"
+        "HYPOTHESIS_LOG.md#L141"
       ],
       "aliases": []
     },
@@ -3316,7 +3354,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L225"
+        "HYPOTHESIS_LOG.md#L229"
       ],
       "aliases": []
     },
@@ -3330,7 +3368,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L333"
+        "HYPOTHESIS_LOG.md#L337"
       ],
       "aliases": []
     },
@@ -3344,7 +3382,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L335"
+        "HYPOTHESIS_LOG.md#L339"
       ],
       "aliases": []
     },
@@ -3358,7 +3396,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L61"
+        "HYPOTHESIS_LOG.md#L65"
       ],
       "aliases": []
     },
@@ -3372,7 +3410,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L63"
+        "HYPOTHESIS_LOG.md#L67"
       ],
       "aliases": []
     },
@@ -3386,7 +3424,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L131"
+        "HYPOTHESIS_LOG.md#L135"
       ],
       "aliases": []
     },
@@ -3400,7 +3438,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L133"
+        "HYPOTHESIS_LOG.md#L137"
       ],
       "aliases": []
     },
@@ -3414,7 +3452,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L179",
+        "HYPOTHESIS_LOG.md#L183",
         "EXECUTION_PLAN.md#L392"
       ],
       "aliases": [
@@ -3431,7 +3469,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L183",
+        "HYPOTHESIS_LOG.md#L187",
         "EXECUTION_PLAN.md#L143"
       ],
       "aliases": []
@@ -3446,7 +3484,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L223"
+        "HYPOTHESIS_LOG.md#L227"
       ],
       "aliases": []
     },
@@ -3460,7 +3498,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L237"
+        "HYPOTHESIS_LOG.md#L241"
       ],
       "aliases": []
     },
@@ -3474,7 +3512,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L239"
+        "HYPOTHESIS_LOG.md#L243"
       ],
       "aliases": []
     },
@@ -3488,7 +3526,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L353"
+        "HYPOTHESIS_LOG.md#L357"
       ],
       "aliases": []
     },
@@ -3516,7 +3554,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L25"
+        "HYPOTHESIS_LOG.md#L29"
       ],
       "aliases": []
     },
@@ -3530,7 +3568,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L55"
+        "HYPOTHESIS_LOG.md#L59"
       ],
       "aliases": []
     },
@@ -3544,7 +3582,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L57"
+        "HYPOTHESIS_LOG.md#L61"
       ],
       "aliases": []
     },
@@ -3558,7 +3596,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L139"
+        "HYPOTHESIS_LOG.md#L143"
       ],
       "aliases": []
     },
@@ -3572,7 +3610,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L199"
+        "HYPOTHESIS_LOG.md#L203"
       ],
       "aliases": []
     },
@@ -3586,7 +3624,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L213"
+        "HYPOTHESIS_LOG.md#L217"
       ],
       "aliases": []
     },
@@ -3600,7 +3638,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L241"
+        "HYPOTHESIS_LOG.md#L245"
       ],
       "aliases": []
     },
@@ -3614,7 +3652,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L251"
+        "HYPOTHESIS_LOG.md#L255"
       ],
       "aliases": []
     },
@@ -3628,7 +3666,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L275"
+        "HYPOTHESIS_LOG.md#L279"
       ],
       "aliases": []
     },
@@ -3642,7 +3680,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L285"
+        "HYPOTHESIS_LOG.md#L289"
       ],
       "aliases": []
     },
@@ -3656,7 +3694,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L299"
+        "HYPOTHESIS_LOG.md#L303"
       ],
       "aliases": []
     },
@@ -3670,7 +3708,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L307"
+        "HYPOTHESIS_LOG.md#L311"
       ],
       "aliases": []
     },
@@ -3684,7 +3722,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L313"
+        "HYPOTHESIS_LOG.md#L317"
       ],
       "aliases": []
     },
@@ -3698,7 +3736,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L425"
+        "HYPOTHESIS_LOG.md#L429"
       ],
       "aliases": []
     },
@@ -3712,7 +3750,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L429"
+        "HYPOTHESIS_LOG.md#L433"
       ],
       "aliases": []
     },
@@ -3726,7 +3764,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L433"
+        "HYPOTHESIS_LOG.md#L437"
       ],
       "aliases": []
     },
@@ -3740,7 +3778,7 @@
       "area": "spatial",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L524"
+        "HYPOTHESIS_LOG.md#L528"
       ],
       "aliases": []
     },
@@ -3754,7 +3792,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L647"
+        "HYPOTHESIS_LOG.md#L651"
       ],
       "aliases": []
     },
@@ -3768,7 +3806,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L651"
+        "HYPOTHESIS_LOG.md#L655"
       ],
       "aliases": []
     },
@@ -3782,7 +3820,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L660"
+        "HYPOTHESIS_LOG.md#L664"
       ],
       "aliases": []
     },
@@ -3796,7 +3834,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L666"
+        "HYPOTHESIS_LOG.md#L670"
       ],
       "aliases": []
     },
@@ -3810,7 +3848,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L667"
+        "HYPOTHESIS_LOG.md#L671"
       ],
       "aliases": []
     },
@@ -3824,7 +3862,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L673"
+        "HYPOTHESIS_LOG.md#L677"
       ],
       "aliases": []
     },
@@ -3838,7 +3876,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L539"
+        "HYPOTHESIS_LOG.md#L543"
       ],
       "aliases": []
     },
@@ -3852,7 +3890,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L546"
+        "HYPOTHESIS_LOG.md#L550"
       ],
       "aliases": []
     },
@@ -3866,7 +3904,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L480"
+        "HYPOTHESIS_LOG.md#L484"
       ],
       "aliases": []
     },
@@ -3880,7 +3918,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L463"
+        "HYPOTHESIS_LOG.md#L467"
       ],
       "aliases": []
     },
@@ -3894,7 +3932,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L466"
+        "HYPOTHESIS_LOG.md#L470"
       ],
       "aliases": []
     },
@@ -3908,7 +3946,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L470"
+        "HYPOTHESIS_LOG.md#L474"
       ],
       "aliases": []
     },
@@ -3922,7 +3960,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L471"
+        "HYPOTHESIS_LOG.md#L475"
       ],
       "aliases": []
     },
@@ -3936,7 +3974,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L688"
+        "HYPOTHESIS_LOG.md#L692"
       ],
       "aliases": []
     },
@@ -3950,7 +3988,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L41",
+        "HYPOTHESIS_LOG.md#L45",
         "WASM_HYPOTHESES.md#L152"
       ],
       "aliases": []
@@ -3965,7 +4003,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L47",
+        "HYPOTHESIS_LOG.md#L51",
         "WASM_HYPOTHESES.md#L165"
       ],
       "aliases": []
@@ -3980,7 +4018,7 @@
       "area": "audio",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L49",
+        "HYPOTHESIS_LOG.md#L53",
         "WASM_HYPOTHESES.md#L170"
       ],
       "aliases": []
@@ -3995,7 +4033,7 @@
       "area": "load",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L51",
+        "HYPOTHESIS_LOG.md#L55",
         "WASM_HYPOTHESES.md#L172"
       ],
       "aliases": [
@@ -4013,8 +4051,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L79",
-        "EXECUTION_PLAN.md#L1650"
+        "HYPOTHESIS_LOG.md#L83",
+        "EXECUTION_PLAN.md#L1668"
       ],
       "aliases": []
     },
@@ -4028,8 +4066,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L89",
-        "EXECUTION_PLAN.md#L1566"
+        "HYPOTHESIS_LOG.md#L93",
+        "EXECUTION_PLAN.md#L1584"
       ],
       "aliases": []
     },
@@ -4043,8 +4081,8 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L101",
-        "EXECUTION_PLAN.md#L1086"
+        "HYPOTHESIS_LOG.md#L105",
+        "EXECUTION_PLAN.md#L1104"
       ],
       "aliases": []
     },
@@ -4058,8 +4096,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L113",
-        "EXECUTION_PLAN.md#L1252"
+        "HYPOTHESIS_LOG.md#L117",
+        "EXECUTION_PLAN.md#L1270"
       ],
       "aliases": []
     },
@@ -4073,7 +4111,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1132"
+        "EXECUTION_PLAN.md#L1150"
       ],
       "aliases": []
     },
@@ -4087,7 +4125,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L189"
+        "HYPOTHESIS_LOG.md#L193"
       ],
       "aliases": []
     },
@@ -4101,7 +4139,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L195"
+        "HYPOTHESIS_LOG.md#L199"
       ],
       "aliases": []
     },
@@ -4115,7 +4153,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L203"
+        "HYPOTHESIS_LOG.md#L207"
       ],
       "aliases": []
     },
@@ -4129,7 +4167,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L363"
+        "HYPOTHESIS_LOG.md#L367"
       ],
       "aliases": []
     },
@@ -4143,7 +4181,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L367"
+        "HYPOTHESIS_LOG.md#L371"
       ],
       "aliases": []
     },
@@ -4199,8 +4237,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L69",
-        "EXECUTION_PLAN.md#L1347"
+        "HYPOTHESIS_LOG.md#L73",
+        "EXECUTION_PLAN.md#L1365"
       ],
       "aliases": []
     },
@@ -4214,8 +4252,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L71",
-        "EXECUTION_PLAN.md#L1586"
+        "HYPOTHESIS_LOG.md#L75",
+        "EXECUTION_PLAN.md#L1604"
       ],
       "aliases": [
         "E-75"
@@ -4231,8 +4269,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L83",
-        "EXECUTION_PLAN.md#L1571"
+        "HYPOTHESIS_LOG.md#L87",
+        "EXECUTION_PLAN.md#L1589"
       ],
       "aliases": []
     },
@@ -4246,8 +4284,8 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L91",
-        "EXECUTION_PLAN.md#L1529"
+        "HYPOTHESIS_LOG.md#L95",
+        "EXECUTION_PLAN.md#L1547"
       ],
       "aliases": []
     },
@@ -4261,8 +4299,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L105",
-        "EXECUTION_PLAN.md#L1371"
+        "HYPOTHESIS_LOG.md#L109",
+        "EXECUTION_PLAN.md#L1389"
       ],
       "aliases": []
     },
@@ -4276,7 +4314,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1522"
+        "EXECUTION_PLAN.md#L1540"
       ],
       "aliases": []
     },
@@ -4290,7 +4328,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L171",
+        "HYPOTHESIS_LOG.md#L175",
         "EXECUTION_PLAN.md#L255"
       ],
       "aliases": []
@@ -4305,7 +4343,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L227"
+        "HYPOTHESIS_LOG.md#L231"
       ],
       "aliases": []
     },
@@ -4319,7 +4357,7 @@
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L257"
+        "HYPOTHESIS_LOG.md#L261"
       ],
       "aliases": []
     },
@@ -4333,7 +4371,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L259"
+        "HYPOTHESIS_LOG.md#L263"
       ],
       "aliases": []
     },
@@ -4347,7 +4385,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L261"
+        "HYPOTHESIS_LOG.md#L265"
       ],
       "aliases": []
     },
@@ -4361,7 +4399,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L287"
+        "HYPOTHESIS_LOG.md#L291"
       ],
       "aliases": []
     },
@@ -4375,7 +4413,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L289"
+        "HYPOTHESIS_LOG.md#L293"
       ],
       "aliases": []
     },
@@ -4389,7 +4427,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L293"
+        "HYPOTHESIS_LOG.md#L297"
       ],
       "aliases": []
     },
@@ -4403,8 +4441,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L297",
-        "HYPOTHESIS_LOG.md#L345"
+        "HYPOTHESIS_LOG.md#L301",
+        "HYPOTHESIS_LOG.md#L349"
       ],
       "aliases": []
     },
@@ -4418,7 +4456,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L303"
+        "HYPOTHESIS_LOG.md#L307"
       ],
       "aliases": []
     },
@@ -4432,7 +4470,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L309"
+        "HYPOTHESIS_LOG.md#L313"
       ],
       "aliases": []
     },
@@ -4446,7 +4484,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L311"
+        "HYPOTHESIS_LOG.md#L315"
       ],
       "aliases": []
     },
@@ -4460,7 +4498,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L315"
+        "HYPOTHESIS_LOG.md#L319"
       ],
       "aliases": []
     },
@@ -4474,7 +4512,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L317"
+        "HYPOTHESIS_LOG.md#L321"
       ],
       "aliases": []
     },
@@ -4488,7 +4526,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L321"
+        "HYPOTHESIS_LOG.md#L325"
       ],
       "aliases": []
     },
@@ -4502,7 +4540,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L325"
+        "HYPOTHESIS_LOG.md#L329"
       ],
       "aliases": []
     },
@@ -4516,7 +4554,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L327"
+        "HYPOTHESIS_LOG.md#L331"
       ],
       "aliases": []
     },
@@ -4530,7 +4568,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L329"
+        "HYPOTHESIS_LOG.md#L333"
       ],
       "aliases": []
     },
@@ -4544,7 +4582,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L331"
+        "HYPOTHESIS_LOG.md#L335"
       ],
       "aliases": []
     },
@@ -4558,7 +4596,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L337"
+        "HYPOTHESIS_LOG.md#L341"
       ],
       "aliases": []
     },
@@ -4572,7 +4610,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L347"
+        "HYPOTHESIS_LOG.md#L351"
       ],
       "aliases": []
     },
@@ -4586,7 +4624,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L349"
+        "HYPOTHESIS_LOG.md#L353"
       ],
       "aliases": []
     },
@@ -4600,7 +4638,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L351"
+        "HYPOTHESIS_LOG.md#L355"
       ],
       "aliases": []
     },
@@ -4614,7 +4652,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L355"
+        "HYPOTHESIS_LOG.md#L359"
       ],
       "aliases": []
     },
@@ -4628,7 +4666,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L401"
+        "HYPOTHESIS_LOG.md#L405"
       ],
       "aliases": []
     },
@@ -4642,7 +4680,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L411"
+        "HYPOTHESIS_LOG.md#L415"
       ],
       "aliases": []
     },
@@ -4656,7 +4694,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L648"
+        "HYPOTHESIS_LOG.md#L652"
       ],
       "aliases": []
     },
@@ -4670,7 +4708,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L649"
+        "HYPOTHESIS_LOG.md#L653"
       ],
       "aliases": []
     },
@@ -4684,7 +4722,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L650"
+        "HYPOTHESIS_LOG.md#L654"
       ],
       "aliases": []
     },
@@ -4698,7 +4736,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L652"
+        "HYPOTHESIS_LOG.md#L656"
       ],
       "aliases": []
     },
@@ -4712,7 +4750,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L654"
+        "HYPOTHESIS_LOG.md#L658"
       ],
       "aliases": []
     },
@@ -4726,7 +4764,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L655"
+        "HYPOTHESIS_LOG.md#L659"
       ],
       "aliases": []
     },
@@ -4740,7 +4778,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L656"
+        "HYPOTHESIS_LOG.md#L660"
       ],
       "aliases": []
     },
@@ -4754,7 +4792,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L657"
+        "HYPOTHESIS_LOG.md#L661"
       ],
       "aliases": []
     },
@@ -4768,7 +4806,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L659"
+        "HYPOTHESIS_LOG.md#L663"
       ],
       "aliases": []
     },
@@ -4782,7 +4820,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L661"
+        "HYPOTHESIS_LOG.md#L665"
       ],
       "aliases": []
     },
@@ -4796,7 +4834,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L664"
+        "HYPOTHESIS_LOG.md#L668"
       ],
       "aliases": [
         "S1"
@@ -4812,7 +4850,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L638"
+        "HYPOTHESIS_LOG.md#L642"
       ],
       "aliases": []
     },
@@ -4826,7 +4864,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L639"
+        "HYPOTHESIS_LOG.md#L643"
       ],
       "aliases": []
     },
@@ -4840,7 +4878,7 @@
       "area": "pre-render",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L640"
+        "HYPOTHESIS_LOG.md#L644"
       ],
       "aliases": []
     },
@@ -4854,7 +4892,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L643"
+        "HYPOTHESIS_LOG.md#L647"
       ],
       "aliases": []
     },
@@ -4868,7 +4906,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L645"
+        "HYPOTHESIS_LOG.md#L649"
       ],
       "aliases": []
     },
@@ -4882,7 +4920,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L646"
+        "HYPOTHESIS_LOG.md#L650"
       ],
       "aliases": []
     },
@@ -4896,7 +4934,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L602"
+        "HYPOTHESIS_LOG.md#L606"
       ],
       "aliases": []
     },
@@ -4910,7 +4948,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L605"
+        "HYPOTHESIS_LOG.md#L609"
       ],
       "aliases": []
     },
@@ -4924,7 +4962,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L606"
+        "HYPOTHESIS_LOG.md#L610"
       ],
       "aliases": []
     },
@@ -4938,7 +4976,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L608"
+        "HYPOTHESIS_LOG.md#L612"
       ],
       "aliases": []
     },
@@ -4952,7 +4990,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L610"
+        "HYPOTHESIS_LOG.md#L614"
       ],
       "aliases": []
     },
@@ -4966,7 +5004,7 @@
       "area": "liquidfun",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L611"
+        "HYPOTHESIS_LOG.md#L615"
       ],
       "aliases": []
     },
@@ -4980,7 +5018,7 @@
       "area": "engine",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L612"
+        "HYPOTHESIS_LOG.md#L616"
       ],
       "aliases": []
     },
@@ -4994,7 +5032,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L613"
+        "HYPOTHESIS_LOG.md#L617"
       ],
       "aliases": []
     },
@@ -5008,7 +5046,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L614"
+        "HYPOTHESIS_LOG.md#L618"
       ],
       "aliases": []
     },
@@ -5022,7 +5060,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L619"
+        "HYPOTHESIS_LOG.md#L623"
       ],
       "aliases": []
     },
@@ -5036,7 +5074,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L620"
+        "HYPOTHESIS_LOG.md#L624"
       ],
       "aliases": []
     },
@@ -5050,7 +5088,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L621"
+        "HYPOTHESIS_LOG.md#L625"
       ],
       "aliases": []
     },
@@ -5064,7 +5102,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L625"
+        "HYPOTHESIS_LOG.md#L629"
       ],
       "aliases": []
     },
@@ -5078,7 +5116,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L626"
+        "HYPOTHESIS_LOG.md#L630"
       ],
       "aliases": []
     },
@@ -5092,7 +5130,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L631"
+        "HYPOTHESIS_LOG.md#L635"
       ],
       "aliases": []
     },
@@ -5106,7 +5144,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L632"
+        "HYPOTHESIS_LOG.md#L636"
       ],
       "aliases": []
     },
@@ -5120,7 +5158,7 @@
       "area": "pre-render",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L634"
+        "HYPOTHESIS_LOG.md#L638"
       ],
       "aliases": []
     },
@@ -5134,7 +5172,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L635"
+        "HYPOTHESIS_LOG.md#L639"
       ],
       "aliases": []
     },
@@ -5148,7 +5186,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L593"
+        "HYPOTHESIS_LOG.md#L597"
       ],
       "aliases": []
     },
@@ -5162,7 +5200,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L594"
+        "HYPOTHESIS_LOG.md#L598"
       ],
       "aliases": []
     },
@@ -5176,7 +5214,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L595"
+        "HYPOTHESIS_LOG.md#L599"
       ],
       "aliases": []
     },
@@ -5190,7 +5228,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L596"
+        "HYPOTHESIS_LOG.md#L600"
       ],
       "aliases": []
     },
@@ -5204,7 +5242,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L597"
+        "HYPOTHESIS_LOG.md#L601"
       ],
       "aliases": []
     },
@@ -5218,7 +5256,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L571"
+        "HYPOTHESIS_LOG.md#L575"
       ],
       "aliases": []
     },
@@ -5232,7 +5270,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L573"
+        "HYPOTHESIS_LOG.md#L577"
       ],
       "aliases": []
     },
@@ -5246,7 +5284,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L583"
+        "HYPOTHESIS_LOG.md#L587"
       ],
       "aliases": []
     },
@@ -5260,7 +5298,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L585"
+        "HYPOTHESIS_LOG.md#L589"
       ],
       "aliases": []
     },
@@ -5274,7 +5312,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L587"
+        "HYPOTHESIS_LOG.md#L591"
       ],
       "aliases": []
     },
@@ -5288,7 +5326,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L588"
+        "HYPOTHESIS_LOG.md#L592"
       ],
       "aliases": []
     },
@@ -5302,7 +5340,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L589"
+        "HYPOTHESIS_LOG.md#L593"
       ],
       "aliases": []
     },
@@ -5316,7 +5354,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L550"
+        "HYPOTHESIS_LOG.md#L554"
       ],
       "aliases": []
     },
@@ -5330,7 +5368,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L552"
+        "HYPOTHESIS_LOG.md#L556"
       ],
       "aliases": []
     },
@@ -5344,7 +5382,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L557"
+        "HYPOTHESIS_LOG.md#L561"
       ],
       "aliases": []
     },
@@ -5358,7 +5396,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L560"
+        "HYPOTHESIS_LOG.md#L564"
       ],
       "aliases": []
     },
@@ -5372,7 +5410,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L562"
+        "HYPOTHESIS_LOG.md#L566"
       ],
       "aliases": []
     },
@@ -5386,7 +5424,7 @@
       "area": "nav",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L567"
+        "HYPOTHESIS_LOG.md#L571"
       ],
       "aliases": []
     },
@@ -5400,7 +5438,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L568"
+        "HYPOTHESIS_LOG.md#L572"
       ],
       "aliases": []
     },
@@ -5414,7 +5452,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L537"
+        "HYPOTHESIS_LOG.md#L541"
       ],
       "aliases": []
     },
@@ -5428,7 +5466,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L544"
+        "HYPOTHESIS_LOG.md#L548"
       ],
       "aliases": []
     },
@@ -5442,7 +5480,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L529"
+        "HYPOTHESIS_LOG.md#L533"
       ],
       "aliases": []
     },
@@ -5456,7 +5494,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L530"
+        "HYPOTHESIS_LOG.md#L534"
       ],
       "aliases": []
     },
@@ -5470,7 +5508,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L531"
+        "HYPOTHESIS_LOG.md#L535"
       ],
       "aliases": []
     },
@@ -5484,7 +5522,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L532"
+        "HYPOTHESIS_LOG.md#L536"
       ],
       "aliases": []
     },
@@ -5498,7 +5536,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L534"
+        "HYPOTHESIS_LOG.md#L538"
       ],
       "aliases": []
     },
@@ -5512,7 +5550,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L488"
+        "HYPOTHESIS_LOG.md#L492"
       ],
       "aliases": []
     },
@@ -5526,7 +5564,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L489"
+        "HYPOTHESIS_LOG.md#L493"
       ],
       "aliases": []
     },
@@ -5540,7 +5578,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L497"
+        "HYPOTHESIS_LOG.md#L501"
       ],
       "aliases": []
     },
@@ -5554,7 +5592,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L500"
+        "HYPOTHESIS_LOG.md#L504"
       ],
       "aliases": []
     },
@@ -5568,7 +5606,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L505"
+        "HYPOTHESIS_LOG.md#L509"
       ],
       "aliases": []
     },
@@ -5582,7 +5620,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L507"
+        "HYPOTHESIS_LOG.md#L511"
       ],
       "aliases": []
     },
@@ -5596,7 +5634,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L509"
+        "HYPOTHESIS_LOG.md#L513"
       ],
       "aliases": []
     },
@@ -5610,7 +5648,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L512"
+        "HYPOTHESIS_LOG.md#L516"
       ],
       "aliases": []
     },
@@ -5624,7 +5662,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L514"
+        "HYPOTHESIS_LOG.md#L518"
       ],
       "aliases": []
     },
@@ -5638,7 +5676,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L464"
+        "HYPOTHESIS_LOG.md#L468"
       ],
       "aliases": []
     },
@@ -5652,7 +5690,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L467"
+        "HYPOTHESIS_LOG.md#L471"
       ],
       "aliases": []
     },
@@ -5666,7 +5704,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L474"
+        "HYPOTHESIS_LOG.md#L478"
       ],
       "aliases": []
     },
@@ -5680,7 +5718,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L475"
+        "HYPOTHESIS_LOG.md#L479"
       ],
       "aliases": []
     },
@@ -5694,7 +5732,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L477"
+        "HYPOTHESIS_LOG.md#L481"
       ],
       "aliases": []
     },
@@ -5708,7 +5746,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L478"
+        "HYPOTHESIS_LOG.md#L482"
       ],
       "aliases": []
     },
@@ -5722,7 +5760,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L479"
+        "HYPOTHESIS_LOG.md#L483"
       ],
       "aliases": []
     },
@@ -5736,7 +5774,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L449"
+        "HYPOTHESIS_LOG.md#L453"
       ],
       "aliases": []
     },
@@ -5750,7 +5788,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L452"
+        "HYPOTHESIS_LOG.md#L456"
       ],
       "aliases": []
     },
@@ -5764,7 +5802,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L453"
+        "HYPOTHESIS_LOG.md#L457"
       ],
       "aliases": []
     },
@@ -5778,7 +5816,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L454"
+        "HYPOTHESIS_LOG.md#L458"
       ],
       "aliases": []
     },
@@ -5792,7 +5830,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L455"
+        "HYPOTHESIS_LOG.md#L459"
       ],
       "aliases": []
     },
@@ -5806,7 +5844,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L456"
+        "HYPOTHESIS_LOG.md#L460"
       ],
       "aliases": []
     },
@@ -5820,7 +5858,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L457"
+        "HYPOTHESIS_LOG.md#L461"
       ],
       "aliases": []
     },
@@ -5834,7 +5872,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L459"
+        "HYPOTHESIS_LOG.md#L463"
       ],
       "aliases": []
     },
@@ -5848,7 +5886,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L462"
+        "HYPOTHESIS_LOG.md#L466"
       ],
       "aliases": []
     },
@@ -5862,7 +5900,7 @@
       "area": "liquidfun",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L687"
+        "HYPOTHESIS_LOG.md#L691"
       ],
       "aliases": []
     },
@@ -5876,7 +5914,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L685"
+        "HYPOTHESIS_LOG.md#L689"
       ],
       "aliases": []
     },
@@ -5904,7 +5942,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L145",
+        "HYPOTHESIS_LOG.md#L149",
         "EXECUTION_PLAN.md#L426"
       ],
       "aliases": []
@@ -5919,7 +5957,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L159",
+        "HYPOTHESIS_LOG.md#L163",
         "EXECUTION_PLAN.md#L810"
       ],
       "aliases": []
@@ -5934,7 +5972,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L163",
+        "HYPOTHESIS_LOG.md#L167",
         "EXECUTION_PLAN.md#L430"
       ],
       "aliases": [
@@ -5951,7 +5989,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L175",
+        "HYPOTHESIS_LOG.md#L179",
         "EXECUTION_PLAN.md#L550"
       ],
       "aliases": []
@@ -5966,7 +6004,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L181",
+        "HYPOTHESIS_LOG.md#L185",
         "EXECUTION_PLAN.md#L157"
       ],
       "aliases": []
@@ -5982,7 +6020,7 @@
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L732",
-        "EXECUTION_PLAN.md#L998"
+        "EXECUTION_PLAN.md#L1016"
       ],
       "aliases": []
     },
@@ -5996,7 +6034,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L283"
+        "HYPOTHESIS_LOG.md#L287"
       ],
       "aliases": []
     },
@@ -6010,7 +6048,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L339"
+        "HYPOTHESIS_LOG.md#L343"
       ],
       "aliases": []
     },
@@ -6024,7 +6062,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L341"
+        "HYPOTHESIS_LOG.md#L345"
       ],
       "aliases": []
     },
@@ -6038,7 +6076,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L578"
+        "HYPOTHESIS_LOG.md#L582"
       ],
       "aliases": []
     },
@@ -6052,7 +6090,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L551"
+        "HYPOTHESIS_LOG.md#L555"
       ],
       "aliases": []
     },
@@ -6066,7 +6104,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L554"
+        "HYPOTHESIS_LOG.md#L558"
       ],
       "aliases": []
     },
@@ -6080,7 +6118,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L498"
+        "HYPOTHESIS_LOG.md#L502"
       ],
       "aliases": []
     },
@@ -6108,7 +6146,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L197"
+        "HYPOTHESIS_LOG.md#L201"
       ],
       "aliases": []
     },
@@ -6123,7 +6161,7 @@
       "kind": "js",
       "refs": [
         "HYPOTHESIS_LOG.md#L9",
-        "HYPOTHESIS_LOG.md#L491"
+        "HYPOTHESIS_LOG.md#L495"
       ],
       "aliases": []
     },
@@ -6151,7 +6189,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L407"
+        "HYPOTHESIS_LOG.md#L411"
       ],
       "aliases": []
     },
@@ -6165,7 +6203,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L511"
+        "HYPOTHESIS_LOG.md#L515"
       ],
       "aliases": []
     },
@@ -6179,7 +6217,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L75"
+        "HYPOTHESIS_LOG.md#L79"
       ],
       "aliases": []
     },
@@ -6193,7 +6231,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L77"
+        "HYPOTHESIS_LOG.md#L81"
       ],
       "aliases": []
     },
@@ -6207,8 +6245,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L107",
-        "EXECUTION_PLAN.md#L1287"
+        "HYPOTHESIS_LOG.md#L111",
+        "EXECUTION_PLAN.md#L1305"
       ],
       "aliases": []
     },
@@ -6222,8 +6260,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L109",
-        "EXECUTION_PLAN.md#L1267"
+        "HYPOTHESIS_LOG.md#L113",
+        "EXECUTION_PLAN.md#L1285"
       ],
       "aliases": []
     },
@@ -6237,8 +6275,8 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L121",
-        "EXECUTION_PLAN.md#L1111"
+        "HYPOTHESIS_LOG.md#L125",
+        "EXECUTION_PLAN.md#L1129"
       ],
       "aliases": []
     },
@@ -6252,7 +6290,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1559"
+        "EXECUTION_PLAN.md#L1577"
       ],
       "aliases": []
     },
@@ -6266,8 +6304,8 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L153",
-        "HYPOTHESIS_LOG.md#L161",
+        "HYPOTHESIS_LOG.md#L157",
+        "HYPOTHESIS_LOG.md#L165",
         "EXECUTION_PLAN.md#L84"
       ],
       "aliases": []
@@ -6282,7 +6320,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L155",
+        "HYPOTHESIS_LOG.md#L159",
         "EXECUTION_PLAN.md#L473"
       ],
       "aliases": []
@@ -6297,7 +6335,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L165",
+        "HYPOTHESIS_LOG.md#L169",
         "EXECUTION_PLAN.md#L368"
       ],
       "aliases": []
@@ -6312,7 +6350,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L173",
+        "HYPOTHESIS_LOG.md#L177",
         "EXECUTION_PLAN.md#L176"
       ],
       "aliases": []
@@ -6327,8 +6365,8 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L185",
-        "EXECUTION_PLAN.md#L906"
+        "HYPOTHESIS_LOG.md#L189",
+        "EXECUTION_PLAN.md#L924"
       ],
       "aliases": []
     },
@@ -6342,7 +6380,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L255"
+        "HYPOTHESIS_LOG.md#L259"
       ],
       "aliases": []
     },
@@ -6356,7 +6394,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L413"
+        "HYPOTHESIS_LOG.md#L417"
       ],
       "aliases": []
     },
@@ -6384,7 +6422,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L925"
+        "EXECUTION_PLAN.md#L943"
       ],
       "aliases": []
     },
@@ -6398,7 +6436,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "EXECUTION_PLAN.md#L1144"
+        "EXECUTION_PLAN.md#L1162"
       ],
       "aliases": []
     },
@@ -6412,8 +6450,8 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L141",
-        "HYPOTHESIS_LOG.md#L143",
+        "HYPOTHESIS_LOG.md#L145",
+        "HYPOTHESIS_LOG.md#L147",
         "EXECUTION_PLAN.md#L205"
       ],
       "aliases": []
@@ -6428,9 +6466,9 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L147",
-        "HYPOTHESIS_LOG.md#L149",
-        "HYPOTHESIS_LOG.md#L157",
+        "HYPOTHESIS_LOG.md#L151",
+        "HYPOTHESIS_LOG.md#L153",
+        "HYPOTHESIS_LOG.md#L161",
         "EXECUTION_PLAN.md#L664"
       ],
       "aliases": []
@@ -6445,7 +6483,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L151"
+        "HYPOTHESIS_LOG.md#L155"
       ],
       "aliases": []
     },
@@ -6459,7 +6497,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L187"
+        "HYPOTHESIS_LOG.md#L191"
       ],
       "aliases": []
     },
@@ -6473,7 +6511,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L215"
+        "HYPOTHESIS_LOG.md#L219"
       ],
       "aliases": []
     },
@@ -6487,7 +6525,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L233"
+        "HYPOTHESIS_LOG.md#L237"
       ],
       "aliases": []
     },
@@ -6501,7 +6539,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L243"
+        "HYPOTHESIS_LOG.md#L247"
       ],
       "aliases": []
     },
@@ -6515,7 +6553,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L245"
+        "HYPOTHESIS_LOG.md#L249"
       ],
       "aliases": []
     },
@@ -6529,7 +6567,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L249"
+        "HYPOTHESIS_LOG.md#L253"
       ],
       "aliases": []
     },
@@ -6543,7 +6581,7 @@
       "area": "particle",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L253"
+        "HYPOTHESIS_LOG.md#L257"
       ],
       "aliases": []
     },
@@ -6557,7 +6595,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L265"
+        "HYPOTHESIS_LOG.md#L269"
       ],
       "aliases": []
     },
@@ -6571,7 +6609,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L281"
+        "HYPOTHESIS_LOG.md#L285"
       ],
       "aliases": []
     },
@@ -6585,7 +6623,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L295"
+        "HYPOTHESIS_LOG.md#L299"
       ],
       "aliases": []
     },
@@ -6599,7 +6637,7 @@
       "area": "harness",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L301"
+        "HYPOTHESIS_LOG.md#L305"
       ],
       "aliases": []
     },
@@ -6613,7 +6651,7 @@
       "area": "spatial",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L415"
+        "HYPOTHESIS_LOG.md#L419"
       ],
       "aliases": []
     },
@@ -6627,7 +6665,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L417"
+        "HYPOTHESIS_LOG.md#L421"
       ],
       "aliases": []
     },
@@ -6641,7 +6679,7 @@
       "area": "physics",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L421"
+        "HYPOTHESIS_LOG.md#L425"
       ],
       "aliases": []
     },
@@ -6655,7 +6693,7 @@
       "area": "particle",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L423"
+        "HYPOTHESIS_LOG.md#L427"
       ],
       "aliases": []
     },
@@ -6669,7 +6707,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L375"
+        "HYPOTHESIS_LOG.md#L379"
       ],
       "aliases": []
     },
@@ -6683,7 +6721,7 @@
       "area": "pre-render",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L385"
+        "HYPOTHESIS_LOG.md#L389"
       ],
       "aliases": []
     },
@@ -6697,7 +6735,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L387"
+        "HYPOTHESIS_LOG.md#L391"
       ],
       "aliases": []
     },
@@ -6711,7 +6749,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L389"
+        "HYPOTHESIS_LOG.md#L393"
       ],
       "aliases": []
     },
@@ -6725,7 +6763,7 @@
       "area": "physics",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L391"
+        "HYPOTHESIS_LOG.md#L395"
       ],
       "aliases": []
     },
@@ -6739,7 +6777,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L393"
+        "HYPOTHESIS_LOG.md#L397"
       ],
       "aliases": []
     },
@@ -6753,7 +6791,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L395"
+        "HYPOTHESIS_LOG.md#L399"
       ],
       "aliases": []
     },
@@ -6767,7 +6805,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L399"
+        "HYPOTHESIS_LOG.md#L403"
       ],
       "aliases": []
     },
@@ -6781,7 +6819,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L403"
+        "HYPOTHESIS_LOG.md#L407"
       ],
       "aliases": []
     },
@@ -6795,7 +6833,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L365"
+        "HYPOTHESIS_LOG.md#L369"
       ],
       "aliases": []
     },
@@ -6809,7 +6847,7 @@
       "area": "spatial",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L369"
+        "HYPOTHESIS_LOG.md#L373"
       ],
       "aliases": []
     },
@@ -6823,7 +6861,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L371"
+        "HYPOTHESIS_LOG.md#L375"
       ],
       "aliases": []
     },
@@ -6837,7 +6875,7 @@
       "area": "engine",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L547"
+        "HYPOTHESIS_LOG.md#L551"
       ],
       "aliases": []
     },
@@ -6869,7 +6907,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L670"
       ],
       "aliases": [],
@@ -6885,7 +6923,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L693"
       ],
       "aliases": []
@@ -6928,7 +6966,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L810"
       ],
       "aliases": []
@@ -6943,7 +6981,7 @@
       "area": "physics",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L711"
       ],
       "aliases": [],
@@ -6959,7 +6997,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L722"
       ],
       "aliases": []
@@ -6974,7 +7012,7 @@
       "area": "logic",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L731"
       ],
       "aliases": [],
@@ -7007,7 +7045,7 @@
       "area": "preRender",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L737",
         "reports/E-94-gpu-pack-wasm.md"
       ],
@@ -7023,7 +7061,7 @@
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "reports/E-94-gpu-pack-wasm.md"
       ],
       "aliases": [],
@@ -7039,7 +7077,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L746"
       ],
       "aliases": []
@@ -7054,7 +7092,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L766",
         "reports/E-96-light-batch.md"
       ],
@@ -7070,7 +7108,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L772",
         "reports/E-97-gpu-frame-pacing.md"
       ],
@@ -7086,7 +7124,7 @@
       "area": "pixi",
       "kind": "gpu",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L781"
       ],
       "aliases": []
@@ -7102,11 +7140,11 @@
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#L808",
-        "HYPOTHESIS_LOG.md#L25"
+        "HYPOTHESIS_LOG.md#L29"
       ],
       "aliases": [],
-      "next": "W4 for the rest. Predator profile 2026-10-23: emitSpriteQueue 17.2 %, collectVisibleEntities 9.6 %, _storeEntitySortY 5.1 %, _displayPose 5.0 %, _writeQueueShadow 4.1 % of pre-render; the shadow stamp chain 37 % (W23).",
-      "rank": 1
+      "next": "W4a (E-112) for the emit, W4b for the collect. Predator profile 2026-10-23: emitSpriteQueue 17.2 %, collectVisibleEntities 9.6 %, _storeEntitySortY 5.1 %, _displayPose 5.0 %, _writeQueueShadow 4.1 % of pre-render; the shadow stamp chain 37 % (W23).",
+      "rank": 2
     },
     {
       "id": "E-82b",
@@ -7135,7 +7173,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L19",
+        "HYPOTHESIS_LOG.md#L23",
         "REVIEW_PLAN.md"
       ],
       "aliases": []
@@ -7150,7 +7188,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "REVIEW_PLAN.md"
       ],
       "aliases": []
@@ -7165,7 +7203,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L813"
       ],
       "aliases": []
@@ -7180,7 +7218,7 @@
       "area": "particle",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L19"
+        "HYPOTHESIS_LOG.md#L23"
       ],
       "aliases": []
     },
@@ -7194,7 +7232,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L782",
         "reports/E-96b-self-lit-batch.md"
       ],
@@ -7210,7 +7248,7 @@
       "area": "pixi",
       "kind": "wasm",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17"
+        "HYPOTHESIS_LOG.md#L21"
       ],
       "aliases": [],
       "next": "Retry when the workers' phasing changes (diff kept outside the tree)."
@@ -7225,7 +7263,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L19"
+        "HYPOTHESIS_LOG.md#L23"
       ],
       "aliases": []
     },
@@ -7239,7 +7277,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17"
+        "HYPOTHESIS_LOG.md#L21"
       ],
       "aliases": [],
       "next": "Predator gate with the next batch."
@@ -7254,7 +7292,7 @@
       "area": "preRender",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17"
+        "HYPOTHESIS_LOG.md#L21"
       ],
       "aliases": []
     },
@@ -7268,7 +7306,7 @@
       "area": "pixi",
       "kind": "js",
       "refs": [
-        "HYPOTHESIS_LOG.md#L17",
+        "HYPOTHESIS_LOG.md#L21",
         "EXECUTION_PLAN.md#L788"
       ],
       "aliases": []

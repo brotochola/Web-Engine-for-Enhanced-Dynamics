@@ -869,6 +869,24 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
+### E-113 Queue columns a multiple of 4 KB apart alias in cache — **open (found in E-112)**
+At a render-queue capacity that is a multiple of 1 024 every float column of a row falls in one L1 set: in E-112's
+kernel, capacity 32 768 against 33 000 moved the JS emit +11 % and the C emit 2.4×. Predator's capacity (119 298)
+does not alias; proceduralTree's 8 192 does, and component columns do the same at entity totals at or next to a
+multiple of 1 024 (queryChurn, spawnStorm: 8 193). Candidate: each queue column starts a cache line after the last
+(`renderQueueLayout` is the one layout), and `Component.initializeArrays` likewise if a scene shows it. Measure on
+a scene at an aliased capacity.
+
+### E-112 Pre-render's emit in WASM (E-76 W4a) — **kernel +117.5 % (25/25); wiring next**
+`wasm/test/preRenderEmit.c` writes `emitSpriteQueue`'s full-emit rows for sprites and decorations. On Predator's
+mix at its queue capacity, every column the emit reads moved into one memory with both queue buffers, checksums
+equal over 45 frames: 976.7 → 2 124.5 ops/s (+117.5 %, 25/25, Node 22). The emit and its shadow write are 21.3 % of
+Predator pre-render, so about 11.5 % of it. Wiring: SpriteRenderer, ShadowCaster and DecorationComponent bound at
+byte offsets inside the render-queue memory, with pre-render's animation state, collector and texture tables; the
+kernel writes sprite and decoration rows and lists the others (particles, bullets, glows), which the JS writes after
+it; Adobe and LiquidFun frames, custom layers and the persist path stay JS; switch `wasm.preRenderEmit`. Then the
+Predator gate, owner pre-render.
+
 ### E-111 The stamp grid's cell computed once — **open (kernel tie by the rounds rule, 2026-10-23)**
 `buildStampGrid` bins each caster in its count pass and again in its fill pass. Keeping the first pass's cell in a
 module `Int32Array` (and multiplying by the exact 1/256 instead of dividing) read +10.5 to +17.7 % in
