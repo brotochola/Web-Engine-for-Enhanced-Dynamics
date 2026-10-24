@@ -263,7 +263,7 @@
         "sweep_light_f32",
         "sweep_light_simd"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "solidSegments",
@@ -272,7 +272,7 @@
       "exports": [
         "collect_solid_f32x4"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768
     },
     {
       "name": "decalPremultiply",

@@ -117,26 +117,39 @@ export function visibilityMemoryRegions({ maxOccluders, poolVerts, maxVerts, ent
   return { ...map, sizes: { occ, pool, out, owners, solidBytes } };
 }
 
+/** The bytes the visibility regions take, laid in another memory (W2b: Box2D's block). */
+export function visibilityMemoryBytes(opts) {
+  return visibilityMemoryRegions(opts).bytes;
+}
+
 /**
  * The memory, its layout and the JS views pre-render binds its scratch to. null when it would pass the
  * module's page limit or cannot be made (no SharedArrayBuffer): pre-render then sweeps in JS.
  * @param {{ maxOccluders: number, poolVerts: number, maxVerts: number, entities: number, fixtures?: number }} opts
+ * @param {null | { memory: WebAssembly.Memory, baseByte: number }} [place] W2b: lay the regions in that memory
+ *   from baseByte (64-aligned), where the gather kernel reads the components too, instead of a memory of their own
  */
-export function createVisibilityMemory(opts) {
+export function createVisibilityMemory(opts, place = null) {
   const map = visibilityMemoryRegions(opts);
-  if (map.pages > WASM_MAX_PAGES) return null;
+  const base = place ? place.baseByte | 0 : 0;
   let memory;
-  try {
-    memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
-  } catch {
-    return null;
+  if (place) {
+    if ((base & 63) !== 0 || base + map.bytes > place.memory.buffer.byteLength) return null;
+    memory = place.memory;
+  } else {
+    if (map.pages > WASM_MAX_PAGES) return null;
+    try {
+      memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
+    } catch {
+      return null;
+    }
   }
   const buffer = memory.buffer;
   const r = map.regions;
   const { occ, pool, out, owners, solidBytes } = map.sizes;
-  const view = (Ctor, name, n) => new Ctor(buffer, r[name].byte, n);
-  const layout = { maxOccluders: occ, poolVerts: pool, maxVerts: out, entities: owners, solidBytes };
-  for (const [name, region] of Object.entries(r)) layout[`${name}Byte`] = region.byte;
+  const view = (Ctor, name, n) => new Ctor(buffer, base + r[name].byte, n);
+  const layout = { maxOccluders: occ, poolVerts: pool, maxVerts: out, entities: owners, solidBytes, baseByte: base };
+  for (const [name, region] of Object.entries(r)) layout[`${name}Byte`] = base + region.byte;
   return {
     memory,
     buffer,
