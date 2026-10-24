@@ -483,6 +483,19 @@ the moved buffers inside that block, so nothing binds twice.
 - *Unblocks:* W4b with bodies (Predator's collect, ~20 % of its pre-render), W19 (the bullet casts read
   Transform, Collider and the grid), W7, W18, W2b, W28.
 
+*Built 2026-10-24 (switch `wasm.box2dBlock`, default on):*
+- *The block.* `scene.init` starts the physics worker before the shared buffers, with Box2D's memory grown by
+  the block (`box2dBlockPlan`, `src/util/box2dEngineBlock.js`). The host `_malloc`s the block, 64-byte aligned
+  and zeroed, and posts the memory back. `createRenderQueueMemory` then lays its regions at the block's byte.
+  Every kernel on the render-queue memory imports up to 32768 pages.
+- *What the block holds besides the queues,* when the sprite collect asks for it (`renderQueueMemorySpec`'s
+  body variant): Transform's state block, RigidBody's, Collider's and the two published pose buffers. The host
+  binds its mirrored schemas at the blocks' bytes and publishes the poses at theirs. Workers bind Transform's
+  heap pose on the block's buffer.
+- *Predator, headless:* a 111.9 MB block, every active body's published pose read back live from it
+  (`publishedPose` in the benchmark's metadata).
+- *Not in the block yet:* the spatial grid and the spatial publish memory, which W19 and W7 need next.
+
 **Phase 5 — Product wiring, per winner, one at a time.** T7 switch first. Scene pair, then the Predator
 gate. Boot cost and dist sizes on record. One commit per port. Winners land in sequence, so each one's
 scene pair runs against a base that already has the earlier ones.
