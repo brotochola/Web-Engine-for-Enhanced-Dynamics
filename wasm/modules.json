@@ -296,6 +296,17 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "decorationSwayF32",
+      "source": "wasm/test/decorationSwayF32.c",
+      "output": "tests/fixtures/wasm/decorationSwayF32.wasm",
+      "exports": [
+        "sway_decorations_f32",
+        "sway_decorations_f32x4"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
