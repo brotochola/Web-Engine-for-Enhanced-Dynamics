@@ -1,7 +1,7 @@
-// E-76 W13, float32: the list builds of wasm/test/particleListsF32.c (build_lists_f32 / _turned_f32, scalar, and
-// build_lists_f32x4 / _turned_f32x4) against the shipped build_lists / build_lists_turned, which
-// particleListsWasm.test.js ties to the JS build. Called through the shipped wrapper (buildParticleListsWasm)
-// on a 12 007-slot pool (full, empty and partial 16-slot blocks, a tail of 7), positions over and past the
+// E-76 W13, float32: the float32 list builds of wasm/particleLists.c (build_lists_f32x4 / build_lists_turned_f32x4)
+// against its double builds (build_lists / build_lists_turned), which particleListsWasm.test.js ties to the JS
+// build. Called through the shipped wrapper (buildParticleListsWasm) on a 12 007-slot pool (full, empty and
+// partial 16-slot blocks, a tail of 7), positions over and past the
 // world, NaN, infinite and past float32's range, under box cameras zoomed out, at 1 and at 2.5, and turned ones
 // at 0.785, 2.4 and -1.1 rad. Some particles are planted on the box's edges (within a few float32 steps of them
 // in double) and some 5e-3 px inside and outside. Each float32 build must give, by compareListBuilds
@@ -14,8 +14,8 @@
 //   (10 % of the canvas), so a particle that changes sides there is off the canvas either way: nothing drawn
 //   changes. How many can change sides is the number of live particles that close to an edge, which the test
 //   counts (none of the random ones, a share of the planted ones);
-// - a visible list that is its flags in active-list order;
-// and the scalar and f32x4 builds the same bytes. A mutant (the camera offset 0.01 px off) must fail.
+// - a visible list that is its flags in active-list order.
+// A mutant (the camera offset 0.01 px off) must fail.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -104,10 +104,6 @@ function build(k, cam) {
   return snapshotLists(activeData, visibleData, pc.isItOnScreen, N);
 }
 
-function same(a, b) {
-  return a.length === b.length && a.every((v, k) => v === b[k]);
-}
-
 test('float32 list builds give the shipped lists, flags only changing within a float32 rounding of an edge', async (t) => {
   const kernels = await kernelsPromise;
   const r = mulberry32(0x11575);
@@ -132,13 +128,11 @@ test('float32 list builds give the shipped lists, flags only changing within a f
       outs[v] = build(kernels[v], cam);
       assert.equal(compareListBuilds(ref, outs[v], pc.x, pc.y, cam, stats), null, `${name} ${v}`);
       assert.ok(stats.flips <= near, `${name} ${v}: ${stats.flips} flips, ${near} particles near an edge`);
-      if (v === 'wasm-f32') {
+      if (v === 'wasm-f32x4') {
         flips += stats.flips;
         t.diagnostic(`${name}: ${ref.active[0]} live, ${ref.visible[0]} visible, ${near} within the slack of an edge (up to ${slack.toExponential(1)} px), ${stats.flips} on the other side (the farthest at ${(stats.worst * 100).toFixed(0)} % of its slack)`);
       }
     }
-    const [a, c] = Object.values(outs);
-    assert.ok(same(a.active, c.active) && same(a.visible, c.visible) && same(a.on, c.on), `${name}: f32x4 builds what f32 builds`);
   }
   assert.ok(flips > 0, 'some planted particle changed sides (the test reaches the edge case)');
 });

@@ -10,13 +10,13 @@
  *   wasm  buildParticleListsWasm (src/workers/particleListsClient.js): build_lists /
  *         build_lists_turned (wasm/particleLists.c, f64x2 on full 16-slot blocks) writing the
  *         published lists only, the integrate's input being the published active list
- *   wasm-f32    the same wrapper around build_lists_f32 / build_lists_turned_f32 (wasm/test/
- *               particleListsF32.c, a test module): the screen test in float32, every particle alone
- *   wasm-f32x4  build_lists_f32x4 / build_lists_turned_f32x4: the same, four particles per f32x4 on a
- *               full block (bit-identical to wasm-f32)
+ *   wasm-f32x4  the same wrapper around build_lists_f32x4 / build_lists_turned_f32x4 (wasm/particleLists.c):
+ *               the screen test in float32, four particles per f32x4 on a full block
  *
  * Both run on the particle memory the scene builds (createParticleMemory). E-80's kernel sitting
  * also timed a scalar build (every particle alone, in double): f64x2 beat it 25/25 in the dense cases.
+ * The float32 pass (2026-10-24) also timed a scalar float32 build: -22.9 to -26.6 % against build_lists
+ * (0/25), so only the f32x4 builds were kept.
  *
  * Cases, one process each variant (runKernelVariants.mjs alternates them and rejects a checksum that
  * differs; the checksum covers both lists and every isItOnScreen byte after each case). base and wasm
@@ -32,7 +32,7 @@
  *   sparse  Predator's pool: 10 000 slots, 150 live ones scattered (the sweep over empty slots)
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleListsWasmMicrobench.mjs --variants base,wasm --rounds 5
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleListsWasmMicrobench.mjs --variants wasm,wasm-f32,wasm-f32x4 --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleListsWasmMicrobench.mjs --variants wasm,wasm-f32x4 --rounds 5
  *   node tests/bench/particleListsWasmMicrobench.mjs --variant wasm [--check] [--output path]
  *
  * --check builds each case once and prints the checksum: no warm-up, no timing.
@@ -52,17 +52,16 @@ import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './micr
 import { emitConfig, PARTICLE_EASES } from './particleIntegrateWasmMicrobench.mjs';
 import { instantiateKernel, machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
-/** The float32 builds: tests/fixtures/wasm/particleListsF32.wasm, by variant name. */
-export const LISTS_F32_MODULE = 'particleListsF32';
+/** The float32 builds of the shipped module (wasm/particleLists.c), by variant name. */
+export const LISTS_F32_MODULE = 'particleLists';
 export const LISTS_F32_EXPORTS = Object.freeze({
-  'wasm-f32': { build: 'build_lists_f32', buildTurned: 'build_lists_turned_f32' },
   'wasm-f32x4': { build: 'build_lists_f32x4', buildTurned: 'build_lists_turned_f32x4' },
 });
 
 /**
  * The shipped binding (bindParticleLists) and one per float32 variant: the same object with its build and
  * buildTurned swapped, which buildParticleListsWasm calls as the particle worker does. `f32: false` leaves
- * the float32 module out.
+ * the float32 variants out.
  */
 export async function bindListKernels(memory, layout, pc, { f32: withF32 = true } = {}) {
   const wasm = await bindParticleLists(memory, layout, pc);

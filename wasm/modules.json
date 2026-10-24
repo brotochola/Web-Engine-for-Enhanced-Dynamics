@@ -81,7 +81,9 @@
       "exports": [
         "build_lists",
         "build_lists_turned",
-        "build_active"
+        "build_active",
+        "build_lists_f32x4",
+        "build_lists_turned_f32x4"
       ],
       "maxMemoryPages": 8192
     },
@@ -313,19 +315,6 @@
       "exports": [
         "integrate_batch_f32",
         "integrate_batch_f32x4"
-      ],
-      "maxMemoryPages": 8192,
-      "test": true
-    },
-    {
-      "name": "particleListsF32",
-      "source": "wasm/test/particleListsF32.c",
-      "output": "tests/fixtures/wasm/particleListsF32.wasm",
-      "exports": [
-        "build_lists_f32",
-        "build_lists_turned_f32",
-        "build_lists_f32x4",
-        "build_lists_turned_f32x4"
       ],
       "maxMemoryPages": 8192,
       "test": true
