@@ -143,15 +143,16 @@ test('PHYSICS_STATS.LIQUIDFUN_MS slot + display row', () => {
   assert.ok(physicsRows.some((r) => r.key === 'LIQUIDFUN_MS'));
 });
 
-test('PHYSICS_STATS LF pass slots 37-44 stay inside stride 50', () => {
+test('PHYSICS_STATS LF pass slots 37-44 stay inside stride 51', () => {
   assert.equal(PHYSICS_STATS.LF_PASS_GRID_MS, 37);
   assert.equal(PHYSICS_STATS.LF_PASS_REST_MS, 44);
   // E-01 took 47 (WAIT_MS) and 48 (IDLE_MS), so the stride moved 48 -> 49;
-  // E-56 took 49 (QUERY_WAKE_MS), 49 -> 50.
+  // E-56 took 49 (QUERY_WAKE_MS), 49 -> 50; BM-3 took 50 (MEMORY_PEAK_KB), 50 -> 51.
   assert.equal(PHYSICS_STATS.WAIT_MS, 47);
   assert.equal(PHYSICS_STATS.IDLE_MS, 48);
   assert.equal(PHYSICS_STATS.QUERY_WAKE_MS, 49);
-  assert.equal(PHYSICS_STATS.STRIDE_FLOATS, 50);
+  assert.equal(PHYSICS_STATS.MEMORY_PEAK_KB, 50);
+  assert.equal(PHYSICS_STATS.STRIDE_FLOATS, 51);
   const physicsRows = WORKER_DISPLAY_CONFIG.physics.stats;
   assert.ok(physicsRows.some((r) => r.key === 'LF_PASS_FIND_CONTACTS_MS'));
 });

@@ -7186,7 +7186,7 @@
       "id": "DX-MEM",
       "title": "`physics.wasmMemoryMB`: the developer chooses the size of Box2D's memory, per scene",
       "status": "running",
-      "statusText": "Plan reviewed and saved 2026-10-24; BM-1 next",
+      "statusText": "BM-1 and BM-3 done 2026-10-24 (MEMORY_PEAK_KB in the physics stats and the memory panel); BM-2 next",
       "date": "2026-10-23",
       "result": "Today every physics scene commits one fixed 512 MB shared memory and running out stops physics with nothing on screen. The plan keeps the memory fixed (views onto it are bound once, in every worker) but lets the scene choose its size: the worker's name carries the page count, a pre-js creates the memory with initial = maximum, and the module's import accepts 16 MB to 2 GB. Adds a peak stat (sbrk), an out-of-memory overlay that names the key, and a survey that sizes the demos and lowers the default.",
       "area": "engine",
@@ -7198,7 +7198,7 @@
         "box2d memory size",
         "wasmMemoryMB"
       ],
-      "next": "BM-1 and BM-2 in the sibling Box2D build (peak export, link flags, weed_pre.js), then the engine items BM-3 to BM-8 and the survey."
+      "next": "BM-2 in the sibling Box2D build (link flags, weed_pre.js), then the engine items BM-4 to BM-8 and the survey."
     },
     {
       "id": "E-86",

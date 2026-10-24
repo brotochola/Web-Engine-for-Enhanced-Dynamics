@@ -170,6 +170,7 @@ test('buildSceneMemoryUsageReport reads Box2D HEAP used from physics stats', () 
   const f32 = new Float32Array(physicsStats);
   f32[PHYSICS_STATS.HEAP_USED_KB] = 48 * 1024; // 48 MB
   f32[PHYSICS_STATS.HEAP_HIGH_WATER_KB] = 64 * 1024; // 64 MB
+  f32[PHYSICS_STATS.MEMORY_PEAK_KB] = 2048 * 1024; // 2 GB, past int32
 
   const sab = new SharedArrayBuffer(64 * 1024);
   const report = buildSceneMemoryUsageReport({
@@ -184,4 +185,5 @@ test('buildSceneMemoryUsageReport reads Box2D HEAP used from physics stats', () 
   assert.equal(report.box2dHeap.reservedBytes, sab.byteLength);
   assert.equal(report.box2dHeap.usedBytes, 48 * 1024 * 1024);
   assert.equal(report.box2dHeap.highWaterBytes, 64 * 1024 * 1024);
+  assert.equal(report.box2dHeap.peakBytes, 2048 * 1024 * 1024);
 });

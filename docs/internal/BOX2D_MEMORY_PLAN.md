@@ -1,7 +1,7 @@
 # Box2D memory plan (`physics.wasmMemoryMB`)
 
 **Opened:** 2026-10-23 (planned in a chat session); reviewed against emsdk 6.0.4 and the shipped glue and
-saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-1. **Registry:** `DX-MEM` in
+saved here 2026-10-24. **Status:** in progress on `main`. **Next step:** BM-2. **Registry:** `DX-MEM` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: a WeedJS developer chooses how much memory Box2D gets, per scene, with
@@ -130,8 +130,10 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
 
 **Sibling repository** (one rebuild per commit):
 
-- [ ] **BM-1** `wasm_wrapper.c`: `size_t weedjs_memory_peak_bytes(void) { return (size_t)sbrk(0); }`, added
-  to `EXPORTED_FUNCTIONS` in `wasm/CMakeLists.txt`.
+- [x] **BM-1** `wasm_wrapper.c`: `size_t weedjs_memory_peak_bytes(void) { return (size_t)sbrk(0); }`. Done
+  2026-10-24 (sibling `23226d5`): `EMSCRIPTEN_KEEPALIVE` exports it, so `EXPORTED_FUNCTIONS` is unchanged. The
+  rebuild changed the glue only by the new export and the letters of internal exports; the import letters
+  are the same.
 - [ ] **BM-2** the Weed build: the link flags and `weedjs/weed_pre.js` of section 3; the stale 256 MB
   comment fixed; `build_for_weed.bat` fails when the glue lacks the pre-js, as it already fails when the
   glue does not load `weedjsPost.js`. Checks on the new glue:
@@ -146,11 +148,13 @@ Taken 2026-10-23, kept in the 2026-10-24 review.
 
 **Engine:**
 
-- [ ] **BM-3** `feat(physics)`: ship BM-1's artifacts. `MEMORY_PEAK_KB` is appended to `PHYSICS_STATS`
+- [x] **BM-3** `feat(physics)`: ship BM-1's artifacts. `MEMORY_PEAK_KB` is appended to `PHYSICS_STATS`
   (`src/util/workersUtils.js`, index 50; `STRIDE_FLOATS` 51) and to its mirror in `weedjsPost.js`, written
   every step next to `HEAP_USED_KB`. The memory report (`buildBox2dHeapInsight`,
   `src/util/sceneBufferMemory.js`) gains the peak, and the memory panel shows "peak X of Y". The size Y
-  is `hot.sab.byteLength`, already in the report, so there is no total stat.
+  is `hot.sab.byteLength`, already in the report, so there is no total stat. Done 2026-10-24:
+  `tests/node/box2dMemoryPeak.wasm.test.js` runs the real export (the break starts above zero, rises past
+  an 8 MB block, and a free does not lower it); the report test reads a 2 GB peak, past int32.
 - [ ] **BM-4** `refactor(physics)`: with detailed stats on, `writePhysicsStats` calls mallinfo (a walk
   of every chunk under the heap lock) a second time per step for the two values the always-on block has
   just written (`weedjsPost.js:2540-2548` and `:2593-2600`). The second call goes.

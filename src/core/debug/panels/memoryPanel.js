@@ -25,6 +25,7 @@ export class MemoryPanel {
     this.elements.total = createStat('SAB total: --');
     this.elements.bufferCount = createStat('Buffers: --');
     this.elements.wasmHeap = createStat('Box2D WASM HEAP: --');
+    this.elements.wasmPeak = createStat('Box2D WASM peak: --');
     this.elements.wasmHeapHigh = createStat('Box2D WASM HEAP high-water: --');
     this.elements.wasmChannels = createStat('Box2D body channels: --');
     this.elements.jsHeap = createStat('JS heap: --');
@@ -32,6 +33,7 @@ export class MemoryPanel {
     totals.appendChild(this.elements.total);
     totals.appendChild(this.elements.bufferCount);
     totals.appendChild(this.elements.wasmHeap);
+    totals.appendChild(this.elements.wasmPeak);
     totals.appendChild(this.elements.wasmHeapHigh);
     totals.appendChild(this.elements.wasmChannels);
     totals.appendChild(this.elements.jsHeap);
@@ -79,12 +81,17 @@ export class MemoryPanel {
     if (heap?.ready) {
       const usedLabel = heap.usedBytes > 0 ? heap.usedFormatted : '?';
       this.elements.wasmHeap.textContent = `Box2D WASM HEAP: ${usedLabel} used / ${heap.reservedFormatted} reserved`;
+      this.elements.wasmPeak.textContent =
+        heap.peakBytes > 0 && heap.reservedBytes > 0
+          ? `Box2D WASM peak: ${heap.peakFormatted} of ${heap.reservedFormatted} (${Math.round((heap.peakBytes / heap.reservedBytes) * 100)} %)`
+          : 'Box2D WASM peak: --';
       this.elements.wasmHeapHigh.textContent = `Box2D WASM HEAP high-water: ${
         heap.highWaterBytes > 0 ? heap.highWaterFormatted : '--'
       }`;
       this.elements.wasmChannels.textContent = `Box2D body channels: ${heap.bodyChannelFormatted} (${heap.bodyCapacity} bodies)`;
     } else {
       this.elements.wasmHeap.textContent = 'Box2D WASM HEAP: (not ready)';
+      this.elements.wasmPeak.textContent = 'Box2D WASM peak: (not ready)';
       this.elements.wasmHeapHigh.textContent = 'Box2D WASM HEAP high-water: (not ready)';
       this.elements.wasmChannels.textContent = 'Box2D body channels: (not ready)';
     }

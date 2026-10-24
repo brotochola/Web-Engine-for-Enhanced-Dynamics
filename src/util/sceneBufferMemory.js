@@ -210,6 +210,8 @@ function buildBox2dHeapInsight(scene) {
       usedFormatted: '0 B',
       highWaterBytes: 0,
       highWaterFormatted: '0 B',
+      peakBytes: 0,
+      peakFormatted: '0 B',
       bodyChannelBytes: 0,
       bodyChannelFormatted: '0 B',
       bodyCapacity: 0,
@@ -226,11 +228,14 @@ function buildBox2dHeapInsight(scene) {
 
   let usedBytes = 0;
   let highWaterBytes = 0;
+  let peakBytes = 0;
   const physSab = scene.buffers?.physicsStats;
   if (physSab) {
     const f32 = new Float32Array(physSab);
     usedBytes = ((f32[PHYSICS_STATS.HEAP_USED_KB] || 0) * 1024) | 0;
     highWaterBytes = ((f32[PHYSICS_STATS.HEAP_HIGH_WATER_KB] || 0) * 1024) | 0;
+    // Can reach 2 GB, past int32: no | 0.
+    peakBytes = (f32[PHYSICS_STATS.MEMORY_PEAK_KB] || 0) * 1024;
   }
 
   return {
@@ -241,10 +246,14 @@ function buildBox2dHeapInsight(scene) {
     usedFormatted: formatBytes(usedBytes),
     highWaterBytes,
     highWaterFormatted: formatBytes(highWaterBytes),
+    peakBytes,
+    peakFormatted: formatBytes(peakBytes),
     bodyChannelBytes,
     bodyChannelFormatted: formatBytes(bodyChannelBytes),
     bodyCapacity,
-    note: 'used = dlmalloc uordblks; reserved = WASM SharedArrayBuffer size; body channels = pose/vel/sleep tables inside HEAP',
+    note:
+      'used = dlmalloc uordblks (live bytes); peak = highest address reached (static data, stacks, heap); ' +
+      'reserved = WASM SharedArrayBuffer size; body channels = pose/vel/sleep tables inside HEAP',
   };
 }
 

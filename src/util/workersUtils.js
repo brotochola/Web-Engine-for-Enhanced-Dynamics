@@ -206,8 +206,14 @@ export const PHYSICS_STATS = Object.freeze({
    * answered by the host's wake instead of waiting for the next frame.
    */
   QUERY_WAKE_MS: 49,
-  STRIDE_FLOATS: 50,
-  BUFFER_SIZE: 50 * 4,
+  /**
+   * Box2D memory in use at its highest (kilobytes): static data, stacks and the highest heap
+   * address reached (`sbrk(0)`; dlmalloc never gives memory back). This is the figure to size
+   * Box2D's memory from; HEAP_USED_KB counts live bytes only.
+   */
+  MEMORY_PEAK_KB: 50,
+  STRIDE_FLOATS: 51,
+  BUFFER_SIZE: 51 * 4,
 });
 
 /**

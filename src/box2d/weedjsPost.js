@@ -254,10 +254,12 @@
     LF_PASS_PRESSURE_MS: 42,
     LF_PASS_CONTACT_SOLVERS_MS: 43,
     LF_PASS_REST_MS: 44,
+    MEMORY_PEAK_KB: 50,
   };
 
   let heapHighWaterKb = 0;
   let weedjsHeapBytesUsed = null;
+  let weedjsMemoryPeakBytes = null;
 
   function viewFromDesc(desc, TypedArray) {
     return new TypedArray(desc.sab, desc.byteOffset, desc.length);
@@ -2546,6 +2548,9 @@
       statsF32[PS.HEAP_USED_KB] = 0;
       statsF32[PS.HEAP_HIGH_WATER_KB] = heapHighWaterKb;
     }
+    // The break reaches 2 GB at most, which the i32 export returns negative: >>> 0.
+    statsF32[PS.MEMORY_PEAK_KB] =
+      typeof weedjsMemoryPeakBytes === 'function' ? ((weedjsMemoryPeakBytes() >>> 0) / 1024) | 0 : 0;
     if (!collectDetailedStats) return;
     statsF32[PS.JOINT_COUNT] = world ? world.getJointCount() : 0;
     statsF32[PS.BODY_SYNC_MS] = bodySyncMs;
@@ -2867,6 +2872,10 @@
     weedjsHeapBytesUsed =
       typeof Module._weedjs_heap_bytes_used === 'function'
         ? Module._weedjs_heap_bytes_used
+        : null;
+    weedjsMemoryPeakBytes =
+      typeof Module._weedjs_memory_peak_bytes === 'function'
+        ? Module._weedjs_memory_peak_bytes
         : null;
     heapHighWaterKb = 0;
     hostEntityCount = data.entityCount | 0;
