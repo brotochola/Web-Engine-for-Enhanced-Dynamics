@@ -2,7 +2,7 @@
 
 Night of 15–16 September 2026. Target: 10 hours, cushion 11. Keep tree (HASH + P2 + P6 + hygiene + collision + counters) versus `main` `0695a8d` plus the same load counters.
 
-This file is the **human** diary of that night. The runner writes [`tests/results/scoreboard/report.md`](../../tests/results/scoreboard/report.md). The hypothesis index is [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). The feature map is [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md).
+This file is the **human** diary of that night. The runner writes `tests/results/scoreboard/report.md` (not kept). The hypothesis index is [`HYPOTHESIS_LOG.md`](../HYPOTHESIS_LOG.md). The feature map is [`FEATURE_INVENTORY.md`](./FEATURE_INVENTORY.md).
 
 Protocol: primary = `STEP_MS` (or kernel ops/s). A speed keep requires the primary at least 3% cheaper and the load within ±5% with cv under 50%. FPS at 60 Hz does not count. Artistic Predator is not a row. Do not claim a "perfect WeedJS".
 
@@ -23,7 +23,7 @@ Machine: Chromium headed and visible, not suspended, those windows not minimized
 
 ## Block 0 — `--headed-only` flag
 
-**What was done.** In [`tests/bench/measureLib.mjs`](../../tests/bench/measureLib.mjs): `sceneWantsHeaded`, `--headed-only id,id`. `--headless` still wins. In [`tests/bench/runScoreboard.mjs`](../../tests/bench/runScoreboard.mjs) the scene cache uses the **effective** headed bit (`scene.key|0|smoke` or `scene.key|1|smoke`), not the catalog's `scene.headed`. Tests in `workloadCountsAlways.test.js`.
+**What was done.** In [`tests/bench/measureLib.mjs`](../../../tests/bench/measureLib.mjs): `sceneWantsHeaded`, `--headed-only id,id`. `--headless` still wins. In [`tests/bench/runScoreboard.mjs`](../../../tests/bench/runScoreboard.mjs) the scene cache uses the **effective** headed bit (`scene.key|0|smoke` or `scene.key|1|smoke`), not the catalog's `scene.headed`. Tests in `workloadCountsAlways.test.js`.
 
 **Setup.** No product bench yet.
 
@@ -33,7 +33,7 @@ Machine: Chromium headed and visible, not suspended, those windows not minimized
 
 ## Block A — Inventory
 
-**What was done.** [`docs/INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md): glossary, map of the 21 rows, box2d smoke-vs-confirm note, QueryAABB burst dropped. Pointers in HOW_WE_MEASURE, FEATURE_BENCHMARKS, docs/README. Correction in FEATURE_HYP_PROGRAM (burst was not shipped).
+**What was done.** [`docs/FEATURE_INVENTORY.md`](./FEATURE_INVENTORY.md): glossary, map of the 21 rows, box2d smoke-vs-confirm note, QueryAABB burst dropped. Pointers in HOW_WE_MEASURE, FEATURE_BENCHMARKS, docs/README. Correction in FEATURE_HYP_PROGRAM (burst was not shipped).
 
 **Setup.** Documentation only.
 
@@ -45,7 +45,7 @@ Machine: Chromium headed and visible, not suspended, those windows not minimized
 
 ## Block B — Tilemap made measurable
 
-**What was done.** [`tests/bench/stressScenes/tilemapStressScene.js`](../../tests/bench/stressScenes/tilemapStressScene.js): seed `0x711e`, 64 queriers × 64 `getTileId` per tick, 64×64 map. Catalog: `scene` + `primary: logic0_STEP_MS` + `load: ENTITIES_PROCESSED`.
+**What was done.** [`tests/bench/stressScenes/tilemapStressScene.js`](../../../tests/bench/stressScenes/tilemapStressScene.js): seed `0x711e`, 64 queriers × 64 `getTileId` per tick, 64×64 map. Catalog: `scene` + `primary: logic0_STEP_MS` + `load: ENTITIES_PROCESSED`.
 
 **Setup.** Node tests: `engineFeatureCatalog.test.js` and `--headed-only` in `workloadCountsAlways.test.js`.
 
@@ -63,7 +63,7 @@ Machine: Chromium headed and visible, not suspended, those windows not minimized
 pnpm bench:scoreboard --vs 0695a8d --only box2d,emit,steadyCombat --headed-only box2d,steadyCombat
 ```
 
-Durable copy: [`tests/results/scoreboard/keep-bundle/report.md`](../../tests/results/scoreboard/keep-bundle/report.md) (the block D board will rewrite `report.md`).
+Durable copy: `tests/results/scoreboard/keep-bundle/report.md` (not kept) (the block D board will rewrite `report.md`).
 
 **Setup.** `test:node` 437/437. Visual lockstep **failed**: `spawn timeout: 0 need 9004` on Balls (0 bodies). The runner continued the speed rows. Headed 5 × 25000/18000 ms on Balls and steady combat. Emit stress 2 × 8 s / 10 s. Baseline `0695a8d` + counters. `src/` restored (`src/` git status clean).
 
@@ -83,7 +83,7 @@ Durable copy: [`tests/results/scoreboard/keep-bundle/report.md`](../../tests/res
 pnpm bench:scoreboard --vs 0695a8d --headed-only visPoly --skip-node --skip-lockstep --only ray,rayVsBox2d,decals,integrate,spatial,liquidfun,liquidfunCouple,liquidfunQuery,queryAabb,nav,visPoly,tilemap,queryPublish,preRender,compute,decorations,bullets,spawn
 ```
 
-Report: [`tests/results/scoreboard/catalog-rest/report.md`](../../tests/results/scoreboard/catalog-rest/report.md). ~36 min. `src/` restored when the runner finished.
+Report: `tests/results/scoreboard/catalog-rest/report.md` (not kept). ~36 min. `src/` restored when the runner finished.
 
 **Setup.** Stress 2 × 8 s / 10 s. visPoly headed 5 × 25 s / 18 s. compute and zenithal **without** a window. Detailed stats off. `VISIBILITY_MS` came out 0.
 
@@ -116,7 +116,7 @@ Report: [`tests/results/scoreboard/catalog-rest/report.md`](../../tests/results/
 
 ## AABB burst reverted (keep hygiene)
 
-**What was done.** `serviceQueryAabb` in [`src/box2d/weedjsPost.js`](../../src/box2d/weedjsPost.js) again calls only `servicePendingQuery` (one at a time). The burst was a leftover: AABB isolation **dropped** it (+835%) and the keep package was not supposed to include it.
+**What was done.** `serviceQueryAabb` in [`src/box2d/weedjsPost.js`](../../../src/box2d/weedjsPost.js) again calls only `servicePendingQuery` (one at a time). The burst was a leftover: AABB isolation **dropped** it (+835%) and the keep package was not supposed to include it.
 
 ```bash
 pnpm bench:scoreboard --vs 0695a8d --only queryAabb --skip-node --skip-lockstep --skip-kernels
@@ -124,7 +124,7 @@ pnpm bench:scoreboard --vs 0695a8d --only queryAabb --skip-node --skip-lockstep 
 
 **Setup.** Stress 2 × 8 s / 10 s, headless.
 
-**Numbers.** Physics 0.130 → 0.127 ms (**−2.5%**, TIE). `BODY_COUNT` 201/201. logic0 ~16.57 / 16.61 ms (the cost went back to logic, as on main). Report: [`tests/results/scoreboard/queryaabb-after-burst-revert/report.md`](../../tests/results/scoreboard/queryaabb-after-burst-revert/report.md).
+**Numbers.** Physics 0.130 → 0.127 ms (**−2.5%**, TIE). `BODY_COUNT` 201/201. logic0 ~16.57 / 16.61 ms (the cost went back to logic, as on main). Report: `tests/results/scoreboard/queryaabb-after-burst-revert/report.md` (not kept).
 
 **Verdict.** TIE. The +1964% was the burst, not Box2D WASM. The keep set now matches "no AABB".
 
@@ -134,7 +134,7 @@ pnpm bench:scoreboard --vs 0695a8d --only queryAabb --skip-node --skip-lockstep 
 pnpm bench:scoreboard --vs 0695a8d --only visPoly --headed-only visPoly --skip-node --skip-lockstep --detailed-stats
 ```
 
-Report: [`tests/results/scoreboard/vispoly-detailed/report.md`](../../tests/results/scoreboard/vispoly-detailed/report.md).
+Report: `tests/results/scoreboard/vispoly-detailed/report.md` (not kept).
 
 **Setup.** Headed 5 × 25 s / 18 s. Sub-timers on.
 
@@ -144,7 +144,7 @@ Report: [`tests/results/scoreboard/vispoly-detailed/report.md`](../../tests/resu
 
 ## Block E — Nav (closed)
 
-Two hypotheses against the current tree. Scene `NavStressScene`, headless 2 × 8 s / 10 s. Primary `particle_STEP_MS`. Report: [`tests/results/nav-hyps/report.md`](../../tests/results/nav-hyps/report.md).
+Two hypotheses against the current tree. Scene `NavStressScene`, headless 2 × 8 s / 10 s. Primary `particle_STEP_MS`. Report: `tests/results/nav-hyps/report.md` (not kept).
 
 **N1_floor.** `Math.floor(cell / gridWidth)` → `| 0`. TIE: particles 2.217 → 2.183 ms (−1.5%). **Not merged.**
 

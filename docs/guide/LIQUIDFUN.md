@@ -4,7 +4,7 @@ Weed fluids are **not** Google LiquidFun C++ pasted into Box2D. They are **`liqu
 
 Sibling source of truth: `d:\xampp\htdocs\Box2d_3.2_C_-_liquidfun` (`box2d+liquidfun/`, `box2d/src/wasm_wrapper.c`). Rebuild copies artifacts into [`src/box2d/`](../../src/box2d/).
 
-Related: [Physics pipeline](./PHYSICS.md), [CPU particles](./PARTICLES.md), [Workers](./WORKERS_ARCHITECTURE.md), [Memory](./MEMORY_STRUCTURE.md), [`src/box2d/README.md`](../../src/box2d/README.md), [LiquidFun optimization campaign + benchmarks](../internal/LIQUIDFUN_HYPOTHESES.md).
+Related: [Physics pipeline](./PHYSICS.md), [CPU particles](./PARTICLES.md), [Workers](./WORKERS_ARCHITECTURE.md), [Memory](./MEMORY_STRUCTURE.md), [`src/box2d/README.md`](../../src/box2d/README.md), [LiquidFun optimization campaign + benchmarks](../internal/reports/LIQUIDFUN_HYPOTHESES.md).
 
 ---
 
@@ -163,7 +163,7 @@ SIMD itself is **not** skipped — `Integrate`/`SolveGravity`/`LimitVelocity` ar
 explicit SSE2/wasm128 intrinsics (`<emmintrin.h>`, same technique Box2D's own
 `contact_solver.c` uses for `B2_SIMD_SSE2` on `B2_CPU_WASM`); the build fails
 (`#error`) rather than silently going scalar if that flag is ever missing. See
-[LIQUIDFUN_HYPOTHESES.md](../internal/LIQUIDFUN_HYPOTHESES.md) H2.
+[LIQUIDFUN_HYPOTHESES.md](../internal/reports/LIQUIDFUN_HYPOTHESES.md) H2.
 
 Emit is **explicit knobs**, not a named cookbook. `LIQUIDFUN_FLAGS` + per-call `viscousScale` / `tint` / `strength` / `trackGroup`. Game recipes (oil, dulce, jelly) live in the scene, not the engine.
 
@@ -206,7 +206,7 @@ Skipped on purpose: NEON, destroy-oldest, contact listeners/filters, ParticleHan
 
 `lfParticleSystem_Step` cannot run in parallel with `b2World_Step` **of the same frame** (world locked; queries invalid). Overlay `Box2d` ms stays `step_world`.
 
-**In-step `lfParallelFor` is already live** (not a later lever). `FindParticleContacts` parallelizes on the Box2D pthread pool (Weed default **4**) when live count ≥ `LF_CONTACT_PARALLEL_MIN` (4096). Work is stolen by block. Contacts land in **per-block** buckets and merge in block-index order, matching a serial `for i in 0..n` walk — same set **and** same order, so pressure / tensile stay bit-stable. Do **not** qsort the merge (see [H10](../internal/LIQUIDFUN_HYPOTHESES.md)). A future snapshot+pipeline that overlaps LiquidFun with the *next* rigid step is still sibling ROADMAP Fase 6.
+**In-step `lfParallelFor` is already live** (not a later lever). `FindParticleContacts` parallelizes on the Box2D pthread pool (Weed default **4**) when live count ≥ `LF_CONTACT_PARALLEL_MIN` (4096). Work is stolen by block. Contacts land in **per-block** buckets and merge in block-index order, matching a serial `for i in 0..n` walk — same set **and** same order, so pressure / tensile stay bit-stable. Do **not** qsort the merge (see [H10](../internal/reports/LIQUIDFUN_HYPOTHESES.md)). A future snapshot+pipeline that overlaps LiquidFun with the *next* rigid step is still sibling ROADMAP Fase 6.
 
 LiquidFun lagging rigid bodies by **1-2 frames is acceptable** for Weed — confirmed, not just assumed. That's the slack a future snapshot+pipeline design would need (main thread owns the live `b2WorldId` exclusively, copies what a background LiquidFun thread needs once per step, drains its impulses back in on a later step); see the sibling ROADMAP's rewritten Fase 6 for the concrete design and its one still-open problem (`FindBodyContacts`/`SolveCollision` would need their own spatial structure over a snapshot, not live Box2D queries). Not implemented — recorded so the constraint isn't rediscovered from scratch later.
 
@@ -330,7 +330,7 @@ Measured, not aspirational, as of the 2026-08-23 optimization campaign: a dedica
 L2 benchmark scene (`tests/bench/stressScenes/liquidFunStressScene.js`, ~10.2k water
 + ~2k spring/staticPressure) runs `BOX2D_MS` ≈ 5.5ms headless — comfortably inside a
 60fps frame budget on its own, before accounting for rendering/other workers. Full
-before/after numbers for every optimization: [LIQUIDFUN_HYPOTHESES.md](../internal/LIQUIDFUN_HYPOTHESES.md).
+before/after numbers for every optimization: [LIQUIDFUN_HYPOTHESES.md](../internal/reports/LIQUIDFUN_HYPOTHESES.md).
 
 ---
 

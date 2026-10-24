@@ -2,7 +2,7 @@
 
 Companion to [`MATH_ALLOC_AUDIT_HYPOTHESES.md`](./MATH_ALLOC_AUDIT_HYPOTHESES.md). That document is the *plan*; this one is the *record of what was actually done*.
 
-**Rule for this file:** one entry per bug or hypothesis, written after the work, in English, in full prose. Never rewrite a status word to change an outcome — append, as [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md) §"What a log row means" requires. Numbers, identifiers and verdict words are preserved exactly.
+**Rule for this file:** one entry per bug or hypothesis, written after the work, in English, in full prose. Never rewrite a status word to change an outcome — append, as [`HOW_WE_MEASURE.md`](../HOW_WE_MEASURE.md) §"What a log row means" requires. Numbers, identifiers and verdict words are preserved exactly.
 
 **Baseline of this session**
 
@@ -2587,7 +2587,7 @@ alike, and a below-floor pair reports its delta without judging it:
 
 ---
 
-## 2026-10-14 17:52 - H-10 CLOSED: KEPT (kernel, producto neutro). Kernel -18.0 %, scene -5.79 %, 4/4 pairs.
+## 2026-10-14 17:52 - H-10 CLOSED: KEPT (kernel, product-neutral). Kernel -18.0 %, scene -5.79 %, 4/4 pairs.
 
 ### The sitting
 
@@ -2630,9 +2630,9 @@ cv 2.2 % / 2.8 % - the 5.79 % effect is 2.2x the noise, and 4/4 pairs agree.
 | Kernel (N=65 535, k=3) | **-18.0 %**, cv 1.0 %, parity exact, 100 % hit rate |
 | Scene (65 000 decorations) | **-5.79 %**, 4/4 pairs improved, cv 2.2 %/2.8 % |
 | Gate verdict | `NEUTRAL (below floor)` |
-| **Verdict** | **`KEPT (kernel, producto neutro)`** |
+| **Verdict** | **`KEPT (kernel, product-neutral)`** |
 
-`KEPT (kernel, producto neutro)` is not a phrase I invented for this: it is the
+`KEPT (kernel, product-neutral)` is not a phrase I invented for this: it is the
 gate's own documented disposition for *"NEUTRAL: with a kernel win"*
 (`runPredatorAbab.mjs:15`). The protocol's 3 ms floor means the scene may not
 *decide* this one, and the kernel decides it with the scene agreeing.

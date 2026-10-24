@@ -2,11 +2,11 @@
 
 **Project:** `multithreadad-game-engine`  
 **Working branch:** `exp/spatial-hyps`  
-**Methodological source:** `morton_experiments` ([REPORT.md](file:///d:/xampp/htdocs/morton_experiments/REPORT.md), class `AdaptiveSpatial`)  
+**Methodological source:** `morton_experiments` (`REPORT.md` of the separate `morton_experiments` folder (not in this repository), class `AdaptiveSpatial`)  
 **Scenes:** `BallsScene`, `PredatorScene`  
 **Runtime:** Chromium headed (Playwright), throttle mitigation on  
 **Data:** `tests/results/spatial-hyps/campaign-summary.json`, `tests/results/spatial-hyps/confirm-summary.json`  
-**Code under test:** [`src/workers/spatialWorker.js`](../../src/workers/spatialWorker.js) (restored to baseline when the campaign closed)
+**Code under test:** [`src/workers/spatialWorker.js`](../../../src/workers/spatialWorker.js) (restored to baseline when the campaign closed)
 
 ---
 
@@ -70,7 +70,7 @@ Hypothetico-deductive: (1) falsifiable H1–H15; (2) headed 2-run screening; (3)
 
 | Factor | Value |
 |--------|-------|
-| Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../../tests/bench/benchmarkDefaults.mjs)) |
+| Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../../../tests/bench/benchmarkDefaults.mjs)) |
 | Mode | headed Chromium |
 | Isolation | 1 hypothesis per run; restore from the baseline snapshot |
 | Harness | `runSpatialHypCampaign.mjs`, `runSpatialHypConfirm.mjs` |
@@ -219,7 +219,7 @@ Confirm baseline (more conservative than the early Predator screening):
 | cellSize | Keep Balls **100**, Predator **128** |
 | Morton reorder / BVH / hash Map | Not as a default (confirmed again) |
 
-**Code status:** the *correct* Verlet H3 lives in [`src/workers/spatialWorker.js`](../../src/workers/spatialWorker.js) behind `neighborReuseSkin` (default **0.04**). The FN/FP oracle (`verifyNeighborSets`) was removed from the engine after FN=0/FP=0 was validated; see §12.
+**Code status:** the *correct* Verlet H3 lives in [`src/workers/spatialWorker.js`](../../../src/workers/spatialWorker.js) behind `neighborReuseSkin` (default **0.04**). The FN/FP oracle (`verifyNeighborSets`) was removed from the engine after FN=0/FP=0 was validated; see §12.
 
 ---
 

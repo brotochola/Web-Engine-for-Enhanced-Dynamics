@@ -1,7 +1,7 @@
 # Performance, GC Pressure, and API Ergonomics Audit & Optimization Plan
 
-**Audit Target:** Changes introduced since commit [`ae0f178da0fbe5a8e248795bf77b65658f5eee43`](file:///d:/xampp/htdocs/multithreadad-game-engine) through branch `improvements_mixed` ([`5c986922`](file:///d:/xampp/htdocs/multithreadad-game-engine))  
-**Measurement Protocol:** Obeying [`docs/internal/HOW_WE_MEASURE.md`](file:///d:/xampp/htdocs/multithreadad-game-engine/docs/internal/HOW_WE_MEASURE.md)  
+**Audit Target:** Changes introduced since commit [`ae0f178da0fbe5a8e248795bf77b65658f5eee43`](../../..) through branch `improvements_mixed` ([`5c986922`](../../..))  
+**Measurement Protocol:** Obeying [`docs/internal/HOW_WE_MEASURE.md`](../HOW_WE_MEASURE.md)  
 **Scope:** AudioWorklet thread safety, Box2D WASM memory management, hot-path garbage collection, compute & mesh batching, rendering synchronization, Tween thread partition safety, Camera deadzone/shake mechanics, TimeScale physics clamping, and API ergonomic consistency.
 
 ---
@@ -51,7 +51,7 @@
 
 ## 1. Measurement Contract & Ground Rules
 
-All hypotheses defined below adhere strictly to [`HOW_WE_MEASURE.md`](file:///d:/xampp/htdocs/multithreadad-game-engine/docs/internal/HOW_WE_MEASURE.md):
+All hypotheses defined below adhere strictly to [`HOW_WE_MEASURE.md`](../HOW_WE_MEASURE.md):
 
 1. **Hierarchy of Measurement:**
    - **Layer 1: Kernel Microbenchmark** (Node.js via `tests/bench/*Microbench.mjs`): Isolated hot paths, pure algorithmic execution, no Chromium overhead. Primary metrics: `ops/s` and checksum verification.
@@ -71,11 +71,11 @@ All hypotheses defined below adhere strictly to [`HOW_WE_MEASURE.md`](file:///d:
 ### A.1. Real-Time AudioWorklet Spinlock Elimination
 
 #### Diagnosis & Concrete Mechanics
-In [`src/workers/audioMixerProcessor.js#L49`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/audioMixerProcessor.js#L49), [`releaseVoice`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/audioMixerProcessor.js#L36) acquires a blocking spinlock on the bus tail:
+In [`src/workers/audioMixerProcessor.js#L49`](../../../src/workers/audioMixerProcessor.js#L49), [`releaseVoice`](../../../src/workers/audioMixerProcessor.js#L36) acquires a blocking spinlock on the bus tail:
 ```javascript
 while (Atomics.compareExchange(chI, tail, 0, 1) !== 0) {}
 ```
-In [`src/core/soundManager.js#L973`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/soundManager.js#L973), non-real-time worker threads or the main thread acquire this same lock via [`_lockBus`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/soundManager.js#L973) inside [`_writeSlotListed`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/soundManager.js#L1123).
+In [`src/core/soundManager.js#L973`](../../../src/core/soundManager.js#L973), non-real-time worker threads or the main thread acquire this same lock via [`_lockBus`](../../../src/core/soundManager.js#L973) inside [`_writeSlotListed`](../../../src/core/soundManager.js#L1123).
 
 The Web Audio `AudioWorkletProcessor.process()` function runs on the OS real-time audio thread. Real-time audio threads operate under hard deadlines: every 128 frames (~2.67ms at 48kHz or ~2.90ms at 44.1kHz), `process()` must execute and return. If a worker or main thread thread is preempted by the OS scheduler (e.g. GC pause, page reflow, CPU scheduling quantum) while holding `tail`, the audio thread spins at 100% CPU waiting for that thread to be rescheduled. This causes instantaneous audio glitches (underruns), pops, and triggers browser audio watchdog termination.
 
@@ -84,19 +84,19 @@ The Web Audio `AudioWorkletProcessor.process()` function runs on the OS real-tim
 2. **Lock-Free Slot State Machine:**
    - Slots already have a state word: `0 = FREE`, `1 = PLAYING`, `2 = CLAIMING`.
    - Add a state `3 = RELEASED_BY_WORKLET`.
-   - When a voice finishes in [`advanceVoice`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/audioMixerProcessor.js#L134) or [`mixVoice`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/audioMixerProcessor.js#L151), the audio thread executes a single wait-free store:
+   - When a voice finishes in [`advanceVoice`](../../../src/workers/audioMixerProcessor.js#L134) or [`mixVoice`](../../../src/workers/audioMixerProcessor.js#L151), the audio thread executes a single wait-free store:
      ```javascript
      Atomics.store(i32, b, 0); // Mark STATE_FREE immediately
      ```
    - If bus tracking is required, write the freed slot ID into an SPSCRingBuffer (Single-Producer Single-Consumer) or an atomic bitset in `_channelSab` that only the audio thread writes and workers consume.
-   - Alternatively, let the host reclaim dead slots lazily during [`SoundManager._writeSlot`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/soundManager.js#L1111): if `Atomics.load(i32, b) === STATE_FREE`, clean up the bus index on the worker side without the audio thread ever taking a lock.
+   - Alternatively, let the host reclaim dead slots lazily during [`SoundManager._writeSlot`](../../../src/core/soundManager.js#L1111): if `Atomics.load(i32, b) === STATE_FREE`, clean up the bus index on the worker side without the audio thread ever taking a lock.
 
 #### What to Take Care About
 - **Race Condition on Slot Re-Use:** If the audio thread frees slot $S$ and a worker immediately reclaims slot $S$ via `compareExchange(FREE, CLAIMING)`, the worker must not read stale bus metadata. The cursor write `f32[b + 6] = 0` must occur before the atomic store releasing state to 0.
 - **Memory Fences:** `Atomics.store` provides sequential consistency in JS, preventing reordering of parameter writes past the state publication.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/stressScenes/audioStormScene.js`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/stressScenes/audioStormScene.js).
+- **Benchmark:** [`tests/bench/stressScenes/audioStormScene.js`](../../../tests/bench/stressScenes/audioStormScene.js).
 - **Execution:** Run Chromium with Web Audio glitch monitoring:
   ```bash
   node tests/bench/audioMixerMicrobench.mjs
@@ -109,7 +109,7 @@ The Web Audio `AudioWorkletProcessor.process()` function runs on the OS real-tim
 ### A.2. Bus Float Representation & Type-Punning Cleanup
 
 #### Diagnosis & Concrete Mechanics
-In [`src/workers/audioMixerProcessor.js#L70`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/audioMixerProcessor.js#L70):
+In [`src/workers/audioMixerProcessor.js#L70`](../../../src/workers/audioMixerProcessor.js#L70):
 ```javascript
 chI[tail + 3] = ss >= 0 ? (chI[tail + 5] | 0) : 0x7f800000;
 ```
@@ -132,7 +132,7 @@ function releaseVoice(i32, chI, chF, b) {
 - **Byte Alignments:** `tail` words are 4-byte aligned, matching 32-bit float boundaries.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/audioSlotMicrobench.mjs`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/audioSlotMicrobench.mjs).
+- **Benchmark:** [`tests/bench/audioSlotMicrobench.mjs`](../../../tests/bench/audioSlotMicrobench.mjs).
 - **Primary Metric:** `ops/s` on slot claiming and voice release. Verify bit-exact equality between `chF[tail + 3]` and `Infinity`.
 
 ---
@@ -142,7 +142,7 @@ function releaseVoice(i32, chI, chF, b) {
 ### B.1. Box2D WASM Chain Scratch Heap Growth & Reallocation
 
 #### Diagnosis & Concrete Mechanics
-In [`src/box2d/weedjsPost.js#L611-L615`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/box2d/weedjsPost.js#L611-L615):
+In [`src/box2d/weedjsPost.js#L611-L615`](../../../src/box2d/weedjsPost.js#L611-L615):
 ```javascript
 function ensureChainVertexScratch() {
   if (chainVertexHeapPointer || !(maxChainPoints > 0)) return;
@@ -150,9 +150,9 @@ function ensureChainVertexScratch() {
   chainVertexHeapFloatIndex = chainVertexHeapPointer >> 2;
 }
 ```
-When changing scenes or re-initializing chain colliders, [`bindChainViews(desc, maxPoints)`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/box2d/weedjsPost.js#L291) sets `maxChainPoints = maxPoints | 0`. However, `chainVertexHeapPointer` is never checked against the previous allocation capacity.
+When changing scenes or re-initializing chain colliders, [`bindChainViews(desc, maxPoints)`](../../../src/box2d/weedjsPost.js#L291) sets `maxChainPoints = maxPoints | 0`. However, `chainVertexHeapPointer` is never checked against the previous allocation capacity.
 
-If Scene 1 allocates scratch memory for 32 points ($32 \times 8 = 256\text{ bytes}$), and Scene 2 specifies `maxChainPoints = 2048`, `chainVertexHeapPointer` remains pointing to the 256-byte buffer. In [`syncChain`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/box2d/weedjsPost.js#L632-L635), the loop writes up to 2048 floats into `Module.HEAPF32[heapBase + v * 2]`, resulting in a massive out-of-bounds write that corrupts the WASM heap.
+If Scene 1 allocates scratch memory for 32 points ($32 \times 8 = 256\text{ bytes}$), and Scene 2 specifies `maxChainPoints = 2048`, `chainVertexHeapPointer` remains pointing to the 256-byte buffer. In [`syncChain`](../../../src/box2d/weedjsPost.js#L632-L635), the loop writes up to 2048 floats into `Module.HEAPF32[heapBase + v * 2]`, resulting in a massive out-of-bounds write that corrupts the WASM heap.
 
 #### How to Optimize (Dynamic Capacity-Aware Scratch Buffer)
 Refactor `ensureChainVertexScratch` to maintain an explicit allocated capacity:
@@ -195,7 +195,7 @@ if (!desc || maxPoints <= 0) {
 - **Zero Sizing:** Ensure `req = 0` cleanly deallocates scratch memory without calling `Module._malloc(0)`.
 
 #### How to Measure
-- **Benchmark:** Create a multi-scene switching test in [`tests/node/rbColliderComposition.wasm.test.js`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/node/rbColliderComposition.wasm.test.js):
+- **Benchmark:** Create a multi-scene switching test in [`tests/node/rbColliderComposition.wasm.test.js`](../../../tests/node/rbColliderComposition.wasm.test.js):
   1. Initialize with `maxChainPoints = 8`.
   2. Sync a chain of 8 vertices.
   3. Reconfigure with `maxChainPoints = 1024`.
@@ -209,7 +209,7 @@ if (!desc || maxPoints <= 0) {
 ### C.1. Zero-Allocation Chain Raycasting & Point Picking in Local Space
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/chainPoints.js#L246-L302`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/chainPoints.js#L246-L302):
+In [`src/core/chainPoints.js#L246-L302`](../../../src/core/chainPoints.js#L246-L302):
 `rayDistance` and `pointNear` iterate over every edge of a chain. On every frame and every edge:
 ```javascript
 const origin = this._origin(entityIdx); // ALLOCATES { x, y, c, s }
@@ -305,8 +305,8 @@ static rayDistance(entityIdx, rayX, rayY, dirX, dirY, rayLength) {
 ### C.2. Zero-Allocation Shared Texture Upload & Resource Lookup
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/layer.js#L305-L315`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/layer.js#L305-L315):
-[`Layer.prototype.updateTexture`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/layer.js#L305) calls [`SharedResource.locateView(bytes)`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/sharedResource.js#L205):
+In [`src/core/layer.js#L305-L315`](../../../src/core/layer.js#L305-L315):
+[`Layer.prototype.updateTexture`](../../../src/core/layer.js#L305) calls [`SharedResource.locateView(bytes)`](../../../src/core/sharedResource.js#L205):
 ```javascript
 static locateView(view) {
   // Nested loops over all bound classes and fields
@@ -319,14 +319,14 @@ static locateView(view) {
   }
 }
 ```
-In [`src/core/layerTextureUpload.js#L77-L91`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/layerTextureUpload.js#L77-L91), [`readTextureUpload`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/layerTextureUpload.js#L77) creates another heap object:
+In [`src/core/layerTextureUpload.js#L77-L91`](../../../src/core/layerTextureUpload.js#L77-L91), [`readTextureUpload`](../../../src/core/layerTextureUpload.js#L77) creates another heap object:
 ```javascript
 const rect = { x, y, w, h, resourceIndex, fieldIndex }; // ALLOCATION
 ```
 For simulation scenes running procedural textures (e.g., fluid simulation or dynamic density maps), this generates allocations on both writer and reader threads on every frame.
 
 #### How to Optimize
-1. **Cache Resource Mapping:** Tag views or use a `WeakMap<ArrayBufferView, { resourceIndex: number, fieldIndex: number, bytes: ArrayBufferView }>` populated during [`SharedResource.initialize`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/sharedResource.js#L160). Lookups become $O(1)$ and require zero object creation.
+1. **Cache Resource Mapping:** Tag views or use a `WeakMap<ArrayBufferView, { resourceIndex: number, fieldIndex: number, bytes: ArrayBufferView }>` populated during [`SharedResource.initialize`](../../../src/core/sharedResource.js#L160). Lookups become $O(1)$ and require zero object creation.
 2. **Reusable Output Struct in `readTextureUpload`:**
    ```javascript
    const _rectScratch = { x: 0, y: 0, w: 0, h: 0, resourceIndex: 0, fieldIndex: 0 };
@@ -349,7 +349,7 @@ For simulation scenes running procedural textures (e.g., fluid simulation or dyn
 - **Multi-Texture Concurrency:** If multiple layers consume uploads in parallel, provide a per-layer scratch object rather than a single shared module-level object.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/textureUploadMicrobench.mjs`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/textureUploadMicrobench.mjs).
+- **Benchmark:** [`tests/bench/textureUploadMicrobench.mjs`](../../../tests/bench/textureUploadMicrobench.mjs).
 - **Target:** 0 bytes allocated per frame in `tests/bench/stressScenes/textureUploadStressScene.js`.
 
 ---
@@ -357,7 +357,7 @@ For simulation scenes running procedural textures (e.g., fluid simulation or dyn
 ### C.3. Procedural Mesh Generation Allocation Churn Elimination
 
 #### Diagnosis & Concrete Mechanics
-In [`src/components/meshRenderer.js#L334-L339`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/components/meshRenderer.js#L334-L339), [`setPlane`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/components/meshRenderer.js#L288) slices static scratch arrays using `.subarray()`:
+In [`src/components/meshRenderer.js#L334-L339`](../../../src/components/meshRenderer.js#L334-L339), [`setPlane`](../../../src/components/meshRenderer.js#L288) slices static scratch arrays using `.subarray()`:
 ```javascript
 MeshGeometry.replace(
   this.index,
@@ -369,7 +369,7 @@ MeshGeometry.replace(
 In V8, calling `.subarray()` on a TypedArray instantiates a new TypedArray object instance with its own wrapper and prototype pointers. Calling `setPlane` or `setRope` on dynamic meshes every frame creates 3 heap objects per entity every frame.
 
 #### How to Optimize
-Extend [`MeshGeometry.replace`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/meshGeometry.js#L355) and internal copy routines to take length parameters directly:
+Extend [`MeshGeometry.replace`](../../../src/core/meshGeometry.js#L355) and internal copy routines to take length parameters directly:
 ```javascript
 static replaceRaw(entity, positions, vertCount, indices, indexCount, uvs, uvCount)
 ```
@@ -380,7 +380,7 @@ Pass the pre-allocated scratch buffers directly without invoking `.subarray()`.
 - **API Backwards Compatibility:** Retain the signature `replace(entity, positions, indices, uvs)` as a convenience wrapper, but internally route procedural generators to `replaceRaw`.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/meshApiMicrobench.mjs`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/meshApiMicrobench.mjs).
+- **Benchmark:** [`tests/bench/meshApiMicrobench.mjs`](../../../tests/bench/meshApiMicrobench.mjs).
 - **Target:** $100\%$ reduction in allocation count during procedural mesh updates.
 
 ---
@@ -388,8 +388,8 @@ Pass the pre-allocated scratch buffers directly without invoking `.subarray()`.
 ### C.4. Sorted Free-Span Table with Deterministic Coalescing in `MeshGeometry`
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/meshGeometry.js#L287-L316`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/meshGeometry.js#L287-L316):
-1. When freeing a span, [`_freeSpan`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/meshGeometry.js#L287) performs a single forward scan `while (i < n)`. If a span merges and expands its range, it swaps with the end element and does not check previously passed indices. Adjacent spans remain unmerged, fragmenting the pool.
+In [`src/core/meshGeometry.js#L287-L316`](../../../src/core/meshGeometry.js#L287-L316):
+1. When freeing a span, [`_freeSpan`](../../../src/core/meshGeometry.js#L287) performs a single forward scan `while (i < n)`. If a span merges and expands its range, it swaps with the end element and does not check previously passed indices. Adjacent spans remain unmerged, fragmenting the pool.
 2. If `n >= cap`, it logs a warning and drops the block:
    ```javascript
    if (n >= cap) {
@@ -467,7 +467,7 @@ static _freeSpan(off, len, count, at, size) {
 ### C.5. Audio Debug Metrics Object Recycling
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/soundManager.js#L762-L778`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/soundManager.js#L762-L778), `getMetrics()` allocates a new object containing 12 properties every time it is invoked by [`AudioPanel.update()`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/debug/panels/audioPanel.js):
+In [`src/core/soundManager.js#L762-L778`](../../../src/core/soundManager.js#L762-L778), `getMetrics()` allocates a new object containing 12 properties every time it is invoked by [`AudioPanel.update()`](../../../src/core/debug/panels/audioPanel.js):
 ```javascript
 static getMetrics() {
   return { activeSlots, maxSlots, loadedSounds, ... }; // ALLOCATION
@@ -496,7 +496,7 @@ static getMetrics(out = this._metricsScratch) {
 - Ensure callers do not cache references expecting immutable snapshots.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/audioPanelMicrobench.mjs`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/audioPanelMicrobench.mjs).
+- **Benchmark:** [`tests/bench/audioPanelMicrobench.mjs`](../../../tests/bench/audioPanelMicrobench.mjs).
 - **Target:** Zero allocations per update tick in `AudioPanel`.
 
 ---
@@ -506,8 +506,8 @@ static getMetrics(out = this._metricsScratch) {
 ### D.1. $O(N \log N)$ Bounded Polygon Triangulation
 
 #### Diagnosis & Concrete Mechanics
-In [`src/render/meshTriangulate.js#L45-L102`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/render/meshTriangulate.js#L45-L102):
-[`triangulateSimplePolygon`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/render/meshTriangulate.js#L45) implements unaccelerated ear-clipping. For each ear test, it checks all remaining vertices against the candidate triangle. The worst-case time complexity is $O(N^3)$. For large polygons ($N > 200$), this causes significant frame drops on the main thread.
+In [`src/render/meshTriangulate.js#L45-L102`](../../../src/render/meshTriangulate.js#L45-L102):
+[`triangulateSimplePolygon`](../../../src/render/meshTriangulate.js#L45) implements unaccelerated ear-clipping. For each ear test, it checks all remaining vertices against the candidate triangle. The worst-case time complexity is $O(N^3)$. For large polygons ($N > 200$), this causes significant frame drops on the main thread.
 
 #### How to Optimize
 1. **Fast Path for Small Polygons ($N \le 64$):** Retain ear clipping with pre-allocated linked-list indices in `_prev` and `_next`.
@@ -548,7 +548,7 @@ In [`src/render/meshTriangulate.js#L45-L102`](file:///d:/xampp/htdocs/multithrea
 ### D.2. Native `TypedArray.prototype.set` for Snapshot Generation
 
 #### Diagnosis & Concrete Mechanics
-In [`src/workers/pixiWorker.js#L4242-L4249`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/pixiWorker.js#L4242-L4249):
+In [`src/workers/pixiWorker.js#L4242-L4249`](../../../src/workers/pixiWorker.js#L4242-L4249):
 ```javascript
 _snapshotVertGen(skip, views) {
   const g = views.meshVertGen;
@@ -585,8 +585,8 @@ _snapshotVertGen(skip, views) {
 ### D.3. Inline Triangle Float Writes in `MeshUvFillBatch`
 
 #### Diagnosis & Concrete Mechanics
-In [`src/render/colliderFillBatch.js#L685-L790`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/render/colliderFillBatch.js#L685-L790):
-Inside the innermost batch loop of [`packMeshUvFill`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/render/colliderFillBatch.js#L705), each triangle invokes `writeUvTri` (22 arguments), which invokes `writeFillTri` (16 arguments). Passing 22 arguments across call boundaries inside a hot loop prevents V8 inlining and wastes CPU cycles on stack allocation.
+In [`src/render/colliderFillBatch.js#L685-L790`](../../../src/render/colliderFillBatch.js#L685-L790):
+Inside the innermost batch loop of [`packMeshUvFill`](../../../src/render/colliderFillBatch.js#L705), each triangle invokes `writeUvTri` (22 arguments), which invokes `writeFillTri` (16 arguments). Passing 22 arguments across call boundaries inside a hot loop prevents V8 inlining and wastes CPU cycles on stack allocation.
 
 #### How to Optimize
 Inline vertex and UV writes directly into `out[base + ...]`:
@@ -618,7 +618,7 @@ written++;
 - **Depth Normalization:** Keep `written / depthDenom` consistent with standard batch depth ordering.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/meshApiMicrobench.mjs`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/meshApiMicrobench.mjs) under 10,000 instanced triangles.
+- **Benchmark:** [`tests/bench/meshApiMicrobench.mjs`](../../../tests/bench/meshApiMicrobench.mjs) under 10,000 instanced triangles.
 - **Target:** $\ge 15\%$ reduction in packing time inside the render worker.
 
 ---
@@ -626,7 +626,7 @@ written++;
 ### D.4. Bit-Shift Division in Worklet Voice Traversal
 
 #### Diagnosis & Concrete Mechanics
-In [`src/workers/audioMixerProcessor.js#L37`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/audioMixerProcessor.js#L37):
+In [`src/workers/audioMixerProcessor.js#L37`](../../../src/workers/audioMixerProcessor.js#L37):
 ```javascript
 var slot = (b - H) / S;
 ```
@@ -647,12 +647,12 @@ var slot = (b - H) >> 3;
 ### E.1. Robust Dual-Sequence Lock for Asynchronous Texture Uploads
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/layerTextureUpload.js#L31-L91`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/layerTextureUpload.js#L31-L91):
-[`writeTextureUpload`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/layerTextureUpload.js#L31) updates `X, Y, W, H, RES, FIELD` and then performs:
+In [`src/core/layerTextureUpload.js#L31-L91`](../../../src/core/layerTextureUpload.js#L31-L91):
+[`writeTextureUpload`](../../../src/core/layerTextureUpload.js#L31) updates `X, Y, W, H, RES, FIELD` and then performs:
 ```javascript
 Atomics.store(view, GEN, (gen + 1) | 0);
 ```
-[`readTextureUpload`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/layerTextureUpload.js#L77) checks:
+[`readTextureUpload`](../../../src/core/layerTextureUpload.js#L77) checks:
 ```javascript
 const gen = Atomics.load(view, GEN);
 if (gen === Atomics.load(view, SEEN)) return null;
@@ -721,7 +721,7 @@ export function readTextureUpload(view, out) {
 - **Memory Fences:** In JavaScript, `Atomics.store` guarantees release semantics, ensuring payload writes do not reorder after the second `GEN` store.
 
 #### How to Measure
-- **Benchmark:** Add [`tests/node/layerTextureUploadConcurrency.test.js`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/node/layerTextureUpload.test.js) spawning a worker hammering `writeTextureUpload` while another worker reads $1,000,000$ times.
+- **Benchmark:** Add [`tests/node/layerTextureUploadConcurrency.test.js`](../../../tests/node/layerTextureUpload.test.js) spawning a worker hammering `writeTextureUpload` while another worker reads $1,000,000$ times.
 - **Assertion:** Zero torn reads (where $W \ne fullW$ or coordinates are invalid).
 
 ---
@@ -731,7 +731,7 @@ export function readTextureUpload(view, out) {
 ### F.1. Symmetrical Camera Rotation Property
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/camera.js#L618-L626`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/camera.js#L618-L626):
+In [`src/core/camera.js#L618-L626`](../../../src/core/camera.js#L618-L626):
 - Getter: `Camera.rotation` (returns radians).
 - Setter: `Camera.setAngle(radians)`.
 - No property setter exists for `Camera.rotation`. Calling `Camera.rotation = 0.5` fails silently. Calling `setAngle` with radians is semantically misleading (angle implies degrees in many game frameworks).
@@ -766,7 +766,7 @@ static setAngle(radians) {
 ### F.2. Safe Audio Channel Handles with Strict Diagnostics
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/soundManager.js#L428-L436`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/soundManager.js#L428-L436):
+In [`src/core/soundManager.js#L428-L436`](../../../src/core/soundManager.js#L428-L436):
 Requesting an undeclared channel via `SoundManager.channel('unknown')` returns an `AudioChannel` instance whose setters fail silently because `_channelWord()` returns `-1`. The developer receives no feedback that their volume or mute commands are ignored.
 
 #### How to Optimize
@@ -791,7 +791,7 @@ static channel(name) {
 ### F.3. Explicit Signatures & Diagnosed Failures for `Collider.setChain`
 
 #### Diagnosis & Concrete Mechanics
-In [`src/components/collider.js#L219`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/components/collider.js#L219):
+In [`src/components/collider.js#L219`](../../../src/components/collider.js#L219):
 `Collider.setChain(index, xy, count, loop)` takes a `count` that represents vertex count (half of array length). If omitted or passed incorrectly, or if open chain requirements ($N \ge 4$) are not met, the call fails silently and writes to `ChainPoints.lastError`.
 
 #### How to Optimize
@@ -816,7 +816,7 @@ static setChain(index, xy, count, loop) {
 ### F.4. Box2D Static Enactment for Chain Colliders
 
 #### Diagnosis & Concrete Mechanics
-In [`src/components/rigidBody.js#L143-L153`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/components/rigidBody.js#L143-L153):
+In [`src/components/rigidBody.js#L143-L153`](../../../src/components/rigidBody.js#L143-L153):
 `RigidBody` computes dynamic mass and inertia for chains:
 ```javascript
 const mass = Math.PI * r * r;
@@ -848,7 +848,7 @@ Enforce static-only mass semantics for chains:
 ### G.1. Cross-Worker Entity Ownership Violation in `Tween.tick`
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/tween.js#L193-L208`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/tween.js#L193-L208) and [`src/workers/logicWorker.js#L845`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/logicWorker.js#L845):
+In [`src/core/tween.js#L193-L208`](../../../src/core/tween.js#L193-L208) and [`src/workers/logicWorker.js#L845`](../../../src/workers/logicWorker.js#L845):
 ```javascript
 // Tween._claim grabs the first free slot globally using a rotating cursor:
 static _claim() {
@@ -861,7 +861,7 @@ Tween.tick(deltaTime, this.workerIndex, this.totalLogicWorkers);
 In `Tween.tick`, slots are sliced with `logicBlockRange(this.capacity, workerIndex, workerCount)`.
 However, entities are partitioned across logic workers by entity index (`entityIndex % totalWorkers` or contiguous entity blocks).
 Because `_claim()` allocates whichever slot in `0..capacity` happens to be free, a tween created for Entity $E$ (owned by Worker 0) can be assigned Slot $S$ (ticked by Worker 1).
-When Worker 1 ticks Slot $S$, its [`_apply`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/tween.js#L326) method writes directly into:
+When Worker 1 ticks Slot $S$, its [`_apply`](../../../src/core/tween.js#L326) method writes directly into:
 - `Transform.x[E]` and `Transform.y[E]`
 - `SpriteRenderer.alpha[E]`
 - `SpriteRenderer.renderDirty[E] = 1`
@@ -886,8 +886,8 @@ Partition the tween pool slots by worker index, or ensure a tween is only ticked
 - **False Sharing:** Grouping per-worker slots prevents cache line contention on `Tween.active`.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/tweenPoolMicrobench.mjs`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/tweenPoolMicrobench.mjs).
-- **Execution:** Run with 4 logic workers in [`tests/bench/stressScenes/tweenStressScene.js`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/stressScenes/tweenStressScene.js).
+- **Benchmark:** [`tests/bench/tweenPoolMicrobench.mjs`](../../../tests/bench/tweenPoolMicrobench.mjs).
+- **Execution:** Run with 4 logic workers in [`tests/bench/stressScenes/tweenStressScene.js`](../../../tests/bench/stressScenes/tweenStressScene.js).
 - **Assertion:** Verify zero concurrent torn writes on `Transform.x` and `renderDirty`.
 
 ---
@@ -895,7 +895,7 @@ Partition the tween pool slots by worker index, or ensure a tween is only ticked
 ### G.2. Property Collision, Silent Drops, and Cancellation Semantics
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/tween.js#L173-L181`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/tween.js#L173-L181):
+In [`src/core/tween.js#L173-L181`](../../../src/core/tween.js#L173-L181):
 ```javascript
 static to(entityIndex, props, ms, ease) {
   if (!props) return -1;
@@ -930,7 +930,7 @@ static to(entityIndex, props, ms, ease) {
 - **Dynamic Body Rejection:** If `props.x` or `props.y` are present, verify that the body is not dynamic, but still allow `alpha`/`tint` to tween if the user requested both.
 
 #### How to Measure
-- **Benchmark:** Unit test in [`tests/node/tweenPool.test.js`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/node/tweenPool.test.js):
+- **Benchmark:** Unit test in [`tests/node/tweenPool.test.js`](../../../tests/node/tweenPool.test.js):
   - Verify that `{ x: 10, alpha: 0.5 }` successfully animates both properties simultaneously.
   - Verify that starting a new alpha tween smoothly cancels the previous alpha tween.
 
@@ -939,7 +939,7 @@ static to(entityIndex, props, ms, ease) {
 ### G.3. Zero-Duration Tween Overhead & Allocation in `toZoom`
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/tween.js#L189-L191`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/tween.js#L189-L191) & [`#L285-L288`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/tween.js#L285-L288):
+In [`src/core/tween.js#L189-L191`](../../../src/core/tween.js#L189-L191) & [`#L285-L288`](../../../src/core/tween.js#L285-L288):
 1. Calling `Tween.toZoom(zoom, ms, ease)` creates `{ zoom }` heap object every time:
    ```javascript
    static toZoom(zoom, ms, ease) {
@@ -970,7 +970,7 @@ In [`src/core/tween.js#L189-L191`](file:///d:/xampp/htdocs/multithreadad-game-en
 - Ensure `_applyImmediate` sets `renderDirty = 1` and updates epochs identically to animated completion.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/tweenPoolMicrobench.mjs`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/tweenPoolMicrobench.mjs).
+- **Benchmark:** [`tests/bench/tweenPoolMicrobench.mjs`](../../../tests/bench/tweenPoolMicrobench.mjs).
 - **Target:** Zero allocations for `toZoom`, and $>10\times$ faster execution for `ms = 0` snaps.
 
 ---
@@ -980,8 +980,8 @@ In [`src/core/tween.js#L189-L191`](file:///d:/xampp/htdocs/multithreadad-game-en
 ### H.1. Screen-Space vs World-Space Deadzone with Camera Rotation
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/camera.js#L674-L678`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/camera.js#L674-L678):
-[`Camera._deadzoneAim`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/camera.js#L663) computes deadzone tracking using world-axis differences:
+In [`src/core/camera.js#L674-L678`](../../../src/core/camera.js#L674-L678):
+[`Camera._deadzoneAim`](../../../src/core/camera.js#L663) computes deadzone tracking using world-axis differences:
 ```javascript
 const dx = entityX - centerX;
 const dy = entityY - centerY;
@@ -1047,7 +1047,7 @@ static _deadzoneAim(entityX, entityY) {
 - Maintain consistent behavior when either `halfW === 0` or `halfH === 0`.
 
 #### How to Measure
-- **Benchmark:** Add unit test in [`tests/node/cameraDeadzone.test.js`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/node/cameraDeadzone.test.js) with `Camera.rotation = Math.PI / 2`.
+- **Benchmark:** Add unit test in [`tests/node/cameraDeadzone.test.js`](../../../tests/node/cameraDeadzone.test.js) with `Camera.rotation = Math.PI / 2`.
 - **Assertion:** Moving along screen X only engages `halfW`, independent of camera world orientation.
 
 ---
@@ -1055,7 +1055,7 @@ static _deadzoneAim(entityX, entityY) {
 ### H.2. Framerate-Independent, Multi-Axis Camera Shake
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/camera.js#L716-L723`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/camera.js#L716-L723):
+In [`src/core/camera.js#L716-L723`](../../../src/core/camera.js#L716-L723):
 ```javascript
 if (step > 0) data[this.IDX_SHAKE_PHASE] = data[this.IDX_SHAKE_PHASE] > 0 ? -1 : 1;
 const mag = amp * (1 - elapsed / dur);
@@ -1090,7 +1090,7 @@ dest.y = phase * mag * -0.5;
 ### H.3. Cross-Worker Shake SharedArrayBuffer Data Race
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/camera.js#L684-L725`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/camera.js#L684-L725) and [`src/workers/preRenderWorker.js#L892`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/workers/preRenderWorker.js#L892):
+In [`src/core/camera.js#L684-L725`](../../../src/core/camera.js#L684-L725) and [`src/workers/preRenderWorker.js#L892`](../../../src/workers/preRenderWorker.js#L892):
 Main thread or LogicWorker calls `Camera.shake(amp, dur)`:
 ```javascript
 data[this.IDX_SHAKE_AMP] = amplitude;
@@ -1122,7 +1122,7 @@ Store shake trigger parameters with an atomic generation stamp `IDX_SHAKE_GEN`. 
 ### I.1. Unbounded Time Scale Causing Physics Explosions
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/timeScale.js#L14-L18`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/timeScale.js#L14-L18) and [`src/box2d/physicsHostImpl.js#L1147-L1155`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/box2d/physicsHostImpl.js#L1147-L1155):
+In [`src/core/timeScale.js#L14-L18`](../../../src/core/timeScale.js#L14-L18) and [`src/box2d/physicsHostImpl.js#L1147-L1155`](../../../src/box2d/physicsHostImpl.js#L1147-L1155):
 ```javascript
 export function sanitizeTimeScale(scale) {
   if (typeof scale !== 'number' || !Number.isFinite(scale)) return 1;
@@ -1164,7 +1164,7 @@ dt *= readTimeScale();
 - Fast-forward modes should increase the number of fixed sub-steps rather than inflating a single step's `dt`.
 
 #### How to Measure
-- **Benchmark:** [`tests/node/timeScale.test.js`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/node/timeScale.test.js).
+- **Benchmark:** [`tests/node/timeScale.test.js`](../../../tests/node/timeScale.test.js).
 - **Assertion:** Setting `Time.scale = 100` maintains solver `dt <= 0.0333s` and prevents body explosion.
 
 ---
@@ -1174,7 +1174,7 @@ dt *= readTimeScale();
 ### J.1. Object Spread Allocation in WASM Joint Sync
 
 #### Diagnosis & Concrete Mechanics
-In [`src/box2d/weedjsPost.js#L1108-L1122`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/box2d/weedjsPost.js#L1108-L1122) and [`src/box2d/physicsApi.js#L1373-L1395`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/box2d/physicsApi.js#L1373-L1395):
+In [`src/box2d/weedjsPost.js#L1108-L1122`](../../../src/box2d/weedjsPost.js#L1108-L1122) and [`src/box2d/physicsApi.js#L1373-L1395`](../../../src/box2d/physicsApi.js#L1373-L1395):
 During joint synchronization:
 ```javascript
 handleObj = world.createPrismaticJointLocal({
@@ -1203,7 +1203,7 @@ Pass parameters directly into a flattened C-wrapped WASM call `_b2CreatePrismati
 - Keep the high-level `JointHandle` API clean for user script convenience, but eliminate dictionary wrapping in internal sync hot paths.
 
 #### How to Measure
-- **Benchmark:** [`tests/bench/prismaticJointMicrobench.mjs`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/bench/prismaticJointMicrobench.mjs).
+- **Benchmark:** [`tests/bench/prismaticJointMicrobench.mjs`](../../../tests/bench/prismaticJointMicrobench.mjs).
 - **Target:** $>50\%$ throughput increase in joint creation.
 
 ---
@@ -1211,7 +1211,7 @@ Pass parameters directly into a flattened C-wrapped WASM call `_b2CreatePrismati
 ### J.2. Ergonomics & Property Parity in `Joint.setProps`
 
 #### Diagnosis & Concrete Mechanics
-In [`src/core/joint.js#L601-L632`](file:///d:/xampp/htdocs/multithreadad-game-engine/src/core/joint.js#L601-L632):
+In [`src/core/joint.js#L601-L632`](../../../src/core/joint.js#L601-L632):
 For prismatic joints:
 - `Joint.setProps(idx, { maxMotorForce })` updates `this.maxMotorTorque[idx]`. If a developer passes `maxMotorTorque` (matching revolute joints), the property is ignored.
 - The `linearHertz` column is reused for `axisAngle`. However, `Joint.getProps` returns `{ axisAngle }`.
@@ -1229,7 +1229,7 @@ if (props.maxMotorForce !== undefined) {
 ```
 
 #### How to Measure
-- **Benchmark:** Unit test in [`tests/node/prismaticJoint.test.js`](file:///d:/xampp/htdocs/multithreadad-game-engine/tests/node/prismaticJoint.test.js) validating property getter and setter parity.
+- **Benchmark:** Unit test in [`tests/node/prismaticJoint.test.js`](../../../tests/node/prismaticJoint.test.js) validating property getter and setter parity.
 
 ---
 

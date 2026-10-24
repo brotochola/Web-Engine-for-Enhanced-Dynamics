@@ -1,11 +1,11 @@
 # Particle emit + integrate optimization hypotheses
 
 Falsifiable claims for speeding up particle spawn and per-frame integration —
-[`src/core/particleEmitter.js`](../../src/core/particleEmitter.js) (`_spawn`, `_mergeCfg`,
-`emit`/`emitZenithal`/`emitFlat`), [`src/util/particleIntegrate.js`](../../src/util/particleIntegrate.js)
+[`src/core/particleEmitter.js`](../../../src/core/particleEmitter.js) (`_spawn`, `_mergeCfg`,
+`emit`/`emitZenithal`/`emitFlat`), [`src/util/particleIntegrate.js`](../../../src/util/particleIntegrate.js)
 (`updateParticlePhysicsBuffers`, `buildActiveListBuffers`, `buildActiveAndVisibleListBuffers`),
-and the shared free list ([`src/core/sharedAtomicPool.js`](../../src/core/sharedAtomicPool.js),
-[`src/util/atomicFreeList.js`](../../src/util/atomicFreeList.js)). Test **headless only** with the
+and the shared free list ([`src/core/sharedAtomicPool.js`](../../../src/core/sharedAtomicPool.js),
+[`src/util/atomicFreeList.js`](../../../src/util/atomicFreeList.js)). Test **headless only** with the
 three-layer protocol below (Wave B of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)).
 
 ## Protocol (always headless)
@@ -69,12 +69,12 @@ composable transforms (`particle-hyps/hypPatches.mjs`, `CANONICAL_ORDER = P1→P
 tournament runner (`runParticleHypTournament.mjs`) and the L1 merger (`particleL1Microbench.mjs`).
 Still in the tree:
 
-- L1: [`tests/bench/particleEmitMicrobench.mjs`](../../tests/bench/particleEmitMicrobench.mjs),
-  [`tests/bench/particleIntegrateMicrobench.mjs`](../../tests/bench/particleIntegrateMicrobench.mjs)
-- L2: [`tests/bench/stressScenes/particleEmitStressScene.js`](../../tests/bench/stressScenes/particleEmitStressScene.js)
-  + [`particles/particleEmitDriver.js`](../../tests/bench/stressScenes/particles/particleEmitDriver.js);
-  [`tests/bench/stressScenes/particleIntegrateStressScene.js`](../../tests/bench/stressScenes/particleIntegrateStressScene.js)
-  + [`particles/particleIntegrateDriver.js`](../../tests/bench/stressScenes/particles/particleIntegrateDriver.js)
+- L1: [`tests/bench/particleEmitMicrobench.mjs`](../../../tests/bench/particleEmitMicrobench.mjs),
+  [`tests/bench/particleIntegrateMicrobench.mjs`](../../../tests/bench/particleIntegrateMicrobench.mjs)
+- L2: [`tests/bench/stressScenes/particleEmitStressScene.js`](../../../tests/bench/stressScenes/particleEmitStressScene.js)
+  + [`particles/particleEmitDriver.js`](../../../tests/bench/stressScenes/particles/particleEmitDriver.js);
+  [`tests/bench/stressScenes/particleIntegrateStressScene.js`](../../../tests/bench/stressScenes/particleIntegrateStressScene.js)
+  + [`particles/particleIntegrateDriver.js`](../../../tests/bench/stressScenes/particles/particleIntegrateDriver.js)
 
 ### Gotcha for anyone writing new drivers/microbenches against `ParticleEmitter`
 
@@ -87,8 +87,8 @@ constant and `{min,max}` objects for all other ranged fields.
 
 ## Related
 
-- Feature pyramid: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md), [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)
+- Feature pyramid: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md), [`FEATURE_BENCHMARKS.md`](../FEATURE_BENCHMARKS.md)
 - Completed campaign for the pipeline template: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md)
 - Sibling Wave A campaign: [`DECAL_HYPOTHESES.md`](./DECAL_HYPOTHESES.md)
-- Particle docs: [`PARTICLES.md`](../guide/PARTICLES.md)
-- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md)
+- Particle docs: [`PARTICLES.md`](../../guide/PARTICLES.md)
+- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../../tests/bench/BENCHMARK_METHODOLOGY.md)

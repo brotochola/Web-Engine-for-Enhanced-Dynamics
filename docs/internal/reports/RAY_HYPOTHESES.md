@@ -1,6 +1,6 @@
 # Ray optimization hypotheses
 
-Falsifiable claims for speeding up [`src/core/ray.js`](../../src/core/ray.js). Test **headless only** with the three-layer protocol below.
+Falsifiable claims for speeding up [`src/core/ray.js`](../../../src/core/ray.js). Test **headless only** with the three-layer protocol below.
 
 ## Protocol (always headless)
 
@@ -64,6 +64,6 @@ Removed in `c40821ec`: the pre-opt baselines (`ray-hyps/baselineRay.js`, `baseli
 
 ## Related
 
-- Feature pyramid: [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)
-- Ray API: [`RAYCASTING.md`](../guide/RAYCASTING.md)
-- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md)
+- Feature pyramid: [`FEATURE_BENCHMARKS.md`](../FEATURE_BENCHMARKS.md)
+- Ray API: [`RAYCASTING.md`](../../guide/RAYCASTING.md)
+- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../../tests/bench/BENCHMARK_METHODOLOGY.md)

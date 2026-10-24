@@ -1,11 +1,11 @@
 # Experimental report: sleep-neighborhood neighbor amortization
 
 **Project:** `multithreadad-game-engine`  
-**Follow-on to:** [`spatial_worker_hypothesis_report.md`](./spatial_worker_hypothesis_report.md) (H1–H15 campaign)  
+**Follow-on to:** [`SPATIAL_WORKER_REPORT.md`](./SPATIAL_WORKER_REPORT.md) (H1–H15 campaign)  
 **Scenes:** `BallsScene`, `PredatorScene`  
 **Runtime:** Chromium headed (Playwright), background-throttle mitigation on  
-**Baseline under test:** current [`src/workers/spatialWorker.js`](../../src/workers/spatialWorker.js) with integrated Verlet reuse + `neighborTickInterval` freeze (not the older campaign baseline)  
-**Data:** [`tests/results/sleep-neighbor-hyps/campaign-summary.json`](../../tests/results/sleep-neighbor-hyps/campaign-summary.json), [`confirm-summary.json`](../../tests/results/sleep-neighbor-hyps/confirm-summary.json)  
+**Baseline under test:** current [`src/workers/spatialWorker.js`](../../../src/workers/spatialWorker.js) with integrated Verlet reuse + `neighborTickInterval` freeze (not the older campaign baseline)  
+**Data:** `tests/results/sleep-neighbor-hyps/campaign-summary.json` (not kept), `confirm-summary.json` (`tests/results/sleep-neighbor-hyps/confirm-summary.json`, not kept)  
 **Patches:** `tests/bench/sleep-neighbor-hyps/sleepHypPatches.mjs` (tree restored to baseline after each campaign; patches and harnesses removed in `c40821ec`)
 
 ---
@@ -79,7 +79,7 @@ Context shift matters: old BASE Predator STEP was ~22 ms; **S0 today is ~6 ms**.
 
 | Factor | Value |
 |--------|-------|
-| Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../../tests/bench/benchmarkDefaults.mjs)) |
+| Warmup / measure | 25 s / 18 s ([`benchmarkDefaults.mjs`](../../../tests/bench/benchmarkDefaults.mjs)) |
 | Mode | headed Chromium |
 | Isolation | One hyp per apply; restore from snapshot baselines under `tests/bench/sleep-neighbor-hyps/` |
 | Screening | 2 runs (`runSleepNeighborCampaign.mjs`) |
@@ -236,7 +236,7 @@ Artifacts: `tests/results/sleep-neighbor-hyps/*.json`. Working tree spatial/scen
 
 ---
 
-## 14. Relationship to `spatial_worker_hypothesis_report.md`
+## 14. Relationship to `SPATIAL_WORKER_REPORT.md`
 
 | Topic | Prior report | This report |
 |-------|--------------|-------------|

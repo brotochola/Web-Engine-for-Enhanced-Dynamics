@@ -225,7 +225,7 @@ Walking that table once per run of triangles, instead of once per triangle, was 
 
 Headed, after both edits, the renderer was 3.03 ms and then 2.76 ms. Against 3.78 ms that is about 23 % cheaper. The second window fell under 3 ms. The baseline had cleared the floor and the changed side was cheaper, so the keep stands. The upload of triangles that actually move is still half the trace. An indexed mesh would shrink that. It was not this change.
 
-The write-up is [`MESH_API_TRACE_REPORT.md`](./MESH_API_TRACE_REPORT.md).
+The write-up is [`MESH_API_TRACE_REPORT.md`](./reports/MESH_API_TRACE_REPORT.md).
 
 ## Wednesday 14 October 2026 (night) — Hand the Renderer a Mesh
 
@@ -263,7 +263,7 @@ The decal dirty scan and the `castAll` comparator were left alone. The scan is a
 
 Balls lockstep had been failing on both sides of the board. `spawnBalls` scheduled 9000 `setTimeout`s, and headless Chromium did not get them out inside 120 seconds, on this tree and on the tree the audit started from. The balls are created before the flush now. Lockstep passes. Physics is 8.013 ms to 7.997 ms, a tie, 9004 bodies awake on both sides. The scoreboard against that morning's revision is still not a faster engine. LiquidFun, the coupled liquid scene, and decal blit came out a few percent more expensive. A first pass had also blamed the ray, the tilemap, and the painter radix. Those files were not edited, and a second sitting of them flipped sign. The keeps that belong to this day are visPoly's pre-render and the sway-bucket kernel.
 
-The essay is [`MATH_ALLOC_AUDIT_IMPLEMENTATION_LOG.md`](./MATH_ALLOC_AUDIT_IMPLEMENTATION_LOG.md). The rows are in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
+The essay is [`MATH_ALLOC_AUDIT_IMPLEMENTATION_LOG.md`](./reports/MATH_ALLOC_AUDIT_IMPLEMENTATION_LOG.md). The rows are in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
 
 ## Friday 9 October 2026 — Count a Particle Pair Once
 
@@ -407,7 +407,7 @@ A fractional entity id inside the pixel would have kept same-pixel ties stable w
 
 Precomputing the float-to-ordinal once was 6.4% more ops/s in Node and 11.5% more expensive on Pixi (24.4 ms to 27.2 ms). The extra array is gone. Pixi's `Buffer.update` already uploads the same typed array. No copy to delete there.
 
-Numbers: [`tests/results/ysort-quantize/report.md`](../../tests/results/ysort-quantize/report.md).
+Numbers: `tests/results/ysort-quantize/report.md` (not kept).
 
 ## Wednesday 23 September 2026 — One Hook, `onSpawned`
 
@@ -441,7 +441,7 @@ Could not get further than that here. This sandbox has no GPU — WebGL and WebG
 
 Shipped the part that was unambiguous: the main queue and every Y-sorted custom layer now call the same four functions (`createPainterState`, `painterSameSet`, `radixPainterOrder`, `orderPainterSlots`), instead of custom layers being stuck on the old GPU depth path unconditionally while the main queue got the fix. `renderer.painterSort: 'off'` stays as a real fallback on both paths, not deleted — Predator is still using it, and deleting it before someone with a real GPU confirms `reinsert` is correct there would be trading a documented, working escape hatch for a codebase that only looks cleaner.
 
-Numbers and the full trace: [`tests/results/painter-shard-coverage/report.md`](../../tests/results/painter-shard-coverage/report.md).
+Numbers and the full trace: `tests/results/painter-shard-coverage/report.md` (not kept).
 
 ## Tuesday 22 September 2026 — Sprites Should Composite Like a PNG
 
@@ -459,7 +459,7 @@ I tried rounding atlas frames and turning smoothing off on the pack blit, so nea
 
 Checked in the demos, zoomed, with the ground and without: Bichos and Predator both composite. Fire sits on the bugs the way a PNG would.
 
-Numbers: [`tests/results/sprite-painter/move-report.md`](../../tests/results/sprite-painter/move-report.md). The dropped full sort: [`tests/results/sprite-painter/report.md`](../../tests/results/sprite-painter/report.md). Where the workers do it: [WORKERS_ARCHITECTURE.md](../guide/WORKERS_ARCHITECTURE.md).
+Numbers: `tests/results/sprite-painter/move-report.md` (not kept). The dropped full sort: `tests/results/sprite-painter/report.md` (not kept). Where the workers do it: [WORKERS_ARCHITECTURE.md](../guide/WORKERS_ARCHITECTURE.md).
 
 ## Monday 21 September 2026 — I Looked Away and the Tab Died
 
@@ -489,7 +489,7 @@ The Performance tab will still look wrong if you multiply the columns. Step is t
 
 Headed, 175k, pre-render slower than the display: pixi median 4.29 ms down to 2.32 ms. The samples split into quiet frames and upload frames, so the spread is ugly. Pre-render's own step did not get cheaper. The mark is the 250k scene, not that row.
 
-Numbers: [`tests/results/renderer-interp/report.md`](../../tests/results/renderer-interp/report.md). Where it sits in the workers: [WORKERS_ARCHITECTURE.md](../guide/WORKERS_ARCHITECTURE.md).
+Numbers: `tests/results/renderer-interp/report.md` (not kept). Where it sits in the workers: [WORKERS_ARCHITECTURE.md](../guide/WORKERS_ARCHITECTURE.md).
 
 ## Sunday 20 September 2026 — I Wanted this.x = 10 Without a Solver
 
@@ -501,7 +501,7 @@ Queries and `explode` throw if you forgot the flag and called a solver API. `thi
 
 We measured it as Bunny Mark C against A. `logic0_STEP_MS` did not move a clean 3% — both sides were under the 3 ms floor. The win is boot, not the frame. The playable mark now sets the flag. Stress A still boots WASM beside the same `tickAll` so we can measure the tax. D, the solver moving the bunnies, stays dropped.
 
-Contract: [PHYSICS.md](../guide/PHYSICS.md#scenes-without-box2d). Numbers: [HYPOTHESIS_LOG.md](./HYPOTHESIS_LOG.md), [`tests/results/bunny-mover/report.md`](../../tests/results/bunny-mover/report.md).
+Contract: [PHYSICS.md](../guide/PHYSICS.md#scenes-without-box2d). Numbers: [HYPOTHESIS_LOG.md](./HYPOTHESIS_LOG.md), `tests/results/bunny-mover/report.md` (not kept).
 
 ## Saturday 19 September 2026 — The Tilemap Was Smooth. The Car Wasn't
 

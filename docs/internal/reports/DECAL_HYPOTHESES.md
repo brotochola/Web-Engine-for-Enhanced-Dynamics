@@ -1,6 +1,6 @@
 # Decal stamp optimization hypotheses
 
-Falsifiable claims for speeding up blood-decal stamping — `src/util/decalStamp.js` (`stampParticleToTileBuffers`; since `ab581e81` it is `Decal.stampToTileBuffers` in [`src/core/decal.js`](../../src/core/decal.js)), [`src/workers/particleWorker.js`](../../src/workers/particleWorker.js) (`stampCollectedParticles`), and [`src/core/particleEmitter.js`](../../src/core/particleEmitter.js) (`stampDecal`). Test **headless only** with the three-layer protocol below (Wave A of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)).
+Falsifiable claims for speeding up blood-decal stamping — `src/util/decalStamp.js` (`stampParticleToTileBuffers`; since `ab581e81` it is `Decal.stampToTileBuffers` in [`src/core/decal.js`](../../../src/core/decal.js)), [`src/workers/particleWorker.js`](../../../src/workers/particleWorker.js) (`stampCollectedParticles`), and [`src/core/particleEmitter.js`](../../../src/core/particleEmitter.js) (`stampDecal`). Test **headless only** with the three-layer protocol below (Wave A of [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md)).
 
 ## Protocol (always headless)
 
@@ -50,12 +50,12 @@ Auto-reject fired on non-target L1 multiply case only. Primary targets (multitil
 
 Removed in `c40821ec`: the pre-opt baselines (`decal-hyps/baselineDecalStamp.js`, `baselineParticleEmitter.js`, `baselineParticleWorker.js`), the composable transforms (`decal-hyps/hypPatches.mjs`, `CANONICAL_ORDER = D1→D2→D3→D4→D5→D6`) and the tournament runner (`runDecalHypTournament.mjs`). Still in the tree:
 
-- L1: [`tests/bench/decalMicrobench.mjs`](../../tests/bench/decalMicrobench.mjs)
-- L2: [`tests/bench/stressScenes/decalStampStressScene.js`](../../tests/bench/stressScenes/decalStampStressScene.js) + [`decals/decalStampDriver.js`](../../tests/bench/stressScenes/decals/decalStampDriver.js)
+- L1: [`tests/bench/decalMicrobench.mjs`](../../../tests/bench/decalMicrobench.mjs)
+- L2: [`tests/bench/stressScenes/decalStampStressScene.js`](../../../tests/bench/stressScenes/decalStampStressScene.js) + [`decals/decalStampDriver.js`](../../../tests/bench/stressScenes/decals/decalStampDriver.js)
 
 ## Related
 
-- Feature pyramid: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md), [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md)
+- Feature pyramid: [`FEATURE_HYP_PROGRAM.md`](./FEATURE_HYP_PROGRAM.md), [`FEATURE_BENCHMARKS.md`](../FEATURE_BENCHMARKS.md)
 - Completed campaign for the pipeline template: [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md)
-- Particle docs: [`PARTICLES.md`](../guide/PARTICLES.md)
-- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../tests/bench/BENCHMARK_METHODOLOGY.md)
+- Particle docs: [`PARTICLES.md`](../../guide/PARTICLES.md)
+- Integrated methodology: [`../tests/bench/BENCHMARK_METHODOLOGY.md`](../../../tests/bench/BENCHMARK_METHODOLOGY.md)

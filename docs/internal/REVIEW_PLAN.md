@@ -3,7 +3,7 @@
 **Opened:** 2026-10-20. **Window reviewed:** `8af92002^..80464dc1` (47 commits).
 **Branch:** `general_review_of_last_3_days`. **Baseline rev for every A/B:** `8af92002^`
 (`main` was fast-forwarded to HEAD, so `--vs main` compares HEAD with itself).
-**Live progress:** [`REVIEW_LIVE_REPORT.md`](./REVIEW_LIVE_REPORT.md), newest first.
+**Live progress:** [`REVIEW_LIVE_REPORT.md`](./reports/REVIEW_LIVE_REPORT.md), newest first.
 **Speed hypotheses** from this review live in [`EXECUTION_PLAN.md`](./EXECUTION_PLAN.md)
 as **E-41 onward** (that file's rule: new hypotheses go there, never to a side file).
 E-40 is skipped on purpose: `tests/bench/e40NeighborReadShape.mjs` already carries that

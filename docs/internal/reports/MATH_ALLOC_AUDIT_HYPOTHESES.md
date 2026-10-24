@@ -1,9 +1,9 @@
 # Math, allocation and GC audit — hypothesis plan
 
 **Date of the audit:** 2026-10-14. **Tree audited:** working tree at `multithreadad-game-engine`, `src/version.js` 0.7.941.
-**Nature of this document:** a list of **hypotheses**, not verdicts. Nothing here has been measured. Every performance claim below is a sentence to be tested against the protocol in [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). The correctness findings are bugs, not hypotheses, but they still go through gate 5 and the hygiene gate before they stay in the tree.
+**Nature of this document:** a list of **hypotheses**, not verdicts. Nothing here has been measured. Every performance claim below is a sentence to be tested against the protocol in [`HOW_WE_MEASURE.md`](../HOW_WE_MEASURE.md). The correctness findings are bugs, not hypotheses, but they still go through gate 5 and the hygiene gate before they stay in the tree.
 
-**Who this is for:** an agent or a human picking this up cold. Read section 0 before touching anything. Read [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) before you measure — several ideas below are already answered there, in both directions.
+**Who this is for:** an agent or a human picking this up cold. Read section 0 before touching anything. Read [`HYPOTHESIS_LOG.md`](../HYPOTHESIS_LOG.md) before you measure — several ideas below are already answered there, in both directions.
 
 **Contents:** §0 measurement contract · §0.8 language rule · §0.9 protocol proposals · §1 what the log already answered · §2 twelve correctness findings · §3 seventeen performance hypotheses · §4 campaign order · §5 **every test, microbenchmark and scene to create** · §6 traps · §7 logging checklist · §8 provenance and limits.
 
@@ -13,7 +13,7 @@
 
 ## 0. The measurement contract this plan obeys
 
-Compressed from [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). That document wins on any conflict. Read it in full before the first run.
+Compressed from [`HOW_WE_MEASURE.md`](../HOW_WE_MEASURE.md). That document wins on any conflict. Read it in full before the first run.
 
 ### 0.1 Layers, in order
 
@@ -66,7 +66,7 @@ The `visPoly` scene is `kind: 'gameplay'` (see `tests/bench/engineFeatureCatalog
 ### 0.6 The gates for a trace-derived micro-optimization
 
 1. **Checksum.** The variant must produce what the shipped code produces. If not: `rejected-in-kernel`, ops/s is not read.
-2. **Baseline is the shipped function** (or the real worker method), never a copy. Use [`tests/bench/workerHarness.mjs`](../../tests/bench/workerHarness.mjs) so worker methods run as the real class.
+2. **Baseline is the shipped function** (or the real worker method), never a copy. Use [`tests/bench/workerHarness.mjs`](../../../tests/bench/workerHarness.mjs) so worker methods run as the real class.
 3. **Kernel win** ≥ 3 % ops/s, same `n` and `seed`, in the trace's regime.
 4. **Re-run the kernel against the patched `src/`** (`runKernelsVsRev.mjs --overlay`). A local variant can win while the worker's hidden class eats the gain.
 5. **Parity test** in `tests/node/`, frame by frame. `pnpm test:node` stays green.
@@ -92,7 +92,7 @@ These are the log's own lessons and they apply directly to most of the ideas bel
 
 **All documents, reports, log rows, comments and bench output in this repository are written in English.** There is no Spanish in `docs/`, in `src/`, or in `tests/bench/`.
 
-This supersedes the line in [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md) §"The report" that says *"The user's language is fine for a report they asked for in that language."* That allowance was used, and it made the institutional memory split across two languages — a 503 KB log where roughly a third of the entries are Spanish makes every cross-reference a translation task. **One language, one corpus.** The reasoning is not "English is better"; it is that a search for a prior measurement must return the prior measurement, not a half of it.
+This supersedes the line in [`HOW_WE_MEASURE.md`](../HOW_WE_MEASURE.md) §"The report" that says *"The user's language is fine for a report they asked for in that language."* That allowance was used, and it made the institutional memory split across two languages — a 503 KB log where roughly a third of the entries are Spanish makes every cross-reference a translation task. **One language, one corpus.** The reasoning is not "English is better"; it is that a search for a prior measurement must return the prior measurement, not a half of it.
 
 When translating an existing row, preserve exactly and without change:
 
@@ -107,7 +107,7 @@ Do not "improve" a row while translating it. If a row looks wrong, that is a sep
 
 ### 0.9 Proposed changes to the protocol, and one settled decision
 
-**These are proposals, not adopted rules.** [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md) is the protocol and wins on any conflict until its author adopts these. They are recorded here because findings in §3 depend on them.
+**These are proposals, not adopted rules.** [`HOW_WE_MEASURE.md`](../HOW_WE_MEASURE.md) is the protocol and wins on any conflict until its author adopts these. They are recorded here because findings in §3 depend on them.
 
 #### Settled: the 16 ms frame-fit bar is deliberately not used
 
@@ -1412,8 +1412,8 @@ Print this into the row you open.
 
 For each hypothesis, before running:
 
-- [ ] Read [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) and quote any row that bears on this idea, with its date, scene and config.
-- [ ] Read [`INVENTARIO_FEATURES.md`](./INVENTARIO_FEATURES.md) for the catalog row: what was already measured, and how to measure against its own champion.
+- [ ] Read [`HYPOTHESIS_LOG.md`](../HYPOTHESIS_LOG.md) and quote any row that bears on this idea, with its date, scene and config.
+- [ ] Read [`FEATURE_INVENTORY.md`](./FEATURE_INVENTORY.md) for the catalog row: what was already measured, and how to measure against its own champion.
 - [ ] State the hypothesis in **one sentence, including the regime** if it is a cull, a light query, or a move of work between workers.
 - [ ] **Name the primary.** If it is a move, name the max. If several workers of one kind, name the max step and the wait. If it is outside the catalog (H-01, H-12), say so.
 - [ ] **Name the predicted delta** (P-3, §0.9). One clause. "About −8 % on `pixi_STEP_MS`."
@@ -1437,7 +1437,7 @@ After running:
 - [ ] **In English** (§0.8). No Spanish in any document, report, row, comment or bench output.
 - [ ] What you learned.
 - [ ] **Write the report in full prose** (`HOW_WE_MEASURE.md` §"The report"). The scoreboard writer in `tests/bench/runScoreboard.mjs` is the template. Do not ship a summary-only report again.
-- [ ] Add or update the row in [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md). Do not rewrite the historical table to change a status word — add the new sitting to the row, or add a row pointing at the old one. When adding to a translated file, preserve every number, identifier and status word exactly (§0.8).
+- [ ] Add or update the row in [`HYPOTHESIS_LOG.md`](../HYPOTHESIS_LOG.md). Do not rewrite the historical table to change a status word — add the new sitting to the row, or add a row pointing at the old one. When adding to a translated file, preserve every number, identifier and status word exactly (§0.8).
 - [ ] If the sitting is thin, mark it `screened` and say what the screen failed to prove.
 
 At campaign close:

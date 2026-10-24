@@ -23,7 +23,7 @@
  * the page presents (main-thread FPS) drop ≥ 3 % in ≥ 75 % of the pairs, or a
  * load key drifts more than 5 %. KEPT (product) if the owner kind is ≤ −3 %, or
  * with `--owner presented` if the presented frames rise ≥ 3 %.
- * Otherwise NEUTRAL: with a kernel win that is `kept (kernel, producto neutro)`.
+ * Otherwise NEUTRAL: with a kernel win that is `kept (kernel, product-neutral)`.
  */
 import fs from 'node:fs';
 import path from 'node:path';

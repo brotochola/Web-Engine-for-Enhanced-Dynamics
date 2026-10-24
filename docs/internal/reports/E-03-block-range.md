@@ -61,7 +61,7 @@ can scalar-replace it entirely — the object never exists, and the function bec
 five integer operations with no memory traffic at all.
 
 **This is V8's escape analysis beating a hand-written optimisation**, and it is not
-a surprise in hindsight. `happy JIT.md` is in this repository and says so directly:
+a surprise in hindsight. `V8_JIT_GUIDE.md` is in this repository and says so directly:
 *"Pull out of the loop whatever is invariant, and the allocations ([], {}, closures)"*
 — listing allocation as a *thing to pull out of a hot loop*, which is right when the
 allocation escapes. Here it does not escape, and V8 removes it for free while the

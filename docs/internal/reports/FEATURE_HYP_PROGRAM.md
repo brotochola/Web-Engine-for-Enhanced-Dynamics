@@ -8,7 +8,7 @@ Same pipeline as Ray for every isolatable hot subsystem:
 4. **Tournament** headless singles → pairs → stacks → merge champion
 5. **L3** demo gate when relevant
 
-Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../../tests/bench/featureTournamentLib.mjs), [`microbenchHelpers.mjs`](../../tests/bench/microbenchHelpers.mjs).
+Shared helpers: [`tests/bench/featureTournamentLib.mjs`](../../../tests/bench/featureTournamentLib.mjs), [`microbenchHelpers.mjs`](../../../tests/bench/microbenchHelpers.mjs).
 
 ## Protocol (headless)
 
@@ -139,7 +139,7 @@ pnpm bench:feature:spatial
 
 ## Wave 0 — QueryAABB burst
 
-`servicePendingQueryBurst` was tried. **Dropped.** Isolation on `QueryAabbStressScene`: physics step **+835%**. Do not reintroduce the burst. See [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md).
+`servicePendingQueryBurst` was tried. **Dropped.** Isolation on `QueryAabbStressScene`: physics step **+835%**. Do not reintroduce the burst. See [`HYPOTHESIS_LOG.md`](../HYPOTHESIS_LOG.md).
 
 ```bash
 node --test tests/node/box2dQueryProtocol.test.js
@@ -175,7 +175,7 @@ The tournament runners, `bench:spatial:campaign`, `bench:micro:pose-skip` and `b
 
 ## Related
 
-- [`FEATURE_BENCHMARKS.md`](./FEATURE_BENCHMARKS.md) — catalog + pyramid
+- [`FEATURE_BENCHMARKS.md`](../FEATURE_BENCHMARKS.md) — catalog + pyramid
 - [`RAY_HYPOTHESES.md`](./RAY_HYPOTHESES.md) — completed Ray tournament
 - [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md) — LiquidFun particle-step campaign
-- [`PARTICLES.md`](../guide/PARTICLES.md) — emit / stamp / integrate docs
+- [`PARTICLES.md`](../../guide/PARTICLES.md) — emit / stamp / integrate docs

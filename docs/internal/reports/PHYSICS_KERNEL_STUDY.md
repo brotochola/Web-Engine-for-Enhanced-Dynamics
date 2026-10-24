@@ -26,6 +26,6 @@ So the rule was: prove a win in isolation first. We later shipped Box2D 3 with H
 
 ## Current status
 
-Use [`PHYSICS.md`](../guide/PHYSICS.md) and [`../src/box2d/README.md`](../../src/box2d/README.md). Don’t treat the “stay on JS until WASM wins” note below as policy anymore; that ship sailed.
+Use [`PHYSICS.md`](../../guide/PHYSICS.md) and [`../src/box2d/README.md`](../../../src/box2d/README.md). Don’t treat the “stay on JS until WASM wins” note below as policy anymore; that ship sailed.
 
 The harness itself is still valid if you want to poke at alternate JS integrate loops for curiosity.

@@ -6,8 +6,8 @@ one alone, and then check that the winners still win together. Phase 0 (the desk
 (four post-E-77 profiles) are done; see [Phase 0 inventory](#phase-0-inventory-2026-10-22) and the
 [Results log](#results-log). No product code has changed for it yet.
 
-Same protocol family as [`LIQUIDFUN_HYPOTHESES.md`](./LIQUIDFUN_HYPOTHESES.md) and
-[`PARTICLE_HYPOTHESES.md`](./PARTICLE_HYPOTHESES.md). Speed rules come from
+Same protocol family as [`LIQUIDFUN_HYPOTHESES.md`](./reports/LIQUIDFUN_HYPOTHESES.md) and
+[`PARTICLE_HYPOTHESES.md`](./reports/PARTICLE_HYPOTHESES.md). Speed rules come from
 [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md). Read the matching rows of
 [`HYPOTHESIS_LOG.md`](./HYPOTHESIS_LOG.md) before any sitting. Every sitting adds a row there and a
 report under [`reports/`](./reports/). A candidate that reaches a kernel sitting gets its own E-number in

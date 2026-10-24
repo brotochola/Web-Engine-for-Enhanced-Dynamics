@@ -4,7 +4,7 @@
 **Algorithm name:** hierarchical / multi-resolution spatial hash (**H-grid** style) — here the minimal 2-level form  
 **Scenes:** BallsScene, PredatorScene  
 **Runtime:** headed Chromium, warmup **8 s** / measure **6 s**  
-**Data:** [`tests/results/multigrid-hyps/smoke-summary.json`](../../tests/results/multigrid-hyps/smoke-summary.json), [`confirm-summary.json`](../../tests/results/multigrid-hyps/confirm-summary.json)  
+**Data:** `tests/results/multigrid-hyps/smoke-summary.json` (not kept), `confirm-summary.json` (`tests/results/multigrid-hyps/confirm-summary.json`, not kept)  
 **Prototype:** `tests/bench/multigrid-hyps/m1SpatialWorker.js` (not merged; removed in `c40821ec`)
 
 ---
@@ -62,4 +62,4 @@ node tests/bench/runMultigridSmoke.mjs
 node tests/bench/runMultigridSmoke.mjs --confirm
 ```
 
-Restores [`src/workers/spatialWorker.js`](../../src/workers/spatialWorker.js) from `tests/bench/multigrid-hyps/baselineSpatialWorker.js` after runs.
+Restores [`src/workers/spatialWorker.js`](../../../src/workers/spatialWorker.js) from `tests/bench/multigrid-hyps/baselineSpatialWorker.js` after runs.
