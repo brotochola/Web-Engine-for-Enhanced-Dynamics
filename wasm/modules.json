@@ -235,6 +235,18 @@
         "premultiply_simd"
       ],
       "maxMemoryPages": 8192
+    },
+    {
+      "name": "shadowStampF32",
+      "source": "wasm/test/shadowStampF32.c",
+      "output": "tests/fixtures/wasm/shadowStampF32.wasm",
+      "exports": [
+        "stamp_light_range",
+        "stamp_light_range_f32",
+        "stamp_light_range_f32x4"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }
