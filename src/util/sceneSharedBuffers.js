@@ -249,7 +249,7 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     if (bufferSize === 0) continue;
 
     buffers.componentData[componentName] = new SharedArrayBuffer(bufferSize);
-    ComponentClass.initializeArrays(buffers.componentData[componentName], totalEntityCount);
+    ComponentClass.initializeArrays(buffers.componentData[componentName], totalEntityCount, buffers.componentDataByte?.[componentName] | 0);
   }
 }
 
@@ -271,7 +271,7 @@ function initializeParticleBuffers(scene) {
   buffers.componentData.ParticleComponent = scene.particleMemory
     ? scene.particleMemory.buffer
     : new SharedArrayBuffer(particleBufferSize);
-  ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles);
+  ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles, buffers.componentDataByte?.ParticleComponent | 0);
   ParticleComponent.particleCount = maxParticles;
 
   const { freeList, freeListTop } = createUint16FreeListBuffers(
@@ -326,7 +326,7 @@ function initializeDecorationBuffers(scene) {
 
   const decorationBufferSize = DecorationComponent.getBufferSize(maxDecorations);
   buffers.componentData.DecorationComponent = new SharedArrayBuffer(decorationBufferSize);
-  DecorationComponent.initializeArrays(buffers.componentData.DecorationComponent, maxDecorations);
+  DecorationComponent.initializeArrays(buffers.componentData.DecorationComponent, maxDecorations, buffers.componentDataByte?.DecorationComponent | 0);
   DecorationComponent.decorationCount = maxDecorations;
 
   const { freeList, freeListTop } = createUint16FreeListBuffers(
@@ -390,7 +390,7 @@ function initializeBulletBuffers(scene) {
 
   const bulletBufferSize = BulletComponent.getBufferSize(maxBullets);
   buffers.componentData.BulletComponent = new SharedArrayBuffer(bulletBufferSize);
-  BulletComponent.initializeArrays(buffers.componentData.BulletComponent, maxBullets);
+  BulletComponent.initializeArrays(buffers.componentData.BulletComponent, maxBullets, buffers.componentDataByte?.BulletComponent | 0);
   BulletComponent.bulletCount = maxBullets;
 
   const { freeList, freeListTop } = createUint16FreeListBuffers(

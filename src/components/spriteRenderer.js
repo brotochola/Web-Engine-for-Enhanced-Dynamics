@@ -242,12 +242,12 @@ export class SpriteRenderer extends Component {
     return aligned + 4;
   }
 
-  static initializeArrays(buffer, count) {
-    super.initializeArrays(buffer, count);
+  static initializeArrays(buffer, count, byteOffset = 0) {
+    super.initializeArrays(buffer, count, byteOffset);
     if (this.spriteRotC) this.spriteRotC.fill(1);
     const base = super.getBufferSize(count);
     const aligned = (base + 3) & ~3;
-    this._zIndexUsers = new Int32Array(buffer, aligned, 1);
+    this._zIndexUsers = new Int32Array(buffer, byteOffset + aligned, 1);
   }
 
   static zIndexUsers() {

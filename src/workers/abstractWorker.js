@@ -566,7 +566,8 @@ export class AbstractWorker {
       if (data.buffers?.componentData?.ParticleComponent) {
         ParticleComponent.initializeArrays(
           data.buffers.componentData.ParticleComponent,
-          data.maxParticles
+          data.maxParticles,
+          data.buffers.componentDataByte?.ParticleComponent | 0
         );
         ParticleComponent.particleCount = data.maxParticles;
         this.reportLog(`initialized ParticleComponent for ${data.maxParticles} particles`);
@@ -586,7 +587,8 @@ export class AbstractWorker {
       if (data.buffers?.componentData?.DecorationComponent) {
         DecorationComponent.initializeArrays(
           data.buffers.componentData.DecorationComponent,
-          data.maxDecorations
+          data.maxDecorations,
+          data.buffers.componentDataByte?.DecorationComponent | 0
         );
         DecorationComponent.decorationCount = data.maxDecorations;
         this.maxDecorations = data.maxDecorations;
@@ -662,7 +664,8 @@ export class AbstractWorker {
       if (data.buffers?.componentData?.BulletComponent) {
         BulletComponent.initializeArrays(
           data.buffers.componentData.BulletComponent,
-          data.maxBullets
+          data.maxBullets,
+          data.buffers.componentDataByte?.BulletComponent | 0
         );
         BulletComponent.bulletCount = data.maxBullets;
         this.maxBullets = data.maxBullets;
@@ -1029,6 +1032,7 @@ export class AbstractWorker {
    */
   initializeAllComponents(data) {
     const componentData = data.buffers?.componentData;
+    const componentBytes = data.buffers?.componentDataByte || null;
     const componentPools = data.componentPools;
     const totalEntityCount = data.globalEntityCount || 0;
 
@@ -1041,7 +1045,8 @@ export class AbstractWorker {
         componentClasses,
         componentData,
         componentPools,
-        totalEntityCount
+        totalEntityCount,
+        componentBytes
       );
 
       // Make all components globally available for dynamic lookups
@@ -1066,7 +1071,7 @@ export class AbstractWorker {
       if (buffer) {
         const alreadyInit = ComponentClass.active && ComponentClass.active.length === totalEntityCount;
         if (!alreadyInit) {
-          ComponentClass.initializeArrays(buffer, totalEntityCount);
+          ComponentClass.initializeArrays(buffer, totalEntityCount, (componentBytes && componentBytes[name]) | 0);
           if (pool?.componentId !== undefined) ComponentClass.componentId = pool.componentId;
         }
       }
@@ -1087,7 +1092,7 @@ export class AbstractWorker {
       if (buffer) {
         const alreadyInit = ComponentClass.active && ComponentClass.active.length === totalEntityCount;
         if (!alreadyInit) {
-          ComponentClass.initializeArrays(buffer, totalEntityCount);
+          ComponentClass.initializeArrays(buffer, totalEntityCount, (componentBytes && componentBytes[name]) | 0);
           if (pool?.componentId !== undefined) ComponentClass.componentId = pool.componentId;
         }
       } else {

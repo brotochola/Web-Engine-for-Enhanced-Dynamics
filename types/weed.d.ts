@@ -976,6 +976,8 @@ export declare const VERSION: string;
 
 export declare class Component {
   static sharedBuffer: SharedArrayBuffer | null;
+  /** Where the component's block starts in `sharedBuffer` (0 for a buffer of its own). */
+  static sharedBufferByte: number;
   static globalEntityCount: number;
   static componentId: number | null;
   static ARRAY_SCHEMA: Record<
@@ -989,7 +991,8 @@ export declare class Component {
   >;
   index: number;
   owner?: GameObject;
-  static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
+  /** `byteOffset`: the block's start in `buffer`, a multiple of 8 (default 0). */
+  static initializeArrays(buffer: SharedArrayBuffer, count: number, byteOffset?: number): void;
 }
 
 /**
@@ -1730,7 +1733,7 @@ export declare class FSM extends Component {
   changeState(StateClass: typeof FSMState): void;
   forceChangeState(StateClass: typeof FSMState): void;
 
-  static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
+  static initializeArrays(buffer: SharedArrayBuffer, count: number, byteOffset?: number): void;
   static changeState(i: number, StateClass: typeof FSMState): void;
   static getStateName(i: number): string | null;
   static isInState(i: number, StateClass: typeof FSMState): boolean;

@@ -236,8 +236,8 @@ export class AdobeAnimComponent extends Component {
     AdobeAnimComponent.rotS[i] = Math.sin(v);
   }
 
-  static initializeArrays(buffer, count) {
-    super.initializeArrays(buffer, count);
+  static initializeArrays(buffer, count, byteOffset = 0) {
+    super.initializeArrays(buffer, count, byteOffset);
     if (this.rotC) this.rotC.fill(1);
   }
 }

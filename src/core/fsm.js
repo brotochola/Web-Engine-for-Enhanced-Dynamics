@@ -59,9 +59,9 @@ export class FSM extends Component {
    * Called automatically by Component.initializeArrays()
    * @override
    */
-  static initializeArrays(buffer, count) {
+  static initializeArrays(buffer, count, byteOffset = 0) {
     // Call parent to setup SoA arrays
-    super.initializeArrays(buffer, count);
+    super.initializeArrays(buffer, count, byteOffset);
 
     // Link states to this FSM (only once per FSM class)
     this._linkStates();

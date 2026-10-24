@@ -331,6 +331,8 @@ class Scene {
         SpriteRenderer: null,
         MeshRenderer: null,
       },
+      // Byte offsets of the components whose buffer is a region of a shared memory (E-112); 0 when absent.
+      componentDataByte: {},
       // Spatial grid buffers (for raycasting)
       gridEntities: null,
       gridCounts: null,
@@ -1138,7 +1140,8 @@ class Scene {
       componentMap,
       this.buffers.componentData,
       this.componentPools,
-      this.totalEntityCount
+      this.totalEntityCount,
+      this.buffers.componentDataByte
     );
 
     // Pose views: HEAP after box2dReady, or Weed SAB when physics is off. Bind once.

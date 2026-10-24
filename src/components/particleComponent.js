@@ -108,11 +108,11 @@ export class ParticleComponent extends Component {
     return aligned + 4;
   }
 
-  static initializeArrays(buffer, count) {
-    super.initializeArrays(buffer, count);
+  static initializeArrays(buffer, count, byteOffset = 0) {
+    super.initializeArrays(buffer, count, byteOffset);
     if (this.rotC) this.rotC.fill(1);
     const aligned = (super.getBufferSize(count) + 3) & ~3;
-    this.renderOnlyLive = new Int32Array(buffer, aligned, 1);
+    this.renderOnlyLive = new Int32Array(buffer, byteOffset + aligned, 1);
   }
 
   static clearArrays() {

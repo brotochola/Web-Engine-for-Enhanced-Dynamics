@@ -47,8 +47,8 @@ export class BulletComponent extends Component {
 
   static bulletCount = 0;
 
-  static initializeArrays(buffer, count) {
-    super.initializeArrays(buffer, count);
+  static initializeArrays(buffer, count, byteOffset = 0) {
+    super.initializeArrays(buffer, count, byteOffset);
     if (this.bulletRotC) this.bulletRotC.fill(1);
     if (this.spriteRotC) this.spriteRotC.fill(1);
   }
