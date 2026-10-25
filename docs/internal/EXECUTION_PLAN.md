@@ -872,6 +872,16 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
+### E-137 The bullet collect writes its own rows — **KEPT (product), 2026-10-25**
+E-98c and E-98e for bullets: `collectVisibleBullets` called `collectRenderable` for each visible bullet and trail,
+whose dispatch, bit scan and `_writeRenderable` always end on the main collector for a bullet on the entities layer
+(`_writeRenderable`, `collectVisibleBullets` and `collectRenderable` were 31 % of `bulletStressScene`'s pre-render).
+The loop now writes those rows itself (`59aceb37`), and the last key stays in `COLLECT_Y` where the sprite collect
+reads it. The first version took mask 0 only and tied (+1.1 %): `BulletPool.spawn` gives every bullet the entities
+layer's bit, not 0; with that bit too (`ece24bf1`), `bulletStressScene?bullets=64000`, 4 pairs against W4d:
+pre-render **3.623 → 3.016 ms, −17.3 %** (0/4 worse). Parity `bulletCollectShortcut.test.js` (three mutants fail it).
+Lesson: a shortcut on "no mask" must check what the spawn path writes as the default mask.
+
 ### E-127 Static scenery culled through a grid — **KEPT (product), 2026-10-24**
 The collect tested every sprite every frame, so its cost followed the world (R-0610: 2.03 → 3.70 ms at a fixed
 visible count when the world doubled). The owner chose an opt-in flag: `static isStatic = true` on a type that does
