@@ -254,6 +254,7 @@ import {
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
 import { bindGpuPack } from '../render/gpuPackClient.js';
+import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
 
 // Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
@@ -519,6 +520,9 @@ class PixiRenderer extends AbstractWorker {
     // render-queue memory (the view below) and gpuPack.wasm packs them, on Pixi's own scratch.
     this._pixiGpuPack = null;
     this._pixiInstanceRows = null;
+    // W30. The entity batch's arrays in a private WebAssembly.Memory, copied into from the render-queue memory by
+    // memory.copy (sharedCopy.createPrivateArena); null without multi-memory.
+    this._privateArena = null;
     // W10. With sortSprites 'pixi', the ENTITIES painter state and its slot lists live in the render-queue
     // memory and painterRadix.wasm sorts them there (painterRadixClient.bindPainterRadix).
     this._painterWasm = null;
@@ -1639,7 +1643,7 @@ class PixiRenderer extends AbstractWorker {
       if (batch.mesh) batch.mesh.visible = false;
       return 0;
     }
-    batch.data.set(src.subarray(0, len));
+    batch.copyIn(batch.data, src, len);
     return batch.commitInstances(keep);
   }
 
@@ -1968,6 +1972,7 @@ class PixiRenderer extends AbstractWorker {
       // E-82b (wasm.gpuPackSplit): the plain sprites in two streams, the statics uploaded when they change. A
       // nearest atlas snaps every pose, which neither the kernel nor packSplitRows packs, so it keeps 15-float rows.
       split: this.config?.wasm?.gpuPackSplit !== false && !this._queueInterp && this.atlasScaleMode !== 'nearest',
+      arena: this._privateArena,
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -6096,6 +6101,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.renderQueueEnabled) {
       await this._bindPixiGpuPack(data);
       await this._bindPainterRadix(data);
+      // W30: room for the entity batch's two streams at their widest (a pose batch's 17 floats a row).
+      this._privateArena = createPrivateArena(data.renderQueueMemory || null,
+        this.renderQueueMaxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS) * 4 + 4096);
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';

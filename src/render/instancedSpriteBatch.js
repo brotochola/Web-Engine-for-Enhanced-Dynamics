@@ -257,6 +257,7 @@ export class InstancedSpriteBatch {
     data = null,
     gpuPack = null,
     split = false,
+    arena = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
@@ -267,7 +268,9 @@ export class InstancedSpriteBatch {
     this._floats = this.poseInterp ? POSE_DYN_FLOATS : this.split ? SPLIT_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
     if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
-    this.data = new Float32Array(this.capacity * this._floats);
+    // W30: in a private memory (sharedCopy.createPrivateArena) when Pixi passes one, so the copies out of the
+    // render-queue memory run as memory.copy (copyIn); else arrays of the batch's own.
+    this.data = (arena && arena.f32(this.capacity * this._floats)) || new Float32Array(this.capacity * this._floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
     // W9d: a plain sprite batch may pack through gpuPack.wasm (`gpuPack`, gpuPackClient.bindGpuPack) into rows
     // of the render-queue memory (`data`); they are copied into `this.data` before the upload, as
@@ -288,8 +291,13 @@ export class InstancedSpriteBatch {
     this._splitScratchU32 = new Uint32Array(0);
     // The static stream (E-82): its CPU copy, the key of what it holds, and the version each ring
     // slot's GPU copy holds (-1: none).
-    this.staticData = new Float32Array(this._twoStreams ? this.capacity * POSE_STATIC_FLOATS : 0);
+    this.staticData = (this._twoStreams && arena && arena.f32(this.capacity * POSE_STATIC_FLOATS))
+      || new Float32Array(this._twoStreams ? this.capacity * POSE_STATIC_FLOATS : 0);
     this.staticDataU32 = new Uint32Array(this.staticData.buffer);
+    // W30: the arena's copy, the shared buffer it copies from and the arena's own (null: TypedArray.set).
+    this._copy = arena ? arena.copy : null;
+    this._copySource = arena ? arena.source : null;
+    this._arenaBuffer = arena ? arena.buffer : null;
     this._staticVersion = 0;
     this._slotStaticVersion = [-1, -1];
     this._stGen = 0;
@@ -709,7 +717,7 @@ export class InstancedSpriteBatch {
       ? packInstancedRowsWasm(this._gpuPack, q, ctx, this._sharedRows, this._floats, this.capacity, this.shadowCast)
       : -1;
     if (out > 0) {
-      this.data.set(this._sharedRows.subarray(0, out * this._floats));
+      this.copyIn(this.data, this._sharedRows, out * this._floats);
     } else if (out < 0) {
       out = packInstancedRows(
         q,
@@ -763,8 +771,8 @@ export class InstancedSpriteBatch {
     if (this._gpuPack !== null) {
       out = packPoseRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity);
       if (out > 0) {
-        this.data.set(this._sharedPose.subarray(0, out * POSE_DYN_FLOATS));
-        if (!current) this.staticData.set(this._sharedStatic.subarray(0, out * POSE_STATIC_FLOATS));
+        this.copyIn(this.data, this._sharedPose, out * POSE_DYN_FLOATS);
+        if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
       }
     }
     if (out < 0) out = current ? this._packPoseOnly(q, ctx) : this._packPoseAndStatics(q, ctx);
@@ -784,8 +792,8 @@ export class InstancedSpriteBatch {
     if (this._gpuPack !== null) {
       out = packSplitRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity);
       if (out > 0) {
-        this.data.set(this._sharedPose.subarray(0, out * SPLIT_POSE_FLOATS));
-        if (!current) this.staticData.set(this._sharedStatic.subarray(0, out * POSE_STATIC_FLOATS));
+        this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
+        if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
       }
     }
     if (out < 0) out = packSplitRows(q, ctx, this.data, current ? null : this.staticData, this.staticDataU32, this.capacity);
@@ -823,10 +831,22 @@ export class InstancedSpriteBatch {
       this._stScale = 0;
       this._stFilter = 0;
       this._staticVersion++;
-      this.staticData.set(stat.subarray(0, keep * POSE_STATIC_FLOATS));
+      this.copyIn(this.staticData, stat, keep * POSE_STATIC_FLOATS);
     }
-    this.data.set(pose.subarray(0, keep * SPLIT_POSE_FLOATS));
+    this.copyIn(this.data, pose, keep * SPLIT_POSE_FLOATS);
     return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4);
+  }
+
+  /**
+   * dst[0..floats) = src[0..floats). W30: by memory.copy when dst is in this batch's arena and src in the shared
+   * memory the arena copies from; else TypedArray.set.
+   */
+  copyIn(dst, src, floats) {
+    if (this._copy !== null && dst.buffer === this._arenaBuffer && src.buffer === this._copySource) {
+      this._copy(dst.byteOffset, src.byteOffset, floats * 4);
+    } else {
+      dst.set(src.subarray(0, floats));
+    }
   }
 
   /** E-82b: commit `count` 15-float rows into a split batch (a GPU queue frame without GPU_FLAG_SPLIT). */
