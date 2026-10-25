@@ -986,8 +986,6 @@ class PreRenderWorker extends AbstractWorker {
                 if (this._emitWasm !== null && this.config?.wasm?.preRenderEmitAdobe !== false
                     && bindEmitAdobe(this._emitWasm, emitLayout)) {
                     this._copyEmitAdobeAssets();
-                    // W27b: in float32 unless the scene asks for the double expansion.
-                    this._emitAdobeF32 = this.config?.wasm?.preRenderEmitAdobeF32 !== false;
                 }
             }
             // W4b: the sprite collect in WASM, when Transform, its pose and Collider are in the memory too.

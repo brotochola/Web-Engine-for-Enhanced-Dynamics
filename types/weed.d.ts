@@ -333,11 +333,6 @@ export type SceneConfig = Record<string, unknown> & {
      * (AdobeAnimComponent and the assets' tables move into the render-queue memory; preRender.adobeTablesMB). Needs preRenderEmit.
      */
     preRenderEmitAdobe?: boolean;
-    /**
-     * That expansion in float32 (default true): faster; each piece's position, scale, rotation and alpha within a float32
-     * rounding of the double expansion. false: the double expansion, the JavaScript emit's values exactly.
-     */
-    preRenderEmitAdobeF32?: boolean;
     /** Pre-render's sprite collect (Transform and Collider move into the render-queue memory; with physics, into Box2D's). */
     preRenderCollect?: boolean;
     /** The bullet tick and its linecasts in one WASM call per frame (physics scenes: the pool moves into Box2D's memory). */

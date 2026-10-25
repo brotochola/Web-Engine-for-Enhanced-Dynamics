@@ -222,8 +222,7 @@ async function setup({
     await initWorker(worker, {
       config: {
         worldWidth: 4000, worldHeight: 3000, preRender: { interpolation: false }, renderer: { ySort },
-        // The double expansion, which these tests hold to the JS bit for bit; W27b's test turns on the float32 one.
-        wasm: { preRenderEmitAdobe: adobeOn, preRenderEmitAdobeF32: false },
+        wasm: { preRenderEmitAdobe: adobeOn },
       },
       globalEntityCount: N,
       buffers,

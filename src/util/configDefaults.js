@@ -484,12 +484,6 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   preRenderEmitAdobe: true,
   /**
-   * That expansion in float32, four pieces per f32x4 (W27b, `adobe_root_f32x4`): each piece's position, scale,
-   * rotation and alpha within a float32 rounding of the double expansion (2e-3 px, 1e-5, 1e-6); textures, tints,
-   * anchors and the rows exact. false: the double expansion, the JavaScript emit's values bit for bit.
-   */
-  preRenderEmitAdobeF32: true,
-  /**
    * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b): Transform, its pose and Collider in the render-queue
    * memory with the emit's SpriteRenderer (so it needs preRenderEmit); with physics, in Box2D's block with RigidBody
    * and the published poses (so it needs box2dBlock).
