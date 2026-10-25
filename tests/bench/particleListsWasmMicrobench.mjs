@@ -46,7 +46,7 @@ import {
   buildActiveAndVisibleListBuffersTurned,
   buildActiveListBuffers,
   updateParticlePhysicsBuffers,
-} from '../../src/util/particleIntegrate.js';
+} from '../reference/particleIntegrate.mjs';
 import { calculateCameraScreenBounds, seededRandom } from '../../src/util/utils.js';
 import { createParticleMemory } from '../../src/util/particleMemory.js';
 import { bindParticleLists, buildParticleListsWasm } from '../../src/workers/particleListsClient.js';

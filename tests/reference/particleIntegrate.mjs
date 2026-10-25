@@ -1,14 +1,14 @@
-// particleIntegrate.js - Pure particle physics integration + active/visible list building
-// Extracted from particleWorker.js so the hot per-particle
-// loops can be exercised from Node (tests/bench) without instantiating workers.
-// particleWorker.js calls these as thin wrappers (this.* -> plain params).
+// The particle integrate and active/visible list builds in JavaScript: src/util/particleIntegrate.js as the particle
+// worker ran it until particleIntegrate.wasm and particleLists.wasm (E-79, E-80) became its only integrate and list
+// build. Kept as the parity reference the kernels are tested against (WASM_HYPOTHESES L12), and the subject of the
+// integrate's semantic tests; the engine does not use it (tests/reference/particleWorkerJs.mjs puts it on a worker).
 
-import { ParticleEmitter } from '../core/particleEmitter.js';
+import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import {
   PARTICLE_TWEEN,
   applyParticleEase,
   lerpRgb,
-} from './particleTween.js';
+} from '../../src/util/particleTween.js';
 
 // P4: reused across calls (single-threaded per worker module instance, same
 // non-reentrancy assumption as ParticleEmitter's other hot-path scratches).

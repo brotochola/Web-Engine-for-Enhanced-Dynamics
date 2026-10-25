@@ -26,7 +26,7 @@ import { fileURLToPath } from 'node:url';
 
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
-import { buildActiveListBuffers } from '../../src/util/particleIntegrate.js';
+import { buildActiveListBuffers } from '../reference/particleIntegrate.mjs';
 import { seededRandom } from '../../src/util/utils.js';
 import { integrateParticlesWasm } from '../../src/workers/particleIntegrateClient.js';
 import {

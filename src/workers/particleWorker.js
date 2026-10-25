@@ -36,13 +36,6 @@ import {
   screenBoundsToWorldBounds,
 } from '../util/utils.js';
 import { Decal as DecalImport } from '../core/decal.js';
-import {
-  updateParticlePhysicsBuffers as updateParticlePhysicsBuffersImport,
-  buildActiveListBuffers as buildActiveListBuffersImport,
-  buildActiveAndVisibleListBuffers as buildActiveAndVisibleListBuffersImport,
-  buildActiveAndVisibleListBuffersTurned as buildActiveAndVisibleListBuffersTurnedImport,
-  particleClassifyLists,
-} from '../util/particleIntegrate.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
@@ -86,10 +79,6 @@ const Grid = GridImport;
 const NavGrid = NavGridImport;
 const calculateSpeed = calculateSpeedImport;
 const Decal = DecalImport;
-const updateParticlePhysicsBuffers = updateParticlePhysicsBuffersImport;
-const buildActiveListBuffers = buildActiveListBuffersImport;
-const buildActiveAndVisibleListBuffers = buildActiveAndVisibleListBuffersImport;
-const buildActiveAndVisibleListBuffersTurned = buildActiveAndVisibleListBuffersTurnedImport;
 const getColliderBounds = getColliderBoundsImport;
 const getCellRange = getCellRangeImport;
 const _boundsResult = _boundsResultImport;
@@ -395,12 +384,7 @@ class ParticleWorker extends AbstractWorker {
 
     // Active particle tracking
     this.activeParticleIndices = null;
-    // The JS integrate's classify lists (particleClassifyLists): its 16-bit module lists, or 32-bit ones
-    // for a pool past 65 535 particles (E-129).
-    this._classifyFlat = new Uint16Array(0);
-    this._classifyHeighted = new Uint16Array(0);
-    // The WASM integrate (E-79) and list build (E-80), bound in initialize when the scene gives a
-    // particle memory.
+    // The WASM integrate (E-79) and list build (E-80), bound in initialize on the particle memory.
     this._wasmIntegrate = null;
     this._wasmLists = null;
 
@@ -464,40 +448,20 @@ class ParticleWorker extends AbstractWorker {
     if (this.maxParticles > 0 && data.buffers.componentData.ParticleComponent) {
       // E-129: slot ids are u32 past 65 535 particles, in every list.
       const ParticleSlots = PoolSlotArray(this.maxParticles);
-      this.particlesToStamp = new ParticleSlots(this.maxParticles);
-      this.activeParticleIndices = new ParticleSlots(this.maxParticles);
-      [this._classifyFlat, this._classifyHeighted] = particleClassifyLists(this.maxParticles);
-      this._wasmIntegrate = null;
-      this._wasmLists = null;
-      if (data.particleMemory && data.particleLayout) {
-        // E-80: the integrate's input is the published active list, which is in the particle memory.
-        this.activeParticleIndices = new ParticleSlots(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
-        // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
-        // wasm.particleIntegrateF32 (default on) takes the kernel's float32 integrate, chosen once here.
-        if (this.config?.wasm?.particleIntegrate !== false) {
-          try {
-            this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles, {
-              f32: this.config?.wasm?.particleIntegrateF32 !== false,
-            });
-            this.particlesToStamp = this._wasmIntegrate.stamp;
-          } catch (err) {
-            console.error('[particle] integrate wasm unavailable', err);
-            this._wasmIntegrate = null;
-          }
-        }
-        // E-80: the active and visible lists built in WASM; wasm.particleListsF32 (default on) takes the
-        // kernel's float32 screen test, chosen once here.
-        if (this.config?.wasm?.particleLists !== false) {
-          try {
-            this._wasmLists = await bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent, {
-              f32: this.config?.wasm?.particleListsF32 !== false,
-            });
-          } catch (err) {
-            console.error('[particle] list wasm unavailable', err);
-            this._wasmLists = null;
-          }
-        }
-      }
+      if (!data.particleMemory || !data.particleLayout) throw new Error('particles without the particle memory (createParticleMemory)');
+      // E-80: the integrate's input is the published active list, which is in the particle memory.
+      this.activeParticleIndices = new ParticleSlots(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
+      // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
+      // wasm.particleIntegrateF32 (default on) takes the kernel's float32 integrate, chosen once here.
+      this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles, {
+        f32: this.config?.wasm?.particleIntegrateF32 !== false,
+      });
+      this.particlesToStamp = this._wasmIntegrate.stamp;
+      // E-80: the active and visible lists built in WASM; wasm.particleListsF32 (default on) takes the
+      // kernel's float32 screen test, chosen once here.
+      this._wasmLists = await bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent, {
+        f32: this.config?.wasm?.particleListsF32 !== false,
+      });
     }
     if (this.maxDecorations > 0) {
       const buckets = this.config?.particle?.swayFrequencyBuckets | 0;
@@ -866,29 +830,12 @@ class ParticleWorker extends AbstractWorker {
   buildActiveAndVisibleParticleLists() {
     if (this.maxParticles === 0) return;
 
-    const active = ParticleComponent.active;
-    const localIndices = this.activeParticleIndices;
-    const activeData = this.activeParticlesData;
-    const visibleData = this.visibleParticlesData;
+    // CPU emitter pool only. LiquidFun lives on its own render SAB.
     const maxParticles = this.maxParticles;
 
-    // CPU emitter pool only. LiquidFun lives on its own render SAB.
-    const expectedActive = maxParticles;
-
-    // Early exit if camera not ready (can't calculate visibility)
+    // Camera not ready: the active list alone (no visibility to test).
     if (!this.cameraData) {
-      if (this._wasmLists) {
-        this.activeParticleCount = buildActiveParticleListWasm(this._wasmLists, maxParticles);
-        return;
-      }
-      this.activeParticleCount = buildActiveListBuffers(
-        maxParticles,
-        active,
-        localIndices,
-        activeData,
-        expectedActive,
-      );
-      if (visibleData) visibleData[0] = 0;
+      this.activeParticleCount = buildActiveParticleListWasm(this._wasmLists, maxParticles);
       return;
     }
 
@@ -898,43 +845,15 @@ class ParticleWorker extends AbstractWorker {
     // _frameCameraBounds filled _drawnCam this frame. A turned camera tests each
     // particle in view space, not in the box around the view (E-51b).
     const rotation = this._drawnCam.rotation;
-    if (this._wasmLists) {
-      this.activeParticleCount = buildParticleListsWasm(
-        this._wasmLists,
-        maxParticles,
-        cameraBounds,
-        rotation,
-        this.canvasWidth,
-        this.canvasHeight,
-        this.cullingRatio,
-      );
-      return;
-    }
-    const { activeCount } = rotation
-      ? buildActiveAndVisibleListBuffersTurned(
-        ParticleComponent,
-        maxParticles,
-        localIndices,
-        activeData,
-        visibleData,
-        expectedActive,
-        cameraBounds,
-        rotation,
-        this.canvasWidth,
-        this.canvasHeight,
-        this.cullingRatio,
-      )
-      : buildActiveAndVisibleListBuffers(
-        ParticleComponent,
-        maxParticles,
-        localIndices,
-        activeData,
-        visibleData,
-        expectedActive,
-        cameraBounds,
-      );
-
-    this.activeParticleCount = activeCount;
+    this.activeParticleCount = buildParticleListsWasm(
+      this._wasmLists,
+      maxParticles,
+      cameraBounds,
+      rotation,
+      this.canvasWidth,
+      this.canvasHeight,
+      this.cullingRatio,
+    );
     // if (activeCount !== this._lastLoggedActiveCount) {
     //   this._lastLoggedActiveCount = activeCount;
     //   const x0 = ParticleComponent.x ? ParticleComponent.x[0] : 0;
@@ -1175,27 +1094,15 @@ class ParticleWorker extends AbstractWorker {
   updateParticlePhysics(deltaTime, dtRatio) {
     if (this.maxParticles === 0) return 0;
 
-    // E-79: chosen here, per frame; both write the same state (tests/node/particleIntegrateWasm.test.js).
-    const { activeCount, stampedCount } = this._wasmIntegrate
-      ? integrateParticlesWasm(
-        this._wasmIntegrate,
-        ParticleComponent,
-        this.activeParticleCount,
-        deltaTime,
-        dtRatio,
-        this.decalsEnabled && this.particlesToStamp,
-      )
-      : updateParticlePhysicsBuffers(
-        ParticleComponent,
-        this.activeParticleIndices,
-        this.activeParticleCount,
-        deltaTime,
-        dtRatio,
-        this.decalsEnabled,
-        this.particlesToStamp,
-        this._classifyFlat,
-        this._classifyHeighted,
-      );
+    // E-79: the integrate in WASM (tests/node/particleIntegrateWasm.test.js holds it to the JS one it replaced).
+    const { activeCount, stampedCount } = integrateParticlesWasm(
+      this._wasmIntegrate,
+      ParticleComponent,
+      this.activeParticleCount,
+      deltaTime,
+      dtRatio,
+      this.decalsEnabled && this.particlesToStamp,
+    );
 
     this.particlesToStampCount = stampedCount;
     return activeCount;

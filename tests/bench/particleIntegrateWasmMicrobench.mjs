@@ -43,7 +43,7 @@
  */
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
-import { buildActiveListBuffers, updateParticlePhysicsBuffers } from '../../src/util/particleIntegrate.js';
+import { buildActiveListBuffers, updateParticlePhysicsBuffers } from '../reference/particleIntegrate.mjs';
 import { seededRandom } from '../../src/util/utils.js';
 import { createParticleMemory } from '../../src/util/particleMemory.js';
 import { bindParticleIntegrate, integrateParticlesWasm } from '../../src/workers/particleIntegrateClient.js';

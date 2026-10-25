@@ -2,7 +2,7 @@
 
 Falsifiable claims for speeding up particle spawn and per-frame integration —
 [`src/core/particleEmitter.js`](../../../src/core/particleEmitter.js) (`_spawn`, `_mergeCfg`,
-`emit`/`emitZenithal`/`emitFlat`), [`src/util/particleIntegrate.js`](../../../src/util/particleIntegrate.js)
+`emit`/`emitZenithal`/`emitFlat`), [`src/util/particleIntegrate.js`](../../../tests/reference/particleIntegrate.mjs) (since the close-out, `tests/reference/particleIntegrate.mjs`)
 (`updateParticlePhysicsBuffers`, `buildActiveListBuffers`, `buildActiveAndVisibleListBuffers`),
 and the shared free list ([`src/core/sharedAtomicPool.js`](../../../src/core/sharedAtomicPool.js),
 [`src/util/atomicFreeList.js`](../../../src/util/atomicFreeList.js)). Test **headless only** with the

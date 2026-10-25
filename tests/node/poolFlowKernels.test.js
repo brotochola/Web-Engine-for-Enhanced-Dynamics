@@ -6,7 +6,7 @@ import { DecorationComponent } from '../../src/components/decorationComponent.js
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { BulletPool } from '../../src/core/bulletPool.js';
-import { buildActiveListBuffers, updateParticlePhysicsBuffers } from '../../src/util/particleIntegrate.js';
+import { buildActiveListBuffers, updateParticlePhysicsBuffers } from '../reference/particleIntegrate.mjs';
 import { Grid } from '../../src/core/grid.js';
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';

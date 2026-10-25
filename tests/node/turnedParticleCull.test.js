@@ -6,6 +6,7 @@ import { Camera } from '../../src/core/camera.js';
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { viewWorldToScreen } from '../../src/util/viewBounds.js';
 import { mulberry32 } from '../bench/benchMath.js';
+import { installParticleJs } from '../reference/particleWorkerJs.mjs';
 
 // E-51b. With the camera turned, the particle worker marked visible every
 // particle in the box around the turned view (about 2x the view at 45 degrees
@@ -13,7 +14,8 @@ import { mulberry32 } from '../bench/benchMath.js';
 // they filled maxVisibleRenderables before on-screen particles got in. The
 // turned path tests each particle in view space. Visible: exactly the particles
 // whose turned screen position is within the canvas plus the culling margin, as
-// viewWorldToScreen puts them.
+// viewWorldToScreen puts them. On plain arrays, through the JS list build (tests/reference, put on the worker): the
+// kernel the worker ships builds the same lists (particleListsWasm.test.js).
 
 const N = 4000;
 const W = 1280;
@@ -44,6 +46,7 @@ async function particleWorker(zoom, rot, seed) {
     ParticleComponent.y[i] = -1500 + rng() * 3000;
   }
   par.maxParticles = N;
+  installParticleJs(par, { integrate: false });
   par.activeParticleIndices = new Uint16Array(N);
   par.activeParticlesData = new Int32Array(N + 1);
   par.visibleParticlesData = new Int32Array(N + 1);

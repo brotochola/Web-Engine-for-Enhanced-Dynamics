@@ -16,7 +16,7 @@ import {
   buildActiveAndVisibleListBuffers,
   buildActiveAndVisibleListBuffersTurned,
   buildActiveListBuffers,
-} from '../../src/util/particleIntegrate.js';
+} from '../reference/particleIntegrate.mjs';
 import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
 import { buildActiveParticleListWasm, buildParticleListsWasm } from '../../src/workers/particleListsClient.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';

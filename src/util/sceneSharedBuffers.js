@@ -296,13 +296,10 @@ function initializeParticleBuffers(scene) {
   if (maxParticles <= 0) return;
 
   const particleBufferSize = ParticleComponent.getBufferSize(maxParticles);
-  // E-79, E-80: for the WASM integrate and list build the component lives at byte 0 of a shared
-  // WebAssembly.Memory (every worker's views are the same); with both switched off, a plain SAB.
-  const wasmParticles = config.wasm?.particleIntegrate !== false || config.wasm?.particleLists !== false;
-  scene.particleMemory = wasmParticles ? createParticleMemory(maxParticles, particleBufferSize) : null;
-  buffers.componentData.ParticleComponent = scene.particleMemory
-    ? scene.particleMemory.buffer
-    : new SharedArrayBuffer(particleBufferSize);
+  // E-79, E-80: the component lives at byte 0 of a shared WebAssembly.Memory (every worker's views are the same),
+  // where the integrate and list kernels run (createParticleMemory throws when it cannot be made).
+  scene.particleMemory = createParticleMemory(maxParticles, particleBufferSize);
+  buffers.componentData.ParticleComponent = scene.particleMemory.buffer;
   ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles, buffers.componentDataByte?.ParticleComponent | 0);
   ParticleComponent.particleCount = maxParticles;
 

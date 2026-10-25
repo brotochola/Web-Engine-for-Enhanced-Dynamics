@@ -18,8 +18,10 @@ import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { seededRandom } from '../../src/util/utils.js';
 import { emitConfig, PARTICLE_EASES } from '../bench/particleIntegrateWasmMicrobench.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { installParticleJs } from '../reference/particleWorkerJs.mjs';
 
-const { n, frames = 0, wasm = {} } = workerData;
+// `js`: the JS integrate and list build the kernels replaced, put on the worker in their place.
+const { n, frames = 0, wasm = {}, js = false } = workerData;
 const W = 1920;
 const H = 1080;
 
@@ -99,6 +101,7 @@ await initWorker(worker, {
     particleLayout: mem ? mem.layout : null,
   },
 });
+if (js) installParticleJs(worker);
 
 const bound = {
   lists: worker._wasmLists ? { slotBytes: worker._wasmLists.slotBytes, f32: worker._wasmLists.f32 } : null,
@@ -107,7 +110,6 @@ const bound = {
   visibleList: worker.visibleParticlesData.constructor.name,
   indices: worker.activeParticleIndices.constructor.name,
   stamp: worker.particlesToStamp.constructor.name,
-  classify: [worker._classifyFlat.constructor.name, worker._classifyFlat.length],
   emitBatch: ParticleEmitter._acquireBatch.constructor.name,
 };
 

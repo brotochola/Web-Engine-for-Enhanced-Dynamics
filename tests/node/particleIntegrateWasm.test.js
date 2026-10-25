@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 
-// E-79: the particle worker's integrate in WASM (the particle memory, wasm.particleIntegrate on)
-// must leave the particle state exactly as the JS integrate does (wasm.particleIntegrate off), frame
+// E-79: the particle worker's integrate in WASM (the particle memory) must leave the particle state exactly as the
+// JS integrate it replaced does (tests/reference/particleIntegrate.mjs, put on the worker in its place), frame
 // after frame: lifetimes, deaths back to the pool in the same order (later spawns land in the same
 // slots), tweens, rotation and tint. Each side boots a real particle worker in its own thread.
 
@@ -23,7 +23,7 @@ for (const mix of ['tween', 'spin']) {
     // wasm.particleIntegrateF32 off: the double integrate.
     const base = { n: 12000, frames: 40, mix, burst: 9000, perFrame: 600, f32: false };
     const [js, wasm] = await Promise.all([run({ ...base, wasm: false }), run({ ...base, wasm: true })]);
-    assert.equal(js.bound, false, 'wasm.particleIntegrate false keeps the JS integrate');
+    assert.equal(js.bound, false, 'the JS side runs the reference integrate');
     assert.equal(wasm.bound, true, 'the particle worker bound the WASM integrate');
     assert.equal(wasm.f32, false, 'wasm.particleIntegrateF32 false binds integrate_batch');
     assert.ok(js.active > 0, 'particles are alive');

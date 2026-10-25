@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
-import { particleClassifyLists, updateParticlePhysicsBuffers } from '../../src/util/particleIntegrate.js';
+import { particleClassifyLists, updateParticlePhysicsBuffers } from '../reference/particleIntegrate.mjs';
 import { PARTICLE_LUT_ENTRIES } from '../../src/util/particleMemory.js';
 import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
 import { bindParticleIntegrate, integrateParticlesWasm } from '../../src/workers/particleIntegrateClient.js';

@@ -441,21 +441,19 @@ export const WASM_DEFAULTS = Object.freeze({
   spatialPublish: true,
   /** Spatial candidate gather (`spatialGather.wasm`, E-78); needs spatialPublish's memory. */
   spatialGather: true,
-  /** Particle integrate (`particleIntegrate.wasm`, E-79): ParticleComponent in a WebAssembly.Memory. */
-  particleIntegrate: true,
   /**
-   * The integrate in float32, four particles per f32x4 where the loop allows it (`integrate_batch_f32x4`, the
+   * The particle integrate (`particleIntegrate.wasm`, E-79, ParticleComponent in a WebAssembly.Memory) in float32, four particles per f32x4 where the loop allows it (`integrate_batch_f32x4`, the
    * float32 pass): positions, velocities, the alpha, scale and tint lerps and the sine and cosine of a turning
    * particle in float32, within a stated tolerance; lifetimes, deaths and the free list exact. false: the double
-   * integrate (`integrate_batch`), the JS integrate's state bit for bit.
+   * integrate (`integrate_batch`), the state of the JS integrate it replaced bit for bit.
    */
   particleIntegrateF32: true,
-  /** Particle list build (`particleLists.wasm`, E-80): the active and visible lists in that memory. */
-  particleLists: true,
   /**
-   * The list build's screen test in float32, four particles per f32x4 (`build_lists_f32x4`, the float32 pass):
+   * The particle list build's (`particleLists.wasm`, E-80: the active and visible lists in that memory) screen test
+   * in float32, four particles per f32x4 (`build_lists_f32x4`, the float32 pass):
    * a particle within a few float32 steps of the culling box's edge (which has the cull margin around the view)
-   * can land on the other side. false: the double test (`build_lists`), the JS build's flags bit for bit.
+   * can land on the other side. false: the double test (`build_lists`), the flags of the JS build it replaced bit
+   * for bit.
    */
   particleListsF32: true,
   /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */

@@ -1,5 +1,6 @@
-// Thread for tests/node/particleListsWasm.test.js (E-80). Boots a real particle worker with its
-// lists built in WASM (the particle memory) or in JS (plain SABs, both particle switches off),
+// Thread for tests/node/particleListsWasm.test.js (E-80). Boots a real particle worker on the particle memory with
+// its lists built in WASM, or with the JS list build it replaced put in its place (`lists` false), and likewise its
+// integrate (`integrate` false: tests/reference/particleWorkerJs.mjs),
 // drives the stress scene's seeded emits under a camera that changes every few frames (none yet,
 // plain, turned, zoomed out), runs the worker's own list build and integrate each frame and posts
 // every frame's checksum of both published lists, every isItOnScreen byte and the particle state
@@ -16,6 +17,7 @@ import { poolFreeListTopBytes, poolSlotBytes } from '../../src/util/poolSlotWidt
 import { seededRandom } from '../../src/util/utils.js';
 import { checksum, emitConfig, PARTICLE_EASES } from '../bench/particleIntegrateWasmMicrobench.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { installParticleJs } from '../reference/particleWorkerJs.mjs';
 
 const { lists, integrate, f32, n, frames, burst, perFrame } = workerData;
 const W = 1280;
@@ -25,41 +27,35 @@ const CAMERAS = [null, [1, 1400, 1100, 0], [0.6, 900, 700, 0.785], [0.3, 0, 0, 0
 
 const worker = await loadWorker('particleWorker.js', 'particleWorker');
 const componentBytes = ParticleComponent.getBufferSize(n);
-const mem = lists || integrate ? createParticleMemory(n, componentBytes) : null;
-const listBuffers = mem
-  ? {
-      activeParticlesData: mem.buffer,
-      visibleParticlesData: mem.buffer,
-      activeParticlesByte: mem.layout.activeListByte,
-      visibleParticlesByte: mem.layout.visibleListByte,
-    }
-  : {
-      activeParticlesData: new SharedArrayBuffer((n + 1) * poolSlotBytes(n)),
-      visibleParticlesData: new SharedArrayBuffer((n + 1) * poolSlotBytes(n)),
-    };
+const mem = createParticleMemory(n, componentBytes);
+const listBuffers = {
+  activeParticlesData: mem.buffer,
+  visibleParticlesData: mem.buffer,
+  activeParticlesByte: mem.layout.activeListByte,
+  visibleParticlesByte: mem.layout.visibleListByte,
+};
 await initWorker(worker, {
   config: {
     particle: { maxParticles: n },
     wasm: {
-      particleIntegrate: integrate,
       // The double integrate: its state is the JS integrate's bit for bit, so the lists alone decide the sums.
       particleIntegrateF32: false,
-      particleLists: lists,
       ...(f32 === undefined ? {} : { particleListsF32: f32 }),
     },
   },
   globalEntityCount: 16,
-  buffers: { componentData: { ParticleComponent: mem ? mem.buffer : new SharedArrayBuffer(componentBytes) } },
+  buffers: { componentData: { ParticleComponent: mem.buffer } },
   extra: {
     maxParticles: n,
     // E-129: FL4 buffers past 65 535 particles.
     particleFreeList: new SharedArrayBuffer(n * poolSlotBytes(n)),
     particleFreeListTop: new SharedArrayBuffer(poolFreeListTopBytes(n)),
-    particleMemory: mem ? mem.memory : null,
-    particleLayout: mem ? mem.layout : null,
+    particleMemory: mem.memory,
+    particleLayout: mem.layout,
     ...listBuffers,
   },
 });
+if (!lists || !integrate) installParticleJs(worker, { integrate: !integrate, lists: !lists });
 
 function camera(spec) {
   if (!spec) return null;
@@ -115,12 +111,12 @@ for (let f = 0; f < frames; f++) {
 parentPort.postMessage({
   sums,
   activeSums,
-  lists: Boolean(worker._wasmLists),
+  lists: lists && Boolean(worker._wasmLists),
   listsF32: worker._wasmLists ? worker._wasmLists.f32 : null,
   listsSlotBytes: worker._wasmLists ? worker._wasmLists.slotBytes : null,
   listClass: activeData.constructor.name,
   maxIndex,
-  integrate: Boolean(worker._wasmIntegrate),
+  integrate: integrate && Boolean(worker._wasmIntegrate),
   active: worker.activeParticleCount,
   visibleSeen,
 });

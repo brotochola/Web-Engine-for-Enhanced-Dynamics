@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 
-// E-80: the particle worker's list build in WASM (the particle memory, wasm.particleLists on) must
-// publish exactly the lists the JS build does (plain SABs, both particle switches off), frame after
+// E-80: the particle worker's list build in WASM (the particle memory) must publish exactly the lists the JS build it
+// replaced does (tests/reference/particleIntegrate.mjs, put on the worker in its place), frame after
 // frame, under every camera path: none yet, plain, turned and zoomed out. Both lists, every
 // isItOnScreen byte and the particle state the integrate leaves from that list are compared. Each
 // side boots a real particle worker in its own thread.
@@ -28,11 +28,11 @@ test('WASM lists are the JS lists under every camera path', async () => {
     run({ ...base, lists: true, integrate: true }),
     run({ ...base, lists: true, integrate: false }),
   ]);
-  assert.equal(js.lists, false, 'both switches off keep the JS lists');
+  assert.equal(js.lists, false, 'the JS side builds the reference lists');
   assert.equal(wasm.lists, true, 'the particle worker bound the WASM lists');
   assert.equal(wasm.listsF32, false, 'wasm.particleListsF32 false binds the double build');
   assert.equal(wasm.integrate, true, 'and the WASM integrate');
-  assert.equal(listsOnly.integrate, false, 'wasm.particleIntegrate false keeps the JS integrate');
+  assert.equal(listsOnly.integrate, false, 'that side runs the reference integrate');
   assert.ok(js.active > 0 && js.visibleSeen > 0, 'particles are alive and some are visible');
   for (const [name, side] of [['WASM lists and integrate', wasm], ['WASM lists, JS integrate', listsOnly]]) {
     const first = js.sums.findIndex((s, i) => s !== side.sums[i]);

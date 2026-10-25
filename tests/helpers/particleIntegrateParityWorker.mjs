@@ -1,5 +1,6 @@
-// Thread for tests/node/particleIntegrateWasm.test.js (E-79). Boots a real particle worker with the
-// integrate in WASM (the particle memory) or in JS (a plain SAB, wasm.particleIntegrate off), drives
+// Thread for tests/node/particleIntegrateWasm.test.js (E-79). Boots a real particle worker on the particle memory
+// with its integrate in WASM, or with the JS integrate it replaced put in its place (`wasm` false:
+// tests/reference/particleWorkerJs.mjs), drives
 // the stress scene's seeded emits, runs the worker's own updateParticlePhysics each frame and posts
 // every frame's checksum of the particle state (`sums`) and its active count and free-list hash (`counts`).
 // `f32` is wasm.particleIntegrateF32, left out of the config when undefined (the scene's default). Each
@@ -8,30 +9,32 @@ import { parentPort, workerData } from 'node:worker_threads';
 
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
-import { buildActiveListBuffers } from '../../src/util/particleIntegrate.js';
+import { buildActiveListBuffers } from '../reference/particleIntegrate.mjs';
 import { createParticleMemory } from '../../src/util/particleMemory.js';
 import { poolFreeListTopBytes, poolSlotBytes } from '../../src/util/poolSlotWidth.js';
 import { seededRandom } from '../../src/util/utils.js';
 import { checksum, emitConfig, PARTICLE_EASES } from '../bench/particleIntegrateWasmMicrobench.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { installParticleJs } from '../reference/particleWorkerJs.mjs';
 
 const { wasm, f32, n, frames, mix, burst, perFrame } = workerData;
 const worker = await loadWorker('particleWorker.js', 'particleWorker');
 const componentBytes = ParticleComponent.getBufferSize(n);
-const mem = wasm ? createParticleMemory(n, componentBytes) : null;
+const mem = createParticleMemory(n, componentBytes);
 await initWorker(worker, {
-  config: { particle: { maxParticles: n }, wasm: { particleIntegrate: wasm, ...(f32 === undefined ? {} : { particleIntegrateF32: f32 }) } },
+  config: { particle: { maxParticles: n }, wasm: { ...(f32 === undefined ? {} : { particleIntegrateF32: f32 }) } },
   globalEntityCount: 16,
-  buffers: { componentData: { ParticleComponent: mem ? mem.buffer : new SharedArrayBuffer(componentBytes) } },
+  buffers: { componentData: { ParticleComponent: mem.buffer } },
   extra: {
     maxParticles: n,
     // E-129: FL4 buffers past 65 535 particles.
     particleFreeList: new SharedArrayBuffer(n * poolSlotBytes(n)),
     particleFreeListTop: new SharedArrayBuffer(poolFreeListTopBytes(n)),
-    particleMemory: mem ? mem.memory : null,
-    particleLayout: mem ? mem.layout : null,
+    particleMemory: mem.memory,
+    particleLayout: mem.layout,
   },
 });
+if (!wasm) installParticleJs(worker, { integrate: true, lists: false });
 ParticleEmitter.resetFreeListInterleaved();
 globalThis.rng = seededRandom(0xc0de1234, 'parity');
 const rnd = seededRandom(0x5eed, 'driver');
@@ -54,7 +57,7 @@ for (let f = 0; f < frames; f++) {
 parentPort.postMessage({
   sums,
   counts,
-  bound: Boolean(worker._wasmIntegrate),
+  bound: wasm && Boolean(worker._wasmIntegrate),
   f32: worker._wasmIntegrate ? worker._wasmIntegrate.f32 : null,
   slotBytes: worker._wasmIntegrate ? worker._wasmIntegrate.slotBytes : null,
   maxIndex: worker.activeParticleIndices.subarray(0, worker.activeParticleCount).reduce((m, i) => (i > m ? i : m), -1),

@@ -312,18 +312,14 @@ export type SceneConfig = Record<string, unknown> & {
     spatialPublish?: boolean;
     /** Spatial candidate gather (the cell walk before the publish). Runs only with spatialPublish. */
     spatialGather?: boolean;
-    /** Particle integrate (lifetime, tweens, motion, floor) for the CPU particle pool. */
-    particleIntegrate?: boolean;
     /**
-     * The particle integrate in float32 (default true): faster; positions, tweens and turning particles' rotations
+     * The particle integrate (lifetime, tweens, motion, floor; WebAssembly) in float32 (default true): faster; positions, tweens and turning particles' rotations
      * within a float32 rounding or so of the double step (lifetimes and deaths exact). false: the double step, the
      * JavaScript integrate's results exactly.
      */
     particleIntegrateF32?: boolean;
-    /** Particle active and visible lists (the per-frame sweep of the pool and the screen test). */
-    particleLists?: boolean;
     /**
-     * The particle lists' screen test in float32 (default true): faster; a particle within a float32 rounding of
+     * The particle active and visible lists' (the per-frame sweep of the pool; WebAssembly) screen test in float32 (default true): faster; a particle within a float32 rounding of
      * the culling box's edge (off the canvas, inside the cull margin) can land on the other side. false: the
      * double test, the JavaScript build's flags exactly.
      */
