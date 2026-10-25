@@ -663,6 +663,8 @@ class PreRenderWorker extends AbstractWorker {
         this._queuePresorted = false;
         this._lastCollectCount = 0;
         this._lastEmitCount = 0;
+        /** The presorted collector's glow rows (type 3): with none, the pack takes every row with no slot list. */
+        this._presortGlowRows = 0;
         this._presortKeys = EMPTY_F32;
         this._presortKeysU32 = EMPTY_U32;
         this._presortOrder = EMPTY_U32;
@@ -3220,10 +3222,14 @@ class PreRenderWorker extends AbstractWorker {
         const cType = this._renderableType;
         const cIndex = this._renderableIndex;
         // The key emitSpriteQueue writes for the row (and every piece of a root), as the queue's Float32 stores it.
+        let glows = 0;
         for (let i = 0; i < count; i++) {
-            keys[i] = this._orderKey(cType[i], cIndex[i], cY[i], ySort);
+            const type = cType[i];
+            if (type === 3) glows++;
+            keys[i] = this._orderKey(type, cIndex[i], cY[i], ySort);
             order[i] = i;
         }
+        this._presortGlowRows = glows;
         radixSortIndicesBySortKey(order, count, this._presortKeysU32, this._presortScratch, this._presortHist);
         let i = 0;
         while (i < count && order[i] === i) i++;
@@ -4704,6 +4710,7 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPackSpec = {
             fillAll: true,
             sortedFlag: GPU_FLAG_SORTED,
+            glowIncludeType: -1,
             writeSprites: this._writePackedSprites,
             writeGlow: this._writePackedGlow,
         };
@@ -4753,8 +4760,10 @@ class PreRenderWorker extends AbstractWorker {
         }
         this._bindGpuPackWriters();
         const typeArr = this.renderQueueType;
-        // E-138: a presorted queue is in painter order already; it is packed as it is, and says so.
+        // E-138: a presorted queue is in painter order already; it is packed as it is, and says so. Without glow
+        // rows there is nothing to split out either: every row in queue order, with no slot list.
         const presorted = this._queuePresorted;
+        const presortedNoGlow = presorted && this._presortGlowRows === 0;
         const allowSort = !presorted && !!(allowPainter && this._gpuPainter && q.sortKey);
         this._packDst = dst;
         this._packQ = q;
@@ -4763,7 +4772,10 @@ class PreRenderWorker extends AbstractWorker {
         spec.count = count;
         spec.type = typeArr;
         spec.opts = opts;
-        spec.splitGlow = !!(this._lightGlowAsSprite === false && typeArr && this._gpuIdxEntity);
+        spec.splitGlow = !presortedNoGlow && !!(this._lightGlowAsSprite === false && typeArr && this._gpuIdxEntity);
+        // Unsplit, the glow rows go to the glow batch only when glows are not sprites (as Pixi's layer sets it); the
+        // spec read undefined, so an unsplit frame packed its sprite rows (type 0) into the glow batch.
+        spec.glowIncludeType = !spec.splitGlow && !presortedNoGlow && this._lightGlowAsSprite === false ? 3 : -1;
         spec.idxEntity = this._gpuIdxEntity;
         spec.idxGlow = this._gpuIdxGlow;
         spec.painter = allowSort ? this._gpuPainter : null;

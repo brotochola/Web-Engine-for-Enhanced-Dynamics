@@ -222,7 +222,8 @@ async function preRenderRun(pre, frames, painterRadix) {
 // to the rows the painter's full sort packs from the same queue in emit order (the painter rebuilt every frame: its
 // reinsert of moved keys puts them after the unmoved ones among equal keys, which a stable sort does not), the glow
 // rows split and in order too, and the frame says it is sorted. Every frame of makeFrames: rebuilds, runs of one key,
-// ties, every key the same, two rows.
+// ties, every key the same, two rows. Then the same frames with no glow rows: the presorted queue packs every row with
+// no slot list (nothing to split out), to the same rows.
 test('E-138: pre-render packs a presorted queue as it is, to the rows the painter packs from the queue in emit order', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const frames = makeFrames(0xe138);
@@ -258,10 +259,16 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
   });
   const painter = pre._gpuPainter;
   assert.ok(painter && painter.kernel && pre._gpuPackWasm, 'the painter and the pack in WASM');
+  let listed = null;
+  pre._bindGpuPackWriters();
+  pre._gpuPackSpec.afterSprites = (n, idx) => {
+    listed = idx !== null && idx !== undefined;
+  };
   const pack = (fr, order) => {
     writeQueue(pre.renderQueueBuffers[pre._queueBuf], fr, order);
     pre._emitWriteCount = 0;
     pre._queuePresorted = order !== null;
+    pre._presortGlowRows = fr.type.reduce((n, t) => n + (t === 3 ? 1 : 0), 0);
     painter.ready = false;
     pre.packSpriteAndShadowQueues();
     pre._queuePresorted = false;
@@ -275,6 +282,7 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
       glow: copyU32(dst.glow, nG * GPU_SPRITE_FLOATS),
       counts: [nS, nG],
       sorted: (dst.header[GPU_HDR_FLAGS] & GPU_FLAG_SORTED) !== 0,
+      listed,
     };
   };
   let moved = 0;
@@ -295,6 +303,25 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
     pre.publishFrame();
   });
   assert.ok(moved > FRAMES * 1000, `the frames were out of order (${moved} rows moved)`);
+
+  // No glow rows: the presorted frames pack with no list, to the painter's rows.
+  frames.forEach((fr0, f) => {
+    const fr = { ...fr0, type: fr0.type.map((t) => (t === 3 ? 0 : t)) };
+    pre.selectWriteBuffers();
+    const want = pack(fr, null);
+    const order = Uint32Array.from({ length: fr.n }, (_, i) => i);
+    radixSortIndicesBySortKey(order, fr.n, new Uint32Array(fr.key.buffer), new Uint32Array(fr.n), new Uint32Array(256));
+    const got = pack(fr, order);
+    assert.deepEqual(got.counts, want.counts, `no glows, frame ${f}: rows`);
+    assert.equal(got.counts[1], 0, `no glows, frame ${f}: no glow rows`);
+    for (const part of ['sprites', 'pose', 'statics']) {
+      const at = firstDiff(got[part], want[part]);
+      assert.equal(at, -1, `no glows, frame ${f}: ${part} differ at word ${at}`);
+    }
+    if (fr.n > 1) assert.equal(got.listed, false, `no glows, frame ${f}: packed with no slot list`);
+    assert.ok(got.sorted, `no glows, frame ${f}: sorted`);
+    pre.publishFrame();
+  });
 });
 
 test('pre-render packs the same rows in the same order with the switch off and through the kernel', async () => {
