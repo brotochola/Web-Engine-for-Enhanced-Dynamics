@@ -559,12 +559,18 @@
 
   // bm8-abort-start
   // The text the scene shows when Box2D aborts. "OOM" is the glue's abort when Box2D's memory is
-  // full; the memory never grows, so name the key that sizes it.
-  function box2dAbortMessage(what, heapBytes) {
+  // full; the memory never grows, so name the key that sizes it, with the value the scene set: the
+  // worker's name carries it ('mb=M'), since Phase 4 grows the memory by the engine's block (pages=N
+  // is then more than M MB).
+  function box2dAbortMessage(what, heapBytes, workerName) {
     if (String(what) === 'OOM') {
+      var heapMB = Math.round(heapBytes / 1048576);
+      var match = /(?:^|\s)mb=(\d+)(?:\s|$)/.exec(workerName || '');
+      var setMB = match ? +match[1] : heapMB;
       return (
-        'Box2D ran out of memory: physics.wasmMemoryMB is ' + Math.round(heapBytes / 1048576) +
-        ' MB. Raise physics.wasmMemoryMB in the scene config; the memory panel shows the Box2D peak.'
+        'Box2D ran out of memory: physics.wasmMemoryMB is ' + setMB + ' MB' +
+        (heapMB > setMB ? ' (' + heapMB + ' MB with the engine\'s block in the same memory)' : '') +
+        '. Raise physics.wasmMemoryMB in the scene config; the memory panel shows the Box2D peak.'
       );
     }
     return 'Box2D aborted: ' + what;
@@ -582,7 +588,7 @@
       state.isPaused = true;
       clearSchedulers();
       var heapBytes = Module.HEAPF32 ? Module.HEAPF32.buffer.byteLength : 0;
-      reportError('Box2D stopped', new Error(box2dAbortMessage(what, heapBytes)));
+      reportError('Box2D stopped', new Error(box2dAbortMessage(what, heapBytes, typeof self !== 'undefined' ? self.name : '')));
     };
   }
 

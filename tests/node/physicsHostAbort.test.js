@@ -15,15 +15,19 @@ test('the message names the key and the size for "OOM", and passes other aborts 
   assert.ok(start > 0 && end > start, 'bm8-abort block missing');
   const box2dAbortMessage = new Function(`${host.slice(start, end)}\nreturn box2dAbortMessage;`)();
   assert.match(box2dAbortMessage('OOM', 64 * 1048576), /^Box2D ran out of memory: physics\.wasmMemoryMB is 64 MB\. Raise/);
+  // Phase 4: the memory holds the engine's block too, so it names the value the scene set (the worker's mb=).
+  assert.match(box2dAbortMessage('OOM', 48 * 1048576, 'physics pages=768 mb=16'),
+    /^Box2D ran out of memory: physics\.wasmMemoryMB is 16 MB \(48 MB with the engine's block in the same memory\)\. Raise/);
+  assert.match(box2dAbortMessage('OOM', 64 * 1048576, 'physics pages=1024 mb=64'), /physics\.wasmMemoryMB is 64 MB\. Raise/);
   assert.equal(box2dAbortMessage('Assertion failed', 0), 'Box2D aborted: Assertion failed');
 });
 
-function loadHost() {
+function loadHost({ name = 'physics pages=1024', heapMB = 64 } = {}) {
   const posted = [];
   let steps = 0;
   const context = vm.createContext({
-    name: 'physics pages=1024',
-    Module: { HEAPF32: { buffer: { byteLength: 64 * 1048576 } } },
+    name,
+    Module: { HEAPF32: { buffer: { byteLength: heapMB * 1048576 } } },
     weedjsEnableHostMode() {},
     weedjsDoStep() {
       steps++;
@@ -66,4 +70,13 @@ test('an out-of-memory abort posts one fatal error and the host stops calling Bo
     posted().filter((m) => m.msg !== 'error'),
     [{ msg: 'barrierDone', id: 7 }],
   );
+});
+
+test('with the engine block in Box2D\'s memory, the fatal error names physics.wasmMemoryMB as the scene set it', () => {
+  // createPhysicsWorker's name for wasmMemoryMB 16 grown by a 31 MB block: 48 MB of memory.
+  const { context, posted } = loadHost({ name: 'physics pages=768 mb=16', heapMB: 48 });
+  context.Module.onAbort('OOM');
+  const errors = posted().filter((m) => m.msg === 'error');
+  assert.equal(errors.length, 1);
+  assert.match(errors[0].message, /physics\.wasmMemoryMB is 16 MB \(48 MB with the engine's block/);
 });

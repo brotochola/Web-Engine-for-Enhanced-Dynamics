@@ -67,6 +67,8 @@ test('the pre-js sizes the memory from the worker name, initial === maximum', ()
   assert.deepEqual(created, [{ initial: 1024, maximum: 1024, shared: true }]);
   assert.equal(Module.wasmMemory.descriptor, created[0]);
   assert.deepEqual(runGlueHead('').created, [{ initial: 8192, maximum: 8192, shared: true }]);
+  // createPhysicsWorker's name since the out-of-memory message names the set size: pages= is still the memory.
+  assert.deepEqual(runGlueHead('physics pages=768 mb=16').created, [{ initial: 768, maximum: 768, shared: true }]);
 });
 
 test('pthread helpers create no memory (they receive the main one)', () => {

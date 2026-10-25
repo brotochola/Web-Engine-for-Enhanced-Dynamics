@@ -37,10 +37,11 @@ function createSceneWorkerFactory(useInlineWorkers, cacheBust) {
  * Classic Box2D worker (pthread entry). Bundle blob or /src/box2d/box2dWasm.js — no type:module.
  * The worker's name carries Box2D's memory size ('physics pages=N'): the glue creates the memory
  * while the script is evaluated, before any message can arrive. `pages` overrides the size Phase 4 grows by
- * the engine block. Exported for tests.
+ * the engine block; 'mb=M' is physics.wasmMemoryMB as the scene set it, for the out-of-memory message (the
+ * block makes N more than M × 16). Exported for tests.
  */
 export function createPhysicsWorker(useInlineWorkers, cacheBust, physicsConfig, pages = box2dMemoryPages(physicsConfig)) {
-  const options = { name: `physics pages=${pages}` };
+  const options = { name: `physics pages=${pages} mb=${box2dMemoryPages(physicsConfig) / 16}` };
   if (useInlineWorkers) {
     if (typeof window.WEED.getBox2dWorkerUrl !== 'function') {
       throw new Error('BUNDLE_MODE physics requires WEED.getBox2dWorkerUrl()');

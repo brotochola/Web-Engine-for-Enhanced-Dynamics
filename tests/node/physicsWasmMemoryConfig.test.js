@@ -59,13 +59,16 @@ test('the physics worker is created with its size in its name, on the src and th
   try {
     createPhysicsWorker(false, '?v=1', { wasmMemoryMB: 64 });
     createPhysicsWorker(true, '', { wasmMemoryMB: 128 });
+    // Phase 4 grows the memory by the engine block; mb= keeps the size the scene set, for the out-of-memory message.
+    createPhysicsWorker(false, '', { wasmMemoryMB: 16 }, 768);
   } finally {
     globalThis.Worker = OriginalWorker;
     if (hadWindow) globalThis.window = originalWindow;
     else delete globalThis.window;
   }
   assert.deepEqual(created, [
-    { url: '/src/box2d/box2dWasm.js?v=1', options: { name: 'physics pages=1024' } },
-    { url: 'blob:weed/box2d', options: { name: 'physics pages=2048' } },
+    { url: '/src/box2d/box2dWasm.js?v=1', options: { name: 'physics pages=1024 mb=64' } },
+    { url: 'blob:weed/box2d', options: { name: 'physics pages=2048 mb=128' } },
+    { url: '/src/box2d/box2dWasm.js', options: { name: 'physics pages=768 mb=16' } },
   ]);
 });
