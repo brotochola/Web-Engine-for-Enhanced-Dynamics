@@ -2,7 +2,8 @@
 // keeps every column pre-render's emit reads (the SpriteRenderer, ShadowCaster and DecorationComponent
 // blocks, both queue buffers, the collector, the animation state; see renderQueueMemoryRegions). emit_rows
 // writes the full emit's sprite and decoration rows with the JS's bits (W4d: the bullet and trail rows too, when
-// BulletComponent is in the memory, writeEmitBulletColumns; the glow rows when LightEmitter is, writeEmitGlowColumns); the rows of other types, the play-once ends and the
+// BulletComponent is in the memory, writeEmitBulletColumns; the glow rows when LightEmitter is, writeEmitGlowColumns; the
+// particle rows when ParticleComponent is, writeEmitParticleColumns); the rows of other types, the play-once ends and the
 // missing textures come back as lists, and pre-render acts on them in JS.
 // W4c: persist_frame (the check and the poses-only pass in one walk, E-116) and persist_remember are the
 // entity queue's persist path, on the same table with the rows each queue buffer last held
@@ -14,7 +15,7 @@
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import {
   EMIT_ADOBE_ASSET_BYTES, EMIT_ADOBE_MAX_ASSETS, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES,
-  EMIT_TABLE_SLOTS,
+  EMIT_PARAM_DOUBLES, EMIT_TABLE_SLOTS,
 } from '../util/wasmMemoryMap.js';
 
 // Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
@@ -41,6 +42,8 @@ export const EMIT_SLOTS = [
   'bActive', 'bX', 'bY', 'bStartX', 'bStartY', 'bOffsetY', 'bScale', 'bAlpha', 'bTint', 'bTexture',
   'bSpriteRotC', 'bSpriteRotS', 'bRotC', 'bRotS', 'bTrailWidth', 'bAnchorX', 'bAnchorY', 'bTrailTexture',
   'lColor', 'lIntensity', 'lSqrt', 'lGlowOffset', 'lGlow', 'tX', 'tY', 'lGradientTexture',
+  'pcX', 'pcY', 'pcZ', 'pcScaleX', 'pcScaleY', 'pcFlipX', 'pcFlipY', 'pcRotC', 'pcRotS', 'pcAlpha', 'pcTint',
+  'pcTexture', 'pcFlat', 'pcView', 'pcWhiteTexture', 'eParams',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -63,6 +66,7 @@ export const EMIT_WARN_NO_ANIM = 0;
 export const EMIT_WARN_NO_START = 1;
 export const EMIT_WARN_DECO_START = 2;
 export const EMIT_WARN_BULLET_START = 3;
+export const EMIT_WARN_PARTICLE_START = 4;
 
 /** The component columns the kernel reads, by slot: [slot, component field]. */
 export const EMIT_SPRITE_COLUMNS = [
@@ -101,6 +105,12 @@ export const EMIT_GLOW_COLUMNS = [
   ['lColor', 'lightColor'], ['lIntensity', 'lightIntensity'], ['lSqrt', 'sqrtLightIntensity'],
   ['lGlowOffset', 'glowHeightOffset'], ['lGlow', 'hasGlowSprite'],
 ];
+/** The particle rows' ParticleComponent columns, by slot; flat and viewMode may be missing (emitSpriteQueue tests them). */
+export const EMIT_PARTICLE_COLUMNS = [
+  ['pcX', 'x'], ['pcY', 'y'], ['pcZ', 'z'], ['pcScaleX', 'scaleX'], ['pcScaleY', 'scaleY'], ['pcFlipX', 'flipX'],
+  ['pcFlipY', 'flipY'], ['pcRotC', 'rotC'], ['pcRotS', 'rotS'], ['pcAlpha', 'alpha'], ['pcTint', 'tint'], ['pcTexture', 'textureId'],
+];
+export const EMIT_PARTICLE_OPTIONAL_COLUMNS = [['pcFlat', 'flat'], ['pcView', 'viewMode']];
 /** W27: what an asset directory record says of its asset (preRenderEmit.c ASSET_*). */
 export const EMIT_ADOBE_NONE = 0;
 export const EMIT_ADOBE_IN = 1;
@@ -141,6 +151,7 @@ export async function bindPreRenderEmit(memory, emit) {
   table[SLOT.tFrameStart] = emit.frameStartByte;
   table[SLOT.tFrameW] = emit.frameWidthByte;
   table[SLOT.tFrameH] = emit.frameHeightByte;
+  table[SLOT.eParams] = emit.paramsByte;
   return {
     buffer,
     emitRows: k.emit_rows,
@@ -150,6 +161,8 @@ export async function bindPreRenderEmit(memory, emit) {
     layout: emit,
     table,
     tableByte: emit.tableByte,
+    // The emit's doubles (E_PARAMS), written with the particle columns.
+    params: new Float64Array(buffer, emit.paramsByte, EMIT_PARAM_DOUBLES),
     // [ends, warnings, a tiled sprite, rows left to the JS, an Adobe expansion past the queue's end].
     results: new Uint32Array(buffer, emit.resultsByte, 8),
     // The lists are read by index up to the counts in results.
@@ -424,6 +437,29 @@ export function writeEmitGlowColumns(b, LightEmitter, Transform, gradientTexture
   for (let k = 0; ok && k < EMIT_GLOW_COLUMNS.length; k++) ok = putSlot(b, EMIT_GLOW_COLUMNS[k][0], LightEmitter[EMIT_GLOW_COLUMNS[k][1]]);
   b.table[SLOT.lGradientTexture] = gradientTexture;
   if (!ok) b.table[SLOT.lColor] = 0;
+  return ok;
+}
+
+/**
+ * The particle rows' columns, their default texture and the zenithal terms, after writeEmitColumns: ParticleComponent
+ * in the memory (the particle memory placed in it), or pcX 0 and emit_rows lists the particle rows for the JS.
+ * @param {number} whiteTexture a particle's texture when its textureId is 0 (_resolveBuiltinTextureId('_whiteCircle'))
+ * @param {number} maxHeight pre-render's zenithalMaxHeight
+ * @param {number} scaleFactor zenithalScaleFactor
+ * @param {number} alphaFade zenithalAlphaFade
+ * @returns {boolean} whether the kernel writes the particle rows this frame
+ */
+export function writeEmitParticleColumns(b, ParticleComponent, whiteTexture, maxHeight, scaleFactor, alphaFade) {
+  let ok = true;
+  for (let k = 0; ok && k < EMIT_PARTICLE_COLUMNS.length; k++) ok = putSlot(b, EMIT_PARTICLE_COLUMNS[k][0], ParticleComponent[EMIT_PARTICLE_COLUMNS[k][1]]);
+  for (let k = 0; ok && k < EMIT_PARTICLE_OPTIONAL_COLUMNS.length; k++) {
+    ok = putSlot(b, EMIT_PARTICLE_OPTIONAL_COLUMNS[k][0], ParticleComponent[EMIT_PARTICLE_OPTIONAL_COLUMNS[k][1]], true);
+  }
+  b.table[SLOT.pcWhiteTexture] = whiteTexture;
+  b.params[0] = maxHeight;
+  b.params[1] = scaleFactor;
+  b.params[2] = alphaFade;
+  if (!ok) b.table[SLOT.pcX] = 0;
   return ok;
 }
 

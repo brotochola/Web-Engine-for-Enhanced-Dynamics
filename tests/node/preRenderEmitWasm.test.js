@@ -8,7 +8,9 @@
 // Y-sort on and off, NaN and -0 shadow terms, decorations with and without a texture, and a collector
 // longer than the queue. W4d: with BulletComponent in the memory, the bullet and trail rows too (hidden,
 // short and -0 trails, offsets, a bullet without a first frame). With LightEmitter and Transform there, the glow rows
-// (hidden by their scale or their alpha, NaN and -0 roots and offsets, every glow strength, the entity's zIndex).
+// (hidden by their scale or their alpha, NaN and -0 roots and offsets, every glow strength, the entity's zIndex). With
+// ParticleComponent there (the particle memory placed in it), the particle rows (zenithal, flat and plain, flipped,
+// the alpha fade on and off, the white circle and a texture past the animations).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -23,6 +25,7 @@ import { Layer } from '../../src/core/layer.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { createParticleMemory, particleMemoryBytes } from '../../src/util/particleMemory.js';
 import {
   bindPreRenderEmit,
   EMIT_BOUNDS,
@@ -34,10 +37,12 @@ import {
   EMIT_WARN_DECO_START,
   EMIT_WARN_NO_ANIM,
   EMIT_WARN_NO_START,
+  EMIT_WARN_PARTICLE_START,
   EMIT_Y_SORT,
   writeEmitBulletColumns,
   writeEmitColumns,
   writeEmitGlowColumns,
+  writeEmitParticleColumns,
   writeEmitTextures,
   writePersistColumns,
 } from '../../src/workers/preRenderEmitClient.js';
@@ -104,7 +109,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0 }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -124,8 +129,13 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     casterBytes: ShadowCaster.getBufferSize(N),
     decorationBytes: DecorationComponent.getBufferSize(DECOS),
     lightBytes: lights ? LightEmitter.getBufferSize(N) : 0,
+    particleBytes: particles ? particleMemoryBytes(POOL, ParticleComponent.getBufferSize(POOL)) : 0,
   }, null, null, false, collect);
   const e = m.layout.emit;
+  // With `particles`, the particle memory in its region of this one, as the scene places it.
+  const pm = particles
+    ? createParticleMemory(POOL, ParticleComponent.getBufferSize(POOL), { memory: m.memory, baseByte: e.particleMemoryByte, bytes: e.particleMemoryBytes })
+    : null;
   const buffers = {
     componentData: {
       ...coreComponentData(N),
@@ -134,7 +144,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
       DecorationComponent: m.buffer,
       // What the rows of other types read in the JS run (the kernel leaves those rows to it).
       LightEmitter: lights ? m.buffer : new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
-      ParticleComponent: new SharedArrayBuffer(ParticleComponent.getBufferSize(POOL)),
+      ParticleComponent: particles ? m.buffer : new SharedArrayBuffer(ParticleComponent.getBufferSize(POOL)),
       BulletComponent: bullets ? m.buffer : new SharedArrayBuffer(BulletComponent.getBufferSize(POOL)),
     },
     componentDataByte: {
@@ -143,6 +153,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
       DecorationComponent: e.decorationByte,
       ...(bullets ? { BulletComponent: m.layout.collect.bullets.componentByte } : {}),
       ...(lights ? { LightEmitter: e.lightEmitterByte } : {}),
+      ...(particles ? { ParticleComponent: pm.layout.componentByte } : {}),
     },
   };
   for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent, LightEmitter]) C.clearArrays();
@@ -182,6 +193,10 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
   }
   assert.equal(SpriteRenderer.scaleX.buffer, m.buffer, 'SpriteRenderer is in the memory');
   assert.equal(LightEmitter.lightColor.buffer === m.buffer, lights, `LightEmitter is ${lights ? '' : 'not '}in the memory`);
+  assert.equal(ParticleComponent.x.buffer === m.buffer, particles, `ParticleComponent is ${particles ? '' : 'not '}in the memory`);
+  worker.zenithalMaxHeight = 220;
+  worker.zenithalScaleFactor = 0.5;
+  worker.zenithalAlphaFade = alphaFade;
   assert.equal(worker._renderableType.buffer, m.buffer, 'the collector is in the memory');
   assert.equal(BulletComponent.x.buffer === m.buffer, bullets, `BulletComponent is ${bullets ? '' : 'not '}in the memory`);
   worker._decorationZoomAlpha = 0.75;
@@ -272,16 +287,39 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     Transform.y[i] = rl() * 3000;
   }
 
+  // Particles: zenithal (heights above and below the floor, -0, NaN), zenithal and flat, flat, plain; flipped either way;
+  // texture 0 (the white circle), an animation, one past the animations.
+  const rp = rng(seed ^ 0x9a27);
+  const pc = ParticleComponent;
+  for (let s = 0; s < POOL; s++) {
+    pc.x[s] = rp() * 4000;
+    pc.y[s] = rp() * 3000;
+    pc.z[s] = s % 13 === 0 ? NaN : s % 9 === 0 ? -0 : s % 5 === 0 ? rp() * 30 : -rp() * 400;
+    pc.scaleX[s] = 0.1 + rp() * 2;
+    pc.scaleY[s] = 0.1 + rp() * 2;
+    pc.flipX[s] = s % 3 === 0 ? 1 : 0;
+    pc.flipY[s] = s % 4 === 0 ? 1 : 0;
+    pc.rotC[s] = Math.cos(s * 0.9);
+    pc.rotS[s] = Math.sin(s * 0.9);
+    pc.alpha[s] = rp();
+    pc.tint[s] = (rp() * 0xffffff) >>> 0;
+    pc.textureId[s] = s % 6 === 0 ? 0 : s % 11 === 0 ? meta.animationFrameStart.length + 5 : 1 + (s % 10);
+    pc.viewMode[s] = s % 2 === 0 ? 1 : 0;
+    pc.flat[s] = s % 7 === 0 ? 1 : 0;
+  }
+
   // The collector: sprites, decorations and a few rows of other types, poses in the queue (E-98d).
   // With `bullets`, a quarter of the rows are of other types, each type in turn walking the bullet slots, so the
   // bullet and trail rows reach every slot class above.
   const types = [];
   const indices = [];
   let other = 0;
+  let pnext = 0;
   for (let k = 0; k < count; k++) {
     const pick = r();
     if (pick < (bullets ? 0.55 : 0.62)) { types.push(0); indices.push(Math.floor(r() * N)); }
     else if (pick < (bullets ? 0.75 : 0.92)) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
+    else if (particles && k % 3 === 1) { types.push(1); indices.push(pnext++ % POOL); }
     else if (lights && k % 3 !== 0) { types.push(3); indices.push((k * 7919) % N); }
     else if (bullets) { types.push([1, 3, 4, 5][other % 4]); indices.push((other >> 2) % POOL); other++; }
     else { types.push([1, 3, 4, 5][k % 4]); indices.push(k % POOL); }
@@ -319,7 +357,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
 
   const b = await bindPreRenderEmit(m.memory, e);
   assert.ok(writeEmitTextures(b, meta), 'the metadata fits the tables');
-  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights };
+  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights, particles };
 }
 
 /** The queue columns a row has. */
@@ -340,7 +378,22 @@ async function runCase(t, opts) {
   const { worker, b, source, types, count, maxItems } = k;
   const n = Math.min(count, maxItems);
   /** The rows the kernel writes: sprites and decorations, and (W4d) bullets and trails with their component in the memory. */
-  const ours = (type) => type === 0 || type === 2 || (k.bullets && (type === 4 || type === 5)) || (k.lights && type === 3);
+  const ours = (type) => type === 0 || type === 2 || (k.bullets && (type === 4 || type === 5)) || (k.lights && type === 3)
+    || (k.particles && type === 1);
+  if (k.particles) {
+    // The particle rows reach every branch the kernel copies.
+    const seen = new Set();
+    for (let r = 0; r < n; r++) {
+      if (types[r] !== 1) continue;
+      const s = k.indices[r];
+      const zen = s % 2 === 0;
+      const flat = s % 7 === 0;
+      seen.add(zen && !flat ? 'zenithal' : zen ? 'zenithal flat' : flat ? 'flat' : 'plain');
+      seen.add(s % 6 === 0 ? 'white' : s % 11 === 0 ? 'no texture' : 'texture');
+      if (s % 3 === 0 && s % 4 === 0) seen.add('flipped both');
+    }
+    assert.deepEqual([...seen].sort(), ['flat', 'flipped both', 'no texture', 'plain', 'texture', 'white', 'zenithal', 'zenithal flat']);
+  }
   if (k.lights) {
     // The glow rows reach every case the kernel copies.
     const seen = new Set();
@@ -386,7 +439,8 @@ async function runCase(t, opts) {
     const written = worker.emitSpriteQueue(DT, source);
     assert.equal(written, n);
     // The kernel's warnings: not the builtin lookups, nor a bullet's when the bullet rows are left to the JS.
-    const kernelWarn = (w) => !w.startsWith('name:') && (k.bullets || !w.startsWith('frameStart:bullet:'));
+    const kernelWarn = (w) => !w.startsWith('name:') && (k.bullets || !w.startsWith('frameStart:bullet:'))
+      && (k.particles || !w.startsWith('frameStart:particle:'));
     jsFrames.push({ snap: k.snapshot(), ends: [...ends].sort(), warns: warns.filter(kernelWarn).sort() });
   }
   worker._spriteAnimationEnded = realEnded;
@@ -416,6 +470,8 @@ async function runCase(t, opts) {
     assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
     assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightGradient')), k.lights, 'the glow columns');
+    assert.equal(writeEmitParticleColumns(b, ParticleComponent, worker._resolveBuiltinTextureId('_whiteCircle'),
+      worker.zenithalMaxHeight, worker.zenithalScaleFactor, worker.zenithalAlphaFade), k.particles, 'the particle columns');
     const tilesDirty = worker.renderQueueTileMode !== null && worker._tiledTileColumns.has(worker.renderQueueTileMode);
     const flags = EMIT_SORT_KEY | (k.ySort ? EMIT_Y_SORT : 0) | (tilesDirty ? EMIT_TILES_DIRTY : 0) | EMIT_BOUNDS;
     const written = b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, worker._decorationZoomAlpha, worker._zBand);
@@ -481,6 +537,7 @@ function warnKey(worker, idx, kind) {
   }
   if (kind === EMIT_WARN_DECO_START) return `frameStart:decoration:${DecorationComponent.textureId[idx]}`;
   if (kind === EMIT_WARN_BULLET_START) return `frameStart:bullet:${BulletComponent.textureId[idx]}`;
+  if (kind === EMIT_WARN_PARTICLE_START) return `frameStart:particle:${ParticleComponent.textureId[idx]}`;
   return `kind ${kind}`;
 }
 
@@ -504,6 +561,12 @@ test('W4d: the emit kernel writes the bullet and trail rows emitSpriteQueue writ
 test('the emit kernel writes the glow rows emitSpriteQueue writes, LightEmitter and Transform in the memory', async (t) => {
   await runCase(t, { ySort: true, lights: true, seed: 0x6107 });
   await runCase(t, { ySort: false, lights: true, bullets: true, seed: 0x6108 });
+});
+
+test('the emit kernel writes the particle rows emitSpriteQueue writes, the particle memory in the render-queue memory', async (t) => {
+  await runCase(t, { ySort: true, particles: true, seed: 0x9a71 });
+  await runCase(t, { ySort: false, particles: true, alphaFade: 0.8, seed: 0x9a72 });
+  await runCase(t, { ySort: true, particles: true, lights: true, bullets: true, alphaFade: 2.5, seed: 0x9a73 });
 });
 
 test('a frame with an Adobe root or a LiquidFun row is declined before anything is written', async () => {
@@ -533,8 +596,9 @@ test('a column outside the memory makes the table refuse, so the JS emits', asyn
 
 test('emitSpriteQueue through the kernel writes every row the JS loop writes, other types included', async (t) => {
   // W4d: the last case with BulletComponent in the memory, where the kernel writes the bullet and trail rows.
-  for (const [ySort, bullets, lights] of [[true, false, false], [false, false, false], [true, true, false], [false, false, true]]) {
-    const k = await setup({ ySort, bullets, lights, seed: lights ? 0x6109 : bullets ? 0xb2b : ySort ? 0xc0ffee : 0xdecade });
+  const cases = [[true, false, false, false], [false, false, false, false], [true, true, false, false], [false, false, true, false], [true, true, true, true]];
+  for (const [ySort, bullets, lights, particles] of cases) {
+    const k = await setup({ ySort, bullets, lights, particles, alphaFade: particles ? 0.6 : 0, seed: particles ? 0x9a74 : lights ? 0x6109 : bullets ? 0xb2b : ySort ? 0xc0ffee : 0xdecade });
     const { worker, source } = k;
     const bound = worker._emitWasm;
     assert.ok(bound, 'the worker bound the kernel at init');
@@ -580,7 +644,7 @@ test('emitSpriteQueue through the kernel writes every row the JS loop writes, ot
       assert.deepEqual(wasm[f].ends, js[f].ends, `frame ${f}: play-once ends, in order`);
       assert.deepEqual(wasm[f].warns, js[f].warns, `frame ${f}: warnings`);
     }
-    t.diagnostic(`ySort ${ySort}, bullets in the memory ${bullets}, lights ${lights}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
+    t.diagnostic(`ySort ${ySort}, bullets in the memory ${bullets}, lights ${lights}, particles ${particles}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
   }
 });
 

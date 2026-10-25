@@ -1,6 +1,6 @@
 import { debugWorkerLog } from './debugLog.js';
 import { createSpatialPublishMemory, spatialPublishMemoryBytes } from './spatialPublishMemory.js';
-import { createParticleMemory } from './particleMemory.js';
+import { createParticleMemory, particleMemoryBytes } from './particleMemory.js';
 import { createRenderQueueMemory, renderQueueMemoryBytes } from './renderQueueMemory.js';
 import { createNavigationMemory } from './navigationMemory.js';
 import { GameObject } from '../core/gameObject.js';
@@ -291,11 +291,16 @@ function initializeParticleBuffers(scene) {
   if (maxParticles <= 0) return;
 
   const particleBufferSize = ParticleComponent.getBufferSize(maxParticles);
-  // E-79, E-80: the component lives at byte 0 of a shared WebAssembly.Memory (every worker's views are the same),
-  // where the integrate and list kernels run (createParticleMemory throws when it cannot be made).
-  scene.particleMemory = createParticleMemory(maxParticles, particleBufferSize);
+  // E-79, E-80: the component lives in a shared WebAssembly.Memory (every worker's views are the same), where the
+  // integrate and list kernels run (createParticleMemory throws when it cannot be made). Close-out group B: in the
+  // render-queue memory's particle region when it has one, where the emit kernel reads the particles.
+  const rqm = scene.renderQueueMemory;
+  const at = rqm?.layout.emit?.particleMemoryByte ?? -1;
+  const place = at >= 0 ? { memory: rqm.memory, baseByte: at, bytes: rqm.layout.emit.particleMemoryBytes } : null;
+  scene.particleMemory = createParticleMemory(maxParticles, particleBufferSize, place);
   buffers.componentData.ParticleComponent = scene.particleMemory.buffer;
-  ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles, buffers.componentDataByte?.ParticleComponent | 0);
+  buffers.componentDataByte.ParticleComponent = scene.particleMemory.layout.componentByte;
+  ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles, scene.particleMemory.layout.componentByte);
   ParticleComponent.particleCount = maxParticles;
 
   const { freeList, freeListTop } = createSlotFreeListBuffers(
@@ -707,7 +712,8 @@ function initializeRenderQueueMemory(scene) {
 }
 
 /**
- * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations and LightEmitter; with
+ * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations, LightEmitter and
+ * the particle memory; with
  * wasm.preRenderEmitAdobe (W27) and Adobe Animate characters, AdobeAnimComponent and room for the assets' tables
  * (preRender.adobeTablesMB: the assets load after this memory is made, so their size is not known yet).
  */
@@ -716,6 +722,7 @@ function emitBlocks(scene) {
   const pools = scene.componentPools || {};
   const n = scene.totalEntityCount;
   const maxDecorations = config.decoration?.maxDecorations | 0;
+  const maxParticles = config.particle?.maxParticles | 0;
   const adobeOn = config.wasm?.preRenderEmitAdobe !== false && Boolean(pools.AdobeAnimComponent?.ComponentClass);
   const tablesMB = config.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
   if (adobeOn) assertIntegerInRange('preRender.adobeTablesMB', tablesMB, 0, 1024);
@@ -726,6 +733,8 @@ function emitBlocks(scene) {
     decorationBytes: maxDecorations > 0 ? DecorationComponent.getBufferSize(maxDecorations) : 0,
     // The glow rows' LightEmitter columns.
     lightBytes: pools.LightEmitter?.ComponentClass ? LightEmitter.getBufferSize(n) : 0,
+    // The particle rows' ParticleComponent, in the particle memory's regions.
+    particleBytes: maxParticles > 0 ? particleMemoryBytes(maxParticles, ParticleComponent.getBufferSize(maxParticles)) : 0,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
   };
 }

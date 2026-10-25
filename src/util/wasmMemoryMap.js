@@ -134,6 +134,9 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'shadowCaster', owner: 'every worker (ShadowCaster)', bytes: emit.casterBytes | 0 },
       { name: 'decorations', owner: 'every worker (DecorationComponent)', bytes: emit.decorationBytes | 0 },
       { name: 'lightEmitter', owner: 'every worker (LightEmitter)', bytes: emit.lightBytes | 0 },
+      // The particle memory's regions (particleMemory.js, laid out there): ParticleComponent, its lists and the
+      // particle kernels' scratch, so the emit kernel reads the particles where the particle worker writes them.
+      { name: 'particleMemory', owner: 'particle (particleMemory.js); every worker reads', bytes: emit.particleBytes | 0 },
       { name: 'emitFrame', owner: 'pre-render', bytes: e * 2 },
       { name: 'emitAccum', owner: 'pre-render', bytes: e * 4 },
       { name: 'emitLastTexture', owner: 'pre-render writes; Pixi reads', bytes: e * 2 },
@@ -150,6 +153,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitForeign', owner: 'pre-render', bytes: n * 8 },
       { name: 'emitResults', owner: 'pre-render', bytes: 32 },
       { name: 'emitTable', owner: 'pre-render', bytes: EMIT_TABLE_SLOTS * 4 },
+      // The emit's doubles (preRenderEmit.c E_PARAMS): the zenithal particles' height terms.
+      { name: 'emitParams', owner: 'pre-render', bytes: EMIT_PARAM_DOUBLES * 8 },
       { name: 'emitPersistType', owner: 'pre-render', bytes: 2 * n },
       { name: 'emitPersistEntity', owner: 'pre-render', bytes: 2 * n * 4 },
       { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },
@@ -349,6 +354,8 @@ export const EMIT_MAX_ANIMATIONS = 65536;
 export const EMIT_MAX_FRAMES = 65536;
 /** Room for the emit kernel's column table (preRenderEmitClient.js EMIT_SLOTS). */
 export const EMIT_TABLE_SLOTS = 192;
+/** The emit's doubles block (preRenderEmit.c E_PARAMS). */
+export const EMIT_PARAM_DOUBLES = 8;
 /** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
 export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;

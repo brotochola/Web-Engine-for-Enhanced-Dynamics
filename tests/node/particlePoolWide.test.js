@@ -2,7 +2,8 @@
 // buffers with createSceneSharedBuffers and boots a real particle worker on them (tests/helpers/
 // particlePoolBootWorker.mjs, a thread each):
 // - at 65 535 particles the scene makes the 16-bit layout it always made: the free list's Uint16 links and 8-byte
-//   head, the particle memory's regions at the offsets the 16-bit formulas give (written out below as they were);
+//   head, the particle memory's regions at the offsets the 16-bit formulas give (written out below as they were),
+//   counted from the memory's first byte (a region of the render-queue memory since close-out group B);
 //   the worker binds the 16-bit kernels and Uint16 lists, and the JS integrate and lists the kernels replaced
 //   (tests/reference) run on them too;
 // - at 200 000 particles (particleIntegrateStressScene?maxParticles=200000's pool): FL4 links, u32 lists, the
@@ -47,7 +48,7 @@ function oldLayout(n) {
   ]);
   const r = map.regions;
   return {
-    pages: map.pages,
+    bytes: map.bytes,
     layout: {
       activeListByte: r.activeList.byte,
       visibleListByte: r.visibleList.byte,
@@ -73,8 +74,9 @@ test('at 65 535 particles the scene and the worker bind the 16-bit layout they a
   assert.equal(wasm.made.freeListBytes, n * 2, 'Uint16 links');
   assert.equal(wasm.made.freeListTopBytes, 8, 'an 8-byte head');
   assert.equal(wasm.made.links, 'Uint16Array');
-  assert.deepEqual(wasm.made.layout, old.layout, 'the particle memory at the 16-bit offsets');
-  assert.equal(wasm.made.pages, old.pages, 'and of the same size');
+  assert.deepEqual(wasm.made.layout, old.layout, 'the particle memory at the 16-bit offsets, from its first byte');
+  assert.equal(wasm.made.bytes, old.bytes, 'and of the same size');
+  assert.equal(wasm.made.componentByte % 64, 0, 'on a line of the render-queue memory');
   assert.deepEqual(wasm.bound.lists, { slotBytes: 2, f32: true }, 'the 16-bit list builds');
   assert.deepEqual(wasm.bound.integrate, { slotBytes: 2, f32: true }, 'the 16-bit integrate');
   for (const key of ['activeList', 'visibleList', 'indices', 'stamp']) assert.equal(wasm.bound[key], 'Uint16Array', key);

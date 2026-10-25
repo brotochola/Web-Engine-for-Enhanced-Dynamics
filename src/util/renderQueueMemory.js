@@ -23,7 +23,7 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
- *   lightBytes?: number, adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
+ *   lightBytes?: number, particleBytes?: number, adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
  *   the emit's regions too (renderQueueMemoryRegions); a component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
@@ -103,6 +103,9 @@ function emitLayout(r, entities, rows) {
     shadowCasterByte: block(r.shadowCaster),
     decorationByte: block(r.decorations),
     lightEmitterByte: block(r.lightEmitter),
+    // The particle memory's place (createParticleMemory), -1 without particles.
+    particleMemoryByte: block(r.particleMemory),
+    particleMemoryBytes: r.particleMemory.bytes,
     frameByte: r.emitFrame.byte,
     accumByte: r.emitAccum.byte,
     lastTextureByte: r.emitLastTexture.byte,
@@ -119,6 +122,7 @@ function emitLayout(r, entities, rows) {
     foreignByte: r.emitForeign.byte,
     resultsByte: r.emitResults.byte,
     tableByte: r.emitTable.byte,
+    paramsByte: r.emitParams.byte,
     // Buffer b's rows start at byte + b * persistRows * the element size.
     persistRows: rows,
     persistTypeByte: r.emitPersistType.byte,

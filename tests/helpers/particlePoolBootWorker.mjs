@@ -15,6 +15,7 @@ import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { Query } from '../../src/core/query.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
+import { particleMemoryBytes } from '../../src/util/particleMemory.js';
 import { seededRandom } from '../../src/util/utils.js';
 import { emitConfig, PARTICLE_EASES } from '../bench/particleIntegrateWasmMicrobench.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
@@ -80,15 +81,29 @@ const made = {
   freeListTopBytes: b.particleFreeListTop.byteLength,
   links: ParticleEmitter.freeList.constructor.name,
   activeListBytes: mem ? null : b.activeParticlesData.byteLength,
-  layout: mem ? { ...mem.layout } : null,
-  pages: mem ? mem.memory.buffer.byteLength / 65536 : 0,
+  // The particle memory's offsets from its first byte (it is a region of the render-queue memory), and its bytes.
+  layout: mem ? relativeLayout(mem.layout) : null,
+  bytes: mem ? particleMemoryBytes(n, ParticleComponent.getBufferSize(n)) : 0,
+  componentByte: mem ? mem.layout.componentByte : -1,
 };
+
+function relativeLayout(layout) {
+  const out = {};
+  for (const [k, v] of Object.entries(layout)) {
+    if (k === 'componentByte') continue;
+    out[k] = k === 'slotBytes' ? v : v - layout.componentByte;
+  }
+  return out;
+}
 
 const worker = await loadWorker('particleWorker.js', 'particleWorker');
 await initWorker(worker, {
   config: scene.config,
   globalEntityCount: scene.totalEntityCount,
-  buffers: { componentData: { ParticleComponent: b.componentData.ParticleComponent } },
+  buffers: {
+    componentData: { ParticleComponent: b.componentData.ParticleComponent },
+    componentDataByte: { ParticleComponent: b.componentDataByte.ParticleComponent },
+  },
   extra: {
     maxParticles: n,
     particleFreeList: b.particleFreeList,

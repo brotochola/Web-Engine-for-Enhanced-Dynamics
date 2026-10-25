@@ -4,8 +4,9 @@
    render-queue memory (src/workers/preRenderEmitClient.js writes the table); 0 marks a column the worker
    does not have. Arithmetic as the JS does it: the sort key and the animation clock in double, each value
    stored as the typed array would store it. W4d: bullet and trail rows (types 4 and 5) too, when
-   BulletComponent is in the memory; glow rows (type 3) when LightEmitter is. Rows of other types (particles;
-   bullets or glows whose component is elsewhere) are listed with the queue row they go to and left for the JS to write; a frame with a LiquidFun
+   BulletComponent is in the memory; glow rows (type 3) when LightEmitter is; particle rows (type 1) when
+   ParticleComponent is (the particle memory, a region of this one). Rows of other types (bullets, glows or
+   particles whose component is elsewhere) are listed with the queue row they go to and left for the JS to write; a frame with a LiquidFun
    row is declined (0xffffffff) before anything is written. Play-once ends and missing animations come back as
    lists too:
    the end message, its entity-type filter and the warnings stay JS.
@@ -54,6 +55,11 @@ enum {
   /* The glow rows (type 3): LightEmitter's columns (L_COLOR 0: not in the memory, so they are listed for the JS),
      the light entity's Transform x and y, and the gradient's texture (a value: _resolveBuiltinTextureId). */
   L_COLOR, L_INTENSITY, L_SQRT, L_GLOW_OFFSET, L_GLOW, T_X, T_Y, L_GRADIENT_TEX,
+  /* The particle rows (type 1): ParticleComponent's columns (PC_X 0: not in the memory, so they are listed for the
+     JS; PC_FLAT and PC_VIEW may be 0), the default texture (a value: _resolveBuiltinTextureId('_whiteCircle')) and
+     the emit's doubles (E_PARAMS: zenithalMaxHeight, zenithalScaleFactor, zenithalAlphaFade). */
+  PC_X, PC_Y, PC_Z, PC_SCALE_X, PC_SCALE_Y, PC_FLIP_X, PC_FLIP_Y, PC_ROT_C, PC_ROT_S, PC_ALPHA, PC_TINT,
+  PC_TEXTURE, PC_FLAT, PC_VIEW, PC_WHITE_TEX, E_PARAMS,
   SLOT_COUNT
 };
 
@@ -74,6 +80,10 @@ enum {
 #define WARN_NO_START 1u   /* sprite: the global animation has no first frame */
 #define WARN_DECO_START 2u /* decoration: its animation has no first frame */
 #define WARN_BULLET_START 3u /* bullet: its animation has no first frame */
+#define WARN_PARTICLE_START 4u /* particle: its animation has no first frame */
+
+/* CAMERA_TYPES.ZENITHAL (src/util/configDefaults.js), a particle's viewMode. */
+#define CAMERA_ZENITHAL 1u
 
 /* lightGlowScale (src/util/utils.js): LIGHT_GLOW_RADIUS_SCALE, LIGHT_GRADIENT_TEXTURE_RADIUS. */
 #define GLOW_RADIUS_SCALE ((300.0 * 4.0) / __builtin_sqrt(20000.0))
@@ -106,6 +116,9 @@ _Static_assert(sizeof(AdobeAsset) == 160, "EMIT_ADOBE_ASSET_BYTES");
 /* `v || 0` on a number: 0, -0 and NaN become 0. */
 INLINE float or0(float v) { return (v == 0.0f || v != v) ? 0.0f : v; }
 INLINE double fabs_d(double v) { return __builtin_fabs(v); }
+/* Math.min(1, v) and Math.max(0, v): NaN stays NaN, and Math.max(0, -0) is +0. */
+INLINE double js_min1(double v) { return v != v ? v : v < 1.0 ? v : 1.0; }
+INLINE double js_max0(double v) { return v != v ? v : v > 0.0 ? v : 0.0; }
 
 /* JS `x % y` on doubles: the exact remainder, the sign of x (musl's fmod, the normalisation by count). */
 static double js_fmod(double x, double y) {
@@ -234,6 +247,14 @@ typedef struct {
   const uint32_t *lColor;
   const float *lIntensity, *lSqrt, *lGlowOff, *lGlow, *tX, *tY;
   uint32_t lGradientTex;
+  const float *pcX, *pcY, *pcZ, *pcScaleX, *pcScaleY;
+  const uint8_t *pcFlipX, *pcFlipY;
+  const float *pcRotC, *pcRotS, *pcAlpha;
+  const uint32_t *pcTint;
+  const uint16_t *pcTexture;
+  const uint8_t *pcFlat, *pcView;
+  uint32_t pcWhiteTex;
+  double zMaxHeight, zScale, zFade;
   int sortKey, ySort, tilesDirty, bounds;
   double deltaSeconds, zoomAlpha, band;
   uint32_t nEnds, nWarns, tiled;
@@ -356,6 +377,27 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->tX = PTR(const float, T_X);
   e->tY = PTR(const float, T_Y);
   e->lGradientTex = t[L_GRADIENT_TEX];
+  e->pcX = PTR(const float, PC_X);
+  e->pcY = PTR(const float, PC_Y);
+  e->pcZ = PTR(const float, PC_Z);
+  e->pcScaleX = PTR(const float, PC_SCALE_X);
+  e->pcScaleY = PTR(const float, PC_SCALE_Y);
+  e->pcFlipX = PTR(const uint8_t, PC_FLIP_X);
+  e->pcFlipY = PTR(const uint8_t, PC_FLIP_Y);
+  e->pcRotC = PTR(const float, PC_ROT_C);
+  e->pcRotS = PTR(const float, PC_ROT_S);
+  e->pcAlpha = PTR(const float, PC_ALPHA);
+  e->pcTint = PTR(const uint32_t, PC_TINT);
+  e->pcTexture = PTR(const uint16_t, PC_TEXTURE);
+  e->pcFlat = PTR(const uint8_t, PC_FLAT);
+  e->pcView = PTR(const uint8_t, PC_VIEW);
+  e->pcWhiteTex = t[PC_WHITE_TEX];
+  {
+    const double *params = PTR(const double, E_PARAMS);
+    e->zMaxHeight = params ? params[0] : 0.0;
+    e->zScale = params ? params[1] : 0.0;
+    e->zFade = params ? params[2] : 0.0;
+  }
   e->sortKey = (flags & F_SORT_KEY) != 0;
   e->ySort = (flags & F_Y_SORT) != 0;
   e->tilesDirty = (flags & F_TILES_DIRTY) != 0;
@@ -664,6 +706,54 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   if (e->qType) e->qType[out] = 3;
 }
 
+/* emitSpriteQueue's particle branch (type 1): collector row i, particle slot cIndex[i], at queue row out. A
+   zenithal particle that is not flat draws its height as scale (and alpha), a flat one at its y, any other at
+   y + z; the doubles as the JS computes them, left to right. */
+INLINE void particle_row(Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  plain_head(e, i, out);
+  e->qX[out] = e->pcX[idx];
+  const double fx = e->pcFlipX[idx] ? -1.0 : 1.0;
+  const double fy = e->pcFlipY[idx] ? -1.0 : 1.0;
+  const int flat = e->pcFlat && e->pcFlat[idx];
+  if (e->pcView && e->pcView[idx] == CAMERA_ZENITHAL && !flat) {
+    e->qY[out] = e->pcY[idx];
+    const double height = -(double)e->pcZ[idx];
+    const double heightFactor = 1.0 + (height / e->zMaxHeight) * e->zScale;
+    e->qScaleX[out] = (float)((double)e->pcScaleX[idx] * heightFactor * fx);
+    e->qScaleY[out] = (float)((double)e->pcScaleY[idx] * heightFactor * fy);
+    double a = (double)e->pcAlpha[idx];
+    if (e->zFade > 0.0) {
+      const double alphaFade = js_min1((height / e->zMaxHeight) * e->zFade);
+      a *= js_max0(1.0 - alphaFade);
+    }
+    e->qAlpha[out] = (float)a;
+  } else {
+    e->qY[out] = flat ? e->pcY[idx] : (float)((double)e->pcY[idx] + (double)e->pcZ[idx]);
+    e->qScaleX[out] = (float)((double)e->pcScaleX[idx] * fx);
+    e->qScaleY[out] = (float)((double)e->pcScaleY[idx] * fy);
+    e->qAlpha[out] = e->pcAlpha[idx];
+  }
+  e->qRotC[out] = e->pcRotC[idx];
+  e->qRotS[out] = e->pcRotS[idx];
+  e->qTint[out] = e->pcTint[idx];
+  const uint32_t a = e->pcTexture[idx];
+  uint32_t tex = INVALID_TEXTURE;
+  if (a == 0) {
+    tex = e->pcWhiteTex;
+  } else if (a < e->nAnims) {
+    tex = (uint32_t)e->frameStart[a];
+  } else {
+    e->warns[2 * e->nWarns] = (uint32_t)idx;
+    e->warns[2 * e->nWarns + 1] = WARN_PARTICLE_START;
+    e->nWarns++;
+  }
+  e->qTexture[out] = (uint16_t)tex;
+  e->qAnchorX[out] = 0.5f;
+  e->qAnchorY[out] = 0.5f;
+  if (e->qType) e->qType[out] = 1;
+}
+
 /* _resolveAdobeFrameIndex for an asset in the tables: the clip's frame at this time, or -1 when the root
    draws nothing (no frames, no frame rate). */
 INLINE int32_t adobe_frame(const AdobeAsset *as, uint32_t clip, double time, int loop) {
@@ -823,6 +913,8 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         trail_row(&e, i, i);
       } else if (ty == 3 && e.lColor) {
         glow_row(&e, i, i);
+      } else if (ty == 1 && e.pcX) {
+        particle_row(&e, i, i);
       } else {
         foreign[2 * nForeign] = i;
         foreign[2 * nForeign + 1] = i;
@@ -850,6 +942,8 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         trail_row(&e, i, w);
       } else if (ty == 3 && e.lColor) {
         glow_row(&e, i, w);
+      } else if (ty == 1 && e.pcX) {
+        particle_row(&e, i, w);
       } else {
         foreign[2 * nForeign] = i;
         foreign[2 * nForeign + 1] = w;
