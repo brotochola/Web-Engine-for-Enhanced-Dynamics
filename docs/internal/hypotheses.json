@@ -8140,7 +8140,8 @@
       ],
       "records": [
         "R-0629",
-        "R-0631"
+        "R-0631",
+        "R-0636"
       ],
       "id": "E-138",
       "title": "A frame whose emit expands its rows sorts the collector before the emit, and packs the queue in order",
@@ -8149,12 +8150,14 @@
       "date": "2026-10-25",
       "area": "pre-render",
       "kind": "js",
-      "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom pre-render 20.516 → 15.818 ms (−19.7 %, 0/4); the renderer's step +18.4 % with its busy time per second flat (more frames delivered); with no glow rows no slot list either (8d67f225): pre-render 16.479 → 14.819 ms (−10.6 %, 0/4)",
+      "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom pre-render 20.516 → 15.818 ms (−19.7 %, 0/4); the renderer's step +18.4 % with its busy time per second flat (more frames delivered); with no glow rows no slot list either (8d67f225): pre-render 16.479 → 14.819 ms (−10.6 %, 0/4); presorted frames leave the sort keys and shadow terms (3fa72bbd): pre-render 13.125 → 11.369 ms (−14.5 %, 0/4) against Pixi +5.5 % (4/4), kept as a trade",
       "next": "Nothing on its own; W27b (the Adobe expansion in float32 and SIMD) is the next cost in that pre-render."
     },
     {
       "aliases": [],
-      "refs": [],
+      "refs": [
+        "WASM_HYPOTHESES.md#W30"
+      ],
       "records": [
         "R-0634",
         "R-0635"
@@ -13819,6 +13822,18 @@
       "text": "**W30, extended: the glow, cookie and shadow-caster batches keep their arrays in private memories too.** 2026-10-25.\n\nThe change (629e812a): every batch Pixi fills from the render-queue memory gets an arena of its own sized for its capacity (`_batchArena`): the entities' glow batch, the cookie shadow batch and the GPU caster batch, which `_commitPackedBatch` fills every frame with pre-render's packed rows (10 % of Predator's Pixi in the Q7 profile). Custom layers pack their own rows and copy nothing out of the shared memory.\n\nScene: Predator, `--vs caa49166 --hyp-rev 90c02b30` (the same tree as 629e812a, whose message was amended with these numbers), 4 pairs, Chrome, headed, source, Pixi the owner: **renderer 3.684 → 3.440 ms, −8.1 %, worse 1/4** (cv 5/2 %). Every worker moved down in this sitting (logic −3.6 %, physics −4.6 %, pre-render −3.1 %), so the figure that stands is against the others: **−3.6 % (lower 3/4)**. GPU_CASTERS 13 411 and 13 329, VISIBLE_ENTITIES 13 497 and 13 413, presented 60. **KEPT (product)**: a smaller gain than the entity batch's, as Predator's casters are about 1.2 MB a frame against Adobe's 15.7 MB.",
       "commits": [
         "629e812a"
+      ]
+    },
+    {
+      "id": "R-0636",
+      "date": "2026-10-25",
+      "time": "04:34",
+      "timeFrom": "recorded",
+      "title": "E-138, fewer stores: presorted frames leave the sort keys and shadow terms; Adobe pre-render -14.5 %, Pixi +5.5 % (a trade, kept)",
+      "verdict": "mixed",
+      "text": "**E-138, fewer stores: a presorted frame's emit leaves the sort keys and the shadow terms. Pre-render −14.5 %, Pixi +5.5 %: kept, with the trade written down.** 2026-10-25.\n\nWhy: after E-138 and W30, adobeAnimateScene at the minimum zoom spends 47.6 % of pre-render (744 ms/s) in `emit_rows`, and W27b showed that cost is the stores, not the arithmetic (float32 SIMD ran +55 % in Node and tied in the scene). On a presorted frame no painter reads the queue's sort keys and no sun-caster pass reads its shadow terms (E-138 presorts only without sun casters), so those four columns, 16 of about 61 bytes a piece, have no reader.\n\nThe change (3fa72bbd): emit_rows given EMIT_PRESORTED treats the sort key and the three shadow columns as absent for every row, which every row writer already handles (no branch added to the piece loop); only the main queue's emit sets it (_emitPresorted: custom layers emit after it and sort by their keys); rows the JS writes keep writing them. preRenderEmitAdobe.test.js: the kernel's rows leave the four columns and every other column is the one written without the flag (a mutant fails it); E-138's frame test now reads the order from the sorted collector.\n\nScene: adobeAnimateScene, `--camera-zoom min`, `--vs 0d436b43 --hyp-rev 3fa72bbd`, 4 pairs, Chrome, headed, source: **pre-render 13.125 → 11.369 ms, −14.5 %, worse 0/4** (cv 2/2 %), −15.9 % against the other workers; **renderer 6.565 → 6.916 ms, +5.5 %, worse 4/4** (cv 1/0 %), +5.8 % against the others; RENDER_QUEUE_SIZE 261 780 both, presented 60. Pre-render was not saturated on either side (its FPS 59.4 to 60.5, the same frame counts), so it is not E-138's consumer effect: CPU profiles before and after put Pixi at 364 and 403 ms/s busy, its copy (W30) and its upload (`updateBuffer`) each a little slower for the same bytes, likely pre-render's pack now moving memory while Pixi copies. The gate calls it a REGRESSION (another worker ≥ 3 % worse). **Kept as a trade**: −1.76 ms on the worker that sets the scene's limit (pre-render, 11 to 13 of 16.7 ms) against +0.35 ms on Pixi (6.9 ms); the owner may prefer the gate's letter (revert 3fa72bbd).",
+      "commits": [
+        "3fa72bbd"
       ]
     }
   ],
