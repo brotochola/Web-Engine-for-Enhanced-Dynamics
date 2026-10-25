@@ -81,6 +81,10 @@ enum {
 /* E-138: the collector was sorted before the emit, so nothing reads this frame's sort keys (no painter) or shadow
    terms (no sun casters): emit_rows writes neither, for any row (fewer bytes stored per Adobe piece). */
 #define F_PRESORTED 64u
+/* A persist frame (W4c): persist_frame wrote the sprite rows, so emit_rows writes every other row, in its own loop
+   (the full emit's sprite loop carries no test of it). A frame with an Adobe root never gets here (persist_frame
+   misses on one); it is declined. */
+#define F_OTHERS_ONLY 128u
 
 /* Warning kinds, for the JS to replay with its own keys. */
 #define WARN_NO_ANIM 0u    /* sprite: no global animation for (sheet, state), sheet set */
@@ -966,7 +970,32 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   uint32_t nForeign = 0;
   uint32_t overflow = 0;
   uint32_t w;
-  if (!roots) {
+  if (flags & F_OTHERS_ONLY) {
+    if (roots) return DECLINED;
+    for (uint32_t i = 0; i < n; i++) {
+      const uint8_t ty = cType[i];
+      if (ty == 0) {
+        continue;
+      } else if (ty == 2) {
+        deco_row(&e, i, i);
+      } else if (ty == 4 && e.bActive) {
+        bullet_row(&e, i, i);
+      } else if (ty == 5 && e.bActive) {
+        trail_row(&e, i, i);
+      } else if (ty == 3 && e.lColor) {
+        glow_row(&e, i, i);
+      } else if (ty == 1 && e.pcX) {
+        particle_row(&e, i, i);
+      } else if (ty == 7) {
+        lf_row(&e, i, i);
+      } else {
+        foreign[2 * nForeign] = i;
+        foreign[2 * nForeign + 1] = i;
+        nForeign++;
+      }
+    }
+    w = n;
+  } else if (!roots) {
     for (uint32_t i = 0; i < n; i++) {
       const uint8_t ty = cType[i];
       if (ty == 0) {

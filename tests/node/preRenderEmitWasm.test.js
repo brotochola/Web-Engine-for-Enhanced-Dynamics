@@ -32,6 +32,7 @@ import {
   bindPreRenderEmit,
   EMIT_BOUNDS,
   EMIT_DECLINED,
+  EMIT_OTHERS_ONLY,
   EMIT_PERSIST_MISS,
   EMIT_SORT_KEY,
   EMIT_TILES_DIRTY,
@@ -964,21 +965,23 @@ test('persist_frame misses on a frame with an Adobe root, which it held last tim
  * JS writes their zeros again, and the queues must not differ.
  */
 async function runWiredPersist(t, cases, casters) {
-  for (const { ySort, seed } of cases) {
-    const k = await setup({ ySort, seed, persist: true });
+  for (const { ySort, seed, all: inMemory = false } of cases) {
+    // `all`: every row type's columns in the memory, so a persist frame's other rows go through the kernel too.
+    const k = await setup({ ySort, seed, persist: true, ...(inMemory ? { bullets: true, lights: true, particles: true, liquidFun: true, interpolate: true } : {}) });
     // No ShadowCaster: its columns unbound, as in a scene that never registered it (the next setup binds them).
     if (!casters) for (const c of ['active', 'heightMultiplier', 'anchorOffsetX', 'anchorOffsetY']) ShadowCaster[c] = null;
     await withPersistOrder(ySort, async () => {
       const { worker, m, maxItems, count } = k;
       const bound = worker._emitWasm;
       assert.ok(bound && bound.texturesReady, 'the worker bound the kernel and wrote its tables');
-      const calls = { persistFrame: 0, persistHits: 0, persistRemember: 0, emitRows: 0 };
+      const calls = { persistFrame: 0, persistHits: 0, persistRemember: 0, emitRows: 0, othersOnly: 0 };
       for (const name of ['persistFrame', 'persistRemember', 'emitRows']) {
         const real = bound[name];
         bound[name] = (...args) => {
           calls[name]++;
           const got = real(...args);
           if (name === 'persistFrame' && got !== EMIT_PERSIST_MISS) calls.persistHits++;
+          if (name === 'emitRows' && (args[3] & EMIT_OTHERS_ONLY) !== 0) calls.othersOnly++;
           return got;
         };
       }
@@ -1017,7 +1020,7 @@ async function runWiredPersist(t, cases, casters) {
         return frames;
       };
       const js = run(null);
-      assert.deepEqual(calls, { persistFrame: 0, persistHits: 0, persistRemember: 0, emitRows: 0 }, 'the JS run called no kernel');
+      assert.deepEqual(calls, { persistFrame: 0, persistHits: 0, persistRemember: 0, emitRows: 0, othersOnly: 0 }, 'the JS run called no kernel');
       const wasm = run(bound);
       for (let f = 0; f < PERSIST_FRAMES; f++) {
         const got = wasm[f];
@@ -1032,9 +1035,10 @@ async function runWiredPersist(t, cases, casters) {
         });
       }
       // Every frame went through the kernel: persist_frame unless the count changed, and on a miss the
-      // full emit and the remember.
+      // full emit and the remember; a hit with rows of other types (every collector here has some) their emit.
       assert.equal(calls.persistHits + calls.persistRemember, PERSIST_FRAMES, JSON.stringify(calls));
-      assert.equal(calls.emitRows, calls.persistRemember, JSON.stringify(calls));
+      assert.equal(calls.emitRows, calls.persistRemember + calls.othersOnly, JSON.stringify(calls));
+      assert.equal(calls.othersOnly, calls.persistHits, JSON.stringify(calls));
       assert.ok(calls.persistHits >= 10 && calls.persistRemember >= 10, JSON.stringify(calls));
       t.diagnostic(`ySort ${ySort}${casters ? '' : ', no ShadowCaster'}: ${JSON.stringify(calls)}`);
     });
@@ -1042,7 +1046,7 @@ async function runWiredPersist(t, cases, casters) {
 }
 
 test('emitSpriteQueue through the kernel takes the persist frames the JS takes and writes what it writes', async (t) => {
-  await runWiredPersist(t, [{ ySort: true, seed: 0xa11 }, { ySort: false, seed: 0xa12 }], true);
+  await runWiredPersist(t, [{ ySort: true, seed: 0xa11 }, { ySort: false, seed: 0xa12 }, { ySort: true, seed: 0xa13, all: true }], true);
 });
 
 test('without ShadowCaster the kernel leaves the shadow terms the full emit wrote (E-117)', async (t) => {

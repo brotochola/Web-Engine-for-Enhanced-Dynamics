@@ -109,6 +109,7 @@ import {
     EMIT_NO_CASTERS,
     EMIT_PERSIST_MISS,
     EMIT_PRESORTED,
+    EMIT_OTHERS_ONLY,
     EMIT_SORT_KEY,
     EMIT_TILES_DIRTY,
     EMIT_WARN_BULLET_START,
@@ -3479,8 +3480,9 @@ class PreRenderWorker extends AbstractWorker {
         // E-112. A full emit's sprite and decoration rows are written by preRenderEmit.wasm (W4d: and the
         // bullet and trail rows), the rows of other types after it; a frame it does not take (an Adobe
         // root, a LiquidFun row, a column outside its memory) runs the loop below.
-        if (emitWasm && !persistHit && loopCount > 0) {
-            const written = this._emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty);
+        // On a persist frame with rows of other types the same kernel writes those, the sprites skipped.
+        if (emitWasm && loopCount > 0) {
+            const written = this._emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty, persistHit);
             if (written >= 0) {
                 writeCount = written;
                 loopCount = 0;
@@ -3954,11 +3956,12 @@ class PreRenderWorker extends AbstractWorker {
      * warned as the JS emit warns them.
      * Returns the rows written, or -1 when the kernel cannot take the frame (the JS loop does).
      */
-    _emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty) {
+    _emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty, othersOnly) {
         const b = this._emitWasm;
         const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
         const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0)
-            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0) | (this._emitPresorted ? EMIT_PRESORTED : 0);
+            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0) | (this._emitPresorted ? EMIT_PRESORTED : 0)
+            | (othersOnly ? EMIT_OTHERS_ONLY : 0);
         const written = b.emitRows(b.tableByte, source.count, source.maxItems, flags,
             deltaTime / 1000, this._decorationZoomAlpha, this._zBand);
         if (written === EMIT_DECLINED) return -1;
