@@ -33,7 +33,7 @@ const GENERAL_PARAMS = 16;
 export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', wasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
-    'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general',
+    'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
   ]);
   return {
     buffer: memory.buffer,
@@ -47,6 +47,8 @@ export async function bindGpuPack(memory, layout) {
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
     castersGeneral: k.pack_casters_general,
+    // W9e: a pose batch's two streams (renderer.interpolation), on the same parameters.
+    pose: k.pack_pose,
     params: new Float64Array(memory.buffer, layout.particlesByte + 16, GENERAL_PARAMS),
     paramsByte: layout.particlesByte + 16,
     inverseByte: layout.inverseByte | 0,
@@ -207,4 +209,48 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
   }
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;
+}
+
+/**
+ * W9e: a pose batch's upload (instancedSpriteBatch.js _packPoseOnly, or _packPoseAndStatics when `stat` is not
+ * null) through the kernel: the pose stream into `pose` (POSE_DYN_FLOATS a row) and the statics into `stat`
+ * (POSE_STATIC_FLOATS a row). The context's values go in as the JS reads them (an unset snap zoom stays NaN, which
+ * skips the snap as snapWorldToPixel does).
+ * @returns {number} the rows written, or -1 when this call is not one the kernel packs (an array outside the memory)
+ */
+export function packPoseRowsWasm(b, q, ctx, pose, stat, capacity) {
+  if (!b || !q || !pose || !ctx) return -1;
+  const o = ctx.o || ctx;
+  if (pose.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
+  const typeArr = ctx.typeArr;
+  if (typeArr && typeArr.buffer !== b.buffer) return -1;
+  // The previous pose: none with the pose snap, as the JS reads it.
+  const prevX = o.snap ? null : o.prevX || null;
+  const prevY = o.snap ? null : o.prevY || null;
+  if ((prevX && prevX.buffer !== b.buffer) || (prevY && prevY.buffer !== b.buffer)) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const count = ctx.scanCount | 0;
+  const indexByte = indexByteFor(b, ctx, count, capacity);
+  if (indexByte < 0) return -1;
+  const P = b.params;
+  P[0] = (ctx.useScreen ? 1 : 0) | (ctx.useScreen && ctx.cameraRot ? 2 : 0) | (o.pixelSnap ? 4 : 0)
+    | (ctx.filterTypes ? 8 : 0) | (ctx.hasInclude ? 16 : 0);
+  P[1] = ctx.cameraX;
+  P[2] = ctx.cameraY;
+  P[3] = ctx.screenScale;
+  P[4] = ctx.camC;
+  P[5] = ctx.camS;
+  P[6] = ctx.focusX;
+  P[7] = ctx.focusY;
+  P[8] = ctx.halfW;
+  P[9] = ctx.halfH;
+  P[10] = o.snapCameraX;
+  P[11] = o.snapCameraY;
+  P[12] = o.snapZoom;
+  P[13] = ctx.includeType | 0;
+  P[14] = ctx.exclude0 | 0;
+  P[15] = ctx.exclude1 | 0;
+  return b.pose(table, indexByte, count, capacity | 0, ctx.depthDenom, pose.byteOffset, stat !== null ? stat.byteOffset : 0,
+    typeArr ? typeArr.byteOffset : 0, prevX ? prevX.byteOffset : 0, prevY ? prevY.byteOffset : 0, b.paramsByte);
 }

@@ -2,7 +2,7 @@
    paths, world space, no pixel snap, no type filter: sprite rows (15 floats) and caster rows (22), and
    sprite rows split into a pose stream and a static stream (E-82b, packSplitRows). Its slow path too (close-out
    group B): pack_sprites_general and pack_casters_general take a type filter, screen space (with the camera's turn)
-   and pixel snap, from a block of doubles the client writes.
+   and pixel snap, from a block of doubles the client writes. And a pose batch's two streams (W9e, renderer.interpolation): pack_pose.
    The render-queue columns and the destination are byte offsets into the imported shared memory, the
    columns through a table written once per queue (src/render/gpuPackClient.js). Arithmetic as JS
    does it: alpha clamped and rounded in double, depth and the tile-offset scale in double, each
@@ -357,4 +357,120 @@ uint32_t pack_casters_general(uint32_t table, uint32_t indices, uint32_t count, 
   return pack_general((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
                       (float *)(uintptr_t)dstByte, typeByte, (uint32_t *)(uintptr_t)particlesByte,
                       (const double *)(uintptr_t)paramsByte, 1);
+}
+
+/* W9e. A pose batch's streams (renderer.interpolation: instancedSpriteBatch.js _packPoseOnly and
+   _packPoseAndStatics). Per row the pose x, y, rotC, rotS and the previous x, y (POSE_DYN_FLOATS, 6), and, unless
+   stat is 0, the statics in E-82's order (sprite_static's, the scale in screen units). The previous pose is read
+   from prevX and prevY (0: the current one, as the JS does without them or with the pose snap), and it goes through
+   the same screen transform and pixel snap. Parameters as pack_general's, at `params`; the depth is the JS's
+   1 - (out + 1) / depthDenom. A filtered row does not take a slot. */
+#define POSE_DYN_FLOATS 6
+
+INLINE uint32_t pack_pose_rows(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, double depthDenom,
+                               float *pose, float *stat, uint32_t typeByte, const float *prevX, const float *prevY,
+                               const double *P, int statics) {
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
+  const uint32_t flags = (uint32_t)P[0];
+  const int screen = (flags & G_SCREEN) != 0;
+  const int turned = (flags & G_TURNED) != 0;
+  const int snap = (flags & G_SNAP) != 0;
+  const int filter = (flags & G_FILTER) != 0 && type;
+  const int hasInclude = (flags & G_INCLUDE) != 0;
+  const double camX = P[1], camY = P[2], scale = P[3], camC = P[4], camS = P[5];
+  const double focusX = P[6], focusY = P[7], halfW = P[8], halfH = P[9];
+  const double snapX = P[10], snapY = P[11], snapZoom = P[12];
+  const int32_t include = (int32_t)P[13], exclude0 = (int32_t)P[14], exclude1 = (int32_t)P[15];
+  const float *X = F32(t, COL_X), *Y = F32(t, COL_Y), *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y);
+  const float *RC = F32(t, COL_ROT_C), *RS = F32(t, COL_ROT_S);
+  uint32_t out = 0;
+  for (uint32_t k = 0; k < count; k++) {
+    const uint32_t i = indices ? idx[k] : k;
+    if (filter) {
+      const int32_t ty = type[i];
+      if (hasInclude && ty != include) continue;
+      if ((exclude0 >= 0 && ty == exclude0) || (exclude1 >= 0 && ty == exclude1)) continue;
+    }
+    if (out >= cap) break;
+    double x = X[i];
+    double y = Y[i];
+    double px = prevX ? (double)prevX[i] : x;
+    double py = prevY ? (double)prevY[i] : y;
+    double sx = 0, sy = 0;
+    if (statics) {
+      sx = SX[i];
+      sy = SY[i];
+    }
+    if (screen) {
+      if (turned) {
+        const double dx = x - focusX;
+        const double dy = y - focusY;
+        x = halfW + (dx * camC - dy * camS) * scale;
+        y = halfH + (dx * camS + dy * camC) * scale;
+        const double pdx = px - focusX;
+        const double pdy = py - focusY;
+        px = halfW + (pdx * camC - pdy * camS) * scale;
+        py = halfH + (pdx * camS + pdy * camC) * scale;
+      } else {
+        x = (x - camX) * scale;
+        y = (y - camY) * scale;
+        px = (px - camX) * scale;
+        py = (py - camY) * scale;
+      }
+      if (statics) {
+        sx *= scale;
+        sy *= scale;
+      }
+    }
+    if (snap) {
+      if (screen) {
+        x = js_round(x);
+        y = js_round(y);
+        px = js_round(px);
+        py = js_round(py);
+      } else {
+        x = snap_world(x, snapX, snapZoom);
+        y = snap_world(y, snapY, snapZoom);
+        px = snap_world(px, snapX, snapZoom);
+        py = snap_world(py, snapY, snapZoom);
+      }
+    }
+    double rc = RC[i];
+    double rs = RS[i];
+    if (screen && turned) {
+      const double nrc = rc * camC - rs * camS;
+      rs = rs * camC + rc * camS;
+      rc = nrc;
+    }
+    float *d = pose + out * POSE_DYN_FLOATS;
+    d[0] = (float)x;
+    d[1] = (float)y;
+    d[2] = (float)rc;
+    d[3] = (float)rs;
+    d[4] = (float)px;
+    d[5] = (float)py;
+    if (statics) {
+      float *s = stat + out * STATIC_FLOATS;
+      sprite_static(t, i, s, 1.0 - (double)(out + 1) / depthDenom);
+      s[0] = (float)sx;
+      s[1] = (float)sy;
+    }
+    out++;
+  }
+  return out;
+}
+
+/* W9e: the pose stream at dstPose, and the statics at dstStatic unless it is 0. */
+__attribute__((export_name("pack_pose")))
+uint32_t pack_pose(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double depthDenom, uint32_t dstPose,
+                   uint32_t dstStatic, uint32_t typeByte, uint32_t prevXByte, uint32_t prevYByte, uint32_t paramsByte) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  float *pose = (float *)(uintptr_t)dstPose;
+  float *stat = (float *)(uintptr_t)dstStatic;
+  const float *prevX = (const float *)(uintptr_t)prevXByte;
+  const float *prevY = (const float *)(uintptr_t)prevYByte;
+  const double *P = (const double *)(uintptr_t)paramsByte;
+  if (dstStatic) return pack_pose_rows(t, indices, count, cap, depthDenom, pose, stat, typeByte, prevX, prevY, P, 1);
+  return pack_pose_rows(t, indices, count, cap, depthDenom, pose, stat, typeByte, prevX, prevY, P, 0);
 }
