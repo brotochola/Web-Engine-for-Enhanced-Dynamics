@@ -452,20 +452,6 @@ export const WASM_DEFAULTS = Object.freeze({
    * for bit.
    */
   particleListsF32: true,
-  /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */
-  gpuPack: true,
-  /**
-   * Pixi's plain sprite pack through `gpuPack.wasm` (W9d, E-123), with `packGpuSprites: 'pixi'` and no pose
-   * interpolation: the entity batch's rows live in the render-queue memory (so it needs gpuPack).
-   */
-  pixiPack: true,
-  /**
-   * E-82b: plain sprites (no pose interpolation, an atlas that is not nearest) go to the GPU as a pose stream every
-   * frame and a static stream only when the queue's statics change. `gpuPack.wasm` writes both into pre-render's GPU
-   * queue (and Pixi's rows, with pixiPack), and the entity batch uploads them as E-82's pose batch does. false keeps
-   * 15-float rows.
-   */
-  gpuPackSplit: true,
   /**
    * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b): Transform, its pose and Collider in the render-queue
    * memory with the emit's SpriteRenderer; with physics, in Box2D's block with RigidBody

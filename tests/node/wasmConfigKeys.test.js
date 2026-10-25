@@ -22,9 +22,13 @@ function applyDefaults(wasm) {
 test('a wasm key that is not a switch is warned about once, and the switches still apply', () => {
   const name = 'notASwitchForThisTest';
   assert.ok(!Object.hasOwn(WASM_DEFAULTS, name));
-  const first = applyDefaults({ [name]: false, gpuPack: false });
+  // A switch the engine still has (the first one left), set against its default.
+  const real = Object.keys(WASM_DEFAULTS)[0];
+  const first = applyDefaults({ [name]: false, ...(real ? { [real]: !WASM_DEFAULTS[real] } : {}) });
   assert.equal(first.warnings.filter((w) => w.includes(`wasm.${name}`)).length, 1, 'named once');
-  assert.equal(first.config.wasm.gpuPack, false, 'a real switch still applies');
+  if (real) assert.equal(first.config.wasm[real], !WASM_DEFAULTS[real], 'a real switch still applies');
+  const gone = applyDefaults({ gpuPack: false });
+  assert.equal(gone.warnings.filter((w) => w.includes('wasm.gpuPack')).length, 1, 'a removed switch is named too');
   const second = applyDefaults({ [name]: false });
   assert.equal(second.warnings.filter((w) => w.includes(`wasm.${name}`)).length, 0, 'not again');
 });

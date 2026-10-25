@@ -127,7 +127,6 @@ import {
     createGpuQueueViews,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
-    packInstancedRows,
     makePackContext,
 } from '../render/gpuQueueLayout.js';
 import {
@@ -409,7 +408,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueType = EMPTY_U8;
         /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
         this._gpuPackWasm = null;
-        // E-82b (wasm.gpuPackSplit): the main sprites go into the GPU queue as a pose stream and a static stream,
+        // E-82b: the main sprites go into the GPU queue as a pose stream and a static stream,
         // the statics written only when the GPU queue buffer does not hold this generation's already. Per GPU
         // queue buffer: the generation its statics hold (0: none) and their rows; and this frame's split.
         this._gpuSplit = false;
@@ -517,6 +516,8 @@ class PreRenderWorker extends AbstractWorker {
         this._frameAdobeEntities = null;
         // _emitRefused said its reason.
         this._emitRefusedWarned = false;
+        // _packRows said a call was refused.
+        this._packRefusedWarned = false;
         // Per-frame cached camera bounds (avoids redundant calculateCameraBounds calls)
         this._frameCameraBoundsValid = false;
 
@@ -1018,16 +1019,18 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuKeepIdx = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
                 this._gpuPackOpts = {};
                 this._gpuCookieQ = null;
-                // E-76 W9: pack in WASM where both queues live in the render-queue memory.
-                if (data.renderQueueMemory && data.renderQueueLayout && this.config?.wasm?.gpuPack !== false) {
-                    try {
-                        this._gpuPackWasm = await bindGpuPack(data.renderQueueMemory, data.renderQueueLayout);
-                    } catch (err) {
-                        console.warn('[PRE_RENDER] gpuPack.wasm did not load; packing in JS', err);
-                        this._gpuPackWasm = null;
-                    }
+                // E-76 W9: the pack is gpuPack.wasm, on the render-queue memory where both queues live (the scene
+                // makes the memory, or does not start).
+                if (!data.renderQueueMemory || !data.renderQueueLayout) {
+                    throw new Error('[PRE_RENDER] the GPU queue has no render-queue memory: gpuPack.wasm has nothing to pack');
                 }
-                this._gpuSplit = this._gpuPackWasm !== null && this.config?.wasm?.gpuPackSplit !== false;
+                try {
+                    this._gpuPackWasm = await bindGpuPack(data.renderQueueMemory, data.renderQueueLayout);
+                } catch (err) {
+                    throw new Error(`[PRE_RENDER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
+                }
+                // E-82b: plain sprites in two streams (a nearest atlas, which snaps every pose, keeps 15-float rows).
+                this._gpuSplit = true;
                 this._gpuStaticGen.fill(0);
                 // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions (made with
                 // shadows and sun casters; without them nothing is stamped).
@@ -3549,16 +3552,18 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * packInstancedRows through the WASM kernel when it takes the call (world space, no snap, no
-     * type filter, everything in the render-queue memory), else in JS. The same bits either way.
+     * A queue's rows through gpuPack.wasm (E-76 W9, close-out group B: every call, the JS packer it replaced is
+     * tests/reference/gpuPackJs.mjs); a call it cannot take (a column outside the render-queue memory) packs nothing
+     * and says so once.
      */
     _packRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) {
-        const b = this._gpuPackWasm;
-        if (b) {
-            const n = packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shadowCast);
-            if (n >= 0) return n;
+        const n = packInstancedRowsWasm(this._gpuPackWasm, q, ctx, dst, floatsPer, capacity, shadowCast);
+        if (n >= 0) return n;
+        if (!this._packRefusedWarned) {
+            this._packRefusedWarned = true;
+            console.error('[PRE_RENDER] gpuPack.wasm cannot pack a queue (a column outside the render-queue memory): its rows are not drawn');
         }
-        return packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast);
+        return 0;
     }
 
     _bindGpuPackWriters() {

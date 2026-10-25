@@ -320,12 +320,6 @@ export type SceneConfig = Record<string, unknown> & {
      * double test, the JavaScript build's flags exactly.
      */
     particleListsF32?: boolean;
-    /** Instanced-row pack in pre-render (the render queues live in one WebAssembly.Memory). */
-    gpuPack?: boolean;
-    /** The same pack for Pixi's sprite rows, with packGpuSprites 'pixi' and no pose interpolation. Needs gpuPack. */
-    pixiPack?: boolean;
-    /** Plain sprites go to the GPU as a pose stream every frame, and their statics only when they change. */
-    gpuPackSplit?: boolean;
     /** Pre-render's emit of sprite and decoration rows (SpriteRenderer, ShadowCaster and the decorations move into the render-queue memory). */
     preRenderEmit?: boolean;
     /**

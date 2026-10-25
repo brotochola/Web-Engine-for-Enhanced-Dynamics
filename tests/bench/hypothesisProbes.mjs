@@ -70,7 +70,7 @@ export const PROBES = {
     // base - and at n=4 that term alone produced a REGRESSION verdict on a change
     // whose own sub-timer moved +3.3 % in 2 of 4 pairs.
     metric: 'SPRITE_PACK_MS',
-    why: 'packInstancedRows packs the queued rows (gatherInstancedRows, which H-02 measured, never ran in a frame: E-21); if the queue is short of the population, the pack path is not what is being timed',
+    why: 'the pack (gpuPack.wasm; packInstancedRows before E-76 W9) packs the queued rows (gatherInstancedRows, which H-02 measured, never ran in a frame: E-21); if the queue is short of the population, the pack path is not what is being timed',
   },
 
   'H-14': {

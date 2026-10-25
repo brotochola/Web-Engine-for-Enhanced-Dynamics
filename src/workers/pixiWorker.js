@@ -539,6 +539,8 @@ class PixiRenderer extends AbstractWorker {
     this._ySortMode = false;
     this._entitiesRoot = null;
     this._lightGlowAdd = true;
+    // _refusePackedFrame said its reason.
+    this._refusedFrameWarned = false;
     // The pipeline's sorter (resolveSpritePipeline): 'none' when nobody orders the sprites.
     this._sortSpritesOn = SORT_SPRITES_NONE;
     this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
@@ -1699,8 +1701,13 @@ class PixiRenderer extends AbstractWorker {
         } else if (packedFlags & GPU_FLAG_SPLIT) {
           // E-82b: the two streams, the statics copied when their generation or the row count moved.
           this.visibleEntityCount = batch.commitSplit(gpu.spritePose, gpu.spriteStatic, packedN, gpu.header[GPU_HDR_STATIC_GEN]);
+        } else if (packedN === 0) {
+          // No sprite rows: pre-render's pack wrote none, so it split none. Nothing to draw.
+          batch.mesh.visible = false;
+          this.visibleEntityCount = 0;
         } else {
-          this.visibleEntityCount = batch.commitRowsSplit(gpu.sprites, gpu.spritesU32, packedN);
+          // Pre-render splits whenever this batch is split (the same atlas filter decides both, close-out group B).
+          this.visibleEntityCount = this._refusePackedFrame('15-float rows for the split entity batch');
         }
       } else {
         this.entitiesBatch.mesh.visible = false;
@@ -1720,6 +1727,18 @@ class PixiRenderer extends AbstractWorker {
           this.entitiesGlowBatch.mesh.visible = false;
         }
       }
+      return;
+    }
+
+    // In pre-render pack mode pre-render packs every frame (close-out group B: Pixi has no rows of its own there), so
+    // a frame its GPU queue does not describe is one _refusePackedFrame handles; with no rows nothing is lost.
+    if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI) {
+      const kept = this._newQueueThisFrame === 0 && this.lastReadFrame > 0;
+      const warn = soaN > 0 && this._newQueueThisFrame !== 0 && !this._refusedFrameWarned;
+      this.visibleEntityCount = this._refusePackedFrame(warn
+        ? `${soaN} rows that its GPU queue frame does not describe (${this._uncommittedFrameReason(gpu, packedN, packedFlags, needOrder)})`
+        : null);
+      if (!kept && this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
       return;
     }
 
@@ -1767,6 +1786,34 @@ class PixiRenderer extends AbstractWorker {
     this.visibleEntityCount = packed.sprite;
     this.visibleParticleCount = splitGlow ? packed.splitParticles : 0;
     if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;
+  }
+
+  /** Which of updateSpritesFromRenderQueue's packedOk terms a GPU queue frame failed, in words. */
+  _uncommittedFrameReason(gpu, packedN, packedFlags, needOrder) {
+    if (!gpu || !gpu.header) return 'no GPU queue';
+    const version = gpu.header[GPU_HDR_VERSION] | 0;
+    if (version !== GPU_QUEUE_VERSION) return `GPU queue version ${version}, not ${GPU_QUEUE_VERSION}`;
+    if (this.entitiesBatch.poseInterp) return 'the entity batch interpolates poses';
+    if (packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0) return 'pre-render packed none of them';
+    if (needOrder && !(packedFlags & GPU_FLAG_SORTED)) return 'they need an order and pre-render did not sort them';
+    return 'two streams for a plain entity batch';
+  }
+
+  /**
+   * A frame of pre-render's GPU queue Pixi cannot commit. A frame read outside the consume/release handshake (no new
+   * queue this frame: before the first one, or a resume redrawing the last) can catch pre-render's next frame half
+   * written, so the entity batch keeps what it last committed (nothing before the first frame) and nothing is said.
+   * A frame Pixi took is drawn empty, `reason` said once (null: no rows were lost).
+   * @returns {number} the entities drawn
+   */
+  _refusePackedFrame(reason) {
+    if (this._newQueueThisFrame === 0 && this.lastReadFrame > 0) return this.visibleEntityCount;
+    if (reason !== null && this._newQueueThisFrame !== 0 && !this._refusedFrameWarned) {
+      this._refusedFrameWarned = true;
+      console.error(`[PIXI WORKER] ${reason}: the entities are not drawn this frame`);
+    }
+    if (this.entitiesBatch) this.entitiesBatch.mesh.visible = false;
+    return 0;
   }
 
   /** Resolve atlas ImageSource for instanced batches. */
@@ -1956,9 +2003,7 @@ class PixiRenderer extends AbstractWorker {
         inverseByte: 0,
       });
     } catch (err) {
-      console.warn('[PIXI WORKER] gpuPack.wasm did not load; packing sprites in JS', err);
-      this._pixiGpuPack = null;
-      return;
+      throw new Error(`[PIXI WORKER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
     }
     const rows = layout.pixiInstanceRows | 0;
     const floats = layout.pixiInstanceFloats | 0 || INSTANCED_SPRITE_FLOATS;
@@ -1992,9 +2037,9 @@ class PixiRenderer extends AbstractWorker {
       poseInterp: this._queueInterp,
       data: this._pixiInstanceRows,
       gpuPack: this._pixiGpuPack,
-      // E-82b (wasm.gpuPackSplit): the plain sprites in two streams, the statics uploaded when they change. A
-      // nearest atlas snaps every pose, which neither the kernel nor packSplitRows packs, so it keeps 15-float rows.
-      split: this.config?.wasm?.gpuPackSplit !== false && !this._queueInterp && this.atlasScaleMode !== 'nearest',
+      // E-82b: the plain sprites in two streams, the statics uploaded when they change. A nearest atlas snaps every
+      // pose, which the split kernel does not pack, so it keeps 15-float rows.
+      split: !this._queueInterp && this.atlasScaleMode !== 'nearest',
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row).
       arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)),
     });

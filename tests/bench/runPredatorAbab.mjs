@@ -20,8 +20,8 @@
  *
  * --query-a <q>, --query-b <q>: scene parameters for one side only, on top of --query (a key the side names
  * replaces the shared one). Without --hyp-rev, both sides then run the --vs worktree: one build, one
- * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=gpuPack` times the pack's
- * JavaScript path against its kernel).
+ * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=particleIntegrateF32` times the
+ * double integrate against the float32 one).
  *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
  * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), if the frames

@@ -20,6 +20,7 @@ import { GPU_PACK_TABLE_SLOTS } from '../../src/util/renderQueueMemory.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
 
 const MAX = 2000;
 const shaderDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../src/shaders');
@@ -137,7 +138,7 @@ test('in pixi pack mode the glow batch packs the glow rows through the kernel, t
   const opts = { space: BATCH_SPACE.WORLD, type: q.type, includeType: 3, depthDenom: MAX };
   for (const b of glow._buffers) b.update = () => {};
   const nKernel = glow.upload(bq, { ...opts });
-  const js = new InstancedSpriteBatch({ capacity: MAX, label: 'glow-js', useWebGpu: true, shaders: GPU_SHADERS, blendMode: 'add', premultiplyAlpha: false });
+  const js = installBatchPackJs(new InstancedSpriteBatch({ capacity: MAX, label: 'glow-js', useWebGpu: true, shaders: GPU_SHADERS, blendMode: 'add', premultiplyAlpha: false }));
   for (const b of js._buffers) b.update = () => {};
   const nJs = js.upload(bq, { ...opts });
   px._pixiGpuPack.spritesGeneral = realGeneral;

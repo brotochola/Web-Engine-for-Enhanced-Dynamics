@@ -12,6 +12,7 @@ import {
   SPLIT_POSE_FLOATS,
 } from '../../src/render/instancedSpriteBatch.js';
 import { GPU_POSE_FLOATS, GPU_STATIC_FLOATS } from '../../src/render/gpuQueueLayout.js';
+import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
 
 // E-82b: a split batch holds a plain batch's 15-float rows as a 4-float pose stream and E-82's static stream,
 // on every path (packSplitRows, the 15-float fallback, rows committed from a GPU queue in either form), and
@@ -50,7 +51,7 @@ function queue(seed, gen) {
 }
 
 function makeBatch(split) {
-  const batch = new InstancedSpriteBatch({ capacity: N, label: 'split-test', split, useWebGpu: false, shaders });
+  const batch = installBatchPackJs(new InstancedSpriteBatch({ capacity: N, label: 'split-test', split, useWebGpu: false, shaders }));
   const uploads = { pose: 0, statics: 0 };
   for (const b of batch._buffers) b.update = () => { uploads.pose++; };
   if (batch._staticBuffers) for (const b of batch._staticBuffers) b.update = () => { uploads.statics++; };
@@ -173,6 +174,6 @@ test('a split batch reads the previous xy from the current one', () => {
   const { batch: plain } = makeBatch(false);
   assert.equal(plain.split, false);
   assert.equal(plain.geometry.attributes.aInstPrevXY, undefined);
-  const pose = new InstancedSpriteBatch({ capacity: 4, label: 'pose', poseInterp: true, split: true, useWebGpu: false, shaders });
+  const pose = installBatchPackJs(new InstancedSpriteBatch({ capacity: 4, label: 'pose', poseInterp: true, split: true, useWebGpu: false, shaders }));
   assert.equal(pose.split, false, 'a pose batch is never split');
 });

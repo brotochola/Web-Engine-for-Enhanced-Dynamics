@@ -1,26 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  GPU_SPRITE_FLOATS,
-  GPU_CASTER_FLOATS,
-  GPU_CASTER_LIGHT_FLOAT,
-  GPU_QUEUE_VERSION,
-  GPU_HDR_SPRITE,
-  GPU_HDR_VERSION,
-  gpuQueueCaps,
-  computeGpuQueueBufferSize,
-  createGpuQueueViews,
-  writeGpuQueueHeader,
-  packInstancedRows,
-  makePackContext,
-  fillQueueIndices,
-} from '../../src/render/gpuQueueLayout.js';
+import { GPU_SPRITE_FLOATS, GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT, GPU_QUEUE_VERSION, GPU_HDR_SPRITE, GPU_HDR_VERSION, gpuQueueCaps, computeGpuQueueBufferSize, createGpuQueueViews, writeGpuQueueHeader, makePackContext, fillQueueIndices } from '../../src/render/gpuQueueLayout.js';
 import {
   writeGpuSpriteRow,
   gatherInstancedRows,
   copyPackedRows,
   rewritePackedDepth,
 } from '../helpers/gpuQueueReference.mjs';
+import { packInstancedRows } from '../reference/gpuPackJs.mjs';
 
 test('gpuQueue SAB views round-trip header and packed rows', () => {
   const lighting = { enabled: true, shadowsEnabled: true, maxLights: 4, maxShadowCastingLights: 2, maxShadowsPerLight: 3, maxShadowsPerEntity: 1 };

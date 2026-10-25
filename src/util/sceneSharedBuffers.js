@@ -548,7 +548,6 @@ export function renderQueueMemorySpec(scene) {
   initializeSceneLayers(scene);
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
   const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
-  const pack = config.wasm?.gpuPack !== false;
   const emit = emitBlocks(scene);
   // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
   const lighting = config.lighting || {};
@@ -570,7 +569,7 @@ export function renderQueueMemorySpec(scene) {
     : null;
   // W9d: Pixi packs the sprite rows itself (packGpuSprites 'pixi'), with the pack kernel, on rows of its own in this
   // memory: 15 floats a row, or (W9e) with pose interpolation 17, a pose batch's pose stream then its statics.
-  const pixiPack = pack && config.wasm?.pixiPack !== false && config.preRender?.packGpuSprites === 'pixi'
+  const pixiPack = config.preRender?.packGpuSprites === 'pixi'
     ? (config.renderer?.interpolation === true ? 17 : 15)
     : 0;
   // W4b: Transform (its state block and, without physics, its pose) and Collider too, next to the emit's
@@ -628,7 +627,8 @@ export function renderQueueMemorySpec(scene) {
   return {
     maxVisibleRenderables,
     gpuCaps,
-    enabled: Boolean(pack || emit || stamp),
+    // The pack and the emit run only in their kernels: every scene with a render queue makes the memory.
+    enabled: true,
     args: [maxVisibleRenderables, computeRenderQueueBufferSize(maxVisibleRenderables), computeGpuQueueBufferSize(gpuCaps), emit, stamp, sway, pixiPack],
     collect,
     painter,

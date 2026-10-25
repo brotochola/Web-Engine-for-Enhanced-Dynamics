@@ -6,10 +6,11 @@ import { fileURLToPath } from 'node:url';
 
 import { InstancedSpriteBatch, INSTANCED_SPRITE_FLOATS, BATCH_SPACE } from '../../src/render/instancedSpriteBatch.js';
 import { bindGpuPack } from '../../src/render/gpuPackClient.js';
+import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
 
 // W9d. Pixi's plain sprite batch packs through gpuPack.wasm when its rows live in the render-queue
-// memory: the rows must be the bits the JS pack writes, and anything the kernel declines (a type
-// filter here) must still pack, in JS.
+// memory: the rows must be the bits the JS pack (tests/reference/gpuPackJs.mjs) writes, a type filter's
+// through the kernel's general entry.
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
@@ -82,19 +83,25 @@ async function setup(seed) {
   top += 16;
   const pack = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
   let kernelCalls = 0;
+  let generalCalls = 0;
   const sprites = pack.sprites;
   pack.sprites = (...a) => {
     kernelCalls++;
     return sprites(...a);
   };
+  const general = pack.spritesGeneral;
+  pack.spritesGeneral = (...a) => {
+    generalCalls++;
+    return general(...a);
+  };
   const order = Uint32Array.from({ length: N }, (_, i) => i).sort(() => rng() - 0.5);
-  return { q, rows, pack, order, calls: () => kernelCalls };
+  return { q, rows, pack, order, calls: () => kernelCalls, generalCalls: () => generalCalls };
 }
 
 function batches(s) {
   const opts = { capacity: N, label: 'w9d', useWebGpu: false, shaders };
   const wasm = new InstancedSpriteBatch({ ...opts, data: s.rows, gpuPack: s.pack });
-  const js = new InstancedSpriteBatch(opts);
+  const js = installBatchPackJs(new InstancedSpriteBatch(opts));
   for (const b of [...wasm._buffers, ...js._buffers]) b.update = () => {};
   assert.equal(wasm._sharedRows, s.rows, 'the kernel packs into the shared rows');
   assert.ok(!(wasm.data.buffer instanceof SharedArrayBuffer), 'and the upload reads a private copy (E-123)');
@@ -120,14 +127,15 @@ test('a painter-ordered world upload packs through the kernel, with the JS rows'
   sameRows(wasm, js, nj, 'indexed');
 });
 
-test('a type-filtered upload the kernel declines still packs, in JS', async () => {
+test('a type-filtered upload packs through the kernel\'s general entry, with the JS rows', async () => {
   const s = await setup(6);
   const { wasm, js } = batches(s);
   const opts = { space: BATCH_SPACE.WORLD, type: s.q.type, excludeType0: 3, depthDenom: N };
   const nw = wasm.upload(s.q, opts);
   const nj = js.upload(s.q, { ...opts });
   assert.equal(nw, nj);
-  assert.equal(s.calls(), 0, 'declined: no kernel call');
+  assert.equal(s.calls(), 0, 'not the plain entry');
+  assert.equal(s.generalCalls(), 1, 'the general entry packed it');
   sameRows(wasm, js, nj, 'filtered');
 });
 

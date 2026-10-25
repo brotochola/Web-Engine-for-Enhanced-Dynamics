@@ -1,15 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  GPU_CASTER_FLOATS,
-  GPU_SPACE_SCREEN,
-  GPU_SPACE_WORLD,
-  GPU_SPRITE_FLOATS,
-  makePackContext,
-  packInstancedRows,
-} from '../../src/render/gpuQueueLayout.js';
+import { GPU_CASTER_FLOATS, GPU_SPACE_SCREEN, GPU_SPACE_WORLD, GPU_SPRITE_FLOATS, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import { bindGpuPack, packInstancedRowsWasm } from '../../src/render/gpuPackClient.js';
+import { packInstancedRows } from '../reference/gpuPackJs.mjs';
 
 // E-76 W9: the WASM pack writes the bits packInstancedRows writes, on the paths it takes, and
 // declines (-1) the rest so the caller packs in JS.

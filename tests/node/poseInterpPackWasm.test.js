@@ -11,6 +11,7 @@ import {
   POSE_STATIC_FLOATS,
 } from '../../src/render/instancedSpriteBatch.js';
 import { bindGpuPack, packPoseRowsWasm } from '../../src/render/gpuPackClient.js';
+import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
 
 // W9e. A pose batch's upload (renderer.interpolation) through gpuPack.wasm's pack_pose: the pose stream and the
 // statics must be the bits the batch's own _packPoseOnly and _packPoseAndStatics write, on every path they take:
@@ -98,7 +99,7 @@ async function setup(seed) {
   const particlesByte = (top = (top + 15) & ~15);
   top += 160;
   const pack = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
-  const batch = new InstancedSpriteBatch({ capacity: N, label: 'w9e', poseInterp: true, useWebGpu: false, shaders });
+  const batch = installBatchPackJs(new InstancedSpriteBatch({ capacity: N, label: 'w9e', poseInterp: true, useWebGpu: false, shaders }));
   return { q, prevX, prevY, pose, stat, region, inMemory, outside: Uint32Array.from(order), pack, batch };
 }
 
@@ -179,7 +180,7 @@ test('a pose batch on the Pixi region uploads through the kernel what the JS pos
   };
   const base = { capacity: N, label: 'w9e-wired', poseInterp: true, useWebGpu: false, shaders };
   const wasm = new InstancedSpriteBatch({ ...base, data: s.region, gpuPack: s.pack });
-  const js = new InstancedSpriteBatch(base);
+  const js = installBatchPackJs(new InstancedSpriteBatch(base));
   for (const b of [...wasm._buffers, ...js._buffers]) b.update = () => {};
   assert.equal(wasm._gpuPack, s.pack, 'the batch packs through the kernel');
   assert.equal(wasm._sharedPose.buffer, s.region.buffer);

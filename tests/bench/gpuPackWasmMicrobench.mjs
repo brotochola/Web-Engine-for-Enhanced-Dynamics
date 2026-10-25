@@ -13,17 +13,12 @@
  *   node tests/bench/gpuPackWasmMicrobench.mjs --variant base|wasm [--output path]
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/gpuPackWasmMicrobench.mjs --variants base,wasm
  */
-import {
-  GPU_CASTER_FLOATS,
-  GPU_SPACE_WORLD,
-  GPU_SPRITE_FLOATS,
-  makePackContext,
-  packInstancedRows,
-} from '../../src/render/gpuQueueLayout.js';
+import { GPU_CASTER_FLOATS, GPU_SPACE_WORLD, GPU_SPRITE_FLOATS, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import { bindGpuPack, GPU_PACK_COLUMNS, packInstancedRowsWasm } from '../../src/render/gpuPackClient.js';
 import { buildQueue } from './gpuQueuePackMicrobench.mjs';
 import { checksumFloats, isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
+import { packInstancedRows } from '../reference/gpuPackJs.mjs';
 
 /** The fixture queue copied onto a shared memory, with the client's scratch. */
 async function memoryQueue(rows) {

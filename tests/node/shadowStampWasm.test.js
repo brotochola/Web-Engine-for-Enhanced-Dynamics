@@ -11,6 +11,7 @@ import assert from 'node:assert/strict';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { computeBufferSize } from '../../src/render/renderQueueLayout.js';
 import { stampLightRange } from '../reference/shadowStamp.mjs';
+import { packInstancedRows } from '../reference/gpuPackJs.mjs';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { stampLightRangeWasm } from '../../src/render/shadowStampClient.js';
 import { LIGHTS, MAX, PER_ENTITY, frame, rng, setup, specFor } from '../helpers/shadowStampFrames.mjs';
@@ -127,7 +128,7 @@ test('pre-render binds the stamp kernel and its stamp is the one the JS made', a
 
 // The light cookies (one screen-space row per shadow-casting light) are a render queue of their own in the stamp's
 // regions, so gpuPack.wasm packs them as it packs the queues; before, they were pre-render's private arrays and only
-// the JS packer took them. The kernel's rows are the JS packer's, frame after frame.
+// the JS packer took them. The kernel's rows are the JS packer's (tests/reference/gpuPackJs.mjs), frame after frame.
 test('the light cookies pack through gpuPack.wasm, the rows the JS packer writes', async () => {
   const { RENDER_QUEUE_CAMERA_BYTES } = await import('../../src/render/renderQueueLayout.js');
   const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
@@ -185,9 +186,12 @@ test('the light cookies pack through gpuPack.wasm, the rows the JS packer writes
     cookieBytes().fill(0xa5);
     const nWasm = worker._packGpuCookies(dst);
     const wasm = cookieBytes().slice();
-    worker._gpuPackWasm = null;
+    // The JS packer in the kernel's place, on the same call.
+    worker._packRows = (q, ctx, out, outU32, floatsPer, capacity, shadowCast) =>
+      packInstancedRows(q, ctx, out, outU32, floatsPer, capacity, shadowCast);
     cookieBytes().fill(0xa5);
     const nJs = worker._packGpuCookies(dst);
+    delete worker._packRows;
     worker._gpuPackWasm = bound;
     assert.ok(nJs > 0, `frame ${f}: cookies to pack`);
     assert.equal(calls, 1, `frame ${f}: the kernel packed them`);

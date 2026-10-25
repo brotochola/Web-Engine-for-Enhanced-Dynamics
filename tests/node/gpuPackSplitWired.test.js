@@ -1,6 +1,7 @@
-// E-82b, wired: pre-render's GPU queue in two streams (wasm.gpuPackSplit), through its real pack path on queues
-// it writes in the render-queue memory, A and B in turn. Every frame the pose and static streams hold, word for
-// word, the 15-float rows the switch-off run packs; the header says GPU_FLAG_SPLIT and the statics' generation;
+// E-82b, wired: pre-render's GPU queue in two streams, through its real pack path on queues it writes in the
+// render-queue memory, A and B in turn. Every frame the pose and static streams hold, word for word, the 15-float
+// rows the same frames pack unsplit (a run with the worker's _gpuSplit off, the plain kernel pack); the header says
+// GPU_FLAG_SPLIT and the statics' generation;
 // and a GPU queue buffer's statics are rewritten only when it does not hold the queue's generation for the
 // same rows (a poisoned static stream stays poisoned on the frames that skip it).
 import { test } from 'node:test';
@@ -65,7 +66,7 @@ async function run(pre, split, ySort = false) {
       renderer: { ySort },
       preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' },
       lighting: { enabled: false },
-      wasm: { ...WASM_DEFAULTS, gpuPackSplit: split },
+      wasm: { ...WASM_DEFAULTS },
     },
     globalEntityCount: 64,
     buffers: { componentData: { ...coreComponentData(64), ...emitSpriteBuffers(m).componentData }, componentDataByte: emitSpriteBuffers(m).componentDataByte },
@@ -86,7 +87,9 @@ async function run(pre, split, ySort = false) {
     },
   });
   assert.ok(pre._gpuPackWasm, 'pre-render packs through gpuPack.wasm');
-  assert.equal(pre._gpuSplit, split);
+  assert.equal(pre._gpuSplit, true, 'pre-render splits (a linear atlas)');
+  // The unsplit run: the same frames as 15-float rows, the reference the streams are compared with.
+  pre._gpuSplit = split;
   const out = [];
   FRAMES.forEach((fr, f) => {
     pre.selectWriteBuffers();

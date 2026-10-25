@@ -104,9 +104,6 @@ test('SpriteRenderer and the emit state are in the render-queue memory (the emit
   // Other components keep buffers of their own.
   assert.ok(on.buffers.componentData.Transform instanceof SharedArrayBuffer);
   assert.notEqual(on.buffers.componentData.Transform, rqm.buffer);
-
-  const emitOnly = buildScene({ gpuPack: false });
-  assert.ok(emitOnly.renderQueueMemory?.layout.emit, 'the emit alone still makes the memory');
 });
 
 test('AdobeAnimComponent, the pose stash and the Adobe tables are in the render-queue memory (W27, no switch)', () => {
@@ -145,8 +142,6 @@ test('with shadows the stamp scratch is in the render-queue memory (the stamp ha
   assert.equal(s.maxLights, 12);
 
   assert.equal(buildScene({}, null).renderQueueMemory.layout.stamp, null, 'no shadows, no stamp regions');
-  const noPack = buildScene({ gpuPack: false }, shadows);
-  assert.ok(noPack.renderQueueMemory?.layout.stamp, 'without the pack too');
 });
 
 test('wasm.decorationSway puts the sway arrays in the render-queue memory, next to the decorations', () => {
@@ -178,21 +173,19 @@ test('with navigation the nav buffer is the navigation memory (the flowfield has
   assert.equal(buildScene({}, null).navigationMemory ?? null, null, 'no navigation, no memory');
 });
 
-test('wasm.pixiPack gives Pixi its own sprite rows and pack scratch in the render-queue memory (W9d)', () => {
-  assert.equal(WASM_DEFAULTS.pixiPack, true);
+test('in pixi pack mode Pixi has its own sprite rows and pack scratch in the render-queue memory (W9d, no switch)', () => {
+  for (const name of ['gpuPack', 'pixiPack', 'gpuPackSplit']) assert.equal(Object.hasOwn(WASM_DEFAULTS, name), false, name);
   const pixi = { preRender: { packGpuSprites: 'pixi' } };
   const l = buildScene({}, null, pixi).renderQueueMemory.layout;
   assert.equal(l.pixiInstanceRows, 100, 'one row per queue row');
   assert.equal(l.pixiInstanceFloats, 15, '15 floats a row');
   assert.ok(l.pixiInstanceByte > 0 && l.pixiIndexByte > l.pixiInstanceByte && l.pixiTableByte > 0 && l.pixiParticlesByte > 0);
-  assert.equal(buildScene({ pixiPack: false }, null, pixi).renderQueueMemory.layout.pixiInstanceRows, 0, 'off');
   assert.equal(buildScene({}, null).renderQueueMemory.layout.pixiInstanceRows, 0, 'pre-render packs: no Pixi rows');
   const interp = { ...pixi, renderer: { maxVisibleRenderables: 100, interpolation: true } };
   // W9e: with pose interpolation the rows hold a pose batch's two streams, 6 + 11 floats.
   const li = buildScene({}, null, interp).renderQueueMemory.layout;
   assert.equal(li.pixiInstanceRows, 100, 'pose interpolation: one row per queue row too');
   assert.equal(li.pixiInstanceFloats, 17, 'of 17 floats');
-  assert.equal(buildScene({ gpuPack: false }, null, pixi).renderQueueMemory.layout.pixiInstanceRows, 0, 'needs gpuPack');
 });
 
 test('with a MESH layer MeshGeometry and the MESH layers\' batches live in the mesh memory (W11, no switch)', () => {
@@ -268,7 +261,6 @@ test('wasm.painterRadix gives the worker that sorts its painter state in the ren
   const none = buildScene({}, null, { renderer, preRender: { packGpuSprites: 'preRender', sortSprites: 'none' } }).renderQueueMemory.layout;
   assert.equal(none.preRenderPainter, null, 'nobody sorts: no state');
   assert.equal(none.pixiPainter, null);
-  assert.ok(buildScene({ gpuPack: false }, null, pre).renderQueueMemory.layout.preRenderPainter, 'the emit makes the memory it rides on');
 });
 
 test('the Weed pose payload binds at a byte offset of a shared buffer', async () => {

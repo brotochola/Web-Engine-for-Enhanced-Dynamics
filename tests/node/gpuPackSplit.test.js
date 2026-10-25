@@ -1,18 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  GPU_POSE_FLOATS,
-  GPU_SPACE_SCREEN,
-  GPU_SPACE_WORLD,
-  GPU_SPRITE_FLOATS,
-  GPU_STATIC_FLOATS,
-  makePackContext,
-  packInstancedRows,
-  packSplitRows,
-  splitInterleavedRows,
-} from '../../src/render/gpuQueueLayout.js';
+import { GPU_POSE_FLOATS, GPU_SPACE_SCREEN, GPU_SPACE_WORLD, GPU_SPRITE_FLOATS, GPU_STATIC_FLOATS, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import { SCATTER_MIN_ROWS, bindGpuPack, packSplitRowsWasm } from '../../src/render/gpuPackClient.js';
+import { packInstancedRows, packSplitRows, splitInterleavedRows } from '../reference/gpuPackJs.mjs';
 
 // E-82b: the split pack (a pose stream and a static stream) holds the 15-float row's terms bit for bit, in JS
 // and in gpuPack.wasm, through the gather and the scatter, and the pose alone leaves the statics as they were.

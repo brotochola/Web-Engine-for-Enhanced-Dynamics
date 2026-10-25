@@ -28,6 +28,7 @@ import {
 import { bindGpuPack, packPoseRowsWasm } from '../../src/render/gpuPackClient.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
@@ -89,7 +90,7 @@ export async function setupPoseKernel({ n = 250000, seed = 0xb0ee5 } = {}) {
     spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
     spriteFragBlend: read('instancedSpriteBlend.frag.glsl'),
   };
-  const batch = new InstancedSpriteBatch({ capacity: n, label: 'w9e-bench', poseInterp: true, useWebGpu: false, shaders });
+  const batch = installBatchPackJs(new InstancedSpriteBatch({ capacity: n, label: 'w9e-bench', poseInterp: true, useWebGpu: false, shaders }));
   const opts = {
     space: BATCH_SPACE.WORLD, includeType: -1, excludeType0: -1, excludeType1: -1,
     prevX, prevY, pixelSnap: true, snapCameraX: 0, snapCameraY: 0, snapZoom: 1,

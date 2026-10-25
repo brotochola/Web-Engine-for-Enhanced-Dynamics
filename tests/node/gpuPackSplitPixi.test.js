@@ -1,7 +1,8 @@
 // E-82b, wired: Pixi's entity batch on pre-render's GPU queue (packGpuSprites 'preRender'), through
 // updateSpritesFromRenderQueue. A split frame commits its two streams, its statics only when their generation or
-// the row count moved; a frame of 15-float rows is split into the batch; and a plain batch (the switch off) never
-// takes a split frame for rows.
+// the row count moved; a frame of 15-float rows for the split batch is drawn empty (pre-render splits whenever the
+// batch is split, close-out group B); a plain batch (a nearest atlas) never takes a split frame for rows; and a frame
+// read outside the consume/release handshake that cannot be committed keeps what the batch holds, silently.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -37,7 +38,7 @@ const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl'), spritePose: re
 class Thing extends GameObject {}
 Thing.components = [RigidBody, Collider, SpriteRenderer];
 
-function scene(split) {
+function scene() {
   Query.reset();
   const s = {
     totalEntityCount: 64,
@@ -66,7 +67,7 @@ function scene(split) {
       renderer: { maxVisibleRenderables: MAX, ySort: false },
       preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' },
       layers: {},
-      wasm: { ...WASM_DEFAULTS, gpuPackSplit: split },
+      wasm: { ...WASM_DEFAULTS },
     },
     buffers: { componentData: {} },
     views: {},
@@ -81,7 +82,8 @@ function scene(split) {
   return s;
 }
 
-async function bindPixi(px, s) {
+/** Pixi on the scene's queues; a nearest atlas gives it a plain entity batch (pre-render then packs 15-float rows). */
+async function bindPixi(px, s, nearest = false) {
   const m = s.renderQueueMemory;
   const caps = gpuQueueCaps(MAX, s.config.lighting);
   px.config = s.config;
@@ -93,6 +95,10 @@ async function bindPixi(px, s) {
   px._engineShaders = GPU_SHADERS;
   px.renderQueueEnabled = true;
   px.renderQueueMaxItems = MAX;
+  px.atlasScaleMode = nearest ? 'nearest' : 'linear';
+  // Frames Pixi took (consumeNextRenderQueue), as updateSpritesFromRenderQueue sees them inside update().
+  px._newQueueThisFrame = 1;
+  px.lastReadFrame = 1;
   for (const b of [0, 1]) {
     const views = createViews(m.buffer, MAX, b ? m.layout.queueBByte : m.layout.queueAByte);
     px.renderQueueBuffers[b] = views;
@@ -150,13 +156,13 @@ function batchRows(batch, n) {
 
 test('Pixi commits a split GPU queue in two streams, its statics when their generation moves', async () => {
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const s = await quietly(() => scene(true));
+  const s = await quietly(() => scene());
   const uploads = await quietly(() => bindPixi(px, s));
   const batch = px.entitiesBatch;
-  assert.equal(batch.split, true, 'the switch on gives a split batch');
+  assert.equal(batch.split, true, 'a linear atlas gives a split batch');
   // frame: [rows, split, generation]
   const frames = [[2500, true, 5], [2500, true, 5], [2500, true, 5], [2500, true, 5], [2500, true, 6], [2500, true, 6],
-    [2400, true, 6], [2400, false, 0], [2400, true, 6], [2400, true, 6]];
+    [2400, true, 6], [2400, true, 6], [2400, true, 6]];
   const versions = [];
   frames.forEach(([n, split, gen], f) => {
     const b = f & 1;
@@ -168,16 +174,50 @@ test('Pixi commits a split GPU queue in two streams, its statics when their gene
     for (let k = 0; k < n * 15; k++) if (got[k] !== rows[k]) assert.fail(`frame ${f}: word ${k} ${got[k]} vs ${rows[k]}`);
     versions.push(batch._staticVersion);
   });
-  // A copy per new generation, row count, or 15-float frame; a split frame right after rows copies again.
+  // A copy per new generation or row count.
   const copies = versions.map((v, f) => (f === 0 ? 1 : v - versions[f - 1]));
-  assert.deepEqual(copies, [1, 0, 0, 0, 1, 0, 1, 1, 1, 0]);
+  assert.deepEqual(copies, [1, 0, 0, 0, 1, 0, 1, 0, 0]);
   assert.ok(uploads.statics >= 2 && uploads.statics <= 12, `${uploads.statics} static uploads`);
+
+  // 15-float rows for the split batch: drawn empty, said once; the next split frame draws again, its statics current.
+  // A frame with no sprite rows has no split flag either (pre-render split nothing): nothing drawn, nothing said.
+  const errors = [];
+  const error = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    writeGpuQueueHeader(px.gpuQueueBuffers[0].header, { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0, staticGen: 0 }, 0);
+    px.renderQueueBuffers[0].count[0] = 0;
+    px._setReadBuffer(0);
+    px.updateSpritesFromRenderQueue();
+    assert.equal(px.visibleEntityCount, 0, 'no sprite rows: nothing drawn');
+    assert.equal(errors.length, 0, 'and nothing said');
+    writeGpuFrame(px, 1, 2400, false, 0, 20);
+    px._setReadBuffer(1);
+    px.updateSpritesFromRenderQueue();
+    assert.equal(px.visibleEntityCount, 0, '15-float rows: no entity drawn');
+    assert.equal(batch.mesh.visible, false);
+    writeGpuFrame(px, 0, 2400, false, 0, 21);
+    px._setReadBuffer(0);
+    px.updateSpritesFromRenderQueue();
+  } finally {
+    console.error = error;
+  }
+  assert.equal(errors.filter((e) => e.includes('15-float rows for the split entity batch')).length, 1, 'said once');
+  const before = batch._staticVersion;
+  const rows = writeGpuFrame(px, 1, 2400, true, 6, 22);
+  px._setReadBuffer(1);
+  px.updateSpritesFromRenderQueue();
+  assert.equal(px.visibleEntityCount, 2400, 'a split frame draws again');
+  assert.equal(batch.mesh.visible, true);
+  assert.equal(batch._staticVersion, before, 'its statics still current');
+  const got = batchRows(batch, 2400);
+  for (let k = 0; k < 2400 * 15; k++) if (got[k] !== rows[k]) assert.fail(`after the refused frames: word ${k} ${got[k]} vs ${rows[k]}`);
 });
 
-test('a plain batch (the switch off) leaves a split frame to the SoA path', async () => {
+test('a plain batch (a nearest atlas) commits 15-float rows and draws a split frame empty, not as rows', async () => {
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const s = await quietly(() => scene(false));
-  await quietly(() => bindPixi(px, s));
+  const s = await quietly(() => scene());
+  await quietly(() => bindPixi(px, s, true));
   assert.equal(px.entitiesBatch.split, false);
   const rows = writeGpuFrame(px, 0, 100, false, 0, 1);
   px._setReadBuffer(0);
@@ -189,8 +229,52 @@ test('a plain batch (the switch off) leaves a split frame to the SoA path', asyn
   px._commitPackedBatch = (...a) => { commits++; return commit(...a); };
   writeGpuFrame(px, 1, 100, true, 3, 2);
   px._setReadBuffer(1);
-  px.updateSpritesFromRenderQueue();
+  await quietly(() => px.updateSpritesFromRenderQueue());
   assert.equal(commits, 0, 'a split frame is not read as rows');
+  assert.equal(px.visibleEntityCount, 0, 'nor drawn');
+});
+
+// Frames read outside the consume/release handshake (before Pixi took its first, or a resume redrawing the last one)
+// can catch pre-render's next frame half written: the header's counts cleared while the queue holds the new rows.
+// Before the first frame nothing is drawn; on a resume the batch keeps the rows it last committed. Neither is said.
+test('a half-written frame outside the handshake keeps the last committed rows, and says nothing', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const s = await quietly(() => scene());
+  await quietly(() => bindPixi(px, s));
+  const batch = px.entitiesBatch;
+  const halfWritten = (b, rows) => {
+    writeGpuQueueHeader(px.gpuQueueBuffers[b].header, { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0, staticGen: 0 }, 0);
+    px.renderQueueBuffers[b].count[0] = rows;
+  };
+  const errors = [];
+  const error = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    px._newQueueThisFrame = 0;
+    px.lastReadFrame = 0;
+    halfWritten(0, 300);
+    px._setReadBuffer(0);
+    px.updateSpritesFromRenderQueue();
+    assert.equal(px.visibleEntityCount, 0, 'before the first frame: nothing drawn');
+    assert.equal(batch.mesh.visible, false);
+
+    px._newQueueThisFrame = 1;
+    px.lastReadFrame = 1;
+    const rows = writeGpuFrame(px, 1, 300, true, 4, 1);
+    px._setReadBuffer(1);
+    px.updateSpritesFromRenderQueue();
+    assert.equal(px.visibleEntityCount, 300, 'a frame Pixi took');
+
+    px._newQueueThisFrame = 0;
+    halfWritten(1, 310);
+    px.updateSpritesFromRenderQueue();
+    assert.equal(px.visibleEntityCount, 300, 'a resume: the last committed rows stay');
+    assert.equal(batch.mesh.visible, true);
+    assert.deepEqual(batchRows(batch, 300), rows);
+  } finally {
+    console.error = error;
+  }
+  assert.deepEqual(errors, [], 'nothing said');
 });
 
 // Close-out group B. On these frames Pixi packed the main queue itself (packSpriteLayer, in JS in pre-render pack
@@ -198,7 +282,7 @@ test('a plain batch (the switch off) leaves a split frame to the SoA path', asyn
 // nobody sorts (Pixi had no painter either, so its own pack was the same unsorted rows). Both commit pre-render's.
 test('a frame of glow rows only and zIndex sprites under Y-sort off commit pre-render\'s rows', async () => {
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const s = await quietly(() => scene(true));
+  const s = await quietly(() => scene());
   await quietly(() => bindPixi(px, s));
   assert.equal(px._sortSpritesOn, 'none', 'Y-sort off: nobody sorts');
   let ownPacks = 0;

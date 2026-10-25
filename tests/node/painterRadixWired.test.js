@@ -463,7 +463,7 @@ async function pixiRun(px, frames, painterRadix) {
     px.updateSpritesFromRenderQueue();
     const nS = px.visibleEntityCount | 0;
     const nG = glowOrder.length;
-    // A split batch (E-82b, wasm.gpuPackSplit) holds the rows as its pose stream and its static stream.
+    // A split batch (E-82b) holds the rows as its pose stream and its static stream.
     const batch = px.entitiesBatch;
     const sprites = batch.split
       ? Uint32Array.from([...copyU32(batch.data, nS * SPLIT_POSE_FLOATS), ...copyU32(batch.staticData, nS * POSE_STATIC_FLOATS)])
