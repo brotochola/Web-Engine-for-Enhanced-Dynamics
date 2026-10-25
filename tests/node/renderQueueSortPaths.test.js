@@ -13,8 +13,6 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
   assert.doesNotMatch(preRender, /_heapsortRenderables|_heapsortCollector/);
   assert.doesNotMatch(preRender, /instancedSprites\s*!==\s*false/);
   assert.match(preRender, /sortTimeThisFrame = 0/);
-  assert.match(preRender, /rqSortKey\[out\] = sk/);
-  assert.match(preRender, /ref\.sortKey = rqSortKey/);
   const custom = preRender.indexOf('buildCustomLayerQueues(deltaTime) {');
   const customBody = preRender.slice(custom, preRender.indexOf('_gpuSoAFromViews(views)', custom));
   assert.match(customBody, /this\.emitSpriteQueue\(deltaTime/);
@@ -85,18 +83,10 @@ test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort con
 });
 
 test('preRender writes the SoA row and the CPU painter packs it', () => {
-  assert.match(preRender, /rqX\[out\] = currX/);
   assert.match(preRender, /packSpriteLayer\(/);
   assert.match(preRender, /_allowGpuPainter\(/);
   assert.doesNotMatch(preRender, /_packDirect/);
   assert.doesNotMatch(preRender, /_writeSpriteKeys/);
-});
-
-test('preRender persist skips Adobe expansion (type 6 write-index mismatch)', () => {
-  const fn = preRender.indexOf('_type0PersistHit(');
-  assert.ok(fn >= 0);
-  const body = preRender.slice(fn, preRender.indexOf('_rememberType0Set(', fn));
-  assert.match(body, /if \(type === 6\) return false;/);
 });
 
 test('instancedSprites config flag removed (always instanced)', () => {

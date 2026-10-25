@@ -80,12 +80,9 @@ test('pre-render views its collector, animation state and texture cache in the e
   assert.equal(SpriteRenderer.active.byteOffset, e.spriteRendererByte);
 });
 
-test('an emit layout for another entity count is not used', async () => {
+test('an emit layout for another entity count stops pre-render (the emit has nothing else to run on)', async () => {
   const m = emitMemory(N + 1);
-  const worker = await boot(m);
-  assert.notEqual(worker._renderableType.buffer, m.buffer);
-  assert.notEqual(worker.entityFrameIndex.buffer, m.buffer);
-  assert.equal(worker.entityFrameIndex.length, N);
+  await assert.rejects(boot(m), /no emit regions/);
 });
 
 test('with the Adobe regions (W27) the pose stash is in the memory too, where the emit kernel reads it', async () => {

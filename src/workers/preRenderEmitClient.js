@@ -197,7 +197,7 @@ export async function bindPreRenderEmit(memory, emit) {
 }
 
 /**
- * W27. Bind the Adobe tables when the layout has them (wasm.preRenderEmitAdobe). Until writeEmitAdobeAssets
+ * W27. Bind the Adobe tables when the layout has them (a scene with AdobeAnimComponent). Until writeEmitAdobeAssets
  * copies the registry in, frames with an Adobe root are declined.
  * @returns {boolean} whether the layout has them
  */

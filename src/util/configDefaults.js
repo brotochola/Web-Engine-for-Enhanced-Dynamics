@@ -467,20 +467,8 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   gpuPackSplit: true,
   /**
-   * Pre-render's emit (`preRenderEmit.wasm`, E-112): SpriteRenderer, ShadowCaster and DecorationComponent
-   * live in the render-queue memory with the emit's state, so the kernel reads every column there.
-   */
-  preRenderEmit: true,
-  /**
-   * Adobe Animate characters in pre-render's emit kernel (W27): AdobeAnimComponent, the collector's pose stash and
-   * the Adobe assets' piece tables (room for them: preRender.adobeTablesMB) live in the render-queue memory too, so
-   * `preRenderEmit.wasm` expands each character into its pieces and advances the clips. false declines every frame
-   * with an Adobe character, as before (needs preRenderEmit).
-   */
-  preRenderEmitAdobe: true,
-  /**
    * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b): Transform, its pose and Collider in the render-queue
-   * memory with the emit's SpriteRenderer (so it needs preRenderEmit); with physics, in Box2D's block with RigidBody
+   * memory with the emit's SpriteRenderer; with physics, in Box2D's block with RigidBody
    * and the published poses.
    */
   preRenderCollect: true,
@@ -496,7 +484,7 @@ export const WASM_DEFAULTS = Object.freeze({
   painterRadix: true,
   /**
    * The particle worker's decoration sway (`decorationSway.wasm`, W22): its arrays in the render-queue memory,
-   * next to the decorations block the emit puts there (so it needs preRenderEmit), with a sway bucket grid.
+   * next to the decorations block the emit puts there, with a sway bucket grid.
    */
   decorationSway: true,
   /**
@@ -815,7 +803,7 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
   hideDecorationsAtZoom: 0.25,
   /**
    * Room in MB (whole, 0..1024) for the Adobe Animate assets' clip, frame and piece tables in the render-queue
-   * memory, with wasm.preRenderEmitAdobe in a scene with Adobe characters. The memory is made before the assets
+   * memory, in a scene with Adobe characters. The memory is made before the assets
    * load, so it cannot be sized from them: a piece takes 46 bytes. An asset that does not fit draws its characters
    * through the JavaScript emit (pre-render warns once).
    */

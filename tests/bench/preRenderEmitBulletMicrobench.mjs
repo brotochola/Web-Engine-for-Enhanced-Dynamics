@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
  * Kernel (E-76 W4d): pre-render's bullet and trail rows (types 4 and 5) written by the emit kernel against the JS
- * that writes them when emit_rows lists them (PreRenderWorker._emitForeignRows), through the shipped
- * emitSpriteQueue on a real worker, BulletComponent in the render-queue memory where the scene puts it (W19).
+ * emit that wrote them (tests/reference/preRenderEmitJs.mjs), through emitSpriteQueue on a real worker,
+ * BulletComponent in the render-queue memory where the scene puts it (W19).
  *
- *   foreign  the bullet columns left out of the kernel's table: emit_rows lists the bullet and trail rows and
- *            _emitForeignRows writes them (the path before W4d)
+ *   js       the JS emit the kernel replaced, the same frame (installEmitJs, _emitWasm null)
  *   wasm     the bullet columns in the table (writeEmitBulletColumns): emit_rows writes them
  *
  * Cases (--case): bullets, bulletStressScene's frame (32 700 bullets on screen, no trails, 195 sprites among
@@ -13,7 +12,7 @@
  * process, through runKernelVariants.mjs, which rejects a variant whose checksum differs: the queue's bytes after
  * one frame. --check prints the checksum only.
  *
- *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderEmitBulletMicrobench.mjs --variants foreign,wasm --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderEmitBulletMicrobench.mjs --variants js,wasm --rounds 5
  *   node tests/bench/preRenderEmitBulletMicrobench.mjs --variant wasm [--case bullets|trails] [--check] [--output path]
  */
 import { BulletComponent } from '../../src/components/bulletComponent.js';
@@ -24,10 +23,11 @@ import { Transform } from '../../src/components/transform.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
-import { EMIT_SLOTS, writeEmitBulletColumns } from '../../src/workers/preRenderEmitClient.js';
+import { writeEmitBulletColumns } from '../../src/workers/preRenderEmitClient.js';
 import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
 
 const DT = 1000 / 60;
 const N = 200;
@@ -92,6 +92,8 @@ export async function setupBulletEmit({ trails = false, seed = 0xb011e7 } = {}) 
     },
   };
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The JS emit the kernel replaced, for the js variant (tests/reference).
+  installEmitJs(worker);
   await initWorker(worker, {
     config: { worldWidth: 4000, worldHeight: 3000, preRender: { interpolation: false }, renderer: { ySort: true } },
     globalEntityCount: N,
@@ -198,27 +200,24 @@ export async function setupBulletEmit({ trails = false, seed = 0xb011e7 } = {}) 
   return { worker, b: worker._emitWasm, source, rows: row, hash };
 }
 
-/** Put the variant on the worker's table: the bullet columns in it (wasm) or left out (foreign). */
+/** Put the variant on the worker: the kernel with the bullet columns in its table (wasm), or the JS emit (js). */
 export function useVariant(s, variant) {
   const { worker, b } = s;
+  if (variant === 'js') {
+    worker._emitWasm = null;
+    return;
+  }
   const write = worker._writeEmitTable.bind(worker);
-  const bActive = EMIT_SLOTS.indexOf('bActive');
   const trail = worker._resolveBuiltinTextureId('_bulletTrail');
-  worker._writeEmitTable = variant === 'wasm'
-    ? (source, trailTexture) => write(source, trailTexture) && writeEmitBulletColumns(b, BulletComponent, trail)
-    : (source, trailTexture) => {
-        const ok = write(source, trailTexture);
-        b.table[bActive] = 0;
-        return ok;
-      };
+  worker._writeEmitTable = (source, trailTexture) => write(source, trailTexture) && writeEmitBulletColumns(b, BulletComponent, trail);
 }
 
 async function main() {
   const args = parseArgs();
-  // The shipped path by default (W4d wires it); foreign is the path before it.
+  // The shipped path by default; js is the JS emit it replaced.
   const variant = String(args.variant || 'wasm');
   const caseName = String(args.case || 'bullets');
-  if (!['foreign', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   if (!['bullets', 'trails'].includes(caseName)) throw new Error(`unknown case ${caseName}`);
   const s = await setupBulletEmit({ trails: caseName === 'trails' });
   useVariant(s, variant);
@@ -226,9 +225,9 @@ async function main() {
   const run = () => worker.emitSpriteQueue(DT, source);
   const written = run();
   if (written !== s.rows) throw new Error(`wrote ${written} of ${s.rows} rows`);
-  // The variant took the path it names: rows listed for the JS, or none.
-  const listed = b.results[3];
-  if ((variant === 'foreign') !== (listed > 0)) throw new Error(`${variant}: emit_rows listed ${listed} rows for the JS`);
+  // The kernel wrote every row (none listed for a JS that is no longer there).
+  const listed = variant === 'wasm' ? b.results[3] : 0;
+  if (listed > 0) throw new Error(`${variant}: emit_rows listed ${listed} rows`);
   const checksum = s.hash();
   if (args.check) {
     console.log(`checksum ${checksum} variant ${variant} case ${caseName} rows ${written} listed ${listed}`);
@@ -246,7 +245,7 @@ async function main() {
     feature: 'pre-render-emit-bullets-wasm',
     variant,
     case: caseName,
-    functions: ['PreRenderWorker.emitSpriteQueue', 'PreRenderWorker._emitForeignRows', 'preRenderEmit.emit_rows'],
+    functions: ['PreRenderWorker.emitSpriteQueue', 'preRenderEmit.emit_rows', 'tests/reference preRenderEmitJs emitSpriteQueue'],
     rows,
     listed,
     checksum,

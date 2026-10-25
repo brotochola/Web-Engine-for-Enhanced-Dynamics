@@ -549,7 +549,7 @@ export function renderQueueMemorySpec(scene) {
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
   const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
   const pack = config.wasm?.gpuPack !== false;
-  const emit = config.wasm?.preRenderEmit !== false ? emitBlocks(scene) : null;
+  const emit = emitBlocks(scene);
   // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
   const lighting = config.lighting || {};
   const stamp = lighting.shadowsEnabled && (gpuCaps.maxSun | 0) > 0
@@ -706,6 +706,12 @@ function initializeRenderQueueMemory(scene) {
   // In the block the collect takes its body variant with physics and its own without.
   if (place) for (const [c, p] of shapes(bodies || own)) if ((rqm = make(c, p, place))) break;
   if (!rqm && spec.enabled) for (const [c, p] of shapes(own)) if ((rqm = make(c, p, null))) break;
+  // The emit runs only in its kernel, on this memory (close-out group B): a scene with a render queue needs it.
+  if (!rqm && spec.enabled && spec.maxVisibleRenderables > 0) {
+    const mb = Math.ceil(renderQueueMemoryBytes(...spec.args, null, null) / 1048576);
+    throw new Error(`render-queue memory: ${mb} MB (renderer.maxVisibleRenderables ${spec.maxVisibleRenderables}, the components `
+      + 'and pools the emit reads) could not be made: past the 2048 MB a kernel memory can take, or refused by the browser');
+  }
   scene.renderQueueMemory = rqm;
   const c = scene.renderQueueMemory?.layout.collect;
   if (c) {
@@ -761,7 +767,7 @@ export function customLayerQueueSpecs() {
 /**
  * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations, LightEmitter,
  * the particle memory and the LiquidFun render buffer; with
- * wasm.preRenderEmitAdobe (W27) and Adobe Animate characters, AdobeAnimComponent and room for the assets' tables
+ * Adobe Animate characters (W27), AdobeAnimComponent and room for the assets' tables
  * (preRender.adobeTablesMB: the assets load after this memory is made, so their size is not known yet).
  */
 function emitBlocks(scene) {
@@ -771,7 +777,7 @@ function emitBlocks(scene) {
   const maxDecorations = config.decoration?.maxDecorations | 0;
   const maxParticles = config.particle?.maxParticles | 0;
   const lfMax = config.physics?.liquidFun?.enabled ? config.physics.liquidFun.maxCount | 0 : 0;
-  const adobeOn = config.wasm?.preRenderEmitAdobe !== false && Boolean(pools.AdobeAnimComponent?.ComponentClass);
+  const adobeOn = Boolean(pools.AdobeAnimComponent?.ComponentClass);
   const tablesMB = config.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
   if (adobeOn) assertIntegerInRange('preRender.adobeTablesMB', tablesMB, 0, 1024);
   return {

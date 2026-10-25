@@ -52,6 +52,7 @@ import {
   writePersistColumns,
 } from '../../src/workers/preRenderEmitClient.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
 
 const N = 700;
 const DECOS = 300;
@@ -173,6 +174,8 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
   for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent, LightEmitter]) C.clearArrays();
   const meta = textureMetadata();
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The JS emit the kernel replaced, for the runs with _emitWasm null (tests/reference).
+  installEmitJs(worker);
   await initWorker(worker, {
     config: { worldWidth: 4000, worldHeight: 3000, preRender: { interpolation: false }, renderer: { ySort } },
     globalEntityCount: N,
@@ -808,10 +811,10 @@ test('a column outside the memory makes the table refuse, so the JS emits', asyn
 });
 
 test('emitSpriteQueue through the kernel writes every row the JS loop writes, other types included', async (t) => {
-  // W4d: the last case with BulletComponent in the memory, where the kernel writes the bullet and trail rows.
-  const cases = [[true, false, false, false], [false, false, false, false], [true, true, false, false], [false, false, true, false], [true, true, true, true]];
-  for (const [ySort, bullets, lights, particles] of cases) {
-    const k = await setup({ ySort, bullets, lights, particles, alphaFade: particles ? 0.6 : 0, seed: particles ? 0x9a74 : lights ? 0x6109 : bullets ? 0xb2b : ySort ? 0xc0ffee : 0xdecade });
+  // Every row type's columns in the memory, as the scene lays them (close-out group B): the kernel writes every row.
+  const cases = [[true, 0x9a74, false], [false, 0xc0ffee, false], [true, 0xdecade, true], [false, 0xb2b, true]];
+  for (const [ySort, seed, liquidFun] of cases) {
+    const k = await setup({ ySort, bullets: true, lights: true, particles: true, liquidFun, interpolate: liquidFun, alphaFade: 0.6, seed });
     const { worker, source } = k;
     const bound = worker._emitWasm;
     assert.ok(bound, 'the worker bound the kernel at init');
@@ -857,7 +860,7 @@ test('emitSpriteQueue through the kernel writes every row the JS loop writes, ot
       assert.deepEqual(wasm[f].ends, js[f].ends, `frame ${f}: play-once ends, in order`);
       assert.deepEqual(wasm[f].warns, js[f].warns, `frame ${f}: warnings`);
     }
-    t.diagnostic(`ySort ${ySort}, bullets in the memory ${bullets}, lights ${lights}, particles ${particles}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
+    t.diagnostic(`ySort ${ySort}, LiquidFun ${liquidFun}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
   }
 });
 
@@ -1112,9 +1115,9 @@ test('persist_frame misses on a frame with an Adobe root, which it held last tim
  * JS writes their zeros again, and the queues must not differ.
  */
 async function runWiredPersist(t, cases, casters) {
-  for (const { ySort, seed, all: inMemory = false } of cases) {
-    // `all`: every row type's columns in the memory, so a persist frame's other rows go through the kernel too.
-    const k = await setup({ ySort, seed, persist: true, ...(inMemory ? { bullets: true, lights: true, particles: true, liquidFun: true, interpolate: true } : {}) });
+  for (const { ySort, seed } of cases) {
+    // Every row type's columns in the memory, as the scene lays them: a persist frame's other rows go through the kernel too.
+    const k = await setup({ ySort, seed, persist: true, bullets: true, lights: true, particles: true, liquidFun: true, interpolate: true });
     // No ShadowCaster: its columns unbound, as in a scene that never registered it (the next setup binds them).
     if (!casters) for (const c of ['active', 'heightMultiplier', 'anchorOffsetX', 'anchorOffsetY']) ShadowCaster[c] = null;
     await withPersistOrder(ySort, async () => {
@@ -1193,7 +1196,7 @@ async function runWiredPersist(t, cases, casters) {
 }
 
 test('emitSpriteQueue through the kernel takes the persist frames the JS takes and writes what it writes', async (t) => {
-  await runWiredPersist(t, [{ ySort: true, seed: 0xa11 }, { ySort: false, seed: 0xa12 }, { ySort: true, seed: 0xa13, all: true }], true);
+  await runWiredPersist(t, [{ ySort: true, seed: 0xa11 }, { ySort: false, seed: 0xa12 }, { ySort: true, seed: 0xa13 }], true);
 });
 
 test('without ShadowCaster the kernel leaves the shadow terms the full emit wrote (E-117)', async (t) => {

@@ -84,8 +84,8 @@ test('with spatial workers the scene makes the publish memory (the search has no
   assert.ok(on.gridMetadata.patternByte > 0, 'with the gather regions');
 });
 
-test('wasm.preRenderEmit puts SpriteRenderer and the emit state in the render-queue memory', () => {
-  assert.equal(WASM_DEFAULTS.preRenderEmit, true);
+test('SpriteRenderer and the emit state are in the render-queue memory (the emit has no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'preRenderEmit'), false);
 
   const on = buildScene({});
   const rqm = on.renderQueueMemory;
@@ -105,23 +105,12 @@ test('wasm.preRenderEmit puts SpriteRenderer and the emit state in the render-qu
   assert.ok(on.buffers.componentData.Transform instanceof SharedArrayBuffer);
   assert.notEqual(on.buffers.componentData.Transform, rqm.buffer);
 
-  const off = buildScene({ preRenderEmit: false });
-  assert.equal(off.renderQueueMemory.layout.emit, null, 'the pack memory without the emit regions');
-  assert.notEqual(off.buffers.componentData.SpriteRenderer, off.renderQueueMemory.buffer);
-  assert.equal(SpriteRenderer.active.byteOffset, 0);
-  assert.deepEqual(off.buffers.componentDataByte, {});
-  assert.equal(off.buffers.entityTextureByte, 0);
-
   const emitOnly = buildScene({ gpuPack: false });
   assert.ok(emitOnly.renderQueueMemory?.layout.emit, 'the emit alone still makes the memory');
-
-  const none = buildScene({ gpuPack: false, preRenderEmit: false });
-  assert.equal(none.renderQueueMemory, null);
-  assert.ok(none.buffers.renderQueueDataA instanceof SharedArrayBuffer);
 });
 
-test('wasm.preRenderEmitAdobe puts AdobeAnimComponent, the pose stash and the Adobe tables in the render-queue memory (W27)', () => {
-  assert.equal(WASM_DEFAULTS.preRenderEmitAdobe, true);
+test('AdobeAnimComponent, the pose stash and the Adobe tables are in the render-queue memory (W27, no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'preRenderEmitAdobe'), false);
 
   const on = buildScene({}, null, {}, [AdobeAnimComponent]);
   const rqm = on.renderQueueMemory;
@@ -140,20 +129,9 @@ test('wasm.preRenderEmitAdobe puts AdobeAnimComponent, the pose stash and the Ad
   assert.equal(nine.adobeAssetsBytes, EMIT_ADOBE_MAX_ASSETS * EMIT_ADOBE_ASSET_BYTES + 9 * 1048576, 'preRender.adobeTablesMB');
   assert.throws(() => buildScene({}, null, { preRender: { adobeTablesMB: 2.5 } }, [AdobeAnimComponent]), /preRender\.adobeTablesMB/);
 
-  const off = buildScene({ preRenderEmitAdobe: false }, null, {}, [AdobeAnimComponent]);
-  const o = off.renderQueueMemory.layout.emit;
-  assert.ok(o, 'the emit regions stay');
-  for (const k of ['adobeAnimByte', 'stashXByte', 'stashYByte', 'stashRotCByte', 'stashRotSByte', 'adobeListByte', 'adobeAssetsByte']) {
-    assert.equal(o[k], -1, `${k}: none`);
-  }
-  assert.equal(off.buffers.componentDataByte.AdobeAnimComponent, undefined);
-  assert.ok(off.buffers.componentData.AdobeAnimComponent instanceof SharedArrayBuffer);
-  assert.notEqual(off.buffers.componentData.AdobeAnimComponent, off.renderQueueMemory.buffer);
-
   const none = buildScene({}).renderQueueMemory.layout.emit;
   assert.equal(none.adobeAnimByte, -1, 'no Adobe character in the scene: no Adobe regions');
   assert.equal(none.adobeAssetsByte, -1);
-  assert.equal(buildScene({ preRenderEmit: false }, null, {}, [AdobeAnimComponent]).renderQueueMemory.layout.emit, null, 'needs the emit');
 });
 
 test('with shadows the stamp scratch is in the render-queue memory (the stamp has no switch)', () => {
@@ -167,8 +145,8 @@ test('with shadows the stamp scratch is in the render-queue memory (the stamp ha
   assert.equal(s.maxLights, 12);
 
   assert.equal(buildScene({}, null).renderQueueMemory.layout.stamp, null, 'no shadows, no stamp regions');
-  const stampOnly = buildScene({ gpuPack: false, preRenderEmit: false }, shadows);
-  assert.ok(stampOnly.renderQueueMemory?.layout.stamp, 'the stamp alone still makes the memory');
+  const noPack = buildScene({ gpuPack: false }, shadows);
+  assert.ok(noPack.renderQueueMemory?.layout.stamp, 'without the pack too');
 });
 
 test('wasm.decorationSway puts the sway arrays in the render-queue memory, next to the decorations', () => {
@@ -188,8 +166,6 @@ test('wasm.decorationSway puts the sway arrays in the render-queue memory, next 
   assert.ok(free, 'no bucket grid: the sway regions, for sway_free');
   assert.equal(free.buckets, 0);
   assert.equal(buildScene({}, null).renderQueueMemory.layout.sway, null, 'no decorations');
-  const noEmit = buildScene({ preRenderEmit: false }, null, grass);
-  assert.equal(noEmit.renderQueueMemory.layout.sway, null, 'without the emit the decorations are not in the memory');
 });
 
 test('with navigation the nav buffer is the navigation memory (the flowfield has no switch)', () => {
@@ -216,7 +192,7 @@ test('wasm.pixiPack gives Pixi its own sprite rows and pack scratch in the rende
   const li = buildScene({}, null, interp).renderQueueMemory.layout;
   assert.equal(li.pixiInstanceRows, 100, 'pose interpolation: one row per queue row too');
   assert.equal(li.pixiInstanceFloats, 17, 'of 17 floats');
-  assert.equal(buildScene({ gpuPack: false, preRenderEmit: false }, null, pixi).renderQueueMemory, null, 'needs gpuPack');
+  assert.equal(buildScene({ gpuPack: false }, null, pixi).renderQueueMemory.layout.pixiInstanceRows, 0, 'needs gpuPack');
 });
 
 test('with a MESH layer MeshGeometry and the MESH layers\' batches live in the mesh memory (W11, no switch)', () => {
@@ -262,7 +238,6 @@ test('wasm.preRenderCollect puts Transform, its pose and Collider in the render-
   assert.equal(Transform.active.buffer, on.renderQueueMemory.buffer);
 
   assert.equal(buildScene({}, null).renderQueueMemory.layout.collect, null, 'physics on: the pose is in Box2D\'s heap');
-  assert.equal(buildScene({ preRenderEmit: false }, null, noPhysics).renderQueueMemory.layout.collect, null, 'needs the emit');
   // Switched off, pre-render does not run the collect kernel, but the blocks stay: the emit's glow rows read
   // Transform's pose there.
   const off = buildScene({ preRenderCollect: false }, null, noPhysics);
@@ -293,7 +268,7 @@ test('wasm.painterRadix gives the worker that sorts its painter state in the ren
   const none = buildScene({}, null, { renderer, preRender: { packGpuSprites: 'preRender', sortSprites: 'none' } }).renderQueueMemory.layout;
   assert.equal(none.preRenderPainter, null, 'nobody sorts: no state');
   assert.equal(none.pixiPainter, null);
-  assert.equal(buildScene({ gpuPack: false, preRenderEmit: false }, null, pre).renderQueueMemory, null, 'it rides on the memory, does not make it');
+  assert.ok(buildScene({ gpuPack: false }, null, pre).renderQueueMemory.layout.preRenderPainter, 'the emit makes the memory it rides on');
 });
 
 test('the Weed pose payload binds at a byte offset of a shared buffer', async () => {

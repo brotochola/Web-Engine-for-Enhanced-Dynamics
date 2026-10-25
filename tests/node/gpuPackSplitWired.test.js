@@ -21,7 +21,7 @@ import {
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
-import { coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { coreComponentData, emitSpec, emitSpriteBuffers, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
 const MAX = 5000;
 const POSE_FROM_ROW = [0, 1, 6, 7];
@@ -57,7 +57,7 @@ function writeQueue(q, fr, f, ySort) {
 
 async function run(pre, split, ySort = false) {
   const caps = gpuQueueCaps(MAX, { enabled: false });
-  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps));
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(64));
   await initWorker(pre, {
     config: {
       worldWidth: 4000,
@@ -68,7 +68,7 @@ async function run(pre, split, ySort = false) {
       wasm: { ...WASM_DEFAULTS, gpuPackSplit: split },
     },
     globalEntityCount: 64,
-    buffers: { componentData: coreComponentData(64) },
+    buffers: { componentData: { ...coreComponentData(64), ...emitSpriteBuffers(m).componentData }, componentDataByte: emitSpriteBuffers(m).componentDataByte },
     extra: {
       renderQueueMemory: m.memory,
       renderQueueLayout: m.layout,

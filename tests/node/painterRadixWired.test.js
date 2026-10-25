@@ -30,7 +30,7 @@ import { radixSortIndicesBySortKey, spriteYSortKey } from '../../src/util/sortIn
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
-import { coreComponentData, initWorker, loadWorker, quietly } from '../bench/workerHarness.mjs';
+import { coreComponentData, emitSpec, emitSpriteBuffers, initWorker, loadWorker, quietly } from '../bench/workerHarness.mjs';
 
 const MAX = 6000;
 const FRAMES = 36;
@@ -140,7 +140,7 @@ function countKernel(state) {
 
 async function preRenderRun(pre, frames, painterRadix) {
   const caps = gpuQueueCaps(MAX, { enabled: true });
-  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), null, null, null, false, null,
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(64), null, null, false, null,
     painterRadix ? { preRender: true, pixi: false } : null);
   await initWorker(pre, {
     config: {
@@ -152,7 +152,7 @@ async function preRenderRun(pre, frames, painterRadix) {
       wasm: { ...WASM_DEFAULTS, painterRadix },
     },
     globalEntityCount: 64,
-    buffers: { componentData: coreComponentData(64) },
+    buffers: { componentData: { ...coreComponentData(64), ...emitSpriteBuffers(m).componentData }, componentDataByte: emitSpriteBuffers(m).componentDataByte },
     extra: {
       renderQueueMemory: m.memory,
       renderQueueLayout: m.layout,
@@ -228,7 +228,7 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const frames = makeFrames(0xe138);
   const caps = gpuQueueCaps(MAX, { enabled: true });
-  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), null, null, null, false, null,
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(64), null, null, false, null,
     { preRender: true, pixi: false });
   await initWorker(pre, {
     config: {
@@ -240,7 +240,7 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
       wasm: { ...WASM_DEFAULTS },
     },
     globalEntityCount: 64,
-    buffers: { componentData: coreComponentData(64) },
+    buffers: { componentData: { ...coreComponentData(64), ...emitSpriteBuffers(m).componentData }, componentDataByte: emitSpriteBuffers(m).componentDataByte },
     extra: {
       renderQueueMemory: m.memory,
       renderQueueLayout: m.layout,

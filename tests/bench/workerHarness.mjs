@@ -183,6 +183,19 @@ export function bindPoseColumns(n) {
   }
 }
 
+/**
+ * The emit's part of a render-queue memory spec for `n` entities (createRenderQueueMemory's emit argument): every scene's
+ * memory has it, since the emit runs only in its kernel. Pass the memory to emitSpriteBuffers to bind SpriteRenderer there.
+ */
+export function emitSpec(n, more = {}) {
+  return { entities: n, spriteBytes: SpriteRenderer.getBufferSize(n), casterBytes: 0, decorationBytes: 0, ...more };
+}
+
+/** The componentData and componentDataByte entries that bind SpriteRenderer at the emit's block of memory `m`. */
+export function emitSpriteBuffers(m) {
+  return { componentData: { SpriteRenderer: m.buffer }, componentDataByte: { SpriteRenderer: m.layout.emit.spriteRendererByte } };
+}
+
 /** A custom layer's collector as pre-render makes one (its pose stash included), of `n` rows. */
 export function customLayerCollector(n, ySorting = false) {
   return {

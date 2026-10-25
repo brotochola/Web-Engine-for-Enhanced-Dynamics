@@ -33,6 +33,7 @@ import { writeEmitColumns, writePersistColumns } from '../../src/workers/preRend
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
 
 // --scale shrinks the population (a cache-resident one, a diagnostic; the verdict is at 1).
 const ARGS = parseArgs();
@@ -73,6 +74,8 @@ export async function setupPersistKernel(opts = {}) {
   if (!m) throw new Error('the render-queue memory does not fit');
   const e = m.layout.emit;
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The JS emit the kernel replaced, for the js variant (tests/reference).
+  installEmitJs(worker);
   await initWorker(worker, {
     config: {
       worldWidth: 1920,

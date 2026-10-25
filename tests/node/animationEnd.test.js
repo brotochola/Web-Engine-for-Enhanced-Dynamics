@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
 import { Messages, MESSAGE_ANIMATION_END } from '../../src/core/messages.js';
 import { drainMessages } from '../../src/util/messageRing.js';
 import { Transform } from '../../src/components/transform.js';
@@ -58,6 +59,10 @@ test('pre-render reports a held last frame once per animation and per spawn', as
 test('an Adobe clip played without loop reports its end once, only for listening types', async () => {
   bindComponents();
   const pr = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The clocks through the JS the kernel replaced (tests/reference): this test mocks the registry's clip lengths,
+  // which the kernel reads from its own tables. The end message and its type filter are pre-render's.
+  installEmitJs(pr);
+  pr._emitWasm = null;
   pr.globalEntityCount = N;
   pr._bindAnimationEndTypes([
     { entityType: 0, animationEnd: true },

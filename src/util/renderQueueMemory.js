@@ -145,7 +145,7 @@ function emitLayout(r, entities, rows, customLayers) {
     persistEntityByte: r.emitPersistEntity.byte,
     persistFrameByte: r.emitPersistFrame.byte,
     persistAnimByte: r.emitPersistAnim.byte,
-    // W27: the Adobe emit's regions, -1 without them (wasm.preRenderEmitAdobe off, or no AdobeAnimComponent).
+    // W27: the Adobe emit's regions, -1 without them (no AdobeAnimComponent).
     adobeAnimByte: r.adobeAnim ? block(r.adobeAnim) : -1,
     stashXByte: r.emitStashX ? r.emitStashX.byte : -1,
     stashYByte: r.emitStashY ? r.emitStashY.byte : -1,

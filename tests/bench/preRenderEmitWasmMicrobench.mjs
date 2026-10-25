@@ -41,9 +41,13 @@ import { DECORATION_Y_SORT_SCALE } from '../../src/util/configDefaults.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
-import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from './workerHarness.mjs';
+import { bindPoseColumns, coreComponentData, emitSpec, initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 import { EMIT_SLOTS } from '../../src/workers/preRenderEmitClient.js';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
+import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { computeGpuQueueBufferSize } from '../../src/render/gpuQueueLayout.js';
+import { gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
 const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/workers/preRenderEmit.wasm'));
@@ -204,6 +208,12 @@ export async function setupEmitKernel(opts = {}) {
   buffers.componentData.ShadowCaster = new SharedArrayBuffer(ShadowCaster.getBufferSize(N));
   buffers.componentData.DecorationComponent = new SharedArrayBuffer(DecorationComponent.getBufferSize(DECOS));
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The JS emit the kernel replaced, for the js variant (tests/reference).
+  installEmitJs(worker);
+  // Pre-render boots only on a render-queue memory with the emit's regions (close-out group B): a small one of the
+  // engine's layout, for the boot; the columns then move into this bench's own memory below, where both variants run.
+  const bootCaps = gpuQueueCaps(MAX_ITEMS, { enabled: false });
+  const boot = createRenderQueueMemory(MAX_ITEMS, computeBufferSize(MAX_ITEMS), computeGpuQueueBufferSize(bootCaps), emitSpec(N));
   await initWorker(worker, {
     config: {
       worldWidth: WORLD_W,
@@ -219,6 +229,8 @@ export async function setupEmitKernel(opts = {}) {
     extra: {
       maxDecorations: DECOS,
       textureMetadata: tex.meta,
+      renderQueueMemory: boot.memory,
+      renderQueueLayout: boot.layout,
       renderQueue: {
         maxItems: MAX_ITEMS,
         sync: new SharedArrayBuffer(8),
@@ -234,6 +246,8 @@ export async function setupEmitKernel(opts = {}) {
   });
   bindPoseColumns(N);
   if (worker.renderQueueX.buffer !== buffer) throw new Error('the queue is not in the kernel memory');
+  // The kernel runs on this bench's memory (emit_rows below); the worker's emitSpriteQueue is the JS reference.
+  worker._emitWasm = null;
 
   // Move every column the emit reads; both variants read them there.
   for (const [slot, f] of Object.entries(SPRITE_COLUMNS)) SpriteRenderer[f] = moved(buffer, regions, slot, SpriteRenderer[f], N);

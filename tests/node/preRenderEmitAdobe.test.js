@@ -27,10 +27,13 @@ import { AdobeAnimCompiler } from '../../src/util/adobeAnimCompiler.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { createParticleMemory, particleMemoryBytes } from '../../src/util/particleMemory.js';
+import { Transform } from '../../src/components/transform.js';
 import { EMIT_ADOBE_ASSET_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { EMIT_ADOBE_IN, EMIT_ADOBE_NONE, EMIT_DECLINED, EMIT_PRESORTED } from '../../src/workers/preRenderEmitClient.js';
 import { radixSortIndicesBySortKey } from '../../src/util/sortIndexByKey.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const N = 500;
@@ -185,7 +188,7 @@ function registerAssets({ plain = false } = {}) {
 
 async function setup({
   ySort = true, hasOrder = true, maxItems = 8000, count = 1200, seed = 0xad0, tablesBytes = 4 * 1048576,
-  adobeOn = true, plain = false, shadows = true,
+  plain = false, shadows = true,
 }) {
   registerAssets({ plain });
   const caps = gpuQueueCaps(maxItems, { enabled: false });
@@ -195,8 +198,16 @@ async function setup({
     casterBytes: ShadowCaster.getBufferSize(N),
     decorationBytes: DecorationComponent.getBufferSize(DECOS),
     adobe: { animBytes: AdobeAnimComponent.getBufferSize(N), tableBytes: tablesBytes },
+    // Every other row type's component where the scene lays it (close-out group B): LightEmitter, the particle memory
+    // and BulletComponent among the emit's blocks, Transform's pose in the collect's.
+    lightBytes: LightEmitter.getBufferSize(N),
+    particleBytes: particleMemoryBytes(POOL, ParticleComponent.getBufferSize(POOL)),
+    bulletBytes: BulletComponent.getBufferSize(POOL),
+  }, null, null, false, {
+    entities: N, transformBytes: Transform.getBufferSize(N), colliderBytes: 0, rigidBodyBytes: 0, bullets: null, visibility: null,
   });
   const e = m.layout.emit;
+  const pm = createParticleMemory(POOL, ParticleComponent.getBufferSize(POOL), { memory: m.memory, baseByte: e.particleMemoryByte, bytes: e.particleMemoryBytes });
   const buffers = {
     componentData: {
       ...coreComponentData(N),
@@ -204,18 +215,21 @@ async function setup({
       ShadowCaster: m.buffer,
       DecorationComponent: m.buffer,
       AdobeAnimComponent: m.buffer,
-      LightEmitter: new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
-      ParticleComponent: new SharedArrayBuffer(ParticleComponent.getBufferSize(POOL)),
-      BulletComponent: new SharedArrayBuffer(BulletComponent.getBufferSize(POOL)),
+      LightEmitter: m.buffer,
+      ParticleComponent: m.buffer,
+      BulletComponent: m.buffer,
     },
     componentDataByte: {
       SpriteRenderer: e.spriteRendererByte, ShadowCaster: e.shadowCasterByte, DecorationComponent: e.decorationByte,
-      AdobeAnimComponent: e.adobeAnimByte,
+      AdobeAnimComponent: e.adobeAnimByte, LightEmitter: e.lightEmitterByte, ParticleComponent: pm.layout.componentByte,
+      BulletComponent: e.bulletComponentByte,
     },
   };
-  for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent, AdobeAnimComponent]) C.clearArrays();
+  for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent, AdobeAnimComponent, LightEmitter]) C.clearArrays();
   const meta = textureMetadata();
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The JS emit the kernel replaced, for the runs with _emitWasm null (tests/reference).
+  installEmitJs(worker);
   const warned = [];
   const realWarn = console.warn;
   const realError = console.error;
@@ -225,7 +239,6 @@ async function setup({
     await initWorker(worker, {
       config: {
         worldWidth: 4000, worldHeight: 3000, preRender: { interpolation: false }, renderer: { ySort },
-        wasm: { preRenderEmitAdobe: adobeOn },
       },
       globalEntityCount: N,
       buffers,
@@ -255,6 +268,10 @@ async function setup({
     console.error = realError;
   }
   bindPoseColumns(N);
+  // Transform's pose where a scene without physics keeps it: the collect's pose block (x, y, rotation, rotC, rotS).
+  Transform.x = new Float32Array(m.buffer, m.layout.collect.poseByte, N);
+  Transform.y = new Float32Array(m.buffer, m.layout.collect.poseByte + 4 * N, N);
+  for (const C of [LightEmitter, ParticleComponent, BulletComponent]) assert.equal(Object.values(C).find(ArrayBuffer.isView)?.buffer, m.buffer, `${C.name} is in the memory`);
   assert.equal(AdobeAnimComponent.scaleX.buffer, m.buffer, 'AdobeAnimComponent is in the memory');
   assert.equal(worker._renderablePx.buffer, m.buffer, 'the pose stash is in the memory');
   assert.ok(worker._emitWasm, 'the worker bound the kernel');
@@ -350,7 +367,9 @@ async function setup({
   // The first rows: a sprite, then a root, so the root's rows follow it, and rows of other types after it.
   types[0] = 0; indices[0] = ROOTS + 1;
   types[1] = 6; indices[1] = 4;
-  types[2] = 1; types[3] = 3;
+  // A particle slot and a light entity (their indices index those pools).
+  types[2] = 1; indices[2] = 2;
+  types[3] = 3; indices[3] = ROOTS + 3;
   for (let q = 0; q < count; q++) {
     worker._renderableType[q] = types[q];
     worker._renderableIndex[q] = indices[q];
@@ -563,11 +582,6 @@ test('an asset with plain arrays goes in the tables; one with no room is not dra
   const two = compare(small, 3, withoutLeftOut(small));
   assert.ok(two.calls.every((c) => c !== EMIT_DECLINED), 'the kernel takes those frames too');
 
-  // Switched off, the kernel declines every frame with a root.
-  const off = await setup({ seed: 0xad9, adobeOn: false });
-  assert.equal(off.worker._emitWasm.adobe, false);
-  const three = compare(off, 2);
-  assert.ok(three.calls.every((c) => c === EMIT_DECLINED));
 });
 
 test('frames without a root after the asset tables keep row i at queue row i', async () => {

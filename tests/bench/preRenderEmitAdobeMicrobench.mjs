@@ -36,6 +36,7 @@ import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker, quietly } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
 const ARGS = parseArgs();
@@ -86,6 +87,8 @@ export async function setupAdobeEmit(seed = 0xad0be) {
     componentDataByte: { SpriteRenderer: e.spriteRendererByte, AdobeAnimComponent: e.adobeAnimByte },
   };
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The JS emit the kernel replaced, for the runs with _emitWasm null (tests/reference).
+  installEmitJs(worker);
   await initWorker(worker, {
     config: {
       worldWidth: WORLD_W,

@@ -78,31 +78,7 @@ test('entity collect uses a per-frame skipCull branch; default still AABBs; B sk
   assert.match(entityCull, /screenMinX/);
   assert.doesNotMatch(entityCull, /screenX\[i\]/);
   assert.match(preRender, /const ySorting = !!\(Layer\._ySorting && Layer\._ySorting\[entry\.layerId\]\)/);
-  assert.match(preRender, /const writeSortKey = !!\(rqSortKey && source\.hasOrder\)/);
-  assert.match(preRender, /rx0 !== 0 \|\| ry0 !== 0/);
-});
-
-test('persist static columns live on the champion worker', () => {
-  assert.match(preRender, /_type0PersistHit\(/);
-  assert.match(preRender, /_writeType0PosesOnly\(/);
-  assert.doesNotMatch(preRender, /_emitType0At\(/);
-});
-
-test('persist pose rewrite also restores shadowH for GPU casters', () => {
-  const start = preRender.indexOf('_writeType0PosesOnly(');
-  const end = preRender.indexOf('_storeEntitySortY(', start);
-  assert.ok(start >= 0 && end > start, 'markers found in order');
-  const body = preRender.slice(start, end);
-  assert.match(body, /_writeQueueShadow\(i, idx\)/);
-});
-
-test('adobe writes one shadow row on the lowest piece', () => {
-  const start = preRender.indexOf('_emitAdobePieces(');
-  const end = preRender.indexOf('_syncGlowLayer(', start);
-  const body = preRender.slice(start, end);
-  assert.match(body, /feetSlot/);
-  assert.match(body, /_writeQueueShadow\(feetSlot, entityIndex, ref\)/);
-  assert.equal((body.match(/_writeQueueShadow\(/g) || []).length, 1);
+  assert.match(preRender, /const writeSortKey = !!\(this\.renderQueueSortKey && source\.hasOrder\)/);
 });
 
 test('stamp light range falls back to influence when visualRange is 0', () => {

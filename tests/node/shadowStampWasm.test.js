@@ -64,13 +64,16 @@ test('a call the regions cannot hold is an error', async () => {
 test('pre-render binds the stamp kernel and its stamp is the one the JS made', async () => {
   const { RENDER_QUEUE_CAMERA_BYTES } = await import('../../src/render/renderQueueLayout.js');
   const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
-  const { coreComponentData, initWorker, loadWorker } = await import('../bench/workerHarness.mjs');
+  const { coreComponentData, emitSpec, emitSpriteBuffers, initWorker, loadWorker } = await import('../bench/workerHarness.mjs');
   const N = 2000;
   const lighting = { enabled: true, shadowsEnabled: true, maxShadowCastingLights: LIGHTS, maxShadowsPerLight: 64, maxShadowsPerEntity: PER_ENTITY, maxLights: 64 };
   const caps = gpuQueueCaps(MAX, lighting);
-  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), null,
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(N),
     { maxSun: caps.maxSun, maxPerEntity: PER_ENTITY, maxLights: LIGHTS });
-  const buffers = { componentData: { ...coreComponentData(N), ShadowCaster: new SharedArrayBuffer(ShadowCaster.getBufferSize(N)) } };
+  const buffers = {
+    componentData: { ...coreComponentData(N), ...emitSpriteBuffers(m).componentData, ShadowCaster: new SharedArrayBuffer(ShadowCaster.getBufferSize(N)) },
+    componentDataByte: emitSpriteBuffers(m).componentDataByte,
+  };
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   await initWorker(worker, {
     config: { worldWidth: 4000, worldHeight: 3000, lighting },
