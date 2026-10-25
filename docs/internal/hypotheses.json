@@ -960,7 +960,8 @@
         "R-0625",
         "R-0626",
         "R-0627",
-        "R-0630"
+        "R-0630",
+        "R-0632"
       ]
     },
     {
@@ -13753,6 +13754,19 @@
       "text": "**E-138, follow-up: a presorted queue with no glow rows packs every row with no slot list; the unsplit pack names its glow type.** 2026-10-25.\n\nSeen in W27b's profile (R-0630): on E-138's presorted frames with glows not drawn as sprites, the main queue still took the glow split. fillQueueIndices listed every row (3.5 % of adobeAnimateScene's pre-render at the minimum zoom) and the pack ran the scatter over that identity list, 2.76 ms against 2.41 ms with no list on its 261 744 rows (the kernel screen of E-138).\n\nThe change (8d67f225): the collector sort counts the glow rows; a presorted frame with none packs unsplit, every row in queue order with no list. The unsplit path read `spec.glowIncludeType` undefined, which `| 0` makes 0, so an unsplit frame (lighting.lightGlow 'sprite', or no slot lists) packed its sprite rows into the glow batch; pre-render now sets it as Pixi's layer does (3 when glows are not sprites, else −1). painterRadixWired.test.js packs makeFrames' frames without glow rows both ways: the same rows as the painter's, no glow rows, no slot list, sorted; two mutants fail it (the split kept, the glow type as before).\n\nScene: adobeAnimateScene, `--camera-zoom min`, `--vs fdaf6bb5 --hyp-rev 81619669` (the same tree as 8d67f225, whose message was amended with these numbers), 4 pairs, Chrome, headed, source: **pre-render 16.479 → 14.819 ms, −10.6 %, worse 0/4** (cv 3/3 %), −6.7 % against the other workers (which moved down 3.7 to 6.0 % together); RENDER_QUEUE_SIZE 261 790 and 261 786; presented 60 on both. **KEPT (product).**",
       "commits": [
         "8d67f225"
+      ]
+    },
+    {
+      "id": "R-0632",
+      "date": "2026-10-25",
+      "time": "03:44",
+      "timeFrom": "recorded",
+      "title": "WASM close-out L3: commit holds across 20 Predator loads (+77 MB); destroy leaves ~720 MB (N-75)",
+      "verdict": "mixed",
+      "text": "**WASM close-out L3: the commit charge across 20 scene loads holds; after the engine is destroyed about 720 MB stay (N-75).** 2026-10-25.\n\nL3 asks that loading and unloading a scene 20 times leave the commit where it started (on Windows every shared memory is committed whole when made). `sceneCycleSmoke.mjs --commit` (aadec9d1, 48205a08) loads a scene, runs it 2.5 s and collects, 20 times in one page, and sums the commit of the node process and the headless Chrome under it before the first scene, after each load and after `game.destroy()`.\n\nPredator, 20 loads: 253 MB before, **1 639 MB after the first load, 1 717 MB after the twentieth** (+77 MB, about 4 MB a load, under the 128 MB the smoke allows): each scene's memories (Box2D's with the engine block, the particle, decal, navigation and spatial ones) go when the next scene replaces them. **After destroy: 1 105 MB**, about 850 MB over the start (974 MB in a one-load probe). The exported classes' static views still hold Box2D's memory (410 MB: `Transform.x` and `GameObject.neighborData` view it since Phase 4); letting those go by hand frees 154 MB, so the rest is held where the public classes do not show. A game switching scenes is fine; a page that unloads the engine is not. Recorded as N-75 in REVIEW_PLAN.md, with the smoke's `--commit` check as its test.",
+      "commits": [
+        "aadec9d1",
+        "48205a08"
       ]
     }
   ],
