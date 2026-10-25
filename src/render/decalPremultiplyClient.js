@@ -1,7 +1,7 @@
 // The WASM decal premultiply (E-76 W21c): loads decalPremultiply.wasm onto the decal memory (decalMemory.js), where
 // the tiles live. Pixi premultiplies each dirty tile with premultiply_simd into the memory's scratch tile and
 // copies that into the tile's own array, which it uploads (an upload straight from shared memory cost the other
-// workers, E-123). The bytes are copyPremultiplyRgba's.
+// workers, E-123). The bytes are the JS premultiply's (tests/reference/decalPremultiply.mjs), the only premultiply now.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 

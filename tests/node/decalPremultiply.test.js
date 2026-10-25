@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { copyPremultiplyRgba } from '../../src/render/webgpu/pinGpuTexture.js';
+import { copyPremultiplyRgba } from '../reference/decalPremultiply.mjs';
 
 test('copyPremultiplyRgba matches /255 on straight alpha', () => {
   const src = new Uint8ClampedArray([

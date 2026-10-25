@@ -347,8 +347,6 @@ export type SceneConfig = Record<string, unknown> & {
     bulletTick?: boolean;
     /** The painter sort of the main sprite queue, in the worker preRender.sortSprites names (its state in the render-queue memory). */
     painterRadix?: boolean;
-    /** Pixi's premultiply of each dirty decal tile, on the decal memory (the decal tiles live in a WebAssembly.Memory of their own). */
-    decalPremultiply?: boolean;
     /** Pixi's mesh corner rewrite for MESH layers (the meshes and the mesh batches live in one WebAssembly.Memory). */
     meshCorners?: boolean;
     /** Pre-render's per-light visibility sweep with raycasted lighting (its scratch lives in a WebAssembly.Memory of pre-render's own). */

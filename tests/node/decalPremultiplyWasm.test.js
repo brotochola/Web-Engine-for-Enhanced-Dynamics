@@ -1,12 +1,13 @@
-// E-76 W21c: the decal tile premultiply kernel (wasm/decalPremultiply.c) against the shipped
-// copyPremultiplyRgba, byte for byte: random bytes, decal-like tiles (mostly alpha 0 and 255, partial edges),
-// every alpha for every colour, and pixel counts that leave a scalar tail. Nothing outside dst is written.
+// E-76 W21c: the decal tile premultiply kernel (wasm/decalPremultiply.c) against the JS premultiply Pixi shipped
+// (copyPremultiplyRgba, tests/reference/decalPremultiply.mjs), byte for byte: random bytes, decal-like tiles (mostly
+// alpha 0 and 255, partial edges), every alpha for every colour, and pixel counts that leave a scalar tail. Nothing
+// outside dst is written.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { copyPremultiplyRgba } from '../../src/render/webgpu/pinGpuTexture.js';
+import { copyPremultiplyRgba } from '../reference/decalPremultiply.mjs';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 

@@ -19,7 +19,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { copyPremultiplyRgba } from '../../src/render/webgpu/pinGpuTexture.js';
+import { copyPremultiplyRgba } from '../reference/decalPremultiply.mjs';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { createDecalMemory } from '../../src/util/decalMemory.js';
 import { bindDecalPremultiply, premultiplyDecalTile } from '../../src/render/decalPremultiplyClient.js';
