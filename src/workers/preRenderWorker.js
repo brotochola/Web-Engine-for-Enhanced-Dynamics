@@ -2279,22 +2279,63 @@ class PreRenderWorker extends AbstractWorker {
         const visibleData = this.visibleBulletsData;
         if (!visibleData) return;
 
+        // collectRenderable queues nothing then.
+        if (!this.renderQueueEnabled) return;
+
         const visibleCount = visibleData[0];
         const y = BulletComponent.y;
         const trailWidth = BulletComponent.trailWidth;
         const active = BulletComponent.active;
+        // E-137. A bullet with no layer mask goes to the main collector, its rows (and its trail's) written here
+        // as _writeRenderable writes them, without collectRenderable's dispatch and bit scan (E-98c and E-98e
+        // for sprites); masked bullets take that path. `n` is the collector's count, synced around that call and
+        // after the loop. The last key goes back to COLLECT_Y, where the loop left it before.
+        const layerMask = BulletComponent.layerMask || null;
+        const rY = this._renderableY;
+        const rType = this._renderableType;
+        const rIndex = this._renderableIndex;
+        const maxItems = this.renderQueueMaxItems;
+        let n = this._renderableCount;
+        let lastKey = COLLECT_Y[0];
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
             if (!active[i]) continue;
             const key = y[i] * Y_SORT_K;
-            COLLECT_Y[0] = key;
-            this.collectRenderable(4, i);
-            if (trailWidth[i] > 0) {
-                COLLECT_Y[0] = key - 1;
-                this.collectRenderable(5, i);
+            const trail = trailWidth[i] > 0;
+            lastKey = trail ? key - 1 : key;
+            if (layerMask === null || layerMask[i] === 0) {
+                if (n < maxItems) {
+                    rY[n] = key;
+                    rType[n] = 4;
+                    rIndex[n] = i;
+                    n++;
+                } else {
+                    this._collectorFull();
+                }
+                if (trail) {
+                    if (n < maxItems) {
+                        rY[n] = key - 1;
+                        rType[n] = 5;
+                        rIndex[n] = i;
+                        n++;
+                    } else {
+                        this._collectorFull();
+                    }
+                }
+            } else {
+                this._renderableCount = n;
+                COLLECT_Y[0] = key;
+                this.collectRenderable(4, i);
+                if (trail) {
+                    COLLECT_Y[0] = key - 1;
+                    this.collectRenderable(5, i);
+                }
+                n = this._renderableCount;
             }
         }
+        this._renderableCount = n;
+        COLLECT_Y[0] = lastKey;
     }
 
     _setQueueType(ref, out, type) {
