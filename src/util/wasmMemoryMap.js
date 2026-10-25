@@ -133,6 +133,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'spriteRenderer', owner: 'every worker (SpriteRenderer)', bytes: emit.spriteBytes | 0 },
       { name: 'shadowCaster', owner: 'every worker (ShadowCaster)', bytes: emit.casterBytes | 0 },
       { name: 'decorations', owner: 'every worker (DecorationComponent)', bytes: emit.decorationBytes | 0 },
+      { name: 'lightEmitter', owner: 'every worker (LightEmitter)', bytes: emit.lightBytes | 0 },
       { name: 'emitFrame', owner: 'pre-render', bytes: e * 2 },
       { name: 'emitAccum', owner: 'pre-render', bytes: e * 4 },
       { name: 'emitLastTexture', owner: 'pre-render writes; Pixi reads', bytes: e * 2 },
@@ -347,7 +348,7 @@ export const EMIT_PROXY_STATES = 256;
 export const EMIT_MAX_ANIMATIONS = 65536;
 export const EMIT_MAX_FRAMES = 65536;
 /** Room for the emit kernel's column table (preRenderEmitClient.js EMIT_SLOTS). */
-export const EMIT_TABLE_SLOTS = 128;
+export const EMIT_TABLE_SLOTS = 192;
 /** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
 export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;

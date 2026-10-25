@@ -98,6 +98,7 @@ import {
     writeEmitAdobeAssets,
     writeEmitAdobeColumns,
     writeEmitBulletColumns,
+    writeEmitGlowColumns,
     writeEmitColumns,
     writeEmitTextures,
     writePersistColumns,
@@ -3858,12 +3859,13 @@ class PreRenderWorker extends AbstractWorker {
      * E-112, W4c. preRenderEmit.wasm's column table for this frame; false when the kernel cannot take the
      * frame (no texture tables yet, a column outside its memory), and the JS runs it. W4d: with BulletComponent
      * in the memory the kernel writes the bullet and trail rows too, the trail's texture `trailTexture`; else
-     * they are left to the JS.
+     * they are left to the JS. With LightEmitter and Transform there, the glow rows too.
      */
     _writeEmitTable(source, trailTexture) {
         const b = this._emitWasm;
         if (!b.texturesReady || !writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return false;
         writeEmitBulletColumns(b, BulletComponent, trailTexture);
+        writeEmitGlowColumns(b, LightEmitter, Transform, this._resolveBuiltinTextureId('_lightGradient'));
         // W27: Adobe roots expand in the kernel when its tables hold the registry's assets and AdobeAnimComponent is
         // in the memory (else it declines a frame with one), on a queue whose texture column is the source's length
         // (_emitAdobePieces stops at that column's end, the loop at maxItems).

@@ -702,11 +702,12 @@ function initializeRenderQueueMemory(scene) {
   if (e.spriteRendererByte >= 0) buffers.componentDataByte.SpriteRenderer = e.spriteRendererByte;
   if (e.shadowCasterByte >= 0) buffers.componentDataByte.ShadowCaster = e.shadowCasterByte;
   if (e.decorationByte >= 0) buffers.componentDataByte.DecorationComponent = e.decorationByte;
+  if (e.lightEmitterByte >= 0) buffers.componentDataByte.LightEmitter = e.lightEmitterByte;
   if (e.adobeAnimByte >= 0) buffers.componentDataByte.AdobeAnimComponent = e.adobeAnimByte;
 }
 
 /**
- * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster and decorations; with
+ * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations and LightEmitter; with
  * wasm.preRenderEmitAdobe (W27) and Adobe Animate characters, AdobeAnimComponent and room for the assets' tables
  * (preRender.adobeTablesMB: the assets load after this memory is made, so their size is not known yet).
  */
@@ -723,6 +724,8 @@ function emitBlocks(scene) {
     spriteBytes: pools.SpriteRenderer?.ComponentClass ? SpriteRenderer.getBufferSize(n) : 0,
     casterBytes: pools.ShadowCaster?.ComponentClass ? ShadowCaster.getBufferSize(n) : 0,
     decorationBytes: maxDecorations > 0 ? DecorationComponent.getBufferSize(maxDecorations) : 0,
+    // The glow rows' LightEmitter columns.
+    lightBytes: pools.LightEmitter?.ComponentClass ? LightEmitter.getBufferSize(n) : 0,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
   };
 }

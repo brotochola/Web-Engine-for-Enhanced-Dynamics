@@ -4,8 +4,8 @@
    render-queue memory (src/workers/preRenderEmitClient.js writes the table); 0 marks a column the worker
    does not have. Arithmetic as the JS does it: the sort key and the animation clock in double, each value
    stored as the typed array would store it. W4d: bullet and trail rows (types 4 and 5) too, when
-   BulletComponent is in the memory. Rows of other types (particles, glows; bullets whose component is
-   elsewhere) are listed with the queue row they go to and left for the JS to write; a frame with a LiquidFun
+   BulletComponent is in the memory; glow rows (type 3) when LightEmitter is. Rows of other types (particles;
+   bullets or glows whose component is elsewhere) are listed with the queue row they go to and left for the JS to write; a frame with a LiquidFun
    row is declined (0xffffffff) before anything is written. Play-once ends and missing animations come back as
    lists too:
    the end message, its entity-type filter and the warnings stay JS.
@@ -51,6 +51,9 @@ enum {
      the JS) and the trail's texture (a value: _resolveBuiltinTextureId('_bulletTrail')). */
   B_ACTIVE, B_X, B_Y, B_START_X, B_START_Y, B_OFFSET_Y, B_SCALE, B_ALPHA, B_TINT, B_TEXTURE,
   B_SPRITE_ROT_C, B_SPRITE_ROT_S, B_ROT_C, B_ROT_S, B_TRAIL_W, B_ANCHOR_X, B_ANCHOR_Y, B_TRAIL_TEX,
+  /* The glow rows (type 3): LightEmitter's columns (L_COLOR 0: not in the memory, so they are listed for the JS),
+     the light entity's Transform x and y, and the gradient's texture (a value: _resolveBuiltinTextureId). */
+  L_COLOR, L_INTENSITY, L_SQRT, L_GLOW_OFFSET, L_GLOW, T_X, T_Y, L_GRADIENT_TEX,
   SLOT_COUNT
 };
 
@@ -71,6 +74,10 @@ enum {
 #define WARN_NO_START 1u   /* sprite: the global animation has no first frame */
 #define WARN_DECO_START 2u /* decoration: its animation has no first frame */
 #define WARN_BULLET_START 3u /* bullet: its animation has no first frame */
+
+/* lightGlowScale (src/util/utils.js): LIGHT_GLOW_RADIUS_SCALE, LIGHT_GRADIENT_TEXTURE_RADIUS. */
+#define GLOW_RADIUS_SCALE ((300.0 * 4.0) / __builtin_sqrt(20000.0))
+#define GRADIENT_RADIUS 100.0
 
 /* W27: an asset directory record (preRenderEmitClient.js writeEmitAdobeAssets). Each array is a byte offset
    with its length (an index past it reads as the JS reads undefined there); the piece arrays share one length,
@@ -224,6 +231,9 @@ typedef struct {
   const uint16_t *bTexture;
   const float *bSpriteRc, *bSpriteRs, *bRc, *bRs, *bTrailW, *bAnchorX, *bAnchorY;
   uint32_t bTrailTex;
+  const uint32_t *lColor;
+  const float *lIntensity, *lSqrt, *lGlowOff, *lGlow, *tX, *tY;
+  uint32_t lGradientTex;
   int sortKey, ySort, tilesDirty, bounds;
   double deltaSeconds, zoomAlpha, band;
   uint32_t nEnds, nWarns, tiled;
@@ -338,6 +348,14 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->bAnchorX = PTR(const float, B_ANCHOR_X);
   e->bAnchorY = PTR(const float, B_ANCHOR_Y);
   e->bTrailTex = t[B_TRAIL_TEX];
+  e->lColor = PTR(const uint32_t, L_COLOR);
+  e->lIntensity = PTR(const float, L_INTENSITY);
+  e->lSqrt = PTR(const float, L_SQRT);
+  e->lGlowOff = PTR(const float, L_GLOW_OFFSET);
+  e->lGlow = PTR(const float, L_GLOW);
+  e->tX = PTR(const float, T_X);
+  e->tY = PTR(const float, T_Y);
+  e->lGradientTex = t[L_GRADIENT_TEX];
   e->sortKey = (flags & F_SORT_KEY) != 0;
   e->ySort = (flags & F_Y_SORT) != 0;
   e->tilesDirty = (flags & F_TILES_DIRTY) != 0;
@@ -615,6 +633,37 @@ INLINE void trail_row(Emit *e, uint32_t i, uint32_t out) {
   if (e->qType) e->qType[out] = 5;
 }
 
+/* emitSpriteQueue's glow branch (type 3): collector row i, light entity cIndex[i], at queue row out. Its sort key
+   takes the entity's z (_orderKey), as a sprite's does. pre-render's _glowLayerAlpha is always 1, so the sprite
+   mode's alpha product is the stored alpha. */
+INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  if (e->sortKey) e->qSortKey[out] = (float)order_key(e, i, idx);
+  if (e->tilesDirty) clear_tiles(e, out);
+  if (e->qShadowH) e->qShadowH[out] = 0.0f;
+  if (e->qShadowOffX) e->qShadowOffX[out] = 0.0f;
+  if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
+  const double scale = ((double)or0(e->lSqrt[idx]) * GLOW_RADIUS_SCALE) / GRADIENT_RADIUS;
+  /* hasGlowSprite 0.5: intensity / 50000; 1: / 25000 */
+  const double glowAlpha = (double)e->lIntensity[idx] * (double)e->lGlow[idx] * (1.0 / 25000.0);
+  if (scale < 0.1 || glowAlpha < 0.001) {
+    hide_row(e, out);
+  } else {
+    e->qX[out] = e->tX[idx];
+    e->qY[out] = (float)((double)e->tY[idx] - (double)or0(e->lGlowOff[idx]));
+    e->qScaleX[out] = (float)scale;
+    e->qScaleY[out] = (float)scale;
+    e->qAlpha[out] = (float)glowAlpha;
+    e->qTint[out] = e->lColor[idx];
+  }
+  e->qRotC[out] = 1.0f;
+  e->qRotS[out] = 0.0f;
+  e->qTexture[out] = (uint16_t)e->lGradientTex;
+  e->qAnchorX[out] = 0.5f;
+  e->qAnchorY[out] = 0.5f;
+  if (e->qType) e->qType[out] = 3;
+}
+
 /* _resolveAdobeFrameIndex for an asset in the tables: the clip's frame at this time, or -1 when the root
    draws nothing (no frames, no frame rate). */
 INLINE int32_t adobe_frame(const AdobeAsset *as, uint32_t clip, double time, int loop) {
@@ -772,6 +821,8 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         bullet_row(&e, i, i);
       } else if (ty == 5 && e.bActive) {
         trail_row(&e, i, i);
+      } else if (ty == 3 && e.lColor) {
+        glow_row(&e, i, i);
       } else {
         foreign[2 * nForeign] = i;
         foreign[2 * nForeign + 1] = i;
@@ -797,6 +848,8 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         bullet_row(&e, i, w);
       } else if (ty == 5 && e.bActive) {
         trail_row(&e, i, w);
+      } else if (ty == 3 && e.lColor) {
+        glow_row(&e, i, w);
       } else {
         foreign[2 * nForeign] = i;
         foreign[2 * nForeign + 1] = w;

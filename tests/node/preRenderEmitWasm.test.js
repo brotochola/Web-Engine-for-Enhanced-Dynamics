@@ -7,7 +7,8 @@
 // tiles-dirty frames after them, sprites without an animation or a first frame, play-once ends, zIndex,
 // Y-sort on and off, NaN and -0 shadow terms, decorations with and without a texture, and a collector
 // longer than the queue. W4d: with BulletComponent in the memory, the bullet and trail rows too (hidden,
-// short and -0 trails, offsets, a bullet without a first frame).
+// short and -0 trails, offsets, a bullet without a first frame). With LightEmitter and Transform there, the glow rows
+// (hidden by their scale or their alpha, NaN and -0 roots and offsets, every glow strength, the entity's zIndex).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -36,6 +37,7 @@ import {
   EMIT_Y_SORT,
   writeEmitBulletColumns,
   writeEmitColumns,
+  writeEmitGlowColumns,
   writeEmitTextures,
   writePersistColumns,
 } from '../../src/workers/preRenderEmitClient.js';
@@ -102,16 +104,17 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
-  const collect = bullets
+  // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
+  const collect = bullets || lights
     ? {
         entities: N,
         transformBytes: Transform.getBufferSize(N),
         colliderBytes: 0,
         rigidBodyBytes: 0,
-        bullets: { bullets: POOL, entities: N, componentBytes: BulletComponent.getBufferSize(POOL), impacts: 8 },
+        bullets: bullets ? { bullets: POOL, entities: N, componentBytes: BulletComponent.getBufferSize(POOL), impacts: 8 } : null,
         visibility: null,
       }
     : null;
@@ -120,6 +123,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     spriteBytes: SpriteRenderer.getBufferSize(N),
     casterBytes: ShadowCaster.getBufferSize(N),
     decorationBytes: DecorationComponent.getBufferSize(DECOS),
+    lightBytes: lights ? LightEmitter.getBufferSize(N) : 0,
   }, null, null, false, collect);
   const e = m.layout.emit;
   const buffers = {
@@ -129,7 +133,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
       ShadowCaster: m.buffer,
       DecorationComponent: m.buffer,
       // What the rows of other types read in the JS run (the kernel leaves those rows to it).
-      LightEmitter: new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
+      LightEmitter: lights ? m.buffer : new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
       ParticleComponent: new SharedArrayBuffer(ParticleComponent.getBufferSize(POOL)),
       BulletComponent: bullets ? m.buffer : new SharedArrayBuffer(BulletComponent.getBufferSize(POOL)),
     },
@@ -138,9 +142,10 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
       ShadowCaster: e.shadowCasterByte,
       DecorationComponent: e.decorationByte,
       ...(bullets ? { BulletComponent: m.layout.collect.bullets.componentByte } : {}),
+      ...(lights ? { LightEmitter: e.lightEmitterByte } : {}),
     },
   };
-  for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent]) C.clearArrays();
+  for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent, LightEmitter]) C.clearArrays();
   const meta = textureMetadata();
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   await initWorker(worker, {
@@ -169,7 +174,14 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     },
   });
   bindPoseColumns(N);
+  if (lights) {
+    // Transform's pose where a scene without physics keeps it: the collect's pose block (x, y, rotation, rotC, rotS).
+    const pose = m.layout.collect.poseByte;
+    Transform.x = new Float32Array(m.buffer, pose, N);
+    Transform.y = new Float32Array(m.buffer, pose + 4 * N, N);
+  }
   assert.equal(SpriteRenderer.scaleX.buffer, m.buffer, 'SpriteRenderer is in the memory');
+  assert.equal(LightEmitter.lightColor.buffer === m.buffer, lights, `LightEmitter is ${lights ? '' : 'not '}in the memory`);
   assert.equal(worker._renderableType.buffer, m.buffer, 'the collector is in the memory');
   assert.equal(BulletComponent.x.buffer === m.buffer, bullets, `BulletComponent is ${bullets ? '' : 'not '}in the memory`);
   worker._decorationZoomAlpha = 0.75;
@@ -245,6 +257,21 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     bc.anchorY[s] = rb();
   }
 
+  // Lights: no glow (the scale's floor), too faint (the alpha's), NaN and -0 roots, NaN and -0 offsets, every strength.
+  const rl = rng(seed ^ 0x9107);
+  const le = LightEmitter;
+  for (let i = 0; i < N; i++) {
+    // Intensity 0.5 is under both alpha floors, 6 only under the drawn one (alpha 1.2e-4 or 2.4e-4).
+    const intensity = i % 11 === 0 ? 0 : i % 13 === 0 ? (i & 1 ? 0.5 : 6) : 50 + rl() * 20000;
+    le.lightIntensity[i] = intensity;
+    le.sqrtLightIntensity[i] = i % 17 === 0 ? NaN : i % 19 === 0 ? -0 : Math.sqrt(intensity);
+    le.hasGlowSprite[i] = [0, 0.5, 1, 0.5][i % 4];
+    le.glowHeightOffset[i] = i % 7 === 0 ? NaN : i % 9 === 0 ? -0 : rl() * 60 - 10;
+    le.lightColor[i] = (rl() * 0xffffffff) >>> 0;
+    Transform.x[i] = i % 23 === 0 ? -0 : rl() * 4000;
+    Transform.y[i] = rl() * 3000;
+  }
+
   // The collector: sprites, decorations and a few rows of other types, poses in the queue (E-98d).
   // With `bullets`, a quarter of the rows are of other types, each type in turn walking the bullet slots, so the
   // bullet and trail rows reach every slot class above.
@@ -255,6 +282,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     const pick = r();
     if (pick < (bullets ? 0.55 : 0.62)) { types.push(0); indices.push(Math.floor(r() * N)); }
     else if (pick < (bullets ? 0.75 : 0.92)) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
+    else if (lights && k % 3 !== 0) { types.push(3); indices.push((k * 7919) % N); }
     else if (bullets) { types.push([1, 3, 4, 5][other % 4]); indices.push((other >> 2) % POOL); other++; }
     else { types.push([1, 3, 4, 5][k % 4]); indices.push(k % POOL); }
   }
@@ -291,7 +319,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
 
   const b = await bindPreRenderEmit(m.memory, e);
   assert.ok(writeEmitTextures(b, meta), 'the metadata fits the tables');
-  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets };
+  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights };
 }
 
 /** The queue columns a row has. */
@@ -312,7 +340,20 @@ async function runCase(t, opts) {
   const { worker, b, source, types, count, maxItems } = k;
   const n = Math.min(count, maxItems);
   /** The rows the kernel writes: sprites and decorations, and (W4d) bullets and trails with their component in the memory. */
-  const ours = (type) => type === 0 || type === 2 || (k.bullets && (type === 4 || type === 5));
+  const ours = (type) => type === 0 || type === 2 || (k.bullets && (type === 4 || type === 5)) || (k.lights && type === 3);
+  if (k.lights) {
+    // The glow rows reach every case the kernel copies.
+    const seen = new Set();
+    for (let r = 0; r < n; r++) {
+      if (types[r] !== 3) continue;
+      const i = k.indices[r];
+      const glow = [0, 0.5, 1, 0.5][i % 4];
+      if (i % 11 === 0 || i % 17 === 0 || i % 19 === 0 || glow === 0) seen.add('no scale or no glow');
+      else if (i % 13 === 0) seen.add('too faint');
+      else seen.add(i % 7 === 0 ? 'drawn, NaN offset' : i % 9 === 0 ? 'drawn, -0 offset' : 'drawn');
+    }
+    assert.deepEqual([...seen].sort(), ['drawn', 'drawn, -0 offset', 'drawn, NaN offset', 'no scale or no glow', 'too faint']);
+  }
   if (k.bullets) {
     // The bullet and trail rows reach every case the kernel copies (setup's bullet slots).
     const seen = new Set();
@@ -374,6 +415,7 @@ async function runCase(t, opts) {
   for (let f = 0; f < FRAMES; f++) {
     assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
+    assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightGradient')), k.lights, 'the glow columns');
     const tilesDirty = worker.renderQueueTileMode !== null && worker._tiledTileColumns.has(worker.renderQueueTileMode);
     const flags = EMIT_SORT_KEY | (k.ySort ? EMIT_Y_SORT : 0) | (tilesDirty ? EMIT_TILES_DIRTY : 0) | EMIT_BOUNDS;
     const written = b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, worker._decorationZoomAlpha, worker._zBand);
@@ -459,6 +501,11 @@ test('W4d: the emit kernel writes the bullet and trail rows emitSpriteQueue writ
   await runCase(t, { ySort: false, bullets: true, seed: 0xb1b });
 });
 
+test('the emit kernel writes the glow rows emitSpriteQueue writes, LightEmitter and Transform in the memory', async (t) => {
+  await runCase(t, { ySort: true, lights: true, seed: 0x6107 });
+  await runCase(t, { ySort: false, lights: true, bullets: true, seed: 0x6108 });
+});
+
 test('a frame with an Adobe root or a LiquidFun row is declined before anything is written', async () => {
   const k = await setup({ ySort: true });
   const { worker, b, source } = k;
@@ -486,8 +533,8 @@ test('a column outside the memory makes the table refuse, so the JS emits', asyn
 
 test('emitSpriteQueue through the kernel writes every row the JS loop writes, other types included', async (t) => {
   // W4d: the last case with BulletComponent in the memory, where the kernel writes the bullet and trail rows.
-  for (const [ySort, bullets] of [[true, false], [false, false], [true, true]]) {
-    const k = await setup({ ySort, bullets, seed: bullets ? 0xb2b : ySort ? 0xc0ffee : 0xdecade });
+  for (const [ySort, bullets, lights] of [[true, false, false], [false, false, false], [true, true, false], [false, false, true]]) {
+    const k = await setup({ ySort, bullets, lights, seed: lights ? 0x6109 : bullets ? 0xb2b : ySort ? 0xc0ffee : 0xdecade });
     const { worker, source } = k;
     const bound = worker._emitWasm;
     assert.ok(bound, 'the worker bound the kernel at init');
@@ -533,7 +580,7 @@ test('emitSpriteQueue through the kernel writes every row the JS loop writes, ot
       assert.deepEqual(wasm[f].ends, js[f].ends, `frame ${f}: play-once ends, in order`);
       assert.deepEqual(wasm[f].warns, js[f].warns, `frame ${f}: warnings`);
     }
-    t.diagnostic(`ySort ${ySort}, bullets in the memory ${bullets}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
+    t.diagnostic(`ySort ${ySort}, bullets in the memory ${bullets}, lights ${lights}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
   }
 });
 

@@ -2,7 +2,7 @@
 // keeps every column pre-render's emit reads (the SpriteRenderer, ShadowCaster and DecorationComponent
 // blocks, both queue buffers, the collector, the animation state; see renderQueueMemoryRegions). emit_rows
 // writes the full emit's sprite and decoration rows with the JS's bits (W4d: the bullet and trail rows too, when
-// BulletComponent is in the memory, writeEmitBulletColumns); the rows of other types, the play-once ends and the
+// BulletComponent is in the memory, writeEmitBulletColumns; the glow rows when LightEmitter is, writeEmitGlowColumns); the rows of other types, the play-once ends and the
 // missing textures come back as lists, and pre-render acts on them in JS.
 // W4c: persist_frame (the check and the poses-only pass in one walk, E-116) and persist_remember are the
 // entity queue's persist path, on the same table with the rows each queue buffer last held
@@ -40,6 +40,7 @@ export const EMIT_SLOTS = [
   'adDir', 'adAssets', 'adList',
   'bActive', 'bX', 'bY', 'bStartX', 'bStartY', 'bOffsetY', 'bScale', 'bAlpha', 'bTint', 'bTexture',
   'bSpriteRotC', 'bSpriteRotS', 'bRotC', 'bRotS', 'bTrailWidth', 'bAnchorX', 'bAnchorY', 'bTrailTexture',
+  'lColor', 'lIntensity', 'lSqrt', 'lGlowOffset', 'lGlow', 'tX', 'tY', 'lGradientTexture',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -94,6 +95,11 @@ export const EMIT_BULLET_COLUMNS = [
   ['bScale', 'scale'], ['bAlpha', 'alpha'], ['bTint', 'tint'], ['bTexture', 'textureId'], ['bSpriteRotC', 'spriteRotC'],
   ['bSpriteRotS', 'spriteRotS'], ['bRotC', 'bulletRotC'], ['bRotS', 'bulletRotS'], ['bTrailWidth', 'trailWidth'],
   ['bAnchorX', 'anchorX'], ['bAnchorY', 'anchorY'],
+];
+/** The glow rows' LightEmitter columns, by slot; with Transform's x and y (tX, tY) of the light's entity. */
+export const EMIT_GLOW_COLUMNS = [
+  ['lColor', 'lightColor'], ['lIntensity', 'lightIntensity'], ['lSqrt', 'sqrtLightIntensity'],
+  ['lGlowOffset', 'glowHeightOffset'], ['lGlow', 'hasGlowSprite'],
 ];
 /** W27: what an asset directory record says of its asset (preRenderEmit.c ASSET_*). */
 export const EMIT_ADOBE_NONE = 0;
@@ -404,6 +410,21 @@ export function writeEmitBulletColumns(b, BulletComponent, trailTexture) {
   }
   b.table[SLOT.bTrailTexture] = trailTexture;
   return true;
+}
+
+/**
+ * The glow rows' columns and the gradient's texture, after writeEmitColumns: LightEmitter's (in the emit's blocks)
+ * and Transform's x and y (in the collect's), all in the memory, or lColor 0 and emit_rows lists the glow rows for
+ * the JS.
+ * @param {number} gradientTexture the glow's texture (_resolveBuiltinTextureId('_lightGradient'))
+ * @returns {boolean} whether the kernel writes the glow rows this frame
+ */
+export function writeEmitGlowColumns(b, LightEmitter, Transform, gradientTexture) {
+  let ok = putSlot(b, 'tX', Transform.x) && putSlot(b, 'tY', Transform.y);
+  for (let k = 0; ok && k < EMIT_GLOW_COLUMNS.length; k++) ok = putSlot(b, EMIT_GLOW_COLUMNS[k][0], LightEmitter[EMIT_GLOW_COLUMNS[k][1]]);
+  b.table[SLOT.lGradientTexture] = gradientTexture;
+  if (!ok) b.table[SLOT.lColor] = 0;
+  return ok;
 }
 
 /**
