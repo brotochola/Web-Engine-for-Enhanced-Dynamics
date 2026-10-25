@@ -961,7 +961,8 @@
         "R-0626",
         "R-0627",
         "R-0630",
-        "R-0632"
+        "R-0632",
+        "R-0633"
       ]
     },
     {
@@ -13768,6 +13769,15 @@
         "aadec9d1",
         "48205a08"
       ]
+    },
+    {
+      "id": "R-0633",
+      "date": "2026-10-25",
+      "time": "03:48",
+      "timeFrom": "recorded",
+      "title": "WASM close-out step 4 screened: engine.wasm saves 1.3 KB and <1 ms of compile per worker; not done",
+      "verdict": "screened",
+      "text": "**WASM close-out step 4 screened: one engine.wasm saves 1.3 KB and under a millisecond of compile per worker; not worth the posted-Module change it needs.** 2026-10-25.\n\nThe plan's step 4 links every kernel into one engine.wasm. A trial build (buildWasm.mjs with a module of several sources, the 18 product kernels linked by wasm-ld, the kernel rules passing; not committed): **231 270 B, 58 735 B gzipped**, against the 18 modules' 232 563 B and 61 055 B gzipped. The helpers repeated in several sources (js_fmod, js_toint32 and the like) are small, so a shared header would save little more. Compile time (Node, WebAssembly.compile, medians of 20): all 18 modules 1.71 ms, engine.wasm 0.48 ms; per worker, its own kernels take 0.14 ms (spatial), 0.62 ms (particle), 0.81 ms (pre-render) and 0.32 ms (Pixi). And one module embedded in each of the four workers that use kernels would add about 230 KB to the bundle (each worker carries 78 KB of base64 instead of its own kernels), unless the main thread compiles it once and posts the WebAssembly.Module, a change to every worker's init and to the --src path. The merge buys tidiness, not speed or size; it is not done. W7 (the whole spatial step in one call) does not need it: gather, publish and rebuild can share a module of their own if W6's +10.9 % ever justifies it."
     }
   ],
   "leads": [
