@@ -5,7 +5,7 @@
  * ParticleEmitter.emit, seeded. 60 000 heighted particles fall for 8–20 s fading and shrinking
  * with seven eases, despawn on ground contact, and 4 000 more are emitted every frame.
  *
- *   base        updateParticlePhysicsBuffers (src/util/particleIntegrate.js), the JS path
+ *   base        updateParticlePhysicsBuffers (tests/reference/particleIntegrate.mjs), the JS path the kernel replaced
  *   wasm        integrateParticlesWasm (src/workers/particleIntegrateClient.js): integrate_batch
  *               (wasm/particleIntegrate.c), then returnToPool for its dead list, in order, and
  *               Math.cos / Math.sin for its trig list; what the particle worker binds with

@@ -5,7 +5,7 @@
  * shipped ParticleEmitter.emit, seeded, aged 300 frames by the shipped integrate so dead slots are
  * scattered the way the scene's free list scatters them (about 65 000 live of 65 535).
  *
- *   base  buildActiveAndVisibleListBuffers / …Turned (src/util/particleIntegrate.js), with the
+ *   base  buildActiveAndVisibleListBuffers / …Turned (tests/reference/particleIntegrate.mjs), with the
  *         worker's local index list and the two published lists, as the particle worker calls them
  *   wasm  buildParticleListsWasm (src/workers/particleListsClient.js): build_lists /
  *         build_lists_turned (wasm/particleLists.c, f64x2 on full 16-slot blocks) writing the

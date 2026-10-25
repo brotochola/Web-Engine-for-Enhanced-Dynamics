@@ -92,7 +92,7 @@ async function stampCase() {
   // memory floor. full = shipped stampLightRange on the Predator fixture (48 lights, 512 per light,
   // 3 per entity); gather = a copy of its grid walk and range filter (the hot lines); loadsOnly =
   // the same walk and loads, XOR into a sink, no stores; storeAll = the same loads, every item stored.
-  const { stampLightRange } = await import('../../src/render/gpuShadowCasters.js');
+  const { stampLightRange } = await import('../reference/shadowStamp.mjs');
   const { setupStamp } = await import('./shadowStampMicrobench.mjs');
   const { loadPredatorFixture } = await import('./predatorFixture.mjs');
   const { warmNormalCompile } = await import('./microbenchHelpers.mjs');

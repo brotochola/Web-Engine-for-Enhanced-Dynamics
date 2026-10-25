@@ -5,7 +5,7 @@
  * up: the 48 lights nearest the caster centroid, maxShadowsPerLight 512, maxShadowsPerEntity 3, casters
  * packed as GPU_CASTER_FLOATS rows.
  *
- *   js          stampLightRange (src/render/gpuShadowCasters.js), the whole call
+ *   js          stampLightRange (tests/reference/shadowStamp.mjs), the whole call
  *   wasm        stamp_light_range, one call per frame, the lights copied into a table of five doubles first
  *               (x, y, intensity, rangeSq, maxShadows), as a product wrapper would each frame
  *   wasm-f32    stamp_light_range_f32 (tests/fixtures/wasm/shadowStampF32.wasm, from wasm/test/shadowStampF32.c):
