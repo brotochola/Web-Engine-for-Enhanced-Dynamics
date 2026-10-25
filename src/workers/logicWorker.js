@@ -2124,7 +2124,7 @@ class LogicWorker extends AbstractWorker {
           bindLiquidFunUserDataListSab(data.liquidFunUserDataListSab);
         }
         if (data.liquidFunHeap) {
-          LiquidFun.bindHeapPose(data.liquidFunHeap);
+          LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
         }
         if (data.movedSab) {
           bindMovedBodies(data.movedSab);

@@ -4511,12 +4511,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         bindCommandRing(data.commandSab);
       }
       if (data.liquidFunHeap) {
-        LiquidFun.bindHeapPose(data.liquidFunHeap);
+        LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
       }
       return;
     }
     if (msg === 'liquidFunHeap' && data.liquidFunHeap) {
-      LiquidFun.bindHeapPose(data.liquidFunHeap);
+      LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
       return;
     }
     if (msg === 'liquidFunCleared') return;

@@ -1550,10 +1550,19 @@ export class AbstractWorker {
         bindMovedBodies(data.movedSab);
       }
       if (data.liquidFunHeap) {
-        LiquidFun.bindHeapPose(data.liquidFunHeap);
+        LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
       }
     } else if (data?.msg === 'liquidFunHeap' && data.liquidFunHeap) {
-      LiquidFun.bindHeapPose(data.liquidFunHeap);
+      LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
     }
+  }
+
+  /**
+   * A LiquidFun heap payload on this worker's own handle of Box2D's memory when the engine block is in it, as
+   * bindBox2dHotFields binds the bodies: the posted SharedArrayBuffer is another object for the same memory, and
+   * a kernel on the block reads a column only when its view is of that memory's buffer (pre-render's LiquidFun rows).
+   */
+  _liquidFunHeapPayload(payload) {
+    return this._box2dHeap ? { ...payload, sab: this._box2dHeap } : payload;
   }
 }
