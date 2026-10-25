@@ -244,7 +244,9 @@ function buildBox2dWorkerSource() {
  * Webpack emits `new URL('./spatialPublish.wasm', import.meta.url)` as
  * `new URL(publicPath + "hash.wasm", scriptBase)`. Blob workers set scriptBase
  * to `blob:.../../../`, and `new URL` throws. Inline the bytes as a data URL
- * so the constructor gets an absolute URL and the worker never fetches.
+ * so the constructor gets an absolute URL and the worker never fetches. Gzipped,
+ * as Box2D's wasm is: the 18 kernels were 310 KB of base64 raw, 81 KB gzipped
+ * (loadWasmKernel inflates a data:application/gzip URL with DecompressionStream).
  */
 function inlineWorkerWasmAssets(source, label) {
     let inlined = 0;
@@ -256,8 +258,8 @@ function inlineWorkerWasmAssets(source, label) {
             throw new Error(`Worker wasm asset missing (${label}): ${rel}`);
         }
         inlined++;
-        const b64 = fs.readFileSync(resolved).toString('base64');
-        return JSON.stringify(`data:application/wasm;base64,${b64}`);
+        const b64 = zlib.gzipSync(fs.readFileSync(resolved), { level: 9 }).toString('base64');
+        return JSON.stringify(`data:application/gzip;base64,${b64}`);
     });
     if (label === 'spatialWorker' && inlined < 1) {
         throw new Error(

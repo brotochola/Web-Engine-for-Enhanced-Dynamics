@@ -8,7 +8,8 @@
 // Each module compiles once per worker; every instance after the first reuses the compiled module.
 // Callers keep the literal `new URL('./<name>.wasm', import.meta.url)` in their own module and pass
 // the URL: webpack emits the asset only for that pattern, and the bundle rewrites it to a data URL
-// (scripts/buildBundle.js), because a blob worker has no directory to fetch from.
+// (scripts/buildBundle.js), because a blob worker has no directory to fetch from; a gzipped one
+// (data:application/gzip), which DecompressionStream inflates, as the bundle's Box2D loader does.
 
 const compiled = new Map();
 
@@ -19,8 +20,14 @@ function bytesFromDataUrl(href) {
   return bytes;
 }
 
+async function gunzip(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
 async function loadBytes(name, url) {
   const href = String(url);
+  if (href.startsWith('data:application/gzip')) return gunzip(bytesFromDataUrl(href));
   if (href.startsWith('data:')) return bytesFromDataUrl(href);
   // Node (kernels and tests that run real workers) cannot fetch a file: URL.
   if (href.startsWith('file:') && globalThis.process?.getBuiltinModule) {

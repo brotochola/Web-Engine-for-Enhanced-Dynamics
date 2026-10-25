@@ -1,13 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 
 import { compileWasmKernel, loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
 
 // E-76 T5: the shared kernel loader links env.memory and nothing else, compiles each module once,
-// and loads from a file URL (Node), a data URL (the bundle) or fetch (the browser).
+// and loads from a file URL (Node), a data URL (the bundle: gzipped) or fetch (the browser).
 
 const SHIPPED = new URL('../../src/workers/spatialPublish.wasm', import.meta.url);
 const EMCC = new URL('../fixtures/spatialPublish.emcc.wasm', import.meta.url);
@@ -20,6 +21,19 @@ test('loadWasmKernel links the shipped spatial module from a file URL and a data
   const fromData = await loadWasmKernel('spatialPublish', dataUrl, mem.memory, ['publish_batch']);
   assert.equal(typeof fromData.publish_batch, 'function');
   assert.equal(compileWasmKernel('spatialPublish', SHIPPED), compileWasmKernel('spatialPublish', SHIPPED), 'compiled once');
+});
+
+test('loadWasmKernel inflates a gzipped data URL (the bundle embeds the kernels so), to the committed module', async () => {
+  const bytes = fs.readFileSync(SHIPPED);
+  const gzipUrl = `data:application/gzip;base64,${zlib.gzipSync(bytes, { level: 9 }).toString('base64')}`;
+  const module = await compileWasmKernel('spatialPublish', gzipUrl);
+  assert.deepEqual(WebAssembly.Module.exports(module), WebAssembly.Module.exports(await WebAssembly.compile(bytes)));
+  const mem = createSpatialPublishMemory(64, 4, 1);
+  const fromGzip = await loadWasmKernel('spatialPublish', gzipUrl, mem.memory, ['publish_batch']);
+  assert.equal(typeof fromGzip.publish_batch, 'function');
+  // A payload that is not gzip names the kernel.
+  const notGzip = `data:application/gzip;base64,${bytes.toString('base64')}`;
+  await assert.rejects(loadWasmKernel('notGzip', notGzip, mem.memory, ['publish_batch']), /^Error: notGzip\.wasm: /);
 });
 
 test('loadWasmKernel refuses a module with other imports, and a missing export', async () => {
