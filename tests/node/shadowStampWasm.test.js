@@ -124,3 +124,76 @@ test('pre-render binds the stamp kernel and its stamp is the one the JS made', a
     assert.equal(stampBytes.findIndex((x, i) => x !== jsBytes[i]), -1, `frame ${k}: stamp rows`);
   }
 });
+
+// The light cookies (one screen-space row per shadow-casting light) are a render queue of their own in the stamp's
+// regions, so gpuPack.wasm packs them as it packs the queues; before, they were pre-render's private arrays and only
+// the JS packer took them. The kernel's rows are the JS packer's, frame after frame.
+test('the light cookies pack through gpuPack.wasm, the rows the JS packer writes', async () => {
+  const { RENDER_QUEUE_CAMERA_BYTES } = await import('../../src/render/renderQueueLayout.js');
+  const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
+  const { coreComponentData, emitSpec, emitSpriteBuffers, initWorker, loadWorker } = await import('../bench/workerHarness.mjs');
+  const N = 500;
+  const lighting = { enabled: true, shadowsEnabled: true, maxShadowCastingLights: LIGHTS, maxShadowsPerLight: 64, maxShadowsPerEntity: PER_ENTITY, maxLights: 64 };
+  const caps = gpuQueueCaps(MAX, lighting);
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(N),
+    { maxSun: caps.maxSun, maxPerEntity: PER_ENTITY, maxLights: LIGHTS, cookies: caps.maxCookie, cookieBytes: computeBufferSize(caps.maxCookie) });
+  assert.ok(m.layout.stamp.cookieQueueByte > 0, 'the cookies\' queue is a stamp region');
+  const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  await initWorker(worker, {
+    config: { worldWidth: 4000, worldHeight: 3000, canvasWidth: 1280, canvasHeight: 720, lighting },
+    globalEntityCount: N,
+    buffers: {
+      componentData: { ...coreComponentData(N), ...emitSpriteBuffers(m).componentData, ShadowCaster: new SharedArrayBuffer(ShadowCaster.getBufferSize(N)) },
+      componentDataByte: emitSpriteBuffers(m).componentDataByte,
+    },
+    extra: {
+      shadows: { enabled: true, maxShadowCastingLights: LIGHTS, maxShadowsPerLight: 64, maxShadowsPerEntity: PER_ENTITY },
+      textureMetadata: { animationFrameStart: [0, 4], animationFrameCount: [4, 1], proxyToGlobalAnim: {}, animationNameToIndex: { _lightGradient: 1 } },
+      renderQueueMemory: m.memory,
+      renderQueueLayout: m.layout,
+      renderQueue: {
+        maxItems: MAX, sync: new SharedArrayBuffer(8),
+        dataA: m.buffer, dataAByte: m.layout.queueAByte, dataB: m.buffer, dataBByte: m.layout.queueBByte,
+        cameraA: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES), cameraB: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+        entityTextureData: new SharedArrayBuffer(N * 2),
+      },
+      gpuQueue: { dataA: m.buffer, dataAByte: m.layout.gpuAByte, dataB: m.buffer, dataBByte: m.layout.gpuBByte, caps },
+    },
+  });
+  const cq = worker._gpuCookieQ;
+  assert.equal(cq.x.buffer, m.buffer, 'the cookies\' columns are in the memory');
+  const bound = worker._gpuPackWasm;
+  assert.ok(bound, 'the worker bound the pack kernel');
+  const dst = worker.gpuQueueBuffers[0];
+  const cookieBytes = () => new Uint8Array(dst.cookie.buffer, dst.cookie.byteOffset, dst.cookie.byteLength);
+  const r = rng(0xc00c1e);
+  let kernelRows = 0;
+  for (let f = 0; f < 10; f++) {
+    // Some lights off (no range, no intensity), the rest anywhere, a camera that moves and zooms.
+    const lights = Array.from({ length: LIGHTS }, (_, k) => ({
+      x: r() * 4000, y: r() * 3000, rangeSq: k % 5 === 0 ? 0 : 1000 + r() * 90000,
+      intensity: k % 7 === 0 ? 0 : 500 + r() * 30000, sqrtI: 0,
+    }));
+    for (const L of lights) L.sqrtI = Math.sqrt(L.intensity);
+    worker._stampLights = lights;
+    worker._stampLightCount = lights.length;
+    worker._frameCameraZoom = 0.5 + r();
+    worker._frameCameraX = r() * 800;
+    worker._frameCameraY = r() * 600;
+    let calls = 0;
+    worker._gpuPackWasm = { ...bound, spritesGeneral: (...a) => { calls++; return bound.spritesGeneral(...a); } };
+    cookieBytes().fill(0xa5);
+    const nWasm = worker._packGpuCookies(dst);
+    const wasm = cookieBytes().slice();
+    worker._gpuPackWasm = null;
+    cookieBytes().fill(0xa5);
+    const nJs = worker._packGpuCookies(dst);
+    worker._gpuPackWasm = bound;
+    assert.ok(nJs > 0, `frame ${f}: cookies to pack`);
+    assert.equal(calls, 1, `frame ${f}: the kernel packed them`);
+    assert.equal(nWasm, nJs, `frame ${f}: rows`);
+    assert.equal(cookieBytes().findIndex((x, i) => x !== wasm[i]), -1, `frame ${f}: the cookie rows`);
+    kernelRows += nWasm;
+  }
+  assert.ok(kernelRows > 50, `rows packed (${kernelRows})`);
+});

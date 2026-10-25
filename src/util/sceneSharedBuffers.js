@@ -557,6 +557,9 @@ export function renderQueueMemorySpec(scene) {
         maxSun: gpuCaps.maxSun | 0,
         maxPerEntity: lighting.maxShadowsPerEntity | 0,
         maxLights: lighting.maxShadowCastingLights | 0,
+        // The light cookies' queue (a render queue of maxCookie rows), which the pack kernel packs.
+        cookies: gpuCaps.maxCookie | 0,
+        cookieBytes: computeRenderQueueBufferSize(gpuCaps.maxCookie | 0),
       }
     : null;
   // W22: the particle worker's decoration sway, on the decorations block (so only with the emit's), with a

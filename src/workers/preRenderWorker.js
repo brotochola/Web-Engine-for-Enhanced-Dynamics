@@ -85,7 +85,7 @@ import {
 } from '../util/configDefaults.js';
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
-import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
+import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import { bindGpuPack, packInstancedRowsWasm, packSplitRowsWasm } from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
@@ -1037,25 +1037,24 @@ class PreRenderWorker extends AbstractWorker {
                 }
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
-                    const cookieRot = new Float32Array(cookieN);
-                    const cookieAnchor = new Float32Array(cookieN);
-                    const cookieTint = new Uint32Array(cookieN);
-                    cookieRot.fill(1);
-                    cookieAnchor.fill(0.5);
-                    cookieTint.fill(0xffffff);
+                    // A render queue of the cookies' rows: in the stamp's regions of the render-queue memory when it
+                    // has them (with shadows), where the pack kernel packs it; else views of a buffer of its own.
+                    const st = data.renderQueueLayout?.stamp;
+                    const inMemory = data.renderQueueMemory && st && st.cookieQueueByte >= 0 && st.cookies >= cookieN;
+                    const cv = inMemory
+                        ? createRenderQueueViews(data.renderQueueMemory.buffer, cookieN, st.cookieQueueByte)
+                        : createRenderQueueViews(new SharedArrayBuffer(computeBufferSize(cookieN)), cookieN, 0);
+                    cv.rotC.fill(1);
+                    cv.anchorX.fill(0.5);
+                    cv.anchorY.fill(0.5);
+                    cv.tint.fill(0xffffff);
                     this._gpuCookieQ = {
                         count: 0,
-                        x: new Float32Array(cookieN),
-                        y: new Float32Array(cookieN),
-                        scaleX: new Float32Array(cookieN),
-                        scaleY: new Float32Array(cookieN),
-                        rotC: cookieRot,
-                        rotS: new Float32Array(cookieN),
-                        alpha: new Float32Array(cookieN),
-                        tint: cookieTint,
-                        textureId: new Uint16Array(cookieN),
-                        anchorX: cookieAnchor,
-                        anchorY: cookieAnchor,
+                        x: cv.x, y: cv.y, scaleX: cv.scaleX, scaleY: cv.scaleY, rotC: cv.rotC, rotS: cv.rotS,
+                        alpha: cv.alpha, tint: cv.tint, textureId: cv.textureId, anchorX: cv.anchorX, anchorY: cv.anchorY,
+                        // No tiling, no shadow terms: zeros the kernel reads as the JS reads absent columns.
+                        tileMulX: cv.tileMulX, tileMulY: cv.tileMulY, tileOffsetU: cv.tileOffsetU, tileOffsetV: cv.tileOffsetV,
+                        shadowH: cv.shadowH, shadowOffX: cv.shadowOffX, shadowOffY: cv.shadowOffY,
                     };
                 }
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
