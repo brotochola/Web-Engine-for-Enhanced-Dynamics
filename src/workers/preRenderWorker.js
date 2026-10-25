@@ -97,6 +97,7 @@ import {
     bindPreRenderEmit,
     writeEmitAdobeAssets,
     writeEmitAdobeColumns,
+    writeEmitBulletColumns,
     writeEmitColumns,
     writeEmitTextures,
     writePersistColumns,
@@ -106,6 +107,7 @@ import {
     EMIT_PERSIST_MISS,
     EMIT_SORT_KEY,
     EMIT_TILES_DIRTY,
+    EMIT_WARN_BULLET_START,
     EMIT_WARN_NO_ANIM,
     EMIT_WARN_NO_START,
     EMIT_Y_SORT,
@@ -3286,7 +3288,7 @@ class PreRenderWorker extends AbstractWorker {
         const persistBuf = source.persist ? this._queueBuf : -1;
         // E-112, W4c. preRenderEmit.wasm takes the frame when every column it reads is in its memory: the
         // persist path, then on a miss the full emit's sprite and decoration rows and the remembered rows.
-        const emitWasm = this._emitWasm !== null && !!stashPx && this._writeEmitTable(source);
+        const emitWasm = this._emitWasm !== null && !!stashPx && this._writeEmitTable(source, bulletTrailTextureId);
         const persistWasm = emitWasm && persistBuf >= 0 && writePersistColumns(this._emitWasm, this, SpriteRenderer, persistBuf);
         let persistHit = false;
         // Rows other than sprites are rewritten in full on a persist frame too (E-82 staticGen).
@@ -3307,9 +3309,9 @@ class PreRenderWorker extends AbstractWorker {
             writeCount = count < maxItems ? count : maxItems;
             loopCount = 0;
         }
-        // E-112. A full emit's sprite and decoration rows are written by preRenderEmit.wasm, the rows of
-        // other types after it; a frame it does not take (an Adobe root, a LiquidFun row, a column
-        // outside its memory) runs the loop below.
+        // E-112. A full emit's sprite and decoration rows are written by preRenderEmit.wasm (W4d: and the
+        // bullet and trail rows), the rows of other types after it; a frame it does not take (an Adobe
+        // root, a LiquidFun row, a column outside its memory) runs the loop below.
         if (emitWasm && !persistHit && loopCount > 0) {
             const written = this._emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty);
             if (written >= 0) {
@@ -3702,11 +3704,14 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * E-112, W4c. preRenderEmit.wasm's column table for this frame; false when the kernel cannot take the
-     * frame (no texture tables yet, a column outside its memory), and the JS runs it.
+     * frame (no texture tables yet, a column outside its memory), and the JS runs it. W4d: with BulletComponent
+     * in the memory the kernel writes the bullet and trail rows too, the trail's texture `trailTexture`; else
+     * they are left to the JS.
      */
-    _writeEmitTable(source) {
+    _writeEmitTable(source, trailTexture) {
         const b = this._emitWasm;
         if (!b.texturesReady || !writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return false;
+        writeEmitBulletColumns(b, BulletComponent, trailTexture);
         // W27: Adobe roots expand in the kernel when its tables hold the registry's assets and AdobeAnimComponent is
         // in the memory (else it declines a frame with one), on a queue whose texture column is the source's length
         // (_emitAdobePieces stops at that column's end, the loop at maxItems).
@@ -3770,8 +3775,8 @@ class PreRenderWorker extends AbstractWorker {
 
     /**
      * E-112. The full emit's rows through preRenderEmit.wasm, on this frame's table (_writeEmitTable): it
-     * writes the sprite and decoration rows and expands the Adobe roots (W27), then the rows of other types it
-     * listed are written here, its play-once ends sent through the entity-type filter and its missing textures
+     * writes the sprite, decoration, bullet and trail rows (W4d) and expands the Adobe roots (W27), then the
+     * rows of other types it listed are written here, its play-once ends sent through the entity-type filter and its missing textures
      * warned as the JS emit warns them.
      * Returns the rows written, or -1 when the kernel cannot take the frame (the JS loop does).
      */
@@ -3803,7 +3808,8 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * E-112. The rows preRenderEmit.wasm left to the JS (particles, glows, bullets and their trails), listed as
+     * E-112. The rows preRenderEmit.wasm left to the JS (particles, glows; bullets and their trails when
+     * BulletComponent is not in its memory, W4d), listed as
      * [collector row, queue row] pairs (W27: after an Adobe root the queue rows move down): the full emit's
      * branches for those types, copied (the emit loop is too hot to share them).
      */
@@ -4043,6 +4049,10 @@ class PreRenderWorker extends AbstractWorker {
                 `animStart:${globalAnimIdx}`,
                 `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${idx}`
             );
+            return;
+        }
+        if (kind === EMIT_WARN_BULLET_START) {
+            this._resolveAnimFrameStart(BulletComponent.textureId[idx], ANIM_LABEL_TAG.BULLET);
             return;
         }
         this._resolveAnimFrameStart(DecorationComponent.textureId[idx], ANIM_LABEL_TAG.DECORATION);

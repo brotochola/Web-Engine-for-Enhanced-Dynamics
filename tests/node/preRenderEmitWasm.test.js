@@ -485,8 +485,9 @@ test('a column outside the memory makes the table refuse, so the JS emits', asyn
 });
 
 test('emitSpriteQueue through the kernel writes every row the JS loop writes, other types included', async (t) => {
-  for (const ySort of [true, false]) {
-    const k = await setup({ ySort, seed: ySort ? 0xc0ffee : 0xdecade });
+  // W4d: the last case with BulletComponent in the memory, where the kernel writes the bullet and trail rows.
+  for (const [ySort, bullets] of [[true, false], [false, false], [true, true]]) {
+    const k = await setup({ ySort, bullets, seed: bullets ? 0xb2b : ySort ? 0xc0ffee : 0xdecade });
     const { worker, source } = k;
     const bound = worker._emitWasm;
     assert.ok(bound, 'the worker bound the kernel at init');
@@ -532,7 +533,7 @@ test('emitSpriteQueue through the kernel writes every row the JS loop writes, ot
       assert.deepEqual(wasm[f].ends, js[f].ends, `frame ${f}: play-once ends, in order`);
       assert.deepEqual(wasm[f].warns, js[f].warns, `frame ${f}: warnings`);
     }
-    t.diagnostic(`ySort ${ySort}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
+    t.diagnostic(`ySort ${ySort}, bullets in the memory ${bullets}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
   }
 });
 
