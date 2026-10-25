@@ -455,11 +455,6 @@ export const WASM_DEFAULTS = Object.freeze({
   /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */
   gpuPack: true,
   /**
-   * Phase 4: with physics on, the render-queue memory is a block of Box2D's memory (grown by it), so kernels read
-   * physics state and the queues in one memory. false keeps the two memories apart.
-   */
-  box2dBlock: true,
-  /**
    * Pixi's plain sprite pack through `gpuPack.wasm` (W9d, E-123), with `packGpuSprites: 'pixi'` and no pose
    * interpolation: the entity batch's rows live in the render-queue memory (so it needs gpuPack).
    */
@@ -486,12 +481,12 @@ export const WASM_DEFAULTS = Object.freeze({
   /**
    * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b): Transform, its pose and Collider in the render-queue
    * memory with the emit's SpriteRenderer (so it needs preRenderEmit); with physics, in Box2D's block with RigidBody
-   * and the published poses (so it needs box2dBlock).
+   * and the published poses.
    */
   preRenderCollect: true,
   /**
    * The bullet tick (`bulletTick.wasm`, W19): the pool walk and its linecasts in one call per frame, with physics,
-   * on Box2D's block (the pool, Transform, Collider and the spatial grid there; needs box2dBlock and spatialPublish).
+   * on Box2D's block (the pool, Transform, Collider and the spatial grid there; needs spatialPublish).
    */
   bulletTick: true,
   /**

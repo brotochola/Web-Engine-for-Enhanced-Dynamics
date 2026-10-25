@@ -578,7 +578,7 @@ export function renderQueueMemorySpec(scene) {
   const physics = config.physics?.enabled !== false;
   // The engine block: Box2D's with physics (where the bodies' poses are), a memory of its own without (close-out
   // group B), laid out the same way.
-  const inBlock = config.wasm?.box2dBlock !== false && (!physics || Boolean(pools.RigidBody?.ComponentClass));
+  const inBlock = !physics || Boolean(pools.RigidBody?.ComponentClass);
   // W19: the bullet tick reads the pool, Transform, Collider and the spatial grid in the engine block, so its regions
   // ride with these blocks; any pool size and id width (the kernel's _u32 forms).
   const maxBullets = config.bullet?.maxBullets | 0;

@@ -16,7 +16,7 @@ import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
 import { installDecalMemory } from './decalMemory.js';
-import { box2dBlockParts, box2dBlockPlan, requestBox2dBlock, standaloneBlock } from './box2dEngineBlock.js';
+import { box2dBlockError, box2dBlockParts, box2dBlockPlan, requestBox2dBlock, standaloneBlock } from './box2dEngineBlock.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -646,7 +646,11 @@ export async function reserveBox2dBlock(scene) {
     return scene.box2dBlock;
   }
   const plan = box2dBlockPlan(scene);
-  if (!plan) return null;
+  if (!plan) {
+    const why = box2dBlockError(scene);
+    if (why) throw new Error(why);
+    return null;
+  }
   const { useInlineWorkers, cacheBust } = await workerMode();
   const worker = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics, plan.pages);
   worker.name = 'physics';

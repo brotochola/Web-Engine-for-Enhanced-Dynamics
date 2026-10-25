@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createRenderQueueMemory, renderQueueMemoryBytes } from '../../src/util/renderQueueMemory.js';
-import { box2dBlockPlan } from '../../src/util/box2dEngineBlock.js';
+import { box2dBlockError, box2dBlockPlan } from '../../src/util/box2dEngineBlock.js';
 import { box2dMemoryPages } from '../../src/box2d/box2dMemory.js';
 import { bindEntityIdWidth } from '../../src/util/entityIdWidth.js';
 
@@ -51,8 +51,11 @@ test('the block plan: physics on and the switch on, Box2D grown by the block', (
   assert.ok(plan.pages > box2dMemoryPages({ wasmMemoryMB: 64 }));
   assert.ok((plan.pages - box2dMemoryPages({ wasmMemoryMB: 64 })) * 65536 >= plan.bytes, 'the pages hold the block');
   assert.equal(box2dBlockPlan({ ...scene(), _physicsEnabled: false }), null, 'no physics, no block');
-  assert.equal(box2dBlockPlan(scene({ wasm: { box2dBlock: false } })), null, 'the switch off');
-  assert.equal(box2dBlockPlan(scene({ physics: { wasmMemoryMB: 2048 } })), null, 'past 2 GB the memories stay apart');
+  assert.equal(box2dBlockPlan(scene({ physics: { wasmMemoryMB: 2048 } })), null, 'past 2 GB there is no block');
+  // And no block with physics is an error at scene creation that names what to lower (reserveBox2dBlock throws it).
+  assert.match(box2dBlockError(scene({ physics: { wasmMemoryMB: 2048 } })), /physics.wasmMemoryMB, 2048 MB.*Lower/s);
+  assert.equal(box2dBlockError(scene()), null, 'a block that fits');
+  assert.equal(box2dBlockError({ ...scene(), _physicsEnabled: false }), null, 'no physics');
 
   // A spatial part that would take the block past 2 GB stays out of it, and the render-queue part keeps its place.
   const spatial = (maxNeighbors, entityIdWidth = 16) => ({
@@ -171,7 +174,6 @@ test('the spec: with physics the collect asks for the body variant, which needs 
     },
   });
   assert.ok(renderQueueMemorySpec(scene(true)).collect.rigidBodyBytes > 0);
-  assert.equal(renderQueueMemorySpec(scene(true, { box2dBlock: false })).collect, null, 'no block, no body variant');
   assert.ok(renderQueueMemorySpec(scene(true, { preRenderCollect: false })).collect.rigidBodyBytes > 0,
     'the collect kernel off, its blocks stay: the emit reads Transform there');
   assert.equal(renderQueueMemorySpec(scene(false)).collect.rigidBodyBytes, 0, 'without physics, the Weed pose variant');
@@ -260,7 +262,6 @@ test('W19: with physics the bodies part carries the bullet tick regions, for any
   // Past 65 535 bullets the kernel's 32-bit form runs (close-out group B): the regions are laid for it too.
   assert.equal(renderQueueMemorySpec(scene({ maxBullets: 70000 })).collect?.bullets?.bullets, 70000, 'a 32-bit pool gets the kernel');
   assert.equal(renderQueueMemorySpec(scene({ spatial: 0 })).collect, null, 'no spatial grid, no cast');
-  assert.equal(renderQueueMemorySpec(scene({ wasm: { box2dBlock: false } })).collect, null, 'no block');
 
   const args = [500, 500 * 64, 4096, null, null, null, false];
   const withBullets = { entities: 1000, transformBytes: 3000, colliderBytes: 64000, rigidBodyBytes: 80000, bullets: b };
@@ -318,7 +319,6 @@ test('W2b: with physics and raycasted lighting the bodies part carries LightOccl
   assert.equal(renderQueueMemorySpec(scene({ raycasted: false })).collect, null, 'no raycasted lighting');
   assert.equal(renderQueueMemorySpec(scene({ spatial: 0 })).collect, null, 'no neighbour rows');
   assert.equal(renderQueueMemorySpec(scene({ noOccluders: true })).collect, null, 'no occluders');
-  assert.equal(renderQueueMemorySpec(scene({ wasm: { box2dBlock: false } })).collect, null, 'no block');
 
   const args = [500, 500 * 64, 4096, null, null, null, false];
   const collect = { entities: 1000, transformBytes: 3000, colliderBytes: 64000, rigidBodyBytes: 80000, bullets: null, visibility: v };

@@ -64,7 +64,6 @@ test('without physics the spec lays the bullet tick in the engine block', () => 
   const b = renderQueueMemorySpec(scene()).collect?.bullets;
   assert.ok(b, 'the bullet tick regions, no physics');
   assert.equal(b.bullets, 3000);
-  assert.equal(renderQueueMemorySpec(scene({ wasm: { box2dBlock: false } })).collect?.bullets ?? null, null, 'no block, no tick');
 });
 
 test('without physics the engine block is a memory of its own, with the render-queue and spatial parts in it', async () => {
