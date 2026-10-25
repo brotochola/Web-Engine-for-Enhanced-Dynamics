@@ -218,12 +218,13 @@ export class LiquidFun {
   /**
    * Bind LiquidFun groups + thin emit SAB on this realm (main or any AbstractWorker).
    * HEAP pose (x/y/alpha/count) is bound later via bindHeapPose on box2dReady.
-   * @param {{ groups?: SharedArrayBuffer|null, render?: SharedArrayBuffer|null, maxCount?: number }} opts
+   * @param {{ groups?: SharedArrayBuffer|null, render?: SharedArrayBuffer|null, renderByte?: number, maxCount?: number }} opts
+   *   renderByte: the render buffer's offset in `render` (a region of the render-queue memory)
    */
-  static bindSabs({ groups = null, render = null, maxCount = 0 } = {}) {
+  static bindSabs({ groups = null, render = null, renderByte = 0, maxCount = 0 } = {}) {
     _groupsViews = groups ? bindLiquidFunGroups(groups, LIQUIDFUN_GROUPS_MAX) : null;
     const n = maxCount | 0;
-    _renderViews = render && n > 0 ? bindLiquidFunRender(render, n) : null;
+    _renderViews = render && n > 0 ? bindLiquidFunRender(render, n, renderByte) : null;
     _particleViews = null;
     if (_heapPose) LiquidFun.bindHeapPose(_heapPose);
   }

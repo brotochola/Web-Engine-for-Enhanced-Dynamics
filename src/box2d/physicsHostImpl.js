@@ -160,10 +160,11 @@
 
   // Mirrors src/render/liquidFunRender.js bindLiquidFunRender (nested classic
   // worker - no ESM import). Layout must stay identical to that file.
-  function bindLiquidFunRenderViews(sab, maxCount) {
+  function bindLiquidFunRenderViews(sab, maxCount, byte) {
     var n = maxCount | 0;
-    var off = 8;
-    var count = new Int32Array(sab, 0, 1);
+    var at = byte | 0;
+    var off = at + 8;
+    var count = new Int32Array(sab, at, 1);
     var x = new Float32Array(sab, off, n);
     off += n * 4;
     var y = new Float32Array(sab, off, n);
@@ -186,7 +187,7 @@
     off += n * 4;
     var textureId = new Uint16Array(sab, off, n);
     off += n * 2;
-    off = (off + 3) & ~3;
+    off = at + ((off - at + 3) & ~3);
     var baseAlpha = new Float32Array(sab, off, n);
     off += n * 4;
     var layerMask = new Uint16Array(sab, off, n);
@@ -1034,7 +1035,7 @@
       lfMax = data.config.physics.liquidFun.maxCount | 0;
     }
     if (buffers.liquidFunRender && lfMax > 0) {
-      state.liquidFun = bindLiquidFunRenderViews(buffers.liquidFunRender, lfMax);
+      state.liquidFun = bindLiquidFunRenderViews(buffers.liquidFunRender, lfMax, buffers.liquidFunRenderByte | 0);
       state.liquidFunMaxCount = lfMax;
     }
     if (buffers.liquidFunGroups) {

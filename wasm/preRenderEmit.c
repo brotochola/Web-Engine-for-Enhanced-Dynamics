@@ -5,9 +5,10 @@
    does not have. Arithmetic as the JS does it: the sort key and the animation clock in double, each value
    stored as the typed array would store it. W4d: bullet and trail rows (types 4 and 5) too, when
    BulletComponent is in the memory; glow rows (type 3) when LightEmitter is; particle rows (type 1) when
-   ParticleComponent is (the particle memory, a region of this one). Rows of other types (bullets, glows or
-   particles whose component is elsewhere) are listed with the queue row they go to and left for the JS to write; a frame with a LiquidFun
-   row is declined (0xffffffff) before anything is written. Play-once ends and missing animations come back as
+   ParticleComponent is (the particle memory, a region of this one); LiquidFun rows (type 7) when its render buffer
+   is. Rows of other types (bullets, glows or particles whose component is elsewhere) are listed with the queue row
+   they go to and left for the JS to write; a frame with a LiquidFun row whose buffer is elsewhere is declined
+   (0xffffffff) before anything is written. Play-once ends and missing animations come back as
    lists too:
    the end message, its entity-type filter and the warnings stay JS.
    W27: an Adobe Animate root (type 6) expands into its pieces as _emitAdobePieces expands it, the frame
@@ -60,6 +61,12 @@ enum {
      the emit's doubles (E_PARAMS: zenithalMaxHeight, zenithalScaleFactor, zenithalAlphaFade). */
   PC_X, PC_Y, PC_Z, PC_SCALE_X, PC_SCALE_Y, PC_FLIP_X, PC_FLIP_Y, PC_ROT_C, PC_ROT_S, PC_ALPHA, PC_TINT,
   PC_TEXTURE, PC_FLAT, PC_VIEW, PC_WHITE_TEX, E_PARAMS,
+  /* The LiquidFun rows (type 7): the render buffer's columns (LF_X 0: not in the memory, so a frame with one is
+     declined; x, y and alpha may be views of LiquidFun's heap in Box2D's memory; LF_BASE_ALPHA may be 0),
+     pre-render's previous positions and how many of them to interpolate from (a value, 0 without interpolation;
+     E_PARAMS[3] is the pose alpha). Their default texture is PC_WHITE_TEX. */
+  LF_X, LF_Y, LF_SCALE_X, LF_SCALE_Y, LF_ALPHA, LF_BASE_ALPHA, LF_ROT_C, LF_ROT_S, LF_TINT, LF_TEXTURE,
+  LF_PREV_X, LF_PREV_Y, LF_PREV_COUNT,
   SLOT_COUNT
 };
 
@@ -81,6 +88,7 @@ enum {
 #define WARN_DECO_START 2u /* decoration: its animation has no first frame */
 #define WARN_BULLET_START 3u /* bullet: its animation has no first frame */
 #define WARN_PARTICLE_START 4u /* particle: its animation has no first frame */
+#define WARN_LF_START 5u /* LiquidFun particle: its animation has no first frame */
 
 /* CAMERA_TYPES.ZENITHAL (src/util/configDefaults.js), a particle's viewMode. */
 #define CAMERA_ZENITHAL 1u
@@ -255,6 +263,12 @@ typedef struct {
   const uint8_t *pcFlat, *pcView;
   uint32_t pcWhiteTex;
   double zMaxHeight, zScale, zFade;
+  const float *lfX, *lfY, *lfScaleX, *lfScaleY, *lfAlpha, *lfBase, *lfRotC, *lfRotS;
+  const uint32_t *lfTint;
+  const uint16_t *lfTexture;
+  const float *lfPrevX, *lfPrevY;
+  uint32_t lfPrevCount;
+  double poseAlpha;
   int sortKey, ySort, tilesDirty, bounds;
   double deltaSeconds, zoomAlpha, band;
   uint32_t nEnds, nWarns, tiled;
@@ -397,7 +411,21 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
     e->zMaxHeight = params ? params[0] : 0.0;
     e->zScale = params ? params[1] : 0.0;
     e->zFade = params ? params[2] : 0.0;
+    e->poseAlpha = params ? params[3] : 0.0;
   }
+  e->lfX = PTR(const float, LF_X);
+  e->lfY = PTR(const float, LF_Y);
+  e->lfScaleX = PTR(const float, LF_SCALE_X);
+  e->lfScaleY = PTR(const float, LF_SCALE_Y);
+  e->lfAlpha = PTR(const float, LF_ALPHA);
+  e->lfBase = PTR(const float, LF_BASE_ALPHA);
+  e->lfRotC = PTR(const float, LF_ROT_C);
+  e->lfRotS = PTR(const float, LF_ROT_S);
+  e->lfTint = PTR(const uint32_t, LF_TINT);
+  e->lfTexture = PTR(const uint16_t, LF_TEXTURE);
+  e->lfPrevX = PTR(const float, LF_PREV_X);
+  e->lfPrevY = PTR(const float, LF_PREV_Y);
+  e->lfPrevCount = e->lfPrevX && e->lfPrevY ? t[LF_PREV_COUNT] : 0u;
   e->sortKey = (flags & F_SORT_KEY) != 0;
   e->ySort = (flags & F_Y_SORT) != 0;
   e->tilesDirty = (flags & F_TILES_DIRTY) != 0;
@@ -754,6 +782,44 @@ INLINE void particle_row(Emit *e, uint32_t i, uint32_t out) {
   if (e->qType) e->qType[out] = 1;
 }
 
+/* emitSpriteQueue's LiquidFun branch (type 7, queued as type 1): collector row i, LiquidFun particle cIndex[i], at
+   queue row out; its position interpolated from pre-render's previous one when there is one. */
+INLINE void lf_row(Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  plain_head(e, i, out);
+  if ((uint32_t)idx < e->lfPrevCount) {
+    const double a = e->poseAlpha;
+    const double px = (double)e->lfPrevX[idx];
+    const double py = (double)e->lfPrevY[idx];
+    e->qX[out] = (float)(px + ((double)e->lfX[idx] - px) * a);
+    e->qY[out] = (float)(py + ((double)e->lfY[idx] - py) * a);
+  } else {
+    e->qX[out] = e->lfX[idx];
+    e->qY[out] = e->lfY[idx];
+  }
+  e->qScaleX[out] = e->lfScaleX[idx];
+  e->qScaleY[out] = e->lfScaleY[idx];
+  e->qAlpha[out] = (float)((double)e->lfAlpha[idx] * (e->lfBase ? (double)e->lfBase[idx] : 1.0));
+  e->qRotC[out] = e->lfRotC[idx];
+  e->qRotS[out] = e->lfRotS[idx];
+  e->qTint[out] = e->lfTint[idx];
+  const uint32_t a = e->lfTexture[idx];
+  uint32_t tex = INVALID_TEXTURE;
+  if (a == 0) {
+    tex = e->pcWhiteTex;
+  } else if (a < e->nAnims) {
+    tex = (uint32_t)e->frameStart[a];
+  } else {
+    e->warns[2 * e->nWarns] = (uint32_t)idx;
+    e->warns[2 * e->nWarns + 1] = WARN_LF_START;
+    e->nWarns++;
+  }
+  e->qTexture[out] = (uint16_t)tex;
+  e->qAnchorX[out] = 0.5f;
+  e->qAnchorY[out] = 0.5f;
+  if (e->qType) e->qType[out] = 1;
+}
+
 /* _resolveAdobeFrameIndex for an asset in the tables: the clip's frame at this time, or -1 when the root
    draws nothing (no frames, no frame rate). */
 INLINE int32_t adobe_frame(const AdobeAsset *as, uint32_t clip, double time, int loop) {
@@ -886,7 +952,7 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   uint32_t roots = 0;
   for (uint32_t i = 0; i < n; i++) {
     const uint8_t ty = cType[i];
-    if (ty == 7) return DECLINED;
+    if (ty == 7 && !e.lfX) return DECLINED;
     if (ty == 6) {
       if (!e.dir) return DECLINED;
       const uint32_t id = e.aaAsset[e.cIndex[i]];
@@ -915,6 +981,8 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         glow_row(&e, i, i);
       } else if (ty == 1 && e.pcX) {
         particle_row(&e, i, i);
+      } else if (ty == 7) {
+        lf_row(&e, i, i);
       } else {
         foreign[2 * nForeign] = i;
         foreign[2 * nForeign + 1] = i;
@@ -944,6 +1012,8 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         glow_row(&e, i, w);
       } else if (ty == 1 && e.pcX) {
         particle_row(&e, i, w);
+      } else if (ty == 7) {
+        lf_row(&e, i, w);
       } else {
         foreign[2 * nForeign] = i;
         foreign[2 * nForeign + 1] = w;

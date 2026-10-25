@@ -137,6 +137,10 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       // The particle memory's regions (particleMemory.js, laid out there): ParticleComponent, its lists and the
       // particle kernels' scratch, so the emit kernel reads the particles where the particle worker writes them.
       { name: 'particleMemory', owner: 'particle (particleMemory.js); every worker reads', bytes: emit.particleBytes | 0 },
+      // The LiquidFun render buffer (liquidFunRender.js; physics writes it) and pre-render's previous positions of
+      // its particles (_prevLfX, _prevLfY), so the emit kernel writes the LiquidFun rows.
+      { name: 'liquidFunRender', owner: 'physics writes; pre-render reads (liquidFunRender.js)', bytes: emit.liquidFun ? emit.liquidFun.renderBytes | 0 : 0 },
+      { name: 'emitLfPrev', owner: 'pre-render', bytes: emit.liquidFun ? (emit.liquidFun.maxCount | 0) * 8 : 0 },
       { name: 'emitFrame', owner: 'pre-render', bytes: e * 2 },
       { name: 'emitAccum', owner: 'pre-render', bytes: e * 4 },
       { name: 'emitLastTexture', owner: 'pre-render writes; Pixi reads', bytes: e * 2 },

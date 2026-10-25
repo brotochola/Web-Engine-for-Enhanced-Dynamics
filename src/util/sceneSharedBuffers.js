@@ -333,12 +333,17 @@ function initializeLiquidFunRenderBuffer(scene) {
   if (!lf?.enabled) return;
   const maxCount = lf.maxCount | 0;
   if (maxCount <= 0) return;
-  scene.buffers.liquidFunRender = new SharedArrayBuffer(liquidFunRenderByteSize(maxCount));
+  // Close-out group B: a region of the render-queue memory when it has one, where the emit kernel reads the rows.
+  const rqm = scene.renderQueueMemory;
+  const at = rqm?.layout.emit?.liquidFunRenderByte ?? -1;
+  scene.buffers.liquidFunRender = at >= 0 ? rqm.buffer : new SharedArrayBuffer(liquidFunRenderByteSize(maxCount));
+  scene.buffers.liquidFunRenderByte = at >= 0 ? at : 0;
   scene.buffers.liquidFunGroups = new SharedArrayBuffer(liquidFunGroupsByteSize(LIQUIDFUN_GROUPS_MAX));
   scene.liquidFunMaxCount = maxCount;
   LiquidFun.bindSabs({
     groups: scene.buffers.liquidFunGroups,
     render: scene.buffers.liquidFunRender,
+    renderByte: scene.buffers.liquidFunRenderByte,
     maxCount,
   });
 }
@@ -712,8 +717,8 @@ function initializeRenderQueueMemory(scene) {
 }
 
 /**
- * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations, LightEmitter and
- * the particle memory; with
+ * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations, LightEmitter,
+ * the particle memory and the LiquidFun render buffer; with
  * wasm.preRenderEmitAdobe (W27) and Adobe Animate characters, AdobeAnimComponent and room for the assets' tables
  * (preRender.adobeTablesMB: the assets load after this memory is made, so their size is not known yet).
  */
@@ -723,6 +728,7 @@ function emitBlocks(scene) {
   const n = scene.totalEntityCount;
   const maxDecorations = config.decoration?.maxDecorations | 0;
   const maxParticles = config.particle?.maxParticles | 0;
+  const lfMax = config.physics?.liquidFun?.enabled ? config.physics.liquidFun.maxCount | 0 : 0;
   const adobeOn = config.wasm?.preRenderEmitAdobe !== false && Boolean(pools.AdobeAnimComponent?.ComponentClass);
   const tablesMB = config.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
   if (adobeOn) assertIntegerInRange('preRender.adobeTablesMB', tablesMB, 0, 1024);
@@ -735,6 +741,8 @@ function emitBlocks(scene) {
     lightBytes: pools.LightEmitter?.ComponentClass ? LightEmitter.getBufferSize(n) : 0,
     // The particle rows' ParticleComponent, in the particle memory's regions.
     particleBytes: maxParticles > 0 ? particleMemoryBytes(maxParticles, ParticleComponent.getBufferSize(maxParticles)) : 0,
+    // The LiquidFun rows' render buffer and previous positions.
+    liquidFun: lfMax > 0 ? { maxCount: lfMax, renderBytes: liquidFunRenderByteSize(lfMax) } : null,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
   };
 }

@@ -797,6 +797,7 @@ export class AbstractWorker {
       LiquidFun.bindSabs({
         groups: data.buffers.liquidFunGroups || null,
         render: data.buffers.liquidFunRender || null,
+        renderByte: data.buffers.liquidFunRenderByte | 0,
         maxCount: data.liquidFunMaxCount | 0,
       });
     }

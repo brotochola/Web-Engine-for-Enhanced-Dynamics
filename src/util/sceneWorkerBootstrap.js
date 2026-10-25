@@ -213,6 +213,7 @@ function buildSceneSharedBuffers(scene) {
     bodyGeneration: scene.buffers.bodyGeneration,
     staticSceneryGen: scene.buffers.staticSceneryGen || null,
     liquidFunRender: scene.buffers.liquidFunRender || null,
+    liquidFunRenderByte: scene.buffers.liquidFunRenderByte | 0,
     liquidFunGroups: scene.buffers.liquidFunGroups || null,
     decalStampRing: scene.buffers.decalStampRing || null,
     spawnCommandRing: scene.buffers.spawnCommandRing || null,

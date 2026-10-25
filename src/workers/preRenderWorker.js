@@ -100,6 +100,7 @@ import {
     writeEmitBulletColumns,
     writeEmitGlowColumns,
     writeEmitParticleColumns,
+    writeEmitLiquidFunColumns,
     writeEmitColumns,
     writeEmitTextures,
     writePersistColumns,
@@ -112,6 +113,7 @@ import {
     EMIT_TILES_DIRTY,
     EMIT_WARN_BULLET_START,
     EMIT_WARN_PARTICLE_START,
+    EMIT_WARN_LF_START,
     EMIT_WARN_NO_ANIM,
     EMIT_WARN_NO_START,
     EMIT_Y_SORT,
@@ -876,7 +878,7 @@ class PreRenderWorker extends AbstractWorker {
         this.maxParticles = data.maxParticles || 0;
         this.liquidFunMaxCount = data.liquidFunMaxCount || 0;
         if (data.buffers?.liquidFunRender && this.liquidFunMaxCount > 0) {
-            this.liquidFun = bindLiquidFunRender(data.buffers.liquidFunRender, this.liquidFunMaxCount);
+            this.liquidFun = bindLiquidFunRender(data.buffers.liquidFunRender, this.liquidFunMaxCount, data.buffers.liquidFunRenderByte | 0);
         }
         this.maxDecorations = data.maxDecorations || 0;
         this.maxBullets = data.maxBullets || 0;
@@ -981,6 +983,13 @@ class PreRenderWorker extends AbstractWorker {
             this._renderableIndex = emitLayout
                 ? new Int32Array(emitBuffer, emitLayout.collectorIndexByte, maxItems)
                 : new Int32Array(maxItems);
+            // The LiquidFun rows' previous positions, where the emit kernel reads them (_latchLiquidFunPrevPose
+            // keeps arrays of this length).
+            if (emitLayout && emitLayout.lfPrevByte >= 0) {
+                const lfN = emitLayout.lfMaxCount;
+                this._prevLfX = new Float32Array(emitBuffer, emitLayout.lfPrevByte, lfN);
+                this._prevLfY = new Float32Array(emitBuffer, emitLayout.lfPrevByte + 4 * lfN, lfN);
+            }
             // E-112: the full emit's sprite and decoration rows in WASM, where it reads every column.
             this._emitWasm = null;
             if (emitLayout && this.config?.wasm?.preRenderEmit !== false) {
@@ -2845,6 +2854,9 @@ class PreRenderWorker extends AbstractWorker {
         if (!this._lfSnapX || this._lfSnapX.length < maxN) {
             this._lfSnapX = new Float32Array(maxN);
             this._lfSnapY = new Float32Array(maxN);
+        }
+        // In the render-queue memory when it has their region (bound with the emit kernel), where it reads them.
+        if (!this._prevLfX || this._prevLfX.length < maxN) {
             this._prevLfX = new Float32Array(maxN);
             this._prevLfY = new Float32Array(maxN);
         }
@@ -3869,8 +3881,11 @@ class PreRenderWorker extends AbstractWorker {
         if (!b.texturesReady || !writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return false;
         writeEmitBulletColumns(b, BulletComponent, trailTexture);
         writeEmitGlowColumns(b, LightEmitter, Transform, this._resolveBuiltinTextureId('_lightGradient'));
-        writeEmitParticleColumns(b, ParticleComponent, this._resolveBuiltinTextureId('_whiteCircle'),
-            this.zenithalMaxHeight, this.zenithalScaleFactor, this.zenithalAlphaFade);
+        const white = this._resolveBuiltinTextureId('_whiteCircle');
+        writeEmitParticleColumns(b, ParticleComponent, white, this.zenithalMaxHeight, this.zenithalScaleFactor, this.zenithalAlphaFade);
+        // A LiquidFun row interpolates when emitSpriteQueue would: interpolatePhysicsPose, _prevLfX, _prevLfCount > idx.
+        const lfPrev = this.interpolatePhysicsPose && this._prevLfX ? this._prevLfCount : 0;
+        writeEmitLiquidFunColumns(b, this.liquidFun, this._prevLfX, this._prevLfY, lfPrev, this._poseAlpha, white);
         // W27: Adobe roots expand in the kernel when its tables hold the registry's assets and AdobeAnimComponent is
         // in the memory (else it declines a frame with one), on a queue whose texture column is the source's length
         // (_emitAdobePieces stops at that column's end, the loop at maxItems).
@@ -4216,6 +4231,10 @@ class PreRenderWorker extends AbstractWorker {
         }
         if (kind === EMIT_WARN_PARTICLE_START) {
             this._resolveAnimFrameStart(ParticleComponent.textureId[idx], ANIM_LABEL_TAG.PARTICLE);
+            return;
+        }
+        if (kind === EMIT_WARN_LF_START) {
+            this._resolveAnimFrameStart(this.liquidFun.textureId[idx], ANIM_LABEL_TAG.LIQUID_FUN);
             return;
         }
         this._resolveAnimFrameStart(DecorationComponent.textureId[idx], ANIM_LABEL_TAG.DECORATION);

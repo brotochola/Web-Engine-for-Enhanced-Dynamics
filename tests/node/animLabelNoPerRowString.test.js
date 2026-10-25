@@ -128,18 +128,18 @@ test('no per-row call site builds a template string any more', () => {
   }
 });
 
-test('all nine per-row call sites pass a tag, not a string', () => {
+test('all ten per-row call sites pass a tag, not a string', () => {
   // Filter out the DEFINITION, which matches the same pattern. A first version
   // counted it and reported "expected 4, found 5".
-  // Nine: the emit loop's four (particle, LiquidFun, decoration, bullet), the copy of the particle
-  // and bullet branches for the rows the emit kernel leaves to the JS, and the decoration, bullet and
-  // particle warnings it hands back (E-112, W4d, close-out group B).
+  // Ten: the emit loop's four (particle, LiquidFun, decoration, bullet), the copy of the particle
+  // and bullet branches for the rows the emit kernel leaves to the JS, and the decoration, bullet,
+  // particle and LiquidFun warnings it hands back (E-112, W4d, close-out group B).
   const defIndex = src.indexOf('_resolveAnimFrameStart(animIdx, kind) {');
   const calls = [...src.matchAll(/_resolveAnimFrameStart\(([^,]+),\s*([^)]+)\)/g)]
     .map((m, i) => ({ arg: m[1].trim(), kind: m[2].trim(), at: m.index }))
     .filter((c) => c.at !== defIndex);
   const perRow = calls.filter((c) => c.arg !== 'map[name]');
-  assert.equal(perRow.length, 9, `expected 9 per-row call sites, found ${perRow.length}`);
+  assert.equal(perRow.length, 10, `expected 10 per-row call sites, found ${perRow.length}`);
   for (const c of perRow) {
     assert.match(c.kind, /^ANIM_LABEL_TAG\./, `${c.arg} does not pass a tag`);
   }

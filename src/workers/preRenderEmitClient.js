@@ -3,7 +3,8 @@
 // blocks, both queue buffers, the collector, the animation state; see renderQueueMemoryRegions). emit_rows
 // writes the full emit's sprite and decoration rows with the JS's bits (W4d: the bullet and trail rows too, when
 // BulletComponent is in the memory, writeEmitBulletColumns; the glow rows when LightEmitter is, writeEmitGlowColumns; the
-// particle rows when ParticleComponent is, writeEmitParticleColumns); the rows of other types, the play-once ends and the
+// particle rows when ParticleComponent is, writeEmitParticleColumns; the LiquidFun rows when its render buffer is,
+// writeEmitLiquidFunColumns); the rows of other types, the play-once ends and the
 // missing textures come back as lists, and pre-render acts on them in JS.
 // W4c: persist_frame (the check and the poses-only pass in one walk, E-116) and persist_remember are the
 // entity queue's persist path, on the same table with the rows each queue buffer last held
@@ -44,6 +45,8 @@ export const EMIT_SLOTS = [
   'lColor', 'lIntensity', 'lSqrt', 'lGlowOffset', 'lGlow', 'tX', 'tY', 'lGradientTexture',
   'pcX', 'pcY', 'pcZ', 'pcScaleX', 'pcScaleY', 'pcFlipX', 'pcFlipY', 'pcRotC', 'pcRotS', 'pcAlpha', 'pcTint',
   'pcTexture', 'pcFlat', 'pcView', 'pcWhiteTexture', 'eParams',
+  'lfX', 'lfY', 'lfScaleX', 'lfScaleY', 'lfAlpha', 'lfBaseAlpha', 'lfRotC', 'lfRotS', 'lfTint', 'lfTexture',
+  'lfPrevX', 'lfPrevY', 'lfPrevCount',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -67,6 +70,7 @@ export const EMIT_WARN_NO_START = 1;
 export const EMIT_WARN_DECO_START = 2;
 export const EMIT_WARN_BULLET_START = 3;
 export const EMIT_WARN_PARTICLE_START = 4;
+export const EMIT_WARN_LF_START = 5;
 
 /** The component columns the kernel reads, by slot: [slot, component field]. */
 export const EMIT_SPRITE_COLUMNS = [
@@ -111,6 +115,11 @@ export const EMIT_PARTICLE_COLUMNS = [
   ['pcFlipY', 'flipY'], ['pcRotC', 'rotC'], ['pcRotS', 'rotS'], ['pcAlpha', 'alpha'], ['pcTint', 'tint'], ['pcTexture', 'textureId'],
 ];
 export const EMIT_PARTICLE_OPTIONAL_COLUMNS = [['pcFlat', 'flat'], ['pcView', 'viewMode']];
+/** The LiquidFun rows' render buffer columns, by slot (pre-render's liquidFun views; baseAlpha may be missing). */
+export const EMIT_LF_COLUMNS = [
+  ['lfX', 'x'], ['lfY', 'y'], ['lfScaleX', 'scaleX'], ['lfScaleY', 'scaleY'], ['lfAlpha', 'alpha'], ['lfRotC', 'rotC'],
+  ['lfRotS', 'rotS'], ['lfTint', 'tint'], ['lfTexture', 'textureId'],
+];
 /** W27: what an asset directory record says of its asset (preRenderEmit.c ASSET_*). */
 export const EMIT_ADOBE_NONE = 0;
 export const EMIT_ADOBE_IN = 1;
@@ -460,6 +469,37 @@ export function writeEmitParticleColumns(b, ParticleComponent, whiteTexture, max
   b.params[1] = scaleFactor;
   b.params[2] = alphaFade;
   if (!ok) b.table[SLOT.pcX] = 0;
+  return ok;
+}
+
+/**
+ * The LiquidFun rows' columns, after writeEmitColumns: the render buffer's (`lf`, pre-render's liquidFun views; x, y
+ * and alpha may view LiquidFun's heap) and the previous positions, all in the memory, or lfX 0 and emit_rows declines
+ * a frame with a LiquidFun row.
+ * @param {null | Record<string, ArrayBufferView>} lf
+ * @param {Float32Array | null} prevX pre-render's _prevLfX
+ * @param {Float32Array | null} prevY _prevLfY
+ * @param {number} prevCount the rows to interpolate from prevX and prevY (0: none)
+ * @param {number} poseAlpha the interpolation's alpha (_poseAlpha)
+ * @param {number} whiteTexture a particle's texture when its textureId is 0
+ * @returns {boolean} whether the kernel writes the LiquidFun rows this frame
+ */
+export function writeEmitLiquidFunColumns(b, lf, prevX, prevY, prevCount, poseAlpha, whiteTexture) {
+  let ok = !!lf;
+  for (let k = 0; ok && k < EMIT_LF_COLUMNS.length; k++) ok = putSlot(b, EMIT_LF_COLUMNS[k][0], lf[EMIT_LF_COLUMNS[k][1]]);
+  if (ok) ok = putSlot(b, 'lfBaseAlpha', lf.baseAlpha, true);
+  // Without interpolation the previous positions are not read: no slots, no rows to interpolate. With it they must
+  // be in the memory too, or the JS takes the frame.
+  if (ok && prevCount > 0) {
+    ok = putSlot(b, 'lfPrevX', prevX) && putSlot(b, 'lfPrevY', prevY);
+  } else {
+    b.table[SLOT.lfPrevX] = 0;
+    b.table[SLOT.lfPrevY] = 0;
+  }
+  b.table[SLOT.lfPrevCount] = ok ? prevCount : 0;
+  b.table[SLOT.pcWhiteTexture] = whiteTexture;
+  b.params[3] = poseAlpha;
+  if (!ok) b.table[SLOT.lfX] = 0;
   return ok;
 }
 

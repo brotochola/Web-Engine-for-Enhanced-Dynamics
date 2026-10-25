@@ -23,7 +23,8 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {number} queueBytes computeBufferSize(maxItems)
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
- *   lightBytes?: number, particleBytes?: number, adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
+ *   lightBytes?: number, particleBytes?: number, liquidFun?: null | { maxCount: number, renderBytes: number },
+ *   adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
  *   the emit's regions too (renderQueueMemoryRegions); a component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
  * @param {null | { decorations: number, buckets: number }} [sway] the sway's regions too (with emit's decorations)
@@ -106,6 +107,10 @@ function emitLayout(r, entities, rows) {
     // The particle memory's place (createParticleMemory), -1 without particles.
     particleMemoryByte: block(r.particleMemory),
     particleMemoryBytes: r.particleMemory.bytes,
+    // The LiquidFun render buffer and pre-render's previous positions (x then y), -1 without LiquidFun.
+    liquidFunRenderByte: block(r.liquidFunRender),
+    lfPrevByte: block(r.emitLfPrev),
+    lfMaxCount: r.emitLfPrev.bytes / 8,
     frameByte: r.emitFrame.byte,
     accumByte: r.emitAccum.byte,
     lastTextureByte: r.emitLastTexture.byte,
