@@ -586,6 +586,15 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
   glows, bullets, trails), LiquidFun frames and some Adobe frames; decorationSway at `swayFrequencyBuckets <= 1`;
   solidSegments' oversized outlines; decal textures left out of the decal memory; any memory past its 512 MB cap.
   Each needs the kernel to cover the case first (or the JS stays for that case).
+- *B as it stands (inventory of 2026-10-25, every kernel's fallbacks read with the defaults on).* The emit is done
+  (step 3). Most cases above are covered now (a nearest atlas, pose interpolation, 32-bit ids, no physics,
+  `sway_free`, the outlines). What still runs a JS copy: gpuPack for the cookie queue (private arrays), Pixi's
+  custom-layer and glow batches and Pixi's own pack on the frames pre-render does not pack (sprite `zIndex` with
+  Y-sort off, fewer than two rows under Y-sort, glow rows only) and 15-float rows into a split batch; the painter's JS
+  sort for Pixi's y-sorted custom layers, for E-138's presort, and for `zIndex` with Y-sort off; the collect's
+  hand-backs (a sprite on a custom layer, a Y-sorted sprite with no last texture yet); the bullet tick's compound and
+  chain colliders; the sway of parented decorations (`resolveAttachedDecorations`); the visibility kernels'
+  compound-solid and self-lit events. Each of those switches still runs the JS when off.
 
 **Steps.**
 
@@ -614,7 +623,19 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
    of bulletTick and visibilityGather was done on 2026-10-24 (R-0621: the engine block as a memory of its own). Left
    in the emit: the glow rows (type 3), the particle rows (type 1:
    ParticleComponent is not in the memory) and the frames with a LiquidFun row (declined; `liquidFunStressScene`'s
-   pre-render spends 31.5 % in the JS emit, at 101 ms/s).*
+   pre-render spends 31.5 % in the JS emit, at 101 ms/s).* *2026-10-25 (later): the emit's JS left `src/`.* The
+   kernel writes every row type: the glow rows (LightEmitter among the emit's blocks), the particle rows (the
+   particle memory a region of the render-queue memory), the LiquidFun rows (its render buffer and pre-render's
+   previous positions there; LiquidFun's heap views on each worker's own handle of the block), a persist frame's
+   rows of other types (its own loop), custom sprite layers (their queues and collectors in the memory, the
+   collector stashing poses at the collect as the entities' does), and Adobe assets the JS took before (plain
+   arrays copied in; an asset with no room in `preRender.adobeTablesMB` is an error that names the key).
+   BulletComponent has a block of its own without the bullet tick's, Transform is placed whenever the emit reads
+   sprites or glows, and `wasm.box2dBlock` is gone (a block that cannot fit Box2D's memory is an error naming
+   `physics.wasmMemoryMB`). Then the JS emit, persist path and Adobe expansion moved to
+   `tests/reference/preRenderEmitJs.mjs` (`installEmitJs` puts them back on a worker for the parity tests),
+   `wasm.preRenderEmit` and `wasm.preRenderEmitAdobe` went, and a queue the kernel cannot take is drawn empty with
+   one error (`_emitRefused`); every scene boots on it (the boot sweep of that day).
 4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
    fdlibm sin/cos), compiled with clang and linked by `wasm-ld` into one `engine.wasm`; the main thread compiles it
    once and posts the `WebAssembly.Module` to the workers, each of which instantiates it once per memory it uses.
