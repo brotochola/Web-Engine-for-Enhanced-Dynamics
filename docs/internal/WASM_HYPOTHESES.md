@@ -575,7 +575,10 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
 - *A, the JS runs only with the switch off or a failed bind:* spatial publish and gather, particle integrate and
   lists, navFlowfield, shadowStamp, painterRadix, meshCorners, decalStamp and decalPremultiply, gpuPack's entity
   batch. Their JS moves under `tests/` as the parity reference (L12), the switch goes, and a failed bind becomes an
-  error that names it (L7).
+  error that names it (L7). Two corrections found on the way: the JS painter sort also orders Pixi's y-sorted custom
+  layers (their painter states are JS ones), so for painterRadix only the main queue's fallback goes; and a scene
+  whose spatial, decal or other kernel memory is past its cap (2 GB since the caps went up) ran the JS, so that
+  case becomes an error at scene creation that names the memory and its size.
 - *B, the JS still runs in a real configuration:* bulletTick and visibilityGather without physics (they live only in
   Box2D's block) and at 32-bit ids or past 65 535 bullets (bulletTick); gpuPack for a nearest atlas, pose
   interpolation and Pixi's glow, shadow, caster and custom-layer batches; the emit's foreign rows (particles,
@@ -589,7 +592,10 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
    only for the winners whose solo gain was under 10 % (a large solo gain cannot vanish below 3 % when combined
    without the all-JS pair showing it). Correctness together (every parity test in one process: the node suite),
    L3 (commit after 20 scene loads), L4 (boot to steady step times), L7 (every scene boots once in Firefox and
-   WebKit). About two hours of machine time, unattended.
+   WebKit). About two hours of machine time, unattended. *Done 2026-10-24, shortened (R-0618); L7 in Firefox
+   (R-0623, R-0624): all 61 scenes boot in release Firefox 158, and on Predator all WASM wins there too
+   (pre-render −36 %, spatial −10 %). Measure Firefox with `--browser firefox` (the installed one): Playwright's
+   Firefox build runs WASM 5–18× slower than release Firefox. WebKit is out (the owner). L3 and L4 remain.*
 2. Group A leaves `src/`, one kernel per commit, each with its parity test now reading the reference under `tests/`.
 3. Group B: the cases a kernel can take over, one at a time (the no-physics placement of bulletTick and
    visibilityGather is the largest), then their JS leaves too.
