@@ -1,15 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  appendStampedCasters,
-  compactShadowCasterIndices,
-  takeClosest,
-  stampLightRange,
-  rtPixelSize,
-  rtPixelScale,
-  copyTypedRange,
-  CASTER_LIGHT_FLOAT,
-} from '../../src/render/gpuShadowCasters.js';
+import { compactShadowCasterIndices, rtPixelSize, rtPixelScale, CASTER_LIGHT_FLOAT } from '../../src/render/gpuShadowCasters.js';
+import { appendStampedCasters, takeClosest, stampLightRange, copyTypedRange } from '../reference/shadowStamp.mjs';
 import { GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
 
 test('compactShadowCasterIndices keeps shadowH>0 and skips glow type 3', () => {

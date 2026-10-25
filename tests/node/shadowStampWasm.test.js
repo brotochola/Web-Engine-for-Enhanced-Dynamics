@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { computeBufferSize } from '../../src/render/renderQueueLayout.js';
-import { stampLightRange } from '../../src/render/gpuShadowCasters.js';
+import { stampLightRange } from '../reference/shadowStamp.mjs';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { stampLightRangeWasm } from '../../src/render/shadowStampClient.js';
 import { LIGHTS, MAX, PER_ENTITY, frame, rng, setup, specFor } from '../helpers/shadowStampFrames.mjs';
@@ -49,19 +49,19 @@ test('the stamp kernel writes what stampLightRange writes, frame after frame', a
   t.diagnostic(`${stamped} stamp rows over 240 frames`);
 });
 
-test('a call the regions cannot hold is declined, so the JS stamps it', async () => {
+test('a call the regions cannot hold is an error', async () => {
   const { caps, dst, b, scratch } = await setup();
   const r = rng(7);
   const f = frame(r, 1, caps, dst);
   const spec = specFor(f, dst, scratch);
-  assert.equal(stampLightRangeWasm(b, { ...spec, maxPerEntity: PER_ENTITY + 1 }), -1, 'more slots per entity');
-  assert.equal(stampLightRangeWasm(b, { ...spec, lights: new Array(LIGHTS + 1).fill(null), lightEnd: LIGHTS + 1 }), -1, 'more lights');
-  assert.equal(stampLightRangeWasm(b, { ...spec, stamp: new Float32Array(dst.stamp.length) }), -1, 'stamp rows outside the memory');
-  assert.equal(stampLightRangeWasm(b, { ...spec, sunN: caps.maxSun + 1 }), -1, 'more casters than the scratch holds');
-  assert.equal(stampLightRangeWasm(b, { ...spec, sunN: 0 }), spec.stampBase | 0, 'no casters: the JS early return');
+  assert.throws(() => stampLightRangeWasm(b, { ...spec, maxPerEntity: PER_ENTITY + 1 }), /shadows per entity/, 'more slots per entity');
+  assert.throws(() => stampLightRangeWasm(b, { ...spec, lights: new Array(LIGHTS + 1).fill(null), lightEnd: LIGHTS + 1 }), /lights, the regions hold/, 'more lights');
+  assert.throws(() => stampLightRangeWasm(b, { ...spec, stamp: new Float32Array(dst.stamp.length) }), /outside the render-queue memory/, 'stamp rows outside the memory');
+  assert.throws(() => stampLightRangeWasm(b, { ...spec, sunN: caps.maxSun + 1 }), /sun casters, the regions hold/, 'more casters than the scratch holds');
+  assert.equal(stampLightRangeWasm(b, { ...spec, sunN: 0 }), spec.stampBase | 0, 'no casters: the early return');
 });
 
-test('pre-render binds the stamp kernel and its stamp is the JS one', async () => {
+test('pre-render binds the stamp kernel and its stamp is the one the JS made', async () => {
   const { RENDER_QUEUE_CAMERA_BYTES } = await import('../../src/render/renderQueueLayout.js');
   const { ShadowCaster } = await import('../../src/components/shadowCaster.js');
   const { coreComponentData, initWorker, loadWorker } = await import('../bench/workerHarness.mjs');
@@ -106,10 +106,12 @@ test('pre-render binds the stamp kernel and its stamp is the JS one', async () =
       this._stampLightCount = f.lights.length;
     };
     const stampBytes = new Uint8Array(dst.stamp.buffer, dst.stamp.byteOffset, dst.stamp.byteLength);
-    worker._stampWasm = null;
+    // The JS stamp the engine shipped, on the spec pre-render builds, in place of its kernel call.
+    worker._stampRange = (spec, sunN, stampBase) => ((sunN | 0) > 0 ? stampLightRange(spec) : stampBase);
     stampBytes.fill(0xa5);
     const js = worker._stampAgainstSun(dst, dst.sun, f.nSun, 0, 0, 1);
     const jsBytes = stampBytes.slice();
+    delete worker._stampRange;
     let calls = 0;
     worker._stampWasm = { ...bound, stampRange: (...a) => { calls++; return bound.stampRange(...a); } };
     stampBytes.fill(0xa5);

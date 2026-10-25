@@ -160,8 +160,8 @@ test('wasm.preRenderEmitAdobe puts AdobeAnimComponent, the pose stash and the Ad
   assert.equal(buildScene({ preRenderEmit: false }, null, {}, [AdobeAnimComponent]).renderQueueMemory.layout.emit, null, 'needs the emit');
 });
 
-test('wasm.shadowStamp puts the stamp scratch in the render-queue memory when shadows are on', () => {
-  assert.equal(WASM_DEFAULTS.shadowStamp, true);
+test('with shadows the stamp scratch is in the render-queue memory (the stamp has no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'shadowStamp'), false);
   const shadows = { enabled: true, shadowsEnabled: true, maxShadowCastingLights: 12, maxShadowsPerEntity: 3, maxShadowsPerLight: 64 };
   const on = buildScene({}, shadows);
   const s = on.renderQueueMemory?.layout.stamp;
@@ -170,7 +170,6 @@ test('wasm.shadowStamp puts the stamp scratch in the render-queue memory when sh
   assert.equal(s.maxPerEntity, 3);
   assert.equal(s.maxLights, 12);
 
-  assert.equal(buildScene({ shadowStamp: false }, shadows).renderQueueMemory.layout.stamp, null, 'off');
   assert.equal(buildScene({}, null).renderQueueMemory.layout.stamp, null, 'no shadows, no stamp regions');
   const stampOnly = buildScene({ gpuPack: false, preRenderEmit: false }, shadows);
   assert.ok(stampOnly.renderQueueMemory?.layout.stamp, 'the stamp alone still makes the memory');

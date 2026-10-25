@@ -125,7 +125,6 @@ import {
 } from '../render/gpuQueueLayout.js';
 import {
     compactShadowCasterIndices,
-    stampLightRange,
     rtPixelSize,
     rtPixelScale,
 } from '../render/gpuShadowCasters.js';
@@ -454,7 +453,7 @@ class PreRenderWorker extends AbstractWorker {
         this._emitWasm = null;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
-        /** The shadow stamp kernel (E-114), bound when its scratch lives in the render-queue memory. */
+        /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
         this._stampWasm = null;
         /** Whether the kernel's last frame wrote a repeating sprite (emitSpriteQueue's tiledRows). */
         this._emitTiledRows = false;
@@ -1040,15 +1039,11 @@ class PreRenderWorker extends AbstractWorker {
                 }
                 this._gpuSplit = this._gpuPackWasm !== null && this.config?.wasm?.gpuPackSplit !== false;
                 this._gpuStaticGen.fill(0);
-                // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions.
+                // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions (made with
+                // shadows and sun casters; without them nothing is stamped).
                 this._stampWasm = null;
-                if (data.renderQueueMemory && data.renderQueueLayout?.stamp && this.config?.wasm?.shadowStamp !== false) {
-                    try {
-                        this._stampWasm = await bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp);
-                    } catch (err) {
-                        console.warn('[PRE_RENDER] shadowStamp.wasm did not load; stamping in JS', err);
-                        this._stampWasm = null;
-                    }
+                if (data.renderQueueMemory && data.renderQueueLayout?.stamp) {
+                    this._stampWasm = await bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp);
                 }
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
@@ -4414,12 +4409,16 @@ class PreRenderWorker extends AbstractWorker {
         spec.stampLightIdx = dst.stampLightIdx;
         spec.lightVec = this._gpuLightVec;
 
-        // E-114: the stamp in WASM; a call its regions cannot hold stamps in JS.
-        if (this._stampWasm !== null) {
-            const cursor = stampLightRangeWasm(this._stampWasm, spec);
-            if (cursor >= 0) return cursor;
+        return this._stampRange(spec, sunN, stampBase);
+    }
+
+    /** E-114: the stamp in shadowStamp.wasm, its only stamp. Without its regions there are no sun casters. */
+    _stampRange(spec, sunN, stampBase) {
+        if (this._stampWasm === null) {
+            if ((sunN | 0) > 0) throw new Error('shadowStamp: sun casters without the stamp regions of the render-queue memory');
+            return stampBase;
         }
-        return stampLightRange(spec);
+        return stampLightRangeWasm(this._stampWasm, spec);
     }
 
     _packGpuCookies(dst) {

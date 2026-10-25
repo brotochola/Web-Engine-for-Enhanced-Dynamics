@@ -10,7 +10,7 @@
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/shadowStampKernel.mjs [--args '{"rounds":7}']
  */
 import { GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
-import { stampLightRange } from '../../src/render/gpuShadowCasters.js';
+import { stampLightRange } from '../reference/shadowStamp.mjs';
 import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';

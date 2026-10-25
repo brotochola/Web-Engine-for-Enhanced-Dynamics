@@ -9,7 +9,7 @@
  *   node tests/bench/shadowStampMicrobench.mjs
  *   node tests/bench/shadowStampMicrobench.mjs --output out.json
  */
-import { stampLightRange, takeClosest } from '../../src/render/gpuShadowCasters.js';
+import { stampLightRange, takeClosest } from '../reference/shadowStamp.mjs';
 import { checksumFloats, checksumInts, isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
 import { setupStamp } from './shadowStampKernel.mjs';

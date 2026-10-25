@@ -1,8 +1,8 @@
 // The WASM shadow-caster stamp (E-76 W23, E-114): loads shadowStamp.wasm onto the render-queue memory and runs
-// stampLightRange (gpuShadowCasters.js) there with the same bits. The sun rows and the stamp output are the GPU
-// queue's regions of that memory, and the scratch and a light table are its stamp regions
-// (renderQueueMemoryRegions). A call the kernel cannot take returns -1 and the caller stamps in JS: an array
-// elsewhere, or more casters, lights or slots per entity than the regions were made for.
+// the stamp there with the bits of the JS one it replaced (stampLightRange, now tests/reference/shadowStamp.mjs). The
+// sun rows and the stamp output are the GPU queue's regions of that memory, and the scratch and a light table are
+// its stamp regions (renderQueueMemoryRegions). It is pre-render's only stamp: a call it cannot take (an array
+// elsewhere, or more casters, lights or slots per entity than the regions were made for) is an error.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
@@ -84,7 +84,7 @@ export async function bindShadowStamp(memory, stamp) {
 /**
  * stampLightRange(spec) through the kernel. The lights go into the light table first, as five doubles
  * each (NaN rangeSq for an empty slot, which the JS skips as it skips a missing light).
- * @returns {number} the stamp cursor, or -1 when the kernel cannot take the call
+ * @returns {number} the stamp cursor; throws when the kernel cannot take the call
  */
 export function stampLightRangeWasm(b, spec) {
   const sun = spec.sun;
@@ -93,15 +93,15 @@ export function stampLightRangeWasm(b, spec) {
   const base = spec.stampBase | 0;
   // stampLightRange's own early return, before any of its scratch is touched.
   if (!sun || !stamp || nSun <= 0 || !spec.lights || !spec.tmpIdx || !spec.dist || !spec.keepIdx || !spec.lightVec) return base;
-  if (sun.buffer !== b.buffer || stamp.buffer !== b.buffer) return -1;
+  if (sun.buffer !== b.buffer || stamp.buffer !== b.buffer) throw new Error('shadowStamp: sun rows or stamp output outside the render-queue memory');
   const lightIdx = spec.stampLightIdx;
-  if (lightIdx && (lightIdx.buffer !== b.buffer || lightIdx.BYTES_PER_ELEMENT !== 2)) return -1;
-  if (nSun > b.maxSun) return -1;
+  if (lightIdx && (lightIdx.buffer !== b.buffer || lightIdx.BYTES_PER_ELEMENT !== 2)) throw new Error('shadowStamp: the stamp light index outside the memory');
+  if (nSun > b.maxSun) throw new Error(`shadowStamp: ${nSun} sun casters, the regions hold ${b.maxSun}`);
   let maxPE = spec.maxPerEntity | 0;
   if (maxPE < 0) maxPE = 0;
-  if (maxPE > b.maxPerEntity) return -1;
+  if (maxPE > b.maxPerEntity) throw new Error(`shadowStamp: ${maxPE} shadows per entity, the regions hold ${b.maxPerEntity}`);
   const capL = spec.lightEnd | 0;
-  if (capL > b.maxLights) return -1;
+  if (capL > b.maxLights) throw new Error(`shadowStamp: ${capL} lights, the regions hold ${b.maxLights}`);
 
   const t = b.table;
   t[SUN] = sun.byteOffset;

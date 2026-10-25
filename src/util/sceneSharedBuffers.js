@@ -547,7 +547,7 @@ export function renderQueueMemorySpec(scene) {
   const emit = config.wasm?.preRenderEmit !== false ? emitBlocks(scene) : null;
   // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
   const lighting = config.lighting || {};
-  const stamp = config.wasm?.shadowStamp !== false && lighting.shadowsEnabled && (gpuCaps.maxSun | 0) > 0
+  const stamp = lighting.shadowsEnabled && (gpuCaps.maxSun | 0) > 0
     ? {
         maxSun: gpuCaps.maxSun | 0,
         maxPerEntity: lighting.maxShadowsPerEntity | 0,

@@ -33,7 +33,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 
 import { GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
-import { stampLightRange } from '../../src/render/gpuShadowCasters.js';
+import { stampLightRange } from '../reference/shadowStamp.mjs';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { checksumFloats, checksumInts, isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';

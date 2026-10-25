@@ -500,8 +500,6 @@ export const WASM_DEFAULTS = Object.freeze({
    * on Box2D's block (the pool, Transform, Collider and the spatial grid there; needs box2dBlock and spatialPublish).
    */
   bulletTick: true,
-  /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
-  shadowStamp: true,
   /**
    * The painter sort of the main sprite queue (`painterRadix.wasm`, W10): the state of the worker that sorts
    * (`preRender.sortSprites`) in the render-queue memory, where the kernel reads the sort keys pre-render wrote.

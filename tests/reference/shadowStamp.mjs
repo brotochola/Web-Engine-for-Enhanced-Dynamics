@@ -1,0 +1,421 @@
+// The shadow-caster stamp in JavaScript: stampLightRange (src/render/gpuShadowCasters.js) as pre-render ran it until
+// shadowStamp.wasm (E-76 W23, E-114) became its only stamp, with the machinery only it used: the caster grid, the
+// nearest-light slots, the pair sorts, takeClosest and appendStampedCasters. Kept as the parity reference the
+// kernel is tested against (WASM_HYPOTHESES L12); the engine does not use it.
+
+import { CASTER_LIGHT_FLOAT } from '../../src/render/gpuShadowCasters.js';
+
+/** Copy n typed-array slots. Avoids `.subarray` views in per-instance loops. */
+export function copyTypedRange(dst, d0, src, s0, n) {
+  for (let i = 0; i < n; i++) dst[d0 + i] = src[s0 + i];
+}
+
+/**
+ * Copy packed caster slots and stamp one light vec4 on each.
+ * `indices` are source instance slots. Stops at `cap` instances.
+ * `lightOffset` indexes into `light` (0 when `light` is already a vec4).
+ * Returns how many were written (dstBase + written).
+ */
+export function appendStampedCasters(dst, dstFloats, dstBase, src, srcFloats, indices, n, light, cap, lightOffset) {
+  const sf = srcFloats | 0;
+  const df = dstFloats | 0;
+  const limit = cap | 0;
+  let out = dstBase | 0;
+  const count = n | 0;
+  const o = lightOffset | 0;
+  const lx = light[o];
+  const ly = light[o + 1];
+  const lz = light[o + 2];
+  const lw = light[o + 3];
+  const lightAt = CASTER_LIGHT_FLOAT;
+  const row = sf < df ? sf : df;
+  for (let k = 0; k < count && out < limit; k++) {
+    const i = indices[k] | 0;
+    const s0 = i * sf;
+    const d0 = out * df;
+    copyTypedRange(dst, d0, src, s0, row);
+    dst[d0 + lightAt] = lx;
+    dst[d0 + lightAt + 1] = ly;
+    dst[d0 + lightAt + 2] = lz;
+    dst[d0 + lightAt + 3] = lw;
+    out++;
+  }
+  return out;
+}
+
+/** World-unit bins for the per-light caster walk. Larger than a character, smaller than the zoom-0.4 view. */
+const STAMP_CELL = 256;
+/** ponytail: above this the bin grid is skipped and the full caster scan runs. Raise the arrays if a map is wider than 128 cells. */
+const STAMP_GRID_MAX_CELLS = 128 * 128;
+
+const _stampGridResult = { minX: 0, minY: 0, gw: 0, gh: 0, cells: 0 };
+
+function buildStampGrid(sun, nSun, sf, counts, starts, items) {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  for (let c = 0; c < nSun; c++) {
+    const b = c * sf;
+    const x = sun[b];
+    const y = sun[b + 1];
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  if (!Number.isFinite(minX)) return null;
+  const gw = (Math.floor((maxX - minX) / STAMP_CELL) | 0) + 1;
+  const gh = (Math.floor((maxY - minY) / STAMP_CELL) | 0) + 1;
+  const cells = gw * gh;
+  if (gw < 1 || gh < 1 || cells > counts.length || cells > STAMP_GRID_MAX_CELLS || nSun > items.length) {
+    return null;
+  }
+  counts.fill(0, 0, cells);
+  for (let c = 0; c < nSun; c++) {
+    const b = c * sf;
+    let col = Math.floor((sun[b] - minX) / STAMP_CELL) | 0;
+    let row = Math.floor((sun[b + 1] - minY) / STAMP_CELL) | 0;
+    if (col < 0) col = 0;
+    else if (col >= gw) col = gw - 1;
+    if (row < 0) row = 0;
+    else if (row >= gh) row = gh - 1;
+    counts[row * gw + col]++;
+  }
+  let sum = 0;
+  for (let i = 0; i < cells; i++) {
+    starts[i] = sum;
+    sum += counts[i];
+  }
+  starts[cells] = nSun;
+  const cursor = counts;
+  for (let i = 0; i < cells; i++) cursor[i] = starts[i];
+  for (let c = 0; c < nSun; c++) {
+    const b = c * sf;
+    let col = Math.floor((sun[b] - minX) / STAMP_CELL) | 0;
+    let row = Math.floor((sun[b + 1] - minY) / STAMP_CELL) | 0;
+    if (col < 0) col = 0;
+    else if (col >= gw) col = gw - 1;
+    if (row < 0) row = 0;
+    else if (row >= gh) row = gh - 1;
+    const cell = row * gw + col;
+    items[cursor[cell]++] = c;
+  }
+  _stampGridResult.minX = minX;
+  _stampGridResult.minY = minY;
+  _stampGridResult.gw = gw;
+  _stampGridResult.gh = gh;
+  _stampGridResult.cells = cells;
+  return _stampGridResult;
+}
+
+let _nearDist = new Float32Array(0);
+let _nearSlot = new Int32Array(0);
+let _nearCount = new Uint8Array(0);
+let _sortIdxRef = null;
+
+function ensureNearest(nSun, maxPE) {
+  const slots = nSun * maxPE;
+  if (_nearDist.length < slots) {
+    _nearDist = new Float32Array(slots);
+    _nearSlot = new Int32Array(slots);
+  }
+  if (_nearCount.length < nSun) _nearCount = new Uint8Array(nSun);
+  _nearCount.fill(0, 0, nSun);
+}
+
+/** Keep the closest lights on this caster. Ties break toward the smaller light index. */
+function noteNearest(caster, lightIndex, d2, maxPE) {
+  const base = caster * maxPE;
+  let n = _nearCount[caster];
+  if (n === maxPE) {
+    const worst = base + n - 1;
+    const wd = _nearDist[worst];
+    if (d2 > wd || (d2 === wd && lightIndex >= _nearSlot[worst])) return;
+    n--;
+  }
+  let i = n;
+  while (i > 0) {
+    const prev = base + i - 1;
+    const pd = _nearDist[prev];
+    const pl = _nearSlot[prev];
+    if (pd < d2 || (pd === d2 && pl <= lightIndex)) break;
+    _nearDist[base + i] = pd;
+    _nearSlot[base + i] = pl;
+    i--;
+  }
+  _nearDist[base + i] = d2;
+  _nearSlot[base + i] = lightIndex;
+  _nearCount[caster] = n + 1;
+}
+let _pairDistScratch = new Float32Array(0);
+
+function cmpPairByIdx(a, b) {
+  return _sortIdxRef[a] - _sortIdxRef[b];
+}
+
+/** Grid walk order → caster index order, so stripe concat matches a serial scan. */
+function sortPairsByIndex(idx, distArr, count, order, idxScratch) {
+  const m = count | 0;
+  if (m < 2) return;
+  if (_pairDistScratch.length < m) _pairDistScratch = new Float32Array(m);
+  for (let i = 0; i < m; i++) order[i] = i;
+  _sortIdxRef = idx;
+  order.subarray(0, m).sort(cmpPairByIdx);
+  _sortIdxRef = null;
+  const ds = _pairDistScratch;
+  for (let i = 0; i < m; i++) {
+    const s = order[i];
+    idxScratch[i] = idx[s];
+    ds[i] = distArr[s];
+  }
+  for (let i = 0; i < m; i++) {
+    idx[i] = idxScratch[i];
+    distArr[i] = ds[i];
+  }
+}
+
+/**
+ * Stamp a strided light range against packed sun rows (xy in each instance).
+ * `lightBegin` + `lightStride` split `_collectStampLights` across workers.
+ * Returns the stamp instance cursor (dstBase + written).
+ * Pair set matches a serial walk when maxPerEntity is 0 (default).
+ * When maxPerEntity > 0, each caster keeps that many closest lights. The
+ * per-caster slots are module scratch, grown only when the caster count grows.
+ */
+export function stampLightRange({
+  sun,
+  sunN,
+  sunFloats,
+  lights,
+  lightBegin,
+  lightEnd,
+  lightStride,
+  maxPerLight,
+  maxPerEntity,
+  tmpIdx,
+  dist,
+  order,
+  keepIdx,
+  gridCounts,
+  gridStarts,
+  gridItems,
+  stamp,
+  stampFloats,
+  stampCap,
+  stampBase,
+  stampLightIdx,
+  lightVec,
+}) {
+  const nSun = sunN | 0;
+  const sf = sunFloats | 0;
+  const capL = lightEnd | 0;
+  const stride = (lightStride | 0) > 0 ? (lightStride | 0) : 1;
+  let begin = lightBegin | 0;
+  if (begin < 0) begin = 0;
+  const maxPL = maxPerLight | 0;
+  const maxPE = maxPerEntity | 0;
+  let cursor = stampBase | 0;
+  const cap = stampCap | 0;
+  if (!sun || !stamp || nSun <= 0 || !lights || !tmpIdx || !dist || !keepIdx || !lightVec) return cursor;
+  if (maxPE > 0) ensureNearest(nSun, maxPE);
+  const tmpCap = tmpIdx.length | 0;
+  const grid = gridCounts && gridStarts && gridItems
+    ? buildStampGrid(sun, nSun, sf, gridCounts, gridStarts, gridItems)
+    : null;
+  for (let i = begin; i < capL && (maxPE > 0 || cursor < cap); i += stride) {
+    const L = lights[i];
+    if (!L || !(L.rangeSq > 0) || !(L.intensity > 0)) continue;
+    const lim = (L.maxShadows > 0)
+      ? (maxPL > 0 ? Math.min(maxPL, L.maxShadows | 0) : (L.maxShadows | 0))
+      : (maxPL > 0 ? maxPL : nSun);
+    let m = 0;
+    const lx = L.x;
+    const ly = L.y;
+    const rangeSq = L.rangeSq;
+    if (grid) {
+      const r = Math.sqrt(rangeSq);
+      let col0 = Math.floor((lx - r - grid.minX) / STAMP_CELL) | 0;
+      let col1 = Math.floor((lx + r - grid.minX) / STAMP_CELL) | 0;
+      let row0 = Math.floor((ly - r - grid.minY) / STAMP_CELL) | 0;
+      let row1 = Math.floor((ly + r - grid.minY) / STAMP_CELL) | 0;
+      if (col0 < 0) col0 = 0;
+      if (row0 < 0) row0 = 0;
+      if (col1 >= grid.gw) col1 = grid.gw - 1;
+      if (row1 >= grid.gh) row1 = grid.gh - 1;
+      for (let row = row0; row <= row1 && m < tmpCap; row++) {
+        const rowBase = row * grid.gw;
+        for (let col = col0; col <= col1 && m < tmpCap; col++) {
+          const cell = rowBase + col;
+          const from = gridStarts[cell];
+          const to = gridStarts[cell + 1];
+          for (let p = from; p < to && m < tmpCap; p++) {
+            const c = gridItems[p];
+            const b = c * sf;
+            const dx = sun[b] - lx;
+            const dy = sun[b + 1] - ly;
+            const d2 = dx * dx + dy * dy;
+            if (d2 > rangeSq) continue;
+            tmpIdx[m] = c;
+            dist[m] = d2;
+            m++;
+          }
+        }
+      }
+    } else {
+      for (let c = 0; c < nSun && m < tmpCap; c++) {
+        const b = c * sf;
+        const dx = sun[b] - lx;
+        const dy = sun[b + 1] - ly;
+        const d2 = dx * dx + dy * dy;
+        if (d2 > rangeSq) continue;
+        tmpIdx[m] = c;
+        dist[m] = d2;
+        m++;
+      }
+    }
+    // takeClosest already sorts by dist when m > lim; index order only matters
+    // when the whole pair set is copied through (grid vs serial parity). With
+    // maxPerEntity each kept caster only takes this light into its own slots, so
+    // the order inside one light changes nothing (E-110).
+    if (grid && m > 1 && maxPE <= 0 && !(lim > 0 && m > lim)) {
+      sortPairsByIndex(tmpIdx, dist, m, order, keepIdx);
+    }
+    if (m <= 0) continue;
+    m = takeClosest(tmpIdx, dist, order, m, lim, keepIdx, maxPE <= 0);
+    if (maxPE > 0) {
+      for (let k = 0; k < m; k++) {
+        const c = keepIdx[k];
+        const b = c * sf;
+        const dx = sun[b] - lx;
+        const dy = sun[b + 1] - ly;
+        noteNearest(c, i, dx * dx + dy * dy, maxPE);
+      }
+      continue;
+    }
+    lightVec[0] = lx;
+    lightVec[1] = ly;
+    lightVec[2] = L.intensity;
+    lightVec[3] = rangeSq;
+    const written = appendStampedCasters(
+      stamp, stampFloats, cursor, sun, sf, keepIdx, m, lightVec, cap, 0
+    );
+    if (stampLightIdx) {
+      for (let k = cursor; k < written; k++) stampLightIdx[k] = i;
+    }
+    cursor = written;
+  }
+  if (maxPE <= 0) return cursor;
+  for (let c = 0; c < nSun && cursor < cap; c++) {
+    const n = _nearCount[c];
+    const base = c * maxPE;
+    for (let k = 0; k < n && cursor < cap; k++) {
+      const li = _nearSlot[base + k];
+      const L = lights[li];
+      lightVec[0] = L.x;
+      lightVec[1] = L.y;
+      lightVec[2] = L.intensity;
+      lightVec[3] = L.rangeSq;
+      keepIdx[0] = c;
+      const written = appendStampedCasters(
+        stamp, stampFloats, cursor, sun, sf, keepIdx, 1, lightVec, cap, 0
+      );
+      if (stampLightIdx && written > cursor) stampLightIdx[cursor] = li;
+      cursor = written;
+    }
+  }
+  return cursor;
+}
+
+function insertionSortOrder(order, dist, left, right) {
+  for (let i = left + 1; i <= right; i++) {
+    const cur = order[i];
+    const val = dist[cur];
+    let j = i - 1;
+    while (j >= left && dist[order[j]] > val) {
+      order[j + 1] = order[j];
+      j--;
+    }
+    order[j + 1] = cur;
+  }
+}
+
+function partitionOrder(order, dist, left, right, pivotIdx) {
+  const pivotVal = dist[order[pivotIdx]];
+  const tmpPivot = order[pivotIdx];
+  order[pivotIdx] = order[right];
+  order[right] = tmpPivot;
+
+  let storeIdx = left;
+  for (let i = left; i < right; i++) {
+    if (dist[order[i]] < pivotVal) {
+      const t = order[storeIdx];
+      order[storeIdx] = order[i];
+      order[i] = t;
+      storeIdx++;
+    }
+  }
+  const t = order[storeIdx];
+  order[storeIdx] = order[right];
+  order[right] = t;
+  return storeIdx;
+}
+
+function quickselectOrder(order, dist, left, right, k) {
+  while (left < right) {
+    if (right - left < 16) {
+      insertionSortOrder(order, dist, left, right);
+      return;
+    }
+    const mid = (left + right) >> 1;
+    const p1 = dist[order[left]] < dist[order[mid]]
+      ? (dist[order[mid]] < dist[order[right]] ? mid : (dist[order[left]] < dist[order[right]] ? right : left))
+      : (dist[order[left]] < dist[order[right]] ? left : (dist[order[mid]] < dist[order[right]] ? right : mid));
+    const p = partitionOrder(order, dist, left, right, p1);
+    if (p === k) {
+      return;
+    } else if (k < p) {
+      right = p - 1;
+    } else {
+      left = p + 1;
+    }
+  }
+}
+
+function quicksortOrder(order, dist, left, right) {
+  while (left < right) {
+    if (right - left < 16) {
+      insertionSortOrder(order, dist, left, right);
+      return;
+    }
+    const mid = (left + right) >> 1;
+    const p1 = dist[order[left]] < dist[order[mid]]
+      ? (dist[order[mid]] < dist[order[right]] ? mid : (dist[order[left]] < dist[order[right]] ? right : left))
+      : (dist[order[left]] < dist[order[right]] ? left : (dist[order[mid]] < dist[order[right]] ? right : mid));
+    const p = partitionOrder(order, dist, left, right, p1);
+    if (p - left < right - p) {
+      quicksortOrder(order, dist, left, p - 1);
+      left = p + 1;
+    } else {
+      quicksortOrder(order, dist, p + 1, right);
+      right = p - 1;
+    }
+  }
+}
+
+/**
+ * The `limit` closest of m candidates into outIdx. `ordered` false (maxPerEntity, E-133): the kept casters only go
+ * into their own nearest-light slots, which order by (distance, light) whatever order they come in, so the
+ * kept slice is not sorted; it holds the same casters.
+ */
+export function takeClosest(tmpIdx, tmpDist, order, m, limit, outIdx, ordered = true) {
+  if (limit > 0 && m > limit) {
+    for (let k = 0; k < m; k++) order[k] = k;
+    quickselectOrder(order, tmpDist, 0, m - 1, limit - 1);
+    if (ordered) quicksortOrder(order, tmpDist, 0, limit - 1);
+    for (let k = 0; k < limit; k++) outIdx[k] = tmpIdx[order[k]];
+    return limit;
+  }
+  for (let k = 0; k < m; k++) outIdx[k] = tmpIdx[k];
+  return m;
+}
