@@ -1,6 +1,7 @@
 /**
- * Scenery camera stress. Engine ceiling is Layer.MAX_LAYERS 16 (4 built-in).
- * 12 cover/static/tiling layers + pan/zoom every tick.
+ * Scenery camera stress. Engine ceiling is Layer.MAX_LAYERS 16 (5 built-in: decals, castedShadows,
+ * entities, lighting, lightGlows). 11 cover/static/tiling layers + pan/zoom every tick (12 until the
+ * fifth built-in layer, which made the twelfth fail to register).
  * Primary: pixi_STEP_MS. Load: SCENERY_COUNT.
  */
 import WEED from '/src/index.js';
@@ -8,7 +9,7 @@ import { CameraOrbitDriver, stepCameraOrbit } from './pixiPeel/cameraOrbitDriver
 
 const { Scene, Camera, LAYER_KIND } = WEED;
 
-export const SCENERY_CUSTOM = 12;
+export const SCENERY_CUSTOM = 11;
 export const WORLD_W = 8000;
 export const WORLD_H = 8000;
 
