@@ -657,10 +657,12 @@ class PreRenderWorker extends AbstractWorker {
         this._emitWriteCount = 0;
         // E-138. A frame whose emit expands its rows (Adobe Animate roots into pieces) sorts the collector before the
         // emit (_presortCollector), so the queue comes out in painter order and the pack takes it in order. Whether
-        // this frame's queue was, the collector's count last frame, and the sort's keys, order and column scratch
-        // (sized on the first such frame).
+        // this frame's queue was, the collector's count and the rows the emit wrote last frame (resetFrameCounters
+        // clears _emitWriteCount before the collect), and the sort's keys, order and column scratch (sized on the
+        // first such frame).
         this._queuePresorted = false;
         this._lastCollectCount = 0;
+        this._lastEmitCount = 0;
         this._presortKeys = EMPTY_F32;
         this._presortKeysU32 = EMPTY_U32;
         this._presortOrder = EMPTY_U32;
@@ -3147,6 +3149,7 @@ class PreRenderWorker extends AbstractWorker {
         if (!this.renderQueueEnabled || this._renderableCount === 0) {
             if (this.renderQueueCount) this.renderQueueCount[0] = 0;
             this._lastCollectCount = 0;
+            this._lastEmitCount = 0;
             return;
         }
 
@@ -3170,6 +3173,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueCount[0] = writeCount;
         this._emitWriteCount = writeCount;
         this._lastCollectCount = count;
+        this._lastEmitCount = writeCount;
         this._renderableCount = 0;
     }
 
@@ -3187,7 +3191,8 @@ class PreRenderWorker extends AbstractWorker {
      */
     _presortCollector(count, ySort) {
         const last = this._lastCollectCount;
-        if (count < 2 || last <= 0 || this._emitWriteCount < 2 * last || this._emitWriteCount >= this.renderQueueMaxItems) return false;
+        const wrote = this._lastEmitCount;
+        if (count < 2 || last <= 0 || wrote < 2 * last || wrote >= this.renderQueueMaxItems) return false;
         if (!this.renderQueueSortKey || !this._gpuPainter || !this._allowGpuPainter()) return false;
         if (this.shadowsEnabled && this.gpuQueueCaps && this.gpuQueueCaps.maxSun > 0) return false;
         const px = this._collectPx;

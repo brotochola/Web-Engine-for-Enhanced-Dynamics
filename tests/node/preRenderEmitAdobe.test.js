@@ -22,6 +22,7 @@ import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
 import { AdobeAnimRegistry } from '../../src/core/adobeAnimRegistry.js';
+import { Layer } from '../../src/core/layer.js';
 import { AdobeAnimCompiler } from '../../src/util/adobeAnimCompiler.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
@@ -705,5 +706,69 @@ test('E-138: the collector sorted by key before the emit gives the queue a stabl
       tiled = tiledAfter;
     }
     assert.ok(moved > 1000, `ySort ${ySort}: the sort moved rows (${moved})`);
+  }
+});
+
+// E-138's gate across real frames: resetFrameCounters clears the emit's count before the collect, so the gate reads
+// last frame's from a field of its own. The first frame of a scene emits unsorted; from the second, a collector
+// whose rows the emit expanded at least twice over is sorted before the emit, and the queue it writes is in key order.
+test('E-138: from its second frame, pre-render sorts an expanding collector before the emit', async () => {
+  const k = await setup({ ySort: true, seed: 0xe13a, shadows: false });
+  const { worker } = k;
+  SpriteRenderer.isAnimated.fill(0);
+  // Pre-render's painter and pack (no GPU queue in this setup: the gate only asks that there is a painter).
+  worker._gpuPainter = worker._gpuPainter || {};
+  worker.shadowsEnabled = false;
+  worker._frameAdobeEntities = [0];
+  worker._bindCollectPoses();
+  assert.equal(worker._collectPx, worker._renderablePx, 'a frame with a root keeps its poses in the stash');
+  // A scene of characters: every root with an asset in the tables, once, and a few sprites among them.
+  const roots = [];
+  for (let i = 0; i < ROOTS; i++) if (AdobeAnimComponent.assetId[i] >= 1 && AdobeAnimComponent.assetId[i] <= 3) roots.push(i);
+  const count = roots.length + 8;
+  const types = new Uint8Array(count);
+  const indices = new Int32Array(count);
+  const ys = new Float32Array(count);
+  for (let q = 0; q < count; q++) {
+    types[q] = q < roots.length ? 6 : 0;
+    indices[q] = q < roots.length ? roots[q] : ROOTS + q;
+    ys[q] = ((q * 7919) % 3001) * 128;
+  }
+  // An order to sort by: Y-sort on the entities layer.
+  const savedLayer = [Layer._ySorting, Layer.entitiesId];
+  Layer._ySorting = new Uint8Array(32);
+  Layer.entitiesId = 0;
+  Layer._ySorting[0] = 1;
+  const sorts = [];
+  const realSort = worker._sortCollectorByKey;
+  worker._sortCollectorByKey = function sort(n, ySort) {
+    sorts.push(n);
+    return realSort.call(this, n, ySort);
+  };
+  try {
+    for (let f = 0; f < 3; f++) {
+      worker.resetFrameCounters();
+      // The collect: the same rows every frame.
+      worker._renderableType.set(types);
+      worker._renderableIndex.set(indices);
+      worker._renderableY.set(ys);
+      worker._renderableCount = count;
+      k.prepare(f);
+      worker.buildRenderQueue(DT);
+      const written = worker.renderQueueCount[0];
+      assert.ok(written > 2 * count, `frame ${f}: the roots expanded (${written} rows from ${count})`);
+      assert.equal(worker._queuePresorted, f > 0, `frame ${f}: presorted`);
+      if (f > 0) {
+        const keys = new Uint32Array(worker.renderQueueSortKey.buffer, worker.renderQueueSortKey.byteOffset, written);
+        const ord = (u) => ((u & 0x80000000) ? ~u : (u | 0x80000000)) >>> 0;
+        for (let r = 1; r < written; r++) {
+          if (ord(keys[r - 1]) > ord(keys[r])) assert.fail(`frame ${f}: queue row ${r} is out of key order`);
+        }
+      }
+    }
+    assert.deepEqual(sorts, [count, count], 'sorted on frames 1 and 2');
+  } finally {
+    delete worker._sortCollectorByKey;
+    [Layer._ySorting, Layer.entitiesId] = savedLayer;
   }
 });
