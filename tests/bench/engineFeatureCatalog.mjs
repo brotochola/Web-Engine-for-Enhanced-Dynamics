@@ -192,8 +192,9 @@ export const ENGINE_FEATURES = [
   {
     id: 'nav',
     name: 'NavGrid',
-    module: 'src/core/navGrid.js',
-    kernel: { script: 'tests/bench/navGridMicrobench.mjs', opsKey: 'cases.dijkstra.opsPerSec' },
+    // The flowfield is navFlowfield.wasm only: its microbench, wasm (navGridMicrobench times a copy of its own).
+    module: 'src/workers/navFlowfieldClient.js',
+    kernel: { script: 'tests/bench/navFlowfieldWasmMicrobench.mjs', opsKey: 'cases.flowfield.opsPerSec' },
     scene: {
       key: 'navStress',
       path: '/tests/bench/stressScenes/navStressScene.js',
