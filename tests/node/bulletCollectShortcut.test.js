@@ -5,12 +5,14 @@ import { loadWorker } from '../bench/workerHarness.mjs';
 import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { Layer } from '../../src/core/layer.js';
 
-// E-137. The bullet collect sends a bullet with no layer mask (and its trail) straight to the main collector,
-// writing the rows itself, past collectRenderable's type dispatch and bit scan (E-98c and E-98e for sprites).
+// E-137. The bullet collect sends a bullet with no layer mask or the entities layer's bit alone (the pool's
+// default), and its trail, straight to the main collector, writing the rows itself, past collectRenderable's
+// type dispatch and bit scan (E-98c and E-98e for sprites).
 // The collectors, the full-collector calls and the sort key left in COLLECT_Y must come out as the loop that
 // called collectRenderable for every bullet left them, and masked bullets still go through collectRenderable.
-// The reference is that loop: the same bullets with the entities layer's bit as their mask, which routes each one
-// through collectRenderable (the generic branch, the loop as it was) to the same collector.
+// The reference is that loop: the bullets the shortcut takes get the entities layer's bit and bit 15 (no
+// sprite-queue layer, so the bit scan drops it) as their mask, which routes each one through collectRenderable
+// (the generic branch, the loop as it was) to the same collector.
 
 const POOL = 24;
 
@@ -76,10 +78,11 @@ for (const cap of [64, 12]) {
       setup(pre);
       const fx = Layer.get('fx').id;
       // Slot 9 to fx only, 16 to fx and the entities layer (both with trails), 21 to the entities layer by its bit
-      // (no trail).
+      // (no trail: the shortcut, as the pool's default mask), 1 to the entities layer and bit 15 (the generic path).
       BulletComponent.layerMask[9] = 1 << fx;
       BulletComponent.layerMask[16] = (1 << fx) | Layer.entitiesMask();
       BulletComponent.layerMask[21] = Layer.entitiesMask();
+      BulletComponent.layerMask[1] = Layer.entitiesMask() | (1 << 15);
 
       collectors(pre, fx, cap);
       const generic = [];
@@ -89,7 +92,7 @@ for (const cap of [64, 12]) {
       };
       pre.collectVisibleBullets();
       delete pre.collectRenderable;
-      assert.deepEqual(generic, ['4:9', '5:9', '4:21', '4:16', '5:16'], 'only the masked bullets take the generic path');
+      assert.deepEqual(generic, ['4:9', '5:9', '4:1', '5:1', '4:16', '5:16'], 'only the bullets masked past the entities layer take the generic path');
       const got = snapshot(pre, fx, fulls);
       if (cap === 64) assert.equal(got.fulls, 0);
       else assert.ok(got.fulls > 0, 'the collector filled up');
@@ -97,7 +100,8 @@ for (const cap of [64, 12]) {
 
       // The loop as it was: every active bullet through collectRenderable, its key in COLLECT_Y.
       const masks = BulletComponent.layerMask;
-      BulletComponent.layerMask = masks.map((m) => m || Layer.entitiesMask());
+      const bit = Layer.entitiesMask();
+      BulletComponent.layerMask = masks.map((m) => (m === 0 || m === bit ? bit | (1 << 15) : m));
       collectors(pre, fx, cap);
       fulls.count = 0;
       let calls = 0;

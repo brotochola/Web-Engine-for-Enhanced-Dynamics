@@ -2286,11 +2286,13 @@ class PreRenderWorker extends AbstractWorker {
         const y = BulletComponent.y;
         const trailWidth = BulletComponent.trailWidth;
         const active = BulletComponent.active;
-        // E-137. A bullet with no layer mask goes to the main collector, its rows (and its trail's) written here
-        // as _writeRenderable writes them, without collectRenderable's dispatch and bit scan (E-98c and E-98e
-        // for sprites); masked bullets take that path. `n` is the collector's count, synced around that call and
-        // after the loop. The last key goes back to COLLECT_Y, where the loop left it before.
+        // E-137. A bullet whose mask is none or the entities layer's bit alone (the pool's default,
+        // Layer.resolveSubscriptions) goes to the main collector, its rows (and its trail's) written here as
+        // _writeRenderable writes them, without collectRenderable's dispatch and bit scan (E-98c and E-98e for
+        // sprites); other masks take that path. `n` is the collector's count, synced around that call and after
+        // the loop. The last key goes back to COLLECT_Y, where the loop left it before.
         const layerMask = BulletComponent.layerMask || null;
+        const entitiesBit = Layer.entitiesId != null ? Layer.entitiesMask() : 0;
         const rY = this._renderableY;
         const rType = this._renderableType;
         const rIndex = this._renderableIndex;
@@ -2304,7 +2306,8 @@ class PreRenderWorker extends AbstractWorker {
             const key = y[i] * Y_SORT_K;
             const trail = trailWidth[i] > 0;
             lastKey = trail ? key - 1 : key;
-            if (layerMask === null || layerMask[i] === 0) {
+            const mask = layerMask === null ? 0 : layerMask[i];
+            if (mask === 0 || mask === entitiesBit) {
                 if (n < maxItems) {
                     rY[n] = key;
                     rType[n] = 4;
