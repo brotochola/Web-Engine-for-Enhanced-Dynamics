@@ -600,7 +600,9 @@ export function renderQueueMemorySpec(scene) {
     && spatialPublishSpec(scene) !== null
     ? visibilityGatherSpec(scene)
     : null;
-  const wantsCollect = config.wasm?.preRenderCollect !== false && Boolean(emit) && emit.spriteBytes > 0;
+  // The collect's blocks whenever the emit reads sprites or glows (Transform's pose is the glow rows' too): the switch
+  // only decides whether pre-render runs the collect kernel on them.
+  const wantsCollect = Boolean(emit) && (emit.spriteBytes > 0 || emit.lightBytes > 0);
   // The bullet and trail rows read BulletComponent: among the emit's blocks when the bullet tick's are not there.
   if (emit && maxBullets > 0 && !bullets) emit.bulletBytes = BulletComponent.getBufferSize(maxBullets);
   const collect = (wantsCollect || bullets || visibility) && pools.Transform?.ComponentClass && (!physics || inBlock)

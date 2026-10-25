@@ -261,12 +261,13 @@ test('wasm.preRenderCollect puts Transform, its pose and Collider in the render-
   assert.equal(on.buffers.componentData.Transform, on.renderQueueMemory.buffer, 'Transform is a block of the memory');
   assert.equal(Transform.active.buffer, on.renderQueueMemory.buffer);
 
-  assert.equal(buildScene({ preRenderCollect: false }, null, noPhysics).renderQueueMemory.layout.collect, null, 'off');
   assert.equal(buildScene({}, null).renderQueueMemory.layout.collect, null, 'physics on: the pose is in Box2D\'s heap');
   assert.equal(buildScene({ preRenderEmit: false }, null, noPhysics).renderQueueMemory.layout.collect, null, 'needs the emit');
+  // Switched off, pre-render does not run the collect kernel, but the blocks stay: the emit's glow rows read
+  // Transform's pose there.
   const off = buildScene({ preRenderCollect: false }, null, noPhysics);
-  assert.equal(off.buffers.componentDataByte.Transform, undefined);
-  assert.ok(off.buffers.componentData.Transform instanceof SharedArrayBuffer && off.buffers.componentData.Transform !== off.renderQueueMemory.buffer);
+  assert.ok(off.renderQueueMemory.layout.collect, 'off: the blocks stay');
+  assert.equal(off.buffers.componentData.Transform, off.renderQueueMemory.buffer);
 });
 
 test('wasm.painterRadix gives the worker that sorts its painter state in the render-queue memory (W10)', () => {
