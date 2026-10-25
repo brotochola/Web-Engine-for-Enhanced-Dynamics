@@ -75,3 +75,24 @@ test('packSpriteLayer orders a dense layer by sort key', () => {
   assert.equal(result.flags, 1);
   assert.equal(result.sprite, 3);
 });
+
+// Close-out group B: a layer with a painter and fewer than two rows is in painter order already, so it says so
+// (sortedFlag); Pixi otherwise packed such a frame itself under Y-sort. With no painter it says nothing.
+test('packSpriteLayer flags fewer than two rows as sorted when it has a painter', () => {
+  const SORTED = 4;
+  for (const [count, painter, want] of [[1, true, SORTED], [0, true, SORTED], [1, false, 0], [2, true, SORTED]]) {
+    const result = packSpriteLayer({
+      count,
+      type: new Uint8Array(4),
+      opts: opts(),
+      painter: painter ? createPainterState(4) : null,
+      keysU32: new Uint32Array(4),
+      sortedFlag: SORTED,
+      // As pre-render's pack asks: every row, through its slot list.
+      fillAll: true,
+      idxEntity: new Uint32Array(4),
+      writeSprites(o) { return o.indexCount; },
+    });
+    assert.equal(result.flags & SORTED, want, `${count} rows, painter ${painter}`);
+  }
+});

@@ -25,7 +25,8 @@ function orderSpriteIndices(opts, painter, keysU32, indices, n, dense, addSortMs
             opts.indices = null;
             opts.indexCount = 0;
         }
-        return 0;
+        // Fewer than two rows are in painter order already.
+        return painter && keysU32 ? sortedFlag | 0 : 0;
     }
     if (addSortMs) {
         const t0 = performance.now();
@@ -99,6 +100,8 @@ export function packSpriteLayer(spec) {
     }
 
     let spriteN = 0;
+    // Fewer than two rows are in painter order already (a layer that would order them says so).
+    if (spec.fillAll && canSort && count < 2) flags |= sortedFlag;
     if (spec.fillAll && spec.idxEntity && canSort && count >= 2) {
         const ne = fillQueueIndices(typeArr, count, -1, -1, spec.idxEntity);
         flags |= orderSpriteIndices(opts, painter, keysU32, spec.idxEntity, ne, false, addSortMs, sortedFlag);

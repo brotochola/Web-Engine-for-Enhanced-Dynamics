@@ -192,3 +192,35 @@ test('a plain batch (the switch off) leaves a split frame to the SoA path', asyn
   px.updateSpritesFromRenderQueue();
   assert.equal(commits, 0, 'a split frame is not read as rows');
 });
+
+// Close-out group B. On these frames Pixi packed the main queue itself (packSpriteLayer, in JS in pre-render pack
+// mode): a frame of glow rows only (pre-render packed no sprite), and sprites with a zIndex under Y-sort off, where
+// nobody sorts (Pixi had no painter either, so its own pack was the same unsorted rows). Both commit pre-render's.
+test('a frame of glow rows only and zIndex sprites under Y-sort off commit pre-render\'s rows', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const s = await quietly(() => scene(true));
+  await quietly(() => bindPixi(px, s));
+  assert.equal(px._sortSpritesOn, 'none', 'Y-sort off: nobody sorts');
+  let ownPacks = 0;
+  const upload = px.entitiesBatch.upload.bind(px.entitiesBatch);
+  px.entitiesBatch.upload = (...a) => { ownPacks++; return upload(...a); };
+
+  // zIndex users, Y-sort off.
+  SpriteRenderer._zIndexUsers[0] = 3;
+  const rows = writeGpuFrame(px, 0, 400, true, 2, 1);
+  px._setReadBuffer(0);
+  px.updateSpritesFromRenderQueue();
+  SpriteRenderer._zIndexUsers[0] = 0;
+  assert.equal(ownPacks, 0, 'zIndex under Y-sort off: no pack of Pixi\'s own');
+  assert.equal(px.visibleEntityCount, 400);
+  assert.deepEqual(batchRows(px.entitiesBatch, 400), rows, 'pre-render\'s rows');
+
+  // Glow rows only: no sprite packed, the glows packed as glows.
+  const g = px.gpuQueueBuffers[1];
+  writeGpuQueueHeader(g.header, { sprite: 0, glow: 25, sun: 0, stamp: 0, cookie: 0, particle: 0, staticGen: 0 }, GPU_FLAG_SPLIT);
+  px.renderQueueBuffers[1].count[0] = 25;
+  px._setReadBuffer(1);
+  px.updateSpritesFromRenderQueue();
+  assert.equal(ownPacks, 0, 'glow rows only: no pack of Pixi\'s own');
+  assert.equal(px.visibleEntityCount, 0, 'no sprite rows');
+});

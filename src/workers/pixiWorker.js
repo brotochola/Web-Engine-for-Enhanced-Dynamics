@@ -250,6 +250,7 @@ import {
   ySortEnabled,
   resolveSpritePipeline,
   PACK_GPU_SPRITES_PIXI,
+  SORT_SPRITES_NONE,
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
@@ -538,6 +539,8 @@ class PixiRenderer extends AbstractWorker {
     this._ySortMode = false;
     this._entitiesRoot = null;
     this._lightGlowAdd = true;
+    // The pipeline's sorter (resolveSpritePipeline): 'none' when nobody orders the sprites.
+    this._sortSpritesOn = SORT_SPRITES_NONE;
     this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
 
     // PIXI application and rendering
@@ -1673,13 +1676,16 @@ class PixiRenderer extends AbstractWorker {
     const packedN = gpu && gpu.header ? (gpu.header[GPU_HDR_SPRITE] | 0) : 0;
     const soaN = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
     const packedFlags = gpu && gpu.header ? (gpu.header[GPU_HDR_FLAGS] | 0) : 0;
-    const needOrder = this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
+    // An order only where the pipeline keeps one (with Y-sort off nobody sorts: this frame's own pack would not
+    // either), so pre-render's unsorted rows are the frame's rows.
+    const needOrder = this._sortSpritesOn !== SORT_SPRITES_NONE && (this._entityYSort() || SpriteRenderer.zIndexUsers() > 0);
     const packedOk = !!(
       gpu &&
       gpu.header &&
       (gpu.header[GPU_HDR_VERSION] | 0) === GPU_QUEUE_VERSION &&
       !this.entitiesBatch.poseInterp &&
-      !(packedN === 0 && soaN > 0) &&
+      // Pre-render packed nothing of a queue with rows (a frame of glow rows only packs them all as glows).
+      !(packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0 && soaN > 0) &&
       (!needOrder || (packedFlags & GPU_FLAG_SORTED)) &&
       ((packedFlags & GPU_FLAG_SPLIT) === 0 || this.entitiesBatch.split) &&
       this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI
@@ -5874,6 +5880,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rendererInterpolation: this._queueInterp,
     });
     this._packGpuSpritesOn = spritePipe.packGpuSprites;
+    this._sortSpritesOn = spritePipe.sortSprites;
     this._lightGlowAdd = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite';
 
     this.autoGenerateMipmaps =
