@@ -520,9 +520,9 @@ class PixiRenderer extends AbstractWorker {
     // render-queue memory (the view below) and gpuPack.wasm packs them, on Pixi's own scratch.
     this._pixiGpuPack = null;
     this._pixiInstanceRows = null;
-    // W30. The entity batch's arrays in a private WebAssembly.Memory, copied into from the render-queue memory by
-    // memory.copy (sharedCopy.createPrivateArena); null without multi-memory.
-    this._privateArena = null;
+    // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
+    // into by memory.copy (_batchArena, sharedCopy.createPrivateArena); the memory they copy from.
+    this._renderQueueMemory = null;
     // W10. With sortSprites 'pixi', the ENTITIES painter state and its slot lists live in the render-queue
     // memory and painterRadix.wasm sorts them there (painterRadixClient.bindPainterRadix).
     this._painterWasm = null;
@@ -1906,6 +1906,14 @@ class PixiRenderer extends AbstractWorker {
     return this._painterWasm ? createWasmPainterState(this._painterWasm) : createPainterState(maxItems);
   }
 
+  /**
+   * W30: a private memory for a batch's arrays (`floats` of them), which copies from the render-queue memory fill by
+   * memory.copy; null without that memory or without multi-memory (the batch keeps arrays of its own).
+   */
+  _batchArena(floats) {
+    return createPrivateArena(this._renderQueueMemory, floats * 4 + 4096);
+  }
+
   /** W10: painterRadix.wasm on Pixi's painter regions of the render-queue memory, when the scene laid them out. */
   async _bindPainterRadix(data) {
     this._painterWasm = null;
@@ -1972,7 +1980,8 @@ class PixiRenderer extends AbstractWorker {
       // E-82b (wasm.gpuPackSplit): the plain sprites in two streams, the statics uploaded when they change. A
       // nearest atlas snaps every pose, which neither the kernel nor packSplitRows packs, so it keeps 15-float rows.
       split: this.config?.wasm?.gpuPackSplit !== false && !this._queueInterp && this.atlasScaleMode !== 'nearest',
-      arena: this._privateArena,
+      // W30: room for its two streams at their widest (a pose batch's 17 floats a row).
+      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)),
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -1996,6 +2005,7 @@ class PixiRenderer extends AbstractWorker {
       blendMode: 'add',
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
+      arena: this._batchArena(maxItems * INSTANCED_SPRITE_FLOATS),
     });
     this.spriteGlowMesh = this.entitiesGlowBatch.mesh;
 
@@ -4095,6 +4105,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       alphaDiscard: false,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
+      arena: this._batchArena(cookieCap * INSTANCED_SPRITE_FLOATS),
     });
     this.gpuCasterBatch = new InstancedSpriteBatch({
       capacity: casterCap,
@@ -4107,6 +4118,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       shadowCast: true,
+      arena: this._batchArena(casterCap * GPU_CASTER_FLOATS),
     });
     if (this.gpuCasterBatch.shadowShader && this.gpuCasterBatch.mesh) {
       this.gpuCasterBatch.mesh.shader = this.gpuCasterBatch.shadowShader;
@@ -6095,15 +6107,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     // CASTED SHADOWS SYSTEM - Initialize
     // ========================================
+    this._renderQueueMemory = data.renderQueueMemory || null;
     this.createCastedShadowsSystem(data);
 
     // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
     if (this.renderQueueEnabled) {
       await this._bindPixiGpuPack(data);
       await this._bindPainterRadix(data);
-      // W30: room for the entity batch's two streams at their widest (a pose batch's 17 floats a row).
-      this._privateArena = createPrivateArena(data.renderQueueMemory || null,
-        this.renderQueueMaxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS) * 4 + 4096);
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';
