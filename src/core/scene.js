@@ -144,6 +144,9 @@ import {
   tryPushSpawn,
 } from '../util/spawnCommandRing.js';
 
+/** `wasm` keys a scene set that are not switches, already warned about (once per key per page). */
+const warnedWasmKeys = new Set();
+
 class Scene {
   /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
   static LOAD_STEPS = Object.freeze([
@@ -732,7 +735,14 @@ class Scene {
       ...(this.config.spatial || {}),
     };
 
-    // WASM kernel switches (E-76 T7)
+    // WASM kernel switches (E-76 T7). A key that is not one (a kernel whose JavaScript path has left the engine
+    // has no switch) is named once, so a scene that still sets it learns why nothing changed.
+    for (const key of Object.keys(this.config.wasm || {})) {
+      if (!Object.hasOwn(WASM_DEFAULTS, key) && !warnedWasmKeys.has(key)) {
+        warnedWasmKeys.add(key);
+        console.warn(`WeedJS: wasm.${key} is not a WASM switch (a kernel without one always runs in WebAssembly); ignored`);
+      }
+    }
     this.config.wasm = {
       ...WASM_DEFAULTS,
       ...(this.config.wasm || {}),
