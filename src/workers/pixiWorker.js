@@ -520,6 +520,8 @@ class PixiRenderer extends AbstractWorker {
     // render-queue memory (the view below) and gpuPack.wasm packs them, on Pixi's own scratch.
     this._pixiGpuPack = null;
     this._pixiInstanceRows = null;
+    // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
+    this._pixiGlowRows = null;
     // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
     // into by memory.copy (_batchArena, sharedCopy.createPrivateArena); the memory they copy from.
     this._renderQueueMemory = null;
@@ -1935,25 +1937,32 @@ class PixiRenderer extends AbstractWorker {
   async _bindPixiGpuPack(data) {
     const memory = data.renderQueueMemory;
     const layout = data.renderQueueLayout;
-    const rows = layout ? layout.pixiInstanceRows | 0 : 0;
-    if (!memory || rows <= 0 || rows < (this.renderQueueMaxItems | 0)) return;
-    const floats = layout.pixiInstanceFloats | 0 || INSTANCED_SPRITE_FLOATS;
-    // A layout made for the other mode (interpolation on or off) leaves the batch packing in JS.
-    if (floats !== (this._queueInterp ? POSE_DYN_FLOATS + POSE_STATIC_FLOATS : INSTANCED_SPRITE_FLOATS)) return;
+    // Close-out group B: Pixi's pack scratch is there whenever the emit's regions are (its custom layers and glow
+    // batch pack through it in either pack mode); the entities' rows only in pixi pack mode.
+    if (!memory || !layout || !(layout.pixiTableByte >= 0)) return;
     try {
       this._pixiGpuPack = await bindGpuPack(memory, {
         tableByte: layout.pixiTableByte,
-        tableSlots: layout.tableSlots,
+        tableSlots: layout.pixiTableSlots | 0 || layout.tableSlots,
         indexByte: layout.pixiIndexByte,
         indexCap: layout.indexCap,
         particlesByte: layout.pixiParticlesByte,
         inverseByte: 0,
       });
-      this._pixiInstanceRows = new Float32Array(memory.buffer, layout.pixiInstanceByte, rows * floats);
     } catch (err) {
       console.warn('[PIXI WORKER] gpuPack.wasm did not load; packing sprites in JS', err);
       this._pixiGpuPack = null;
-      this._pixiInstanceRows = null;
+      return;
+    }
+    const rows = layout.pixiInstanceRows | 0;
+    const floats = layout.pixiInstanceFloats | 0 || INSTANCED_SPRITE_FLOATS;
+    // A layout made for the other mode (interpolation on or off) leaves the entity batch packing in JS.
+    if (rows > 0 && rows >= (this.renderQueueMaxItems | 0)
+      && floats === (this._queueInterp ? POSE_DYN_FLOATS + POSE_STATIC_FLOATS : INSTANCED_SPRITE_FLOATS)) {
+      this._pixiInstanceRows = new Float32Array(memory.buffer, layout.pixiInstanceByte, rows * floats);
+    }
+    if ((layout.pixiGlowRows | 0) >= (this.renderQueueMaxItems | 0) && layout.pixiGlowByte >= 0) {
+      this._pixiGlowRows = new Float32Array(memory.buffer, layout.pixiGlowByte, (this.renderQueueMaxItems | 0) * INSTANCED_SPRITE_FLOATS);
     }
   }
 
@@ -2005,6 +2014,9 @@ class PixiRenderer extends AbstractWorker {
       blendMode: 'add',
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
+      // Pixi packs the glow rows here in pixi pack mode, through gpuPack.wasm into its rows of the memory.
+      data: this._pixiGlowRows,
+      gpuPack: this._pixiGlowRows ? this._pixiGpuPack : null,
       arena: this._batchArena(maxItems * INSTANCED_SPRITE_FLOATS),
     });
     this.spriteGlowMesh = this.entitiesGlowBatch.mesh;
@@ -6576,6 +6588,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         ];
         sortKeyU32ByBuf = buffers.map((b) => b.sortKeyU32);
         painter = layerYSort ? createPainterState(maxItems) : null;
+        // Close-out group B: the layer's rows in the render-queue memory (next to its queues), where gpuPack.wasm
+        // packs them; copied out for the upload as the entities' are (W30's arena).
+        const layerRows = lrq.rowsByte >= 0 && this._pixiGpuPack && lrq.dataA === this._renderQueueMemory?.buffer
+          ? new Float32Array(lrq.dataA, lrq.rowsByte, maxItems * INSTANCED_SPRITE_FLOATS)
+          : null;
         batch = new InstancedSpriteBatch({
           capacity: maxItems,
           label: `custom-layer-${layerName}`,
@@ -6586,6 +6603,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           alphaDiscard: false,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
+          data: layerRows,
+          gpuPack: layerRows ? this._pixiGpuPack : null,
+          arena: layerRows ? this._batchArena(maxItems * INSTANCED_SPRITE_FLOATS) : null,
         });
         batch.mesh.blendMode = containerBlend;
       }

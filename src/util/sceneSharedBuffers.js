@@ -794,8 +794,12 @@ function emitBlocks(scene) {
     particleBytes: maxParticles > 0 ? particleMemoryBytes(maxParticles, ParticleComponent.getBufferSize(maxParticles)) : 0,
     // The LiquidFun rows' render buffer and previous positions.
     liquidFun: lfMax > 0 ? { maxCount: lfMax, renderBytes: liquidFunRenderByteSize(lfMax) } : null,
-    // The custom sprite layers' queues and collectors.
+    // The custom sprite layers' queues and collectors (and the rows Pixi packs each into).
     customLayers: customLayerQueueSpecs().map((c) => ({ ...c, queueBytes: computeRenderQueueBufferSize(c.maxItems) })),
+    // Pixi's glow batch's rows, where it packs the glow rows in pixi pack mode (additive glows).
+    pixiGlowRows: config.preRender?.packGpuSprites === 'pixi'
+      && (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite'
+      ? resolveMaxVisibleRenderables(scene) : 0,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
   };
 }
@@ -919,6 +923,8 @@ function initializeLightingAndRenderBuffers(scene) {
       dataBByte: at ? at.queueBByte : 0,
       // The layer's collector (y, index, the pose stash, type) in the memory, -1 when pre-render keeps its own.
       collectorByte: at ? at.collectorByte : -1,
+      // The rows Pixi packs the layer into, -1 when it keeps its own.
+      rowsByte: at ? at.rowsByte : -1,
       maxItems,
       layerId,
       layerName: layer.name,

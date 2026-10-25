@@ -113,7 +113,7 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  *   `preRenderPainter*` owned by pre-render, `pixiPainter*` by Pixi, so the kernel reads the sort keys where
  *   pre-render wrote them and the two never share a state
  */
-export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0, collect = null, painter = null, pixiFloats = 15) {
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0, collect = null, painter = null, pixiFloats = 15, pixiExtra = null) {
   const n = maxItems | 0;
   const regions = [
     { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
@@ -178,6 +178,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
         { name: `customQueueA${k}`, owner: 'pre-render writes; Pixi reads', bytes: c.queueBytes | 0 },
         { name: `customQueueB${k}`, owner: 'pre-render writes; Pixi reads', bytes: c.queueBytes | 0 },
         { name: `customCollector${k}`, owner: 'pre-render', bytes: (c.maxItems | 0) * CUSTOM_COLLECTOR_ROW_BYTES },
+        // The rows Pixi packs the layer into (15 floats each) before it copies them out for the upload.
+        { name: `customRows${k}`, owner: 'Pixi packs', bytes: (c.maxItems | 0) * 15 * 4 },
       );
     }
     if (emit.adobe) {
@@ -230,13 +232,16 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'swayTable', owner: 'particle', bytes: SWAY_TABLE_SLOTS * 4 },
     );
   }
-  if ((pixiRows | 0) > 0) {
+  if ((pixiRows | 0) > 0 || pixiExtra) {
     // W9d: Pixi's instance rows (15 floats each; W9e: 17 with pose interpolation, the pose stream then the statics)
-    // and its own pack scratch, apart from pre-render's: the two pack at the same time.
+    // and its own pack scratch, apart from pre-render's: the two pack at the same time. Close-out group B: the
+    // scratch whenever Pixi packs anything (its custom layers, in either pack mode), with a column table for each
+    // custom layer's two buffers (pixiExtra.tableBytes), and the glow batch's rows in pixi pack mode.
     regions.push(
       { name: 'pixiInstances', owner: 'Pixi packs and uploads', bytes: (pixiRows | 0) * (pixiFloats | 0) * 4 },
+      { name: 'pixiGlowRows', owner: 'Pixi packs', bytes: (pixiExtra ? pixiExtra.glowRows | 0 : 0) * 15 * 4 },
       { name: 'pixiPackIndices', owner: 'Pixi', bytes: n * 4 },
-      { name: 'pixiPackTables', owner: 'Pixi', bytes: tableBytes },
+      { name: 'pixiPackTables', owner: 'Pixi', bytes: pixiExtra ? pixiExtra.tableBytes | 0 : tableBytes },
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
     );
   }

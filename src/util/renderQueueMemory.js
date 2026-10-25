@@ -47,7 +47,8 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
   const pixiRows = pixiFloats > 0 ? n : 0;
-  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiFloats || 15);
+  const pixiExtra = pixiExtraSpec(emit);
+  const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiFloats || 15, pixiExtra);
   const base = place ? place.baseByte | 0 : 0;
   if (place) {
     if ((base & 63) !== 0 || base + map.bytes > place.memory.buffer.byteLength) return null;
@@ -80,13 +81,18 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         stamp: stamp ? stampLayout(r, stamp) : null,
         sway: sway ? swayLayout(r, sway) : null,
         collect: collect ? collectLayout(r, collect) : null,
-        // W9d: Pixi's instance rows and pack scratch (0 rows: Pixi does not pack plain rows here).
+        // W9d: Pixi's instance rows (0 rows: Pixi does not pack the entities' plain rows here) and its pack scratch
+        // (close-out group B: whenever the emit's regions are there, for Pixi's custom layers and glow batch), with
+        // a column table per queue buffer it packs; the glow batch's rows in pixi pack mode.
         pixiInstanceRows: pixiRows,
         pixiInstanceFloats: pixiRows > 0 ? pixiFloats : 0,
         pixiInstanceByte: pixiRows > 0 ? r.pixiInstances.byte : -1,
-        pixiIndexByte: pixiRows > 0 ? r.pixiPackIndices.byte : -1,
-        pixiTableByte: pixiRows > 0 ? r.pixiPackTables.byte : -1,
-        pixiParticlesByte: pixiRows > 0 ? r.pixiPackResults.byte : -1,
+        pixiIndexByte: r.pixiPackIndices ? r.pixiPackIndices.byte : -1,
+        pixiTableByte: r.pixiPackTables ? r.pixiPackTables.byte : -1,
+        pixiTableSlots: pixiExtra ? pixiExtra.tableSlots : GPU_PACK_TABLE_SLOTS,
+        pixiParticlesByte: r.pixiPackResults ? r.pixiPackResults.byte : -1,
+        pixiGlowRows: r.pixiGlowRows && r.pixiGlowRows.bytes > 0 ? pixiExtra.glowRows : 0,
+        pixiGlowByte: r.pixiGlowRows && r.pixiGlowRows.bytes > 0 ? r.pixiGlowRows.byte : -1,
         // W10: each sorting worker's painter state (null: that worker sorts in JS on arrays of its own).
         preRenderPainter: painter?.preRender ? painterStateLayout(r, 'preRenderPainter', n) : null,
         pixiPainter: painter?.pixi ? painterStateLayout(r, 'pixiPainter', n) : null,
@@ -95,6 +101,16 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   } catch {
     return null;
   }
+}
+
+/**
+ * Pixi's pack scratch beyond its entity rows (close-out group B), with the emit's regions: a column table for each
+ * queue buffer it packs (the entities' two, each custom layer's two, two to spare) and the glow batch's rows.
+ */
+function pixiExtraSpec(emit) {
+  if (!emit) return null;
+  const tableSlots = GPU_PACK_TABLE_SLOTS + 2 * ((emit.customLayers && emit.customLayers.length) | 0);
+  return { glowRows: emit.pixiGlowRows | 0, tableSlots, tableBytes: tableSlots * GPU_PACK_COLUMNS.length * 4 };
 }
 
 /** Byte offsets of the emit's regions; -1 for a component block the scene does not have. */
@@ -108,6 +124,7 @@ function emitLayout(r, entities, rows, customLayers) {
       queueAByte: r[`customQueueA${k}`].byte,
       queueBByte: r[`customQueueB${k}`].byte,
       collectorByte: r[`customCollector${k}`].byte,
+      rowsByte: r[`customRows${k}`].byte,
     })),
     entities,
     spriteRendererByte: block(r.spriteRenderer),
@@ -214,7 +231,7 @@ export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit
   if (n <= 0) return 0;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
-  return renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiFloats > 0 ? n : 0, collect, painter, pixiFloats || 15).bytes;
+  return renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiFloats > 0 ? n : 0, collect, painter, pixiFloats || 15, pixiExtraSpec(emit)).bytes;
 }
 
 function stampLayout(r, stamp) {
