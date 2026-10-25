@@ -18,7 +18,6 @@
    walk (E-116), persist_remember is _rememberType0Set; the rows a queue buffer last held are the P_
    columns, the slots of that buffer. */
 #include <stdint.h>
-#include <wasm_simd128.h>
 
 #define INLINE static inline __attribute__((always_inline))
 #define INVALID_TEXTURE 0xffffu
@@ -63,9 +62,6 @@ enum {
 /* persist_frame (E-117): the scene has no ShadowCaster, so a sprite row's shadow terms are the zeros the
    full emit wrote when this buffer last held the row, and the walk leaves them. */
 #define F_NO_CASTERS 16u
-/* W27b: emit_rows expands Adobe roots in float32, four pieces at a time (adobe_root_f32x4), not in double as the
-   JS does: within preRenderEmitAdobe.test.js's tolerance, not bit for bit. */
-#define F_ADOBE_F32 32u
 
 /* Warning kinds, for the JS to replay with its own keys. */
 #define WARN_NO_ANIM 0u    /* sprite: no global animation for (sheet, state), sheet set */
@@ -629,101 +625,61 @@ INLINE int32_t adobe_frame(const AdobeAsset *as, uint32_t clip, double time, int
   return frameIndex;
 }
 
-/* What an Adobe root's pieces are made from: its frame's piece range in its asset and the root's transform. */
-typedef struct {
-  uint32_t start, end;
-  double rootX, rootY, rootC, rootS, rootScaleX, rootScaleY, rootAlpha, pivotX, pivotY, mirrorSign;
-  uint32_t rootTint;
-  const float *pieceX, *pieceY, *pieceScaleX, *pieceScaleY, *pieceAlpha, *pieceAnchorX, *pieceAnchorY;
-  const double *pieceRotC, *pieceRotS;
-  const uint16_t *textureIds;
-} AdobeRun;
-
-/* _emitAdobePieces' prologue for root collector row i (entity idx): 0 when the root draws nothing. */
-INLINE int adobe_run(const Emit *e, uint32_t i, int32_t idx, AdobeRun *r) {
+/* _emitAdobePieces: root collector row i, its pieces from queue row w while the queue has room (cap).
+   Returns the next free row; *overflow is set when pieces did not fit. */
+INLINE uint32_t adobe_root(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double sortKey, uint32_t *overflow) {
+  const int32_t idx = e->cIndex[i];
   const uint32_t id = e->aaAsset[idx];
-  if (id >= e->nAssets) return 0;
+  if (id >= e->nAssets) return w;
   const AdobeAsset *as = &e->dir[id];
-  if (as->kind != ASSET_IN) return 0;
+  if (as->kind != ASSET_IN) return w;
   const uint32_t clip = e->aaClip[idx];
   const int32_t frameIndex = adobe_frame(as, clip, (double)e->aaTime[idx], e->aaLoop[idx] != 0);
-  if (frameIndex < 0) return 0;
+  if (frameIndex < 0) return w;
 
-  r->rootX = (double)e->stX[i];
-  r->rootY = (double)e->stY[i];
+  const double rootX = (double)e->stX[i];
+  const double rootY = (double)e->stY[i];
   const double poseC = (double)e->stRc[i];
   const double poseS = (double)e->stRs[i];
   /* body pose CS x AdobeAnimComponent CS */
   const double ac = (double)e->aaRotC[idx];
   const double asn = (double)e->aaRotS[idx];
-  r->rootC = poseC * ac - poseS * asn;
-  r->rootS = poseS * ac + poseC * asn;
-  r->rootScaleX = (double)e->aaScaleX[idx];
-  r->rootScaleY = (double)e->aaScaleY[idx];
+  const double rootC = poseC * ac - poseS * asn;
+  const double rootS = poseS * ac + poseC * asn;
+  const double rootScaleX = (double)e->aaScaleX[idx];
+  const double rootScaleY = (double)e->aaScaleY[idx];
   const double rootAnchorX = (double)e->aaAnchorX[idx];
   const double rootAnchorY = (double)e->aaAnchorY[idx];
-  r->rootAlpha = (double)e->aaAlpha[idx];
-  r->rootTint = e->aaTint[idx];
+  const double rootAlpha = (double)e->aaAlpha[idx];
+  const uint32_t rootTint = e->aaTint[idx];
 
   const uint64_t absoluteFrame = (uint64_t)(clip < as->clipStartLen ? AT(uint32_t, as->clipStart)[clip] : 0u)
     + (uint64_t)frameIndex;
-  r->start = 0;
-  r->end = 0;
+  uint32_t start = 0;
+  uint32_t end = 0;
   if (absoluteFrame < as->frames) {
-    r->start = AT(uint32_t, as->frameStart)[absoluteFrame];
-    r->end = r->start + AT(uint16_t, as->frameCount)[absoluteFrame];
+    start = AT(uint32_t, as->frameStart)[absoluteFrame];
+    end = start + AT(uint16_t, as->frameCount)[absoluteFrame];
   }
   const double minX = clip < as->minXLen ? (double)AT(float, as->minX)[clip] : as->assetMinX;
   const double minY = clip < as->minYLen ? (double)AT(float, as->minY)[clip] : as->assetMinY;
   const double maxX = clip < as->maxXLen ? (double)AT(float, as->maxX)[clip] : as->assetMaxX;
   const double maxY = clip < as->maxYLen ? (double)AT(float, as->maxY)[clip] : as->assetMaxY;
-  r->pivotX = minX + (maxX - minX) * rootAnchorX;
-  r->pivotY = minY + (maxY - minY) * rootAnchorY;
+  const double pivotX = minX + (maxX - minX) * rootAnchorX;
+  const double pivotY = minY + (maxY - minY) * rootAnchorY;
   /* -1 when exactly one of the root's scales is negative (a reflection): the pieces' rotations flip. */
-  r->mirrorSign = ((r->rootScaleX < 0.0) != (r->rootScaleY < 0.0)) ? -1.0 : 1.0;
+  const double mirrorSign = ((rootScaleX < 0.0) != (rootScaleY < 0.0)) ? -1.0 : 1.0;
 
-  r->pieceX = AT(float, as->px);
-  r->pieceY = AT(float, as->py);
-  r->pieceScaleX = AT(float, as->psx);
-  r->pieceScaleY = AT(float, as->psy);
-  r->pieceRotC = AT(double, as->prc);
-  r->pieceRotS = AT(double, as->prs);
-  r->pieceAlpha = AT(float, as->palpha);
-  r->pieceAnchorX = AT(float, as->pax);
-  r->pieceAnchorY = AT(float, as->pay);
-  r->textureIds = AT(uint16_t, as->ptex);
-  return 1;
-}
-
-/* _emitAdobePieces: root collector row i, its pieces from queue row w while the queue has room (cap).
-   Returns the next free row; *overflow is set when pieces did not fit. */
-INLINE uint32_t adobe_root(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double sortKey, uint32_t *overflow) {
-  const int32_t idx = e->cIndex[i];
-  AdobeRun r;
-  if (!adobe_run(e, i, idx, &r)) return w;
-  const uint32_t start = r.start;
-  const uint32_t end = r.end;
-  const double rootX = r.rootX;
-  const double rootY = r.rootY;
-  const double rootC = r.rootC;
-  const double rootS = r.rootS;
-  const double rootScaleX = r.rootScaleX;
-  const double rootScaleY = r.rootScaleY;
-  const double rootAlpha = r.rootAlpha;
-  const uint32_t rootTint = r.rootTint;
-  const double pivotX = r.pivotX;
-  const double pivotY = r.pivotY;
-  const double mirrorSign = r.mirrorSign;
-  const float *pieceX = r.pieceX;
-  const float *pieceY = r.pieceY;
-  const float *pieceScaleX = r.pieceScaleX;
-  const float *pieceScaleY = r.pieceScaleY;
-  const double *pieceRotC = r.pieceRotC;
-  const double *pieceRotS = r.pieceRotS;
-  const float *pieceAlpha = r.pieceAlpha;
-  const float *pieceAnchorX = r.pieceAnchorX;
-  const float *pieceAnchorY = r.pieceAnchorY;
-  const uint16_t *textureIds = r.textureIds;
+  const float *pieceX = AT(float, as->px);
+  const float *pieceY = AT(float, as->py);
+  const float *pieceScaleX = AT(float, as->psx);
+  const float *pieceScaleY = AT(float, as->psy);
+  const double *pieceRotC = AT(double, as->prc);
+  const double *pieceRotS = AT(double, as->prs);
+  const float *pieceAlpha = AT(float, as->palpha);
+  const float *pieceAnchorX = AT(float, as->pax);
+  const float *pieceAnchorY = AT(float, as->pay);
+  const uint16_t *textureIds = AT(uint16_t, as->ptex);
   const float sk = (float)sortKey;
 
   int64_t feetSlot = -1;
@@ -755,125 +711,6 @@ INLINE uint32_t adobe_root(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double
       if (e->qShadowOffY) e->qShadowOffY[w] = 0.0f;
     }
     /* The lowest piece on screen carries the root's shadow. */
-    if (feetSlot < 0 || y >= feetY) {
-      feetY = y;
-      feetSlot = w;
-    }
-    w++;
-  }
-  if (feetSlot >= 0) queue_shadow(e, (uint32_t)feetSlot, idx);
-  if (p < end) *overflow = 1;
-  return w;
-}
-
-/* Four of an asset's piece rotations (doubles) as float32 lanes. */
-INLINE v128_t load_f64x4_as_f32x4(const double *v) {
-  const v128_t lo = wasm_f32x4_demote_f64x2_zero(wasm_v128_load(v));
-  const v128_t hi = wasm_f32x4_demote_f64x2_zero(wasm_v128_load(v + 2));
-  return wasm_i32x4_shuffle(lo, hi, 0, 1, 4, 5);
-}
-
-/* W27b: adobe_root in float32, four pieces a lane each while four fit (the pieces of a frame are consecutive in
-   the asset and in the queue), the rest one at a time with the same float32 arithmetic. The root's transform is
-   computed in double as adobe_root computes it, then rounded once. */
-INLINE uint32_t adobe_root_f32x4(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double sortKey, uint32_t *overflow) {
-  const int32_t idx = e->cIndex[i];
-  AdobeRun r;
-  if (!adobe_run(e, i, idx, &r)) return w;
-  const float rootX = (float)r.rootX;
-  const float rootY = (float)r.rootY;
-  const float rootC = (float)r.rootC;
-  const float rootS = (float)r.rootS;
-  const float scaleX = (float)r.rootScaleX;
-  const float scaleY = (float)r.rootScaleY;
-  const float alpha = (float)r.rootAlpha;
-  const float pivotX = (float)r.pivotX;
-  const float pivotY = (float)r.pivotY;
-  const float mirror = (float)r.mirrorSign;
-  const float sk = (float)sortKey;
-  const v128_t vRootX = wasm_f32x4_splat(rootX);
-  const v128_t vRootY = wasm_f32x4_splat(rootY);
-  const v128_t vRootC = wasm_f32x4_splat(rootC);
-  const v128_t vRootS = wasm_f32x4_splat(rootS);
-  const v128_t vScaleX = wasm_f32x4_splat(scaleX);
-  const v128_t vScaleY = wasm_f32x4_splat(scaleY);
-  const v128_t vAlpha = wasm_f32x4_splat(alpha);
-  const v128_t vPivotX = wasm_f32x4_splat(pivotX);
-  const v128_t vPivotY = wasm_f32x4_splat(pivotY);
-  const v128_t vMirror = wasm_f32x4_splat(mirror);
-  const v128_t vTint = wasm_i32x4_splat((int32_t)r.rootTint);
-  const v128_t vSortKey = wasm_f32x4_splat(sk);
-  const v128_t vZero = wasm_f32x4_splat(0.0f);
-  const uint32_t typeWord = 0x06060606u;
-
-  int64_t feetSlot = -1;
-  float feetY = 0.0f;
-  uint32_t p = r.start;
-  const uint32_t end = r.end;
-  for (; p + 4 <= end && w + 4 <= cap; p += 4) {
-    const v128_t lx = wasm_f32x4_mul(wasm_f32x4_sub(wasm_v128_load(r.pieceX + p), vPivotX), vScaleX);
-    const v128_t ly = wasm_f32x4_mul(wasm_f32x4_sub(wasm_v128_load(r.pieceY + p), vPivotY), vScaleY);
-    const v128_t y = wasm_f32x4_add(wasm_f32x4_add(vRootY, wasm_f32x4_mul(vRootS, lx)), wasm_f32x4_mul(vRootC, ly));
-    const v128_t x = wasm_f32x4_sub(wasm_f32x4_add(vRootX, wasm_f32x4_mul(vRootC, lx)), wasm_f32x4_mul(vRootS, ly));
-    wasm_v128_store(e->qX + w, x);
-    wasm_v128_store(e->qY + w, y);
-    wasm_v128_store(e->qScaleX + w, wasm_f32x4_mul(wasm_v128_load(r.pieceScaleX + p), vScaleX));
-    wasm_v128_store(e->qScaleY + w, wasm_f32x4_mul(wasm_v128_load(r.pieceScaleY + p), vScaleY));
-    const v128_t pc = load_f64x4_as_f32x4(r.pieceRotC + p);
-    const v128_t ps = wasm_f32x4_mul(load_f64x4_as_f32x4(r.pieceRotS + p), vMirror);
-    wasm_v128_store(e->qRotC + w, wasm_f32x4_sub(wasm_f32x4_mul(vRootC, pc), wasm_f32x4_mul(vRootS, ps)));
-    wasm_v128_store(e->qRotS + w, wasm_f32x4_add(wasm_f32x4_mul(vRootS, pc), wasm_f32x4_mul(vRootC, ps)));
-    wasm_v128_store(e->qAlpha + w, wasm_f32x4_mul(wasm_v128_load(r.pieceAlpha + p), vAlpha));
-    wasm_v128_store(e->qTint + w, vTint);
-    __builtin_memcpy(e->qTexture + w, r.textureIds + p, 8);
-    wasm_v128_store(e->qAnchorX + w, wasm_v128_load(r.pieceAnchorX + p));
-    wasm_v128_store(e->qAnchorY + w, wasm_v128_load(r.pieceAnchorY + p));
-    if (e->qType) __builtin_memcpy(e->qType + w, &typeWord, 4);
-    if (e->tilesDirty) {
-      for (uint32_t k = 0; k < 4; k++) clear_tiles(e, w + k);
-    }
-    if (e->qSortKey) wasm_v128_store(e->qSortKey + w, vSortKey);
-    if (e->qShadowH) {
-      wasm_v128_store(e->qShadowH + w, vZero);
-      if (e->qShadowOffX) wasm_v128_store(e->qShadowOffX + w, vZero);
-      if (e->qShadowOffY) wasm_v128_store(e->qShadowOffY + w, vZero);
-    }
-    /* The lowest piece on screen carries the root's shadow: the lanes in order, as one at a time. */
-    const float y0 = wasm_f32x4_extract_lane(y, 0);
-    const float y1 = wasm_f32x4_extract_lane(y, 1);
-    const float y2 = wasm_f32x4_extract_lane(y, 2);
-    const float y3 = wasm_f32x4_extract_lane(y, 3);
-    if (feetSlot < 0 || y0 >= feetY) { feetY = y0; feetSlot = w; }
-    if (y1 >= feetY) { feetY = y1; feetSlot = w + 1; }
-    if (y2 >= feetY) { feetY = y2; feetSlot = w + 2; }
-    if (y3 >= feetY) { feetY = y3; feetSlot = w + 3; }
-    w += 4;
-  }
-  for (; p < end && w < cap; p++) {
-    const float lx = (r.pieceX[p] - pivotX) * scaleX;
-    const float ly = (r.pieceY[p] - pivotY) * scaleY;
-    const float y = (rootY + rootS * lx) + rootC * ly;
-    e->qX[w] = (rootX + rootC * lx) - rootS * ly;
-    e->qY[w] = y;
-    e->qScaleX[w] = r.pieceScaleX[p] * scaleX;
-    e->qScaleY[w] = r.pieceScaleY[p] * scaleY;
-    const float pc = (float)r.pieceRotC[p];
-    const float ps = (float)r.pieceRotS[p] * mirror;
-    e->qRotC[w] = rootC * pc - rootS * ps;
-    e->qRotS[w] = rootS * pc + rootC * ps;
-    e->qAlpha[w] = r.pieceAlpha[p] * alpha;
-    e->qTint[w] = r.rootTint;
-    e->qTexture[w] = r.textureIds[p];
-    e->qAnchorX[w] = r.pieceAnchorX[p];
-    e->qAnchorY[w] = r.pieceAnchorY[p];
-    if (e->qType) e->qType[w] = 6;
-    if (e->tilesDirty) clear_tiles(e, w);
-    if (e->qSortKey) e->qSortKey[w] = sk;
-    if (e->qShadowH) {
-      e->qShadowH[w] = 0.0f;
-      if (e->qShadowOffX) e->qShadowOffX[w] = 0.0f;
-      if (e->qShadowOffY) e->qShadowOffY[w] = 0.0f;
-    }
     if (feetSlot < 0 || y >= feetY) {
       feetY = y;
       feetSlot = w;
@@ -934,13 +771,12 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
     w = n;
   } else {
     /* emitSpriteQueue's loop: until the collector or the queue runs out. */
-    const int adobeF32 = (flags & F_ADOBE_F32) != 0;
     w = 0;
     for (uint32_t i = 0; i < count && w < maxItems; i++) {
       const uint8_t ty = cType[i];
       if (ty == 6) {
         const double sk = e.sortKey ? order_key(&e, i, e.cIndex[i]) : (double)e.cY[i];
-        w = adobeF32 ? adobe_root_f32x4(&e, i, w, maxItems, sk, &overflow) : adobe_root(&e, i, w, maxItems, sk, &overflow);
+        w = adobe_root(&e, i, w, maxItems, sk, &overflow);
         continue;
       }
       if (ty == 0) {
