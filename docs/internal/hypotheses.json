@@ -962,7 +962,8 @@
         "R-0627",
         "R-0630",
         "R-0632",
-        "R-0633"
+        "R-0633",
+        "R-0634"
       ]
     },
     {
@@ -8150,6 +8151,22 @@
       "kind": "js",
       "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom pre-render 20.516 → 15.818 ms (−19.7 %, 0/4); the renderer's step +18.4 % with its busy time per second flat (more frames delivered); with no glow rows no slot list either (8d67f225): pre-render 16.479 → 14.819 ms (−10.6 %, 0/4)",
       "next": "Nothing on its own; W27b (the Adobe expansion in float32 and SIMD) is the next cost in that pre-render."
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [
+        "R-0634"
+      ],
+      "id": "W30",
+      "title": "Pixi's copies out of the render-queue memory by WebAssembly memory.copy into a private memory",
+      "status": "kept",
+      "statusText": "opened and kept 2026-10-25 (from the adobeAnimateScene profile: commitSplit 65 % of Pixi)",
+      "date": "2026-10-25",
+      "area": "pixi",
+      "kind": "wasm",
+      "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom, renderer 7.939 → 6.545 ms (−17.8 %, 0/8); the copy 1.99 → 1.25 ms for 15 MB in Chrome 155",
+      "next": "The glow and shadow batches (_commitPackedBatch) into arenas of their own; a Predator pair."
     }
   ],
   "records": [
@@ -13778,6 +13795,18 @@
       "title": "WASM close-out step 4 screened: engine.wasm saves 1.3 KB and <1 ms of compile per worker; not done",
       "verdict": "screened",
       "text": "**WASM close-out step 4 screened: one engine.wasm saves 1.3 KB and under a millisecond of compile per worker; not worth the posted-Module change it needs.** 2026-10-25.\n\nThe plan's step 4 links every kernel into one engine.wasm. A trial build (buildWasm.mjs with a module of several sources, the 18 product kernels linked by wasm-ld, the kernel rules passing; not committed): **231 270 B, 58 735 B gzipped**, against the 18 modules' 232 563 B and 61 055 B gzipped. The helpers repeated in several sources (js_fmod, js_toint32 and the like) are small, so a shared header would save little more. Compile time (Node, WebAssembly.compile, medians of 20): all 18 modules 1.71 ms, engine.wasm 0.48 ms; per worker, its own kernels take 0.14 ms (spatial), 0.62 ms (particle), 0.81 ms (pre-render) and 0.32 ms (Pixi). And one module embedded in each of the four workers that use kernels would add about 230 KB to the bundle (each worker carries 78 KB of base64 instead of its own kernels), unless the main thread compiles it once and posts the WebAssembly.Module, a change to every worker's init and to the --src path. The merge buys tidiness, not speed or size; it is not done. W7 (the whole spatial step in one call) does not need it: gather, publish and rebuild can share a module of their own if W6's +10.9 % ever justifies it."
+    },
+    {
+      "id": "R-0634",
+      "date": "2026-10-25",
+      "time": "04:12",
+      "timeFrom": "recorded",
+      "title": "W30: Pixi's copies by memory.copy into a private memory; adobeAnimateScene (min zoom) Pixi -17.8 %",
+      "verdict": "kept",
+      "text": "**W30: Pixi's copies out of the render-queue memory by WebAssembly memory.copy into a private memory.** 2026-10-25.\n\nWhy: E-123 has every batch upload from arrays of its own (uploading from the shared rows made the other workers slower), so every frame Pixi copies the rows pre-render or its own pack wrote. In adobeAnimateScene at the minimum zoom `commitSplit` was 65 % of Pixi's 359 ms/s (the copy of 261 788 rows, 15.7 MB a frame); in bulletStressScene 28 %; in Predator `_commitPackedBatch` 10 %. TypedArray.set from a view of a shared memory copies word by word (V8's relaxed memcpy for shared buffers); WebAssembly's memory.copy between two memories (multi-memory: Chrome 120, Firefox 125) is the engine's memmove. A screen in Chrome 155 (chromeKernel.mjs, 15 MB): TypedArray.set from shared into a plain array 1.985 ms, memory.copy from the shared memory into an unshared one 1.25 ms (−37 %), memory.copy inside the shared memory 1.31 ms; Node 12.4 runs the same module.\n\nThe change (da139ae4): `src/render/sharedCopy.js` holds the copy module, assembled by hand (C has no syntax for a second memory; its WAT is in the comment), and `createPrivateArena`: an unshared WebAssembly.Memory made at its full size and never grown, so its buffer is an ordinary ArrayBuffer the upload reads as before, with a bump allocator. Pixi makes one for the entity batch (its two streams at their widest, 17 floats a row); `InstancedSpriteBatch.copyIn` takes every copy into the arena by memory.copy (commitSplit, the W9d and W9e uploads, `_commitPackedBatch`) and anything else by TypedArray.set. Without multi-memory (no arena) the batch keeps its arrays. sharedCopy.test.js: the copy bit for bit (NaN and -0 patterns), the arena's arrays aligned and its end refused, a batch in the arena committing the bytes a batch without one commits, by memory.copy; a length mutant fails it.\n\nScene: adobeAnimateScene, `--camera-zoom min`, `--vs 987db5f5 --hyp-rev cbf074f8` (the same tree as da139ae4, whose message was amended with these numbers), Chrome, headed, source, Pixi the owner. The first 4 pairs: renderer 7.780 → 6.594 ms (−15.2 %, 0/4), but spatial, which the change does not reach, +4.0 % (worse 4/4, cv 1/3 %; +2.4 % against the others). An A/A in the same sitting (cbf074f8 on both sides, 4 pairs) moved physics +2.6 % (3/4) and spatial +1.0 %, so the sitting grew by 4 pairs (`--append`). **8 pairs: renderer 7.939 → 6.545 ms, −17.8 %, worse 0/8** (cv 2/3 %), −15.6 % against the other workers (8/8); spatial 5.356 → 5.348 ms (+0.6 %, 5/8), physics −0.7 %, pre-render −0.9 %; RENDER_QUEUE_SIZE 261 778 on both sides; presented 60. **KEPT (product).**\n\nNext: the other batches Pixi commits from the render-queue memory (the glow batch, the shadow casters' sun, stamp and cookie batches: `_commitPackedBatch`, 10 % of Predator's Pixi) into arenas of their own.",
+      "commits": [
+        "da139ae4"
+      ]
     }
   ],
   "leads": [
