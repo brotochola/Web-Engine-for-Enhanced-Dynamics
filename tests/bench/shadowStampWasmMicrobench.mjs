@@ -99,7 +99,8 @@ function toleranceChecksum(k, run) {
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'js');
+  // The shipped path by default (the engine catalog runs it with no flags); js is the reference.
+  const variant = String(args.variant || 'wasm');
   if (!(variant in STAMP_VARIANTS)) throw new Error(`unknown variant ${variant} (${Object.keys(STAMP_VARIANTS).join(', ')})`);
   const opts = {};
   if (args['max-per-entity'] !== undefined) opts.maxPerEntity = Number(args['max-per-entity']);

@@ -530,8 +530,9 @@ export const ENGINE_FEATURES = [
   {
     id: 'shadowStamp',
     name: 'Shadow caster stamp',
-    module: 'src/render/gpuShadowCasters.js',
-    kernel: { script: 'tests/bench/shadowStampMicrobench.mjs', opsKey: 'cases.stamp.opsPerSec' },
+    // shadowStamp.wasm only (the JS stamp is tests/reference/shadowStamp.mjs): the kernel's microbench, wasm.
+    module: 'src/render/shadowStampClient.js',
+    kernel: { script: 'tests/bench/shadowStampWasmMicrobench.mjs', opsKey: 'cases.stamp.opsPerSec' },
     scene: null,
     primary: ['preRender_STEP_MS'],
     load: [],
