@@ -8127,6 +8127,24 @@
       "kind": "js",
       "result": "kept (product) 2026-10-25: bulletStressScene?bullets=64000 pre-render 3.623 → 3.016 ms (−17.3 %, 0/4) against W4d; the first version (mask 0 only) tied, since a default bullet's mask is the entities layer's bit",
       "next": "Nothing: the glow and particle collects are separate rows of item 7."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-138"
+      ],
+      "records": [
+        "R-0629"
+      ],
+      "id": "E-138",
+      "title": "A frame whose emit expands its rows sorts the collector before the emit, and packs the queue in order",
+      "status": "kept",
+      "statusText": "opened and kept 2026-10-25 (from the adobeAnimateScene profile and a kernel screen of the pack)",
+      "date": "2026-10-25",
+      "area": "pre-render",
+      "kind": "js",
+      "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom pre-render 20.516 → 15.818 ms (−19.7 %, 0/4); the renderer's step +18.4 % with its busy time per second flat (more frames delivered)",
+      "next": "Nothing on its own; W27b (the Adobe expansion in float32 and SIMD) is the next cost in that pre-render."
     }
   ],
   "records": [
@@ -13690,6 +13708,19 @@
         "59aceb37",
         "ece24bf1",
         "671eda34"
+      ]
+    },
+    {
+      "id": "R-0629",
+      "date": "2026-10-25",
+      "time": "03:11",
+      "timeFrom": "recorded",
+      "title": "E-138: the collector sorted before the emit when it expands its rows; adobeAnimateScene (min zoom) pre-render -19.7 %",
+      "verdict": "kept",
+      "text": "**E-138: a frame whose emit expands its rows sorts the collector before the emit.** 2026-10-25.\n\nWhy: in adobeAnimateScene at the minimum zoom (20 000 characters, 261 744 queue rows), pre-render is saturated (818 ms/s) and spends 33.8 % in `pack_sprites_split_scatter`, 12.9 % in `painter_order_simd` and 2.5 % in `fillQueueIndices`. The painter sorts the queue's runs (E-103), and the pack then writes each row to its painter slot: a random write per root's run. A kernel screen of the shipped pack on that shape (Node, 261 744 rows): runs of 13 in random order 5.31 ms, the queue already in order 2.41 ms (the gather is worse, 7.07 ms).\n\nThe change (355ee06e, its gate fixed in 95e03c4c): when last frame's emit wrote at least twice the rows it was given, buildRenderQueue stably sorts the collector and its pose stash by the keys the emit will write (the painter's radix), so the queue comes out in painter order; _packGpuSprites packs it as it is, with no painter and no slot list, and sets GPU_FLAG_SORTED. Only with pre-render's painter, no sun casters (packed in queue order) and a queue that did not fill. Equal keys keep the collector's order, as the painter's full sort does (its reinsert of moved keys, which these frames skip, puts them after the unmoved ones). Tests: the queue emitted from the sorted collector is the emitted queue sorted by key, every column, frame after frame (two mutants fail it); the presorted queue packs to the rows the painter packs; real frames (resetFrameCounters, the collector, buildRenderQueue) sort from the second on.\n\nFirst pair, a tie that measured nothing: the gate read _emitWriteCount, which resetFrameCounters clears at the start of every frame, so the presort never ran (adobeAnimateScene at the minimum zoom, `--vs a3300db3 --hyp-rev 355ee06e`, 4 pairs: pre-render 20.638 → 20.286 ms, −1.5 %, the painter and the scatter still in the profile). An earlier pair at the default zoom was under the floor (936 characters, 12 251 rows).\n\n**Scene, with the gate fixed:** adobeAnimateScene, `--camera-zoom min`, `--vs a3300db3 --hyp-rev 95e03c4c`, 4 pairs, Chrome, headed, source, detailed stats off: **pre-render 20.516 → 15.818 ms, −19.7 %, worse 0/4** (cv 6/5 %), −21.5 % against the other workers; RENDER_QUEUE_SIZE 261 792 and 261 789; VISIBLE_ENTITIES 20 000 both. The tool called it REGRESSION for the renderer: 6.432 → 7.658 ms per step (+18.4 %, 4/4). The change does not reach Pixi (the GPU rows are the same), and its busy time per second did not move: CPU profiles of the scene before and after, 366 and 359 ms/s, pre-render 818 and 681 ms/s. Pre-render was saturated and delivered fewer frames (its FPS in the pairs 54.8 against 57.8), so more of Pixi's steps now commit a new frame (`commitSplit` +19 % per second) and fewer are empty: the consumer of a faster producer, read against its load as the rules ask. **KEPT (product).**\n\nLesson: a gate that reads per-frame state must be tested across real frames; every unit test passed with the presort never running in a scene.",
+      "commits": [
+        "355ee06e",
+        "95e03c4c"
       ]
     }
   ],
