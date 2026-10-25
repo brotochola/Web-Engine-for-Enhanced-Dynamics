@@ -13,12 +13,18 @@
  *   js    the shipped methods with no kernel bound (emitSpriteQueue's loop and _emitAdobePieces)
  *   wasm  the same with the kernel bound, as initialize binds it; a frame the kernel declines runs the JS
  *         (kernelFrames in the report counts the frames it took)
+ *   wasm-f32x4  W27b: the kernel expanding the roots in float32, four pieces at a time (EMIT_ADOBE_F32). Not bit for
+ *         bit, so its checksum frames run in lock-step: each frame's exact emit makes the hash (wasm's checksum),
+ *         then the float32 emit from the same state must match it within F32_TOLERANCE (positions 2e-3 px,
+ *         scales and rotations 1e-5, alpha 1e-6, every other column exact); the checksum names the first value
+ *         outside it otherwise. The timed frames run the float32 emit.
  *
  * The asset is the demo's (demos/fla/willian/willian2), compiled by AdobeAnimCompiler as the scene compiles it,
  * with texture ids of its own (no atlas here). The checksum covers every queue column of every written row and
  * AdobeAnimComponent's clocks after each of 45 frames (an advance then an emit).
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderEmitAdobeMicrobench.mjs --variants js,wasm --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderEmitAdobeMicrobench.mjs --variants wasm,wasm-f32x4 --rounds 5
  *   node tests/bench/preRenderEmitAdobeMicrobench.mjs --variant wasm [--scale 0.1] [--output path]
  */
 import fs from 'node:fs';
@@ -200,8 +206,14 @@ export async function setupAdobeEmit(seed = 0xad0be) {
     a.playing.set(clocks.playing);
     worker._persistCount = [0, 0];
   };
-  return { worker, bound, use, emit, advance, hashFrame, reset, pieces: asset.pieceX.length };
+  return { worker, bound, use, emit, advance, hashFrame, reset, columns, pieces: asset.pieceX.length };
 }
+
+/** W27b: how far the float32 expansion may land from the double one, per column (absent: exact). */
+const F32_TOLERANCE = {
+  renderQueueX: 2e-3, renderQueueY: 2e-3, renderQueueScaleX: 1e-5, renderQueueScaleY: 1e-5,
+  renderQueueRotC: 1e-5, renderQueueRotS: 1e-5, renderQueueAlpha: 1e-6,
+};
 
 function hashBytes(h, bytes) {
   for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 16777619) >>> 0;
@@ -210,9 +222,10 @@ function hashBytes(h, bytes) {
 
 async function main() {
   const variant = String(ARGS.variant || 'js');
-  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  if (!['js', 'wasm', 'wasm-f32x4'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  const f32 = variant === 'wasm-f32x4';
   const k = await quietly(() => setupAdobeEmit(Number(ARGS.seed ?? 0xad0be)));
-  k.use(variant === 'wasm');
+  k.use(variant !== 'js');
 
   // 45 frames from the fixture's state, each an advance then an emit; the frames the kernel took, counted.
   let kernelFrames = 0;
@@ -224,18 +237,40 @@ async function main() {
   };
   let checksum = 2166136261;
   let written = 0;
-  for (let f = 0; f < FRAMES; f++) {
+  for (let f = 0; f < FRAMES && typeof checksum === 'number'; f++) {
     k.advance();
+    k.worker._emitAdobeF32 = false;
     written = k.emit();
     checksum = Math.imul(checksum ^ written, 16777619) >>> 0;
     checksum = k.hashFrame(checksum, written);
+    if (f32) {
+      const exact = k.columns.map((c) => k.worker[c].slice(0, written));
+      k.worker._emitAdobeF32 = true;
+      const again = k.emit();
+      if (again !== written) checksum = `frame ${f}: ${again} rows, not ${written}`;
+      k.columns.forEach((c, n) => {
+        if (typeof checksum !== 'number') return;
+        const got = k.worker[c];
+        const tol = F32_TOLERANCE[c];
+        for (let r = 0; r < written; r++) {
+          const ok = tol === undefined ? Object.is(got[r], exact[n][r]) : Math.abs(got[r] - exact[n][r]) <= tol;
+          if (!ok) {
+            checksum = `frame ${f}: ${c}[${r}] ${got[r]}, the double emit wrote ${exact[n][r]}`;
+            return;
+          }
+        }
+      });
+    }
   }
+  k.worker._emitAdobeF32 = f32;
   k.bound.emitRows = realRows;
+  // In lock-step every frame was emitted twice.
+  if (f32) kernelFrames /= 2;
   k.reset();
 
   // Normal compiles, not OSR: short calls over the first 64 characters.
   let tier = null;
-  if (variant === 'wasm') {
+  if (variant !== 'js') {
     tier = await warmWasm(k.bound.emitRows, () => k.emit(64));
     if (typeof k.bound.adobeAdvance === 'function') await warmWasm(k.bound.adobeAdvance, () => k.advance(64));
     else warmNormalCompile(() => k.advance(64));
