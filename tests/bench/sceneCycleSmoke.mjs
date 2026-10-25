@@ -1,8 +1,8 @@
 // Scene-cycle smoke test: repeatedly load + destroy a scene in one page and
 // verify teardown leaves no broken state behind (Layer/NavGrid/Sound statics),
 // no page errors occur, and the JS heap does not grow monotonically.
-// --commit (Windows; WASM_HYPOTHESES L3): also the commit charge (private bytes) of the browser and every process
-// under it, before the first scene, after each cycle and after the engine is destroyed: every shared memory a scene
+// --commit (Windows; WASM_HYPOTHESES L3): also the commit charge (private bytes) of this process, the browser and
+// every process under it, before the first scene, after each cycle and after the engine is destroyed: every shared memory a scene
 // makes (Box2D's with the engine block, the particle, decal, navigation and spatial memories) is committed whole
 // when it is made, and the scene's teardown must give it back. Fails when the last cycle's commit is more than
 // 128 MB over the first's, or the commit after destroy more than 128 MB over the start.
@@ -94,7 +94,8 @@ async function main() {
     });
 
     // One evaluate sets the engine up, one runs each cycle (so the commit can be read between them), one destroys it.
-    const pid = browser.process()?.pid;
+    // The browser is a child of this process: its tree and this process (a steady base) are what is summed.
+    const pid = process.pid;
     const commit = () => (sampleCommit ? commitMB(pid) : null);
     await page.evaluate(
       async ({ sceneModule, sceneExport }) => {
