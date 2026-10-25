@@ -635,7 +635,18 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
    `physics.wasmMemoryMB`). Then the JS emit, persist path and Adobe expansion moved to
    `tests/reference/preRenderEmitJs.mjs` (`installEmitJs` puts them back on a worker for the parity tests),
    `wasm.preRenderEmit` and `wasm.preRenderEmitAdobe` went, and a queue the kernel cannot take is drawn empty with
-   one error (`_emitRefused`); every scene boots on it (the boot sweep of that day).
+   one error (`_emitRefused`); every scene boots on it (the boot sweep of that day). The batch's gates (R-0638,
+   with E-138's presort in the painter kernel, the light cookies and Pixi's glow and custom-layer batches through
+   gpuPack.wasm): Predator neutral (pre-render −0.1 %), `adobeAnimateScene` at the minimum zoom pre-render +2.5 %
+   over 8 pairs (worse 7/8, under the 3 % line, near the session's 8-pair limit of about 2 %): kept as hygiene.
+   Open: spatial +3.65 % there (7/8), which no change reaches; the batch moved regions within Box2D's block.
+   Then gpuPack's JS left `src/`: `packInstancedRows`, `packSplitRows`, `splitInterleavedRows`, the pose batch's
+   packers and the pixel snap are `tests/reference/gpuPackJs.mjs` (`installBatchPackJs` puts them back on a batch
+   for the parity tests); `wasm.gpuPack`, `wasm.pixiPack` and `wasm.gpuPackSplit` went; a call the kernel cannot
+   pack is drawn empty with one error, and in pre-render pack mode Pixi packs nothing of its own (a GPU queue
+   frame it cannot commit is drawn empty). Left in group B: the painter sort (Pixi's y-sorted custom layers sort
+   in JS, and a worker without a painter state sorts E-138's presort in JS), the collect's hand-backs, the bullet
+   tick's compound and chain colliders, the decoration sway's JS loops and the visibility kernels' JS.
 4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
    fdlibm sin/cos), compiled with clang and linked by `wasm-ld` into one `engine.wasm`; the main thread compiles it
    once and posts the `WebAssembly.Module` to the workers, each of which instantiates it once per memory it uses.
