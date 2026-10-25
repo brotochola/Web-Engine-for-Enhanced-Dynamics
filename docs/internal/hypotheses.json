@@ -963,7 +963,8 @@
         "R-0630",
         "R-0632",
         "R-0633",
-        "R-0634"
+        "R-0634",
+        "R-0638"
       ]
     },
     {
@@ -13847,6 +13848,32 @@
       "text": "**E-138, fewer stores (3fa72bbd): kept, a decision on R-0636's trade.** 2026-10-25.\n\nR-0636's pair (adobeAnimateScene, `--camera-zoom min`, 4 pairs) moved pre-render 13.125 → 11.369 ms (−14.5 %, 0/4) and the renderer 6.565 → 6.916 ms (+5.5 %, 4/4), which the gate counts as a regression (another worker 3 % or more worse). The owner left the call to the session, with the scene's bottleneck as the criterion. At that zoom the worker that bounds the frame is pre-render: STEP_MS − WAIT_MS 11.4 ms on side B (load 65–69 %), against physics 7.7 ms (46 %), the renderer 6.9 ms (41 %), spatial 5.4 ms and logic 2.5 ms. The change takes 1.76 ms off that worker and puts 0.35 ms on one that stays 4.5 ms below it, so the headroom of the frame grows by the pre-render gain. **Kept.** Revisit if a scene where Pixi bounds the frame takes the presorted path (Adobe pieces at twice the collector's rows), since there the trade would go the other way.",
       "commits": [
         "3fa72bbd"
+      ]
+    },
+    {
+      "id": "R-0638",
+      "date": "2026-10-25",
+      "time": "15:38",
+      "timeFrom": "recorded",
+      "title": "WASM close-out step 3, group B's first batch: the emit writes every row type and its JS left src/; gates: Predator neutral, adobeAnimateScene pre-render +2.5 % over 8 pairs (under the line)",
+      "verdict": "kept-hygiene",
+      "text": "**WASM close-out step 3, group B's first batch: the emit writes every row type and its JS left `src/`; E-138's presort, the light cookies and Pixi's glow and custom-layer batches through the kernels. Kept as hygiene; pre-render on adobeAnimateScene at the minimum zoom is +2.5 % over 8 pairs, under the 3 % line.** 2026-10-25.\n\nThe owner's direction for group B: only well-tested, optimized WASM; the JS copies of the kernels leave the engine. The inventory of that day (every kernel's fallbacks with the defaults on) found the emit's JS running on these cases, now covered by the kernel:\n\n- glow rows (type 3): LightEmitter among the emit's blocks, the light entity's Transform x and y from the collect's (019deec1);\n- particle rows (type 1): the particle memory a region of the render-queue memory (a120ab97);\n- LiquidFun rows (type 7): its render buffer and pre-render's previous positions there (0f05ae2f), LiquidFun's heap views on each worker's own handle of the block, since a posted SharedArrayBuffer is another object for the same memory (6e726b47; liquidFunStressScene's JS loop ran on 239 of 240 frames before);\n- a persist frame's rows of other types, in a loop of their own (e50a4b96);\n- Adobe assets the JS took (plain arrays copied in; no room in preRender.adobeTablesMB, malformed, or past 256 ids is an error, not drawn: 91aeb79b);\n- custom sprite layers: their queues and collectors in the memory, the collector stashing the collect's poses (495507c9; platformerGameScene's bloom layer 300 of 300 frames in the kernel);\n- BulletComponent without the bullet tick's regions (a15dafe7), the collect's blocks whatever wasm.preRenderCollect says (a1d48827), wasm.box2dBlock gone, a block that cannot fit an error (89b0437d).\n\nThen the JS emit, the persist path's JS and the Adobe expansion and clocks moved to tests/reference/preRenderEmitJs.mjs (6ef34205; installEmitJs puts them on a worker for the parity tests), wasm.preRenderEmit and wasm.preRenderEmitAdobe went, and a queue the kernel cannot take is drawn empty with one error. In the same batch: E-138's presort sorts in pre-render's painter kernel (e757a165), the light cookies are a render queue in the stamp's regions packed by gpuPack.wasm (7769e579), Pixi's glow batch (pixi pack mode) and the custom layers' batches pack through gpuPack.wasm (95361ced), and Pixi packs nothing of its own on frames pre-render packed (587c5f60). The node suite passed at each commit, and every scene boots (61, source, Chrome).\n\n**Gates** (`runPredatorAbab --vs 17028648 --hyp-rev 587c5f60 --owner preRender`, worktrees, headed, detailed stats off, AB BA order):\n\n- Predator, 4 pairs: NEUTRAL. Pre-render 3.789 → 3.767 ms (−0.1 %, worse 2/4, cv 5/4 %); logic +0.3 %, spatial +1.5 %, renderer +1.0 %; physics +5.4 % (2/4, cv 11 %), not blocking. Load keys flat (bodies, casters, visible entities within 0.3 %).\n- adobeAnimateScene at the minimum zoom, where pre-render is the bottleneck (11 ms against Pixi's 6.9): the first 4 pairs read pre-render 10.999 → 11.461 ms, +4.6 % (worse 4/4, cv 1/3 %; pairs +8.5, +1.3, +6.4, +2.8 %), and spatial +3.5 % (4/4), which the runner called REGRESSION.\n- The session's A/A on that scene (587c5f60 against itself, 4 pairs): pre-render +1.4 % (pairs +0.5, −0.5, +2.4, +4.3 %), spatial +1.8 % (−2.8 to +5.2 %), physics +0.1 %, renderer −1.6 %. Detection limits (2.5 × the pairs' spread / √pairs): pre-render about 2.7–3.1 % at 4 pairs and 1.9–2.2 % at 8; spatial about 4.7 % and 3.4 %.\n- 4 more pairs, a fresh sitting of the same two revisions and protocol (`--append` refuses a working tree that changed, and only tests outside `src/` had): pre-render 11.059 → 11.155 ms, +1.1 % (3/4); spatial +3.9 % (3/4); physics −3.2 %, renderer −1.1 %.\n- All 8 pairs: pre-render median **+2.5 %** (mean +2.8 %), worse 7/8; against the other workers +1.9 % (6/8). By run order: B second (AB) median +5.3 %, B first (BA) +1.7 %, a run-order effect of about 2 % on this scene that the alternating order cancels in the mean.\n- A profile pair with detailed stats on (2 pairs, AB) read B faster: pre-render 11.67 → 10.98 and 11.69 → 11.56 ms; pack 3.74/3.66 → 3.37/3.40 ms (−8 %), emit 4.96/4.74 → 4.73/5.12 ms, collect 1.35/1.51 → 1.43/1.51 ms. No phase shows the cost the gate reads.\n\nVerdict: **kept (hygiene)**. Pre-render, the bottleneck, is +2.5 % over 8 pairs: under the 3 % line, near the 8-pair limit, and not in any phase timer. Open: spatial is +3.65 % over the 8 pairs (worse 7/8), just over its 8-pair limit, though no change in the batch reaches spatial's work. The batch moved regions within Box2D's block (LightEmitter, the particle memory, LiquidFun's buffers, BulletComponent, the presort keys), so a layout effect is the first suspect. Spatial is not that scene's bottleneck (5.4 ms against pre-render's 11).",
+      "commits": [
+        "019deec1",
+        "a120ab97",
+        "0f05ae2f",
+        "6e726b47",
+        "e50a4b96",
+        "91aeb79b",
+        "495507c9",
+        "a15dafe7",
+        "a1d48827",
+        "89b0437d",
+        "6ef34205",
+        "e757a165",
+        "7769e579",
+        "95361ced",
+        "587c5f60"
       ]
     }
   ],
