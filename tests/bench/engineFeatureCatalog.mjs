@@ -73,10 +73,10 @@ export const ENGINE_FEATURES = [
   {
     id: 'integrate',
     name: 'Particle integrate',
-    module: 'src/util/particleIntegrate.js',
-    // build + updateParticlePhysicsBuffers at 50% pool occupancy. The old key
-    // (cases.buildActiveListBuffers) never existed in the JSON.
-    kernel: { script: 'tests/bench/particleIntegrateMicrobench.mjs', opsKey: 'cases.occ50_integrate.opsPerSec' },
+    // particleIntegrate.wasm only (the JS integrate is tests/reference/particleIntegrate.mjs): the kernel's microbench,
+    // its shipped float32 form.
+    module: 'src/workers/particleIntegrateClient.js',
+    kernel: { script: 'tests/bench/particleIntegrateWasmMicrobench.mjs', opsKey: 'cases.integrate.opsPerSec' },
     scene: {
       key: 'particleIntegrate',
       path: '/tests/bench/stressScenes/particleIntegrateStressScene.js',

@@ -280,7 +280,8 @@ export async function createIntegrateRig(maxParticles = MAX_PARTICLES, { f32: wi
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'base');
+  // The shipped integrate by default (the engine catalog runs it with no flags); base is the JS reference.
+  const variant = String(args.variant || 'wasm-f32x4');
   const mix = String(args.case || 'tween');
   if (!['base', 'wasm', ...Object.keys(INTEGRATE_F32_EXPORTS)].includes(variant)) throw new Error(`unknown variant ${variant}`);
   if (!['tween', 'spin'].includes(mix)) throw new Error(`unknown case ${mix}`);
