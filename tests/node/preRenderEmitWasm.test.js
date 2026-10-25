@@ -6,7 +6,8 @@
 // left alone. The mix covers what the kernel copies from the JS: tiled sprites (world and local) and the
 // tiles-dirty frames after them, sprites without an animation or a first frame, play-once ends, zIndex,
 // Y-sort on and off, NaN and -0 shadow terms, decorations with and without a texture, and a collector
-// longer than the queue.
+// longer than the queue. W4d: with BulletComponent in the memory, the bullet and trail rows too (hidden,
+// short and -0 trails, offsets, a bullet without a first frame).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -28,10 +29,12 @@ import {
   EMIT_PERSIST_MISS,
   EMIT_SORT_KEY,
   EMIT_TILES_DIRTY,
+  EMIT_WARN_BULLET_START,
   EMIT_WARN_DECO_START,
   EMIT_WARN_NO_ANIM,
   EMIT_WARN_NO_START,
   EMIT_Y_SORT,
+  writeEmitBulletColumns,
   writeEmitColumns,
   writeEmitTextures,
   writePersistColumns,
@@ -99,14 +102,25 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
+  // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
+  const collect = bullets
+    ? {
+        entities: N,
+        transformBytes: Transform.getBufferSize(N),
+        colliderBytes: 0,
+        rigidBodyBytes: 0,
+        bullets: { bullets: POOL, entities: N, componentBytes: BulletComponent.getBufferSize(POOL), impacts: 8 },
+        visibility: null,
+      }
+    : null;
   const m = createRenderQueueMemory(maxItems, computeBufferSize(maxItems), computeGpuQueueBufferSize(caps), {
     entities: N,
     spriteBytes: SpriteRenderer.getBufferSize(N),
     casterBytes: ShadowCaster.getBufferSize(N),
     decorationBytes: DecorationComponent.getBufferSize(DECOS),
-  });
+  }, null, null, false, collect);
   const e = m.layout.emit;
   const buffers = {
     componentData: {
@@ -117,9 +131,14 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
       // What the rows of other types read in the JS run (the kernel leaves those rows to it).
       LightEmitter: new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
       ParticleComponent: new SharedArrayBuffer(ParticleComponent.getBufferSize(POOL)),
-      BulletComponent: new SharedArrayBuffer(BulletComponent.getBufferSize(POOL)),
+      BulletComponent: bullets ? m.buffer : new SharedArrayBuffer(BulletComponent.getBufferSize(POOL)),
     },
-    componentDataByte: { SpriteRenderer: e.spriteRendererByte, ShadowCaster: e.shadowCasterByte, DecorationComponent: e.decorationByte },
+    componentDataByte: {
+      SpriteRenderer: e.spriteRendererByte,
+      ShadowCaster: e.shadowCasterByte,
+      DecorationComponent: e.decorationByte,
+      ...(bullets ? { BulletComponent: m.layout.collect.bullets.componentByte } : {}),
+    },
   };
   for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent]) C.clearArrays();
   const meta = textureMetadata();
@@ -152,6 +171,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
   bindPoseColumns(N);
   assert.equal(SpriteRenderer.scaleX.buffer, m.buffer, 'SpriteRenderer is in the memory');
   assert.equal(worker._renderableType.buffer, m.buffer, 'the collector is in the memory');
+  assert.equal(BulletComponent.x.buffer === m.buffer, bullets, `BulletComponent is ${bullets ? '' : 'not '}in the memory`);
   worker._decorationZoomAlpha = 0.75;
   worker._animEndByType = new Uint8Array(256).fill(1);
 
@@ -201,13 +221,41 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     DecorationComponent.anchorY[d] = r();
   }
 
+  // Bullets (W4d), from a generator of their own: inactive ones, trails of no length (start at the bullet), shorter
+  // than 0.1, with a -0 difference (x -0, start +0), muzzle offsets, a texture past the animations.
+  const rb = rng(seed ^ 0xb011e7);
+  const bc = BulletComponent;
+  for (let s = 0; s < POOL; s++) {
+    bc.active[s] = s % 7 === 0 ? 0 : 1;
+    bc.x[s] = s % 13 === 0 ? -0 : rb() * 4000;
+    bc.y[s] = rb() * 3000;
+    bc.startX[s] = s % 13 === 0 ? 0 : s % 5 === 0 ? bc.x[s] : s % 6 === 0 ? bc.x[s] + 0.03 : bc.x[s] - (rb() - 0.5) * 300;
+    bc.startY[s] = s % 5 === 0 || s % 6 === 0 ? bc.y[s] : bc.y[s] - (rb() - 0.5) * 300;
+    bc.offsetY[s] = s % 3 === 0 ? 0 : -rb() * 40;
+    bc.scale[s] = 0.25 + rb();
+    bc.alpha[s] = rb();
+    bc.tint[s] = (rb() * 0xffffff) >>> 0;
+    bc.textureId[s] = s % 17 === 0 ? meta.animationFrameStart.length + 3 : s % 12;
+    bc.spriteRotC[s] = Math.cos(s * 0.7);
+    bc.spriteRotS[s] = Math.sin(s * 0.7);
+    bc.bulletRotC[s] = Math.cos(s * 1.3);
+    bc.bulletRotS[s] = Math.sin(s * 1.3);
+    bc.trailWidth[s] = 0.5 + rb() * 3;
+    bc.anchorX[s] = rb();
+    bc.anchorY[s] = rb();
+  }
+
   // The collector: sprites, decorations and a few rows of other types, poses in the queue (E-98d).
+  // With `bullets`, a quarter of the rows are of other types, each type in turn walking the bullet slots, so the
+  // bullet and trail rows reach every slot class above.
   const types = [];
   const indices = [];
+  let other = 0;
   for (let k = 0; k < count; k++) {
     const pick = r();
-    if (pick < 0.62) { types.push(0); indices.push(Math.floor(r() * N)); }
-    else if (pick < 0.92) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
+    if (pick < (bullets ? 0.55 : 0.62)) { types.push(0); indices.push(Math.floor(r() * N)); }
+    else if (pick < (bullets ? 0.75 : 0.92)) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
+    else if (bullets) { types.push([1, 3, 4, 5][other % 4]); indices.push((other >> 2) % POOL); other++; }
     else { types.push([1, 3, 4, 5][k % 4]); indices.push(k % POOL); }
   }
   const qViews = () => ({ x: worker.renderQueueX, y: worker.renderQueueY, rc: worker.renderQueueRotC, rs: worker.renderQueueRotS });
@@ -243,7 +291,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
 
   const b = await bindPreRenderEmit(m.memory, e);
   assert.ok(writeEmitTextures(b, meta), 'the metadata fits the tables');
-  return { worker, m, b, source, types, count, maxItems, snapshot, restore, ySort };
+  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets };
 }
 
 /** The queue columns a row has. */
@@ -263,6 +311,22 @@ async function runCase(t, opts) {
   const k = await setup(opts);
   const { worker, b, source, types, count, maxItems } = k;
   const n = Math.min(count, maxItems);
+  /** The rows the kernel writes: sprites and decorations, and (W4d) bullets and trails with their component in the memory. */
+  const ours = (type) => type === 0 || type === 2 || (k.bullets && (type === 4 || type === 5));
+  if (k.bullets) {
+    // The bullet and trail rows reach every case the kernel copies (setup's bullet slots).
+    const seen = new Set();
+    for (let r = 0; r < n; r++) {
+      const type = types[r];
+      if (type !== 4 && type !== 5) continue;
+      const slot = k.indices[r];
+      if (slot % 7 === 0) seen.add(`${type} inactive`);
+      else if (type === 4) seen.add(slot % 17 === 0 ? '4 no texture' : '4 drawn');
+      else if (slot % 13 === 0) seen.add('5 -0 dx');
+      else seen.add(slot % 5 === 0 || slot % 6 === 0 ? '5 too short' : '5 drawn');
+    }
+    assert.deepEqual([...seen].sort(), ['4 drawn', '4 inactive', '4 no texture', '5 -0 dx', '5 drawn', '5 inactive', '5 too short']);
+  }
   const start = k.snapshot();
 
   // The JS: 30 frames, the queue and the state after each, the ends and warnings it made. The worker
@@ -280,7 +344,9 @@ async function runCase(t, opts) {
     warns.length = 0;
     const written = worker.emitSpriteQueue(DT, source);
     assert.equal(written, n);
-    jsFrames.push({ snap: k.snapshot(), ends: [...ends].sort(), warns: warns.filter((w) => !w.startsWith('name:')).sort() });
+    // The kernel's warnings: not the builtin lookups, nor a bullet's when the bullet rows are left to the JS.
+    const kernelWarn = (w) => !w.startsWith('name:') && (k.bullets || !w.startsWith('frameStart:bullet:'));
+    jsFrames.push({ snap: k.snapshot(), ends: [...ends].sort(), warns: warns.filter(kernelWarn).sort() });
   }
   worker._spriteAnimationEnded = realEnded;
   worker._warnMissingTexture = realWarn;
@@ -289,7 +355,7 @@ async function runCase(t, opts) {
   k.restore(start);
   const marker = 0x5a;
   for (let r = 0; r < n; r++) {
-    if (types[r] === 0 || types[r] === 2) continue;
+    if (ours(types[r])) continue;
     for (const c of ROW_COLUMNS) {
       const v = worker[c];
       if (v) new Uint8Array(v.buffer, v.byteOffset + r * v.BYTES_PER_ELEMENT, v.BYTES_PER_ELEMENT).fill(marker);
@@ -307,6 +373,7 @@ async function runCase(t, opts) {
   const results = b.results;
   for (let f = 0; f < FRAMES; f++) {
     assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
+    assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
     const tilesDirty = worker.renderQueueTileMode !== null && worker._tiledTileColumns.has(worker.renderQueueTileMode);
     const flags = EMIT_SORT_KEY | (k.ySort ? EMIT_Y_SORT : 0) | (tilesDirty ? EMIT_TILES_DIRTY : 0) | EMIT_BOUNDS;
     const written = b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, worker._decorationZoomAlpha, worker._zBand);
@@ -325,11 +392,11 @@ async function runCase(t, opts) {
     const foreign = [];
     for (let r = 0; r < results[3]; r++) foreign.push([b.u32[b.foreignAt + 2 * r], b.u32[b.foreignAt + 2 * r + 1]]);
     const expectForeign = [];
-    for (let r = 0; r < n; r++) if (types[r] !== 0 && types[r] !== 2) expectForeign.push([r, r]);
+    for (let r = 0; r < n; r++) if (!ours(types[r])) expectForeign.push([r, r]);
     assert.deepEqual(foreign, expectForeign, `frame ${f}: the rows left to the JS`);
     const qa = k.m.layout.queueAByte;
     for (let r = 0; r < n; r++) {
-      const ours = types[r] === 0 || types[r] === 2;
+      const mine = ours(types[r]);
       for (const c of ROW_COLUMNS) {
         const v = worker[c];
         if (!v) continue;
@@ -337,10 +404,10 @@ async function runCase(t, opts) {
         const at = v.byteOffset - qa + r * bpe;
         for (let x = 0; x < bpe; x++) {
           const got = now.queue[at + x];
-          if (ours && got !== js.snap.queue[at + x]) {
+          if (mine && got !== js.snap.queue[at + x]) {
             assert.fail(`frame ${f} row ${r} (type ${types[r]}) ${c}: ${hex(now.queue, at, bpe)}, the JS wrote ${hex(js.snap.queue, at, bpe)}`);
           }
-          if (!ours && got !== marker) assert.fail(`frame ${f} row ${r} (type ${types[r]}) ${c} was written`);
+          if (!mine && got !== marker) assert.fail(`frame ${f} row ${r} (type ${types[r]}) ${c} was written`);
         }
       }
     }
@@ -371,6 +438,7 @@ function warnKey(worker, idx, kind) {
     return `animStart:${g}`;
   }
   if (kind === EMIT_WARN_DECO_START) return `frameStart:decoration:${DecorationComponent.textureId[idx]}`;
+  if (kind === EMIT_WARN_BULLET_START) return `frameStart:bullet:${BulletComponent.textureId[idx]}`;
   return `kind ${kind}`;
 }
 
@@ -384,6 +452,11 @@ test('the emit kernel writes what emitSpriteQueue writes, without Y-sort', async
 
 test('the emit kernel fills a queue to its capacity', async (t) => {
   await runCase(t, { ySort: true, maxItems: 600, count: 600, seed: 0xfeed });
+});
+
+test('W4d: the emit kernel writes the bullet and trail rows emitSpriteQueue writes, BulletComponent in the memory', async (t) => {
+  await runCase(t, { ySort: true, bullets: true, seed: 0xb0b });
+  await runCase(t, { ySort: false, bullets: true, seed: 0xb1b });
 });
 
 test('a frame with an Adobe root or a LiquidFun row is declined before anything is written', async () => {

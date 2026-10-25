@@ -1,8 +1,9 @@
 // The WASM emit (E-76 W4a, E-112): loads preRenderEmit.wasm onto the render-queue memory, where the scene
 // keeps every column pre-render's emit reads (the SpriteRenderer, ShadowCaster and DecorationComponent
 // blocks, both queue buffers, the collector, the animation state; see renderQueueMemoryRegions). emit_rows
-// writes the full emit's sprite and decoration rows with the JS's bits; the rows of other types, the
-// play-once ends and the missing textures come back as lists, and pre-render acts on them in JS.
+// writes the full emit's sprite and decoration rows with the JS's bits (W4d: the bullet and trail rows too, when
+// BulletComponent is in the memory, writeEmitBulletColumns); the rows of other types, the play-once ends and the
+// missing textures come back as lists, and pre-render acts on them in JS.
 // W4c: persist_frame (the check and the poses-only pass in one walk, E-116) and persist_remember are the
 // entity queue's persist path, on the same table with the rows each queue buffer last held
 // (writePersistColumns).
@@ -37,6 +38,8 @@ export const EMIT_SLOTS = [
   'aaActive', 'aaPlaying', 'aaRate', 'aaTime', 'aaLoop', 'aaAsset', 'aaClip',
   'aaScaleX', 'aaScaleY', 'aaAnchorX', 'aaAnchorY', 'aaRotC', 'aaRotS', 'aaAlpha', 'aaTint',
   'adDir', 'adAssets', 'adList',
+  'bActive', 'bX', 'bY', 'bStartX', 'bStartY', 'bOffsetY', 'bScale', 'bAlpha', 'bTint', 'bTexture',
+  'bSpriteRotC', 'bSpriteRotS', 'bRotC', 'bRotS', 'bTrailWidth', 'bAnchorX', 'bAnchorY', 'bTrailTexture',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -56,6 +59,7 @@ export const EMIT_PERSIST_MISS = -1;
 export const EMIT_WARN_NO_ANIM = 0;
 export const EMIT_WARN_NO_START = 1;
 export const EMIT_WARN_DECO_START = 2;
+export const EMIT_WARN_BULLET_START = 3;
 
 /** The component columns the kernel reads, by slot: [slot, component field]. */
 export const EMIT_SPRITE_COLUMNS = [
@@ -81,6 +85,13 @@ export const EMIT_ADOBE_COLUMNS = [
   ['aaActive', 'active'], ['aaPlaying', 'playing'], ['aaRate', 'playbackRate'], ['aaTime', 'time'], ['aaLoop', 'loop'],
   ['aaAsset', 'assetId'], ['aaClip', 'clipId'], ['aaScaleX', 'scaleX'], ['aaScaleY', 'scaleY'], ['aaAnchorX', 'anchorX'],
   ['aaAnchorY', 'anchorY'], ['aaRotC', 'rotC'], ['aaRotS', 'rotS'], ['aaAlpha', 'alpha'], ['aaTint', 'tint'],
+];
+/** W4d: BulletComponent's columns the bullet and trail rows read, by slot (a trail starts at startX, startY). */
+export const EMIT_BULLET_COLUMNS = [
+  ['bActive', 'active'], ['bX', 'x'], ['bY', 'y'], ['bStartX', 'startX'], ['bStartY', 'startY'], ['bOffsetY', 'offsetY'],
+  ['bScale', 'scale'], ['bAlpha', 'alpha'], ['bTint', 'tint'], ['bTexture', 'textureId'], ['bSpriteRotC', 'spriteRotC'],
+  ['bSpriteRotS', 'spriteRotS'], ['bRotC', 'bulletRotC'], ['bRotS', 'bulletRotS'], ['bTrailWidth', 'trailWidth'],
+  ['bAnchorX', 'anchorX'], ['bAnchorY', 'anchorY'],
 ];
 /** W27: what an asset directory record says of its asset (preRenderEmit.c ASSET_*). */
 export const EMIT_ADOBE_NONE = 0;
@@ -373,6 +384,23 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   for (let k = 0; k < EMIT_OPTIONAL_QUEUE_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_OPTIONAL_QUEUE_COLUMNS[k][0], w[EMIT_OPTIONAL_QUEUE_COLUMNS[k][1]], true)) return false;
   }
+  return true;
+}
+
+/**
+ * W4d. BulletComponent's columns and the trail's texture, after writeEmitColumns: all of them in the memory (the
+ * bullet pool in the engine block, W19), or bActive 0 and emit_rows lists the bullet and trail rows for the JS.
+ * @param {number} trailTexture the trail's first frame (_resolveBuiltinTextureId('_bulletTrail'))
+ * @returns {boolean} whether the kernel writes the bullet and trail rows this frame
+ */
+export function writeEmitBulletColumns(b, BulletComponent, trailTexture) {
+  for (let k = 0; k < EMIT_BULLET_COLUMNS.length; k++) {
+    if (!putSlot(b, EMIT_BULLET_COLUMNS[k][0], BulletComponent[EMIT_BULLET_COLUMNS[k][1]])) {
+      b.table[SLOT.bActive] = 0;
+      return false;
+    }
+  }
+  b.table[SLOT.bTrailTexture] = trailTexture;
   return true;
 }
 

@@ -3,9 +3,11 @@
    the collector's stash, on a frame the persist check missed. Every column is a byte offset into the
    render-queue memory (src/workers/preRenderEmitClient.js writes the table); 0 marks a column the worker
    does not have. Arithmetic as the JS does it: the sort key and the animation clock in double, each value
-   stored as the typed array would store it. Rows of other types (particles, glows, bullets) are listed with
-   the queue row they go to and left for the JS to write; a frame with a LiquidFun row is declined
-   (0xffffffff) before anything is written. Play-once ends and missing animations come back as lists too:
+   stored as the typed array would store it. W4d: bullet and trail rows (types 4 and 5) too, when
+   BulletComponent is in the memory. Rows of other types (particles, glows; bullets whose component is
+   elsewhere) are listed with the queue row they go to and left for the JS to write; a frame with a LiquidFun
+   row is declined (0xffffffff) before anything is written. Play-once ends and missing animations come back as
+   lists too:
    the end message, its entity-type filter and the warnings stay JS.
    W27: an Adobe Animate root (type 6) expands into its pieces as _emitAdobePieces expands it, the frame
    resolved as _resolveAdobeFrameIndex resolves it, from AdobeAnimComponent and the asset directory the JS
@@ -45,6 +47,10 @@ enum {
   AA_ACTIVE, AA_PLAYING, AA_RATE, AA_TIME, AA_LOOP, AA_ASSET, AA_CLIP,
   AA_SCALE_X, AA_SCALE_Y, AA_ANCHOR_X, AA_ANCHOR_Y, AA_ROT_C, AA_ROT_S, AA_ALPHA, AA_TINT,
   AD_DIR, AD_ASSETS, AD_LIST,
+  /* W4d: BulletComponent's columns (B_ACTIVE 0: not in the memory, so bullet and trail rows are listed for
+     the JS) and the trail's texture (a value: _resolveBuiltinTextureId('_bulletTrail')). */
+  B_ACTIVE, B_X, B_Y, B_START_X, B_START_Y, B_OFFSET_Y, B_SCALE, B_ALPHA, B_TINT, B_TEXTURE,
+  B_SPRITE_ROT_C, B_SPRITE_ROT_S, B_ROT_C, B_ROT_S, B_TRAIL_W, B_ANCHOR_X, B_ANCHOR_Y, B_TRAIL_TEX,
   SLOT_COUNT
 };
 
@@ -61,6 +67,7 @@ enum {
 #define WARN_NO_ANIM 0u    /* sprite: no global animation for (sheet, state), sheet set */
 #define WARN_NO_START 1u   /* sprite: the global animation has no first frame */
 #define WARN_DECO_START 2u /* decoration: its animation has no first frame */
+#define WARN_BULLET_START 3u /* bullet: its animation has no first frame */
 
 /* W27: an asset directory record (preRenderEmitClient.js writeEmitAdobeAssets). Each array is a byte offset
    with its length (an index past it reads as the JS reads undefined there); the piece arrays share one length,
@@ -208,6 +215,12 @@ typedef struct {
   const uint32_t *aaTint;
   const AdobeAsset *dir;
   uint32_t nAssets;
+  const uint8_t *bActive;
+  const float *bX, *bY, *bStartX, *bStartY, *bOffY, *bScale, *bAlpha;
+  const uint32_t *bTint;
+  const uint16_t *bTexture;
+  const float *bSpriteRc, *bSpriteRs, *bRc, *bRs, *bTrailW, *bAnchorX, *bAnchorY;
+  uint32_t bTrailTex;
   int sortKey, ySort, tilesDirty, bounds;
   double deltaSeconds, zoomAlpha, band;
   uint32_t nEnds, nWarns, tiled;
@@ -304,6 +317,24 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->aaTint = PTR(const uint32_t, AA_TINT);
   e->dir = PTR(const AdobeAsset, AD_DIR);
   e->nAssets = t[AD_ASSETS];
+  e->bActive = PTR(const uint8_t, B_ACTIVE);
+  e->bX = PTR(const float, B_X);
+  e->bY = PTR(const float, B_Y);
+  e->bStartX = PTR(const float, B_START_X);
+  e->bStartY = PTR(const float, B_START_Y);
+  e->bOffY = PTR(const float, B_OFFSET_Y);
+  e->bScale = PTR(const float, B_SCALE);
+  e->bAlpha = PTR(const float, B_ALPHA);
+  e->bTint = PTR(const uint32_t, B_TINT);
+  e->bTexture = PTR(const uint16_t, B_TEXTURE);
+  e->bSpriteRc = PTR(const float, B_SPRITE_ROT_C);
+  e->bSpriteRs = PTR(const float, B_SPRITE_ROT_S);
+  e->bRc = PTR(const float, B_ROT_C);
+  e->bRs = PTR(const float, B_ROT_S);
+  e->bTrailW = PTR(const float, B_TRAIL_W);
+  e->bAnchorX = PTR(const float, B_ANCHOR_X);
+  e->bAnchorY = PTR(const float, B_ANCHOR_Y);
+  e->bTrailTex = t[B_TRAIL_TEX];
   e->sortKey = (flags & F_SORT_KEY) != 0;
   e->ySort = (flags & F_Y_SORT) != 0;
   e->tilesDirty = (flags & F_TILES_DIRTY) != 0;
@@ -451,14 +482,20 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   e->qTexture[out] = (uint16_t)tex;
 }
 
-/* emitSpriteQueue's decoration branch: collector row i at queue row out. */
-INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
-  const int32_t idx = e->cIndex[i];
+/* What emitSpriteQueue writes first on a row that is no sprite and casts no shadow (a decoration, a bullet, a
+   trail): the sort key with z 0 (_orderKey), the tile columns cleared, the shadow terms zeroed. */
+INLINE void plain_head(const Emit *e, uint32_t i, uint32_t out) {
   if (e->sortKey) e->qSortKey[out] = (float)(e->ySort ? 0.0 * e->band + (double)e->cY[i] : 0.0);
   if (e->tilesDirty) clear_tiles(e, out);
   if (e->qShadowH) e->qShadowH[out] = 0.0f;
   if (e->qShadowOffX) e->qShadowOffX[out] = 0.0f;
   if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
+}
+
+/* emitSpriteQueue's decoration branch: collector row i at queue row out. */
+INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  plain_head(e, i, out);
   const float x = e->stX[i];
   const float y = e->stY[i];
   const float rc = e->stRc[i];
@@ -484,6 +521,88 @@ INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = e->dAnchorX[idx];
   e->qAnchorY[out] = e->dAnchorY[idx];
   if (e->qType) e->qType[out] = 2;
+}
+
+/* A bullet or trail row that draws nothing, parked off screen; its other columns keep what they held. */
+INLINE void hide_row(const Emit *e, uint32_t out) {
+  e->qAlpha[out] = 0.0f;
+  e->qScaleX[out] = 0.0f;
+  e->qScaleY[out] = 0.0f;
+  e->qX[out] = -10000.0f;
+  e->qY[out] = -10000.0f;
+}
+
+/* W4d. emitSpriteQueue's bullet branch (type 4): collector row i, bullet slot cIndex[i], at queue row out. */
+INLINE void bullet_row(Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  plain_head(e, i, out);
+  if (!e->bActive[idx]) {
+    hide_row(e, out);
+  } else {
+    const float s = e->bScale[idx];
+    e->qX[out] = e->bX[idx];
+    e->qY[out] = (float)((double)e->bY[idx] + (double)e->bOffY[idx]);
+    e->qScaleX[out] = s;
+    e->qScaleY[out] = s;
+    e->qRotC[out] = e->bSpriteRc[idx];
+    e->qRotS[out] = e->bSpriteRs[idx];
+    e->qAlpha[out] = e->bAlpha[idx];
+    e->qTint[out] = e->bTint[idx];
+    const uint32_t a = e->bTexture[idx];
+    uint32_t tex = INVALID_TEXTURE;
+    if (a < e->nAnims) {
+      tex = (uint32_t)e->frameStart[a];
+    } else {
+      e->warns[2 * e->nWarns] = (uint32_t)idx;
+      e->warns[2 * e->nWarns + 1] = WARN_BULLET_START;
+      e->nWarns++;
+    }
+    e->qTexture[out] = (uint16_t)tex;
+    e->qAnchorX[out] = e->bAnchorX[idx];
+    e->qAnchorY[out] = e->bAnchorY[idx];
+  }
+  if (e->qType) e->qType[out] = 4;
+}
+
+/* W4d. emitSpriteQueue's trail branch (type 5): the line from the bullet's start to where it is, in double as the
+   JS computes it; shorter than 0.1 it is hidden. */
+INLINE void trail_row(Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  plain_head(e, i, out);
+  if (!e->bActive[idx]) {
+    hide_row(e, out);
+  } else {
+    const double off = (double)e->bOffY[idx];
+    const double currX = (double)e->bX[idx];
+    const double currY = (double)e->bY[idx] + off;
+    const double startX = (double)e->bStartX[idx];
+    const double startY = (double)e->bStartY[idx] + off;
+    const double dx = currX - startX;
+    const double dy = currY - startY;
+    const double lenSq = dx * dx + dy * dy;
+    if (lenSq < 0.01) {
+      hide_row(e, out);
+    } else {
+      /* The JS's ternaries, not fabs: a -0 difference stays -0. */
+      const double adx = dx < 0.0 ? -dx : dx;
+      const double ady = dy < 0.0 ? -dy : dy;
+      const double mx = adx > ady ? adx : ady;
+      const double mn = adx > ady ? ady : adx;
+      const double lengthApprox = 0.96 * mx + 0.4 * mn;
+      e->qX[out] = (float)((startX + currX) * 0.5);
+      e->qY[out] = (float)((startY + currY) * 0.5);
+      e->qScaleX[out] = (float)(lengthApprox / 10.0);
+      e->qScaleY[out] = e->bTrailW[idx];
+      e->qRotC[out] = e->bRc[idx];
+      e->qRotS[out] = e->bRs[idx];
+      e->qAlpha[out] = (float)((double)e->bAlpha[idx] * 0.9);
+      e->qTint[out] = 0xffffffu;
+    }
+  }
+  e->qTexture[out] = (uint16_t)e->bTrailTex;
+  e->qAnchorX[out] = 0.5f;
+  e->qAnchorY[out] = 0.5f;
+  if (e->qType) e->qType[out] = 5;
 }
 
 /* _resolveAdobeFrameIndex for an asset in the tables: the clip's frame at this time, or -1 when the root
@@ -639,6 +758,10 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         sprite_row(&e, i, i);
       } else if (ty == 2) {
         deco_row(&e, i, i);
+      } else if (ty == 4 && e.bActive) {
+        bullet_row(&e, i, i);
+      } else if (ty == 5 && e.bActive) {
+        trail_row(&e, i, i);
       } else {
         foreign[2 * nForeign] = i;
         foreign[2 * nForeign + 1] = i;
@@ -660,6 +783,10 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         sprite_row(&e, i, w);
       } else if (ty == 2) {
         deco_row(&e, i, w);
+      } else if (ty == 4 && e.bActive) {
+        bullet_row(&e, i, w);
+      } else if (ty == 5 && e.bActive) {
+        trail_row(&e, i, w);
       } else {
         foreign[2 * nForeign] = i;
         foreign[2 * nForeign + 1] = w;
