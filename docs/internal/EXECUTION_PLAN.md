@@ -883,7 +883,10 @@ frames. 4 pairs: pre-render **20.516 → 15.818 ms, −19.7 %** (0/4 worse). The
 busy time per second stayed flat (366 and 359 ms/s): pre-render now delivers more frames, so more of Pixi's steps
 commit one. Follow-up (`8d67f225`): a presorted frame with no glow rows packs every row with no slot list (the
 glow split still listed every row and scattered over that identity list): pre-render **16.479 → 14.819 ms, −10.6 %**
-(0/4). Lesson: a gate that reads per-frame state needs a test across real frames.
+(0/4). Then (`3fa72bbd`) a presorted frame's emit leaves the sort keys and shadow terms, which nothing
+reads that frame: pre-render **13.125 → 11.369 ms, −14.5 %** (0/4), but Pixi +5.5 % (4/4, its copy and upload slower
+for the same bytes); kept as a trade (R-0636). Lesson: a gate that reads per-frame state needs a test across real
+frames.
 
 ### E-137 The bullet collect writes its own rows — **KEPT (product), 2026-10-25**
 E-98c and E-98e for bullets: `collectVisibleBullets` called `collectRenderable` for each visible bullet and trail,
