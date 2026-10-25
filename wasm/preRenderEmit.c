@@ -13,8 +13,9 @@
    the end message, its entity-type filter and the warnings stay JS.
    W27: an Adobe Animate root (type 6) expands into its pieces as _emitAdobePieces expands it, the frame
    resolved as _resolveAdobeFrameIndex resolves it, from AdobeAnimComponent and the asset directory the JS
-   copies the registry's assets into (AdobeAsset); rows after it move down. Without those tables, or with a
-   root whose asset they do not hold, the frame is declined. adobe_advance is advanceAdobeAnimations.
+   copies the registry's assets into (AdobeAsset); rows after it move down. Without those tables the frame is
+   declined; a root whose asset they do not hold (no room, malformed: the client says so) draws nothing.
+   adobe_advance is advanceAdobeAnimations.
    W4c: the persist path of the entity queue, from the same table. persist_frame is _type0PersistHit (with
    _repairPersistFrame) and _writeType0PosesOnly (with _writeQueueShadow and _advancePersistFrame) in one
    walk (E-116), persist_remember is _rememberType0Set; the rows a queue buffer last held are the P_
@@ -105,9 +106,8 @@ enum {
    with its length (an index past it reads as the JS reads undefined there); the piece arrays share one length,
    past every frame's last piece. The rotations are doubles: the asset's pieceRotC/pieceRotS widened, or
    Math.cos/Math.sin of pieceRotation as the JS computes them for an asset without them. */
-#define ASSET_NONE 0u /* no asset at this id: its roots draw nothing */
+#define ASSET_NONE 0u /* no asset at this id, or one the tables could not take: its roots draw nothing */
 #define ASSET_IN 1u   /* in the tables */
-#define ASSET_JS 2u   /* registered, not in the tables (no room, or arrays the kernel cannot read exactly) */
 typedef struct {
   uint32_t kind;
   uint32_t clipStartLen, clipStart;   /* clipFrameStart, u32 */
@@ -959,13 +959,9 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
     if (ty == 7 && !e.lfX) return DECLINED;
     if (ty == 6) {
       if (!e.dir) return DECLINED;
-      const uint32_t id = e.aaAsset[e.cIndex[i]];
-      if (id < e.nAssets && e.dir[id].kind == ASSET_JS) return DECLINED;
       roots++;
     }
   }
-  /* A collector longer than the queue past an expansion reads past its rows in the JS. */
-  if (roots && count > maxItems) return DECLINED;
 
   uint32_t nForeign = 0;
   uint32_t overflow = 0;
@@ -1020,9 +1016,9 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
     }
     w = n;
   } else {
-    /* emitSpriteQueue's loop: until the collector or the queue runs out. */
+    /* emitSpriteQueue's loop: until the collector or the queue runs out (the collector holds at most maxItems). */
     w = 0;
-    for (uint32_t i = 0; i < count && w < maxItems; i++) {
+    for (uint32_t i = 0; i < n && w < maxItems; i++) {
       const uint8_t ty = cType[i];
       if (ty == 6) {
         const double sk = e.sortKey ? order_key(&e, i, e.cIndex[i]) : (double)e.cY[i];
@@ -1061,7 +1057,7 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
 
 /* advanceAdobeAnimations: the clocks of the frame's Adobe entities (AD_LIST, listCount of them). Returns how
    many play-once clips ended, their entities listed in order at the start of the same list (for the JS's end
-   message), or DECLINED, before anything is written, when a playing clock's asset is not in the tables. */
+   message), or DECLINED without the tables; a clock whose asset they do not hold does not move. */
 __attribute__((export_name("adobe_advance")))
 uint32_t adobe_advance(uint32_t table, uint32_t listCount, double deltaSeconds) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
@@ -1076,12 +1072,6 @@ uint32_t adobe_advance(uint32_t table, uint32_t listCount, double deltaSeconds) 
   const uint16_t *asset = PTR(const uint16_t, AA_ASSET);
   const uint16_t *clip = PTR(const uint16_t, AA_CLIP);
   if (!dir) return DECLINED;
-  for (uint32_t k = 0; k < listCount; k++) {
-    const uint32_t i = list[k];
-    if (!active[i] || !playing[i]) continue;
-    const uint32_t id = asset[i];
-    if (id < nAssets && dir[id].kind == ASSET_JS) return DECLINED;
-  }
   uint32_t ended = 0;
   for (uint32_t k = 0; k < listCount; k++) {
     const uint32_t i = list[k];

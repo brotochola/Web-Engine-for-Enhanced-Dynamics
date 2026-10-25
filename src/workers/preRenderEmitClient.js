@@ -122,10 +122,9 @@ export const EMIT_LF_COLUMNS = [
   ['lfX', 'x'], ['lfY', 'y'], ['lfScaleX', 'scaleX'], ['lfScaleY', 'scaleY'], ['lfAlpha', 'alpha'], ['lfRotC', 'rotC'],
   ['lfRotS', 'rotS'], ['lfTint', 'tint'], ['lfTexture', 'textureId'],
 ];
-/** W27: what an asset directory record says of its asset (preRenderEmit.c ASSET_*). */
+/** W27: what an asset directory record says of its asset (preRenderEmit.c ASSET_*): none (or one the tables could not take), in them. */
 export const EMIT_ADOBE_NONE = 0;
 export const EMIT_ADOBE_IN = 1;
-export const EMIT_ADOBE_JS = 2;
 /** The record's u32 words (preRenderEmit.c AdobeAsset); its four doubles start at word 32. */
 const REC = {
   kind: 0, clipStartLen: 1, clipStart: 2, clipCountLen: 3, clipCount: 4, clipRateLen: 5, clipRate: 6,
@@ -225,28 +224,32 @@ export function writeEmitAdobeColumns(b, AdobeAnimComponent, ok) {
   return ready;
 }
 
-/** An asset array's length when it is absent (0) or of the class the compiler makes; -1 for anything else. */
-function arrayLength(a, Ctor) {
+/**
+ * An asset array's length (0 when it is absent), or -1 when it is no array of numbers. A typed array of another
+ * class or a plain array (an asset built by hand) is copied into the class the compiler makes, its values as that
+ * class stores them.
+ */
+function arrayLength(a) {
   if (a === undefined || a === null) return 0;
-  return a instanceof Ctor ? a.length : -1;
+  return ArrayBuffer.isView(a) || Array.isArray(a) ? a.length : -1;
 }
 
 /**
- * What the tables need of one asset: the lengths of its arrays and the bytes they take, or null when the kernel
- * cannot read it as the JS does (arrays of another class, frame lists of two lengths, pieces past the piece
- * arrays, bounds that are not numbers). Such an asset is emitted in JS.
+ * What the tables need of one asset: the lengths of its arrays and the bytes they take, or null when it is
+ * malformed (an array that is not one, frame lists of two lengths, pieces past the piece arrays, bounds that are
+ * not numbers): its characters are then not drawn, and pre-render says so.
  */
 function planAsset(asset) {
   const L = {
-    clipStart: arrayLength(asset.clipFrameStart, Uint32Array),
-    clipCount: arrayLength(asset.clipFrameCount, Uint16Array),
-    clipRate: arrayLength(asset.clipFrameRate, Float32Array),
-    minX: arrayLength(asset.clipBoundsMinX, Float32Array),
-    minY: arrayLength(asset.clipBoundsMinY, Float32Array),
-    maxX: arrayLength(asset.clipBoundsMaxX, Float32Array),
-    maxY: arrayLength(asset.clipBoundsMaxY, Float32Array),
-    frameStart: arrayLength(asset.framePieceStart, Uint32Array),
-    frameCount: arrayLength(asset.framePieceCount, Uint16Array),
+    clipStart: arrayLength(asset.clipFrameStart),
+    clipCount: arrayLength(asset.clipFrameCount),
+    clipRate: arrayLength(asset.clipFrameRate),
+    minX: arrayLength(asset.clipBoundsMinX),
+    minY: arrayLength(asset.clipBoundsMinY),
+    maxX: arrayLength(asset.clipBoundsMaxX),
+    maxY: arrayLength(asset.clipBoundsMaxY),
+    frameStart: arrayLength(asset.framePieceStart),
+    frameCount: arrayLength(asset.framePieceCount),
   };
   for (const n of Object.values(L)) if (n < 0) return null;
   // framePieceCount?.[f] ?? 0 and framePieceStart?.[f] ?? 0 are read apart in the JS: one length for both.
@@ -261,13 +264,13 @@ function planAsset(asset) {
   if (bounds.some((v) => typeof v !== 'number')) return null;
   if (pieces > 0) {
     for (const name of ['pieceX', 'pieceY', 'pieceScaleX', 'pieceScaleY', 'pieceAlpha', 'pieceAnchorX', 'pieceAnchorY']) {
-      if (!(arrayLength(asset[name], Float32Array) >= pieces)) return null;
+      if (!(arrayLength(asset[name]) >= pieces)) return null;
     }
-    if (!(arrayLength(asset.pieceTextureId, Uint16Array) >= pieces)) return null;
+    if (!(arrayLength(asset.pieceTextureId) >= pieces)) return null;
     // pieceRotC ? pieceRotC[p] : Math.cos(pieceRotation[p]), and the same for the sine (an empty array is truthy).
-    const rotation = arrayLength(asset.pieceRotation, Float32Array) >= pieces;
+    const rotation = arrayLength(asset.pieceRotation) >= pieces;
     for (const name of ['pieceRotC', 'pieceRotS']) {
-      if (asset[name] == null ? !rotation : !(arrayLength(asset[name], Float32Array) >= pieces)) return null;
+      if (asset[name] == null ? !rotation : !(arrayLength(asset[name]) >= pieces)) return null;
     }
   }
   const line = (bytes) => Math.ceil(bytes / 8) * 8;
@@ -280,11 +283,11 @@ function planAsset(asset) {
 /**
  * W27. Copy the registry's assets (AdobeAnimRegistry.assetById) into the asset directory and the tables after
  * it, every array as the kernel reads it: the piece rotations as doubles (an asset without pieceRotC/pieceRotS
- * gets Math.cos/Math.sin of pieceRotation, as the JS emit computes them). An asset that does not fit, or that
- * planAsset turns down, is marked for the JS: a frame with one of its roots is declined. Called when pre-render
- * binds the kernel and whenever the registry's array changes.
+ * gets Math.cos/Math.sin of pieceRotation, as the JS emit computes them). An asset that does not fit, that
+ * planAsset turns down, or past the directory's ids is left out: its roots draw nothing and its clocks stand,
+ * and the caller reports it. Called when pre-render binds the kernel and whenever the registry's array changes.
  * @param {Array<object | null | undefined>} assets by asset id
- * @returns {Array<{ name: string, bytes: number }>} the assets left out for want of room
+ * @returns {Array<{ name: string, bytes: number, reason: 'room' | 'malformed' | 'ids' }>} the assets left out
  */
 export function writeEmitAdobeAssets(b, assets) {
   const L = b.layout;
@@ -300,18 +303,20 @@ export function writeEmitAdobeAssets(b, assets) {
   b.table[SLOT.adDir] = 0;
   b.table[SLOT.adAssets] = 0;
   const skipped = [];
+  const ids = Math.min(assets.length, EMIT_ADOBE_MAX_ASSETS);
   if (assets.length > EMIT_ADOBE_MAX_ASSETS) {
-    skipped.push({ name: `${assets.length - 1} assets (the tables hold ${EMIT_ADOBE_MAX_ASSETS - 1})`, bytes: 0 });
-    return skipped;
+    skipped.push({ name: `${assets.length - EMIT_ADOBE_MAX_ASSETS} assets past id ${EMIT_ADOBE_MAX_ASSETS - 1}`, bytes: 0, reason: 'ids' });
   }
   const buffer = b.buffer;
   const end = dirByte + L.adobeAssetsBytes;
   let at = dirByte + dirBytes;
+  /** The first `n` values of a typed or a plain array. */
+  const first = (src, n) => (ArrayBuffer.isView(src) ? src.subarray(0, n) : src.slice(0, n));
   /** Copy `src`'s first `n` values as `Ctor` at the next free byte; returns that byte (0 for an empty array). */
   const put = (Ctor, src, n) => {
     if (n === 0) return 0;
     const byte = at;
-    new Ctor(buffer, byte, n).set(src.subarray(0, n));
+    new Ctor(buffer, byte, n).set(first(src, n));
     at += Math.ceil((n * Ctor.BYTES_PER_ELEMENT) / 8) * 8;
     return byte;
   };
@@ -320,19 +325,23 @@ export function writeEmitAdobeAssets(b, assets) {
     if (n === 0) return 0;
     const byte = at;
     const dst = new Float64Array(buffer, byte, n);
-    if (baked != null) dst.set(baked.subarray(0, n));
+    if (baked != null) dst.set(first(baked, n));
     else for (let p = 0; p < n; p++) dst[p] = trig(rotation[p]);
     at += n * 8;
     return byte;
   };
-  for (let id = 0; id < assets.length; id++) {
+  for (let id = 0; id < ids; id++) {
     const asset = assets[id];
     if (!asset) continue;
     const r = id * REC_WORDS;
     const plan = planAsset(asset);
-    if (!plan || at + plan.bytes > end) {
-      words[r + REC.kind] = EMIT_ADOBE_JS;
-      if (plan) skipped.push({ name: String(asset.name ?? id), bytes: plan.bytes });
+    // Left at none (the directory was cleared).
+    if (!plan) {
+      skipped.push({ name: String(asset.name ?? id), bytes: 0, reason: 'malformed' });
+      continue;
+    }
+    if (at + plan.bytes > end) {
+      skipped.push({ name: String(asset.name ?? id), bytes: plan.bytes, reason: 'room' });
       continue;
     }
     const { L: n, frames, pieces } = plan;
@@ -367,7 +376,7 @@ export function writeEmitAdobeAssets(b, assets) {
     doubles.set(plan.bounds, r / 2 + REC_BOUNDS_DOUBLE);
     words[r + REC.kind] = EMIT_ADOBE_IN;
   }
-  b.table[SLOT.adAssets] = assets.length;
+  b.table[SLOT.adAssets] = ids;
   b.adobeReady = true;
   return skipped;
 }

@@ -28,7 +28,7 @@ import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/r
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { EMIT_ADOBE_ASSET_BYTES } from '../../src/util/wasmMemoryMap.js';
-import { EMIT_ADOBE_IN, EMIT_ADOBE_JS, EMIT_ADOBE_NONE, EMIT_DECLINED, EMIT_PRESORTED } from '../../src/workers/preRenderEmitClient.js';
+import { EMIT_ADOBE_IN, EMIT_ADOBE_NONE, EMIT_DECLINED, EMIT_PRESORTED } from '../../src/workers/preRenderEmitClient.js';
 import { radixSortIndicesBySortKey } from '../../src/util/sortIndexByKey.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
@@ -175,7 +175,8 @@ function registerAssets({ plain = false } = {}) {
   AdobeAnimRegistry.register('synthB', synthAsset('synthB', 22, clips, { prebaked: false }));
   AdobeAnimRegistry.register('willian', willian());
   if (plain) {
-    // Plain arrays, as an asset built by hand might hold: the JS reads them as doubles, the kernel cannot.
+    // Plain arrays, as an asset built by hand might hold: the JS reads them as doubles, the tables take them as
+    // the compiler's classes (exactly, since these came from those classes).
     const a = synthAsset('plain', 33, clips);
     for (const k of Object.keys(a)) if (ArrayBuffer.isView(a[k])) a[k] = Array.from(a[k]);
     AdobeAnimRegistry.register('plain', a);
@@ -217,7 +218,9 @@ async function setup({
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const warned = [];
   const realWarn = console.warn;
+  const realError = console.error;
   console.warn = (msg) => warned.push(String(msg));
+  console.error = (msg) => warned.push(String(msg));
   try {
     await initWorker(worker, {
       config: {
@@ -249,6 +252,7 @@ async function setup({
     });
   } finally {
     console.warn = realWarn;
+    console.error = realError;
   }
   bindPoseColumns(N);
   assert.equal(AdobeAnimComponent.scaleX.buffer, m.buffer, 'AdobeAnimComponent is in the memory');
@@ -392,7 +396,7 @@ async function setup({
  * The same frames through the JS loop and through the kernel, from the same start: everything they write must
  * be equal. Returns the kernel run's calls ([written or declined] per frame) and what each run warned.
  */
-function compare(k, frames = FRAMES) {
+function compare(k, frames = FRAMES, aroundJs = null) {
   const { worker } = k;
   const bound = worker._emitWasm;
   const start = k.snapshot();
@@ -430,7 +434,9 @@ function compare(k, frames = FRAMES) {
     return { out, warned };
   };
   const genStart = worker._staticGen;
+  aroundJs?.(true);
   const js = run(false);
+  aroundJs?.(false);
   worker._staticGen = genStart;
   calls.length = 0;
   const wasm = run(true);
@@ -514,21 +520,48 @@ test('the asset directory: every registered asset in the tables, as the kernel r
   assert.ok(pieces > 0 && pieces <= synthB.pieceX.length);
 });
 
-test('a root whose asset is not in the tables declines the frame, and the JS emits it', async () => {
-  // Plain arrays: not in the tables, no warning.
+/**
+ * The registry's assets the kernel's directory left out (kind none, registered) gone for the JS run: it then draws
+ * and advances nothing for them, as the kernel does.
+ */
+function withoutLeftOut(k) {
+  const saved = new Map();
+  return (before) => {
+    const byId = AdobeAnimRegistry.assetById;
+    const words = new Uint32Array(k.m.buffer, k.m.layout.emit.adobeAssetsByte, (byId.length * EMIT_ADOBE_ASSET_BYTES) / 4);
+    if (before) {
+      for (let id = 1; id < byId.length; id++) {
+        if (byId[id] && words[(id * EMIT_ADOBE_ASSET_BYTES) / 4] === EMIT_ADOBE_NONE) {
+          saved.set(id, byId[id]);
+          byId[id] = null;
+        }
+      }
+    } else {
+      for (const [id, asset] of saved) byId[id] = asset;
+      saved.clear();
+    }
+  };
+}
+
+test('an asset with plain arrays goes in the tables; one with no room is not drawn and says why', async () => {
+  // Plain arrays: copied into the compiler's classes, no message, and the kernel writes what the JS writes.
   const plain = await setup({ seed: 0xad7, plain: true });
   const words = new Uint32Array(plain.m.buffer, plain.m.layout.emit.adobeAssetsByte, (5 * EMIT_ADOBE_ASSET_BYTES) / 4);
-  assert.equal(words[(4 * EMIT_ADOBE_ASSET_BYTES) / 4], EMIT_ADOBE_JS, 'the plain asset is marked for the JS');
+  assert.equal(words[(4 * EMIT_ADOBE_ASSET_BYTES) / 4], EMIT_ADOBE_IN, 'the plain asset is in the tables');
   assert.equal(plain.warnedAtInit.length, 0);
   const one = compare(plain, 3);
-  assert.ok(one.calls.every((c) => c === EMIT_DECLINED), 'declined: a root plays the plain asset');
+  assert.ok(one.calls.every((c) => c !== EMIT_DECLINED), 'the kernel takes the frames with its roots');
 
-  // No room for the demo's asset (the synthetic ones fit): one warning when the tables are written, then the
-  // frames with one of its roots go to the JS.
+  // No room for the demo's asset (the synthetic ones fit): one error naming the config key when the tables are
+  // written; its roots draw nothing, which is what the JS draws for an asset the registry does not have.
   const small = await setup({ seed: 0xad8, tablesBytes: 4096 });
-  assert.equal(small.warnedAtInit.filter((w) => w.includes('"willian"')).length, 1, small.warnedAtInit.join('\n'));
-  const two = compare(small, 3);
-  assert.ok(two.calls.every((c) => c === EMIT_DECLINED));
+  const said = small.warnedAtInit.filter((w) => w.includes('"willian"'));
+  assert.equal(said.length, 1, small.warnedAtInit.join('\n'));
+  assert.match(said[0], /preRender\.adobeTablesMB/);
+  const smallWords = new Uint32Array(small.m.buffer, small.m.layout.emit.adobeAssetsByte, (4 * EMIT_ADOBE_ASSET_BYTES) / 4);
+  assert.equal(smallWords[(3 * EMIT_ADOBE_ASSET_BYTES) / 4], EMIT_ADOBE_NONE, 'left out');
+  const two = compare(small, 3, withoutLeftOut(small));
+  assert.ok(two.calls.every((c) => c !== EMIT_DECLINED), 'the kernel takes those frames too');
 
   // Switched off, the kernel declines every frame with a root.
   const off = await setup({ seed: 0xad9, adobeOn: false });
@@ -560,7 +593,7 @@ test('a LiquidFun row still declines the frame', async () => {
  * advanceAdobeAnimations through adobe_advance and through its JS loop, from the same clocks: AdobeAnimComponent's
  * time and playing flags after every frame, and the ended clips in the order the JS reports them.
  */
-function compareAdvance(k, frames) {
+function compareAdvance(k, frames, aroundJs = null) {
   const { worker } = k;
   const a = AdobeAnimComponent;
   const bound = worker._emitWasm;
@@ -591,7 +624,9 @@ function compareAdvance(k, frames) {
     worker._adobeAnimationEnded = realEnded;
     return out;
   };
+  aroundJs?.(true);
   const js = run(false);
+  aroundJs?.(false);
   calls.length = 0;
   const wasm = run(true);
   bound.adobeAdvance = realAdvance;
@@ -619,13 +654,13 @@ test('adobe_advance advances the clips as advanceAdobeAnimations does, the ended
   t.diagnostic(`${calls.length} frames through the kernel, ${ended} clips ended`);
 });
 
-test('adobe_advance declines a frame where a playing clock reads an asset the tables do not hold', async () => {
+test('adobe_advance takes the plain asset\'s clocks, and leaves an asset with no room standing', async () => {
   const k = await setup({ seed: 0xadd, plain: true });
   const { calls } = compareAdvance(k, 6);
-  assert.ok(calls.length > 0 && calls.every((c) => c === EMIT_DECLINED));
-  // Paused, the plain asset's clocks are not read: the kernel takes the frame.
-  for (let i = 0; i < ROOTS; i++) if (AdobeAnimComponent.assetId[i] === 4) AdobeAnimComponent.playing[i] = 0;
-  const again = compareAdvance(k, 6);
+  assert.ok(calls.length > 0 && calls.every((c) => c !== EMIT_DECLINED));
+  // No room for the demo's asset: its clocks do not move, as the JS leaves those of an asset the registry lacks.
+  const small = await setup({ seed: 0xade, tablesBytes: 4096 });
+  const again = compareAdvance(small, 6, withoutLeftOut(small));
   assert.ok(again.calls.length > 0 && again.calls.every((c) => c !== EMIT_DECLINED));
 });
 

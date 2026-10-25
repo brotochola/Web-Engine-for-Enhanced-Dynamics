@@ -3899,13 +3899,26 @@ class PreRenderWorker extends AbstractWorker {
         return true;
     }
 
-    /** W27. The registry's assets into the emit kernel's tables; an asset with no room there warns, once per copy. */
+    /**
+     * W27. The registry's assets into the emit kernel's tables. An asset the tables could not take is not drawn (nor
+     * are its clips advanced): an error per asset, once per copy, says why and what to change.
+     */
     _copyEmitAdobeAssets() {
         const skipped = writeEmitAdobeAssets(this._emitWasm, AdobeAnimRegistry.assetById);
         for (let k = 0; k < skipped.length; k++) {
             const s = skipped[k];
-            console.warn(`[PRE_RENDER] Adobe Animate asset "${s.name}" needs ${s.bytes} bytes of tables in the render-queue `
-                + 'memory and preRender.adobeTablesMB has no room left: its characters are emitted in JavaScript.');
+            if (s.reason === 'room') {
+                const mb = this.config?.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
+                console.error(`[PRE_RENDER] Adobe Animate asset "${s.name}" needs ${s.bytes} bytes of tables in the render-queue `
+                    + `memory and preRender.adobeTablesMB (${mb} MB) has no room left: its characters are not drawn. `
+                    + 'Raise preRender.adobeTablesMB.');
+            } else if (s.reason === 'ids') {
+                console.error(`[PRE_RENDER] ${s.name}: the emit's asset directory holds ids 0 to 255, their characters are not drawn.`);
+            } else {
+                console.error(`[PRE_RENDER] Adobe Animate asset "${s.name}" is malformed (an array that is not one, frame lists `
+                    + 'of two lengths, a frame whose pieces run past its piece arrays, or bounds that are not numbers): its '
+                    + 'characters are not drawn.');
+            }
         }
     }
 
