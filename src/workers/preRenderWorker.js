@@ -105,6 +105,7 @@ import {
     EMIT_DECLINED,
     EMIT_NO_CASTERS,
     EMIT_PERSIST_MISS,
+    EMIT_PRESORTED,
     EMIT_SORT_KEY,
     EMIT_TILES_DIRTY,
     EMIT_WARN_BULLET_START,
@@ -665,6 +666,11 @@ class PreRenderWorker extends AbstractWorker {
         this._lastEmitCount = 0;
         /** The presorted collector's glow rows (type 3): with none, the pack takes every row with no slot list. */
         this._presortGlowRows = 0;
+        /**
+         * True only while the main queue's emit runs on a presorted frame: the kernel then leaves the sort keys and
+         * the shadow terms, which nothing reads that frame (custom layers emit after it and keep theirs).
+         */
+        this._emitPresorted = false;
         this._presortKeys = EMPTY_F32;
         this._presortKeysU32 = EMPTY_U32;
         this._presortOrder = EMPTY_U32;
@@ -3158,6 +3164,7 @@ class PreRenderWorker extends AbstractWorker {
         const count = this._renderableCount;
         const hasOrder = this._queueHasOrder();
         this._queuePresorted = hasOrder && this._presortCollector(count, this._entityYSort());
+        this._emitPresorted = this._queuePresorted;
         const writeCount = this.emitSpriteQueue(deltaTime, this._fillEmitSource(
             count,
             this.renderQueueMaxItems,
@@ -3172,6 +3179,7 @@ class PreRenderWorker extends AbstractWorker {
             hasOrder,
             hasOrder && this._entityYSort()
         ));
+        this._emitPresorted = false;
         this.renderQueueCount[0] = writeCount;
         this._emitWriteCount = writeCount;
         this._lastCollectCount = count;
@@ -3928,7 +3936,7 @@ class PreRenderWorker extends AbstractWorker {
         const b = this._emitWasm;
         const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
         const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0)
-            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0);
+            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0) | (this._emitPresorted ? EMIT_PRESORTED : 0);
         const written = b.emitRows(b.tableByte, source.count, source.maxItems, flags,
             deltaTime / 1000, this._decorationZoomAlpha, this._zBand);
         if (written === EMIT_DECLINED) return -1;

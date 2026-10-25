@@ -51,6 +51,8 @@ export const EMIT_TILES_DIRTY = 4;
 export const EMIT_BOUNDS = 8;
 /** persist_frame's flag for a scene without ShadowCaster (E-117): the shadow terms stay the full emit's zeros. */
 export const EMIT_NO_CASTERS = 16;
+/** E-138: a presorted frame's emit_rows leaves the sort keys and the shadow terms, which nothing reads that frame. */
+export const EMIT_PRESORTED = 64;
 /** What JS reads back from emit_rows when it declined the frame (u32 0xffffffff as an i32). */
 export const EMIT_DECLINED = -1;
 /** What persist_frame returns when the rows are not the ones the buffer last held (W4c). */

@@ -62,6 +62,9 @@ enum {
 /* persist_frame (E-117): the scene has no ShadowCaster, so a sprite row's shadow terms are the zeros the
    full emit wrote when this buffer last held the row, and the walk leaves them. */
 #define F_NO_CASTERS 16u
+/* E-138: the collector was sorted before the emit, so nothing reads this frame's sort keys (no painter) or shadow
+   terms (no sun casters): emit_rows writes neither, for any row (fewer bytes stored per Adobe piece). */
+#define F_PRESORTED 64u
 
 /* Warning kinds, for the JS to replay with its own keys. */
 #define WARN_NO_ANIM 0u    /* sprite: no global animation for (sheet, state), sheet set */
@@ -339,6 +342,13 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->ySort = (flags & F_Y_SORT) != 0;
   e->tilesDirty = (flags & F_TILES_DIRTY) != 0;
   e->bounds = (flags & F_BOUNDS) != 0;
+  if (flags & F_PRESORTED) {
+    e->sortKey = 0;
+    e->qSortKey = 0;
+    e->qShadowH = 0;
+    e->qShadowOffX = 0;
+    e->qShadowOffY = 0;
+  }
   e->deltaSeconds = deltaSeconds;
   e->zoomAlpha = zoomAlpha;
   e->band = band;

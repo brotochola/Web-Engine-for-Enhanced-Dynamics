@@ -28,7 +28,7 @@ import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/r
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { EMIT_ADOBE_ASSET_BYTES } from '../../src/util/wasmMemoryMap.js';
-import { EMIT_ADOBE_IN, EMIT_ADOBE_JS, EMIT_ADOBE_NONE, EMIT_DECLINED } from '../../src/workers/preRenderEmitClient.js';
+import { EMIT_ADOBE_IN, EMIT_ADOBE_JS, EMIT_ADOBE_NONE, EMIT_DECLINED, EMIT_PRESORTED } from '../../src/workers/preRenderEmitClient.js';
 import { radixSortIndicesBySortKey } from '../../src/util/sortIndexByKey.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
@@ -711,7 +711,8 @@ test('E-138: the collector sorted by key before the emit gives the queue a stabl
 
 // E-138's gate across real frames: resetFrameCounters clears the emit's count before the collect, so the gate reads
 // last frame's from a field of its own. The first frame of a scene emits unsorted; from the second, a collector
-// whose rows the emit expanded at least twice over is sorted before the emit, and the queue it writes is in key order.
+// whose rows the emit expanded at least twice over is sorted before the emit (its rows in key order; the queue's sort
+// key column, which nothing reads that frame, is not written).
 test('E-138: from its second frame, pre-render sorts an expanding collector before the emit', async () => {
   const k = await setup({ ySort: true, seed: 0xe13a, shadows: false });
   const { worker } = k;
@@ -759,10 +760,15 @@ test('E-138: from its second frame, pre-render sorts an expanding collector befo
       assert.ok(written > 2 * count, `frame ${f}: the roots expanded (${written} rows from ${count})`);
       assert.equal(worker._queuePresorted, f > 0, `frame ${f}: presorted`);
       if (f > 0) {
-        const keys = new Uint32Array(worker.renderQueueSortKey.buffer, worker.renderQueueSortKey.byteOffset, written);
-        const ord = (u) => ((u & 0x80000000) ? ~u : (u | 0x80000000)) >>> 0;
-        for (let r = 1; r < written; r++) {
-          if (ord(keys[r - 1]) > ord(keys[r])) assert.fail(`frame ${f}: queue row ${r} is out of key order`);
+        const key = new Float32Array(1);
+        const bits = new Uint32Array(key.buffer);
+        const ord = (q) => {
+          key[0] = worker._orderKey(worker._renderableType[q], worker._renderableIndex[q], worker._renderableY[q], true);
+          const u = bits[0];
+          return ((u & 0x80000000) ? ~u : (u | 0x80000000)) >>> 0;
+        };
+        for (let q = 1; q < count; q++) {
+          if (ord(q - 1) > ord(q)) assert.fail(`frame ${f}: collector row ${q} is out of key order`);
         }
       }
     }
@@ -771,4 +777,58 @@ test('E-138: from its second frame, pre-render sorts an expanding collector befo
     delete worker._sortCollectorByKey;
     [Layer._ySorting, Layer.entitiesId] = savedLayer;
   }
+});
+
+// E-138: on a presorted frame the main queue's emit (EMIT_PRESORTED) leaves the sort keys and the shadow terms, which
+// nothing reads that frame (no painter, no sun casters), and writes every other column as it does without the flag.
+test("E-138: a presorted frame's kernel emit leaves the sort keys and shadow terms, and writes the rest the same", async () => {
+  const k = await setup({ ySort: true, seed: 0xe13b });
+  const { worker, maxItems } = k;
+  SpriteRenderer.isAnimated.fill(0);
+  const views = worker.renderQueueBuffers[0];
+  const left = new Set(['sortKey', 'shadowH', 'shadowOffX', 'shadowOffY']);
+  const columns = Object.entries(views).filter(([name, v]) => ArrayBuffer.isView(v) && v.length === maxItems && name !== 'sortKeyU32');
+  assert.ok(columns.some(([name]) => name === 'shadowH') && columns.some(([name]) => name === 'sortKey'));
+  const before = k.snapshot();
+  k.prepare(0);
+  const written = worker.emitSpriteQueue(DT, k.source());
+  const plain = columns.map(([, v]) => new Uint8Array(v.buffer, v.byteOffset, v.byteLength).slice());
+  k.restore(before);
+  for (const [name, v] of columns) if (left.has(name)) new Uint8Array(v.buffer, v.byteOffset, v.byteLength).fill(0x5a);
+  k.prepare(0);
+  worker._emitPresorted = true;
+  let kernelRan = false;
+  const realRows = worker._emitWasm.emitRows;
+  worker._emitWasm.emitRows = (...args) => {
+    kernelRan = (args[3] & EMIT_PRESORTED) !== 0;
+    return realRows(...args);
+  };
+  try {
+    assert.equal(worker.emitSpriteQueue(DT, k.source()), written);
+  } finally {
+    worker._emitPresorted = false;
+    worker._emitWasm.emitRows = realRows;
+  }
+  assert.ok(kernelRan, 'the kernel took the frame with EMIT_PRESORTED');
+  const type = views.type;
+  let kept = 0;
+  columns.forEach(([name, v], c) => {
+    const got = new Uint8Array(v.buffer, v.byteOffset, written * v.BYTES_PER_ELEMENT);
+    if (left.has(name)) {
+      // The rows the kernel writes (sprites, decorations, Adobe pieces) keep the canary; the JS writes the rest.
+      const bpe = v.BYTES_PER_ELEMENT;
+      for (let r = 0; r < written; r++) {
+        if (type[r] !== 0 && type[r] !== 2 && type[r] !== 6) continue;
+        for (let b = 0; b < bpe; b++) {
+          if (got[r * bpe + b] !== 0x5a) assert.fail(`${name}[${r}] (type ${type[r]}) was written`);
+        }
+        kept++;
+      }
+      return;
+    }
+    const want = plain[c].subarray(0, written * v.BYTES_PER_ELEMENT);
+    const at = got.findIndex((x, i) => x !== want[i]);
+    assert.equal(at, -1, `${name} differs at byte ${at}`);
+  });
+  assert.ok(kept > 4 * 1000, `the kernel's rows left the four columns (${kept})`);
 });
