@@ -1,5 +1,5 @@
 // E-76 W14: the flowfield kernel (wasm/test/navFlowfield.c, tests/fixtures/wasm/navFlowfield.wasm) against
-// the shipped ParticleWorker.computeFlowfield on a real particle worker, both on one shared memory as
+// the JS search the engine shipped (tests/reference/navFlowfield.mjs) on a real particle worker's grid, both on one shared memory as
 // navFlowfieldWasmMicrobench.mjs lays it out. Grids of the sizes a scene can make: 1 × 1 up to 256 × 256,
 // one row or one column, a 1 × 7000 line whose far end lies past the 65 535 a distance holds, a 4 700 × 2
 // strip whose maxDistance clamps to 65 535. Open fields, random walls at three densities, rooms with sealed
@@ -15,6 +15,7 @@ import { NavGrid } from '../../src/core/navGrid.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import { roomWalls, setupFlowfieldKernel, STRESS_NAVIGATION } from '../bench/navFlowfieldWasmMicrobench.mjs';
 import { createNavigationMemory } from '../../src/util/navigationMemory.js';
+import { buckets, computeFlowfieldReference, FlowScratch } from '../reference/navFlowfield.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
 // Few slots: the parity is per flowfield, and a 256 × 256 slot is 128 KB.
@@ -121,7 +122,7 @@ function assertSame(actual, expected, gw, what) {
 
 /** The JS flowfield, then the kernel through its wrapper, for one target. */
 function assertParity(k, target, label) {
-  const s = k.worker.scratch;
+  const s = k.flowScratch;
   k.flowfieldJs(target);
   const dist = s.distance.slice();
   const dir = s.direction.slice();
@@ -152,20 +153,19 @@ test('the flowfield kernel writes what computeFlowfield writes, grid after grid'
   }
 });
 
-/** The shipped _bucketInsertCell's two paths for a filed cell over one JS flowfield: moved, or kept in place. */
+/** The reference's bucket insert's two paths for a filed cell over one JS flowfield: moved, or kept in place. */
 function bucketMoves(k, target) {
-  const proto = Object.getPrototypeOf(k.worker);
-  const shipped = proto._bucketInsertCell;
+  const insert = buckets.insert;
   const counts = { moved: 0, kept: 0 };
-  proto._bucketInsertCell = function (scratch, cell, bucket) {
+  buckets.insert = (scratch, cell, bucket) => {
     const old = scratch.bucketNodeDist[cell];
     if (old >= 0) counts[old === Math.min(bucket, scratch.maxDistance) ? 'kept' : 'moved']++;
-    return shipped.call(this, scratch, cell, bucket);
+    return insert(scratch, cell, bucket);
   };
   try {
     k.flowfieldJs(target);
   } finally {
-    proto._bucketInsertCell = shipped;
+    buckets.insert = insert;
   }
   return counts;
 }
@@ -223,10 +223,10 @@ test("the bench's warm-up leaves the grid as it found it", async () => {
 });
 
 // W14 wired: a particle worker booted on the navigation memory as the scene makes it (the nav buffer at
-// byte 0, the flowfield's scratch after it) binds the kernel at init; computeFlowfield with the kernel
-// and without it must fill each target's slot with the same vectors and count the same cached flowfields.
+// byte 0, the flowfield's scratch after it) binds the kernel at init; its computeFlowfield and the JS search the
+// engine shipped must fill each target's slot with the same vectors and count the same cached flowfields.
 // The targets stay under the slots, so no eviction (whose stamps are whole seconds) can tell the runs apart.
-test('computeFlowfield through the kernel the worker binds fills the slots the JS fills', async (t) => {
+test('computeFlowfield through the kernel the worker binds fills the slots the JS search filled', async (t) => {
   const navigation = { ...STRESS_NAVIGATION };
   for (const map of ['open', 'rooms']) {
     const gridWidth = 64;
@@ -269,15 +269,15 @@ test('computeFlowfield through the kernel the worker binds fills the slots the J
       const byte = NavGrid._flowfieldHeadersOffset + slot * NavGrid._flowfieldSlotSize + NavGrid._FLOWFIELD_HEADER_SIZE;
       return Buffer.from(new Uint8Array(m.buffer, byte, cells * 2));
     };
-    const run = (kernel) => {
+    const flowScratch = new FlowScratch(cells, navigation.maxPathLength, gridWidth, gridHeight);
+    const run = (flowfield) => {
       NavGrid.invalidate();
       worker.cachedFlowfieldsCount = 0;
-      worker._flowWasm = kernel;
-      for (const cell of targets) worker.computeFlowfield(cell);
+      for (const cell of targets) flowfield(cell);
       return { slots: targets.map(slotBytes), cached: worker.cachedFlowfieldsCount };
     };
-    const js = run(null);
-    const wasm = run(bound);
+    const js = run((cell) => computeFlowfieldReference(worker, cell, flowScratch));
+    const wasm = run((cell) => worker.computeFlowfield(cell));
     assert.equal(calls, targets.length, `${map}: the kernel took every flowfield`);
     assert.equal(wasm.cached, js.cached, `${map}: cached flowfields`);
     targets.forEach((cell, k) => {

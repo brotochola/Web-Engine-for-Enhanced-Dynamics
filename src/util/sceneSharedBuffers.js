@@ -886,11 +886,10 @@ function initializeNavigationAndQueryBuffers(scene) {
     const navBufferSize = NavGrid.calculateSABSize(navConfig, gridWidth, gridHeight);
 
     // W14: the nav buffer at byte 0 of a WebAssembly.Memory, the flowfield kernel's scratch after it; every
-    // worker views the buffer as it views a plain one.
-    scene.navigationMemory = config.wasm?.navFlowfield !== false
-      ? createNavigationMemory(navBufferSize, gridWidth * gridHeight)
-      : null;
-    buffers.navigationData = scene.navigationMemory ? scene.navigationMemory.buffer : new SharedArrayBuffer(navBufferSize);
+    // worker views the buffer as it views a plain one. The flowfield runs only in navFlowfield.wasm, so the memory
+    // is always made (createNavigationMemory throws when it cannot be).
+    scene.navigationMemory = createNavigationMemory(navBufferSize, gridWidth * gridHeight);
+    buffers.navigationData = scene.navigationMemory.buffer;
     NavGrid.writeHeader(buffers.navigationData, navConfig, gridWidth, gridHeight);
 
     const walkabilityOffset = 32;

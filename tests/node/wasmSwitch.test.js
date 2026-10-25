@@ -197,17 +197,13 @@ test('wasm.decorationSway puts the sway arrays in the render-queue memory, next 
   assert.equal(noEmit.renderQueueMemory.layout.sway, null, 'without the emit the decorations are not in the memory');
 });
 
-test('wasm.navFlowfield puts the nav buffer in the navigation memory', () => {
-  assert.equal(WASM_DEFAULTS.navFlowfield, true);
+test('with navigation the nav buffer is the navigation memory (the flowfield has no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'navFlowfield'), false);
   const nav = { navigation: { enabled: true, cellSize: 50, maxFlowfields: 8, maxPaths: 8, maxPathLength: 32 } };
   const on = buildScene({}, null, nav);
   assert.ok(on.navigationMemory, 'the navigation memory');
   assert.equal(on.buffers.navigationData, on.navigationMemory.buffer, 'the nav buffer is its buffer');
   assert.equal(on.navigationMemory.layout.cells, 40 * 20);
-
-  const off = buildScene({ navFlowfield: false }, null, nav);
-  assert.equal(off.navigationMemory, null, 'off');
-  assert.ok(off.buffers.navigationData instanceof SharedArrayBuffer);
   assert.equal(buildScene({}, null).navigationMemory ?? null, null, 'no navigation, no memory');
 });
 

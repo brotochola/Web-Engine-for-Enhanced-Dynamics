@@ -1,19 +1,19 @@
 #!/usr/bin/env node
 /**
  * Kernel (E-76 W14): the particle worker's flowfield in WASM (wasm/navFlowfield.c, src/workers/navFlowfield.wasm)
- * against the shipped ParticleWorker.computeFlowfield, on a real particle worker with navStressScene's
- * grid: a 2048 × 2048 world in 32 px cells (64 × 64), no walls, 64 flowfield slots.
+ * against the JS search the engine shipped (tests/reference/navFlowfield.mjs), on a real particle worker with
+ * navStressScene's grid: a 2048 × 2048 world in 32 px cells (64 × 64), no walls, 64 flowfield slots.
  *
- *   js    ParticleWorker.computeFlowfield (shipped): the search, the walls' pass and the smoothing in the
- *         worker's NavScratch, then the slot (allocateFlowfieldSlot, writeFlowfieldData)
- *   wasm  the same method with the kernel bound (worker._flowWasm, as the worker binds it on the navigation
- *         memory): compute_flowfield, then the slot as computeFlowfield fills it (_computeFlowfieldWasm).
- *         flowfieldWasm below is the same around a table of the caller's, for the warm-up and the test
+ *   js    the reference: the search, the walls' pass and the smoothing in a FlowScratch (the worker's
+ *         NavScratch as it was), then the slot (allocateFlowfieldSlot, writeFlowfieldData)
+ *   wasm  ParticleWorker.computeFlowfield (shipped), the kernel the worker bound on this memory:
+ *         compute_flowfield, then the slot. flowfieldWasm below is the same around a table of the caller's,
+ *         for the warm-up and the test
  *
  * The search reads the walkability and both sides write the slot, all in the nav buffer, which here is
  * the shared WebAssembly.Memory the kernel imports: NavGrid reads its header at byte 0 of the buffer it is
- * given, so the nav layout starts the memory and the kernel's scratch follows it. The JS scratch stays the
- * worker's. One op is one flowfield. The targets are navStressScene's, in the order its agents ask for
+ * given, so the nav layout starts the memory and the kernel's scratch follows it. The JS scratch is the
+ * reference's own. One op is one flowfield. The targets are navStressScene's, in the order its agents ask for
  * them: 256 agents on 40 targets that move every tick, so every request misses the cache and the scene's
  * 8 ms deadline loop computes flowfields back to back (E-38). In the scene a faster search shows as more
  * flowfields per frame (FLOWFIELDS_COMPUTED), not as a lower STEP_MS.
@@ -36,6 +36,7 @@ import { NavGrid } from '../../src/core/navGrid.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions } from '../../src/util/wasmMemoryMap.js';
 import { FLOWFIELD_SLOTS } from '../../src/workers/navFlowfieldClient.js';
+import { computeFlowfieldReference, FlowScratch } from '../reference/navFlowfield.mjs';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, TIMING_MARKER, warmWasm } from './wasmKernelHelpers.mjs';
@@ -137,9 +138,27 @@ export async function setupFlowfieldKernel({ gridWidth, gridHeight, navigation =
     },
     globalEntityCount: 0,
     buffers: { navigationData: buffer },
+    // This memory in createNavigationMemory's layout, so the worker binds the kernel on it as on a scene's.
+    extra: {
+      navigationMemory: memory,
+      navigationLayout: {
+        cells,
+        navBytes: R.nav.bytes,
+        stateByte: R.state.byte,
+        distByte: R.dist.byte,
+        dirByte: R.dir.byte,
+        nextByte: R.next.byte,
+        prevByte: R.prev.byte,
+        headByte: R.head.byte,
+        sumsByte: R.sums.byte,
+        quotientByte: R.quotient.byte,
+        vectorsByte: R.vectors.byte,
+        tableByte: R.table.byte,
+      },
+    },
   });
-  if (!worker.navEnabled || NavGrid.getWalkabilityArray().buffer !== buffer || worker.totalCells !== cells) {
-    throw new Error('the worker did not bind the nav buffer');
+  if (!worker.navEnabled || NavGrid.getWalkabilityArray().buffer !== buffer || worker.totalCells !== cells || !worker._flowWasm) {
+    throw new Error('the worker did not bind the nav buffer and the kernel');
   }
 
   const writeTable = (byte, width, height) => {
@@ -166,7 +185,11 @@ export async function setupFlowfieldKernel({ gridWidth, gridHeight, navigation =
     if (willUseEmptySlot) worker.cachedFlowfieldsCount++;
     return settled;
   };
-  const flowfieldJs = (targetCell) => worker.computeFlowfield(targetCell);
+  /** The JS search the engine shipped, in a scratch of its own (the worker's NavScratch no longer has those arrays). */
+  const flowScratch = new FlowScratch(cells, navigation.maxPathLength, gridWidth, gridHeight);
+  const flowfieldJs = (targetCell) => computeFlowfieldReference(worker, targetCell, flowScratch);
+  /** The shipped method: the kernel the worker bound. */
+  const flowfieldShipped = (targetCell) => worker.computeFlowfield(targetCell);
 
   /** The vectors of the READY slot that holds `targetCell`'s flowfield. */
   const slotVectors = (targetCell) => {
@@ -181,14 +204,14 @@ export async function setupFlowfieldKernel({ gridWidth, gridHeight, navigation =
     NavGrid.invalidate();
     worker.cachedFlowfieldsCount = 0;
   };
-  /** Short calls for a normal compile: the shipped method on the grid's first cells read as a small grid. */
+  /** Short calls for a normal compile: the reference on the grid's first cells read as a small grid. */
   const warmJs = (calls) => {
     const saved = [worker.gridWidth, worker.gridHeight, worker.totalCells];
     worker.gridWidth = Math.min(WARM, gridWidth);
     worker.gridHeight = Math.min(WARM, gridHeight);
     worker.totalCells = worker.gridWidth * worker.gridHeight;
     try {
-      warmNormalCompile(() => worker.computeFlowfield(worker.totalCells >> 1), calls);
+      warmNormalCompile(() => flowfieldJs(worker.totalCells >> 1), calls);
     } finally {
       [worker.gridWidth, worker.gridHeight, worker.totalCells] = saved;
       clearSlots();
@@ -214,9 +237,9 @@ export async function setupFlowfieldKernel({ gridWidth, gridHeight, navigation =
     tableByte: R.table.byte,
     computeFlowfield,
     flowfieldJs,
+    flowfieldShipped,
     flowfieldWasm,
-    /** What the worker binds as _flowWasm (navFlowfieldClient.js bindNavFlowfield), on this memory's table. */
-    shipped: { compute: computeFlowfield, tableByte: R.table.byte, vectors },
+    flowScratch,
     slotVectors,
     warmJs,
     warmKernel,
@@ -245,7 +268,8 @@ function checksumOf(k, flowfield, targets) {
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'js');
+  // The shipped path by default; js is the reference.
+  const variant = String(args.variant || 'wasm');
   if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const map = String(args.map || 'open');
   if (!['open', 'rooms'].includes(map)) throw new Error(`unknown map ${map}`);
@@ -259,9 +283,7 @@ async function main() {
     navigation: { ...STRESS_NAVIGATION, cellSize },
     walls: map === 'rooms' ? roomWalls : null,
   });
-  // The shipped method either way: with the kernel bound, computeFlowfield runs _computeFlowfieldWasm.
-  if (variant === 'wasm') k.worker._flowWasm = k.shipped;
-  const flowfield = k.flowfieldJs;
+  const flowfield = variant === 'wasm' ? k.flowfieldShipped : k.flowfieldJs;
   const walls = k.walk.reduce((n, w) => n + (w === 0 ? 1 : 0), 0);
   const label = `${gridWidth} × ${gridHeight} ${map}`;
 
@@ -289,7 +311,7 @@ async function main() {
   const report = {
     feature: 'nav-flowfield-wasm',
     variant,
-    functions: ['ParticleWorker.computeFlowfield', 'navFlowfield.compute_flowfield'],
+    functions: ['computeFlowfieldReference (tests/reference)', 'navFlowfield.compute_flowfield'],
     grid: { width: gridWidth, height: gridHeight, cellSize, map, walls },
     checksumFlowfields: checkTargets.length,
     checksum,

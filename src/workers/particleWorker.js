@@ -29,7 +29,7 @@ import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRend
 import { AbstractWorker } from './abstractWorker.js';
 import { Query as QueryImport } from '../core/query.js';
 import { Grid as GridImport } from '../core/grid.js';
-import { NavGrid as NavGridImport, DIRECTION as DIRECTIONImport, DIR_TO_VEC as DIR_TO_VECImport } from '../core/navGrid.js';
+import { NavGrid as NavGridImport } from '../core/navGrid.js';
 import {
   calculateSpeed as calculateSpeedImport,
   calculateCameraScreenBounds,
@@ -84,8 +84,6 @@ const SpriteRenderer = SpriteRendererImport;
 const Query = QueryImport;
 const Grid = GridImport;
 const NavGrid = NavGridImport;
-const DIRECTION = DIRECTIONImport;
-const DIR_TO_VEC = DIR_TO_VECImport;
 const calculateSpeed = calculateSpeedImport;
 const Decal = DecalImport;
 const updateParticlePhysicsBuffers = updateParticlePhysicsBuffersImport;
@@ -105,14 +103,6 @@ const TOMBSTONE_SLOT = 2;
 const NAV_DX = Object.freeze([0, 1, 1, 1, 0, -1, -1, -1]);
 const NAV_DY = Object.freeze([-1, -1, 0, 1, 1, 1, 0, -1]);
 const NAV_COST = Object.freeze([10, 14, 10, 14, 10, 14, 10, 14]);
-const NAV_OPPOSITE_DIR = Object.freeze([
-  DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW,
-  DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
-]);
-const NAV_DIR_MAP = Object.freeze([
-  DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
-  DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW,
-]);
 
 function nextPowerOfTwo(value) {
   let n = 1;
@@ -279,37 +269,16 @@ class PathRequestQueue {
 }
 
 /**
- * NavScratch - Reusable buffers for pathfinding algorithms
+ * NavScratch: reusable buffers for the A* search (computePath). The flowfield searches in the navigation memory
+ * (navFlowfield.wasm).
  */
 class NavScratch {
   constructor(totalCells, maxPathLength, gridWidth, gridHeight) {
-    this.visited = new Uint8Array(totalCells);
     this.stamp = new Uint32Array(totalCells);
     this.currentStamp = 0;
 
-    this.distance = new Uint16Array(totalCells);
-    this.direction = new Uint8Array(totalCells);
-    this.smoothedVectors = new Int8Array(totalCells * 2);
-
+    // The flowfield's distance cap, which navFlowfield.wasm takes (bindNavFlowfield).
     this.maxDistance = Math.min(65535, (gridWidth + gridHeight) * 14);
-    this.bucketHead = new Int32Array(this.maxDistance + 1);
-    this.bucketTail = new Int32Array(this.maxDistance + 1);
-    this.bucketNodeNext = new Int32Array(totalCells);
-    this.bucketNodePrev = new Int32Array(totalCells);
-    this.bucketNodeDist = new Int32Array(totalCells);
-    this.bucketNodeCell = new Uint32Array(totalCells);
-    for (let i = 0; i <= this.maxDistance; i++) {
-      this.bucketHead[i] = -1;
-      this.bucketTail[i] = -1;
-    }
-    for (let i = 0; i < totalCells; i++) {
-      this.bucketNodeNext[i] = -1;
-      this.bucketNodePrev[i] = -1;
-      this.bucketNodeDist[i] = -1;
-      this.bucketNodeCell[i] = i;
-    }
-    this.bucketHeadDistance = 0;
-    this.bucketCount = 0;
 
     this.heapCell = new Uint32Array(totalCells);
     this.heapFCost = new Uint32Array(totalCells);
@@ -326,15 +295,6 @@ class NavScratch {
       this.stamp.fill(0);
       this.currentStamp = 1;
     }
-
-    this.bucketHeadDistance = 0;
-    this.bucketCount = 0;
-    this.bucketHead.fill(-1);
-    this.bucketTail.fill(-1);
-    this.bucketNodeNext.fill(-1);
-    this.bucketNodePrev.fill(-1);
-    this.bucketNodeDist.fill(-1);
-
     this.heapSize = 0;
   }
 
@@ -398,7 +358,7 @@ class ParticleWorker extends AbstractWorker {
     // Navigation
     this.navEnabled = false;
     this.scratch = null;
-    // W14: navFlowfield.wasm on the navigation memory, or null (the JS search).
+    // W14: navFlowfield.wasm on the navigation memory, bound with navigation.
     this._flowWasm = null;
     this.flowfieldRequests = null;
     /** W26: the decal stamp kernel, on the decal memory the tiles live in; stamps queue as records. */
@@ -677,21 +637,16 @@ class ParticleWorker extends AbstractWorker {
         this.gridHeight
       );
 
-      // W14: the flowfield search in WASM, when the nav buffer is the navigation memory's.
-      if (data.navigationMemory && data.navigationLayout && this.config?.wasm?.navFlowfield !== false
-        && data.navigationMemory.buffer === data.buffers.navigationData) {
-        try {
-          this._flowWasm = await bindNavFlowfield(data.navigationMemory, data.navigationLayout, {
-            walkability: NavGrid.getWalkabilityArray(),
-            gridWidth: this.gridWidth,
-            gridHeight: this.gridHeight,
-            maxDistance: this.scratch.maxDistance,
-          });
-        } catch (err) {
-          console.warn('[particle] navFlowfield.wasm did not load; searching in JS', err);
-          this._flowWasm = null;
-        }
+      // W14: the flowfield search in navFlowfield.wasm, on the navigation memory the nav buffer lives in.
+      if (!data.navigationMemory || !data.navigationLayout || data.navigationMemory.buffer !== data.buffers.navigationData) {
+        throw new Error('navigation without its navigation memory (createNavigationMemory)');
       }
+      this._flowWasm = await bindNavFlowfield(data.navigationMemory, data.navigationLayout, {
+        walkability: NavGrid.getWalkabilityArray(),
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        maxDistance: this.scratch.maxDistance,
+      });
 
       const flowfieldQueueCapacity = Math.max(32, this.maxFlowfields * 8);
       const pathQueueCapacity = Math.max(64, this.maxPaths * 8);
@@ -1664,208 +1619,8 @@ class ParticleWorker extends AbstractWorker {
     return false;
   }
 
-  _bucketInsertCell(scratch, cell, bucket) {
-    const clampedBucket = bucket > scratch.maxDistance ? scratch.maxDistance : bucket;
-    const oldBucket = scratch.bucketNodeDist[cell];
-    if (oldBucket >= 0) {
-      if (oldBucket === clampedBucket) return;
-      this._bucketUnlinkCell(scratch, cell, oldBucket);
-    }
-
-    const head = scratch.bucketHead[clampedBucket];
-    scratch.bucketNodePrev[cell] = -1;
-    scratch.bucketNodeNext[cell] = head;
-    if (head >= 0) {
-      scratch.bucketNodePrev[head] = cell;
-    } else {
-      scratch.bucketTail[clampedBucket] = cell;
-    }
-    scratch.bucketHead[clampedBucket] = cell;
-    scratch.bucketNodeDist[cell] = clampedBucket;
-    scratch.bucketCount++;
-  }
-
-  _bucketUnlinkCell(scratch, cell, bucket) {
-    const prev = scratch.bucketNodePrev[cell];
-    const next = scratch.bucketNodeNext[cell];
-    if (prev >= 0) {
-      scratch.bucketNodeNext[prev] = next;
-    } else {
-      scratch.bucketHead[bucket] = next;
-    }
-    if (next >= 0) {
-      scratch.bucketNodePrev[next] = prev;
-    } else {
-      scratch.bucketTail[bucket] = prev;
-    }
-    scratch.bucketNodePrev[cell] = -1;
-    scratch.bucketNodeNext[cell] = -1;
-    scratch.bucketNodeDist[cell] = -1;
-    scratch.bucketCount--;
-  }
-
-  _bucketPopCell(scratch, bucket) {
-    const cell = scratch.bucketHead[bucket];
-    if (cell < 0) return -1;
-    this._bucketUnlinkCell(scratch, cell, bucket);
-    return scratch.bucketNodeCell[cell];
-  }
-
+  /** W14: the search, the walls' pass and the smoothing in navFlowfield.wasm, then the slot. */
   computeFlowfield(targetCell) {
-    // W14. The search, the walls' pass and the smoothing in navFlowfield.wasm; the slot as below.
-    if (this._flowWasm !== null) {
-      this._computeFlowfieldWasm(targetCell);
-      return;
-    }
-    const willUseEmptySlot = this._hasEmptyFlowfieldSlot();
-
-    const scratch = this.scratch;
-    scratch.reset();
-
-    const walkability = NavGrid.getWalkabilityArray();
-    const gridWidth = this.gridWidth;
-    const gridHeight = this.gridHeight;
-    const totalCells = this.totalCells;
-
-    scratch.distance.fill(65535);
-    scratch.direction.fill(DIRECTION.NONE);
-
-    scratch.distance[targetCell] = 0;
-    this._bucketInsertCell(scratch, targetCell, 0);
-
-    while (scratch.bucketCount > 0) {
-      while (scratch.bucketHeadDistance <= scratch.maxDistance && scratch.bucketHead[scratch.bucketHeadDistance] < 0) {
-        scratch.bucketHeadDistance++;
-      }
-      if (scratch.bucketHeadDistance > scratch.maxDistance) break;
-
-      const cell = this._bucketPopCell(scratch, scratch.bucketHeadDistance);
-      if (cell < 0) continue;
-
-      if (scratch.isVisited(cell)) continue;
-      scratch.markVisited(cell);
-
-      const cellDist = scratch.distance[cell];
-      const cellX = cell % gridWidth;
-      const cellY = Math.floor(cell / gridWidth);
-
-      for (let dir = 0; dir < 8; dir++) {
-        const nx = cellX + NAV_DX[dir];
-        const ny = cellY + NAV_DY[dir];
-
-        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
-
-        const neighbor = ny * gridWidth + nx;
-
-        if (walkability[neighbor] === 0) continue;
-        if (scratch.isVisited(neighbor)) continue;
-
-        const newDist = cellDist + NAV_COST[dir];
-        if (newDist < scratch.distance[neighbor]) {
-          scratch.distance[neighbor] = newDist;
-          scratch.direction[neighbor] = NAV_OPPOSITE_DIR[dir];
-
-          const bucket = Math.min(newDist, scratch.maxDistance);
-          this._bucketInsertCell(scratch, neighbor, bucket);
-        }
-      }
-    }
-
-    for (let cell = 0; cell < totalCells; cell++) {
-      if (walkability[cell] !== 0) continue;
-
-      const cellX = cell % gridWidth;
-      const cellY = Math.floor(cell / gridWidth);
-
-      let bestDir = DIRECTION.NONE;
-      let bestDist = 65535;
-
-      for (let dir = 0; dir < 8; dir++) {
-        const nx = cellX + NAV_DX[dir];
-        const ny = cellY + NAV_DY[dir];
-
-        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
-
-        const neighbor = ny * gridWidth + nx;
-
-        if (walkability[neighbor] === 0) continue;
-
-        if (scratch.distance[neighbor] < bestDist) {
-          bestDist = scratch.distance[neighbor];
-          bestDir = NAV_DIR_MAP[dir];
-        }
-      }
-
-      scratch.direction[cell] = bestDir;
-    }
-
-    // Third pass: Smoothing
-    if (!scratch.smoothedVectors) {
-      scratch.smoothedVectors = new Int8Array(this.totalCells * 2);
-    }
-
-    const smoothed = scratch.smoothedVectors;
-
-    for (let y = 0; y < this.gridHeight; y++) {
-      for (let x = 0; x < gridWidth; x++) {
-        const cell = y * gridWidth + x;
-        const outIdx = cell * 2;
-        const dir = scratch.direction[cell];
-
-        if (dir === DIRECTION.NONE) {
-          smoothed[outIdx] = 0;
-          smoothed[outIdx + 1] = 0;
-          continue;
-        }
-
-        if (walkability[cell] === 0) {
-          const vec = DIR_TO_VEC[dir];
-          smoothed[outIdx] = Math.round(vec[0] * 127);
-          smoothed[outIdx + 1] = Math.round(vec[1] * 127);
-          continue;
-        }
-
-        let sumX = 0;
-        let sumY = 0;
-        let count = 0;
-
-        for (let ny = y - 1; ny <= y + 1; ny++) {
-          for (let nx = x - 1; nx <= x + 1; nx++) {
-            if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < this.gridHeight) {
-              const neighbor = ny * gridWidth + nx;
-              const neighborDir = scratch.direction[neighbor];
-              if (neighborDir !== DIRECTION.NONE) {
-                const vec = DIR_TO_VEC[neighborDir];
-                sumX += vec[0];
-                sumY += vec[1];
-                count++;
-              }
-            }
-          }
-        }
-
-        if (count > 0) {
-          const avgX = sumX / count;
-          const avgY = sumY / count;
-          smoothed[outIdx] = Math.round(avgX * 127);
-          smoothed[outIdx + 1] = Math.round(avgY * 127);
-        } else {
-          smoothed[outIdx] = 0;
-          smoothed[outIdx + 1] = 0;
-        }
-      }
-    }
-
-    const slot = NavGrid.allocateFlowfieldSlot(targetCell);
-    NavGrid.writeFlowfieldData(slot, smoothed);
-
-    if (willUseEmptySlot) {
-      this.cachedFlowfieldsCount++;
-    }
-  }
-
-  /** W14. computeFlowfield with the kernel for the search and the smoothing, then the slot as the JS fills it. */
-  _computeFlowfieldWasm(targetCell) {
     const willUseEmptySlot = this._hasEmptyFlowfieldSlot();
     const f = this._flowWasm;
     f.compute(f.tableByte, targetCell);

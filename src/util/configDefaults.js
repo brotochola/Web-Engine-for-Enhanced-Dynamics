@@ -525,11 +525,6 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   decorationSwayF32: true,
   /**
-   * The particle worker's flowfield search (`navFlowfield.wasm`, W14): the nav buffer at byte 0 of a
-   * WebAssembly.Memory, the search's scratch after it.
-   */
-  navFlowfield: true,
-  /**
    * Pre-render's per-light visibility sweep with raycasted lighting (`visibilitySweep.wasm`, W2a): the light's
    * occluders, its polygon and the polar bins of compound solids in a WebAssembly.Memory pre-render owns.
    */
