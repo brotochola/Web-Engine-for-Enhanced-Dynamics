@@ -17,6 +17,11 @@ const BOX2D_MAX_PAGES = 32768;
 /** Room for dlmalloc's chunk header and the 64-byte alignment of one large block. */
 const BLOCK_SLACK_BYTES = 1 << 20;
 
+/** The pages Box2D's memory grows by for a block of `bytes` (with dlmalloc's room for one large chunk). */
+export function box2dBlockPages(bytes) {
+  return Math.ceil((bytes + BLOCK_SLACK_BYTES) / 65536);
+}
+
 /**
  * The block this scene's regions need and the pages Box2D's memory then takes, or null when the scene keeps
  * separate memories. queueBytes: the render-queue part, from the block's start (64-aligned); spatialBytes: the
@@ -27,7 +32,7 @@ export function box2dBlockPlan(scene) {
   if (!scene._physicsEnabled || scene.config.wasm?.box2dBlock === false) return null;
   const queueBytes = (renderQueueBlockBytes(scene) + 63) & ~63;
   const box2dPages = box2dMemoryPages(scene.config.physics);
-  const pagesFor = (bytes) => box2dPages + Math.ceil((bytes + BLOCK_SLACK_BYTES) / 65536);
+  const pagesFor = (bytes) => box2dPages + box2dBlockPages(bytes);
   // A spatial part that would take the block past the limit (many neighbours: a row and a candidate list of
   // maxNeighbors ids per entity) stays out of it, in a memory of its own or the JS path, and the render-queue
   // part keeps its place.
