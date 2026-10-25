@@ -18,9 +18,10 @@
  *
  *   node tests/bench/profileSceneSweep.mjs [--pass cpu|deopt|heap|boot] [--set demos|stress|all]
  *        [--only name,name] [--warmup-ms 6000] [--duration-ms 8000] [--out tests/results/wasm-q1b]
- *        [--inventory-only] [--keep-traces] [--browser firefox]
+ *        [--inventory-only] [--keep-traces] [--browser firefox] [--dist]
  *
- * The boot pass only starts each scene and checks it ran (exit status, page errors), in --browser's browser.
+ * The boot pass only starts each scene and checks it ran (exit status, page errors), in --browser's browser; with
+ * --dist on the dist/ bundle (weed.bundle.esm.min.js, which must be fresh), not the source.
  *
  * A scene that fails or hangs (--timeout-ms, default 180 000) is recorded as failed; the sweep
  * goes on. CPU samples are not STEP_MS: this says where a worker spends its busy time.
@@ -161,7 +162,7 @@ function heapPass(file, dir, opts) {
 function bootPass(file, dir, opts) {
   const name = sceneName(file);
   const run = spawn([
-    bench('runIntegratedWorkerBenchmark.mjs'), '--src', '--headed', '--no-collect-detailed-stats',
+    bench('runIntegratedWorkerBenchmark.mjs'), ...(opts.dist ? [] : ['--src']), '--headed', '--no-collect-detailed-stats',
     ...(opts.browser ? ['--browser', opts.browser] : []),
     '--scene', file, '--scene-export', sceneExport(file), '--warmup-ms', String(opts.warmupMs),
     '--duration-ms', String(opts.durationMs), '--output', path.join(dir, 'boot.json'),
@@ -282,6 +283,7 @@ function main() {
     timeoutMs: Number(args['timeout-ms'] ?? 180000),
     keepTraces: Boolean(args['keep-traces']),
     browser: args.browser ? String(args.browser) : '',
+    dist: Boolean(args.dist),
   };
   fs.mkdirSync(opts.out, { recursive: true });
   // The cpu pass's index is results.json; the others keep their own.
