@@ -181,6 +181,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
         // The rows Pixi packs the layer into (15 floats each) before it copies them out for the upload.
         { name: `customRows${k}`, owner: 'Pixi packs', bytes: (c.maxItems | 0) * 15 * 4 },
       );
+      // A y-sorted layer's painter state, where painterRadix.wasm sorts the keys pre-render writes in its queues.
+      if (c.ySort) regions.push(...painterStateRegions(`customPainter${k}`, c.maxItems | 0, 'Pixi (the layer\'s painter sort)'));
     }
     if (emit.adobe) {
       regions.push(

@@ -36,7 +36,8 @@ test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter pat
   assert.match(pixi, /packSpriteLayer\(/);
   assert.match(packLayer, /painterOrder\(painter, dense \? null : indices, n, keysU32\)/);
   assert.match(packLayer, /if \(painter\.kernel\) return orderPainterSlotsWasm\(painter, idxE, n, keysU32\);\s+return orderPainterSlots\(painter, idxE, n, keysU32\);/);
-  assert.match(pixi, /painter = layerYSort \? createPainterState\(maxItems\) : null/);
+  // Close-out group B: a y-sorted layer's state is the kernel's, on its regions (customLayerPainter.test.js).
+  assert.match(pixi, /painter = layerYSort \? this\._customLayerPainterState\(layerPainterKernel, lrq, maxItems\) : null/);
   assert.match(pixi, /this\._uploadSortedSprites\(cl\.batch, q, opts, cl\.painter, cl\.sortKeyU32, null, count\)/);
 });
 

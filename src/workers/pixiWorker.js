@@ -106,7 +106,7 @@ import {
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { createPainterState } from '../util/sortIndexByKey.js';
-import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../render/painterRadixClient.js';
+import { bindPainterRadix, createWasmPainterState, painterSlotList, wasmPainterState } from '../render/painterRadixClient.js';
 import { LiquidFunDensitySplat, LF_SPLAT_STRIDE } from '../render/liquidFunDensitySplat.js';
 import { packParticleLights, resolveParticleLights } from '../render/particleLightSplat.js';
 import {
@@ -1981,6 +1981,39 @@ class PixiRenderer extends AbstractWorker {
       console.warn('[PIXI WORKER] painterRadix.wasm did not load; sorting in JS', err);
       this._painterWasm = null;
     }
+  }
+
+  /**
+   * painterRadix.wasm for the y-sorted custom layers, whose painter states are regions of the render-queue memory
+   * next to their queues: Pixi's entities kernel when it has one (a kernel sorts any state of its memory), else one
+   * bound for them. Null without such a state, or with wasm.painterRadix off: the layers then sort in JS.
+   */
+  async _bindCustomLayerPainter(queues) {
+    const memory = this._renderQueueMemory;
+    let layout = null;
+    for (const q of Object.values(queues)) {
+      if (q && q.painter) {
+        layout = q.painter;
+        break;
+      }
+    }
+    if (!memory || !layout || this.config?.wasm?.painterRadix === false) return null;
+    if (this._painterWasm) return this._painterWasm.kernel;
+    try {
+      return (await bindPainterRadix(memory, layout)).kernel;
+    } catch (err) {
+      console.warn('[PIXI WORKER] painterRadix.wasm did not load; the custom layers sort in JS', err);
+      return null;
+    }
+  }
+
+  /** A y-sorted custom layer's painter state: on its regions of the memory, sorted by `kernel`; else the JS one. */
+  _customLayerPainterState(kernel, lrq, maxItems) {
+    const layout = lrq.painter;
+    if (kernel && layout && lrq.dataA === kernel.buffer && layout.rows >= maxItems) {
+      return wasmPainterState(kernel.buffer, layout, kernel);
+    }
+    return createPainterState(maxItems);
   }
 
   /**
@@ -6558,6 +6591,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!metadata?.layers) return;
 
     const queues = data.customLayerRenderQueues || {};
+    // The y-sorted layers' painter states are regions of the render-queue memory, next to their queues.
+    const layerPainterKernel = await this._bindCustomLayerPainter(queues);
     const lfMax =
       (data.liquidFunMaxCount | 0) ||
       (this.config?.physics?.liquidFun?.maxCount | 0) ||
@@ -6639,7 +6674,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           createRenderQueueViews(lrq.dataB, maxItems, lrq.dataBByte | 0),
         ];
         sortKeyU32ByBuf = buffers.map((b) => b.sortKeyU32);
-        painter = layerYSort ? createPainterState(maxItems) : null;
+        painter = layerYSort ? this._customLayerPainterState(layerPainterKernel, lrq, maxItems) : null;
         // Close-out group B: the layer's rows in the render-queue memory (next to its queues), where gpuPack.wasm
         // packs them; copied out for the upload as the entities' are (W30's arena).
         const layerRows = lrq.rowsByte >= 0 && this._pixiGpuPack && lrq.dataA === this._renderQueueMemory?.buffer

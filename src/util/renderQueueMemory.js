@@ -24,7 +24,7 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
  *   lightBytes?: number, particleBytes?: number, liquidFun?: null | { maxCount: number, renderBytes: number },
- *   customLayers?: Array<{ layerId: number, maxItems: number, queueBytes: number }>, bulletBytes?: number,
+ *   customLayers?: Array<{ layerId: number, maxItems: number, queueBytes: number, ySort?: boolean }>, bulletBytes?: number,
  *   adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
  *   the emit's regions too (renderQueueMemoryRegions); a component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number, cookies?: number, cookieBytes?: number }} [stamp]
@@ -125,6 +125,8 @@ function emitLayout(r, entities, rows, customLayers) {
       queueBByte: r[`customQueueB${k}`].byte,
       collectorByte: r[`customCollector${k}`].byte,
       rowsByte: r[`customRows${k}`].byte,
+      // A y-sorted layer's painter state (Pixi sorts it), null for a layer drawn in queue order.
+      painter: c.ySort ? painterStateLayout(r, `customPainter${k}`, c.maxItems | 0) : null,
     })),
     entities,
     spriteRendererByte: block(r.spriteRenderer),

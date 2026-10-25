@@ -762,7 +762,8 @@ export function customLayerQueueSpecs() {
     const meta = layerMetas[i];
     if (!meta || meta.builtIn || !meta.hasRenderQueue || meta.id === Layer.entitiesId) continue;
     if (!Layer.getById(meta.id)) continue;
-    out.push({ layerId: meta.id, maxItems: meta.maxItems || LAYER_DEFAULTS.maxItemsPerLayer });
+    // ySort: Pixi sorts the layer's rows by their keys (its painter state is laid out with its queues).
+    out.push({ layerId: meta.id, maxItems: meta.maxItems || LAYER_DEFAULTS.maxItemsPerLayer, ySort: meta.ySorting === true });
   }
   return out;
 }
@@ -925,6 +926,8 @@ function initializeLightingAndRenderBuffers(scene) {
       collectorByte: at ? at.collectorByte : -1,
       // The rows Pixi packs the layer into, -1 when it keeps its own.
       rowsByte: at ? at.rowsByte : -1,
+      // A y-sorted layer's painter state (painterStateLayout) in the memory, null otherwise.
+      painter: at ? at.painter : null,
       maxItems,
       layerId,
       layerName: layer.name,
