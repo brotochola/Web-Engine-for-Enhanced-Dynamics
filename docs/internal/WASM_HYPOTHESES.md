@@ -597,6 +597,13 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
    (pre-render −36 %, spatial −10 %). Measure Firefox with `--browser firefox` (the installed one): Playwright's
    Firefox build runs WASM 5–18× slower than release Firefox. WebKit is out (the owner). L3 and L4 remain.*
 2. Group A leaves `src/`, one kernel per commit, each with its parity test now reading the reference under `tests/`.
+   *Done 2026-10-24 for eight kernels (R-0625): decalStamp, decalPremultiply, navFlowfield, meshCorners, shadowStamp,
+   particleIntegrate and particleLists, spatialGather and spatialPublish. Their JS is `tests/reference/` (a
+   `spatialJsClass` / `installParticleJs` puts it back on a worker for the parity tests), their switches are gone (a
+   scene that still sets one is warned once), their memories are always made with the feature and one that cannot
+   be is an error naming its size, and a kernel that does not load names itself. Left with group B, since their JS
+   still serves other callers: gpuPack's entity batch (its JS packer also packs Pixi's pack-mode and interpolation
+   batches, item 6b) and the painter sort's main queue (the JS sort also orders the y-sorted custom layers).*
 3. Group B: the cases a kernel can take over, one at a time (the no-physics placement of bulletTick and
    visibilityGather is the largest), then their JS leaves too.
 4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
