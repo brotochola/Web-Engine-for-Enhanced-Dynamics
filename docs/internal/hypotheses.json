@@ -817,7 +817,8 @@
       "aliases": [],
       "records": [
         "R-0586",
-        "R-0589"
+        "R-0589",
+        "R-0630"
       ]
     },
     {
@@ -958,7 +959,8 @@
         "R-0624",
         "R-0625",
         "R-0626",
-        "R-0627"
+        "R-0627",
+        "R-0630"
       ]
     },
     {
@@ -13721,6 +13723,23 @@
       "commits": [
         "355ee06e",
         "95e03c4c"
+      ]
+    },
+    {
+      "id": "R-0630",
+      "date": "2026-10-25",
+      "time": "03:28",
+      "timeFrom": "recorded",
+      "title": "W27b: the Adobe expansion in float32 and SIMD, kernel +55 %, a tie in adobeAnimateScene; reverted",
+      "verdict": "rejected",
+      "text": "**W27b: the Adobe expansion in float32, four pieces at a time. Kernel +55 %, a tie in the scene; reverted.** 2026-10-25.\n\nWhy: after E-138, adobeAnimateScene at the minimum zoom spent 40.3 % of pre-render (681 ms/s) in `emit_rows`, nearly all of it expanding 20 000 characters into 261 788 pieces in double, piece by piece, as the JS does. The owner's rules allow float32 within a stated tolerance, and every kernel gets the SIMD/float32 pass.\n\nThe change (70e9490c, 7f5a961b, 49b40890): `adobe_root_f32x4`, the root's transform in double then rounded once, four pieces to an f32x4 with vector stores into each queue column, the rest with the same float32 arithmetic; behind EMIT_ADOBE_F32, on by default through wasm.preRenderEmitAdobeF32. preRenderEmitAdobe.test.js held it to the double expansion within 2e-3 px (positions), 1e-5 (scales, rotations) and 1e-6 (alpha), every other column exact, with Y-sort and without and a queue that fills inside a character (two mutants failed it).\n\nKernel (`preRenderEmitAdobeMicrobench`, Node, 10 000 characters of the demo's asset, 130 888 rows, 5 alternating rounds, TurboFan; the f32x4 variant's checksum frames in lock-step with the double emit, all 45 within the tolerance): emit 443.3 → 687.1 ops/s (+55.0 %).\n\nScene: adobeAnimateScene, `--camera-zoom min`, `--vs 7f5a961b --hyp-rev 49b40890`, 4 pairs, Chrome, headed, source: pre-render 14.608 → 15.625 ms (+2.1 %, worse 2/4, cv 8/5 %), −0.4 % against the other workers, which all moved up together (physics +7.5 %, renderer +6.3 %, spatial +3.1 %): no gain. A CPU profile of the scene with the switch on against the one before it (E-138 on): `emit_rows` 274 → 262 ms/s (40.3 % → 38.7 % of 681 → 676 ms/s). In the scene the expansion is bound by its stores (261 788 rows into 16 columns, while Pixi reads the other buffer), not by the arithmetic the bench's hot, half-size working set measured. Chrome decides: a tie, and a tolerance path that buys nothing is not kept. Reverted (65ccbc11, 950865f8, 91edeae2); the code is in 70e9490c if a scene where the expansion is compute-bound turns up.\n\nSeen on the way: on E-138's presorted frames with lighting off, the main queue still takes the glow split (fillQueueIndices builds a list of every row, 3.5 % of pre-render) and packs through the scatter with that identity list (2.76 ms on the screen's shape) instead of with no list (2.41 ms). A follow-up.",
+      "commits": [
+        "70e9490c",
+        "7f5a961b",
+        "49b40890",
+        "65ccbc11",
+        "950865f8",
+        "91edeae2"
       ]
     }
   ],
