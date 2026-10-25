@@ -607,7 +607,11 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
 3. Group B: the cases a kernel can take over, one at a time (the no-physics placement of bulletTick and
    visibilityGather is the largest), then their JS leaves too. *2026-10-25: W9e, a pose batch through gpuPack.wasm
    (a tie, kept as coverage); W4d, the emit's bullet and trail rows (pre-render −14.1 % in `bulletStressScene`), with
-   E-137 (the bullet collect in JS, −17.3 % after it). Left in the emit: the glow rows (type 3), the particle rows (type 1:
+   E-137 (the bullet collect in JS, −17.3 % after it); E-138, the collector sorted before the emit when it expands
+   (Adobe at the minimum zoom: pre-render −19.7 %, then −10.6 % with no slot list); W27b, the Adobe expansion in
+   float32 and SIMD, kernel +55 % but a tie in the scene (bound by its stores), reverted. The no-physics placement
+   of bulletTick and visibilityGather was done on 2026-10-24 (R-0621: the engine block as a memory of its own). Left
+   in the emit: the glow rows (type 3), the particle rows (type 1:
    ParticleComponent is not in the memory) and the frames with a LiquidFun row (declined; `liquidFunStressScene`'s
    pre-render spends 31.5 % in the JS emit, at 101 ms/s).*
 4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
