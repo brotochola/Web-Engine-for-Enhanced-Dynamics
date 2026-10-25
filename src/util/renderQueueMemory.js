@@ -24,7 +24,7 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
  *   lightBytes?: number, particleBytes?: number, liquidFun?: null | { maxCount: number, renderBytes: number },
- *   customLayers?: Array<{ layerId: number, maxItems: number, queueBytes: number }>,
+ *   customLayers?: Array<{ layerId: number, maxItems: number, queueBytes: number }>, bulletBytes?: number,
  *   adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
  *   the emit's regions too (renderQueueMemoryRegions); a component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
@@ -113,6 +113,8 @@ function emitLayout(r, entities, rows, customLayers) {
     shadowCasterByte: block(r.shadowCaster),
     decorationByte: block(r.decorations),
     lightEmitterByte: block(r.lightEmitter),
+    // BulletComponent here when the bullet tick's block does not hold it, -1 otherwise.
+    bulletComponentByte: block(r.emitBullets),
     // The particle memory's place (createParticleMemory), -1 without particles.
     particleMemoryByte: block(r.particleMemory),
     particleMemoryBytes: r.particleMemory.bytes,

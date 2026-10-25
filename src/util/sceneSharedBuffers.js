@@ -428,10 +428,12 @@ function initializeBulletBuffers(scene) {
   if (maxBullets <= 0) return;
 
   const bulletBufferSize = BulletComponent.getBufferSize(maxBullets);
-  // W19: in Box2D's block when the bullet tick's regions are there (renderQueueMemorySpec), else a buffer of its own.
-  const bulletBlock = scene.renderQueueMemory?.layout.collect?.bullets;
-  if (bulletBlock) buffers.componentDataByte.BulletComponent = bulletBlock.componentByte;
-  buffers.componentData.BulletComponent = bulletBlock ? scene.renderQueueMemory.buffer : new SharedArrayBuffer(bulletBufferSize);
+  // W19: in Box2D's block when the bullet tick's regions are there (renderQueueMemorySpec); else among the emit's
+  // blocks, where the emit kernel reads it for the bullet and trail rows; else a buffer of its own.
+  const rqm = scene.renderQueueMemory;
+  const at = rqm?.layout.collect?.bullets?.componentByte ?? (rqm?.layout.emit?.bulletComponentByte ?? -1);
+  if (at >= 0) buffers.componentDataByte.BulletComponent = at;
+  buffers.componentData.BulletComponent = at >= 0 ? rqm.buffer : new SharedArrayBuffer(bulletBufferSize);
   BulletComponent.initializeArrays(buffers.componentData.BulletComponent, maxBullets, buffers.componentDataByte?.BulletComponent | 0);
   BulletComponent.bulletCount = maxBullets;
 
@@ -599,6 +601,8 @@ export function renderQueueMemorySpec(scene) {
     ? visibilityGatherSpec(scene)
     : null;
   const wantsCollect = config.wasm?.preRenderCollect !== false && Boolean(emit) && emit.spriteBytes > 0;
+  // The bullet and trail rows read BulletComponent: among the emit's blocks when the bullet tick's are not there.
+  if (emit && maxBullets > 0 && !bullets) emit.bulletBytes = BulletComponent.getBufferSize(maxBullets);
   const collect = (wantsCollect || bullets || visibility) && pools.Transform?.ComponentClass && (!physics || inBlock)
     ? {
         entities: n,

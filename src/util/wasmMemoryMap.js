@@ -134,6 +134,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'shadowCaster', owner: 'every worker (ShadowCaster)', bytes: emit.casterBytes | 0 },
       { name: 'decorations', owner: 'every worker (DecorationComponent)', bytes: emit.decorationBytes | 0 },
       { name: 'lightEmitter', owner: 'every worker (LightEmitter)', bytes: emit.lightBytes | 0 },
+      // BulletComponent when the bullet tick's regions (W19, with the collect's) do not hold it.
+      { name: 'emitBullets', owner: 'every worker (BulletComponent)', bytes: emit.bulletBytes | 0 },
       // The particle memory's regions (particleMemory.js, laid out there): ParticleComponent, its lists and the
       // particle kernels' scratch, so the emit kernel reads the particles where the particle worker writes them.
       { name: 'particleMemory', owner: 'particle (particleMemory.js); every worker reads', bytes: emit.particleBytes | 0 },
