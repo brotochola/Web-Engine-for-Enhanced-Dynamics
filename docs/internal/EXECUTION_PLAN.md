@@ -872,6 +872,17 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
 
+### E-138 A frame that expands its rows sorts the collector before the emit — **KEPT (product), 2026-10-25**
+In `adobeAnimateScene` at the minimum zoom pre-render is saturated and the pack scatters each Adobe character's run of
+pieces to its painter slot (a kernel screen on its 261 744 rows: 5.31 ms scattered, 2.41 ms in order). When last
+frame's emit wrote at least twice the collector's rows, the collector and its pose stash are stably sorted by the
+emit's keys first (`355ee06e`); the queue then comes out in painter order and is packed as it is, with no painter
+(GPU_FLAG_SORTED). Not with sun casters (packed in queue order) or a queue that filled. The gate first read a count
+`resetFrameCounters` clears, so the presort never ran (a tie, −1.5 %); fixed in `95e03c4c`, with a test over real
+frames. 4 pairs: pre-render **20.516 → 15.818 ms, −19.7 %** (0/4 worse). The renderer's step rose 18.4 % while its
+busy time per second stayed flat (366 and 359 ms/s): pre-render now delivers more frames, so more of Pixi's steps
+commit one. Lesson: a gate that reads per-frame state needs a test across real frames.
+
 ### E-137 The bullet collect writes its own rows — **KEPT (product), 2026-10-25**
 E-98c and E-98e for bullets: `collectVisibleBullets` called `collectRenderable` for each visible bullet and trail,
 whose dispatch, bit scan and `_writeRenderable` always end on the main collector for a bullet on the entities layer
