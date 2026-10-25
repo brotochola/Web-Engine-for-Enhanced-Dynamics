@@ -161,6 +161,9 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitTable', owner: 'pre-render', bytes: EMIT_TABLE_SLOTS * 4 },
       // The emit's doubles (preRenderEmit.c E_PARAMS): the zenithal particles' height terms.
       { name: 'emitParams', owner: 'pre-render', bytes: EMIT_PARAM_DOUBLES * 8 },
+      // E-138: the presort's keys (f32) and order (u32), which pre-render's painter kernel sorts.
+      { name: 'emitPresortKeys', owner: 'pre-render', bytes: n * 4 },
+      { name: 'emitPresortOrder', owner: 'pre-render', bytes: n * 4 },
       { name: 'emitPersistType', owner: 'pre-render', bytes: 2 * n },
       { name: 'emitPersistEntity', owner: 'pre-render', bytes: 2 * n * 4 },
       { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },

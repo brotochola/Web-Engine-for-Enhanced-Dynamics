@@ -87,7 +87,7 @@ import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_S
 import { Layer } from '../core/layer.js';
 import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import { bindGpuPack, packInstancedRowsWasm, packSplitRowsWasm } from '../render/gpuPackClient.js';
-import { bindPainterRadix, createWasmPainterState, painterSlotList } from '../render/painterRadixClient.js';
+import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
 import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
 import {
@@ -960,6 +960,12 @@ class PreRenderWorker extends AbstractWorker {
             // the poses there on a frame with one, _bindCollectPoses).
             const stashIn = emitLayout !== null && emitLayout.persistRows === maxItems && emitLayout.stashXByte >= 0;
             const stash = (byte) => (stashIn ? new Float32Array(emitBuffer, byte, maxItems) : new Float32Array(maxItems));
+            // E-138: the presort's keys and order in the memory, where the painter kernel sorts them.
+            if (emitLayout !== null && emitLayout.persistRows === maxItems && emitLayout.presortKeysByte >= 0) {
+                this._presortKeys = new Float32Array(emitBuffer, emitLayout.presortKeysByte, maxItems);
+                this._presortKeysU32 = new Uint32Array(emitBuffer, emitLayout.presortKeysByte, maxItems);
+                this._presortOrder = new Uint32Array(emitBuffer, emitLayout.presortOrderByte, maxItems);
+            }
             this._renderablePx = stash(emitLayout?.stashXByte);
             this._renderablePy = stash(emitLayout?.stashYByte);
             this._renderableRotC = stash(emitLayout?.stashRotCByte);
@@ -2780,11 +2786,16 @@ class PreRenderWorker extends AbstractWorker {
 
     /** E-138. The collector's rows and their poses in the stash, stably sorted by the key the emit writes for them. */
     _sortCollectorByKey(count, ySort) {
+        // The keys and the order are regions of the render-queue memory (bound at init), where pre-render's painter
+        // kernel sorts them; the permutation's scratch is pre-render's own.
         if (this._presortOrder.length < count) {
             const n = this.renderQueueMaxItems;
             this._presortKeys = new Float32Array(n);
             this._presortKeysU32 = new Uint32Array(this._presortKeys.buffer);
             this._presortOrder = new Uint32Array(n);
+        }
+        if (this._presortF32.length < count) {
+            const n = this.renderQueueMaxItems;
             this._presortScratch = new Uint32Array(n);
             this._presortHist = new Uint32Array(256);
             this._presortF32 = new Float32Array(n);
@@ -2805,7 +2816,9 @@ class PreRenderWorker extends AbstractWorker {
             order[i] = i;
         }
         this._presortGlowRows = glows;
-        radixSortIndicesBySortKey(order, count, this._presortKeysU32, this._presortScratch, this._presortHist);
+        const painter = this._gpuPainter;
+        if (painter && painter.kernel) radixSortIndicesWasm(painter, order, count, this._presortKeysU32);
+        else radixSortIndicesBySortKey(order, count, this._presortKeysU32, this._presortScratch, this._presortHist);
         let i = 0;
         while (i < count && order[i] === i) i++;
         if (i === count) return;

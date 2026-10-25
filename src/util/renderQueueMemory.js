@@ -139,6 +139,9 @@ function emitLayout(r, entities, rows, customLayers) {
     resultsByte: r.emitResults.byte,
     tableByte: r.emitTable.byte,
     paramsByte: r.emitParams.byte,
+    // E-138: the presort's keys and order (one per queue row).
+    presortKeysByte: r.emitPresortKeys.byte,
+    presortOrderByte: r.emitPresortOrder.byte,
     // Buffer b's rows start at byte + b * persistRows * the element size.
     persistRows: rows,
     persistTypeByte: r.emitPersistType.byte,
