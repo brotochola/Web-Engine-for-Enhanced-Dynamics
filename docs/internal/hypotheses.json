@@ -8156,7 +8156,8 @@
       "aliases": [],
       "refs": [],
       "records": [
-        "R-0634"
+        "R-0634",
+        "R-0635"
       ],
       "id": "W30",
       "title": "Pixi's copies out of the render-queue memory by WebAssembly memory.copy into a private memory",
@@ -8165,8 +8166,8 @@
       "date": "2026-10-25",
       "area": "pixi",
       "kind": "wasm",
-      "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom, renderer 7.939 → 6.545 ms (−17.8 %, 0/8); the copy 1.99 → 1.25 ms for 15 MB in Chrome 155",
-      "next": "The glow and shadow batches (_commitPackedBatch) into arenas of their own; a Predator pair."
+      "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom, renderer 7.939 → 6.545 ms (−17.8 %, 0/8); the copy 1.99 → 1.25 ms for 15 MB in Chrome 155; the glow, cookie and caster batches too (629e812a): Predator Pixi 3.684 → 3.440 ms (−8.1 %, −3.6 % against the others)",
+      "next": "Nothing pending: every batch Pixi fills from the render-queue memory copies by memory.copy."
     }
   ],
   "records": [
@@ -13806,6 +13807,18 @@
       "text": "**W30: Pixi's copies out of the render-queue memory by WebAssembly memory.copy into a private memory.** 2026-10-25.\n\nWhy: E-123 has every batch upload from arrays of its own (uploading from the shared rows made the other workers slower), so every frame Pixi copies the rows pre-render or its own pack wrote. In adobeAnimateScene at the minimum zoom `commitSplit` was 65 % of Pixi's 359 ms/s (the copy of 261 788 rows, 15.7 MB a frame); in bulletStressScene 28 %; in Predator `_commitPackedBatch` 10 %. TypedArray.set from a view of a shared memory copies word by word (V8's relaxed memcpy for shared buffers); WebAssembly's memory.copy between two memories (multi-memory: Chrome 120, Firefox 125) is the engine's memmove. A screen in Chrome 155 (chromeKernel.mjs, 15 MB): TypedArray.set from shared into a plain array 1.985 ms, memory.copy from the shared memory into an unshared one 1.25 ms (−37 %), memory.copy inside the shared memory 1.31 ms; Node 12.4 runs the same module.\n\nThe change (da139ae4): `src/render/sharedCopy.js` holds the copy module, assembled by hand (C has no syntax for a second memory; its WAT is in the comment), and `createPrivateArena`: an unshared WebAssembly.Memory made at its full size and never grown, so its buffer is an ordinary ArrayBuffer the upload reads as before, with a bump allocator. Pixi makes one for the entity batch (its two streams at their widest, 17 floats a row); `InstancedSpriteBatch.copyIn` takes every copy into the arena by memory.copy (commitSplit, the W9d and W9e uploads, `_commitPackedBatch`) and anything else by TypedArray.set. Without multi-memory (no arena) the batch keeps its arrays. sharedCopy.test.js: the copy bit for bit (NaN and -0 patterns), the arena's arrays aligned and its end refused, a batch in the arena committing the bytes a batch without one commits, by memory.copy; a length mutant fails it.\n\nScene: adobeAnimateScene, `--camera-zoom min`, `--vs 987db5f5 --hyp-rev cbf074f8` (the same tree as da139ae4, whose message was amended with these numbers), Chrome, headed, source, Pixi the owner. The first 4 pairs: renderer 7.780 → 6.594 ms (−15.2 %, 0/4), but spatial, which the change does not reach, +4.0 % (worse 4/4, cv 1/3 %; +2.4 % against the others). An A/A in the same sitting (cbf074f8 on both sides, 4 pairs) moved physics +2.6 % (3/4) and spatial +1.0 %, so the sitting grew by 4 pairs (`--append`). **8 pairs: renderer 7.939 → 6.545 ms, −17.8 %, worse 0/8** (cv 2/3 %), −15.6 % against the other workers (8/8); spatial 5.356 → 5.348 ms (+0.6 %, 5/8), physics −0.7 %, pre-render −0.9 %; RENDER_QUEUE_SIZE 261 778 on both sides; presented 60. **KEPT (product).**\n\nNext: the other batches Pixi commits from the render-queue memory (the glow batch, the shadow casters' sun, stamp and cookie batches: `_commitPackedBatch`, 10 % of Predator's Pixi) into arenas of their own.",
       "commits": [
         "da139ae4"
+      ]
+    },
+    {
+      "id": "R-0635",
+      "date": "2026-10-25",
+      "time": "04:19",
+      "timeFrom": "recorded",
+      "title": "W30 extended to the glow, cookie and caster batches; Predator Pixi -8.1 % (-3.6 % against the others)",
+      "verdict": "kept",
+      "text": "**W30, extended: the glow, cookie and shadow-caster batches keep their arrays in private memories too.** 2026-10-25.\n\nThe change (629e812a): every batch Pixi fills from the render-queue memory gets an arena of its own sized for its capacity (`_batchArena`): the entities' glow batch, the cookie shadow batch and the GPU caster batch, which `_commitPackedBatch` fills every frame with pre-render's packed rows (10 % of Predator's Pixi in the Q7 profile). Custom layers pack their own rows and copy nothing out of the shared memory.\n\nScene: Predator, `--vs caa49166 --hyp-rev 90c02b30` (the same tree as 629e812a, whose message was amended with these numbers), 4 pairs, Chrome, headed, source, Pixi the owner: **renderer 3.684 → 3.440 ms, −8.1 %, worse 1/4** (cv 5/2 %). Every worker moved down in this sitting (logic −3.6 %, physics −4.6 %, pre-render −3.1 %), so the figure that stands is against the others: **−3.6 % (lower 3/4)**. GPU_CASTERS 13 411 and 13 329, VISIBLE_ENTITIES 13 497 and 13 413, presented 60. **KEPT (product)**: a smaller gain than the entity batch's, as Predator's casters are about 1.2 MB a frame against Adobe's 15.7 MB.",
+      "commits": [
+        "629e812a"
       ]
     }
   ],
