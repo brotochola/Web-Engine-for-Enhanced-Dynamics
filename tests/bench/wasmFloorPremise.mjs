@@ -179,7 +179,8 @@ async function gatherCase() {
     ], scope);
     return Q3;
   };
-  const k = await setupSpatialKernel({ n: 16500, workers: 1, spatial: { neighborReuseSkin: 0, neighborTickInterval: 1 }, make });
+  // The JS search the kernels replaced (tests/reference/spatialGather.mjs), with its JS filter.
+  const k = await setupSpatialKernel({ n: 16500, workers: 1, spatial: { neighborReuseSkin: 0, neighborTickInterval: 1 }, make, js: { publish: 'js' } });
   const w = k.workers[0];
   k.frame(); // one shipped update: rows, grid, owned list
   rec.posU = new Uint32Array(w.entityPosData.buffer, w.entityPosData.byteOffset, w.entityPosData.length);
@@ -239,7 +240,7 @@ async function publishCase() {
     ], scope);
     return P;
   };
-  const k = await setupSpatialKernel({ n: 16500, workers: 3, make });
+  const k = await setupSpatialKernel({ n: 16500, workers: 3, make, js: { publish: 'js' } });
   for (let f = 0; f < 45; f++) k.frame();
   const w = k.workers[0], maxN = Grid.maxNeighbors, stride = 1 + maxN, count = k.n, vr = Collider.visualRange;
   const ids = []; for (let i = 0; i < w._ownedEntityCount; i++) { const a = w._ownedEntityList[i]; if (vr[a] > 0) ids.push(a); }

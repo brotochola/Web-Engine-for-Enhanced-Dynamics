@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 
-// E-78: the spatial candidate gather in WASM (wasm/spatialGather.c, wasm.spatialGather on) must
-// publish exactly what the JS gather publishes (wasm.spatialGather off), frame after frame, with
+// E-78: the spatial candidate gather in WASM (wasm/spatialGather.c) must publish exactly what the JS gather it
+// replaced publishes (tests/reference/spatialGather.mjs, on the workers in its place), frame after frame, with
 // Predator's reuse settings and drift and with every list rebuilt every frame. Each side runs in
 // its own thread: Grid is static state, one setup per thread.
 
@@ -32,7 +32,7 @@ for (const [name, spatial] of Object.entries(CONFIGS)) {
       // spatial.gatherCellOrder: the batch in home-cell order gathers and publishes the same rows.
       run({ ...base, spatial: { ...spatial, gatherCellOrder: true }, gather: true }),
     ]);
-    assert.deepEqual(js.bound, [false, false, false], 'wasm.spatialGather false keeps the JS gather');
+    assert.deepEqual(js.bound, [false, false, false], 'the JS side runs the reference gather');
     assert.deepEqual(wasm.bound, [true, true, true], 'the WASM gather is bound in every spatial worker');
     assert.ok(js.published > 0, 'neighbours are published');
     const first = js.sums.findIndex((s, i) => s !== wasm.sums[i]);
@@ -43,7 +43,7 @@ for (const [name, spatial] of Object.entries(CONFIGS)) {
 }
 
 // W8b: past 65 535 entities the ids are 32-bit and the publish and the gather take the kernels' _u32 exports.
-// Against the plain buffers' JS publish and gather, frame after frame, with ids above the 16-bit range in
+// Against the JS publish and gather the kernels replaced, frame after frame, with ids above the 16-bit range in
 // every row. Detailed stats on: the JS publish counts the neighbours it finds, the WASM one only then (E-02).
 test('at 32-bit ids the WASM publish and gather publish what the JS path publishes', async () => {
   const base = {
@@ -60,7 +60,7 @@ test('at 32-bit ids the WASM publish and gather publish what the JS path publish
     run({ ...base, gather: true }),
     run({ ...base, spatial: { ...base.spatial, gatherCellOrder: true }, gather: true }),
   ]);
-  assert.deepEqual(js.publishBound, [false, false, false], 'the plain buffers keep the JS publish');
+  assert.deepEqual(js.publishBound, [false, false, false], 'that side runs the reference filter');
   assert.deepEqual(publish.publishBound, [true, true, true], 'the WASM publish is bound at 32-bit ids');
   assert.deepEqual(gather.bound, [true, true, true], 'the WASM gather is bound at 32-bit ids');
   assert.ok(js.published > 0, 'neighbours are published');

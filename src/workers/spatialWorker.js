@@ -50,7 +50,7 @@ import {
 } from '../util/workersUtils.js';
 import { generateSymmetricalCirclePattern } from '../util/utils.js';
 import { SPATIAL_DEFAULTS } from '../util/configDefaults.js';
-import { EntityIdArray, packSpatialPairStamp as packSpatialPairStampImport, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
+import { EntityIdArray, SPATIAL_STAMP_FRAME_MASK } from '../util/entityIdWidth.js';
 import { bindSpatialGather, bindSpatialPublish } from './spatialPublishClient.js';
 import { SPATIAL_MAX_CELL_RADIUS } from '../util/spatialPublishMemory.js';
 import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRangeImport, _boundsResult as _boundsResultImport, _cellRangeResult as _cellRangeResultImport, SHAPE_CIRCLE as SHAPE_CIRCLEImport } from '../util/colliderUtils.js';
@@ -64,7 +64,6 @@ const RigidBody = RigidBodyImport;
 const Collider = ColliderImport;
 const SpriteRenderer = SpriteRendererImport;
 const Grid = GridImport;
-const packSpatialPairStamp = packSpatialPairStampImport;
 const getColliderBounds = getColliderBoundsImport;
 const getCellRange = getCellRangeImport;
 const _boundsResult = _boundsResultImport;
@@ -147,11 +146,6 @@ class SpatialWorker extends AbstractWorker {
     // Pattern lengths cache: cellRadius -> length (number of cell pairs)
     this._patternLengths = new Uint16Array(this._maxCellRadius + 1);
 
-    // Cached neighbor cells: (cellIndex * MAX_CELL_RADIUS + cellRadius) -> cell-index list.
-    // Uint16 while totalCells <= 65535; Uint32 above that. Chosen in initialize.
-    this._cellIndexArray = Uint16Array;
-    this._cellNeighborCache = new Map();
-    this._maxNeighborCacheEntries = 8192;
     // The WASM candidate gather (E-78), bound in initialize when the publish memory has its regions.
     this._wasmGather = null;
 
@@ -250,7 +244,6 @@ class SpatialWorker extends AbstractWorker {
     this.gridWidth = gridMetadata.gridCols;
     this.gridHeight = gridMetadata.gridRows;
     this.totalCells = gridMetadata.totalCells;
-    this._cellIndexArray = this.totalCells > 65535 ? Uint32Array : Uint16Array;
     this.rowsPerBlock = gridMetadata.rowsPerBlock || SPATIAL_DEFAULTS.rowsPerBlock;
 
     // Store viewport for screen checks
@@ -313,26 +306,19 @@ class SpatialWorker extends AbstractWorker {
     } else {
       this._entityNeighborNextTick = null;
     }
-    const candStride = 1 + Grid.maxNeighbors;
-    this._wasmPub = null;
-    if (data.spatialPublishMemory && data.gridMetadata?.candByte) {
-      try {
-        this._wasmPub = await bindSpatialPublish(
-          data.spatialPublishMemory,
-          data.gridMetadata,
-          this.workerId | 0,
-          this.globalEntityCount,
-          Grid.maxNeighbors,
-        );
-        this._wasmMeta = data.gridMetadata;
-      } catch (err) {
-        console.error('[spatial] publish wasm unavailable', err);
-        this._wasmPub = null;
-      }
+    // E-76: the publish (and, below, E-78's gather) in WASM on the spatial publish memory, the worker's only search.
+    if (!data.spatialPublishMemory || !data.gridMetadata?.candByte || !data.gridMetadata?.patternByte) {
+      throw new Error('spatial worker without the spatial publish memory and its gather regions (createSpatialPublishMemory)');
     }
-    this._neighborCandidateData = this._wasmPub
-      ? this._wasmPub.cand
-      : new (EntityIdArray())(this.globalEntityCount * candStride);
+    this._wasmPub = await bindSpatialPublish(
+      data.spatialPublishMemory,
+      data.gridMetadata,
+      this.workerId | 0,
+      this.globalEntityCount,
+      Grid.maxNeighbors,
+    );
+    this._wasmMeta = data.gridMetadata;
+    this._neighborCandidateData = this._wasmPub.cand;
     this._candidateCountOf = new (EntityIdArray())(this.globalEntityCount);
     this._ownedEntityList = new (EntityIdArray())(this.globalEntityCount);
     this._ownedEntityCount = 0;
@@ -344,25 +330,17 @@ class SpatialWorker extends AbstractWorker {
     this._precomputeCirclePatterns();
 
     // E-78: the candidate gather in WASM, on the publish memory's grid, markers, flags and lists.
-    // Its marker and flags are the ones the JS reads (the fill on stamp wrap, _canReuseNeighbors).
-    this._wasmGather = null;
-    if (this._wasmPub && this.config?.wasm?.spatialGather !== false && data.gridMetadata?.patternByte) {
-      try {
-        this._wasmGather = await bindSpatialGather(
-          data.spatialPublishMemory,
-          data.gridMetadata,
-          this.workerId | 0,
-          this.globalEntityCount,
-          this._circlePatterns,
-          this._maxCellRadius,
-        );
-        this.processedMarker = this._wasmGather.marker;
-        this._neighborCandidateTruncated = this._wasmGather.truncated;
-      } catch (err) {
-        console.error('[spatial] gather wasm unavailable', err);
-        this._wasmGather = null;
-      }
-    }
+    // Its marker and flags are the ones the worker reads (the fill on stamp wrap, _canReuseNeighbors).
+    this._wasmGather = await bindSpatialGather(
+      data.spatialPublishMemory,
+      data.gridMetadata,
+      this.workerId | 0,
+      this.globalEntityCount,
+      this._circlePatterns,
+      this._maxCellRadius,
+    );
+    this.processedMarker = this._wasmGather.marker;
+    this._neighborCandidateTruncated = this._wasmGather.truncated;
 
     if (this.ownedRowCount > 0) {
       debugWorkerLog(
@@ -411,63 +389,6 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * Get cached neighbor cells for a cell+radius combination, or generate and cache it
-   * @param {number} cellIndex - Source cell index
-   * @param {number} cellRadius - Search radius in cells
-   * @param {number} centerRow - Center row of the entity's cell
-   * @param {number} centerCol - Center column of the entity's cell
-   * @returns {Uint16Array|Uint32Array} Neighbor cell indices
-   */
-  _getNeighborCells(cellIndex, cellRadius, centerRow, centerCol) {
-    const clampedRadius = cellRadius > this._maxCellRadius ? this._maxCellRadius : cellRadius;
-    // Cache key: cellIndex * MAX_RADIUS + cellRadius
-    const cacheKey = cellIndex * (this._maxCellRadius + 1) + clampedRadius;
-
-    // Single lookup avoids an extra Map probe in the hot path.
-    const cached = this._cellNeighborCache.get(cacheKey);
-    if (cached) {
-      return cached;
-    }
-
-    // Generate neighbor cells from pattern
-    const pattern = this._circlePatterns[clampedRadius];
-    const patternLength = pattern.length;
-    const maxNeighborCells = this._patternLengths[clampedRadius] || (patternLength >> 1);
-
-    // Pre-allocate array (worst case: all cells in pattern are valid)
-    const neighborCells = new this._cellIndexArray(maxNeighborCells);
-    let count = 0;
-
-    const gridWidth = this.gridWidth;
-    const gridHeight = this.gridHeight;
-
-    for (let i = 0; i < patternLength; i += 2) {
-      const dr = pattern[i];
-      const dc = pattern[i + 1];
-
-      const checkRow = centerRow + dr;
-      const checkCol = centerCol + dc;
-
-      // Bounds check (optimized: check both axes in single condition)
-      if (checkRow >= 0 && checkRow < gridHeight && checkCol >= 0 && checkCol < gridWidth) {
-        neighborCells[count++] = checkRow * gridWidth + checkCol;
-      }
-    }
-
-    // Return subarray if we didn't use full allocation (creates view, no copy)
-    const result = count === maxNeighborCells
-      ? neighborCells
-      : neighborCells.subarray(0, count);
-
-    // Bound cache growth: this memoization is only a performance hint.
-    if (this._cellNeighborCache.size >= this._maxNeighborCacheEntries) {
-      this._cellNeighborCache.clear();
-    }
-    this._cellNeighborCache.set(cacheKey, result);
-    return result;
-  }
-
-  /**
    * Main update - called each frame
    * Rebuilds owned grid rows and computes neighbors for entities in those rows
    */
@@ -491,8 +412,7 @@ class SpatialWorker extends AbstractWorker {
 
     // STEP 2: Find neighbors (only for entities in owned rows)
     startTime = detail ? performance.now() : 0;
-    if (this._wasmGather) this._findNeighborsWasmGather();
-    else this.findNeighborsForOwnedEntities();
+    this._findNeighbors();
     if (detail) {
       this.neighborSearchTimeThisFrame = performance.now() - startTime;
     }
@@ -1300,239 +1220,13 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
-   * Filter expanded candidate list into published neighborData at exact visualRange.
-   * @returns {number} published count
+   * The neighbour search of the owned entities (E-76 W5, E-78). The per-entity decisions (stagger, skin
+   * reuse) stay here; every list to rebuild goes to one gather_batch call (wasm/spatialGather.c: the JS
+   * arithmetic in double, this worker's circle patterns in order); then the bookkeeping, then the publish
+   * (publish_batch). It publishes exactly what the JS search it replaced published
+   * (tests/reference/spatialGather.mjs; tests/node/spatialGatherWasm.test.js).
    */
-  _publishFilteredNeighbors(entityA, myX, myY, myVisualRange, neighborOffset, maxNeighbors, entityPosData, neighborData) {
-    if (this._wasmPub) {
-      this._wasmPub.range[entityA] = myVisualRange;
-      this._wasmPub.list[this._wasmPub.queued++] = entityA;
-      return 0;
-    }
-    const candStride = 1 + maxNeighbors;
-    const candBase = entityA * candStride;
-    const cand = this._neighborCandidateData;
-    const candCount = cand[candBase];
-    let published = 0;
-    for (let i = 0; i < candCount; i++) {
-      const entityB = cand[candBase + 1 + i];
-      const baseIdxB = entityB * 4;
-      const bX = entityPosData[baseIdxB];
-      const bY = entityPosData[baseIdxB + 1];
-      const bHalfExtent = entityPosData[baseIdxB + 2];
-      const dx = bX - myX;
-      const dy = bY - myY;
-      const effectiveRange = myVisualRange + bHalfExtent;
-      if (dx * dx + dy * dy < effectiveRange * effectiveRange) {
-        if (published < maxNeighbors) {
-          neighborData[neighborOffset + 1 + published] = entityB;
-          published++;
-          this.neighborsFoundThisFrame++;
-        }
-      }
-    }
-    neighborData[neighborOffset] = published;
-    return published;
-  }
-
-  findNeighborsForOwnedEntities() {
-    const visualRange = Collider.visualRange;
-    const active = Transform.active;
-
-    const gridWidth = this.gridWidth;
-    const gridHeight = this.gridHeight;
-    const invCellSize = this.invCellSize;
-    const maxNeighbors = Grid.maxNeighbors;
-    const stride = Grid._stride;
-    const cellStride = Grid._cellIdStride;
-    const cellHeader = Grid._headerIds;
-    const workerId = this.workerId;
-    const skinFrac = this._neighborReuseSkin;
-    const tickInterval = this._neighborTickInterval;
-    const nextTick = this._entityNeighborNextTick;
-    const maxReuseFrames = this._maxReuseFrames;
-    const framesSinceBuild = this._entityFramesSinceBuild;
-    const candStride = 1 + maxNeighbors;
-    const candData = this._neighborCandidateData;
-    const candCountOf = this._candidateCountOf;
-
-    const neighborData = Grid.neighborData;
-    const entityPosData = this.entityPosData;
-    const gridCounts = Grid._gridCounts;
-    const gridEntities = Grid._gridEntities;
-
-    const processedMarker = this.processedMarker;
-    this._processedFrameCounter++;
-    if (this._processedFrameCounter > SPATIAL_STAMP_FRAME_MASK) {
-      this._processedFrameCounter = 1;
-      processedMarker.fill(0);
-    }
-    const stampFrame = this._processedFrameCounter;
-
-    const maxRow = gridHeight - 1;
-
-    // Built by rebuildOwnedRows this frame: each entity once, home row owned here.
-    const ownedList = this._ownedEntityList;
-    const ownedCount = this._ownedEntityCount;
-    for (let oi = 0; oi < ownedCount; oi++) {
-      const entityA = ownedList[oi];
-      if (!active[entityA]) continue;
-
-      const baseIdxA = entityA * 4;
-      const myX = entityPosData[baseIdxA];
-      const myY = entityPosData[baseIdxA + 1];
-      const myHalfExtent = entityPosData[baseIdxA + 2];
-
-      let homeRow = (myY * invCellSize) | 0;
-      homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
-
-      this.entitiesProcessedThisFrame++;
-
-      const stampedA = packSpatialPairStamp(stampFrame, entityA);
-      const myVisualRange = visualRange[entityA];
-      const neighborOffset = entityA * stride;
-
-      if (myVisualRange <= 0) {
-        neighborData[neighborOffset] = 0;
-        continue;
-      }
-
-      const skin = myVisualRange * skinFrac;
-      const searchRange = myVisualRange + 2 * skin;
-
-      let homeCol = (myX * invCellSize) | 0;
-      const maxCol = gridWidth - 1;
-      homeCol = homeCol < 0 ? 0 : homeCol > maxCol ? maxCol : homeCol;
-      const entityCellIndex = homeRow * gridWidth + homeCol;
-      const cellRadius = ((searchRange * invCellSize) | 0) + 1;
-
-      // Schedule stagger: only ~1/tickInterval entities full-rebuild per frame
-      let scheduleSkipRebuild = false;
-      if (tickInterval > 1) {
-        if (--nextTick[entityA] > 0) {
-          scheduleSkipRebuild = true;
-        } else {
-          nextTick[entityA] = tickInterval;
-        }
-      }
-
-      // True tickInterval: off-tick keeps last neighborData (no cell-walk, no re-filter).
-      // Logic already decimates AI; stale neighbors for N frames is the point.
-      if (
-        scheduleSkipRebuild &&
-        candCountOf[entityA] > 0 &&
-        framesSinceBuild[entityA] < maxReuseFrames
-      ) {
-        this.neighborsReusedThisFrame++;
-        framesSinceBuild[entityA]++;
-        continue;
-      }
-
-      // Verlet skin reuse: re-filter expanded candidates into published set
-      const skinCanReuse =
-        skinFrac > 0 &&
-        this._canReuseNeighbors(
-          entityA,
-          myX,
-          myY,
-          myHalfExtent,
-          myVisualRange
-        );
-
-      if (skinCanReuse) {
-        this.neighborsReusedThisFrame++;
-        framesSinceBuild[entityA]++;
-        this._publishFilteredNeighbors(
-          entityA,
-          myX,
-          myY,
-          myVisualRange,
-          neighborOffset,
-          maxNeighbors,
-          entityPosData,
-          neighborData
-        );
-      } else {
-        const neighborCells = this._getNeighborCells(entityCellIndex, cellRadius, homeRow, homeCol);
-        const neighborCellsLength = neighborCells.length;
-
-        // Miss: rebuild expanded candidate list at searchRange
-        const candBase = entityA * candStride;
-        let candCount = 0;
-        let truncated = false;
-        const searchRangeWithExtentBase = searchRange;
-
-        for (let i = 0; i < neighborCellsLength; i++) {
-          const checkCellIndex = neighborCells[i];
-          const checkByteOffset = checkCellIndex * Grid.cellByteSize;
-          const checkCellCount = gridCounts[checkByteOffset];
-          if (checkCellCount === 0) continue;
-
-          this.cellsCheckedThisFrame++;
-          const checkEntityBase = checkCellIndex * cellStride + cellHeader;
-
-          for (let j = 0; j < checkCellCount; j++) {
-            const entityB = gridEntities[checkEntityBase + j];
-            if (entityA === entityB) continue;
-            if (processedMarker[entityB] === stampedA) continue;
-            processedMarker[entityB] = stampedA;
-
-            const baseIdxB = entityB * 4;
-            const bX = entityPosData[baseIdxB];
-            const bY = entityPosData[baseIdxB + 1];
-            const bHalfExtent = entityPosData[baseIdxB + 2];
-            const dxAB = bX - myX;
-            const dyAB = bY - myY;
-            const effectiveRange = searchRangeWithExtentBase + bHalfExtent;
-            if (dxAB * dxAB + dyAB * dyAB < effectiveRange * effectiveRange) {
-              if (candCount < maxNeighbors) {
-                candData[candBase + 1 + candCount] = entityB;
-                candCount++;
-              } else {
-                truncated = true;
-                break;
-              }
-            }
-          }
-          if (truncated) break;
-        }
-
-        candData[candBase] = candCount;
-        candCountOf[entityA] = candCount;
-        this._neighborCandidateTruncated[entityA] = truncated ? 1 : 0;
-
-        this._publishFilteredNeighbors(
-          entityA,
-          myX,
-          myY,
-          myVisualRange,
-          neighborOffset,
-          maxNeighbors,
-          entityPosData,
-          neighborData
-        );
-
-        if (!truncated) {
-          this._storeNeighborReuseSignature(entityA, myX, myY, myHalfExtent, myVisualRange);
-        } else {
-          // Skin reuse stays off (incomplete list), but schedule stagger needs age reset
-          this._entityReuseInitialized[entityA] = 0;
-          framesSinceBuild[entityA] = 0;
-        }
-      }
-    }
-    this._flushWasmPublish();
-  }
-
-  /**
-   * findNeighborsForOwnedEntities with the candidate gather in WASM (E-78). The per-entity
-   * decisions (stagger, skin reuse) stay here; every list to rebuild goes to one gather_batch call
-   * (wasm/spatialGather.c: the JS arithmetic in double, this worker's circle patterns in order);
-   * then the bookkeeping, then the publish. Taken when the publish memory has the gather's regions
-   * and wasm.spatialGather is on. It publishes exactly what the JS gather publishes
-   * (tests/node/spatialGatherWasm.test.js).
-   */
-  _findNeighborsWasmGather() {
+  _findNeighbors() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
     const maxNeighbors = Grid.maxNeighbors;
@@ -1576,7 +1270,7 @@ class SpatialWorker extends AbstractWorker {
         continue;
       }
 
-      // Schedule stagger, as in findNeighborsForOwnedEntities.
+      // Schedule stagger: only ~1/tickInterval entities rebuild per frame.
       let scheduleSkipRebuild = false;
       if (tickInterval > 1) {
         if (--nextTick[entityA] > 0) {
@@ -1653,7 +1347,7 @@ class SpatialWorker extends AbstractWorker {
     this._flushWasmPublish();
   }
 
-  /** The WASM publish of every entity queued this frame (both gathers end here). */
+  /** The WASM publish of every entity queued this frame (the search ends here). */
   _flushWasmPublish() {
     if (this._wasmPub && this._wasmPub.queued) {
       const n = this._wasmPub.queued;
@@ -1684,8 +1378,7 @@ class SpatialWorker extends AbstractWorker {
       // for the pair that writes a verdict ("Sub-timers inflate the step, and a
       // 3 percent gap on that inflation is not the product"), so on every run
       // that can decide anything this loop was computing a number nobody could
-      // read. The JS fallback path above still increments the counter inline and
-      // is unconditional - it costs nothing extra to keep it correct there.
+      // read.
       if (this.collectDetailedStats) {
         // neighbor-recount-start
         const stride = 1 + Grid.maxNeighbors;

@@ -6,9 +6,11 @@ import { setupSpatialKernel } from '../bench/spatialWorkerMicrobench.mjs';
 
 // The stagger skip reads a dense per-entity candidate count. It must always
 // equal the count stored at the head of that entity's candidate row, through
-// rebuilds, reuse frames and stagger skips.
+// rebuilds, reuse frames and stagger skips. The rows live in the publish memory,
+// shared by the spatial workers, and each worker's counts cover the entities it
+// rebuilt: one worker owns them all here.
 test('dense candidate count mirrors the candidate row head', async () => {
-  const k = await setupSpatialKernel({ n: 3000, seed: 0x7e57 });
+  const k = await setupSpatialKernel({ n: 3000, seed: 0x7e57, workers: 1 });
   const stride = 1 + Grid.maxNeighbors;
   for (let f = 0; f < 40; f++) {
     k.frame();

@@ -15,8 +15,8 @@ import { meshLayerCapacities } from '../../src/util/meshMemory.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { EMIT_ADOBE_ASSET_BYTES, EMIT_ADOBE_MAX_ASSETS } from '../../src/util/wasmMemoryMap.js';
 
-// E-76 T7: one switch per WASM module. wasm.spatialPublish false must give the scene the plain-SAB
-// JavaScript publish path (what 32-bit ids get), default true the publish memory.
+// E-76 T7: the switches of the WASM modules that still have one, and the memories every kernel lays out (a kernel
+// whose JavaScript path left the engine has no switch: its memory is always made).
 
 class Entity extends GameObject {}
 Entity.components = [RigidBody, Collider, SpriteRenderer];
@@ -72,20 +72,16 @@ function buildScene(wasm, lightingOverride = null, configOverride = {}, extraCom
   }
 }
 
-test('wasm.spatialPublish chooses between the publish memory and the JS path', () => {
-  assert.equal(WASM_DEFAULTS.spatialPublish, true);
+test('with spatial workers the scene makes the publish memory (the search has no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'spatialPublish'), false);
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'spatialGather'), false);
 
   const on = buildScene({});
-  assert.ok(on.spatialPublish, 'publish memory by default');
+  assert.ok(on.spatialPublish, 'the publish memory');
   assert.equal(on.buffers.neighborData, on.spatialPublish.buffer);
   assert.equal(on.gridMetadata.candByte, on.spatialPublish.candByte);
   assert.ok(on.gridMetadata.listStride > 0);
-
-  const off = buildScene({ spatialPublish: false });
-  assert.equal(off.spatialPublish, null, 'no publish memory');
-  assert.ok(off.buffers.neighborData instanceof SharedArrayBuffer);
-  assert.equal(off.buffers.neighborData.byteLength, 1000 * 33 * 2, 'plain neighbour rows');
-  assert.equal(off.gridMetadata.candByte, 0, 'the spatial worker binds no WASM publish');
+  assert.ok(on.gridMetadata.patternByte > 0, 'with the gather regions');
 });
 
 test('wasm.preRenderEmit puts SpriteRenderer and the emit state in the render-queue memory', () => {

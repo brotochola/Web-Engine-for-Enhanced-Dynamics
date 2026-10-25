@@ -308,10 +308,6 @@ export type SceneConfig = Record<string, unknown> & {
    * JavaScript path instead, for example to time one against the other in the same build.
    */
   wasm?: {
-    /** Spatial neighbour publish, at either entity id width. A scene whose rows would not fit its 2 GB memory runs the JavaScript path. */
-    spatialPublish?: boolean;
-    /** Spatial candidate gather (the cell walk before the publish). Runs only with spatialPublish. */
-    spatialGather?: boolean;
     /**
      * The particle integrate (lifetime, tweens, motion, floor; WebAssembly) in float32 (default true): faster; positions, tweens and turning particles' rotations
      * within a float32 rounding or so of the double step (lifetimes and deaths exact). false: the double step, the

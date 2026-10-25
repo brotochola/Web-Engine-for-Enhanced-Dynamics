@@ -4,7 +4,7 @@
  * the JS gather, on real workers in WASM mode (the publish memory the scene builds at 16-bit ids,
  * with the grid in it). Both sides are shipped code, chosen by the scene switch:
  *
- *   base  wasm.spatialGather false: findNeighborsForOwnedEntities, the JS gather, the WASM publish
+ *   base  the JS gather the kernel replaced (tests/reference/spatialGather.mjs), the WASM publish
  *   wasm  wasm.spatialGather true (the default): _findNeighborsWasmGather, one gather_batch call
  *         per worker (wasm/spatialGather.c) for every list that rebuilds, the same WASM publish
  *   ordered  wasm with spatial.gatherCellOrder: order_batch_by_cell puts each batch in home-cell
@@ -66,12 +66,11 @@ async function main() {
     n: Number(args.n ?? 16500),
     workers: 3,
     spatial: { ...spatial, gatherCellOrder: v.ordered },
-    publishMemory: 'product',
-    wasm: { spatialGather: v.gather },
+    js: v.gather ? null : { publish: 'kernel' },
   });
   if (!k.workers.every((w) => w._wasmPub)) throw new Error('the workers did not bind the WASM publish');
-  const gather = k.workers[0]._wasmGather;
-  if (Boolean(gather) !== v.gather) throw new Error(`variant ${variant}: the gather is ${gather ? 'bound' : 'not bound'}`);
+  const gather = v.gather ? k.workers[0]._wasmGather : null;
+  if (v.gather && !gather) throw new Error(`variant ${variant}: the gather is not bound`);
 
   // A float32 variant: in lock step with the shipped gather for the checksum frames.
   let fn = null;
@@ -107,7 +106,7 @@ async function main() {
     feature: 'spatial-gather-wasm',
     variant,
     config,
-    functions: ['SpatialWorker.findNeighborsForOwnedEntities', 'SpatialWorker._findNeighborsWasmGather', v.fn ? `spatialGatherF32.${v.fn}` : 'spatialGather.gather_batch'],
+    functions: ['findNeighborsForOwnedEntities (tests/reference)', 'SpatialWorker._findNeighbors', v.fn ? `spatialGatherF32.${v.fn}` : 'spatialGather.gather_batch'],
     n: k.n,
     seed: 0x5a71a1,
     checksum,

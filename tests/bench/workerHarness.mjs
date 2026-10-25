@@ -20,6 +20,7 @@ import { RigidBody } from '../../src/components/rigidBody.js';
 import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { entityIdBytes, EntityIdArray } from '../../src/util/entityIdWidth.js';
+import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
@@ -104,6 +105,46 @@ export function spatialBuffers(cfg, n) {
     entityIdBytes: idBytes,
   };
   return { buffers, gridMetadata };
+}
+
+/**
+ * Point spatialBuffers' poses, rows and grid at the spatial publish memory `mem`, and give gridMetadata its regions'
+ * offsets, as the scene hands them to a spatial worker (its neighbour search runs only there).
+ */
+export function bindPublishMemory(buffers, gridMetadata, mem) {
+  buffers.entityPosData = mem.buffer;
+  buffers.neighborData = mem.buffer;
+  if (mem.gridByte) buffers.gridBuffer = mem.buffer;
+  Object.assign(gridMetadata, {
+    posByte: mem.posByte,
+    rangeByte: mem.rangeByte,
+    neighborByte: mem.neighborByte,
+    candByte: mem.candByte,
+    listByte: mem.listByte,
+    listStride: mem.listStride,
+    gridByte: mem.gridByte | 0,
+    markerByte: mem.markerByte | 0,
+    markerStride: mem.markerStride | 0,
+    truncatedByte: mem.truncatedByte | 0,
+    truncatedStride: mem.truncatedStride | 0,
+    rebuildByte: mem.rebuildByte | 0,
+    rebuildStride: mem.rebuildStride | 0,
+    orderByte: mem.orderByte | 0,
+    orderStride: mem.orderStride | 0,
+    patternByte: mem.patternByte | 0,
+    patternBytes: mem.patternBytes | 0,
+  });
+}
+
+/** spatialBuffers on the spatial publish memory for `workers` spatial workers (pass `mem.memory` to their init). */
+export function spatialPublishBuffers(cfg, n, workers = 1) {
+  const { buffers, gridMetadata } = spatialBuffers(cfg, n);
+  const mem = createSpatialPublishMemory(n, cfg.maxNeighbors, workers, {
+    totalCells: gridMetadata.totalCells,
+    cellByteSize: 4 + cfg.maxEntitiesPerCell * gridMetadata.entityIdBytes,
+  });
+  bindPublishMemory(buffers, gridMetadata, mem);
+  return { buffers, gridMetadata, mem };
 }
 
 /**

@@ -56,21 +56,6 @@ test('the WASM publish itself is NOT gated', () => {
   assert.ok(publish < gate, 'the WASM publish must happen before the stats gate');
 });
 
-test('the JS fallback path still counts inline and unconditionally', () => {
-  // The non-WASM branch of _publishFilteredNeighbors increments the same counter
-  // per accepted neighbour. Gating that one would be wrong: it is free there, and
-  // a scene that falls back to JS would lose the stat.
-  const src = read('src/workers/spatialWorker.js');
-  const fn = src.slice(src.indexOf('_publishFilteredNeighbors('));
-  const at = fn.indexOf('this.neighborsFoundThisFrame++;');
-  assert.ok(at > 0, 'the JS fallback no longer counts neighbours');
-  const before = fn.slice(0, at);
-  assert.ok(
-    !before.includes('collectDetailedStats'),
-    'the JS fallback increment is inside a collectDetailedStats gate',
-  );
-});
-
 // ------------------------------------------------- the checksum that matters ---
 
 /**

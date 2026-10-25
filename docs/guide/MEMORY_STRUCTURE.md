@@ -91,7 +91,7 @@ Every entity gets a visual-range neighbor list (Box2D owns contacts).
 | --------------------- | ------------------------------------------------------------------------------- |
 | **Size**              | `totalEntityCount * (1 + maxNeighbors) * entityIdBytes()` (default `maxNeighbors` = 128; width 16 is `* 2`) |
 | **Per-entity layout** | `[totalCount, neighbors[maxNeighbors]]` in the scene entity-id width                         |
-| **Typed array**       | `Uint16Array` at width 16, `Uint32Array` at width 32. At width 16 with spatial workers on, these rows (and the latched poses, candidate rows and per-worker lists) live in one shared `WebAssembly.Memory` (`src/util/spatialPublishMemory.js`) after a 128 KiB header, so the real buffer is larger than the size above. Width 32 uses plain SharedArrayBuffers. |
+| **Typed array**       | `Uint16Array` at width 16, `Uint32Array` at width 32. With spatial workers on, at either width, these rows (and the latched poses, the grid, candidate rows and per-worker lists) live in one shared `WebAssembly.Memory` (`src/util/spatialPublishMemory.js`) after a 128 KiB header, so the real buffer is larger than the size above. |
 
 | Writer                           | Reader                                      |
 | -------------------------------- | ------------------------------------------- |

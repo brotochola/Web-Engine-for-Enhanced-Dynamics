@@ -228,20 +228,15 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   Gamepad.initialize(buffers.gamepadData);
 
   const spatialOn = (config.spatial.numberOfSpatialWorkers | 0) > 0;
-  const maxNeighbors = config.spatial.maxNeighbors;
   scene.spatialPublish = null;
   if (spatialOn) {
-    // wasm.spatialPublish false (E-76 T7) takes the plain-SAB JS path. Phase 4: in the spatial
-    // part of Box2D's block when there is one (sized from the same spec), else a memory of its own.
+    // The neighbour search runs only in WASM (spatialGather, spatialPublish), on the publish memory. Phase 4: in the
+    // spatial part of Box2D's block when there is one (sized from the same spec), else a memory of its own.
     const args = spatialPublishSpec(scene);
     const block = scene.box2dBlock;
-    const place = args && block && block.spatialBytes > 0 ? { memory: block.memory, baseByte: block.spatialByte } : null;
-    scene.spatialPublish = args
-      ? (place && createSpatialPublishMemory(...args, place)) || createSpatialPublishMemory(...args)
-      : null;
-    buffers.neighborData = scene.spatialPublish
-      ? scene.spatialPublish.buffer
-      : new SharedArrayBuffer(totalEntityCount * (1 + maxNeighbors) * entityIdBytes());
+    const place = block && block.spatialBytes > 0 ? { memory: block.memory, baseByte: block.spatialByte } : null;
+    scene.spatialPublish = (place && createSpatialPublishMemory(...args, place)) || createSpatialPublishMemory(...args);
+    buffers.neighborData = scene.spatialPublish.buffer;
   } else {
     buffers.neighborData = null;
   }
@@ -640,13 +635,12 @@ function visibilityGatherSpec(scene) {
 }
 
 /**
- * The spatial publish memory's arguments (createSpatialPublishMemory), or null when the scene keeps plain buffers
- * (no spatial worker, or wasm.spatialPublish off).
+ * The spatial publish memory's arguments (createSpatialPublishMemory), or null without a spatial worker.
  */
 export function spatialPublishSpec(scene) {
   const { config } = scene;
   const workers = config.spatial?.numberOfSpatialWorkers | 0;
-  if (!(workers > 0) || config.wasm?.spatialPublish === false) return null;
+  if (!(workers > 0)) return null;
   return [scene.totalEntityCount, config.spatial.maxNeighbors, workers, spatialGridSpec(config)];
 }
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { coreComponentData, loadWorker, spatialBuffers } from '../bench/workerHarness.mjs';
+import { coreComponentData, loadWorker, spatialPublishBuffers } from '../bench/workerHarness.mjs';
 
 // Workers used to replace console.log with a no-op unless debug.verboseWorkers
 // was on, so a game's console.log inside tick() printed nothing. The engine's
@@ -10,7 +10,7 @@ import { coreComponentData, loadWorker, spatialBuffers } from '../bench/workerHa
 const N = 16;
 
 function initPayload(debug) {
-  const { buffers, gridMetadata } = spatialBuffers(
+  const { buffers, gridMetadata, mem } = spatialPublishBuffers(
     { worldWidth: 1000, worldHeight: 1000, cellSize: 100, maxEntitiesPerCell: 8, maxNeighbors: 8 },
     N,
   );
@@ -25,6 +25,7 @@ function initPayload(debug) {
     componentPools: {},
     frameRateStride: 16,
     frameRateIndex: 0,
+    spatialPublishMemory: mem.memory,
   };
 }
 

@@ -48,9 +48,13 @@ export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWor
   const gather = layout.gather;
   const base = place ? place.baseByte | 0 : 0;
   if (place) {
+    // Not in the block: the caller makes a memory of its own.
     if ((base & 63) !== 0 || base + layout.bytes > place.memory.buffer.byteLength) return null;
   } else if (layout.pages > WASM_MAX_PAGES) {
-    return null;
+    throw new Error(
+      `spatial publish memory: ${Math.ceil(layout.pages / 16)} MB (${entityCount} entities, maxNeighbors ${maxNeighbors}) is past the ` +
+        `${WASM_MAX_PAGES / 16} MB a kernel memory can take; lower spatial.maxNeighbors`,
+    );
   }
   // Every region's byte from the memory's start: the block's offset added when the regions sit in a block.
   const regions = {};
@@ -81,8 +85,9 @@ export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWor
       patternBytes: gather ? regions.patterns.bytes : 0,
       regions,
     };
-  } catch {
-    return null;
+  } catch (err) {
+    if (place) return null;
+    throw new Error(`spatial publish memory: the browser would not make ${Math.ceil(layout.pages / 16)} MB (${err?.message ?? err})`, { cause: err });
   }
 }
 

@@ -437,10 +437,6 @@ export const SPATIAL_DEFAULTS = Object.freeze({
  * do not fit its memory). Benches flip a switch with `?wasmOff=<name>` to time both paths in one build.
  */
 export const WASM_DEFAULTS = Object.freeze({
-  /** Spatial neighbour publish (`spatialPublish.wasm`). */
-  spatialPublish: true,
-  /** Spatial candidate gather (`spatialGather.wasm`, E-78); needs spatialPublish's memory. */
-  spatialGather: true,
   /**
    * The particle integrate (`particleIntegrate.wasm`, E-79, ParticleComponent in a WebAssembly.Memory) in float32, four particles per f32x4 where the loop allows it (`integrate_batch_f32x4`, the
    * float32 pass): positions, velocities, the alpha, scale and tint lerps and the sine and cosine of a turning
