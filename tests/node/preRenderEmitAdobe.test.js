@@ -28,6 +28,7 @@ import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQue
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { EMIT_ADOBE_ASSET_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { EMIT_ADOBE_IN, EMIT_ADOBE_JS, EMIT_ADOBE_NONE, EMIT_DECLINED } from '../../src/workers/preRenderEmitClient.js';
+import { radixSortIndicesBySortKey } from '../../src/util/sortIndexByKey.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
@@ -625,4 +626,84 @@ test('adobe_advance declines a frame where a playing clock reads an asset the ta
   for (let i = 0; i < ROOTS; i++) if (AdobeAnimComponent.assetId[i] === 4) AdobeAnimComponent.playing[i] = 0;
   const again = compareAdvance(k, 6);
   assert.ok(again.calls.length > 0 && again.calls.every((c) => c !== EMIT_DECLINED));
+});
+
+// E-138. Pre-render may sort the collector by the keys the emit writes before the emit (_sortCollectorByKey), so the
+// queue comes out in painter order: that must be the queue the emit writes from the collector as it was, sorted by
+// key with a stable sort (a root's pieces stay together, equal keys in collector order), every column of every row,
+// frame after frame, with and without Y-sort. The play-once ends and the missing textures are the same sets (their
+// order follows the rows'). A row leaves some columns as its queue slot held them (a hidden bullet, trail or glow its
+// rotation, tint, texture and anchors; an untiled sprite its tile mode and offsets), invisible there and moved to
+// another slot by the sort, so every frame of both runs starts from the same uniform queue.
+test('E-138: the collector sorted by key before the emit gives the queue a stable sort by key after it', async () => {
+  for (const ySort of [true, false]) {
+    const k = await setup({ ySort, seed: ySort ? 0xe138 : 0xe139 });
+    const { worker, maxItems } = k;
+    // This collector lists some sprites more than once (a real one lists each once), and an animated sprite advances
+    // its clock once per row, so its rows would depend on their order: the sprites stand still here.
+    SpriteRenderer.isAnimated.fill(0);
+    worker._collectPx = worker._renderablePx;
+    worker._collectPy = worker._renderablePy;
+    worker._collectRotC = worker._renderableRotC;
+    worker._collectRotS = worker._renderableRotS;
+    const views = worker.renderQueueBuffers[0];
+    const columns = Object.entries(views).filter(([name, v]) => ArrayBuffer.isView(v) && v.length === maxItems && name !== 'sortKeyU32');
+    const bytesOf = (v) => new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+    const realEnded = worker._spriteAnimationEnded;
+    const realMissing = worker._warnMissingTexture;
+    const queueBytes = new Uint8Array(k.m.buffer, k.m.layout.queueAByte, computeBufferSize(maxItems));
+    const frame = (f, presort) => {
+      queueBytes.fill(0x5a);
+      k.prepare(f);
+      if (presort) worker._sortCollectorByKey(k.count, ySort);
+      const ends = [];
+      const missing = [];
+      worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+      worker._warnMissingTexture = (key) => missing.push(key);
+      const written = worker.emitSpriteQueue(DT, k.source());
+      worker._spriteAnimationEnded = realEnded;
+      worker._warnMissingTexture = realMissing;
+      return { written, rows: columns.map(([, v]) => bytesOf(v).slice()), ends: ends.sort(), missing: missing.sort() };
+    };
+    let moved = 0;
+    // The queue's tile columns once a repeating sprite wrote them (E-102b), carried from frame to frame as the worker
+    // carries them (k.restore clears them).
+    let tiled = new Set();
+    for (let f = 0; f < FRAMES; f++) {
+      const before = k.snapshot();
+      worker._tiledTileColumns = new Set(tiled);
+      const plain = frame(f, false);
+      const after = k.snapshot();
+      const tiledAfter = new Set(worker._tiledTileColumns);
+      k.restore(before);
+      worker._tiledTileColumns = new Set(tiled);
+      const sorted = frame(f, true);
+      assert.equal(sorted.written, plain.written, `frame ${f}: rows`);
+      assert.ok(plain.written > k.count && plain.written < maxItems, `frame ${f}: the roots expanded (${plain.written} rows), the queue did not fill`);
+      // The plain queue's rows by key, stably: its sortKey column's bits, as the painter reads them.
+      const n = plain.written;
+      const keyCol = columns.findIndex(([name]) => name === 'sortKey');
+      const keyBits = new Uint32Array(plain.rows[keyCol].buffer, 0, maxItems);
+      const order = Uint32Array.from({ length: n }, (_, i) => i);
+      radixSortIndicesBySortKey(order, n, keyBits, new Uint32Array(n), new Uint32Array(256));
+      for (let r = 0; r < n; r++) if (order[r] !== r) moved++;
+      columns.forEach(([name, v], c) => {
+        const bpe = v.BYTES_PER_ELEMENT;
+        for (let r = 0; r < n; r++) {
+          const from = order[r] * bpe;
+          for (let b = 0; b < bpe; b++) {
+            if (sorted.rows[c][r * bpe + b] !== plain.rows[c][from + b]) {
+              assert.fail(`ySort ${ySort} frame ${f}: ${name}[${r}] is not the plain queue's row ${order[r]}`);
+            }
+          }
+        }
+      });
+      assert.deepEqual(sorted.ends, plain.ends, `frame ${f}: play-once ends`);
+      assert.deepEqual(sorted.missing, plain.missing, `frame ${f}: missing textures`);
+      // On from the plain run's state, the collector as the collect wrote it.
+      k.restore(after);
+      tiled = tiledAfter;
+    }
+    assert.ok(moved > 1000, `ySort ${ySort}: the sort moved rows (${moved})`);
+  }
 });

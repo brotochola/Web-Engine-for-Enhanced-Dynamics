@@ -22,9 +22,11 @@ import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Query } from '../../src/core/query.js';
 import { computeBufferSize, createViews, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
-import { computeGpuQueueBufferSize, GPU_HDR_GLOW, GPU_HDR_SPRITE, GPU_SPRITE_FLOATS, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
+import {
+  computeGpuQueueBufferSize, GPU_FLAG_SORTED, GPU_HDR_FLAGS, GPU_HDR_GLOW, GPU_HDR_SPRITE, GPU_SPRITE_FLOATS, gpuQueueCaps,
+} from '../../src/render/gpuQueueLayout.js';
 import { INSTANCED_SPRITE_FLOATS, POSE_STATIC_FLOATS, SPLIT_POSE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
-import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
+import { radixSortIndicesBySortKey, spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
@@ -78,23 +80,25 @@ function makeFrames(seed) {
   return frames;
 }
 
-function writeQueue(q, fr) {
+/** The frame's rows into queue `q`; with `order`, row k is the frame's row order[k] (E-138's presorted queue). */
+function writeQueue(q, fr, order = null) {
   const n = fr.n;
   q.count[0] = n;
-  for (let i = 0; i < n; i++) {
-    q.x[i] = fr.x[i];
-    q.y[i] = fr.y[i];
-    q.scaleX[i] = 1 + (i % 3) * 0.25;
-    q.scaleY[i] = 1;
-    q.rotC[i] = 1;
-    q.rotS[i] = 0;
-    q.alpha[i] = 1;
-    q.tint[i] = 0xffffff;
-    q.textureId[i] = i % 5;
-    q.anchorX[i] = 0.5;
-    q.anchorY[i] = 0.5;
-    q.type[i] = fr.type[i];
-    q.sortKey[i] = fr.key[i];
+  for (let k = 0; k < n; k++) {
+    const i = order ? order[k] : k;
+    q.x[k] = fr.x[i];
+    q.y[k] = fr.y[i];
+    q.scaleX[k] = 1 + (i % 3) * 0.25;
+    q.scaleY[k] = 1;
+    q.rotC[k] = 1;
+    q.rotS[k] = 0;
+    q.alpha[k] = 1;
+    q.tint[k] = 0xffffff;
+    q.textureId[k] = i % 5;
+    q.anchorX[k] = 0.5;
+    q.anchorY[k] = 0.5;
+    q.type[k] = fr.type[i];
+    q.sortKey[k] = fr.key[i];
   }
 }
 
@@ -213,6 +217,85 @@ async function preRenderRun(pre, frames, painterRadix) {
   }
   return { out, calls };
 }
+
+// E-138: a queue already in painter order (the collector sorted before the emit) is packed as it is, with no painter,
+// to the rows the painter's full sort packs from the same queue in emit order (the painter rebuilt every frame: its
+// reinsert of moved keys puts them after the unmoved ones among equal keys, which a stable sort does not), the glow
+// rows split and in order too, and the frame says it is sorted. Every frame of makeFrames: rebuilds, runs of one key,
+// ties, every key the same, two rows.
+test('E-138: pre-render packs a presorted queue as it is, to the rows the painter packs from the queue in emit order', async () => {
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const frames = makeFrames(0xe138);
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), null, null, null, false, null,
+    { preRender: true, pixi: false });
+  await initWorker(pre, {
+    config: {
+      worldWidth: 4000,
+      worldHeight: 4000,
+      renderer: { ySort: true },
+      preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' },
+      lighting: { enabled: false },
+      wasm: { ...WASM_DEFAULTS },
+    },
+    globalEntityCount: 64,
+    buffers: { componentData: coreComponentData(64) },
+    extra: {
+      renderQueueMemory: m.memory,
+      renderQueueLayout: m.layout,
+      renderQueue: {
+        maxItems: MAX,
+        sync: new SharedArrayBuffer(8),
+        dataA: m.buffer,
+        dataAByte: m.layout.queueAByte,
+        dataB: m.buffer,
+        dataBByte: m.layout.queueBByte,
+        cameraA: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+        cameraB: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+      },
+      gpuQueue: { dataA: m.buffer, dataB: m.buffer, dataAByte: m.layout.gpuAByte, dataBByte: m.layout.gpuBByte, caps },
+    },
+  });
+  const painter = pre._gpuPainter;
+  assert.ok(painter && painter.kernel && pre._gpuPackWasm, 'the painter and the pack in WASM');
+  const pack = (fr, order) => {
+    writeQueue(pre.renderQueueBuffers[pre._queueBuf], fr, order);
+    pre._emitWriteCount = 0;
+    pre._queuePresorted = order !== null;
+    painter.ready = false;
+    pre.packSpriteAndShadowQueues();
+    pre._queuePresorted = false;
+    const dst = pre.gpuQueueBuffers[pre._queueBuf];
+    const nS = dst.header[GPU_HDR_SPRITE] | 0;
+    const nG = dst.header[GPU_HDR_GLOW] | 0;
+    return {
+      sprites: copyU32(dst.sprites, nS * GPU_SPRITE_FLOATS),
+      pose: copyU32(dst.spritePose, nS * SPLIT_POSE_FLOATS),
+      statics: copyU32(dst.spriteStatic, nS * POSE_STATIC_FLOATS),
+      glow: copyU32(dst.glow, nG * GPU_SPRITE_FLOATS),
+      counts: [nS, nG],
+      sorted: (dst.header[GPU_HDR_FLAGS] & GPU_FLAG_SORTED) !== 0,
+    };
+  };
+  let moved = 0;
+  frames.forEach((fr, f) => {
+    pre.selectWriteBuffers();
+    const want = pack(fr, null);
+    const order = Uint32Array.from({ length: fr.n }, (_, i) => i);
+    radixSortIndicesBySortKey(order, fr.n, new Uint32Array(fr.key.buffer), new Uint32Array(fr.n), new Uint32Array(256));
+    for (let k = 0; k < fr.n; k++) if (order[k] !== k) moved++;
+    const got = pack(fr, order);
+    assert.deepEqual(got.counts, want.counts, `frame ${f}: rows`);
+    for (const part of ['sprites', 'pose', 'statics', 'glow']) {
+      const at = firstDiff(got[part], want[part]);
+      assert.equal(at, -1, `frame ${f}: ${part} differ at word ${at}`);
+    }
+    // Sorted, always (the painter leaves the flag off under two sprite rows: frame 30's one, and a glow).
+    assert.ok(got.sorted, `frame ${f}: sorted`);
+    pre.publishFrame();
+  });
+  assert.ok(moved > FRAMES * 1000, `the frames were out of order (${moved} rows moved)`);
+});
 
 test('pre-render packs the same rows in the same order with the switch off and through the kernel', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');

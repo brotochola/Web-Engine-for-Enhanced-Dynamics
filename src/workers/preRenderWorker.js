@@ -71,7 +71,7 @@ import {
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
+import { orderSortKey, radixSortIndicesBySortKey, spriteYSortKey, spriteSortFootY, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -274,6 +274,12 @@ function formatAnimLabel(kind, animIdx) {
     // Undefined/null animIdx used to render as "undefined" via template coercion;
     // String() keeps that identical.
     return `${name}:${String(animIdx)}`;
+}
+
+/** E-138. col[0..n) = col[order[0..n)], through tmp. */
+function permuteF32(col, order, n, tmp) {
+    for (let k = 0; k < n; k++) tmp[k] = col[order[k]];
+    col.set(tmp.subarray(0, n));
 }
 
 /** Stretch / skip tiling on non-entity queue rows (particles, adobe pieces, …). */
@@ -649,6 +655,20 @@ class PreRenderWorker extends AbstractWorker {
         this._visGather = null;
         this._decorationZoomAlpha = 1;
         this._emitWriteCount = 0;
+        // E-138. A frame whose emit expands its rows (Adobe Animate roots into pieces) sorts the collector before the
+        // emit (_presortCollector), so the queue comes out in painter order and the pack takes it in order. Whether
+        // this frame's queue was, the collector's count last frame, and the sort's keys, order and column scratch
+        // (sized on the first such frame).
+        this._queuePresorted = false;
+        this._lastCollectCount = 0;
+        this._presortKeys = EMPTY_F32;
+        this._presortKeysU32 = EMPTY_U32;
+        this._presortOrder = EMPTY_U32;
+        this._presortScratch = EMPTY_U32;
+        this._presortHist = EMPTY_U32;
+        this._presortF32 = EMPTY_F32;
+        this._presortU8 = EMPTY_U8;
+        this._presortI32 = EMPTY_I32;
         this._emptyAdobeEntities = null;
         this._columnSnapshot = null;
         this._lightGlowAsSprite = false;
@@ -3123,13 +3143,16 @@ class PreRenderWorker extends AbstractWorker {
 
     buildRenderQueue(deltaTime) {
         this._syncGlowLayer();
+        this._queuePresorted = false;
         if (!this.renderQueueEnabled || this._renderableCount === 0) {
             if (this.renderQueueCount) this.renderQueueCount[0] = 0;
+            this._lastCollectCount = 0;
             return;
         }
 
         const count = this._renderableCount;
         const hasOrder = this._queueHasOrder();
+        this._queuePresorted = hasOrder && this._presortCollector(count, this._entityYSort());
         const writeCount = this.emitSpriteQueue(deltaTime, this._fillEmitSource(
             count,
             this.renderQueueMaxItems,
@@ -3146,7 +3169,73 @@ class PreRenderWorker extends AbstractWorker {
         ));
         this.renderQueueCount[0] = writeCount;
         this._emitWriteCount = writeCount;
+        this._lastCollectCount = count;
         this._renderableCount = 0;
+    }
+
+    /**
+     * E-138. Sort the collector by the keys the emit will write, before the emit, when last frame's emit wrote at
+     * least twice the rows it was given (Adobe Animate roots expand into their pieces): the painter would sort the
+     * queue's runs and the pack scatter its rows to their painter slots, a random write per run. A stable sort of
+     * the collector expanded in place is a stable sort of the queue (a root's pieces are consecutive under its key),
+     * so the queue comes out in that order and _packGpuSprites packs it as it is (GPU_FLAG_SORTED, no painter).
+     * Equal keys keep the collector's order, as the painter's full sort keeps the queue's (its reinsert of moved
+     * keys, which this frame skips, puts them after the unmoved ones). Only where the painter is pre-render's, no
+     * sun casters are packed (they are listed in queue order) and the queue did not fill (which rows are cut
+     * would change). The poses are in the stash then (E-98d); the collector's columns are permuted in place.
+     * @returns {boolean} whether the collector was sorted
+     */
+    _presortCollector(count, ySort) {
+        const last = this._lastCollectCount;
+        if (count < 2 || last <= 0 || this._emitWriteCount < 2 * last || this._emitWriteCount >= this.renderQueueMaxItems) return false;
+        if (!this.renderQueueSortKey || !this._gpuPainter || !this._allowGpuPainter()) return false;
+        if (this.shadowsEnabled && this.gpuQueueCaps && this.gpuQueueCaps.maxSun > 0) return false;
+        const px = this._collectPx;
+        if (px === this.renderQueueX || px.length < count) return false;
+        this._sortCollectorByKey(count, ySort);
+        return true;
+    }
+
+    /** E-138. The collector's rows and their poses in the stash, stably sorted by the key the emit writes for them. */
+    _sortCollectorByKey(count, ySort) {
+        if (this._presortOrder.length < count) {
+            const n = this.renderQueueMaxItems;
+            this._presortKeys = new Float32Array(n);
+            this._presortKeysU32 = new Uint32Array(this._presortKeys.buffer);
+            this._presortOrder = new Uint32Array(n);
+            this._presortScratch = new Uint32Array(n);
+            this._presortHist = new Uint32Array(256);
+            this._presortF32 = new Float32Array(n);
+            this._presortU8 = new Uint8Array(n);
+            this._presortI32 = new Int32Array(n);
+        }
+        const keys = this._presortKeys;
+        const order = this._presortOrder;
+        const cY = this._renderableY;
+        const cType = this._renderableType;
+        const cIndex = this._renderableIndex;
+        // The key emitSpriteQueue writes for the row (and every piece of a root), as the queue's Float32 stores it.
+        for (let i = 0; i < count; i++) {
+            keys[i] = this._orderKey(cType[i], cIndex[i], cY[i], ySort);
+            order[i] = i;
+        }
+        radixSortIndicesBySortKey(order, count, this._presortKeysU32, this._presortScratch, this._presortHist);
+        let i = 0;
+        while (i < count && order[i] === i) i++;
+        if (i === count) return;
+        const f32 = this._presortF32;
+        for (let k = 0; k < count; k++) f32[k] = cY[order[k]];
+        cY.set(f32.subarray(0, count));
+        permuteF32(this._collectPx, order, count, f32);
+        permuteF32(this._collectPy, order, count, f32);
+        permuteF32(this._collectRotC, order, count, f32);
+        permuteF32(this._collectRotS, order, count, f32);
+        const u8 = this._presortU8;
+        for (let k = 0; k < count; k++) u8[k] = cType[order[k]];
+        cType.set(u8.subarray(0, count));
+        const i32 = this._presortI32;
+        for (let k = 0; k < count; k++) i32[k] = cIndex[order[k]];
+        cIndex.set(i32.subarray(0, count));
     }
 
     _fillEmitSource(count, maxItems, collectorY, collectorType, collectorIndex, stashX, stashY, stashRotC, stashRotS, persist, hasOrder, ySort) {
@@ -4659,7 +4748,9 @@ class PreRenderWorker extends AbstractWorker {
         }
         this._bindGpuPackWriters();
         const typeArr = this.renderQueueType;
-        const allowSort = !!(allowPainter && this._gpuPainter && q.sortKey);
+        // E-138: a presorted queue is in painter order already; it is packed as it is, and says so.
+        const presorted = this._queuePresorted;
+        const allowSort = !presorted && !!(allowPainter && this._gpuPainter && q.sortKey);
         this._packDst = dst;
         this._packQ = q;
         this._packParticles = 0;
@@ -4678,7 +4769,7 @@ class PreRenderWorker extends AbstractWorker {
         res.sprite = packed.sprite;
         res.glow = packed.glow;
         res.particle = this._packParticles | 0;
-        res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0);
+        res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0) | (presorted ? GPU_FLAG_SORTED : 0);
         res.staticGen = this._packSplitUsed ? this._packSplitGen : 0;
         return res;
     }
