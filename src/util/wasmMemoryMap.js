@@ -113,7 +113,7 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  *   `preRenderPainter*` owned by pre-render, `pixiPainter*` by Pixi, so the kernel reads the sort keys where
  *   pre-render wrote them and the two never share a state
  */
-export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0, collect = null, painter = null) {
+export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, tableBytes, emit = null, stamp = null, sway = null, pixiRows = 0, collect = null, painter = null, pixiFloats = 15) {
   const n = maxItems | 0;
   const regions = [
     { name: 'guard', owner: 'nobody', bytes: NULL_GUARD_BYTES },
@@ -203,10 +203,10 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
     );
   }
   if ((pixiRows | 0) > 0) {
-    // W9d: Pixi's instance rows (15 floats each) and its own pack scratch, apart from pre-render's: the two
-    // pack at the same time.
+    // W9d: Pixi's instance rows (15 floats each; W9e: 17 with pose interpolation, the pose stream then the statics)
+    // and its own pack scratch, apart from pre-render's: the two pack at the same time.
     regions.push(
-      { name: 'pixiInstances', owner: 'Pixi packs and uploads', bytes: (pixiRows | 0) * 15 * 4 },
+      { name: 'pixiInstances', owner: 'Pixi packs and uploads', bytes: (pixiRows | 0) * (pixiFloats | 0) * 4 },
       { name: 'pixiPackIndices', owner: 'Pixi', bytes: n * 4 },
       { name: 'pixiPackTables', owner: 'Pixi', bytes: tableBytes },
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },

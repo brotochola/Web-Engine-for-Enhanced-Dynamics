@@ -86,6 +86,8 @@ async function setup(seed) {
   }
   const pose = alloc(Float32Array, N * POSE_DYN_FLOATS);
   const stat = alloc(Float32Array, N * POSE_STATIC_FLOATS);
+  // Pixi's pack region with interpolation: 17 floats a row, the pose stream then the statics.
+  const region = alloc(Float32Array, N * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS));
   const order = Uint32Array.from({ length: N }, (_, i) => i).sort(() => rng() - 0.5);
   const inMemory = alloc(Uint32Array, N);
   inMemory.set(order);
@@ -97,7 +99,7 @@ async function setup(seed) {
   top += 160;
   const pack = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
   const batch = new InstancedSpriteBatch({ capacity: N, label: 'w9e', poseInterp: true, useWebGpu: false, shaders });
-  return { q, prevX, prevY, pose, stat, inMemory, outside: Uint32Array.from(order), pack, batch };
+  return { q, prevX, prevY, pose, stat, region, inMemory, outside: Uint32Array.from(order), pack, batch };
 }
 
 function sameWords(a, b, floats, rows, label) {
@@ -165,4 +167,37 @@ test('pack_pose declines what is not in the memory', async () => {
   assert.equal(packPoseRowsWasm(s.pack, s.q, ctx, s.pose, s.stat, N), -1, 'a previous pose outside');
   const ctx2 = s.batch._beginUpload(s.q, { ...none, space: BATCH_SPACE.WORLD });
   assert.equal(packPoseRowsWasm(s.pack, s.q, ctx2, new Float32Array(N * POSE_DYN_FLOATS), null, N), -1, 'rows outside');
+});
+
+test('a pose batch on the Pixi region uploads through the kernel what the JS pose batch uploads', async () => {
+  const s = await setup(13);
+  let calls = 0;
+  const kernel = s.pack.pose;
+  s.pack.pose = (...a) => {
+    calls++;
+    return kernel(...a);
+  };
+  const base = { capacity: N, label: 'w9e-wired', poseInterp: true, useWebGpu: false, shaders };
+  const wasm = new InstancedSpriteBatch({ ...base, data: s.region, gpuPack: s.pack });
+  const js = new InstancedSpriteBatch(base);
+  for (const b of [...wasm._buffers, ...js._buffers]) b.update = () => {};
+  assert.equal(wasm._gpuPack, s.pack, 'the batch packs through the kernel');
+  assert.equal(wasm._sharedPose.buffer, s.region.buffer);
+  assert.ok(!(wasm.data.buffer instanceof SharedArrayBuffer), 'and uploads a private copy (E-123)');
+  const opts = {
+    space: BATCH_SPACE.WORLD, includeType: -1, excludeType0: -1, excludeType1: -1,
+    prevX: s.prevX, prevY: s.prevY, pixelSnap: true, snapCameraX: 3.5, snapCameraY: -2.25, snapZoom: 1.5,
+  };
+  // Three frames: the first packs the statics, then the pose alone (statics current), then both again after the
+  // queue's statics generation would have moved (a row count that differs).
+  for (const [frame, count] of [[0, N], [1, N], [2, N - 333]]) {
+    s.q.count = count;
+    for (let i = 0; i < N; i++) s.q.x[i] += frame;
+    const nw = wasm.upload(s.q, opts);
+    const nj = js.upload(s.q, { ...opts });
+    assert.equal(nw, nj, `frame ${frame}: rows`);
+    sameWords(wasm.data, js.data, POSE_DYN_FLOATS, nj, `frame ${frame}: pose`);
+    sameWords(wasm.staticData, js.staticData, POSE_STATIC_FLOATS, nj, `frame ${frame}: statics`);
+  }
+  assert.equal(calls, 3, 'every frame through the kernel');
 });

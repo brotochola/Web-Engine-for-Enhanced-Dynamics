@@ -35,7 +35,7 @@ import {
   packSplitRows,
   splitInterleavedRows,
 } from './gpuQueueLayout.js';
-import { packInstancedRowsWasm, packSplitRowsWasm } from './gpuPackClient.js';
+import { packInstancedRowsWasm, packPoseRowsWasm, packSplitRowsWasm } from './gpuPackClient.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -273,14 +273,15 @@ export class InstancedSpriteBatch {
     // of the render-queue memory (`data`); they are copied into `this.data` before the upload, as
     // _commitPackedBatch copies pre-render's. Uploading from the shared rows themselves made every other
     // worker slower in Predator (E-123: physics +9.5 %, spatial +6.3 %, 4/4). A split batch packs the same
-    // region as its two streams, the poses first.
-    const shared = !this.poseInterp && !this.shadowCast && data instanceof Float32Array
-      && data.length >= this.capacity * INSTANCED_SPRITE_FLOATS ? data : null;
-    this._sharedRows = shared || new Float32Array(0);
+    // region as its two streams, the poses first; so does a pose batch (W9e), whose rows are 17 floats.
+    const poseFloats = this.poseInterp ? POSE_DYN_FLOATS : SPLIT_POSE_FLOATS;
+    const rowFloats = this.poseInterp ? POSE_DYN_FLOATS + POSE_STATIC_FLOATS : INSTANCED_SPRITE_FLOATS;
+    const shared = !this.shadowCast && data instanceof Float32Array && data.length >= this.capacity * rowFloats ? data : null;
+    this._sharedRows = shared && !this.poseInterp ? shared : new Float32Array(0);
     this._gpuPack = shared && gpuPack ? gpuPack : null;
-    this._sharedPose = shared && this.split ? shared.subarray(0, this.capacity * SPLIT_POSE_FLOATS) : new Float32Array(0);
-    this._sharedStatic = shared && this.split
-      ? new Float32Array(shared.buffer, shared.byteOffset + this.capacity * SPLIT_POSE_FLOATS * 4, this.capacity * POSE_STATIC_FLOATS)
+    this._sharedPose = shared && this._twoStreams ? shared.subarray(0, this.capacity * poseFloats) : new Float32Array(0);
+    this._sharedStatic = shared && this._twoStreams
+      ? new Float32Array(shared.buffer, shared.byteOffset + this.capacity * poseFloats * 4, this.capacity * POSE_STATIC_FLOATS)
       : new Float32Array(0);
     // A split batch's 15-float scratch for the calls packSplitRows does not take, made on the first one.
     this._splitScratch = new Float32Array(0);
@@ -749,10 +750,24 @@ export class InstancedSpriteBatch {
     return false;
   }
 
+  /**
+   * A pose batch's upload (renderer.interpolation): the pose stream, and the statics when _staticsCurrent says the
+   * GPU's are not this upload's. Through gpuPack.wasm (W9e, pack_pose) when the batch has it, into its region of the
+   * render-queue memory and then into its own arrays (E-123); else the JS packers below.
+   */
   _uploadPose(q, opts) {
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
-    const out = this._staticsCurrent(q, ctx) ? this._packPoseOnly(q, ctx) : this._packPoseAndStatics(q, ctx);
+    const current = this._staticsCurrent(q, ctx);
+    let out = -1;
+    if (this._gpuPack !== null) {
+      out = packPoseRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity);
+      if (out > 0) {
+        this.data.set(this._sharedPose.subarray(0, out * POSE_DYN_FLOATS));
+        if (!current) this.staticData.set(this._sharedStatic.subarray(0, out * POSE_STATIC_FLOATS));
+      }
+    }
+    if (out < 0) out = current ? this._packPoseOnly(q, ctx) : this._packPoseAndStatics(q, ctx);
     return this._finishUpload(out, POSE_DYN_FLOATS * 4);
   }
 

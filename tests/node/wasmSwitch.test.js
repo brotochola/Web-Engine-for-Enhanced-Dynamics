@@ -207,11 +207,15 @@ test('wasm.pixiPack gives Pixi its own sprite rows and pack scratch in the rende
   const pixi = { preRender: { packGpuSprites: 'pixi' } };
   const l = buildScene({}, null, pixi).renderQueueMemory.layout;
   assert.equal(l.pixiInstanceRows, 100, 'one row per queue row');
+  assert.equal(l.pixiInstanceFloats, 15, '15 floats a row');
   assert.ok(l.pixiInstanceByte > 0 && l.pixiIndexByte > l.pixiInstanceByte && l.pixiTableByte > 0 && l.pixiParticlesByte > 0);
   assert.equal(buildScene({ pixiPack: false }, null, pixi).renderQueueMemory.layout.pixiInstanceRows, 0, 'off');
   assert.equal(buildScene({}, null).renderQueueMemory.layout.pixiInstanceRows, 0, 'pre-render packs: no Pixi rows');
   const interp = { ...pixi, renderer: { maxVisibleRenderables: 100, interpolation: true } };
-  assert.equal(buildScene({}, null, interp).renderQueueMemory.layout.pixiInstanceRows, 0, 'pose interpolation packs its own way');
+  // W9e: with pose interpolation the rows hold a pose batch's two streams, 6 + 11 floats.
+  const li = buildScene({}, null, interp).renderQueueMemory.layout;
+  assert.equal(li.pixiInstanceRows, 100, 'pose interpolation: one row per queue row too');
+  assert.equal(li.pixiInstanceFloats, 17, 'of 17 floats');
   assert.equal(buildScene({ gpuPack: false, preRenderEmit: false }, null, pixi).renderQueueMemory, null, 'needs gpuPack');
 });
 

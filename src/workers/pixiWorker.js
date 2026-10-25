@@ -97,6 +97,8 @@ import { viewWorldBounds } from '../util/viewBounds.js';
 import {
   InstancedSpriteBatch,
   INSTANCED_SPRITE_FLOATS,
+  POSE_DYN_FLOATS,
+  POSE_STATIC_FLOATS,
   BATCH_SPACE,
   BATCH_DEPTH,
   buildTextureLut,
@@ -1914,12 +1916,18 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
-  /** W9d: gpuPack.wasm on Pixi's regions of the render-queue memory, when the scene laid them out. */
+  /**
+   * W9d: gpuPack.wasm on Pixi's regions of the render-queue memory, when the scene laid them out (W9e: with pose
+   * interpolation too, 17 floats a row for the pose batch's two streams).
+   */
   async _bindPixiGpuPack(data) {
     const memory = data.renderQueueMemory;
     const layout = data.renderQueueLayout;
     const rows = layout ? layout.pixiInstanceRows | 0 : 0;
-    if (!memory || rows <= 0 || this._queueInterp || rows < (this.renderQueueMaxItems | 0)) return;
+    if (!memory || rows <= 0 || rows < (this.renderQueueMaxItems | 0)) return;
+    const floats = layout.pixiInstanceFloats | 0 || INSTANCED_SPRITE_FLOATS;
+    // A layout made for the other mode (interpolation on or off) leaves the batch packing in JS.
+    if (floats !== (this._queueInterp ? POSE_DYN_FLOATS + POSE_STATIC_FLOATS : INSTANCED_SPRITE_FLOATS)) return;
     try {
       this._pixiGpuPack = await bindGpuPack(memory, {
         tableByte: layout.pixiTableByte,
@@ -1929,7 +1937,7 @@ class PixiRenderer extends AbstractWorker {
         particlesByte: layout.pixiParticlesByte,
         inverseByte: 0,
       });
-      this._pixiInstanceRows = new Float32Array(memory.buffer, layout.pixiInstanceByte, rows * INSTANCED_SPRITE_FLOATS);
+      this._pixiInstanceRows = new Float32Array(memory.buffer, layout.pixiInstanceByte, rows * floats);
     } catch (err) {
       console.warn('[PIXI WORKER] gpuPack.wasm did not load; packing sprites in JS', err);
       this._pixiGpuPack = null;
