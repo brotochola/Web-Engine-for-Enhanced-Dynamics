@@ -401,7 +401,7 @@ class ParticleWorker extends AbstractWorker {
     // W14: navFlowfield.wasm on the navigation memory, or null (the JS search).
     this._flowWasm = null;
     this.flowfieldRequests = null;
-    /** W26: the decal stamp kernel, bound when the tiles live in the decal memory; stamps queue as records. */
+    /** W26: the decal stamp kernel, on the decal memory the tiles live in; stamps queue as records. */
     this._decalWasm = null;
     this.pathRequests = null;
     this._pathRequestTmp = { key: 0, fromCell: 0, toCell: 0 };
@@ -469,25 +469,8 @@ class ParticleWorker extends AbstractWorker {
     this._impactHeader = null; // Int32Array view: [0]=count, [1]=batch sequence
     this._impactData = null;
     this._maxImpactsPerFrame = 0;
-    this._stampArgs = {
-      worldX: 0,
-      worldY: 0,
-      tint: 0,
-      scaleX: 1,
-      scaleY: 1,
-      alpha: 1,
-      blendMode: 0,
-      textureRgba: null,
-      texWidth: 0,
-      texHeight: 0,
-      decalsTiles: null,
-      decalsTilesDirty: null,
-      decalsTileSize: 0,
-      decalsTilePixelSize: 0,
-      decalsTilesX: 0,
-      decalsTilesY: 0,
-      decalsResolution: 0,
-    };
+    /** Decal textures the decal memory does not hold, warned about once each (stampParticleToTile). */
+    this._decalTexturesMissing = new Set();
   }
 
   /**
@@ -653,19 +636,12 @@ class ParticleWorker extends AbstractWorker {
           };
         }
       }
-      // W26: the stamps through decalStamp.wasm, when the tiles are the decal memory.
-      this._decalWasm = null;
-      if (data.decals.memory && data.decals.memoryLayout && this.config?.wasm?.decalStamp !== false) {
-        try {
-          this._decalWasm = await bindDecalStamp(data.decals.memory, data.decals.memoryLayout, this.decalsTilesX, this.decalsTilesY);
-          for (const [textureId, placed] of Object.entries(this._decalWasm.textures)) {
-            const texture = this.decalTextures[textureId];
-            if (texture) texture.wasmByte = placed.byte;
-          }
-        } catch (err) {
-          console.warn('[PARTICLE WORKER] decalStamp.wasm did not load; stamping decals in JS', err);
-          this._decalWasm = null;
-        }
+      // W26: the stamps through decalStamp.wasm, on the decal memory the tiles live in (installDecalMemory).
+      if (!data.decals.memory || !data.decals.memoryLayout) throw new Error('decals without the decal memory (installDecalMemory)');
+      this._decalWasm = await bindDecalStamp(data.decals.memory, data.decals.memoryLayout, this.decalsTilesX, this.decalsTilesY);
+      for (const [textureId, placed] of Object.entries(this._decalWasm.textures)) {
+        const texture = this.decalTextures[textureId];
+        if (texture) texture.wasmByte = placed.byte;
       }
       // console.log('[PARTICLE WORKER] Decals system initialized');
     } else {
@@ -1314,48 +1290,30 @@ class ParticleWorker extends AbstractWorker {
     if (!texture) return;
     // W26: a record for decalStamp.wasm (written here, so no double crosses a call), stamped at the flush.
     const b = this._decalWasm;
-    if (b !== null) {
-      if (texture.wasmByte >= 0) {
-        if (b.count === b.maxStamps) this.flushDecalStamps();
-        const n = b.count;
-        const f = n << 3;
-        const u = n << 4;
-        b.f64[f] = worldX;
-        b.f64[f + 1] = worldY;
-        b.f64[f + 2] = scaleX;
-        b.f64[f + 3] = scaleY;
-        b.f64[f + 4] = alpha;
-        b.u32[u + 10] = tint;
-        b.u32[u + 11] = blendMode === 1 ? 1 : 0;
-        b.u32[u + 12] = texture.wasmByte;
-        b.u32[u + 13] = texture.width;
-        b.u32[u + 14] = texture.height;
-        b.count = n + 1;
-        return;
+    if (b === null) return;
+    // The memory holds every well-formed texture (createDecalMemory): one it left out has no pixels to stamp.
+    if (texture.wasmByte < 0) {
+      if (!this._decalTexturesMissing.has(textureId)) {
+        this._decalTexturesMissing.add(textureId);
+        console.warn(`[PARTICLE WORKER] decal texture ${textureId} is not in the decal memory (no pixels?); its stamps are skipped`);
       }
-      // A texture the memory does not hold stamps in JS, after the records before it.
-      if (b.count > 0) this.flushDecalStamps();
+      return;
     }
-
-    const p = this._stampArgs;
-    p.worldX = worldX;
-    p.worldY = worldY;
-    p.tint = tint;
-    p.scaleX = scaleX;
-    p.scaleY = scaleY;
-    p.alpha = alpha;
-    p.blendMode = blendMode;
-    p.textureRgba = texture.rgba;
-    p.texWidth = texture.width;
-    p.texHeight = texture.height;
-    p.decalsTiles = this.decalsTilesRGBA;
-    p.decalsTilesDirty = this.decalsTilesDirty;
-    p.decalsTileSize = this.decalsTileSize;
-    p.decalsTilePixelSize = this.decalsTilePixelSize;
-    p.decalsTilesX = this.decalsTilesX;
-    p.decalsTilesY = this.decalsTilesY;
-    p.decalsResolution = this.decalsResolution;
-    Decal.stampToTileBuffers(p);
+    if (b.count === b.maxStamps) this.flushDecalStamps();
+    const n = b.count;
+    const f = n << 3;
+    const u = n << 4;
+    b.f64[f] = worldX;
+    b.f64[f + 1] = worldY;
+    b.f64[f + 2] = scaleX;
+    b.f64[f + 3] = scaleY;
+    b.f64[f + 4] = alpha;
+    b.u32[u + 10] = tint;
+    b.u32[u + 11] = blendMode === 1 ? 1 : 0;
+    b.u32[u + 12] = texture.wasmByte;
+    b.u32[u + 13] = texture.width;
+    b.u32[u + 14] = texture.height;
+    b.count = n + 1;
   }
 
   /** W26: stamp the records queued since the last flush (stampParticleToTile) and set their tiles dirty. */

@@ -1,5 +1,5 @@
-// E-76 W26: the decal stamp kernel (wasm/test/decalStamp.c, a test module) against the shipped
-// Decal.stampToTileBuffers, bit for bit. Random batches built to reach every branch: stamps clipped at tile
+// E-76 W26: the decal stamp kernel (wasm/test/decalStamp.c, a test module) against the JS stamp the engine shipped
+// (tests/reference/decalStamp.mjs), bit for bit. Random batches built to reach every branch: stamps clipped at tile
 // and world edges, on tile and pixel boundaries, outside the world, NaN and infinite positions; stamps a
 // whole number of pixels wide that start an ulp before a pixel edge, the only ones whose last column and
 // row sample past the texture (the JS skips those); scales of 0, negative, NaN and infinite, under a pixel,
@@ -13,7 +13,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { Decal } from '../../src/core/decal.js';
+import { stampToTileBuffers } from '../reference/decalStamp.mjs';
 import { calculateDecalTileBounds, calculateTileClipRegion } from '../../src/util/utils.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
@@ -271,7 +271,7 @@ async function runConfigs(seed, flags) {
       for (let s = 0; s < n; s++) {
         const st = randomStamp(r, cfg, texList);
         const tex = k.tex[st.texture];
-        Decal.stampToTileBuffers({
+        stampToTileBuffers({
           worldX: st.worldX,
           worldY: st.worldY,
           tint: st.tint,

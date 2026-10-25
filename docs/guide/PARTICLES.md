@@ -133,11 +133,11 @@ Same as before: `texture` name, or `spritesheet` + `animation` + `frame`. Resolv
 ParticleEmitter.emit / emitFlat / emitZenithal
   → ParticleComponent SAB (incl. flat, viewMode)
 Decal.stamp
-  → particle worker: `stampToTileBuffers` now (no ring hop)
+  → particle worker: queued for the decal stamp kernel (no ring hop)
   → logic / main: stamp ring SAB (no particle slot)
 particleWorker
   → physics + ground (`stayOnTheFloor` blood that lands)
-  → drain stamp ring + `Decal.stampToTileBuffers`
+  → drain stamp ring + the decal stamp (WebAssembly, one call per batch)
   → visibleParticlesData
 preRenderWorker
   → render queue pose from viewMode / flat
@@ -145,11 +145,11 @@ pixiWorker
   → draw (decal atlas dirty tiles)
 ```
 
-`Decal.stamp` from logic / main is not sync with the atlas — blend is the next particle tick. From the particle worker the atlas is current when the call returns. `Decal.getColor(x, y)` reads the atlas (packed `0xRRGGBBAA`, or `0` if empty / decals off). Pixi upload follows dirty tiles.
+`Decal.stamp` from logic / main is not sync with the atlas — blend is the next particle tick. In the particle worker stamps are blended at the end of its tick, in one WebAssembly call. `Decal.getColor(x, y)` reads the atlas (packed `0xRRGGBBAA`, or `0` if empty / decals off). Pixi upload follows dirty tiles.
 
 ## Related
 
-- [`decal.js`](../../src/core/decal.js) — `Decal.stamp` (game) and the atlas (`stampToTileBuffers`, save). The pixel loop is not a scene API.
+- [`decal.js`](../../src/core/decal.js) — `Decal.stamp` (game) and the atlas (save). The pixel loop (`decalStamp.wasm`) is not a scene API.
 - [`particleEmitter.js`](../../src/core/particleEmitter.js)
 - [`particleComponent.js`](../../src/components/particleComponent.js)
 - [`particleWorker.js`](../../src/workers/particleWorker.js)

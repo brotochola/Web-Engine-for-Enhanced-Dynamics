@@ -525,11 +525,9 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   decorationSwayF32: true,
   /**
-   * The particle worker's decal stamping (`decalStamp.wasm`, W26): the decal tiles at byte 0 of a WebAssembly.Memory
-   * of their own, with the decal textures and the kernel's scratch after them.
+   * Pixi's premultiply of each dirty decal tile (`decalPremultiply.wasm`, W21c), on the decal memory: the decal tiles at
+   * byte 0 of a WebAssembly.Memory of their own, where the particle worker stamps them (`decalStamp.wasm`, W26).
    */
-  decalStamp: true,
-  /** Pixi's premultiply of each dirty decal tile (`decalPremultiply.wasm`, W21c), on the decal memory decalStamp makes. */
   decalPremultiply: true,
   /**
    * The particle worker's flowfield search (`navFlowfield.wasm`, W14): the nav buffer at byte 0 of a

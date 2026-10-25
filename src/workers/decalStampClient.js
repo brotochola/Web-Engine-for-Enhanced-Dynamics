@@ -1,7 +1,8 @@
 // The WASM decal stamp (E-76 W26): loads decalStamp.wasm onto the decal memory (decalMemory.js), where the tiles,
 // the decal textures and the kernel's scratch live. The particle worker writes each stamp as a 64-byte record
 // (stampParticleToTile) and stamp_tiles stamps the frame's records in one call, in their order, as
-// Decal.stampToTileBuffers would one by one; the tiles it touched get their dirty flags after it returns.
+// the JS stamp did one by one (tests/reference/decalStamp.mjs); the tiles it touched get their dirty flags after it
+// returns.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { DECAL_STAMP_BYTES, DECAL_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
@@ -45,7 +46,7 @@ export async function bindDecalStamp(memory, layout, tilesX, tilesY) {
 
 /**
  * Stamp the records written since the last flush, then set the dirty flag of every tile the kernel touched
- * (after its pixels, as stampToTileBuffers' Atomics.store is). Returns the tiles stamped.
+ * (after its pixels, as the JS stamp's Atomics.store was). Returns the tiles stamped.
  */
 export function flushDecalStamps(b, dirty, tileSize, resolution) {
   const n = b.count;

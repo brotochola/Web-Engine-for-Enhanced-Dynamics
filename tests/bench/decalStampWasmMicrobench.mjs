@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 /**
  * Kernel (E-76 W26): the particle worker's decal stamping in WASM (wasm/decalStamp.c, src/workers/decalStamp.wasm)
- * against the shipped Decal.stampToTileBuffers, on the stamps
+ * against the JS stamp the engine shipped (Decal.stampToTileBuffers, now tests/reference/decalStamp.mjs), on the stamps
  * decalStampStressScene makes: DecalStampDriver's 768 seeded Decal.stamp calls a tick (blood.png, 32 × 32;
  * scale 0.4–2, alpha 0.4–1, a random tint, every third one multiply) on a 1920 × 1080 world, decalsTileSize
  * 256 at resolution 0.5: 8 × 5 tiles of 128 px.
  *
- *   js           ParticleWorker.stampParticleToTile → Decal.stampToTileBuffers (shipped), once per drained
- *                stamp, on a real particle worker
+ *   js           the reference stamp, once per drained stamp, called as ParticleWorker.stampParticleToTile
+ *                called it (the engine itself only stamps in WASM now), on a real particle worker's tiles
  *   wasm         the same worker with decalStamp.wasm bound: stampParticleToTile writes each drained stamp as
  *                a 64-byte record, flushDecalStamps stamps the frame's records in one call
  *   wasm-scalar  the same call with the kernel's scalar loop forced (the JS pixel loop line for line)
@@ -31,6 +31,7 @@ import zlib from 'node:zlib';
 import { pathToFileURL } from 'node:url';
 
 import { Decal } from '../../src/core/decal.js';
+import { stampToTileBuffers } from '../reference/decalStamp.mjs';
 import { createDecalMemory } from '../../src/util/decalMemory.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
@@ -231,16 +232,46 @@ export async function setupDecalKernel({ flags = 0 } = {}) {
 
   const fx = drainedFrames(FRAMES);
 
-  /** The shipped path, once per drained stamp: the JS stamp (no kernel) or a record, then the frame's flush. */
-  const stampFrameWith = (useKernel) => (frame, count = STAMPS_PER_TICK) => {
-    worker._decalWasm = useKernel ? kernel : null;
+  /**
+   * The JS stamp the engine shipped (tests/reference/decalStamp.mjs), once per drained stamp, as
+   * stampParticleToTile called it: the texture by id, one reused argument object.
+   */
+  const p = {
+    worldX: 0, worldY: 0, tint: 0, scaleX: 1, scaleY: 1, alpha: 1, blendMode: 0,
+    textureRgba: null, texWidth: 0, texHeight: 0,
+    decalsTiles: worker.decalsTilesRGBA,
+    decalsTilesDirty: worker.decalsTilesDirty,
+    decalsTileSize: worker.decalsTileSize,
+    decalsTilePixelSize: worker.decalsTilePixelSize,
+    decalsTilesX: worker.decalsTilesX,
+    decalsTilesY: worker.decalsTilesY,
+    decalsResolution: worker.decalsResolution,
+  };
+  const stampFrameJs = (frame, count = STAMPS_PER_TICK) => {
+    for (let k = frame * STAMPS_PER_TICK, end = k + count; k < end; k++) {
+      const texture = worker.decalTextures[fx.textureId[k]];
+      if (!texture) continue;
+      p.worldX = fx.x[k];
+      p.worldY = fx.y[k];
+      p.tint = fx.tint[k];
+      p.scaleX = fx.scaleX[k];
+      p.scaleY = fx.scaleY[k];
+      p.alpha = fx.alpha[k];
+      p.blendMode = fx.blendMode[k];
+      p.textureRgba = texture.rgba;
+      p.texWidth = texture.width;
+      p.texHeight = texture.height;
+      stampToTileBuffers(p);
+    }
+    return 0;
+  };
+  /** The shipped path, once per drained stamp: a record, then the frame's flush. */
+  const stampFrameWasm = (frame, count = STAMPS_PER_TICK) => {
     for (let k = frame * STAMPS_PER_TICK, end = k + count; k < end; k++) {
       worker.stampParticleToTile(fx.x[k], fx.y[k], fx.tint[k], fx.scaleX[k], fx.scaleY[k], fx.textureId[k], fx.alpha[k], fx.blendMode[k]);
     }
-    return useKernel ? worker.flushDecalStamps() : 0;
+    return worker.flushDecalStamps();
   };
-  const stampFrameJs = stampFrameWith(false);
-  const stampFrameWasm = stampFrameWith(true);
 
   const tiles = new Uint8Array(m.buffer, 0, tileBytes);
   const dirty = worker.decalsTilesDirty;
@@ -300,7 +331,7 @@ async function main() {
   const report = {
     feature: 'decal-stamp-wasm',
     variant,
-    functions: ['Decal.stampToTileBuffers', 'decalStamp.stamp_tiles'],
+    functions: ['stampToTileBuffers (tests/reference)', 'decalStamp.stamp_tiles'],
     stampsPerFrame: STAMPS_PER_TICK,
     frames: FRAMES,
     tiles: { x: TILES_X, y: TILES_Y, pixels: TILE_PIXELS },

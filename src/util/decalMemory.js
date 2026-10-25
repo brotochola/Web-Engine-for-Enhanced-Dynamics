@@ -2,7 +2,9 @@
 // worker views them as it viewed the tiles' own SharedArrayBuffer (particle stamps them; Pixi uploads them;
 // Decal.getColor and saves read them on the main thread and in logic). After them, the stamp kernel's scratch
 // and a copy of every decal texture (decalMemoryRegions). Made once the textures are loaded, before any worker
-// is initialized, so nothing binds the tiles twice.
+// is initialized, so nothing binds the tiles twice. The decal stamp and premultiply run only in WebAssembly, so a
+// scene with decals always has one: a memory past the 2 GB cap, or one the browser will not make, is an error that
+// names its size.
 
 import { Decal } from '../core/decal.js';
 import { DECAL_MAX_STAMPS, decalMemoryRegions } from './wasmMemoryMap.js';
@@ -12,7 +14,7 @@ const WASM_MAX_PAGES = 32768;
 
 /**
  * @param {{ totalTiles: number, tilePixelSize: number, textures: Record<string, { width: number, height: number, rgba: ArrayBufferLike }> | null }} opts
- * @returns {null | { memory: WebAssembly.Memory, buffer: SharedArrayBuffer, layout: object }}
+ * @returns {null | { memory: WebAssembly.Memory, buffer: SharedArrayBuffer, layout: object }} null without tiles
  */
 export function createDecalMemory({ totalTiles, tilePixelSize, textures }) {
   const tiles = totalTiles | 0;
@@ -28,12 +30,19 @@ export function createDecalMemory({ totalTiles, tilePixelSize, textures }) {
     textureBytes += (bytes + 63) & ~63;
   }
   const map = decalMemoryRegions(tileBytes, tiles, textureBytes, pixels);
-  if (map.pages > WASM_MAX_PAGES || map.regions.tiles.byte !== 0) return null;
+  if (map.regions.tiles.byte !== 0) throw new Error('decal memory: the tiles must start at byte 0');
+  const mb = Math.ceil((map.pages * 65536) / 1048576);
+  if (map.pages > WASM_MAX_PAGES) {
+    throw new Error(
+      `decal memory: ${mb} MB (${tiles} tiles of ${pixels}x${pixels} px) is past the ${WASM_MAX_PAGES / 16} MB a kernel memory ` +
+        'can take; lower particle.decalsResolution or the world size',
+    );
+  }
   let memory;
   try {
     memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
-  } catch {
-    return null;
+  } catch (err) {
+    throw new Error(`decal memory: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
   }
   const r = map.regions;
   const buffer = memory.buffer;
@@ -65,15 +74,15 @@ export function createDecalMemory({ totalTiles, tilePixelSize, textures }) {
 }
 
 /**
- * With decals and wasm.decalStamp on, put the scene's tiles in a decal memory: the tiles' buffer becomes the
- * memory's (still empty: nothing stamps before the workers start) and the main thread's atlas is bound to it.
- * A scene whose memory cannot be made keeps its tiles' own SharedArrayBuffer and the JS stamp.
+ * With decals, put the scene's tiles in a decal memory: the tiles' buffer becomes the memory's (still empty:
+ * nothing stamps before the workers start) and the main thread's atlas is bound to it. createDecalMemory throws
+ * when the memory cannot be made.
  */
 export function installDecalMemory(scene) {
   scene.decalMemory = null;
   const cfg = scene.config;
   const p = cfg.particle || {};
-  if (!p.decals || cfg.wasm?.decalStamp === false || !scene.buffers?.decalsTilesRGBA) return null;
+  if (!p.decals || !scene.buffers?.decalsTilesRGBA) return null;
   const m = createDecalMemory({
     totalTiles: scene.decalsTotalTiles,
     tilePixelSize: p.decalsTilePixelSize,
