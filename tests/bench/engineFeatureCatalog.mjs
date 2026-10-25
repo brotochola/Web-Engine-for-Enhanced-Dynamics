@@ -38,8 +38,9 @@ export const ENGINE_FEATURES = [
   {
     id: 'decals',
     name: 'Decal stamp',
-    module: 'src/core/decal.js',
-    kernel: { script: 'tests/bench/decalMicrobench.mjs', opsKey: 'cases.normal_multitile_large.opsPerSec' },
+    // The stamp is decalStamp.wasm only (the JS one is tests/reference/decalStamp.mjs): the kernel's microbench, wasm.
+    module: 'src/workers/decalStampClient.js',
+    kernel: { script: 'tests/bench/decalStampWasmMicrobench.mjs', opsKey: 'cases.stamp.opsPerSec' },
     scene: {
       key: 'decalStamp',
       path: '/tests/bench/stressScenes/decalStampStressScene.js',
@@ -546,8 +547,9 @@ export const ENGINE_FEATURES = [
   {
     id: 'decalPremultiply',
     name: 'Decal tile premultiply',
-    module: 'src/render/webgpu/pinGpuTexture.js',
-    kernel: { script: 'tests/bench/premultiplyMicrobench.mjs', opsKey: 'cases.tiles.opsPerSec' },
+    // decalPremultiply.wasm only (the JS one is tests/reference/decalPremultiply.mjs): the kernel's microbench, wasm.
+    module: 'src/render/decalPremultiplyClient.js',
+    kernel: { script: 'tests/bench/decalPremultiplyWasmMicrobench.mjs', opsKey: 'cases.premultiply.opsPerSec' },
     scene: null,
     primary: ['pixi_STEP_MS'],
     load: [],

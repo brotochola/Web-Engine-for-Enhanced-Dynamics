@@ -308,7 +308,8 @@ function hashBytes(h, bytes) {
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'js');
+  // The shipped path by default (the engine catalog runs it with no flags); js is the reference.
+  const variant = String(args.variant || 'wasm');
   if (!['js', 'wasm', 'wasm-scalar'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const k = await setupDecalKernel({ flags: variant === 'wasm-scalar' ? F_SCALAR : 0 });
   const stampFrame = variant === 'js' ? k.stampFrameJs : k.stampFrameWasm;

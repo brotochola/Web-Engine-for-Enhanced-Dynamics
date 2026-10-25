@@ -89,7 +89,8 @@ export async function setupPremultiplyKernel() {
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'js');
+  // The shipped path by default (the engine catalog runs it with no flags); js is the reference.
+  const variant = String(args.variant || 'wasm');
   if (!['js', 'wasm', 'wasm-scalar'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const s = await setupPremultiplyKernel();
   const run = variant === 'js' ? s.runJs : variant === 'wasm' ? s.runSimd : s.runScalar;
