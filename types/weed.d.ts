@@ -299,7 +299,7 @@ export type SceneConfig = Record<string, unknown> & {
   preRender?: Record<string, unknown> & {
     /**
      * Room in MB, whole, 0..1024 (default 4), for the Adobe Animate assets' tables in the render-queue memory
-     * (wasm.preRenderEmitAdobe). A piece takes 46 bytes; an asset that does not fit is drawn through the JavaScript emit.
+     * (the emit kernel's). A piece takes 46 bytes; an asset that does not fit is not drawn, and an error names this key.
      */
     adobeTablesMB?: number;
   };
@@ -320,13 +320,6 @@ export type SceneConfig = Record<string, unknown> & {
      * double test, the JavaScript build's flags exactly.
      */
     particleListsF32?: boolean;
-    /** Pre-render's emit of sprite and decoration rows (SpriteRenderer, ShadowCaster and the decorations move into the render-queue memory). */
-    preRenderEmit?: boolean;
-    /**
-     * Adobe Animate characters in that emit: each one expanded into its pieces, and the clips advanced
-     * (AdobeAnimComponent and the assets' tables move into the render-queue memory; preRender.adobeTablesMB). Needs preRenderEmit.
-     */
-    preRenderEmitAdobe?: boolean;
     /** Pre-render's sprite collect (Transform and Collider move into the render-queue memory; with physics, into Box2D's). */
     preRenderCollect?: boolean;
     /** The bullet tick and its linecasts in one WASM call per frame (physics scenes: the pool moves into Box2D's memory). */
@@ -341,7 +334,7 @@ export type SceneConfig = Record<string, unknown> & {
     solidSegments?: boolean;
     /** Pre-render's per-light occluder gather in one call (physics scenes: LightOccluder moves into Box2D's memory). Needs visibilitySweep. */
     visibilityGather?: boolean;
-    /** The particle worker's decoration sway (with particle.swayFrequencyBuckets above 1 and preRenderEmit on). */
+    /** The particle worker's decoration sway (with particle.swayFrequencyBuckets above 1). */
     decorationSway?: boolean;
     /**
      * The decoration sway in float32 (default true): faster; a sway rotation within a float32 rounding or so of the
