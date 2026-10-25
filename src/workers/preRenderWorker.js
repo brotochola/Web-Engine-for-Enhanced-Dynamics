@@ -101,6 +101,7 @@ import {
     writeEmitColumns,
     writeEmitTextures,
     writePersistColumns,
+    EMIT_ADOBE_F32,
     EMIT_BOUNDS,
     EMIT_DECLINED,
     EMIT_NO_CASTERS,
@@ -459,6 +460,8 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPainterWasm = null;
         /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
         this._emitWasm = null;
+        /** W27b: the kernel expands Adobe roots in float32 (EMIT_ADOBE_F32), not in double as the JS does. */
+        this._emitAdobeF32 = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
@@ -3922,7 +3925,7 @@ class PreRenderWorker extends AbstractWorker {
         const b = this._emitWasm;
         const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
         const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0)
-            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0);
+            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0) | (this._emitAdobeF32 ? EMIT_ADOBE_F32 : 0);
         const written = b.emitRows(b.tableByte, source.count, source.maxItems, flags,
             deltaTime / 1000, this._decorationZoomAlpha, this._zBand);
         if (written === EMIT_DECLINED) return -1;

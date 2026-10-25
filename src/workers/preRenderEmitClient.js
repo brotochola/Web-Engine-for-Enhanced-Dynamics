@@ -51,6 +51,8 @@ export const EMIT_TILES_DIRTY = 4;
 export const EMIT_BOUNDS = 8;
 /** persist_frame's flag for a scene without ShadowCaster (E-117): the shadow terms stay the full emit's zeros. */
 export const EMIT_NO_CASTERS = 16;
+/** W27b: emit_rows expands Adobe roots in float32, four pieces at a time (adobe_root_f32x4), not in double. */
+export const EMIT_ADOBE_F32 = 32;
 /** What JS reads back from emit_rows when it declined the frame (u32 0xffffffff as an i32). */
 export const EMIT_DECLINED = -1;
 /** What persist_frame returns when the rows are not the ones the buffer last held (W4c). */

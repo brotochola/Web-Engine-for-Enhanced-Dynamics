@@ -772,3 +772,53 @@ test('E-138: from its second frame, pre-render sorts an expanding collector befo
     [Layer._ySorting, Layer.entitiesId] = savedLayer;
   }
 });
+
+// W27b: with EMIT_ADOBE_F32 the kernel expands the roots in float32, four pieces at a time, the rest one by one. From
+// the same state each frame, its queue must be the double expansion's within the tolerance (positions 2e-3 px, scales
+// and rotations 1e-5, alpha 1e-6; NaN where it wrote NaN) and every other column exact: textures, tints, anchors, types, sort keys, tile
+// columns, the shadow terms (on the piece the double expansion picked: no two pieces of these assets lie within the
+// tolerance of each other's foot line), on the same rows; with Y-sort and without, and a queue that fills inside a
+// character (the four-piece steps stop at the queue's end).
+const F32_TOLERANCE = { x: 2e-3, y: 2e-3, scaleX: 1e-5, scaleY: 1e-5, rotC: 1e-5, rotS: 1e-5, alpha: 1e-6 };
+
+test('W27b: the float32 Adobe expansion is the double one within its tolerance', async () => {
+  for (const opts of [{ ySort: true, seed: 0xf32a }, { ySort: false, seed: 0xf32b }, { maxItems: 700, count: 700, seed: 0xf32c }]) {
+    const k = await setup(opts);
+    const { worker, maxItems } = k;
+    SpriteRenderer.isAnimated.fill(0);
+    const views = worker.renderQueueBuffers[0];
+    const columns = Object.entries(views).filter(([name, v]) => ArrayBuffer.isView(v) && v.length === maxItems && name !== 'sortKeyU32');
+    const realWarn = console.warn;
+    console.warn = () => {};
+    let checked = 0;
+    try {
+      for (let f = 0; f < FRAMES; f++) {
+        const before = k.snapshot();
+        k.prepare(f);
+        worker._emitAdobeF32 = false;
+        const written = worker.emitSpriteQueue(DT, k.source());
+        const exact = columns.map(([, v]) => v.slice(0, written));
+        const after = k.snapshot();
+        k.restore(before);
+        k.prepare(f);
+        worker._emitAdobeF32 = true;
+        assert.equal(worker.emitSpriteQueue(DT, k.source()), written, `${JSON.stringify(opts)} frame ${f}: rows`);
+        columns.forEach(([name, v], c) => {
+          const tol = F32_TOLERANCE[name];
+          for (let r = 0; r < written; r++) {
+            const ok = tol === undefined
+              ? Object.is(v[r], exact[c][r])
+              : Math.abs(v[r] - exact[c][r]) <= tol || (Number.isNaN(v[r]) && Number.isNaN(exact[c][r]));
+            if (!ok) assert.fail(`${JSON.stringify(opts)} frame ${f}: ${name}[${r}] ${v[r]}, the double expansion wrote ${exact[c][r]}`);
+          }
+        });
+        checked += written;
+        k.restore(after);
+      }
+    } finally {
+      console.warn = realWarn;
+      worker._emitAdobeF32 = false;
+    }
+    assert.ok(checked > 0);
+  }
+});
