@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadWorker } from '../bench/workerHarness.mjs';
+import { customLayerCollector, loadWorker } from '../bench/workerHarness.mjs';
 import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { Layer } from '../../src/core/layer.js';
 
@@ -38,10 +38,7 @@ function collectors(pre, fx, cap) {
   pre._renderableCount = 0;
   pre.renderQueueMaxItems = cap;
   pre._customLayerCollectors = {
-    [fx]: {
-      y: new Float32Array(64), type: new Uint8Array(64), index: new Int32Array(64),
-      count: 0, maxItems: 64, ySorting: false, _overflowWarned: false,
-    },
+    [fx]: customLayerCollector(64),
   };
 }
 

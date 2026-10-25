@@ -221,3 +221,27 @@ test('resolveMaxVisibleRenderables auto-fills null', () => {
   assert.equal(resolveMaxVisibleRenderables(scene), 190);
   assert.equal(scene.config.renderer.maxVisibleRenderables, 190);
 });
+
+test('a custom sprite layer\'s queue buffers and collector are regions of the render-queue memory', () => {
+  const scene = createValidationScene({ config: { layers: { fx: {}, sparks: {} } } });
+  // What a full build reads besides the validation's fields.
+  Object.assign(scene, { componentPools: {}, preInitializeEntityTypeArrays() {}, constructor: { queries: [] } });
+  createSceneSharedBuffers(scene);
+  const rqm = scene.renderQueueMemory;
+  const queues = Object.values(scene.customLayerRenderQueues);
+  assert.equal(queues.length, 2, 'both layers have a queue');
+  const placed = rqm.layout.emit.customLayers;
+  assert.equal(placed.length, 2);
+  const starts = [];
+  for (const q of queues) {
+    assert.equal(q.dataA, rqm.buffer, `${q.layerName}: buffer A is the memory's`);
+    assert.equal(q.dataB, rqm.buffer, `${q.layerName}: buffer B too`);
+    for (const at of [q.dataAByte, q.dataBByte, q.collectorByte]) {
+      assert.ok(at > 0 && at % 64 === 0, `${q.layerName}: ${at} is a line of the memory`);
+      starts.push(at);
+    }
+    assert.ok(placed.some((c) => c.layerId === q.layerId && c.maxItems === q.maxItems), `${q.layerName}: in the layout`);
+  }
+  assert.equal(new Set(starts).size, starts.length, 'no two regions share a start');
+  assert.ok(!starts.includes(rqm.layout.queueAByte) && !starts.includes(rqm.layout.queueBByte), 'apart from the entities queue');
+});

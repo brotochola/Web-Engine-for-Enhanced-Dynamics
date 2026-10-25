@@ -24,6 +24,7 @@ export const GPU_PACK_TABLE_SLOTS = 4;
  * @param {number} gpuQueueBytes computeGpuQueueBufferSize(caps)
  * @param {null | { entities: number, spriteBytes: number, casterBytes: number, decorationBytes: number,
  *   lightBytes?: number, particleBytes?: number, liquidFun?: null | { maxCount: number, renderBytes: number },
+ *   customLayers?: Array<{ layerId: number, maxItems: number, queueBytes: number }>,
  *   adobe?: null | { animBytes: number, tableBytes: number } }} [emit]
  *   the emit's regions too (renderQueueMemoryRegions); a component with 0 bytes gets no block (byte -1)
  * @param {null | { maxSun: number, maxPerEntity: number, maxLights: number }} [stamp] the stamp's regions too
@@ -74,7 +75,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         particlesByte: r.packResults.byte,
         // Phase 4: the regions are a block of Box2D's memory, so Transform's pose in Box2D's heap is in it too.
         inBox2dBlock: Boolean(place),
-        emit: emit ? emitLayout(r, emit.entities | 0, n) : null,
+        emit: emit ? emitLayout(r, emit.entities | 0, n, emit.customLayers) : null,
         stamp: stamp ? stampLayout(r, stamp) : null,
         sway: sway ? swayLayout(r, sway) : null,
         collect: collect ? collectLayout(r, collect) : null,
@@ -96,9 +97,17 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
 }
 
 /** Byte offsets of the emit's regions; -1 for a component block the scene does not have. */
-function emitLayout(r, entities, rows) {
+function emitLayout(r, entities, rows, customLayers) {
   const block = (region) => (region.bytes > 0 ? region.byte : -1);
   return {
+    // Each custom sprite layer's queue buffers and collector (CUSTOM_COLLECTOR_ROW_BYTES a row).
+    customLayers: (customLayers || []).map((c, k) => ({
+      layerId: c.layerId,
+      maxItems: c.maxItems | 0,
+      queueAByte: r[`customQueueA${k}`].byte,
+      queueBByte: r[`customQueueB${k}`].byte,
+      collectorByte: r[`customCollector${k}`].byte,
+    })),
     entities,
     spriteRendererByte: block(r.spriteRenderer),
     shadowCasterByte: block(r.shadowCaster),

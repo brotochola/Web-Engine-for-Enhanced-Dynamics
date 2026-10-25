@@ -164,6 +164,17 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },
       { name: 'emitPersistAnim', owner: 'pre-render', bytes: 2 * n * 2 },
     );
+    // Each custom sprite layer's two queue buffers (pre-render writes, Pixi reads) and its collector: y and index
+    // (u32 each), the pose stash x, y, rotC, rotS (f32 each), then type (u8) per row: CUSTOM_COLLECTOR_ROW_BYTES.
+    const layers = emit.customLayers || [];
+    for (let k = 0; k < layers.length; k++) {
+      const c = layers[k];
+      regions.push(
+        { name: `customQueueA${k}`, owner: 'pre-render writes; Pixi reads', bytes: c.queueBytes | 0 },
+        { name: `customQueueB${k}`, owner: 'pre-render writes; Pixi reads', bytes: c.queueBytes | 0 },
+        { name: `customCollector${k}`, owner: 'pre-render', bytes: (c.maxItems | 0) * CUSTOM_COLLECTOR_ROW_BYTES },
+      );
+    }
     if (emit.adobe) {
       regions.push(
         { name: 'adobeAnim', owner: 'every worker (AdobeAnimComponent)', bytes: emit.adobe.animBytes | 0 },
@@ -360,6 +371,8 @@ export const EMIT_MAX_FRAMES = 65536;
 export const EMIT_TABLE_SLOTS = 192;
 /** The emit's doubles block (preRenderEmit.c E_PARAMS). */
 export const EMIT_PARAM_DOUBLES = 8;
+/** A custom layer collector's bytes per row: y, index, stash x, y, rotC, rotS (4 bytes each), type (1). */
+export const CUSTOM_COLLECTOR_ROW_BYTES = 25;
 /** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
 export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;

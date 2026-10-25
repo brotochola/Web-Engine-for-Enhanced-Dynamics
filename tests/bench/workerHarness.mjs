@@ -183,6 +183,15 @@ export function bindPoseColumns(n) {
   }
 }
 
+/** A custom layer's collector as pre-render makes one (its pose stash included), of `n` rows. */
+export function customLayerCollector(n, ySorting = false) {
+  return {
+    y: new Float32Array(n), type: new Uint8Array(n), index: new Int32Array(n),
+    stashX: new Float32Array(n), stashY: new Float32Array(n), stashRotC: new Float32Array(n), stashRotS: new Float32Array(n),
+    count: 0, maxItems: n, ySorting, _overflowWarned: false,
+  };
+}
+
 /** Fill the shared active list `[count, id0, id1, …]`. */
 export function setActiveList(sab, ids) {
   const list = new (EntityIdArray())(sab);

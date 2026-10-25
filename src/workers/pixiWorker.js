@@ -6571,8 +6571,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       let painter = null;
       if (lrq && maxItems > 0) {
         buffers = [
-          createRenderQueueViews(lrq.dataA, maxItems),
-          createRenderQueueViews(lrq.dataB, maxItems),
+          createRenderQueueViews(lrq.dataA, maxItems, lrq.dataAByte | 0),
+          createRenderQueueViews(lrq.dataB, maxItems, lrq.dataBByte | 0),
         ];
         sortKeyU32ByBuf = buffers.map((b) => b.sortKeyU32);
         painter = layerYSort ? createPainterState(maxItems) : null;

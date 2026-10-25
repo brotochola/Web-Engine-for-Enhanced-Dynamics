@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadWorker } from '../bench/workerHarness.mjs';
+import { customLayerCollector, loadWorker } from '../bench/workerHarness.mjs';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import { bindCollect, collectMemory, useBodies, useSortY } from '../bench/preRenderCollectKernel.mjs';
 import { Query } from '../../src/core/query.js';
@@ -107,10 +107,7 @@ function reset(pre, m, fx) {
   pre.visibleEntitiesCount = 0;
   pre._renderQueueOverflowWarned = false;
   pre._customLayerCollectors = {
-    [fx]: {
-      y: new Float32Array(N), type: new Uint8Array(N), index: new Int32Array(N),
-      count: 0, maxItems: N, ySorting: false, _overflowWarned: false,
-    },
+    [fx]: customLayerCollector(N),
   };
 }
 

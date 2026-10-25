@@ -1135,10 +1135,20 @@ class PreRenderWorker extends AbstractWorker {
                     const layerId = parseInt(idStr);
                     const layerMax = lrq.maxItems;
 
+                    // The collector with its pose stash, as the entities' (E-98d): the emit reads the poses the
+                    // collect took. In the render-queue memory when it holds the layer (close-out group B), where the
+                    // emit kernel reads them (CUSTOM_COLLECTOR_ROW_BYTES a row).
+                    const at = lrq.collectorByte | 0;
+                    const inMemory = lrq.collectorByte >= 0 && lrq.dataA === data.renderQueueMemory?.buffer;
+                    const f32 = (k) => (inMemory ? new Float32Array(lrq.dataA, at + k * 4 * layerMax, layerMax) : new Float32Array(layerMax));
                     const collector = {
-                        y: new Float32Array(layerMax),
-                        type: new Uint8Array(layerMax),
-                        index: new Int32Array(layerMax),
+                        y: f32(0),
+                        type: inMemory ? new Uint8Array(lrq.dataA, at + 24 * layerMax, layerMax) : new Uint8Array(layerMax),
+                        index: inMemory ? new Int32Array(lrq.dataA, at + 4 * layerMax, layerMax) : new Int32Array(layerMax),
+                        stashX: f32(2),
+                        stashY: f32(3),
+                        stashRotC: f32(4),
+                        stashRotS: f32(5),
                         count: 0,
                         maxItems: layerMax,
                         ySorting: Layer.getById(layerId)?.ySorting !== false,
@@ -1147,8 +1157,8 @@ class PreRenderWorker extends AbstractWorker {
                     this._customLayerCollectors[layerId] = collector;
 
                     const bufs = [
-                        createRenderQueueViews(lrq.dataA, layerMax),
-                        createRenderQueueViews(lrq.dataB, layerMax),
+                        createRenderQueueViews(lrq.dataA, layerMax, lrq.dataAByte | 0),
+                        createRenderQueueViews(lrq.dataB, layerMax, lrq.dataBByte | 0),
                     ];
                     this._customLayerQueueBuffers[layerId] = bufs;
                     this._customLayerQueueRefs[layerId] = {};
@@ -2738,12 +2748,26 @@ class PreRenderWorker extends AbstractWorker {
                 if (collector.count < collector.maxItems) {
                     const wi = collector.count;
                     collector.y[wi] = y;
-                    // A sprite's sort line only where the layer is Y-sorted (E-98); an Adobe root's
-                    // key also goes to its pieces' sortKey column, so it is always computed.
-                    if (type === 6 || (type === 0 && Layer._ySorting && Layer._ySorting[layerId])) {
+                    // The pose the emit reads, as the entities' collector stashes it (E-98d). A sprite's sort line
+                    // only where the layer is Y-sorted (E-98); an Adobe root's key also goes to its pieces' sortKey
+                    // column, so it is always computed.
+                    if (type === 0 || type === 6) {
                         const pose = this._displayPoseOut;
                         this._displayPose(index, pose);
-                        this._storeEntitySortY(type, index, pose, collector.y, wi);
+                        collector.stashX[wi] = pose[0];
+                        collector.stashY[wi] = pose[1];
+                        collector.stashRotC[wi] = pose[2];
+                        collector.stashRotS[wi] = pose[3];
+                        if (type === 6 || (Layer._ySorting && Layer._ySorting[layerId])) {
+                            this._storeEntitySortY(type, index, pose, collector.y, wi);
+                        }
+                    } else if (type === 2) {
+                        const pose = this._displayPoseOut;
+                        this._decorationWorldXY(index, pose);
+                        collector.stashX[wi] = pose[0];
+                        collector.stashY[wi] = pose[1];
+                        collector.stashRotC[wi] = DecorationComponent.rotC[index];
+                        collector.stashRotS[wi] = DecorationComponent.rotS[index];
                     }
                     collector.type[wi] = type;
                     collector.index[wi] = index;
@@ -4286,10 +4310,10 @@ class PreRenderWorker extends AbstractWorker {
                     collector.y,
                     collector.type,
                     collector.index,
-                    null,
-                    null,
-                    null,
-                    null,
+                    collector.stashX,
+                    collector.stashY,
+                    collector.stashRotC,
+                    collector.stashRotS,
                     false,
                     ySorting,
                     ySorting

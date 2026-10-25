@@ -61,6 +61,9 @@ const FRAMES = 30;
 const POOL = 64;
 /** LiquidFun particles in the render buffer. */
 const LFN = 96;
+/** A custom sprite layer's id and rows (its queue and collector in the memory). */
+const CL = 9;
+const CLMAX = 500;
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -116,7 +119,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -138,6 +141,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     lightBytes: lights ? LightEmitter.getBufferSize(N) : 0,
     particleBytes: particles ? particleMemoryBytes(POOL, ParticleComponent.getBufferSize(POOL)) : 0,
     liquidFun: liquidFun ? { maxCount: LFN, renderBytes: liquidFunRenderByteSize(LFN) } : null,
+    customLayers: customLayer ? [{ layerId: CL, maxItems: CLMAX, queueBytes: computeBufferSize(CLMAX) }] : [],
   }, null, null, false, collect);
   const e = m.layout.emit;
   // With `particles`, the particle memory in its region of this one, as the scene places it.
@@ -179,6 +183,15 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
       maxBullets: POOL,
       liquidFunMaxCount: liquidFun ? LFN : 0,
       textureMetadata: meta,
+      // With `customLayer`, one custom sprite layer's queue and collector where the scene places them.
+      ...(customLayer ? {
+        customLayerRenderQueues: {
+          [CL]: {
+            dataA: m.buffer, dataAByte: e.customLayers[0].queueAByte, dataB: m.buffer, dataBByte: e.customLayers[0].queueBByte,
+            collectorByte: e.customLayers[0].collectorByte, maxItems: CLMAX, layerId: CL, layerName: 'fx',
+          },
+        },
+      } : {}),
       renderQueueMemory: m.memory,
       renderQueueLayout: m.layout,
       renderQueue: {
@@ -400,7 +413,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
 
   const b = await bindPreRenderEmit(m.memory, e);
   assert.ok(writeEmitTextures(b, meta), 'the metadata fits the tables');
-  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights, particles, liquidFun, interpolate };
+  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights, particles, liquidFun, interpolate, customLayer };
 }
 
 /** The queue columns a row has. */
@@ -633,6 +646,140 @@ test('the emit kernel writes the LiquidFun rows emitSpriteQueue writes, its rend
   await runCase(t, { ySort: false, liquidFun: true, interpolate: false, seed: 0x1f02 });
   // Without baseAlpha (the JS multiplies by 1), with particles in the memory too.
   await runCase(t, { ySort: true, liquidFun: true, interpolate: true, particles: true, noBaseAlpha: true, seed: 0x1f03 });
+});
+
+// Close-out group B. A custom sprite layer's queue goes through the same emit (buildCustomLayerQueues): its collector
+// keeps a pose stash written at the collect, as the entities' does (E-98d), and with the collector and both queue
+// buffers in the memory the kernel writes the layer's rows. 30 frames of the layer through buildCustomLayerQueues,
+// the JS loop against the kernel, from the same start: the layer's queue, the animation state and the ends.
+test('a custom layer\'s queue through the emit kernel is the one the JS writes', async (t) => {
+  for (const ySort of [true, false]) {
+    const k = await setup({ ySort, bullets: true, lights: true, particles: true, liquidFun: true, customLayer: true, seed: ySort ? 0xc1a1 : 0xc1a2 });
+    const { worker, m } = k;
+    const entry = worker._customLayerEntries[0];
+    assert.ok(entry && entry.layerId === CL, 'the worker made the layer');
+    const c = entry.collector;
+    assert.equal(c.type.buffer, m.buffer, 'its collector is in the memory');
+    assert.equal(c.stashX.buffer, m.buffer, 'its pose stash too');
+    worker._setWriteBuffer(0);
+    assert.equal(entry.ref.x.buffer, m.buffer, 'and its queue');
+    // The layer's rows: the entities collector's first rows, poses from a generator.
+    const r = rng(ySort ? 0x51a : 0x51b);
+    const rows = CLMAX - 7;
+    for (let i = 0; i < rows; i++) {
+      c.type[i] = k.types[i];
+      c.index[i] = k.indices[i];
+      c.y[i] = Math.round(r() * 3000) * 128;
+      c.stashX[i] = r() * 4000;
+      c.stashY[i] = r() * 3000;
+      c.stashRotC[i] = Math.cos(i * 0.7);
+      c.stashRotS[i] = Math.sin(i * 0.7);
+    }
+    const L = m.layout.emit.customLayers[0];
+    const layerQueue = new Uint8Array(m.buffer, L.queueAByte, computeBufferSize(CLMAX));
+    const start = { main: k.snapshot(), layer: layerQueue.slice() };
+    const bound = worker._emitWasm;
+    let kernelCalls = 0;
+    const realRows = bound.emitRows;
+    bound.emitRows = (...args) => {
+      kernelCalls++;
+      return realRows(...args);
+    };
+    const realEnded = worker._spriteAnimationEnded;
+    const run = (kernel) => {
+      k.restore(start.main);
+      layerQueue.set(start.layer);
+      worker._emitWasm = kernel;
+      worker._setWriteBuffer(0);
+      const frames = [];
+      for (let f = 0; f < FRAMES; f++) {
+        const ends = [];
+        worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+        c.count = rows;
+        worker.buildCustomLayerQueues(DT);
+        frames.push({ queue: layerQueue.slice(), count: entry.ref.count[0], state: k.snapshot().state, ends });
+      }
+      worker._spriteAnimationEnded = realEnded;
+      return frames;
+    };
+    const js = run(null);
+    const wasm = run(bound);
+    bound.emitRows = realRows;
+    worker._emitWasm = bound;
+    assert.equal(kernelCalls, FRAMES, 'the kernel took every frame of the layer');
+    for (let f = 0; f < FRAMES; f++) {
+      assert.equal(wasm[f].count, js[f].count, `frame ${f}: rows`);
+      const at = wasm[f].queue.findIndex((x, i) => x !== js[f].queue[i]);
+      assert.equal(at, -1, `frame ${f}: the layer's queue differs at byte ${at}`);
+      wasm[f].state.forEach((v, s2) => {
+        assert.deepEqual(Buffer.from(v.buffer, v.byteOffset, v.byteLength), Buffer.from(js[f].state[s2].buffer, js[f].state[s2].byteOffset, js[f].state[s2].byteLength), `frame ${f}: state ${s2}`);
+      });
+      assert.deepEqual(wasm[f].ends, js[f].ends, `frame ${f}: play-once ends, in order`);
+    }
+    t.diagnostic(`ySort ${ySort}: ${js[0].count} rows in the layer, ${new Set(k.types.slice(0, rows)).size} row types`);
+  }
+});
+
+// The stash a custom layer's collect now writes (_writeRenderable: the display pose of a sprite, a decoration's world
+// position and facing) gives the queue the JS emit wrote when the layer had no stash and took the poses at the emit.
+test('a custom layer emitted from its stash writes what the emit wrote taking the poses itself', async () => {
+  const k = await setup({ ySort: true, customLayer: true, seed: 0xc1a3 });
+  const { worker, m } = k;
+  const entry = worker._customLayerEntries[0];
+  const c = entry.collector;
+  const rows = CLMAX - 3;
+  const pose = new Float32Array(4);
+  const r = rng(0x51c);
+  for (let i = 0; i < N; i++) {
+    Transform.x[i] = r() * 4000;
+    Transform.y[i] = r() * 3000;
+    Transform.rotC[i] = Math.cos(i * 0.3);
+    Transform.rotS[i] = Math.sin(i * 0.3);
+  }
+  for (let d = 0; d < DECOS; d++) {
+    DecorationComponent.rotC[d] = Math.cos(d * 1.1);
+    DecorationComponent.rotS[d] = Math.sin(d * 1.1);
+  }
+  for (let i = 0; i < rows; i++) {
+    const type = k.types[i] === 0 || k.types[i] === 2 ? k.types[i] : 0;
+    const idx = type === 2 ? k.indices[i] % DECOS : k.indices[i];
+    c.type[i] = type;
+    c.index[i] = idx;
+    c.y[i] = Math.round(r() * 3000) * 128;
+    // What _writeRenderable stashes.
+    if (type === 0) {
+      worker._displayPose(idx, pose);
+      c.stashX[i] = pose[0];
+      c.stashY[i] = pose[1];
+      c.stashRotC[i] = pose[2];
+      c.stashRotS[i] = pose[3];
+    } else {
+      worker._decorationWorldXY(idx, pose);
+      c.stashX[i] = pose[0];
+      c.stashY[i] = pose[1];
+      c.stashRotC[i] = DecorationComponent.rotC[idx];
+      c.stashRotS[i] = DecorationComponent.rotS[idx];
+    }
+  }
+  const L = m.layout.emit.customLayers[0];
+  const layerQueue = new Uint8Array(m.buffer, L.queueAByte, computeBufferSize(CLMAX));
+  const start = { main: k.snapshot(), layer: layerQueue.slice() };
+  const stash = [c.stashX, c.stashY, c.stashRotC, c.stashRotS];
+  const run = (withStash) => {
+    k.restore(start.main);
+    layerQueue.set(start.layer);
+    worker._emitWasm = null;
+    worker._setWriteBuffer(0);
+    if (!withStash) c.stashX = c.stashY = c.stashRotC = c.stashRotS = null;
+    c.count = rows;
+    worker.buildCustomLayerQueues(DT);
+    [c.stashX, c.stashY, c.stashRotC, c.stashRotS] = stash;
+    return layerQueue.slice();
+  };
+  const without = run(false);
+  const withIt = run(true);
+  const at = withIt.findIndex((x, i) => x !== without[i]);
+  assert.equal(at, -1, `the layer's queue differs at byte ${at}`);
 });
 
 test('a frame with an Adobe root or a LiquidFun row is declined before anything is written', async () => {

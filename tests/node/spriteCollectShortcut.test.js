@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadWorker } from '../bench/workerHarness.mjs';
+import { customLayerCollector, loadWorker } from '../bench/workerHarness.mjs';
 import { Transform } from '../../src/components/transform.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Collider } from '../../src/components/collider.js';
@@ -71,10 +71,7 @@ function collectors(pre, fx) {
   pre._renderableCount = 0;
   pre.renderQueueMaxItems = N;
   pre._customLayerCollectors = {
-    [fx]: {
-      y: new Float32Array(N), type: new Uint8Array(N), index: new Int32Array(N),
-      count: 0, maxItems: N, ySorting: false, _overflowWarned: false,
-    },
+    [fx]: customLayerCollector(N),
   };
 }
 

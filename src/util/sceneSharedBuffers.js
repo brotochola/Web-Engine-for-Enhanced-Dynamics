@@ -543,6 +543,7 @@ export function resolveMaxVisibleRenderables(scene) {
  */
 export function renderQueueMemorySpec(scene) {
   const { config } = scene;
+  initializeSceneLayers(scene);
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
   const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
   const pack = config.wasm?.gpuPack !== false;
@@ -717,6 +718,41 @@ function initializeRenderQueueMemory(scene) {
 }
 
 /**
+ * The scene's layers from its config (Layer.initializeFromConfig), once per scene load: the render-queue memory's
+ * spec reads the custom layers' queues from them, and Phase 4 sizes Box2D's block from that spec before the shared
+ * buffers exist (reserveBox2dBlock). teardownSceneSharedState clears the mark.
+ */
+export function initializeSceneLayers(scene) {
+  if (scene._sceneLayersReady === true) return;
+  const { config } = scene;
+  const builtInLayers = {};
+  const defaultYSorting = ySortEnabled(config.renderer?.ySort);
+  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+  for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
+    if (name === 'lightGlows' && glowAsSprite) continue;
+    builtInLayers[name] = {
+      ...defaults,
+      ySorting: name === 'entities' ? defaultYSorting : defaults.ySorting,
+    };
+  }
+  Layer.initializeFromConfig(config.layers, builtInLayers);
+  scene._sceneLayersReady = true;
+}
+
+/** The custom sprite layers with a render queue (initializeSceneLayers first): [{ layerId, maxItems }] in id order. */
+export function customLayerQueueSpecs() {
+  const out = [];
+  const layerMetas = Layer._metadata?.layers || [];
+  for (let i = 0; i < layerMetas.length; i++) {
+    const meta = layerMetas[i];
+    if (!meta || meta.builtIn || !meta.hasRenderQueue || meta.id === Layer.entitiesId) continue;
+    if (!Layer.getById(meta.id)) continue;
+    out.push({ layerId: meta.id, maxItems: meta.maxItems || LAYER_DEFAULTS.maxItemsPerLayer });
+  }
+  return out;
+}
+
+/**
  * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations, LightEmitter,
  * the particle memory and the LiquidFun render buffer; with
  * wasm.preRenderEmitAdobe (W27) and Adobe Animate characters, AdobeAnimComponent and room for the assets' tables
@@ -743,6 +779,8 @@ function emitBlocks(scene) {
     particleBytes: maxParticles > 0 ? particleMemoryBytes(maxParticles, ParticleComponent.getBufferSize(maxParticles)) : 0,
     // The LiquidFun rows' render buffer and previous positions.
     liquidFun: lfMax > 0 ? { maxCount: lfMax, renderBytes: liquidFunRenderByteSize(lfMax) } : null,
+    // The custom sprite layers' queues and collectors.
+    customLayers: customLayerQueueSpecs().map((c) => ({ ...c, queueBytes: computeRenderQueueBufferSize(c.maxItems) })),
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
   };
 }
@@ -848,35 +886,26 @@ function initializeLightingAndRenderBuffers(scene) {
   new Int32Array(buffers.poseSync)[1] = 0;
   scene.poseCapacity = poseN;
 
-  const builtInLayers = {};
-  const defaultYSorting = ySortEnabled(config.renderer?.ySort);
-  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
-  for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
-    if (name === 'lightGlows' && glowAsSprite) continue;
-    builtInLayers[name] = {
-      ...defaults,
-      ySorting: name === 'entities' ? defaultYSorting : defaults.ySorting,
-    };
-  }
-  Layer.initializeFromConfig(config.layers, builtInLayers);
+  initializeSceneLayers(scene);
   Layer._postToRenderer = (msg) => scene.workers.renderer?.postMessage(msg);
 
+  // Close-out group B: in the render-queue memory with the emit's regions (two queue buffers and the layer's
+  // collector each), where the emit kernel writes them; else buffers of their own.
   scene.customLayerRenderQueues = {};
-  const layerMetas = Layer._metadata?.layers || [];
-  for (let i = 0; i < layerMetas.length; i++) {
-    const meta = layerMetas[i];
-    if (!meta || meta.builtIn || !meta.hasRenderQueue || meta.id === Layer.entitiesId) continue;
-
-    const layer = Layer.getById(meta.id);
-    if (!layer) continue;
-
-    const layerMaxItems = meta.maxItems || LAYER_DEFAULTS.maxItemsPerLayer;
-    const layerQueueSize = computeRenderQueueBufferSize(layerMaxItems);
-    scene.customLayerRenderQueues[layer.id] = {
-      dataA: new SharedArrayBuffer(layerQueueSize),
-      dataB: new SharedArrayBuffer(layerQueueSize),
-      maxItems: layerMaxItems,
-      layerId: layer.id,
+  const placed = new Map((rqm?.layout.emit?.customLayers || []).map((c) => [c.layerId, c]));
+  for (const { layerId, maxItems } of customLayerQueueSpecs()) {
+    const layer = Layer.getById(layerId);
+    const at = placed.get(layerId);
+    const layerQueueSize = computeRenderQueueBufferSize(maxItems);
+    scene.customLayerRenderQueues[layerId] = {
+      dataA: at ? rqm.buffer : new SharedArrayBuffer(layerQueueSize),
+      dataAByte: at ? at.queueAByte : 0,
+      dataB: at ? rqm.buffer : new SharedArrayBuffer(layerQueueSize),
+      dataBByte: at ? at.queueBByte : 0,
+      // The layer's collector (y, index, the pose stash, type) in the memory, -1 when pre-render keeps its own.
+      collectorByte: at ? at.collectorByte : -1,
+      maxItems,
+      layerId,
       layerName: layer.name,
     };
   }
@@ -1311,6 +1340,7 @@ function initializeSharedResourceBuffers(scene) {
 }
 
 export function teardownSceneSharedState(scene) {
+  scene._sceneLayersReady = false;
   SoundManager.reset();
   if (scene.loadedAudioNames) scene.loadedAudioNames.length = 0;
 
