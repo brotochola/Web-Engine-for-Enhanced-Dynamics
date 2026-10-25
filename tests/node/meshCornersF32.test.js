@@ -40,8 +40,8 @@ test('the float32 corner rewrites write what the shipped kernel writes, bit for 
   const s = await setup();
   const k = await loadWasmKernel('meshCornersF32', KERNEL_URL, s.memory, ['rewrite_corners_f32', 'rewrite_corners_f32x4']);
   const variants = {
-    f32: { ...s.b, rewrite: k.rewrite_corners_f32, calls: 0, declined: 0 },
-    f32x4: { ...s.b, rewrite: k.rewrite_corners_f32x4, calls: 0, declined: 0 },
+    f32: { ...s.b, rewrite: k.rewrite_corners_f32, calls: 0 },
+    f32x4: { ...s.b, rewrite: k.rewrite_corners_f32x4, calls: 0 },
   };
   const r = rng(0x3e5c);
   const pattern = new Uint32Array(s.outWords.length);
@@ -55,9 +55,7 @@ test('the float32 corner rewrites write what the shipped kernel writes, bit for 
     codes[code]++;
     for (const [name, bound] of Object.entries(variants)) {
       s.outWords.set(pattern);
-      const declined = bound.declined;
       const got = rewriteCornersWasm(bound, s.out, n, s.entity, views, stride, last, genNow, lastUvGen, uvGenNow);
-      assert.equal(bound.declined, declined, `frame ${f} ${name}: the kernel took the call`);
       assert.equal(got, code, `frame ${f} (mode ${mode}, stride ${stride}) ${name}: return code`);
       const d = worstDifference(ref, s.outWords);
       assert.ok(d.worst <= TOLERANCE_PX, `frame ${f} ${name}: word ${d.at} off by ${d.worst}`);
@@ -74,7 +72,7 @@ test('the float32 corner rewrites write what the shipped kernel writes, bit for 
 test('a kernel that reads the wrong column, or a corner 2e-3 px off, is caught', async () => {
   const s = await setup();
   const k = await loadWasmKernel('meshCornersF32', KERNEL_URL, s.memory, ['rewrite_corners_f32x4']);
-  const bound = { ...s.b, rewrite: k.rewrite_corners_f32x4, calls: 0, declined: 0 };
+  const bound = { ...s.b, rewrite: k.rewrite_corners_f32x4, calls: 0 };
   const r = rng(0x3e5c);
   const pattern = new Uint32Array(s.outWords.length);
   // Frame 0 rewrites rows (mode 0: fans and index lists, finite corners mostly).

@@ -1,5 +1,5 @@
 // E-76 W11: the mesh corner rewrite kernel (wasm/meshCorners.c, through the client's rewriteCornersWasm)
-// against the shipped rewriteExplicitMeshCorners, in one memory that starts with the MeshGeometry block as the
+// against the JS rewrite Pixi shipped (tests/reference/meshCorners.mjs), in one memory that starts with the MeshGeometry block as the
 // product's mesh memory does. Random frames are written straight into the columns, so they reach what the
 // MeshRenderer API never makes: fans and index lists, with and without the UV batch's corners, generations
 // equal and not, entities with no mesh, ids past the geometry columns, past the generations and past 2^31
@@ -14,7 +14,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS, rewriteExplicitMeshCorners } from '../../src/render/colliderFillBatch.js';
+import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
 import { MESH_CORNER_VARIANTS, setupMeshCornersKernel } from '../bench/meshCornersWasmMicrobench.mjs';
 import { E, FRAMES, GEN_ROOM, I, V, frameCall, rng, setup, viewsOf, writeGeometry, writeInstances } from '../helpers/meshCornerFrames.mjs';
@@ -113,9 +114,7 @@ test('the corner kernel writes what rewriteExplicitMeshCorners writes, frame aft
     const jsWords = s.outWords.slice();
     assert.equal(expected(s, views, n, step, gen, last, uvSource, lastUvGen, tally), jsCode, `frame ${k} (mode ${mode}): the test's mirror of the JS`);
     s.outWords.set(pattern);
-    const declined = s.b.declined;
     const code = rewriteCornersWasm(s.b, s.out, n, s.entity, views, stride, last, genNow, lastUvGen, uvGenNow);
-    assert.equal(s.b.declined, declined, `frame ${k}: the kernel took the call`);
     assert.equal(code, jsCode, `frame ${k} (mode ${mode}, ${n} instances, stride ${stride}): return code`);
     const at = s.outWords.findIndex((w, q) => w !== jsWords[q]);
     assert.equal(at, -1, `frame ${k} (mode ${mode}, stride ${stride}): rows differ at word ${at} (row ${Math.floor(at / step)}, float ${at % step}): kernel 0x${(s.outWords[at] >>> 0).toString(16)}, JS 0x${(jsWords[at] >>> 0).toString(16)}`);
@@ -127,7 +126,7 @@ test('the corner kernel writes what rewriteExplicitMeshCorners writes, frame aft
   t.diagnostic(`${FRAMES} frames; codes ${JSON.stringify(codes)}; UV generations ${JSON.stringify(uvCalls)}; runs ${JSON.stringify(tally)}`);
 });
 
-test('a call the kernel cannot take goes to the JS, and an empty one returns 0', async () => {
+test('a call the kernel cannot take is an error, and an empty one returns 0', async () => {
   const s = await setup();
   const r = rng(11);
   const need = writeGeometry(r, s, 0);
@@ -137,31 +136,25 @@ test('a call the kernel cannot take goes to the JS, and an empty one returns 0',
   const views = viewsOf(s);
   const gen = s.gen.subarray(0, E);
   const last = s.last.subarray(0, E);
+  const cannot = /meshCorners: a call the kernel cannot take/;
+  const calls = s.b.calls;
   const outside = new Float32Array(s.out.length);
-  const jsOut = new Float32Array(s.out.length);
-  const jsCode = rewriteExplicitMeshCorners(jsOut, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen);
-  assert.equal(rewriteCornersWasm(s.b, outside, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen), jsCode);
-  assert.deepEqual(new Uint32Array(outside.buffer), new Uint32Array(jsOut.buffer), 'rows outside the memory: the JS wrote them');
-  assert.equal(s.b.declined, 1);
+  assert.throws(() => rewriteCornersWasm(s.b, outside, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen), cannot, 'rows outside the memory');
   const copied = { ...views, meshVertexX: new Float32Array(s.geom.vertexX) };
-  rewriteCornersWasm(s.b, s.out, n, s.entity, copied, MESH_UV_FILL_FLOATS, last, gen);
-  assert.equal(s.b.declined, 2, 'vertices other than the bound column');
-  rewriteCornersWasm(s.b, s.out, s.entity.length + 1, s.entity, views, COLLIDER_FILL_FLOATS, last, gen);
-  assert.equal(s.b.declined, 3, 'a count past the instance list');
+  assert.throws(() => rewriteCornersWasm(s.b, s.out, n, s.entity, copied, MESH_UV_FILL_FLOATS, last, gen), cannot, 'vertices other than the bound column');
+  assert.throws(() => rewriteCornersWasm(s.b, s.out, s.entity.length + 1, s.entity, views, COLLIDER_FILL_FLOATS, last, gen), cannot, 'a count past the instance list');
   // E-118: UV generations the kernel cannot read.
   const uvGen = s.uvGen.subarray(0, E);
-  rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, new Uint32Array(E), uvGen);
-  assert.equal(s.b.declined, 4, 'drawn UV generations outside the memory');
-  rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, s.lastUv.subarray(0, E), new Uint32Array(s.buffer, 0, E));
-  assert.equal(s.b.declined, 5, 'UV generations at byte 0, which the table reads as none');
-  rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, s.lastUv.subarray(0, E), Array.from(uvGen));
-  assert.equal(s.b.declined, 6, 'UV generations that are not a Uint32Array');
-  // On the fill batch the UV generations are not read, so they cannot decline the call.
+  assert.throws(() => rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, new Uint32Array(E), uvGen), cannot, 'drawn UV generations outside the memory');
+  assert.throws(() => rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, s.lastUv.subarray(0, E), new Uint32Array(s.buffer, 0, E)), cannot, 'UV generations at byte 0, which the table reads as none');
+  assert.throws(() => rewriteCornersWasm(s.b, s.out, n, s.entity, views, MESH_UV_FILL_FLOATS, last, gen, s.lastUv.subarray(0, E), Array.from(uvGen)), cannot, 'UV generations that are not a Uint32Array');
+  assert.equal(s.b.calls, calls, 'none of them reached the kernel');
+  // On the fill batch the UV generations are not read, so they cannot stop the call.
   rewriteCornersWasm(s.b, s.out, n, s.entity, views, COLLIDER_FILL_FLOATS, last, gen, new Uint32Array(E), uvGen);
-  assert.equal(s.b.declined, 6, 'the fill batch ignores them');
+  assert.equal(s.b.calls, calls + 1, 'the fill batch ignores them');
   assert.equal(rewriteCornersWasm(s.b, s.out, 0, s.entity, views, COLLIDER_FILL_FLOATS, last, gen), 0);
   assert.equal(rewriteCornersWasm(s.b, s.out, n, s.entity, { ...views, meshVertGen: null }, COLLIDER_FILL_FLOATS, last, null), 0);
-  assert.equal(s.b.declined, 6, 'the early returns never reach the kernel or the JS');
+  assert.equal(s.b.calls, calls + 1, 'the early returns never reach the kernel');
 });
 
 test('the bench scene hashes the same through every variant', async () => {
@@ -171,7 +164,6 @@ test('the bench scene hashes the same through every variant', async () => {
     hashes[variant] = k.checksumFrames(variant);
     if (MESH_CORNER_VARIANTS[variant].wasm) {
       const bound = k.bindingOf(variant);
-      assert.equal(bound.declined, 0, `${variant}: the kernel took every call`);
       assert.ok(bound.calls > 0, `${variant}: the kernel ran`);
     }
     assert.ok(k.uvCount > 10000 && k.fillCount > 400, `${k.fillCount} fill and ${k.uvCount} UV rows`);

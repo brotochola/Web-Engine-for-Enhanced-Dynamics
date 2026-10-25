@@ -4,7 +4,8 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-import { rewriteExplicitMeshCorners, COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 
 // B24. A logic worker edits a mesh in place: it stores the vertices, then bumps
 // that entity's vertex generation. Pixi redrew entities whose generation moved,

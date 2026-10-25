@@ -28,8 +28,8 @@ import {
   packColliderFill,
   packMeshUvFill,
   resetColliderFillMeshLayerWarn,
-  rewriteExplicitMeshCorners,
 } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { triangulateSimplePolygon } from '../../src/render/meshTriangulate.js';
 import { applyMeshes, packMeshes } from '../../src/core/save/worldBufferSave.js';
 import { decodeSaveUncompressed, encodeSaveUncompressed } from '../../src/core/save/entitySaveSnapshot.js';
@@ -229,7 +229,7 @@ class WidthThing extends GameObject {}
 WidthThing.components = [RigidBody, Collider, MeshRenderer];
 
 /** The main thread's shared buffers for a scene of `n` mesh entities on one MESH layer (meshCornersWired's scene). */
-function bootScene(n, maxMeshVerts, maxMeshIndices, meshCorners = true) {
+function bootScene(n, maxMeshVerts, maxMeshIndices) {
   Query.reset();
   const scene = {
     totalEntityCount: n,
@@ -257,7 +257,7 @@ function bootScene(n, maxMeshVerts, maxMeshIndices, meshCorners = true) {
       navigation: { enabled: false },
       renderer: { maxVisibleRenderables: 100, maxMeshVerts, maxMeshIndices },
       layers: { mesh: { kind: LAYER_KIND.MESH, zIndex: 2 } },
-      wasm: { ...WASM_DEFAULTS, meshCorners },
+      wasm: { ...WASM_DEFAULTS },
     },
     buffers: { componentData: {} },
     views: {},
@@ -281,12 +281,6 @@ test('the scene boot binds the 16-bit block up to 65 535 vertices and the 32-bit
     assert.equal(scene.meshMemory.layout.geometryBytes, want.byteLength, `${V}: the block in the mesh memory`);
     assert.equal(scene.buffers.meshGeomData, scene.meshMemory.buffer);
     assertLayout(want, `${V} verts, booted`);
-    // The switch off: a buffer of its own, the same block.
-    const own = bootScene(n, V, I, false);
-    assert.equal(own.meshMemory, null);
-    assert.ok(own.buffers.meshGeomData instanceof SharedArrayBuffer);
-    assert.equal(own.buffers.meshGeomData.byteLength, want.byteLength, `${V}: a buffer of its own`);
-    assertLayout(want, `${V} verts, switch off`);
   }
   MeshGeometry.reset();
 });

@@ -5,10 +5,10 @@
 import { MeshGeometry, resetMeshGeometryWarns } from '../../src/core/meshGeometry.js';
 import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
 import {
-  rewriteExplicitMeshCorners,
   sampleMeshFillPose,
   MESH_UV_FILL_FLOATS,
 } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { checksumFloats, timeIt } from './microbenchHelpers.mjs';
 
 function poseCtx() {

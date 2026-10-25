@@ -40,7 +40,8 @@ export function meshLayerIds(metadata) {
 
 /**
  * The mesh memory for `layerIds`, each with the capacities `caps`, or null when there is no MESH layer
- * (nothing for the kernel to rewrite) or the memory would not fit the module's import.
+ * (nothing for the kernel to rewrite). A memory past the module's import, or one the browser will not make, throws:
+ * the corner rewrite runs only in the kernel.
  * @param {number} geometryBytes MeshGeometry.getBufferSize(maxVerts, maxIndices, entities)
  * @param {number} entities
  * @param {number[]} layerIds meshLayerIds(Layer metadata)
@@ -52,34 +53,41 @@ export function createMeshMemory(geometryBytes, entities, layerIds, caps) {
   const fill = caps.fill | 0;
   const uv = caps.uv | 0;
   const map = meshMemoryRegions(geometryBytes | 0, entities | 0, layerIds.map(() => ({ fillRows: fill, uvRows: uv })));
-  if (map.pages > WASM_MAX_PAGES) return null;
-  const r = map.regions;
-  try {
-    const memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
-    return {
-      memory,
-      buffer: memory.buffer,
-      // Plain numbers, so the layout posts to workers as it is.
-      layout: {
-        entities: entities | 0,
-        geometryBytes: geometryBytes | 0,
-        tableByte: r.meshCornerTable.byte,
-        layers: layerIds.map((layerId, k) => ({
-          layerId,
-          fillRows: fill,
-          uvRows: uv,
-          fillRowsByte: r[`meshFillRows${k}`].byte,
-          uvRowsByte: r[`meshUvRows${k}`].byte,
-          fillEntityByte: r[`meshFillEntity${k}`].byte,
-          uvEntityByte: r[`meshUvEntity${k}`].byte,
-          lastVertGenByte: r[`meshLastVertGen${k}`].byte,
-          frameVertGenByte: r[`meshFrameVertGen${k}`].byte,
-          lastUvGenByte: r[`meshLastUvGen${k}`].byte,
-          frameUvGenByte: r[`meshFrameUvGen${k}`].byte,
-        })),
-      },
-    };
-  } catch {
-    return null;
+  const mb = Math.ceil((map.pages * 65536) / 1048576);
+  if (map.pages > WASM_MAX_PAGES) {
+    throw new Error(
+      `mesh memory: ${mb} MB (${entities | 0} entities, ${layerIds.length} MESH layers of ${fill} + ${uv} rows) is past the ` +
+        `${WASM_MAX_PAGES / 16} MB a kernel memory can take; lower renderer.maxMeshVerts or the fixture pool`,
+    );
   }
+  const r = map.regions;
+  let memory;
+  try {
+    memory = new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
+  } catch (err) {
+    throw new Error(`mesh memory: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
+  }
+  return {
+    memory,
+    buffer: memory.buffer,
+    // Plain numbers, so the layout posts to workers as it is.
+    layout: {
+      entities: entities | 0,
+      geometryBytes: geometryBytes | 0,
+      tableByte: r.meshCornerTable.byte,
+      layers: layerIds.map((layerId, k) => ({
+        layerId,
+        fillRows: fill,
+        uvRows: uv,
+        fillRowsByte: r[`meshFillRows${k}`].byte,
+        uvRowsByte: r[`meshUvRows${k}`].byte,
+        fillEntityByte: r[`meshFillEntity${k}`].byte,
+        uvEntityByte: r[`meshUvEntity${k}`].byte,
+        lastVertGenByte: r[`meshLastVertGen${k}`].byte,
+        frameVertGenByte: r[`meshFrameVertGen${k}`].byte,
+        lastUvGenByte: r[`meshLastUvGen${k}`].byte,
+        frameUvGenByte: r[`meshFrameUvGen${k}`].byte,
+      })),
+    },
+  };
 }

@@ -1,7 +1,6 @@
 // E-76 W11, wired: the Pixi worker's real MESH layer path (initializeCustomLayers once, then updateCustomLayers
-// every frame) on scenes that createSceneSharedBuffers builds, three ways: the switch off (MeshGeometry in a
-// SharedArrayBuffer of its own, Pixi's batches in arrays of their own, the JS rewrite), the mesh memory with
-// the JS rewrite, and the mesh memory with the corner kernel. Every frame the game side edits meshes through
+// every frame) on scenes that createSceneSharedBuffers builds, on the mesh memory, two ways: the JS rewrite Pixi
+// shipped (tests/reference/meshCorners.mjs, in place of its _rewriteMeshCorners) and the corner kernel. Every frame the game side edits meshes through
 // the MeshRenderer API (setVertices on grids, fans and stars; setRope; setMesh with new UVs or new indices; the
 // same setPlane again; now and then a new topology or a clearMesh) and repaints one, and all three runs must
 // hold the same rows in both batches, word for word. On the mesh memory the batches write their rows there and
@@ -22,6 +21,7 @@ import { Layer } from '../../src/core/layer.js';
 import { Query } from '../../src/core/query.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { LAYER_KIND, WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { createWeedPosePayload, initWeedPoseDefaults } from '../../src/box2d/box2dHotFields.js';
@@ -61,7 +61,7 @@ async function quietly(fn) {
 }
 
 /** The main thread's shared buffers for a scene of N mesh entities on one MESH layer. */
-function buildScene(meshCorners) {
+function buildScene(renderer = { maxVisibleRenderables: 100, maxMeshVerts: MAX_VERTS, maxMeshIndices: MAX_INDICES }) {
   Query.reset();
   const scene = {
     totalEntityCount: N,
@@ -87,9 +87,9 @@ function buildScene(meshCorners) {
       logic: { staggeredUpdates: false },
       debug: { maxDebugDrawEntries: 1 },
       navigation: { enabled: false },
-      renderer: { maxVisibleRenderables: 100, maxMeshVerts: MAX_VERTS, maxMeshIndices: MAX_INDICES },
+      renderer,
       layers: { mesh: { kind: LAYER_KIND.MESH, zIndex: 2 } },
-      wasm: { ...WASM_DEFAULTS, meshCorners },
+      wasm: { ...WASM_DEFAULTS },
     },
     buffers: { componentData: {} },
     views: {},
@@ -108,7 +108,7 @@ function buildScene(meshCorners) {
 }
 
 /** The Pixi worker, its per-scene state cleared, bound to `scene` through its real init of custom layers. */
-async function initPixi(px, scene) {
+async function initPixi(px, scene, meshGeom = undefined) {
   px._colliderFillSkip = [];
   px._colliderFillViews = null;
   px._colliderFillLayerCount = -1;
@@ -123,7 +123,7 @@ async function initPixi(px, scene) {
     layerData: Layer.getSerializableData(),
     customLayerRenderQueues: scene.customLayerRenderQueues,
     // As sceneWorkerBootstrap posts it.
-    meshGeom: {
+    meshGeom: meshGeom !== undefined ? meshGeom : {
       enabled: true,
       maxMeshVerts: MAX_VERTS,
       maxMeshIndices: MAX_INDICES,
@@ -224,12 +224,12 @@ function gameFrame(r, api, shapes) {
 
 /**
  * One run: the scene, Pixi bound to it, FRAMES frames of game edits then Pixi's frame, the rows of both batches
- * after each. `kernel` false unbinds the kernel after the init (the JS rewrite on the memory's arrays).
+ * after each. `kernel` false runs the JS rewrite Pixi shipped in place of its own (the memory's arrays either way).
  */
-async function run(px, meshCorners, kernel) {
-  const scene = await quietly(() => buildScene(meshCorners));
+async function run(px, kernel) {
+  const scene = await quietly(() => buildScene());
   await quietly(() => initPixi(px, scene));
-  if (!kernel) px._meshCornersWasm = null;
+  if (!kernel) px._rewriteMeshCorners = rewriteExplicitMeshCorners;
   const layerId = Layer.get('mesh').id;
   const cl = px._customLayers[layerId];
   assert.ok(cl?.fillBatch, 'the MESH layer has its fill batch');
@@ -270,6 +270,7 @@ async function run(px, meshCorners, kernel) {
       frames.push({ fillN, uvN, fill, uv });
     }
   });
+  delete px._rewriteMeshCorners;
   return { scene, cl, frames, kernel: px._meshCornersWasm, skip: px._colliderFillSkip[layerId] };
 }
 
@@ -279,18 +280,10 @@ function firstDiff(a, b) {
   return -1;
 }
 
-test('Pixi draws the same mesh rows with the switch off, on the mesh memory in JS, and through the kernel', async () => {
+test('Pixi draws the same mesh rows on the mesh memory through the kernel as the JS rewrite did', async () => {
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
 
-  const off = await run(px, false, false);
-  assert.equal(off.scene.meshMemory, null, 'switched off: no mesh memory');
-  assert.ok(off.scene.buffers.meshGeomData instanceof SharedArrayBuffer);
-  assert.equal(off.cl.meshRegion, null, 'the batches keep arrays of their own');
-  assert.ok(!(off.cl.fillBatch.data.buffer instanceof SharedArrayBuffer));
-  assert.equal(off.cl.fillBatch.rows, off.cl.fillBatch.data, 'written where they are uploaded from');
-  assert.equal(off.cl.uvFillBatch.rows, off.cl.uvFillBatch.data);
-
-  const js = await run(px, true, false);
+  const js = await run(px, false);
   const mem = js.scene.meshMemory;
   assert.ok(mem, 'the mesh memory');
   assert.equal(js.scene.buffers.meshGeomData, mem.buffer, 'MeshGeometry lives in it');
@@ -312,28 +305,41 @@ test('Pixi draws the same mesh rows with the switch off, on the mesh memory in J
   for (const name of ['instanceEntity', 'uvInstanceEntity', 'lastVertGen', 'frameVertGen', 'lastUvGen', 'frameUvGen']) {
     assert.equal(js.skip[name].buffer, mem.buffer, `${name} in the memory`);
   }
-  assert.equal(js.kernel, null, 'the JS run has no kernel');
 
-  const wasm = await run(px, true, true);
+  const calls = js.kernel.calls;
+  const wasm = await run(px, true);
   assert.ok(wasm.kernel, 'the kernel bound');
-  assert.equal(wasm.kernel.declined, 0, 'the kernel took every call');
+  assert.equal(calls, 0, 'the JS run did not call the kernel');
   assert.ok(wasm.kernel.calls > FRAMES / 2, `the kernel ran (${wasm.kernel.calls} calls)`);
 
   let rewrites = 0;
   let uvRows = 0;
   for (let f = 0; f < FRAMES; f++) {
-    const a = off.frames[f];
-    for (const [name, other] of [['mesh memory, JS', js.frames[f]], ['kernel', wasm.frames[f]]]) {
-      assert.equal(other.fillN, a.fillN, `frame ${f}, ${name}: fill rows`);
-      assert.equal(other.uvN, a.uvN, `frame ${f}, ${name}: UV rows`);
-      const atFill = firstDiff(other.fill, a.fill);
-      assert.equal(atFill, -1, `frame ${f}, ${name}: fill row ${Math.floor(atFill / COLLIDER_FILL_FLOATS)}, float ${atFill % COLLIDER_FILL_FLOATS}`);
-      const atUv = firstDiff(other.uv, a.uv);
-      assert.equal(atUv, -1, `frame ${f}, ${name}: UV row ${Math.floor(atUv / MESH_UV_FILL_FLOATS)}, float ${atUv % MESH_UV_FILL_FLOATS}`);
-    }
-    if (f > 0 && a.uvN === off.frames[f - 1].uvN) rewrites++;
+    const a = js.frames[f];
+    const other = wasm.frames[f];
+    assert.equal(other.fillN, a.fillN, `frame ${f}: fill rows`);
+    assert.equal(other.uvN, a.uvN, `frame ${f}: UV rows`);
+    const atFill = firstDiff(other.fill, a.fill);
+    assert.equal(atFill, -1, `frame ${f}: fill row ${Math.floor(atFill / COLLIDER_FILL_FLOATS)}, float ${atFill % COLLIDER_FILL_FLOATS}`);
+    const atUv = firstDiff(other.uv, a.uv);
+    assert.equal(atUv, -1, `frame ${f}: UV row ${Math.floor(atUv / MESH_UV_FILL_FLOATS)}, float ${atUv % MESH_UV_FILL_FLOATS}`);
+    if (f > 0 && a.uvN === js.frames[f - 1].uvN) rewrites++;
     uvRows += a.uvN;
   }
   assert.ok(rewrites > FRAMES / 2, `${rewrites} frames kept their topology`);
   assert.ok(uvRows > FRAMES * 100, `${uvRows} UV rows compared`);
+});
+
+test('a MESH layer without MeshGeometry fills its collider shapes in arrays of its own', async () => {
+  // renderer.maxMeshVerts 0 (the destructible terrain scenes): no mesh memory and no corner to rewrite, so the
+  // layer's batch keeps arrays of its own and Pixi binds no kernel.
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const scene = await quietly(() => buildScene({ maxVisibleRenderables: 100 }));
+  assert.equal(scene.meshMemory, null, 'no mesh memory');
+  await quietly(() => initPixi(px, scene, null));
+  const cl = px._customLayers[Layer.get('mesh').id];
+  assert.ok(cl?.fillBatch, 'the MESH layer has its fill batch');
+  assert.equal(cl.meshRegion, null, 'no regions');
+  assert.ok(!(cl.fillBatch.rows.buffer instanceof SharedArrayBuffer), 'rows of its own');
+  assert.equal(px._meshCornersWasm, null, 'no kernel');
 });

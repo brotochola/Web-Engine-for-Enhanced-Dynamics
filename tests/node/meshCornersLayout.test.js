@@ -147,7 +147,6 @@ test('the client writes each slot the value its name says', async () => {
   // Nothing moved: the kernel walks the runs and writes no row.
   assert.equal(rewriteCornersWasm(b, out, 3, entity, views, MESH_UV_FILL_FLOATS, last, gen, lastUv, uvGen), 1);
   assert.equal(b.calls, 1);
-  assert.equal(b.declined, 0);
   assert.equal(slot('out'), out.byteOffset);
   assert.equal(slot('count'), 3);
   assert.equal(slot('step'), MESH_UV_FILL_FLOATS);

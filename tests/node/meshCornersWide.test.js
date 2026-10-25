@@ -1,17 +1,18 @@
 // E-130: the corner kernel on a 32-bit arena. With renderer.maxMeshVerts past 65535 MeshGeometry's vertex counts
 // and triangle indices are Uint32, and meshCornersClient binds wasm/meshCorners.c's rewrite_corners_u32 for them
-// (a 16-bit arena keeps rewrite_corners). The kernel against rewriteExplicitMeshCorners on meshCornersWasm.test.js's
+// (a 16-bit arena keeps rewrite_corners). The kernel against the JS rewrite (tests/reference/meshCorners.mjs) on meshCornersWasm.test.js's
 // random frames over 32-bit columns: a small arena bound at 32 bits (every case of the 16-bit frames, plus corner
 // indices of 2^16 and up past the mesh, 2^31 and up among them, and vertex counts of 2^31 and up, which the JS
 // reads as negative), and an arena of 70 000 vertices with meshes past 65 535 vertices whose indices name the
 // vertices past 65 535. Each frame: the same return code and every word of the row region, bit for bit. Then
 // Pixi's real MESH layer path on a scene of maxMeshVerts 70 000 with a 66 306-vertex plane, as meshCornersWired
-// runs it: the switch off, the mesh memory in JS, and the kernel draw the same rows frame after frame.
+// runs it: the JS rewrite and the kernel draw the same rows frame after frame.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
-import { MESH_UV_FILL_FLOATS, COLLIDER_FILL_FLOATS, rewriteExplicitMeshCorners } from '../../src/render/colliderFillBatch.js';
+import { MESH_UV_FILL_FLOATS, COLLIDER_FILL_FLOATS } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { bindMeshCorners, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
 import { E, frameCall, rng, setup } from '../helpers/meshCornerFrames.mjs';
 import {
@@ -134,9 +135,7 @@ async function compareFrames(opts, frames, seed, mustReach) {
     const jsWords = s.outWords.slice();
     assert.equal(expected(s, views, n, step, gen, last, uvSource, lastUvGen, tally), jsCode, `frame ${k} (mode ${mode}): the test's mirror of the JS`);
     s.outWords.set(pattern);
-    const declined = s.b.declined;
     const code = rewriteCornersWasm(s.b, s.out, n, s.entity, views, stride, last, genNow, lastUvGen, uvGenNow);
-    assert.equal(s.b.declined, declined, `frame ${k}: the kernel took the call`);
     assert.equal(code, jsCode, `frame ${k} (mode ${mode}, ${n} instances, stride ${stride}): return code`);
     const at = s.outWords.findIndex((w, q) => w !== jsWords[q]);
     assert.equal(at, -1, `frame ${k} (mode ${mode}, stride ${stride}): word ${at}: kernel 0x${(s.outWords[at] >>> 0).toString(16)}, JS 0x${(jsWords[at] >>> 0).toString(16)}`);
@@ -170,7 +169,6 @@ test('the bench scene hashes the same on a 32-bit arena, and each variant runs o
     if (meshCornerVariant(wide).wasm) {
       const bound = b.bindingOf(wide);
       assert.equal(bound.indexWidth, 32, `${wide}: rewrite_corners_u32`);
-      assert.equal(bound.declined, 0, `${wide}: the kernel took every call`);
       assert.ok(bound.calls > 0, `${wide}: the kernel ran`);
     }
     assert.throws(() => b.frameOp(narrow), /runs on a 16-bit arena/, `${narrow} refuses the 32-bit arena`);
@@ -205,7 +203,7 @@ async function quietly(fn) {
   }
 }
 
-function buildScene(meshCorners) {
+function buildScene() {
   Query.reset();
   const scene = {
     totalEntityCount: N,
@@ -233,7 +231,7 @@ function buildScene(meshCorners) {
       navigation: { enabled: false },
       renderer: { maxVisibleRenderables: 100, maxMeshVerts: MAX_VERTS, maxMeshIndices: MAX_INDICES },
       layers: { mesh: { kind: LAYER_KIND.MESH, zIndex: 2 } },
-      wasm: { ...WASM_DEFAULTS, meshCorners },
+      wasm: { ...WASM_DEFAULTS },
     },
     buffers: { componentData: {} },
     views: {},
@@ -345,14 +343,14 @@ function firstDiff(a, b) {
   return -1;
 }
 
-async function run(px, meshCorners, kernel) {
-  const scene = await quietly(() => buildScene(meshCorners));
+async function run(px, kernel) {
+  const scene = await quietly(() => buildScene());
   await quietly(() => initPixi(px, scene));
-  if (!kernel) px._meshCornersWasm = null;
   assert.equal(MeshGeometry.indexWidth, 32, 'the scene bound a 32-bit arena');
   // Each rewrite's return code: a rewrite that answers -1 sends Pixi to a full pack, whose rows match anyway.
   const codes = [];
-  const rewrite = Object.getPrototypeOf(px)._rewriteMeshCorners;
+  // The JS run: the rewrite Pixi shipped, in place of its own.
+  const rewrite = kernel ? Object.getPrototypeOf(px)._rewriteMeshCorners : rewriteExplicitMeshCorners;
   px._rewriteMeshCorners = function (...args) {
     const code = rewrite.apply(this, args);
     codes.push(code);
@@ -391,34 +389,29 @@ async function run(px, meshCorners, kernel) {
   return { scene, cl, frames, codes, kernel: px._meshCornersWasm };
 }
 
-test('Pixi draws the same rows of a 32-bit arena with the switch off, on the mesh memory in JS, and through the kernel', async () => {
+test('Pixi draws the same rows of a 32-bit arena through the kernel as the JS rewrite did', async () => {
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
-  const off = await run(px, false, false);
-  assert.equal(off.scene.meshMemory, null);
-  const js = await run(px, true, false);
+  const js = await run(px, false);
   assert.ok(js.scene.meshMemory, 'the mesh memory');
   assert.ok(js.cl.meshRegion, 'the layer has its regions');
-  const wasm = await run(px, true, true);
+  const wasm = await run(px, true);
   assert.ok(wasm.kernel, 'the kernel bound');
   assert.equal(wasm.kernel.indexWidth, 32, 'rewrite_corners_u32');
-  assert.equal(wasm.kernel.declined, 0, 'the kernel took every call');
   assert.ok(wasm.kernel.calls > FRAMES / 2, `the kernel ran (${wasm.kernel.calls} calls)`);
   // The kernel rewrote what the JS rewrote: the same codes, call for call, most of them done.
   assert.deepEqual(wasm.codes, js.codes, 'the kernel answers each rewrite as the JS does');
-  assert.deepEqual(off.codes, js.codes);
   const done = js.codes.filter((c) => c === 1).length;
   assert.ok(done > FRAMES, `${done} of ${js.codes.length} rewrites done`);
   let uvRows = 0;
   for (let f = 0; f < FRAMES; f++) {
-    const a = off.frames[f];
-    for (const [name, other] of [['mesh memory, JS', js.frames[f]], ['kernel', wasm.frames[f]]]) {
-      assert.equal(other.fillN, a.fillN, `frame ${f}, ${name}: fill rows`);
-      assert.equal(other.uvN, a.uvN, `frame ${f}, ${name}: UV rows`);
-      const atFill = firstDiff(other.fill, a.fill);
-      assert.equal(atFill, -1, `frame ${f}, ${name}: fill row ${Math.floor(atFill / COLLIDER_FILL_FLOATS)}`);
-      const atUv = firstDiff(other.uv, a.uv);
-      assert.equal(atUv, -1, `frame ${f}, ${name}: UV row ${Math.floor(atUv / MESH_UV_FILL_FLOATS)}`);
-    }
+    const a = js.frames[f];
+    const other = wasm.frames[f];
+    assert.equal(other.fillN, a.fillN, `frame ${f}: fill rows`);
+    assert.equal(other.uvN, a.uvN, `frame ${f}: UV rows`);
+    const atFill = firstDiff(other.fill, a.fill);
+    assert.equal(atFill, -1, `frame ${f}: fill row ${Math.floor(atFill / COLLIDER_FILL_FLOATS)}`);
+    const atUv = firstDiff(other.uv, a.uv);
+    assert.equal(atUv, -1, `frame ${f}: UV row ${Math.floor(atUv / MESH_UV_FILL_FLOATS)}`);
     uvRows += a.uvN;
   }
   assert.ok(uvRows > FRAMES * BIG_SEGS[0] * BIG_SEGS[1] * 2, `${uvRows} UV rows compared`);

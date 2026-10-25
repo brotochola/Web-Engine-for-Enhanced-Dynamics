@@ -15,8 +15,8 @@ import {
   packColliderFill,
   packMeshUvFill,
   resetColliderFillMeshLayerWarn,
-  rewriteExplicitMeshCorners,
 } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 
 const E = 40;
 const MAX_VERTS = 8192;

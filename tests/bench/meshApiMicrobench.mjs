@@ -14,11 +14,11 @@ import {
   packColliderFill,
   packColliderFillPoseOnly,
   packMeshUvFill,
-  rewriteExplicitMeshCorners,
   COLLIDER_FILL_FLOATS,
   MESH_UV_FILL_FLOATS,
   resetColliderFillMeshLayerWarn,
 } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { checksumFloats, isCli, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const SEED_XY = 0x41e5;

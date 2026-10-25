@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
  * Kernel (E-76 W11, E-118): Pixi's mesh corner rewrite in WASM (wasm/meshCorners.c, src/render/meshCorners.wasm)
- * against the shipped rewriteExplicitMeshCorners, on the meshes meshApiStressScene makes.
+ * against the JS rewrite Pixi shipped (tests/reference/meshCorners.mjs), on the meshes meshApiStressScene makes.
  *
- *   js          rewriteExplicitMeshCorners (src/render/colliderFillBatch.js), as Pixi called it before E-118 on
+ *   js          rewriteExplicitMeshCorners (tests/reference/meshCorners.mjs), as Pixi called it before E-118 on
  *               a frame whose vertices moved: once for the fill batch (18-float rows), once for the UV batch
  *               (24-float rows), without the UV generations, so every rewritten UV row stores its UVs
  *   js-uvgen    the same calls with the UV generations (E-118): a UV row stores its UVs only when its mesh's UV
@@ -63,8 +63,8 @@ import {
   packColliderFill,
   packMeshUvFill,
   resetColliderFillMeshLayerWarn,
-  rewriteExplicitMeshCorners,
 } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { bindMeshCorners, rewriteCornersWasm } from '../../src/render/meshCornersClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { meshMemoryRegions } from '../../src/util/wasmMemoryMap.js';
@@ -330,7 +330,7 @@ export async function setupMeshCornersKernel(opts = {}) {
   const bindingOf = (variant) => {
     const fn = specOf(variant).fn;
     if (!fn) return b;
-    bindings[fn] ??= { ...b, rewrite: f32[fn], calls: 0, declined: 0 };
+    bindings[fn] ??= { ...b, rewrite: f32[fn], calls: 0 };
     return bindings[fn];
   };
   /** A variant's rewrite function, with rewriteExplicitMeshCorners' arguments. */
@@ -467,7 +467,6 @@ async function main() {
 
   const checksum = k.checksumFrames(variant);
   const bound = k.bindingOf(variant);
-  if (spec.wasm && bound.declined) throw new Error(`the kernel declined ${bound.declined} calls`);
   if (args.check) {
     console.log(`checksum ${checksum} variant ${variant} fill ${k.fillCount} uv ${k.uvCount} rows, ${FRAMES} frames, ${k.indexWidth}-bit arena`);
     return;
@@ -496,7 +495,6 @@ async function main() {
     cohorts: k.cohorts,
     rows: { fill: k.fillCount, uv: k.uvCount, rewritten: dirty.rewritten, withUv: uvRows },
     checksum,
-    declined: bound.declined,
     wasmTier: tier,
     machine: machineState(),
     cases,

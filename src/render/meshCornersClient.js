@@ -1,16 +1,18 @@
 // The WASM mesh corner rewrite (E-76 W11): loads meshCorners.wasm onto the mesh memory (meshMemory.js) and
-// runs rewriteExplicitMeshCorners (colliderFillBatch.js) there with the same bits, the UV generations
+// runs the corner rewrite there with the bits of the JS one it replaced (rewriteExplicitMeshCorners, now
+// tests/reference/meshCorners.mjs), the UV generations
 // (E-118) included. The memory starts with the MeshGeometry block, where logic workers write the meshes, and
 // holds Pixi's mesh batches, their instance-to-entity lists and the generation copies as regions of their
-// own, so the kernel reads and writes every array where it lives. A call it cannot take goes to the JS
-// function, and the binding counts it in `declined`: an array outside the memory or of another type,
-// MeshGeometry columns other than the bound ones, rows or an instance list shorter than the call.
+// own, so the kernel reads and writes every array where it lives. It is the only rewrite (the JS one is
+// tests/reference/meshCorners.mjs): a call it cannot take is an error, which only a wiring bug makes (an array
+// outside the memory or of another type, MeshGeometry columns other than the bound ones, rows or an instance list
+// shorter than the call).
 // E-130: a 32-bit arena (renderer.maxMeshVerts past 65535) binds the kernel's rewrite_corners_u32 export, a
 // 16-bit one rewrite_corners, by the class of the columns at bind time; the call path is the same.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { MESH_CORNER_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
-import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS, rewriteExplicitMeshCorners } from './colliderFillBatch.js';
+import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from './colliderFillBatch.js';
 
 // Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
 const wasmUrl = new URL('./meshCorners.wasm', import.meta.url);
@@ -106,7 +108,7 @@ export async function bindMeshCorners(memory, tableByte, geom) {
   table[INDEX_CAP] = geom.indices.length;
   const bound = {};
   for (const name of Object.keys(columns)) bound[name] = geom[name];
-  return { buffer, table, tableByte, rewrite, geom: bound, calls: 0, declined: 0, indexWidth: wide ? 32 : 16 };
+  return { buffer, table, tableByte, rewrite, geom: bound, calls: 0, indexWidth: wide ? 32 : 16 };
 }
 
 /** A Uint32Array in the kernel's memory holding at least `n` values. */
@@ -117,7 +119,7 @@ function u32In(b, a, n) {
 /**
  * rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen,
  * uvGenNow) through the kernel: same arguments, same result, same bits. `b.calls` counts the calls the kernel
- * ran; a call it cannot take goes to the JS function and `b.declined` counts it.
+ * ran; a call it cannot take throws.
  */
 export function rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow) {
   const n = count | 0;
@@ -140,8 +142,10 @@ export function rewriteCornersWasm(b, out, count, entityOfInstance, views, strid
     (uvOn && (views.meshUvU !== g.uvU || views.meshUvV !== g.uvV)) ||
     (uvGen !== null && (!u32In(b, uvGen, 0) || uvGen.byteOffset === 0 || !u32In(b, lastUvGen, 0)))
   ) {
-    b.declined++;
-    return rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+    throw new Error(
+      'meshCorners: a call the kernel cannot take (rows, instance list, generations or MeshGeometry columns that are ' +
+        'not the ones bound in the mesh memory)',
+    );
   }
   const t = b.table;
   t[OUT] = out.byteOffset;

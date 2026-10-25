@@ -1021,17 +1021,16 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
   if (maxMeshVerts > 0) {
     // E-130: the block's index width follows maxMeshVerts (16-bit up to 65535), as every worker derives it.
     const meshGeomBytes = MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, totalEntityCount);
-    // E-76 W11: with the corner kernel on, the block is byte 0 of the mesh memory, which also holds every MESH
-    // layer's batches the way Pixi sizes them (meshMemory.js). No MESH layer, or the switch off: a buffer of its own.
-    if (config.wasm?.meshCorners !== false) {
-      const maxFixtures = (config.physics?.maxFixturePoolSize | 0) || (config.physics?.maxFixtures | 0);
-      scene.meshMemory = createMeshMemory(
-        meshGeomBytes,
-        totalEntityCount,
-        meshLayerIds(Layer._metadata),
-        meshLayerCapacities(maxFixtures, totalEntityCount, maxMeshVerts, maxMeshIndices),
-      );
-    }
+    // E-76 W11: the block is byte 0 of the mesh memory, which also holds every MESH layer's batches the way Pixi
+    // sizes them (meshMemory.js), where the corner kernel rewrites them. No MESH layer: a buffer of its own (nothing
+    // rewrites corners).
+    const maxFixtures = (config.physics?.maxFixturePoolSize | 0) || (config.physics?.maxFixtures | 0);
+    scene.meshMemory = createMeshMemory(
+      meshGeomBytes,
+      totalEntityCount,
+      meshLayerIds(Layer._metadata),
+      meshLayerCapacities(maxFixtures, totalEntityCount, maxMeshVerts, maxMeshIndices),
+    );
     buffers.meshGeomData = scene.meshMemory ? scene.meshMemory.buffer : new SharedArrayBuffer(meshGeomBytes);
     MeshGeometry.initializeArrays(
       buffers.meshGeomData,

@@ -112,7 +112,6 @@ import {
   packColliderFill,
   packColliderFillPoseOnly,
   packMeshUvFill,
-  rewriteExplicitMeshCorners,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
   clearMeshFillPaintDirty,
@@ -4653,13 +4652,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * E-76 W11. rewriteExplicitMeshCorners through the corner kernel when it is bound; the client hands a call
-   * the kernel cannot take to the JS function.
+   * E-76 W11. The corner rewrite of a MESH layer's batch, through the corner kernel (meshCornersClient.js). Only
+   * moved vertex generations call it, and those exist only with MeshGeometry, hence with the mesh memory and the kernel.
    */
   _rewriteMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow) {
     const b = this._meshCornersWasm;
-    if (b) return rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
-    return rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+    if (b === null) throw new Error('meshCorners: a corner rewrite without the mesh memory');
+    return rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
   }
 
   _ensureMeshUvBatch(cl) {
@@ -6399,9 +6398,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   /**
-   * E-76 W11. The mesh memory the main thread made (meshMemory.js), when MeshGeometry is bound on its buffer
-   * here, and the corner kernel on it unless wasm.meshCorners is off. A kernel that does not load leaves the
-   * JS rewrite, on the same arrays.
+   * E-76 W11. The mesh memory the main thread made (meshMemory.js) and the corner kernel on it: with a MESH layer
+   * MeshGeometry and every MESH layer's batches live there. Without one there is no memory and nothing to rewrite.
    */
   async _bindMeshMemory(data) {
     this._meshMemoryBuffer = null;
@@ -6410,32 +6408,31 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const mg = data.meshGeom;
     const memory = mg?.memory || null;
     const layout = mg?.layout || null;
-    if (!memory || !layout || mg.data !== memory.buffer || MeshGeometry.vertOffset?.buffer !== memory.buffer) return;
-    if ((layout.entities | 0) !== (this.globalEntityCount | 0)) return;
+    if (!memory || !layout) return;
+    if (mg.data !== memory.buffer || MeshGeometry.vertOffset?.buffer !== memory.buffer) {
+      throw new Error('meshCorners: MeshGeometry is not bound on the mesh memory');
+    }
+    if ((layout.entities | 0) !== (this.globalEntityCount | 0)) {
+      throw new Error(`meshCorners: the mesh memory holds ${layout.entities} entities, the scene ${this.globalEntityCount}`);
+    }
     this._meshMemoryBuffer = memory.buffer;
     this._meshMemoryLayout = layout;
-    if ((data.config || this.config)?.wasm?.meshCorners === false) return;
-    try {
-      this._meshCornersWasm = await bindMeshCorners(memory, layout.tableByte, {
-        vertOffset: MeshGeometry.vertOffset,
-        vertCount: MeshGeometry.vertCount,
-        indexOffset: MeshGeometry.indexOffset,
-        indexCount: MeshGeometry.indexCount,
-        vertexX: MeshGeometry.vertexX,
-        vertexY: MeshGeometry.vertexY,
-        uvU: MeshGeometry.uvU,
-        uvV: MeshGeometry.uvV,
-        indices: MeshGeometry.indices,
-      });
-    } catch (err) {
-      console.warn('[PIXI] meshCorners.wasm did not load; rewriting mesh corners in JS', err);
-      this._meshCornersWasm = null;
-    }
+    this._meshCornersWasm = await bindMeshCorners(memory, layout.tableByte, {
+      vertOffset: MeshGeometry.vertOffset,
+      vertCount: MeshGeometry.vertCount,
+      indexOffset: MeshGeometry.indexOffset,
+      indexCount: MeshGeometry.indexCount,
+      vertexX: MeshGeometry.vertexX,
+      vertexY: MeshGeometry.vertexY,
+      uvU: MeshGeometry.uvU,
+      uvV: MeshGeometry.uvV,
+      indices: MeshGeometry.indices,
+    });
   }
 
   /**
    * E-76 W11. The mesh memory's regions for MESH layer `layerId`, when the main thread sized them as this
-   * worker sizes the layer's batches (meshLayerCapacities); else null, and the layer keeps arrays of its own.
+   * worker sizes the layer's batches (meshLayerCapacities); else null, which initializeCustomLayers refuses.
    */
   _meshLayerRegion(layerId, caps) {
     const layout = this._meshMemoryLayout;
@@ -6525,6 +6522,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         const caps = meshLayerCapacities(maxFx, entitySlots, maxMeshVerts, maxMeshIndices);
         // E-76 W11: the rows in the mesh memory, where the corner kernel rewrites them.
         meshRegion = this._meshLayerRegion(layerId, caps);
+        // Without MeshGeometry (renderer.maxMeshVerts 0) there is no mesh memory: the layer fills collider shapes in
+        // arrays of its own and no corner is ever rewritten. With it, every MESH layer has its regions there.
+        if (!meshRegion && this._meshMemoryLayout) {
+          throw new Error(`MESH layer "${layerName}": its rows are not in the mesh memory (sized apart from meshLayerCapacities)`);
+        }
         fillBatch = new ColliderFillBatch({
           capacity: caps.fill,
           label: `mesh-layer-${layerName}`,

@@ -220,8 +220,8 @@ test('wasm.pixiPack gives Pixi its own sprite rows and pack scratch in the rende
   assert.equal(buildScene({ gpuPack: false, preRenderEmit: false }, null, pixi).renderQueueMemory, null, 'needs gpuPack');
 });
 
-test('wasm.meshCorners puts MeshGeometry and the MESH layers\' batches in the mesh memory (W11)', () => {
-  assert.equal(WASM_DEFAULTS.meshCorners, true);
+test('with a MESH layer MeshGeometry and the MESH layers\' batches live in the mesh memory (W11, no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'meshCorners'), false);
   const renderer = { maxVisibleRenderables: 100, maxMeshVerts: 512, maxMeshIndices: 1536 };
   const meshes = {
     renderer,
@@ -242,10 +242,6 @@ test('wasm.meshCorners puts MeshGeometry and the MESH layers\' batches in the me
   }
   assert.equal(mem.layout.geometryBytes, MeshGeometry.getBufferSize(512, 1536, 1000));
 
-  const off = buildScene({ meshCorners: false }, null, meshes);
-  assert.equal(off.meshMemory, null, 'off');
-  assert.ok(off.buffers.meshGeomData instanceof SharedArrayBuffer);
-  assert.equal(off.buffers.meshGeomData.byteLength, MeshGeometry.getBufferSize(512, 1536, 1000), 'a buffer of its own');
 
   const noMeshLayer = buildScene({}, null, { renderer, layers: { sprites: { zIndex: 2 } } });
   assert.equal(noMeshLayer.meshMemory, null, 'no MESH layer, nothing to rewrite');
