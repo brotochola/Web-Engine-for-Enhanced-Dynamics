@@ -30,7 +30,16 @@ test('loadWasmKernel refuses a module with other imports, and a missing export',
     /imports wasi_snapshot_preview1\.\w+ \(function\); a kernel may import only env\.memory/,
   );
   await assert.rejects(loadWasmKernel('spatialPublish', SHIPPED, memory, ['nope']), /no function export nope/);
-  await assert.rejects(loadWasmKernel('missing', pathToFileURL('missing.wasm'), memory, []), /ENOENT/);
+  await assert.rejects(loadWasmKernel('missing', pathToFileURL('missing.wasm'), memory, []), /^Error: missing\.wasm: .*ENOENT/);
+});
+
+test('a kernel that does not compile or link names itself', async () => {
+  const shared = new WebAssembly.Memory({ initial: 2, maximum: 2, shared: true });
+  const garbage = `data:application/wasm;base64,${Buffer.from('not a module').toString('base64')}`;
+  await assert.rejects(loadWasmKernel('garbage', garbage, shared, []), /^Error: garbage\.wasm: /);
+  // The shipped module imports a shared memory: an unshared one does not link.
+  const unshared = new WebAssembly.Memory({ initial: 2, maximum: 2 });
+  await assert.rejects(loadWasmKernel('spatialPublish', SHIPPED, unshared, ['publish_batch']), /^Error: spatialPublish\.wasm: /);
 });
 
 test('the spatial worker binds the publish module through the loader', async () => {

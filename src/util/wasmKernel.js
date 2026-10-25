@@ -55,13 +55,26 @@ export function compileWasmKernel(name, url) {
  * @returns {Promise<Record<string, Function>>}
  */
 export async function loadWasmKernel(name, url, memory, exportNames) {
-  const module = await compileWasmKernel(name, url);
+  // The engine has no JavaScript path to fall back to, so a kernel that does not load stops the scene: its errors
+  // name it (a CompileError or LinkError does not).
+  const named = (err) => (String(err?.message).startsWith(`${name}.wasm`) ? err : new Error(`${name}.wasm: ${err?.message ?? err}`, { cause: err }));
+  let module;
+  try {
+    module = await compileWasmKernel(name, url);
+  } catch (err) {
+    throw named(err);
+  }
   for (const imp of WebAssembly.Module.imports(module)) {
     if (imp.module !== 'env' || imp.name !== 'memory' || imp.kind !== 'memory') {
       throw new Error(`${name}.wasm imports ${imp.module}.${imp.name} (${imp.kind}); a kernel may import only env.memory`);
     }
   }
-  const instance = await WebAssembly.instantiate(module, { env: { memory } });
+  let instance;
+  try {
+    instance = await WebAssembly.instantiate(module, { env: { memory } });
+  } catch (err) {
+    throw named(err);
+  }
   const out = {};
   for (const exportName of exportNames) {
     const fn = instance.exports[exportName];
