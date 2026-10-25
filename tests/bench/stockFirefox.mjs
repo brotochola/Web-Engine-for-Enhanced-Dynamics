@@ -44,9 +44,24 @@ const PREFS = {
   'app.update.auto': false,
   'app.update.checkInstallTime': false,
   'browser.sessionstore.resume_from_crash': false,
+  // No "Open Firefox in Troubleshoot Mode?" prompt after ended runs (see close).
+  'toolkit.startup.max_resumed_crashes': -1,
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** Windows: a running Firefox holds its profile's parent.lock open with no sharing. */
+function profileInUse(profile) {
+  if (process.platform !== 'win32') return false;
+  const lock = path.join(profile, 'parent.lock');
+  if (!fs.existsSync(lock)) return false;
+  try {
+    fs.closeSync(fs.openSync(lock, 'r+'));
+    return false;
+  } catch (err) {
+    return err.code === 'EBUSY' || err.code === 'EPERM';
+  }
+}
 
 /** The Firefox to start: --firefox-exe, else WEED_FIREFOX_EXE, else where the installer puts it. */
 export function stockFirefoxExe(cliArgs = {}) {
@@ -132,6 +147,9 @@ export function createStockFirefox() {
       },
       async goto(url) {
         fs.mkdirSync(profile, { recursive: true });
+        if (profileInUse(profile)) {
+          throw new Error(`the Firefox bench profile ${profile} is in use by another Firefox: close it (or set WEED_FIREFOX_PROFILE)`);
+        }
         const prefs = Object.entries(PREFS).map(([k, v]) => `user_pref(${JSON.stringify(k)}, ${JSON.stringify(v)});\n`);
         fs.writeFileSync(path.join(profile, 'user.js'), prefs.join(''));
         const driven = url + (url.includes('?') ? '&' : '?') + 'stockDriver=1';
@@ -168,17 +186,25 @@ export function createStockFirefox() {
         return page;
       },
       async close() {
-        if (child && process.platform !== 'win32') child.kill('SIGKILL');
+        // A graceful close first: a forced end counts as a crash, and after three Firefox opened on a "Troubleshoot
+        // Mode?" prompt that held the profile, so every run after it failed (2026-10-24). Forced only past 10 s.
         if (process.platform === 'win32') {
           // Windows' launcher process can hand off to the browser and exit, so the browser is found by its profile.
           const mark = path.basename(profile);
-          spawnSync('powershell', ['-NoProfile', '-Command',
-            `Get-CimInstance Win32_Process -Filter "Name='firefox.exe'" | Where-Object { $_.CommandLine -like '*${mark}*' } | ` +
-            `ForEach-Object { taskkill /T /F /PID $_.ProcessId | Out-Null }`], { stdio: 'ignore' });
-          if (child) spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore' });
+          const ours = `Get-CimInstance Win32_Process -Filter "Name='firefox.exe'" | Where-Object { $_.CommandLine -like '*${mark}*' }`;
+          spawnSync('powershell', ['-NoProfile', '-Command', `${ours} | ForEach-Object { taskkill /PID $_.ProcessId | Out-Null }`], { stdio: 'ignore' });
+          for (let k = 0; k < 40 && child; k++) await sleep(250);
+          if (child) {
+            spawnSync('powershell', ['-NoProfile', '-Command', `${ours} | ForEach-Object { taskkill /T /F /PID $_.ProcessId | Out-Null }`], { stdio: 'ignore' });
+            if (child) spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { stdio: 'ignore' });
+          }
+        } else if (child) {
+          child.kill('SIGTERM');
+          for (let k = 0; k < 40 && child; k++) await sleep(250);
+          if (child) child.kill('SIGKILL');
         }
         // The profile's lock is let go a moment after the process ends; the next run starts on it.
-        await sleep(1500);
+        await sleep(1000);
       },
     };
   }
