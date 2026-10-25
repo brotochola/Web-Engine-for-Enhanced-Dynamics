@@ -8136,7 +8136,8 @@
         "EXECUTION_PLAN.md#E-138"
       ],
       "records": [
-        "R-0629"
+        "R-0629",
+        "R-0631"
       ],
       "id": "E-138",
       "title": "A frame whose emit expands its rows sorts the collector before the emit, and packs the queue in order",
@@ -8145,7 +8146,7 @@
       "date": "2026-10-25",
       "area": "pre-render",
       "kind": "js",
-      "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom pre-render 20.516 → 15.818 ms (−19.7 %, 0/4); the renderer's step +18.4 % with its busy time per second flat (more frames delivered)",
+      "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom pre-render 20.516 → 15.818 ms (−19.7 %, 0/4); the renderer's step +18.4 % with its busy time per second flat (more frames delivered); with no glow rows no slot list either (8d67f225): pre-render 16.479 → 14.819 ms (−10.6 %, 0/4)",
       "next": "Nothing on its own; W27b (the Adobe expansion in float32 and SIMD) is the next cost in that pre-render."
     }
   ],
@@ -13740,6 +13741,18 @@
         "65ccbc11",
         "950865f8",
         "91edeae2"
+      ]
+    },
+    {
+      "id": "R-0631",
+      "date": "2026-10-25",
+      "time": "03:37",
+      "timeFrom": "recorded",
+      "title": "E-138 follow-up: no slot list on presorted frames with no glow rows; adobeAnimateScene (min zoom) pre-render -10.6 %",
+      "verdict": "kept",
+      "text": "**E-138, follow-up: a presorted queue with no glow rows packs every row with no slot list; the unsplit pack names its glow type.** 2026-10-25.\n\nSeen in W27b's profile (R-0630): on E-138's presorted frames with glows not drawn as sprites, the main queue still took the glow split. fillQueueIndices listed every row (3.5 % of adobeAnimateScene's pre-render at the minimum zoom) and the pack ran the scatter over that identity list, 2.76 ms against 2.41 ms with no list on its 261 744 rows (the kernel screen of E-138).\n\nThe change (8d67f225): the collector sort counts the glow rows; a presorted frame with none packs unsplit, every row in queue order with no list. The unsplit path read `spec.glowIncludeType` undefined, which `| 0` makes 0, so an unsplit frame (lighting.lightGlow 'sprite', or no slot lists) packed its sprite rows into the glow batch; pre-render now sets it as Pixi's layer does (3 when glows are not sprites, else −1). painterRadixWired.test.js packs makeFrames' frames without glow rows both ways: the same rows as the painter's, no glow rows, no slot list, sorted; two mutants fail it (the split kept, the glow type as before).\n\nScene: adobeAnimateScene, `--camera-zoom min`, `--vs fdaf6bb5 --hyp-rev 81619669` (the same tree as 8d67f225, whose message was amended with these numbers), 4 pairs, Chrome, headed, source: **pre-render 16.479 → 14.819 ms, −10.6 %, worse 0/4** (cv 3/3 %), −6.7 % against the other workers (which moved down 3.7 to 6.0 % together); RENDER_QUEUE_SIZE 261 790 and 261 786; presented 60 on both. **KEPT (product).**",
+      "commits": [
+        "8d67f225"
       ]
     }
   ],
