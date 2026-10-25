@@ -885,7 +885,9 @@ commit one. Follow-up (`8d67f225`): a presorted frame with no glow rows packs ev
 glow split still listed every row and scattered over that identity list): pre-render **16.479 → 14.819 ms, −10.6 %**
 (0/4). Then (`3fa72bbd`) a presorted frame's emit leaves the sort keys and shadow terms, which nothing
 reads that frame: pre-render **13.125 → 11.369 ms, −14.5 %** (0/4), but Pixi +5.5 % (4/4, its copy and upload slower
-for the same bytes); kept as a trade (R-0636). Lesson: a gate that reads per-frame state needs a test across real
+for the same bytes). Kept: at that zoom pre-render is the worker that bounds the frame (11.4 ms, 65–69 % load,
+against physics 7.7, Pixi 6.9 and spatial 5.4 ms), so 1.76 ms off it is worth 0.35 ms on a worker 4.5 ms below it
+(the owner left the call to the session; decision record R-0637). Lesson: a gate that reads per-frame state needs a test across real
 frames.
 
 ### E-137 The bullet collect writes its own rows — **KEPT (product), 2026-10-25**
