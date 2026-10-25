@@ -841,9 +841,9 @@
       "id": "W4",
       "title": "`emitSpriteQueue`, `_displayPose`, `_writeQueueShadow`, with W3's collect chain",
       "status": "kept",
-      "statusText": "W4a kept (E-112), W4c kept (E-115 to E-117), W4b kept for scenes without physics 2026-10-24 (BunnyMark pre-render −9.4 %); W4b with physics waits on Phase 4",
+      "statusText": "W4a kept (E-112), W4c kept (E-115 to E-117), W4b kept for scenes without physics 2026-10-24 (BunnyMark pre-render −9.4 %); W4b with physics waits on Phase 4; W4d kept 2026-10-25",
       "date": null,
-      "result": "W4a kept (E-112), W4c kept (E-115 to E-117), W4b kept: BunnyMark pre-render −9.4 % without physics, Predator pre-render −13.3 % (−17.3 % against the drift) with physics, 2026-10-24",
+      "result": "W4a kept (E-112), W4c kept (E-115 to E-117), W4b kept: BunnyMark pre-render −9.4 % without physics, Predator pre-render −13.3 % (−17.3 % against the drift) with physics, 2026-10-24; W4d (the bullet and trail rows) kept 2026-10-25: bulletStressScene?bullets=64000 pre-render 4.185 → 3.612 ms, −14.1 % (0/4)",
       "area": "pre-render",
       "kind": "wasm",
       "refs": [
@@ -856,7 +856,8 @@
         "R-0564",
         "R-0574",
         "R-0581",
-        "R-0588"
+        "R-0588",
+        "R-0627"
       ]
     },
     {
@@ -956,7 +957,8 @@
         "R-0623",
         "R-0624",
         "R-0625",
-        "R-0626"
+        "R-0626",
+        "R-0627"
       ]
     },
     {
@@ -8107,6 +8109,24 @@
       "rank": 20,
       "result": "In stationarySpatialWideScene (70 000 stationary entities, 32-bit ids, a CPU trace after W8b), spatial is publish_batch_u32 60.6 %, gather_batch_u32 14.8 %, rebuildOwnedRows 14.2 %: the publish refilters rows nobody's movement changed. With static isStatic (E-127), a row whose entity and every candidate are static is unchanged while its candidate list is reused; the worker could leave it out of the publish batch (no kernel change) and clear the marks when the static counter moves. Pays only where static entities have large visual ranges (Predator's props have 0 or 50), so the regime is narrow.",
       "next": "Only if a real scene has static entities with large visual ranges: the owner scene with isStatic on the stationary type; a parity test on the published rows."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-137"
+      ],
+      "records": [
+        "R-0628"
+      ],
+      "id": "E-137",
+      "title": "The bullet collect writes its own rows for bullets on the main collector",
+      "status": "kept",
+      "statusText": "opened and kept 2026-10-25 (from the item-7 profile of bulletStressScene)",
+      "date": "2026-10-25",
+      "area": "pre-render",
+      "kind": "js",
+      "result": "kept (product) 2026-10-25: bulletStressScene?bullets=64000 pre-render 3.623 → 3.016 ms (−17.3 %, 0/4) against W4d; the first version (mask 0 only) tied, since a default bullet's mask is the entities layer's bit",
+      "next": "Nothing: the glow and particle collects are separate rows of item 7."
     }
   ],
   "records": [
@@ -13642,6 +13662,35 @@
       "title": "W9e: a pose batch packs through gpuPack.wasm (pack_pose); bunnyMark Pixi -2.0 %, a tie, kept as coverage",
       "verdict": "kept-hygiene",
       "text": "**W9e: a pose batch (renderer.interpolation) packs through gpuPack.wasm.** Close-out item 6b, its hot part. 2026-10-25.\n\nWhy this part of 6b first: a CPU profile of the scenes that run Pixi's own packers (pose interpolation or `packGpuSprites: 'pixi'`), 2026-10-25, found one hot JS packer: bunnyMarkScene's Pixi spent 71 % of its 192 ms/s busy time in `_packPoseOnly` (250 000 sprites, interpolation on). Pixi's glow, shadow, caster and custom-layer batches did not show; adobeAnimate's Pixi time is `commitSplit` (68 % of 376 ms/s), a copy of pre-render's two streams whose statics generation moves every frame (an animated scene), not JS arithmetic: a lead of its own.\n\nThe change: `pack_pose` in gpuPack.c (b0fa91de), the pose x, y, rotC, rotS and the previous x, y, and the 11 statics unless current, through pack_general's screen transform, pixel snap and type filter, with the JS's depth `1 - (out + 1) / depthDenom`; bit-identical to the batch's packers on 15 paths (both streams and the pose alone, full and short capacity). Wired in 418f50b9 (measured as 7f38f3fe, the same tree before its message took the numbers): with interpolation Pixi's pack region is 17 floats a row (pose then statics) and the pose batch packs there, then copies into its own arrays (E-123).\n\nKernel (`poseInterpPackMicrobench`, Node, 250 000 sprites, world space, pixel snap, the previous pose; 5 alternating rounds, the wasm side includes the copy): pose alone 90.9 → 405.6 ops/s (+346 %), both streams 68.5 → 169.1 ops/s (+147 %). One CPU profile of bunnyMark after: Pixi busy 161 ms/s, `pack_pose` 70 and the copy 45 where `_packPoseOnly` took 137.\n\n**Scene: a tie.** bunnyMarkScene, Pixi owner, `--vs 0192f7c8 --hyp-rev 7f38f3fe`, 4 pairs, Chrome, headed, source, detailed stats off: Pixi **4.178 → 4.136 ms, −2.0 %, worse 1/4** (cv 2/1 %), pre-render 4.815 → 4.777 ms (−1.4 %, 1/4), logic and the rest under the 3 ms floor; load keys equal (250 000 visible). NEUTRAL by the speed rule; kept as coverage (decision 7: the JS pose packers can leave src/ once no batch needs them), as gpuPack's slow path was (R-0622).\n\nWhy the profile's −16 % did not hold: in Chrome the JS pose pack is about 2.3 ms a frame (the Node bench's 11 ms overstated it about five times), and the wired path adds the copy out of the shared region into the batch's own arrays (E-123), about 0.75 ms for 250 000 × 6 floats, which takes back most of what the kernel saves. Lead: in a scene whose other workers are idle (bunnyMark), uploading from the shared region (E-123's cost was other workers' time in Predator) or copying only what moved."
+    },
+    {
+      "id": "R-0627",
+      "date": "2026-10-25",
+      "time": "01:29",
+      "timeFrom": "recorded",
+      "title": "W4d: the bullet and trail rows in the emit kernel; bulletStressScene pre-render -14.1 %",
+      "verdict": "kept",
+      "text": "**W4d: pre-render's bullet and trail rows (types 4 and 5) in the emit kernel.** Close-out item 7 (group B, the emit's foreign rows), its largest part. 2026-10-25.\n\nWhy: the item-7 profile of bulletStressScene (2026-10-25) had pre-render at 203 ms/s, with `_emitForeignRows` 24.9 %, `clearQueueShadow` 5.7 % and `_resolveAnimFrameStart` 2.5 %: the bullet rows emit_rows listed for the JS.\n\nThe change: emit_rows writes emitSpriteQueue's bullet and trail branches when BulletComponent's columns are in the render-queue memory (df0c092f), which they are wherever the bullet tick runs (its block, W19); wired in pre-render in 33f8484a. The trail is computed in double as the JS computes it, hidden rows keep the columns the JS leaves, and a bullet without a first frame comes back as warning kind 3, which the JS replays. Where BulletComponent is elsewhere the rows stay listed for the JS. Parity: preRenderEmitWasm.test.js puts BulletComponent in the memory and holds the rows to the JS emit's bit for bit over 30 frames, with every slot class reached (inactive, zero and short trails, a −0 difference, no texture); a mutant (trail alpha × 0.8) fails it.\n\nKernel (`preRenderEmitBulletMicrobench`, 7c2e0b09, Node, bulletStressScene's frame of 32 700 bullets and 195 sprites, 5 alternating rounds, TurboFan, checksums equal): bullets 872.9 → 2092.5 ops/s (+139.7 %), with trails 744.2 → 1408.4 ops/s (+89.3 %).\n\nScene: at its default 40 000 bullets, bulletStressScene's pre-render is 2.97 ms, under the 3 ms floor: 2.972 → 2.507 ms (−15.6 %, better in 4/4), not judged. With the scene's new load knob (`?bullets=64000`, 671eda34), `--vs 7c2e0b09 --hyp-rev 33f8484a` (run as 411dc4ca, the same tree before its message was reworded), 4 pairs, Chrome, headed, source, detailed stats off: **pre-render 4.185 → 3.612 ms, −14.1 %, worse 0/4** (cv 1/2 %); particle 4.799 → 4.776 ms (−0.5 %, 1/4); the other workers under the floor; RENDER_QUEUE_SIZE 52 437 on both sides; presented 60 on both. **KEPT (product).**\n\nLeft in item 7: the bullet collect (E-137), the glow rows (type 3), the particle rows (type 1: ParticleComponent is not in the memory) and the frames with a LiquidFun row (declined).",
+      "commits": [
+        "df0c092f",
+        "7c2e0b09",
+        "33f8484a",
+        "671eda34"
+      ]
+    },
+    {
+      "id": "R-0628",
+      "date": "2026-10-25",
+      "time": "01:29",
+      "timeFrom": "recorded",
+      "title": "E-137: the bullet collect writes its own rows; bulletStressScene pre-render -17.3 % after W4d",
+      "verdict": "kept",
+      "text": "**E-137: the bullet collect writes its own rows for bullets on the main collector.** Close-out item 7's other half in bulletStressScene (a JS change: E-98c and E-98e's pattern, for bullets). 2026-10-25.\n\nWhy: the same profile had `_writeRenderable` 13.5 %, `collectVisibleBullets` 9.5 % and `collectRenderable` 8.1 % of pre-render's 203 ms/s: collectRenderable's type dispatch, `Layer.entitiesMask()` and bit scan, then `_writeRenderable` re-reading the collector's columns from `this`, for each of 32 700 bullets a frame, which all end on the main collector.\n\nThe change: collectVisibleBullets writes the main collector's rows itself (y, type, index; the trail's after it at key − 1), the count in a local synced around the generic path, and leaves the last key in COLLECT_Y where the old loop left it (the sprite collect reads it). bulletCollectShortcut.test.js holds the collectors (main and a custom layer), the full-collector calls and that key to the old loop's, room for all and a full collector.\n\nFirst version (59aceb37): the shortcut took mask 0 only, as E-98c does for sprites. But BulletPool.spawn gives every bullet `Layer.resolveSubscriptions(config)`, which is the entities layer's bit without a layer, so no default bullet took it: bulletStressScene?bullets=64000, `--vs 671eda34 --hyp-rev 59aceb37`, 4 pairs: pre-render 3.605 → 3.665 ms (+1.1 %, worse 2/4), a tie, as it had to be. Second version (ece24bf1): that bit alone routes to the main collector once, as 0 does, so it takes the shortcut too; the test's reference forces the generic path with the entities bit and bit 15 (no sprite-queue layer), and three mutants fail it (the trail's key, the COLLECT_Y write, the first version's condition).\n\nScene: `bulletStressScene?bullets=64000`, `--vs 671eda34 --hyp-rev ece24bf1`, 4 pairs, Chrome, headed, source, detailed stats off (the pairs ran as 70b485da, ad329ac0 and cbbbd59a, the same trees before the messages were reworded): **pre-render 3.623 → 3.016 ms, −17.3 %, worse 0/4** (cv 1/5 %); particle 4.874 → 4.847 ms (−0.8 %, 1/4); RENDER_QUEUE_SIZE 52 442 and 52 425; presented 60.0 and 59.9 (−0.3 %). The renderer went 1.429 → 1.625 ms, under the floor and not judged; the queue it reads is the same bit for bit, so it is noted, not explained. **KEPT (product).** With W4d before it (not measured as a total): bulletStress pre-render about 4.19 → 3.02 ms at 64 000 bullets.\n\nLesson: a shortcut on \"no mask\" has to check the mask the spawn path writes by default.",
+      "commits": [
+        "59aceb37",
+        "ece24bf1",
+        "671eda34"
+      ]
     }
   ],
   "leads": [
