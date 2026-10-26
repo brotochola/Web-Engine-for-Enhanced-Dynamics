@@ -10,6 +10,7 @@ const { Scene, GameObject, SpriteRenderer, ParticleEmitter, Camera, SharedResour
 //   ?columns=<n>            smoke columns started every second (default 6)
 //   ?count=<n>              GPU particles per column (default 400)
 //   ?look=1                 the smoke layer goes through a look shader (its density pass is GPU particles)
+//   ?interp=1               renderer.interpolation: Pixi packs the entities (and lists the groups) itself
 
 function param(name, fallback) {
   try {
@@ -25,8 +26,11 @@ const SORT = param('sort', '1') !== '0';
 const COLUMNS = Math.max(0, parseInt(param('columns', '6'), 10) || 0);
 const COUNT = Math.max(1, parseInt(param('count', '400'), 10) || 400);
 const LOOK = param('look', '0') === '1';
+const INTERP = param('interp', '0') === '1';
 
-export const stressSceneConfig = { requested: { backend: BACKEND, sort: SORT, columns: COLUMNS, count: COUNT, look: LOOK } };
+export const stressSceneConfig = {
+  requested: { backend: BACKEND, sort: SORT, columns: COLUMNS, count: COUNT, look: LOOK, interp: INTERP },
+};
 
 /** The page's knobs, for the logic worker (which does not see the page's query string). */
 export class GpuStressSettings extends SharedResource {
@@ -133,7 +137,8 @@ export class GpuParticlesStressScene extends Scene {
     worldHeight: WORLD_H,
     seed: 0x5eed,
     physics: { enabled: false },
-    renderer: { backend: BACKEND, ySort: true, noLimitFPS: false },
+    renderer: { backend: BACKEND, ySort: true, noLimitFPS: false, interpolation: INTERP },
+    ...(INTERP ? { preRender: { packGpuSprites: 'pixi', sortSprites: 'pixi' } } : {}),
     logic: { numberOfLogicWorkers: 1, noLimitFPS: false },
     particle: { maxParticles: 4000 },
     layers: {
@@ -154,7 +159,9 @@ export class GpuParticlesStressScene extends Scene {
     },
   };
 
-  static assets = LOOK ? { shaders: { gpuSmokeLook: '/tests/bench/stressScenes/gpuSmokeLook.frag' } } : {};
+  static assets = LOOK
+    ? { shaders: { gpuSmokeLook: `/tests/bench/stressScenes/gpuSmokeLook.${BACKEND === 'webgpu' ? 'wgsl' : 'frag'}` } }
+    : {};
 
   static entities = [
     [Tree, 200],
