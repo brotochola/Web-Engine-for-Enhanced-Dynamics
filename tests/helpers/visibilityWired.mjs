@@ -228,7 +228,7 @@ export async function bootPreRenderGather(scene, {
       worldHeight: WORLD_H,
       lighting: { enabled: true, raycasted: true, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit },
       physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
-      wasm: { preRenderCollect: false, ...wasm },
+      wasm: { ...wasm },
     },
     globalEntityCount: N,
     buffers,

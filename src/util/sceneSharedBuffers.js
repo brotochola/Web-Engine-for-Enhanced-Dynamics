@@ -602,8 +602,7 @@ export function renderQueueMemorySpec(scene) {
     && spatialPublishSpec(scene) !== null
     ? visibilityGatherSpec(scene)
     : null;
-  // The collect's blocks whenever the emit reads sprites or glows (Transform's pose is the glow rows' too): the switch
-  // only decides whether pre-render runs the collect kernel on them.
+  // The collect's blocks whenever the emit reads sprites or glows (Transform's pose is the glow rows' too).
   const wantsCollect = Boolean(emit) && (emit.spriteBytes > 0 || emit.lightBytes > 0);
   // The bullet and trail rows read BulletComponent: among the emit's blocks when the bullet tick's are not there.
   if (emit && maxBullets > 0 && !bullets) emit.bulletBytes = BulletComponent.getBufferSize(maxBullets);
@@ -691,28 +690,28 @@ function initializeRenderQueueMemory(scene) {
   scene.maxVisibleRenderables = spec.maxVisibleRenderables;
   scene.gpuQueueCaps = spec.gpuCaps;
   // Phase 4: in the block physics reserved in Box2D's memory when there is one and the regions fit it (they
-  // were sized from the same spec); else a memory of its own. A scene whose collect blocks or painter state
-  // would not fit keeps the memory without them (and their JS), the collect before the painter. The collect's
-  // body variant goes only in the block: outside Box2D's memory the kernel could not read Transform's pose.
+  // were sized from the same spec); else a memory of its own. The collect's blocks always go with it when the spec
+  // has them (the sprite collect runs only in its kernel); a painter state that would not fit is left out (pre-render
+  // says so). The collect's body variant goes only in the block: outside Box2D's memory the kernel could not read
+  // Transform's pose, so a scene with physics and no block (built without its physics worker) has no collect, and
+  // pre-render says it cannot collect.
   const block = scene.box2dBlock;
   const place = block && spec.enabled ? { memory: block.memory, baseByte: block.byte } : null;
-  const bodies = spec.collect && spec.collect.rigidBodyBytes > 0 ? spec.collect : null;
-  const own = spec.collect && !bodies ? spec.collect : null;
-  const shapes = (collect) => (collect ? [[collect, spec.painter], [collect, null]] : [])
-    .concat([[null, spec.painter], [null, null]]);
+  const outside = spec.collect && spec.collect.rigidBodyBytes > 0 ? null : spec.collect;
+  const shapes = (collect) => [[collect, spec.painter], [collect, null]];
   const make = (collect, painter, at) =>
     (!at || renderQueueMemoryBytes(...spec.args, collect, painter) <= block.queueBytes)
       ? createRenderQueueMemory(...spec.args, collect, painter, at)
       : null;
   let rqm = null;
-  // In the block the collect takes its body variant with physics and its own without.
-  if (place) for (const [c, p] of shapes(bodies || own)) if ((rqm = make(c, p, place))) break;
-  if (!rqm && spec.enabled) for (const [c, p] of shapes(own)) if ((rqm = make(c, p, null))) break;
-  // The emit runs only in its kernel, on this memory (close-out group B): a scene with a render queue needs it.
+  if (place) for (const [c, p] of shapes(spec.collect)) if ((rqm = make(c, p, place))) break;
+  if (!rqm && spec.enabled) for (const [c, p] of shapes(outside)) if ((rqm = make(c, p, null))) break;
+  // The emit and the collect run only in their kernels, on this memory (close-out group B): a scene with a render
+  // queue needs it.
   if (!rqm && spec.enabled && spec.maxVisibleRenderables > 0) {
-    const mb = Math.ceil(renderQueueMemoryBytes(...spec.args, null, null) / 1048576);
+    const mb = Math.ceil(renderQueueMemoryBytes(...spec.args, outside, null) / 1048576);
     throw new Error(`render-queue memory: ${mb} MB (renderer.maxVisibleRenderables ${spec.maxVisibleRenderables}, the components `
-      + 'and pools the emit reads) could not be made: past the 2048 MB a kernel memory can take, or refused by the browser');
+      + 'and pools the emit and the collect read) could not be made: past the 2048 MB a kernel memory can take, or refused by the browser');
   }
   scene.renderQueueMemory = rqm;
   const c = scene.renderQueueMemory?.layout.collect;

@@ -453,12 +453,6 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   particleListsF32: true,
   /**
-   * Pre-render's sprite collect (`preRenderCollect.wasm`, W4b): Transform, its pose and Collider in the render-queue
-   * memory with the emit's SpriteRenderer; with physics, in Box2D's block with RigidBody
-   * and the published poses.
-   */
-  preRenderCollect: true,
-  /**
    * The bullet tick (`bulletTick.wasm`, W19): the pool walk and its linecasts in one call per frame, with physics,
    * on Box2D's block (the pool, Transform, Collider and the spatial grid there; needs spatialPublish).
    */

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W4b): pre-render's sprite collect in WASM (wasm/preRenderCollect.c) against the JS loop of the
- * shipped PreRenderWorker.collectVisibleEntities, on a real worker, 250 000 sprites, every column in one shared
+ * Kernel (E-76 W4b): pre-render's sprite collect in WASM (wasm/preRenderCollect.c) against the JS loop it replaced
+ * (tests/reference/preRenderCollectJs.mjs), on a real worker, 250 000 sprites, every column in one shared
  * memory (preRenderCollectKernel.mjs).
  *
  *   bunny     BunnyMark: skipCull, every sprite queued, the sprite query's list (copied into the memory)
@@ -11,8 +11,8 @@
  *             Y-sort on the foot line of anchors that are mostly not the feet; a straight camera over a world
  *             twice the view, about a quarter queued
  *
- *   js    the shipped collectVisibleEntities with no kernel bound (its JS loop)
- *   wasm  the same with the kernel bound (_collectVisibleEntitiesWasm)
+ *   js    the JS collect (collectVisibleEntitiesJs) on the worker
+ *   wasm  the shipped collectVisibleEntities, the kernel bound (_collectVisibleEntitiesWasm)
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderCollectWasmMicrobench.mjs --variants js,wasm --rounds 5
  *   node tests/bench/preRenderCollectWasmMicrobench.mjs --variant wasm [--scale 0.1] [--output path]
@@ -22,6 +22,7 @@ import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } 
 import { loadWorker, quietly } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 import { bindCollect, collectMemory, useBodies, useSortY } from './preRenderCollectKernel.mjs';
+import { collectVisibleEntitiesJs } from '../reference/preRenderCollectJs.mjs';
 
 const ARGS = parseArgs();
 const SCALE = Number(ARGS.scale ?? 1);
@@ -129,7 +130,7 @@ export async function setupCollectKernel(caseName, seed = 0xb0b) {
     listLength = N;
     return pre._renderableCount;
   };
-  const js = (items = N) => sized(items, () => { pre._collectWasm = null; pre.collectVisibleEntities(); });
+  const js = (items = N) => sized(items, () => collectVisibleEntitiesJs(pre));
   const wasm = (items = N) => sized(items, () => { pre._collectWasm = k; pre.collectVisibleEntities(); });
   const hash = () => {
     let x = 2166136261;
@@ -166,7 +167,7 @@ async function main() {
   const report = {
     feature: 'preRender-collect-wasm',
     variant,
-    functions: ['PreRenderWorker.collectVisibleEntities', 'preRenderCollect.collect_sprites', 'preRenderCollect.collect_sprites_turned'],
+    functions: ['collectVisibleEntitiesJs', 'PreRenderWorker.collectVisibleEntities', 'preRenderCollect.collect_sprites', 'preRenderCollect.collect_sprites_turned'],
     n: N,
     seed: 0xb0b,
     checksum,

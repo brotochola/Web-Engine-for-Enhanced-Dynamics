@@ -40,10 +40,10 @@ test('entity collect uses a per-frame skipCull branch; default still AABBs; B sk
   // directly below instead of by counting a string that an optimisation removed.
   assert.equal(body.match(skipIf)?.length ?? 0, 0);
   assert.equal(adobeBody.match(skipIf)?.length ?? 0, 1);
-  // One hoisted read per loop...
-  assert.match(body, /const skipCull = this\.skipCull;/);
-  // ...used by the loop, and the loop guarded by it.
-  assert.match(body, /if \(!skipCull\) \{/);
+  // The entity collect is preRenderCollect.wasm's walk (W4b): skipCull is an argument of the straight walk, and the
+  // turned camera's copy (E-51) runs only with the cull on; turnedCameraCull.test.js checks what the copy keeps.
+  assert.match(body, /this\.skipCull \? 1 : 0/);
+  assert.match(body, /const turned = rot && !this\.skipCull;/);
   // The glow collector hoists too, including the static-array lookups that were
   // a property chain per light.
   // Slice by the method DEFINITION, not a bare name: `advanceAdobeAnimations(` also
@@ -64,19 +64,8 @@ test('entity collect uses a per-frame skipCull branch; default still AABBs; B sk
   const glowCode = glow.replace(/^\s*\/\/.*$/gm, '');
   assert.doesNotMatch(glowCode, /SpriteRenderer\.boundsHalfW\?\./);
   assert.doesNotMatch(glowCode, /this\.skipCull\)/);
-  // Two loops: the turned-camera copy (E-51, exact view-space cull) and the one
-  // rotation 0 runs; turnedCameraCull.test.js checks what the copy keeps.
-  assert.equal(body.match(/for \(let idx = 0; idx < iterCount/g)?.length, 2);
-  assert.match(body, /screenMinX/);
   assert.doesNotMatch(body, /screenX\[i\] = sx/);
   assert.doesNotMatch(adobeBody, /screenX\[i\] = sx/);
-  // Same reason as the glow slice: indexOf on a removed literal returns -1, and
-  // slice(-1, n) silently yields one character instead of failing loudly.
-  const cullStart = body.indexOf('if (!skipCull)');
-  assert.ok(cullStart >= 0, 'the entity cull branch must be findable');
-  const entityCull = body.slice(cullStart, body.indexOf('isItOnScreen[i] = 1'));
-  assert.match(entityCull, /screenMinX/);
-  assert.doesNotMatch(entityCull, /screenX\[i\]/);
   assert.match(preRender, /const ySorting = !!\(Layer\._ySorting && Layer\._ySorting\[entry\.layerId\]\)/);
   assert.match(preRender, /const writeSortKey = !!\(this\.renderQueueSortKey && source\.hasOrder\)/);
 });

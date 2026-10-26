@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { loadWorker } from '../bench/workerHarness.mjs';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import { bindCollect, collectMemory } from '../bench/preRenderCollectKernel.mjs';
+import { collectVisibleEntitiesJs } from '../reference/preRenderCollectJs.mjs';
 import { Query } from '../../src/core/query.js';
 import { Layer } from '../../src/core/layer.js';
 import { Transform } from '../../src/components/transform.js';
@@ -132,6 +133,13 @@ test('static scenery through the grid leaves the collectors as the linear cull d
     const ids = publishedList(m.views);
     Query.queryActiveEntities = () => ids;
     const kernel = await bindCollect(m);
+    // The shipped collect on the kernel, or the JS one it replaced.
+    const collect = (wasm) => {
+      if (!wasm) return collectVisibleEntitiesJs(pre);
+      pre._collectWasm = kernel;
+      pre.collectVisibleEntities();
+      pre._collectWasm = null;
+    };
     bindStaticSceneryGen(genSab);
     bindStaticTypes(CLASSES);
     staticSceneryChanged();
@@ -148,9 +156,7 @@ test('static scenery through the grid leaves the collectors as the linear cull d
         return walked;
       };
       reset(pre, m);
-      pre._collectWasm = wasm ? kernel : null;
-      pre.collectVisibleEntities();
-      pre._collectWasm = null;
+      collect(wasm);
       return snapshot(pre, m);
     };
 
@@ -196,13 +202,11 @@ test('static scenery through the grid leaves the collectors as the linear cull d
       m.views.x[s] = 90000;
       staticSceneryChangedAt(s);
       reset(pre, m);
-      pre.collectVisibleEntities();
+      collect(false);
       m.views.x[s] = cam.x;
       staticSceneryChangedAt(s);
       reset(pre, m);
-      pre._collectWasm = wasm ? kernel : null;
-      pre.collectVisibleEntities();
-      pre._collectWasm = null;
+      collect(wasm);
       const moved = snapshot(pre, m);
       assert.ok(linear.index.includes(s), 'the moved entity is in view');
       assert.deepEqual(moved, linear, `a moved static entity (${wasm ? 'kernel' : 'JS'})`);

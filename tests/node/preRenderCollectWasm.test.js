@@ -4,12 +4,14 @@ import assert from 'node:assert/strict';
 import { customLayerCollector, loadWorker } from '../bench/workerHarness.mjs';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import { bindCollect, collectMemory, useBodies, useSortY } from '../bench/preRenderCollectKernel.mjs';
+import { collectVisibleEntitiesJs } from '../reference/preRenderCollectJs.mjs';
 import { Query } from '../../src/core/query.js';
 import { Layer } from '../../src/core/layer.js';
+import { Transform } from '../../src/components/transform.js';
 
 // E-76 W4b, the sprite collect kernel (wasm/preRenderCollect.c). On the same bytes, the worker's collect through
 // the kernel must leave the main collector, a custom layer's collector, the visible count and the overflow warning
-// exactly as the shipped collectVisibleEntities leaves them: every sprite with no layer mask written by the
+// exactly as the JS collect (tests/reference) leaves them: every sprite with no layer mask written by the
 // kernel (with a body, its published pose; with Y-sort, its foot line), every masked one, and every one whose
 // sort line needs a frame not resolved yet, through collectRenderable at its place in the walk.
 
@@ -143,7 +145,16 @@ const CASES = [
   { name: 'Y-sort and bodies, the list, masked', skipCull: false, rot: 0, masked: true, list: true, sortY: true, bodies: {} },
   { name: 'Y-sort, a full collector', skipCull: true, rot: 0, maxItems: 1000, sortY: true },
   { name: 'Y-sort on halves and negative zeros (Math.round)', skipCull: true, rot: 0, sortY: true, halves: true },
+  { name: 'Y-sort before the emit kernel\'s texture tables (no frame sizes)', skipCull: false, rot: 0, sortY: true, noTables: true },
 ];
+
+/** Y-sort with no texture metadata: the emit kernel holds no frame sizes, and the JS has none. */
+function beforeTables(pre) {
+  pre._emitWasm.texturesReady = false;
+  pre._emitWasm.frames = 0;
+  pre.frameWidth = null;
+  pre.frameHeight = null;
+}
 
 // Feet-anchored sprites whose sort line is the pose itself, on the values Math.round treats apart.
 const HALVES = [-0.5, -1.5, -2.5, -0.25, -0, 0, 0.5, 1.5, 2.5, -0.75, 8388607.5, -8388607.5, 1e-30, -1e-30];
@@ -172,6 +183,7 @@ for (const c of CASES) {
       camera(pre, c);
       if (c.bodies) useBodies(pre, m, c.bodies);
       if (c.sortY) useSortY(pre, m, (i) => (i * 7) % m.views.frameW.length);
+      if (c.noTables) beforeTables(pre);
       if (c.halves) halves(m);
       if (c.list) {
         const rng = mulberry32(99);
@@ -187,8 +199,7 @@ for (const c of CASES) {
       reset(pre, m, fx);
       const warn = console.warn;
       console.warn = () => {};
-      pre._collectWasm = null;
-      pre.collectVisibleEntities();
+      collectVisibleEntitiesJs(pre);
       const js = snapshot(pre, m, fx);
 
       reset(pre, m, fx);
@@ -210,3 +221,46 @@ for (const c of CASES) {
     }
   });
 }
+
+// Close-out group B: the collect runs only in its kernel. A frame it cannot take (no collect regions, as in a memory
+// made by hand; a column outside the memory) collects no sprite, and pre-render says why once.
+test('a frame the collect kernel cannot take collects no sprite, and says so once', async () => {
+  Layer.reset();
+  Layer.initializeFromConfig({ fx: {} }, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const errors = [];
+  const error = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    const m = collectMemory(pre, N, N);
+    const fx = Layer.get('fx').id;
+    fill(m, 77, { masked: null });
+    camera(pre, { skipCull: true, rot: 0 });
+    const kernel = await bindCollect(m);
+    pre._collectRefusedWarned = false;
+    reset(pre, m, fx);
+    pre._collectWasm = null;
+    pre.collectVisibleEntities();
+    pre.collectVisibleEntities();
+    assert.equal(pre._renderableCount, 0, 'no kernel: nothing collected');
+    assert.equal(errors.filter((e) => e.includes('no collect regions')).length, 1, 'said once');
+
+    pre._collectRefusedWarned = false;
+    const x = Transform.x;
+    Transform.x = new Float32Array(N);
+    reset(pre, m, fx);
+    pre._collectWasm = kernel;
+    pre.collectVisibleEntities();
+    Transform.x = x;
+    assert.equal(pre._renderableCount, 0, 'a column outside the memory: nothing collected');
+    assert.equal(errors.filter((e) => e.includes('outside the render-queue memory')).length, 1);
+
+    reset(pre, m, fx);
+    pre.collectVisibleEntities();
+    pre._collectWasm = null;
+    assert.ok(pre._renderableCount > 100, `the column back, the kernel collects (${pre._renderableCount})`);
+  } finally {
+    console.error = error;
+    Layer.reset();
+  }
+});

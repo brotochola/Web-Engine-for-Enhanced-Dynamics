@@ -320,8 +320,6 @@ export type SceneConfig = Record<string, unknown> & {
      * double test, the JavaScript build's flags exactly.
      */
     particleListsF32?: boolean;
-    /** Pre-render's sprite collect (Transform and Collider move into the render-queue memory; with physics, into Box2D's). */
-    preRenderCollect?: boolean;
     /** The bullet tick and its linecasts in one WASM call per frame (physics scenes: the pool moves into Box2D's memory). */
     bulletTick?: boolean;
     /** Pre-render's per-light visibility sweep with raycasted lighting (its scratch lives in a WebAssembly.Memory of pre-render's own). */

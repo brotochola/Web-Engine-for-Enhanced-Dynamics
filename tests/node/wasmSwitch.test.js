@@ -217,8 +217,8 @@ test('with a MESH layer MeshGeometry and the MESH layers\' batches live in the m
   assert.equal(buildScene({}, null, { layers: meshes.layers }).meshMemory, null, 'no mesh vertices, no MeshGeometry');
 });
 
-test('wasm.preRenderCollect puts Transform, its pose and Collider in the render-queue memory when physics is off (W4b)', () => {
-  assert.equal(WASM_DEFAULTS.preRenderCollect, true);
+test('the collect puts Transform, its pose and Collider in the render-queue memory when physics is off (W4b, no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'preRenderCollect'), false);
   const noPhysics = { physics: { maxJoints: 0, enabled: false } };
   const on = buildScene({}, null, noPhysics);
   const c = on.renderQueueMemory?.layout.collect;
@@ -231,11 +231,6 @@ test('wasm.preRenderCollect puts Transform, its pose and Collider in the render-
   assert.equal(Transform.active.buffer, on.renderQueueMemory.buffer);
 
   assert.equal(buildScene({}, null).renderQueueMemory.layout.collect, null, 'physics on: the pose is in Box2D\'s heap');
-  // Switched off, pre-render does not run the collect kernel, but the blocks stay: the emit's glow rows read
-  // Transform's pose there.
-  const off = buildScene({ preRenderCollect: false }, null, noPhysics);
-  assert.ok(off.renderQueueMemory.layout.collect, 'off: the blocks stay');
-  assert.equal(off.buffers.componentData.Transform, off.renderQueueMemory.buffer);
 });
 
 test('the worker that sorts has its painter state in the render-queue memory (W10, no switch)', () => {

@@ -5,7 +5,7 @@
  * them where the shipped PreRenderWorker.collectVisibleEntities reads them (Transform, SpriteRenderer, Collider,
  * the worker's main collector), and leaves room for the kernel's list, table and results, as the render-queue
  * memory's collect regions do. `bindCollect` binds the worker's kernel there; with `pre._collectWasm` set the
- * shipped collect takes the kernel, with it null the JS loop. The bodies' columns (RigidBody.active, two pose
+ * shipped collect takes it (the JS loop it replaced is tests/reference/preRenderCollectJs.mjs). The bodies' columns (RigidBody.active, two pose
  * generations) and the sort line's (scale, own facing, last texture, the frame sizes) are laid too: `useBodies`
  * and `useSortY` point the worker at them, as its pose latch and Y-sort do.
  */

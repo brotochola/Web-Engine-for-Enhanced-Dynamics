@@ -174,11 +174,7 @@ test('the spec: with physics the collect asks for the body variant, which needs 
     },
   });
   assert.ok(renderQueueMemorySpec(scene(true)).collect.rigidBodyBytes > 0);
-  assert.ok(renderQueueMemorySpec(scene(true, { preRenderCollect: false })).collect.rigidBodyBytes > 0,
-    'the collect kernel off, its blocks stay: the emit reads Transform there');
   assert.equal(renderQueueMemorySpec(scene(false)).collect.rigidBodyBytes, 0, 'without physics, the Weed pose variant');
-  assert.equal(box2dBlockPlan(scene(true)).bytes, box2dBlockPlan(scene(true, { preRenderCollect: false })).bytes,
-    'the block is the same either way');
 });
 
 test('the spatial publish regions sit in the block after the render-queue part, every region shifted', async () => {

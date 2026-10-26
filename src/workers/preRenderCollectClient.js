@@ -2,8 +2,8 @@
 // keeps every column pre-render's sprite collect reads (Transform and its pose, SpriteRenderer, Collider; with
 // physics, Phase 4, RigidBody and the published poses in Box2D's block) and the main collector it writes
 // (renderQueueMemoryRegions' collect spec). collect_sprites and collect_sprites_turned walk the sprites as
-// collectVisibleEntities' two loops do; a sprite with a layer mask, or whose sort line needs a frame not resolved
-// yet, is handed back for collectRenderable in JS.
+// collectVisibleEntities' two loops did; a sprite with a layer mask, or whose sort line needs a frame not resolved
+// yet, is handed back for collectRenderable in JS. The JS loops are tests/reference/preRenderCollectJs.mjs.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { COLLECT_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
@@ -49,8 +49,9 @@ export async function bindPreRenderCollect(memory, collect) {
 /**
  * The column table for this frame (the collector's pose columns are the queue buffer being written), and b.mode:
  * the bodies' poses when the worker latched one (the generation this frame reads, and the one before it), the
- * foot-line sort key when the worker Y-sorts (with the emit kernel's copy of the frame sizes). False when a column
- * the collect reads is not in the memory, and the JS collect runs instead.
+ * foot-line sort key when the worker Y-sorts (with the emit kernel's copy of the frame sizes: none before its texture
+ * tables, and a sprite whose frame is then out of them is sized 0). False when a column the collect reads is not in
+ * the memory: the frame collects no sprite.
  */
 export function writeCollectColumns(b, worker, Transform, SpriteRenderer, Collider) {
   const t = b.table;
@@ -104,7 +105,7 @@ export function writeCollectColumns(b, worker, Transform, SpriteRenderer, Collid
   if (live) mode |= COLLECT_MODE_BODIES;
   const sortY = Boolean(worker._entitySortY);
   const emit = sortY ? worker._emitWasm : null;
-  if (sortY && (!emit || !emit.texturesReady)) ok = false;
+  if (sortY && !emit) ok = false;
   put('sAnchorX', sortY ? SpriteRenderer.anchorX : null, sortY);
   put('sAnchorY', sortY ? SpriteRenderer.anchorY : null, sortY);
   put('sScaleX', sortY ? SpriteRenderer.scaleX : null, sortY);

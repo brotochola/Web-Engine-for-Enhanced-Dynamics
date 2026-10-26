@@ -2,31 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { bindCollect, collectMemory } from '../bench/preRenderCollectKernel.mjs';
 import { Transform } from '../../src/components/transform.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
-import { Collider } from '../../src/components/collider.js';
 import { viewWorldToScreen } from '../../src/util/viewBounds.js';
 
 // E-51. With the camera turned, pre-render culled with the box around the
 // turned view (about 2x the view at 45 degrees on 16:9) and queued everything
 // in it. The turned path tests each sprite in view space. Kept: exactly the
 // sprites whose turned screen position is within the canvas, plus the culling
-// margin and the sprite's own extent, as viewWorldToScreen puts them.
+// margin and the sprite's own extent, as viewWorldToScreen puts them. The collect is the shipped one, its kernel
+// (preRenderCollect.wasm) on a memory with every column it reads.
 
 const N = 60 * 40;
 const CW = 1280;
 const CH = 720;
 
-function setup(pre, rot, zoom) {
-  Transform.x = new Float32Array(N);
-  Transform.y = new Float32Array(N);
-  Transform.active = new Uint8Array(N).fill(1);
-  SpriteRenderer.active = new Uint8Array(N).fill(1);
-  SpriteRenderer.renderVisible = new Uint8Array(N).fill(1);
-  SpriteRenderer.spritesheetId = new Uint16Array(N).fill(1);
-  SpriteRenderer.boundsHalfW = new Float32Array(N);
-  SpriteRenderer.boundsHalfH = new Float32Array(N);
-  Collider.visualRange = new Float32Array(N);
+/** The sprites and camera; returns the entities the collect queued, in order. */
+async function setup(pre, rot, zoom) {
+  const m = collectMemory(pre, N, N, { mask: false });
+  Transform.active.fill(1);
+  SpriteRenderer.active.fill(1);
+  SpriteRenderer.renderVisible.fill(1);
+  SpriteRenderer.spritesheetId.fill(1);
   for (let i = 0; i < N; i++) {
     Transform.x[i] = (i % 60) * 40 - 200;
     Transform.y[i] = ((i / 60) | 0) * 40 - 300;
@@ -45,10 +43,14 @@ function setup(pre, rot, zoom) {
   pre._frameCameraY = 150;
   pre._frameCameraRot = rot;
   pre.visibleEntitiesCount = 0;
-  const got = [];
-  pre.collectRenderable = (_type, i) => got.push(i);
+  pre.renderQueueEnabled = true;
+  pre._entitySortY = false;
+  pre._poseX = null;
+  pre._rbActive = null;
+  pre._renderableCount = 0;
   pre._collectEntityGlow = () => {};
-  return got;
+  pre._collectWasm = await bindCollect(m);
+  return () => Array.from(m.views.oIndex.subarray(0, pre._renderableCount));
 }
 
 function expected(rot, zoom) {
@@ -72,18 +74,19 @@ function expected(rot, zoom) {
 test('a turned camera queues exactly the sprites in the turned view', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   for (const [rot, zoom] of [[Math.PI / 4, 1], [0.3, 0.7], [-1.1, 1.6], [Math.PI, 1]]) {
-    const got = setup(pre, rot, zoom);
+    const queued = await setup(pre, rot, zoom);
     pre.collectVisibleEntities();
     const want = expected(rot, zoom);
-    assert.deepEqual(got, want, `rot ${rot} zoom ${zoom}`);
+    assert.deepEqual(queued(), want, `rot ${rot} zoom ${zoom}`);
     assert.equal(pre.visibleEntitiesCount, want.length);
   }
 });
 
 test('at 45 degrees the turned view keeps about half of the box around it', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-  const turned = setup(pre, Math.PI / 4, 1);
+  const queued = await setup(pre, Math.PI / 4, 1);
   pre.collectVisibleEntities();
+  const turned = queued();
   // The box the old cull used, with the same margin and extents.
   const c = Math.SQRT1_2;
   const boxHalf = (CW * 0.5 * c + CH * 0.5 * c);
@@ -102,7 +105,7 @@ test('at 45 degrees the turned view keeps about half of the box around it', asyn
 
 test('rotation 0 keeps the screen box as before', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-  const got = setup(pre, 0, 1);
+  const queued = await setup(pre, 0, 1);
   pre.collectVisibleEntities();
-  assert.deepEqual(got, expected(0, 1));
+  assert.deepEqual(queued(), expected(0, 1));
 });
