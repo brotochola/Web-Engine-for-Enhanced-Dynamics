@@ -71,6 +71,12 @@ const FIELDS_BY_KIND = [
 ].map((fields) => new Set(fields));
 const ALL_FIELDS = new Set(FIELDS_BY_KIND.flatMap((fields) => [...fields]));
 
+/**
+ * What `spawn()` passes for a class with spawnParams when the caller gives no config (ED-42): the engine only reads
+ * it, so one frozen object serves every such spawn instead of a new `{}` each.
+ */
+export const NO_SPAWN_CONFIG = Object.freeze({});
+
 /** The points default when a declaration gives none: one empty array per realm, read-only. */
 const NO_POINTS = new Float64Array(0);
 

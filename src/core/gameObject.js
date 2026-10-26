@@ -74,7 +74,7 @@ import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from './messages.js';
 import { Tween } from './tween.js';
-import { fillSpawnParams, releaseSpawnParams } from './spawnParams.js';
+import { fillSpawnParams, releaseSpawnParams, NO_SPAWN_CONFIG } from './spawnParams.js';
 import { checkSpawnConfig } from './debug/spawnParamsCheck.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
@@ -2636,14 +2636,19 @@ export class GameObject {
    * @param {Object} [spawnConfig] - Initial configuration (position, velocity, etc.)
    * @returns {GameObject|null}
    */
-  static spawn(spawnConfig = {}) {
+  static spawn(spawnConfig) {
     const EntityClass = this;
     if (typeof spawnConfig === 'function' || EntityClass === GameObject) {
       const name = typeof spawnConfig === 'function' ? spawnConfig.name : 'Enemy';
       console.error(`WeedJS: spawn on the entity class: ${name}.spawn(config).`);
       return null;
     }
-    if (spawnConfig === null) spawnConfig = {};
+    if (spawnConfig === undefined || spawnConfig === null) {
+      // ED-42: a class with spawnParams only reads the config (its onSpawned gets the
+      // engine's params object), so it shares one empty one. A class without them gets
+      // a fresh object: its onSpawned may write into the config it receives.
+      spawnConfig = EntityClass.spawnParams ? NO_SPAWN_CONFIG : {};
+    }
 
     if (isMainThread()) {
       // The page reserves the index; a logic worker sets the entity up.

@@ -14,7 +14,7 @@ import {
   SPAWN_PARAMS_STACK_DEPTH,
 } from '../../src/core/spawnParams.js';
 
-// VISUAL_EDITOR_PLAN.md ED-41: static spawnParams. The classes register through the logic worker's own
+// VISUAL_EDITOR_PLAN.md ED-41 and ED-42: static spawnParams. The classes register through the logic worker's own
 // createGameObjectInstances, the path a scene takes, and spawn through the shipped GameObject.spawn → _spawnAt.
 
 class Plank extends GameObject {
@@ -81,6 +81,23 @@ test('the params object is the engine\'s, reused by the next spawn of the class'
   assert.equal(Plank.objects[0], Plank.objects[1], 'one object per class, refilled');
   assert.equal(Plank.objects[1].width, 220, 'a key the second spawn left out is back to its default');
   assert.deepEqual(config, { x: 1, y: 2, width: 300 }, 'the caller\'s config is not written to');
+});
+
+test('spawn() with no config: a class with spawnParams gets every default from one shared object (ED-42)', async () => {
+  await register([[Plank, 4], [Plain, 4]]);
+  Plank.seen.length = 0;
+  Plank.spawn();
+  Plank.spawn(null);
+  assert.equal(Plank.seen[0].width, 220);
+  assert.equal(Plank.seen[1].label, 'plank');
+  assert.equal(Plank.seen[1].x, 0);
+  // A class without params still gets a fresh object it may write into.
+  Plain.seen.length = 0;
+  Plain.spawn();
+  Plain.spawn();
+  assert.notEqual(Plain.seen[0], Plain.seen[1]);
+  assert.equal(Object.isFrozen(Plain.seen[0]), false);
+  Plain.seen[0].written = true;
 });
 
 test('a class without spawnParams gets the caller\'s object, as before', async () => {
