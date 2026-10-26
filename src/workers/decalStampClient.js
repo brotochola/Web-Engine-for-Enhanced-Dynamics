@@ -6,9 +6,8 @@
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { DECAL_STAMP_BYTES, DECAL_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./decalStamp.wasm', import.meta.url);
 
 /** wasm/decalStamp.c's table, slot for slot. */
 export const DECAL_SLOTS = ['tiles', 'dirty', 'tilesX', 'tilesY', 'tilePixels', 'stamps', 'columns', 'columnsCap', 'flags'];
@@ -17,7 +16,7 @@ if (DECAL_SLOTS.length > DECAL_TABLE_SLOTS) throw new Error('decalStamp: the col
 export const DECAL_F_SCALAR = 1;
 
 export async function bindDecalStamp(memory, layout, tilesX, tilesY) {
-  const k = await loadWasmKernel('decalStamp', wasmUrl, memory, ['stamp_tiles']);
+  const k = await loadWasmKernel('decalStamp', engineWasmUrl, memory, ['stamp_tiles']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, layout.tableByte, DECAL_SLOTS.length);
   table[0] = layout.tilesByte;

@@ -6,9 +6,8 @@
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { NAV_MAX_BUCKETS, NAV_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./navFlowfield.wasm', import.meta.url);
 
 /** wasm/navFlowfield.c's column table, slot for slot. */
 export const FLOWFIELD_SLOTS = ['walk', 'width', 'height', 'maxDist', 'state', 'dist', 'dir', 'next', 'prev', 'head', 'sums', 'quotient', 'out'];
@@ -27,7 +26,7 @@ export async function bindNavFlowfield(memory, nav, grid) {
   if (!grid.walkability || grid.walkability.buffer !== buffer) throw new Error('navFlowfield: the walkability is not in the memory');
   if (grid.gridWidth * grid.gridHeight !== nav.cells) throw new Error('navFlowfield: the grid does not match the memory');
   if (!(grid.maxDistance >= 0 && grid.maxDistance < NAV_MAX_BUCKETS)) throw new Error('navFlowfield: the distance buckets outgrow their region');
-  const k = await loadWasmKernel('navFlowfield', wasmUrl, memory, ['compute_flowfield']);
+  const k = await loadWasmKernel('navFlowfield', engineWasmUrl, memory, ['compute_flowfield']);
   const t = new Uint32Array(buffer, nav.tableByte, FLOWFIELD_SLOTS.length);
   t[SLOT.walk] = grid.walkability.byteOffset;
   t[SLOT.width] = grid.gridWidth;

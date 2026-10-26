@@ -12,7 +12,7 @@ import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/render/decalPremultiply.wasm'));
+const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/wasm/engine.wasm'));
 
 async function bind(maxPixels) {
   const bytes = maxPixels * 4;

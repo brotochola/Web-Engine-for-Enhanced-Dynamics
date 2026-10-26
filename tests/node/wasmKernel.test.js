@@ -10,7 +10,7 @@ import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.
 // E-76 T5: the shared kernel loader links env.memory and nothing else, compiles each module once,
 // and loads from a file URL (Node), a data URL (the bundle: gzipped) or fetch (the browser).
 
-const SHIPPED = new URL('../../src/workers/spatialPublish.wasm', import.meta.url);
+const SHIPPED = new URL('../../src/wasm/engine.wasm', import.meta.url);
 const EMCC = new URL('../fixtures/spatialPublish.emcc.wasm', import.meta.url);
 
 test('loadWasmKernel links the shipped spatial module from a file URL and a data URL', async () => {

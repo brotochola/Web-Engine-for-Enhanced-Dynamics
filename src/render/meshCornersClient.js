@@ -13,9 +13,8 @@
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { MESH_CORNER_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
 import { COLLIDER_FILL_FLOATS, MESH_UV_FILL_FLOATS } from './colliderFillBatch.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./meshCorners.wasm', import.meta.url);
 
 /** wasm/meshCorners.c's column table, slot for slot. */
 export const MESH_CORNER_SLOTS = [
@@ -92,7 +91,7 @@ export async function bindMeshCorners(memory, tableByte, geom) {
   if (geom.vertCount.length !== e || geom.indexOffset.length !== e || geom.indexCount.length !== e) throw new Error('meshCorners: entity columns of different lengths');
   if (geom.vertexY.length !== v || geom.uvU.length !== v || geom.uvV.length !== v) throw new Error('meshCorners: vertex columns of different lengths');
   const exportName = wide ? REWRITE_EXPORT_U32 : REWRITE_EXPORT;
-  const rewrite = (await loadWasmKernel('meshCorners', wasmUrl, memory, [exportName]))[exportName];
+  const rewrite = (await loadWasmKernel('meshCorners', engineWasmUrl, memory, [exportName]))[exportName];
   const table = new Uint32Array(buffer, tableByte, MESH_CORNER_SLOTS.length);
   table[VERT_OFFSET] = geom.vertOffset.byteOffset;
   table[VERT_COUNT] = geom.vertCount.byteOffset;

@@ -8,9 +8,8 @@
 import { loadWasmKernel } from '../../util/wasmKernel.js';
 import { GATHER_EVENT_BYTES, GATHER_TABLE_SLOTS } from '../../util/wasmMemoryMap.js';
 import { ShapeType } from '../../box2d/box2dConstants.js';
+import { engineWasmUrl } from '../../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./visibilityGather.wasm', import.meta.url);
 
 /** wasm/visibilityGather.c's column table, slot for slot. */
 export const GATHER_SLOTS = [
@@ -47,7 +46,7 @@ export const GATHER_EVENT_F64 = GATHER_EVENT_BYTES >> 3;
  * @param {{ layout: Record<string, number> }} vm
  */
 export async function bindVisibilityGather(memory, v, vm) {
-  const k = await loadWasmKernel('visibilityGather', wasmUrl, memory, ['gather_light', 'gather_light_u32']);
+  const k = await loadWasmKernel('visibilityGather', engineWasmUrl, memory, ['gather_light', 'gather_light_u32']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, v.tableByte, GATHER_SLOTS.length);
   table.fill(0);

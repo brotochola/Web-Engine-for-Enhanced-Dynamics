@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W14): the particle worker's flowfield in WASM (wasm/navFlowfield.c, src/workers/navFlowfield.wasm)
+ * Kernel (E-76 W14): the particle worker's flowfield in WASM (wasm/navFlowfield.c, in src/wasm/engine.wasm)
  * against the JS search the engine shipped (tests/reference/navFlowfield.mjs), on a real particle worker with
  * navStressScene's grid: a 2048 × 2048 world in 32 px cells (64 × 64), no walls, 64 flowfield slots.
  *
@@ -41,7 +41,7 @@ import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './micr
 import { initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, TIMING_MARKER, warmWasm } from './wasmKernelHelpers.mjs';
 
-const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/workers/navFlowfield.wasm'));
+const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/wasm/engine.wasm'));
 export { FLOWFIELD_SLOTS };
 /** navFlowfield.c's QUOTIENT_BYTES. */
 const QUOTIENT_BYTES = 190;

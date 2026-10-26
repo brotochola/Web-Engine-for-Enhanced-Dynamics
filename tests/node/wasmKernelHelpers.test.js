@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { compareSamples, instantiateKernel, kernelEntry } from '../bench/wasmKernelHelpers.mjs';
+import { compareSamples, instantiateKernel, kernelBinaryPath, kernelEntry } from '../bench/wasmKernelHelpers.mjs';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
 
 // E-76 T4: the WASM kernel harness. Its verdict rule is HOW_WE_MEASURE's (3 % and 90 % of the
@@ -25,7 +25,11 @@ test('compareSamples: a verdict needs 3 % and 90 % of the cross comparisons', ()
 });
 
 test('instantiateKernel links the shared memory and nothing else', () => {
-  assert.equal(kernelEntry('spatialPublish').output, 'src/workers/spatialPublish.wasm');
+  // Its own build is a test fixture; it ships in engine.wasm, which instantiateKernel reads.
+  assert.equal(kernelEntry('spatialPublish').output, 'tests/fixtures/wasm/spatialPublish.wasm');
+  const slashes = (p) => p.split('\\').join('/');
+  assert.ok(slashes(kernelBinaryPath('spatialPublish')).endsWith('src/wasm/engine.wasm'));
+  assert.ok(slashes(kernelBinaryPath('spatialPublish', { separate: true })).endsWith('tests/fixtures/wasm/spatialPublish.wasm'));
   const mem = createSpatialPublishMemory(64, 4, 1);
   const exports = instantiateKernel('spatialPublish', mem.memory);
   assert.equal(typeof exports.publish_batch, 'function');

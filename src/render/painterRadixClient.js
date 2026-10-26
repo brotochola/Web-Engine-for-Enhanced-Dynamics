@@ -15,6 +15,7 @@
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { PAINTER_HIST_WORDS, PAINTER_SLOTS } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
 /**
  * Is `state.order` (last frame's permutation) still a valid slot set for this
@@ -45,10 +46,8 @@ export function painterSameSet(state, idxE, ne) {
   return true;
 }
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./painterRadix.wasm', import.meta.url);
 
-export const PAINTER_RADIX_URL = wasmUrl;
+export const PAINTER_RADIX_URL = engineWasmUrl;
 export { PAINTER_HIST_WORDS, PAINTER_SLOTS };
 /** Radix variants: each has radix_sort_*, painter_order_* and reinsert_*. */
 export const CORES = ['scalar', 'kv8', 'kv11', 'adaptive', 'simd'];
@@ -85,7 +84,7 @@ export function variantExports(variant) {
 }
 
 /** The kernel's exports on `memory` (every variant's, or `exportNames`). */
-export function loadPainterRadix(memory, url = wasmUrl, exportNames = KERNEL_EXPORTS) {
+export function loadPainterRadix(memory, url = engineWasmUrl, exportNames = KERNEL_EXPORTS) {
   return loadWasmKernel('painterRadix', url, memory, exportNames);
 }
 
@@ -183,7 +182,7 @@ export function resetWasmPainterState(state) {
  * @param {{ rows: number, tableByte: number, idxEntityByte: number, idxGlowByte: number } & Record<string, number>} layout
  */
 export async function bindPainterRadix(memory, layout, variant = PAINTER_VARIANT) {
-  const exports = await loadPainterRadix(memory, wasmUrl, variantExports(variant));
+  const exports = await loadPainterRadix(memory, engineWasmUrl, variantExports(variant));
   return { kernel: painterRadixVariant(exports, variant, memory.buffer), layout };
 }
 

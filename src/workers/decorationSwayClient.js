@@ -13,9 +13,8 @@
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { poolSlotBytes } from '../util/poolSlotWidth.js';
 import { SWAY_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./decorationSway.wasm', import.meta.url);
 
 /** wasm/decorationSway.c's column table, slot for slot. */
 export const SWAY_SLOTS = [
@@ -53,7 +52,7 @@ export async function bindDecorationSway(memory, sway, { f32 = false } = {}) {
   const wide = (sway.slotBytes ?? poolSlotBytes(sway.decorations | 0)) === 4;
   const exportName = `${f32 ? 'sway_decorations_f32x4' : 'sway_decorations'}${wide ? '_u32' : ''}`;
   const freeName = wide ? 'sway_free_u32' : 'sway_free';
-  const k = await loadWasmKernel('decorationSway', wasmUrl, memory, [exportName, freeName, 'sway_trig']);
+  const k = await loadWasmKernel('decorationSway', engineWasmUrl, memory, [exportName, freeName, 'sway_trig']);
   const buffer = memory.buffer;
   return {
     buffer,

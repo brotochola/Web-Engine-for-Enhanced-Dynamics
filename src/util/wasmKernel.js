@@ -5,13 +5,17 @@
 // to the same rule: it links `env.memory` and nothing else, so a module that needs another import
 // fails here with its name instead of being answered by a stub that returns 0.
 //
-// Each module compiles once per worker; every instance after the first reuses the compiled module.
-// Callers keep the literal `new URL('./<name>.wasm', import.meta.url)` in their own module and pass
-// the URL: webpack emits the asset only for that pattern, and the bundle rewrites it to a data URL
+// Each module compiles once per worker, and is instantiated once per memory: the engine module (src/wasm/engine.js)
+// holds every kernel, so the clients of one memory share its instance, each taking its own exports. A kernel has no
+// globals and no data of its own, only the memory it imports, so sharing the instance shares nothing else.
+// The callers pass the engine module's URL, the literal `new URL('./engine.wasm', import.meta.url)` in
+// src/wasm/engine.js: webpack emits the asset only for that pattern, and the bundle rewrites it to a data URL
 // (scripts/buildBundle.js), because a blob worker has no directory to fetch from; a gzipped one
 // (data:application/gzip), which DecompressionStream inflates, as the bundle's Box2D loader does.
 
 const compiled = new Map();
+// The instances of each module (by URL), one per memory.
+const instances = new Map();
 
 function bytesFromDataUrl(href) {
   const binary = atob(href.slice(href.indexOf(',') + 1));
@@ -55,8 +59,8 @@ export function compileWasmKernel(name, url) {
 
 /**
  * Instantiate kernel `name` on `memory` and return the named exports.
- * @param {string} name module name, for errors (`spatialPublish`)
- * @param {URL | string} url the module's URL, from `new URL('./<name>.wasm', import.meta.url)`
+ * @param {string} name the kernel's name, for errors (`spatialPublish`)
+ * @param {URL | string} url the module's URL (src/wasm/engine.js' engineWasmUrl; a test may pass one kernel's own build)
  * @param {WebAssembly.Memory} memory the shared memory the kernel works in
  * @param {string[]} exportNames the functions the caller uses
  * @returns {Promise<Record<string, Function>>}
@@ -76,9 +80,19 @@ export async function loadWasmKernel(name, url, memory, exportNames) {
       throw new Error(`${name}.wasm imports ${imp.module}.${imp.name} (${imp.kind}); a kernel may import only env.memory`);
     }
   }
+  const href = String(url);
+  let byMemory = instances.get(href);
+  if (!byMemory) instances.set(href, (byMemory = new WeakMap()));
+  let pending = byMemory.get(memory);
+  if (!pending) {
+    pending = WebAssembly.instantiate(module, { env: { memory } });
+    // A failed instantiation is not cached either.
+    pending.catch(() => byMemory.delete(memory));
+    byMemory.set(memory, pending);
+  }
   let instance;
   try {
-    instance = await WebAssembly.instantiate(module, { env: { memory } });
+    instance = await pending;
   } catch (err) {
     throw named(err);
   }

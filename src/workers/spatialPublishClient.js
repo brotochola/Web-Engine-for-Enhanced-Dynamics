@@ -4,10 +4,8 @@
 
 import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
 import { loadWasmKernel } from '../util/wasmKernel.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./spatialPublish.wasm', import.meta.url);
-const gatherUrl = new URL('./spatialGather.wasm', import.meta.url);
 
 /**
  * The WASM candidate gather (E-78) for spatial worker `workerIndex`: its kernel and its slices of
@@ -24,7 +22,7 @@ export async function bindSpatialGather(memory, layout, workerIndex, entityCount
   // W8b: the _u32 exports for 32-bit entity ids (the lists, candidate rows and grid cells hold ids of that width).
   const wide = entityIdBytes() === 4;
   const names = wide ? ['gather_batch_u32', 'order_batch_by_cell_u32'] : ['gather_batch', 'order_batch_by_cell'];
-  const k = await loadWasmKernel('spatialGather', gatherUrl, memory, names);
+  const k = await loadWasmKernel('spatialGather', engineWasmUrl, memory, names);
   const gather = k[names[0]];
   const order = k[names[1]];
   const count = entityCount | 0;
@@ -78,7 +76,7 @@ export async function bindSpatialGather(memory, layout, workerIndex, entityCount
 export async function bindSpatialPublish(memory, layout, workerIndex, entityCount, maxNeighbors) {
   // W8b: publish_batch_u32 for 32-bit entity ids.
   const name = entityIdBytes() === 4 ? 'publish_batch_u32' : 'publish_batch';
-  const publish = (await loadWasmKernel('spatialPublish', wasmUrl, memory, [name]))[name];
+  const publish = (await loadWasmKernel('spatialPublish', engineWasmUrl, memory, [name]))[name];
   const count = entityCount | 0;
   const stride = 1 + (maxNeighbors | 0);
   // Each spatial worker's batch list is its own slice, on its own cache lines.

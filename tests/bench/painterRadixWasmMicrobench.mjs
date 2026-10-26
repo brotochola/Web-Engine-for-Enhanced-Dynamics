@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W10): the painter sort in WASM (wasm/painterRadix.c, src/render/painterRadix.wasm) against the
+ * Kernel (E-76 W10): the painter sort in WASM (wasm/painterRadix.c, in src/wasm/engine.wasm) against the
  * JS radixPainterOrder and reinsertChangedSlots (src/util/sortIndexByKey.js), on the bytes both read: the
  * float32 sort key columns live in one shared WebAssembly.Memory (as in the render-queue memory, where
  * pre-render writes them), the JS keeps its createPainterState arrays and its own copy of the slot list, the

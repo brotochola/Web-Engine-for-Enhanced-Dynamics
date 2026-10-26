@@ -461,7 +461,7 @@ test('mutant: an owner off by one is caught', () => {
 
 test('the shipped solidSegments.wasm writes the screening module\'s f32x4 bits', async () => {
   const k = await createSolidSegmentsKernel({ solidBytes: 8 << 20 });
-  const url = new URL('../../src/render/visibility/solidSegments.wasm', import.meta.url);
+  const url = new URL('../../src/wasm/engine.wasm', import.meta.url);
   const shipped = (await loadWasmKernel('solidSegments', url, k.memory, ['collect_solid_f32x4'])).collect_solid_f32x4;
   const cases = [...corpus(), ...binEdgeCases(), ...slackCases(200)];
   for (const frame of sceneFrames({ entityBase: 2000 }).frames) {

@@ -1,4 +1,4 @@
-// E-76 W22: the double sway kernel (sway_decorations in src/workers/decorationSway.wasm, from wasm/decorationSway.c) against
+// E-76 W22: the double sway kernel (sway_decorations in src/wasm/engine.wasm, from wasm/decorationSway.c) against
 // the JS sway it replaced (tests/reference/decorationSwayJs.mjs, its bucket path) on a real
 // particle worker, every array the sway reads in one shared memory as decorationSwayWasmMicrobench lays it
 // out, the kernel run through that bench's wrapper (swayDecorationsWasm: the per-bucket Math.sin / Math.cos

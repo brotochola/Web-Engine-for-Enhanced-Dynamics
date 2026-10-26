@@ -8,9 +8,8 @@
 import { loadWasmKernel } from '../../util/wasmKernel.js';
 import { VISIBILITY_SWEEP_RESULT_WORDS, VISIBILITY_SWEEP_TABLE_SLOTS } from '../../util/visibilityMemory.js';
 import { POLAR_BINS, SWEEP_CAPS, copySweepTables } from './angularSweep.js';
+import { engineWasmUrl } from '../../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./visibilitySweep.wasm', import.meta.url);
 
 /** wasm/visibilitySweep.c's table, slot for slot. */
 export const SWEEP_SLOTS = [
@@ -58,7 +57,7 @@ export const SWEEP_EXPORTS = Object.freeze({ f32: 'sweep_light_f32', simd: 'swee
 export async function bindVisibilitySweep(vm, { maxVerts, f32 = true }) {
   const variant = f32 ? 'f32' : 'simd';
   const exportName = SWEEP_EXPORTS[variant];
-  const k = await loadWasmKernel('visibilitySweep', wasmUrl, vm.memory, [exportName]);
+  const k = await loadWasmKernel('visibilitySweep', engineWasmUrl, vm.memory, [exportName]);
   const L = vm.layout;
   const buffer = vm.buffer;
   const { maxEvents, occCache, maxActive, fullCircleSegs } = SWEEP_CAPS;

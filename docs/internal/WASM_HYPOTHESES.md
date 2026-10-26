@@ -73,7 +73,7 @@ correctness-sensitive changes; float32 maths in C against double maths in JS bre
 
 ## A defect found in today's module (REVIEW_PLAN N-62)
 
-`wasm-dis` on the shipped [`src/workers/spatialPublish.wasm`](../../src/workers/spatialPublish.wasm)
+`wasm-dis` on the shipped `src/workers/spatialPublish.wasm`
 (1354 bytes, byte-identical to `tests/bench/wasm/spatialPublish.wasm`):
 
 - It was built by emcc, not freestanding. It imports `wasi_snapshot_preview1.args_get`,

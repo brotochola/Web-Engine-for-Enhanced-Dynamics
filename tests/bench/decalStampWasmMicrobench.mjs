@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W26): the particle worker's decal stamping in WASM (wasm/decalStamp.c, src/workers/decalStamp.wasm)
+ * Kernel (E-76 W26): the particle worker's decal stamping in WASM (wasm/decalStamp.c, in src/wasm/engine.wasm)
  * against the JS stamp the engine shipped (Decal.stampToTileBuffers, now tests/reference/decalStamp.mjs), on the stamps
  * decalStampStressScene makes: DecalStampDriver's 768 seeded Decal.stamp calls a tick (blood.png, 32 × 32;
  * scale 0.4–2, alpha 0.4–1, a random tint, every third one multiply) on a 1920 × 1080 world, decalsTileSize
@@ -38,7 +38,7 @@ import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-export const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/workers/decalStamp.wasm'));
+export const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/wasm/engine.wasm'));
 
 /** decalStamp.c's table, slot for slot. */
 export const DECAL_SLOTS = ['tiles', 'dirty', 'tilesX', 'tilesY', 'tilePixels', 'stamps', 'columns', 'columnsCap', 'flags'];

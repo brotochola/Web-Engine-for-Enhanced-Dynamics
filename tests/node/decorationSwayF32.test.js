@@ -47,7 +47,7 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const LIST_CAP_SLOT = SWAY_SLOTS.indexOf('listCap');
-const BINARY = fs.readFileSync(path.join(root, 'src/workers/decorationSway.wasm'));
+const BINARY = fs.readFileSync(path.join(root, 'src/wasm/engine.wasm'));
 
 /** The float32 sways of `bytes` (the fixture, or a mutant of it) on `memory`, by variant. */
 function kernelsOf(bytes, memory) {

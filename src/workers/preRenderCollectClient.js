@@ -7,9 +7,8 @@
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { COLLECT_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./preRenderCollect.wasm', import.meta.url);
 
 /** wasm/preRenderCollect.c's column table, slot for slot. */
 export const COLLECT_SLOTS = [
@@ -27,7 +26,7 @@ if (COLLECT_SLOTS.length > COLLECT_TABLE_SLOTS) throw new Error('preRenderCollec
 const SLOT = Object.fromEntries(COLLECT_SLOTS.map((name, k) => [name, k]));
 
 export async function bindPreRenderCollect(memory, collect) {
-  const k = await loadWasmKernel('preRenderCollect', wasmUrl, memory, ['collect_sprites', 'collect_sprites_turned']);
+  const k = await loadWasmKernel('preRenderCollect', engineWasmUrl, memory, ['collect_sprites', 'collect_sprites_turned']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, collect.tableByte, COLLECT_SLOTS.length);
   table[SLOT.listU32] = 1;

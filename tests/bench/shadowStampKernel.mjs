@@ -202,7 +202,7 @@ export async function run(args = {}) {
   const minMs = Number(args.minMs ?? 200);
   const opts = args.maxPerEntity !== undefined ? { maxPerEntity: Number(args.maxPerEntity) } : {};
   const bytes = new Uint8Array(await (await fetch(new URL('../fixtures/predator-frame.bin', import.meta.url))).arrayBuffer());
-  const k = await createStampKernel(parsePredatorFixture(bytes), opts, new URL('../../src/render/shadowStamp.wasm', import.meta.url));
+  const k = await createStampKernel(parsePredatorFixture(bytes), opts, new URL('../../src/wasm/engine.wasm', import.meta.url));
   const sides = { wasm: k.stampWasm, js: () => stampLightRange(k.spec) };
   const checksums = {};
   const written = {};

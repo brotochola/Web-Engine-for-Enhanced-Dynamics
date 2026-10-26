@@ -7,9 +7,8 @@
 // memory lays the lists out at 4 bytes a slot (layout.slotBytes 4), binds the _u32 export of each build.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./particleLists.wasm', import.meta.url);
 
 /** The kernel's two screen-test builds, double and float32, on u16 lists and on u32 lists (wasm/particleLists.c). */
 const BUILD_EXPORTS = Object.freeze({ build: 'build_lists', buildTurned: 'build_lists_turned', buildActive: 'build_active' });
@@ -29,7 +28,7 @@ const BUILD_EXPORTS_F32_U32 = Object.freeze({
 export async function bindParticleLists(memory, layout, pc, { f32 = false } = {}) {
   const wide = layout.slotBytes === 4;
   const names = wide ? (f32 ? BUILD_EXPORTS_F32_U32 : BUILD_EXPORTS_U32) : f32 ? BUILD_EXPORTS_F32 : BUILD_EXPORTS;
-  const k = await loadWasmKernel('particleLists', wasmUrl, memory, [names.build, names.buildTurned, names.buildActive]);
+  const k = await loadWasmKernel('particleLists', engineWasmUrl, memory, [names.build, names.buildTurned, names.buildActive]);
   if (pc.sharedBuffer !== memory.buffer) throw new Error('ParticleComponent is not in the particle memory');
   return {
     f32: Boolean(f32),

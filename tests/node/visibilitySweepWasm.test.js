@@ -580,7 +580,7 @@ test('W2a sweep: mutants of the kernel fail the gate (EPSILON 1e-5 -> 2e-5, the 
 
 // ---- the shipped module -------------------------------------------------------------------------------
 
-const SHIPPED_URL = new URL('../../src/render/visibility/visibilitySweep.wasm', import.meta.url);
+const SHIPPED_URL = new URL('../../src/wasm/engine.wasm', import.meta.url);
 const SHIPPED = { f32: 'sweep_light_f32', simd: 'sweep_light_simd' };
 
 test('W2a sweep: the shipped visibilitySweep.wasm writes the screening module\'s f32 and simd bits', async () => {

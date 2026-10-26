@@ -1,4 +1,4 @@
-// E-76 W10: the painter sort kernel (wasm/painterRadix.c, src/render/painterRadix.wasm) against the JS
+// E-76 W10: the painter sort kernel (wasm/painterRadix.c, in src/wasm/engine.wasm) against the JS
 // radixSortIndicesBySortKey, radixPainterOrder, reinsertChangedSlots and orderPainterSlots
 // (src/util/sortIndexByKey.js), bit for bit, every variant, and the client's orderPainterSlotsWasm and
 // radixSortIndicesWasm (what packSpriteLayer calls) on each. Keys are float32 bits as pre-render writes

@@ -15,9 +15,8 @@
 import { loadWasmKernel } from '../../util/wasmKernel.js';
 import { SOLID_CTX_SLOTS, SOLID_EDGE_BYTES } from '../../util/visibilityMemory.js';
 import { POLAR_BINS, ensureSolidChain, markPolarBinsActive, polarCentreTables } from './angularSweep.js';
+import { engineWasmUrl } from '../../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./solidSegments.wasm', import.meta.url);
 
 /** wasm/solidSegments.c's context table, slot for slot. */
 export const SOLID_CTX = ['dist', 'owner', 'active', 'cos', 'sin', 'cosF', 'sinF', 'tan'];
@@ -61,7 +60,7 @@ const S = {
 export async function bindSolidSegments(vm) {
   const L = vm.layout;
   if (!(L.solidBytes > 0)) return null;
-  const k = await loadWasmKernel('solidSegments', wasmUrl, vm.memory, ['collect_solid_f32x4']);
+  const k = await loadWasmKernel('solidSegments', engineWasmUrl, vm.memory, ['collect_solid_f32x4']);
   const buffer = vm.buffer;
   // The bins' centre rays, from angularSweep.js' own tables (index 2b + 1), so the doubles are the JS's.
   const { cos, sin } = polarCentreTables();

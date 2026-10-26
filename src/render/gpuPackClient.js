@@ -6,9 +6,8 @@
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { GPU_CASTER_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./gpuPack.wasm', import.meta.url);
 
 /** Lists shorter than this pack by gathering: the scatter's inverse costs a pass over the queue. */
 export const SCATTER_MIN_ROWS = 4096;
@@ -31,7 +30,7 @@ export const GPU_PACK_COLUMNS = [
 const GENERAL_PARAMS = 16;
 
 export async function bindGpuPack(memory, layout) {
-  const k = await loadWasmKernel('gpuPack', wasmUrl, memory, [
+  const k = await loadWasmKernel('gpuPack', engineWasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
   ]);

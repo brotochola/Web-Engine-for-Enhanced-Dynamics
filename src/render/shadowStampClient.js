@@ -7,9 +7,8 @@
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { STAMP_GRID_CELLS, STAMP_LIGHT_DOUBLES, STAMP_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
 import { GPU_CASTER_LIGHT_FLOAT } from './gpuQueueLayout.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./shadowStamp.wasm', import.meta.url);
 
 /** wasm/shadowStamp.c's column table, slot for slot. */
 export const STAMP_SLOTS = [
@@ -56,7 +55,7 @@ const NEAR_COUNT = 27;
  * @param {Record<string, number>} stamp createRenderQueueMemory's layout.stamp
  */
 export async function bindShadowStamp(memory, stamp) {
-  const k = await loadWasmKernel('shadowStamp', wasmUrl, memory, ['stamp_light_range']);
+  const k = await loadWasmKernel('shadowStamp', engineWasmUrl, memory, ['stamp_light_range']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, stamp.tableByte, STAMP_SLOTS.length);
   table[LIGHTS] = stamp.lightsByte;

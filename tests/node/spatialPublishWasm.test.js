@@ -14,7 +14,7 @@ import { publishFilteredNeighborsJs } from '../reference/spatialGather.mjs';
 // disagreed within ~3e-7 of the range edge, so a third of the candidates here sit on that edge.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const SHIPPED = path.join(root, 'src/workers/spatialPublish.wasm');
+const SHIPPED = path.join(root, 'src/wasm/engine.wasm');
 
 async function instantiateShipped(memory) {
   // Only the memory: the module imports nothing else.
@@ -132,11 +132,12 @@ test('the spatial module publishes exactly what the JS path publishes, on the ra
   }
 });
 
-test('the shipped spatial module imports only the shared memory', () => {
+test('the shipped spatial kernels (in engine.wasm) import only the shared memory', () => {
   const mod = new WebAssembly.Module(fs.readFileSync(SHIPPED));
   assert.deepEqual(WebAssembly.Module.imports(mod), [{ module: 'env', name: 'memory', kind: 'memory' }]);
-  assert.deepEqual(WebAssembly.Module.exports(mod), [
-    { name: 'publish_batch', kind: 'function' },
-    { name: 'publish_batch_u32', kind: 'function' },
-  ]);
+  const exports = WebAssembly.Module.exports(mod);
+  for (const name of ['publish_batch', 'publish_batch_u32']) {
+    assert.ok(exports.some((e) => e.name === name && e.kind === 'function'), name);
+  }
+  assert.ok(exports.every((e) => e.kind === 'function'), 'only functions');
 });

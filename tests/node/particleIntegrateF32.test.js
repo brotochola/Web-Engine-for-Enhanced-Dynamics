@@ -203,7 +203,7 @@ function patchFloat(bytes, from, to) {
 
 test('the tolerance catches a wrong sine coefficient, a wrong ease constant and a drifting dtRatio', async () => {
   const rig = await rigPromise;
-  const original = new Uint8Array(fs.readFileSync(path.join(root, 'src/workers/particleIntegrate.wasm')));
+  const original = new Uint8Array(fs.readFileSync(path.join(root, 'src/wasm/engine.wasm')));
   const mutants = [
     { from: -1.6666654611e-1, to: -1.6666e-1, mix: 'spin', caught: /rot[CS]\[/, minHits: 2, what: 'the sine coefficient' },
     // floor: lifespans of 0.3–3 s, so back.in runs to the end of its curve within the 60 frames.

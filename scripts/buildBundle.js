@@ -241,13 +241,15 @@ function buildBox2dWorkerSource() {
 }
 
 /**
- * Webpack emits `new URL('./spatialPublish.wasm', import.meta.url)` as
+ * Webpack emits `new URL('./engine.wasm', import.meta.url)` (src/wasm/engine.js, every kernel in one module) as
  * `new URL(publicPath + "hash.wasm", scriptBase)`. Blob workers set scriptBase
  * to `blob:.../../../`, and `new URL` throws. Inline the bytes as a data URL
  * so the constructor gets an absolute URL and the worker never fetches. Gzipped,
- * as Box2D's wasm is: the 18 kernels were 310 KB of base64 raw, 81 KB gzipped
- * (loadWasmKernel inflates a data:application/gzip URL with DecompressionStream).
+ * as Box2D's wasm is: engine.wasm is 235 KB raw, 59 KB gzipped (loadWasmKernel
+ * inflates a data:application/gzip URL with DecompressionStream). The module that
+ * names it is shared by the workers, so it lands once, in their common chunk.
  */
+let inlinedWasmAssets = 0;
 function inlineWorkerWasmAssets(source, label) {
     let inlined = 0;
     const next = source.replace(/[A-Za-z_$][\w$]*\.p\s*\+\s*(["'])([^"']+\.wasm)\1/g, (_match, _quote, rel) => {
@@ -261,12 +263,7 @@ function inlineWorkerWasmAssets(source, label) {
         const b64 = zlib.gzipSync(fs.readFileSync(resolved), { level: 9 }).toString('base64');
         return JSON.stringify(`data:application/gzip;base64,${b64}`);
     });
-    if (label === 'spatialWorker' && inlined < 1) {
-        throw new Error(
-            'spatialWorker.min.js has no publicPath wasm asset to inline. ' +
-            'new URL(import.meta.url) would throw inside the blob worker.',
-        );
-    }
+    inlinedWasmAssets += inlined;
     if (inlined) console.log(`   inlined ${inlined} wasm asset(s) into ${label}`);
     return next;
 }
@@ -304,6 +301,12 @@ function readWorkerArtifacts() {
     } else {
         console.warn('   WARN: workers/worker_common.min.js missing — workers not deduped');
         sizes.worker_common = 0;
+    }
+    if (inlinedWasmAssets < 1) {
+        throw new Error(
+            'No worker artifact has a publicPath wasm asset to inline (engine.wasm). ' +
+            'new URL(import.meta.url) would throw inside the blob workers.',
+        );
     }
 
     return { workers, workerCommon, sizes };

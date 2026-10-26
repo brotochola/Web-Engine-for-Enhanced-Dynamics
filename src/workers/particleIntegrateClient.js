@@ -10,9 +10,8 @@ import { ParticleEmitter } from '../core/particleEmitter.js';
 import { PARTICLE_LUT_ENTRIES } from '../util/particleMemory.js';
 import { expoLutTables } from '../util/particleTween.js';
 import { loadWasmKernel } from '../util/wasmKernel.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./particleIntegrate.wasm', import.meta.url);
 
 /** The columns wasm/particleIntegrate.c reads, in its table's order. */
 export const PARTICLE_INTEGRATE_COLUMNS = Object.freeze([
@@ -35,7 +34,7 @@ export const PARTICLE_INTEGRATE_COLUMNS = Object.freeze([
 export async function bindParticleIntegrate(memory, layout, pc, maxParticles, { f32 = false } = {}) {
   const wide = layout.slotBytes === 4;
   const exportName = `${f32 ? 'integrate_batch_f32x4' : 'integrate_batch'}${wide ? '_u32' : ''}`;
-  const integrate = (await loadWasmKernel('particleIntegrate', wasmUrl, memory, [exportName]))[exportName];
+  const integrate = (await loadWasmKernel('particleIntegrate', engineWasmUrl, memory, [exportName]))[exportName];
   const buffer = memory.buffer;
   if (pc.sharedBuffer !== buffer) throw new Error('ParticleComponent is not in the particle memory');
   const columns = new Uint32Array(buffer, layout.columnsByte, PARTICLE_INTEGRATE_COLUMNS.length);

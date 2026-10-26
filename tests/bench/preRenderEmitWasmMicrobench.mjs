@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Kernel (E-76 W4a, E-112): pre-render's full emit of sprite rows (type 0) and decoration rows (type 2)
- * in WASM (wasm/preRenderEmit.c, src/workers/preRenderEmit.wasm) against the shipped
+ * in WASM (wasm/preRenderEmit.c, in src/wasm/engine.wasm) against the shipped
  * PreRenderWorker.emitSpriteQueue, on a real worker with Predator's mix.
  *
  *   js    PreRenderWorker.emitSpriteQueue (shipped), as buildRenderQueue calls it on a frame its
@@ -50,7 +50,7 @@ import { computeGpuQueueBufferSize } from '../../src/render/gpuQueueLayout.js';
 import { gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/workers/preRenderEmit.wasm'));
+const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/wasm/engine.wasm'));
 
 // --scale shrinks every count (a cache-resident population, a diagnostic; the verdict is at 1).
 const ARGS = parseArgs();

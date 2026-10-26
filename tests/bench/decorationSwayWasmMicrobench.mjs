@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W22): the particle worker's decoration sway in WASM (wasm/decorationSway.c, src/workers/decorationSway.wasm, a
+ * Kernel (E-76 W22): the particle worker's decoration sway in WASM (wasm/decorationSway.c, in src/wasm/engine.wasm, a
  * module) against the JS sway it replaced (tests/reference/decorationSwayJs.mjs), on a real particle worker with
  * Predator's grass.
  *

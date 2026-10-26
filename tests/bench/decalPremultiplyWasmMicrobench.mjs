@@ -29,7 +29,7 @@ import { quietly } from './workerHarness.mjs';
 import { setupDecalKernel } from './decalStampWasmMicrobench.mjs';
 
 const repoRoot = path.resolve(import.meta.dirname, '../..');
-const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/render/decalPremultiply.wasm'));
+const KERNEL_URL = pathToFileURL(path.join(repoRoot, 'src/wasm/engine.wasm'));
 const TILE_PIXELS = 128;
 const TILE_BYTES = TILE_PIXELS * TILE_PIXELS * 4;
 

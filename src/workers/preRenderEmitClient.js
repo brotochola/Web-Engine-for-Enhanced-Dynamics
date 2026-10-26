@@ -18,9 +18,8 @@ import {
   EMIT_ADOBE_ASSET_BYTES, EMIT_ADOBE_MAX_ASSETS, EMIT_PROXY_SHEETS, EMIT_PROXY_STATES, EMIT_MAX_ANIMATIONS, EMIT_MAX_FRAMES,
   EMIT_PARAM_DOUBLES, EMIT_TABLE_SLOTS,
 } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./preRenderEmit.wasm', import.meta.url);
 
 /** wasm/preRenderEmit.c's column table, slot for slot. */
 export const EMIT_SLOTS = [
@@ -149,7 +148,7 @@ export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
  * @param {Record<string, number>} emit createRenderQueueMemory's layout.emit
  */
 export async function bindPreRenderEmit(memory, emit) {
-  const k = await loadWasmKernel('preRenderEmit', wasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_remember', 'adobe_advance']);
+  const k = await loadWasmKernel('preRenderEmit', engineWasmUrl, memory, ['emit_rows', 'persist_frame', 'persist_remember', 'adobe_advance']);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, emit.tableByte, EMIT_SLOTS.length);
   table[SLOT.rEnds] = emit.endsByte;

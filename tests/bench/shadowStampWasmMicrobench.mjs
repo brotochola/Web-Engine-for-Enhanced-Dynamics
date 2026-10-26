@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Kernel (E-76 W23, E-114): pre-render's shadow-caster stamp in WASM (wasm/shadowStamp.c,
- * src/render/shadowStamp.wasm) against the shipped stampLightRange, on the Predator fixture as shadowStampMicrobench sets it
+ * in src/wasm/engine.wasm) against the shipped stampLightRange, on the Predator fixture as shadowStampMicrobench sets it
  * up: the 48 lights nearest the caster centroid, maxShadowsPerLight 512, maxShadowsPerEntity 3, casters
  * packed as GPU_CASTER_FLOATS rows.
  *
@@ -41,7 +41,7 @@ import { createStampKernel } from './shadowStampKernel.mjs';
 import { compareStamps } from './shadowStampTolerance.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
 
-const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/render/shadowStamp.wasm'));
+const KERNEL_URL = pathToFileURL(path.resolve(import.meta.dirname, '../../src/wasm/engine.wasm'));
 const F32_URL = pathToFileURL(path.resolve(import.meta.dirname, '../fixtures/wasm/shadowStampF32.wasm'));
 /** The variants: the JS (null), or a module's export. */
 export const STAMP_VARIANTS = {

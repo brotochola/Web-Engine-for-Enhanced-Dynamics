@@ -7,9 +7,8 @@ import { loadWasmKernel } from '../util/wasmKernel.js';
 import { entityIdBytes } from '../util/entityIdWidth.js';
 import { ShapeType } from '../box2d/box2dConstants.js';
 import { BULLET_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./bulletTick.wasm', import.meta.url);
 
 /** The kernel's variants (one walk, the same bytes): the shipped tick takes BULLET_TICK_VARIANT. */
 export const BULLET_TICK_VARIANTS = ['bullet_tick', 'bullet_tick_hoist', 'bullet_tick_nostamp', 'bullet_tick_lean'];
@@ -51,7 +50,7 @@ export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIA
     if (variant !== 'bullet_tick_lean') throw new Error(`bulletTick: ${variant} has no 32-bit form`);
     name = wideIds && wideSlots ? 'bullet_tick_lean_u32' : wideIds ? 'bullet_tick_lean_ids32' : 'bullet_tick_lean_slots32';
   }
-  const k = await loadWasmKernel('bulletTick', wasmUrl, memory, [...BULLET_TICK_VARIANTS, name]);
+  const k = await loadWasmKernel('bulletTick', engineWasmUrl, memory, [...BULLET_TICK_VARIANTS, name]);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, layout.tableByte, BULLET_TICK_SLOTS.length);
   table[SLOT.results] = layout.resultsByte;

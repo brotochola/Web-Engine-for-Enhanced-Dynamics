@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W11, E-118): Pixi's mesh corner rewrite in WASM (wasm/meshCorners.c, src/render/meshCorners.wasm)
+ * Kernel (E-76 W11, E-118): Pixi's mesh corner rewrite in WASM (wasm/meshCorners.c, in src/wasm/engine.wasm)
  * against the JS rewrite Pixi shipped (tests/reference/meshCorners.mjs), on the meshes meshApiStressScene makes.
  *
  *   js          rewriteExplicitMeshCorners (tests/reference/meshCorners.mjs), as Pixi called it before E-118 on
