@@ -25,6 +25,7 @@ import {
   gpuLayerLayout,
   gpuRingCapacities,
   gpuWriterCount,
+  proxyMemoryBytes,
 } from '../util/gpuParticleLayout.js';
 
 /** A ring with nothing alive moves its epoch to now when it is this far behind (keeps float32 births precise). */
@@ -99,7 +100,9 @@ export class GpuParticles {
   static writerSlot = -1;
   /** Writer rings per GPU layer (gpuWriterCount): main, each logic worker, the particle worker. */
   static writers = 0;
-  /** @type {Array<null | { id: number, name: string, sab: SharedArrayBuffer, layout: object, rings: object[], sortWithEntities: boolean, pixelSnap: boolean, maxParticles: number }>} */
+  /** The y-sort proxies' splits, A and B (gpuParticleProxies.js), when a layer sorts with the entities. */
+  static proxySab = null;
+  /** @type {Array<null | { id: number, name: string, sab: SharedArrayBuffer, layout: object, rings: object[], sortWithEntities: boolean, look: boolean, pixelSnap: boolean, maxParticles: number }>} */
   static _layers = [];
   static _warned = new Set();
   static _opA = { from: 0, to: 0, tween: false, ease: 0 };
@@ -129,10 +132,13 @@ export class GpuParticles {
         sab,
         layout,
         sortWithEntities: config.sortWithEntities === true,
+        // A look shader: among the entities its finished target is drawn in regions (gpuParticleProxies.js).
+        look: !!config.shader?.fragment,
         pixelSnap: config.pixelSnap === true,
         maxParticles: caps.reduce((a, b) => a + b, 0),
       });
     }
+    if (this._layers.some((l) => l && l.sortWithEntities)) this.proxySab = new SharedArrayBuffer(proxyMemoryBytes());
     return this;
   }
 
@@ -155,7 +161,11 @@ export class GpuParticles {
 
   /** Posted to workers with the scene's init data. */
   static getSerializableData() {
-    return { writers: this.writers, layers: this._layers.filter(Boolean).map(({ rings, ...rest }) => rest) };
+    return {
+      writers: this.writers,
+      proxySab: this.proxySab,
+      layers: this._layers.filter(Boolean).map(({ rings, ...rest }) => rest),
+    };
   }
 
   /** Workers: bind the memories the main thread made. */
@@ -163,6 +173,7 @@ export class GpuParticles {
     this._layers = [];
     this._warned.clear();
     this.writers = data?.writers | 0;
+    this.proxySab = data?.proxySab || null;
     for (const info of data?.layers || []) this._bindLayer(info);
   }
 
@@ -176,6 +187,7 @@ export class GpuParticles {
     this._warned.clear();
     this.writers = 0;
     this.writerSlot = -1;
+    this.proxySab = null;
   }
 
   /** The GPU layers, by id (null holes for other layers). */

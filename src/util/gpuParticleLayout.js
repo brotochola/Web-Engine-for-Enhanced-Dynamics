@@ -144,3 +144,45 @@ export function gpuLayerLayout(capacities) {
 
 /** Frames of age per ms: the unit CPU particles move in (velocities per frame, gravity per frame²). */
 export const GPU_FRAME_MS = 16.67;
+
+// The y-sort proxies' splits (src/render/gpuParticleProxies.js): per frame, the GPU particle groups and look-layer
+// regions drawn among the entities, each with the entities instance it is drawn before. Two halves, one per
+// render-queue buffer (A and B), written by the worker that packs the entities and read by Pixi with that frame.
+
+/** Entries per frame (groups and regions). Past it, the rest are not drawn that frame. */
+export const PROXY_MAX_ENTRIES = 1024;
+/** Words per entry: instance index, kind and layer, ring, group (absolute), then the rectangle (floats). */
+export const PROXY_ENTRY_WORDS = 8;
+export const PROXY = Object.freeze({
+  INDEX: 0, // packed entities drawn before the entry
+  KIND_LAYER: 1, // kind << 8 | layer id
+  RING: 2,
+  GROUP: 3, // the group's absolute index in its ring (a region: its head group)
+  MIN_X_F: 4, MIN_Y_F: 5, MAX_X_F: 6, MAX_Y_F: 7,
+});
+export const PROXY_KIND = Object.freeze({ GROUP: 0, REGION: 1 });
+/** Int32 header of a half: entry count, entries dropped (past PROXY_MAX_ENTRIES), then reserved. */
+export const PROXY_HEADER_INTS = 4;
+const PROXY_HALF_INTS = PROXY_HEADER_INTS + PROXY_MAX_ENTRIES * PROXY_ENTRY_WORDS;
+
+/** Bytes of the split memory (both halves). */
+export function proxyMemoryBytes() {
+  return 2 * PROXY_HALF_INTS * 4;
+}
+
+/**
+ * Views of both halves.
+ * @param {SharedArrayBuffer} sab
+ */
+export function bindProxyHalves(sab) {
+  const out = [];
+  for (let h = 0; h < 2; h++) {
+    const byte = h * PROXY_HALF_INTS * 4;
+    out.push({
+      header: new Int32Array(sab, byte, PROXY_HEADER_INTS),
+      ints: new Int32Array(sab, byte + PROXY_HEADER_INTS * 4, PROXY_MAX_ENTRIES * PROXY_ENTRY_WORDS),
+      floats: new Float32Array(sab, byte + PROXY_HEADER_INTS * 4, PROXY_MAX_ENTRIES * PROXY_ENTRY_WORDS),
+    });
+  }
+  return out;
+}

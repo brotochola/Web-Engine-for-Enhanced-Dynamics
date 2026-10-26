@@ -78,6 +78,7 @@ layers: {
     maxParticles: 200000,                      // across all writer rings (default 100000)
     gpuRings: { main: 0.1, logic: 1, particle: 0.1 },  // optional: the rings' shares
     blendMode: BLEND_MODES.ADD,                // optional; additive layers draw color only, like glows
+    sortWithEntities: true,                    // optional: each emitGpu call is y-sorted among the entities
     pixelSnap: true,                           // optional: snap each particle's center to the pixel grid
     shader: { fragment: 'smokeLook', containerBlend: BLEND_MODES.ADD },  // optional look pass
   },
@@ -86,6 +87,29 @@ layers: {
 
 - **Look shaders:** with a `shader`, the particles are the layer's density pass and the look shader runs over it, as for a sprite layer ([LAYER_ROUTING.md](./LAYER_ROUTING.md)).
 - **No CPU subscriptions:** CPU sprites and particles cannot route to a GPU layer.
+- **Alpha:** the layer's `alpha` (`Layer.get('smoke').alpha = 0.5` at runtime) applies to its particles.
+
+## Among the entities (`sortWithEntities`)
+
+In an isometric or top-down world the painter's y-sort decides what hides what. A GPU layer with `sortWithEntities: true` joins it: every `emitGpu` call (a group) is drawn among the entities as one item, at its ground y `sortY` (default: the middle of `y`), so a tree that stands lower hides the smoke behind it, and the smoke hides the trees behind it. It needs `renderer.ySort`; without it, or while the entities layer does not y-sort, the layer draws at its zIndex as before.
+
+```javascript
+renderer: { ySort: true },
+layers: {
+  smoke: { kind: LAYER_KIND.GPU_PARTICLES, maxParticles: 120000, sortWithEntities: true },
+},
+
+ParticleEmitter.emitGpu({ layer: 'smoke', sortY: this.y /* the chimney's foot */, ... });
+```
+
+A group sorts as a whole: its key is a CPU particle's on row `sortY`, so it lands after the entities on that row and before the ones below it. One column of smoke is one item. A wide emit that should cross in front of and behind things is several calls.
+
+How it is drawn:
+
+- **Nothing in the painter changes.** The entities are sorted and packed as always. The worker that packs them (pre-render by default; Pixi with `renderer.interpolation` or `preRender.packGpuSprites: 'pixi'`) lists the frame's live, visible groups and finds where each one's key goes in the packed order by binary search. That is O(groups · log entities) a frame; the particles themselves never reach the CPU.
+- **The entities batch is drawn in chunks** with the groups between them: the same buffers drawn from an instance, nothing copied or uploaded again. Each group is one or two instanced draws of its own ring slots. Groups with no sprite between them share a gap; past `renderer.maxPainterSplits` gaps a frame (default 32), the closest gaps merge, and a group then draws a few sprites early.
+- **Look layers** draw their finished look target in regions instead: a group's rectangle on screen, sampled from the target. Overlapping groups of the layer merge into one region at the place of the one furthest back, since the look runs over all of them at once. A look that spreads past the particles is cut at the group's bounds. With `containerBlend: BLEND_MODES.ADD` the entities behind a region show through it, as they do under the full-screen look.
+- **Limits:** 1024 groups and regions a frame among the entities (pre-render warns once past it; the rest are not drawn that frame). The groups are children of the entities layer: hiding the entities layer or lowering its alpha also applies to them.
 
 ## How it works
 

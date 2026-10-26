@@ -66,6 +66,9 @@ import {
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand } from '../util/sortIndexByKey.js';
+import { Time } from '../core/timeScale.js';
+import { GpuParticles } from '../core/gpuParticles.js';
+import { PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, proxyView } from '../render/gpuParticleProxies.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -637,6 +640,12 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuCounts = null;
         this._gpuShadowsResult = null;
         this._gpuSpritesResult = null;
+        // GPU particle groups in the y-sort painter (gpuParticleProxies.js): the split memory's halves, A and B,
+        // when a GPU layer sorts with the entities and this worker packs them; null otherwise.
+        this._proxyHalves = null;
+        this._proxyCollector = null;
+        this._proxyView = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        this._proxyDroppedWarned = false;
         this._stampLightCmp = stampLightOrder;
         // Stamp lights and their scratch: first written when a light first shows.
         this._stampLights = null;
@@ -856,6 +865,10 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPackCtx = {};
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
+        if (GpuParticles.proxySab && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER) {
+            this._proxyHalves = bindProxyHalves(GpuParticles.proxySab);
+            this._proxyCollector = new ProxyCollector();
+        }
 
         // ========================================
         // RENDER QUEUE - Initialize (DOUBLE BUFFERED)
@@ -3404,7 +3417,7 @@ class PreRenderWorker extends AbstractWorker {
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
         const res = this._gpuSpritesResult
-            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0 });
+            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0, indices: null });
         this._packSplitUsed = false;
         this._packSplitGen = 0;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
@@ -3413,6 +3426,7 @@ class PreRenderWorker extends AbstractWorker {
             res.particle = 0;
             res.flags = 0;
             res.staticGen = 0;
+            res.indices = null;
             return res;
         }
         this._bindGpuPackWriters();
@@ -3445,6 +3459,7 @@ class PreRenderWorker extends AbstractWorker {
         res.particle = this._packParticles | 0;
         res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0) | (presorted ? GPU_FLAG_SORTED : 0);
         res.staticGen = this._packSplitUsed ? this._packSplitGen : 0;
+        res.indices = packed.spriteIndices;
         return res;
     }
 
@@ -3457,6 +3472,7 @@ class PreRenderWorker extends AbstractWorker {
         const q = this._gpuSoAFromBound();
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
         const sprites = this._packGpuSprites(dst, q, this._allowGpuPainter());
+        if (this._proxyHalves !== null) this._writeProxies(q, sprites);
         if (detail) {
             const sortDelta = this.sortTimeThisFrame - sortBefore;
             let ms = performance.now() - tSprites;
@@ -3476,6 +3492,37 @@ class PreRenderWorker extends AbstractWorker {
         counts.staticGen = sprites.staticGen | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
+    }
+
+    /**
+     * The frame's GPU particle groups among the entities (gpuParticleProxies.js), into the split half of the
+     * queue buffer being written: each group with the packed entity it is drawn before. Nothing listed when the
+     * entities are not y-sorted (the layers then draw at their zIndex).
+     */
+    _writeProxies(q, sprites) {
+        const half = this._proxyHalves[this._queueBuf & 1];
+        const collector = this._proxyCollector;
+        // Packed in painter order (or nothing packed): Pixi commits only such a frame when the entities y-sort.
+        const ordered = (sprites.sprite | 0) === 0 || (sprites.flags & GPU_FLAG_SORTED) !== 0;
+        const n = this._entitySortY && ordered
+            ? collector.collect(GpuParticles.layers, Time.simNowMs, this._proxyFrameView(), this._zBand)
+            : 0;
+        if (n === 0) {
+            half.header[1] = 0;
+            Atomics.store(half.header, 0, 0);
+            return;
+        }
+        collector.write(half, q.sortKey, sprites.indices, sprites.sprite | 0);
+        if (collector.dropped > 0 && !this._proxyDroppedWarned) {
+            this._proxyDroppedWarned = true;
+            console.warn(`[PRE_RENDER] ${collector.dropped} GPU particle groups past the ${PROXY_MAX_ENTRIES} a frame among the entities are not drawn`);
+        }
+    }
+
+    _proxyFrameView() {
+        if (!this.cameraData) return null;
+        return proxyView(this._proxyView, this._frameCameraX, this._frameCameraY, this._frameCameraZoom,
+            this._frameCameraRot || 0, this.canvasWidth, this.canvasHeight);
     }
 
     /**

@@ -299,6 +299,11 @@ import { Time } from '../core/timeScale.js';
 import { GpuParticles } from '../core/gpuParticles.js';
 import { GpuParticleLayerBatch, packAnimStartLookup } from '../render/gpuParticleBatch.js';
 import { installInstanceRangeDraw } from '../render/instanceRangeDraw.js';
+import {
+  PROXY, PROXY_KIND, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, localProxyHalf, proxyView,
+} from '../render/gpuParticleProxies.js';
+import { EntityChunks, RegionQuads } from '../render/gpuParticleChunks.js';
+import { zSortBand } from '../util/sortIndexByKey.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -571,6 +576,22 @@ class PixiRenderer extends AbstractWorker {
     /** @type {GpuParticleLayerBatch[]} */
     this._gpuParticleBatches = [];
     this._gpuParticleLiveRecords = 0;
+    // GPU particle groups among the entities (gpuParticleProxies.js): the sortWithEntities layers by id, as
+    // { layerId, cl, batch, regions }, the entities batch in chunks, and the frame's entries. Pre-render's split
+    // halves when it packs the entities; Pixi's own half and collector when Pixi packs them.
+    this._proxyLayers = [];
+    this._proxyLayerList = [];
+    this._entityChunks = null;
+    this._proxyHalves = null;
+    this._proxyReadHalf = 0;
+    this._proxyLocal = null;
+    this._proxyCollector = null;
+    this._proxyView = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    this._proxyBand = 0;
+    this._proxyApplyHalf = null;
+    this._proxyDrawEntry = null;
+    this._proxyMatrix = new Matrix();
+    this._proxiesOn = false;
     this._rqIdxEntity = null;
     this._rqIdxGlow = null;
     /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
@@ -1738,6 +1759,7 @@ class PixiRenderer extends AbstractWorker {
           this.entitiesGlowBatch.mesh.visible = false;
         }
       }
+      if (this._proxiesOn) this._applyPackedProxies();
       return;
     }
 
@@ -1750,6 +1772,8 @@ class PixiRenderer extends AbstractWorker {
         ? `${soaN} rows that its GPU queue frame does not describe (${this._uncommittedFrameReason(gpu, packedN, packedFlags, needOrder)})`
         : null);
       if (!kept && this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
+      // A frame drawn without its entities still draws its groups.
+      if (!kept && this._proxiesOn) this._applyPackedProxies();
       return;
     }
 
@@ -1796,6 +1820,7 @@ class PixiRenderer extends AbstractWorker {
     const packed = packSpriteLayer(spec);
     this.visibleEntityCount = packed.sprite;
     this.visibleParticleCount = splitGlow ? packed.splitParticles : 0;
+    if (this._proxiesOn) this._applyLocalProxies(packed.spriteIndices, packed.sprite);
     if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;
   }
 
@@ -1997,10 +2022,146 @@ class PixiRenderer extends AbstractWorker {
   updateGpuParticleLayers() {
     const batches = this._gpuParticleBatches;
     if (batches.length === 0) return;
+    if (this._proxyLayerList.length > 0) this._syncProxiesOn();
     const now = Time.simNowMs;
     let live = 0;
     for (let i = 0; i < batches.length; i++) live += batches[i].update(now);
     this._gpuParticleLiveRecords = live;
+  }
+
+  /**
+   * The sortWithEntities layers draw among the entities while the entities y-sort (gpuParticleProxies.js); with
+   * the y-sort off they draw at their zIndex, as any layer.
+   */
+  _syncProxiesOn() {
+    const on = this._entityChunks !== null && this._entityYSort();
+    if (on === this._proxiesOn) return;
+    this._proxiesOn = on;
+    const list = this._proxyLayerList;
+    for (let i = 0; i < list.length; i++) {
+      const pl = list[i];
+      pl.batch.sorted = on;
+      // A look layer's full-screen composite gives way to its regions among the entities.
+      if (pl.cl.displaySprite) pl.cl.displaySprite.renderable = !on;
+    }
+    if (!on) this._entityChunks.clear();
+  }
+
+  /** After initializeCustomLayers' layers: the sortWithEntities layers, drawn among the entities. */
+  _initProxies() {
+    const old = this._proxyLayerList;
+    for (let i = 0; i < old.length; i++) if (old[i].regions) old[i].regions.destroy();
+    this._proxyLayers = [];
+    this._proxyLayerList = [];
+    this._proxiesOn = false;
+    if (this._entityChunks) this._entityChunks.clear();
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      if (!cl.gpu || !cl.gpu.info.sortWithEntities) continue;
+      let regions = null;
+      if (cl.gpu.look && cl.rtOut) {
+        regions = new RegionQuads({
+          useWebGpu: this._useWebGpu,
+          shaders: this._engineShaders,
+          texture: cl.rtOut,
+          blendMode: cl.containerBlend,
+          label: `gpu-regions-${cl.layerName}`,
+        });
+      }
+      const pl = { layerId: cl.layerId, cl, batch: cl.gpu, regions };
+      this._proxyLayers[cl.layerId] = pl;
+      this._proxyLayerList.push(pl);
+    }
+    if (this._proxyLayerList.length === 0) return;
+    if (!this._ySort) {
+      console.warn('[PIXI WORKER] sortWithEntities needs renderer.ySort: those GPU particle layers draw at their zIndex');
+    }
+    if (!this.entitiesBatch || !this._entitiesRoot) return;
+    if (!this._entityChunks) {
+      this._entityChunks = new EntityChunks({
+        batch: this.entitiesBatch,
+        root: this._entitiesRoot,
+        maxSplits: this.config?.renderer?.maxPainterSplits,
+      });
+    }
+    this._proxyBand = zSortBand(this.config?.worldHeight || 0);
+    if (this._packGpuSpritesOn === PACK_GPU_SPRITES_PIXI) {
+      if (!this._proxyLocal) {
+        this._proxyLocal = localProxyHalf();
+        this._proxyCollector = new ProxyCollector();
+      }
+    } else if (GpuParticles.proxySab) {
+      this._proxyHalves = bindProxyHalves(GpuParticles.proxySab);
+    }
+    if (!this._proxyDrawEntry) this._proxyDrawEntry = (w, out) => this._drawProxyEntry(w, out);
+  }
+
+  /** Pre-render's entries for the frame Pixi took (it packed the entities). */
+  _applyPackedProxies() {
+    this._applyProxies(this._proxyHalves !== null ? this._proxyHalves[this._proxyReadHalf] : null);
+  }
+
+  /** Pixi packed the entities: it lists the groups itself, against the order it just packed. */
+  _applyLocalProxies(order, packedCount) {
+    const half = this._proxyLocal;
+    if (half === null) {
+      this._applyProxies(null);
+      return;
+    }
+    const collector = this._proxyCollector;
+    const view = proxyView(this._proxyView, this._renderCameraX, this._renderCameraY, this._renderZoom,
+      this._renderCameraRot || 0, this.canvasWidth, this.canvasHeight);
+    const n = this._painter !== null ? collector.collect(GpuParticles.layers, Time.simNowMs, view, this._proxyBand) : 0;
+    if (n > 0) collector.write(half, this.renderQueueSortKey, order, packedCount | 0);
+    else Atomics.store(half.header, 0, 0);
+    this._applyProxies(half);
+  }
+
+  /** The entities root this frame: the entities batch in chunks, the entries in the gaps. */
+  _applyProxies(half) {
+    const chunks = this._entityChunks;
+    const count = half !== null ? Math.min(Atomics.load(half.header, 0), PROXY_MAX_ENTRIES) : 0;
+    if (count <= 0) {
+      chunks.clear();
+      return;
+    }
+    const list = this._proxyLayerList;
+    let regions = false;
+    for (let i = 0; i < list.length; i++) {
+      const pl = list[i];
+      pl.batch.beginGroups();
+      if (pl.regions !== null) {
+        const out = pl.cl.rtOut;
+        if (out && pl.regions.source !== out.source) pl.regions.setTexture(out);
+        pl.regions.beginFrame();
+        regions = true;
+      }
+    }
+    if (regions) this._writeCameraRtTransform(this._proxyMatrix, 1);
+    this._proxyApplyHalf = half;
+    const mesh = this.entitiesBatch.mesh;
+    chunks.apply(half, count, mesh.visible ? mesh.geometry.instanceCount | 0 : 0, this._proxyDrawEntry);
+  }
+
+  /** One entry's meshes: a group's ring slices, or a look layer's region. */
+  _drawProxyEntry(w, out) {
+    const half = this._proxyApplyHalf;
+    const ints = half.ints;
+    const kindLayer = ints[w + PROXY.KIND_LAYER];
+    const pl = this._proxyLayers[kindLayer & 0xff];
+    if (!pl || !layerIsVisible(pl.layerId)) return;
+    const alphas = Layer._alpha;
+    const alpha = alphas ? alphas[pl.layerId] : 1;
+    if ((kindLayer >> 8) === PROXY_KIND.GROUP) {
+      pl.batch.groupMeshes(ints[w + PROXY.RING], ints[w + PROXY.GROUP], out, alpha);
+      return;
+    }
+    if (pl.regions === null) return;
+    const f = half.floats;
+    const mesh = pl.regions.quad(f[w + PROXY.MIN_X_F], f[w + PROXY.MIN_Y_F], f[w + PROXY.MAX_X_F], f[w + PROXY.MAX_Y_F],
+      this._proxyMatrix, this.canvasWidth || 1, this.canvasHeight || 1);
+    mesh.alpha = alpha;
+    out.push(mesh);
   }
 
   _entityYSort() {
@@ -2217,6 +2378,7 @@ class PixiRenderer extends AbstractWorker {
       consumedNewFrame = true;
       const readBufferIndex = (readyFrame - 1) & 1;
       this._setReadBuffer(readBufferIndex);
+      this._proxyReadHalf = readBufferIndex;
       for (let i = 0; i < this._customLayerList.length; i++) {
         const layer = this._customLayerList[i];
         if (layer.buffers) layer.readRef = layer.buffers[readBufferIndex];
@@ -6027,12 +6189,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): their programs, only in a scene that has one.
     if (data.gpuParticles?.layers?.length) {
+      // A look layer drawn among the entities draws its finished target in regions (gpuParticleChunks.js).
+      const regionShaders = data.gpuParticles.layers.some((l) => l.sortWithEntities && l.look);
       if (this._useWebGpu) {
         shaderFetches.push(
           fetchEngineShader('/src/shaders/gpuParticle.wgsl').then((s) => {
             sh.gpuParticle = s;
           })
         );
+        if (regionShaders) {
+          shaderFetches.push(fetchEngineShader('/src/shaders/gpuRegion.wgsl').then((s) => {
+            sh.gpuRegion = s;
+          }));
+        }
       } else {
         shaderFetches.push(
           fetchEngineShader('/src/shaders/gpuParticle.vert.glsl').then((s) => {
@@ -6045,6 +6214,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             sh.gpuParticleFragAdd = s;
           })
         );
+        if (regionShaders) {
+          shaderFetches.push(
+            fetchEngineShader('/src/shaders/gpuRegion.vert.glsl').then((s) => {
+              sh.gpuRegionVert = s;
+            }),
+            fetchEngineShader('/src/shaders/gpuRegion.frag.glsl').then((s) => {
+              sh.gpuRegionFrag = s;
+            })
+          );
+        }
       }
     }
     await Promise.all(shaderFetches);
@@ -6850,6 +7029,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           blendMode: blend,
           additive: !looks && blend === 'add',
           pixelSnap: !!config.gpuParticles?.pixelSnap,
+          look: looks,
           label: `gpu-particles-${layerName}`,
         });
         gpuBatch.container.blendMode = blend;
@@ -7060,6 +7240,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     this._customLayerList = Object.values(this._customLayers);
     this._bindLutToBatches();
+    this._initProxies();
 
     if (this._customLayerList.length > 0) {
       this.pixiApp.stage.sortChildren();

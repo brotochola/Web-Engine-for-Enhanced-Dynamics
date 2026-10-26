@@ -105,6 +105,10 @@ class RingDraw {
     this.index = new Buffer({ data: QUAD_INDEX, usage: BufferUsage.INDEX });
     // Two meshes: a live window that wraps the ring end is drawn as two ranges.
     this.meshes = [this._mesh(state), this._mesh(state)];
+    this.state = state;
+    // Groups drawn one by one among the entities (gpuParticleChunks.js): meshes reused frame to frame.
+    this.pool = [];
+    this.poolUsed = 0;
     this.uploaded = 0; // records uploaded (absolute count)
     this.oldestLive = 0; // reader-side: the oldest group that may still be alive (absolute)
     this.liveFirst = 0;
@@ -177,6 +181,20 @@ class RingDraw {
     return this.liveCount;
   }
 
+  /** A mesh of the group pool, pointed at slots [slot, slot + count). */
+  groupMesh(slot, count) {
+    let mesh = this.pool[this.poolUsed];
+    if (!mesh) {
+      mesh = this._mesh(this.state);
+      mesh.visible = true;
+      this.pool.push(mesh);
+    }
+    this.poolUsed++;
+    mesh.geometry.weedFirstInstance = slot;
+    mesh.geometry.instanceCount = count;
+    return mesh;
+  }
+
   /** Point the meshes at [first, first + count) of the ring (two ranges across the ring end). */
   setRange(first, count) {
     const cap = this.ring.capacity;
@@ -202,7 +220,7 @@ class RingDraw {
   }
 
   destroy() {
-    for (const m of this.meshes) {
+    for (const m of this.meshes.concat(this.pool)) {
       m.geometry.destroy();
       m.destroy();
     }
@@ -224,10 +242,15 @@ export class GpuParticleLayerBatch {
    * @param {string} opts.blendMode Pixi blend mode name ('normal', 'add', ...)
    * @param {boolean} [opts.additive] color-only output (an additive layer drawn on the stage)
    * @param {boolean} [opts.pixelSnap]
+   * @param {boolean} [opts.sorted] drawn among the entities, a group at a time (gpuParticleChunks.js), not at the
+   *   layer's zIndex; a look layer still draws its rings into its density target
+   * @param {boolean} [opts.look] the layer has a look shader
    * @param {string} [opts.label]
    */
   constructor(opts) {
     this.info = opts.info;
+    this.sorted = !!opts.sorted;
+    this.look = !!opts.look;
     this.label = opts.label || `gpu-particles-${opts.info.name}`;
     this.useWebGpu = !!opts.useWebGpu;
     this.pixelSnap = !!opts.pixelSnap;
@@ -300,7 +323,8 @@ export class GpuParticleLayerBatch {
       draw.upload(published);
       const nowRel = nowMs - ring.epoch[0];
       const count = draw.window(published, groups, nowRel, epochGen);
-      draw.setRange(draw.liveFirst, count);
+      // Sorted among the entities, a plain layer's groups are drawn one by one (groupMeshes); its rings are not.
+      draw.setRange(draw.liveFirst, this.sorted && !this.look ? 0 : count);
       const group = draw.shader.resources.uniforms;
       const u = group.uniforms.uGpuParticles;
       u[0] = nowRel;
@@ -310,6 +334,49 @@ export class GpuParticleLayerBatch {
     }
     this.liveRecords = live;
     return live;
+  }
+
+  /** Start a frame of group draws (the pools are reused). */
+  beginGroups() {
+    for (let r = 0; r < this.rings.length; r++) this.rings[r].poolUsed = 0;
+  }
+
+  /**
+   * Push the meshes that draw group `group` (absolute) of writer ring `r` into `out`: one, or two when its slots
+   * wrap the ring end. Records the writer has written over are left out.
+   * @param {number} r
+   * @param {number} group
+   * @param {object[]} out
+   * @param {number} alpha the layer's alpha
+   */
+  groupMeshes(r, group, out, alpha = 1) {
+    const draw = this.rings[r];
+    if (!draw) return;
+    const ring = draw.ring;
+    const b = (group & (ring.groupCapacity - 1)) * GPU_GROUP_WORDS;
+    let first = ring.groupBits[b + GPU_GROUP.FIRST] >>> 0;
+    let count = ring.groupBits[b + GPU_GROUP.COUNT] >>> 0;
+    const published = draw.uploaded;
+    const floor = (published - ring.capacity) >>> 0;
+    if (((published - first) >>> 0) > ring.capacity) {
+      const lost = (floor - first) >>> 0;
+      if (lost >= count) return;
+      first = floor;
+      count -= lost;
+    }
+    const cap = ring.capacity;
+    const slot = first & (cap - 1);
+    const head = Math.min(count, cap - slot);
+    const a = draw.groupMesh(slot, head);
+    a.alpha = alpha;
+    a.blendMode = this.state.blendMode;
+    out.push(a);
+    if (count > head) {
+      const m = draw.groupMesh(0, count - head);
+      m.alpha = alpha;
+      m.blendMode = this.state.blendMode;
+      out.push(m);
+    }
   }
 
   destroy() {

@@ -634,6 +634,11 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxMeshVerts: 0,
   /** Explicit MeshRenderer index arena. 0 = convex fans only. Caps at 2^22 at either width. */
   maxMeshIndices: 0,
+  /**
+   * GPU particle layers with `sortWithEntities`: most places a frame where the entities batch is cut to draw a group
+   * between its sprites (docs/guide/GPU_PARTICLES.md). Past it, the closest places merge.
+   */
+  maxPainterSplits: 32,
 });
 
 // ============================================================================
