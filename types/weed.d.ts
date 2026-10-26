@@ -304,8 +304,8 @@ export type SceneConfig = Record<string, unknown> & {
     adobeTablesMB?: number;
   };
   /**
-   * WebAssembly kernels, one switch per module (default true). false runs that module's
-   * JavaScript path instead, for example to time one against the other in the same build.
+   * WebAssembly kernels' float32 passes (each default true). The kernels always run in WebAssembly; false
+   * takes the same kernel's double export instead, slower and exact.
    */
   wasm?: {
     /**

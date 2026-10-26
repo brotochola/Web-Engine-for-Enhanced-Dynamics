@@ -86,7 +86,7 @@ export function spatialPublishRegions(entityCount, maxNeighbors, spatialWorkers,
  * - emitAdobeList: the frame's active Adobe entities, copied from their query for the clock advance (u32);
  * - emitAdobeAssets: the Adobe assets' tables, a directory of EMIT_ADOBE_MAX_ASSETS records
  *   (EMIT_ADOBE_ASSET_BYTES each, preRenderEmitClient.js writes them) and the clip, frame and piece arrays
- *   after it (`emit.adobe.tableBytes`, preRender.adobeTablesMB); an asset that does not fit is emitted in JS.
+ *   after it (`emit.adobe.tableBytes`, preRender.adobeTablesMB); an asset that does not fit is not drawn (one error).
  * With `stamp` (E-114, the shadow stamp `shadowStamp.wasm`, which reads the sun rows and writes the stamp
  * rows where the GPU queues hold them), its scratch: the candidates, their distances, order and the kept
  * list (one entry per sun caster each), the stamp grid's counts, starts and items, the nearest lights per

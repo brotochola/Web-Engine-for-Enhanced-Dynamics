@@ -339,7 +339,7 @@ class ParticleWorker extends AbstractWorker {
     this._swayFrameCounter = 0;
     this._activeDecorationSnapshot = null;
     this._activeDecorationSnapshotCount = 0;
-    // W22: decorationSway.wasm on the render-queue memory, or null (the JS loop).
+    // W22: the sway kernel on the render-queue memory, or null in a scene without decorations.
     this._swayWasm = null;
     // _swayRefused said its reason.
     this._swayRefusedWarned = false;

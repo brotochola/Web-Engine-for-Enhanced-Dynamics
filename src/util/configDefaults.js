@@ -440,14 +440,14 @@ export const SPATIAL_DEFAULTS = Object.freeze({
  */
 export const WASM_DEFAULTS = Object.freeze({
   /**
-   * The particle integrate (`particleIntegrate.wasm`, E-79, ParticleComponent in a WebAssembly.Memory) in float32, four particles per f32x4 where the loop allows it (`integrate_batch_f32x4`, the
+   * The particle integrate (the particleIntegrate kernel, E-79, ParticleComponent in a WebAssembly.Memory) in float32, four particles per f32x4 where the loop allows it (`integrate_batch_f32x4`, the
    * float32 pass): positions, velocities, the alpha, scale and tint lerps and the sine and cosine of a turning
    * particle in float32, within a stated tolerance; lifetimes, deaths and the free list exact. false: the double
    * integrate (`integrate_batch`), the state of the JS integrate it replaced bit for bit.
    */
   particleIntegrateF32: true,
   /**
-   * The particle list build's (`particleLists.wasm`, E-80: the active and visible lists in that memory) screen test
+   * The particle list build's (the particleLists kernel, E-80: the active and visible lists in that memory) screen test
    * in float32, four particles per f32x4 (`build_lists_f32x4`, the float32 pass):
    * a particle within a few float32 steps of the culling box's edge (which has the cull margin around the view)
    * can land on the other side. false: the double test (`build_lists`), the flags of the JS build it replaced bit
@@ -754,8 +754,8 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
   /**
    * Room in MB (whole, 0..1024) for the Adobe Animate assets' clip, frame and piece tables in the render-queue
    * memory, in a scene with Adobe characters. The memory is made before the assets
-   * load, so it cannot be sized from them: a piece takes 46 bytes. An asset that does not fit draws its characters
-   * through the JavaScript emit (pre-render warns once).
+   * load, so it cannot be sized from them: a piece takes 46 bytes. An asset that does not fit is not drawn, and
+   * pre-render logs one error naming it and this key.
    */
   adobeTablesMB: 4,
 });
