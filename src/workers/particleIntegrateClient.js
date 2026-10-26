@@ -1,15 +1,17 @@
 // The WASM particle integrate (E-79): loads particleIntegrate.wasm onto the particle memory and
 // runs updateParticlePhysicsBuffers' work in it. What JS did around the loop stays here: the dead
 // list goes back to the pool in the order JS returned it (the free list's order decides later
-// allocations), and an angle past fdlibm's medium reduction gets Math.cos / Math.sin.
+// allocations), and an angle past fdlibm's medium reduction gets Math.cos / Math.sin. With `f32`
+// (wasm.particleIntegrateF32, the particle worker's default) the kernel's float32 integrate,
+// integrate_batch_f32x4, is bound in integrate_batch's place, once; the call and the JS around it are the
+// same. E-129: a pool past 65 535 slots (layout.slotBytes 4) binds the _u32 export, on u32 lists.
 
 import { ParticleEmitter } from '../core/particleEmitter.js';
 import { PARTICLE_LUT_ENTRIES } from '../util/particleMemory.js';
 import { expoLutTables } from '../util/particleTween.js';
 import { loadWasmKernel } from '../util/wasmKernel.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./particleIntegrate.wasm', import.meta.url);
 
 /** The columns wasm/particleIntegrate.c reads, in its table's order. */
 export const PARTICLE_INTEGRATE_COLUMNS = Object.freeze([
@@ -27,9 +29,12 @@ export const PARTICLE_INTEGRATE_COLUMNS = Object.freeze([
  * @param {Record<string, number>} layout createParticleMemory's layout
  * @param {typeof import('../components/particleComponent.js').ParticleComponent} pc
  * @param {number} maxParticles
+ * @param {{ f32?: boolean }} [options] f32: the float32 integrate (`f32` on the binding says which)
  */
-export async function bindParticleIntegrate(memory, layout, pc, maxParticles) {
-  const { integrate_batch: integrate } = await loadWasmKernel('particleIntegrate', wasmUrl, memory, ['integrate_batch']);
+export async function bindParticleIntegrate(memory, layout, pc, maxParticles, { f32 = false } = {}) {
+  const wide = layout.slotBytes === 4;
+  const exportName = `${f32 ? 'integrate_batch_f32x4' : 'integrate_batch'}${wide ? '_u32' : ''}`;
+  const integrate = (await loadWasmKernel('particleIntegrate', engineWasmUrl, memory, [exportName]))[exportName];
   const buffer = memory.buffer;
   if (pc.sharedBuffer !== buffer) throw new Error('ParticleComponent is not in the particle memory');
   const columns = new Uint32Array(buffer, layout.columnsByte, PARTICLE_INTEGRATE_COLUMNS.length);
@@ -40,14 +45,17 @@ export async function bindParticleIntegrate(memory, layout, pc, maxParticles) {
   if (tables.some((t) => t.length !== PARTICLE_LUT_ENTRIES)) throw new Error('EXPO table size changed');
   tables.forEach((t, k) => new Float32Array(buffer, layout.lutByte + k * PARTICLE_LUT_ENTRIES * 4, PARTICLE_LUT_ENTRIES).set(t));
   const n = maxParticles | 0;
+  const Slot = wide ? Uint32Array : Uint16Array;
   return {
     integrate,
+    f32: Boolean(f32),
+    slotBytes: wide ? 4 : 2,
     layout,
     lutSize: PARTICLE_LUT_ENTRIES - 1,
-    indices: new Uint16Array(buffer, layout.indicesByte, n),
-    stamp: new Uint16Array(buffer, layout.stampByte, n),
-    dead: new Uint16Array(buffer, layout.deadByte, n),
-    trig: new Uint16Array(buffer, layout.trigByte, n),
+    indices: new Slot(buffer, layout.indicesByte, n),
+    stamp: new Slot(buffer, layout.stampByte, n),
+    dead: new Slot(buffer, layout.deadByte, n),
+    trig: new Slot(buffer, layout.trigByte, n),
     trigAngle: new Float64Array(buffer, layout.trigAngleByte, n),
     results: new Int32Array(buffer, layout.resultsByte, 4),
     out: { activeCount: 0, stampedCount: 0 },

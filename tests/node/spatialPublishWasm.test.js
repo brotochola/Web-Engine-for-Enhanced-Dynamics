@@ -4,39 +4,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Grid } from '../../src/core/grid.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
-import { initWorker, loadWorker, spatialBuffers } from '../bench/workerHarness.mjs';
+import { publishFilteredNeighborsJs } from '../reference/spatialGather.mjs';
 
 // The spatial publish module (wasm/spatialPublish.c, built by scripts/buildWasm.mjs) must publish
-// exactly what the JavaScript path publishes: SpatialWorker._publishFilteredNeighbors on a real
-// worker, the path taken at 32-bit ids or with wasm.spatialPublish false. Since E-76 W8a the C
+// exactly what the JavaScript filter it replaced publishes (SpatialWorker._publishFilteredNeighbors, now
+// tests/reference/spatialGather.mjs). Since E-76 W8a the C
 // does the JS arithmetic (float32 inputs widened, every operation in double); in float32 the two
 // disagreed within ~3e-7 of the range edge, so a third of the candidates here sit on that edge.
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-const SHIPPED = path.join(root, 'src/workers/spatialPublish.wasm');
+const SHIPPED = path.join(root, 'src/wasm/engine.wasm');
 
 async function instantiateShipped(memory) {
   // Only the memory: the module imports nothing else.
   const { instance } = await WebAssembly.instantiate(fs.readFileSync(SHIPPED), { env: { memory } });
   return instance.exports.publish_batch;
-}
-
-/** A real spatial worker in JS mode (no publish memory), sized for this frame. */
-async function jsWorker(count, maxN) {
-  const cfg = { worldWidth: 4096, worldHeight: 2048, cellSize: 128, maxEntitiesPerCell: 16, maxNeighbors: maxN };
-  const worker = await loadWorker('spatialWorker.js', 'spatialWorker');
-  const { buffers, gridMetadata } = spatialBuffers(cfg, count);
-  await initWorker(worker, {
-    config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg },
-    globalEntityCount: count,
-    buffers,
-    gridMetadata,
-    extra: { workerIndex: 0, totalSpatialWorkers: 1 },
-  });
-  assert.equal(worker._wasmPub, null, 'the reference worker runs the JS path');
-  return worker;
 }
 
 function readRows(neighbor, list, n, maxN) {
@@ -132,15 +115,13 @@ test('the spatial module publishes exactly what the JS path publishes, on the ra
     publish(n, cfg.maxN, mem.posByte, mem.rangeByte, mem.candByte, mem.neighborByte, mem.listByte);
     const shipped = readRows(neighbor, views.list, n, cfg.maxN);
 
-    // The same bytes in the JS path's own storage: poses, candidates, rows in Grid.neighborData.
-    const worker = await jsWorker(cfg.count, cfg.maxN);
-    worker.entityPosData.set(views.pos);
-    worker._neighborCandidateData.set(views.cand);
-    const rows = Grid.neighborData;
-    rows.fill(0xbeef);
+    // The same bytes through the JS filter, in arrays of its own: poses, candidates, rows.
+    const pos = Float32Array.from(views.pos);
+    const ctx = { _neighborCandidateData: Uint16Array.from(views.cand), neighborsFoundThisFrame: 0 };
+    const rows = new Uint16Array(cfg.count * stride).fill(0xbeef);
     for (let k = 0; k < n; k++) {
       const a = views.list[k];
-      worker._publishFilteredNeighbors(a, views.pos[a * 4], views.pos[a * 4 + 1], views.range[a], a * stride, cfg.maxN, worker.entityPosData, rows);
+      publishFilteredNeighborsJs.call(ctx, a, pos[a * 4], pos[a * 4 + 1], views.range[a], a * stride, cfg.maxN, pos, rows);
     }
     const js = readRows(rows, views.list, n, cfg.maxN);
 
@@ -151,8 +132,12 @@ test('the spatial module publishes exactly what the JS path publishes, on the ra
   }
 });
 
-test('the shipped spatial module imports only the shared memory', () => {
+test('the shipped spatial kernels (in engine.wasm) import only the shared memory', () => {
   const mod = new WebAssembly.Module(fs.readFileSync(SHIPPED));
   assert.deepEqual(WebAssembly.Module.imports(mod), [{ module: 'env', name: 'memory', kind: 'memory' }]);
-  assert.deepEqual(WebAssembly.Module.exports(mod), [{ name: 'publish_batch', kind: 'function' }]);
+  const exports = WebAssembly.Module.exports(mod);
+  for (const name of ['publish_batch', 'publish_batch_u32']) {
+    assert.ok(exports.some((e) => e.name === name && e.kind === 'function'), name);
+  }
+  assert.ok(exports.every((e) => e.kind === 'function'), 'only functions');
 });

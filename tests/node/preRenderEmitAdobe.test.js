@@ -1,0 +1,897 @@
+// W27: preRenderEmit.wasm expands Adobe Animate roots (type 6) into their pieces. On a real pre-render worker,
+// the render-queue memory laid out with the emit's Adobe regions, emitSpriteQueue with the kernel bound must leave
+// the queue, the animation state and the persist state as the JS loop leaves them (_emitAdobePieces and
+// _resolveAdobeFrameIndex for the roots), bit for bit, frame after frame, with sprites, decorations and rows of
+// other types around the roots (those after a root move down). The mix: synthetic assets with and without
+// prebaked piece rotations, clip bounds shorter than the clips (the asset bounds then, doubles), empty frames,
+// clips with no frames or no frame rate, unregistered asset ids; roots flipped on one axis or both, turned,
+// zero-scaled, with clocks before, inside and past their clip, looping or not; shadow casters on the roots, a
+// tiled sprite (the tile columns dirty after it), sort keys with and without an order, Y-sort on and off, a
+// queue that overflows in the middle of a root. The demo's own asset (willian) is one of them.
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { ShadowCaster } from '../../src/components/shadowCaster.js';
+import { DecorationComponent } from '../../src/components/decorationComponent.js';
+import { ParticleComponent } from '../../src/components/particleComponent.js';
+import { BulletComponent } from '../../src/components/bulletComponent.js';
+import { LightEmitter } from '../../src/components/lightEmitter.js';
+import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
+import { AdobeAnimRegistry } from '../../src/core/adobeAnimRegistry.js';
+import { Layer } from '../../src/core/layer.js';
+import { AdobeAnimCompiler } from '../../src/util/adobeAnimCompiler.js';
+import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
+import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
+import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { createParticleMemory, particleMemoryBytes } from '../../src/util/particleMemory.js';
+import { Transform } from '../../src/components/transform.js';
+import { EMIT_ADOBE_ASSET_BYTES } from '../../src/util/wasmMemoryMap.js';
+import { EMIT_ADOBE_IN, EMIT_ADOBE_NONE, EMIT_DECLINED, EMIT_PRESORTED } from '../../src/workers/preRenderEmitClient.js';
+
+import { bindPainterRadix, createWasmPainterState } from '../../src/render/painterRadixClient.js';
+import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
+import { radixSortIndicesBySortKey } from '../reference/painterJs.mjs';
+
+const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
+const N = 500;
+const ROOTS = 200; // entities 0 … 199 carry AdobeAnimComponent, the rest sprites
+const DECOS = 120;
+const POOL = 64;
+const DT = 1000 / 60;
+const FRAMES = 12;
+
+function rng(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) >>> 0;
+    let t = s;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Sheets 1-2 with 1-, 3- and 8-frame animations, then the builtin textures the other rows use. */
+function textureMetadata() {
+  const animationFrameStart = [];
+  const animationFrameCount = [];
+  const widths = [];
+  const heights = [];
+  const proxyToGlobalAnim = {};
+  let offset = 0;
+  for (let sheet = 1; sheet <= 2; sheet++) {
+    proxyToGlobalAnim[sheet] = {};
+    [1, 3, 8].forEach((frames, local) => {
+      proxyToGlobalAnim[sheet][local] = animationFrameStart.length;
+      animationFrameStart.push(offset);
+      animationFrameCount.push(frames);
+      for (let f = 0; f < frames; f++) {
+        widths.push(16 + ((sheet * 7 + f * 5) % 40));
+        heights.push(20 + ((sheet * 11 + f * 3) % 30));
+      }
+      offset += frames;
+    });
+  }
+  const animationNameToIndex = {};
+  for (const name of ['_lightGradient', '_whiteCircle', '_bulletTrail']) {
+    animationNameToIndex[name] = animationFrameStart.length;
+    animationFrameStart.push(offset);
+    animationFrameCount.push(1);
+    widths.push(64);
+    heights.push(64);
+    offset += 1;
+  }
+  return {
+    animationFrameStart, animationFrameCount, proxyToGlobalAnim, animationNameToIndex, totalFrames: offset,
+    frameWidth: Uint16Array.from(widths), frameHeight: Uint16Array.from(heights),
+  };
+}
+
+/**
+ * An asset shaped as AdobeAnimCompiler shapes one, from `clips` ([frames, frame rate] each). prebaked false
+ * leaves pieceRotC/pieceRotS out (the JS then takes Math.cos/Math.sin of pieceRotation); shortBounds gives the
+ * clip bounds two entries fewer than the clips (the last clips fall back to the asset bounds).
+ */
+function synthAsset(name, seed, clips, { prebaked = true, shortBounds = false } = {}) {
+  const r = rng(seed);
+  const clipFrameStart = [];
+  const framePieceStart = [];
+  const framePieceCount = [];
+  const p = { x: [], y: [], sx: [], sy: [], rot: [], alpha: [], ax: [], ay: [], tex: [] };
+  clips.forEach(([frames]) => {
+    clipFrameStart.push(framePieceStart.length);
+    for (let f = 0; f < frames; f++) {
+      const n = f % 5 === 3 ? 0 : 1 + Math.floor(r() * 9);
+      framePieceStart.push(p.x.length);
+      framePieceCount.push(n);
+      // Every third frame its pieces on one line: on an unturned root they tie for the feet (the last one wins).
+      const line = f % 3 === 1 ? (r() - 0.8) * 300 : null;
+      for (let k = 0; k < n; k++) {
+        p.x.push((r() - 0.5) * 200);
+        p.y.push(line !== null ? line : (r() - 0.8) * 300);
+        p.sx.push(r() < 0.1 ? -(0.5 + r()) : 0.5 + r());
+        p.sy.push(0.5 + r());
+        p.rot.push((r() - 0.5) * 6);
+        p.alpha.push(r());
+        p.ax.push(r());
+        p.ay.push(r());
+        p.tex.push(1 + Math.floor(r() * 500));
+      }
+    }
+  });
+  const bounds = clips.length - (shortBounds ? 2 : 0);
+  const rand = (n, lo, hi) => Float32Array.from({ length: n }, () => lo + r() * (hi - lo));
+  const asset = {
+    name,
+    clipNames: clips.map((_, k) => `clip${k}`),
+    clipNameToId: Object.fromEntries(clips.map((_, k) => [`clip${k}`, k])),
+    clipFrameStart: Uint32Array.from(clipFrameStart),
+    clipFrameCount: Uint16Array.from(clips.map(([frames]) => frames)),
+    clipFrameRate: Float32Array.from(clips.map(([, rate]) => rate)),
+    // Doubles, not floats: the JS reads them as they are.
+    assetBoundsMinX: -101.123456789,
+    assetBoundsMinY: -250.987654321,
+    assetBoundsMaxX: 99.3333333333,
+    assetBoundsMaxY: 12.7777777777,
+    clipBoundsMinX: rand(bounds, -120, -40),
+    clipBoundsMinY: rand(bounds, -260, -150),
+    clipBoundsMaxX: rand(bounds, 40, 120),
+    clipBoundsMaxY: rand(bounds, 0, 30),
+    framePieceStart: Uint32Array.from(framePieceStart),
+    framePieceCount: Uint16Array.from(framePieceCount),
+    pieceTextureId: Uint16Array.from(p.tex),
+    pieceX: Float32Array.from(p.x),
+    pieceY: Float32Array.from(p.y),
+    pieceRotation: Float32Array.from(p.rot),
+    pieceScaleX: Float32Array.from(p.sx),
+    pieceScaleY: Float32Array.from(p.sy),
+    pieceAlpha: Float32Array.from(p.alpha),
+    pieceAnchorX: Float32Array.from(p.ax),
+    pieceAnchorY: Float32Array.from(p.ay),
+  };
+  if (prebaked) {
+    asset.pieceRotC = Float32Array.from(p.rot, Math.cos);
+    asset.pieceRotS = Float32Array.from(p.rot, Math.sin);
+  }
+  return asset;
+}
+
+let willianAsset = null;
+/** The Adobe Animate demo's asset, compiled as the scene compiles it, texture ids of the test's own. */
+function willian() {
+  if (willianAsset) return willianAsset;
+  const dir = path.join(repoRoot, 'demos/fla/willian/willian2');
+  const read = (file) => JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8').replace(/^﻿/, ''));
+  willianAsset = AdobeAnimCompiler.compile('willian', read('Animation.json'), read('spritemap1.json'));
+  for (let q = 0; q < willianAsset.pieceTextureId.length; q++) willianAsset.pieceTextureId[q] = 1 + ((q * 13) % 900);
+  return willianAsset;
+}
+
+/** The registry the cases use: ids 1, 2 synthetic (prebaked, not), 3 the demo's, 4 synthetic with plain arrays. */
+function registerAssets({ plain = false } = {}) {
+  AdobeAnimRegistry.clearForSceneUnload();
+  const clips = [[12, 24], [1, 30], [0, 24], [5, 0], [7, 12.5], [9, 60]];
+  AdobeAnimRegistry.register('synthA', synthAsset('synthA', 11, clips, { prebaked: true, shortBounds: true }));
+  AdobeAnimRegistry.register('synthB', synthAsset('synthB', 22, clips, { prebaked: false }));
+  AdobeAnimRegistry.register('willian', willian());
+  if (plain) {
+    // Plain arrays, as an asset built by hand might hold: the JS reads them as doubles, the tables take them as
+    // the compiler's classes (exactly, since these came from those classes).
+    const a = synthAsset('plain', 33, clips);
+    for (const k of Object.keys(a)) if (ArrayBuffer.isView(a[k])) a[k] = Array.from(a[k]);
+    AdobeAnimRegistry.register('plain', a);
+  }
+}
+
+async function setup({
+  ySort = true, hasOrder = true, maxItems = 8000, count = 1200, seed = 0xad0, tablesBytes = 4 * 1048576,
+  plain = false, shadows = true,
+}) {
+  registerAssets({ plain });
+  const caps = gpuQueueCaps(maxItems, { enabled: false });
+  const m = createRenderQueueMemory(maxItems, computeBufferSize(maxItems), computeGpuQueueBufferSize(caps), {
+    entities: N,
+    spriteBytes: SpriteRenderer.getBufferSize(N),
+    casterBytes: ShadowCaster.getBufferSize(N),
+    decorationBytes: DecorationComponent.getBufferSize(DECOS),
+    adobe: { animBytes: AdobeAnimComponent.getBufferSize(N), tableBytes: tablesBytes },
+    // Every other row type's component where the scene lays it (close-out group B): LightEmitter, the particle memory
+    // and BulletComponent among the emit's blocks, Transform's pose in the collect's.
+    lightBytes: LightEmitter.getBufferSize(N),
+    particleBytes: particleMemoryBytes(POOL, ParticleComponent.getBufferSize(POOL)),
+    bulletBytes: BulletComponent.getBufferSize(POOL),
+  }, null, null, false, {
+    entities: N, transformBytes: Transform.getBufferSize(N), colliderBytes: 0, rigidBodyBytes: 0, bullets: null, visibility: null,
+  }, { preRender: true, pixi: false });
+  const e = m.layout.emit;
+  const pm = createParticleMemory(POOL, ParticleComponent.getBufferSize(POOL), { memory: m.memory, baseByte: e.particleMemoryByte, bytes: e.particleMemoryBytes });
+  const buffers = {
+    componentData: {
+      ...coreComponentData(N),
+      SpriteRenderer: m.buffer,
+      ShadowCaster: m.buffer,
+      DecorationComponent: m.buffer,
+      AdobeAnimComponent: m.buffer,
+      LightEmitter: m.buffer,
+      ParticleComponent: m.buffer,
+      BulletComponent: m.buffer,
+    },
+    componentDataByte: {
+      SpriteRenderer: e.spriteRendererByte, ShadowCaster: e.shadowCasterByte, DecorationComponent: e.decorationByte,
+      AdobeAnimComponent: e.adobeAnimByte, LightEmitter: e.lightEmitterByte, ParticleComponent: pm.layout.componentByte,
+      BulletComponent: e.bulletComponentByte,
+    },
+  };
+  for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent, AdobeAnimComponent, LightEmitter]) C.clearArrays();
+  const meta = textureMetadata();
+  const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The JS emit the kernel replaced, for the runs with _emitWasm null (tests/reference).
+  installEmitJs(worker);
+  const warned = [];
+  const realWarn = console.warn;
+  const realError = console.error;
+  console.warn = (msg) => warned.push(String(msg));
+  console.error = (msg) => warned.push(String(msg));
+  try {
+    await initWorker(worker, {
+      config: {
+        worldWidth: 4000, worldHeight: 3000, preRender: { interpolation: false }, renderer: { ySort },
+      },
+      globalEntityCount: N,
+      buffers,
+      extra: {
+        maxDecorations: DECOS,
+        maxParticles: POOL,
+        maxBullets: POOL,
+        textureMetadata: meta,
+        renderQueueMemory: m.memory,
+        renderQueueLayout: m.layout,
+        renderQueue: {
+          maxItems,
+          sync: new SharedArrayBuffer(8),
+          dataA: m.buffer,
+          dataAByte: m.layout.queueAByte,
+          dataB: m.buffer,
+          dataBByte: m.layout.queueBByte,
+          cameraA: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+          cameraB: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
+          entityTextureData: m.buffer,
+          entityTextureByte: e.lastTextureByte,
+        },
+      },
+    });
+  } finally {
+    console.warn = realWarn;
+    console.error = realError;
+  }
+  bindPoseColumns(N);
+  // Transform's pose where a scene without physics keeps it: the collect's pose block (x, y, rotation, rotC, rotS).
+  Transform.x = new Float32Array(m.buffer, m.layout.collect.poseByte, N);
+  Transform.y = new Float32Array(m.buffer, m.layout.collect.poseByte + 4 * N, N);
+  for (const C of [LightEmitter, ParticleComponent, BulletComponent]) assert.equal(Object.values(C).find(ArrayBuffer.isView)?.buffer, m.buffer, `${C.name} is in the memory`);
+  assert.equal(AdobeAnimComponent.scaleX.buffer, m.buffer, 'AdobeAnimComponent is in the memory');
+  assert.equal(worker._renderablePx.buffer, m.buffer, 'the pose stash is in the memory');
+  assert.ok(worker._emitWasm, 'the worker bound the kernel');
+  worker._decorationZoomAlpha = 0.6;
+  worker._animEndByType = new Uint8Array(256).fill(1);
+
+  const r = rng(seed);
+  const sr = SpriteRenderer;
+  for (let i = 0; i < N; i++) {
+    // zIndex on every entity: an Adobe root's sort key reads SpriteRenderer.zIndex too.
+    sr.zIndex[i] = (i % 7) - 3;
+    ShadowCaster.active[i] = shadows && i % 3 !== 0 ? 1 : 0;
+    ShadowCaster.heightMultiplier[i] = i % 17 === 0 ? NaN : r() * 2;
+    ShadowCaster.anchorOffsetX[i] = i % 11 === 0 ? -0 : r();
+    ShadowCaster.anchorOffsetY[i] = r() - 0.5;
+    if (i < ROOTS) continue;
+    sr.active[i] = 1;
+    sr.scaleX[i] = 0.5 + r();
+    sr.scaleY[i] = 0.5 + r();
+    sr.alpha[i] = r();
+    sr.tint[i] = (r() * 0xffffff) >>> 0;
+    sr.anchorX[i] = r();
+    sr.anchorY[i] = r();
+    sr.inheritTransformRotation[i] = i % 3 === 0 ? 0 : 1;
+    sr.spriteRotC[i] = Math.cos(i);
+    sr.spriteRotS[i] = Math.sin(i);
+    // A few tiled sprites: from their first frame on, the other rows clear the tile columns.
+    sr.repeatX[i] = i % 41 === 0 ? 32 : 0;
+    sr.repeatY[i] = 0;
+    sr.tileMode[i] = 1;
+    sr.boundsHalfW[i] = 10 + (i % 40);
+    sr.boundsHalfH[i] = 12 + (i % 30);
+    sr.spritesheetId[i] = 1 + (i % 2);
+    sr.animationState[i] = i % 3;
+    sr.isAnimated[i] = 1;
+    sr.animationSpeed[i] = 0.2 + r() * 0.8;
+    sr.loop[i] = i % 13 === 0 ? 0 : 1;
+    worker.entityFrameIndex[i] = i % 8;
+    worker.entityFrameAccumulator[i] = r() * 0.1;
+  }
+  const a = AdobeAnimComponent;
+  for (let i = 0; i < ROOTS; i++) {
+    a.active[i] = 1;
+    // Mostly the three assets, some with no asset (0), an id nothing registered (7), and with plain, id 4.
+    const pick = i % 10;
+    a.assetId[i] = pick < 3 ? 1 : pick < 6 ? 2 : pick < 8 ? 3 : pick === 8 ? (plain && i % 20 === 8 ? 4 : 0) : 7;
+    const asset = AdobeAnimRegistry.getAsset(a.assetId[i]);
+    const clips = asset ? asset.clipNames.length : 1;
+    // Every clip, and now and then one past the last (no frames).
+    a.clipId[i] = i % 23 === 0 ? clips + 1 : i % clips;
+    const frames = AdobeAnimRegistry.getClipFrameCount(a.assetId[i], a.clipId[i]);
+    const rate = AdobeAnimRegistry.getClipFrameRate(a.assetId[i], a.clipId[i]);
+    const duration = rate > 0 ? frames / rate : 1;
+    // Before, inside and past the clip.
+    a.time[i] = i % 19 === 0 ? -0.3 : i % 17 === 0 ? duration * 2.5 : r() * duration;
+    a.loop[i] = i % 4 === 0 ? 0 : 1;
+    a.playing[i] = 1;
+    a.playbackRate[i] = 0.5 + r();
+    // Flipped on one axis (the mirror sign), on both, zero-scaled; turned by AdobeAnimComponent's rotation.
+    const sx = 0.2 + r() * 0.5;
+    const sy = 0.2 + r() * 0.5;
+    a.scaleX[i] = i % 5 === 1 ? -sx : i % 5 === 2 ? -sx : sx;
+    a.scaleY[i] = i % 5 === 2 ? -sy : i % 5 === 3 ? -sy : i % 29 === 0 ? 0 : sy;
+    a.anchorX[i] = r();
+    a.anchorY[i] = i % 2 ? 1 : r();
+    // Unturned ones among the casters (i % 3 !== 0): their pieces on one line tie for the shadow.
+    const turn = i % 6 === 1 ? 0 : (r() - 0.5) * 2;
+    a.rotC[i] = Math.cos(turn);
+    a.rotS[i] = Math.sin(turn);
+    a.alpha[i] = r();
+    a.tint[i] = (r() * 0xffffff) >>> 0;
+  }
+  for (let d = 0; d < DECOS; d++) {
+    DecorationComponent.scaleX[d] = r();
+    DecorationComponent.scaleY[d] = r();
+    DecorationComponent.alpha[d] = r();
+    DecorationComponent.tint[d] = (r() * 0xffffff) >>> 0;
+    DecorationComponent.textureId[d] = d % 5;
+    DecorationComponent.anchorX[d] = r();
+    DecorationComponent.anchorY[d] = r();
+  }
+
+  // The collector: roots, sprites, decorations and rows of other types, poses in the stash (a frame with a root).
+  const types = [];
+  const indices = [];
+  for (let q = 0; q < count; q++) {
+    const pick = r();
+    if (pick < 0.3) { types.push(6); indices.push(Math.floor(r() * ROOTS)); }
+    else if (pick < 0.6) { types.push(0); indices.push(ROOTS + Math.floor(r() * (N - ROOTS))); }
+    else if (pick < 0.85) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
+    else { types.push([1, 3, 4, 5][q % 4]); indices.push(q % POOL); }
+  }
+  // The first rows: a sprite, then a root, so the root's rows follow it, and rows of other types after it.
+  types[0] = 0; indices[0] = ROOTS + 1;
+  types[1] = 6; indices[1] = 4;
+  // A particle slot and a light entity (their indices index those pools).
+  types[2] = 1; indices[2] = 2;
+  types[3] = 3; indices[3] = ROOTS + 3;
+  for (let q = 0; q < count; q++) {
+    worker._renderableType[q] = types[q];
+    worker._renderableIndex[q] = indices[q];
+    worker._renderableY[q] = Math.round(r() * 3000) * 128 + (q % 3 === 0 ? -0 : 0);
+  }
+  const stash = { x: worker._renderablePx, y: worker._renderablePy, rc: worker._renderableRotC, rs: worker._renderableRotS };
+  const source = () => worker._fillEmitSource(count, maxItems, worker._renderableY, worker._renderableType,
+    worker._renderableIndex, stash.x, stash.y, stash.rc, stash.rs, true, hasOrder, hasOrder && ySort);
+
+  /** Frame f's poses and clocks, the same calls on both runs. */
+  const prepare = (f) => {
+    const fr = rng(seed * 1000 + f);
+    for (let q = 0; q < count; q++) {
+      stash.x[q] = fr() * 4000;
+      stash.y[q] = fr() * 3000;
+      const turn = q % 4 === 0 ? 0 : fr() * 6.3;
+      stash.rc[q] = Math.cos(turn);
+      stash.rs[q] = Math.sin(turn);
+    }
+    for (let i = 0; i < ROOTS; i++) a.time[i] += (DT / 1000) * a.playbackRate[i];
+  };
+
+  const queueBytes = new Uint8Array(m.buffer, m.layout.queueAByte, computeBufferSize(maxItems));
+  // What either side may write, and what neither may: the collector, its stash, the persist rows.
+  const state = [
+    worker.entityFrameIndex, worker.entityFrameAccumulator, worker.entityLastTextureId,
+    SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH, a.time, a.playing,
+    worker._renderableType, worker._renderableIndex, worker._renderableY, stash.x, stash.y, stash.rc, stash.rs,
+    ...worker._persistType, ...worker._persistEntity, ...worker._persistFrame, ...worker._persistAnim,
+  ];
+  const snapshot = () => ({ queue: queueBytes.slice(), state: state.map((v) => v.slice()) });
+  const restore = (s) => {
+    queueBytes.set(s.queue);
+    state.forEach((v, k) => v.set(s.state[k]));
+    worker._tiledTileColumns = new Set();
+    worker._persistCount = [0, 0];
+    worker._adobeRenderQueueOverflowWarned = false;
+  };
+  return { worker, m, source, prepare, snapshot, restore, types, count, maxItems, warnedAtInit: warned };
+}
+
+/**
+ * The same frames through the JS loop and through the kernel, from the same start: everything they write must
+ * be equal. Returns the kernel run's calls ([written or declined] per frame) and what each run warned.
+ */
+function compare(k, frames = FRAMES, aroundJs = null) {
+  const { worker } = k;
+  const bound = worker._emitWasm;
+  const start = k.snapshot();
+  const realEnded = worker._spriteAnimationEnded;
+  const realMissing = worker._warnMissingTexture;
+  const realWarn = console.warn;
+  const calls = [];
+  const realRows = bound.emitRows;
+  bound.emitRows = (...args) => {
+    const got = realRows(...args);
+    calls.push(got);
+    return got;
+  };
+  const run = (kernel) => {
+    k.restore(start);
+    worker._emitWasm = kernel ? bound : null;
+    const out = [];
+    const warned = [];
+    console.warn = (msg) => warned.push(String(msg));
+    for (let f = 0; f < frames; f++) {
+      k.prepare(f);
+      const ends = [];
+      const missing = [];
+      worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+      worker._warnMissingTexture = (key) => missing.push(key);
+      const written = worker.emitSpriteQueue(DT, k.source());
+      out.push({
+        written, snap: k.snapshot(), ends, missing: missing.sort(), tiled: worker._tiledTileColumns.size,
+        counts: [...worker._persistCount], gen: worker._staticGen,
+      });
+    }
+    console.warn = realWarn;
+    worker._spriteAnimationEnded = realEnded;
+    worker._warnMissingTexture = realMissing;
+    return { out, warned };
+  };
+  const genStart = worker._staticGen;
+  aroundJs?.(true);
+  const js = run(false);
+  aroundJs?.(false);
+  worker._staticGen = genStart;
+  calls.length = 0;
+  const wasm = run(true);
+  bound.emitRows = realRows;
+  worker._emitWasm = bound;
+  for (let f = 0; f < frames; f++) {
+    const got = wasm.out[f];
+    const want = js.out[f];
+    assert.equal(got.written, want.written, `frame ${f}: rows written`);
+    const at = got.snap.queue.findIndex((x, i) => x !== want.snap.queue[i]);
+    if (at >= 0) assert.fail(`frame ${f}: the queue differs at byte ${at} (${describe(worker, k, at)})`);
+    got.snap.state.forEach((v, s) => {
+      assert.deepEqual(Buffer.from(v.buffer, v.byteOffset, v.byteLength),
+        Buffer.from(want.snap.state[s].buffer, want.snap.state[s].byteOffset, want.snap.state[s].byteLength), `frame ${f}: state ${s}`);
+    });
+    assert.deepEqual(got.ends, want.ends, `frame ${f}: play-once ends, in order`);
+    assert.deepEqual(got.missing, want.missing, `frame ${f}: missing textures`);
+    assert.deepEqual({ tiled: got.tiled, counts: got.counts, gen: got.gen }, { tiled: want.tiled, counts: want.counts, gen: want.gen }, `frame ${f}`);
+  }
+  assert.deepEqual(wasm.warned, js.warned, 'the warnings');
+  return { calls, js, wasm };
+}
+
+/** Which queue column and row a byte of queue A is. */
+function describe(worker, k, at) {
+  const base = k.m.layout.queueAByte;
+  for (const [name, v] of Object.entries(worker.renderQueueBuffers[0])) {
+    if (!ArrayBuffer.isView(v) || name === 'sortKeyU32') continue;
+    const from = v.byteOffset - base;
+    if (at >= from && at < from + v.byteLength) {
+      const row = Math.floor((at - from) / v.BYTES_PER_ELEMENT);
+      return `${name}[${row}]`;
+    }
+  }
+  return 'outside the columns';
+}
+
+test('the kernel expands Adobe roots as _emitAdobePieces does, Y-sorted, with shadows', async (t) => {
+  const k = await setup({ ySort: true, seed: 0xad1 });
+  const { calls, js } = compare(k);
+  assert.equal(calls.length, FRAMES);
+  assert.ok(calls.every((c) => c !== EMIT_DECLINED), 'the kernel took every frame');
+  const written = js.out[0].written;
+  assert.ok(written > k.count, `the roots expanded (${written} rows from ${k.count})`);
+  t.diagnostic(`${k.count} collector rows, ${k.types.filter((x) => x === 6).length} roots, ${written} queue rows`);
+});
+
+test('the kernel expands Adobe roots without Y-sort, and without an order (the roots\' keys are the collector\'s)', async () => {
+  for (const [ySort, hasOrder, seed] of [[false, true, 0xad2], [true, false, 0xad3], [false, false, 0xad4]]) {
+    const k = await setup({ ySort, hasOrder, seed, shadows: seed !== 0xad3 });
+    const { calls } = compare(k, 6);
+    assert.ok(calls.every((c) => c !== EMIT_DECLINED), `ySort ${ySort}, order ${hasOrder}: every frame`);
+  }
+});
+
+test('a queue that fills in the middle of a root stops there, and warns once', async () => {
+  const k = await setup({ maxItems: 700, count: 700, seed: 0xad5 });
+  const { calls, js } = compare(k, 4);
+  assert.ok(calls.every((c) => c === 700), 'the kernel filled the queue on every frame');
+  assert.equal(js.out[0].written, 700);
+  assert.equal(js.warned.filter((w) => w.includes('piece expansion exceeded')).length, 1, 'one warning');
+  // The collector row the queue filled at: some rows were never reached.
+  assert.equal(k.worker._adobeRenderQueueOverflowWarned, true);
+});
+
+test('the asset directory: every registered asset in the tables, as the kernel reads it', async () => {
+  const k = await setup({ seed: 0xad6 });
+  const b = k.worker._emitWasm;
+  const e = k.m.layout.emit;
+  const words = new Uint32Array(k.m.buffer, e.adobeAssetsByte, (4 * EMIT_ADOBE_ASSET_BYTES) / 4);
+  const kind = (id) => words[(id * EMIT_ADOBE_ASSET_BYTES) / 4];
+  assert.equal(b.adobeReady, true);
+  assert.equal(b.adobeFrom, AdobeAnimRegistry.assetById);
+  assert.deepEqual([kind(0), kind(1), kind(2), kind(3)], [EMIT_ADOBE_NONE, EMIT_ADOBE_IN, EMIT_ADOBE_IN, EMIT_ADOBE_IN]);
+  // synthB has no pieceRotC: the rotation column holds Math.cos of pieceRotation, as doubles.
+  const synthB = AdobeAnimRegistry.getAsset(2);
+  const rec = (2 * EMIT_ADOBE_ASSET_BYTES) / 4;
+  const pieces = words[rec + 18];
+  const cos = new Float64Array(k.m.buffer, words[rec + 23], pieces);
+  for (let p = 0; p < pieces; p++) assert.equal(cos[p], Math.cos(synthB.pieceRotation[p]));
+  assert.ok(pieces > 0 && pieces <= synthB.pieceX.length);
+});
+
+/**
+ * The registry's assets the kernel's directory left out (kind none, registered) gone for the JS run: it then draws
+ * and advances nothing for them, as the kernel does.
+ */
+function withoutLeftOut(k) {
+  const saved = new Map();
+  return (before) => {
+    const byId = AdobeAnimRegistry.assetById;
+    const words = new Uint32Array(k.m.buffer, k.m.layout.emit.adobeAssetsByte, (byId.length * EMIT_ADOBE_ASSET_BYTES) / 4);
+    if (before) {
+      for (let id = 1; id < byId.length; id++) {
+        if (byId[id] && words[(id * EMIT_ADOBE_ASSET_BYTES) / 4] === EMIT_ADOBE_NONE) {
+          saved.set(id, byId[id]);
+          byId[id] = null;
+        }
+      }
+    } else {
+      for (const [id, asset] of saved) byId[id] = asset;
+      saved.clear();
+    }
+  };
+}
+
+test('an asset with plain arrays goes in the tables; one with no room is not drawn and says why', async () => {
+  // Plain arrays: copied into the compiler's classes, no message, and the kernel writes what the JS writes.
+  const plain = await setup({ seed: 0xad7, plain: true });
+  const words = new Uint32Array(plain.m.buffer, plain.m.layout.emit.adobeAssetsByte, (5 * EMIT_ADOBE_ASSET_BYTES) / 4);
+  assert.equal(words[(4 * EMIT_ADOBE_ASSET_BYTES) / 4], EMIT_ADOBE_IN, 'the plain asset is in the tables');
+  assert.equal(plain.warnedAtInit.length, 0);
+  const one = compare(plain, 3);
+  assert.ok(one.calls.every((c) => c !== EMIT_DECLINED), 'the kernel takes the frames with its roots');
+
+  // No room for the demo's asset (the synthetic ones fit): one error naming the config key when the tables are
+  // written; its roots draw nothing, which is what the JS draws for an asset the registry does not have.
+  const small = await setup({ seed: 0xad8, tablesBytes: 4096 });
+  const said = small.warnedAtInit.filter((w) => w.includes('"willian"'));
+  assert.equal(said.length, 1, small.warnedAtInit.join('\n'));
+  assert.match(said[0], /preRender\.adobeTablesMB/);
+  const smallWords = new Uint32Array(small.m.buffer, small.m.layout.emit.adobeAssetsByte, (4 * EMIT_ADOBE_ASSET_BYTES) / 4);
+  assert.equal(smallWords[(3 * EMIT_ADOBE_ASSET_BYTES) / 4], EMIT_ADOBE_NONE, 'left out');
+  const two = compare(small, 3, withoutLeftOut(small));
+  assert.ok(two.calls.every((c) => c !== EMIT_DECLINED), 'the kernel takes those frames too');
+
+});
+
+test('frames without a root after the asset tables keep row i at queue row i', async () => {
+  const k = await setup({ seed: 0xada });
+  const cType = k.worker._renderableType;
+  for (let q = 0; q < k.count; q++) {
+    if (cType[q] === 6) cType[q] = 0;
+    if (cType[q] === 0 && k.worker._renderableIndex[q] < ROOTS) k.worker._renderableIndex[q] += ROOTS;
+  }
+  const { calls } = compare(k, 4);
+  assert.ok(calls.every((c) => c === k.count), 'one queue row per collector row');
+});
+
+test('a LiquidFun row still declines the frame', async () => {
+  const k = await setup({ seed: 0xadb });
+  const b = k.worker._emitWasm;
+  k.worker._renderableType[50] = 7;
+  assert.ok(k.worker._writeEmitTable(k.source()));
+  assert.equal(b.emitRows(b.tableByte, k.count, k.maxItems, 0, DT / 1000, 1, k.worker._zBand), EMIT_DECLINED);
+});
+
+/**
+ * advanceAdobeAnimations through adobe_advance and through its JS loop, from the same clocks: AdobeAnimComponent's
+ * time and playing flags after every frame, and the ended clips in the order the JS reports them.
+ */
+function compareAdvance(k, frames, aroundJs = null) {
+  const { worker } = k;
+  const a = AdobeAnimComponent;
+  const bound = worker._emitWasm;
+  const ids = Uint16Array.from({ length: ROOTS }, (_, i) => (i * 7) % ROOTS);
+  const start = { time: a.time.slice(), playing: a.playing.slice() };
+  const realEnded = worker._adobeAnimationEnded;
+  const calls = [];
+  const realAdvance = bound.adobeAdvance;
+  bound.adobeAdvance = (...args) => {
+    const got = realAdvance(...args);
+    calls.push(got);
+    return got;
+  };
+  const run = (kernel) => {
+    a.time.set(start.time);
+    a.playing.set(start.playing);
+    worker._emitWasm = kernel ? bound : null;
+    const out = [];
+    for (let f = 0; f < frames; f++) {
+      const ended = [];
+      worker._adobeAnimationEnded = (i) => ended.push(i);
+      worker._frameAdobeEntities = ids;
+      // Long and short frames, and one with no time at all (the JS returns before its loop).
+      worker.advanceAdobeAnimations(f % 9 === 4 ? 0 : DT * (f % 5 === 2 ? 7 : 1));
+      // A copy of the clocks' bytes (Buffer.from of a typed array copies; of its buffer it would be a view).
+      out.push({ time: Buffer.from(new Uint8Array(a.time.buffer, a.time.byteOffset, a.time.byteLength)), playing: [...a.playing], ended });
+    }
+    worker._adobeAnimationEnded = realEnded;
+    return out;
+  };
+  aroundJs?.(true);
+  const js = run(false);
+  aroundJs?.(false);
+  calls.length = 0;
+  const wasm = run(true);
+  bound.adobeAdvance = realAdvance;
+  worker._emitWasm = bound;
+  for (let f = 0; f < frames; f++) {
+    assert.deepEqual(wasm[f].time, js[f].time, `frame ${f}: the clocks`);
+    assert.deepEqual(wasm[f].playing, js[f].playing, `frame ${f}: playing`);
+    assert.deepEqual(wasm[f].ended, js[f].ended, `frame ${f}: the clips that ended, in order`);
+  }
+  return { calls, ended: js.reduce((s, x) => s + x.ended.length, 0) };
+}
+
+test('adobe_advance advances the clips as advanceAdobeAnimations does, the ended ones in order', async (t) => {
+  const k = await setup({ seed: 0xadc });
+  const a = AdobeAnimComponent;
+  for (let i = 0; i < ROOTS; i++) {
+    // Backwards now and then (a play-once clip then ends at 0), paused, inactive.
+    if (i % 9 === 0) a.playbackRate[i] = -(0.5 + (i % 4));
+    if (i % 13 === 0) a.playing[i] = 0;
+    if (i % 31 === 0) a.active[i] = 0;
+  }
+  const { calls, ended } = compareAdvance(k, 40);
+  assert.ok(calls.length > 0 && calls.every((c) => c !== EMIT_DECLINED), `the kernel took the frames (${calls.length})`);
+  assert.ok(ended > 5, `clips ended (${ended})`);
+  t.diagnostic(`${calls.length} frames through the kernel, ${ended} clips ended`);
+});
+
+test('adobe_advance takes the plain asset\'s clocks, and leaves an asset with no room standing', async () => {
+  const k = await setup({ seed: 0xadd, plain: true });
+  const { calls } = compareAdvance(k, 6);
+  assert.ok(calls.length > 0 && calls.every((c) => c !== EMIT_DECLINED));
+  // No room for the demo's asset: its clocks do not move, as the JS leaves those of an asset the registry lacks.
+  const small = await setup({ seed: 0xade, tablesBytes: 4096 });
+  const again = compareAdvance(small, 6, withoutLeftOut(small));
+  assert.ok(again.calls.length > 0 && again.calls.every((c) => c !== EMIT_DECLINED));
+});
+
+// E-138. Pre-render may sort the collector by the keys the emit writes before the emit (_sortCollectorByKey), so the
+// queue comes out in painter order: that must be the queue the emit writes from the collector as it was, sorted by
+// key with a stable sort (a root's pieces stay together, equal keys in collector order), every column of every row,
+// frame after frame, with and without Y-sort. The play-once ends and the missing textures are the same sets (their
+// order follows the rows'). A row leaves some columns as its queue slot held them (a hidden bullet, trail or glow its
+// rotation, tint, texture and anchors; an untiled sprite its tile mode and offsets), invisible there and moved to
+// another slot by the sort, so every frame of both runs starts from the same uniform queue.
+test('E-138: the collector sorted by key before the emit gives the queue a stable sort by key after it', async () => {
+  // The presort's sort through pre-render's painter kernel (its keys and order in the memory), against a stable sort
+  // of the plain queue by its keys (the JS radix, tests/reference/painterJs.mjs).
+  for (const ySort of [true, false]) {
+    const k = await setup({ ySort, seed: ySort ? 0xe138 : 0xe139 });
+    const { worker, maxItems } = k;
+    let radixCalls = 0;
+    worker._gpuPainter = createWasmPainterState(await bindPainterRadix(k.m.memory, k.m.layout.preRenderPainter));
+    const radix = worker._gpuPainter.kernel.radix;
+    worker._gpuPainter.kernel.radix = (...args) => {
+      radixCalls++;
+      return radix(...args);
+    };
+    // This collector lists some sprites more than once (a real one lists each once), and an animated sprite advances
+    // its clock once per row, so its rows would depend on their order: the sprites stand still here.
+    SpriteRenderer.isAnimated.fill(0);
+    worker._collectPx = worker._renderablePx;
+    worker._collectPy = worker._renderablePy;
+    worker._collectRotC = worker._renderableRotC;
+    worker._collectRotS = worker._renderableRotS;
+    const views = worker.renderQueueBuffers[0];
+    const columns = Object.entries(views).filter(([name, v]) => ArrayBuffer.isView(v) && v.length === maxItems && name !== 'sortKeyU32');
+    const bytesOf = (v) => new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+    const realEnded = worker._spriteAnimationEnded;
+    const realMissing = worker._warnMissingTexture;
+    const queueBytes = new Uint8Array(k.m.buffer, k.m.layout.queueAByte, computeBufferSize(maxItems));
+    const frame = (f, presort) => {
+      queueBytes.fill(0x5a);
+      k.prepare(f);
+      if (presort) worker._sortCollectorByKey(k.count, ySort);
+      const ends = [];
+      const missing = [];
+      worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+      worker._warnMissingTexture = (key) => missing.push(key);
+      const written = worker.emitSpriteQueue(DT, k.source());
+      worker._spriteAnimationEnded = realEnded;
+      worker._warnMissingTexture = realMissing;
+      return { written, rows: columns.map(([, v]) => bytesOf(v).slice()), ends: ends.sort(), missing: missing.sort() };
+    };
+    let moved = 0;
+    // The queue's tile columns once a repeating sprite wrote them (E-102b), carried from frame to frame as the worker
+    // carries them (k.restore clears them).
+    let tiled = new Set();
+    for (let f = 0; f < FRAMES; f++) {
+      const before = k.snapshot();
+      worker._tiledTileColumns = new Set(tiled);
+      const plain = frame(f, false);
+      const after = k.snapshot();
+      const tiledAfter = new Set(worker._tiledTileColumns);
+      k.restore(before);
+      worker._tiledTileColumns = new Set(tiled);
+      const sorted = frame(f, true);
+      assert.equal(sorted.written, plain.written, `frame ${f}: rows`);
+      assert.ok(plain.written > k.count && plain.written < maxItems, `frame ${f}: the roots expanded (${plain.written} rows), the queue did not fill`);
+      // The plain queue's rows by key, stably: its sortKey column's bits, as the painter reads them.
+      const n = plain.written;
+      const keyCol = columns.findIndex(([name]) => name === 'sortKey');
+      const keyBits = new Uint32Array(plain.rows[keyCol].buffer, 0, maxItems);
+      const order = Uint32Array.from({ length: n }, (_, i) => i);
+      radixSortIndicesBySortKey(order, n, keyBits, new Uint32Array(n), new Uint32Array(256));
+      for (let r = 0; r < n; r++) if (order[r] !== r) moved++;
+      columns.forEach(([name, v], c) => {
+        const bpe = v.BYTES_PER_ELEMENT;
+        for (let r = 0; r < n; r++) {
+          const from = order[r] * bpe;
+          for (let b = 0; b < bpe; b++) {
+            if (sorted.rows[c][r * bpe + b] !== plain.rows[c][from + b]) {
+              assert.fail(`ySort ${ySort} frame ${f}: ${name}[${r}] is not the plain queue's row ${order[r]}`);
+            }
+          }
+        }
+      });
+      assert.deepEqual(sorted.ends, plain.ends, `frame ${f}: play-once ends`);
+      assert.deepEqual(sorted.missing, plain.missing, `frame ${f}: missing textures`);
+      // On from the plain run's state, the collector as the collect wrote it.
+      k.restore(after);
+      tiled = tiledAfter;
+    }
+    assert.ok(moved > 1000, `ySort ${ySort}: the sort moved rows (${moved})`);
+    assert.ok(radixCalls > 0, 'the painter kernel sorted');
+    worker._gpuPainter = null;
+  }
+});
+
+// E-138's gate across real frames: resetFrameCounters clears the emit's count before the collect, so the gate reads
+// last frame's from a field of its own. The first frame of a scene emits unsorted; from the second, a collector
+// whose rows the emit expanded at least twice over is sorted before the emit (its rows in key order; the queue's sort
+// key column, which nothing reads that frame, is not written).
+test('E-138: from its second frame, pre-render sorts an expanding collector before the emit', async () => {
+  const k = await setup({ ySort: true, seed: 0xe13a, shadows: false });
+  const { worker } = k;
+  SpriteRenderer.isAnimated.fill(0);
+  // Pre-render's painter (no GPU queue in this setup: the gate asks for a painter whose kernel holds the presort's
+  // keys and order).
+  worker._gpuPainter = createWasmPainterState(await bindPainterRadix(k.m.memory, k.m.layout.preRenderPainter));
+  worker.shadowsEnabled = false;
+  worker._frameAdobeEntities = [0];
+  worker._bindCollectPoses();
+  assert.equal(worker._collectPx, worker._renderablePx, 'a frame with a root keeps its poses in the stash');
+  // A scene of characters: every root with an asset in the tables, once, and a few sprites among them.
+  const roots = [];
+  for (let i = 0; i < ROOTS; i++) if (AdobeAnimComponent.assetId[i] >= 1 && AdobeAnimComponent.assetId[i] <= 3) roots.push(i);
+  const count = roots.length + 8;
+  const types = new Uint8Array(count);
+  const indices = new Int32Array(count);
+  const ys = new Float32Array(count);
+  for (let q = 0; q < count; q++) {
+    types[q] = q < roots.length ? 6 : 0;
+    indices[q] = q < roots.length ? roots[q] : ROOTS + q;
+    ys[q] = ((q * 7919) % 3001) * 128;
+  }
+  // An order to sort by: Y-sort on the entities layer.
+  const savedLayer = [Layer._ySorting, Layer.entitiesId];
+  Layer._ySorting = new Uint8Array(32);
+  Layer.entitiesId = 0;
+  Layer._ySorting[0] = 1;
+  const sorts = [];
+  const realSort = worker._sortCollectorByKey;
+  worker._sortCollectorByKey = function sort(n, ySort) {
+    sorts.push(n);
+    return realSort.call(this, n, ySort);
+  };
+  try {
+    for (let f = 0; f < 3; f++) {
+      worker.resetFrameCounters();
+      // The collect: the same rows every frame.
+      worker._renderableType.set(types);
+      worker._renderableIndex.set(indices);
+      worker._renderableY.set(ys);
+      worker._renderableCount = count;
+      k.prepare(f);
+      worker.buildRenderQueue(DT);
+      const written = worker.renderQueueCount[0];
+      assert.ok(written > 2 * count, `frame ${f}: the roots expanded (${written} rows from ${count})`);
+      assert.equal(worker._queuePresorted, f > 0, `frame ${f}: presorted`);
+      if (f > 0) {
+        const key = new Float32Array(1);
+        const bits = new Uint32Array(key.buffer);
+        const ord = (q) => {
+          key[0] = worker._orderKey(worker._renderableType[q], worker._renderableIndex[q], worker._renderableY[q], true);
+          const u = bits[0];
+          return ((u & 0x80000000) ? ~u : (u | 0x80000000)) >>> 0;
+        };
+        for (let q = 1; q < count; q++) {
+          if (ord(q - 1) > ord(q)) assert.fail(`frame ${f}: collector row ${q} is out of key order`);
+        }
+      }
+    }
+    assert.deepEqual(sorts, [count, count], 'sorted on frames 1 and 2');
+  } finally {
+    delete worker._sortCollectorByKey;
+    [Layer._ySorting, Layer.entitiesId] = savedLayer;
+  }
+});
+
+// E-138: on a presorted frame the main queue's emit (EMIT_PRESORTED) leaves the sort keys and the shadow terms, which
+// nothing reads that frame (no painter, no sun casters), and writes every other column as it does without the flag.
+test("E-138: a presorted frame's kernel emit leaves the sort keys and shadow terms, and writes the rest the same", async () => {
+  const k = await setup({ ySort: true, seed: 0xe13b });
+  const { worker, maxItems } = k;
+  SpriteRenderer.isAnimated.fill(0);
+  const views = worker.renderQueueBuffers[0];
+  const left = new Set(['sortKey', 'shadowH', 'shadowOffX', 'shadowOffY']);
+  const columns = Object.entries(views).filter(([name, v]) => ArrayBuffer.isView(v) && v.length === maxItems && name !== 'sortKeyU32');
+  assert.ok(columns.some(([name]) => name === 'shadowH') && columns.some(([name]) => name === 'sortKey'));
+  const before = k.snapshot();
+  k.prepare(0);
+  const written = worker.emitSpriteQueue(DT, k.source());
+  const plain = columns.map(([, v]) => new Uint8Array(v.buffer, v.byteOffset, v.byteLength).slice());
+  k.restore(before);
+  for (const [name, v] of columns) if (left.has(name)) new Uint8Array(v.buffer, v.byteOffset, v.byteLength).fill(0x5a);
+  k.prepare(0);
+  worker._emitPresorted = true;
+  let kernelRan = false;
+  const realRows = worker._emitWasm.emitRows;
+  worker._emitWasm.emitRows = (...args) => {
+    kernelRan = (args[3] & EMIT_PRESORTED) !== 0;
+    return realRows(...args);
+  };
+  try {
+    assert.equal(worker.emitSpriteQueue(DT, k.source()), written);
+  } finally {
+    worker._emitPresorted = false;
+    worker._emitWasm.emitRows = realRows;
+  }
+  assert.ok(kernelRan, 'the kernel took the frame with EMIT_PRESORTED');
+  const type = views.type;
+  let kept = 0;
+  columns.forEach(([name, v], c) => {
+    const got = new Uint8Array(v.buffer, v.byteOffset, written * v.BYTES_PER_ELEMENT);
+    if (left.has(name)) {
+      // The rows the kernel writes (sprites, decorations, Adobe pieces) keep the canary; the JS writes the rest.
+      const bpe = v.BYTES_PER_ELEMENT;
+      for (let r = 0; r < written; r++) {
+        if (type[r] !== 0 && type[r] !== 2 && type[r] !== 6) continue;
+        for (let b = 0; b < bpe; b++) {
+          if (got[r * bpe + b] !== 0x5a) assert.fail(`${name}[${r}] (type ${type[r]}) was written`);
+        }
+        kept++;
+      }
+      return;
+    }
+    const want = plain[c].subarray(0, written * v.BYTES_PER_ELEMENT);
+    const at = got.findIndex((x, i) => x !== want[i]);
+    assert.equal(at, -1, `${name} differs at byte ${at}`);
+  });
+  assert.ok(kept > 4 * 1000, `the kernel's rows left the four columns (${kept})`);
+});

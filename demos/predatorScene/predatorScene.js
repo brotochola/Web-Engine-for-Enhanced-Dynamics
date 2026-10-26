@@ -456,14 +456,18 @@ export class PredatorScene extends WEED.Scene {
     console.log('onLoadGame', payload);
   }
 
-  createNewGame() {
+  async createNewGame() {
     this.spawnBarrels(this.numberOfBarrels);
-    this.spawnRocksTreesAndHouses();
+    // The map's rocks, trees and houses come from a JSON file. Fetched here, they spawn after the rest as before,
+    // and createNewGame waits for them: the scene flushes its spawns and starts the first frame after it, so they do
+    // not pop in a moment later.
+    const map = this.spawnRocksTreesAndHouses();
     this.spawnLights(100);
     this.spawnTrash(100);
     this.spawnCivilians(10000);
     this.spawnMySoldiers(6000);
     this.spawnDestination();
+    await map;
   }
 
   spawnTrash(count) {
@@ -475,7 +479,7 @@ export class PredatorScene extends WEED.Scene {
     }
   }
   spawnRocksTreesAndHouses() {
-    fetch('/demos/trees_and_rocks.json')
+    return fetch('/demos/trees_and_rocks.json')
       .then((response) => response.json())
       .then((data) => {
         data.rocks.forEach((rock) => {

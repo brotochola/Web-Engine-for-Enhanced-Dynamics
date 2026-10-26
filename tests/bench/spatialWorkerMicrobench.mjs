@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Kernel: the shipped SpatialWorker frame (rebuildOwnedRows +
- * findNeighborsForOwnedEntities) on a real worker instance, Predator layout.
+ * Kernel: the shipped SpatialWorker frame (rebuildOwnedRows + the neighbour search: the gather and publish
+ * kernels on the publish memory) on a real worker instance, Predator layout. setupSpatialKernel's `js` option
+ * puts the JS search the kernels replaced (tests/reference/spatialGather.mjs) on the workers instead.
  *
  * Three spatial workers share one Grid and one neighbor SAB, like the scene:
  * each owns interleaved rows. One "frame" is all three updates in sequence.
@@ -19,12 +20,14 @@ import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Grid } from '../../src/core/grid.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
-import { EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
+import { bindEntityIdWidth, EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
 import { getColliderBounds, getCellRange, _boundsResult, _cellRangeResult, SHAPE_CIRCLE } from '../../src/util/colliderUtils.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
+import { spatialJsClass } from '../reference/spatialGather.mjs';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import {
   bindPoseColumns,
+  bindPublishMemory,
   coreComponentData,
   initWorker,
   loadWorker,
@@ -85,49 +88,35 @@ export async function setupSpatialKernel(opts = {}) {
   const workersCount = opts.workers ?? 3;
   const seed = opts.seed ?? 0x5a71a1;
   const cfg = { ...PREDATOR_SPATIAL, ...(opts.spatial || {}) };
+  // opts.idWidth 32: the scene's 32-bit entity ids (the workers bind the width from config.entityIdWidth).
+  const idWidth = opts.idWidth === 32 ? 32 : 16;
+  bindEntityIdWidth(idWidth);
   const { buffers, gridMetadata } = spatialBuffers(cfg, n);
   buffers.componentData = coreComponentData(n);
-  // WASM mode (E-76): poses, rows, candidates and (E-78) the grid in the publish memory, as
-  // sceneSharedBuffers builds it at 16-bit ids. 'product' is that memory; a function is a factory,
-  // so a kernel can lay out more regions. `opts.wasm` is the scene's wasm switches (T7).
-  const mem = opts.publishMemory === 'product'
-    ? createSpatialPublishMemory(n, cfg.maxNeighbors, workersCount, {
+  // Poses, rows, candidates and (E-78) the grid in the publish memory, as sceneSharedBuffers builds it; a
+  // function in `opts.publishMemory` is a factory, so a kernel can lay out more regions. `opts.wasm` is the
+  // scene's wasm switches (T7); `opts.js` ({ publish: 'js' | 'kernel' }) runs the JS search on the workers.
+  const mem = typeof opts.publishMemory === 'function'
+    ? opts.publishMemory(n, cfg.maxNeighbors, workersCount, gridMetadata)
+    : createSpatialPublishMemory(n, cfg.maxNeighbors, workersCount, {
         totalCells: gridMetadata.totalCells,
         cellByteSize: 4 + cfg.maxEntitiesPerCell * gridMetadata.entityIdBytes,
-      })
-    : opts.publishMemory
-      ? opts.publishMemory(n, cfg.maxNeighbors, workersCount, gridMetadata)
-      : null;
-  if (opts.publishMemory && !mem) throw new Error('no publish memory (16-bit entity ids only)');
-  if (mem) {
-    buffers.entityPosData = mem.buffer;
-    buffers.neighborData = mem.buffer;
-    if (mem.gridByte) buffers.gridBuffer = mem.buffer;
-    Object.assign(gridMetadata, {
-      posByte: mem.posByte,
-      rangeByte: mem.rangeByte,
-      neighborByte: mem.neighborByte,
-      candByte: mem.candByte,
-      listByte: mem.listByte,
-      listStride: mem.listStride,
-      gridByte: mem.gridByte | 0,
-      markerByte: mem.markerByte | 0,
-      markerStride: mem.markerStride | 0,
-      truncatedByte: mem.truncatedByte | 0,
-      truncatedStride: mem.truncatedStride | 0,
-      rebuildByte: mem.rebuildByte | 0,
-      rebuildStride: mem.rebuildStride | 0,
-      orderByte: mem.orderByte | 0,
-      orderStride: mem.orderStride | 0,
-      patternByte: mem.patternByte | 0,
-      patternBytes: mem.patternBytes | 0,
-    });
-  }
+      });
+  if (!mem) throw new Error('no publish memory');
+  bindPublishMemory(buffers, gridMetadata, mem);
 
-  const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', opts.make);
+  const jsMake = opts.js ? (Base) => spatialJsClass(Base, opts.js) : null;
+  const make = jsMake && opts.make ? (Base) => opts.make(jsMake(Base)) : jsMake || opts.make;
+  const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', make);
   for (let w = 0; w < workers.length; w++) {
     await initWorker(workers[w], {
-      config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg, ...(opts.wasm ? { wasm: opts.wasm } : {}) },
+      config: {
+        worldWidth: cfg.worldWidth,
+        worldHeight: cfg.worldHeight,
+        spatial: cfg,
+        entityIdWidth: idWidth,
+        ...(opts.wasm ? { wasm: opts.wasm } : {}),
+      },
       globalEntityCount: n,
       buffers,
       gridMetadata,
@@ -135,7 +124,7 @@ export async function setupSpatialKernel(opts = {}) {
         workerIndex: w,
         totalSpatialWorkers: workers.length,
         frameRateIndex: w,
-        ...(mem ? { spatialPublishMemory: mem.memory } : {}),
+        spatialPublishMemory: mem.memory,
       },
     });
   }
@@ -207,7 +196,7 @@ export async function setupSpatialKernel(opts = {}) {
   function frame() {
     drift();
     // update() is the shipped per-frame entry: resets the counters, then
-    // rebuildOwnedRows + findNeighborsForOwnedEntities.
+    // rebuildOwnedRows + the neighbour search.
     for (let w = 0; w < workers.length; w++) workers[w].update(16.67, 1, false);
   }
 
@@ -252,7 +241,7 @@ async function main() {
   const report = {
     feature: 'spatial-worker-frame',
     variant,
-    functions: ['SpatialWorker.rebuildOwnedRows', 'SpatialWorker.findNeighborsForOwnedEntities'],
+    functions: ['SpatialWorker.rebuildOwnedRows', 'SpatialWorker._findNeighbors (spatialGather, spatialPublish)'],
     n: k.n,
     seed: Number(args.seed ?? 0x5a71a1),
     workers: k.workers.length,

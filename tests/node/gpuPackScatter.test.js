@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GPU_CASTER_FLOATS, GPU_SPACE_WORLD, GPU_SPRITE_FLOATS, makePackContext, packInstancedRows } from '../../src/render/gpuQueueLayout.js';
+import { GPU_CASTER_FLOATS, GPU_SPACE_WORLD, GPU_SPRITE_FLOATS, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import { bindGpuPack, packInstancedRowsWasm, SCATTER_MIN_ROWS } from '../../src/render/gpuPackClient.js';
+import { packInstancedRows } from '../reference/gpuPackJs.mjs';
 
 // E-76 W9b: a long index list packs through its inverse (the queue read in order, each row written
 // to its slot), with the gather's bits; a list with a repeated or out-of-range row falls back to the

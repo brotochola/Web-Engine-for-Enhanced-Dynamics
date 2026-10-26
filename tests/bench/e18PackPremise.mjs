@@ -16,9 +16,10 @@
  *   node tests/bench/e18PackPremise.mjs
  *   node tests/bench/e18PackPremise.mjs --output tests/results/e18-pack-premise/kernel.json
  */
-import { GPU_SPRITE_FLOATS, GPU_SPACE_WORLD, makePackContext, packInstancedRows } from '../../src/render/gpuQueueLayout.js';
+import { GPU_SPRITE_FLOATS, GPU_SPACE_WORLD, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import { checksumFloats, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
+import { packInstancedRows } from '../reference/gpuPackJs.mjs';
 
 function buildQueue(fx, rows) {
   const { x, y, rotC, rotS, active } = fx.arrays;

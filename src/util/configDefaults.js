@@ -296,8 +296,11 @@ export const SCENE_DEFAULTS = Object.freeze({
   worldWidth: 1000,
   worldHeight: 1000,
   seed: 1,
-  /** 16 = Uint16 entity ids (max 65535). 32 = Uint32 lists (max 300000). */
-  entityIdWidth: 16,
+  /**
+   * 'auto' = Uint16 entity ids while the scene's pools hold at most 65535 entities, Uint32 past that (the
+   * engine decides when the scene is built). 16 or 32 forces one: 16 = max 65535, 32 = Uint32 lists (max 500000).
+   */
+  entityIdWidth: 'auto',
   /**
    * When true, Scene.init does not start the main rAF loop or worker loops.
    * Drive simulation with scene.stepFrame(dtMs) / stepFrames(n, dtMs).
@@ -429,38 +432,40 @@ export const SPATIAL_DEFAULTS = Object.freeze({
 // ============================================================================
 
 /**
- * WebAssembly kernels (E-76), one switch per module. `false` runs that module's JavaScript path,
- * the one the engine also takes when the module cannot run (the spatial publish needs 16-bit
- * entity ids). Benches flip a switch with `?wasmOff=<name>` to time both paths in one build.
+ * WebAssembly kernels (E-76). The engine's kernels run only in WebAssembly: their JavaScript copies left src/
+ * (close-out group B; tests/reference/ keeps them for the parity tests), except where a kernel cannot take a
+ * configuration (the bullet tick and the visibility gather when the spatial grid is not in the engine block). Each
+ * switch here picks between two exports of one kernel: the float32 pass, faster within its stated tolerance, or the
+ * double one. Benches flip a switch with `?wasmOff=<name>` to time both in one build.
  */
 export const WASM_DEFAULTS = Object.freeze({
-  /** Spatial neighbour publish (`spatialPublish.wasm`). */
-  spatialPublish: true,
-  /** Spatial candidate gather (`spatialGather.wasm`, E-78); needs spatialPublish's memory. */
-  spatialGather: true,
-  /** Particle integrate (`particleIntegrate.wasm`, E-79): ParticleComponent in a WebAssembly.Memory. */
-  particleIntegrate: true,
-  /** Particle list build (`particleLists.wasm`, E-80): the active and visible lists in that memory. */
-  particleLists: true,
-  /** Instanced-row pack (`gpuPack.wasm`, E-76 W9): the render queues in a WebAssembly.Memory, packed there by pre-render. */
-  gpuPack: true,
   /**
-   * Pre-render's emit (`preRenderEmit.wasm`, E-112): SpriteRenderer, ShadowCaster and DecorationComponent
-   * live in the render-queue memory with the emit's state, so the kernel reads every column there.
+   * The particle integrate (`particleIntegrate.wasm`, E-79, ParticleComponent in a WebAssembly.Memory) in float32, four particles per f32x4 where the loop allows it (`integrate_batch_f32x4`, the
+   * float32 pass): positions, velocities, the alpha, scale and tint lerps and the sine and cosine of a turning
+   * particle in float32, within a stated tolerance; lifetimes, deaths and the free list exact. false: the double
+   * integrate (`integrate_batch`), the state of the JS integrate it replaced bit for bit.
    */
-  preRenderEmit: true,
-  /** The shadow-caster stamp (`shadowStamp.wasm`, E-114): its scratch and light table in the render-queue memory. */
-  shadowStamp: true,
+  particleIntegrateF32: true,
   /**
-   * The particle worker's decoration sway (`decorationSway.wasm`, W22): its arrays in the render-queue memory,
-   * next to the decorations block the emit puts there (so it needs preRenderEmit), with a sway bucket grid.
+   * The particle list build's (`particleLists.wasm`, E-80: the active and visible lists in that memory) screen test
+   * in float32, four particles per f32x4 (`build_lists_f32x4`, the float32 pass):
+   * a particle within a few float32 steps of the culling box's edge (which has the cull margin around the view)
+   * can land on the other side. false: the double test (`build_lists`), the flags of the JS build it replaced bit
+   * for bit.
    */
-  decorationSway: true,
+  particleListsF32: true,
   /**
-   * The particle worker's flowfield search (`navFlowfield.wasm`, W14): the nav buffer at byte 0 of a
-   * WebAssembly.Memory, the search's scratch after it.
+   * The sway in float32, four skew decorations per f32x4 (`sway_decorations_f32x4`, the float32 pass): a sway
+   * rotation within 2^-21 · (1 + |amplitude|) · (1 + |base rotation|) of the double one (1.2e-6 for Predator's
+   * grass); buckets, impulse phases and modes exact. false: the double sway (`sway_decorations`), the JS
+   * sway's bits.
    */
-  navFlowfield: true,
+  decorationSwayF32: true,
+  /**
+   * The sweep's float32 export (Chrome's pick: edge terms and box tests in float32, within 1e-4 of each
+   * vertex's distance from the light); false runs its double SIMD export instead.
+   */
+  visibilitySweepF32: true,
 });
 
 // ============================================================================
@@ -614,11 +619,12 @@ export const RENDERER_DEFAULTS = Object.freeze({
    */
   interpolation: false,
   /**
-   * Explicit MeshRenderer vertex arena (local x,y). 0 = off.
-   * Indices are Uint16, so this caps at 65535.
+   * Explicit MeshRenderer vertex arena (local x,y). 0 = off. Up to 65535 the vertex counts and
+   * triangle indices are Uint16; past that they are Uint32, up to 1048576 (2^20). One mesh may
+   * take the whole arena.
    */
   maxMeshVerts: 0,
-  /** Explicit MeshRenderer index arena. 0 = convex fans only. Caps at 2^22. */
+  /** Explicit MeshRenderer index arena. 0 = convex fans only. Caps at 2^22 at either width. */
   maxMeshIndices: 0,
 });
 
@@ -745,6 +751,13 @@ export const PRE_RENDER_DEFAULTS = Object.freeze({
   cullingRatio: 0.1,
   startFadingDecorationsAtZoom: 0.5,
   hideDecorationsAtZoom: 0.25,
+  /**
+   * Room in MB (whole, 0..1024) for the Adobe Animate assets' clip, frame and piece tables in the render-queue
+   * memory, in a scene with Adobe characters. The memory is made before the assets
+   * load, so it cannot be sized from them: a piece takes 46 bytes. An asset that does not fit draws its characters
+   * through the JavaScript emit (pre-render warns once).
+   */
+  adobeTablesMB: 4,
 });
 
 /** @param {boolean|null|undefined} value */

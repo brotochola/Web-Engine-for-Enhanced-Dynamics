@@ -47,7 +47,6 @@ test('flag off keeps the 16-float upload; pose pack is a separate method', () =>
   assert.match(batchSrc, /if \(this\.poseInterp\) return this\._uploadPose/);
   assert.match(batchSrc, /_finishUpload\(out, this\._strideBytes\)/);
   assert.match(batchSrc, /_finishUpload\(out, POSE_DYN_FLOATS \* 4\)/);
-  assert.match(batchSrc, /data\[base \+ 4\] = px;/);
   assert.match(batchSrc, /uniforms\.uPoseAlpha = alpha/);
   assert.match(batchSrc, /group\.update\(\)/);
   assert.doesNotMatch(

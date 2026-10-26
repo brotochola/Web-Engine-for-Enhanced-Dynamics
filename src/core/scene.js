@@ -66,8 +66,8 @@ import {
   getSharedBufferSize as getSharedBufferSizeFromBuffers,
 } from '../util/sceneBufferMemory.js';
 import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
-import { bindEntityIdWidth, resolveEntityIdWidth, EntityIdArray } from '../util/entityIdWidth.js';
-import { createSceneWorkers } from '../util/sceneWorkerBootstrap.js';
+import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
+import { createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
 import {
   bindFrameClock,
   publishFrame,
@@ -75,6 +75,7 @@ import {
   readPhaseSample,
   frameClockSlot,
 } from '../util/frameClock.js';
+import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { Query } from './query.js';
 import { GrabSystem } from './grabSystem.js';
 import {
@@ -143,6 +144,9 @@ import {
   tryPushSpawn,
 } from '../util/spawnCommandRing.js';
 
+/** `wasm` keys a scene set that are not switches, already warned about (once per key per page). */
+const warnedWasmKeys = new Set();
+
 class Scene {
   /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
   static LOAD_STEPS = Object.freeze([
@@ -192,6 +196,8 @@ class Scene {
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
     this.imageUrls = { ...this.constructor.assets };
+    /** The Adobe Animate assets init fetched and compiled (prepareAdobeAnimateAssets), until preloadAssets takes them. */
+    this._preparedAdobeAssets = null;
     this.audioUrls = this.constructor.audios || [];
     this.loadedAudioNames = [];
 
@@ -201,7 +207,13 @@ class Scene {
 
     // Apply all default config values
     this._applyConfigDefaults();
-    bindEntityIdWidth(resolveEntityIdWidth(this.config));
+    // The id width before any pool registers ('auto': from every entity the scene declares), written back so
+    // the shared buffers and every worker bind the same one.
+    this.config.entityIdWidth = resolveEntityIdWidth(
+      this.config,
+      declaredEntityCount(this.constructor.entities, this.config.lighting?.maxFlashes),
+    );
+    bindEntityIdWidth(this.config.entityIdWidth);
 
     this.seed = this.config.seed;
     this.rng = seededRandom(this.seed, 'main');
@@ -236,6 +248,10 @@ class Scene {
     this.box2dHotFields = null;
     /** @type {object|null} Weed pose SAB when physics.enabled === false (5 float channels). */
     this.weedPose = null;
+    /** W26: the decal memory (decalMemory.js) when the tiles live in one, else null. */
+    this.decalMemory = null;
+    /** Phase 4: the block of Box2D's memory the render-queue regions live in ({ memory, byte, bytes }), or null. */
+    this.box2dBlock = null;
 
     // Workers
     this.workers = {
@@ -719,7 +735,14 @@ class Scene {
       ...(this.config.spatial || {}),
     };
 
-    // WASM kernel switches (E-76 T7)
+    // WASM kernel switches (E-76 T7). A key that is not one (a kernel whose JavaScript path has left the engine
+    // has no switch) is named once, so a scene that still sets it learns why nothing changed.
+    for (const key of Object.keys(this.config.wasm || {})) {
+      if (!Object.hasOwn(WASM_DEFAULTS, key) && !warnedWasmKeys.has(key)) {
+        warnedWasmKeys.add(key);
+        console.warn(`WeedJS: wasm.${key} is not a WASM switch (a kernel without one always runs in WebAssembly); ignored`);
+      }
+    }
     this.config.wasm = {
       ...WASM_DEFAULTS,
       ...(this.config.wasm || {}),
@@ -1015,6 +1038,10 @@ class Scene {
       throw new Error(isolationError);
     }
 
+    // N-73: the Adobe Animate assets are fetched and compiled from here, alongside the audio and the scripts, and
+    // awaited before the render queue is sized: its auto size counts each character's largest frame of pieces.
+    const adobePrepare = this.prepareAdobeAnimateAssets(this.imageUrls?.AdobeAnimateAnimations || {});
+
     // Initialize AudioWorklet mixer and autoplay gate
     const audioConfig = this.config.audio || {};
     await SoundManager.initializeAudioWorklet(
@@ -1031,6 +1058,12 @@ class Scene {
 
     await this.loadEntityScriptsInMainThread();
     this._loadStep('scripts');
+
+    this._preparedAdobeAssets = await adobePrepare;
+
+    // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
+    // render-queue regions the shared buffers make are laid in it.
+    await reserveBox2dBlock(this);
 
     // Create shared buffers
 
@@ -1344,7 +1377,11 @@ class Scene {
   createSharedBuffers() {
     createSceneSharedBuffers(this);
     if (!this._physicsEnabled) {
-      this.weedPose = createWeedPosePayload(this.totalEntityCount);
+      // W4b: the pose's region of the render-queue memory when the collect kernel has one.
+      const collect = this.renderQueueMemory?.layout.collect;
+      this.weedPose = collect
+        ? createWeedPosePayload(this.totalEntityCount, this.renderQueueMemory.buffer, collect.poseByte)
+        : createWeedPosePayload(this.totalEntityCount);
       initWeedPoseDefaults(this.weedPose);
     } else {
       this.weedPose = null;
@@ -1610,7 +1647,9 @@ class Scene {
     const textures = imageUrls?.textures || {};
     const sceneSpritesheets = imageUrls?.spritesheets || {};
     const adobeAnimateAnimations = imageUrls?.AdobeAnimateAnimations || {};
-    const preparedAdobeAssets = await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
+    // Prepared in init (N-73), else here.
+    const preparedAdobeAssets = this._preparedAdobeAssets || await this.prepareAdobeAnimateAssets(adobeAnimateAnimations);
+    this._preparedAdobeAssets = null;
     this._loadStep('adobe');
     const step = (stage) => (value) => {
       this._loadStep(stage);
@@ -2506,6 +2545,7 @@ class Scene {
 
   startMainLoop() {
     const clock = this.buffers?.frameClock ? bindFrameClock(this.buffers.frameClock) : null;
+    const totals = this.buffers?.frameTotals ? bindFrameTotals(this.buffers.frameTotals) : null;
     const mainSlot = frameClockSlot('main');
     const loop = (currentTime) => {
       // E-24. Publish the display frame before any worker of this vsync is
@@ -2529,6 +2569,7 @@ class Scene {
         const t0 = performance.now();
         this.updateInternal(deltaTime);
         this.mainStepMs = performance.now() - t0;
+        if (totals) addFrame(totals, mainSlot, this.mainStepMs, 0, 0);
 
         this.mainFrameNumber++;
         this.mainFrameTimesSum -= this.mainFrameTimes[this.mainFrameTimeIndex];
@@ -2683,6 +2724,8 @@ class Scene {
     this.loadedTilemaps = {};
     this.loadedAdobeAnimateAssets = {};
     this.decalTextureData = null;
+    this.decalMemory = null;
+    this.box2dBlock = null;
     this.bigAtlasCanvas = null;
     this.bigAtlasJson = null;
     this.bigAtlasProxySheets = null;

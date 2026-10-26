@@ -10,13 +10,15 @@ import {
   OCC_CIRCLE,
   OCC_POLY,
   POLAR_BINS,
+  writeOrientedBoxVerts,
+} from '../../src/render/visibility/angularSweep.js';
+import { checksumFloats, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import {
   buildVisibilityPolygon,
   clearPolarBins,
   clipVisibilityToPolar,
   rasterBoundarySegment,
-  writeOrientedBoxVerts,
-} from '../../src/render/visibility/angularSweep.js';
-import { checksumFloats, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+} from '../reference/visibilitySweepJs.mjs';
 
 const args = parseArgs();
 const OUTPUT = args.output ? String(args.output) : null;

@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * Kernel (E-76 W22): the particle worker's decoration sway in WASM (wasm/decorationSway.c, src/workers/decorationSway.wasm, a
- * module) against the shipped ParticleWorker._updateDecorationSwayBuckets, on a real particle worker with
+ * Kernel (E-76 W22): the particle worker's decoration sway in WASM (wasm/decorationSway.c, in src/wasm/engine.wasm, a
+ * module) against the JS sway it replaced (tests/reference/decorationSwayJs.mjs), on a real particle worker with
  * Predator's grass.
  *
- *   js    ParticleWorker.updateDecorationSway (shipped), as update() calls it every frame: its bucket
- *         path, _updateDecorationSwayBuckets
- *   wasm  the same call with the kernel bound (worker._swayWasm, as its initialize binds it on the
- *         render-queue memory): the per-bucket Math.sin / Math.cos and the cache reset in JS, then
- *         _swayFrameWasm (the column table, one sway_decorations call, Math.sin / Math.cos for the
- *         decorations the kernel lists, none of Predator's). swayDecorationsWasm below is the same
- *         around a fixed table, for the parity test.
+ *   js    the JS sway on the worker (updateDecorationSwayJs), as update() called it every frame: its bucket
+ *         path
+ *   wasm  ParticleWorker.updateDecorationSway with the kernel bound (worker._swayWasm, as its initialize binds
+ *         it on the render-queue memory): the per-bucket Math.sin / Math.cos and the cache reset in JS, then
+ *         the column table, one sway_decorations call, Math.sin / Math.cos for the decorations the kernel
+ *         lists (none of Predator's). swayDecorationsWasm below is the same around a fixed table, for the
+ *         parity test.
  *
  * Predator's decorations: 20 000 grass blades spawned through the shipped DecorationPool.spawn (what
  * Decoration.spawn calls) with predatorScene.js's spawnGrass config: SWAY_LOOP_SKEW, amplitude 0.05–0.08,
@@ -27,11 +27,23 @@
  * worker's init the component block at a region of it (componentDataByte, the product's path) and moves
  * the worker's own arrays after it, so the JS and the kernel read and write the same bytes.
  *
+ *   wasm-f32x4  the same call with sway_decorations_f32x4 (wasm/decorationSway.c) bound in the kernel's
+ *               place, as the worker binds it by default (wasm.decorationSwayF32): the sway angle and its
+ *               rotation in float32, four skew decorations per f32x4. (The float32 pass also timed a scalar
+ *               float32 sway: -3.6 % against sway_decorations.) wasm is the double sway (the switch off).
+ *
  * One variant per process, through runKernelVariants.mjs, which rejects a variant whose checksum differs.
  * The checksum covers rotC, rotS, sway, swayPhase, the bucket tables and the cache after each of the first
- * 8 frames. --check runs those frames only and prints the checksum: no warm-up, no timing.
+ * 8 frames. --check runs those frames only and prints the checksum: no warm-up, no timing. js and wasm hash
+ * their own state (E-119: identical). A float32 variant runs those frames in lock-step with the shipped
+ * kernel: each frame the shipped kernel sways from the shipped state and gives the hash, then the variant
+ * sways the same frame from the same bytes and compareSwayStates checks it (everything exact but rotC and
+ * rotS, which take swayF32Slack, and the trig list, whose values take it too), and the run goes on from the
+ * shipped state. The checksum is the shipped kernel's (wasm's) when every frame passes, and a string naming
+ * the first difference when one does not.
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/decorationSwayWasmMicrobench.mjs --variants js,wasm --rounds 5
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/decorationSwayWasmMicrobench.mjs --variants wasm,wasm-f32x4 --rounds 5
  *   node tests/bench/decorationSwayWasmMicrobench.mjs --variant wasm [--on-screen 1] [--n 20000] [--check] [--output path]
  *
  * --on-screen is the share of the world's width in view (1: every blade on screen, Q3's fixture).
@@ -39,12 +51,130 @@
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
-import { SWAY_ANGLE_PER_MS, swayFrequencyForBucket } from '../../src/util/decorationSway.js';
+import { SWAY_ANGLE_PER_MS, SWAY_LOOP, swayFrequencyForBucket } from '../../src/util/decorationSway.js';
+import { updateDecorationSwayJs } from '../reference/decorationSwayJs.mjs';
 import { bindDecorationSway, SWAY_SLOTS, TRIG_IMPULSE } from '../../src/workers/decorationSwayClient.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
+import { poolFreeListTopBytes, poolSlotBytes } from '../../src/util/poolSlotWidth.js';
 import { isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
 import { machineState, warmWasm } from './wasmKernelHelpers.mjs';
+
+/** The float32 sway of the shipped module (wasm/decorationSway.c), by variant name. */
+export const SWAY_F32_MODULE = 'decorationSway';
+export const SWAY_F32_EXPORTS = Object.freeze({ 'wasm-f32x4': 'sway_decorations_f32x4' });
+
+
+/** Away from 0.08 rad by at most this, a float32 angle can take the other side of the JS's small-angle step. */
+const SWAY_STEP_COS = 1 - Math.cos(0.08) + (0.08 - Math.sin(0.08));
+
+/**
+ * How far a float32 sway may put a decoration's rotC or rotS from the shipped kernel's: a few float32
+ * roundings of the angle (relative to the amplitude, since sin a cos p + cos a sin p can cancel) carried
+ * through the rotation, 2^-21 · (1 + |amplitude|) · (1 + |baseRotC| + |baseRotS|): 1.2e-6 for Predator's
+ * grass. The angle of a trig-list entry takes 2^-21 · (1 + |amplitude|).
+ */
+export function swayF32Slack(amplitude, baseRotC, baseRotS) {
+  // A NaN input gives NaN on both sides (or does not enter: a skew decoration ignores its base rotation).
+  const mag = (v) => (Number.isNaN(v) ? 0 : Math.abs(v));
+  return 2 ** -21 * (1 + mag(amplitude)) * (1 + mag(baseRotC) + mag(baseRotS));
+}
+
+/**
+ * An infinite or NaN amplitude or base rotation, or a loop decoration's amplitude past 6.6e6 rad (where a
+ * float32 rounding of the angle passes pi): the shipped rotation is then Math.cos / Math.sin of an angle no
+ * rounding defines, or infinities whose NaN-ness follows its sign, so nothing holds the variant to it. Not a
+ * value a scene sways by; the parity frames reach it with amplitudes of 3e38 and infinite bases.
+ */
+export function swayF32Free(mode, amplitude, baseRotC, baseRotS) {
+  if (!(Math.abs(amplitude) < Infinity && Math.abs(baseRotC) < Infinity && Math.abs(baseRotS) < Infinity)) return true;
+  return mode === SWAY_LOOP && Math.abs(amplitude) >= 6.6e6;
+}
+
+/** Two values of a float column agree: both NaN (any payload), the same, or within `slack`. */
+function close(a, b, slack) {
+  if (Number.isNaN(a) || Number.isNaN(b)) return Number.isNaN(a) && Number.isNaN(b);
+  return a === b || Math.abs(a - b) <= slack;
+}
+
+/**
+ * A float32 sway frame against the shipped kernel's on the same bytes. `views` is the [name, view] list of
+ * every array the sway reads or writes (the DecorationComponent columns by their names, the worker's
+ * arrays), all in one buffer; `ref` and `got` are copies of that buffer after each kernel's frame, `refTrig`
+ * and `gotTrig` their trig lists ({ trig, value } arrays, before the JS finished them). Every array must be
+ * the same (a float as Object.is sees it, any NaN for a NaN) but rotC and rotS, which take swayF32Slack; the
+ * trig lists must hold the same entries with values within 2^-21 · (1 + |amplitude|), except a sway angle
+ * within that of 0.08 rad, which can be in one list only: its rotation then takes the JS's step there too
+ * (cos 0.08 against 1). A decoration whose inputs leave nothing to compare (swayF32Free) may differ in
+ * both. Counts the step crossings in stats.stepFlips, the free decorations that differ in stats.free, the
+ * largest rotation error as a share of its slack in stats.worst and absolute, for amplitudes up to 1 rad, in
+ * stats.worstAbs; returns the first difference, or null. The last argument reads the trig entries of a u32
+ * sway (E-129: the impulse at bit 31).
+ */
+export function compareSwayStates(views, ref, got, refTrig, gotTrig, stats = { stepFlips: 0, worst: 0 },
+  { indexMask = 0xffff, impulseBit = TRIG_IMPULSE } = {}) {
+  const at = (bytes, name) => {
+    const v = views.find(([n]) => n === name)[1];
+    return new v.constructor(bytes.buffer, v.byteOffset, v.length);
+  };
+  const amp = at(ref, 'swayAmplitude');
+  const bc = at(ref, 'baseRotC');
+  const bs = at(ref, 'baseRotS');
+  const mode = at(ref, 'sway');
+  const entries = (list) => {
+    const m = new Map();
+    for (let e = 0; e < list.trig.length; e++) m.set(list.trig[e], list.value[e]);
+    return m;
+  };
+  const refList = entries(refTrig);
+  const gotList = entries(gotTrig);
+  const stepped = new Set();
+  for (const key of new Set([...refList.keys(), ...gotList.keys()])) {
+    const i = key & indexMask;
+    const impulse = (key & impulseBit) !== 0;
+    const a = refList.get(key);
+    const b = gotList.get(key);
+    const slack = 2 ** -21 * (1 + Math.abs(amp[i]));
+    if (a !== undefined && b !== undefined) {
+      if (impulse ? a !== b : !close(a, b, slack)) return `trig value of ${i}: shipped ${a}, variant ${b}`;
+      continue;
+    }
+    const v = a ?? b;
+    if (!impulse && swayF32Free(mode[i], amp[i], bc[i], bs[i])) {
+      stepped.add(i);
+      continue;
+    }
+    if (impulse || !(Math.abs(Math.abs(v) - 0.08) <= slack)) {
+      return `decoration ${i} is in ${a === undefined ? 'the variant' : 'the shipped'} trig list only (${v})`;
+    }
+    stepped.add(i);
+    stats.stepFlips++;
+  }
+  for (const [name, view] of views) {
+    const a = new view.constructor(ref.buffer, view.byteOffset, view.length);
+    const b = new view.constructor(got.buffer, view.byteOffset, view.length);
+    const rot = name === 'rotC' || name === 'rotS';
+    for (let i = 0; i < a.length; i++) {
+      if (rot) {
+        if (swayF32Free(mode[i], amp[i], bc[i], bs[i])) {
+          if (a[i] !== b[i] && !(Number.isNaN(a[i]) && Number.isNaN(b[i]))) stats.free = (stats.free ?? 0) + 1;
+          continue;
+        }
+        let slack = swayF32Slack(amp[i], bc[i], bs[i]);
+        if (stepped.has(i)) slack += SWAY_STEP_COS * (Math.abs(bc[i]) + Math.abs(bs[i]));
+        if (!close(a[i], b[i], slack)) {
+          return `${name}[${i}]: shipped ${a[i]}, variant ${b[i]} (slack ${slack}; mode ${at(ref, 'sway')[i]}, amplitude ${amp[i]}, base ${bc[i]}, ${bs[i]})`;
+        }
+        const err = Math.abs(a[i] - b[i]);
+        if (err > 0 && err / slack > stats.worst) stats.worst = err / slack;
+        if (Math.abs(amp[i]) <= 1 && err > (stats.worstAbs ?? 0)) stats.worstAbs = err;
+      } else if (a instanceof Float32Array ? !(Object.is(a[i], b[i]) || (Number.isNaN(a[i]) && Number.isNaN(b[i]))) : a[i] !== b[i]) {
+        return `${name}[${i}]: shipped ${a[i]}, variant ${b[i]}`;
+      }
+    }
+  }
+  return null;
+}
 
 
 export { SWAY_SLOTS, TRIG_IMPULSE };
@@ -63,9 +193,9 @@ const CHECK_FRAMES = 8;
 /** The scene clock at the first frame (the Predator fixture's 12 s warm-up). */
 const START_MS = 12000;
 
-/** A view of the same kind as `from` at `region`, holding what `from` holds. */
-function moved(buffer, region, from) {
-  const view = new from.constructor(buffer, region.byte, from.length);
+/** A view of the same kind as `from` (or of `Type`) at `region`, holding what `from` holds. */
+function moved(buffer, region, from, Type = from.constructor) {
+  const view = new Type(buffer, region.byte, from.length);
   view.set(from);
   return view;
 }
@@ -73,24 +203,27 @@ function moved(buffer, region, from) {
 /**
  * A real particle worker whose sway arrays all live in one shared memory, Predator's grass spawned and
  * the kernel bound. `kMax` sizes the bucket tables for a grid larger than the one the worker starts with.
- * @param {{ n?: number, k?: number, kMax?: number, listCap?: number, onScreen?: number, seed?: number }} [opts]
+ * `slotBytes` 4 lays the snapshot and the chunk list out as u32 and binds the u32 sway (E-129).
+ * @param {{ n?: number, k?: number, kMax?: number, listCap?: number, onScreen?: number, seed?: number, slotBytes?: number }} [opts]
  */
 export async function setupSwayKernel(opts = {}) {
   const n = opts.n ?? GRASS;
   const k = opts.k ?? BUCKETS;
   const kMax = Math.max(k, opts.kMax ?? k);
   const listCap = opts.listCap ?? SWAY_LIST_CAP;
+  // The pool's own width (E-129: 4 past 65 535 decorations), or 4 for a 16-bit pool to run the u32 sway on.
+  const slotBytes = opts.slotBytes ?? poolSlotBytes(n);
   const layout = layoutRegions([
     { name: 'guard', bytes: NULL_GUARD_BYTES },
     { name: 'decorations', bytes: DecorationComponent.getBufferSize(n) },
-    { name: 'snapshot', bytes: n * 2 },
+    { name: 'snapshot', bytes: n * slotBytes },
     { name: 'phaseSin', bytes: n * 4 },
     { name: 'phaseCos', bytes: n * 4 },
     { name: 'bucketSin', bytes: kMax * 4 },
     { name: 'bucketCos', bytes: kMax * 4 },
     { name: 'bucketOf', bytes: n * 2 },
     { name: 'bucketFreq', bytes: n * 4 },
-    { name: 'list', bytes: listCap * 2 },
+    { name: 'list', bytes: listCap * slotBytes },
     { name: 'trig', bytes: n * 4 },
     { name: 'trigValue', bytes: n * 8 },
     // The parent column as entityIdWidth 32 lays it out, for the parity test.
@@ -111,9 +244,9 @@ export async function setupSwayKernel(opts = {}) {
     },
     extra: {
       maxDecorations: n,
-      decorationFreeList: new SharedArrayBuffer(n * 2),
-      decorationFreeListTop: new SharedArrayBuffer(8),
-      activeDecorationsData: new SharedArrayBuffer((1 + n) * 2),
+      decorationFreeList: new SharedArrayBuffer(n * poolSlotBytes(n)),
+      decorationFreeListTop: new SharedArrayBuffer(poolFreeListTopBytes(n)),
+      activeDecorationsData: new SharedArrayBuffer((1 + n) * poolSlotBytes(n)),
       activeDecorationsLock: new SharedArrayBuffer(4),
     },
   });
@@ -121,7 +254,7 @@ export async function setupSwayKernel(opts = {}) {
   if (worker._swayBuckets !== k) throw new Error(`the worker has ${worker._swayBuckets} sway buckets, not ${k}`);
 
   // The worker's own sway arrays, moved into the memory with what its init put in them.
-  worker._activeDecorationSnapshot = moved(buffer, R.snapshot, worker._activeDecorationSnapshot);
+  worker._activeDecorationSnapshot = moved(buffer, R.snapshot, worker._activeDecorationSnapshot, slotBytes === 4 ? Uint32Array : undefined);
   worker._phaseSin = moved(buffer, R.phaseSin, worker._phaseSin);
   worker._phaseCos = moved(buffer, R.phaseCos, worker._phaseCos);
   worker._bucketSin = moved(buffer, R.bucketSin, worker._bucketSin);
@@ -165,13 +298,17 @@ export async function setupSwayKernel(opts = {}) {
   if (worker._activeDecorationSnapshotCount !== n) throw new Error(`the snapshot holds ${worker._activeDecorationSnapshotCount} of ${n}`);
   worker.accumulatedTime = START_MS;
 
-  const b = await bindSwayKernel(memory, R, worker, listCap);
-  return { worker, memory, buffer, layout, regions: R, b, n, k, onScreen };
+  const b = await bindSwayKernel(memory, R, worker, listCap, { slotBytes });
+  return { worker, memory, buffer, layout, regions: R, b, n, k, onScreen, slotBytes };
 }
 
-/** Load the kernel onto `memory` through the client, on a layout of the bench's regions, and write its table. */
-export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIST_CAP) {
-  if (!(listCap >= 1 && listCap * 2 <= regions.list.bytes)) throw new Error(`sway: a list of ${listCap} does not fit its region`);
+/**
+ * Load the kernel onto `memory` through the client, on a layout of the bench's regions, and write its table.
+ * `f32`: bindDecorationSway's (wasm.decorationSwayF32), off by default here: the double sway. `slotBytes` 4: the
+ * u32 sway on a u32 snapshot and list (E-129), with the trig list's impulse at bit 31.
+ */
+export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIST_CAP, { f32 = false, slotBytes = 2 } = {}) {
+  if (!(listCap >= 1 && listCap * slotBytes <= regions.list.bytes)) throw new Error(`sway: a list of ${listCap} does not fit its region`);
   const b = await bindDecorationSway(memory, {
     decorations: regions.trig.bytes / 4,
     buckets: regions.bucketSin.bytes / 4,
@@ -180,7 +317,9 @@ export async function bindSwayKernel(memory, regions, worker, listCap = SWAY_LIS
     trigByte: regions.trig.byte,
     trigValueByte: regions.trigValue.byte,
     tableByte: regions.table.byte,
-  });
+    // The client binds the sway of this width (the _u32 one, with its trig bits, for 4).
+    slotBytes,
+  }, { f32 });
   writeSwayTable(b, worker);
   return b;
 }
@@ -220,7 +359,7 @@ export function writeSwayTable(b, worker) {
 }
 
 /** The rest of the JS loop body for the decorations the kernel listed: Math.sin / Math.cos, then the rotation. */
-function finishTrig(trig, trigValue, n) {
+function finishTrig(trig, trigValue, n, indexMask = 0xffff, impulseBit = TRIG_IMPULSE) {
   const D = DecorationComponent;
   const rotC = D.rotC;
   const rotS = D.rotS;
@@ -229,9 +368,9 @@ function finishTrig(trig, trigValue, n) {
   const swayAmplitude = D.swayAmplitude;
   for (let t = 0; t < n; t++) {
     const e = trig[t];
-    const i = e & 0xffff;
+    const i = e & indexMask;
     let delta = trigValue[t];
-    if ((e & TRIG_IMPULSE) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
+    if ((e & impulseBit) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
     const bc = baseRotC[i];
     const bs = baseRotS[i];
     if (delta !== 0) {
@@ -257,8 +396,8 @@ export function swayDecorationsWasm(b, worker, deltaTime = 0) {
   if (activeCount === 0) return -1;
   const k = worker._swayBuckets;
   if (!(k > 1)) {
-    // Without buckets every decoration takes a Math.sin: that loop stays JS.
-    worker.updateDecorationSway(deltaTime);
+    // Without buckets (sway_free in the worker) this wrapper runs the JS sway.
+    updateDecorationSwayJs(worker, deltaTime);
     return -1;
   }
   // _updateDecorationSwayBuckets before its loop: this frame's bucket angles, and the cache reset.
@@ -275,7 +414,7 @@ export function swayDecorationsWasm(b, worker, deltaTime = 0) {
     worker._swayBucketFreq.fill(-1);
   }
   const n = b.sway(b.tableByte, activeCount, k, deltaTime);
-  if (n > 0) finishTrig(b.trig, b.trigValue, n);
+  if (n > 0) finishTrig(b.trig, b.trigValue, n, b.trigIndexMask ?? 0xffff, b.trigImpulse ?? TRIG_IMPULSE);
   return n;
 }
 
@@ -294,37 +433,88 @@ export function hashSwayState(h, worker) {
   return h;
 }
 
+/** Every array the sway reads or writes, by name: the DecorationComponent columns and the worker's. */
+export function swayStateViews(worker) {
+  const D = DecorationComponent;
+  const out = Object.keys(D.ARRAY_SCHEMA).map((name) => [name, D[name]]);
+  out.push(
+    ['snapshot', worker._activeDecorationSnapshot],
+    ['phaseSin', worker._phaseSin],
+    ['phaseCos', worker._phaseCos],
+    ['bucketSin', worker._bucketSin],
+    ['bucketCos', worker._bucketCos],
+    ['bucketOf', worker._swayBucketOf],
+    ['bucketFreq', worker._swayBucketFreq],
+  );
+  return out;
+}
+
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'js');
-  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  if (!['js', 'wasm', ...Object.keys(SWAY_F32_EXPORTS)].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  const f32 = variant in SWAY_F32_EXPORTS;
   const s = await setupSwayKernel({ n: Number(args.n ?? GRASS), onScreen: Number(args['on-screen'] ?? ON_SCREEN) });
   const { worker, b } = s;
   let listed = 0;
-  // The shipped path either way: with the kernel bound, updateDecorationSway runs _swayFrameWasm. Over the
-  // checksum frames the kernel's call counts what it lists; the timed frames call it bare.
-  worker._swayWasm = variant === 'wasm' ? b : null;
-  const kernel = b.sway;
-  b.sway = (...callArgs) => {
-    const n = kernel(...callArgs);
-    if (n > 0) listed += n;
+  let lastListed = 0;
+  // js: the JS sway; else the shipped path with the kernel bound. Over the checksum frames the kernel's call counts
+  // what it lists; the timed frames call it bare.
+  worker._swayWasm = variant === 'js' ? null : b;
+  const shipped = b.sway;
+  // wasm-f32x4: the function the worker binds with wasm.decorationSwayF32 on (bindDecorationSway's `f32`).
+  const kernel = f32 ? (await bindSwayKernel(s.memory, s.regions, worker, b.listCap, { f32: true })).sway : shipped;
+  const counted = (fn, count) => (...callArgs) => {
+    const n = fn(...callArgs);
+    lastListed = n;
+    if (count && n > 0) listed += n;
     return n;
   };
-  const sway = () => worker.updateDecorationSway(DT);
+  const countedKernel = counted(kernel, true);
+  const countedShipped = counted(shipped, false);
+  b.sway = countedKernel;
+  const sway = variant === 'js' ? () => updateDecorationSwayJs(worker, DT) : () => worker.updateDecorationSway(DT);
   const frame = () => {
     worker.accumulatedTime += DT;
     sway();
   };
+  const bytes = new Uint8Array(s.buffer, 0, s.layout.bytes);
+  const views = swayStateViews(worker);
+  const trigList = () => ({ trig: b.trig.slice(0, lastListed), value: b.trigValue.slice(0, lastListed) });
+  const flips = { stepFlips: 0, worst: 0 };
+  let violation = null;
 
   // The first frames from the spawn: every bucket misses, then every one hits.
   let checksum = 2166136261;
   for (let f = 0; f < CHECK_FRAMES; f++) {
-    frame();
+    if (!f32) {
+      frame();
+      checksum = hashSwayState(checksum, worker);
+      continue;
+    }
+    // The shipped kernel from the shipped state, then the variant from the same bytes; on from the former.
+    worker.accumulatedTime += DT;
+    const before = bytes.slice();
+    const cacheK = worker._swayBucketCacheK;
+    b.sway = countedShipped;
+    sway();
+    const refTrig = trigList();
     checksum = hashSwayState(checksum, worker);
+    const ref = bytes.slice();
+    const refCacheK = worker._swayBucketCacheK;
+    bytes.set(before);
+    worker._swayBucketCacheK = cacheK;
+    b.sway = countedKernel;
+    sway();
+    const bad = compareSwayStates(views, ref, bytes.slice(), refTrig, trigList(), flips);
+    if (bad && !violation) violation = `tolerance: frame ${f}: ${bad}`;
+    bytes.set(ref);
+    worker._swayBucketCacheK = refCacheK;
   }
   const checkedListed = listed;
   b.sway = kernel;
-  const line = `checksum ${checksum} (${CHECK_FRAMES} frames, ${s.n} decorations, ${s.onScreen} on screen${variant === 'wasm' ? `, ${checkedListed} listed for Math.sin / Math.cos` : ''})`;
+  if (violation) checksum = violation;
+  const line = `checksum ${checksum} (${CHECK_FRAMES} frames, ${s.n} decorations, ${s.onScreen} on screen${variant !== 'js' ? `, ${checkedListed} listed for Math.sin / Math.cos` : ''})`;
   if (args.check) {
     console.log(line);
     return;
@@ -337,7 +527,7 @@ async function main() {
     frame();
   };
   let tier = null;
-  if (variant === 'wasm') tier = await warmWasm(b.sway, short);
+  if (variant !== 'js') tier = await warmWasm(b.sway, short);
   else warmNormalCompile(short);
   worker._activeDecorationSnapshotCount = count;
   const cases = {
@@ -346,18 +536,22 @@ async function main() {
   const report = {
     feature: 'decoration-sway-wasm',
     variant,
-    functions: ['ParticleWorker._updateDecorationSwayBuckets', 'decorationSway.sway_decorations'],
+    functions: [variant === 'js' ? 'swayBucketsJs' : 'ParticleWorker._updateDecorationSwayBuckets', f32 ? `${SWAY_F32_MODULE}.${SWAY_F32_EXPORTS[variant]}` : 'decorationSway.sway_decorations'],
     n: s.n,
     onScreen: s.onScreen,
     buckets: s.k,
     listCap: b.listCap,
     checksum,
-    // Decorations the kernel listed for Math.sin / Math.cos over the checksum frames (wasm).
-    listed: variant === 'wasm' ? checkedListed : null,
+    // Decorations the kernel listed for Math.sin / Math.cos over the checksum frames (wasm and its variants).
+    listed: variant !== 'js' ? checkedListed : null,
+    // Float32 variants: decorations on the other side of the 0.08 rad step, and the largest rotation error
+    // as a share of its slack, over the checksum frames.
+    flips: f32 ? flips : null,
     wasmTier: tier,
     machine: machineState(),
     cases,
   };
+  if (violation) console.error(violation);
   if (args.output) writeReport(String(args.output), report);
   else console.log(`${line}${tier ? ` tier ${tier}` : ''} sway ${cases.sway.opsPerSec.toFixed(1)} ops/s`);
 }

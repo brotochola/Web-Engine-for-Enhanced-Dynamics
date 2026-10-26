@@ -790,7 +790,8 @@ test('logic worker binds LiquidFun HEAP pose on box2dReady and liquidFunHeap', (
     join(dirname(fileURLToPath(import.meta.url)), '../../src/workers/logicWorker.js'),
     'utf8',
   );
-  assert.match(src, /LiquidFun\.bindHeapPose\(data\.liquidFunHeap\)/);
+  // On the worker's handle of the engine block when it has one (AbstractWorker._liquidFunHeapPayload).
+  assert.match(src, /LiquidFun\.bindHeapPose\(this\._liquidFunHeapPayload\(data\.liquidFunHeap\)\)/);
   assert.match(src, /default:\s*super\.handleCustomMessage\(data\);/);
 });
 

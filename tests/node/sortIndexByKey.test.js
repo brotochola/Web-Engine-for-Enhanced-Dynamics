@@ -1,17 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  radixSortIndicesBySortKey,
-  reinsertChangedSlots,
-  createPainterState,
-  painterSameSet,
-  orderPainterSlots,
-  spriteYSortKey,
-  orderSortKey,
-  zSortBand,
-  floatBitsToOrd,
-} from '../../src/util/sortIndexByKey.js';
+import { spriteYSortKey, orderSortKey, zSortBand } from '../../src/util/sortIndexByKey.js';
 import { depthFromSortKey } from '../helpers/zBufferDepth.mjs';
+import { createPainterState, floatBitsToOrd, orderPainterSlots, painterSameSet, radixSortIndicesBySortKey, reinsertChangedSlots } from '../reference/painterJs.mjs';
 
 function cmpFloat(a, b) {
   if (a < b) return -1;

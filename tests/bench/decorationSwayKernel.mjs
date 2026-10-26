@@ -1,4 +1,4 @@
-// Same unattached sway math as particleWorker.updateDecorationSway.
+// Same unattached sway math as the particle worker's JS sway did (tests/reference/decorationSwayJs.mjs).
 // Scan walks maxDecorations. Snapshot walks a compact index list.
 
 import {

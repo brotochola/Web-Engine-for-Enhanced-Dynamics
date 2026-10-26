@@ -28,7 +28,8 @@ import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
-import { packInstancedRows } from './gpuQueueLayout.js';
+import { GPU_POSE_FLOATS, GPU_STATIC_FLOATS } from './gpuQueueLayout.js';
+import { packInstancedRowsWasm, packPoseRowsWasm, packSplitRowsWasm } from './gpuPackClient.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -40,7 +41,11 @@ export const INSTANCED_SPRITE_STRIDE = INSTANCED_SPRITE_FLOATS * 4;
 // only when they change: when the queue's staticGen, the rows packed, the type filter or the screen
 // scale differ from what the static buffer holds. 24 bytes a sprite a frame instead of 68.
 export const POSE_DYN_FLOATS = 6;
-export const POSE_STATIC_FLOATS = 11;
+export const POSE_STATIC_FLOATS = GPU_STATIC_FLOATS;
+// E-82b. A split batch is a plain batch in the same two streams, its pose 4 floats (x, y, rotC, rotS) and
+// the previous xy read from the current one: 16 bytes a sprite on a frame whose statics hold, the same 60
+// as a plain batch on one whose statics change.
+export const SPLIT_POSE_FLOATS = GPU_POSE_FLOATS;
 
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
 export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
@@ -65,30 +70,6 @@ const EMPTY_UPLOAD_OPTS = Object.freeze({
   indices: null,
   indexCount: 0,
 });
-
-/** Nearest sampling: land the anchor on a device pixel so every sprite shares the texel phase. */
-export function snapWorldToPixel(v, cam, zoom) {
-  if (!(zoom > 0)) return v;
-  return Math.round((v - cam) * zoom) / zoom + cam;
-}
-
-const _snapXY = { x: 0, y: 0 };
-
-function snapSpritePos(x, y, o, useScreen) {
-  if (!o.pixelSnap) {
-    _snapXY.x = x;
-    _snapXY.y = y;
-    return _snapXY;
-  }
-  if (useScreen) {
-    _snapXY.x = Math.round(x);
-    _snapXY.y = Math.round(y);
-    return _snapXY;
-  }
-  _snapXY.x = snapWorldToPixel(x, o.snapCameraX, o.snapZoom);
-  _snapXY.y = snapWorldToPixel(y, o.snapCameraY, o.snapZoom);
-  return _snapXY;
-}
 
 /**
  * Per-textureId LUT: origW, origH, u0, v0, u1, v1, trimX, trimY, trimW, trimH
@@ -243,19 +224,47 @@ export class InstancedSpriteBatch {
     shaders = null,
     poseInterp = false,
     shadowCast = false,
+    data = null,
+    gpuPack = null,
+    split = false,
+    arena = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
-    this._floats = this.poseInterp ? POSE_DYN_FLOATS : INSTANCED_SPRITE_FLOATS;
+    this.split = !!split && !this.poseInterp && !this.shadowCast;
+    // Two streams, a pose and the statics: a pose batch's (E-82) or a split batch's (E-82b).
+    this._twoStreams = this.poseInterp || this.split;
+    this._floats = this.poseInterp ? POSE_DYN_FLOATS : this.split ? SPLIT_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
     if (this.shadowCast) this._floats += 7;
     this._strideBytes = this._floats * 4;
-    this.data = new Float32Array(this.capacity * this._floats);
+    // W30: in a private memory (sharedCopy.createPrivateArena) when Pixi passes one, so the copies out of the
+    // render-queue memory run as memory.copy (copyIn); else arrays of the batch's own.
+    this.data = (arena && arena.f32(this.capacity * this._floats)) || new Float32Array(this.capacity * this._floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
-    // A pose batch's static stream (E-82): its CPU copy, the key of what it holds, and the version
-    // each ring slot's GPU copy holds (-1: none).
-    this.staticData = new Float32Array(this.poseInterp ? this.capacity * POSE_STATIC_FLOATS : 0);
+    // W9d: a plain sprite batch may pack through gpuPack.wasm (`gpuPack`, gpuPackClient.bindGpuPack) into rows
+    // of the render-queue memory (`data`); they are copied into `this.data` before the upload, as
+    // _commitPackedBatch copies pre-render's. Uploading from the shared rows themselves made every other
+    // worker slower in Predator (E-123: physics +9.5 %, spatial +6.3 %, 4/4). A split batch packs the same
+    // region as its two streams, the poses first; so does a pose batch (W9e), whose rows are 17 floats.
+    const poseFloats = this.poseInterp ? POSE_DYN_FLOATS : SPLIT_POSE_FLOATS;
+    const rowFloats = this.poseInterp ? POSE_DYN_FLOATS + POSE_STATIC_FLOATS : INSTANCED_SPRITE_FLOATS;
+    const shared = !this.shadowCast && data instanceof Float32Array && data.length >= this.capacity * rowFloats ? data : null;
+    this._sharedRows = shared && !this.poseInterp ? shared : new Float32Array(0);
+    this._gpuPack = shared && gpuPack ? gpuPack : null;
+    this._sharedPose = shared && this._twoStreams ? shared.subarray(0, this.capacity * poseFloats) : new Float32Array(0);
+    this._sharedStatic = shared && this._twoStreams
+      ? new Float32Array(shared.buffer, shared.byteOffset + this.capacity * poseFloats * 4, this.capacity * POSE_STATIC_FLOATS)
+      : new Float32Array(0);
+    // The static stream (E-82): its CPU copy, the key of what it holds, and the version each ring
+    // slot's GPU copy holds (-1: none).
+    this.staticData = (this._twoStreams && arena && arena.f32(this.capacity * POSE_STATIC_FLOATS))
+      || new Float32Array(this._twoStreams ? this.capacity * POSE_STATIC_FLOATS : 0);
     this.staticDataU32 = new Uint32Array(this.staticData.buffer);
+    // W30: the arena's copy, the shared buffer it copies from and the arena's own (null: TypedArray.set).
+    this._copy = arena ? arena.copy : null;
+    this._copySource = arena ? arena.source : null;
+    this._arenaBuffer = arena ? arena.buffer : null;
     this._staticVersion = 0;
     this._slotStaticVersion = [-1, -1];
     this._stGen = 0;
@@ -265,11 +274,14 @@ export class InstancedSpriteBatch {
     this._quad = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
     this._index = [0, 1, 2, 0, 2, 3];
     const labelName = label || 'instanced-sprites';
+    this._label = labelName;
+    // _packRefused said its reason.
+    this._packRefusedWarned = false;
     this._buffers = [
       this._makeInstanceBuffer(labelName),
       this._makeInstanceBuffer(labelName + '-ring'),
     ];
-    this._staticBuffers = this.poseInterp
+    this._staticBuffers = this._twoStreams
       ? [this._makeStaticBuffer(labelName + '-static'), this._makeStaticBuffer(labelName + '-static-ring')]
       : null;
     this._geometries = this._buffers.map((buf, r) => this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null));
@@ -383,16 +395,17 @@ export class InstancedSpriteBatch {
   }
 
   _geometryFor(buf, staticBuf) {
-    if (this.poseInterp) {
-      // E-82: the pose stream (24-byte stride) and the static stream (44).
-      const ds = POSE_DYN_FLOATS * 4;
+    if (this._twoStreams) {
+      // E-82: the pose stream (24-byte stride) and the static stream (44). E-82b, a split batch: a 16-byte
+      // pose whose previous xy is the current one (the pose shader's mix at uPoseAlpha 1 gives it back).
+      const ds = this._floats * 4;
       const ss = POSE_STATIC_FLOATS * 4;
       const geometry = new Geometry({
         attributes: {
           aQuad: { buffer: this._quad, format: 'float32x2' },
           aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
           aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-          aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 16, instance: true },
+          aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: this.poseInterp ? 16 : 0, instance: true },
           aInstScale: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 0, instance: true },
           aInstAnchor: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 8, instance: true },
           aInstDepth: { buffer: staticBuf, format: 'float32', stride: ss, offset: 16, instance: true },
@@ -432,9 +445,10 @@ export class InstancedSpriteBatch {
     const uniforms = {
       uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
     };
-    if (this.poseInterp) {
+    if (this._twoStreams) {
       // Number, not Float32Array. Pixi's WebGL f32 sync compares the value
       // with !==. The same array never looks changed, so the GPU stays at 0.
+      // A split batch keeps 1 (setPoseAlpha leaves it).
       uniforms.uPoseAlpha = { value: 1, type: 'f32' };
     }
     const resources = {
@@ -448,8 +462,8 @@ export class InstancedSpriteBatch {
       fragEntry = 'mainFrag';
     }
     const shaders = this._engineShaders;
-    const spriteSource = this.poseInterp ? shaders?.spritePose : shaders?.sprite;
-    const vertSource = this.poseInterp ? shaders?.spriteVertPose : shaders?.spriteVert;
+    const spriteSource = this._twoStreams ? shaders?.spritePose : shaders?.sprite;
+    const vertSource = this._twoStreams ? shaders?.spriteVertPose : shaders?.spriteVert;
     if (this._useWebGpu) {
       const gpuProgram = instancedSpriteGpuProgram(GpuProgram, spriteSource, fragEntry, name);
       return new Shader({ gpuProgram, resources });
@@ -664,17 +678,16 @@ export class InstancedSpriteBatch {
    */
   upload(q, opts) {
     if (this.poseInterp) return this._uploadPose(q, opts);
+    if (this.split) return this._uploadSplit(q, opts);
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
-    const out = packInstancedRows(
-      q,
-      ctx,
-      this.data,
-      this.dataU32,
-      this._floats,
-      this.capacity,
-      this.shadowCast
-    );
+    // W9d, close-out group B: gpuPack.wasm packs every call into the batch's rows of the render-queue memory, then
+    // they are copied into its own (E-123); the JS packer it replaced is tests/reference/gpuPackJs.mjs.
+    const out = this._gpuPack !== null
+      ? packInstancedRowsWasm(this._gpuPack, q, ctx, this._sharedRows, this._floats, this.capacity, this.shadowCast)
+      : -1;
+    if (out < 0) return this._packRefused(this._strideBytes);
+    if (out > 0) this.copyIn(this.data, this._sharedRows, out * this._floats);
     return this._finishUpload(out, this._strideBytes);
   }
 
@@ -704,221 +717,91 @@ export class InstancedSpriteBatch {
     return false;
   }
 
+  /**
+   * A pose batch's upload (renderer.interpolation): the pose stream, and the statics when _staticsCurrent says the
+   * GPU's are not this upload's. Through gpuPack.wasm (W9e, pack_pose), into its region of the render-queue memory and
+   * then into its own arrays (E-123).
+   */
   _uploadPose(q, opts) {
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
-    const out = this._staticsCurrent(q, ctx) ? this._packPoseOnly(q, ctx) : this._packPoseAndStatics(q, ctx);
+    const current = this._staticsCurrent(q, ctx);
+    const out = this._gpuPack !== null
+      ? packPoseRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity)
+      : -1;
+    if (out < 0) return this._packRefused(POSE_DYN_FLOATS * 4);
+    if (out > 0) {
+      this.copyIn(this.data, this._sharedPose, out * POSE_DYN_FLOATS);
+      if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
+    }
     return this._finishUpload(out, POSE_DYN_FLOATS * 4);
   }
 
-  /** The pose stream alone: the statics on the GPU are current. A copy of the loop below. */
-  _packPoseOnly(q, ctx) {
-    const o = ctx.o;
-    const data = this.data;
-    const indices = ctx.indices;
-    const useIndices = ctx.useIndices;
-    const useScreen = ctx.useScreen;
-    const cameraX = ctx.cameraX;
-    const cameraY = ctx.cameraY;
-    const screenScale = ctx.screenScale;
-    const typeArr = ctx.typeArr;
-    const includeType = ctx.includeType;
-    const exclude0 = ctx.exclude0;
-    const exclude1 = ctx.exclude1;
-    const hasInclude = ctx.hasInclude;
-    const filterTypes = ctx.filterTypes;
-    const scanCount = ctx.scanCount;
-    const snap = !!o.snap;
-    const prevXArr = snap ? null : o.prevX;
-    const prevYArr = snap ? null : o.prevY;
-    const rqX = q.x;
-    const rqY = q.y;
-    const rqRotC = q.rotC;
-    const rqRotS = q.rotS;
-    let base = 0;
-    let out = 0;
-    for (let k = 0; k < scanCount; k++) {
-      const i = useIndices ? indices[k] : k;
-      if (filterTypes) {
-        const t = typeArr[i];
-        if (hasInclude && t !== includeType) continue;
-        if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
-      }
-      if (out >= this.capacity) break;
-      let x = rqX[i];
-      let y = rqY[i];
-      let px = prevXArr ? prevXArr[i] : x;
-      let py = prevYArr ? prevYArr[i] : y;
-      if (useScreen) {
-        if (ctx.cameraRot) {
-          const c = ctx.camC;
-          const s = ctx.camS;
-          const dx = x - ctx.focusX;
-          const dy = y - ctx.focusY;
-          x = ctx.halfW + (dx * c - dy * s) * screenScale;
-          y = ctx.halfH + (dx * s + dy * c) * screenScale;
-          const pdx = px - ctx.focusX;
-          const pdy = py - ctx.focusY;
-          px = ctx.halfW + (pdx * c - pdy * s) * screenScale;
-          py = ctx.halfH + (pdx * s + pdy * c) * screenScale;
-        } else {
-          x = (x - cameraX) * screenScale;
-          y = (y - cameraY) * screenScale;
-          px = (px - cameraX) * screenScale;
-          py = (py - cameraY) * screenScale;
-        }
-      }
-      const snapped = snapSpritePos(x, y, o, useScreen);
-      x = snapped.x;
-      y = snapped.y;
-      const snappedPrev = snapSpritePos(px, py, o, useScreen);
-      px = snappedPrev.x;
-      py = snappedPrev.y;
-      let rc = rqRotC[i];
-      let rs = rqRotS[i];
-      if (useScreen && ctx.cameraRot) {
-        const c = ctx.camC;
-        const s = ctx.camS;
-        const nrc = rc * c - rs * s;
-        rs = rs * c + rc * s;
-        rc = nrc;
-      }
-      data[base] = x;
-      data[base + 1] = y;
-      data[base + 2] = rc;
-      data[base + 3] = rs;
-      data[base + 4] = px;
-      data[base + 5] = py;
-      base += POSE_DYN_FLOATS;
-      out++;
+  /**
+   * E-82b. A split batch's upload: the pose stream, and the statics when _staticsCurrent says the GPU's are
+   * not this upload's. Through gpuPack.wasm (W9d); the values are a plain batch's. A split batch is a world-space
+   * one with no pixel snap (a nearest atlas keeps 15-float rows) and no type filter, which the kernel takes.
+   */
+  _uploadSplit(q, opts) {
+    const ctx = this._beginUpload(q, opts);
+    if (!ctx) return 0;
+    const current = this._staticsCurrent(q, ctx);
+    const out = this._gpuPack !== null
+      ? packSplitRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity)
+      : -1;
+    if (out < 0) return this._packRefused(SPLIT_POSE_FLOATS * 4);
+    if (out > 0) {
+      this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
+      if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
     }
-    return out;
+    return this._finishUpload(out, SPLIT_POSE_FLOATS * 4);
   }
 
-  /** Both streams: the pose into data, the statics into staticData. */
-  _packPoseAndStatics(q, ctx) {
-    const o = ctx.o;
-    const data = this.data;
-    const stat = this.staticData;
-    const statU32 = this.staticDataU32;
-    const indices = ctx.indices;
-    const useIndices = ctx.useIndices;
-    const useScreen = ctx.useScreen;
-    const cameraX = ctx.cameraX;
-    const cameraY = ctx.cameraY;
-    const screenScale = ctx.screenScale;
-    const typeArr = ctx.typeArr;
-    const includeType = ctx.includeType;
-    const exclude0 = ctx.exclude0;
-    const exclude1 = ctx.exclude1;
-    const hasInclude = ctx.hasInclude;
-    const filterTypes = ctx.filterTypes;
-    const depthDenom = ctx.depthDenom;
-    const scanCount = ctx.scanCount;
-    const snap = !!o.snap;
-    const prevXArr = snap ? null : o.prevX;
-    const prevYArr = snap ? null : o.prevY;
-    const rqX = q.x;
-    const rqY = q.y;
-    const rqScaleX = q.scaleX;
-    const rqScaleY = q.scaleY;
-    const rqRotC = q.rotC;
-    const rqRotS = q.rotS;
-    const rqAlpha = q.alpha;
-    const rqTint = q.tint;
-    const rqTextureId = q.textureId;
-    const rqAnchorX = q.anchorX;
-    const rqAnchorY = q.anchorY;
-    const rqRepeatX = q.repeatX;
-    const rqRepeatY = q.repeatY;
-    const rqTileMulX = q.tileMulX;
-    const rqTileMulY = q.tileMulY;
-    const rqTileOffU = q.tileOffsetU;
-    const rqTileOffV = q.tileOffsetV;
-    let base = 0;
-    let sBase = 0;
-    let out = 0;
-    for (let k = 0; k < scanCount; k++) {
-      const i = useIndices ? indices[k] : k;
-      if (filterTypes) {
-        const t = typeArr[i];
-        if (hasInclude && t !== includeType) continue;
-        if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
-      }
-      if (out >= this.capacity) break;
-      let x = rqX[i];
-      let y = rqY[i];
-      let px = prevXArr ? prevXArr[i] : x;
-      let py = prevYArr ? prevYArr[i] : y;
-      let sx = rqScaleX[i];
-      let sy = rqScaleY[i];
-      if (useScreen) {
-        if (ctx.cameraRot) {
-          const c = ctx.camC;
-          const s = ctx.camS;
-          const dx = x - ctx.focusX;
-          const dy = y - ctx.focusY;
-          x = ctx.halfW + (dx * c - dy * s) * screenScale;
-          y = ctx.halfH + (dx * s + dy * c) * screenScale;
-          const pdx = px - ctx.focusX;
-          const pdy = py - ctx.focusY;
-          px = ctx.halfW + (pdx * c - pdy * s) * screenScale;
-          py = ctx.halfH + (pdx * s + pdy * c) * screenScale;
-        } else {
-          x = (x - cameraX) * screenScale;
-          y = (y - cameraY) * screenScale;
-          px = (px - cameraX) * screenScale;
-          py = (py - cameraY) * screenScale;
-        }
-        sx *= screenScale;
-        sy *= screenScale;
-      }
-      const snapped = snapSpritePos(x, y, o, useScreen);
-      x = snapped.x;
-      y = snapped.y;
-      const snappedPrev = snapSpritePos(px, py, o, useScreen);
-      px = snappedPrev.x;
-      py = snappedPrev.y;
-      const depth = 1.0 - (out + 1) / depthDenom;
-      let a = rqAlpha[i];
-      if (a < 0) a = 0;
-      else if (a > 1) a = 1;
-      const a8 = (a * 255 + 0.5) | 0;
-      const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
-      const rx = rqRepeatX ? rqRepeatX[i] : 0;
-      const ry = rqRepeatY ? rqRepeatY[i] : 0;
-      const invX = rqTileMulX ? rqTileMulX[i] : (rx > 0 ? 1 / rx : 0);
-      const invY = rqTileMulY ? rqTileMulY[i] : (ry > 0 ? 1 / ry : 0);
-      let rc = rqRotC[i];
-      let rs = rqRotS[i];
-      if (useScreen && ctx.cameraRot) {
-        const c = ctx.camC;
-        const s = ctx.camS;
-        const nrc = rc * c - rs * s;
-        rs = rs * c + rc * s;
-        rc = nrc;
-      }
-      data[base] = x;
-      data[base + 1] = y;
-      data[base + 2] = rc;
-      data[base + 3] = rs;
-      data[base + 4] = px;
-      data[base + 5] = py;
-      stat[sBase] = sx;
-      stat[sBase + 1] = sy;
-      stat[sBase + 2] = rqAnchorX[i];
-      stat[sBase + 3] = rqAnchorY[i];
-      stat[sBase + 4] = depth;
-      statU32[sBase + 5] = packed >>> 0;
-      stat[sBase + 6] = rqTextureId[i];
-      stat[sBase + 7] = invX;
-      stat[sBase + 8] = invY;
-      stat[sBase + 9] = rqTileOffU ? rqTileOffU[i] * (1 / 65535) : 0;
-      stat[sBase + 10] = rqTileOffV ? rqTileOffV[i] * (1 / 65535) : 0;
-      base += POSE_DYN_FLOATS;
-      sBase += POSE_STATIC_FLOATS;
-      out++;
+  /**
+   * A call gpuPack.wasm cannot pack (the batch has no rows in the render-queue memory, or the queue's columns are
+   * elsewhere): drawn empty, the reason said once.
+   */
+  _packRefused(stride) {
+    if (!this._packRefusedWarned) {
+      this._packRefusedWarned = true;
+      console.error(`[INSTANCED SPRITES] ${this._label}: gpuPack.wasm cannot pack this upload (its rows or the queue's `
+        + 'columns are outside the render-queue memory): it is drawn empty');
     }
-    return out;
+    return this._finishUpload(0, stride);
   }
+
+  /**
+   * E-82b: commit `count` rows another worker packed in the two streams (pre-render's GPU queue with
+   * GPU_FLAG_SPLIT). `gen` is their statics' generation (0: unknown); the statics are copied only when it
+   * or the row count differs from what this batch holds.
+   */
+  commitSplit(pose, stat, count, gen) {
+    const n = count | 0;
+    const keep = n > this.capacity ? this.capacity : n;
+    if (keep <= 0) return this._finishUpload(0, SPLIT_POSE_FLOATS * 4);
+    const g = gen >>> 0;
+    if (g === 0 || g !== this._stGen || keep !== this._stRows || this._stScale !== 0 || this._stFilter !== 0) {
+      this._stGen = g;
+      this._stRows = keep;
+      this._stScale = 0;
+      this._stFilter = 0;
+      this._staticVersion++;
+      this.copyIn(this.staticData, stat, keep * POSE_STATIC_FLOATS);
+    }
+    this.copyIn(this.data, pose, keep * SPLIT_POSE_FLOATS);
+    return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4);
+  }
+
+  /**
+   * dst[0..floats) = src[0..floats). W30: by memory.copy when dst is in this batch's arena and src in the shared
+   * memory the arena copies from; else TypedArray.set.
+   */
+  copyIn(dst, src, floats) {
+    if (this._copy !== null && dst.buffer === this._arenaBuffer && src.buffer === this._copySource) {
+      this._copy(dst.byteOffset, src.byteOffset, floats * 4);
+    } else {
+      dst.set(src.subarray(0, floats));
+    }
+  }
+
 }

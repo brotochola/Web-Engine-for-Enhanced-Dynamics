@@ -76,7 +76,9 @@ import {
   GPU_HDR_FLAGS,
   GPU_QUEUE_VERSION,
   GPU_HDR_VERSION,
+  GPU_HDR_STATIC_GEN,
   GPU_FLAG_SORTED,
+  GPU_FLAG_SPLIT,
   createGpuQueueViews,
 } from '../render/gpuQueueLayout.js';
 import {
@@ -94,13 +96,16 @@ import {
 import { viewWorldBounds } from '../util/viewBounds.js';
 import {
   InstancedSpriteBatch,
+  INSTANCED_SPRITE_FLOATS,
+  POSE_DYN_FLOATS,
+  POSE_STATIC_FLOATS,
   BATCH_SPACE,
   BATCH_DEPTH,
   buildTextureLut,
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
-import { createPainterState } from '../util/sortIndexByKey.js';
+import { bindPainterRadix, createWasmPainterState, painterSlotList, wasmPainterState } from '../render/painterRadixClient.js';
 import { LiquidFunDensitySplat, LF_SPLAT_STRIDE } from '../render/liquidFunDensitySplat.js';
 import { packParticleLights, resolveParticleLights } from '../render/particleLightSplat.js';
 import {
@@ -108,7 +113,6 @@ import {
   packColliderFill,
   packColliderFillPoseOnly,
   packMeshUvFill,
-  rewriteExplicitMeshCorners,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
   clearMeshFillPaintDirty,
@@ -118,6 +122,8 @@ import {
   COLLIDER_FILL_FLOATS,
   MESH_UV_FILL_FLOATS,
 } from '../render/colliderFillBatch.js';
+import { bindMeshCorners, rewriteCornersWasm } from '../render/meshCornersClient.js';
+import { meshLayerCapacities } from '../util/meshMemory.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
 import { releasePixiBindGroupsOnResource } from '../render/releasePixiBindGroups.js';
@@ -224,7 +230,8 @@ function applyComputeTexSizeUniform(cl) {
     cl.compute.numY
   );
 }
-import { writeRgba32Float, writeRgba8, copyPremultiplyRgba } from '../render/webgpu/pinGpuTexture.js';
+import { writeRgba32Float, writeRgba8 } from '../render/webgpu/pinGpuTexture.js';
+import { bindDecalPremultiply, premultiplyDecalTile } from '../render/decalPremultiplyClient.js';
 import { createSharedTextureSource, createWorldRectMesh } from '../render/worldTextureMesh.js';
 import { uploadSharedImage } from '../render/sharedTextureUpload.js';
 import { SharedResource } from '../core/sharedResource.js';
@@ -242,9 +249,12 @@ import {
   ySortEnabled,
   resolveSpritePipeline,
   PACK_GPU_SPRITES_PIXI,
+  SORT_SPRITES_NONE,
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
+import { bindGpuPack } from '../render/gpuPackClient.js';
+import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
 
 // Bundles embed the engine shaders (WEED.EngineShaders, posted at init): an npm
@@ -506,6 +516,18 @@ class PixiRenderer extends AbstractWorker {
     // _pacedTick marks a tick that submitted nothing, which publishes no stats.
     this._framePacer = new GpuFramePacer();
     this._pacedTick = false;
+    // W9d. With packGpuSprites 'pixi' and no pose interpolation, the entity batch's rows live in the
+    // render-queue memory (the view below) and gpuPack.wasm packs them, on Pixi's own scratch.
+    this._pixiGpuPack = null;
+    this._pixiInstanceRows = null;
+    // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
+    this._pixiGlowRows = null;
+    // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
+    // into by memory.copy (_batchArena, sharedCopy.createPrivateArena); the memory they copy from.
+    this._renderQueueMemory = null;
+    // W10. With sortSprites 'pixi', the ENTITIES painter state and its slot lists live in the render-queue
+    // memory and painterRadix.wasm sorts them there (painterRadixClient.bindPainterRadix).
+    this._painterWasm = null;
     this._pendingResizeW = null;
     this._pendingResizeH = null;
     this._surfaceUnconfigured = false;
@@ -516,6 +538,10 @@ class PixiRenderer extends AbstractWorker {
     this._ySortMode = false;
     this._entitiesRoot = null;
     this._lightGlowAdd = true;
+    // _refusePackedFrame said its reason.
+    this._refusedFrameWarned = false;
+    // The pipeline's sorter (resolveSpritePipeline): 'none' when nobody orders the sprites.
+    this._sortSpritesOn = SORT_SPRITES_NONE;
     this.physicsWorkerIndex = 1; // Updated during initialize() based on spatial worker count
 
     // PIXI application and rendering
@@ -931,6 +957,10 @@ class PixiRenderer extends AbstractWorker {
     // Per MESH layer: last packed ColliderFixture.revision + pose scratch.
     // ponytail: first frame / replace / moving mesh always pack; skip keeps instanceCount.
     this._colliderFillSkip = [];
+    // E-76 W11: the mesh memory (meshMemory.js) the MESH layers' batches live in, and the corner kernel.
+    this._meshMemoryBuffer = null;
+    this._meshMemoryLayout = null;
+    this._meshCornersWasm = null;
 
     // Reusable matrices for low-res rendering
     this._shadowTransform = new PIXI.Matrix();
@@ -974,11 +1004,9 @@ class PixiRenderer extends AbstractWorker {
     this._painter = null;
     this._lastDt = 1 / 60;
     this._deferredRenderQueueRelease = 0;
-    this._decalSharedBuffers = null;
     this._decalCopyBuffers = null;
-    // Uint32Array views of the two above, per tile, for copyPremultiplyRgba (E-107).
-    this._decalSharedWords = null;
-    this._decalCopyWords = null;
+    /** W21c: the decal premultiply kernel, on the decal memory the tiles live in. */
+    this._decalPremultiply = null;
     this._visBatchProgramOpts = null;
     this._selfLitSpriteProgramOpts = null;
     this._selfLitBatchProgramOpts = null;
@@ -1382,6 +1410,7 @@ class PixiRenderer extends AbstractWorker {
       v.meshGeomRevision = MeshGeometry.revision;
       v.meshVertGen = MeshGeometry.vertGen;
       v.meshVertEpoch = MeshGeometry.vertEpoch;
+      v.meshUvGen = MeshGeometry.uvGen;
     }
     v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
     v.animationFrameStart = this.animationFrameStart;
@@ -1620,7 +1649,7 @@ class PixiRenderer extends AbstractWorker {
       if (batch.mesh) batch.mesh.visible = false;
       return 0;
     }
-    batch.data.set(src.subarray(0, len));
+    batch.copyIn(batch.data, src, len);
     return batch.commitInstances(keep);
   }
 
@@ -1648,22 +1677,37 @@ class PixiRenderer extends AbstractWorker {
     const packedN = gpu && gpu.header ? (gpu.header[GPU_HDR_SPRITE] | 0) : 0;
     const soaN = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
     const packedFlags = gpu && gpu.header ? (gpu.header[GPU_HDR_FLAGS] | 0) : 0;
-    const needOrder = this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
+    // An order only where the pipeline keeps one (with Y-sort off nobody sorts: this frame's own pack would not
+    // either), so pre-render's unsorted rows are the frame's rows.
+    const needOrder = this._sortSpritesOn !== SORT_SPRITES_NONE && (this._entityYSort() || SpriteRenderer.zIndexUsers() > 0);
     const packedOk = !!(
       gpu &&
       gpu.header &&
       (gpu.header[GPU_HDR_VERSION] | 0) === GPU_QUEUE_VERSION &&
       !this.entitiesBatch.poseInterp &&
-      !(packedN === 0 && soaN > 0) &&
+      // Pre-render packed nothing of a queue with rows (a frame of glow rows only packs them all as glows).
+      !(packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0 && soaN > 0) &&
       (!needOrder || (packedFlags & GPU_FLAG_SORTED)) &&
+      ((packedFlags & GPU_FLAG_SPLIT) === 0 || this.entitiesBatch.split) &&
       this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI
     );
     if (packedOk) {
       this._syncEntityOrder();
       if (layerIsVisible(Layer.entitiesId)) {
-        this.visibleEntityCount = this._commitPackedBatch(
-          this.entitiesBatch, gpu.sprites, packedN, GPU_SPRITE_FLOATS
-        );
+        const batch = this.entitiesBatch;
+        if (!batch.split) {
+          this.visibleEntityCount = this._commitPackedBatch(batch, gpu.sprites, packedN, GPU_SPRITE_FLOATS);
+        } else if (packedFlags & GPU_FLAG_SPLIT) {
+          // E-82b: the two streams, the statics copied when their generation or the row count moved.
+          this.visibleEntityCount = batch.commitSplit(gpu.spritePose, gpu.spriteStatic, packedN, gpu.header[GPU_HDR_STATIC_GEN]);
+        } else if (packedN === 0) {
+          // No sprite rows: pre-render's pack wrote none, so it split none. Nothing to draw.
+          batch.mesh.visible = false;
+          this.visibleEntityCount = 0;
+        } else {
+          // Pre-render splits whenever this batch is split (the same atlas filter decides both, close-out group B).
+          this.visibleEntityCount = this._refusePackedFrame('15-float rows for the split entity batch');
+        }
       } else {
         this.entitiesBatch.mesh.visible = false;
         this.visibleEntityCount = 0;
@@ -1682,6 +1726,18 @@ class PixiRenderer extends AbstractWorker {
           this.entitiesGlowBatch.mesh.visible = false;
         }
       }
+      return;
+    }
+
+    // In pre-render pack mode pre-render packs every frame (close-out group B: Pixi has no rows of its own there), so
+    // a frame its GPU queue does not describe is one _refusePackedFrame handles; with no rows nothing is lost.
+    if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI) {
+      const kept = this._newQueueThisFrame === 0 && this.lastReadFrame > 0;
+      const warn = soaN > 0 && this._newQueueThisFrame !== 0 && !this._refusedFrameWarned;
+      this.visibleEntityCount = this._refusePackedFrame(warn
+        ? `${soaN} rows that its GPU queue frame does not describe (${this._uncommittedFrameReason(gpu, packedN, packedFlags, needOrder)})`
+        : null);
+      if (!kept && this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
       return;
     }
 
@@ -1729,6 +1785,34 @@ class PixiRenderer extends AbstractWorker {
     this.visibleEntityCount = packed.sprite;
     this.visibleParticleCount = splitGlow ? packed.splitParticles : 0;
     if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;
+  }
+
+  /** Which of updateSpritesFromRenderQueue's packedOk terms a GPU queue frame failed, in words. */
+  _uncommittedFrameReason(gpu, packedN, packedFlags, needOrder) {
+    if (!gpu || !gpu.header) return 'no GPU queue';
+    const version = gpu.header[GPU_HDR_VERSION] | 0;
+    if (version !== GPU_QUEUE_VERSION) return `GPU queue version ${version}, not ${GPU_QUEUE_VERSION}`;
+    if (this.entitiesBatch.poseInterp) return 'the entity batch interpolates poses';
+    if (packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0) return 'pre-render packed none of them';
+    if (needOrder && !(packedFlags & GPU_FLAG_SORTED)) return 'they need an order and pre-render did not sort them';
+    return 'two streams for a plain entity batch';
+  }
+
+  /**
+   * A frame of pre-render's GPU queue Pixi cannot commit. A frame read outside the consume/release handshake (no new
+   * queue this frame: before the first one, or a resume redrawing the last) can catch pre-render's next frame half
+   * written, so the entity batch keeps what it last committed (nothing before the first frame) and nothing is said.
+   * A frame Pixi took is drawn empty, `reason` said once (null: no rows were lost).
+   * @returns {number} the entities drawn
+   */
+  _refusePackedFrame(reason) {
+    if (this._newQueueThisFrame === 0 && this.lastReadFrame > 0) return this.visibleEntityCount;
+    if (reason !== null && this._newQueueThisFrame !== 0 && !this._refusedFrameWarned) {
+      this._refusedFrameWarned = true;
+      console.error(`[PIXI WORKER] ${reason}: the entities are not drawn this frame`);
+    }
+    if (this.entitiesBatch) this.entitiesBatch.mesh.visible = false;
+    return 0;
   }
 
   /** Resolve atlas ImageSource for instanced batches. */
@@ -1867,14 +1951,115 @@ class PixiRenderer extends AbstractWorker {
     const active = this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
     if (!active) this._painter = null;
     else if (!this._painter && this.renderQueueMaxItems) {
-      this._painter = createPainterState(this.renderQueueMaxItems);
+      this._painter = this._newEntityPainter();
+    }
+  }
+
+  /** The ENTITIES queue's painter state: on the render-queue memory, sorted by its kernel (W10); null when Pixi does not sort. */
+  _newEntityPainter() {
+    return this._painterWasm ? createWasmPainterState(this._painterWasm) : null;
+  }
+
+  /**
+   * W30: a private memory for a batch's arrays (`floats` of them), which copies from the render-queue memory fill by
+   * memory.copy; null without that memory or without multi-memory (the batch keeps arrays of its own).
+   */
+  _batchArena(floats) {
+    return createPrivateArena(this._renderQueueMemory, floats * 4 + 4096);
+  }
+
+  /** W10: painterRadix.wasm on Pixi's painter regions of the render-queue memory, laid out when Pixi sorts. */
+  async _bindPainterRadix(data) {
+    this._painterWasm = null;
+    const memory = data.renderQueueMemory;
+    const layout = data.renderQueueLayout?.pixiPainter || null;
+    if (!memory || !layout) return;
+    if (layout.rows < (this.renderQueueMaxItems | 0)) {
+      throw new Error(`[PIXI WORKER] the painter state holds ${layout.rows} rows for a queue of ${this.renderQueueMaxItems | 0}`);
+    }
+    try {
+      this._painterWasm = await bindPainterRadix(memory, layout);
+    } catch (err) {
+      throw new Error(`[PIXI WORKER] painterRadix.wasm did not load: ${err?.message ?? err}`, { cause: err });
+    }
+  }
+
+  /**
+   * painterRadix.wasm for the y-sorted custom layers, whose painter states are regions of the render-queue memory
+   * next to their queues: Pixi's entities kernel when it has one (a kernel sorts any state of its memory), else one
+   * bound for them; null when no layer has such a state.
+   */
+  async _bindCustomLayerPainter(queues) {
+    const memory = this._renderQueueMemory;
+    let layout = null;
+    for (const q of Object.values(queues)) {
+      if (q && q.painter) {
+        layout = q.painter;
+        break;
+      }
+    }
+    if (!memory || !layout) return null;
+    if (this._painterWasm) return this._painterWasm.kernel;
+    try {
+      return (await bindPainterRadix(memory, layout)).kernel;
+    } catch (err) {
+      throw new Error(`[PIXI WORKER] painterRadix.wasm did not load for the y-sorted custom layers: ${err?.message ?? err}`, { cause: err });
+    }
+  }
+
+  /**
+   * A y-sorted custom layer's painter state, on its regions of the memory and sorted by `kernel`; null (the layer drawn
+   * in queue order, said once) when it has none there.
+   */
+  _customLayerPainterState(kernel, lrq, maxItems, layerName) {
+    const layout = lrq.painter;
+    if (!kernel || !layout || lrq.dataA !== kernel.buffer || layout.rows < maxItems) {
+      console.error(`[PIXI WORKER] custom layer "${layerName}" sorts by y, but its painter state is not in the render-queue `
+        + 'memory with its queues: it is drawn in queue order');
+      return null;
+    }
+    return wasmPainterState(kernel.buffer, layout, kernel);
+  }
+
+  /**
+   * W9d: gpuPack.wasm on Pixi's regions of the render-queue memory, when the scene laid them out (W9e: with pose
+   * interpolation too, 17 floats a row for the pose batch's two streams).
+   */
+  async _bindPixiGpuPack(data) {
+    const memory = data.renderQueueMemory;
+    const layout = data.renderQueueLayout;
+    // Close-out group B: Pixi's pack scratch is there whenever the emit's regions are (its custom layers and glow
+    // batch pack through it in either pack mode); the entities' rows only in pixi pack mode.
+    if (!memory || !layout || !(layout.pixiTableByte >= 0)) return;
+    try {
+      this._pixiGpuPack = await bindGpuPack(memory, {
+        tableByte: layout.pixiTableByte,
+        tableSlots: layout.pixiTableSlots | 0 || layout.tableSlots,
+        indexByte: layout.pixiIndexByte,
+        indexCap: layout.indexCap,
+        particlesByte: layout.pixiParticlesByte,
+        inverseByte: 0,
+      });
+    } catch (err) {
+      throw new Error(`[PIXI WORKER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
+    }
+    const rows = layout.pixiInstanceRows | 0;
+    const floats = layout.pixiInstanceFloats | 0 || INSTANCED_SPRITE_FLOATS;
+    // A layout made for the other mode (interpolation on or off) leaves the entity batch packing in JS.
+    if (rows > 0 && rows >= (this.renderQueueMaxItems | 0)
+      && floats === (this._queueInterp ? POSE_DYN_FLOATS + POSE_STATIC_FLOATS : INSTANCED_SPRITE_FLOATS)) {
+      this._pixiInstanceRows = new Float32Array(memory.buffer, layout.pixiInstanceByte, rows * floats);
+    }
+    if ((layout.pixiGlowRows | 0) >= (this.renderQueueMaxItems | 0) && layout.pixiGlowByte >= 0) {
+      this._pixiGlowRows = new Float32Array(memory.buffer, layout.pixiGlowByte, (this.renderQueueMaxItems | 0) * INSTANCED_SPRITE_FLOATS);
     }
   }
 
   createEntitiesInstancedBatch(maxItems) {
-    this._rqIdxEntity = new Uint32Array(maxItems);
-    this._rqIdxGlow = new Uint32Array(maxItems);
-    this._painter = this._ySort ? createPainterState(maxItems) : null;
+    const painterWasm = this._painterWasm;
+    this._rqIdxEntity = painterWasm ? painterSlotList(painterWasm, 'entity', maxItems) : new Uint32Array(maxItems);
+    this._rqIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
+    this._painter = this._ySort ? this._newEntityPainter() : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -1888,6 +2073,13 @@ class PixiRenderer extends AbstractWorker {
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       poseInterp: this._queueInterp,
+      data: this._pixiInstanceRows,
+      gpuPack: this._pixiGpuPack,
+      // E-82b: the plain sprites in two streams, the statics uploaded when they change. A nearest atlas snaps every
+      // pose, which the split kernel does not pack, so it keeps 15-float rows.
+      split: !this._queueInterp && this.atlasScaleMode !== 'nearest',
+      // W30: room for its two streams at their widest (a pose batch's 17 floats a row).
+      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)),
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -1911,6 +2103,10 @@ class PixiRenderer extends AbstractWorker {
       blendMode: 'add',
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
+      // Pixi packs the glow rows here in pixi pack mode, through gpuPack.wasm into its rows of the memory.
+      data: this._pixiGlowRows,
+      gpuPack: this._pixiGlowRows ? this._pixiGpuPack : null,
+      arena: this._batchArena(maxItems * INSTANCED_SPRITE_FLOATS),
     });
     this.spriteGlowMesh = this.entitiesGlowBatch.mesh;
 
@@ -2360,35 +2556,14 @@ class PixiRenderer extends AbstractWorker {
         continue;
       }
 
-      const tileByteOffset = tileIndex * bytesPerTile;
-      let tileRGBAShared = this._decalSharedBuffers?.[tileIndex];
-      if (!tileRGBAShared) {
-        this._decalSharedBuffers ??= [];
-        tileRGBAShared = new Uint8ClampedArray(
-          this.decalsTilesRGBA.buffer,
-          tileByteOffset,
-          bytesPerTile
-        );
-        this._decalSharedBuffers[tileIndex] = tileRGBAShared;
-      }
-
       let tileRGBA = this._decalCopyBuffers?.[tileIndex];
       if (!tileRGBA) {
         this._decalCopyBuffers ??= [];
         tileRGBA = new Uint8ClampedArray(bytesPerTile);
         this._decalCopyBuffers[tileIndex] = tileRGBA;
       }
-      let sharedWords = this._decalSharedWords?.[tileIndex];
-      let copyWords = this._decalCopyWords?.[tileIndex];
-      if (!sharedWords || !copyWords) {
-        this._decalSharedWords ??= [];
-        this._decalCopyWords ??= [];
-        sharedWords = this._decalSharedWords[tileIndex] = new Uint32Array(
-          tileRGBAShared.buffer, tileRGBAShared.byteOffset, bytesPerTile >> 2
-        );
-        copyWords = this._decalCopyWords[tileIndex] = new Uint32Array(tileRGBA.buffer, 0, bytesPerTile >> 2);
-      }
-      copyPremultiplyRgba(tileRGBA, tileRGBAShared, copyWords, sharedWords);
+      // The tile, premultiplied in the decal memory's scratch, into its own array for the upload.
+      premultiplyDecalTile(this._decalPremultiply, tileIndex, tileRGBA);
 
       const sprite = this.decalTileSprites[tileIndex];
       let source = this.decalTileTextureSources[tileIndex];
@@ -3280,9 +3455,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const occluderBlock = LightOccluder.block;
     const wedgePos = this._wedgePositions;
     const wedgeScale = this._wedgeScales;
-    // The most one light writes: its fills, then its wedges.
+    // The most one light writes: its fills, then its wedges. E-135: a compound's fill is indexed, so it can take
+    // more than three indices a vertex; every shape stops the light at either budget.
+    const maxIdx = maxVerts * 3;
     const lightVerts = maxVerts + WEDGE_MAX_QUADS * 4;
-    const lightIndices = maxVerts * 3 + WEDGE_MAX_QUADS * 6;
+    const lightIndices = maxIdx + WEDGE_MAX_QUADS * 6;
     let batch = this._ensureSelfLitBatch(lightVerts, lightIndices, 0, 0);
     let data = batch.data;
     let indices = batch.indices;
@@ -3316,6 +3493,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
       // This light's vertices start here; its fills stop at maxVerts of them, as its own mesh did.
       const lightBase = vtx;
+      const lightIdxBase = iCount;
       this._wedgeVerts = 0;
 
       for (let e = i; e < j; e++) {
@@ -3358,7 +3536,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             ColliderFixture.vertCount, ColliderFixture.vertexX, ColliderFixture.vertexY,
             ColliderFixture.head[entityIdx], ColliderFixture.maxCount | 0
           );
-          const fill = solid.fill;
+          // E-135: the shared vertices once, then the soup's triangles by index.
+          const pts = solid.fillPts;
+          const fillIdx = solid.fillIdx;
+          const m = solid.fillPtCount | 0;
           const n = solid.fillVerts | 0;
           const lcx = Collider.polyCentroidX ? Collider.polyCentroidX[entityIdx] : 0;
           const lcy = Collider.polyCentroidY ? Collider.polyCentroidY[entityIdx] : 0;
@@ -3366,30 +3547,21 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const bodyCy = ey + s * (ox + lcx) + c * (oy + lcy);
           const originX = ex + c * ox - s * oy;
           const originY = ey + s * ox + c * oy;
-          let stopFill = false;
-          for (let v = 0; v + 3 <= n; v += 3) {
-            if (vtx - lightBase + 3 > maxVerts) {
-              stopFill = true;
-              break;
-            }
-            const baseV = vtx;
-            for (let k = 0; k < 3; k++) {
-              const lxocal = fill[(v + k) * 2];
-              const lyocal = fill[(v + k) * 2 + 1];
-              const o = vtx * SELF_LIT_BATCH_FLOATS;
-              data[o] = originX + c * lxocal - s * lyocal;
-              data[o + 1] = originY + s * lxocal + c * lyocal;
-              data[o + 9] = VIS_REST;
-              data[o + 10] = bodyCx;
-              data[o + 11] = bodyCy;
-              data[o + 12] = 0;
-              vtx++;
-            }
-            indices[iCount++] = baseV;
-            indices[iCount++] = baseV + 1;
-            indices[iCount++] = baseV + 2;
+          if (vtx - lightBase + m > maxVerts || iCount - lightIdxBase + n > maxIdx) break;
+          const baseV = vtx;
+          for (let p = 0; p < m; p++) {
+            const lxocal = pts[p * 2];
+            const lyocal = pts[p * 2 + 1];
+            const o = vtx * SELF_LIT_BATCH_FLOATS;
+            data[o] = originX + c * lxocal - s * lyocal;
+            data[o + 1] = originY + s * lxocal + c * lyocal;
+            data[o + 9] = VIS_REST;
+            data[o + 10] = bodyCx;
+            data[o + 11] = bodyCy;
+            data[o + 12] = 0;
+            vtx++;
           }
-          if (stopFill) break;
+          for (let v = 0; v < n; v++) indices[iCount++] = baseV + fillIdx[v];
           continue;
         }
 
@@ -3401,7 +3573,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           const ldx = lx - cx;
           const ldy = ly - cy;
           if (ldx * ldx + ldy * ldy <= r * r) continue;
-          if (vtx - lightBase + segs + 1 > maxVerts) break;
+          if (vtx - lightBase + segs + 1 > maxVerts || iCount - lightIdxBase + segs * 3 > maxIdx) break;
           const center = vtx;
           for (let si = -1; si < segs; si++) {
             const o = vtx * SELF_LIT_BATCH_FLOATS;
@@ -3446,7 +3618,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             }
           }
           if (pointInConvex(lx, ly, boxX, boxY, vc)) continue;
-          if (vtx - lightBase + vc > maxVerts) break;
+          if (vtx - lightBase + vc > maxVerts || iCount - lightIdxBase + (vc - 2) * 3 > maxIdx) break;
           const baseV = vtx;
           const bodyCx = ex + ox;
           const bodyCy = ey + oy;
@@ -4034,6 +4206,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       alphaDiscard: false,
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
+      arena: this._batchArena(cookieCap * INSTANCED_SPRITE_FLOATS),
     });
     this.gpuCasterBatch = new InstancedSpriteBatch({
       capacity: casterCap,
@@ -4046,6 +4219,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       useWebGpu: this._useWebGpu,
       shaders: this._engineShaders,
       shadowCast: true,
+      arena: this._batchArena(casterCap * GPU_CASTER_FLOATS),
     });
     if (this.gpuCasterBatch.shadowShader && this.gpuCasterBatch.mesh) {
       this.gpuCasterBatch.mesh.shader = this.gpuCasterBatch.shadowShader;
@@ -4438,12 +4612,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         bindCommandRing(data.commandSab);
       }
       if (data.liquidFunHeap) {
-        LiquidFun.bindHeapPose(data.liquidFunHeap);
+        LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
       }
       return;
     }
     if (msg === 'liquidFunHeap' && data.liquidFunHeap) {
-      LiquidFun.bindHeapPose(data.liquidFunHeap);
+      LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
       return;
     }
     if (msg === 'liquidFunCleared') return;
@@ -4591,10 +4765,34 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
+  /** E-76 W11. A MESH layer's instance lists and generation copies, in its regions of the mesh memory. */
+  _bindMeshSkipRegions(skip, r) {
+    const buf = this._meshMemoryBuffer;
+    const n = this._meshMemoryLayout.entities | 0;
+    skip.instanceEntity = new Uint32Array(buf, r.fillEntityByte, r.fillRows);
+    skip.uvInstanceEntity = new Uint32Array(buf, r.uvEntityByte, r.uvRows);
+    skip.lastVertGen = new Uint32Array(buf, r.lastVertGenByte, n);
+    skip.frameVertGen = new Uint32Array(buf, r.frameVertGenByte, n);
+    skip.lastUvGen = new Uint32Array(buf, r.lastUvGenByte, n);
+    skip.frameUvGen = new Uint32Array(buf, r.frameUvGenByte, n);
+  }
+
+  /**
+   * E-76 W11. The corner rewrite of a MESH layer's batch, through the corner kernel (meshCornersClient.js). Only
+   * moved vertex generations call it, and those exist only with MeshGeometry, hence with the mesh memory and the kernel.
+   */
+  _rewriteMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow) {
+    const b = this._meshCornersWasm;
+    if (b === null) throw new Error('meshCorners: a corner rewrite without the mesh memory');
+    return rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+  }
+
   _ensureMeshUvBatch(cl) {
     if (cl.uvFillBatch) return cl.uvFillBatch;
     const cap = cl.uvCapacity | 0;
     if (cap <= 0) return null;
+    // E-76 W11: the rows in the mesh memory when the layer has its regions there.
+    const region = cl.meshRegion;
     const batch = new MeshUvFillBatch({
       capacity: cap,
       label: `mesh-uv-${cl.layerId}`,
@@ -4602,6 +4800,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       shaders: this._engineShaders,
       atlasSource: this._resolveAtlasSource(),
       lutSource: this._texLutSource,
+      data: region && region.uvRows === cap
+        ? new Float32Array(this._meshMemoryBuffer, region.uvRowsByte, cap * MESH_UV_FILL_FLOATS)
+        : null,
     });
     batch.mesh.blendMode = cl.fillBatch?.mesh?.blendMode || cl.containerBlend || 'normal';
     cl.uvFillBatch = batch;
@@ -4657,6 +4858,39 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._ensureVertGenScratch(skip, views);
     skip.lastVertGen.set(skip.frameVertGen.subarray(0, skip.lastVertGen.length));
   }
+
+  /**
+   * E-118. Copy the live UV generations right after the vertex generations, before any vertex or UV is
+   * read this frame, for the reason _captureVertGen gives. The rewrite also redraws a run whose UV
+   * generation moved alone, so a capture that caught one of a write's two bumps and not the other draws
+   * the write the next frame.
+   * @returns {Uint32Array|null}
+   */
+  _captureUvGen(skip, views) {
+    const g = views.meshUvGen;
+    if (!g) return null;
+    const n = views.entityCount | 0;
+    if (skip.lastUvGen.length < n) {
+      const next = new Uint32Array(n);
+      next.set(skip.lastUvGen);
+      skip.lastUvGen = next;
+    }
+    if (skip.frameUvGen.length < n) skip.frameUvGen = new Uint32Array(n);
+    const dst = skip.frameUvGen;
+    if (g.length === n && dst.length === n) {
+      dst.set(g);
+    } else {
+      dst.set(g.subarray(0, n));
+    }
+    return dst;
+  }
+
+  /** E-118. Record the UV generations captured this frame as drawn. */
+  _commitUvGen(skip, views) {
+    if (!views.meshUvGen) return;
+    const last = skip.lastUvGen;
+    last.set(skip.frameUvGen.subarray(0, last.length));
+  }
   // vertgen-end
 
   _packMeshUvLayer(cl, views, skip) {
@@ -4675,8 +4909,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       skip.uvInstanceEntity = new Uint32Array(cap);
     }
     views.instanceEntity = skip.uvInstanceEntity;
-    views.outU32 = batch.dataU32;
-    const packed = packMeshUvFill(batch.data, cap, cl.layerId, views);
+    views.outU32 = batch.rowsU32;
+    const packed = packMeshUvFill(batch.rows, cap, cl.layerId, views);
     skip.uvLocalsReady = packed > 0;
     cl.uvPrevCount = packed;
     batch.upload(packed);
@@ -5729,6 +5963,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       rendererInterpolation: this._queueInterp,
     });
     this._packGpuSpritesOn = spritePipe.packGpuSprites;
+    this._sortSpritesOn = spritePipe.sortSprites;
     this._lightGlowAdd = (this.config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite';
 
     this.autoGenerateMipmaps =
@@ -5890,7 +6125,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this.decalsTotalTiles = data.decals.totalTiles;
 
       // Create typed array views over SharedArrayBuffers
-      this.decalsTilesRGBA = new Uint8ClampedArray(data.decals.tilesRGBA);
+      // The tiles' bytes only: with W26 their buffer is the decal memory, the kernel's scratch after them.
+      this.decalsTilesRGBA = new Uint8ClampedArray(
+        data.decals.tilesRGBA, 0, data.decals.totalTiles * data.decals.tilePixelSize * data.decals.tilePixelSize * 4);
+      // W21c: dirty tiles premultiplied by decalPremultiply.wasm, on the decal memory the tiles live in.
+      if (!data.decals.memory || !data.decals.memoryLayout) throw new Error('decals without the decal memory (installDecalMemory)');
+      this._decalPremultiply = await bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout);
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
 
       // Create decal tile container (renders between background and entities)
@@ -5969,10 +6209,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // ========================================
     // CASTED SHADOWS SYSTEM - Initialize
     // ========================================
+    this._renderQueueMemory = data.renderQueueMemory || null;
     this.createCastedShadowsSystem(data);
 
     // ENTITIES always render through the instanced Mesh (no ParticleContainer path)
     if (this.renderQueueEnabled) {
+      await this._bindPixiGpuPack(data);
+      await this._bindPainterRadix(data);
       this.createEntitiesInstancedBatch(this.renderQueueMaxItems);
       this._entitiesRoot = new Container();
       this._entitiesRoot.label = 'entities-root';
@@ -6282,6 +6525,55 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     debugWorkerLog(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}`);
   }
 
+  /**
+   * E-76 W11. The mesh memory the main thread made (meshMemory.js) and the corner kernel on it: with a MESH layer
+   * MeshGeometry and every MESH layer's batches live there. Without one there is no memory and nothing to rewrite.
+   */
+  async _bindMeshMemory(data) {
+    this._meshMemoryBuffer = null;
+    this._meshMemoryLayout = null;
+    this._meshCornersWasm = null;
+    const mg = data.meshGeom;
+    const memory = mg?.memory || null;
+    const layout = mg?.layout || null;
+    if (!memory || !layout) return;
+    if (mg.data !== memory.buffer || MeshGeometry.vertOffset?.buffer !== memory.buffer) {
+      throw new Error('meshCorners: MeshGeometry is not bound on the mesh memory');
+    }
+    if ((layout.entities | 0) !== (this.globalEntityCount | 0)) {
+      throw new Error(`meshCorners: the mesh memory holds ${layout.entities} entities, the scene ${this.globalEntityCount}`);
+    }
+    this._meshMemoryBuffer = memory.buffer;
+    this._meshMemoryLayout = layout;
+    this._meshCornersWasm = await bindMeshCorners(memory, layout.tableByte, {
+      vertOffset: MeshGeometry.vertOffset,
+      vertCount: MeshGeometry.vertCount,
+      indexOffset: MeshGeometry.indexOffset,
+      indexCount: MeshGeometry.indexCount,
+      vertexX: MeshGeometry.vertexX,
+      vertexY: MeshGeometry.vertexY,
+      uvU: MeshGeometry.uvU,
+      uvV: MeshGeometry.uvV,
+      indices: MeshGeometry.indices,
+    });
+  }
+
+  /**
+   * E-76 W11. The mesh memory's regions for MESH layer `layerId`, when the main thread sized them as this
+   * worker sizes the layer's batches (meshLayerCapacities); else null, which initializeCustomLayers refuses.
+   */
+  _meshLayerRegion(layerId, caps) {
+    const layout = this._meshMemoryLayout;
+    if (!layout || !this._meshMemoryBuffer) return null;
+    const layers = layout.layers || [];
+    for (let i = 0; i < layers.length; i++) {
+      const r = layers[i];
+      if (r.layerId !== layerId) continue;
+      return r.fillRows === caps.fill && r.uvRows === caps.uv ? r : null;
+    }
+    return null;
+  }
+
   async initializeCustomLayers(data) {
     const prev = this._customLayerList || [];
     for (let i = 0; i < prev.length; i++) {
@@ -6297,12 +6589,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     this._destroyAllCustomLayerCompute();
     this._customLayers = {};
+    await this._bindMeshMemory(data);
     if (!data.layerData) return;
 
     const metadata = data.layerData.metadata;
     if (!metadata?.layers) return;
 
     const queues = data.customLayerRenderQueues || {};
+    // The y-sorted layers' painter states are regions of the render-queue memory, next to their queues.
+    const layerPainterKernel = await this._bindCustomLayerPainter(queues);
     const lfMax =
       (data.liquidFunMaxCount | 0) ||
       (this.config?.physics?.liquidFun?.maxCount | 0) ||
@@ -6339,6 +6634,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       let buffers = null;
       let batch = null;
       let fillBatch = null;
+      let meshRegion = null;
       if (isMesh) {
         const maxFx =
           (data.config?.physics?.maxFixturePoolSize | 0) ||
@@ -6353,30 +6649,42 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           (data.config?.renderer?.maxMeshIndices | 0) ||
           (this.config?.renderer?.maxMeshIndices | 0);
         // Fixtures or one primary shape per entity; each convex is at most 6 fans (8-2).
-        const colliderCap = Math.max(maxFx, entitySlots) * (MAX_POLYGON_VERTICES - 2);
-        const fanCap = maxMeshVerts > 2 ? maxMeshVerts - 2 : 0;
-        const indexCap = (maxMeshIndices / 3) | 0;
-        const explicitCap = fanCap + indexCap;
+        const caps = meshLayerCapacities(maxFx, entitySlots, maxMeshVerts, maxMeshIndices);
+        // E-76 W11: the rows in the mesh memory, where the corner kernel rewrites them.
+        meshRegion = this._meshLayerRegion(layerId, caps);
+        // Without MeshGeometry (renderer.maxMeshVerts 0) there is no mesh memory: the layer fills collider shapes in
+        // arrays of its own and no corner is ever rewritten. With it, every MESH layer has its regions there.
+        if (!meshRegion && this._meshMemoryLayout) {
+          throw new Error(`MESH layer "${layerName}": its rows are not in the mesh memory (sized apart from meshLayerCapacities)`);
+        }
         fillBatch = new ColliderFillBatch({
-          capacity: Math.max(1, colliderCap + explicitCap),
+          capacity: caps.fill,
           label: `mesh-layer-${layerName}`,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
           atlasSource: this._resolveAtlasSource(),
           lutSource: this._texLutSource,
+          data: meshRegion
+            ? new Float32Array(this._meshMemoryBuffer, meshRegion.fillRowsByte, caps.fill * COLLIDER_FILL_FLOATS)
+            : null,
         });
-        fillBatch._uvCapacity = explicitCap;
+        fillBatch._uvCapacity = caps.uv;
         fillBatch.mesh.blendMode = containerBlend;
       }
       let sortKeyU32ByBuf = null;
       let painter = null;
       if (lrq && maxItems > 0) {
         buffers = [
-          createRenderQueueViews(lrq.dataA, maxItems),
-          createRenderQueueViews(lrq.dataB, maxItems),
+          createRenderQueueViews(lrq.dataA, maxItems, lrq.dataAByte | 0),
+          createRenderQueueViews(lrq.dataB, maxItems, lrq.dataBByte | 0),
         ];
         sortKeyU32ByBuf = buffers.map((b) => b.sortKeyU32);
-        painter = layerYSort ? createPainterState(maxItems) : null;
+        painter = layerYSort ? this._customLayerPainterState(layerPainterKernel, lrq, maxItems, layerName) : null;
+        // Close-out group B: the layer's rows in the render-queue memory (next to its queues), where gpuPack.wasm
+        // packs them; copied out for the upload as the entities' are (W30's arena).
+        const layerRows = lrq.rowsByte >= 0 && this._pixiGpuPack && lrq.dataA === this._renderQueueMemory?.buffer
+          ? new Float32Array(lrq.dataA, lrq.rowsByte, maxItems * INSTANCED_SPRITE_FLOATS)
+          : null;
         batch = new InstancedSpriteBatch({
           capacity: maxItems,
           label: `custom-layer-${layerName}`,
@@ -6387,6 +6695,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           alphaDiscard: false,
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
+          data: layerRows,
+          gpuPack: layerRows ? this._pixiGpuPack : null,
+          arena: layerRows ? this._batchArena(maxItems * INSTANCED_SPRITE_FLOATS) : null,
         });
         batch.mesh.blendMode = containerBlend;
       }
@@ -6421,6 +6732,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uvFillBatch: null,
         uvCapacity: fillBatch?._uvCapacity | 0,
         uvPrevCount: 0,
+        // E-76 W11: this MESH layer's regions of the mesh memory, or null.
+        meshRegion,
         splatBatch,
         densitySource: isLfDensity ? LAYER_DENSITY_SOURCE.LIQUID_FUN : LAYER_DENSITY_SOURCE.SPRITES,
         splat: splatCfg ? { ...splatCfg } : null,
@@ -6703,7 +7016,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         densityMesh = cl.batch.mesh;
       } else if (cl.fillBatch) {
         const views = this._ensureColliderFillViews();
-        views.outU32 = cl.fillBatch.dataU32;
+        views.outU32 = cl.fillBatch.rowsU32;
         let skip = this._colliderFillSkip[cl.layerId];
         if (!skip) {
           skip = this._colliderFillSkip[cl.layerId] = {
@@ -6714,6 +7027,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             lastVertEpoch: 0,
             lastVertGen: null,
             frameVertGen: null,
+            // E-118: the UV generations drawn and this frame's copy (_captureUvGen).
+            lastUvGen: new Uint32Array(0),
+            frameUvGen: new Uint32Array(0),
+            // Each batch's instance-to-entity list, written by its full pack.
+            instanceEntity: new Uint32Array(0),
+            uvInstanceEntity: new Uint32Array(0),
             prevPose: {},
             camX: NaN,
             camY: NaN,
@@ -6722,6 +7041,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             rtReady: false,
             uvLocalsReady: false,
           };
+          if (cl.meshRegion) this._bindMeshSkipRegions(skip, cl.meshRegion);
         }
         views.lastPaintEpoch = skip.lastPaintEpoch;
         views.lastMeshRevision = skip.lastMeshRevision | 0;
@@ -6754,9 +7074,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           let full = !topologyStable;
           // Generations before vertices (B24): both paths below read vertices.
           const genNow = full || vertsMoved ? this._captureVertGen(skip, views) : null;
+          // E-118: the UV generations right after, for the same reads.
+          const uvGenNow = genNow ? this._captureUvGen(skip, views) : null;
           if (!full && vertsMoved) {
-            const fillRewrite = rewriteExplicitMeshCorners(
-              cl.fillBatch.data,
+            const fillRewrite = this._rewriteMeshCorners(
+              cl.fillBatch.rows,
               lastPacked,
               skip.instanceEntity,
               views,
@@ -6767,21 +7089,23 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             const uvCount = cl.uvPrevCount | 0;
             const uvRewrite = !cl.uvFillBatch || uvCount <= 0
               ? 1
-              : rewriteExplicitMeshCorners(
-                cl.uvFillBatch.data,
+              : this._rewriteMeshCorners(
+                cl.uvFillBatch.rows,
                 uvCount,
                 skip.uvInstanceEntity,
                 views,
                 MESH_UV_FILL_FLOATS,
                 skip.lastVertGen,
                 genNow,
+                skip.lastUvGen,
+                uvGenNow,
               );
             if (fillRewrite < 0 || uvRewrite < 0) full = true;
           }
           if (full) {
             views.instanceEntity = skip.instanceEntity;
-            views.outU32 = cl.fillBatch.dataU32;
-            const packed = packColliderFill(cl.fillBatch.data, cap, cl.layerId, views);
+            views.outU32 = cl.fillBatch.rowsU32;
+            const packed = packColliderFill(cl.fillBatch.rows, cap, cl.layerId, views);
             skip.localsReady = packed > 0;
             cl.fillBatch.upload(packed);
             cl.prevCount = packed;
@@ -6791,13 +7115,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             }
             this._packMeshUvLayer(cl, views, skip);
             this._commitVertGen(skip, views);
+            this._commitUvGen(skip, views);
           } else {
             const touchVbo = vertsMoved || paintMoved;
             if (paintMoved) {
               if (lastPacked > 0) {
-                views.outU32 = cl.fillBatch.dataU32;
+                views.outU32 = cl.fillBatch.rowsU32;
                 packColliderFillPoseOnly(
-                  cl.fillBatch.data,
+                  cl.fillBatch.rows,
                   cap,
                   lastPacked,
                   skip.instanceEntity,
@@ -6806,9 +7131,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               }
               const uvCount = cl.uvPrevCount | 0;
               if (cl.uvFillBatch && uvCount > 0 && skip.uvInstanceEntity) {
-                views.outU32 = cl.uvFillBatch.dataU32;
+                views.outU32 = cl.uvFillBatch.rowsU32;
                 packColliderFillPoseOnly(
-                  cl.uvFillBatch.data,
+                  cl.uvFillBatch.rows,
                   cl.uvFillBatch.capacity,
                   uvCount,
                   skip.uvInstanceEntity,
@@ -6833,7 +7158,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 this._uploadMeshPoseSource(cl.uvFillBatch, 'mesh-uv-pose');
               }
             }
-            if (vertsMoved) this._commitVertGen(skip, views);
+            if (vertsMoved) {
+              this._commitVertGen(skip, views);
+              this._commitUvGen(skip, views);
+            }
           }
           copyMeshFillPoseScratch(views, skip.prevPose);
           skip.lastRevision = rev;

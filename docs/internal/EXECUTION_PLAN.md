@@ -574,7 +574,7 @@ source does not support — `_getNeighborCells` "one `Map.get` per entity" and
 the counter that measures it or read the exits in front of it.** E-13 was rejected for
 free; had it gone to a scene it would have cost a Predator pair to confirm a zero.
 
-### E-76 WASM migration: which JavaScript hot loops are faster as WebAssembly — **IN PROGRESS (Phases 0–2 done 2026-10-22)**
+### E-76 WASM migration: which JavaScript hot loops are faster as WebAssembly — **DONE 2026-10-26 (the kernels' JS copies left src/; every kernel in one engine.wasm; the close-out sitting R-0642, step 4 R-0643)**
 The plan, its gates and its ids (T tools, Q premises, W candidates, L checks) live in
 [`WASM_HYPOTHESES.md`](./WASM_HYPOTHESES.md); this entry is its index here. The rule from the record:
 WASM pays when the data already lives in WASM memory, one call does a batch, and the loop needs
@@ -805,7 +805,7 @@ so completions counted against submissions pace it without a closure per frame. 
 (`e55c15a0`): presented frames **43.4 → 60.0 fps, +38.4 %, 4/4**. The renderer's mean step rose 29 %; a CPU
 trace puts Pixi at 3.2 → 2.9 ms per presented frame (it draws 46 % more of them).
 
-### E-98 Pre-render's full emit at 250 000 sprites takes more than a frame — **E-98a kept; open**
+### E-98 Pre-render's full emit at 250 000 sprites takes more than a frame — **closed 2026-10-24: 21.1 → 5.17 ms**
 Paced, `bunnyMarkScene`'s Pixi draws 60 frames a second and pre-render's step per worked frame is
 ~21 ms (a detailed run: `COLLECT_MS` 14.3, `EMIT_MS` 4.7), so fewer new queues than frames. The CPU
 profile: `_writeRenderable` 18 %, `_writeType0PosesOnly` 13 %, `_storeEntitySortY` 12 %,
@@ -848,6 +848,9 @@ after every row passed, so a walk that misses late does not advance them twice):
 Predator's chain after it (fresh profile, 2026-10-23: `emitSpriteQueue` 17.2 %, `collectVisibleEntities` 9.6 %,
 `_storeEntitySortY` 5.1 %, `_displayPose` 5.0 %, `_writeQueueShadow` 4.1 % of pre-render; the shadow stamp
 chain 37 %).
+**Closed (2026-10-24):** after the persist series in C (E-115 to E-117) BunnyMark's pre-render is 5.17 ms per new queue,
+under a frame. A CPU profile then put `collectVisibleEntities` at 69.9 % self of pre-render (its inlined row writes) and
+the persist kernel at 26.1 %: the rest is W4b, the collect in C (E-128 answered: W3 folds into it).
 
 ### E-104 Query type masks walked in BigInt — **KEPT (hygiene)** (`564fccc4`)
 Every frame the logic worker publishes the precomputed queries, and `copyActiveMatchesToBuffer` walked each
@@ -868,6 +871,61 @@ Pixi 3.7 → 0.08 MB/s in `decalBlitStressScene`.
 
 ### E-108 `Decal.stamp` doubles through a module array — **KEPT (hygiene)** (`8ad26b2a`)
 Logic 7.9 → 4.7 MB/s in `decalStampStressScene` (the rest is the driver).
+
+### E-138 A frame that expands its rows sorts the collector before the emit — **KEPT (product), 2026-10-25**
+In `adobeAnimateScene` at the minimum zoom pre-render is saturated and the pack scatters each Adobe character's run of
+pieces to its painter slot (a kernel screen on its 261 744 rows: 5.31 ms scattered, 2.41 ms in order). When last
+frame's emit wrote at least twice the collector's rows, the collector and its pose stash are stably sorted by the
+emit's keys first (`355ee06e`); the queue then comes out in painter order and is packed as it is, with no painter
+(GPU_FLAG_SORTED). Not with sun casters (packed in queue order) or a queue that filled. The gate first read a count
+`resetFrameCounters` clears, so the presort never ran (a tie, −1.5 %); fixed in `95e03c4c`, with a test over real
+frames. 4 pairs: pre-render **20.516 → 15.818 ms, −19.7 %** (0/4 worse). The renderer's step rose 18.4 % while its
+busy time per second stayed flat (366 and 359 ms/s): pre-render now delivers more frames, so more of Pixi's steps
+commit one. Follow-up (`8d67f225`): a presorted frame with no glow rows packs every row with no slot list (the
+glow split still listed every row and scattered over that identity list): pre-render **16.479 → 14.819 ms, −10.6 %**
+(0/4). Then (`3fa72bbd`) a presorted frame's emit leaves the sort keys and shadow terms, which nothing
+reads that frame: pre-render **13.125 → 11.369 ms, −14.5 %** (0/4), but Pixi +5.5 % (4/4, its copy and upload slower
+for the same bytes). Kept: at that zoom pre-render is the worker that bounds the frame (11.4 ms, 65–69 % load,
+against physics 7.7, Pixi 6.9 and spatial 5.4 ms), so 1.76 ms off it is worth 0.35 ms on a worker 4.5 ms below it
+(the owner left the call to the session; decision record R-0637). Lesson: a gate that reads per-frame state needs a test across real
+frames.
+
+### E-137 The bullet collect writes its own rows — **KEPT (product), 2026-10-25**
+E-98c and E-98e for bullets: `collectVisibleBullets` called `collectRenderable` for each visible bullet and trail,
+whose dispatch, bit scan and `_writeRenderable` always end on the main collector for a bullet on the entities layer
+(`_writeRenderable`, `collectVisibleBullets` and `collectRenderable` were 31 % of `bulletStressScene`'s pre-render).
+The loop now writes those rows itself (`59aceb37`), and the last key stays in `COLLECT_Y` where the sprite collect
+reads it. The first version took mask 0 only and tied (+1.1 %): `BulletPool.spawn` gives every bullet the entities
+layer's bit, not 0; with that bit too (`ece24bf1`), `bulletStressScene?bullets=64000`, 4 pairs against W4d:
+pre-render **3.623 → 3.016 ms, −17.3 %** (0/4 worse). Parity `bulletCollectShortcut.test.js` (three mutants fail it).
+Lesson: a shortcut on "no mask" must check what the spawn path writes as the default mask.
+
+### E-127 Static scenery culled through a grid — **KEPT (product), 2026-10-24**
+The collect tested every sprite every frame, so its cost followed the world (R-0610: 2.03 → 3.70 ms at a fixed
+visible count when the world doubled). The owner chose an opt-in flag: `static isStatic = true` on a type that does
+not move after onSpawned. Pre-render bins those entities in its own grid (`staticSceneryGrid.js`) when the scene's
+static counter moves (`staticScenery.js`: spawns, despawns, and the setters' moves, resizes and sprite changes),
+and the collect walks the moving sprites plus the static ones in the cells in view, in entity order, testing each as
+before. Parity `staticSceneryCull.test.js` (both collects, seven cameras). 500 000 sprites, 2.5 % in view, 4 pairs:
+pre-render **4.230 → 1.346 ms, −68.0 %**. Left: the view box is widened by the largest static half extent (bin huge
+sprites apart); spatial and physics still treat static scenery like the rest (E-126 is the spatial half).
+
+### E-135 The self-lit fill of a compound occluder as shared vertices — **KEPT (product), 2026-10-24**
+Found in W21a's trace (R-0612): in `compoundVisPolyStressScene?remeshEvery=1&ringSegments=64` Pixi's `_buildSelfLitBatch`
+was 43.8 % of Pixi and `updateBuffer` 27.3 %, because every fill triangle of every (light, compound) pair went out as
+three fresh 13-float vertices. `ensureCompoundSolid` now builds the fill's shared vertices (same bits only, so the
+drawn triangles and attributes are the soup's) and Pixi writes them once per light, the triangles by index; each
+shape stops a light at the vertex or the index budget. Golden `selfLitFillTriangles.test.js`: the same 142 triangles
+from 152 vertices instead of 352. `ringSegments=128`, 4 pairs, worktrees: Pixi **3.361 → 2.875 ms, −15.6 %**, −16.2 %
+against the other workers (4/4). Left: the transmit wedges and the circle fan are already indexed; nothing else in
+the batch writes a vertex per triangle.
+
+### E-123 Pixi's plain sprite pack in WASM, re-gated on one build (E-76 W9d) — **KEPT (product), 2026-10-24**
+W9d behind `wasm.pixiPack` (`6d9c7258`), timed with `--query-a wasmOff=pixiPack` on one worktree. Uploading from the
+shared rows cost every worker the change cannot reach about 6 % in Predator (physics +9.5 %, spatial +6.3 %, 4/4), the
+flag that had sunk W9d. With the rows copied into the batch's own array before the upload (`365c4b60`): Predator renderer
+4.864 → 3.980 ms, −10.6 % (3/4), −5.4 % against the unreachable workers (4/4), nothing regressed. Lesson for every GPU
+upload: copy out of shared memory first (W11's mesh batches upload from shared views).
 
 ### E-122 The flowfield search in WASM (E-76 W14) — **KEPT (product), 2026-10-24**
 An agent's `wasm/test/navFlowfield.c` (`f0237dd0`): `computeFlowfield`'s search, walls' pass and smoothing,
@@ -916,13 +974,19 @@ Kernel +99.8 % (25/25, Node); Chrome `SHADOW_Q_MS` 2.6–2.8 → 1.9–2.0 ms. *
 pre-render 5.287 → 4.692 ms, −10.3 %, worse 0/4**, every other worker within the session's A/A.
 Report: [`reports/E-114-shadow-stamp-wasm.md`](./reports/E-114-shadow-stamp-wasm.md).
 
-### E-113 Queue columns a multiple of 4 KB apart alias in cache — **open (found in E-112)**
+### E-113 Queue columns a multiple of 4 KB apart alias in cache — **kept (kernel), 2026-10-24**
 At a render-queue capacity that is a multiple of 1 024 every float column of a row falls in one L1 set: in E-112's
 kernel, capacity 32 768 against 33 000 moved the JS emit +11 % and the C emit 2.4×. Predator's capacity (119 298)
 does not alias; proceduralTree's 8 192 does, and component columns do the same at entity totals at or next to a
 multiple of 1 024 (queryChurn, spawnStorm: 8 193). Candidate: each queue column starts a cache line after the last
 (`renderQueueLayout` is the one layout), and `Component.initializeArrays` likewise if a scene shows it. Measure on
 a scene at an aliased capacity.
+**Done (2026-10-24, the queue):** each column starts a line past a line boundary (`renderQueueLayout.js`).
+The shipped emit at 32 768: C 900.8 → 2 162.0 ops/s (2.4×), JS +11.7 %; at Predator's 119 298 +1.4 % and +0.8 %.
+The component columns, screened the same day on the shipped collect at 262 144 sprites (each column on its
+boundary against a line past it): C −0.7 to +3.3 %, JS −1.0 to +1.9 %. Not taken: the collect reads its columns,
+and the queue's 2.4× came from the emit writing twenty. Left: a scene at an aliased queue capacity, with the
+next Predator gate.
 
 ### E-112 Pre-render's emit in WASM (E-76 W4a) — **KEPT (product), 2026-10-23**
 `wasm/preRenderEmit.c` writes `emitSpriteQueue`'s full-emit rows for sprites and decorations on the render-queue
@@ -956,12 +1020,25 @@ order during `buildStampGrid` tied in `shadowStampMicrobench` (666 → 658 ops/s
 cache and the samples were load stalls. The stamp is about a third of Predator's pre-render (`stampLightRange`,
 `buildStampGrid`, `partitionOrder`, `copyTypedRange`, `noteNearest`); W23 is the next look at it.
 
-### E-82b The split upload for sprites without pose interpolation — **open (from E-82)**
+### E-82b The split upload for sprites without pose interpolation — **KEPT (product), 2026-10-24**
 Scenes with `renderer.interpolation` off (the default) upload 15 floats per sprite every frame. With the
 default `packGpuSprites: 'preRender'` those rows come from pre-render's WASM packer (`gpuPack.wasm`) and Pixi
 copies them in `_commitPackedBatch`, so the split needs the packer to write a pose stream and a static stream
 and Pixi a two-buffer geometry for the plain path; `staticGen` already says when statics changed. It pays only
 on persist frames, which a moving camera rarely gives (Predator), so measure it on a static high-count scene.
+*Design note (2026-10-24):* a split in Pixi alone (the pose batch with the previous pose equal to the current)
+would cost the frames whose statics change: Pixi would pack in JS what pre-render packed in C, and upload
+68 bytes a sprite instead of 60. That is every frame of a moving camera (Predator). So the split belongs in the
+packer: `gpuPack.wasm` writes a pose stream and a static stream into the GPU queue, and Pixi copies both and
+uploads the statics only when `staticGen` moves. Owner scene: `BunnyMarkStressCScene` (100 000 bunnies,
+default renderer, still camera), renderer; Predator renderer as the guard.
+**Built and kept (2026-10-24, R-0599):** `wasm.gpuPackSplit`. The packer writes a 16-byte pose stream and a 44-byte
+static stream into the GPU queue (`GPU_FLAG_SPLIT`, the statics' generation in the header), the statics only into
+a buffer that lacks the generation; Pixi's entity batch is E-82's two-stream batch with the previous xy read from
+the current one. BunnyMarkStressC at 250 000 bunnies (`?bunnies=`; 100 000 put Pixi under the floor), one build,
+4 pairs: renderer **4.953 → 1.701 ms, −65.6 %**, pre-render **9.212 → 7.006 ms, −23.8 %**, both 0/4 worse.
+Predator NEUTRAL. Left: a nearest atlas (the snapped pose) keeps 15-float rows; pose interpolation on the packed
+path (pre-render writing the previous xy) and E-82's packed static formats.
 
 ### E-90 Public `Ray` methods small enough to inline into game code — **kept (hygiene), 2026-10-23**
 After E-85 the ray stress logic still allocates 4.3 MB/s, in the driver's own tick: game code calls

@@ -14,7 +14,7 @@ import {
   updateParticlePhysicsBuffers,
   buildActiveListBuffers,
   buildActiveAndVisibleListBuffers,
-} from '../../src/util/particleIntegrate.js';
+} from '../reference/particleIntegrate.mjs';
 import { PARTICLE_TWEEN } from '../../src/util/particleTween.js';
 import { PerformanceObserver } from 'node:perf_hooks';
 import { mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';

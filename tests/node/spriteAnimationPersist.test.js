@@ -1,11 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { bootEmitWorker, countPersistHits, oneAnimationMetadata } from '../helpers/preRenderEmitBoot.mjs';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
 import { Layer } from '../../src/core/layer.js';
-import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 
 // A persist frame (the sprite rows, their frames and animation states as this queue buffer last
 // emitted them, nothing render-dirty) rewrites only the poses, and skipped the sprite rows in the
@@ -14,39 +13,13 @@ import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/r
 
 const N = 2;
 
-function renderQueuePayload(maxItems) {
-  const bytes = computeBufferSize(maxItems);
-  return {
-    maxItems,
-    sync: new SharedArrayBuffer(8),
-    dataA: new SharedArrayBuffer(bytes),
-    dataB: new SharedArrayBuffer(bytes),
-    cameraA: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
-    cameraB: new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES),
-    entityTextureData: new SharedArrayBuffer(maxItems * 2),
-  };
-}
 
 test('an animated sprite keeps animating in a scene where nothing else changes', async () => {
   Layer.reset();
   Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
   try {
-    const w = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-    const componentData = coreComponentData(N);
-    await initWorker(w, {
-      config: { worldWidth: 1000, worldHeight: 1000, preRender: { interpolation: false } },
-      globalEntityCount: N,
-      buffers: { componentData },
-      extra: { renderQueue: renderQueuePayload(8) },
-    });
-    for (const C of [Transform, SpriteRenderer]) C.initializeArrays(componentData[C.name], N);
-    bindPoseColumns(N);
     // One sheet (id 1) with one 4-frame animation; textures 0..3, 16 px.
-    w.proxyToGlobalAnim = [null, [0]];
-    w.animationFrameStart = [0];
-    w.animationFrameCount = [4];
-    w.frameWidth = new Uint16Array(4).fill(16);
-    w.frameHeight = new Uint16Array(4).fill(16);
+    const { worker: w } = await bootEmitWorker(N, { textureMetadata: oneAnimationMetadata(4) });
 
     Transform.active[0] = 1;
     Transform.x[0] = 100;
@@ -87,28 +60,15 @@ test('an animated sprite keeps animating in a scene where nothing else changes',
 });
 
 // E-98b. A persist frame of sprites only skips the emit loop, which would only count the rows: the
-// count it publishes and the poses _writeType0PosesOnly wrote must be what the loop gave.
+// count it publishes and the poses the persist pass wrote must be what the loop gave.
 // E-98d. With no Adobe root the collect writes poses straight into the queue; with one, into the
 // stash the emit copies from. Both arrangements must publish the same queue.
 for (const adobe of [null, [N + 7]]) test(`a persist frame of sprites only publishes every row and its pose (${adobe ? 'stash' : 'poses in the queue'})`, async () => {
   Layer.reset();
   Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
   try {
-    const w = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-    const componentData = coreComponentData(N);
-    await initWorker(w, {
-      config: { worldWidth: 1000, worldHeight: 1000, preRender: { interpolation: false } },
-      globalEntityCount: N,
-      buffers: { componentData },
-      extra: { renderQueue: renderQueuePayload(8) },
-    });
-    for (const C of [Transform, SpriteRenderer]) C.initializeArrays(componentData[C.name], N);
-    bindPoseColumns(N);
-    w.proxyToGlobalAnim = [null, [0]];
-    w.animationFrameStart = [0];
-    w.animationFrameCount = [1];
-    w.frameWidth = new Uint16Array(1).fill(16);
-    w.frameHeight = new Uint16Array(1).fill(16);
+    // The stash is in the memory with the Adobe regions, as a scene with Adobe characters has it.
+    const { worker: w } = await bootEmitWorker(N, { adobe: adobe !== null });
     for (let e = 0; e < N; e++) {
       Transform.active[e] = 1;
       Transform.rotC[e] = 1;
@@ -118,13 +78,7 @@ for (const adobe of [null, [N + 7]]) test(`a persist frame of sprites only publi
       SpriteRenderer.scaleY[e] = 1;
       SpriteRenderer.alpha[e] = 1;
     }
-    const hit = w._type0PersistHit;
-    let hits = 0;
-    w._type0PersistHit = function (...args) {
-      const h = hit.apply(this, args);
-      if (h) hits++;
-      return h;
-    };
+    const persist = countPersistHits(w);
     for (let f = 0; f < 6; f++) {
       for (let e = 0; e < N; e++) {
         Transform.x[e] = 10 * e + f;
@@ -140,8 +94,8 @@ for (const adobe of [null, [N + 7]]) test(`a persist frame of sprites only publi
       for (let e = 0; e < N; e++) assert.equal(w.renderQueueX[e], 10 * e + f, `frame ${f}: row ${e} pose`);
       w._queueBuf ^= 1;
     }
-    delete w._type0PersistHit; // the shared worker gets its own method back
-    assert.equal(hits, 4, 'frames 2 to 5 were persist frames');
+    persist.restore();
+    assert.equal(persist.hits, 4, 'frames 2 to 5 were persist frames');
   } finally {
     Layer.reset();
   }
@@ -153,21 +107,7 @@ test('a row a repeating sprite left is cleared when a plain sprite takes it', as
   Layer.reset();
   Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
   try {
-    const w = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-    const componentData = coreComponentData(N);
-    await initWorker(w, {
-      config: { worldWidth: 1000, worldHeight: 1000, preRender: { interpolation: false } },
-      globalEntityCount: N,
-      buffers: { componentData },
-      extra: { renderQueue: renderQueuePayload(8) },
-    });
-    for (const C of [Transform, SpriteRenderer]) C.initializeArrays(componentData[C.name], N);
-    bindPoseColumns(N);
-    w.proxyToGlobalAnim = [null, [0]];
-    w.animationFrameStart = [0];
-    w.animationFrameCount = [1];
-    w.frameWidth = new Uint16Array(1).fill(16);
-    w.frameHeight = new Uint16Array(1).fill(16);
+    const { worker: w } = await bootEmitWorker(N);
     Transform.active[0] = 1;
     Transform.rotC[0] = 1;
     SpriteRenderer.active[0] = 1;
@@ -211,22 +151,8 @@ test('both queue buffers show the current frame, and an animated scene keeps its
   Layer.reset();
   Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
   try {
-    const w = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-    const componentData = coreComponentData(N);
-    await initWorker(w, {
-      config: { worldWidth: 1000, worldHeight: 1000, preRender: { interpolation: false } },
-      globalEntityCount: N,
-      buffers: { componentData },
-      extra: { renderQueue: renderQueuePayload(8) },
-    });
-    for (const C of [Transform, SpriteRenderer]) C.initializeArrays(componentData[C.name], N);
-    bindPoseColumns(N);
     // One sheet with one 4-frame animation, textures 0..3: a row's texture is its frame.
-    w.proxyToGlobalAnim = [null, [0]];
-    w.animationFrameStart = [0];
-    w.animationFrameCount = [4];
-    w.frameWidth = new Uint16Array(4).fill(16);
-    w.frameHeight = new Uint16Array(4).fill(16);
+    const { worker: w } = await bootEmitWorker(N, { textureMetadata: oneAnimationMetadata(4) });
     for (let e = 0; e < N; e++) {
       Transform.active[e] = 1;
       Transform.x[e] = 100 + 50 * e;
@@ -244,13 +170,7 @@ test('both queue buffers show the current frame, and an animated scene keeps its
     SpriteRenderer.animationSpeed[0] = 0.25; // a frame every 4 ticks
     SpriteRenderer.animationSpeed[1] = 1 / 3; // every 3: the two change on different ticks
 
-    const hit = w._type0PersistHit;
-    let hits = 0;
-    w._type0PersistHit = function (...args) {
-      const h = hit.apply(this, args);
-      if (h) hits++;
-      return h;
-    };
+    const persist = countPersistHits(w);
     const shown = [[-1, -1], [-1, -1]]; // per buffer, the texture each row last showed
     for (let f = 0; f < 60; f++) {
       const buf = w._queueBuf;
@@ -271,7 +191,8 @@ test('both queue buffers show the current frame, and an animated scene keeps its
       w._queueBuf ^= 1;
     }
     // The first frame of each buffer is a full emit; every later one keeps the rows.
-    assert.equal(hits, 58, `persist frames: ${hits} of 60`);
+    persist.restore();
+    assert.equal(persist.hits, 58, `persist frames: ${persist.hits} of 60`);
   } finally {
     Layer.reset();
   }

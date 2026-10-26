@@ -22,10 +22,20 @@ import { dummyLutSource } from './instancedSpriteBatch.js';
 import { FILL_ROW, MESH_UV_FILL_FLOATS, MESH_UV_FILL_STRIDE, sampleMeshFillPose } from './colliderFillBatch.js';
 
 export class MeshUvFillBatch {
-  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null }) {
+  /**
+   * `data`: where the rows are written, capacity × MESH_UV_FILL_FLOATS, a region of the mesh memory
+   * (meshMemory.js, E-76 W11) where the corner kernel rewrites them; any other length, none. As in
+   * ColliderFillBatch, the Pixi Buffer uploads an array of its own (E-123), and upload copies into it the
+   * rows it sends.
+   */
+  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null }) {
     this.capacity = Math.max(1, capacity | 0);
-    this.data = new Float32Array(this.capacity * MESH_UV_FILL_FLOATS);
+    const floats = this.capacity * MESH_UV_FILL_FLOATS;
+    this.data = new Float32Array(floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
+    const shared = data instanceof Float32Array && data.length === floats ? data : null;
+    this.rows = shared || this.data;
+    this.rowsU32 = shared ? new Uint32Array(shared.buffer, shared.byteOffset, shared.length) : this.dataU32;
     this.buffer = new Buffer({
       data: this.data,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
@@ -128,6 +138,8 @@ export class MeshUvFillBatch {
       return 0;
     }
     this.mesh.visible = true;
+    // E-123: the rows this upload sends, out of the mesh memory into the Buffer's own array.
+    if (this.rows !== this.data) this.data.set(this.rows.subarray(0, n * MESH_UV_FILL_FLOATS));
     this.buffer.update(n * MESH_UV_FILL_STRIDE);
     this.geometry.instanceCount = n;
     return n;

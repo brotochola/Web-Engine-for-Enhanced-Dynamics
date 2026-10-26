@@ -9,6 +9,27 @@ const INTERIOR = 240;
 const WALL = 48;
 const WORLD_W = 4000;
 const WORLD_H = 3000;
+/** ?physics=0: no physics worker; the walls and props are colliders without bodies (the bullets still hit them). */
+const PHYSICS = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('physics') !== '0';
+  } catch {
+    return true;
+  }
+})();
+
+/**
+ * ?bullets=N: the load knob. The pool (40 000 by default), the drivers' spawn rate and the queue scale with it, so
+ * the pool stays as full and the bullets on screen grow with N (under 65 536 the pool keeps its 16-bit slots).
+ */
+const BULLETS = (() => {
+  try {
+    const n = Number(new URLSearchParams(globalThis.location?.search || '').get('bullets'));
+    return Number.isFinite(n) && n > 0 ? Math.floor(n) : 40000;
+  } catch {
+    return 40000;
+  }
+})();
 
 /** Dense in-world bullets: walls so they die inside, driver keeps the pool full. */
 export class BulletStressScene extends Scene {
@@ -29,16 +50,17 @@ export class BulletStressScene extends Scene {
       staggeredUpdates: false,
     },
     physics: {
+      enabled: PHYSICS,
       subStepCount: 1,
       noLimitFPS: false,
       gravity: { x: 0, y: 0 },
     },
     particle: { maxParticles: 0, decals: false },
-    bullet: { maxBullets: 40000, maxImpactsPerFrame: 256 },
+    bullet: { maxBullets: BULLETS, maxImpactsPerFrame: 256 },
     renderer: {
       backend: 'webgl',
       noLimitFPS: false,
-      maxVisibleRenderables: 42000,
+      maxVisibleRenderables: BULLETS + 2000,
     },
     lighting: { enabled: false },
   };
@@ -104,7 +126,7 @@ export class BulletStressScene extends Scene {
     }
 
     for (let s = 0; s < 8; s++) {
-      BulletStressDriver.spawn({ seed: SEED + s * 97, spawnPerTick: 180 });
+      BulletStressDriver.spawn({ seed: SEED + s * 97, spawnPerTick: Math.round((180 * BULLETS) / 40000) });
     }
 
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);

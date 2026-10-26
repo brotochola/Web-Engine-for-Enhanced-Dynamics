@@ -59,7 +59,7 @@ test('neighbour reuse does not depend on a cell-version hash', () => {
   // skin, reuse silently changes meaning and this is the guard that says so.
   const src = code('src/workers/spatialWorker.js');
   assert.match(src, /_canReuseNeighbors/, 'the Verlet skin gate is gone');
-  assert.match(src, /skinCanReuse/, 'the skin branch is gone');
+  assert.match(src, /skinFrac > 0 && this\._canReuseNeighbors\(/, 'the skin branch is gone');
   assert.match(src, /framesSinceBuild/, 'the age cap is gone');
   assert.ok(
     !/cellVersion/i.test(src),

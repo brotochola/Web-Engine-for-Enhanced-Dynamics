@@ -20,19 +20,41 @@ import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { Camera } from '../core/camera.js';
 import { Query as QueryImport } from '../core/query.js';
 import {
-    buildVisibilityPolygon,
+    bindPolarBins,
     clearPolarBins,
-    clipVisibilityToPolar,
-    collectSolidSegments,
     ensureCompoundSolid,
-    markSeenPolarOwners,
-    sweepSawOccluder,
     OCC_CIRCLE,
     OCC_POLY,
     polarBinsActive,
+    skipPolarBins,
+    warnSweepOverflow,
     writeOrientedBoxVerts,
     writePolygonVerts,
 } from '../render/visibility/angularSweep.js';
+import {
+    GATHER_EVENT_F64,
+    GATHER_EVENT_I32,
+    GATHER_EV_SOLID,
+    bindVisibilityGather,
+    writeGatherColumns,
+} from '../render/visibility/visibilityGatherClient.js';
+import {
+    bindVisibilitySweep,
+    SWEEP_OWNER_SEEN,
+    SWEEP_OWNER_STAMP,
+    SWEEP_R_EVENT_OVERFLOW,
+    SWEEP_R_OWNERS_MARKED,
+    SWEEP_R_SEEN_VALID,
+    SWEEP_R_STAMP,
+} from '../render/visibility/visibilitySweepClient.js';
+import {
+    SOLID_ARGS,
+    bindSolidSegments,
+    collectSolidRefused,
+    collectSolidWasm,
+    unbindSolidSegments,
+} from '../render/visibility/solidSegmentsClient.js';
+import { VISIBILITY_MAX_OCCLUDERS, createVisibilityMemory, visibilityMemoryOpts } from '../util/visibilityMemory.js';
 import { Grid as GridImport } from '../core/grid.js';
 import { Sun } from '../core/sun.js';
 import {
@@ -40,11 +62,10 @@ import {
     screenBoundsToWorldBounds,
     lightInfluenceRadius,
     lightCookieScale,
-    lightGlowScale,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand } from '../util/sortIndexByKey.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -55,16 +76,24 @@ import {
     ENTITY_GLOW_SORT_BIAS,
     ShapeType,
     MAX_POLYGON_VERTICES,
-    SPRITE_TILE_MODE,
     resolveZenithalMaxHeight,
 } from '../util/configDefaults.js';
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
-import { createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
-import { bindGpuPack, packInstancedRowsWasm } from '../render/gpuPackClient.js';
+import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
+import { bindGpuPack, packInstancedRowsWasm, packSplitRowsWasm } from '../render/gpuPackClient.js';
+import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
+import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
 import {
+    bindEmitAdobe,
     bindPreRenderEmit,
+    writeEmitAdobeAssets,
+    writeEmitAdobeColumns,
+    writeEmitBulletColumns,
+    writeEmitGlowColumns,
+    writeEmitParticleColumns,
+    writeEmitLiquidFunColumns,
     writeEmitColumns,
     writeEmitTextures,
     writePersistColumns,
@@ -72,8 +101,13 @@ import {
     EMIT_DECLINED,
     EMIT_NO_CASTERS,
     EMIT_PERSIST_MISS,
+    EMIT_PRESORTED,
+    EMIT_OTHERS_ONLY,
     EMIT_SORT_KEY,
     EMIT_TILES_DIRTY,
+    EMIT_WARN_BULLET_START,
+    EMIT_WARN_PARTICLE_START,
+    EMIT_WARN_LF_START,
     EMIT_WARN_NO_ANIM,
     EMIT_WARN_NO_START,
     EMIT_Y_SORT,
@@ -84,15 +118,14 @@ import {
     GPU_SPACE_WORLD,
     GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
+    GPU_FLAG_SPLIT,
     createGpuQueueViews,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
-    packInstancedRows,
     makePackContext,
 } from '../render/gpuQueueLayout.js';
 import {
     compactShadowCasterIndices,
-    stampLightRange,
     rtPixelSize,
     rtPixelScale,
 } from '../render/gpuShadowCasters.js';
@@ -101,6 +134,8 @@ import { bindLiquidFunRender } from '../render/liquidFunRender.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
+import { staticSceneryGen } from '../core/staticScenery.js';
+import { StaticSceneryGrid } from '../render/staticSceneryGrid.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -128,7 +163,6 @@ const EMPTY_U8 = new Uint8Array(0);
 const EMPTY_U16 = new Uint16Array(0);
 const EMPTY_U32 = new Uint32Array(0);
 const EMPTY_I32 = new Int32Array(0);
-const TILE_MODE_LOCAL = SPRITE_TILE_MODE.LOCAL;
 
 /**
  * E-07. Kinds of animation-row source, as numeric tags.
@@ -240,45 +274,14 @@ function formatAnimLabel(kind, animIdx) {
     return `${name}:${String(animIdx)}`;
 }
 
-/** Stretch / skip tiling on non-entity queue rows (particles, adobe pieces, …). */
-function clearTileFields(ref, out) {
-    if (ref.tileMode) ref.tileMode[out] = 0;
-    if (ref.tileOffsetU) ref.tileOffsetU[out] = 0;
-    if (ref.tileOffsetV) ref.tileOffsetV[out] = 0;
-    if (ref.tileMulX) ref.tileMulX[out] = 0;
-    if (ref.tileMulY) ref.tileMulY[out] = 0;
+/** E-138. col[0..n) = col[order[0..n)], through tmp. */
+function permuteF32(col, order, n, tmp) {
+    for (let k = 0; k < n; k++) tmp[k] = col[order[k]];
+    col.set(tmp.subarray(0, n));
 }
 
-/** Non-caster rows: zero stamp extras instead of fill() of the whole prefix. */
-function clearQueueShadow(ref, out) {
-    if (ref.shadowH) ref.shadowH[out] = 0;
-    if (ref.shadowOffX) ref.shadowOffX[out] = 0;
-    if (ref.shadowOffY) ref.shadowOffY[out] = 0;
-}
 
-/**
- * Copy SoA tile fields and resolve signed GPU mul:
- * WORLD (or legacy repeatX with mode 0): +1/period
- * LOCAL: -(2 * boundsHalf) / period
- */
-function writeEntityTileFields(
-    ref, out, idx,
-    srTileMode, srTileOffU, srTileOffV,
-    srRepeatX, srRepeatY, srBHW, srBHH
-) {
-    const mode = srTileMode[idx];
-    if (ref.tileMode) ref.tileMode[out] = mode;
-    if (ref.tileOffsetU) ref.tileOffsetU[out] = srTileOffU[idx];
-    if (ref.tileOffsetV) ref.tileOffsetV[out] = srTileOffV[idx];
-    const rx = srRepeatX[idx];
-    const ry = srRepeatY[idx];
-    let mx = 0;
-    let my = 0;
-    if (rx > 0) mx = mode === TILE_MODE_LOCAL ? -(srBHW[idx] * 2) / rx : 1 / rx;
-    if (ry > 0) my = mode === TILE_MODE_LOCAL ? -(srBHH[idx] * 2) / ry : 1 / ry;
-    if (ref.tileMulX) ref.tileMulX[out] = mx;
-    if (ref.tileMulY) ref.tileMulY[out] = my;
-}
+
 /** Composite depth sort: worldY * scale + innerZ (entities, decorations, bullets) */
 const Y_SORT_K = DECORATION_Y_SORT_SCALE;
 // The sort key of the renderable being collected (E-86). collectRenderable and _writeRenderable are
@@ -286,9 +289,6 @@ const Y_SORT_K = DECORATION_Y_SORT_SCALE;
 // heap number per visible particle, bullet, decoration and glow. Callers write it here first.
 // Sprites (types 0 and 6) need none: _writeRenderable stores their drawn Y.
 const COLLECT_Y = new Float64Array(1);
-// The frame's step in seconds for _advancePersistFrame, written once per persist frame (a double
-// passed to it per animated sprite would be a heap number each).
-const PERSIST_DT = new Float64Array(1);
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *
@@ -403,9 +403,23 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueType = EMPTY_U8;
         /** The instanced-row pack kernel (E-76 W9), bound when the queues live in the render-queue memory. */
         this._gpuPackWasm = null;
+        // E-82b: the main sprites go into the GPU queue as a pose stream and a static stream,
+        // the statics written only when the GPU queue buffer does not hold this generation's already. Per GPU
+        // queue buffer: the generation its statics hold (0: none) and their rows; and this frame's split.
+        this._gpuSplit = false;
+        this._gpuStaticGen = new Uint32Array(2);
+        this._gpuStaticRows = new Int32Array(2);
+        this._packSplitUsed = false;
+        this._packSplitGen = 0;
+        /** The main queue's painter state (painterRadixClient's wasmPainterState), when pre-render sorts it. */
+        this._gpuPainter = null;
+        /** The painter sort kernel (W10) on pre-render's painter regions of the render-queue memory, when laid out. */
+        this._gpuPainterWasm = null;
         /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
         this._emitWasm = null;
-        /** The shadow stamp kernel (E-114), bound when its scratch lives in the render-queue memory. */
+        /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
+        this._collectWasm = null;
+        /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
         this._stampWasm = null;
         /** Whether the kernel's last frame wrote a repeating sprite (emitSpriteQueue's tiledRows). */
         this._emitTiledRows = false;
@@ -489,30 +503,20 @@ class PreRenderWorker extends AbstractWorker {
         // Pre-allocated query arrays
         this._queryLightEmitter = null;
         this._querySpriteRenderer = null;
+        // E-127. The static scenery's grid; empty without static types.
+        this._staticGrid = new StaticSceneryGrid();
         this._queryAdobeAnim = null;
 
         // Per-frame cached query results (avoids duplicate queryActiveEntities calls)
         this._frameAdobeEntities = null;
+        // _emitRefused said its reason.
+        this._emitRefusedWarned = false;
+        // _collectRefused said its reason.
+        this._collectRefusedWarned = false;
+        // _packRows said a call was refused.
+        this._packRefusedWarned = false;
         // Per-frame cached camera bounds (avoids redundant calculateCameraBounds calls)
         this._frameCameraBoundsValid = false;
-
-        // Pre-allocated result object for _resolveAdobeFrameIndex (avoids per-entity alloc)
-        this._adobeFrameResult = { asset: null, clipId: 0, frameIndex: 0 };
-
-        // Pre-allocated ref for _emitAdobePieces (avoids per-frame alloc in buildRenderQueue)
-        this._emitRef = {
-            x: null, y: null, scaleX: null, scaleY: null,
-            rotC: null, rotS: null, alpha: null, tint: null, textureId: null,
-            anchorX: null, anchorY: null, type: null,
-            repeatX: null, repeatY: null,
-            tileMode: null, tileOffsetU: null, tileOffsetV: null,
-            tileMulX: null, tileMulY: null,
-            // E-102b: whether this queue's tile columns may hold a repeating sprite's values.
-            tilesDirty: false,
-            // Set by emitSpriteQueue each frame; declared so the first frame does not reshape it (N-32).
-            sortKey: null, shadowH: null, shadowOffX: null, shadowOffY: null,
-            scActive: null, scH: null, scOx: null, scOy: null,
-        };
 
         // Visible lights SAB: written here, read by pixi (avoids duplicate query)
         this.visibleLightsData = null;
@@ -586,8 +590,41 @@ class PreRenderWorker extends AbstractWorker {
         this._selfLitOcc = EMPTY_I32;
         this._selfLitSeen = EMPTY_U32;
         this._selfLitSeenStamp = 0;
+        // W2a: the per-light sweep in visibilitySweep.wasm (bindVisibilitySweep's binding), on the visibility
+        // memory pre-render makes for it; null before an init with raycasted lighting.
+        this._visSweep = null;
+        this._visMemory = null;
+        // buildVisibilityPolygons said the sweep is missing.
+        this._visRefusedWarned = false;
+        // W1: the swept light loop's compound raster, solidSegments.wasm (collectSolidWasm); without a fixture pool
+        // no compound solid comes, and collectSolidRefused says so if one does.
+        this._visCollectSolid = collectSolidRefused;
+        // W2b: the light's neighbour gather in visibilityGather.wasm (bindVisibilityGather's binding), with the
+        // visibility memory placed in the engine block; null gathers in JS (the spatial memory outside the block).
+        this._visGather = null;
         this._decorationZoomAlpha = 1;
         this._emitWriteCount = 0;
+        // E-138. A frame whose emit expands its rows (Adobe Animate roots into pieces) sorts the collector before the
+        // emit (_presortCollector), so the queue comes out in painter order and the pack takes it in order. Whether
+        // this frame's queue was, the collector's count and the rows the emit wrote last frame (resetFrameCounters
+        // clears _emitWriteCount before the collect), and the sort's keys, order and column scratch (sized on the
+        // first such frame).
+        this._queuePresorted = false;
+        this._lastCollectCount = 0;
+        this._lastEmitCount = 0;
+        /** The presorted collector's glow rows (type 3): with none, the pack takes every row with no slot list. */
+        this._presortGlowRows = 0;
+        /**
+         * True only while the main queue's emit runs on a presorted frame: the kernel then leaves the sort keys and
+         * the shadow terms, which nothing reads that frame (custom layers emit after it and keep theirs).
+         */
+        this._emitPresorted = false;
+        this._presortKeys = EMPTY_F32;
+        this._presortKeysU32 = EMPTY_U32;
+        this._presortOrder = EMPTY_U32;
+        this._presortF32 = EMPTY_F32;
+        this._presortU8 = EMPTY_U8;
+        this._presortI32 = EMPTY_I32;
         this._emptyAdobeEntities = null;
         this._columnSnapshot = null;
         this._lightGlowAsSprite = false;
@@ -782,7 +819,7 @@ class PreRenderWorker extends AbstractWorker {
         this.maxParticles = data.maxParticles || 0;
         this.liquidFunMaxCount = data.liquidFunMaxCount || 0;
         if (data.buffers?.liquidFunRender && this.liquidFunMaxCount > 0) {
-            this.liquidFun = bindLiquidFunRender(data.buffers.liquidFunRender, this.liquidFunMaxCount);
+            this.liquidFun = bindLiquidFunRender(data.buffers.liquidFunRender, this.liquidFunMaxCount, data.buffers.liquidFunRenderByte | 0);
         }
         this.maxDecorations = data.maxDecorations || 0;
         this.maxBullets = data.maxBullets || 0;
@@ -875,6 +912,7 @@ class PreRenderWorker extends AbstractWorker {
                     : new Float32Array(this.globalEntityCount);
             }
             this._bindAnimationEndTypes(data.registeredClasses);
+            this._staticGrid.bindTypes(data.registeredClasses, this.globalEntityCount);
 
             // Pre-allocate renderable collector buffers
             this._renderableY = emitLayout
@@ -886,20 +924,51 @@ class PreRenderWorker extends AbstractWorker {
             this._renderableIndex = emitLayout
                 ? new Int32Array(emitBuffer, emitLayout.collectorIndexByte, maxItems)
                 : new Int32Array(maxItems);
-            // E-112: the full emit's sprite and decoration rows in WASM, where it reads every column.
-            this._emitWasm = null;
-            if (emitLayout && this.config?.wasm?.preRenderEmit !== false) {
+            // The LiquidFun rows' previous positions, where the emit kernel reads them (_latchLiquidFunPrevPose
+            // keeps arrays of this length).
+            if (emitLayout && emitLayout.lfPrevByte >= 0) {
+                const lfN = emitLayout.lfMaxCount;
+                this._prevLfX = new Float32Array(emitBuffer, emitLayout.lfPrevByte, lfN);
+                this._prevLfY = new Float32Array(emitBuffer, emitLayout.lfPrevByte + 4 * lfN, lfN);
+            }
+            // E-112, close-out group B: the emit is preRenderEmit.wasm, on the render-queue memory where every column
+            // it reads is (the scene makes the memory, or fails to start when it cannot).
+            if (!emitLayout) {
+                throw new Error('[PRE_RENDER] the render queue has no emit regions in the render-queue memory '
+                    + '(renderQueueLayout.emit for this entity count): the emit kernel has nothing to run on');
+            }
+            try {
+                this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
+            } catch (err) {
+                throw new Error(`[PRE_RENDER] preRenderEmit.wasm did not load: ${err?.message ?? err}`, { cause: err });
+            }
+            // W27: the Adobe roots too, from a copy of the registry's assets (deserialized before initialize).
+            if (bindEmitAdobe(this._emitWasm, emitLayout)) this._copyEmitAdobeAssets();
+            // W4b: the sprite collect runs only in preRenderCollect.wasm, on Transform, its pose and Collider in the
+            // memory (the scene lays them out whenever the emit reads sprites or glows).
+            this._collectWasm = null;
+            const collectLayout = data.renderQueueLayout?.collect || null;
+            if (collectLayout) {
                 try {
-                    this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
+                    this._collectWasm = await bindPreRenderCollect(data.renderQueueMemory, collectLayout);
                 } catch (err) {
-                    console.warn('[PRE_RENDER] preRenderEmit.wasm did not load; emitting in JS', err);
-                    this._emitWasm = null;
+                    throw new Error(`[PRE_RENDER] preRenderCollect.wasm did not load: ${err?.message ?? err}`, { cause: err });
                 }
             }
-            this._renderablePx = new Float32Array(maxItems);
-            this._renderablePy = new Float32Array(maxItems);
-            this._renderableRotC = new Float32Array(maxItems);
-            this._renderableRotS = new Float32Array(maxItems);
+            // W27: the pose stash in the memory too when the emit kernel expands Adobe roots (the collect writes
+            // the poses there on a frame with one, _bindCollectPoses).
+            const stashIn = emitLayout !== null && emitLayout.persistRows === maxItems && emitLayout.stashXByte >= 0;
+            const stash = (byte) => (stashIn ? new Float32Array(emitBuffer, byte, maxItems) : new Float32Array(maxItems));
+            // E-138: the presort's keys and order in the memory, where the painter kernel sorts them.
+            if (emitLayout !== null && emitLayout.persistRows === maxItems && emitLayout.presortKeysByte >= 0) {
+                this._presortKeys = new Float32Array(emitBuffer, emitLayout.presortKeysByte, maxItems);
+                this._presortKeysU32 = new Uint32Array(emitBuffer, emitLayout.presortKeysByte, maxItems);
+                this._presortOrder = new Uint32Array(emitBuffer, emitLayout.presortOrderByte, maxItems);
+            }
+            this._renderablePx = stash(emitLayout?.stashXByte);
+            this._renderablePy = stash(emitLayout?.stashYByte);
+            this._renderableRotC = stash(emitLayout?.stashRotCByte);
+            this._renderableRotS = stash(emitLayout?.stashRotSByte);
             // W4c: in the memory, where the emit kernel's persist path reads them.
             const persistRows = emitLayout && emitLayout.persistRows === maxItems ? maxItems : 0;
             const persistView = (Type, byte, b) => (persistRows
@@ -923,8 +992,28 @@ class PreRenderWorker extends AbstractWorker {
                     createGpuQueueViews(data.gpuQueue.dataA, caps, data.gpuQueue.dataAByte | 0),
                     createGpuQueueViews(data.gpuQueue.dataB, caps, data.gpuQueue.dataBByte | 0),
                 ];
-                this._gpuIdxEntity = new Uint32Array(maxItems);
-                this._gpuIdxGlow = new Uint32Array(maxItems);
+                // W10: the painter sort is painterRadix.wasm on pre-render's painter state, next to the keys it
+                // writes, when pre-render sorts (the scene lays the state out then); the slot lists it sorts are
+                // regions there too.
+                this._gpuPainterWasm = null;
+                const painterLayout = data.renderQueueLayout?.preRenderPainter || null;
+                if (this._ySort && data.renderQueueMemory && painterLayout) {
+                    if (painterLayout.rows < maxItems) {
+                        throw new Error(`[PRE_RENDER] the painter state holds ${painterLayout.rows} rows for a queue of ${maxItems}`);
+                    }
+                    try {
+                        this._gpuPainterWasm = await bindPainterRadix(data.renderQueueMemory, painterLayout);
+                    } catch (err) {
+                        throw new Error(`[PRE_RENDER] painterRadix.wasm did not load: ${err?.message ?? err}`, { cause: err });
+                    }
+                } else if (this._ySort && this._sortSprites === SORT_SPRITES_PRERENDER
+                    && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER) {
+                    console.error('[PRE_RENDER] pre-render sorts the sprites (preRender.sortSprites), but the render-queue '
+                        + 'memory has no painter state for it: they are drawn unsorted');
+                }
+                const painterWasm = this._gpuPainterWasm;
+                this._gpuIdxEntity = painterWasm ? painterSlotList(painterWasm, 'entity', maxItems) : new Uint32Array(maxItems);
+                this._gpuIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
                 this._gpuPackCtx = {};
                 this._gpuCasterIdx = new Uint32Array(Math.max(1, caps.maxSun | 0, maxItems));
                 this._gpuStampTmp = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
@@ -934,50 +1023,49 @@ class PreRenderWorker extends AbstractWorker {
                 this._gpuKeepIdx = new Uint32Array(Math.max(1, caps.maxStamp | 0, maxItems));
                 this._gpuPackOpts = {};
                 this._gpuCookieQ = null;
-                // E-76 W9: pack in WASM where both queues live in the render-queue memory.
-                if (data.renderQueueMemory && data.renderQueueLayout && this.config?.wasm?.gpuPack !== false) {
-                    try {
-                        this._gpuPackWasm = await bindGpuPack(data.renderQueueMemory, data.renderQueueLayout);
-                    } catch (err) {
-                        console.warn('[PRE_RENDER] gpuPack.wasm did not load; packing in JS', err);
-                        this._gpuPackWasm = null;
-                    }
+                // E-76 W9: the pack is gpuPack.wasm, on the render-queue memory where both queues live (the scene
+                // makes the memory, or does not start).
+                if (!data.renderQueueMemory || !data.renderQueueLayout) {
+                    throw new Error('[PRE_RENDER] the GPU queue has no render-queue memory: gpuPack.wasm has nothing to pack');
                 }
-                // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions.
+                try {
+                    this._gpuPackWasm = await bindGpuPack(data.renderQueueMemory, data.renderQueueLayout);
+                } catch (err) {
+                    throw new Error(`[PRE_RENDER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
+                }
+                // E-82b: plain sprites in two streams (a nearest atlas, which snaps every pose, keeps 15-float rows).
+                this._gpuSplit = true;
+                this._gpuStaticGen.fill(0);
+                // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions (made with
+                // shadows and sun casters; without them nothing is stamped).
                 this._stampWasm = null;
-                if (data.renderQueueMemory && data.renderQueueLayout?.stamp && this.config?.wasm?.shadowStamp !== false) {
-                    try {
-                        this._stampWasm = await bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp);
-                    } catch (err) {
-                        console.warn('[PRE_RENDER] shadowStamp.wasm did not load; stamping in JS', err);
-                        this._stampWasm = null;
-                    }
+                if (data.renderQueueMemory && data.renderQueueLayout?.stamp) {
+                    this._stampWasm = await bindShadowStamp(data.renderQueueMemory, data.renderQueueLayout.stamp);
                 }
                 const cookieN = Math.max(1, caps.maxCookie | 0);
                 if (cookieN > 0) {
-                    const cookieRot = new Float32Array(cookieN);
-                    const cookieAnchor = new Float32Array(cookieN);
-                    const cookieTint = new Uint32Array(cookieN);
-                    cookieRot.fill(1);
-                    cookieAnchor.fill(0.5);
-                    cookieTint.fill(0xffffff);
+                    // A render queue of the cookies' rows: in the stamp's regions of the render-queue memory when it
+                    // has them (with shadows), where the pack kernel packs it; else views of a buffer of its own.
+                    const st = data.renderQueueLayout?.stamp;
+                    const inMemory = data.renderQueueMemory && st && st.cookieQueueByte >= 0 && st.cookies >= cookieN;
+                    const cv = inMemory
+                        ? createRenderQueueViews(data.renderQueueMemory.buffer, cookieN, st.cookieQueueByte)
+                        : createRenderQueueViews(new SharedArrayBuffer(computeBufferSize(cookieN)), cookieN, 0);
+                    cv.rotC.fill(1);
+                    cv.anchorX.fill(0.5);
+                    cv.anchorY.fill(0.5);
+                    cv.tint.fill(0xffffff);
                     this._gpuCookieQ = {
                         count: 0,
-                        x: new Float32Array(cookieN),
-                        y: new Float32Array(cookieN),
-                        scaleX: new Float32Array(cookieN),
-                        scaleY: new Float32Array(cookieN),
-                        rotC: cookieRot,
-                        rotS: new Float32Array(cookieN),
-                        alpha: new Float32Array(cookieN),
-                        tint: cookieTint,
-                        textureId: new Uint16Array(cookieN),
-                        anchorX: cookieAnchor,
-                        anchorY: cookieAnchor,
+                        x: cv.x, y: cv.y, scaleX: cv.scaleX, scaleY: cv.scaleY, rotC: cv.rotC, rotS: cv.rotS,
+                        alpha: cv.alpha, tint: cv.tint, textureId: cv.textureId, anchorX: cv.anchorX, anchorY: cv.anchorY,
+                        // No tiling, no shadow terms: zeros the kernel reads as the JS reads absent columns.
+                        tileMulX: cv.tileMulX, tileMulY: cv.tileMulY, tileOffsetU: cv.tileOffsetU, tileOffsetV: cv.tileOffsetV,
+                        shadowH: cv.shadowH, shadowOffX: cv.shadowOffX, shadowOffY: cv.shadowOffY,
                     };
                 }
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
-                if (this._ySort) this._gpuPainter = createPainterState(maxItems);
+                this._gpuPainter = this._ySort && this._gpuPainterWasm ? createWasmPainterState(this._gpuPainterWasm) : null;
                 this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
             }
 
@@ -994,10 +1082,20 @@ class PreRenderWorker extends AbstractWorker {
                     const layerId = parseInt(idStr);
                     const layerMax = lrq.maxItems;
 
+                    // The collector with its pose stash, as the entities' (E-98d): the emit reads the poses the
+                    // collect took. In the render-queue memory when it holds the layer (close-out group B), where the
+                    // emit kernel reads them (CUSTOM_COLLECTOR_ROW_BYTES a row).
+                    const at = lrq.collectorByte | 0;
+                    const inMemory = lrq.collectorByte >= 0 && lrq.dataA === data.renderQueueMemory?.buffer;
+                    const f32 = (k) => (inMemory ? new Float32Array(lrq.dataA, at + k * 4 * layerMax, layerMax) : new Float32Array(layerMax));
                     const collector = {
-                        y: new Float32Array(layerMax),
-                        type: new Uint8Array(layerMax),
-                        index: new Int32Array(layerMax),
+                        y: f32(0),
+                        type: inMemory ? new Uint8Array(lrq.dataA, at + 24 * layerMax, layerMax) : new Uint8Array(layerMax),
+                        index: inMemory ? new Int32Array(lrq.dataA, at + 4 * layerMax, layerMax) : new Int32Array(layerMax),
+                        stashX: f32(2),
+                        stashY: f32(3),
+                        stashRotC: f32(4),
+                        stashRotS: f32(5),
                         count: 0,
                         maxItems: layerMax,
                         ySorting: Layer.getById(layerId)?.ySorting !== false,
@@ -1006,8 +1104,8 @@ class PreRenderWorker extends AbstractWorker {
                     this._customLayerCollectors[layerId] = collector;
 
                     const bufs = [
-                        createRenderQueueViews(lrq.dataA, layerMax),
-                        createRenderQueueViews(lrq.dataB, layerMax),
+                        createRenderQueueViews(lrq.dataA, layerMax, lrq.dataAByte | 0),
+                        createRenderQueueViews(lrq.dataB, layerMax, lrq.dataBByte | 0),
                     ];
                     this._customLayerQueueBuffers[layerId] = bufs;
                     this._customLayerQueueRefs[layerId] = {};
@@ -1027,9 +1125,10 @@ class PreRenderWorker extends AbstractWorker {
             this.animationNameToIndex = data.textureMetadata.animationNameToIndex;
             this.frameWidth = data.textureMetadata.frameWidth;   // Uint16Array[textureId]
             this.frameHeight = data.textureMetadata.frameHeight; // Uint16Array[textureId]
-            // E-112: the kernel's copy of it; metadata that does not fit its tables keeps the JS emit.
+            // E-112: the kernel's copy of it (u8 sheets and states, u16 textures: valid metadata always fits).
             if (this._emitWasm !== null && !writeEmitTextures(this._emitWasm, data.textureMetadata)) {
-                this._emitWasm = null;
+                throw new Error('[PRE_RENDER] the texture metadata does not fit the emit kernel\'s tables (a sheet past 255, '
+                    + 'more than 65 536 animations or frames, or a hole in animationFrameStart/animationFrameCount)');
             }
         }
 
@@ -1087,6 +1186,14 @@ class PreRenderWorker extends AbstractWorker {
         // VISIBILITY POLYGONS - Initialize (raycasted light occlusion)
         // ========================================
         this.visibilityPolygonsEnabled = false;
+        // W2a: a previous scene's visibility memory goes, and the polar bins are angularSweep.js' own until the
+        // next binds them.
+        this._visSweep = null;
+        this._visMemory = null;
+        this._visCollectSolid = collectSolidRefused;
+        this._visGather = null;
+        unbindSolidSegments();
+        bindPolarBins(null, null);
         if (
             data.visibilityPolygons &&
             data.visibilityPolygons.enabled &&
@@ -1120,28 +1227,33 @@ class PreRenderWorker extends AbstractWorker {
             }
 
             // Scratch arrays for collecting nearby occluders (circle + convex)
-            const maxOccluders = 1024;
-            this._vpOccKind = new Uint8Array(maxOccluders);
-            this._vpCircleX = new Float32Array(maxOccluders);
-            this._vpCircleY = new Float32Array(maxOccluders);
-            this._vpCircleR = new Float32Array(maxOccluders);
-            this._vpVertStart = new Int32Array(maxOccluders);
-            this._vpVertCount = new Uint8Array(maxOccluders);
+            const maxOccluders = VISIBILITY_MAX_OCCLUDERS;
             // Max verts: 4 per box, MAX_POLYGON_VERTICES per poly, rare all-poly worst case
-            this._vpVertsX = new Float32Array(maxOccluders * MAX_POLYGON_VERTICES);
-            this._vpVertsY = new Float32Array(maxOccluders * MAX_POLYGON_VERTICES);
+            const poolVerts = maxOccluders * MAX_POLYGON_VERTICES;
+            // W2a: the scratch below, the polar bins and the seen stamps are views on a visibility memory, where
+            // visibilitySweep.wasm reads them (a memory that cannot be made, or a kernel that does not load, is an
+            // init error).
+            const vm = await this._bindVisibilitySweep(maxVerts, data);
+            this._vpOccKind = vm.kind;
+            this._vpCircleX = vm.cx;
+            this._vpCircleY = vm.cy;
+            this._vpCircleR = vm.cr;
+            this._vpVertStart = vm.vertStart;
+            this._vpVertCount = vm.vertCount;
+            this._vpVertsX = vm.vertsX;
+            this._vpVertsY = vm.vertsY;
             this._vpMaxOccluders = maxOccluders;
 
             // Output scratch for polygon vertices
-            this._vpOutX = new Float32Array(maxVerts);
-            this._vpOutY = new Float32Array(maxVerts);
+            this._vpOutX = vm.outX;
+            this._vpOutY = vm.outY;
 
             // Self-lit queue (entity under own occluder fill)
             this._selfLitMax = data.visibilityPolygons.maxOccluderSelfLit || 512;
             this._selfLitItemBytes = 28;
             this._selfLitSolid = new Uint8Array(this._selfLitMax);
             this._selfLitOcc = new Int32Array(this._selfLitMax);
-            this._selfLitSeen = new Uint32Array(this.globalEntityCount);
+            this._selfLitSeen = vm.ownerSeen;
             const selfLitSabs = [
                 data.visibilityPolygons.selfLitDataA,
                 data.visibilityPolygons.selfLitDataB,
@@ -1161,6 +1273,62 @@ class PreRenderWorker extends AbstractWorker {
             }
 
         }
+    }
+
+    /**
+     * W2a. Make the visibility memory (src/util/visibilityMemory.js: the light's gather and polygon, the polar
+     * bins, the seen stamps, the sweep's scratch) and bind visibilitySweep.wasm on it (wasm.visibilitySweepF32
+     * picks the float32 sweep or the double SIMD one). Returns the views the scratch binds to; a memory that cannot
+     * be made or a kernel that does not load is an error.
+     * W1: with a fixture pool the memory also holds the compound solids' outlines, and solidSegments.wasm rasters
+     * them into its bins.
+     * W2b: when the scene laid the gather's regions in the engine block with these options, the memory is placed
+     * there and visibilityGather.wasm is bound on it; otherwise it is a memory of its own and the JS gathers.
+     */
+    async _bindVisibilitySweep(maxVerts, data) {
+        const opts = visibilityMemoryOpts({
+            maxVerts,
+            entities: this.globalEntityCount,
+            fixtures: ColliderFixture.maxCount | 0,
+        });
+        const v = data.renderQueueLayout?.collect?.visibility || null;
+        const memory = data.renderQueueMemory || null;
+        const sameOpts = (a, b) => a.maxOccluders === b.maxOccluders && a.poolVerts === b.poolVerts
+            && a.maxVerts === b.maxVerts && a.entities === b.entities && a.fixtures === b.fixtures;
+        let place = v && memory && sameOpts(v.opts, opts) ? { memory, baseByte: v.byte } : null;
+        let vm = createVisibilityMemory(opts, place);
+        if (!vm && place) {
+            place = null;
+            vm = createVisibilityMemory(opts, null);
+        }
+        if (!vm) {
+            throw new Error('[PRE_RENDER] the visibility memory could not be made (a shared WebAssembly.Memory was refused): '
+                + 'raycasted lighting needs it');
+        }
+        let sweep;
+        try {
+            sweep = await bindVisibilitySweep(vm, { maxVerts, f32: this.config?.wasm?.visibilitySweepF32 !== false });
+        } catch (err) {
+            throw new Error(`[PRE_RENDER] visibilitySweep.wasm did not load: ${err?.message ?? err}`, { cause: err });
+        }
+        this._visSweep = sweep;
+        this._visMemory = vm.memory;
+        bindPolarBins(vm.views.polarDist, vm.views.polarOwner);
+        if (vm.layout.solidBytes > 0) {
+            try {
+                if (await bindSolidSegments(vm)) this._visCollectSolid = collectSolidWasm;
+            } catch (err) {
+                throw new Error(`[PRE_RENDER] solidSegments.wasm did not load: ${err?.message ?? err}`, { cause: err });
+            }
+        }
+        if (place) {
+            try {
+                this._visGather = await bindVisibilityGather(memory, v, vm);
+            } catch (err) {
+                throw new Error(`[PRE_RENDER] visibilityGather.wasm did not load: ${err?.message ?? err}`, { cause: err });
+            }
+        }
+        return vm.views;
     }
 
     /**
@@ -1514,236 +1682,143 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Entity visibility + collect for the sprite queue.
+     * Entity visibility + collect for the sprite queue, in preRenderCollect.wasm (W4b, close-out group B): every column
+     * it reads is in the render-queue memory (with physics, Phase 4, the bodies' published poses there too; with
+     * Y-sort, the emit kernel's frame sizes). A frame it cannot take collects no sprite and pre-render says why once
+     * (_collectRefused). The JS loops it replaced are tests/reference/preRenderCollectJs.mjs.
      */
     collectVisibleEntities() {
-        if (this.globalEntityCount === 0 || !SpriteRenderer.active || !this.cameraData) return;
-
-        const cameraBounds = this.calculateCameraBounds();
-        if (!cameraBounds) return;
-
-        const x = Transform.x;
-        const y = Transform.y;
-        const active = Transform.active;
-        const spriteRendererActive = SpriteRenderer.active;
-        const renderVisible = SpriteRenderer.renderVisible;
-        const visualRange = Collider.visualRange;
-
-        const camZoom = cameraBounds.zoom;
-        const cameraOffsetX = cameraBounds.cameraOffsetX;
-        const cameraOffsetY = cameraBounds.cameraOffsetY;
-        const screenMinX = cameraBounds.minX;
-        const screenMaxX = cameraBounds.maxX;
-        const screenMinY = cameraBounds.minY;
-        const screenMaxY = cameraBounds.maxY;
-
-        // Iteration source: published sprite query, else full index scan (not the live SAB list).
-        // Normalized to (array, base offset) instead of a per-frame closure so the
-        // hot loop below stays allocation-free and the index load stays inlineable.
-        let iterCount, iterSource;
-        const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
-        if (spriteEntities && spriteEntities.length > 0) {
-            iterCount = spriteEntities.length;
-            iterSource = spriteEntities;
-        } else {
-            // Do not walk live activeEntitiesData — logic0 may be mid-merge
-            // with count=1. Empty published query falls back to a full scan
-            // (inactive slots skip). create() drain publishes before start.
-            iterCount = this.globalEntityCount;
-            iterSource = null;
-        }
-
-        const boundsHalfW = SpriteRenderer.boundsHalfW;
-        const boundsHalfH = SpriteRenderer.boundsHalfH;
-        const spritesheetId = SpriteRenderer.spritesheetId;
-
-        // H-19. Everything hoisted out of the per-entity loop below.
-        //
-        // None of these can change while the loop runs: the component arrays are
-        // bound once, `skipCull` is a config flag, and the truthiness of a typed
-        // array is fixed at allocation. The loop was re-deriving four array
-        // truthiness tests and one property read for every entity on every frame
-        // - 45 568 times per frame at the deepest spritePack setting.
-        //
-        // The counter is the other half. `this.visibleEntitiesCount++` is a
-        // property store per VISIBLE entity, so the same setting performed 45 568
-        // property writes to produce one number. It is accumulated in a local and
-        // added back once.
-        //
-        // `+=` and not `=`: `collectVisibleAdobeAnimations` increments the same
-        // field and both collectors run per frame, so assigning would discard the
-        // other method's contribution.
-        const skipCull = this.skipCull;
-        const hasSpriteRenderer = !!spriteRendererActive;
-        const hasHalfW = !!boundsHalfW;
-        const hasHalfH = !!boundsHalfH;
-        const hasVisualRange = !!visualRange;
-        const hasSheetId = !!spritesheetId;
-        const useIterSource = iterSource !== null && iterSource !== undefined;
-        let visibleCount = 0;
-        // E-98c. A sprite with no layer mask goes to the entities collector: what collectRenderable's
-        // type dispatch and bit scan come to for it, without them. Masked sprites take that path.
-        const queueSprites = this.renderQueueEnabled;
-        const spriteLayerMask = SpriteRenderer.layerMask || null;
-        const entitiesId = Layer.entitiesId;
-        // E-98e. Those sprites go to the main collector, written here as _writeRenderable writes
-        // them: it re-read a dozen fields per sprite. `n` is its count; collectRenderable, for
-        // masked sprites, updates the field, so it is synced around that call and after the loop.
-        const rY = this._renderableY;
-        const rType = this._renderableType;
-        const rIndex = this._renderableIndex;
-        const cPx = this._collectPx;
-        const cPy = this._collectPy;
-        const cRotC = this._collectRotC;
-        const cRotS = this._collectRotS;
-        const pose = this._displayPoseOut;
-        const sortY = this._entitySortY;
-        const maxItems = this.renderQueueMaxItems;
-        const keyY = COLLECT_Y[0];
-        let n = this._renderableCount;
-        // E-98f. A sprite with no body takes _displayPose's Transform branch, read here instead of
-        // in a call per sprite; a body (a published physics pose) still goes through _displayPose.
-        const bodyPoses = this._poseX && this._rbActive ? this._rbActive : null;
-        const tRotC = Transform.rotC;
-        const tRotS = Transform.rotS;
-
-        const rot = this._frameCameraRot || 0;
-        if (rot && !skipCull) {
-            // E-51. A turned camera's box (above) is ~2× the view at 45° on 16:9,
-            // and everything in it was queued. Here each point turns into view
-            // space and is tested against the view itself plus the same margin.
-            // A copy of the loop below, so rotation 0 runs the loop it always did.
-            const rc = Math.cos(rot);
-            const rs = Math.sin(rot);
-            const halfCw = this.canvasWidth * 0.5;
-            const halfCh = this.canvasHeight * 0.5;
-            const marginScale = camZoom < 1 ? camZoom : 1;
-            const limW = halfCw + this.canvasWidth * this.cullingRatio * marginScale;
-            const limH = halfCh + this.canvasHeight * this.cullingRatio * marginScale;
-            for (let idx = 0; idx < iterCount; idx++) {
-                const i = useIterSource ? iterSource[idx] : idx;
-                if (!active[i]) continue;
-                if (!hasSpriteRenderer || !spriteRendererActive[i]) continue;
-
-                const dx = x[i] * camZoom - cameraOffsetX - halfCw;
-                const dy = y[i] * camZoom - cameraOffsetY - halfCh;
-                let halfExtent = 0;
-                if (hasHalfW) {
-                    const halfW = boundsHalfW[i] || 0;
-                    const halfH = hasHalfH ? (boundsHalfH[i] || 0) : 0;
-                    if (halfW > halfH) halfExtent = halfW;
-                    else if (halfH > 0) halfExtent = halfH;
-                }
-                if (halfExtent <= 0 && hasVisualRange) halfExtent = visualRange[i] || 0;
-                const extent = halfExtent * camZoom;
-                const u = rc * dx - rs * dy;
-                const v = rs * dx + rc * dy;
-                const w = limW + extent;
-                const h = limH + extent;
-                if (u < -w || u > w || v < -h || v > h) continue;
-
-                if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
-                    if (queueSprites && (spriteLayerMask === null || spriteLayerMask[i] === 0)) {
-                        if (n < maxItems) {
-                            rY[n] = keyY;
-                            rType[n] = 0;
-                            rIndex[n] = i;
-                            if (bodyPoses !== null && bodyPoses[i]) {
-                                this._displayPose(i, pose);
-                            } else {
-                                pose[0] = x[i];
-                                pose[1] = y[i];
-                                pose[2] = tRotC && tRotC[i] !== undefined ? tRotC[i] : 1;
-                                pose[3] = tRotS ? (tRotS[i] || 0) : 0;
-                            }
-                            cPx[n] = pose[0];
-                            cPy[n] = pose[1];
-                            cRotC[n] = pose[2];
-                            cRotS[n] = pose[3];
-                            if (sortY) this._storeEntitySortY(0, i, pose, rY, n);
-                            n++;
-                        } else {
-                            this._collectorFull();
-                        }
-                    } else {
-                        this._renderableCount = n;
-                        this.collectRenderable(0, i);
-                        n = this._renderableCount;
-                    }
-                    visibleCount++;
-                }
-            }
-            this._renderableCount = n;
-            this.visibleEntitiesCount += visibleCount;
-            this._collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
-                screenMinX, screenMaxX, screenMinY, screenMaxY);
+        if (this.globalEntityCount === 0 || !SpriteRenderer.active || !this.cameraData || !this.renderQueueEnabled) return;
+        if (this._collectWasm === null) {
+            this._collectRefused('the render-queue memory has no collect regions');
             return;
         }
-
-        for (let idx = 0; idx < iterCount; idx++) {
-            const i = useIterSource ? iterSource[idx] : idx;
-            if (!active[i]) continue;
-            if (!hasSpriteRenderer || !spriteRendererActive[i]) continue;
-
-            if (!skipCull) {
-                const sx = x[i] * camZoom - cameraOffsetX;
-                const sy = y[i] * camZoom - cameraOffsetY;
-
-                // Use cached bounds (updated on scale/animation change)
-                let halfExtent = 0;
-                if (hasHalfW) {
-                    const halfW = boundsHalfW[i] || 0;
-                    const halfH = hasHalfH ? (boundsHalfH[i] || 0) : 0;
-                    if (halfW > halfH) halfExtent = halfW;
-                    else if (halfH > 0) halfExtent = halfH;
-                }
-                if (halfExtent <= 0 && hasVisualRange) halfExtent = visualRange[i] || 0;
-                const extent = halfExtent * camZoom;
-                const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
-                    sy >= screenMinY - extent && sy <= screenMaxY + extent;
-                if (!onScreen) continue;
-            }
-
-            // sheetId 0 = unset (spawn reset / pool recycle). Never queue.
-            if (renderVisible[i] && hasSheetId && spritesheetId[i]) {
-                if (queueSprites && (spriteLayerMask === null || spriteLayerMask[i] === 0)) {
-                    if (n < maxItems) {
-                        rY[n] = keyY;
-                        rType[n] = 0;
-                        rIndex[n] = i;
-                        if (bodyPoses !== null && bodyPoses[i]) {
-                            this._displayPose(i, pose);
-                        } else {
-                            pose[0] = x[i];
-                            pose[1] = y[i];
-                            pose[2] = tRotC && tRotC[i] !== undefined ? tRotC[i] : 1;
-                            pose[3] = tRotS ? (tRotS[i] || 0) : 0;
-                        }
-                        cPx[n] = pose[0];
-                        cPy[n] = pose[1];
-                        cRotC[n] = pose[2];
-                        cRotS[n] = pose[3];
-                        if (sortY) this._storeEntitySortY(0, i, pose, rY, n);
-                        n++;
-                    } else {
-                        this._collectorFull();
-                    }
-                } else {
-                    this._renderableCount = n;
-                    this.collectRenderable(0, i);
-                    n = this._renderableCount;
-                }
-                visibleCount++;
-            }
-            // Sun shadows are a second draw of this sprite. No shadow-queue row.
+        if (!writeCollectColumns(this._collectWasm, this, Transform, SpriteRenderer, Collider)) {
+            this._collectRefused('a column it reads is outside the render-queue memory');
+            return;
         }
+        this._collectVisibleEntitiesWasm();
+    }
 
-        this._renderableCount = n;
-        this.visibleEntitiesCount += visibleCount;
+    /** A frame the collect kernel cannot take: no sprite is collected, the reason said once. */
+    _collectRefused(reason) {
+        if (this._collectRefusedWarned) return;
+        this._collectRefusedWarned = true;
+        console.error(`[PRE_RENDER] the collect kernel cannot take the sprites (${reason}): they are not drawn`);
+    }
 
-        // PRE-HOT: glow collect in a separate pass over LightEmitter actives only
-        this._collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
-            screenMinX, screenMaxX, screenMinY, screenMaxY);
+    /**
+     * W4b. collectVisibleEntities' walk through preRenderCollect.wasm: the iteration source, camera bounds and
+     * turned-camera margins, one call for the walk, and for each sprite it hands back (a layer mask, or a sort line
+     * whose frame is not resolved yet) collectRenderable before the walk goes on from the next one, so the
+     * collectors fill in the walk's order.
+     */
+    _collectVisibleEntitiesWasm() {
+        const cb = this.calculateCameraBounds();
+        if (!cb) return;
+        const b = this._collectWasm;
+        const spriteEntities = Query.queryActiveEntities(this._querySpriteRenderer || [SpriteRenderer]);
+        // E-127: with static scenery, the walk of the moving sprites and the static ones in the cells in view.
+        const walked = this._staticSceneryWalk(spriteEntities, cb);
+        const walk = walked >= 0 ? this._staticGrid.list : spriteEntities;
+        const listed = walked >= 0 ? writeCollectList(b, walk, walked) : writeCollectList(b, spriteEntities);
+        const count = walked >= 0 ? walked : listed > 0 ? listed : this.globalEntityCount;
+        const res = b.results;
+        res[0] = this._renderableCount;
+        res[1] = 0;
+        res[2] = 0;
+        const maxItems = this.renderQueueMaxItems;
+        // A sprite has no collector key of its own: under Y-sort its sort line (the kernel writes it), else unread (the
+        // emit's depth is its zIndex): 0.
+        const keyY = 0;
+        const zoom = cb.zoom;
+        const rot = this._frameCameraRot || 0;
+        const turned = rot && !this.skipCull;
+        let rc = 0;
+        let rs = 0;
+        let halfCw = 0;
+        let halfCh = 0;
+        let limW = 0;
+        let limH = 0;
+        if (turned) {
+            rc = Math.cos(rot);
+            rs = Math.sin(rot);
+            halfCw = this.canvasWidth * 0.5;
+            halfCh = this.canvasHeight * 0.5;
+            const marginScale = zoom < 1 ? zoom : 1;
+            limW = halfCw + this.canvasWidth * this.cullingRatio * marginScale;
+            limH = halfCh + this.canvasHeight * this.cullingRatio * marginScale;
+        }
+        const mode = b.mode;
+        const alpha = this._poseAlpha;
+        let visible = 0;
+        let from = 0;
+        for (;;) {
+            const stop = turned
+                ? b.collectSpritesTurned(b.tableByte, from, count, maxItems, keyY, zoom, cb.cameraOffsetX,
+                    cb.cameraOffsetY, halfCw, halfCh, rc, rs, limW, limH, mode, alpha, Y_SORT_K)
+                : b.collectSprites(b.tableByte, from, count, maxItems, this.skipCull ? 1 : 0, keyY, zoom,
+                    cb.cameraOffsetX, cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY, mode, alpha, Y_SORT_K);
+            if (stop >= count) break;
+            this._renderableCount = res[0];
+            this.collectRenderable(0, listed > 0 ? walk[stop] : stop);
+            res[0] = this._renderableCount;
+            visible++;
+            from = stop + 1;
+        }
+        this._renderableCount = res[0];
+        if (res[2]) this._collectorFull();
+        this.visibleEntitiesCount += visible + res[1];
+        this._collectEntityGlow(Transform.x, Transform.y, Collider.visualRange, zoom, cb.cameraOffsetX,
+            cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY);
+    }
+
+    /**
+     * E-127. The collect's walk with the static scenery culled by its grid: the published sprite list's moving
+     * entities and the static ones in the cells that meet the view (widened by the largest static half extent), in
+     * entity order, in this._staticGrid.list. Returns its length, or -1 when the collect walks the list as given
+     * (no static types, the cull off, or no published list). The grid is binned again when the static counter moved;
+     * the counter is read after the list, so a static entity the list holds was binned.
+     */
+    _staticSceneryWalk(spriteEntities, cb) {
+        const grid = this._staticGrid;
+        if (!grid.enabled || this.skipCull || !cb || !spriteEntities || spriteEntities.length === 0) return -1;
+        const gen = staticSceneryGen();
+        if (gen !== grid.builtGen) {
+            grid.build(gen, this.config?.worldWidth || 0, this.config?.worldHeight || 0, Transform.active,
+                Transform.x, Transform.y, SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH, Collider.visualRange);
+        }
+        const zoom = cb.zoom;
+        const half = grid.maxHalf;
+        const rot = this._frameCameraRot || 0;
+        let minX;
+        let maxX;
+        let minY;
+        let maxY;
+        if (rot) {
+            // The turned camera's test (collectVisibleEntities) in view space, its box turned back into the world.
+            const rc = Math.abs(Math.cos(rot));
+            const rs = Math.abs(Math.sin(rot));
+            const marginScale = zoom < 1 ? zoom : 1;
+            const halfCw = this.canvasWidth * 0.5;
+            const halfCh = this.canvasHeight * 0.5;
+            const w = halfCw + this.canvasWidth * this.cullingRatio * marginScale + half * zoom;
+            const h = halfCh + this.canvasHeight * this.cullingRatio * marginScale + half * zoom;
+            const cx = (cb.cameraOffsetX + halfCw) / zoom;
+            const cy = (cb.cameraOffsetY + halfCh) / zoom;
+            const hx = (rc * w + rs * h) / zoom + 1;
+            const hy = (rs * w + rc * h) / zoom + 1;
+            minX = cx - hx;
+            maxX = cx + hx;
+            minY = cy - hy;
+            maxY = cy + hy;
+        } else {
+            minX = (cb.minX + cb.cameraOffsetX) / zoom - half - 1;
+            maxX = (cb.maxX + cb.cameraOffsetX) / zoom + half + 1;
+            minY = (cb.minY + cb.cameraOffsetY) / zoom - half - 1;
+            maxY = (cb.maxY + cb.cameraOffsetY) / zoom + half + 1;
+        }
+        return grid.walk(spriteEntities, spriteEntities.length, minX, minY, maxX, maxY);
     }
 
     _collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
@@ -1825,48 +1900,37 @@ class PreRenderWorker extends AbstractWorker {
         Messages.sendSystem(i, MESSAGE_ANIMATION_END, 1, AdobeAnimComponent.clipId[i]);
     }
 
+    /** The frame's Adobe clocks, in preRenderEmit.wasm (adobe_advance, W27); the JS loop is tests/reference/preRenderEmitJs.mjs. */
     advanceAdobeAnimations(deltaTime) {
-        if (!AdobeAnimComponent.active) return;
-
+        // No render queue (nothing to draw): no kernel, and nothing to advance for.
+        if (!AdobeAnimComponent.active || this._emitWasm === null) return;
         const deltaSeconds = deltaTime / 1000;
         if (deltaSeconds <= 0) return;
-
-        const active = AdobeAnimComponent.active;
-        const playing = AdobeAnimComponent.playing;
-        const playbackRate = AdobeAnimComponent.playbackRate;
-        const assetId = AdobeAnimComponent.assetId;
-        const clipId = AdobeAnimComponent.clipId;
-        const time = AdobeAnimComponent.time;
-        const loop = AdobeAnimComponent.loop;
-
         const adobeEntities = this._frameAdobeEntities;
         if (!adobeEntities || adobeEntities.length === 0) return;
-
-        for (let n = 0; n < adobeEntities.length; n++) {
-            const i = adobeEntities[n];
-            if (!active[i] || !playing[i]) continue;
-
-            const frameCount = AdobeAnimRegistry.getClipFrameCount(assetId[i], clipId[i]);
-            const frameRate = AdobeAnimRegistry.getClipFrameRate(assetId[i], clipId[i]);
-            if (frameCount <= 0 || frameRate <= 0) continue;
-
-            const duration = frameCount / frameRate;
-            const nextTime = time[i] + deltaSeconds * playbackRate[i];
-
-            if (loop[i]) {
-                time[i] = duration > 0 ? ((nextTime % duration) + duration) % duration : 0;
-            } else if (nextTime >= duration) {
-                time[i] = duration;
-                playing[i] = 0;
-                this._adobeAnimationEnded(i);
-            } else if (nextTime <= 0) {
-                time[i] = 0;
-                playing[i] = 0;
-                this._adobeAnimationEnded(i);
-            } else {
-                time[i] = nextTime;
-            }
+        if (!this._emitWasm.adobe || !this._advanceAdobeWasm(adobeEntities, deltaSeconds)) {
+            this._emitRefused("the Adobe clocks (AdobeAnimComponent outside the memory, or no asset tables)");
         }
+    }
+
+    /**
+     * W27. advanceAdobeAnimations' loop in preRenderEmit.wasm (adobe_advance), on the frame's Adobe entities copied
+     * into its list; the ended play-once clips come back in order and get their end message here. False when the
+     * kernel cannot take the frame (AdobeAnimComponent or an asset a playing clock reads not in its tables): the JS
+     * loop runs it.
+     */
+    _advanceAdobeWasm(adobeEntities, deltaSeconds) {
+        const b = this._emitWasm;
+        const assets = AdobeAnimRegistry.assetById;
+        if (assets !== b.adobeFrom || assets.length !== b.adobeAssets) this._copyEmitAdobeAssets();
+        const n = adobeEntities.length;
+        if (n > b.adobeListCap || !writeEmitAdobeColumns(b, AdobeAnimComponent, true)) return false;
+        const list = b.adobeList;
+        list.set(adobeEntities);
+        const ended = b.adobeAdvance(b.tableByte, n, deltaSeconds);
+        if (ended === EMIT_DECLINED) return false;
+        for (let k = 0; k < ended; k++) this._adobeAnimationEnded(list[k]);
+        return true;
     }
 
     collectVisibleAdobeAnimations() {
@@ -1963,26 +2027,66 @@ class PreRenderWorker extends AbstractWorker {
         const visibleData = this.visibleBulletsData;
         if (!visibleData) return;
 
+        // collectRenderable queues nothing then.
+        if (!this.renderQueueEnabled) return;
+
         const visibleCount = visibleData[0];
         const y = BulletComponent.y;
         const trailWidth = BulletComponent.trailWidth;
         const active = BulletComponent.active;
+        // E-137. A bullet whose mask is none or the entities layer's bit alone (the pool's default,
+        // Layer.resolveSubscriptions) goes to the main collector, its rows (and its trail's) written here as
+        // _writeRenderable writes them, without collectRenderable's dispatch and bit scan (E-98c and E-98e for
+        // sprites); other masks take that path. `n` is the collector's count, synced around that call and after
+        // the loop. The last key goes back to COLLECT_Y, where the loop left it before.
+        const layerMask = BulletComponent.layerMask || null;
+        const entitiesBit = Layer.entitiesId != null ? Layer.entitiesMask() : 0;
+        const rY = this._renderableY;
+        const rType = this._renderableType;
+        const rIndex = this._renderableIndex;
+        const maxItems = this.renderQueueMaxItems;
+        let n = this._renderableCount;
+        let lastKey = COLLECT_Y[0];
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
             if (!active[i]) continue;
             const key = y[i] * Y_SORT_K;
-            COLLECT_Y[0] = key;
-            this.collectRenderable(4, i);
-            if (trailWidth[i] > 0) {
-                COLLECT_Y[0] = key - 1;
-                this.collectRenderable(5, i);
+            const trail = trailWidth[i] > 0;
+            lastKey = trail ? key - 1 : key;
+            const mask = layerMask === null ? 0 : layerMask[i];
+            if (mask === 0 || mask === entitiesBit) {
+                if (n < maxItems) {
+                    rY[n] = key;
+                    rType[n] = 4;
+                    rIndex[n] = i;
+                    n++;
+                } else {
+                    this._collectorFull();
+                }
+                if (trail) {
+                    if (n < maxItems) {
+                        rY[n] = key - 1;
+                        rType[n] = 5;
+                        rIndex[n] = i;
+                        n++;
+                    } else {
+                        this._collectorFull();
+                    }
+                }
+            } else {
+                this._renderableCount = n;
+                COLLECT_Y[0] = key;
+                this.collectRenderable(4, i);
+                if (trail) {
+                    COLLECT_Y[0] = key - 1;
+                    this.collectRenderable(5, i);
+                }
+                n = this._renderableCount;
             }
         }
-    }
-
-    _setQueueType(ref, out, type) {
-        if (ref.type) ref.type[out] = type;
+        this._renderableCount = n;
+        COLLECT_Y[0] = lastKey;
     }
 
     _entityYSort() {
@@ -2046,111 +2150,6 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
-    _type0PersistHit(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity || this._persistCount[bufIdx] !== count) return false;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const prevA = this._persistAnim[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        const animState = SpriteRenderer.animationState;
-        let repaired = 0;
-        this._persistFramesRepaired = 0;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            if (prevT[i] !== type || prevE[i] !== idx) return false;
-            // Adobe (type 6) expands to N queue rows. Persist writes at the
-            // collector index, which is not the emit write index once any
-            // expanded row is in the list — skip persist for that frame.
-            if (type === 6) return false;
-            if (type !== 0) continue;
-            if (dirty && dirty[idx]) return false;
-            if (animState && prevA[i] !== (animState[idx] | 0)) return false;
-            // E-98g. The frame moved since this buffer last showed the row: the other buffer's emit or
-            // persist frame advanced it. The row gets the current frame's texture; a full emit for
-            // that made every frame of an animated scene a full one.
-            if (frameIndex && prevF[i] !== (frameIndex[idx] | 0)) {
-                if (!this._repairPersistFrame(i, idx)) return false;
-                prevF[i] = frameIndex[idx];
-                repaired++;
-            }
-        }
-        this._persistFramesRepaired = repaired;
-        return true;
-    }
-
-    /**
-     * E-98g. Row i of the queue being written gets entity idx's current frame, as the full emit
-     * writes it (animStart + frame). False when the full emit must decide: no animation entry, or a
-     * frame past the animation's end (the emit resets it).
-     */
-    _repairPersistFrame(i, idx) {
-        const proxyMap = this.proxyToGlobalAnim?.[SpriteRenderer.spritesheetId[idx]];
-        const globalAnimIdx = proxyMap?.[SpriteRenderer.animationState[idx]];
-        if (globalAnimIdx === undefined) return false;
-        const animStart = this.animationFrameStart?.[globalAnimIdx];
-        if (animStart === undefined) return false;
-        const frame = this.entityFrameIndex[idx];
-        if (frame >= (this.animationFrameCount?.[globalAnimIdx] ?? 1)) return false;
-        const tex = animStart + frame;
-        this.renderQueueTextureId[i] = tex;
-        if (this.entityLastTextureId) this.entityLastTextureId[idx] = tex;
-        return true;
-    }
-
-    _rememberType0Set(bufIdx, count, collectorType, collectorIndex) {
-        if (!this._persistEntity) return;
-        const prevE = this._persistEntity[bufIdx];
-        const prevT = this._persistType[bufIdx];
-        const prevF = this._persistFrame[bufIdx];
-        const prevA = this._persistAnim[bufIdx];
-        const dirty = SpriteRenderer.renderDirty;
-        const frameIndex = this.entityFrameIndex;
-        const animState = SpriteRenderer.animationState;
-        let clearedDirty = false;
-        for (let i = 0; i < count; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            prevT[i] = type;
-            prevE[i] = idx;
-            prevF[i] = frameIndex ? (frameIndex[idx] | 0) : 0;
-            prevA[i] = type === 0 && animState ? (animState[idx] | 0) : 0;
-            if (type === 0 && dirty && dirty[idx]) {
-                dirty[idx] = 0;
-                clearedDirty = true;
-            }
-        }
-        this._persistCount[bufIdx] = count;
-        // The dirty flag is one per entity, but the queue has two buffers. This buffer
-        // just took the change; the other one still holds the old columns, so its next
-        // emit must be a full one or it flickers the old tint/alpha/scale at 30 Hz.
-        if (clearedDirty) this._persistCount[bufIdx ^ 1] = -1;
-    }
-
-    _writeQueueShadow(out, entityIndex, ref) {
-        const shadowH = (ref && ref.shadowH) || this.renderQueueShadowH;
-        if (!shadowH) return;
-        const i = entityIndex | 0;
-        const scActive = (ref && ref.scActive) || ShadowCaster.active;
-        const cast = scActive && scActive[i];
-        const scH = (ref && ref.scH) || ShadowCaster.heightMultiplier;
-        shadowH[out] = cast ? (scH ? (scH[i] || 0) : 0) : 0;
-        const offX = (ref && ref.shadowOffX) || this.renderQueueShadowOffX;
-        const offY = (ref && ref.shadowOffY) || this.renderQueueShadowOffY;
-        const scOx = (ref && ref.scOx) || ShadowCaster.anchorOffsetX;
-        const scOy = (ref && ref.scOy) || ShadowCaster.anchorOffsetY;
-        if (offX) offX[out] = cast ? (scOx ? (scOx[i] || 0) : 0) : 0;
-        if (offY) offY[out] = cast ? (scOy ? (scOy[i] || 0) : 0) : 0;
-    }
-
-    /**
-     * The persist frame's sprite rows: poses, sort keys and shadow terms, and the animation clock.
-     * Returns how many rows are of other types (rewritten in full by the emit loop); the sprites
-     * whose animation moved to a new frame go to _persistFramesMoved. Both are new statics for
-     * E-82's staticGen.
-     */
     /**
      * E-98d. An Adobe root is the only row the emit expands into several; without one, the emit
      * writes queue row i from collector row i, so the collect can write poses there directly.
@@ -2163,111 +2162,6 @@ class PreRenderWorker extends AbstractWorker {
         this._collectPy = inQueue ? this.renderQueueY : (this._renderablePy || EMPTY_F32);
         this._collectRotC = inQueue ? this.renderQueueRotC : (this._renderableRotC || EMPTY_F32);
         this._collectRotS = inQueue ? this.renderQueueRotS : (this._renderableRotS || EMPTY_F32);
-    }
-
-    _writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime) {
-        const rqX = this.renderQueueX;
-        const rqY = this.renderQueueY;
-        const rqRotC = this.renderQueueRotC;
-        const rqRotS = this.renderQueueRotS;
-        const rqSortKey = this.renderQueueSortKey;
-        const writeSortKey = !!(rqSortKey && this._queueHasOrder());
-        const ySort = writeSortKey && this._entityYSort();
-        const inherit = SpriteRenderer.inheritTransformRotation;
-        const spriteC = SpriteRenderer.spriteRotC;
-        const spriteS = SpriteRenderer.spriteRotS;
-        // Animations advance here too, not only in the full emit: a persist frame skips the
-        // sprite rows there, so in a scene whose rows held still every animation froze.
-        const animated = SpriteRenderer.isAnimated || null;
-        PERSIST_DT[0] = deltaTime / 1000;
-        let others = 0;
-        let moved = 0;
-        if (stashPx === rqX) {
-            // E-98d. The collect wrote the poses into these columns: only a sprite drawn with its
-            // own facing needs its rotation. A copy of the loop below.
-            for (let i = 0; i < count; i++) {
-                if (collectorType[i] !== 0) {
-                    others++;
-                    continue;
-                }
-                const idx = collectorIndex[i];
-                if (inherit && !inherit[idx] && spriteC && spriteS) {
-                    rqRotC[i] = spriteC[idx];
-                    rqRotS[i] = spriteS[idx];
-                }
-                if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
-                this._writeQueueShadow(i, idx);
-                if (animated !== null && animated[idx]) moved += this._advancePersistFrame(i, idx);
-            }
-            this._persistFramesMoved = moved;
-            return others;
-        }
-        for (let i = 0; i < count; i++) {
-            if (collectorType[i] !== 0) {
-                others++;
-                continue;
-            }
-            const idx = collectorIndex[i];
-            rqX[i] = stashPx[i];
-            rqY[i] = stashPy[i];
-            if (inherit && inherit[idx]) {
-                rqRotC[i] = stashRc[i];
-                rqRotS[i] = stashRs[i];
-            } else if (inherit && spriteC && spriteS) {
-                rqRotC[i] = spriteC[idx];
-                rqRotS[i] = spriteS[idx];
-            }
-            if (writeSortKey) rqSortKey[i] = this._orderKey(0, idx, collectorY[i], ySort);
-            this._writeQueueShadow(i, idx);
-            if (animated !== null && animated[idx]) moved += this._advancePersistFrame(i, idx);
-        }
-        this._persistFramesMoved = moved;
-        return others;
-    }
-
-    /**
-     * One animated sprite's clock on a persist frame: the full emit's advance, copied (the emit
-     * loop is too hot to share it). When the frame moves, row i gets the new texture.
-     * Returns 1 when it did, else 0.
-     */
-    _advancePersistFrame(i, idx) {
-        const animState = SpriteRenderer.animationState[idx];
-        const proxyMap = this.proxyToGlobalAnim?.[SpriteRenderer.spritesheetId[idx]];
-        const globalAnimIdx = proxyMap?.[animState];
-        if (globalAnimIdx === undefined) return 0;
-        const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
-        if (animFrameCount <= 1) return 0;
-        const frameIndex = this.entityFrameIndex;
-        const frameAccum = this.entityFrameAccumulator;
-        frameAccum[idx] += PERSIST_DT[0];
-        const frameDuration = 1 / (SpriteRenderer.animationSpeed[idx] * 60);
-        if (frameAccum[idx] < frameDuration) return 0;
-        frameAccum[idx] -= frameDuration;
-        const currentFrame = frameIndex[idx];
-        if (SpriteRenderer.loop[idx] !== 1 && currentFrame >= animFrameCount - 1) {
-            // The last frame of a play-once animation finished showing.
-            if (this._animEndByType[Transform.entityType[idx]] === 1) {
-                this._spriteAnimationEnded(idx, animState);
-            }
-            return 0;
-        }
-        frameIndex[idx] = (currentFrame + 1) % animFrameCount;
-        const animStart = this.animationFrameStart?.[globalAnimIdx];
-        if (animStart === undefined) return 0;
-        const tex = animStart + frameIndex[idx];
-        this.renderQueueTextureId[i] = tex;
-        if (this.entityLastTextureId) this.entityLastTextureId[idx] = tex;
-        // This buffer now shows the new frame: its next check needs no repair (E-98g).
-        const prevF = this._persistFrame && this._persistFrame[this._queueBuf];
-        if (prevF) prevF[i] = frameIndex[idx];
-        // Bounds may change (variable frame sizes)
-        if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
-            const sx = Math.abs(SpriteRenderer.scaleX[idx]) || 1; // flip = negative scale
-            const sy = Math.abs(SpriteRenderer.scaleY[idx]) || 1;
-            SpriteRenderer.boundsHalfW[idx] = ((this.frameWidth[tex] || 0) * sx) * 0.5;
-            SpriteRenderer.boundsHalfH[idx] = ((this.frameHeight[tex] || 0) * sy) * 0.5;
-        }
-        return 1;
     }
 
     /**
@@ -2335,12 +2229,26 @@ class PreRenderWorker extends AbstractWorker {
                 if (collector.count < collector.maxItems) {
                     const wi = collector.count;
                     collector.y[wi] = y;
-                    // A sprite's sort line only where the layer is Y-sorted (E-98); an Adobe root's
-                    // key also goes to its pieces' sortKey column, so it is always computed.
-                    if (type === 6 || (type === 0 && Layer._ySorting && Layer._ySorting[layerId])) {
+                    // The pose the emit reads, as the entities' collector stashes it (E-98d). A sprite's sort line
+                    // only where the layer is Y-sorted (E-98); an Adobe root's key also goes to its pieces' sortKey
+                    // column, so it is always computed.
+                    if (type === 0 || type === 6) {
                         const pose = this._displayPoseOut;
                         this._displayPose(index, pose);
-                        this._storeEntitySortY(type, index, pose, collector.y, wi);
+                        collector.stashX[wi] = pose[0];
+                        collector.stashY[wi] = pose[1];
+                        collector.stashRotC[wi] = pose[2];
+                        collector.stashRotS[wi] = pose[3];
+                        if (type === 6 || (Layer._ySorting && Layer._ySorting[layerId])) {
+                            this._storeEntitySortY(type, index, pose, collector.y, wi);
+                        }
+                    } else if (type === 2) {
+                        const pose = this._displayPoseOut;
+                        this._decorationWorldXY(index, pose);
+                        collector.stashX[wi] = pose[0];
+                        collector.stashY[wi] = pose[1];
+                        collector.stashRotC[wi] = DecorationComponent.rotC[index];
+                        collector.stashRotS[wi] = DecorationComponent.rotS[index];
                     }
                     collector.type[wi] = type;
                     collector.index[wi] = index;
@@ -2385,46 +2293,6 @@ class PreRenderWorker extends AbstractWorker {
         this._renderableCount = writeIdx + 1;
     }
 
-    _resolveAdobeFrameIndex(entityIndex) {
-        const r = this._adobeFrameResult;
-        const assetId = AdobeAnimComponent.assetId[entityIndex];
-        const clipId = AdobeAnimComponent.clipId[entityIndex];
-        const frameCount = AdobeAnimRegistry.getClipFrameCount(assetId, clipId);
-        const frameRate = AdobeAnimRegistry.getClipFrameRate(assetId, clipId);
-
-        if (frameCount <= 0 || frameRate <= 0) {
-            r.asset = null; r.clipId = 0; r.frameIndex = 0;
-            return r;
-        }
-
-        const asset = AdobeAnimRegistry.getAsset(assetId);
-        if (!asset) {
-            r.asset = null; r.clipId = 0; r.frameIndex = 0;
-            return r;
-        }
-
-        const duration = frameCount / frameRate;
-        let time = AdobeAnimComponent.time[entityIndex];
-        if (duration > 0) {
-            if (AdobeAnimComponent.loop[entityIndex]) {
-                time = ((time % duration) + duration) % duration;
-            } else if (time >= duration) {
-                time = duration;
-            } else if (time < 0) {
-                time = 0;
-            }
-        } else {
-            time = 0;
-        }
-
-        let frameIndex = frameCount > 1 ? (time * frameRate) | 0 : 0;
-        if (frameIndex >= frameCount) frameIndex = frameCount - 1;
-        if (frameIndex < 0) frameIndex = 0;
-
-        r.asset = asset; r.clipId = clipId; r.frameIndex = frameIndex;
-        return r;
-    }
-
     /**
      * Latch latest published physics pose buffer. Consume like pixi (store consumedFrame).
      */
@@ -2452,6 +2320,9 @@ class PreRenderWorker extends AbstractWorker {
         if (!this._lfSnapX || this._lfSnapX.length < maxN) {
             this._lfSnapX = new Float32Array(maxN);
             this._lfSnapY = new Float32Array(maxN);
+        }
+        // In the render-queue memory when it has their region (bound with the emit kernel), where it reads them.
+        if (!this._prevLfX || this._prevLfX.length < maxN) {
             this._prevLfX = new Float32Array(maxN);
             this._prevLfY = new Float32Array(maxN);
         }
@@ -2621,132 +2492,6 @@ class PreRenderWorker extends AbstractWorker {
         out[1] = DecorationComponent.y[decoIdx] + oy;
     }
 
-    _emitAdobePieces(ref, writeIndex, entityIndex, sortKey = 0, stashedPose = null) {
-        const resolved = this._resolveAdobeFrameIndex(entityIndex);
-        const asset = resolved.asset;
-        if (!asset) return writeIndex;
-
-        const clipFrameStart = asset.clipFrameStart;
-        const framePieceCount = asset.framePieceCount;
-        const framePieceStart = asset.framePieceStart;
-        const pieceX = asset.pieceX;
-        const pieceY = asset.pieceY;
-        const pieceScaleX = asset.pieceScaleX;
-        const pieceScaleY = asset.pieceScaleY;
-        const pieceRotation = asset.pieceRotation;
-        const pieceRotCArr = asset.pieceRotC;
-        const pieceRotSArr = asset.pieceRotS;
-        const pieceAlpha = asset.pieceAlpha;
-        const pieceAnchorX = asset.pieceAnchorX;
-        const pieceAnchorY = asset.pieceAnchorY;
-        const textureIds = asset.pieceTextureId;
-        const clipId = resolved.clipId;
-        const clipBoundsMinX = asset.clipBoundsMinX;
-        const clipBoundsMinY = asset.clipBoundsMinY;
-        const clipBoundsMaxX = asset.clipBoundsMaxX;
-        const clipBoundsMaxY = asset.clipBoundsMaxY;
-        const assetBoundsMinX = asset.assetBoundsMinX;
-        const assetBoundsMinY = asset.assetBoundsMinY;
-        const assetBoundsMaxX = asset.assetBoundsMaxX;
-        const assetBoundsMaxY = asset.assetBoundsMaxY;
-
-        let rootX, rootY, poseC, poseS;
-        if (stashedPose) {
-            rootX = stashedPose[0];
-            rootY = stashedPose[1];
-            poseC = stashedPose[2];
-            poseS = stashedPose[3];
-        } else {
-            const pose = this._displayPoseOut;
-            this._displayPose(entityIndex, pose);
-            rootX = pose[0];
-            rootY = pose[1];
-            poseC = pose[2];
-            poseS = pose[3];
-        }
-        // body pose CS × AdobeAnimComponent CS (inline — hot piece loop)
-        const ac = AdobeAnimComponent.rotC[entityIndex];
-        const as = AdobeAnimComponent.rotS[entityIndex];
-        const rootC = poseC * ac - poseS * as;
-        const rootS = poseS * ac + poseC * as;
-        const rootScaleX = AdobeAnimComponent.scaleX[entityIndex];
-        const rootScaleY = AdobeAnimComponent.scaleY[entityIndex];
-        const rootAnchorX = AdobeAnimComponent.anchorX[entityIndex];
-        const rootAnchorY = AdobeAnimComponent.anchorY[entityIndex];
-        const rootAlpha = AdobeAnimComponent.alpha[entityIndex];
-        const rootTint = AdobeAnimComponent.tint[entityIndex];
-
-        const frameIndex = resolved.frameIndex;
-        const absoluteFrame = (clipFrameStart?.[clipId] ?? 0) + frameIndex;
-        const pieceCount = framePieceCount?.[absoluteFrame] ?? 0;
-        const start = framePieceStart?.[absoluteFrame] ?? 0;
-        const end = start + pieceCount;
-        const maxItems = ref.textureId.length;
-        const minX = clipBoundsMinX?.[clipId] ?? assetBoundsMinX ?? 0;
-        const minY = clipBoundsMinY?.[clipId] ?? assetBoundsMinY ?? 0;
-        const maxX = clipBoundsMaxX?.[clipId] ?? assetBoundsMaxX ?? 0;
-        const maxY = clipBoundsMaxY?.[clipId] ?? assetBoundsMaxY ?? 0;
-        const pivotX = minX + (maxX - minX) * rootAnchorX;
-        const pivotY = minY + (maxY - minY) * rootAnchorY;
-
-        // Mirror sign: -1 when exactly one of the parent scales is negative
-        // (a reflection). Required because S(-1,1)*R(θ) = R(-θ)*S(-1,1), so a
-        // piece's local rotation must be negated under a single-axis flip,
-        // otherwise rotated pieces (e.g. tilted hands in a "running" clip)
-        // appear mirrored to the wrong side after a horizontal flip.
-        const mirrorSign = ((rootScaleX < 0) !== (rootScaleY < 0)) ? -1 : 1;
-
-        let feetSlot = -1;
-        let feetY = 0;
-        let p = start;
-        for (; p < end && writeIndex < maxItems; p++) {
-            const localX = (pieceX[p] - pivotX) * rootScaleX;
-            const localY = (pieceY[p] - pivotY) * rootScaleY;
-
-            ref.x[writeIndex] = rootX + rootC * localX - rootS * localY;
-            ref.y[writeIndex] = rootY + rootS * localX + rootC * localY;
-            ref.scaleX[writeIndex] = pieceScaleX[p] * rootScaleX;
-            ref.scaleY[writeIndex] = pieceScaleY[p] * rootScaleY;
-            // Prebaked piece CS; mirrorSign flips sin under single-axis reflection
-            const pc = pieceRotCArr ? pieceRotCArr[p] : Math.cos(pieceRotation[p]);
-            const ps = (pieceRotSArr ? pieceRotSArr[p] : Math.sin(pieceRotation[p])) * mirrorSign;
-            ref.rotC[writeIndex] = rootC * pc - rootS * ps;
-            ref.rotS[writeIndex] = rootS * pc + rootC * ps;
-            ref.alpha[writeIndex] = pieceAlpha[p] * rootAlpha;
-            ref.tint[writeIndex] = rootTint;
-            ref.textureId[writeIndex] = textureIds[p];
-            ref.anchorX[writeIndex] = pieceAnchorX[p];
-            ref.anchorY[writeIndex] = pieceAnchorY[p];
-            this._setQueueType(ref, writeIndex, 6, entityIndex);
-            if (ref.tilesDirty) {
-                if (ref.repeatX) ref.repeatX[writeIndex] = 0;
-                if (ref.repeatY) ref.repeatY[writeIndex] = 0;
-                clearTileFields(ref, writeIndex);
-            }
-            if (ref.sortKey) ref.sortKey[writeIndex] = sortKey;
-            if (ref.shadowH) {
-                ref.shadowH[writeIndex] = 0;
-                if (ref.shadowOffX) ref.shadowOffX[writeIndex] = 0;
-                if (ref.shadowOffY) ref.shadowOffY[writeIndex] = 0;
-            }
-            const pieceWorldY = ref.y[writeIndex];
-            if (feetSlot < 0 || pieceWorldY >= feetY) {
-                feetY = pieceWorldY;
-                feetSlot = writeIndex;
-            }
-            writeIndex++;
-        }
-
-        if (feetSlot >= 0) this._writeQueueShadow(feetSlot, entityIndex, ref);
-
-        if (p < end && !this._adobeRenderQueueOverflowWarned) {
-            this._adobeRenderQueueOverflowWarned = true;
-            console.warn('[PRE_RENDER] Adobe Animate piece expansion exceeded render queue capacity. Increase renderer.maxVisibleRenderables.');
-        }
-
-        return writeIndex;
-    }
-
     /**
      * Sprite mode does not register lightGlows. Glows stay in the entity queue.
      * Add mode: a hidden lightGlows layer skips the collect.
@@ -2763,13 +2508,18 @@ class PreRenderWorker extends AbstractWorker {
 
     buildRenderQueue(deltaTime) {
         this._syncGlowLayer();
+        this._queuePresorted = false;
         if (!this.renderQueueEnabled || this._renderableCount === 0) {
             if (this.renderQueueCount) this.renderQueueCount[0] = 0;
+            this._lastCollectCount = 0;
+            this._lastEmitCount = 0;
             return;
         }
 
         const count = this._renderableCount;
         const hasOrder = this._queueHasOrder();
+        this._queuePresorted = hasOrder && this._presortCollector(count, this._entityYSort());
+        this._emitPresorted = this._queuePresorted;
         const writeCount = this.emitSpriteQueue(deltaTime, this._fillEmitSource(
             count,
             this.renderQueueMaxItems,
@@ -2784,9 +2534,81 @@ class PreRenderWorker extends AbstractWorker {
             hasOrder,
             hasOrder && this._entityYSort()
         ));
+        this._emitPresorted = false;
         this.renderQueueCount[0] = writeCount;
         this._emitWriteCount = writeCount;
+        this._lastCollectCount = count;
+        this._lastEmitCount = writeCount;
         this._renderableCount = 0;
+    }
+
+    /**
+     * E-138. Sort the collector by the keys the emit will write, before the emit, when last frame's emit wrote at
+     * least twice the rows it was given (Adobe Animate roots expand into their pieces): the painter would sort the
+     * queue's runs and the pack scatter its rows to their painter slots, a random write per run. A stable sort of
+     * the collector expanded in place is a stable sort of the queue (a root's pieces are consecutive under its key),
+     * so the queue comes out in that order and _packGpuSprites packs it as it is (GPU_FLAG_SORTED, no painter).
+     * Equal keys keep the collector's order, as the painter's full sort keeps the queue's (its reinsert of moved
+     * keys, which this frame skips, puts them after the unmoved ones). Only where the painter is pre-render's, no
+     * sun casters are packed (they are listed in queue order) and the queue did not fill (which rows are cut
+     * would change). The poses are in the stash then (E-98d); the collector's columns are permuted in place.
+     * @returns {boolean} whether the collector was sorted
+     */
+    _presortCollector(count, ySort) {
+        const last = this._lastCollectCount;
+        const wrote = this._lastEmitCount;
+        if (count < 2 || last <= 0 || wrote < 2 * last || wrote >= this.renderQueueMaxItems) return false;
+        if (!this.renderQueueSortKey || !this._gpuPainter || !this._allowGpuPainter()) return false;
+        // The keys and the order are regions of the render-queue memory, where the painter kernel sorts them.
+        if (this._presortOrder.length < count || this._presortOrder.buffer !== this._gpuPainter.kernel.buffer) return false;
+        if (this.shadowsEnabled && this.gpuQueueCaps && this.gpuQueueCaps.maxSun > 0) return false;
+        const px = this._collectPx;
+        if (px === this.renderQueueX || px.length < count) return false;
+        this._sortCollectorByKey(count, ySort);
+        return true;
+    }
+
+    /** E-138. The collector's rows and their poses in the stash, stably sorted by the key the emit writes for them. */
+    _sortCollectorByKey(count, ySort) {
+        // The keys and the order are regions of the render-queue memory (bound at init, _presortCollector checks),
+        // where pre-render's painter kernel sorts them; the permutation's scratch is pre-render's own.
+        if (this._presortF32.length < count) {
+            const n = this.renderQueueMaxItems;
+            this._presortF32 = new Float32Array(n);
+            this._presortU8 = new Uint8Array(n);
+            this._presortI32 = new Int32Array(n);
+        }
+        const keys = this._presortKeys;
+        const order = this._presortOrder;
+        const cY = this._renderableY;
+        const cType = this._renderableType;
+        const cIndex = this._renderableIndex;
+        // The key emitSpriteQueue writes for the row (and every piece of a root), as the queue's Float32 stores it.
+        let glows = 0;
+        for (let i = 0; i < count; i++) {
+            const type = cType[i];
+            if (type === 3) glows++;
+            keys[i] = this._orderKey(type, cIndex[i], cY[i], ySort);
+            order[i] = i;
+        }
+        this._presortGlowRows = glows;
+        radixSortIndicesWasm(this._gpuPainter, order, count, this._presortKeysU32);
+        let i = 0;
+        while (i < count && order[i] === i) i++;
+        if (i === count) return;
+        const f32 = this._presortF32;
+        for (let k = 0; k < count; k++) f32[k] = cY[order[k]];
+        cY.set(f32.subarray(0, count));
+        permuteF32(this._collectPx, order, count, f32);
+        permuteF32(this._collectPy, order, count, f32);
+        permuteF32(this._collectRotC, order, count, f32);
+        permuteF32(this._collectRotS, order, count, f32);
+        const u8 = this._presortU8;
+        for (let k = 0; k < count; k++) u8[k] = cType[order[k]];
+        cType.set(u8.subarray(0, count));
+        const i32 = this._presortI32;
+        for (let k = 0; k < count; k++) i32[k] = cIndex[order[k]];
+        cIndex.set(i32.subarray(0, count));
     }
 
     _fillEmitSource(count, maxItems, collectorY, collectorType, collectorIndex, stashX, stashY, stashRotC, stashRotS, persist, hasOrder, ySort) {
@@ -2807,173 +2629,30 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * Write one sprite layer from a collector into SoA columns already bound
-     * on this.renderQueue*. Main queue and custom layers share this loop.
+     * The emit of one queue (the entities' or a custom layer's), in preRenderEmit.wasm (E-112, W4a-W4d, W27, close-out
+     * group B): every row type, the persist path of the entities queue (W4c) and, on a persist frame, the rows of other
+     * types. Every column it reads is in the render-queue memory (preRenderEmitClient.js); a queue it cannot take is drawn
+     * empty and pre-render says why once (_emitRefused). The JS emit it replaced is tests/reference/preRenderEmitJs.mjs.
+     * @returns {number} the rows written
      */
     emitSpriteQueue(deltaTime, source) {
         const count = source.count;
         const maxItems = source.maxItems;
-        const collectorY = source.collectorY;
-        const collectorType = source.collectorType;
-        const collectorIndex = source.collectorIndex;
-        const stashPx = source.stashX;
-        const stashPy = source.stashY;
-        const stashRc = source.stashRotC;
-        const stashRs = source.stashRotS;
-
         // sortKey is written for the CPU painter. Pixi reinserts; this pass does not sort.
         const detail = source.persist && this.collectDetailedStats;
         if (detail) this.sortTimeThisFrame = 0;
         const tEmit = detail ? performance.now() : 0;
-
-        // Cache output arrays
-        const rqX = this.renderQueueX;
-        const rqY = this.renderQueueY;
-        const rqScaleX = this.renderQueueScaleX;
-        const rqScaleY = this.renderQueueScaleY;
-        const rqRotC = this.renderQueueRotC;
-        const rqRotS = this.renderQueueRotS;
-        const rqAlpha = this.renderQueueAlpha;
-        const rqTint = this.renderQueueTint;
-        const rqTextureId = this.renderQueueTextureId;
-        const rqAnchorX = this.renderQueueAnchorX;
-        const rqAnchorY = this.renderQueueAnchorY;
-        const rqType = this.renderQueueType;
-        const rqSortKey = this.renderQueueSortKey;
-        const rqRepeatX = this.renderQueueRepeatX;
-        const rqRepeatY = this.renderQueueRepeatY;
         const rqTileMode = this.renderQueueTileMode;
-        const rqTileOffsetU = this.renderQueueTileOffsetU;
-        const rqTileOffsetV = this.renderQueueTileOffsetV;
-        const rqTileMulX = this.renderQueueTileMulX;
-        const rqTileMulY = this.renderQueueTileMulY;
-        const entityLastTextureId = this.entityLastTextureId;
-
-        // Cache component arrays
-        const entityX = Transform.x;
-        const entityY = Transform.y;
-
-        const srScaleX = SpriteRenderer.scaleX;
-        const srScaleY = SpriteRenderer.scaleY;
-        const srAlpha = SpriteRenderer.alpha;
-        const srTint = SpriteRenderer.tint;
-        const srAnchorX = SpriteRenderer.anchorX;
-        const srAnchorY = SpriteRenderer.anchorY;
-        const srAnimState = SpriteRenderer.animationState;
-        const srSpritesheetId = SpriteRenderer.spritesheetId;
-        const srAnimSpeed = SpriteRenderer.animationSpeed;
-        const srLoop = SpriteRenderer.loop;
-        const srIsAnimated = SpriteRenderer.isAnimated;
-        const srInheritTransformRotation = SpriteRenderer.inheritTransformRotation;
-        const srSpriteRotC = SpriteRenderer.spriteRotC;
-        const srSpriteRotS = SpriteRenderer.spriteRotS;
-        const srRepeatX = SpriteRenderer.repeatX;
-        const srRepeatY = SpriteRenderer.repeatY;
-        const srTileMode = SpriteRenderer.tileMode;
-        const srTileOffsetU = SpriteRenderer.tileOffsetU;
-        const srTileOffsetV = SpriteRenderer.tileOffsetV;
-        const srBoundsHalfW = SpriteRenderer.boundsHalfW;
-        const srBoundsHalfH = SpriteRenderer.boundsHalfH;
-
-        const particleX = ParticleComponent.x;
-        const particleY = ParticleComponent.y;
-        const particleZ = ParticleComponent.z;
-        const particleScaleX = ParticleComponent.scaleX;
-        const particleScaleY = ParticleComponent.scaleY;
-        const particleFlipX = ParticleComponent.flipX;
-        const particleFlipY = ParticleComponent.flipY;
-        const particleRotC = ParticleComponent.rotC;
-        const particleRotS = ParticleComponent.rotS;
-        const particleAlpha = ParticleComponent.alpha;
-        const particleTint = ParticleComponent.tint;
-        const particleTextureId = ParticleComponent.textureId;
-        const particleFlat = ParticleComponent.flat;
-        const particleViewMode = ParticleComponent.viewMode;
-
-        const lightColor = LightEmitter.lightColor;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-        const glowHeightOffset = LightEmitter.glowHeightOffset;
-        const glowSprite = LightEmitter.hasGlowSprite;
-        const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
-        const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
-
-        const decoX = DecorationComponent.x;
-        const decoY = DecorationComponent.y;
-        const decoOffsetX = DecorationComponent.offsetX;
-        const decoOffsetY = DecorationComponent.offsetY;
-        const decoScaleX = DecorationComponent.scaleX;
-        const decoScaleY = DecorationComponent.scaleY;
-        const decoRotC = DecorationComponent.rotC;
-        const decoRotS = DecorationComponent.rotS;
-        const decoAlpha = DecorationComponent.alpha;
-        const decoTint = DecorationComponent.tint;
-        const decoTextureId = DecorationComponent.textureId;
-        const decoAnchorX = DecorationComponent.anchorX;
-        const decoAnchorY = DecorationComponent.anchorY;
-
-        const bulletX = BulletComponent.x;
-        const bulletY = BulletComponent.y;
-        const bulletStartX = BulletComponent.startX ?? BulletComponent.prevX;
-        const bulletStartY = BulletComponent.startY ?? BulletComponent.prevY;
-        const bulletOffsetY = BulletComponent.offsetY;
-        const bulletScale = BulletComponent.scale;
-        const bulletAlpha = BulletComponent.alpha;
-        const bulletTint = BulletComponent.tint;
-        const bulletTextureId = BulletComponent.textureId;
-        const bulletSpriteRotC = BulletComponent.spriteRotC;
-        const bulletSpriteRotS = BulletComponent.spriteRotS;
-        const bulletRotC = BulletComponent.bulletRotC;
-        const bulletRotS = BulletComponent.bulletRotS;
-        const bulletTrailWidth = BulletComponent.trailWidth;
-        const bulletAnchorX = BulletComponent.anchorX;
-        const bulletAnchorY = BulletComponent.anchorY;
-        const bulletActive = BulletComponent.active;
-
-        const bulletTrailTextureId = this._resolveBuiltinTextureId('_bulletTrail');
-        const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
-
-        const frameIndex = this.entityFrameIndex;
-        const frameAccum = this.entityFrameAccumulator;
-        const deltaSeconds = deltaTime / 1000;
-        const ref = this._emitRef;
-        ref.x = rqX; ref.y = rqY; ref.scaleX = rqScaleX; ref.scaleY = rqScaleY;
-        ref.rotC = rqRotC; ref.rotS = rqRotS; ref.alpha = rqAlpha; ref.tint = rqTint;
-        ref.textureId = rqTextureId; ref.anchorX = rqAnchorX; ref.anchorY = rqAnchorY;
-        ref.type = rqType;
-        ref.sortKey = rqSortKey;
-        ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
-        ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
-        ref.tileMulX = rqTileMulX; ref.tileMulY = rqTileMulY;
         const tilesDirty = rqTileMode !== null && this._tiledTileColumns.has(rqTileMode);
-        ref.tilesDirty = tilesDirty;
-        let tiledRows = false;
-        const rqShadowH = this.renderQueueShadowH;
-        const rqShadowOffX = this.renderQueueShadowOffX;
-        const rqShadowOffY = this.renderQueueShadowOffY;
-        const scActive = ShadowCaster.active;
-        const scH = ShadowCaster.heightMultiplier;
-        const scOx = ShadowCaster.anchorOffsetX;
-        const scOy = ShadowCaster.anchorOffsetY;
-
-        ref.shadowH = rqShadowH;
-        ref.shadowOffX = rqShadowOffX;
-        ref.shadowOffY = rqShadowOffY;
-        ref.scActive = scActive;
-        ref.scH = scH;
-        ref.scOx = scOx;
-        ref.scOy = scOy;
-
-        let writeCount = 0;
-        const stashPose = this._displayPoseOut;
-        const writeSortKey = !!(rqSortKey && source.hasOrder);
+        const writeSortKey = !!(this.renderQueueSortKey && source.hasOrder);
         const ySort = !!source.ySort;
         // -1 when off: buffer 0 is a valid persist target (it used to read as false).
         const persistBuf = source.persist ? this._queueBuf : -1;
-        // E-112, W4c. preRenderEmit.wasm takes the frame when every column it reads is in its memory: the
-        // persist path, then on a miss the full emit's sprite and decoration rows and the remembered rows.
-        const emitWasm = this._emitWasm !== null && !!stashPx && this._writeEmitTable(source);
-        const persistWasm = emitWasm && persistBuf >= 0 && writePersistColumns(this._emitWasm, this, SpriteRenderer, persistBuf);
+        if (!this._writeEmitTable(source, this._resolveBuiltinTextureId('_bulletTrail'))) {
+            return this._emitRefused('a column it reads is outside the render-queue memory');
+        }
+        const persistWasm = persistBuf >= 0 && writePersistColumns(this._emitWasm, this, SpriteRenderer, persistBuf);
+        let writeCount = 0;
         let persistHit = false;
         // Rows other than sprites are rewritten in full on a persist frame too (E-82 staticGen).
         let persistOthers = 0;
@@ -2981,400 +2660,23 @@ class PreRenderWorker extends AbstractWorker {
             persistOthers = this._persistFrameWasm(persistBuf, count, maxItems, deltaTime);
             persistHit = persistOthers >= 0;
             if (!persistHit) persistOthers = 0;
-        } else if (persistBuf >= 0) {
-            persistHit = this._type0PersistHit(persistBuf, count, collectorType, collectorIndex);
-            if (persistHit) {
-                persistOthers = this._writeType0PosesOnly(count, collectorType, collectorIndex, collectorY, stashPx, stashPy, stashRc, stashRs, deltaTime);
-            }
         }
-        // E-98b. On a persist frame of sprites only, the loop below would only count the rows.
-        let loopCount = count;
+        let tiledRows = false;
         if (persistHit && persistOthers === 0) {
+            // E-98b. A persist frame of sprites only: persist_frame wrote them.
             writeCount = count < maxItems ? count : maxItems;
-            loopCount = 0;
-        }
-        // E-112. A full emit's sprite and decoration rows are written by preRenderEmit.wasm, the rows of
-        // other types after it; a frame it does not take (an Adobe root, a LiquidFun row, a column
-        // outside its memory) runs the loop below.
-        if (emitWasm && !persistHit && loopCount > 0) {
-            const written = this._emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty);
-            if (written >= 0) {
-                writeCount = written;
-                loopCount = 0;
-                tiledRows = this._emitTiledRows;
-            }
-        }
-
-        for (let i = 0; i < loopCount && writeCount < maxItems; i++) {
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-
-            if (persistHit && type === 0) {
-                writeCount++;
-                continue;
-            }
-            const yKey = collectorY[i];
-            const sk = writeSortKey ? this._orderKey(type, idx, yKey, ySort) : yKey;
-
-            if (type === 6) {
-                if (stashPx) {
-                    stashPose[0] = stashPx[i];
-                    stashPose[1] = stashPy[i];
-                    stashPose[2] = stashRc[i];
-                    stashPose[3] = stashRs[i];
-                    writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, stashPose);
-                } else {
-                    writeCount = this._emitAdobePieces(ref, writeCount, idx, sk, null);
-                }
-                continue;
-            }
-
-            const out = writeCount++;
-            if (writeSortKey) rqSortKey[out] = sk;
-            if (type !== 0) {
-                if (tilesDirty) {
-                    if (rqRepeatX) rqRepeatX[out] = 0;
-                    if (rqRepeatY) rqRepeatY[out] = 0;
-                    clearTileFields(ref, out);
-                }
-                clearQueueShadow(ref, out);
-            }
-
-            if (type === 0) {
-                // === ENTITY === (pose stashed at collect when the collector has it)
-                let currX;
-                let currY;
-                let rc;
-                let rs;
-                if (stashPx) {
-                    currX = stashPx[i];
-                    currY = stashPy[i];
-                    if (srInheritTransformRotation[idx]) {
-                        rc = stashRc[i];
-                        rs = stashRs[i];
-                    } else {
-                        rc = srSpriteRotC[idx];
-                        rs = srSpriteRotS[idx];
-                    }
-                } else {
-                    this._displayPose(idx, stashPose);
-                    currX = stashPose[0];
-                    currY = stashPose[1];
-                    if (srInheritTransformRotation[idx]) {
-                        rc = stashPose[2];
-                        rs = stashPose[3];
-                    } else {
-                        rc = srSpriteRotC[idx];
-                        rs = srSpriteRotS[idx];
-                    }
-                }
-                const sx = srScaleX[idx];
-                const sy = srScaleY[idx];
-                const a = srAlpha[idx];
-                const tint = srTint[idx];
-                const ax = srAnchorX[idx];
-                const ay = srAnchorY[idx];
-                rqAlpha[out] = a;
-                this._writeQueueShadow(out, idx);
-                const rx0 = srRepeatX[idx];
-                const ry0 = srRepeatY[idx];
-                if (rx0 !== 0 || ry0 !== 0) {
-                    tiledRows = true;
-                    if (rqRepeatX) rqRepeatX[out] = rx0;
-                    if (rqRepeatY) rqRepeatY[out] = ry0;
-                    writeEntityTileFields(
-                        ref, out, idx,
-                        srTileMode, srTileOffsetU, srTileOffsetV,
-                        srRepeatX, srRepeatY, srBoundsHalfW, srBoundsHalfH
-                    );
-                } else if (tilesDirty) {
-                    if (rqRepeatX) rqRepeatX[out] = 0;
-                    if (rqRepeatY) rqRepeatY[out] = 0;
-                    if (rqTileMulX) rqTileMulX[out] = 0;
-                    if (rqTileMulY) rqTileMulY[out] = 0;
-                }
-
-                rqX[out] = currX;
-                rqY[out] = currY;
-                rqScaleX[out] = sx;
-                rqScaleY[out] = sy;
-                rqRotC[out] = rc;
-                rqRotS[out] = rs;
-                rqTint[out] = tint;
-                rqAnchorX[out] = ax;
-                rqAnchorY[out] = ay;
-
-                this._setQueueType(ref, out, 0, idx);
-                const sheetId = srSpritesheetId[idx];
-                const animState = srAnimState[idx];
-                let tex = INVALID_TEXTURE_ID;
-
-                const proxyMap = this.proxyToGlobalAnim?.[sheetId];
-                const globalAnimIdx = proxyMap?.[animState];
-
-                if (globalAnimIdx !== undefined) {
-                    const animFrameCount = this.animationFrameCount?.[globalAnimIdx] ?? 1;
-                    if (frameIndex[idx] >= animFrameCount) {
-                        frameIndex[idx] = 0;
-                    }
-
-                    if (srIsAnimated[idx] && animFrameCount > 1) {
-                        frameAccum[idx] += deltaSeconds;
-                        const frameDuration = 1 / (srAnimSpeed[idx] * 60);
-
-                        if (frameAccum[idx] >= frameDuration) {
-                            frameAccum[idx] -= frameDuration;
-
-                            const currentFrame = frameIndex[idx];
-                            const isLastFrame = currentFrame >= animFrameCount - 1;
-                            const shouldLoop = srLoop[idx] === 1;
-
-                            if (!shouldLoop && isLastFrame) {
-                                // The last frame of a play-once animation finished showing.
-                                if (this._animEndByType[Transform.entityType[idx]] === 1) {
-                                    this._spriteAnimationEnded(idx, animState);
-                                }
-                            } else {
-                                frameIndex[idx] = (currentFrame + 1) % animFrameCount;
-                                // Bounds may change (variable frame sizes)
-                                if (this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH) {
-                                    const texId = (this.animationFrameStart?.[globalAnimIdx] ?? 0) + frameIndex[idx];
-                                    const origW = this.frameWidth[texId] || 0;
-                                    const origH = this.frameHeight[texId] || 0;
-                                    const sx = Math.abs(srScaleX[idx]) || 1; // flip = negative scale
-                                    const sy = Math.abs(srScaleY[idx]) || 1;
-                                    SpriteRenderer.boundsHalfW[idx] = (origW * sx) * 0.5;
-                                    SpriteRenderer.boundsHalfH[idx] = (origH * sy) * 0.5;
-                                }
-                            }
-                        }
-                    }
-
-                    const animStart = this.animationFrameStart?.[globalAnimIdx];
-                    if (animStart === undefined) {
-                        this._warnMissingTexture(
-                            `animStart:${globalAnimIdx}`,
-                            `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${idx}`
-                        );
-                    } else {
-                        tex = animStart + frameIndex[idx];
-                        if (entityLastTextureId) entityLastTextureId[idx] = tex;
-                    }
-                } else {
-                    // Never reuse stale lastTextureId (pool recycle / spawn before setSprite).
-                    if (entityLastTextureId) entityLastTextureId[idx] = INVALID_TEXTURE_ID;
-                    // sheetId 0 = unset sentinel — expected under collect→emit recycle. No warn.
-                    if (sheetId) {
-                        this._warnMissingTexture(
-                            `sprite:${sheetId}:${animState}`,
-                            `[PRE_RENDER] no global anim for sheetId=${sheetId} animState=${animState} entity=${idx}; using INVALID textureId`
-                        );
-                    }
-                }
-                rqTextureId[out] = tex;
-            } else if (type === 1) {
-                // === PARTICLE ===
-                rqX[out] = particleX[idx];
-                // Zenithal: height → scale (and alpha). Never fold z into Y.
-                // Flat: y only. Else (topdown): screenY = y + z.
-                if (particleViewMode && particleViewMode[idx] === CAMERA_TYPES.ZENITHAL && !(particleFlat && particleFlat[idx])) {
-                    rqY[out] = particleY[idx];
-                    const height = -particleZ[idx];
-                    const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
-                    rqScaleX[out] = particleScaleX[idx] * heightFactor * (particleFlipX[idx] ? -1 : 1);
-                    rqScaleY[out] = particleScaleY[idx] * heightFactor * (particleFlipY[idx] ? -1 : 1);
-                    let a = particleAlpha[idx];
-                    if (this.zenithalAlphaFade > 0) {
-                        const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
-                        a *= Math.max(0, 1 - alphaFade);
-                    }
-                    rqAlpha[out] = a;
-                } else if (particleFlat && particleFlat[idx]) {
-                    rqY[out] = particleY[idx];
-                    rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
-                    rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
-                    rqAlpha[out] = particleAlpha[idx];
-                } else {
-                    rqY[out] = particleY[idx] + particleZ[idx];
-                    rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
-                    rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
-                    rqAlpha[out] = particleAlpha[idx];
-                }
-                rqRotC[out] = particleRotC[idx];
-                rqRotS[out] = particleRotS[idx];
-                rqTint[out] = particleTint[idx];
-                const pAnimIdx = particleTextureId[idx];
-                rqTextureId[out] = pAnimIdx === 0
-                    ? whiteCircleTextureId
-                    : this._resolveAnimFrameStart(pAnimIdx, ANIM_LABEL_TAG.PARTICLE);
-                rqAnchorX[out] = 0.5;
-                rqAnchorY[out] = 0.5;
-                this._setQueueType(ref, out, 1, idx);
-            } else if (type === 7) {
-                const lf = this.liquidFun;
-                if (
-                    this.interpolatePhysicsPose &&
-                    this._prevLfX &&
-                    this._prevLfCount > idx
-                ) {
-                    const alpha = this._poseAlpha;
-                    const px = this._prevLfX[idx];
-                    const py = this._prevLfY[idx];
-                    rqX[out] = px + (lf.x[idx] - px) * alpha;
-                    rqY[out] = py + (lf.y[idx] - py) * alpha;
-                } else {
-                    rqX[out] = lf.x[idx];
-                    rqY[out] = lf.y[idx];
-                }
-                rqScaleX[out] = lf.scaleX[idx];
-                rqScaleY[out] = lf.scaleY[idx];
-                rqAlpha[out] = lf.alpha[idx] * (lf.baseAlpha ? lf.baseAlpha[idx] : 1);
-                rqRotC[out] = lf.rotC[idx];
-                rqRotS[out] = lf.rotS[idx];
-                rqTint[out] = lf.tint[idx];
-                const lfAnimIdx = lf.textureId[idx];
-                rqTextureId[out] = lfAnimIdx === 0
-                    ? whiteCircleTextureId
-                    : this._resolveAnimFrameStart(lfAnimIdx, ANIM_LABEL_TAG.LIQUID_FUN);
-                rqAnchorX[out] = 0.5;
-                rqAnchorY[out] = 0.5;
-                this._setQueueType(ref, out, 1, idx);
-            } else if (type === 2) {
-                // === DECORATION === (world xy + facing stashed at collect when present)
-                let decoWorldX;
-                let decoWorldY;
-                let decoRotCos;
-                let decoRotSin;
-                if (stashPx) {
-                    decoWorldX = stashPx[i];
-                    decoWorldY = stashPy[i];
-                    decoRotCos = stashRc[i];
-                    decoRotSin = stashRs[i];
-                } else {
-                    this._decorationWorldXY(idx, stashPose);
-                    decoWorldX = stashPose[0];
-                    decoWorldY = stashPose[1];
-                    decoRotCos = decoRotC[idx];
-                    decoRotSin = decoRotS[idx];
-                }
-                rqX[out] = decoWorldX;
-                rqY[out] = decoWorldY;
-                rqScaleX[out] = decoScaleX[idx];
-                rqScaleY[out] = decoScaleY[idx];
-                rqRotC[out] = decoRotCos;
-                rqRotS[out] = decoRotSin;
-                rqAlpha[out] = decoAlpha[idx] * this._decorationZoomAlpha;
-                rqTint[out] = decoTint[idx];
-                const dAnimIdx = decoTextureId[idx];
-                rqTextureId[out] = this._resolveAnimFrameStart(dAnimIdx, ANIM_LABEL_TAG.DECORATION);
-                rqAnchorX[out] = decoAnchorX[idx];
-                rqAnchorY[out] = decoAnchorY[idx];
-                this._setQueueType(ref, out, 2, idx);
-            } else if (type === 4) {
-                // === BULLET ===
-                if (!bulletActive[idx]) {
-                    rqAlpha[out] = 0;
-                    rqScaleX[out] = 0;
-                    rqScaleY[out] = 0;
-                    rqX[out] = -10000;
-                    rqY[out] = -10000;
-                } else {
-                    rqX[out] = bulletX[idx];
-                    rqY[out] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                    rqScaleX[out] = bulletScale[idx];
-                    rqScaleY[out] = bulletScale[idx];
-                    rqRotC[out] = bulletSpriteRotC[idx];
-                    rqRotS[out] = bulletSpriteRotS[idx];
-                    rqAlpha[out] = bulletAlpha[idx];
-                    rqTint[out] = bulletTint[idx];
-                    const bAnimIdx = bulletTextureId[idx];
-                    rqTextureId[out] = this._resolveAnimFrameStart(bAnimIdx, ANIM_LABEL_TAG.BULLET);
-                    rqAnchorX[out] = bulletAnchorX[idx];
-                    rqAnchorY[out] = bulletAnchorY[idx];
-                }
-                this._setQueueType(ref, out, 4, idx);
-            } else if (type === 5) {
-                // === BULLET TRAIL (line from start to curr, 0-alpha at start) ===
-                if (!bulletActive[idx]) {
-                    rqAlpha[out] = 0;
-                    rqScaleX[out] = 0;
-                    rqScaleY[out] = 0;
-                    rqX[out] = -10000;
-                    rqY[out] = -10000;
-                } else {
-                    const currX = bulletX[idx];
-                    const currY = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                    const startX = bulletStartX[idx];
-                    const startY = bulletStartY[idx] + (bulletOffsetY[idx] ?? 0);
-                    const dx = currX - startX;
-                    const dy = currY - startY;
-                    const lenSq = dx * dx + dy * dy;
-
-                    if (lenSq < BULLET_TRAIL_MIN_LENGTH_SQ) {
-                        rqAlpha[out] = 0;
-                        rqScaleX[out] = 0;
-                        rqScaleY[out] = 0;
-                        rqX[out] = -10000;
-                        rqY[out] = -10000;
-                    } else {
-                        const adx = dx < 0 ? -dx : dx;
-                        const ady = dy < 0 ? -dy : dy;
-                        const max = adx > ady ? adx : ady;
-                        const min = adx > ady ? ady : adx;
-                        const lengthApprox = 0.96 * max + 0.4 * min;
-
-                        rqX[out] = (startX + currX) * 0.5;
-                        rqY[out] = (startY + currY) * 0.5;
-                        rqScaleX[out] = lengthApprox / 10;
-                        rqScaleY[out] = bulletTrailWidth[idx];
-                        // Flight dir already in bulletRotC/S (straight bullets)
-                        rqRotC[out] = bulletRotC[idx];
-                        rqRotS[out] = bulletRotS[idx];
-                        rqAlpha[out] = bulletAlpha[idx] * 0.9;
-                        rqTint[out] = 0xffffff;
-                    }
-                }
-                rqTextureId[out] = bulletTrailTextureId;
-                rqAnchorX[out] = 0.5;
-                rqAnchorY[out] = 0.5;
-                this._setQueueType(ref, out, 5, idx);
-            } else {
-                // === LIGHT GLOW (type=3) ===
-                const scale = lightGlowScale(sqrtLightIntensity[idx]);
-                // hasGlowSprite 0.5 → /50000; 1 → /25000
-                const glowAlpha = lightIntensity[idx] * glowSprite[idx] * (1 / 25000);
-
-                if (scale < 0.1 || glowAlpha < 0.001) {
-                    rqAlpha[out] = 0;
-                    rqScaleX[out] = 0;
-                    rqScaleY[out] = 0;
-                    rqX[out] = -10000;
-                    rqY[out] = -10000;
-                } else {
-                    rqX[out] = entityX[idx];
-                    rqY[out] = entityY[idx] - (glowHeightOffset[idx] || 0);
-                    rqScaleX[out] = scale;
-                    rqScaleY[out] = scale;
-                    rqAlpha[out] = glowAlpha;
-                    rqTint[out] = lightColor[idx];
-                }
-                rqRotC[out] = 1;
-                rqRotS[out] = 0;
-                rqTextureId[out] = lightGradientTextureId;
-                rqAnchorX[out] = 0.5;
-                rqAnchorY[out] = 0.5;
-                if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
-                this._setQueueType(ref, out, 3, idx);
-            }
+        } else if (count > 0) {
+            // The full emit, or on a persist frame the rows of other types (the sprites skipped).
+            const written = this._emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty, persistHit);
+            if (written < 0) return this._emitRefused('the kernel declined a frame');
+            writeCount = written;
+            tiledRows = this._emitTiledRows;
         }
 
         if (detail) this.emitTimeThisFrame = performance.now() - tEmit;
         // E-102b: from now on this queue's other rows must clear what a repeating sprite left.
         if (tiledRows && rqTileMode !== null) this._tiledTileColumns.add(rqTileMode);
-        if (source.persist && !persistHit) {
-            if (persistWasm) this._rememberType0SetWasm(persistBuf, count, maxItems);
-            else this._rememberType0Set(persistBuf, count, collectorType, collectorIndex);
-        }
+        if (persistWasm && !persistHit) this._rememberType0SetWasm(persistBuf, count, maxItems);
         if (source.persist) {
             // E-82. A frame that only moved sprites keeps the count; anything else is a new one
             // (0 is skipped: it means unknown).
@@ -3386,17 +2688,69 @@ class PreRenderWorker extends AbstractWorker {
         return writeCount;
     }
 
-    /**
-     * E-112, W4c. preRenderEmit.wasm's column table for this frame; false when the kernel cannot take the
-     * frame (no texture tables yet, a column outside its memory), and the JS runs it.
-     */
-    _writeEmitTable(source) {
-        const b = this._emitWasm;
-        return b.texturesReady && writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source);
+    /** A queue the emit kernel cannot take: drawn empty this frame, the reason said once. */
+    _emitRefused(reason) {
+        if (!this._emitRefusedWarned) {
+            this._emitRefusedWarned = true;
+            console.error(`[PRE_RENDER] the emit kernel cannot take a render queue (${reason}): it is drawn empty`);
+        }
+        return 0;
     }
 
     /**
-     * W4c, E-116. _type0PersistHit and _writeType0PosesOnly in one preRenderEmit.wasm walk (persist_frame),
+     * E-112, W4c. preRenderEmit.wasm's column table for this frame; false when the kernel cannot take the
+     * frame (no texture tables yet, a column outside its memory), and the JS runs it. W4d: with BulletComponent
+     * in the memory the kernel writes the bullet and trail rows too, the trail's texture `trailTexture`; else
+     * they are left to the JS. With LightEmitter and Transform there, the glow rows too; with ParticleComponent, the
+     * particle rows.
+     */
+    _writeEmitTable(source, trailTexture) {
+        const b = this._emitWasm;
+        if (!b.texturesReady || !writeEmitColumns(b, this, SpriteRenderer, ShadowCaster, DecorationComponent, source)) return false;
+        writeEmitBulletColumns(b, BulletComponent, trailTexture);
+        writeEmitGlowColumns(b, LightEmitter, Transform, this._resolveBuiltinTextureId('_lightGradient'));
+        const white = this._resolveBuiltinTextureId('_whiteCircle');
+        writeEmitParticleColumns(b, ParticleComponent, white, this.zenithalMaxHeight, this.zenithalScaleFactor, this.zenithalAlphaFade);
+        // A LiquidFun row interpolates when emitSpriteQueue would: interpolatePhysicsPose, _prevLfX, _prevLfCount > idx.
+        const lfPrev = this.interpolatePhysicsPose && this._prevLfX ? this._prevLfCount : 0;
+        writeEmitLiquidFunColumns(b, this.liquidFun, this._prevLfX, this._prevLfY, lfPrev, this._poseAlpha, white);
+        // W27: Adobe roots expand in the kernel when its tables hold the registry's assets and AdobeAnimComponent is
+        // in the memory (else it declines a frame with one), on a queue whose texture column is the source's length
+        // (_emitAdobePieces stops at that column's end, the loop at maxItems).
+        if (b.adobe) {
+            const assets = AdobeAnimRegistry.assetById;
+            if (assets !== b.adobeFrom || assets.length !== b.adobeAssets) this._copyEmitAdobeAssets();
+            writeEmitAdobeColumns(b, AdobeAnimComponent, this.renderQueueTextureId.length === source.maxItems);
+        }
+        return true;
+    }
+
+    /**
+     * W27. The registry's assets into the emit kernel's tables. An asset the tables could not take is not drawn (nor
+     * are its clips advanced): an error per asset, once per copy, says why and what to change.
+     */
+    _copyEmitAdobeAssets() {
+        const skipped = writeEmitAdobeAssets(this._emitWasm, AdobeAnimRegistry.assetById);
+        for (let k = 0; k < skipped.length; k++) {
+            const s = skipped[k];
+            if (s.reason === 'room') {
+                const mb = this.config?.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
+                console.error(`[PRE_RENDER] Adobe Animate asset "${s.name}" needs ${s.bytes} bytes of tables in the render-queue `
+                    + `memory and preRender.adobeTablesMB (${mb} MB) has no room left: its characters are not drawn. `
+                    + 'Raise preRender.adobeTablesMB.');
+            } else if (s.reason === 'ids') {
+                console.error(`[PRE_RENDER] ${s.name}: the emit's asset directory holds ids 0 to 255, their characters are not drawn.`);
+            } else {
+                console.error(`[PRE_RENDER] Adobe Animate asset "${s.name}" is malformed (an array that is not one, frame lists `
+                    + 'of two lengths, a frame whose pieces run past its piece arrays, or bounds that are not numbers): its '
+                    + 'characters are not drawn.');
+            }
+        }
+    }
+
+    /**
+     * W4c, E-116. The JS persist check and poses-only pass (_type0PersistHit and _writeType0PosesOnly in
+     * tests/reference/preRenderEmitJs.mjs) in one preRenderEmit.wasm walk (persist_frame),
      * on this frame's table: the rows of other types when the rows are the ones this buffer last held,
      * else -1 (the full emit that follows rewrites the pose columns the walk wrote). The repairs go to
      * _persistFramesRepaired, the sprites whose frame moved to _persistFramesMoved, the play-once ends
@@ -3436,23 +2790,26 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * E-112. The full emit's rows through preRenderEmit.wasm, on this frame's table (_writeEmitTable): it
-     * writes the sprite and decoration rows, then the rows of other types it listed are written here, its
-     * play-once ends sent through the entity-type filter and its missing textures warned as the JS emit
-     * warns them.
-     * Returns the rows written, or -1 when the kernel cannot take the frame (the JS loop does).
+     * E-112. The full emit's rows through preRenderEmit.wasm, on this frame's table (_writeEmitTable): every row type
+     * (W4d, close-out group B) and the Adobe roots' pieces (W27), or with \`othersOnly\` a persist frame's rows but the
+     * sprites; its play-once ends are sent through the entity-type filter and its missing textures warned as the JS
+     * emit warned them.
+     * Returns the rows written, or -1 when the kernel cannot take the frame (a declined frame, or rows it listed
+     * because their columns are outside the memory).
      */
-    _emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty) {
+    _emitRowsWasm(deltaTime, source, writeSortKey, ySort, tilesDirty, othersOnly) {
         const b = this._emitWasm;
         const bounds = this.frameWidth && this.frameHeight && SpriteRenderer.boundsHalfW && SpriteRenderer.boundsHalfH;
         const flags = (writeSortKey ? EMIT_SORT_KEY : 0) | (ySort ? EMIT_Y_SORT : 0)
-            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0);
+            | (tilesDirty ? EMIT_TILES_DIRTY : 0) | (bounds ? EMIT_BOUNDS : 0) | (this._emitPresorted ? EMIT_PRESORTED : 0)
+            | (othersOnly ? EMIT_OTHERS_ONLY : 0);
         const written = b.emitRows(b.tableByte, source.count, source.maxItems, flags,
             deltaTime / 1000, this._decorationZoomAlpha, this._zBand);
         if (written === EMIT_DECLINED) return -1;
         const results = b.results;
         const u32 = b.u32;
-        if (results[3] > 0) this._emitForeignRows(b.foreignAt, results[3], source, writeSortKey, ySort, tilesDirty);
+        // Rows the kernel lists are of a type whose columns are outside the memory: nothing would write them.
+        if (results[3] > 0) return -1;
         const ends = results[0];
         for (let k = 0, at = b.endsAt; k < ends; k++, at += 2) {
             const idx = u32[at];
@@ -3461,231 +2818,12 @@ class PreRenderWorker extends AbstractWorker {
         const warns = results[1];
         for (let k = 0, at = b.warnsAt; k < warns; k++, at += 2) this._emitWarn(u32[at], u32[at + 1]);
         this._emitTiledRows = results[2] !== 0;
-        return written;
-    }
-
-    /**
-     * E-112. The rows preRenderEmit.wasm left to the JS (particles, glows, bullets and their trails), at
-     * their collector rows: the full emit's branches for those types, copied (the emit loop is too hot to
-     * share them). Row i is queue row i: a frame the kernel took has no Adobe root to expand.
-     */
-    _emitForeignRows(listAt, listCount, source, writeSortKey, ySort, tilesDirty) {
-        const list = this._emitWasm.u32;
-        const collectorY = source.collectorY;
-        const collectorType = source.collectorType;
-        const collectorIndex = source.collectorIndex;
-        const ref = this._emitRef;
-        const rqX = this.renderQueueX;
-        const rqY = this.renderQueueY;
-        const rqScaleX = this.renderQueueScaleX;
-        const rqScaleY = this.renderQueueScaleY;
-        const rqRotC = this.renderQueueRotC;
-        const rqRotS = this.renderQueueRotS;
-        const rqAlpha = this.renderQueueAlpha;
-        const rqTint = this.renderQueueTint;
-        const rqTextureId = this.renderQueueTextureId;
-        const rqAnchorX = this.renderQueueAnchorX;
-        const rqAnchorY = this.renderQueueAnchorY;
-        const rqSortKey = this.renderQueueSortKey;
-        const rqRepeatX = this.renderQueueRepeatX;
-        const rqRepeatY = this.renderQueueRepeatY;
-
-        const entityX = Transform.x;
-        const entityY = Transform.y;
-
-        const particleX = ParticleComponent.x;
-        const particleY = ParticleComponent.y;
-        const particleZ = ParticleComponent.z;
-        const particleScaleX = ParticleComponent.scaleX;
-        const particleScaleY = ParticleComponent.scaleY;
-        const particleFlipX = ParticleComponent.flipX;
-        const particleFlipY = ParticleComponent.flipY;
-        const particleRotC = ParticleComponent.rotC;
-        const particleRotS = ParticleComponent.rotS;
-        const particleAlpha = ParticleComponent.alpha;
-        const particleTint = ParticleComponent.tint;
-        const particleTextureId = ParticleComponent.textureId;
-        const particleFlat = ParticleComponent.flat;
-        const particleViewMode = ParticleComponent.viewMode;
-
-        const lightColor = LightEmitter.lightColor;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-        const glowHeightOffset = LightEmitter.glowHeightOffset;
-        const glowSprite = LightEmitter.hasGlowSprite;
-        const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
-        const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
-
-        const bulletX = BulletComponent.x;
-        const bulletY = BulletComponent.y;
-        const bulletStartX = BulletComponent.startX ?? BulletComponent.prevX;
-        const bulletStartY = BulletComponent.startY ?? BulletComponent.prevY;
-        const bulletOffsetY = BulletComponent.offsetY;
-        const bulletScale = BulletComponent.scale;
-        const bulletAlpha = BulletComponent.alpha;
-        const bulletTint = BulletComponent.tint;
-        const bulletTextureId = BulletComponent.textureId;
-        const bulletSpriteRotC = BulletComponent.spriteRotC;
-        const bulletSpriteRotS = BulletComponent.spriteRotS;
-        const bulletRotC = BulletComponent.bulletRotC;
-        const bulletRotS = BulletComponent.bulletRotS;
-        const bulletTrailWidth = BulletComponent.trailWidth;
-        const bulletAnchorX = BulletComponent.anchorX;
-        const bulletAnchorY = BulletComponent.anchorY;
-        const bulletActive = BulletComponent.active;
-
-        const bulletTrailTextureId = this._resolveBuiltinTextureId('_bulletTrail');
-        const BULLET_TRAIL_MIN_LENGTH_SQ = 0.01;
-
-        for (let k = 0; k < listCount; k++) {
-            const i = list[listAt + k];
-            const type = collectorType[i];
-            const idx = collectorIndex[i];
-            const yKey = collectorY[i];
-            const sk = writeSortKey ? this._orderKey(type, idx, yKey, ySort) : yKey;
-            const out = i;
-            if (writeSortKey) rqSortKey[out] = sk;
-            if (tilesDirty) {
-                if (rqRepeatX) rqRepeatX[out] = 0;
-                if (rqRepeatY) rqRepeatY[out] = 0;
-                clearTileFields(ref, out);
-            }
-            clearQueueShadow(ref, out);
-            if (type === 1) {
-                // === PARTICLE ===
-                rqX[out] = particleX[idx];
-                // Zenithal: height → scale (and alpha). Never fold z into Y.
-                // Flat: y only. Else (topdown): screenY = y + z.
-                if (particleViewMode && particleViewMode[idx] === CAMERA_TYPES.ZENITHAL && !(particleFlat && particleFlat[idx])) {
-                    rqY[out] = particleY[idx];
-                    const height = -particleZ[idx];
-                    const heightFactor = 1 + (height / this.zenithalMaxHeight) * this.zenithalScaleFactor;
-                    rqScaleX[out] = particleScaleX[idx] * heightFactor * (particleFlipX[idx] ? -1 : 1);
-                    rqScaleY[out] = particleScaleY[idx] * heightFactor * (particleFlipY[idx] ? -1 : 1);
-                    let a = particleAlpha[idx];
-                    if (this.zenithalAlphaFade > 0) {
-                        const alphaFade = Math.min(1, (height / this.zenithalMaxHeight) * this.zenithalAlphaFade);
-                        a *= Math.max(0, 1 - alphaFade);
-                    }
-                    rqAlpha[out] = a;
-                } else if (particleFlat && particleFlat[idx]) {
-                    rqY[out] = particleY[idx];
-                    rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
-                    rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
-                    rqAlpha[out] = particleAlpha[idx];
-                } else {
-                    rqY[out] = particleY[idx] + particleZ[idx];
-                    rqScaleX[out] = particleScaleX[idx] * (particleFlipX[idx] ? -1 : 1);
-                    rqScaleY[out] = particleScaleY[idx] * (particleFlipY[idx] ? -1 : 1);
-                    rqAlpha[out] = particleAlpha[idx];
-                }
-                rqRotC[out] = particleRotC[idx];
-                rqRotS[out] = particleRotS[idx];
-                rqTint[out] = particleTint[idx];
-                const pAnimIdx = particleTextureId[idx];
-                rqTextureId[out] = pAnimIdx === 0
-                    ? whiteCircleTextureId
-                    : this._resolveAnimFrameStart(pAnimIdx, ANIM_LABEL_TAG.PARTICLE);
-                rqAnchorX[out] = 0.5;
-                rqAnchorY[out] = 0.5;
-                this._setQueueType(ref, out, 1, idx);
-            } else if (type === 4) {
-                // === BULLET ===
-                if (!bulletActive[idx]) {
-                    rqAlpha[out] = 0;
-                    rqScaleX[out] = 0;
-                    rqScaleY[out] = 0;
-                    rqX[out] = -10000;
-                    rqY[out] = -10000;
-                } else {
-                    rqX[out] = bulletX[idx];
-                    rqY[out] = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                    rqScaleX[out] = bulletScale[idx];
-                    rqScaleY[out] = bulletScale[idx];
-                    rqRotC[out] = bulletSpriteRotC[idx];
-                    rqRotS[out] = bulletSpriteRotS[idx];
-                    rqAlpha[out] = bulletAlpha[idx];
-                    rqTint[out] = bulletTint[idx];
-                    const bAnimIdx = bulletTextureId[idx];
-                    rqTextureId[out] = this._resolveAnimFrameStart(bAnimIdx, ANIM_LABEL_TAG.BULLET);
-                    rqAnchorX[out] = bulletAnchorX[idx];
-                    rqAnchorY[out] = bulletAnchorY[idx];
-                }
-                this._setQueueType(ref, out, 4, idx);
-            } else if (type === 5) {
-                // === BULLET TRAIL (line from start to curr, 0-alpha at start) ===
-                if (!bulletActive[idx]) {
-                    rqAlpha[out] = 0;
-                    rqScaleX[out] = 0;
-                    rqScaleY[out] = 0;
-                    rqX[out] = -10000;
-                    rqY[out] = -10000;
-                } else {
-                    const currX = bulletX[idx];
-                    const currY = bulletY[idx] + (bulletOffsetY[idx] ?? 0);
-                    const startX = bulletStartX[idx];
-                    const startY = bulletStartY[idx] + (bulletOffsetY[idx] ?? 0);
-                    const dx = currX - startX;
-                    const dy = currY - startY;
-                    const lenSq = dx * dx + dy * dy;
-
-                    if (lenSq < BULLET_TRAIL_MIN_LENGTH_SQ) {
-                        rqAlpha[out] = 0;
-                        rqScaleX[out] = 0;
-                        rqScaleY[out] = 0;
-                        rqX[out] = -10000;
-                        rqY[out] = -10000;
-                    } else {
-                        const adx = dx < 0 ? -dx : dx;
-                        const ady = dy < 0 ? -dy : dy;
-                        const max = adx > ady ? adx : ady;
-                        const min = adx > ady ? ady : adx;
-                        const lengthApprox = 0.96 * max + 0.4 * min;
-
-                        rqX[out] = (startX + currX) * 0.5;
-                        rqY[out] = (startY + currY) * 0.5;
-                        rqScaleX[out] = lengthApprox / 10;
-                        rqScaleY[out] = bulletTrailWidth[idx];
-                        // Flight dir already in bulletRotC/S (straight bullets)
-                        rqRotC[out] = bulletRotC[idx];
-                        rqRotS[out] = bulletRotS[idx];
-                        rqAlpha[out] = bulletAlpha[idx] * 0.9;
-                        rqTint[out] = 0xffffff;
-                    }
-                }
-                rqTextureId[out] = bulletTrailTextureId;
-                rqAnchorX[out] = 0.5;
-                rqAnchorY[out] = 0.5;
-                this._setQueueType(ref, out, 5, idx);
-            } else {
-                // === LIGHT GLOW (type=3) ===
-                const scale = lightGlowScale(sqrtLightIntensity[idx]);
-                // hasGlowSprite 0.5 → /50000; 1 → /25000
-                const glowAlpha = lightIntensity[idx] * glowSprite[idx] * (1 / 25000);
-
-                if (scale < 0.1 || glowAlpha < 0.001) {
-                    rqAlpha[out] = 0;
-                    rqScaleX[out] = 0;
-                    rqScaleY[out] = 0;
-                    rqX[out] = -10000;
-                    rqY[out] = -10000;
-                } else {
-                    rqX[out] = entityX[idx];
-                    rqY[out] = entityY[idx] - (glowHeightOffset[idx] || 0);
-                    rqScaleX[out] = scale;
-                    rqScaleY[out] = scale;
-                    rqAlpha[out] = glowAlpha;
-                    rqTint[out] = lightColor[idx];
-                }
-                rqRotC[out] = 1;
-                rqRotS[out] = 0;
-                rqTextureId[out] = lightGradientTextureId;
-                rqAnchorX[out] = 0.5;
-                rqAnchorY[out] = 0.5;
-                if (this._lightGlowAsSprite && rqAlpha[out] > 0) rqAlpha[out] *= this._glowLayerAlpha;
-                this._setQueueType(ref, out, 3, idx);
-            }
+        // W27: an Adobe root's pieces ran past the queue's end (_emitAdobePieces warns once).
+        if (results[4] !== 0 && !this._adobeRenderQueueOverflowWarned) {
+            this._adobeRenderQueueOverflowWarned = true;
+            console.warn('[PRE_RENDER] Adobe Animate piece expansion exceeded render queue capacity. Increase renderer.maxVisibleRenderables.');
         }
+        return written;
     }
 
     /** E-112. A missing texture the kernel met, warned under the key and text the JS emit uses. */
@@ -3705,6 +2843,18 @@ class PreRenderWorker extends AbstractWorker {
                 `animStart:${globalAnimIdx}`,
                 `[PRE_RENDER] animationFrameStart missing for globalAnimIdx=${globalAnimIdx} entity=${idx}`
             );
+            return;
+        }
+        if (kind === EMIT_WARN_BULLET_START) {
+            this._resolveAnimFrameStart(BulletComponent.textureId[idx], ANIM_LABEL_TAG.BULLET);
+            return;
+        }
+        if (kind === EMIT_WARN_PARTICLE_START) {
+            this._resolveAnimFrameStart(ParticleComponent.textureId[idx], ANIM_LABEL_TAG.PARTICLE);
+            return;
+        }
+        if (kind === EMIT_WARN_LF_START) {
+            this._resolveAnimFrameStart(this.liquidFun.textureId[idx], ANIM_LABEL_TAG.LIQUID_FUN);
             return;
         }
         this._resolveAnimFrameStart(DecorationComponent.textureId[idx], ANIM_LABEL_TAG.DECORATION);
@@ -3740,10 +2890,10 @@ class PreRenderWorker extends AbstractWorker {
                     collector.y,
                     collector.type,
                     collector.index,
-                    null,
-                    null,
-                    null,
-                    null,
+                    collector.stashX,
+                    collector.stashY,
+                    collector.stashRotC,
+                    collector.stashRotS,
                     false,
                     ySorting,
                     ySorting
@@ -4071,12 +3221,16 @@ class PreRenderWorker extends AbstractWorker {
         spec.stampLightIdx = dst.stampLightIdx;
         spec.lightVec = this._gpuLightVec;
 
-        // E-114: the stamp in WASM; a call its regions cannot hold stamps in JS.
-        if (this._stampWasm !== null) {
-            const cursor = stampLightRangeWasm(this._stampWasm, spec);
-            if (cursor >= 0) return cursor;
+        return this._stampRange(spec, sunN, stampBase);
+    }
+
+    /** E-114: the stamp in shadowStamp.wasm, its only stamp. Without its regions there are no sun casters. */
+    _stampRange(spec, sunN, stampBase) {
+        if (this._stampWasm === null) {
+            if ((sunN | 0) > 0) throw new Error('shadowStamp: sun casters without the stamp regions of the render-queue memory');
+            return stampBase;
         }
-        return stampLightRange(spec);
+        return stampLightRangeWasm(this._stampWasm, spec);
     }
 
     _packGpuCookies(dst) {
@@ -4170,16 +3324,18 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * packInstancedRows through the WASM kernel when it takes the call (world space, no snap, no
-     * type filter, everything in the render-queue memory), else in JS. The same bits either way.
+     * A queue's rows through gpuPack.wasm (E-76 W9, close-out group B: every call, the JS packer it replaced is
+     * tests/reference/gpuPackJs.mjs); a call it cannot take (a column outside the render-queue memory) packs nothing
+     * and says so once.
      */
     _packRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) {
-        const b = this._gpuPackWasm;
-        if (b) {
-            const n = packInstancedRowsWasm(b, q, ctx, dst, floatsPer, capacity, shadowCast);
-            if (n >= 0) return n;
+        const n = packInstancedRowsWasm(this._gpuPackWasm, q, ctx, dst, floatsPer, capacity, shadowCast);
+        if (n >= 0) return n;
+        if (!this._packRefusedWarned) {
+            this._packRefusedWarned = true;
+            console.error('[PRE_RENDER] gpuPack.wasm cannot pack a queue (a column outside the render-queue memory): its rows are not drawn');
         }
-        return packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast);
+        return 0;
     }
 
     _bindGpuPackWriters() {
@@ -4190,9 +3346,15 @@ class PreRenderWorker extends AbstractWorker {
             const dst = this._packDst;
             const cap = this.gpuQueueCaps.maxSprites;
             const ctx = makePackContext(q, opts, cap, this._gpuPackCtx);
-            const n = ctx
-                ? this._packRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, cap, false)
-                : 0;
+            let n = 0;
+            if (ctx) {
+                n = this._gpuSplit ? this._packSpritesSplit(q, ctx, dst, cap) : -1;
+                if (n < 0) {
+                    // 15-float rows: whatever statics this buffer held are gone.
+                    this._gpuStaticGen[this._queueBuf & 1] = 0;
+                    n = this._packRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, cap, false);
+                }
+            }
             this._packParticles = ctx ? (ctx.particleCount | 0) : 0;
             return n;
         };
@@ -4208,9 +3370,35 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPackSpec = {
             fillAll: true,
             sortedFlag: GPU_FLAG_SORTED,
+            glowIncludeType: -1,
             writeSprites: this._writePackedSprites,
             writeGlow: this._writePackedGlow,
         };
+    }
+
+    /**
+     * E-82b: the main sprites as two streams through gpuPack.wasm, the statics only when this GPU queue buffer
+     * does not hold the queue's current generation (renderQueueStaticGen) for the same rows. The glow split's
+     * list (_gpuIdxEntity: the rows that are not glows, in order) follows from the queue's types, which the
+     * generation covers; a painter's order may move with the poses alone, so a sorted frame writes both. -1 when
+     * the kernel does not take the call; the caller then packs 15-float rows and the frame goes without
+     * GPU_FLAG_SPLIT.
+     */
+    _packSpritesSplit(q, ctx, dst, cap) {
+        const slot = this._queueBuf & 1;
+        const genView = this.renderQueueStaticGen;
+        const sorted = ctx.useIndices && ctx.indices !== this._gpuIdxEntity;
+        const gen = !sorted && genView.length ? genView[0] >>> 0 : 0;
+        const scan = ctx.scanCount | 0;
+        const rows = scan < cap ? scan : cap;
+        const current = gen !== 0 && this._gpuStaticGen[slot] === gen && this._gpuStaticRows[slot] === rows;
+        const n = packSplitRowsWasm(this._gpuPackWasm, q, ctx, dst.spritePose, current ? null : dst.spriteStatic, cap);
+        if (n < 0) return -1;
+        this._gpuStaticGen[slot] = gen;
+        this._gpuStaticRows[slot] = n;
+        this._packSplitUsed = true;
+        this._packSplitGen = gen;
+        return n;
     }
 
     _packGpuSprites(dst, q, allowPainter) {
@@ -4218,17 +3406,25 @@ class PreRenderWorker extends AbstractWorker {
         const opts = this._gpuPackOpts;
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
-        const res = this._gpuSpritesResult || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0 });
+        const res = this._gpuSpritesResult
+            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0 });
+        this._packSplitUsed = false;
+        this._packSplitGen = 0;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
             res.sprite = 0;
             res.glow = 0;
             res.particle = 0;
             res.flags = 0;
+            res.staticGen = 0;
             return res;
         }
         this._bindGpuPackWriters();
         const typeArr = this.renderQueueType;
-        const allowSort = !!(allowPainter && this._gpuPainter && q.sortKey);
+        // E-138: a presorted queue is in painter order already; it is packed as it is, and says so. Without glow
+        // rows there is nothing to split out either: every row in queue order, with no slot list.
+        const presorted = this._queuePresorted;
+        const presortedNoGlow = presorted && this._presortGlowRows === 0;
+        const allowSort = !presorted && !!(allowPainter && this._gpuPainter && q.sortKey);
         this._packDst = dst;
         this._packQ = q;
         this._packParticles = 0;
@@ -4236,7 +3432,10 @@ class PreRenderWorker extends AbstractWorker {
         spec.count = count;
         spec.type = typeArr;
         spec.opts = opts;
-        spec.splitGlow = !!(this._lightGlowAsSprite === false && typeArr && this._gpuIdxEntity);
+        spec.splitGlow = !presortedNoGlow && !!(this._lightGlowAsSprite === false && typeArr && this._gpuIdxEntity);
+        // Unsplit, the glow rows go to the glow batch only when glows are not sprites (as Pixi's layer sets it); the
+        // spec read undefined, so an unsplit frame packed its sprite rows (type 0) into the glow batch.
+        spec.glowIncludeType = !spec.splitGlow && !presortedNoGlow && this._lightGlowAsSprite === false ? 3 : -1;
         spec.idxEntity = this._gpuIdxEntity;
         spec.idxGlow = this._gpuIdxGlow;
         spec.painter = allowSort ? this._gpuPainter : null;
@@ -4247,7 +3446,8 @@ class PreRenderWorker extends AbstractWorker {
         res.sprite = packed.sprite;
         res.glow = packed.glow;
         res.particle = this._packParticles | 0;
-        res.flags = packed.flags;
+        res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0) | (presorted ? GPU_FLAG_SORTED : 0);
+        res.staticGen = this._packSplitUsed ? this._packSplitGen : 0;
         return res;
     }
 
@@ -4276,6 +3476,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
         counts.flags = sprites.flags | 0;
+        counts.staticGen = sprites.staticGen | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
     }
@@ -4367,7 +3568,25 @@ class PreRenderWorker extends AbstractWorker {
 
     buildVisibilityPolygons() {
         if (!this.visibilityPolygonsEnabled) return;
+        // W2a: the sweep runs only in visibilitySweep.wasm (close-out group B), which init binds whenever visibility
+        // polygons are on. The JS sweep it replaced is tests/reference/visibilitySweepJs.mjs.
+        if (this._visSweep === null) {
+            if (!this._visRefusedWarned) {
+                this._visRefusedWarned = true;
+                console.error('[PRE_RENDER] raycasted lighting has no visibility sweep bound: the lights get no polygon');
+            }
+            return;
+        }
+        this._buildVisibilityPolygonsSwept();
+    }
 
+    /**
+     * W2a. The light loop, each light's sweep in visibilitySweep.wasm: the gather (visibilityGather.wasm where the
+     * scene placed its regions in the engine block, else the JS below) into the scratch on the visibility memory,
+     * then one call per light for the sweep, the polar clip and the seen owners, and _dropUnseenSwept on what it
+     * left.
+     */
+    _buildVisibilityPolygonsSwept() {
         const buf = this._vpWriteBuffer;
         if (!buf) { return; }
 
@@ -4429,6 +3648,14 @@ class PreRenderWorker extends AbstractWorker {
         const i32 = buf.i32;
         const f32 = buf.f32;
         const pose = this._displayPoseOut;
+        const sweepK = this._visSweep;
+        const sweepLight = sweepK.sweep;
+        const sweepTable = sweepK.table;
+        const sweepTableByte = sweepK.tableByte;
+        const sweepResults = sweepK.results;
+        const ownerSeenByte = sweepK.ownerSeenByte;
+        // W1: solidSegments.wasm (collectSolidWasm), bound at init; the doubles go through SOLID_ARGS.
+        const collectSolid = this._visCollectSolid;
 
         const entityLastTextureId = this.entityLastTextureId;
         const maxSelfLit = this._selfLitMax || 0;
@@ -4455,6 +3682,16 @@ class PreRenderWorker extends AbstractWorker {
 
         let lightsWritten = 0;
 
+        // W2b: each light's neighbour walk in visibilityGather.wasm when every column it reads is in the memory
+        // this frame (the published pose generations move); the compound solids and the self-lit candidates come
+        // back as events, in neighbour order.
+        const gk = this._visGather;
+        const gatherOn = gk !== null
+            && writeGatherColumns(gk, this, Grid, Transform, Collider, LightOccluder, ColliderFixture, selfLitI32 !== null);
+        const gatherRes = gatherOn ? gk.results : null;
+        const evI32 = gatherOn ? gk.eventsI32 : null;
+        const evF64 = gatherOn ? gk.eventsF64 : null;
+
         for (let li = 0; li < lightCount && lightsWritten < maxLts; li++) {
             const lightIdx = visibleLights[1 + li];
             if (!lightEnabled[lightIdx]) continue;
@@ -4467,15 +3704,97 @@ class PreRenderWorker extends AbstractWorker {
             const lx = pose[0];
             const ly = pose[1];
             const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
+            SOLID_ARGS[6] = lx;
+            SOLID_ARGS[7] = ly;
+            SOLID_ARGS[8] = influenceRadius * influenceRadius;
 
             let occCount = 0;
             let vertPool = 0;
             let occluderLimitHit = false;
-            clearPolarBins(influenceRadius);
+            if (!gatherOn) clearPolarBins(influenceRadius);
             const selfLitStart = selfLitCount;
             let solidsLit = 0;
 
-            if (neighborData && stride > 0) {
+            if (gatherOn) {
+                // The bins are cleared before the light's first solid rasters; a light with none leaves them.
+                skipPolarBins();
+                let binsCleared = false;
+                occCount = gk.gather(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha);
+                occluderLimitHit = gatherRes[3] !== 0;
+                const events = gatherRes[2];
+                for (let e = 0; e < events; e++) {
+                    const ei = e * GATHER_EVENT_I32;
+                    const ef = e * GATHER_EVENT_F64;
+                    const nIdx = evI32[ei + 1];
+                    const wx = evF64[ef + 2];
+                    const wy = evF64[ef + 3];
+                    const c = evF64[ef + 4];
+                    const s = evF64[ef + 5];
+                    if (evI32[ei] === GATHER_EV_SOLID) {
+                        if (!binsCleared) {
+                            clearPolarBins(influenceRadius);
+                            binsCleared = true;
+                        }
+                        const solid = ensureCompoundSolid(
+                            nIdx,
+                            fixtureRevision ? fixtureRevision[0] : 0,
+                            fixtureHead, fixtureNext, fixtureActiveArr,
+                            fixtureVertCount, fixtureVertX, fixtureVertY,
+                            fixtureHead[nIdx], fixturePoolMax,
+                            false // segments only: the fill is pixi's (self-lit)
+                        );
+                        SOLID_ARGS[0] = wx;
+                        SOLID_ARGS[1] = wy;
+                        SOLID_ARGS[2] = c;
+                        SOLID_ARGS[3] = s;
+                        SOLID_ARGS[4] = colOffX[nIdx] || 0;
+                        SOLID_ARGS[5] = colOffY[nIdx] || 0;
+                        const hit = collectSolid(solid, nIdx);
+                        if (!(hit > 0 && selfLitI32 && selfLitCount < maxSelfLit)) continue;
+                        const byteOff = 4 + selfLitCount * selfLitItemBytes;
+                        const i32Off = byteOff >> 2;
+                        selfLitI32[i32Off] = nIdx;
+                        selfLitI32[i32Off + 1] = lightIdx;
+                        selfLitF32[i32Off + 2] = wx;
+                        selfLitF32[i32Off + 3] = wy;
+                        selfLitF32[i32Off + 4] = c;
+                        selfLitF32[i32Off + 5] = s;
+                        const u16Off = byteOff >> 1;
+                        let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
+                        if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
+                            texId = this._resolveEntitySpriteTextureId(nIdx);
+                        }
+                        selfLitU16[u16Off + 12] = texId;
+                        selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
+                        selfLitU8[byteOff + 27] = 0;
+                        selfLitSolid[selfLitCount] = 1;
+                        solidsLit++;
+                        selfLitCount++;
+                        continue;
+                    }
+                    // A packed occluder: the kernel sends these only while the self-lit list is on.
+                    if (selfLitCount >= maxSelfLit) continue;
+                        const byteOff = 4 + selfLitCount * selfLitItemBytes;
+                        const i32Off = byteOff >> 2;
+                        selfLitI32[i32Off] = nIdx;
+                        selfLitI32[i32Off + 1] = lightIdx;
+                        selfLitF32[i32Off + 2] = wx;
+                        selfLitF32[i32Off + 3] = wy;
+                        selfLitF32[i32Off + 4] = c;
+                        selfLitF32[i32Off + 5] = s;
+                        const u16Off = byteOff >> 1;
+                        let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
+                        if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
+                            texId = this._resolveEntitySpriteTextureId(nIdx);
+                        }
+                        selfLitU16[u16Off + 12] = texId;
+                        selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
+                        selfLitU8[byteOff + 27] = 0;
+                        selfLitSolid[selfLitCount] = 0;
+                        selfLitOcc[selfLitCount] = evI32[ei + 2];
+                        selfLitCount++;
+                }
+            } else if (neighborData && stride > 0) {
                 const offset = lightIdx * stride;
                 const nCount = neighborData[offset];
                 for (let k = 0; k < nCount; k++) {
@@ -4519,10 +3838,13 @@ class PreRenderWorker extends AbstractWorker {
                             fixtureHead[nIdx], fixturePoolMax,
                             false // segments only: the fill is pixi's (self-lit)
                         );
-                        const hit = collectSolidSegments(
-                            solid, wx, wy, c, s, ox, oy,
-                            lx, ly, influenceRadius * influenceRadius, nIdx
-                        );
+                        SOLID_ARGS[0] = wx;
+                        SOLID_ARGS[1] = wy;
+                        SOLID_ARGS[2] = c;
+                        SOLID_ARGS[3] = s;
+                        SOLID_ARGS[4] = ox;
+                        SOLID_ARGS[5] = oy;
+                        const hit = collectSolid(solid, nIdx);
                         if (hit > 0 && selfLitI32 && selfLitCount < maxSelfLit) {
                             const byteOff = 4 + selfLitCount * selfLitItemBytes;
                             const i32Off = byteOff >> 2;
@@ -4659,21 +3981,31 @@ class PreRenderWorker extends AbstractWorker {
                 );
             }
 
-            let vertCount = buildVisibilityPolygon(
-                lx, ly, influenceRadius,
-                kind, cX, cY, cR, vertStart, vertCountArr, vertsX, vertsY,
-                occCount, outX, outY, maxVerts
-            );
+            // W2a: the sweep, and with compound solids in the bins the polar clip and the seen owners, in one call
+            // on the memory the gather above packed (the _vp* scratch are its views). A light with self-lit items
+            // takes a new N-19 stamp, and the kernel marks the solids its polygon shows with it.
             const polarActive = polarBinsActive();
-            if (polarActive) {
-                vertCount = clipVisibilityToPolar(
-                    lx, ly, outX, outY, vertCount, outX, outY, maxVerts
-                );
+            if (selfLitCount > selfLitStart) {
+                let stamp = (this._selfLitSeenStamp + 1) >>> 0;
+                if (stamp === 0) {
+                    this._selfLitSeen.fill(0);
+                    stamp = 1;
+                }
+                this._selfLitSeenStamp = stamp;
+                sweepTable[SWEEP_OWNER_SEEN] = solidsLit > 0 && polarActive ? ownerSeenByte : 0;
+                sweepTable[SWEEP_OWNER_STAMP] = stamp;
+            } else {
+                sweepTable[SWEEP_OWNER_SEEN] = 0;
+            }
+            const vertCount = sweepLight(sweepTableByte, lx, ly, influenceRadius, occCount, polarActive);
+            // A light the sweep gave up on (its event or active cap): the JS sweep's warning, once.
+            if (sweepResults[SWEEP_R_SEEN_VALID] === 0) {
+                warnSweepOverflow(sweepResults[SWEEP_R_EVENT_OVERFLOW] !== 0, occCount);
             }
             // N-19 / N-39: an occluder is self-lit where this light sees it, not
             // wherever it is in range (rock behind rock, a box behind a box stay dark).
             if (selfLitCount > selfLitStart) {
-                selfLitCount = this._dropUnseen(selfLitBuf, selfLitStart, selfLitCount, solidsLit > 0 && polarActive);
+                selfLitCount = this._dropUnseenSwept(selfLitBuf, selfLitStart, selfLitCount, solidsLit > 0 && polarActive);
             }
 
             // Layout: [lightIdx:i32, lightX:f32, lightY:f32, vertexCount:i32, x[N]:f32, y[N]:f32]
@@ -4701,20 +4033,20 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * N-19 / N-39. Keep this light's self-lit items [start, end) that its
-     * polygon shows: a solid when one of its polar bins is on it
-     * (markSeenPolarOwners; no bin at all means none is), a simple occluder
-     * when a sweep vertex landed on it (sweepSawOccluder). Returns the new count.
+     * W2a, N-19 / N-39. Keep this light's self-lit items [start, end) that its polygon shows, after the sweep
+     * kernel: a solid when the light's call marked it with the stamp (the kernel's ownersMarked counts the bins
+     * that did, -1 when no merge ran), a simple occluder when the kernel's N-39 stamps say a vertex landed on it
+     * (every one after a sweep that gave up, and every one past the occluder cache).
      */
-    _dropUnseen(buf, start, end, polarActive) {
-        let stamp = (this._selfLitSeenStamp + 1) >>> 0;
-        if (stamp === 0) {
-            this._selfLitSeen.fill(0);
-            stamp = 1;
-        }
-        this._selfLitSeenStamp = stamp;
+    _dropUnseenSwept(buf, start, end, polarActive) {
+        const k = this._visSweep;
+        const stamp = this._selfLitSeenStamp;
         const seen = this._selfLitSeen;
-        const solidsKnown = !polarActive || markSeenPolarOwners(seen, stamp) >= 0;
+        const solidsKnown = !polarActive || k.resultsI32[SWEEP_R_OWNERS_MARKED] >= 0;
+        const sawAll = k.results[SWEEP_R_SEEN_VALID] === 0;
+        const sweepStamp = k.results[SWEEP_R_STAMP];
+        const occSeen = k.seen;
+        const occCache = k.occCache;
         const solid = this._selfLitSolid;
         const occ = this._selfLitOcc;
         const itemBytes = this._selfLitItemBytes;
@@ -4723,7 +4055,12 @@ class PreRenderWorker extends AbstractWorker {
         let w = start;
         for (let q = start; q < end; q++) {
             const off = 4 + q * itemBytes;
-            if (solid[q] ? solidsKnown && seen[i32[off >> 2]] !== stamp : !sweepSawOccluder(occ[q])) continue;
+            if (solid[q]) {
+                if (solidsKnown && seen[i32[off >> 2]] !== stamp) continue;
+            } else {
+                const oi = occ[q];
+                if (!sawAll && oi < occCache && occSeen[oi] !== sweepStamp) continue;
+            }
             if (w !== q) {
                 u8.copyWithin(4 + w * itemBytes, off, off + itemBytes);
                 solid[w] = solid[q];

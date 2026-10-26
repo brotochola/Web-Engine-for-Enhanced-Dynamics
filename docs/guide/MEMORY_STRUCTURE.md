@@ -91,7 +91,7 @@ Every entity gets a visual-range neighbor list (Box2D owns contacts).
 | --------------------- | ------------------------------------------------------------------------------- |
 | **Size**              | `totalEntityCount * (1 + maxNeighbors) * entityIdBytes()` (default `maxNeighbors` = 128; width 16 is `* 2`) |
 | **Per-entity layout** | `[totalCount, neighbors[maxNeighbors]]` in the scene entity-id width                         |
-| **Typed array**       | `Uint16Array` at width 16, `Uint32Array` at width 32. At width 16 with spatial workers on, these rows (and the latched poses, candidate rows and per-worker lists) live in one shared `WebAssembly.Memory` (`src/util/spatialPublishMemory.js`) after a 128 KiB header, so the real buffer is larger than the size above. Width 32 uses plain SharedArrayBuffers. |
+| **Typed array**       | `Uint16Array` at width 16, `Uint32Array` at width 32. With spatial workers on, at either width, these rows (and the latched poses, the grid, candidate rows and per-worker lists) live in one shared `WebAssembly.Memory` (`src/util/spatialPublishMemory.js`) after a 128 KiB header, so the real buffer is larger than the size above. |
 
 | Writer                           | Reader                                      |
 | -------------------------------- | ------------------------------------------- |
@@ -127,18 +127,18 @@ Every entity gets a visual-range neighbor list (Box2D owns contacts).
 
 Compact index lists so workers iterate only alive/visible entities. No scanning full pools.
 
-Entity active lists use the scene id width: `[count, idx0, idx1, ...]` with `entityIdBytes()` equal to 2 or 4. Particle, decoration, and bullet lists stay `Uint16` (`* 2`), because those pools cap at 65535.
+Entity active lists use the scene id width: `[count, idx0, idx1, ...]` with `entityIdBytes()` equal to 2 or 4. Particle, decoration, and bullet lists use their own pool's width, `slotBytes` below: `Uint16` (2) while the pool holds at most 65535 slots (`particle.maxParticles`, `decoration.maxDecorations`, `bullet.maxBullets`), `Uint32` (4) past that, up to 524287. Each pool decides alone, from its own maximum, when the scene builds its buffers; its free list, the decoration spatial hash and attachment table, and the particle and sway kernels' lists follow it.
 
 | Buffer                         | Size                               | Writer                           | Reader                        |
 | ------------------------------ | ---------------------------------- | -------------------------------- | ----------------------------- |
 | `activeEntitiesData`           | `(1 + totalEntityCount) * idBytes` | Logic worker 0 (spawn/despawn)   | Spatial, particle, pre_render |
 | `perTypeActiveLists[typeName]` | `(1 + poolSize) * idBytes` each    | Logic worker 0                   | All workers                   |
-| `activeParticlesData`          | `(1 + maxParticles) * 2` bytes     | Particle worker                  | Pre_render                    |
-| `visibleParticlesData`         | `(1 + maxParticles) * 2` bytes     | Particle worker                  | Pre_render                    |
-| `activeDecorationsData`        | `(1 + maxDecorations) * 2` bytes   | DecorationPool + particle worker | Pre_render                    |
-| `visibleDecorationsData`       | `(1 + maxDecorations) * 2` bytes   | Particle worker                  | Pre_render                    |
-| `activeBulletsData`            | `(1 + maxBullets) * 2` bytes       | Logic worker                     | Pre_render                    |
-| `visibleBulletsData`           | `(1 + maxBullets) * 2` bytes       | Particle worker                  | Pre_render                    |
+| `activeParticlesData`          | `(1 + maxParticles) * slotBytes`   | Particle worker                  | Pre_render                    |
+| `visibleParticlesData`         | `(1 + maxParticles) * slotBytes`   | Particle worker                  | Pre_render                    |
+| `activeDecorationsData`        | `(1 + maxDecorations) * slotBytes` | DecorationPool + particle worker | Pre_render                    |
+| `visibleDecorationsData`       | `(1 + maxDecorations) * slotBytes` | Particle worker                  | Pre_render                    |
+| `activeBulletsData`            | `(1 + maxBullets) * slotBytes`     | Logic worker                     | Pre_render                    |
+| `visibleBulletsData`           | `(1 + maxBullets) * slotBytes`     | Particle worker                  | Pre_render                    |
 
 ---
 
@@ -207,7 +207,7 @@ Same Treiber stack as joints.
 
 ### `meshGeomData`
 
-Explicit visual mesh, one span per entity. Off unless `renderer.maxMeshVerts` > 0. Layout: `MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, entityCount)` — per entity `vertOffset` (`-1` = none), `vertCount`, `indexOffset` (`-1` = convex fan), `indexCount`, `hasUv`; arenas `vertexX/Y`, `uvU/V`, `indices` (`Uint16`, so `maxMeshVerts` ≤ 65535); one `revision`. The free-span table sits in the same SAB behind a spin lock so logic workers can allocate. Pixi only reads. The Box2D worker does not bind it.
+Explicit visual mesh, one span per entity. Off unless `renderer.maxMeshVerts` > 0. Layout: `MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, entityCount)` — per entity `vertOffset` (`-1` = none), `vertCount`, `indexOffset` (`-1` = convex fan), `indexCount`, `hasUv`; arenas `vertexX/Y`, `uvU/V`, `indices`. `vertCount` and `indices` are `Uint16` while `maxMeshVerts` ≤ 65535 and `Uint32` past that (cap 1048576), chosen from `maxMeshVerts` when each worker binds the block; one `revision`. The free-span table sits in the same SAB behind a spin lock so logic workers can allocate. Pixi only reads. The Box2D worker does not bind it.
 
 | Writer | Reader |
 | ------ | ------ |
@@ -493,6 +493,8 @@ O(1) lock-free pool allocation via a Treiber stack with an ABA tag (`src/util/at
 | `freeList`    | `poolSize * 2` bytes | `Uint16Array`   | Per-slot next links, value = `localIndex + 1`, `0` = end of chain                        |
 | `freeListTop` | 8 bytes              | `Int32Array[2]` | `[0]` packed head: `(tag << 16) \| (localIndex + 1)`, CAS-updated; `[1]` free count (stats) |
 
+A particle, decoration or bullet pool past 65535 slots (up to 524287) takes the FL4 stack instead, like entity pools at `entityIdWidth` 32: `Uint32Array` links (`poolSize * 4` bytes) and a 16-byte `Int32Array[4]` head, `[0]` = `(tag << 19) | (localIndex + 1)` with a 13-bit tag, `[2]` the free count. `SharedAtomicPool.initializeFreeList` binds the pool's stack once, from its maximum.
+
 Pops and pushes retry a `compareExchange` on the packed head; the 16-bit tag is bumped on every successful operation, which defeats ABA. The previous counter+array design raced (a pop's payload read vs. a concurrent push's payload write on the same slot), so indices could be handed out twice. Entity pool links store LOCAL slot indices; pops translate to global indices via the pool's `startIndex`.
 
 **Applied to:**
@@ -577,7 +579,7 @@ One writer per slot, so slots need no cross-writer lock. Readers use `readFrame`
 | --------------------- | ---- | ------ |
 | `queryEntityMetadata` | `16 + numTypes * 16` | `[numTypes, pad, per-type: componentMask, startIndex, endIndex]` |
 | `queryCacheSAB`       | `8 + maxQueries * 16` | `[numQueries, maxQueries, pad, per-query: queryMask, typeMask]` |
-| `queryResultsSAB`     | `numQueries * (16 + 3 * (1+N) * idBytes)` | Per query: Int32 header `[publishedSnapshot, publishedCount, publishedFrame, reserved]` + **3** snapshots of `[count, entityIndices…]`. `idBytes` is 2 or 4. `N` is the scene entity capacity (65535 at width 16, 300000 at width 32). Triple buffering avoids torn reads when a reader lags one publish. |
+| `queryResultsSAB`     | `numQueries * (16 + 3 * (1+N) * idBytes)` | Per query: Int32 header `[publishedSnapshot, publishedCount, publishedFrame, reserved]` + **3** snapshots of `[count, entityIndices…]`. `idBytes` is 2 or 4. `N` is the scene entity capacity (65535 at width 16, 500000 at width 32). Triple buffering avoids torn reads when a reader lags one publish. |
 | `queryVersionSAB`     | `4` | `[activeQueryVersion: Int32]` bumped whenever logic 0 mutates active/query lists |
 
 | Writer                                                                                                   | Reader                    |

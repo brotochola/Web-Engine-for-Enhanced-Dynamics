@@ -17,7 +17,6 @@ import {
   IMPULSE_DONE as IMPULSE_DONEImport,
   advanceImpulsePhase as advanceImpulsePhaseImport,
   swayFrequencyForBucket as swayFrequencyForBucketImport,
-  bucketFromSwayFrequency as bucketFromSwayFrequencyImport,
 } from '../util/decorationSway.js';
 import { BulletPool as BulletPoolImport } from '../core/bulletPool.js';
 import { BulletComponent as BulletComponentImport } from '../components/bulletComponent.js';
@@ -29,23 +28,20 @@ import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRend
 import { AbstractWorker } from './abstractWorker.js';
 import { Query as QueryImport } from '../core/query.js';
 import { Grid as GridImport } from '../core/grid.js';
-import { NavGrid as NavGridImport, DIRECTION as DIRECTIONImport, DIR_TO_VEC as DIR_TO_VECImport } from '../core/navGrid.js';
+import { NavGrid as NavGridImport } from '../core/navGrid.js';
 import {
   calculateSpeed as calculateSpeedImport,
   calculateCameraScreenBounds,
   screenBoundsToWorldBounds,
 } from '../util/utils.js';
 import { Decal as DecalImport } from '../core/decal.js';
-import {
-  updateParticlePhysicsBuffers as updateParticlePhysicsBuffersImport,
-  buildActiveListBuffers as buildActiveListBuffersImport,
-  buildActiveAndVisibleListBuffers as buildActiveAndVisibleListBuffersImport,
-  buildActiveAndVisibleListBuffersTurned as buildActiveAndVisibleListBuffersTurnedImport,
-} from '../util/particleIntegrate.js';
+import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
-import { bindDecorationSway, writeSwayColumns, TRIG_IMPULSE } from './decorationSwayClient.js';
+import { bindDecorationSway, writeSwayColumns } from './decorationSwayClient.js';
+import { bindBulletTick } from '../core/bulletTickClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
+import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
 import {
   getColliderBounds as getColliderBoundsImport,
   getCellRange as getCellRangeImport,
@@ -69,7 +65,6 @@ const SWAY_ANGLE_PER_MS = SWAY_ANGLE_PER_MSImport;
 const IMPULSE_DONE = IMPULSE_DONEImport;
 const advanceImpulsePhase = advanceImpulsePhaseImport;
 const swayFrequencyForBucket = swayFrequencyForBucketImport;
-const bucketFromSwayFrequency = bucketFromSwayFrequencyImport;
 const BulletPool = BulletPoolImport;
 const BulletComponent = BulletComponentImport;
 const Transform = TransformImport;
@@ -80,14 +75,8 @@ const SpriteRenderer = SpriteRendererImport;
 const Query = QueryImport;
 const Grid = GridImport;
 const NavGrid = NavGridImport;
-const DIRECTION = DIRECTIONImport;
-const DIR_TO_VEC = DIR_TO_VECImport;
 const calculateSpeed = calculateSpeedImport;
 const Decal = DecalImport;
-const updateParticlePhysicsBuffers = updateParticlePhysicsBuffersImport;
-const buildActiveListBuffers = buildActiveListBuffersImport;
-const buildActiveAndVisibleListBuffers = buildActiveAndVisibleListBuffersImport;
-const buildActiveAndVisibleListBuffersTurned = buildActiveAndVisibleListBuffersTurnedImport;
 const getColliderBounds = getColliderBoundsImport;
 const getCellRange = getCellRangeImport;
 const _boundsResult = _boundsResultImport;
@@ -101,14 +90,6 @@ const TOMBSTONE_SLOT = 2;
 const NAV_DX = Object.freeze([0, 1, 1, 1, 0, -1, -1, -1]);
 const NAV_DY = Object.freeze([-1, -1, 0, 1, 1, 1, 0, -1]);
 const NAV_COST = Object.freeze([10, 14, 10, 14, 10, 14, 10, 14]);
-const NAV_OPPOSITE_DIR = Object.freeze([
-  DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW,
-  DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
-]);
-const NAV_DIR_MAP = Object.freeze([
-  DIRECTION.N, DIRECTION.NE, DIRECTION.E, DIRECTION.SE,
-  DIRECTION.S, DIRECTION.SW, DIRECTION.W, DIRECTION.NW,
-]);
 
 function nextPowerOfTwo(value) {
   let n = 1;
@@ -275,37 +256,16 @@ class PathRequestQueue {
 }
 
 /**
- * NavScratch - Reusable buffers for pathfinding algorithms
+ * NavScratch: reusable buffers for the A* search (computePath). The flowfield searches in the navigation memory
+ * (navFlowfield.wasm).
  */
 class NavScratch {
   constructor(totalCells, maxPathLength, gridWidth, gridHeight) {
-    this.visited = new Uint8Array(totalCells);
     this.stamp = new Uint32Array(totalCells);
     this.currentStamp = 0;
 
-    this.distance = new Uint16Array(totalCells);
-    this.direction = new Uint8Array(totalCells);
-    this.smoothedVectors = new Int8Array(totalCells * 2);
-
+    // The flowfield's distance cap, which navFlowfield.wasm takes (bindNavFlowfield).
     this.maxDistance = Math.min(65535, (gridWidth + gridHeight) * 14);
-    this.bucketHead = new Int32Array(this.maxDistance + 1);
-    this.bucketTail = new Int32Array(this.maxDistance + 1);
-    this.bucketNodeNext = new Int32Array(totalCells);
-    this.bucketNodePrev = new Int32Array(totalCells);
-    this.bucketNodeDist = new Int32Array(totalCells);
-    this.bucketNodeCell = new Uint32Array(totalCells);
-    for (let i = 0; i <= this.maxDistance; i++) {
-      this.bucketHead[i] = -1;
-      this.bucketTail[i] = -1;
-    }
-    for (let i = 0; i < totalCells; i++) {
-      this.bucketNodeNext[i] = -1;
-      this.bucketNodePrev[i] = -1;
-      this.bucketNodeDist[i] = -1;
-      this.bucketNodeCell[i] = i;
-    }
-    this.bucketHeadDistance = 0;
-    this.bucketCount = 0;
 
     this.heapCell = new Uint32Array(totalCells);
     this.heapFCost = new Uint32Array(totalCells);
@@ -322,15 +282,6 @@ class NavScratch {
       this.stamp.fill(0);
       this.currentStamp = 1;
     }
-
-    this.bucketHeadDistance = 0;
-    this.bucketCount = 0;
-    this.bucketHead.fill(-1);
-    this.bucketTail.fill(-1);
-    this.bucketNodeNext.fill(-1);
-    this.bucketNodePrev.fill(-1);
-    this.bucketNodeDist.fill(-1);
-
     this.heapSize = 0;
   }
 
@@ -390,13 +341,17 @@ class ParticleWorker extends AbstractWorker {
     this._activeDecorationSnapshotCount = 0;
     // W22: decorationSway.wasm on the render-queue memory, or null (the JS loop).
     this._swayWasm = null;
+    // _swayRefused said its reason.
+    this._swayRefusedWarned = false;
 
     // Navigation
     this.navEnabled = false;
     this.scratch = null;
-    // W14: navFlowfield.wasm on the navigation memory, or null (the JS search).
+    // W14: navFlowfield.wasm on the navigation memory, bound with navigation.
     this._flowWasm = null;
     this.flowfieldRequests = null;
+    /** W26: the decal stamp kernel, on the decal memory the tiles live in; stamps queue as records. */
+    this._decalWasm = null;
     this.pathRequests = null;
     this._pathRequestTmp = { key: 0, fromCell: 0, toCell: 0 };
     this.gridWidth = 0;
@@ -429,8 +384,7 @@ class ParticleWorker extends AbstractWorker {
 
     // Active particle tracking
     this.activeParticleIndices = null;
-    // The WASM integrate (E-79) and list build (E-80), bound in initialize when the scene gives a
-    // particle memory.
+    // The WASM integrate (E-79) and list build (E-80), bound in initialize on the particle memory.
     this._wasmIntegrate = null;
     this._wasmLists = null;
 
@@ -459,25 +413,8 @@ class ParticleWorker extends AbstractWorker {
     this._impactHeader = null; // Int32Array view: [0]=count, [1]=batch sequence
     this._impactData = null;
     this._maxImpactsPerFrame = 0;
-    this._stampArgs = {
-      worldX: 0,
-      worldY: 0,
-      tint: 0,
-      scaleX: 1,
-      scaleY: 1,
-      alpha: 1,
-      blendMode: 0,
-      textureRgba: null,
-      texWidth: 0,
-      texHeight: 0,
-      decalsTiles: null,
-      decalsTilesDirty: null,
-      decalsTileSize: 0,
-      decalsTilePixelSize: 0,
-      decalsTilesX: 0,
-      decalsTilesY: 0,
-      decalsResolution: 0,
-    };
+    /** Decal textures the decal memory does not hold, warned about once each (stampParticleToTile). */
+    this._decalTexturesMissing = new Set();
   }
 
   /**
@@ -509,34 +446,26 @@ class ParticleWorker extends AbstractWorker {
 
     // Initialize particle arrays
     if (this.maxParticles > 0 && data.buffers.componentData.ParticleComponent) {
-      this.particlesToStamp = new Uint16Array(this.maxParticles);
-      this.activeParticleIndices = new Uint16Array(this.maxParticles);
-      this._wasmIntegrate = null;
-      this._wasmLists = null;
-      if (data.particleMemory && data.particleLayout) {
-        // E-80: the integrate's input is the published active list, which is in the particle memory.
-        this.activeParticleIndices = new Uint16Array(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
-        // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
-        if (this.config?.wasm?.particleIntegrate !== false) {
-          try {
-            this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles);
-            this.particlesToStamp = this._wasmIntegrate.stamp;
-          } catch (err) {
-            console.error('[particle] integrate wasm unavailable', err);
-            this._wasmIntegrate = null;
-          }
-        }
-        // E-80: the active and visible lists built in WASM.
-        if (this.config?.wasm?.particleLists !== false) {
-          try {
-            this._wasmLists = await bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent);
-          } catch (err) {
-            console.error('[particle] list wasm unavailable', err);
-            this._wasmLists = null;
-          }
-        }
-      }
+      // E-129: slot ids are u32 past 65 535 particles, in every list.
+      const ParticleSlots = PoolSlotArray(this.maxParticles);
+      if (!data.particleMemory || !data.particleLayout) throw new Error('particles without the particle memory (createParticleMemory)');
+      // E-80: the integrate's input is the published active list, which is in the particle memory.
+      this.activeParticleIndices = new ParticleSlots(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
+      // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
+      // wasm.particleIntegrateF32 (default on) takes the kernel's float32 integrate, chosen once here.
+      this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles, {
+        f32: this.config?.wasm?.particleIntegrateF32 !== false,
+      });
+      this.particlesToStamp = this._wasmIntegrate.stamp;
+      // E-80: the active and visible lists built in WASM; wasm.particleListsF32 (default on) takes the
+      // kernel's float32 screen test, chosen once here.
+      this._wasmLists = await bindParticleLists(data.particleMemory, data.particleLayout, ParticleComponent, {
+        f32: this.config?.wasm?.particleListsF32 !== false,
+      });
     }
+    // W22: the sway kernel, bound below when the scene laid its regions out (a worker initialized again drops
+    // the last one).
+    this._swayWasm = null;
     if (this.maxDecorations > 0) {
       const buckets = this.config?.particle?.swayFrequencyBuckets | 0;
       this._swayBuckets = buckets > 1 ? buckets : 0;
@@ -544,7 +473,8 @@ class ParticleWorker extends AbstractWorker {
       const swayLayout = this._swayRegions(data);
       const swayBuffer = swayLayout ? data.renderQueueMemory.buffer : null;
       const swayView = (Type, byte, length) => (swayLayout ? new Type(swayBuffer, byte, length) : new Type(length));
-      this._activeDecorationSnapshot = swayView(Uint16Array, swayLayout?.snapshotByte, this.maxDecorations);
+      // E-129: u32 past 65 535 decorations, as the sway regions and the kernel bound for them.
+      this._activeDecorationSnapshot = swayView(PoolSlotArray(this.maxDecorations), swayLayout?.snapshotByte, this.maxDecorations);
       if (this._swayBuckets) {
         this._phaseSin = swayView(Float32Array, swayLayout?.phaseSinByte, this.maxDecorations);
         this._phaseCos = swayView(Float32Array, swayLayout?.phaseCosByte, this.maxDecorations);
@@ -579,11 +509,26 @@ class ParticleWorker extends AbstractWorker {
       }
       if (swayLayout) {
         try {
-          this._swayWasm = await bindDecorationSway(data.renderQueueMemory, swayLayout);
+          // wasm.decorationSwayF32 (default on) takes the kernel's float32 sway, chosen once here.
+          this._swayWasm = await bindDecorationSway(data.renderQueueMemory, swayLayout, {
+            f32: this.config?.wasm?.decorationSwayF32 !== false,
+          });
         } catch (err) {
-          console.warn('[particle] decorationSway.wasm did not load; swaying in JS', err);
-          this._swayWasm = null;
+          throw new Error(`[particle] decorationSway.wasm did not load: ${err?.message ?? err}`, { cause: err });
         }
+      }
+    }
+
+    // W19: the bullet tick in WASM, where the pool, Transform, Collider and the grid share the engine block (the scene
+    // lays the regions out whenever it has bullets and a spatial grid). BulletPool.tick casts in JS where the kernel
+    // cannot read the grid: no spatial workers, or the spatial memory outside the block.
+    BulletPoolImport._wasm = null;
+    const bulletLayout = data.renderQueueLayout?.collect?.bullets || null;
+    if (bulletLayout && data.renderQueueMemory && this.maxBullets > 0) {
+      try {
+        BulletPoolImport._wasm = await bindBulletTick(data.renderQueueMemory, bulletLayout);
+      } catch (err) {
+        throw new Error(`[particle] bulletTick.wasm did not load: ${err?.message ?? err}`, { cause: err });
       }
     }
 
@@ -600,7 +545,9 @@ class ParticleWorker extends AbstractWorker {
       this.decalsTilesY = data.decals.tilesY;
       this.decalsTotalTiles = data.decals.totalTiles;
 
-      this.decalsTilesRGBA = new Uint8ClampedArray(data.decals.tilesRGBA);
+      // The tiles' bytes only: with W26 their buffer is the decal memory, the kernel's scratch after them.
+      this.decalsTilesRGBA = new Uint8ClampedArray(
+        data.decals.tilesRGBA, 0, data.decals.totalTiles * data.decals.tilePixelSize * data.decals.tilePixelSize * 4);
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
       Decal.bindStampRing(data.decals.stampRing || data.buffers?.decalStampRing || null);
       Decal.bindStampApply(this.stampParticleToTile.bind(this));
@@ -611,8 +558,17 @@ class ParticleWorker extends AbstractWorker {
             width: textureData.width,
             height: textureData.height,
             rgba: new Uint8ClampedArray(textureData.rgba),
+            // W26: the texture's copy in the decal memory, -1 without one.
+            wasmByte: -1,
           };
         }
+      }
+      // W26: the stamps through decalStamp.wasm, on the decal memory the tiles live in (installDecalMemory).
+      if (!data.decals.memory || !data.decals.memoryLayout) throw new Error('decals without the decal memory (installDecalMemory)');
+      this._decalWasm = await bindDecalStamp(data.decals.memory, data.decals.memoryLayout, this.decalsTilesX, this.decalsTilesY);
+      for (const [textureId, placed] of Object.entries(this._decalWasm.textures)) {
+        const texture = this.decalTextures[textureId];
+        if (texture) texture.wasmByte = placed.byte;
       }
       // console.log('[PARTICLE WORKER] Decals system initialized');
     } else {
@@ -648,21 +604,16 @@ class ParticleWorker extends AbstractWorker {
         this.gridHeight
       );
 
-      // W14: the flowfield search in WASM, when the nav buffer is the navigation memory's.
-      if (data.navigationMemory && data.navigationLayout && this.config?.wasm?.navFlowfield !== false
-        && data.navigationMemory.buffer === data.buffers.navigationData) {
-        try {
-          this._flowWasm = await bindNavFlowfield(data.navigationMemory, data.navigationLayout, {
-            walkability: NavGrid.getWalkabilityArray(),
-            gridWidth: this.gridWidth,
-            gridHeight: this.gridHeight,
-            maxDistance: this.scratch.maxDistance,
-          });
-        } catch (err) {
-          console.warn('[particle] navFlowfield.wasm did not load; searching in JS', err);
-          this._flowWasm = null;
-        }
+      // W14: the flowfield search in navFlowfield.wasm, on the navigation memory the nav buffer lives in.
+      if (!data.navigationMemory || !data.navigationLayout || data.navigationMemory.buffer !== data.buffers.navigationData) {
+        throw new Error('navigation without its navigation memory (createNavigationMemory)');
       }
+      this._flowWasm = await bindNavFlowfield(data.navigationMemory, data.navigationLayout, {
+        walkability: NavGrid.getWalkabilityArray(),
+        gridWidth: this.gridWidth,
+        gridHeight: this.gridHeight,
+        maxDistance: this.scratch.maxDistance,
+      });
 
       const flowfieldQueueCapacity = Math.max(32, this.maxFlowfields * 8);
       const pathQueueCapacity = Math.max(64, this.maxPaths * 8);
@@ -808,6 +759,8 @@ class ParticleWorker extends AbstractWorker {
     const ringStamps = Decal.drainStampRing((x, y, tint, scaleX, scaleY, textureId, alpha, blendMode) => {
       this.stampParticleToTile(x, y, tint, scaleX, scaleY, textureId, alpha, blendMode);
     });
+    // W26: the frame's stamps, queued as records, in one kernel call.
+    this.flushDecalStamps();
     this.particlesStampedThisFrame += ringStamps;
     if (shouldProfile) {
       this.decalStampTimeThisFrame += performance.now() - startTime;
@@ -880,29 +833,12 @@ class ParticleWorker extends AbstractWorker {
   buildActiveAndVisibleParticleLists() {
     if (this.maxParticles === 0) return;
 
-    const active = ParticleComponent.active;
-    const localIndices = this.activeParticleIndices;
-    const activeData = this.activeParticlesData;
-    const visibleData = this.visibleParticlesData;
+    // CPU emitter pool only. LiquidFun lives on its own render SAB.
     const maxParticles = this.maxParticles;
 
-    // CPU emitter pool only. LiquidFun lives on its own render SAB.
-    const expectedActive = maxParticles;
-
-    // Early exit if camera not ready (can't calculate visibility)
+    // Camera not ready: the active list alone (no visibility to test).
     if (!this.cameraData) {
-      if (this._wasmLists) {
-        this.activeParticleCount = buildActiveParticleListWasm(this._wasmLists, maxParticles);
-        return;
-      }
-      this.activeParticleCount = buildActiveListBuffers(
-        maxParticles,
-        active,
-        localIndices,
-        activeData,
-        expectedActive,
-      );
-      if (visibleData) visibleData[0] = 0;
+      this.activeParticleCount = buildActiveParticleListWasm(this._wasmLists, maxParticles);
       return;
     }
 
@@ -912,43 +848,15 @@ class ParticleWorker extends AbstractWorker {
     // _frameCameraBounds filled _drawnCam this frame. A turned camera tests each
     // particle in view space, not in the box around the view (E-51b).
     const rotation = this._drawnCam.rotation;
-    if (this._wasmLists) {
-      this.activeParticleCount = buildParticleListsWasm(
-        this._wasmLists,
-        maxParticles,
-        cameraBounds,
-        rotation,
-        this.canvasWidth,
-        this.canvasHeight,
-        this.cullingRatio,
-      );
-      return;
-    }
-    const { activeCount } = rotation
-      ? buildActiveAndVisibleListBuffersTurned(
-        ParticleComponent,
-        maxParticles,
-        localIndices,
-        activeData,
-        visibleData,
-        expectedActive,
-        cameraBounds,
-        rotation,
-        this.canvasWidth,
-        this.canvasHeight,
-        this.cullingRatio,
-      )
-      : buildActiveAndVisibleListBuffers(
-        ParticleComponent,
-        maxParticles,
-        localIndices,
-        activeData,
-        visibleData,
-        expectedActive,
-        cameraBounds,
-      );
-
-    this.activeParticleCount = activeCount;
+    this.activeParticleCount = buildParticleListsWasm(
+      this._wasmLists,
+      maxParticles,
+      cameraBounds,
+      rotation,
+      this.canvasWidth,
+      this.canvasHeight,
+      this.cullingRatio,
+    );
     // if (activeCount !== this._lastLoggedActiveCount) {
     //   this._lastLoggedActiveCount = activeCount;
     //   const x0 = ParticleComponent.x ? ParticleComponent.x[0] : 0;
@@ -1189,25 +1097,15 @@ class ParticleWorker extends AbstractWorker {
   updateParticlePhysics(deltaTime, dtRatio) {
     if (this.maxParticles === 0) return 0;
 
-    // E-79: chosen here, per frame; both write the same state (tests/node/particleIntegrateWasm.test.js).
-    const { activeCount, stampedCount } = this._wasmIntegrate
-      ? integrateParticlesWasm(
-        this._wasmIntegrate,
-        ParticleComponent,
-        this.activeParticleCount,
-        deltaTime,
-        dtRatio,
-        this.decalsEnabled && this.particlesToStamp,
-      )
-      : updateParticlePhysicsBuffers(
-        ParticleComponent,
-        this.activeParticleIndices,
-        this.activeParticleCount,
-        deltaTime,
-        dtRatio,
-        this.decalsEnabled,
-        this.particlesToStamp,
-      );
+    // E-79: the integrate in WASM (tests/node/particleIntegrateWasm.test.js holds it to the JS one it replaced).
+    const { activeCount, stampedCount } = integrateParticlesWasm(
+      this._wasmIntegrate,
+      ParticleComponent,
+      this.activeParticleCount,
+      deltaTime,
+      dtRatio,
+      this.decalsEnabled && this.particlesToStamp,
+    );
 
     this.particlesToStampCount = stampedCount;
     return activeCount;
@@ -1255,126 +1153,75 @@ class ParticleWorker extends AbstractWorker {
   stampParticleToTile(worldX, worldY, tint, scaleX, scaleY, textureId, alpha, blendMode) {
     const texture = this.decalTextures[textureId];
     if (!texture) return;
+    // W26: a record for decalStamp.wasm (written here, so no double crosses a call), stamped at the flush.
+    const b = this._decalWasm;
+    if (b === null) return;
+    // The memory holds every well-formed texture (createDecalMemory): one it left out has no pixels to stamp.
+    if (texture.wasmByte < 0) {
+      if (!this._decalTexturesMissing.has(textureId)) {
+        this._decalTexturesMissing.add(textureId);
+        console.warn(`[PARTICLE WORKER] decal texture ${textureId} is not in the decal memory (no pixels?); its stamps are skipped`);
+      }
+      return;
+    }
+    if (b.count === b.maxStamps) this.flushDecalStamps();
+    const n = b.count;
+    const f = n << 3;
+    const u = n << 4;
+    b.f64[f] = worldX;
+    b.f64[f + 1] = worldY;
+    b.f64[f + 2] = scaleX;
+    b.f64[f + 3] = scaleY;
+    b.f64[f + 4] = alpha;
+    b.u32[u + 10] = tint;
+    b.u32[u + 11] = blendMode === 1 ? 1 : 0;
+    b.u32[u + 12] = texture.wasmByte;
+    b.u32[u + 13] = texture.width;
+    b.u32[u + 14] = texture.height;
+    b.count = n + 1;
+  }
 
-    const p = this._stampArgs;
-    p.worldX = worldX;
-    p.worldY = worldY;
-    p.tint = tint;
-    p.scaleX = scaleX;
-    p.scaleY = scaleY;
-    p.alpha = alpha;
-    p.blendMode = blendMode;
-    p.textureRgba = texture.rgba;
-    p.texWidth = texture.width;
-    p.texHeight = texture.height;
-    p.decalsTiles = this.decalsTilesRGBA;
-    p.decalsTilesDirty = this.decalsTilesDirty;
-    p.decalsTileSize = this.decalsTileSize;
-    p.decalsTilePixelSize = this.decalsTilePixelSize;
-    p.decalsTilesX = this.decalsTilesX;
-    p.decalsTilesY = this.decalsTilesY;
-    p.decalsResolution = this.decalsResolution;
-    Decal.stampToTileBuffers(p);
+  /** W26: stamp the records queued since the last flush (stampParticleToTile) and set their tiles dirty. */
+  flushDecalStamps() {
+    const b = this._decalWasm;
+    if (b === null || b.count === 0) return 0;
+    return flushDecalStamps(b, this.decalsTilesDirty, this.decalsTileSize, this.decalsResolution);
   }
 
   // ========================================
   // DECORATION SWAY
   // ========================================
 
+  /**
+   * The decorations' sway (W22, close-out group B), in decorationSway.wasm on the render-queue memory: on the
+   * frequency grid (particle.swayFrequencyBuckets > 1) _updateDecorationSwayBuckets, else sway_free, every
+   * decoration's own sine in the kernel. Parented decorations sway in resolveAttachedDecorations. A frame the kernel
+   * cannot take does not sway, and the worker says why once (_swayRefused). The JS loops it replaced are
+   * tests/reference/decorationSwayJs.mjs.
+   */
   updateDecorationSway(deltaTime = 0) {
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
-
-    const activeData = this._activeDecorationSnapshot;
     const activeCount = this._activeDecorationSnapshotCount;
     if (activeCount === 0) return;
-
-    const active = DecorationComponent.active;
-    const sway = DecorationComponent.sway;
-    const swayAmplitude = DecorationComponent.swayAmplitude;
-    const swayFrequency = DecorationComponent.swayFrequency;
-    const swayPhase = DecorationComponent.swayPhase;
-    const rotC = DecorationComponent.rotC;
-    const rotS = DecorationComponent.rotS;
-    const baseRotC = DecorationComponent.baseRotC;
-    const baseRotS = DecorationComponent.baseRotS;
-
     const swayBaseAngle = this.accumulatedTime * SWAY_ANGLE_PER_MS;
-
     if (this._swayBuckets > 1) {
       this._updateDecorationSwayBuckets(deltaTime, swayBaseAngle);
       return;
     }
-
-    const parentEntityIndex = DecorationComponent.parentEntityIndex;
-    const isItOnScreen = DecorationComponent.isItOnScreen;
-
-    // OPTIMIZED: Iterate over the stable active snapshot instead of maxDecorations.
-    for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[idx];
-      if (!active[i]) continue;
-      if (parentEntityIndex[i] !== this._noParent) continue;
-      if (!isItOnScreen[i]) continue;
-
-      const mode = sway[i];
-      if (mode === SWAY_OFF) continue;
-      const bc = baseRotC[i];
-      const bs = baseRotS[i];
-      let delta = 0;
-      if (mode === SWAY_LOOP || mode === SWAY_LOOP_SKEW) {
-        delta = Math.sin(swayBaseAngle * swayFrequency[i] + i * 0.1) * swayAmplitude[i];
-        if (mode === SWAY_LOOP_SKEW) {
-          rotC[i] = SWAY_SKEW_C;
-          rotS[i] = delta;
-          continue;
-        }
-      } else if (mode === SWAY_IMPULSE) {
-        const nextPhase = advanceImpulsePhase(swayPhase[i], deltaTime, swayFrequency[i]);
-        if (nextPhase === IMPULSE_DONE) {
-          sway[i] = SWAY_OFF;
-          swayPhase[i] = 0;
-          rotC[i] = bc;
-          rotS[i] = bs;
-          continue;
-        }
-        swayPhase[i] = nextPhase;
-        delta = Math.sin(nextPhase) * swayAmplitude[i];
-      }
-      if (delta !== 0) {
-        const ad = delta < 0 ? -delta : delta;
-        const dc = ad < 0.08 ? 1 : Math.cos(delta);
-        const ds = ad < 0.08 ? delta : Math.sin(delta);
-        rotC[i] = bc * dc - bs * ds;
-        rotS[i] = bs * dc + bc * ds;
-      } else {
-        rotC[i] = bc;
-        rotS[i] = bs;
-      }
-    }
+    if (!this._swayReady()) return;
+    const bound = this._swayWasm;
+    bound.free(bound.tableByte, activeCount, deltaTime, swayBaseAngle);
   }
 
   /**
-   * Same loop as updateDecorationSway, but SWAY_LOOP uses the frequency grid.
-   * Chosen once per frame so the hot path has no fallback into Math.sin.
+   * The sway on the frequency grid: this frame's per-bucket Math.sin / Math.cos and the cache reset, then
+   * sway_decorations (the bucket cache and the impulse step per decoration), then the Math.sin / Math.cos of the
+   * decorations it listed (an impulse's sine, an angle of 0.08 rad or more), finished in C too.
    */
   _updateDecorationSwayBuckets(deltaTime, swayBaseAngle) {
-    const activeData = this._activeDecorationSnapshot;
-    const activeCount = this._activeDecorationSnapshotCount;
-    const active = DecorationComponent.active;
-    const sway = DecorationComponent.sway;
-    const swayAmplitude = DecorationComponent.swayAmplitude;
-    const swayFrequency = DecorationComponent.swayFrequency;
-    const swayPhase = DecorationComponent.swayPhase;
-    const rotC = DecorationComponent.rotC;
-    const rotS = DecorationComponent.rotS;
-    const baseRotC = DecorationComponent.baseRotC;
-    const baseRotS = DecorationComponent.baseRotS;
-    const parentEntityIndex = DecorationComponent.parentEntityIndex;
-    const isItOnScreen = DecorationComponent.isItOnScreen;
     const k = this._swayBuckets;
     const sA = this._bucketSin;
     const cA = this._bucketCos;
-    const phaseSin = this._phaseSin;
-    const phaseCos = this._phaseCos;
     for (let b = 0; b < k; b++) {
       const a = swayBaseAngle * swayFrequencyForBucket(b, k);
       sA[b] = Math.sin(a);
@@ -1385,126 +1232,39 @@ class ParticleWorker extends AbstractWorker {
       this._swayBucketCacheK = k;
       this._swayBucketFreq.fill(-1);
     }
-    // W22. The loop below in decorationSway.wasm, when it can read every column.
-    if (this._swayWasm !== null && this._swayFrameWasm(activeCount, k, deltaTime)) return;
-    const bucketOf = this._swayBucketOf;
-    const bucketFreq = this._swayBucketFreq;
-    const noParent = this._noParent;
-
-    for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[idx];
-      if (!active[i]) continue;
-      if (parentEntityIndex[i] !== noParent) continue;
-      if (!isItOnScreen[i]) continue;
-
-      const mode = sway[i];
-      if (mode === SWAY_OFF) continue;
-      const bc = baseRotC[i];
-      const bs = baseRotS[i];
-      let delta = 0;
-      if (mode === SWAY_LOOP || mode === SWAY_LOOP_SKEW) {
-        // Self-validating bucket cache.
-        //
-        // `bucketFromSwayFrequency` recomputes `2 / (k - 1)`, then divides,
-        // rounds and clamps - per decoration, per frame. The loop above already
-        // hoists the sin/cos for exactly this reason ("chosen once per frame so
-        // the hot path has no fallback into Math.sin"), and this call was the
-        // same mistake one layer down.
-        //
-        // A steady state hit is two typed-array reads and a float compare,
-        // replacing a division. A miss recomputes and revalidates, so a
-        // decoration whose swayFrequency changed is correct on the same frame it
-        // changes - there is no window in which the cache is wrong.
-        const f = swayFrequency[i];
-        let b = bucketOf[i];
-        if (bucketFreq[i] !== f) {
-          b = bucketFromSwayFrequency(f, k);
-          bucketOf[i] = b;
-          bucketFreq[i] = f;
-        }
-        delta = (sA[b] * phaseCos[i] + cA[b] * phaseSin[i]) * swayAmplitude[i];
-        if (mode === SWAY_LOOP_SKEW) {
-          rotC[i] = SWAY_SKEW_C;
-          rotS[i] = delta;
-          continue;
-        }
-      } else if (mode === SWAY_IMPULSE) {
-        const nextPhase = advanceImpulsePhase(swayPhase[i], deltaTime, swayFrequency[i]);
-        if (nextPhase === IMPULSE_DONE) {
-          sway[i] = SWAY_OFF;
-          swayPhase[i] = 0;
-          rotC[i] = bc;
-          rotS[i] = bs;
-          continue;
-        }
-        swayPhase[i] = nextPhase;
-        delta = Math.sin(nextPhase) * swayAmplitude[i];
-      }
-      if (delta !== 0) {
-        const ad = delta < 0 ? -delta : delta;
-        const dc = ad < 0.08 ? 1 : Math.cos(delta);
-        const ds = ad < 0.08 ? delta : Math.sin(delta);
-        rotC[i] = bc * dc - bs * ds;
-        rotS[i] = bs * dc + bc * ds;
-      } else {
-        rotC[i] = bc;
-        rotS[i] = bs;
-      }
-    }
+    if (!this._swayReady()) return;
+    const bound = this._swayWasm;
+    const n = bound.sway(bound.tableByte, this._activeDecorationSnapshotCount, k, deltaTime);
+    if (n > 0) bound.finishTrig(bound.tableByte, n, bound.trigIndexMask, bound.trigImpulse);
   }
 
-  /** W22. The scene's sway regions when they fit this worker's decorations and grid, else null (the JS sway). */
+  /** W22. The scene's sway regions when they fit this worker's decorations and grid, else null (no sway). */
   _swayRegions(data) {
     const s = data.renderQueueLayout?.sway;
-    if (!s || !data.renderQueueMemory || this.config?.wasm?.decorationSway === false) return null;
-    if (s.decorations !== this.maxDecorations || s.buckets !== this._swayBuckets || this._swayBuckets <= 1) return null;
+    if (!s || !data.renderQueueMemory) return null;
+    if (s.decorations !== this.maxDecorations || s.buckets !== this._swayBuckets) return null;
     // The kernel reads DecorationComponent where the scene bound it: the memory's decorations block.
     const rotC = DecorationComponent.rotC;
     if (!rotC || rotC.buffer !== data.renderQueueMemory.buffer) return null;
     return s;
   }
 
-  /**
-   * W22. _updateDecorationSwayBuckets' loop in decorationSway.wasm (sway_decorations), after this frame's
-   * bucket angles; then the Math.sin / Math.cos of the decorations it listed. False when the kernel cannot
-   * read a column (the JS loop runs).
-   */
-  _swayFrameWasm(activeCount, k, deltaTime) {
-    const b = this._swayWasm;
-    if (!writeSwayColumns(b, this, DecorationComponent)) return false;
-    const n = b.sway(b.tableByte, activeCount, k, deltaTime);
-    if (n > 0) this._finishSwayTrig(b.trig, b.trigValue, n);
+  /** The sway kernel's column table for this frame; false, said once, when it cannot take the frame. */
+  _swayReady() {
+    if (this._swayWasm === null) return this._swayRefused('the render-queue memory has no sway regions for these decorations');
+    if (!writeSwayColumns(this._swayWasm, this, DecorationComponent)) {
+      return this._swayRefused('a column it reads is outside the render-queue memory');
+    }
     return true;
   }
 
-  /**
-   * W22. The rest of the loop body for the decorations the kernel listed, in its order: an impulse's
-   * Math.sin(phase) * swayAmplitude, then the rotation with its Math.cos / Math.sin past 0.08 rad.
-   */
-  _finishSwayTrig(trig, trigValue, n) {
-    const rotC = DecorationComponent.rotC;
-    const rotS = DecorationComponent.rotS;
-    const baseRotC = DecorationComponent.baseRotC;
-    const baseRotS = DecorationComponent.baseRotS;
-    const swayAmplitude = DecorationComponent.swayAmplitude;
-    for (let t = 0; t < n; t++) {
-      const e = trig[t];
-      const i = e & 0xffff;
-      let delta = trigValue[t];
-      if ((e & TRIG_IMPULSE) !== 0) delta = Math.sin(delta) * swayAmplitude[i];
-      const bc = baseRotC[i];
-      const bs = baseRotS[i];
-      if (delta !== 0) {
-        const ad = delta < 0 ? -delta : delta;
-        const dc = ad < 0.08 ? 1 : Math.cos(delta);
-        const ds = ad < 0.08 ? delta : Math.sin(delta);
-        rotC[i] = bc * dc - bs * ds;
-        rotS[i] = bs * dc + bc * ds;
-      } else {
-        rotC[i] = bc;
-        rotS[i] = bs;
-      }
+  /** A frame the sway kernel cannot take: the decorations keep their rotations, the reason said once. */
+  _swayRefused(reason) {
+    if (!this._swayRefusedWarned) {
+      this._swayRefusedWarned = true;
+      console.error(`[particle] the sway kernel cannot take the decorations (${reason}): they do not sway`);
     }
+    return false;
   }
 
   // ========================================
@@ -1634,208 +1394,8 @@ class ParticleWorker extends AbstractWorker {
     return false;
   }
 
-  _bucketInsertCell(scratch, cell, bucket) {
-    const clampedBucket = bucket > scratch.maxDistance ? scratch.maxDistance : bucket;
-    const oldBucket = scratch.bucketNodeDist[cell];
-    if (oldBucket >= 0) {
-      if (oldBucket === clampedBucket) return;
-      this._bucketUnlinkCell(scratch, cell, oldBucket);
-    }
-
-    const head = scratch.bucketHead[clampedBucket];
-    scratch.bucketNodePrev[cell] = -1;
-    scratch.bucketNodeNext[cell] = head;
-    if (head >= 0) {
-      scratch.bucketNodePrev[head] = cell;
-    } else {
-      scratch.bucketTail[clampedBucket] = cell;
-    }
-    scratch.bucketHead[clampedBucket] = cell;
-    scratch.bucketNodeDist[cell] = clampedBucket;
-    scratch.bucketCount++;
-  }
-
-  _bucketUnlinkCell(scratch, cell, bucket) {
-    const prev = scratch.bucketNodePrev[cell];
-    const next = scratch.bucketNodeNext[cell];
-    if (prev >= 0) {
-      scratch.bucketNodeNext[prev] = next;
-    } else {
-      scratch.bucketHead[bucket] = next;
-    }
-    if (next >= 0) {
-      scratch.bucketNodePrev[next] = prev;
-    } else {
-      scratch.bucketTail[bucket] = prev;
-    }
-    scratch.bucketNodePrev[cell] = -1;
-    scratch.bucketNodeNext[cell] = -1;
-    scratch.bucketNodeDist[cell] = -1;
-    scratch.bucketCount--;
-  }
-
-  _bucketPopCell(scratch, bucket) {
-    const cell = scratch.bucketHead[bucket];
-    if (cell < 0) return -1;
-    this._bucketUnlinkCell(scratch, cell, bucket);
-    return scratch.bucketNodeCell[cell];
-  }
-
+  /** W14: the search, the walls' pass and the smoothing in navFlowfield.wasm, then the slot. */
   computeFlowfield(targetCell) {
-    // W14. The search, the walls' pass and the smoothing in navFlowfield.wasm; the slot as below.
-    if (this._flowWasm !== null) {
-      this._computeFlowfieldWasm(targetCell);
-      return;
-    }
-    const willUseEmptySlot = this._hasEmptyFlowfieldSlot();
-
-    const scratch = this.scratch;
-    scratch.reset();
-
-    const walkability = NavGrid.getWalkabilityArray();
-    const gridWidth = this.gridWidth;
-    const gridHeight = this.gridHeight;
-    const totalCells = this.totalCells;
-
-    scratch.distance.fill(65535);
-    scratch.direction.fill(DIRECTION.NONE);
-
-    scratch.distance[targetCell] = 0;
-    this._bucketInsertCell(scratch, targetCell, 0);
-
-    while (scratch.bucketCount > 0) {
-      while (scratch.bucketHeadDistance <= scratch.maxDistance && scratch.bucketHead[scratch.bucketHeadDistance] < 0) {
-        scratch.bucketHeadDistance++;
-      }
-      if (scratch.bucketHeadDistance > scratch.maxDistance) break;
-
-      const cell = this._bucketPopCell(scratch, scratch.bucketHeadDistance);
-      if (cell < 0) continue;
-
-      if (scratch.isVisited(cell)) continue;
-      scratch.markVisited(cell);
-
-      const cellDist = scratch.distance[cell];
-      const cellX = cell % gridWidth;
-      const cellY = Math.floor(cell / gridWidth);
-
-      for (let dir = 0; dir < 8; dir++) {
-        const nx = cellX + NAV_DX[dir];
-        const ny = cellY + NAV_DY[dir];
-
-        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
-
-        const neighbor = ny * gridWidth + nx;
-
-        if (walkability[neighbor] === 0) continue;
-        if (scratch.isVisited(neighbor)) continue;
-
-        const newDist = cellDist + NAV_COST[dir];
-        if (newDist < scratch.distance[neighbor]) {
-          scratch.distance[neighbor] = newDist;
-          scratch.direction[neighbor] = NAV_OPPOSITE_DIR[dir];
-
-          const bucket = Math.min(newDist, scratch.maxDistance);
-          this._bucketInsertCell(scratch, neighbor, bucket);
-        }
-      }
-    }
-
-    for (let cell = 0; cell < totalCells; cell++) {
-      if (walkability[cell] !== 0) continue;
-
-      const cellX = cell % gridWidth;
-      const cellY = Math.floor(cell / gridWidth);
-
-      let bestDir = DIRECTION.NONE;
-      let bestDist = 65535;
-
-      for (let dir = 0; dir < 8; dir++) {
-        const nx = cellX + NAV_DX[dir];
-        const ny = cellY + NAV_DY[dir];
-
-        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
-
-        const neighbor = ny * gridWidth + nx;
-
-        if (walkability[neighbor] === 0) continue;
-
-        if (scratch.distance[neighbor] < bestDist) {
-          bestDist = scratch.distance[neighbor];
-          bestDir = NAV_DIR_MAP[dir];
-        }
-      }
-
-      scratch.direction[cell] = bestDir;
-    }
-
-    // Third pass: Smoothing
-    if (!scratch.smoothedVectors) {
-      scratch.smoothedVectors = new Int8Array(this.totalCells * 2);
-    }
-
-    const smoothed = scratch.smoothedVectors;
-
-    for (let y = 0; y < this.gridHeight; y++) {
-      for (let x = 0; x < gridWidth; x++) {
-        const cell = y * gridWidth + x;
-        const outIdx = cell * 2;
-        const dir = scratch.direction[cell];
-
-        if (dir === DIRECTION.NONE) {
-          smoothed[outIdx] = 0;
-          smoothed[outIdx + 1] = 0;
-          continue;
-        }
-
-        if (walkability[cell] === 0) {
-          const vec = DIR_TO_VEC[dir];
-          smoothed[outIdx] = Math.round(vec[0] * 127);
-          smoothed[outIdx + 1] = Math.round(vec[1] * 127);
-          continue;
-        }
-
-        let sumX = 0;
-        let sumY = 0;
-        let count = 0;
-
-        for (let ny = y - 1; ny <= y + 1; ny++) {
-          for (let nx = x - 1; nx <= x + 1; nx++) {
-            if (nx >= 0 && nx < gridWidth && ny >= 0 && ny < this.gridHeight) {
-              const neighbor = ny * gridWidth + nx;
-              const neighborDir = scratch.direction[neighbor];
-              if (neighborDir !== DIRECTION.NONE) {
-                const vec = DIR_TO_VEC[neighborDir];
-                sumX += vec[0];
-                sumY += vec[1];
-                count++;
-              }
-            }
-          }
-        }
-
-        if (count > 0) {
-          const avgX = sumX / count;
-          const avgY = sumY / count;
-          smoothed[outIdx] = Math.round(avgX * 127);
-          smoothed[outIdx + 1] = Math.round(avgY * 127);
-        } else {
-          smoothed[outIdx] = 0;
-          smoothed[outIdx + 1] = 0;
-        }
-      }
-    }
-
-    const slot = NavGrid.allocateFlowfieldSlot(targetCell);
-    NavGrid.writeFlowfieldData(slot, smoothed);
-
-    if (willUseEmptySlot) {
-      this.cachedFlowfieldsCount++;
-    }
-  }
-
-  /** W14. computeFlowfield with the kernel for the search and the smoothing, then the slot as the JS fills it. */
-  _computeFlowfieldWasm(targetCell) {
     const willUseEmptySlot = this._hasEmptyFlowfieldSlot();
     const f = this._flowWasm;
     f.compute(f.tableByte, targetCell);

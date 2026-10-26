@@ -1,0 +1,144 @@
+// The bullet tick in WASM (E-76 W19): loads bulletTick.wasm onto the memory where the scene keeps the bullets,
+// Transform, Collider and the spatial grid (Phase 4: Box2D's block), and points its column table at them each
+// frame. bullet_tick walks the pool as BulletPool.tick does; a bullet whose cast meets a compound polygon or a
+// chain is handed back for the JS tick.
+
+import { loadWasmKernel } from '../util/wasmKernel.js';
+import { entityIdBytes } from '../util/entityIdWidth.js';
+import { ShapeType } from '../box2d/box2dConstants.js';
+import { BULLET_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
+
+
+/** The kernel's variants (one walk, the same bytes): the shipped tick takes BULLET_TICK_VARIANT. */
+export const BULLET_TICK_VARIANTS = ['bullet_tick', 'bullet_tick_hoist', 'bullet_tick_nostamp', 'bullet_tick_lean'];
+export const BULLET_TICK_VARIANT = 'bullet_tick_lean';
+
+/** wasm/bulletTick.c's column table, slot for slot. */
+export const BULLET_TICK_SLOTS = [
+  'bActive', 'bX', 'bY', 'bPrevX', 'bPrevY', 'bVx', 'bVy', 'bSpeed', 'bRotC', 'bRotS', 'bDamage', 'bOwner', 'bShooter',
+  'oActive', 'oImpacts', 'oReturned', 'results',
+  'tActive', 'tX', 'tY', 'tRotC', 'tRotS',
+  'cActive', 'cShape', 'cLayer', 'cOffX', 'cOffY', 'cRadius', 'cWidth', 'cHeight',
+  'cPolyCount', 'cFixtureCount', 'cPvx', 'cPvy', 'cPnx', 'cPny',
+  'gGrid', 'gStamp', 'gGen',
+];
+const SLOT = Object.fromEntries(BULLET_TICK_SLOTS.map((name, k) => [name, k]));
+if (BULLET_TICK_SLOTS.length > BULLET_TABLE_SLOTS) throw new Error('bulletTick: the column table outgrew its region');
+
+// The kernel's shape numbers.
+if (ShapeType.Box !== 0 || ShapeType.Circle !== 1 || ShapeType.Polygon !== 2 || ShapeType.Chain !== 3) {
+  throw new Error('bulletTick: ShapeType changed; update wasm/bulletTick.c');
+}
+
+/**
+ * @param {WebAssembly.Memory} memory
+ * @param {{ tableByte: number, resultsByte: number, returnedByte: number, stampByte: number, activeByte: number,
+ *   impactsByte: number, bullets: number, entities: number, impacts: number }} layout the kernel's regions in that
+ *   memory: the active list and the impact records it writes (the pool copies them out), its returned list, stamps,
+ *   results and table
+ * @param {string} [variant] one of BULLET_TICK_VARIANTS (benches and tests pick; the engine takes the default)
+ */
+export async function bindBulletTick(memory, layout, variant = BULLET_TICK_VARIANT) {
+  if (!BULLET_TICK_VARIANTS.includes(variant)) throw new Error(`bulletTick: no variant ${variant}`);
+  // 32-bit entity ids (the grid's ids, the owners) and a pool past 65 535 bullets (the active list) take the lean
+  // tick's 32-bit forms; the other variants are 16-bit (benches).
+  const wideIds = entityIdBytes() === 4;
+  const wideSlots = (layout.bullets | 0) > 65535;
+  let name = variant;
+  if (wideIds || wideSlots) {
+    if (variant !== 'bullet_tick_lean') throw new Error(`bulletTick: ${variant} has no 32-bit form`);
+    name = wideIds && wideSlots ? 'bullet_tick_lean_u32' : wideIds ? 'bullet_tick_lean_ids32' : 'bullet_tick_lean_slots32';
+  }
+  const k = await loadWasmKernel('bulletTick', engineWasmUrl, memory, [...BULLET_TICK_VARIANTS, name]);
+  const buffer = memory.buffer;
+  const table = new Uint32Array(buffer, layout.tableByte, BULLET_TICK_SLOTS.length);
+  table[SLOT.results] = layout.resultsByte;
+  table[SLOT.oReturned] = layout.returnedByte;
+  table[SLOT.oActive] = layout.activeByte;
+  table[SLOT.oImpacts] = layout.impactsByte;
+  table[SLOT.gStamp] = layout.stampByte;
+  table[SLOT.gGen] = 0;
+  return {
+    buffer,
+    tick: k[name],
+    wideIds,
+    table,
+    tableByte: layout.tableByte,
+    results: new Int32Array(buffer, layout.resultsByte, 4),
+    returned: new Uint32Array(buffer, layout.returnedByte, layout.bullets),
+    stamp: new Uint32Array(buffer, layout.stampByte, layout.entities),
+    // The active list ([0] unused here: the count is results[0] - 1) and the impacts, 6 floats each.
+    activeOut: new (wideSlots ? Uint32Array : Uint16Array)(buffer, layout.activeByte, layout.bullets + 1),
+    impacts: new Float32Array(buffer, layout.impactsByte, layout.impacts * 6),
+    impactCap: layout.impacts | 0,
+  };
+}
+
+/**
+ * The column table for this frame. False when a column the tick reads or writes is not in the memory (or the
+ * grid's ids or the owners are not at the bound width), and the JS tick runs instead.
+ */
+export function writeBulletColumns(b, BulletComponent, Transform, Collider, Grid) {
+  const t = b.table;
+  const buffer = b.buffer;
+  let ok = true;
+  const put = (slot, a, required) => {
+    if (!a) {
+      t[SLOT[slot]] = 0;
+      if (required) ok = false;
+    } else if (a.buffer === buffer) {
+      t[SLOT[slot]] = a.byteOffset;
+    } else {
+      ok = false;
+    }
+  };
+  const bc = BulletComponent;
+  put('bActive', bc.active, true);
+  put('bX', bc.x, true);
+  put('bY', bc.y, true);
+  put('bPrevX', bc.prevX, true);
+  put('bPrevY', bc.prevY, true);
+  put('bVx', bc.vx, true);
+  put('bVy', bc.vy, true);
+  put('bSpeed', bc.speed, true);
+  put('bRotC', bc.bulletRotC, true);
+  put('bRotS', bc.bulletRotS, true);
+  put('bDamage', bc.damage, true);
+  put('bOwner', bc.ownerId, true);
+  put('bShooter', bc.shooterEntityType, true);
+  const Ids = b.wideIds ? Uint32Array : Uint16Array;
+  if (!(bc.ownerId instanceof Ids)) ok = false;
+  put('tActive', Transform.active, true);
+  put('tX', Transform.x, true);
+  put('tY', Transform.y, true);
+  put('tRotC', Transform.rotC, false);
+  put('tRotS', Transform.rotS, false);
+  put('cActive', Collider.active, true);
+  put('cShape', Collider.shapeType, true);
+  put('cLayer', Collider.collisionLayer, true);
+  put('cOffX', Collider.offsetX, true);
+  put('cOffY', Collider.offsetY, true);
+  put('cRadius', Collider.radius, true);
+  put('cWidth', Collider.width, true);
+  put('cHeight', Collider.height, true);
+  put('cPolyCount', Collider.polyCount, true);
+  put('cFixtureCount', Collider.fixtureCount, false);
+  put('cPvx', Collider.polyVertexX, true);
+  put('cPvy', Collider.polyVertexY, true);
+  put('cPnx', Collider.polyNormalX, true);
+  put('cPny', Collider.polyNormalY, true);
+  const counts = Grid._gridCounts;
+  if (!counts || counts.buffer !== buffer || !(Grid._gridEntities instanceof Ids)) ok = false;
+  else t[SLOT.gGrid] = counts.byteOffset;
+  return ok;
+}
+
+/** Ray numbers left before the stamps wrap; past it they are cleared, as Ray._beginRayGen clears its own. */
+export function readyBulletStamps(b, rays) {
+  const gen = b.table[SLOT.gGen] >>> 0;
+  if (gen + rays >= 0xFFFFFFFF) {
+    b.stamp.fill(0);
+    b.table[SLOT.gGen] = 0;
+  }
+}

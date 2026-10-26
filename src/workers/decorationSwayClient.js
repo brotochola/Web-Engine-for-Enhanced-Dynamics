@@ -3,13 +3,18 @@
 // sway regions). sway_decorations is the per-decoration loop of _updateDecorationSwayBuckets with its
 // bucket cache and impulse step; the frame's per-bucket Math.sin / Math.cos and the cache reset stay JS
 // before it, and the decorations that need a Math.sin or Math.cos of their own (an impulse's phase, a sway
-// angle of 0.08 rad or more) come back in the trig list for the JS to finish.
+// angle of 0.08 rad or more) come back in the trig list, which sway_trig finishes. Without a frequency grid
+// (particle.swayFrequencyBuckets 0 or 1) sway_free runs the whole loop, every sine in the kernel. With `f32`
+// (wasm.decorationSwayF32, the particle worker's default) the kernel's float32 sway, sway_decorations_f32x4,
+// is bound in sway_decorations' place, once; the table, the call and the JS around it are the same. E-129: past
+// 65 535 decorations the snapshot and the chunk list are u32 and the _u32 export is bound, whose trig list puts
+// the impulse at bit 31; the binding carries the trig list's index mask and impulse bit for the JS that finishes it.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
+import { poolSlotBytes } from '../util/poolSlotWidth.js';
 import { SWAY_TABLE_SLOTS } from '../util/wasmMemoryMap.js';
+import { engineWasmUrl } from '../wasm/engine.js';
 
-// Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
-const wasmUrl = new URL('./decorationSway.wasm', import.meta.url);
 
 /** wasm/decorationSway.c's column table, slot for slot. */
 export const SWAY_SLOTS = [
@@ -21,6 +26,8 @@ if (SWAY_SLOTS.length > SWAY_TABLE_SLOTS) throw new Error('decorationSway: the c
 const SLOT = Object.fromEntries(SWAY_SLOTS.map((name, k) => [name, k]));
 /** decorationSway.c's TRIG_IMPULSE: the trig-list bit of an impulse, whose value is its phase. */
 export const TRIG_IMPULSE = 0x10000;
+/** TRIG_IMPULSE_U32: the same bit in the u32 sways' trig list, above any slot (E-129). */
+export const TRIG_IMPULSE_U32 = 0x80000000;
 
 /** The DecorationComponent columns the kernel reads or writes, by slot. */
 const DECORATION_COLUMNS = [
@@ -37,14 +44,26 @@ const WORKER_COLUMNS = [
 /**
  * Bind the kernel to the render-queue memory.
  * @param {WebAssembly.Memory} memory
- * @param {Record<string, number>} sway createRenderQueueMemory's layout.sway
+ * @param {Record<string, number>} sway createRenderQueueMemory's layout.sway (`slotBytes`, when given, sets the
+ *   width; else the decorations' count does)
+ * @param {{ f32?: boolean }} [options] f32: the float32 sway (`f32` on the binding says which)
  */
-export async function bindDecorationSway(memory, sway) {
-  const k = await loadWasmKernel('decorationSway', wasmUrl, memory, ['sway_decorations']);
+export async function bindDecorationSway(memory, sway, { f32 = false } = {}) {
+  const wide = (sway.slotBytes ?? poolSlotBytes(sway.decorations | 0)) === 4;
+  const exportName = `${f32 ? 'sway_decorations_f32x4' : 'sway_decorations'}${wide ? '_u32' : ''}`;
+  const freeName = wide ? 'sway_free_u32' : 'sway_free';
+  const k = await loadWasmKernel('decorationSway', engineWasmUrl, memory, [exportName, freeName, 'sway_trig']);
   const buffer = memory.buffer;
   return {
     buffer,
-    sway: k.sway_decorations,
+    sway: k[exportName],
+    free: k[freeName],
+    finishTrig: k.sway_trig,
+    f32: Boolean(f32),
+    slotBytes: wide ? 4 : 2,
+    // How the JS reads a trig-list entry: the decoration's index, and the impulse bit.
+    trigIndexMask: wide ? 0x7fffffff : 0xffff,
+    trigImpulse: wide ? TRIG_IMPULSE_U32 : TRIG_IMPULSE,
     layout: sway,
     tableByte: sway.tableByte,
     table: new Uint32Array(buffer, sway.tableByte, SWAY_SLOTS.length),
@@ -60,7 +79,7 @@ export async function bindDecorationSway(memory, sway) {
  * Write the column table from DecorationComponent's and the worker's views. Every call (a scene may rebind
  * its components); two dozen stores against a frame of decorations.
  * @returns {boolean} false when a column is not in the memory, or the grid outgrew the bucket regions:
- *   the JS sways the frame
+ *   the frame does not sway
  */
 export function writeSwayColumns(b, w, DecorationComponent) {
   const t = b.table;
@@ -75,10 +94,17 @@ export function writeSwayColumns(b, w, DecorationComponent) {
   t[SLOT.parentWide] = parent.BYTES_PER_ELEMENT === 4 ? 1 : 0;
   t[SLOT.noParent] = w._noParent;
   for (let c = 0; c < WORKER_COLUMNS.length; c++) {
+    // Without a frequency grid (sway_free) the worker has no phase or bucket tables: only the snapshot is read.
+    if (w._swayBuckets === 0 && WORKER_COLUMNS[c][0] !== 'snapshot') {
+      t[SLOT[WORKER_COLUMNS[c][0]]] = 0;
+      continue;
+    }
     const view = w[WORKER_COLUMNS[c][1]];
     if (!view || view.buffer !== b.buffer) return false;
     t[SLOT[WORKER_COLUMNS[c][0]]] = view.byteOffset;
   }
+  // The snapshot at the kernel's width (E-129).
+  if (w._activeDecorationSnapshot.BYTES_PER_ELEMENT !== b.slotBytes) return false;
   if (w._swayBuckets > b.buckets) return false;
   t[SLOT.list] = b.listByte;
   t[SLOT.listCap] = b.listCap;

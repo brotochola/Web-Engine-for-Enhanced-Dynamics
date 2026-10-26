@@ -1,10 +1,10 @@
 /**
  * Scene entity-id width. 16 = current Uint16 lists (max 65535).
- * 32 = compose FL4 + PAIR3 + NBR1 + GRID1 + LIST-U32 (product ceiling 300000).
+ * 32 = compose FL4 + PAIR3 + NBR1 + GRID1 + LIST-U32 (product ceiling 500000).
  * Bind once at SAB create / worker init. Hot loops call packPair / popEntity,
  * never `width === 32`.
  *
- * Spatial pair stamp shares FL4's 19-bit id ceiling (300000 < 2^19).
+ * Spatial pair stamp shares FL4's 19-bit id ceiling (500000 < 2^19 = 524288).
  * Frame lives in the high 13 bits (8192 frames, then the marker buffer is cleared).
  */
 
@@ -13,7 +13,7 @@ import { bindEntityFreeList } from './atomicFreeList.js';
 export const ENTITY_ID_WIDTH_16 = 16;
 export const ENTITY_ID_WIDTH_32 = 32;
 export const MAX_ENTITIES_U16 = 65535;
-export const MAX_ENTITIES_U32 = 300000;
+export const MAX_ENTITIES_U32 = 500000;
 export const ENTITY_ID_NONE_U16 = 0xffff;
 export const ENTITY_ID_NONE_U32 = 0xffffffff;
 export const PAIR_U32_STRIDE = 4294967296;
@@ -90,10 +90,27 @@ export function packSpatialPairStamp16(frame, entityA) {
   return ((frame & 0xffff) << 16) | (entityA & 0xffff);
 }
 
-export function resolveEntityIdWidth(config) {
+/**
+ * The scene's id width. `entityIdWidth` 16 or 32 is the developer's choice; 'auto' (the default) and anything
+ * else is 16-bit ids while `entityCount` (every pool the scene declares) fits them and 32 past that.
+ */
+export function resolveEntityIdWidth(config, entityCount = 0) {
   const raw = config?.entityIdWidth;
   if (raw === 32 || raw === '32' || raw === ENTITY_ID_WIDTH_32) return ENTITY_ID_WIDTH_32;
-  return ENTITY_ID_WIDTH_16;
+  if (raw === 16 || raw === '16') return ENTITY_ID_WIDTH_16;
+  return entityCount > MAX_ENTITIES_U16 ? ENTITY_ID_WIDTH_32 : ENTITY_ID_WIDTH_16;
+}
+
+/**
+ * Every entity a scene declares before it registers them: its static `entities` pools and the Flash pool
+ * lighting adds (`lighting.maxFlashes`). What 'auto' decides from.
+ * @param {Array<[Function, number]>} entities
+ * @param {number} maxFlashes
+ */
+export function declaredEntityCount(entities, maxFlashes = 0) {
+  let n = maxFlashes > 0 ? maxFlashes | 0 : 0;
+  for (const entry of entities || []) n += entry[1] > 0 ? entry[1] | 0 : 0;
+  return n;
 }
 
 export function bindEntityIdWidth(nextWidth) {

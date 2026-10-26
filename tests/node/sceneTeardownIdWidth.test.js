@@ -24,7 +24,7 @@ import { teardownSceneSharedState } from '../../src/util/sceneSharedBuffers.js';
  * This is only reachable in 32-bit mode, which is why it is latent today:
  * `MAX_ENTITIES_U16` is 65535, so a 16-bit count can never exceed 65535 and its
  * high half is never anything but zero - there the old code was accidentally
- * correct. `MAX_ENTITIES_U32` is 300000, so a 32-bit scene can hold well over
+ * correct. `MAX_ENTITIES_U32` is 500000, so a 32-bit scene can hold well over
  * 65535 entities of one type, and then the low half alone is not the count.
  *
  * `sceneSharedBuffers.js:108` already warns when a registration exceeds the

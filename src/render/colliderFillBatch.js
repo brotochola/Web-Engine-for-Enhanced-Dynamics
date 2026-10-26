@@ -702,93 +702,6 @@ export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, view
   return n;
 }
 
-/**
- * Rewrite aV0..aV2 (and uv0..uv2 when stride is the UV batch) for entities whose
- * vertGen moved. Returns -1 when the packed triangle count no longer matches.
- * @returns {number} 1 ok, -1 topology mismatch, 0 nothing to do
- */
-export function rewriteExplicitMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow) {
-  const n = count | 0;
-  // genNow: generations captured before any vertex read (see pixiWorker
-  // _captureVertGen). The live array works for a single-threaded caller.
-  const gen = genNow || views.meshVertGen;
-  if (!out || n <= 0 || !entityOfInstance || !gen || !lastVertGen) return 0;
-  const step = (stride | 0) > 0 ? (stride | 0) : COLLIDER_FILL_FLOATS;
-  const vx = views.meshVertexX;
-  const vy = views.meshVertexY;
-  const indices = views.meshIndices;
-  const u = views.meshUvU;
-  const v = views.meshUvV;
-  const uvOn = step >= MESH_UV_FILL_FLOATS && u && v;
-  let k = 0;
-  while (k < n) {
-    const i = entityOfInstance[k] | 0;
-    let end = k + 1;
-    while (end < n && (entityOfInstance[end] | 0) === i) end++;
-    const run = end - k;
-    const dirty = i >= 0 && i < gen.length && (gen[i] >>> 0) !== ((lastVertGen[i] >>> 0));
-    const vOff = views.meshVertOffset && i >= 0 ? (views.meshVertOffset[i] | 0) : -1;
-    if (dirty && vOff >= 0) {
-      const vN = views.meshVertCount ? (views.meshVertCount[i] | 0) : 0;
-      const iAt = views.meshIndexOffset ? (views.meshIndexOffset[i] | 0) : -1;
-      const need = iAt >= 0
-        ? ((views.meshIndexCount[i] >>> 0) / 3) | 0
-        : (vN >= 3 ? vN - 2 : 0);
-      if (need !== run || vN < 3 || !vx || !vy) return -1;
-      if (iAt >= 0) {
-        if (!indices) return -1;
-        for (let t = 0; t < run; t++) {
-          const o = iAt + t * 3;
-          const a = indices[o] | 0;
-          const b = indices[o + 1] | 0;
-          const c = indices[o + 2] | 0;
-          if (a < 0 || b < 0 || c < 0 || a >= vN || b >= vN || c >= vN) return -1;
-          const ia = vOff + a;
-          const ib = vOff + b;
-          const ic = vOff + c;
-          const base = (k + t) * step;
-          out[base] = vx[ia];
-          out[base + 1] = vy[ia];
-          out[base + 2] = vx[ib];
-          out[base + 3] = vy[ib];
-          out[base + 4] = vx[ic];
-          out[base + 5] = vy[ic];
-          if (uvOn) {
-            out[base + 18] = u[ia];
-            out[base + 19] = v[ia];
-            out[base + 20] = u[ib];
-            out[base + 21] = v[ib];
-            out[base + 22] = u[ic];
-            out[base + 23] = v[ic];
-          }
-        }
-      } else {
-        for (let t = 0; t < run; t++) {
-          const ib = vOff + t + 1;
-          const ic = vOff + t + 2;
-          const base = (k + t) * step;
-          out[base] = vx[vOff];
-          out[base + 1] = vy[vOff];
-          out[base + 2] = vx[ib];
-          out[base + 3] = vy[ib];
-          out[base + 4] = vx[ic];
-          out[base + 5] = vy[ic];
-          if (uvOn) {
-            out[base + 18] = u[vOff];
-            out[base + 19] = v[vOff];
-            out[base + 20] = u[ib];
-            out[base + 21] = v[ib];
-            out[base + 22] = u[ic];
-            out[base + 23] = v[ic];
-          }
-        }
-      }
-    }
-    k = end;
-  }
-  return 1;
-}
-
 function writeUvTri(
   out, outU32, base, written, maxOut, depthDenom,
   x0, y0, x1, y1, x2, y2, wx, wy, c, s, packed,
@@ -930,11 +843,22 @@ export class ColliderFillBatch {
    * @param {object} opts.shaders
    * @param {import('../vendor/pixi.min.js').TextureSource} [opts.atlasSource]
    * @param {import('../vendor/pixi.min.js').TextureSource} [opts.lutSource]
+   * @param {Float32Array|null} [opts.data] where the rows are written, capacity × COLLIDER_FILL_FLOATS: a region of
+   *   the mesh memory (meshMemory.js, E-76 W11), where the corner kernel rewrites them; any other length, none
    */
-  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null }) {
+  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null }) {
     this.capacity = Math.max(1, capacity | 0);
-    this.data = new Float32Array(this.capacity * COLLIDER_FILL_FLOATS);
+    const floats = this.capacity * COLLIDER_FILL_FLOATS;
+    // What the Pixi Buffer uploads: always an array of its own. Uploading every frame from a view on shared
+    // memory made every other worker slower in Chrome (E-123).
+    this.data = new Float32Array(floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
+    // Where the packs and the corner rewrite write the rows: the mesh memory's region when there is one, and
+    // upload copies the rows it sends from there; else this.data. Every writer writes here, because the
+    // rewrite changes the corners of some rows and keeps the rest of what is there.
+    const shared = data instanceof Float32Array && data.length === floats ? data : null;
+    this.rows = shared || this.data;
+    this.rowsU32 = shared ? new Uint32Array(shared.buffer, shared.byteOffset, shared.length) : this.dataU32;
     this.buffer = new Buffer({
       data: this.data,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
@@ -1027,7 +951,7 @@ export class ColliderFillBatch {
   }
 
   /**
-   * @param {number} count packed instances already written into this.data
+   * @param {number} count packed instances already written into this.rows
    * @returns {number}
    */
   upload(count) {
@@ -1038,6 +962,8 @@ export class ColliderFillBatch {
       return 0;
     }
     this.mesh.visible = true;
+    // E-123: the rows this upload sends, out of the mesh memory into the Buffer's own array.
+    if (this.rows !== this.data) this.data.set(this.rows.subarray(0, n * COLLIDER_FILL_FLOATS));
     this.buffer.update(n * COLLIDER_FILL_STRIDE);
     this.geometry.instanceCount = n;
     return n;

@@ -128,18 +128,17 @@ test('no per-row call site builds a template string any more', () => {
   }
 });
 
-test('all seven per-row call sites pass a tag, not a string', () => {
+test('all four per-row call sites pass a tag, not a string', () => {
   // Filter out the DEFINITION, which matches the same pattern. A first version
   // counted it and reported "expected 4, found 5".
-  // Seven: the emit loop's four (particle, LiquidFun, decoration, bullet), the copy of the particle
-  // and bullet branches for the rows the emit kernel leaves to the JS, and the decoration warning it
-  // hands back (E-112).
+  // Four: the decoration, bullet, particle and LiquidFun warnings the emit kernel hands back (_emitWarn). The
+  // emit loop's own call sites left with the JS emit (close-out group B: tests/reference/preRenderEmitJs.mjs).
   const defIndex = src.indexOf('_resolveAnimFrameStart(animIdx, kind) {');
   const calls = [...src.matchAll(/_resolveAnimFrameStart\(([^,]+),\s*([^)]+)\)/g)]
     .map((m, i) => ({ arg: m[1].trim(), kind: m[2].trim(), at: m.index }))
     .filter((c) => c.at !== defIndex);
   const perRow = calls.filter((c) => c.arg !== 'map[name]');
-  assert.equal(perRow.length, 7, `expected 7 per-row call sites, found ${perRow.length}`);
+  assert.equal(perRow.length, 4, `expected 4 per-row call sites, found ${perRow.length}`);
   for (const c of perRow) {
     assert.match(c.kind, /^ANIM_LABEL_TAG\./, `${c.arg} does not pass a tag`);
   }

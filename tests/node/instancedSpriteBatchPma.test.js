@@ -109,8 +109,9 @@ test('particles share the painter list; glow stays ADD; no second particle batch
 });
 
 test('render-queue partition idx buffers are Uint32 (no Uint16 wrap past 65535)', () => {
-  assert.match(pixiSrc, /_rqIdxEntity = new Uint32Array\(maxItems\)/);
-  assert.match(pixiSrc, /_rqIdxGlow = new Uint32Array\(maxItems\)/);
+  // W10: on the render-queue memory they are painterSlotList's Uint32Array views (painterRadixWired.test.js).
+  assert.match(pixiSrc, /_rqIdxEntity = painterWasm \? painterSlotList\(painterWasm, 'entity', maxItems\) : new Uint32Array\(maxItems\)/);
+  assert.match(pixiSrc, /_rqIdxGlow = painterWasm \? painterSlotList\(painterWasm, 'glow', maxItems\) : new Uint32Array\(maxItems\)/);
   assert.doesNotMatch(pixiSrc, /_rqIdxEntity = new Uint16Array\(maxItems\)/);
   assert.doesNotMatch(pixiSrc, /_rqIdxGlow = new Uint16Array\(maxItems\)/);
   assert.doesNotMatch(pixiSrc, /_rqIdxParticle/);

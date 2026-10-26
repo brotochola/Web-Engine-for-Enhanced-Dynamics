@@ -236,13 +236,14 @@ static void quicksort_order(uint32_t *order, const float *dist, int32_t left, in
   }
 }
 
-/* takeClosest */
+/* takeClosest. ordered 0 (maxShadowsPerEntity): the kept casters only go into their own nearest-light slots,
+   whose order is (distance, light) whatever order they come in, so the kept slice is not sorted (E-133). */
 INLINE uint32_t take_closest(const uint32_t *tmpIdx, const float *tmpDist, uint32_t *order, uint32_t m, int32_t limit,
-                             uint32_t *outIdx) {
+                             uint32_t *outIdx, int ordered) {
   if (limit > 0 && m > (uint32_t)limit) {
     for (uint32_t k = 0; k < m; k++) order[k] = k;
     quickselect_order(order, tmpDist, 0, (int32_t)m - 1, limit - 1);
-    quicksort_order(order, tmpDist, 0, limit - 1);
+    if (ordered) quicksort_order(order, tmpDist, 0, limit - 1);
     for (int32_t k = 0; k < limit; k++) outIdx[k] = tmpIdx[order[k]];
     return (uint32_t)limit;
   }
@@ -362,7 +363,7 @@ int32_t stamp_light_range(uint32_t table) {
     }
     if (grid && m > 1 && maxPE == 0 && !(lim > 0 && m > (uint32_t)lim)) sort_pairs_by_index(tmpIdx, dist, m);
     if (m == 0) continue;
-    m = take_closest(tmpIdx, dist, order, m, lim, keep);
+    m = take_closest(tmpIdx, dist, order, m, lim, keep, maxPE == 0);
     if (maxPE > 0) {
       for (uint32_t k = 0; k < m; k++) {
         const uint32_t c = keep[k];

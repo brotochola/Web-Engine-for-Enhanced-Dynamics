@@ -43,14 +43,16 @@ const IDW = 'src/util/entityIdWidth.js';
 
 // --- failure 1: the type was never there -----------------------------------
 
-test('logicWorker.js contains no Float64Array, and no comment claiming one', () => {
+test('logicWorker.js keeps the pair key out of any Float64Array, and no comment claims one', () => {
   // Strip comments first, or the note that explains the removal documents the very
   // symbol it is reporting as absent - the trap that broke four earlier test files.
+  // E-125 added one Float64Array, the spawn sort's packed keys; the pair key is still a Map key.
   const src = code(LOGIC);
-  assert.ok(
-    !/Float64Array/.test(src),
-    'logicWorker.js has a Float64Array outside a comment; the note above _pairSlot is wrong about that',
-  );
+  const uses = src.match(/[\w.]*\s*=\s*new Float64Array\(/g) || [];
+  for (const use of uses) {
+    assert.match(use, /_spawnSortKeys/, `logicWorker.js makes a Float64Array other than the spawn keys: ${use}`);
+  }
+  assert.ok(/this\._pairSlot = new Map\(/.test(src), 'the pair key is a Map key');
 });
 
 test('the removal note does not itself read as the claim it removes', () => {

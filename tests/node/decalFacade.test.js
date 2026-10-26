@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Decal } from '../../src/core/decal.js';
+import { stampToTileBuffers } from '../reference/decalStamp.mjs';
 
 test('Decal.stamp returns 0 when stamp ring is unbound', { concurrency: false }, () => {
   Decal.bindStampRing(null);
@@ -36,7 +37,7 @@ test('Decal.enqueueStamp + drain paints a tile pixel', { concurrency: false }, (
     assert.equal(tint, 0xffffff);
     assert.equal(alpha, 1);
     assert.equal(blendMode, 0);
-    Decal.stampToTileBuffers({
+    stampToTileBuffers({
       worldX: x,
       worldY: y,
       tint,
@@ -81,7 +82,7 @@ test('Decal.stamp applies locally and does not enqueue', { concurrency: false },
   const sab = Decal.createStampRingSab(64);
   Decal.bindStampRing(sab);
   Decal.bindStampApply((x, y, tint, scaleX, scaleY, textureId, alpha, blendMode) => {
-    Decal.stampToTileBuffers({
+    stampToTileBuffers({
       worldX: x,
       worldY: y,
       tint,

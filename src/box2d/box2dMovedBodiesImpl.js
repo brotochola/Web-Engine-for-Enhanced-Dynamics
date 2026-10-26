@@ -1,9 +1,10 @@
 // Shared "bodies that moved this physics step" SAB.
-// Producer: weedjs_post afterStep (WASM body move events + teleports).
-// Consumers: spatial (dirty rebuild), later anything needing movers.
+// Producer: weedjs_post afterStep (WASM body move events, teleports, and bodies created,
+// destroyed or reshaped by the body sync).
+// Consumers: spatial (the grid rewritten for the bodies that moved, E-126), Box2d.getMovedBodies.
 //
 // Layout:
-//   Int32 header[4]: generation, count, entityCapacity, reserved
+//   Int32 header[4]: generation, count, entityCapacity, sequence (odd while a publish writes)
 //   Uint32 movedList[entityCapacity]
 //   Uint8  movedBits[entityCapacity]
 //   Uint8  fellAsleep[entityCapacity]  (parallel to list indices, not bits)
@@ -12,6 +13,9 @@
   var HDR_GEN = 0;
   var HDR_COUNT = 1;
   var HDR_CAP = 2;
+  // E-126. Odd from the start of a publish to its end, so a reader that copies the list can tell
+  // whether a publish ran while it copied (readMovedBodiesHeader, copyMovedBodies).
+  var HDR_SEQ = 3;
   var HDR_I32 = 4;
 
   var movedSab = null;
@@ -143,6 +147,7 @@
     teleportBits,
   ) {
     if (!hdrI32 || !movedList || !movedBits) return 0;
+    Atomics.add(hdrI32, HDR_SEQ, 1);
     var cap = entityCapacity;
     movedBits.fill(0);
     if (fellAsleep) fellAsleep.fill(0);
@@ -180,19 +185,56 @@
 
     Atomics.store(hdrI32, HDR_COUNT, count);
     Atomics.add(hdrI32, HDR_GEN, 1);
+    Atomics.add(hdrI32, HDR_SEQ, 1);
     return count;
+  }
+
+  /**
+   * E-126. The last publish's generation and count without an allocation: out[0] = generation,
+   * out[1] = count, out[2] = the sequence they were read at, or -1 when a publish was writing.
+   * Pass out[2] to copyMovedBodies to copy the list of that same publish.
+   * @param {Int32Array} out length >= 3
+   * @returns {boolean} false when no buffer is bound (no physics worker)
+   */
+  function readMovedBodiesHeader(out) {
+    if (!hdrI32 || !movedList) return false;
+    var seq = Atomics.load(hdrI32, HDR_SEQ) | 0;
+    var gen = Atomics.load(hdrI32, HDR_GEN) | 0;
+    var count = Atomics.load(hdrI32, HDR_COUNT) | 0;
+    var seqAfter = Atomics.load(hdrI32, HDR_SEQ) | 0;
+    out[0] = gen;
+    out[1] = count;
+    out[2] = (seq & 1) === 0 && seq === seqAfter ? seq : -1;
+    return true;
+  }
+
+  /**
+   * E-126. Copy the first `count` entries of the list into `dst` and say whether they are the
+   * publish readMovedBodiesHeader saw at sequence `seq` (no publish started since).
+   * @param {Int32Array|Uint32Array} dst length >= count
+   * @param {number} count out[1] of readMovedBodiesHeader
+   * @param {number} seq out[2] of readMovedBodiesHeader
+   * @returns {boolean}
+   */
+  function copyMovedBodies(dst, count, seq) {
+    if (!hdrI32 || !movedList || seq < 0 || count > dst.length || count > entityCapacity) return false;
+    for (var i = 0; i < count; i++) dst[i] = movedList[i];
+    return (Atomics.load(hdrI32, HDR_SEQ) | 0) === seq;
   }
 
   var api = {
     HDR_GEN: HDR_GEN,
     HDR_COUNT: HDR_COUNT,
     HDR_CAP: HDR_CAP,
+    HDR_SEQ: HDR_SEQ,
     createMovedBodiesSab: createMovedBodiesSab,
     bindMovedBodies: bindMovedBodies,
     isMovedBodiesBound: isMovedBodiesBound,
     getMovedBodiesViews: getMovedBodiesViews,
     viewsFromSab: viewsFromSab,
     publishMovedBodies: publishMovedBodies,
+    readMovedBodiesHeader: readMovedBodiesHeader,
+    copyMovedBodies: copyMovedBodies,
   };
 
   global.Box2dMovedBodies = api;

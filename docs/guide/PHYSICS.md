@@ -85,7 +85,7 @@ this.meshRenderer.tint = 0x88aa66;
 this.setLayer('terrain');
 ```
 
-A mesh does not need a body. `renderer.maxMeshVerts` (default `0`) is the vertex arena; `renderer.maxMeshIndices` (default `0`) is the index arena. Indices are `Uint16`, so `maxMeshVerts` caps at 65535.
+A mesh does not need a body. `renderer.maxMeshVerts` (default `0`) is the vertex arena; `renderer.maxMeshIndices` (default `0`) is the index arena. Up to 65535 vertices the arena's vertex counts and indices are `Uint16`; past that they are `Uint32`, and `maxMeshVerts` caps at 1048576. One mesh may use the whole arena. `maxMeshIndices` caps at 4194304. `setPlane` takes at most 254 cells per axis in a 16-bit arena and 1023 in a 32-bit one.
 
 ```js
 static config = {

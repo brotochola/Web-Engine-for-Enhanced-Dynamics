@@ -8,7 +8,7 @@
  *   node tests/bench/premultiplyMicrobench.mjs
  *   node tests/bench/premultiplyMicrobench.mjs --output out.json
  */
-import { copyPremultiplyRgba } from '../../src/render/webgpu/pinGpuTexture.js';
+import { copyPremultiplyRgba } from '../reference/decalPremultiply.mjs';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 
 const VARIANTS = { base: copyPremultiplyRgba };

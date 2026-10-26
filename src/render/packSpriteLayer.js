@@ -1,7 +1,17 @@
 import { fillQueueIndices } from './gpuQueueLayout.js';
-import { orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
+import { orderPainterSlotsWasm, radixSortIndicesWasm } from './painterRadixClient.js';
 
 const packResult = { sprite: 0, glow: 0, splitParticles: 0, flags: 0 };
+
+/** The painter's order through its kernel (W10, painterRadixClient.js; a state always carries one). */
+function painterOrder(painter, idxE, n, keysU32) {
+    return orderPainterSlotsWasm(painter, idxE, n, keysU32);
+}
+
+/** The glow rows by key, with the painter's kernel and scratch. */
+function sortGlowRows(painter, idxG, ng, keysU32) {
+    radixSortIndicesWasm(painter, idxG, ng, keysU32);
+}
 
 function orderSpriteIndices(opts, painter, keysU32, indices, n, dense, addSortMs, sortedFlag) {
     if (!painter || !keysU32 || n < 2) {
@@ -12,14 +22,15 @@ function orderSpriteIndices(opts, painter, keysU32, indices, n, dense, addSortMs
             opts.indices = null;
             opts.indexCount = 0;
         }
-        return 0;
+        // Fewer than two rows are in painter order already.
+        return painter && keysU32 ? sortedFlag | 0 : 0;
     }
     if (addSortMs) {
         const t0 = performance.now();
-        opts.indices = orderPainterSlots(painter, dense ? null : indices, n, keysU32);
+        opts.indices = painterOrder(painter, dense ? null : indices, n, keysU32);
         addSortMs(performance.now() - t0);
     } else {
-        opts.indices = orderPainterSlots(painter, dense ? null : indices, n, keysU32);
+        opts.indices = painterOrder(painter, dense ? null : indices, n, keysU32);
     }
     opts.indexCount = n;
     return sortedFlag | 0;
@@ -66,10 +77,10 @@ export function packSpriteLayer(spec) {
             if (canSort && ng > 1) {
                 if (spec.timeGlowSort && addSortMs) {
                     const t0 = performance.now();
-                    radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist);
+                    sortGlowRows(painter, idxG, ng, keysU32);
                     addSortMs(performance.now() - t0);
                 } else {
-                    radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist);
+                    sortGlowRows(painter, idxG, ng, keysU32);
                 }
             }
             opts.sortKey = null;
@@ -86,6 +97,8 @@ export function packSpriteLayer(spec) {
     }
 
     let spriteN = 0;
+    // Fewer than two rows are in painter order already (a layer that would order them says so).
+    if (spec.fillAll && canSort && count < 2) flags |= sortedFlag;
     if (spec.fillAll && spec.idxEntity && canSort && count >= 2) {
         const ne = fillQueueIndices(typeArr, count, -1, -1, spec.idxEntity);
         flags |= orderSpriteIndices(opts, painter, keysU32, spec.idxEntity, ne, false, addSortMs, sortedFlag);

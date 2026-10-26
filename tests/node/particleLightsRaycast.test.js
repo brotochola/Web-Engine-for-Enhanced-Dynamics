@@ -45,6 +45,7 @@ test('particleLights.max is capped with a warning', async () => {
   const r = resolveParticleLights({ enabled: true, max: 1e8 }, false);
   assert.equal(r.enabled, true);
   assert.equal(r.max, PARTICLE_LIGHT_MAX);
-  assert.match(r.warning, /above 65535; capped/);
+  assert.equal(PARTICLE_LIGHT_MAX, 524287, 'the particle pool ceiling (E-129)');
+  assert.match(r.warning, /above 524287; capped/);
   assert.deepEqual(resolveParticleLights({ enabled: true, max: PARTICLE_LIGHT_MAX }, false).warning, null);
 });

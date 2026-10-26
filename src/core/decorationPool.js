@@ -24,6 +24,7 @@ import {
   ENTITY_GLOW_SORT_BIAS,
 } from '../util/configDefaults.js';
 import { entityIdNone } from '../util/entityIdWidth.js';
+import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { bucketFromSwayFrequency, swayFrequencyForBucket, SWAY_LOOP, SWAY_LOOP_SKEW } from '../util/decorationSway.js';
 
 export {
@@ -51,15 +52,18 @@ export {
 export class DecorationPool extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'DecorationPool';
+  // E-129: 32-bit slot ids past 65 535 decorations.
+  static slotIdsFromMax = true;
 
   // Compact list of active decoration indices [count, idx0, idx1, ...]
   // Maintained incrementally by spawn/despawn, read by particle_worker
+  // Uint16Array, or Uint32Array past 65 535 decorations (E-129), like the attachment table.
   static activeDecorationsData = null;
   static _activeListLock = null;
 
   // Entity -> attached decoration indices (SAB, not ECS). Row stride = _maxAttachedPerEntity.
   static _attachedDecorationCount = null; // Uint8Array length entityCount
-  static _attachedDecorationIndices = null; // Uint16Array length entityCount * maxAttached
+  static _attachedDecorationIndices = null; // Uint16Array (Uint32Array past 65 535) length entityCount * maxAttached
   static _attachmentEntityCount = 0;
   static _maxAttachedPerEntity = 0;
 
@@ -113,7 +117,7 @@ export class DecorationPool extends SharedAtomicPool {
   /**
    * SharedArrayBuffers for entity→decoration attachment list (engine bookkeeping, not ECS).
    * @param {SharedArrayBuffer|null} sabCount - Uint8Array, length entityCount
-   * @param {SharedArrayBuffer|null} sabIndices - Uint16Array, length entityCount * maxAttached
+   * @param {SharedArrayBuffer|null} sabIndices - Uint16Array (Uint32Array past 65 535 decorations), length entityCount * maxAttached
    * @param {number} entityCount
    * @param {number} maxAttachedPerEntity - 1..255
    */
@@ -126,7 +130,7 @@ export class DecorationPool extends SharedAtomicPool {
       return;
     }
     this._attachedDecorationCount = new Uint8Array(sabCount);
-    this._attachedDecorationIndices = new Uint16Array(sabIndices);
+    this._attachedDecorationIndices = new (PoolSlotArray(this.maxCount))(sabIndices);
     this._attachmentEntityCount = entityCount;
     this._maxAttachedPerEntity = maxAttachedPerEntity;
   }
@@ -556,7 +560,7 @@ export class DecorationPool extends SharedAtomicPool {
    */
   static initializeActiveList(buffer, lockBuffer = null) {
     if (buffer) {
-      this.activeDecorationsData = new Uint16Array(buffer);
+      this.activeDecorationsData = new (PoolSlotArray(this.maxCount))(buffer);
     }
     this._activeListLock = lockBuffer ? new Int32Array(lockBuffer) : null;
   }

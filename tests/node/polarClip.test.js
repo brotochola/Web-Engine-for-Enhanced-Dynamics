@@ -1,12 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  POLAR_BINS,
-  clearPolarBins,
-  clipVisibilityToPolar,
-  rasterBoundarySegment,
-} from '../../src/render/visibility/angularSweep.js';
+import { POLAR_BINS } from '../../src/render/visibility/angularSweep.js';
+import { clearPolarBins, clipVisibilityToPolar, rasterBoundarySegment } from '../reference/visibilitySweepJs.mjs';
 
 const R = 200;
 

@@ -10,6 +10,8 @@
  * Gated (exit 1 when the runtime has a public member the .d.ts lacks):
  * GameObject, Scene, GameEngine, and the keys of the WEED namespace. Public =
  * not starting with "_". Declared but not at runtime is reported as stale.
+ * Also gated, both ways: config.wasm's switches (WASM_DEFAULTS) against the
+ * `wasm?: { … }` block, since a switch that left the engine is only warned about.
  * No TypeScript dependency: the class blocks are read with a brace counter.
  */
 import fs from 'node:fs';
@@ -23,7 +25,11 @@ const showAll = process.argv.includes('--all');
 /** Body text of `export declare class Name … { … }` or `export interface Name … { … }`. */
 function blockOf(kind, name) {
   const re = new RegExp(`export (?:declare )?${kind} ${name}\\b[^{]*\\{`);
-  const m = re.exec(dts);
+  return bodyAfter(re.exec(dts));
+}
+
+/** The brace-counted body after a match that ends at its opening brace (null: no match). */
+function bodyAfter(m) {
   if (!m) return null;
   let depth = 1;
   let i = m.index + m[0].length;
@@ -131,10 +137,27 @@ if (nsMissing.length) {
   lines.push(`WEED namespace:\n  missing in WeedNamespace: ${nsMissing.sort().join(', ')}`);
 }
 
+// config.wasm: one declared key per switch, none for a switch that left (its scene is only warned).
+const { WASM_DEFAULTS } = await import(pathToFileURL(path.join(root, 'src/util/configDefaults.js')).href);
+const wasmBlock = bodyAfter(/\n {2}wasm\?: \{/.exec(dts));
+const wasmDecl = declaredMembers(wasmBlock).inst;
+const switches = Object.keys(WASM_DEFAULTS);
+const wasmMissing = switches.filter((k) => !wasmDecl.has(k));
+const wasmStale = [...wasmDecl].filter((k) => !Object.hasOwn(WASM_DEFAULTS, k));
+if (wasmBlock === null) {
+  missingCount++;
+  lines.push('config.wasm: no `wasm?: { … }` block in types/weed.d.ts');
+} else if (wasmMissing.length || wasmStale.length) {
+  missingCount += wasmMissing.length + wasmStale.length;
+  lines.push('config.wasm:');
+  if (wasmMissing.length) lines.push(`  switches missing in .d.ts: ${wasmMissing.sort().join(', ')}`);
+  if (wasmStale.length) lines.push(`  declared, not a switch (WASM_DEFAULTS): ${wasmStale.sort().join(', ')}`);
+}
+
 if (lines.length) console.log(lines.join('\n'));
 if (missingCount > 0) {
   console.error(`\ntypes drift: ${missingCount} public runtime member(s) not declared in types/weed.d.ts`);
   process.exitCode = 1;
 } else {
-  console.log('types drift: GameObject, Scene, GameEngine and WEED are declared');
+  console.log('types drift: GameObject, Scene, GameEngine, WEED and config.wasm are declared');
 }

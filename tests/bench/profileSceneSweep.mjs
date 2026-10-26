@@ -16,9 +16,12 @@
  * engine's own wasm://), with game and bench code (demos/, tests/) added up apart since that code
  * stays in JS, and the engine's steady-state deopts and allocation rates when those passes ran.
  *
- *   node tests/bench/profileSceneSweep.mjs [--pass cpu|deopt|heap] [--set demos|stress|all]
+ *   node tests/bench/profileSceneSweep.mjs [--pass cpu|deopt|heap|boot] [--set demos|stress|all]
  *        [--only name,name] [--warmup-ms 6000] [--duration-ms 8000] [--out tests/results/wasm-q1b]
- *        [--inventory-only] [--keep-traces]
+ *        [--inventory-only] [--keep-traces] [--browser firefox] [--dist]
+ *
+ * The boot pass only starts each scene and checks it ran (exit status, page errors), in --browser's browser; with
+ * --dist on the dist/ bundle (weed.bundle.esm.min.js, which must be fresh), not the source.
  *
  * A scene that fails or hangs (--timeout-ms, default 180 000) is recorded as failed; the sweep
  * goes on. CPU samples are not STEP_MS: this says where a worker spends its busy time.
@@ -74,7 +77,7 @@ const SCENE_EXPORTS = {
   particleEmitStressScene: 'ParticleEmitStressScene3W',
 };
 
-const PASSES = ['cpu', 'deopt', 'heap'];
+const PASSES = ['cpu', 'deopt', 'heap', 'boot'];
 
 /** The scene class a module exports: SCENE_EXPORTS's, or the first exported class named …Scene…. */
 export function sceneExport(file) {
@@ -151,12 +154,36 @@ function heapPass(file, dir, opts) {
   return run.status === 0 && fs.existsSync(path.join(dir, 'heap.json')) ? '' : failed(run);
 }
 
+/**
+ * boot: the scene runs a short window (no trace) in --browser's browser (Chrome by default, `firefox` for
+ * the installed Firefox), and fails on a nonzero exit or a page error: the check that every scene still starts where
+ * no JS fallback is left (WASM_HYPOTHESES L7).
+ */
+function bootPass(file, dir, opts) {
+  const name = sceneName(file);
+  const run = spawn([
+    bench('runIntegratedWorkerBenchmark.mjs'), ...(opts.dist ? [] : ['--src']), '--headed', '--no-collect-detailed-stats',
+    ...(opts.browser ? ['--browser', opts.browser] : []),
+    '--scene', file, '--scene-export', sceneExport(file), '--warmup-ms', String(opts.warmupMs),
+    '--duration-ms', String(opts.durationMs), '--output', path.join(dir, 'boot.json'),
+    ...(SCENE_ARGS[name] || []),
+  ], opts);
+  const out = `${run.stdout || ''}\n${run.stderr || ''}`;
+  fs.writeFileSync(path.join(dir, 'run.log'), out);
+  const error = out.split('\n').find((l) => /\[(benchmark )?page error\]|Fatal engine error/.test(l));
+  if (error) return error.trim().slice(0, 240);
+  return run.status === 0 ? '' : failed(run);
+}
+
 function profileScene(file, opts) {
   const name = sceneName(file);
   const dir = opts.pass === 'cpu' ? path.join(opts.out, name) : path.join(opts.out, name, opts.pass);
   fs.mkdirSync(dir, { recursive: true });
   const t0 = Date.now();
-  const why = opts.pass === 'deopt' ? deoptPass(file, dir, opts) : opts.pass === 'heap' ? heapPass(file, dir, opts) : cpuPass(file, dir, opts);
+  const why = opts.pass === 'deopt' ? deoptPass(file, dir, opts)
+    : opts.pass === 'heap' ? heapPass(file, dir, opts)
+    : opts.pass === 'boot' ? bootPass(file, dir, opts)
+    : cpuPass(file, dir, opts);
   return { name, file, ok: !why, why, seconds: (Date.now() - t0) / 1000 };
 }
 
@@ -255,6 +282,8 @@ function main() {
     durationMs: Number(args['duration-ms'] ?? 8000),
     timeoutMs: Number(args['timeout-ms'] ?? 180000),
     keepTraces: Boolean(args['keep-traces']),
+    browser: args.browser ? String(args.browser) : '',
+    dist: Boolean(args.dist),
   };
   fs.mkdirSync(opts.out, { recursive: true });
   // The cpu pass's index is results.json; the others keep their own.

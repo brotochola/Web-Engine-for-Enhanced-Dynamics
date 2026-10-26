@@ -6,10 +6,9 @@ Engine-focused notes for the current `src/` architecture.
 
 | Resource | Current Limit |
 |---|---|
-| Entity indices, default | `0..65534` (`config.entityIdWidth` **16**, `Uint16`) |
-| Total pooled entities, default | `65535` |
-| Entity indices, opt-in | `config.entityIdWidth: 32`, ceiling **300000**. A scene with `physics.enabled` (the default) throws if `totalEntityCount > 65535` |
-| Particle / decoration / bullet pool indices | `0..65534`. Those slot stacks stay `Uint16` at either width |
+| Entity indices | `config.entityIdWidth` **'auto'** (default): `Uint16` (`0..65534`) while the scene's pools hold at most 65535 entities, `Uint32` past that, ceiling **500000**. `16` or `32` forces one |
+| Total pooled entities | `65535` at 16-bit ids, `500000` at 32. A scene with `physics.enabled` (the default) throws if `totalEntityCount > 65535` |
+| Particle / decoration / bullet pools | `particle.maxParticles`, `decoration.maxDecorations`, `bullet.maxBullets`, each up to **524287**. A pool of at most 65535 keeps `Uint16` slot ids (`0..65534`); past that it takes `Uint32` ones, decided per pool from its own maximum, whatever `entityIdWidth` is |
 | QuerySystem component mask width | `64` components |
 | QuerySystem entity-type mask width | `64` entity types |
 | Spatial grid cells | No 65535 cap. The neighbor-cell cache is `Uint16` until `totalCells > 65535`, then `Uint32` |
@@ -22,12 +21,13 @@ Engine-focused notes for the current `src/` architecture.
 | Audio buses | `8` (`SoundManager.MAX_CHANNELS`) |
 | Max rendering layers | `16` (`Layer.MAX_LAYERS`) |
 | ColliderFixture pool | `physics.maxFixturePoolSize` (global slots, default `0`) |
+| Explicit mesh vertices | `renderer.maxMeshVerts`, default `0`. `Uint16` vertex counts and indices up to `65535`, `Uint32` past that, cap `1048576`. `renderer.maxMeshIndices` caps at `4194304` |
 | Box2D memory | `physics.wasmMemoryMB`, `16..2048` MB, default `128`. Fixed while the scene runs; running out stops physics with an error that names the key. Sizes: [PHYSICS.md](./PHYSICS.md#physics-memory-physicswasmmemorymb) |
 | Default custom layer maxItems | `5000` |
 | Audio playback rate range | `0.25..4` |
 | Sound ID type | `Int32` (index into per-name ID map) |
 
-`entityIdWidth` is bound once when the scene allocates shared buffers. Width 32 widens active lists, queries, grid slots, and neighbor lists to 4 bytes. Bunny mark uses it with physics off. Width 16 is what every other demo uses.
+`entityIdWidth` is decided when the scene is built, from every pool it declares (its `static entities` and the Flash pool lighting adds), and bound once when the scene allocates shared buffers. Width 32 widens active lists, queries, grid slots, and neighbor lists to 4 bytes; a scene of up to 65535 entities keeps 16-bit ids and pays nothing for it. Bunny mark (250 001 entities, physics off) gets 32.
 
 ---
 
@@ -173,6 +173,7 @@ When `decoration.maxDecorations > 0`, world-owned decorations (no parent) are in
 
 ```javascript
 // Allocate out once (module scope or onSpawned), not inside tick().
+// A Uint32Array when decoration.maxDecorations is past 65535: its pool indices do not fit 16 bits.
 const out = new Uint16Array(64);
 const n = Decoration.queryCircle(worldX, worldY, 100, out);
 for (let i = 0; i < n; i++) {
@@ -1315,8 +1316,43 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
 ## Performance Notes
 
 - Prefer component-array reads in hot loops.
+- A per-entity number with a fractional part that changes every tick (a phase, a timer, an angle, a speed) belongs
+  in a component column, not in a field of the entity. Chrome keeps such a field as a pointer to a boxed number,
+  so every write allocates a new one: one `this._phase += …` per entity per tick made 21 MB/s of garbage in a
+  stress scene. A component column is a typed array, and writing to it allocates nothing. Integer fields
+  (counters, indices, flags) do not box. Declare the column and write it through the component's accessor:
+
+  ```js
+  class Spin extends Component {
+    static ARRAY_SCHEMA = { phase: Float32Array };
+  }
+
+  class Fan extends GameObject {
+    static components = [Spin];
+    tick(dtRatio) {
+      this.spin.phase += 0.05 * dtRatio; // a float32 store, no allocation
+    }
+  }
+  ```
 - Keep `collider.visualRange` tight to reduce neighbor pressure.
 - Use `tickInterval > 1` for heavy AI and enable `logic.staggeredUpdates`.
+- A type that never moves after `onSpawned` (props, buildings, decor on a large map) can declare `static isStatic = true`.
+  Pre-render then bins its sprites in a grid and tests only the ones near the view, so 500 000 props with 2.5 % of them
+  on screen cost what the view holds instead of every sprite every frame. The drawn set and order are the same as
+  without the flag. Moving one through `x`, `y`, scale or `setSprite` re-bins the scenery (fine now and then, not every
+  frame); writing `Transform.x[i]` directly is not seen, and a body on a static type should be static too.
+
+  ```js
+  class Tree extends GameObject {
+    static components = [SpriteRenderer];
+    static isStatic = true;
+    onSpawned({ x, y }) {
+      this.x = x;
+      this.y = y;
+      this.setSprite('tree');
+    }
+  }
+  ```
 - Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
 - Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. If both `tick` and `tickAll` exist, instance `tick` wins.
 - Use particles/decorations for short-lived or static visuals instead of full entities.

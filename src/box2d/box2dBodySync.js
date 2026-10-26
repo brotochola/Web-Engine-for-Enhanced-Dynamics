@@ -43,22 +43,25 @@ export function bindPoseSlotBuffers(pose) {
     return;
   }
   const sabs = [pose.dataA, pose.dataB];
+  const bytes = [pose.dataAByte | 0, pose.dataBByte | 0];
   const slots = [];
   for (let i = 0; i < 2; i++) {
     const sab = sabs[i];
+    const at = bytes[i];
     // Each buffer names its own capacity. Production allocates both at
     // poseN * 16, so this matches the shared `pose.capacity`. A shorter first
     // buffer must not shrink the view of the second: that is the case where
     // `return` in invalidatePoseSlot skips a slot the longer buffer still holds.
-    const fromBytes = (sab.byteLength / 16) | 0;
+    // A region of a larger memory (its byte given, Phase 4) holds `pose.capacity`.
+    const fromBytes = at > 0 ? 0 : (sab.byteLength / 16) | 0;
     const n = fromBytes > 0 ? fromBytes : (pose.capacity | 0);
     if (!(n > 0)) {
       poseSlots = null;
       return;
     }
     slots.push({
-      rotC: new Float32Array(sab, n * 8, n),
-      rotS: new Float32Array(sab, n * 12, n),
+      rotC: new Float32Array(sab, at + n * 8, n),
+      rotS: new Float32Array(sab, at + n * 12, n),
     });
   }
   poseSlots = slots;
@@ -108,10 +111,12 @@ export function bindBodySyncBuffers(buffers) {
   pendingOverflow = 0;
   poseSlots = null;
   if (buffers.poseDataA && buffers.poseDataB) {
-    const n = (buffers.poseDataA.byteLength / 16) | 0;
+    const n = buffers.poseDataAByte > 0 ? buffers.poseCapacity | 0 : (buffers.poseDataA.byteLength / 16) | 0;
     bindPoseSlotBuffers({
       dataA: buffers.poseDataA,
       dataB: buffers.poseDataB,
+      dataAByte: buffers.poseDataAByte | 0,
+      dataBByte: buffers.poseDataBByte | 0,
       capacity: n,
     });
   }

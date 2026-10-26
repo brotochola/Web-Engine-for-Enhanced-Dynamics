@@ -1,5 +1,5 @@
 {
-  "comment": "WebAssembly kernel modules (E-76). Built by scripts/buildWasm.mjs; rules in scripts/wasmKernelRules.mjs. \"test\": true modules are built and checked the same way but never shipped (tests/fixtures/wasm/).",
+  "comment": "WebAssembly kernel modules (E-76). Built by scripts/buildWasm.mjs; rules in scripts/wasmKernelRules.mjs. \"engine\" is what ships: every kernel's source linked into one module (close-out step 4). The kernels marked \"engine\": true are also built alone, for the A/B against the engine and nothing else; \"test\": true modules are built and checked the same way but never shipped (tests/fixtures/wasm/).",
   "toolchain": {
     "clang": [
       "clang version 24.0.0git",
@@ -12,13 +12,121 @@
   },
   "modules": [
     {
+      "name": "engine",
+      "sources": [
+        "wasm/spatialPublish.c",
+        "wasm/spatialGather.c",
+        "wasm/particleIntegrate.c",
+        "wasm/particleLists.c",
+        "wasm/gpuPack.c",
+        "wasm/preRenderEmit.c",
+        "wasm/shadowStamp.c",
+        "wasm/decorationSway.c",
+        "wasm/decalStamp.c",
+        "wasm/meshCorners.c",
+        "wasm/navFlowfield.c",
+        "wasm/preRenderCollect.c",
+        "wasm/bulletTick.c",
+        "wasm/painterRadix.c",
+        "wasm/visibilitySweep.c",
+        "wasm/solidSegments.c",
+        "wasm/visibilityGather.c",
+        "wasm/decalPremultiply.c"
+      ],
+      "output": "src/wasm/engine.wasm",
+      "exports": [
+        "publish_batch",
+        "publish_batch_u32",
+        "gather_batch",
+        "order_batch_by_cell",
+        "gather_batch_u32",
+        "order_batch_by_cell_u32",
+        "integrate_batch",
+        "integrate_batch_f32x4",
+        "integrate_batch_u32",
+        "integrate_batch_f32x4_u32",
+        "build_lists",
+        "build_lists_turned",
+        "build_active",
+        "build_lists_f32x4",
+        "build_lists_turned_f32x4",
+        "build_lists_u32",
+        "build_lists_turned_u32",
+        "build_active_u32",
+        "build_lists_f32x4_u32",
+        "build_lists_turned_f32x4_u32",
+        "pack_sprites",
+        "pack_casters",
+        "pack_sprites_scatter",
+        "pack_casters_scatter",
+        "pack_sprites_split",
+        "pack_sprites_split_scatter",
+        "pack_sprites_general",
+        "pack_casters_general",
+        "pack_pose",
+        "emit_rows",
+        "persist_frame",
+        "persist_remember",
+        "adobe_advance",
+        "stamp_light_range",
+        "sway_decorations",
+        "sway_decorations_f32x4",
+        "sway_decorations_u32",
+        "sway_decorations_f32x4_u32",
+        "sway_free",
+        "sway_free_u32",
+        "sway_trig",
+        "stamp_tiles",
+        "rewrite_corners",
+        "rewrite_corners_u32",
+        "compute_flowfield",
+        "collect_sprites",
+        "collect_sprites_turned",
+        "bullet_tick",
+        "bullet_tick_hoist",
+        "bullet_tick_nostamp",
+        "bullet_tick_lean",
+        "bullet_tick_lean_ids32",
+        "bullet_tick_lean_slots32",
+        "bullet_tick_lean_u32",
+        "radix_sort_scalar",
+        "radix_sort_kv8",
+        "radix_sort_kv11",
+        "radix_sort_adaptive",
+        "radix_sort_simd",
+        "painter_order_scalar",
+        "painter_order_kv8",
+        "painter_order_kv11",
+        "painter_order_adaptive",
+        "painter_order_simd",
+        "reinsert_scalar",
+        "reinsert_kv8",
+        "reinsert_kv11",
+        "reinsert_adaptive",
+        "reinsert_simd",
+        "reinsert_inplace",
+        "reinsert_simd_inplace",
+        "sweep_light_f32",
+        "sweep_light_simd",
+        "collect_solid_f32x4",
+        "gather_light",
+        "gather_light_u32",
+        "premultiply_scalar",
+        "premultiply_simd"
+      ],
+      "maxMemoryPages": 32768
+    },
+    {
       "name": "spatialPublish",
       "source": "wasm/spatialPublish.c",
-      "output": "src/workers/spatialPublish.wasm",
+      "output": "tests/fixtures/wasm/spatialPublish.wasm",
       "exports": [
-        "publish_batch"
+        "publish_batch",
+        "publish_batch_u32"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "coexistScale",
@@ -58,44 +166,69 @@
     {
       "name": "spatialGather",
       "source": "wasm/spatialGather.c",
-      "output": "src/workers/spatialGather.wasm",
+      "output": "tests/fixtures/wasm/spatialGather.wasm",
       "exports": [
         "gather_batch",
-        "order_batch_by_cell"
+        "order_batch_by_cell",
+        "gather_batch_u32",
+        "order_batch_by_cell_u32"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "particleIntegrate",
       "source": "wasm/particleIntegrate.c",
-      "output": "src/workers/particleIntegrate.wasm",
+      "output": "tests/fixtures/wasm/particleIntegrate.wasm",
       "exports": [
-        "integrate_batch"
+        "integrate_batch",
+        "integrate_batch_f32x4",
+        "integrate_batch_u32",
+        "integrate_batch_f32x4_u32"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "particleLists",
       "source": "wasm/particleLists.c",
-      "output": "src/workers/particleLists.wasm",
+      "output": "tests/fixtures/wasm/particleLists.wasm",
       "exports": [
         "build_lists",
         "build_lists_turned",
-        "build_active"
+        "build_active",
+        "build_lists_f32x4",
+        "build_lists_turned_f32x4",
+        "build_lists_u32",
+        "build_lists_turned_u32",
+        "build_active_u32",
+        "build_lists_f32x4_u32",
+        "build_lists_turned_f32x4_u32"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "gpuPack",
       "source": "wasm/gpuPack.c",
-      "output": "src/render/gpuPack.wasm",
+      "output": "tests/fixtures/wasm/gpuPack.wasm",
       "exports": [
         "pack_sprites",
         "pack_casters",
         "pack_sprites_scatter",
-        "pack_casters_scatter"
+        "pack_casters_scatter",
+        "pack_sprites_split",
+        "pack_sprites_split_scatter",
+        "pack_sprites_general",
+        "pack_casters_general",
+        "pack_pose"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "spatialRebuild",
@@ -110,60 +243,249 @@
     {
       "name": "preRenderEmit",
       "source": "wasm/preRenderEmit.c",
-      "output": "src/workers/preRenderEmit.wasm",
+      "output": "tests/fixtures/wasm/preRenderEmit.wasm",
       "exports": [
         "emit_rows",
         "persist_frame",
-        "persist_remember"
+        "persist_remember",
+        "adobe_advance"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "shadowStamp",
       "source": "wasm/shadowStamp.c",
-      "output": "src/render/shadowStamp.wasm",
+      "output": "tests/fixtures/wasm/shadowStamp.wasm",
       "exports": [
         "stamp_light_range"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "decorationSway",
       "source": "wasm/decorationSway.c",
-      "output": "src/workers/decorationSway.wasm",
+      "output": "tests/fixtures/wasm/decorationSway.wasm",
       "exports": [
-        "sway_decorations"
+        "sway_decorations",
+        "sway_decorations_f32x4",
+        "sway_decorations_u32",
+        "sway_decorations_f32x4_u32",
+        "sway_free",
+        "sway_free_u32",
+        "sway_trig"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "decalStamp",
-      "source": "wasm/test/decalStamp.c",
+      "source": "wasm/decalStamp.c",
       "output": "tests/fixtures/wasm/decalStamp.wasm",
       "exports": [
         "stamp_tiles"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "meshCorners",
-      "source": "wasm/test/meshCorners.c",
+      "source": "wasm/meshCorners.c",
       "output": "tests/fixtures/wasm/meshCorners.wasm",
       "exports": [
-        "rewrite_corners"
+        "rewrite_corners",
+        "rewrite_corners_u32"
       ],
-      "maxMemoryPages": 8192,
-      "test": true
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
     },
     {
       "name": "navFlowfield",
       "source": "wasm/navFlowfield.c",
-      "output": "src/workers/navFlowfield.wasm",
+      "output": "tests/fixtures/wasm/navFlowfield.wasm",
       "exports": [
         "compute_flowfield"
       ],
-      "maxMemoryPages": 8192
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
+    },
+    {
+      "name": "preRenderCollect",
+      "source": "wasm/preRenderCollect.c",
+      "output": "tests/fixtures/wasm/preRenderCollect.wasm",
+      "exports": [
+        "collect_sprites",
+        "collect_sprites_turned"
+      ],
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
+    },
+    {
+      "name": "bulletTick",
+      "source": "wasm/bulletTick.c",
+      "output": "tests/fixtures/wasm/bulletTick.wasm",
+      "exports": [
+        "bullet_tick",
+        "bullet_tick_hoist",
+        "bullet_tick_nostamp",
+        "bullet_tick_lean",
+        "bullet_tick_lean_ids32",
+        "bullet_tick_lean_slots32",
+        "bullet_tick_lean_u32"
+      ],
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
+    },
+    {
+      "name": "painterRadix",
+      "source": "wasm/painterRadix.c",
+      "output": "tests/fixtures/wasm/painterRadix.wasm",
+      "exports": [
+        "radix_sort_scalar",
+        "radix_sort_kv8",
+        "radix_sort_kv11",
+        "radix_sort_adaptive",
+        "radix_sort_simd",
+        "painter_order_scalar",
+        "painter_order_kv8",
+        "painter_order_kv11",
+        "painter_order_adaptive",
+        "painter_order_simd",
+        "reinsert_scalar",
+        "reinsert_kv8",
+        "reinsert_kv11",
+        "reinsert_adaptive",
+        "reinsert_simd",
+        "reinsert_inplace",
+        "reinsert_simd_inplace"
+      ],
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
+    },
+    {
+      "name": "solidSegmentsVariants",
+      "source": "wasm/test/solidSegments.c",
+      "output": "tests/fixtures/wasm/solidSegmentsVariants.wasm",
+      "exports": [
+        "collect_solid_f64",
+        "collect_solid_pseudo",
+        "collect_solid_fast",
+        "collect_solid_f64x2",
+        "collect_solid_f32x4"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "visibilitySweepVariants",
+      "source": "wasm/test/visibilitySweep.c",
+      "output": "tests/fixtures/wasm/visibilitySweepVariants.wasm",
+      "exports": [
+        "sweep_light_f64",
+        "sweep_light_pseudo",
+        "sweep_light_pre",
+        "sweep_light_simd",
+        "sweep_light_f32"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "visibilitySweep",
+      "source": "wasm/visibilitySweep.c",
+      "output": "tests/fixtures/wasm/visibilitySweep.wasm",
+      "exports": [
+        "sweep_light_f32",
+        "sweep_light_simd"
+      ],
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
+    },
+    {
+      "name": "solidSegments",
+      "source": "wasm/solidSegments.c",
+      "output": "tests/fixtures/wasm/solidSegments.wasm",
+      "exports": [
+        "collect_solid_f32x4"
+      ],
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
+    },
+    {
+      "name": "visibilityGather",
+      "source": "wasm/visibilityGather.c",
+      "output": "tests/fixtures/wasm/visibilityGather.wasm",
+      "exports": [
+        "gather_light",
+        "gather_light_u32"
+      ],
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
+    },
+    {
+      "name": "decalPremultiply",
+      "source": "wasm/decalPremultiply.c",
+      "output": "tests/fixtures/wasm/decalPremultiply.wasm",
+      "exports": [
+        "premultiply_scalar",
+        "premultiply_simd"
+      ],
+      "maxMemoryPages": 32768,
+      "test": true,
+      "engine": true
+    },
+    {
+      "name": "shadowStampF32",
+      "source": "wasm/test/shadowStampF32.c",
+      "output": "tests/fixtures/wasm/shadowStampF32.wasm",
+      "exports": [
+        "stamp_light_range",
+        "stamp_light_range_f32",
+        "stamp_light_range_f32x4"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "meshCornersF32",
+      "source": "wasm/test/meshCornersF32.c",
+      "output": "tests/fixtures/wasm/meshCornersF32.wasm",
+      "exports": [
+        "rewrite_corners",
+        "rewrite_corners_u32",
+        "rewrite_corners_f32",
+        "rewrite_corners_f32x4"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
+    },
+    {
+      "name": "spatialGatherF32",
+      "source": "wasm/test/spatialGatherF32.c",
+      "output": "tests/fixtures/wasm/spatialGatherF32.wasm",
+      "exports": [
+        "gather_batch",
+        "order_batch_by_cell",
+        "gather_batch_u32",
+        "order_batch_by_cell_u32",
+        "gather_batch_f32",
+        "gather_batch_f32x4"
+      ],
+      "maxMemoryPages": 8192,
+      "test": true
     }
   ]
 }

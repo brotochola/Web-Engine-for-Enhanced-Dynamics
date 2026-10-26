@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * Kernel: the spatial neighbour publish, shipped JS against the shipped WASM module (E-76 T4).
+ * Kernel: the spatial neighbour publish, the JS filter it replaced against the shipped WASM module (E-76 T4).
  *
- * JS: `SpatialWorker._publishFilteredNeighbors` on a real worker in JS mode, the path the engine
- * takes without a publish memory (32-bit ids, or the module failed to load), called per entity as
- * `findNeighborsForOwnedEntities` calls it. It keeps that path's storage: poses in the
- * `entityPosData` SAB, candidates in the worker's own array, rows in `Grid.neighborData`.
+ * JS: the range filter of `SpatialWorker._publishFilteredNeighbors` as the engine shipped it until the publish
+ * kernel became its only one (tests/reference/spatialGather.mjs), called per entity as the JS search called it,
+ * on storage of its own: poses, candidates and rows in arrays outside the memory.
  * WASM: `publish_batch` on the product memory (`createSpatialPublishMemory`), one call for the
  * batch, as the worker makes it at the end of a frame. Both sides read the same bytes; the rows
  * they write are compared before anything is timed.
@@ -24,10 +23,10 @@ import assert from 'node:assert/strict';
 import { Collider } from '../../src/components/collider.js';
 import { Grid } from '../../src/core/grid.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
+import { publishFilteredNeighborsJs } from '../reference/spatialGather.mjs';
 import { isCli, parseArgs, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 import { setupSpatialKernel } from './spatialWorkerMicrobench.mjs';
 import { abab, instantiateKernel, machineState, warmWasm } from './wasmKernelHelpers.mjs';
-import { initWorker, loadWorker, spatialBuffers } from './workerHarness.mjs';
 
 const UNIFORM = { count: 4096, maxNeighbors: 1024, candidates: 48, batch: 2048, seed: 0x1234567 };
 
@@ -78,24 +77,20 @@ async function uniformCase() {
     }
   }
 
-  const cfg = { worldWidth: 10000, worldHeight: 5000, cellSize: 128, maxEntitiesPerCell: 128, maxNeighbors: maxN };
-  const worker = await loadWorker('spatialWorker.js', 'spatialWorker');
-  const { buffers, gridMetadata } = spatialBuffers(cfg, count);
-  await initWorker(worker, {
-    config: { worldWidth: cfg.worldWidth, worldHeight: cfg.worldHeight, spatial: cfg },
-    globalEntityCount: count,
-    buffers,
-    gridMetadata,
-    extra: { workerIndex: 0, totalSpatialWorkers: 1 },
-  });
-  assert.equal(worker._wasmPub, null, 'the worker runs the JS path');
-  worker.entityPosData.set(m.pos);
-  worker._neighborCandidateData.set(m.cand);
   const range = Float32Array.from(m.range);
-  return { mem, m, worker, range, list: Uint16Array.from(m.list.subarray(0, batch)), n: batch, count, maxN };
+  return { mem, m, js: jsSide(m.pos, m.cand, count, maxN), range, list: Uint16Array.from(m.list.subarray(0, batch)), n: batch, count, maxN };
 }
 
-/** Candidate rows from the real gather (JS mode), copied into the product memory for the WASM. */
+/** The JS filter's storage: copies of the poses and candidates, rows of its own. */
+function jsSide(pos, cand, count, maxN) {
+  return {
+    pos: Float32Array.from(pos.subarray(0, count * 4)),
+    ctx: { _neighborCandidateData: Uint16Array.from(cand.subarray(0, count * (1 + maxN))), neighborsFoundThisFrame: 0 },
+    rows: new Uint16Array(count * (1 + maxN)),
+  };
+}
+
+/** Candidate rows from the real gather, copied into a product memory of their own for the WASM. */
 async function predatorCase() {
   const k = await setupSpatialKernel({ n: 16500, workers: 3 });
   for (let f = 0; f < 45; f++) k.frame();
@@ -120,7 +115,7 @@ async function predatorCase() {
     m.cand.set(worker._neighborCandidateData.subarray(base, base + 1 + worker._neighborCandidateData[base]), base);
   }
   const range = Float32Array.from(visualRange.subarray(0, count));
-  return { mem, m, worker, range, list: Uint16Array.from(ids), n: ids.length, count, maxN };
+  return { mem, m, js: jsSide(m.pos, m.cand, count, maxN), range, list: Uint16Array.from(ids), n: ids.length, count, maxN };
 }
 
 /** FNV-1a over each batch entity's row (count, then ids), in batch order. */
@@ -140,17 +135,17 @@ async function main() {
   const rounds = Number(args.rounds ?? 9);
   const setup = caseName === 'uniform' ? await uniformCase() : caseName === 'predator' ? await predatorCase() : null;
   if (!setup) throw new Error(`unknown case ${caseName}`);
-  const { mem, m, worker, range, list, n, maxN } = setup;
+  const { mem, m, js: side, range, list, n, maxN } = setup;
   const stride = 1 + maxN;
-  const posJs = worker.entityPosData;
-  const rowsJs = Grid.neighborData;
+  const posJs = side.pos;
+  const rowsJs = side.rows;
   const publish = instantiateKernel('spatialPublish', mem.memory).publish_batch;
 
   const js = (count) => {
     for (let k = 0; k < count; k++) {
       const a = list[k];
       const p = a * 4;
-      worker._publishFilteredNeighbors(a, posJs[p], posJs[p + 1], range[a], a * stride, maxN, posJs, rowsJs);
+      publishFilteredNeighborsJs.call(side.ctx, a, posJs[p], posJs[p + 1], range[a], a * stride, maxN, posJs, rowsJs);
     }
   };
   const wasm = (count) => publish(count, maxN, mem.posByte, mem.rangeByte, mem.candByte, mem.neighborByte, mem.listByte);
@@ -176,7 +171,7 @@ async function main() {
   const report = {
     feature: 'spatial-publish-wasm',
     case: caseName,
-    functions: ['SpatialWorker._publishFilteredNeighbors', 'spatialPublish.publish_batch'],
+    functions: ['_publishFilteredNeighbors (tests/reference)', 'spatialPublish.publish_batch'],
     n,
     seed: caseName === 'uniform' ? UNIFORM.seed : 0x5a71a1,
     checksum: jsSum,

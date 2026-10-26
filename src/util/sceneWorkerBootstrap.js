@@ -15,6 +15,8 @@ import { frameClockSlot } from './frameClock.js';
 import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
+import { installDecalMemory } from './decalMemory.js';
+import { box2dBlockError, box2dBlockParts, box2dBlockPlan, requestBox2dBlock, standaloneBlock } from './box2dEngineBlock.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
 
 // One cache-bust token per page load: a hard refresh still picks up new worker
@@ -34,10 +36,12 @@ function createSceneWorkerFactory(useInlineWorkers, cacheBust) {
 /**
  * Classic Box2D worker (pthread entry). Bundle blob or /src/box2d/box2dWasm.js — no type:module.
  * The worker's name carries Box2D's memory size ('physics pages=N'): the glue creates the memory
- * while the script is evaluated, before any message can arrive. Exported for tests.
+ * while the script is evaluated, before any message can arrive. `pages` overrides the size Phase 4 grows by
+ * the engine block; 'mb=M' is physics.wasmMemoryMB as the scene set it, for the out-of-memory message (the
+ * block makes N more than M × 16). Exported for tests.
  */
-export function createPhysicsWorker(useInlineWorkers, cacheBust, physicsConfig) {
-  const options = { name: `physics pages=${box2dMemoryPages(physicsConfig)}` };
+export function createPhysicsWorker(useInlineWorkers, cacheBust, physicsConfig, pages = box2dMemoryPages(physicsConfig)) {
+  const options = { name: `physics pages=${pages} mb=${box2dMemoryPages(physicsConfig) / 16}` };
   if (useInlineWorkers) {
     if (typeof window.WEED.getBox2dWorkerUrl !== 'function') {
       throw new Error('BUNDLE_MODE physics requires WEED.getBox2dWorkerUrl()');
@@ -61,9 +65,11 @@ function createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBu
     scene.workers.logicWorkers.push(logicWorker);
   }
 
-  // Boot: no box2dWasm.js when config.physics.enabled === false.
+  // Boot: no box2dWasm.js when config.physics.enabled === false. Phase 4 started it already (reserveBox2dBlock).
   if (scene._physicsEnabled) {
-    scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics);
+    if (!scene.workers.physics) {
+      scene.workers.physics = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics);
+    }
     // Main-side label for step waiters and logs; the worker's own name is set above.
     scene.workers.physics.name = 'physics';
   } else {
@@ -179,6 +185,7 @@ function buildSceneSharedBuffers(scene) {
     debugDrawData: scene.buffers.debugDrawData,
     frameRateData: scene.buffers.frameRateData,
     frameClock: scene.buffers.frameClock || null,
+    frameTotals: scene.buffers.frameTotals || null,
     componentData: scene.buffers.componentData,
     // Each component's byte offset in its buffer (a region of the render-queue memory, E-112), or none.
     componentDataByte: scene.buffers.componentDataByte || null,
@@ -204,7 +211,9 @@ function buildSceneSharedBuffers(scene) {
     bodyDirtyFlags: scene.buffers.bodyDirtyFlags,
     bodyDirtyWords: scene.buffers.bodyDirtyWords,
     bodyGeneration: scene.buffers.bodyGeneration,
+    staticSceneryGen: scene.buffers.staticSceneryGen || null,
     liquidFunRender: scene.buffers.liquidFunRender || null,
+    liquidFunRenderByte: scene.buffers.liquidFunRenderByte | 0,
     liquidFunGroups: scene.buffers.liquidFunGroups || null,
     decalStampRing: scene.buffers.decalStampRing || null,
     spawnCommandRing: scene.buffers.spawnCommandRing || null,
@@ -224,6 +233,7 @@ function buildRegisteredClassesInfo(scene) {
     endIndex: r.startIndex + r.count,
     entityType: r.entityType,
     deriveSpeed: r.class.deriveSpeed === true,
+    isStatic: r.class.isStatic === true,
     animationEnd: definesBelow(r.class, GameObject, 'onAnimationEnd'),
     engineProvided: r.class.scriptUrl === null,
     components: r.components.map((c) => c.name),
@@ -343,6 +353,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     posePublish: {
       dataA: scene.buffers.poseDataA,
       dataB: scene.buffers.poseDataB,
+      // Each buffer's byte: a region of Box2D's block (Phase 4), else 0.
+      dataAByte: scene.buffers.poseDataAByte | 0,
+      dataBByte: scene.buffers.poseDataBByte | 0,
       sync: scene.buffers.poseSync,
       capacity: scene.poseCapacity || scene.totalEntityCount,
     },
@@ -360,6 +373,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           tilesDirty: scene.buffers.decalsTilesDirty,
           stampRing: scene.buffers.decalStampRing,
           textures: scene.decalTextureData,
+          // W26: the decal memory (the tiles are its buffer) and its regions, or none.
+          memory: scene.decalMemory ? scene.decalMemory.memory : null,
+          memoryLayout: scene.decalMemory ? scene.decalMemory.layout : null,
         }
       : null,
     shadows: scene.config.lighting.shadowsEnabled
@@ -435,6 +451,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
           maxMeshIndices: scene.config.renderer.maxMeshIndices | 0,
           entityCount: scene.totalEntityCount,
           data: scene.buffers.meshGeomData,
+          // E-76 W11: the mesh memory that data is the buffer of, and its layout (Pixi's corner kernel).
+          memory: scene.meshMemory?.memory || null,
+          layout: scene.meshMemory?.layout || null,
         }
       : null,
     audio: {
@@ -604,17 +623,50 @@ function attachSceneWorkerRuntimeHandlers(scene) {
   debugWorkerLog('[Scene] ✅ Message handlers set up');
 }
 
-export async function createSceneWorkers(scene) {
-  const cacheBust = WORKER_CACHE_BUST;
+/** Bundle (inline worker sources, made ready here) or /src workers, and the cache-bust token. */
+async function workerMode() {
   const useInlineWorkers =
     typeof window !== 'undefined' && window.WEED?.BUNDLE_MODE && window.WEED?.WorkerSources;
-
-  if (useInlineWorkers) {
-    if (typeof window.WEED.ensureEmbeddedSources === 'function') {
-      await window.WEED.ensureEmbeddedSources();
-    }
-    debugWorkerLog('[Scene] Using inline workers (single-file bundle mode)');
+  if (useInlineWorkers && typeof window.WEED.ensureEmbeddedSources === 'function') {
+    await window.WEED.ensureEmbeddedSources();
   }
+  return { useInlineWorkers, cacheBust: WORKER_CACHE_BUST };
+}
+
+/**
+ * Phase 4: start the physics worker before the shared buffers exist, with Box2D's memory grown by the
+ * render-queue regions' block, and reserve that block (box2dEngineBlock.js). Sets scene.box2dBlock to
+ * { memory, byte, bytes } or null; createSceneWorkers then reuses the worker. Without physics the block is a memory of
+ * its own, laid out the same way (standaloneBlock), and no worker starts early.
+ */
+export async function reserveBox2dBlock(scene) {
+  scene.box2dBlock = null;
+  if (!scene._physicsEnabled) {
+    scene.box2dBlock = standaloneBlock(scene);
+    return scene.box2dBlock;
+  }
+  const plan = box2dBlockPlan(scene);
+  if (!plan) {
+    const why = box2dBlockError(scene);
+    if (why) throw new Error(why);
+    return null;
+  }
+  const { useInlineWorkers, cacheBust } = await workerMode();
+  const worker = createPhysicsWorker(useInlineWorkers, cacheBust, scene.config.physics, plan.pages);
+  worker.name = 'physics';
+  // The glue's pre-js throws while the script loads when the memory cannot be made; nothing else listens yet.
+  worker.onerror = (e) => {
+    console.error('❌ EARLY ERROR in physics worker (module load failed):', e.message, e);
+    scene._showFatalErrorMessage('physics', 'Physics worker failed to start', e.message || String(e));
+  };
+  scene.workers.physics = worker;
+  scene.box2dBlock = box2dBlockParts(await requestBox2dBlock(worker, plan.bytes), plan);
+  return scene.box2dBlock;
+}
+
+export async function createSceneWorkers(scene) {
+  const { useInlineWorkers, cacheBust } = await workerMode();
+  if (useInlineWorkers) debugWorkerLog('[Scene] Using inline workers (single-file bundle mode)');
 
   const makeWorker = createSceneWorkerFactory(useInlineWorkers, cacheBust);
   createSceneWorkerInstances(scene, makeWorker, useInlineWorkers, cacheBust);
@@ -623,6 +675,9 @@ export async function createSceneWorkers(scene) {
   const spritesheetConfigs = scene.imageUrls.spritesheets || {};
   // preloadAssets overlaps atlas ∥ audio ∥ tilemaps ∥ flowfields ∥ shaders
   await scene.preloadAssets(scene.imageUrls, spritesheetConfigs, scene.audioUrls);
+  // W26: the decal tiles in a memory of their own, with the stamp kernel's scratch and the decal textures, now
+  // that the textures are loaded and before any worker binds the tiles.
+  installDecalMemory(scene);
 
   scene.textureMetadata = scene.buildTextureMetadata();
   injectLoadedShaderSources(scene);

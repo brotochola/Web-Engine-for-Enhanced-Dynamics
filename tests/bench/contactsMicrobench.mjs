@@ -12,6 +12,8 @@
  * overrides only the methods the hypothesis touches.
  */
 import { collisionPairKey } from '../../src/util/utils.js';
+import { Transform } from '../../src/components/transform.js';
+import { drainContactRing } from '../../src/box2d/box2dContactRing.js';
 import { begin, createContactWorker, end, logicWorkerClass } from './contactFlowHarness.mjs';
 import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
@@ -59,7 +61,77 @@ export function fixturePairs(fx, maxPairs = 120000, reach = 0.5) {
   return pairs;
 }
 
-const VARIANTS = { base: (Base) => Base };
+/**
+ * W18's screen: the stay loop's generation check as plain reads of the generation array instead of
+ * Atomics.load. A copy of the shipped method with that one change (FOREIGN_SWEEP_FRAMES is logicWorker.js').
+ */
+const FOREIGN_SWEEP_FRAMES = 30;
+const plainGen = (Base) => class extends Base {
+  _processBox2dCollisionCallbacks() {
+    if (!this.useBox2dContacts || !this.box2dContactRingI32) return;
+    const frame = (this._contactFrame = (this._contactFrame + 1) >>> 0);
+    const result = drainContactRing(this.box2dContactRingI32, this.box2dContactCursor, this._onContactRingEvent);
+    this.box2dContactCursor = result.nextCursor;
+    this.frameCollisions = this._pairView;
+    if (result.overrun) {
+      if (this._pairCount !== 0 || this._foreignCount !== 0) this._clearContactState('contact ring overrun');
+      return;
+    }
+    if (--this._foreignSweepIn <= 0) {
+      this._foreignSweepIn = FOREIGN_SWEEP_FRAMES;
+      for (let f = 0; f < this._foreignCount; ) {
+        if (this._foreignValid(f)) f++;
+        else this._removeForeignSlot(f, collisionPairKey(this._foreignMin[f], this._foreignMax[f]));
+      }
+    }
+    const gameObjects = this.gameObjects;
+    const entityType = Transform.entityType;
+    const active = Transform.active;
+    const collisionFlags = this.collisionListenerByType;
+    const gen = this.bodyGeneration;
+    const pairMin = this._pairMin;
+    const pairMax = this._pairMax;
+    const genMin = this._pairGenMin;
+    const genMax = this._pairGenMax;
+    const began = this._pairBegan;
+    const pairSides = this._pairSides;
+    let s = 0;
+    let calling = -1;
+    for (;;) {
+      try {
+        while (s < this._pairCount) {
+          const minE = pairMin[s];
+          const maxE = pairMax[s];
+          const valid =
+            active[minE] &&
+            active[maxE] &&
+            (gen
+              ? (gen[minE] >>> 0) === genMin[s] && (gen[maxE] >>> 0) === genMax[s]
+              : genMin[s] === 0 && genMax[s] === 0);
+          if (!valid) {
+            this._removePairSlot(s, collisionPairKey(minE, maxE));
+            continue;
+          }
+          const beganNow = began[s] === frame;
+          s++;
+          if (beganNow) continue;
+          const sides = pairSides[s - 1];
+          const aListens = (sides & 1) !== 0 && collisionFlags[entityType[minE]];
+          const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
+          calling = minE;
+          if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
+          calling = maxE;
+          if (bListens) gameObjects[maxE]?.onCollisionStay(minE);
+        }
+        break;
+      } catch (error) {
+        this._entityThrew(error, calling, 'onCollisionStay');
+      }
+    }
+  }
+};
+
+const VARIANTS = { base: (Base) => Base, plainGen };
 
 export async function setupContactKernel(opts = {}) {
   const fx = loadPredatorFixture();

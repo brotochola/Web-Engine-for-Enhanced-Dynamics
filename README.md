@@ -20,8 +20,9 @@ Many browser games run simulation and rendering on a single thread. This engine 
 | ---------------------------------------------------------------------------- | ----------------------------- |
 | **50,000+ entities** chasing, shooting and fleeing, driven by state machines | **60 FPS**                    |
 | **Bunnymark** sprite stress test                                             | **250,000 sprites at 60 FPS** |
+| **18 WebAssembly kernels** (hand-written C, SIMD) for the hottest engine loops | pre-render **−42 %** (Predator), **−70 %** (10,000 animated characters) against the all-JS engine |
 | Production bundle (Box2D + LiquidFun WASM included)                          | **≈ 1 MB**                    |
-| Unit tests                                                                   | **1004** node tests (16 Oct 2026) |
+| Unit tests                                                                   | **1986** node tests (26 Oct 2026) |
 
 Measured on a mid-range laptop: AMD Ryzen 7 4800H, 16 GB RAM, NVIDIA GTX 1650. Benchmark methodology: [`tests/bench/BENCHMARK_METHODOLOGY.md`](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/tests/bench/BENCHMARK_METHODOLOGY.md).
 

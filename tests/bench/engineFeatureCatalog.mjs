@@ -38,8 +38,9 @@ export const ENGINE_FEATURES = [
   {
     id: 'decals',
     name: 'Decal stamp',
-    module: 'src/core/decal.js',
-    kernel: { script: 'tests/bench/decalMicrobench.mjs', opsKey: 'cases.normal_multitile_large.opsPerSec' },
+    // The stamp is decalStamp.wasm only (the JS one is tests/reference/decalStamp.mjs): the kernel's microbench, wasm.
+    module: 'src/workers/decalStampClient.js',
+    kernel: { script: 'tests/bench/decalStampWasmMicrobench.mjs', opsKey: 'cases.stamp.opsPerSec' },
     scene: {
       key: 'decalStamp',
       path: '/tests/bench/stressScenes/decalStampStressScene.js',
@@ -72,10 +73,10 @@ export const ENGINE_FEATURES = [
   {
     id: 'integrate',
     name: 'Particle integrate',
-    module: 'src/util/particleIntegrate.js',
-    // build + updateParticlePhysicsBuffers at 50% pool occupancy. The old key
-    // (cases.buildActiveListBuffers) never existed in the JSON.
-    kernel: { script: 'tests/bench/particleIntegrateMicrobench.mjs', opsKey: 'cases.occ50_integrate.opsPerSec' },
+    // particleIntegrate.wasm only (the JS integrate is tests/reference/particleIntegrate.mjs): the kernel's microbench,
+    // its shipped float32 form.
+    module: 'src/workers/particleIntegrateClient.js',
+    kernel: { script: 'tests/bench/particleIntegrateWasmMicrobench.mjs', opsKey: 'cases.integrate.opsPerSec' },
     scene: {
       key: 'particleIntegrate',
       path: '/tests/bench/stressScenes/particleIntegrateStressScene.js',
@@ -191,8 +192,9 @@ export const ENGINE_FEATURES = [
   {
     id: 'nav',
     name: 'NavGrid',
-    module: 'src/core/navGrid.js',
-    kernel: { script: 'tests/bench/navGridMicrobench.mjs', opsKey: 'cases.dijkstra.opsPerSec' },
+    // The flowfield is navFlowfield.wasm only: its microbench, wasm (navGridMicrobench times a copy of its own).
+    module: 'src/workers/navFlowfieldClient.js',
+    kernel: { script: 'tests/bench/navFlowfieldWasmMicrobench.mjs', opsKey: 'cases.flowfield.opsPerSec' },
     scene: {
       key: 'navStress',
       path: '/tests/bench/stressScenes/navStressScene.js',
@@ -528,8 +530,9 @@ export const ENGINE_FEATURES = [
   {
     id: 'shadowStamp',
     name: 'Shadow caster stamp',
-    module: 'src/render/gpuShadowCasters.js',
-    kernel: { script: 'tests/bench/shadowStampMicrobench.mjs', opsKey: 'cases.stamp.opsPerSec' },
+    // shadowStamp.wasm only (the JS stamp is tests/reference/shadowStamp.mjs): the kernel's microbench, wasm.
+    module: 'src/render/shadowStampClient.js',
+    kernel: { script: 'tests/bench/shadowStampWasmMicrobench.mjs', opsKey: 'cases.stamp.opsPerSec' },
     scene: null,
     primary: ['preRender_STEP_MS'],
     load: [],
@@ -546,8 +549,9 @@ export const ENGINE_FEATURES = [
   {
     id: 'decalPremultiply',
     name: 'Decal tile premultiply',
-    module: 'src/render/webgpu/pinGpuTexture.js',
-    kernel: { script: 'tests/bench/premultiplyMicrobench.mjs', opsKey: 'cases.tiles.opsPerSec' },
+    // decalPremultiply.wasm only (the JS one is tests/reference/decalPremultiply.mjs): the kernel's microbench, wasm.
+    module: 'src/render/decalPremultiplyClient.js',
+    kernel: { script: 'tests/bench/decalPremultiplyWasmMicrobench.mjs', opsKey: 'cases.premultiply.opsPerSec' },
     scene: null,
     primary: ['pixi_STEP_MS'],
     load: [],

@@ -20,6 +20,7 @@ import { RigidBody } from '../../src/components/rigidBody.js';
 import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { entityIdBytes, EntityIdArray } from '../../src/util/entityIdWidth.js';
+import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
@@ -107,6 +108,46 @@ export function spatialBuffers(cfg, n) {
 }
 
 /**
+ * Point spatialBuffers' poses, rows and grid at the spatial publish memory `mem`, and give gridMetadata its regions'
+ * offsets, as the scene hands them to a spatial worker (its neighbour search runs only there).
+ */
+export function bindPublishMemory(buffers, gridMetadata, mem) {
+  buffers.entityPosData = mem.buffer;
+  buffers.neighborData = mem.buffer;
+  if (mem.gridByte) buffers.gridBuffer = mem.buffer;
+  Object.assign(gridMetadata, {
+    posByte: mem.posByte,
+    rangeByte: mem.rangeByte,
+    neighborByte: mem.neighborByte,
+    candByte: mem.candByte,
+    listByte: mem.listByte,
+    listStride: mem.listStride,
+    gridByte: mem.gridByte | 0,
+    markerByte: mem.markerByte | 0,
+    markerStride: mem.markerStride | 0,
+    truncatedByte: mem.truncatedByte | 0,
+    truncatedStride: mem.truncatedStride | 0,
+    rebuildByte: mem.rebuildByte | 0,
+    rebuildStride: mem.rebuildStride | 0,
+    orderByte: mem.orderByte | 0,
+    orderStride: mem.orderStride | 0,
+    patternByte: mem.patternByte | 0,
+    patternBytes: mem.patternBytes | 0,
+  });
+}
+
+/** spatialBuffers on the spatial publish memory for `workers` spatial workers (pass `mem.memory` to their init). */
+export function spatialPublishBuffers(cfg, n, workers = 1) {
+  const { buffers, gridMetadata } = spatialBuffers(cfg, n);
+  const mem = createSpatialPublishMemory(n, cfg.maxNeighbors, workers, {
+    totalCells: gridMetadata.totalCells,
+    cellByteSize: 4 + cfg.maxEntitiesPerCell * gridMetadata.entityIdBytes,
+  });
+  bindPublishMemory(buffers, gridMetadata, mem);
+  return { buffers, gridMetadata, mem };
+}
+
+/**
  * Send the real `init` message. `extra` goes on the payload root
  * (workerIndex, totalSpatialWorkers, …).
  */
@@ -140,6 +181,28 @@ export function bindPoseColumns(n) {
   for (const k of ['vx', 'vy', 'angularVelocity']) {
     if (!(RigidBody[k] instanceof Float32Array) || RigidBody[k].length < n) RigidBody[k] = new Float32Array(n);
   }
+}
+
+/**
+ * The emit's part of a render-queue memory spec for `n` entities (createRenderQueueMemory's emit argument): every scene's
+ * memory has it, since the emit runs only in its kernel. Pass the memory to emitSpriteBuffers to bind SpriteRenderer there.
+ */
+export function emitSpec(n, more = {}) {
+  return { entities: n, spriteBytes: SpriteRenderer.getBufferSize(n), casterBytes: 0, decorationBytes: 0, ...more };
+}
+
+/** The componentData and componentDataByte entries that bind SpriteRenderer at the emit's block of memory `m`. */
+export function emitSpriteBuffers(m) {
+  return { componentData: { SpriteRenderer: m.buffer }, componentDataByte: { SpriteRenderer: m.layout.emit.spriteRendererByte } };
+}
+
+/** A custom layer's collector as pre-render makes one (its pose stash included), of `n` rows. */
+export function customLayerCollector(n, ySorting = false) {
+  return {
+    y: new Float32Array(n), type: new Uint8Array(n), index: new Int32Array(n),
+    stashX: new Float32Array(n), stashY: new Float32Array(n), stashRotC: new Float32Array(n), stashRotS: new Float32Array(n),
+    count: 0, maxItems: n, ySorting, _overflowWarned: false,
+  };
 }
 
 /** Fill the shared active list `[count, id0, id1, …]`. */

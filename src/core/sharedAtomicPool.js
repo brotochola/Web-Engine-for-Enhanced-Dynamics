@@ -6,6 +6,10 @@
 // - The free list is a lock-free Treiber stack (see atomicFreeList.js):
 //   freeListTop[0] is the CAS-updated packed head, freeListTop[1] the free
 //   count, and freeList holds the per-slot next links
+// - E-129: a pool whose slot ids follow its maximum (slotIdsFromMax: particles,
+//   decorations, bullets) takes the FL4 stack past 65 535 slots: Uint32 links,
+//   freeListTop[0] the head, [2] the free count. initializeFreeList binds the
+//   operations once; up to 65 535 slots they are the u16 stack's, as always.
 // - Any worker or the main thread can safely acquire/return indices
 //
 // ARCHITECTURE:
@@ -17,9 +21,14 @@ import {
   popU16,
   popIndicesU16,
   pushU16,
+  resetFl4,
+  popFl4,
+  popIndicesFl4,
+  pushFl4,
   getFreeListCount,
 } from '../util/atomicFreeList.js';
 import { debugWorkerLog } from '../util/debugLog.js';
+import { poolSlotWide } from '../util/poolSlotWidth.js';
 
 /**
  * Base class for atomic object pools backed by SharedArrayBuffer.
@@ -38,8 +47,16 @@ export class SharedAtomicPool {
 
     // Free list for O(1) allocation (lock-free linked stack backed by SAB)
     // Shared between all workers and main thread
-    static freeList = null; // Uint16Array - per-slot next links
-    static freeListTop = null; // Int32Array[2] - [0]=packed head, [1]=free count
+    static freeList = null; // Uint16Array - per-slot next links (Uint32Array with FL4)
+    static freeListTop = null; // Int32Array[2] - [0]=packed head, [1]=free count (Int32Array[4] with FL4)
+
+    // E-129: true for a pool whose slot ids are 32-bit past 65 535 slots (poolSlotWidth.js).
+    static slotIdsFromMax = false;
+    // The free-list operations, bound by initializeFreeList: the u16 stack's, or FL4's for a wide pool.
+    static _popSlot = popU16;
+    static _popSlots = popIndicesU16;
+    static _pushSlot = pushU16;
+    static _resetSlots = resetU16;
 
     // Pool name for logging (override in subclass)
     static poolName = 'SharedAtomicPool';
@@ -70,13 +87,22 @@ export class SharedAtomicPool {
 
     /**
      * Initialize the shared free list buffers
-     * Called by workers to connect to the shared free list
-     * @param {SharedArrayBuffer} freeListBuffer - Buffer for next links (Uint16Array)
-     * @param {SharedArrayBuffer} freeListTopBuffer - Buffer for head + count (Int32Array[2])
+     * Called by workers to connect to the shared free list, after initialize(maxCount): a pool with
+     * slotIdsFromMax past 65 535 slots binds FL4 (E-129), every other pool the u16 stack.
+     * @param {SharedArrayBuffer} freeListBuffer - Buffer for next links (Uint16Array, or Uint32Array with FL4)
+     * @param {SharedArrayBuffer} freeListTopBuffer - Buffer for head + count (Int32Array[2], or [4] with FL4)
      */
     static initializeFreeList(freeListBuffer, freeListTopBuffer) {
-        this.freeList = new Uint16Array(freeListBuffer);
+        const wide = this.slotIdsFromMax && poolSlotWide(this.maxCount);
+        this.freeList = wide ? new Uint32Array(freeListBuffer) : new Uint16Array(freeListBuffer);
         this.freeListTop = new Int32Array(freeListTopBuffer);
+        if (wide && (this.freeListTop.length < 4 || this.freeList.length < this.maxCount)) {
+            throw new Error(`${this.poolName}: ${this.maxCount} slots need FL4 buffers (4 bytes a link, a 16-byte head)`);
+        }
+        this._popSlot = wide ? popFl4 : popU16;
+        this._popSlots = wide ? popIndicesFl4 : popIndicesU16;
+        this._pushSlot = wide ? pushFl4 : pushU16;
+        this._resetSlots = wide ? resetFl4 : resetU16;
         debugWorkerLog(
             `${this.poolName}: Free list initialized (free: ${getFreeListCount(this.freeListTop)})`
         );
@@ -92,7 +118,7 @@ export class SharedAtomicPool {
         if (!this.initialized || !this.freeList || !this.freeListTop) {
             return -1;
         }
-        return popU16(this.freeListTop, this.freeList);
+        return this._popSlot(this.freeListTop, this.freeList);
     }
 
     /**
@@ -102,7 +128,7 @@ export class SharedAtomicPool {
         if (!this.initialized || !this.freeList || !this.freeListTop || maxToPop <= 0) {
             return 0;
         }
-        return popIndicesU16(this.freeListTop, this.freeList, maxToPop, outArray, outOffset);
+        return this._popSlots(this.freeListTop, this.freeList, maxToPop, outArray, outOffset);
     }
 
     /**
@@ -114,7 +140,7 @@ export class SharedAtomicPool {
     static returnToPool(index) {
         if (!this.freeList || !this.freeListTop) return;
         if (index < 0 || index >= this.maxCount) return;
-        pushU16(this.freeListTop, this.freeList, index);
+        this._pushSlot(this.freeListTop, this.freeList, index);
     }
 
     /**
@@ -166,6 +192,10 @@ export class SharedAtomicPool {
         this.initialized = false;
         this.freeList = null;
         this.freeListTop = null;
+        this._popSlot = popU16;
+        this._popSlots = popIndicesU16;
+        this._pushSlot = pushU16;
+        this._resetSlots = resetU16;
     }
 
     /**
@@ -182,6 +212,6 @@ export class SharedAtomicPool {
      */
     static resetFreeListInterleaved(interleaveFactor = 8) {
         if (!this.freeList || !this.freeListTop || this.maxCount === 0) return;
-        resetU16(this.freeListTop, this.freeList, this.maxCount, interleaveFactor);
+        this._resetSlots(this.freeListTop, this.freeList, this.maxCount, interleaveFactor);
     }
 }

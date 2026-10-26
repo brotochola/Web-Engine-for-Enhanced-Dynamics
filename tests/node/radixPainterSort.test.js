@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { radixSortIndicesBySortKey } from '../../src/util/sortIndexByKey.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
+import { radixSortIndicesBySortKey } from '../reference/painterJs.mjs';
 
 // Reference: plain 4-pass LSD radix on the float-to-ordinal key, one
 // histogram per pass. Stable, so equal keys keep their input order.

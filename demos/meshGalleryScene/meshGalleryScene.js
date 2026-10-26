@@ -2,8 +2,8 @@
 //
 // The picture is not the collider. MeshRenderer draws on the "gallery" layer.
 // renderer.maxMeshVerts / maxMeshIndices size the shared vertex and index arenas
-// (both default to 0, which is why this scene sets them). Indices are uint16,
-// so maxMeshVerts cannot exceed 65535.
+// (both default to 0, which is why this scene sets them). Indices are uint16 up
+// to 65535 vertices and uint32 past that (maxMeshVerts caps at 1048576).
 //
 // Top row has no RigidBody and no Collider. Transform is the only pose.
 //   fan      setMesh(positions)              convex fan, solid tint

@@ -73,7 +73,7 @@ correctness-sensitive changes; float32 maths in C against double maths in JS bre
 
 ## A defect found in today's module (REVIEW_PLAN N-62)
 
-`wasm-dis` on the shipped [`src/workers/spatialPublish.wasm`](../../src/workers/spatialPublish.wasm)
+`wasm-dis` on the shipped `src/workers/spatialPublish.wasm`
 (1354 bytes, byte-identical to `tests/bench/wasm/spatialPublish.wasm`):
 
 - It was built by emcc, not freestanding. It imports `wasi_snapshot_preview1.args_get`,
@@ -146,41 +146,42 @@ the per-candidate facts behind each row are in the [inventory](#phase-0-inventor
 
 | Id | Worker | Code | Claim | WASM edge | Known going in | Judged on | Status |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| **W1** | pre-render | `collectSolidSegments` with `rasterPolarSpan`, `stampPolarBin` and `raySegT` inlined, in [`angularSweep.js`](../../src/render/visibility/angularSweep.js) | One call per (light, compound solid) that transforms, faces, ranges and rasters every edge beats the shipped loop on the same `_polarDist` / `_polarOwner` | plain WASM for the edge loop; SIMD over bins only as `f64x2` (2 bins per vector keeps the double maths; `f32x4`, the "4 bins per vector" first written here, breaks the bit-identical gates) | Runs only with `raycasted` lighting and compound occluders: never in Predator or visPoly. Q1: 84.9 % of compoundVisPoly `ringSegments=64` pre-render, but the per-edge `atan2` line alone is ~40 % of it, and V8 runs `Math.atan2` as native fdlibm. Bins per span ~1.5–3 (computed). Q2: an fdlibm `atan2` differs from Chrome 155's in 16.5 % of these inputs (1 ulp), so bit-identical gates cannot hold in Chrome | `angularSweepMicrobench` polar cases; `compoundVisPolyStressScene?ringSegments=64` pre-render (not a row of `engineFeatureCatalog.mjs` yet) | open: tolerance gates (decision 5) |
-| **W2a** | pre-render | per light: `buildVisibilityPolygon`, `clipVisibilityToPolar`, `mergeSweep` | One call per light, the per-light scratch in the module's own Memory, beats JS | no dispatch per event, doubles never boxed | Q1: the sweep is 49.2 % of visPoly pre-render (`rayPolyDist` 17.6 %, `emitVertex` 26.9 % inclusive). Tolerance gate (H-06, 1e-4): Q2 did not pass in Chrome; the insertion sort is an algorithm question (E-23) | `angularSweepMicrobench`; `visPolyStressScene` pre-render | open: tolerance gates (decision 5) |
-| **W2b** | pre-render | the whole `buildVisibilityPolygons` frame, neighbour gather included | One call per frame beats JS | no per-light dispatch | the gather reads ~10 SABs and Box2D's heap (`_displayPose` 13.7 % of visPoly pre-render, the gather loop 26 %) | same as W2a | open, blocked on Phase 4 |
+| **W1** | pre-render | `collectSolidSegments` with `rasterPolarSpan`, `stampPolarBin` and `raySegT` inlined, in [`angularSweep.js`](../../src/render/visibility/angularSweep.js) | One call per (light, compound solid) that transforms, faces, ranges and rasters every edge beats the shipped loop on the same `_polarDist` / `_polarOwner` | plain WASM for the edge loop; SIMD over bins only as `f64x2` (2 bins per vector keeps the double maths; `f32x4`, the "4 bins per vector" first written here, breaks the bit-identical gates) | Runs only with `raycasted` lighting and compound occluders: never in Predator or visPoly. Q1: 84.9 % of compoundVisPoly `ringSegments=64` pre-render, but the per-edge `atan2` line alone is ~40 % of it, and V8 runs `Math.atan2` as native fdlibm. Bins per span ~1.5–3 (computed). Q2: an fdlibm `atan2` differs from Chrome 155's in 16.5 % of these inputs (1 ulp), so bit-identical gates cannot hold in Chrome | `angularSweepMicrobench` polar cases; `compoundVisPolyStressScene?ringSegments=64` pre-render (not a row of `engineFeatureCatalog.mjs` yet) | open: tolerance gates (decision 5); **wired 2026-10-24** (`wasm.solidSegments`, default on, behind `wasm.visibilitySweep`): bit for bit with the JS in the wired test; **kept (product)**: compoundVisPoly `?ringSegments=64` pre-render 3.867 → 1.971 ms, −49.0 % (0/4) |
+| **W2a** | pre-render | per light: `buildVisibilityPolygon`, `clipVisibilityToPolar`, `mergeSweep` | One call per light, the per-light scratch in the module's own Memory, beats JS | no dispatch per event, doubles never boxed | Q1: the sweep is 49.2 % of visPoly pre-render (`rayPolyDist` 17.6 %, `emitVertex` 26.9 % inclusive). Tolerance gate (H-06, 1e-4): Q2 did not pass in Chrome; the insertion sort is an algorithm question (E-23) | `angularSweepMicrobench`; `visPolyStressScene` pre-render | open: tolerance gates (decision 5); **wired 2026-10-24** (`wasm.visibilitySweep`, f32 sweep by default, `wasm.visibilitySweepF32`), on a visibility memory of pre-render's own: simd bit for bit, f32 within the gate; **kept (product)**: visPoly pre-render 5.090 → 3.790 ms, −25.4 % (0/4) |
+| **W2b** | pre-render | the whole `buildVisibilityPolygons` frame, neighbour gather included | One call per frame beats JS | no per-light dispatch | the gather reads ~10 SABs and Box2D's heap (`_displayPose` 13.7 % of visPoly pre-render, the gather loop 26 %) | same as W2a | **kept (product)** 2026-10-24 (`wasm.visibilityGather`, with physics: LightOccluder and the visibility memory in Box2D's block): each light's neighbour walk, display poses, cull and packing in one call, the compound solids and self-lit items back as events, bit for bit with the JS; visPoly pre-render 3.765 → 2.839 ms, −24.3 % (0/4); compoundVisPoly `?ringSegments=64` under the floor, not worse |
 | **W3** | pre-render | the cull loop of `collectVisibleEntities` in [`preRenderWorker.js`](../../src/workers/preRenderWorker.js) | A WASM cull over the SAB columns beats JS | maybe SIMD compares if columns are contiguous | Q1: 7.2 % self of Predator pre-render; its 32.1 % inclusive is `collectRenderable` → `_writeRenderable`, which reads JS objects and stays JS. Removing `\|\| 0` there cost +4.8 % (2026-10-06) | desk | **screened (ceiling)** 1.2 % |
-| **W4** | pre-render | `emitSpriteQueue`, `_displayPose`, `_writeQueueShadow`, with W3's collect chain | A WASM render-queue build beats JS | small: a tuned branchy loop (9 row types, 44 `if`); needs the texture metadata as typed tables and ~70 columns of 7 SABs in one memory | Q1: emit 28.7 % inclusive of Predator pre-render, the collect chain 32.1 %. E-66 removed the boxing, E-71/E-72 typed the columns, E-77 the imports | Q3 floor, then a pre-render kernel | split 2026-10-23: **W4a**, the emit, on the render-queue memory: **kept (product)** E-112, Predator pre-render −4.6 % (8 pairs); **W4c**, the persist path, open; **W4b**, the collect (`collectVisibleEntities`, `_displayPose`, `_storeEntitySortY`), reads Transform from Box2D's heap: open, blocked on Phase 4 |
+| **W4** | pre-render | `emitSpriteQueue`, `_displayPose`, `_writeQueueShadow`, with W3's collect chain | A WASM render-queue build beats JS | small: a tuned branchy loop (9 row types, 44 `if`); needs the texture metadata as typed tables and ~70 columns of 7 SABs in one memory | Q1: emit 28.7 % inclusive of Predator pre-render, the collect chain 32.1 %. E-66 removed the boxing, E-71/E-72 typed the columns, E-77 the imports | Q3 floor, then a pre-render kernel | split 2026-10-23: **W4a**, the emit, on the render-queue memory: **kept (product)** E-112, Predator pre-render −4.6 % (8 pairs); **W4c**, the persist path, open; **W4b**, the collect (`collectVisibleEntities`, `_displayPose`, `_storeEntitySortY`), reads Transform from Box2D's heap: open, blocked on Phase 4; **W4b without physics kept** (BunnyMark pre-render −9.4 %); **W4b with physics built 2026-10-24** on Phase 4 (bodies' published poses interpolated, the Y-sort foot line, unresolved frames handed back), bit for bit in its test; kernel: Predator's case +65.0 %; **kept (product)**: Predator pre-render 4.364 → 3.757 ms, −13.3 % (0/4), −17.3 % against the drift; **W4d**, the emit's bullet and trail rows (close-out item 7), **kept (product)** 2026-10-25: `bulletStressScene?bullets=64000` pre-render 4.185 → 3.612 ms, −14.1 % (0/4) |
 | **W4c** | pre-render | the persist path of `emitSpriteQueue`: `_type0PersistHit`, `_writeType0PosesOnly`, `_rememberType0Set` (new from E-112) | The persist check, the poses-only pass and the remembered row set in the emit kernel beat JS | the same memory as W4a: every column they read is there already | BunnyMark pre-render (after E-98): persist check 23.0 %, poses-only 16.4 %; on a full emit `_rememberType0Set` walks every row in JS after the kernel | `bunnyMarkScene` pre-render; Predator gate | **kept (product)** E-115, E-116, E-117: BunnyMark pre-render 6.12 → 5.17 ms over two gates |
 | **W5** | spatial | candidate gather in `findNeighborsForOwnedEntities` ([`spatialWorker.js`](../../src/workers/spatialWorker.js)) | WASM gather beats JS | batching only | Q1: 61.8 % self of Predator spatial (85.8 % inclusive). E-70/E-75: three JS layouts slower. Q3: floor ratio 1.026, the same as the publish loop, which WASM runs 1.4–2.2× faster than JS; at 1.4× the ceiling is ~18 % of Predator spatial. Needs the grid cells inside the spatial Memory (one more region, no arena) | Q3 first; spatial kernel; Predator spatial | **kept (product)** E-78: Predator spatial −18.6 % |
 | **W6** | spatial | `rebuildOwnedRows` | WASM binning beats JS | batching, no boxing | Q1: 12.5 % inclusive of Predator spatial: 2.9 % ceiling alone. Inputs in five SABs including Box2D's heap | `spatialRebuildWasmMicrobench` | **screened 2026-10-23**: bit-exact C port +10.9 % in its kernel on Predator's mix (1.48× with every shape), about 1.4 % of Predator spatial |
-| **W7** | spatial | W5 + W6 + the existing publish | The whole spatial step in one call beats JS + WASM publish | one call per frame | Q1: the three are ~98 % of Predator spatial; the publish module itself 17.5 %. Needs `Transform.x/y` in the same memory: arena or Box2D's memory | Predator spatial | open, blocked on Phase 4; after the W6 screen its ceiling is the glue (8 %) plus 1.4 %, under 10 % of spatial |
+| **W7** | spatial | W5 + W6 + the existing publish | The whole spatial step in one call beats JS + WASM publish | one call per frame | Q1: the three are ~98 % of Predator spatial; the publish module itself 17.5 %. Needs `Transform.x/y` in the same memory: arena or Box2D's memory | Predator spatial | open, blocked on Phase 4; after the W6 screen its ceiling is the glue (8 %) plus 1.4 %, under 10 % of spatial; **unblocked 2026-10-24** (Phase 4: the spatial publish memory is a part of Box2D's block, with Transform's pose), **deferred to the grouping step**: one call per frame means the gather, publish and rebuild kernels in one module, which the migration sequence does after every hypothesis; the glue it saves is ~8 % of spatial |
 | **W8a** | spatial | `publish_batch` ([`spatialPublish.c`](../../wasm/spatialPublish.c)) in double | The JS path's arithmetic in C (float32 inputs widened, every operation in double) publishes exactly what the JS path does and costs under 3 % | correctness: one neighbour set for both paths | Q5: float32 and double disagree only within ~3·10⁻⁷ of the range edge; 0 of 34.9 M real pairs, 86 of 2 000 entities on an edge frame. Scalar double ties with the shipped f32x4 module on Predator rows (−1.9, +0.5, +0.8 %) and is −21.6 % on an arithmetic-bound edge frame | Predator gate (hygiene: no worker 3 % worse) | **kept (correctness)** 2026-10-22: gate NEUTRAL; Chrome kernel +2.0 to +3.2 % |
-| **W8b** | spatial | a 32-bit-id `publish_batch` | A 32-bit-id variant keeps the win past 65,535 ids | reach | today `createSpatialPublishMemory` returns `null` unless ids are 2 bytes (E-27), and the scene takes the JS path silently. At 32-bit ids each row region is `count × (1 + maxNeighbors) × 4` bytes, past 512 MB (and 4 GB) for large scenes | `spatialPublishWasmMicrobench` at 32-bit ids; a 32-bit stress scene (`stationarySpatial32Scene`) | open |
-| **W9** | Pixi | `packInstancedRows` in [`gpuQueueLayout.js`](../../src/render/gpuQueueLayout.js) | Plain WASM (no SIMD) beats JS | at most the 26 % that is arithmetic | Q1: 33.9 % of Predator Pixi. E-18 rejected SIMD (gather, painter runs of 1.002); X5: the rest is cache lines written by pre-render on another core | desk | **kept (product)** E-94: painterSort pre-render −3.5 % (kernel 2.3–3.1×, gather-bound at 300 000 rows); was **reopened** (decision 6): ~10 % of Pixi at 1.4×; **Q1b**: pre-render packs too: 38–40 % of a saturated pre-render (995–998 ms/s) in `painterSortStressScene`, `painterMoveStressScene` and Adobe Animate at the minimum zoom, 19 % in `bulletStressScene` and `bunnyMarkStressScene`; Pixi 30–42 % in Predator and `renderQueueStressScene` |
-| **W10** | Pixi | `radixSortIndicesBySortKey`, `radixPainterOrder`, `reinsertChangedSlots` in [`sortIndexByKey.js`](../../src/util/sortIndexByKey.js) | WASM radix beats JS | small: gather + bucket scatter | Q1: 11.8 % inclusive of Predator Pixi (2.0 % ceiling there); no painter stress scene share on record | Q3; `painterRadixMicrobench` | **reopened** (decision 6): ~3.4 % of Pixi at 1.4× |
+| **W8b** | spatial | a 32-bit-id `publish_batch` | A 32-bit-id variant keeps the win past 65,535 ids | reach | today `createSpatialPublishMemory` returns `null` unless ids are 2 bytes (E-27), and the scene takes the JS path silently. At 32-bit ids each row region is `count × (1 + maxNeighbors) × 4` bytes, past 512 MB (and 4 GB) for large scenes | `stationarySpatialWideScene` (70 000 entities, 32-bit ids by 'auto'), the WASM paths against `wasmOff` in one build | **kept (product)** 2026-10-24: spatial 18.648 → 12.234 ms (−33.0 %, 0/4); the `_u32` exports, 16-bit kernels unchanged; a scene whose rows do not fit 2 GB keeps the JS path (R-0611) |
+| **W9** | Pixi | `packInstancedRows` in [`gpuQueueLayout.js`](../../src/render/gpuQueueLayout.js) | Plain WASM (no SIMD) beats JS | at most the 26 % that is arithmetic | Q1: 33.9 % of Predator Pixi. E-18 rejected SIMD (gather, painter runs of 1.002); X5: the rest is cache lines written by pre-render on another core | desk | **W9d kept (product)** E-123 (2026-10-24): Pixi's own pack through the kernel, rows copied out of shared memory before the upload, Predator renderer −10.6 %; **kept (product)** E-94: painterSort pre-render −3.5 % (kernel 2.3–3.1×, gather-bound at 300 000 rows); was **reopened** (decision 6): ~10 % of Pixi at 1.4×; **Q1b**: pre-render packs too: 38–40 % of a saturated pre-render (995–998 ms/s) in `painterSortStressScene`, `painterMoveStressScene` and Adobe Animate at the minimum zoom, 19 % in `bulletStressScene` and `bunnyMarkStressScene`; Pixi 30–42 % in Predator and `renderQueueStressScene` |
+| **W10** | Pixi | `radixSortIndicesBySortKey`, `radixPainterOrder`, `reinsertChangedSlots` in [`sortIndexByKey.js`](../../src/util/sortIndexByKey.js) | WASM radix beats JS | small: gather + bucket scatter | Q1: 11.8 % inclusive of Predator Pixi (2.0 % ceiling there); no painter stress scene share on record | Q3; `painterRadixMicrobench` | **reopened** (decision 6): ~3.4 % of Pixi at 1.4×; **wired 2026-10-24** (`wasm.painterRadix`, simd radix with inplace's merge), the painter state in the render-queue memory; **kept (product)**: painterSort pre-render −3.4 %, painterMove −7.5 % (0/4 each), Predator renderer −2.6 % paired, −5.8 % against the drift |
 | **W11** | Pixi | `rewriteExplicitMeshCorners`, `uploadPoseTable` ([`colliderFillBatch.js`](../../src/render/colliderFillBatch.js)) | WASM mesh writes beat JS | a strided copy with an index gather | `writeExplicitTriCorners`, first named here, was folded into `rewriteExplicitMeshCorners` in `d72c638c` (meshApi renderer 3.779 → 2.896 ms); the 25.3 % share predates that | a meshApi trace at a load over 3 ms; park if the rewrite and pose table are under ~18 % of Pixi | **kernel +35.7 %** E-121; wiring and E-118 (a UV generation) by an agent |
-| **W12** | particle | `updateParticlePhysicsBuffers` in [`particleIntegrate.js`](../../src/util/particleIntegrate.js) | WASM integrate beats JS | no boxing; every column is on one SAB (an own Memory, no arena) | Q1: 75.3 % inclusive of the particle worker in `particleIntegrateStressScene?tween=1` (65 k live), 0.7 % in Predator (~100 live). `returnToPool` per dead particle would become a dead list; E-59 tuned the ease front. Q2: fdlibm `sin`/`cos` equal Chrome's after float32 rounding (0 of 102 M) | `particleIntegrateMicrobench`; `particleIntegrateStressScene?tween=1` particle (not `bulletStressScene`, which has `maxParticles: 0`) | **kept (product)** E-79: stress particle −31.3 % |
-| **W13** | particle | `buildActiveAndVisibleListBuffers` (and `…Turned`) | WASM compaction and cull beats JS | `i8x16` over the contiguous `active` column skips empty slots; no compress instruction for the dense case | Q1: 22.6 % of the particle worker in the stress scene, 3.3 % in Predator. Every call sweeps all `maxParticles` slots (`expectedActive = maxParticles`) | with W12, one call per frame | **kept (product)** E-80: stress particle −15.1 % |
+| **W12** | particle | `updateParticlePhysicsBuffers` in [`particleIntegrate.js`](../../tests/reference/particleIntegrate.mjs) (now the reference) | WASM integrate beats JS | no boxing; every column is on one SAB (an own Memory, no arena) | Q1: 75.3 % inclusive of the particle worker in `particleIntegrateStressScene?tween=1` (65 k live), 0.7 % in Predator (~100 live). `returnToPool` per dead particle would become a dead list; E-59 tuned the ease front. Q2: fdlibm `sin`/`cos` equal Chrome's after float32 rounding (0 of 102 M) | `particleIntegrateMicrobench`; `particleIntegrateStressScene?tween=1` particle (not `bulletStressScene`, which has `maxParticles: 0`) | **kept (product)** E-79: stress particle −31.3 %; **float32 2026-10-24**: `integrate_batch_f32x4` behind `wasm.particleIntegrateF32` (default on), within its tolerance gates; **kept (product)**: `?spin=1` particle 3.708 → 2.962 ms, −20.1 % (0/4) |
+| **W13** | particle | `buildActiveAndVisibleListBuffers` (and `…Turned`) | WASM compaction and cull beats JS | `i8x16` over the contiguous `active` column skips empty slots; no compress instruction for the dense case | Q1: 22.6 % of the particle worker in the stress scene, 3.3 % in Predator. Every call sweeps all `maxParticles` slots (`expectedActive = maxParticles`) | with W12, one call per frame | **kept (product)** E-80: stress particle −15.1 %; **float32 2026-10-24**: `build_lists_f32x4` behind `wasm.particleListsF32` (default on), a flag flips only within the cull slack; scene tie on a pool of 200 000: particle 5.511 → 5.444 ms, −1.5 % (1/4 worse), kept on the kernel |
 | **W14** | particle | `computeFlowfield` / `computePath` in [`particleWorker.js`](../../src/workers/particleWorker.js) (not `navGrid.js`, which holds the layout) | WASM search beats JS | integer grids | Q1: nav 5.9 % inclusive of Predator particle; in NavStress the search is deadline-bound, so `STEP_MS` cannot fall | desk | **kept (product)** E-122: navStress 6.1 → 36.8 flowfields a frame (+509 %), particle −56.9 %; kernel 16× |
 | **W15** | physics | `publishPose` in [`weedjsPost.js`](../../src/box2d/weedjsPost.js) | The pose copy in C beats JS | small | Q1: ~8 % of the physics JS thread. PH1: kernel +147 %, Predator physics −0.8 %. A C copy cannot write the pose SABs from Box2D's memory | desk | **screened (ceiling)** 1.8 % |
 | **W16** | physics | LiquidFun particle sync and extract | — | — | already C (LIQUIDFUN H8, H14); JS does bulk `.set` copies | — | **screened (already C)** |
 | **W17** | physics | `drainCommandRing` in [`box2dCommandRingImpl.js`](../../src/box2d/box2dCommandRingImpl.js) | One bulk copy of the ring into the Box2D heap and one export that applies every command beats a JS handler plus an export call per command | removes one JS → WASM call per command | absent from the Predator trace; SpawnStorm share unknown. The ring is a Weed SAB, not Box2D memory; related: the scalar create path (E-50b). Q4: a JS → WASM call costs about 4 ns, so the per-command export call is not the cost | a SpawnStorm trace first; `spawnStormScene` physics | open, premise weak (Q4) |
-| **W18** | logic | contact begin/stay classification in `logicWorker.js` | WASM classification beats JS; callbacks stay JS | a C hash table instead of the `Map` keyed by heap numbers | Q1: 11.3 % inclusive of Predator logic (2.6–3.7 % ceiling). E-54 per-slot stamp already −9.5 %. Inputs in four SABs plus the ring | `contactsMicrobench`; `contactDrainStressScene` | open, blocked on Phase 4 |
-| **W19** | particle | batched bullet linecasts: `BulletPool.tick` → `Ray.linecastDir`, geometry in [`ray.js`](../../src/core/ray.js) (`querySystem.js` has none) | WASM batched casts beat JS | batching | absent from the Predator trace; per-query game calls lose to the boundary (Q4) and are out of scope | `rayMicrobench`; `bulletStressScene` particle | open, blocked on Phase 4; **Q1b**: bullet rays ~70 % of particle in `bulletStressScene` (493 ms/s: `_traverseGrid` 30.7 %, `_checkCellEntities` 13.6 %, `tick` 13.4 %), with 29.6 ms/s of GC, the only GC pressure in the sweep |
+| **W18** | logic | contact begin/stay classification in `logicWorker.js` | WASM classification beats JS; callbacks stay JS | a C hash table instead of the `Map` keyed by heap numbers | Q1: 11.3 % inclusive of Predator logic (2.6–3.7 % ceiling). E-54 per-slot stamp already −9.5 %. Inputs in four SABs plus the ring | `contactsMicrobench`; `contactDrainStressScene` | **dropped** 2026-10-24 (R-0606): on its owner scene the classifier's cost was the game callbacks (they stay JS) and the generation check's `Atomics.load`, which E-131 removed in JS (ContactDrainHunt logic −12.9 %); a C classifier would take a few % of logic |
+| **W19** | particle | batched bullet linecasts: `BulletPool.tick` → `Ray.linecastDir`, geometry in [`ray.js`](../../src/core/ray.js) (`querySystem.js` has none) | WASM batched casts beat JS | batching | absent from the Predator trace; per-query game calls lose to the boundary (Q4) and are out of scope | `rayMicrobench`; `bulletStressScene` particle | open, blocked on Phase 4; **Q1b**: bullet rays ~70 % of particle in `bulletStressScene` (493 ms/s: `_traverseGrid` 30.7 %, `_checkCellEntities` 13.6 %, `tick` 13.4 %), with 29.6 ms/s of GC, the only GC pressure in the sweep; **kernel built 2026-10-24** (`wasm/bulletTick.c`: the pool walk, the grid DDA, circle, box and single-polygon tests in one call; compounds and chains handed back), bit for bit with BulletPool.tick; wiring after E-129 widens the bullet pool; **wired 2026-10-24** (`wasm.bulletTick`, default on): with physics the pool and the kernel's regions sit in the bodies part of Box2D's block, the particle worker binds it, `BulletPool.tick` hands it the frame (16-bit pools; a 32-bit pool keeps the JS); Chrome chose `bullet_tick_lean` (storm +63.5 %, 7/7); one headless run: particle 4.66 → 3.05 ms; **kept (product)**: bulletStressScene particle 4.839 → 3.171 ms, −33.9 % (0/4) |
 | **W20** | audio | `mixVoice` and the compressor in [`audioMixerProcessor.js`](../../src/workers/audioMixerProcessor.js) | No GC or tier-up stalls on the audio thread | predictability, not speed | 128 voices ≈ 0.1 ms of a 2.67 ms quantum; the worklet is absent from traces; `audioMixerMicrobench` times `_mixDirect`, not the product's `_mixBuses` | only if glitches are heard | **screened (parked)** |
 | **W21a** | rebuild | `ensureCompoundSolid` | Faster compound rebuilds | plain loops | per frame only in remesh scenes (`compoundGeometryDirtyScene`, compoundVisPoly `?remeshEvery=`) | `compoundSolidMicrobench`; `compoundGeometryDirtyScene` | open |
 | **W21b** | load | mesh triangulation (`meshTriangulate.js`) | Faster boot | — | only when game code calls `MeshRenderer.setPolygon` | boot time | **screened (boot only)** |
 | **W21c** | Pixi | decal premultiply (`copyPremultiplyRgba`) and the dirty-tile sweep | WASM premultiply beats JS | `i8x16`/`i16x8` over contiguous pixel words; one SAB (own Memory) | runs every Pixi frame with decals on; Q1: 0.5 % of Predator Pixi. X1: kernel +44.4 %, Predator renderer −0.8 % | `premultiplyMicrobench`; `decalStampStressScene` / `decalBlitStressScene` renderer | open |
 | **W21d** | load | `AdobeAnimCompiler.compile` | Faster boot | — | once per Adobe asset at preload | boot time | **screened (boot only)** |
 | **W21e** | load | atlas bake (`createBigAtlas`) | Faster boot | — | only when no baked atlas exists | boot time | **screened (boot only)** |
-| **W22** | particle | `_updateDecorationSwayBuckets` in [`particleWorker.js`](../../src/workers/particleWorker.js) (new from Q1) | WASM sway beats JS | f32 columns on one component SAB (own Memory path, as W12) | Q1: 45.1 % of Predator particle (20 000 grass blades). H-10 cached the bucket, E-77 shrank it to 2 636 B of TurboFan code; a gather through the active snapshot with five early `continue`s. Q3: the loop takes 1.74–1.77× its floor's time in snapshot order, 2.51× shuffled | Q3 first; `decorationSwayMicrobench`; `decorationSwayStressScene`; Predator particle | **wired** E-119: kernel +94.5 % (25/25); kept (kernel; product-neutral by the floor): Predator particle 0.942 → 0.870 ms |
+| **W22** | particle | `_updateDecorationSwayBuckets` in [`particleWorker.js`](../../src/workers/particleWorker.js) (new from Q1) | WASM sway beats JS | f32 columns on one component SAB (own Memory path, as W12) | Q1: 45.1 % of Predator particle (20 000 grass blades). H-10 cached the bucket, E-77 shrank it to 2 636 B of TurboFan code; a gather through the active snapshot with five early `continue`s. Q3: the loop takes 1.74–1.77× its floor's time in snapshot order, 2.51× shuffled | Q3 first; `decorationSwayMicrobench`; `decorationSwayStressScene`; Predator particle | **wired** E-119: kernel +94.5 % (25/25); kept (kernel; product-neutral by the floor): Predator particle 0.942 → 0.870 ms; **float32 2026-10-24**: `sway_decorations_f32x4` behind `wasm.decorationSwayF32` (default on); E-129 lifts the pool past 65 535 (`_u32` exports); scene tie at 500 000 decorations: particle 3.627 → 3.669 ms, +0.4 % (the sway is screen-bounded), kept on the kernel |
 | **W23** | pre-render | shadow-caster stamp: `stampLightRange`, `buildStampGrid`, `partitionOrder` in [`gpuShadowCasters.js`](../../src/render/gpuShadowCasters.js) (new from Q1) | WASM stamp beats JS | batching | Q1: 16.8 % of Predator pre-render (25.9 % with the caster pack); the hottest line is the gathered load `sun[b] - lx` (32 %); lights arrive as JS objects. Q3: on the Predator fixture (3 per entity) the grid walk is 6.6–6.9 % of `stampLightRange` and 2.2× / 1.48× its floors; selection and the append are the rest. E-110 (2026-10-23) made the JS stamp +36.4 % in the kernel with a per-entity cap, which lowers the ceiling | Q3 first; `shadowStampMicrobench`; Predator pre-render | **kept (product)** E-114: Predator pre-render −10.3 % (4 pairs, window watched); kernel +99.8 % |
 | **W24** | physics | Box2D clock reads (new from Q1b): `b2GetTicks` through WASI `clock_time_get` (a BigInt per call) in the scheduler's idle spin, every iteration since `b2Pause` is empty in WASM, and ~40 per step in the per-stage `b2Profile` timers Weed never reads | Fewer, cheaper clock calls make the physics threads cheaper | none: the cost is the import calls themselves | Q1b: `_emscripten_get_now` 3–10 % of each solver thread, 5–36 % of the physics JS thread (`ballsHeavyStressScene` 9.5 %, `orientedBoxScene` 36 %). Weed reads 5 profile times (`wasm_wrapper.c` `g_profile`). Patch drafted in the Box2D repo: `emscripten_get_now` directly, the stage timers off in the Weed build, the clock every 64th spin | `ballsHeavyStressScene` physics; Predator gate | **kept (hygiene)**, a tie: physics −2.1 % (E-55, Box2D `3b2d4c8`); Predator gate passed (alone: physics +2.3 %, 4/8) |
 | **W25** | spatial | W5 in home-cell order: `order_batch_by_cell` before `gather_batch` (E-81) | Entities that walk the same cells, run together, find them in cache | the radix sort is cheap in C | Q1b: the gather is the hottest kernel (57 % of Boids spatial, 81 % of `orientedBoxScene`). E-70/E-75 tried cell-order copies in JS (slower); processing order was never tried. Kernel: +21.7 % when every list rebuilds, +2.3 % (tie) with Predator's reuse | Boids spatial; Predator gate | **kept (product)** E-81: Boids spatial −8.4 % |
 | **W26** | particle | decal stamping `stampToTileBuffers` in [`decal.js`](../../src/core/decal.js) (new from Q1b) | A WASM pixel loop beats JS | SIMD blending of the RGBA tiles | Q1b: 95.2 % of particle (331 ms/s) in `decalStampStressScene`, 88.2 % in `decalBlitStressScene`. Tiles are worker buffers: a decal memory | `decalStampStressScene` particle | **kernel +377.9 %** E-120 (SIMD, exact; the scalar port −11.4 %); wiring next: the tiles in a memory of their own |
-| **W27** | pre-render | the Adobe Animate emit, `_emitAdobePieces` and `advanceAdobeAnimations` (new from Q1b) | WASM piece emission beats JS | batching per symbol | Q1b, Adobe Animate at the minimum zoom (10 000 characters): pre-render saturated at 995 ms/s, `_emitAdobePieces` 27.1 %; at zoom 1.4, `advanceAdobeAnimations` 14.3 % and per-entity registry lookups (`getAsset` 9.7 %, `getClipFrameRate` 6.0 %, a JS fix: E-84) | Adobe Animate pre-render | open (with W4) |
+| **W27** | pre-render | the Adobe Animate emit, `_emitAdobePieces` and `advanceAdobeAnimations` (new from Q1b) | WASM piece emission beats JS | batching per symbol | Q1b, Adobe Animate at the minimum zoom (10 000 characters): pre-render saturated at 995 ms/s, `_emitAdobePieces` 27.1 %; at zoom 1.4, `advanceAdobeAnimations` 14.3 % and per-entity registry lookups (`getAsset` 9.7 %, `getClipFrameRate` 6.0 %, a JS fix: E-84) | Adobe Animate pre-render | open (with W4); **built 2026-10-24** (`wasm.preRenderEmitAdobe`, default on): the emit kernel expands Adobe roots into their pieces and advances their clocks (`adobe_advance`), the assets copied into a `preRender.adobeTablesMB` region (default 4 MB); bit for bit in `preRenderEmitAdobe.test.js`; kernel (Node, 5/5): emit +151.5 %, advance +59.9 %, the plain emit tied (+1.8 %); **kept (product)**: the demo at minimum zoom, pre-render 20.103 → 14.252 ms, −29.1 % (0/4); physics +3.6 % (4/4), which may be Box2D's heap moving with the tables region (a Phase 4 question) |
 | **W28** | physics | `applyForcesAndTorque`, `publishMovedBodies`, `snapshotPrevPose` in [`weedjsPost.js`](../../src/box2d/weedjsPost.js) (new from Q1b) | One C call over the force ring beats a call per body | batching the boundary | Q1b: physics JS thread 4–8 % (`applyForcesAndTorque`), 2–5 % (`publishMovedBodies`) in Boids, Predator, `movedBodiesMixedScene` | Predator physics | open (with Phase 4) |
+| **W30** | Pixi | the copies out of the render-queue memory into the batches' own arrays (`commitSplit`, `_commitPackedBatch`, the W9d/W9e uploads; new 2026-10-25) | WebAssembly `memory.copy` from the shared memory into a private one (multi-memory) beats TypedArray.set from a shared view | the copy's bandwidth: 15 MB in 1.25 ms against 1.99 ms in Chrome 155 | adobeAnimateScene at the minimum zoom: `commitSplit` 65 % of Pixi; bulletStress 28 %; Predator `_commitPackedBatch` 10 % | adobeAnimateScene (min zoom) Pixi; Predator | **kept (product)** 2026-10-25: Adobe Pixi 7.939 → 6.545 ms (−17.8 %, 0/8); the glow, cookie and caster batches too: Predator Pixi −8.1 % (−3.6 % against the others) |
 
 **Out of scope from the start.** Game code, components, `GameObject`, scene, Pixi API calls and
 queries that return objects: object-heavy, and a call per entity across the boundary would cost more
@@ -344,6 +345,8 @@ it passes Q3).
 
 ### Order for Phase 3
 
+**Order after E-123 (2026-10-24):** W11 with E-118 (finish the wiring; copy the mesh rows out of shared memory before each upload, as E-123 found) → W4b, the collect in C, first for scenes without physics (Transform's pose is then a Weed buffer that can be a region of the render-queue memory, no boot barrier; BunnyMark's collect is 70 % of pre-render) → Phase 4 for physics scenes (W4b there, W19, W7, W18) → W26 with W21c (a decal memory) → W2a → W1 → W10.
+
 **Order after E-119 (2026-10-24):** W26 (wiring, a decal memory) → W11 with E-118 (an agent) → W21c → W2a → W1 → W10; W4b, W7, W18, W19 and W2b with Phase 4. Gates now take both sides from worktrees (`--hyp-rev`), so agents can edit the main folder during them.
 
 **Order after E-114 (2026-10-24):** W4c (BunnyMark's persist path in the emit kernel), with W22, W26, W11 and W14 screened in parallel by agents (kernel sittings one at a time) → W21c → W2a → W1 → W10; W4b, W7, W18, W19 and W2b with Phase 4.
@@ -455,6 +458,45 @@ after E-98 (pre-render's collect went 21 → 6 ms in JS). A cheaper boot than th
 worker before the scene buffers exist, have it `_malloc` the engine block as soon as its module is ready, and build
 the moved buffers inside that block, so nothing binds twice.
 
+**Design for the build (2026-10-24, from W4b's needs).** BunnyMark's collect is 70 % of its pre-render
+(E-128), and the collect is what Phase 4 moves first. What one kernel must see together:
+
+- *Scenes without physics:* Transform's pose is the Weed buffer `scene.weedPose` (`createWeedPosePayload`,
+  main thread, before any worker), its state block (`active`, `entityType`, `isItOnScreen`) is a component
+  buffer, and the physics host does not run. Both, and Collider, can be regions of the render-queue memory
+  through E-112's `componentDataByte` path, with no barrier and no host change: **W4b goes first there**
+  (kernel screen `3d330df3`, `wasm/test/preRenderCollect.c`).
+- *Physics scenes:* a body's display pose comes from the published pose buffers (`poseDataA/B`, made on the
+  main thread, filled by the physics host's `publishPose`), a bodiless sprite's from Transform in Box2D's
+  heap. So the kernel needs Box2D's memory, the pose buffers and the render-queue regions in one memory.
+- *The barrier, cheapest form:* the main thread already sizes the render-queue memory from the config before
+  any worker (`initializeRenderQueueMemory`). With physics on it starts the physics worker first, posts it
+  the block size; the host `_malloc`s the block once its module is ready (Box2D's memory carries the
+  developer's `physics.wasmMemoryMB` plus the block, `box2dMemoryPages`) and posts back the
+  `WebAssembly.Memory` and the block's byte. `createRenderQueueMemory` then lays its regions at that byte of
+  Box2D's memory instead of making a memory of its own, the pose buffers become two more regions there, and
+  every other worker boots as today with buffers that happen to be views of Box2D's memory. Nothing binds
+  twice and no worker waits on `box2dReady` before `start`. A scene whose block does not fit keeps today's
+  separate memories and the JS paths.
+- *What the physics host must learn:* honour byte offsets for the pose buffers it writes (today plain SABs),
+  and keep its mirrored schemas (`physicsHostImpl.js`) reading Transform and Collider where
+  `componentDataByte` puts them, if those blocks move too.
+- *Unblocks:* W4b with bodies (Predator's collect, ~20 % of its pre-render), W19 (the bullet casts read
+  Transform, Collider and the grid), W7, W18, W2b, W28.
+
+*Built 2026-10-24 (switch `wasm.box2dBlock`, default on):*
+- *The block.* `scene.init` starts the physics worker before the shared buffers, with Box2D's memory grown by
+  the block (`box2dBlockPlan`, `src/util/box2dEngineBlock.js`). The host `_malloc`s the block, 64-byte aligned
+  and zeroed, and posts the memory back. `createRenderQueueMemory` then lays its regions at the block's byte.
+  Every kernel on the render-queue memory imports up to 32768 pages.
+- *What the block holds besides the queues,* when the sprite collect asks for it (`renderQueueMemorySpec`'s
+  body variant): Transform's state block, RigidBody's, Collider's and the two published pose buffers. The host
+  binds its mirrored schemas at the blocks' bytes and publishes the poses at theirs. Workers bind Transform's
+  heap pose on the block's buffer.
+- *Predator, headless:* a 111.9 MB block, every active body's published pose read back live from it
+  (`publishedPose` in the benchmark's metadata).
+- *Not in the block yet:* the spatial grid and the spatial publish memory, which W19 and W7 need next.
+
 **Phase 5 — Product wiring, per winner, one at a time.** T7 switch first. Scene pair, then the Predator
 gate. Boot cost and dist sizes on record. One commit per port. Winners land in sequence, so each one's
 scene pair runs against a base that already has the earlier ones.
@@ -478,9 +520,12 @@ Playwright can drive both with COOP/COEP.
 | **L4** | Compile and warm-up: each worker compiles each module on V8 background threads that compete with busy workers; the first frames run unoptimized WASM | time to first frame and time to steady step times (first 10 s per worker), all-JS against all-WASM; if bad, compile once and post the `WebAssembly.Module` to the workers |
 | **L5** | Memory bandwidth and L3: winners measured alone in different workers may not add up when they run at the same time | L-sitting below |
 | **L6** | Fallbacks: N modules with JS fallbacks make 2^N paths; 16- vs 32-bit ids flip several at once | the L-sitting configurations, on both id widths |
-| **L7** | Feature support: every module assumes SIMD, atomics and bulk memory | one capability check; if it fails, all fall back together; that path tested once |
+| **L7** | Feature support: every module assumes SIMD, atomics and bulk memory | one capability check; if it fails, all fall back together; that path tested once. Once the JS paths leave `src/` (decision 7) there is nothing to fall back to: before that, every scene boots once in Firefox and in WebKit, and afterwards a failed check is an error that names the missing feature |
 | **L8** | Tools | T10 on every module |
 | **L9** | Bundle size | all 8 dist bundles measured; `smokeBundleEmbed` covers every module |
+| **L10** | Cores: the gains were measured with 16 logical processors, and a scene starts the workers its config names on any machine (no file under `src/` reads `navigator.hardwareConcurrency`); on four cores the workers share them, and the whole machine's CPU decides | the all-JS-against-all-WASM pair of the L-sitting once more with Chrome held to four physical cores, process CPU per presented frame on both sides ([HOW_WE_MEASURE, milestone checks](./HOW_WE_MEASURE.md#engine-wide-claim)) |
+| **L11** | Inputs past a region: Box2D's memory holds its own heap and the engine's block (render queues, Transform, RigidBody, Collider, the published poses, the bullet pool), so a count or an offset past its region writes into a neighbour without a fault | each client checks the counts and offsets it passes against its region once per call (one check per batch); a debug build leaves canary gaps between the regions and checks them every few frames |
+| **L12** | The reference: each parity test compares a kernel with its JS path on the same bytes. Once the winners' JS paths leave `src/` (decision 7), the grouping step rewrites kernels with nothing to compare them against | before a JS path leaves `src/`, it moves under `tests/` as the reference its parity test runs, or the test keeps golden frames recorded from it |
 
 ### Do the winners add up (the L-sitting)
 
@@ -501,8 +546,169 @@ memory. The lockstep scenes (balls, liquidfun, lfstress, particles) run all JS a
 where a module promised bit-identical output, within the declared tolerance where Q2 says the maths
 cannot match.
 
-**Close-out.** One `npm run bench:scoreboard`, all WASM against the last commit before the migration.
-Boot numbers on record. A HYPOTHESIS_LOG row for the combination with the leave-one-out table.
+**Close-out.** One `npm run bench:scoreboard`, all WASM against the last commit before the migration,
+and L10's four-core pair. Boot numbers on record. A record in the register for the combination, with the
+leave-one-out table. The migration's total is the number of these sittings, never the sum of the
+kernels' records ([HOW_WE_MEASURE](./HOW_WE_MEASURE.md#how-a-sitting-decides): a total is measured, not
+added).
+
+*Run 2026-10-26, after group B (R-0642), all WASM (4a82a562) against 5477a582:*
+- **The scoreboard, scenes only (R-0641).** Kernel rows skipped: the base has no kernels to time. Lockstep skipped:
+  the float32 kernels are tolerance gates, not bit gates. Results:
+  - 7 kept: ray and rayVsBox2d logic −37 %, liquidfunQuery physics −9.8 %, visPoly pre-render −49 %, bullets
+    particle −53 %, spawn logic −6.3 %, textureUpload Pixi −4.0 %;
+  - 7 ties;
+  - none worse;
+  - the rest are protocol ceilings and step floors, rows that do not reach their hot code.
+- **L4 (R-0640).** The first 2 s are not worse.
+- **L10, four physical cores (affinity 0x55).**
+  - Predator: pre-render 4.87 → 2.87 ms (−39 %), spatial −18 %, renderer −8 %, presented 60 fps on both sides.
+    Physics +12 % and logic +11 % have a cv of 12–15 %, not judged.
+  - adobeAnimateScene at the minimum zoom: pre-render 45.7 → 11.1 ms (−76 %), physics −6.8 %, presented
+    59.2 → 59.9 fps.
+  - Process CPU per presented frame was not read: the runner has no tool for it yet (HOW_WE_MEASURE tool 9).
+- **Boot.** Every scene boots on the source tree in Chrome and in release Firefox 158 (61/61 each), with no JS to fall back to.
+
+## Close-out plan (2026-10-24)
+
+Every hypothesis is decided or parked (W7 belongs to the grouping step; E-136 is a narrow lead). Decision 7's order
+holds: Phase 6, then the JS paths leave `src/`, then the kernels are grouped.
+
+**What is shipped.** 18 kernels, 191 KB, 69 exports with no name in two modules. Every one imports only
+`env.memory` and has no globals and no data segments, so no two can collide in a shared memory (L1 holds), and
+all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` and `wasm-opt -O3` steps).
+
+| Worker | Kernels | Memory |
+| --- | --- | --- |
+| spatial | spatialPublish, spatialGather | the spatial publish memory (in Box2D's block with physics) |
+| pre-render | preRenderCollect, preRenderEmit, gpuPack, painterRadix, shadowStamp | the render-queue memory (in the block with physics) |
+| pre-render | visibilitySweep, solidSegments, visibilityGather | the visibility memory (in the block with physics; the gather only there) |
+| particle | particleIntegrate, particleLists | the particle memory |
+| particle | decorationSway, bulletTick | the render-queue memory (bulletTick only in the block) |
+| particle | decalStamp; navFlowfield | the decal memory; the navigation memory |
+| pixi | gpuPack, painterRadix, meshCorners, decalPremultiply | Pixi's regions of the render-queue memory; the mesh memory; the decal memory |
+
+**Which JS paths can leave `src/` (the inventory of 2026-10-24).**
+
+- *A, the JS runs only with the switch off or a failed bind:* spatial publish and gather, particle integrate and
+  lists, navFlowfield, shadowStamp, painterRadix, meshCorners, decalStamp and decalPremultiply, gpuPack's entity
+  batch. Their JS moves under `tests/` as the parity reference (L12), the switch goes, and a failed bind becomes an
+  error that names it (L7). Two corrections found on the way: the JS painter sort also orders Pixi's y-sorted custom
+  layers (their painter states are JS ones), so for painterRadix only the main queue's fallback goes; and a scene
+  whose spatial, decal or other kernel memory is past its cap (2 GB since the caps went up) ran the JS, so that
+  case becomes an error at scene creation that names the memory and its size.
+- *B, the JS still runs in a real configuration:* bulletTick and visibilityGather without physics (they live only in
+  Box2D's block) and at 32-bit ids or past 65 535 bullets (bulletTick); gpuPack for a nearest atlas, pose
+  interpolation and Pixi's glow, shadow, caster and custom-layer batches; the emit's foreign rows (particles,
+  glows, bullets, trails), LiquidFun frames and some Adobe frames; decorationSway at `swayFrequencyBuckets <= 1`;
+  solidSegments' oversized outlines; decal textures left out of the decal memory; any memory past its 512 MB cap.
+  Each needs the kernel to cover the case first (or the JS stays for that case).
+- *B as it stands (inventory of 2026-10-25, every kernel's fallbacks read with the defaults on).* The emit is done
+  (step 3). Most cases above are covered now (a nearest atlas, pose interpolation, 32-bit ids, no physics,
+  `sway_free`, the outlines). What still runs a JS copy: gpuPack for the cookie queue (private arrays), Pixi's
+  custom-layer and glow batches and Pixi's own pack on the frames pre-render does not pack (sprite `zIndex` with
+  Y-sort off, fewer than two rows under Y-sort, glow rows only) and 15-float rows into a split batch; the painter's JS
+  sort for Pixi's y-sorted custom layers, for E-138's presort, and for `zIndex` with Y-sort off; the collect's
+  hand-backs (a sprite on a custom layer, a Y-sorted sprite with no last texture yet); the bullet tick's compound and
+  chain colliders; the sway of parented decorations (`resolveAttachedDecorations`); the visibility kernels'
+  compound-solid and self-lit events. Each of those switches still runs the JS when off.
+
+**Steps.**
+
+1. Phase 6 sitting: all JS against all WASM on Predator and the winners' owner scenes, four pairs each; leave-one-out
+   only for the winners whose solo gain was under 10 % (a large solo gain cannot vanish below 3 % when combined
+   without the all-JS pair showing it). Correctness together (every parity test in one process: the node suite),
+   L3 (commit after 20 scene loads), L4 (boot to steady step times), L7 (every scene boots once in Firefox and
+   WebKit). About two hours of machine time, unattended. *Done 2026-10-24, shortened (R-0618); L7 in Firefox
+   (R-0623, R-0624): all 61 scenes boot in release Firefox 158, and on Predator all WASM wins there too
+   (pre-render −36 %, spatial −10 %). Measure Firefox with `--browser firefox` (the installed one): Playwright's
+   Firefox build runs WASM 5–18× slower than release Firefox. WebKit is out (the owner). L3 on 2026-10-25
+   (`sceneCycleSmoke --commit`): twenty loads of Predator hold the commit, but `destroy` does not give it back
+   (N-75). L4 on 2026-10-26 (R-0640): all JS against all WASM, the first 2 s are not worse with WASM, every
+   bottleneck worker faster from the first frames (Predator pre-render −52 %, adobeAnimateScene −70 %), so
+   compiling once and posting the module (step 4) is structure, not speed.*
+2. Group A leaves `src/`, one kernel per commit, each with its parity test now reading the reference under `tests/`.
+   *Done 2026-10-24 for eight kernels (R-0625): decalStamp, decalPremultiply, navFlowfield, meshCorners, shadowStamp,
+   particleIntegrate and particleLists, spatialGather and spatialPublish. Their JS is `tests/reference/` (a
+   `spatialJsClass` / `installParticleJs` puts it back on a worker for the parity tests), their switches are gone (a
+   scene that still sets one is warned once), their memories are always made with the feature and one that cannot
+   be is an error naming its size, and a kernel that does not load names itself. Left with group B, since their JS
+   still serves other callers: gpuPack's entity batch (its JS packer also packs Pixi's pack-mode and interpolation
+   batches, item 6b) and the painter sort's main queue (the JS sort also orders the y-sorted custom layers).*
+3. Group B: the cases a kernel can take over, one at a time (the no-physics placement of bulletTick and
+   visibilityGather is the largest), then their JS leaves too. *2026-10-25: W9e, a pose batch through gpuPack.wasm
+   (a tie, kept as coverage); W4d, the emit's bullet and trail rows (pre-render −14.1 % in `bulletStressScene`), with
+   E-137 (the bullet collect in JS, −17.3 % after it); E-138, the collector sorted before the emit when it expands
+   (Adobe at the minimum zoom: pre-render −19.7 %, then −10.6 % with no slot list); W27b, the Adobe expansion in
+   float32 and SIMD, kernel +55 % but a tie in the scene (bound by its stores), reverted. The no-physics placement
+   of bulletTick and visibilityGather was done on 2026-10-24 (R-0621: the engine block as a memory of its own). Left
+   in the emit: the glow rows (type 3), the particle rows (type 1:
+   ParticleComponent is not in the memory) and the frames with a LiquidFun row (declined; `liquidFunStressScene`'s
+   pre-render spends 31.5 % in the JS emit, at 101 ms/s).* *2026-10-25 (later): the emit's JS left `src/`.* The
+   kernel writes every row type: the glow rows (LightEmitter among the emit's blocks), the particle rows (the
+   particle memory a region of the render-queue memory), the LiquidFun rows (its render buffer and pre-render's
+   previous positions there; LiquidFun's heap views on each worker's own handle of the block), a persist frame's
+   rows of other types (its own loop), custom sprite layers (their queues and collectors in the memory, the
+   collector stashing poses at the collect as the entities' does), and Adobe assets the JS took before (plain
+   arrays copied in; an asset with no room in `preRender.adobeTablesMB` is an error that names the key).
+   BulletComponent has a block of its own without the bullet tick's, Transform is placed whenever the emit reads
+   sprites or glows, and `wasm.box2dBlock` is gone (a block that cannot fit Box2D's memory is an error naming
+   `physics.wasmMemoryMB`). Then the JS emit, persist path and Adobe expansion moved to
+   `tests/reference/preRenderEmitJs.mjs` (`installEmitJs` puts them back on a worker for the parity tests),
+   `wasm.preRenderEmit` and `wasm.preRenderEmitAdobe` went, and a queue the kernel cannot take is drawn empty with
+   one error (`_emitRefused`); every scene boots on it (the boot sweep of that day). The batch's gates (R-0638,
+   with E-138's presort in the painter kernel, the light cookies and Pixi's glow and custom-layer batches through
+   gpuPack.wasm): Predator neutral (pre-render −0.1 %), `adobeAnimateScene` at the minimum zoom pre-render +2.5 %
+   over 8 pairs (worse 7/8, under the 3 % line, near the session's 8-pair limit of about 2 %): kept as hygiene.
+   Open: spatial +3.65 % there (7/8), which no change reaches; the batch moved regions within Box2D's block.
+   Then gpuPack's JS left `src/`: `packInstancedRows`, `packSplitRows`, `splitInterleavedRows`, the pose batch's
+   packers and the pixel snap are `tests/reference/gpuPackJs.mjs` (`installBatchPackJs` puts them back on a batch
+   for the parity tests); `wasm.gpuPack`, `wasm.pixiPack` and `wasm.gpuPackSplit` went; a call the kernel cannot
+   pack is drawn empty with one error, and in pre-render pack mode Pixi packs nothing of its own (a GPU queue
+   frame it cannot commit is drawn empty).
+   *2026-10-26: group B done.* The second batch (R-0639; gates on Predator and adobeAnimateScene at the minimum
+   zoom, no worker 3 % worse, pre-render −0.2 % there):
+   - **Painter.** Pixi's y-sorted custom layers sort in the kernel, on painter states in the render-queue memory.
+     Then the JS painter moved to `tests/reference/painterJs.mjs` and `wasm.painterRadix` went. A queue the kernel
+     refuses is drawn in queue order, with one error.
+   - **Sprite collect.** Its JS loops moved to `tests/reference/preRenderCollectJs.mjs` and
+     `wasm.preRenderCollect` went. The memory always carries the collect's blocks when the spec has them.
+   - **Decoration sway.** Its JS loops moved to `tests/reference/decorationSwayJs.mjs` and `wasm.decorationSway`
+     went.
+   - **Bullet tick.** `wasm.bulletTick` went.
+   - **Visibility.** The sweep's JS, the polar raster, the clip and the merge left `angularSweep.js`, and the JS
+     light loop left pre-render, for `tests/reference/visibilitySweepJs.mjs` (`buildVisibilityPolygonsJs` runs it
+     on a worker for the wired parity tests). `wasm.visibilitySweep`, `wasm.solidSegments` and
+     `wasm.visibilityGather` went.
+
+   Init errors replace every failed bind. What stays JavaScript is no copy of a kernel:
+   - the collect's hand-backs to `collectRenderable` (a layer mask, a frame not resolved yet);
+   - the sway of parented decorations (`resolveAttachedDecorations`);
+   - `BulletPool.tick`'s loop and the JS visibility gather, where the kernel cannot read the grid (no spatial
+     workers, or the spatial memory outside the engine block);
+   - the bullet tick's per-bullet hand-back of compound polygons and chains, and the gather's compound-solid and
+     self-lit events.
+
+   The switches left in `WASM_DEFAULTS` each pick a kernel's float32 export or its double one.
+4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
+   fdlibm sin/cos), compiled with clang and linked by `wasm-ld` into one `engine.wasm`; the main thread compiles it
+   once and posts the `WebAssembly.Module` to the workers, each of which instantiates it once per memory it uses.
+   *Done 2026-10-26 on branch wasm_group (3e035db7; R-0643), after group B made wasm_hyp merge-ready. What was
+   built:*
+   - *every shipped kernel linked from its source into `src/wasm/engine.wasm`, one wasm-ld link then wasm-opt (240 471 B,
+     60 246 B gzipped, against 241 765 B and 62 963 B apart);*
+   - *the kernels' code unchanged: of their 88 named functions, 65 are byte for byte their own build's and 23 differ only
+     in their calls' indices;*
+   - *one module naming the binary (`src/wasm/engine.js`), so the bundle carries one copy, in the workers' common chunk;*
+   - *each worker compiles it once and instantiates it once per memory.*
+
+   *Left out on purpose: the main thread's compile and post (one compile per worker costs no frame, L4), and one `.c` per
+   worker with a shared header (wasm-opt already merges the identical helpers; W7 is its own speed hypothesis). Gate:
+   Predator, adobeAnimateScene, visPolyStressScene and bulletStressScene against the kernels apart, every owner within
+   ±1.3 %.*
+   Not `wasm-merge`: a source merge lets W7 call gather, publish and rebuild in one unit and removes the duplicate
+   helpers. Each merged kernel passes its parity test bit for bit, ties a Node kernel A/B against its separate
+   build, and gets one Chrome check on its owner scene.
 
 ## Open decisions
 
@@ -529,6 +735,12 @@ defaults):
    (11.8 %) about 3.4 %, and W3 the cull loop (7.2 % self) about 2 %. W9 and W10 are reopened. W9's
    inputs are the render-queue SABs and its output is Pixi's `Buffer.data`, so it needs a render-queue
    memory (an own Memory like the particles', no arena) and a copy out.
+7. **The order after the hypotheses (the owner, 2026-10-23):** every hypothesis first, new candidates
+   included; then Phase 6, the kernels living together; then the JS paths of the winners leave `src/`, with
+   their `wasm.*` switches; and only then are the kernels grouped into `.wasm` files. Only engine code moves
+   to WASM: scenes and game objects stay JavaScript, and the engine APIs that game code calls per entity
+   stay callable from it. Grouping and cleanup are cheap once the winners are known; done earlier, they are
+   churn on kernels that may still be dropped.
 
 ## Results log
 

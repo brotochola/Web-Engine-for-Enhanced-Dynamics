@@ -41,15 +41,27 @@ const ISOLATION_HEADERS = {
  *   or CORP, so a page is not isolated unless something else (weed-sw.js, DX-SW) adds them
  * @param {Record<string, string>} [options.files] URL path → file under the root, served in its place
  *   (e.g. '/weed-sw.js' → the source of the isolation service worker)
+ * @param {Record<string, (body: string) => unknown>} [options.routes] URL path → handler for a POST to it, given the
+ *   request body; what it returns (or resolves to) goes back as JSON (stockFirefox.mjs)
  */
 export async function createStaticBenchmarkServer(rootDirectory, preferredPort = 0, options = {}) {
   const normalizedRoot = path.resolve(rootDirectory);
   const isolationHeaders = options.isolationHeaders !== false ? ISOLATION_HEADERS : null;
   const files = options.files || {};
+  const routes = options.routes || {};
 
   const server = http.createServer(async (req, res) => {
     try {
       const url = new URL(req.url, 'http://127.0.0.1');
+      if (req.method === 'POST' && Object.hasOwn(routes, url.pathname)) {
+        let body = '';
+        req.setEncoding('utf8');
+        for await (const chunk of req) body += chunk;
+        const value = await routes[url.pathname](body);
+        res.writeHead(200, { 'Content-Type': 'application/json', ...isolationHeaders, 'Cache-Control': 'no-store' });
+        res.end(JSON.stringify(value ?? null));
+        return;
+      }
       if (url.pathname === '/favicon.ico') {
         // Every browser auto-requests this; repo has no favicon. 204 keeps
         // headless benchmark console output free of spurious 404 noise.

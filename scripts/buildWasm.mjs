@@ -116,15 +116,23 @@ function run(file, args) {
   }
 }
 
+/** A module's C sources: `sources` (the engine module, every kernel linked into one) or its one `source`. */
+export function moduleSources(mod) {
+  return mod.sources || [mod.source];
+}
+
 /** Compile, link and optimize one module into workDir; returns the bytes. */
 export function buildModule(tools, mod, workDir) {
   // The linked file's name becomes the module name in the name section: keep it <name>.wasm.
   fs.mkdirSync(path.join(workDir, 'link'), { recursive: true });
-  const obj = path.join(workDir, `${mod.name}.o`);
+  const objs = moduleSources(mod).map((source) => {
+    const obj = path.join(workDir, `${path.basename(source, '.c')}.o`);
+    run(tools.clang, [...CLANG_FLAGS, '-c', path.join(root, source), '-o', obj]);
+    return obj;
+  });
   const linked = path.join(workDir, 'link', `${mod.name}.wasm`);
   const out = path.join(workDir, `${mod.name}.wasm`);
-  run(tools.clang, [...CLANG_FLAGS, '-c', path.join(root, mod.source), '-o', obj]);
-  run(tools.wasmLd, [...LINK_FLAGS, `--max-memory=${mod.maxMemoryPages * 65536}`, '-o', linked, obj]);
+  run(tools.wasmLd, [...LINK_FLAGS, `--max-memory=${mod.maxMemoryPages * 65536}`, '-o', linked, ...objs]);
   run(tools.wasmOpt, [...OPT_FLAGS, linked, '-o', out]);
   return fs.readFileSync(out);
 }
@@ -164,7 +172,8 @@ function main() {
     const bytes = buildModule(tools, mod, path.join(workRoot, mod.name));
     const problems = kernelRuleProblems(bytes, spec);
     const gz = zlib.gzipSync(bytes, { level: 9 }).length;
-    console.log(`\n${mod.name}: ${kb(bytes.length)} (${kb(gz)} gzip) from ${mod.source}`);
+    const from = moduleSources(mod);
+    console.log(`\n${mod.name}: ${kb(bytes.length)} (${kb(gz)} gzip) from ${from.length > 1 ? `${from.length} sources` : from[0]}`);
     for (const p of problems) console.log(`  rule: ${p}`);
     if (problems.length) {
       failed++;

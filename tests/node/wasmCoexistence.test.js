@@ -29,8 +29,8 @@ const CELL_BYTES = 4 + PER_CELL * 2;
 const MAX_CELL_RADIUS = 12;
 
 const MODULES = [
-  { name: 'spatialPublish', file: '../../src/workers/spatialPublish.wasm', exports: ['publish_batch'] },
-  { name: 'spatialGather', file: '../../src/workers/spatialGather.wasm', exports: ['gather_batch'] },
+  { name: 'spatialPublish', file: '../../src/wasm/engine.wasm', exports: ['publish_batch'] },
+  { name: 'spatialGather', file: '../../src/wasm/engine.wasm', exports: ['gather_batch'] },
   { name: 'coexistScale', file: '../fixtures/wasm/coexistScale.wasm', exports: ['scale_f32'] },
   { name: 'coexistHistogram', file: '../fixtures/wasm/coexistHistogram.wasm', exports: ['histogram_u16'] },
 ].map((m) => ({ name: m.name, exports: m.exports, url: new URL(m.file, import.meta.url).href }));

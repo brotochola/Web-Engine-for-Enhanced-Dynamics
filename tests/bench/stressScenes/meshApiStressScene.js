@@ -10,7 +10,9 @@
  *   poly    setPolygon at spawn (ear-clip)
  *   fill    primary box + visualOutset, no setMesh (collider fill)
  *
- * Vertex arena is renderer.maxMeshVerts (65535). The default mix sits near 52k verts.
+ * Arenas (query): `maxVerts` is renderer.maxMeshVerts (default 65535) and `maxIndices` renderer.maxMeshIndices
+ * (default 524288). The default mix takes 64 040 verts and 296 448 indices, so `count` past 1.02 needs maxVerts
+ * raised (count=4: 256 160 verts and 1 185 792 indices, so maxVerts=262144&maxIndices=1310720).
  * Deform grids are large so the per-frame vert rewrite is enough work to see on Pixi.
  * Passing a mix that does not fit throws in create(), so a run cannot silently drop meshes.
  */
@@ -26,8 +28,6 @@ const DEFORM_SY = 16;
 const PLANE_SX = 4;
 const PLANE_SY = 3;
 const POLY_VERTS = 10;
-const MAX_VERTS = 65535;
-const MAX_INDICES = 524288;
 const COLS = 96;
 const SPACING = 56;
 
@@ -49,6 +49,15 @@ function cohort(name, fallback) {
   const s = scale == null ? 1 : scale;
   return Math.round(fallback * s);
 }
+
+/** An arena size from the query, else the default. */
+function arena(name, fallback) {
+  const n = queryNumber(name);
+  return n == null ? fallback : Math.floor(n);
+}
+
+export const MAX_VERTS = arena('maxVerts', 65535);
+export const MAX_INDICES = arena('maxIndices', 524288);
 
 export const RIGID = cohort('rigid', 600);
 export const DEFORM = cohort('deform', 120);
@@ -314,7 +323,7 @@ export class MeshApiStressScene extends Scene {
     const indices = meshApiIndexBudget();
     if (verts > MAX_VERTS || indices > MAX_INDICES) {
       throw new Error(
-        `meshApiStressScene does not fit: verts ${verts}/${MAX_VERTS}, indices ${indices}/${MAX_INDICES}`,
+        `meshApiStressScene does not fit: verts ${verts}/${MAX_VERTS}, indices ${indices}/${MAX_INDICES} (raise the maxVerts and maxIndices query)`,
       );
     }
     let i = 0;

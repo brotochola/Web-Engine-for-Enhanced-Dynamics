@@ -56,15 +56,20 @@ export function isBox2dHotFieldsBound(payload) {
 /** Weed pose SAB layout when physics.enabled === false: x, y, rotation, rotC, rotS. */
 export const WEED_POSE_CHANNEL_COUNT = 5;
 
-export function createWeedPosePayload(entityCount) {
+/**
+ * @param {number} entityCount
+ * @param {SharedArrayBuffer | null} [sab] a buffer to place the channels in (a region of the render-queue memory,
+ *   W4b), at `byte` (4-aligned); a buffer of their own when null
+ */
+export function createWeedPosePayload(entityCount, sab = null, byte = 0) {
   const n = entityCount | 0;
   if (!(n > 0)) {
     throw new Error('createWeedPosePayload: entityCount must be > 0');
   }
-  const sab = new SharedArrayBuffer(n * WEED_POSE_CHANNEL_COUNT * 4);
+  const base = byte >> 2;
   return {
-    sab,
-    channelOffsets: [0, n, n * 2, n * 3, n * 4],
+    sab: sab || new SharedArrayBuffer(n * WEED_POSE_CHANNEL_COUNT * 4),
+    channelOffsets: [base, base + n, base + n * 2, base + n * 3, base + n * 4],
     bodyCapacity: n,
   };
 }

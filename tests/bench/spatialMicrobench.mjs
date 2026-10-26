@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // L1: Grid rebuild + neighbor gather through the Grid API.
-// The worker's own loop (rebuildOwnedRows / findNeighborsForOwnedEntities) is
+// The worker's own loop (rebuildOwnedRows and the neighbour search kernels) is
 // spatialWorkerMicrobench.mjs; this one isolates Grid.addEntityToCell / setNeighbor.
 //
 //   node tests/bench/spatialMicrobench.mjs

@@ -9,6 +9,8 @@
  * alpha = WASM life-fade (1→0 when fadeToAlpha0). baseAlpha = emit opacity
  * (never overwritten by sync). rqAlpha = alpha * baseAlpha.
  * layerMask = emit subscriptions (bit i = Layer.id). Same idea as SpriteRenderer.layerMask.
+ * Close-out group B: a region of the render-queue memory when the scene has one (its byte offset in
+ * buffers.liquidFunRenderByte), so pre-render's emit kernel reads the rows there.
  */
 
 export function liquidFunRenderByteSize(maxCount) {
@@ -23,10 +25,11 @@ export function liquidFunRenderByteSize(maxCount) {
   return (off + 3) & ~3;
 }
 
-export function bindLiquidFunRender(sab, maxCount) {
+export function bindLiquidFunRender(sab, maxCount, byte = 0) {
   const n = maxCount | 0;
-  let off = 8;
-  const count = new Int32Array(sab, 0, 1);
+  const at = byte | 0;
+  let off = at + 8;
+  const count = new Int32Array(sab, at, 1);
   const x = new Float32Array(sab, off, n);
   off += n * 4;
   const y = new Float32Array(sab, off, n);
@@ -49,7 +52,7 @@ export function bindLiquidFunRender(sab, maxCount) {
   off += n * 4;
   const textureId = new Uint16Array(sab, off, n);
   off += n * 2;
-  off = (off + 3) & ~3;
+  off = at + ((off - at + 3) & ~3);
   const baseAlpha = new Float32Array(sab, off, n);
   off += n * 4;
   const layerMask = new Uint16Array(sab, off, n);

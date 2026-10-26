@@ -8,7 +8,6 @@ import {
   packColliderFill,
   packColliderFillPoseOnly,
   packMeshUvFill,
-  rewriteExplicitMeshCorners,
   colliderFillCanSkipPack,
   copyMeshFillPoseScratch,
   COLLIDER_FILL_FLOATS,
@@ -17,6 +16,7 @@ import {
   resetColliderFillMeshLayerWarn,
   ColliderFillBatch,
 } from '../../src/render/colliderFillBatch.js';
+import { rewriteExplicitMeshCorners } from '../reference/meshCorners.mjs';
 import { MeshUvFillBatch } from '../../src/render/meshUvFillBatch.js';
 import {
   MeshRenderer,

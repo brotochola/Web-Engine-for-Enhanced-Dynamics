@@ -7,6 +7,9 @@
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/contactsMicrobench.mjs --variants base,myvariant
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/audioSlotMicrobench.mjs --variants base,l3 --rounds 4
+ *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleIntegrateWasmMicrobench.mjs --variants wasm,wasm-f32 -- --case spin
+ *
+ * Arguments after `--` go to every run of the bench, after its --variant and --output.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -57,13 +60,17 @@ export function runKernelVariants({ script, variants, rounds = 3, outDir, extraA
 }
 
 function main() {
-  const args = parseArgs();
+  const argv = process.argv.slice(2);
+  const sep = argv.indexOf('--');
+  const args = parseArgs(sep < 0 ? argv : argv.slice(0, sep));
+  const extraArgs = sep < 0 ? [] : argv.slice(sep + 1);
   const script = String(args.script);
   const variants = String(args.variants || 'base').split(',').map((s) => s.trim()).filter(Boolean);
   const rounds = Number(args.rounds ?? 3);
   const name = path.basename(script, '.mjs');
   const outDir = path.join(repoRoot, 'tests/results/kernel-variants', name);
-  const summary = runKernelVariants({ script, variants, rounds, outDir });
+  const summary = runKernelVariants({ script, variants, rounds, outDir, extraArgs });
+  if (extraArgs.length) summary.extraArgs = extraArgs;
   writeJson(path.join(outDir, 'summary.json'), summary);
   console.log(`\n======== ${name} (${rounds} alternating rounds) ========`);
   for (const [v, row] of Object.entries(summary.variants)) {

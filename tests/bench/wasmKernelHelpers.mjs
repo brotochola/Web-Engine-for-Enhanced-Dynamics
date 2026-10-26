@@ -45,9 +45,18 @@ export function kernelEntry(name) {
   return mod;
 }
 
+/**
+ * The binary a kernel ships in: engine.wasm for a kernel of the engine module (close-out step 4), with every
+ * kernel's exports, or its own build with `separate` (tests/fixtures/wasm/, for the A/B against the engine).
+ */
+export function kernelBinaryPath(name, { separate = false } = {}) {
+  const entry = kernelEntry(name);
+  return path.join(repoRoot, entry.engine && !separate ? kernelEntry('engine').output : entry.output);
+}
+
 /** Compiled module (sync); `file` overrides the manifest's output path (a candidate binary). */
-export function compileKernel(name, file = null) {
-  const bytes = fs.readFileSync(file ? path.resolve(file) : path.join(repoRoot, kernelEntry(name).output));
+export function compileKernel(name, file = null, { separate = false } = {}) {
+  const bytes = fs.readFileSync(file ? path.resolve(file) : kernelBinaryPath(name, { separate }));
   return new WebAssembly.Module(bytes);
 }
 

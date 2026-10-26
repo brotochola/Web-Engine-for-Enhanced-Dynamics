@@ -274,6 +274,11 @@ export type SceneQueryTuple = readonly (typeof Component)[];
 
 /** Merged runtime scene config (static defaults + `Scene.config` + nested worker blocks). */
 export type SceneConfig = Record<string, unknown> & {
+  /**
+   * Entity id width. 'auto' (default): 16-bit ids while the scene's pools hold at most 65535 entities, 32-bit
+   * past that, decided when the scene is built. 16 or 32 forces one (32: up to 500000 entities).
+   */
+  entityIdWidth?: 'auto' | 16 | 32;
   physics?: Record<string, unknown> & {
     /**
      * Default true. false = do not create the Box2D WASM worker;
@@ -291,21 +296,37 @@ export type SceneConfig = Record<string, unknown> & {
     /** @deprecated one-release alias of maxFixturePoolSize */
     maxFixtures?: number;
   };
+  preRender?: Record<string, unknown> & {
+    /**
+     * Room in MB, whole, 0..1024 (default 4), for the Adobe Animate assets' tables in the render-queue memory
+     * (the emit kernel's). A piece takes 46 bytes; an asset that does not fit is not drawn, and an error names this key.
+     */
+    adobeTablesMB?: number;
+  };
   /**
    * WebAssembly kernels, one switch per module (default true). false runs that module's
    * JavaScript path instead, for example to time one against the other in the same build.
    */
   wasm?: {
-    /** Spatial neighbour publish. Needs 16-bit entity ids; at 32 the JavaScript path runs anyway. */
-    spatialPublish?: boolean;
-    /** Spatial candidate gather (the cell walk before the publish). Runs only with spatialPublish. */
-    spatialGather?: boolean;
-    /** Particle integrate (lifetime, tweens, motion, floor) for the CPU particle pool. */
-    particleIntegrate?: boolean;
-    /** Particle active and visible lists (the per-frame sweep of the pool and the screen test). */
-    particleLists?: boolean;
-    /** Instanced-row pack in pre-render (the render queues live in one WebAssembly.Memory). */
-    gpuPack?: boolean;
+    /**
+     * The particle integrate (lifetime, tweens, motion, floor; WebAssembly) in float32 (default true): faster; positions, tweens and turning particles' rotations
+     * within a float32 rounding or so of the double step (lifetimes and deaths exact). false: the double step, the
+     * JavaScript integrate's results exactly.
+     */
+    particleIntegrateF32?: boolean;
+    /**
+     * The particle active and visible lists' (the per-frame sweep of the pool; WebAssembly) screen test in float32 (default true): faster; a particle within a float32 rounding of
+     * the culling box's edge (off the canvas, inside the cull margin) can land on the other side. false: the
+     * double test, the JavaScript build's flags exactly.
+     */
+    particleListsF32?: boolean;
+    /** The sweep in float32 (default) or, false, in double precision. */
+    visibilitySweepF32?: boolean;
+    /**
+     * The decoration sway in float32 (default true): faster; a sway rotation within a float32 rounding or so of the
+     * double one. false: the double sway, the JavaScript sway's results exactly.
+     */
+    decorationSwayF32?: boolean;
   };
 };
 
@@ -1062,6 +1083,12 @@ export declare class GameObject {
    * Scene gate skips the hypot loop if no registered type opts in.
    */
   static deriveSpeed: boolean;
+  /**
+   * Static scenery: entities of this type do not move after onSpawned. Pre-render culls their sprites through a grid, so a
+   * large world of them costs what the view holds. Moving one through the setters (x, y, scale, sprite) re-bins them;
+   * writing its Transform columns directly is not seen. Default false.
+   */
+  static isStatic: boolean;
   /**
    * After initializeArrays: Int16 per entity. Worker index that must run this
    * entity’s logic. FORCE_PROCESS_ON_LOGIC_WORKER_NONE (−1) means stride.
@@ -3189,7 +3216,10 @@ export declare class MeshRenderer extends Component {
   setVertices(positions: ArrayLike<number>): this;
   /** Drop the explicit mesh and fall back to collider fill. */
   clearMesh(): this;
-  /** Subdivided quad, local origin at the center. segX / segY are cell counts. */
+  /**
+   * Subdivided quad, local origin at the center. segX / segY are cell counts: at most 254, or 1023 when
+   * renderer.maxMeshVerts passes 65535 (a 32-bit vertex arena).
+   */
   setPlane(width: number, height: number, segX: number, segY: number): this;
   /** Textured strip. points is flat x,y or {x,y}[]. */
   setRope(
@@ -3844,8 +3874,8 @@ export declare class Decoration {
   static get(id: number): Decoration;
   static ensureForParented(id: number): Decoration;
   static evictFacade(id: number): void;
-  /** World-owned decorations only; fills out with pool indices; returns count. */
-  static queryCircle(x: number, y: number, radius: number, out: Uint16Array): number;
+  /** World-owned decorations only; fills out with pool indices (a Uint32Array past 65 535 decorations); returns count. */
+  static queryCircle(x: number, y: number, radius: number, out: Uint16Array | Uint32Array): number;
   get active(): boolean;
   get x(): number;
   set x(v: number);
@@ -3918,7 +3948,7 @@ export declare class DecorationSpatial {
   static insert(decoIdx: number): void;
   static remove(decoIdx: number): void;
   static move(decoIdx: number, x: number, y: number): void;
-  static queryCircle(x: number, y: number, radius: number, out: Uint16Array): number;
+  static queryCircle(x: number, y: number, radius: number, out: Uint16Array | Uint32Array): number;
 }
 
 export declare class BulletPool extends SharedAtomicPool {

@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildVisibilityPolygon,
   OCC_CIRCLE,
   OCC_POLY,
   writeOrientedBoxVerts,
   writePolygonVerts,
 } from '../../src/render/visibility/angularSweep.js';
 import { buildVisibilityPolygonReference } from '../helpers/sweepReference.mjs';
+import { buildVisibilityPolygon } from '../reference/visibilitySweepJs.mjs';
 
 // E-63. The sweep took Math.cos/sin of every event's angle, an angle that came
 // from atan2 of the very vertex (or circle tangent) the ray points at. The

@@ -8,7 +8,7 @@
  *   node tests/bench/wasmFloorPremise.mjs --case gather
  *   node --allow-natives-syntax tests/bench/wasmFloorPremise.mjs --case publish
  *
- * sway    W22: the shipped _updateDecorationSwayBuckets (real worker, 20 000 decorations) against
+ * sway    W22: the JS _updateDecorationSwayBuckets (tests/reference; real worker, 20 000 decorations) against
  *         the same loop with its float maths replaced by XOR of the loaded words, same stores.
  * stamp   W23: the shipped stampLightRange (Predator fixture) against a copy of its grid walk and
  *         range filter, and that copy against two floors (loads only; loads and every item stored).
@@ -28,13 +28,14 @@ const args = parseArgs();
 const which = String(args.case || 'sway');
 
 async function swayCase() {
-  // Q3 for W22: the shipped ParticleWorker._updateDecorationSwayBuckets against its memory floor:
+  // Q3 for W22: the JS ParticleWorker._updateDecorationSwayBuckets (tests/reference) against its memory floor:
   // the same loop, the same loads and the same two stores, with the float maths replaced by XOR of
   // the loaded words (through Uint32Array aliases of the same bytes). Real worker, 20 000 decorations.
   const { DecorationComponent } = await import('../../src/components/decorationComponent.js');
   const { mulberry32, warmNormalCompile } = await import('./microbenchHelpers.mjs');
   const { initWorker, loadWorker } = await import('./workerHarness.mjs');
   const { abab, machineState } = await import('./wasmKernelHelpers.mjs');
+  const { swayBucketsJs, updateDecorationSwayJs } = await import('../reference/decorationSwayJs.mjs');
   const n = Number(args.n ?? 20000), K = 100;
   const order = String(args.order || 'sequential');
   const worker = await loadWorker('particleWorker.js', 'particleWorker');
@@ -54,7 +55,7 @@ async function swayCase() {
   }
   worker._activeDecorationSnapshotCount = n;
   worker.accumulatedTime = 1000;
-  worker.updateDecorationSway(16.67); // fills the phase tables and the bucket cache
+  updateDecorationSwayJs(worker, 16.67); // fills the phase tables and the bucket cache
 
   const u32 = (a) => new Uint32Array(a.buffer, a.byteOffset, a.length);
   const D = DecorationComponent;
@@ -76,7 +77,7 @@ async function swayCase() {
     }
   }
   let t = 1000;
-  const shipped = (count) => { t += 16.67; worker._activeDecorationSnapshotCount = count; worker._updateDecorationSwayBuckets(16.67, t * 0.002); };
+  const shipped = (count) => { t += 16.67; worker._activeDecorationSnapshotCount = count; swayBucketsJs(worker, 16.67, t * 0.002); };
   const floor = (count) => swayFloor(worker, count);
   warmNormalCompile(() => shipped(64));
   warmNormalCompile(() => floor(64));
@@ -92,7 +93,7 @@ async function stampCase() {
   // memory floor. full = shipped stampLightRange on the Predator fixture (48 lights, 512 per light,
   // 3 per entity); gather = a copy of its grid walk and range filter (the hot lines); loadsOnly =
   // the same walk and loads, XOR into a sink, no stores; storeAll = the same loads, every item stored.
-  const { stampLightRange } = await import('../../src/render/gpuShadowCasters.js');
+  const { stampLightRange } = await import('../reference/shadowStamp.mjs');
   const { setupStamp } = await import('./shadowStampMicrobench.mjs');
   const { loadPredatorFixture } = await import('./predatorFixture.mjs');
   const { warmNormalCompile } = await import('./microbenchHelpers.mjs');
@@ -179,7 +180,8 @@ async function gatherCase() {
     ], scope);
     return Q3;
   };
-  const k = await setupSpatialKernel({ n: 16500, workers: 1, spatial: { neighborReuseSkin: 0, neighborTickInterval: 1 }, make });
+  // The JS search the kernels replaced (tests/reference/spatialGather.mjs), with its JS filter.
+  const k = await setupSpatialKernel({ n: 16500, workers: 1, spatial: { neighborReuseSkin: 0, neighborTickInterval: 1 }, make, js: { publish: 'js' } });
   const w = k.workers[0];
   k.frame(); // one shipped update: rows, grid, owned list
   rec.posU = new Uint32Array(w.entityPosData.buffer, w.entityPosData.byteOffset, w.entityPosData.length);
@@ -239,7 +241,7 @@ async function publishCase() {
     ], scope);
     return P;
   };
-  const k = await setupSpatialKernel({ n: 16500, workers: 3, make });
+  const k = await setupSpatialKernel({ n: 16500, workers: 3, make, js: { publish: 'js' } });
   for (let f = 0; f < 45; f++) k.frame();
   const w = k.workers[0], maxN = Grid.maxNeighbors, stride = 1 + maxN, count = k.n, vr = Collider.visualRange;
   const ids = []; for (let i = 0; i < w._ownedEntityCount; i++) { const a = w._ownedEntityList[i]; if (vr[a] > 0) ids.push(a); }

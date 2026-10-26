@@ -206,3 +206,47 @@ test('summarizeWorkerBenchmarkWindow averages stats fields across samples', () =
   assert.equal(physics.statsSamplesAverage.BODY_COUNT, 3000);
   assert.equal(physics.statsSamplesAverage.STEP_MS, 6);
 });
+
+test('with the frame totals, each worker and the main thread get an exact window between the two ends', async () => {
+  const frameTotals = await import('../../src/util/frameTotals.js');
+  const { frameClockSlot } = await import('../../src/util/frameClock.js');
+  const scene = createBenchmarkSceneStub();
+  scene.buffers.frameTotals = frameTotals.createFrameTotalsBuffer();
+  const view = frameTotals.bindFrameTotals(scene.buffers.frameTotals);
+  const reader = createWorkerBenchmarkReader(scene, { frameTotals });
+  assert.equal(typeof reader.totalsWindow, 'function');
+  // Warm-up, outside the window.
+  frameTotals.addFrame(view, frameClockSlot('logic', 1), 40, 0, 0);
+  const start = reader.snapshot(1000, { totals: true });
+  for (let i = 0; i < 300; i++) {
+    frameTotals.addFrame(view, frameClockSlot('logic', 1), i % 2 ? 4 : 6, 1, 0);
+    frameTotals.addFrame(view, frameClockSlot('physics'), 7, 0, 0.5);
+    frameTotals.addFrame(view, frameClockSlot('main'), 1.25, 0, 0);
+  }
+  scene.mainFrameNumber = 300;
+  const mid = reader.snapshot(3500);
+  assert.equal(mid.workers[0].totals, null, 'samples do not copy the totals');
+  const end = reader.snapshot(6000, { totals: true });
+  const summary = summarizeWorkerBenchmarkWindow(start, end, { sampleSnapshots: [mid], totalsWindow: reader.totalsWindow });
+  const logic1 = summary.workers.find((w) => w.id === 'logic1');
+  assert.equal(logic1.exact.frames, 300);
+  assert.equal(logic1.exact.stepMs, 5);
+  assert.equal(logic1.exact.workMs, 4);
+  const physics = summary.workers.find((w) => w.id === 'physics');
+  assert.equal(physics.exact.extraMs, 0.5);
+  // A worker that published nothing in the window has no exact window, rather than a zero.
+  assert.equal(summary.workers.find((w) => w.id === 'spatial0').exact, null);
+  assert.equal(summary.mainThread.exactFPS, 60);
+  assert.equal(summary.mainThread.exact.stepMs, 1.25);
+});
+
+test('without the totals module the reader stays sampled', () => {
+  const scene = createBenchmarkSceneStub();
+  const reader = createWorkerBenchmarkReader(scene);
+  assert.equal(reader.totalsWindow, null);
+  const a = reader.snapshot(0, { totals: true });
+  const b = reader.snapshot(1000, { totals: true });
+  const summary = summarizeWorkerBenchmarkWindow(a, b, { totalsWindow: reader.totalsWindow });
+  assert.ok(summary.workers.every((w) => w.exact === null));
+  assert.equal(summary.mainThread.exactFPS, null);
+});

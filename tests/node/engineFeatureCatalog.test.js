@@ -58,6 +58,8 @@ test('catalog has one unique row per hot engine feature', () => {
     const row = getFeature(id);
     assert.ok(row, `missing ${id}`);
     assert.ok(row.module && row.module.startsWith('src/'), `${id} module`);
+    // A module that moved (a JS path that left src/ for tests/reference) leaves its row pointing nowhere.
+    assert.ok(fs.existsSync(path.join(root, row.module)), `${id}: ${row.module} exists`);
     assert.ok(Array.isArray(row.primary), `${id} primary`);
     assert.ok(Array.isArray(row.load), `${id} load`);
     if (row.kernel) {

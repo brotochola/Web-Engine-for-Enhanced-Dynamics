@@ -1,16 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { OCC_POLY, writeOrientedBoxVerts } from '../../src/render/visibility/angularSweep.js';
 import {
   buildVisibilityPolygon,
   clearPolarBins,
   clipVisibilityToPolar,
+  dropUnseenJs,
   markSeenPolarOwners,
-  OCC_POLY,
   rasterBoundarySegment,
   sweepSawOccluder,
-  writeOrientedBoxVerts,
-} from '../../src/render/visibility/angularSweep.js';
+} from '../reference/visibilitySweepJs.mjs';
 
 // N-19. A compound solid (terrain chunk) used to be drawn self-lit whenever one
 // of its segments was in the light's range, so rock deep behind other rock lit
@@ -112,7 +112,7 @@ test('before any merge, the caller is told it cannot know', () => {
   assert.equal(markSeenPolarOwners(new Uint32Array(16), 1), -1);
 });
 
-test('pre-render keeps only the occluders a light sees, solids and simple ones', async () => {
+test('the JS light loop kept only the occluders a light sees, solids and simple ones (dropUnseenJs)', async () => {
   const { loadWorker } = await import('../bench/workerHarness.mjs');
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const itemBytes = 28;
@@ -135,7 +135,7 @@ test('pre-render keeps only the occluders a light sees, solids and simple ones',
   stampWalls();
   sweepThenClip([[0, 150, 40, 20]]);
   assert.equal(sweepSawOccluder(0), true);
-  const kept = pre._dropUnseen(buf, 2, items.length, true);
+  const kept = dropUnseenJs(pre, buf, 2, items.length, true);
   assert.equal(kept, 5);
   const ids = [];
   for (let q = 0; q < kept; q++) {
@@ -145,7 +145,7 @@ test('pre-render keeps only the occluders a light sees, solids and simple ones',
   }
   assert.deepEqual(ids, [1, 2, 7, 3, 9], 'solid 8 is behind solid 7');
   // No bin stamped at all: no solid is seen, the seen simple occluder stays.
-  assert.equal(pre._dropUnseen(buf, 2, kept, false), 3);
+  assert.equal(dropUnseenJs(pre, buf, 2, kept, false), 3);
   assert.equal(buf.i32[(4 + 2 * itemBytes) >> 2], 3);
 });
 

@@ -11,21 +11,37 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
 const weedPost = fs.readFileSync(path.join(root, 'src', 'box2d', 'weedjsPost.js'), 'utf8');
 const siblingNames = extractImportScriptNames(weedPost);
-// Engine WASM kernels (E-76 T5; test modules are not shipped): each must be embedded in every artifact as the base64 of its
-// committed bytes (a data URL the worker loads, raw or inside a gzipped worker payload).
+// Engine WASM kernels (E-76 T5; test modules are not shipped): each must be embedded in every artifact as a gzipped data URL
+// of its committed bytes (data:application/gzip;base64,…, which the worker inflates), in the artifact or inside a gzipped
+// worker payload.
 const kernelModules = JSON.parse(fs.readFileSync(path.join(root, 'wasm', 'modules.json'), 'utf8')).modules.filter((m) => !m.test).map((m) => ({
   name: m.name,
   output: m.output,
-  b64: fs.readFileSync(path.join(root, m.output)).toString('base64'),
+  bytes: fs.readFileSync(path.join(root, m.output)),
 }));
+const box2dWasmBytes = fs.readFileSync(path.join(root, 'src', 'box2d', 'box2dWasm.wasm'));
+
+/** The inflated bytes of every gzipped data URL in `text`. */
+function gzipDataUrls(text) {
+  const out = [];
+  for (const m of text.matchAll(/data:application\/gzip;base64,([A-Za-z0-9+/=]+)/g)) {
+    try {
+      out.push(zlib.gunzipSync(Buffer.from(m[1], 'base64')));
+    } catch {
+      // not a gzip payload
+    }
+  }
+  return out;
+}
 
 function assert(cond, msg) {
   if (!cond) throw new Error(msg);
 }
 
+/** Box2D's wasm among the gunzipped payloads (the kernels are gzipped wasm too: matched by its committed bytes). */
 function findWasm(payloads) {
   for (const buf of payloads) {
-    if (buf.length > 10000 && buf[0] === 0x00 && buf[1] === 0x61) return buf;
+    if (buf.equals(box2dWasmBytes)) return buf;
   }
   // Compressed artifacts gzip the whole Box2dWorkerSource; wasm b64 lives inside that UTF-8.
   for (const buf of payloads) {
@@ -34,7 +50,7 @@ function findWasm(payloads) {
     for (const b64 of inner) {
       try {
         const g = zlib.gunzipSync(Buffer.from(b64, 'base64'));
-        if (g.length > 10000 && g[0] === 0x00 && g[1] === 0x61) return g;
+        if (g.equals(box2dWasmBytes)) return g;
       } catch {
         // not wasm
       }
@@ -103,9 +119,10 @@ for (const name of BUNDLE_ARTIFACTS) {
     .filter((buf) => buf[0] !== 0x00)
     .map((buf) => buf.toString('utf8'));
 
+  const kernelBytes = [s, ...utf8Payloads].flatMap(gzipDataUrls);
   for (const mod of kernelModules) {
-    const embedded = s.includes(mod.b64) || utf8Payloads.some((text) => text.includes(mod.b64));
-    assert(embedded, `${name}: kernel ${mod.name} (${mod.output}) is not embedded, or not its committed bytes`);
+    const embedded = kernelBytes.some((bytes) => bytes.equals(mod.bytes));
+    assert(embedded, `${name}: kernel ${mod.name} (${mod.output}) is not embedded gzipped, or not its committed bytes`);
   }
 
   if (compressed) {

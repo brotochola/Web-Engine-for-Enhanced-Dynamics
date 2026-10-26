@@ -8,6 +8,10 @@
     if (!new URLSearchParams(location.search).has('src')) {
       document.write('<script type="importmap">{"imports":{"/src/index.js":"/dist/weed.bundle.esm.min.js"}}<\/script>');
     }
+    // A browser started without Playwright (stockFirefox.mjs) takes the runner's calls through stockDriver.js.
+    if (new URLSearchParams(location.search).has('stockDriver')) {
+      document.write('<script src="stockDriver.js"><\/script>');
+    }
   </script>
 </head>
 <body>
@@ -185,6 +189,57 @@
       return overlay ? overlay.textContent.replace(/\s+/g, ' ').trim() : null;
     }
 
+    /**
+     * The physics pose buffers as the engine publishes them, read where the scene keeps them (Phase 4: regions of
+     * Box2D's block): active bodies, how many have a live pose in the current generation, and the largest
+     * distance between that pose and Transform's. Null without physics.
+     */
+    function publishedPoseCheck(scene) {
+      const b = scene.buffers;
+      const n = b.poseCapacity | 0;
+      const rb = globalThis.RigidBody?.active;
+      const tx = globalThis.Transform?.x;
+      const ty = globalThis.Transform?.y;
+      if (!scene._physicsEnabled || !b.poseSync || !(n > 0) || !rb || !tx) return null;
+      const ready = Atomics.load(new Int32Array(b.poseSync), 0);
+      if (!(ready > 0)) return { bodies: 0, live: 0, maxDelta: null, ready };
+      const cur = (ready - 1) & 1;
+      const sab = cur ? b.poseDataB : b.poseDataA;
+      const at = (cur ? b.poseDataBByte : b.poseDataAByte) | 0;
+      const px = new Float32Array(sab, at, n);
+      const py = new Float32Array(sab, at + n * 4, n);
+      const rc = new Float32Array(sab, at + n * 8, n);
+      const rs = new Float32Array(sab, at + n * 12, n);
+      let bodies = 0;
+      let live = 0;
+      let maxDelta = 0;
+      for (let i = 0; i < n && i < rb.length; i++) {
+        if (!rb[i]) continue;
+        bodies++;
+        if (rc[i] * rc[i] + rs[i] * rs[i] <= 0.25) continue;
+        live++;
+        const dx = px[i] - tx[i];
+        const dy = py[i] - ty[i];
+        const d = Math.sqrt(dx * dx + dy * dy);
+        if (d > maxDelta) maxDelta = d;
+      }
+      return { bodies, live, maxDelta, ready };
+    }
+
+    /** How many entities have at least one neighbour in the rows spatial publishes, of how many; null without. */
+    function neighborRowsCheck(scene) {
+      const b = scene.buffers;
+      const meta = scene.gridMetadata;
+      const n = scene.totalEntityCount | 0;
+      if (!b.neighborData || !meta || !(n > 0)) return null;
+      const stride = 1 + (meta.maxNeighbors | 0);
+      const Ids = meta.entityIdBytes === 4 ? Uint32Array : Uint16Array;
+      const rows = new Ids(b.neighborData, meta.neighborByte | 0, n * stride);
+      let withNeighbors = 0;
+      for (let i = 0; i < n; i++) if (rows[i * stride] > 0) withNeighbors++;
+      return { entities: n, withNeighbors };
+    }
+
     function summarizeFromSession(
       startSnapshot,
       endSnapshot,
@@ -196,6 +251,7 @@
       const summary = session.summarizeWorkerBenchmarkWindow(startSnapshot, endSnapshot, {
         measurementDurationMs: endSnapshot.takenAtMs - startSnapshot.takenAtMs,
         sampleSnapshots,
+        totalsWindow: session.reader.totalsWindow,
       });
 
       return {
@@ -215,12 +271,20 @@
           // The fatal overlay's text if a worker died during the run (null when none did).
           fatalError: fatalErrorText(),
           wasmRan: { spatialPublish: Boolean(scene.spatialPublish) },
+          // Phase 4: the block of Box2D's memory the render-queue regions sit in, or null (separate memories).
+          box2dBlock: scene.box2dBlock ? { byte: scene.box2dBlock.byte, bytes: scene.box2dBlock.bytes, inBlock: scene.renderQueueMemory?.memory === scene.box2dBlock.memory, bodies: (scene.renderQueueMemory?.layout.collect?.bodyPoseAByte ?? -1) >= 0, spatial: Boolean(scene.spatialPublish) && scene.spatialPublish.memory === scene.box2dBlock.memory } : null,
+          // The published poses read back where they live: a body whose pose never lands reads as not live.
+          publishedPose: publishedPoseCheck(scene),
+          // Entities with a published neighbour row (spatial's output, where logic reads it).
+          neighborRows: neighborRowsCheck(scene),
           worldWidth: config.worldWidth,
           worldHeight: config.worldHeight,
           warmupMs: config.warmupMs,
           durationMs: config.durationMs,
           sampleIntervalMs: config.sampleIntervalMs,
           sampleCount: sampleSnapshots.length,
+          // Every frame in the window counted (src/util/frameTotals.js), or only the samples.
+          exactWindow: Boolean(session.reader.totalsWindow),
         },
       };
     }
@@ -293,7 +357,9 @@
       if (config.cameraZoom != null) {
         WEED.Camera.setZoom(config.cameraZoom === 'min' ? WEED.Camera.minZoom : Number(config.cameraZoom));
       }
-      const reader = createWorkerBenchmarkReader(scene);
+      // The running totals, when this tree's engine keeps them (an older baseline does not).
+      const frameTotals = scene.buffers?.frameTotals ? await import('/src/util/frameTotals.js') : null;
+      const reader = createWorkerBenchmarkReader(scene, { frameTotals });
 
       session = {
         config,
@@ -320,7 +386,7 @@
         throw new Error('Benchmark session not prepared');
       }
       stopSampling();
-      session.startSnapshot = session.reader.snapshot(performance.now());
+      session.startSnapshot = session.reader.snapshot(performance.now(), { totals: true });
       session.sampleSnapshots = [];
       session.sampleTimer = setInterval(() => {
         if (!session) return;
@@ -336,7 +402,7 @@
       }
       stopSampling();
 
-      const endSnapshot = session.reader.snapshot(performance.now());
+      const endSnapshot = session.reader.snapshot(performance.now(), { totals: true });
       const startSnapshot = session.startSnapshot || endSnapshot;
       const result = summarizeFromSession(
         startSnapshot,

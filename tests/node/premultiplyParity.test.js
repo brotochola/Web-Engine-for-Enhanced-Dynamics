@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { copyPremultiplyRgba } from '../../src/render/webgpu/pinGpuTexture.js';
+import { copyPremultiplyRgba } from '../reference/decalPremultiply.mjs';
 
 // Reference: the per-channel formula (matches WebGL UNPACK_PREMULTIPLY).
 function reference(dst, src) {

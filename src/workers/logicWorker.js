@@ -157,8 +157,8 @@ class LogicWorker extends AbstractWorker {
     //
     // A previous version of this file had, 45 lines above and attached to nothing, the
     // comment "Float64Array, not Int32Array: this key overflows a 32-bit int well
-    // before the entity cap." There is no Float64Array in this file - the grep for one
-    // returns that comment - and the key is a Map key, i.e. a JS number. As a floating
+    // before the entity cap." There is no Float64Array in this file for the pair key (the
+    // spawn sort's keys, E-125, are the only one), and the key is a Map key, i.e. a JS number. As a floating
     // JSDoc it also visually documented the B-09 block below it. Read as a performance
     // claim about hashing, it is what made E-10 a two-line hypothesis that was already
     // dead; E-10 then swept 715 838 805 keys and found zero boxed (in Node; Chrome's
@@ -282,7 +282,8 @@ class LogicWorker extends AbstractWorker {
     this._spawnIdx = new Int32Array(256);
     this._spawnType = new Int32Array(256);
     this._spawnClass = new Array(256);
-    this._spawnPerm = new Int32Array(256);
+    // E-125: the spawn batch's packed sort keys; its length, the batch capacity, is a power of two (256, doubling).
+    this._spawnSortKeys = new Float64Array(256);
     this._spawnSorted = new Int32Array(256);
     this._spawnSortedClass = new Array(256);
 
@@ -553,7 +554,7 @@ class LogicWorker extends AbstractWorker {
       this._spawnIdx = idx;
       this._spawnType = type;
       this._spawnClass = classes;
-      this._spawnPerm = new Int32Array(next);
+      this._spawnSortKeys = new Float64Array(next);
       this._spawnSorted = new Int32Array(next);
       this._spawnSortedClass = new Array(next);
       this._spawnCap = next;
@@ -720,27 +721,25 @@ class LogicWorker extends AbstractWorker {
       return true;
     }
 
-    const perm = this._spawnPerm;
+    const keys = this._spawnSortKeys;
+    const span = keys.length;
     const sorted = this._spawnSorted;
     const sortedClass = this._spawnSortedClass;
     const transformActive = Transform.active;
 
-    // Sort spawn positions by entity index with a comparator over a permutation,
-    // then gather. H-14 (2026-10-14) replaced the comparator with a numeric sort
-    // of packed (entityIndex, position) Float64 keys: +106..147 % in the kernel,
-    // but a spawnStorm sitting of -0.55 % with 3/8 pairs worse, contaminated by a
-    // stray Chromium launch, so it was dropped and reverted. Its comments stayed
-    // here and described a key this code does not build (review). Read
-    // HYPOTHESIS_LOG before re-proposing it. Two spawns of one index compare
-    // equal; they carry the same class, so their order does not change the lists.
-    // They are kept once: a short life whose index was reused at once (LIFO)
-    // spawns twice in one batch, and the merge below only skips an index the list
-    // already holds, so both copies were listed and the entity ticked twice.
+    // Sort the batch by entity index, then gather (E-125, H-14 re-sat). Each spawn is a key, entityIndex * span +
+    // its position, sorted by the typed array's own numeric sort with no comparator: span, the keys' length, is the
+    // batch capacity and a power of two, so a key is an exact integer under 2^53 and the order is by index, then by position, the order
+    // the stable comparator sort over a permutation gave. Two spawns of one index carry the same class, so their
+    // order does not change the lists. They are kept once: a short life whose index was reused at once (LIFO)
+    // spawns twice in one batch, and the merge below only skips an index the list already holds, so both copies
+    // were listed and the entity ticked twice.
     let m = 0;
-    for (let i = 0; i < n; i++) perm[i] = i;
-    perm.subarray(0, n).sort((a, b) => idx[a] - idx[b]);
+    for (let i = 0; i < n; i++) keys[i] = idx[i] * span + i;
+    keys.subarray(0, n).sort();
     for (let i = 0; i < n; i++) {
-      const src = perm[i];
+      const key = keys[i];
+      const src = (key - Math.floor(key / span) * span) | 0;
       const entityIndex = idx[src];
       if (transformActive[entityIndex] !== 1) continue;
       if (m > 0 && sorted[m - 1] === entityIndex) continue;
@@ -1891,6 +1890,9 @@ class LogicWorker extends AbstractWorker {
     // Purge pairs whose generation changed or entities went inactive.
     // A throwing onCollisionStay is reported and the walk resumes at the next
     // pair (s is already past it); the try sits outside the loop.
+    // E-131: the generations are plain reads. Physics bumps them; a bump this walk misses is caught on the
+    // next frame's, as one that lands just after an Atomics.load would be. Atomics.load here cost the contact
+    // flow kernel 22 to 24 % of its time.
     let s = 0;
     let calling = -1;
     for (;;) {
@@ -1902,7 +1904,7 @@ class LogicWorker extends AbstractWorker {
             active[minE] &&
             active[maxE] &&
             (gen
-              ? (Atomics.load(gen, minE) >>> 0) === genMin[s] && (Atomics.load(gen, maxE) >>> 0) === genMax[s]
+              ? (gen[minE] >>> 0) === genMin[s] && (gen[maxE] >>> 0) === genMax[s]
               : genMin[s] === 0 && genMax[s] === 0);
           if (!valid) {
             this._removePairSlot(s, collisionPairKey(minE, maxE));
@@ -2122,7 +2124,7 @@ class LogicWorker extends AbstractWorker {
           bindLiquidFunUserDataListSab(data.liquidFunUserDataListSab);
         }
         if (data.liquidFunHeap) {
-          LiquidFun.bindHeapPose(data.liquidFunHeap);
+          LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
         }
         if (data.movedSab) {
           bindMovedBodies(data.movedSab);

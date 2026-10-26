@@ -12,8 +12,17 @@ export const GPU_SPRITE_FLOATS = 15;
 /** x, y, intensity, rangeSq. Sits after shadowH, shadowOffX, shadowOffY. */
 export const GPU_CASTER_LIGHT_FLOAT = GPU_SPRITE_FLOATS + 3;
 export const GPU_CASTER_FLOATS = GPU_CASTER_LIGHT_FLOAT + 4;
-export const GPU_HEADER_INTS = 8;
-export const GPU_QUEUE_VERSION = 5;
+/**
+ * E-82b. With GPU_FLAG_SPLIT the sprite region holds the same terms in two streams instead of 15-float
+ * rows: the poses first (x, y, rotC, rotS, GPU_POSE_FLOATS a row), then the statics (scale, anchor, depth,
+ * packed tint, texture, tile terms, GPU_STATIC_FLOATS a row: E-82's static order). GPU_HDR_STATIC_GEN is
+ * the queue's staticGen when the statics are those of that generation, else 0, so Pixi uploads the statics
+ * only when it changes. Same bytes as the 15-float rows.
+ */
+export const GPU_POSE_FLOATS = 4;
+export const GPU_STATIC_FLOATS = 11;
+export const GPU_HEADER_INTS = 12;
+export const GPU_QUEUE_VERSION = 6;
 
 export const GPU_HDR_SPRITE = 0;
 export const GPU_HDR_GLOW = 1;
@@ -23,19 +32,16 @@ export const GPU_HDR_COOKIE = 4;
 export const GPU_HDR_PARTICLE = 5;
 export const GPU_HDR_FLAGS = 6;
 export const GPU_HDR_VERSION = 7;
+export const GPU_HDR_STATIC_GEN = 8;
 
 export const GPU_FLAG_SORTED = 1;
+export const GPU_FLAG_SPLIT = 2;
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
 
 function align4(n) {
   return (n + 3) & ~3;
-}
-
-function snapWorldToPixel(v, cam, zoom) {
-  if (!(zoom > 0)) return v;
-  return Math.round((v - cam) * zoom) / zoom + cam;
 }
 
 /**
@@ -98,6 +104,9 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   const header = new Int32Array(sab, offset, GPU_HEADER_INTS);
   offset += GPU_HEADER_INTS * 4;
   const sprites = regionF32(sab, offset, (c.maxSprites | 0) * GPU_SPRITE_FLOATS);
+  // E-82b: the same region as two streams.
+  const spritePose = regionF32(sab, offset, (c.maxSprites | 0) * GPU_POSE_FLOATS);
+  const spriteStatic = regionF32(sab, spritePose.next, (c.maxSprites | 0) * GPU_STATIC_FLOATS);
   offset = sprites.next;
   const glow = regionF32(sab, offset, (c.maxGlow | 0) * GPU_SPRITE_FLOATS);
   offset = glow.next;
@@ -116,6 +125,9 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     header,
     sprites: sprites.view,
     spritesU32: sprites.u32,
+    spritePose: spritePose.view,
+    spriteStatic: spriteStatic.view,
+    spriteStaticU32: spriteStatic.u32,
     glow: glow.view,
     glowU32: glow.u32,
     sun: sun.view,
@@ -140,6 +152,7 @@ export function clearGpuQueueHeader(header) {
   header[GPU_HDR_PARTICLE] = 0;
   header[GPU_HDR_FLAGS] = 0;
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
+  header[GPU_HDR_STATIC_GEN] = 0;
 }
 
 export function writeGpuQueueHeader(header, counts, flags) {
@@ -152,228 +165,7 @@ export function writeGpuQueueHeader(header, counts, flags) {
   header[GPU_HDR_PARTICLE] = counts.particle | 0;
   header[GPU_HDR_FLAGS] = flags | 0;
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
-}
-
-/**
- * Pack SoA queue rows into interleaved instance floats (same layout as
- * InstancedSpriteBatch.upload).
- * @returns {number} instances written
- */
-export function packInstancedRows(q, ctx, dst, dstU32, floatsPer, capacity, shadowCast) {
-  if (!q || !dst || !ctx) return 0;
-  const o = ctx.o || ctx;
-  const indices = ctx.indices;
-  const useIndices = ctx.useIndices;
-  const useScreen = ctx.useScreen;
-  const cameraX = ctx.cameraX || 0;
-  const cameraY = ctx.cameraY || 0;
-  const screenScale = ctx.screenScale || 1;
-  const typeArr = ctx.typeArr;
-  const includeType = ctx.includeType | 0;
-  const exclude0 = ctx.exclude0 | 0;
-  const exclude1 = ctx.exclude1 | 0;
-  const hasInclude = ctx.hasInclude;
-  const filterTypes = ctx.filterTypes;
-  const depthDenom = ctx.depthDenom || 1;
-  const scanCount = ctx.scanCount | 0;
-  const cap = capacity | 0;
-  const fp = floatsPer | 0;
-  const rqX = q.x;
-  const rqY = q.y;
-  const rqScaleX = q.scaleX;
-  const rqScaleY = q.scaleY;
-  const rqRotC = q.rotC;
-  const rqRotS = q.rotS;
-  const rqAlpha = q.alpha;
-  const rqTint = q.tint;
-  const rqTextureId = q.textureId;
-  const rqAnchorX = q.anchorX;
-  const rqAnchorY = q.anchorY;
-  const rqRepeatX = q.repeatX;
-  const rqRepeatY = q.repeatY;
-  const rqTileMulX = q.tileMulX;
-  const rqTileMulY = q.tileMulY;
-  const rqTileOffU = q.tileOffsetU;
-  const rqTileOffV = q.tileOffsetV;
-  const pixelSnap = !!o.pixelSnap;
-  const snapCamX = o.snapCameraX || 0;
-  const snapCamY = o.snapCameraY || 0;
-  const snapZoom = o.snapZoom || 1;
-  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
-  const INV_65535 = 1 / 65535;
-  let base = 0;
-  let out = 0;
-  let particles = 0;
-  if (!useScreen && !pixelSnap && !filterTypes) {
-    if (!shadowCast && fp === GPU_SPRITE_FLOATS) {
-      for (let k = 0; k < scanCount; k++) {
-        if (out >= cap) break;
-        const i = useIndices ? indices[k] : k;
-        if (typeArr && typeArr[i] === 1) particles++;
-
-        const depth = 1.0 - (out + 1) * invDepthDenom;
-        let a = rqAlpha[i];
-        if (a < 0) a = 0;
-        else if (a > 1) a = 1;
-        const a8 = (a * 255 + 0.5) | 0;
-        const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
-
-        const invX = rqTileMulX ? rqTileMulX[i] : (rqRepeatX && rqRepeatX[i] > 0 ? 1 / rqRepeatX[i] : 0);
-        const invY = rqTileMulY ? rqTileMulY[i] : (rqRepeatY && rqRepeatY[i] > 0 ? 1 / rqRepeatY[i] : 0);
-        dst[base] = rqX[i];
-        dst[base + 1] = rqY[i];
-        dst[base + 2] = rqScaleX[i];
-        dst[base + 3] = rqScaleY[i];
-        dst[base + 4] = rqAnchorX[i];
-        dst[base + 5] = rqAnchorY[i];
-        dst[base + 6] = rqRotC[i];
-        dst[base + 7] = rqRotS[i];
-        dst[base + 8] = depth;
-        dstU32[base + 9] = packed >>> 0;
-        dst[base + 10] = rqTextureId[i];
-        dst[base + 11] = invX;
-        dst[base + 12] = invY;
-        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
-        base += 15;
-        out++;
-      }
-      ctx.particleCount = particles;
-      return out;
-    }
-    if (shadowCast && fp === GPU_CASTER_FLOATS) {
-      const qShadowH = q.shadowH;
-      const qShadowOffX = q.shadowOffX;
-      const qShadowOffY = q.shadowOffY;
-      for (let k = 0; k < scanCount; k++) {
-        if (out >= cap) break;
-        const i = useIndices ? indices[k] : k;
-        if (typeArr && typeArr[i] === 1) particles++;
-
-        const depth = 1.0 - (out + 1) * invDepthDenom;
-        let a = rqAlpha[i];
-        if (a < 0) a = 0;
-        else if (a > 1) a = 1;
-        const a8 = (a * 255 + 0.5) | 0;
-        const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
-
-        const invX = rqTileMulX ? rqTileMulX[i] : (rqRepeatX && rqRepeatX[i] > 0 ? 1 / rqRepeatX[i] : 0);
-        const invY = rqTileMulY ? rqTileMulY[i] : (rqRepeatY && rqRepeatY[i] > 0 ? 1 / rqRepeatY[i] : 0);
-        dst[base] = rqX[i];
-        dst[base + 1] = rqY[i];
-        dst[base + 2] = rqScaleX[i];
-        dst[base + 3] = rqScaleY[i];
-        dst[base + 4] = rqAnchorX[i];
-        dst[base + 5] = rqAnchorY[i];
-        dst[base + 6] = rqRotC[i];
-        dst[base + 7] = rqRotS[i];
-        dst[base + 8] = depth;
-        dstU32[base + 9] = packed >>> 0;
-        dst[base + 10] = rqTextureId[i];
-        dst[base + 11] = invX;
-        dst[base + 12] = invY;
-        dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-        dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
-        dst[base + 15] = qShadowH ? qShadowH[i] : 0;
-        dst[base + 16] = qShadowOffX ? qShadowOffX[i] : 0;
-        dst[base + 17] = qShadowOffY ? qShadowOffY[i] : 0;
-        dst[base + 18] = 0;
-        dst[base + 19] = 0;
-        dst[base + 20] = 0;
-        dst[base + 21] = 0;
-        base += 22;
-        out++;
-      }
-      ctx.particleCount = particles;
-      return out;
-    }
-  }
-
-  for (let k = 0; k < scanCount; k++) {
-    const i = useIndices ? indices[k] : k;
-    if (filterTypes) {
-      const t = typeArr[i];
-      if (hasInclude && t !== includeType) continue;
-      if ((exclude0 >= 0 && t === exclude0) || (exclude1 >= 0 && t === exclude1)) continue;
-    }
-    if (out >= cap) break;
-    if (typeArr && typeArr[i] === 1) particles++;
-
-    let x = rqX[i];
-    let y = rqY[i];
-    let sx = rqScaleX[i];
-    let sy = rqScaleY[i];
-    let rc = rqRotC[i];
-    let rs = rqRotS[i];
-    if (useScreen) {
-      if (ctx.cameraRot) {
-        const c = ctx.camC;
-        const s = ctx.camS;
-        const dx = x - ctx.focusX;
-        const dy = y - ctx.focusY;
-        x = ctx.halfW + (dx * c - dy * s) * screenScale;
-        y = ctx.halfH + (dx * s + dy * c) * screenScale;
-        const nrc = rc * c - rs * s;
-        rs = rs * c + rc * s;
-        rc = nrc;
-      } else {
-        x = (x - cameraX) * screenScale;
-        y = (y - cameraY) * screenScale;
-      }
-      sx *= screenScale;
-      sy *= screenScale;
-    }
-    if (pixelSnap) {
-      if (useScreen) {
-        x = Math.round(x);
-        y = Math.round(y);
-      } else {
-        x = snapWorldToPixel(x, snapCamX, snapZoom);
-        y = snapWorldToPixel(y, snapCamY, snapZoom);
-      }
-    }
-    const depth = 1.0 - (out + 1) * invDepthDenom;
-
-    let a = rqAlpha[i];
-    if (a < 0) a = 0;
-    else if (a > 1) a = 1;
-    const a8 = (a * 255 + 0.5) | 0;
-    const packed = ((a8 & 255) << 24) | (rqTint[i] & 0xffffff);
-
-    const invX = rqTileMulX ? rqTileMulX[i] : (rqRepeatX && rqRepeatX[i] > 0 ? 1 / rqRepeatX[i] : 0);
-    const invY = rqTileMulY ? rqTileMulY[i] : (rqRepeatY && rqRepeatY[i] > 0 ? 1 / rqRepeatY[i] : 0);
-    dst[base] = x;
-    dst[base + 1] = y;
-    dst[base + 2] = sx;
-    dst[base + 3] = sy;
-    dst[base + 4] = rqAnchorX[i];
-    dst[base + 5] = rqAnchorY[i];
-    dst[base + 6] = rc;
-    dst[base + 7] = rs;
-    dst[base + 8] = depth;
-    dstU32[base + 9] = packed >>> 0;
-    dst[base + 10] = rqTextureId[i];
-    dst[base + 11] = invX;
-    dst[base + 12] = invY;
-    dst[base + 13] = rqTileOffU ? rqTileOffU[i] * INV_65535 : 0;
-    dst[base + 14] = rqTileOffV ? rqTileOffV[i] * INV_65535 : 0;
-    if (shadowCast && fp >= GPU_CASTER_FLOATS) {
-      const sh = q.shadowH;
-      const shAt = GPU_SPRITE_FLOATS;
-      dst[base + shAt] = sh ? sh[i] : 0;
-      dst[base + shAt + 1] = q.shadowOffX ? q.shadowOffX[i] : 0;
-      dst[base + shAt + 2] = q.shadowOffY ? q.shadowOffY[i] : 0;
-      const lightAt = GPU_CASTER_LIGHT_FLOAT;
-      dst[base + lightAt] = 0;
-      dst[base + lightAt + 1] = 0;
-      dst[base + lightAt + 2] = 0;
-      dst[base + lightAt + 3] = 0;
-    }
-    base += fp;
-    out++;
-  }
-  ctx.particleCount = particles;
-  return out;
+  header[GPU_HDR_STATIC_GEN] = counts.staticGen | 0;
 }
 
 /**

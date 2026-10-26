@@ -1,7 +1,7 @@
 import { debugWorkerLog } from './debugLog.js';
-import { createSpatialPublishMemory } from './spatialPublishMemory.js';
-import { createParticleMemory } from './particleMemory.js';
-import { createRenderQueueMemory } from './renderQueueMemory.js';
+import { createSpatialPublishMemory, spatialPublishMemoryBytes } from './spatialPublishMemory.js';
+import { createParticleMemory, particleMemoryBytes } from './particleMemory.js';
+import { createRenderQueueMemory, renderQueueMemoryBytes } from './renderQueueMemory.js';
 import { createNavigationMemory } from './navigationMemory.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
@@ -38,13 +38,14 @@ import {
   LAYER_DEFAULTS,
   DEFAULT_LAYERS,
   LIGHTING_DEFAULTS,
+  PRE_RENDER_DEFAULTS,
 } from './configDefaults.js';
 import { Sun } from '../core/sun.js';
 import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
-import { ySortEnabled } from '../render/rendererBackend.js';
+import { SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, ySortEnabled } from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
@@ -59,6 +60,7 @@ import {
   PRE_RENDER_STATS,
 } from './workersUtils.js';
 import { createFrameClockBuffer } from './frameClock.js';
+import { createFrameTotalsBuffer } from './frameTotals.js';
 import { ParticleEmitter } from '../core/particleEmitter.js';
 import { liquidFunRenderByteSize } from '../render/liquidFunRender.js';
 import { liquidFunGroupsByteSize, LIQUIDFUN_GROUPS_MAX } from './liquidFunGroups.js';
@@ -67,6 +69,7 @@ import { Joint } from '../core/joint.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
 import { ChainPoints } from '../core/chainPoints.js';
 import { MeshGeometry } from '../core/meshGeometry.js';
+import { createMeshMemory, meshLayerCapacities, meshLayerIds } from './meshMemory.js';
 import { SoundManager } from '../core/soundManager.js';
 import { Query } from '../core/query.js';
 import { SharedResource } from '../core/sharedResource.js';
@@ -84,8 +87,11 @@ import {
   BODY_DIRTY,
   bindBodySyncBuffers,
 } from '../box2d/box2dBodySync.js';
+import { bindStaticSceneryGen, bindStaticTypes } from '../core/staticScenery.js';
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
+import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } from './poolSlotWidth.js';
+import { visibilityMemoryBytes, visibilityMemoryOpts } from './visibilityMemory.js';
 import { Messages } from '../core/messages.js';
 
 /** Cell count ceiling. Not an entity id. 2^20 covers a 4096 px world at a 4 px cell. */
@@ -118,14 +124,15 @@ export function validateSceneSharedBufferConfig(scene) {
     );
     if (width !== 32 && registration.count > MAX_ENTITIES_U16) {
       throw new RangeError(
-        `${label} count ${registration.count} requires config.entityIdWidth = 32`,
+        `${label} count ${registration.count} needs 32-bit ids: config.entityIdWidth 'auto' (the default) or 32, not 16`,
       );
     }
   }
 
-  assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_ENTITIES_U16);
-  assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_ENTITIES_U16);
-  assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_ENTITIES_U16);
+  // E-129: 32-bit slot ids past 65 535, up to MAX_POOL_SLOTS (poolSlotWidth.js).
+  assertIntegerInRange('particle.maxParticles', config.particle.maxParticles, 0, MAX_POOL_SLOTS);
+  assertIntegerInRange('decoration.maxDecorations', config.decoration.maxDecorations, 0, MAX_POOL_SLOTS);
+  assertIntegerInRange('bullet.maxBullets', config.bullet.maxBullets, 0, MAX_POOL_SLOTS);
   assertIntegerInRange('tween.maxTweens', config.tween?.maxTweens ?? 0, 0, 1 << 20);
   assertIntegerInRange('physics.maxJoints', config.physics.maxJoints || 0, 0, maxEnt);
   assertIntegerInRange(
@@ -140,17 +147,18 @@ export function validateSceneSharedBufferConfig(scene) {
     0,
     1 << 20,
   );
+  // E-130: up to 65535 vertices the arena is 16-bit; past that 32-bit, up to MeshGeometry.VERT_CAP (2^20).
   assertIntegerInRange(
     'renderer.maxMeshVerts',
     config.renderer?.maxMeshVerts ?? 0,
     0,
-    65535,
+    MeshGeometry.VERT_CAP,
   );
   assertIntegerInRange(
     'renderer.maxMeshIndices',
     config.renderer?.maxMeshIndices ?? 0,
     0,
-    4194304,
+    MeshGeometry.INDEX_CAP,
   );
   assertIntegerInRange('spatial.maxNeighbors', config.spatial.maxNeighbors, 0, MAX_ENTITIES);
   assertIntegerInRange('spatial.maxEntitiesPerCell', config.spatial.maxEntitiesPerCell, 1, 255);
@@ -179,12 +187,27 @@ function createUint16FreeListBuffers(buffers, freeListKey, freeListTopKey, count
   };
 }
 
-function createCompactUint16ListPair(buffers, activeKey, visibleKey, maxEntries) {
-  const size = (1 + maxEntries) * 2;
+/**
+ * A slot pool's free list (E-129): the u16 stack's buffers up to 65 535 slots (Uint16 links, an 8-byte head),
+ * FL4's past that (Uint32 links, a 16-byte head). SharedAtomicPool.initializeFreeList binds the same width.
+ */
+function createSlotFreeListBuffers(buffers, freeListKey, freeListTopKey, count) {
+  buffers[freeListKey] = new SharedArrayBuffer(count * poolSlotBytes(count));
+  buffers[freeListTopKey] = new SharedArrayBuffer(poolFreeListTopBytes(count));
+  return {
+    freeList: new (PoolSlotArray(count))(buffers[freeListKey]),
+    freeListTop: new Int32Array(buffers[freeListTopKey]),
+  };
+}
+
+/** A slot pool's [count, index, ...] list pair, at its slot width (E-129: u32 past 65 535). */
+function createCompactSlotListPair(buffers, activeKey, visibleKey, maxEntries) {
+  const Slot = PoolSlotArray(maxEntries);
+  const size = (1 + maxEntries) * Slot.BYTES_PER_ELEMENT;
   buffers[activeKey] = new SharedArrayBuffer(size);
   buffers[visibleKey] = new SharedArrayBuffer(size);
-  new Uint16Array(buffers[activeKey])[0] = 0;
-  new Uint16Array(buffers[visibleKey])[0] = 0;
+  new Slot(buffers[activeKey])[0] = 0;
+  new Slot(buffers[visibleKey])[0] = 0;
 }
 
 function clearActiveFlags(array, count) {
@@ -205,16 +228,15 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   Gamepad.initialize(buffers.gamepadData);
 
   const spatialOn = (config.spatial.numberOfSpatialWorkers | 0) > 0;
-  const maxNeighbors = config.spatial.maxNeighbors;
   scene.spatialPublish = null;
   if (spatialOn) {
-    // wasm.spatialPublish false (E-76 T7) takes the plain-SAB JS path, as 32-bit ids do.
-    scene.spatialPublish = config.wasm?.spatialPublish === false
-      ? null
-      : createSpatialPublishMemory(totalEntityCount, maxNeighbors, config.spatial.numberOfSpatialWorkers | 0, spatialGridSpec(config));
-    buffers.neighborData = scene.spatialPublish
-      ? scene.spatialPublish.buffer
-      : new SharedArrayBuffer(totalEntityCount * (1 + maxNeighbors) * entityIdBytes());
+    // The neighbour search runs only in WASM (spatialGather, spatialPublish), on the publish memory. Phase 4: in the
+    // spatial part of Box2D's block when there is one (sized from the same spec), else a memory of its own.
+    const args = spatialPublishSpec(scene);
+    const block = scene.box2dBlock;
+    const place = block && block.spatialBytes > 0 ? { memory: block.memory, baseByte: block.spatialByte } : null;
+    scene.spatialPublish = (place && createSpatialPublishMemory(...args, place)) || createSpatialPublishMemory(...args);
+    buffers.neighborData = scene.spatialPublish.buffer;
   } else {
     buffers.neighborData = null;
   }
@@ -269,17 +291,19 @@ function initializeParticleBuffers(scene) {
   if (maxParticles <= 0) return;
 
   const particleBufferSize = ParticleComponent.getBufferSize(maxParticles);
-  // E-79, E-80: for the WASM integrate and list build the component lives at byte 0 of a shared
-  // WebAssembly.Memory (every worker's views are the same); with both switched off, a plain SAB.
-  const wasmParticles = config.wasm?.particleIntegrate !== false || config.wasm?.particleLists !== false;
-  scene.particleMemory = wasmParticles ? createParticleMemory(maxParticles, particleBufferSize) : null;
-  buffers.componentData.ParticleComponent = scene.particleMemory
-    ? scene.particleMemory.buffer
-    : new SharedArrayBuffer(particleBufferSize);
-  ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles, buffers.componentDataByte?.ParticleComponent | 0);
+  // E-79, E-80: the component lives in a shared WebAssembly.Memory (every worker's views are the same), where the
+  // integrate and list kernels run (createParticleMemory throws when it cannot be made). Close-out group B: in the
+  // render-queue memory's particle region when it has one, where the emit kernel reads the particles.
+  const rqm = scene.renderQueueMemory;
+  const at = rqm?.layout.emit?.particleMemoryByte ?? -1;
+  const place = at >= 0 ? { memory: rqm.memory, baseByte: at, bytes: rqm.layout.emit.particleMemoryBytes } : null;
+  scene.particleMemory = createParticleMemory(maxParticles, particleBufferSize, place);
+  buffers.componentData.ParticleComponent = scene.particleMemory.buffer;
+  buffers.componentDataByte.ParticleComponent = scene.particleMemory.layout.componentByte;
+  ParticleComponent.initializeArrays(buffers.componentData.ParticleComponent, maxParticles, scene.particleMemory.layout.componentByte);
   ParticleComponent.particleCount = maxParticles;
 
-  const { freeList, freeListTop } = createUint16FreeListBuffers(
+  const { freeList, freeListTop } = createSlotFreeListBuffers(
     buffers,
     'particleFreeList',
     'particleFreeListTop',
@@ -298,7 +322,7 @@ function initializeParticleBuffers(scene) {
     buffers.activeParticlesByte = scene.particleMemory.layout.activeListByte;
     buffers.visibleParticlesByte = scene.particleMemory.layout.visibleListByte;
   } else {
-    createCompactUint16ListPair(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles);
+    createCompactSlotListPair(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles);
     buffers.activeParticlesByte = 0;
     buffers.visibleParticlesByte = 0;
   }
@@ -309,12 +333,17 @@ function initializeLiquidFunRenderBuffer(scene) {
   if (!lf?.enabled) return;
   const maxCount = lf.maxCount | 0;
   if (maxCount <= 0) return;
-  scene.buffers.liquidFunRender = new SharedArrayBuffer(liquidFunRenderByteSize(maxCount));
+  // Close-out group B: a region of the render-queue memory when it has one, where the emit kernel reads the rows.
+  const rqm = scene.renderQueueMemory;
+  const at = rqm?.layout.emit?.liquidFunRenderByte ?? -1;
+  scene.buffers.liquidFunRender = at >= 0 ? rqm.buffer : new SharedArrayBuffer(liquidFunRenderByteSize(maxCount));
+  scene.buffers.liquidFunRenderByte = at >= 0 ? at : 0;
   scene.buffers.liquidFunGroups = new SharedArrayBuffer(liquidFunGroupsByteSize(LIQUIDFUN_GROUPS_MAX));
   scene.liquidFunMaxCount = maxCount;
   LiquidFun.bindSabs({
     groups: scene.buffers.liquidFunGroups,
     render: scene.buffers.liquidFunRender,
+    renderByte: scene.buffers.liquidFunRenderByte,
     maxCount,
   });
 }
@@ -337,7 +366,7 @@ function initializeDecorationBuffers(scene) {
   DecorationComponent.initializeArrays(buffers.componentData.DecorationComponent, maxDecorations, decorationAt | 0);
   DecorationComponent.decorationCount = maxDecorations;
 
-  const { freeList, freeListTop } = createUint16FreeListBuffers(
+  const { freeList, freeListTop } = createSlotFreeListBuffers(
     buffers,
     'decorationFreeList',
     'decorationFreeListTop',
@@ -349,7 +378,7 @@ function initializeDecorationBuffers(scene) {
   DecorationPool.swayFrequencyBuckets = config.particle?.swayFrequencyBuckets | 0;
   DecorationPool.initializeFreeList(buffers.decorationFreeList, buffers.decorationFreeListTop);
 
-  createCompactUint16ListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
+  createCompactSlotListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
   buffers.activeDecorationsLock = new SharedArrayBuffer(4);
   DecorationPool.initializeActiveList(buffers.activeDecorationsData, buffers.activeDecorationsLock);
 
@@ -357,9 +386,11 @@ function initializeDecorationBuffers(scene) {
   const gridWidth = Math.ceil(config.worldWidth / cellSize);
   const gridHeight = Math.ceil(config.worldHeight / cellSize);
   const totalCells = gridWidth * gridHeight;
-  buffers.decorationSpatialHead = new SharedArrayBuffer(totalCells * Uint16Array.BYTES_PER_ELEMENT);
-  buffers.decorationSpatialNext = new SharedArrayBuffer(maxDecorations * Uint16Array.BYTES_PER_ELEMENT);
-  buffers.decorationSpatialPrev = new SharedArrayBuffer(maxDecorations * Uint16Array.BYTES_PER_ELEMENT);
+  // The spatial links are decoration slots: u32 past 65 535 decorations (E-129).
+  const slotBytes = poolSlotBytes(maxDecorations);
+  buffers.decorationSpatialHead = new SharedArrayBuffer(totalCells * slotBytes);
+  buffers.decorationSpatialNext = new SharedArrayBuffer(maxDecorations * slotBytes);
+  buffers.decorationSpatialPrev = new SharedArrayBuffer(maxDecorations * slotBytes);
   buffers.decorationSpatialCellOf = new SharedArrayBuffer(maxDecorations * Int32Array.BYTES_PER_ELEMENT);
   buffers.decorationSpatialLock = new SharedArrayBuffer(Int32Array.BYTES_PER_ELEMENT);
   DecorationSpatial.initialize(
@@ -377,7 +408,7 @@ function initializeDecorationBuffers(scene) {
   const maxAttached = config.decoration.maxAttachedDecorationsPerEntity;
   if (totalEntityCount > 0 && maxAttached > 0) {
     buffers.attachedDecorationCount = new SharedArrayBuffer(totalEntityCount);
-    buffers.attachedDecorationIndices = new SharedArrayBuffer(totalEntityCount * maxAttached * 2);
+    buffers.attachedDecorationIndices = new SharedArrayBuffer(totalEntityCount * maxAttached * slotBytes);
     DecorationPool.initializeAttachmentSlots(
       buffers.attachedDecorationCount,
       buffers.attachedDecorationIndices,
@@ -397,11 +428,16 @@ function initializeBulletBuffers(scene) {
   if (maxBullets <= 0) return;
 
   const bulletBufferSize = BulletComponent.getBufferSize(maxBullets);
-  buffers.componentData.BulletComponent = new SharedArrayBuffer(bulletBufferSize);
+  // W19: in Box2D's block when the bullet tick's regions are there (renderQueueMemorySpec); else among the emit's
+  // blocks, where the emit kernel reads it for the bullet and trail rows; else a buffer of its own.
+  const rqm = scene.renderQueueMemory;
+  const at = rqm?.layout.collect?.bullets?.componentByte ?? (rqm?.layout.emit?.bulletComponentByte ?? -1);
+  if (at >= 0) buffers.componentDataByte.BulletComponent = at;
+  buffers.componentData.BulletComponent = at >= 0 ? rqm.buffer : new SharedArrayBuffer(bulletBufferSize);
   BulletComponent.initializeArrays(buffers.componentData.BulletComponent, maxBullets, buffers.componentDataByte?.BulletComponent | 0);
   BulletComponent.bulletCount = maxBullets;
 
-  const { freeList, freeListTop } = createUint16FreeListBuffers(
+  const { freeList, freeListTop } = createSlotFreeListBuffers(
     buffers,
     'bulletFreeList',
     'bulletFreeListTop',
@@ -409,7 +445,7 @@ function initializeBulletBuffers(scene) {
   );
   resetFreeList(freeListTop, freeList, maxBullets, 1);
 
-  createCompactUint16ListPair(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
+  createCompactSlotListPair(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
 
   // Header: [0]=count (Int32), [1]=batch sequence (Int32). Impact data starts at byte 8.
   // The sequence lets logic workers detect new batches and avoid double-processing
@@ -419,6 +455,18 @@ function initializeBulletBuffers(scene) {
 
   BulletPool.initialize(maxBullets);
   BulletPool.initializeFreeList(buffers.bulletFreeList, buffers.bulletFreeListTop);
+}
+
+/** The larger of `max` and the most pieces any frame of a compiled Adobe Animate asset draws. */
+function maxFramePieces(asset, max) {
+  const counts = asset?.framePieceCount;
+  if (!counts) return max;
+  let m = max;
+  for (let i = 0; i < counts.length; i++) {
+    const c = counts[i] | 0;
+    if (c > m) m = c;
+  }
+  return m;
 }
 
 /**
@@ -438,14 +486,11 @@ export function computeAutoMaxVisibleRenderables(scene) {
   const lightingEnabled = !!config.lighting?.enabled;
 
   let maxPieces = 1;
-  for (const asset of AdobeAnimRegistry.assets.values()) {
-    const counts = asset.framePieceCount;
-    if (!counts) continue;
-    for (let i = 0; i < counts.length; i++) {
-      const c = counts[i] | 0;
-      if (c > maxPieces) maxPieces = c;
-    }
-  }
+  for (const asset of AdobeAnimRegistry.assets.values()) maxPieces = maxFramePieces(asset, maxPieces);
+  // N-73: the registry fills after the atlas, long after the queue is sized; the assets init compiled for it
+  // (Scene._preparedAdobeAssets) hold the same piece counts.
+  const prepared = scene._preparedAdobeAssets?.compiledAssets;
+  if (prepared) for (const asset of Object.values(prepared)) maxPieces = maxFramePieces(asset, maxPieces);
 
   let adobePieceBonus = 0;
   const registered = scene.registeredClasses || [];
@@ -494,57 +539,266 @@ export function resolveMaxVisibleRenderables(scene) {
  * blocks, which those components are then bound in (buffers.componentDataByte), and pre-render's emit
  * state. Without the memory (both switches off, or too big) every component keeps a buffer of its own.
  */
-function initializeRenderQueueMemory(scene) {
-  const { buffers, config } = scene;
-  buffers.componentDataByte = {};
+/**
+ * What the render-queue memory will hold for this scene, computed from its config and pools before anything is
+ * made: Phase 4 sizes Box2D's block from it before the shared buffers exist (renderQueueBlockBytes).
+ */
+export function renderQueueMemorySpec(scene) {
+  const { config } = scene;
+  initializeSceneLayers(scene);
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
   const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
-  scene.maxVisibleRenderables = maxVisibleRenderables;
-  scene.gpuQueueCaps = gpuCaps;
-  const pack = config.wasm?.gpuPack !== false;
-  const emit = config.wasm?.preRenderEmit !== false ? emitBlocks(scene) : null;
+  const emit = emitBlocks(scene);
   // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
   const lighting = config.lighting || {};
-  const stamp = config.wasm?.shadowStamp !== false && lighting.shadowsEnabled && (gpuCaps.maxSun | 0) > 0
+  const stamp = lighting.shadowsEnabled && (gpuCaps.maxSun | 0) > 0
     ? {
         maxSun: gpuCaps.maxSun | 0,
         maxPerEntity: lighting.maxShadowsPerEntity | 0,
         maxLights: lighting.maxShadowCastingLights | 0,
+        // The light cookies' queue (a render queue of maxCookie rows), which the pack kernel packs.
+        cookies: gpuCaps.maxCookie | 0,
+        cookieBytes: computeRenderQueueBufferSize(gpuCaps.maxCookie | 0),
       }
     : null;
-  // W22: the particle worker's decoration sway, on the decorations block (so only with the emit's), for
-  // a bucket grid (without one every decoration takes a Math.sin and the loop stays JS).
+  // W22: the particle worker's decoration sway, on the decorations block (so only with the emit's), with a
+  // frequency grid (sway_decorations) or without one (sway_free, every decoration's own sine in the kernel).
   const buckets = config.particle?.swayFrequencyBuckets | 0;
-  const sway = config.wasm?.decorationSway !== false && emit && emit.decorationBytes > 0 && buckets > 1
-    ? { decorations: config.decoration.maxDecorations | 0, buckets }
+  const sway = emit && emit.decorationBytes > 0
+    ? { decorations: config.decoration.maxDecorations | 0, buckets: buckets > 1 ? buckets : 0 }
     : null;
-  scene.renderQueueMemory = pack || emit || stamp
-    ? createRenderQueueMemory(
-        maxVisibleRenderables,
-        computeRenderQueueBufferSize(maxVisibleRenderables),
-        computeGpuQueueBufferSize(gpuCaps),
-        emit,
-        stamp,
-        sway,
-      )
+  // W9d: Pixi packs the sprite rows itself (packGpuSprites 'pixi'), with the pack kernel, on rows of its own in this
+  // memory: 15 floats a row, or (W9e) with pose interpolation 17, a pose batch's pose stream then its statics.
+  const pixiPack = config.preRender?.packGpuSprites === 'pixi'
+    ? (config.renderer?.interpolation === true ? 17 : 15)
+    : 0;
+  // W4b: Transform (its state block and, without physics, its pose) and Collider too, next to the emit's
+  // SpriteRenderer, so the sprite collect kernel reads every column there. With physics the pose is in Box2D's
+  // heap, so these blocks, RigidBody's and the published pose buffers go only in Box2D's block (Phase 4).
+  const pools = scene.componentPools || {};
+  const n = scene.totalEntityCount;
+  const physics = config.physics?.enabled !== false;
+  // The engine block: Box2D's with physics (where the bodies' poses are), a memory of its own without (close-out
+  // group B), laid out the same way.
+  const inBlock = !physics || Boolean(pools.RigidBody?.ComponentClass);
+  // W19: the bullet tick reads the pool, Transform, Collider and the spatial grid in the engine block, so its regions
+  // ride with these blocks; any pool size and id width (the kernel's _u32 forms).
+  const maxBullets = config.bullet?.maxBullets | 0;
+  const bullets = inBlock && maxBullets > 0
+    && spatialPublishSpec(scene) !== null
+    ? {
+        bullets: maxBullets,
+        entities: n,
+        componentBytes: BulletComponent.getBufferSize(maxBullets),
+        impacts: config.bullet.maxImpactsPerFrame ?? 64,
+      }
     : null;
+  // W2b: the visibility gather reads LightOccluder, Transform, Collider, the bodies' poses (with physics) and the
+  // neighbour rows in the engine block and packs into pre-render's visibility regions placed there (so it needs W2a's
+  // sweep): with raycasted lighting.
+  const visibility = inBlock && lighting.enabled && lighting.raycasted
+    && Boolean(pools.LightOccluder?.ComponentClass) && Boolean(pools.Collider?.ComponentClass)
+    && spatialPublishSpec(scene) !== null
+    ? visibilityGatherSpec(scene)
+    : null;
+  // The collect's blocks whenever the emit reads sprites or glows (Transform's pose is the glow rows' too).
+  const wantsCollect = Boolean(emit) && (emit.spriteBytes > 0 || emit.lightBytes > 0);
+  // The bullet and trail rows read BulletComponent: among the emit's blocks when the bullet tick's are not there.
+  if (emit && maxBullets > 0 && !bullets) emit.bulletBytes = BulletComponent.getBufferSize(maxBullets);
+  const collect = (wantsCollect || bullets || visibility) && pools.Transform?.ComponentClass && (!physics || inBlock)
+    ? {
+        entities: n,
+        transformBytes: Transform.getBufferSize(n),
+        colliderBytes: pools.Collider?.ComponentClass ? Collider.getBufferSize(n) : 0,
+        rigidBodyBytes: physics ? RigidBody.getBufferSize(n) : 0,
+        bullets,
+        visibility,
+      }
+    : null;
+  // W10: the painter sort's state for the worker that sorts the main queue (preRender.sortSprites, which the
+  // scene resolved), next to the sort keys pre-render writes here.
+  const sortSprites = config.preRender?.sortSprites;
+  const painter = (sortSprites === SORT_SPRITES_PRERENDER || sortSprites === SORT_SPRITES_PIXI)
+    ? { preRender: sortSprites === SORT_SPRITES_PRERENDER, pixi: sortSprites === SORT_SPRITES_PIXI }
+    : null;
+  return {
+    maxVisibleRenderables,
+    gpuCaps,
+    // The pack and the emit run only in their kernels: every scene with a render queue makes the memory.
+    enabled: true,
+    args: [maxVisibleRenderables, computeRenderQueueBufferSize(maxVisibleRenderables), computeGpuQueueBufferSize(gpuCaps), emit, stamp, sway, pixiPack],
+    collect,
+    painter,
+  };
+}
+
+/**
+ * W2b: the visibility gather's part of the collect spec: LightOccluder's block, the visibility memory's options and
+ * bytes (pre-render places the memory with these options), and one event record per neighbour a row can hold.
+ */
+function visibilityGatherSpec(scene) {
+  const { config } = scene;
+  const n = scene.totalEntityCount;
+  const opts = visibilityMemoryOpts({
+    maxVerts: config.lighting.maxPolygonVertices || 128,
+    entities: n,
+    fixtures: config.physics.maxFixturePoolSize || 0,
+  });
+  return {
+    opts,
+    occluderBytes: LightOccluder.getBufferSize(n),
+    bytes: visibilityMemoryBytes(opts),
+    events: config.spatial.maxNeighbors | 0,
+  };
+}
+
+/**
+ * The spatial publish memory's arguments (createSpatialPublishMemory), or null without a spatial worker.
+ */
+export function spatialPublishSpec(scene) {
+  const { config } = scene;
+  const workers = config.spatial?.numberOfSpatialWorkers | 0;
+  if (!(workers > 0)) return null;
+  return [scene.totalEntityCount, config.spatial.maxNeighbors, workers, spatialGridSpec(config)];
+}
+
+/**
+ * The bytes the spatial publish regions take in a block of Box2D's memory (Phase 4), 0 without them. Sized before
+ * createSceneSharedBuffers binds the scene's entity id width, so it binds it here (the same width).
+ */
+export function spatialBlockBytes(scene) {
+  bindEntityIdWidth(resolveEntityIdWidth(scene.config));
+  const args = spatialPublishSpec(scene);
+  return args ? spatialPublishMemoryBytes(...args) : 0;
+}
+
+/**
+ * The bytes the render-queue regions take in a block of Box2D's memory (Phase 4), 0 when the scene makes no
+ * render-queue memory. The collect's blocks are in it when the spec has them (with physics, its body variant),
+ * and the painter state when the spec has it.
+ */
+export function renderQueueBlockBytes(scene) {
+  const spec = renderQueueMemorySpec(scene);
+  return spec.enabled ? renderQueueMemoryBytes(...spec.args, spec.collect, spec.painter) : 0;
+}
+
+function initializeRenderQueueMemory(scene) {
+  const { buffers } = scene;
+  buffers.componentDataByte = {};
+  const spec = renderQueueMemorySpec(scene);
+  scene.maxVisibleRenderables = spec.maxVisibleRenderables;
+  scene.gpuQueueCaps = spec.gpuCaps;
+  // Phase 4: in the block physics reserved in Box2D's memory when there is one and the regions fit it (they
+  // were sized from the same spec); else a memory of its own. The collect's blocks always go with it when the spec
+  // has them (the sprite collect runs only in its kernel); a painter state that would not fit is left out (pre-render
+  // says so). The collect's body variant goes only in the block: outside Box2D's memory the kernel could not read
+  // Transform's pose, so a scene with physics and no block (built without its physics worker) has no collect, and
+  // pre-render says it cannot collect.
+  const block = scene.box2dBlock;
+  const place = block && spec.enabled ? { memory: block.memory, baseByte: block.byte } : null;
+  const outside = spec.collect && spec.collect.rigidBodyBytes > 0 ? null : spec.collect;
+  const shapes = (collect) => [[collect, spec.painter], [collect, null]];
+  const make = (collect, painter, at) =>
+    (!at || renderQueueMemoryBytes(...spec.args, collect, painter) <= block.queueBytes)
+      ? createRenderQueueMemory(...spec.args, collect, painter, at)
+      : null;
+  let rqm = null;
+  if (place) for (const [c, p] of shapes(spec.collect)) if ((rqm = make(c, p, place))) break;
+  if (!rqm && spec.enabled) for (const [c, p] of shapes(outside)) if ((rqm = make(c, p, null))) break;
+  // The emit and the collect run only in their kernels, on this memory (close-out group B): a scene with a render
+  // queue needs it.
+  if (!rqm && spec.enabled && spec.maxVisibleRenderables > 0) {
+    const mb = Math.ceil(renderQueueMemoryBytes(...spec.args, outside, null) / 1048576);
+    throw new Error(`render-queue memory: ${mb} MB (renderer.maxVisibleRenderables ${spec.maxVisibleRenderables}, the components `
+      + 'and pools the emit and the collect read) could not be made: past the 2048 MB a kernel memory can take, or refused by the browser');
+  }
+  scene.renderQueueMemory = rqm;
+  const c = scene.renderQueueMemory?.layout.collect;
+  if (c) {
+    if (c.transformByte >= 0) buffers.componentDataByte.Transform = c.transformByte;
+    if (c.rigidBodyByte >= 0) buffers.componentDataByte.RigidBody = c.rigidBodyByte;
+    if (c.colliderByte >= 0) buffers.componentDataByte.Collider = c.colliderByte;
+    if (c.visibility) buffers.componentDataByte.LightOccluder = c.visibility.occluderByte;
+  }
   const e = scene.renderQueueMemory?.layout.emit;
   if (!e) return;
   if (e.spriteRendererByte >= 0) buffers.componentDataByte.SpriteRenderer = e.spriteRendererByte;
   if (e.shadowCasterByte >= 0) buffers.componentDataByte.ShadowCaster = e.shadowCasterByte;
   if (e.decorationByte >= 0) buffers.componentDataByte.DecorationComponent = e.decorationByte;
+  if (e.lightEmitterByte >= 0) buffers.componentDataByte.LightEmitter = e.lightEmitterByte;
+  if (e.adobeAnimByte >= 0) buffers.componentDataByte.AdobeAnimComponent = e.adobeAnimByte;
 }
 
-/** The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster and decorations. */
+/**
+ * The scene's layers from its config (Layer.initializeFromConfig), once per scene load: the render-queue memory's
+ * spec reads the custom layers' queues from them, and Phase 4 sizes Box2D's block from that spec before the shared
+ * buffers exist (reserveBox2dBlock). teardownSceneSharedState clears the mark.
+ */
+export function initializeSceneLayers(scene) {
+  if (scene._sceneLayersReady === true) return;
+  const { config } = scene;
+  const builtInLayers = {};
+  const defaultYSorting = ySortEnabled(config.renderer?.ySort);
+  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
+  for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
+    if (name === 'lightGlows' && glowAsSprite) continue;
+    builtInLayers[name] = {
+      ...defaults,
+      ySorting: name === 'entities' ? defaultYSorting : defaults.ySorting,
+    };
+  }
+  Layer.initializeFromConfig(config.layers, builtInLayers);
+  scene._sceneLayersReady = true;
+}
+
+/** The custom sprite layers with a render queue (initializeSceneLayers first): [{ layerId, maxItems }] in id order. */
+export function customLayerQueueSpecs() {
+  const out = [];
+  const layerMetas = Layer._metadata?.layers || [];
+  for (let i = 0; i < layerMetas.length; i++) {
+    const meta = layerMetas[i];
+    if (!meta || meta.builtIn || !meta.hasRenderQueue || meta.id === Layer.entitiesId) continue;
+    if (!Layer.getById(meta.id)) continue;
+    // ySort: Pixi sorts the layer's rows by their keys (its painter state is laid out with its queues).
+    out.push({ layerId: meta.id, maxItems: meta.maxItems || LAYER_DEFAULTS.maxItemsPerLayer, ySort: meta.ySorting === true });
+  }
+  return out;
+}
+
+/**
+ * The component blocks the emit memory holds: the scene's SpriteRenderer, ShadowCaster, decorations, LightEmitter,
+ * the particle memory and the LiquidFun render buffer; with
+ * Adobe Animate characters (W27), AdobeAnimComponent and room for the assets' tables
+ * (preRender.adobeTablesMB: the assets load after this memory is made, so their size is not known yet).
+ */
 function emitBlocks(scene) {
+  const { config } = scene;
   const pools = scene.componentPools || {};
   const n = scene.totalEntityCount;
-  const maxDecorations = scene.config.decoration?.maxDecorations | 0;
+  const maxDecorations = config.decoration?.maxDecorations | 0;
+  const maxParticles = config.particle?.maxParticles | 0;
+  const lfMax = config.physics?.liquidFun?.enabled ? config.physics.liquidFun.maxCount | 0 : 0;
+  const adobeOn = Boolean(pools.AdobeAnimComponent?.ComponentClass);
+  const tablesMB = config.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
+  if (adobeOn) assertIntegerInRange('preRender.adobeTablesMB', tablesMB, 0, 1024);
   return {
     entities: n,
     spriteBytes: pools.SpriteRenderer?.ComponentClass ? SpriteRenderer.getBufferSize(n) : 0,
     casterBytes: pools.ShadowCaster?.ComponentClass ? ShadowCaster.getBufferSize(n) : 0,
     decorationBytes: maxDecorations > 0 ? DecorationComponent.getBufferSize(maxDecorations) : 0,
+    // The glow rows' LightEmitter columns.
+    lightBytes: pools.LightEmitter?.ComponentClass ? LightEmitter.getBufferSize(n) : 0,
+    // The particle rows' ParticleComponent, in the particle memory's regions.
+    particleBytes: maxParticles > 0 ? particleMemoryBytes(maxParticles, ParticleComponent.getBufferSize(maxParticles)) : 0,
+    // The LiquidFun rows' render buffer and previous positions.
+    liquidFun: lfMax > 0 ? { maxCount: lfMax, renderBytes: liquidFunRenderByteSize(lfMax) } : null,
+    // The custom sprite layers' queues and collectors (and the rows Pixi packs each into).
+    customLayers: customLayerQueueSpecs().map((c) => ({ ...c, queueBytes: computeRenderQueueBufferSize(c.maxItems) })),
+    // Pixi's glow batch's rows, where it packs the glow rows in pixi pack mode (additive glows).
+    pixiGlowRows: config.preRender?.packGpuSprites === 'pixi'
+      && (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite'
+      ? resolveMaxVisibleRenderables(scene) : 0,
+    adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
   };
 }
 
@@ -627,45 +881,52 @@ function initializeLightingAndRenderBuffers(scene) {
   buffers.gpuQueueDataAByte = rqm ? rqm.layout.gpuAByte : 0;
   buffers.gpuQueueDataBByte = rqm ? rqm.layout.gpuBByte : 0;
 
-  // Physics pose publish (post-step snapshot for visuals) — SoA x,y,rotC,rotS × 2 buffers
+  // Physics pose publish (post-step snapshot for visuals) — SoA x,y,rotC,rotS × 2 buffers. Phase 4: two
+  // regions of Box2D's block when the collect's body variant is there (each with its byte), else buffers.
   const poseN = scene.totalEntityCount;
   const poseBufBytes = poseN * 4 * 4;
-  buffers.poseDataA = new SharedArrayBuffer(Math.max(poseBufBytes, 12));
-  buffers.poseDataB = new SharedArrayBuffer(Math.max(poseBufBytes, 12));
+  const posePlace = rqm?.layout.collect;
+  if (posePlace && posePlace.bodyPoseAByte >= 0 && posePlace.bodyPoseBByte >= 0) {
+    buffers.poseDataA = rqm.buffer;
+    buffers.poseDataB = rqm.buffer;
+    buffers.poseDataAByte = posePlace.bodyPoseAByte;
+    buffers.poseDataBByte = posePlace.bodyPoseBByte;
+  } else {
+    buffers.poseDataA = new SharedArrayBuffer(Math.max(poseBufBytes, 12));
+    buffers.poseDataB = new SharedArrayBuffer(Math.max(poseBufBytes, 12));
+    buffers.poseDataAByte = 0;
+    buffers.poseDataBByte = 0;
+  }
+  buffers.poseCapacity = poseN;
   buffers.poseSync = new SharedArrayBuffer(8);
   new Int32Array(buffers.poseSync)[0] = 0;
   new Int32Array(buffers.poseSync)[1] = 0;
   scene.poseCapacity = poseN;
 
-  const builtInLayers = {};
-  const defaultYSorting = ySortEnabled(config.renderer?.ySort);
-  const glowAsSprite = (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) === 'sprite';
-  for (const [name, defaults] of Object.entries(DEFAULT_LAYERS)) {
-    if (name === 'lightGlows' && glowAsSprite) continue;
-    builtInLayers[name] = {
-      ...defaults,
-      ySorting: name === 'entities' ? defaultYSorting : defaults.ySorting,
-    };
-  }
-  Layer.initializeFromConfig(config.layers, builtInLayers);
+  initializeSceneLayers(scene);
   Layer._postToRenderer = (msg) => scene.workers.renderer?.postMessage(msg);
 
+  // Close-out group B: in the render-queue memory with the emit's regions (two queue buffers and the layer's
+  // collector each), where the emit kernel writes them; else buffers of their own.
   scene.customLayerRenderQueues = {};
-  const layerMetas = Layer._metadata?.layers || [];
-  for (let i = 0; i < layerMetas.length; i++) {
-    const meta = layerMetas[i];
-    if (!meta || meta.builtIn || !meta.hasRenderQueue || meta.id === Layer.entitiesId) continue;
-
-    const layer = Layer.getById(meta.id);
-    if (!layer) continue;
-
-    const layerMaxItems = meta.maxItems || LAYER_DEFAULTS.maxItemsPerLayer;
-    const layerQueueSize = computeRenderQueueBufferSize(layerMaxItems);
-    scene.customLayerRenderQueues[layer.id] = {
-      dataA: new SharedArrayBuffer(layerQueueSize),
-      dataB: new SharedArrayBuffer(layerQueueSize),
-      maxItems: layerMaxItems,
-      layerId: layer.id,
+  const placed = new Map((rqm?.layout.emit?.customLayers || []).map((c) => [c.layerId, c]));
+  for (const { layerId, maxItems } of customLayerQueueSpecs()) {
+    const layer = Layer.getById(layerId);
+    const at = placed.get(layerId);
+    const layerQueueSize = computeRenderQueueBufferSize(maxItems);
+    scene.customLayerRenderQueues[layerId] = {
+      dataA: at ? rqm.buffer : new SharedArrayBuffer(layerQueueSize),
+      dataAByte: at ? at.queueAByte : 0,
+      dataB: at ? rqm.buffer : new SharedArrayBuffer(layerQueueSize),
+      dataBByte: at ? at.queueBByte : 0,
+      // The layer's collector (y, index, the pose stash, type) in the memory, -1 when pre-render keeps its own.
+      collectorByte: at ? at.collectorByte : -1,
+      // The rows Pixi packs the layer into, -1 when it keeps its own.
+      rowsByte: at ? at.rowsByte : -1,
+      // A y-sorted layer's painter state (painterStateLayout) in the memory, null otherwise.
+      painter: at ? at.painter : null,
+      maxItems,
+      layerId,
       layerName: layer.name,
     };
   }
@@ -687,11 +948,10 @@ function initializeNavigationAndQueryBuffers(scene) {
     const navBufferSize = NavGrid.calculateSABSize(navConfig, gridWidth, gridHeight);
 
     // W14: the nav buffer at byte 0 of a WebAssembly.Memory, the flowfield kernel's scratch after it; every
-    // worker views the buffer as it views a plain one.
-    scene.navigationMemory = config.wasm?.navFlowfield !== false
-      ? createNavigationMemory(navBufferSize, gridWidth * gridHeight)
-      : null;
-    buffers.navigationData = scene.navigationMemory ? scene.navigationMemory.buffer : new SharedArrayBuffer(navBufferSize);
+    // worker views the buffer as it views a plain one. The flowfield runs only in navFlowfield.wasm, so the memory
+    // is always made (createNavigationMemory throws when it cannot be).
+    scene.navigationMemory = createNavigationMemory(navBufferSize, gridWidth * gridHeight);
+    buffers.navigationData = scene.navigationMemory.buffer;
     NavGrid.writeHeader(buffers.navigationData, navConfig, gridWidth, gridHeight);
 
     const walkabilityOffset = 32;
@@ -752,6 +1012,10 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
   buffers.bodyDirtyWords = new SharedArrayBuffer(dirtyWordCount * 4);
   buffers.bodyGeneration = new SharedArrayBuffer(totalEntityCount * 4);
   buffers.bodyGenEpoch = new SharedArrayBuffer(4);
+  // E-127: moved when static scenery spawns, despawns or changes; pre-render bins it again then.
+  buffers.staticSceneryGen = new SharedArrayBuffer(4);
+  bindStaticSceneryGen(buffers.staticSceneryGen);
+  bindStaticTypes(registeredClasses);
   const bodySync = bindBodySyncBuffers(buffers);
   if (bodySync) {
     bodySync.dirtyFlags.fill(BODY_DIRTY.LIFECYCLE);
@@ -815,9 +1079,21 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
   MeshGeometry.reset();
   const maxMeshVerts = config.renderer?.maxMeshVerts | 0;
   const maxMeshIndices = config.renderer?.maxMeshIndices | 0;
+  scene.meshMemory = null;
   if (maxMeshVerts > 0) {
+    // E-130: the block's index width follows maxMeshVerts (16-bit up to 65535), as every worker derives it.
     const meshGeomBytes = MeshGeometry.getBufferSize(maxMeshVerts, maxMeshIndices, totalEntityCount);
-    buffers.meshGeomData = new SharedArrayBuffer(meshGeomBytes);
+    // E-76 W11: the block is byte 0 of the mesh memory, which also holds every MESH layer's batches the way Pixi
+    // sizes them (meshMemory.js), where the corner kernel rewrites them. No MESH layer: a buffer of its own (nothing
+    // rewrites corners).
+    const maxFixtures = (config.physics?.maxFixturePoolSize | 0) || (config.physics?.maxFixtures | 0);
+    scene.meshMemory = createMeshMemory(
+      meshGeomBytes,
+      totalEntityCount,
+      meshLayerIds(Layer._metadata),
+      meshLayerCapacities(maxFixtures, totalEntityCount, maxMeshVerts, maxMeshIndices),
+    );
+    buffers.meshGeomData = scene.meshMemory ? scene.meshMemory.buffer : new SharedArrayBuffer(meshGeomBytes);
     MeshGeometry.initializeArrays(
       buffers.meshGeomData,
       maxMeshVerts,
@@ -1029,6 +1305,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   // slot: Float32 cannot hold an epoch millisecond, and the benchmark average
   // would erase the phase the buffer exists to show.
   buffers.frameClock = createFrameClockBuffer();
+  // Running totals of every published frame on the frame clock's slots: the bench's exact window.
+  buffers.frameTotals = createFrameTotalsBuffer();
 
   scene.camera.x = config.worldWidth / 2 - config.canvasWidth / 2;
   scene.camera.y = config.worldHeight / 2 - config.canvasHeight / 2;
@@ -1083,6 +1361,7 @@ function initializeSharedResourceBuffers(scene) {
 }
 
 export function teardownSceneSharedState(scene) {
+  scene._sceneLayersReady = false;
   SoundManager.reset();
   if (scene.loadedAudioNames) scene.loadedAudioNames.length = 0;
 
@@ -1157,6 +1436,8 @@ export function teardownSceneSharedState(scene) {
   GameObject.entityTypeHasForcedLogicWorker = null;
   GameObject.entityTypeForcedLogicWorkerCount = null;
   bindBodySyncBuffers(null);
+  bindStaticSceneryGen(null);
+  bindStaticTypes(null);
   GameObject.instances = [];
   GameObject._globalAnimationCache = Object.create(null);
   GameObject._animIndexBySheet = [];
@@ -1201,4 +1482,13 @@ export function teardownSceneSharedState(scene) {
   scene.registeredClasses = [];
   scene.totalEntityCount = 0;
   scene.audioMetrics = SoundManager.createMetrics();
+
+  // N-75: the components' views go with the scene. Transform's pose, RigidBody and the neighbour rows view Box2D's
+  // memory (the engine block), the rest the scene's other memories, so a page that destroys the engine keeps none
+  // of them alive. The next scene binds its own (scene.js clears the views of a component it does not pool).
+  for (const C of [Transform, RigidBody, Collider, SpriteRenderer, MeshRenderer, AdobeAnimComponent, ParticleComponent,
+    DecorationComponent, BulletComponent, ShadowCaster, FlashComponent, LightEmitter, LightOccluder]) {
+    C.clearArrays();
+  }
+  GameObject.neighborData = null;
 }

@@ -1,17 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { OCC_CIRCLE, OCC_POLY, POLAR_BINS } from '../../src/render/visibility/angularSweep.js';
+import { mulberry32 } from '../bench/benchMath.js';
+import { createPolarReference } from '../helpers/polarReference.mjs';
 import {
-  OCC_CIRCLE,
-  OCC_POLY,
-  POLAR_BINS,
   buildVisibilityPolygon,
   clearPolarBins,
   clipVisibilityToPolar,
   rasterBoundarySegment,
-} from '../../src/render/visibility/angularSweep.js';
-import { mulberry32 } from '../bench/benchMath.js';
-import { createPolarReference } from '../helpers/polarReference.mjs';
+} from '../reference/visibilitySweepJs.mjs';
 
 // E-43. The merge tests each sweep edge only against the rays in the arc it
 // subtends from the light. The reference (tests/helpers/polarReference.mjs) is

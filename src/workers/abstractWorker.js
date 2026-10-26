@@ -39,6 +39,7 @@ import { LiquidFun } from '../core/liquidFun.js';
 import { setAssertRotCSUnit } from '../box2d/box2dCommandRing.js';
 import { resetWaitMeter, waitMeterMs } from '../util/waitMeter.js';
 import { bindFrameClock, stampStep } from '../util/frameClock.js';
+import { addFrame, bindFrameTotals } from '../util/frameTotals.js';
 import { SharedResource } from '../core/sharedResource.js';
 import { DebugDraw } from '../core/debug/debugDraw.js';
 import { Grid } from '../core/grid.js';
@@ -67,6 +68,7 @@ import { bindLiquidFunExtractSab } from '../box2d/liquidFunExtract.js';
 import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js';
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { bindBodySyncBuffers, bindPoseSlotBuffers } from '../box2d/box2dBodySync.js';
+import { bindStaticSceneryGen, bindStaticTypes } from '../core/staticScenery.js';
 
 import { Component } from '../core/component.js';
 import { Transform } from '../components/transform.js';
@@ -81,6 +83,7 @@ import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { bindPoolExhaustion } from '../util/poolExhaustion.js';
+import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
 
@@ -144,6 +147,9 @@ export class AbstractWorker {
     this.poseSync = null;
     this.poseBuffers = [null, null];
     this.poseCapacity = 0;
+    // Phase 4: Box2D's memory's buffer when the render-queue regions are a block of it, so Transform's pose
+    // (Box2D's heap) is bound on the same buffer as the regions and a kernel finds both in one memory.
+    this._box2dHeap = null;
     this._poseX = null;
     this._poseY = null;
     this._poseRotC = null;
@@ -204,6 +210,8 @@ export class AbstractWorker {
     // outside STEP_MS: they run before the step timer starts and after it stops.
     this._frameClock = null;
     this._frameClockSlot = -1;
+    // Running totals of the frames this worker publishes, on its frame clock slot (frameTotals.js).
+    this._frameTotals = null;
 
     // Injected dt for `{ msg: 'step' }` (lockstep). 0 = use wall / fixedFps.
     this._injectedDeltaTime = 0;
@@ -303,10 +311,13 @@ export class AbstractWorker {
    */
   _writeFrameMeters(schema) {
     const stats = this.stats;
+    const waitMs = waitMeterMs();
     stats[schema.FPS] = this.currentFPS;
     stats[schema.STEP_MS] = this.stepTimeThisFrame;
     stats[schema.IDLE_MS] = this.idleTimeThisFrame;
-    stats[schema.WAIT_MS] = waitMeterMs();
+    stats[schema.WAIT_MS] = waitMs;
+    // Every frame that publishes meters, so the bench reads a window exactly instead of sampling it.
+    if (this._frameTotals) addFrame(this._frameTotals, this._frameClockSlot, this.stepTimeThisFrame, waitMs, 0);
   }
 
   reportLog(message) {
@@ -465,6 +476,9 @@ export class AbstractWorker {
     this.reportLog('initializing common buffers');
     this.globalEntityCount = data.globalEntityCount;
     this.bodySyncViews = bindBodySyncBuffers(data.buffers);
+    // E-127: static scenery's counter, and which types are static (their spawns, moves and despawns move it).
+    bindStaticSceneryGen(data.buffers?.staticSceneryGen || null);
+    bindStaticTypes(data.registeredClasses);
     Decal.bindStampRing(data.buffers?.decalStampRing || null);
     bindSpawnCommandRing(data.buffers?.spawnCommandRing || null);
     {
@@ -498,6 +512,9 @@ export class AbstractWorker {
     setAssertRotCSUnit(!!this.config.debug?.assertRotCSUnit);
 
     this._bindPosePublish(data.posePublish);
+    this._box2dHeap = data.renderQueueLayout?.inBox2dBlock && data.renderQueueMemory
+      ? data.renderQueueMemory.buffer
+      : null;
 
     // Boot: query/explode throw if no WASM worker. Not a per-tick gate.
     Box2d.physicsWorkerAbsent = data.config?.physics?.enabled === false;
@@ -606,13 +623,14 @@ export class AbstractWorker {
       // Initialize activeDecorationsData compact list (for optimized iteration)
       if (data.activeDecorationsData) {
         DecorationPool.initializeActiveList(data.activeDecorationsData, data.activeDecorationsLock || null);
-        this.activeDecorationsData = new Uint16Array(data.activeDecorationsData);
+        // E-129: u32 past 65 535 decorations.
+        this.activeDecorationsData = new (PoolSlotArray(data.maxDecorations | 0))(data.activeDecorationsData);
         this.reportLog(`initialized DecorationPool activeDecorationsData`);
       }
 
       // Initialize visibleDecorationsData compact list (written by particle_worker, read by pre_render_worker)
       if (data.visibleDecorationsData) {
-        this.visibleDecorationsData = new Uint16Array(data.visibleDecorationsData);
+        this.visibleDecorationsData = new (PoolSlotArray(data.maxDecorations | 0))(data.visibleDecorationsData);
         this.reportLog(`initialized visibleDecorationsData`);
       }
 
@@ -675,11 +693,13 @@ export class AbstractWorker {
       if (data.bulletFreeList && data.bulletFreeListTop) {
         BulletPool.initializeFreeList(data.bulletFreeList, data.bulletFreeListTop);
       }
+      // E-129: u32 past 65 535 bullets.
+      const BulletSlots = PoolSlotArray(data.maxBullets | 0);
       if (data.activeBulletsData) {
-        this.activeBulletsData = new Uint16Array(data.activeBulletsData);
+        this.activeBulletsData = new BulletSlots(data.activeBulletsData);
       }
       if (data.visibleBulletsData) {
-        this.visibleBulletsData = new Uint16Array(data.visibleBulletsData);
+        this.visibleBulletsData = new BulletSlots(data.visibleBulletsData);
       }
       if (data.impactBuffer) {
         this.impactBuffer = data.impactBuffer;
@@ -736,15 +756,16 @@ export class AbstractWorker {
     // Initialize particle compact lists (for optimized iteration)
     if (data.maxParticles && data.maxParticles > 0) {
       // activeParticlesData: rebuilt each frame by particle_worker. In the particle memory (E-80)
-      // both lists sit at a byte offset; a plain SAB starts at 0.
+      // both lists sit at a byte offset; a plain SAB starts at 0. E-129: u32 past 65 535 particles.
       const listLength = (data.maxParticles | 0) + 1;
+      const ParticleSlots = PoolSlotArray(data.maxParticles | 0);
       if (data.activeParticlesData) {
-        this.activeParticlesData = new Uint16Array(data.activeParticlesData, data.activeParticlesByte | 0, listLength);
+        this.activeParticlesData = new ParticleSlots(data.activeParticlesData, data.activeParticlesByte | 0, listLength);
         this.reportLog(`initialized activeParticlesData`);
       }
       // visibleParticlesData: subset of active particles that are on-screen
       if (data.visibleParticlesData) {
-        this.visibleParticlesData = new Uint16Array(data.visibleParticlesData, data.visibleParticlesByte | 0, listLength);
+        this.visibleParticlesData = new ParticleSlots(data.visibleParticlesData, data.visibleParticlesByte | 0, listLength);
         this.reportLog(`initialized visibleParticlesData`);
       }
     }
@@ -776,6 +797,7 @@ export class AbstractWorker {
       LiquidFun.bindSabs({
         groups: data.buffers.liquidFunGroups || null,
         render: data.buffers.liquidFunRender || null,
+        renderByte: data.buffers.liquidFunRenderByte | 0,
         maxCount: data.liquidFunMaxCount | 0,
       });
     }
@@ -859,6 +881,7 @@ export class AbstractWorker {
     if (data.buffers?.frameClock && Number.isInteger(data.frameClockSlot)) {
       this._frameClock = bindFrameClock(data.buffers.frameClock);
       this._frameClockSlot = data.frameClockSlot;
+      if (data.buffers.frameTotals) this._frameTotals = bindFrameTotals(data.buffers.frameTotals);
     }
     if (data.buffers?.tweenData) {
       Tween.bind(data.buffers.tweenData, data.config?.tween?.maxTweens | 0, data.globalEntityCount | 0);
@@ -1122,15 +1145,17 @@ export class AbstractWorker {
     this.poseCapacity = n;
     this.poseSync = new Int32Array(pose.sync);
     const sabs = [pose.dataA, pose.dataB];
+    const bytes = [pose.dataAByte | 0, pose.dataBByte | 0];
     // 4 channels: x,y,rotC,rotS - must mirror weedjsPost.js bindPosePublish
-    // (physics-worker-side writer of this same SAB layout).
+    // (physics-worker-side writer of this same SAB layout), from each buffer's byte.
     for (let i = 0; i < 2; i++) {
       const sab = sabs[i];
+      const at = bytes[i];
       this.poseBuffers[i] = {
-        x: new Float32Array(sab, 0, n),
-        y: new Float32Array(sab, n * 4, n),
-        rotC: new Float32Array(sab, n * 8, n),
-        rotS: new Float32Array(sab, n * 12, n),
+        x: new Float32Array(sab, at, n),
+        y: new Float32Array(sab, at + n * 4, n),
+        rotC: new Float32Array(sab, at + n * 8, n),
+        rotS: new Float32Array(sab, at + n * 12, n),
       };
     }
     bindPoseSlotBuffers(pose);
@@ -1495,7 +1520,8 @@ export class AbstractWorker {
    */
   handleCustomMessage(data) {
     if (data?.msg === 'box2dReady' && data.channelOffsets) {
-      bindBox2dHotFields(data);
+      // The same memory as the posted heap: its offsets hold there (Box2D's memory does not grow).
+      bindBox2dHotFields(this._box2dHeap ? { ...data, sab: this._box2dHeap } : data);
       if (data.commandSab) {
         bindCommandRing(data.commandSab);
       }
@@ -1524,10 +1550,19 @@ export class AbstractWorker {
         bindMovedBodies(data.movedSab);
       }
       if (data.liquidFunHeap) {
-        LiquidFun.bindHeapPose(data.liquidFunHeap);
+        LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
       }
     } else if (data?.msg === 'liquidFunHeap' && data.liquidFunHeap) {
-      LiquidFun.bindHeapPose(data.liquidFunHeap);
+      LiquidFun.bindHeapPose(this._liquidFunHeapPayload(data.liquidFunHeap));
     }
+  }
+
+  /**
+   * A LiquidFun heap payload on this worker's own handle of Box2D's memory when the engine block is in it, as
+   * bindBox2dHotFields binds the bodies: the posted SharedArrayBuffer is another object for the same memory, and
+   * a kernel on the block reads a column only when its view is of that memory's buffer (pre-render's LiquidFun rows).
+   */
+  _liquidFunHeapPayload(payload) {
+    return this._box2dHeap ? { ...payload, sab: this._box2dHeap } : payload;
   }
 }

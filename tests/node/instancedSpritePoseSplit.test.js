@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { InstancedSpriteBatch, POSE_DYN_FLOATS, POSE_STATIC_FLOATS, BATCH_SPACE } from '../../src/render/instancedSpriteBatch.js';
+import { installBatchPackJs } from '../reference/gpuPackJs.mjs';
 
 // E-82: a pose batch packs two streams, the pose every upload and the statics only when the queue's
 // staticGen (or the rows, filter, screen scale) changed. Each stream holds what the 17-float record
@@ -39,7 +40,7 @@ function queue(seed, gen) {
 }
 
 function makeBatch() {
-  const batch = new InstancedSpriteBatch({ capacity: N, label: 'pose-test', poseInterp: true, useWebGpu: false, shaders });
+  const batch = installBatchPackJs(new InstancedSpriteBatch({ capacity: N, label: 'pose-test', poseInterp: true, useWebGpu: false, shaders }));
   const uploads = { pose: 0, statics: 0 };
   for (const b of batch._buffers) b.update = () => { uploads.pose++; };
   for (const b of batch._staticBuffers) b.update = () => { uploads.statics++; };

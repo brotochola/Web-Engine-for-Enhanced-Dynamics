@@ -1,18 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  GPU_SPRITE_FLOATS,
-  packInstancedRows,
-  makePackContext,
-} from '../../src/render/gpuQueueLayout.js';
+import { GPU_SPRITE_FLOATS, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import { writeGpuSpriteRow, gatherInstancedRows } from '../helpers/gpuQueueReference.mjs';
-import {
-  spriteYSortKey,
-  zSortBand,
-  orderSortKey,
-  createPainterState,
-  orderPainterSlots,
-} from '../../src/util/sortIndexByKey.js';
+import { spriteYSortKey, zSortBand, orderSortKey } from '../../src/util/sortIndexByKey.js';
+import { packInstancedRows } from '../reference/gpuPackJs.mjs';
+import { createPainterState, orderPainterSlots } from '../reference/painterJs.mjs';
 
 const Y_SORT_K = 128;
 

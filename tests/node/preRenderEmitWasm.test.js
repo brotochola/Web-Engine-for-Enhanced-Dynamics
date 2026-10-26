@@ -6,7 +6,12 @@
 // left alone. The mix covers what the kernel copies from the JS: tiled sprites (world and local) and the
 // tiles-dirty frames after them, sprites without an animation or a first frame, play-once ends, zIndex,
 // Y-sort on and off, NaN and -0 shadow terms, decorations with and without a texture, and a collector
-// longer than the queue.
+// longer than the queue. W4d: with BulletComponent in the memory, the bullet and trail rows too (hidden,
+// short and -0 trails, offsets, a bullet without a first frame). With LightEmitter and Transform there, the glow rows
+// (hidden by their scale or their alpha, NaN and -0 roots and offsets, every glow strength, the entity's zIndex). With
+// ParticleComponent there (the particle memory placed in it), the particle rows (zenithal, flat and plain, flipped,
+// the alpha fade on and off, the white circle and a texture past the animations). With the LiquidFun render buffer
+// and pre-render's previous positions there, the LiquidFun rows (interpolated or not, with and without baseAlpha).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -21,22 +26,33 @@ import { Layer } from '../../src/core/layer.js';
 import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
+import { createParticleMemory, particleMemoryBytes } from '../../src/util/particleMemory.js';
+import { liquidFunRenderByteSize } from '../../src/render/liquidFunRender.js';
 import {
   bindPreRenderEmit,
   EMIT_BOUNDS,
   EMIT_DECLINED,
+  EMIT_OTHERS_ONLY,
   EMIT_PERSIST_MISS,
   EMIT_SORT_KEY,
   EMIT_TILES_DIRTY,
+  EMIT_WARN_BULLET_START,
   EMIT_WARN_DECO_START,
   EMIT_WARN_NO_ANIM,
   EMIT_WARN_NO_START,
+  EMIT_WARN_PARTICLE_START,
+  EMIT_WARN_LF_START,
   EMIT_Y_SORT,
+  writeEmitBulletColumns,
   writeEmitColumns,
+  writeEmitGlowColumns,
+  writeEmitParticleColumns,
+  writeEmitLiquidFunColumns,
   writeEmitTextures,
   writePersistColumns,
 } from '../../src/workers/preRenderEmitClient.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
 
 const N = 700;
 const DECOS = 300;
@@ -44,6 +60,11 @@ const MAX = 900;
 const DT = 1000 / 60;
 const FRAMES = 30;
 const POOL = 64;
+/** LiquidFun particles in the render buffer. */
+const LFN = 96;
+/** A custom sprite layer's id and rows (its queue and collector in the memory). */
+const CL = 9;
+const CLMAX = 500;
 
 function rng(seed) {
   let s = seed >>> 0;
@@ -99,15 +120,35 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
+  // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
+  // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
+  const collect = bullets || lights
+    ? {
+        entities: N,
+        transformBytes: Transform.getBufferSize(N),
+        colliderBytes: 0,
+        rigidBodyBytes: 0,
+        bullets: bullets ? { bullets: POOL, entities: N, componentBytes: BulletComponent.getBufferSize(POOL), impacts: 8 } : null,
+        visibility: null,
+      }
+    : null;
   const m = createRenderQueueMemory(maxItems, computeBufferSize(maxItems), computeGpuQueueBufferSize(caps), {
     entities: N,
     spriteBytes: SpriteRenderer.getBufferSize(N),
     casterBytes: ShadowCaster.getBufferSize(N),
     decorationBytes: DecorationComponent.getBufferSize(DECOS),
-  });
+    lightBytes: lights ? LightEmitter.getBufferSize(N) : 0,
+    particleBytes: particles ? particleMemoryBytes(POOL, ParticleComponent.getBufferSize(POOL)) : 0,
+    liquidFun: liquidFun ? { maxCount: LFN, renderBytes: liquidFunRenderByteSize(LFN) } : null,
+    customLayers: customLayer ? [{ layerId: CL, maxItems: CLMAX, queueBytes: computeBufferSize(CLMAX) }] : [],
+  }, null, null, false, collect);
   const e = m.layout.emit;
+  // With `particles`, the particle memory in its region of this one, as the scene places it.
+  const pm = particles
+    ? createParticleMemory(POOL, ParticleComponent.getBufferSize(POOL), { memory: m.memory, baseByte: e.particleMemoryByte, bytes: e.particleMemoryBytes })
+    : null;
   const buffers = {
     componentData: {
       ...coreComponentData(N),
@@ -115,15 +156,26 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
       ShadowCaster: m.buffer,
       DecorationComponent: m.buffer,
       // What the rows of other types read in the JS run (the kernel leaves those rows to it).
-      LightEmitter: new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
-      ParticleComponent: new SharedArrayBuffer(ParticleComponent.getBufferSize(POOL)),
-      BulletComponent: new SharedArrayBuffer(BulletComponent.getBufferSize(POOL)),
+      LightEmitter: lights ? m.buffer : new SharedArrayBuffer(LightEmitter.getBufferSize(N)),
+      ParticleComponent: particles ? m.buffer : new SharedArrayBuffer(ParticleComponent.getBufferSize(POOL)),
+      BulletComponent: bullets ? m.buffer : new SharedArrayBuffer(BulletComponent.getBufferSize(POOL)),
     },
-    componentDataByte: { SpriteRenderer: e.spriteRendererByte, ShadowCaster: e.shadowCasterByte, DecorationComponent: e.decorationByte },
+    componentDataByte: {
+      SpriteRenderer: e.spriteRendererByte,
+      ShadowCaster: e.shadowCasterByte,
+      DecorationComponent: e.decorationByte,
+      ...(bullets ? { BulletComponent: m.layout.collect.bullets.componentByte } : {}),
+      ...(lights ? { LightEmitter: e.lightEmitterByte } : {}),
+      ...(particles ? { ParticleComponent: pm.layout.componentByte } : {}),
+    },
+    // With `liquidFun`, the render buffer in its region of the memory, as the scene places it.
+    ...(liquidFun ? { liquidFunRender: m.buffer, liquidFunRenderByte: e.liquidFunRenderByte } : {}),
   };
-  for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent]) C.clearArrays();
+  for (const C of [SpriteRenderer, ShadowCaster, DecorationComponent, LightEmitter]) C.clearArrays();
   const meta = textureMetadata();
   const worker = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  // The JS emit the kernel replaced, for the runs with _emitWasm null (tests/reference).
+  installEmitJs(worker);
   await initWorker(worker, {
     config: { worldWidth: 4000, worldHeight: 3000, preRender: { interpolation: false }, renderer: { ySort } },
     globalEntityCount: N,
@@ -132,7 +184,17 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
       maxDecorations: DECOS,
       maxParticles: POOL,
       maxBullets: POOL,
+      liquidFunMaxCount: liquidFun ? LFN : 0,
       textureMetadata: meta,
+      // With `customLayer`, one custom sprite layer's queue and collector where the scene places them.
+      ...(customLayer ? {
+        customLayerRenderQueues: {
+          [CL]: {
+            dataA: m.buffer, dataAByte: e.customLayers[0].queueAByte, dataB: m.buffer, dataBByte: e.customLayers[0].queueBByte,
+            collectorByte: e.customLayers[0].collectorByte, maxItems: CLMAX, layerId: CL, layerName: 'fx',
+          },
+        },
+      } : {}),
       renderQueueMemory: m.memory,
       renderQueueLayout: m.layout,
       renderQueue: {
@@ -150,8 +212,24 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     },
   });
   bindPoseColumns(N);
+  if (lights) {
+    // Transform's pose where a scene without physics keeps it: the collect's pose block (x, y, rotation, rotC, rotS).
+    const pose = m.layout.collect.poseByte;
+    Transform.x = new Float32Array(m.buffer, pose, N);
+    Transform.y = new Float32Array(m.buffer, pose + 4 * N, N);
+  }
   assert.equal(SpriteRenderer.scaleX.buffer, m.buffer, 'SpriteRenderer is in the memory');
+  assert.equal(LightEmitter.lightColor.buffer === m.buffer, lights, `LightEmitter is ${lights ? '' : 'not '}in the memory`);
+  assert.equal(ParticleComponent.x.buffer === m.buffer, particles, `ParticleComponent is ${particles ? '' : 'not '}in the memory`);
+  worker.zenithalMaxHeight = 220;
+  worker.zenithalScaleFactor = 0.5;
+  worker.zenithalAlphaFade = alphaFade;
+  if (liquidFun) {
+    assert.equal(worker.liquidFun.x.buffer, m.buffer, 'the LiquidFun render buffer is in the memory');
+    assert.equal(worker._prevLfX.buffer, m.buffer, 'and the previous positions');
+  }
   assert.equal(worker._renderableType.buffer, m.buffer, 'the collector is in the memory');
+  assert.equal(BulletComponent.x.buffer === m.buffer, bullets, `BulletComponent is ${bullets ? '' : 'not '}in the memory`);
   worker._decorationZoomAlpha = 0.75;
   worker._animEndByType = new Uint8Array(256).fill(1);
 
@@ -201,13 +279,108 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     DecorationComponent.anchorY[d] = r();
   }
 
+  // Bullets (W4d), from a generator of their own: inactive ones, trails of no length (start at the bullet), shorter
+  // than 0.1, with a -0 difference (x -0, start +0), muzzle offsets, a texture past the animations.
+  const rb = rng(seed ^ 0xb011e7);
+  const bc = BulletComponent;
+  for (let s = 0; s < POOL; s++) {
+    bc.active[s] = s % 7 === 0 ? 0 : 1;
+    bc.x[s] = s % 13 === 0 ? -0 : rb() * 4000;
+    bc.y[s] = rb() * 3000;
+    bc.startX[s] = s % 13 === 0 ? 0 : s % 5 === 0 ? bc.x[s] : s % 6 === 0 ? bc.x[s] + 0.03 : bc.x[s] - (rb() - 0.5) * 300;
+    bc.startY[s] = s % 5 === 0 || s % 6 === 0 ? bc.y[s] : bc.y[s] - (rb() - 0.5) * 300;
+    bc.offsetY[s] = s % 3 === 0 ? 0 : -rb() * 40;
+    bc.scale[s] = 0.25 + rb();
+    bc.alpha[s] = rb();
+    bc.tint[s] = (rb() * 0xffffff) >>> 0;
+    bc.textureId[s] = s % 17 === 0 ? meta.animationFrameStart.length + 3 : s % 12;
+    bc.spriteRotC[s] = Math.cos(s * 0.7);
+    bc.spriteRotS[s] = Math.sin(s * 0.7);
+    bc.bulletRotC[s] = Math.cos(s * 1.3);
+    bc.bulletRotS[s] = Math.sin(s * 1.3);
+    bc.trailWidth[s] = 0.5 + rb() * 3;
+    bc.anchorX[s] = rb();
+    bc.anchorY[s] = rb();
+  }
+
+  // Lights: no glow (the scale's floor), too faint (the alpha's), NaN and -0 roots, NaN and -0 offsets, every strength.
+  const rl = rng(seed ^ 0x9107);
+  const le = LightEmitter;
+  for (let i = 0; i < N; i++) {
+    // Intensity 0.5 is under both alpha floors, 6 only under the drawn one (alpha 1.2e-4 or 2.4e-4).
+    const intensity = i % 11 === 0 ? 0 : i % 13 === 0 ? (i & 1 ? 0.5 : 6) : 50 + rl() * 20000;
+    le.lightIntensity[i] = intensity;
+    le.sqrtLightIntensity[i] = i % 17 === 0 ? NaN : i % 19 === 0 ? -0 : Math.sqrt(intensity);
+    le.hasGlowSprite[i] = [0, 0.5, 1, 0.5][i % 4];
+    le.glowHeightOffset[i] = i % 7 === 0 ? NaN : i % 9 === 0 ? -0 : rl() * 60 - 10;
+    le.lightColor[i] = (rl() * 0xffffffff) >>> 0;
+    Transform.x[i] = i % 23 === 0 ? -0 : rl() * 4000;
+    Transform.y[i] = rl() * 3000;
+  }
+
+  // Particles: zenithal (heights above and below the floor, -0, NaN), zenithal and flat, flat, plain; flipped either way;
+  // texture 0 (the white circle), an animation, one past the animations.
+  const rp = rng(seed ^ 0x9a27);
+  const pc = ParticleComponent;
+  for (let s = 0; s < POOL; s++) {
+    pc.x[s] = rp() * 4000;
+    pc.y[s] = rp() * 3000;
+    pc.z[s] = s % 13 === 0 ? NaN : s % 9 === 0 ? -0 : s % 5 === 0 ? rp() * 30 : -rp() * 400;
+    pc.scaleX[s] = 0.1 + rp() * 2;
+    pc.scaleY[s] = 0.1 + rp() * 2;
+    pc.flipX[s] = s % 3 === 0 ? 1 : 0;
+    pc.flipY[s] = s % 4 === 0 ? 1 : 0;
+    pc.rotC[s] = Math.cos(s * 0.9);
+    pc.rotS[s] = Math.sin(s * 0.9);
+    pc.alpha[s] = rp();
+    pc.tint[s] = (rp() * 0xffffff) >>> 0;
+    pc.textureId[s] = s % 6 === 0 ? 0 : s % 11 === 0 ? meta.animationFrameStart.length + 5 : 1 + (s % 10);
+    pc.viewMode[s] = s % 2 === 0 ? 1 : 0;
+    pc.flat[s] = s % 7 === 0 ? 1 : 0;
+  }
+
+  // LiquidFun particles: interpolated from a previous position (the first 12 with `interpolate`) or not, a baseAlpha
+  // (missing on a second run), texture 0, an animation, one past the animations.
+  if (liquidFun) {
+    const rf = rng(seed ^ 0x1f1f);
+    const lf = worker.liquidFun;
+    lf.count[0] = LFN;
+    for (let s = 0; s < LFN; s++) {
+      lf.x[s] = rf() * 4000;
+      lf.y[s] = rf() * 3000;
+      lf.scaleX[s] = 0.2 + rf();
+      lf.scaleY[s] = 0.2 + rf();
+      lf.alpha[s] = rf();
+      lf.baseAlpha[s] = s % 5 === 0 ? 1 : rf();
+      lf.rotC[s] = Math.cos(s * 0.3);
+      lf.rotS[s] = Math.sin(s * 0.3);
+      lf.tint[s] = (rf() * 0xffffff) >>> 0;
+      lf.textureId[s] = s % 4 === 0 ? 0 : s % 13 === 0 ? meta.animationFrameStart.length + 7 : 1 + (s % 9);
+      worker._prevLfX[s] = lf.x[s] + (rf() - 0.5) * 20;
+      worker._prevLfY[s] = lf.y[s] + (rf() - 0.5) * 20;
+    }
+    if (noBaseAlpha) lf.baseAlpha = null;
+    worker.interpolatePhysicsPose = interpolate;
+    worker._prevLfCount = 12;
+    worker._poseAlpha = 0.37;
+  }
+
   // The collector: sprites, decorations and a few rows of other types, poses in the queue (E-98d).
+  // With `bullets`, a quarter of the rows are of other types, each type in turn walking the bullet slots, so the
+  // bullet and trail rows reach every slot class above.
   const types = [];
   const indices = [];
+  let other = 0;
+  let pnext = 0;
+  let lfnext = 0;
   for (let k = 0; k < count; k++) {
     const pick = r();
-    if (pick < 0.62) { types.push(0); indices.push(Math.floor(r() * N)); }
-    else if (pick < 0.92) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
+    if (pick < (bullets ? 0.55 : 0.62)) { types.push(0); indices.push(Math.floor(r() * N)); }
+    else if (pick < (bullets ? 0.75 : 0.92)) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
+    else if (particles && k % 3 === 1) { types.push(1); indices.push(pnext++ % POOL); }
+    else if (liquidFun && k % 3 === 2) { types.push(7); indices.push(lfnext++ % LFN); }
+    else if (lights && k % 3 !== 0) { types.push(3); indices.push((k * 7919) % N); }
+    else if (bullets) { types.push([1, 3, 4, 5][other % 4]); indices.push((other >> 2) % POOL); other++; }
     else { types.push([1, 3, 4, 5][k % 4]); indices.push(k % POOL); }
   }
   const qViews = () => ({ x: worker.renderQueueX, y: worker.renderQueueY, rc: worker.renderQueueRotC, rs: worker.renderQueueRotS });
@@ -243,7 +416,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
 
   const b = await bindPreRenderEmit(m.memory, e);
   assert.ok(writeEmitTextures(b, meta), 'the metadata fits the tables');
-  return { worker, m, b, source, types, count, maxItems, snapshot, restore, ySort };
+  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights, particles, liquidFun, interpolate, customLayer };
 }
 
 /** The queue columns a row has. */
@@ -263,6 +436,62 @@ async function runCase(t, opts) {
   const k = await setup(opts);
   const { worker, b, source, types, count, maxItems } = k;
   const n = Math.min(count, maxItems);
+  /** The rows the kernel writes: sprites and decorations, and (W4d) bullets and trails with their component in the memory. */
+  const ours = (type) => type === 0 || type === 2 || (k.bullets && (type === 4 || type === 5)) || (k.lights && type === 3)
+    || (k.particles && type === 1) || (k.liquidFun && type === 7);
+  if (k.liquidFun) {
+    // The LiquidFun rows reach every case the kernel copies.
+    const seen = new Set();
+    for (let r = 0; r < n; r++) {
+      if (types[r] !== 7) continue;
+      const s = k.indices[r];
+      seen.add(k.interpolate && s < 12 ? 'interpolated' : 'at its position');
+      seen.add(s % 4 === 0 ? 'white' : s % 13 === 0 ? 'no texture' : 'texture');
+    }
+    const expected = ['at its position', 'no texture', 'texture', 'white', ...(k.interpolate ? ['interpolated'] : [])];
+    assert.deepEqual([...seen].sort(), expected.sort());
+  }
+  if (k.particles) {
+    // The particle rows reach every branch the kernel copies.
+    const seen = new Set();
+    for (let r = 0; r < n; r++) {
+      if (types[r] !== 1) continue;
+      const s = k.indices[r];
+      const zen = s % 2 === 0;
+      const flat = s % 7 === 0;
+      seen.add(zen && !flat ? 'zenithal' : zen ? 'zenithal flat' : flat ? 'flat' : 'plain');
+      seen.add(s % 6 === 0 ? 'white' : s % 11 === 0 ? 'no texture' : 'texture');
+      if (s % 3 === 0 && s % 4 === 0) seen.add('flipped both');
+    }
+    assert.deepEqual([...seen].sort(), ['flat', 'flipped both', 'no texture', 'plain', 'texture', 'white', 'zenithal', 'zenithal flat']);
+  }
+  if (k.lights) {
+    // The glow rows reach every case the kernel copies.
+    const seen = new Set();
+    for (let r = 0; r < n; r++) {
+      if (types[r] !== 3) continue;
+      const i = k.indices[r];
+      const glow = [0, 0.5, 1, 0.5][i % 4];
+      if (i % 11 === 0 || i % 17 === 0 || i % 19 === 0 || glow === 0) seen.add('no scale or no glow');
+      else if (i % 13 === 0) seen.add('too faint');
+      else seen.add(i % 7 === 0 ? 'drawn, NaN offset' : i % 9 === 0 ? 'drawn, -0 offset' : 'drawn');
+    }
+    assert.deepEqual([...seen].sort(), ['drawn', 'drawn, -0 offset', 'drawn, NaN offset', 'no scale or no glow', 'too faint']);
+  }
+  if (k.bullets) {
+    // The bullet and trail rows reach every case the kernel copies (setup's bullet slots).
+    const seen = new Set();
+    for (let r = 0; r < n; r++) {
+      const type = types[r];
+      if (type !== 4 && type !== 5) continue;
+      const slot = k.indices[r];
+      if (slot % 7 === 0) seen.add(`${type} inactive`);
+      else if (type === 4) seen.add(slot % 17 === 0 ? '4 no texture' : '4 drawn');
+      else if (slot % 13 === 0) seen.add('5 -0 dx');
+      else seen.add(slot % 5 === 0 || slot % 6 === 0 ? '5 too short' : '5 drawn');
+    }
+    assert.deepEqual([...seen].sort(), ['4 drawn', '4 inactive', '4 no texture', '5 -0 dx', '5 drawn', '5 inactive', '5 too short']);
+  }
   const start = k.snapshot();
 
   // The JS: 30 frames, the queue and the state after each, the ends and warnings it made. The worker
@@ -280,7 +509,10 @@ async function runCase(t, opts) {
     warns.length = 0;
     const written = worker.emitSpriteQueue(DT, source);
     assert.equal(written, n);
-    jsFrames.push({ snap: k.snapshot(), ends: [...ends].sort(), warns: warns.filter((w) => !w.startsWith('name:')).sort() });
+    // The kernel's warnings: not the builtin lookups, nor a bullet's when the bullet rows are left to the JS.
+    const kernelWarn = (w) => !w.startsWith('name:') && (k.bullets || !w.startsWith('frameStart:bullet:'))
+      && (k.particles || !w.startsWith('frameStart:particle:')) && (k.liquidFun || !w.startsWith('frameStart:liquidFun:'));
+    jsFrames.push({ snap: k.snapshot(), ends: [...ends].sort(), warns: warns.filter(kernelWarn).sort() });
   }
   worker._spriteAnimationEnded = realEnded;
   worker._warnMissingTexture = realWarn;
@@ -289,7 +521,7 @@ async function runCase(t, opts) {
   k.restore(start);
   const marker = 0x5a;
   for (let r = 0; r < n; r++) {
-    if (types[r] === 0 || types[r] === 2) continue;
+    if (ours(types[r])) continue;
     for (const c of ROW_COLUMNS) {
       const v = worker[c];
       if (v) new Uint8Array(v.buffer, v.byteOffset + r * v.BYTES_PER_ELEMENT, v.BYTES_PER_ELEMENT).fill(marker);
@@ -307,6 +539,13 @@ async function runCase(t, opts) {
   const results = b.results;
   for (let f = 0; f < FRAMES; f++) {
     assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
+    assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
+    assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightGradient')), k.lights, 'the glow columns');
+    assert.equal(writeEmitParticleColumns(b, ParticleComponent, worker._resolveBuiltinTextureId('_whiteCircle'),
+      worker.zenithalMaxHeight, worker.zenithalScaleFactor, worker.zenithalAlphaFade), k.particles, 'the particle columns');
+    const lfPrev = worker.interpolatePhysicsPose && worker._prevLfX ? worker._prevLfCount : 0;
+    assert.equal(writeEmitLiquidFunColumns(b, worker.liquidFun, worker._prevLfX, worker._prevLfY, lfPrev, worker._poseAlpha,
+      worker._resolveBuiltinTextureId('_whiteCircle')), k.liquidFun, 'the LiquidFun columns');
     const tilesDirty = worker.renderQueueTileMode !== null && worker._tiledTileColumns.has(worker.renderQueueTileMode);
     const flags = EMIT_SORT_KEY | (k.ySort ? EMIT_Y_SORT : 0) | (tilesDirty ? EMIT_TILES_DIRTY : 0) | EMIT_BOUNDS;
     const written = b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, worker._decorationZoomAlpha, worker._zBand);
@@ -321,14 +560,15 @@ async function runCase(t, opts) {
         Buffer.from(js.snap.state[s].buffer, js.snap.state[s].byteOffset, js.snap.state[s].byteLength), `frame ${f}: state ${s}`);
     }
     // Rows: sprites and decorations equal to the JS's, bit for bit; the others untouched and listed.
+    // [collector row, queue row] pairs: the same row without an Adobe root.
     const foreign = [];
-    for (let r = 0; r < results[3]; r++) foreign.push(b.u32[b.foreignAt + r]);
+    for (let r = 0; r < results[3]; r++) foreign.push([b.u32[b.foreignAt + 2 * r], b.u32[b.foreignAt + 2 * r + 1]]);
     const expectForeign = [];
-    for (let r = 0; r < n; r++) if (types[r] !== 0 && types[r] !== 2) expectForeign.push(r);
+    for (let r = 0; r < n; r++) if (!ours(types[r])) expectForeign.push([r, r]);
     assert.deepEqual(foreign, expectForeign, `frame ${f}: the rows left to the JS`);
     const qa = k.m.layout.queueAByte;
     for (let r = 0; r < n; r++) {
-      const ours = types[r] === 0 || types[r] === 2;
+      const mine = ours(types[r]);
       for (const c of ROW_COLUMNS) {
         const v = worker[c];
         if (!v) continue;
@@ -336,10 +576,10 @@ async function runCase(t, opts) {
         const at = v.byteOffset - qa + r * bpe;
         for (let x = 0; x < bpe; x++) {
           const got = now.queue[at + x];
-          if (ours && got !== js.snap.queue[at + x]) {
+          if (mine && got !== js.snap.queue[at + x]) {
             assert.fail(`frame ${f} row ${r} (type ${types[r]}) ${c}: ${hex(now.queue, at, bpe)}, the JS wrote ${hex(js.snap.queue, at, bpe)}`);
           }
-          if (!ours && got !== marker) assert.fail(`frame ${f} row ${r} (type ${types[r]}) ${c} was written`);
+          if (!mine && got !== marker) assert.fail(`frame ${f} row ${r} (type ${types[r]}) ${c} was written`);
         }
       }
     }
@@ -370,6 +610,9 @@ function warnKey(worker, idx, kind) {
     return `animStart:${g}`;
   }
   if (kind === EMIT_WARN_DECO_START) return `frameStart:decoration:${DecorationComponent.textureId[idx]}`;
+  if (kind === EMIT_WARN_BULLET_START) return `frameStart:bullet:${BulletComponent.textureId[idx]}`;
+  if (kind === EMIT_WARN_PARTICLE_START) return `frameStart:particle:${ParticleComponent.textureId[idx]}`;
+  if (kind === EMIT_WARN_LF_START) return `frameStart:liquidFun:${worker.liquidFun.textureId[idx]}`;
   return `kind ${kind}`;
 }
 
@@ -383,6 +626,163 @@ test('the emit kernel writes what emitSpriteQueue writes, without Y-sort', async
 
 test('the emit kernel fills a queue to its capacity', async (t) => {
   await runCase(t, { ySort: true, maxItems: 600, count: 600, seed: 0xfeed });
+});
+
+test('W4d: the emit kernel writes the bullet and trail rows emitSpriteQueue writes, BulletComponent in the memory', async (t) => {
+  await runCase(t, { ySort: true, bullets: true, seed: 0xb0b });
+  await runCase(t, { ySort: false, bullets: true, seed: 0xb1b });
+});
+
+test('the emit kernel writes the glow rows emitSpriteQueue writes, LightEmitter and Transform in the memory', async (t) => {
+  await runCase(t, { ySort: true, lights: true, seed: 0x6107 });
+  await runCase(t, { ySort: false, lights: true, bullets: true, seed: 0x6108 });
+});
+
+test('the emit kernel writes the particle rows emitSpriteQueue writes, the particle memory in the render-queue memory', async (t) => {
+  await runCase(t, { ySort: true, particles: true, seed: 0x9a71 });
+  await runCase(t, { ySort: false, particles: true, alphaFade: 0.8, seed: 0x9a72 });
+  await runCase(t, { ySort: true, particles: true, lights: true, bullets: true, alphaFade: 2.5, seed: 0x9a73 });
+});
+
+test('the emit kernel writes the LiquidFun rows emitSpriteQueue writes, its render buffer in the render-queue memory', async (t) => {
+  await runCase(t, { ySort: true, liquidFun: true, interpolate: true, seed: 0x1f01 });
+  await runCase(t, { ySort: false, liquidFun: true, interpolate: false, seed: 0x1f02 });
+  // Without baseAlpha (the JS multiplies by 1), with particles in the memory too.
+  await runCase(t, { ySort: true, liquidFun: true, interpolate: true, particles: true, noBaseAlpha: true, seed: 0x1f03 });
+});
+
+// Close-out group B. A custom sprite layer's queue goes through the same emit (buildCustomLayerQueues): its collector
+// keeps a pose stash written at the collect, as the entities' does (E-98d), and with the collector and both queue
+// buffers in the memory the kernel writes the layer's rows. 30 frames of the layer through buildCustomLayerQueues,
+// the JS loop against the kernel, from the same start: the layer's queue, the animation state and the ends.
+test('a custom layer\'s queue through the emit kernel is the one the JS writes', async (t) => {
+  for (const ySort of [true, false]) {
+    const k = await setup({ ySort, bullets: true, lights: true, particles: true, liquidFun: true, customLayer: true, seed: ySort ? 0xc1a1 : 0xc1a2 });
+    const { worker, m } = k;
+    const entry = worker._customLayerEntries[0];
+    assert.ok(entry && entry.layerId === CL, 'the worker made the layer');
+    const c = entry.collector;
+    assert.equal(c.type.buffer, m.buffer, 'its collector is in the memory');
+    assert.equal(c.stashX.buffer, m.buffer, 'its pose stash too');
+    worker._setWriteBuffer(0);
+    assert.equal(entry.ref.x.buffer, m.buffer, 'and its queue');
+    // The layer's rows: the entities collector's first rows, poses from a generator.
+    const r = rng(ySort ? 0x51a : 0x51b);
+    const rows = CLMAX - 7;
+    for (let i = 0; i < rows; i++) {
+      c.type[i] = k.types[i];
+      c.index[i] = k.indices[i];
+      c.y[i] = Math.round(r() * 3000) * 128;
+      c.stashX[i] = r() * 4000;
+      c.stashY[i] = r() * 3000;
+      c.stashRotC[i] = Math.cos(i * 0.7);
+      c.stashRotS[i] = Math.sin(i * 0.7);
+    }
+    const L = m.layout.emit.customLayers[0];
+    const layerQueue = new Uint8Array(m.buffer, L.queueAByte, computeBufferSize(CLMAX));
+    const start = { main: k.snapshot(), layer: layerQueue.slice() };
+    const bound = worker._emitWasm;
+    let kernelCalls = 0;
+    const realRows = bound.emitRows;
+    bound.emitRows = (...args) => {
+      kernelCalls++;
+      return realRows(...args);
+    };
+    const realEnded = worker._spriteAnimationEnded;
+    const run = (kernel) => {
+      k.restore(start.main);
+      layerQueue.set(start.layer);
+      worker._emitWasm = kernel;
+      worker._setWriteBuffer(0);
+      const frames = [];
+      for (let f = 0; f < FRAMES; f++) {
+        const ends = [];
+        worker._spriteAnimationEnded = (idx, anim) => ends.push(`${idx}:${anim}`);
+        c.count = rows;
+        worker.buildCustomLayerQueues(DT);
+        frames.push({ queue: layerQueue.slice(), count: entry.ref.count[0], state: k.snapshot().state, ends });
+      }
+      worker._spriteAnimationEnded = realEnded;
+      return frames;
+    };
+    const js = run(null);
+    const wasm = run(bound);
+    bound.emitRows = realRows;
+    worker._emitWasm = bound;
+    assert.equal(kernelCalls, FRAMES, 'the kernel took every frame of the layer');
+    for (let f = 0; f < FRAMES; f++) {
+      assert.equal(wasm[f].count, js[f].count, `frame ${f}: rows`);
+      const at = wasm[f].queue.findIndex((x, i) => x !== js[f].queue[i]);
+      assert.equal(at, -1, `frame ${f}: the layer's queue differs at byte ${at}`);
+      wasm[f].state.forEach((v, s2) => {
+        assert.deepEqual(Buffer.from(v.buffer, v.byteOffset, v.byteLength), Buffer.from(js[f].state[s2].buffer, js[f].state[s2].byteOffset, js[f].state[s2].byteLength), `frame ${f}: state ${s2}`);
+      });
+      assert.deepEqual(wasm[f].ends, js[f].ends, `frame ${f}: play-once ends, in order`);
+    }
+    t.diagnostic(`ySort ${ySort}: ${js[0].count} rows in the layer, ${new Set(k.types.slice(0, rows)).size} row types`);
+  }
+});
+
+// The stash a custom layer's collect now writes (_writeRenderable: the display pose of a sprite, a decoration's world
+// position and facing) gives the queue the JS emit wrote when the layer had no stash and took the poses at the emit.
+test('a custom layer emitted from its stash writes what the emit wrote taking the poses itself', async () => {
+  const k = await setup({ ySort: true, customLayer: true, seed: 0xc1a3 });
+  const { worker, m } = k;
+  const entry = worker._customLayerEntries[0];
+  const c = entry.collector;
+  const rows = CLMAX - 3;
+  const pose = new Float32Array(4);
+  const r = rng(0x51c);
+  for (let i = 0; i < N; i++) {
+    Transform.x[i] = r() * 4000;
+    Transform.y[i] = r() * 3000;
+    Transform.rotC[i] = Math.cos(i * 0.3);
+    Transform.rotS[i] = Math.sin(i * 0.3);
+  }
+  for (let d = 0; d < DECOS; d++) {
+    DecorationComponent.rotC[d] = Math.cos(d * 1.1);
+    DecorationComponent.rotS[d] = Math.sin(d * 1.1);
+  }
+  for (let i = 0; i < rows; i++) {
+    const type = k.types[i] === 0 || k.types[i] === 2 ? k.types[i] : 0;
+    const idx = type === 2 ? k.indices[i] % DECOS : k.indices[i];
+    c.type[i] = type;
+    c.index[i] = idx;
+    c.y[i] = Math.round(r() * 3000) * 128;
+    // What _writeRenderable stashes.
+    if (type === 0) {
+      worker._displayPose(idx, pose);
+      c.stashX[i] = pose[0];
+      c.stashY[i] = pose[1];
+      c.stashRotC[i] = pose[2];
+      c.stashRotS[i] = pose[3];
+    } else {
+      worker._decorationWorldXY(idx, pose);
+      c.stashX[i] = pose[0];
+      c.stashY[i] = pose[1];
+      c.stashRotC[i] = DecorationComponent.rotC[idx];
+      c.stashRotS[i] = DecorationComponent.rotS[idx];
+    }
+  }
+  const L = m.layout.emit.customLayers[0];
+  const layerQueue = new Uint8Array(m.buffer, L.queueAByte, computeBufferSize(CLMAX));
+  const start = { main: k.snapshot(), layer: layerQueue.slice() };
+  const stash = [c.stashX, c.stashY, c.stashRotC, c.stashRotS];
+  const run = (withStash) => {
+    k.restore(start.main);
+    layerQueue.set(start.layer);
+    worker._emitWasm = null;
+    worker._setWriteBuffer(0);
+    if (!withStash) c.stashX = c.stashY = c.stashRotC = c.stashRotS = null;
+    c.count = rows;
+    worker.buildCustomLayerQueues(DT);
+    [c.stashX, c.stashY, c.stashRotC, c.stashRotS] = stash;
+    return layerQueue.slice();
+  };
+  const without = run(false);
+  const withIt = run(true);
+  const at = withIt.findIndex((x, i) => x !== without[i]);
+  assert.equal(at, -1, `the layer's queue differs at byte ${at}`);
 });
 
 test('a frame with an Adobe root or a LiquidFun row is declined before anything is written', async () => {
@@ -411,8 +811,10 @@ test('a column outside the memory makes the table refuse, so the JS emits', asyn
 });
 
 test('emitSpriteQueue through the kernel writes every row the JS loop writes, other types included', async (t) => {
-  for (const ySort of [true, false]) {
-    const k = await setup({ ySort, seed: ySort ? 0xc0ffee : 0xdecade });
+  // Every row type's columns in the memory, as the scene lays them (close-out group B): the kernel writes every row.
+  const cases = [[true, 0x9a74, false], [false, 0xc0ffee, false], [true, 0xdecade, true], [false, 0xb2b, true]];
+  for (const [ySort, seed, liquidFun] of cases) {
+    const k = await setup({ ySort, bullets: true, lights: true, particles: true, liquidFun, interpolate: liquidFun, alphaFade: 0.6, seed });
     const { worker, source } = k;
     const bound = worker._emitWasm;
     assert.ok(bound, 'the worker bound the kernel at init');
@@ -458,7 +860,7 @@ test('emitSpriteQueue through the kernel writes every row the JS loop writes, ot
       assert.deepEqual(wasm[f].ends, js[f].ends, `frame ${f}: play-once ends, in order`);
       assert.deepEqual(wasm[f].warns, js[f].warns, `frame ${f}: warnings`);
     }
-    t.diagnostic(`ySort ${ySort}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
+    t.diagnostic(`ySort ${ySort}, LiquidFun ${liquidFun}: ${js[0].written} rows, ${k.types.filter((x) => x !== 0 && x !== 2).length} of other types`);
   }
 });
 
@@ -714,20 +1116,22 @@ test('persist_frame misses on a frame with an Adobe root, which it held last tim
  */
 async function runWiredPersist(t, cases, casters) {
   for (const { ySort, seed } of cases) {
-    const k = await setup({ ySort, seed, persist: true });
+    // Every row type's columns in the memory, as the scene lays them: a persist frame's other rows go through the kernel too.
+    const k = await setup({ ySort, seed, persist: true, bullets: true, lights: true, particles: true, liquidFun: true, interpolate: true });
     // No ShadowCaster: its columns unbound, as in a scene that never registered it (the next setup binds them).
     if (!casters) for (const c of ['active', 'heightMultiplier', 'anchorOffsetX', 'anchorOffsetY']) ShadowCaster[c] = null;
     await withPersistOrder(ySort, async () => {
       const { worker, m, maxItems, count } = k;
       const bound = worker._emitWasm;
       assert.ok(bound && bound.texturesReady, 'the worker bound the kernel and wrote its tables');
-      const calls = { persistFrame: 0, persistHits: 0, persistRemember: 0, emitRows: 0 };
+      const calls = { persistFrame: 0, persistHits: 0, persistRemember: 0, emitRows: 0, othersOnly: 0 };
       for (const name of ['persistFrame', 'persistRemember', 'emitRows']) {
         const real = bound[name];
         bound[name] = (...args) => {
           calls[name]++;
           const got = real(...args);
           if (name === 'persistFrame' && got !== EMIT_PERSIST_MISS) calls.persistHits++;
+          if (name === 'emitRows' && (args[3] & EMIT_OTHERS_ONLY) !== 0) calls.othersOnly++;
           return got;
         };
       }
@@ -766,7 +1170,7 @@ async function runWiredPersist(t, cases, casters) {
         return frames;
       };
       const js = run(null);
-      assert.deepEqual(calls, { persistFrame: 0, persistHits: 0, persistRemember: 0, emitRows: 0 }, 'the JS run called no kernel');
+      assert.deepEqual(calls, { persistFrame: 0, persistHits: 0, persistRemember: 0, emitRows: 0, othersOnly: 0 }, 'the JS run called no kernel');
       const wasm = run(bound);
       for (let f = 0; f < PERSIST_FRAMES; f++) {
         const got = wasm[f];
@@ -781,9 +1185,10 @@ async function runWiredPersist(t, cases, casters) {
         });
       }
       // Every frame went through the kernel: persist_frame unless the count changed, and on a miss the
-      // full emit and the remember.
+      // full emit and the remember; a hit with rows of other types (every collector here has some) their emit.
       assert.equal(calls.persistHits + calls.persistRemember, PERSIST_FRAMES, JSON.stringify(calls));
-      assert.equal(calls.emitRows, calls.persistRemember, JSON.stringify(calls));
+      assert.equal(calls.emitRows, calls.persistRemember + calls.othersOnly, JSON.stringify(calls));
+      assert.equal(calls.othersOnly, calls.persistHits, JSON.stringify(calls));
       assert.ok(calls.persistHits >= 10 && calls.persistRemember >= 10, JSON.stringify(calls));
       t.diagnostic(`ySort ${ySort}${casters ? '' : ', no ShadowCaster'}: ${JSON.stringify(calls)}`);
     });
@@ -791,7 +1196,7 @@ async function runWiredPersist(t, cases, casters) {
 }
 
 test('emitSpriteQueue through the kernel takes the persist frames the JS takes and writes what it writes', async (t) => {
-  await runWiredPersist(t, [{ ySort: true, seed: 0xa11 }, { ySort: false, seed: 0xa12 }], true);
+  await runWiredPersist(t, [{ ySort: true, seed: 0xa11 }, { ySort: false, seed: 0xa12 }, { ySort: true, seed: 0xa13 }], true);
 });
 
 test('without ShadowCaster the kernel leaves the shadow terms the full emit wrote (E-117)', async (t) => {

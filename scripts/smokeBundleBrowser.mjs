@@ -6,8 +6,21 @@ import { BUNDLE_ARTIFACTS } from './buildBundle.js';
 import { createStaticBenchmarkServer } from '../tests/helpers/createStaticBenchmarkServer.mjs';
 import { analyzePng, captureCanvasPng } from '../tests/helpers/visualPngCompare.mjs';
 import { BOX2D_MEMORY_MB_DEFAULT } from '../src/box2d/box2dMemory.js';
+import { box2dBlockPages } from '../src/util/box2dEngineBlock.js';
 
 const MB = 1024 * 1024;
+
+/**
+ * Box2D's own share of its memory on the page: the whole memory less the pages Phase 4 grew it by for the engine's
+ * block (scene.box2dBlock), which physics.wasmMemoryMB does not count.
+ */
+async function box2dOwnBytes(page) {
+  const { total, block } = await page.evaluate(() => {
+    const scene = window.game?.currentScene;
+    return { total: scene?.box2dHotFields?.sab?.byteLength ?? 0, block: scene?.box2dBlock?.bytes ?? 0 };
+  });
+  return total - (block > 0 ? box2dBlockPages(block) * 65536 : 0);
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const dist = path.join(root, 'dist');
@@ -94,7 +107,7 @@ try {
     // Box2D's memory size travels in the physics worker's name (physics.wasmMemoryMB); a bundle that
     // lost it would get the glue's 512 MB fallback.
     if (result?.ok) {
-      const reserved = await page.evaluate(() => window.game?.currentScene?.box2dHotFields?.sab?.byteLength ?? 0);
+      const reserved = await box2dOwnBytes(page);
       if (reserved !== BOX2D_MEMORY_MB_DEFAULT * MB) {
         result.ok = false;
         result.text = `${result.text || ''} (Box2D memory ${reserved / MB} MB, expected ${BOX2D_MEMORY_MB_DEFAULT})`;
@@ -150,7 +163,7 @@ try {
     } else {
       const reserved = await page
         .waitForFunction(() => window.game?.currentScene?.box2dHotFields?.sab?.byteLength, undefined, { timeout: 60000 })
-        .then((h) => h.jsonValue(), () => 0);
+        .then(() => box2dOwnBytes(page), () => 0);
       ok = reserved === mb * MB;
       detail = `Box2D memory ${reserved / MB} MB`;
     }

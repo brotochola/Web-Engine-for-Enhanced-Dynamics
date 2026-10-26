@@ -18,6 +18,11 @@
  * edits in the main folder while the sitting runs (another session's, an agent's) cannot reach it;
  * `--vs X --hyp-rev X` is an A/A of two directories.
  *
+ * --query-a <q>, --query-b <q>: scene parameters for one side only, on top of --query (a key the side names
+ * replaces the shared one). Without --hyp-rev, both sides then run the --vs worktree: one build, one
+ * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=particleIntegrateF32` times the
+ * double integrate against the float32 one).
+ *
  * Verdict per kind: median of the paired deltas (B−A)/A. REGRESSION if any
  * kind is ≥ +3 % and its cv is ≤ 10 % (or it is the owner kind), if the frames
  * the page presents (main-thread FPS) drop ≥ 3 % in ≥ 75 % of the pairs, or a
@@ -205,10 +210,46 @@ const THROUGHPUT_FAMILY = { FLOWFIELDS_COMPUTED: ['FLOWFIELDS_SERVICED'] };
 const LOAD_GATE_BAND_PCT = 5;
 const LOAD_CV_FAIL = 0.5;
 
-/** Max STEP_MS per worker kind plus the load keys. */
+/**
+ * A worker's primary over the window from its running totals (src/util/frameTotals.js): STEP_MS minus WAIT_MS,
+ * plus QUERY_WAKE_MS on physics (sync queries answered between steps), HOW_WE_MEASURE "What counts as faster".
+ */
+function exactPrimary(kind, exact) {
+  return exact.workMs + (kind === 'physics' ? exact.extraMs : 0);
+}
+
+/**
+ * Max STEP_MS per worker kind plus the load keys.
+ *
+ * `<kind>_STEP_MS_EXACT` is the primary over every frame of the window, when every worker of that kind kept
+ * running totals; `<kind>_STEP_MS_SAMPLED` is the mean of the 100 ms samples of STEP_MS, one frame in six.
+ * `<kind>_STEP_MS` is the exact one when there is one. decideAbab reads exact only when every pair has it on
+ * both sides (a baseline revision older than the totals has none).
+ */
 export function predatorMetrics(report) {
   const out = {};
-  for (const kind of KINDS) out[`${kind}_STEP_MS`] = 0;
+  for (const kind of KINDS) {
+    out[`${kind}_STEP_MS`] = 0;
+    out[`${kind}_STEP_MS_SAMPLED`] = 0;
+  }
+  const exactWorst = {};
+  const exactMissing = new Set();
+  for (const w of report.workers || []) {
+    const kind = w.type === 'pixi' ? 'renderer' : w.type;
+    if (!KINDS.includes(kind)) continue;
+    if (!w.exact) {
+      exactMissing.add(kind);
+      continue;
+    }
+    const primary = exactPrimary(kind, w.exact);
+    if (!exactWorst[kind] || primary > exactWorst[kind].primary) exactWorst[kind] = { primary, exact: w.exact };
+  }
+  for (const [kind, worst] of Object.entries(exactWorst)) {
+    if (exactMissing.has(kind)) continue;
+    out[`${kind}_STEP_MS_EXACT`] = worst.primary;
+    out[`${kind}_P95_MS`] = worst.exact.p95Ms;
+    out[`${kind}_FRAMES`] = worst.exact.frames;
+  }
   // Generic, not a hand-listed if-chain.
   //
   // The hand-listed version was a landmine: I added ACTIVE_DECORATIONS,
@@ -227,15 +268,24 @@ export function predatorMetrics(report) {
   for (const w of report.workers || []) {
     const avg = w.statsSamplesAverage || {};
     const kind = w.type === 'pixi' ? 'renderer' : w.type;
-    const key = `${kind}_STEP_MS`;
+    const key = `${kind}_STEP_MS_SAMPLED`;
     if (key in out && (avg.STEP_MS ?? 0) > out[key]) out[key] = avg.STEP_MS;
     for (const lk of LOAD_KEYS) {
       if (lk in avg) published[lk] = Math.max(published[lk] ?? 0, avg[lk]);
     }
   }
   for (const lk of LOAD_KEYS) if (lk in published) out[lk] = published[lk];
+  for (const kind of KINDS) {
+    const exact = out[`${kind}_STEP_MS_EXACT`];
+    out[`${kind}_STEP_MS`] = Number.isFinite(exact) ? exact : out[`${kind}_STEP_MS_SAMPLED`];
+  }
+  // Presented frames: the main thread's frames over the window's length when counted, else the sampled mean.
   const mainFps = report.mainThread?.averageFPS;
-  if (Number.isFinite(mainFps)) out[PRESENTED_KEY] = mainFps;
+  const mainFpsExact = report.mainThread?.exactFPS;
+  if (Number.isFinite(mainFps)) out[`${PRESENTED_KEY}_SAMPLED`] = mainFps;
+  if (Number.isFinite(mainFpsExact)) out[`${PRESENTED_KEY}_EXACT`] = mainFpsExact;
+  if (Number.isFinite(mainFpsExact)) out[PRESENTED_KEY] = mainFpsExact;
+  else if (Number.isFinite(mainFps)) out[PRESENTED_KEY] = mainFps;
 
   // Sub-timers, namespaced by worker kind so two workers can publish the same
   // one without colliding (`preRender_EMIT_MS` is not `renderer_EMIT_MS`).
@@ -247,6 +297,16 @@ export function predatorMetrics(report) {
     }
   }
   return out;
+}
+
+/** `--query` with one side's parameters on top: a key the side names replaces the shared one. */
+export function sideQuery(shared, side) {
+  const base = String(shared || '').replace(/^\?/, '');
+  if (!side) return base;
+  const out = new URLSearchParams(base);
+  for (const [k, v] of new URLSearchParams(String(side).replace(/^\?/, ''))) out.set(k, v);
+  // Lists stay readable (wasmOff=a,b); the page's URLSearchParams reads either form.
+  return out.toString().replace(/%2C/gi, ',');
 }
 
 function parseOverrides(raw) {
@@ -266,7 +326,7 @@ function parseOverrides(raw) {
 function sittingStamp(scene, opts, args, baseline, hypSide = null) {
   const git = (argv, encoding) => execFileSync('git', argv, { cwd: repoRoot, encoding, maxBuffer: 1 << 28 });
   return {
-    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS, presented: PRESENTED_KEY },
+    schema: { kinds: KINDS, loadKeys: LOAD_KEYS, subTimers: SUB_TIMERS, presented: PRESENTED_KEY, primary: 'exact-or-sampled' },
     scene: { path: scene.path, exportName: scene.exportName },
     protocol: {
       headed: opts.headed,
@@ -274,6 +334,8 @@ function sittingStamp(scene, opts, args, baseline, hypSide = null) {
       warmupMs: opts.warmupMs,
       durationMs: opts.durationMs,
       query: opts.query,
+      queryA: opts.queryA,
+      queryB: opts.queryB,
       extraArgs: opts.extraArgs,
     },
     vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
@@ -311,10 +373,21 @@ export function appendMismatches(prev, stamp) {
   return out;
 }
 
+/**
+ * Which of a pair's keys a sitting reads: `<base>_EXACT` when every side of every pair has it, else
+ * `<base>_SAMPLED` when every side has that, else `<base>` (sittings written before the totals).
+ */
+export function sittingKey(pairs, base) {
+  const all = (key) => pairs.length > 0 && pairs.every((p) => Number.isFinite(p.A?.[key]) && Number.isFinite(p.B?.[key]));
+  if (all(`${base}_EXACT`)) return { key: `${base}_EXACT`, source: 'exact' };
+  if (all(`${base}_SAMPLED`)) return { key: `${base}_SAMPLED`, source: 'sampled' };
+  return { key: base, source: 'sampled' };
+}
+
 export function decideAbab(pairs, owner, metric = null) {
   const kinds = {};
   for (const kind of KINDS) {
-    const key = `${kind}_STEP_MS`;
+    const { key, source } = sittingKey(pairs, `${kind}_STEP_MS`);
     const a = pairs.map((p) => p.A[key]);
     const b = pairs.map((p) => p.B[key]);
     const deltas = pairs.map((p) => pctDelta(p.B[key], p.A[key])).filter(Number.isFinite);
@@ -336,6 +409,8 @@ export function decideAbab(pairs, owner, metric = null) {
     // the same rule: an idle owner cannot be shown to have been improved.
     const interpretable = baseMedian >= STEP_MS_FLOOR;
     kinds[kind] = {
+      source,
+      key,
       baseMedian,
       hypMedian: median(b),
       pairedDeltaPct,
@@ -345,7 +420,30 @@ export function decideAbab(pairs, owner, metric = null) {
       cvHyp: cv(b),
       interpretable,
       belowFloorPct: interpretable ? null : ((baseMedian / STEP_MS_FLOOR) * 100).toFixed(1),
+      againstOthers: null,
     };
+  }
+  // Each judged kind against the median of the other judged kinds in the same pair (HOW_WE_MEASURE's drift
+  // rule, read per pair). The session's A/A of 2026-10-24 swung every worker 5–15 % together from run to run;
+  // this reading cancels what a whole run shares. Reported beside the verdict, which it does not change. The
+  // owner is left out of every other kind's reference: its own move is the change's, not the run's.
+  const judged = KINDS.filter((k) => kinds[k].interpretable);
+  for (const kind of judged) {
+    const others = judged.filter((k) => k !== kind && k !== owner);
+    if (others.length < 2) continue;
+    const rel = [];
+    for (const p of pairs) {
+      const own = pctDelta(p.B[kinds[kind].key], p.A[kinds[kind].key]);
+      const od = others.map((k) => pctDelta(p.B[kinds[k].key], p.A[kinds[k].key])).filter(Number.isFinite);
+      if (Number.isFinite(own) && od.length >= 2) rel.push(own - median(od));
+    }
+    if (rel.length) {
+      kinds[kind].againstOthers = {
+        deltas: rel,
+        medianPct: median(rel),
+        lowerFraction: rel.filter((d) => d < 0).length / rel.length,
+      };
+    }
   }
   const load = {};
   const reasons = [];
@@ -426,11 +524,13 @@ export function decideAbab(pairs, owner, metric = null) {
   // Higher is better here. Judged only when every pair has it (sittings written
   // before it was collected are re-decided without it).
   let presented = null;
-  const fa = pairs.map((p) => p.A?.[PRESENTED_KEY]).filter(Number.isFinite);
-  const fb = pairs.map((p) => p.B?.[PRESENTED_KEY]).filter(Number.isFinite);
+  const presentedKey = sittingKey(pairs, PRESENTED_KEY);
+  const fa = pairs.map((p) => p.A?.[presentedKey.key]).filter(Number.isFinite);
+  const fb = pairs.map((p) => p.B?.[presentedKey.key]).filter(Number.isFinite);
   if (pairs.length && fa.length === pairs.length && fb.length === pairs.length) {
-    const deltas = pairs.map((p) => pctDelta(p.B[PRESENTED_KEY], p.A[PRESENTED_KEY]));
+    const deltas = pairs.map((p) => pctDelta(p.B[presentedKey.key], p.A[presentedKey.key]));
     presented = {
+      source: presentedKey.source,
       baseMedian: median(fa),
       hypMedian: median(fb),
       pairedDeltaPct: median(deltas),
@@ -547,6 +647,9 @@ async function main() {
     warmupMs: Number(args['warmup-ms'] ?? DEFAULT_WARMUP_MS),
     durationMs: Number(args['duration-ms'] ?? DEFAULT_DURATION_MS),
     query: typeof args.query === 'string' ? args.query : '',
+    // The query each side runs with (--query plus --query-a or --query-b).
+    queryA: sideQuery(typeof args.query === 'string' ? args.query : '', typeof args['query-a'] === 'string' ? args['query-a'] : ''),
+    queryB: sideQuery(typeof args.query === 'string' ? args.query : '', typeof args['query-b'] === 'string' ? args['query-b'] : ''),
     // Canvas size, forwarded as extra args rather than as new options.
     //
     // `runIntegratedOnce` already accepts `extraArgs` and forwards them verbatim,
@@ -566,6 +669,8 @@ async function main() {
       // The camera zoom the runner sets (min, or a number): adobeAnimateScene draws all 10 000
       // characters only at the minimum zoom, and saturates pre-render there.
       ...(args['camera-zoom'] ? ['--camera-zoom', String(args['camera-zoom'])] : []),
+      // --browser firefox: both sides in the installed Firefox (stockFirefox.mjs); playwright-firefox for Playwright's.
+      ...(args.browser ? ['--browser', String(args.browser)] : []),
     ],
   };
   const scene = resolveScene(args);
@@ -600,8 +705,15 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   console.log(`baseline worktree ${baseline.root}`);
   // --hyp-rev <rev>: B from its own worktree, apart from the main folder (see the header).
   const hypSide = args['hyp-rev'] ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b' }) : null;
-  const hypRoot = hypSide ? hypSide.root : repoRoot;
+  // Per-side queries without --hyp-rev: B runs A's worktree, so the two sides are one build.
+  const perSide = opts.queryA !== opts.queryB;
+  if (perSide && !hypSide && !args.vs) {
+    throw new Error('--query-a/--query-b compare one build: pass --vs <rev> (both sides run its worktree), or --hyp-rev too.');
+  }
+  const hypRoot = hypSide ? hypSide.root : perSide ? baseline.root : repoRoot;
   if (hypSide) console.log(`hypothesis worktree ${hypSide.root}`);
+  else if (perSide) console.log('one build: both sides run the baseline worktree');
+  if (perSide) console.log(`side A query "${opts.queryA}", side B query "${opts.queryB}"`);
   // --append: add pairs to the previous sitting of the same hypothesis, only when
   // that sitting was measured the same way (review M9).
   const stamp = sittingStamp(scene, opts, args, baseline, hypSide);
@@ -625,7 +737,8 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     const order = p % 2 === 0 ? [['A', baseline.root], ['B', hypRoot]] : [['B', hypRoot], ['A', baseline.root]];
     for (const [side, root] of order) {
       console.log(`\n======== ${name} pair ${p + 1}/${first + nPairs} side ${side} ========`);
-      const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root });
+      const query = side === 'A' ? opts.queryA : opts.queryB;
+      const res = runIntegratedWithRetry(scene, path.join(outDir, `${side}-p${p}.json`), { ...opts, root, query });
       if (!res.ok) throw new Error(`${side} p${p}: ${res.error}`);
       pair[side] = predatorMetrics(res.report);
     }
@@ -720,7 +833,12 @@ function printDecision(name, decision) {
       continue;
     }
     console.log(
-      `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%`
+      `${kind.padEnd(10)} ${k.baseMedian.toFixed(3)} → ${k.hypMedian.toFixed(3)} ms  paired ${k.pairedDeltaPct >= 0 ? '+' : ''}${k.pairedDeltaPct.toFixed(1)}%  worse ${Math.round(k.worseFraction * k.deltas.length)}/${k.deltas.length}  cv ${(k.cvBase * 100).toFixed(0)}/${(k.cvHyp * 100).toFixed(0)}%` +
+        (k.source === 'exact' ? '' : '  (sampled)') +
+        (k.againstOthers
+          ? `  vs the others ${k.againstOthers.medianPct >= 0 ? '+' : ''}${k.againstOthers.medianPct.toFixed(1)}% ` +
+            `(lower ${Math.round(k.againstOthers.lowerFraction * k.againstOthers.deltas.length)}/${k.againstOthers.deltas.length})`
+          : ''),
     );
   }
   if (decision.throughput) {

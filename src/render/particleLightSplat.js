@@ -4,6 +4,7 @@
  */
 
 import { CAMERA_TYPES, LIGHTING_DEFAULTS } from '../util/configDefaults.js';
+import { MAX_POOL_SLOTS } from '../util/poolSlotWidth.js';
 import { LIGHT_INFLUENCE_RADIUS_SCALE } from '../util/utils.js';
 
 export const PARTICLE_LIGHT_FLOATS = 4;
@@ -41,8 +42,11 @@ export function resolveParticleLights(particleLights, raycasted) {
   return { enabled: true, max, warning: null };
 }
 
-/** Upper bound for lighting.particleLights.max (same as LiquidFun maxCount). */
-export const PARTICLE_LIGHT_MAX = 65535;
+/**
+ * Upper bound for lighting.particleLights.max: the particle pool's own ceiling (E-129: 524 287 slots, 8 MB of
+ * instances), so a pool past 65 535 can light every particle; it was LiquidFun's 65 535.
+ */
+export const PARTICLE_LIGHT_MAX = MAX_POOL_SLOTS;
 /** Drop quads whose projected alpha is at or under this. */
 export const PARTICLE_LIGHT_ALPHA_CUT = 1 / 255;
 /** Drop quads smaller than half a lighting-RT pixel. */
@@ -77,7 +81,7 @@ function layerAlpha(mask, visible, alphaArr) {
  * @param {Float32Array} data
  * @param {Uint32Array} dataU32
  * @param {number} capacity
- * @param {{ active: Uint16Array, lightSqrt: Float32Array, x: Float32Array, y: Float32Array, z?: Float32Array, alpha?: Float32Array, tint?: Uint32Array, flat?: Uint8Array, viewMode?: Uint8Array, renderOnly?: Uint8Array, layerMask?: Uint16Array }} views
+ * @param {{ active: Uint16Array|Uint32Array, lightSqrt: Float32Array, x: Float32Array, y: Float32Array, z?: Float32Array, alpha?: Float32Array, tint?: Uint32Array, flat?: Uint8Array, viewMode?: Uint8Array, renderOnly?: Uint8Array, layerMask?: Uint16Array }} views
  * @param {{ zoom?: number, cameraX?: number, cameraY?: number, cameraRot?: number, resolution?: number, canvasW?: number, canvasH?: number, zenithalMaxHeight?: number, zenithalAlphaFade?: number, layerVisible?: Uint8Array|null, layerAlpha?: Float32Array|null, max?: number }} opts
  * @returns {number} packed instance count
  */

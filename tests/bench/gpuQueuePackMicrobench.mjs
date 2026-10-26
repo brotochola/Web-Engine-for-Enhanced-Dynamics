@@ -9,16 +9,10 @@
  *   node tests/bench/gpuQueuePackMicrobench.mjs
  *   node tests/bench/gpuQueuePackMicrobench.mjs --output out.json
  */
-import {
-  GPU_CASTER_FLOATS,
-  GPU_SPACE_WORLD,
-  GPU_SPRITE_FLOATS,
-  fillQueueIndices,
-  makePackContext,
-  packInstancedRows,
-} from '../../src/render/gpuQueueLayout.js';
+import { GPU_CASTER_FLOATS, GPU_SPACE_WORLD, GPU_SPRITE_FLOATS, fillQueueIndices, makePackContext } from '../../src/render/gpuQueueLayout.js';
 import { checksumFloats, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
+import { packInstancedRows } from '../reference/gpuPackJs.mjs';
 
 // Hypotheses: { sprites, casters } pack functions per variant. Sprite rows are
 // what InstancedSpriteBatch.upload packs (Pixi), caster rows what pre-render's

@@ -1,5 +1,5 @@
-// E-76 W22: the sway kernel (tests/fixtures/wasm/decorationSway.wasm, from wasm/test/decorationSway.c) against
-// the shipped ParticleWorker.updateDecorationSway (its bucket path, _updateDecorationSwayBuckets) on a real
+// E-76 W22: the double sway kernel (sway_decorations in src/wasm/engine.wasm, from wasm/decorationSway.c) against
+// the JS sway it replaced (tests/reference/decorationSwayJs.mjs, its bucket path) on a real
 // particle worker, every array the sway reads in one shared memory as decorationSwayWasmMicrobench lays it
 // out, the kernel run through that bench's wrapper (swayDecorationsWasm: the per-bucket Math.sin / Math.cos
 // in JS, the kernel, then Math.sin / Math.cos for the decorations it lists). Both sides start each frame from
@@ -23,185 +23,26 @@ import { computeBufferSize } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
+import { bucketFromSwayFrequency, SWAY_IMPULSE, SWAY_LOOP, SWAY_LOOP_SKEW, SWAY_OFF } from '../../src/util/decorationSway.js';
+import { compareSwayStates, setupSwayKernel, SWAY_SLOTS, swayDecorationsWasm, TRIG_IMPULSE } from '../bench/decorationSwayWasmMicrobench.mjs';
+import { bindDecorationSway } from '../../src/workers/decorationSwayClient.js';
+import { updateDecorationSwayJs } from '../reference/decorationSwayJs.mjs';
 import {
-  bucketFromSwayFrequency,
-  SWAY_IMPULSE,
-  SWAY_LOOP,
-  SWAY_LOOP_SKEW,
-  SWAY_OFF,
-  swayFrequencyForBucket,
-} from '../../src/util/decorationSway.js';
-import {
-  setupSwayKernel,
-  SWAY_SLOTS,
-  swayDecorationsWasm,
-  TRIG_IMPULSE,
-  writeSwayTable,
-} from '../bench/decorationSwayWasmMicrobench.mjs';
+  DT,
+  frameDelta,
+  K_MAX,
+  LIST_CAPS,
+  N,
+  PHASES,
+  pickSnapshot,
+  rng,
+  scramble,
+  setGrid,
+  stateViews,
+  useWideParents,
+} from '../helpers/decorationSwayScenarios.mjs';
 
-const N = 1500;
-const K_MAX = 70000;
-const DT = 1000 / 60;
 const LIST_CAP_SLOT = SWAY_SLOTS.indexOf('listCap');
-const LIST_CAPS = [1, 37, 1024];
-
-/** Runs of frames: the bucket grid of each, Predator's untouched grass first, the 32-bit parents last. */
-const PHASES = [
-  { name: 'predator', frames: 6, k: 100, predator: true },
-  { name: 'k7', frames: 30, k: 7 },
-  { name: 'k3', frames: 12, k: 3 },
-  { name: 'k5', frames: 12, k: 5 },
-  { name: 'k2', frames: 10, k: 2 },
-  { name: 'k100', frames: 16, k: 100 },
-  { name: 'k70000', frames: 10, k: 70000 },
-  { name: 'k7 after k70000', frames: 12, k: 7 },
-  { name: 'wide parents', frames: 16, k: 100, wide: true },
-];
-
-function rng(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function amplitude(r) {
-  const u = r();
-  if (u < 0.5) return 0.02 + r() * 0.055; // under 0.08 rad
-  if (u < 0.58) return 0.079 + r() * 0.002; // either side of 0.08
-  if (u < 0.75) return (r() < 0.5 ? -1 : 1) * (0.1 + r() * 1.4); // past it: Math.cos / Math.sin
-  if (u < 0.8) return 0;
-  if (u < 0.83) return -0;
-  if (u < 0.86) return NaN;
-  if (u < 0.88) return Infinity;
-  if (u < 0.9) return -Infinity;
-  if (u < 0.94) return -(0.02 + r() * 0.05);
-  if (u < 0.97) return 1e-30;
-  return 3e38;
-}
-
-function frequency(r, k) {
-  const step = 2 / (k - 1);
-  const u = r();
-  if (u < 0.4) return swayFrequencyForBucket(Math.floor(r() * k), k); // on the grid
-  if (u < 0.6) return r() * 4 - 0.5; // between buckets and past both ends
-  if (u < 0.66) return 1 + (Math.floor(r() * (k - 1)) + 0.5) * step; // halfway: a tie where step is 2^-n
-  if (u < 0.7) return [0.5, 1.25, 1.5, 1.75, 2, 2.5][Math.floor(r() * 6)]; // ties at 2, 3 and 5 buckets
-  if (u < 0.73) return NaN;
-  if (u < 0.75) return Infinity;
-  if (u < 0.77) return -Infinity;
-  if (u < 0.8) return -1; // the cache's sentinel
-  if (u < 0.82) return 0;
-  if (u < 0.84) return -0;
-  if (u < 0.86) return 1e30;
-  return 1 + r() * 2;
-}
-
-function phase(r) {
-  const u = r();
-  if (u < 0.3) return 0;
-  if (u < 0.55) return r() * Math.PI;
-  if (u < 0.7) return Math.PI - r() * 0.05; // ends within a few frames
-  if (u < 0.75) return NaN;
-  if (u < 0.78) return -Infinity;
-  if (u < 0.85) return -r() * 3;
-  if (u < 0.9) return 100;
-  return r() * 0.5;
-}
-
-/** Re-roll a share of the decorations; the rest keep their state, so the cache hits and impulses run on. */
-function scramble(r, s, k, share, wide) {
-  const D = DecorationComponent;
-  const noParent = s.worker._noParent;
-  for (let i = 0; i < N; i++) {
-    if (r() >= share) continue;
-    let u = r();
-    D.active[i] = u < 0.06 ? 0 : u < 0.1 ? 9 : 1;
-    u = r();
-    D.parentEntityIndex[i] = u < 0.08 ? Math.floor(r() * 40) : wide && u < 0.12 ? 0xffff : noParent;
-    u = r();
-    D.isItOnScreen[i] = u < 0.2 ? 0 : u < 0.25 ? 255 : 1;
-    u = r();
-    D.sway[i] = u < 0.08 ? SWAY_OFF : u < 0.36 ? SWAY_LOOP_SKEW : u < 0.66 ? SWAY_LOOP : u < 0.9 ? SWAY_IMPULSE : [4, 9, 255][Math.floor(r() * 3)];
-    D.swayAmplitude[i] = amplitude(r);
-    D.swayFrequency[i] = frequency(r, k);
-    D.swayPhase[i] = phase(r);
-    if (D.sway[i] === SWAY_IMPULSE) {
-      u = r();
-      if (u < 0.06) {
-        D.swayPhase[i] = -1; // the next phase is -1, which the JS takes for IMPULSE_DONE
-        D.swayFrequency[i] = 0;
-      } else if (u < 0.12) {
-        D.swayPhase[i] = 0; // the next phase is +0
-        D.swayFrequency[i] = 0;
-      } else if (u < 0.16) {
-        D.swayPhase[i] = -0; // and -0
-        D.swayFrequency[i] = -0;
-      } else if (u < 0.5) {
-        D.swayFrequency[i] = 1 + r() * 2;
-      }
-    }
-    const a = r() * 2 * Math.PI;
-    u = r();
-    D.baseRotC[i] = u < 0.03 ? NaN : u < 0.05 ? -0 : u < 0.06 ? Infinity : Math.cos(a);
-    D.baseRotS[i] = u < 0.03 ? Math.sin(a) : u < 0.05 ? -0 : u < 0.06 ? -Infinity : Math.sin(a);
-    // Outputs: whatever was there must stay where the JS writes nothing.
-    D.rotC[i] = r() * 4 - 2;
-    D.rotS[i] = r() * 4 - 2;
-  }
-}
-
-/** Empty, full in order, full shuffled, or a shuffled part of the pool: each index at most once. */
-function pickSnapshot(r, s) {
-  const w = s.worker;
-  const snap = w._activeDecorationSnapshot;
-  const u = r();
-  if (u < 0.06) {
-    w._activeDecorationSnapshotCount = 0;
-    return;
-  }
-  const ids = Array.from({ length: N }, (_, i) => i);
-  if (u >= 0.3) {
-    for (let i = N - 1; i > 0; i--) {
-      const j = Math.floor(r() * (i + 1));
-      [ids[i], ids[j]] = [ids[j], ids[i]];
-    }
-  }
-  const m = u < 0.4 ? N : 1 + Math.floor(r() * N);
-  for (let k = 0; k < m; k++) snap[k] = ids[k];
-  w._activeDecorationSnapshotCount = m;
-}
-
-function frameDelta(r) {
-  const u = r();
-  if (u < 0.05) return 0;
-  if (u < 0.08) return NaN;
-  if (u < 0.1) return 1e6;
-  if (u < 0.13) return -40;
-  return DT * (1 + Math.floor(r() * 3));
-}
-
-function setGrid(s, k) {
-  const w = s.worker;
-  w._swayBuckets = k;
-  // The same regions (the table points there); the JS reads these lengths.
-  w._bucketSin = new Float32Array(s.buffer, s.regions.bucketSin.byte, k);
-  w._bucketCos = new Float32Array(s.buffer, s.regions.bucketCos.byte, k);
-}
-
-/** entityIdWidth 32: a u32 parent column with 0xffffffff for none (0xffff is an entity there). */
-function useWideParents(s) {
-  const D = DecorationComponent;
-  const wide = new Uint32Array(s.buffer, s.regions.parent32.byte, N);
-  for (let i = 0; i < N; i++) wide[i] = D.parentEntityIndex[i] === 0xffff ? 0xffffffff : D.parentEntityIndex[i];
-  D.parentEntityIndex = wide;
-  s.worker._noParent = 0xffffffff;
-  writeSwayTable(s.b, s.worker);
-}
 
 /** Which branch of the JS each snapshot entry takes this frame, from the state before it (coverage only). */
 function classify(s, deltaTime, k, cov) {
@@ -249,27 +90,45 @@ function classify(s, deltaTime, k, cov) {
   }
 }
 
-function stateViews(s) {
-  const D = DecorationComponent;
-  const w = s.worker;
-  const out = Object.keys(D.ARRAY_SCHEMA).map((name) => [name, D[name]]);
-  out.push(
-    ['snapshot', w._activeDecorationSnapshot],
-    ['phaseSin', w._phaseSin],
-    ['phaseCos', w._phaseCos],
-    ['bucketSin', w._bucketSin],
-    ['bucketCos', w._bucketCos],
-    ['bucketOf', w._swayBucketOf],
-    ['bucketFreq', w._swayBucketFreq],
-  );
-  return out;
-}
-
 /** The first element that differs: a float as Object.is sees it (NaN is NaN, +0 is not -0), the rest exactly. */
 function firstDiff(a, b) {
   const float = a instanceof Float32Array;
   for (let i = 0; i < a.length; i++) {
     if (float ? !Object.is(a[i], b[i]) : a[i] !== b[i]) return i;
+  }
+  return -1;
+}
+
+/**
+ * The sines and cosines the kernel takes itself (sway_free, sway_trig) are fdlibm's, which V8's match to an ulp
+ * (E-76 Q2): a rotation it writes may differ from the JS's by that much after the composition and the float32
+ * store, so rotC and rotS are held to SWAY_TRIG_TOL of the base rotation's size. An angle past fdlibm's medium
+ * reduction (|x| >= 2^20 pi/2, about 1.6e6 rad: an amplitude, a frequency or an impulse phase no decoration has)
+ * is reduced modulo 2 pi in double, which keeps nothing of the angle: such a decoration is left out of the
+ * comparison (its rotation is noise on both paths).
+ */
+const SWAY_TRIG_TOL = 1e-6;
+const SWAY_TRIG_DOMAIN = 2 ** 20 * (Math.PI / 2);
+/** How many rotations firstRotationDiff held to the tolerance (not equal bit for bit, inside the domain). */
+const rotationsCompared = { n: 0 };
+
+/** The first rotation outside the tolerance (D's columns as they were before the frame), or -1. */
+function firstRotationDiff(a, b, D, before, baseAngle, deltaTime) {
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i];
+    const y = b[i];
+    if (Object.is(x, y) || (Number.isNaN(x) && Number.isNaN(y))) continue;
+    const scale = Math.max(1, Math.abs(before.baseRotC[i]) + Math.abs(before.baseRotS[i]));
+    if (Number.isFinite(x) && Number.isFinite(y) && Math.abs(x - y) <= SWAY_TRIG_TOL * scale) {
+      rotationsCompared.n++;
+      continue;
+    }
+    // The largest argument either path takes for it: the amplitude bounds a sway angle, the frequency times the
+    // base angle or the frame's phase step bounds a sine's argument (an impulse adds its phase, under pi).
+    const amp = Math.abs(before.swayAmplitude[i]);
+    const reach = Math.abs(before.swayFrequency[i]) * Math.max(1, Math.abs(baseAngle), Math.abs(deltaTime * 0.002)) + 4 + i * 0.1;
+    if (!(amp < SWAY_TRIG_DOMAIN) || !(reach < SWAY_TRIG_DOMAIN)) continue;
+    return i;
   }
   return -1;
 }
@@ -280,7 +139,7 @@ function runFrame(s, deltaTime) {
   const mem = new Uint8Array(s.buffer, 0, s.layout.bytes);
   const before = mem.slice();
   const cacheK = w._swayBucketCacheK;
-  w.updateDecorationSway(deltaTime);
+  updateDecorationSwayJs(w, deltaTime);
   const js = stateViews(s).map(([name, v]) => [name, v.slice()]);
   const jsCacheK = w._swayBucketCacheK;
   mem.set(before);
@@ -333,19 +192,19 @@ test('the sway kernel writes what _updateDecorationSwayBuckets writes, frame aft
   t.diagnostic(`${frame} frames: ${JSON.stringify(cov)}`);
 });
 
-// W22 wired: a particle worker booted on a render-queue memory with the sway regions (as the scene makes it:
-// the decorations block, then the sway arrays) binds the kernel itself and keeps its sway arrays there.
-// updateDecorationSway with the kernel and without it must leave the same bytes, frame after frame, on the
-// random frames above: the worker's own path (writeSwayColumns, sway_decorations, _finishSwayTrig).
-test('updateDecorationSway through the kernel the worker binds writes what the JS writes', async (t) => {
-  const k = 100;
+
+/**
+ * A particle worker booted on a render-queue memory with the sway regions (as the scene makes it: the
+ * decorations block, then the sway arrays), with `wasm` as its config's wasm block.
+ */
+async function bootWired(k, wasm) {
   const caps = gpuQueueCaps(64, { enabled: false });
   const m = createRenderQueueMemory(64, computeBufferSize(64), computeGpuQueueBufferSize(caps),
     { entities: 16, spriteBytes: 0, casterBytes: 0, decorationBytes: DecorationComponent.getBufferSize(N) }, null,
     { decorations: N, buckets: k });
   const worker = await loadWorker('particleWorker.js', 'particleWorker');
   await initWorker(worker, {
-    config: { particle: { swayFrequencyBuckets: k }, decoration: { maxDecorations: N } },
+    config: { particle: { swayFrequencyBuckets: k }, decoration: { maxDecorations: N }, ...(wasm ? { wasm } : {}) },
     globalEntityCount: 16,
     buffers: {
       componentData: { DecorationComponent: m.buffer },
@@ -361,8 +220,20 @@ test('updateDecorationSway through the kernel the worker binds writes what the J
       renderQueueLayout: m.layout,
     },
   });
+  return { m, worker };
+}
+
+// W22 wired: the worker binds the kernel itself and keeps its sway arrays in the memory.
+// updateDecorationSway with the kernel and without it must leave the same bytes, frame after frame, on the
+// random frames above: the worker's own path (writeSwayColumns, sway_decorations, sway_trig), with
+// wasm.decorationSwayF32 off (the double sway). The rotations of the decorations sway_trig finishes are held to
+// SWAY_TRIG_TOL; every other byte is exact.
+test('updateDecorationSway through the kernel the worker binds writes what the JS writes', async (t) => {
+  const k = 100;
+  const { m, worker } = await bootWired(k, { decorationSwayF32: false });
   const bound = worker._swayWasm;
   assert.ok(bound, 'the worker bound the kernel at init');
+  assert.equal(bound.f32, false, 'wasm.decorationSwayF32 false binds sway_decorations');
   for (const name of ['_activeDecorationSnapshot', '_phaseSin', '_phaseCos', '_bucketSin', '_bucketCos', '_swayBucketOf', '_swayBucketFreq']) {
     assert.equal(worker[name].buffer, m.buffer, `${name} is in the memory`);
   }
@@ -385,18 +256,150 @@ test('updateDecorationSway through the kernel the worker binds writes what the J
     worker.accumulatedTime += DT;
     const before = mem.slice();
     const cacheK = worker._swayBucketCacheK;
-    worker._swayWasm = null;
-    worker.updateDecorationSway(deltaTime);
+    updateDecorationSwayJs(worker, deltaTime);
     const js = stateViews(st).map(([name, v]) => [name, v.slice()]);
     mem.set(before);
     worker._swayBucketCacheK = cacheK;
+    const pre = beforeColumns();
     worker._swayWasm = bound;
     worker.updateDecorationSway(deltaTime);
     stateViews(st).forEach(([name, v], c) => {
-      const at = firstDiff(v, js[c][1]);
+      const rot = name === 'rotC' || name === 'rotS';
+      const at = rot ? firstRotationDiff(v, js[c][1], DecorationComponent, pre, worker.accumulatedTime * 0.002, deltaTime) : firstDiff(v, js[c][1]);
       assert.equal(at, -1, `frame ${f}: ${name}[${at}]: JS ${js[c][1][at]}, kernel ${v[at]}`);
     });
   }
-  assert.ok(calls >= 50 && listed > 0, `the kernel ran (${calls} calls) and listed decorations for the JS (${listed})`);
-  t.diagnostic(`${calls} kernel calls, ${listed} decorations finished in JS`);
+  assert.ok(calls >= 50 && listed > 0, `the kernel ran (${calls} calls) and listed decorations for sway_trig (${listed})`);
+  t.diagnostic(`${calls} kernel calls, ${listed} decorations finished by sway_trig`);
+});
+
+/** The columns the tolerance reads, as they are before a frame. */
+function beforeColumns() {
+  const D = DecorationComponent;
+  return {
+    baseRotC: D.baseRotC.slice(),
+    baseRotS: D.baseRotS.slice(),
+    swayAmplitude: D.swayAmplitude.slice(),
+    swayFrequency: D.swayFrequency.slice(),
+  };
+}
+
+// Close-out group B: without a frequency grid (particle.swayFrequencyBuckets 0, the default) the worker binds
+// sway_free and the whole loop runs in the kernel, every sine in it. updateDecorationSway with the kernel and
+// without it, on the random frames above: every byte exact but the rotations, which are held to SWAY_TRIG_TOL.
+test('updateDecorationSway without a frequency grid runs sway_free, within its tolerance of the JS', async (t) => {
+  const { m, worker } = await bootWired(0, { decorationSwayF32: false });
+  const bound = worker._swayWasm;
+  assert.ok(bound, 'the worker bound the kernel without a grid');
+  assert.equal(worker._swayBuckets, 0);
+  let calls = 0;
+  const free = bound.free;
+  bound.free = (...args) => {
+    calls++;
+    return free(...args);
+  };
+  const st = { worker };
+  const r = rng(0x5ee3);
+  const mem = new Uint8Array(m.buffer);
+  for (let f = 0; f < 60; f++) {
+    scramble(r, st, 2, f === 0 ? 1 : 0.25, false);
+    pickSnapshot(r, st);
+    const deltaTime = frameDelta(r);
+    worker.accumulatedTime += DT;
+    const before = mem.slice();
+    updateDecorationSwayJs(worker, deltaTime);
+    const js = stateViews(st).map(([name, v]) => [name, v.slice()]);
+    mem.set(before);
+    const pre = beforeColumns();
+    worker._swayWasm = bound;
+    worker.updateDecorationSway(deltaTime);
+    const baseAngle = worker.accumulatedTime * 0.002;
+    stateViews(st).forEach(([name, v], c) => {
+      const rot = name === 'rotC' || name === 'rotS';
+      const at = rot ? firstRotationDiff(v, js[c][1], DecorationComponent, pre, baseAngle, deltaTime) : firstDiff(v, js[c][1]);
+      assert.equal(at, -1, `frame ${f}: ${name}[${at}]: JS ${js[c][1][at]}, kernel ${v[at]}`);
+    });
+  }
+  assert.ok(calls >= 50, `sway_free ran (${calls} calls)`);
+  t.diagnostic(`${calls} sway_free calls, ${rotationsCompared.n} rotations within the tolerance and not bit for bit`);
+});
+
+// The default, wasm.decorationSwayF32 on: the worker binds sway_decorations_f32x4, and its frames on the
+// worker's own path stay within compareSwayStates' tolerance (decorationSwayF32.test.js) of the same path
+// with the double sway, which the test above ties to the JS.
+test('wasm.decorationSwayF32 (default on) binds the float32 sway, within its tolerance on the worker path', async (t) => {
+  const k = 100;
+  const { m, worker } = await bootWired(k, null);
+  const bound = worker._swayWasm;
+  assert.ok(bound, 'the worker bound the kernel at init');
+  assert.equal(bound.f32, true, 'the default binds sway_decorations_f32x4');
+  const f32 = bound.sway;
+  const f64 = (await bindDecorationSway(m.memory, m.layout.sway, { f32: false })).sway;
+  let trig = null;
+  const run = (fn) => (...args) => {
+    const n = fn(...args);
+    trig = { trig: bound.trig.slice(0, n), value: bound.trigValue.slice(0, n) };
+    return n;
+  };
+  const st = { worker };
+  const r = rng(0x5ee2);
+  const mem = new Uint8Array(m.buffer);
+  const stats = { stepFlips: 0, worst: 0 };
+  let frames = 0;
+  for (let f = 0; f < 60; f++) {
+    scramble(r, st, k, f === 0 ? 1 : 0.25, false);
+    pickSnapshot(r, st);
+    const deltaTime = frameDelta(r);
+    worker.accumulatedTime += DT;
+    const before = mem.slice();
+    const cacheK = worker._swayBucketCacheK;
+    trig = null;
+    bound.sway = run(f64);
+    worker.updateDecorationSway(deltaTime);
+    const ref = mem.slice();
+    const refTrig = trig;
+    const refCacheK = worker._swayBucketCacheK;
+    mem.set(before);
+    worker._swayBucketCacheK = cacheK;
+    trig = null;
+    bound.sway = run(f32);
+    worker.updateDecorationSway(deltaTime);
+    if (!refTrig) continue;
+    frames++;
+    assert.equal(worker._swayBucketCacheK, refCacheK, `frame ${f}: the cache grid`);
+    // The trig lists are compared as the kernels returned them; the bytes after the JS finished them.
+    const bad = compareSwayStates(stateViews(st), ref, mem.slice(), refTrig, trig, stats);
+    assert.equal(bad, null, `frame ${f}`);
+  }
+  bound.sway = f32;
+  assert.ok(frames >= 50, `${frames} frames swayed`);
+  t.diagnostic(`${frames} frames: rotation error at most ${(stats.worst * 100).toFixed(0)} % of its slack, ${stats.stepFlips} across the 0.08 rad step`);
+});
+
+// Close-out group B: the sway runs only in its kernel. A worker whose memory has no sway regions for its decorations
+// (a memory made by hand, as setupSwayKernel's) leaves their rotations as they are, and says so once.
+test('a frame the sway kernel cannot take does not sway, and says so once', async () => {
+  const s = await setupSwayKernel({ n: N, k: 100, kMax: K_MAX, listCap: 1024, seed: 0x5ee5 });
+  const w = s.worker;
+  assert.ok(w._swayWasm === null, 'no sway regions: no kernel');
+  const D = DecorationComponent;
+  const errors = [];
+  const error = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    w._swayRefusedWarned = false;
+    const rotC = D.rotC.slice();
+    const rotS = D.rotS.slice();
+    for (let f = 0; f < 3; f++) {
+      w.accumulatedTime += 16;
+      w.updateDecorationSway(16);
+    }
+    assert.equal(firstDiff(D.rotC, rotC), -1, 'rotC as it was');
+    assert.equal(firstDiff(D.rotS, rotS), -1, 'rotS as it was');
+    assert.equal(errors.filter((e) => e.includes('no sway regions')).length, 1, 'said once');
+    updateDecorationSwayJs(w, 16);
+    assert.ok(firstDiff(D.rotS, rotS) >= 0, 'the JS would have swayed them');
+  } finally {
+    console.error = error;
+  }
 });

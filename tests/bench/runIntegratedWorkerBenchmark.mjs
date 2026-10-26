@@ -3,10 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { chromium } from 'playwright';
+import { chromium, firefox } from 'playwright';
 
 import { workerLoadPct } from '../../src/util/workersUtils.js';
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
+import { createStockFirefox, stockFirefoxExe } from './stockFirefox.mjs';
 import { assertDistFreshForRun } from '../../scripts/distVersion.js';
 import {
   DEFAULT_DURATION_MS,
@@ -25,6 +26,14 @@ function formatWorkerConsoleLine(worker) {
   let line =
     `${worker.id}: STEP_MS ${step.toFixed(3)} | Load ${formatLoadPct(step)}` +
     ` | FPS ${worker.averageFPS.toFixed(2)} (inst ${worker.instantaneousFPS.toFixed(2)})`;
+  // Every frame of the window (src/util/frameTotals.js); the STEP_MS above is the mean of the samples.
+  const ex = worker.exact;
+  if (ex) {
+    line += ` | exact ${ex.frames} frames: step ${ex.stepMs.toFixed(3)}` +
+      (ex.waitMs > 0 ? ` wait ${ex.waitMs.toFixed(3)}` : '') +
+      (ex.extraMs > 0 ? ` query wake ${ex.extraMs.toFixed(3)}` : '') +
+      ` p50 ${ex.p50Ms.toFixed(2)} p95 ${ex.p95Ms.toFixed(2)}`;
+  }
   if (worker.type === 'preRender' || worker.id === 'preRender' || String(worker.id || '').startsWith('preRender')) {
     if (avg.COLLECT_MS != null) line += ` | COLLECT_MS ${Number(avg.COLLECT_MS).toFixed(3)}`;
     if (avg.EMIT_MS != null) line += ` | EMIT_MS ${Number(avg.EMIT_MS).toFixed(3)}`;
@@ -431,7 +440,12 @@ async function main() {
   // different engine than the working tree with nothing in the output to say so.
   assertDistFreshForRun(repoRoot, { useSrc: srcModules, label: 'runIntegratedWorkerBenchmark' });
 
-  const server = await createStaticBenchmarkServer(repoRoot);
+  // --browser firefox: the installed Firefox, driven over HTTP (stockFirefox.mjs); Chrome's CDP tools are not there.
+  const stockFirefox = cliArgs.browser === 'firefox' ? createStockFirefox() : null;
+  if (stockFirefox && (trace || usePhasedScreenshots)) {
+    throw new Error('--browser firefox: no trace or screenshots (they use Chrome CDP)');
+  }
+  const server = await createStaticBenchmarkServer(repoRoot, 0, stockFirefox ? { routes: stockFirefox.routes } : {});
   const extraQuery = typeof cliArgs.query === 'string' ? cliArgs.query.replace(/^\?/, '') : '';
   const qs = [];
   if (srcModules) qs.push('src=1');
@@ -538,7 +552,17 @@ async function main() {
   watchdog.unref();
 
   try {
-    if (requestedChannel === 'chromium') {
+    if (stockFirefox) {
+      const exe = stockFirefoxExe(cliArgs);
+      browserChannel = `firefox (${exe})`;
+      browser = stockFirefox.launch(exe, { headed });
+    } else if (cliArgs.browser === 'playwright-firefox') {
+      // Playwright's Firefox (PLAYWRIGHT_BROWSERS_PATH says where it is installed): boots and console lines, not
+      // speed, since its WASM ran 5-18x slower than release Firefox (stockFirefox.mjs). No Chrome flags; tracing and
+      // the window watch are Chrome's (CDP) and are skipped there.
+      browserChannel = 'playwright-firefox';
+      browser = await firefox.launch({ headless: !headed });
+    } else if (requestedChannel === 'chromium') {
       browserChannel = 'chromium';
       browser = await chromium.launch(launchOptions);
     } else {
@@ -549,6 +573,11 @@ async function main() {
       browserChannel = requestedChannel || 'chrome';
     }
   } catch (chromeError) {
+    // A Firefox run never falls back to Chromium: its numbers would be Chrome's.
+    if (stockFirefox || cliArgs.browser === 'playwright-firefox') {
+      await server.close();
+      throw new Error(`Unable to launch ${browserChannel}: ${chromeError.message}`);
+    }
     try {
       browserChannel = 'chromium';
       browser = await chromium.launch(launchOptions);
@@ -587,7 +616,10 @@ async function main() {
         text.includes('WebGPU') ||
         text.includes('PIXI WORKER') ||
         text.includes('uncaptured') ||
-        text.includes('ComputeLayer')
+        text.includes('ComputeLayer') ||
+        // The physics host's own warnings (a body Box2D would not create, a full pool): a run that hits them is not
+        // the scene it was asked to be.
+        text.includes('[weedjs-box2d]')
       ) {
         console.log(`[page ${msg.type()}] ${text}`);
       }
@@ -788,7 +820,8 @@ async function main() {
       ? 'Chromium background-throttle mitigation off (--allow-throttle)'
       : 'Chromium background-throttle mitigation on (minimize/occlude less punishing)';
     console.log(
-      `Benchmark report written to ${outputPath} (${headed ? 'headed' : 'headless'} Chromium; ${throttleNote})`
+      `Benchmark report written to ${outputPath} (${headed ? 'headed' : 'headless'} ${browserChannel}` +
+        `${browserChannel.includes('firefox') ? '' : `; ${throttleNote}`})`
     );
     if (screenshotPaths.length > 0) {
       console.log(`Screenshots (${screenshotPaths.length}): ${screenshotDir}`);

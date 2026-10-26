@@ -97,9 +97,9 @@ Convention: `z < 0` = airborne, `z >= 0` = on ground.
 
 Zenithal vs topdown does **not** change physics. Only `flat` vs heighted does. One active list is enough; do not split pools by `viewMode` for simulation.
 
-This step runs in WebAssembly by default: the particle pool lives in a shared `WebAssembly.Memory` and one call per frame advances every active particle, with the same results as the JavaScript step (dead particles still return to the pool through `ParticleEmitter`). Scene config `wasm: { particleIntegrate: false }` runs the JavaScript step instead.
+This step runs in WebAssembly: the particle pool lives in a shared `WebAssembly.Memory` and one call per frame advances every active particle (dead particles still return to the pool through `ParticleEmitter`). By default the step works in float32, four particles at a time where it can: positions, velocities, the alpha, scale and tint tweens and a turning particle's rotation come out within a float32 rounding or so of the double step's (a tint channel within 1), while lifetimes, deaths and the order particles return to the pool are the same. `wasm: { particleIntegrateF32: false }` keeps the double step.
 
-The sweep before it runs in WebAssembly too. It lists the live particles and tests each one against the camera, setting `isItOnScreen` and filling the visible list that pre-render draws. Scene config `wasm: { particleLists: false }` runs it in JavaScript.
+The sweep before it runs in WebAssembly too. It lists the live particles and tests each one against the camera, setting `isItOnScreen` and filling the visible list that pre-render draws. By default the sweep tests positions in float32, four particles at a time: a particle within a float32 rounding of the culling box's edge (outside the canvas, inside the cull margin) can land on the other side of it. `wasm: { particleListsF32: false }` keeps the double test.
 
 ## Rendering (`preRenderWorker`)
 
@@ -115,7 +115,7 @@ Reads per-particle `viewMode` / `flat`:
 
 | Key | Role |
 | --- | --- |
-| `maxParticles` | Pool size |
+| `maxParticles` | Pool size, up to 524287. Past 65535 particle slot ids are 32-bit (the lists, the free list and the WebAssembly kernels follow); up to 65535 they are 16-bit |
 | `decals` / `decalsTileSize` / `decalsResolution` | Floor stamp tilemap |
 | `zenithalMaxHeight` | Reference height for full zenithal scale boost |
 | `zenithalScaleFactor` | How hard scale grows with height |
@@ -133,11 +133,11 @@ Same as before: `texture` name, or `spritesheet` + `animation` + `frame`. Resolv
 ParticleEmitter.emit / emitFlat / emitZenithal
   → ParticleComponent SAB (incl. flat, viewMode)
 Decal.stamp
-  → particle worker: `stampToTileBuffers` now (no ring hop)
+  → particle worker: queued for the decal stamp kernel (no ring hop)
   → logic / main: stamp ring SAB (no particle slot)
 particleWorker
   → physics + ground (`stayOnTheFloor` blood that lands)
-  → drain stamp ring + `Decal.stampToTileBuffers`
+  → drain stamp ring + the decal stamp (WebAssembly, one call per batch)
   → visibleParticlesData
 preRenderWorker
   → render queue pose from viewMode / flat
@@ -145,11 +145,11 @@ pixiWorker
   → draw (decal atlas dirty tiles)
 ```
 
-`Decal.stamp` from logic / main is not sync with the atlas — blend is the next particle tick. From the particle worker the atlas is current when the call returns. `Decal.getColor(x, y)` reads the atlas (packed `0xRRGGBBAA`, or `0` if empty / decals off). Pixi upload follows dirty tiles.
+`Decal.stamp` from logic / main is not sync with the atlas — blend is the next particle tick. In the particle worker stamps are blended at the end of its tick, in one WebAssembly call. `Decal.getColor(x, y)` reads the atlas (packed `0xRRGGBBAA`, or `0` if empty / decals off). Pixi upload follows dirty tiles.
 
 ## Related
 
-- [`decal.js`](../../src/core/decal.js) — `Decal.stamp` (game) and the atlas (`stampToTileBuffers`, save). The pixel loop is not a scene API.
+- [`decal.js`](../../src/core/decal.js) — `Decal.stamp` (game) and the atlas (save). The pixel loop (`decalStamp.wasm`) is not a scene API.
 - [`particleEmitter.js`](../../src/core/particleEmitter.js)
 - [`particleComponent.js`](../../src/components/particleComponent.js)
 - [`particleWorker.js`](../../src/workers/particleWorker.js)

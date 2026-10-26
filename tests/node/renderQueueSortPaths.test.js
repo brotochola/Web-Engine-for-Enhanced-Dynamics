@@ -13,8 +13,6 @@ test('preRenderWorker only writes sortKey; never CPU-sorts the queue', () => {
   assert.doesNotMatch(preRender, /_heapsortRenderables|_heapsortCollector/);
   assert.doesNotMatch(preRender, /instancedSprites\s*!==\s*false/);
   assert.match(preRender, /sortTimeThisFrame = 0/);
-  assert.match(preRender, /rqSortKey\[out\] = sk/);
-  assert.match(preRender, /ref\.sortKey = rqSortKey/);
   const custom = preRender.indexOf('buildCustomLayerQueues(deltaTime) {');
   const customBody = preRender.slice(custom, preRender.indexOf('_gpuSoAFromViews(views)', custom));
   assert.match(customBody, /this\.emitSpriteQueue\(deltaTime/);
@@ -30,12 +28,18 @@ test('pixi packed GPU sprites must already be painter-sorted when ySort or zInde
 
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {
   const packLayer = readFileSync(join(root, 'src/render/packSpriteLayer.js'), 'utf8');
-  assert.match(pixi, /createPainterState/);
-  assert.match(pixi, /this\._painter = this\._ySort \? createPainterState\(maxItems\) : null/);
+  // Close-out group B: the painter's JS left src/ (tests/reference/painterJs.mjs); every state is a kernel's.
+  assert.doesNotMatch(pixi, /createPainterState\(/);
+  assert.match(pixi, /this\._painter = this\._ySort \? this\._newEntityPainter\(\) : null/);
+  // W10: the ENTITIES painter is the kernel's state on the render-queue memory (none when Pixi does not sort).
+  assert.match(pixi, /this\._painterWasm \? createWasmPainterState\(this\._painterWasm\) : null/);
   assert.match(pixi, /_uploadSortedSprites\(/);
   assert.match(pixi, /packSpriteLayer\(/);
-  assert.match(packLayer, /orderPainterSlots\(painter, dense \? null : indices, n, keysU32\)/);
-  assert.match(pixi, /painter = layerYSort \? createPainterState\(maxItems\) : null/);
+  assert.match(packLayer, /painterOrder\(painter, dense \? null : indices, n, keysU32\)/);
+  assert.match(packLayer, /return orderPainterSlotsWasm\(painter, idxE, n, keysU32\);/);
+  assert.doesNotMatch(packLayer, /orderPainterSlots\(|radixSortIndicesBySortKey/);
+  // Close-out group B: a y-sorted layer's state is the kernel's, on its regions (customLayerPainter.test.js).
+  assert.match(pixi, /painter = layerYSort \? this\._customLayerPainterState\(layerPainterKernel, lrq, maxItems, layerName\) : null/);
   assert.match(pixi, /this\._uploadSortedSprites\(cl\.batch, q, opts, cl\.painter, cl\.sortKeyU32, null, count\)/);
 });
 
@@ -82,18 +86,10 @@ test('pixi: GPU two-pass is gone; ySorting uses reinsert with no painterSort con
 });
 
 test('preRender writes the SoA row and the CPU painter packs it', () => {
-  assert.match(preRender, /rqX\[out\] = currX/);
   assert.match(preRender, /packSpriteLayer\(/);
   assert.match(preRender, /_allowGpuPainter\(/);
   assert.doesNotMatch(preRender, /_packDirect/);
   assert.doesNotMatch(preRender, /_writeSpriteKeys/);
-});
-
-test('preRender persist skips Adobe expansion (type 6 write-index mismatch)', () => {
-  const fn = preRender.indexOf('_type0PersistHit(');
-  assert.ok(fn >= 0);
-  const body = preRender.slice(fn, preRender.indexOf('_rememberType0Set(', fn));
-  assert.match(body, /if \(type === 6\) return false;/);
 });
 
 test('instancedSprites config flag removed (always instanced)', () => {

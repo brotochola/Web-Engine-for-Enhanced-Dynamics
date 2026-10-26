@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { snapWorldToPixel } from '../../src/render/instancedSpriteBatch.js';
+// The JS snap gpuPack.wasm replaced (its pixel snap); the kernel's parity tests compare with it.
+import { snapWorldToPixel } from '../reference/gpuPackJs.mjs';
 
 test('snapWorldToPixel puts anchors on the same screen-pixel phase', () => {
   const zoom = 2;

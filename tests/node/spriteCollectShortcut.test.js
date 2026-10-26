@@ -1,35 +1,37 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { loadWorker } from '../bench/workerHarness.mjs';
+import { customLayerCollector, loadWorker } from '../bench/workerHarness.mjs';
+import { bindCollect, collectMemory, useBodies, useSortY } from '../bench/preRenderCollectKernel.mjs';
 import { Transform } from '../../src/components/transform.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
-import { Collider } from '../../src/components/collider.js';
 import { Layer } from '../../src/core/layer.js';
 
-// E-98c, E-98e and E-98f. The sprite collect sends a sprite with no layer mask straight to the
-// entities collector, past collectRenderable's type dispatch and bit scan, writes its row itself (E-98e)
-// instead of calling _writeRenderable, and reads a bodiless sprite's Transform pose itself (E-98f). The
-// collectors must come out as collectRenderable fills them for every sprite, bodies or not, and a
-// masked sprite still goes through collectRenderable.
+// E-98c, E-98e and E-98f, and W4b. The sprite collect (its kernel, preRenderCollect.wasm) sends a sprite with no
+// layer mask straight to the entities collector, past collectRenderable's type dispatch and bit scan, writes its row
+// itself instead of calling _writeRenderable, and reads a bodiless sprite's Transform pose itself. The collectors
+// must come out as collectRenderable fills them for every sprite, bodies or not, and a masked sprite still goes
+// through collectRenderable.
 
 const N = 6;
 
+/** The sprites in a memory with every column the collect kernel reads, the main collector there too. */
 function setup(pre) {
-  Transform.x = new Float32Array(N).map((_, i) => 100 + i * 3.25);
-  Transform.y = new Float32Array(N).map((_, i) => 100 - i * 1.5);
-  Transform.active = new Uint8Array(N).fill(1);
-  Transform.rotC = new Float32Array(N).map((_, i) => Math.cos(i * 0.7));
-  Transform.rotS = new Float32Array(N).map((_, i) => Math.sin(i * 0.7));
-  SpriteRenderer.active = new Uint8Array(N).fill(1);
-  SpriteRenderer.renderVisible = new Uint8Array(N).fill(1);
-  SpriteRenderer.spritesheetId = new Uint16Array(N).fill(1);
-  SpriteRenderer.boundsHalfW = new Float32Array(N).fill(4);
-  SpriteRenderer.boundsHalfH = new Float32Array(N).fill(4);
-  SpriteRenderer.anchorX = new Float32Array(N).fill(0.5);
-  SpriteRenderer.anchorY = new Float32Array(N).fill(1);
-  SpriteRenderer.layerMask = new Uint16Array(N);
-  Collider.visualRange = new Float32Array(N);
+  const m = collectMemory(pre, N, N);
+  for (let i = 0; i < N; i++) {
+    Transform.x[i] = 100 + i * 3.25;
+    Transform.y[i] = 100 - i * 1.5;
+    Transform.rotC[i] = Math.cos(i * 0.7);
+    Transform.rotS[i] = Math.sin(i * 0.7);
+  }
+  Transform.active.fill(1);
+  SpriteRenderer.active.fill(1);
+  SpriteRenderer.renderVisible.fill(1);
+  SpriteRenderer.spritesheetId.fill(1);
+  SpriteRenderer.boundsHalfW.fill(4);
+  SpriteRenderer.boundsHalfH.fill(4);
+  SpriteRenderer.anchorX.fill(0.5);
+  SpriteRenderer.anchorY.fill(1);
   pre.globalEntityCount = N;
   pre.cameraData = {};
   pre._querySpriteRenderer = null;
@@ -48,18 +50,31 @@ function setup(pre) {
   pre._poseX = null;
   pre._rbActive = null;
   pre.interpolatePhysicsPose = false;
+  return m;
 }
 
 /** Sprites 1, 3 and 4 are bodies with a published pose; 4's rotation is not live, so it uses the Transform. */
-function bodies(pre) {
-  pre._rbActive = Uint8Array.from([0, 1, 0, 1, 1, 0]);
-  pre._poseX = new Float32Array(N).map((_, i) => 500 + i * 7.5);
-  pre._poseY = new Float32Array(N).map((_, i) => 300 - i * 2.25);
-  pre._poseRotC = new Float32Array(N).map((_, i) => (i === 4 ? 0 : Math.cos(i)));
-  pre._poseRotS = new Float32Array(N).map((_, i) => (i === 4 ? 0 : Math.sin(i)));
+function bodies(pre, m) {
+  const v = m.views;
+  v.rb.set([0, 1, 0, 1, 1, 0]);
+  for (let i = 0; i < N; i++) {
+    v.px[i] = 500 + i * 7.5;
+    v.py[i] = 300 - i * 2.25;
+    v.pc[i] = i === 4 ? 0 : Math.cos(i);
+    v.ps[i] = i === 4 ? 0 : Math.sin(i);
+  }
+  useBodies(pre, m, { prev: false });
 }
 
-/** Empty main and fx collectors, sized for the scene. */
+/** An empty main collector (the memory's) and fx collector. */
+function emptyCollectors(pre, fx) {
+  pre._renderableCount = 0;
+  pre._customLayerCollectors = {
+    [fx]: customLayerCollector(N),
+  };
+}
+
+/** Empty main and fx collectors of their own, sized for the scene. */
 function collectors(pre, fx) {
   pre._renderableY = new Float32Array(N);
   pre._renderableType = new Uint8Array(N);
@@ -71,10 +86,7 @@ function collectors(pre, fx) {
   pre._renderableCount = 0;
   pre.renderQueueMaxItems = N;
   pre._customLayerCollectors = {
-    [fx]: {
-      y: new Float32Array(N), type: new Uint8Array(N), index: new Int32Array(N),
-      count: 0, maxItems: N, ySorting: false, _overflowWarned: false,
-    },
+    [fx]: customLayerCollector(N),
   };
 }
 
@@ -99,20 +111,23 @@ for (const [sortY, withBodies] of [[false, false], [true, false], [false, true],
     const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
     const realCollect = pre.collectRenderable;
     try {
-      setup(pre);
-      pre._entitySortY = sortY;
-      if (withBodies) bodies(pre);
+      const m = setup(pre);
+      pre._entitySortY = false;
+      if (sortY) useSortY(pre, m, () => 0);
+      if (withBodies) bodies(pre, m);
       const fx = Layer.get('fx').id;
       SpriteRenderer.layerMask[2] = 1 << fx;
       SpriteRenderer.layerMask[4] = (1 << fx) | Layer.entitiesMask();
 
-      collectors(pre, fx);
+      emptyCollectors(pre, fx);
+      pre._collectWasm = await bindCollect(m);
       const generic = [];
       pre.collectRenderable = (type, i) => {
         generic.push(i);
         realCollect.call(pre, type, i);
       };
       pre.collectVisibleEntities();
+      pre._collectWasm = null;
       delete pre.collectRenderable;
       assert.deepEqual(generic, [2, 4], 'only the masked sprites take the generic path');
       const got = snapshot(pre, fx);

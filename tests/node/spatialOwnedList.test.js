@@ -52,8 +52,10 @@ const CELL_WALK = [
 
 const cellWalk = (Base) => variantClass(Base, CELL_WALK, SCOPE);
 
+// The JS search (tests/reference/spatialGather.mjs): this is a property of its owned-entity list, which the kernels
+// keep (spatialGatherWasm.test.js holds them to it).
 async function frameChecksums(make, frames, spatial) {
-  const k = await setupSpatialKernel({ n: 4000, seed: 0x5a71a1, make, spatial });
+  const k = await setupSpatialKernel({ n: 4000, seed: 0x5a71a1, make, spatial, js: { publish: 'js' } });
   const out = [];
   for (let f = 0; f < frames; f++) {
     k.frame();

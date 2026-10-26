@@ -484,17 +484,18 @@
     if (!(n > 0)) return;
     poseCapacity = n;
     poseSync = new Int32Array(pose.sync);
-    // 4 channels: x,y,rotC,rotS.
+    // 4 channels: x,y,rotC,rotS, from each buffer's byte (a region of Box2D's block, Phase 4; else 0).
     const bytesPerBuf = n * 4 * 4;
     for (let i = 0; i < 2; i++) {
       const sab = i === 0 ? pose.dataA : pose.dataB;
+      const at = (i === 0 ? pose.dataAByte : pose.dataBByte) | 0;
       poseBuffers[i] = {
-        x: new Float32Array(sab, 0, n),
-        y: new Float32Array(sab, n * 4, n),
-        rotC: new Float32Array(sab, n * 8, n),
-        rotS: new Float32Array(sab, n * 12, n),
+        x: new Float32Array(sab, at, n),
+        y: new Float32Array(sab, at + n * 4, n),
+        rotC: new Float32Array(sab, at + n * 8, n),
+        rotS: new Float32Array(sab, at + n * 12, n),
       };
-      if (sab.byteLength < bytesPerBuf) {
+      if (sab.byteLength < at + bytesPerBuf) {
         console.warn('[weedjs-box2d] pose buffer too small', sab.byteLength, bytesPerBuf);
       }
     }
@@ -1011,6 +1012,10 @@
   function syncBodySlot(i, flags) {
     let changes = 0;
     let created = false;
+    // E-126. A body created, destroyed or reshaped changes the cells it covers without a move
+    // event: the moved list carries it, as it carries a teleport, so the spatial grid rewritten
+    // for the bodies that moved rewrites this one too.
+    if ((flags & (BODY_DIRTY.LIFECYCLE | BODY_DIRTY.GEOMETRY)) !== 0) markTeleportMoved(i);
     const want =
       views.entityActive[i] !== 0 &&
         (views.rbActive[i] !== 0 || views.colActive[i] !== 0)
@@ -1038,6 +1043,7 @@
       changes++;
     }
 
+    // body-create-start
     if (want && !have) {
       if (createBodyForEntity(i)) {
         hasBody[i] = 1;
@@ -1054,7 +1060,7 @@
           views.px[i] = views.x[i];
           views.py[i] = views.y[i];
         }
-      } else {
+      } else if (views.entityActive[i] !== 0 && (views.rbActive[i] !== 0 || views.colActive[i] !== 0)) {
         if (!createFailed[i]) {
           createFailed[i] = 1;
           console.warn('[weedjs-box2d] createBody failed; retry next step', i);
@@ -1064,7 +1070,11 @@
           Atomics.or(bodyDirtyHalves, i >>> 4, 1 << (i & 15));
         }
       }
+      // Otherwise the entity was despawned while this step created its body (createBodyForEntity found no
+      // RigidBody or Collider active): nothing failed and there is nothing to retry; the despawn marks the slot.
+      // SpawnStorm warned 470 times a second here, and the warning was ~23 % of its physics.
     }
+    // body-create-end
     // LIFECYCLE alone = create/destroy above. Extra bits (GEOMETRY / BODY_TYPE /
     // FILTER / …) still need property sync — including the create frame.
     // Spawn swallows markBodyDirty inside withBodyDirtyDeferred, then bumps

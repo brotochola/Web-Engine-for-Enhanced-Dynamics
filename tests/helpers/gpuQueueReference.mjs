@@ -1,10 +1,11 @@
 // Reference row writers for the GPU sprite queue (review D5). Moved out of
-// src/render/gpuQueueLayout.js: no engine code calls them. packInstancedRows
-// is the live packer; these stay as the parity references the tests and the
-// closed H-02/E-21 benches are written against.
+// src/render/gpuQueueLayout.js: no engine code calls them. gpuPack.wasm is the
+// live packer (its JS, packInstancedRows, is tests/reference/gpuPackJs.mjs); these
+// stay as the parity references the tests and the closed H-02/E-21 benches are
+// written against.
 import { GPU_SPRITE_FLOATS, GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
 
-// Same as the (unexported) one packInstancedRows uses.
+// Same as the one packInstancedRows uses (tests/reference/gpuPackJs.mjs).
 function snapWorldToPixel(v, cam, zoom) {
   if (!(zoom > 0)) return v;
   return Math.round((v - cam) * zoom) / zoom + cam;
@@ -60,9 +61,9 @@ export function rewritePackedDepth(dst, n, depthDenom, floatsPer) {
  * references anywhere in the repository are in `tests/node/*` and `tests/bench/*`.
  * Do not read its history as a claim about the engine: see below.
  *
- * The live gather is `packInstancedRows` (`gpuQueueLayout.js:244`), called from
- * `instancedSpriteBatch.js:625` and from four sites in `preRenderWorker.js`
- * (`:2907`, `:3052`, `:3094`, `:3105`). It does the same job - SoA columns in,
+ * The live gather was `packInstancedRows` (then in gpuQueueLayout.js, called from
+ * InstancedSpriteBatch and pre-render; gpuPack.wasm packs since E-76 W9, and the JS
+ * is tests/reference/gpuPackJs.mjs). It does the same job - SoA columns in,
  * interleaved instance floats out - with a different, larger signature.
  *
  * The comment that used to sit here said:

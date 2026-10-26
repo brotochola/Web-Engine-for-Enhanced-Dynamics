@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
-import { updateParticlePhysicsBuffers } from '../../src/util/particleIntegrate.js';
+import { updateParticlePhysicsBuffers } from '../reference/particleIntegrate.mjs';
 
 function setupPool(max) {
   const previous = {};

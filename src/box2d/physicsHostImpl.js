@@ -77,6 +77,31 @@
     Atomics.add(i32, i32Base + 5, 1);
   }
 
+  // src/util/frameTotals.js addFrame, copied for the same reason. tests/node/frameTotals.test.js
+  // runs this copy against addFrame and compares the buffers byte for byte.
+  var FT_HEADER = 64;
+  var FT_BINS = 1024;
+  var FT_SLOT = FT_HEADER + FT_BINS * 4;
+
+  function ftAdd(state, stepMs, waitMs, extraMs) {
+    var slot = state.fcSlot;
+    if (!state.ftI32 || slot < 0 || !(stepMs >= 0)) return;
+    var i32 = state.ftI32;
+    var f64 = state.ftF64;
+    var f0 = (slot * FT_SLOT) >> 3;
+    var seq = (slot * FT_SLOT) >> 2;
+    var work = waitMs > 0 ? stepMs - waitMs : stepMs;
+    var bin = work > 0 ? (work * 8) | 0 : 0;
+    if (bin >= FT_BINS) bin = FT_BINS - 1;
+    Atomics.add(i32, seq, 1);
+    f64[f0 + 1] += 1;
+    f64[f0 + 2] += stepMs;
+    if (waitMs > 0) f64[f0 + 3] += waitMs;
+    if (extraMs > 0) f64[f0 + 4] += extraMs;
+    state.ftU32[((slot * FT_SLOT + FT_HEADER) >> 2) + bin]++;
+    Atomics.add(i32, seq, 1);
+  }
+
   // Mirrors Transform / RigidBody ARRAY_SCHEMA (pose/vel/sleeping = HEAP only).
   var TRANSFORM_SCHEMA = {
     active: Uint8Array,
@@ -135,10 +160,11 @@
 
   // Mirrors src/render/liquidFunRender.js bindLiquidFunRender (nested classic
   // worker - no ESM import). Layout must stay identical to that file.
-  function bindLiquidFunRenderViews(sab, maxCount) {
+  function bindLiquidFunRenderViews(sab, maxCount, byte) {
     var n = maxCount | 0;
-    var off = 8;
-    var count = new Int32Array(sab, 0, 1);
+    var at = byte | 0;
+    var off = at + 8;
+    var count = new Int32Array(sab, at, 1);
     var x = new Float32Array(sab, off, n);
     off += n * 4;
     var y = new Float32Array(sab, off, n);
@@ -161,7 +187,7 @@
     off += n * 4;
     var textureId = new Uint16Array(sab, off, n);
     off += n * 2;
-    off = (off + 3) & ~3;
+    off = at + ((off - at + 3) & ~3);
     var baseAlpha = new Float32Array(sab, off, n);
     off += n * 4;
     var layerMask = new Uint16Array(sab, off, n);
@@ -243,9 +269,11 @@
     return { type: typeOrSpec, length: 1 };
   }
 
-  function bindSchema(buffer, count, schema) {
+  // byte: where the block starts in buffer (a region of Box2D's block, Phase 4; 64-aligned, so each field
+  // aligns as it does from 0), as the components' initializeArrays take it.
+  function bindSchema(buffer, count, schema, byte) {
     var views = {};
-    var offset = 0;
+    var offset = byte | 0;
     var names = Object.keys(schema);
     for (var i = 0; i < names.length; i++) {
       var name = names[i];
@@ -452,6 +480,12 @@
     clockScale: null,
     frameRateIndex: -1,
     frameRateStride: 1,
+    // Phase 4: the engine block malloc'd in Box2D's memory (its raw pointer), 0 without one.
+    engineBlockRaw: 0,
+    // Running totals of every step, on the frame clock's slot (ftAdd).
+    ftI32: null,
+    ftF64: null,
+    ftU32: null,
     commandSab: null,
     queryAabbSab: null,
     overlapCircleSab: null,
@@ -526,12 +560,18 @@
 
   // bm8-abort-start
   // The text the scene shows when Box2D aborts. "OOM" is the glue's abort when Box2D's memory is
-  // full; the memory never grows, so name the key that sizes it.
-  function box2dAbortMessage(what, heapBytes) {
+  // full; the memory never grows, so name the key that sizes it, with the value the scene set: the
+  // worker's name carries it ('mb=M'), since Phase 4 grows the memory by the engine's block (pages=N
+  // is then more than M MB).
+  function box2dAbortMessage(what, heapBytes, workerName) {
     if (String(what) === 'OOM') {
+      var heapMB = Math.round(heapBytes / 1048576);
+      var match = /(?:^|\s)mb=(\d+)(?:\s|$)/.exec(workerName || '');
+      var setMB = match ? +match[1] : heapMB;
       return (
-        'Box2D ran out of memory: physics.wasmMemoryMB is ' + Math.round(heapBytes / 1048576) +
-        ' MB. Raise physics.wasmMemoryMB in the scene config; the memory panel shows the Box2D peak.'
+        'Box2D ran out of memory: physics.wasmMemoryMB is ' + setMB + ' MB' +
+        (heapMB > setMB ? ' (' + heapMB + ' MB with the engine\'s block in the same memory)' : '') +
+        '. Raise physics.wasmMemoryMB in the scene config; the memory panel shows the Box2D peak.'
       );
     }
     return 'Box2D aborted: ' + what;
@@ -549,7 +589,7 @@
       state.isPaused = true;
       clearSchedulers();
       var heapBytes = Module.HEAPF32 ? Module.HEAPF32.buffer.byteLength : 0;
-      reportError('Box2D stopped', new Error(box2dAbortMessage(what, heapBytes)));
+      reportError('Box2D stopped', new Error(box2dAbortMessage(what, heapBytes, typeof self !== 'undefined' ? self.name : '')));
     };
   }
 
@@ -682,6 +722,8 @@
         ? {
           dataA: state.posePublish.dataA,
           dataB: state.posePublish.dataB,
+          dataAByte: state.posePublish.dataAByte | 0,
+          dataBByte: state.posePublish.dataBByte | 0,
           sync: state.posePublish.sync,
           capacity: state.posePublish.capacity | 0,
         }
@@ -939,6 +981,11 @@
       state.fcI32 = new Int32Array(data.buffers.frameClock);
       state.fcF64 = new Float64Array(data.buffers.frameClock);
       state.fcSlot = data.frameClockSlot | 0;
+      if (data.buffers.frameTotals) {
+        state.ftI32 = new Int32Array(data.buffers.frameTotals);
+        state.ftF64 = new Float64Array(data.buffers.frameTotals);
+        state.ftU32 = new Uint32Array(data.buffers.frameTotals);
+      }
     }
     if (data.frameRateIndex !== undefined) {
       state.frameRateIndex = data.frameRateIndex | 0;
@@ -962,20 +1009,25 @@
       throw new Error('[physics_host] init missing Transform/RigidBody/Collider buffers');
     }
 
+    // Each block's byte in its buffer: a region of the render-queue memory (Phase 4: Box2D's block), else 0.
+    var componentByte = buffers.componentDataByte || {};
     state.transform = bindSchema(
       componentData.Transform,
       state.globalEntityCount,
       TRANSFORM_SCHEMA,
+      componentByte.Transform,
     );
     state.rigidBody = bindSchema(
       componentData.RigidBody,
       state.globalEntityCount,
       RIGIDBODY_SCHEMA,
+      componentByte.RigidBody,
     );
     state.collider = bindSchema(
       componentData.Collider,
       state.globalEntityCount,
       COLLIDER_SCHEMA,
+      componentByte.Collider,
     );
 
     var lfMax = data.liquidFunMaxCount | 0;
@@ -983,7 +1035,7 @@
       lfMax = data.config.physics.liquidFun.maxCount | 0;
     }
     if (buffers.liquidFunRender && lfMax > 0) {
-      state.liquidFun = bindLiquidFunRenderViews(buffers.liquidFunRender, lfMax);
+      state.liquidFun = bindLiquidFunRenderViews(buffers.liquidFunRender, lfMax, buffers.liquidFunRenderByte | 0);
       state.liquidFunMaxCount = lfMax;
     }
     if (buffers.liquidFunGroups) {
@@ -1195,9 +1247,11 @@
         }
       }
       if (state.stats) {
-        state.stats[PS.STEP_MS] = performance.now() - t0;
+        var stepMs = performance.now() - t0;
+        state.stats[PS.STEP_MS] = stepMs;
         state.stats[PS.WAIT_MS] = WAIT_METER.ms;
         state.stats[PS.QUERY_WAKE_MS] = queryWakeMs;
+        ftAdd(state, stepMs, WAIT_METER.ms, queryWakeMs);
         queryWakeMs = 0;
       }
     }
@@ -1240,9 +1294,11 @@
         state._inStep = false;
       }
       if (state.stats) {
-        state.stats[PS.STEP_MS] = performance.now() - t0;
+        var stepMs = performance.now() - t0;
+        state.stats[PS.STEP_MS] = stepMs;
         state.stats[PS.WAIT_MS] = WAIT_METER.ms;
         state.stats[PS.QUERY_WAKE_MS] = queryWakeMs;
+        ftAdd(state, stepMs, WAIT_METER.ms, queryWakeMs);
         queryWakeMs = 0;
       }
     }
@@ -1259,6 +1315,34 @@
       clearInterval(state.intervalId);
       state.intervalId = 0;
     }
+  }
+
+  // Phase 4 (WASM_HYPOTHESES): a block of Box2D's memory for the engine's regions (the render-queue memory),
+  // asked for before init. Allocated once the module runs, 64-byte aligned and zeroed, and posted back with the
+  // memory itself, which every kernel then imports. memory null: no block, and the engine makes its own memory.
+  function reserveEngineBlock(bytes) {
+    var whenReady = typeof global.weedjsWhenModuleReady === 'function'
+      ? global.weedjsWhenModuleReady
+      : function (cb) { cb(); };
+    whenReady(function () {
+      var memory = typeof Module !== 'undefined' ? Module.wasmMemory : null;
+      var raw = 0;
+      if (memory && bytes > 0 && !state.engineBlockRaw && typeof Module._malloc === 'function') {
+        try {
+          raw = Module._malloc(bytes + 64);
+        } catch (err) {
+          raw = 0;
+        }
+      }
+      if (!raw) {
+        self.postMessage({ msg: 'engineBlock', memory: null, byte: 0, bytes: 0 });
+        return;
+      }
+      var byte = (raw + 63) & ~63;
+      new Uint8Array(memory.buffer, byte, bytes).fill(0);
+      state.engineBlockRaw = raw;
+      self.postMessage({ msg: 'engineBlock', memory: memory, byte: byte, bytes: bytes });
+    });
   }
 
   function startGameLoop() {
@@ -1280,6 +1364,8 @@
       if (data.msg === 'init') {
         state.isPaused = true;
         initializeFromWeedInit(data);
+      } else if (data.msg === 'reserveEngineBlock') {
+        reserveEngineBlock(data.bytes | 0);
       } else if (data.msg === 'start') {
         startGameLoop();
       } else if (data.msg === 'pause') {

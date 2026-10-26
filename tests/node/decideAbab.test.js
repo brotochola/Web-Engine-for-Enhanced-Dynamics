@@ -181,3 +181,81 @@ test('predatorMetrics reads the main thread\'s FPS as the presented frames', () 
   assert.equal(m.MAIN_FPS, 57.5);
   assert.equal('MAIN_FPS' in predatorMetrics({ workers: [] }), false);
 });
+
+test('predatorMetrics: the exact primary is step minus wait, plus query wake on physics, worst worker of a kind', () => {
+  const ex = (stepMs, waitMs, extraMs, p95Ms = 9, frames = 600) => ({ frames, stepMs, waitMs, extraMs, workMs: stepMs - waitMs, p50Ms: 5, p95Ms });
+  const m = predatorMetrics({
+    workers: [
+      { type: 'logic', statsSamplesAverage: { STEP_MS: 5.9 }, exact: ex(6, 1, 0, 8) },
+      { type: 'logic', statsSamplesAverage: { STEP_MS: 5.1 }, exact: ex(5.5, 0, 0, 11) },
+      { type: 'physics', statsSamplesAverage: { STEP_MS: 7.7 }, exact: ex(8, 0.5, 0.25) },
+      { type: 'spatial', statsSamplesAverage: { STEP_MS: 3.3 }, exact: ex(3.4, 0, 0) },
+      { type: 'spatial', statsSamplesAverage: { STEP_MS: 3.1 }, exact: null },
+    ],
+    mainThread: { averageFPS: 58.2, exactFPS: 59.4 },
+  });
+  assert.equal(m.logic_STEP_MS_EXACT, 5.5);
+  assert.equal(m.logic_P95_MS, 11);
+  assert.equal(m.logic_STEP_MS_SAMPLED, 5.9);
+  assert.equal(m.logic_STEP_MS, 5.5);
+  assert.equal(m.physics_STEP_MS_EXACT, 7.75);
+  // One spatial worker without totals: the kind stays sampled.
+  assert.equal('spatial_STEP_MS_EXACT' in m, false);
+  assert.equal(m.spatial_STEP_MS, 3.3);
+  assert.equal(m.MAIN_FPS, 59.4);
+  assert.equal(m.MAIN_FPS_SAMPLED, 58.2);
+});
+
+test('decideAbab reads the exact primary only when every side of every pair has it', () => {
+  const both = pairsWith('preRender', [8, 8.1, 7.9, 8], [7, 7.1, 6.9, 7]);
+  for (const p of both) {
+    for (const side of ['A', 'B']) {
+      for (const k of KINDS) {
+        p[side][`${k}_STEP_MS_SAMPLED`] = p[side][`${k}_STEP_MS`];
+        p[side][`${k}_STEP_MS_EXACT`] = p[side][`${k}_STEP_MS`] * 1.1;
+      }
+    }
+  }
+  let d = decideAbab(both, 'preRender');
+  assert.equal(d.kinds.preRender.source, 'exact');
+  assert.ok(Math.abs(d.kinds.preRender.baseMedian - 8.8) < 1e-9);
+  // A baseline revision without the totals: every pair of that kind falls back to the samples, on both sides.
+  delete both[2].A.preRender_STEP_MS_EXACT;
+  d = decideAbab(both, 'preRender');
+  assert.equal(d.kinds.preRender.source, 'sampled');
+  assert.equal(d.kinds.preRender.baseMedian, 8);
+  assert.equal(d.verdict, 'KEPT (product)');
+});
+
+test('sideQuery: a side\'s parameters on top of the shared query', async () => {
+  const { sideQuery } = await import('../../tests/bench/runPredatorAbab.mjs');
+  assert.equal(sideQuery('sprites=250000', ''), 'sprites=250000');
+  assert.equal(sideQuery('?sprites=250000', null), 'sprites=250000');
+  assert.equal(sideQuery('sprites=250000', 'wasmOff=gpuPack,shadowStamp'), 'sprites=250000&wasmOff=gpuPack,shadowStamp');
+  assert.equal(sideQuery('sprites=250000&wasmOff=gpuPack', 'wasmOff=shadowStamp'), 'sprites=250000&wasmOff=shadowStamp');
+  assert.equal(sideQuery('', 'wasmOff=gpuPack'), 'wasmOff=gpuPack');
+});
+
+test('each judged kind is read against the median of the others in the same pair, the owner left out of their reference', () => {
+  // A run where the whole machine is 10 % slower on side B, and the renderer (the owner) 5 % cheaper than that.
+  const pairs = [0, 1, 2, 3].map((i) => {
+    const swing = i % 2 ? 1.1 : 0.9;
+    const A = {};
+    const B = {};
+    for (const k of KINDS) {
+      A[`${k}_STEP_MS`] = k === 'particle' ? 0.5 : 5;
+      B[`${k}_STEP_MS`] = A[`${k}_STEP_MS`] * swing * (k === 'renderer' ? 0.95 : 1);
+    }
+    return { A, B };
+  });
+  const d = decideAbab(pairs, 'renderer');
+  const r = d.kinds.renderer.againstOthers;
+  assert.equal(r.deltas.length, 4);
+  // 0.95 × 0.9 against 0.9 is −4.5 %, 0.95 × 1.1 against 1.1 is −5.5 %.
+  for (const x of r.deltas) assert.ok(Math.abs(x + 4.5) < 0.01 || Math.abs(x + 5.5) < 0.01, `renderer vs others ${x}`);
+  assert.equal(r.lowerFraction, 1);
+  // The unreachable kinds read 0 against each other: the owner's move does not leak into them.
+  for (const k of ['logic', 'spatial', 'physics', 'preRender']) assert.ok(Math.abs(d.kinds[k].againstOthers.medianPct) < 1e-9, k);
+  // Below the floor: not judged, and not part of anyone's reference.
+  assert.equal(d.kinds.particle.againstOthers, null);
+});

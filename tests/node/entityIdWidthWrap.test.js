@@ -173,26 +173,26 @@ test('FL1 pop/push/batch-equivalent at 300000', () => {
   assert.equal(popFl1(top, links), got[0]);
 });
 
-test('production u32 free list (FL4) pops 299999', () => {
-  const n = 300000;
+test('production u32 free list (FL4) pops 499999', () => {
+  const n = 500000;
   const top = new Int32Array(new SharedArrayBuffer(16));
   const links = new Uint32Array(new SharedArrayBuffer(n * 4));
   resetFreeList(top, links, n, 1);
   const first = popFreeIndex(top, links);
-  assert.equal(first, 299999);
+  assert.equal(first, 499999);
   pushFreeIndex(top, links, first);
-  assert.equal(popFreeIndex(top, links), 299999);
+  assert.equal(popFreeIndex(top, links), 499999);
 });
 
-test('FL4 19+13 pops 299999 and does not alias', () => {
-  const n = 300000;
+test('FL4 19+13 pops 499999 and does not alias', () => {
+  const n = 500000;
   const top = new Int32Array(new SharedArrayBuffer(8));
   const links = new Uint32Array(new SharedArrayBuffer(n * 4));
   resetFl4(top, links, n, 1);
   const first = popFl4(top, links);
-  assert.equal(first, 299999);
+  assert.equal(first, 499999);
   pushFl4(top, links, first);
-  assert.equal(popFl4(top, links), 299999);
+  assert.equal(popFl4(top, links), 499999);
 });
 
 test('GRID0 truncates id 70000; GRID1 stores it', () => {
@@ -265,7 +265,7 @@ test('joint-style u16 pack aliases entityB 65536 to 0', () => {
   assert.equal(out.b, 65536);
 });
 
-test('validateSceneSharedBufferConfig: 300k only with entityIdWidth 32', () => {
+test('validateSceneSharedBufferConfig: past 65535 only with entityIdWidth 32, up to 500000', () => {
   assert.throws(
     () => validateSceneSharedBufferConfig(makeValidationScene(65536, 16)),
     /totalEntityCount must be an integer in \[0, 65535\]/,
@@ -275,9 +275,10 @@ test('validateSceneSharedBufferConfig: 300k only with entityIdWidth 32', () => {
     /totalEntityCount must be an integer in \[0, 65535\]/,
   );
   assert.doesNotThrow(() => validateSceneSharedBufferConfig(makeValidationScene(300000, 32)));
+  assert.doesNotThrow(() => validateSceneSharedBufferConfig(makeValidationScene(500000, 32)));
   assert.throws(
-    () => validateSceneSharedBufferConfig(makeValidationScene(300001, 32)),
-    /totalEntityCount must be an integer in \[0, 300000\]/,
+    () => validateSceneSharedBufferConfig(makeValidationScene(500001, 32)),
+    /totalEntityCount must be an integer in \[0, 500000\]/,
   );
   assert.equal(maxEntitiesForWidth(16), MAX_ENTITIES_U16);
   assert.equal(maxEntitiesForWidth(32), MAX_ENTITIES_U32);

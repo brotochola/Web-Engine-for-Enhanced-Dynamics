@@ -2,6 +2,12 @@
 // ponytail: self-intersections and holes fail closed (return -1).
 // Upgrade: earcut with hole indices.
 
+import { MAX_MESH_VERTS_U16, MAX_MESH_VERTS_U32 } from '../core/meshGeometry.js';
+
+// The ear test walks the ring, which is at most the outline's vertex count long; the guard stops only a ring
+// that does not close (E-130: past every outline the 32-bit arena takes).
+const RING_GUARD = MAX_MESH_VERTS_U32 + 1;
+
 let _prev = null;
 let _next = null;
 
@@ -29,7 +35,7 @@ function isEar(xy, p, c, n, next, ccw) {
   if (ccw ? cr <= 0 : cr >= 0) return false;
   let v = next[n];
   let guard = 0;
-  while (v !== p && guard++ < 65536) {
+  while (v !== p && guard++ < RING_GUARD) {
     if (pointInTri(xy, v, p, c, n, ccw)) return false;
     v = next[v];
   }
@@ -40,11 +46,12 @@ function isEar(xy, p, c, n, next, ccw) {
  * @param {ArrayLike<number>} xy flat x,y
  * @param {number} count vertex count
  * @param {Uint16Array|Uint32Array} out triangle indices, local to the outline
+ * @param {number} [maxCount] the most vertices taken: MeshGeometry.vertLimit (65535 for a 16-bit arena)
  * @returns {number} index count, or -1
  */
-export function triangulateSimplePolygon(xy, count, out) {
+export function triangulateSimplePolygon(xy, count, out, maxCount = MAX_MESH_VERTS_U16) {
   const n = count | 0;
-  if (n < 3 || n > 65535 || !xy || !out) return -1;
+  if (n < 3 || n > maxCount || n > MAX_MESH_VERTS_U32 || !xy || !out) return -1;
   const need = (n - 2) * 3;
   if (out.length < need) return -1;
 
