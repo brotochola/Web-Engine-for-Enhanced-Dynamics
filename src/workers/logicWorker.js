@@ -79,6 +79,7 @@ import {
   isSpawnCommandRingBound,
 } from '../util/spawnCommandRing.js';
 import { collectInstanceFields, applyInstanceFields } from '../core/save/instanceFields.js';
+import { createSpawnParamsState } from '../core/spawnParams.js';
 
 /** This worker's instance of the entity at `index` (hot reload field carry). */
 function instanceAtIndex(index) {
@@ -415,6 +416,8 @@ class LogicWorker extends AbstractWorker {
         EntityClass.entityType = entityType; // Auto-assigned entity type ID
         this._entityClassByType[entityType] = EntityClass;
         GameObject.classByType[entityType] = EntityClass;
+        // Its declared spawn params, compiled once: _spawnAt fills them before onSpawned.
+        GameObject._spawnParamsByType[entityType] = createSpawnParamsState(EntityClass);
 
         // Pre-computed typed array of all entity indices for this class
         // Uses Uint16 since max entities = 65535 (fits in 16 bits)

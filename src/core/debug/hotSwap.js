@@ -53,6 +53,7 @@ const SHAPE_STATICS = [
   'queries',
   'tickInterval',
   'forceProcessOnLogicWorker',
+  'spawnParams',
 ];
 
 /** Hooks whose presence the engine reads once (tick lists, listener gates, inboxes). */

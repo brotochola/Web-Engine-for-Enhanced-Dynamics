@@ -125,6 +125,42 @@ export type SpawnConfig = Record<string, unknown> & {
   forceProcessOnLogicWorker?: number;
 };
 
+/** A spawn param's kind (`type`). Without one, a number, boolean or string value implies number, bool or string. */
+export type SpawnParamKind =
+  | 'number'
+  | 'color'
+  | 'enum'
+  | 'bool'
+  | 'string'
+  | 'sprite'
+  | 'animation'
+  | 'entity'
+  | 'points';
+
+interface SpawnParamBase {
+  /** Shown by the editor instead of the key. */
+  label?: string;
+  /** The editor's tooltip. */
+  tip?: string;
+}
+
+/**
+ * One entry of `static spawnParams`: the default (`value`) and what the editor needs to edit it.
+ * onSpawned gets the value as declared: a number, a 0xRRGGBB color, an enum option's number, a boolean,
+ * a string (sprite and animation names too), an entity instance or null, a Float64Array of x, y pairs.
+ */
+export type SpawnParam =
+  | (SpawnParamBase & { value: number; type?: 'number'; min?: number; max?: number; step?: number })
+  | (SpawnParamBase & { value: number; type: 'color' })
+  | (SpawnParamBase & { value: number; type: 'enum'; options: Record<string, number> })
+  | (SpawnParamBase & { value: boolean; type?: 'bool' })
+  | (SpawnParamBase & { value: string; type?: 'string' | 'sprite' | 'animation' })
+  | (SpawnParamBase & { value?: null; type: 'entity'; /** Name of the entity class it must point to (the editor checks). */ class?: string })
+  | (SpawnParamBase & { value?: null | number[] | Float64Array; type: 'points' });
+
+/** `static spawnParams`: param name → entry. Not x, y, layer, layers, active or forceProcessOnLogicWorker. */
+export type SpawnParams = Record<string, SpawnParam>;
+
 /** Do not force this entity onto one worker: use stride `activeListSlot % logicWorkerCount`. */
 export const FORCE_PROCESS_ON_LOGIC_WORKER_NONE: -1;
 export function resolveForceProcessOnLogicWorker(
@@ -1090,6 +1126,21 @@ export declare class GameObject {
    */
   static isStatic: boolean;
   /**
+   * The config onSpawned reads, declared once with a default and a range per key (Unity's
+   * [SerializeField, Range], Godot's @export_range); the editor builds its widgets from it.
+   * Before onSpawned the engine fills every key the caller left out with its default, into an
+   * object it owns: x, y and every declared key, valid only during onSpawned (copy what you need
+   * into components). In debug builds a key nothing reads warns once. Default null: onSpawned
+   * gets the caller's config as it is.
+   *
+   * @example
+   * static spawnParams = {
+   *   width: { value: 220, min: 8, max: 4000, step: 1 },
+   *   tint: { value: 0x495870, type: 'color' },
+   * };
+   */
+  static spawnParams: SpawnParams | null;
+  /**
    * After initializeArrays: Int16 per entity. Worker index that must run this
    * entity’s logic. FORCE_PROCESS_ON_LOGIC_WORKER_NONE (−1) means stride.
    * Not the LogicWorker instance (`this.logicWorker`).
@@ -1163,7 +1214,11 @@ export declare class GameObject {
 
   // Lifecycle hooks (override). The collision / screen / joint ones need their tag
   // component in static components; the scene warns at load when one is missing.
-  /** Each spawn from the pool; spawnConfig keys were applied first. */
+  /**
+   * Each spawn from the pool; spawnConfig keys were applied first. For a class with
+   * static spawnParams it is the engine's params object: x, y and every declared key,
+   * defaults filled, valid only during this call.
+   */
   onSpawned(spawnConfig?: SpawnConfig): void;
   /** Before the entity returns to the pool. */
   onDespawned(): void;

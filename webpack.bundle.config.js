@@ -49,6 +49,8 @@ const debugStubAliases = isProd ? {
         path.resolve(__dirname, 'src/core/debug/stubs/debugFlags.js'),
     [path.resolve(__dirname, 'src/core/debug/hotReload.js')]:
         path.resolve(__dirname, 'src/core/debug/stubs/hotReload.js'),
+    [path.resolve(__dirname, 'src/core/debug/spawnParamsCheck.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/spawnParamsCheck.js'),
 } : {};
 
 // UMD build (for <script> tags and CommonJS)

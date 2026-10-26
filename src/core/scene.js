@@ -134,6 +134,7 @@ import {
   resolveSpritePipeline,
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
+import { describeSpawnParams } from './spawnParams.js';
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
@@ -602,6 +603,10 @@ class Scene {
    * Register an entity class
    */
   registerEntityClass(EntityClass, count, scriptPath = null) {
+    // A malformed static spawnParams fails the load here, naming the class and key,
+    // before any worker compiles it.
+    describeSpawnParams(EntityClass);
+
     // Auto-detect script path
     if (!scriptPath && EntityClass.scriptUrl) {
       scriptPath = urlToPath(EntityClass.scriptUrl);

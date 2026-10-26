@@ -74,6 +74,8 @@ import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from './messages.js';
 import { Tween } from './tween.js';
+import { fillSpawnParams, releaseSpawnParams } from './spawnParams.js';
+import { checkSpawnConfig } from './debug/spawnParamsCheck.js';
 // Export Keyboard for easy access (Mouse imported separately to avoid circular dep)
 // Note: SpriteSheetRegistry is registered globally in AbstractWorker.registerCoreClasses()
 export { Keyboard, SpriteSheetRegistry, SceneBridge };
@@ -170,6 +172,40 @@ export class GameObject {
    * columns directly is not seen. A body on a static type should be static too (a moving one is not followed).
    */
   static isStatic = false;
+
+  /**
+   * The config onSpawned reads, declared once with a default and a range per key: Unity's
+   * [SerializeField, Range], Godot's @export_range. The editor builds its widgets from it.
+   * Before onSpawned the engine fills every key the caller left out with its default, so
+   * onSpawned reads `params.width` with no `?? 220`:
+   *
+   *   static spawnParams = {
+   *     width: { value: 220, min: 8, max: 4000, step: 1 },
+   *     tint:  { value: 0x495870, type: 'color' },
+   *   };
+   *   onSpawned(params) { this.collider.width = params.width; this.setTint(params.tint); }
+   *
+   * Kinds (`type`, else inferred from the value): number (min, max, step), color, enum
+   * (options: { Box: 0, Circle: 1 }), bool, string, sprite, animation, entity (an entity
+   * index or instance in, the instance or null out; class: 'Door'), points (x, y pairs in a
+   * Float64Array). Every entry may have a label and a tip. A subclass that adds params
+   * spreads its parent's: `{ ...Platform.spawnParams, speed: { value: 2 } }`.
+   *
+   * onSpawned gets an object the engine owns, with x, y and every declared key. It is valid
+   * only during onSpawned (the next spawn of the class reuses it): copy what you need into
+   * components. Engine keys (layer, layers, active, forceProcessOnLogicWorker) are still
+   * read from the caller's config, and are not params. In debug builds a key the caller
+   * passes that nothing reads (not declared, not an engine key, not a field of the entity)
+   * warns once. Without spawnParams, onSpawned gets the caller's config as it is.
+   * @type {Record<string, object>|null}
+   */
+  static spawnParams = null;
+
+  /**
+   * @internal Per entity type id, on logic workers: its compiled spawnParams
+   * (createSpawnParamsState), or null.
+   */
+  static _spawnParamsByType = [];
 
   // Neighbor data (from spatial worker)
   static neighborData = null;
@@ -2938,13 +2974,20 @@ export class GameObject {
       // A hot reload puts the entity back as it was: its saved components already
       // hold what onSpawned did, and onSpawned again would spawn children twice.
       if (instance.onSpawned && spawnConfig._hotRestore !== true) {
+        // A class with spawnParams gets the engine's params object, its defaults
+        // filled (spawnParams.js); the identity check skips a stale entry.
+        const params = GameObject._spawnParamsByType[EntityClass.entityType];
+        const filled = params !== undefined && params !== null && params.EntityClass === EntityClass;
+        if (filled) checkSpawnConfig(params, spawnConfig, instance);
         try {
-          instance.onSpawned(spawnConfig);
+          instance.onSpawned(filled ? fillSpawnParams(params, spawnConfig, GameObject.instances) : spawnConfig);
         } catch (error) {
           // In a worker, report it and finish the spawn (Unity keeps an object
           // whose Awake threw); elsewhere (tests, tools) keep throwing.
           if (!logicWorkerCtx) throw error;
           reportWorkerError(error, 'onSpawned', EntityClass.name, i);
+        } finally {
+          if (filled) releaseSpawnParams(params);
         }
       }
 
