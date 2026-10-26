@@ -1110,6 +1110,31 @@ class Scene {
     // Scenery declared in config.layers (cover / tiling / tilemap) before preload().
     await Layer.applyConfiguredContent();
 
+    await this._runContentLifecycle();
+    this._loadStep('world');
+
+    // LIFECYCLE PHASE 3: Start everything.
+    // Main thread loop first (for input handling), then worker game loops.
+    // Workers see a fully populated scene with infrastructure ready on frame 1.
+    // manualStep: tests drive time via stepFrame(); loops stay paused.
+    if (!this.config.manualStep) {
+      this.startMainLoop();
+      this.startAllWorkers();
+    }
+  }
+
+  /**
+   * @internal The content part of a load, with the create-time spawn batch open: preload,
+   * the scene file's entities, create, then createNewGame or the save restore, and the
+   * spawn flush. init runs it once the workers are up; a fast swap runs it again on the
+   * same workers (GameEngine.loadScene).
+   */
+  async _runContentLifecycle() {
+    this._spawnBatchOpen = true;
+    this._createSpawnExtras = [];
+    this._createLogic0Spawns = 0;
+    this._createOwnerSpawns = new Set();
+
     // LIFECYCLE PHASE 1: preload()
     // Scene infrastructure setup (camera, nav grid, dynamic scenery overrides).
     // Messages sent here are processed by workers while they are still paused,
@@ -1140,17 +1165,7 @@ class Scene {
       await this.createNewGame(this.data);
       await this._flushCreateSpawns();
     }
-    this._loadStep('world');
     this._spawnBatchOpen = false;
-
-    // LIFECYCLE PHASE 3: Start everything.
-    // Main thread loop first (for input handling), then worker game loops.
-    // Workers see a fully populated scene with infrastructure ready on frame 1.
-    // manualStep: tests drive time via stepFrame(); loops stay paused.
-    if (!this.config.manualStep) {
-      this.startMainLoop();
-      this.startAllWorkers();
-    }
   }
 
   /**
