@@ -340,7 +340,7 @@ export function renderPage(registry, resolved = {}, journal = [], builtAt = '') 
     <input id="q" type="search" placeholder="Search ids, titles, results, records…">
     <select id="fstatus"><option value="">Any status or verdict</option><option value="@pending">Pending (open, running, blocked)</option><option value="@kept">Kept</option><option value="@notkept">Not kept (dropped, rejected, fail)</option><option value="@neutral">Tie, mixed, screened, passed, answered</option></select>
     <select id="farea"><option value="">Any worker</option></select>
-    <select id="fkind"><option value="">Any kind</option><option value="wasm">WASM / C</option><option value="js">JS</option><option value="gpu">GPU</option><option value="dx">DX</option></select>
+    <select id="fkind"><option value="">Any kind</option><option value="wasm">WASM / C</option><option value="js">JS</option><option value="gpu">GPU</option><option value="dx">DX</option><option value="bug">Bug</option></select>
     <select id="fmonth"><option value="">Any month</option></select>
     <select id="fshow"><option value="">Records and journal</option><option value="records">Records only</option><option value="journal">Journal only</option></select>
   </div>
