@@ -1470,6 +1470,40 @@ class Scene {
   }
 
   /**
+   * @internal What a save records of the scene file (ED-36): its URL (from the site root
+   * when it is on this page's origin, so the save loads wherever the game is served) and the
+   * names of the placed entities still live, with their indices. null without a scene file.
+   * @returns {{ url: string, names: Array<[string, number]> }|null}
+   */
+  _sceneFileForSave() {
+    const url = this.sceneFileUrl;
+    if (!url) return null;
+    const origin = typeof location !== 'undefined' ? location.origin : '';
+    const names = [];
+    for (const [name, packed] of this._namedEntities) {
+      const index = Math.floor(packed / 65536);
+      if (Messages.spawnGen[index] === packed - index * 65536) names.push([name, index]);
+    }
+    return { url: origin && url.startsWith(`${origin}/`) ? url.slice(origin.length) : url, names };
+  }
+
+  /**
+   * @internal After a save restore: the names of the entities it brought back, at the
+   * indices they have now (`mapGet`: saved index → new one, or null when not restored).
+   * @param {Array<[string, number]>} names
+   * @param {(oldIndex: number) => number|null} mapGet
+   */
+  _restoreNamedEntities(names, mapGet) {
+    if (!Array.isArray(names)) return;
+    for (let i = 0; i < names.length; i++) {
+      const [name, oldIndex] = names[i];
+      const index = mapGet(oldIndex);
+      if (index === null) continue;
+      this._namedEntities.set(name, index * 65536 + (Messages.spawnGen[index] | 0));
+    }
+  }
+
+  /**
    * @internal Spawn the scene file's entities (init, between preload and create): referenced
    * entities first, each entity param's name turned into its index. On a restore, the
    * classes the save brings back are skipped (a hot reload brings back every class).

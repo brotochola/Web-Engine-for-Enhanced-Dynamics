@@ -318,6 +318,10 @@ export function applySavePayloadToScene(scene, payload, options = {}) {
     applySharedResources(payload.sharedResources);
     applyNav(payload.nav);
     const mapGet = idMapGetter(result.idPairs);
+    // The scene file's names of the entities the save brought back, at their new indices.
+    if (payload.sceneFile && typeof scene._restoreNamedEntities === 'function') {
+      scene._restoreNamedEntities(payload.sceneFile.names, mapGet);
+    }
     if (allTypes && payload.instanceFields) {
       await sendInstanceFields(scene, payload.instanceFields, mapGet);
     }
@@ -343,7 +347,9 @@ export function applySavePayloadToScene(scene, payload, options = {}) {
 }
 
 /**
- * High-level load: remount scene with restore payload.
+ * High-level load: remount scene with restore payload. A save made in a scene file loads
+ * that file, the level the player was in (a fast swap when it is the running scene's class);
+ * SceneClassOrUrl is what a save without one loads.
  * @param {object} gameEngine
  * @param {Function|string} SceneClassOrUrl
  * @param {string} slotId
@@ -353,7 +359,8 @@ export async function loadGame(gameEngine, SceneClassOrUrl, slotId, options = {}
   const blob = await SaveStore.get(slotId);
   if (!blob) throw new Error(`SaveGame: slot not found: ${slotId}`);
   const payload = await decodeSave(blob);
-  const ok = await gameEngine.loadScene(SceneClassOrUrl, { restorePayload: payload, data: options.data });
+  const source = payload.sceneFile?.url || SceneClassOrUrl;
+  const ok = await gameEngine.loadScene(source, { restorePayload: payload, data: options.data });
   if (!ok) throw new Error('SaveGame: scene transition busy');
   return payload;
 }

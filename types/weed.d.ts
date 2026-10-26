@@ -1826,7 +1826,7 @@ export declare class Scene {
   getMemoryUsageReport(): SceneMemoryUsageReport;
   /** Save to IndexedDB (auto slot id when omitted). Pauses for a consistent snapshot. */
   saveGame(slotId?: string): Promise<unknown>;
-  /** Remount this scene from a slot (keeps this.data). */
+  /** Remount this scene from a slot (keeps this.data); a save made in a scene file loads that file. */
   loadGame(slotId: string): Promise<unknown>;
   /** Pause every worker and wait until they all stopped (saves use it). */
   pauseAndSettle(timeoutMs?: number): Promise<void>;
@@ -3042,10 +3042,15 @@ export function saveGame(
    */
   options?: { allEntities?: boolean; instanceFields?: boolean },
 ): Promise<{ meta: SaveMeta; bytes: number; entityCount: number; particleCount: number }>;
+/**
+ * Load a save: remount the scene with it. A save made in a scene file loads that file, the level the
+ * player was in (a fast swap when it is the running scene's class); SceneClass is what a save without one loads.
+ */
 export function loadGame(
   gameEngine: GameEngine,
-  SceneClass: typeof Scene,
+  SceneClass: typeof Scene | string,
   slotId: string,
+  options?: { data?: unknown },
 ): Promise<unknown>;
 export function buildSavePayload(scene: Scene, globals?: Record<string, unknown>): unknown;
 export function encodeSave(payload: unknown): Promise<Uint8Array>;

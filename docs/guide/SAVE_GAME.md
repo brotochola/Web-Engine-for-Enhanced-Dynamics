@@ -132,6 +132,9 @@ repeat:
 | 17 | CHAINS2 | u8 layout, then local chain points for saved entities |
 | 18 | FIXTURES2 | u8 layout, then extra convex pieces for saved entities |
 | 19 | MESHES2 | u8 layout, then custom mesh verts, optional UVs, optional indices |
+| 20 | CUSTOM | u8 layout, then the JSON of `onSaveGame()`'s value |
+| 21 | INSTANCE_FIELDS | u8 layout, then JSON: plain JS fields of instances, per logic worker (hot reload only) |
+| 22 | SCENE_FILE | u8 layout, then JSON: the scene file the save was made in and its placed entities' names |
 
 Every section added since TWEENS2 starts with a layout byte: a record change bumps it instead of needing a new tag, and a layout newer than the build reads as an absent section (with a warning). A shared resource whose schema fingerprint (name, then each field name, type, length and atomic flag in layout order) differs from the bound class is skipped: raw bytes cannot be applied best-effort, and two schemas can share a byte size.
 
@@ -176,6 +179,8 @@ await game.loadScene(MyScene, { restorePayload: payload });
 import { saveGame, loadGame, SaveStore, encodeSave, decodeSave } from '/src/index.js';
 ```
 
+A scene loaded from a scene file (`*.scene.json`) records it in its saves: `scene.loadGame` and `loadGame` load that file, the level the player was in (a fast swap when the running scene is its class), and the restored entities keep the names the file gave them (`scene.getByName`). A save without one (a scene loaded from its class, or an older save) loads the scene you pass.
+
 Load remounts the scene: `create()` builds statics, then logic worker `restoreSave` despawns serializable types and re-spawns from records (Box2D bodies via normal spawn dirty path), flushes active lists, acks `restoreSaveComplete`, then `onLoadGame(payload)`, then play starts.
 
 ## Hot reload (debug)
@@ -187,6 +192,10 @@ Load remounts the scene: `create()` builds statics, then logic worker `restoreSa
 Saving the scene file, or a file it imports, puts the new code into the running game with no reload. The page and every worker load the new version and copy its methods onto the classes already running, so every entity runs the new code from its next call. The shared memory, the entities, their JS fields, the workers and the camera stay as they are. The console names what was swapped: `[WeedJS] hot swapped demos/x/slime.js (Slime)`.
 
 What applies at once: method bodies (`tick`, callbacks, helpers, the scene's `update`), getters and setters, static methods and values, and the constants and functions of the changed file. Code that already ran does not run again: `onSpawned` and `create()` keep their old effect on what exists, and new spawns use the new code. Two limits: module-level state of the changed file (a `let` at its top) starts over, and a static field your code changes at runtime gets its source value back when its class is swapped.
+
+### The running scene's scene file: a fresh reload
+
+Saving the scene file the running scene was loaded from (`levels/1-1.scene.json`) reloads the page **without** the state, so the scene loads the file as it now is: a restore would put every entity back where it was, over the positions you just changed. A scene file the running scene was not loaded from does nothing.
 
 ### Anything else: a reload that keeps the state
 

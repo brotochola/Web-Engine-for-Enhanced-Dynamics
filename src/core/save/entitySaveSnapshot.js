@@ -358,6 +358,10 @@ export function buildSavePayload(scene, globals = {}, options = {}) {
   const custom = typeof scene.onSaveGame === 'function' ? scene.onSaveGame() : undefined;
   if (custom !== undefined && custom !== null) payload.custom = custom;
   if (globals.instanceFields) payload.instanceFields = globals.instanceFields;
+  // The scene file the save was made in and its placed entities' names (ED-36): loadGame
+  // loads that file, and the restore gives the restored entities their names back.
+  const sceneFile = typeof scene._sceneFileForSave === 'function' ? scene._sceneFileForSave() : null;
+  if (sceneFile) payload.sceneFile = sceneFile;
   return payload;
 }
 

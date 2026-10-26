@@ -917,7 +917,11 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     - `heapSampleWorkers.mjs` across 100 swaps.
   - **Done when:** a fast swap between two platformer files is faster than a full load
     by the ED-39 margin, and all four tests pass.
-- [ ] **ED-36 Saves record the scene file.**
+- [x] **ED-36 Saves record the scene file.** Done 2026-10-26: section 22, SCENE_FILE (JSON: the file's URL from
+  the site root and the placed entities' live names with their indices); `loadGame` loads the
+  recorded file; the restore gives the restored entities their names back through its
+  old-to-new pairs, the hot-reload save included (closes Found during implementation, item 3).
+  `saveSceneFile.test.js`; `SAVE_GAME.md` documents it and the scene-file hot reload.
   - Add an **optional** save section holding the file URL. The codec already omits empty
     optional sections, so older saves still load with no migration.
   - `loadGame` loads the recorded file, which goes through the fast swap when the setup
@@ -1186,7 +1190,7 @@ server still writes nothing. What changed for this plan:
    brings back are not spawned (a save replaces the serializable classes, a hot reload
    every class: `applySavePayloadToScene`). Their names are not in the name map until
    ED-36 records names in saves; after a hot reload that restored the scene, `getByName`
-   returns null for them. ED-36 must cover the hot-reload save too.
+   returns null for them. ED-36 must cover the hot-reload save too. **Closed by ED-36.**
 4. **The platformer's class is `PlatformerGameScene`;** this plan's examples say
    `PlatformerScene`.
 5. **Format 1 details settled:** an empty `config` is left out on save; colors stay

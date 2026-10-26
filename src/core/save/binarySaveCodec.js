@@ -33,6 +33,11 @@ export const SECTION = Object.freeze({
   CUSTOM: 20,
   /** u8 layout, then JSON: plain JS fields of instances, per logic worker. Hot reload saves only. */
   INSTANCE_FIELDS: 21,
+  /**
+   * u8 layout, then JSON: { url, names: [[name, entityIndex], …] }, the scene file the save was made in
+   * and its placed entities' names (VISUAL_EDITOR_PLAN.md ED-36). Absent for a scene loaded from its class.
+   */
+  SCENE_FILE: 22,
 });
 
 /** 2: repeat, doneMsg, flags (DX 4.2). Layout 1 saves still read. */
@@ -793,7 +798,7 @@ function readCustom(r) {
   return JSON.parse(r.str());
 }
 
-function writeInstanceFields(w, value) {
+function writeJsonSection(w, value) {
   w.u8(SECTION_LAYOUT);
   w.str(JSON.stringify(value));
 }
@@ -901,7 +906,10 @@ export function encodeBinarySaveBody(payload) {
     pushSection(sections, SECTION.CUSTOM, (w) => writeCustom(w, payload.custom));
   }
   if (payload.instanceFields) {
-    pushSection(sections, SECTION.INSTANCE_FIELDS, (w) => writeInstanceFields(w, payload.instanceFields));
+    pushSection(sections, SECTION.INSTANCE_FIELDS, (w) => writeJsonSection(w, payload.instanceFields));
+  }
+  if (payload.sceneFile) {
+    pushSection(sections, SECTION.SCENE_FILE, (w) => writeJsonSection(w, payload.sceneFile));
   }
 
   const out = new Writer();
@@ -978,5 +986,7 @@ export function decodeBinarySaveBody(bytes) {
     // Older saves have no CUSTOM section: null, not an error.
     custom: readVersioned(map, SECTION.CUSTOM, -1, 'custom', readCustom),
     instanceFields: readVersioned(map, SECTION.INSTANCE_FIELDS, -1, 'instance fields', readCustom),
+    // Older saves, and saves of a scene loaded from its class, have none: null.
+    sceneFile: readVersioned(map, SECTION.SCENE_FILE, -1, 'scene file', readCustom),
   };
 }
