@@ -979,6 +979,10 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
 M1: open the platformer, press Shift+E, click a platform, drag it, widen it, Ctrl+S,
 reload, and it is still there.
 
+**Status 2026-10-26:** the code of every Stage 2 item is in, with Node tests. M1 itself
+(a browser run of the steps above) and ED-44 (a measurement) wait for the sitting that
+runs the paused browser work.
+
 - [x] **ED-6 Edit mode toggle** (D5, Stage 2 version).
   - Files: `src/core/debug/editor/editMode.js`; a button in
     `src/core/debug/panels/scenePanel.js`.
