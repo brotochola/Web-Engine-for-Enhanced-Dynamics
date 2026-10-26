@@ -161,6 +161,30 @@ export type SpawnParam =
 /** `static spawnParams`: param name → entry. Not x, y, layer, layers, active or forceProcessOnLogicWorker. */
 export type SpawnParams = Record<string, SpawnParam>;
 
+/** One entity a scene file places. */
+export interface SceneFileEntity {
+  /** Unique in the file; `scene.getByName(name)` finds it, and entity params name it. */
+  name: string;
+  /** The entity class's name, as registered in the scene's static entities. */
+  class: string;
+  x: number;
+  y: number;
+  /** The spawn params that differ from the class's defaults; an entity param holds another entity's name. */
+  config?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+/** A `*.scene.json` file (format 1), as `game.loadScene(url)` reads it. */
+export interface SceneFile {
+  format: 1;
+  /** The scene class's module, relative to the file. */
+  script: string;
+  /** The scene class's export name; optional when the module exports one scene. */
+  export?: string;
+  entities: SceneFileEntity[];
+  [key: string]: unknown;
+}
+
 /** Do not force this entity onto one worker: use stride `activeListSlot % logicWorkerCount`. */
 export const FORCE_PROCESS_ON_LOGIC_WORKER_NONE: -1;
 export function resolveForceProcessOnLogicWorker(
@@ -1409,7 +1433,11 @@ export declare class GameEngine {
   debugEnabled: boolean;
   debugUI: DebugUI | null;
   constructor(config?: GameEngineConfig);
-  /** data: handed to the scene as scene.data and as the argument of preload / create / createNewGame. */
+  /**
+   * source: a scene module URL, a Scene class, or a scene file (`*.scene.json`), whose script and
+   * export name the class and whose entities spawn between preload and create.
+   * data: handed to the scene as scene.data and as the argument of preload / create / createNewGame.
+   */
   loadScene(source: string | typeof Scene, options?: { data?: unknown; onProgress?: (done: number, total: number, stage: string) => void; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string }): Promise<boolean>;
   readonly presenting: boolean;
   setPresenting(on: boolean): void;
@@ -1688,10 +1716,19 @@ export declare class Scene {
   exposeGlobalReferences(): void;
   /** What game.loadScene(url, { data }) passed; null when nothing. Main thread only. */
   data: unknown;
+  /** The scene file this scene was loaded from, as parsed; null for a scene loaded from its class or module. */
+  sceneFile: SceneFile | null;
+  /** Absolute URL of `sceneFile`, or null. */
+  sceneFileUrl: string | null;
   preload(data?: unknown): void | Promise<void>;
   create(data?: unknown): void | Promise<void>;
   /** New game only (skipped when a save is loaded). */
   createNewGame(data?: unknown): void | Promise<void>;
+  /**
+   * The entity the scene file placed under `name`, or null (no such name, or it despawned since).
+   * Page only, from create() on; entities refer to each other through `entity` spawn params.
+   */
+  getByName(name: string): GameObject | null;
   /**
    * After a save is applied; payload.custom is what onSaveGame returned (null if nothing).
    * payload.hotReload is true after a hot reload: every entity is back already (serializable

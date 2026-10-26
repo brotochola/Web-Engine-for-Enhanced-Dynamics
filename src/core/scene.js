@@ -135,6 +135,8 @@ import {
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import { describeSpawnParams } from './spawnParams.js';
+import { sceneFileSpawnOrder, sceneFileSpawnConfig } from './sceneFile.js';
+import { isEntityClassSerializable } from './save/entitySaveSnapshot.js';
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
@@ -193,6 +195,18 @@ class Scene {
     this._loadStepsDone = 0;
     /** loadScene's { onProgress }, set by GameEngine; null when none. */
     this._onProgressOption = null;
+    /**
+     * The scene file this scene was loaded from (sceneFile.js, format 1), as parsed; null for a
+     * scene loaded from its class or module. Set by GameEngine.loadScene.
+     */
+    this.sceneFile = null;
+    /** Absolute URL of `sceneFile`, or null. */
+    this.sceneFileUrl = null;
+    /**
+     * Page only: the scene file's entity names → index · 65536 + the slot's spawn generation
+     * then (getByName). Replaced on every load; never sent to a worker.
+     */
+    this._namedEntities = new Map();
 
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
@@ -1096,6 +1110,10 @@ class Scene {
     // so the renderer can build the tilemap and warm up the GPU before the first frame.
     await this.preload(this.data);
 
+    // A scene file's entities: after preload(), before create() (which can find them with
+    // getByName), in the same create-time batch as create()'s own spawns.
+    if (this.sceneFile !== null) this._spawnSceneFileEntities();
+
     // LIFECYCLE PHASE 2: create()
     // Static / always-on world setup (runs for new game AND save load).
     await this.create(this.data);
@@ -1263,6 +1281,87 @@ class Scene {
    */
   createNewGame(data) {
     // Override for new-game-only spawns
+  }
+
+  /**
+   * The entity the scene file placed under `name` (its `"name"` key), or null: no such
+   * name in the running file, or that entity has despawned since (its slot may hold another
+   * entity now). On the page; entities refer to each other through `entity` spawn params
+   * instead (GameObject.spawnParams). Works from create() on.
+   * @param {string} name
+   * @returns {GameObject|null}
+   */
+  getByName(name) {
+    const packed = this._namedEntities.get(name);
+    if (packed === undefined) return null;
+    const index = Math.floor(packed / 65536);
+    if (Messages.spawnGen[index] !== packed - index * 65536) return null;
+    return GameObject.instances[index] ?? null;
+  }
+
+  /**
+   * @internal Spawn the scene file's entities (init, between preload and create): referenced
+   * entities first, each entity param's name turned into its index. On a restore, the
+   * classes the save brings back are skipped (a hot reload brings back every class).
+   */
+  _spawnSceneFileEntities() {
+    const where = this.sceneFileUrl || 'scene file';
+    const records = this.sceneFile.entities;
+    const classes = new Map();
+    for (const r of this.registeredClasses) classes.set(r.class.name, r.class);
+    const restoring = this._restorePayload !== null && this._restorePayload !== undefined;
+    const restoredByTheSave = (EntityClass) =>
+      restoring && (this._restoreAllTypes === true || isEntityClassSerializable(EntityClass));
+
+    // One warning per class whose pool cannot hold what the file places.
+    const placed = new Map();
+    for (const record of records) {
+      const EntityClass = classes.get(record.class);
+      if (EntityClass) placed.set(EntityClass, (placed.get(EntityClass) || 0) + 1);
+    }
+    for (const [EntityClass, count] of placed) {
+      if (count > EntityClass.poolSize) {
+        console.warn(
+          `WeedJS: ${where} places ${count} ${EntityClass.name}, its pool holds ${EntityClass.poolSize}: ` +
+            `raise ${EntityClass.name}'s count in ${this.constructor.name}.entities`,
+        );
+      }
+    }
+
+    const { order, backRefs, cycles } = sceneFileSpawnOrder(records, (name) => classes.get(name));
+    for (const cycle of cycles) {
+      console.warn(
+        `WeedJS: ${where}: ${cycle.join(' → ')} refer to each other in a loop; ` +
+          `${cycle[cycle.length - 1]} gets no entity for its reference back to ${cycle[0]}`,
+      );
+    }
+    const missingClasses = new Set();
+    const indexOf = (name) => {
+      const packed = this._namedEntities.get(name);
+      return packed === undefined ? -1 : Math.floor(packed / 65536);
+    };
+    for (let o = 0; o < order.length; o++) {
+      const position = order[o];
+      const record = records[position];
+      const EntityClass = classes.get(record.class);
+      if (!EntityClass) {
+        if (!missingClasses.has(record.class)) {
+          missingClasses.add(record.class);
+          console.warn(
+            `WeedJS: ${where}: "${record.class}" is not in ${this.constructor.name}.entities; its entities are skipped`,
+          );
+        }
+        continue;
+      }
+      if (restoredByTheSave(EntityClass)) continue;
+      const spawnConfig = sceneFileSpawnConfig(record, position, EntityClass, indexOf, backRefs, (key, target) => {
+        console.warn(`WeedJS: ${where}: ${record.name}.${key} names "${target}", which is not an entity of the file`);
+      });
+      const entity = EntityClass.spawn(spawnConfig);
+      if (entity === null) continue; // pool full: warned above
+      const index = entity.index;
+      this._namedEntities.set(record.name, index * 65536 + (Messages.spawnGen[index] | 0));
+    }
   }
 
   /**

@@ -22,6 +22,7 @@ import {
   nativeImport,
   toAbsoluteScriptUrl,
 } from '../util/sceneScript.js';
+import { fetchSceneFile, isSceneFileUrl, sceneFileScriptUrl } from './sceneFile.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
@@ -306,6 +307,9 @@ class GameEngine {
    * Load and initialize a new scene.
    * String: module URL (`/demos/predatorScene/predatorScene.js`). Engine import()s it
    * and workers load that same file (entity graph, no per-entity scriptUrl).
+   * Scene file (`/demos/platformerGameScene/levels/1-1.scene.json`): its "script" and
+   * "export" name the scene class, and its entities spawn between preload and create
+   * (`scene.getByName(name)` finds them). `options.export` overrides the file's.
    * Class: same as today; engine infers the file from loaded JS when it can.
    * @param {string|Function} source
    * @param {{ data?: unknown, onProgress?: (done: number, total: number, stage: string) => void, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
@@ -333,8 +337,18 @@ class GameEngine {
       const origin = typeof location !== 'undefined' ? location.origin : '';
       let SceneClass;
       let sceneScriptUrl = null;
+      let sceneFile = null;
+      let sceneFileUrl = null;
 
-      if (typeof source === 'string') {
+      if (isSceneFileUrl(source)) {
+        // A scene file: its "script" (relative to the file) and "export" name the class;
+        // its entities spawn between preload and create (Scene._spawnSceneFileEntities).
+        sceneFileUrl = toAbsoluteScriptUrl(source, origin);
+        sceneFile = await fetchSceneFile(sceneFileUrl);
+        sceneScriptUrl = sceneFileScriptUrl(sceneFile, sceneFileUrl, origin);
+        const ns = await nativeImport(sceneScriptUrl);
+        SceneClass = pickSceneClass(ns, options.export || sceneFile.export, Scene);
+      } else if (typeof source === 'string') {
         sceneScriptUrl = toAbsoluteScriptUrl(source, origin);
         const ns = await nativeImport(sceneScriptUrl);
         SceneClass = pickSceneClass(ns, options.export, Scene);
@@ -404,6 +418,8 @@ class GameEngine {
       debugWorkerLog(`📥 Loading scene: ${SceneClass.name}`);
       this.currentScene = new SceneClass(this);
       this.currentScene.sceneScriptUrl = sceneScriptUrl;
+      this.currentScene.sceneFile = sceneFile;
+      this.currentScene.sceneFileUrl = sceneFileUrl;
       this.currentScene.data = options.data === undefined ? null : options.data;
       if (typeof options.onProgress === 'function') this.currentScene._onProgressOption = options.onProgress;
       if (restorePayload) {
