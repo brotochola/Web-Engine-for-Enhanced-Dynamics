@@ -27,7 +27,12 @@ export class Messages {
   static createBuffers(logicWorkerCount, capacity, entityCount) {
     const inboxes = [];
     for (let w = 0; w < logicWorkerCount; w++) inboxes.push(createMessageInbox(capacity));
-    return { inboxes, spawnGen: new SharedArrayBuffer(Math.max(2, (entityCount | 0) * 2)) };
+    return { inboxes, spawnGen: this.createSpawnGenBuffer(entityCount) };
+  }
+
+  /** The spawn generation column alone (a scene with no listener still has it: Scene.getByName reads it). */
+  static createSpawnGenBuffer(entityCount) {
+    return new SharedArrayBuffer(Math.max(2, (entityCount | 0) * 2));
   }
 
   /**

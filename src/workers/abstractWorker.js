@@ -874,9 +874,12 @@ export class AbstractWorker {
     if (data.buffers?.poolExhaustionData) {
       bindPoolExhaustion(data.buffers.poolExhaustionData);
     }
+    // Without inboxes the spawn generation column still comes: every despawn bumps it (Scene.getByName).
+    const messageInboxes = data.buffers?.messageInboxes || null;
+    const messageSpawnGen = data.buffers?.messageSpawnGen || null;
     Messages.bind(
-      data.buffers?.messageInboxes ? { inboxes: data.buffers.messageInboxes, spawnGen: data.buffers.messageSpawnGen } : null,
-      data.messageNames
+      messageSpawnGen ? { inboxes: messageInboxes || [], spawnGen: messageSpawnGen } : null,
+      messageInboxes ? data.messageNames : []
     );
     if (data.buffers?.frameClock && Number.isInteger(data.frameClockSlot)) {
       this._frameClock = bindFrameClock(data.buffers.frameClock);

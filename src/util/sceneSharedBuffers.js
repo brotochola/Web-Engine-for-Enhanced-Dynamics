@@ -1173,7 +1173,9 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   buffers.poolExhaustionData = new SharedArrayBuffer(poolExhaustionBytes(scene.registeredClasses.length));
   bindPoolExhaustion(buffers.poolExhaustionData);
 
-  // Entity messages: only when a registered type defines onMessage / onAnimationEnd.
+  // Entity messages: inboxes only when a registered type defines onMessage / onAnimationEnd. The spawn generation
+  // column is always there (2 bytes per entity): every despawn bumps it, so a message and a scene file's name
+  // (Scene.getByName) can tell the entity they meant from the next one in its slot.
   if (scene._anyMessageListener) {
     const mb = Messages.createBuffers(scene.numberOfLogicWorkers, config.logic?.maxMessages ?? 4096, totalEntityCount);
     buffers.messageInboxes = mb.inboxes;
@@ -1181,8 +1183,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
     Messages.bind(mb, scene.constructor.messages);
   } else {
     buffers.messageInboxes = null;
-    buffers.messageSpawnGen = null;
-    Messages.unbind();
+    buffers.messageSpawnGen = Messages.createSpawnGenBuffer(totalEntityCount);
+    Messages.bind({ inboxes: [], spawnGen: buffers.messageSpawnGen }, []);
   }
 
   const maxTweens = config.tween?.maxTweens | 0;
