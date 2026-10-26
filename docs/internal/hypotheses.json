@@ -8385,6 +8385,28 @@
         "containerBlend"
       ],
       "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim."
+    },
+    {
+      "id": "ED-41",
+      "title": "Visual editor: spawn params (B2) cost classes without them nothing, and allocate nothing for classes with them",
+      "status": "running",
+      "statusText": "Kernel passed 2026-10-26 (ED-40); the spawn-storm pair, the deopt log and the heap sample are next",
+      "date": "2026-10-26",
+      "result": "ED-40 kernel against the commit before ED-41: a class without params ties (a, -0.4 %) or is faster (b, +7.4 %, 96 % of rounds); a class with 4 params spawns 2.3 M/s with none passed and 1.4 M/s with 2 passed, re-entrant 2.4 M/s, all with 0 minor GCs over 1e6 spawns.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md"
+      ],
+      "aliases": [
+        "spawnParams",
+        "ED-40",
+        "ED-42"
+      ],
+      "next": "Spawn-storm ABAB (hygiene), summarizeV8Deopt on spawn-storm, heapSampleWorkers on spawn-storm (VISUAL_EDITOR_PLAN.md ED-41, Measure).",
+      "records": [
+        "R-0646"
+      ]
     }
   ],
   "records": [
@@ -14152,6 +14174,18 @@
       "text": "**CPU profile of every scene after the WASM migration (v0.13.0 plus comment fixes, 7922d724), the source of EXECUTION_PLAN's Wave 7.** 2026-10-26, 16:47 to 17:11.\n\n**Protocol.** `node tests/bench/profileSceneSweep.mjs --pass cpu --set all`:\n- 65 scenes, one at a time, headed, from source, detailed stats off;\n- 6 s of warm-up, then an 8 s window;\n- the sweep's list now also has Q1's scenes (visPoly, compoundVisPoly at `ringSegments=64`, particleIntegrate with tweens) and stationarySpatialWideScene (7922d724).\n\n64 scenes were profiled. particleEmitStressScene failed on a 404 for `src/core/debug/spawnParamsCheck.js`, an import another session was writing into `gameObject.js` at that moment. CPU samples say where a worker spends its busy time, not `STEP_MS`.\n\n**Not a quiet sitting.** A visual-editor session worked in the same folder.\n- **Contended scenes.** It ran headless scene loads (ED-39, R-0644) at least from 16:53 to 16:56, so scenes 16 to 23 may read high.\n- **Half-edited code.** From about 17:08 its uncommitted spawn checks were in `gameObject.js`, `scene.js` and `logicWorker.js`, so scenes 58 to 65 ran on that code.\n\nProfile both groups again before deciding anything on them.\n\n**Findings** (ms/s busy, and % of that worker):\n- **Box2D's solver threads read 1000 ms/s in every scene with physics, even with no bodies.** In bunnyMarkStressScene, physics steps in 0.13 ms with `BODY_COUNT 0`, and the threads are 99.6 % in `wasm-function[108]`. Either the sampler counts a blocked semaphore wait as busy, or the threads spin; an OS thread-time check decides it (E-144).\n  - On a physics-bound scene, each solver thread spends 9 % in `_emscripten_get_now` (ballsHeavyStressScene, 90 ms/s per thread). Predator spends 3 %.\n- **Logic: about half of Predator's logic is engine code around the game's.**\n  - Each of its two workers (345 and 330 ms/s): the component getter 14 and 10 %, `neighborCount` 8, `_tickIntervalBucket` 8, the FSM tick 7, `getNeighbor` 7 and 7, the collision dispatch 5 and 7.\n  - Game code is 27 %.\n  - adobeAnimateScene: 44 % of its logic (226 ms/s) is the component getter.\n  - painterSortStressScene: logic is 89 % `_tickIntervalBucket`; painterMoveStressScene: 37 % `_tickNonDecimatedOne` (720 ms/s).\n  - tilemapStressScene: logic is 82 % `getTileId` (576 ms/s).\n  - tweenStressScene: tween tick 49 %, `_apply` 35 %.\n  - waterAndBoxesScene: `_processBox2dCollisionCallbacks` 58 % of logic.\n  - spawnStormScene: `_spawnAt` 40 %, `despawn` 12 %.\n- **Spatial is the largest engine sum.** `gather_batch` is 1 599 ms/s over 18 scenes and `publish_batch` 1 447.\n  - Boids: spatial 583 ms/s on each of its two workers, gather 44 %, `rebuildOwnedRows` 26 %.\n  - orientedBox: gather 76 % of 352.\n  - movedBodiesMixed: publish 46 % of 553.\n  - stationarySpatialWide: `publish_batch_u32` 61 % of 783.\n  - Predator: gather 37 %, publish 31 %, rebuild 17 % of 412.\n- **Pre-render and Pixi.**\n  - painterMove and painterSort saturate pre-render (995 and 968 ms/s), 40–48 % in `pack_sprites_split_scatter`.\n  - adobeAnimateScene at the minimum zoom: pre-render 696 ms/s, `emit_rows` 44 %, `pack_sprites_split` 28 %.\n  - Predator: pre-render 368 ms/s, 39 % in `stamp_light_range`.\n  - textureUpload: Pixi 900 ms/s, 96 % in `uploadSharedImage`.\n  - meshApi: Pixi 351 ms/s, 32 % `rewrite_corners` and 32 % the UV upload.\n- **Scenes that load nothing.** Several stress scenes load no worker past 50 ms/s at their default knobs: bunnyMarkStress, spritePack, painterAdobe, decorationSway, audioStorm.\n\n**Outcome.** EXECUTION_PLAN's Wave 7 orders what is left:\n- step 0's checks;\n- nine hypotheses, ranked 1 to 9: E-144, E-139, E-140, E-141, E-142, E-146, E-147, E-143, E-145;\n- the review items, among them a new one, N-78;\n- a triage of the 39 older pending rows: 14 done, 22 stale and 3 small speed items, with the register moves listed and not applied yet.",
       "commits": [
         "7922d724"
+      ]
+    },
+    {
+      "id": "R-0646",
+      "date": "2026-10-26",
+      "time": "20:34",
+      "timeFrom": "recorded",
+      "title": "ED-40 kernel: spawn with and without spawnParams; classes without params not slower, the params path allocation-free",
+      "verdict": "passed",
+      "text": "**ED-40 kernel: spawn and despawn with and without spawnParams (VISUAL_EDITOR_PLAN.md ED-40, for ED-41 and ED-42).** 2026-10-26.\n\n`tests/bench/spawnParamsMicrobench.mjs` (37013e51): the shipped `GameObject.spawn` / `_spawnAt` and `despawn` on a real logic worker in Node, batches of 256 with the list merge after each; spawns per second, and the minor GCs over 1e6 spawns once warm. `runKernelsVsRev.mjs --vs ab451d27` (the commit before ED-41): a warmup process per side, then 5 rounds per side, order alternating, median per side. kernelTierAudit: no src function timed through OSR only. Machine at about 20 % CPU (another project's idle dev servers), no other benchmark running.\n\n| case | base (M spawns/s) | now | Δ | rounds won | minor GCs / 1e6 spawns |\n| --- | --- | --- | --- | --- | --- |\n| a: no params, one shared config with x, y | 1.464 | 1.458 | −0.4 % | 56 % | 2 (both trees) |\n| b: no params, `spawn()` with no config | 4.296 | 4.614 | +7.4 % | 96 % | 7 (both trees: the fresh `{}`, ED-42's known remainder) |\n| c: 4 params declared, none passed | — | 2.344 | new | | **0** |\n| d: 4 params, 2 passed | — | 1.389 | new | | **0** |\n| e: onSpawned spawning its own class | — | 2.361 | new | | **0** |\n\nPer-case checksums of a and b match across the trees (26420165). The runner's CHECKSUM verdict on a and b came from the script's top-level checksum, which also folded c to e in (a tree without spawnParams runs only a and b): fixed in the same commit for later runs; the outputs are the same.\n\n**Verdict: passed.** Classes without spawnParams are not slower (a ties, b is faster), and the params path allocates nothing in steady state, re-entrant spawns included: ED-41's and ED-42's kernel claims hold. Their spawn-storm pair, deopt log and heap sample are next.",
+      "commits": [
+        "37013e51"
       ]
     }
   ],
