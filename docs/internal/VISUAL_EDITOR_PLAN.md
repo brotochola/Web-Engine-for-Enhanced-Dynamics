@@ -801,7 +801,14 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     for the editor (D7): it drops every change event of that path inside the window, not
     only the first (one write can fire more than one).
   - **Tests:** extend `tests/node/hotReload.test.js`.
-- [~] **ED-35 The fast swap** (D3).
+- [~] **ED-35 The fast swap** (D3). **Version 1 code done 2026-10-26:** `_runContentLifecycle`
+  (187d6400), the pools' in-place clears (f90b4e43), the layers' boot values and the dirty
+  marks (689088c4), the camera's and sun's boot values (c30675ed), logic0's `clearScene`
+  (0391b8ba), the benches' `fullLoad` (37f0938e), the swap in `loadScene` (7ef89898).
+  Tests with stand-in workers and the shipped logic worker: `fastSwap.test.js`,
+  `clearScene.test.js`, `swapClears.test.js`, `layer.test.js`. **Pending, in a browser,
+  when runs are allowed:** the parity, no-leftovers and no-leak tests below, ED-39 again
+  with `--swap`, and the full node suite on a quiet machine.
   - **Steps:**
     1. Inventory every pool kind and scene-wide state, with owner, clear or reset path,
        and test. Record it in this item before coding. **Done 2026-10-26** (below).
