@@ -25,7 +25,7 @@
 import { Time, sanitizeTimeScale } from '../../timeScale.js';
 import { Camera } from '../../camera.js';
 import { Mouse } from '../../mouse.js';
-import { saveSceneFile } from './sceneFileStore.js';
+import { saveSceneFile, listSceneFiles } from './sceneFileStore.js';
 import { Selection } from './selection.js';
 import { MoveTool, SNAP_STEPS, snapTo } from './moveTool.js';
 import { History } from './history.js';
@@ -53,6 +53,20 @@ const SELECT_BUTTON = 1;
 /** How long a status line (saved, could not save) stays on the indicator. */
 const STATUS_MS = 3000;
 
+/**
+ * A name typed for New or Save As, as a file of the same folder: `.scene.json` added when missing; null when it is
+ * empty or holds a folder (/, \) or a colon.
+ * @param {unknown} name
+ * @returns {string|null}
+ */
+export function sceneFileNameOf(name) {
+  if (typeof name !== 'string') return null;
+  const trimmed = name.trim();
+  if (trimmed === '' || /[\\/:]/.test(trimmed)) return null;
+  const fileName = trimmed.endsWith('.scene.json') ? trimmed : `${trimmed}.scene.json`;
+  return fileName === '.scene.json' ? null : fileName;
+}
+
 export class EditMode {
   constructor(debugUI) {
     this.debugUI = debugUI;
@@ -64,6 +78,8 @@ export class EditMode {
     this.palette = new Palette(this);
     /** The class each click on the view places (the palette's button), or null. */
     this.placing = null;
+    /** The scene files in the running one's folder, for the palette's level list (ED-38). */
+    this.sceneFiles = [];
 
     // What entering found, put back on leaving.
     this._savedTimeScale = NaN;
@@ -137,6 +153,7 @@ export class EditMode {
     this._hold();
     this._listen(true);
     this.palette.show();
+    this.refreshSceneFiles();
     this._changed();
   }
 
@@ -265,6 +282,113 @@ export class EditMode {
     const scene = this.debugUI.scene;
     const name = nameOfEditorId(scene, id);
     this._showRestored(name === null ? -1 : restorePlaced(scene, name, snapshot));
+  }
+
+  // ---- scene files: the level list, Open, New, Save As (ED-38) ----
+
+  /** The running scene file's name (`1-1.scene.json`), or null. */
+  get sceneFileName() {
+    const url = this.debugUI.scene?.sceneFileUrl;
+    return url ? decodeURIComponent(new URL(url).pathname.split('/').pop()) : null;
+  }
+
+  /** The running scene file's folder, or null. */
+  _folderUrl() {
+    const url = this.debugUI.scene?.sceneFileUrl;
+    return url ? new URL('.', url).href : null;
+  }
+
+  /** List the scene files beside the running one (the palette's level list). */
+  async refreshSceneFiles() {
+    const folder = this._folderUrl();
+    let files = [];
+    if (folder !== null) {
+      try {
+        files = await listSceneFiles(folder);
+      } catch (error) {
+        this._setStatus(error.message, true);
+      }
+    }
+    this.sceneFiles = files;
+    this.palette.refresh();
+  }
+
+  /** Whether the document's unsaved changes may go: asks when there are some. */
+  _mayDiscard() {
+    if (!this.dirty) return true;
+    return typeof confirm === 'function' && confirm(`${this.sceneFileName} has unsaved changes. Discard them?`);
+  }
+
+  /**
+   * Open a scene file of the running one's folder: a fast swap when it names the running scene class.
+   * @returns {Promise<boolean>} whether it was loaded
+   */
+  async openSceneFile(name) {
+    const scene = this.debugUI.scene;
+    const folder = this._folderUrl();
+    if (folder === null || name === this.sceneFileName || !this._mayDiscard()) return false;
+    const ok = await this.debugUI.gameEngine.loadScene(new URL(name, folder).href, { data: scene.data });
+    return ok !== false;
+  }
+
+  /**
+   * New: an empty scene file in the running one's folder, naming the same scene module and class; written, then
+   * opened.
+   * @returns {Promise<boolean>}
+   */
+  async newSceneFile(name) {
+    const scene = this.debugUI.scene;
+    const folder = this._folderUrl();
+    const fileName = sceneFileNameOf(name);
+    if (folder === null || !scene.sceneFile || fileName === null) {
+      this._setStatus(fileName === null ? `Not a scene file name: ${name}` : 'This scene has no scene file to start from', true);
+      return false;
+    }
+    if (this.sceneFiles.includes(fileName)) {
+      this._setStatus(`${fileName} is already there`, true);
+      return false;
+    }
+    if (!this._mayDiscard()) return false;
+    const doc = { format: 1, script: scene.sceneFile.script, export: scene.sceneFile.export, entities: [] };
+    const url = new URL(fileName, folder).href;
+    try {
+      await saveSceneFile(url, doc);
+    } catch (error) {
+      this._setStatus(error.message, true);
+      return false;
+    }
+    this.sceneFiles = [...this.sceneFiles, fileName].sort();
+    const ok = await this.debugUI.gameEngine.loadScene(url, { data: scene.data });
+    return ok !== false;
+  }
+
+  /**
+   * Save As: the document written to another file of the running one's folder, which is then the running file
+   * (Ctrl+S, hot reload and saves of the game go to it).
+   * @returns {Promise<boolean>}
+   */
+  async saveSceneFileAs(name) {
+    const scene = this.debugUI.scene;
+    const folder = this._folderUrl();
+    const fileName = sceneFileNameOf(name);
+    if (folder === null || !scene.sceneFile || fileName === null) {
+      this._setStatus(fileName === null ? `Not a scene file name: ${name}` : 'This scene has no scene file to save', true);
+      return false;
+    }
+    if (this.sceneFiles.includes(fileName) && !(typeof confirm === 'function' && confirm(`Replace ${fileName}?`))) return false;
+    const url = new URL(fileName, folder).href;
+    const position = this.history.position;
+    try {
+      await saveSceneFile(url, scene.sceneFile);
+    } catch (error) {
+      this._setStatus(error.message, true);
+      return false;
+    }
+    scene.sceneFileUrl = url;
+    this.history.markSaved(position);
+    this._setStatus(`Saved as ${fileName}`, false);
+    await this.refreshSceneFiles();
+    return true;
   }
 
   /** The palette's button: each click on the view places one of `className`, until Esc or the button again. */

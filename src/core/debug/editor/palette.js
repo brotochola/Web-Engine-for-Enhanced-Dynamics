@@ -1,18 +1,24 @@
 // palette.js — the editor's palette (VISUAL_EDITOR_PLAN.md ED-11): the running scene's entity classes, each with how
 // many the open scene file places against its pool, and a button that places new ones (each click on the view puts
-// one there, until Esc or the button again). Shown while edit mode is on; its rows are rebuilt when the document
-// changes, never per frame.
+// one there, until Esc or the button again). Above them, the level row (ED-38): the scene files of the running one's
+// folder, Open, New and Save As. Shown while edit mode is on; rebuilt when the document or the file list changes,
+// never per frame.
 
 import { FloatingPanel } from '../ui/floatingPanel.js';
 
 /** Classes the editor does not offer: the engine's own helpers. */
 const UNPLACEABLE = new Set(['Flash']);
 
+const SELECT_STYLE =
+  'flex:1;min-width:0;font-size:11px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;' +
+  'border:1px solid rgba(255,255,255,0.3);border-radius:3px;cursor:pointer';
+
 export class Palette {
   /** @param {object} editMode - the EditMode it places through */
   constructor(editMode) {
     this.editMode = editMode;
     this._panel = null;
+    this._files = null;
     this._list = null;
   }
 
@@ -33,10 +39,11 @@ export class Palette {
     this._panel = null;
   }
 
-  /** The rows again: after a change to the document, a swap, or a change of what is being placed. */
+  /** The rows again: after a change to the document, a swap, the file list, or what is being placed. */
   refresh() {
     const list = this._list;
     if (list === null) return;
+    this._fillFiles();
     list.textContent = '';
     const scene = this.editMode.debugUI.scene;
     const placed = new Map();
@@ -46,6 +53,62 @@ export class Palette {
       if (UNPLACEABLE.has(name)) continue;
       list.appendChild(this._row(name, placed.get(name) || 0, EntityClass.poolSize | 0));
     }
+  }
+
+  /** The level row: the folder's scene files (the running one chosen), Open, New and Save As. */
+  _fillFiles() {
+    const box = this._files;
+    if (box === null) return;
+    box.textContent = '';
+    const editMode = this.editMode;
+    const current = editMode.sceneFileName;
+    if (current === null) {
+      const note = document.createElement('div');
+      note.textContent = 'This scene was loaded from its class, not a scene file: nothing to open or save.';
+      note.style.cssText = 'font-size:10px;color:#888;white-space:normal';
+      box.appendChild(note);
+      return;
+    }
+    const names = editMode.sceneFiles.includes(current) ? editMode.sceneFiles : [current, ...editMode.sceneFiles];
+    const select = document.createElement('select');
+    select.style.cssText = SELECT_STYLE;
+    select.title = 'The scene files of this folder';
+    for (const name of names) {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      select.appendChild(option);
+    }
+    select.value = current;
+    const open = this._button('Open', 'Open the chosen file (a fast swap for this scene class)', () => editMode.openSceneFile(select.value));
+    const create = this._button('New', 'A new, empty scene file of this scene class, in this folder', () => {
+      const name = prompt('A new scene file, in this folder:', 'level.scene.json');
+      if (name !== null) editMode.newSceneFile(name);
+    });
+    const saveAs = this._button('Save As', 'Write this level to another file of this folder, and keep editing that one', () => {
+      const name = prompt('Save this scene file as:', current);
+      if (name !== null) editMode.saveSceneFileAs(name);
+    });
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:4px;align-items:center';
+    row.appendChild(select);
+    row.appendChild(open);
+    const actions = document.createElement('div');
+    actions.style.cssText = 'display:flex;gap:4px;margin-top:4px';
+    actions.appendChild(create);
+    actions.appendChild(saveAs);
+    box.appendChild(row);
+    box.appendChild(actions);
+  }
+
+  _button(text, title, onclick) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'debug-ui-btn';
+    button.textContent = text;
+    button.title = title;
+    button.onclick = onclick;
+    return button;
   }
 
   _row(className, placed, pool) {
@@ -81,10 +144,14 @@ export class Palette {
       width: 240,
       onClose: () => {
         this._panel = null;
+        this._files = null;
         this._list = null;
       },
     });
+    this._files = document.createElement('div');
+    this._files.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
     this._list = document.createElement('div');
+    panel.body.appendChild(this._files);
     panel.body.appendChild(this._list);
     panel.mount();
     this._panel = panel;

@@ -219,6 +219,49 @@ class El {
   }
 }
 
+test('the palette’s level row: the folder’s files with the running one chosen, Open, New and Save As (ED-38)', () => {
+  const { scene } = makeScene();
+  globalThis.document = { createElement: (tag) => new El(tag) };
+  const answers = ['boss', null, 'copy'];
+  globalThis.prompt = () => answers.shift();
+  try {
+    const calls = [];
+    const editMode = {
+      debugUI: { scene },
+      placing: null,
+      sceneFileName: '1-1.scene.json',
+      sceneFiles: ['1-0.scene.json', '1-2.scene.json'],
+      openSceneFile: (name) => calls.push(['open', name]),
+      newSceneFile: (name) => calls.push(['new', name]),
+      saveSceneFileAs: (name) => calls.push(['saveAs', name]),
+    };
+    const palette = new Palette(editMode);
+    palette._files = new El('div');
+    palette._list = new El('div');
+    palette.refresh();
+    const [row, actions] = palette._files.children;
+    const select = row.children[0];
+    assert.deepEqual(
+      select.children.map((o) => o.value),
+      ['1-1.scene.json', '1-0.scene.json', '1-2.scene.json'],
+      'the running file is listed even before the list arrives',
+    );
+    assert.equal(select.value, '1-1.scene.json');
+    select.value = '1-2.scene.json';
+    row.children[1].onclick();
+    actions.children[0].onclick(); // New: 'boss'
+    actions.children[0].onclick(); // New: cancelled
+    actions.children[1].onclick(); // Save As: 'copy'
+    assert.deepEqual(calls, [['open', '1-2.scene.json'], ['new', 'boss'], ['saveAs', 'copy']]);
+    editMode.sceneFileName = null;
+    palette.refresh();
+    assert.match(palette._files.textContent, /loaded from its class/);
+  } finally {
+    delete globalThis.document;
+    delete globalThis.prompt;
+  }
+});
+
 test('the palette lists the scene’s classes with the file’s count against each pool, not the engine’s own', () => {
   const { scene } = makeScene();
   globalThis.document = { createElement: (tag) => new El(tag) };

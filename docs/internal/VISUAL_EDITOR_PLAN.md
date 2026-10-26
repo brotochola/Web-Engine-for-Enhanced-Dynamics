@@ -1097,8 +1097,17 @@ reload, and it is still there.
       group in pipeline order) for a paused scene of any config. It is refused while the
       game runs or a step is still running, and disabled while editing.
     `editorTimeControls.test.js`.
-- [ ] **ED-38 Scene-file picker:** list `levels/*.scene.json` (D7), open with
+- [x] **ED-38 Scene-file picker:** list `levels/*.scene.json` (D7), open with
   `loadScene`, New (an empty file naming the current class and export), Save As.
+  - Done 2026-10-26: the level row at the top of the palette, with the scene files of the
+    running one's folder (`listSceneFiles`, the list route; listed on entering edit mode)
+    and the running file chosen. Open loads the chosen file with the running `data` (a fast
+    swap for the same class). New writes an empty file with the running file's `script` and
+    `export`, then opens it. Save As writes the document to another file of the folder,
+    which is then the running one: Ctrl+S, hot reload and game saves go to it. A name stays
+    in the folder: `.scene.json` is added, and `/`, `\` and `:` are refused. Unsaved changes
+    are discarded only after the author confirms, and a file is replaced only after a
+    confirm. `editorFiles.test.js`, and the row in `editorPalette.test.js`.
 - [ ] **ED-44 Editor idle cost check** (measurement):
   - with the editor open and idle for 10 s, versus closed, the page's and workers'
     allocation rate does not rise;
