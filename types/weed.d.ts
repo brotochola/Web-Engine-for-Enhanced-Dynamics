@@ -1056,6 +1056,178 @@ export declare class SharedResource {
   ): void;
 }
 
+// ============================================================================
+// NETWORKING (WebRTC, main thread) — docs/internal/NETWORKING_PLAN.md
+// ============================================================================
+
+export declare const NET_CHANNEL: Readonly<{ RELIABLE: 0; FAST: 1 }>;
+export declare const NET_MSG: Readonly<{ JSON: 0; PING: 1; PONG: 2; POSES: 3; USER_MIN: 16 }>;
+export declare const NET_STATE: Readonly<{
+  IDLE: 'idle';
+  CONNECTING: 'connecting';
+  HOSTING: 'hosting';
+  CONNECTED: 'connected';
+  DISCONNECTED: 'disconnected';
+}>;
+export type NetState = (typeof NET_STATE)[keyof typeof NET_STATE];
+export type NetChannel = (typeof NET_CHANNEL)[keyof typeof NET_CHANNEL];
+
+/** Epoch milliseconds (performance.timeOrigin + performance.now()), comparable across threads. */
+export declare function netNow(): number;
+/** A random room code, XXXX-XXXX (31-symbol alphabet without 0/O/1/I/L). */
+export declare function generateRoomCode(fillRandom?: (bytes: Uint8Array) => Uint8Array): string;
+/** What a person typed, upper case and without separators; '' when it is not a valid code. */
+export declare function normalizeRoomCode(input: string): string;
+/** XXXX-XXXX; '' when invalid. */
+export declare function formatRoomCode(input: string): string;
+
+/** The store interface RoomSignaling writes to (signalingStore.js). */
+export interface NetSignalingStore {
+  connect?(): Promise<void>;
+  get(path: string): Promise<unknown>;
+  set(path: string, value: unknown): Promise<void>;
+  update(path: string, fields: Record<string, unknown>): Promise<void>;
+  remove(path: string): Promise<void>;
+  push(path: string, value: unknown): Promise<string>;
+  transaction(path: string, fn: (current: unknown) => unknown): Promise<{ committed: boolean }>;
+  onValue(path: string, cb: (value: unknown) => void): () => void;
+  onChildAdded(path: string, cb: (key: string, value: unknown) => void): () => void;
+  onChildRemoved(path: string, cb: (key: string) => void): () => void;
+  removeOnDisconnect(path: string): Promise<void>;
+  close?(): void;
+}
+
+/** Firebase Realtime Database signaling (the SDK loads from gstatic on first use). */
+export declare class FirebaseStore implements NetSignalingStore {
+  constructor(firebaseConfig: Record<string, string>);
+  connect(): Promise<void>;
+  get(path: string): Promise<unknown>;
+  set(path: string, value: unknown): Promise<void>;
+  update(path: string, fields: Record<string, unknown>): Promise<void>;
+  remove(path: string): Promise<void>;
+  push(path: string, value: unknown): Promise<string>;
+  transaction(path: string, fn: (current: unknown) => unknown): Promise<{ committed: boolean }>;
+  onValue(path: string, cb: (value: unknown) => void): () => void;
+  onChildAdded(path: string, cb: (key: string, value: unknown) => void): () => void;
+  onChildRemoved(path: string, cb: (key: string) => void): () => void;
+  removeOnDisconnect(path: string): Promise<void>;
+  close(): void;
+}
+
+/** Signaling for tabs of one browser on one machine (localStorage + storage events). Development and tests. */
+export declare class LocalStorageStore implements NetSignalingStore {
+  constructor(options?: { storage?: Storage; eventTarget?: EventTarget; now?: () => number });
+  connect(): Promise<void>;
+  get(path: string): Promise<unknown>;
+  set(path: string, value: unknown): Promise<void>;
+  update(path: string, fields: Record<string, unknown>): Promise<void>;
+  remove(path: string): Promise<void>;
+  push(path: string, value: unknown): Promise<string>;
+  transaction(path: string, fn: (current: unknown) => unknown): Promise<{ committed: boolean }>;
+  onValue(path: string, cb: (value: unknown) => void): () => void;
+  onChildAdded(path: string, cb: (key: string, value: unknown) => void): () => void;
+  onChildRemoved(path: string, cb: (key: string) => void): () => void;
+  removeOnDisconnect(path: string): Promise<void>;
+  close(): void;
+}
+
+export interface NetworkConfig {
+  /** 'firebase' (default when `firebase` is set), 'local' (tabs of one browser), or a store. */
+  signaling?: 'firebase' | 'local' | NetSignalingStore;
+  /** Firebase web config with databaseURL (Realtime Database). */
+  firebase?: Record<string, string>;
+  /** STUN/TURN servers. Default: Google STUN; [] for 'local'. */
+  iceServers?: RTCIceServer[];
+  joinTimeoutMs?: number;
+  /** Connection steps to the console. */
+  log?: boolean;
+}
+
+/**
+ * WebRTC multiplayer on the main thread: one host, up to maxPeers clients (star).
+ * Channels: RELIABLE (ordered) for JSON messages and events, FAST (unordered, no retransmit)
+ * for snapshots, input and pings.
+ */
+export declare class Network {
+  constructor(config?: NetworkConfig);
+  readonly myId: string;
+  readonly signalingKind: string;
+  readonly role: 'host' | 'client' | null;
+  readonly state: NetState;
+  /** Normalized, no separator ('' before host/join). */
+  readonly roomCode: string;
+  readonly hostId: string | null;
+  readonly maxPeers: number;
+  readonly isHost: boolean;
+  readonly isClient: boolean;
+  /** XXXX-XXXX. */
+  readonly displayCode: string;
+  /** Peers whose reliable channel is open (for a client: the host). */
+  readonly peerIds: string[];
+  /** Create a room; resolves with its code (XXXX-XXXX). */
+  host(options?: { code?: string; maxPeers?: number }): Promise<string>;
+  /** Resolves when the reliable channel to the host is open. */
+  join(code: string): Promise<void>;
+  leave(): Promise<void>;
+  destroy(): Promise<void>;
+  on(event: 'peerJoined' | 'peerLeft', fn: (peerId: string) => void): () => void;
+  on(event: 'state', fn: (state: NetState) => void): () => void;
+  /** JSON messages on the reliable channel, by name. */
+  onMessage(name: string, fn: (peerId: string, data: any) => void): () => void;
+  /** One handler per binary type (NET_MSG.USER_MIN..255, or NET_MSG.POSES). The view spans the whole packet. */
+  onBinary(type: number, fn: (peerId: string, view: DataView, channel: NetChannel) => void): () => void;
+  sendMessage(peerId: string, name: string, data?: unknown): boolean;
+  broadcastMessage(name: string, data?: unknown, exceptPeerId?: string | null): void;
+  sendMessageToHost(name: string, data?: unknown): boolean;
+  /** First byte of `bytes` is the message type. */
+  sendBinary(peerId: string, bytes: Uint8Array | ArrayBuffer, channel?: NetChannel): boolean;
+  broadcastBinary(bytes: Uint8Array | ArrayBuffer, channel?: NetChannel): void;
+  sendBinaryToHost(bytes: Uint8Array | ArrayBuffer, channel?: NetChannel): boolean;
+  /** Smoothed round trip in ms; NaN before the first pong. */
+  rtt(peerId: string): number;
+}
+
+export interface NetPoseSource {
+  x: Float32Array;
+  y: Float32Array;
+  rotation: Float32Array | null;
+}
+export interface NetVelocitySource {
+  vx: Float32Array | null;
+  vy: Float32Array | null;
+  angularVelocity: Float32Array | null;
+}
+export interface NetPoseTarget {
+  x: Float32Array;
+  y: Float32Array;
+  rotation: Float32Array;
+  vx: Float32Array;
+  vy: Float32Array;
+  angularVelocity: Float32Array;
+  time?: Float64Array;
+  tick?: Uint32Array;
+}
+/** Bytes of a POSES packet with `count` entities (7 + 26 per entity). */
+export declare function poseSnapshotBytes(count: number): number;
+/** Write a POSES packet from Transform / RigidBody views; returns bytes written. */
+export declare function writePoseSnapshot(
+  view: DataView,
+  tick: number,
+  netIds: ArrayLike<number>,
+  indices: ArrayLike<number>,
+  count: number,
+  pose: NetPoseSource,
+  vel?: NetVelocitySource | null,
+): number;
+/** Read a POSES packet into arrays indexed by netId; null when the packet is not whole. */
+export declare function readPoseSnapshot(
+  view: DataView,
+  target: NetPoseTarget,
+  stampMs: number,
+): { tick: number; count: number } | null;
+/** u32 ticks that wrap: is `a` after `b`? */
+export declare function isNewerTick(a: number, b: number): boolean;
+
 export declare class GameObject {
   static startIndex: number;
   static poolSize: number;
@@ -4143,6 +4315,20 @@ export interface WeedNamespace extends WeedEnums {
   BulletComponent: typeof BulletComponent;
   Joint: typeof Joint;
   SharedResource: typeof SharedResource;
+  Network: typeof Network;
+  NET_STATE: typeof NET_STATE;
+  NET_CHANNEL: typeof NET_CHANNEL;
+  NET_MSG: typeof NET_MSG;
+  netNow: typeof netNow;
+  generateRoomCode: typeof generateRoomCode;
+  normalizeRoomCode: typeof normalizeRoomCode;
+  formatRoomCode: typeof formatRoomCode;
+  writePoseSnapshot: typeof writePoseSnapshot;
+  readPoseSnapshot: typeof readPoseSnapshot;
+  poseSnapshotBytes: typeof poseSnapshotBytes;
+  isNewerTick: typeof isNewerTick;
+  LocalStorageStore: typeof LocalStorageStore;
+  FirebaseStore: typeof FirebaseStore;
   ColliderFixture: typeof ColliderFixture;
   FORCE_PROCESS_ON_LOGIC_WORKER_NONE: typeof FORCE_PROCESS_ON_LOGIC_WORKER_NONE;
   resolveForceProcessOnLogicWorker: typeof resolveForceProcessOnLogicWorker;
