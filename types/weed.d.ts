@@ -320,14 +320,8 @@ export type SceneConfig = Record<string, unknown> & {
      * double test, the JavaScript build's flags exactly.
      */
     particleListsF32?: boolean;
-    /** Pre-render's per-light visibility sweep with raycasted lighting (its scratch lives in a WebAssembly.Memory of pre-render's own). */
-    visibilitySweep?: boolean;
-    /** The sweep in float32 (default) or, false, in double precision. Needs visibilitySweep. */
+    /** The sweep in float32 (default) or, false, in double precision. */
     visibilitySweepF32?: boolean;
-    /** Pre-render's raster of compound occluders (fixture pools) into the visibility bins. Needs visibilitySweep. */
-    solidSegments?: boolean;
-    /** Pre-render's per-light occluder gather in one call (physics scenes: LightOccluder moves into Box2D's memory). Needs visibilitySweep. */
-    visibilityGather?: boolean;
     /**
      * The decoration sway in float32 (default true): faster; a sway rotation within a float32 rounding or so of the
      * double one. false: the double sway, the JavaScript sway's results exactly.

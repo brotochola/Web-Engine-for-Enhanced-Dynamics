@@ -8,13 +8,13 @@ import {
   OCC_CIRCLE,
   OCC_POLY,
   POLAR_BINS,
-  buildVisibilityPolygon,
   writeOrientedBoxVerts,
 } from '../../src/render/visibility/angularSweep.js';
 import { lightInfluenceRadius } from '../../src/util/lightRadius.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { mulberry32 } from '../bench/benchMath.js';
+import { buildVisibilityPolygon } from '../reference/visibilitySweepJs.mjs';
 
 export const KERNEL_URL = new URL('../fixtures/wasm/visibilitySweepVariants.wasm', import.meta.url);
 

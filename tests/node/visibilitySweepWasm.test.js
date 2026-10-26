@@ -24,13 +24,7 @@ import {
   OCC_CIRCLE,
   OCC_POLY,
   POLAR_BINS,
-  buildVisibilityPolygon,
-  clearPolarBins,
-  clipVisibilityToPolar,
-  markSeenPolarOwners,
   polarBinsActive,
-  rasterBoundarySegment,
-  sweepSawOccluder,
   writeOrientedBoxVerts,
   writePolygonVerts,
 } from '../../src/render/visibility/angularSweep.js';
@@ -50,6 +44,14 @@ import {
   sweepJs,
   visPolyFrame,
 } from '../helpers/visibilitySweepKernel.mjs';
+import {
+  buildVisibilityPolygon,
+  clearPolarBins,
+  clipVisibilityToPolar,
+  markSeenPolarOwners,
+  rasterBoundarySegment,
+  sweepSawOccluder,
+} from '../reference/visibilitySweepJs.mjs';
 
 const VARIANTS = Object.keys(SWEEP_VARIANTS);
 const DOUBLE_VARIANTS = VARIANTS.filter((v) => !RELATIVE_GATE.has(v));

@@ -32,7 +32,7 @@
  * alternating, args { rounds, minMs, variants: "js,f64,..." }); the Node CLI loads its Node-only helpers when it
  * runs.
  */
-import { POLAR_BINS, clearPolarBins, collectSolidSegments, segmentDistSq } from '../../src/render/visibility/angularSweep.js';
+import { POLAR_BINS, segmentDistSq } from '../../src/render/visibility/angularSweep.js';
 import { normalizeAngleSigned } from '../../src/util/utils.js';
 import {
   FLIP_LIMIT,
@@ -42,6 +42,7 @@ import {
   WASM_VARIANTS,
   sceneGate,
 } from '../helpers/solidSegmentsKernel.mjs';
+import { clearPolarBins, collectSolidSegments } from '../reference/visibilitySweepJs.mjs';
 
 export const VARIANTS = ['js', ...Object.keys(WASM_VARIANTS)];
 

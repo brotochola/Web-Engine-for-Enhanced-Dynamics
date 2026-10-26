@@ -14,7 +14,7 @@
 
 import { loadWasmKernel } from '../../util/wasmKernel.js';
 import { SOLID_CTX_SLOTS, SOLID_EDGE_BYTES } from '../../util/visibilityMemory.js';
-import { POLAR_BINS, collectSolidSegments, ensureSolidChain, markPolarBinsActive, polarCentreTables } from './angularSweep.js';
+import { POLAR_BINS, ensureSolidChain, markPolarBinsActive, polarCentreTables } from './angularSweep.js';
 
 // Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
 const wasmUrl = new URL('./solidSegments.wasm', import.meta.url);
@@ -49,7 +49,8 @@ const S = {
   /** Copies made and region resets, for tests. */
   copies: 0,
   resets: 0,
-  fallbacks: 0,
+  refused: 0,
+  refusedWarned: false,
 };
 
 /**
@@ -96,7 +97,8 @@ export async function bindSolidSegments(vm) {
   S.epoch = ++epochCounter;
   S.copies = 0;
   S.resets = 0;
-  S.fallbacks = 0;
+  S.refused = 0;
+  S.refusedWarned = false;
   return S;
 }
 
@@ -106,9 +108,17 @@ export function unbindSolidSegments() {
   S.epoch = ++epochCounter;
 }
 
-/** The binding's counters since it was made: outline copies, region restarts, solids rastered in JS. */
+/** The binding's counters since it was made: outline copies, region restarts, solids it could not raster. */
 export function solidSegmentsStats() {
-  return { bound: S.fn !== null, copies: S.copies, resets: S.resets, fallbacks: S.fallbacks };
+  return { bound: S.fn !== null, copies: S.copies, resets: S.resets, refused: S.refused };
+}
+
+/** A compound solid the kernel cannot raster: it casts no shadow, and pre-render says why once. */
+function refuseSolid(reason) {
+  S.refused++;
+  if (S.refusedWarned) return;
+  S.refusedWarned = true;
+  console.error(`[PRE_RENDER] solidSegments.wasm cannot raster a compound solid (${reason}): it casts no shadow`);
 }
 
 /**
@@ -152,10 +162,14 @@ function placeSolid(solid) {
   return true;
 }
 
-/** collectSolidSegments on SOLID_ARGS, in JS. */
-export function collectSolidJs(solid, owner) {
-  const a = SOLID_ARGS;
-  return collectSolidSegments(solid, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8], owner);
+/**
+ * The swept light loop's compound raster when the kernel is not bound: a scene with no fixture pool has no compound
+ * solid, so none comes; one that does is refused. The JS raster it replaced is tests/reference/visibilitySweepJs.mjs.
+ */
+export function collectSolidRefused(solid) {
+  if (!solid || solid.segCount <= 0) return 0;
+  refuseSolid(`no binding, a solid of ${solid.segCount} edges`);
+  return 0;
 }
 
 /**
@@ -165,8 +179,8 @@ export function collectSolidJs(solid, owner) {
 export function collectSolidWasm(solid, owner) {
   if (!solid || solid.segCount <= 0) return 0;
   if (!placeSolid(solid)) {
-    S.fallbacks++;
-    return collectSolidJs(solid, owner);
+    refuseSolid(`an outline of ${solid.segCount} edges is larger than the solids region`);
+    return 0;
   }
   const a = SOLID_ARGS;
   const hit = S.fn(S.ctxByte, solid.wasmSegByte, solid.wasmChainByte, solid.segCount,

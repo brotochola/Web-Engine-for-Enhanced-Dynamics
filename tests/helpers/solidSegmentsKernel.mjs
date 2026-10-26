@@ -11,11 +11,7 @@
 // active flag must match.
 import {
   POLAR_BINS,
-  clearPolarBins,
-  clipVisibilityToPolar,
-  collectSolidSegments,
   ensureCompoundSolid,
-  markSeenPolarOwners,
   polarBinsActive,
   segmentDistSq,
 } from '../../src/render/visibility/angularSweep.js';
@@ -24,6 +20,12 @@ import { normalizeAngleSigned } from '../../src/util/utils.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { NULL_GUARD_BYTES, layoutRegions } from '../../src/util/wasmMemoryMap.js';
 import { mulberry32 } from '../bench/benchMath.js';
+import {
+  clearPolarBins,
+  clipVisibilityToPolar,
+  collectSolidSegments,
+  markSeenPolarOwners,
+} from '../reference/visibilitySweepJs.mjs';
 
 export const KERNEL_URL = new URL('../fixtures/wasm/solidSegmentsVariants.wasm', import.meta.url);
 

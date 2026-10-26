@@ -18,6 +18,7 @@ import { visibilityMemoryBytes, visibilityMemoryOpts } from '../../src/util/visi
 import { mulberry32 } from '../bench/benchMath.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker, spatialBuffers } from '../bench/workerHarness.mjs';
 import { FLIP_AREA_TOLERANCE, MAX_FLIP_SHARE, comparePolygons } from './visibilitySweepKernel.mjs';
+import { buildVisibilityPolygonsJs } from '../reference/visibilitySweepJs.mjs';
 
 const V = MAX_POLYGON_VERTICES;
 const NONE = 0xffff;
@@ -154,8 +155,8 @@ export async function bootPreRender(scene, {
 /**
  * W2b: bootPreRender with what the gather kernel reads in one shared memory, as Phase 4 lays it in Box2D's block:
  * Transform (its block and its pose columns), Collider, LightOccluder, the neighbour rows, the visibility regions
- * and the gather's table, results and events (renderQueueLayout.collect.visibility). `wasm.visibilityGather: false`
- * runs the JS gather on the same memory, which places the visibility memory there all the same.
+ * and the gather's table, results and events (renderQueueLayout.collect.visibility). With `pre._visGather` set to null
+ * after it, the worker gathers in JS on the same memory.
  */
 export async function bootPreRenderGather(scene, {
   wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, fixtureSlack = 16, fixtures: withPool = true,
@@ -169,7 +170,7 @@ export async function bootPreRenderGather(scene, {
     worldWidth: WORLD_W, worldHeight: WORLD_H, cellSize: 128, maxEntitiesPerCell: 64, maxNeighbors,
   }, N);
   const opts = visibilityMemoryOpts({
-    maxVerts, entities: N, fixtures: withPool && wasm.solidSegments !== false ? fixturePool : 0,
+    maxVerts, entities: N, fixtures: withPool ? fixturePool : 0,
   });
   const regions = [
     ['transform', Transform.getBufferSize(N)],
@@ -365,9 +366,11 @@ export function writeFrame(boot, t, { scene = boot.scene, revision = 7 } = {}) {
 }
 
 /** One visibility pass and what it published. */
-export function runFrame(boot) {
+/** One visibility pass on the worker (`js`: the JS light loop it replaced, tests/reference), as published. */
+export function runFrame(boot, { js = false } = {}) {
   const { pre, maxVerts, slotBytes } = boot;
-  pre.buildVisibilityPolygons();
+  if (js) buildVisibilityPolygonsJs(pre);
+  else pre.buildVisibilityPolygons();
   const buf = pre._vpWriteBuffer;
   const lights = [];
   for (let l = 0; l < buf.header[0]; l++) {

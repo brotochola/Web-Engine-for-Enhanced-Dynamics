@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { POLAR_BINS } from '../../src/render/visibility/angularSweep.js';
+import { mulberry32 } from '../bench/benchMath.js';
 import {
-  POLAR_BINS,
   buildVisibilityPolygon,
   clearPolarBins,
   clipVisibilityToPolar,
   rasterBoundarySegment,
-} from '../../src/render/visibility/angularSweep.js';
-import { mulberry32 } from '../bench/benchMath.js';
+} from '../reference/visibilitySweepJs.mjs';
 
 // E-41. A light with only compound occluders sweeps nothing, so its sweep
 // polygon is the 32-segment placeholder circle. E-41 merged it at three edges

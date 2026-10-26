@@ -277,7 +277,7 @@ test('W2b: with physics and raycasted lighting the bodies part carries LightOccl
   const { LightOccluder } = await import('../../src/components/lightOccluder.js');
   const { WASM_DEFAULTS } = await import('../../src/util/configDefaults.js');
   const { visibilityMemoryBytes, visibilityMemoryOpts } = await import('../../src/util/visibilityMemory.js');
-  assert.equal(WASM_DEFAULTS.visibilityGather, true);
+  for (const key of ['visibilitySweep', 'solidSegments', 'visibilityGather']) assert.equal(Object.hasOwn(WASM_DEFAULTS, key), false, key + ': no switch');
   const scene = (over = {}) => ({
     _physicsEnabled: true,
     totalEntityCount: 1000,
@@ -308,9 +308,7 @@ test('W2b: with physics and raycasted lighting the bodies part carries LightOccl
   assert.equal(v.bytes, visibilityMemoryBytes(opts));
   assert.equal(v.occluderBytes, LightOccluder.getBufferSize(1000));
   assert.equal(v.events, 48, 'one record per neighbour a row holds');
-  assert.equal(renderQueueMemorySpec(scene({ wasm: { solidSegments: false } })).collect.visibility.opts.fixtures, 0, 'W1 off: no outline regions');
-  assert.equal(renderQueueMemorySpec(scene({ wasm: { visibilityGather: false } })).collect, null, 'the switch off');
-  assert.equal(renderQueueMemorySpec(scene({ wasm: { visibilitySweep: false } })).collect, null, 'it needs the sweep');
+  assert.equal(renderQueueMemorySpec(scene({ fixtures: 0 })).collect.visibility.opts.fixtures, 0, 'no fixture pool: no outline regions');
   assert.equal(renderQueueMemorySpec(scene({ raycasted: false })).collect, null, 'no raycasted lighting');
   assert.equal(renderQueueMemorySpec(scene({ spatial: 0 })).collect, null, 'no neighbour rows');
   assert.equal(renderQueueMemorySpec(scene({ noOccluders: true })).collect, null, 'no occluders');

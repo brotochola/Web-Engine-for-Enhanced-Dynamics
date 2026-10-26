@@ -9,6 +9,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { bootPreRenderGather, makeScene, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
+import { collectSolidJs } from '../reference/visibilitySweepJs.mjs';
 
 const TIMES = [0, 0.35, 0.9, 1.6, 2.75, 4.2];
 
@@ -56,13 +57,17 @@ function sameFrames(js, k, label) {
   return { lights, selfLit };
 }
 
-async function compare(seed, sceneOpts, bootOpts, label) {
+async function compare(seed, sceneOpts, bootOpts, label, rasterJs = false) {
   const scene = makeScene(seed, sceneOpts);
-  const jsBoot = await bootPreRenderGather(scene, { ...bootOpts, wasm: { ...(bootOpts.wasm || {}), visibilityGather: false } });
-  assert.equal(jsBoot.pre._visGather, null, `${label}: the switch off gathers in JS`);
+  // The JS gather: the worker's own loop with no gather kernel, on the same placed memory.
+  const jsBoot = await bootPreRenderGather(scene, bootOpts);
+  assert.ok(jsBoot.pre._visGather, `${label}: the kernel is bound`);
+  jsBoot.pre._visGather = null;
+  if (rasterJs) jsBoot.pre._visCollectSolid = collectSolidJs;
   assert.equal(jsBoot.pre._visMemory, jsBoot.memory, `${label}: the visibility memory is placed in the shared memory`);
   const js = frames(jsBoot, scene);
   const kBoot = await bootPreRenderGather(scene, bootOpts);
+  if (rasterJs) kBoot.pre._visCollectSolid = collectSolidJs;
   assert.ok(kBoot.pre._visGather, `${label}: the kernel is bound`);
   assert.equal(kBoot.pre._visMemory, kBoot.memory);
   const calls = countGather(kBoot.pre);
@@ -86,6 +91,6 @@ test('W2b: a scene with no compound solid (the bins never cleared) matches too',
   await compare(0x2b2d, { rings: 0 }, {}, 'no compound solid');
 });
 
-test('W2b: with W1 off, the compound solids the kernel sends back raster in JS and match', async () => {
-  await compare(0x2b2e, { rings: 6 }, { wasm: { solidSegments: false } }, 'solidSegments off');
+test('W2b: with the JS raster in place of W1, the compound solids the kernel sends back raster in JS and match', async () => {
+  await compare(0x2b2e, { rings: 6 }, {}, 'the JS raster', true);
 });

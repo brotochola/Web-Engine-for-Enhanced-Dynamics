@@ -1,14 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  POLAR_BINS,
-  clearPolarBins,
-  clipVisibilityToPolar,
-  collectSolidSegments,
-  ensureCompoundSolid,
-} from '../../src/render/visibility/angularSweep.js';
+import { POLAR_BINS, ensureCompoundSolid } from '../../src/render/visibility/angularSweep.js';
 import { gridCompound } from '../bench/compoundSolidMicrobench.mjs';
+import { clearPolarBins, clipVisibilityToPolar, collectSolidSegments } from '../reference/visibilitySweepJs.mjs';
 
 // E-50. collectSolidSegments runs the cheap facing test before the range test
 // (a division), and stops range-testing back-facing edges once something hit.

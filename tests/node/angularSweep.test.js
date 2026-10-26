@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  buildVisibilityPolygon,
   OCC_CIRCLE,
   OCC_POLY,
   writeOrientedBoxVerts,
@@ -13,6 +12,7 @@ import {
   LIGHT_OCCLUDER_MASK_COLLIDER,
   LIGHT_OCCLUDER_MASK_SPRITE,
 } from '../../src/components/lightOccluder.js';
+import { buildVisibilityPolygon } from '../reference/visibilitySweepJs.mjs';
 
 test('LightOccluder schema has maskMode and block, no radius', () => {
   assert.ok(LightOccluder.ARRAY_SCHEMA.active);

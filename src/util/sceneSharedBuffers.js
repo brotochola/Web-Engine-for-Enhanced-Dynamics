@@ -597,7 +597,6 @@ export function renderQueueMemorySpec(scene) {
   // neighbour rows in the engine block and packs into pre-render's visibility regions placed there (so it needs W2a's
   // sweep): with raycasted lighting.
   const visibility = inBlock && lighting.enabled && lighting.raycasted
-    && config.wasm?.visibilitySweep !== false && config.wasm?.visibilityGather !== false
     && Boolean(pools.LightOccluder?.ComponentClass) && Boolean(pools.Collider?.ComponentClass)
     && spatialPublishSpec(scene) !== null
     ? visibilityGatherSpec(scene)
@@ -643,7 +642,7 @@ function visibilityGatherSpec(scene) {
   const opts = visibilityMemoryOpts({
     maxVerts: config.lighting.maxPolygonVertices || 128,
     entities: n,
-    fixtures: config.wasm?.solidSegments !== false ? (config.physics.maxFixturePoolSize || 0) : 0,
+    fixtures: config.physics.maxFixturePoolSize || 0,
   });
   return {
     opts,

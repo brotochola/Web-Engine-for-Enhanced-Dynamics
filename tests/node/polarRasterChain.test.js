@@ -1,18 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  POLAR_BINS,
-  clearPolarBins,
-  clipVisibilityToPolar,
-  collectSolidSegments,
-  ensureCompoundSolid,
-  segmentDistSq,
-} from '../../src/render/visibility/angularSweep.js';
+import { POLAR_BINS, ensureCompoundSolid, segmentDistSq } from '../../src/render/visibility/angularSweep.js';
 import { MAX_POLYGON_VERTICES } from '../../src/util/configDefaults.js';
 import { gridCompound } from '../bench/compoundSolidMicrobench.mjs';
 import { mulberry32 } from '../bench/benchMath.js';
 import { createPolarReference } from '../helpers/polarReference.mjs';
+import { clearPolarBins, clipVisibilityToPolar, collectSolidSegments } from '../reference/visibilitySweepJs.mjs';
 
 // E-61. collectSolidSegments walks an outline's edges in chain order and the
 // raster reuses the angle of the end it just computed as the next start. The

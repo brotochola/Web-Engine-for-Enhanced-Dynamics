@@ -432,9 +432,11 @@ export const SPATIAL_DEFAULTS = Object.freeze({
 // ============================================================================
 
 /**
- * WebAssembly kernels (E-76), one switch per module. `false` runs that module's JavaScript path,
- * the one the engine also takes when the module cannot run (the spatial publish when its rows
- * do not fit its memory). Benches flip a switch with `?wasmOff=<name>` to time both paths in one build.
+ * WebAssembly kernels (E-76). The engine's kernels run only in WebAssembly: their JavaScript copies left src/
+ * (close-out group B; tests/reference/ keeps them for the parity tests), except where a kernel cannot take a
+ * configuration (the bullet tick and the visibility gather when the spatial grid is not in the engine block). Each
+ * switch here picks between two exports of one kernel: the float32 pass, faster within its stated tolerance, or the
+ * double one. Benches flip a switch with `?wasmOff=<name>` to time both in one build.
  */
 export const WASM_DEFAULTS = Object.freeze({
   /**
@@ -460,27 +462,10 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   decorationSwayF32: true,
   /**
-   * Pre-render's per-light visibility sweep with raycasted lighting (`visibilitySweep.wasm`, W2a): the light's
-   * occluders, its polygon and the polar bins of compound solids in a WebAssembly.Memory pre-render owns.
-   */
-  visibilitySweep: true,
-  /**
    * The sweep's float32 export (Chrome's pick: edge terms and box tests in float32, within 1e-4 of each
-   * vertex's distance from the light); false runs its double SIMD export instead. Needs visibilitySweep.
+   * vertex's distance from the light); false runs its double SIMD export instead.
    */
   visibilitySweepF32: true,
-  /**
-   * Pre-render's compound-solid raster into the polar bins (`solidSegments.wasm`, W1), with a fixture pool: each
-   * solid's outline copied into the visibility memory when it is built. Runs in the sweep's light loop, so it
-   * needs visibilitySweep.
-   */
-  solidSegments: true,
-  /**
-   * Pre-render's visibility gather (`visibilityGather.wasm`, W2b): each light's neighbour walk, display poses, cull
-   * and occluder packing in one call. With physics only: LightOccluder and the visibility memory move into Box2D's
-   * block, next to Transform, Collider, the poses and the neighbour rows. Needs visibilitySweep.
-   */
-  visibilityGather: true,
 });
 
 // ============================================================================

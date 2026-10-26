@@ -9,16 +9,11 @@
  */
 import { PerformanceObserver } from 'node:perf_hooks';
 
-import {
-  POLAR_BINS,
-  clearPolarBins,
-  clipVisibilityToPolar,
-  collectSolidSegments,
-  ensureCompoundSolid,
-} from '../../src/render/visibility/angularSweep.js';
+import { POLAR_BINS, ensureCompoundSolid } from '../../src/render/visibility/angularSweep.js';
 import { MAX_POLYGON_VERTICES } from '../../src/util/configDefaults.js';
 import { checksumFloats, isCli, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { mulberry32 } from './benchMath.js';
+import { clearPolarBins, clipVisibilityToPolar, collectSolidSegments } from '../reference/visibilitySweepJs.mjs';
 
 const NONE = 0xffff;
 const V = MAX_POLYGON_VERTICES;

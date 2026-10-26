@@ -1,5 +1,6 @@
 // E-76 W2a: pre-render's visibility pass with its sweep in visibilitySweep.wasm, on a real worker initialized
-// through its own init path (tests/helpers/visibilityWired.mjs), against the same worker on the JS path.
+// through its own init path (tests/helpers/visibilityWired.mjs), against the JS light loop it replaced
+// (tests/reference/visibilitySweepJs.mjs) on the same worker.
 //
 // The gate is the sweep kernel's (tests/node/visibilitySweepWasm.test.js, comparePolygons): each light's
 // polygon with the same vertex count and every vertex within H-06's 1e-4 world units plus a float32 ulp
@@ -10,18 +11,16 @@
 // raster stamps into the memory and the kernel merges), over several frames; a small vertex cap (bins merged
 // in groups); and a light past the active cap, which gives up as the JS does, with the JS's warning once.
 //
-// W1, the compound raster in solidSegments.wasm (on by default with the sweep): the same frames with it on
-// and off publish the same polygons and self-lit lists bit for bit (a bin it stamps holds the JS's distance
-// and owner; it can differ only where a solid's end lies within ~1e-15 rad of a bin edge), also across a
-// remesh (a new fixture revision, one outline grown, one moved); the client's copies of the outlines start
-// over when their region fills and a solid larger than the region rasters in JS, on the same bins.
+// W1, the compound raster in solidSegments.wasm (with a fixture pool): the same frames with it and with the JS
+// raster in the swept loop publish the same polygons and self-lit lists bit for bit (a bin it stamps holds the JS's
+// distance and owner; it can differ only where a solid's end lies within ~1e-15 rad of a bin edge), also across a
+// remesh (a new fixture revision, one outline grown, one moved); the client's copies of the outlines start over
+// when their region fills, and a solid larger than the region is refused (it casts no shadow), with one error.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
   POLAR_BINS,
-  bindPolarBins,
-  clearPolarBins,
   ensureCompoundSolid,
   polarBinArrays,
   polarBinsActive,
@@ -29,7 +28,7 @@ import {
 import {
   SOLID_ARGS,
   bindSolidSegments,
-  collectSolidJs,
+  collectSolidRefused,
   collectSolidWasm,
   solidSegmentsStats,
 } from '../../src/render/visibility/solidSegmentsClient.js';
@@ -44,6 +43,7 @@ import {
   runFrame,
   writeFrame,
 } from '../helpers/visibilityWired.mjs';
+import { bindPolarBins, clearPolarBins, collectSolidJs } from '../reference/visibilitySweepJs.mjs';
 
 const FRAMES = [0, 0.7, 1.4, 2.1];
 
@@ -72,11 +72,18 @@ function countCalls(pre) {
   return counter;
 }
 
-function framesOf(boot) {
+/** The frames through the worker's visibility pass, or (`js`) through the JS light loop it replaced. */
+function framesOf(boot, js = false) {
   return FRAMES.map((t) => {
     writeFrame(boot, t);
-    return runFrame(boot);
+    return runFrame(boot, { js });
   });
+}
+
+/** The swept loop with the JS compound raster in it, in place of solidSegments.wasm. */
+function jsRaster(boot) {
+  boot.pre._visCollectSolid = collectSolidJs;
+  return boot;
 }
 
 /** Every frame within the gate, and flips at most MAX_FLIP_SHARE of the lights. */
@@ -128,9 +135,9 @@ test('the active cap: the kernel gives up on the light as the JS does, with the 
 
   let js;
   const jsWarnings = await warnings(async () => {
-    const boot = await bootPreRender(scene, { maxNeighbors: 512, wasm: { visibilitySweep: false } });
+    const boot = await bootPreRender(scene, { maxNeighbors: 512 });
     writeFrame(boot, 0);
-    js = [runFrame(boot)];
+    js = [runFrame(boot, { js: true })];
   });
   assert.equal(jsWarnings.filter((m) => m.includes('Active occluder cap')).length, 0, 'the warning is the JS sweep\'s own, given once');
   const c = compareFrames(js[0], wasm[0], { relative: true });
@@ -139,50 +146,22 @@ test('the active cap: the kernel gives up on the light as the JS does, with the 
   assert.ok(js[0].selfLit.length >= 300, `${js[0].selfLit.length} self-lit items`);
 });
 
-test('a scene on the JS path binds what it bound before the visibility kernels', async () => {
+test('a scene without raycasted lighting binds no visibility kernel, and the bins go back to angularSweep.js', async () => {
   const scene = makeScene(0x0b1d, { lights: 6, boxes: 30, circles: 10, polygons: 5, rings: 1 });
   // A kernel scene first: its memory and bins must not outlive it.
   const on = await bootPreRender(scene);
   assert.ok(on.pre._visSweep, 'the kernel scene binds the sweep');
   assert.equal(polarBinArrays().own, false);
 
-  const { pre } = await bootPreRender(scene, { wasm: { visibilitySweep: false } });
-  assert.equal(pre._visSweep, null, 'no sweep kernel');
-  assert.equal(pre._visMemory, null, 'no visibility memory');
-  const bins = polarBinArrays();
-  assert.ok(bins.own, 'the polar bins are angularSweep.js\' own arrays again');
-  assert.ok(!(bins.dist.buffer instanceof SharedArrayBuffer));
-  const plain = [
-    ['_vpOccKind', Uint8Array, 1024], ['_vpCircleX', Float32Array, 1024], ['_vpCircleY', Float32Array, 1024],
-    ['_vpCircleR', Float32Array, 1024], ['_vpVertStart', Int32Array, 1024], ['_vpVertCount', Uint8Array, 1024],
-    ['_vpVertsX', Float32Array, 1024 * 8], ['_vpVertsY', Float32Array, 1024 * 8],
-    ['_vpOutX', Float32Array, 512], ['_vpOutY', Float32Array, 512], ['_selfLitSeen', Uint32Array, scene.entities],
-  ];
-  for (const [field, Ctor, length] of plain) {
-    const a = pre[field];
-    assert.ok(a instanceof Ctor, `${field} is a ${Ctor.name}`);
-    assert.equal(a.length, length, `${field}'s length`);
-    assert.ok(!(a.buffer instanceof SharedArrayBuffer) && a.byteOffset === 0 && a.buffer.byteLength === a.byteLength, `${field} is an array of its own`);
-  }
-  let swept = 0;
-  pre._buildVisibilityPolygonsSwept = () => {
-    swept++;
-  };
-  writeFrame({ pre, scene, maxNeighbors: 256 }, 0);
-  pre.buildVisibilityPolygons();
-  delete pre._buildVisibilityPolygonsSwept;
-  assert.equal(swept, 0, 'the JS light loop ran');
-  assert.ok(pre._vpWriteBuffer.header[0] > 0, 'and published polygons');
-
-  // Without raycasted lighting there is no visibility pass and no memory, whatever the switches say.
+  // Without raycasted lighting there is no visibility pass and no memory.
   const dark = await bootPreRender(scene, { raycasted: false });
   assert.equal(dark.pre._visSweep, null);
   assert.equal(dark.pre._visMemory, null);
   assert.ok(polarBinArrays().own);
 });
 
-test('with wasm.visibilitySweep (default), the scratch, the bins and the seen stamps are views on the visibility memory', async () => {
-  assert.equal(WASM_DEFAULTS.visibilitySweep, true);
+test('the scratch, the bins and the seen stamps are views on the visibility memory (W2a, no switch)', async () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'visibilitySweep'), false, 'no switch');
   assert.equal(WASM_DEFAULTS.visibilitySweepF32, true);
   const scene = makeScene(0x5eed, { lights: 4, boxes: 10, circles: 4, polygons: 2, rings: 1 });
   const { pre } = await bootPreRender(scene);
@@ -209,8 +188,8 @@ for (const [name, wasm, relative] of [
 ]) {
   test(`${name}: every light's polygon and the self-lit list are the JS's, frame after frame`, async (t) => {
     const scene = makeScene(0x2a2a);
-    const js = framesOf(await bootPreRender(scene, { wasm: { visibilitySweep: false } }));
     const boot = await bootPreRender(scene, { wasm });
+    const js = framesOf(boot, true);
     const calls = countCalls(boot.pre);
     const k = framesOf(boot);
     const lit = js.reduce((n, f) => n + f.lights.length, 0);
@@ -226,8 +205,9 @@ for (const [name, wasm, relative] of [
 test('a small vertex cap: the polar merge groups bins as the JS does', async (t) => {
   const scene = makeScene(0x128, { lights: 24, boxes: 120, circles: 40, polygons: 30, rings: 10 });
   for (const maxVerts of [128, 17]) {
-    const js = framesOf(await bootPreRender(scene, { maxVerts, wasm: { visibilitySweep: false } }));
-    const k = framesOf(await bootPreRender(scene, { maxVerts }));
+    const boot = await bootPreRender(scene, { maxVerts });
+    const js = framesOf(boot, true);
+    const k = framesOf(boot);
     const r = assertSame(js, k, `maxVerts ${maxVerts}`, { relative: true });
     t.diagnostic(`maxVerts ${maxVerts}: ${r.lights} lights, ${r.exact} bit for bit, ${r.flips.length} flips`);
   }
@@ -249,13 +229,11 @@ function assertBitForBit(a, b, label) {
 const polarLights = (frames) => frames.reduce((n, f) => n + f.lights.filter((L) => L.n === POLAR_BINS).length, 0);
 
 test('W1: compound solids raster in solidSegments.wasm, and the polygons are the JS raster\'s, bit for bit', async (t) => {
-  assert.equal(WASM_DEFAULTS.solidSegments, true);
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'solidSegments'), false, 'no switch');
   const scene = makeScene(0x5011d, {
     lights: 20, boxes: 40, circles: 10, polygons: 10, rings: 28, ringSegments: [64, 18, 40], radius: [250, 700],
   });
-  const off = await bootPreRender(scene, { wasm: { solidSegments: false } });
-  assert.equal(off.pre._visCollectSolid, collectSolidJs, 'solidSegments false: the JS raster in the swept loop');
-  const js = framesOf(off);
+  const js = framesOf(jsRaster(await bootPreRender(scene)));
   const boot = await bootPreRender(scene);
   assert.equal(boot.pre._visCollectSolid, collectSolidWasm, 'the kernel by default');
   let calls = 0;
@@ -266,7 +244,7 @@ test('W1: compound solids raster in solidSegments.wasm, and the polygons are the
   const k = framesOf(boot);
   assertBitForBit(js, k, 'W1');
   const stats = solidSegmentsStats();
-  assert.equal(stats.fallbacks, 0, 'every outline fits');
+  assert.equal(stats.refused, 0, 'every outline fits');
   assert.ok(stats.copies <= 28, `each solid copied once (${stats.copies})`);
   assert.ok(calls > 200, `${calls} (light, solid) calls`);
   assert.ok(polarLights(js) > 30, `${polarLights(js)} lights merged with their bins`);
@@ -280,15 +258,16 @@ test('W1: a remesh (a new fixture revision) copies the outlines again, grown or 
   remeshed.ents[first].tris = ringTriangles(30, 80, 32); // 36 outline edges -> 60: a new slot
   remeshed.ents[first + 1].tris = ringTriangles(18, 70, 40); // the same count, moved: its own slot again
   const plan = [[0, scene, 7], [0.5, scene, 7], [1, remeshed, 8], [1.5, remeshed, 8], [2, scene, 9]];
-  const run = async (opts) => {
-    const boot = await bootPreRender(scene, { ...opts, fixtureSlack: 40 });
+  const run = async (js) => {
+    const boot = await bootPreRender(scene, { fixtureSlack: 40 });
+    if (js) jsRaster(boot);
     return plan.map(([t, s, revision]) => {
       writeFrame(boot, t, { scene: s, revision });
       return runFrame(boot);
     });
   };
-  const js = await run({ wasm: { solidSegments: false } });
-  const k = await run({});
+  const js = await run(true);
+  const k = await run(false);
   assertBitForBit(js, k, 'remesh');
   const stats = solidSegmentsStats();
   // Three revisions: a lit solid is copied once in each, not once a frame.
@@ -296,7 +275,7 @@ test('W1: a remesh (a new fixture revision) copies the outlines again, grown or 
   assert.ok(polarLights(js) > 10);
 });
 
-test('W1: outline copies start over when their region fills, and a solid past the region rasters in JS', async () => {
+test('W1: outline copies start over when their region fills, and a solid past the region is refused, said once', async () => {
   const { buildSolid, trianglesCompound } = await import('../helpers/solidSegmentsKernel.mjs');
   // Four fixtures' worth: 4 x MAX_POLYGON_VERTICES edges = 640 bytes of copies.
   const vm = createVisibilityMemory({ maxOccluders: 4, poolVerts: 16, maxVerts: 64, entities: 16, fixtures: 4 });
@@ -318,14 +297,29 @@ test('W1: outline copies start over when their region fills, and a solid past th
     };
     const steps = [[a, [100, 40, 1, 0, 0, 0]], [b, [-120, 60, 0.8, 0.6, 5, 0]], [c, [30, -150, 0, 1, 0, -3]],
       [a, [110, 30, 1, 0, 0, 0]], [b, [-120, 70, 0.6, 0.8, 0, 0]], [big, [0, 200, 1, 0, 0, 0]], [c, [40, -140, 0, 1, 0, 0]]];
-    steps.forEach(([solid, pose], i) => {
-      const js = raster(collectSolidJs, solid, i + 1, pose);
-      const wasm = raster(collectSolidWasm, solid, i + 1, pose);
-      assert.ok(js.active, `step ${i}: the solid is lit`);
-      assert.deepEqual(wasm, js, `step ${i}: the bins, the owners, hit and the active flag`);
-    });
+    const errors = [];
+    const error = console.error;
+    console.error = (msg) => errors.push(String(msg));
+    try {
+      steps.forEach(([solid, pose], i) => {
+        const js = raster(collectSolidJs, solid, i + 1, pose);
+        const wasm = raster(collectSolidWasm, solid, i + 1, pose);
+        assert.ok(js.active, `step ${i}: the solid is lit`);
+        if (solid === big) {
+          assert.equal(wasm.hit, false, 'the solid past the region: no hit');
+          assert.equal(wasm.active, 0, 'and no bin stamped');
+          assert.ok(wasm.dist.every((d) => d === R) && wasm.owner.every((o) => o === -1), 'the bins as cleared');
+        } else {
+          assert.deepEqual(wasm, js, `step ${i}: the bins, the owners, hit and the active flag`);
+        }
+      });
+      raster(collectSolidWasm, big, 99, [0, 200, 1, 0, 0, 0]);
+    } finally {
+      console.error = error;
+    }
+    assert.equal(errors.filter((e) => e.includes('larger than the solids region')).length, 1, 'said once');
     const stats = solidSegmentsStats();
-    assert.equal(stats.fallbacks, 1, 'the solid past the region rastered in JS');
+    assert.equal(stats.refused, 2, 'the solid past the region, refused twice');
     assert.equal(stats.resets, 2, 'the region started over twice');
     assert.equal(stats.copies, 6, 'a, b, c, then a and b again after the first restart, c after the second');
   } finally {
@@ -333,20 +327,38 @@ test('W1: outline copies start over when their region fills, and a solid past th
   }
 });
 
-test('W1: with wasm.solidSegments false or no fixture pool, the swept loop rasters solids in JS', async () => {
+test('W1: with a fixture pool the swept loop rasters solids in solidSegments.wasm; without one there is nothing to raster', async () => {
   const scene = makeScene(0x0ff, { lights: 4, boxes: 10, circles: 2, polygons: 2, rings: 2 });
-  const off = await bootPreRender(scene, { wasm: { solidSegments: false } });
-  assert.ok(off.pre._visSweep, 'the sweep kernel still');
-  assert.equal(off.pre._visCollectSolid, collectSolidJs);
-  assert.equal(solidSegmentsStats().bound, false);
   const on = await bootPreRender(scene);
   assert.equal(on.pre._visCollectSolid, collectSolidWasm);
   assert.equal(solidSegmentsStats().bound, true);
   const noPool = await bootPreRender(scene, { fixtures: false });
   assert.ok(noPool.pre._visSweep);
-  assert.equal(noPool.pre._visCollectSolid, collectSolidJs, 'no fixture pool, no compound solid to raster');
+  assert.equal(noPool.pre._visCollectSolid, collectSolidRefused, 'no fixture pool, no compound solid to raster');
   assert.equal(solidSegmentsStats().bound, false);
-  const sweepOff = await bootPreRender(scene, { wasm: { visibilitySweep: false } });
-  assert.equal(sweepOff.pre._visCollectSolid, collectSolidJs, 'solidSegments needs visibilitySweep');
-  assert.equal(solidSegmentsStats().bound, false);
+});
+
+// Close-out group B: the sweep runs only in its kernel, which init binds whenever visibility polygons are on. A pass
+// with no sweep bound (a worker the harness left without one) publishes nothing new and says so once.
+test('a visibility pass with no sweep bound publishes nothing, and says so once', async () => {
+  const scene = makeScene(0x0ff1, { lights: 4, boxes: 10, circles: 2, polygons: 2, rings: 0 });
+  const boot = await bootPreRender(scene);
+  const { pre } = boot;
+  writeFrame(boot, 0);
+  pre._vpWriteBuffer.header[0] = 7;
+  const sweep = pre._visSweep;
+  const errors = [];
+  const error = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    pre._visSweep = null;
+    pre._visRefusedWarned = false;
+    pre.buildVisibilityPolygons();
+    pre.buildVisibilityPolygons();
+  } finally {
+    console.error = error;
+    pre._visSweep = sweep;
+  }
+  assert.equal(pre._vpWriteBuffer.header[0], 7, 'the buffer untouched');
+  assert.equal(errors.filter((e) => e.includes('no visibility sweep bound')).length, 1, 'said once');
 });

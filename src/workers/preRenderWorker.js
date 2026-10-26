@@ -21,13 +21,8 @@ import { Camera } from '../core/camera.js';
 import { Query as QueryImport } from '../core/query.js';
 import {
     bindPolarBins,
-    buildVisibilityPolygon,
     clearPolarBins,
-    clipVisibilityToPolar,
-    collectSolidSegments,
     ensureCompoundSolid,
-    markSeenPolarOwners,
-    sweepSawOccluder,
     OCC_CIRCLE,
     OCC_POLY,
     polarBinsActive,
@@ -55,7 +50,7 @@ import {
 import {
     SOLID_ARGS,
     bindSolidSegments,
-    collectSolidJs,
+    collectSolidRefused,
     collectSolidWasm,
     unbindSolidSegments,
 } from '../render/visibility/solidSegmentsClient.js';
@@ -596,13 +591,16 @@ class PreRenderWorker extends AbstractWorker {
         this._selfLitSeen = EMPTY_U32;
         this._selfLitSeenStamp = 0;
         // W2a: the per-light sweep in visibilitySweep.wasm (bindVisibilitySweep's binding), on the visibility
-        // memory pre-render makes for it; null sweeps in JS.
+        // memory pre-render makes for it; null before an init with raycasted lighting.
         this._visSweep = null;
         this._visMemory = null;
-        // W1: the swept light loop's compound raster, solidSegments.wasm (collectSolidWasm) or the JS.
-        this._visCollectSolid = collectSolidJs;
+        // buildVisibilityPolygons said the sweep is missing.
+        this._visRefusedWarned = false;
+        // W1: the swept light loop's compound raster, solidSegments.wasm (collectSolidWasm); without a fixture pool
+        // no compound solid comes, and collectSolidRefused says so if one does.
+        this._visCollectSolid = collectSolidRefused;
         // W2b: the light's neighbour gather in visibilityGather.wasm (bindVisibilityGather's binding), with the
-        // visibility memory placed in Box2D's block; null gathers in JS.
+        // visibility memory placed in the engine block; null gathers in JS (the spatial memory outside the block).
         this._visGather = null;
         this._decorationZoomAlpha = 1;
         this._emitWriteCount = 0;
@@ -1188,11 +1186,11 @@ class PreRenderWorker extends AbstractWorker {
         // VISIBILITY POLYGONS - Initialize (raycasted light occlusion)
         // ========================================
         this.visibilityPolygonsEnabled = false;
-        // W2a: a previous scene's visibility memory goes, and the polar bins are angularSweep.js' own again,
-        // so a scene on the JS path binds what it always did.
+        // W2a: a previous scene's visibility memory goes, and the polar bins are angularSweep.js' own until the
+        // next binds them.
         this._visSweep = null;
         this._visMemory = null;
-        this._visCollectSolid = collectSolidJs;
+        this._visCollectSolid = collectSolidRefused;
         this._visGather = null;
         unbindSolidSegments();
         bindPolarBins(null, null);
@@ -1232,32 +1230,30 @@ class PreRenderWorker extends AbstractWorker {
             const maxOccluders = VISIBILITY_MAX_OCCLUDERS;
             // Max verts: 4 per box, MAX_POLYGON_VERTICES per poly, rare all-poly worst case
             const poolVerts = maxOccluders * MAX_POLYGON_VERTICES;
-            // W2a: with wasm.visibilitySweep on, the scratch below, the polar bins and the seen stamps are views
-            // on a visibility memory, where visibilitySweep.wasm reads them; otherwise (or when it cannot be
-            // made or loaded) plain arrays, as always.
-            const vm = this.config?.wasm?.visibilitySweep !== false
-                ? await this._bindVisibilitySweep(maxVerts, data)
-                : null;
-            this._vpOccKind = vm ? vm.kind : new Uint8Array(maxOccluders);
-            this._vpCircleX = vm ? vm.cx : new Float32Array(maxOccluders);
-            this._vpCircleY = vm ? vm.cy : new Float32Array(maxOccluders);
-            this._vpCircleR = vm ? vm.cr : new Float32Array(maxOccluders);
-            this._vpVertStart = vm ? vm.vertStart : new Int32Array(maxOccluders);
-            this._vpVertCount = vm ? vm.vertCount : new Uint8Array(maxOccluders);
-            this._vpVertsX = vm ? vm.vertsX : new Float32Array(poolVerts);
-            this._vpVertsY = vm ? vm.vertsY : new Float32Array(poolVerts);
+            // W2a: the scratch below, the polar bins and the seen stamps are views on a visibility memory, where
+            // visibilitySweep.wasm reads them (a memory that cannot be made, or a kernel that does not load, is an
+            // init error).
+            const vm = await this._bindVisibilitySweep(maxVerts, data);
+            this._vpOccKind = vm.kind;
+            this._vpCircleX = vm.cx;
+            this._vpCircleY = vm.cy;
+            this._vpCircleR = vm.cr;
+            this._vpVertStart = vm.vertStart;
+            this._vpVertCount = vm.vertCount;
+            this._vpVertsX = vm.vertsX;
+            this._vpVertsY = vm.vertsY;
             this._vpMaxOccluders = maxOccluders;
 
             // Output scratch for polygon vertices
-            this._vpOutX = vm ? vm.outX : new Float32Array(maxVerts);
-            this._vpOutY = vm ? vm.outY : new Float32Array(maxVerts);
+            this._vpOutX = vm.outX;
+            this._vpOutY = vm.outY;
 
             // Self-lit queue (entity under own occluder fill)
             this._selfLitMax = data.visibilityPolygons.maxOccluderSelfLit || 512;
             this._selfLitItemBytes = 28;
             this._selfLitSolid = new Uint8Array(this._selfLitMax);
             this._selfLitOcc = new Int32Array(this._selfLitMax);
-            this._selfLitSeen = vm ? vm.ownerSeen : new Uint32Array(this.globalEntityCount);
+            this._selfLitSeen = vm.ownerSeen;
             const selfLitSabs = [
                 data.visibilityPolygons.selfLitDataA,
                 data.visibilityPolygons.selfLitDataB,
@@ -1282,18 +1278,18 @@ class PreRenderWorker extends AbstractWorker {
     /**
      * W2a. Make the visibility memory (src/util/visibilityMemory.js: the light's gather and polygon, the polar
      * bins, the seen stamps, the sweep's scratch) and bind visibilitySweep.wasm on it (wasm.visibilitySweepF32
-     * picks the float32 sweep or the double SIMD one). Returns the views the scratch binds to, or null: the
-     * memory could not be made or the module did not load, and the JS sweep runs on plain arrays.
-     * W1: with a fixture pool and wasm.solidSegments on, the memory also holds the compound solids' outlines
-     * and solidSegments.wasm rasters them into its bins (the swept loop only: W1 needs W2a).
-     * W2b: when the scene laid the gather's regions in Box2D's block with these options, the memory is placed
+     * picks the float32 sweep or the double SIMD one). Returns the views the scratch binds to; a memory that cannot
+     * be made or a kernel that does not load is an error.
+     * W1: with a fixture pool the memory also holds the compound solids' outlines, and solidSegments.wasm rasters
+     * them into its bins.
+     * W2b: when the scene laid the gather's regions in the engine block with these options, the memory is placed
      * there and visibilityGather.wasm is bound on it; otherwise it is a memory of its own and the JS gathers.
      */
     async _bindVisibilitySweep(maxVerts, data) {
         const opts = visibilityMemoryOpts({
             maxVerts,
             entities: this.globalEntityCount,
-            fixtures: this.config?.wasm?.solidSegments !== false ? (ColliderFixture.maxCount | 0) : 0,
+            fixtures: ColliderFixture.maxCount | 0,
         });
         const v = data.renderQueueLayout?.collect?.visibility || null;
         const memory = data.renderQueueMemory || null;
@@ -1306,15 +1302,14 @@ class PreRenderWorker extends AbstractWorker {
             vm = createVisibilityMemory(opts, null);
         }
         if (!vm) {
-            console.warn('[PRE_RENDER] the visibility memory could not be made; sweeping in JS');
-            return null;
+            throw new Error('[PRE_RENDER] the visibility memory could not be made (a shared WebAssembly.Memory was refused): '
+                + 'raycasted lighting needs it');
         }
         let sweep;
         try {
             sweep = await bindVisibilitySweep(vm, { maxVerts, f32: this.config?.wasm?.visibilitySweepF32 !== false });
         } catch (err) {
-            console.warn('[PRE_RENDER] visibilitySweep.wasm did not load; sweeping in JS', err);
-            return null;
+            throw new Error(`[PRE_RENDER] visibilitySweep.wasm did not load: ${err?.message ?? err}`, { cause: err });
         }
         this._visSweep = sweep;
         this._visMemory = vm.memory;
@@ -1323,15 +1318,14 @@ class PreRenderWorker extends AbstractWorker {
             try {
                 if (await bindSolidSegments(vm)) this._visCollectSolid = collectSolidWasm;
             } catch (err) {
-                console.warn('[PRE_RENDER] solidSegments.wasm did not load; compound solids raster in JS', err);
+                throw new Error(`[PRE_RENDER] solidSegments.wasm did not load: ${err?.message ?? err}`, { cause: err });
             }
         }
-        if (place && this.config?.wasm?.visibilityGather !== false) {
+        if (place) {
             try {
                 this._visGather = await bindVisibilityGather(memory, v, vm);
             } catch (err) {
-                console.warn('[PRE_RENDER] visibilityGather.wasm did not load; gathering in JS', err);
-                this._visGather = null;
+                throw new Error(`[PRE_RENDER] visibilityGather.wasm did not load: ${err?.message ?? err}`, { cause: err });
             }
         }
         return vm.views;
@@ -3574,348 +3568,23 @@ class PreRenderWorker extends AbstractWorker {
 
     buildVisibilityPolygons() {
         if (!this.visibilityPolygonsEnabled) return;
-        // W2a: the sweep in visibilitySweep.wasm runs in its own copy of the light loop.
-        if (this._visSweep !== null) {
-            this._buildVisibilityPolygonsSwept();
+        // W2a: the sweep runs only in visibilitySweep.wasm (close-out group B), which init binds whenever visibility
+        // polygons are on. The JS sweep it replaced is tests/reference/visibilitySweepJs.mjs.
+        if (this._visSweep === null) {
+            if (!this._visRefusedWarned) {
+                this._visRefusedWarned = true;
+                console.error('[PRE_RENDER] raycasted lighting has no visibility sweep bound: the lights get no polygon');
+            }
             return;
         }
-
-        const buf = this._vpWriteBuffer;
-        if (!buf) { return; }
-
-        const selfLitBuf = this._selfLitWriteBuffer;
-        if (selfLitBuf) selfLitBuf.header[0] = 0;
-
-        // Optional SoA may be absent when scene never registered LightEmitter / LightOccluder
-        if (!LightEmitter.active || !LightOccluder.active || !Collider.active) {
-            buf.header[0] = 0;
-            return;
-        }
-
-        const transformActive = Transform.active;
-        const occluderActive = LightOccluder.active;
-        const occluderMaskMode = LightOccluder.maskMode;
-        const occluderBlock = LightOccluder.block;
-        const colliderActive = Collider.active;
-        const shapeType = Collider.shapeType;
-        const colRadius = Collider.radius;
-        const colWidth = Collider.width;
-        const colHeight = Collider.height;
-        const colOffX = Collider.offsetX;
-        const colOffY = Collider.offsetY;
-        const polyCountArr = Collider.polyCount;
-        const polyVertX = Collider.polyVertexX;
-        const polyVertY = Collider.polyVertexY;
-        const polyCentroidX = Collider.polyCentroidX;
-        const polyCentroidY = Collider.polyCentroidY;
-        const fixtureCountArr = Collider.fixtureCount;
-        const fixtureHead = ColliderFixture.head;
-        const fixtureNext = ColliderFixture.next;
-        const fixtureActiveArr = ColliderFixture.active;
-        const fixtureVertCount = ColliderFixture.vertCount;
-        const fixtureVertX = ColliderFixture.vertexX;
-        const fixtureVertY = ColliderFixture.vertexY;
-        const fixturePoolMax = ColliderFixture.maxCount | 0;
-        const fixtureRevision = ColliderFixture.revision;
-        const lightEnabled = LightEmitter.active;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-
-        const neighborData = Grid.neighborData;
-        const stride = Grid._stride;
-
-        const maxVerts = this._vpMaxVerts;
-        const maxLts = this._vpMaxLights;
-        const slotBytes = this._vpSlotBytes;
-        const kind = this._vpOccKind;
-        const cX = this._vpCircleX;
-        const cY = this._vpCircleY;
-        const cR = this._vpCircleR;
-        const vertStart = this._vpVertStart;
-        const vertCountArr = this._vpVertCount;
-        const vertsX = this._vpVertsX;
-        const vertsY = this._vpVertsY;
-        const maxOccluders = this._vpMaxOccluders;
-        const outX = this._vpOutX;
-        const outY = this._vpOutY;
-        const i32 = buf.i32;
-        const f32 = buf.f32;
-        const pose = this._displayPoseOut;
-
-        const entityLastTextureId = this.entityLastTextureId;
-        const maxSelfLit = this._selfLitMax || 0;
-        let selfLitCount = 0;
-        const selfLitI32 = selfLitBuf ? selfLitBuf.i32 : null;
-        const selfLitF32 = selfLitBuf ? selfLitBuf.f32 : null;
-        const selfLitU16 = selfLitBuf ? selfLitBuf.u16 : null;
-        const selfLitU8 = selfLitBuf ? selfLitBuf.u8 : null;
-        const selfLitItemBytes = this._selfLitItemBytes || 28;
-        const selfLitSolid = this._selfLitSolid;
-        const selfLitOcc = this._selfLitOcc;
-
-        const visibleLights = this.visibleLightsData;
-        if (!visibleLights) { buf.header[0] = 0; return; }
-
-        const lightCount = visibleLights[0];
-        if (lightCount === 0) { buf.header[0] = 0; return; }
-        if (lightCount > maxLts) {
-            this._warnOnce(
-                '_warnedVisibilityPolygonLightCap',
-                `[PRE_RENDER] visibility polygon light cap reached (${maxLts}). Increase lighting.maxLights or reduce raycasted visible lights.`
-            );
-        }
-
-        let lightsWritten = 0;
-
-        for (let li = 0; li < lightCount && lightsWritten < maxLts; li++) {
-            const lightIdx = visibleLights[1 + li];
-            if (!lightEnabled[lightIdx]) continue;
-
-            const intensity = lightIntensity[lightIdx];
-            if (intensity <= 0) continue;
-
-            // Same display pose as sprites (post-step publish), not live Transform
-            this._displayPose(lightIdx, pose);
-            const lx = pose[0];
-            const ly = pose[1];
-            const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
-
-            let occCount = 0;
-            let vertPool = 0;
-            let occluderLimitHit = false;
-            clearPolarBins(influenceRadius);
-            const selfLitStart = selfLitCount;
-            let solidsLit = 0;
-
-            if (neighborData && stride > 0) {
-                const offset = lightIdx * stride;
-                const nCount = neighborData[offset];
-                for (let k = 0; k < nCount; k++) {
-                    if (occCount >= maxOccluders) {
-                        occluderLimitHit = true;
-                        break;
-                    }
-                    const nIdx = neighborData[offset + 1 + k];
-                    if (!transformActive[nIdx] || !occluderActive[nIdx] || !colliderActive[nIdx]) continue;
-                    if (occluderBlock && !(occluderBlock[nIdx] > 0)) continue;
-
-                    this._displayPose(nIdx, pose);
-                    const wx = pose[0];
-                    const wy = pose[1];
-                    const c = pose[2];
-                    const s = pose[3];
-
-                    const shape = shapeType[nIdx];
-                    if (shape === ShapeType.Chain) continue;
-                    const ox = colOffX[nIdx] || 0;
-                    const oy = colOffY[nIdx] || 0;
-                    const nFixtures = fixtureCountArr ? (fixtureCountArr[nIdx] | 0) : 0;
-                    if (nFixtures > 0 && fixtureHead && nIdx < fixtureHead.length) {
-                        const lcx = polyCentroidX ? polyCentroidX[nIdx] : 0;
-                        const lcy = polyCentroidY ? polyCentroidY[nIdx] : 0;
-                        const centX = wx + c * (ox + lcx) - s * (oy + lcy);
-                        const centY = wy + s * (ox + lcx) + c * (oy + lcy);
-                        const hw = (colWidth[nIdx] || 0) * 0.5;
-                        const hh = (colHeight[nIdx] || 0) * 0.5;
-                        const reach = Math.sqrt(hw * hw + hh * hh);
-                        const cdx = centX - lx;
-                        const cdy = centY - ly;
-                        const bound = influenceRadius + reach;
-                        if (cdx * cdx + cdy * cdy > bound * bound) continue;
-
-                        const solid = ensureCompoundSolid(
-                            nIdx,
-                            fixtureRevision ? fixtureRevision[0] : 0,
-                            fixtureHead, fixtureNext, fixtureActiveArr,
-                            fixtureVertCount, fixtureVertX, fixtureVertY,
-                            fixtureHead[nIdx], fixturePoolMax,
-                            false // segments only: the fill is pixi's (self-lit)
-                        );
-                        const hit = collectSolidSegments(
-                            solid, wx, wy, c, s, ox, oy,
-                            lx, ly, influenceRadius * influenceRadius, nIdx
-                        );
-                        if (hit > 0 && selfLitI32 && selfLitCount < maxSelfLit) {
-                            const byteOff = 4 + selfLitCount * selfLitItemBytes;
-                            const i32Off = byteOff >> 2;
-                            selfLitI32[i32Off] = nIdx;
-                            selfLitI32[i32Off + 1] = lightIdx;
-                            selfLitF32[i32Off + 2] = wx;
-                            selfLitF32[i32Off + 3] = wy;
-                            selfLitF32[i32Off + 4] = c;
-                            selfLitF32[i32Off + 5] = s;
-                            const u16Off = byteOff >> 1;
-                            let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
-                            if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
-                                texId = this._resolveEntitySpriteTextureId(nIdx);
-                            }
-                            selfLitU16[u16Off + 12] = texId;
-                            selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
-                            selfLitU8[byteOff + 27] = 0;
-                            selfLitSolid[selfLitCount] = 1;
-                            solidsLit++;
-                            selfLitCount++;
-                        }
-                        continue;
-                    }
-                    const occX = wx + ox;
-                    const occY = wy + oy;
-                    const dx = occX - lx;
-                    const dy = occY - ly;
-                    let reach = 0;
-                    if (shape === ShapeType.Circle) {
-                        reach = colRadius[nIdx] || 0;
-                    } else {
-                        const hw = (colWidth[nIdx] || 0) * 0.5;
-                        const hh = (colHeight[nIdx] || 0) * 0.5;
-                        // H-03: sqrt, not Math.hypot - the overflow/underflow guard is wasted here.
-                        // Measured ~16x cheaper (5/5 counterbalanced rounds, 1e-3..1e7). NOT
-                        // bit-identical to hypot: it agrees on ~64% of in-range pairs and differs by
-                        // a few ulps on the rest, because hypot is deliberately the more accurate of
-                        // the two. That is ~1e-16 relative, far under the Float32 this value is
-                        // stored into. Overflow is unreachable (Float64 squares overflow past ~1.34e154).
-                        // Do not reintroduce hypot here without measuring it again.
-                        reach = Math.sqrt(hw * hw + hh * hh);
-                    }
-                    const maxReach = influenceRadius + reach;
-                    if (dx * dx + dy * dy > maxReach * maxReach) continue;
-
-                    let packed = false;
-
-                    if (shape === ShapeType.Circle) {
-                        const r = colRadius[nIdx];
-                        if (!(r > 0)) continue;
-                        kind[occCount] = OCC_CIRCLE;
-                        cX[occCount] = wx + ox;
-                        cY[occCount] = wy + oy;
-                        cR[occCount] = r;
-                        vertStart[occCount] = 0;
-                        vertCountArr[occCount] = 0;
-                        packed = true;
-                    } else if (shape === ShapeType.Box) {
-                        const w = colWidth[nIdx];
-                        const h = colHeight[nIdx];
-                        if (!(w > 0) || !(h > 0)) continue;
-                        kind[occCount] = OCC_POLY;
-                        vertStart[occCount] = vertPool;
-                        writeOrientedBoxVerts(
-                            vertsX, vertsY, vertPool,
-                            wx, wy, w, h, c, s, ox, oy
-                        );
-                        vertCountArr[occCount] = 4;
-                        vertPool += 4;
-                        packed = true;
-                    } else if (shape === ShapeType.Polygon) {
-                        const pc = polyCountArr[nIdx] | 0;
-                        if (pc >= 3) {
-                            kind[occCount] = OCC_POLY;
-                            vertStart[occCount] = vertPool;
-                            const base = nIdx * MAX_POLYGON_VERTICES;
-                            writePolygonVerts(
-                                vertsX, vertsY, vertPool,
-                                wx, wy, c, s, ox, oy,
-                                polyVertX, polyVertY, base, pc
-                            );
-                            vertCountArr[occCount] = pc;
-                            vertPool += pc;
-                            packed = true;
-                        } else {
-                            // Fallback to box extents when poly not filled
-                            const w = colWidth[nIdx];
-                            const h = colHeight[nIdx];
-                            if (!(w > 0) || !(h > 0)) continue;
-                            kind[occCount] = OCC_POLY;
-                            vertStart[occCount] = vertPool;
-                            writeOrientedBoxVerts(
-                                vertsX, vertsY, vertPool,
-                                wx, wy, w, h, c, s, ox, oy
-                            );
-                            vertCountArr[occCount] = 4;
-                            vertPool += 4;
-                            packed = true;
-                        }
-                    }
-
-                    if (!packed) continue;
-
-                    // Self-lit queue: bake display pose (frame-locked with sprites / umbra)
-                    if (selfLitI32 && selfLitCount < maxSelfLit) {
-                        const byteOff = 4 + selfLitCount * selfLitItemBytes;
-                        const i32Off = byteOff >> 2;
-                        selfLitI32[i32Off] = nIdx;
-                        selfLitI32[i32Off + 1] = lightIdx;
-                        selfLitF32[i32Off + 2] = wx;
-                        selfLitF32[i32Off + 3] = wy;
-                        selfLitF32[i32Off + 4] = c;
-                        selfLitF32[i32Off + 5] = s;
-                        const u16Off = byteOff >> 1;
-                        let texId = entityLastTextureId ? entityLastTextureId[nIdx] : INVALID_TEXTURE_ID;
-                        if (texId === INVALID_TEXTURE_ID && (occluderMaskMode[nIdx] | 0) === LIGHT_OCCLUDER_MASK_SPRITE) {
-                            texId = this._resolveEntitySpriteTextureId(nIdx);
-                        }
-                        selfLitU16[u16Off + 12] = texId; // after 6×i32/f32 = 24 bytes
-                        selfLitU8[byteOff + 26] = occluderMaskMode[nIdx] | 0;
-                        selfLitU8[byteOff + 27] = 0;
-                        selfLitSolid[selfLitCount] = 0;
-                        selfLitOcc[selfLitCount] = occCount;
-                        selfLitCount++;
-                    }
-
-                    occCount++;
-                }
-            }
-            if (occluderLimitHit) {
-                this._warnOnce(
-                    '_warnedVisibilityPolygonOccluderCap',
-                    `[PRE_RENDER] visibility polygon occluder cap reached (${maxOccluders} per light). Reduce occluder density or raise the internal cap.`
-                );
-            }
-
-            let vertCount = buildVisibilityPolygon(
-                lx, ly, influenceRadius,
-                kind, cX, cY, cR, vertStart, vertCountArr, vertsX, vertsY,
-                occCount, outX, outY, maxVerts
-            );
-            const polarActive = polarBinsActive();
-            if (polarActive) {
-                vertCount = clipVisibilityToPolar(
-                    lx, ly, outX, outY, vertCount, outX, outY, maxVerts
-                );
-            }
-            // N-19 / N-39: an occluder is self-lit where this light sees it, not
-            // wherever it is in range (rock behind rock, a box behind a box stay dark).
-            if (selfLitCount > selfLitStart) {
-                selfLitCount = this._dropUnseen(selfLitBuf, selfLitStart, selfLitCount, solidsLit > 0 && polarActive);
-            }
-
-            // Layout: [lightIdx:i32, lightX:f32, lightY:f32, vertexCount:i32, x[N]:f32, y[N]:f32]
-            const baseIndex = (4 + lightsWritten * slotBytes) >> 2;
-            i32[baseIndex] = lightIdx;
-            f32[baseIndex + 1] = lx;
-            f32[baseIndex + 2] = ly;
-            i32[baseIndex + 3] = vertCount;
-
-            // A loop, not set(subarray(...)): two views per light per frame were 2.2 MB/s of garbage
-            // in visPolyStressScene (N-1). The same Float32 rounding either way.
-            const xStart = baseIndex + 4;
-            const yStart = xStart + maxVerts;
-            const copyCount = vertCount < maxVerts ? vertCount : maxVerts; // subarray clamped too
-            for (let v = 0; v < copyCount; v++) {
-                f32[xStart + v] = outX[v];
-                f32[yStart + v] = outY[v];
-            }
-
-            lightsWritten++;
-        }
-
-        buf.header[0] = lightsWritten;
-        if (selfLitBuf) selfLitBuf.header[0] = selfLitCount;
+        this._buildVisibilityPolygonsSwept();
     }
 
     /**
-     * W2a. buildVisibilityPolygons with each light's sweep in visibilitySweep.wasm: the same gather into the
-     * same scratch (views on the visibility memory), then one call per light for the sweep, the polar clip
-     * and the seen owners, and _dropUnseenSwept on what it left. A copy of the light loop, not a branch in it.
+     * W2a. The light loop, each light's sweep in visibilitySweep.wasm: the gather (visibilityGather.wasm where the
+     * scene placed its regions in the engine block, else the JS below) into the scratch on the visibility memory,
+     * then one call per light for the sweep, the polar clip and the seen owners, and _dropUnseenSwept on what it
+     * left.
      */
     _buildVisibilityPolygonsSwept() {
         const buf = this._vpWriteBuffer;
@@ -3985,7 +3654,7 @@ class PreRenderWorker extends AbstractWorker {
         const sweepTableByte = sweepK.tableByte;
         const sweepResults = sweepK.results;
         const ownerSeenByte = sweepK.ownerSeenByte;
-        // W1: solidSegments.wasm or collectSolidSegments, bound at init; the doubles go through SOLID_ARGS.
+        // W1: solidSegments.wasm (collectSolidWasm), bound at init; the doubles go through SOLID_ARGS.
         const collectSolid = this._visCollectSolid;
 
         const entityLastTextureId = this.entityLastTextureId;
@@ -4048,7 +3717,7 @@ class PreRenderWorker extends AbstractWorker {
 
             if (gatherOn) {
                 // The bins are cleared before the light's first solid rasters; a light with none leaves them.
-                skipPolarBins(influenceRadius);
+                skipPolarBins();
                 let binsCleared = false;
                 occCount = gk.gather(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha);
                 occluderLimitHit = gatherRes[3] !== 0;
@@ -4312,10 +3981,9 @@ class PreRenderWorker extends AbstractWorker {
                 );
             }
 
-            // W2a: buildVisibilityPolygon, and with compound solids in the bins clipVisibilityToPolar and
-            // markSeenPolarOwners, in one call on the memory the gather above packed (the _vp* scratch are
-            // its views). A light with self-lit items takes the N-19 stamp _dropUnseen would take, and the
-            // kernel marks the solids its polygon shows with it.
+            // W2a: the sweep, and with compound solids in the bins the polar clip and the seen owners, in one call
+            // on the memory the gather above packed (the _vp* scratch are its views). A light with self-lit items
+            // takes a new N-19 stamp, and the kernel marks the solids its polygon shows with it.
             const polarActive = polarBinsActive();
             if (selfLitCount > selfLitStart) {
                 let stamp = (this._selfLitSeenStamp + 1) >>> 0;
@@ -4365,44 +4033,10 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
-     * N-19 / N-39. Keep this light's self-lit items [start, end) that its
-     * polygon shows: a solid when one of its polar bins is on it
-     * (markSeenPolarOwners; no bin at all means none is), a simple occluder
-     * when a sweep vertex landed on it (sweepSawOccluder). Returns the new count.
-     */
-    _dropUnseen(buf, start, end, polarActive) {
-        let stamp = (this._selfLitSeenStamp + 1) >>> 0;
-        if (stamp === 0) {
-            this._selfLitSeen.fill(0);
-            stamp = 1;
-        }
-        this._selfLitSeenStamp = stamp;
-        const seen = this._selfLitSeen;
-        const solidsKnown = !polarActive || markSeenPolarOwners(seen, stamp) >= 0;
-        const solid = this._selfLitSolid;
-        const occ = this._selfLitOcc;
-        const itemBytes = this._selfLitItemBytes;
-        const i32 = buf.i32;
-        const u8 = buf.u8;
-        let w = start;
-        for (let q = start; q < end; q++) {
-            const off = 4 + q * itemBytes;
-            if (solid[q] ? solidsKnown && seen[i32[off >> 2]] !== stamp : !sweepSawOccluder(occ[q])) continue;
-            if (w !== q) {
-                u8.copyWithin(4 + w * itemBytes, off, off + itemBytes);
-                solid[w] = solid[q];
-                occ[w] = occ[q];
-            }
-            w++;
-        }
-        return w;
-    }
-
-    /**
-     * W2a. _dropUnseen after the sweep kernel. The stamp is the one the light's call marked its solids with
-     * (the kernel's ownersMarked is markSeenPolarOwners' count, -1 when no merge ran), and a simple occluder
-     * is seen as sweepSawOccluder says, from the kernel's N-39 stamps: every one after a sweep that gave up,
-     * and every one past the occluder cache.
+     * W2a, N-19 / N-39. Keep this light's self-lit items [start, end) that its polygon shows, after the sweep
+     * kernel: a solid when the light's call marked it with the stamp (the kernel's ownersMarked counts the bins
+     * that did, -1 when no merge ran), a simple occluder when the kernel's N-39 stamps say a vertex landed on it
+     * (every one after a sweep that gave up, and every one past the occluder cache).
      */
     _dropUnseenSwept(buf, start, end, polarActive) {
         const k = this._visSweep;
