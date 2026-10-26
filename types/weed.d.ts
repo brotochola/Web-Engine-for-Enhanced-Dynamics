@@ -324,8 +324,6 @@ export type SceneConfig = Record<string, unknown> & {
     preRenderCollect?: boolean;
     /** The bullet tick and its linecasts in one WASM call per frame (physics scenes: the pool moves into Box2D's memory). */
     bulletTick?: boolean;
-    /** The painter sort of the main sprite queue, in the worker preRender.sortSprites names (its state in the render-queue memory). */
-    painterRadix?: boolean;
     /** Pre-render's per-light visibility sweep with raycasted lighting (its scratch lives in a WebAssembly.Memory of pre-render's own). */
     visibilitySweep?: boolean;
     /** The sweep in float32 (default) or, false, in double precision. Needs visibilitySweep. */

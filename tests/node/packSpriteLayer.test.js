@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { packSpriteLayer } from '../../src/render/packSpriteLayer.js';
-import { createPainterState } from '../../src/util/sortIndexByKey.js';
+import { kernelPainter } from '../helpers/painterKernel.mjs';
 
 function opts() {
   return { indices: null, indexCount: 0, sortKey: 1, includeType: -1 };
@@ -55,9 +55,9 @@ test('packSpriteLayer skips the glow write when that destination has no room', (
   assert.equal(result.sprite, 1);
 });
 
-test('packSpriteLayer orders a dense layer by sort key', () => {
-  const painter = createPainterState(4);
-  const keys = new Uint32Array([30, 10, 20]);
+test('packSpriteLayer orders a dense layer by sort key', async () => {
+  const { state: painter, keysU32: keys } = await kernelPainter(4);
+  keys.set([30, 10, 20]);
   let seen = [];
   const result = packSpriteLayer({
     count: 3,
@@ -78,19 +78,20 @@ test('packSpriteLayer orders a dense layer by sort key', () => {
 
 // Close-out group B: a layer with a painter and fewer than two rows is in painter order already, so it says so
 // (sortedFlag); Pixi otherwise packed such a frame itself under Y-sort. With no painter it says nothing.
-test('packSpriteLayer flags fewer than two rows as sorted when it has a painter', () => {
+test('packSpriteLayer flags fewer than two rows as sorted when it has a painter', async () => {
   const SORTED = 4;
   for (const [count, painter, want] of [[1, true, SORTED], [0, true, SORTED], [1, false, 0], [2, true, SORTED]]) {
+    const k = await kernelPainter(4);
     const result = packSpriteLayer({
       count,
       type: new Uint8Array(4),
       opts: opts(),
-      painter: painter ? createPainterState(4) : null,
-      keysU32: new Uint32Array(4),
+      painter: painter ? k.state : null,
+      keysU32: k.keysU32,
       sortedFlag: SORTED,
-      // As pre-render's pack asks: every row, through its slot list.
+      // As pre-render's pack asks: every row, through its slot list (in the memory, as the kernel reads it).
       fillAll: true,
-      idxEntity: new Uint32Array(4),
+      idxEntity: k.idx,
       writeSprites(o) { return o.indexCount; },
     });
     assert.equal(result.flags & SORTED, want, `${count} rows, painter ${painter}`);

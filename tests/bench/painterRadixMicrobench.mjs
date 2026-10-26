@@ -11,9 +11,10 @@
  *   node tests/bench/painterRadixMicrobench.mjs
  *   node tests/bench/painterRadixMicrobench.mjs --output out.json
  */
-import { createPainterState, radixPainterOrder, radixSortIndicesBySortKey, spriteYSortKey } from '../../src/util/sortIndexByKey.js';
+import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { checksumInts, isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
+import { createPainterState, radixPainterOrder, radixSortIndicesBySortKey } from '../reference/painterJs.mjs';
 
 // Hypotheses: radixPainterOrder variants.
 const VARIANTS = { base: radixPainterOrder };

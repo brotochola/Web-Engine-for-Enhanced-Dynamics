@@ -464,11 +464,6 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   bulletTick: true,
   /**
-   * The painter sort of the main sprite queue (`painterRadix.wasm`, W10): the state of the worker that sorts
-   * (`preRender.sortSprites`) in the render-queue memory, where the kernel reads the sort keys pre-render wrote.
-   */
-  painterRadix: true,
-  /**
    * The particle worker's decoration sway (`decorationSway.wasm`, W22): its arrays in the render-queue memory,
    * next to the decorations block the emit puts there, with a sway bucket grid.
    */

@@ -58,7 +58,9 @@ function writeQueue(q, fr, f, ySort) {
 
 async function run(pre, split, ySort = false) {
   const caps = gpuQueueCaps(MAX, { enabled: false });
-  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(64));
+  // With Y-sort pre-render sorts, so its painter state is laid out as the scene lays it.
+  const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(64), null, null, false, null,
+    ySort ? { preRender: true, pixi: false } : null);
   await initWorker(pre, {
     config: {
       worldWidth: 4000,

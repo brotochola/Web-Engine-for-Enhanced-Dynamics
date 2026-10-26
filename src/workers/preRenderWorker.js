@@ -70,7 +70,7 @@ import {
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
-import { orderSortKey, radixSortIndicesBySortKey, spriteYSortKey, spriteSortFootY, zSortBand, createPainterState } from '../util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand } from '../util/sortIndexByKey.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -416,7 +416,7 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuStaticRows = new Int32Array(2);
         this._packSplitUsed = false;
         this._packSplitGen = 0;
-        /** The main queue's painter state (createPainterState's shape), with ySort on and a GPU queue. */
+        /** The main queue's painter state (painterRadixClient's wasmPainterState), when pre-render sorts it. */
         this._gpuPainter = null;
         /** The painter sort kernel (W10) on pre-render's painter regions of the render-queue memory, when laid out. */
         this._gpuPainterWasm = null;
@@ -622,8 +622,6 @@ class PreRenderWorker extends AbstractWorker {
         this._presortKeys = EMPTY_F32;
         this._presortKeysU32 = EMPTY_U32;
         this._presortOrder = EMPTY_U32;
-        this._presortScratch = EMPTY_U32;
-        this._presortHist = EMPTY_U32;
         this._presortF32 = EMPTY_F32;
         this._presortU8 = EMPTY_U8;
         this._presortI32 = EMPTY_I32;
@@ -994,18 +992,24 @@ class PreRenderWorker extends AbstractWorker {
                     createGpuQueueViews(data.gpuQueue.dataA, caps, data.gpuQueue.dataAByte | 0),
                     createGpuQueueViews(data.gpuQueue.dataB, caps, data.gpuQueue.dataBByte | 0),
                 ];
-                // W10: the painter sort in WASM on pre-render's painter state, next to the keys it writes; the
-                // slot lists it sorts are regions there too.
+                // W10: the painter sort is painterRadix.wasm on pre-render's painter state, next to the keys it
+                // writes, when pre-render sorts (the scene lays the state out then); the slot lists it sorts are
+                // regions there too.
                 this._gpuPainterWasm = null;
                 const painterLayout = data.renderQueueLayout?.preRenderPainter || null;
-                if (this._ySort && data.renderQueueMemory && painterLayout && painterLayout.rows >= maxItems
-                    && this.config?.wasm?.painterRadix !== false) {
+                if (this._ySort && data.renderQueueMemory && painterLayout) {
+                    if (painterLayout.rows < maxItems) {
+                        throw new Error(`[PRE_RENDER] the painter state holds ${painterLayout.rows} rows for a queue of ${maxItems}`);
+                    }
                     try {
                         this._gpuPainterWasm = await bindPainterRadix(data.renderQueueMemory, painterLayout);
                     } catch (err) {
-                        console.warn('[PRE_RENDER] painterRadix.wasm did not load; sorting in JS', err);
-                        this._gpuPainterWasm = null;
+                        throw new Error(`[PRE_RENDER] painterRadix.wasm did not load: ${err?.message ?? err}`, { cause: err });
                     }
+                } else if (this._ySort && this._sortSprites === SORT_SPRITES_PRERENDER
+                    && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER) {
+                    console.error('[PRE_RENDER] pre-render sorts the sprites (preRender.sortSprites), but the render-queue '
+                        + 'memory has no painter state for it: they are drawn unsorted');
                 }
                 const painterWasm = this._gpuPainterWasm;
                 this._gpuIdxEntity = painterWasm ? painterSlotList(painterWasm, 'entity', maxItems) : new Uint32Array(maxItems);
@@ -1061,11 +1065,7 @@ class PreRenderWorker extends AbstractWorker {
                     };
                 }
                 this._gpuCounts = { sprite: 0, glow: 0, sun: 0, stamp: 0, cookie: 0, particle: 0 };
-                if (this._ySort) {
-                    this._gpuPainter = this._gpuPainterWasm
-                        ? createWasmPainterState(this._gpuPainterWasm)
-                        : createPainterState(maxItems);
-                }
+                this._gpuPainter = this._ySort && this._gpuPainterWasm ? createWasmPainterState(this._gpuPainterWasm) : null;
                 this._atlasNearest = (rendererConfig.atlasScaleMode || RENDERER_DEFAULTS.atlasScaleMode) === 'nearest';
             }
 
@@ -2779,6 +2779,8 @@ class PreRenderWorker extends AbstractWorker {
         const wrote = this._lastEmitCount;
         if (count < 2 || last <= 0 || wrote < 2 * last || wrote >= this.renderQueueMaxItems) return false;
         if (!this.renderQueueSortKey || !this._gpuPainter || !this._allowGpuPainter()) return false;
+        // The keys and the order are regions of the render-queue memory, where the painter kernel sorts them.
+        if (this._presortOrder.length < count || this._presortOrder.buffer !== this._gpuPainter.kernel.buffer) return false;
         if (this.shadowsEnabled && this.gpuQueueCaps && this.gpuQueueCaps.maxSun > 0) return false;
         const px = this._collectPx;
         if (px === this.renderQueueX || px.length < count) return false;
@@ -2788,18 +2790,10 @@ class PreRenderWorker extends AbstractWorker {
 
     /** E-138. The collector's rows and their poses in the stash, stably sorted by the key the emit writes for them. */
     _sortCollectorByKey(count, ySort) {
-        // The keys and the order are regions of the render-queue memory (bound at init), where pre-render's painter
-        // kernel sorts them; the permutation's scratch is pre-render's own.
-        if (this._presortOrder.length < count) {
-            const n = this.renderQueueMaxItems;
-            this._presortKeys = new Float32Array(n);
-            this._presortKeysU32 = new Uint32Array(this._presortKeys.buffer);
-            this._presortOrder = new Uint32Array(n);
-        }
+        // The keys and the order are regions of the render-queue memory (bound at init, _presortCollector checks),
+        // where pre-render's painter kernel sorts them; the permutation's scratch is pre-render's own.
         if (this._presortF32.length < count) {
             const n = this.renderQueueMaxItems;
-            this._presortScratch = new Uint32Array(n);
-            this._presortHist = new Uint32Array(256);
             this._presortF32 = new Float32Array(n);
             this._presortU8 = new Uint8Array(n);
             this._presortI32 = new Int32Array(n);
@@ -2818,9 +2812,7 @@ class PreRenderWorker extends AbstractWorker {
             order[i] = i;
         }
         this._presortGlowRows = glows;
-        const painter = this._gpuPainter;
-        if (painter && painter.kernel) radixSortIndicesWasm(painter, order, count, this._presortKeysU32);
-        else radixSortIndicesBySortKey(order, count, this._presortKeysU32, this._presortScratch, this._presortHist);
+        radixSortIndicesWasm(this._gpuPainter, order, count, this._presortKeysU32);
         let i = 0;
         while (i < count && order[i] === i) i++;
         if (i === count) return;

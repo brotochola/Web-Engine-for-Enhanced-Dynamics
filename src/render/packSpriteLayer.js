@@ -1,19 +1,16 @@
 import { fillQueueIndices } from './gpuQueueLayout.js';
 import { orderPainterSlotsWasm, radixSortIndicesWasm } from './painterRadixClient.js';
-import { orderPainterSlots, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
 
 const packResult = { sprite: 0, glow: 0, splitParticles: 0, flags: 0 };
 
-/** The painter's order: through its kernel when the state carries one (W10, painterRadixClient.js), else JS. */
+/** The painter's order through its kernel (W10, painterRadixClient.js; a state always carries one). */
 function painterOrder(painter, idxE, n, keysU32) {
-    if (painter.kernel) return orderPainterSlotsWasm(painter, idxE, n, keysU32);
-    return orderPainterSlots(painter, idxE, n, keysU32);
+    return orderPainterSlotsWasm(painter, idxE, n, keysU32);
 }
 
 /** The glow rows by key, with the painter's kernel and scratch. */
 function sortGlowRows(painter, idxG, ng, keysU32) {
-    if (painter.kernel) radixSortIndicesWasm(painter, idxG, ng, keysU32);
-    else radixSortIndicesBySortKey(idxG, ng, keysU32, painter.scratch, painter.hist);
+    radixSortIndicesWasm(painter, idxG, ng, keysU32);
 }
 
 function orderSpriteIndices(opts, painter, keysU32, indices, n, dense, addSortMs, sortedFlag) {

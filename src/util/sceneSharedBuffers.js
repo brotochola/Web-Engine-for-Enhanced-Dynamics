@@ -620,8 +620,7 @@ export function renderQueueMemorySpec(scene) {
   // W10: the painter sort's state for the worker that sorts the main queue (preRender.sortSprites, which the
   // scene resolved), next to the sort keys pre-render writes here.
   const sortSprites = config.preRender?.sortSprites;
-  const painter = config.wasm?.painterRadix !== false
-    && (sortSprites === SORT_SPRITES_PRERENDER || sortSprites === SORT_SPRITES_PIXI)
+  const painter = (sortSprites === SORT_SPRITES_PRERENDER || sortSprites === SORT_SPRITES_PIXI)
     ? { preRender: sortSprites === SORT_SPRITES_PRERENDER, pixi: sortSprites === SORT_SPRITES_PIXI }
     : null;
   return {

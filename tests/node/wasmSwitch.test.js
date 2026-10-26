@@ -238,8 +238,8 @@ test('wasm.preRenderCollect puts Transform, its pose and Collider in the render-
   assert.equal(off.buffers.componentData.Transform, off.renderQueueMemory.buffer);
 });
 
-test('wasm.painterRadix gives the worker that sorts its painter state in the render-queue memory (W10)', () => {
-  assert.equal(WASM_DEFAULTS.painterRadix, true);
+test('the worker that sorts has its painter state in the render-queue memory (W10, no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'painterRadix'), false);
   const renderer = { maxVisibleRenderables: 100, ySort: true };
   // As the scene resolves preRender.sortSprites before the buffers (resolveSpritePipeline).
   const pre = { renderer, preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' } };
@@ -256,8 +256,6 @@ test('wasm.painterRadix gives the worker that sorts its painter state in the ren
   assert.ok(pixiL.pixiPainter, 'Pixi sorts (Predator): its painter state');
   assert.equal(pixiL.preRenderPainter, null, 'pre-render does not sort');
 
-  assert.equal(buildScene({ painterRadix: false }, null, pre).renderQueueMemory.layout.preRenderPainter, null, 'off');
-  assert.equal(buildScene({ painterRadix: false }, null, pixi).renderQueueMemory.layout.pixiPainter, null, 'off');
   const none = buildScene({}, null, { renderer, preRender: { packGpuSprites: 'preRender', sortSprites: 'none' } }).renderQueueMemory.layout;
   assert.equal(none.preRenderPainter, null, 'nobody sorts: no state');
   assert.equal(none.pixiPainter, null);

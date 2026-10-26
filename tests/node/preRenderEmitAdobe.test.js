@@ -31,10 +31,11 @@ import { createParticleMemory, particleMemoryBytes } from '../../src/util/partic
 import { Transform } from '../../src/components/transform.js';
 import { EMIT_ADOBE_ASSET_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { EMIT_ADOBE_IN, EMIT_ADOBE_NONE, EMIT_DECLINED, EMIT_PRESORTED } from '../../src/workers/preRenderEmitClient.js';
-import { radixSortIndicesBySortKey } from '../../src/util/sortIndexByKey.js';
+
 import { bindPainterRadix, createWasmPainterState } from '../../src/render/painterRadixClient.js';
 import { bindPoseColumns, coreComponentData, initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import { installEmitJs } from '../reference/preRenderEmitJs.mjs';
+import { radixSortIndicesBySortKey } from '../reference/painterJs.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 const N = 500;
@@ -687,21 +688,18 @@ test('adobe_advance takes the plain asset\'s clocks, and leaves an asset with no
 // rotation, tint, texture and anchors; an untiled sprite its tile mode and offsets), invisible there and moved to
 // another slot by the sort, so every frame of both runs starts from the same uniform queue.
 test('E-138: the collector sorted by key before the emit gives the queue a stable sort by key after it', async () => {
-  // The presort's sort through pre-render's painter kernel (its keys and order in the memory) and through the JS
-  // radix (no painter): each against a stable sort of the plain queue by its keys.
-  for (const [ySort, kernel] of [[true, false], [false, false], [true, true], [false, true]]) {
+  // The presort's sort through pre-render's painter kernel (its keys and order in the memory), against a stable sort
+  // of the plain queue by its keys (the JS radix, tests/reference/painterJs.mjs).
+  for (const ySort of [true, false]) {
     const k = await setup({ ySort, seed: ySort ? 0xe138 : 0xe139 });
     const { worker, maxItems } = k;
     let radixCalls = 0;
-    worker._gpuPainter = null;
-    if (kernel) {
-      worker._gpuPainter = createWasmPainterState(await bindPainterRadix(k.m.memory, k.m.layout.preRenderPainter));
-      const radix = worker._gpuPainter.kernel.radix;
-      worker._gpuPainter.kernel.radix = (...args) => {
-        radixCalls++;
-        return radix(...args);
-      };
-    }
+    worker._gpuPainter = createWasmPainterState(await bindPainterRadix(k.m.memory, k.m.layout.preRenderPainter));
+    const radix = worker._gpuPainter.kernel.radix;
+    worker._gpuPainter.kernel.radix = (...args) => {
+      radixCalls++;
+      return radix(...args);
+    };
     // This collector lists some sprites more than once (a real one lists each once), and an animated sprite advances
     // its clock once per row, so its rows would depend on their order: the sprites stand still here.
     SpriteRenderer.isAnimated.fill(0);
@@ -768,7 +766,7 @@ test('E-138: the collector sorted by key before the emit gives the queue a stabl
       tiled = tiledAfter;
     }
     assert.ok(moved > 1000, `ySort ${ySort}: the sort moved rows (${moved})`);
-    assert.equal(radixCalls > 0, kernel, kernel ? 'the painter kernel sorted' : 'the JS radix sorted');
+    assert.ok(radixCalls > 0, 'the painter kernel sorted');
     worker._gpuPainter = null;
   }
 });
@@ -781,8 +779,9 @@ test('E-138: from its second frame, pre-render sorts an expanding collector befo
   const k = await setup({ ySort: true, seed: 0xe13a, shadows: false });
   const { worker } = k;
   SpriteRenderer.isAnimated.fill(0);
-  // Pre-render's painter and pack (no GPU queue in this setup: the gate only asks that there is a painter).
-  worker._gpuPainter = worker._gpuPainter || {};
+  // Pre-render's painter (no GPU queue in this setup: the gate asks for a painter whose kernel holds the presort's
+  // keys and order).
+  worker._gpuPainter = createWasmPainterState(await bindPainterRadix(k.m.memory, k.m.layout.preRenderPainter));
   worker.shadowsEnabled = false;
   worker._frameAdobeEntities = [0];
   worker._bindCollectPoses();

@@ -40,10 +40,11 @@
  * In Chrome (`run(args)`, browser-safe) every variant runs in one page, alternating rounds, each sample at
  * least `minMs` (default 20); args: variants, cases, rounds, minMs, stressRows.
  */
-import { createPainterState, radixPainterOrder, reinsertChangedSlots, spriteYSortKey } from '../../src/util/sortIndexByKey.js';
+import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { layoutRegions, NULL_GUARD_BYTES, painterStateLayout, painterStateRegions } from '../../src/util/wasmMemoryMap.js';
 import { mulberry32 } from './benchMath.js';
 import { VARIANTS, loadPainterRadix, painterRadixVariant, wasmPainterState } from '../../src/render/painterRadixClient.js';
+import { createPainterState, radixPainterOrder, reinsertChangedSlots } from '../reference/painterJs.mjs';
 
 export const SEED = 0x9a1e7;
 export const PREDATOR_ROWS = 13000;

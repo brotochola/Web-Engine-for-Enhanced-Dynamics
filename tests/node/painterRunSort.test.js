@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createPainterState, radixPainterOrder, radixSortIndicesBySortKey } from '../../src/util/sortIndexByKey.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
+import { createPainterState, radixPainterOrder, radixSortIndicesBySortKey } from '../reference/painterJs.mjs';
 
 // E-103. radixPainterOrder sorts runs (consecutive slots under one key, an Adobe Animate character's
 // pieces) by their first slot and expands them. The order must be the one the stable radix gives

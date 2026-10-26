@@ -305,9 +305,10 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
 
 /**
  * A painter state's arrays (W10 `painterRadix.wasm`), in the order of the kernel's table (painterRadix.c P_*):
- * createPainterState's order, scratch, moved, merge (u32 per row), prevKey (u32 per slot), slotMoved (u8 per
- * slot), runHeads (u32 per row) and runLen (u32 per slot), then the kernel's histograms (PAINTER_HIST_WORDS
- * u32, the JS module's radixHist4) and its two ordinal buffers (u32 per row).
+ * the JS painter state's order, scratch, moved, merge (u32 per row), prevKey (u32 per slot), slotMoved (u8 per
+ * slot), runHeads (u32 per row) and runLen (u32 per slot) (createPainterState, tests/reference/painterJs.mjs), then
+ * the kernel's histograms (PAINTER_HIST_WORDS u32, the JS radix's radixHist4) and its two ordinal buffers (u32 per
+ * row).
  */
 export const PAINTER_SLOTS = ['order', 'scratch', 'moved', 'merge', 'prevKey', 'slotMoved', 'runHeads', 'runLen', 'hist', 'ordsA', 'ordsB'];
 /** painterRadix.c HIST_WORDS: three 11-bit histograms. */
@@ -321,7 +322,7 @@ const capitalized = (name) => name[0].toUpperCase() + name.slice(1);
  * offset: the main queue's rows without the glow rows (`${prefix}IdxEntity`) and the glow rows
  * (`${prefix}IdxGlow`), u32 per row. Rows and slots are both the queue's rows.
  * @param {string} prefix
- * @param {number} rows the queue's rows (createPainterState's maxItems)
+ * @param {number} rows the queue's rows (one state row per queue row)
  * @param {string} owner
  */
 export function painterStateRegions(prefix, rows, owner) {

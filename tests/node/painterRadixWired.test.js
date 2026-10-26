@@ -1,6 +1,6 @@
-// E-76 W10, wired: the painter sort through the workers' real paths, two ways each: the switch off (no painter
-// regions: the JS sort on arrays of the worker's own) and the kernel (painterRadix.wasm on the worker's painter
-// state in the render-queue memory, the slot lists there too).
+// E-76 W10, wired: the painter sort through the workers' real paths (painterRadix.wasm on the worker's painter state
+// in the render-queue memory, the slot lists there too), against the JS painter it replaced
+// (tests/reference/painterJs.mjs) run on the same frames: one state across them, as the worker's.
 // - Pre-render (sortSprites 'preRender', the painter stress scenes): packSpriteAndShadowQueues on queues it
 //   writes in the memory, A and B in turn, with the pack kernel (gpuPack.wasm) on both runs.
 // - Pixi (sortSprites 'pixi', Predator): updateSpritesFromRenderQueue on the same queues, with its own sprite
@@ -8,7 +8,7 @@
 // The frames walk every way the order is made: the first rebuild, keys that move (reinsert, a few slots to
 // most), ties, keys above the world origin, runs of one key (an Adobe character's pieces), a count change and a
 // type change at the same count (rebuilds), a frame with every key the same, one with two rows. Every frame the
-// sprite order, the glow order, and the rows each batch would upload must be the same, word for word.
+// sprite order and the glow order must be the JS painter's, and each packed row the queue row at its slot.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -23,14 +23,16 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Query } from '../../src/core/query.js';
 import { computeBufferSize, createViews, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import {
-  computeGpuQueueBufferSize, GPU_FLAG_SORTED, GPU_HDR_FLAGS, GPU_HDR_GLOW, GPU_HDR_SPRITE, GPU_SPRITE_FLOATS, gpuQueueCaps,
+  computeGpuQueueBufferSize, GPU_FLAG_SORTED, GPU_HDR_FLAGS, GPU_HDR_GLOW, GPU_HDR_SPRITE, GPU_POSE_FLOATS, GPU_SPRITE_FLOATS,
+  gpuQueueCaps,
 } from '../../src/render/gpuQueueLayout.js';
 import { INSTANCED_SPRITE_FLOATS, POSE_STATIC_FLOATS, SPLIT_POSE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
-import { radixSortIndicesBySortKey, spriteYSortKey } from '../../src/util/sortIndexByKey.js';
+import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
 import { coreComponentData, emitSpec, emitSpriteBuffers, initWorker, loadWorker, quietly } from '../bench/workerHarness.mjs';
+import { createPainterState, orderPainterSlots, radixSortIndicesBySortKey } from '../reference/painterJs.mjs';
 
 const MAX = 6000;
 const FRAMES = 36;
@@ -110,15 +112,44 @@ function firstDiff(a, b) {
   return -1;
 }
 
-function sameFrames(off, on, label) {
-  assert.equal(on.length, off.length);
+/**
+ * The orders packSpriteLayer's glow split gives each frame with the JS painter: the rows that are not glows (type 3)
+ * through orderPainterSlots on one state across the frames, the glow rows by the stable radix.
+ */
+function jsOrders(frames) {
+  const state = createPainterState(MAX);
+  return frames.map((fr) => {
+    const keys = new Uint32Array(fr.key.buffer);
+    const idxE = [];
+    const idxG = [];
+    for (let i = 0; i < fr.n; i++) (fr.type[i] === 3 ? idxG : idxE).push(i);
+    const e = Uint32Array.from(idxE);
+    const spriteOrder = e.length < 2 ? e : Uint32Array.from(orderPainterSlots(state, e, e.length, keys).subarray(0, e.length));
+    const glowOrder = Uint32Array.from(idxG);
+    if (glowOrder.length > 1) radixSortIndicesBySortKey(glowOrder, glowOrder.length, keys, new Uint32Array(glowOrder.length), new Uint32Array(256));
+    return { spriteOrder, glowOrder };
+  });
+}
+
+/** Every frame's orders are the JS painter's, and each packed row's x and y the frame's row at its slot. */
+function sameFrames(want, got, frames, label) {
+  assert.equal(got.length, want.length);
   let sorted = 0;
-  for (let f = 0; f < off.length; f++) {
-    for (const part of ['sprites', 'glow', 'spriteOrder', 'glowOrder']) {
-      const at = firstDiff(on[f][part], off[f][part]);
-      assert.equal(at, -1, `${label} frame ${f}: ${part} differ at word ${at} (${on[f][part].length} vs ${off[f][part].length} words)`);
+  for (let f = 0; f < want.length; f++) {
+    for (const part of ['spriteOrder', 'glowOrder']) {
+      const at = firstDiff(got[f][part], want[f][part]);
+      assert.equal(at, -1, `${label} frame ${f}: ${part} differs at ${at} (${got[f][part].length} vs ${want[f][part].length} slots)`);
     }
-    if (off[f].spriteOrder.length > 1) sorted++;
+    const fr = frames[f];
+    for (const [rows, order, stride] of [[got[f].spriteXY, got[f].spriteOrder, got[f].spriteStride], [got[f].glowXY, got[f].glowOrder, GPU_SPRITE_FLOATS]]) {
+      for (let k = 0; k < order.length; k++) {
+        const slot = order[k];
+        if (rows[k * stride] !== fr.x[slot] || rows[k * stride + 1] !== fr.y[slot]) {
+          assert.fail(`${label} frame ${f}: row ${k} is not slot ${slot}'s`);
+        }
+      }
+    }
+    if (want[f].spriteOrder.length > 1) sorted++;
   }
   assert.ok(sorted >= FRAMES - 2, `${label}: ${sorted} frames sorted`);
 }
@@ -138,10 +169,11 @@ function countKernel(state) {
 
 // ---- pre-render ----
 
-async function preRenderRun(pre, frames, painterRadix) {
+/** Pre-render sorting (sortSprites 'preRender', Y-sort) on a render-queue memory, with or without its painter state. */
+async function initPreRender(pre, withPainter) {
   const caps = gpuQueueCaps(MAX, { enabled: true });
   const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(64), null, null, false, null,
-    painterRadix ? { preRender: true, pixi: false } : null);
+    withPainter ? { preRender: true, pixi: false } : null);
   await initWorker(pre, {
     config: {
       worldWidth: 4000,
@@ -149,7 +181,7 @@ async function preRenderRun(pre, frames, painterRadix) {
       renderer: { ySort: true },
       preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' },
       lighting: { enabled: false },
-      wasm: { ...WASM_DEFAULTS, painterRadix },
+      wasm: { ...WASM_DEFAULTS },
     },
     globalEntityCount: 64,
     buffers: { componentData: { ...coreComponentData(64), ...emitSpriteBuffers(m).componentData }, componentDataByte: emitSpriteBuffers(m).componentDataByte },
@@ -169,24 +201,21 @@ async function preRenderRun(pre, frames, painterRadix) {
       gpuQueue: { dataA: m.buffer, dataB: m.buffer, dataAByte: m.layout.gpuAByte, dataBByte: m.layout.gpuBByte, caps },
     },
   });
+  return m;
+}
+
+async function preRenderRun(pre, frames) {
+  const m = await initPreRender(pre, true);
   const painter = pre._gpuPainter;
   assert.ok(painter, 'pre-render has its painter');
-  assert.ok(pre._gpuPackWasm, 'both runs pack through gpuPack.wasm');
-  let calls = null;
-  if (painterRadix) {
-    assert.ok(painter.kernel, 'the kernel sorts');
-    assert.equal(painter.order.buffer, m.buffer, 'the state is in the memory');
-    assert.equal(painter.order.byteOffset, m.layout.preRenderPainter.orderByte);
-    assert.equal(pre._gpuIdxEntity.buffer, m.buffer, 'the slot lists too');
-    assert.equal(pre._gpuIdxEntity.byteOffset, m.layout.preRenderPainter.idxEntityByte);
-    assert.equal(pre._gpuIdxGlow.byteOffset, m.layout.preRenderPainter.idxGlowByte);
-    calls = countKernel(painter);
-  } else {
-    assert.equal(m.layout.preRenderPainter, null, 'switched off: no painter regions');
-    assert.equal(painter.kernel, null, 'the JS sorts');
-    assert.ok(!(painter.order.buffer instanceof SharedArrayBuffer), 'on arrays of its own');
-    assert.ok(!(pre._gpuIdxEntity.buffer instanceof SharedArrayBuffer));
-  }
+  assert.ok(pre._gpuPackWasm, 'pre-render packs through gpuPack.wasm');
+  assert.ok(painter.kernel, 'the kernel sorts');
+  assert.equal(painter.order.buffer, m.buffer, 'the state is in the memory');
+  assert.equal(painter.order.byteOffset, m.layout.preRenderPainter.orderByte);
+  assert.equal(pre._gpuIdxEntity.buffer, m.buffer, 'the slot lists too');
+  assert.equal(pre._gpuIdxEntity.byteOffset, m.layout.preRenderPainter.idxEntityByte);
+  assert.equal(pre._gpuIdxGlow.byteOffset, m.layout.preRenderPainter.idxGlowByte);
+  const calls = countKernel(painter);
   pre._bindGpuPackWriters();
   let spriteOrder = null;
   let glowOrder = null;
@@ -207,9 +236,11 @@ async function preRenderRun(pre, frames, painterRadix) {
     const dst = pre.gpuQueueBuffers[pre._queueBuf];
     const nS = dst.header[GPU_HDR_SPRITE] | 0;
     const nG = dst.header[GPU_HDR_GLOW] | 0;
+    // The sprites as the split's pose stream (x, y first), the glows as 15-float rows.
     out.push({
-      sprites: copyU32(dst.sprites, nS * GPU_SPRITE_FLOATS),
-      glow: copyU32(dst.glow, nG * GPU_SPRITE_FLOATS),
+      spriteXY: Float32Array.from(dst.spritePose.subarray(0, nS * GPU_POSE_FLOATS)),
+      spriteStride: GPU_POSE_FLOATS,
+      glowXY: Float32Array.from(dst.glow.subarray(0, nG * GPU_SPRITE_FLOATS)),
       spriteOrder,
       glowOrder,
     });
@@ -324,16 +355,33 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
   });
 });
 
-test('pre-render packs the same rows in the same order with the switch off and through the kernel', async () => {
+test('pre-render\'s painter kernel orders the rows as the JS painter does, frame after frame, and the pack takes that order', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
   const frames = makeFrames(0x9a17);
-  const off = await preRenderRun(pre, frames, false);
-  const on = await preRenderRun(pre, frames, true);
-  sameFrames(off.out, on.out, 'pre-render');
+  const on = await preRenderRun(pre, frames);
+  const want = jsOrders(frames);
+  sameFrames(want, on.out, frames, 'pre-render');
   assert.ok(on.calls.order >= 4, `the kernel rebuilt ${on.calls.order} times`);
   assert.ok(on.calls.reinsert >= 20, `and reinserted ${on.calls.reinsert} times`);
   assert.ok(on.calls.radix >= FRAMES - 2, `and sorted the glow rows ${on.calls.radix} times`);
-  assert.ok(off.out[5].glowOrder.length > 300, 'the glow rows are split and sorted');
+  assert.ok(want[5].glowOrder.length > 300, 'the glow rows are split and sorted');
+});
+
+// The scene lays a painter state out whenever pre-render sorts; a memory without one (made by hand) leaves pre-render
+// without a painter, and it says so at init instead of drawing unsorted in silence.
+test('pre-render told to sort on a memory without its painter state has no painter, and says so', async () => {
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const errors = [];
+  const error = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    await initPreRender(pre, false);
+  } finally {
+    console.error = error;
+  }
+  assert.equal(pre._gpuPainter, null, 'no painter');
+  assert.equal(pre._gpuPainterWasm, null);
+  assert.equal(errors.filter((e) => e.includes('no painter state')).length, 1, 'said once');
 });
 
 // ---- Pixi ----
@@ -351,7 +399,7 @@ class Thing extends GameObject {}
 Thing.components = [RigidBody, Collider, SpriteRenderer];
 
 /** The main thread's buffers for a Predator-shaped pipeline: Pixi packs and sorts (W9d, W10). */
-function pixiScene(painterRadix) {
+function pixiScene() {
   Query.reset();
   const scene = {
     totalEntityCount: 64,
@@ -380,7 +428,7 @@ function pixiScene(painterRadix) {
       renderer: { maxVisibleRenderables: MAX, ySort: true },
       preRender: { packGpuSprites: 'pixi', sortSprites: 'pixi' },
       layers: {},
-      wasm: { ...WASM_DEFAULTS, painterRadix },
+      wasm: { ...WASM_DEFAULTS },
     },
     buffers: { componentData: {} },
     views: {},
@@ -422,26 +470,19 @@ async function bindPixi(px, scene) {
   for (const batch of [px.entitiesBatch, px.entitiesGlowBatch]) for (const buf of batch._buffers) buf.update = () => {};
 }
 
-async function pixiRun(px, frames, painterRadix) {
-  const scene = await quietly(() => pixiScene(painterRadix));
+async function pixiRun(px, frames) {
+  const scene = await quietly(() => pixiScene());
   const layout = scene.renderQueueMemory.layout;
   await quietly(() => bindPixi(px, scene));
-  assert.ok(px._pixiGpuPack, 'both runs pack the sprite rows through gpuPack.wasm (W9d)');
+  assert.ok(px._pixiGpuPack, 'Pixi packs the sprite rows through gpuPack.wasm (W9d)');
   const painter = px._painter;
   assert.ok(px._rqIdxEntity instanceof Uint32Array && px._rqIdxGlow instanceof Uint32Array, 'u32 slot lists');
-  let calls = null;
-  if (painterRadix) {
-    assert.ok(px._painterWasm && painter.kernel, 'the kernel sorts');
-    assert.equal(painter.order.buffer, scene.renderQueueMemory.buffer, 'the state is in the memory');
-    assert.equal(painter.order.byteOffset, layout.pixiPainter.orderByte);
-    assert.equal(px._rqIdxEntity.byteOffset, layout.pixiPainter.idxEntityByte, 'the slot lists too');
-    assert.equal(px._rqIdxGlow.byteOffset, layout.pixiPainter.idxGlowByte);
-    calls = countKernel(painter);
-  } else {
-    assert.equal(layout.pixiPainter, null, 'switched off: no painter regions');
-    assert.equal(painter.kernel, null, 'the JS sorts');
-    assert.ok(!(px._rqIdxEntity.buffer instanceof SharedArrayBuffer), 'on lists of its own');
-  }
+  assert.ok(px._painterWasm && painter.kernel, 'the kernel sorts');
+  assert.equal(painter.order.buffer, scene.renderQueueMemory.buffer, 'the state is in the memory');
+  assert.equal(painter.order.byteOffset, layout.pixiPainter.orderByte);
+  assert.equal(px._rqIdxEntity.byteOffset, layout.pixiPainter.idxEntityByte, 'the slot lists too');
+  assert.equal(px._rqIdxGlow.byteOffset, layout.pixiPainter.idxGlowByte);
+  const calls = countKernel(painter);
   // E-123: what the batches upload are arrays of their own.
   assert.ok(!(px.entitiesBatch.data.buffer instanceof SharedArrayBuffer));
   px._bindPixiPackWriters();
@@ -463,14 +504,13 @@ async function pixiRun(px, frames, painterRadix) {
     px.updateSpritesFromRenderQueue();
     const nS = px.visibleEntityCount | 0;
     const nG = glowOrder.length;
-    // A split batch (E-82b) holds the rows as its pose stream and its static stream.
+    // A split batch (E-82b) holds the rows as its pose stream (x, y first) and its static stream.
     const batch = px.entitiesBatch;
-    const sprites = batch.split
-      ? Uint32Array.from([...copyU32(batch.data, nS * SPLIT_POSE_FLOATS), ...copyU32(batch.staticData, nS * POSE_STATIC_FLOATS)])
-      : copyU32(batch.data, nS * INSTANCED_SPRITE_FLOATS);
+    const stride = batch.split ? SPLIT_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
     out.push({
-      sprites,
-      glow: copyU32(px.entitiesGlowBatch.data, nG * INSTANCED_SPRITE_FLOATS),
+      spriteXY: Float32Array.from(batch.data.subarray(0, nS * stride)),
+      spriteStride: stride,
+      glowXY: Float32Array.from(px.entitiesGlowBatch.data.subarray(0, nG * INSTANCED_SPRITE_FLOATS)),
       spriteOrder,
       glowOrder,
     });
@@ -478,14 +518,14 @@ async function pixiRun(px, frames, painterRadix) {
   return { out, calls };
 }
 
-test('Pixi uploads the same rows in the same order with the switch off and through the kernel', async () => {
+test('Pixi\'s painter kernel orders the rows as the JS painter does, frame after frame, and its batches upload that order', async () => {
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
   const frames = makeFrames(0x51c0);
-  const off = await pixiRun(px, frames, false);
-  const on = await pixiRun(px, frames, true);
-  sameFrames(off.out, on.out, 'Pixi');
+  const on = await pixiRun(px, frames);
+  const want = jsOrders(frames);
+  sameFrames(want, on.out, frames, 'Pixi');
   assert.ok(on.calls.order >= 4, `the kernel rebuilt ${on.calls.order} times`);
   assert.ok(on.calls.reinsert >= 20, `and reinserted ${on.calls.reinsert} times`);
   assert.ok(on.calls.radix >= FRAMES - 2, `and sorted the glow rows ${on.calls.radix} times`);
-  assert.ok(off.out[5].glowOrder.length > 300, 'the glow rows are split and sorted');
+  assert.ok(want[5].glowOrder.length > 300, 'the glow rows are split and sorted');
 });

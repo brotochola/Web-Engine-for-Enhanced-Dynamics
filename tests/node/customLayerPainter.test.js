@@ -1,6 +1,6 @@
 // Close-out group B: a y-sorted custom layer's painter state is a region of the render-queue memory, next to its
 // queues, and Pixi's layer sorts through painterRadix.wasm there (Pixi's entities kernel, or one bound for the layers);
-// before, every custom layer sorted with a JS state. Frame after frame, with rows moving, joining, leaving and tying,
+// before, every custom layer sorted with a JS state (tests/reference/painterJs.mjs, the order compared with). Frame after frame, with rows moving, joining, leaving and tying,
 // the kernel's order is the JS painter's, and the layer's upload takes it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -19,8 +19,9 @@ import { BATCH_SPACE } from '../../src/render/instancedSpriteBatch.js';
 import { orderPainterSlotsWasm } from '../../src/render/painterRadixClient.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
-import { createPainterState, orderPainterSlots } from '../../src/util/sortIndexByKey.js';
+
 import { loadWorker, quietly } from '../bench/workerHarness.mjs';
+import { createPainterState, orderPainterSlots } from '../reference/painterJs.mjs';
 
 const MAX = 2000;
 const YS_ROWS = 900;
@@ -194,12 +195,3 @@ for (const [label, bindEntitiesPainter, sortSprites] of [
     assert.equal(opts.indices, cl.painter.order, 'in the kernel\'s order');
   });
 }
-
-test('with wasm.painterRadix off the layer sorts with a JS state, as before', async () => {
-  const s = scene({ painterRadix: false });
-  assert.ok(s.customLayerRenderQueues[Layer.get('ys').id].painter, 'the regions are laid out all the same');
-  const px = await initPixi(s);
-  const cl = layerNamed(px, 'ys');
-  assert.ok(cl.painter, 'a painter');
-  assert.equal(cl.painter.kernel, null, 'a JS one');
-});

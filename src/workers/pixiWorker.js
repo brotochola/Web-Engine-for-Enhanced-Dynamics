@@ -105,7 +105,6 @@ import {
   packTextureLutRgba,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
-import { createPainterState } from '../util/sortIndexByKey.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, wasmPainterState } from '../render/painterRadixClient.js';
 import { LiquidFunDensitySplat, LF_SPLAT_STRIDE } from '../render/liquidFunDensitySplat.js';
 import { packParticleLights, resolveParticleLights } from '../render/particleLightSplat.js';
@@ -1952,13 +1951,13 @@ class PixiRenderer extends AbstractWorker {
     const active = this._entityYSort() || SpriteRenderer.zIndexUsers() > 0;
     if (!active) this._painter = null;
     else if (!this._painter && this.renderQueueMaxItems) {
-      this._painter = this._newEntityPainter(this.renderQueueMaxItems);
+      this._painter = this._newEntityPainter();
     }
   }
 
-  /** The ENTITIES queue's painter state: on the render-queue memory, sorted by its kernel, when bound (W10). */
-  _newEntityPainter(maxItems) {
-    return this._painterWasm ? createWasmPainterState(this._painterWasm) : createPainterState(maxItems);
+  /** The ENTITIES queue's painter state: on the render-queue memory, sorted by its kernel (W10); null when Pixi does not sort. */
+  _newEntityPainter() {
+    return this._painterWasm ? createWasmPainterState(this._painterWasm) : null;
   }
 
   /**
@@ -1969,24 +1968,26 @@ class PixiRenderer extends AbstractWorker {
     return createPrivateArena(this._renderQueueMemory, floats * 4 + 4096);
   }
 
-  /** W10: painterRadix.wasm on Pixi's painter regions of the render-queue memory, when the scene laid them out. */
+  /** W10: painterRadix.wasm on Pixi's painter regions of the render-queue memory, laid out when Pixi sorts. */
   async _bindPainterRadix(data) {
     this._painterWasm = null;
     const memory = data.renderQueueMemory;
     const layout = data.renderQueueLayout?.pixiPainter || null;
-    if (!memory || !layout || layout.rows < (this.renderQueueMaxItems | 0) || this.config?.wasm?.painterRadix === false) return;
+    if (!memory || !layout) return;
+    if (layout.rows < (this.renderQueueMaxItems | 0)) {
+      throw new Error(`[PIXI WORKER] the painter state holds ${layout.rows} rows for a queue of ${this.renderQueueMaxItems | 0}`);
+    }
     try {
       this._painterWasm = await bindPainterRadix(memory, layout);
     } catch (err) {
-      console.warn('[PIXI WORKER] painterRadix.wasm did not load; sorting in JS', err);
-      this._painterWasm = null;
+      throw new Error(`[PIXI WORKER] painterRadix.wasm did not load: ${err?.message ?? err}`, { cause: err });
     }
   }
 
   /**
    * painterRadix.wasm for the y-sorted custom layers, whose painter states are regions of the render-queue memory
    * next to their queues: Pixi's entities kernel when it has one (a kernel sorts any state of its memory), else one
-   * bound for them. Null without such a state, or with wasm.painterRadix off: the layers then sort in JS.
+   * bound for them; null when no layer has such a state.
    */
   async _bindCustomLayerPainter(queues) {
     const memory = this._renderQueueMemory;
@@ -1997,23 +1998,27 @@ class PixiRenderer extends AbstractWorker {
         break;
       }
     }
-    if (!memory || !layout || this.config?.wasm?.painterRadix === false) return null;
+    if (!memory || !layout) return null;
     if (this._painterWasm) return this._painterWasm.kernel;
     try {
       return (await bindPainterRadix(memory, layout)).kernel;
     } catch (err) {
-      console.warn('[PIXI WORKER] painterRadix.wasm did not load; the custom layers sort in JS', err);
-      return null;
+      throw new Error(`[PIXI WORKER] painterRadix.wasm did not load for the y-sorted custom layers: ${err?.message ?? err}`, { cause: err });
     }
   }
 
-  /** A y-sorted custom layer's painter state: on its regions of the memory, sorted by `kernel`; else the JS one. */
-  _customLayerPainterState(kernel, lrq, maxItems) {
+  /**
+   * A y-sorted custom layer's painter state, on its regions of the memory and sorted by `kernel`; null (the layer drawn
+   * in queue order, said once) when it has none there.
+   */
+  _customLayerPainterState(kernel, lrq, maxItems, layerName) {
     const layout = lrq.painter;
-    if (kernel && layout && lrq.dataA === kernel.buffer && layout.rows >= maxItems) {
-      return wasmPainterState(kernel.buffer, layout, kernel);
+    if (!kernel || !layout || lrq.dataA !== kernel.buffer || layout.rows < maxItems) {
+      console.error(`[PIXI WORKER] custom layer "${layerName}" sorts by y, but its painter state is not in the render-queue `
+        + 'memory with its queues: it is drawn in queue order');
+      return null;
     }
-    return createPainterState(maxItems);
+    return wasmPainterState(kernel.buffer, layout, kernel);
   }
 
   /**
@@ -2054,7 +2059,7 @@ class PixiRenderer extends AbstractWorker {
     const painterWasm = this._painterWasm;
     this._rqIdxEntity = painterWasm ? painterSlotList(painterWasm, 'entity', maxItems) : new Uint32Array(maxItems);
     this._rqIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
-    this._painter = this._ySort ? this._newEntityPainter(maxItems) : null;
+    this._painter = this._ySort ? this._newEntityPainter() : null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -6674,7 +6679,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           createRenderQueueViews(lrq.dataB, maxItems, lrq.dataBByte | 0),
         ];
         sortKeyU32ByBuf = buffers.map((b) => b.sortKeyU32);
-        painter = layerYSort ? this._customLayerPainterState(layerPainterKernel, lrq, maxItems) : null;
+        painter = layerYSort ? this._customLayerPainterState(layerPainterKernel, lrq, maxItems, layerName) : null;
         // Close-out group B: the layer's rows in the render-queue memory (next to its queues), where gpuPack.wasm
         // packs them; copied out for the upload as the entities' are (W30's arena).
         const layerRows = lrq.rowsByte >= 0 && this._pixiGpuPack && lrq.dataA === this._renderQueueMemory?.buffer

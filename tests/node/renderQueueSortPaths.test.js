@@ -28,16 +28,18 @@ test('pixi packed GPU sprites must already be painter-sorted when ySort or zInde
 
 test('pixi: main ENTITIES queue and Y-sorted custom layers share one painter path', () => {
   const packLayer = readFileSync(join(root, 'src/render/packSpriteLayer.js'), 'utf8');
-  assert.match(pixi, /createPainterState/);
-  assert.match(pixi, /this\._painter = this\._ySort \? this\._newEntityPainter\(maxItems\) : null/);
-  // W10: the ENTITIES painter is the kernel's state on the render-queue memory when bound, the JS one otherwise.
-  assert.match(pixi, /this\._painterWasm \? createWasmPainterState\(this\._painterWasm\) : createPainterState\(maxItems\)/);
+  // Close-out group B: the painter's JS left src/ (tests/reference/painterJs.mjs); every state is a kernel's.
+  assert.doesNotMatch(pixi, /createPainterState\(/);
+  assert.match(pixi, /this\._painter = this\._ySort \? this\._newEntityPainter\(\) : null/);
+  // W10: the ENTITIES painter is the kernel's state on the render-queue memory (none when Pixi does not sort).
+  assert.match(pixi, /this\._painterWasm \? createWasmPainterState\(this\._painterWasm\) : null/);
   assert.match(pixi, /_uploadSortedSprites\(/);
   assert.match(pixi, /packSpriteLayer\(/);
   assert.match(packLayer, /painterOrder\(painter, dense \? null : indices, n, keysU32\)/);
-  assert.match(packLayer, /if \(painter\.kernel\) return orderPainterSlotsWasm\(painter, idxE, n, keysU32\);\s+return orderPainterSlots\(painter, idxE, n, keysU32\);/);
+  assert.match(packLayer, /return orderPainterSlotsWasm\(painter, idxE, n, keysU32\);/);
+  assert.doesNotMatch(packLayer, /orderPainterSlots\(|radixSortIndicesBySortKey/);
   // Close-out group B: a y-sorted layer's state is the kernel's, on its regions (customLayerPainter.test.js).
-  assert.match(pixi, /painter = layerYSort \? this\._customLayerPainterState\(layerPainterKernel, lrq, maxItems\) : null/);
+  assert.match(pixi, /painter = layerYSort \? this\._customLayerPainterState\(layerPainterKernel, lrq, maxItems, layerName\) : null/);
   assert.match(pixi, /this\._uploadSortedSprites\(cl\.batch, q, opts, cl\.painter, cl\.sortKeyU32, null, count\)/);
 });
 

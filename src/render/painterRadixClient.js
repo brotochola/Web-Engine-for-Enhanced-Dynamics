@@ -1,19 +1,49 @@
 // The WASM painter sort (E-76 W10): painterRadix.wasm on the render-queue memory, where pre-render writes the
 // main queue's sort keys and the sorting worker keeps its painter state (renderQueueMemoryRegions' painter
-// spec, wasmMemoryMap.js painterStateRegions). A state made here has createPainterState's shape with its
-// arrays as views on the memory, and carries the kernel: packSpriteLayer sorts such a state with
+// spec, wasmMemoryMap.js painterStateRegions). A state made here has the JS painter state's shape
+// (createPainterState, tests/reference/painterJs.mjs) with its arrays as views on the memory, and carries the
+// kernel: packSpriteLayer sorts such a state with
 // orderPainterSlotsWasm and radixSortIndicesWasm, which pass the keys and the slot list by their byte offsets
-// and leave the order, prevKey, slotMoved, runHeads, runLen and moved arrays the JS leaves
-// (sortIndexByKey.js), bit for bit. Keys or a slot list outside the memory, or more rows than the state holds,
-// sort in JS on the same arrays. The order is an index list the packs read; nothing uploads it.
+// and leave the order, prevKey, slotMoved, runHeads, runLen and moved arrays the JS sort left (its copy is
+// tests/reference/painterJs.mjs), bit for bit. Keys or a slot list outside the memory, or more rows than the state
+// holds, are drawn in queue order, said once (painterRefused). The order is an index list the packs read; nothing
+// uploads it.
 //
 // The workers bind PAINTER_VARIANT; every variant stays exported for tests/node/painterRadixWasm.test.js and
 // tests/bench/painterRadixWasmMicrobench.mjs. Browser-safe (no node: imports), so a Chrome kernel module can
 // load it.
 
-import { orderPainterSlots, painterSameSet, radixSortIndicesBySortKey } from '../util/sortIndexByKey.js';
 import { loadWasmKernel } from '../util/wasmKernel.js';
 import { PAINTER_HIST_WORDS, PAINTER_SLOTS } from '../util/wasmMemoryMap.js';
+
+/**
+ * Is `state.order` (last frame's permutation) still a valid slot set for this
+ * frame? `idxE === null` means the dense range [0, ne) with no type filter
+ * (a custom layer's queue is never split by type): same `ne` implies the same
+ * integer set, no scan needed. A real `idxE` (the main queue's type-filtered
+ * slot list, glow excluded) needs the O(n) stamp check since it is a proper
+ * subset of [0, count) whose membership can shift frame to frame.
+ * @param {ReturnType<typeof wasmPainterState>} state
+ * @param {Uint32Array|null} idxE
+ * @param {number} ne
+ */
+export function painterSameSet(state, idxE, ne) {
+  if (!state.ready || state.n !== ne) return false;
+  if (!idxE) return true;
+  let gen = (state.gen + 1) | 0;
+  if (gen === 0) {
+    state.stamp.fill(0);
+    gen = 1;
+  }
+  state.gen = gen;
+  const stamp = state.stamp;
+  for (let i = 0; i < ne; i++) stamp[idxE[i]] = gen;
+  const order = state.order;
+  for (let i = 0; i < ne; i++) {
+    if (stamp[order[i]] !== gen) return false;
+  }
+  return true;
+}
 
 // Literal on purpose: webpack emits the asset for this pattern, and the bundle embeds it.
 const wasmUrl = new URL('./painterRadix.wasm', import.meta.url);
@@ -101,8 +131,8 @@ function slotBytes(slot, rows) {
 
 /**
  * A cold painter state on the regions `layout` names (wasmMemoryMap.js painterStateLayout): createPainterState's
- * fields in its order, its arrays views on `buffer` and zeroed, `stamp` a private array (painterSameSet is the
- * JS one), the table written, and `kernel` the variant that sorts it (null: only the JS does).
+ * fields in its order, its arrays views on `buffer` and zeroed, `stamp` a private array (painterSameSet reads it
+ * here), the table written, and `kernel` the variant that sorts it.
  * @param {SharedArrayBuffer | ArrayBuffer} buffer
  * @param {{ rows: number, tableByte: number } & Record<string, number>} layout
  * @param {ReturnType<typeof painterRadixVariant> | null} [kernel]
@@ -179,7 +209,8 @@ export function painterSlotList(binding, which, rows) {
 export function orderPainterSlotsWasm(state, idxE, ne, keysU32) {
   const k = state.kernel;
   if (keysU32.buffer !== k.buffer || (idxE !== null && idxE.buffer !== k.buffer) || ne > state.order.length) {
-    return orderPainterSlots(state, idxE, ne, keysU32);
+    painterRefused(ne > state.order.length ? `${ne} rows for a state of ${state.order.length}` : 'its keys or slot list are outside the render-queue memory');
+    return idxE;
   }
   if (ne <= 0) return idxE;
   if (ne < 2) {
@@ -195,12 +226,21 @@ export function orderPainterSlotsWasm(state, idxE, ne, keysU32) {
   return state.order;
 }
 
-/** radixSortIndicesBySortKey(idx, n, keysU32, state.scratch, state.hist) through the state's kernel. */
+let painterRefusedWarned = false;
+
+/** A call painterRadix.wasm cannot take: its rows stay in queue order, the reason said once. */
+function painterRefused(reason) {
+  if (painterRefusedWarned) return;
+  painterRefusedWarned = true;
+  console.error(`[PAINTER] painterRadix.wasm cannot sort a queue (${reason}): it is drawn in queue order`);
+}
+
+/** The stable radix by key (tests/reference/painterJs.mjs radixSortIndicesBySortKey) through the state's kernel. */
 export function radixSortIndicesWasm(state, idx, n, keysU32) {
   if ((n | 0) < 2) return;
   const k = state.kernel;
   if (keysU32.buffer !== k.buffer || idx.buffer !== k.buffer || n > state.order.length) {
-    radixSortIndicesBySortKey(idx, n, keysU32, state.scratch, state.hist);
+    painterRefused(n > state.order.length ? `${n} rows for a state of ${state.order.length}` : 'its keys or list are outside the render-queue memory');
     return;
   }
   k.radix(state.table, idx.byteOffset, n, keysU32.byteOffset);

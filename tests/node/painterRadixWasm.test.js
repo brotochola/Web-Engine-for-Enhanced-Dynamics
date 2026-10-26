@@ -17,16 +17,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  createPainterState,
-  orderPainterSlots,
-  orderSortKey,
-  radixPainterOrder,
-  radixSortIndicesBySortKey,
-  reinsertChangedSlots,
-  spriteYSortKey,
-  zSortBand,
-} from '../../src/util/sortIndexByKey.js';
+import { orderSortKey, spriteYSortKey, zSortBand } from '../../src/util/sortIndexByKey.js';
 import { layoutRegions, NULL_GUARD_BYTES, painterStateLayout, painterStateRegions } from '../../src/util/wasmMemoryMap.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import {
@@ -42,6 +33,7 @@ import {
   variantCore,
   wasmPainterState,
 } from '../../src/render/painterRadixClient.js';
+import { createPainterState, orderPainterSlots, radixPainterOrder, radixSortIndicesBySortKey, reinsertChangedSlots } from '../reference/painterJs.mjs';
 
 const CAP = 20480;
 
@@ -475,7 +467,7 @@ function counted(v) {
   return { k, calls };
 }
 
-test('a kernel state has createPainterState\'s shape; off the memory the wrappers sort in JS on its arrays', () => {
+test('a kernel state has createPainterState\'s shape; off the memory a call keeps queue order and says so once', () => {
   const js = createPainterState(CAP);
   assert.deepEqual(Object.keys(ws), Object.keys(js), 'the same fields in the same order');
   for (const [name, value] of Object.entries(js)) {
@@ -492,29 +484,31 @@ test('a kernel state has createPainterState\'s shape; off the memory the wrapper
   radixSortIndicesBySortKey(ref, 5000, keys, new Uint32Array(5000), new Uint32Array(256));
   const { k, calls } = counted(variants[PAINTER_VARIANT]);
   ws.kernel = k;
-  // The glow rows' radix: a list in the memory goes to the kernel, a list of its own to the JS.
+  // The glow rows' radix: a list in the memory goes to the kernel; a list of its own stays in queue order.
   idx.set(slots);
   radixSortIndicesWasm(ws, idx, 5000, keys);
   sameArray(idx, ref, 5000, 'the kernel radix');
   assert.equal(calls.radix, 1, 'through the kernel');
-  const own = Uint32Array.from(slots);
-  radixSortIndicesWasm(ws, own, 5000, keys);
-  sameArray(own, ref, 5000, 'the JS radix');
-  assert.equal(calls.radix, 1, 'a list outside the memory: JS');
   radixSortIndicesWasm(ws, idx, 1, keys);
   assert.equal(calls.radix, 1, 'one row: nothing to sort');
-
-  // Keys outside the memory (a custom layer's queue): orderPainterSlots on the state's arrays.
-  const ownKeys = Uint32Array.from(keys);
-  const jsState = freshPair();
-  ws.kernel = k;
-  for (let f = 0; f < 3; f++) {
-    if (f > 0) for (let s = 0; s < 3000; s++) if (r() < 0.2) ownKeys[s] += 128 * 256;
-    const want = orderPainterSlots(jsState, null, 3000, ownKeys);
-    const got = orderPainterSlotsWasm(ws, null, 3000, ownKeys);
-    sameArray(got, want, 3000, `JS on the kernel state, frame ${f}`);
-    sameState(jsState, PAINTER_VARIANT, `JS on the kernel state, frame ${f}`);
+  const errors = [];
+  const error = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    const own = Uint32Array.from(slots);
+    radixSortIndicesWasm(ws, own, 5000, keys);
+    sameArray(own, Uint32Array.from(slots), 5000, 'a list outside the memory: queue order');
+    assert.equal(calls.radix, 1, 'and no kernel call');
+    // Keys outside the memory: the slot list as given (null: the dense queue order), no kernel call.
+    const ownKeys = Uint32Array.from(keys);
+    assert.equal(orderPainterSlotsWasm(ws, null, 3000, ownKeys), null, 'keys outside the memory: queue order');
+    const list = idx.subarray(0, 3000);
+    assert.equal(orderPainterSlotsWasm(ws, list, 3000, ownKeys), list, 'the slot list as given');
+    assert.equal(calls.order + calls.reinsert, 0, 'no kernel call');
+  } finally {
+    console.error = error;
   }
-  assert.equal(calls.order + calls.reinsert, 0, 'keys outside the memory: no kernel call');
+  // The refusal is said once a process: whichever call refused first in it said so.
+  assert.ok(errors.length <= 1 && errors.every((e) => e.includes('drawn in queue order')), 'said once at most');
   ws.kernel = null;
 });
