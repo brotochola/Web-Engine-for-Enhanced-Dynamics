@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "script": "../platformerGameScene.js",
+  "export": "PlatformerGameScene",
+  "entities": [
+    { "name": "Platform1", "class": "Platform", "x": 600, "y": 2050, "config": { "width": 1200, "height": 60, "tint": 5927055 } },
+    { "name": "Platform2", "class": "Platform", "x": 1820, "y": 1760, "config": { "width": 420, "height": 50, "tint": 5204355 } },
+    { "name": "Platform3", "class": "Platform", "x": 2300, "y": 1630, "config": { "width": 280, "height": 44, "tint": 5204355 } },
+    { "name": "Platform4", "class": "Platform", "x": 2670, "y": 1700, "config": { "width": 260, "height": 44, "tint": 5204355 } },
+    { "name": "Platform5", "class": "Platform", "x": 3070, "y": 1560, "config": { "width": 300, "height": 44, "tint": 5204355 } },
+    { "name": "Platform6", "class": "Platform", "x": 3520, "y": 1720, "config": { "width": 420, "height": 44, "tint": 5204355 } },
+    { "name": "Platform7", "class": "Platform", "x": 4020, "y": 1880, "config": { "width": 500, "height": 54, "tint": 5927055 } },
+    { "name": "Platform8", "class": "Platform", "x": 4680, "y": 2040, "config": { "width": 920, "height": 60, "tint": 5927055 } },
+    { "name": "Platform9", "class": "Platform", "x": 1260, "y": 1740, "config": { "tint": 7506341 } },
+    { "name": "Platform10", "class": "Platform", "x": 1500, "y": 1620, "config": { "width": 180, "height": 32, "tint": 7506341 } },
+    { "name": "Platform11", "class": "Platform", "x": 3320, "y": 1400, "config": { "width": 170, "height": 32, "tint": 7506341 } },
+    { "name": "Platform12", "class": "Platform", "x": 4560, "y": 1650, "config": { "width": 180, "height": 32, "tint": 7506341 } }
+  ]
+}

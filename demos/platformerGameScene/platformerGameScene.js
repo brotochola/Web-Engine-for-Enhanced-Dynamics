@@ -91,13 +91,16 @@ export class PlatformerGameScene extends Scene {
     [Platform, 64],
   ];
 
+  // Loaded by this module (benches, old links), the scene places what its first level file does.
+  static defaultSceneFile = './levels/1-1.scene.json';
+
   constructor(game) {
     super(game);
     this.playerIndex = -1;
   }
 
+  // The platforms are in the scene file this scene loads from (levels/1-1.scene.json).
   create() {
-    this.spawnLevelPlatforms();
     Camera.setZoom(1.25);
     this._syncBloomTexels();
   }
@@ -118,28 +121,6 @@ export class PlatformerGameScene extends Scene {
     const startY = this.playerIndex >= 0 ? Transform.y[this.playerIndex] : 1700;
     Camera.centerOn(startX, startY);
 
-  }
-
-  spawnLevelPlatforms() {
-    const defs = [
-      { x: 600, y: 2050, width: 1200, height: 60, tint: 0x5a708f },
-      { x: 1820, y: 1760, width: 420, height: 50, tint: 0x4f6983 },
-      { x: 2300, y: 1630, width: 280, height: 44, tint: 0x4f6983 },
-      { x: 2670, y: 1700, width: 260, height: 44, tint: 0x4f6983 },
-      { x: 3070, y: 1560, width: 300, height: 44, tint: 0x4f6983 },
-      { x: 3520, y: 1720, width: 420, height: 44, tint: 0x4f6983 },
-      { x: 4020, y: 1880, width: 500, height: 54, tint: 0x5a708f },
-      { x: 4680, y: 2040, width: 920, height: 60, tint: 0x5a708f },
-      { x: 1260, y: 1740, width: 220, height: 36, tint: 0x7289a5 },
-      { x: 1500, y: 1620, width: 180, height: 32, tint: 0x7289a5 },
-      { x: 3320, y: 1400, width: 170, height: 32, tint: 0x7289a5 },
-      { x: 4560, y: 1650, width: 180, height: 32, tint: 0x7289a5 },
-    ];
-
-    for (let i = 0; i < defs.length; i++) {
-      defs[i].layer = BLOOM_LAYER;
-      Platform.spawn(defs[i]);
-    }
   }
 
   _syncBloomTexels() {

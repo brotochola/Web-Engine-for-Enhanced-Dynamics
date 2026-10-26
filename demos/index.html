@@ -112,7 +112,7 @@
       { name: '✨ Particle Lab', url: '/demos/particleLabScene/particleLabScene.js' },
       { name: 'Bunny Mark', url: '/demos/bunnyMarkScene/bunnyMarkScene.js' },
       { name: '🦴 Adobe Animate', url: '/demos/adobeAnimateScene/adobeAnimateScene.js' },
-      { name: 'platformer game', url: '/demos/platformerGameScene/platformerGameScene.js' },
+      { name: 'platformer game', url: '/demos/platformerGameScene/levels/1-1.scene.json' },
       { name: 'Constraint Boxes', url: '/demos/constraintBoxScene/constraintBoxScene.js' },
       { name: 'Oriented Boxes', url: '/demos/orientedBoxScene/orientedBoxScene.js' },
       { name: 'Weld Break', url: '/demos/weldBreakScene/weldBreakScene.js' },
@@ -144,10 +144,12 @@
 
     function sceneKeys(entry) {
       const parts = entry.url.split('/');
-      const file = parts[parts.length - 1].replace(/\.js$/i, '');
-      const folder = parts[parts.length - 2] || '';
+      // A scene file (levels/1-1.scene.json) is named after its scene's folder first.
+      const sceneFile = /\.scene\.json$/i.test(entry.url);
+      const file = parts[parts.length - 1].replace(sceneFile ? /\.scene\.json$/i : /\.js$/i, '');
+      const folder = (sceneFile && parts[parts.length - 2] === 'levels' ? parts[parts.length - 3] : parts[parts.length - 2]) || '';
       const keys = new Set();
-      for (const raw of [file, folder]) {
+      for (const raw of sceneFile ? [folder, file] : [file, folder]) {
         const lower = raw.toLowerCase();
         if (!lower) continue;
         keys.add(lower);
