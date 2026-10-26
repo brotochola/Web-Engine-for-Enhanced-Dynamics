@@ -276,6 +276,11 @@ test('GameEngine: Shift+E toggles edit mode; while it is on the game gets no key
     assert.equal(debugUI.editing, false);
     press('a');
     assert.deepEqual(keys, ['d', 'e', 'a'], 'the game got none of the keys pressed while editing');
+
+    engine.preventDefaultKeys = true;
+    assert.equal(press(' ').defaultPrevented, true, 'a space for the game does not scroll the page');
+    assert.equal(press(' ', { target: { tagName: 'INPUT' } }).defaultPrevented, false, 'a space typed in a field is the field’s');
+    assert.equal(press('Tab', { target: { tagName: 'INPUT' } }).defaultPrevented, false, 'Tab moves to the next field');
   } finally {
     delete globalThis.window;
     delete globalThis.document;

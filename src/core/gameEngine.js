@@ -164,7 +164,8 @@ class GameEngine {
   _setupWindowListeners() {
     this._keydownHandler = (e) => {
       const key = e.key.toLowerCase();
-      if (this.preventDefaultKeys && PREVENT_DEFAULT_KEYS.has(key)) {
+      // Not in a field: a space, an arrow or Tab typed there is the field's.
+      if (this.preventDefaultKeys && PREVENT_DEFAULT_KEYS.has(key) && !isTypingTarget(e.target)) {
         e.preventDefault();
       }
       if (this.debugEnabled) {
