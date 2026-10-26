@@ -1,8 +1,9 @@
 # Visual editor plan
 
-**Opened:** 2026-10-22. **Status:** planned, no code yet. All design decisions needed for
-Stage 1 and Stage 2 are taken (see "Decisions"). **Next step:** Stage 1 in the order given
-in "Execution order".
+**Opened:** 2026-10-22. **Updated:** 2026-10-26, against the code after the WASM migration
+(E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stage 1 started
+2026-10-26. All design decisions needed for Stage 1 and Stage 2 are taken (see
+"Decisions"). **Next step:** Stage 1 in the order given in "Execution order".
 
 A visual editor for WeedJS: click an entity in the running scene, move it, change its
 settings, save the result to a scene file, play it, stop it. Unity, Godot and PlayCanvas
@@ -12,10 +13,14 @@ entities, scene code, workers that own their data, and no garbage in steady stat
 **For the agent executing this plan:**
 - Read `CLAUDE.md`, `docs/internal/HOW_WE_MEASURE.md` and this whole file before the
   first commit.
-- Work on a branch in this folder (no worktrees).
-- One item per commit; the node suite is green before each commit.
-- Tick the item here (`[x]` plus the commit hash) in the same commit, and add anything
-  new under "Found during implementation".
+- Work in this folder (no worktrees for the work itself).
+- **Branch `visual_editor`** (the author made it on 2026-10-26 for this work: "commit as
+  you want, be descriptive"). One item per commit, in plan order, with a message that
+  says what changed and why. Other sessions share this folder: stage only this plan's
+  files, by path, and never anyone else's.
+- The node suite is green before each commit.
+- Tick the item here (`[x]` plus its commit), and add anything new under "Found during
+  implementation".
 
 ---
 
@@ -44,6 +49,10 @@ Taken on 2026-10-22 unless noted.
      it.
    - `physics.wasmMemoryMB` is part of the setup that must match: Box2D's memory is sized
      when the physics worker starts and never grows (BOX2D_MEMORY_PLAN.md, 2026-10-24).
+   - Since the WASM migration a full load also makes every memory again: Box2D's (with
+     the engine block and the render-queue regions), the particle, decal, navigation and
+     spatial ones, and `engine.wasm` is instantiated once per memory. A Predator load
+     commits about 1.4 GB (R-0632). The fast swap keeps all of them.
 3. **Changing scene despawns everything:** entities (including ones the old scene
    spawned itself), bullets, particles, decals, decorations, joints, LiquidFun
    particles. Then the new scene spawns its content. State that crosses scenes travels
@@ -126,11 +135,21 @@ The engine's rules in `CLAUDE.md` apply to every item. In addition:
   - Use `tests/bench/microbenchHelpers.mjs` (`warmNormalCompile`), and confirm the tier
     with `tests/bench/kernelTierAudit.mjs`.
   - Report ops/s with a checksum.
-- **Scene A/B** for spawn-path changes: `npm run bench:feature:spawn-storm`, ABAB
-  against the base rev.
+- **Scene A/B** for spawn-path changes: the spawn-storm scene
+  (`tests/bench/stressScenes/spawnStormScene.js`) through
+  `tests/bench/runPredatorAbab.mjs --scene … --vs <base> --hyp-rev <rev>`, both sides from
+  worktrees (never the main folder: M13), 4 pairs, grown by 4 with `--append` only when
+  they do not decide, one A/A per session as the noise reference.
+  - Side A is the commit before the change (for ED-41 and ED-42: `ab451d27`), side B
+    the change's commit.
   - Primary: logic0's `STEP_MS − WAIT_MS`, with a baseline of at least 3 ms (raise the
     scene's own load knob if not).
   - These are hygiene keeps: kept unless a primary worker is 3 % worse.
+  - Spawning is not on Predator's per-frame hot path, so no Predator gate unless an item
+    changes a frame loop.
+- **Record** each sitting the same day in the register:
+  `node scripts/hypotheses.mjs record --hyp <id> …` (CLAUDE.md). The editor's
+  measurements use the ids `ED-xx`.
 - **V8:** add `--js-flags="--log-deopt --log-ic"`, then run
   `node tests/bench/summarizeV8Deopt.mjs`. No new deopts in `_spawnAt`, `onSpawned` or
   `fillSpawnParams` in steady state. `tests/node/workerShape.test.js` stays green.
@@ -159,6 +178,8 @@ The engine's rules in `CLAUDE.md` apply to every item. In addition:
 | Content as data | Only ad hoc JSON (`littleCity` houses, `demos/trees_and_rocks.json`) and code arrays (platformer `defs`) | `demos/` | A scene file format |
 | Writing files | Nothing | `server/node_server.js` is read-only | Save and list routes |
 | Atlas bake | Headless Chrome via Playwright | `scripts/bakeBigAtlas.mjs` | Bake from the running editor |
+| Repeated loads | Loads a scene N times in one page and reads the memory commit | `tests/bench/sceneCycleSmoke.mjs` | Per-phase timings (ED-39) |
+| A real logic worker in Node | The spawn batch kernel on the shipped worker | `tests/bench/spawnSoAMicrobench.mjs`, `tests/bench/workerHarness.mjs` | `_spawnAt` and params cases (ED-40) |
 
 Behaviours that shape the design:
 
@@ -176,8 +197,12 @@ Behaviours that shape the design:
   `forceProcessOnLogicWorker`), then calls `onSpawned(spawnConfig)`. Ring spawns pass
   logic0's shared `_spawnXyScratch`, so keeping the config past `onSpawned` is already
   unsafe today.
-- **The load lifecycle** (`scene.js`):
-  1. workers;
+- **The load lifecycle** (`scene.js`, `init`; `loadScene` first waits for the
+  cross-origin isolation check, DX-SW). Load progress (`_loadStep`) reports `audio`,
+  `scripts`, `buffers`, `workers`, `adobe`, the asset stages and `world`:
+  1. audio worklet; entity scripts on the page; Adobe Animate assets (fetched and
+     compiled in parallel, N-73); a block of Box2D's memory reserved for the render-queue
+     regions (`reserveBox2dBlock`); shared buffers; workers;
   2. page instances (`_createPageInstances`);
   3. `Layer.applyConfiguredContent()`;
   4. `preload(data)`;
@@ -322,7 +347,15 @@ and the running scene is not **dirty**:
 
    ED-35's first task is to list, for each pool kind, the owner and an existing clear
    path. A kind with no clear path is added to this step, or marks the scene dirty until
-   it has one.
+   it has one. Known since the WASM migration, for that inventory:
+   - **static scenery** (E-127, `static isStatic`): pre-render bins those sprites by cell.
+     Despawn already bumps the generation (`staticSceneryChangedAt` in
+     `_deactivateSlotComponents`), so a clear through despawn rebins; the parity test
+     checks it;
+   - **frame totals** (`src/util/frameTotals.js`): statistics, not state; reset them so the
+     new scene's numbers start clean;
+   - **memories and `engine.wasm` instances, the Box2D engine block, the render-queue
+     regions:** kept as they are, which is the point of the swap.
 4. **Reset scene-wide state to boot values:**
    - camera (re-run the camera part of the scene buffer init in
      `src/util/sceneSharedBuffers.js`);
@@ -355,7 +388,8 @@ and the running scene is not **dirty**:
 
 - `static entities`: class names and pool sizes;
 - each component's schema hash (`src/core/save/schemaHash.js`);
-- `config`, deep;
+- `config`, deep: it includes `config.wasm` (the float32 or double kernel exports) and
+  `config.entityIdWidth`, which `init` now derives from the declared pools;
 - `assets` and `audios`;
 - `sharedResources`, as declarations rather than values;
 - `queries` and `messages`.
@@ -556,9 +590,9 @@ fallback).
   picker, under the same path rules.
 - Both live in **one module**, `server/devRoutes.mjs`, used by `server/node_server.js`
   now and by the `create-weed-game` template's `scripts/dev.mjs` later (ED-30).
-- **Hot reload:** the editor calls `HotReload.ignoreOnce(path, 2000)` before writing.
-  The SSE event for that path is dropped, because the editor has already applied the
-  change.
+- **Hot reload:** the editor calls `HotReload.ignore(path, 2000)` before writing.
+  The SSE events for that path are dropped for that long, because the editor has already
+  applied the change.
 
 ### D8. Play and Stop
 
@@ -613,8 +647,12 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
 
 ### Stage 1: scene files, spawn params, fast swap
 
-- [ ] **ED-39 Measure full loads by phase** (measurement only, its own commit, before
-  ED-35).
+- [x] **ED-39 Measure full loads by phase** (measurement only, its own commit, before
+  ED-35). Done 2026-10-26: script 9350cc95, report ac13248b
+  (`reports/ED-39-scene-load-phases.md`), register 32cb27d5 (R-0644). A warm full load is 2.82 s (Predator) and 3.00 s
+  (littleCity); a fast swap skips about 2.4 and 2.7 s of it and still pays the hooks and the
+  spawn flush (0.28 and 0.13 s). The last 100 ms of each load is `transitionCooldown`,
+  after the scene runs.
   - Script: `tests/bench/sceneLoadPhases.mjs`, headless Chromium with `--src`.
   - Scenes: `predatorScene` and `littleCity`, 5 loads each, after one warm-up load.
   - Phases, timed with `performance.now()`:
@@ -628,16 +666,23 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     - restore or `createNewGame`;
     - `_flushCreateSpawns`;
     - first rendered frame.
-  - Use `loadScene`'s `onProgress(done, total, stage)` where its stages are enough. Add
-    marks where they are not, in this commit, debug-only.
+  - Use `loadScene`'s `onProgress(done, total, stage)` where its stages are enough. The
+    `world` stage holds `preload`, `create`, `createNewGame` and `_flushCreateSpawns`: the
+    bench page splits it by loading a subclass of the scene that times those hooks, so
+    `src/` gets no marks. First frame: the renderer's frame count moving after load.
+  - Page setup from `tests/bench/sceneCycleSmoke.mjs` (same server, `?src=1`).
   - Report: `docs/internal/reports/ED-39-scene-load-phases.md` (median and spread per
     phase). Run it again on the fast swap after ED-35 and add a section.
   - **Done when:** the report says which phases a fast swap skips, and how many ms they
     are.
 - [ ] **ED-40 Spawn kernel** (measurement only, its own commit, before ED-41 and ED-42).
+  Deferred 2026-10-26: the author asked for code only, no benchmarks for now. When it
+  runs, its "before" side is the base revision in a worktree (the kernel compares two
+  trees), so ED-41 and ED-42 can still be measured against it.
   - File: `tests/bench/spawnParamsMicrobench.mjs`.
-  - It loads a real logic worker through `tests/bench/workerHarness.mjs` and calls the
-    shipped `GameObject._spawnAt` and `despawn` in a loop. No copies of `src/`.
+  - It loads a real logic worker the way `tests/bench/spawnSoAMicrobench.mjs` does (the
+    shipped `logicWorker.js` in Node) and calls the shipped `GameObject._spawnAt` and
+    `despawn` in a loop. No copies of `src/`.
   - Cases:
     - (a) a class without params, ring-style config (the shared scratch);
     - (b) a class without params, `spawn()` with no config;
@@ -649,7 +694,14 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   - Warm-up through `warmNormalCompile`; check with `kernelTierAudit.mjs`.
   - Cases (c) to (e) are skipped until ED-41 exists; the commit records (a) and (b) as
     the baseline.
-- [ ] **ED-41 Spawn params (B2), engine side** (D4).
+- [~] **ED-41 Spawn params (B2), engine side** (D4). Code and tests done 2026-10-26
+  (54241704): `src/core/spawnParams.js`, the debug check
+  `src/core/debug/spawnParamsCheck.js` with its stub (aliased in both webpack configs),
+  `GameObject.spawnParams` / `_spawnParamsByType`, the fill in `_spawnAt`, worker
+  registration in `createGameObjectInstances`, page validation in `registerEntityClass`,
+  `spawnParams` in hot swap's shape statics, types. `tests/node/spawnParams.test.js` (12
+  tests, the natives one included). **Measurements pending** (ED-40 kernel, spawn-storm
+  pair, deopt log, heap sample): no benchmarks for now.
   - **Files:**
     - `src/core/gameObject.js`: registration metadata, `fillSpawnParams`, the call in
       `_spawnAt`;
@@ -687,7 +739,9 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     - Spawn-storm ABAB (hygiene).
     - `summarizeV8Deopt.mjs` on spawn-storm: no new steady-state deopts in `_spawnAt`.
     - `heapSampleWorkers.mjs` on spawn-storm: allocation rate not up.
-- [ ] **ED-42 No allocation for `spawn()` without a config,** after ED-41.
+- [~] **ED-42 No allocation for `spawn()` without a config,** after ED-41. Code and test
+  done 2026-10-26 (b7d5c648): `NO_SPAWN_CONFIG` in `spawnParams.js`, used by
+  `GameObject.spawn`. **Measurement pending** (ED-40 case (c)).
   - File: `src/core/gameObject.js` (`static spawn`).
   - Drop the default `= {}` and the `null → {}`.
     - **Classes with `spawnParams`** get a shared frozen empty object, which the fill
@@ -701,7 +755,10 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     - a class with params called as `spawn()` gets every default.
   - **Measure:** ED-40 case (c) shows zero minor GCs over 1e6 spawns; case (b) is
     unchanged. Spawn-storm hygiene check.
-- [ ] **ED-2 `loadScene` accepts a `*.scene.json`** (D2).
+- [x] **ED-2 `loadScene` accepts a `*.scene.json`** (D2). Done 2026-10-26 (742b041c, with ED-34):
+  `src/core/sceneFile.js`, `GameEngine.loadScene`, `Scene._spawnSceneFileEntities`, types;
+  `tests/node/sceneFile.test.js`. `src/index.js` is unchanged: nothing new to export at
+  runtime. Also `Scene.defaultSceneFile` (2417e483; Found during implementation, item 2).
   - **Files:**
     - `src/core/gameEngine.js` (`loadScene`: detect `.scene.json`, fetch, resolve
       `script` and `export`);
@@ -719,10 +776,16 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     - `getByName` before and after `create()`.
   - **Measure:** load-time only, so no hygiene A/B is needed unless `_spawnFromPage`
     changes; if it does, run the spawn-storm check.
-- [ ] **ED-34 `scene.getByName(name)`.** Returns the page instance placed under that name
+- [x] **ED-34 `scene.getByName(name)`.** Done 2026-10-26 (742b041c), with the spawn
+  generation check (ab451d27; Found during implementation, item 1). Returns the page instance placed under that name
   in the running file, or `null`. On the page only; the guide says entities use `entity`
   params instead. Files: `src/core/scene.js`, types. Tests in `sceneFile.test.js`.
-- [ ] **ED-3 Platformer on a scene file.**
+- [x] **ED-3 Platformer on a scene file.** Done 2026-10-26 (a226baa5):
+  `levels/1-1.scene.json`, `Platform.spawnParams` (it now takes the bloom layer itself; a
+  file's `"layer"` overrides it), `PlatformerGameScene.defaultSceneFile`, the picker loads
+  the file. `demos/tests/platformerSceneFile.test.js` checks parity at the data level (the
+  old array against the file with the declared defaults filled in). **Pending:** the
+  browser check that reads the components after load, when browser runs are allowed.
   - Move the `defs` array in `spawnLevelPlatforms()` to
     `demos/platformerGameScene/levels/1-1.scene.json`.
   - Give `Platform` its `spawnParams` (`width`, `height`, `tint`, `alpha`) and drop its
@@ -730,11 +793,13 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   - The demo picker loads the file.
   - **Tests** (`demos/tests`): parity of the same platforms (x, y, width, height, tint)
     before and after, read from the components after load.
-- [ ] **ED-4a Hot reload of scene files, first version.**
+- [x] **ED-4a Hot reload of scene files, first version.** Done 2026-10-26 (53ff147d),
+  two tests in `hotReload.test.js`.
   - File: `src/core/debug/hotReload.js` (`onFileChanged`).
   - A changed `*.scene.json` that is the running scene's file does `location.reload()`
-    **without** the restore. Other scene files are ignored. Add `ignoreOnce(path, ms)`
-    for the editor (D7).
+    **without** the restore. Other scene files are ignored. Add `ignore(path, ms)`
+    for the editor (D7): it drops every change event of that path inside the window, not
+    only the first (one write can fire more than one).
   - **Tests:** extend `tests/node/hotReload.test.js`.
 - [ ] **ED-35 The fast swap** (D3).
   - **Steps:**
@@ -909,8 +974,9 @@ and it is still there.
 - **Measurement:**
   - The rules in "Performance and GC rules" above, and `HOW_WE_MEASURE.md` for every
     scene A/B.
-  - After measuring, update `HYPOTHESIS_LOG.md` where a speed claim was made (ED-35's
-    load time).
+  - After measuring, write the record in the register (`node scripts/hypotheses.mjs
+    record`), where a speed claim was made (ED-35's load time) and for each kernel and
+    hygiene sitting. `HYPOTHESIS_LOG.md` is only a pointer now.
 - **Line endings:** new files follow their neighbours (`git ls-files --eol`). CRLF files
   are edited with a script that writes `\r\n`.
 - **Public API changes** update `src/index.js` (named export and the `WEED` object) and
@@ -958,7 +1024,7 @@ and it is still there.
   view renders only visible rows, and decorations are stored as flat arrays (ED-25).
 - **Minified games without keep-names** break only in production; ED-32's smoke load
   catches it.
-- **The editor's own saves triggering a reload.** `ignoreOnce` (D7) and ED-4 prevent it.
+- **The editor's own saves triggering a reload.** `HotReload.ignore` (D7) and ED-4 prevent it.
 
 ## Reference: Unity, Godot, PlayCanvas
 
@@ -986,6 +1052,69 @@ Sources: docs.godotengine.org (`.tscn` format, game embedding), godotengine.org/
 script attributes), github.com/playcanvas/editor, the PlayCanvas blog (open-source
 announcement, 2025-07-30).
 
+## Changes since 2026-10-22
+
+Checked 2026-10-26, 553 commits later (the WASM migration, E-76, merged in 2958b6aa and
+released as v0.13.0). Every claim in "What exists today" still holds: `spawn()` still
+allocates its default `{}`, logic0 still has `_spawnXyScratch`, `pause()` still stops the
+renderer, hot reload still restores a changed `.json` with `reloadKeepingState`, and the
+server still writes nothing. What changed for this plan:
+
+- **Memory.** Component data now sits at byte offsets inside the WASM and Box2D memories
+  (`componentDataByte`); the render-queue regions live in a block of Box2D's memory;
+  `engine.wasm` is instantiated once per memory. A full load makes all of it again, which
+  strengthens the case for the fast swap (Decision 2).
+- **Static scenery** (E-127, `GameObject.isStatic`) and **frame totals** are new state;
+  both are in D3's inventory.
+- **`config.entityIdWidth`** is derived from the declared pools, and `config.wasm` holds
+  the kernel switches; both are in the fingerprint through `config`.
+- **The load lifecycle** gained the isolation wait, the Adobe prepare and the Box2D block
+  reservation (see "Behaviours that shape the design").
+- **Process:** versions change only on release; measurements go to the register
+  (`scripts/hypotheses.mjs`); scene pairs run from worktrees with 4 + 4 pairs; commits
+  wait for the author's word (see the top of this file).
+- **Tools to build on:** `sceneCycleSmoke.mjs` for ED-39, `spawnSoAMicrobench.mjs` for
+  ED-40.
+
 ## Found during implementation
 
-(none yet)
+1. **`getByName` needs a spawn generation in every scene.** A placed entity can despawn
+   and its slot go to another entity: an index alone would name the wrong one, and
+   `Transform.active` is still 0 while the load's spawns wait for logic0. The spawn
+   generation column (`Messages.spawnGen`, bumped by every despawn) existed only in scenes
+   with message listeners; it is now always made (2 bytes per entity), inboxes still only
+   with listeners. The name map keeps index and generation (`index · 65536 + gen`).
+2. **`static defaultSceneFile` on a scene class (new API, for the author to confirm).**
+   Loaded by its module or class, a scene loads the scene file it names (relative to its
+   module). Without it, everything that loads the platformer by module (the bench page,
+   `profileSceneSweep.mjs`, old links) would have had no platforms. Godot calls the same
+   idea the main scene.
+3. **Restores and scene files.** On a restore, the file's entities of the classes the save
+   brings back are not spawned (a save replaces the serializable classes, a hot reload
+   every class: `applySavePayloadToScene`). Their names are not in the name map until
+   ED-36 records names in saves; after a hot reload that restored the scene, `getByName`
+   returns null for them. ED-36 must cover the hot-reload save too.
+4. **The platformer's class is `PlatformerGameScene`;** this plan's examples say
+   `PlatformerScene`.
+5. **Format 1 details settled:** an empty `config` is left out on save; colors stay
+   numbers (open decision 2); an entity param's value in a file is the target's name, and
+   the loader turns it into an index; a points param's array becomes a Float64Array on the
+   page, so the worker gets it without a copy per spawn.
+6. **Params objects are built by `JSON.parse`** of a per-class template: every property
+   in-object (keyed stores on an empty object turn a big one into a dictionary, whose
+   number stores allocate), numbers double from the start, declared keys before `x` and
+   `y` (so a caller's `{ x, y, … }` literal does not share the hidden class). The natives
+   test checks one hidden class across integer and fraction fills.
+7. **A malformed `spawnParams` throws at registration** on the page, naming the class and
+   key; unknown entry fields throw too (catches `{ valeu: 3 }`). Entity params resolve to
+   the pooled instance at the index without requiring it to be active: the page reserved
+   that index, and a spawn that overflows the ring arrives by message before the ring's.
+8. **The fast swap keeps the scene instance** (changes D3 step 5). The Scene constructor
+   has global side effects: `Query.reset()`, clearing the optional components' arrays
+   (Adobe, light, shadow, flash, occluder), registering every entity class again,
+   `Flash.initialize`, a new `globalThis.rng`. A second instance built during a swap
+   would wipe the running scene's arrays. So version 1 swaps only between scene files of
+   the **same scene class** (D0's main case) and keeps the instance; a different class
+   with the same setup does a full load, logged as such (follow-up item ED-35b). A field a
+   scene's constructor sets keeps its value across a swap: per-level state goes in
+   `preload()`/`create()` or in `data`, and the guide (ED-1) says so.
