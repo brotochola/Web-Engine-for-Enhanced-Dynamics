@@ -607,6 +607,53 @@ export const ENGINE_FEATURES = [
     primary: ['pixi_STEP_MS'],
     load: [],
   },
+  // VISUAL_EDITOR_PLAN.md ED-40: spawn and despawn on a logic worker, without and with spawnParams (ED-41, ED-42).
+  // One row per case of the script; c to e are NEW against a tree without spawnParams.
+  {
+    id: 'spawnParamsA',
+    name: 'Spawn, no params, ring-style config',
+    module: 'src/core/gameObject.js',
+    kernel: { script: 'tests/bench/spawnParamsMicrobench.mjs', opsKey: 'cases.a.spawnsPerSec', touches: ['src/core/spawnParams.js'] },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'spawnParamsB',
+    name: 'Spawn, no params, spawn() with no config',
+    module: 'src/core/gameObject.js',
+    kernel: { script: 'tests/bench/spawnParamsMicrobench.mjs', opsKey: 'cases.b.spawnsPerSec', touches: ['src/core/spawnParams.js'] },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'spawnParamsC',
+    name: 'Spawn, 4 params, none passed',
+    module: 'src/core/spawnParams.js',
+    kernel: { script: 'tests/bench/spawnParamsMicrobench.mjs', opsKey: 'cases.c.spawnsPerSec', touches: ['src/core/gameObject.js'] },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'spawnParamsD',
+    name: 'Spawn, 4 params, 2 passed',
+    module: 'src/core/spawnParams.js',
+    kernel: { script: 'tests/bench/spawnParamsMicrobench.mjs', opsKey: 'cases.d.spawnsPerSec', touches: ['src/core/gameObject.js'] },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'spawnParamsE',
+    name: 'Spawn, params, onSpawned spawning its own class',
+    module: 'src/core/spawnParams.js',
+    kernel: { script: 'tests/bench/spawnParamsMicrobench.mjs', opsKey: 'cases.e.spawnsPerSec', touches: ['src/core/gameObject.js'] },
+    scene: null,
+    primary: ['logic0_STEP_MS'],
+    load: [],
+  },
 ];
 
 export function getFeature(id) {

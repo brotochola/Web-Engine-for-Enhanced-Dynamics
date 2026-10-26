@@ -49,6 +49,11 @@ const REQUIRED = [
   'preRenderWorker',
   'swayBuckets',
   'textureUpload',
+  'spawnParamsA',
+  'spawnParamsB',
+  'spawnParamsC',
+  'spawnParamsD',
+  'spawnParamsE',
 ];
 
 test('catalog has one unique row per hot engine feature', () => {
