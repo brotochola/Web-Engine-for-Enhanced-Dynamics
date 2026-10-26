@@ -15,7 +15,8 @@
 // Known limit of this version: tick() still runs, with a zero delta, so code that counts frames keeps counting.
 // ED-19 pauses the simulation workers instead.
 //
-// Ctrl+S saves the running scene file through the dev server (sceneFileStore.js, ED-13).
+// A left click selects (selection.js, ED-8); Esc clears the selection, and with none leaves edit mode. Ctrl+S saves
+// the running scene file through the dev server (sceneFileStore.js, ED-13).
 //
 // Cost: nothing before the first Shift+E. Its listeners are on the document only while it is on.
 
@@ -23,9 +24,12 @@ import { Time } from '../../timeScale.js';
 import { Camera } from '../../camera.js';
 import { Mouse } from '../../mouse.js';
 import { saveSceneFile } from './sceneFileStore.js';
+import { Selection } from './selection.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
+/** The button that selects (primary). */
+const SELECT_BUTTON = 1;
 
 /** How long a status line (saved, could not save) stays on the indicator. */
 const STATUS_MS = 3000;
@@ -34,6 +38,7 @@ export class EditMode {
   constructor(debugUI) {
     this.debugUI = debugUI;
     this.active = false;
+    this.selection = new Selection(debugUI);
 
     // What entering found, put back on leaving.
     this._savedTimeScale = NaN;
@@ -57,7 +62,13 @@ export class EditMode {
     this._panFromY = NaN;
 
     this._onPointerDown = (e) => {
-      if ((e.buttons & PAN_BUTTONS) === 0 || e.target !== this.debugUI.gameEngine?.canvas) return;
+      if (e.target !== this.debugUI.gameEngine?.canvas) return;
+      if (e.buttons === SELECT_BUTTON) {
+        // The engine's canvas listener ran first: Mouse holds this point in the world.
+        this.selection.pickAt(Mouse.x, Mouse.y);
+        return;
+      }
+      if ((e.buttons & PAN_BUTTONS) === 0) return;
       e.preventDefault(); // no autoscroll on a middle press
       this._panPointer = e.pointerId;
       this._panX = e.clientX;
@@ -105,6 +116,7 @@ export class EditMode {
     this.active = false;
     this._listen(false);
     this._panPointer = -1;
+    this.selection.clear();
     this._setStatus('', false);
     Mouse.isEditModeActive = false;
     Camera.held = false;
@@ -121,7 +133,8 @@ export class EditMode {
    */
   onKey(e) {
     if (e.key === 'Escape') {
-      this.exit();
+      if (this.selection.index >= 0) this.selection.clear();
+      else this.exit();
       return true;
     }
     if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
@@ -171,8 +184,14 @@ export class EditMode {
     this.debugUI.tools.updateToolIndicator();
   }
 
+  /** The debug UI's tick, while edit mode is on. */
+  update() {
+    this.selection.update();
+  }
+
   /** A fast swap put the time scale and the camera back to the level's start: hold them again. */
   onContentSwapped() {
+    this.selection.clear();
     if (!this.active) return;
     this._savedTimeScale = Time.scale;
     this._savedFree = Camera._free;

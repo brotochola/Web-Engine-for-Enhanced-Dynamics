@@ -118,6 +118,32 @@ test('a right or middle drag on the game canvas pans; elsewhere, or with the lef
   }
 });
 
+test('a left click on the game canvas selects at the mouse; Esc lets go of the selection, then of edit mode', () => {
+  const { editMode, canvas } = setup();
+  try {
+    editMode.enter();
+    const picks = [];
+    let cleared = 0;
+    editMode.selection.pickAt = (x, y) => picks.push([x, y]);
+    editMode.selection.clear = () => {
+      cleared++;
+      editMode.selection.index = -1;
+    };
+    const fire = (e) => document.listeners.get('pointerdown')({ pointerId: 1, preventDefault() {}, ...e });
+    fire({ buttons: 1, target: canvas });
+    fire({ buttons: 1, target: {} });
+    fire({ buttons: 3, target: canvas });
+    assert.deepEqual(picks, [[Mouse.x, Mouse.y]], 'only a plain left press on the canvas');
+    editMode.selection.index = 4;
+    editMode.onKey({ key: 'Escape' });
+    assert.deepEqual([cleared, editMode.active], [1, true]);
+    editMode.onKey({ key: 'Escape' });
+    assert.equal(editMode.active, false);
+  } finally {
+    teardown();
+  }
+});
+
 test('in edit mode no button press reaches the game; a release still does', () => {
   setup();
   try {

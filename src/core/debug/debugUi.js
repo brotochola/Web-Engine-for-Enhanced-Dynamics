@@ -233,6 +233,7 @@ export class DebugUI {
 
   destroy() {
     this.editMode.exit();
+    this.editMode.selection.destroy();
     this.stop();
     this.canvas.destroy();
     this.tools.destroy();
@@ -254,6 +255,7 @@ export class DebugUI {
       this.panels[this.openSection].update();
     }
 
+    if (this.editMode.active) this.editMode.update();
     this.tools.update();
   }
 

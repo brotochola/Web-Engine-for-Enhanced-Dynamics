@@ -1010,12 +1010,22 @@ reload, and it is still there.
     a reader holds the file. The atomic test reads during a 3 MB write and fails against
     an in-place write. `editorSave.test.js` covers the client, Ctrl+S, and one save
     through the real route. The static route's own path check is review item N-80.
-- [ ] **ED-8 Selection.**
+- [x] **ED-8 Selection.**
   - Reuse `_pickEntity`, and add a sprite-bounds hit test from `SpriteRenderer` anchor,
     scale and frame size, for entities without colliders.
   - Draw a selection box on the overlay.
   - Mark entities as authored (in the document) or runtime.
   - Allocation only on click.
+  - Done 2026-10-26 (`editor/pick.js`, `editor/selection.js`), with one change: a click
+    tests every active entity instead of `_pickEntity`'s grid query (Found during
+    implementation, item 12). The hit is the collider (`pointInCollider`) or, without
+    one, the sprite box the overlay draws; the smaller of overlapping hits first, the next
+    on a second click at the same spot. The overlay's selected-entity box draws it. An
+    "Editor" panel names it, with whether the running file placed it (a name in
+    `_namedEntities` with its generation) or code spawned it (read-only). The selection
+    lets go of an entity that despawns, and a fast swap or leaving edit mode clears it.
+    Esc clears it, and with nothing selected, leaves edit mode.
+    `editorSelection.test.js`.
 - [ ] **ED-7 Param widgets** from `spawnParams` (D4 table), with the key/value box as the
   fallback. Widgets are created on selection change, never per frame.
 - [ ] **ED-9 Inspector editing.** Each change is a set-param command, which respawns
@@ -1278,6 +1288,12 @@ server still writes nothing. What changed for this plan:
     `Time.scale` and the camera back to the level's start; the swap calls the editor
     before the workers resume. Debug builds already kept Shift+H/I/K/O/S from the game;
     Shift+E joins them.
+12. **`_pickEntity` misses the far end of a wide entity** (ED-8). The spatial grid's
+    `getEntitiesInRadius` keeps entities whose center is within the radius, so a click at
+    the end of a 1200 px platform finds it only when nothing else is near (then the
+    picker scans everything). The editor scans every active entity on a click with exact
+    hit tests (`editor/pick.js`: one pass, no allocation). The debug inspector tool still
+    picks through the grid; it could use `pickEntityAt` too.
 
 **New items:**
 
