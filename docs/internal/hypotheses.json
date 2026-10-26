@@ -8367,6 +8367,24 @@
       "rank": 9,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "A design note first (batch layout, sort, shadows, custom layers), then a prototype on adobeAnimateScene."
+    },
+    {
+      "id": "N-79",
+      "title": "A layer drawn without a render target ignores blendMode (fx ADD draws normal)",
+      "status": "open",
+      "statusText": "found 2026-10-26, a bug: confirmed in the code, not fixed",
+      "date": "2026-10-26",
+      "result": "A sprite layer without a look shader (and MESH and world-rect layers) is drawn straight to the stage by a mesh registered with forceContainerBlend, so it takes shader.containerBlend (normal when there is no shader) and never the layer's blendMode. The fx layers of destructibleTerrainScene, mamushkaDigScene and planetPhysicsScene ask for ADD and draw normal. Workaround: shader: { containerBlend: ADD } with no fragment (marks the layer hasShader).",
+      "area": "pixi",
+      "kind": "js",
+      "refs": [
+        "REVIEW_PLAN.md#N-79"
+      ],
+      "aliases": [
+        "blendMode ignored",
+        "containerBlend"
+      ],
+      "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim."
     }
   ],
   "records": [
