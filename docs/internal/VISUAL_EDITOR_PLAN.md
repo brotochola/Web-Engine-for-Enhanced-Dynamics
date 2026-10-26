@@ -799,8 +799,9 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   `levels/1-1.scene.json`, `Platform.spawnParams` (it now takes the bloom layer itself; a
   file's `"layer"` overrides it), `PlatformerGameScene.defaultSceneFile`, the picker loads
   the file. `demos/tests/platformerSceneFile.test.js` checks parity at the data level (the
-  old array against the file with the declared defaults filled in). **Pending:** the
-  browser check that reads the components after load, when browser runs are allowed.
+  old array against the file with the declared defaults filled in). The browser check
+  that reads the components after load passes (`tests/bench/editorM1Smoke.mjs`, fbae4b9c:
+  every platform of 1-1).
   - Move the `defs` array in `spawnLevelPlatforms()` to
     `demos/platformerGameScene/levels/1-1.scene.json`.
   - Give `Platform` its `spawnParams` (`width`, `height`, `tint`, `alpha`) and drop its
