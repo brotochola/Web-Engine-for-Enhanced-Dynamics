@@ -519,15 +519,16 @@ class ParticleWorker extends AbstractWorker {
       }
     }
 
-    // W19: the bullet tick in WASM, when the pool, Transform, Collider and the grid share Box2D's block.
+    // W19: the bullet tick in WASM, where the pool, Transform, Collider and the grid share the engine block (the scene
+    // lays the regions out whenever it has bullets and a spatial grid). BulletPool.tick casts in JS where the kernel
+    // cannot read the grid: no spatial workers, or the spatial memory outside the block.
     BulletPoolImport._wasm = null;
     const bulletLayout = data.renderQueueLayout?.collect?.bullets || null;
-    if (bulletLayout && data.renderQueueMemory && this.maxBullets > 0 && this.config?.wasm?.bulletTick !== false) {
+    if (bulletLayout && data.renderQueueMemory && this.maxBullets > 0) {
       try {
         BulletPoolImport._wasm = await bindBulletTick(data.renderQueueMemory, bulletLayout);
       } catch (err) {
-        console.warn('[particle] bulletTick.wasm did not load; bullets tick in JS', err);
-        BulletPoolImport._wasm = null;
+        throw new Error(`[particle] bulletTick.wasm did not load: ${err?.message ?? err}`, { cause: err });
       }
     }
 

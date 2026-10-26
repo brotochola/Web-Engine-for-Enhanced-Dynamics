@@ -584,7 +584,7 @@ export function renderQueueMemorySpec(scene) {
   // W19: the bullet tick reads the pool, Transform, Collider and the spatial grid in the engine block, so its regions
   // ride with these blocks; any pool size and id width (the kernel's _u32 forms).
   const maxBullets = config.bullet?.maxBullets | 0;
-  const bullets = inBlock && config.wasm?.bulletTick !== false && maxBullets > 0
+  const bullets = inBlock && maxBullets > 0
     && spatialPublishSpec(scene) !== null
     ? {
         bullets: maxBullets,

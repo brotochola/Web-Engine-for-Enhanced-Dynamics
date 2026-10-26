@@ -202,7 +202,9 @@ export class BulletPool extends SharedAtomicPool {
    */
   static tick(dtRatio, activeData, impactHeader, impactData, maxImpacts, opts) {
     // W19: the kernel takes the frame when it is bound, the call is the worker's own (no kernel options), the
-    // pool's list is at the kernel's width, its impact region holds the cap, and every column is in its memory.
+    // pool's list is at the kernel's width, its impact region holds the cap, and every column is in its memory. The
+    // loop below runs where it cannot read the grid (no spatial workers, or the spatial memory outside the engine
+    // block: no regions for it) and for the kernel-only options.
     const k = this._wasm;
     if (k !== null && opts === undefined && activeData.BYTES_PER_ELEMENT === k.activeOut.BYTES_PER_ELEMENT
       && (maxImpacts | 0) <= k.impactCap
