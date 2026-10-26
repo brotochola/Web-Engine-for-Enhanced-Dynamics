@@ -6,6 +6,7 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Scene } from '../../src/core/scene.js';
 import {
   checkSceneFile,
+  defaultSceneFileUrl,
   inlineJson,
   isSceneFileUrl,
   parseSceneFile,
@@ -79,6 +80,14 @@ test('a scene file names its module relative to itself', () => {
     sceneFileScriptUrl(doc, '/demos/platformerGameScene/levels/1-1.scene.json', 'http://host'),
     'http://host/demos/platformerGameScene/platformerGameScene.js',
   );
+  class WithLevel extends Scene {
+    static defaultSceneFile = './levels/1-1.scene.json';
+  }
+  assert.equal(
+    defaultSceneFileUrl(WithLevel, 'http://host/demos/platformerGameScene/platformerGameScene.js'),
+    'http://host/demos/platformerGameScene/levels/1-1.scene.json',
+  );
+  assert.equal(defaultSceneFileUrl(Scene, 'http://host/demos/a.js'), null, 'a scene that names none');
   assert.equal(isSceneFileUrl('/levels/1-1.scene.json'), true);
   assert.equal(isSceneFileUrl('/levels/1-1.scene.json?v=2'), true);
   assert.equal(isSceneFileUrl('/demos/scene.js'), false);

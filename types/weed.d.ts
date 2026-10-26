@@ -1660,6 +1660,11 @@ export declare class Scene {
   static queries: SceneQueryTuple[];
   /** Optional scene module href. `loadScene(url)` sets this when missing. */
   static scriptUrl?: string | null;
+  /**
+   * The scene file (relative to the scene's module) whose entities load when the scene is
+   * loaded by its module or class instead of a scene file: its first level. Default null.
+   */
+  static defaultSceneFile: string | null;
   game: GameEngine;
   loadedTextures: unknown;
   /** Absolute scene module href workers import(), or null when using leftover entity scriptUrl. */

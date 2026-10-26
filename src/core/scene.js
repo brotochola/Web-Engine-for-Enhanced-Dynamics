@@ -179,6 +179,12 @@ class Scene {
   static queries = []; // [[ComponentClass, ...], ...] custom active queries to precompute
   /** Names entities may send each other (sendTo / onMessage): ['hit', 'heal', …]. */
   static messages = [];
+  /**
+   * The scene file (`*.scene.json`, relative to this scene's module) whose entities load
+   * when the scene is loaded by its module or class rather than by a scene file: its first
+   * level. null: none.
+   */
+  static defaultSceneFile = null;
 
   constructor(game) {
     this.game = game; // Reference to GameEngine orchestrator

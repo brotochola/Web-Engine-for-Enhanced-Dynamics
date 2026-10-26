@@ -22,7 +22,7 @@ import {
   nativeImport,
   toAbsoluteScriptUrl,
 } from '../util/sceneScript.js';
-import { fetchSceneFile, isSceneFileUrl, sceneFileScriptUrl } from './sceneFile.js';
+import { defaultSceneFileUrl, fetchSceneFile, isSceneFileUrl, sceneFileScriptUrl } from './sceneFile.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
@@ -371,6 +371,12 @@ class GameEngine {
 
       if (sceneScriptUrl && !SceneClass.scriptUrl) {
         SceneClass.scriptUrl = sceneScriptUrl;
+      }
+
+      // Loaded by its module or class: the scene's own first level, if it names one.
+      if (sceneFile === null) {
+        sceneFileUrl = defaultSceneFileUrl(SceneClass, sceneScriptUrl, origin);
+        if (sceneFileUrl !== null) sceneFile = await fetchSceneFile(sceneFileUrl);
       }
 
       // A hot reload of this very scene: restore what was running (once).

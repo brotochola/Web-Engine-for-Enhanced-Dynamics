@@ -160,6 +160,18 @@ export function sceneFileScriptUrl(doc, fileUrl, origin = '') {
 }
 
 /**
+ * The URL of a scene class's `static defaultSceneFile` (relative to its module), or null when it names none.
+ * @param {Function} SceneClass
+ * @param {string|null} sceneScriptUrl - the class's module URL, if known
+ * @param {string} [origin]
+ */
+export function defaultSceneFileUrl(SceneClass, sceneScriptUrl, origin = '') {
+  const file = SceneClass.defaultSceneFile;
+  if (typeof file !== 'string' || file === '') return null;
+  return new URL(file, new URL(sceneScriptUrl || '/', origin || 'http://localhost')).href;
+}
+
+/**
  * Fetch, parse and check a scene file.
  * @param {string} url
  * @returns {Promise<object>}
