@@ -41,9 +41,10 @@ test('Platform declares the defaults its onSpawned used to write with ??', () =>
 
 test('levels/1-1.scene.json places the platforms the old array did', () => {
   const d = describeSpawnParams(Platform);
-  // The platforms (ED-37 added a goal to the level).
+  // The old array's platforms are Platform1 to Platform12; the level has grown since (ED-37: a goal, a step).
   const platforms = doc.entities.filter((e) => e.class === 'Platform');
-  const placed = platforms.map((e) => {
+  const old = OLD_DEFS.map((_, i) => platforms.find((e) => e.name === `Platform${i + 1}`));
+  const placed = old.map((e) => {
     const filled = { x: e.x, y: e.y };
     for (let i = 0; i < d.keys.length; i++) filled[d.keys[i]] = e.config?.[d.keys[i]] ?? d.defaults[i];
     return { x: filled.x, y: filled.y, width: filled.width, height: filled.height, tint: filled.tint };

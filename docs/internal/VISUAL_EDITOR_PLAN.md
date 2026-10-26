@@ -1231,6 +1231,13 @@ server still writes nothing. What changed for this plan:
    emits an event, and the scene's listener finds the goal among its file's entities by
    index (`getByName`) and reads `next` from the file. The declared `string` param is what
    the editor shows (ED-7).
+10. **Level 1-1's first floating platform was out of the player's reach** (ED-37). The
+    jump is one 1333 px/s kick against 3600 px/s² of gravity (DX 2.4), about 245 px up.
+    From the start ground `Platform9` needs 298 px and `Platform2` 285 px, and 1-1 has no
+    ground between x 1200 and 4220: its goal could not be reached by playing. The layout
+    predates DX 2.4, whose acceleration burst jumped higher on a hitch. 1-1 gains one step,
+    `Platform13` (150 px up from the ground, 148 px on to `Platform9`); the old platforms and
+    the jump stay as they were. ED-37's browser run checks it.
 
 **New items:**
 
