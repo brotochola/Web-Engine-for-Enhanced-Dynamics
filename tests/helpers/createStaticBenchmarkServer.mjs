@@ -43,14 +43,18 @@ const ISOLATION_HEADERS = {
  *   (e.g. '/weed-sw.js' → the source of the isolation service worker)
  * @param {Record<string, (body: string) => unknown>} [options.routes] URL path → handler for a POST to it, given the
  *   request body; what it returns (or resolves to) goes back as JSON (stockFirefox.mjs)
+ * @param {(req: http.IncomingMessage, res: http.ServerResponse, headers: object) => boolean} [options.before] asked
+ *   first; true when it answered the request (the dev server's editor routes, server/devRoutes.js)
  */
 export async function createStaticBenchmarkServer(rootDirectory, preferredPort = 0, options = {}) {
   const normalizedRoot = path.resolve(rootDirectory);
   const isolationHeaders = options.isolationHeaders !== false ? ISOLATION_HEADERS : null;
   const files = options.files || {};
   const routes = options.routes || {};
+  const before = options.before || null;
 
   const server = http.createServer(async (req, res) => {
+    if (before !== null && before(req, res, isolationHeaders || {})) return;
     try {
       const url = new URL(req.url, 'http://127.0.0.1');
       if (req.method === 'POST' && Object.hasOwn(routes, url.pathname)) {
