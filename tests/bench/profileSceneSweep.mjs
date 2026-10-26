@@ -50,8 +50,9 @@ const DEMOS = [
   'zenithalParticleTestScene/zenithalParticleTestScene.js',
 ].map((p) => `/demos/${p}`);
 
-/** Stress scenes for engine processes Q1 did not profile (its gap list first). */
+/** Stress scenes: Q1's own and W8b's 70 000 entities, then the engine processes Q1 did not profile (its gap list). */
 const STRESS = [
+  'visPolyStressScene', 'compoundVisPolyStressScene', 'particleIntegrateStressScene', 'stationarySpatialWideScene',
   'spawnStormScene', 'contactDrainStressScene', 'bulletStressScene', 'bulletStormScene', 'painterSortStressScene',
   'painterMoveStressScene', 'painterAdobeStressScene', 'decalStampStressScene', 'decalBlitStressScene',
   'meshApiStressScene', 'decorationSwayStressScene', 'decoChurnStressScene', 'liquidFunStressScene',
@@ -66,6 +67,9 @@ const STRESS = [
 const SCENE_ARGS = {
   // 10 000 animated characters, all of them in view only at the minimum zoom (the owner's setting).
   adobeAnimateScene: ['--camera-zoom', 'min'],
+  // Q1's settings: the compound outlines W1 rasters, and the tweens of W12's integrate.
+  compoundVisPolyStressScene: ['--query', 'ringSegments=64'],
+  particleIntegrateStressScene: ['--query', 'tween=1'],
 };
 
 /** Modules that export more than one scene: the one the sweep runs (the heaviest variant). */
