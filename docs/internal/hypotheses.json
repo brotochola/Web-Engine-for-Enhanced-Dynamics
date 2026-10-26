@@ -8185,7 +8185,7 @@
       "status": "answered",
       "statusText": "Measured 2026-10-26: Predator and littleCity, 1 cold + 5 warm loads each",
       "date": "2026-10-26",
-      "result": "A warm full load is 2.82 s (Predator) and 3.00 s (littleCity), headless; workers ready (1.5 to 1.8 s), shared buffers and assets are about 2.4 and 2.7 s of it, all skipped by a fast swap. What a fast swap still pays: the scene hooks and the spawn flush, 0.28 and 0.13 s.",
+      "result": "A warm full load is 2.82 s (Predator) and 3.00 s (littleCity); a fast swap of the same class is 0.26 s (Predator, headed) and 0.23 s (littleCity), the platformer 0.16 s: the clear, resets and tiny physics step about 40 ms, the level's hooks and flush, and the 0.1 s cooldown.",
       "area": "load",
       "kind": "dx",
       "refs": [
@@ -8194,7 +8194,8 @@
       ],
       "next": "Run tests/bench/sceneLoadPhases.mjs again on the fast swap once ED-35 exists.",
       "records": [
-        "R-0644"
+        "R-0644",
+        "R-0648"
       ]
     },
     {
@@ -14197,6 +14198,15 @@
       "title": "ED-41/42 spawn storm: the branch's engine changes neutral on logic0 (-1.6 %, 0/4 worse), no new deopt, allocation unchanged",
       "verdict": "passed",
       "text": "**ED-41 / ED-42 on spawn storm: the pair, the deopt log, the heap sample (VISUAL_EDITOR_PLAN.md ED-41, Measure).** 2026-10-26.\n\nOne sitting for the visual editor branch's engine changes as a batch (spawn params, spawn without a config, the spawn generation column, logic0's `clearScene` case, `Camera.held`, `Mouse.isEditModeActive`): A = the branch point `468d2ef3`, B = HEAD `82164bd3`, both from worktrees. `spawnStormScene` (`storm=1800`, headed, `--src`, detailed stats off), `runPredatorAbab.mjs --pairs 4 --owner logic`.\n\n- **Pair: NEUTRAL.** logic0 STEP_MS 5.608 → 5.439 ms, paired −1.6 %, worse in 0 of 4 pairs, cv 2 % / 2 %. Presented 60.0 → 60.0 fps. Load keys: ENTITIES_PROCESSED 2001 → 2001, BODY_COUNT 889 → 847 (−4.7 %, under the 5 % gate), VISIBLE_ENTITIES +3.4 %. The other workers are under the 3 ms floor.\n- **Deopt log** (`--log-deopt --log-ic`, 10 s warm-up + 10 s, both trees, `summarizeV8Deopt.mjs`): no deopt in `_spawnAt`, the params fill or `despawn` in either tree. The same locations deopt in both during warm-up (line numbers shifted by the branch's edits; HEAD adds one warm-up deopt in `mouse.js`). The steady megamorphic ICs are identical (`clearArrays`, `isTypedArray`).\n- **Heap sample** (`heapSampleWorkers.mjs`, logic worker, 10 s + 8 s): 3532 → 3573 KB/s (+1.1 %, within the sampler's noise), the same sites in the same order: the stress driver's `tick` (2.1 MB/s) and `update` (1.4 MB/s), as before the branch.\n\n**Verdict: passed (hygiene).** With the ED-40 kernel (R-0646: classes without params not slower, the params path 0 minor GCs per 1e6 spawns), ED-41's and ED-42's measurements are done: kept as hygiene."
+    },
+    {
+      "id": "R-0648",
+      "date": "2026-10-26",
+      "time": "20:55",
+      "timeFrom": "recorded",
+      "title": "ED-39 on the fast swap: platformer 0.16 s, littleCity 0.23 s, Predator 0.26 s headed (0.68 s headless: the software renderer's frame)",
+      "verdict": "answered",
+      "text": "**ED-39 again, on the fast swap (ED-35) (VISUAL_EDITOR_PLAN.md).** 2026-10-26.\n\n`tests/bench/sceneLoadPhases.mjs --swap` (d434f0a1, which also times the swap's own steps): 1 cold full load + 5 fast swaps of the same scene class, timed to the renderer's first frame after them. Headless for the platformer, littleCity and Predator; Predator again headed (the machine's GPU). No other benchmark running.\n\nMedians of five swaps, ms: platformer **161.5** [123.6..306] (cold full load 1368); littleCity **226.9** [192.1..323.3] (cold 2898, ED-39's warm full load 3001); Predator headless **677.4** [646.5..745.1], headed **257.0** [247.6..285.6] (cold 2294 headless, 1836 headed; ED-39's warm full load 2824).\n\nWhere it goes: the clear 0.4 / 17.4 / 24.1 / 19.1 ms, the resets under 0.5 ms, the tiny physics step 0.3 / 7.7 / 25.4 / 20.4 ms, the level's hooks and spawn flush (Predator 0.13 s, as in a full load), `transitionCooldown` about 0.1 s in every scene. The settle waits for each worker's frame in progress: Predator headless 380 ms because the Pixi worker draws in software (a scratch probe: Pixi answered the barrier in 503, 458, 49 ms, every other worker within 12 ms); headed 0.8 ms.\n\n**Verdict: answered.** A fast swap is 4 to 13 times faster than a full load, close to ED-39's prediction (littleCity 2.77 s saved against 2.73 predicted; Predator 0.26 s against about 0.3 s). Report section: `docs/internal/reports/ED-39-scene-load-phases.md`, \"Fast swap (ED-35)\"."
     }
   ],
   "leads": [
