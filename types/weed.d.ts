@@ -866,6 +866,12 @@ export declare class Time {
   static set scale(value: number);
   /** `simMs * Time.scale`. */
   static scaleSimMs(simMs: number): number;
+  /**
+   * The scene's sim clock in ms, the same in every thread: 0 at scene start, advanced once per main-thread frame by
+   * the scaled frame time (clamped to 100 ms, as the workers clamp theirs), so a pause or a hitstop stops it. GPU
+   * particles age by it. 0 when unbound.
+   */
+  static get simNowMs(): number;
 }
 
 /** Particle ease ids (`PARTICLE_EASE` / `WEED.enums.PARTICLE_EASE`). */

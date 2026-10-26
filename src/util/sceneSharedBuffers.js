@@ -31,7 +31,7 @@ import { Gamepad } from '../core/gamepad.js';
 import Keyboard from '../core/keyboard.js';
 import { Flash } from '../core/flash.js';
 import { Camera } from '../core/camera.js';
-import { Time } from '../core/timeScale.js';
+import { CLOCK_BYTES, Time } from '../core/timeScale.js';
 import { Tween, tweenBufferBytes } from '../core/tween.js';
 import {
   SUN_DEFAULTS,
@@ -1165,8 +1165,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   Keyboard.initialize(views.input, scene.keyMap);
   scene.updateKeyboardBuffer();
 
-  buffers.clockData = new SharedArrayBuffer(4);
-  views.clock = new Float32Array(buffers.clockData);
+  buffers.clockData = new SharedArrayBuffer(CLOCK_BYTES);
+  views.clock = new Float32Array(buffers.clockData, 0, 1);
   views.clock[0] = 1;
   Time.bind(buffers.clockData);
 

@@ -5,7 +5,15 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { AbstractWorker } from '../../src/workers/abstractWorker.js';
-import { Time, sanitizeTimeScale, scaleSimMs, MAX_TIME_SCALE } from '../../src/core/timeScale.js';
+import {
+  CLOCK_BYTES,
+  MAX_TIME_SCALE,
+  SIM_CLOCK_MAX_STEP_MS,
+  Time,
+  sanitizeTimeScale,
+  scaleSimMs,
+  simClockStepMs,
+} from '../../src/core/timeScale.js';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '../..');
 
@@ -121,4 +129,51 @@ test('physics host multiplies solver dt and still times STEP_MS with performance
   assert.match(host, /\(deltaTimeMs \/ 1000\) \* readTimeScale\(\)/);
   assert.match(host, /var stepMs = performance\.now\(\) - t0;\s*state\.stats\[PS\.STEP_MS\] = stepMs;/);
   assert.doesNotMatch(host, /STEP_MS\] = dt/);
+});
+
+test('Time.simNowMs: the shared sim clock advances by scaled ms, read the same through any view', { concurrency: false }, () => {
+  const sab = new SharedArrayBuffer(CLOCK_BYTES);
+  new Float32Array(sab, 0, 1)[0] = 1;
+  Time.bind(sab);
+  try {
+    assert.equal(Time.simNowMs, 0, 'starts at 0');
+    Time._advanceSimNow(simClockStepMs(16, Time.scale));
+    assert.equal(Time.simNowMs, 16);
+    Time.scale = 0.5;
+    Time._advanceSimNow(simClockStepMs(16, Time.scale));
+    assert.equal(Time.simNowMs, 24, 'Time.scale slows it');
+    Time.scale = 0;
+    Time._advanceSimNow(simClockStepMs(16, Time.scale));
+    assert.equal(Time.simNowMs, 24, 'a hitstop stops it');
+    assert.equal(new Float64Array(sab, 8, 1)[0], 24, 'another realm reads the same f64');
+    assert.equal(Atomics.load(new Int32Array(sab, 4, 1), 0) & 1, 0, 'the sequence is even between writes');
+  } finally {
+    Time.unbind();
+  }
+});
+
+test('simClockStepMs clamps a wall delta as the workers do; a lockstep step is not clamped', () => {
+  assert.equal(simClockStepMs(16, 1), 16);
+  assert.equal(simClockStepMs(5000, 1), SIM_CLOCK_MAX_STEP_MS, 'a tab back from the background does not jump');
+  assert.equal(simClockStepMs(-3, 1), 0);
+  assert.equal(simClockStepMs(250, 1, true), 250, 'an injected step is taken as given');
+  assert.equal(simClockStepMs(40, 2), 80);
+});
+
+test('a clock SAB without the sim clock reads 0 and ignores advances', { concurrency: false }, () => {
+  Time.bind(new SharedArrayBuffer(4));
+  try {
+    Time._advanceSimNow(16);
+    assert.equal(Time.simNowMs, 0);
+    assert.equal(Time.scale, 0, 'a zeroed scale slot is a hitstop, as before');
+  } finally {
+    Time.unbind();
+  }
+});
+
+test('the scene allocates the sim clock, and the frame loop and stepFrame advance it', () => {
+  const sharedBuffers = readFileSync(join(root, 'src/util/sceneSharedBuffers.js'), 'utf8');
+  assert.match(sharedBuffers, /buffers\.clockData = new SharedArrayBuffer\(CLOCK_BYTES\)/);
+  const scene = readFileSync(join(root, 'src/core/scene.js'), 'utf8');
+  assert.equal((scene.match(/Time\._advanceSimNow\(simClockStepMs\(/g) || []).length, 2, 'rAF loop and stepFrame');
 });
