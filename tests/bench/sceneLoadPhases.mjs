@@ -71,6 +71,19 @@ async function runPage(page, { sceneModule, sceneExport, loads, settleMs, swap }
           }
         };
       };
+      // The same for a method its caller does not await: the wrapper stays synchronous.
+      const wrapSync = (owner, key, label) => {
+        const original = owner[key];
+        if (typeof original !== 'function') return;
+        owner[key] = function wrapped(...args) {
+          mark(`${label}:start`);
+          try {
+            return original.apply(this, args);
+          } finally {
+            mark(label);
+          }
+        };
+      };
       const proto = SceneClass.prototype;
       wrap(proto, 'preload', 'preload');
       wrap(proto, 'create', 'create');
@@ -78,6 +91,11 @@ async function runPage(page, { sceneModule, sceneExport, loads, settleMs, swap }
       wrap(proto, '_flushCreateSpawns', 'flushCreateSpawns');
       wrap(proto, 'destroy', 'previousDestroy');
       wrap(WEED.Layer, 'applyConfiguredContent', 'applyConfiguredContent');
+      // The fast swap's own steps (ED-35): every worker settled, the clear, the resets, the tiny physics step.
+      wrap(proto, 'pauseAndSettle', 'swap:settle');
+      wrap(proto, '_clearWorldForSwap', 'swap:clear');
+      wrapSync(proto, '_resetSceneWideStateForSwap', 'swap:resets');
+      wrap(proto, '_stepWorkerGroup', 'swap:physicsStep');
 
       const game = new WEED.GameEngine({
         autoResize: false,
