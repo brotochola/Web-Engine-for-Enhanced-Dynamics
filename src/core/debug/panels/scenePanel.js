@@ -1,6 +1,7 @@
-// ScenePanel.js — Scene switching and play/pause controls
+// ScenePanel.js — Scene switching, play/pause/step, game speed and edit mode
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
+import { MAX_TIME_SCALE } from '../../timeScale.js';
 
 function sceneEntryIsActive(scene, entry) {
   if (!scene) return false;
@@ -34,6 +35,8 @@ export class ScenePanel {
     this.debugUI = debugUI;
     this.elements = {};
     this.panel = null;
+    /** The speed the slider shows, so a tick writes the DOM only when it changed. */
+    this._shownSpeed = NaN;
   }
 
   // ------- DOM creation -------
@@ -65,17 +68,62 @@ export class ScenePanel {
     });
     controlsRow.appendChild(this.elements.resumeBtn);
 
+    // One frame of the paused game (ED-14).
+    this.elements.stepBtn = createButton('⏭ Step', '', () => this.debugUI.scene?.stepPaused());
+    this.elements.stepBtn.title = 'One frame, while paused';
+    controlsRow.appendChild(this.elements.stepBtn);
+
     this.elements.editBtn = createButton('✏ Edit', '', () => this.debugUI.toggleEditMode());
     this.elements.editBtn.title = 'Edit mode (Shift+E): the world holds still, the view is yours';
     controlsRow.appendChild(this.elements.editBtn);
 
     this.panel.appendChild(controlsRow);
+
+    // Game speed (Time.scale; while editing, the speed leaving edit mode plays at).
+    const speedRow = createRow('margin-top:8px;gap:8px;align-items:center');
+    speedRow.appendChild(createStat('Speed:'));
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.className = 'debug-ui-range';
+    slider.min = '0';
+    slider.max = String(MAX_TIME_SCALE);
+    slider.step = '0.05';
+    slider.value = '1';
+    slider.style.cssText = 'flex:1;min-width:0';
+    slider.title = 'Time.scale: 1 is real time, 0 holds still';
+    slider.oninput = () => {
+      this.debugUI.playSpeed = Number(slider.value);
+      this._showSpeed();
+    };
+    const speedText = createStat('1.00×');
+    const realTime = createButton('1×', '', () => {
+      this.debugUI.playSpeed = 1;
+      this._showSpeed();
+    });
+    realTime.title = 'Real time';
+    speedRow.appendChild(slider);
+    speedRow.appendChild(speedText);
+    speedRow.appendChild(realTime);
+    this.elements.speedSlider = slider;
+    this.elements.speedText = speedText;
+    this.panel.appendChild(speedRow);
     return this.panel;
   }
 
-  /** The Edit button shows whether edit mode is on (EditMode calls it on every change). */
+  /** The speed slider and its number, when the speed changed (from here, a game's hitstop, edit mode). */
+  _showSpeed() {
+    const speed = this.debugUI.playSpeed;
+    if (speed === this._shownSpeed) return;
+    this._shownSpeed = speed;
+    if (this.elements.speedSlider) this.elements.speedSlider.value = String(speed);
+    if (this.elements.speedText) this.elements.speedText.textContent = `${speed.toFixed(2)}×`;
+  }
+
+  /** The Edit button shows whether edit mode is on (EditMode calls it on every change), and Step and the speed follow. */
   updateEditButton() {
     if (this.elements.editBtn) this.elements.editBtn.classList.toggle('active', this.debugUI.editing);
+    this._updatePlayPauseState();
+    this._showSpeed();
   }
 
   // ------- lifecycle -------
@@ -86,6 +134,7 @@ export class ScenePanel {
 
   update() {
     this._updatePlayPauseState();
+    this._showSpeed();
   }
 
   // ------- scene list -------
@@ -124,5 +173,7 @@ export class ScenePanel {
     const isPaused = this.debugUI.scene?.state?.pause;
     if (this.elements.pauseBtn) this.elements.pauseBtn.classList.toggle('active', isPaused);
     if (this.elements.resumeBtn) this.elements.resumeBtn.classList.toggle('active', !isPaused);
+    // Step runs a frame of the paused game; edit mode holds the world at speed 0.
+    if (this.elements.stepBtn) this.elements.stepBtn.disabled = !isPaused || this.debugUI.editing;
   }
 }

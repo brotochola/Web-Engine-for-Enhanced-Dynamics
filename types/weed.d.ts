@@ -1782,6 +1782,8 @@ export declare class Scene {
   startAllWorkers(): void;
   stepFrame(deltaTimeMs?: number): Promise<void>;
   stepFrames(count: number, deltaTimeMs?: number): Promise<void>;
+  /** One frame of a paused scene, any config (the debug UI's Step). False while running or mid-step. */
+  stepPaused(deltaTimeMs?: number): Promise<boolean>;
   hashActiveTransforms(): { hash: string; count: number };
   hashLiquidFun(): { hash: string; count: number };
   countActiveTransforms(): number;

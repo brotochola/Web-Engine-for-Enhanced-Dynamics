@@ -1086,8 +1086,17 @@ reload, and it is still there.
     Each is one undo. Undo finds its record by an editor id: a non-enumerable property, so
     the file never holds it and a copy gets it back by hand. A rename or a delete in between
     loses nothing. `editorPalette.test.js`.
-- [ ] **ED-14 Time controls:** speed slider (`Time.scale`), pause, step. The worker
+- [x] **ED-14 Time controls:** speed slider (`Time.scale`), pause, step. The worker
   `step` message already runs one frame whatever the pause state is.
+  - Done 2026-10-26, in the Scene panel beside Pause and Play.
+    - Speed is a slider from 0 to 4 with its number and a 1× button. While editing it sets
+      the speed that leaving edit mode plays at (`EditMode.playSpeed`), since edit mode
+      holds `Time.scale` at 0. A speed a game sets (a hitstop) shows on the next tick, and
+      the DOM is written only when the speed changed.
+    - Step is `Scene.stepPaused()`: stepFrame's frame (the page's update, then each worker
+      group in pipeline order) for a paused scene of any config. It is refused while the
+      game runs or a step is still running, and disabled while editing.
+    `editorTimeControls.test.js`.
 - [ ] **ED-38 Scene-file picker:** list `levels/*.scene.json` (D7), open with
   `loadScene`, New (an empty file naming the current class and export), Save As.
 - [ ] **ED-44 Editor idle cost check** (measurement):

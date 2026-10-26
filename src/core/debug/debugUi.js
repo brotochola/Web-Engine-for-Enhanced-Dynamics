@@ -231,6 +231,15 @@ export class DebugUI {
     this.editMode.onContentSwapped();
   }
 
+  /** The speed the game plays at: Time.scale, or while editing, the scale leaving edit mode puts back. */
+  get playSpeed() {
+    return this.editMode.playSpeed;
+  }
+
+  set playSpeed(value) {
+    this.editMode.playSpeed = value;
+  }
+
   destroy() {
     this.editMode.exit();
     this.editMode.selection.destroy();

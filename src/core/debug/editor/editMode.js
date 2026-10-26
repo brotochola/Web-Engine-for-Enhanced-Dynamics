@@ -22,7 +22,7 @@
 //
 // Cost: nothing before the first Shift+E. Its listeners are on the document only while it is on.
 
-import { Time } from '../../timeScale.js';
+import { Time, sanitizeTimeScale } from '../../timeScale.js';
 import { Camera } from '../../camera.js';
 import { Mouse } from '../../mouse.js';
 import { saveSceneFile } from './sceneFileStore.js';
@@ -220,6 +220,17 @@ export class EditMode {
   /** The document has changes the file does not hold. */
   get dirty() {
     return this.history.dirty;
+  }
+
+  /** The speed the game plays at (ED-14): Time.scale, or while editing, the scale that leaving puts back. */
+  get playSpeed() {
+    return this.active ? this._savedTimeScale : Time.scale;
+  }
+
+  set playSpeed(value) {
+    const scale = sanitizeTimeScale(value);
+    if (this.active) this._savedTimeScale = scale;
+    else Time.scale = scale;
   }
 
   /**

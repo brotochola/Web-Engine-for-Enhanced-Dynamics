@@ -330,6 +330,8 @@ class Scene {
 
     this._stepSeq = 0;
     this._stepWaiters = new Map();
+    /** A stepPaused frame is running (the debug UI's Step). */
+    this._steppingPaused = false;
 
     // create()/createNewGame() spawns: see _flushCreateSpawns.
     this._spawnBatchOpen = true;
@@ -2593,7 +2595,30 @@ class Scene {
     if (!(dt > 0)) {
       throw new Error('stepFrame needs deltaTime > 0');
     }
+    await this._stepOneFrame(dt);
+  }
 
+  /**
+   * One frame of a paused scene (the debug UI's Step, VISUAL_EDITOR_PLAN.md ED-14), as
+   * stepFrame does for manualStep scenes: workers handle `step` whatever their pause state,
+   * and while paused nothing else advances them. Refused (false) unless the scene is paused,
+   * or a step is still running.
+   * @param {number} [deltaTimeMs=16.67]
+   * @returns {Promise<boolean>}
+   */
+  async stepPaused(deltaTimeMs = 16.67) {
+    if (!this.state.pause || this._steppingPaused) return false;
+    this._steppingPaused = true;
+    try {
+      await this._stepOneFrame(deltaTimeMs);
+    } finally {
+      this._steppingPaused = false;
+    }
+    return true;
+  }
+
+  /** The page's frame, then each worker group in pipeline order, each awaited. */
+  async _stepOneFrame(dt) {
     this.updateInternal(dt);
 
     await this._stepWorkerGroup(this.workers.logicWorkers, dt);
