@@ -8389,10 +8389,10 @@
     {
       "id": "ED-41",
       "title": "Visual editor: spawn params (B2) cost classes without them nothing, and allocate nothing for classes with them",
-      "status": "running",
+      "status": "kept-hygiene",
       "statusText": "Kernel passed 2026-10-26 (ED-40); the spawn-storm pair, the deopt log and the heap sample are next",
       "date": "2026-10-26",
-      "result": "ED-40 kernel against the commit before ED-41: a class without params ties (a, -0.4 %) or is faster (b, +7.4 %, 96 % of rounds); a class with 4 params spawns 2.3 M/s with none passed and 1.4 M/s with 2 passed, re-entrant 2.4 M/s, all with 0 minor GCs over 1e6 spawns.",
+      "result": "Kernel (R-0646): classes without params not slower, the params path 0 minor GCs per 1e6 spawns. Spawn storm, branch point against HEAD, 4 pairs: logic0 -1.6 % (0/4 worse, cv 2 %), no deopt in the spawn path, logic worker allocation 3532 -> 3573 KB/s from the same sites.",
       "area": "logic",
       "kind": "js",
       "refs": [
@@ -8405,7 +8405,8 @@
       ],
       "next": "Spawn-storm ABAB (hygiene), summarizeV8Deopt on spawn-storm, heapSampleWorkers on spawn-storm (VISUAL_EDITOR_PLAN.md ED-41, Measure).",
       "records": [
-        "R-0646"
+        "R-0646",
+        "R-0647"
       ]
     }
   ],
@@ -14187,6 +14188,15 @@
       "commits": [
         "37013e51"
       ]
+    },
+    {
+      "id": "R-0647",
+      "date": "2026-10-26",
+      "time": "20:46",
+      "timeFrom": "recorded",
+      "title": "ED-41/42 spawn storm: the branch's engine changes neutral on logic0 (-1.6 %, 0/4 worse), no new deopt, allocation unchanged",
+      "verdict": "passed",
+      "text": "**ED-41 / ED-42 on spawn storm: the pair, the deopt log, the heap sample (VISUAL_EDITOR_PLAN.md ED-41, Measure).** 2026-10-26.\n\nOne sitting for the visual editor branch's engine changes as a batch (spawn params, spawn without a config, the spawn generation column, logic0's `clearScene` case, `Camera.held`, `Mouse.isEditModeActive`): A = the branch point `468d2ef3`, B = HEAD `82164bd3`, both from worktrees. `spawnStormScene` (`storm=1800`, headed, `--src`, detailed stats off), `runPredatorAbab.mjs --pairs 4 --owner logic`.\n\n- **Pair: NEUTRAL.** logic0 STEP_MS 5.608 → 5.439 ms, paired −1.6 %, worse in 0 of 4 pairs, cv 2 % / 2 %. Presented 60.0 → 60.0 fps. Load keys: ENTITIES_PROCESSED 2001 → 2001, BODY_COUNT 889 → 847 (−4.7 %, under the 5 % gate), VISIBLE_ENTITIES +3.4 %. The other workers are under the 3 ms floor.\n- **Deopt log** (`--log-deopt --log-ic`, 10 s warm-up + 10 s, both trees, `summarizeV8Deopt.mjs`): no deopt in `_spawnAt`, the params fill or `despawn` in either tree. The same locations deopt in both during warm-up (line numbers shifted by the branch's edits; HEAD adds one warm-up deopt in `mouse.js`). The steady megamorphic ICs are identical (`clearArrays`, `isTypedArray`).\n- **Heap sample** (`heapSampleWorkers.mjs`, logic worker, 10 s + 8 s): 3532 → 3573 KB/s (+1.1 %, within the sampler's noise), the same sites in the same order: the stress driver's `tick` (2.1 MB/s) and `update` (1.4 MB/s), as before the branch.\n\n**Verdict: passed (hygiene).** With the ED-40 kernel (R-0646: classes without params not slower, the params path 0 minor GCs per 1e6 spawns), ED-41's and ED-42's measurements are done: kept as hygiene."
     }
   ],
   "leads": [
