@@ -164,7 +164,9 @@ test('the selection knows what the scene file placed, and lets go of an entity t
   selection.select(1);
   Transform.active[1] = 0;
   selection.update();
-  assert.equal(selection.index, -1);
+  assert.equal(selection.index, 1, 'inactive with the same generation: a spawn waiting for logic0, still selected');
+  selection.pickAt(3000, 100);
+  assert.equal(selection.index, -1, 'a click on nothing lets go');
   calls.length = 0;
   selection.pickAt(3000, 100);
   assert.deepEqual(calls, [], 'a click on nothing with nothing selected changes nothing');

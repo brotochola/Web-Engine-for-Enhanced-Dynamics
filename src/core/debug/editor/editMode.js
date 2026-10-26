@@ -39,6 +39,12 @@ export class EditMode {
     this.debugUI = debugUI;
     this.active = false;
     this.selection = new Selection(debugUI);
+    /** The document has edits that are not saved (ED-12 ties it to the undo stack). */
+    this.dirty = false;
+    this.selection.onEdit = () => {
+      this.dirty = true;
+      debugUI.tools.updateToolIndicator();
+    };
 
     // What entering found, put back on leaving.
     this._savedTimeScale = NaN;
@@ -167,6 +173,7 @@ export class EditMode {
     this._setStatus(`Saving ${name}…`, false);
     try {
       await saveSceneFile(scene.sceneFileUrl, scene.sceneFile);
+      this.dirty = false;
       this._setStatus(`Saved ${name}`, false);
       return true;
     } catch (error) {
@@ -192,6 +199,7 @@ export class EditMode {
   /** A fast swap put the time scale and the camera back to the level's start: hold them again. */
   onContentSwapped() {
     this.selection.clear();
+    this.dirty = false; // another document
     if (!this.active) return;
     this._savedTimeScale = Time.scale;
     this._savedFree = Camera._free;

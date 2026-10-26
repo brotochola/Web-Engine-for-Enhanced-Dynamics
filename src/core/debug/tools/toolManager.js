@@ -252,7 +252,10 @@ export class ToolManager {
     } else if (this.debugUI.editMode.active) {
       const editMode = this.debugUI.editMode;
       el.textContent =
-        editMode.status || 'Edit mode: click selects, right or middle drag pans, the wheel zooms, Ctrl+S saves. Shift+E plays';
+        editMode.status ||
+        (editMode.dirty
+          ? 'Edit mode: unsaved changes, Ctrl+S saves them. Shift+E plays'
+          : 'Edit mode: click selects, right or middle drag pans, the wheel zooms, Ctrl+S saves. Shift+E plays');
       el.className = editMode.statusIsError ? 'debug-ui-tool-indicator visible editor error' : 'debug-ui-tool-indicator visible editor';
     } else {
       el.className = 'debug-ui-tool-indicator';

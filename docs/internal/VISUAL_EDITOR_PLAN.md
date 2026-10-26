@@ -1026,10 +1026,29 @@ reload, and it is still there.
     lets go of an entity that despawns, and a fast swap or leaving edit mode clears it.
     Esc clears it, and with nothing selected, leaves edit mode.
     `editorSelection.test.js`.
-- [ ] **ED-7 Param widgets** from `spawnParams` (D4 table), with the key/value box as the
+- [x] **ED-7 Param widgets** from `spawnParams` (D4 table), with the key/value box as the
   fallback. Widgets are created on selection change, never per frame.
-- [ ] **ED-9 Inspector editing.** Each change is a set-param command, which respawns
+  - Done 2026-10-26 (`editor/paramWidgets.js`), in the Editor panel of an authored entity:
+    - a number gets a slider and a field when it has `min` and `max` (clamped), else a
+      field;
+    - a color gets the color picker, an enum a dropdown, a bool a checkbox, and a string,
+      sprite or animation a text field;
+    - an entity gets a dropdown of the file's entities of its `class` (the file stores the
+      name; a name the file lacks shows as missing);
+    - points show their count.
+    A class without params gets its config as JSON. The asset pickers, clicking an entity,
+    and dragging points are ED-45.
+- [x] **ED-9 Inspector editing.** Each change is a set-param command, which respawns
   (D6). Show the default next to the field, and a reset-to-default button.
+  - Done 2026-10-26 (`editor/sceneDocument.js`). A change writes the record (a value equal
+    to the default is left out, and an empty config with it), despawns the entity, spawns
+    it from the record, and points its name at the new entity. Every entity whose entity
+    params name it respawns too, since it held the old index. The selection follows the
+    new entity, and the indicator says the document has unsaved changes until Ctrl+S.
+    Each user action is one change: a number when its field is left or its slider let go,
+    a color when the picker closes. The respawned entity is live on logic0's next frame.
+    Its body waits for the first physics step after edit mode, since time scale 0 takes
+    none. `editorParams.test.js`. Undo is ED-12.
 - [ ] **ED-10 Move tool:** ghost drag (preallocated corners), grid snap (1/8/16/32),
   arrow-key nudge (Shift for 10×), respawn on release.
 - [ ] **ED-12 Undo and redo** (Ctrl+Z / Ctrl+Y) over the command list, with the
@@ -1297,6 +1316,10 @@ server still writes nothing. What changed for this plan:
 
 **New items:**
 
+- [ ] **ED-45 The rest of D4's widgets:** a picker over the loaded sprites and animations
+  (SpriteSheetRegistry, the atlas) for `sprite` and `animation` params; clicking a placed
+  entity in the view to fill an `entity` param; and handles dragged in the view for
+  `points`, drawn on the overlay from a preallocated buffer.
 - [ ] **ED-35b Fast swap to another scene class with the same setup** (a `BossLevel`
   subclass). Needs the setup fingerprint (D3, a `WeakMap` per class), the new module
   imported on the page and in every worker, and the class changed without building a new
