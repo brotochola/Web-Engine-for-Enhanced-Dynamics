@@ -13,6 +13,7 @@ in vec4 aFrames;    // frames 2-3, 4-5, 6-7 (bits), reserved
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
 uniform mat3 uTransformMatrix;
+uniform vec4 uColor;          // the mesh's group color, premultiplied: its alpha is the layer's
 uniform sampler2D uTexLut;
 uniform sampler2D uAnimStart;
 uniform vec4 uGpuParticles; // x: now (ms on this ring's epoch), y: pixel snap
@@ -128,6 +129,6 @@ void main() {
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(world, 1.0);
   gl_Position = vec4(clip.xy, 0.0, 1.0);
-  vColor = vec4(rgb, alpha);
+  vColor = vec4(rgb, alpha * uColor.a);
   vAtlasUV = uv;
 }

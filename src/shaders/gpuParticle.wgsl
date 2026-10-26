@@ -156,7 +156,7 @@ fn mainVert(
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(world, 1.0);
   out.position = vec4<f32>(clip.xy, 0.0, 1.0);
-  out.vColor = vec4<f32>(rgb, alpha);
+  out.vColor = vec4<f32>(rgb, alpha * localUniforms.uColor.a); // the mesh's group alpha: the layer's
   out.vAtlasUV = uv;
   return out;
 }
