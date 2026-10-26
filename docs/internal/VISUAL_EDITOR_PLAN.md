@@ -801,17 +801,103 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     for the editor (D7): it drops every change event of that path inside the window, not
     only the first (one write can fire more than one).
   - **Tests:** extend `tests/node/hotReload.test.js`.
-- [ ] **ED-35 The fast swap** (D3).
+- [~] **ED-35 The fast swap** (D3).
   - **Steps:**
     1. Inventory every pool kind and scene-wide state, with owner, clear or reset path,
-       and test. Record it in this item before coding.
-    2. The fingerprint, in a `WeakMap`.
+       and test. Record it in this item before coding. **Done 2026-10-26** (below).
+    2. The fingerprint, in a `WeakMap`. **Version 1 needs none:** it swaps only between
+       files of the same scene class (Found during implementation, item 8), whose setup
+       is its own statics. It comes with the class swap (ED-35b).
     3. Dirty marking at the rare API entries.
     4. A `clearScene` message and ack per owner worker.
     5. The resets.
-    6. The class swap, when the class differs.
+    6. The class swap, when the class differs. **Moved to ED-35b.**
     7. The lifecycle re-run.
     8. The console line for full loads.
+  - **Inventory (step 1, 2026-10-26).** Read from the code at a2a875cd. "Full load" is
+    what a full load does today: every worker is terminated and every buffer made again,
+    so nothing below needs a clear there.
+    - **Findings that shape the swap:**
+      - **Bodies die lazily.** Despawn only bumps the body generation
+        (`box2dBodySync.js`, `bumpBodyGeneration`); physics destroys the body, and its
+        Box2D joints, in `syncBodies`, which runs only on a step with dt > 0. The Box2D
+        command ring is drained after it, on the same steps. A paused world keeps the old
+        bodies, joints and queued commands, so the swap runs **one physics step with a
+        tiny dt** after the clear and before any new spawn (the `step` message,
+        `stepDone` ack). Teardown's way of zeroing `active` flags sets no dirty marks: it
+        is safe only because physics is terminated, and the swap must not copy it.
+      - **Hooks run during the clear.** `onDespawned` may spawn entities, particles,
+        decals or bullets, play sounds, write shared resources. The entity pass repeats
+        until nothing is active, and the effect pools and scene-wide resets come after it.
+      - **logic0 already has a one-message clear:** `_restoreSave` despawns classes,
+        clears joints, applies tweens, flushes the list updates and acks
+        (`restoreSaveComplete`). `clearScene` is modelled on it. It must run with every
+        other thread idle: `despawnAll` writes `active` flags and resets free lists with
+        plain stores.
+      - **`despawnAll` gaps:** it returns early for a class with nothing active, skipping
+        the free-list reset (indices popped by page spawns that never became active stay
+        leaked), so the swap resets every free list itself. It removes no joint (no
+        despawn path calls `Joint.removeAllForEntity`; physics re-creates a stale joint
+        when both slots hold bodies again), so the swap calls `Joint.clearAllActive`.
+      - **Stale commands carry no generation:** the Box2D command ring (the physics step
+        flushes it), the bullet impact batch (`onGotShot` is called with no active check:
+        zero its count), the decal stamp ring (discard it on its consumer).
+    - **Entities and logic workers:**
+
+      | State | Clear in the swap |
+      | --- | --- |
+      | Free lists, active lists, per-type lists, query lists | logic0: `despawnAll` of every class until none is active, then `initializeFreeList` of every class |
+      | Pending spawns (ring, list updates) | logic0 drains them first, flushes after |
+      | Tick lists, pins, tick countdowns, FSM state | nothing: rebuilt from the lists, or per spawn |
+      | Pair and contact tables, message inboxes | nothing: purged by the generation and active checks |
+      | Tweens | logic0: `applyTweens(null)` (also drops zoom tweens, which `cancelForDespawn` leaves) |
+      | Joints (pool and free list) | logic0: `Joint.clearAllActive()`, and a free-list reset (slots a break leaves) |
+      | Chains | reset the pool (`ChainPoints`: freed spans never merge, `bump` never rewinds) |
+      | `previousScreenVisibility` (each logic worker) | zero it, or a respawn on a visible slot gets no `onScreenEnter` |
+      | Pool-exhaustion counters and warn-once flags | zero them (no path today) |
+      | Error dedupe (page and workers) | neither side (clearing one desyncs the counts) |
+      | Instance JS fields, worker frame counters and RNG, spatial reuse caches, pre-render animation accumulators | accepted, as across a respawn today; the guide says so |
+
+    - **Effect pools and physics:**
+
+      | State | Clear in the swap |
+      | --- | --- |
+      | Bullets | per-slot despawn of the active ones, then zero the impact batch count |
+      | Particles | per-slot `returnToPool` (a raw `active.fill(0)` corrupts the feeds and the free list) |
+      | Decorations | `DecorationPool.despawnAll()` |
+      | Decals | zero the tile bytes, mark every tile dirty for Pixi, discard the stamp ring (no path today) |
+      | Flash | an entity class: rides the entity pass |
+      | Fixtures, meshes, collider feeds | nothing: freed per entity |
+      | Bodies, contacts, Box2D command ring | the tiny-dt physics step |
+      | LiquidFun particles and groups | `LiquidFun.clear()` (runs on that step) |
+      | LiquidFun system, tuning, radial gravity | no path: a change at runtime marks the scene dirty |
+      | Grab | `GrabSystem.reset()` |
+      | Physics config set at runtime | re-post the boot values (only sleeping, sub-steps, hit-event threshold and the contact ring apply at runtime) |
+
+    - **Scene-wide:**
+
+      | State | Reset in the swap |
+      | --- | --- |
+      | Camera | apply the boot values (today inline in `sceneSharedBuffers.js`: made a function) |
+      | `Time.scale` | 1 |
+      | Sun | the boot block (`Sun.initFromConfig` + `setTimeOfDay`) |
+      | Shared resources | zero them (they have no declared initial values: boot is a zeroed buffer) |
+      | Nav walkability | `NavGrid.updateNavGrid([])` (asynchronous; the next level's own calls come after it on the same port) |
+      | Layers: alpha, visible, uniforms | back to the configured values |
+      | Layers: scenery content, texture and buffer updates, splat radius | no path: marks the scene dirty |
+      | Input edge counters | nothing (each realm keeps its last-seen copy: a reset would fake edges) |
+      | Debug draw ring, frame clock and totals, stats | nothing (entries expire; the rest is cumulative or per frame) |
+      | Static scenery bins, pose interpolation | nothing (despawn re-bins; interpolation is stateless) |
+      | Sounds | `SoundManager.stopAll()` |
+      | Selected entity (debug) | `setSelectedEntity(-1)` |
+      | Page scene fields | reset by hand: the name map, the spawn batch, `scene.on` listeners (a full load starts with none), `data`, the scene file |
+      | User timers and frame callbacks | not tracked by the engine, in a full load either: unchanged |
+
+    - **Order:** settle; logic0's `clearScene` (drain, entity pass until none is active,
+      joints, tweens, free lists, chains, flush, ack), the other logic workers' (zero
+      `previousScreenVisibility`, ack); under pause, the effect pools; the scene-wide
+      resets; the tiny-dt physics step; reopen the spawn batch and run the lifecycle;
+      resume.
   - **Files:** `src/core/gameEngine.js`, `src/core/scene.js`,
     `src/workers/logicWorker.js`, `src/workers/particleWorker.js`, the physics host
     (`src/box2d/`), `src/core/save/schemaHash.js` (reuse), and new
@@ -1118,3 +1204,10 @@ server still writes nothing. What changed for this plan:
    with the same setup does a full load, logged as such (follow-up item ED-35b). A field a
    scene's constructor sets keeps its value across a swap: per-level state goes in
    `preload()`/`create()` or in `data`, and the guide (ED-1) says so.
+
+**New items:**
+
+- [ ] **ED-35b Fast swap to another scene class with the same setup** (a `BossLevel`
+  subclass). Needs the setup fingerprint (D3, a `WeakMap` per class), the new module
+  imported on the page and in every worker, and the class changed without building a new
+  scene instance (the constructor's global side effects, item 8 above).
