@@ -43,6 +43,7 @@ import {
     readTextureUpload,
     writeTextureUpload,
 } from './layerTextureUpload.js';
+import { markSceneDirty } from './sceneDirty.js';
 import { SharedResource } from './sharedResource.js';
 
 /**
@@ -149,6 +150,10 @@ export class Layer {
     static _uniformFloats = [];   // Float32Array[] indexed by layer id
     static _uniformDirty = [];    // Int32Array[1][] indexed by layer id
     static _uniformMaps = [];     // { name: { offset, size } }[] indexed by layer id
+    /** Boot values of alpha, visibility and uniforms (snapshotBootLiveValues), or null. */
+    static _bootLive = null;
+    /** True while applyConfiguredContent runs: the configured scenery does not mark the scene dirty. */
+    static _applyingConfiguredContent = false;
     static _textureSlots = [];    // { [name]: { view, width, height, sab } }[] by layer id
 
     // Blend mode ID -> PixiJS string. Indices match BLEND_MODES enum in configDefaults.js.
@@ -414,6 +419,7 @@ export class Layer {
             return;
         }
         const p = normalizeWorldParallax(typeof opts === 'number' ? opts : opts?.parallax);
+        Layer._sceneryChanged(this, 'setStatic');
         this._kind = LAYER_KIND.STATIC;
         Layer._postContentCommand({
             msg: 'setLayerContent',
@@ -440,6 +446,7 @@ export class Layer {
             console.warn('Layer.setCover: texture is required');
             return;
         }
+        Layer._sceneryChanged(this, 'setCover');
         this._kind = LAYER_KIND.COVER;
         Layer._postContentCommand({
             msg: 'setLayerContent',
@@ -469,6 +476,7 @@ export class Layer {
             : { tileScale: tileScaleOrOpts };
         const tileScale = Number.isFinite(opts.tileScale) ? opts.tileScale : 1;
         const p = normalizeWorldParallax(opts.parallax);
+        Layer._sceneryChanged(this, 'setTiling');
         this._kind = LAYER_KIND.TILING;
         Layer._postContentCommand({
             msg: 'setLayerContent',
@@ -496,6 +504,7 @@ export class Layer {
             return Promise.resolve();
         }
         const p = normalizeWorldParallax(options.parallax);
+        Layer._sceneryChanged(this, 'setTilemap');
         this._kind = LAYER_KIND.TILEMAP;
         return new Promise((resolve) => {
             Layer._postContentCommand({
@@ -517,11 +526,73 @@ export class Layer {
             console.warn('Layer: renderer not connected');
             return;
         }
+        Layer._sceneryChanged(this, 'clear');
         Layer._postContentCommand({
             msg: 'setLayerContent',
             type: 'none',
             layerId: this.id,
         });
+    }
+
+    /**
+     * A scenery change outside the configured content: a fast swap cannot put it back, so
+     * the next loadScene of this scene class is a full load (sceneDirty.js). The configured
+     * content itself (applyConfiguredContent at boot) does not count.
+     */
+    static _sceneryChanged(layer, method) {
+        if (this._applyingConfiguredContent) return;
+        markSceneDirty(`layer "${layer.name}" changed its scenery (${method})`);
+    }
+
+    /**
+     * Keep the boot values of what can change at runtime from any thread with nothing to
+     * mark it (alpha, visibility, shader uniforms), so a fast swap can put them back
+     * (restoreBootLiveValues). Scene.init calls it once the configured content is applied,
+     * before preload().
+     */
+    static snapshotBootLiveValues() {
+        if (!this._alpha) {
+            this._bootLive = null;
+            return;
+        }
+        this._bootLive = {
+            alpha: Float32Array.from(this._alpha),
+            visible: Uint8Array.from(this._visible),
+            uniforms: this._uniformFloats.map((floats) => (floats ? Float32Array.from(floats) : null)),
+        };
+    }
+
+    /**
+     * Put alpha, visibility and uniforms back to their boot values, with the dirty flags the
+     * renderer reads, for the layers that changed (the fast swap, VISUAL_EDITOR_PLAN.md ED-35).
+     * Every thread must be idle.
+     */
+    static restoreBootLiveValues() {
+        const boot = this._bootLive;
+        if (!boot || !this._alpha) return;
+        for (let id = 0; id < boot.alpha.length; id++) {
+            if (this._alpha[id] !== boot.alpha[id]) {
+                this._alpha[id] = boot.alpha[id];
+                Atomics.store(this._alphaDirty, id, 1);
+            }
+            if (this._visible[id] !== boot.visible[id]) {
+                this._visible[id] = boot.visible[id];
+                Atomics.store(this._visibleDirty, id, 1);
+            }
+        }
+        for (let id = 0; id < boot.uniforms.length; id++) {
+            const was = boot.uniforms[id];
+            const floats = this._uniformFloats[id];
+            if (!was || !floats) continue;
+            let changed = false;
+            for (let i = 0; i < was.length; i++) {
+                if (floats[i] !== was[i] && !(floats[i] !== floats[i] && was[i] !== was[i])) {
+                    floats[i] = was[i];
+                    changed = true;
+                }
+            }
+            if (changed) Atomics.store(this._uniformDirty[id], 0, 1);
+        }
     }
 
     // ========================================
@@ -644,32 +715,37 @@ export class Layer {
      */
     static async applyConfiguredContent() {
         const waits = [];
-        for (let i = 0; i < this.count; i++) {
-            const layer = this._byId[i];
-            if (!layer || layer._builtIn || !isSceneryKind(layer._kind)) continue;
-            const content = layer._content || {};
-            const kind = layer._kind;
-            if (kind === LAYER_KIND.COVER && content.texture) {
-                layer.setCover({
-                    texture: content.texture,
-                    parallax: content.parallax,
-                    margin: content.margin,
-                    zoomParallax: content.zoomParallax,
-                });
-            } else if (kind === LAYER_KIND.STATIC && content.texture) {
-                layer.setStatic(content.texture, { parallax: content.parallax });
-            } else if (kind === LAYER_KIND.TILING && content.texture) {
-                layer.setTiling(content.texture, {
-                    tileScale: content.tileScale,
-                    parallax: content.parallax,
-                });
-            } else if (kind === LAYER_KIND.TILEMAP && content.tilemap) {
-                waits.push(layer.setTilemap(content.tilemap, {
-                    scale: content.scale,
-                    layers: content.layers,
-                    parallax: content.parallax,
-                }));
+        this._applyingConfiguredContent = true;
+        try {
+            for (let i = 0; i < this.count; i++) {
+                const layer = this._byId[i];
+                if (!layer || layer._builtIn || !isSceneryKind(layer._kind)) continue;
+                const content = layer._content || {};
+                const kind = layer._kind;
+                if (kind === LAYER_KIND.COVER && content.texture) {
+                    layer.setCover({
+                        texture: content.texture,
+                        parallax: content.parallax,
+                        margin: content.margin,
+                        zoomParallax: content.zoomParallax,
+                    });
+                } else if (kind === LAYER_KIND.STATIC && content.texture) {
+                    layer.setStatic(content.texture, { parallax: content.parallax });
+                } else if (kind === LAYER_KIND.TILING && content.texture) {
+                    layer.setTiling(content.texture, {
+                        tileScale: content.tileScale,
+                        parallax: content.parallax,
+                    });
+                } else if (kind === LAYER_KIND.TILEMAP && content.tilemap) {
+                    waits.push(layer.setTilemap(content.tilemap, {
+                        scale: content.scale,
+                        layers: content.layers,
+                        parallax: content.parallax,
+                    }));
+                }
             }
+        } finally {
+            this._applyingConfiguredContent = false;
         }
         if (waits.length) await Promise.all(waits);
     }
@@ -1876,6 +1952,7 @@ export class Layer {
         this._byName = {};
         this._byId = [];
         this.count = 0;
+        this._bootLive = null;
         this.initialized = false;
         this.entitiesId = -1;
         this._configSAB = null;

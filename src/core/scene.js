@@ -137,6 +137,7 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { describeSpawnParams } from './spawnParams.js';
 import { sceneFileSpawnOrder, sceneFileSpawnConfig } from './sceneFile.js';
 import { isEntityClassSerializable } from './save/entitySaveSnapshot.js';
+import { clearSceneDirty } from './sceneDirty.js';
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
@@ -213,6 +214,9 @@ class Scene {
      * then (getByName). Replaced on every load; never sent to a worker.
      */
     this._namedEntities = new Map();
+    // A full load starts from fresh workers and buffers: nothing is left that a fast swap
+    // could not reset (sceneDirty.js).
+    clearSceneDirty();
 
     // Merge static config with any runtime config
     this.config = { ...this.constructor.config };
@@ -1109,6 +1113,8 @@ class Scene {
 
     // Scenery declared in config.layers (cover / tiling / tilemap) before preload().
     await Layer.applyConfiguredContent();
+    // What a fast swap puts back: the layers' runtime values as configured.
+    Layer.snapshotBootLiveValues();
 
     await this._runContentLifecycle();
     this._loadStep('world');

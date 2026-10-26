@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Layer } from '../../src/core/layer.js';
+import { clearSceneDirty, sceneDirtyReason } from '../../src/core/sceneDirty.js';
 import {
   LAYER_DENSITY_SOURCE,
   LAYER_SPLAT_FALLOFF,
@@ -294,6 +295,69 @@ test('densitySource string alias liquidFun still normalizes to int enum', () => 
     const oil = Layer.get('oil');
     assert.equal(oil.densitySource, LAYER_DENSITY_SOURCE.LIQUID_FUN);
     assert.equal(Layer.feederKind(oil.id), LAYER_FEEDER_KIND.DENSITY);
+  } finally {
+    Layer.reset();
+  }
+});
+
+// VISUAL_EDITOR_PLAN.md ED-35: what a fast swap puts back, and what makes it do a full load instead.
+
+test('a scenery change after boot marks the scene dirty; the configured content does not', async () => {
+  try {
+    clearSceneDirty();
+    Layer.reset();
+    Layer.initializeFromConfig(
+      { sky: { kind: LAYER_KIND.COVER, texture: 'landscape', zIndex: 0 } },
+      BUILT_IN_LAYERS,
+      true
+    );
+    Layer._postToRenderer = () => {};
+    await Layer.applyConfiguredContent();
+    assert.equal(sceneDirtyReason(), null, 'the configured cover is what a load puts there');
+    Layer.sky.setStatic('night');
+    assert.equal(sceneDirtyReason(), 'layer "sky" changed its scenery (setStatic)');
+    Layer.sky.clear();
+    assert.equal(sceneDirtyReason(), 'layer "sky" changed its scenery (setStatic)', 'the first reason is kept');
+  } finally {
+    clearSceneDirty();
+    Layer.reset();
+  }
+});
+
+test('restoreBootLiveValues puts alpha, visibility and uniforms back, with the renderer\'s dirty flags', () => {
+  try {
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        glow: {
+          zIndex: 3,
+          maxItems: 10,
+          shader: { fragment: 'glow', uniforms: { uStrength: { value: 0.5, type: 'f32' } } },
+        },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    const glow = Layer.get('glow');
+    const alphaBoot = glow.alpha;
+    Layer.snapshotBootLiveValues();
+    glow.alpha = 0.25;
+    glow.visible = false;
+    glow.setUniform('uStrength', 2);
+    const id = glow.id;
+    // The renderer has taken every change so far.
+    Layer._alphaDirty.fill(0);
+    Layer._visibleDirty.fill(0);
+    Layer._uniformDirty[id][0] = 0;
+    Layer.restoreBootLiveValues();
+    assert.equal(glow.alpha, alphaBoot);
+    assert.equal(glow.visible, true);
+    assert.equal(Layer._uniformFloats[id][Layer._uniformMaps[id].uStrength.offset], 0.5);
+    assert.equal(Layer._alphaDirty[id], 1);
+    assert.equal(Layer._visibleDirty[id], 1);
+    assert.equal(Layer._uniformDirty[id][0], 1);
+    const other = Layer.get('entities').id;
+    assert.equal(Layer._alphaDirty[other], 0, 'a layer that did not change is not re-sent');
   } finally {
     Layer.reset();
   }
