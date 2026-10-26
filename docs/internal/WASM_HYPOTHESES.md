@@ -693,9 +693,19 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
 4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
    fdlibm sin/cos), compiled with clang and linked by `wasm-ld` into one `engine.wasm`; the main thread compiles it
    once and posts the `WebAssembly.Module` to the workers, each of which instantiates it once per memory it uses.
-   *Deferred to after the merge into main (2026-10-26, with the owner's 12-hour deadline): L4 found no warm-up cost
-   (R-0640), and each worker already compiles each module once, so the grouping is structure, not speed; it gets a
-   branch of its own.*
+   *Done 2026-10-26 on branch wasm_group (3e035db7; R-0643), after group B made wasm_hyp merge-ready. What was
+   built:*
+   - *every shipped kernel linked from its source into `src/wasm/engine.wasm`, one wasm-ld link then wasm-opt (240 471 B,
+     60 246 B gzipped, against 241 765 B and 62 963 B apart);*
+   - *the kernels' code unchanged: of their 88 named functions, 65 are byte for byte their own build's and 23 differ only
+     in their calls' indices;*
+   - *one module naming the binary (`src/wasm/engine.js`), so the bundle carries one copy, in the workers' common chunk;*
+   - *each worker compiles it once and instantiates it once per memory.*
+
+   *Left out on purpose: the main thread's compile and post (one compile per worker costs no frame, L4), and one `.c` per
+   worker with a shared header (wasm-opt already merges the identical helpers; W7 is its own speed hypothesis). Gate:
+   Predator, adobeAnimateScene, visPolyStressScene and bulletStressScene against the kernels apart, every owner within
+   ±1.3 %.*
    Not `wasm-merge`: a source merge lets W7 call gather, publish and rebuild in one unit and removes the duplicate
    helpers. Each merged kernel passes its parity test bit for bit, ties a Node kernel A/B against its separate
    build, and gets one Chrome check on its owner scene.

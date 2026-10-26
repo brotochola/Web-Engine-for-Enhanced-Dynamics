@@ -574,7 +574,7 @@ source does not support — `_getNeighborCells` "one `Map.get` per entity" and
 the counter that measures it or read the exits in front of it.** E-13 was rejected for
 free; had it gone to a scene it would have cost a Predator pair to confirm a zero.
 
-### E-76 WASM migration: which JavaScript hot loops are faster as WebAssembly — **IN PROGRESS (close-out step 3 done 2026-10-26: the kernels' JS copies left src/)**
+### E-76 WASM migration: which JavaScript hot loops are faster as WebAssembly — **DONE 2026-10-26 (the kernels' JS copies left src/; every kernel in one engine.wasm; the close-out sitting R-0642, step 4 R-0643)**
 The plan, its gates and its ids (T tools, Q premises, W candidates, L checks) live in
 [`WASM_HYPOTHESES.md`](./WASM_HYPOTHESES.md); this entry is its index here. The rule from the record:
 WASM pays when the data already lives in WASM memory, one call does a batch, and the loop needs
