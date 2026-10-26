@@ -351,21 +351,11 @@ export class ToolManager {
       return;
     }
     if (kind === 'particle') {
-      const active = ParticleComponent.active;
-      if (!active) return;
-      for (let i = 0; i < active.length; i++) {
-        if (!active[i]) continue;
-        active[i] = 0;
-        ParticleEmitter.returnToPool(i);
-      }
+      ParticleEmitter.despawnAll();
       return;
     }
     if (kind === 'bullet') {
-      const active = BulletComponent.active;
-      if (!active) return;
-      for (let i = 0; i < active.length; i++) {
-        if (active[i]) BulletPool.despawn(i);
-      }
+      BulletPool.despawnAll();
     }
   }
 

@@ -64,6 +64,9 @@ function resolveStampTextureId(config) {
   return textureId | 0;
 }
 
+/** Decal.clearAll drains the ring without stamping. */
+function dropStamp() {}
+
 function tileHasContent(rgba, byteOffset, bytesPerTile) {
   const end = byteOffset + bytesPerTile;
   for (let i = byteOffset + 3; i < end; i += 4) {
@@ -226,6 +229,35 @@ export class Decal {
       Atomics.store(stampRingI32, base, write + 1);
       return true;
     }
+  }
+
+  /**
+   * Wipe every decal (the fast swap, VISUAL_EDITOR_PLAN.md ED-35): each tile that holds
+   * something is zeroed and marked dirty, so the renderer uploads it again (empty tiles are
+   * left alone: no upload for them), and the stamps still in the ring are dropped. Every
+   * thread must be idle: the particle worker blends stamps into the tiles.
+   * @param {object} scene - the running scene (its decal buffers and config)
+   * @returns {number} tiles wiped
+   */
+  static clearAll(scene) {
+    Decal.drainStampRing(dropStamp);
+    const tiles = scene?.buffers?.decalsTilesRGBA;
+    const dirtySab = scene?.buffers?.decalsTilesDirty;
+    const tilePixelSize = scene?.config?.particle?.decalsTilePixelSize | 0;
+    if (!tiles || !dirtySab || !(tilePixelSize > 0)) return 0;
+    const bytesPerTile = tilePixelSize * tilePixelSize * 4;
+    const totalTiles = scene.decalsTotalTiles | 0;
+    const rgba = new Uint8Array(tiles, 0, totalTiles * bytesPerTile);
+    const dirty = new Uint8Array(dirtySab);
+    let wiped = 0;
+    for (let t = 0; t < totalTiles; t++) {
+      const at = t * bytesPerTile;
+      if (!tileHasContent(rgba, at, bytesPerTile)) continue;
+      rgba.fill(0, at, at + bytesPerTile);
+      Atomics.store(dirty, t, 1);
+      wiped++;
+    }
+    return wiped;
   }
 
   static drainStampRing(onStamp) {

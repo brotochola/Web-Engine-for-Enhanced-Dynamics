@@ -130,6 +130,26 @@ export class ParticleEmitter extends SharedAtomicPool {
   }
 
   /**
+   * Return every live particle to the pool, through returnToPool so the layer feeds, the
+   * render-only count and the free list stay right (a raw `active.fill(0)` breaks them).
+   * The fast swap (VISUAL_EDITOR_PLAN.md ED-35) and the debug tools' Clear call it. Every
+   * thread must be idle: the particle worker integrates and frees particles.
+   * @returns {number} how many were live
+   */
+  static despawnAll() {
+    const active = ParticleComponent.active;
+    if (!active) return 0;
+    let n = 0;
+    for (let i = 0; i < active.length; i++) {
+      if (!active[i]) continue;
+      active[i] = 0;
+      this.returnToPool(i);
+      n++;
+    }
+    return n;
+  }
+
+  /**
    * Heighted particles: screenY = y + z (topdown / side / iso).
    * @param {Object} config - Particle emission configuration
    * @returns {number} - Number of particles actually spawned

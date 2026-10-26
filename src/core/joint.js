@@ -837,6 +837,28 @@ export class Joint extends SharedAtomicPool {
   }
 
   /**
+   * Remove every joint and give the pool back whole (VISUAL_EDITOR_PLAN.md ED-35, the fast
+   * swap). Active joints go through remove() (unlinked, revision bumped, slot returned);
+   * then what joint breaks left: physics takes a broken joint off the active list
+   * (removeWeedJoint) but keeps its links to both entities and never returns its slot, so
+   * every link list is emptied and the free list rewritten whole. Every thread must be
+   * idle: the free list is rewritten with plain stores.
+   */
+  static resetAll() {
+    if (!this.active) return;
+    this.clearAllActive();
+    const invalid = this.INVALID_INDEX;
+    this.active.fill(0);
+    this.activeIndices.fill(invalid);
+    this.activeIndexPositions.fill(invalid);
+    this.nextA.fill(invalid);
+    this.nextB.fill(invalid);
+    if (this.head) this.head.fill(invalid);
+    if (this.activeCount) Atomics.store(this.activeCount, 0, 0);
+    this.resetFreeListInterleaved(1);
+  }
+
+  /**
    * Recreate joints from save records after entity index remap.
    * @param {object[]} records
    * @param {Map<number, number>|Record<number, number>} oldToNew

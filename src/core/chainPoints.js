@@ -67,6 +67,17 @@ export class ChainPoints {
     this.freeTop = new Int32Array(buffer, offset, 1);
     offset += 4;
     this.bump = new Int32Array(buffer, offset, 1);
+    this.clearAll();
+  }
+
+  /**
+   * Free every entity's chain and rewind the pool (also the fast swap's clear,
+   * VISUAL_EDITOR_PLAN.md ED-35): a freed span never merges with its neighbours and the
+   * bump pointer never goes back, so freeing chain by chain would not give the room back.
+   * Every thread must be idle.
+   */
+  static clearAll() {
+    if (!this.begin) return;
     this.begin.fill(-1);
     this.count.fill(0);
     this.cap.fill(0);

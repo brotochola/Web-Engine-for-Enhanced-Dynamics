@@ -36,6 +36,16 @@ export function unbindPoolExhaustion() {
   localWarned.clear();
 }
 
+/**
+ * Start counting again, as a new scene does (the fast swap, VISUAL_EDITOR_PLAN.md ED-35):
+ * every pool's warned flag and dropped count back to 0, for every thread (they share the
+ * buffer). Every thread must be idle.
+ */
+export function resetPoolExhaustion() {
+  view.fill(0);
+  localWarned.clear();
+}
+
 function firstToWarn(slot, key) {
   if (view.length === 0) {
     if (localWarned.has(key)) return false;

@@ -174,6 +174,24 @@ export class BulletPool extends SharedAtomicPool {
   }
 
   /**
+   * Despawn every live bullet (the fast swap, VISUAL_EDITOR_PLAN.md ED-35, and the debug
+   * tools' Clear). Every thread must be idle: the particle worker moves and frees bullets.
+   * Hits already written to the impact batch are the caller's to drop.
+   * @returns {number} how many were live
+   */
+  static despawnAll() {
+    const active = BulletComponent.active;
+    if (!active) return 0;
+    let n = 0;
+    for (let i = 0; i < active.length; i++) {
+      if (!active[i]) continue;
+      this.despawn(i);
+      n++;
+    }
+    return n;
+  }
+
+  /**
    * Fill `out` with indices where `active[i]` is set. Kernel override only.
    * @param {Uint16Array|Uint32Array} out (a Uint32Array past 65 535 bullets)
    * @returns {number} live count
