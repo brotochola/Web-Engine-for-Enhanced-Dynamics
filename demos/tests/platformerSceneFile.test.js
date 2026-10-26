@@ -41,15 +41,16 @@ test('Platform declares the defaults its onSpawned used to write with ??', () =>
 
 test('levels/1-1.scene.json places the platforms the old array did', () => {
   const d = describeSpawnParams(Platform);
-  const placed = doc.entities.map((e) => {
-    assert.equal(e.class, 'Platform');
+  // The platforms (ED-37 added a goal to the level).
+  const platforms = doc.entities.filter((e) => e.class === 'Platform');
+  const placed = platforms.map((e) => {
     const filled = { x: e.x, y: e.y };
     for (let i = 0; i < d.keys.length; i++) filled[d.keys[i]] = e.config?.[d.keys[i]] ?? d.defaults[i];
     return { x: filled.x, y: filled.y, width: filled.width, height: filled.height, tint: filled.tint };
   });
   assert.deepEqual(placed, OLD_DEFS);
   const pool = PlatformerGameScene.entities.find(([C]) => C === Platform)[1];
-  assert.ok(doc.entities.length <= pool, 'the pool holds what the file places');
+  assert.ok(platforms.length <= pool, 'the pool holds what the file places');
 });
 
 test('the file names the scene module and class, and the scene names the file', () => {

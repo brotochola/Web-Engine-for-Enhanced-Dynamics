@@ -929,16 +929,22 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   - **Files:** `src/core/save/entitySaveSnapshot.js`, `binarySaveCodec.js`,
     `saveGame.js`.
   - **Test:** save in `1-2`, load from `1-1`, and `1-2` is back with the saved entities.
-- [ ] **ED-37 Two-level platformer demo:** `1-1.scene.json`, `1-2.scene.json`, and a
-  `Goal` entity whose `next` param (a string) names the next file. On contact it calls
-  `loadScene(next, { data: { score } })`. Public API only. Its demo test checks that
-  reaching the goal loads `1-2` without a full load (console line absent).
+- [~] **ED-37 Two-level platformer demo:** `1-1.scene.json`, `1-2.scene.json`, and a
+  `Goal` entity whose `next` param (a string) names the next file. Code done 2026-10-26:
+  `Goal` (a static box on the bloom layer) emits `goalReached` when the player touches it;
+  the scene finds which of its file's goals that was (`getByName`) and loads its `next`,
+  relative to the level's file, with `{ data: { levelsDone } }` (the platformer keeps no
+  score). A touch while a level loads is ignored (`game.isTransitioning`). Each level's goal
+  leads to the other. Public API only (Found during implementation, item 9).
+  `demos/tests/platformerLevels.test.js` checks the links, the pools, `next`'s declared
+  kind and the scene's handler. **Waits on the browser runs:** reaching the goal loads `1-2`
+  with no full-load console line.
 - [x] **ED-4b Hot reload of the running scene file through the fast swap,** after ED-35.
   Test in `hotReload.test.js`. Done 2026-10-26: the running file is loaded again with its
   `data` (`game.loadScene`: a fast swap when the scene can take one, else a full load in
   the page); a file that does not load is reported and the scene runs on (the file is read
   before anything is torn down); a busy engine falls back to the page reload. Done before
-  ED-37, which waits on the author's uncommitted edit of `levels/1-1.scene.json`.
+  ED-37.
 - [ ] **ED-1 User guide** `docs/guide/SCENE_FILES.md`, covering:
   - the scene class and the scene file;
   - the rule of thumb;
@@ -1219,6 +1225,12 @@ server still writes nothing. What changed for this plan:
    with the same setup does a full load, logged as such (follow-up item ED-35b). A field a
    scene's constructor sets keeps its value across a swap: per-level state goes in
    `preload()`/`create()` or in `data`, and the guide (ED-1) says so.
+9. **An entity cannot load the next level itself** (ED-37). `loadScene` runs on the page;
+   the goal's contact runs on the logic worker that owns the goal, and a field `onSpawned`
+   set lives on the worker that spawned it (logic0, for spawns from the page). So the goal
+   emits an event, and the scene's listener finds the goal among its file's entities by
+   index (`getByName`) and reads `next` from the file. The declared `string` param is what
+   the editor shows (ED-7).
 
 **New items:**
 

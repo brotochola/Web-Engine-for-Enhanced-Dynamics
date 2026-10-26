@@ -1,6 +1,7 @@
 import WEED from '/src/index.js';
 import { BluePlatformerPlayer } from './gameObjects/bluePlatformerPlayer.js';
 import { Platform } from './gameObjects/platform.js';
+import { Goal } from './gameObjects/goal.js';
 
 const { Scene, Camera, Transform, Layer, BLEND_MODES } = WEED;
 
@@ -89,6 +90,7 @@ export class PlatformerGameScene extends Scene {
   static entities = [
     [BluePlatformerPlayer, 1],
     [Platform, 64],
+    [Goal, 4],
   ];
 
   // Loaded by this module (benches, old links), the scene places what its first level file does.
@@ -99,10 +101,27 @@ export class PlatformerGameScene extends Scene {
     this.playerIndex = -1;
   }
 
-  // The platforms are in the scene file this scene loads from (levels/1-1.scene.json).
+  // The platforms and the goal are in the level's scene file (levels/1-1.scene.json, 1-2, …).
   create() {
     Camera.setZoom(1.25);
     this._syncBloomTexels();
+    // The player reached a goal (Goal.onCollisionEnter, on a logic worker): the next level.
+    this.on('goalReached', (_data, goalIndex) => this.goToNextLevel(goalIndex));
+  }
+
+  /**
+   * Load the level the reached goal names, relative to this level's file. Another level of
+   * this scene class is a fast swap: the workers, memory and atlas stay. What carries over
+   * travels in data (levels done so far). A second touch while the level loads is ignored.
+   * @param {number} goalIndex
+   */
+  goToNextLevel(goalIndex) {
+    if (this.game.isTransitioning) return;
+    const goal = this.sceneFile?.entities.find((e) => e.class === 'Goal' && this.getByName(e.name)?.index === goalIndex);
+    const next = goal?.config?.next;
+    if (!next) return;
+    const levelsDone = (this.data?.levelsDone ?? 0) + 1;
+    this.game.loadScene(new URL(next, this.sceneFileUrl).href, { data: { levelsDone } });
   }
 
   createNewGame() {
