@@ -65,7 +65,12 @@ import {
   buildSceneMemoryUsageReport,
   getSharedBufferSize as getSharedBufferSizeFromBuffers,
 } from '../util/sceneBufferMemory.js';
-import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
+import {
+  applySunBoot,
+  createSceneSharedBuffers,
+  restoreBootCamera,
+  teardownSceneSharedState,
+} from '../util/sceneSharedBuffers.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
 import { createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
 import {
@@ -137,11 +142,11 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { describeSpawnParams } from './spawnParams.js';
 import { sceneFileSpawnOrder, sceneFileSpawnConfig } from './sceneFile.js';
 import { isEntityClassSerializable } from './save/entitySaveSnapshot.js';
-import { clearSceneDirty } from './sceneDirty.js';
+import { clearSceneDirty, sceneDirtyReason } from './sceneDirty.js';
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
-import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
+import { reportPoolExhausted, droppedSpawns, resetPoolExhaustion } from '../util/poolExhaustion.js';
 import {
   isSpawnCommandRingBound,
   tryPushDespawn,
@@ -150,6 +155,18 @@ import {
 
 /** `wasm` keys a scene set that are not switches, already warned about (once per key per page). */
 const warnedWasmKeys = new Set();
+
+/** The fast swap's physics step (ms, scaled by Time.scale = 1): it only flushes the clear, so it is tiny. */
+const SWAP_PHYSICS_STEP_MS = 0.001;
+
+/** A deep copy of plain config data; a shallow one if it holds something structuredClone cannot copy. */
+function cloneConfig(value) {
+  try {
+    return structuredClone(value);
+  } catch {
+    return { ...value };
+  }
+}
 
 class Scene {
   /** Steps onLoadProgress reports, in boot order (the asset ones overlap). */
@@ -294,6 +311,10 @@ class Scene {
     Query.reset();
 
     this.pendingPhysicsUpdates = [];
+
+    // The physics settings a load starts from: a fast swap posts them again, undoing any
+    // `scene.physics.x = …` made at runtime (structuredClone: game code may change nested values).
+    this._bootPhysicsConfig = cloneConfig(this.config.physics);
 
     const scene = this;
     this.physics = new Proxy(this.config.physics, {
@@ -1174,6 +1195,126 @@ class Scene {
       await this._flushCreateSpawns();
     }
     this._spawnBatchOpen = false;
+  }
+
+  /**
+   * @internal Why loadScene of `SceneClass` cannot fast-swap into this running scene, or null
+   * when it can (VISUAL_EDITOR_PLAN.md ED-35, D3). Version 1 swaps only to the same scene
+   * class (its setup is its own statics), and leaves to a full load what it cannot reset:
+   * LiquidFun, layers that take uploads, a scene marked dirty (sceneDirty.js).
+   * @param {Function} SceneClass
+   * @returns {string|null}
+   */
+  _fastSwapBlocker(SceneClass) {
+    if (SceneClass !== this.constructor) {
+      return `${SceneClass.name} is not the running ${this.constructor.name}`;
+    }
+    if (this.config.manualStep) return 'config.manualStep: tests step the frames';
+    if (this.config.physics?.liquidFun?.enabled) return 'LiquidFun is on';
+    if (Layer.hasTextureUploads()) return 'a layer takes texture or buffer uploads';
+    const dirty = sceneDirtyReason();
+    if (dirty !== null) return `the scene is dirty: ${dirty}`;
+    return null;
+  }
+
+  /**
+   * @internal The fast swap (VISUAL_EDITOR_PLAN.md ED-35, D3): load new content into this
+   * scene on its running workers, keeping the workers, the shared memories, the atlas and
+   * WASM, which a full load makes again. In order: pause and settle every worker; clear the
+   * world (the logic workers' clearScene, then the effect pools); put the scene-wide state
+   * back to its boot values; one tiny physics step, which destroys the despawned entities'
+   * bodies and joints and runs the queued commands; then this load's fields, the content
+   * lifecycle (preload, the scene file, create, createNewGame or the restore) and resume.
+   * The scene object is kept: a field its constructor set keeps its value.
+   * @param {{ data: unknown, sceneFile: object|null, sceneFileUrl: string|null, restorePayload: object|null, onProgress: Function|null }} load
+   */
+  async _fastSwap({ data, sceneFile, sceneFileUrl, restorePayload, onProgress }) {
+    await this.pauseAndSettle();
+    try {
+      await this._clearWorldForSwap();
+      this._resetSceneWideStateForSwap();
+      await this._stepWorkerGroup(this.workers.physics ? [this.workers.physics] : [], SWAP_PHYSICS_STEP_MS);
+
+      // This load's own fields, as a new scene starts with them.
+      this.data = data;
+      this.sceneFile = sceneFile;
+      this.sceneFileUrl = sceneFileUrl;
+      this._namedEntities = new Map();
+      this._eventListeners = new Map();
+      this._restorePayload = restorePayload;
+      this._restoreAllTypes = false;
+      this._onProgressOption = onProgress;
+      // onLoadProgress reports the swap as the last step: the others are what it skips.
+      this._loadStepsDone = Scene.LOAD_STEPS.length - 1;
+      await this._runContentLifecycle();
+      this._loadStep('world');
+    } finally {
+      this._spawnBatchOpen = false;
+      this.resume();
+    }
+  }
+
+  /**
+   * @internal The fast swap's world clear, every worker paused: the logic workers'
+   * clearScene (entities, joints, tweens, chains, free lists), then on the page the pools the
+   * particle worker runs, which the entities' onDespawned hooks may have just filled.
+   */
+  async _clearWorldForSwap() {
+    const logicWorkers = this.workers.logicWorkers.filter(Boolean);
+    await Promise.all(
+      logicWorkers.map((worker) => this._askWorker(worker, { msg: 'clearScene' }, 'clearSceneComplete')),
+    );
+    BulletPool.despawnAll();
+    if (this.buffers.impactBuffer) {
+      // Hits already written point at entities that are gone: no logic worker takes them now.
+      Atomics.store(new Int32Array(this.buffers.impactBuffer, 0, 2), 0, 0);
+    }
+    ParticleEmitter.despawnAll();
+    DecorationPool.despawnAll();
+    Decal.clearAll(this);
+    GrabSystem.reset();
+    resetPoolExhaustion();
+  }
+
+  /**
+   * @internal The fast swap's reset of what is not an entity or a pool, to the values a load
+   * starts with: camera, time scale, sun, shared resources (zeroed, as boot makes them), nav
+   * walkability, the layers' alpha, visibility and uniforms, sounds, the debug selection,
+   * and the physics settings (posted again, undoing changes made at runtime).
+   */
+  _resetSceneWideStateForSwap() {
+    restoreBootCamera(this);
+    Time.scale = 1;
+    applySunBoot(this.config);
+    const resources = this.buffers.sharedResources || {};
+    for (const name in resources) new Uint8Array(resources[name]).fill(0);
+    if (this.navigationEnabled) NavGrid.updateNavGrid([]);
+    Layer.restoreBootLiveValues();
+    SoundManager.stopAll();
+    if (this.debugFlags) this.debugFlags.setSelectedEntity(-1);
+    this.updatePhysicsConfig(cloneConfig(this._bootPhysicsConfig));
+  }
+
+  /**
+   * @internal Post `message` to `worker` and resolve with its `replyMsg` answer (one request
+   * of a kind per worker at a time). Rejects after timeoutMs.
+   */
+  _askWorker(worker, message, replyMsg, timeoutMs = 10000) {
+    return new Promise((resolve, reject) => {
+      let timer = 0;
+      const onMessage = (e) => {
+        if (e.data?.msg !== replyMsg) return;
+        clearTimeout(timer);
+        worker.removeEventListener('message', onMessage);
+        resolve(e.data);
+      };
+      timer = setTimeout(() => {
+        worker.removeEventListener('message', onMessage);
+        reject(new Error(`[Scene] ${worker.name} did not answer ${message.msg}`));
+      }, timeoutMs);
+      worker.addEventListener('message', onMessage);
+      worker.postMessage(message);
+    });
   }
 
   /**
@@ -2175,6 +2316,8 @@ class Scene {
           idPairs: e.data.idPairs || [],
         });
       }
+    } else if (e.data.msg === 'clearSceneComplete') {
+      // Answered through _askWorker (the fast swap's clear).
     } else if (e.data.msg === 'hotSwapResult') {
       if (this._hotSwapReply) this._hotSwapReply(e.data);
     } else if (e.data.msg === 'instanceFields') {

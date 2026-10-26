@@ -545,6 +545,20 @@ export class Layer {
     }
 
     /**
+     * Whether some layer has a picture or buffer that game code can upload into
+     * (updateTexture, updateBuffer, from any thread): the fast swap cannot tell what was
+     * uploaded, so such a scene loads fully (Scene._fastSwapBlocker).
+     */
+    static hasTextureUploads() {
+        const slots = this._textureSlots || [];
+        for (let i = 0; i < slots.length; i++) {
+            const bag = slots[i];
+            if (bag) for (const name in bag) return true;
+        }
+        return false;
+    }
+
+    /**
      * Keep the boot values of what can change at runtime from any thread with nothing to
      * mark it (alpha, visibility, shader uniforms), so a fast swap can put them back
      * (restoreBootLiveValues). Scene.init calls it once the configured content is applied,

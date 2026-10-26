@@ -312,11 +312,14 @@ class GameEngine {
    * (`scene.getByName(name)` finds them). `options.export` overrides the file's.
    * Class: same as today; engine infers the file from loaded JS when it can.
    * @param {string|Function} source
-   * @param {{ data?: unknown, onProgress?: (done: number, total: number, stage: string) => void, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
+   * @param {{ data?: unknown, onProgress?: (done: number, total: number, stage: string) => void, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string, fullLoad?: boolean }} [options]
    *   data: handed to the scene as scene.data and as the argument of preload / create /
    *   createNewGame (level number, a menu choice, …).
    *   onProgress(done, total, stage): the same calls as Scene.onLoadProgress, for a
    *   loading screen the caller owns.
+   *   A load of the running scene class (another level of it) is a fast swap: the workers,
+   *   memories, atlas and WASM are kept and only the content changes. fullLoad: true asks
+   *   for a full load anyway; the console says why a load was full when a scene ran.
    * @returns {boolean} - true if scene change accepted, false if busy
    */
   async loadScene(source, options = {}) {
@@ -400,6 +403,26 @@ class GameEngine {
         const blob = await SaveStore.get(options.restoreSlot);
         if (!blob) throw new Error(`Save slot not found: ${options.restoreSlot}`);
         restorePayload = await decodeSave(blob);
+      }
+
+      // A scene of the running class: swap its content on the running workers, keeping
+      // workers, memories, atlas and WASM (VISUAL_EDITOR_PLAN.md ED-35). The console says
+      // why a load is full when one could have been a swap.
+      if (this.currentScene && !hotRestore) {
+        const blocker = options.fullLoad === true ? null : this.currentScene._fastSwapBlocker(SceneClass);
+        if (options.fullLoad !== true && blocker === null) {
+          await this.currentScene._fastSwap({
+            data: options.data === undefined ? null : options.data,
+            sceneFile,
+            sceneFileUrl,
+            restorePayload,
+            onProgress: typeof options.onProgress === 'function' ? options.onProgress : null,
+          });
+          await new Promise((resolve) => setTimeout(resolve, this.transitionCooldown));
+          this.state = GameEngine.states.READY;
+          return true;
+        }
+        if (blocker !== null) console.info(`[WeedJS] loadScene: full load (${blocker})`);
       }
 
       // Detach debug UI from current scene
