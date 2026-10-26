@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-25",
+  "updated": "2026-10-26",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -964,7 +964,8 @@
         "R-0632",
         "R-0633",
         "R-0634",
-        "R-0638"
+        "R-0638",
+        "R-0639"
       ]
     },
     {
@@ -13875,6 +13876,15 @@
         "95361ced",
         "587c5f60"
       ]
+    },
+    {
+      "id": "R-0639",
+      "date": "2026-10-26",
+      "time": "02:22",
+      "timeFrom": "recorded",
+      "title": "WASM close-out step 3, group B's second batch: gpuPack, painter, collect and sway JS out of src, wasm.bulletTick gone; Predator and adobeAnimateScene neutral",
+      "verdict": "kept-hygiene",
+      "text": "**WASM close-out step 3, group B's second batch: the JS copies of gpuPack, the painter sort, the sprite collect and the decoration sway left `src/`, and `wasm.bulletTick` went. Kept as hygiene: Predator and adobeAnimateScene at the minimum zoom show no worker 3 % worse.** 2026-10-26.\n\nThe commits:\n\n- **gpuPack** (74b4e896). Its JS moved to `tests/reference/gpuPackJs.mjs`, and `wasm.gpuPack`, `wasm.pixiPack` and `wasm.gpuPackSplit` went.\n  - The boot sweep found two bugs, fixed in the same commit. First, Pixi's frames outside the queue handshake read a buffer pre-render may be writing; they now keep the last good frame (N-76). Second, an empty split frame was refused; it now draws nothing.\n- **The painter** (cdc3676c, then af66b3db). Pixi's y-sorted custom layers sort in the kernel first; then the JS painter moved to `tests/reference/painterJs.mjs`, and `wasm.painterRadix` went.\n  - A queue the kernel refuses is drawn in queue order, with one error.\n  - Pre-render told to sort on a memory without its painter state says so at init.\n- **The sprite collect** (5c972848). Its two JS loops moved to `tests/reference/preRenderCollectJs.mjs`, and `wasm.preRenderCollect` went.\n  - The memory always carries the collect's blocks when the spec has them.\n  - A frame the kernel cannot take collects nothing, with one error.\n  - Y-sort before the texture tables collects through the kernel.\n- **The decoration sway** (ec15e7d8). Its JS loops moved to `tests/reference/decorationSwayJs.mjs`, and `wasm.decorationSway` went.\n  - Parented decorations still sway in JS (`resolveAttachedDecorations`), which the kernel does not cover.\n- **`wasm.bulletTick`** (6915ca31). The kernel runs wherever its regions are laid out.\n  - BulletPool.tick's JS loop stays where the kernel cannot read the grid: no spatial workers, or the spatial memory outside the engine block.\n- **Two re-init bugs** were found by the new tests and fixed in the commits above. `_gpuPainter` and `_swayWasm` kept the last init's binding.\n- The node suite passed at each commit (1982 to 1985 tests). Every mutant was killed, except one: the sway's in-frame cache reset, which cannot run since `_swayBuckets` changes only at init. The scenes each change reaches booted clean (61, then 5, 11 and 8).\n\n**Gates** (`runPredatorAbab --vs 587c5f60 --hyp-rev 6915ca31 --owner preRender`, 4 pairs each; A is R-0638's measured B; worktrees, headed, detailed stats off, AB BA order):\n\n- **Predator.** The runner says KEPT (product), read here as neutral:\n  - pre-render 4.040 → 3.796 ms, −6.2 % (worse 1/4, cv 8/2 %), but −1.6 % against the other workers;\n  - logic −6.3 % and spatial −2.5 %, which this batch does not reach: the machine drifted down;\n  - renderer −1.6 %; physics +2.2 % (worse 3/4, cv 11/4 %), not reached by the batch and under the line; particle below its floor;\n  - presented 60.0 fps on both sides; load keys within 0.2 %.\n- **adobeAnimateScene at the minimum zoom**, where pre-render is the bottleneck: NEUTRAL.\n  - pre-render 11.101 → 11.081 ms, −0.2 % (worse 2/4, cv 1/1 %);\n  - renderer +0.6 %, spatial +0.5 % (worse 2/4), physics −0.6 %;\n  - presented 59.9 → 60.0 fps; load keys equal.\n\nVerdict: **kept (hygiene)**. No primary worker is 3 % worse on either scene. Spatial's +3.65 % on adobeAnimateScene in R-0638 (N-74) does not reappear against that batch: +0.5 %, cv 1 %."
     }
   ],
   "leads": [
