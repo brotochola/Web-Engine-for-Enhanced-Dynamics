@@ -1482,4 +1482,13 @@ export function teardownSceneSharedState(scene) {
   scene.registeredClasses = [];
   scene.totalEntityCount = 0;
   scene.audioMetrics = SoundManager.createMetrics();
+
+  // N-75: the components' views go with the scene. Transform's pose, RigidBody and the neighbour rows view Box2D's
+  // memory (the engine block), the rest the scene's other memories, so a page that destroys the engine keeps none
+  // of them alive. The next scene binds its own (scene.js clears the views of a component it does not pool).
+  for (const C of [Transform, RigidBody, Collider, SpriteRenderer, MeshRenderer, AdobeAnimComponent, ParticleComponent,
+    DecorationComponent, BulletComponent, ShadowCaster, FlashComponent, LightEmitter, LightOccluder]) {
+    C.clearArrays();
+  }
+  GameObject.neighborData = null;
 }
