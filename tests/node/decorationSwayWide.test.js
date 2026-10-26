@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 
 import { compareSwayStates, setupSwayKernel, SWAY_SLOTS, swayDecorationsWasm, TRIG_IMPULSE } from '../bench/decorationSwayWasmMicrobench.mjs';
 import { instantiateKernel } from '../bench/wasmKernelHelpers.mjs';
+import { updateDecorationSwayJs } from '../reference/decorationSwayJs.mjs';
 import { DT, frameDelta, K_MAX, LIST_CAPS, N, PHASES, pickSnapshot, rng, scramble, setGrid, stateViews, useWideParents } from '../helpers/decorationSwayScenarios.mjs';
 
 const LIST_CAP_SLOT = SWAY_SLOTS.indexOf('listCap');
@@ -51,7 +52,7 @@ async function frames(each) {
       w.accumulatedTime += DT;
       const before = mem.slice();
       const cacheK = w._swayBucketCacheK;
-      w.updateDecorationSway(deltaTime);
+      updateDecorationSwayJs(w, deltaTime);
       const js = mem.slice();
       const jsCacheK = w._swayBucketCacheK;
       // `narrow`: a 16-bit sway, whose trig list the JS finishes with the impulse at bit 16.

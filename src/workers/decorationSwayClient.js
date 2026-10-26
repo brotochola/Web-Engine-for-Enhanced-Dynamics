@@ -80,7 +80,7 @@ export async function bindDecorationSway(memory, sway, { f32 = false } = {}) {
  * Write the column table from DecorationComponent's and the worker's views. Every call (a scene may rebind
  * its components); two dozen stores against a frame of decorations.
  * @returns {boolean} false when a column is not in the memory, or the grid outgrew the bucket regions:
- *   the JS sways the frame
+ *   the frame does not sway
  */
 export function writeSwayColumns(b, w, DecorationComponent) {
   const t = b.table;

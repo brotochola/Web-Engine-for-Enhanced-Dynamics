@@ -24,6 +24,7 @@ import { TRIG_IMPULSE, TRIG_IMPULSE_U32 } from '../../src/workers/decorationSway
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
+import { updateDecorationSwayJs } from '../reference/decorationSwayJs.mjs';
 
 const D = DecorationComponent;
 const K = 100;
@@ -185,8 +186,7 @@ test('200 000 decorations: 32-bit slots through the pool, the hash, attachments,
     worker.accumulatedTime += 1000 / 60;
     const before = mem.slice();
     const cacheK = worker._swayBucketCacheK;
-    worker._swayWasm = null;
-    worker.updateDecorationSway(1000 / 60);
+    updateDecorationSwayJs(worker, 1000 / 60);
     const js = views().map((v) => v.slice());
     mem.set(before);
     worker._swayBucketCacheK = cacheK;

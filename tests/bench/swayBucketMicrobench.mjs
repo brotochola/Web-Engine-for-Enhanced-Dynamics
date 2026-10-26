@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Shipped ParticleWorker.updateDecorationSway, on-screen grass, frequency grid.
+ * The JS decoration sway (tests/reference/decorationSwayJs.mjs, as the particle worker ran it before
+ * decorationSway.wasm), on-screen grass, frequency grid.
  * Checksum is the 1e-3 tolerance pass against Math.sin, so the old loop and
  * the bucket loop can be compared. The bench does not copy the loop.
  *
@@ -9,6 +10,7 @@
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
 import { initWorker, loadWorker } from './workerHarness.mjs';
+import { updateDecorationSwayJs } from '../reference/decorationSwayJs.mjs';
 
 const K = 100;
 const TOL = 1e-3;
@@ -78,7 +80,7 @@ async function main() {
     const worker = await setup(n);
     worker.accumulatedTime = 1000;
     const angle = worker.accumulatedTime * 0.002;
-    worker.updateDecorationSway(16.67);
+    updateDecorationSwayJs(worker, 16.67);
     const { refC, refS } = reference(n, angle);
     const err = maxErr(n, DecorationComponent.rotC, DecorationComponent.rotS, refC, refS);
     if (err > worst) worst = err;
@@ -88,12 +90,12 @@ async function main() {
     cases[key] = timeIt(`worker sway n=${n}`, () => {
       t += 16.67;
       worker.accumulatedTime = t;
-      worker.updateDecorationSway(16.67);
+      updateDecorationSwayJs(worker, 16.67);
     }, { iterations: 8, warmup: 4 });
   }
   const report = {
     feature: 'sway-buckets-worker',
-    functions: ['ParticleWorker.updateDecorationSway'],
+    functions: ['updateDecorationSwayJs'],
     n: [8000, 20000],
     seed: SEED,
     checksum: 0x5ea7,

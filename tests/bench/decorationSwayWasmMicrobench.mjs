@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
  * Kernel (E-76 W22): the particle worker's decoration sway in WASM (wasm/decorationSway.c, src/workers/decorationSway.wasm, a
- * module) against the shipped ParticleWorker._updateDecorationSwayBuckets, on a real particle worker with
+ * module) against the JS sway it replaced (tests/reference/decorationSwayJs.mjs), on a real particle worker with
  * Predator's grass.
  *
- *   js    ParticleWorker.updateDecorationSway (shipped), as update() calls it every frame: its bucket
- *         path, _updateDecorationSwayBuckets
- *   wasm  the same call with the kernel bound (worker._swayWasm, as its initialize binds it on the
- *         render-queue memory): the per-bucket Math.sin / Math.cos and the cache reset in JS, then
- *         _swayFrameWasm (the column table, one sway_decorations call, Math.sin / Math.cos for the
- *         decorations the kernel lists, none of Predator's). swayDecorationsWasm below is the same
- *         around a fixed table, for the parity test.
+ *   js    the JS sway on the worker (updateDecorationSwayJs), as update() called it every frame: its bucket
+ *         path
+ *   wasm  ParticleWorker.updateDecorationSway with the kernel bound (worker._swayWasm, as its initialize binds
+ *         it on the render-queue memory): the per-bucket Math.sin / Math.cos and the cache reset in JS, then
+ *         the column table, one sway_decorations call, Math.sin / Math.cos for the decorations the kernel
+ *         lists (none of Predator's). swayDecorationsWasm below is the same around a fixed table, for the
+ *         parity test.
  *
  * Predator's decorations: 20 000 grass blades spawned through the shipped DecorationPool.spawn (what
  * Decoration.spawn calls) with predatorScene.js's spawnGrass config: SWAY_LOOP_SKEW, amplitude 0.05–0.08,
@@ -52,6 +52,7 @@ import { DecorationComponent } from '../../src/components/decorationComponent.js
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
 import { SWAY_ANGLE_PER_MS, SWAY_LOOP, swayFrequencyForBucket } from '../../src/util/decorationSway.js';
+import { updateDecorationSwayJs } from '../reference/decorationSwayJs.mjs';
 import { bindDecorationSway, SWAY_SLOTS, TRIG_IMPULSE } from '../../src/workers/decorationSwayClient.js';
 import { layoutRegions, NULL_GUARD_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { poolFreeListTopBytes, poolSlotBytes } from '../../src/util/poolSlotWidth.js';
@@ -395,8 +396,8 @@ export function swayDecorationsWasm(b, worker, deltaTime = 0) {
   if (activeCount === 0) return -1;
   const k = worker._swayBuckets;
   if (!(k > 1)) {
-    // Without buckets every decoration takes a Math.sin: that loop stays JS.
-    worker.updateDecorationSway(deltaTime);
+    // Without buckets (sway_free in the worker) this wrapper runs the JS sway.
+    updateDecorationSwayJs(worker, deltaTime);
     return -1;
   }
   // _updateDecorationSwayBuckets before its loop: this frame's bucket angles, and the cache reset.
@@ -457,8 +458,8 @@ async function main() {
   const { worker, b } = s;
   let listed = 0;
   let lastListed = 0;
-  // The shipped path either way: with the kernel bound, updateDecorationSway runs _swayFrameWasm. Over the
-  // checksum frames the kernel's call counts what it lists; the timed frames call it bare.
+  // js: the JS sway; else the shipped path with the kernel bound. Over the checksum frames the kernel's call counts
+  // what it lists; the timed frames call it bare.
   worker._swayWasm = variant === 'js' ? null : b;
   const shipped = b.sway;
   // wasm-f32x4: the function the worker binds with wasm.decorationSwayF32 on (bindDecorationSway's `f32`).
@@ -472,7 +473,7 @@ async function main() {
   const countedKernel = counted(kernel, true);
   const countedShipped = counted(shipped, false);
   b.sway = countedKernel;
-  const sway = () => worker.updateDecorationSway(DT);
+  const sway = variant === 'js' ? () => updateDecorationSwayJs(worker, DT) : () => worker.updateDecorationSway(DT);
   const frame = () => {
     worker.accumulatedTime += DT;
     sway();
@@ -535,7 +536,7 @@ async function main() {
   const report = {
     feature: 'decoration-sway-wasm',
     variant,
-    functions: ['ParticleWorker._updateDecorationSwayBuckets', f32 ? `${SWAY_F32_MODULE}.${SWAY_F32_EXPORTS[variant]}` : 'decorationSway.sway_decorations'],
+    functions: [variant === 'js' ? 'swayBucketsJs' : 'ParticleWorker._updateDecorationSwayBuckets', f32 ? `${SWAY_F32_MODULE}.${SWAY_F32_EXPORTS[variant]}` : 'decorationSway.sway_decorations'],
     n: s.n,
     onScreen: s.onScreen,
     buckets: s.k,

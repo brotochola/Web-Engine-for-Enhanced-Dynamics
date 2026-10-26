@@ -458,11 +458,6 @@ export const WASM_DEFAULTS = Object.freeze({
    */
   bulletTick: true,
   /**
-   * The particle worker's decoration sway (`decorationSway.wasm`, W22): its arrays in the render-queue memory,
-   * next to the decorations block the emit puts there, with a sway bucket grid.
-   */
-  decorationSway: true,
-  /**
    * The sway in float32, four skew decorations per f32x4 (`sway_decorations_f32x4`, the float32 pass): a sway
    * rotation within 2^-21 · (1 + |amplitude|) · (1 + |base rotation|) of the double one (1.2e-6 for Predator's
    * grass); buckets, impulse phases and modes exact. false: the double sway (`sway_decorations`), the JS

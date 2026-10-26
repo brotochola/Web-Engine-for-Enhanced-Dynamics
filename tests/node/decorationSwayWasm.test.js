@@ -1,5 +1,5 @@
 // E-76 W22: the double sway kernel (sway_decorations in src/workers/decorationSway.wasm, from wasm/decorationSway.c) against
-// the shipped ParticleWorker.updateDecorationSway (its bucket path, _updateDecorationSwayBuckets) on a real
+// the JS sway it replaced (tests/reference/decorationSwayJs.mjs, its bucket path) on a real
 // particle worker, every array the sway reads in one shared memory as decorationSwayWasmMicrobench lays it
 // out, the kernel run through that bench's wrapper (swayDecorationsWasm: the per-bucket Math.sin / Math.cos
 // in JS, the kernel, then Math.sin / Math.cos for the decorations it lists). Both sides start each frame from
@@ -26,6 +26,7 @@ import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import { bucketFromSwayFrequency, SWAY_IMPULSE, SWAY_LOOP, SWAY_LOOP_SKEW, SWAY_OFF } from '../../src/util/decorationSway.js';
 import { compareSwayStates, setupSwayKernel, SWAY_SLOTS, swayDecorationsWasm, TRIG_IMPULSE } from '../bench/decorationSwayWasmMicrobench.mjs';
 import { bindDecorationSway } from '../../src/workers/decorationSwayClient.js';
+import { updateDecorationSwayJs } from '../reference/decorationSwayJs.mjs';
 import {
   DT,
   frameDelta,
@@ -138,7 +139,7 @@ function runFrame(s, deltaTime) {
   const mem = new Uint8Array(s.buffer, 0, s.layout.bytes);
   const before = mem.slice();
   const cacheK = w._swayBucketCacheK;
-  w.updateDecorationSway(deltaTime);
+  updateDecorationSwayJs(w, deltaTime);
   const js = stateViews(s).map(([name, v]) => [name, v.slice()]);
   const jsCacheK = w._swayBucketCacheK;
   mem.set(before);
@@ -255,8 +256,7 @@ test('updateDecorationSway through the kernel the worker binds writes what the J
     worker.accumulatedTime += DT;
     const before = mem.slice();
     const cacheK = worker._swayBucketCacheK;
-    worker._swayWasm = null;
-    worker.updateDecorationSway(deltaTime);
+    updateDecorationSwayJs(worker, deltaTime);
     const js = stateViews(st).map(([name, v]) => [name, v.slice()]);
     mem.set(before);
     worker._swayBucketCacheK = cacheK;
@@ -307,8 +307,7 @@ test('updateDecorationSway without a frequency grid runs sway_free, within its t
     const deltaTime = frameDelta(r);
     worker.accumulatedTime += DT;
     const before = mem.slice();
-    worker._swayWasm = null;
-    worker.updateDecorationSway(deltaTime);
+    updateDecorationSwayJs(worker, deltaTime);
     const js = stateViews(st).map(([name, v]) => [name, v.slice()]);
     mem.set(before);
     const pre = beforeColumns();
@@ -375,4 +374,32 @@ test('wasm.decorationSwayF32 (default on) binds the float32 sway, within its tol
   bound.sway = f32;
   assert.ok(frames >= 50, `${frames} frames swayed`);
   t.diagnostic(`${frames} frames: rotation error at most ${(stats.worst * 100).toFixed(0)} % of its slack, ${stats.stepFlips} across the 0.08 rad step`);
+});
+
+// Close-out group B: the sway runs only in its kernel. A worker whose memory has no sway regions for its decorations
+// (a memory made by hand, as setupSwayKernel's) leaves their rotations as they are, and says so once.
+test('a frame the sway kernel cannot take does not sway, and says so once', async () => {
+  const s = await setupSwayKernel({ n: N, k: 100, kMax: K_MAX, listCap: 1024, seed: 0x5ee5 });
+  const w = s.worker;
+  assert.ok(w._swayWasm === null, 'no sway regions: no kernel');
+  const D = DecorationComponent;
+  const errors = [];
+  const error = console.error;
+  console.error = (msg) => errors.push(String(msg));
+  try {
+    w._swayRefusedWarned = false;
+    const rotC = D.rotC.slice();
+    const rotS = D.rotS.slice();
+    for (let f = 0; f < 3; f++) {
+      w.accumulatedTime += 16;
+      w.updateDecorationSway(16);
+    }
+    assert.equal(firstDiff(D.rotC, rotC), -1, 'rotC as it was');
+    assert.equal(firstDiff(D.rotS, rotS), -1, 'rotS as it was');
+    assert.equal(errors.filter((e) => e.includes('no sway regions')).length, 1, 'said once');
+    updateDecorationSwayJs(w, 16);
+    assert.ok(firstDiff(D.rotS, rotS) >= 0, 'the JS would have swayed them');
+  } finally {
+    console.error = error;
+  }
 });

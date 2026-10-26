@@ -144,8 +144,8 @@ test('with shadows the stamp scratch is in the render-queue memory (the stamp ha
   assert.equal(buildScene({}, null).renderQueueMemory.layout.stamp, null, 'no shadows, no stamp regions');
 });
 
-test('wasm.decorationSway puts the sway arrays in the render-queue memory, next to the decorations', () => {
-  assert.equal(WASM_DEFAULTS.decorationSway, true);
+test('the sway arrays are in the render-queue memory, next to the decorations (W22, no switch)', () => {
+  assert.equal(Object.hasOwn(WASM_DEFAULTS, 'decorationSway'), false);
   const grass = { decoration: { maxDecorations: 800 }, particle: { maxParticles: 0, swayFrequencyBuckets: 100 } };
   const on = buildScene({}, null, grass);
   const w = on.renderQueueMemory?.layout.sway;
@@ -154,7 +154,6 @@ test('wasm.decorationSway puts the sway arrays in the render-queue memory, next 
   assert.equal(w.buckets, 100);
   assert.ok(on.renderQueueMemory.layout.emit.decorationByte >= 0, 'next to the decorations block');
 
-  assert.equal(buildScene({ decorationSway: false }, null, grass).renderQueueMemory.layout.sway, null, 'off');
   const noGrid = { ...grass, particle: { maxParticles: 0, swayFrequencyBuckets: 0 } };
   // Without a frequency grid the regions are there too, with no bucket tables: sway_free runs the loop.
   const free = buildScene({}, null, noGrid).renderQueueMemory.layout.sway;

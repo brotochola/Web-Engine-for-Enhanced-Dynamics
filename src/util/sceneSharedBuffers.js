@@ -564,7 +564,7 @@ export function renderQueueMemorySpec(scene) {
   // W22: the particle worker's decoration sway, on the decorations block (so only with the emit's), with a
   // frequency grid (sway_decorations) or without one (sway_free, every decoration's own sine in the kernel).
   const buckets = config.particle?.swayFrequencyBuckets | 0;
-  const sway = config.wasm?.decorationSway !== false && emit && emit.decorationBytes > 0
+  const sway = emit && emit.decorationBytes > 0
     ? { decorations: config.decoration.maxDecorations | 0, buckets: buckets > 1 ? buckets : 0 }
     : null;
   // W9d: Pixi packs the sprite rows itself (packGpuSprites 'pixi'), with the pack kernel, on rows of its own in this

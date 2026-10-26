@@ -379,8 +379,8 @@ test('pre-render told to sort on a memory without its painter state has no paint
   } finally {
     console.error = error;
   }
-  assert.equal(pre._gpuPainter, null, 'no painter');
-  assert.equal(pre._gpuPainterWasm, null);
+  assert.ok(pre._gpuPainter === null, 'no painter');
+  assert.ok(pre._gpuPainterWasm === null, 'no painter kernel');
   assert.equal(errors.filter((e) => e.includes('no painter state')).length, 1, 'said once');
 });
 

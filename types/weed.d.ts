@@ -330,8 +330,6 @@ export type SceneConfig = Record<string, unknown> & {
     solidSegments?: boolean;
     /** Pre-render's per-light occluder gather in one call (physics scenes: LightOccluder moves into Box2D's memory). Needs visibilitySweep. */
     visibilityGather?: boolean;
-    /** The particle worker's decoration sway (with particle.swayFrequencyBuckets above 1). */
-    decorationSway?: boolean;
     /**
      * The decoration sway in float32 (default true): faster; a sway rotation within a float32 rounding or so of the
      * double one. false: the double sway, the JavaScript sway's results exactly.
