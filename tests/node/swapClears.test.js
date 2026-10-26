@@ -179,8 +179,9 @@ test('restoreBootCamera puts the camera back as the load left it', () => {
   assert.equal(Camera.x, 100);
   assert.equal(Camera.y, 50);
   assert.equal(Camera.zoom, 1);
-  // Every value but the last slot, the seqlock word the bounds write advanced (an even count: unlocked).
-  assert.deepEqual([...view].slice(0, -1), [...scene._bootCamera].slice(0, -1));
+  // Every value but the seqlock word, which the bounds write advanced (an even count: unlocked).
+  const unlocked = (values) => [...values].filter((_, i) => i !== Camera.IDX_FOLLOW_SEQ);
+  assert.deepEqual(unlocked(view), unlocked(scene._bootCamera));
 });
 
 test('applySunBoot puts the sun back at its configured settings and start hour', () => {

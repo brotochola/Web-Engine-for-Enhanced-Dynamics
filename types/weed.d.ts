@@ -2222,6 +2222,12 @@ export declare class Camera {
     options?: { panSpeed?: number; zoomSensitivity?: number; smoothing?: number; arrows?: boolean; maxZoom?: number }
   ): void;
   static setFreeTarget(x: number, y: number): void;
+  /**
+   * While true, follow, followEntity, centerOn and setPosition do nothing, on every thread, and only
+   * the page's free camera moves the view. The debug editor's edit mode (Shift+E) holds it.
+   */
+  static get held(): boolean;
+  static set held(value: boolean);
   /** Skip wheel zoom for one frame. */
   static pauseFreeZoom(): void;
   static get isFreePanning(): boolean;

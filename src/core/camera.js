@@ -62,9 +62,9 @@ export function deadzoneCenter(entityX, entityY, centerX, centerY, halfW, halfH,
  * - Multiple readers in pre_render, pixi, main thread UI/debug
  */
 export class Camera {
-  // SharedArrayBuffer view: Float32Array[17]
+  // SharedArrayBuffer view: Float32Array[18]
   static _data = null;
-  static FLOAT_COUNT = 17;
+  static FLOAT_COUNT = 18;
   static IDX_ZOOM = 0;
   static IDX_X = 1;
   static IDX_Y = 2;
@@ -85,6 +85,8 @@ export class Camera {
   static IDX_SHAKE_PHASE = 15;
   /** Int32 seqlock guarding followEntity/followTarget/followUsed writes. */
   static IDX_FOLLOW_SEQ = 16;
+  /** 1 while a tool holds the view (Camera.held): game code's follows and moves return at once. */
+  static IDX_HOLD = 17;
 
   // Canvas dimensions (needed for centering calculations)
   static _canvasWidth = 0;
@@ -688,6 +690,33 @@ export class Camera {
    * @param {number} [dtRatio] - Delta time ratio for frame-rate-independent smoothing
    */
   static follow(targetX, targetY, smoothing, dtRatio) {
+    if (this._isHeld()) return;
+    this._follow(targetX, targetY, smoothing, dtRatio);
+  }
+
+  /**
+   * While true, follow, followEntity, centerOn and setPosition do nothing, on every thread,
+   * and only the page's free camera (setFree) moves the view: the editor's edit mode holds
+   * it so that a game that follows its player every frame does not take the view back.
+   * Released, the next follow eases from where the view was left.
+   * @type {boolean}
+   */
+  static get held() {
+    return this._isHeld();
+  }
+
+  static set held(value) {
+    const data = this._data;
+    if (data !== null && data.length > this.IDX_HOLD) data[this.IDX_HOLD] = value ? 1 : 0;
+  }
+
+  static _isHeld() {
+    const data = this._data;
+    return data !== null && data[this.IDX_HOLD] === 1;
+  }
+
+  /** follow without the hold: the free camera's own moves. */
+  static _follow(targetX, targetY, smoothing, dtRatio) {
     this._followWriteBegin();
     try {
       this._clearFollowEntityStamp();
@@ -820,7 +849,7 @@ export class Camera {
    * @param {number} [dtRatio]
    */
   static followEntity(index, lookAheadSec, smoothing, dtRatio) {
-    if (index == null) return;
+    if (index == null || this._isHeld()) return;
     const i = index | 0;
     const poseX = this._poseX;
     const look = lookAheadSec || 0;
@@ -1142,7 +1171,7 @@ export class Camera {
       this._freeZoomAnchorY = null;
     }
     if (!zooming || this._freeZoomAnchorX == null || !(this._canvasWidth > 0)) {
-      this.follow(this._freeFollowX, this._freeFollowY, this._freeSmoothing, dtRatio);
+      this._follow(this._freeFollowX, this._freeFollowY, this._freeSmoothing, dtRatio);
       return;
     }
 
@@ -1163,7 +1192,7 @@ export class Camera {
     let z1 = z0 + (this._data[this.IDX_TARGET_ZOOM] - z0) * esZoom;
     z1 = Math.max(this.minZoom, Math.min(this._maxZoom, z1));
     if (!(z1 > 0) || z1 === z0) {
-      this.follow(this._freeFollowX, this._freeFollowY, this._freeSmoothing, dtRatio);
+      this._follow(this._freeFollowX, this._freeFollowY, this._freeSmoothing, dtRatio);
       return;
     }
 
@@ -1253,7 +1282,7 @@ export class Camera {
    * @param {number} targetY - Target Y position in world coordinates
    */
   static centerOn(targetX, targetY) {
-    if (!this._data) return;
+    if (!this._data || this._isHeld()) return;
     this._followWriteBegin();
     try {
       this._clearFollowEntityStamp();
@@ -1277,7 +1306,7 @@ export class Camera {
    * @param {number} y - Y position
    */
   static setPosition(x, y) {
-    if (!this._data) return;
+    if (!this._data || this._isHeld()) return;
     this._followWriteBegin();
     try {
       this._clearFollowEntityStamp();
