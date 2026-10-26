@@ -56,6 +56,7 @@ export class ParticleComponent extends Component {
     // === Over-life tweens (from/to) ===
     // tweenMask bits: ALPHA=1 SCALEX=2 SCALEY=4 TINT=8 ROT=16 (see particleTween.PARTICLE_TWEEN)
     tweenMask: Uint16Array,
+    // The ease of every tweened property, when they share one (the usual case).
     easeId: Uint8Array,
     alphaFrom: Float32Array,
     alphaTo: Float32Array,
@@ -104,6 +105,10 @@ export class ParticleComponent extends Component {
     bounces: Uint8Array,
     bounciness: Float32Array, // share of the falling speed kept, 0-1
     bounceFriction: Float32Array, // share of the ground speed kept, 0-1
+
+    // Each tweened property's ease when they differ (tweenMask has PARTICLE_TWEEN.MIXED_EASE): 4 bits per
+    // property at particleTween.PARTICLE_EASE_SHIFT (alpha, scaleX, scaleY, tint, rotation, angular velocity).
+    easeIds: Uint32Array,
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
   };
 

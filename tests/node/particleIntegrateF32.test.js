@@ -49,7 +49,7 @@ const TOLERANCE = integrateF32Tolerance(FRAMES);
 /** One emit of a mix: the bench's stress configs, or the landing and flat ones (emitFlat). */
 function emitMix(mix, count, k, area) {
   const ease = PARTICLE_EASES[k % PARTICLE_EASES.length];
-  if (mix === 'tween' || mix === 'spin' || mix === 'bounce') return ParticleEmitter.emit(emitConfig(mix, count, ease, area));
+  if (mix === 'tween' || mix === 'spin' || mix === 'bounce' || mix === 'mixed') return ParticleEmitter.emit(emitConfig(mix, count, ease, area));
   const cfg = {
     count,
     x: area.x,
@@ -169,7 +169,7 @@ function runMix(rig, mix, kernels, { dtSkew = {} } = {}) {
 
 const rigPromise = createIntegrateRig(N);
 
-for (const mix of ['tween', 'spin', 'floor', 'flat', 'bounce']) {
+for (const mix of ['tween', 'spin', 'floor', 'flat', 'bounce', 'mixed']) {
   test(`float32 integrates stay within tolerance of the shipped kernel for 60 frames (${mix})`, async (t) => {
     const rig = await rigPromise;
     const r = runMix(rig, mix, rig.kernels);

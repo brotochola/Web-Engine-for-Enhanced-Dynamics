@@ -15,6 +15,18 @@ export const PARTICLE_TWEEN = Object.freeze({
   SCALEY: 4,
   TINT: 8,
   ROT: 16,
+  /** The tweened properties do not share one ease: ParticleComponent.easeIds holds each one's. */
+  MIXED_EASE: 32,
+});
+
+/** Bit offset of each property's 4-bit ease in ParticleComponent.easeIds (read with PARTICLE_TWEEN.MIXED_EASE). */
+export const PARTICLE_EASE_SHIFT = Object.freeze({
+  ALPHA: 0,
+  SCALEX: 4,
+  SCALEY: 8,
+  TINT: 12,
+  ROT: 16,
+  ANGULAR_VELOCITY: 20,
 });
 
 const EASE_STRING_TO_ID = Object.freeze({

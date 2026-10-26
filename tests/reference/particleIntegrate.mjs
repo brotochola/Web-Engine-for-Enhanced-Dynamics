@@ -72,6 +72,7 @@ export function updateParticlePhysicsBuffers(
     flat,
     tweenMask,
     easeId,
+    easeIds,
     alphaFrom,
     alphaTo,
     scaleX,
@@ -124,22 +125,35 @@ export function updateParticlePhysicsBuffers(
     const cycling = !!(animMode && animMode[i]);
     if (mask || spinning || cycling) {
       const lifeProgress = lifespan[i] > 0 ? currentLife[i] / lifespan[i] : 1;
-      const eased =
-        mask || spinning
-          ? applyParticleEase(lifeProgress, easeId ? easeId[i] : 0)
-          : lifeProgress;
+      // One ease per tweened property (easeIds) when they differ; otherwise easeId eases them all.
+      let eA, eSX, eSY, eT, eR, eV;
+      if (mask & PARTICLE_TWEEN.MIXED_EASE) {
+        const ids = easeIds[i];
+        eA = mask & PARTICLE_TWEEN.ALPHA ? applyParticleEase(lifeProgress, ids & 15) : 0;
+        eSX = mask & PARTICLE_TWEEN.SCALEX ? applyParticleEase(lifeProgress, (ids >>> 4) & 15) : 0;
+        eSY = mask & PARTICLE_TWEEN.SCALEY ? applyParticleEase(lifeProgress, (ids >>> 8) & 15) : 0;
+        eT = mask & PARTICLE_TWEEN.TINT ? applyParticleEase(lifeProgress, (ids >>> 12) & 15) : 0;
+        eR = mask & PARTICLE_TWEEN.ROT ? applyParticleEase(lifeProgress, (ids >>> 16) & 15) : 0;
+        eV = spinning ? applyParticleEase(lifeProgress, (ids >>> 20) & 15) : 0;
+      } else {
+        const eased =
+          mask || spinning
+            ? applyParticleEase(lifeProgress, easeId ? easeId[i] : 0)
+            : lifeProgress;
+        eA = eSX = eSY = eT = eR = eV = eased;
+      }
 
       if (mask & PARTICLE_TWEEN.ALPHA) {
-        alpha[i] = alphaFrom[i] + (alphaTo[i] - alphaFrom[i]) * eased;
+        alpha[i] = alphaFrom[i] + (alphaTo[i] - alphaFrom[i]) * eA;
       }
       if (mask & PARTICLE_TWEEN.SCALEX) {
-        scaleX[i] = scaleXFrom[i] + (scaleXTo[i] - scaleXFrom[i]) * eased;
+        scaleX[i] = scaleXFrom[i] + (scaleXTo[i] - scaleXFrom[i]) * eSX;
       }
       if (mask & PARTICLE_TWEEN.SCALEY) {
-        scaleY[i] = scaleYFrom[i] + (scaleYTo[i] - scaleYFrom[i]) * eased;
+        scaleY[i] = scaleYFrom[i] + (scaleYTo[i] - scaleYFrom[i]) * eSY;
       }
       if (mask & PARTICLE_TWEEN.TINT) {
-        const c = lerpRgb(tintFrom[i], tintTo[i], eased);
+        const c = lerpRgb(tintFrom[i], tintTo[i], eT);
         tint[i] = c;
         baseTint[i] = c;
       }
@@ -147,10 +161,10 @@ export function updateParticlePhysicsBuffers(
       // rotFrom/rotTo/angularVel* are radians (converted at spawn).
       let angle = rotFrom ? rotFrom[i] : 0;
       if (mask & PARTICLE_TWEEN.ROT) {
-        angle = rotFrom[i] + (rotTo[i] - rotFrom[i]) * eased;
+        angle = rotFrom[i] + (rotTo[i] - rotFrom[i]) * eR;
       }
       if (spinning) {
-        const av = angularVelFrom[i] + (angularVelTo[i] - angularVelFrom[i]) * eased;
+        const av = angularVelFrom[i] + (angularVelTo[i] - angularVelFrom[i]) * eV;
         angle += av * currentLife[i];
       }
       if ((mask & PARTICLE_TWEEN.ROT) || spinning) {

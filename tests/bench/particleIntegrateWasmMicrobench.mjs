@@ -83,6 +83,15 @@ export function emitConfig(mix, count, ease, area) {
     cfg.bounciness = { min: 0.3, max: 0.8 };
     cfg.bounceFriction = { min: 0.4, max: 0.9 };
   }
+  if (mix === 'mixed') {
+    // A different ease on every tweened property (PARTICLE_TWEEN.MIXED_EASE): the scale and alpha ones from
+    // `ease`, the others fixed, and a turning half that eases its rotation and spin on their own.
+    cfg.scale = { from: { min: 0.4, max: 1 }, to: 1.8, ease };
+    cfg.alpha = { from: 1, to: 0, ease: ease === 'quad.in' ? 'cubic.out' : 'quad.in' };
+    cfg.tint = { from: 0xff2040, to: 0x20ff80, ease: 'expo.inout' };
+    cfg.rotation = { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease: 'back.out' };
+    cfg.angularVelocity = { from: -90, to: 90, ease: 'bounce.out' };
+  }
   if (mix === 'spin') {
     cfg.rotation = { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease };
     cfg.angularVelocity = { from: -90, to: 90, ease };
