@@ -117,7 +117,22 @@ test('Ctrl+S in edit mode saves the running scene file once, and the indicator s
       const debugUI = { scene, tools: { updateToolIndicator() {} } };
       const editMode = new EditMode(debugUI);
       const key = (k, extra) => ({ key: k, ctrlKey: false, metaKey: false, ...extra });
+      // A width typed into the panel and not yet committed: Ctrl+S leaves the field first, so it is saved too.
+      let committed = false;
+      globalThis.document = {
+        activeElement: {
+          tagName: 'INPUT',
+          blur: () => {
+            committed = true;
+            DOC.entities[0].config.width = 1300;
+          },
+        },
+      };
       assert.equal(editMode.onKey(key('s', { ctrlKey: true })), true, 'the editor took Ctrl+S');
+      delete globalThis.document;
+      assert.equal(committed, true);
+      assert.match(calls[0].init.body, /"width": 1300/, 'the committed value is in what was written');
+      DOC.entities[0].config.width = 1200;
       assert.equal(editMode.onKey(key('S', { metaKey: true })), true);
       await editMode.save();
       assert.equal(calls.length, 1, 'a second Ctrl+S during the save waits for it');

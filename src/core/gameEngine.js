@@ -176,7 +176,9 @@ class GameEngine {
           return;
         }
         if (this.debugUI.editing) {
-          if (!isTypingTarget(e.target) && this.debugUI.onEditKey(e)) e.preventDefault();
+          // A field keeps its keys, but Ctrl+S saves from a field of the editor's panels too.
+          const save = (e.ctrlKey || e.metaKey) && key === 's';
+          if ((save || !isTypingTarget(e.target)) && this.debugUI.onEditKey(e)) e.preventDefault();
           return;
         }
         if (e.shiftKey && (key === 'h' || key === 'i' || key === 'k' || key === 'o' || key === 's')) {

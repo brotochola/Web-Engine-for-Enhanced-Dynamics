@@ -245,12 +245,13 @@ test('GameEngine: Shift+E toggles edit mode; while it is on the game gets no key
   globalThis.document = fakeDocument();
   try {
     const keys = [];
+    const editorKeys = [];
     const debugUI = {
       editing: false,
       toggleEditMode() {
         this.editing = !this.editing;
       },
-      onEditKey: (e) => e.key === 'Escape',
+      onEditKey: (e) => (editorKeys.push(e.key), e.key === 'Escape' || e.key === 's'),
     };
     const engine = { debugEnabled: true, debugUI, currentScene: { onKeyDown: (key) => keys.push(key) } };
     GameEngine.prototype._setupWindowListeners.call(engine);
@@ -272,6 +273,14 @@ test('GameEngine: Shift+E toggles edit mode; while it is on the game gets no key
     press('w');
     press(' ');
     assert.equal(press('Escape').defaultPrevented, true, 'the editor took it');
+    const field = { tagName: 'INPUT' };
+    press('Delete', { target: field });
+    assert.equal(press('s', { ctrlKey: true, target: field }).defaultPrevented, true, 'Ctrl+S saves from a field too');
+    assert.deepEqual(
+      editorKeys,
+      ['E', 'w', ' ', 'Escape', 's'],
+      'the held Shift+E (which the editor ignores), not a Delete typed into a field',
+    );
     press('E', { shiftKey: true });
     assert.equal(debugUI.editing, false);
     press('a');

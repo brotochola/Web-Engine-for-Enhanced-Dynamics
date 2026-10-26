@@ -53,6 +53,12 @@ const SELECT_BUTTON = 1;
 /** How long a status line (saved, could not save) stays on the indicator. */
 const STATUS_MS = 3000;
 
+/** Leave the field that has the focus, so its change event commits what was typed into it. */
+function commitFocusedField() {
+  const field = typeof document !== 'undefined' ? document.activeElement : null;
+  if (field && (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA' || field.tagName === 'SELECT')) field.blur();
+}
+
 /**
  * A name typed for New or Save As, as a file of the same folder: `.scene.json` added when missing; null when it is
  * empty or holds a folder (/, \) or a colon.
@@ -192,6 +198,9 @@ export class EditMode {
       switch (e.key) {
         case 's':
         case 'S':
+          // A value typed into a field and not yet committed (no change event: the field still has the focus) is
+          // part of the document the author means to save: leaving the field commits it first.
+          commitFocusedField();
           this.save();
           return true;
         case 'd':
