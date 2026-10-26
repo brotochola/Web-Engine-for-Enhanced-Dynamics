@@ -16,6 +16,7 @@ import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { drainMessages } from '../util/messageRing.js';
 import { definesBelow } from '../util/listenerTags.js';
 import { Joint } from '../core/joint.js';
+import { ChainPoints } from '../core/chainPoints.js';
 import { Mouse } from '../core/mouse.js';
 import { Transform } from '../components/transform.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
@@ -117,6 +118,9 @@ const FOREIGN_SWEEP_FRAMES = 30;
  */
 const LIST_UPDATE_MAX_BATCHES = 64;
 const LIST_UPDATE_MAX_BATCH_PENDING = 2048;
+
+/** The fast swap's clear (_clearScene) despawns in passes while onDespawned hooks spawn: at most this many. */
+const CLEAR_SCENE_MAX_PASSES = 8;
 
 class LogicWorker extends AbstractWorker {
   constructor(selfRef) {
@@ -2308,6 +2312,13 @@ class LogicWorker extends AbstractWorker {
         break;
       }
 
+      case 'clearScene': {
+        // The fast swap's world clear (VISUAL_EDITOR_PLAN.md ED-35); every other thread is idle.
+        this._clearScene();
+        self.postMessage({ msg: 'clearSceneComplete', workerIndex: this.workerIndex });
+        break;
+      }
+
       case 'listUpdates': {
         // Only worker 0 processes list updates from other workers
         if (this.workerIndex !== 0) {
@@ -2418,6 +2429,58 @@ class LogicWorker extends AbstractWorker {
     });
     this._pendingDrainExtras = null;
     return n;
+  }
+
+  /**
+   * The fast swap's world clear (VISUAL_EDITOR_PLAN.md ED-35), with every other thread idle
+   * (Scene.pauseAndSettle). Every logic worker forgets which entities it saw on screen, so an
+   * entity spawned into a visible slot gets its onScreenEnter. logic0 then:
+   * - runs what is pending: ring spawns and despawns, list updates;
+   * - despawns every entity of every class, in passes until a pass finds none, since an
+   *   onDespawned hook may spawn (a class registered after the hook's own is already done);
+   * - removes every joint (Joint.resetAll: despawn removes none, and breaks leave slots),
+   *   drops every tween (zoom tweens included) and rewinds the chain pool;
+   * - resets every class's free list: despawnAll skips a class with nothing active, so an
+   *   index a page spawn popped but never set up would stay taken (an entity a hook kept
+   *   spawning past the passes stays live, out of the free list, with a warning);
+   * - applies the list updates the pass queued.
+   */
+  _clearScene() {
+    this.previousScreenVisibility.fill(0);
+    if (this.workerIndex !== 0) return;
+    this._drainSpawnCommandRing();
+    this.processListUpdates();
+    const classes = [];
+    for (const classInfo of this.registeredClasses) {
+      const EntityClass = self[classInfo.name];
+      if (EntityClass) classes.push(EntityClass);
+    }
+    let cleared = false;
+    for (let pass = 0; pass < CLEAR_SCENE_MAX_PASSES && !cleared; pass++) {
+      let despawned = 0;
+      for (let c = 0; c < classes.length; c++) despawned += GameObject.despawnAll.call(classes[c]) | 0;
+      cleared = despawned === 0;
+    }
+    Joint.resetAll();
+    applyTweens(null);
+    ChainPoints.clearAll();
+    const active = Transform.active;
+    for (let c = 0; c < classes.length; c++) {
+      const EntityClass = classes[c];
+      if (!EntityClass.freeList) continue;
+      GameObject.initializeFreeList(EntityClass);
+      // A hook that kept spawning past the passes: its entities stay live, so their indices
+      // come back out of the free list (despawnAll's own reset put them in it).
+      let live = null;
+      for (let i = EntityClass.startIndex; i < EntityClass.endIndex; i++) {
+        if (active[i] === 1) (live || (live = new Set())).add(i);
+      }
+      if (live !== null) {
+        GameObject._takeFreeIndices(EntityClass, live);
+        console.warn(`WeedJS: clearing the scene, ${live.size} ${EntityClass.name} are still live: an onDespawned hook keeps spawning`);
+      }
+    }
+    this.processListUpdates();
   }
 
   _mainThreadDespawn(entityIndex) {
