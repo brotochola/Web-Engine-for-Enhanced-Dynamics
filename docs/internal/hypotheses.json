@@ -966,7 +966,8 @@
         "R-0634",
         "R-0638",
         "R-0639",
-        "R-0640"
+        "R-0640",
+        "R-0642"
       ]
     },
     {
@@ -13904,6 +13905,15 @@
       "title": "Scoreboard against `5477a582` (full, 40 rows)",
       "verdict": "note",
       "text": "ray: KEPT, rayVsBox2d: KEPT, decals: FAIL, emit: FAIL, integrate: FAIL, spatial: FAIL, box2d: TIE, liquidfun: TIE, liquidfunCouple: TIE, liquidfunQuery: KEPT, queryAabb: FAIL, nav: FAIL, visPoly: KEPT, tilemap: TIE, tilemapGid: FAIL, contactDrain: FAIL, box2dRayJs: TIE, queryPublish: FAIL, preRender: FAIL, compute: FAIL, decorations: TIE, bullets: KEPT, spawn: KEPT, steadyCombat: TIE, decalBlit: FAIL, sceneryCam: FAIL, meshFillMoving: FAIL, meshFillPan: FAIL, meshFillLook: FAIL, audioStorm: FAIL, audioSlots: NA, gameObjectAccess: NA, shadowStamp: NA, gpuQueuePack: NA, decalPremultiply: NA, painterRadix: NA, publishPose: NA, preRenderWorker: NA, swayBuckets: NA, textureUpload: KEPT.\n\nNo. 3 row(s) FAIL/WORSE. Do not claim a better WeedJS. 12 row(s) are a protocol ceiling (not claimed). 2 row(s) are under the 3 ms floor (not a regression). A tree is the fastest WeedJS only when every catalog row is kept or a tie and none is worse or failed. The rows' numbers are in the local report (`tests/results/scoreboard/report.md`, not kept)."
+    },
+    {
+      "id": "R-0642",
+      "date": "2026-10-26",
+      "time": "04:39",
+      "timeFrom": "recorded",
+      "title": "WASM close-out sitting: all WASM against the last commit before E-76; scoreboard none worse (7 kept, 7 tie), L10 four cores pre-render -39 % Predator / -76 % adobeAnimateScene, 61/61 boot in Chrome and Firefox",
+      "verdict": "kept",
+      "text": "**WASM close-out sitting: all WASM (4a82a562) against the last commit before E-76 (5477a582). The scoreboard has no row worse; L10 on four physical cores keeps the gains (pre-render −39 % on Predator, −76 % on adobeAnimateScene at the minimum zoom); the boot is the same or better.** 2026-10-26.\n\nThis is the migration's measured total (HOW_WE_MEASURE: a total is measured, not added). The kernels' own records are the parts. Phase 6's leave-one-out is R-0618.\n\n**Scoreboard** (R-0641, `runScoreboard --vs 5477a582 --skip-kernels --skip-lockstep --skip-node`; stress rows headless 2 × 8/10 s, gameplay rows headed 5 × 10/10 s).\n- Kernel rows skipped: the base has no kernels, so its side would time the reference or fail.\n- Lockstep skipped: the float32 kernels are tolerance gates by the owner's decision (speed over exactness), not bit gates.\n\n| Verdict | Rows |\n| --- | --- |\n| kept | ray: logic 4.345 → 2.735 ms, −37.1 % |\n| | rayVsBox2d: logic −36.9 % |\n| | liquidfunQuery: physics −9.8 % |\n| | visPoly: pre-render −49.2 % |\n| | bullets: particle −52.8 % |\n| | spawn: logic −6.3 % |\n| | textureUpload: Pixi −4.0 % |\n| tie | box2d, liquidfun, liquidfunCouple, tilemap, box2dRayJs, decorations, steadyCombat. On steadyCombat, particle −35.7 % and spatial −30.9 %, but logic +5.7 %. |\n| worse | none |\n| fail | Protocol ceilings: the catalog's rows whose scene cannot reach 3 ms in the hot code (decals, emit, integrate, nav, tilemapGid, contactDrain, queryPublish, preRender, compute, sceneryCam, meshFillPan, meshFillLook). |\n| | Step floors: queryAabb (logic −16.5 %, under 3 ms), meshFillMoving (Pixi 0.79 → 0.84 ms, under 3 ms). |\n| | Loads not comparable: spatial (NEIGHBORS_REUSED −11.9 %), decalBlit (Pixi 20.9 → 8.7 ms with 12.7 % more tiles uploaded), audioStorm. |\n\n**L4** (R-0640): the first 2 s are not worse; every bottleneck worker is faster from the first frames.\n\n**L10, four physical cores** (`runPredatorAbab --vs 5477a582 --hyp-rev 4a82a562`, 4 pairs, headed). The runner and its Chrome ran under `start /affinity 55`, and the bench's Chrome processes were seen at 0x55.\n- **Predator.** NEUTRAL:\n  - pre-render 4.865 → 2.874 ms, −39.0 % (worse 0/4);\n  - spatial −18.1 %, renderer −7.7 %;\n  - physics +12.3 % (3/4) and logic +10.8 % (2/4), cv 12–15 %, too noisy to judge (N-74, L5);\n  - presented 60.0 → 59.9 fps.\n- **adobeAnimateScene at the minimum zoom.** NEUTRAL:\n  - pre-render 45.698 → 11.135 ms, −76.4 % (0/4);\n  - spatial −7.6 %, physics −6.8 %;\n  - presented 59.2 → 59.9 fps.\n- Process CPU per presented frame was not read: the runner has no tool for it yet (HOW_WE_MEASURE tool 9).\n\n**Correctness and boot.**\n- The node suite passes (1986).\n- Every scene boots on the source tree in Chrome (61/61, after the last JS left).\n- Every scene boots in release Firefox 158.0.1 too (61/61, `--browser firefox`): with no JS left to fall back to, every kernel loads there.\n- The bundles build, and their embed and browser smokes pass (all 8; each about 9 KB smaller with the JS gone).\n- N-75 is fixed: destroy gives Box2D's memory back.\n\n**Verdict: the migration holds as a whole.**\n- No catalog row is worse.\n- On sixteen logical processors (R-0640, steady) and on four cores, Predator's pre-render is 39–42 % faster, and with 10,000 animated characters 70–76 % faster.\n- The grouping (step 4) follows the merge."
     }
   ],
   "leads": [
