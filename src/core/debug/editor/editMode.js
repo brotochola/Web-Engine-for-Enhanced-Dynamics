@@ -15,8 +15,9 @@
 // Known limit of this version: tick() still runs, with a zero delta, so code that counts frames keeps counting.
 // ED-19 pauses the simulation workers instead.
 //
-// A left click selects (selection.js, ED-8); Esc clears the selection, and with none leaves edit mode. Ctrl+S saves
-// the running scene file through the dev server (sceneFileStore.js, ED-13).
+// A left click selects (selection.js, ED-8), and a drag moves the selection (moveTool.js, ED-10), as do the arrow
+// keys (Shift: ten steps); G cycles the grid step. Esc clears the selection, and with none leaves edit mode. Ctrl+S
+// saves the running scene file through the dev server (sceneFileStore.js, ED-13).
 //
 // Cost: nothing before the first Shift+E. Its listeners are on the document only while it is on.
 
@@ -25,6 +26,7 @@ import { Camera } from '../../camera.js';
 import { Mouse } from '../../mouse.js';
 import { saveSceneFile } from './sceneFileStore.js';
 import { Selection } from './selection.js';
+import { MoveTool, SNAP_STEPS } from './moveTool.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -39,6 +41,7 @@ export class EditMode {
     this.debugUI = debugUI;
     this.active = false;
     this.selection = new Selection(debugUI);
+    this.move = new MoveTool(this.selection);
     /** The document has edits that are not saved (ED-12 ties it to the undo stack). */
     this.dirty = false;
     this.selection.onEdit = () => {
@@ -71,7 +74,7 @@ export class EditMode {
       if (e.target !== this.debugUI.gameEngine?.canvas) return;
       if (e.buttons === SELECT_BUTTON) {
         // The engine's canvas listener ran first: Mouse holds this point in the world.
-        this.selection.pickAt(Mouse.x, Mouse.y);
+        this.move.press(Mouse.x, Mouse.y, e.clientX, e.clientY);
         return;
       }
       if ((e.buttons & PAN_BUTTONS) === 0) return;
@@ -83,6 +86,7 @@ export class EditMode {
       this._panFromY = Camera._freeFollowY;
     };
     this._onPointerMove = (e) => {
+      if ((e.buttons & SELECT_BUTTON) !== 0) this.move.move(Mouse.x, Mouse.y, e.clientX, e.clientY);
       if (e.pointerId !== this._panPointer) return;
       if ((e.buttons & PAN_BUTTONS) === 0) {
         this._panPointer = -1;
@@ -92,6 +96,7 @@ export class EditMode {
       Camera.setFreeTarget(this._panFromX - (e.clientX - this._panX) / zoom, this._panFromY - (e.clientY - this._panY) / zoom);
     };
     this._onPointerUp = (e) => {
+      if ((e.buttons & SELECT_BUTTON) === 0) this.move.release();
       if (e.pointerId === this._panPointer && (e.buttons & PAN_BUTTONS) === 0) this._panPointer = -1;
     };
     this._onContextMenu = (e) => {
@@ -122,6 +127,7 @@ export class EditMode {
     this.active = false;
     this._listen(false);
     this._panPointer = -1;
+    this.move.cancel();
     this.selection.clear();
     this._setStatus('', false);
     Mouse.isEditModeActive = false;
@@ -147,7 +153,27 @@ export class EditMode {
       this.save();
       return true;
     }
-    return false;
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    const steps = e.shiftKey ? 10 : 1;
+    switch (e.key) {
+      case 'ArrowLeft':
+        return this.move.nudge(-steps, 0);
+      case 'ArrowRight':
+        return this.move.nudge(steps, 0);
+      case 'ArrowUp':
+        return this.move.nudge(0, -steps);
+      case 'ArrowDown':
+        return this.move.nudge(0, steps);
+      case 'g':
+      case 'G': {
+        const next = SNAP_STEPS[(SNAP_STEPS.indexOf(this.move.snap) + 1) % SNAP_STEPS.length];
+        this.move.snap = next;
+        this._setStatus(next > 1 ? `Grid ${next} px` : 'No grid', false);
+        return true;
+      }
+      default:
+        return false;
+    }
   }
 
   /**
@@ -198,6 +224,7 @@ export class EditMode {
 
   /** A fast swap put the time scale and the camera back to the level's start: hold them again. */
   onContentSwapped() {
+    this.move.cancel();
     this.selection.clear();
     this.dirty = false; // another document
     if (!this.active) return;

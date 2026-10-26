@@ -144,6 +144,32 @@ test('a left click on the game canvas selects at the mouse; Esc lets go of the s
   }
 });
 
+test('the arrow keys nudge (Shift: ten steps) and G cycles the grid step', () => {
+  const { editMode } = setup();
+  try {
+    editMode.enter();
+    const nudges = [];
+    editMode.move.nudge = (x, y) => (nudges.push([x, y]), true);
+    const key = (k, extra = {}) => editMode.onKey({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...extra });
+    assert.equal(key('ArrowRight'), true);
+    key('ArrowUp', { shiftKey: true });
+    key('ArrowLeft');
+    key('ArrowDown', { shiftKey: true });
+    assert.equal(key('ArrowLeft', { ctrlKey: true }), false, 'not with Ctrl');
+    assert.deepEqual(nudges, [[1, 0], [0, -10], [-1, 0], [0, 10]]);
+    const steps = [];
+    for (let i = 0; i < 4; i++) {
+      key('g');
+      steps.push(editMode.move.snap);
+    }
+    assert.deepEqual(steps, [8, 16, 32, 1]);
+    assert.equal(editMode.status, 'No grid');
+    clearTimeout(editMode._statusTimer);
+  } finally {
+    teardown();
+  }
+});
+
 test('in edit mode no button press reaches the game; a release still does', () => {
   setup();
   try {

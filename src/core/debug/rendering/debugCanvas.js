@@ -397,6 +397,10 @@ export class DebugCanvas {
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_SELECTED_ENTITY))
       this.physics.drawSelectedEntity(ctx, canvas, camera, zoom, flags, pose);
 
+    // The editor's move ghost (edit mode, while dragging).
+    const editMode = this.debugUI.editMode;
+    if (editMode?.active) editMode.move.drawOverlay(ctx, camera, zoom);
+
     if (rolled) ctx.setTransform(1, 0, 0, 1, 0, 0);
     this._drawHud(ctx, canvas, camera, zoom);
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH))

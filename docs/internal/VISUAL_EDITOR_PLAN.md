@@ -1049,8 +1049,16 @@ reload, and it is still there.
     a color when the picker closes. The respawned entity is live on logic0's next frame.
     Its body waits for the first physics step after edit mode, since time scale 0 takes
     none. `editorParams.test.js`. Undo is ED-12.
-- [ ] **ED-10 Move tool:** ghost drag (preallocated corners), grid snap (1/8/16/32),
+- [x] **ED-10 Move tool:** ghost drag (preallocated corners), grid snap (1/8/16/32),
   arrow-key nudge (Shift for 10×), respawn on release.
+  - Done 2026-10-26 (`editor/moveTool.js`). A press on the selected entity keeps it, so a
+    drag from there moves it, and a click there without a drag takes the next entity under
+    it. Past 3 screen pixels it is a drag: the overlay draws a dashed ghost of the entity's
+    box where it would land (`pick.js` `entityBox`, corners in a `Float64Array(8)`), and
+    nothing is spawned or written until the release writes the record's x and y and
+    respawns, once. The arrow keys nudge by grid steps (Shift: ten); G cycles the grid
+    (1, 8, 16, 32 px; 1 keeps whole pixels). Runtime entities do not move.
+    `editorMove.test.js`.
 - [ ] **ED-12 Undo and redo** (Ctrl+Z / Ctrl+Y) over the command list, with the
   unsaved-changes marker tied to the stack position.
 - [ ] **ED-11 Palette** from `static entities`, with pool use per class for the open

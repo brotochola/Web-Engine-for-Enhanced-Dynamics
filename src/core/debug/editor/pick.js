@@ -54,6 +54,53 @@ export function pointInSprite(i, x, y) {
   return lx >= Math.min(x0, x1) && lx <= Math.max(x0, x1) && ly >= Math.min(y0, y1) && ly <= Math.max(y0, y1);
 }
 
+/**
+ * The box an entity is picked by, into `out`: center x and y, half width and height, and its turn (cos, sin). The
+ * collider's when it has one (a circle's square), else the sprite's. False when it has neither.
+ * @param {number} i
+ * @param {Float64Array} out - 6 values
+ */
+export function entityBox(i, out) {
+  let c = Transform.rotC ? Transform.rotC[i] : 1;
+  let s = Transform.rotS ? Transform.rotS[i] : 0;
+  const x = Transform.x[i];
+  const y = Transform.y[i];
+  if (Collider.active && Collider.active[i] === 1) {
+    const ox = Collider.offsetX[i] || 0;
+    const oy = Collider.offsetY[i] || 0;
+    const r = Collider.radius[i];
+    out[0] = x + c * ox - s * oy;
+    out[1] = y + s * ox + c * oy;
+    out[2] = r > 0 ? r : Collider.width[i] * 0.5;
+    out[3] = r > 0 ? r : Collider.height[i] * 0.5;
+  } else if (SpriteRenderer.active && SpriteRenderer.active[i]) {
+    const inherit = SpriteRenderer.inheritTransformRotation;
+    if (inherit && !inherit[i]) {
+      c = SpriteRenderer.spriteRotC[i];
+      s = SpriteRenderer.spriteRotS[i];
+    }
+    const w = SpriteRenderer.getOriginalWidth(i) * SpriteRenderer.scaleX[i];
+    const h = SpriteRenderer.getOriginalHeight(i) * SpriteRenderer.scaleY[i];
+    // The box's center sits (0.5 - anchor) of the size from the entity's position.
+    const lx = (0.5 - SpriteRenderer.anchorX[i]) * w;
+    const ly = (0.5 - SpriteRenderer.anchorY[i]) * h;
+    out[0] = x + c * lx - s * ly;
+    out[1] = y + s * lx + c * ly;
+    out[2] = Math.abs(w) * 0.5;
+    out[3] = Math.abs(h) * 0.5;
+  } else {
+    return false;
+  }
+  out[4] = c;
+  out[5] = s;
+  return true;
+}
+
+/** Whether a world point is on the entity, by the same test a click uses. */
+export function pointOnEntity(i, x, y) {
+  return Collider.active && Collider.active[i] === 1 ? pointInCollider(i, x, y) : pointInSprite(i, x, y);
+}
+
 /** The area a hit covers, to prefer the smaller of overlapping entities. */
 function hitArea(i, byCollider) {
   if (byCollider) {

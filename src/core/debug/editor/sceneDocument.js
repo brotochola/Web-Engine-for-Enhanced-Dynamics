@@ -75,6 +75,18 @@ export function setParam(scene, name, key, value) {
 }
 
 /**
+ * Move a placed entity: its record's x and y, and respawn it there.
+ * @returns {number} the respawned entity's index, or -1
+ */
+export function setPosition(scene, name, x, y) {
+  const found = recordOf(scene, name);
+  if (found === null) return -1;
+  found.record.x = x;
+  found.record.y = y;
+  return respawnPlaced(scene, name);
+}
+
+/**
  * Replace a placed entity's whole config (a class without spawnParams: the editor's key/value box), and respawn it.
  * @param {object} scene
  * @param {string} name
