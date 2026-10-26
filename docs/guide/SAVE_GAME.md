@@ -195,7 +195,7 @@ What applies at once: method bodies (`tick`, callbacks, helpers, the scene's `up
 
 ### The running scene's scene file: a fresh reload
 
-Saving the scene file the running scene was loaded from (`levels/1-1.scene.json`) reloads the page **without** the state, so the scene loads the file as it now is: a restore would put every entity back where it was, over the positions you just changed. A scene file the running scene was not loaded from does nothing.
+Saving the scene file the running scene was loaded from (`levels/1-1.scene.json`) loads it again, with the same `data` and **without** the state, so the scene shows the file as it now is: a restore would put every entity back where it was, over the positions you just changed. It is a fast swap (no page reload; the workers, memory and atlas stay) unless the scene needs a full load. A file that does not load (an edit half done, a JSON error) is reported in the console and the scene runs on: fix it and save again. A scene file the running scene was not loaded from does nothing.
 
 ### Anything else: a reload that keeps the state
 

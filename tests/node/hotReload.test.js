@@ -195,10 +195,16 @@ async function withLocation(fn) {
   return reloads;
 }
 
-test('the running scene file changed: the page reloads fresh, so the file\'s new content loads', async () => {
-  // ED-4a. A restore would put every entity back where it was, over the file's new positions.
-  const scene = { sceneFileUrl: 'http://localhost:8000/demos/platformerGameScene/levels/1-1.scene.json', sceneScriptUrl: 'x' };
-  const game = { currentScene: scene, state: 1 };
+test('the running scene file changed: it is loaded again, with its data and no restore, without a page reload', async () => {
+  // ED-4a, ED-4b. A restore would put every entity back where it was, over the file's new positions; loading the
+  // file again (a fast swap for the running class) loads it as it now is and keeps the workers.
+  const scene = {
+    sceneFileUrl: 'http://localhost:8000/demos/platformerGameScene/levels/1-1.scene.json',
+    sceneScriptUrl: 'x',
+    data: { lives: 3 },
+  };
+  const loads = [];
+  const game = { currentScene: scene, state: 1, loadScene: async (url, options) => (loads.push([url, options]), true) };
   let kept = 0;
   const keep = HotReload.reloadKeepingState;
   HotReload.reloadKeepingState = async () => {
@@ -207,26 +213,54 @@ test('the running scene file changed: the page reloads fresh, so the file\'s new
   try {
     const reloads = await withLocation(async () => {
       const event = (file) => JSON.stringify({ file });
-      assert.equal(await HotReload.onFileChanged(game, event('demos/platformerGameScene/levels/1-1.scene.json')), 'reloaded');
+      assert.equal(await HotReload.onFileChanged(game, event('demos/platformerGameScene/levels/1-1.scene.json')), 'loaded');
       assert.equal(await HotReload.onFileChanged(game, event('demos/platformerGameScene/levels/1-2.scene.json')), 'other');
     });
-    assert.equal(reloads, 1, 'only the running scene\'s file reloads');
+    assert.deepEqual(loads, [[scene.sceneFileUrl, { data: { lives: 3 } }]], "only the running scene's file, with its data");
+    assert.equal(reloads, 0, 'no page reload');
     assert.equal(kept, 0, 'never through the reload that restores the state');
   } finally {
     HotReload.reloadKeepingState = keep;
   }
 });
 
-test('HotReload.ignore drops a file\'s change events while the window lasts', async () => {
-  const scene = { sceneFileUrl: 'http://localhost:8000/levels/a.scene.json' };
-  const game = { currentScene: scene, state: 1 };
-  const reloads = await withLocation(async () => {
+test('a scene file that does not load is reported and the scene runs on; a busy engine reloads the page', async () => {
+  const scene = { sceneFileUrl: 'http://localhost:8000/levels/a.scene.json', data: null };
+  const event = JSON.stringify({ file: 'levels/a.scene.json' });
+  const errors = [];
+  const quiet = console.error;
+  console.error = (m) => errors.push(String(m));
+  try {
+    const broken = {
+      currentScene: scene,
+      state: 1,
+      loadScene: async () => {
+        throw new Error('levels/a.scene.json is not JSON');
+      },
+    };
+    const busy = { currentScene: scene, state: 1, loadScene: async () => false };
+    const reloads = await withLocation(async () => {
+      assert.equal(await HotReload.onFileChanged(broken, event), 'failed');
+      assert.equal(await HotReload.onFileChanged(busy, event), 'reloaded');
+    });
+    assert.equal(reloads, 1, 'only the busy case reloads');
+  } finally {
+    console.error = quiet;
+  }
+  assert.match(errors[0], /did not load; the scene runs on/);
+});
+
+test("HotReload.ignore drops a file's change events while the window lasts", async () => {
+  const scene = { sceneFileUrl: 'http://localhost:8000/levels/a.scene.json', data: null };
+  let loads = 0;
+  const game = { currentScene: scene, state: 1, loadScene: async () => (loads++, true) };
+  await withLocation(async () => {
     HotReload.ignore('/levels/a.scene.json', 60000);
     const event = JSON.stringify({ file: 'levels/a.scene.json' });
     assert.equal(await HotReload.onFileChanged(game, event), 'ignored');
     assert.equal(await HotReload.onFileChanged(game, event), 'ignored', 'every event of the window, not only the first');
     HotReload.ignore('/levels/a.scene.json', -1);
-    assert.equal(await HotReload.onFileChanged(game, event), 'reloaded', 'after the window, a change reloads again');
+    assert.equal(await HotReload.onFileChanged(game, event), 'loaded', 'after the window, a change loads again');
   });
-  assert.equal(reloads, 1);
+  assert.equal(loads, 1);
 });

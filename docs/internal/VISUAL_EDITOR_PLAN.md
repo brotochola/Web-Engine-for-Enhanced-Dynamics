@@ -933,8 +933,12 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   `Goal` entity whose `next` param (a string) names the next file. On contact it calls
   `loadScene(next, { data: { score } })`. Public API only. Its demo test checks that
   reaching the goal loads `1-2` without a full load (console line absent).
-- [ ] **ED-4b Hot reload of the running scene file through the fast swap,** after ED-35.
-  Test in `hotReload.test.js`.
+- [x] **ED-4b Hot reload of the running scene file through the fast swap,** after ED-35.
+  Test in `hotReload.test.js`. Done 2026-10-26: the running file is loaded again with its
+  `data` (`game.loadScene`: a fast swap when the scene can take one, else a full load in
+  the page); a file that does not load is reported and the scene runs on (the file is read
+  before anything is torn down); a busy engine falls back to the page reload. Done before
+  ED-37, which waits on the author's uncommitted edit of `levels/1-1.scene.json`.
 - [ ] **ED-1 User guide** `docs/guide/SCENE_FILES.md`, covering:
   - the scene class and the scene file;
   - the rule of thumb;

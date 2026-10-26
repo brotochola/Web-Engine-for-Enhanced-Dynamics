@@ -5,10 +5,11 @@
 // is swapped in place, on the page and in every worker (hotSwap.js): no reload,
 // the shared memory and everything in it stay as they are.
 //
-// The running scene's scene file (`*.scene.json`) reloads the page without the
-// state: the file's new content is what the scene loads, where a restore would put
-// every entity back where it was. Any other scene file is ignored. The editor
-// writes scene files itself and has already applied the change: it calls
+// The running scene's scene file (`*.scene.json`) is loaded again, with no restore:
+// the file's new content is what the scene loads, where a restore would put every
+// entity back where it was. It is a fast swap when the scene can take one (no page
+// reload, the workers stay). Any other scene file is ignored. The editor writes
+// scene files itself and has already applied the change: it calls
 // HotReload.ignore(path, ms) before writing, and that file's events are dropped.
 //
 // Anything else (an asset, a shader, the page, an engine file), or a change the
@@ -97,7 +98,7 @@ export class HotReload {
       /* an older server sends no file: reload */
     }
     const scene = game && game.currentScene;
-    if (/\.scene\.json$/i.test(file)) return this.onSceneFileChanged(scene, file);
+    if (/\.scene\.json$/i.test(file)) return this.onSceneFileChanged(game, scene, file);
     if (!/\.m?js$/i.test(file) || !scene || !scene.sceneScriptUrl || game.state !== 1) {
       return this.reloadKeepingState(game);
     }
@@ -117,18 +118,30 @@ export class HotReload {
   }
 
   /**
-   * A scene file changed. The running scene's own reloads the page fresh, so it loads the
-   * file's new content; the editor's own writes (ignore) and other scenes' files do nothing.
+   * A scene file changed. The running scene's own is loaded again, with the same data: a
+   * fast swap when the scene can take one (ED-4b), else a full load in the page; either way
+   * the file's new content, not a restore of what ran. A file that does not load (an edit
+   * half done) is reported and the running scene goes on: the file is read before anything
+   * is torn down. The editor's own writes (ignore) and other scenes' files do nothing.
+   * @param {object} game
    * @param {object|null} scene
    * @param {string} file - relative to the served folder
-   * @returns {'ignored'|'reloaded'|'other'}
+   * @returns {Promise<'ignored'|'other'|'loaded'|'reloaded'|'failed'>}
    */
-  static onSceneFileChanged(scene, file) {
+  static async onSceneFileChanged(game, scene, file) {
     const url = new URL(file.replace(/^\/+/, ''), `${location.origin}/`).href;
     if (this._isIgnored(url)) return 'ignored';
     const running = scene && scene.sceneFileUrl ? scene.sceneFileUrl.split(/[?#]/)[0] : null;
     if (running !== url) return 'other';
-    console.info(`[WeedJS] hot reload: ${file} changed; reloading the page to load it`);
+    console.info(`[WeedJS] hot reload: ${file} changed; loading it again`);
+    try {
+      const ok = await game.loadScene(scene.sceneFileUrl, { data: scene.data });
+      if (ok !== false) return 'loaded';
+    } catch (error) {
+      console.error(`[WeedJS] hot reload: ${file} did not load; the scene runs on. Fix it and save again.`, error);
+      return 'failed';
+    }
+    // Another load was under way: the page reload loads the file as it is now.
     location.reload();
     return 'reloaded';
   }
