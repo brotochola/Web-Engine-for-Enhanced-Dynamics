@@ -26,9 +26,12 @@ What follows from that:
 | --- | --- | --- | --- | --- |
 | A game object | `GameObject` + `MonoBehaviour` | `Node2D` script | `Sprite` / custom class | `class Enemy extends GameObject` with `static components = […]` |
 | A prefab | Prefab | `PackedScene` | a config object | the class itself, plus a spawn config |
+| A level | a scene (`.unity`) | a scene (`.tscn`) | a `Scene` and its map | a scene class (settings, pools, rules) and one scene file per level, `levels/1-1.scene.json` (what is placed where) ([SCENE_FILES.md](./SCENE_FILES.md)) |
+| Find a placed object | `GameObject.Find` | `get_node` | — | `scene.getByName('Goal1')`, on the page |
 | Create one | `Instantiate` | `instance()` + `add_child` | `this.add.sprite` | `const e = Enemy.spawn({ x, y })`, the same call in the scene and in entities |
 | Destroy it | `Destroy` | `queue_free` | `destroy()` | `this.despawn()`; another one: `Enemy.despawn(e)` or `Enemy.despawn(index)` |
-| Per-object data | fields, `[SerializeField]` | `@export var` | properties | component fields: `static ARRAY_SCHEMA = { hp: Float32Array }`, then `this.health.hp` |
+| Per-object data | fields | `var` | properties | component fields: `static ARRAY_SCHEMA = { hp: Float32Array }`, then `this.health.hp` |
+| Settings a level sets per object | `[SerializeField]`, `[Range]` | `@export`, `@export_range` | — | `static spawnParams = { width: { value: 220, min: 8, max: 4000 } }`, read in `onSpawned(params)` ([SCENE_FILES.md](./SCENE_FILES.md#spawn-params-what-a-level-sets-per-entity)) |
 | Get a component | `GetComponent<T>()` | `get_node` | — | `this.rigidBody`, `this.health` (camelCase class name) |
 | Does it have one? | `TryGetComponent` | `has_node` | — | `this.hasComponent(Shield)`, `GameObject.hasComponent(other, Shield)` |
 | What is that object? | `CompareTag`, `is` | `is_in_group`, `is` | `instanceof` | `this.is(Coin)`, `GameObject.is(other, Coin)` (subclasses count) |
@@ -50,7 +53,7 @@ What follows from that:
 | Sprite animation | Animator | `AnimationPlayer` | `anims.play` | `setSpritesheet('hero')`, `setAnimation('run', loop)`, `setAnimationSpeed(0.25)`, `onAnimationEnd(name)` |
 | Flip | `flipX` | `flip_h` | `setFlipX` | `this.flipX = true`, `this.setFlip(x, y)` |
 | Size | `transform.localScale` | `scale` | `setDisplaySize` | `this.setDisplaySize(w, h)`, `this.setScale(sx, sy)`; `this.collider.fitToSprite()` |
-| Load a level | `SceneManager.LoadScene` | `change_scene_to` | `this.scene.start(key, data)` | `game.loadScene(url, { data })`; the scene gets `create(data)` |
+| Load a level | `SceneManager.LoadScene` | `change_scene_to` | `this.scene.start(key, data)` | `game.loadScene('levels/1-2.scene.json', { data })`; the scene gets `create(data)`. Another level of the running scene class is a fast swap ([SCENE_FILES.md](./SCENE_FILES.md#changing-level)) |
 | Keep data across levels | `DontDestroyOnLoad` | autoload | registry | `loadScene(url, { data })`, or plain JS module state on the main thread |
 | Save the game | your serializer | `ConfigFile` | `localStorage` | `static serializable = true` + `scene.saveGame(slot)`; scene state in `onSaveGame()` ([SAVE_GAME.md](./SAVE_GAME.md)) |
 | Slow motion / pause | `Time.timeScale` | `Engine.time_scale` | `timeScale` | `Time.scale = 0.25`; `game.pause()` freezes everything |
@@ -64,6 +67,7 @@ What follows from that:
 
 - **Tag components gate callbacks.** `onCollisionEnter` runs only for classes that list `CollisionListener` (`onScreenEnter` needs `CameraInOutListener`, `onJointBreak` needs `JointBreakListener`). The scene warns at load when a hook has no tag.
 - **An empty `tick() {}` still counts.** The logic worker visits every entity of the type each frame. Leave `tick` out of entities that do nothing per frame.
+- **Another level of the running scene keeps the scene object.** Its constructor does not run again, so a field it set keeps the last level's value: set per-level state in `create()` ([SCENE_FILES.md](./SCENE_FILES.md#what-a-level-change-clears)).
 - **A spawn from the scene is live next frame.** `Enemy.spawn(…)` returns the Enemy at once, but a logic worker sets it up (`onSpawned`) on its next frame and overwrites what you wrote to it before. Pass the setup in the config, which `onSpawned(config)` receives: `Enemy.spawn({ x, y, hp: 3 })`. The same holds for a class pinned to another logic worker.
 - **Animation speed is frames per 1/60 s.** A spawn plays at `0.2` (12 fps); `setAnimationSpeed(fps / 60)` changes it, and `0` holds the current frame.
 - **Animations advance while drawn.** An off-screen animation waits, and so does its `onAnimationEnd`.

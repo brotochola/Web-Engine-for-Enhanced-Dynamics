@@ -945,7 +945,15 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   the page); a file that does not load is reported and the scene runs on (the file is read
   before anything is torn down); a busy engine falls back to the page reload. Done before
   ED-37.
-- [ ] **ED-1 User guide** `docs/guide/SCENE_FILES.md`, covering:
+- [x] **ED-1 User guide** `docs/guide/SCENE_FILES.md`. Done 2026-10-26, with what goes where,
+  the kinds as a table, a `Guard` example of entity, points and enum params, the platformer's
+  goal for changing level, the full-load reasons as the console prints them, and what a swap
+  keeps (the scene object, the workers' modules, the pooled objects).
+  `demos/tests/sceneFilesGuide.test.js` runs it: code quoted from the demo must match its
+  file, the other examples are evaluated and run, and the kinds table, the debug warning and
+  the full-load reasons are checked against the engine. Linked from the guide's README and
+  `COMING_FROM.md` (rows for a level, per-object settings and `getByName`; a surprise: the
+  scene object outlives a level). It was to cover:
   - the scene class and the scene file;
   - the rule of thumb;
   - format 1;
