@@ -36,6 +36,8 @@ export class Selection {
     this._panel = null;
     this._title = null;
     this._detail = null;
+    this._nameRow = null;
+    this._nameInput = null;
     this._fields = null;
     this._classNameOf = (entityType) => debugUI.tools._classNameForType(entityType);
     this._hooks = {
@@ -115,10 +117,12 @@ export class Selection {
       this._detail.style.color = '#888';
     }
     const found = this.authored ? recordOf(scene, this.name) : null;
+    this._nameRow.style.display = found === null ? 'none' : 'flex';
     if (found === null) {
       this._fields.textContent = '';
       return;
     }
+    this._nameInput.value = this.name;
     buildParamFields(this._fields, paramsOf(scene, found.record), found.record.config || {}, this._hooks);
   }
 
@@ -128,9 +132,26 @@ export class Selection {
     this._title.style.cssText = 'color:#fff;font-weight:bold;margin-bottom:4px';
     this._detail = document.createElement('div');
     this._detail.style.cssText = 'font-size:12px;margin-bottom:6px';
+    // The name in the file: renaming keeps names unique and follows the entity params that name it (ED-11).
+    this._nameRow = document.createElement('div');
+    this._nameRow.style.cssText = 'display:flex;align-items:center;gap:6px;margin-bottom:6px';
+    const nameLabel = document.createElement('span');
+    nameLabel.textContent = 'Name';
+    nameLabel.style.cssText = 'font-size:11px;color:#ccc;width:84px;flex:none';
+    this._nameInput = document.createElement('input');
+    this._nameInput.type = 'text';
+    this._nameInput.style.cssText =
+      'flex:1;min-width:0;font-size:11px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;' +
+      'border:1px solid rgba(255,255,255,0.3);border-radius:3px';
+    this._nameInput.onchange = () => {
+      if (!this.editor.renameSelected(this._nameInput.value)) this._nameInput.value = this.name;
+    };
+    this._nameRow.appendChild(nameLabel);
+    this._nameRow.appendChild(this._nameInput);
     this._fields = document.createElement('div');
     panel.body.appendChild(this._title);
     panel.body.appendChild(this._detail);
+    panel.body.appendChild(this._nameRow);
     panel.body.appendChild(this._fields);
     panel.mount();
     this._panel = panel;

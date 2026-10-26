@@ -27,9 +27,23 @@ import { Camera } from '../../camera.js';
 import { Mouse } from '../../mouse.js';
 import { saveSceneFile } from './sceneFileStore.js';
 import { Selection } from './selection.js';
-import { MoveTool, SNAP_STEPS } from './moveTool.js';
+import { MoveTool, SNAP_STEPS, snapTo } from './moveTool.js';
 import { History } from './history.js';
-import { editPlaced, restorePlaced } from './sceneDocument.js';
+import { Palette } from './palette.js';
+import {
+  editPlaced,
+  restorePlaced,
+  recordOf,
+  classNamed,
+  indexOfName,
+  editorIdOf,
+  withEditorId,
+  nameOfEditorId,
+  uniqueName,
+  addPlaced,
+  removePlaced,
+  renamePlaced,
+} from './sceneDocument.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -47,6 +61,9 @@ export class EditMode {
     this.selection.editor = this;
     this.move = new MoveTool(this.selection);
     this.history = new History();
+    this.palette = new Palette(this);
+    /** The class each click on the view places (the palette's button), or null. */
+    this.placing = null;
 
     // What entering found, put back on leaving.
     this._savedTimeScale = NaN;
@@ -73,7 +90,8 @@ export class EditMode {
       if (e.target !== this.debugUI.gameEngine?.canvas) return;
       if (e.buttons === SELECT_BUTTON) {
         // The engine's canvas listener ran first: Mouse holds this point in the world.
-        this.move.press(Mouse.x, Mouse.y, e.clientX, e.clientY);
+        if (this.placing !== null) this.place(this.placing, Mouse.x, Mouse.y);
+        else this.move.press(Mouse.x, Mouse.y, e.clientX, e.clientY);
         return;
       }
       if ((e.buttons & PAN_BUTTONS) === 0) return;
@@ -118,6 +136,7 @@ export class EditMode {
     debugUI.tools.deactivateAll();
     this._hold();
     this._listen(true);
+    this.palette.show();
     this._changed();
   }
 
@@ -126,6 +145,8 @@ export class EditMode {
     this.active = false;
     this._listen(false);
     this._panPointer = -1;
+    this.placing = null;
+    this.palette.hide();
     this.move.cancel();
     this.selection.clear();
     this._setStatus('', false);
@@ -144,15 +165,21 @@ export class EditMode {
    */
   onKey(e) {
     if (e.key === 'Escape') {
-      if (this.selection.index >= 0) this.selection.clear();
+      if (this.placing !== null) this.startPlacing(this.placing);
+      else if (this.selection.index >= 0) this.selection.clear();
       else this.exit();
       return true;
     }
+    if (e.key === 'Delete' || (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey)) return this.deleteSelected();
     if (e.ctrlKey || e.metaKey) {
       switch (e.key) {
         case 's':
         case 'S':
           this.save();
+          return true;
+        case 'd':
+        case 'D':
+          this.duplicateSelected();
           return true;
         case 'z':
         case 'Z':
@@ -205,18 +232,148 @@ export class EditMode {
   editSelected(label, write) {
     const selection = this.selection;
     if (!selection.authored || this.move.dragging) return -1;
-    const name = selection.name;
-    const result = editPlaced(this.debugUI.scene, name, write);
+    const scene = this.debugUI.scene;
+    const found = recordOf(scene, selection.name);
+    if (found === null) return -1;
+    // Undo finds the record by its editor id: it may be renamed, or removed and put back, by then.
+    const id = editorIdOf(found.record);
+    const result = editPlaced(scene, selection.name, write);
     if (result === null) return -1;
     const { before, after } = result;
     this.history.push({
       id: 0,
       label,
-      undo: () => this._showRestored(restorePlaced(this.debugUI.scene, name, before)),
-      redo: () => this._showRestored(restorePlaced(this.debugUI.scene, name, after)),
+      undo: () => this._restore(id, before),
+      redo: () => this._restore(id, after),
     });
     this._showRestored(result.index);
     return result.index;
+  }
+
+  _restore(id, snapshot) {
+    const scene = this.debugUI.scene;
+    const name = nameOfEditorId(scene, id);
+    this._showRestored(name === null ? -1 : restorePlaced(scene, name, snapshot));
+  }
+
+  /** The palette's button: each click on the view places one of `className`, until Esc or the button again. */
+  startPlacing(className) {
+    this.placing = this.placing === className ? null : className;
+    if (this.placing !== null) this.selection.clear();
+    this.palette.refresh();
+    this.debugUI.tools.updateToolIndicator();
+  }
+
+  /**
+   * Place a new entity of `className` at a world point, on the grid, under a name the file does not use.
+   * @returns {number} its index, or -1
+   */
+  place(className, x, y) {
+    const scene = this.debugUI.scene;
+    if (!scene?.sceneFile) {
+      this._setStatus('This scene was not loaded from a scene file: there is no file to place into', true);
+      return -1;
+    }
+    const step = this.move.snap;
+    const record = { name: uniqueName(scene, className), class: className, x: snapTo(x, step), y: snapTo(y, step) };
+    return this._add(record, -1, `place ${record.name}`);
+  }
+
+  /** Ctrl+D: a copy of the selected placed entity, a grid step (at least 16 px) down and to the right, named anew. */
+  duplicateSelected() {
+    const selection = this.selection;
+    if (!selection.authored) return -1;
+    const scene = this.debugUI.scene;
+    const found = recordOf(scene, selection.name);
+    if (found === null) return -1;
+    const offset = Math.max(this.move.snap, 16);
+    const record = structuredClone(found.record);
+    record.name = uniqueName(scene, found.record.name);
+    record.x = found.record.x + offset;
+    record.y = found.record.y + offset;
+    return this._add(record, found.position + 1, `duplicate ${selection.name}`);
+  }
+
+  /** Add a record at `position` and spawn it; kept for undo. A full pool says which count to raise. */
+  _add(record, position, label) {
+    const scene = this.debugUI.scene;
+    const index = addPlaced(scene, record, position);
+    if (index < 0) {
+      const pool = classNamed(scene, record.class)?.poolSize | 0;
+      this._setStatus(`${record.class}: its pool of ${pool} is full. Raise its count in ${scene.constructor.name}.entities`, true);
+      return -1;
+    }
+    const id = editorIdOf(record);
+    const at = scene.sceneFile.entities.indexOf(record);
+    const copy = structuredClone(record);
+    this.history.push({
+      id: 0,
+      label,
+      undo: () => this._remove(id),
+      redo: () => this._showRestored(addPlaced(this.debugUI.scene, withEditorId(structuredClone(copy), id), at)),
+    });
+    this._showRestored(index);
+    return index;
+  }
+
+  /** Del: take the selected placed entity out of the file; kept for undo. */
+  deleteSelected() {
+    const selection = this.selection;
+    if (!selection.authored || this.move.dragging) return false;
+    const scene = this.debugUI.scene;
+    const found = recordOf(scene, selection.name);
+    if (found === null) return false;
+    const id = editorIdOf(found.record);
+    const copy = structuredClone(found.record);
+    const at = found.position;
+    this.history.push({
+      id: 0,
+      label: `delete ${selection.name}`,
+      undo: () => this._showRestored(addPlaced(this.debugUI.scene, withEditorId(structuredClone(copy), id), at)),
+      redo: () => this._remove(id),
+    });
+    this._remove(id);
+    return true;
+  }
+
+  _remove(id) {
+    const scene = this.debugUI.scene;
+    const name = nameOfEditorId(scene, id);
+    if (name !== null) removePlaced(scene, name);
+    this._showRestored(-1);
+  }
+
+  /**
+   * Rename the selected placed entity, and every entity param that names it; kept for undo.
+   * @returns {boolean} false when the name is empty or taken
+   */
+  renameSelected(to) {
+    const selection = this.selection;
+    if (!selection.authored) return false;
+    const scene = this.debugUI.scene;
+    const from = selection.name;
+    const found = recordOf(scene, from);
+    if (found === null) return false;
+    if (!renamePlaced(scene, from, to)) {
+      this._setStatus(typeof to !== 'string' || to.trim() === '' ? 'A name cannot be empty' : `The file already has a ${to}`, true);
+      return false;
+    }
+    const id = editorIdOf(found.record);
+    this.history.push({
+      id: 0,
+      label: `rename ${from} to ${to}`,
+      undo: () => this._renameTo(id, from),
+      redo: () => this._renameTo(id, to),
+    });
+    this._showRestored(indexOfName(scene, to));
+    return true;
+  }
+
+  _renameTo(id, name) {
+    const scene = this.debugUI.scene;
+    const current = nameOfEditorId(scene, id);
+    if (current !== null && current !== name) renamePlaced(scene, current, name);
+    this._showRestored(indexOfName(scene, name));
   }
 
   undo() {
@@ -231,10 +388,11 @@ export class EditMode {
     this._setStatus(change === null ? 'Nothing to redo' : `Redid: ${change.label}`, false);
   }
 
-  /** Select the entity a change respawned (or nothing, when its pool was full). */
+  /** Select the entity a change respawned (or nothing: deleted, or its pool was full), and count the palette again. */
   _showRestored(index) {
     if (index >= 0) this.selection.select(index);
     else this.selection.clear();
+    this.palette.refresh();
     this.debugUI.tools.updateToolIndicator();
   }
 
@@ -290,6 +448,7 @@ export class EditMode {
     this.move.cancel();
     this.selection.clear();
     this.history.clear(); // another document
+    this.palette.refresh();
     if (!this.active) return;
     this._savedTimeScale = Time.scale;
     this._savedFree = Camera._free;

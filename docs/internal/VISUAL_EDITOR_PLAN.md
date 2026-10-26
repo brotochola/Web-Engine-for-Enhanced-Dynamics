@@ -1071,9 +1071,21 @@ reload, and it is still there.
     A fast swap or a full load starts a new stack. Add, remove and rename (ED-11) will push
     their own undo and redo. `editorHistory.test.js`, and undo and redo through the panel
     in `editorParams.test.js`.
-- [ ] **ED-11 Palette** from `static entities`, with pool use per class for the open
+- [x] **ED-11 Palette** from `static entities`, with pool use per class for the open
   file. Click to place at the cursor; Ctrl+D duplicates (new name); Del deletes;
   renaming keeps names unique.
+  - Done 2026-10-26 (`editor/palette.js`; `sceneDocument.js` add, remove, rename). The
+    palette is a panel shown in edit mode, with a row per class (the engine's `Flash`
+    left out) reading placed in the file against the pool, red when full. Its `+` puts the
+    view in place mode: each click places one at the cursor, on the grid, under the
+    smallest free name (`Platform13`), until Esc or the button again. Ctrl+D copies the
+    selection a grid step (at least 16 px) away, after it in the file. Del takes it out:
+    entities that named it respawn without it, and their params keep the name for an undo.
+    The Editor panel's Name field renames, refusing an empty or taken name, and the entity
+    params that named it follow. A full pool places nothing and says which count to raise.
+    Each is one undo. Undo finds its record by an editor id: a non-enumerable property, so
+    the file never holds it and a copy gets it back by hand. A rename or a delete in between
+    loses nothing. `editorPalette.test.js`.
 - [ ] **ED-14 Time controls:** speed slider (`Time.scale`), pause, step. The worker
   `step` message already runs one frame whatever the pause state is.
 - [ ] **ED-38 Scene-file picker:** list `levels/*.scene.json` (D7), open with

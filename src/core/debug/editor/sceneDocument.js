@@ -137,10 +137,108 @@ export const setConfig = (scene, name, config) => editPlaced(scene, name, (recor
 export function respawnPlaced(scene, name) {
   const index = respawnOne(scene, name);
   if (index < 0) return index;
+  respawnReferrers(scene, name);
+  return index;
+}
+
+/** Respawn every placed entity whose entity params name `name`: they hold its old index, or none. */
+function respawnReferrers(scene, name) {
   for (const other of scene.sceneFile.entities) {
     if (other.name !== name && refersTo(scene, other, name)) respawnOne(scene, other.name);
   }
+}
+
+// ---- adding, removing and renaming placed entities (ED-11) ----
+
+/**
+ * A record's editor id: made once, kept on the record as a property the file never holds (not enumerable), so the
+ * history finds a record after it was renamed, or removed and put back (`withEditorId` on the copy).
+ */
+let nextEditorId = 1;
+export function editorIdOf(record) {
+  if (!Object.prototype.hasOwnProperty.call(record, '_editorId')) withEditorId(record, nextEditorId++);
+  return record._editorId;
+}
+
+/** Give a record (a copy put back by undo) its editor id. */
+export function withEditorId(record, id) {
+  Object.defineProperty(record, '_editorId', { value: id, enumerable: false, configurable: true });
+  return record;
+}
+
+/** The current name of the record with that editor id, or null when the file has none. */
+export function nameOfEditorId(scene, id) {
+  for (const record of scene?.sceneFile?.entities || []) if (record._editorId === id) return record.name;
+  return null;
+}
+
+/** A name the file does not use: `base` without its trailing digits, then the smallest free number (Platform13). */
+export function uniqueName(scene, base) {
+  const used = new Set(scene.sceneFile.entities.map((e) => e.name));
+  const stem = base.replace(/\d+$/, '') || base;
+  for (let n = 1; ; n++) {
+    const name = `${stem}${n}`;
+    if (!used.has(name)) return name;
+  }
+}
+
+/**
+ * Put a record into the file at `position` (the end when -1) and spawn it. Entities that already name it (an undone
+ * delete) respawn with it.
+ * @returns {number} its index, or -1: its pool is full, and the record is not added
+ */
+export function addPlaced(scene, record, position = -1) {
+  const entities = scene.sceneFile.entities;
+  const at = position < 0 || position > entities.length ? entities.length : position;
+  entities.splice(at, 0, record);
+  const index = respawnOne(scene, record.name);
+  if (index < 0) {
+    entities.splice(at, 1);
+    return -1;
+  }
+  respawnReferrers(scene, record.name);
   return index;
+}
+
+/**
+ * Take a record out of the file and despawn its entity. Entities that named it respawn without it (their params
+ * still hold the name: a later add puts it back).
+ * @returns {{ record: object, position: number }|null}
+ */
+export function removePlaced(scene, name) {
+  const found = recordOf(scene, name);
+  if (found === null) return null;
+  const index = indexOfName(scene, name);
+  const EntityClass = classNamed(scene, found.record.class);
+  if (index >= 0 && EntityClass !== undefined) EntityClass.despawn(index);
+  scene._namedEntities.delete(name);
+  scene.sceneFile.entities.splice(found.position, 1);
+  respawnReferrers(scene, name);
+  return found;
+}
+
+/**
+ * Rename a placed entity, and every entity param that names it; the entity itself does not change.
+ * @returns {boolean} false when `to` is empty, taken, or `from` is not in the file
+ */
+export function renamePlaced(scene, from, to) {
+  if (typeof to !== 'string' || to.trim() === '' || to === from || recordOf(scene, to) !== null) return false;
+  const found = recordOf(scene, from);
+  if (found === null) return false;
+  found.record.name = to;
+  const packed = scene._namedEntities.get(from);
+  scene._namedEntities.delete(from);
+  if (packed !== undefined) scene._namedEntities.set(to, packed);
+  for (const record of scene.sceneFile.entities) {
+    const config = record.config;
+    const description = config ? paramsOf(scene, record) : null;
+    if (description === null) continue;
+    for (let k = 0; k < description.keys.length; k++) {
+      const key = description.keys[k];
+      if (description.kinds[k] === KIND_ENTITY && config[key] === from) config[key] = to;
+    }
+  }
+  return true;
 }
 
 function respawnOne(scene, name) {

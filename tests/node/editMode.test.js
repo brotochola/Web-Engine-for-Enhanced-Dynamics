@@ -53,6 +53,8 @@ function setup() {
     _ensureTickLoop: () => calls.push('tick'),
   };
   debugUI.editMode = new EditMode(debugUI);
+  // The palette is a DOM panel (editorPalette.test.js has it).
+  debugUI.editMode.palette = { show: () => calls.push('palette'), hide() {}, refresh() {}, destroy() {} };
   return { editMode: debugUI.editMode, debugUI, canvas, calls };
 }
 
@@ -74,7 +76,7 @@ test('entering holds the world, the camera and the input; leaving puts them back
     assert.equal(Camera._free, true);
     assert.equal(Mouse.isEditModeActive, true);
     assert.equal(Mouse.isDebugToolActive, true);
-    assert.deepEqual(calls, ['tools off', 'indicator', 'button', 'tick'], 'other tools off, the UI told');
+    assert.deepEqual(calls, ['tools off', 'palette', 'indicator', 'button', 'tick'], 'other tools off, the palette shown, the UI told');
     assert.deepEqual([...document.listeners.keys()].sort(), ['contextmenu', 'pointerdown', 'pointermove', 'pointerup']);
 
     editMode.exit();

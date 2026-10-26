@@ -234,6 +234,7 @@ export class DebugUI {
   destroy() {
     this.editMode.exit();
     this.editMode.selection.destroy();
+    this.editMode.palette.destroy();
     this.stop();
     this.canvas.destroy();
     this.tools.destroy();
