@@ -28,6 +28,7 @@ A new project: `npm create weed-game my-game`, then `npm install` and `npm run d
 | [`LAYER_ROUTING.md`](./LAYER_ROUTING.md) | Render layers, backgrounds, custom layer rules |
 | [`COMPUTE_LAYERS.md`](./COMPUTE_LAYERS.md) | WebGPU compute layers, body pack, pass layouts |
 | [`PARTICLES.md`](./PARTICLES.md) | ParticleEmitter modes, physics versus view, decals |
+| [`GPU_PARTICLES.md`](./GPU_PARTICLES.md) | `emitGpu`: particles computed in the vertex shader, GPU particle layers |
 | [`PARTICLE_LIGHTS.md`](./PARTICLE_LIGHTS.md) | Opt-in particle lights, height pose, fill-rate cap |
 | [`FLASHES.md`](./FLASHES.md) | `Flash.spawn`, `castShadows`, the light budget |
 | [`TILEMAP.md`](./TILEMAP.md) | Tiled JSON, shared tile data, queries, GID page meshes |

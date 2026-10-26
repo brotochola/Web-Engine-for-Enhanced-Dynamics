@@ -63,6 +63,8 @@ export const LAYER_KIND: Readonly<{
   DENSITY: 'density';
   COMPUTE: 'compute';
   MESH: 'mesh';
+  /** Particles computed in the vertex shader ({@link ParticleEmitter.emitGpu}). */
+  GPU_PARTICLES: 'gpuParticles';
   DECALS: 'decals';
   SHADOWS: 'shadows';
   LIGHTING: 'lighting';
@@ -2503,8 +2505,21 @@ export interface LayerUniformDef {
 
 /** Per-layer entry in scene `config.layers` (custom layers). */
 export interface LayerSceneConfigEntry {
+  /** {@link LAYER_KIND}; omitted = sprites (or density / compute from `shader`). */
+  kind?: string;
   zIndex?: number;
   blendMode?: number;
+  /** `kind: LAYER_KIND.GPU_PARTICLES`: records across all writer rings (each ring a power of two). Default 100000. */
+  maxParticles?: number;
+  /** `kind: LAYER_KIND.GPU_PARTICLES`: weights of the writer rings' shares of `maxParticles` (default 1 each). */
+  gpuRings?: { main?: number; logic?: number; particle?: number };
+  /**
+   * `kind: LAYER_KIND.GPU_PARTICLES` with `renderer.ySort`: every emitGpu call joins the entities' y-sort painter as
+   * one item at its ground y (`sortY`), so trees in front of it hide it. Off: the layer draws at its zIndex.
+   */
+  sortWithEntities?: boolean;
+  /** `kind: LAYER_KIND.GPU_PARTICLES`: snap each particle's center to the pixel grid. */
+  pixelSnap?: boolean;
   ySorting?: boolean;
   resolution?: number;
   /** Pixi upsample filter when resolution &lt; 1. Default {@link LAYER_SCALE_MODE}.LINEAR. */
@@ -3767,6 +3782,49 @@ export declare class ParticleEmitter extends SharedAtomicPool {
   static emitAlongLine(
     config: Omit<ParticleEmitConfig, 'x' | 'y'> & { x0: number; y0: number; x1: number; y1: number },
   ): number;
+  /**
+   * GPU particles into a `LAYER_KIND.GPU_PARTICLES` layer: written once, computed in the vertex shader after that.
+   * No CPU cost per frame; nothing reads them back (no collisions, decals or floor) and they are not saved. From the
+   * main thread, a logic worker or the particle worker. Returns the particles written.
+   */
+  static emitGpu(config: ParticleGpuEmitConfig): number;
+  static reset(): void;
+}
+
+/** {@link ParticleEmitter.emitGpu}: the closed-form keys of {@link ParticleEmitConfig}, plus the GPU ones. */
+export interface ParticleGpuEmitConfig extends Omit<ParticleEmitConfig,
+  'fadeOnTheFloor' | 'stayOnTheFloor' | 'despawnOnGroundContact' | 'bounces' | 'bounciness' | 'bounceFriction'
+  | 'layer' | 'layers' | 'renderOnly' | 'lightIntensity' | 'blendMode' | 'rotC' | 'rotS' | 'gravity'> {
+  /** A `LAYER_KIND.GPU_PARTICLES` layer's name or id. */
+  layer: string | number;
+  /** emit's height model: the ground point moves, `z` / `vz` / `gravity` act on the height (`z < 0` is up), drawn at `y + z`. No floor: `z` stops at 0. Default false (emitFlat's model: gravity on `vy`). */
+  heighted?: boolean;
+  /** px/frame². Default 0.15 heighted, 0 flat (as emit / emitFlat). */
+  gravity?: number;
+  /** Air drag, 1/s: velocities decay as e^(-drag·t). Default 0. */
+  drag?: WeedNumOrRange;
+  /** Each particle is born this many ms after the call. Default 0. */
+  delay?: WeedNumOrRange;
+  /** The group's ground y among the entities (`sortWithEntities`). Default: the middle of `y`. */
+  sortY?: number;
+}
+
+/** The rings behind `LAYER_KIND.GPU_PARTICLES` layers (gpuParticles.js); emit with {@link ParticleEmitter.emitGpu}. */
+export declare class GpuParticles {
+  /** This thread's ring in every GPU layer: 0 main, 1..L logic workers, L+1 the particle worker; -1 cannot emit. */
+  static writerSlot: number;
+  static writers: number;
+  static readonly particleWorkerSlot: number;
+  static readonly layers: ReadonlyArray<object | null>;
+  static layerOf(layer: string | number): object | null;
+  /** Per writer ring: capacity, records and groups ever published, and times live records were written over. */
+  static stats(layer: string | number): Array<{ capacity: number; published: number; groups: number; overflows: number }> | null;
+  /** Where record `slot` of writer ring `ring` is now, through an evaluator such as gpuParticleEval's. */
+  static evaluate(layer: string | number, ring: number, slot: number, evaluate: (rec: Float32Array, base: number, now: number) => object): object | null;
+  static emit(config: ParticleGpuEmitConfig): number;
+  static initializeFromConfig(layersConfig: Record<string, LayerSceneConfigEntry>, numberOfLogicWorkers?: number): typeof GpuParticles;
+  static getSerializableData(): { writers: number; layers: object[] };
+  static initializeFromBuffers(data: { writers: number; layers: object[] } | null | undefined): void;
   static reset(): void;
 }
 
@@ -4135,6 +4193,7 @@ export interface WeedNamespace extends WeedEnums {
   JointBreakListener: typeof JointBreakListener;
   Grab: typeof Grab;
   ParticleEmitter: typeof ParticleEmitter;
+  GpuParticles: typeof GpuParticles;
   LiquidFun: typeof LiquidFun;
   LIQUIDFUN_FLAGS: typeof LIQUIDFUN_FLAGS;
   LIQUIDFUN_GROUP_FLAGS: typeof LIQUIDFUN_GROUP_FLAGS;

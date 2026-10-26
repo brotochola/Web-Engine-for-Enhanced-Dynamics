@@ -79,6 +79,8 @@ import {
   isSpawnCommandRingBound,
 } from '../util/spawnCommandRing.js';
 import { collectInstanceFields, applyInstanceFields } from '../core/save/instanceFields.js';
+import { GpuParticles } from '../core/gpuParticles.js';
+import { gpuLogicWriterSlot } from '../util/gpuParticleLayout.js';
 
 /** This worker's instance of the entity at `index` (hot reload field carry). */
 function instanceAtIndex(index) {
@@ -306,6 +308,8 @@ class LogicWorker extends AbstractWorker {
   initialize(data) {
     // Set worker index for identification
     this.workerIndex = data.workerIndex || 0;
+    // This worker's ring in every GPU particle layer (ParticleEmitter.emitGpu).
+    GpuParticles.writerSlot = gpuLogicWriterSlot(this.workerIndex);
 
     // Initialize stats buffer for writing metrics (strided access for multi-worker)
     if (data.buffers.logicStats) {

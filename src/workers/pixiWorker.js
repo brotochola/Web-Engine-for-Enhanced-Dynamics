@@ -295,6 +295,10 @@ function sortPrefixByDistSq(arr, count) {
 }
 
 import { RENDERER_STATS, createStatsWriter } from '../util/workersUtils.js';
+import { Time } from '../core/timeScale.js';
+import { GpuParticles } from '../core/gpuParticles.js';
+import { GpuParticleLayerBatch, packAnimStartLookup } from '../render/gpuParticleBatch.js';
+import { installInstanceRangeDraw } from '../render/instanceRangeDraw.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -559,6 +563,14 @@ class PixiRenderer extends AbstractWorker {
     this._texLutSource = null;
     this._texLutRgba = null;
     this._texLutNeedsGpuUpload = false;
+    // GPU particle layers (LAYER_KIND.GPU_PARTICLES): animation index -> atlas lookup id, as RGBA32F (red).
+    this._gpuAnimStartSource = null;
+    this._gpuAnimStartRgba = new Float32Array(0);
+    this._gpuAnimStartWidth = 0;
+    this._gpuAnimStartHeight = 0;
+    /** @type {GpuParticleLayerBatch[]} */
+    this._gpuParticleBatches = [];
+    this._gpuParticleLiveRecords = 0;
     this._rqIdxEntity = null;
     this._rqIdxGlow = null;
     /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
@@ -1495,7 +1507,7 @@ class PixiRenderer extends AbstractWorker {
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (!cl.rt) {
-        const mesh = cl.worldMesh || cl.batch?.mesh || cl.fillBatch?.mesh;
+        const mesh = cl.worldMesh || cl.batch?.mesh || cl.fillBatch?.mesh || cl.gpu?.container;
         if (mesh) this._placeWorldCamera(mesh, zoom, cameraX, cameraY, rot);
         const uvMesh = cl.uvFillBatch?.mesh;
         if (uvMesh) this._placeWorldCamera(uvMesh, zoom, cameraX, cameraY, rot);
@@ -1929,6 +1941,7 @@ class PixiRenderer extends AbstractWorker {
     this._texLutSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
     this._texLutNeedsGpuUpload = true;
     this._uploadTexLutTexture();
+    this._rebuildGpuAnimStartLookup();
     const src = this._resolveAtlasSource();
     if (this.entitiesBatch) this.entitiesBatch.setAtlasSource(src);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
@@ -1939,8 +1952,55 @@ class PixiRenderer extends AbstractWorker {
       if (cl.batch) cl.batch.setAtlasSource(src);
       if (cl.fillBatch) cl.fillBatch.setAtlasSource(src);
       if (cl.uvFillBatch) cl.uvFillBatch.setAtlasSource(src);
+      if (cl.gpu) cl.gpu.setTextures(src, this._texLutSource, this._gpuAnimStartSource);
     }
     this._bindLutToBatches();
+  }
+
+  /**
+   * GPU particles store a texture as CPU particles do, an animation index; their vertex shader maps it to the
+   * atlas lookup's id through this table (animationFrameStart, 0 = the white circle, as the emit kernel does).
+   */
+  _rebuildGpuAnimStartLookup() {
+    if (!GpuParticles.layers.some(Boolean)) return;
+    const white = this.animationFrameStart?.[SpriteSheetRegistry.getTextureId('_whiteCircle')] ?? 0;
+    const packed = packAnimStartLookup(this.animationFrameStart || [], white);
+    this._gpuAnimStartRgba = packed.data;
+    this._gpuAnimStartWidth = packed.width;
+    this._gpuAnimStartHeight = packed.height;
+    this._gpuAnimStartSource = PIXI.TextureSource.from({
+      resource: packed.data,
+      width: packed.width,
+      height: packed.height,
+      format: 'rgba32float',
+      scaleMode: 'nearest',
+      addressMode: 'clamp-to-edge',
+      autoGenerateMipmaps: false,
+    });
+    this._gpuAnimStartSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
+    this._uploadGpuAnimStartLookup();
+  }
+
+  _uploadGpuAnimStartLookup() {
+    const source = this._gpuAnimStartSource;
+    if (!source) return;
+    if (this._useWebGpu) {
+      const renderer = this.pixiApp?.renderer;
+      if (!renderer?.gpu?.device) return;
+      writeRgba32Float(renderer, source, this._gpuAnimStartRgba, this._gpuAnimStartWidth, this._gpuAnimStartHeight, 'weed-gpu-anim-start');
+      return;
+    }
+    this._uploadRgba32FloatGl(source, this._gpuAnimStartRgba, this._gpuAnimStartWidth, this._gpuAnimStartHeight);
+  }
+
+  /** Every frame: new GPU particle records up, each ring's live window and clock set. */
+  updateGpuParticleLayers() {
+    const batches = this._gpuParticleBatches;
+    if (batches.length === 0) return;
+    const now = Time.simNowMs;
+    let live = 0;
+    for (let i = 0; i < batches.length; i++) live += batches[i].update(now);
+    this._gpuParticleLiveRecords = live;
   }
 
   _entityYSort() {
@@ -2338,6 +2398,7 @@ class PixiRenderer extends AbstractWorker {
       if (!consumedNewFrame) this.tickInterpolatedPose();
       this.ensureCameraBeforeFirstFrame();
       this.updateCameraTransform();
+      this.updateGpuParticleLayers();
       this.syncLayerAlphaFromSharedState();
       this.updateDecalTiles();
       if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
@@ -4920,6 +4981,49 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
+  /**
+   * A GPU particle layer's density pass: its meshes keep world positions, and the camera into the layer's RT is
+   * the render transform (as a MESH layer's fill).
+   */
+  _renderGpuParticlesToRt(cl) {
+    const container = cl.gpu.container;
+    container.x = 0;
+    container.y = 0;
+    container.rotation = 0;
+    container.pivot.set(0, 0);
+    if (container.scale.x !== 1 || container.scale.y !== 1) container.scale.set(1);
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = cl.gpu.liveRecords > 0 ? container : this._rtEmptyContainer;
+    rtOpts.target = cl.rt;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    rtOpts.transform = this._writeCameraRtTransform(this._meshRtTransform, cl.resolution || 1);
+    this._submitRender(rtOpts);
+    rtOpts.transform = null;
+  }
+
+  /** World px -> RT px of a viewport-sized layer RT at `resolution`, rotation included, into `mx`. */
+  _writeCameraRtTransform(mx, resolution) {
+    const z = this._renderZoom * resolution;
+    const rot = this._renderCameraRot || 0;
+    if (!rot) {
+      mx.set(z, 0, 0, z, -this._renderCameraX * z, -this._renderCameraY * z);
+      return mx;
+    }
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const a = z * c;
+    const b = z * s;
+    const cc = -z * s;
+    const d = z * c;
+    const focusX = this._renderCameraX + (this.canvasWidth || 0) / (2 * (this._renderZoom || 1));
+    const focusY = this._renderCameraY + (this.canvasHeight || 0) / (2 * (this._renderZoom || 1));
+    const screenCx = (this.canvasWidth || 0) * resolution * 0.5;
+    const screenCy = (this.canvasHeight || 0) * resolution * 0.5;
+    mx.set(a, b, cc, d, screenCx - a * focusX - cc * focusY, screenCy - b * focusX - d * focusY);
+    return mx;
+  }
+
   _renderMeshFillToRt(cl, fillMesh) {
     const z = this._renderZoom * (cl.resolution || 1);
     const mx = this._meshRtTransform;
@@ -5921,6 +6025,28 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         );
       }
     }
+    // GPU particle layers (LAYER_KIND.GPU_PARTICLES): their programs, only in a scene that has one.
+    if (data.gpuParticles?.layers?.length) {
+      if (this._useWebGpu) {
+        shaderFetches.push(
+          fetchEngineShader('/src/shaders/gpuParticle.wgsl').then((s) => {
+            sh.gpuParticle = s;
+          })
+        );
+      } else {
+        shaderFetches.push(
+          fetchEngineShader('/src/shaders/gpuParticle.vert.glsl').then((s) => {
+            sh.gpuParticleVert = s;
+          }),
+          fetchEngineShader('/src/shaders/gpuParticle.frag.glsl').then((s) => {
+            sh.gpuParticleFrag = s;
+          }),
+          fetchEngineShader('/src/shaders/gpuParticleAdditive.frag.glsl').then((s) => {
+            sh.gpuParticleFragAdd = s;
+          })
+        );
+      }
+    }
     await Promise.all(shaderFetches);
     this._initTilemapGidProgram();
 
@@ -6579,6 +6705,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < prev.length; i++) {
       const old = prev[i];
       if (old && old.worldMesh) old.worldMesh.destroy(true);
+      if (old && old.gpu) old.gpu.destroy();
       const sources = old && old.sharedSources;
       if (!sources) continue;
       const keys = Object.keys(sources);
@@ -6589,6 +6716,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     this._destroyAllCustomLayerCompute();
     this._customLayers = {};
+    this._gpuParticleBatches = [];
     await this._bindMeshMemory(data);
     if (!data.layerData) return;
 
@@ -6614,12 +6742,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const isCompute = !!config.compute;
       const isMesh = config.kind === LAYER_KIND.MESH;
       const isWorldRect = !!(config.worldRect && config.shaderTextures && config.shaderTextures.length);
-      if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh && !isWorldRect) continue;
+      const isGpu = config.kind === LAYER_KIND.GPU_PARTICLES;
+      if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh && !isWorldRect && !isGpu) continue;
 
       const layerId = config.id;
       const layerName = config.name;
       const lrq = queues[layerId];
-      if (!isLfDensity && !isCompute && !isMesh && !isWorldRect && !lrq) continue;
+      if (!isLfDensity && !isCompute && !isMesh && !isWorldRect && !isGpu && !lrq) continue;
 
       const layerObj = Layer.getById(layerId);
       if (!layerObj) continue;
@@ -6702,6 +6831,31 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         batch.mesh.blendMode = containerBlend;
       }
 
+      // GPU particles: one instanced mesh per writer ring, evaluated in the vertex shader (gpuParticleBatch.js).
+      let gpuBatch = null;
+      if (isGpu) {
+        const info = GpuParticles.layerOf(layerId);
+        if (!info) continue;
+        installInstanceRangeDraw(this.pixiApp.renderer, this._useWebGpu);
+        if (!this._gpuAnimStartSource) this._rebuildGpuAnimStartLookup();
+        const looks = !!(hasShader && config.shaderFragment);
+        const blend = looks ? containerBlend : layerObj.blendMode;
+        gpuBatch = new GpuParticleLayerBatch({
+          info,
+          useWebGpu: this._useWebGpu,
+          shaders: this._engineShaders,
+          atlasSource: this._resolveAtlasSource(),
+          lutSource: this._texLutSource,
+          animStartSource: this._gpuAnimStartSource,
+          blendMode: blend,
+          additive: !looks && blend === 'add',
+          pixelSnap: !!config.gpuParticles?.pixelSnap,
+          label: `gpu-particles-${layerName}`,
+        });
+        gpuBatch.container.blendMode = blend;
+        this._gpuParticleBatches.push(gpuBatch);
+      }
+
       let splatBatch = null;
       if (isLfDensity) {
         splatBatch = new LiquidFunDensitySplat({
@@ -6751,6 +6905,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         meshLook: false,
         compute: null,
         lookSource: null,
+        // LAYER_KIND.GPU_PARTICLES: the layer's GpuParticleLayerBatch, or null.
+        gpu: gpuBatch,
       };
 
       if (isCompute) {
@@ -6889,6 +7045,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._registerLayerDisplayObject(layerName, batch.mesh, true);
         this.pixiApp.stage.addChild(batch.mesh);
         debugWorkerLog(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
+      } else if (gpuBatch) {
+        // The layer's own blend mode on the container: its meshes draw with it (Pixi's group blend).
+        this._registerLayerDisplayObject(layerName, gpuBatch.container, false);
+        this.pixiApp.stage.addChild(gpuBatch.container);
+        debugWorkerLog(`PIXI WORKER: GPU particle layer "${layerName}" initialized (${gpuBatch.rings.length} rings)`);
       } else {
         console.warn(`PIXI WORKER: Layer "${layerName}" skipped (no shader RT and no sprite batch)`);
         continue;
@@ -6985,6 +7146,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         cl.splatBatch.upload(views, so);
         densityMesh = cl.splatBatch.mesh;
         cl.prevCount = views?.count ? views.count[0] | 0 : 0;
+      } else if (cl.gpu) {
+        // Updated this frame by updateGpuParticleLayers; with a look shader, its density pass is drawn here.
+        if (cl.rt) {
+          this._renderGpuParticlesToRt(cl);
+          if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+            rtOpts.transform = null;
+            rtOpts.container = cl.shaderMesh;
+            rtOpts.target = cl.rtOut;
+            rtOpts.clear = true;
+            rtOpts.clearColor = this._clearTransparent;
+            this._submitRender(rtOpts);
+          }
+        }
+        continue;
       } else if (cl.batch && cl.readRef) {
         const ref = cl.readRef;
         const count = ref.count[0];

@@ -122,6 +122,8 @@ export const LAYER_KIND = Object.freeze({
   DENSITY: 'density',
   COMPUTE: 'compute',
   MESH: 'mesh',
+  /** Particles computed in the vertex shader (ParticleEmitter.emitGpu). No render queue: rings per writer thread. */
+  GPU_PARTICLES: 'gpuParticles',
   DECALS: 'decals',
   SHADOWS: 'shadows',
   LIGHTING: 'lighting',
@@ -135,6 +137,7 @@ const SCENERY_KIND_SET = new Set([
 ]);
 
 const SKIP_SUBSCRIBE_KIND_SET = new Set([
+  LAYER_KIND.GPU_PARTICLES,
   LAYER_KIND.COVER,
   LAYER_KIND.STATIC,
   LAYER_KIND.TILING,

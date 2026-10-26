@@ -67,6 +67,7 @@ import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
 import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from '../core/particleEmitter.js';
+import { GpuParticles } from '../core/gpuParticles.js';
 import { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from '../core/liquidFun.js';
 import { Box2d } from '../core/box2d.js';
 import { Decal } from '../core/decal.js';
@@ -197,6 +198,7 @@ export const WORKER_WEED = Object.freeze({
   JointBreakListener,
   Grab,
   ParticleEmitter,
+  GpuParticles,
   LiquidFun,
   LIQUIDFUN_FLAGS,
   LIQUIDFUN_GROUP_FLAGS,

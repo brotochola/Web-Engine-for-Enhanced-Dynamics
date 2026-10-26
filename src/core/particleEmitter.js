@@ -47,6 +47,7 @@ import { CAMERA_TYPES, PARTICLE_EASE } from '../util/configDefaults.js';
 import { randomRange, randomColor, rng } from '../util/utils.js';
 import { Layer } from './layer.js';
 import { syncParticleFeed } from '../util/layerFeed.js';
+import { GpuParticles } from './gpuParticles.js';
 import {
   PARTICLE_EASE_SHIFT,
   PARTICLE_TWEEN,
@@ -160,6 +161,20 @@ export class ParticleEmitter extends SharedAtomicPool {
     const o = this._flatOverrides;
     o.gravity = config.gravity ?? 0;
     return this._spawn(config, o);
+  }
+
+  /**
+   * GPU particles: written once into a LAYER_KIND.GPU_PARTICLES layer and computed in the vertex shader from then
+   * on. No CPU cost per frame, and no 65 535 ceiling; in exchange nothing reads them back (no collisions, no
+   * decals, no floor), and they are not saved. `layer` names the GPU layer. The keys of emit / emitFlat where the
+   * motion has a closed form, plus `heighted` (emit's height model; default flat), `drag` (1/s), `delay` (ms) and
+   * `sortY` (the group's ground y among the entities, with the layer's `sortWithEntities`). Any thread that runs
+   * game code can call it: the main thread, a logic worker, the particle worker.
+   * @param {Object} config
+   * @returns {number} particles written
+   */
+  static emitGpu(config) {
+    return GpuParticles.emit(config);
   }
 
   /**

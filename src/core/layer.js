@@ -825,11 +825,12 @@ export class Layer {
             });
             if (!layer) continue;
             layer._sharedPictures = shaderTextureList(config.shader).length > 0;
-            // LF density, compute, and scenery skip the sprite render queue.
+            // LF density, compute, GPU particles and scenery skip the sprite render queue.
             this._hasRenderQueue[layer.id] = (
                 densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                 || compute
                 || kind === LAYER_KIND.MESH
+                || kind === LAYER_KIND.GPU_PARTICLES
                 || hasSharedPictures(config)
                 || isSceneryKind(kind)
             ) ? 0 : 1;
@@ -907,6 +908,7 @@ export class Layer {
             || kind === LAYER_KIND.TILING || kind === LAYER_KIND.TILEMAP
             || kind === LAYER_KIND.SPRITES || kind === LAYER_KIND.DENSITY
             || kind === LAYER_KIND.COMPUTE || kind === LAYER_KIND.MESH
+            || kind === LAYER_KIND.GPU_PARTICLES
             || kind === LAYER_KIND.DECALS
             || kind === LAYER_KIND.SHADOWS || kind === LAYER_KIND.LIGHTING) {
             if (isSceneryKind(kind) && builtIn) {
@@ -1222,6 +1224,7 @@ export class Layer {
         if (!layer || !this._feederKind) return;
         let kind = LAYER_FEEDER_KIND.BUILTIN;
         if (isSceneryKind(layer._kind)) kind = LAYER_FEEDER_KIND.NONE;
+        else if (layer._kind === LAYER_KIND.GPU_PARTICLES) kind = LAYER_FEEDER_KIND.NONE;
         else if (layer._kind === LAYER_KIND.MESH) kind = LAYER_FEEDER_KIND.MESH;
         else if (layer._compute) kind = LAYER_FEEDER_KIND.COMPUTE;
         else if (layer._sharedPictures) kind = LAYER_FEEDER_KIND.NONE;
@@ -1606,6 +1609,7 @@ export class Layer {
                 maxItems: isBuiltIn
                     || densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     || layer._kind === LAYER_KIND.MESH
+                    || layer._kind === LAYER_KIND.GPU_PARTICLES
                     || hasSharedPictures(config)
                     || isSceneryKind(layer._kind)
                     ? 0
@@ -1625,6 +1629,13 @@ export class Layer {
                 resource: typeof config.resource === 'string' ? config.resource : null,
                 worldRect: worldRectOf(config.shader),
                 shaderTextures: shaderTextureList(config.shader),
+                // LAYER_KIND.GPU_PARTICLES: the rings are GpuParticles' (gpuParticles.js); these are the draw options.
+                gpuParticles: layer._kind === LAYER_KIND.GPU_PARTICLES
+                    ? {
+                        sortWithEntities: config.sortWithEntities === true,
+                        pixelSnap: config.pixelSnap === true,
+                    }
+                    : null,
             };
 
             if (config.shader) {

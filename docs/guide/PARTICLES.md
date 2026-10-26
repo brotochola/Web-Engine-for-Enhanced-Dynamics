@@ -173,4 +173,5 @@ pixiWorker
 - [`particleComponent.js`](../../src/components/particleComponent.js)
 - [`particleWorker.js`](../../src/workers/particleWorker.js)
 - [LiquidFun (Box2D fluids)](./LIQUIDFUN.md)
+- [GPU particles](./GPU_PARTICLES.md): `ParticleEmitter.emitGpu`, particles computed in the vertex shader (no CPU cost per frame, nothing reads them back)
 - Demo: [`zenithalParticleTestScene.js`](../../demos/zenithalParticleTestScene/zenithalParticleTestScene.js), [`bluePlatformerPlayer.js`](../../demos/platformerGameScene/gameObjects/bluePlatformerPlayer.js), [`liquidFunDemoScene.js`](../../demos/liquidFunDemoScene/liquidFunDemoScene.js)

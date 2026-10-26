@@ -90,6 +90,7 @@ export { Grab } from './components/grab.js';
 // ============================================================================
 // Note: Particles are NOT GameObjects - they use ParticleComponent directly
 export { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/particleEmitter.js';
+export { GpuParticles } from './core/gpuParticles.js';
 export { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/liquidFun.js';
 export { Box2d } from './core/box2d.js';
 export { Decal } from './core/decal.js';
@@ -228,6 +229,7 @@ import { AdobeAnimComponent } from './components/adobeAnimComponent.js';
 import { ParticleComponent } from './components/particleComponent.js';
 
 import { ParticleEmitter, DECAL_STAMPS_BLEND_MODE } from './core/particleEmitter.js';
+import { GpuParticles } from './core/gpuParticles.js';
 import { LiquidFun, LIQUIDFUN_FLAGS, LIQUIDFUN_GROUP_FLAGS } from './core/liquidFun.js';
 import { Box2d } from './core/box2d.js';
 import { Decal } from './core/decal.js';
@@ -398,6 +400,7 @@ const WEED = Object.freeze({
 
   // Particles
   ParticleEmitter,
+  GpuParticles,
   LiquidFun,
   LIQUIDFUN_FLAGS,
   LIQUIDFUN_GROUP_FLAGS,

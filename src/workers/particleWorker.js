@@ -42,6 +42,7 @@ import { bindDecorationSway, writeSwayColumns } from './decorationSwayClient.js'
 import { bindBulletTick } from '../core/bulletTickClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
 import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
+import { GpuParticles } from '../core/gpuParticles.js';
 import {
   getColliderBounds as getColliderBoundsImport,
   getCellRange as getCellRangeImport,
@@ -422,6 +423,8 @@ class ParticleWorker extends AbstractWorker {
    */
   async initialize(data) {
     // console.log('[PARTICLE WORKER] Starting initialize()...');
+    // The particle worker's ring in every GPU particle layer (the last one).
+    GpuParticles.writerSlot = GpuParticles.particleWorkerSlot;
 
     // Initialize stats buffer
     if (data.buffers.particleStats) {
