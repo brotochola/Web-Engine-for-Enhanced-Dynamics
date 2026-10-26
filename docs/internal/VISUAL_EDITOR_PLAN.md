@@ -675,10 +675,16 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     phase). Run it again on the fast swap after ED-35 and add a section.
   - **Done when:** the report says which phases a fast swap skips, and how many ms they
     are.
-- [ ] **ED-40 Spawn kernel** (measurement only, its own commit, before ED-41 and ED-42).
+- [x] **ED-40 Spawn kernel** (measurement only, its own commit, before ED-41 and ED-42).
   Deferred 2026-10-26: the author asked for code only, no benchmarks for now. When it
   runs, its "before" side is the base revision in a worktree (the kernel compares two
   trees), so ED-41 and ED-42 can still be measured against it.
+  - Done 2026-10-26 (37013e51, R-0646): `runKernelsVsRev.mjs --vs ab451d27` (the commit
+    before ED-41), 5 rounds a side. (a) 1.464 → 1.458 M spawns/s (−0.4 %, a tie);
+    (b) 4.30 → 4.61 (+7.4 %, 96 % of rounds); (c) 2.34, (d) 1.39, (e) 2.36 M/s with
+    **0 minor GCs over 1e6 spawns**; (a) 2 and (b) 7 in both trees. Catalog rows
+    `spawnParamsA`..`E`. Its commit came after ED-41 and ED-42 (they were written while
+    benchmarks were held), so its base side is that older commit's `src/`.
   - File: `tests/bench/spawnParamsMicrobench.mjs`.
   - It loads a real logic worker the way `tests/bench/spawnSoAMicrobench.mjs` does (the
     shipped `logicWorker.js` in Node) and calls the shipped `GameObject._spawnAt` and
@@ -694,14 +700,20 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   - Warm-up through `warmNormalCompile`; check with `kernelTierAudit.mjs`.
   - Cases (c) to (e) are skipped until ED-41 exists; the commit records (a) and (b) as
     the baseline.
-- [~] **ED-41 Spawn params (B2), engine side** (D4). Code and tests done 2026-10-26
+- [x] **ED-41 Spawn params (B2), engine side** (D4). Code and tests done 2026-10-26
   (54241704): `src/core/spawnParams.js`, the debug check
   `src/core/debug/spawnParamsCheck.js` with its stub (aliased in both webpack configs),
   `GameObject.spawnParams` / `_spawnParamsByType`, the fill in `_spawnAt`, worker
   registration in `createGameObjectInstances`, page validation in `registerEntityClass`,
   `spawnParams` in hot swap's shape statics, types. `tests/node/spawnParams.test.js` (12
-  tests, the natives one included). **Measurements pending** (ED-40 kernel, spawn-storm
-  pair, deopt log, heap sample): no benchmarks for now.
+  tests, the natives one included). **Measured 2026-10-26, kept as hygiene (R-0646,
+  R-0647):**
+  - the ED-40 kernel: classes without params are not slower, and the params path makes
+    0 minor GCs per 1e6 spawns;
+  - spawn storm, the branch point against HEAD, 4 pairs: logic0 −1.6 % (0/4 worse, cv
+    2 %);
+  - the deopt log: no deopt in the spawn path, in either tree;
+  - the heap sample: 3532 → 3573 KB/s, from the same sites.
   - **Files:**
     - `src/core/gameObject.js`: registration metadata, `fillSpawnParams`, the call in
       `_spawnAt`;
@@ -739,9 +751,12 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     - Spawn-storm ABAB (hygiene).
     - `summarizeV8Deopt.mjs` on spawn-storm: no new steady-state deopts in `_spawnAt`.
     - `heapSampleWorkers.mjs` on spawn-storm: allocation rate not up.
-- [~] **ED-42 No allocation for `spawn()` without a config,** after ED-41. Code and test
+- [x] **ED-42 No allocation for `spawn()` without a config,** after ED-41. Code and test
   done 2026-10-26 (b7d5c648): `NO_SPAWN_CONFIG` in `spawnParams.js`, used by
-  `GameObject.spawn`. **Measurement pending** (ED-40 case (c)).
+  `GameObject.spawn`. **Measured 2026-10-26** (R-0646, R-0647): ED-40 case (c) makes 0
+  minor GCs over 1e6 spawns; case (b) (a class without params, which keeps its fresh
+  `{}`: 7 minor GCs per 1e6 spawns, as before) is 7.4 % faster than before; spawn storm is
+  neutral.
   - File: `src/core/gameObject.js` (`static spawn`).
   - Drop the default `= {}` and the `null → {}`.
     - **Classes with `spawnParams`** get a shared frozen empty object, which the fill
