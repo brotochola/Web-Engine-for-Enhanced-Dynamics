@@ -73,7 +73,39 @@ Predator load here took 4.8 s, inside that range.
   same path the scene-file loader (ED-2) will use for placed entities, so ED-5's 1,764 trees are the
   size check for it.
 
-## Next
+## Fast swap (ED-35), 2026-10-26
 
-Run the script again after ED-35, with a fast-swap section: the same scenes swapping to a scene
-file with the same setup, timed to the first rendered frame.
+The same script with `--swap` (d434f0a1): the cold load is full, and the five warm loads of the
+same scene class are fast swaps, timed to the renderer's first frame after them. The page's copy of
+the scene class also wraps the swap's own steps (`pauseAndSettle`, `_clearWorldForSwap`, the resets,
+the tiny physics step). Platformer, littleCity and Predator headless; Predator again headed, which
+draws with the machine's GPU.
+
+Milliseconds, median of five swaps [min..max]:
+
+| Step | Platformer | littleCity | Predator headless | Predator headed |
+| --- | ---: | ---: | ---: | ---: |
+| fetch the scene file, import the module | 7.0 | 1.7 | 1.7 | 1.1 |
+| settle every worker (`pauseAndSettle`) | 42.4 [7.1..187.3] | 25.5 | 379.9 [333.5..463.2] | 0.8 [0.4..1.8] |
+| the clear (logic0's `clearScene`, the effect pools) | 0.4 | 17.4 | 24.1 | 19.1 |
+| the resets | 0.1 | 0.2 | 0.3 | 0.2 |
+| the tiny physics step | 0.3 | 7.7 | 25.4 | 20.4 |
+| `preload` | 0 | 14.5 | 0 | 0 |
+| `create` + `createNewGame` | 0 | 0 | 24.0 | 21.5 |
+| `_flushCreateSpawns` | 0.7 | 40.0 | 105.7 | 91.9 |
+| start, then `transitionCooldown` | 110.4 | 104.0 | 104.5 | 101.7 |
+| **Total** | **161.5 [123.6..306]** | **226.9 [192.1..323.3]** | **677.4 [646.5..745.1]** | **257.0 [247.6..285.6]** |
+| the cold full load in the same run | 1368 | 2898 | 2294 | 1836 |
+
+- **A fast swap is 4 to 13 times faster than a full load.** littleCity saves 2.77 s of its 3.00 s
+  warm full load (ED-39's prediction was 2.73 s); Predator headed takes 0.26 s, as predicted (about
+  0.3 s), against 2.82 s.
+- **The settle depends on the renderer.** Every worker answers the barrier between two frames, so
+  the swap waits for the longest frame in progress. Headless Chromium draws Predator in software:
+  a scratch probe timed each worker's answer, and the Pixi worker took 503, 458 and 49 ms while every
+  other worker answered within 12 ms. With the GPU (headed), the settle is under 2 ms.
+- **What a swap pays is the level's own work and the cooldown.** Of Predator's 0.26 s, 0.13 s is
+  its hooks and the spawn flush (the same as in a full load) and 0.1 s is `transitionCooldown`. The
+  clear, the resets and the tiny physics step together take about 40 ms.
+- Not measured here: a scene whose renderer frame is long on the author's machine would wait for it
+  in the settle too; a swap cannot be shorter than the frame in progress.

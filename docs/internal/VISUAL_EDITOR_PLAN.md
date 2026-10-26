@@ -816,14 +816,22 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     for the editor (D7): it drops every change event of that path inside the window, not
     only the first (one write can fire more than one).
   - **Tests:** extend `tests/node/hotReload.test.js`.
-- [~] **ED-35 The fast swap** (D3). **Version 1 code done 2026-10-26:** `_runContentLifecycle`
+- [x] **ED-35 The fast swap** (D3). **Version 1 code done 2026-10-26:** `_runContentLifecycle`
   (187d6400), the pools' in-place clears (f90b4e43), the layers' boot values and the dirty
   marks (689088c4), the camera's and sun's boot values (c30675ed), logic0's `clearScene`
   (0391b8ba), the benches' `fullLoad` (37f0938e), the swap in `loadScene` (7ef89898).
   Tests with stand-in workers and the shipped logic worker: `fastSwap.test.js`,
-  `clearScene.test.js`, `swapClears.test.js`, `layer.test.js`. **Pending, in a browser,
-  when runs are allowed:** the parity, no-leftovers and no-leak tests below, ED-39 again
-  with `--swap`, and the full node suite on a quiet machine.
+  `clearScene.test.js`, `swapClears.test.js`, `layer.test.js`. **Done in a browser
+  2026-10-26:**
+  - `tests/bench/fastSwapSmoke.mjs` (52361f92) passes the four D3 tests:
+    - **parity:** a swap to 1-2 against a full load of 1-2;
+    - **no leftovers:** Predator's ~17,700 entities and its effect pools are all empty
+      at the clear, and every class matches a full load after it;
+    - **fallback:** another class, and a dirty scene;
+    - **no leak:** 100 swaps; page heap 6.55 → 6.81 MB, commit charge 778 → 655 MB.
+  - **ED-39 with `--swap`** (R-0648, the report's fast-swap section): platformer 0.16 s,
+    littleCity 0.23 s, Predator 0.26 s headed (4 to 13 times a full load; done when ✓).
+  - **Spawn storm** neutral, in the branch's batch pair (R-0647).
   - **Steps:**
     1. Inventory every pool kind and scene-wide state, with owner, clear or reset path,
        and test. Record it in this item before coding. **Done 2026-10-26** (below).
@@ -944,7 +952,7 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   - **Files:** `src/core/save/entitySaveSnapshot.js`, `binarySaveCodec.js`,
     `saveGame.js`.
   - **Test:** save in `1-2`, load from `1-1`, and `1-2` is back with the saved entities.
-- [~] **ED-37 Two-level platformer demo:** `1-1.scene.json`, `1-2.scene.json`, and a
+- [x] **ED-37 Two-level platformer demo:** `1-1.scene.json`, `1-2.scene.json`, and a
   `Goal` entity whose `next` param (a string) names the next file. Code done 2026-10-26:
   `Goal` (a static box on the bloom layer) emits `goalReached` when the player touches it;
   the scene finds which of its file's goals that was (`getByName`) and loads its `next`,
@@ -952,8 +960,8 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   score). A touch while a level loads is ignored (`game.isTransitioning`). Each level's goal
   leads to the other. Public API only (Found during implementation, item 9).
   `demos/tests/platformerLevels.test.js` checks the links, the pools, `next`'s declared
-  kind and the scene's handler. **Waits on the browser runs:** reaching the goal loads `1-2`
-  with no full-load console line.
+  kind and the scene's handler. In a browser (`editorM1Smoke.mjs`): the player put on the
+  goal loads `1-2` by a fast swap, with no full-load console line and `levelsDone` 1.
 - [x] **ED-4b Hot reload of the running scene file through the fast swap,** after ED-35.
   Test in `hotReload.test.js`. Done 2026-10-26: the running file is loaded again with its
   `data` (`game.loadScene`: a fast swap when the scene can take one, else a full load in
@@ -994,9 +1002,10 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
 M1: open the platformer, press Shift+E, click a platform, drag it, widen it, Ctrl+S,
 reload, and it is still there.
 
-**Status 2026-10-26:** the code of every Stage 2 item is in, with Node tests. M1 itself
-(a browser run of the steps above) and ED-44 (a measurement) wait for the sitting that
-runs the paused browser work.
+**Status 2026-10-26:** the code of every Stage 2 item is in, with Node tests. **M1 passes
+in Chromium** (`tests/bench/editorM1Smoke.mjs`, fbae4b9c): Shift+E, a click selects a
+platform, a drag moves it, its Width field widens it, Ctrl+S writes the file, and after a
+reload it is still there. ED-44 is the last Stage 2 item.
 
 - [x] **ED-6 Edit mode toggle** (D5, Stage 2 version).
   - Files: `src/core/debug/editor/editMode.js`; a button in
