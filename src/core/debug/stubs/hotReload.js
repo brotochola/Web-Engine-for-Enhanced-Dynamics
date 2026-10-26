@@ -3,6 +3,7 @@ export class HotReload {
   static SLOT = '__weed-hot-reload';
   static start() {}
   static stop() {}
+  static ignore() {}
   static async reloadKeepingState() {}
   static takeRestore() {
     return null;

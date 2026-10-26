@@ -177,3 +177,56 @@ test('--sw serves without the isolation headers and serves weed-sw.js at the roo
     rmSync(root, { recursive: true, force: true, maxRetries: 20, retryDelay: 100 });
   }
 });
+
+/** Run `fn` with a page location whose reload is counted; returns how many reloads it asked for. */
+async function withLocation(fn) {
+  const saved = globalThis.location;
+  let reloads = 0;
+  globalThis.location = { origin: 'http://localhost:8000', reload: () => reloads++ };
+  const info = console.info;
+  console.info = () => {};
+  try {
+    await fn();
+  } finally {
+    console.info = info;
+    if (saved === undefined) delete globalThis.location;
+    else globalThis.location = saved;
+  }
+  return reloads;
+}
+
+test('the running scene file changed: the page reloads fresh, so the file\'s new content loads', async () => {
+  // ED-4a. A restore would put every entity back where it was, over the file's new positions.
+  const scene = { sceneFileUrl: 'http://localhost:8000/demos/platformerGameScene/levels/1-1.scene.json', sceneScriptUrl: 'x' };
+  const game = { currentScene: scene, state: 1 };
+  let kept = 0;
+  const keep = HotReload.reloadKeepingState;
+  HotReload.reloadKeepingState = async () => {
+    kept++;
+  };
+  try {
+    const reloads = await withLocation(async () => {
+      const event = (file) => JSON.stringify({ file });
+      assert.equal(await HotReload.onFileChanged(game, event('demos/platformerGameScene/levels/1-1.scene.json')), 'reloaded');
+      assert.equal(await HotReload.onFileChanged(game, event('demos/platformerGameScene/levels/1-2.scene.json')), 'other');
+    });
+    assert.equal(reloads, 1, 'only the running scene\'s file reloads');
+    assert.equal(kept, 0, 'never through the reload that restores the state');
+  } finally {
+    HotReload.reloadKeepingState = keep;
+  }
+});
+
+test('HotReload.ignore drops a file\'s change events while the window lasts', async () => {
+  const scene = { sceneFileUrl: 'http://localhost:8000/levels/a.scene.json' };
+  const game = { currentScene: scene, state: 1 };
+  const reloads = await withLocation(async () => {
+    HotReload.ignore('/levels/a.scene.json', 60000);
+    const event = JSON.stringify({ file: 'levels/a.scene.json' });
+    assert.equal(await HotReload.onFileChanged(game, event), 'ignored');
+    assert.equal(await HotReload.onFileChanged(game, event), 'ignored', 'every event of the window, not only the first');
+    HotReload.ignore('/levels/a.scene.json', -1);
+    assert.equal(await HotReload.onFileChanged(game, event), 'reloaded', 'after the window, a change reloads again');
+  });
+  assert.equal(reloads, 1);
+});

@@ -5,6 +5,12 @@
 // is swapped in place, on the page and in every worker (hotSwap.js): no reload,
 // the shared memory and everything in it stay as they are.
 //
+// The running scene's scene file (`*.scene.json`) reloads the page without the
+// state: the file's new content is what the scene loads, where a restore would put
+// every entity back where it was. Any other scene file is ignored. The editor
+// writes scene files itself and has already applied the change: it calls
+// HotReload.ignore(path, ms) before writing, and that file's events are dropped.
+//
 // Anything else (an asset, a shader, the page, an engine file), or a change the
 // running game cannot take (components, pools, which hooks a class defines...),
 // falls back to a reload that keeps the state: the page saves the running scene
@@ -33,6 +39,28 @@ export class HotReload {
   static _busy = false;
   static _queue = Promise.resolve();
   static _version = 0;
+  /** Absolute URL → time (ms, Date.now) until which its change events are dropped. */
+  static _ignored = new Map();
+
+  /**
+   * Drop the change events of `path` for the next `ms` milliseconds: the caller is about to
+   * write that file and has already applied what it holds (the editor saving a scene file).
+   * @param {string} path - from the served folder's root (`/demos/…`) or absolute
+   * @param {number} [ms]
+   */
+  static ignore(path, ms = 2000) {
+    if (typeof location === 'undefined') return;
+    this._ignored.set(new URL(path, `${location.origin}/`).href, Date.now() + ms);
+  }
+
+  /** Whether `url`'s change events are being dropped (HotReload.ignore). */
+  static _isIgnored(url) {
+    const until = this._ignored.get(url);
+    if (until === undefined) return false;
+    if (Date.now() <= until) return true;
+    this._ignored.delete(url);
+    return false;
+  }
 
   /** Listen for the dev server's change events. A server without the endpoint closes it quietly. */
   static start(game) {
@@ -69,6 +97,7 @@ export class HotReload {
       /* an older server sends no file: reload */
     }
     const scene = game && game.currentScene;
+    if (/\.scene\.json$/i.test(file)) return this.onSceneFileChanged(scene, file);
     if (!/\.m?js$/i.test(file) || !scene || !scene.sceneScriptUrl || game.state !== 1) {
       return this.reloadKeepingState(game);
     }
@@ -85,6 +114,23 @@ export class HotReload {
     }
     console.info(`[WeedJS] hot swapped ${file}${result.swapped.length ? ` (${result.swapped.join(', ')})` : ''}`);
     return result;
+  }
+
+  /**
+   * A scene file changed. The running scene's own reloads the page fresh, so it loads the
+   * file's new content; the editor's own writes (ignore) and other scenes' files do nothing.
+   * @param {object|null} scene
+   * @param {string} file - relative to the served folder
+   * @returns {'ignored'|'reloaded'|'other'}
+   */
+  static onSceneFileChanged(scene, file) {
+    const url = new URL(file.replace(/^\/+/, ''), `${location.origin}/`).href;
+    if (this._isIgnored(url)) return 'ignored';
+    const running = scene && scene.sceneFileUrl ? scene.sceneFileUrl.split(/[?#]/)[0] : null;
+    if (running !== url) return 'other';
+    console.info(`[WeedJS] hot reload: ${file} changed; reloading the page to load it`);
+    location.reload();
+    return 'reloaded';
   }
 
   /**
