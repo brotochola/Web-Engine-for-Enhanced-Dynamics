@@ -5,9 +5,12 @@
 // every process under it, before the first scene, after each cycle and after the engine is destroyed: every shared memory a scene
 // makes (Box2D's with the engine block, the particle, decal, navigation and spatial memories) is committed whole
 // when it is made, and the scene's teardown must give it back. Fails when the last cycle's commit is more than
-// 128 MB over the first's, or the commit after destroy more than 128 MB over the start.
+// 128 MB over the first's, or the commit after destroy more than 128 MB over the start. The commit after destroy is
+// read once it settles (the workers' memories go some seconds after their threads exit): sampled each second, up to
+// 15 s, at least 6 s and until a second's fall is under 8 MB.
+// The page runs the source tree (?src=1); --dist runs the committed bundle, the page's default.
 //
-// Usage: node tests/bench/sceneCycleSmoke.mjs [--cycles 4] [--scene /demos/ballsScene/ballsScene.js] [--scene-export BallsScene] [--headed] [--commit]
+// Usage: node tests/bench/sceneCycleSmoke.mjs [--cycles 4] [--scene /demos/ballsScene/ballsScene.js] [--scene-export BallsScene] [--headed] [--commit] [--dist]
 
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
@@ -71,7 +74,8 @@ async function main() {
   const sampleCommit = Boolean(args.commit);
 
   const server = await createStaticBenchmarkServer(repoRoot);
-  const pageUrl = `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html`;
+  // Without ?src=1 the page's importmap resolves /src/index.js to the dist bundle.
+  const pageUrl = `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html${args.dist ? '' : '?src=1'}`;
 
   const browser = await chromium.launch({
     headless: !headed,
@@ -180,6 +184,20 @@ async function main() {
       };
     });
     afterDestroy.commitMB = commit();
+    if (sampleCommit) {
+      // At least 6 s, then until a second's fall is under 8 MB.
+      let prev = afterDestroy.commitMB;
+      for (let s = 0; s < 15; s++) {
+        await page.evaluate(async () => {
+          await new Promise((r) => setTimeout(r, 1000));
+          if (typeof globalThis.gc === 'function') globalThis.gc();
+        });
+        const now = commit();
+        afterDestroy.commitMB = Math.min(afterDestroy.commitMB, now);
+        if (s >= 5 && prev - now < 8) break;
+        prev = now;
+      }
+    }
     const report = { cycles: cyclesReport, afterDestroy };
 
     console.log('\n=== Scene cycle smoke report ===');
