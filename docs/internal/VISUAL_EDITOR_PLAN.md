@@ -588,7 +588,7 @@ fallback).
   returns the new mtime.
 - **`GET /__weed/list?dir=…&ext=.scene.json`:** a read-only list for the scene-file
   picker, under the same path rules.
-- Both live in **one module**, `server/devRoutes.mjs`, used by `server/node_server.js`
+- Both live in **one module**, `server/devRoutes.js`, used by `server/node_server.js`
   now and by the `create-weed-game` template's `scripts/dev.mjs` later (ED-30).
 - **Hot reload:** the editor calls `HotReload.ignore(path, 2000)` before writing.
   The SSE events for that path are dropped for that long, because the editor has already
@@ -993,13 +993,23 @@ reload, and it is still there.
     resume); a full load re-enters edit mode in the next scene.
     `editModeZeroStep.wasm.test.js`: at scale 0 the host steps 0 s, and Box2D moves no
     body on a 0 s step. `editMode.test.js`, `cameraHold.test.js`.
-- [ ] **ED-13 Save route** (D7). Files: `server/devRoutes.mjs`, `server/node_server.js`,
+- [x] **ED-13 Save route** (D7). Files: `server/devRoutes.mjs`, `server/node_server.js`,
   the editor's save command, and Ctrl+S.
   - **Tests** (`tests/node/devRoutes.test.js`):
     - writes inside the root;
     - rejects `..`, other extensions, non-local requests and oversize bodies;
     - the write is atomic;
     - the list route filters by extension.
+  - Done 2026-10-26: `server/devRoutes.js` (`.js`, like the rest of `server/`) and the
+    editor's `sceneFileStore.js`; Ctrl+S in edit mode writes the running document, and
+    the indicator says how it went. Beyond D7: a local request must also name a loopback
+    `Host` and, if it sends one, its own page's `Origin` (a page of another site in the
+    same browser is local too, and DNS rebinding gives it a loopback address); the body
+    must parse as JSON; `\` and `:` in a path are refused (Windows reads `a:b` as a
+    stream); a missing folder is 404; on Windows the rename is tried again for 2 s while
+    a reader holds the file. The atomic test reads during a 3 MB write and fails against
+    an in-place write. `editorSave.test.js` covers the client, Ctrl+S, and one save
+    through the real route. The static route's own path check is review item N-80.
 - [ ] **ED-8 Selection.**
   - Reuse `_pickEntity`, and add a sprite-bounds hit test from `SpriteRenderer` anchor,
     scale and frame size, for entities without colliders.

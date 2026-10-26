@@ -15,14 +15,20 @@
 // Known limit of this version: tick() still runs, with a zero delta, so code that counts frames keeps counting.
 // ED-19 pauses the simulation workers instead.
 //
+// Ctrl+S saves the running scene file through the dev server (sceneFileStore.js, ED-13).
+//
 // Cost: nothing before the first Shift+E. Its listeners are on the document only while it is on.
 
 import { Time } from '../../timeScale.js';
 import { Camera } from '../../camera.js';
 import { Mouse } from '../../mouse.js';
+import { saveSceneFile } from './sceneFileStore.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
+
+/** How long a status line (saved, could not save) stays on the indicator. */
+const STATUS_MS = 3000;
 
 export class EditMode {
   constructor(debugUI) {
@@ -35,6 +41,13 @@ export class EditMode {
     this._savedFreeSmoothing = NaN;
     /** A full load left edit mode: enter it again when the new scene is attached. */
     this._resumeOnAttach = false;
+
+    /** What the indicator says instead of the help for a moment (a save's outcome), and whether it went wrong. */
+    this.status = '';
+    this.statusIsError = false;
+    this._statusTimer = 0;
+    /** The save under way, so that a second Ctrl+S waits for it instead of writing twice at once. */
+    this._saving = null;
 
     // A drag that pans: its pointer, where it started on screen, and the free camera's target then.
     this._panPointer = -1;
@@ -92,6 +105,7 @@ export class EditMode {
     this.active = false;
     this._listen(false);
     this._panPointer = -1;
+    this._setStatus('', false);
     Mouse.isEditModeActive = false;
     Camera.held = false;
     Camera.setFree(this._savedFree, { smoothing: this._savedFreeSmoothing });
@@ -110,7 +124,51 @@ export class EditMode {
       this.exit();
       return true;
     }
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+      this.save();
+      return true;
+    }
     return false;
+  }
+
+  /**
+   * Write the running scene file (its document as it is now) through the dev server.
+   * @returns {Promise<boolean>} whether it was written
+   */
+  save() {
+    if (this._saving === null) {
+      this._saving = this._save().finally(() => {
+        this._saving = null;
+      });
+    }
+    return this._saving;
+  }
+
+  async _save() {
+    const scene = this.debugUI.scene;
+    if (!scene || !scene.sceneFile || !scene.sceneFileUrl) {
+      this._setStatus('This scene was not loaded from a scene file: nothing to save', true);
+      return false;
+    }
+    const name = new URL(scene.sceneFileUrl).pathname.split('/').pop();
+    this._setStatus(`Saving ${name}…`, false);
+    try {
+      await saveSceneFile(scene.sceneFileUrl, scene.sceneFile);
+      this._setStatus(`Saved ${name}`, false);
+      return true;
+    } catch (error) {
+      console.error(`[WeedJS] editor: ${error.message}`);
+      this._setStatus(error.message, true);
+      return false;
+    }
+  }
+
+  _setStatus(text, isError) {
+    this.status = text;
+    this.statusIsError = isError;
+    clearTimeout(this._statusTimer);
+    this._statusTimer = text === '' ? 0 : setTimeout(() => this._setStatus('', false), STATUS_MS);
+    this.debugUI.tools.updateToolIndicator();
   }
 
   /** A fast swap put the time scale and the camera back to the level's start: hold them again. */

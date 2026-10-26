@@ -250,8 +250,9 @@ export class ToolManager {
       el.textContent = 'Inspector: click a ' + (this.inspectKind || 'entity');
       el.className = 'debug-ui-tool-indicator visible inspector';
     } else if (this.debugUI.editMode.active) {
-      el.textContent = 'Edit mode: right or middle drag pans, the wheel zooms. Shift+E or Esc plays';
-      el.className = 'debug-ui-tool-indicator visible editor';
+      const editMode = this.debugUI.editMode;
+      el.textContent = editMode.status || 'Edit mode: right or middle drag pans, the wheel zooms, Ctrl+S saves. Shift+E or Esc plays';
+      el.className = editMode.statusIsError ? 'debug-ui-tool-indicator visible editor error' : 'debug-ui-tool-indicator visible editor';
     } else {
       el.className = 'debug-ui-tool-indicator';
     }

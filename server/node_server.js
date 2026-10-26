@@ -15,6 +15,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { devBanner } from './devBanner.js';
+import { handleDevRoute } from './devRoutes.js';
 
 const SW_MODE = process.argv.includes('--sw');
 const PORT = Number(process.env.PORT) || (SW_MODE ? 8090 : 8000);
@@ -103,6 +104,9 @@ const mimeTypes = {
 
 const server = http.createServer((req, res) => {
   if (LOG_REQUESTS) console.log(`${req.method} ${req.url}`);
+
+  // The editor saves scene files and lists them (localhost only).
+  if (handleDevRoute(req, res, process.cwd(), ISOLATION_HEADERS)) return;
 
   // Parse URL and strip query parameters
   const [urlPath, query = ''] = req.url.split('?');
