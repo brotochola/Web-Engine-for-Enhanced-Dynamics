@@ -87,7 +87,8 @@ results are records of the register.
 [E-112](./reports/E-112-preRender-emit-wasm.md) ·
 [E-114](./reports/E-114-shadow-stamp-wasm.md) ·
 [E-115 to E-117](./reports/E-115-preRender-persist-wasm.md) ·
-[DX-MEM](./reports/DX-MEM-box2d-memory.md)
+[DX-MEM](./reports/DX-MEM-box2d-memory.md) ·
+[ED-39](./reports/ED-39-scene-load-phases.md)
 
 **Finished campaigns** (dated by when each was first written):
 
