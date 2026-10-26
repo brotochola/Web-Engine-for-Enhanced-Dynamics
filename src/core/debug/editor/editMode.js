@@ -17,7 +17,8 @@
 //
 // A left click selects (selection.js, ED-8), and a drag moves the selection (moveTool.js, ED-10), as do the arrow
 // keys (Shift: ten steps); G cycles the grid step. Esc clears the selection, and with none leaves edit mode. Ctrl+S
-// saves the running scene file through the dev server (sceneFileStore.js, ED-13).
+// saves the running scene file through the dev server (sceneFileStore.js, ED-13). Every change to the document goes
+// through editSelected and is kept for Ctrl+Z / Ctrl+Y (history.js, ED-12).
 //
 // Cost: nothing before the first Shift+E. Its listeners are on the document only while it is on.
 
@@ -27,6 +28,8 @@ import { Mouse } from '../../mouse.js';
 import { saveSceneFile } from './sceneFileStore.js';
 import { Selection } from './selection.js';
 import { MoveTool, SNAP_STEPS } from './moveTool.js';
+import { History } from './history.js';
+import { editPlaced, restorePlaced } from './sceneDocument.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -41,13 +44,9 @@ export class EditMode {
     this.debugUI = debugUI;
     this.active = false;
     this.selection = new Selection(debugUI);
+    this.selection.editor = this;
     this.move = new MoveTool(this.selection);
-    /** The document has edits that are not saved (ED-12 ties it to the undo stack). */
-    this.dirty = false;
-    this.selection.onEdit = () => {
-      this.dirty = true;
-      debugUI.tools.updateToolIndicator();
-    };
+    this.history = new History();
 
     // What entering found, put back on leaving.
     this._savedTimeScale = NaN;
@@ -149,11 +148,26 @@ export class EditMode {
       else this.exit();
       return true;
     }
-    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
-      this.save();
-      return true;
+    if (e.ctrlKey || e.metaKey) {
+      switch (e.key) {
+        case 's':
+        case 'S':
+          this.save();
+          return true;
+        case 'z':
+        case 'Z':
+          if (e.shiftKey) this.redo();
+          else this.undo();
+          return true;
+        case 'y':
+        case 'Y':
+          this.redo();
+          return true;
+        default:
+          return false;
+      }
     }
-    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.altKey) return false;
     const steps = e.shiftKey ? 10 : 1;
     switch (e.key) {
       case 'ArrowLeft':
@@ -174,6 +188,54 @@ export class EditMode {
       default:
         return false;
     }
+  }
+
+  /** The document has changes the file does not hold. */
+  get dirty() {
+    return this.history.dirty;
+  }
+
+  /**
+   * Change the selected placed entity's record with `write(record, description)` and respawn it; the change is
+   * kept for undo, and the selection follows the respawned entity.
+   * @param {string} label - what the change was, for the status line of an undo
+   * @param {(record: object, description: object|null) => void} write
+   * @returns {number} the respawned entity's index, or -1 (nothing selected from the file, or nothing changed)
+   */
+  editSelected(label, write) {
+    const selection = this.selection;
+    if (!selection.authored || this.move.dragging) return -1;
+    const name = selection.name;
+    const result = editPlaced(this.debugUI.scene, name, write);
+    if (result === null) return -1;
+    const { before, after } = result;
+    this.history.push({
+      id: 0,
+      label,
+      undo: () => this._showRestored(restorePlaced(this.debugUI.scene, name, before)),
+      redo: () => this._showRestored(restorePlaced(this.debugUI.scene, name, after)),
+    });
+    this._showRestored(result.index);
+    return result.index;
+  }
+
+  undo() {
+    if (this.move.dragging) return;
+    const change = this.history.undo();
+    this._setStatus(change === null ? 'Nothing to undo' : `Undid: ${change.label}`, false);
+  }
+
+  redo() {
+    if (this.move.dragging) return;
+    const change = this.history.redo();
+    this._setStatus(change === null ? 'Nothing to redo' : `Redid: ${change.label}`, false);
+  }
+
+  /** Select the entity a change respawned (or nothing, when its pool was full). */
+  _showRestored(index) {
+    if (index >= 0) this.selection.select(index);
+    else this.selection.clear();
+    this.debugUI.tools.updateToolIndicator();
   }
 
   /**
@@ -197,9 +259,10 @@ export class EditMode {
     }
     const name = new URL(scene.sceneFileUrl).pathname.split('/').pop();
     this._setStatus(`Saving ${name}…`, false);
+    const position = this.history.position;
     try {
       await saveSceneFile(scene.sceneFileUrl, scene.sceneFile);
-      this.dirty = false;
+      this.history.markSaved(position);
       this._setStatus(`Saved ${name}`, false);
       return true;
     } catch (error) {
@@ -226,7 +289,7 @@ export class EditMode {
   onContentSwapped() {
     this.move.cancel();
     this.selection.clear();
-    this.dirty = false; // another document
+    this.history.clear(); // another document
     if (!this.active) return;
     this._savedTimeScale = Time.scale;
     this._savedFree = Camera._free;
@@ -236,6 +299,7 @@ export class EditMode {
 
   /** The debug UI is leaving its scene (a full load): leave edit mode, and come back to it in the next scene. */
   onDetach() {
+    this.history.clear();
     this._resumeOnAttach = this.active;
     this.exit();
   }

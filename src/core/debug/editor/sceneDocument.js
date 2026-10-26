@@ -6,6 +6,9 @@
 //
 // A value equal to the declared default is left out of the record (and an empty config with it), as the file
 // format wants. On the page, once per change; the respawned entity is live on logic0's next frame.
+//
+// editPlaced makes a change from a write (writeParam, writePosition, writeConfig) and returns the record before and
+// after it, which is what undo and redo put back (restorePlaced; history.js).
 
 import { describeSpawnParams, KIND_ENTITY, KIND_POINTS } from '../../spawnParams.js';
 import { sceneFileSpawnConfig } from '../../sceneFile.js';
@@ -51,18 +54,13 @@ export function isDefaultValue(description, k, value) {
 }
 
 /**
- * Set one spawn param of a placed entity, and respawn it.
- * @param {object} scene
- * @param {string} name - the entity's name in the running file
+ * Write one spawn param into a record: a value equal to the declared default is left out (and an empty config).
+ * @param {object} record
+ * @param {object|null} description - the class's spawn params
  * @param {string} key
  * @param {unknown} value - as the file holds it: a number, boolean, string, an entity's name (or null), x, y pairs
- * @returns {number} the respawned entity's index, or -1
  */
-export function setParam(scene, name, key, value) {
-  const found = recordOf(scene, name);
-  if (found === null) return -1;
-  const { record } = found;
-  const description = paramsOf(scene, record);
+export function writeParam(record, description, key, value) {
   const k = description === null ? undefined : description.indexOf[key];
   if (k !== undefined && isDefaultValue(description, k, value)) {
     if (record.config) delete record.config[key];
@@ -71,35 +69,65 @@ export function setParam(scene, name, key, value) {
     record.config[key] = value;
   }
   if (record.config && Object.keys(record.config).length === 0) delete record.config;
-  return respawnPlaced(scene, name);
 }
 
-/**
- * Move a placed entity: its record's x and y, and respawn it there.
- * @returns {number} the respawned entity's index, or -1
- */
-export function setPosition(scene, name, x, y) {
-  const found = recordOf(scene, name);
-  if (found === null) return -1;
-  found.record.x = x;
-  found.record.y = y;
-  return respawnPlaced(scene, name);
+/** Write a record's position. */
+export function writePosition(record, x, y) {
+  record.x = x;
+  record.y = y;
 }
 
+/** Write a record's whole config (a class without spawnParams: the editor's key/value box); `{}` leaves it out. */
+export function writeConfig(record, config) {
+  if (Object.keys(config).length === 0) delete record.config;
+  else record.config = config;
+}
+
+/** What a change can touch in a record, copied: its position and its config. */
+export function snapshotOf(record) {
+  return { x: record.x, y: record.y, config: record.config === undefined ? undefined : structuredClone(record.config) };
+}
+
+const sameSnapshot = (a, b) => a.x === b.x && a.y === b.y && JSON.stringify(a.config) === JSON.stringify(b.config);
+
 /**
- * Replace a placed entity's whole config (a class without spawnParams: the editor's key/value box), and respawn it.
+ * Change a placed entity's record with `write(record, description)`, and respawn the entity.
  * @param {object} scene
- * @param {string} name
- * @param {object} config
+ * @param {string} name - the entity's name in the running file
+ * @param {(record: object, description: object|null) => void} write
+ * @returns {{ index: number, before: object, after: object }|null} the respawned entity's index (-1: a full pool)
+ *   and the record before and after; null when there is no such record or the write changed nothing
+ */
+export function editPlaced(scene, name, write) {
+  const found = recordOf(scene, name);
+  if (found === null) return null;
+  const before = snapshotOf(found.record);
+  write(found.record, paramsOf(scene, found.record));
+  const after = snapshotOf(found.record);
+  if (sameSnapshot(before, after)) return null;
+  return { index: respawnPlaced(scene, name), before, after };
+}
+
+/**
+ * Put a placed entity's record back as a snapshot has it, and respawn the entity (undo and redo).
  * @returns {number} the respawned entity's index, or -1
  */
-export function setConfig(scene, name, config) {
+export function restorePlaced(scene, name, snapshot) {
   const found = recordOf(scene, name);
   if (found === null) return -1;
-  if (Object.keys(config).length === 0) delete found.record.config;
-  else found.record.config = config;
+  const { record } = found;
+  record.x = snapshot.x;
+  record.y = snapshot.y;
+  if (snapshot.config === undefined) delete record.config;
+  else record.config = structuredClone(snapshot.config);
   return respawnPlaced(scene, name);
 }
+
+/** One change and its respawn, kept by no history (tests, tools). Each returns the new index, or -1. */
+export const setParam = (scene, name, key, value) =>
+  editPlaced(scene, name, (record, description) => writeParam(record, description, key, value))?.index ?? -1;
+export const setPosition = (scene, name, x, y) => editPlaced(scene, name, (record) => writePosition(record, x, y))?.index ?? -1;
+export const setConfig = (scene, name, config) => editPlaced(scene, name, (record) => writeConfig(record, config))?.index ?? -1;
 
 /**
  * Despawn the entity placed under `name` and spawn it again from its record; then the same for every placed entity

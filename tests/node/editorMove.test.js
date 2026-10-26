@@ -11,7 +11,7 @@ import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
 import { Messages } from '../../src/core/messages.js';
 import { MoveTool, snapTo, SNAP_STEPS } from '../../src/core/debug/editor/moveTool.js';
-import { recordOf } from '../../src/core/debug/editor/sceneDocument.js';
+import { recordOf, editPlaced } from '../../src/core/debug/editor/sceneDocument.js';
 
 const N = 16;
 
@@ -60,7 +60,14 @@ function setup() {
       return this.name !== null;
     },
     pickAt: (x, y) => picks.push([x, y]),
-    _edited: (index) => edited.push(index),
+  };
+  // The editor's part (EditMode.editSelected), without the history: the change and its respawn.
+  selection.editor = {
+    editSelected: (label, write) => {
+      const result = editPlaced(scene, selection.name, write);
+      edited.push(result === null ? -1 : result.index);
+      return result === null ? -1 : result.index;
+    },
   };
   return { tool: new MoveTool(selection), selection, scene, calls, picks, edited };
 }

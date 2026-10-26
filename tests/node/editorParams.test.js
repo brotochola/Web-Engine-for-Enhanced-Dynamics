@@ -9,7 +9,7 @@ import { Messages } from '../../src/core/messages.js';
 import { Transform } from '../../src/components/transform.js';
 import { setParam, setConfig, respawnPlaced, recordOf } from '../../src/core/debug/editor/sceneDocument.js';
 import { buildParamFields, defaultText, toHex } from '../../src/core/debug/editor/paramWidgets.js';
-import { Selection } from '../../src/core/debug/editor/selection.js';
+import { EditMode } from '../../src/core/debug/editor/editMode.js';
 import { describeSpawnParams, KIND_ENUM, KIND_COLOR, KIND_STRING } from '../../src/core/spawnParams.js';
 
 // ---- a scene with a document and classes that record their spawns ----
@@ -264,24 +264,35 @@ test('a class without spawnParams gets its config as JSON, applied when it parse
     assert.equal(area.style.borderColor, '');
   }));
 
-test('the panel’s change edits the document, respawns, and the selection follows the new entity', () => {
+test('the panel’s change edits the document, respawns, the selection follows, and undo and redo put it back', () => {
   const { scene, calls } = makeScene();
   Transform.entityType = new Uint8Array(64);
   const debugUI = {
     scene,
-    tools: { _classNameForType: () => 'Platform' },
+    tools: { _classNameForType: () => 'Platform', updateToolIndicator() {} },
     debugFlags: { setSelectedEntity() {}, clearSelectedEntity() {} },
     canvas: { startLoop() {}, syncLoop() {} },
   };
-  const selection = new Selection(debugUI);
+  const editMode = new EditMode(debugUI);
+  const { selection } = editMode;
   selection._show = () => {};
-  let edits = 0;
-  selection.onEdit = () => edits++;
   selection.select(1);
   assert.equal(selection.name, 'Ground');
   selection._hooks.onChange('height', 80);
-  assert.deepEqual([selection.index, selection.name, edits], [10, 'Ground', 1]);
+  assert.deepEqual([selection.index, selection.name, editMode.dirty], [10, 'Ground', true]);
   assert.deepEqual(recordOf(scene, 'Ground').record.config, { width: 1200, height: 80 });
   assert.equal(calls.filter((c) => c[0] === 'spawn').length, 2, 'the platform and the lever that names it');
   assert.deepEqual(selection._hooks.entityNames('Platform'), [], 'its own name is not offered');
+  selection._hooks.onChange('height', 80);
+  assert.equal(editMode.history._done.length, 1, 'the same value again: no change, no entry');
+
+  editMode.undo();
+  assert.deepEqual(recordOf(scene, 'Ground').record.config, { width: 1200 });
+  assert.equal(editMode.dirty, false, 'back to the file as loaded');
+  assert.equal(selection.index, 12, 'the respawned platform is selected');
+  assert.equal(editMode.status, 'Undid: Ground.height');
+  editMode.redo();
+  assert.deepEqual(recordOf(scene, 'Ground').record.config, { width: 1200, height: 80 });
+  assert.equal(editMode.dirty, true);
+  clearTimeout(editMode._statusTimer);
 });

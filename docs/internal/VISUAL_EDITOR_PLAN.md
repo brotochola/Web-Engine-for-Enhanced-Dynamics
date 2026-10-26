@@ -1059,8 +1059,18 @@ reload, and it is still there.
     respawns, once. The arrow keys nudge by grid steps (Shift: ten); G cycles the grid
     (1, 8, 16, 32 px; 1 keeps whole pixels). Runtime entities do not move.
     `editorMove.test.js`.
-- [ ] **ED-12 Undo and redo** (Ctrl+Z / Ctrl+Y) over the command list, with the
+- [x] **ED-12 Undo and redo** (Ctrl+Z / Ctrl+Y) over the command list, with the
   unsaved-changes marker tied to the stack position.
+  - Done 2026-10-26 (`editor/history.js`). Every change goes through
+    `EditMode.editSelected(label, write)`: `sceneDocument.editPlaced` copies the record's
+    position and config before and after the write, respawns, and returns both. A write
+    that changes nothing is no change. Undo and redo put a copy back (`restorePlaced`),
+    respawn, and select the entity. Ctrl+Z undoes; Ctrl+Y or Ctrl+Shift+Z redoes. The
+    document is unsaved while the stack is not where the last save or load left it. A save
+    marks the position it serialized, so a change made while it was written stays unsaved.
+    A fast swap or a full load starts a new stack. Add, remove and rename (ED-11) will push
+    their own undo and redo. `editorHistory.test.js`, and undo and redo through the panel
+    in `editorParams.test.js`.
 - [ ] **ED-11 Palette** from `static entities`, with pool use per class for the open
   file. Click to place at the cursor; Ctrl+D duplicates (new name); Del deletes;
   renaming keeps names unique.

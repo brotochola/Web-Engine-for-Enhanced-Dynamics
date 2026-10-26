@@ -9,7 +9,7 @@
 // The ghost's corners live in a buffer made once: drawing it allocates nothing per frame.
 
 import { entityBox, pointOnEntity } from './pick.js';
-import { recordOf, setPosition } from './sceneDocument.js';
+import { recordOf, writePosition } from './sceneDocument.js';
 
 /** The grid steps the editor offers, in world pixels; 1 is no snap. */
 export const SNAP_STEPS = Object.freeze([1, 8, 16, 32]);
@@ -109,9 +109,10 @@ export class MoveTool {
     return true;
   }
 
+  /** Through the editor: kept for undo, and the selection follows the respawned entity. */
   _moveTo(x, y) {
     const selection = this.selection;
-    selection._edited(setPosition(selection.debugUI.scene, selection.name, x, y));
+    selection.editor.editSelected(`move ${selection.name}`, (record) => writePosition(record, x, y));
   }
 
   /**

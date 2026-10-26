@@ -6,8 +6,9 @@
 // The selection is the entity, not its slot: it keeps the spawn generation, and an entity that despawns (or whose
 // slot goes to another) is not selected any more. A fast swap clears it.
 //
-// An authored entity's panel has a field per spawn param (paramWidgets.js, ED-7). A change edits its record in the
-// scene file's document and respawns it (sceneDocument.js, ED-9); the selection moves to the respawned entity.
+// An authored entity's panel has a field per spawn param (paramWidgets.js, ED-7). A change goes through the editor
+// (EditMode.editSelected): it edits the record in the scene file's document, respawns the entity (sceneDocument.js,
+// ED-9), keeps the change for undo, and selects the respawned entity.
 //
 // Cost: the panel is made on the first selection, its fields on each selection. A click or an edit allocates; a
 // frame does not.
@@ -17,7 +18,7 @@ import { Messages } from '../../messages.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
 import { pickEntityAt } from './pick.js';
 import { buildParamFields } from './paramWidgets.js';
-import { recordOf, paramsOf, setParam, setConfig } from './sceneDocument.js';
+import { recordOf, paramsOf, writeParam, writeConfig } from './sceneDocument.js';
 
 export class Selection {
   constructor(debugUI) {
@@ -29,8 +30,8 @@ export class Selection {
     this.name = null;
     this.className = '';
 
-    /** Called after each edit (EditMode marks the document unsaved). */
-    this.onEdit = null;
+    /** The editor the selection's changes go through (EditMode.editSelected). */
+    this.editor = null;
 
     this._panel = null;
     this._title = null;
@@ -38,8 +39,9 @@ export class Selection {
     this._fields = null;
     this._classNameOf = (entityType) => debugUI.tools._classNameForType(entityType);
     this._hooks = {
-      onChange: (key, value) => this._edited(setParam(debugUI.scene, this.name, key, value)),
-      onConfig: (config) => this._edited(setConfig(debugUI.scene, this.name, config)),
+      onChange: (key, value) =>
+        this.editor.editSelected(`${this.name}.${key}`, (record, description) => writeParam(record, description, key, value)),
+      onConfig: (config) => this.editor.editSelected(`${this.name} config`, (record) => writeConfig(record, config)),
       entityNames: (className) => namesOf(debugUI.scene, className, this.name),
     };
   }
@@ -87,13 +89,6 @@ export class Selection {
     const i = this.index;
     if (i < 0) return;
     if (i * 65536 + (Messages.spawnGen[i] | 0) !== this.packed) this.clear();
-  }
-
-  /** After an edit: select the respawned entity (its fields from the record as it is now). */
-  _edited(index) {
-    if (index >= 0) this.select(index);
-    else this.clear();
-    if (this.onEdit) this.onEdit();
   }
 
   destroy() {
