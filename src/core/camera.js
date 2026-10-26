@@ -601,6 +601,10 @@ export class Camera {
     if (snap.slot <= 0) return dest;
     const i = snap.slot - 1;
     if (i < 0 || i >= poseX.length) return dest;
+    // The latched pose holds bodies only. An entity without one is drawn from
+    // Transform, which followEntity already put into the SAB camera: reading its
+    // (never published) pose slot centered the view on the world origin.
+    if (!(RigidBody.active && RigidBody.active[i])) return dest;
     const zoom = snap.zoom || 1;
     const cw = this._canvasWidth;
     const ch = this._canvasHeight;
@@ -828,7 +832,8 @@ export class Camera {
     let y;
     let vx;
     let vy;
-    if (poseX && RigidBody.active && RigidBody.active[i]) {
+    const followsBody = !!(poseX && RigidBody.active && RigidBody.active[i]);
+    if (followsBody) {
       x = poseX[i];
       y = this._poseY[i];
       if (look !== 0) {
@@ -846,10 +851,13 @@ export class Camera {
       vy = RigidBody.vy ? RigidBody.vy[i] : 0;
     }
     const ready = this._poseReadyFrame | 0;
-    const publishFrozen = ready > 0 && ready === this._followPoseReady;
-    this._followPoseReady = ready;
     // Same pose snapshot as last follow: sprite is frozen. Do not ease the
     // camera or the tilemap slides under the car (high-speed rAF lap hitch).
+    // Only a body's sprite waits for a physics publish: an entity without one
+    // moves with Transform every logic tick, and with nothing awake in the world
+    // the publish frame never changes, which held the camera where it was.
+    const publishFrozen = followsBody && ready > 0 && ready === this._followPoseReady;
+    this._followPoseReady = ready;
     if (publishFrozen) {
       this._followWriteBegin();
       try {
