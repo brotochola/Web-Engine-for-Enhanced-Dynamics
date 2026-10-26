@@ -130,6 +130,26 @@ export { SharedAtomicPool } from './core/sharedAtomicPool.js';
 export { SharedResource, SharedResourceMailbox } from './core/sharedResource.js';
 
 // ============================================================================
+// NETWORKING (WebRTC, main thread) — docs/internal/NETWORKING_PLAN.md
+// ============================================================================
+export { Network, NET_STATE } from './core/network/network.js';
+export {
+  NET_CHANNEL,
+  NET_MSG,
+  netNow,
+  generateRoomCode,
+  normalizeRoomCode,
+  formatRoomCode,
+} from './core/network/netProtocol.js';
+export {
+  writePoseSnapshot,
+  readPoseSnapshot,
+  poseSnapshotBytes,
+  isNewerTick,
+} from './core/network/poseSnapshot.js';
+export { LocalStorageStore, FirebaseStore } from './core/network/signalingStore.js';
+
+// ============================================================================
 // FLASHES
 // ============================================================================
 export { Flash } from './core/flash.js';
@@ -248,6 +268,22 @@ import { DecorationSpatial } from './core/decorationSpatial.js';
 import { BulletPool } from './core/bulletPool.js';
 import { SharedAtomicPool } from './core/sharedAtomicPool.js';
 import { SharedResource, SharedResourceMailbox } from './core/sharedResource.js';
+import { Network, NET_STATE } from './core/network/network.js';
+import {
+  NET_CHANNEL,
+  NET_MSG,
+  netNow,
+  generateRoomCode,
+  normalizeRoomCode,
+  formatRoomCode,
+} from './core/network/netProtocol.js';
+import {
+  writePoseSnapshot,
+  readPoseSnapshot,
+  poseSnapshotBytes,
+  isNewerTick,
+} from './core/network/poseSnapshot.js';
+import { LocalStorageStore, FirebaseStore } from './core/network/signalingStore.js';
 import { DecorationComponent } from './components/decorationComponent.js';
 import { BulletComponent } from './components/bulletComponent.js';
 import { LightEmitter } from './components/lightEmitter.js';
@@ -423,6 +459,22 @@ const WEED = Object.freeze({
   SharedAtomicPool,
   SharedResource,
   SharedResourceMailbox,
+
+  // Networking (WebRTC, main thread)
+  Network,
+  NET_STATE,
+  NET_CHANNEL,
+  NET_MSG,
+  netNow,
+  generateRoomCode,
+  normalizeRoomCode,
+  formatRoomCode,
+  writePoseSnapshot,
+  readPoseSnapshot,
+  poseSnapshotBytes,
+  isNewerTick,
+  LocalStorageStore,
+  FirebaseStore,
 
   // Flashes
   Flash,

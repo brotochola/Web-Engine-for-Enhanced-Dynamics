@@ -24,6 +24,11 @@ const MAIN_THREAD_ONLY = [
   'encodeSave',
   'decodeSave',
   'setupWorkerCommunication',
+  // WebRTC, localStorage and the Firebase SDK: main thread (docs/internal/NETWORKING_PLAN.md)
+  'Network',
+  'NET_STATE',
+  'LocalStorageStore',
+  'FirebaseStore',
 ];
 
 test('worker WEED has every WEED name except the main-thread-only ones', () => {

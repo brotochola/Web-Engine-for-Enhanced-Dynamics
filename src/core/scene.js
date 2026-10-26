@@ -137,6 +137,7 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
+import { fetchReadRetryUncached } from '../util/fetchRetry.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
 import {
   isSpawnCommandRingBound,
@@ -1546,17 +1547,10 @@ class Scene {
     await Promise.all(
       entries.map(async ([tilemapId, tilemapConfig]) => {
         try {
-          const jsonResponse = await fetch(tilemapConfig.json);
-          if (!jsonResponse.ok) {
-            throw new Error(`Failed to load tilemap JSON: ${tilemapConfig.json}`);
-          }
-          const tilemapData = await jsonResponse.json();
-
-          const tilesetResponse = await fetch(tilemapConfig.png);
-          if (!tilesetResponse.ok) {
-            throw new Error(`Failed to load tileset image: ${tilemapConfig.png}`);
-          }
-          const tilesetBitmap = await createImageBitmap(await tilesetResponse.blob());
+          const tilemapData = await fetchReadRetryUncached(tilemapConfig.json, (r) => r.json());
+          const tilesetBitmap = await createImageBitmap(
+            await fetchReadRetryUncached(tilemapConfig.png, (r) => r.blob())
+          );
 
           this.loadedTilemaps[tilemapId] = {
             data: tilemapData,

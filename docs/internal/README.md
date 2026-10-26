@@ -31,6 +31,7 @@ tried, what is planned, and the journal of building the engine. They are not the
 | [`VISUAL_EDITOR_PLAN.md`](./VISUAL_EDITOR_PLAN.md) | The visual editor: goals, design, stages and items (ED-xx), open decisions. |
 | [`ISOLATION_SERVICE_WORKER_PLAN.md`](./ISOLATION_SERVICE_WORKER_PLAN.md) | SharedArrayBuffer without COOP/COEP headers: our own service worker, test plan, items (SW-xx), open decisions. |
 | [`BOX2D_MEMORY_PLAN.md`](./BOX2D_MEMORY_PLAN.md) | `physics.wasmMemoryMB`: a per-scene size for Box2D's memory, the out-of-memory error, the sizing survey, items (BM-xx). |
+| [`NETWORKING_PLAN.md`](./NETWORKING_PLAN.md) | Multiplayer over WebRTC: what exists, constraints, architecture, the developer API, stages N0–N7 and items (NET-xx), open decisions. |
 
 ## The journal
 

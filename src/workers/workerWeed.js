@@ -91,6 +91,21 @@ import { Joint } from '../core/joint.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
 import { SharedAtomicPool } from '../core/sharedAtomicPool.js';
 import { SharedResource, SharedResourceMailbox } from '../core/sharedResource.js';
+// Networking: the pure helpers only (Network itself is main-thread WebRTC).
+import {
+  NET_CHANNEL,
+  NET_MSG,
+  netNow,
+  generateRoomCode,
+  normalizeRoomCode,
+  formatRoomCode,
+} from '../core/network/netProtocol.js';
+import {
+  writePoseSnapshot,
+  readPoseSnapshot,
+  poseSnapshotBytes,
+  isNewerTick,
+} from '../core/network/poseSnapshot.js';
 import { Flash } from '../core/flash.js';
 import { Query } from '../core/query.js';
 import {
@@ -216,6 +231,16 @@ export const WORKER_WEED = Object.freeze({
   SharedAtomicPool,
   SharedResource,
   SharedResourceMailbox,
+  NET_CHANNEL,
+  NET_MSG,
+  netNow,
+  generateRoomCode,
+  normalizeRoomCode,
+  formatRoomCode,
+  writePoseSnapshot,
+  readPoseSnapshot,
+  poseSnapshotBytes,
+  isNewerTick,
   Flash,
   FORCE_PROCESS_ON_LOGIC_WORKER_NONE,
   resolveForceProcessOnLogicWorker,
