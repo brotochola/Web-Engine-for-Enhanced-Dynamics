@@ -1102,14 +1102,10 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
     );
   }
 
-  const sunConfig = { ...SUN_DEFAULTS, ...config.lighting?.sun };
-  if (sunConfig.enabled) {
+  if (sunBootConfig(config).enabled) {
     buffers.sunData = new SharedArrayBuffer(Sun.BYTE_LENGTH);
     Sun.initialize(buffers.sunData);
-    Sun.initFromConfig(sunConfig);
-    if (sunConfig.dayCycle?.enabled) {
-      Sun.setTimeOfDay(sunConfig.startHour);
-    }
+    applySunBoot(config);
   }
 
   const idBytes = entityIdBytes();
@@ -1314,6 +1310,48 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   scene.camera.y = config.worldHeight / 2 - config.canvasHeight / 2;
   views.camera[1] = scene.camera.x;
   views.camera[2] = scene.camera.y;
+  // The camera as a load leaves it, for a fast swap to put back (restoreBootCamera).
+  scene._bootCamera = Float32Array.from(views.camera);
+}
+
+/** The sun's settings a load starts from: config.lighting.sun over the defaults. */
+function sunBootConfig(config) {
+  return { ...SUN_DEFAULTS, ...config.lighting?.sun };
+}
+
+/**
+ * Put the sun where a load puts it: its configured angle, elevation, colour, intensity and
+ * shadow settings, and the start hour when the day cycles. Boot (after Sun.initialize) and
+ * the fast swap (VISUAL_EDITOR_PLAN.md ED-35) call it; no sun, no change.
+ * @param {object} config - the scene's config
+ */
+export function applySunBoot(config) {
+  const sunConfig = sunBootConfig(config);
+  if (!sunConfig.enabled || !Sun.buffer) return;
+  Sun.initFromConfig(sunConfig);
+  if (sunConfig.dayCycle?.enabled) {
+    Sun.setTimeOfDay(sunConfig.startHour);
+  }
+}
+
+/**
+ * Put the camera back as the load left it (the fast swap, VISUAL_EDITOR_PLAN.md ED-35): the
+ * shared values from the copy kept at boot (position, zoom, follow target, shake), this
+ * thread's camera state rebound to them at the current canvas size, the world bounds, and
+ * no free camera. Every thread must be idle.
+ * @param {object} scene
+ */
+export function restoreBootCamera(scene) {
+  const view = scene.views?.camera;
+  const boot = scene._bootCamera;
+  if (!view || !boot) return;
+  Camera.setFree(false);
+  view.set(boot);
+  Camera.initialize(view, Camera._canvasWidth, Camera._canvasHeight);
+  const config = scene.config;
+  if (config.worldWidth && config.worldHeight) {
+    Camera.setWorldBounds(config.worldWidth, config.worldHeight);
+  }
 }
 
 /**

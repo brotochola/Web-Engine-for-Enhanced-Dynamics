@@ -258,6 +258,8 @@ class Scene {
     };
     /** Render-queue camera views bound by _drawnCameraViews(). */
     this._drawnCam = null;
+    /** The camera buffer as the load left it (sceneSharedBuffers.js), for a fast swap to put back. */
+    this._bootCamera = null;
     /** Game-code errors from workers: key → { phase, className, entityIndex, message, counts: Map<worker, n> }. */
     this._entityErrors = new Map();
     /** True when a registered type defines onMessage (or onAnimationEnd): the inboxes exist. */

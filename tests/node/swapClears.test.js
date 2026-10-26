@@ -11,6 +11,9 @@ import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { Collider } from '../../src/components/collider.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
+import { Camera } from '../../src/core/camera.js';
+import { Sun } from '../../src/core/sun.js';
+import { applySunBoot, restoreBootCamera } from '../../src/util/sceneSharedBuffers.js';
 import {
   bindPoolExhaustion,
   droppedSpawns,
@@ -157,4 +160,38 @@ test('resetPoolExhaustion: every pool warns again and counts from 0, as in a new
     unbindPoolExhaustion();
   }
   assert.equal(warned.length, 2, 'once before the reset, once after');
+});
+
+test('restoreBootCamera puts the camera back as the load left it', () => {
+  const view = new Float32Array(new SharedArrayBuffer(Camera.FLOAT_COUNT * 4));
+  view[0] = 1;
+  view[3] = Number.NaN;
+  view[4] = Number.NaN;
+  view[5] = 1;
+  Camera.initialize(view, 800, 600);
+  view[1] = 100;
+  view[2] = 50;
+  const scene = { views: { camera: view }, _bootCamera: Float32Array.from(view), config: { worldWidth: 4000, worldHeight: 3000 } };
+  Camera.x = 700;
+  Camera.zoom = 2.5;
+  assert.equal(Camera.x, 700);
+  restoreBootCamera(scene);
+  assert.equal(Camera.x, 100);
+  assert.equal(Camera.y, 50);
+  assert.equal(Camera.zoom, 1);
+  // Every value but the last slot, the seqlock word the bounds write advanced (an even count: unlocked).
+  assert.deepEqual([...view].slice(0, -1), [...scene._bootCamera].slice(0, -1));
+});
+
+test('applySunBoot puts the sun back at its configured settings and start hour', () => {
+  Sun.initialize(new SharedArrayBuffer(Sun.BYTE_LENGTH));
+  const config = { lighting: { sun: { enabled: true, angle: 1.2, intensity: 0.8, startHour: 7, dayCycle: { enabled: true } } } };
+  applySunBoot(config);
+  const boot = { hour: Sun.hour, angle: Sun.angle, intensity: Sun.intensity };
+  Sun.setTimeOfDay(21);
+  Sun.angle = 3;
+  Sun.intensity = 0.1;
+  applySunBoot(config);
+  assert.deepEqual({ hour: Sun.hour, angle: Sun.angle, intensity: Sun.intensity }, boot);
+  assert.equal(Sun.hour, 7);
 });
