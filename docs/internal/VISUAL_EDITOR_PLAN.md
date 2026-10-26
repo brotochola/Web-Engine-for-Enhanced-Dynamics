@@ -1006,7 +1006,7 @@ reload, and it is still there.
 **Status 2026-10-26:** the code of every Stage 2 item is in, with Node tests. **M1 passes
 in Chromium** (`tests/bench/editorM1Smoke.mjs`, fbae4b9c): Shift+E, a click selects a
 platform, a drag moves it, its Width field widens it, Ctrl+S writes the file, and after a
-reload it is still there. ED-44 is the last Stage 2 item.
+reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1 reached.**
 
 - [x] **ED-6 Edit mode toggle** (D5, Stage 2 version).
   - Files: `src/core/debug/editor/editMode.js`; a button in
@@ -1137,7 +1137,12 @@ reload it is still there. ED-44 is the last Stage 2 item.
     in the folder: `.scene.json` is added, and `/`, `\` and `:` are refused. Unsaved changes
     are discarded only after the author confirms, and a file is replaced only after a
     confirm. `editorFiles.test.js`, and the row in `editorPalette.test.js`.
-- [ ] **ED-44 Editor idle cost check** (measurement):
+- [x] **ED-44 Editor idle cost check** (measurement). Done 2026-10-26 (89aa51ca, R-0649),
+  with `tests/bench/editorIdleCost.mjs` (a script of its own: it needs the debug UI and
+  samples the page; `heapSampleWorkers.mjs` drives the bench runner with debug off). With
+  the editor open and idle, allocation drops on the page (60.7 → 45.0 KB/s) and in every
+  worker, every worker does less per frame (physics 0.27 → 0.002 ms: the world holds
+  still), and the page frame stays within its noise.
   - with the editor open and idle for 10 s, versus closed, the page's and workers'
     allocation rate does not rise;
   - extend `heapSampleWorkers.mjs` to sample the page target if it does not already;
