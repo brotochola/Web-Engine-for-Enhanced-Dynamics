@@ -8409,6 +8409,26 @@
         "R-0646",
         "R-0647"
       ]
+    },
+    {
+      "id": "ED-44",
+      "title": "Visual editor: edit mode open and idle costs nothing per frame, on the page or in the workers",
+      "status": "passed",
+      "statusText": "Measured 2026-10-26: the platformer, edit mode off then on in one page, two runs",
+      "date": "2026-10-26",
+      "result": "With the editor open and idle, allocation drops on the page (60.7 -> 45.0 KB/s) and in every worker, every worker does less per frame (the world holds still), and the page frame does not move beyond its noise (updateInternal 0.13 -> 0.06 ms, run 1 0.08 -> 0.09).",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md"
+      ],
+      "aliases": [
+        "editor idle cost"
+      ],
+      "next": "None: an editor change that adds per-frame work runs tests/bench/editorIdleCost.mjs again.",
+      "records": [
+        "R-0649"
+      ]
     }
   ],
   "records": [
@@ -14207,6 +14227,18 @@
       "title": "ED-39 on the fast swap: platformer 0.16 s, littleCity 0.23 s, Predator 0.26 s headed (0.68 s headless: the software renderer's frame)",
       "verdict": "answered",
       "text": "**ED-39 again, on the fast swap (ED-35) (VISUAL_EDITOR_PLAN.md).** 2026-10-26.\n\n`tests/bench/sceneLoadPhases.mjs --swap` (d434f0a1, which also times the swap's own steps): 1 cold full load + 5 fast swaps of the same scene class, timed to the renderer's first frame after them. Headless for the platformer, littleCity and Predator; Predator again headed (the machine's GPU). No other benchmark running.\n\nMedians of five swaps, ms: platformer **161.5** [123.6..306] (cold full load 1368); littleCity **226.9** [192.1..323.3] (cold 2898, ED-39's warm full load 3001); Predator headless **677.4** [646.5..745.1], headed **257.0** [247.6..285.6] (cold 2294 headless, 1836 headed; ED-39's warm full load 2824).\n\nWhere it goes: the clear 0.4 / 17.4 / 24.1 / 19.1 ms, the resets under 0.5 ms, the tiny physics step 0.3 / 7.7 / 25.4 / 20.4 ms, the level's hooks and spawn flush (Predator 0.13 s, as in a full load), `transitionCooldown` about 0.1 s in every scene. The settle waits for each worker's frame in progress: Predator headless 380 ms because the Pixi worker draws in software (a scratch probe: Pixi answered the barrier in 503, 458, 49 ms, every other worker within 12 ms); headed 0.8 ms.\n\n**Verdict: answered.** A fast swap is 4 to 13 times faster than a full load, close to ED-39's prediction (littleCity 2.77 s saved against 2.73 predicted; Predator 0.26 s against about 0.3 s). Report section: `docs/internal/reports/ED-39-scene-load-phases.md`, \"Fast swap (ED-35)\"."
+    },
+    {
+      "id": "R-0649",
+      "date": "2026-10-26",
+      "time": "20:59",
+      "timeFrom": "recorded",
+      "title": "ED-44: the editor open and idle; allocation and worker work drop, the page frame unchanged",
+      "verdict": "passed",
+      "text": "**ED-44: the editor open and idle (VISUAL_EDITOR_PLAN.md ED-44).** 2026-10-26.\n\n`tests/bench/editorIdleCost.mjs`: one headless Chrome page, the platformer on `levels/1-1.scene.json`, `debug: true`; 4 s to settle, then 8 s sampled with edit mode off, Shift+E, 4 s, 8 s sampled with it on and idle (nothing selected, the pointer still). Two runs (the second added the workers' work per frame).\n\n- **Allocation, KB/s, closed → open** (run 2; run 1 alike): page 60.7 → 45.0; physics 94.7 → 17.5; spatial 27.8 → 10.9; logic 42.4 → 24.0; pixi 589.4 → 543.4; particle 52.1 → 18.9; preRender 104.7 → 23.4.\n- **The page:** rAF interval 16.66 → 16.67 ms median (p95 17.04 both); updateInternal 0.13 → 0.06 ms (run 1: 0.08 → 0.09), within the noise.\n- **Workers, STEP_MS − WAIT_MS per frame:** physics 0.271 → 0.002 (no steps at scale 0), renderer 0.937 → 0.777, preRender 0.399 → 0.293, logic0 0.127 → 0.068, particle 0.086 → 0.048, spatial0 0.057 → 0.036.\n\n**Verdict: passed.** Nothing rises with the editor open: allocation and the workers' work drop (the world holds still), and the page's frame does not move beyond its noise. The editor's own per-frame work (the free camera, the debug UI's tick at its interval) is under what this can see (about 0.01 ms).",
+      "commits": [
+        "89aa51ca"
+      ]
     }
   ],
   "leads": [
