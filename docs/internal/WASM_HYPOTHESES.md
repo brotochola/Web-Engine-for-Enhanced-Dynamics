@@ -605,7 +605,11 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
    WebKit). About two hours of machine time, unattended. *Done 2026-10-24, shortened (R-0618); L7 in Firefox
    (R-0623, R-0624): all 61 scenes boot in release Firefox 158, and on Predator all WASM wins there too
    (pre-render −36 %, spatial −10 %). Measure Firefox with `--browser firefox` (the installed one): Playwright's
-   Firefox build runs WASM 5–18× slower than release Firefox. WebKit is out (the owner). L3 and L4 remain.*
+   Firefox build runs WASM 5–18× slower than release Firefox. WebKit is out (the owner). L3 on 2026-10-25
+   (`sceneCycleSmoke --commit`): twenty loads of Predator hold the commit, but `destroy` does not give it back
+   (N-75). L4 on 2026-10-26 (R-0640): all JS against all WASM, the first 2 s are not worse with WASM, every
+   bottleneck worker faster from the first frames (Predator pre-render −52 %, adobeAnimateScene −70 %), so
+   compiling once and posting the module (step 4) is structure, not speed.*
 2. Group A leaves `src/`, one kernel per commit, each with its parity test now reading the reference under `tests/`.
    *Done 2026-10-24 for eight kernels (R-0625): decalStamp, decalPremultiply, navFlowfield, meshCorners, shadowStamp,
    particleIntegrate and particleLists, spatialGather and spatialPublish. Their JS is `tests/reference/` (a
@@ -644,9 +648,31 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
    packers and the pixel snap are `tests/reference/gpuPackJs.mjs` (`installBatchPackJs` puts them back on a batch
    for the parity tests); `wasm.gpuPack`, `wasm.pixiPack` and `wasm.gpuPackSplit` went; a call the kernel cannot
    pack is drawn empty with one error, and in pre-render pack mode Pixi packs nothing of its own (a GPU queue
-   frame it cannot commit is drawn empty). Left in group B: the painter sort (Pixi's y-sorted custom layers sort
-   in JS, and a worker without a painter state sorts E-138's presort in JS), the collect's hand-backs, the bullet
-   tick's compound and chain colliders, the decoration sway's JS loops and the visibility kernels' JS.
+   frame it cannot commit is drawn empty).
+   *2026-10-26: group B done.* The second batch (R-0639; gates on Predator and adobeAnimateScene at the minimum
+   zoom, no worker 3 % worse, pre-render −0.2 % there):
+   - **Painter.** Pixi's y-sorted custom layers sort in the kernel, on painter states in the render-queue memory.
+     Then the JS painter moved to `tests/reference/painterJs.mjs` and `wasm.painterRadix` went. A queue the kernel
+     refuses is drawn in queue order, with one error.
+   - **Sprite collect.** Its JS loops moved to `tests/reference/preRenderCollectJs.mjs` and
+     `wasm.preRenderCollect` went. The memory always carries the collect's blocks when the spec has them.
+   - **Decoration sway.** Its JS loops moved to `tests/reference/decorationSwayJs.mjs` and `wasm.decorationSway`
+     went.
+   - **Bullet tick.** `wasm.bulletTick` went.
+   - **Visibility.** The sweep's JS, the polar raster, the clip and the merge left `angularSweep.js`, and the JS
+     light loop left pre-render, for `tests/reference/visibilitySweepJs.mjs` (`buildVisibilityPolygonsJs` runs it
+     on a worker for the wired parity tests). `wasm.visibilitySweep`, `wasm.solidSegments` and
+     `wasm.visibilityGather` went.
+
+   Init errors replace every failed bind. What stays JavaScript is no copy of a kernel:
+   - the collect's hand-backs to `collectRenderable` (a layer mask, a frame not resolved yet);
+   - the sway of parented decorations (`resolveAttachedDecorations`);
+   - `BulletPool.tick`'s loop and the JS visibility gather, where the kernel cannot read the grid (no spatial
+     workers, or the spatial memory outside the engine block);
+   - the bullet tick's per-bullet hand-back of compound polygons and chains, and the gather's compound-solid and
+     self-lit events.
+
+   The switches left in `WASM_DEFAULTS` each pick a kernel's float32 export or its double one.
 4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
    fdlibm sin/cos), compiled with clang and linked by `wasm-ld` into one `engine.wasm`; the main thread compiles it
    once and posts the `WebAssembly.Module` to the workers, each of which instantiates it once per memory it uses.
