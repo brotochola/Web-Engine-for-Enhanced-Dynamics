@@ -17,7 +17,10 @@
  * Each phase is the time from the event before it to its own end; a wrapped hook also reports the gap before it.
  *
  *   node tests/bench/sceneLoadPhases.mjs [--scene /demos/predatorScene/predatorScene.js] [--scene-export PredatorScene]
- *     [--loads 5] [--settle-ms 2000] [--headed] [--dist] [--output tests/results/ed39-predator.json]
+ *     [--loads 5] [--settle-ms 2000] [--swap] [--headed] [--dist] [--output tests/results/ed39-predator.json]
+ *
+ * Every load is a full one ({ fullLoad: true }); with --swap the warm loads may be fast swaps (ED-35), timed the
+ * same way to the first frame the renderer publishes after them.
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,7 +41,7 @@ function spread(values) {
   return { median: +median.toFixed(1), min: +v[0].toFixed(1), max: +v[n - 1].toFixed(1) };
 }
 
-async function runPage(page, { sceneModule, sceneExport, loads, settleMs }) {
+async function runPage(page, { sceneModule, sceneExport, loads, settleMs, swap }) {
   await page.evaluate(
     async ({ sceneModule, sceneExport }) => {
       const [{ default: WEED }, sceneNs, totalsModule, clockModule] = await Promise.all([
@@ -92,27 +95,41 @@ async function runPage(page, { sceneModule, sceneExport, loads, settleMs }) {
 
   const results = [];
   for (let i = 0; i <= loads; i++) {
-    const one = await page.evaluate(async (settleMs) => {
+    // The first load is always full; with --swap the warm ones may be fast swaps (ED-35).
+    const fullLoad = i === 0 || !swap;
+    const one = await page.evaluate(async ({ settleMs, fullLoad }) => {
       const { game, sceneModule, sceneExport, state, mark, totalsModule, clockModule } = globalThis.__loadPhases;
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const slot = clockModule.FRAME_CLOCK_SLOTS.renderer;
+      const framesOf = (scene) => {
+        const view = scene?.buffers?.frameTotals ? totalsModule.bindFrameTotals(scene.buffers.frameTotals) : null;
+        const totals = view ? totalsModule.readTotals(view, slot) : null;
+        return { view, frames: totals ? totals.frames : 0 };
+      };
+      const before = game.currentScene;
+      const framesBefore = framesOf(before).frames;
       state.events = [];
       state.t0 = performance.now();
       mark('start');
       await game.loadScene(sceneModule, {
         export: sceneExport,
+        fullLoad,
         onProgress: (_done, _total, stage) => mark(`stage:${stage}`),
       });
       mark('loadSceneReturned');
 
-      // First frame the renderer publishes after the load.
+      // First frame the renderer publishes after the load. A fast swap keeps the frame
+      // totals (same scene, same buffers): its first frame is the count rising past where
+      // it was before the load.
       const scene = game.currentScene;
-      const slot = clockModule.FRAME_CLOCK_SLOTS.renderer;
-      const view = scene.buffers?.frameTotals ? totalsModule.bindFrameTotals(scene.buffers.frameTotals) : null;
+      const swapped = scene === before;
+      const { view } = framesOf(scene);
       if (view) {
+        const baseline = swapped ? framesBefore : 0;
         const deadline = performance.now() + 10000;
         for (;;) {
           const totals = totalsModule.readTotals(view, slot);
-          if (totals && totals.frames > 0) break;
+          if (totals && totals.frames > baseline) break;
           if (performance.now() > deadline) break;
           await sleep(1);
         }
@@ -120,8 +137,8 @@ async function runPage(page, { sceneModule, sceneExport, loads, settleMs }) {
       }
       const events = state.events.slice();
       await sleep(settleMs);
-      return { events };
-    }, settleMs);
+      return { events, swapped };
+    }, { settleMs, fullLoad });
     results.push(one);
   }
   return results;
@@ -159,7 +176,8 @@ async function main() {
     await page.goto(pageUrl, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => document.body.dataset.benchmarkReady === 'true', undefined, { timeout: 30000 });
 
-    const runs = await runPage(page, { sceneModule, sceneExport, loads, settleMs });
+    const swap = Boolean(args.swap);
+    const runs = await runPage(page, { sceneModule, sceneExport, loads, settleMs, swap });
 
     // Phase names in the order a warm load meets them (it has the previous scene's teardown first), then any only
     // the cold load has; a phase that occurs several times in one load (the spawn flush) is summed within that load.
@@ -181,7 +199,7 @@ async function main() {
     }));
     const totals = { coldMs: +cold.total.toFixed(1), warm: spread(warm.map((l) => l.total)) };
 
-    console.log(`\n=== ED-39 load phases: ${sceneExport}, 1 cold + ${warm.length} warm loads ===`);
+    console.log(`\n=== ED-39 load phases: ${sceneExport}, 1 cold load + ${warm.length} warm ${swap ? 'fast swaps' : 'full loads'} ===`);
     console.log('phase'.padEnd(34) + 'cold ms'.padStart(10) + '   warm median [min..max] ms');
     for (const row of table) {
       const w = row.warm ? `${row.warm.median} [${row.warm.min}..${row.warm.max}]` : '-';
@@ -200,6 +218,8 @@ async function main() {
         scene: sceneModule,
         sceneExport,
         loads: { cold: 1, warm: warm.length },
+        swap,
+        swapped: runs.map((r) => r.swapped),
         settleMs,
         source: args.dist ? 'dist' : 'src',
         phases: table,

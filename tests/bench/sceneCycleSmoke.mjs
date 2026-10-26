@@ -139,7 +139,8 @@ async function main() {
           const heap = () => (performance.memory ? performance.memory.usedJSHeapSize : 0);
           const { WEED, game, sceneModule, sceneExport } = globalThis.__cycleSmoke;
           const { Layer } = WEED;
-          await game.loadScene(sceneModule, { export: sceneExport });
+          // A full load each cycle: this checks teardown, which a fast swap (ED-35) skips.
+          await game.loadScene(sceneModule, { export: sceneExport, fullLoad: true });
           await sleep(2500); // let workers run for a bit
 
           const running = {
