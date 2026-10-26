@@ -8180,6 +8180,24 @@
       "next": "Nothing pending: every batch Pixi fills from the render-queue memory copies by memory.copy."
     },
     {
+      "id": "ED-39",
+      "title": "Visual editor: full scene loads by phase, to size the fast swap (ED-35)",
+      "status": "answered",
+      "statusText": "Measured 2026-10-26: Predator and littleCity, 1 cold + 5 warm loads each",
+      "date": "2026-10-26",
+      "result": "A warm full load is 2.82 s (Predator) and 3.00 s (littleCity), headless; workers ready (1.5 to 1.8 s), shared buffers and assets are about 2.4 and 2.7 s of it, all skipped by a fast swap. What a fast swap still pays: the scene hooks and the spawn flush, 0.28 and 0.13 s.",
+      "area": "load",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md",
+        "reports/ED-39-scene-load-phases.md"
+      ],
+      "next": "Run tests/bench/sceneLoadPhases.mjs again on the fast swap once ED-35 exists.",
+      "records": [
+        "R-0644"
+      ]
+    },
+    {
       "aliases": [],
       "refs": [
         "EXECUTION_PLAN.md#E-144"
@@ -14096,6 +14114,15 @@
       "title": "WASM close-out step 4: every kernel ships in one engine.wasm (same code per function; Predator, adobeAnimateScene, visPoly, bullets neutral; 61/61 boot in Chrome and Firefox)",
       "verdict": "kept",
       "text": "**WASM close-out step 4: every kernel ships in one engine.wasm (branch wasm_group, 3e035db7). The kernels' code is the same as their own builds', and the owner scenes are neutral against the kernels apart. Kept as structure.** 2026-10-26.\n\n**Built.**\n- `scripts/buildWasm.mjs` links the 18 shipped kernels' sources into `src/wasm/engine.wasm` (`wasm/modules.json`'s \"engine\": one wasm-ld link over the objects, then wasm-opt; 78 exports).\n  - Size: 240 471 B, 60 246 B gzipped, against 241 765 B and 62 963 B for the modules apart.\n  - The kernels' own builds are now test fixtures (`tests/fixtures/wasm/`), byte for byte the binaries they replaced.\n- **Same code, function by function.** Of the 88 named functions in the kernels' own builds, 65 are byte for byte the same in engine.wasm. The other 23 have the same size and differ only in their calls' function indices, which change with the module. None is missing, and none differs in size.\n- **Loading.** `src/wasm/engine.js` is the only module that names the binary.\n  - Each worker compiles it once and instantiates it once per memory (`util/wasmKernel.js`). The clients of one memory share the instance, each taking its own exports. That is safe because a kernel has no globals and no data of its own.\n  - The bundle carries one copy, in the workers' common chunk: the prod compressed bundle is 1664 KB, against 1671 KB with the modules apart and 1680 KB on main.\n- **Not done, on purpose:**\n  - The main thread's compile and post of the module. Each worker's one compile costs no frame (L4, R-0640), and the bundle already holds one copy.\n  - One `.c` per worker with a shared header. wasm-ld links the sources, and wasm-opt already merges identical helpers. W7's calls across kernels are a speed hypothesis of their own.\n\n**Gate** (`runPredatorAbab --vs 0c94caff --hyp-rev 3e035db7`: the kernels apart, then engine.wasm; 4 pairs each, worktrees, headed, detailed stats off, AB BA order). Every scene NEUTRAL:\n- **Predator:**\n  - pre-render 3.829 → 3.799 ms, −0.7 % (worse 2/4);\n  - renderer −4.6 %, logic −1.9 %, spatial −0.8 %;\n  - physics −10.8 % (1/4, cv 7/8 %): drift, since the change does not reach physics;\n  - presented 60.0 fps on both sides.\n- **adobeAnimateScene at the minimum zoom:** pre-render 11.088 → 11.160 ms, +0.6 % (cv 1/0 %); every other worker within ±1.2 %; presented 59.9 → 60.0 fps.\n- **visPolyStressScene:** pre-render 2.858 → 2.822 ms (−1.3 %, under the 3 ms floor).\n- **bulletStressScene:** particle 3.166 → 3.169 ms, +0.1 % (cv 1/1 %).\n\n**Correctness.**\n- Suite 1986/1986.\n- `buildWasm --check` passes.\n- The bundles build, and their embed and browser smokes pass (all 8).\n- Boot: 61/61 scenes in Chrome. 61/61 in release Firefox 158.0.1.\n\n**Verdict: kept (structure).** The migration's plan is complete. The branch is wasm_hyp plus this step."
+    },
+    {
+      "id": "R-0644",
+      "date": "2026-10-26",
+      "time": "16:56",
+      "timeFrom": "recorded",
+      "title": "ED-39: full scene loads by phase; a fast swap skips about 2.4 s of Predator's 2.8 s and 2.7 s of littleCity's 3.0 s",
+      "verdict": "answered",
+      "text": "**ED-39: full scene loads, phase by phase (VISUAL_EDITOR_PLAN.md).** 2026-10-26. Measurement only.\n\n`tests/bench/sceneLoadPhases.mjs`: one headless page, `?src=1`, `debug: false`, 1 cold + 5 warm loads, 2 s between loads. Phases from `onProgress` stages, the scene's hooks wrapped on the page's copy of the module, and the renderer's first frame (frame totals). Idle machine.\n\n- **Predator:** warm 2.82 s median [2.54..4.77], cold 2.76 s. Workers ready 1.50 s, shared buffers 0.54 s, assets 0.26 s, layers 0.06 s: about **2.37 s a fast swap skips**. It still pays `create` + `createNewGame` + the spawn flush, 0.28 s (the flush 0.23 s).\n- **littleCity:** warm 3.00 s [2.80..3.40], cold 2.85 s. Skipped about **2.73 s** (workers 1.82 s, assets 0.66 s, buffers 0.23 s); stays `preload` + flush, 0.13 s.\n- The last 100 ms of every load is `transitionCooldown`, after the scene is running: not load time a player sees.\n\n**Verdict: answered.** Expected fast swap about 0.3 s (Predator) and 0.15 s (littleCity) before the clear's own cost; ED-35 measures it with the same script. Report: `docs/internal/reports/ED-39-scene-load-phases.md`."
     },
     {
       "id": "R-0645",
