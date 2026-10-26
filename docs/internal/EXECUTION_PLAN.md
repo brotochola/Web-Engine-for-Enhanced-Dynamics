@@ -2106,6 +2106,303 @@ inline nothing (the particle sign); aliasing all their imports blindly measured 
 
 ---
 
+## Wave 7 — after the WASM migration (the 2026-10-26 sweep)
+
+Written 2026-10-26, after E-76 was merged and released (v0.13.0). It is the order of everything still open:
+- **Speed:** the ranked candidates, from a CPU profile of every scene taken that day (R-0645).
+- **Correctness:** the open review items.
+- **Cleanup:** the register's leftovers.
+
+Every speed item is measured by [`HOW_WE_MEASURE.md`](./HOW_WE_MEASURE.md): its kernel first where one exists, then its
+owner scene (ABAB from worktrees), with Predator only as a gate for hot-path changes. E-139 to E-147 are rows of the
+register, ranked 1 to 9, before W7 (10).
+
+**The order, in short:**
+1. Step 0's checks.
+2. E-144: Box2D's threads. Predator's largest worker is physics, at 6.7 ms (R-0618: then spatial 4.9, logic 4.0, pre-render 3.7, Pixi 3.5).
+3. The logic items: E-139, E-140, E-141, E-142 with N-78, and E-146.
+4. E-147, spatial.
+5. E-143, the tweens.
+6. E-145, Adobe on the GPU.
+7. The review items, N-77 first.
+8. The register moves of step 6.
+
+### Wave 7's sweep (R-0645)
+
+`node tests/bench/profileSceneSweep.mjs --pass cpu --set all`:
+- **What ran:** 65 scenes, one at a time, headed, from source, detailed stats off, 6 s of warm-up and an 8 s window.
+- **The code:** v0.13.0 plus comment fixes (7922d724).
+- **Results:** 64 scenes profiled.
+  - particleEmitStressScene failed. Another session was writing an import it loads at that moment, so the cause is not a bug of this tree.
+- **Units:** CPU samples, not `STEP_MS`. A row says where a worker spends its busy time, in ms per second of the window.
+
+**Read the numbers with these caveats:**
+- **Contended scenes.** Another session ran headless scene loads (ED-39, recorded at 16:56) during this sweep: at least from 16:53 to 16:56, judging by the times of its files, and maybe earlier. Scenes 16 to 23 (littleCity to platformerGame) may read high.
+- **Scenes on half-edited code.** From about 17:08, scenes 58 to 65 (audioStorm to cmdSamePose) ran with that session's uncommitted spawn checks in `gameObject.js`, `scene.js` and `logicWorker.js`. Profile them again (step 0) before deciding anything on them.
+- **Box2D's solver threads read 1000 ms/s in every scene with physics, even with no bodies.** In bunnyMarkStressScene, physics steps in 0.13 ms with `BODY_COUNT 0`, yet its three solver threads read 1000 ms/s each, 99.6 % in one function (`wasm-function[108]`). Either the sampler counts a thread blocked in its semaphore wait as busy, or the threads spin. E-144 decides it.
+- **Scenes that load nothing.** Several stress scenes load no worker past 50 ms/s at their default knobs: bunnyMarkStressScene, spritePackStressScene, painterAdobeStressScene, decorationSwayStressScene, audioStormScene and others. The register's lead says the same: raise their knobs before reading them.
+
+**Where the time is now.** The busiest workers (ms/s), with their top functions as % of that worker:
+
+| Scene | Worker, ms/s | Where it goes |
+| --- | --- | --- |
+| painterMoveStressScene | pre-render 995 | `pack_sprites_split_scatter` 40 %, `reinsert_simd_inplace` 25 %, `collect_sprites` 16 % |
+| | logic 720 | `_tickNonDecimatedOne` 37 %, game code 49 % |
+| painterSortStressScene | pre-render 968 | `pack_sprites_split_scatter` 48 %, `collect_sprites` 22 %, `persist_frame` 9 % |
+| | logic 175 | `_tickIntervalBucket` 89 % |
+| textureUploadStressScene | Pixi 900 | `uploadSharedImage` 96 % (the GL upload) |
+| stationarySpatialWideScene | spatial 783 (two workers) | `publish_batch_u32` 61 %, `gather_batch_u32` 15 % |
+| adobeAnimateScene at the minimum zoom | pre-render 696 | `emit_rows` 44 %, `pack_sprites_split` 28 % |
+| | Pixi 375 | Pixi's own code 156 ms/s |
+| | spatial 367 | `publish_batch` 46 %, `rebuildOwnedRows` 22 % |
+| | logic 226 | the component getter 44 %, `update` 21 % |
+| boidsScene | spatial 583 (two workers) | `gather_batch` 44 %, `rebuildOwnedRows` 26 %, `publish_batch` 16 % |
+| | logic about 90 (four workers) | game code 64 % |
+| tilemapStressScene | logic 576 | `getTileId` 82 % |
+| movedBodiesMixedScene | spatial 553 | `publish_batch` 46 % |
+| predatorScene | spatial 412 | `gather_batch` 37 %, `publish_batch` 31 %, `rebuildOwnedRows` 17 % |
+| | logic 345 and 330 (two workers) | engine code about 50 %, game code 27 % (detail under step 1) |
+| | pre-render 368 | `stamp_light_range` 39 %, `emit_rows` 23 %, `collect_sprites` 15 % |
+| | Pixi 367 | `pack_sprites_split` 21 %, Pixi's own code 30 % |
+| spawnStormScene | logic 393 | `_spawnAt` 40 %, `despawn` 12 % |
+| littleCityScene | logic 330 | game code 43 %; `neighborCount` 7 %, the component getter 7 %, `requestVectorFromStaticFlowfield` 6 % |
+| | spatial 339 and 285 | `publish_batch` 44 %, `gather_batch` 35 % |
+| meshApiStressScene | Pixi 351 | `rewrite_corners` 32 %, the mesh UV upload 32 % |
+| orientedBoxScene | spatial 352 | `gather_batch` 76 % |
+| decalBlitStressScene | Pixi 319 | Pixi's own code 228 ms/s |
+| navStressScene | particle 290 | `compute_flowfield` 86 % (deadline-bound by design) |
+| bulletStressScene | particle 249 | `bullet_tick_lean` 85 % |
+| rayStressScene | logic 199 | the ray API in JS (circle and box distances, the cell walk, the top-N) about 80 % |
+| tweenStressScene | logic 159 | tween `tick` 49 %, `_apply` 35 % |
+| waterAndBoxesScene | logic 139 | `_processBox2dCollisionCallbacks` 58 % |
+| ballsHeavyStressScene | each solver thread | `_emscripten_get_now` 9 % (90 ms/s per thread) |
+
+Summed over every scene, the most expensive engine functions are:
+- the spatial kernels: `gather_batch` 1 599 ms/s over 18 scenes, `publish_batch` 1 447;
+- pre-render's pack, collect and emit kernels;
+- `rebuildOwnedRows` (JS) 877;
+- the logic loop around game ticks: `_tickNonDecimatedOne` 399, `_tickIntervalBucket` 250, `update` 145;
+- `publishPose` 242 and the component getter 225.
+
+### Step 0: cheap checks that decide parts of Wave 7
+
+- **E-144's first half: Box2D's solver threads at idle.** Read each thread's CPU time from the operating system while
+  bunnyMarkStressScene (no bodies) and ballsHeavyStressScene run, against the sampler's 1000 ms/s.
+  - Tool: a small script that reads Chrome's renderer threads (`Get-Process` → `Threads.TotalProcessorTime`), committed on its own.
+  - About 15 minutes.
+  - If the threads burn cores with no bodies, E-144's fix comes first in the whole plan. Every scene with physics would get up to three cores back.
+- **Names for Box2D in profiles.** A profiling build of `box2dWasm.wasm` that keeps its name section (`--profiling-funcs`), not shipped, so traces name the solver's functions instead of `wasm-function[37]`.
+  - It is needed to read N-71 (mallinfo every step) and N-74.
+  - Tool only. Keep both builds working (SIMD and no-SIMD).
+- **The deopt and heap passes**, which the register's leads still list. Run `profileSceneSweep --pass deopt` and `--pass heap` with `--only` on the busiest scenes of the table above: steady-state deopts, megamorphic ICs, and allocation by site.
+- **Profile again what this sweep could not read:** scenes 16 to 23 and 58 to 65 on a quiet machine, and particleEmitStressScene.
+  - Raise the default knobs of the scenes that load nothing, then profile them.
+  - meshGalleryScene shows a second main thread at 1000 ms/s with no function over 2 %: find what it is.
+
+### Step 1: the engine's cost around game code (logic, JavaScript)
+
+**The evidence:**
+- **Predator:** about half of each logic worker is engine code.
+  - Worker one: the component getter 14 %, `neighborCount` 8 %, `_tickIntervalBucket` 8 %, the FSM `tick` 7 %, `getNeighbor` 7 %, the collision dispatch 5 %, the query copy 3 %.
+  - Worker two: the same within a point or two.
+  - Game code is 27 %.
+- **Adobe:** 44 % of logic is one getter.
+- **Painter scenes:** painterSort's logic is 89 % `_tickIntervalBucket`, and painterMove's is 37 % `_tickNonDecimatedOne`.
+
+Game code stays JavaScript, so these are JavaScript tuning items, measured with kernels where possible.
+
+### E-139 Component getters read a lazily filled object by name
+
+**The mechanism.** `this.rigidBody`, `this.collider`, `this.adobeAnimComponent` and the rest are getters that the class
+registration defines (`gameObject.js`, the component getter):
+- every getter is a closure over one shared function;
+- each reads `this._componentCache[componentName]`;
+- `_componentCache` is an object filled lazily, in whatever order an entity's code first touches its components.
+
+So there are many shapes and a keyed load by a string that differs per closure.
+
+**Variants:**
+- per-class component slots: an array declared in the constructor, read by a closure integer;
+- the component instances built with the entity, as fields declared in its constructor.
+
+**How it is decided:**
+- **Kernel:** the getter over several entity classes.
+- **Owner scene:** adobeAnimateScene at the minimum zoom, logic.
+- **Gate:** Predator logic.
+
+The ceiling is most of 44 % of Adobe's logic, and 10–14 % of Predator's.
+
+### E-140 The logic loop's own cost per ticked entity
+
+`_tickIntervalBucket` is 89 % of painterSort's logic and 7–8 % of Predator's. `_tickNonDecimatedOne` is 37 % of
+painterMove's logic, and `update` 21 % of Adobe's.
+
+**How to approach it:**
+1. Read what the loop does per entity before calling the game's `tick`: the bucket walk, the active test, the per-call arguments (the bucket loop takes 17 parameters), and the forced-scan branch.
+2. Measure on the existing owner scenes, `minimalTickScene` and `minimalTickIntervalScene`.
+3. Write a leaner loop, with one copy per case. Follow the hot-loop rule: no shared helper or loop-invariant branch inside it.
+
+The ceiling depends on how much of that self time is the loop rather than inlined game code. `--trace-turbo-inlining` tells which.
+
+### E-141 Neighbour accessors called from game code
+
+`neighborCount` and `getNeighbor` are each 7–8 % of Predator's logic and 5–7 % of littleCity's and Boids'. Both are
+already two-line typed-array reads, so the cost is the call itself: the receivers are every entity class, so the load of
+`_neighborOffset` is polymorphic.
+
+**Candidates:**
+- `_neighborOffset` at the same place in every instance;
+- a per-index offset table on `Grid`;
+- a documented path with no call (`getAllNeighborIds()` and a local loop) in the guide.
+
+Kernel first.
+
+### E-142 `getTileId` divides twice per call
+
+**Speed.** `getTileId` is 82 % of tilemapStressScene's logic (469 ms/s; that scene calls it at a fixed rate). It
+divides by the tile width and height on each call. Reciprocals stored with the map remove both divisions.
+
+**A correctness bug, filed as N-78.** `| 0` truncates toward zero, so a coordinate in (−tileWidth, 0) reads tile 0
+instead of empty. `Math.floor` fixes it. Use it in the faster version too.
+
+### E-143 Tweens
+
+The tween `tick` (49 %) and `_apply` (35 %) take tweenStressScene's logic (159 ms/s). Read the per-tween work first,
+then decide between JavaScript tuning and a kernel over the tween slots: the tween slots are typed arrays already.
+
+### E-146 The FSM tick and the collision-callback dispatch
+
+- **The FSM.** `fsm.js`'s `tick` is 7 % of Predator's logic.
+- **The collision dispatch.** `_processBox2dCollisionCallbacks` is 58 % of waterAndBoxesScene's logic and 5–7 % of Predator's.
+  - It is self time of the engine function. The profile would name the game's callbacks apart, inlined or not.
+  - W18 (dropped) had found its owner scene's cost in the game callbacks and in an `Atomics.load` that E-131 then removed. This is another scene, so read why before changing anything.
+
+Read the per-event and per-state costs, then a kernel for each.
+
+**Not now: the spawn path** (`_spawnAt` 40 % and `despawn` 12 % of spawnStorm's logic). It is being changed by the
+visual editor's spawn parameters work (VISUAL_EDITOR_PLAN). Profile it again after that work lands. The register's
+lead on H-14 (the numeric sort of packed keys, E-93) is re-sat then too.
+
+### Step 2: spatial, the largest engine sum
+
+### E-147 The spatial kernels wait on memory: less work per frame
+
+`gather_batch` is 44 % of Boids' spatial, 76 % of orientedBoxScene's and 37 % of Predator's. `publish_batch` is 46 %
+of movedBodiesMixedScene's spatial, and its 32-bit form is 61 % of stationarySpatialWideScene's.
+
+Both kernels are bound by memory, not arithmetic:
+- **The gather.** Its float32 variants lost in Node: f32 −2.0 % and f32x4 −1.2 % (0/25, R-0571).
+- **The publish.** Its f32x4 form tied the double one on Predator's rows (W8a).
+
+So what is left is doing less work:
+1. **Read the reuse rates.** Count how many rows each scene rebuilds and republishes per frame, against the neighbour-reuse skin and its frame limit.
+2. **The Chrome entry for the gather's float32 variants.** They have none yet. The owner's rule is that Chrome decides between kernel variants; it closes the flags pass.
+3. **W7 and E-136**, below.
+
+### Spatial's other items
+
+- **W7 (rank 10).** One call per frame for gather, publish and rebuild saves the glue, about 8 % of Predator's spatial.
+- **E-136.** Spatial would leave out of the publish the rows of neighbourhoods where every entity is static. Its owner scene is profiled now: stationarySpatialWideScene's publish is 61 % of 783 ms/s.
+- **`rebuildOwnedRows` (JavaScript).** It is 26 % of Boids' spatial, 22 % of Adobe's and 17 % of Predator's.
+  - W6's exact C port was only 10.9 % faster in its kernel, about 1.4 % of Predator's spatial, so it was screened.
+  - The question now is why these scenes take the full rebuild rather than `_rebuildMovedRows`, the rows of moved entities only.
+  - The register's "H-ROW / H-OWN spatial" row belongs here (step 6): with two or more spatial workers, each worker scans every active entity and skips the rows it does not own.
+- **Adobe's characters.** They set `collider.visualRange = 50`, so spatial spends 367 ms/s finding their neighbours. Check whether their code ever reads them.
+  - If it does not, in the demo that is a demo setting.
+  - In the engine, an entity whose code never reads neighbours could stay out of the gather: an engine option, measured on its own.
+
+### Step 3: pre-render and Pixi
+
+### E-145 Adobe Animate pieces expanded on the GPU
+
+At the minimum zoom, `emit_rows` (44 %) and `pack_sprites_split` (28 %) take a pre-render of 696 ms/s, and W27b showed
+the expansion is bound by its stores: float32 and SIMD tied.
+
+**The idea:** fewer bytes written, not faster maths. One row per character goes to the GPU with the piece tables
+(clips, frames, pieces), and the vertex shader expands the pieces. It also removes most of Pixi's 15 MB-per-frame copy
+(W30).
+
+It is large and changes the render path, so a design note comes first: the batch layout, the sort, the shadows, and
+what the custom layers lose. Then a prototype on adobeAnimateScene.
+
+### Pre-render and Pixi items not ranked yet
+
+- **Painter scenes.** `pack_sprites_split_scatter` is 40–48 % of a saturated pre-render in painterSort and painterMove.
+  - Pixi there is 40 % in an unnamed module (most likely W30's `memory.copy`) and 47 % in Pixi's own code.
+  - The register's lead: the persist path pays only when the visible set is unchanged, which a moving camera rarely gives.
+- **Predator's sprite statics** (R-0607). Pixi rewrites them every frame, because Predator sorts in Pixi (`sortSprites: 'pixi'`), so E-82b cannot skip them.
+- **Predator's shadow stamp.** `stamp_light_range` is 39 % of its pre-render, after W23 and E-133.
+- **Texture uploads.** `uploadSharedImage` is 96 % of textureUploadStressScene's Pixi (900 ms/s). This is the GPU side, the register's first lead.
+- **Mesh uploads.** meshApiStressScene's Pixi is 32 % the mesh UV upload and 32 % `rewrite_corners`.
+- **Decal uploads.** In decalBlitStressScene, Pixi's own code takes 228 ms/s, the decal tile uploads.
+
+### Step 4: physics
+
+### E-144 Box2D's solver threads: their idle cost and their clock reads
+
+**The finding.**
+- **The clock.** On a physics-bound scene, each solver thread spends 9 % in `_emscripten_get_now` (ballsHeavyStressScene, 90 ms/s per thread), and Predator 3 %.
+- **Where the reads come from.** The scheduler reads the clock when each spin starts and every 64th spin (W24 made it every 64th instead of every spin), and the solver's stage waits spin too.
+- **The idle question.** Step 0 decides whether those threads also burn cores when there is no work.
+- **Why it ranks first.** Physics is Predator's largest worker (6.7 ms, R-0618).
+
+**Variants, in the Box2D repo:**
+- a spin bounded by a count, with no clock;
+- a shorter spin;
+- a futex wait in the stage syncs.
+
+Both builds must keep working (SIMD and no-SIMD), with `build_for_weed.bat` before each commit.
+
+**How it is decided:**
+- **Owner:** ballsHeavyStressScene physics.
+- **Gate:** Predator, reading the other workers too, since freed cores help them.
+
+### Other physics items
+
+- **N-74 / L5.** physics +7 % on adobeAnimateScene against the engine before E-76. E-144 and the names build come first; then the place of the engine block in Box2D's heap (before or after the world).
+- **`publishPose` and `applyForcesAndTorque`.** They are 11 % and 9 % of Boids' physics thread (`publishPose` sums 242 ms/s over 18 scenes).
+  - W15 and W28 were screened on Predator's ceilings (1.8 % and 2 %).
+  - Boids shows larger shares, so screen them again there.
+
+### Step 5: the open review items
+
+In [`REVIEW_PLAN.md`](./REVIEW_PLAN.md):
+
+| Item | What | Size |
+| --- | --- | --- |
+| N-77 | Chrome's GPU process keeps about 87 MB after `game.destroy()`. The fix: dispose the Pixi worker's renderer and device before the terminate. `sceneCycleSmoke --commit` is the test. | about 1 h |
+| N-76 | Pixi frames outside the consume/release handshake may read a queue that pre-render is writing. | half a day |
+| N-78 | `getTileId` and its kin truncate negative coordinates toward zero (with E-142). | 30 min |
+| N-71 | mallinfo every physics step, with detailed stats off. It needs the names build to be seen. | with E-144 |
+| N-74 | physics on adobeAnimateScene (step 4). | with E-144 |
+| N-69 | `ContactDrainCap32Scene` declares 70 000 bodies, past the 65 535 a scene with physics allows. | 15 min |
+| N-65 | A NaN animation clock advances on persist frames only. A behaviour change, for the owner of the animation API to decide. | decision |
+| N-6, N-9, N-31, N-36, N-38, N-44, N-46 | Older items: logic single-writer isolation, headed console probes, Predator's dead flocking code, spatial drift, lit fills, type gaps, the README's bundler advice. | as written there |
+
+### Step 6: the register's leftovers
+
+- **E-76.** It was still `running`; it is kept: done 2026-10-26 (R-0642, R-0643).
+- **The older pending rows.** There are 39: status open, mixed, running or blocked, not counting E-76, W7, E-136, E-109 and DX-SW. They were triaged against the code at 7922d724, a desk review with no sitting.
+  - 14 are done, by a later hypothesis or by their own record.
+  - 22 are stale: the code they name is gone or rewritten. The multi pre-render rows and the GPU sort went in September (766bf53d, R-0207).
+  - 3 are still speed items, all small:
+    - **"H-ROW / H-OWN spatial":** about 0.2–0.45 ms in scenes with two or more spatial workers (boidsScene), and zero with one. It goes with step 2's `rebuildOwnedRows` item.
+    - **"Floor occlusion (do not project if it covers the ground)":** the share is unknown. First count the casters that cover the ground in Predator at night, and close the row if there are almost none.
+    - **E-12 (the flowfield slot scan):** 0.005–0.02 ms a frame. Close it, with that number in its row.
+- **The moves to apply in the register.** None is applied yet, and each comes after a look at its row:
+  - **kept:** E-50 (its tail E-50b is E-91) and "preRender.skipCull (AABB vs emit-all)";
+  - **kept-hygiene:** E-55 (done as W24, R-0460) and "SAB spawn command ring";
+  - **answered:** E-31, "Time scale", "Camera dead zone and shake", "Second batch, not measured", "lightGlow sprite versus add", "Doc+Doubao filter" and "CELL u32";
+  - **superseded:** E-11 (by E-122), H-15 (by E-85's second change, R-0462), "Caster ids per cell from spatial" (by E-114's stamp grid), and E-14, P2, D1 with the other 19 stale rows;
+  - **closed:** E-12.
+- **Leftovers that are not rows yet**, each worth one when a scene shows it:
+  - the light-splat attenuation of LiquidFun's lit water (GPU fill only);
+  - the gather's home-cell ordering, which silently stops past 65 536 cells (`order_by_cell` keys cells in 16 bits);
+  - the A* tail (`computePath` in JS, for Predator's player only);
+  - `requestVectorFromStaticFlowfield`, 6 % of littleCity's logic (a `Map.get` by name, two floors and two divides per call).
+
+---
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
