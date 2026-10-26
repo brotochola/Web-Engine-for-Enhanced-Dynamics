@@ -552,6 +552,23 @@ leave-one-out table. The migration's total is the number of these sittings, neve
 kernels' records ([HOW_WE_MEASURE](./HOW_WE_MEASURE.md#how-a-sitting-decides): a total is measured, not
 added).
 
+*Run 2026-10-26, after group B (R-0642), all WASM (4a82a562) against 5477a582:*
+- **The scoreboard, scenes only (R-0641).** Kernel rows skipped: the base has no kernels to time. Lockstep skipped:
+  the float32 kernels are tolerance gates, not bit gates. Results:
+  - 7 kept: ray and rayVsBox2d logic −37 %, liquidfunQuery physics −9.8 %, visPoly pre-render −49 %, bullets
+    particle −53 %, spawn logic −6.3 %, textureUpload Pixi −4.0 %;
+  - 7 ties;
+  - none worse;
+  - the rest are protocol ceilings and step floors, rows that do not reach their hot code.
+- **L4 (R-0640).** The first 2 s are not worse.
+- **L10, four physical cores (affinity 0x55).**
+  - Predator: pre-render 4.87 → 2.87 ms (−39 %), spatial −18 %, renderer −8 %, presented 60 fps on both sides.
+    Physics +12 % and logic +11 % have a cv of 12–15 %, not judged.
+  - adobeAnimateScene at the minimum zoom: pre-render 45.7 → 11.1 ms (−76 %), physics −6.8 %, presented
+    59.2 → 59.9 fps.
+  - Process CPU per presented frame was not read: the runner has no tool for it yet (HOW_WE_MEASURE tool 9).
+- **Boot.** Every scene boots on the source tree in Chrome and in release Firefox 158 (61/61 each), with no JS to fall back to.
+
 ## Close-out plan (2026-10-24)
 
 Every hypothesis is decided or parked (W7 belongs to the grouping step; E-136 is a narrow lead). Decision 7's order
@@ -676,6 +693,9 @@ all are built with the same pinned flags (`-O3 -msimd128`, the same `wasm-ld` an
 4. The grouping, by hand: one `.c` per worker plus a shared header (one copy of `js_to_int32`, `floor_int32`, the
    fdlibm sin/cos), compiled with clang and linked by `wasm-ld` into one `engine.wasm`; the main thread compiles it
    once and posts the `WebAssembly.Module` to the workers, each of which instantiates it once per memory it uses.
+   *Deferred to after the merge into main (2026-10-26, with the owner's 12-hour deadline): L4 found no warm-up cost
+   (R-0640), and each worker already compiles each module once, so the grouping is structure, not speed; it gets a
+   branch of its own.*
    Not `wasm-merge`: a source merge lets W7 call gather, publish and rebuild in one unit and removes the duplicate
    helpers. Each merged kernel passes its parity test bit for bit, ties a Node kernel A/B against its separate
    build, and gets one Chrome check on its owner scene.
