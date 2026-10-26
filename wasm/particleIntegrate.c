@@ -17,7 +17,8 @@ enum {
   BASE_TINT, TEXTURE_ID, ROT_C, ROT_S, FADE_ON_FLOOR, TIME_ON_FLOOR, INITIAL_ALPHA, STAY_ON_FLOOR,
   DESPAWN_ON_GROUND, TWEEN_MASK, EASE_ID, ALPHA_FROM, ALPHA_TO, SCALE_X_FROM, SCALE_X_TO,
   SCALE_Y_FROM, SCALE_Y_TO, TINT_FROM, TINT_TO, ROT_FROM, ROT_TO, ANG_FROM, ANG_TO, HAS_ANG,
-  ANIM_COUNT, ANIM_MODE, ANIM_FRAMES, FLAT, RENDER_ONLY, COLUMN_COUNT
+  ANIM_COUNT, ANIM_MODE, ANIM_FRAMES, FLAT, RENDER_ONLY, BOUNCES, BOUNCINESS, BOUNCE_FRICTION,
+  COLUMN_COUNT
 };
 
 /* PARTICLE_TWEEN bits. */
@@ -148,6 +149,8 @@ void integrate_batch(
   const uint16_t *animFrames = COL(uint16_t, ANIM_FRAMES);
   const uint8_t *flat = COL(uint8_t, FLAT);
   const uint8_t *renderOnly = COL(uint8_t, RENDER_ONLY);
+  uint8_t *bounces = COL(uint8_t, BOUNCES);
+  const float *bounciness = COL(float, BOUNCINESS), *bounceFriction = COL(float, BOUNCE_FRICTION);
   uint16_t *stamp = (uint16_t *)(uintptr_t)stampByte;
   uint16_t *flatList = (uint16_t *)(uintptr_t)flatByte;
   uint16_t *heightedList = (uint16_t *)(uintptr_t)heightedByte;
@@ -220,7 +223,7 @@ void integrate_batch(
     y[i] = (float)((double)y[i] + (double)vy[i] * dtRatio);
   }
 
-  /* Heighted pass: gravity + air / ground / floor fade / despawn. */
+  /* Heighted pass: gravity + air / ground (bounce) / floor fade / despawn. */
   uint32_t survivors = 0;
   for (uint32_t k = 0; k < heightedCount; k++) {
     const uint32_t i = heightedList[k];
@@ -231,6 +234,26 @@ void integrate_batch(
       z[i] = (float)((double)z[i] + (double)vz[i] * dtRatio);
       survivors++;
       continue;
+    }
+    if (bounces[i] > 0 && vz[i] > 0) {
+      /* Floor bounce: the rebound must beat two frames of gravity (0.05 px/frame when gravity is
+         tiny), or the particle lands as it would without bounces. */
+      const double rebound = (double)vz[i] * (double)bounciness[i];
+      const double g = (double)gravity[i];
+      const double minRebound = g > 0.025 ? g * 2 : 0.05;
+      if (rebound > minRebound) {
+        bounces[i] = (uint8_t)(bounces[i] - 1u);
+        const double keep = (double)bounceFriction[i];
+        vx[i] = (float)((double)vx[i] * keep);
+        vy[i] = (float)((double)vy[i] * keep);
+        vz[i] = (float)(-rebound);
+        x[i] = (float)((double)x[i] + (double)vx[i] * dtRatio);
+        y[i] = (float)((double)y[i] + (double)vy[i] * dtRatio);
+        z[i] = (float)((double)vz[i] * dtRatio);
+        survivors++;
+        continue;
+      }
+      bounces[i] = 0;
     }
     z[i] = 0;
     vx[i] = 0;
@@ -546,6 +569,8 @@ void integrate_batch_f32x4(
   const uint16_t *animFrames = COL(uint16_t, ANIM_FRAMES);
   const uint8_t *flat = COL(uint8_t, FLAT);
   const uint8_t *renderOnly = COL(uint8_t, RENDER_ONLY);
+  uint8_t *bounces = COL(uint8_t, BOUNCES);
+  const float *bounciness = COL(float, BOUNCINESS), *bounceFriction = COL(float, BOUNCE_FRICTION);
   uint16_t *stamp = (uint16_t *)(uintptr_t)stampByte;
   uint16_t *flatList = (uint16_t *)(uintptr_t)flatByte;
   uint16_t *heightedList = (uint16_t *)(uintptr_t)heightedByte;
@@ -669,7 +694,7 @@ void integrate_batch_f32x4(
     y[i] = y[i] + vy[i] * dt;
   }
 
-  /* Heighted pass: gravity + air / ground / floor fade / despawn. */
+  /* Heighted pass: gravity + air / ground (bounce) / floor fade / despawn. */
   uint32_t survivors = 0;
   for (uint32_t k = 0; k < heightedCount;) {
     if (k + 4 <= heightedCount && run_of_four(heightedList, k)) {
@@ -694,6 +719,26 @@ void integrate_batch_f32x4(
       z[i] = z[i] + vz[i] * dt;
       survivors++;
       continue;
+    }
+    if (bounces[i] > 0 && vz[i] > 0) {
+      /* integrate_batch's floor bounce. The decision in double, as there, so both bounce on the same frame;
+         a float32 product of two floats is the double one rounded once. */
+      const double rebound = (double)vz[i] * (double)bounciness[i];
+      const double g = (double)gravity[i];
+      const double minRebound = g > 0.025 ? g * 2 : 0.05;
+      if (rebound > minRebound) {
+        bounces[i] = (uint8_t)(bounces[i] - 1u);
+        const float keep = bounceFriction[i];
+        vx[i] = vx[i] * keep;
+        vy[i] = vy[i] * keep;
+        vz[i] = (float)(-rebound);
+        x[i] = x[i] + vx[i] * dt;
+        y[i] = y[i] + vy[i] * dt;
+        z[i] = vz[i] * dt;
+        survivors++;
+        continue;
+      }
+      bounces[i] = 0;
     }
     z[i] = 0;
     vx[i] = 0;
@@ -810,6 +855,8 @@ void integrate_batch_u32(
   const uint16_t *animFrames = COL(uint16_t, ANIM_FRAMES);
   const uint8_t *flat = COL(uint8_t, FLAT);
   const uint8_t *renderOnly = COL(uint8_t, RENDER_ONLY);
+  uint8_t *bounces = COL(uint8_t, BOUNCES);
+  const float *bounciness = COL(float, BOUNCINESS), *bounceFriction = COL(float, BOUNCE_FRICTION);
   uint32_t *stamp = (uint32_t *)(uintptr_t)stampByte;
   uint32_t *flatList = (uint32_t *)(uintptr_t)flatByte;
   uint32_t *heightedList = (uint32_t *)(uintptr_t)heightedByte;
@@ -882,7 +929,7 @@ void integrate_batch_u32(
     y[i] = (float)((double)y[i] + (double)vy[i] * dtRatio);
   }
 
-  /* Heighted pass: gravity + air / ground / floor fade / despawn. */
+  /* Heighted pass: gravity + air / ground (bounce) / floor fade / despawn. */
   uint32_t survivors = 0;
   for (uint32_t k = 0; k < heightedCount; k++) {
     const uint32_t i = heightedList[k];
@@ -893,6 +940,26 @@ void integrate_batch_u32(
       z[i] = (float)((double)z[i] + (double)vz[i] * dtRatio);
       survivors++;
       continue;
+    }
+    if (bounces[i] > 0 && vz[i] > 0) {
+      /* Floor bounce: the rebound must beat two frames of gravity (0.05 px/frame when gravity is
+         tiny), or the particle lands as it would without bounces. */
+      const double rebound = (double)vz[i] * (double)bounciness[i];
+      const double g = (double)gravity[i];
+      const double minRebound = g > 0.025 ? g * 2 : 0.05;
+      if (rebound > minRebound) {
+        bounces[i] = (uint8_t)(bounces[i] - 1u);
+        const double keep = (double)bounceFriction[i];
+        vx[i] = (float)((double)vx[i] * keep);
+        vy[i] = (float)((double)vy[i] * keep);
+        vz[i] = (float)(-rebound);
+        x[i] = (float)((double)x[i] + (double)vx[i] * dtRatio);
+        y[i] = (float)((double)y[i] + (double)vy[i] * dtRatio);
+        z[i] = (float)((double)vz[i] * dtRatio);
+        survivors++;
+        continue;
+      }
+      bounces[i] = 0;
     }
     z[i] = 0;
     vx[i] = 0;
@@ -968,6 +1035,8 @@ void integrate_batch_f32x4_u32(
   const uint16_t *animFrames = COL(uint16_t, ANIM_FRAMES);
   const uint8_t *flat = COL(uint8_t, FLAT);
   const uint8_t *renderOnly = COL(uint8_t, RENDER_ONLY);
+  uint8_t *bounces = COL(uint8_t, BOUNCES);
+  const float *bounciness = COL(float, BOUNCINESS), *bounceFriction = COL(float, BOUNCE_FRICTION);
   uint32_t *stamp = (uint32_t *)(uintptr_t)stampByte;
   uint32_t *flatList = (uint32_t *)(uintptr_t)flatByte;
   uint32_t *heightedList = (uint32_t *)(uintptr_t)heightedByte;
@@ -1091,7 +1160,7 @@ void integrate_batch_f32x4_u32(
     y[i] = y[i] + vy[i] * dt;
   }
 
-  /* Heighted pass: gravity + air / ground / floor fade / despawn. */
+  /* Heighted pass: gravity + air / ground (bounce) / floor fade / despawn. */
   uint32_t survivors = 0;
   for (uint32_t k = 0; k < heightedCount;) {
     if (k + 4 <= heightedCount && run_of_four_u32(heightedList, k)) {
@@ -1116,6 +1185,26 @@ void integrate_batch_f32x4_u32(
       z[i] = z[i] + vz[i] * dt;
       survivors++;
       continue;
+    }
+    if (bounces[i] > 0 && vz[i] > 0) {
+      /* integrate_batch's floor bounce. The decision in double, as there, so both bounce on the same frame;
+         a float32 product of two floats is the double one rounded once. */
+      const double rebound = (double)vz[i] * (double)bounciness[i];
+      const double g = (double)gravity[i];
+      const double minRebound = g > 0.025 ? g * 2 : 0.05;
+      if (rebound > minRebound) {
+        bounces[i] = (uint8_t)(bounces[i] - 1u);
+        const float keep = bounceFriction[i];
+        vx[i] = vx[i] * keep;
+        vy[i] = vy[i] * keep;
+        vz[i] = (float)(-rebound);
+        x[i] = x[i] + vx[i] * dt;
+        y[i] = y[i] + vy[i] * dt;
+        z[i] = vz[i] * dt;
+        survivors++;
+        continue;
+      }
+      bounces[i] = 0;
     }
     z[i] = 0;
     vx[i] = 0;

@@ -49,7 +49,7 @@ const TOLERANCE = integrateF32Tolerance(FRAMES);
 /** One emit of a mix: the bench's stress configs, or the landing and flat ones (emitFlat). */
 function emitMix(mix, count, k, area) {
   const ease = PARTICLE_EASES[k % PARTICLE_EASES.length];
-  if (mix === 'tween' || mix === 'spin') return ParticleEmitter.emit(emitConfig(mix, count, ease, area));
+  if (mix === 'tween' || mix === 'spin' || mix === 'bounce') return ParticleEmitter.emit(emitConfig(mix, count, ease, area));
   const cfg = {
     count,
     x: area.x,
@@ -117,6 +117,7 @@ function runMix(rig, mix, kernels, { dtSkew = {} } = {}) {
   let stamped = 0;
   let dead = 0;
   let flatMoved = 0;
+  let bounced = 0;
   for (let f = 0; f < FRAMES && !violation; f++) {
     const dtRatio = DT_RATIOS[f % DT_RATIOS.length];
     for (const v of names) {
@@ -135,6 +136,7 @@ function runMix(rig, mix, kernels, { dtSkew = {} } = {}) {
       const count = buildActiveListBuffers(N, pc.active, b.indices, null, N);
       s.list = b.indices.slice(0, count);
       b.integrate = kernels[v];
+      const bouncesBefore = v === 'wasm' ? s.list.map((i) => pc.bounces[i]) : null;
       const out = integrateParticlesWasm(b, pc, count, (1000 / 60) * dtRatio, dtRatio * (dtSkew[v] ?? 1), f % 2 === 1);
       s.stamp = b.stamp.slice(0, out.stampedCount);
       if (v === 'wasm') {
@@ -143,6 +145,9 @@ function runMix(rig, mix, kernels, { dtSkew = {} } = {}) {
         for (const i of s.list) if (pc.flat[i] && pc.active[i] && !pc.renderOnly[i]) flatMoved++;
         stamped += out.stampedCount;
         for (const i of s.list) if (pc.hasAngularVel[i] || pc.tweenMask[i] & 16) rotated++;
+        s.list.forEach((i, k) => {
+          if (pc.bounces[i] < bouncesBefore[k] && pc.active[i]) bounced++;
+        });
       }
       s.state = rig.save();
     }
@@ -159,12 +164,12 @@ function runMix(rig, mix, kernels, { dtSkew = {} } = {}) {
       }
     }
   }
-  return { violation, worst, rotated, trigListed, stamped, dead, flatMoved, alive: sides.wasm.list.length };
+  return { violation, worst, rotated, trigListed, stamped, dead, flatMoved, bounced, alive: sides.wasm.list.length };
 }
 
 const rigPromise = createIntegrateRig(N);
 
-for (const mix of ['tween', 'spin', 'floor', 'flat']) {
+for (const mix of ['tween', 'spin', 'floor', 'flat', 'bounce']) {
   test(`float32 integrates stay within tolerance of the shipped kernel for 60 frames (${mix})`, async (t) => {
     const rig = await rigPromise;
     const r = runMix(rig, mix, rig.kernels);
@@ -175,6 +180,7 @@ for (const mix of ['tween', 'spin', 'floor', 'flat']) {
     }
     if (mix === 'floor') assert.ok(r.stamped > 0 && r.dead > 0, `particles landed: ${r.stamped} stamped, ${r.dead} dead`);
     if (mix === 'flat') assert.ok(r.flatMoved > 100000, `the flat pass ran (${r.flatMoved})`);
+    if (mix === 'bounce') assert.ok(r.bounced > 100 && r.dead > 0, `particles bounced (${r.bounced}) and then landed (${r.dead} dead)`);
     const fmt = (w) => Object.entries(w)
       .filter(([, e]) => e.abs > 0 || e.channel > 0)
       .map(([c, e]) => (e.channel !== undefined ? `${c} ${e.channel} step` : `${c} ${e.abs.toExponential(2)} (${Math.round(e.share * 100)} % of its tolerance)`))

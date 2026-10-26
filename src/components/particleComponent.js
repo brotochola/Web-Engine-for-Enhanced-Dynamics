@@ -96,6 +96,14 @@ export class ParticleComponent extends Component {
     renderOnly: Uint8Array,
     // sqrt(lightIntensity). 0 = this particle does not light the scene.
     lightSqrt: Float32Array,
+
+    // === Floor bounces (heighted particles; ParticleEmitter.emit / emitZenithal `bounces`) ===
+    // Bounces left. A falling particle that reaches the floor with bounces left rebounds instead of
+    // landing: vz becomes -vz * bounciness, vx and vy keep bounceFriction of themselves. A rebound
+    // weaker than two frames of gravity lands. 0 = lands on first contact, as without bounces.
+    bounces: Uint8Array,
+    bounciness: Float32Array, // share of the falling speed kept, 0-1
+    bounceFriction: Float32Array, // share of the ground speed kept, 0-1
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
   };
 

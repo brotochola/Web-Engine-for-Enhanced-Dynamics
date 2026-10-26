@@ -66,6 +66,9 @@ export function updateParticlePhysicsBuffers(
     initialAlpha,
     stayOnTheFloor,
     despawnOnGroundContact,
+    bounces,
+    bounciness,
+    bounceFriction,
     flat,
     tweenMask,
     easeId,
@@ -178,7 +181,7 @@ export function updateParticlePhysicsBuffers(
     y[i] += vy[i] * dtRatio;
   }
 
-  // Heighted pass: gravity + air / ground / floor fade / despawn.
+  // Heighted pass: gravity + air / ground (bounce) / floor fade / despawn.
   let heightedSurvivors = 0;
   for (let k = 0; k < heightedCount; k++) {
     const i = heightedList[k];
@@ -191,6 +194,26 @@ export function updateParticlePhysicsBuffers(
       z[i] += vz[i] * dtRatio;
       heightedSurvivors++;
       continue;
+    }
+
+    // Floor bounce: a falling particle with bounces left rebounds, unless the rebound is weaker than two
+    // frames of gravity (0.05 px/frame when gravity is tiny); then it lands as it would without bounces.
+    if (bounces && bounces[i] > 0 && vz[i] > 0) {
+      const rebound = vz[i] * bounciness[i];
+      const minRebound = gravity[i] > 0.025 ? gravity[i] * 2 : 0.05;
+      if (rebound > minRebound) {
+        bounces[i]--;
+        const keep = bounceFriction[i];
+        vx[i] *= keep;
+        vy[i] *= keep;
+        vz[i] = -rebound;
+        x[i] += vx[i] * dtRatio;
+        y[i] += vy[i] * dtRatio;
+        z[i] = vz[i] * dtRatio;
+        heightedSurvivors++;
+        continue;
+      }
+      bounces[i] = 0;
     }
 
     // On ground

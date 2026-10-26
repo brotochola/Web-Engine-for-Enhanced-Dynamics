@@ -18,7 +18,7 @@ function run(workerData) {
   });
 }
 
-for (const mix of ['tween', 'spin']) {
+for (const mix of ['tween', 'spin', 'bounce']) {
   test(`WASM integrate leaves the particles as the JS integrate does (${mix})`, async () => {
     // wasm.particleIntegrateF32 off: the double integrate.
     const base = { n: 12000, frames: 40, mix, burst: 9000, perFrame: 600, f32: false };

@@ -81,6 +81,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'scale', 'scaleX', 'scaleY', 'alpha', 'tint',
     'rotC', 'rotS', 'rotation', 'angularVelocity', 'flipX', 'flipY',
     'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
+    'bounces', 'bounciness', 'bounceFriction',
     'blendMode', 'layer', 'layers', 'renderOnly', 'lightIntensity',
   ];
   static _alongLineScratch = Object.create(null);
@@ -296,6 +297,11 @@ export class ParticleEmitter extends SharedAtomicPool {
     const initialAlpha = ParticleComponent.initialAlpha;
     const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
     const despawnOnGroundContact = ParticleComponent.despawnOnGroundContact;
+    const bounces = ParticleComponent.bounces;
+    const bounciness = ParticleComponent.bounciness;
+    const bounceFriction = ParticleComponent.bounceFriction;
+    // Floor bounces: heighted particles only (emitFlat has no floor).
+    const bouncing = !flatMode && cfg.bounces != null;
     const tweenMask = ParticleComponent.tweenMask;
     const easeIdArr = ParticleComponent.easeId;
     const alphaFrom = ParticleComponent.alphaFrom;
@@ -500,6 +506,14 @@ export class ParticleEmitter extends SharedAtomicPool {
 
       stayOnTheFloor[i] = flatMode ? 0 : (cfg.stayOnTheFloor ? 1 : 0);
       despawnOnGroundContact[i] = flatMode ? 0 : (cfg.despawnOnGroundContact ? 1 : 0);
+      if (bouncing) {
+        const n = Math.round(randomRange(cfg.bounces, 0));
+        bounces[i] = n > 255 ? 255 : n > 0 ? n : 0;
+        bounciness[i] = randomRange(cfg.bounciness, 0.5);
+        bounceFriction[i] = randomRange(cfg.bounceFriction, 0.7);
+      } else {
+        bounces[i] = 0;
+      }
 
       blendMode[i] = cfg.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
       if (layerMask) {

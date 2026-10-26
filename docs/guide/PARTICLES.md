@@ -37,6 +37,23 @@ WEED.ParticleEmitter.emit({
   stayOnTheFloor: true,
 });
 
+// Debris that bounces once or twice, then stays as a decal
+WEED.ParticleEmitter.emit({
+  x: this.x,
+  y: this.y,
+  z: -8,
+  texture: 'rock',
+  count: 12,
+  angleXY: { min: 0, max: 360 },
+  speed: { min: 1, max: 5 },
+  vz: { min: -6, max: -3 },
+  gravity: 0.3,
+  bounces: { min: 1, max: 2 },
+  bounciness: 0.35,
+  bounceFriction: 0.6,
+  stayOnTheFloor: true,
+});
+
 // Zenithal: same physics, height → scale (scene zenithal* knobs)
 WEED.ParticleEmitter.emitZenithal({
   x: Mouse.x,
@@ -90,7 +107,7 @@ Props that accept over-life ops: `alpha`, `scale` / `scaleX` / `scaleY`, `tint`,
 Convention: `z < 0` = airborne, `z >= 0` = on ground.
 
 - **Flat:** `vy += gravity`; integrate `x`/`y` every step; skip ground clamp and floor flags. Death by lifespan (and optional `alpha: { from, to: 0 }`). No collision.
-- **Heighted:** `vz += gravity`; while airborne integrate `x`/`y`/`z`; on ground zero velocity then:
+- **Heighted:** `vz += gravity`; while airborne integrate `x`/`y`/`z`. On ground contact while falling, a particle with `bounces` left rebounds instead: `vz = -vz * bounciness`, `vx` and `vy` keep `bounceFriction` of themselves, and one bounce is used. A rebound weaker than two frames of gravity (`2 * gravity`, or 0.05 px/frame when gravity is under 0.025) counts as a landing. On a landing, zero velocity then:
   - `despawnOnGroundContact` → return to pool
   - `stayOnTheFloor` → queue decal stamp → return to pool
   - `fadeOnTheFloor` → fade alpha over time → return when alpha ≤ 0

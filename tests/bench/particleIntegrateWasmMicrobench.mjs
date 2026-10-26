@@ -76,6 +76,13 @@ export function emitConfig(mix, count, ease, area) {
     scale: { from: { min: 0.4, max: 1 }, to: 0.2, ease },
     alpha: { from: 1, to: 0, ease },
   };
+  if (mix === 'bounce') {
+    // Low enough to land within a test run, with floor bounces before the despawn.
+    cfg.z = { min: -300, max: -20 };
+    cfg.bounces = { min: 1, max: 3 };
+    cfg.bounciness = { min: 0.3, max: 0.8 };
+    cfg.bounceFriction = { min: 0.4, max: 0.9 };
+  }
   if (mix === 'spin') {
     cfg.rotation = { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease };
     cfg.angularVelocity = { from: -90, to: 90, ease };
@@ -112,6 +119,8 @@ export function checksum(indices, count) {
     f32(pc.rotC[i]);
     f32(pc.rotS[i]);
     mix(pc.tint[i]);
+    f32(pc.vx[i]);
+    mix(pc.bounces[i]);
   }
   return h >>> 0;
 }
@@ -145,7 +154,7 @@ export function integrateF32Tolerance(frames = 1) {
   const tween = Object.freeze({ abs: 1e-6, ulps: 8 });
   const turn = Object.freeze({ abs: 2.5e-7, ulps: 0 });
   return Object.freeze({
-    exact: ['active', 'currentLife', 'timeOnFloor', 'textureId'],
+    exact: ['active', 'currentLife', 'timeOnFloor', 'textureId', 'bounces'],
     float: {
       x: drift, y: drift, z: drift, vx: drift, vy: drift, vz: drift,
       alpha: tween, initialAlpha: tween, scaleX: tween, scaleY: tween,

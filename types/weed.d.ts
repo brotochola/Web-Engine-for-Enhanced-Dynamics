@@ -778,6 +778,15 @@ export interface ParticleEmitConfig {
   fadeOnTheFloor?: number;
   stayOnTheFloor?: boolean;
   despawnOnGroundContact?: boolean;
+  /**
+   * Floor bounces before the floor behaviour (`despawnOnGroundContact`, `stayOnTheFloor`, `fadeOnTheFloor`) runs.
+   * Heighted particles only: `emitFlat` has no floor and ignores it. Rounded, clamped to 0-255. Default: none.
+   */
+  bounces?: WeedNumOrRange;
+  /** Share of the falling speed kept, upward, on each bounce (0-1). Default 0.5. */
+  bounciness?: WeedNumOrRange;
+  /** Share of the ground speed (`vx`, `vy`) kept on each bounce (0-1). Default 0.7. */
+  bounceFriction?: WeedNumOrRange;
   /** 0 = normal, 1 = multiply (see {@link DECAL_STAMPS_BLEND_MODE}). */
   blendMode?: number;
   /** Layer name or id to render on. Omitted (and no `layers`) = the entities layer. */
