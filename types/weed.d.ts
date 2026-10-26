@@ -1991,6 +1991,8 @@ export declare class Mouse {
   static readonly MAX: 4;
   static readonly BUFFER_SIZE: number;
   static isDebugToolActive: boolean;
+  /** The debug editor's edit mode: no button press reaches the game (releases still do). */
+  static isEditModeActive: boolean;
 
   static initialize(buffer: SharedArrayBuffer | Float32Array): void;
   static get isInitialized(): boolean;

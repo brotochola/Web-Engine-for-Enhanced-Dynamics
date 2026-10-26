@@ -1248,6 +1248,8 @@ class Scene {
       this._loadStepsDone = Scene.LOAD_STEPS.length - 1;
       await this._runContentLifecycle();
       this._loadStep('world');
+      // The editor's edit mode holds the new level still, as it held the old (debug builds).
+      this.game?.debugUI?.onContentSwapped();
     } finally {
       this._spawnBatchOpen = false;
       this.resume();

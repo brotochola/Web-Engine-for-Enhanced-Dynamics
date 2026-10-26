@@ -249,6 +249,9 @@ export class ToolManager {
     } else if (this.inspectorActive) {
       el.textContent = 'Inspector: click a ' + (this.inspectKind || 'entity');
       el.className = 'debug-ui-tool-indicator visible inspector';
+    } else if (this.debugUI.editMode.active) {
+      el.textContent = 'Edit mode: right or middle drag pans, the wheel zooms. Shift+E or Esc plays';
+      el.className = 'debug-ui-tool-indicator visible editor';
     } else {
       el.className = 'debug-ui-tool-indicator';
     }
@@ -677,6 +680,7 @@ export class ToolManager {
 
   _syncDebugToolFlag() {
     Mouse.isDebugToolActive = !!(
+      this.debugUI.editMode.active ||
       this.activeSpawnerType ||
       this.eraserActive ||
       this.poolPaintKind ||

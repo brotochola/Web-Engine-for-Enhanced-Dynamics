@@ -63,6 +63,9 @@ export class Mouse {
   // Debug tool mode flag - when true, primary-button down is consumed by DebugUI tools
   static isDebugToolActive = false;
 
+  // The editor's edit mode: no button press reaches the game (releases still do)
+  static isEditModeActive = false;
+
   // Cursor owns slot 0 until it leaves with no button held (main thread)
   static _mouseOwnsSlot0 = false;
 
@@ -507,17 +510,18 @@ export class Mouse {
    * every press or release in between is a pointermove with a new `buttons` mask
    * (1 primary, 2 secondary, 4 auxiliary). Releases always apply. A press applies only
    * when `allowPress`: a move that did not start on this canvas (a drag in from a DOM
-   * panel) must not start one.
+   * panel) must not start one. In edit mode none does.
    * @param {number} buttons
    * @param {boolean} allowPress
    */
   static _syncCursorButtons(buttons, allowPress) {
+    const press = allowPress && !this.isEditModeActive;
     if ((buttons & 1) === 0) this._setDown(0, false);
-    else if (allowPress && !this.isDebugToolActive) this._setDown(0, true);
+    else if (press && !this.isDebugToolActive) this._setDown(0, true);
     if ((buttons & 4) === 0) this._setHeld(this._BTN1, false, this._PRESS1, this._REL1);
-    else if (allowPress) this._setHeld(this._BTN1, true, this._PRESS1, this._REL1);
+    else if (press) this._setHeld(this._BTN1, true, this._PRESS1, this._REL1);
     if ((buttons & 2) === 0) this._setHeld(this._BTN2, false, this._PRESS2, this._REL2);
-    else if (allowPress) this._setHeld(this._BTN2, true, this._PRESS2, this._REL2);
+    else if (press) this._setHeld(this._BTN2, true, this._PRESS2, this._REL2);
   }
 
   static _claimCursor(pointerId) {
@@ -592,13 +596,15 @@ export class Mouse {
       this._ids[slot] = id;
       this._place(slot, e, camera);
       if (slot === 0) this.isPresent = true;
-      if (!(this.isDebugToolActive && button === 0)) this._setDown(slot, true);
+      if (!this.isEditModeActive && !(this.isDebugToolActive && button === 0)) this._setDown(slot, true);
     } else {
       this._claimCursor(id);
       this._place(0, e, camera);
       this.isPresent = true;
       if (typeof e.buttons === 'number') {
         this._syncCursorButtons(e.buttons, true);
+      } else if (this.isEditModeActive) {
+        // no press reaches the game
       } else if (button === 0) {
         if (!this.isDebugToolActive) this._setDown(0, true);
       } else if (button === 1) {

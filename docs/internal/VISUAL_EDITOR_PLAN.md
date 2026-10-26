@@ -523,7 +523,7 @@ fallback).
 
 ### D5. Edit mode
 
-- Entered with `E` and a button in the debug UI's Scene panel.
+- Entered with `Shift+E` (games play `E`) and a button in the debug UI's Scene panel.
 - **Stage 2 version (ED-6):**
   - Save `Time.scale`, then set it to 0. Every worker gets a zero delta, and rendering
     continues.
@@ -970,18 +970,29 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   and Godot's `@export` to `spawnParams`, and scenes to scenes.
 - [ ] **ED-5 (optional)** Move the `littleCity` houses and Predator's
   `trees_and_rocks.json` to scene files. The 1,764 trees are also the size check for
-  ED-2's loader; time it with ED-39's script.
+  ED-2's loader; time it with ED-39's script. **Deferred 2026-10-26** to the sitting that
+  runs the paused measurements: its point is that timing, and Predator is the gameplay
+  gate, whose load path should change in the same sitting that measures it.
 
 ### Stage 2: edit in the game page (milestone M1)
 
-M1: open the platformer, press E, click a platform, drag it, widen it, Ctrl+S, reload,
-and it is still there.
+M1: open the platformer, press Shift+E, click a platform, drag it, widen it, Ctrl+S,
+reload, and it is still there.
 
-- [ ] **ED-6 Edit mode toggle** (D5, Stage 2 version).
+- [x] **ED-6 Edit mode toggle** (D5, Stage 2 version).
   - Files: `src/core/debug/editor/editMode.js`; a button in
     `src/core/debug/panels/scenePanel.js`.
   - **Verify** the zero step: a node test steps physics at time scale 0 and checks that
     every body's pose is unchanged.
+  - Done 2026-10-26, with what D5 left out (Found during implementation, item 11):
+    **Shift+E**, not E (games play E); a **camera hold** (`Camera.held`, a float appended
+    to the camera buffer) that game follows respect, since the platformer follows its
+    player every frame; **no key and no button press** reaches the game (GameEngine hands
+    keydowns to the editor; `Mouse.isEditModeActive`); a right or middle drag pans. A
+    fast swap re-holds the new level (`debugUI.onContentSwapped`, before the workers
+    resume); a full load re-enters edit mode in the next scene.
+    `editModeZeroStep.wasm.test.js`: at scale 0 the host steps 0 s, and Box2D moves no
+    body on a 0 s step. `editMode.test.js`, `cameraHold.test.js`.
 - [ ] **ED-13 Save route** (D7). Files: `server/devRoutes.mjs`, `server/node_server.js`,
   the editor's save command, and Ctrl+S.
   - **Tests** (`tests/node/devRoutes.test.js`):
@@ -1246,6 +1257,17 @@ server still writes nothing. What changed for this plan:
     predates DX 2.4, whose acceleration burst jumped higher on a hitch. 1-1 gains one step,
     `Platform13` (150 px up from the ground, 148 px on to `Platform9`); the old platforms and
     the jump stay as they were. ED-37's browser run checks it.
+11. **Edit mode needs more than `Time.scale` 0** (ED-6). Ticks and `scene.update()` still
+    run, so a game that follows its player every frame (the platformer from `update()`,
+    the car, ship, walker and Predator demos from a tick on a worker) takes the view back
+    from the editor, and the keys the free camera pans with (WASD) are the keys the
+    player moves and jumps with: at scale 0 a jump is queued and fires on leaving. So the
+    camera is held (`Camera.held`: `follow`, `followEntity`, `centerOn` and `setPosition`
+    return at once on every thread, the page's free camera still moves), the editor takes
+    every key and button press, and it pans with a right or middle drag. A fast swap puts
+    `Time.scale` and the camera back to the level's start; the swap calls the editor
+    before the workers resume. Debug builds already kept Shift+H/I/K/O/S from the game;
+    Shift+E joins them.
 
 **New items:**
 

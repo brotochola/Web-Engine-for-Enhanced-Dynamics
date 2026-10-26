@@ -28,6 +28,13 @@ const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
 ]);
 
+/** A key typed into a field (a debug panel's input, the page's own form) is the field's. */
+function isTypingTarget(target) {
+  if (!target || typeof target !== 'object') return false;
+  const tag = target.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable === true;
+}
+
 class GameEngine {
   static states = {
     TRANSITIONING: 0,
@@ -160,8 +167,20 @@ class GameEngine {
       if (this.preventDefaultKeys && PREVENT_DEFAULT_KEYS.has(key)) {
         e.preventDefault();
       }
-      if (this.debugEnabled && e.shiftKey && (key === 'h' || key === 'i' || key === 'k' || key === 'o' || key === 's')) {
-        return;
+      if (this.debugEnabled) {
+        // Shift+E: the editor's edit mode (not while typing in a field). While it is on, the
+        // editor has the keys and the game none.
+        if (e.shiftKey && key === 'e' && !e.repeat && !isTypingTarget(e.target)) {
+          this.debugUI.toggleEditMode();
+          return;
+        }
+        if (this.debugUI.editing) {
+          if (!isTypingTarget(e.target) && this.debugUI.onEditKey(e)) e.preventDefault();
+          return;
+        }
+        if (e.shiftKey && (key === 'h' || key === 'i' || key === 'k' || key === 'o' || key === 's')) {
+          return;
+        }
       }
       this.currentScene?.onKeyDown(key);
     };

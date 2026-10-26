@@ -65,8 +65,17 @@ export class ScenePanel {
     });
     controlsRow.appendChild(this.elements.resumeBtn);
 
+    this.elements.editBtn = createButton('✏ Edit', '', () => this.debugUI.toggleEditMode());
+    this.elements.editBtn.title = 'Edit mode (Shift+E): the world holds still, the view is yours';
+    controlsRow.appendChild(this.elements.editBtn);
+
     this.panel.appendChild(controlsRow);
     return this.panel;
+  }
+
+  /** The Edit button shows whether edit mode is on (EditMode calls it on every change). */
+  updateEditButton() {
+    if (this.elements.editBtn) this.elements.editBtn.classList.toggle('active', this.debugUI.editing);
   }
 
   // ------- lifecycle -------

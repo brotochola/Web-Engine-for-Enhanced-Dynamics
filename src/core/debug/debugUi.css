@@ -578,6 +578,11 @@
   color: #ffc864;
 }
 
+.debug-ui-tool-indicator.editor {
+  border-color: rgba(52, 211, 153, 0.5);
+  color: #34d399;
+}
+
 .debug-ui-inspector-panel {
   border-color: rgba(255, 200, 100, 0.35);
 }

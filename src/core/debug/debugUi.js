@@ -8,6 +8,7 @@ import { injectStyles, createTab } from './ui/debugDom.js';
 import { StatsCollector } from './stats/statsCollector.js';
 import { DebugCanvas } from './rendering/debugCanvas.js';
 import { ToolManager } from './tools/toolManager.js';
+import { EditMode } from './editor/editMode.js';
 import { DebugDraw } from './debugDraw.js';
 import { DEBUG_DEFAULTS } from '../../util/configDefaults.js';
 
@@ -59,6 +60,7 @@ export class DebugUI {
     // Sub-systems
     this.stats = new StatsCollector();
     this.canvas = new DebugCanvas(this);
+    this.editMode = new EditMode(this);
     this.tools = new ToolManager(this);
 
     // Panels (keyed by section id for the accordion)
@@ -132,9 +134,11 @@ export class DebugUI {
 
     this.canvas.syncLoop();
     this.start();
+    this.editMode.onAttach();
   }
 
   detach() {
+    this.editMode.onDetach();
     this.stop();
     this.canvas.detach();
     this.tools.attach(); // resets tool state
@@ -162,12 +166,13 @@ export class DebugUI {
     this._rafId = requestAnimationFrame(loop);
   }
 
-  /** True while panel/tool updates are needed (overlay visible or active tools). */
+  /** True while panel/tool updates are needed (overlay visible, edit mode or active tools). */
   _needsTick() {
     if (!this.scene) return false;
     if (!this.container?.classList.contains('hidden')) return true;
     const tools = this.tools;
     return !!(
+      this.editMode.active ||
       tools.inspectorActive ||
       tools.activeSpawnerType ||
       tools.eraserActive ||
@@ -202,7 +207,32 @@ export class DebugUI {
     this.container.classList.add('hidden');
   }
 
+  // ========================================
+  // EDIT MODE (editor/editMode.js)
+  // ========================================
+
+  /** Whether edit mode is on: GameEngine then hands keys to onEditKey, not to the game. */
+  get editing() {
+    return this.editMode.active;
+  }
+
+  /** Shift+E and the Scene panel's Edit button. */
+  toggleEditMode() {
+    this.editMode.toggle();
+  }
+
+  /** @param {KeyboardEvent} e @returns {boolean} whether the editor took it */
+  onEditKey(e) {
+    return this.editMode.onKey(e);
+  }
+
+  /** Scene._fastSwap, after the new content and before the workers resume. */
+  onContentSwapped() {
+    this.editMode.onContentSwapped();
+  }
+
   destroy() {
+    this.editMode.exit();
     this.stop();
     this.canvas.destroy();
     this.tools.destroy();

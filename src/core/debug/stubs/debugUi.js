@@ -15,6 +15,14 @@ export class DebugUI {
   show() {}
   hide() {}
   destroy() {}
+  get editing() {
+    return false;
+  }
+  toggleEditMode() {}
+  onEditKey() {
+    return false;
+  }
+  onContentSwapped() {}
 }
 
 DebugUI.drawLine = noop;
