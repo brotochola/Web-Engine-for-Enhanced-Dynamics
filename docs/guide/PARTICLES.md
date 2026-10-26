@@ -122,11 +122,13 @@ The sweep before it runs in WebAssembly too. It lists the live particles and tes
 
 Reads per-particle `viewMode` / `flat`:
 
-| Mode | `rqY` | Scale / alpha |
-| --- | --- | --- |
-| Zenithal (`viewMode === ZENITHAL`, not flat) | `y` | `scale *= 1 + (-z / zenithalMaxHeight) * zenithalScaleFactor`; optional alpha fade |
-| Flat | `y` | unchanged |
-| Topdown / side (`emit`) | `y + z` | unchanged |
+| Mode | `rqY` (drawn at) | Y-sort key | Scale / alpha |
+| --- | --- | --- | --- |
+| Zenithal (`viewMode === ZENITHAL`, not flat) | `y` | height (`-z`) | `scale *= 1 + (-z / zenithalMaxHeight) * zenithalScaleFactor`; optional alpha fade |
+| Flat | `y` | ground row | unchanged |
+| Topdown / side (`emit`) | `y + z` | ground row | unchanged |
+
+With `renderer.ySort`, heighted and flat particles sort by their **ground row**, `round(y) * DECORATION_Y_SORT_SCALE + PARTICLE_SORT_BIAS`, the way a sprite sorts by its feet. A spark 60 px in the air is drawn 60 px up the screen, but it sorts where its shadow would be: in front of the trees north of that point, behind the ones south of it. `PARTICLE_SORT_BIAS` puts a particle in front of a body whose feet are on the same pixel row (a muzzle spark in front of its shooter), behind that body's light glow.
 
 ## Scene config (`particle`)
 

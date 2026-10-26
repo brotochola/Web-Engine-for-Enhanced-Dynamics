@@ -3839,6 +3839,8 @@ export declare const DECORATION_Y_SORT_SCALE: number;
 export declare const DECORATION_INNER_Z_MIN: number;
 export declare const DECORATION_INNER_Z_MAX: number;
 export declare const ENTITY_GLOW_SORT_BIAS: number;
+/** Particles' y-sort offset inside their ground pixel row: in front of a body on the same row, behind its glow. */
+export declare const PARTICLE_SORT_BIAS: number;
 export declare const DECORATION_NO_PARENT: number;
 export declare const SWAY_OFF: 0;
 export declare const SWAY_LOOP: 1;
@@ -4144,6 +4146,7 @@ export interface WeedNamespace extends WeedEnums {
   DECORATION_INNER_Z_MIN: number;
   DECORATION_INNER_Z_MAX: number;
   ENTITY_GLOW_SORT_BIAS: number;
+  PARTICLE_SORT_BIAS: number;
   DECORATION_NO_PARENT: number;
   /** The "no parent" id for the scene's entity id width. */
   decorationNoParent(): number;

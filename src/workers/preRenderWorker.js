@@ -74,6 +74,7 @@ import {
     CAMERA_TYPES,
     DECORATION_Y_SORT_SCALE,
     ENTITY_GLOW_SORT_BIAS,
+    PARTICLE_SORT_BIAS,
     ShapeType,
     MAX_POLYGON_VERTICES,
     resolveZenithalMaxHeight,
@@ -1631,13 +1632,9 @@ class PreRenderWorker extends AbstractWorker {
                 viewMode &&
                 viewMode[i] === CAMERA_TYPES.ZENITHAL &&
                 !(flat && flat[i]);
-            const isFlat = !!(flat && flat[i]);
-            const sortKey = isZenithal
-                ? -z[i]
-                : isFlat
-                    ? y[i] * Y_SORT_K
-                    : (y[i] + z[i]) * Y_SORT_K;
-            COLLECT_Y[0] = sortKey;
+            // Heighted and flat particles sort by their ground row, as a sprite sorts by its feet: a spark in
+            // the air is in front of the tree it flies in front of, though it is drawn at y + z.
+            COLLECT_Y[0] = isZenithal ? -z[i] : spriteYSortKey(y[i], Y_SORT_K) + PARTICLE_SORT_BIAS;
             this.collectRenderable(1, i);
             this.visibleParticlesCount++;
         }

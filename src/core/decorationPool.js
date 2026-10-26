@@ -22,6 +22,7 @@ import {
   DECORATION_INNER_Z_MIN,
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
+  PARTICLE_SORT_BIAS,
 } from '../util/configDefaults.js';
 import { entityIdNone } from '../util/entityIdWidth.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
@@ -32,6 +33,7 @@ export {
   DECORATION_INNER_Z_MIN,
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
+  PARTICLE_SORT_BIAS,
 };
 /** Sentinel: decoration not parented. Width 16 = 0xffff; width 32 = 0xffffffff. */
 export function decorationNoParent() {

@@ -131,7 +131,7 @@ export class ParticleEmitter extends SharedAtomicPool {
   }
 
   /**
-   * Heighted particles: screenY = y + z (topdown / side / iso).
+   * Heighted particles: drawn at screenY = y + z (topdown / side / iso), y-sorted by their ground row y.
    * @param {Object} config - Particle emission configuration
    * @returns {number} - Number of particles actually spawned
    */

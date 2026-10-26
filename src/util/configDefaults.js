@@ -542,6 +542,11 @@ export const DECORATION_INNER_Z_MAX = DECORATION_Y_SORT_SCALE - 2;
 export const DECORATION_INNER_Z_MIN = -(DECORATION_Y_SORT_SCALE - 1);
 /** Light glow (type 3) sort offset vs entity body at same foot Y; separate from DecorationPool and above child decorations. */
 export const ENTITY_GLOW_SORT_BIAS = DECORATION_Y_SORT_SCALE - 1;
+/**
+ * Particles' sort offset inside their ground pixel row (CPU particles and GPU particle groups): in front of a
+ * body whose feet are on the same row, behind its light glow.
+ */
+export const PARTICLE_SORT_BIAS = DECORATION_Y_SORT_SCALE >> 1;
 
 // ============================================================================
 // TWEEN DEFAULTS
