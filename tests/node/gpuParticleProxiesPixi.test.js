@@ -35,6 +35,14 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.wgsl'), 'utf8');
 const REGION_WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuRegion.wgsl'), 'utf8');
 const BAND = zSortBand(720);
+const clock = new Float64Array(1);
+/** Time.simNowMs as the Pixi worker passes it (Time.readSimNowInto). */
+const clockNow = () => {
+  Time.readSimNowInto(clock, 0);
+  return clock;
+};
+/** What the entities root draws, in order: its children keep every mesh they ever drew, hidden when unused. */
+const drawn = (node) => node.children.filter((c) => c.visible && c.renderable);
 
 function setup() {
   const layers = { smoke: { kind: LAYER_KIND.GPU_PARTICLES, maxParticles: 64 * 3, sortWithEntities: true } };
@@ -77,8 +85,9 @@ function setup() {
     _proxyReadHalf: 0,
     _proxyLocal: localProxyHalf(),
     _proxyCollector: new ProxyCollector(),
-    _proxyView: { minX: 0, minY: 0, maxX: 0, maxY: 0 },
-    _proxyBand: BAND,
+    _proxyCamera: new Float64Array(6),
+    _proxyView: new Float64Array(4),
+    _gpuClock: new Float64Array(1),
     _proxyApplyHalf: null,
     _proxyDrawEntry: null,
     _proxyMatrix: new Matrix(),
@@ -97,7 +106,7 @@ function setup() {
     },
   });
   ctx._proxyLayers[layerId] = pl;
-  ctx._proxyDrawEntry = (w, out) => Pixi._drawProxyEntry.call(ctx, w, out);
+  ctx._proxyDrawEntry = (w, out, n) => Pixi._drawProxyEntry.call(ctx, w, out, n);
   return {
     ctx,
     batch,
@@ -124,9 +133,9 @@ test('Pixi puts each group between the entities it sorts between, under the enti
     ctx.renderQueueSortKey = Float32Array.from(rows, (y) => orderSortKey(spriteYSortKey(y, DECORATION_Y_SORT_SCALE), 0, true, BAND));
     Pixi._syncProxiesOn.call(ctx);
     assert.equal(batch.sorted, true);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     Pixi._applyLocalProxies.call(ctx, null, 3);
-    const kids = entitiesRoot.children;
+    const kids = drawn(entitiesRoot);
     assert.equal(kids.length, 5, 'chunk, group, chunk, group, chunk');
     assert.deepEqual([kids[0].geometry.weedFirstInstance, kids[0].geometry.instanceCount], [0, 1]);
     assert.equal(kids[1], batch.rings[0].pool[0]);
@@ -149,11 +158,11 @@ test('a hidden layer\'s groups are left out; its alpha goes on their meshes', { 
     Pixi._syncProxiesOn.call(ctx);
     Layer._alpha[layerId] = 0.25;
     Pixi._applyLocalProxies.call(ctx, null, 0);
-    assert.equal(entitiesRoot.children.length, 1);
-    assert.equal(entitiesRoot.children[0].alpha, 0.25);
+    assert.equal(drawn(entitiesRoot).length, 1);
+    assert.equal(drawn(entitiesRoot)[0].alpha, 0.25);
     Layer._visible[layerId] = 0;
     Pixi._applyLocalProxies.call(ctx, null, 0);
-    assert.equal(entitiesRoot.children.length, 0, 'no entities packed, the group hidden');
+    assert.equal(drawn(entitiesRoot).length, 0, 'no entities packed, the group hidden');
     assert.equal(batch.rings[0].poolUsed, 0);
   } finally {
     restore();
@@ -168,13 +177,13 @@ test('without the entities\' y-sort the layers draw at their zIndex again', { co
     Pixi._syncProxiesOn.call(ctx);
     assert.equal(displaySprite.renderable, false, 'a look layer\'s composite gives way to its regions');
     Pixi._applyLocalProxies.call(ctx, null, 3);
-    assert.notDeepEqual(entitiesRoot.children, [entitiesMesh]);
+    assert.notDeepEqual(drawn(entitiesRoot), [entitiesMesh]);
     ctx.ySort = false;
     Pixi._syncProxiesOn.call(ctx);
     assert.equal(batch.sorted, false);
     assert.equal(displaySprite.renderable, true);
-    assert.deepEqual(entitiesRoot.children, [entitiesMesh]);
-    batch.update(Time.simNowMs);
+    assert.deepEqual(drawn(entitiesRoot), [entitiesMesh]);
+    batch.update(clockNow());
     assert.equal(batch.rings[0].meshes[0].visible, true, 'the rings draw again');
   } finally {
     restore();
@@ -207,7 +216,7 @@ test('a look layer\'s region blends as its full-screen composite, and samples wh
     half.floats[PROXY.MAX_Y_F] = 410;
     half.header[0] = 1;
     Pixi._applyProxies.call(ctx, half);
-    const kids = entitiesRoot.children;
+    const kids = drawn(entitiesRoot);
     assert.equal(kids.length, 3, 'chunk, region, chunk');
     const quad = kids[1];
     assert.equal(regions.blendMode, 'screen');

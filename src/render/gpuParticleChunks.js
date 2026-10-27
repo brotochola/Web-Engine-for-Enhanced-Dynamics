@@ -131,6 +131,8 @@ export class RegionQuads {
     this.index = new Buffer({ data: new Uint32Array([0, 1, 2, 0, 2, 3]), usage: BufferUsage.INDEX });
     this.pool = [];
     this.used = 0;
+    /** The layer's alpha for this frame's quads; the Pixi worker sets it each frame. */
+    this.alpha = NaN;
   }
 
   /** The blend the quads draw with: the one the layer's full-screen composite uses. */
@@ -153,10 +155,17 @@ export class RegionQuads {
   }
 
   /**
-   * A quad over world rect [minX, maxX] x [minY, maxY]. `m` maps world to screen px (a, b, c, d, tx, ty);
-   * the UVs are screen / canvas.
+   * A quad over the world rect of the entry at `floats[at…]` (PROXY.MIN_X_F … MAX_Y_F), with the layer's `alpha`.
+   * `m` maps world to screen px (a, b, c, d, tx, ty); the UVs are screen / canvas. The rect is read here, not
+   * passed: a double argument to a call TurboFan does not inline is boxed.
+   * @param {Float32Array} floats a proxy half's floats
+   * @param {number} at the entry's first word
    */
-  quad(minX, minY, maxX, maxY, m, canvasW, canvasH) {
+  quad(floats, at, m, canvasW, canvasH) {
+    const minX = floats[at + PROXY.MIN_X_F];
+    const minY = floats[at + PROXY.MIN_Y_F];
+    const maxX = floats[at + PROXY.MAX_X_F];
+    const maxY = floats[at + PROXY.MAX_Y_F];
     let q = this.pool[this.used];
     if (!q) {
       const positions = new Buffer({ data: new Float32Array(8), usage: BufferUsage.VERTEX | BufferUsage.COPY_DST });
@@ -186,6 +195,7 @@ export class RegionQuads {
     }
     q.positions.update();
     q.uvs.update();
+    q.mesh.alpha = this.alpha;
     return q.mesh;
   }
 
@@ -215,8 +225,10 @@ export class EntityChunks {
     this.maxSplits = opts.maxSplits | 0 || DEFAULT_MAX_PAINTER_SPLITS;
     // Per base geometry of the batch (it flips between two each frame): its chunk meshes.
     this.chunks = new Map();
+    // The frame's draw order, [0, count). The array keeps its length (resetting it would free its storage and
+    // every frame would grow it again).
     this.children = [];
-    this.previous = [];
+    this.count = 0;
     this.at = new Int32Array(64);
     this.gaps = 0;
     this.active = false;
@@ -243,7 +255,8 @@ export class EntityChunks {
    * @param {{ ints: Int32Array }} half the frame's entries
    * @param {number} count entries
    * @param {number} instanceCount instances the batch committed
-   * @param {(entryWord: number, out: object[]) => void} drawEntry pushes the meshes of one entry
+   * @param {(entryWord: number, out: object[], n: number) => number} drawEntry writes the meshes of one entry at
+   *   out[n…] and returns the next free index
    */
   apply(half, count, instanceCount, drawEntry) {
     if (count <= 0) {
@@ -253,8 +266,8 @@ export class EntityChunks {
     if (this.at.length < count) this.at = new Int32Array(count * 2);
     const at = this.at;
     this.gaps = assignGaps(half.ints, count, this.maxSplits, at, instanceCount);
-    const children = this.children;
-    children.length = 0;
+    const order = this.children;
+    let n = 0;
     const base = this.batch.mesh.geometry;
     let from = 0;
     let chunk = 0;
@@ -265,39 +278,59 @@ export class EntityChunks {
         const m = this._chunk(base, chunk++);
         m.geometry.weedFirstInstance = from;
         m.geometry.instanceCount = k - from;
-        children.push(m);
+        order[n++] = m;
       }
       if (k > from) from = k;
-      drawEntry(e * PROXY_ENTRY_WORDS, children);
+      n = drawEntry(e * PROXY_ENTRY_WORDS, order, n);
     }
     if (from < instanceCount && visible) {
       const m = this._chunk(base, chunk++);
       m.geometry.weedFirstInstance = from;
       m.geometry.instanceCount = instanceCount - from;
-      children.push(m);
+      order[n++] = m;
     }
-    this._setChildren(children);
+    this.count = n;
+    this._show(order, n);
     this.active = true;
   }
 
-  /** Back to the batch's own mesh. */
+  /** Back to the batch's own mesh: the chunks and proxies are hidden, the batch draws itself. */
   clear() {
     if (!this.active) return;
-    this.children.length = 0;
-    this.children.push(this.batch.mesh);
-    this._setChildren(this.children);
+    const kids = this.root.children;
+    const own = this.batch.mesh;
+    for (let i = 0; i < kids.length; i++) {
+      const m = kids[i];
+      if (m !== own && m.visible) m.visible = false;
+    }
+    own.renderable = true;
+    this.count = 0;
     this.active = false;
   }
 
-  _setChildren(list) {
-    const prev = this.previous;
-    let same = prev.length === list.length;
-    for (let i = 0; same && i < list.length; i++) same = prev[i] === list[i];
-    if (same) return;
-    this.root.removeChildren();
-    for (let i = 0; i < list.length; i++) this.root.addChild(list[i]);
-    prev.length = 0;
-    for (let i = 0; i < list.length; i++) prev.push(list[i]);
+  /**
+   * The root draws order[0, n) in that order, and nothing else. Every mesh it ever drew stays its child: a first
+   * use appends it, swaps put it in place, and the ones not in this frame are hidden. Adding and removing children
+   * each frame made garbage (removeChildren's array, Pixi's bookkeeping); a swap writes two slots. The batch's own
+   * mesh stays a child too, not rendered while the chunks draw its instances.
+   */
+  _show(order, n) {
+    const root = this.root;
+    const own = this.batch.mesh;
+    if (own.renderable) own.renderable = false;
+    for (let i = 0; i < n; i++) {
+      const m = order[i];
+      if (m.parent !== root) root.addChild(m);
+      if (!m.visible) m.visible = true;
+    }
+    const kids = root.children;
+    for (let i = 0; i < n; i++) {
+      if (kids[i] !== order[i]) root.swapChildren(kids[i], order[i]);
+    }
+    for (let i = n; i < kids.length; i++) {
+      const m = kids[i];
+      if (m !== own && m.visible) m.visible = false;
+    }
   }
 
   destroy() {

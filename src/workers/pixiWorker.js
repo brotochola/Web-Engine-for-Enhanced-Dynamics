@@ -300,10 +300,9 @@ import { GpuParticles } from '../core/gpuParticles.js';
 import { GpuParticleLayerBatch, packAnimStartLookup } from '../render/gpuParticleBatch.js';
 import { installInstanceRangeDraw } from '../render/instanceRangeDraw.js';
 import {
-  PROXY, PROXY_KIND, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, localProxyHalf, proxyView,
+  PROXY, PROXY_CAMERA, PROXY_KIND, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, localProxyHalf, proxyView,
 } from '../render/gpuParticleProxies.js';
 import { EntityChunks, RegionQuads } from '../render/gpuParticleChunks.js';
-import { zSortBand } from '../util/sortIndexByKey.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -586,9 +585,11 @@ class PixiRenderer extends AbstractWorker {
     this._proxyReadHalf = 0;
     this._proxyLocal = null;
     this._proxyCollector = null;
-    // Doubles from the start (a Smi field turned double in the frame loop moves the object to a new map: N-32).
-    this._proxyView = { minX: NaN, minY: NaN, maxX: NaN, maxY: NaN };
-    this._proxyBand = 0;
+    // The proxies' camera and culled view (gpuParticleProxies.js proxyView), and the sim clock: typed arrays, so
+    // no double crosses a call.
+    this._proxyCamera = new Float64Array(6);
+    this._proxyView = new Float64Array(4);
+    this._gpuClock = new Float64Array(1);
     this._proxyApplyHalf = null;
     this._proxyDrawEntry = null;
     this._proxyMatrix = new Matrix();
@@ -2024,9 +2025,9 @@ class PixiRenderer extends AbstractWorker {
     const batches = this._gpuParticleBatches;
     if (batches.length === 0) return;
     if (this._proxyLayerList.length > 0) this._syncProxiesOn();
-    const now = Time.simNowMs;
+    Time.readSimNowInto(this._gpuClock, 0);
     let live = 0;
-    for (let i = 0; i < batches.length; i++) live += batches[i].update(now);
+    for (let i = 0; i < batches.length; i++) live += batches[i].update(this._gpuClock);
     this._gpuParticleLiveRecords = live;
   }
 
@@ -2086,7 +2087,6 @@ class PixiRenderer extends AbstractWorker {
         maxSplits: this.config?.renderer?.maxPainterSplits,
       });
     }
-    this._proxyBand = zSortBand(this.config?.worldHeight || 0);
     if (this._packGpuSpritesOn === PACK_GPU_SPRITES_PIXI) {
       if (!this._proxyLocal) {
         this._proxyLocal = localProxyHalf();
@@ -2095,7 +2095,7 @@ class PixiRenderer extends AbstractWorker {
     } else if (GpuParticles.proxySab) {
       this._proxyHalves = bindProxyHalves(GpuParticles.proxySab);
     }
-    if (!this._proxyDrawEntry) this._proxyDrawEntry = (w, out) => this._drawProxyEntry(w, out);
+    if (!this._proxyDrawEntry) this._proxyDrawEntry = (w, out, n) => this._drawProxyEntry(w, out, n);
   }
 
   /** Pre-render's entries for the frame Pixi took (it packed the entities). */
@@ -2111,9 +2111,17 @@ class PixiRenderer extends AbstractWorker {
       return;
     }
     const collector = this._proxyCollector;
-    const view = proxyView(this._proxyView, this._renderCameraX, this._renderCameraY, this._renderZoom,
-      this._renderCameraRot || 0, this.canvasWidth, this.canvasHeight);
-    const n = this._painter !== null ? collector.collect(GpuParticles.layers, Time.simNowMs, view, this._proxyBand) : 0;
+    const cam = this._proxyCamera;
+    cam[PROXY_CAMERA.X] = this._renderCameraX;
+    cam[PROXY_CAMERA.Y] = this._renderCameraY;
+    cam[PROXY_CAMERA.ZOOM] = this._renderZoom;
+    cam[PROXY_CAMERA.ROT] = this._renderCameraRot || 0;
+    cam[PROXY_CAMERA.CANVAS_W] = this.canvasWidth;
+    cam[PROXY_CAMERA.CANVAS_H] = this.canvasHeight;
+    Time.readSimNowInto(this._gpuClock, 0);
+    const n = this._painter !== null
+      ? collector.collect(GpuParticles.layers, this._gpuClock, proxyView(this._proxyView, cam))
+      : 0;
     if (n > 0) collector.write(half, this.renderQueueSortKey, order, packedCount | 0);
     else Atomics.store(half.header, 0, 0);
     this._applyProxies(half);
@@ -2128,11 +2136,16 @@ class PixiRenderer extends AbstractWorker {
       return;
     }
     const list = this._proxyLayerList;
+    const alphas = Layer._alpha;
     let regions = false;
     for (let i = 0; i < list.length; i++) {
       const pl = list[i];
+      // The layer's alpha for this frame's group meshes and regions, set once here rather than passed per entry.
+      const alpha = alphas ? alphas[pl.layerId] : 1;
+      pl.batch.alpha = alpha;
       pl.batch.beginGroups();
       if (pl.regions !== null) {
+        pl.regions.alpha = alpha;
         const out = pl.cl.rtOut;
         if (out && pl.regions.source !== out.source) pl.regions.setTexture(out);
         // The composite's blend follows Layer blend changes (handleSetLayerProps); the regions follow it.
@@ -2142,31 +2155,26 @@ class PixiRenderer extends AbstractWorker {
         regions = true;
       }
     }
-    if (regions) this._writeCameraRtTransform(this._proxyMatrix, 1);
+    if (regions) this._writeCameraRtTransform(this._proxyMatrix, null);
     this._proxyApplyHalf = half;
     const mesh = this.entitiesBatch.mesh;
     chunks.apply(half, count, mesh.visible ? mesh.geometry.instanceCount | 0 : 0, this._proxyDrawEntry);
   }
 
   /** One entry's meshes: a group's ring slices, or a look layer's region. */
-  _drawProxyEntry(w, out) {
+  /** One entry's meshes at out[n…] (a group's ring slices, or a look layer's region); returns the next index. */
+  _drawProxyEntry(w, out, n) {
     const half = this._proxyApplyHalf;
     const ints = half.ints;
     const kindLayer = ints[w + PROXY.KIND_LAYER];
     const pl = this._proxyLayers[kindLayer & 0xff];
-    if (!pl || !layerIsVisible(pl.layerId)) return;
-    const alphas = Layer._alpha;
-    const alpha = alphas ? alphas[pl.layerId] : 1;
+    if (!pl || !layerIsVisible(pl.layerId)) return n;
     if ((kindLayer >> 8) === PROXY_KIND.GROUP) {
-      pl.batch.groupMeshes(ints[w + PROXY.RING], ints[w + PROXY.GROUP], out, alpha);
-      return;
+      return pl.batch.groupMeshes(ints[w + PROXY.RING], ints[w + PROXY.GROUP], out, n);
     }
-    if (pl.regions === null) return;
-    const f = half.floats;
-    const mesh = pl.regions.quad(f[w + PROXY.MIN_X_F], f[w + PROXY.MIN_Y_F], f[w + PROXY.MAX_X_F], f[w + PROXY.MAX_Y_F],
-      this._proxyMatrix, this.canvasWidth || 1, this.canvasHeight || 1);
-    mesh.alpha = alpha;
-    out.push(mesh);
+    if (pl.regions === null) return n;
+    out[n] = pl.regions.quad(half.floats, w, this._proxyMatrix, this.canvasWidth || 1, this.canvasHeight || 1);
+    return n + 1;
   }
 
   _entityYSort() {
@@ -5164,17 +5172,25 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     rtOpts.target = cl.rt;
     rtOpts.clear = true;
     rtOpts.clearColor = this._clearTransparent;
-    rtOpts.transform = this._writeCameraRtTransform(this._meshRtTransform, cl.resolution || 1);
+    rtOpts.transform = this._writeCameraRtTransform(this._meshRtTransform, cl);
     this._submitRender(rtOpts);
     rtOpts.transform = null;
   }
 
   /** World px -> RT px of a viewport-sized layer RT at `resolution`, rotation included, into `mx`. */
-  _writeCameraRtTransform(mx, resolution) {
+  _writeCameraRtTransform(mx, cl) {
+    // The layer's RT resolution (null: the screen, 1). Read here and written field by field: doubles passed to a
+    // call TurboFan does not inline (this one, or Matrix.set) are boxed.
+    const resolution = cl !== null ? cl.resolution || 1 : 1;
     const z = this._renderZoom * resolution;
     const rot = this._renderCameraRot || 0;
     if (!rot) {
-      mx.set(z, 0, 0, z, -this._renderCameraX * z, -this._renderCameraY * z);
+      mx.a = z;
+      mx.b = 0;
+      mx.c = 0;
+      mx.d = z;
+      mx.tx = -this._renderCameraX * z;
+      mx.ty = -this._renderCameraY * z;
       return mx;
     }
     const c = Math.cos(rot);
@@ -5187,7 +5203,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const focusY = this._renderCameraY + (this.canvasHeight || 0) / (2 * (this._renderZoom || 1));
     const screenCx = (this.canvasWidth || 0) * resolution * 0.5;
     const screenCy = (this.canvasHeight || 0) * resolution * 0.5;
-    mx.set(a, b, cc, d, screenCx - a * focusX - cc * focusY, screenCy - b * focusX - d * focusY);
+    mx.a = a;
+    mx.b = b;
+    mx.c = cc;
+    mx.d = d;
+    mx.tx = screenCx - a * focusX - cc * focusY;
+    mx.ty = screenCy - b * focusX - d * focusY;
     return mx;
   }
 

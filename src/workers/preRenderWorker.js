@@ -68,7 +68,7 @@ import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersU
 import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand } from '../util/sortIndexByKey.js';
 import { Time } from '../core/timeScale.js';
 import { GpuParticles } from '../core/gpuParticles.js';
-import { PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, proxyView } from '../render/gpuParticleProxies.js';
+import { PROXY_CAMERA, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, proxyView } from '../render/gpuParticleProxies.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -644,9 +644,11 @@ class PreRenderWorker extends AbstractWorker {
         // when a GPU layer sorts with the entities and this worker packs them; null otherwise.
         this._proxyHalves = null;
         this._proxyCollector = null;
-        // Doubles from the start: a field turned from a small integer to a double in the frame loop moves the
-        // object to a new map (N-32).
-        this._proxyView = { minX: NaN, minY: NaN, maxX: NaN, maxY: NaN };
+        // The proxies' camera, culled view and sim clock (gpuParticleProxies.js proxyView): typed arrays, so no
+        // double crosses a call.
+        this._proxyCamera = new Float64Array(6);
+        this._proxyView = new Float64Array(4);
+        this._proxyClock = new Float64Array(1);
         this._proxyDroppedWarned = false;
         this._stampLightCmp = stampLightOrder;
         // Stamp lights and their scratch: first written when a light first shows.
@@ -3508,9 +3510,11 @@ class PreRenderWorker extends AbstractWorker {
         const collector = this._proxyCollector;
         // Packed in painter order (or nothing packed): Pixi commits only such a frame when the entities y-sort.
         const ordered = (sprites.sprite | 0) === 0 || (sprites.flags & GPU_FLAG_SORTED) !== 0;
-        const n = this._entitySortY && ordered
-            ? collector.collect(GpuParticles.layers, Time.simNowMs, this._proxyFrameView(), this._zBand)
-            : 0;
+        let n = 0;
+        if (this._entitySortY && ordered) {
+            Time.readSimNowInto(this._proxyClock, 0);
+            n = collector.collect(GpuParticles.layers, this._proxyClock, this._proxyFrameView());
+        }
         if (n === 0) {
             half.header[1] = 0;
             Atomics.store(half.header, 0, 0);
@@ -3525,8 +3529,14 @@ class PreRenderWorker extends AbstractWorker {
 
     _proxyFrameView() {
         if (!this.cameraData) return null;
-        return proxyView(this._proxyView, this._frameCameraX, this._frameCameraY, this._frameCameraZoom,
-            this._frameCameraRot || 0, this.canvasWidth, this.canvasHeight);
+        const cam = this._proxyCamera;
+        cam[PROXY_CAMERA.X] = this._frameCameraX;
+        cam[PROXY_CAMERA.Y] = this._frameCameraY;
+        cam[PROXY_CAMERA.ZOOM] = this._frameCameraZoom;
+        cam[PROXY_CAMERA.ROT] = this._frameCameraRot || 0;
+        cam[PROXY_CAMERA.CANVAS_W] = this.canvasWidth;
+        cam[PROXY_CAMERA.CANVAS_H] = this.canvasHeight;
+        return proxyView(this._proxyView, cam);
     }
 
     /**

@@ -67,17 +67,27 @@ function entityKeys(rows) {
 }
 
 const entry = (half, e, word) => half.ints[e * PROXY_ENTRY_WORDS + word];
+const clock = new Float64Array(1);
+/** Time.simNowMs as the workers pass it (Time.readSimNowInto). */
+const clockNow = () => {
+  Time.readSimNowInto(clock, 0);
+  return clock;
+};
+/** proxyView's camera slots. */
+const cameraOf = (x, y, zoom, rot, w, h) => Float64Array.of(x, y, zoom, rot, w, h);
+/** What the root draws, in order. */
+const drawn = (node) => node.children.filter((c) => c.visible && c.renderable);
 const entryF = (half, e, word) => half.floats[e * PROXY_ENTRY_WORDS + word];
 
 test('upperBoundByKey: where a key goes in the packed order, after the instances it ties with', () => {
   const keys = new Float32Array([5, 1, 3, 3, 9]);
   const order = new Uint32Array([1, 2, 3, 0, 4]);
-  assert.equal(upperBoundByKey(keys, order, 5, 0), 0);
-  assert.equal(upperBoundByKey(keys, order, 5, 3), 3, 'after both 3s');
-  assert.equal(upperBoundByKey(keys, order, 5, 4), 3);
-  assert.equal(upperBoundByKey(keys, order, 5, 9), 5);
-  assert.equal(upperBoundByKey(keys, order, 3, 9), 3, 'only the packed instances count');
-  assert.equal(upperBoundByKey(new Float32Array([1, 3, 3, 5, 9]), null, 5, 3), 3, 'no order: instance k is row k');
+  assert.equal(upperBoundByKey(keys, order, 5, Float64Array.of(0), 0), 0);
+  assert.equal(upperBoundByKey(keys, order, 5, Float64Array.of(3), 0), 3, 'after both 3s');
+  assert.equal(upperBoundByKey(keys, order, 5, Float64Array.of(4), 0), 3);
+  assert.equal(upperBoundByKey(keys, order, 5, Float64Array.of(9), 0), 5);
+  assert.equal(upperBoundByKey(keys, order, 3, Float64Array.of(9), 0), 3, 'only the packed instances count');
+  assert.equal(upperBoundByKey(new Float32Array([1, 3, 3, 5, 9]), null, 5, Float64Array.of(3), 0), 3, 'no order: instance k is row k');
 });
 
 test('a group\'s key is a CPU particle\'s on its ground row: behind what stands lower, in front of that row', () => {
@@ -96,7 +106,7 @@ test('the packer lists live groups in key order, each with the entity it is draw
     emit({ sortY: 100 });
     emit({ sortY: 200 });
     const collector = new ProxyCollector();
-    assert.equal(collector.collect(GpuParticles.layers, Time.simNowMs, null, BAND), 3);
+    assert.equal(collector.collect(GpuParticles.layers, clockNow(), null), 3);
     const { keys, order } = entityKeys([350, 50, 250, 150]);
     const half = localProxyHalf();
     assert.equal(collector.write(half, keys, order, 4), 3);
@@ -122,7 +132,7 @@ test('hundreds of groups come out in key order, ties in the order they were coll
     const n = 700;
     for (let g = 0; g < n; g++) emit({ count: 1, sortY: Math.floor(rows() * 40) * 10 }); // 40 rows: many ties
     const collector = new ProxyCollector();
-    assert.equal(collector.collect(GpuParticles.layers, Time.simNowMs, null, BAND), n);
+    assert.equal(collector.collect(GpuParticles.layers, clockNow(), null), n);
     const expected = Array.from({ length: n }, (_, i) => i).sort((a, b) => collector.keys[a] - collector.keys[b] || a - b);
     assert.deepEqual(Array.from(collector.order.subarray(0, n)), expected);
   } finally {
@@ -138,13 +148,13 @@ test('ended groups are skipped and the cursor moves past them; unborn ones are l
     emit({ lifespan: 5000, x: 900, sortY: 30 });
     Time._advanceSimNow(200);
     const collector = new ProxyCollector();
-    assert.equal(collector.collect(GpuParticles.layers, Time.simNowMs, null, BAND), 2, 'the first has ended');
+    assert.equal(collector.collect(GpuParticles.layers, clockNow(), null), 2, 'the first has ended');
     assert.equal(collector.cursors[Layer.get('smoke').id][0], 1);
-    const view = proxyView({ minX: 0, minY: 0, maxX: 0, maxY: 0 }, -100, -100, 1, 0, 400, 300);
-    assert.deepEqual(view, { minX: -100, minY: -100, maxX: 300, maxY: 200 });
-    assert.equal(collector.collect(GpuParticles.layers, Time.simNowMs, view, BAND), 1, 'the one at x 900 is off screen');
-    const turned = proxyView({ minX: 0, minY: 0, maxX: 0, maxY: 0 }, 0, 0, 2, 0.5, 400, 300);
-    assert.ok(turned.minX < 0 && turned.maxX > 200, 'a turned camera: the box around what it sees');
+    const view = proxyView(new Float64Array(4), cameraOf(-100, -100, 1, 0, 400, 300));
+    assert.deepEqual(Array.from(view), [-100, -100, 300, 200]);
+    assert.equal(collector.collect(GpuParticles.layers, clockNow(), view), 1, 'the one at x 900 is off screen');
+    const turned = proxyView(new Float64Array(4), cameraOf(0, 0, 2, 0.5, 400, 300));
+    assert.ok(turned[0] < 0 && turned[2] > 200, 'a turned camera: the box around what it sees');
   } finally {
     restore();
   }
@@ -160,7 +170,7 @@ test('a look layer\'s overlapping groups merge into one region, keyed by the one
     emit({ x: 10, sortY: 100 });
     emit({ x: 600, sortY: 300 });
     const collector = new ProxyCollector();
-    collector.collect(GpuParticles.layers, Time.simNowMs, null, BAND);
+    collector.collect(GpuParticles.layers, clockNow(), null);
     const { keys, order } = entityKeys([50, 150, 250, 350]);
     const half = localProxyHalf();
     assert.equal(collector.write(half, keys, order, 4), 2);
@@ -180,7 +190,7 @@ test('past PROXY_MAX_ENTRIES the rest are dropped and counted', { concurrency: f
   try {
     for (let i = 0; i < PROXY_MAX_ENTRIES + 6; i++) emit({ count: 1, sortY: i % 700 });
     const collector = new ProxyCollector();
-    assert.equal(collector.collect(GpuParticles.layers, Time.simNowMs, null, BAND), PROXY_MAX_ENTRIES + 6);
+    assert.equal(collector.collect(GpuParticles.layers, clockNow(), null), PROXY_MAX_ENTRIES + 6);
     const half = bindProxyHalves(new SharedArrayBuffer(GpuParticles.proxySab.byteLength))[1];
     assert.equal(collector.write(half, null, null, 0), PROXY_MAX_ENTRIES);
     assert.equal(collector.dropped, 6);
@@ -232,10 +242,14 @@ test('the entities batch is drawn in chunks with each entry in its gap, then bac
     const half = localProxyHalf();
     [0, 4, 4].forEach((k, e) => { half.ints[e * PROXY_ENTRY_WORDS + PROXY.INDEX] = k; });
     const marks = [new Container(), new Container(), new Container()];
-    const draw = (w, out) => out.push(marks[w / PROXY_ENTRY_WORDS]);
+    const draw = (w, out, n) => {
+      out[n] = marks[w / PROXY_ENTRY_WORDS];
+      return n + 1;
+    };
     chunks.apply(half, 3, 10, draw);
-    const kids = rootNode.children;
+    const kids = drawn(rootNode);
     assert.equal(kids.length, 5);
+    assert.equal(entities.mesh.renderable, false, 'the chunks draw the batch\'s instances');
     assert.equal(kids[0], marks[0], 'entry 0 is behind every entity');
     assert.equal(kids[1].geometry.weedFirstInstance, 0);
     assert.equal(kids[1].geometry.instanceCount, 4);
@@ -247,10 +261,14 @@ test('the entities batch is drawn in chunks with each entry in its gap, then bac
     assert.equal(kids[1].geometry.attributes.aMove.buffer, base.aMove.buffer, 'a chunk draws the batch\'s own buffers');
     assert.equal(kids[1].shader, entities.mesh.shader);
     const first = kids[1];
+    const children = rootNode.children.length;
     chunks.apply(half, 3, 10, draw);
-    assert.equal(rootNode.children[1], first, 'chunk meshes are reused');
+    assert.equal(drawn(rootNode)[1], first, 'chunk meshes are reused');
+    assert.equal(rootNode.children.length, children, 'and stay children: no child added or removed');
     chunks.clear();
-    assert.deepEqual(rootNode.children, [entities.mesh]);
+    assert.deepEqual(drawn(rootNode), [entities.mesh]);
+    chunks.apply(half, 3, 10, draw);
+    assert.deepEqual(drawn(rootNode).map((c) => c.label || ''), kids.map((c) => c.label || ''), 'the same order again');
     chunks.destroy();
   } finally {
     batch.destroy();
@@ -265,22 +283,20 @@ test('a group draws its slots, two ranges across the ring end, without the recor
     emit({ count: 50 }); // slots 0..49 of a 64-slot ring
     emit({ count: 30 }); // slots 50..79: wraps
     batch.sorted = true;
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(batch.rings[0].meshes[0].visible || batch.rings[0].meshes[1].visible, false, 'a sorted layer draws no rings');
     batch.beginGroups();
     const out = [];
-    batch.groupMeshes(0, 1, out, 0.5);
-    assert.equal(out.length, 2);
+    batch.alpha = 0.5;
+    assert.equal(batch.groupMeshes(0, 1, out, 0), 2);
     assert.deepEqual([out[0].geometry.weedFirstInstance, out[0].geometry.instanceCount], [50, 14]);
     assert.deepEqual([out[1].geometry.weedFirstInstance, out[1].geometry.instanceCount], [0, 16]);
     assert.equal(out[0].alpha, 0.5);
-    out.length = 0;
-    batch.groupMeshes(0, 0, out, 1);
-    assert.equal(out.length, 1);
+    batch.alpha = 1;
+    assert.equal(batch.groupMeshes(0, 0, out, 0), 1);
     assert.deepEqual([out[0].geometry.weedFirstInstance, out[0].geometry.instanceCount], [16, 34], 'its first 16 are gone');
     batch.beginGroups();
-    out.length = 0;
-    batch.groupMeshes(0, 1, out, 1);
+    batch.groupMeshes(0, 1, out, 0);
     assert.equal(out[0], batch.rings[0].pool[0], 'the pool is reused frame to frame');
   } finally {
     batch.destroy();

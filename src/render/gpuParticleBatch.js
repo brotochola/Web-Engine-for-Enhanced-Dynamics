@@ -25,6 +25,7 @@ import {
   GPU_GROUP,
   GPU_GROUP_WORDS,
   GPU_RECORD_BYTES,
+  GPU_RECORD_FLOATS,
   GPU_RING,
 } from '../util/gpuParticleLayout.js';
 
@@ -33,6 +34,10 @@ export const GPU_PARTICLE_ATTRIBUTES = Object.freeze(['aMove', 'aHeight', 'aTime
 
 /** Animation indices per row of the anim-start lookup (uAnimStart). */
 export const GPU_ANIM_LUT_WIDTH = 64;
+
+/** Records per pre-made copy view (RingDraw._copy); a power of two. */
+const COPY_BLOCK = 256;
+const COPY_BLOCK_SHIFT = 8;
 
 const QUAD = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
 const QUAD_INDEX = new Uint32Array([0, 1, 2, 0, 2, 3]);
@@ -96,6 +101,17 @@ class RingDraw {
     this.ring = ring;
     this.shader = shader;
     this.mirror = new Float32Array(ring.records.length);
+    this.mirrorBits = new Uint32Array(this.mirror.buffer);
+    // Whole blocks of COPY_BLOCK records copy through views made once (TypedArray.set); a view per upload was
+    // garbage. A range's ends copy word by word (_copyWords).
+    const blockCount = (ring.capacity / COPY_BLOCK) | 0;
+    const blockWords = COPY_BLOCK * GPU_RECORD_FLOATS;
+    this.srcBlocks = new Array(blockCount);
+    this.dstBlocks = new Array(blockCount);
+    for (let k = 0; k < blockCount; k++) {
+      this.srcBlocks[k] = ring.records.subarray(k * blockWords, (k + 1) * blockWords);
+      this.dstBlocks[k] = this.mirror.subarray(k * blockWords, (k + 1) * blockWords);
+    }
     this.buffer = new Buffer({
       data: this.mirror,
       label: `${label}-records`,
@@ -132,6 +148,28 @@ class RingDraw {
     return mesh;
   }
 
+  /** Records [from, from + n) of the ring into the mirror (a range that does not wrap the ring end). */
+  _copy(from, n) {
+    const end = from + n;
+    let r = from;
+    let blocks = (r + COPY_BLOCK - 1) & ~(COPY_BLOCK - 1);
+    if (blocks > end) blocks = end;
+    this._copyWords(r * GPU_RECORD_FLOATS, blocks * GPU_RECORD_FLOATS);
+    r = blocks;
+    while (r + COPY_BLOCK <= end) {
+      this.dstBlocks[r >> COPY_BLOCK_SHIFT].set(this.srcBlocks[r >> COPY_BLOCK_SHIFT]);
+      r += COPY_BLOCK;
+    }
+    this._copyWords(r * GPU_RECORD_FLOATS, end * GPU_RECORD_FLOATS);
+  }
+
+  /** Words [from, to) as Uint32: bit for bit, the bit-packed fields included. */
+  _copyWords(from, to) {
+    const src = this.ring.recordBits;
+    const dst = this.mirrorBits;
+    for (let w = from; w < to; w++) dst[w] = src[w];
+  }
+
   /** Copy and upload the records published since the last call. */
   upload(published) {
     const cap = this.ring.capacity;
@@ -140,12 +178,10 @@ class RingDraw {
     if (fresh > cap) fresh = cap; // lapped: only the newest ring's worth is still there
     const start = (published - fresh) >>> 0;
     const from = start & (cap - 1);
-    const src = this.ring.records;
-    const floats = GPU_RECORD_BYTES / 4;
-    const head = Math.min(fresh, cap - from);
-    this.mirror.set(src.subarray(from * floats, (from + head) * floats), from * floats);
+    const head = fresh < cap - from ? fresh : cap - from;
+    this._copy(from, head);
     if (fresh > head) {
-      this.mirror.set(src.subarray(0, (fresh - head) * floats), 0);
+      this._copy(0, fresh - head);
       this.buffer.update(cap * GPU_RECORD_BYTES, 0); // across the ring end: the whole array
     } else {
       this.buffer.update(head * GPU_RECORD_BYTES, from * GPU_RECORD_BYTES);
@@ -162,8 +198,9 @@ class RingDraw {
    * that ended are skipped.
    * @returns {number} live records (0 = nothing to draw)
    */
-  window(published, groups, nowRel, epochGen) {
+  window(published, groups, epochGen, clock) {
     const ring = this.ring;
+    const nowRel = clock[0] - ring.epoch[0];
     const gcap = ring.groupCapacity;
     if (((groups - this.oldestLive) >>> 0) > gcap) this.oldestLive = (groups - gcap) >>> 0;
     while (this.oldestLive !== groups) {
@@ -203,7 +240,8 @@ class RingDraw {
   /** Point the meshes at [first, first + count) of the ring (two ranges across the ring end). */
   setRange(first, count) {
     const cap = this.ring.capacity;
-    const [a, b] = this.meshes;
+    const a = this.meshes[0];
+    const b = this.meshes[1];
     if (count <= 0) {
       a.visible = false;
       b.visible = false;
@@ -273,6 +311,8 @@ export class GpuParticleLayerBatch {
     this.state.culling = false;
     this.rings = [];
     this.liveRecords = 0;
+    /** The layer's alpha for this frame's group meshes (groupMeshes); the Pixi worker sets it each frame. */
+    this.alpha = NaN;
     const shaders = opts.shaders || {};
     for (let r = 0; r < this.info.rings.length; r++) {
       const shader = this._makeShader(shaders, opts, `${this.label}-ring${r}`);
@@ -318,10 +358,11 @@ export class GpuParticleLayerBatch {
 
   /**
    * Upload new records and set every ring's live window and clock for this frame.
-   * @param {number} nowMs Time.simNowMs
+   * @param {Float64Array} clock clock[0] is Time.simNowMs (Time.readSimNowInto): a typed array, since a double
+   *   passed to a call TurboFan does not inline is boxed
    * @returns {number} live records drawn
    */
-  update(nowMs) {
+  update(clock) {
     let live = 0;
     for (let r = 0; r < this.rings.length; r++) {
       const draw = this.rings[r];
@@ -330,13 +371,12 @@ export class GpuParticleLayerBatch {
       const published = Atomics.load(ring.header, GPU_RING.PUBLISHED) >>> 0;
       const epochGen = Atomics.load(ring.header, GPU_RING.EPOCH_GEN) >>> 0;
       draw.upload(published);
-      const nowRel = nowMs - ring.epoch[0];
-      const count = draw.window(published, groups, nowRel, epochGen);
+      const count = draw.window(published, groups, epochGen, clock);
       // Sorted among the entities, a plain layer's groups are drawn one by one (groupMeshes); its rings are not.
       draw.setRange(draw.liveFirst, this.sorted && !this.look ? 0 : count);
       const group = draw.shader.resources.uniforms;
       const u = group.uniforms.uGpuParticles;
-      u[0] = nowRel;
+      u[0] = clock[0] - ring.epoch[0];
       u[1] = this.pixelSnap ? 1 : 0;
       if (typeof group.update === 'function') group.update();
       live += count;
@@ -351,16 +391,18 @@ export class GpuParticleLayerBatch {
   }
 
   /**
-   * Push the meshes that draw group `group` (absolute) of writer ring `r` into `out`: one, or two when its slots
-   * wrap the ring end. Records the writer has written over are left out.
+   * Write the meshes that draw group `group` (absolute) of writer ring `r` at out[n…]: one, or two when its slots
+   * wrap the ring end. Records the writer has written over are left out. The meshes take `alpha`, the layer's for
+   * this frame. Returns the next free index.
    * @param {number} r
    * @param {number} group
    * @param {object[]} out
-   * @param {number} alpha the layer's alpha
+   * @param {number} n
+   * @returns {number}
    */
-  groupMeshes(r, group, out, alpha = 1) {
+  groupMeshes(r, group, out, n) {
     const draw = this.rings[r];
-    if (!draw) return;
+    if (draw === undefined) return n;
     const ring = draw.ring;
     const b = (group & (ring.groupCapacity - 1)) * GPU_GROUP_WORDS;
     let first = ring.groupBits[b + GPU_GROUP.FIRST] >>> 0;
@@ -369,23 +411,25 @@ export class GpuParticleLayerBatch {
     const floor = (published - ring.capacity) >>> 0;
     if (((published - first) >>> 0) > ring.capacity) {
       const lost = (floor - first) >>> 0;
-      if (lost >= count) return;
+      if (lost >= count) return n;
       first = floor;
       count -= lost;
     }
     const cap = ring.capacity;
     const slot = first & (cap - 1);
-    const head = Math.min(count, cap - slot);
+    const head = count < cap - slot ? count : cap - slot;
+    const blend = this.state.blendMode;
     const a = draw.groupMesh(slot, head);
-    a.alpha = alpha;
-    a.blendMode = this.state.blendMode;
-    out.push(a);
+    a.alpha = this.alpha;
+    a.blendMode = blend;
+    out[n++] = a;
     if (count > head) {
       const m = draw.groupMesh(0, count - head);
-      m.alpha = alpha;
-      m.blendMode = this.state.blendMode;
-      out.push(m);
+      m.alpha = this.alpha;
+      m.blendMode = blend;
+      out[n++] = m;
     }
+    return n;
   }
 
   destroy() {

@@ -102,6 +102,28 @@ export class Time {
   }
 
   /**
+   * Time.simNowMs into `out[index]`. The engine's per-frame readers use it: a double returned from a call TurboFan
+   * does not inline is boxed, one written into a typed array is not.
+   * @param {Float64Array} out
+   * @param {number} index
+   */
+  static readSimNowInto(out, index) {
+    const seq = this._simSeq;
+    if (!seq) {
+      out[index] = 0;
+      return;
+    }
+    const now = this._simNow;
+    for (let tries = 0; tries < 64; tries++) {
+      const before = Atomics.load(seq, 0);
+      if (before & 1) continue;
+      out[index] = now[0];
+      if (Atomics.load(seq, 0) === before) return;
+    }
+    out[index] = now[0];
+  }
+
+  /**
    * Advance the sim clock by `simMs`. Engine-internal: the main thread is its one writer (Scene's frame loop and
    * stepFrame). No-op when the clock is unbound.
    * @param {number} simMs

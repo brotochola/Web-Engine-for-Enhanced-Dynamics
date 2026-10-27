@@ -54,6 +54,13 @@ function setup(maxParticles = 64 * 3, batchOpts = {}) {
   };
 }
 
+const clock = new Float64Array(1);
+/** Time.simNowMs as the Pixi worker passes it (Time.readSimNowInto). */
+const clockNow = () => {
+  Time.readSimNowInto(clock, 0);
+  return clock;
+};
+
 const emit = (n, lifespan, extra = {}) => ParticleEmitter.emitGpu({ layer: 'smoke', count: n, x: 0, y: 0, lifespan, ...extra });
 
 test('a frame uploads only the records published since the last one, out of a private copy', { concurrency: false }, () => {
@@ -61,16 +68,16 @@ test('a frame uploads only the records published since the last one, out of a pr
   try {
     assert.notEqual(draw.mirror.buffer, draw.ring.records.buffer, 'uploads come from the ring\'s own array');
     emit(10, 1000);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(draw.buffer._updateOffset, 0);
     assert.equal(draw.buffer._updateSize, 10 * GPU_RECORD_BYTES);
     assert.deepEqual(Array.from(draw.mirror.subarray(0, 4)), Array.from(draw.ring.records.subarray(0, 4)));
     emit(5, 1000);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(draw.buffer._updateOffset, 10 * GPU_RECORD_BYTES, 'the next range starts where the last ended');
     assert.equal(draw.buffer._updateSize, 5 * GPU_RECORD_BYTES);
     const id = draw.buffer._updateID;
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(draw.buffer._updateID, id, 'nothing new, nothing uploaded');
   } finally {
     restore();
@@ -103,12 +110,12 @@ test('every published range reaches the GPU, in a frame that draws nothing of th
   const { batch, draw, restore } = setup(64 * 3, { flush: upload });
   try {
     emit(8, 1000);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     upload(draw.buffer); // drawn
     emit(10, 1000);
-    batch.update(Time.simNowMs); // nothing of this ring drawn: a hidden layer, or groups all off-screen
+    batch.update(clockNow()); // nothing of this ring drawn: a hidden layer, or groups all off-screen
     emit(5, 1000);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     upload(draw.buffer); // drawn
     const floats = (23 * GPU_RECORD_BYTES) / 4;
     assert.deepEqual(Array.from(gl.data.subarray(0, floats)), Array.from(draw.ring.records.subarray(0, floats)));
@@ -121,20 +128,20 @@ test('the live window starts at the oldest group still alive, and wraps the ring
   const { batch, draw, restore } = setup();
   try {
     const [a, b] = draw.meshes;
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(a.visible || b.visible, false, 'nothing published, nothing drawn');
     emit(40, 100); // dies at 100 ms
     emit(10, 5000);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(a.geometry.weedFirstInstance, 0);
     assert.equal(a.geometry.instanceCount, 50);
     Time._advanceSimNow(200);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(a.geometry.weedFirstInstance, 40, 'the dead group is skipped');
     assert.equal(a.geometry.instanceCount, 10);
     assert.equal(b.visible, false);
     emit(30, 5000); // slots 50..79 of a 64-slot ring: wraps
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(a.geometry.weedFirstInstance, 40);
     assert.equal(a.geometry.instanceCount, 24, 'up to the ring end');
     assert.equal(b.visible, true);
@@ -142,7 +149,7 @@ test('the live window starts at the oldest group still alive, and wraps the ring
     assert.equal(b.geometry.instanceCount, 16, 'the rest from slot 0');
     assert.equal(draw.buffer._updateSize, 64 * GPU_RECORD_BYTES, 'a range across the ring end uploads the whole array');
     Time._advanceSimNow(6000);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(a.visible || b.visible, false, 'all ended');
   } finally {
     restore();
@@ -155,11 +162,11 @@ test('each ring\'s clock is now on its own epoch; delays keep a group alive unti
     Time._advanceSimNow(1000);
     emit(4, 100, { delay: 500 });
     Time._advanceSimNow(250);
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(draw.shader.resources.uniforms.uniforms.uGpuParticles[0], 250, 'ms since the ring\'s epoch');
     assert.equal(draw.meshes[0].visible, true);
     Time._advanceSimNow(400); // 650 ms: the last particle dies at 600
-    batch.update(Time.simNowMs);
+    batch.update(clockNow());
     assert.equal(draw.meshes[0].visible, false);
   } finally {
     restore();

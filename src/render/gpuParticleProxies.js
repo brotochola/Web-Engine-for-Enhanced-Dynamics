@@ -23,14 +23,17 @@ import {
 export { PROXY, PROXY_ENTRY_WORDS, PROXY_KIND, PROXY_MAX_ENTRIES, bindProxyHalves, proxyMemoryBytes } from '../util/gpuParticleLayout.js';
 
 /**
- * How many of the first `count` packed instances have a key <= `key`: where an item with that key goes in the
- * painter's order (after the instances it ties with). `order` maps instance k to its queue row (null: row k).
+ * How many of the first `count` packed instances have a key <= `from[at]`: where an item with that key goes in the
+ * painter's order (after the instances it ties with). `order` maps instance k to its queue row (null: row k). The
+ * key comes in a typed array: a double argument to a call TurboFan does not inline is boxed.
  * @param {Float32Array} keys the queue's sortKey column
  * @param {Uint32Array|null} order
  * @param {number} count
- * @param {number} key
+ * @param {Float64Array} from
+ * @param {number} at
  */
-export function upperBoundByKey(keys, order, count, key) {
+export function upperBoundByKey(keys, order, count, from, at) {
+  const key = from[at];
   let lo = 0;
   let hi = count | 0;
   while (lo < hi) {
@@ -109,29 +112,37 @@ export function groupSortKey(sortY, band) {
   return Math.fround(orderSortKey(spriteYSortKey(sortY, DECORATION_Y_SORT_SCALE) + PARTICLE_SORT_BIAS, 0, true, band));
 }
 
+/** Slots of a proxy camera (proxyView's input): what the worker's camera draws this frame. */
+export const PROXY_CAMERA = Object.freeze({ X: 0, Y: 1, ZOOM: 2, ROT: 3, CANVAS_W: 4, CANVAS_H: 5 });
+
 /**
- * The world rectangle the camera sees, into `out` (a rotated view: the box around it). Groups outside it are
- * not listed.
- * @param {{ minX: number, minY: number, maxX: number, maxY: number }} out
+ * The world rectangle the camera sees, into `out` = [minX, minY, maxX, maxY] (a rotated view: the box around it).
+ * Groups outside it are not listed. Typed arrays in and out: no double crosses the call.
+ * @param {Float64Array} out
+ * @param {Float64Array} camera PROXY_CAMERA slots
+ * @returns {Float64Array} out
  */
-export function proxyView(out, cameraX, cameraY, zoom, rot, canvasW, canvasH) {
+export function proxyView(out, camera) {
+  const zoom = camera[PROXY_CAMERA.ZOOM];
   const z = zoom > 0 ? zoom : 1;
-  const w = canvasW / z;
-  const h = canvasH / z;
-  if (!rot) {
-    out.minX = cameraX;
-    out.minY = cameraY;
-    out.maxX = cameraX + w;
-    out.maxY = cameraY + h;
+  const w = camera[PROXY_CAMERA.CANVAS_W] / z;
+  const h = camera[PROXY_CAMERA.CANVAS_H] / z;
+  const x = camera[PROXY_CAMERA.X];
+  const y = camera[PROXY_CAMERA.Y];
+  if (!camera[PROXY_CAMERA.ROT]) {
+    out[0] = x;
+    out[1] = y;
+    out[2] = x + w;
+    out[3] = y + h;
     return out;
   }
-  const cx = cameraX + w * 0.5;
-  const cy = cameraY + h * 0.5;
+  const cx = x + w * 0.5;
+  const cy = y + h * 0.5;
   const r = Math.sqrt(w * w + h * h) * 0.5;
-  out.minX = cx - r;
-  out.minY = cy - r;
-  out.maxX = cx + r;
-  out.maxY = cy + r;
+  out[0] = cx - r;
+  out[1] = cy - r;
+  out[2] = cx + r;
+  out[3] = cy + r;
   return out;
 }
 
@@ -179,16 +190,16 @@ export class ProxyCollector {
   }
 
   /**
-   * Collect the live groups of every `sortWithEntities` layer. `view` culls (world rect, or null for none).
-   * Groups whose first particle is not born yet are listed too: their draw costs vertices only, and the frame
-   * Pixi draws them in is a little later than this one.
+   * Collect the live groups of every `sortWithEntities` layer. `view` culls (proxyView's world rect, or null for
+   * none). Groups whose first particle is not born yet are listed too: their draw costs vertices only, and the
+   * frame Pixi draws them in is a little later than this one.
    * @param {Array} layers GpuParticles.layers
-   * @param {number} nowMs Time.simNowMs
-   * @param {{ minX: number, minY: number, maxX: number, maxY: number } | null} view
-   * @param {number} band zSortBand(worldHeight)
+   * @param {Float64Array} clock clock[0] is Time.simNowMs (Time.readSimNowInto)
+   * @param {Float64Array | null} view [minX, minY, maxX, maxY]
    * @returns {number} groups collected
    */
-  collect(layers, nowMs, view, band) {
+  collect(layers, clock, view) {
+    const nowMs = clock[0];
     let n = 0;
     for (let id = 0; id < layers.length; id++) {
       const info = layers[id];
@@ -220,9 +231,13 @@ export class ProxyCollector {
           const minY = ring.groups[b + GPU_GROUP.MIN_Y_F];
           const maxX = ring.groups[b + GPU_GROUP.MAX_X_F];
           const maxY = ring.groups[b + GPU_GROUP.MAX_Y_F];
-          if (view && (maxX < view.minX || minX > view.maxX || maxY < view.minY || minY > view.maxY)) continue;
+          if (view !== null && (maxX < view[0] || minX > view[2] || maxY < view[1] || minY > view[3])) continue;
           this._grow(n + 1);
-          this.keys[n] = groupSortKey(ring.groups[b + GPU_GROUP.SORT_Y_F], band);
+          // groupSortKey, written out: its double came back boxed from the call. floor(y + 0.5) is its
+          // Math.round for a float32 y, and the entities' zIndex band is 0.
+          this.keys[n] = Math.fround(
+            Math.floor(ring.groups[b + GPU_GROUP.SORT_Y_F] + 0.5) * DECORATION_Y_SORT_SCALE + PARTICLE_SORT_BIAS
+          );
           this.layer[n] = id;
           this.ring[n] = r;
           this.group[n] = g | 0;
@@ -269,7 +284,7 @@ export class ProxyCollector {
         continue;
       }
       const w = e * PROXY_ENTRY_WORDS;
-      ints[w + PROXY.INDEX] = keys ? upperBoundByKey(keys, order, count, this.keys[i]) : count;
+      ints[w + PROXY.INDEX] = keys ? upperBoundByKey(keys, order, count, this.keys, i) : count;
       ints[w + PROXY.KIND_LAYER] = ((this.look[i] ? PROXY_KIND.REGION : PROXY_KIND.GROUP) << 8) | this.layer[i];
       ints[w + PROXY.RING] = this.ring[i];
       ints[w + PROXY.GROUP] = this.group[i];
