@@ -263,6 +263,10 @@ export class GpuParticles {
     }
 
     const heighted = cfg.heighted === true;
+    if (!heighted && (cfg.z !== undefined || cfg.vz !== undefined)) {
+      // emitGpu defaults to emitFlat's model; a config moved over from emit keeps z / vz and would silently lose them.
+      this._warnOnce('flat-z', 'ParticleEmitter.emitGpu: "z" and "vz" move a particle only with heighted: true (emit\'s model); without it they are ignored and gravity pulls on vy, as in emitFlat');
+    }
     const textures = this._resolveFrames(cfg);
     const frameCount = textures.count;
     const halfSize = textures.halfSize;

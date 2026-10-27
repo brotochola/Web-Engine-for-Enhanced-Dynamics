@@ -294,6 +294,24 @@ test('emitGpu refuses a thread without a ring, a layer that is not GPU, and warn
   }
 });
 
+test('z or vz without heighted warns once: emitGpu defaults to emitFlat\'s model', { concurrency: false }, () => {
+  const restore = setup();
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (m) => warned.push(String(m));
+  try {
+    ParticleEmitter.emitGpu({ layer: 'smoke', x: 0, y: 0, heighted: true, z: -10, vz: -1 });
+    assert.equal(warned.length, 0, 'heighted: z and vz are used');
+    ParticleEmitter.emitGpu({ layer: 'smoke', x: 0, y: 0, z: -10 });
+    ParticleEmitter.emitGpu({ layer: 'smoke', x: 0, y: 0, vz: -1 });
+    assert.equal(warned.length, 1, warned.join('\n'));
+    assert.match(warned[0], /heighted: true/);
+  } finally {
+    console.warn = warn;
+    restore();
+  }
+});
+
 test('workers bind the main thread\'s memories; the particle worker writes the last ring', { concurrency: false }, () => {
   const restore = setup(undefined, { logic: 2 });
   try {
