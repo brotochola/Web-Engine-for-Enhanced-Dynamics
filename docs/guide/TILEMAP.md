@@ -6,7 +6,7 @@ SAB-backed Tiled tilemap data accessible from any thread, with allocation-free q
 
 ## Overview
 
-TileMap loads [Tiled](https://www.mapeditor.org/) JSON tilemaps and backs their tile data with `SharedArrayBuffer`. All workers share the same tile memory instead of receiving cloned map payloads. Tile data is written once at scene load and is immutable after that.
+TileMap loads [Tiled](https://www.mapeditor.org/) JSON tilemaps and backs their tile data with `SharedArrayBuffer`. All workers share the same tile memory instead of receiving cloned map payloads. Tile data is written once at scene load and is immutable after that, with one exception in debug builds: with hot reload (`npm run dev`), saving a running scene's Tiled file writes its new tiles into the same memory in place, when the map's shape is unchanged, and redraws the layers that show it ([EDITOR.md](./EDITOR.md)). Anything a scene derived from the tiles at load follows on the level's next load.
 
 Architecture mirrors `layer.js`: static registry + lightweight facade instances.
 
@@ -213,5 +213,5 @@ Each `TileMapLayer.data` is an `Int32Array` view into the corresponding region. 
 
 - **Zero allocation queries**: `getAllTileIds()` returns a borrowed pre-allocated object; copy values if you need to store them. `worldToTile()` and `tileToWorld()` require caller-owned output objects so stored references stay safe.
 - **Direct property access**: `TileMap.myTilemap.sidewalk` is a V8 hidden-class property read. No dictionary lookup, no string hashing.
-- **No Atomics**: Tile data is immutable after init. Plain typed array reads are sufficient.
+- **No Atomics**: Tile data is immutable after init (a debug build's hot reload writes it in place between frames). Plain typed array reads are sufficient.
 - **Tileset images not in BigAtlas**: the GID shader samples the tileset `ImageSource` with its own UVs. Merging tileset PNGs into the BigAtlas would fight those UVs for no gain.

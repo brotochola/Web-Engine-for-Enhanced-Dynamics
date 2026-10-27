@@ -899,13 +899,13 @@ export class EditMode {
   }
 
   undo() {
-    if (this.move.dragging) return;
+    if (this.move.dragging || this.handles?.dragging) return;
     const change = this.history.undo();
     this._setStatus(change === null ? 'Nothing to undo' : `Undid: ${change.label}`, false);
   }
 
   redo() {
-    if (this.move.dragging) return;
+    if (this.move.dragging || this.handles?.dragging) return;
     const change = this.history.redo();
     this._setStatus(change === null ? 'Nothing to redo' : `Redid: ${change.label}`, false);
   }
@@ -1077,7 +1077,11 @@ export class EditMode {
 
   _hold() {
     Time.scale = 0;
+    // The view stays where it is: a scene that only centers its camera has no follow target, and setFree would take
+    // the camera's top-left for one (the world's corner).
+    const wasFree = Camera._free;
     Camera.setFree(true, { smoothing: 1 });
+    if (!wasFree) Camera.setFreeTarget(Camera.centerX, Camera.centerY);
     Camera.held = true;
     Mouse.isEditModeActive = true;
     Mouse.isDebugToolActive = true;

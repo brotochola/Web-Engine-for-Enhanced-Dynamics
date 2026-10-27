@@ -240,7 +240,7 @@ export class EntityPickTool {
     let any = -1;
     let anyArea = INF;
     for (let i = 0; active && i < active.length; i++) {
-      if (active[i] !== 1 || i === self) continue;
+      if (active[i] !== 1 || i === self || editMode.layers?.unpickable(i) === true) continue; // locked or hidden (ED-24)
       const className = editMode.debugUI.tools._classNameForType(types[i]);
       if (className === UNPICKABLE || !pointOnEntity(i, x, y)) continue;
       const area = entityBox(i, box) ? box[2] * box[3] : 0;

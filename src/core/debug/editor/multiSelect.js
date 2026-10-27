@@ -97,7 +97,7 @@ export class MultiSelect {
     const editMode = this.editMode;
     const scene = editMode.debugUI.scene;
     const selection = editMode.selection;
-    const hit = pickEntityAt(x, y, -1, selection._classNameOf);
+    const hit = pickEntityAt(x, y, -1, selection._classNameOf, selection._unpickable);
     const name = hit < 0 ? null : nameOfIndex(scene, hit);
     if (e.shiftKey) {
       if (name === null) return true; // nothing placed there: Shift+click does nothing
@@ -260,7 +260,7 @@ export class MultiSelect {
     const out = [];
     for (const record of scene?.sceneFile?.entities || []) {
       const i = indexOfName(scene, record.name);
-      if (i < 0) continue;
+      if (i < 0 || this.editMode.layers?.unpickable(i) === true) continue; // a locked or hidden layer's
       if (!entityBox(i, box)) {
         const x = Transform.x[i];
         const y = Transform.y[i];

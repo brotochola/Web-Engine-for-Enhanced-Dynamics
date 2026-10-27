@@ -296,3 +296,16 @@ test('GameEngine: Shift+E toggles edit mode; while it is on the game gets no key
     delete globalThis.document;
   }
 });
+
+test('entering keeps the view where it is, in a scene that only centers its camera (no follow target)', () => {
+  const { editMode } = setup();
+  try {
+    Camera._data[1] = 1000; // the view's top-left, world px; zoom 1 on an 800 × 600 canvas
+    Camera._data[2] = 500;
+    editMode.enter();
+    assert.equal(Camera._freeFollowX, 1400, 'the view’s center, not its top-left');
+    assert.equal(Camera._freeFollowY, 800);
+  } finally {
+    teardown();
+  }
+});

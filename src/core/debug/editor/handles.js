@@ -294,6 +294,7 @@ export class HandlesTool {
     const selection = editMode.selection;
     const index = selection.index;
     if (index < 0 || selection.name === null || !Transform.active || Transform.active[index] !== 1) return false;
+    if (editMode.layers?.locked(index) === true) return false; // a locked layer's entity (ED-24): no handles
     const signature = shapeSignature(index);
     if (
       index !== this._planIndex ||
