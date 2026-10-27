@@ -9,10 +9,12 @@
 //   sheets that have it. The param holds only the name; the sheet is the one the class sets in its code.
 //
 // The lists are made once per atlas (a full load registers another), so a selection change only builds the field. A
-// pick from the list commits at once; typing commits when the field is left, as the other text fields do.
+// pick from the list commits at once; typing commits when the field is left, as the other text fields do. The palette's
+// class pictures (classThumbs.js, ED-65) resolve a sprite param's default through the same catalog.
 
 import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
 import { KIND_ANIMATION } from '../../spawnParams.js';
+import { drawAtlasFrame } from './atlasThumb.js';
 
 /** The thumbnail's size, px. */
 export const THUMB_SIZE = 28;
@@ -95,20 +97,7 @@ export class AssetCatalog {
    * @returns {boolean} whether a frame was drawn
    */
   drawThumbnail(canvas, kind, name) {
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return false;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    const scene = this._sceneOf();
-    const atlas = scene ? scene.bigAtlasCanvas : null;
-    const frame = this.frameOf(kind, name);
-    const rect = frame !== null && scene && scene.bigAtlasJson ? scene.bigAtlasJson.frames?.[frame]?.frame : null;
-    if (!atlas || !rect || !(rect.w > 0 && rect.h > 0)) return false;
-    const k = Math.min(canvas.width / rect.w, canvas.height / rect.h);
-    const w = rect.w * k;
-    const h = rect.h * k;
-    ctx.imageSmoothingEnabled = k < 1; // pixel art stays crisp when it is drawn larger
-    ctx.drawImage(atlas, rect.x, rect.y, rect.w, rect.h, (canvas.width - w) / 2, (canvas.height - h) / 2, w, h);
-    return true;
+    return drawAtlasFrame(canvas, this._sceneOf(), this.frameOf(kind, name));
   }
 }
 

@@ -204,21 +204,73 @@ class El {
     this.children = [];
     this.style = {};
     this.dataset = {};
-    this.classList = { set: new Set(), add(c) { this.set.add(c); } };
+    this.classList = {
+      set: new Set(),
+      add(c) {
+        this.set.add(c);
+      },
+      remove(c) {
+        this.set.delete(c);
+      },
+    };
+    this.title = '';
+    this.value = '';
+    this.width = 0;
+    this.height = 0;
+    /** How many times its text was set: a refresh writes only what changed. */
+    this.writes = 0;
     this._text = '';
+    this._ctx = null;
   }
   appendChild(node) {
     this.children.push(node);
     return node;
   }
+  append(...nodes) {
+    for (const node of nodes) this.appendChild(node);
+  }
+  addEventListener() {}
+  getContext() {
+    this._ctx ??= {
+      calls: 0,
+      clearRect() {
+        this.calls++;
+      },
+      fillRect() {
+        this.calls++;
+      },
+      fillText() {
+        this.calls++;
+      },
+      drawImage() {
+        this.calls++;
+      },
+    };
+    return this._ctx;
+  }
   get textContent() {
     return this._text + this.children.map((c) => c.textContent).join('');
   }
   set textContent(text) {
+    this.writes++;
     this._text = text;
     this.children = [];
   }
+  *all() {
+    for (const child of this.children) {
+      yield child;
+      yield* child.all();
+    }
+  }
+  find(fn) {
+    for (const el of this.all()) if (fn(el)) return el;
+    return null;
+  }
 }
+
+const countOf = (row) => row.find((el) => el.dataset.count !== undefined);
+const plusOf = (row) => row.find((el) => el.dataset.place !== undefined);
+const thumbOf = (row) => row.find((el) => el.dataset.thumb !== undefined);
 
 test('the palette’s level row: the folder’s files with the running one chosen, Open, New and Save As (ED-38)', () => {
   const { scene } = makeScene();
@@ -274,10 +326,129 @@ test('the palette lists the scene’s classes with the file’s count against ea
     palette.refresh();
     const rows = palette._list.children;
     assert.deepEqual(rows.map((r) => r.dataset.className), ['Platform', 'Lever'], 'no Flash');
-    assert.deepEqual(rows.map((r) => r.children[2].textContent), ['1 / 64', '1 / 8']);
-    assert.equal(rows[1].children[0].classList.set.has('active'), true, 'the class being placed');
-    rows[0].children[0].onclick();
+    assert.deepEqual(rows.map((r) => r.children.map((el) => el.tagName)), [
+      ['CANVAS', 'SPAN', 'SPAN', 'BUTTON'],
+      ['CANVAS', 'SPAN', 'SPAN', 'BUTTON'],
+    ], 'its picture, its name, its count, its +');
+    assert.deepEqual(rows.map((r) => countOf(r).textContent), ['1 / 64', '1 / 8']);
+    assert.equal(plusOf(rows[1]).classList.set.has('active'), true, 'the class being placed');
+    plusOf(rows[0]).onclick();
     assert.deepEqual(placing, ['Platform']);
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test('a refresh keeps the rows and their pictures, and writes only the counts and marks that changed (ED-65)', () => {
+  const { scene } = makeScene();
+  globalThis.document = { createElement: (tag) => new El(tag) };
+  try {
+    const editMode = { debugUI: { scene }, placing: null, startPlacing() {} };
+    const palette = new Palette(editMode);
+    palette._list = new El('div');
+    palette.refresh();
+    const [platform, lever] = palette._list.children;
+    const drawn = thumbOf(platform).getContext().calls;
+    assert.ok(drawn > 0, 'its mark: nothing of it is live in this fake scene');
+    const countWrites = countOf(lever).writes;
+
+    scene.sceneFile.entities.push({ name: 'Platform2', class: 'Platform', x: 0, y: 0 });
+    editMode.placing = 'Platform';
+    palette.refresh();
+    assert.equal(palette._list.children[0], platform, 'the same row');
+    assert.equal(palette._list.children[1], lever);
+    assert.equal(countOf(platform).textContent, '2 / 64');
+    assert.equal(countOf(lever).writes, countWrites, 'the lever’s count did not change: not written');
+    assert.equal(plusOf(platform).classList.set.has('active'), true);
+    assert.equal(thumbOf(platform).getContext().calls, drawn, 'its mark is not drawn again');
+
+    // Another scene (a full load): its own rows.
+    const other = makeScene().scene;
+    editMode.debugUI.scene = other;
+    palette.refresh();
+    assert.notEqual(palette._list.children[0], platform);
+    assert.equal(countOf(palette._list.children[0]).textContent, '1 / 64');
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test('a row drags its class to the view: the editor’s type, its picture under the pointer; the end lets go (ED-66)', () => {
+  const { scene } = makeScene();
+  globalThis.document = { createElement: (tag) => new El(tag) };
+  try {
+    const editMode = { debugUI: { scene }, placing: null, startPlacing() {} };
+    const palette = new Palette(editMode);
+    palette._list = new El('div');
+    palette.refresh();
+    const [platform] = palette._list.children;
+    assert.equal(platform.draggable, true);
+    assert.match(platform.title, /drag it onto the view/);
+    const data = {};
+    const transfer = {
+      effectAllowed: 'all',
+      setData: (type, value) => (data[type] = value),
+      setDragImage: (image, x, y) => (data.image = [image, x, y]),
+    };
+    platform.ondragstart({ dataTransfer: transfer });
+    assert.deepEqual(data, { 'application/x-weed-class': 'Platform', image: [thumbOf(platform), 16, 16] });
+    assert.equal(transfer.effectAllowed, 'copy');
+    assert.equal(palette.drops.dragging, 'Platform', 'the view’s cross knows what it carries');
+    assert.equal(platform.style.opacity, '0.55');
+    platform.ondragend();
+    assert.equal(palette.drops.dragging, null);
+    assert.equal(platform.style.opacity, '');
+  } finally {
+    delete globalThis.document;
+  }
+});
+
+test('more than 8 classes: a field filters them by name, Esc clears it; 8 or fewer, none (ED-65)', () => {
+  const { scene } = makeScene();
+  const names = ['CityHouse', 'CityTree', 'CityPerson', 'TrafficCar', 'Bird', 'Boat', 'Bench', 'Lamp', 'Fountain'];
+  const classes = names.map((name, k) => {
+    const EntityClass = { name, startIndex: k * 4, poolSize: 4 };
+    return { class: EntityClass };
+  });
+  globalThis.document = { createElement: (tag) => new El(tag) };
+  try {
+    const editMode = { debugUI: { scene }, placing: null, startPlacing() {} };
+    const palette = new Palette(editMode);
+    palette._classesTop = new El('div');
+    palette._list = new El('div');
+    palette._noMatch = new El('div');
+    palette.refresh();
+    assert.equal(palette._filter, null, 'two classes: no filter');
+    assert.equal(palette._classesTop.find((el) => el.tagName === 'INPUT'), null);
+
+    scene.registeredClasses = classes;
+    palette.refresh();
+    const filter = palette._classesTop.find((el) => el.tagName === 'INPUT');
+    assert.ok(filter, 'nine classes: a filter');
+    assert.equal(filter, palette._filter);
+    assert.match(filter.title, /Esc clears/);
+    const shown = () => palette._list.children.filter((row) => row.style.display !== 'none').map((row) => row.dataset.className);
+    filter.value = 'city';
+    filter.oninput();
+    assert.deepEqual(shown(), ['CityHouse', 'CityTree', 'CityPerson'], 'any case');
+    filter.value = ' Bo ';
+    filter.oninput();
+    assert.deepEqual(shown(), ['Boat']);
+    assert.equal(palette._noMatch.style.display, 'none');
+    filter.value = 'zzz';
+    filter.oninput();
+    assert.deepEqual(shown(), []);
+    assert.equal(palette._noMatch.style.display, 'block', 'says that nothing matches');
+
+    filter.value = 'tree';
+    filter.oninput();
+    palette.refresh(); // a change to the document: the filter stays
+    assert.deepEqual(shown(), ['CityTree']);
+    let stopped = false;
+    filter.onkeydown({ key: 'Escape', preventDefault() {}, stopPropagation: () => (stopped = true) });
+    assert.equal(filter.value, '');
+    assert.equal(stopped, true, 'the editor does not also take the Esc');
+    assert.equal(shown().length, 9);
   } finally {
     delete globalThis.document;
   }

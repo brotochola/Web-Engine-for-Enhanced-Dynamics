@@ -13,8 +13,12 @@
 // and in `entities` when no sprite layer is among them, as the renderer draws it (preRenderWorker collectRenderable).
 // The choices last while the scene runs, fast swaps included, and go with it (a full load).
 //
+// The game's layers come first (ED-67): the ones its config.layers declares, and `entities`, where its entities draw
+// unless they name another. The engine's own pipeline layers (Layer.builtIn: decals, castedShadows, lighting,
+// lightGlows) follow under a folded "Engine layers" line, which says how many of them are hidden while folded.
+//
 // Cost: nothing per frame. A click asks each entity under the pointer for its layers (a few array reads); the rows
-// are built when the scene changes, and a switch changes only itself.
+// are built when the scene changes, and a switch or the fold changes only what it shows.
 
 import { Layer } from '../../layer.js';
 import { SpriteRenderer } from '../../../components/spriteRenderer.js';
@@ -65,8 +69,19 @@ export function editorLayersOf(scene) {
 /** Whether entities can be in a layer (a sprite, density, compute or mesh layer), so locking it means something. */
 export const lockable = (layer) => !isSkipSubscribeKind(layer.kind);
 
+/**
+ * Whether a layer is the engine's own: one it makes for its pipeline (decals, castedShadows, lighting, lightGlows),
+ * not one the scene declares in its config.layers (the platformer's bloom is the platformer's). `entities` is made by
+ * the engine too, but it is where the game's entities draw unless they name another layer: it is the game's.
+ * @param {Layer} layer
+ */
+export const isEngineLayer = (layer) => layer.builtIn === true && layer.name !== 'entities';
+
 const ROW_STYLE = 'display:grid;grid-template-columns:34px 34px 1fr auto;align-items:center;gap:2px;margin:1px 0';
 const HEAD_STYLE = `${ROW_STYLE};font-size:9px;color:#888;text-transform:uppercase;letter-spacing:0.4px`;
+const FOLD_STYLE =
+  'display:block;width:100%;box-sizing:border-box;margin:3px 0 1px;padding:2px 0;border:0;background:none;' +
+  'color:#999;font:inherit;font-size:10px;text-align:left;cursor:pointer';
 
 export class EditorLayers {
   /** @param {object} editMode - the EditMode these switches belong to */
@@ -83,6 +98,12 @@ export class EditorLayers {
     /** The palette's section and the scene its rows were built for. */
     this._box = null;
     this._boxScene = null;
+    /** The engine's layers are shown under their line (ED-67); folded until opened, for as long as the page lives. */
+    this.engineOpen = false;
+    /** That line (null when the scene uses none of them), their rows, and their ids as a mask. */
+    this._fold = null;
+    this._engineRows = [];
+    this._engineMask = 0;
   }
 
   isHidden(id) {
@@ -138,6 +159,7 @@ export class EditorLayers {
   setHidden(id, hidden) {
     const bit = 1 << id;
     this.hiddenMask = hidden ? this.hiddenMask | bit : this.hiddenMask & ~bit;
+    if ((this._engineMask & bit) !== 0) this._showFold();
     const editMode = this.editMode;
     if (!editMode.active) {
       if (hidden && editMode.debugUI.hosted) editMode.enter(); // applies the choices
@@ -205,13 +227,66 @@ export class EditorLayers {
     this._box = box;
     this._boxScene = scene;
     box.textContent = '';
+    this._fold = null;
+    this._engineRows = [];
+    this._engineMask = 0;
     const layers = editorLayersOf(scene);
     if (layers.length === 0) return;
     const head = document.createElement('div');
     head.style.cssText = HEAD_STYLE;
     head.append(cell('hide', 'Not drawn while editing'), cell('lock', 'Not picked or moved by the editor'), cell('layers', ''));
     box.appendChild(head);
-    for (const layer of layers) box.appendChild(this._row(layer));
+    for (const layer of layers) if (!isEngineLayer(layer)) box.appendChild(this._row(layer));
+    for (const layer of layers) {
+      if (!isEngineLayer(layer)) continue;
+      if (this._fold === null) {
+        this._fold = this._foldLine();
+        box.appendChild(this._fold);
+      }
+      const row = this._row(layer);
+      row.dataset.engine = '';
+      row.style.display = this.engineOpen ? 'grid' : 'none';
+      this._engineRows.push(row);
+      this._engineMask |= 1 << layer.id;
+      box.appendChild(row);
+    }
+    this._showFold();
+  }
+
+  /** Show or fold the engine's layers. */
+  setEngineOpen(open) {
+    if (open === this.engineOpen) return;
+    this.engineOpen = open;
+    const display = open ? 'grid' : 'none';
+    for (const row of this._engineRows) row.style.display = display;
+    this._showFold();
+  }
+
+  /** The line over the engine's layers: a click shows or folds them. */
+  _foldLine() {
+    const line = document.createElement('button');
+    line.type = 'button';
+    line.className = 'weed-layers-fold';
+    line.dataset.engineLayers = '';
+    line.style.cssText = FOLD_STYLE;
+    line.title =
+      'The layers the engine makes for lighting, glows, shadows and decals (the game’s own are above): ' +
+      'click to show or fold them. Hide works on them too.';
+    line.onclick = () => this.setEngineOpen(!this.engineOpen);
+    return line;
+  }
+
+  /** The fold line's text: open or folded, how many, and folded, how many of them are hidden while editing. */
+  _showFold() {
+    const line = this._fold;
+    if (line === null) return;
+    let hidden = 0;
+    for (let bits = this.hiddenMask & this._engineMask; bits !== 0; bits &= bits - 1) hidden++;
+    const count = this._engineRows.length;
+    const text = `${this.engineOpen ? '▾' : '▸'} Engine layers · ${count}${!this.engineOpen && hidden > 0 ? ` · ${hidden} hidden` : ''}`;
+    if (line.textContent === text) return;
+    line.textContent = text; // its arrow says open or folded: the state changes only with it
+    line.setAttribute('aria-expanded', this.engineOpen ? 'true' : 'false');
   }
 
   _row(layer) {
