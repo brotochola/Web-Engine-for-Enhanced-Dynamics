@@ -1,5 +1,6 @@
-// The scene list's DOM in the editor page (VISUAL_EDITOR_PLAN.md ED-62): its filter field (typing keeps the matching
-// rows, the count shows, Esc clears it, Ctrl+F in the list puts the focus there).
+// The scene list's DOM in the editor page (VISUAL_EDITOR_PLAN.md ED-62, ED-63): its filter field (typing keeps the
+// matching rows, the count shows, Esc clears it, Ctrl+F in the list puts the focus there); its keys (↑ ↓ along the rows
+// shown, Enter and a double click frame, F2 renames in a field over the row, Del and Ctrl+D) and its clicks.
 //
 // The list sits in a fake document whose events go the way a browser's do (capture, target, bubble, stopPropagation),
 // with the editor page's own key handling on its window, as editorShell.js has it: a keydown the list does not take
@@ -249,18 +250,90 @@ function makeEditorPage({ editing = true } = {}) {
       return this.name !== null;
     },
   };
+  // As Selection.select and clear: the hosted list hears of each change.
+  const select = (index) => {
+    selection.index = index;
+    selection.packed = index * 65536;
+    selection.name = nameAt(scene, index);
+    debugUI.hosted.onSelectionChanged();
+  };
+  const unselect = () => {
+    selection.index = -1;
+    selection.packed = -1;
+    selection.name = null;
+    debugUI.hosted.onSelectionChanged();
+  };
+  const indexOfName = (name) => Math.floor(scene._namedEntities.get(name) / 65536);
+  // As MultiSelect: the others selected with the inspector's, by name.
+  const multi = {
+    names: new Set(),
+    get count() {
+      return this.names.size;
+    },
+    has(name) {
+      return this.names.has(name);
+    },
+    selectedNames() {
+      const out = selection.name !== null ? [selection.name] : [];
+      for (const name of this.names) if (name !== selection.name) out.push(name);
+      return out;
+    },
+    clear() {
+      if (this.names.size === 0) return;
+      this.names.clear();
+      debugUI.hosted.onSelectionChanged();
+    },
+    selectNames(names) {
+      log.push(['select names', names.slice()]);
+      this.names.clear();
+      if (names.length === 0) {
+        unselect();
+        return;
+      }
+      for (let k = 1; k < names.length; k++) this.names.add(names[k]);
+      select(indexOfName(names[0]));
+    },
+  };
   const editMode = {
     active: editing,
     selection,
     layers: { locked: () => false },
-    multi: { count: 0, has: () => false },
+    multi,
     _setStatus: (text, isError) => log.push(['status', text, isError]),
+    enter() {
+      log.push(['enter edit mode']);
+      editMode.active = true;
+    },
     selectFromList(index, center) {
       log.push(['select', index, center]);
-      selection.index = index;
-      selection.packed = index * 65536;
-      selection.name = nameAt(scene, index);
-      debugUI.hosted.onSelectionChanged();
+      select(index);
+    },
+    // As EditMode's: a name the file has (or none) is refused; a change of the document, then the selection.
+    renameSelected(to) {
+      const from = selection.name;
+      log.push(['rename', from, to]);
+      if (to.trim() === '' || scene._namedEntities.has(to)) return false;
+      scene.sceneFile.entities.find((r) => r.name === from).name = to;
+      scene._namedEntities.set(to, scene._namedEntities.get(from));
+      scene._namedEntities.delete(from);
+      debugUI.hosted.onDocumentChanged();
+      select(selection.index);
+      return true;
+    },
+    deleteSelected() {
+      log.push(['delete', selection.name]);
+      if (!selection.authored) return false;
+      const name = selection.name;
+      scene.sceneFile.entities.splice(scene.sceneFile.entities.findIndex((r) => r.name === name), 1);
+      scene._namedEntities.delete(name);
+      Transform.active[selection.index] = 0; // logic0's despawn, at once
+      debugUI.hosted.onDocumentChanged();
+      unselect();
+      return true;
+    },
+    duplicateSelected() {
+      log.push(['duplicate', selection.name]);
+      return -1;
     },
     onKey(e) {
       log.push(['editor key', e.key]);
@@ -287,11 +360,28 @@ function makeEditorPage({ editing = true } = {}) {
   dock.appendChild(tree.el);
   doc.defaultView.addEventListener('keydown', (e) => hosted.onHostKey(e));
   tree.attach(scene);
-  return { doc, tree, editMode, selection, scene, log, styles };
+  return { doc, tree, editMode, selection, scene, log, styles, unselect };
 }
 
 /** The rows drawn, as text. */
 const shownRows = (tree) => tree._rows.filter((r) => r.style.display !== 'none').map((r) => r.textContent);
+
+/** The row element drawing list row `r`. */
+const rowEl = (tree, r) => tree._rows.find((el) => el.style.display !== 'none' && el.dataset.row === String(r));
+
+/** A click on list row `r` (a double click: two clicks, then dblclick, as a browser sends them). */
+function click(tree, r, init = {}) {
+  dispatch(rowEl(tree, r), 'click', init);
+}
+function doubleClick(tree, r) {
+  const el = rowEl(tree, r);
+  dispatch(el, 'click', { detail: 1 });
+  dispatch(el, 'click', { detail: 2 });
+  dispatch(el, 'dblclick', { detail: 2 });
+}
+
+/** The keys the editor itself heard (a key the list takes must not be one). */
+const editorKeys = (log) => log.filter(([what]) => what === 'editor key').map(([, key]) => key);
 
 function done() {
   delete globalThis.document;
@@ -345,6 +435,8 @@ test('Ctrl+F in the list puts the focus in the filter; the list’s keys stop at
     assert.deepEqual(log, [], 'typing in the field is the field’s');
     press(doc, 'ArrowDown');
     assert.equal(doc.activeElement, tree._list, '↓ in the filter: to the list');
+    assert.deepEqual(log, [['select', 18, false]], 'at the first match (ED-63)');
+    log.length = 0;
     const esc = press(doc, 'Escape');
     assert.equal(esc.stopped, true);
     assert.equal(tree.model.query, '', 'Esc in the list clears a filter first');
@@ -382,6 +474,234 @@ test('a click on a class folds it under the filter; the rows in view are drawn, 
     tree.render();
     tree.update();
     assert.equal(writes, 0);
+  } finally {
+    done();
+  }
+});
+
+// ---- keys and rename (ED-63) ----
+
+test('↑ and ↓ move the selection along the rows shown, past a class’s row and an entity not live, into view; they stop at the list', () => {
+  const { doc, tree, selection, log } = makeEditorPage();
+  try {
+    Transform.active[5] = 0; // Platform4 is not live
+    tree.update();
+    tree._list.clientHeight = 100; // five rows in view
+    click(tree, 1); // Platform: open
+    click(tree, 2); // Platform1
+    tree._list.focus();
+    assert.equal(selection.name, 'Platform1');
+    const names = [];
+    for (let k = 0; k < 4; k++) {
+      press(doc, 'ArrowDown');
+      names.push(selection.name);
+    }
+    assert.deepEqual(names, ['Platform2', 'Platform3', 'Platform5', 'Platform6'], 'Platform4, not live, passed over');
+    assert.equal(tree._list.scrollTop, 7 * ROW_HEIGHT + ROW_HEIGHT - 100, 'scrolled by the bottom edge to Platform6’s row');
+    press(doc, 'ArrowDown');
+    assert.equal(selection.name, 'Platform6', 'Coin is closed: nothing after it');
+    click(tree, 8); // Coin: open
+    for (const index of [18, 19, 20, 20]) {
+      press(doc, 'ArrowDown');
+      assert.equal(selection.index, index);
+    }
+    for (let k = 0; k < 3; k++) press(doc, 'ArrowUp');
+    assert.equal(selection.name, 'Platform6', 'up past Coin’s row');
+    assert.deepEqual(editorKeys(log), [], 'no arrow reached the editor (its arrows move the selected entity)');
+    assert.equal(rowEl(tree, 7).style.background, 'rgba(74,222,128,0.32)', 'the list has the focus: brighter');
+    tree._list.blur();
+    assert.equal(rowEl(tree, 7).style.background, 'rgba(74,222,128,0.18)');
+  } finally {
+    done();
+  }
+});
+
+test('nothing selected, ↓ starts at the rows in view; after a delete it goes on from where the deleted entity was', () => {
+  const { doc, tree, selection, scene, unselect } = makeEditorPage();
+  try {
+    click(tree, 1);
+    tree._list.focus();
+    press(doc, 'ArrowDown');
+    assert.equal(selection.name, 'Platform1', 'the first entity in view');
+    press(doc, 'ArrowDown');
+    press(doc, 'Delete');
+    assert.equal(selection.index, -1, 'deleted: nothing selected');
+    assert.equal(scene.sceneFile.entities.some((r) => r.name === 'Platform2'), false);
+    assert.equal(rowEl(tree, 3).textContent, 'Platform3  #4', 'the list shows the change at once');
+    press(doc, 'ArrowDown');
+    assert.equal(selection.name, 'Platform3', 'the next one, now on its row');
+    unselect(); // the editor’s Esc
+    press(doc, 'ArrowDown');
+    assert.equal(selection.name, 'Platform4', 'let go of, still there: the one after it');
+    unselect();
+    press(doc, 'ArrowUp');
+    assert.equal(selection.name, 'Platform3');
+  } finally {
+    done();
+  }
+});
+
+test('Enter and a double click frame: EditMode.frameSelection when it is there, else the view centered on the entity', () => {
+  const { doc, tree, editMode, selection, log } = makeEditorPage();
+  try {
+    click(tree, 1);
+    click(tree, 2);
+    tree._list.focus();
+    log.length = 0;
+    press(doc, 'Enter');
+    assert.deepEqual(log, [['select', 2, true]], 'without frameSelection: centered, as a double click did');
+    editMode.frameSelection = () => log.push(['frame', selection.name]);
+    log.length = 0;
+    press(doc, 'Enter');
+    doubleClick(tree, 4);
+    assert.deepEqual(log, [['frame', 'Platform1'], ['select', 4, false], ['frame', 'Platform3']], 'selected once, then framed');
+    doubleClick(tree, 8);
+    assert.equal(tree.model.groups[2].open, true, 'a double click on a class’s row: one fold');
+    assert.deepEqual(editorKeys(log), []);
+  } finally {
+    done();
+  }
+});
+
+test('F2 renames in place: Enter keeps a free name; a taken one leaves the field open, marked, the old name kept; Esc; leaving the field', () => {
+  const { doc, tree, editMode, scene, log } = makeEditorPage();
+  try {
+    click(tree, 1);
+    click(tree, 2);
+    tree._list.focus();
+    const f2 = press(doc, 'F2');
+    const field = tree._rename;
+    assert.equal(f2.stopped, true);
+    assert.equal(tree.renaming, true);
+    assert.equal(doc.activeElement, field);
+    assert.equal(field.style.display, '');
+    assert.equal(field.style.top, `${2 * ROW_HEIGHT}px`, 'over Platform1’s row');
+    assert.equal(field.value, 'Platform1');
+    assert.equal(field.selected, true, 'its name selected, to type over');
+
+    field.value = 'Platform2';
+    press(doc, 'Enter');
+    assert.equal(doc.activeElement, field, 'a name the file has: the field stays');
+    assert.equal(field.style.borderColor, '#f87171');
+    assert.equal(scene.sceneFile.entities[0].name, 'Platform1', 'the old name stays');
+    field.value = 'Start';
+    dispatch(field, 'input');
+    assert.equal(field.style.borderColor, '#4ade80', 'typing again unmarks it');
+    press(doc, 'Enter');
+    assert.equal(scene.sceneFile.entities[0].name, 'Start');
+    assert.equal(field.style.display, 'none');
+    assert.equal(doc.activeElement, tree._list, 'back to the list');
+    assert.equal(rowEl(tree, 2).textContent, 'Start  #2');
+
+    press(doc, 'F2');
+    field.value = 'Begin';
+    press(doc, 'Escape');
+    assert.equal(scene.sceneFile.entities[0].name, 'Start', 'Esc: the old name');
+    assert.equal(field.style.display, 'none');
+    assert.equal(doc.activeElement, tree._list);
+
+    press(doc, 'F2');
+    field.value = 'Begin';
+    tree._filter.focus(); // the field is left
+    assert.equal(scene.sceneFile.entities[0].name, 'Begin', 'left: the name typed, when the file can take it');
+
+    tree._list.focus();
+    press(doc, 'F2');
+    field.value = 'Other';
+    editMode.selectFromList(3, false); // a pick in the view
+    assert.equal(field.style.display, 'none', 'the selection moved away: the field goes');
+    assert.equal(scene._namedEntities.has('Other'), false);
+
+    editMode.selectFromList(19, false);
+    tree._list.focus();
+    press(doc, 'F2');
+    assert.equal(tree.renaming, false);
+    assert.deepEqual(log.at(-1), ['status', '#19 was spawned by code: the scene file has no name of it to change', true]);
+    assert.deepEqual(log.filter(([what]) => what === 'rename'), [
+      ['rename', 'Platform1', 'Platform2'],
+      ['rename', 'Platform1', 'Start'],
+      ['rename', 'Start', 'Begin'],
+    ]);
+    assert.deepEqual(editorKeys(log), [], 'F2, Enter and Esc stayed in the list');
+  } finally {
+    done();
+  }
+});
+
+test('Del and Ctrl+D: the editor’s delete and duplicate, once each, not again by its own keys; a runtime entity says why not', () => {
+  const { doc, tree, editMode, log } = makeEditorPage();
+  try {
+    click(tree, 1);
+    click(tree, 2);
+    tree._list.focus();
+    const del = press(doc, 'Delete');
+    assert.equal(del.defaultPrevented, true);
+    assert.equal(del.stopped, true);
+    press(doc, 'ArrowDown');
+    const duplicate = press(doc, 'd', { ctrlKey: true });
+    assert.equal(duplicate.defaultPrevented, true, 'not the browser’s bookmark');
+    press(doc, 'Backspace');
+    editMode.selectFromList(19, false);
+    press(doc, 'Delete');
+    press(doc, 'ArrowLeft');
+    press(doc, 'z', { ctrlKey: true });
+    assert.deepEqual(
+      log.filter(([what]) => what === 'delete' || what === 'duplicate' || what === 'status' || what === 'editor key'),
+      [
+        ['delete', 'Platform1'],
+        ['duplicate', 'Platform2'],
+        ['delete', 'Platform2'],
+        ['status', '#19 was spawned by code, not placed by the scene file: read-only', true],
+        ['editor key', 'ArrowLeft'],
+        ['editor key', 'z'],
+      ],
+      '← and Ctrl+Z are the editor’s',
+    );
+  } finally {
+    done();
+  }
+});
+
+test('while the game plays, ↑ ↓ and Enter select and frame; F2, Del and Ctrl+D enter edit mode first, as the Assets dock’s + does', () => {
+  const { doc, tree, editMode, log } = makeEditorPage({ editing: false });
+  try {
+    click(tree, 1);
+    click(tree, 2);
+    tree._list.focus();
+    press(doc, 'ArrowDown');
+    press(doc, 'Enter');
+    assert.equal(editMode.active, false, 'looking does not edit');
+    press(doc, 'd', { ctrlKey: true });
+    assert.equal(editMode.active, true);
+    assert.deepEqual(
+      log.filter(([what]) => what === 'enter edit mode' || what === 'duplicate'),
+      [['enter edit mode'], ['duplicate', 'Platform2']],
+      'edit mode, then the duplicate: one undo away',
+    );
+    assert.deepEqual(editorKeys(log), []);
+  } finally {
+    done();
+  }
+});
+
+test('a click selects one and lets the others go; Shift or Ctrl+click adds a placed entity or takes it out, the list staying put', () => {
+  const { tree, editMode, selection } = makeEditorPage();
+  try {
+    click(tree, 1);
+    editMode.multi.selectNames(['Platform1', 'Platform2', 'Platform3']);
+    const selected = () => tree._rows.filter((r) => r.style.display !== 'none' && Boolean(r.style.background)).map((r) => r.textContent);
+    assert.deepEqual(selected(), ['Platform1  #2', 'Platform2  #3', 'Platform3  #4']);
+    tree._list.scrollTop = 40;
+    tree.render();
+    click(tree, 6, { ctrlKey: true });
+    assert.deepEqual(editMode.multi.selectedNames(), ['Platform1', 'Platform2', 'Platform3', 'Platform5']);
+    click(tree, 3, { shiftKey: true });
+    assert.deepEqual(editMode.multi.selectedNames(), ['Platform1', 'Platform3', 'Platform5']);
+    assert.equal(tree._list.scrollTop, 40, 'the list stayed where it was');
+    click(tree, 7);
+    assert.equal(selection.name, 'Platform6');
+    assert.equal(editMode.multi.count, 0, 'a plain click: that one alone');
+    assert.deepEqual(selected(), ['Platform6  #7']);
   } finally {
     done();
   }

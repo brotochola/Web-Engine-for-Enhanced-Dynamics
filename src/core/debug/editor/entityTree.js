@@ -1,12 +1,18 @@
 // entityTree.js — the editor page's scene list (VISUAL_EDITOR_PLAN.md D9, ED-15): the running scene's entities
 // grouped by class, in the order the scene registers them. A group lists what the running scene file places (its
 // records, by name, with the live entity each has, or none) and then what code spawned (live entities the file does
-// not name, by index: read-only). Groups open and close; a click selects (while playing too: ED-17), a double click
-// centers the view on the entity.
+// not name, by index: read-only). Groups open and close; a click selects one entity (while playing too: ED-17), and
+// Shift or Ctrl+click adds a placed one to the selection or takes it out; a double click frames it.
 //
 // A filter over the list (ED-62; Ctrl+F while the list has the focus) keeps the rows whose name or class holds what
 // is typed, case aside: they show under their classes, unfolded, each class with its count. Esc clears it, and the
 // groups are as they were.
+//
+// Keys while the list has the focus (ED-63): ↑ and ↓ move the selection along the rows shown, Enter frames it, F2
+// renames it in a field over its row, Del deletes and Ctrl+D duplicates what is selected (the editor's own commands:
+// several selected, all of them, one undo). An edit while the game plays enters edit mode first, as the Assets dock's
+// + does. The keys the list takes stop at it, so the editor's own keys (which the editor page passes on from its
+// window) do not act on them a second time; ← → and the rest go on to the editor.
 //
 // Only the rows in view are drawn: a spacer as tall as every row, and a few row elements placed over it and reused.
 // Each remembers what it shows, and is written only when that changes. A scene of tens of thousands of entities costs
@@ -327,13 +333,18 @@ const ROW_STYLE =
 const TEXT = '#d6d9e2';
 const DIM = '#8a90a0';
 const LINE = '#262b38';
+const ACCENT = '#4ade80';
+const ERROR = '#f87171';
+/** A selected row; brighter while the list has the focus, where the keys go. */
 const SELECTED = 'rgba(74,222,128,0.18)';
+const SELECTED_FOCUS = 'rgba(74,222,128,0.32)';
+const FONT = "12px system-ui,-apple-system,'Segoe UI',sans-serif";
 
 /** The list's rules that inline styles cannot say, in the list's document: a row under the pointer, a field's focus. */
 const STYLE_ID = 'weed-editor-tree';
 const STYLES =
   `.weed-tree-row:hover{background-color:rgba(255,255,255,0.05)}` +
-  `.weed-tree-filter:focus{border-color:#4ade80;outline:none}` +
+  `.weed-tree-filter:focus{border-color:${ACCENT};outline:none}` +
   `.weed-tree-filter::placeholder{color:#6b7080}` +
   `.weed-tree-clear:hover{color:${TEXT}}` +
   `.weed-tree-list:focus-visible{box-shadow:inset 0 0 0 1px rgba(74,222,128,0.4)}`;
@@ -343,12 +354,27 @@ const SEARCH_ICON =
   'stroke="currentColor" stroke-width="1.6"/><path d="M10 10l4.5 4.5" stroke="currentColor" stroke-width="1.6" ' +
   'stroke-linecap="round"/></svg>';
 
+const PLACED_TITLE =
+  'Placed by the scene file. Click: select it (Shift or Ctrl: add it to the selection, or take it out); double click: ' +
+  'frame it. With the list focused: ↑ ↓ select, Enter frames, F2 renames, Del deletes, Ctrl+D duplicates';
+const RUNTIME_TITLE =
+  'Spawned by code, not by the scene file: read-only. Click: select it; double click: frame it. ↑ ↓ select, Enter frames';
+const NOT_LIVE_TITLE = 'Placed by the scene file, but not live: its pool may be full';
+
 // What a row is (RowShown.flags).
 const F_OPEN = 1;
 const F_FILTERED = 2;
 const F_LIVE = 4;
 const F_SELECTED = 8;
 const F_LOCKED = 16;
+const F_FOCUS = 32;
+
+/** A row up to this many rows past an edge of the view is scrolled to by that edge (a key's step); farther, to the middle. */
+const NEAR_ROWS = 3;
+
+// The list's edits of what is selected (Del, Ctrl+D).
+const EDIT_DELETE = 0;
+const EDIT_DUPLICATE = 1;
 
 /** What a row element shows, so that a render writes only what changed. */
 class RowShown {
@@ -401,8 +427,8 @@ export class EntityTree {
     this._filter.title =
       'Show the entities whose name or class holds this, case aside (Ctrl+F in the list). ↓ or Enter: to the list; Esc clears it';
     this._filter.style.cssText =
-      `flex:1;min-width:0;font:12px system-ui,-apple-system,'Segoe UI',sans-serif;color:#e3e6ee;background:#0b0d12;` +
-      'border:1px solid #343a4c;border-radius:4px;padding:2px 6px';
+      `flex:1;min-width:0;font:${FONT};color:#e3e6ee;background:#0b0d12;border:1px solid #343a4c;border-radius:4px;` +
+      'padding:2px 6px';
     this._count = document.createElement('span');
     this._count.style.cssText = `flex:none;color:${DIM};font-size:11px;white-space:nowrap`;
     this._clear = document.createElement('button');
@@ -414,7 +440,7 @@ export class EntityTree {
       `flex:none;display:none;font:15px/1 system-ui,sans-serif;color:${DIM};background:none;border:0;padding:0 2px;cursor:pointer`;
     this._bar.append(icon, this._filter, this._count, this._clear);
 
-    // The rows: the list scrolls, the spacer is as tall as all of them.
+    // The rows: the list scrolls, the spacer is as tall as all of them. The list takes the focus, for its keys.
     this._list = document.createElement('div');
     this._list.className = 'weed-tree-list';
     this._list.tabIndex = 0;
@@ -433,6 +459,22 @@ export class EntityTree {
     this._clearShown = false;
     /** The list's rules are in its document. */
     this._styled = false;
+    /** The list has the focus: the keys are its (its selected row is brighter). */
+    this._focused = false;
+    /**
+     * The row the selection was last shown on, and the entity there: once nothing is selected (a delete, Esc), ↓ and
+     * ↑ go on from that row. After a delete it holds the next entity. -1: none.
+     */
+    this._cursorRow = -1;
+    this._cursorIndex = -1;
+    /** A change of the selection the list makes itself that must not move the list (a Ctrl+click). */
+    this._quiet = false;
+    // Rename in place (ED-63): the field over the row, made on the first F2; the name it renames (null: closed); its
+    // row's top as written; whether the name typed was refused.
+    this._rename = null;
+    this._renameName = null;
+    this._renameTop = -1;
+    this._renameRefused = false;
 
     this._onScroll = () => this.render();
     this._onClick = (e) => this._clicked(e, false);
@@ -443,9 +485,15 @@ export class EntityTree {
       this.clearFilter();
       this._filter.focus();
     };
+    this._onFocus = () => this._setFocused(true);
+    this._onBlur = () => this._setFocused(false);
+    this._onRenameBlur = () => this._commitRename(false);
+    this._onRenameInput = () => this._markRename(false);
     this._list.addEventListener('scroll', this._onScroll);
     this._list.addEventListener('click', this._onClick);
     this._list.addEventListener('dblclick', this._onDoubleClick);
+    this._list.addEventListener('focus', this._onFocus);
+    this._list.addEventListener('blur', this._onBlur);
     this.el.addEventListener('keydown', this._onKeyDown);
     this._filter.addEventListener('input', this._onFilterInput);
     this._clear.addEventListener('click', this._onClearClick);
@@ -456,11 +504,13 @@ export class EntityTree {
     this._scene = scene;
     this.model.build(scene);
     this.model.refresh(scene);
+    this._cursorRow = -1;
     this._style();
     this.render();
   }
 
   detach() {
+    this._closeRename(false);
     this._scene = null;
     this.model.clear();
     this.render();
@@ -484,13 +534,21 @@ export class EntityTree {
     if (this.model.refresh(scene) || changed) this.render();
   }
 
-  /** The selection changed: open its group, scroll it into view, mark it. */
+  /**
+   * The selection changed: open its group, scroll it into view, mark it. A rename in place of another entity is
+   * left (the old name stays): the selection moved away from it.
+   */
   onSelectionChanged() {
     const selection = this.debugUI.editMode.selection;
-    if (this._scene !== null && selection.index >= 0) {
-      this._fresh();
+    if (this._renameName !== null && selection.name !== this._renameName) this._closeRename(false);
+    this._fresh(); // a delete clears the selection: its row goes now, not at the next tick
+    if (!this._quiet && this._scene !== null && selection.index >= 0) {
       const row = this.model.reveal(selection.index, selection.name);
-      if (row >= 0) this._scrollToRow(row);
+      if (row >= 0) {
+        this._cursorRow = row;
+        this._cursorIndex = selection.index;
+        this._scrollToRow(row);
+      }
     }
     this.render();
   }
@@ -519,6 +577,7 @@ export class EntityTree {
   /** The filter changed: from the top of what it keeps; cleared, back to the selection. */
   _filterShown(cleared) {
     let top = 0;
+    this._cursorRow = -1;
     const selection = this.debugUI.editMode.selection;
     if (cleared && selection.index >= 0) {
       const row = this.model.reveal(selection.index, selection.name);
@@ -545,11 +604,12 @@ export class EntityTree {
     }
   }
 
-  // ---- keys ----
+  // ---- keys (ED-63) ----
 
   /**
-   * A key typed in the list or its filter. The keys it takes stop here: none reaches the editor's own keys (the
-   * editor page passes keys on from its window, HostedEditor.onHostKey), so each has one action.
+   * A key typed in the list, its filter or a rename's field. The keys it takes stop here: none reaches the editor's
+   * own keys (the editor page passes keys on from its window, HostedEditor.onHostKey), so each has one action. The
+   * others (Ctrl+Z, ← →, Shift+E, …) go on to the editor.
    */
   _keyDown(e) {
     const ctrl = e.ctrlKey || e.metaKey;
@@ -557,10 +617,12 @@ export class EntityTree {
     if (ctrl && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
       this.focusFilter();
       handled = true;
-    } else if (e.target === this._filter) {
-      handled = this._filterKey(e);
     } else if (e.target === this._list) {
       handled = this._listKey(e);
+    } else if (e.target === this._filter) {
+      handled = this._filterKey(e);
+    } else if (this._rename !== null && e.target === this._rename) {
+      handled = this._renameKey(e);
     }
     if (handled) {
       e.preventDefault();
@@ -568,7 +630,45 @@ export class EntityTree {
     }
   }
 
-  /** In the filter: Esc clears it (empty, back to the list); ↓ and Enter go to the list. */
+  /**
+   * In the list: ↑ ↓ move the selection, Enter frames it, F2 renames it, Del (or Backspace) deletes and Ctrl+D
+   * duplicates what is selected; Esc clears a filter (without one, Esc is the editor's: it lets go of the selection).
+   */
+  _listKey(e) {
+    if (e.altKey) return false;
+    const key = e.key;
+    if (e.ctrlKey || e.metaKey) {
+      if (key !== 'd' && key !== 'D') return false;
+      this._edit(EDIT_DUPLICATE);
+      return true;
+    }
+    switch (key) {
+      case 'ArrowDown':
+        this._step(1);
+        return true;
+      case 'ArrowUp':
+        this._step(-1);
+        return true;
+      case 'Enter':
+        this._frame();
+        return true;
+      case 'F2':
+        this.startRename();
+        return true;
+      case 'Delete':
+      case 'Backspace':
+        this._edit(EDIT_DELETE);
+        return true;
+      case 'Escape':
+        if (this.model.query === '') return false;
+        this.clearFilter();
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /** In the filter: Esc clears it (empty, back to the list); ↓ and Enter go to the list, at the first match. */
   _filterKey(e) {
     if (e.ctrlKey || e.metaKey || e.altKey) return false;
     if (e.key === 'Escape') {
@@ -578,18 +678,241 @@ export class EntityTree {
     }
     if (e.key === 'ArrowDown' || e.key === 'Enter') {
       this._list.focus();
+      const selection = this.debugUI.editMode.selection;
+      if (selection.index < 0 || this.model.rowOf(selection.index, selection.name) < 0) this._step(1);
       return true;
     }
     return false;
   }
 
-  /** In the list: Esc clears a filter (without one, it is the editor's: it lets go of the selection). */
-  _listKey(e) {
-    if (e.key === 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && this.model.query !== '') {
-      this.clearFilter();
+  /**
+   * ↓ (1) and ↑ (-1): select the entity on the next row the list shows; a class's row and an entity that is not live
+   * are passed over. Nothing selected (or not shown): from the row the selection was last on, else from the rows in
+   * view. Scrolled into view by the selection's change (onSelectionChanged).
+   */
+  _step(step) {
+    if (this._scene === null) return;
+    this._fresh();
+    const model = this.model;
+    const total = model.rowCount;
+    const selection = this.debugUI.editMode.selection;
+    const row = selection.index >= 0 ? model.rowOf(selection.index, selection.name) : -1;
+    let start;
+    if (row >= 0) {
+      start = row + step;
+    } else if (this._cursorRow >= 0 && this._cursorRow <= total) {
+      // The entity it was on is still there (Esc let go of it): the next one. Another one is (a delete): that one.
+      const at = model.locate(this._cursorRow);
+      const same = at !== null && this._indexAt(at) === this._cursorIndex;
+      start = step > 0 ? (same ? this._cursorRow + 1 : this._cursorRow) : this._cursorRow - 1;
+    } else {
+      const first = Math.floor(this._list.scrollTop / ROW_HEIGHT);
+      const view = Math.max(1, Math.floor(this._list.clientHeight / ROW_HEIGHT));
+      start = step > 0 ? first : Math.min(total - 1, first + view - 1);
+    }
+    for (let r = start; r >= 0 && r < total; r += step) {
+      const at = model.locate(r);
+      if (at === null) break;
+      const index = this._indexAt(at);
+      if (index < 0) continue;
+      this._choose(index);
+      return;
+    }
+  }
+
+  /** Select one entity from the list (a click, ↑ ↓): the others selected with it are let go. */
+  _choose(index) {
+    const editMode = this.debugUI.editMode;
+    const multi = editMode.multi;
+    if (multi && multi.count > 0) {
+      this._quiet = true;
+      try {
+        multi.clear();
+      } finally {
+        this._quiet = false;
+      }
+    }
+    editMode.selectFromList(index, false);
+  }
+
+  /** Shift or Ctrl+click on a placed entity: add it to the selection, or take it out (as Shift+click in the view). */
+  _toggleSelected(name) {
+    const multi = this.debugUI.editMode.multi;
+    const names = multi.selectedNames();
+    const at = names.indexOf(name);
+    if (at >= 0) names.splice(at, 1);
+    else names.push(name);
+    this._quiet = true; // the list stays where it is: the inspector's entity may be far from this row
+    try {
+      multi.selectNames(names);
+    } finally {
+      this._quiet = false;
+    }
+  }
+
+  /** Enter and a double click: frame the selection (EditMode.frameSelection, ED-57), else center the view on it. */
+  _frame() {
+    const editMode = this.debugUI.editMode;
+    const index = editMode.selection.index;
+    if (index < 0) return;
+    if (typeof editMode.frameSelection === 'function') editMode.frameSelection();
+    else editMode.selectFromList(index, true);
+  }
+
+  /** Del and Ctrl+D: the editor's delete and duplicate of what is selected (several: all of them, one undo). */
+  _edit(kind) {
+    const editMode = this.debugUI.editMode;
+    const selection = editMode.selection;
+    if (selection.index < 0) return;
+    if (!selection.authored) {
+      editMode._setStatus(`#${selection.index} was spawned by code, not placed by the scene file: read-only`, true);
+      return;
+    }
+    if (!this._editing()) return;
+    if (kind === EDIT_DELETE) editMode.deleteSelected();
+    else editMode.duplicateSelected();
+  }
+
+  /**
+   * An edit from the list while the game plays enters edit mode first, as the Assets dock's + does: the world holds
+   * still, and the edit can be undone at once (the editor's undo is edit mode's).
+   * @returns {boolean} whether the editor is editing
+   */
+  _editing() {
+    const editMode = this.debugUI.editMode;
+    if (!editMode.active) editMode.enter();
+    return editMode.active === true;
+  }
+
+  // ---- rename in place (ED-63) ----
+
+  /**
+   * F2: a field over the selected placed entity's row, its name selected. Enter keeps the name typed
+   * (EditMode.renameSelected); a name the file has, or none, is refused: the field stays, marked, and the status line
+   * says why. Esc leaves the old name, as does a selection that moves away; leaving the field keeps a name it can.
+   * @returns {boolean} whether the field opened
+   */
+  startRename() {
+    const editMode = this.debugUI.editMode;
+    const selection = editMode.selection;
+    if (selection.index < 0 || this._scene === null) return false;
+    if (!selection.authored) {
+      editMode._setStatus(`#${selection.index} was spawned by code: the scene file has no name of it to change`, true);
+      return false;
+    }
+    this._fresh();
+    const row = this.model.reveal(selection.index, selection.name);
+    if (row < 0) {
+      editMode._setStatus(`${selection.name} is not in the list: the filter leaves it out`, true);
+      return false;
+    }
+    if (!this._editing()) return false;
+    this._scrollToRow(row);
+    const field = this._renameField();
+    this._renameName = selection.name;
+    field.value = selection.name;
+    this._markRename(false);
+    this.render(); // places the field over the row
+    field.style.display = '';
+    field.focus();
+    field.select();
+    return true;
+  }
+
+  /** Whether a rename's field is open. */
+  get renaming() {
+    return this._renameName !== null;
+  }
+
+  _renameField() {
+    if (this._rename !== null) return this._rename;
+    const field = document.createElement('input');
+    field.type = 'text';
+    field.spellcheck = false;
+    field.autocomplete = 'off';
+    field.title = 'Its new name in the scene file: Enter keeps it, Esc leaves the old one';
+    field.style.cssText =
+      `position:absolute;left:16px;right:4px;height:20px;box-sizing:border-box;z-index:1;display:none;font:${FONT};` +
+      `color:#e3e6ee;background:#0b0d12;border:1px solid ${ACCENT};border-radius:3px;padding:0 5px;outline:none`;
+    field.addEventListener('blur', this._onRenameBlur);
+    field.addEventListener('input', this._onRenameInput);
+    this._spacer.appendChild(field);
+    this._rename = field;
+    return field;
+  }
+
+  /** In a rename's field: Enter keeps the name, Esc leaves the old one. Other keys are the field's (Ctrl+S saves). */
+  _renameKey(e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.key === 'Enter') {
+      this._commitRename(true);
+      return true;
+    }
+    if (e.key === 'Escape') {
+      this._closeRename(true);
       return true;
     }
     return false;
+  }
+
+  /**
+   * Keep the name typed. `byKey` (Enter): refused, the field stays; else (the field was left) the old name stays.
+   */
+  _commitRename(byKey) {
+    const from = this._renameName;
+    if (from === null) return;
+    const editMode = this.debugUI.editMode;
+    const to = this._rename.value.trim();
+    if (to === from || editMode.selection.name !== from || (to === '' && !byKey)) {
+      this._closeRename(byKey);
+      return;
+    }
+    this._renameName = null; // the selection the rename shows is not one that moved away
+    if (editMode.renameSelected(to)) {
+      this._closeRename(byKey);
+      return;
+    }
+    if (byKey) {
+      this._renameName = from;
+      this._markRename(true);
+      this._rename.select();
+      return;
+    }
+    this._closeRename(false);
+  }
+
+  /** Close a rename's field (the focus back to the list when `refocus`: Enter, Esc). */
+  _closeRename(refocus) {
+    const field = this._rename;
+    const open = field !== null && field.style.display !== 'none';
+    this._renameName = null; // before the focus moves: the field's blur then keeps nothing
+    this._renameTop = -1;
+    if (open) {
+      this._markRename(false);
+      if (refocus) this._list.focus();
+      field.style.display = 'none';
+    }
+  }
+
+  /** The field's border: refused (red) or not. */
+  _markRename(refused) {
+    if (refused === this._renameRefused || this._rename === null) return;
+    this._renameRefused = refused;
+    this._rename.style.borderColor = refused ? ERROR : ACCENT;
+  }
+
+  /** The field follows its row (rows above it may come and go); a row that went closes it. */
+  _placeRename() {
+    const selection = this.debugUI.editMode.selection;
+    const row = this.model.rowOf(selection.index, this._renameName);
+    if (row < 0) {
+      this._closeRename(false);
+      return;
+    }
+    const top = row * ROW_HEIGHT;
+    if (top === this._renameTop) return;
+    this._renameTop = top;
+    this._rename.style.top = `${top}px`;
   }
 
   // ---- drawing ----
@@ -608,6 +931,7 @@ export class EntityTree {
       const r = first + k;
       this._fill(k, r, r < total ? model.locate(r) : null);
     }
+    if (this._renameName !== null) this._placeRename();
     this._showFilter();
   }
 
@@ -618,13 +942,20 @@ export class EntityTree {
     this._spacer.style.height = `${height}px`;
   }
 
-  /** Scroll so that a row shows. */
+  /** Scroll so that a row shows: a row near an edge (a key's step) by that edge, a farther one to the middle. */
   _scrollToRow(row) {
     this._sizeSpacer(this.model.rowCount);
     const list = this._list;
     const top = row * ROW_HEIGHT;
     const view = list.clientHeight;
-    if (top < list.scrollTop || top + ROW_HEIGHT > list.scrollTop + view) list.scrollTop = Math.max(0, top - (view >> 1));
+    const scroll = list.scrollTop;
+    if (top >= scroll && top + ROW_HEIGHT <= scroll + view) return;
+    const near = NEAR_ROWS * ROW_HEIGHT;
+    let to;
+    if (top < scroll && top >= scroll - near) to = top;
+    else if (top >= scroll && top < scroll + view + near) to = top + ROW_HEIGHT - view;
+    else to = top - (view >> 1);
+    list.scrollTop = Math.max(0, to);
   }
 
   _addRow() {
@@ -685,6 +1016,7 @@ export class EntityTree {
         // A locked layer's entity is marked (editorLayers.js, ED-24).
         if (editMode.layers?.locked(index)) flags |= F_LOCKED;
       }
+      if ((flags & F_SELECTED) !== 0 && this._focused) flags |= F_FOCUS;
     }
     if (
       shown.kind === kind &&
@@ -726,17 +1058,14 @@ export class EntityTree {
     } else if (kind === ROW_AUTHORED) {
       text = index >= 0 ? `${name}  #${index}` : `${name}  (not live)`;
       if (index < 0) color = '#6b7080';
-      title =
-        index >= 0
-          ? 'Placed by the scene file. A click selects it, a double click centers the view on it'
-          : 'Placed by the scene file, but not live: its pool may be full';
+      title = index >= 0 ? PLACED_TITLE : NOT_LIVE_TITLE;
     } else {
       text = `#${index}  runtime`;
       color = DIM;
-      title = 'Spawned by code, not by the scene file: read-only. A click selects it, a double click centers the view on it';
+      title = RUNTIME_TITLE;
     }
     if ((flags & F_LOCKED) !== 0) text += LOCKED_MARK;
-    const background = (flags & F_SELECTED) !== 0 ? SELECTED : '';
+    const background = (flags & F_SELECTED) === 0 ? '' : (flags & F_FOCUS) !== 0 ? SELECTED_FOCUS : SELECTED;
     if (shown.text !== text) el.textContent = shown.text = text;
     if (shown.color !== color) el.style.color = shown.color = color;
     if (shown.background !== background) el.style.background = shown.background = background;
@@ -749,28 +1078,55 @@ export class EntityTree {
 
   // ---- pointer ----
 
+  /**
+   * A click on a row: a class's row folds or unfolds; an entity's selects it alone (Shift or Ctrl on a placed one:
+   * adds it to the selection or takes it out). A double click frames the entity; on a class's row it is one fold.
+   */
   _clicked(e, double) {
     const el = e.target?.closest ? e.target.closest('[data-row]') : null;
     if (!el || this._scene === null) return;
     const at = this.model.locate(Number(el.dataset.row));
     if (at === null) return;
     if (at.kind === ROW_GROUP) {
-      if (double) return;
+      if (double || e.detail > 1) return;
       this.model.toggle(at.group);
+      this._cursorRow = -1;
       this.render();
       return;
     }
-    const index =
-      at.kind === ROW_AUTHORED ? liveIndexOf(this._scene, at.group.authored[at.item]) : at.group.runtime[at.item];
     const editMode = this.debugUI.editMode;
+    const index = this._indexAt(at);
     if (index < 0) {
       editMode._setStatus(`${at.group.authored[at.item]} is not live: its pool may be full`, true);
       return;
     }
-    editMode.selectFromList(index, double);
+    if (double) {
+      if (editMode.selection.index !== index) this._choose(index);
+      this._frame();
+      return;
+    }
+    if (at.kind === ROW_AUTHORED && (e.shiftKey || e.ctrlKey || e.metaKey) && editMode.multi) {
+      this._toggleSelected(at.group.authored[at.item]);
+      return;
+    }
+    // The second click of a double click: already selected.
+    if (e.detail > 1 && editMode.selection.index === index) return;
+    this._choose(index);
+  }
+
+  /** The live entity a row shows, or -1 (a class's row, or a record that is not live). */
+  _indexAt(at) {
+    if (at.kind === ROW_AUTHORED) return liveIndexOf(this._scene, at.group.authored[at.item]);
+    return at.kind === ROW_RUNTIME ? at.group.runtime[at.item] : -1;
   }
 
   // ---- upkeep ----
+
+  _setFocused(focused) {
+    if (focused === this._focused) return;
+    this._focused = focused;
+    this.render();
+  }
 
   /** The document changed since the lists were made: make them again now (a key or a selection needs its rows). */
   _fresh() {
@@ -804,11 +1160,18 @@ export class EntityTree {
   }
 
   destroy() {
+    this._closeRename(false);
     this._list.removeEventListener('scroll', this._onScroll);
     this._list.removeEventListener('click', this._onClick);
     this._list.removeEventListener('dblclick', this._onDoubleClick);
+    this._list.removeEventListener('focus', this._onFocus);
+    this._list.removeEventListener('blur', this._onBlur);
     this.el.removeEventListener('keydown', this._onKeyDown);
     this._filter.removeEventListener('input', this._onFilterInput);
     this._clear.removeEventListener('click', this._onClearClick);
+    if (this._rename !== null) {
+      this._rename.removeEventListener('blur', this._onRenameBlur);
+      this._rename.removeEventListener('input', this._onRenameInput);
+    }
   }
 }
