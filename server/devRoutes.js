@@ -1,11 +1,14 @@
 // devRoutes.js — the dev server's routes for the editor (VISUAL_EDITOR_PLAN.md D7, ED-13): save a scene file, and
-// list the scene files of a folder. One module, for server/node_server.js now and the create-weed-game template's
-// dev script later (ED-30); it needs nothing but Node.
+// list the scene files of a folder; export the game (ED-32). One module, for server/node_server.js now and the
+// create-weed-game template's dev script later (ED-30); it needs nothing but Node (an export loads esbuild).
 //
 //   PUT /__weed/file?path=/demos/x/levels/1-1.scene.json    body: the file's new text
 //       200 { "mtimeMs": … }: written atomically (a temporary file in the same folder, then a rename over it)
 //   GET /__weed/list?dir=/demos/x/levels&ext=.scene.json
 //       200 { "files": ["1-1.scene.json", …] }: the folder's files with that ending, sorted
+//   POST /__weed/export    body: what to export (server/exportGame.js, ED-32), the baked atlas in it
+//       200 { "outDir": …, "url": …, "files": […], … }: the game as a static site, in the folder the server was
+//       given (options.export), never one the request names
 //
 // Who may: a request from this machine (the socket's address), addressed to it by a loopback name (Host), and, when
 // it says where it comes from (Origin), from a page of this server. A page of another site open in the same browser
@@ -16,6 +19,8 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+
+import { exportRoute } from './exportGame.js';
 
 export const MAX_BODY_BYTES = 8 * 1024 * 1024;
 /** An atlas image may be bigger than a scene file: a 4096 × 4096 one holds 64 MB of pixels. */
@@ -83,12 +88,14 @@ const hasDevExtension = (name, ext) => (ext === undefined ? DEV_FILE_EXTENSIONS.
  * @param {import('node:http').ServerResponse} res
  * @param {string} root - the served folder
  * @param {Record<string, string>} [headers] - added to every answer (the server's isolation headers)
+ * @param {{ export?: { dir?: string, outDir?: string, engineBundle?: string } }} [options] - where exports go and
+ *   the engine bundle they ship (exportGame.js, exportRoute)
  * @returns {boolean}
  */
-export function handleDevRoute(req, res, root, headers = {}) {
+export function handleDevRoute(req, res, root, headers = {}, options = {}) {
   const url = new URL(req.url, 'http://localhost');
   const route = url.pathname;
-  if (route !== '/__weed/file' && route !== '/__weed/list') return false;
+  if (route !== '/__weed/file' && route !== '/__weed/list' && route !== '/__weed/export') return false;
   const send = (status, body) => {
     res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers });
     res.end(JSON.stringify(body));
@@ -100,6 +107,9 @@ export function handleDevRoute(req, res, root, headers = {}) {
   if (route === '/__weed/file') {
     if (req.method !== 'PUT') send(405, { error: 'PUT the file' });
     else writeFileRoute(req, url, root, send);
+  } else if (route === '/__weed/export') {
+    if (req.method !== 'POST') send(405, { error: 'POST what to export' });
+    else exportRoute(req, root, send, options.export);
   } else if (req.method !== 'GET') {
     send(405, { error: 'GET the list' });
   } else {

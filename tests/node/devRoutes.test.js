@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { handleDevRoute, MAX_ATLAS_PNG_BYTES, MAX_BODY_BYTES, resolveInside } from '../../server/devRoutes.js';
 
@@ -196,4 +197,60 @@ test('other paths are left to the server', () => {
   for (const url of ['/__weed/reload', '/index.html', '/__weed/files', '/__weed/file/x']) {
     assert.equal(handleDevRoute({ url, method: 'GET', headers: {}, socket: {} }, res, os.tmpdir()), false, url);
   }
+});
+
+test('POST /__weed/export exports into the folder the server was given, never one the request names (ED-32)', async () => {
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-export-route-'));
+  const engineBundle = path.join(work, 'weed.prod.bundle.min.js');
+  fs.writeFileSync(engineBundle, '/* engine */');
+  const options = { export: { dir: path.join(work, 'exports'), engineBundle } };
+  const server = http.createServer((req, res) => {
+    if (!handleDevRoute(req, res, repo, {}, options)) {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (body) => fetch(`${base}/__weed/export`, { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) });
+  const F = '/tests/fixtures/exportGame';
+  try {
+    const res = await post({
+      scene: `${F}/game/fixtureScene.js`,
+      export: 'FixtureScene',
+      start: `${F}/game/levels/a.scene.json`,
+      sceneFiles: [`${F}/game/levels/a.scene.json`],
+      assets: [],
+      atlas: null,
+      outDir: path.join(work, 'elsewhere'), // not the request's to choose
+    });
+    const done = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(done));
+    assert.equal(done.outDir, path.join(work, 'exports', 'FixtureScene'));
+    assert.equal(done.url, null, 'outside the served folder: no URL to open it at');
+    assert.ok(done.files.includes('game.min.js') && done.files.includes('vendor/weed.js'));
+    assert.ok(fs.existsSync(path.join(work, 'exports', 'FixtureScene', 'index.html')));
+    assert.equal(fs.existsSync(path.join(work, 'elsewhere')), false);
+
+    const missing = await post({ scene: `${F}/game/none.js`, export: 'FixtureScene' });
+    assert.equal(missing.status, 404);
+    assert.match((await missing.json()).error, /scene module not found/);
+    assert.equal((await post('{ not json')).status, 400);
+    assert.equal((await fetch(`${base}/__weed/export`)).status, 405);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+  // The same local checks as the other routes.
+  let status = 0;
+  const req = Object.assign(new EventEmitter(), {
+    method: 'POST',
+    url: '/__weed/export',
+    socket: { remoteAddress: '192.168.1.20' },
+    headers: { host: 'localhost:8000' },
+    resume() {},
+  });
+  assert.equal(handleDevRoute(req, { writeHead: (s) => (status = s), end() {} }, os.tmpdir()), true);
+  assert.equal(status, 403, 'another machine');
 });
