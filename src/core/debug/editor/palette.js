@@ -7,8 +7,8 @@
 // changes). In the editor page (D9) it is the Assets dock, shown whether or not edit mode is on: its + enters edit
 // mode.
 
-import { FloatingPanel } from '../ui/floatingPanel.js';
 import { TilemapList } from './tilemapList.js';
+import { FloatingPanel } from '../ui/floatingPanel.js';
 
 /** Classes the editor does not offer: the engine's own helpers. */
 const UNPLACEABLE = new Set(['Flash']);
