@@ -1556,7 +1556,7 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 - **Size:** `weed.editor.min.js` is 128 KB after Stage 4 (57 KB at ED-29). It loads only
   in debug and only on first use. Splitting is not worth it yet.
 
-**State 2026-10-27, night:** ED-50 to ED-80 done. Deferred: ED-23 (particle lab), ED-35b (fast swap across scene classes).
+**State 2026-10-27, night:** ED-50 to ED-81 done. Deferred: ED-23 (particle lab), ED-35b (fast swap across scene classes).
 The final pass, 2026-10-27: test:node (2,398), test:demos, check:types, make_bundle, buildEditor, test:node:bundle,
 test:bundle, smokeEditorBundle, sceneCycleSmoke, and the 11 editor smokes (M1, shell, handles, format, panels, assets,
 layout, tree, console, export, session) all pass; dist/ put back.
@@ -1676,6 +1676,21 @@ layout, tree, console, export, session) all pass; dist/ put back.
     editorShellSmoke now checks that the page opens editing, that a list click while playing keeps playing, and that
     Stop comes back with the selection. editorAssetsSmoke drops a tree while littleCity plays.
   - The same report found N-82 (found item 46): each Stop added a loop to five workers.
+- [x] **ED-81 The platformer's player is its level's (added 2026-10-27, the author's).** The author asked why the
+  player had no spawn params, as Platform has. The scene spawned it in `createNewGame` at (240, 1700) in every level,
+  so the editor listed it as runtime and read-only. Now each level places it as `Player`:
+  - **Its start and its tuning are the level's.** `BluePlatformerPlayer.spawnParams` holds jumpSpeed,
+    moveAcceleration, scale, radius, friction, linearDamping and lightIntensity, with the old values as defaults. The
+    scene finds the player by name in `create()`, and by name each frame in `update()`, because an edit respawns it
+    at another index.
+  - **Not serializable** (the author's call): a level places it, so a save does not keep it.
+  - **The editor showed it at another size than the game.** The scene spawned it at 0.42 and each tick drew it at
+    0.35, so with no ticks while editing it looked bigger. Now both use the scale param.
+  - **Its pool is 2.** An edit respawns the entity before the old slot is free (found item 47), and with a pool of
+    one a jumpSpeed edit left the level without a player until Stop.
+  - Tests: platformerLevels.test.js (each level's Player, the params, not serializable); editorTreeSmoke's player row
+    is a placed entity's. In Chrome with a window: listed placed, its seven params in the inspector, an edit respawns
+    it and the camera follows the new index, and Stop puts it back at its start with the edit in the record.
 
 **View (here):**
 
@@ -2116,6 +2131,11 @@ server still writes nothing. What changed for this plan:
     frame stepped the world another 1/60 s, so the game sped up. Headless Chromium did not show it. A game's level change
     by fast swap did the same: ED-35's smokes counted memory, not frames. Fixed in the engine since cdb6af67
     (REVIEW_PLAN.md N-82): 60 after each Stop.
+47. **An edit of an entity whose class's pool its level fills made it disappear** (ED-81: one player, pool of one).
+    The respawn despawns and spawns at once, and the old slot is free only once the logic worker has despawned it, so
+    the spawn found no slot and the entity was gone until Stop, with no message. Since 061dd811 the status line says
+    so and names the count to raise. Respawning in place would need a spawn that waits for the slot (async) or a
+    re-run of onSpawned on the same index. Neither is done: one free slot per edited class is the rule for now.
 
 **New items:**
 
