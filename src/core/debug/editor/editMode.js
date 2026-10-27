@@ -779,7 +779,9 @@ export class EditMode {
     }
     const step = this.move.snap;
     const record = { name: uniqueName(scene, className), class: className, x: snapTo(x, step), y: snapTo(y, step) };
-    return this._add(record, -1, `place ${record.name}`);
+    const index = this._add(record, -1, `place ${record.name}`);
+    if (index >= 0) this._setStatus(`Placed ${record.name}`, false);
+    return index;
   }
 
   /** Ctrl+D: a copy of the selected placed entity, a grid step (at least 16 px) down and to the right, named anew. */
@@ -796,7 +798,10 @@ export class EditMode {
     record.x = found.record.x + offset;
     record.y = found.record.y + offset;
     keepSeed(record, found.record);
-    return this._add(record, found.position + 1, `duplicate ${selection.name}`);
+    const source = selection.name;
+    const index = this._add(record, found.position + 1, `duplicate ${source}`);
+    if (index >= 0) this._setStatus(`Duplicated ${source} as ${record.name}`, false);
+    return index;
   }
 
   /** Add a record at `position` and spawn it; kept for undo. A full pool says which count to raise. */
@@ -1030,6 +1035,7 @@ export class EditMode {
     this.palette.refresh();
     this._notify();
     if (plan.skipped > 0) this._setStatus(`Pasted ${names.length}; ${plan.skipped} left out: their classes are not in this scene`, true);
+    else this._setStatus(`Pasted ${names.length === 1 ? names[0] : `${names.length} entities`}`, false);
     return true;
   }
 

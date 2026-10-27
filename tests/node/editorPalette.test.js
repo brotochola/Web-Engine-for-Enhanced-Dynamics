@@ -133,9 +133,11 @@ test('place, duplicate, delete and rename are each one undo, and survive one ano
   assert.equal(editMode.selection.name, 'Platform2');
   assert.deepEqual(recordOf(scene, 'Platform2').record, { name: 'Platform2', class: 'Platform', x: 1000, y: 496 });
   assert.equal(editMode.selection.index, placed);
+  assert.equal(editMode.status, 'Placed Platform2', 'the status line says what was made');
 
   editMode.selection.select(1);
   editMode.duplicateSelected();
+  assert.equal(editMode.status, 'Duplicated Platform1 as Platform3');
   const copy = recordOf(scene, 'Platform3');
   assert.deepEqual(
     { ...copy.record },

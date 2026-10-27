@@ -89,6 +89,7 @@ test('Ctrl+X copies and deletes; a paste in a level where the name is free keeps
       assert.equal(world.record('Ball1'), null);
       editMode.onKey(ctrl('v'));
       assert.ok(world.record('Ball1'), 'the smallest free number: its own name again');
+      assert.equal(editMode.status, 'Pasted Ball1');
       assert.equal('seed' in world.record('Ball1'), false, 'its own name gives its seed');
 
       writeClipboard({ kind: CLIPBOARD_KIND, version: 1, entities: [{ name: 'Ufo1', class: 'Ufo', x: 0, y: 0 }], joints: [] });
