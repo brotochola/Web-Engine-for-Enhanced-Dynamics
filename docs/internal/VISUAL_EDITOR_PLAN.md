@@ -1,9 +1,9 @@
 # Visual editor plan
 
 **Opened:** 2026-10-22. **Updated:** 2026-10-26, against the code after the WASM migration
-(E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stage 1 started
-2026-10-26. All design decisions needed for Stage 1 and Stage 2 are taken (see
-"Decisions"). **Next step:** Stage 1 in the order given in "Execution order".
+(E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stages 1 and 2
+done 2026-10-26 (milestone M1 reached); Stage 3 started with ED-15, the editor page (D9).
+**Next step:** Stage 3 in item order (ED-16 to ED-19).
 
 A visual editor for WeedJS: click an entity in the running scene, move it, change its
 settings, save the result to a scene file, play it, stop it. Unity, Godot and PlayCanvas
@@ -1213,7 +1213,7 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
 
 ### Stage 3: the editor page
 
-- [ ] **ED-15 Shell page.**
+- [x] **ED-15 Shell page.**
   - The game runs in a same-origin iframe, and the editor reaches its `window` and SABs
     directly.
   - Docked panels:
@@ -1222,6 +1222,31 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
     - the existing performance, memory, layers and nav panels.
   - It survives the game's page reloads, so selection and undo survive too.
   - How it ships to npm users is open decision 4.
+  - Done 2026-10-26 (e785e800), as D9 describes, after 1e1e8371 (`loadScene`'s
+    `sceneFile`) and a00f3ceb (undo entries as data). The editor page is
+    `/src/core/debug/editor/shell/?game=<the game's page>`; the debug UI's Scene panel opens
+    it for the page it is in.
+    - **Docks:** the toolbar (Edit or Play, Save, Undo, Redo, the file and its unsaved
+      marker, the status), the scene list (`editor/entityTree.js`), the inspector (the
+      Editor panel's body), the assets (the palette: level files and classes, shown while
+      playing too), the debug bar with all its panels, and the console (empty until
+      ED-18).
+    - **The scene list** groups by class: the file's records by name (with their live
+      index, or "not live"), then runtime entities by index. It draws only the rows in
+      view and refreshes at the debug UI's interval into index lists made once per class.
+      A click selects and enters edit mode; a double click centers the view.
+    - **Keys** typed in the editor page: Shift+E, Ctrl+S (even while playing), and the edit
+      keys while editing. Play gives the game the focus.
+    - **Reloads:** the game page hands over its editor state on `pagehide`, and the next
+      page takes it up when its scene is ready (`debugUI.onSceneReady`, called by
+      `loadScene`): the unsaved document comes back by a fast swap, with undo, edit mode,
+      the selection and the view.
+    - **Tests:** `editorShell.test.js`, `editorTree.test.js`, `editorHandover.test.js`. In
+      Chromium, `tests/bench/editorShellSmoke.mjs` (8/8): docks, a click in the list, keys,
+      an edit, Reload game keeping all of it, undo after the reload. Over 5 more reloads,
+      Chrome's document count stays at 2 and the heap stays flat. A first leak run grew by
+      one document per reload with or without the editor page: Playwright kept a handle to
+      the scene its wait returned. Waits now return booleans.
 - [ ] **ED-16 Play and Stop** (D8).
 - [ ] **ED-17 Live inspector while playing:** component columns from `ARRAY_SCHEMA`,
   editable, refreshed at the UI interval, lost on Stop, with "copy to scene".
@@ -1469,6 +1494,13 @@ server still writes nothing. What changed for this plan:
     littleCity's workload as a benchmark scene. The engine has no hook after the flush for
     a new game: a scene-ready hook (or `getAllActive` counting the batch) would remove the
     trap. Belongs to the API work, with the guide's lifecycle section.
+
+14. **`loadScene(url, { sceneFile })` (new API, for the author to confirm).** It loads a scene
+    file's URL with a document held in memory (checked, and copied) in place of what the
+    file holds. The URL, or the class's `defaultSceneFile`, still names the file that
+    saves and hot reload go to. The editor needs it to go back to an unsaved document: its
+    resume after a reload (ED-15) and Stop (ED-16). A game can load a level it built in
+    code. In `types/weed.d.ts`; not yet in the guide.
 
 **New items:**
 
