@@ -1646,8 +1646,10 @@ class PreRenderWorker extends AbstractWorker {
                 viewMode[i] === CAMERA_TYPES.ZENITHAL &&
                 !(flat && flat[i]);
             // Heighted and flat particles sort by their ground row, as a sprite sorts by its feet: a spark in
-            // the air is in front of the tree it flies in front of, though it is drawn at y + z.
-            COLLECT_Y[0] = isZenithal ? -z[i] : spriteYSortKey(y[i], Y_SORT_K) + PARTICLE_SORT_BIAS;
+            // the air is in front of the tree it flies in front of, though it is drawn at y + z. The row is
+            // spriteYSortKey's Math.round(y) written as floor(y + 0.5): the same for every float32 y (the sum is
+            // exact in double), and Math.round here cost pre-render 10 % with 38 000 particles in view.
+            COLLECT_Y[0] = isZenithal ? -z[i] : Math.floor(y[i] + 0.5) * Y_SORT_K + PARTICLE_SORT_BIAS;
             this.collectRenderable(1, i);
             this.visibleParticlesCount++;
         }
