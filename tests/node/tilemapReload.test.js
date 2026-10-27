@@ -10,6 +10,7 @@ import { TileMap } from '../../src/core/tileMap.js';
 import { Layer } from '../../src/core/layer.js';
 import { DEFAULT_LAYERS, LAYER_KIND } from '../../src/util/configDefaults.js';
 import { HotReload } from '../../src/core/debug/hotReload.js';
+import { TilemapList } from '../../src/core/debug/editor/tilemapList.js';
 import {
   sceneTilemaps,
   tilemapOfFile,
@@ -240,6 +241,72 @@ test('hot reload: a tilemap’s file goes in place with no page reload; another 
   } finally {
     HotReload.reloadKeepingState = keep;
     [console.info, console.warn] = quiet;
+    teardown();
+  }
+});
+
+// ---- the palette's Tilemaps section, against a fake DOM ----
+
+class El {
+  constructor(tag) {
+    this.tagName = tag.toUpperCase();
+    this.children = [];
+    this.style = {};
+    this.dataset = {};
+    this.title = '';
+    this._text = '';
+  }
+  appendChild(node) {
+    this.children.push(node);
+    return node;
+  }
+  append(...nodes) {
+    for (const node of nodes) this.appendChild(node);
+  }
+  get textContent() {
+    return this._text + this.children.map((c) => c.textContent).join('');
+  }
+  set textContent(text) {
+    this._text = text;
+    this.children = [];
+  }
+}
+
+test('the Assets dock lists the scene’s tilemaps, built once per scene; its button reloads one in place', async () => {
+  const { scene, files } = setup();
+  globalThis.document = { createElement: (tag) => new El(tag) };
+  try {
+    const statuses = [];
+    const editMode = { debugUI: { scene }, _setStatus: (text, error) => statuses.push([text, error]) };
+    const list = new TilemapList(editMode);
+    const box = new El('div');
+    list.fill(box);
+    assert.equal(box.style.display, '');
+    const row = box.children[1];
+    assert.equal(row.dataset.tilemap, 'ground');
+    assert.deepEqual(
+      row.children.map((c) => c.textContent),
+      ['ground  ·  ground.json', '↻', '6×4 tiles of 24 px, 2 layers; on ground'],
+    );
+    list.fill(box);
+    assert.equal(box.children[1], row, 'the same scene: the rows stay');
+
+    files.set('/maps/ground.json', JSON.stringify(tiled([['bg', 4], ['walls', 0]])));
+    await row.children[1].onclick();
+    assert.equal(tiles('bg')[0], 4);
+    files.set('/maps/ground.json', JSON.stringify(tiled([['bg', 4], ['walls', 0]], { height: H + 1 })));
+    assert.equal(await list.reload('ground'), 'reload');
+    assert.deepEqual(statuses, [
+      ['Tilemap ground reloaded from its file', false],
+      ['Tilemap ground: its size changed (6×4 tiles, now 6×5). Reload the game to load it', true],
+    ]);
+
+    editMode.debugUI.scene = { imageUrls: {} };
+    list.fill(box);
+    assert.equal(box.style.display, 'none', 'a scene without tilemaps: no section');
+    assert.equal(box.children.length, 0);
+  } finally {
+    delete globalThis.document;
     teardown();
   }
 });
