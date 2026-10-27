@@ -16,7 +16,8 @@
 // ED-19 pauses the simulation workers instead.
 //
 // A left click selects (selection.js, ED-8), and a drag moves the selection (moveTool.js, ED-10), as do the arrow
-// keys (Shift: ten steps); G cycles the grid step. Esc clears the selection, and with none leaves edit mode. Ctrl+S
+// keys (Shift: ten steps); G cycles the grid step. Other tools (Stage 4: handles, brushes, pickers) are added with
+// addTool(): one may take a press before the move tool does, and has the pointer until it is let go. Esc clears the selection, and with none leaves edit mode. Ctrl+S
 // saves the running scene file through the dev server (sceneFileStore.js, ED-13). Every change to the document goes
 // through editSelected and is kept for Ctrl+Z / Ctrl+Y (history.js, ED-12).
 //
@@ -99,6 +100,19 @@ export class EditMode {
     this.placing = null;
     /** The scene files in the running one's folder, for the palette's level list (ED-38). */
     this.sceneFiles = [];
+    /**
+     * The editor's other tools, in the order they were added (addTool, Stage 4). Each may take a primary press on the
+     * view before the move tool (press returns true), then has the pointer until the button is let go (move,
+     * release); it may follow the pointer with no button down (hover), draw on the overlay (drawOverlay, each frame
+     * the overlay draws while editing), take a key first (onKey returns true), and drop what it was doing when edit
+     * mode is left or the level swapped (cancel). Every method is optional.
+     * @type {{ press?: (x: number, y: number, e: PointerEvent) => boolean, move?: Function, release?: Function,
+     *   hover?: Function, drawOverlay?: (ctx: CanvasRenderingContext2D, camera: object, zoom: number) => void,
+     *   onKey?: (e: KeyboardEvent) => boolean, cancel?: () => void }[]}
+     */
+    this.tools = [];
+    /** The tool a press went to, until its button is let go. */
+    this._toolWithPointer = null;
 
     // What entering found, put back on leaving.
     this._savedTimeScale = NaN;
@@ -130,7 +144,7 @@ export class EditMode {
       if (e.buttons === SELECT_BUTTON) {
         // The engine's canvas listener ran first: Mouse holds this point in the world.
         if (this.placing !== null) this.place(this.placing, Mouse.x, Mouse.y);
-        else this.move.press(Mouse.x, Mouse.y, e.clientX, e.clientY);
+        else if (!this._pressTool(e)) this.move.press(Mouse.x, Mouse.y, e.clientX, e.clientY);
         return;
       }
       if ((e.buttons & PAN_BUTTONS) === 0) return;
@@ -142,7 +156,12 @@ export class EditMode {
       this._panFromY = Camera._freeFollowY;
     };
     this._onPointerMove = (e) => {
-      if ((e.buttons & SELECT_BUTTON) !== 0) this.move.move(Mouse.x, Mouse.y, e.clientX, e.clientY);
+      if ((e.buttons & SELECT_BUTTON) !== 0) {
+        if (this._toolWithPointer !== null) this._toolWithPointer.move?.(Mouse.x, Mouse.y, e);
+        else this.move.move(Mouse.x, Mouse.y, e.clientX, e.clientY);
+      } else if (e.buttons === 0) {
+        for (const tool of this.tools) tool.hover?.(Mouse.x, Mouse.y, e);
+      }
       if (e.pointerId !== this._panPointer) return;
       if ((e.buttons & PAN_BUTTONS) === 0) {
         this._panPointer = -1;
@@ -152,7 +171,15 @@ export class EditMode {
       Camera.setFreeTarget(this._panFromX - (e.clientX - this._panX) / zoom, this._panFromY - (e.clientY - this._panY) / zoom);
     };
     this._onPointerUp = (e) => {
-      if ((e.buttons & SELECT_BUTTON) === 0) this.move.release();
+      if ((e.buttons & SELECT_BUTTON) === 0) {
+        const tool = this._toolWithPointer;
+        if (tool !== null) {
+          this._toolWithPointer = null;
+          tool.release?.(Mouse.x, Mouse.y, e);
+        } else {
+          this.move.release();
+        }
+      }
       if (e.pointerId === this._panPointer && (e.buttons & PAN_BUTTONS) === 0) this._panPointer = -1;
     };
     this._onContextMenu = (e) => {
@@ -163,6 +190,40 @@ export class EditMode {
   toggle() {
     if (this.active) this.play();
     else this.enter();
+  }
+
+  /**
+   * Add a tool (see `tools`): handles, brushes, pickers.
+   * @template T
+   * @param {T} tool
+   * @returns {T}
+   */
+  addTool(tool) {
+    this.tools.push(tool);
+    return tool;
+  }
+
+  /** A primary press: the first tool that takes it has the pointer. */
+  _pressTool(e) {
+    for (const tool of this.tools) {
+      if (tool.press && tool.press(Mouse.x, Mouse.y, e) === true) {
+        this._toolWithPointer = tool;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Every tool drops what it was doing (leaving edit mode, a swap). */
+  _cancelTools() {
+    this._toolWithPointer = null;
+    for (const tool of this.tools) tool.cancel?.();
+  }
+
+  /** The overlay's frame while editing (debugCanvas.js): the move ghost, then each tool's drawing. */
+  drawOverlay(ctx, camera, zoom) {
+    this.move.drawOverlay(ctx, camera, zoom);
+    for (const tool of this.tools) tool.drawOverlay?.(ctx, camera, zoom);
   }
 
   /** Whether the game is playing a session Play started, which Stop ends. */
@@ -252,6 +313,7 @@ export class EditMode {
     this.placing = null;
     this.palette.hide();
     this.move.cancel();
+    this._cancelTools();
     // The selection stays: the inspector shows its live values while the game plays (ED-17).
     this._setStatus('', false);
     Mouse.isEditModeActive = false;
@@ -269,6 +331,7 @@ export class EditMode {
    * @returns {boolean} whether it was the editor's
    */
   onKey(e) {
+    for (const tool of this.tools) if (tool.onKey && tool.onKey(e) === true) return true;
     if (e.key === 'Escape') {
       if (this.placing !== null) this.startPlacing(this.placing);
       else if (this.selection.index >= 0) this.selection.clear();
@@ -774,6 +837,7 @@ export class EditMode {
   /** A fast swap put the time scale and the camera back to the level's start: hold them again. */
   onContentSwapped() {
     this.move.cancel();
+    this._cancelTools();
     this.selection.clear();
     if (!this._ownSwap) this.history.clear(); // another document (Stop and resume put theirs back)
     this.debugUI.hosted?.onDocumentChanged();
