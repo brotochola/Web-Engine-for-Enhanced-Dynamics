@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
+import { SpriteSheetRegistry, bigAtlasChunkName } from '../../src/core/spriteSheetRegistry.js';
 import { describeSpawnParams, KIND_SPRITE, KIND_ANIMATION } from '../../src/core/spawnParams.js';
 import { AssetCatalog, assetPickerWidget, THUMB_SIZE } from '../../src/core/debug/editor/assetPicker.js';
 import { buildParamFields } from '../../src/core/debug/editor/paramWidgets.js';
@@ -83,6 +83,21 @@ test('the choices: the atlas’s sprites (the engine’s own last), and each ani
   assert.equal(catalog.frameOf(KIND_SPRITE, 'civil1_walk_down'), 'civil1_walk_down_0', 'a sheet’s animation shows its first frame');
   assert.equal(catalog.frameOf(KIND_ANIMATION, 'walk_left'), 'civil1_walk_left_0', 'the first sheet that has it');
   assert.equal(catalog.frameOf(KIND_ANIMATION, 'run'), null);
+
+  // bigAtlas's chunk sheets (ED-74: indices past 255) are proxy sheets of the atlas's own names, not animations.
+  const chunk = new AssetCatalog(() => null);
+  SpriteSheetRegistry.registerProxy(bigAtlasChunkName(1), {
+    isProxy: true,
+    targetSheet: 'bigAtlas',
+    prefix: '',
+    animations: { bunny: { originalName: 'bunny', prefixedName: 'bunny', index: 0 } },
+    indexToName: { 0: 'bunny' },
+  });
+  assert.deepEqual(chunk.options(KIND_ANIMATION), [
+    ['walk_down', 'civil1'],
+    ['walk_left', 'civil1, civil2'],
+  ]);
+  assert.equal(chunk.has(KIND_ANIMATION, 'bunny'), false);
 
   // A full load registers another atlas: the lists follow.
   SpriteSheetRegistry.clearForSceneUnload();

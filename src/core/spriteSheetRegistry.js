@@ -195,6 +195,11 @@ export function bigAtlasChunkName(k) {
   return `bigAtlas@${k}`;
 }
 
+/** Whether a sheet is one of bigAtlas's chunks: its names are bigAtlas's, not a spritesheet's animations. */
+export function isBigAtlasChunk(sheetName) {
+  return typeof sheetName === 'string' && sheetName.startsWith('bigAtlas@');
+}
+
 /**
  * Add bigAtlas's chunk sheets to a set of proxy sheets (the scene's, which the workers register too).
  * @param {{ animations?: Record<string, unknown> }} json - bigAtlas's JSON: its animations, in index order

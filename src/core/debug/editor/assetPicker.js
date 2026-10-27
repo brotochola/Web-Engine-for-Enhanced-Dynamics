@@ -12,7 +12,7 @@
 // pick from the list commits at once; typing commits when the field is left, as the other text fields do. The palette's
 // class pictures (classThumbs.js, ED-65) resolve a sprite param's default through the same catalog.
 
-import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
+import { SpriteSheetRegistry, isBigAtlasChunk } from '../../spriteSheetRegistry.js';
 import { KIND_ANIMATION } from '../../spawnParams.js';
 import { drawAtlasFrame } from './atlasThumb.js';
 
@@ -54,7 +54,8 @@ export class AssetCatalog {
     const sheetsOf = new Map();
     this._animationEntry = new Map();
     for (const [sheetName, sheet] of SpriteSheetRegistry.spritesheets) {
-      if (!sheet || !sheet.isProxy) continue;
+      // bigAtlas's chunks (ED-74) are proxy sheets too, but their names are the atlas's sprites.
+      if (!sheet || !sheet.isProxy || isBigAtlasChunk(sheetName)) continue;
       for (const name of Object.keys(sheet.animations)) {
         if (!sheetsOf.has(name)) {
           sheetsOf.set(name, []);
