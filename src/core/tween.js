@@ -9,8 +9,7 @@ import { MeshRenderer } from '../components/meshRenderer.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Camera } from './camera.js';
-import { PARTICLE_EASE } from '../util/configDefaults.js';
-import { applyParticleEase, lerpRgb } from '../util/particleTween.js';
+import { applyParticleEase, lerpRgb, resolveEaseId } from '../util/particleTween.js';
 import { logicBlockRange } from '../util/logicOwner.js';
 import { EntityIdArray, entityIdBytes } from '../util/entityIdWidth.js';
 import { Messages } from './messages.js';
@@ -51,23 +50,6 @@ function paintTarget(ent) {
   return 0;
 }
 
-const EASE_NAME = Object.freeze({
-  lerp: PARTICLE_EASE.LERP,
-  'quad.in': PARTICLE_EASE.QUAD_IN,
-  'quad.out': PARTICLE_EASE.QUAD_OUT,
-  'quad.inout': PARTICLE_EASE.QUAD_INOUT,
-  'cubic.in': PARTICLE_EASE.CUBIC_IN,
-  'cubic.out': PARTICLE_EASE.CUBIC_OUT,
-  'cubic.inout': PARTICLE_EASE.CUBIC_INOUT,
-  'expo.in': PARTICLE_EASE.EXPO_IN,
-  'expo.out': PARTICLE_EASE.EXPO_OUT,
-  'expo.inout': PARTICLE_EASE.EXPO_INOUT,
-  'back.in': PARTICLE_EASE.BACK_IN,
-  'back.out': PARTICLE_EASE.BACK_OUT,
-  'back.inout': PARTICLE_EASE.BACK_INOUT,
-  'bounce.out': PARTICLE_EASE.BOUNCE_OUT,
-});
-
 function align4(n) {
   return (n + 3) & ~3;
 }
@@ -96,15 +78,6 @@ export function tweenBufferBytes(count, entityCount = 0) {
   o = align4(o + n); // flags
   o += (entityCount | 0) * 2; // live tweens per entity
   return o;
-}
-
-function easeIdOf(ease) {
-  if (typeof ease === 'string') {
-    const id = EASE_NAME[ease];
-    return id === undefined ? PARTICLE_EASE.LERP : id;
-  }
-  const n = ease | 0;
-  return n >= 0 && n <= PARTICLE_EASE.BOUNCE_OUT ? n : PARTICLE_EASE.LERP;
 }
 
 function repeatCount(options) {
@@ -235,7 +208,7 @@ export class Tween {
    * @param {number} entityIndex
    * @param {{ alpha?: number, tint?: number, scaleX?: number, scaleY?: number, x?: number, y?: number }} props
    * @param {number} ms
-   * @param {number|string} [ease]
+   * @param {number} [ease] a PARTICLE_EASE value (default lerp)
    * @param {{ delay?: number, repeat?: number, yoyo?: boolean, onComplete?: string }} [options]
    *   delay ms before it starts (from values are read now); repeat extra cycles
    *   (-1 or Infinity = forever); yoyo plays every other cycle backwards;
@@ -244,6 +217,8 @@ export class Tween {
    * @returns {number} slot, or -1
    */
   static to(entityIndex, props, ms, ease, options) {
+    // On every path and before a slot is claimed: an ease that is not a PARTICLE_EASE value throws.
+    const easeId = resolveEaseId(ease);
     if (!props) return -1;
     const ent = entityIndex | 0;
     const wantsXy = props.x !== undefined || props.y !== undefined;
@@ -252,34 +227,35 @@ export class Tween {
 
     if (wantsXy && isDynamic(ent)) {
       if (!wantsPaint) return -1;
-      return this._start(KIND_PAINT, ent, props, ms, ease, options);
+      return this._start(KIND_PAINT, ent, props, ms, easeId, options);
     }
 
     if (wantsXy && wantsPaint) {
       // One onComplete for the pair: both end on the same frame.
-      const slotXy = this._start(KIND_XY, ent, props, ms, ease, options);
-      const slotPaint = this._start(KIND_PAINT, ent, props, ms, ease, slotXy >= 0 ? withoutDone(options) : options);
+      const slotXy = this._start(KIND_XY, ent, props, ms, easeId, options);
+      const slotPaint = this._start(KIND_PAINT, ent, props, ms, easeId, slotXy >= 0 ? withoutDone(options) : options);
       return slotXy >= 0 ? slotXy : slotPaint;
     }
 
     if (wantsXy) {
-      return this._start(KIND_XY, ent, props, ms, ease, options);
+      return this._start(KIND_XY, ent, props, ms, easeId, options);
     }
-    return this._start(KIND_PAINT, ent, props, ms, ease, options);
+    return this._start(KIND_PAINT, ent, props, ms, easeId, options);
   }
 
   /**
    * @param {number} zoom
    * @param {number} ms
-   * @param {number|string} [ease]
+   * @param {number} [ease] a PARTICLE_EASE value (default lerp)
    * @returns {number}
    */
   static toZoom(zoom, ms, ease, options) {
+    const easeId = resolveEaseId(ease);
     if (!(ms > 0)) {
       Camera.targetZoom = +zoom;
       return -1;
     }
-    return this._start(KIND_ZOOM, 0, { zoom: +zoom }, ms, ease, withoutDone(options));
+    return this._start(KIND_ZOOM, 0, { zoom: +zoom }, ms, easeId, withoutDone(options));
   }
 
   /**
@@ -344,7 +320,8 @@ export class Tween {
     return -1;
   }
 
-  static _start(kind, entityIndex, props, ms, ease, options) {
+  /** @param {number} easeId resolved by the caller (resolveEaseId), before any claim */
+  static _start(kind, entityIndex, props, ms, easeId, options) {
     const dur = ms > 0 ? ms : 0;
     const delay = options && options.delay > 0 ? +options.delay : 0;
     if (!(dur > 0) && delay === 0) {
@@ -357,7 +334,7 @@ export class Tween {
     if (slot < 0) return -1;
     this.kind[slot] = kind;
     this.entity[slot] = entityIndex;
-    this.ease[slot] = easeIdOf(ease);
+    this.ease[slot] = easeId;
     this.duration[slot] = dur > 0 ? dur : 1e-6;
     this.elapsed[slot] = -delay;
     this.repeat[slot] = repeatCount(options);

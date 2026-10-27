@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, ParticleEmitter } = WEED;
+const { GameObject, ParticleEmitter, PARTICLE_EASE: E } = WEED;
 
 // Big initial burst + a steady trickle top-up so a large heighted population
 // stays airborne (falling under gravity) for most of the measurement window,
@@ -18,7 +18,7 @@ const MARGIN = 64;
 // `spin` (scene `?spin=1`, E-80): every particle also turns (a rotation tween
 // and an angular velocity) and changes colour (a tint tween), so the integrate
 // runs its sin/cos and the tint lerp per particle: more particle-worker load.
-const EASES = ['lerp', 'quad.out', 'cubic.in', 'quad.inout', 'expo.out', 'back.in', 'bounce.out'];
+const EASES = [E.LERP, E.QUAD_OUT, E.CUBIC_IN, E.QUAD_INOUT, E.EXPO_OUT, E.BACK_IN, E.BOUNCE_OUT];
 
 /** Emits a large heighted population (gravity + despawnOnGroundContact) once, then trickles. */
 export class ParticleIntegrateDriver extends GameObject {

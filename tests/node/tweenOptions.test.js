@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Tween, tweenBufferBytes, TWEEN_REPEAT_FOREVER } from '../../src/core/tween.js';
+import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
 import { Messages } from '../../src/core/messages.js';
@@ -29,7 +30,7 @@ const near = (a, b) => Math.abs(a - b) < 1e-5;
 
 test('delay: nothing moves until it has passed, then the tween runs its duration', () => {
   setup();
-  Tween.to(0, { alpha: 0 }, 100, 'lerp', { delay: 50 });
+  Tween.to(0, { alpha: 0 }, 100, PARTICLE_EASE.LERP, { delay: 50 });
   Tween.tick(40);
   assert.equal(SpriteRenderer.alpha[0], 1);
   Tween.tick(60); // 50 of delay + 50 of the tween
@@ -41,8 +42,8 @@ test('delay: nothing moves until it has passed, then the tween runs its duration
 
 test('repeat runs extra cycles from the start; yoyo runs every other one backwards', () => {
   setup();
-  Tween.to(0, { alpha: 0 }, 100, 'lerp', { repeat: 1 });
-  Tween.to(1, { alpha: 0 }, 100, 'lerp', { repeat: 1, yoyo: true });
+  Tween.to(0, { alpha: 0 }, 100, PARTICLE_EASE.LERP, { repeat: 1 });
+  Tween.to(1, { alpha: 0 }, 100, PARTICLE_EASE.LERP, { repeat: 1, yoyo: true });
   Tween.tick(100); // end of cycle 1
   Tween.tick(50);
   assert.ok(near(SpriteRenderer.alpha[0], 0.5), 'repeat: from 1 again');
@@ -57,7 +58,7 @@ test('repeat runs extra cycles from the start; yoyo runs every other one backwar
 
 test('repeat: -1 runs until cancelled', () => {
   setup();
-  const slot = Tween.to(0, { alpha: 0 }, 10, 'lerp', { repeat: -1, yoyo: true });
+  const slot = Tween.to(0, { alpha: 0 }, 10, PARTICLE_EASE.LERP, { repeat: -1, yoyo: true });
   assert.equal(Tween.repeat[slot], TWEEN_REPEAT_FOREVER);
   for (let k = 0; k < 100; k++) Tween.tick(7);
   assert.equal(Tween.active[slot], 1);
@@ -70,7 +71,7 @@ test('onComplete sends the declared message to the entity once, after the last c
   setup();
   Messages.bind(Messages.createBuffers(1, 16, E), ['faded']);
   try {
-    const slot = Tween.to(2, { alpha: 0 }, 100, 'lerp', { repeat: 1, onComplete: 'faded' });
+    const slot = Tween.to(2, { alpha: 0 }, 100, PARTICLE_EASE.LERP, { repeat: 1, onComplete: 'faded' });
     Tween.tick(100);
     let got = [];
     drainMessages(Messages.inboxI32[0], Messages.inboxF64[0], (...m) => got.push(m));
@@ -78,7 +79,7 @@ test('onComplete sends the declared message to the entity once, after the last c
     Tween.tick(100);
     drainMessages(Messages.inboxI32[0], Messages.inboxF64[0], (...m) => got.push(m));
     assert.deepEqual(got, [[2, -1, 0, 0, slot, 0, 0, 0]]);
-    assert.throws(() => Tween.to(2, { alpha: 1 }, 10, 'lerp', { onComplete: 'nope' }), /'nope' is not declared/);
+    assert.throws(() => Tween.to(2, { alpha: 1 }, 10, PARTICLE_EASE.LERP, { onComplete: 'nope' }), /'nope' is not declared/);
     assert.equal(Tween.entityTweens[2], 0, 'the refused tween claimed nothing');
   } finally {
     Messages.unbind();
@@ -120,7 +121,7 @@ test('a finished tween freed by a racing cancel is only counted down once', () =
 
 test('tweens save repeat / yoyo / onComplete, and a layout 1 save still loads', () => {
   setup();
-  Tween.to(0, { alpha: 0 }, 100, 'lerp', { repeat: 3, yoyo: true });
+  Tween.to(0, { alpha: 0 }, 100, PARTICLE_EASE.LERP, { repeat: 3, yoyo: true });
   const slots = [];
   for (let i = 0; i < Tween.capacity; i++) {
     if (Tween.active[i] !== 1) continue;

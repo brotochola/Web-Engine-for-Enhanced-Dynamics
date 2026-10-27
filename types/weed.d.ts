@@ -728,7 +728,7 @@ export type WeedParticleOp =
       to?: WeedNumOrRange;
       start?: WeedNumOrRange;
       end?: WeedNumOrRange;
-      ease?: number | string;
+      ease?: ParticleEase;
     };
 
 /** Tint: number | spawn {min,max} | from/to over life. */
@@ -740,7 +740,7 @@ export type WeedParticleColorOp =
       to?: number | { min: number; max: number };
       start?: number | { min: number; max: number };
       end?: number | { min: number; max: number };
-      ease?: number | string;
+      ease?: ParticleEase;
     };
 
 export interface ParticleEmitConfig {
@@ -801,14 +801,8 @@ export interface ParticleEmitConfig {
   lightIntensity?: WeedNumOrRange;
 }
 
-/** Ease name or id (see {@link PARTICLE_EASE}). Unknown values fall back to `lerp`. */
-export type WeedEaseName =
-  | 'lerp'
-  | 'quad.in' | 'quad.out' | 'quad.inout'
-  | 'cubic.in' | 'cubic.out' | 'cubic.inout'
-  | 'expo.in' | 'expo.out' | 'expo.inout'
-  | 'back.in' | 'back.out' | 'back.inout'
-  | 'bounce.out';
+/** An ease: a {@link PARTICLE_EASE} value (particles' over-life ops and Tween). Anything else throws. */
+export type ParticleEase = (typeof PARTICLE_EASE)[keyof typeof PARTICLE_EASE];
 
 /** Properties {@link Tween.to} can animate. */
 export interface TweenProps {
@@ -849,9 +843,9 @@ export declare class Tween {
    * @returns the slot, or -1 (immediate, refused, pool full or nothing to animate). With
    * both xy and paint props two slots are used and the xy slot is returned when claimed.
    */
-  static to(entityIndex: number, props: TweenProps, ms: number, ease?: WeedEaseName | number, options?: TweenOptions): number;
+  static to(entityIndex: number, props: TweenProps, ms: number, ease?: ParticleEase, options?: TweenOptions): number;
   /** Tween `Camera.targetZoom`. `ms <= 0` sets it at once and returns -1. */
-  static toZoom(zoom: number, ms: number, ease?: WeedEaseName | number, options?: Omit<TweenOptions, 'onComplete'>): number;
+  static toZoom(zoom: number, ms: number, ease?: ParticleEase, options?: Omit<TweenOptions, 'onComplete'>): number;
   /** Cancel live tweens of an entity; `kind` is 0 paint, 1 xy, 2 zoom, omitted = all. */
   static cancel(entityIndex: number, kind?: number | null): void;
   /** Advance this worker's slot block by `dt` ms. Returns live slots advanced. */

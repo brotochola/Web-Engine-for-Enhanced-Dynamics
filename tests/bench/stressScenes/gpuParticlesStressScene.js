@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { Scene, GameObject, SpriteRenderer, ParticleEmitter, Camera, SharedResource, LAYER_KIND, BLEND_MODES, rng } = WEED;
+const { Scene, GameObject, SpriteRenderer, ParticleEmitter, Camera, SharedResource, LAYER_KIND, BLEND_MODES, PARTICLE_EASE, rng } = WEED;
 
 // GPU particles (LAYER_KIND.GPU_PARTICLES) among y-sorted "trees": smoke columns and fire from ParticleEmitter.emitGpu,
 // bouncing CPU sparks from ParticleEmitter.emit, so the two kinds are seen together. A visual check and a load knob
@@ -87,8 +87,8 @@ export class Smoker extends GameObject {
       drag: 0.6,
       delay: { min: 0, max: 900 },
       lifespan: { min: 1800, max: 3200 },
-      scale: { from: { min: 0.25, max: 0.45 }, to: { min: 0.9, max: 1.5 }, ease: 'quad.out' },
-      alpha: { from: 0.55, to: 0, ease: 'quad.in' },
+      scale: { from: { min: 0.25, max: 0.45 }, to: { min: 0.9, max: 1.5 }, ease: PARTICLE_EASE.QUAD_OUT },
+      alpha: { from: 0.55, to: 0, ease: PARTICLE_EASE.QUAD_IN },
       tint: { from: 0x9a9a9a, to: 0x3c3c3c },
       texture: '_whiteCircle_64x64',
       sortY: y,
@@ -105,7 +105,7 @@ export class Smoker extends GameObject {
       angleXY: { min: 0, max: 360 },
       speed: { min: 0, max: 0.3 },
       lifespan: { min: 300, max: 700 },
-      scale: { from: 0.35, to: 0.05, ease: 'cubic.in' },
+      scale: { from: 0.35, to: 0.05, ease: PARTICLE_EASE.CUBIC_IN },
       tint: { from: 0xffe08a, to: 0xff4010 },
       texture: '_whiteCircle_64x64',
       sortY: y,

@@ -155,7 +155,7 @@ test('emitGpu writes records, one group, then publishes', { concurrency: false }
     Time._advanceSimNow(5000);
     const n = ParticleEmitter.emitGpu({
       layer: 'smoke', count: 10, x: 100, y: { min: 200, max: 220 }, vx: 1, vy: -2, lifespan: 800,
-      scale: { from: 1, to: 2, ease: 'quad.out' }, alpha: { from: 1, to: 0, ease: 'quad.in' }, tint: 0x336699,
+      scale: { from: 1, to: 2, ease: PARTICLE_EASE.QUAD_OUT }, alpha: { from: 1, to: 0, ease: PARTICLE_EASE.QUAD_IN }, tint: 0x336699,
     });
     assert.equal(n, 10);
     const r = ring(0);
@@ -180,6 +180,21 @@ test('emitGpu writes records, one group, then publishes', { concurrency: false }
   }
 });
 
+test('emitGpu throws on an ease that is not a PARTICLE_EASE value, before it writes', { concurrency: false }, () => {
+  const restore = setup();
+  try {
+    Time._advanceSimNow(5000);
+    assert.throws(() => ParticleEmitter.emitGpu({ layer: 'smoke', count: 4, alpha: { from: 1, to: 0, ease: 'quad.in' } }), TypeError);
+    assert.throws(() => ParticleEmitter.emitGpu({ layer: 'smoke', count: 4, tint: { from: 0xff0000, to: 0, ease: 'quad.in' } }), TypeError);
+    const r = ring(0);
+    assert.equal(Atomics.load(r.header, GPU_RING.PUBLISHED), 0);
+    assert.equal(Atomics.load(r.header, GPU_RING.GROUPS), 0);
+    assert.equal(ParticleEmitter.emitGpu({ layer: 'smoke', count: 4, alpha: { from: 1, to: 0, ease: PARTICLE_EASE.QUAD_IN } }), 4);
+  } finally {
+    restore();
+  }
+});
+
 test('a flat GPU particle is where the CPU integrate puts the same particle, frame after frame', { concurrency: false }, () => {
   const restore = setup();
   const prev = {};
@@ -192,7 +207,7 @@ test('a flat GPU particle is where the CPU integrate puts the same particle, fra
     ParticleEmitter.resetFreeListInterleaved(1);
     const cfg = {
       count: 1, x: 10, y: 20, vx: 2.5, vy: -6, gravity: 0.2, lifespan: 2000,
-      scale: { from: 0.5, to: 2, ease: 'cubic.out' }, alpha: { from: 1, to: 0, ease: 'quad.in' },
+      scale: { from: 0.5, to: 2, ease: PARTICLE_EASE.CUBIC_OUT }, alpha: { from: 1, to: 0, ease: PARTICLE_EASE.QUAD_IN },
     };
     ParticleComponent.particleCount = 4;
     ParticleEmitter.emitFlat(cfg);

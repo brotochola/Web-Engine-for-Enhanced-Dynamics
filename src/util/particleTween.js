@@ -29,23 +29,6 @@ export const PARTICLE_EASE_SHIFT = Object.freeze({
   ANGULAR_VELOCITY: 20,
 });
 
-const EASE_STRING_TO_ID = Object.freeze({
-  lerp: PARTICLE_EASE.LERP,
-  'quad.in': PARTICLE_EASE.QUAD_IN,
-  'quad.out': PARTICLE_EASE.QUAD_OUT,
-  'quad.inout': PARTICLE_EASE.QUAD_INOUT,
-  'cubic.in': PARTICLE_EASE.CUBIC_IN,
-  'cubic.out': PARTICLE_EASE.CUBIC_OUT,
-  'cubic.inout': PARTICLE_EASE.CUBIC_INOUT,
-  'expo.in': PARTICLE_EASE.EXPO_IN,
-  'expo.out': PARTICLE_EASE.EXPO_OUT,
-  'expo.inout': PARTICLE_EASE.EXPO_INOUT,
-  'back.in': PARTICLE_EASE.BACK_IN,
-  'back.out': PARTICLE_EASE.BACK_OUT,
-  'back.inout': PARTICLE_EASE.BACK_INOUT,
-  'bounce.out': PARTICLE_EASE.BOUNCE_OUT,
-});
-
 /** From PARTICLE_DEFAULTS — LUT built once at module load (scene override does not rebuild). */
 const EXPO_LUT_SIZE = PARTICLE_DEFAULTS.expoLutSize | 0;
 
@@ -91,19 +74,14 @@ function sampleExpoLut(lut, t) {
 }
 
 /**
+ * An ease as its id: a PARTICLE_EASE value, or none (lerp). Anything else throws: an ease is the enum's value.
  * @param {unknown} ease
  * @returns {number}
  */
 export function resolveEaseId(ease) {
-  if (ease == null) return PARTICLE_EASE.LERP;
-  if (typeof ease === 'number' && ease >= 0 && ease <= PARTICLE_EASE.BOUNCE_OUT) {
-    return ease | 0;
-  }
-  if (typeof ease === 'string') {
-    const id = EASE_STRING_TO_ID[ease.toLowerCase()];
-    if (id !== undefined) return id;
-  }
-  return PARTICLE_EASE.LERP;
+  if (ease === undefined || ease === null) return PARTICLE_EASE.LERP;
+  if (Number.isInteger(ease) && ease >= 0 && ease <= PARTICLE_EASE.BOUNCE_OUT) return ease;
+  throw new TypeError(`ease must be a PARTICLE_EASE value (0-${PARTICLE_EASE.BOUNCE_OUT}), not ${typeof ease === 'string' ? `"${ease}"` : String(ease)}`);
 }
 
 /**

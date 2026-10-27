@@ -9,7 +9,7 @@ Related: [CPU particles](./PARTICLES.md), [Layer routing](./LAYER_ROUTING.md), [
 ## Quick start
 
 ```javascript
-const { Scene, ParticleEmitter, LAYER_KIND, BLEND_MODES } = WEED;
+const { Scene, ParticleEmitter, LAYER_KIND, BLEND_MODES, PARTICLE_EASE } = WEED;
 
 export class MyScene extends Scene {
   static config = {
@@ -35,8 +35,8 @@ ParticleEmitter.emitGpu({
   drag: 0.6,                            // 1/s
   delay: { min: 0, max: 900 },          // ms: a column that keeps coming for almost a second
   lifespan: { min: 1800, max: 3200 },
-  scale: { from: 0.3, to: 1.4, ease: 'quad.out' },
-  alpha: { from: 0.55, to: 0, ease: 'quad.in' },
+  scale: { from: 0.3, to: 1.4, ease: PARTICLE_EASE.QUAD_OUT },
+  alpha: { from: 0.55, to: 0, ease: PARTICLE_EASE.QUAD_IN },
   tint: { from: 0x9a9a9a, to: 0x3c3c3c },
   texture: '_whiteCircle_64x64',
 });

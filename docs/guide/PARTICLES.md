@@ -96,9 +96,9 @@ Particle `gravity` is px/frame² (`dtRatio ≈ 1` at 60fps), **not** Box2D scene
 | `{ from, to, ease }` | Same + ease id (`PARTICLE_EASE.LERP` default) |
 | Nested | `from` / `to` may themselves be `number` or `{ min, max }` |
 
-Aliases: `start`/`end` ≡ `from`/`to`. Ease: numeric id or `'lerp'` / `'quad.out'` / `'cubic.in'` / `'expo.inout'` / `'back.out'` / `'bounce.out'` (no sine).
+Aliases: `start`/`end` ≡ `from`/`to`. Ease: a `PARTICLE_EASE` value: `LERP`, `QUAD_IN` / `QUAD_OUT` / `QUAD_INOUT`, the same three for `CUBIC`, `EXPO` and `BACK`, and `BOUNCE_OUT` (no sine). Anything else, a name such as `'quad.out'` included, throws a `TypeError`.
 
-Props that accept over-life ops: `alpha`, `scale` / `scaleX` / `scaleY`, `tint`, `rotation`. Also `angularVelocity` (deg/ms). Each one eases with its own `ease`: `alpha: { from: 1, to: 0, ease: 'quad.in' }` next to `scale: { from: 1, to: 3, ease: 'quad.out' }` fades in and grows out. When every tweened property names the same ease (the usual case) the worker eases once per particle. Frame cycle: `frame: [0,1,2]` + `spritesheet`/`animation` (+ optional `anim: 'cycle'|'random'`).
+Props that accept over-life ops: `alpha`, `scale` / `scaleX` / `scaleY`, `tint`, `rotation`. Also `angularVelocity` (deg/ms). Each one eases with its own `ease`: `alpha: { from: 1, to: 0, ease: PARTICLE_EASE.QUAD_IN }` next to `scale: { from: 1, to: 3, ease: PARTICLE_EASE.QUAD_OUT }` fades in and grows out. When every tweened property names the same ease (the usual case) the worker eases once per particle. Frame cycle: `frame: [0,1,2]` + `spritesheet`/`animation` (+ optional `anim: 'cycle'|'random'`).
 
 `scale: { min, max }` samples once and writes both axes — aspect stays locked. Pass both `scaleX` and `scaleY` with no `scale` only for non-uniform stamps (decals, muzzle).
 

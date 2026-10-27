@@ -42,6 +42,7 @@
  * tint tween on every particle, so the C sin/cos and the tint lerp run per particle.
  */
 import { ParticleComponent } from '../../src/components/particleComponent.js';
+import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { buildActiveListBuffers, updateParticlePhysicsBuffers } from '../reference/particleIntegrate.mjs';
 import { seededRandom } from '../../src/util/utils.js';
@@ -54,7 +55,8 @@ const MAX_PARTICLES = 65535;
 const INITIAL_BURST = 60000;
 const TOPUP_PER_FRAME = 4000;
 const DT = 1000 / 60;
-const EASES = ['lerp', 'quad.out', 'cubic.in', 'quad.inout', 'expo.out', 'back.in', 'bounce.out'];
+const E = PARTICLE_EASE;
+const EASES = [E.LERP, E.QUAD_OUT, E.CUBIC_IN, E.QUAD_INOUT, E.EXPO_OUT, E.BACK_IN, E.BOUNCE_OUT];
 export const PARTICLE_EASES = EASES;
 
 /** The float32 kernel of the shipped module (wasm/particleIntegrate.c), by variant name. */
@@ -87,10 +89,10 @@ export function emitConfig(mix, count, ease, area) {
     // A different ease on every tweened property (PARTICLE_TWEEN.MIXED_EASE): the scale and alpha ones from
     // `ease`, the others fixed, and a turning half that eases its rotation and spin on their own.
     cfg.scale = { from: { min: 0.4, max: 1 }, to: 1.8, ease };
-    cfg.alpha = { from: 1, to: 0, ease: ease === 'quad.in' ? 'cubic.out' : 'quad.in' };
-    cfg.tint = { from: 0xff2040, to: 0x20ff80, ease: 'expo.inout' };
-    cfg.rotation = { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease: 'back.out' };
-    cfg.angularVelocity = { from: -90, to: 90, ease: 'bounce.out' };
+    cfg.alpha = { from: 1, to: 0, ease: ease === E.QUAD_IN ? E.CUBIC_OUT : E.QUAD_IN };
+    cfg.tint = { from: 0xff2040, to: 0x20ff80, ease: E.EXPO_INOUT };
+    cfg.rotation = { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease: E.BACK_OUT };
+    cfg.angularVelocity = { from: -90, to: 90, ease: E.BOUNCE_OUT };
   }
   if (mix === 'spin') {
     cfg.rotation = { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease };
