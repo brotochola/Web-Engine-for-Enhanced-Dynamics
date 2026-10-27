@@ -1666,6 +1666,11 @@ layout, tree, console, export, session) all pass; dist/ put back.
   - **An edit started while playing stops first** and is made at the level's start (`EditMode.edit`): the palette's
     +, a drop, the brush, an entity pick, and Del, Ctrl+D and F2 in the list. Hiding a layer while playing only keeps
     the choice. Esc no longer leaves edit mode. A second Stop while one swaps waits for it (it began a second swap).
+  - **Not one frame plays.** Stop enters edit mode before its swap, so the new level is held before the workers
+    resume. Entered after it, the swap's cooldown played: the platformer's player stood 22-30 px below its start
+    (1722, 1730, 1723 for 1700, Chrome with a window, four Stops). Since the fix it is at 1700 after each Stop, and
+    the workers run 59-61 frames a second. The swap also puts the view back before the workers resume: the level's
+    boot camera showed until the swap's cooldown ended, then the view jumped back (editorM1Smoke's click landed on it).
   - Tests: editorHandover.test.js (Shift+E, the opening, the reset after a full load, the view), and editorDropPlace,
     editorTreeKeys, editorLayers, editorShell, editorShellLayout, editorTools. The smokes wait for `EditMode.settled`.
     editorShellSmoke now checks that the page opens editing, that a list click while playing keeps playing, and that
