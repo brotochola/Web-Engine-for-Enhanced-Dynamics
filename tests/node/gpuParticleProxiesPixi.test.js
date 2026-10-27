@@ -42,7 +42,8 @@ const clockNow = () => {
   return clock;
 };
 /** What the entities root draws, in order: its children keep every mesh they ever drew, hidden when unused. */
-const drawn = (node) => node.children.filter((c) => c.visible && c.renderable);
+// What Pixi draws: visible and renderable children, with alpha (an idle chunk twin has none).
+const drawn = (node) => node.children.filter((c) => c.visible && c.renderable && c.alpha > 0);
 
 function setup() {
   const layers = { smoke: { kind: LAYER_KIND.GPU_PARTICLES, maxParticles: 64 * 3, sortWithEntities: true } };

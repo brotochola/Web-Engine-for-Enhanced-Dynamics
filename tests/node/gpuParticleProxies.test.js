@@ -76,7 +76,8 @@ const clockNow = () => {
 /** proxyView's camera slots. */
 const cameraOf = (x, y, zoom, rot, w, h) => Float64Array.of(x, y, zoom, rot, w, h);
 /** What the root draws, in order. */
-const drawn = (node) => node.children.filter((c) => c.visible && c.renderable);
+// What Pixi draws: visible and renderable children, with alpha (an idle chunk twin has none).
+const drawn = (node) => node.children.filter((c) => c.visible && c.renderable && c.alpha > 0);
 const entryF = (half, e, word) => half.floats[e * PROXY_ENTRY_WORDS + word];
 
 test('upperBoundByKey: where a key goes in the packed order, after the instances it ties with', () => {
@@ -269,6 +270,53 @@ test('the entities batch is drawn in chunks with each entry in its gap, then bac
     assert.deepEqual(drawn(rootNode), [entities.mesh]);
     chunks.apply(half, 3, 10, draw);
     assert.deepEqual(drawn(rootNode).map((c) => c.label || ''), kids.map((c) => c.label || ''), 'the same order again');
+    chunks.destroy();
+  } finally {
+    batch.destroy();
+    restore();
+  }
+});
+
+test('the batch drawing from its two geometries in turn leaves the stage as it was: no instruction rebuild', { concurrency: false }, () => {
+  const restore = setup();
+  const { batch, entities } = meshes();
+  try {
+    const rootNode = new Container({ isRenderGroup: true });
+    rootNode.addChild(entities.mesh);
+    // A batch uploads into each of its ring geometries in turn; two real geometries over one buffer stand in.
+    const geometries = [batch.rings[1].meshes[0].geometry, batch.rings[1].meshes[1].geometry];
+    const chunks = new EntityChunks({ batch: entities, root: rootNode });
+    const half = localProxyHalf();
+    [0, 4, 4].forEach((k, e) => { half.ints[e * PROXY_ENTRY_WORDS + PROXY.INDEX] = k; });
+    const marks = [new Container(), new Container(), new Container()];
+    const draw = (w, out, n) => {
+      out[n] = marks[w / PROXY_ENTRY_WORDS];
+      return n + 1;
+    };
+    const frame = (f) => {
+      entities.mesh.geometry = geometries[f & 1];
+      chunks.apply(half, 3, 10, draw);
+    };
+    frame(0);
+    frame(1); // the second geometry's chunks join their twins
+    const children = rootNode.children.slice();
+    for (let f = 2; f < 6; f++) {
+      rootNode.renderGroup.structureDidChange = false;
+      frame(f);
+      assert.equal(rootNode.renderGroup.structureDidChange, false, `frame ${f}: nothing hidden, shown or moved`);
+      assert.deepEqual(rootNode.children, children, 'the same children in the same order');
+      const kids = drawn(rootNode);
+      assert.deepEqual(kids.map((c) => c.label || ''), ['', `entities-chunk-0-${f & 1}`, '', '', `entities-chunk-1-${f & 1}`],
+        'one mesh per chunk is drawn: the one over the geometry the batch uploaded');
+      assert.deepEqual([kids[1].geometry.weedFirstInstance, kids[1].geometry.instanceCount], [0, 4]);
+      assert.deepEqual([kids[4].geometry.weedFirstInstance, kids[4].geometry.instanceCount], [4, 6]);
+      const twin = rootNode.children[rootNode.children.indexOf(kids[1]) + ((f & 1) === 0 ? 1 : -1)];
+      assert.equal(twin.label, `entities-chunk-0-${(f & 1) ^ 1}`, 'its twin is next to it, slot 0 first');
+      assert.equal(twin.alpha, 0);
+    }
+    entities.mesh.geometry = batch.rings[0].meshes[0].geometry;
+    assert.throws(() => chunks.apply(half, 3, 10, draw), /third geometry/);
+    entities.mesh.geometry = geometries[0];
     chunks.destroy();
   } finally {
     batch.destroy();

@@ -223,8 +223,11 @@ export class EntityChunks {
     this.batch = opts.batch;
     this.root = opts.root;
     this.maxSplits = opts.maxSplits | 0 || DEFAULT_MAX_PAINTER_SPLITS;
-    // Per base geometry of the batch (it flips between two each frame): its chunk meshes.
-    this.chunks = new Map();
+    // The batch draws from its two ring geometries in turn (one per upload), so chunk j is a pair of meshes, one
+    // over each. Both stay children, slot 0's first: the idle one has alpha 0, which Pixi's mesh pipe skips when it
+    // draws. Hiding it (visible) or putting the other in its place would rebuild the stage's instructions every frame.
+    this.bases = [null, null];
+    this.chunks = [[], []];
     // The frame's draw order, [0, count). The array keeps its length (resetting it would free its storage and
     // every frame would grow it again).
     this.children = [];
@@ -234,20 +237,54 @@ export class EntityChunks {
     this.active = false;
   }
 
-  _chunk(base, j) {
-    let list = this.chunks.get(base);
-    if (!list) {
-      list = [];
-      this.chunks.set(base, list);
+  /** 0 or 1: which of the batch's two ring geometries `base` is, in the order they first show up. */
+  _baseSlot(base) {
+    const bases = this.bases;
+    if (bases[0] === base) return 0;
+    if (bases[1] === base) return 1;
+    if (bases[0] === null) {
+      bases[0] = base;
+      return 0;
     }
+    if (bases[1] === null) {
+      bases[1] = base;
+      return 1;
+    }
+    throw new Error('EntityChunks: the entities batch drew from a third geometry');
+  }
+
+  _chunk(slot, j) {
+    const list = this.chunks[slot];
     let mesh = list[j];
-    if (!mesh) {
-      mesh = new Mesh({ geometry: rangeGeometryOf(base), shader: this.batch.mesh.shader, state: this.batch.mesh.state });
+    if (mesh === undefined) {
+      const batchMesh = this.batch.mesh;
+      mesh = new Mesh({ geometry: rangeGeometryOf(this.bases[slot]), shader: batchMesh.shader, state: batchMesh.state });
       mesh.cullable = false;
-      mesh.label = `entities-chunk-${j}`;
+      mesh.label = `entities-chunk-${j}-${slot}`;
       list[j] = mesh;
     }
     return mesh;
+  }
+
+  /**
+   * Chunk j draws instances [first, first + count) with the mesh over the live geometry; its twin, if made yet,
+   * stays next to it, idle. Writes them at order[n…] (slot 0's first), returns the next free index.
+   */
+  _pushChunk(order, n, live, j, first, count) {
+    const m = this._chunk(live, j);
+    m.geometry.weedFirstInstance = first;
+    m.geometry.instanceCount = count;
+    m.alpha = 1;
+    const twin = this.chunks[live ^ 1][j];
+    if (twin === undefined) {
+      order[n] = m;
+      return n + 1;
+    }
+    twin.alpha = 0;
+    // In index order: a write past the end would leave a hole, and the array would stay holey.
+    order[n] = live === 0 ? m : twin;
+    order[n + 1] = live === 0 ? twin : m;
+    return n + 2;
   }
 
   /**
@@ -268,27 +305,17 @@ export class EntityChunks {
     this.gaps = assignGaps(half.ints, count, this.maxSplits, at, instanceCount);
     const order = this.children;
     let n = 0;
-    const base = this.batch.mesh.geometry;
+    const live = this._baseSlot(this.batch.mesh.geometry);
     let from = 0;
     let chunk = 0;
     const visible = this.batch.mesh.visible && instanceCount > 0;
     for (let e = 0; e < count; e++) {
       const k = at[e];
-      if (k > from && visible) {
-        const m = this._chunk(base, chunk++);
-        m.geometry.weedFirstInstance = from;
-        m.geometry.instanceCount = k - from;
-        order[n++] = m;
-      }
+      if (k > from && visible) n = this._pushChunk(order, n, live, chunk++, from, k - from);
       if (k > from) from = k;
       n = drawEntry(e * PROXY_ENTRY_WORDS, order, n);
     }
-    if (from < instanceCount && visible) {
-      const m = this._chunk(base, chunk++);
-      m.geometry.weedFirstInstance = from;
-      m.geometry.instanceCount = instanceCount - from;
-      order[n++] = m;
-    }
+    if (from < instanceCount && visible) n = this._pushChunk(order, n, live, chunk++, from, instanceCount - from);
     this.count = n;
     this._show(order, n);
     this.active = true;
@@ -334,13 +361,14 @@ export class EntityChunks {
   }
 
   destroy() {
-    for (const list of this.chunks.values()) {
+    for (const list of this.chunks) {
       for (const m of list) {
-        if (!m) continue;
         m.geometry.destroy();
         m.destroy();
       }
+      list.length = 0;
     }
-    this.chunks.clear();
+    this.bases[0] = null;
+    this.bases[1] = null;
   }
 }
