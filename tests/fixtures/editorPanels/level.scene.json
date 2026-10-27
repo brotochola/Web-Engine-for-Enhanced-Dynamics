@@ -1,0 +1,11 @@
+{
+  "format": 1,
+  "script": "./editorPanelsScene.js",
+  "export": "EditorPanelsScene",
+  "entities": [
+    { "name": "Crate1", "class": "Crate", "x": 400, "y": 300 },
+    { "name": "Crate2", "class": "Crate", "x": 1136, "y": 300, "config": { "sprite": "bunny" } },
+    { "name": "Walker1", "class": "Walker", "x": 400, "y": 660 },
+    { "name": "Walker2", "class": "Walker", "x": 1136, "y": 660, "config": { "anim": "walk_left" } }
+  ]
+}
