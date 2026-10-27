@@ -14,7 +14,7 @@ import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
-import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { SpriteSheetRegistry, BIG_ATLAS_CHUNK, bigAtlasChunkName } from './spriteSheetRegistry.js';
 import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
@@ -2130,20 +2130,21 @@ export class GameObject {
     // Static sprites use bigAtlas directly
     const sheetName = 'bigAtlas';
 
-    // PERFORMANCE: Global cache of bigAtlas animation indices, keyed by the sprite name alone: the
-    // sheet is always bigAtlas here, and a "bigAtlas:name" key built per call was a new string per
-    // spawn (E-93). No prototype, so a sprite named "constructor" is an ordinary key.
+    // PERFORMANCE: Global cache keyed by the sprite name alone: a "bigAtlas:name" key built per call was a
+    // new string per spawn (E-93). No prototype, so a sprite named "constructor" is an ordinary key. Its
+    // value is the sheet and the index setSprite stores, packed (sheet · 256 + index): bigAtlas for its
+    // first 256 animations, a chunk sheet bigAtlas@k past them (ED-74: both columns are bytes).
     if (!GameObject._globalAnimationCache) {
       GameObject._globalAnimationCache = Object.create(null);
     }
 
-    let animIndex = GameObject._globalAnimationCache[spriteName];
+    let packed = GameObject._globalAnimationCache[spriteName];
 
-    if (animIndex === undefined) {
+    if (packed === undefined) {
       // First time this sprite is used - look it up in bigAtlas
-      animIndex = SpriteSheetRegistry.getAnimationIndex(sheetName, spriteName);
+      const globalIndex = SpriteSheetRegistry.getAnimationIndex(sheetName, spriteName);
 
-      if (animIndex === undefined) {
+      if (globalIndex === undefined) {
         // Sprite not found - provide helpful error message
         console.error(
           `❌ ${this.constructor.name}: Sprite "${spriteName}" not found in bigAtlas. ` +
@@ -2152,17 +2153,21 @@ export class GameObject {
         return this;
       }
 
+      const sheetId = SpriteSheetRegistry.getSpritesheetId(
+        globalIndex < BIG_ATLAS_CHUNK ? sheetName : bigAtlasChunkName((globalIndex / BIG_ATLAS_CHUNK) | 0),
+      );
+      if (sheetId === 0) {
+        console.error(`❌ ${this.constructor.name}: bigAtlas not loaded yet`);
+        return this;
+      }
+      packed = sheetId * BIG_ATLAS_CHUNK + (globalIndex % BIG_ATLAS_CHUNK);
       // Cache it globally for future use
-      GameObject._globalAnimationCache[spriteName] = animIndex;
+      GameObject._globalAnimationCache[spriteName] = packed;
     }
 
-    // Store which spritesheet to use (bigAtlas for static sprites)
-    const bigAtlasId = SpriteSheetRegistry.getSpritesheetId('bigAtlas');
-    if (bigAtlasId === 0) {
-      console.error(`❌ ${this.constructor.name}: bigAtlas not loaded yet`);
-      return this;
-    }
-    this.spriteRenderer.spritesheetId = bigAtlasId;
+    // Store which spritesheet to use (bigAtlas, or its chunk, for static sprites)
+    this.spriteRenderer.spritesheetId = (packed / BIG_ATLAS_CHUNK) | 0;
+    const animIndex = packed % BIG_ATLAS_CHUNK;
 
     // Mark as NOT animated (static sprite - displays single frame)
     this.spriteRenderer.isAnimated = 0;
