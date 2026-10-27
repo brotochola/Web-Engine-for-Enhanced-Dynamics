@@ -68,6 +68,7 @@ import { ScatterBrush } from './scatterBrush.js';
 import { JointTool } from './jointTool.js';
 import { frameSelection, frameAll } from './frame.js';
 import { GridOverlay, loadGrid, saveGrid } from './grid.js';
+import { toggleShortcutSheet } from './shortcuts.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -349,6 +350,8 @@ export class EditMode {
   enter() {
     const debugUI = this.debugUI;
     if (this.active || !debugUI.scene) return;
+    // A game paused (the toolbar's or the Scene panel's ⏸) goes on: the editor's respawns need its logic worker.
+    if (debugUI.scene.state?.pause) debugUI.gameEngine?.resume?.();
     this.active = true;
     this._savedTimeScale = Time.scale;
     this._savedFree = Camera._free;
@@ -390,6 +393,7 @@ export class EditMode {
    */
   onKey(e) {
     for (const tool of this.tools) if (tool.onKey && tool.onKey(e) === true) return true;
+    if (e.key === '?') return this.toggleShortcuts();
     if (e.key === 'Escape') {
       if (this.placing !== null) this.startPlacing(this.placing);
       else if (this.selection.index >= 0) this.selection.clear();
@@ -1132,6 +1136,39 @@ export class EditMode {
   /** The debug UI's tick: the selection lets go of an entity that despawned, and its live values refresh. */
   update() {
     this.selection.update();
+    // A pause from elsewhere (the Scene panel): the toolbar's ⏸ follows, at the tick's pace (it writes only changes).
+    this.debugUI.hosted?.toolbar?.refresh();
+  }
+
+  /**
+   * The toolbar's ⏸ (ED-69): pause the running game, its last frame showing, or resume it; ⏭ then steps it. Not while
+   * editing (edit mode holds the world its own way).
+   * @returns {boolean} whether it paused or resumed
+   */
+  togglePause() {
+    const engine = this.debugUI.gameEngine;
+    const scene = this.debugUI.scene;
+    if (this.active || !engine || !scene) return false;
+    if (scene.state?.pause) engine.resume();
+    else engine.pause();
+    this.debugUI.panels?.scene?._updatePlayPauseState?.();
+    this._notify();
+    return true;
+  }
+
+  /** ⏭: one frame of the paused game (Scene.stepPaused). */
+  stepFrame() {
+    const scene = this.debugUI.scene;
+    if (this.active || !scene?.state?.pause) return false;
+    scene.stepPaused();
+    return true;
+  }
+
+  /** ? (ED-69): every key of the editor on one sheet, over the editor page when the game runs in one. */
+  toggleShortcuts() {
+    const doc = this.debugUI.hosted?.toolbar?.el?.ownerDocument ?? document;
+    toggleShortcutSheet(doc);
+    return true;
   }
 
   // ---- across a reload of the game page, in the editor page (D9) ----

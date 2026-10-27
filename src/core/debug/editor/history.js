@@ -55,6 +55,16 @@ export class History {
     return this._undone.length > 0;
   }
 
+  /** What Undo would take back ('' with nothing done), for its tooltip. */
+  get undoLabel() {
+    return this._done.length > 0 ? this._done[this._done.length - 1].label || '' : '';
+  }
+
+  /** What Redo would do again ('' with nothing undone). */
+  get redoLabel() {
+    return this._undone.length > 0 ? this._undone[this._undone.length - 1].label || '' : '';
+  }
+
   /** The document differs from the file as last saved or loaded. */
   get dirty() {
     return this._topId() !== this._savedId;

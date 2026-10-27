@@ -311,3 +311,30 @@ test('entering keeps the view where it is, in a scene that only centers its came
     teardown();
   }
 });
+
+test('the toolbar’s ⏸ and ⏭ pause and step the running game, not while editing; entering edit mode lets a paused game go on', () => {
+  const { editMode, debugUI } = setup();
+  try {
+    const engine = [];
+    debugUI.scene = { state: { pause: false }, stepPaused: () => engine.push('step') };
+    debugUI.gameEngine.pause = () => {
+      engine.push('pause');
+      debugUI.scene.state.pause = true;
+    };
+    debugUI.gameEngine.resume = () => {
+      engine.push('resume');
+      debugUI.scene.state.pause = false;
+    };
+    assert.equal(editMode.stepFrame(), false, 'not paused: no step');
+    editMode.togglePause();
+    editMode.stepFrame();
+    editMode.togglePause();
+    assert.deepEqual(engine, ['pause', 'step', 'resume']);
+    editMode.togglePause();
+    editMode.enter();
+    assert.deepEqual([engine.at(-1), debugUI.scene.state.pause], ['resume', false], 'the editor’s respawns need the game going');
+    assert.equal(editMode.togglePause(), false, 'not while editing');
+  } finally {
+    teardown();
+  }
+});
