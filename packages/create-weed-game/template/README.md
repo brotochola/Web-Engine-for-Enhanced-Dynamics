@@ -13,4 +13,6 @@ npm run preview   # serves dist/ like a host would
 
 The page needs two response headers (`Cross-Origin-Opener-Policy: same-origin` and `Cross-Origin-Embedder-Policy: require-corp`). `npm run dev` sends them, and the build adds a `_headers` file for Netlify and Cloudflare Pages. Hosts that cannot send headers (GitHub Pages, any static server) are covered too: the build puts `weed-sw.js` next to `index.html`, and on a player's first visit the game reloads once while it sets itself up. Details per host: [DEPLOY.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/DEPLOY.md).
 
+`npm run dev` answers this machine only; `npm run dev -- --host` opens it to your network, to try the game on a phone.
+
 Next: [Your first game](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/FIRST_GAME.md) builds a small complete game step by step. If you know Unity, Godot or Phaser, see [COMING_FROM.md](https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/docs/guide/COMING_FROM.md).

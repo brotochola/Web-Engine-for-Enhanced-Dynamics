@@ -2,6 +2,7 @@
 // the served folder, a folder's index.html, a folder asked for without its slash sent to it, and the headers
 // SharedArrayBuffer needs. The path goes through resolveInside: before (review N-80) it was read as sent, and a raw
 // request for `/../…` (curl --path-as-is, a socket; a browser removes the dots) read outside it.
+// Also where the server listens (listenHost, listenAddresses, listenFrom).
 
 import fs from 'fs';
 import path from 'path';
@@ -136,4 +137,56 @@ export function serveStaticFile(req, res, { root, headers = {}, special = null, 
 export function listenHost(argv, env) {
   if (env.WEED_HOST) return env.WEED_HOST;
   return argv.includes('--host') ? '0.0.0.0' : '127.0.0.1';
+}
+
+/**
+ * The addresses to listen at for listenHost's `host`. A browser may take `localhost` for ::1 or for 127.0.0.1, so
+ * this machine only means both: with 127.0.0.1 alone, Windows let the server start on a port that another server
+ * held on every interface (no EADDRINUSE there), and Chrome took `localhost` over IPv6 to the other one. `--host`
+ * (0.0.0.0) is Node's default address (undefined): every interface, IPv6 and IPv4, as before N-80.
+ * @param {string} host
+ * @returns {(string|undefined)[]}
+ */
+export function listenAddresses(host) {
+  if (host === '127.0.0.1' || host === 'localhost') return ['127.0.0.1', '::1'];
+  return host === '0.0.0.0' ? [undefined] : [host];
+}
+
+/**
+ * Listen at every address on the first port from `port` up that all of them take: a port in use at one of them is
+ * left, after `onInUse(port)`, and an address this machine lacks (no IPv6) is skipped.
+ * @param {number} port
+ * @param {(string|undefined)[]} addresses
+ * @param {() => import('net').Server} createServer  a new server, one per address
+ * @param {(port: number) => void} [onInUse]
+ * @returns {Promise<{ port: number, servers: import('net').Server[] }>}
+ */
+export async function listenFrom(port, addresses, createServer, onInUse = () => {}) {
+  for (;; port++) {
+    const servers = [];
+    let inUse = false;
+    for (const host of addresses) {
+      const server = createServer();
+      const error = await new Promise((resolve) => {
+        server.once('error', resolve);
+        server.listen({ port, host }, () => {
+          server.off('error', resolve);
+          resolve(null);
+        });
+      });
+      if (error === null) {
+        servers.push(server);
+      } else if (error.code === 'EADDRINUSE') {
+        inUse = true;
+        break;
+      } else if (error.code !== 'EADDRNOTAVAIL' && error.code !== 'EAFNOSUPPORT') {
+        for (const s of servers) s.close();
+        throw error;
+      }
+    }
+    if (!inUse && servers.length > 0) return { port, servers };
+    for (const s of servers) s.close();
+    if (!inUse) throw new Error(`No address to listen at on port ${port}: ${addresses.map((a) => a ?? 'every interface').join(', ')}`);
+    onInUse(port);
+  }
 }

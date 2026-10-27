@@ -15,7 +15,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 import { devBanner } from './devBanner.js';
-import { serveStaticFile, listenHost } from './staticFiles.js';
+import { serveStaticFile, listenHost, listenAddresses, listenFrom } from './staticFiles.js';
 
 const SW_MODE = process.argv.includes('--sw');
 const PORT = Number(process.env.PORT) || (SW_MODE ? 8090 : 8000);
@@ -85,7 +85,7 @@ function watchForReload() {
   }
 }
 
-const server = http.createServer((req, res) => {
+const handleRequest = (req, res) => {
   if (LOG_REQUESTS) console.log(`${req.method} ${req.url}`);
 
   const urlPath = req.url.split('?')[0];
@@ -114,23 +114,20 @@ const server = http.createServer((req, res) => {
     headers: ISOLATION_HEADERS,
     special: SW_MODE ? (sitePath) => (sitePath === '/weed-sw.js' ? ISOLATION_WORKER : null) : null,
   });
-});
-
-const startServer = (port) => {
-  server.listen(port, HOST, () => {
-    console.log(devBanner({ port, host: HOST, swMode: SW_MODE, hotReload: HOT_RELOAD, logRequests: LOG_REQUESTS, root: process.cwd() }));
-  });
-
-  server.on('error', (e) => {
-    if (e.code === 'EADDRINUSE') {
-      console.log(`⚠️ Port ${port} is in use, trying ${port + 1}...`);
-      server.close(); // Ensure previous attempt is cleaned up
-      startServer(port + 1);
-    } else {
-      console.error('❌ Server error:', e);
-    }
-  });
 };
 
 if (HOT_RELOAD) watchForReload();
-startServer(PORT);
+// One server per address (both loopback ones by default, so `localhost` reaches this server whichever the browser
+// takes), on the first port from PORT that every address takes.
+listenFrom(PORT, listenAddresses(HOST), () => http.createServer(handleRequest), (port) => {
+  console.log(`⚠️ Port ${port} is in use, trying ${port + 1}...`);
+}).then(
+  ({ port, servers }) => {
+    for (const server of servers) server.on('error', (e) => console.error('❌ Server error:', e));
+    console.log(devBanner({ port, host: HOST, swMode: SW_MODE, hotReload: HOT_RELOAD, logRequests: LOG_REQUESTS, root: process.cwd() }));
+  },
+  (e) => {
+    console.error('❌ Server error:', e);
+    process.exit(1);
+  },
+);

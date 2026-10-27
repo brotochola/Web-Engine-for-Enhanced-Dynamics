@@ -1,14 +1,18 @@
 // Local server for the game.
 //   node scripts/dev.mjs        the project, with hot reload (npm run dev)
 //   node scripts/dev.mjs dist   the build, as a host would serve it (npm run preview)
+//   --host                      open it to the network, to try the game on a phone (this machine only by default)
 // Every response carries the two headers SharedArrayBuffer needs.
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const root = path.resolve(process.argv[2] || '.');
+const args = process.argv.slice(2);
+const folder = args.find((a) => !a.startsWith('--'));
+const root = path.resolve(folder || '.');
 const port = Number(process.env.PORT) || 8000;
-const hotReload = !process.argv[2];
+const host = process.env.WEED_HOST || (args.includes('--host') ? '0.0.0.0' : '127.0.0.1');
+const hotReload = !folder;
 
 const HEADERS = {
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -80,7 +84,7 @@ if (hotReload) {
   }
 }
 
-const server = http.createServer((req, res) => {
+function handle(req, res) {
   const { pathname } = new URL(req.url, 'http://localhost');
 
   if (pathname === '/__weed/reload') {
@@ -116,8 +120,33 @@ const server = http.createServer((req, res) => {
     const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
     res.writeHead(200, { ...HEADERS, 'Content-Type': type }).end(data);
   });
-});
+}
 
-server.listen(port, () => {
-  console.log(`${hotReload ? 'Dev server' : 'Serving ' + path.relative('.', root)}: http://localhost:${port}`);
-});
+// A browser may take localhost for ::1 or for 127.0.0.1: listen at both, or another server left on the port could
+// answer one of them (Windows lets both listen). --host: every interface. A port in use moves on to the next one.
+const addresses = host === '127.0.0.1' ? ['127.0.0.1', '::1'] : [host === '0.0.0.0' ? undefined : host];
+async function listen(port) {
+  const servers = [];
+  for (const address of addresses) {
+    const server = http.createServer(handle);
+    const error = await new Promise((resolve) => {
+      server.once('error', resolve);
+      server.listen({ port, host: address }, () => {
+        server.off('error', resolve);
+        resolve(null);
+      });
+    });
+    if (error?.code === 'EADDRINUSE') {
+      for (const s of servers) s.close();
+      console.log(`Port ${port} is in use, trying ${port + 1}`);
+      return listen(port + 1);
+    }
+    if (error && address !== '::1') throw error; // a machine without IPv6 has no ::1
+    if (!error) servers.push(server);
+  }
+  return port;
+}
+
+const at = await listen(port);
+console.log(`${hotReload ? 'Dev server' : 'Serving ' + path.relative('.', root)}: http://localhost:${at}`);
+if (host !== '127.0.0.1') console.log(`Open to the network (${host}): anyone on it can load these files.`);
