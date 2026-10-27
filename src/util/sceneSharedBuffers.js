@@ -1161,7 +1161,7 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   Keyboard.initialize(views.input, scene.keyMap);
   scene.updateKeyboardBuffer();
 
-  buffers.clockData = new SharedArrayBuffer(4);
+  buffers.clockData = new SharedArrayBuffer(8); // the scale, and the editor's hold (timeScale.js)
   views.clock = new Float32Array(buffers.clockData);
   views.clock[0] = 1;
   Time.bind(buffers.clockData);

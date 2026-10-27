@@ -7,6 +7,7 @@ self.postMessage({
 // Runs GameObject.tick / AI; steering writes RigidBody accel fields for Box2D
 
 // Import engine dependencies
+import { Time } from '../core/timeScale.js';
 import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { reportWorkerError } from '../util/errorReport.js';
@@ -948,6 +949,9 @@ class LogicWorker extends AbstractWorker {
 
     // Count active entities while processing
     let activeCount = 0;
+    // The editor holds the world (ED-71): no entity ticks this frame; what comes before them (spawns, list updates,
+    // contacts, messages) went on.
+    const held = Time.held;
 
     // DETERMINISTIC MODULO: Each worker processes entities where (idx % totalWorkers === workerIndex)
     // Applied per-type to maintain fair load distribution
@@ -976,7 +980,7 @@ class LogicWorker extends AbstractWorker {
     // Zero decimation overhead - no countdown checks, no prototype lookups
     // This is the common case for most entity types
     const nonDecimatedTypes = this.nonDecimatedTypes;
-    const nonDecimatedCount = nonDecimatedTypes.length;
+    const nonDecimatedCount = held ? 0 : nonDecimatedTypes.length;
     const forceProcessOnLogicWorker = GameObject.forceProcessOnLogicWorker;
     const entityTypeHasForcedLogicWorker = GameObject.entityTypeHasForcedLogicWorker;
 
@@ -1059,7 +1063,7 @@ class LogicWorker extends AbstractWorker {
     // Full countdown logic for entities with tickInterval > 1
     // tickInterval is cached per-type (no prototype lookup in inner loop)
     const decimatedTypes = this.decimatedTypes;
-    const decimatedCount = decimatedTypes.length;
+    const decimatedCount = held ? 0 : decimatedTypes.length;
     const nextTick = GameObject.nextTick; // Cache the typed array reference
 
     if (decimatedCount > 0 && nextTick) {
@@ -1156,7 +1160,7 @@ class LogicWorker extends AbstractWorker {
       }
     }
 
-    activeCount += this._runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa);
+    if (!held) activeCount += this._runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa);
 
     if (collectDetailed) {
       this.entityTimeThisFrame = performance.now() - tEntity0;
@@ -1175,8 +1179,8 @@ class LogicWorker extends AbstractWorker {
       this.systemsExecutedThisFrame++; // Entity tick system executed
     }
 
-    // Store active count for FPS reporting
-    this.activeEntityCount = activeCount;
+    // Store active count for FPS reporting (held, the count of the last frame that ticked)
+    if (!held) this.activeEntityCount = activeCount;
 
     // ========================================
     // PHASE 3: SEND LIST UPDATES TO LOGIC0 (non-logic0 workers)

@@ -12,8 +12,9 @@
 // before the workers resume. A full load (another scene) leaves edit mode and enters it again once the new scene is
 // attached.
 //
-// Known limit of this version: tick() still runs, with a zero delta, so code that counts frames keeps counting.
-// ED-19 pauses the simulation workers instead.
+// The editor holds the world (Time.held, ED-71): the logic workers run no entity ticks while editing, which at dt 0
+// would only redo their last frame; spawns, list updates and messages go on, as the editor's respawns need them. So a
+// class sets up its look in onSpawned, not in its first tick, to show right while editing.
 //
 // A left click selects (selection.js, ED-8), and a drag moves the selection (moveTool.js, ED-10), as do the arrow
 // keys (Shift: ten steps); G cycles the grid step; F frames the selection and Shift+F the level (frame.js, ED-57). Other tools (Stage 4: handles, brushes, pickers) are added with
@@ -387,6 +388,7 @@ export class EditMode {
     Mouse.isEditModeActive = false;
     Camera.held = false;
     Camera.setFree(this._savedFree, { smoothing: this._savedFreeSmoothing });
+    Time.held = false;
     Time.scale = this._savedTimeScale;
     this.debugUI.tools._syncDebugToolFlag();
     this._changed();
@@ -1288,6 +1290,7 @@ export class EditMode {
 
   _hold() {
     Time.scale = 0;
+    Time.held = true;
     // The view stays where it is: a scene that only centers its camera has no follow target, and setFree would take
     // the camera's top-left for one (the world's corner).
     const wasFree = Camera._free;
