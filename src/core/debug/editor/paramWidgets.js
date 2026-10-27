@@ -23,6 +23,19 @@ const FIELD_STYLE =
   'font-size:11px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;' +
   'border:1px solid rgba(255,255,255,0.3);border-radius:3px;min-width:0;box-sizing:border-box';
 const HINT_STYLE = 'font-size:10px;color:#777;white-space:nowrap;overflow:hidden;text-overflow:ellipsis';
+/**
+ * Under 250 px (a narrow dock: 224 px at a 1100 px window) a row stacks: its label and ↺ on a line, its widget under
+ * them at the full width, which squeezed a slider to its thumb beside an 84 px label. A container query, so the rows
+ * follow their own width.
+ */
+const ROWS_CSS =
+  '[data-param-rows]{container-type:inline-size}' +
+  '@container (max-width: 250px){' +
+  '.weed-param-row{grid-template-columns:1fr auto!important}' +
+  '.weed-param-row>[data-part=label]{grid-column:1;grid-row:1}' +
+  '.weed-param-row>[data-part=reset]{grid-column:2;grid-row:1}' +
+  '.weed-param-row>[data-part=widget]{grid-column:1/3;grid-row:2}' +
+  '.weed-param-row>[data-part=hint]{grid-column:1/3!important;grid-row:3}}';
 
 /** A color number as `#rrggbb`. */
 export const toHex = (color) => `#${(color >>> 0).toString(16).padStart(6, '0').slice(-6)}`;
@@ -68,6 +81,10 @@ export function buildParamFields(container, description, config, hooks) {
     container.appendChild(configBox(config, hooks.onConfig));
     return;
   }
+  container.dataset.paramRows = '';
+  const style = document.createElement('style');
+  style.textContent = ROWS_CSS;
+  container.appendChild(style);
   for (let k = 0; k < description.keys.length; k++) {
     const key = description.keys[k];
     const kind = description.kinds[k];
@@ -81,6 +98,7 @@ export function buildParamFields(container, description, config, hooks) {
 
 function paramRow(key, kind, entry, fallback, value, set, hooks) {
   const row = document.createElement('div');
+  row.className = 'weed-param-row';
   row.style.cssText = 'display:grid;grid-template-columns:84px 1fr auto;gap:4px 6px;align-items:center;margin:3px 0';
   row.dataset.key = key;
 
@@ -88,10 +106,13 @@ function paramRow(key, kind, entry, fallback, value, set, hooks) {
   label.textContent = entry.label || key;
   label.title = entry.tip ? `${key}: ${entry.tip}` : key;
   label.style.cssText = 'font-size:11px;color:#ccc;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
+  label.dataset.part = 'label';
   row.appendChild(label);
 
   const commit = (next) => hooks.onChange(key, next);
-  row.appendChild(widget(kind, entry, value, commit, hooks, key));
+  const field = widget(kind, entry, value, commit, hooks, key);
+  field.dataset.part = 'widget';
+  row.appendChild(field);
 
   const reset = document.createElement('button');
   reset.type = 'button';
@@ -100,11 +121,13 @@ function paramRow(key, kind, entry, fallback, value, set, hooks) {
   reset.title = `Back to the default, ${defaultText(kind, entry, fallback)}`;
   reset.style.visibility = set ? 'visible' : 'hidden';
   reset.onclick = () => commit(kind === KIND_ENTITY || kind === KIND_POINTS ? null : fallback);
+  reset.dataset.part = 'reset';
   row.appendChild(reset);
 
   const hint = document.createElement('span');
   hint.style.cssText = `${HINT_STYLE};grid-column:2 / 4`;
   hint.textContent = `default ${defaultText(kind, entry, fallback)}`;
+  hint.dataset.part = 'hint';
   row.appendChild(hint);
   return row;
 }
