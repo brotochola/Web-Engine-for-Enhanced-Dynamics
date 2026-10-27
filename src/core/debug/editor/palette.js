@@ -3,9 +3,10 @@
 // and a + that places new ones (each click on the view puts one there, until Esc or + again). A class dragged from
 // here onto the view is placed where it drops (dropPlace.js). With more than 8 classes, a field above them filters
 // them by name. Above the classes, the level row (ED-38): the scene files of the running one's folder, Open, New and
-// Save As; then the scene's layers with hide and lock (editorLayers.js, ED-24), and its Tiled tilemaps with a button
-// that loads one again in place (tilemapList.js, ED-26). Shown while edit mode is on. In the editor page (D9) it is
-// the Assets dock, shown whether or not edit mode is on: its + and a drop on the view enter edit mode.
+// Save As; then the scene's layers with hide and lock, the engine's own folded under a line of their own
+// (editorLayers.js, ED-24, ED-67), and its Tiled tilemaps with a button that loads one again in place (tilemapList.js,
+// ED-26). Shown while edit mode is on. In the editor page (D9) it is the Assets dock, shown whether or not edit mode
+// is on: its + and a drop on the view enter edit mode.
 //
 // Cost: nothing per frame. The class rows are made once per scene and kept: a refresh (a change to the document, a
 // swap, the file list, what is being placed) writes only the counts and marks that changed, and draws again only the
@@ -50,7 +51,8 @@ const ROW_STYLE =
 const PALETTE_CSS =
   '.weed-palette-class:hover{background:rgba(255,255,255,0.06)}' +
   '.weed-palette-class:active{cursor:grabbing}' +
-  '.weed-palette-class button{flex:none;cursor:pointer}';
+  '.weed-palette-class button{flex:none;cursor:pointer}' +
+  '.weed-layers-fold:hover{color:#ddd}';
 
 /** The scene's classes the palette offers, in the order it registered them. */
 export function placeableClasses(scene) {

@@ -15,7 +15,7 @@ import { Time } from '../../src/core/timeScale.js';
 import { Camera } from '../../src/core/camera.js';
 import { Mouse } from '../../src/core/mouse.js';
 import { EditMode } from '../../src/core/debug/editor/editMode.js';
-import { EditorLayers, entityLayerMask, editorLayersOf, lockable } from '../../src/core/debug/editor/editorLayers.js';
+import { EditorLayers, entityLayerMask, editorLayersOf, lockable, isEngineLayer } from '../../src/core/debug/editor/editorLayers.js';
 import { EntityTree } from '../../src/core/debug/editor/entityTree.js';
 import { Palette } from '../../src/core/debug/editor/palette.js';
 
@@ -144,6 +144,23 @@ test('the layers offered: the scene’s own and the engine’s it uses, highest 
       ['props', 'entities'],
       'scenery, lighting, shadows and decals hold no entities',
     );
+  } finally {
+    Layer.reset();
+  }
+});
+
+test('the engine’s own layers are the pipeline’s it makes; the scene’s and `entities` are the game’s (ED-67)', () => {
+  initLayers();
+  try {
+    const lit = { config: { lighting: { enabled: true, shadowsEnabled: true }, particle: { decals: true } } };
+    const layers = editorLayersOf(lit);
+    assert.deepEqual(layers.filter(isEngineLayer).map((l) => l.name), ['lightGlows', 'lighting', 'castedShadows', 'decals']);
+    assert.deepEqual(
+      layers.filter((l) => !isEngineLayer(l)).map((l) => l.name),
+      ['props', 'entities', 'ground'],
+      'what config.layers declares, and where entities draw by default',
+    );
+    assert.equal(Layer.get('entities').builtIn, true, 'made by the engine, but the game’s');
   } finally {
     Layer.reset();
   }
@@ -298,11 +315,15 @@ class El {
     this.className = '';
     this.clientHeight = 400;
     this.scrollTop = 0;
+    this.attributes = {};
     this._text = '';
   }
   appendChild(node) {
     this.children.push(node);
     return node;
+  }
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
   }
   append(...nodes) {
     for (const node of nodes) this.appendChild(node);
@@ -381,6 +402,87 @@ test('the palette’s Layers section: a row per layer with hide and lock, built 
     palette.refresh();
     assert.notEqual(palette._layers.children[1], built, 'another scene: built again');
     assert.equal([...palette._layers.children[1].all()].find((el) => el.dataset.switch === 'lock').checked, false);
+  } finally {
+    done(editMode);
+    Layer.reset();
+  }
+});
+
+test('the game’s layers first, the engine’s under a folded line a click opens; hide and lock still work (ED-67)', () => {
+  initLayers();
+  const { editMode, scene } = makeEditor();
+  scene.config = { lighting: { enabled: true, shadowsEnabled: true }, particle: { decals: true } };
+  globalThis.document = { createElement: (tag) => new El(tag), addEventListener() {}, removeEventListener() {} };
+  try {
+    const palette = new Palette(editMode);
+    palette._files = new El('div');
+    palette._layers = new El('div');
+    palette._list = new El('div');
+    editMode.palette = palette;
+    palette.refresh();
+    const box = palette._layers;
+    assert.deepEqual(
+      box.children.slice(1).map((el) => el.dataset.layer ?? (el.dataset.engineLayers !== undefined ? 'FOLD' : '?')),
+      ['props', 'entities', 'ground', 'FOLD', 'lightGlows', 'lighting', 'castedShadows', 'decals'],
+      'highest first in each part',
+    );
+    const fold = box.children.find((el) => el.dataset.engineLayers !== undefined);
+    const engineRows = box.children.filter((el) => el.dataset.engine !== undefined);
+    const gameRows = box.children.slice(1, 4);
+    assert.equal(fold.tagName, 'BUTTON');
+    assert.equal(fold.textContent, '▸ Engine layers · 4');
+    assert.equal(fold.attributes['aria-expanded'], 'false');
+    assert.match(fold.title, /click to show or fold them/);
+    assert.deepEqual(engineRows.map((row) => row.style.display), ['none', 'none', 'none', 'none'], 'folded');
+    assert.ok(gameRows.every((row) => row.style.display === undefined), 'the game’s rows as they were');
+
+    fold.onclick();
+    assert.deepEqual(engineRows.map((row) => row.style.display), ['grid', 'grid', 'grid', 'grid']);
+    assert.equal(fold.textContent, '▾ Engine layers · 4');
+    assert.equal(fold.attributes['aria-expanded'], 'true');
+
+    // Hide works on the engine's rows; they hold no entities, so no lock.
+    const lighting = engineRows.find((row) => row.dataset.layer === 'lighting');
+    const switches = [...lighting.all()].filter((el) => el.type === 'checkbox');
+    assert.deepEqual(switches.map((el) => el.dataset.switch), ['hide']);
+    switches[0].checked = true;
+    switches[0].onchange();
+    assert.equal(editMode.layers.isHidden(Layer.getId('lighting')), true);
+    assert.equal(fold.textContent, '▾ Engine layers · 4');
+    fold.onclick();
+    assert.equal(fold.textContent, '▸ Engine layers · 4 · 1 hidden', 'folded, it says one of them is hidden');
+    editMode.layers.setHidden(Layer.getId('lighting'), false);
+    assert.equal(fold.textContent, '▸ Engine layers · 4');
+
+    // A game layer's lock, as before.
+    const lock = [...gameRows[0].all()].find((el) => el.dataset.switch === 'lock');
+    lock.checked = true;
+    lock.onchange();
+    assert.equal(editMode.layers.isLocked(Layer.getId('props')), true);
+
+    palette.refresh();
+    assert.equal(box.children.find((el) => el.dataset.engineLayers !== undefined), fold, 'a refresh keeps the rows');
+    fold.onclick();
+    editMode.layers.reset(); // another scene: its rows anew, the fold as it was left
+    palette.refresh();
+    const again = palette._layers.children.find((el) => el.dataset.engineLayers !== undefined);
+    assert.notEqual(again, fold);
+    assert.equal(again.textContent, '▾ Engine layers · 4');
+  } finally {
+    done(editMode);
+    Layer.reset();
+  }
+});
+
+test('a scene that uses none of the engine’s layers has no fold line', () => {
+  initLayers();
+  const { editMode } = makeEditor();
+  globalThis.document = { createElement: (tag) => new El(tag), addEventListener() {}, removeEventListener() {} };
+  try {
+    const box = new El('div');
+    editMode.layers.fill(box);
+    assert.equal(box.children.some((el) => el.dataset.engineLayers !== undefined), false);
+    assert.deepEqual(box.children.slice(1).map((el) => el.dataset.layer), ['props', 'entities', 'ground']);
   } finally {
     done(editMode);
     Layer.reset();

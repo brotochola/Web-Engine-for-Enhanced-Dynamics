@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * The editor's Assets dock in Chromium (VISUAL_EDITOR_PLAN.md ED-65, ED-66), in the editor page on the dev server's
- * short route (/editor?scene=…). Each check prints PASS or FAIL with what it read; the exit code is the number of
- * failures. Nothing is saved: the checks read the dock and the document in memory, and undo what they place.
+ * The editor's Assets dock in Chromium (VISUAL_EDITOR_PLAN.md ED-65, ED-66, ED-67), in the editor page on the dev
+ * server's short route (/editor?scene=…). Each check prints PASS or FAIL with what it read; the exit code is the number
+ * of failures. Nothing is saved: the checks read the dock and the document in memory, and undo what they place.
  *
  *   littlecity pictures      (ED-65) every class row has a 32 px picture with pixels drawn; the houses, trees, people
  *                            and cars show what a live one of them shows (its sprite from the atlas)
@@ -10,14 +10,19 @@
  *                            own drag and drop, from the editor page into the game's frame): edit mode is entered, one
  *                            more tree is placed where it was dropped (the click's mapping of that point) and
  *                            selected, as one undo; Ctrl+Z takes it out
+ *   littlecity layers        (ED-67) the game's layers first (entities, ground), then a folded "Engine layers" line
+ *                            over decals; a click unfolds it, its hide hides the layer while editing, and folded again
+ *                            the line says one is hidden
  *   platformergame pictures  (ED-65) the platforms and the goal are their tinted bars (live), the player (an Adobe
  *                            Animate character, no sprite) its initials
  *   platformergame drag      (ED-66) in edit mode on a 16 px grid, a Platform dragged onto the view: while it is over
  *                            the view the overlay draws its landing cross on the grid; dropped, one more platform
  *                            there, selected, as one undo; Ctrl+Z takes it out; + then a click still places a Goal
+ *   platformergame layers    (ED-67) bloom (the platformer's own) and entities first, lightGlows, lighting and
+ *                            castedShadows folded under the line; bloom's lock still locks
  *   game page drag           (ED-66) the platformer's own page (no editor page), Shift+E: a Goal dragged from the
  *                            floating palette onto the canvas is placed at the drop point; Ctrl+Z takes it out
- *   predator filter         (ED-65) its 18 classes get a filter field; "drop" leaves the Drop classes, Esc clears it
+ *   predator filter          (ED-65) its 18 classes get a filter field; "drop" leaves the Drop classes, Esc clears it
  *
  * Screenshots go to D:\tmp\claude\editor-assets\ (never the repository).
  *
@@ -186,6 +191,27 @@ async function dragRowTo(page, className, to, { hold = 0 } = {}) {
   return during;
 }
 
+/** The dock's Layers section: its rows and the engine's fold line in their order, and which rows show. */
+const readLayers = (page) =>
+  page.evaluate(() => {
+    const dock = document.querySelector('[data-slot=assets]');
+    const rows = [...dock.querySelectorAll('[data-layer]')].map((row) => ({
+      name: row.dataset.layer,
+      engine: row.dataset.engine !== undefined,
+      shown: row.offsetParent !== null,
+    }));
+    const order = [...dock.querySelectorAll('[data-layer], [data-engine-layers]')].map((el) => el.dataset.layer ?? 'FOLD');
+    const fold = dock.querySelector('[data-engine-layers]');
+    return { rows, order, fold: fold ? fold.textContent : null };
+  });
+
+/** Whether a layer is drawn now, read in the game page. */
+const layerVisible = (page, name) =>
+  gameFrame(page).evaluate(async (name) => {
+    const { default: WEED } = await import('/src/index.js');
+    return WEED.Layer.get(name).visible;
+  }, name);
+
 /** Ctrl+Z typed in the editor page (the scene list has the focus). */
 async function undo(page) {
   await page.locator('[data-slot=tree]').click({ position: { x: 5, y: 5 } });
@@ -250,6 +276,35 @@ async function littleCity(browser, origin, errors) {
     `playing ${!before.active} → editing ${after.active}; trees ${before.records} → ${after.records} → after Ctrl+Z ` +
       `${undone.records}; ${after.last?.name} at ${after.last?.x}, ${after.last?.y} for a drop at ${aimed.x.toFixed(1)}, ` +
       `${aimed.y.toFixed(1)} (grid ${after.snap}); selected ${after.selection}; undo "${after.undo}"`,
+  );
+
+  // ---- the engine's layers apart (ED-67), while editing ----
+  const fold = page.locator('[data-slot=assets] [data-engine-layers]');
+  const folded = await readLayers(page);
+  await fold.click();
+  const open = await readLayers(page);
+  const hide = page.locator('[data-slot=assets] [data-layer="decals"] input[data-switch=hide]');
+  await hide.check();
+  const decalsHidden = (await layerVisible(page, 'decals')) === false;
+  await fold.click();
+  const refolded = await readLayers(page);
+  await fold.scrollIntoViewIfNeeded();
+  await page.locator('[data-slot=assets]').screenshot({ path: `${SHOTS}/littlecity-layers.png` });
+  await fold.click();
+  await hide.uncheck();
+  const decalsBack = (await layerVisible(page, 'decals')) === true;
+  check(
+    'littlecity layers',
+    folded.order.join(' ') === 'entities ground FOLD decals' &&
+      folded.rows.every((r) => r.shown === !r.engine) &&
+      folded.fold === '▸ Engine layers · 1' &&
+      open.rows.every((r) => r.shown) &&
+      decalsHidden &&
+      refolded.fold === '▸ Engine layers · 1 · 1 hidden' &&
+      decalsBack,
+    `order ${folded.order.join(' ')}; "${folded.fold}", shown: ${folded.rows.filter((r) => r.shown).map((r) => r.name).join(', ')}; ` +
+      `open: all shown ${open.rows.every((r) => r.shown)}; decals hidden ${decalsHidden}, folded again "${refolded.fold}"; ` +
+      `unchecked: shown ${decalsBack}`,
   );
   await page.close();
 }
@@ -320,6 +375,24 @@ async function platformer(browser, origin, errors) {
       `${after.records} → after Ctrl+Z ${undone.records}; ${after.last?.name} at ${after.last?.x}, ${after.last?.y} for a ` +
       `drop at ${aimed.x.toFixed(1)}, ${aimed.y.toFixed(1)} (grid 16); selected ${after.selection}; undo "${after.undo}"; ` +
       `+ and a click: goals ${goalBefore.records} → ${goalAfter.records} → ${goalUndone.records}`,
+  );
+
+  // ---- the engine's layers apart (ED-67): bloom is the platformer's own ----
+  const layers = await readLayers(page);
+  const lock = page.locator('[data-slot=assets] [data-layer="bloom"] input[data-switch=lock]');
+  await lock.check();
+  const locked = await gameFrame(page).evaluate(async () => {
+    const { default: WEED } = await import('/src/index.js');
+    return window.game.debugUI.editMode.layers.isLocked(WEED.Layer.getId('bloom'));
+  });
+  await lock.uncheck();
+  check(
+    'platformergame layers',
+    layers.order.join(' ') === 'bloom entities FOLD lightGlows lighting castedShadows' &&
+      layers.rows.every((r) => r.shown === !r.engine) &&
+      layers.fold === '▸ Engine layers · 3' &&
+      locked,
+    `order ${layers.order.join(' ')}; "${layers.fold}"; bloom's lock works ${locked}`,
   );
   await page.close();
 }
