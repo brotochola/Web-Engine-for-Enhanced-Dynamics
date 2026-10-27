@@ -29,7 +29,8 @@ export const SHORTCUTS = Object.freeze([
       ['Drag', 'move, on the grid (Alt: off it)'],
       ['Arrows', 'nudge one grid step (Shift: ten)'],
       ['G · Shift+G', 'the snap step · the grid’s lines'],
-      ['L', 'the scene unlit while editing, or lit as the game is'],
+      ['Drag the ring above it', 'turn it (Shift: 15° steps)'],
+      ['Drag an edge or corner', 'resize: its width and height, or its scale when its class sizes it in code (Shift: the aspect kept; Alt: about the center)'],
       ['Ctrl+D', 'duplicate'],
       ['Drag a class from Assets', 'place one where it drops (or + then a click)'],
       ['Ctrl+C · Ctrl+X · Ctrl+V', 'copy · cut · paste where the pointer is'],
@@ -45,6 +46,7 @@ export const SHORTCUTS = Object.freeze([
       ['Wheel', 'zoom about the pointer'],
       ['Right or middle drag · Space+drag', 'pan'],
       ['W A S D', 'pan'],
+      ['L', 'the scene unlit while editing, or lit as the game is'],
     ],
   ],
   [
