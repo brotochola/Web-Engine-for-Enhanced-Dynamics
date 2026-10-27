@@ -3,8 +3,8 @@
  *   dist/    weed.editor.min.js and weed.editor.esm.min.js (webpack.editor.config.js: the editor's modules, the
  *            engine's own read from WEED_EDITOR_KIT)
  *   shell/   the editor page (src/core/debug/editor/shell/), served by a game's dev server at /__weed/editor/
- *   server/  the dev server's routes for the editor: saving and listing scene files (server/devRoutes.js) and the
- *            editor page (server/editorPage.js), for a game's scripts/dev.mjs
+ *   server/  the dev server's routes for the editor: saving and listing scene files and Export (server/devRoutes.js,
+ *            exportGame.js, exportRuntime.js) and the editor page (server/editorPage.js), for a game's scripts/dev.mjs
  * These are copies made for publishing, not tracked (packages/editor/.gitignore).
  *
  *   node scripts/buildEditor.js
@@ -33,7 +33,8 @@ export function buildEditor({ log = console.log } = {}) {
   execSync(`node "${webpackCli}" --config webpack.editor.config.js`, { cwd: rootDir, stdio: 'inherit' });
   copyFolder(path.join(rootDir, 'src/core/debug/editor/shell'), path.join(packageDir, 'shell'));
   const server = path.join(packageDir, 'server');
-  copyFolder(path.join(rootDir, 'server'), server, (name) => name === 'devRoutes.js' || name === 'editorPage.js');
+  const SERVER_FILES = new Set(['devRoutes.js', 'editorPage.js', 'exportGame.js', 'exportRuntime.js']);
+  copyFolder(path.join(rootDir, 'server'), server, (name) => SERVER_FILES.has(name));
   fs.writeFileSync(
     path.join(server, 'index.js'),
     [

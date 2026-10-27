@@ -180,14 +180,16 @@ test('with @weed.js/editor installed the dev server gives it its routes; --host 
   fs.writeFileSync(
     path.join(editorDir, 'server/index.js'),
     [
-      "export function handleDevRoute(req, res) { if (!req.url.startsWith('/__weed/file')) return false; res.end('save route'); return true; }",
+      "export function handleDevRoute(req, res, root, headers, options) { if (!req.url.startsWith('/__weed/file')) return false; res.end('save route ' + JSON.stringify(options)); return true; }",
       "export function serveEditorPage(req, res) { if (!req.url.startsWith('/__weed/editor/')) return false; res.end('editor page'); return true; }",
     ].join('\n'),
   );
   const server = await startServer(dir, ['--host']);
   try {
     assert.equal((await get(server.port, '/__weed/editor/?game=/index.html')).body, 'editor page');
-    assert.equal((await get(server.port, '/__weed/file?path=/levels/a.scene.json')).body, 'save route');
+    const routed = (await get(server.port, '/__weed/file?path=/levels/a.scene.json')).body;
+    assert.ok(routed.startsWith('save route '), routed);
+    assert.equal(path.resolve(JSON.parse(routed.slice('save route '.length)).export.outDir), path.resolve(dir, 'dist'), 'Export writes dist/');
     assert.equal((await get(server.port, '/')).status, 200, 'the project folder, not one named --host');
   } finally {
     await server.stop();

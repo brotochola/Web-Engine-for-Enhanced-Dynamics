@@ -14,8 +14,9 @@ const port = Number(process.env.PORT) || 8000;
 const host = process.env.WEED_HOST || (args.includes('--host') ? '0.0.0.0' : '127.0.0.1');
 const hotReload = !folder;
 
-// The editor (@weed.js/editor, a devDependency): it saves and lists the levels' scene files, and its page is at
-// /__weed/editor/. Not with npm run preview; without the package the game runs as before.
+// The editor (@weed.js/editor, a devDependency): it saves and lists the levels' scene files, its page is at
+// /__weed/editor/, and its Export builds the game, minified, into dist/ (with esbuild). Not with npm run preview;
+// without the package the game runs as before.
 const editor = hotReload ? await import('@weed.js/editor/server').catch(() => null) : null;
 
 const HEADERS = {
@@ -91,7 +92,8 @@ if (hotReload) {
 const server = http.createServer((req, res) => {
   const { pathname } = new URL(req.url, 'http://localhost');
 
-  if (editor && (editor.handleDevRoute(req, res, root, HEADERS) || editor.serveEditorPage(req, res, { headers: HEADERS }))) {
+  const routes = { export: { outDir: path.join(root, 'dist') } };
+  if (editor && (editor.handleDevRoute(req, res, root, HEADERS, routes) || editor.serveEditorPage(req, res, { headers: HEADERS }))) {
     return;
   }
 

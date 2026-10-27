@@ -41,3 +41,4 @@ fs.writeFileSync(
 );
 
 console.log(`Built ${OUT}/. Try it with npm run preview, then upload ${OUT}/ to your host.`);
+console.log("For a minified build with a baked atlas, use the editor's Export instead (npm run dev, then Export).");

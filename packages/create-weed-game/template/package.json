@@ -15,6 +15,7 @@
     "node": ">=20"
   },
   "devDependencies": {
-    "@weed.js/editor": "^0.13.0"
+    "@weed.js/editor": "^0.13.0",
+    "esbuild": "^0.27.3"
   }
 }
