@@ -992,11 +992,18 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   Examples must run: add them to `demos/tests/` like `firstGameGuide.test.js`. Link it
   from `docs/guide/README.md` and `COMING_FROM.md`, mapping Unity's `[SerializeField]`
   and Godot's `@export` to `spawnParams`, and scenes to scenes.
-- [ ] **ED-5 (optional)** Move the `littleCity` houses and Predator's
+- [x] **ED-5 (optional)** Move the `littleCity` houses and Predator's
   `trees_and_rocks.json` to scene files. The 1,764 trees are also the size check for
   ED-2's loader; time it with ED-39's script. **Deferred 2026-10-26** to the sitting that
   runs the paused measurements: its point is that timing, and Predator is the gameplay
   gate, whose load path should change in the same sitting that measures it.
+  - Done 2026-10-26 (1707dcef, R-0650): `predatorScene/levels/map.scene.json` (1,939
+    records) and `littleCity/levels/city.scene.json` (1,308), named by `defaultSceneFile`;
+    CityTree declares its radius. Every map entity keeps its pool index and position.
+    Predator's trees and rocks draw their random sizes in another order: they now spawn
+    before the soldiers. The loader turns the 1,939 records into spawns in 2.9 ms; the
+    flush is the cost, as before. Found during implementation, item 13 (littleCity's nav
+    grid).
 
 ### Stage 2: edit in the game page (milestone M1)
 
@@ -1395,6 +1402,17 @@ server still writes nothing. What changed for this plan:
     picker scans everything). The editor scans every active entity on a click with exact
     hit tests (`editor/pick.js`: one pass, no allocation). The debug inspector tool still
     picks through the grid; it could use `pickEntityAt` too.
+13. **A load's spawns are not in `getAllActive()` until the flush** (ED-5). `preload`,
+    `create` and `createNewGame` spawn through the create-time batch, which logic0 takes at
+    `_flushCreateSpawns`, after them. littleCity built its nav grid in `preload` from
+    `CityHouse.getAllActive()` and `CityTree.getAllActive()`: a probe in Chromium reads 0
+    blocked cells of 21,632 after a load, and 2,234 once the grid is built again with the
+    map live. So its flowfields ignore houses and trees, before ED-5 and after (the build
+    moved to `create`, where it is just as early). Predator rebuilds its grid every 300
+    frames, the first of them included, so it is not affected. Not fixed here: it changes
+    littleCity's workload as a benchmark scene. The engine has no hook after the flush for
+    a new game: a scene-ready hook (or `getAllActive` counting the batch) would remove the
+    trap. Belongs to the API work, with the guide's lifecycle section.
 
 **New items:**
 
