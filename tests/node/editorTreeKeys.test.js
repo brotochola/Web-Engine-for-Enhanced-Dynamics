@@ -1,6 +1,7 @@
-// The scene list's DOM in the editor page (VISUAL_EDITOR_PLAN.md ED-62, ED-63): its filter field (typing keeps the
-// matching rows, the count shows, Esc clears it, Ctrl+F in the list puts the focus there); its keys (↑ ↓ along the rows
-// shown, Enter and a double click frame, F2 renames in a field over the row, Del and Ctrl+D) and its clicks.
+// The scene list's DOM in the editor page (VISUAL_EDITOR_PLAN.md ED-62, ED-63, ED-64): its filter field (typing keeps
+// the matching rows, the count shows, Esc clears it, Ctrl+F in the list puts the focus there); its keys (↑ ↓ along the
+// rows shown, Enter and a double click frame, F2 renames in a field over the row, Del and Ctrl+D) and its clicks; its
+// context menu (the items per row, where it opens, what closes it, what each item does).
 //
 // The list sits in a fake document whose events go the way a browser's do (capture, target, bubble, stopPropagation),
 // with the editor page's own key handling on its window, as editorShell.js has it: a keydown the list does not take
@@ -13,6 +14,15 @@ import { Transform } from '../../src/components/transform.js';
 import { Messages } from '../../src/core/messages.js';
 import { EntityTree, ROW_HEIGHT } from '../../src/core/debug/editor/entityTree.js';
 import { HostedEditor } from '../../src/core/debug/editor/editorHost.js';
+import {
+  menuFor,
+  placeMenu,
+  ITEM_SEPARATOR,
+  TARGET_GROUP,
+  TARGET_PLACED,
+  TARGET_RUNTIME,
+  TARGET_NOT_LIVE,
+} from '../../src/core/debug/editor/treeMenu.js';
 
 // ---- a fake document: what the list uses, with a browser's event order ----
 
@@ -84,8 +94,24 @@ class FakeElement extends FakeTarget {
     this.textContent = '';
     this.scrollTop = 0;
     this.clientHeight = 200;
-    this.tabIndex = FOCUSABLE.has(this.tagName) ? 0 : -1;
+    this._tabIndex = FOCUSABLE.has(this.tagName) ? 0 : -1;
+    /** A browser focuses by script a field, or any element given a tabIndex (-1 included). */
+    this._focusable = FOCUSABLE.has(this.tagName);
     this.rect = { left: 0, top: 0, width: 160, height: 100 };
+    this.attributes = {};
+  }
+  get tabIndex() {
+    return this._tabIndex;
+  }
+  set tabIndex(value) {
+    this._tabIndex = value;
+    this._focusable = true;
+  }
+  setAttribute(name, value) {
+    this.attributes[name] = String(value);
+  }
+  getAttribute(name) {
+    return name in this.attributes ? this.attributes[name] : null;
   }
   appendChild(node) {
     if (node.parentNode) node.parentNode.removeChild(node);
@@ -122,7 +148,7 @@ class FakeElement extends FakeTarget {
     return this.ownerDocument.body.contains(this);
   }
   focus() {
-    if (this.tabIndex < 0 || !this.isConnected || this.style.display === 'none') return;
+    if (!this._focusable || !this.isConnected || this.style.display === 'none') return;
     this.ownerDocument._moveFocus(this);
   }
   blur() {
@@ -180,7 +206,7 @@ function dispatch(target, type, init = {}, bubbles = true) {
   const path = [];
   for (let at = target; at instanceof FakeElement; at = at.parentNode) path.push(at);
   const doc = target.ownerDocument;
-  if (path.at(-1) === doc.body) path.push(doc, doc.defaultView);
+  if (doc && path.at(-1) === doc.body) path.push(doc, doc.defaultView);
   for (let k = path.length - 1; k > 0 && !e.stopped; k--) path[k]._fire(e, true);
   if (!e.stopped) target._fire(e, null);
   if (bubbles) for (let k = 1; k < path.length && !e.stopped; k++) path[k]._fire(e, false);
@@ -702,6 +728,191 @@ test('a click selects one and lets the others go; Shift or Ctrl+click adds a pla
     assert.equal(selection.name, 'Platform6');
     assert.equal(editMode.multi.count, 0, 'a plain click: that one alone');
     assert.deepEqual(selected(), ['Platform6  #7']);
+  } finally {
+    done();
+  }
+});
+
+// ---- the context menu (ED-64) ----
+
+const labelsOf = (menu) => menu.items.map((it) => (it.id === ITEM_SEPARATOR ? '—' : it.label));
+
+/** A right click on list row `r`, at a point of the viewport. */
+const rightClick = (tree, r, x = 120, y = 90) => dispatch(rowEl(tree, r), 'contextmenu', { button: 2, clientX: x, clientY: y });
+
+/** Pick the menu's item labelled `label`, by a click. */
+function pick(tree, label) {
+  const el = [...tree._menu.el.all()].find((node) => node.dataset.item !== undefined && node.children[0].textContent === label);
+  assert.ok(el, `an item "${label}" in ${JSON.stringify(tree._menu.labels)}`);
+  dispatch(el, 'click');
+}
+
+test('the menu’s items per row: a placed entity’s, several selected, a runtime one’s (read-only), a class’s; Copy when the editor has it', () => {
+  const placed = menuFor({ kind: TARGET_PLACED, className: 'Platform', name: 'Platform1', index: 2, selected: 1, placed: 6, matching: 6 });
+  assert.equal(placed.caption, 'Platform1  ·  Platform');
+  assert.deepEqual(labelsOf(placed), ['Frame', 'Rename…', 'Duplicate', 'Delete', '—', 'Select all Platform (6)']);
+  assert.deepEqual(placed.items.filter((it) => it.hint !== '').map((it) => it.hint), ['Enter', 'F2', 'Ctrl+D', 'Del'], 'each with its key');
+  assert.ok(placed.items.every((it) => it.id === ITEM_SEPARATOR || it.title.length > 20), 'each with a hover title');
+
+  const several = menuFor({ kind: TARGET_PLACED, className: 'Platform', name: 'Platform1', selected: 3, placed: 6, matching: 6, canCopy: true });
+  assert.equal(several.caption, 'Platform1 and 2 more selected');
+  assert.deepEqual(labelsOf(several), ['Frame', 'Rename…', 'Duplicate 3', 'Copy 3', 'Delete 3', '—', 'Select all Platform (6)']);
+
+  const runtime = menuFor({ kind: TARGET_RUNTIME, className: 'Coin', index: 19, placed: 1, matching: 1 });
+  assert.equal(runtime.caption, 'Coin #19  ·  spawned by code, read-only');
+  assert.deepEqual(labelsOf(runtime), ['Frame', '—', 'Select all Coin (1)'], 'read-only: Frame and Select all');
+  const player = menuFor({ kind: TARGET_RUNTIME, className: 'Player', index: 0, placed: 0, matching: 0 });
+  assert.equal(player.items.at(-1).disabled, true);
+  assert.match(player.items.at(-1).title, /No Player is placed by the scene file/);
+
+  const filtered = menuFor({ kind: TARGET_GROUP, className: 'Platform', placed: 6, matching: 2, runtime: 0, filtered: true });
+  assert.deepEqual(labelsOf(filtered), ['Select the 2 matching Platform'], 'a class’s row; under a filter, what it keeps');
+  assert.equal(menuFor({ kind: TARGET_GROUP, className: 'Coin', placed: 1, matching: 1, runtime: 2 }).caption, 'Coin  ·  1 placed, 2 runtime');
+  const notLive = menuFor({ kind: TARGET_NOT_LIVE, className: 'Platform', name: 'Platform4', placed: 6, matching: 6 });
+  assert.deepEqual(labelsOf(notLive), ['Frame', '—', 'Select all Platform (6)']);
+  assert.equal(notLive.items[0].disabled, true, 'nothing live to frame');
+});
+
+test('the menu stays in the viewport: left of the point or above it when it does not fit, never past an edge', () => {
+  assert.deepEqual(placeMenu(100, 100, 200, 150, 1000, 700), [100, 100]);
+  assert.deepEqual(placeMenu(950, 100, 200, 150, 1000, 700), [796, 100]);
+  assert.deepEqual(placeMenu(100, 650, 200, 150, 1000, 700), [100, 500]);
+  assert.deepEqual(placeMenu(100, 100, 200, 800, 1000, 700), [100, 4], 'taller than the view: from its top');
+  assert.deepEqual(placeMenu(-20, -20, 200, 150, 1000, 700), [4, 4]);
+});
+
+test('a right click opens the row’s menu in the list’s document, its entity selected first; Esc closes it, back to the list; its keys stop at it', () => {
+  const { doc, tree, selection, log } = makeEditorPage();
+  try {
+    click(tree, 1);
+    const e = rightClick(tree, 3);
+    assert.equal(e.defaultPrevented, true, 'not the browser’s menu');
+    const menu = tree._menu;
+    const el = menu.el;
+    assert.equal(el.parentNode, doc.body, 'in the list’s document, over everything');
+    assert.equal(el.getAttribute('role'), 'menu');
+    assert.equal(selection.name, 'Platform2', 'the row’s entity selected first');
+    assert.deepEqual(menu.labels, ['Frame', 'Rename…', 'Duplicate', 'Delete', '—', 'Select all Platform (6)']);
+    assert.deepEqual([el.style.left, el.style.top], ['120px', '90px'], 'at the pointer');
+    assert.equal(doc.activeElement, el);
+    const down = press(doc, 'ArrowDown');
+    assert.equal(down.stopped, true);
+    assert.equal(el.children[1].style.background, 'rgba(74,222,128,0.18)', 'Frame active');
+    press(doc, 'Escape');
+    assert.equal(menu.isOpen, false);
+    assert.equal(doc.body.contains(el), false, 'taken out of the document');
+    assert.equal(doc.activeElement, tree._list);
+    assert.equal(doc.listening('pointerdown') + doc.defaultView.listening('blur'), 0, 'its listeners went with it');
+    assert.deepEqual(editorKeys(log), [], '↓ and Esc did not reach the editor (its Esc lets go of the selection)');
+  } finally {
+    done();
+  }
+});
+
+test('a click elsewhere, the window losing the focus, the list scrolling or the selection moving closes the menu; a click in it does not', () => {
+  const { doc, tree, editMode } = makeEditorPage();
+  try {
+    click(tree, 1);
+    rightClick(tree, 2);
+    dispatch(tree._menu.el.children[0], 'pointerdown');
+    assert.equal(tree._menu.isOpen, true, 'a press on its caption');
+    dispatch(doc.body, 'pointerdown');
+    assert.equal(tree._menu.isOpen, false, 'a press elsewhere');
+    rightClick(tree, 2);
+    dispatch(doc.defaultView, 'blur', {}, false);
+    assert.equal(tree._menu.isOpen, false, 'a click in the game’s frame (the window loses the focus)');
+    rightClick(tree, 2);
+    tree._list.scrollTop = 40;
+    dispatch(tree._list, 'scroll', {}, false);
+    assert.equal(tree._menu.isOpen, false, 'the list scrolled');
+    rightClick(tree, 2);
+    editMode.selectFromList(19, false);
+    assert.equal(tree._menu.isOpen, false, 'the selection moved');
+  } finally {
+    done();
+  }
+});
+
+test('the items act on the selection: Select all (the row’s first), Rename on one of several, Copy and Delete on all of them', () => {
+  const { doc, tree, editMode, selection, log } = makeEditorPage();
+  try {
+    click(tree, 1);
+    rightClick(tree, 4);
+    pick(tree, 'Select all Platform (6)');
+    assert.deepEqual(log.findLast(([what]) => what === 'select names'), [
+      'select names',
+      ['Platform3', 'Platform1', 'Platform2', 'Platform4', 'Platform5', 'Platform6'],
+    ]);
+    assert.equal(selection.name, 'Platform3', 'the inspector shows the row’s');
+    assert.equal(doc.activeElement, tree._list, 'a pick: back to the list');
+
+    rightClick(tree, 6);
+    assert.equal(editMode.multi.count, 5, 'one of several: they stay selected');
+    assert.deepEqual(tree._menu.labels, ['Frame', 'Rename…', 'Duplicate 6', 'Delete 6', '—', 'Select all Platform (6)']);
+    pick(tree, 'Rename…');
+    assert.equal(selection.name, 'Platform5', 'the row’s entity for the field');
+    assert.equal(editMode.multi.count, 5, 'the others still selected');
+    assert.equal(tree.renaming, true);
+    assert.equal(tree._rename.value, 'Platform5');
+    press(doc, 'Escape');
+
+    editMode.copySelected = () => log.push(['copy', editMode.multi.selectedNames().length]);
+    rightClick(tree, 2);
+    pick(tree, 'Copy 6');
+    assert.deepEqual(log.at(-1), ['copy', 6]);
+    rightClick(tree, 2);
+    pick(tree, 'Delete 6');
+    assert.equal(log.filter(([what]) => what === 'delete').length, 1, 'the editor’s delete, once (it takes all six)');
+    assert.deepEqual(editorKeys(log), []);
+  } finally {
+    done();
+  }
+});
+
+test('a runtime row’s menu: Frame and Select all; the keyboard’s (ContextMenu, Shift+F10) is the selection’s, its first item active', () => {
+  const { doc, tree, editMode, log } = makeEditorPage();
+  try {
+    editMode.selectFromList(19, false);
+    tree._list.focus();
+    const e = dispatch(tree._list, 'contextmenu', { button: 0 });
+    assert.equal(e.defaultPrevented, true);
+    assert.deepEqual(tree._menu.labels, ['Frame', '—', 'Select all Coin (1)']);
+    assert.equal(tree._menu.el.children[1].style.background, 'rgba(74,222,128,0.18)', 'Frame active');
+    log.length = 0;
+    press(doc, 'Enter');
+    assert.deepEqual(log, [['select', 19, true]], 'Frame: the view centered on it (no frameSelection)');
+    const empty = dispatch(tree._spacer, 'contextmenu', { button: 2 });
+    assert.equal(tree._menu.isOpen, false, 'a right click on no row: no menu');
+    assert.equal(empty.defaultPrevented, false, 'the browser’s own there');
+  } finally {
+    done();
+  }
+});
+
+test('the menu is kept in the viewport; an edit from it while the game plays enters edit mode first', () => {
+  const { tree, editMode, log } = makeEditorPage({ editing: false });
+  try {
+    click(tree, 1);
+    rightClick(tree, 2, 990, 690); // the fake menu measures 160 × 100
+    assert.deepEqual([tree._menu.el.style.left, tree._menu.el.style.top], [`${1000 - 4 - 160}px`, `${690 - 100}px`]);
+    pick(tree, 'Duplicate');
+    assert.equal(editMode.active, true);
+    assert.deepEqual(log.filter(([what]) => what === 'enter edit mode' || what === 'duplicate'), [['enter edit mode'], ['duplicate', 'Platform1']]);
+  } finally {
+    done();
+  }
+});
+
+test('the page going (destroy) with the menu open takes it out of the editor page’s document, with its listeners (D9)', () => {
+  const { doc, tree } = makeEditorPage();
+  try {
+    click(tree, 1);
+    rightClick(tree, 2);
+    const el = tree._menu.el;
+    tree.destroy();
+    assert.equal(doc.body.contains(el), false);
+    assert.equal(doc.listening('pointerdown') + doc.defaultView.listening('blur') + doc.defaultView.listening('resize'), 0);
+    assert.equal(tree._list.listening('contextmenu') + tree.el.listening('keydown'), 0);
   } finally {
     done();
   }

@@ -14,6 +14,9 @@
 // + does. The keys the list takes stop at it, so the editor's own keys (which the editor page passes on from its
 // window) do not act on them a second time; ← → and the rest go on to the editor.
 //
+// A right click on a row (ED-64; the ContextMenu key or Shift+F10 for the selection's) opens its menu (treeMenu.js):
+// Frame, Rename, Duplicate, Copy, Delete and Select all of its class; on a runtime entity, Frame and Select all.
+//
 // Only the rows in view are drawn: a spacer as tall as every row, and a few row elements placed over it and reused.
 // Each remembers what it shows, and is written only when that changes. A scene of tens of thousands of entities costs
 // the rows on screen.
@@ -26,6 +29,20 @@
 
 import { Transform } from '../../../components/transform.js';
 import { Messages } from '../../messages.js';
+import {
+  TreeMenu,
+  menuFor,
+  ITEM_FRAME,
+  ITEM_RENAME,
+  ITEM_DUPLICATE,
+  ITEM_COPY,
+  ITEM_DELETE,
+  ITEM_SELECT_ALL,
+  TARGET_GROUP,
+  TARGET_PLACED,
+  TARGET_RUNTIME,
+  TARGET_NOT_LIVE,
+} from './treeMenu.js';
 
 /** Height of a row, px: the view places rows by it. */
 export const ROW_HEIGHT = 20;
@@ -356,9 +373,10 @@ const SEARCH_ICON =
 
 const PLACED_TITLE =
   'Placed by the scene file. Click: select it (Shift or Ctrl: add it to the selection, or take it out); double click: ' +
-  'frame it. With the list focused: ↑ ↓ select, Enter frames, F2 renames, Del deletes, Ctrl+D duplicates';
+  'frame it; right click: more. With the list focused: ↑ ↓ select, Enter frames, F2 renames, Del deletes, Ctrl+D duplicates';
 const RUNTIME_TITLE =
-  'Spawned by code, not by the scene file: read-only. Click: select it; double click: frame it. ↑ ↓ select, Enter frames';
+  'Spawned by code, not by the scene file: read-only. Click: select it; double click: frame it; right click: more. ' +
+  '↑ ↓ select, Enter frames';
 const NOT_LIVE_TITLE = 'Placed by the scene file, but not live: its pool may be full';
 
 // What a row is (RowShown.flags).
@@ -475,8 +493,18 @@ export class EntityTree {
     this._renameName = null;
     this._renameTop = -1;
     this._renameRefused = false;
+    // The context menu (ED-64), and what it was opened on: the row's class, its entity's name (null: runtime, or a
+    // class's row) and index; the list's scroll then (the list scrolling closes it).
+    this._menu = new TreeMenu((id) => this._menuPicked(id));
+    this._menuGroup = null;
+    this._menuName = null;
+    this._menuIndex = -1;
+    this._menuScrollTop = 0;
 
-    this._onScroll = () => this.render();
+    this._onScroll = () => {
+      if (this._menu.isOpen && this._list.scrollTop !== this._menuScrollTop) this._menu.close(false);
+      this.render();
+    };
     this._onClick = (e) => this._clicked(e, false);
     this._onDoubleClick = (e) => this._clicked(e, true);
     this._onKeyDown = (e) => this._keyDown(e);
@@ -489,9 +517,11 @@ export class EntityTree {
     this._onBlur = () => this._setFocused(false);
     this._onRenameBlur = () => this._commitRename(false);
     this._onRenameInput = () => this._markRename(false);
+    this._onContextMenu = (e) => this._contextMenu(e);
     this._list.addEventListener('scroll', this._onScroll);
     this._list.addEventListener('click', this._onClick);
     this._list.addEventListener('dblclick', this._onDoubleClick);
+    this._list.addEventListener('contextmenu', this._onContextMenu);
     this._list.addEventListener('focus', this._onFocus);
     this._list.addEventListener('blur', this._onBlur);
     this.el.addEventListener('keydown', this._onKeyDown);
@@ -510,15 +540,17 @@ export class EntityTree {
   }
 
   detach() {
+    this._menu.close(false);
     this._closeRename(false);
     this._scene = null;
     this.model.clear();
     this.render();
   }
 
-  /** The document changed: its records are listed again at the next update. */
+  /** The document changed: its records are listed again at the next update. A menu open on its rows goes. */
   invalidate() {
     this._documentChanged = true;
+    this._menu.close(false);
   }
 
   /** The debug UI's tick: draw again when the document or a group changed. */
@@ -536,11 +568,12 @@ export class EntityTree {
 
   /**
    * The selection changed: open its group, scroll it into view, mark it. A rename in place of another entity is
-   * left (the old name stays): the selection moved away from it.
+   * left (the old name stays): the selection moved away from it; so is a menu open on what was selected.
    */
   onSelectionChanged() {
     const selection = this.debugUI.editMode.selection;
     if (this._renameName !== null && selection.name !== this._renameName) this._closeRename(false);
+    this._menu.close(false);
     this._fresh(); // a delete clears the selection: its row goes now, not at the next tick
     if (!this._quiet && this._scene !== null && selection.index >= 0) {
       const row = this.model.reveal(selection.index, selection.name);
@@ -612,6 +645,7 @@ export class EntityTree {
    * others (Ctrl+Z, ← →, Shift+E, …) go on to the editor.
    */
   _keyDown(e) {
+    if (e.isComposing) return; // an input method's Enter or Esc is its own
     const ctrl = e.ctrlKey || e.metaKey;
     let handled = false;
     if (ctrl && !e.shiftKey && !e.altKey && (e.key === 'f' || e.key === 'F')) {
@@ -915,6 +949,155 @@ export class EntityTree {
     this._rename.style.top = `${top}px`;
   }
 
+  // ---- the context menu (ED-64) ----
+
+  /**
+   * A right click on a row opens its menu, in place of the browser's. The ContextMenu key and Shift+F10 send one with
+   * no button to the list itself: the selection's menu, under its row.
+   */
+  _contextMenu(e) {
+    if (this._scene === null) return;
+    const el = e.target?.closest ? e.target.closest('[data-row]') : null;
+    if (el !== null) {
+      e.preventDefault();
+      const at = this.model.locate(Number(el.dataset.row));
+      if (at !== null) this._openMenu(at.kind, at.group, at.item, e.clientX, e.clientY, false);
+      return;
+    }
+    if (e.button !== 2) {
+      e.preventDefault();
+      this._openMenuAtSelection();
+    }
+  }
+
+  /** The selection's menu, under its row (the keyboard's), its first item active. */
+  _openMenuAtSelection() {
+    const selection = this.debugUI.editMode.selection;
+    if (selection.index < 0) return;
+    this._fresh();
+    const row = this.model.reveal(selection.index, selection.name);
+    if (row < 0) return;
+    this._scrollToRow(row);
+    this.render();
+    const at = this.model.locate(row);
+    const box = this._list.getBoundingClientRect();
+    this._openMenu(at.kind, at.group, at.item, box.left + 24, box.top + (row + 1) * ROW_HEIGHT - this._list.scrollTop, true);
+  }
+
+  /**
+   * The menu of a row (its kind, class and item, as locate gives them), at a point of the viewport. Its edits act on
+   * the selection: an entity outside it is selected first (alone); one of several selected keeps them.
+   */
+  _openMenu(rowKind, group, item, x, y, keyboard) {
+    const editMode = this.debugUI.editMode;
+    const model = this.model;
+    let kind = TARGET_GROUP;
+    let name = null;
+    let index = -1;
+    if (rowKind === ROW_AUTHORED) {
+      name = group.authored[item];
+      index = liveIndexOf(this._scene, name);
+      kind = index >= 0 ? TARGET_PLACED : TARGET_NOT_LIVE;
+    } else if (rowKind === ROW_RUNTIME) {
+      index = group.runtime[item];
+      kind = TARGET_RUNTIME;
+    }
+    if (index >= 0 && !this._isSelected(index, name)) this._choose(index);
+    const selection = editMode.selection;
+    this._menuGroup = group;
+    this._menuName = name;
+    this._menuIndex = index;
+    this._menuScrollTop = this._list.scrollTop;
+    const menu = menuFor({
+      kind,
+      className: group.name,
+      name,
+      index,
+      selected: (selection.authored ? 1 : 0) + (editMode.multi ? editMode.multi.count : 0),
+      placed: group.authored.length,
+      matching: model.query === '' || group.matchAll ? group.authored.length : group.matchedCount,
+      runtime: group.runtimeCount,
+      filtered: model.query !== '',
+      canCopy: typeof editMode.copySelected === 'function',
+    });
+    this._menu.open(this.el.ownerDocument, x, y, menu, { keyboard, returnFocus: this._list });
+  }
+
+  /** Whether the entity of a row is selected: the inspector's, or one of the others. */
+  _isSelected(index, name) {
+    const editMode = this.debugUI.editMode;
+    const selection = editMode.selection;
+    if (name === null) return selection.index === index && selection.name === null;
+    return (selection.name === name && selection.index >= 0) || editMode.multi?.has(name) === true;
+  }
+
+  /** A pick in the menu (it has closed). The edits are the list's keys' (an edit while playing enters edit mode). */
+  _menuPicked(id) {
+    const editMode = this.debugUI.editMode;
+    const name = this._menuName;
+    const group = this._menuGroup;
+    this._menuGroup = null;
+    switch (id) {
+      case ITEM_FRAME:
+        this._frame();
+        break;
+      case ITEM_RENAME:
+        if (editMode.selection.name !== name) this._makeFirst(name);
+        this.startRename();
+        break;
+      case ITEM_DUPLICATE:
+        this._edit(EDIT_DUPLICATE);
+        break;
+      case ITEM_COPY:
+        editMode.copySelected?.();
+        break;
+      case ITEM_DELETE:
+        this._edit(EDIT_DELETE);
+        break;
+      case ITEM_SELECT_ALL:
+        if (group !== null) this._selectAll(group, name);
+        break;
+      default:
+        break;
+    }
+  }
+
+  /** The row's entity becomes the inspector's, the others selected with it staying so (Rename on one of several). */
+  _makeFirst(name) {
+    const multi = this.debugUI.editMode.multi;
+    if (!multi) return;
+    const names = multi.selectedNames();
+    const at = names.indexOf(name);
+    if (at <= 0) return;
+    names.splice(at, 1);
+    names.unshift(name);
+    this._quiet = true;
+    try {
+      multi.selectNames(names);
+    } finally {
+      this._quiet = false;
+    }
+  }
+
+  /**
+   * "Select all <Class>": its placed entities (under a filter, the ones it keeps) through the editor's multi-select,
+   * the row's own first (the inspector shows it).
+   */
+  _selectAll(group, first) {
+    const names = [];
+    if (this.model.query === '' || group.matchAll) {
+      for (const name of group.authored) names.push(name);
+    } else {
+      for (let k = 0; k < group.matchedCount; k++) names.push(group.authored[group.matched[k]]);
+    }
+    const at = first === null ? -1 : names.indexOf(first);
+    if (at > 0) {
+      names.splice(at, 1);
+      names.unshift(first);
+    }
+    this.debugUI.editMode.multi.selectNames(names);
+  }
+
   // ---- drawing ----
 
   /** Draw the rows in view. */
@@ -1054,7 +1237,9 @@ export class EntityTree {
           : `${arrow} ${name}  ·  ${shown.placed} placed, ${shown.runtime} runtime`;
       color = '#9aa2b4';
       indent = 8;
-      title = `${name}: ${shown.placed} placed by the scene file, ${shown.runtime} spawned by code. A click folds or unfolds it`;
+      title =
+        `${name}: ${shown.placed} placed by the scene file, ${shown.runtime} spawned by code. A click folds or unfolds ` +
+        'it; right click: select all of it';
     } else if (kind === ROW_AUTHORED) {
       text = index >= 0 ? `${name}  #${index}` : `${name}  (not live)`;
       if (index < 0) color = '#6b7080';
@@ -1159,11 +1344,17 @@ export class EntityTree {
     this._styled = true;
   }
 
+  /**
+   * The page goes (or the editor): nothing of this page may stay in the editor page's document (D9), so an open
+   * menu goes with its listeners there.
+   */
   destroy() {
+    this._menu.close(false);
     this._closeRename(false);
     this._list.removeEventListener('scroll', this._onScroll);
     this._list.removeEventListener('click', this._onClick);
     this._list.removeEventListener('dblclick', this._onDoubleClick);
+    this._list.removeEventListener('contextmenu', this._onContextMenu);
     this._list.removeEventListener('focus', this._onFocus);
     this._list.removeEventListener('blur', this._onBlur);
     this.el.removeEventListener('keydown', this._onKeyDown);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The editor page's scene list in Chromium (VISUAL_EDITOR_PLAN.md ED-62, ED-63): littleCity (1,243 placed trees, 65 houses,
+ * The editor page's scene list in Chromium (VISUAL_EDITOR_PLAN.md ED-62, ED-63, ED-64): littleCity (1,243 placed trees, 65 houses,
  * 8,000 runtime people, cars) and the platformer, each at /editor?scene=…, with real keys and clicks. Each check prints
  * PASS or FAIL with what it read; the exit code is the number of failures. Nothing is saved: the level files are not
  * touched. Screenshots go to D:\tmp\claude\editor-tree\ (or --shots <dir>).
@@ -18,11 +18,19 @@
  *               is kept, one undo; Ctrl+Z (the editor's) takes it back
  *     Del and Ctrl+D once   Del takes one record out, Ctrl+D adds one (a second Ctrl+D would add another), each one undo
  *     double click          on CityTree45: selects it and frames it
+ *     menu      a right click on CityTree45: Frame, Rename…, Duplicate, (Copy, once the editor has it), Delete, Select all
+ *               CityTree (1243), in the editor page's document, in view, with the focus; Esc closes it and the tree
+ *               stays selected (the editor's Esc would have let go of it)
+ *     select all            the menu's Select all: 1,243 selected, CityTree45 the inspector's; the pick's time
+ *     menu placement and runtime   opened at the viewport's corner it stays inside; a runtime person's menu: Frame and
+ *               Select all (disabled: no person is placed), read-only; a click elsewhere closes it
  *   platformer
  *     filter    "PLAT" (case aside) keeps two classes whole, the player's (BluePlatformerPlayer) and the 13 platforms;
  *               "goal" the goal; Esc clears it
  *     keys      in edit mode, "platform1", Enter: Platform1 selected; F2 "Ledge" renames it (the inspector follows),
  *               Ctrl+Z takes it back; Del deletes it, Ctrl+Z puts it back; nothing left unsaved
+ *     menu      Platform3's menu; its Delete takes it out (one undo), Ctrl+Z puts it back; Shift+F10 in the list opens
+ *               the selection's, its first item active; the player's (runtime) row: Frame and Select all, disabled
  *
  *   node tests/bench/editorTreeSmoke.mjs [--headed] [--shots <dir>]
  */
@@ -115,6 +123,34 @@ const readEditor = (page) =>
       status: editMode.status,
     };
   });
+
+/** The scene list's context menu as shown (null when closed): its items, where it is, whether it has the focus. */
+const readMenu = (page) =>
+  page.evaluate(() => {
+    const menu = document.getElementById('game').contentWindow.game.debugUI.hosted.tree._menu;
+    if (!menu.isOpen) return null;
+    const box = menu.el.getBoundingClientRect();
+    return {
+      labels: menu.labels,
+      active: menu._active,
+      disabled: menu._items.map((item) => item.disabled),
+      caption: menu.el.children[0].textContent,
+      box: [box.left, box.top, box.width, box.height].map(Math.round),
+      inView: box.left >= 0 && box.top >= 0 && box.right <= innerWidth && box.bottom <= innerHeight,
+      inEditorPage: menu.el.ownerDocument === document && menu.el.parentNode === document.body,
+      focused: document.activeElement === menu.el,
+    };
+  });
+
+/** The menu's item with this label (a locator in the editor page's document). */
+const menuItem = (page, label) => page.locator('[role=menu] [role=menuitem]', { hasText: label });
+
+/** What Copy adds to a placed entity's items, when the editor has it (EditMode.copySelected, ED-59). */
+const copyLabels = (page, count = '') =>
+  page.evaluate((n) => {
+    const editMode = document.getElementById('game').contentWindow.game.debugUI.editMode;
+    return typeof editMode.copySelected === 'function' ? [n ? `Copy ${n}` : 'Copy'] : [];
+  }, count);
 
 /** Whether the free camera's target is on the selected entity (Enter, a double click: frame or center). */
 const framed = (state) => state.at !== null && Math.abs(state.camera[0] - state.at[0]) < 2 && Math.abs(state.camera[1] - state.at[1]) < 2;
@@ -371,6 +407,106 @@ async function littleCity(browser, server, shots, errors) {
     doubled.selection === 'CityTree45' && framed(doubled),
     `${doubled.selection}: camera ${doubled.camera.map(Math.round)} on ${doubled.at?.map(Math.round)}`,
   );
+
+  // ---- the menu (ED-64): a placed row's, Esc, Select all ----
+  const row45 = page.locator('[data-slot=tree] [data-row]', { hasText: /^CityTree45\s/ });
+  await row45.click({ button: 'right' });
+  await page.waitForTimeout(150);
+  const placedMenu = await readMenu(page);
+  const copy = await copyLabels(page);
+  await page.screenshot({ path: path.join(shots, 'littlecity-menu.png') });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  const escaped = await readEditor(page);
+  const closed = await readMenu(page);
+  check(
+    'littleCity menu',
+    placedMenu !== null &&
+      JSON.stringify(placedMenu.labels) ===
+        JSON.stringify(['Frame', 'Rename…', 'Duplicate', ...copy, 'Delete', '—', 'Select all CityTree (1243)']) &&
+      placedMenu.caption.startsWith('CityTree45') &&
+      placedMenu.inEditorPage &&
+      placedMenu.inView &&
+      placedMenu.focused &&
+      closed === null &&
+      escaped.focus === 'list' &&
+      escaped.selection === 'CityTree45',
+    `${JSON.stringify(placedMenu?.labels)} "${placedMenu?.caption}" at ${placedMenu?.box}, in the editor page's document ` +
+      `${placedMenu?.inEditorPage}, focused ${placedMenu?.focused}; Esc: closed ${closed === null}, focus ${escaped.focus}, ` +
+      `still selected ${escaped.selection} (the editor's Esc would have let go of it)`,
+  );
+
+  await row45.click({ button: 'right' });
+  await page.evaluate(() => {
+    // The pick's work: from the click's capture on the document to its bubbling there (the menu's handler between);
+    // and the list's own share of it (its onSelectionChanged, after the layout the inspector's new fields leave).
+    const tree = document.getElementById('game').contentWindow.game.debugUI.hosted.tree;
+    const probe = (window.__pickProbe = { ms: -1, list: 0, calls: 0 });
+    const own = tree.onSelectionChanged;
+    tree.onSelectionChanged = function timed() {
+      void document.body.offsetHeight;
+      const t = performance.now();
+      own.call(tree);
+      probe.list += performance.now() - t;
+      probe.calls++;
+    };
+    let t0 = 0;
+    const before = () => (t0 = performance.now());
+    const after = () => {
+      probe.ms = performance.now() - t0;
+      document.removeEventListener('click', before, true);
+      document.removeEventListener('click', after);
+      delete tree.onSelectionChanged;
+    };
+    document.addEventListener('click', before, true);
+    document.addEventListener('click', after);
+    return true;
+  });
+  await menuItem(page, 'Select all CityTree').click();
+  await page.waitForTimeout(300);
+  const pick = await page.evaluate(() => ({ ...window.__pickProbe }));
+  const all = await page.evaluate(() => {
+    const editMode = document.getElementById('game').contentWindow.game.debugUI.editMode;
+    return { count: editMode.multi.selectedNames().length, first: editMode.selection.name };
+  });
+  await page.screenshot({ path: path.join(shots, 'littlecity-select-all.png') });
+  check(
+    'littleCity select all',
+    all.count === 1243 && all.first === 'CityTree45' && pick.calls > 0 && pick.list < 16,
+    `${all.count} selected, the inspector's ${all.first}; the pick took ${ms(pick.ms)}, of it the list's own ` +
+      `${ms(pick.list)} (${pick.calls} calls); the rest is the editor's multi-select and the inspector's new fields`,
+  );
+
+  // ---- the menu at the viewport's corner stays inside it; a runtime row's: Frame and Select all; a click elsewhere ----
+  await page.evaluate(() => {
+    const row = [...document.querySelectorAll('[data-slot=tree] [data-row]')].find((el) => el.style.display !== 'none' && /^CityTree\d/.test(el.textContent));
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2, clientX: innerWidth - 3, clientY: innerHeight - 3 }));
+    return true;
+  });
+  await page.waitForTimeout(100);
+  const corner = await readMenu(page);
+  await page.keyboard.press('Escape');
+  await page.fill(FILTER, 'person');
+  await page.waitForTimeout(150);
+  await page.locator('[data-slot=tree] [data-row]', { hasText: /^#\d+\s+runtime/ }).first().click({ button: 'right' });
+  await page.waitForTimeout(150);
+  const runtimeMenu = await readMenu(page);
+  await page.screenshot({ path: path.join(shots, 'littlecity-menu-runtime.png') });
+  await page.mouse.click(1150, 49); // the Inspector dock's header
+  await page.waitForTimeout(100);
+  const afterOutside = await readMenu(page);
+  check(
+    'littleCity menu placement and runtime',
+    corner !== null &&
+      corner.inView &&
+      runtimeMenu !== null &&
+      JSON.stringify(runtimeMenu.labels) === JSON.stringify(['Frame', '—', 'Select all CityPerson']) &&
+      runtimeMenu.disabled.at(-1) === true &&
+      runtimeMenu.caption.includes('read-only') &&
+      afterOutside === null,
+    `opened at the corner: ${corner?.box} in view ${corner?.inView}; a runtime person's: ${JSON.stringify(runtimeMenu?.labels)} ` +
+      `(Select all disabled ${runtimeMenu?.disabled.at(-1)}), "${runtimeMenu?.caption}"; a click elsewhere closes it ${afterOutside === null}`,
+  );
   await page.close();
 }
 
@@ -434,6 +570,50 @@ async function platformer(browser, server, shots, errors) {
       !restored.dirty,
     `F2 "Ledge": ${renamed.selection} (inspector "${renamed.inspector}"); Ctrl+Z: ${undone.selection}; Del: records ` +
       `${start.records} → ${deleted.records}; Ctrl+Z: ${restored.records}, ${restored.selection}, unsaved ${restored.dirty}`,
+  );
+
+  // ---- the menu (ED-64): Delete from it and undo; the player's (runtime) row ----
+  await page.fill(FILTER, 'platform');
+  await page.waitForTimeout(150);
+  await page.locator('[data-slot=tree] [data-row]', { hasText: /^Platform3\s/ }).click({ button: 'right' });
+  await page.waitForTimeout(100);
+  const menu = await readMenu(page);
+  await page.screenshot({ path: path.join(shots, 'platformer-menu.png') });
+  await menuItem(page, 'Delete').click();
+  await page.waitForTimeout(300);
+  const deletedByMenu = await readEditor(page);
+  await page.keyboard.press('Control+Z');
+  await page.waitForTimeout(300);
+  const back = await readEditor(page);
+  await page.keyboard.press('Shift+F10'); // the keyboard's menu: the selection's, under its row
+  await page.waitForTimeout(100);
+  const byKey = await readMenu(page);
+  await page.keyboard.press('Escape');
+  await page.fill(FILTER, 'blue');
+  await page.waitForTimeout(150);
+  await page.locator('[data-slot=tree] [data-row]', { hasText: /^#\d+\s+runtime/ }).first().click({ button: 'right' });
+  await page.waitForTimeout(100);
+  const player = await readMenu(page);
+  await page.keyboard.press('Escape');
+  const copy = await copyLabels(page);
+  check(
+    'platformer menu',
+    menu !== null &&
+      JSON.stringify(menu.labels) === JSON.stringify(['Frame', 'Rename…', 'Duplicate', ...copy, 'Delete', '—', 'Select all Platform (13)']) &&
+      deletedByMenu.records === start.records - 1 &&
+      deletedByMenu.undo.join() === 'delete Platform3' &&
+      back.records === start.records &&
+      back.focus === 'list' &&
+      byKey !== null &&
+      byKey.caption.startsWith('Platform3') &&
+      byKey.active === 0 &&
+      player !== null &&
+      JSON.stringify(player.labels) === JSON.stringify(['Frame', '—', 'Select all BluePlatformerPlayer']) &&
+      player.disabled.at(-1) === true,
+    `Platform3's ${JSON.stringify(menu?.labels)}; Delete: records ${start.records} → ${deletedByMenu.records} ` +
+      `(${deletedByMenu.undo}); Ctrl+Z ${back.records} (focus ${back.focus}); Shift+F10: "${byKey?.caption}", item ` +
+      `${byKey?.active} active; the player's ${JSON.stringify(player?.labels)}, ` +
+      `Select all disabled ${player?.disabled.at(-1)}`,
   );
   await page.close();
 }
