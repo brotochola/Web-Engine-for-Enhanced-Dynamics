@@ -2064,7 +2064,8 @@ class PixiRenderer extends AbstractWorker {
           useWebGpu: this._useWebGpu,
           shaders: this._engineShaders,
           texture: cl.rtOut,
-          blendMode: cl.containerBlend,
+          // As the layer's full-screen composite draws (the layer's blendMode, not its containerBlend).
+          blendMode: cl.displaySprite?.blendMode || 'normal',
           label: `gpu-regions-${cl.layerName}`,
         });
       }
@@ -2133,6 +2134,9 @@ class PixiRenderer extends AbstractWorker {
       if (pl.regions !== null) {
         const out = pl.cl.rtOut;
         if (out && pl.regions.source !== out.source) pl.regions.setTexture(out);
+        // The composite's blend follows Layer blend changes (handleSetLayerProps); the regions follow it.
+        const blend = pl.cl.displaySprite ? pl.cl.displaySprite.blendMode : 'normal';
+        if (blend !== pl.regions.blendMode) pl.regions.setBlendMode(blend);
         pl.regions.beginFrame();
         regions = true;
       }

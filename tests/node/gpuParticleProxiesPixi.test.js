@@ -11,14 +11,14 @@ import { CLOCK_BYTES, Time } from '../../src/core/timeScale.js';
 import { DECORATION_Y_SORT_SCALE, LAYER_KIND } from '../../src/util/configDefaults.js';
 import { orderSortKey, spriteYSortKey, zSortBand } from '../../src/util/sortIndexByKey.js';
 import { seededRandom } from '../../src/util/utils.js';
-import { ProxyCollector, localProxyHalf } from '../../src/render/gpuParticleProxies.js';
-import { EntityChunks } from '../../src/render/gpuParticleChunks.js';
+import { PROXY, PROXY_KIND, ProxyCollector, localProxyHalf } from '../../src/render/gpuParticleProxies.js';
+import { EntityChunks, RegionQuads } from '../../src/render/gpuParticleChunks.js';
 import { GpuParticleLayerBatch } from '../../src/render/gpuParticleBatch.js';
 import { Container, Matrix, Texture } from '../../src/vendor/pixi.min.js';
 
 // The Pixi worker's side of the y-sort proxies: the entries of the frame it draws put the groups' meshes between
 // chunks of the entities batch under the entities root, a hidden layer's groups are left out, and the layers go
-// back to their zIndex when the entities stop y-sorting. The real methods (the prototype's) on a small context.
+// back to their zIndex when the entities stop y-sorting. A look layer's regions blend as its composite does. The real methods (the prototype's) on a small context.
 
 const previousSelf = globalThis.self;
 const previousPostMessage = globalThis.postMessage;
@@ -33,6 +33,7 @@ test.after(() => {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.wgsl'), 'utf8');
+const REGION_WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuRegion.wgsl'), 'utf8');
 const BAND = zSortBand(720);
 
 function setup() {
@@ -176,6 +177,45 @@ test('without the entities\' y-sort the layers draw at their zIndex again', { co
     batch.update(Time.simNowMs);
     assert.equal(batch.rings[0].meshes[0].visible, true, 'the rings draw again');
   } finally {
+    restore();
+  }
+});
+
+test('a look layer\'s region blends as its full-screen composite, and samples where the camera puts it', { concurrency: false }, () => {
+  const { ctx, layerId, displaySprite, entitiesMesh, entitiesRoot, restore } = setup();
+  const regions = new RegionQuads({
+    useWebGpu: true,
+    shaders: { gpuRegion: REGION_WGSL },
+    texture: Texture.WHITE,
+    blendMode: 'normal',
+  });
+  try {
+    const pl = ctx._proxyLayers[layerId];
+    pl.regions = regions;
+    pl.cl.rtOut = Texture.WHITE;
+    displaySprite.blendMode = 'screen'; // the layer's blendMode, as _applyLayerPresentation sets it
+    entitiesMesh.geometry.instanceCount = 2;
+    ctx._renderZoom = 2;
+    ctx._renderCameraX = 100;
+    ctx._renderCameraY = 50;
+    const half = localProxyHalf();
+    half.ints[PROXY.INDEX] = 1;
+    half.ints[PROXY.KIND_LAYER] = (PROXY_KIND.REGION << 8) | layerId;
+    half.floats[PROXY.MIN_X_F] = 100;
+    half.floats[PROXY.MIN_Y_F] = 50;
+    half.floats[PROXY.MAX_X_F] = 740;
+    half.floats[PROXY.MAX_Y_F] = 410;
+    half.header[0] = 1;
+    Pixi._applyProxies.call(ctx, half);
+    const kids = entitiesRoot.children;
+    assert.equal(kids.length, 3, 'chunk, region, chunk');
+    const quad = kids[1];
+    assert.equal(regions.blendMode, 'screen');
+    assert.equal(quad.blendMode, 'screen', 'not the containerBlend its particles were summed with');
+    const uv = Array.from(regions.pool[0].uvs.data);
+    assert.deepEqual(uv, [0, 0, 1, 0, 1, 1, 0, 1], 'world (100, 50)-(740, 410) at zoom 2 fills the 1280x720 canvas');
+  } finally {
+    regions.destroy();
     restore();
   }
 });

@@ -107,7 +107,7 @@ export class RegionQuads {
    * @param {boolean} opts.useWebGpu
    * @param {object} opts.shaders the Pixi worker's engine shaders (gpuRegion / gpuRegionVert, gpuRegionFrag)
    * @param {object} opts.texture the layer's look output (RenderTexture)
-   * @param {string} opts.blendMode
+   * @param {string} opts.blendMode the layer's blendMode, as its full-screen composite draws
    * @param {string} [opts.label]
    */
   constructor(opts) {
@@ -131,6 +131,13 @@ export class RegionQuads {
     this.index = new Buffer({ data: new Uint32Array([0, 1, 2, 0, 2, 3]), usage: BufferUsage.INDEX });
     this.pool = [];
     this.used = 0;
+  }
+
+  /** The blend the quads draw with: the one the layer's full-screen composite uses. */
+  setBlendMode(blendMode) {
+    this.blendMode = blendMode || 'normal';
+    this.state.blendMode = this.blendMode;
+    for (let i = 0; i < this.pool.length; i++) this.pool[i].mesh.blendMode = this.blendMode;
   }
 
   /** The layer's look target was recreated (a resize). */
