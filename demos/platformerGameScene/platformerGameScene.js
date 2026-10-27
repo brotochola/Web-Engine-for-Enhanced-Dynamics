@@ -54,23 +54,23 @@ export class PlatformerGameScene extends Scene {
       maxPolygonVertices: 5000,
     },
     layers: {
-      bloom: {
-        zIndex: 3.5,
-        blendMode: BLEND_MODES.NORMAL,
-        resolution: BLOOM_RESOLUTION,
-        maxItems: 2048,
-        ySorting: false,
-        shader: {
-          fragment: 'bloom',
-          containerBlend: BLEND_MODES.NORMAL,
-          uniforms: {
-            uThreshold: { value: 0.05, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Threshold', tip: 'Luma below this does not bloom.' },
-            uIntensity: { value: 0.4, type: 'f32', min: 0, max: 4, step: 0.05, label: 'Intensity', tip: 'How strong the glow add is.' },
-            uBlurSize: { value: 12, type: 'f32', min: 1, max: 30, step: 1, label: 'Blur', tip: 'StackBlur radius in pixels (1–8).' },
-            uTexelSize: { value: [0.002, 0.002], type: 'vec2<f32>' },
-          },
-        },
-      },
+      // bloom: {
+      //   zIndex: 3.5,
+      //   blendMode: BLEND_MODES.NORMAL,
+      //   resolution: BLOOM_RESOLUTION,
+      //   maxItems: 2048,
+      //   ySorting: false,
+      //   shader: {
+      //     fragment: 'bloom',
+      //     containerBlend: BLEND_MODES.NORMAL,
+      //     uniforms: {
+      //       uThreshold: { value: 0.05, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Threshold', tip: 'Luma below this does not bloom.' },
+      //       uIntensity: { value: 0.4, type: 'f32', min: 0, max: 4, step: 0.05, label: 'Intensity', tip: 'How strong the glow add is.' },
+      //       uBlurSize: { value: 12, type: 'f32', min: 1, max: 30, step: 1, label: 'Blur', tip: 'StackBlur radius in pixels (1–8).' },
+      //       uTexelSize: { value: [0.002, 0.002], type: 'vec2<f32>' },
+      //     },
+      //   },
+      // },
     },
   };
 
@@ -83,7 +83,7 @@ export class PlatformerGameScene extends Scene {
       },
     },
     shaders: {
-      bloom: '/demos/shaders/bloom.frag',
+      // bloom: '/demos/shaders/bloom.frag',
     },
   };
 
@@ -104,7 +104,7 @@ export class PlatformerGameScene extends Scene {
   // The platforms and the goal are in the level's scene file (levels/1-1.scene.json, 1-2, …).
   create() {
     Camera.setZoom(1.25);
-    this._syncBloomTexels();
+    // this._syncBloomTexels();
     // The player reached a goal (Goal.onCollisionEnter, on a logic worker): the next level.
     this.on('goalReached', (_data, goalIndex) => this.goToNextLevel(goalIndex));
   }
@@ -132,7 +132,7 @@ export class PlatformerGameScene extends Scene {
       scaleY: 0.42,
       worldWidth: this.config.worldWidth,
       worldHeight: this.config.worldHeight,
-      layer: BLOOM_LAYER,
+      // layer: BLOOM_LAYER,
     });
 
     this.playerIndex = playerHandle.index;
@@ -153,7 +153,7 @@ export class PlatformerGameScene extends Scene {
   }
 
   update() {
-    this._syncBloomTexels();
+    // this._syncBloomTexels();
     this._playerX = Transform.x[this.playerIndex];
     this._playerY = Transform.y[this.playerIndex];
     Camera.follow(this._playerX, this._playerY, 0.15);

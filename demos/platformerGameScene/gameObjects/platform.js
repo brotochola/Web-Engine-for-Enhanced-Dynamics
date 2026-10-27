@@ -35,12 +35,13 @@ export class Platform extends GameObject {
 
     this.collider.width = width;
     this.collider.height = height;
+    this.collider.friction = 0.66
 
     this.setSprite('_white');
     this.setScale(width / 8, height / 8);
     this.setAnchor(0.5, 0.5);
     this.setTint(params.tint);
     this.setAlpha(params.alpha);
-    this.setLayer(BLOOM_LAYER);
+    // this.setLayer(BLOOM_LAYER);
   }
 }

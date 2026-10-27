@@ -12,7 +12,7 @@ export class BluePlatformerPlayer extends GameObject {
   // One-shot kick: addVelocity, not an acceleration burst (whose height
   // depended on how many physics steps ran before the next tick).
   static jumpSpeed = 1333; // px/s, what the old -80000 px/s² burst gave on one 60 Hz step
-  static moveAcceleration = 1800; // px/s²
+  static moveAcceleration = 3800; // px/s²
   static stickThreshold = 0.35; // left stick past this counts as left/right
   static stickJumpThreshold = 0.6; // stick pushed up this far jumps, like the up arrow
   static scale = 0.35;
@@ -44,7 +44,7 @@ export class BluePlatformerPlayer extends GameObject {
       lifespan: { min: 100, max: 500 },
       angleXY: { min: -180, max: 180 },
       speed: { min: 3, max: 5 },
-      layer: 'bloom',
+      // layer: 'bloom',
     });
   }
 
@@ -64,15 +64,16 @@ export class BluePlatformerPlayer extends GameObject {
 
   onSpawned(spawnConfig = {}) {
     this.rigidBody.static = 0;
-    this.rigidBody.linearDamping = 0.001;
+    this.rigidBody.linearDamping = 0.5;
 
     this.collider.radius = 30;
+    this.collider.friction = 0.2
     this.collider.visualRange = 120;
     this.setFixedRotation(1);
     this.platformerCharacterComponent.isItStandingOnPlatform = -1
 
     this.lightEmitter.lightColor = 0xffffff;
-    this.lightEmitter.lightIntensity = 30000;
+    this.lightEmitter.lightIntensity = 3000;
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0.5;
@@ -179,7 +180,7 @@ export class BluePlatformerPlayer extends GameObject {
         lifespan: 300,
         angleXY: randomOffset,
         speed: { min: 0, max: -this.vx * 0.01 },
-        layer: 'bloom',
+        // layer: 'bloom',
       });
     }
   }
@@ -196,7 +197,7 @@ export class BluePlatformerPlayer extends GameObject {
       lifespan: 300,
       angleXY: 0,
       speed: 0,
-      layer: 'bloom',
+      // layer: 'bloom',
     });
 
   }

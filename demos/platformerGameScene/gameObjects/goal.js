@@ -41,7 +41,7 @@ export class Goal extends GameObject {
     this.setScale(params.width / 8, params.height / 8);
     this.setAnchor(0.5, 0.5);
     this.setTint(params.tint);
-    this.setLayer(BLOOM_LAYER);
+    // this.setLayer(BLOOM_LAYER);
   }
 
   onCollisionEnter(other) {
