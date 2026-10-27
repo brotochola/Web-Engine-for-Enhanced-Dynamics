@@ -7,6 +7,9 @@
 // What the host gets from here is let go of on pagehide (shell/editorShell.js says why); this side only puts nodes
 // of its own into the docks and never listens on the host's.
 //
+// A part of the protocol came after its first form, and a page uses it only when its host has it: the dock keys
+// (Ctrl+1, 2, 3 typed in this page fold the editor page's docks: host.dockKey).
+//
 // Cost: a page that is not in the editor page pays one property read, at construction.
 
 import { isTypingTarget } from '../../../util/typingTarget.js';
@@ -17,6 +20,21 @@ import { ConsolePanel } from './consolePanel.js';
 import { createConsoleForward } from '../../../util/consoleForward.js';
 
 export { HOST_KEY, HOST_VERSION, findEditorHost, editorPageUrl } from '../editorPage.js';
+
+/** The editor page's dock keys by KeyboardEvent.code, so a layout that shifts its digits has them too. */
+const DOCK_DIGIT_CODES = Object.freeze({ Digit1: 1, Digit2: 2, Digit3: 3, Numpad1: 1, Numpad2: 2, Numpad3: 3 });
+
+/**
+ * The digit of Ctrl+1, Ctrl+2 or Ctrl+3 (Cmd on a Mac), or 0. The editor page reads its own keys the same way
+ * (shell/editorLayout.js, dockKeyOf).
+ * @param {KeyboardEvent} e
+ */
+export function dockDigitOf(e) {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return 0;
+  const byCode = DOCK_DIGIT_CODES[e.code];
+  if (byCode !== undefined) return byCode;
+  return e.key === '1' ? 1 : e.key === '2' ? 2 : e.key === '3' ? 3 : 0;
+}
 
 export class HostedEditor {
   /**
@@ -36,6 +54,15 @@ export class HostedEditor {
     this.console = null;
     this._pageConsole = null;
     this._onPageHide = () => this.disconnect();
+    // Ctrl+1, 2, 3 typed in this page fold the editor page's docks: neither the game nor the browser (a tab switch)
+    // gets them. A capture listener, so it sees them before the engine hands keys to the game or the editor.
+    this._onDockKey = (e) => {
+      const digit = dockDigitOf(e);
+      if (digit === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat) this.host.dockKey(digit);
+    };
   }
 
   /** Connect to the host and fill its docks (the debug UI's constructor, once its own DOM is built). */
@@ -60,6 +87,7 @@ export class HostedEditor {
     slots.console.appendChild(panel.el);
     this._pageConsole = createConsoleForward(console, (entry) => panel.add('page', entry.level, entry.text));
     this._pageConsole.set(true);
+    if (typeof this.host.dockKey === 'function') window.addEventListener('keydown', this._onDockKey, true);
   }
 
   /** Whether the docks are there (connected, and the page has not hidden). */
@@ -84,6 +112,7 @@ export class HostedEditor {
       }
     }
     window.removeEventListener('pagehide', this._onPageHide);
+    window.removeEventListener('keydown', this._onDockKey, true);
     this.slots = null;
     this._pageConsole?.set(false);
     this.tree?.destroy();

@@ -1,0 +1,408 @@
+// The editor page's docks (VISUAL_EDITOR_PLAN.md ED-50): sizes a handle's drag changes, folds, Ctrl+1, 2, 3, the
+// bottom dock's Console pane, and this viewer's layout kept in localStorage (a storage that throws keeps the
+// defaults). The layout runs here on stand-in elements; tests/bench/editorLayoutSmoke.mjs runs the real page in
+// Chromium.
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  DockLayout,
+  LAYOUT_DEFAULTS,
+  LAYOUT_KEY,
+  FLAG_KEYS,
+  SIZE_KEYS,
+  SIZE_LIMITS,
+  dockKeyOf,
+  numberText,
+  paneHeight,
+  paneSizeFor,
+  readLayout,
+  shareText,
+  sideSizeFor,
+  sideWidth,
+  splitFor,
+  writeLayout,
+} from '../../src/core/debug/editor/shell/editorLayout.js';
+
+// ---- stand-ins for the page's elements ----
+
+class ClassList {
+  constructor() {
+    this.names = new Set();
+  }
+  add(name) {
+    this.names.add(name);
+  }
+  remove(name) {
+    this.names.delete(name);
+  }
+  toggle(name, force) {
+    const on = force === undefined ? !this.names.has(name) : !!force;
+    if (on) this.names.add(name);
+    else this.names.delete(name);
+    return on;
+  }
+  contains(name) {
+    return this.names.has(name);
+  }
+}
+
+class Style {
+  constructor() {
+    this.props = new Map();
+    this.writes = [];
+  }
+  setProperty(name, value) {
+    this.props.set(name, value);
+    this.writes.push([name, value]);
+  }
+}
+
+class Element {
+  constructor({ dataset = {}, rect = { width: 0, height: 0 }, queries = {} } = {}) {
+    this.dataset = dataset;
+    this.classList = new ClassList();
+    this.style = new Style();
+    this.attributes = new Map();
+    this.listeners = new Map();
+    this.hidden = false;
+    this.rect = rect;
+    this.rectReads = 0;
+    this.clicks = 0;
+    this.captured = new Set();
+    this.queries = queries;
+  }
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+  getAttribute(name) {
+    return this.attributes.get(name) ?? null;
+  }
+  addEventListener(type, listener) {
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(listener);
+  }
+  dispatch(type, init = {}) {
+    const e = {
+      type,
+      currentTarget: this,
+      target: this,
+      prevented: false,
+      preventDefault() {
+        this.prevented = true;
+      },
+      stopPropagation() {},
+      ...init,
+    };
+    for (const listener of this.listeners.get(type) ?? []) listener(e);
+    return e;
+  }
+  getBoundingClientRect() {
+    this.rectReads++;
+    return { ...this.rect };
+  }
+  setPointerCapture(id) {
+    this.captured.add(id);
+  }
+  hasPointerCapture(id) {
+    return this.captured.has(id);
+  }
+  releasePointerCapture(id) {
+    this.captured.delete(id);
+  }
+  click() {
+    this.clicks++;
+    this.dispatch('click');
+  }
+  querySelector(selector) {
+    return this.queries[selector] ?? null;
+  }
+}
+
+function memoryStorage(initial = null) {
+  const data = new Map(initial === null ? [] : [[LAYOUT_KEY, initial]]);
+  return {
+    data,
+    sets: 0,
+    getItem(key) {
+      return data.has(key) ? data.get(key) : null;
+    },
+    setItem(key, value) {
+      this.sets++;
+      data.set(key, String(value));
+    },
+  };
+}
+
+const throwingStorage = () => ({
+  getItem() {
+    throw new DOMException('blocked', 'SecurityError');
+  },
+  setItem() {
+    throw new DOMException('full', 'QuotaExceededError');
+  },
+});
+
+function makeLayout({ width = 1366, height = 768, storage = memoryStorage(), debugQueries = {} } = {}) {
+  const named = (key, names) => names.map((name) => new Element({ dataset: { [key]: name } }));
+  const el = {
+    body: new Element(),
+    left: new Element({ rect: { width: 250, height: 700 } }),
+    right: new Element({ rect: { width: 320, height: 700 } }),
+    bottom: new Element({ rect: { width: width, height: 240 } }),
+    column: new Element({ rect: { width: 315, height: 700 } }),
+    assets: new Element({ rect: { width: 315, height: 280 } }),
+    handles: named('handle', ['left', 'right', 'bottom', 'split']),
+    folds: named('fold', ['left', 'right', 'bottom', 'inspector', 'assets']),
+    toggles: named('toggle', ['left', 'right', 'bottom']),
+    consoleTab: new Element(),
+    consolePane: new Element(),
+    debugSlot: new Element({ queries: debugQueries }),
+  };
+  const win = { innerWidth: width, innerHeight: height };
+  const layout = new DockLayout(el, { win, storage }).start();
+  const by = (list, key) => Object.fromEntries(list.map((e) => [e.dataset[key], e]));
+  return { layout, el, win, storage, handle: by(el.handles, 'handle'), fold: by(el.folds, 'fold'), toggle: by(el.toggles, 'toggle') };
+}
+
+/** A drag on a handle: press, moves by (dx, dy) each, release. */
+function drag(handle, moves, { pointerId = 1, x = 500, y = 400 } = {}) {
+  handle.dispatch('pointerdown', { button: 0, pointerId, clientX: x, clientY: y });
+  for (const [dx, dy] of moves) handle.dispatch('pointermove', { pointerId, clientX: x + dx, clientY: y + dy });
+  handle.dispatch('pointerup', { pointerId, clientX: x, clientY: y });
+}
+
+const key = (k, extra = {}) => ({ key: k, code: '', ctrlKey: false, metaKey: false, shiftKey: false, altKey: false, repeat: false, ...extra });
+const ctrl = (digit, extra = {}) => {
+  const e = key(String(digit), { code: `Digit${digit}`, ctrlKey: true, ...extra });
+  e.prevented = false;
+  e.preventDefault = () => {
+    e.prevented = true;
+  };
+  return e;
+};
+
+// ---- sizes ----
+
+test('a side dock shows its size, within its bounds and a share of the window', () => {
+  assert.equal(sideWidth('left', 250, 1920), 250);
+  assert.equal(sideWidth('right', 320, 1366), 320);
+  assert.equal(sideWidth('left', 50, 1920), SIZE_LIMITS.left[0], 'the minimum');
+  assert.equal(sideWidth('left', 640, 1366), 0.32 * 1366, 'a third of the window at most');
+  assert.equal(sideWidth('right', 760, 1366), 0.4 * 1366);
+  assert.equal(sideWidth('right', 320, 400), SIZE_LIMITS.right[0], 'a window too small: the minimum wins, as CSS clamp');
+});
+
+test('a drag keeps the size that shows the width it reached, whatever the window', () => {
+  for (const viewport of [1920, 1366, 1100, 800]) {
+    for (const side of ['left', 'right']) {
+      for (const width of [100, 180, 260, 333, 420, 900]) {
+        const size = sideSizeFor(side, width, viewport);
+        assert.equal(size, Math.round(size), 'whole px');
+        assert.ok(size >= SIZE_LIMITS[side][0] && size <= SIZE_LIMITS[side][1]);
+        const [min, sizeMax] = SIZE_LIMITS[side];
+        const max = Math.min((side === 'left' ? 0.32 : 0.4) * viewport, sizeMax);
+        const wanted = Math.max(min, Math.min(width, max));
+        assert.ok(Math.abs(sideWidth(side, size, viewport) - wanted) < 1, `${side} ${width} px at ${viewport}: ${sideWidth(side, size, viewport)}`);
+      }
+    }
+  }
+});
+
+test('the bottom pane: at least 96 px, and it leaves 200 px of the window', () => {
+  assert.equal(paneHeight(240, 768), 240);
+  assert.equal(paneHeight(900, 768), 568);
+  assert.equal(paneHeight(20, 768), 96);
+  assert.equal(paneHeight(240, 250), 96, 'a short window: the minimum');
+  assert.equal(paneSizeFor(340.4, 768), 340);
+  assert.equal(paneSizeFor(5000, 1080), 880);
+});
+
+test('the split is the Inspector’s share of the column, from the Assets’ height', () => {
+  assert.equal(splitFor(280, 700), 0.6);
+  assert.equal(splitFor(0, 700), 0.85, 'the Assets keep some room');
+  assert.equal(splitFor(700, 700), 0.15);
+  assert.equal(splitFor(100, 0), LAYOUT_DEFAULTS.split, 'no column measured');
+});
+
+// ---- this viewer's layout ----
+
+test('the layout kept in storage: the defaults, with what it holds over them where valid and in bounds', () => {
+  const defaults = readLayout(null);
+  assert.deepEqual(defaults, { ...LAYOUT_DEFAULTS });
+  assert.notEqual(defaults, LAYOUT_DEFAULTS, 'a layout of its own, not the frozen defaults');
+  for (const text of ['not json', '[1,2]', '42', 'null', '"left"']) assert.deepEqual(readLayout(memoryStorage(text)), { ...LAYOUT_DEFAULTS }, text);
+  const kept = readLayout(
+    memoryStorage(JSON.stringify({ left: '300', right: 99999, bottom: 333.6, split: 2, leftFolded: 'yes', consoleOpen: true, extra: 1 })),
+  );
+  assert.equal(kept.left, LAYOUT_DEFAULTS.left, 'a string is not a size');
+  assert.equal(kept.right, SIZE_LIMITS.right[1]);
+  assert.equal(kept.bottom, 334);
+  assert.equal(kept.split, SIZE_LIMITS.split[1]);
+  assert.equal(kept.leftFolded, false, 'not a boolean');
+  assert.equal(kept.consoleOpen, true);
+  assert.equal('extra' in kept, false);
+});
+
+test('a storage that throws (blocked, full) leaves the defaults and keeps nothing, without throwing', () => {
+  assert.deepEqual(readLayout(throwingStorage()), { ...LAYOUT_DEFAULTS });
+  assert.equal(writeLayout(throwingStorage(), { ...LAYOUT_DEFAULTS }), false);
+  assert.equal(writeLayout(null, { ...LAYOUT_DEFAULTS }), false);
+});
+
+test('what is kept is the sizes and folds only, and reads back the same', () => {
+  const storage = memoryStorage();
+  const layout = { ...LAYOUT_DEFAULTS, left: 301, split: 0.7, rightFolded: true, consoleOpen: true, notMine: 'x' };
+  assert.equal(writeLayout(storage, layout), true);
+  const saved = JSON.parse(storage.getItem(LAYOUT_KEY));
+  assert.deepEqual(Object.keys(saved).sort(), [...SIZE_KEYS, ...FLAG_KEYS].sort());
+  const { notMine, ...expected } = layout;
+  assert.deepEqual(readLayout(storage), expected);
+});
+
+test('a size is written from a table of strings: the same value, the same string', () => {
+  assert.equal(numberText(250), '250');
+  assert.equal(numberText(250), numberText(250));
+  assert.equal(numberText(-3), '-3');
+  assert.equal(numberText(1.5), '1.5');
+  assert.equal(shareText(400), '0.400');
+  assert.equal(shareText(400), shareText(400));
+  assert.equal(shareText(1000), '1.000');
+});
+
+test('Ctrl+1, Ctrl+2, Ctrl+3 (Cmd on a Mac) by the key or the physical key; nothing with Shift or Alt', () => {
+  assert.equal(dockKeyOf(key('1', { ctrlKey: true })), 1);
+  assert.equal(dockKeyOf(key('2', { metaKey: true })), 2);
+  assert.equal(dockKeyOf(key('"', { code: 'Digit3', ctrlKey: true })), 3, 'a layout whose 3 key types another character');
+  assert.equal(dockKeyOf(key('2', { code: 'Numpad2', ctrlKey: true })), 2);
+  assert.equal(dockKeyOf(key('1')), 0);
+  assert.equal(dockKeyOf(key('!', { code: 'Digit1', ctrlKey: true, shiftKey: true })), 0);
+  assert.equal(dockKeyOf(key('3', { code: 'Digit3', ctrlKey: true, altKey: true })), 0);
+  assert.equal(dockKeyOf(key('4', { code: 'Digit4', ctrlKey: true })), 0);
+});
+
+// ---- the layout on the page ----
+
+test('the kept layout is shown at start: each size on the element that reads it, the folds as body classes', () => {
+  const storage = memoryStorage(JSON.stringify({ left: 300, right: 400, bottom: 333, split: 0.7, rightFolded: true, assetsFolded: true }));
+  const { el, toggle, fold } = makeLayout({ storage });
+  assert.equal(el.body.style.props.get('--weed-left'), '300');
+  assert.equal(el.body.style.props.get('--weed-right'), '400');
+  assert.equal(el.bottom.style.props.get('--weed-bottom'), '333');
+  assert.equal(el.assets.style.props.get('--weed-assets'), '0.300');
+  assert.equal(el.body.classList.contains('weed-fold-right'), true);
+  assert.equal(el.body.classList.contains('weed-fold-left'), false);
+  assert.equal(el.body.classList.contains('weed-fold-assets'), true);
+  assert.deepEqual(['left', 'right', 'bottom'].map((t) => toggle[t].getAttribute('aria-pressed')), ['true', 'false', 'true']);
+  assert.equal(fold.assets.getAttribute('aria-expanded'), 'false');
+  assert.equal(fold.inspector.getAttribute('aria-expanded'), 'true');
+  assert.equal(el.consolePane.hidden, true);
+  assert.equal(storage.sets, 0, 'showing writes nothing back');
+});
+
+test('a drag writes one property per move that changes the size, reads the layout only at the press, and keeps it at the release', () => {
+  const { el, handle, storage } = makeLayout();
+  const reads = () => el.left.rectReads + el.right.rectReads + el.bottom.rectReads + el.assets.rectReads + el.column.rectReads;
+  drag(handle.left, [[10, 0], [10.2, 3], [35, 0], [60, 0]]);
+  // 260, 260 (unchanged: no write), 285, 310.
+  assert.deepEqual(el.body.style.writes.slice(-3), [['--weed-left', '260'], ['--weed-left', '285'], ['--weed-left', '310']]);
+  assert.equal(reads(), 1, 'one layout read, at the press');
+  assert.equal(storage.sets, 1, 'kept once, at the release');
+  assert.equal(JSON.parse(storage.getItem(LAYOUT_KEY)).left, 310);
+  assert.equal(el.body.classList.contains('weed-resizing'), false, 'the drag is over');
+  assert.equal(handle.left.captured.size, 0, 'the pointer is let go');
+});
+
+test('each handle sizes its own: the right dock leftward, the bottom pane upward, the split downward', () => {
+  const { layout, el, handle } = makeLayout();
+  drag(handle.right, [[-50, 0]]);
+  assert.equal(layout.layout.right, 370);
+  assert.equal(el.body.style.props.get('--weed-right'), '370');
+  drag(handle.bottom, [[0, -100]]);
+  assert.equal(layout.layout.bottom, 340);
+  assert.equal(el.bottom.style.props.get('--weed-bottom'), '340');
+  drag(handle.split, [[0, 70]]);
+  assert.equal(layout.layout.split, 0.7, 'the Assets 280 → 210 px of 700');
+  assert.equal(el.assets.style.props.get('--weed-assets'), '0.300');
+});
+
+test('a drag stops at the bounds, ignores another pointer, and a double click puts the default back', () => {
+  const { layout, el, handle } = makeLayout();
+  drag(handle.left, [[5000, 0]]);
+  assert.equal(layout.layout.left, Math.round(0.32 * 1366), 'a third of the window');
+  handle.right.dispatch('pointerdown', { button: 0, pointerId: 7, clientX: 900, clientY: 300 });
+  handle.right.dispatch('pointermove', { pointerId: 8, clientX: 700, clientY: 300 });
+  handle.right.dispatch('pointerdown', { button: 0, pointerId: 9, clientX: 900, clientY: 300 });
+  handle.right.dispatch('pointerup', { pointerId: 9 });
+  assert.equal(layout.layout.right, LAYOUT_DEFAULTS.right, 'other pointers do nothing');
+  handle.right.dispatch('pointerup', { pointerId: 7 });
+  handle.left.dispatch('dblclick');
+  assert.equal(layout.layout.left, LAYOUT_DEFAULTS.left);
+  assert.equal(el.body.style.props.get('--weed-left'), String(LAYOUT_DEFAULTS.left));
+  // A secondary button does not start a drag.
+  handle.left.dispatch('pointerdown', { button: 2, pointerId: 3, clientX: 0, clientY: 0 });
+  handle.left.dispatch('pointermove', { pointerId: 3, clientX: 100, clientY: 0 });
+  assert.equal(layout.layout.left, LAYOUT_DEFAULTS.left);
+});
+
+test('with a storage that throws, the layout starts with the defaults and its drags and folds still work', () => {
+  const { layout, el, handle, fold } = makeLayout({ storage: throwingStorage() });
+  assert.deepEqual(layout.layout, { ...LAYOUT_DEFAULTS });
+  drag(handle.left, [[40, 0]]);
+  assert.equal(el.body.style.props.get('--weed-left'), '290');
+  fold.left.click();
+  assert.equal(el.body.classList.contains('weed-fold-left'), true);
+});
+
+test('fold buttons and Ctrl+1, 2, 3 fold and unfold the docks; the bar’s buttons show it; a held key folds once', () => {
+  const { layout, el, toggle, fold, storage } = makeLayout();
+  fold.left.click();
+  assert.equal(el.body.classList.contains('weed-fold-left'), true);
+  assert.equal(toggle.left.getAttribute('aria-pressed'), 'false');
+  toggle.left.click();
+  assert.equal(el.body.classList.contains('weed-fold-left'), false);
+  const e2 = ctrl(2);
+  assert.equal(layout.onKey(e2), true);
+  assert.equal(e2.prevented, true, 'the browser does not switch tabs');
+  assert.equal(el.body.classList.contains('weed-fold-right'), true);
+  layout.onKey(ctrl(3));
+  assert.equal(el.body.classList.contains('weed-fold-bottom'), true);
+  const held = ctrl(3, { repeat: true });
+  assert.equal(layout.onKey(held), true);
+  assert.equal(held.prevented, true);
+  assert.equal(el.body.classList.contains('weed-fold-bottom'), true, 'a repeat folds nothing');
+  assert.equal(layout.onKey(ctrl(4)), false);
+  assert.equal(layout.onKey(key('2')), false);
+  assert.deepEqual(JSON.parse(storage.getItem(LAYOUT_KEY)).rightFolded, true, 'kept');
+  // A section's title: folded, the other section takes the column.
+  fold.assets.click();
+  assert.equal(el.body.classList.contains('weed-fold-assets'), true);
+  assert.equal(fold.assets.getAttribute('aria-expanded'), 'false');
+  // The game page passes its keys on by digit (EditorHost.dockKey).
+  assert.equal(layout.toggleDock(1), true);
+  assert.equal(el.body.classList.contains('weed-fold-left'), true);
+  assert.equal(layout.toggleDock(7), false);
+});
+
+test('the Console opens a pane over the strip; it closes a debug panel that is open, and a debug panel closes it', () => {
+  const activeTab = new Element();
+  const queries = { '.debug-ui-tab.active': activeTab };
+  const { layout, el, storage } = makeLayout({ debugQueries: queries });
+  el.consoleTab.click();
+  assert.equal(layout.layout.consoleOpen, true);
+  assert.equal(el.consolePane.hidden, false);
+  assert.equal(el.body.classList.contains('weed-console-open'), true);
+  assert.equal(el.consoleTab.getAttribute('aria-pressed'), 'true');
+  assert.equal(activeTab.clicks, 1, 'the open debug panel’s tab, clicked: the debug bar closes it');
+  assert.equal(JSON.parse(storage.getItem(LAYOUT_KEY)).consoleOpen, true);
+  // A debug tab clicked while the Console is open: once its panel is open, the Console closes.
+  queries['.debug-ui-panel.open'] = new Element();
+  el.debugSlot.dispatch('click');
+  assert.equal(layout.layout.consoleOpen, false);
+  assert.equal(el.consolePane.hidden, true);
+  // Opening the Console unfolds a folded bottom dock.
+  layout.setFolded('bottom', true);
+  delete queries['.debug-ui-tab.active'];
+  el.consoleTab.click();
+  assert.equal(layout.layout.bottomFolded, false);
+});
