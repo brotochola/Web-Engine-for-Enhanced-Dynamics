@@ -425,6 +425,21 @@ export class EntityTree {
     this._scene = null;
     this._documentChanged = false;
 
+    /**
+     * Its rows are made to fit its height when it draws: a taller dock (a fold, a drag, a window resize) draws again.
+     * The observer is the window's the list is shown in (the editor page's, D9), made when it is first drawn there,
+     * and let go in destroy, so nothing of this page stays in the editor page.
+     */
+    this._sizeObserver = null;
+    this._observedView = null;
+    this._shownHeight = -1;
+    this._onResize = () => {
+      const height = this._list.clientHeight;
+      if (height === this._shownHeight) return;
+      this._shownHeight = height;
+      this.render();
+    };
+
     this.el = document.createElement('div');
     this.el.className = 'weed-tree';
     this.el.style.cssText = 'display:flex;flex-direction:column;height:100%;min-height:0';
@@ -1177,6 +1192,7 @@ export class EntityTree {
   /** Draw the rows in view. */
   render() {
     this._style();
+    this._watchSize();
     const model = this.model;
     const total = model.rowCount;
     this._sizeSpacer(total);
@@ -1190,6 +1206,16 @@ export class EntityTree {
     }
     if (this._renameName !== null) this._placeRename();
     this._showFilter();
+  }
+
+  /** Watch the list's height in the window it is shown in now (see the constructor). */
+  _watchSize() {
+    const view = this._list.ownerDocument?.defaultView ?? null;
+    if (view === this._observedView) return;
+    this._sizeObserver?.disconnect();
+    this._observedView = view;
+    this._sizeObserver = typeof view?.ResizeObserver === 'function' ? new view.ResizeObserver(this._onResize) : null;
+    this._sizeObserver?.observe(this._list);
   }
 
   _sizeSpacer(total) {
@@ -1427,6 +1453,9 @@ export class EntityTree {
    * menu goes with its listeners there.
    */
   destroy() {
+    this._sizeObserver?.disconnect();
+    this._sizeObserver = null;
+    this._observedView = null;
     this._menu.close(false);
     this._closeRename(false);
     this._cancelPending();

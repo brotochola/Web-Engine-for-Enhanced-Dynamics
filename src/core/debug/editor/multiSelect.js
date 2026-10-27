@@ -79,7 +79,10 @@ export class MultiSelect {
   selectNames(names) {
     const editMode = this.editMode;
     const scene = editMode.debugUI.scene;
-    const live = names.filter((name) => recordOf(scene, name) !== null && indexOfName(scene, name) >= 0);
+    // The file's names once (a record lookup per name was 17 to 30 ms for littleCity's 1,243 trees).
+    const inFile = new Set();
+    for (const record of scene?.sceneFile?.entities || []) inFile.add(record.name);
+    const live = names.filter((name) => inFile.has(name) && indexOfName(scene, name) >= 0);
     this.names.clear();
     if (live.length === 0) {
       editMode.selection.clear();
