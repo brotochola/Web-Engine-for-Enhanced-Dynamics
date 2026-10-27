@@ -17,17 +17,31 @@ export const OWN_WRITE_IGNORE_MS = 2000;
  * @returns {Promise<number>} the file's new modification time
  */
 export async function saveSceneFile(fileUrl, doc, env = {}) {
+  return putDevFile(fileUrl, serializeSceneFile(doc), 'application/json', env);
+}
+
+/**
+ * Write a file through the dev server's file route: a scene file, or the atlas the editor bakes (.atlas.png,
+ * .atlas.json; ED-31). Hot reload skips the write: the page already has what it wrote.
+ * @param {string} fileUrl - the file's URL, on this page's server
+ * @param {string|Uint8Array|Blob} body
+ * @param {string} contentType
+ * @param {{ fetch?: typeof fetch, origin?: string }} [env] - for tests
+ * @returns {Promise<number>} the file's new modification time
+ */
+export async function putDevFile(fileUrl, body, contentType, env = {}) {
   const origin = env.origin ?? location.origin;
   const url = new URL(fileUrl, `${origin}/`);
   if (url.origin !== origin) throw new Error(`${fileUrl} is not on this page's server, so the editor cannot save it`);
   const sitePath = decodeURIComponent(url.pathname);
-  const text = serializeSceneFile(doc);
   HotReload.ignore(url.pathname, OWN_WRITE_IGNORE_MS);
   const res = await (env.fetch ?? fetch)(`${origin}/__weed/file?path=${encodeURIComponent(sitePath)}`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: text,
+    headers: { 'Content-Type': contentType },
+    body,
   });
+  // A big body (an atlas image) can take longer to send than the window lasts: it starts again once written.
+  HotReload.ignore(url.pathname, OWN_WRITE_IGNORE_MS);
   let answer = null;
   try {
     answer = await res.json();

@@ -60,6 +60,7 @@ export {
   encodeSave,
   decodeSave,
 } from './core/save/saveGame.js';
+export { registerSceneFile } from './core/sceneFile.js';
 
 // ============================================================================
 // COMPONENTS
@@ -199,6 +200,7 @@ import {
   encodeSave,
   decodeSave,
 } from './core/save/saveGame.js';
+import { registerSceneFile } from './core/sceneFile.js';
 import {
   mixSeed,
   seededRandom,
@@ -373,6 +375,7 @@ const WEED = Object.freeze({
   buildSavePayload,
   encodeSave,
   decodeSave,
+  registerSceneFile,
 
   // Components
   Transform,

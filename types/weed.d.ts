@@ -197,6 +197,14 @@ export interface SceneFileInput {
   [key: string]: unknown;
 }
 
+/**
+ * Carry a scene file in the game's code: a load of its URL (loadScene, a scene class's defaultSceneFile, a save that
+ * recorded the file) takes this document and fetches nothing. An exported game (the editor's Export, game.min.js)
+ * registers every level it bundles. Checked now (throws on a malformed one); each load gets its own copy.
+ * @param url the file's URL: absolute, or relative to the page
+ */
+export function registerSceneFile(url: string, doc: SceneFile): void;
+
 /** Do not force this entity onto one worker: use stride `activeListSlot % logicWorkerCount`. */
 export const FORCE_PROCESS_ON_LOGIC_WORKER_NONE: -1;
 export function resolveForceProcessOnLogicWorker(
@@ -4228,6 +4236,7 @@ export interface WeedNamespace extends WeedEnums {
   buildSavePayload: typeof buildSavePayload;
   encodeSave: typeof encodeSave;
   decodeSave: typeof decodeSave;
+  registerSceneFile: typeof registerSceneFile;
   Transform: typeof Transform;
   RigidBody: typeof RigidBody;
   Collider: typeof Collider;

@@ -17,6 +17,8 @@ import { MINIFY_RESERVED_NAMES } from './scripts/minifyReservedNames.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+// scripts/buildBundle.js passes WEED_DIST_DIR (absolute) to build into another folder than dist/.
+const distDir = process.env.WEED_DIST_DIR ? path.resolve(process.env.WEED_DIST_DIR) : path.resolve(__dirname, 'dist');
 
 // Cap terser worker_threads parallelism. See webpack.config.js for context —
 // each worker thread gets V8's default ~2GB heap, and the embedded ~4MB worker
@@ -64,7 +66,7 @@ const umdConfig = {
     devtool: false,
     entry: './src/index.bundle.js',
     output: {
-        path: path.resolve(__dirname, 'dist'),
+        path: distDir,
         filename: bundleFileName(false),
         library: {
             name: 'WEED',
@@ -147,7 +149,7 @@ const esmConfig = {
     devtool: false,
     entry: './src/index.bundle.js',
     output: {
-        path: path.resolve(__dirname, 'dist'),
+        path: distDir,
         filename: bundleFileName(true),
         library: {
             type: 'module'

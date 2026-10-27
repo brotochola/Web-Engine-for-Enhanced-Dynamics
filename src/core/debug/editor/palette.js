@@ -6,6 +6,7 @@
 // edit mode.
 
 import { FloatingPanel } from '../ui/floatingPanel.js';
+import { ShipRow } from './shipRow.js';
 
 /** Classes the editor does not offer: the engine's own helpers. */
 const UNPLACEABLE = new Set(['Flash']);
@@ -23,6 +24,8 @@ export class Palette {
     this._body = null;
     this._files = null;
     this._list = null;
+    /** The Bake atlas and Export row (shipRow.js), made with the body. */
+    this.ship = null;
   }
 
   show() {
@@ -152,6 +155,9 @@ export class Palette {
     this._files.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
     this._list = document.createElement('div');
     this._body.append(this._files, this._list);
+    // Stage 5: Bake atlas and Export, below the classes.
+    this.ship = new ShipRow(this.editMode);
+    this._body.append(this.ship.el);
   }
 
   _createPanel() {

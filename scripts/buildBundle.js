@@ -14,6 +14,7 @@
 
 import { execSync } from 'child_process';
 import fs from 'fs';
+import { createRequire } from 'module';
 import path from 'path';
 import zlib from 'zlib';
 import { fileURLToPath } from 'url';
@@ -22,9 +23,13 @@ import { BUILD_INPUTS_FILE, bundleInputsHash } from './distVersion.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, '..');
-const distDir = path.join(rootDir, 'dist');
+// WEED_DIST_DIR builds into another folder (a smoke's fresh engine in a temp folder, dist/ left as it is); the
+// webpack configs read it too, so it is made absolute here, against this process's folder.
+const distDir = process.env.WEED_DIST_DIR ? path.resolve(process.env.WEED_DIST_DIR) : path.join(rootDir, 'dist');
+if (process.env.WEED_DIST_DIR) process.env.WEED_DIST_DIR = distDir;
 const workersDir = path.join(distDir, 'workers');
-const webpackCli = path.join(rootDir, 'node_modules', 'webpack-cli', 'bin', 'cli.js');
+// Resolved the way Node resolves it: from a git worktree, node_modules is the main checkout's, folders above.
+const webpackCli = createRequire(import.meta.url).resolve('webpack-cli/bin/cli.js');
 
 if (process.argv.includes('--obfuscate')) process.env.OBFUSCATE = 'true';
 const shouldObfuscate = process.env.OBFUSCATE === 'true';

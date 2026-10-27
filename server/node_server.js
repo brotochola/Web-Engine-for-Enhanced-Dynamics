@@ -44,6 +44,12 @@ const HOT_RELOAD = process.env.WEED_HOT_RELOAD !== '0';
 // banner stays readable. WEED_LOG_REQUESTS=1 logs every request.
 const LOG_REQUESTS = process.env.WEED_LOG_REQUESTS === '1';
 const reloadClients = new Set();
+// The editor's Export (ED-32): each scene class's game goes to scratch/export/<SceneClass>/ (scratch/ is not tracked),
+// or under WEED_EXPORT_DIR; it ships WEED_EXPORT_ENGINE, else dist/weed.prod.bundle.min.js.
+const EXPORT = {
+  dir: process.env.WEED_EXPORT_DIR || path.join(process.cwd(), 'scratch', 'export'),
+  engineBundle: process.env.WEED_EXPORT_ENGINE || undefined,
+};
 const WATCHED_EXT = new Set(['.js', '.mjs', '.json', '.frag', '.vert', '.glsl', '.wgsl', '.png', '.jpg', '.css', '.html']);
 const IGNORED = /(^|[\\/])(node_modules|\.git|dist|scratch|\.claude)([\\/]|$)|(^|[\\/])tests[\\/]results([\\/]|$)/;
 let reloadTimer = null;
@@ -92,8 +98,9 @@ function watchForReload() {
 const server = http.createServer((req, res) => {
   if (LOG_REQUESTS) console.log(`${req.method} ${req.url}`);
 
-  // The editor saves scene files and lists them (localhost only), and its page is at /__weed/editor/.
-  if (handleDevRoute(req, res, process.cwd(), ISOLATION_HEADERS)) return;
+  // The editor saves scene files, lists them and exports the game (localhost only), and its page is at
+  // /__weed/editor/.
+  if (handleDevRoute(req, res, process.cwd(), ISOLATION_HEADERS, { export: EXPORT })) return;
   if (serveEditorPage(req, res, { shellDir: EDITOR_SHELL, headers: ISOLATION_HEADERS })) return;
 
   const urlPath = req.url.split('?')[0];

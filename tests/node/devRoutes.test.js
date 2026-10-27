@@ -1,6 +1,7 @@
 // The dev server's editor routes (VISUAL_EDITOR_PLAN.md D7, ED-13): PUT /__weed/file writes a scene file inside the
 // served folder, atomically; GET /__weed/list lists a folder's scene files. Only this machine, its own pages, paths
-// inside the folder, .scene.json names, JSON bodies of at most 8 MB.
+// inside the folder, .scene.json names (and the baked atlas: .atlas.json, .atlas.png), JSON bodies of at most 8 MB
+// (a PNG of at most 64 MB).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -8,8 +9,9 @@ import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-import { handleDevRoute, MAX_BODY_BYTES, resolveInside } from '../../server/devRoutes.js';
+import { handleDevRoute, MAX_ATLAS_PNG_BYTES, MAX_BODY_BYTES, resolveInside } from '../../server/devRoutes.js';
 
 async function withServer(fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-devroutes-'));
@@ -100,6 +102,35 @@ test('PUT refuses paths out of the folder, other endings, bodies that are not JS
   });
 });
 
+test('PUT writes the atlas the editor bakes: a PNG of up to 64 MB and its JSON (ED-31)', async () => {
+  await withServer(async ({ root, base }) => {
+    // Past the 8 MB of a scene file: an atlas image may be that big.
+    const png = Buffer.alloc(MAX_BODY_BYTES + 1024, 7);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png);
+    assert.ok(png.length <= MAX_ATLAS_PNG_BYTES);
+    const res = await put(base, '/levels/Level.atlas.png', png);
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+    assert.ok(fs.readFileSync(path.join(root, 'levels', 'Level.atlas.png')).equals(png), 'written byte for byte');
+    const json = '{"frames":{},"animations":{},"meta":{"size":{"w":1,"h":1}}}';
+    assert.equal((await put(base, '/levels/Level.atlas.json', json)).status, 200);
+    assert.equal(fs.readFileSync(path.join(root, 'levels', 'Level.atlas.json'), 'utf8'), json);
+
+    const refused = [
+      ['/levels/Other.atlas.png', '{"not":"a png"}', 400, /not a PNG/],
+      ['/levels/Other.atlas.json', 'not json', 400, /not JSON/],
+      ['/levels/Other.png', png.subarray(0, 64), 400, /can be written/],
+      ['/levels/Other.json', '{}', 400, /can be written/],
+      ['/levels/Other.atlas.json', `"${'x'.repeat(MAX_BODY_BYTES)}"`, 413, /at most/],
+    ];
+    for (const [sitePath, body, status, why] of refused) {
+      const answer = await put(base, sitePath, body);
+      assert.equal(answer.status, status, sitePath);
+      assert.match((await answer.json()).error, why, sitePath);
+    }
+    assert.deepEqual(fs.readdirSync(path.join(root, 'levels')).sort(), ['Level.atlas.json', 'Level.atlas.png']);
+  });
+});
+
 test('a link inside the folder does not lead out of it', async () => {
   await withServer(async ({ root, base }) => {
     const elsewhere = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-devroutes-elsewhere-'));
@@ -166,4 +197,60 @@ test('other paths are left to the server', () => {
   for (const url of ['/__weed/reload', '/index.html', '/__weed/files', '/__weed/file/x']) {
     assert.equal(handleDevRoute({ url, method: 'GET', headers: {}, socket: {} }, res, os.tmpdir()), false, url);
   }
+});
+
+test('POST /__weed/export exports into the folder the server was given, never one the request names (ED-32)', async () => {
+  const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
+  const work = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-export-route-'));
+  const engineBundle = path.join(work, 'weed.prod.bundle.min.js');
+  fs.writeFileSync(engineBundle, '/* engine */ WEED.registerSceneFile');
+  const options = { export: { dir: path.join(work, 'exports'), engineBundle } };
+  const server = http.createServer((req, res) => {
+    if (!handleDevRoute(req, res, repo, {}, options)) {
+      res.writeHead(404);
+      res.end();
+    }
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const post = (body) => fetch(`${base}/__weed/export`, { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) });
+  const F = '/tests/fixtures/exportGame';
+  try {
+    const res = await post({
+      scene: `${F}/game/fixtureScene.js`,
+      export: 'FixtureScene',
+      start: `${F}/game/levels/a.scene.json`,
+      sceneFiles: [`${F}/game/levels/a.scene.json`],
+      assets: [],
+      atlas: null,
+      outDir: path.join(work, 'elsewhere'), // not the request's to choose
+    });
+    const done = await res.json();
+    assert.equal(res.status, 200, JSON.stringify(done));
+    assert.equal(done.outDir, path.join(work, 'exports', 'FixtureScene'));
+    assert.equal(done.url, null, 'outside the served folder: no URL to open it at');
+    assert.ok(done.files.includes('game.min.js') && done.files.includes('vendor/weed.js'));
+    assert.ok(fs.existsSync(path.join(work, 'exports', 'FixtureScene', 'index.html')));
+    assert.equal(fs.existsSync(path.join(work, 'elsewhere')), false);
+
+    const missing = await post({ scene: `${F}/game/none.js`, export: 'FixtureScene' });
+    assert.equal(missing.status, 404);
+    assert.match((await missing.json()).error, /scene module not found/);
+    assert.equal((await post('{ not json')).status, 400);
+    assert.equal((await fetch(`${base}/__weed/export`)).status, 405);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+  // The same local checks as the other routes.
+  let status = 0;
+  const req = Object.assign(new EventEmitter(), {
+    method: 'POST',
+    url: '/__weed/export',
+    socket: { remoteAddress: '192.168.1.20' },
+    headers: { host: 'localhost:8000' },
+    resume() {},
+  });
+  assert.equal(handleDevRoute(req, { writeHead: (s) => (status = s), end() {} }, os.tmpdir()), true);
+  assert.equal(status, 403, 'another machine');
 });

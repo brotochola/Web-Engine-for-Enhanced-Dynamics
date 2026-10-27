@@ -1,7 +1,9 @@
 // toolbar.js — the editor page's toolbar (VISUAL_EDITOR_PLAN.md D9, ED-15), made by the game page and put into the
 // editor page's bar: Play or Edit, Stop (D8, ED-16), Save, Undo, Redo, the running scene file with its unsaved
 // marker, and the editor's status line. refresh() writes only what changed; EditMode asks for it on each change of
-// its own, never per frame.
+// its own, never per frame. Export (ED-32) builds the game into a static site (shipRow.js).
+
+import { exportFromEditor } from './shipRow.js';
 
 const BUTTON_CLASS = 'weed-editor-button';
 
@@ -16,11 +18,12 @@ export class EditorToolbar {
     this._save = this._button('Save', () => editMode.save(), 'Write the scene file (Ctrl+S)');
     this._undo = this._button('Undo', () => editMode.undo(), 'Undo (Ctrl+Z), while editing');
     this._redo = this._button('Redo', () => editMode.redo(), 'Redo (Ctrl+Y), while editing');
+    this._export = this._button('Export', () => exportFromEditor(editMode), 'Build the game into a static site, with its atlas baked (the Assets dock says where it went)');
     this._file = document.createElement('span');
     this._file.style.cssText = 'color:#c8ccd8;white-space:nowrap;margin-left:6px';
     this._status = document.createElement('span');
     this._status.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0';
-    this.el.append(this._mode, this._stop, this._save, this._undo, this._redo, this._file, this._status);
+    this.el.append(this._mode, this._stop, this._save, this._undo, this._redo, this._export, this._file, this._status);
     /** What is shown, so a refresh that changes nothing writes nothing. */
     this._shown = { editing: null, playing: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, error: null };
     this.refresh();

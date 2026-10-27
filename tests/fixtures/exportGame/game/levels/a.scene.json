@@ -1,0 +1,9 @@
+{
+  "format": 1,
+  "script": "../fixtureScene.js",
+  "export": "FixtureScene",
+  "entities": [
+    { "name": "Crate1", "class": "Crate", "x": 100, "y": 200 },
+    { "name": "Crate2", "class": "Crate", "x": 300, "y": 200, "config": { "size": 64 } }
+  ]
+}
