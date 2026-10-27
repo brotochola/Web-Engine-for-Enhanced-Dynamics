@@ -36,10 +36,10 @@ import { Mouse } from '../../mouse.js';
 import { Transform } from '../../../components/transform.js';
 import { saveSceneFile, listSceneFiles } from './sceneFileStore.js';
 import { Selection } from './selection.js';
+import { EditorLayers } from './editorLayers.js';
 import { MoveTool, SNAP_STEPS, snapTo } from './moveTool.js';
 import { History } from './history.js';
 import { Palette } from './palette.js';
-import { EditorLayers } from './editorLayers.js';
 import {
   editPlaced,
   restorePlaced,

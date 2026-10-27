@@ -13,7 +13,7 @@ import { TilemapList } from './tilemapList.js';
 /** Classes the editor does not offer: the engine's own helpers. */
 const UNPLACEABLE = new Set(['Flash']);
 
-/** A section above the classes: the level row, the layers, the tilemaps. */
+/** The layers' and tilemaps' sections, ruled off as the level row above them is. */
 const SECTION_STYLE = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
 
 const SELECT_STYLE =
@@ -66,8 +66,7 @@ export class Palette {
     const list = this._list;
     if (list === null) return;
     this._fillFiles();
-    if (this._layers !== null) this.editMode.layers?.fill(this._layers);
-    if (this._tilemaps !== null) this._tilemapList.fill(this._tilemaps);
+    this._fillSections();
     list.textContent = '';
     const scene = this.editMode.debugUI.scene;
     const placed = new Map();
@@ -125,6 +124,24 @@ export class Palette {
     box.appendChild(actions);
   }
 
+  /**
+   * The Layers (ED-24) and Tilemaps (ED-26) sections: made on the first refresh, between the level row and the
+   * classes, and filled when the scene changes (their builders keep the rows they made for a scene).
+   */
+  _fillSections() {
+    if (this._layers === null) {
+      if (this._body === null) return;
+      this._layers = document.createElement('div');
+      this._layers.style.cssText = SECTION_STYLE;
+      this._tilemaps = document.createElement('div');
+      this._tilemaps.style.cssText = SECTION_STYLE;
+      this._body.insertBefore(this._layers, this._list);
+      this._body.insertBefore(this._tilemaps, this._list);
+    }
+    this.editMode.layers?.fill(this._layers);
+    if (this._tilemaps !== null) this._tilemapList.fill(this._tilemaps);
+  }
+
   _button(text, title, onclick) {
     const button = document.createElement('button');
     button.type = 'button';
@@ -162,13 +179,9 @@ export class Palette {
   _createBody() {
     this._body = document.createElement('div');
     this._files = document.createElement('div');
-    this._files.style.cssText = SECTION_STYLE;
-    this._layers = document.createElement('div');
-    this._layers.style.cssText = SECTION_STYLE;
-    this._tilemaps = document.createElement('div');
-    this._tilemaps.style.cssText = SECTION_STYLE;
+    this._files.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
     this._list = document.createElement('div');
-    this._body.append(this._files, this._layers, this._tilemaps, this._list);
+    this._body.append(this._files, this._list);
   }
 
   _createPanel() {
