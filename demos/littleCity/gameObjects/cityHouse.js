@@ -13,16 +13,23 @@ const { ShapeType } = enums;
 
 const HOUSE_COUNT = 63;
 
+/** house_01 … house_63. */
+const houseSprite = (n) => (n < 10 ? `house_0${n}` : `house_${n}`);
+
 export class CityHouse extends GameObject {
   static serializable = true;
   static components = [Collider, SpriteRenderer, LightEmitter, RigidBody];
   static houseCount = HOUSE_COUNT;
 
-  onSpawned(spawnConfig = {}) {
+  // The house's picture, picked in the editor (levels/city.scene.json); empty, its seed picks one of the 63.
+  static spawnParams = {
+    sprite: { value: '', type: 'sprite', tip: 'The house; empty: one of the 63, from its seed (🎲 for another)' },
+  };
+
+  onSpawned(params) {
     this.rigidBody.static = 1;
-    const n = 1 + ((rng() * HOUSE_COUNT) | 0);
-    const id = n < 10 ? `0${n}` : `${n}`;
-    this.setSprite(`house_${id}`);
+    const n = 1 + ((rng() * HOUSE_COUNT) | 0); // drawn either way, so a draw after it stays the same
+    this.setSprite(params.sprite || houseSprite(n));
 
     // objects JSON footprint ~293×262; collider sits toward the base
     this.collider.shapeType = ShapeType.Box;
