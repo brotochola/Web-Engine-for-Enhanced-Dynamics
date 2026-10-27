@@ -231,7 +231,8 @@ export class EditMode {
   /** Whether a tool draws on the overlay with nothing selected (the brush's circle): the overlay runs while one does. */
   wantsOverlay() {
     if (!this.active) return false;
-    for (const tool of this.tools) if (tool.wantsOverlay?.() === true) return true;
+    const tools = this.tools; // each overlay frame: an index, no iterator
+    for (let k = 0; k < tools.length; k++) if (tools[k].wantsOverlay?.() === true) return true;
     return false;
   }
 
