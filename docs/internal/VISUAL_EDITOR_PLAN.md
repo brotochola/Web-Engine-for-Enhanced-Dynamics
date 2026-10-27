@@ -2082,6 +2082,14 @@ server still writes nothing. What changed for this plan:
 45. **Two smoke races found by the full pass, under load:** editorLayoutSmoke read the pointer while a resized frame
     still settled (it waits for the canvas to follow its frame since b5a0557f), and editorSessionSmoke pasted before the
     game had read the pointer's point (it waits for it since 9cbefc8d). Neither is the editor's.
+46. **Each Stop added a loop to five workers** (the author, 2026-10-27: the logic worker at 5000 fps after a few Stops,
+    the meter's floor of 0.2 ms, two frames in one tick). The fast swap pauses and resumes the workers in 2-6 ms,
+    within one display frame, and a pause left the requestAnimationFrame each worker had asked for: it ran after the
+    resume, beside the loop resume() started. In Chrome with a window, the platformer's logic, spatial, particle,
+    pre-render and physics workers ran 60, 121, 180, 237, 300 and 356 frames/s after 0 to 5 Stops, and each extra physics
+    frame stepped the world another 1/60 s, so the game sped up. Headless Chromium did not show it. A game's level change
+    by fast swap did the same: ED-35's smokes counted memory, not frames. Fixed in the engine since cdb6af67
+    (REVIEW_PLAN.md N-82): 60 after each Stop.
 
 **New items:**
 
