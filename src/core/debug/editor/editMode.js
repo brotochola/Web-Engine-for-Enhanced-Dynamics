@@ -39,6 +39,7 @@ import { Selection } from './selection.js';
 import { MoveTool, SNAP_STEPS, snapTo } from './moveTool.js';
 import { History } from './history.js';
 import { Palette } from './palette.js';
+import { MultiSelect, groupsOf, writeGroups } from './multiSelect.js';
 import {
   editPlaced,
   restorePlaced,
@@ -54,6 +55,7 @@ import {
   addPlaced,
   removePlaced,
   renamePlaced,
+  writePosition,
 } from './sceneDocument.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
@@ -185,6 +187,11 @@ export class EditMode {
     this._onContextMenu = (e) => {
       if (e.target === this.debugUI.gameEngine?.canvas) e.preventDefault(); // a right drag pans
     };
+
+    /** Several placed entities selected (ED-28): a box, Shift+click, Ctrl+A, groups. Last: other tools come first. */
+    this.multi = this.addTool(new MultiSelect(this));
+    /** A batch of changes is being applied: the selection is shown once, after it. */
+    this._quiet = false;
   }
 
   toggle() {
@@ -432,6 +439,25 @@ export class EditMode {
    */
   _apply(change, forward) {
     switch (change.kind) {
+      case 'batch': {
+        // Several changes as one (ED-28): in order forward, the other way back; the selection shown once after.
+        const list = forward ? change.changes : change.changes.slice().reverse();
+        this._quiet = true;
+        try {
+          for (const c of list) this._apply(c, forward);
+        } finally {
+          this._quiet = false;
+        }
+        this.multi.selectNames((forward ? change.selectAfter : change.selectBefore) || []);
+        this.debugUI.hosted?.onDocumentChanged();
+        this.palette.refresh();
+        this._notify();
+        break;
+      }
+      case 'groups':
+        writeGroups(this.debugUI.scene.sceneFile, structuredClone(forward ? change.after : change.before));
+        this._notify();
+        break;
       case 'edit':
         this._restore(change.editorId, forward ? change.after : change.before);
         break;
@@ -608,6 +634,7 @@ export class EditMode {
   /** Ctrl+D: a copy of the selected placed entity, a grid step (at least 16 px) down and to the right, named anew. */
   duplicateSelected() {
     const selection = this.selection;
+    if (this.multi.count > 0 && selection.authored) return this._duplicateMany();
     if (!selection.authored) return -1;
     const scene = this.debugUI.scene;
     const found = recordOf(scene, selection.name);
@@ -635,9 +662,148 @@ export class EditMode {
     return index;
   }
 
+  // ---- several selected entities (ED-28) ----
+
+  /**
+   * Change the records of several placed entities with `write(record, description)` and respawn them, as one change
+   * (undo takes all of them back).
+   * @param {string} label
+   * @param {string[]} names
+   * @param {(record: object, description: object|null) => void} write
+   * @returns {boolean} whether anything changed
+   */
+  editMany(label, names, write) {
+    const scene = this.debugUI.scene;
+    const changes = [];
+    this._quiet = true;
+    try {
+      for (const name of names) {
+        const found = recordOf(scene, name);
+        if (found === null) continue;
+        const id = editorIdOf(found.record);
+        const result = editPlaced(scene, name, write);
+        if (result !== null) changes.push({ kind: 'edit', editorId: id, before: result.before, after: result.after });
+      }
+    } finally {
+      this._quiet = false;
+    }
+    if (changes.length === 0) return false;
+    this.history.push({ id: 0, label, kind: 'batch', changes, selectBefore: names, selectAfter: names });
+    this.multi.selectNames(names);
+    this.debugUI.hosted?.onDocumentChanged();
+    this.palette.refresh();
+    this._notify();
+    return true;
+  }
+
+  /** The move tool's release and nudge: the selection to (x, y), the others selected by the same step. */
+  moveSelectedTo(x, y) {
+    const selection = this.selection;
+    if (this.multi.count === 0) return this.editSelected(`move ${selection.name}`, (record) => writePosition(record, x, y));
+    const found = recordOf(this.debugUI.scene, selection.name);
+    if (found === null) return -1;
+    const dx = x - found.record.x;
+    const dy = y - found.record.y;
+    const names = this.multi.selectedNames();
+    this.editMany(`move ${names.length} entities`, names, (record) => writePosition(record, record.x + dx, record.y + dy));
+    return selection.index;
+  }
+
+  /** Ctrl+G: the selected placed entities become a group (a click on one selects them all); one undo. */
+  groupSelected() {
+    const names = this.multi.selectedNames();
+    const doc = this.debugUI.scene?.sceneFile;
+    if (!doc || names.length < 2) {
+      this._setStatus('Select two or more placed entities to group them', true);
+      return false;
+    }
+    const before = structuredClone(groupsOf(doc));
+    const after = before.map((g) => g.filter((n) => !names.includes(n))).filter((g) => g.length > 1);
+    after.push(names);
+    writeGroups(doc, structuredClone(after));
+    this.history.push({ id: 0, label: `group ${names.length} entities`, kind: 'groups', before, after });
+    this._setStatus(`Grouped ${names.length}: a click on one selects them all`, false);
+    return true;
+  }
+
+  /** Ctrl+Shift+G: the groups of the selected entities are undone; one undo. */
+  ungroupSelected() {
+    const names = this.multi.selectedNames();
+    const doc = this.debugUI.scene?.sceneFile;
+    if (!doc) return false;
+    const before = structuredClone(groupsOf(doc));
+    const after = before.filter((g) => !g.some((n) => names.includes(n)));
+    if (after.length === before.length) return false;
+    writeGroups(doc, structuredClone(after));
+    this.history.push({ id: 0, label: 'ungroup', kind: 'groups', before, after });
+    this._setStatus('Ungrouped', false);
+    return true;
+  }
+
+  /** Del with several selected: all of them out of the file, as one change. */
+  _deleteMany() {
+    const scene = this.debugUI.scene;
+    const names = this.multi.selectedNames();
+    // The last in the file first, so each one's position is still its own, and undo puts them back in order.
+    const found = names.map((name) => recordOf(scene, name)).filter((f) => f !== null);
+    found.sort((a, b) => b.position - a.position);
+    const changes = found.map((f) => ({
+      kind: 'remove',
+      editorId: editorIdOf(f.record),
+      at: f.position,
+      copy: structuredClone(f.record),
+    }));
+    this._quiet = true;
+    try {
+      for (const c of changes) this._remove(c.editorId);
+    } finally {
+      this._quiet = false;
+    }
+    this.history.push({ id: 0, label: `delete ${changes.length} entities`, kind: 'batch', changes, selectBefore: names, selectAfter: [] });
+    this.multi.selectNames([]);
+    this.debugUI.hosted?.onDocumentChanged();
+    this.palette.refresh();
+    this._notify();
+    return true;
+  }
+
+  /** Ctrl+D with several selected: a copy of each, a grid step away, as one change; the copies selected. */
+  _duplicateMany() {
+    const scene = this.debugUI.scene;
+    const names = this.multi.selectedNames();
+    const offset = Math.max(this.move.snap, 16);
+    const changes = [];
+    const copies = [];
+    this._quiet = true;
+    try {
+      for (const name of names) {
+        const found = recordOf(scene, name);
+        if (found === null) continue;
+        const record = structuredClone(found.record);
+        record.name = uniqueName(scene, found.record.name);
+        record.x = found.record.x + offset;
+        record.y = found.record.y + offset;
+        const at = scene.sceneFile.entities.length;
+        if (addPlaced(scene, record, at) < 0) continue;
+        changes.push({ kind: 'add', editorId: editorIdOf(record), at, copy: structuredClone(record) });
+        copies.push(record.name);
+      }
+    } finally {
+      this._quiet = false;
+    }
+    if (changes.length === 0) return -1;
+    this.history.push({ id: 0, label: `duplicate ${changes.length} entities`, kind: 'batch', changes, selectBefore: names, selectAfter: copies });
+    this.multi.selectNames(copies);
+    this.debugUI.hosted?.onDocumentChanged();
+    this.palette.refresh();
+    this._notify();
+    return this.selection.index;
+  }
+
   /** Del: take the selected placed entity out of the file; kept for undo. */
   deleteSelected() {
     const selection = this.selection;
+    if (this.multi.count > 0 && selection.authored && !this.move.dragging) return this._deleteMany();
     if (!selection.authored || this.move.dragging) return false;
     const scene = this.debugUI.scene;
     const found = recordOf(scene, selection.name);
@@ -704,6 +870,7 @@ export class EditMode {
 
   /** Select the entity a change respawned (or nothing: deleted, or its pool was full), and count the palette again. */
   _showRestored(index) {
+    if (this._quiet) return;
     this.debugUI.hosted?.onDocumentChanged();
     if (index >= 0) this.selection.select(index);
     else this.selection.clear();

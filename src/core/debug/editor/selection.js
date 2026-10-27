@@ -187,6 +187,16 @@ export class Selection {
     this._body.append(this._title, this._detail, this._nameRow, this._fields, this.live.el);
   }
 
+  /** How many others are selected with it (ED-28): a line under its name. */
+  showCount(count) {
+    if (this._detail === null || !this.authored) return;
+    const file = this.debugUI.scene?.sceneFileUrl ? new URL(this.debugUI.scene.sceneFileUrl).pathname.split('/').pop() : 'the scene file';
+    this._detail.textContent =
+      count > 0
+        ? `And ${count} more selected: a move, Del and Ctrl+D act on all; Ctrl+G groups them.`
+        : `Placed by ${file}: changes to it are saved there.`;
+  }
+
   _onPanelClosed() {
     this._panel = null;
     this.clear();

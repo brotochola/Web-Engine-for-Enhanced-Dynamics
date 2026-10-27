@@ -246,6 +246,9 @@ export function renamePlaced(scene, from, to) {
       if (description.kinds[k] === KIND_ENTITY && config[key] === from) config[key] = to;
     }
   }
+  // The editor's groups (ED-28) name it too.
+  const groups = scene.sceneFile.editor?.groups;
+  if (Array.isArray(groups)) for (const group of groups) for (let k = 0; k < group.length; k++) if (group[k] === from) group[k] = to;
   return true;
 }
 

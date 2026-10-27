@@ -305,7 +305,7 @@ export class EntityTree {
       const index = liveIndexOf(this._scene, name);
       text = index >= 0 ? `${name}  #${index}` : `${name}  (not live)`;
       if (index < 0) color = '#6b7080';
-      selected = selection.name === name && selection.index >= 0;
+      selected = (selection.name === name && selection.index >= 0) || this.debugUI.editMode.multi?.has(name) === true;
       indent = 22;
     } else {
       const index = group.runtime[at.item];

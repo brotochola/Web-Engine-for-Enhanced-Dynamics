@@ -33,6 +33,7 @@ function setup() {
     _ensureTickLoop() {},
   };
   const editMode = new EditMode(debugUI);
+  editMode.tools.length = 0; // the extension point alone, without the editor's own tools (box select)
   debugUI.editMode = editMode;
   editMode.palette = { show() {}, hide() {}, refresh() {}, destroy() {} };
   const moves = [];

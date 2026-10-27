@@ -123,6 +123,7 @@ test('a right or middle drag on the game canvas pans; elsewhere, or with the lef
 test('a left click on the game canvas selects at the mouse; Esc lets go of the selection, then of edit mode', () => {
   const { editMode, canvas } = setup();
   try {
+    editMode.tools.length = 0; // the move tool's routing alone: box select has its tests (editorMulti.test.js)
     editMode.enter();
     const picks = [];
     let cleared = 0;

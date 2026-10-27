@@ -109,10 +109,11 @@ export class MoveTool {
     return true;
   }
 
-  /** Through the editor: kept for undo, and the selection follows the respawned entity. */
+  /** Through the editor: kept for undo, and the selection follows the respawned entity (the others selected too). */
   _moveTo(x, y) {
-    const selection = this.selection;
-    selection.editor.editSelected(`move ${selection.name}`, (record) => writePosition(record, x, y));
+    const editor = this.selection.editor;
+    if (typeof editor.moveSelectedTo === 'function') editor.moveSelectedTo(x, y);
+    else editor.editSelected(`move ${this.selection.name}`, (record) => writePosition(record, x, y));
   }
 
   /**

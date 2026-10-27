@@ -8,6 +8,8 @@
  *   M1     on a scratch copy of 1-1 (levels/__m1-check.scene.json, removed after): Shift+E, a click selects a
  *          platform, a drag moves it, its Width field widens it, Ctrl+S writes the file through the dev server's
  *          route, and a fresh page that loads the file has the platform where it was left, that wide
+ *   ED-28  on 1-1 (nothing saved): Shift+click selects two platforms, dragging one moves both by the same step,
+ *          one Ctrl+Z puts both back, and a box drawn on empty ground selects both
  *   ED-37  1-1's player put on its goal: the contact loads 1-2 by a fast swap (the scene object kept, no full-load
  *          console line), with levelsDone 1
  *
@@ -217,6 +219,103 @@ async function checkEd37(page, log) {
   check('ED-37 with what carries over', outcome.data?.levelsDone === 1, JSON.stringify(outcome.data));
 }
 
+async function checkEd28(browser, port, log) {
+  const page = await enginePage(browser, port, log);
+  await load(page, `${LEVELS}/1-1.scene.json`, 2500);
+  await page.keyboard.press('Shift+E');
+  await page.waitForFunction(() => globalThis.__m1.game.debugUI.editing === true, undefined, { timeout: 5000 });
+  // Zoomed out with the wheel, as an author does, so several platforms are in view; the zoom eases in, so wait
+  // until the drawn view and the one clicks map through agree.
+  await page.mouse.move(640, 360);
+  for (let k = 0; k < 6; k++) {
+    await page.mouse.wheel(0, 240);
+    await page.waitForTimeout(60);
+  }
+  await page.waitForFunction(
+    () => {
+      const { WEED, game } = globalThis.__m1;
+      const drawn = WEED.Camera._drawnView();
+      const cam = game.currentScene.camera;
+      return Math.abs(drawn.zoom - cam.zoom) < 1e-4 && Math.abs(drawn.x - cam.x) < 0.5 && Math.abs(drawn.y - cam.y) < 0.5;
+    },
+    undefined,
+    { timeout: 10000 },
+  );
+  const view = await page.evaluate(() => {
+    const { WEED, game } = globalThis.__m1;
+    const player = WEED.GameObject.instances[game.currentScene.playerIndex];
+    const p = WEED.Camera.worldToScreen(player.x, player.y);
+    return { zoom: WEED.Camera.zoom, player: { x: p.x, y: p.y } };
+  });
+  const inView = (p) =>
+    p.screen && p.screen.x > 380 && p.screen.x < 940 && p.screen.y > 150 && p.screen.y < 660 &&
+    Math.abs(p.screen.x - view.player.x) + Math.abs(p.screen.y - view.player.y) > 120;
+  const [a, b] = (await platformsOf(page)).filter(inView);
+  check('ED-28 two platforms in view', Boolean(a && b), a && b ? `${a.name}, ${b.name}` : 'fewer than two');
+  if (!a || !b) return page;
+  const selected = () => page.evaluate(() => globalThis.__m1.game.debugUI.editMode.multi.selectedNames());
+  const recordsOf = () =>
+    page.evaluate(
+      (names) => names.map((n) => {
+        const r = globalThis.__m1.game.currentScene.sceneFile.entities.find((e) => e.name === n);
+        return [r.x, r.y];
+      }),
+      [a.name, b.name],
+    );
+
+  await page.keyboard.down('Shift');
+  await page.mouse.click(a.screen.x, a.screen.y);
+  await page.mouse.click(b.screen.x, b.screen.y);
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(150);
+  const picked = await selected();
+  check('ED-28 Shift+click selects both', picked.length === 2 && picked.includes(a.name) && picked.includes(b.name), JSON.stringify(picked));
+
+  const before = await recordsOf();
+  await page.mouse.move(a.screen.x, a.screen.y);
+  await page.mouse.down();
+  await page.mouse.move(a.screen.x + 96, a.screen.y, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const after = await recordsOf();
+  const stepA = after[0][0] - before[0][0];
+  const stepB = after[1][0] - before[1][0];
+  check('ED-28 dragging one moves both by the same step', stepA !== 0 && stepA === stepB && after[1][1] === before[1][1],
+    `${a.name} +${stepA}, ${b.name} +${stepB}`);
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(300);
+  const undone = await recordsOf();
+  check('ED-28 one Ctrl+Z puts both back', JSON.stringify(undone) === JSON.stringify(before), JSON.stringify(undone));
+
+  // A box from empty ground around both, from nothing selected (Esc: the others, then the selection).
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  const corner = await page.evaluate(
+    async ({ x0, y0 }) => {
+      const { pickEntityAt } = await import('/src/core/debug/editor/pick.js');
+      const { WEED, game } = globalThis.__m1;
+      for (let dy = 40; dy < 200; dy += 10) {
+        const w = WEED.Camera.screenToWorld(x0, y0 - dy);
+        if (pickEntityAt(w.x, w.y, -1, (t) => game.debugUI.tools._classNameForType(t)) < 0) return { x: x0, y: y0 - dy };
+      }
+      return null;
+    },
+    { x0: Math.min(a.screen.x, b.screen.x) - 60, y0: Math.min(a.screen.y, b.screen.y) },
+  );
+  if (corner) {
+    await page.mouse.move(corner.x, corner.y);
+    await page.mouse.down();
+    await page.mouse.move(Math.max(a.screen.x, b.screen.x) + 60, Math.max(a.screen.y, b.screen.y) + 20, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(200);
+  }
+  const boxed = await selected();
+  check('ED-28 a box on empty ground selects both', Boolean(corner) && boxed.includes(a.name) && boxed.includes(b.name),
+    corner ? JSON.stringify(boxed) : 'no empty ground above them');
+  return page;
+}
+
 async function main() {
   const headed = process.argv.includes('--headed');
   const server = await createStaticBenchmarkServer(repoRoot, 0, {
@@ -230,6 +329,8 @@ async function main() {
     await page.close();
     page = await checkM1(browser, server.port, log);
     await checkEd37(page, log);
+    await page.close();
+    page = await checkEd28(browser, server.port, log);
     await page.close();
   } finally {
     await browser.close();
