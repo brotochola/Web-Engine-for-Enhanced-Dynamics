@@ -10,6 +10,7 @@
  *             file puts them
  *   joints    in edit mode, the inspector of a placed entity adds a joint (the type and the other entity from its
  *             lists) and removes the file's one; each is one undo
+ *   handles   Alt+drag on the joint's handle (on the entity's center) moves its anchor, not the entity
  *   brush     the palette's Paint takes up the brush; a drag paints decorations into the file and the pool
  *   undo      Ctrl+Z takes the stroke back out of the file and the pool; Ctrl+Y puts it back
  *   saved     Ctrl+S writes the file through the dev server's route: the new joint, the painted decorations
@@ -99,6 +100,35 @@ const readWorld = (page) =>
     };
   });
 
+/**
+ * The screen point the engine reads as the world point (wx, wy): Camera.worldToScreen first, then corrected by what
+ * Mouse reads there (the view may still be on its way to a free target set just before).
+ */
+async function screenPointOf(page, wx, wy) {
+  let point = await page.evaluate(
+    ([x, y]) => {
+      const p = globalThis.__fmt.WEED.Camera.worldToScreen(x, y);
+      return { x: p.x, y: p.y };
+    },
+    [wx, wy],
+  );
+  let zoom = 1;
+  for (let k = 0; k < 6; k++) {
+    await page.mouse.move(point.x, point.y);
+    await page.waitForTimeout(60);
+    const read = await page.evaluate(() => {
+      const { Mouse, Camera } = globalThis.__fmt.WEED;
+      return { x: Mouse.x, y: Mouse.y, zoom: Camera.zoom || 1 };
+    });
+    zoom = read.zoom;
+    const dx = (wx - read.x) * zoom;
+    const dy = (wy - read.y) * zoom;
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) break;
+    point = { x: point.x + dx, y: point.y + dy };
+  }
+  return { x: point.x, y: point.y, zoom };
+}
+
 const samePoints = (a, b) => a.length === b.length && a.every((p, k) => Math.abs(p[0] - b[k][0]) < 1e-3 && Math.abs(p[1] - b[k][1]) < 1e-3);
 
 async function checkLoad(page) {
@@ -169,6 +199,41 @@ async function checkJoints(page) {
       undo.join() === 'joints,joints',
     `after add ${added.joints.length} live, after remove ${JSON.stringify(removed.fileJoints)}; undo ${undo.join()}`,
   );
+
+  // Alt+drag the new joint's handle on Anchor (its center) 30 px right and 20 px up, Anchor in the middle of the view
+  // (away from the panels).
+  await page.evaluate(() => {
+    globalThis.__fmt.WEED.Camera.setFreeTarget(600, 400);
+    return true;
+  });
+  await page.waitForTimeout(300);
+  const from = await screenPointOf(page, 600, 400);
+  const ends = { from, to: { x: from.x + 30 * from.zoom, y: from.y - 20 * from.zoom } };
+  await page.keyboard.down('Alt');
+  await page.mouse.move(ends.from.x, ends.from.y);
+  await page.mouse.down();
+  await page.mouse.move(ends.to.x, ends.to.y, { steps: 6 });
+  await page.mouse.up();
+  await page.keyboard.up('Alt');
+  await page.waitForTimeout(300);
+  const dragged = await readWorld(page);
+  const anchor = dragged.fileJoints?.[0]?.anchorA ?? [NaN, NaN];
+  const kept = await page.evaluate(() => {
+    const scene = globalThis.__fmt.game.currentScene;
+    const record = scene.sceneFile.entities.find((e) => e.name === 'Anchor');
+    return { x: record.x, y: record.y, selected: globalThis.__fmt.game.debugUI.editMode.selection.name };
+  });
+  check(
+    'handles: Alt+drag on a joint’s handle moves its anchor (one undo), not the entity',
+    Math.abs(anchor[0] - 30) < 1.5 &&
+      Math.abs(anchor[1] + 20) < 1.5 &&
+      Math.abs(dragged.joints[0]?.anchors[0] - anchor[0]) < 1e-3 &&
+      kept.x === 600 &&
+      kept.y === 400 &&
+      kept.selected === 'Anchor',
+    `dragged from screen ${ends.from.x.toFixed(0)}, ${ends.from.y.toFixed(0)}: anchorA ${JSON.stringify(anchor)}, ` +
+      `live ${JSON.stringify(dragged.joints[0]?.anchors)}; Anchor at ${kept.x}, ${kept.y}, selected ${kept.selected}`,
+  );
 }
 
 async function checkBrush(page) {
@@ -233,15 +298,17 @@ async function checkSaveAndReload(browser, port, log, page, edited) {
   const text = fs.readFileSync(scratchPath, 'utf8');
   check(
     'saved: Ctrl+S writes the joint and the decorations, in the file’s layout',
-    saved !== null && /\n {4}\{ "type": "distance", "a": "Anchor", "b": "Crate", "anchorA": \[0, 0\], "anchorB": \[0, 0\] \}\n/.test(text) &&
+    saved !== null &&
+      /\n {4}\{ "type": "distance", "a": "Anchor", "b": "Crate", "anchorA": \[[-\d.]+, [-\d.]+\], "anchorB": \[0, 0\] \}\n/.test(text) &&
       /\n {6}"x": \[/.test(text),
     saved ? `${saved.joints.length} joint, ${saved.decorations[0].x.length} pebbles` : 'file unchanged',
   );
   await page.close();
   const fresh = await enginePage(browser, port, log);
   const world = await readWorld(fresh);
-  // The distance joint without a length holds the anchors as placed: Anchor (600, 400) to Crate (400, 600).
-  const want = Math.sqrt(200 * 200 + 200 * 200);
+  // The distance joint without a length holds its anchors as placed: Anchor (600, 400) and its anchor, Crate (400, 600).
+  const [ax, ay] = saved?.joints[0].anchorA ?? [0, 0];
+  const want = Math.sqrt((600 + ax - 400) ** 2 + (400 + ay - 600) ** 2);
   check(
     'reload: a fresh page has the joint between the right entities and every decoration',
     world.joints.length === 1 &&

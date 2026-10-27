@@ -58,6 +58,7 @@ import {
 import { jointsBeforeDelete, replaceJoints } from './sceneJoints.js';
 import { applyJointsChange } from './jointsPanel.js';
 import { ScatterBrush } from './scatterBrush.js';
+import { JointTool } from './jointTool.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -116,6 +117,8 @@ export class EditMode {
     this.tools = [];
     /** The scatter brush for the file's decorations (scatterBrush.js, ED-25); the palette shows its section. */
     this.brush = this.addTool(new ScatterBrush(this));
+    /** The selected entity's joints on the overlay, their anchors dragged (jointTool.js, ED-21). */
+    this.addTool(new JointTool(this));
     /** The tool a press went to, until its button is let go. */
     this._toolWithPointer = null;
 

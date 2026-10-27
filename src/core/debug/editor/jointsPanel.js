@@ -106,6 +106,7 @@ export class JointsPanel {
     el.style.display = '';
     const title = document.createElement('div');
     title.textContent = 'Joints';
+    title.title = 'The scene file’s joints that name this entity. In the view, Alt+drag a handle to move its anchor.';
     title.style.cssText = 'font-size:11px;color:#ccc;font-weight:bold;margin-bottom:3px';
     el.appendChild(title);
     const others = scene.sceneFile.entities.filter((e) => e.name !== name).map((e) => e.name);

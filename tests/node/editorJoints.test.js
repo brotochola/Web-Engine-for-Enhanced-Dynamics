@@ -13,6 +13,8 @@ import { spawnSceneFileJoints } from '../../src/core/sceneFileJoints.js';
 import { serializeSceneFile } from '../../src/core/sceneFile.js';
 import { setParam, removePlaced, renamePlaced, recordOf } from '../../src/core/debug/editor/sceneDocument.js';
 import { editJoints, newJoint, JointsPanel } from '../../src/core/debug/editor/jointsPanel.js';
+import { replaceJoints } from '../../src/core/debug/editor/sceneJoints.js';
+import { JointTool } from '../../src/core/debug/editor/jointTool.js';
 import { EditMode } from '../../src/core/debug/editor/editMode.js';
 
 function bootJoints(maxJoints = 8, entities = 64) {
@@ -253,6 +255,58 @@ test('the panel lists the entity’s joints; its fields add, change and remove t
 function liveIndexOfJoint(scene, position) {
   return scene._fileJoints.get(scene.sceneFile.joints[position]).index;
 }
+
+test('the overlay: a handle on each anchor of the selected entity’s joints; a dragged handle writes it, one undo', () => {
+  const scene = makeScene();
+  for (const key of ['x', 'y', 'rotC', 'rotS']) Transform[key] = new Float32Array(64);
+  Transform.rotC.fill(1);
+  const place = (i, x, y) => {
+    Transform.x[i] = x;
+    Transform.y[i] = y;
+  };
+  place(1, 100, 200); // the door
+  place(2, 160, 200); // the frame
+  replaceJoints(scene, [{ type: 'revolute', a: 'Door', b: 'Frame', anchorA: [20, 0], anchorB: [-20, 0] }]);
+  const editMode = editorFor(scene);
+  editMode.active = true;
+  const tool = editMode.tools.find((t) => t instanceof JointTool);
+  const arcs = [];
+  const fills = [];
+  const ctx = new Proxy(
+    {},
+    {
+      get: (_, key) => (...args) => {
+        if (key === 'arc') arcs.push(args.slice(0, 3));
+        if (key === 'fill') fills.push(arcs.length);
+      },
+      set: () => true,
+    },
+  );
+  tool.drawOverlay(ctx, { x: 100, y: 150 }, 2);
+  assert.deepEqual(arcs, [], 'nothing selected');
+  editMode.selection.select(1);
+  tool.drawOverlay(ctx, { x: 100, y: 150 }, 2);
+  assert.deepEqual(arcs, [[40, 100, 5], [80, 100, 5]], 'at (120, 200) on the door and (140, 200) on the frame');
+  assert.deepEqual(fills, [1], 'the selected entity’s handle is filled');
+
+  const alt = { altKey: true };
+  assert.equal(tool.press(500, 500, alt), false, 'no handle there: the move tool has it');
+  assert.equal(tool.press(121, 201, { altKey: false }), false, 'without Alt, a press is the move tool’s');
+  assert.equal(tool.press(121, 201, alt), true);
+  tool.move(125, 210);
+  arcs.length = 0;
+  tool.drawOverlay(ctx, { x: 100, y: 150 }, 2);
+  assert.deepEqual(arcs[0], [50, 120, 5], 'the handle follows the pointer');
+  tool.release();
+  assert.deepEqual(scene.sceneFile.joints[0].anchorA, [25, 10], 'from the door’s position');
+  const live = scene._fileJoints.get(scene.sceneFile.joints[0]).index;
+  assert.deepEqual([Joint.localAnchorAX[live], Joint.localAnchorAY[live]], [25, 10]);
+  assert.equal(editMode.history._done.at(-1).kind, 'joints');
+  editMode.undo();
+  assert.deepEqual(scene.sceneFile.joints[0].anchorA, [20, 0]);
+  clearTimeout(editMode._statusTimer);
+  Joint.reset();
+});
 
 test('newJoint: a distance joint holds the centers; the others hold the entities where they are', () => {
   const scene = makeScene();
