@@ -12,6 +12,11 @@
 // scene files itself and has already applied the change: it calls
 // HotReload.ignore(path, ms) before writing, and that file's events are dropped.
 //
+// A Tiled file of the running scene's tilemaps (assets.tilemaps) goes in place when its
+// shape is the same (tilemapReload.js, ED-26): its tiles are written into the tilemap's
+// shared memory and the layers that show it are drawn again. No page reload: the editor
+// keeps its state. Another shape reloads the page as below.
+//
 // Anything else (an asset, a shader, the page, an engine file), or a change the
 // running game cannot take (components, pools, which hooks a class defines...),
 // falls back to a reload that keeps the state: the page saves the running scene
@@ -21,6 +26,7 @@
 import { nativeImport } from '../../util/sceneScript.js';
 import { expandBlobEntityScripts } from '../../util/utils.js';
 import { swapModule, hotModuleUrl } from './hotSwap.js';
+import { tilemapOfFile, reloadTilemap } from './tilemapReload.js';
 
 const SLOT = '__weed-hot-reload';
 const KEY = 'weed.hotReload';
@@ -99,6 +105,10 @@ export class HotReload {
     }
     const scene = game && game.currentScene;
     if (/\.scene\.json$/i.test(file)) return this.onSceneFileChanged(game, scene, file);
+    if (file !== '' && scene && game.state === 1) {
+      const tilemap = tilemapOfFile(scene, new URL(file.replace(/^\/+/, ''), `${location.origin}/`).href);
+      if (tilemap !== null) return this.onTilemapChanged(game, scene, tilemap, file);
+    }
     if (!/\.m?js$/i.test(file) || !scene || !scene.sceneScriptUrl || game.state !== 1) {
       return this.reloadKeepingState(game);
     }
@@ -143,6 +153,35 @@ export class HotReload {
     }
     // Another load was under way: the page reload loads the file as it is now.
     location.reload();
+    return 'reloaded';
+  }
+
+  /**
+   * A Tiled file of the running scene's tilemaps changed (ED-26). The same shape goes in place
+   * (tilemapReload.js): its tiles in the shared memory, the layers that show it drawn again, no
+   * page reload, so the editor keeps its document, undo and selection. Another shape reloads
+   * the page with the scene's state. A file that does not load (Tiled half done writing it) is
+   * reported, and the scene runs on.
+   * @param {object} game
+   * @param {object} scene
+   * @param {string} id - the tilemap's id (assets.tilemaps)
+   * @param {string} file - relative to the served folder
+   * @returns {Promise<'tilemap'|'failed'|'reloaded'>}
+   */
+  static async onTilemapChanged(game, scene, id, file) {
+    const { result, reason } = await reloadTilemap(scene, id);
+    if (result === 'reloaded') {
+      console.info(
+        `[WeedJS] hot reload: ${file}: tilemap "${id}" reloaded in place; what the scene built from its tiles at load follows on the next load of the level`,
+      );
+      return 'tilemap';
+    }
+    if (result === 'failed') {
+      console.warn(`[WeedJS] hot reload: ${file}: ${reason}; the scene runs on. Save it again.`);
+      return 'failed';
+    }
+    console.info(`[WeedJS] hot reload: ${file}: ${reason}; reloading the page with the scene's state`);
+    await this.reloadKeepingState(game);
     return 'reloaded';
   }
 
