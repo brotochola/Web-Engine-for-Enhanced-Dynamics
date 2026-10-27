@@ -1,11 +1,11 @@
 # Visual editor plan
 
-**Opened:** 2026-10-22. **Updated:** 2026-10-27. **Status: done** on branch `visual_editor`,
-every stage, but three items deferred with their reasons: ED-19 (pause only the simulation
-workers), ED-23 (the particle lab as a panel), ED-35b (a fast swap to another scene class).
-Stage 4 and ED-31/32 were built in parallel by four agents in worktrees, on the editor tools
-extension point (2ab97e45), and merged; the author set a 12 to 14 hour time box for Stages
-3 (rest) to 5.
+**Opened:** 2026-10-22. **Updated:** 2026-10-27. **Status:** Stages 1 to 5 done on branch
+`visual_editor`, but three items deferred with their reasons: ED-19 (pause only the simulation
+workers; now ED-71), ED-23 (the particle lab as a panel), ED-35b (a fast swap to another scene
+class). Stage 4 and ED-31/32 were built in parallel by four agents in worktrees, on the editor
+tools extension point (2ab97e45), and merged. **Stage 6 (a useful editor) opened 2026-10-27**
+after the author's review: it grows as the work finds more.
 
 **Final test pass, 2026-10-27 00:04** (one run, on the merged tree): node 2,233/2,233; demos
 105/105; check:types; editorM1Smoke 17/17, editorShellSmoke 11/11, editorHandlesSmoke 10/10,
@@ -1511,6 +1511,206 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
     with its routes (`exportGame.js`, `exportRuntime.js`).
   - Tests: `createWeedGame.test.js`.
 
+### Stage 6: a useful editor (opened 2026-10-27)
+
+The author used the editor and asked: finish the plan, test it well, ask whether the editor
+is useful, and if not, why, what to improve, and do it; Unity and Godot as inspiration;
+useful, easy, well integrated with the engine's API and architecture; super optimized, with
+a clear and responsive UI. This stage is the answer, and it grows as the work finds more.
+
+**The review (2026-10-27), from the author's two reports and screenshots in Chromium of the
+platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
+
+- **What works:** the loop (select, drag, tune a param, undo, save, play, stop), handles,
+  joints, decorations, groups, the fast swap, export.
+- **What a dev hits first:**
+  - **The layout.**
+    - The bottom dock keeps ~200 px empty under the debug bar at every size.
+    - At 1366×768 the view is 775×500; at 1024×768 it is 435×500.
+    - The inspector and the assets share the right column at a fixed split and cut each
+      other off.
+    - Nothing resizes or folds.
+    - The edit hint covers the bottom of the view and wraps to four lines at 1024 px.
+  - **The inspector.**
+    - No position: x and y show only in the Live section's raw Transform columns.
+    - No rotation or scale.
+    - Joints show for every entity, a house's too.
+    - Live (entityType, isItOnScreen, …) is always open.
+    - A class without spawnParams (the city's houses) gets a JSON box.
+  - **The view.**
+    - No frame-selection key (Unity's F).
+    - The grid and snap only by key (G), and the snap size cannot be changed.
+    - No rotate handle, no copy and paste, no middle-button pan.
+  - **The scene list.** No filter (littleCity: 1,243 trees), no rename in place, no
+    keyboard, no context menu.
+  - **The assets.**
+    - The palette is class names without pictures: you cannot see which is the house.
+    - Placing is "+" then a click; Unity and Godot drag from the project into the scene.
+    - The engine's lighting layers sit among the game's.
+  - **Two bugs the author hit:**
+    - A drag re-rolled a house's random sprite. Fixed in fe41a30c: each scene-file entity
+      draws from a seed of its own.
+    - The editor page needed a long `?game=` URL. Fixed in ae3b8fac: `/editor?scene=…`.
+- **Size:** `weed.editor.min.js` is 128 KB after Stage 4 (57 KB at ED-29). It loads only
+  in debug and only on first use. Splitting is not worth it yet.
+
+**How the work is split:**
+- Four agents in worktrees, each on its own files, merged here:
+  - shell: ED-50, ED-51, ED-52;
+  - scene list: ED-62, ED-63, ED-64;
+  - assets: ED-65, ED-66, ED-67;
+  - console: ED-68.
+- The rest is done in this folder.
+- Agents do not edit this plan: the merge ticks their items.
+
+**Layout (agent "shell"):**
+
+- [ ] **ED-50 Docks that resize and fold.**
+  - A drag handle between the view and each dock (left, right, bottom) and between the
+    Inspector and Assets.
+  - A fold button on each dock and keys: Ctrl+1 the scene list, Ctrl+2 the right column,
+    Ctrl+3 the bottom dock.
+  - Sizes and folds are remembered per viewer (localStorage, every access in try/catch).
+  - The bottom dock is as tall as the debug bar, unless the Console tab opens a pane of its
+    own size.
+  - Each dock scrolls on its own.
+  - The view's canvas follows its box (the game page's autoResize): no stretched frame.
+- [ ] **ED-51 Responsive.**
+  - Below ~1280 px the side docks narrow.
+  - Below ~1100 px they become panels over the view, opened from the bar, and the view
+    keeps the width.
+  - Checked by screenshots and by the view's size at 1920, 1366, 1100 and 800 px wide.
+  - Nothing overflows the bar: its buttons wrap or shorten.
+- [ ] **ED-52 A status bar.**
+  - Under the view, one line: the edit hint (contextual: placing, dragging, handles), the
+    world point under the pointer, the zoom, the selection's count, grid and snap.
+  - In the editor page it replaces the hint over the view (toolManager.js's tool
+    indicator) and the toolbar's status text; the in-page editor keeps its indicator.
+
+**Inspector (here):**
+
+- [ ] **ED-53 Transform first.** At the top of a placed entity:
+  - Position x, y (the record's);
+  - Rotation in degrees;
+  - Scale x, y.
+  - Each value can be dragged by its label (scrubbing) and typed, snapped like a drag.
+  - Each change is one undo.
+  - Rotation and scale are new optional record keys (`rotation` in radians, `scaleX`,
+    `scaleY`) beside x and y. The engine applies them after `onSpawned` for a scene file's
+    entity (as `_rotation`, `_scaleX`, `_scaleY` in the spawn config, taken out like
+    `_seed`), so the file wins over a class that resets its scale. Code spawns are
+    unchanged.
+  - Format check, types, SCENE_FILES.md.
+- [ ] **ED-54 Sections that fold, as Unity's components.**
+  - Transform, Params (or Config for a class without spawnParams), Joints, Live.
+  - Joints shows only for an entity with a RigidBody, and opens only when it has joints.
+  - Live is folded until opened; the choice is remembered.
+  - A folded section costs nothing per frame (Live already updates only while shown).
+- [ ] **ED-55 Edit several at once.**
+  - With several selected, the inspector shows the transform and the params their classes
+    share.
+  - A change writes every one of them, as one undo (the batch kind).
+  - A field whose values differ shows "—" until set.
+- [ ] **ED-56 Another look.**
+  - A 🎲 button on a placed entity writes a new `seed` and respawns it: a house picks
+    another of its 63 sprites, a tree another tint.
+  - Undo goes back.
+  - It is the per-entity stream of fe41a30c put to use; no class code needed.
+
+**View (here):**
+
+- [ ] **ED-57 Frame.**
+  - F frames the selection (several: their box), Shift+F the whole level.
+  - A double click on a scene-list row frames it.
+  - The camera eases there; the zoom stays within the scene's limits.
+- [ ] **ED-58 Rotate handle.**
+  - A ring handle above the selection's box: a drag turns it about its center.
+  - Shift snaps to 15°.
+  - Several selected turn about their common center: positions and rotations, one undo.
+- [ ] **ED-59 Copy and paste.**
+  - Ctrl+C copies the selected placed entities: their records, with joints between them.
+  - Ctrl+V pastes them at the pointer with new names, one undo.
+  - The system clipboard carries them as JSON, so a paste works in another level and in
+    another tab.
+- [ ] **ED-60 Grid and snap in the toolbar.**
+  - A snap toggle and its size (1, 4, 8, 16, 32, 64 px; the default from the scene's tile
+    size when it has a tilemap).
+  - The grid shown while editing.
+  - Alt held while dragging does not snap.
+  - Saved per viewer.
+- [ ] **ED-61 Pan like the others.** The middle button and Space+drag pan; right drag
+  still does.
+
+**Scene list (agent "scene list"):**
+
+- [ ] **ED-62 A filter.**
+  - A field over the list (Ctrl+F while the list has focus).
+  - It matches name or class: the matching rows show under their classes, unfolded, with
+    the count.
+  - It works over 10,000 rows without a frame drop (filtering over the names, the
+    virtualized rows unchanged).
+- [ ] **ED-63 Keys and rename.**
+  - Up and down move the selection along the visible rows.
+  - Enter frames (ED-57), F2 renames in place, Del deletes, Ctrl+D duplicates.
+  - A double click frames.
+- [ ] **ED-64 A context menu.** On a row: Frame, Rename, Duplicate, Copy, Delete, Select
+  all of this class.
+
+**Assets (agent "assets"):**
+
+- [ ] **ED-65 Pictures and a filter in the palette.**
+  - Each class shows a thumbnail: the first frame of what a live entity of it shows (its
+    SpriteRenderer's sheet and animation), else its spawnParams' sprite default, else a
+    plain mark. Drawn once per class from the atlas, as assetPicker.js draws.
+  - A filter field when there are more than 8 classes.
+- [ ] **ED-66 Drag to place.**
+  - A class dragged from the palette onto the view is placed where it is dropped, snapped,
+    one undo, selected.
+  - Works in the editor page (the drop lands in the game page's frame) and in the game page
+    itself.
+  - "+" then a click stays.
+- [ ] **ED-67 The engine's layers apart.** The layers the engine makes (lighting,
+  lightGlows, bloom, castedShadows) go under a folded "Engine layers" line; the game's
+  layers come first.
+
+**Console and toolbar:**
+
+- [ ] **ED-68 (agent "console") Filter the console.**
+  - Errors, warnings and logs as toggles with their counts, a search field, Clear.
+  - The view stays at the bottom while new rows come, unless scrolled up.
+  - A dock that is not shown costs no layout per row.
+- [ ] **ED-69 (here) Toolbar.**
+  - While playing: Pause and Step (one frame).
+  - Undo and Redo name the change in their tooltip.
+  - A shortcuts sheet (`?`) lists every key of the editor.
+
+**Speed (here):**
+
+- [ ] **ED-70 What the editor costs.**
+  - `tests/bench/editorIdleCost.mjs` on the platformer and littleCity: edit mode at rest,
+    playing with the editor page, and the game alone.
+  - Per worker, STEP − WAIT, the page's frame time, and the page's allocation.
+  - Before and after Stage 6, in the register. A cost with no reason is fixed here.
+- [ ] **ED-71 (was ED-19) A held world costs less.** After ED-70: in edit mode, skip what
+  a world that does not move needs no work for (for example particles and physics
+  stepping at dt 0), worker by worker, if ED-70 shows them. The logic worker keeps running:
+  the editor's respawns need it.
+
+**Demos (here):**
+
+- [ ] **ED-72 littleCity's houses declare their sprite.** A `house` param (1–63), so the
+  inspector picks the house; without it, the house comes from the entity's seed as now.
+
+**Last:**
+
+- [ ] **ED-73 One smoke of a dev's session** (`tests/bench/editorSessionSmoke.mjs`, at
+  1366×768). On a scratch level:
+  - filter the list, select, frame;
+  - type a position, rotate, scale;
+  - copy and paste, place a class by dragging;
+  - fold and resize docks;
+  - undo everything, save, and reload: the file and the view as left.
+
 ---
 
 ## Working rules for these items
@@ -1755,6 +1955,23 @@ server still writes nothing. What changed for this plan:
     `Camera.worldToScreen` (the drawn view) and the point a click maps to (`scene.camera`)
     agree only once it has settled. `setZoom` also stops at the zoom where the world fills
     the view. WEED exports no `DecorationPool` (`DecorationComponent.active` reads it).
+24. **A drag re-rolled a house's random look** (the author, 2026-10-27).
+    - The cause: CityHouse picks its sprite with `rng()` in `onSpawned`, and the editor
+      applies every edit by respawning, which drew the logic worker's next numbers.
+    - A load drew them in file order too, so deleting an entity changed the look of every
+      one after it.
+    - Fixed in fe41a30c: a scene file's entity draws from a stream of its own (its `seed`
+      record key, else a hash of its name, mixed with the scene's seed).
+    - Every file's random looks changed once with it.
+25. **`localhost:8000/__weed/editor/` answered 404** (the author, 2026-10-27).
+    - An old `npm run dev` still held port 8000 on every interface. Since N-80 the new
+      one listened on 127.0.0.1 only, and Windows let both bind the port without
+      EADDRINUSE.
+    - Chrome took `localhost` to ::1, the old server's.
+    - Fixed in 410697f8: the dev servers listen at both loopback addresses (and `--host`
+      at every interface on both stacks), so the port they print reaches them, or the port
+      counts as in use.
+    - The editor page's address became `/editor?scene=…` (ae3b8fac).
 
 **New items:**
 
