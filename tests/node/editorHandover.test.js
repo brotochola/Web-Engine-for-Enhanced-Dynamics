@@ -253,8 +253,21 @@ test('Stop: back to the level as the document has it now, in edit mode, the view
     // The game's camera followed its player: its top-left at (5000, 1000), so its center at (5400, 1300).
     Camera._data[1] = 5000;
     Camera._data[2] = 1000;
+    // What the swap finds when it hands the new level over, before the workers resume (Scene._fastSwap).
+    const atSwap = [];
+    const swapped = editMode.onContentSwapped.bind(editMode);
+    editMode.onContentSwapped = () => {
+      Time.scale = 1; // the swap's reset (Scene._resetSceneWideStateForSwap)
+      swapped();
+      atSwap.push(editMode.active, Time.scale, Camera._freeFollowX, Camera._freeFollowY);
+    };
 
     assert.equal(await editMode.stop(), true);
+    assert.deepEqual(
+      atSwap,
+      [true, 0, 5400, 1300],
+      'edit mode holds the new level before its workers resume, in the view it comes back to: not one frame plays, no other view shows',
+    );
     assert.equal(loads.length, 1);
     assert.equal(loads[0][0], FILE);
     assert.equal(loads[0][1].sceneFile.entities[0].config.width, 640, 'the document, edits and all');
@@ -355,9 +368,10 @@ test('Shift+E: Play while editing; while playing, a Stop back to the level’s s
     editMode.toggle();
     assert.equal(editMode.playing, true, 'Play');
     editMode.toggle();
-    assert.equal(editMode.active, false, 'the Stop is a swap: edit mode once it is done');
+    assert.equal(editMode.active, true, 'edit mode at once: it holds the level the Stop swaps in');
+    assert.equal(editMode.settled, false, 'the swap is on its way');
     assert.equal(await editMode.edit(), true, 'and edit() waits for it');
-    assert.equal(editMode.active, true);
+    assert.equal(editMode.settled, true);
     assert.equal(editMode.playing, false);
     assert.deepEqual(loads.map(([url]) => url), [FILE], 'one swap, to the document');
     assert.equal(await editMode.edit(), true, 'editing already: nothing more');

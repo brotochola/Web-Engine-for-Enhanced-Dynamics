@@ -169,6 +169,8 @@ export class EditMode {
     this._ownSwap = false;
     /** The Stop under way: a second one (Shift+E again, an edit waiting for edit mode) waits for it. */
     this._stopping = null;
+    /** The view the editor's own swap comes back to in edit mode ({ x, y, zoom }), while it runs; else null. */
+    this._swapView = null;
 
     /** What the indicator says instead of the help for a moment (a save's outcome), and whether it went wrong. */
     this.status = '';
@@ -262,16 +264,16 @@ export class EditMode {
    * @returns {Promise<boolean>} whether the editor is editing
    */
   async edit() {
-    if (this.active) return true;
-    const scene = this.debugUI.scene;
-    if (!scene) return false;
-    if (!scene.sceneFileUrl) this.enter();
-    else {
-      try {
-        await this.stop();
-      } catch (error) {
-        console.error('[WeedJS] editor: could not go back to the level’s start', error);
-      }
+    try {
+      // A Stop under way is in edit mode already (it holds the level it swaps in): wait for its swap.
+      if (this._stopping !== null) await this._stopping;
+      if (this.active) return true;
+      const scene = this.debugUI.scene;
+      if (!scene) return false;
+      if (!scene.sceneFileUrl) this.enter();
+      else await this.stop();
+    } catch (error) {
+      console.error('[WeedJS] editor: could not go back to the level’s start', error);
     }
     return this.active;
   }
@@ -1296,14 +1298,23 @@ export class EditMode {
       const options = { data };
       if (kept.document !== null) options.sceneFile = kept.document;
       this.move.cancel();
+      // Into edit mode before the swap, so it holds the new level before the workers resume (onContentSwapped): not one
+      // frame of it plays. Entered after, a Stop left the platformer's player 20-30 px below its start (ED-80).
+      const enteredHere = kept.active && !this.active;
+      if (enteredHere) this.enter();
       this._ownSwap = true;
+      this._swapView = kept.active ? kept.view : null;
       let ok;
       try {
         ok = await debugUI.gameEngine.loadScene(kept.sceneFileUrl, options);
       } finally {
         this._ownSwap = false;
+        this._swapView = null;
       }
-      if (ok === false) return false;
+      if (ok === false) {
+        if (enteredHere) this.exit(); // no swap (another load under way): the game plays on
+        return false;
+      }
     }
     const scene = debugUI.scene;
     for (const [name, id] of kept.editorIds) {
@@ -1343,6 +1354,13 @@ export class EditMode {
     this._savedFree = Camera._free;
     this._panPointer = -1;
     this._hold();
+    // The editor's own swap (Stop, resume) puts its view back now, before the workers resume: the level's boot camera
+    // showed until the swap's cooldown ended, then the view jumped back.
+    const view = this._swapView;
+    if (view !== null) {
+      Camera.setFreeTarget(view.x, view.y);
+      Camera.setZoom(view.zoom);
+    }
   }
 
   /** The debug UI is leaving its scene (a full load): leave edit mode, and come back to it in the next scene. */
