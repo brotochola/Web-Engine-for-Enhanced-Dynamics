@@ -1474,7 +1474,7 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
     signature, 64 MB: a 4096² atlas). The editor shows the `bigAtlas` entry that loads them;
     the scene's code is the author's to change. Tests: `devRoutes.test.js`,
     `editorAtlasBake.test.js`, the bake check of `editorExportSmoke.mjs`.
-- [ ] **ED-32** Export:
+- [x] **ED-32** Export:
   - esbuild on the dev server builds the scene classes, entity classes and scene files
     into `game.min.js`;
   - class names are kept (keep-names), because names are identity (see
@@ -1555,6 +1555,9 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
   in debug and only on first use. Splitting is not worth it yet.
 
 **State 2026-10-27, night:** ED-50 to ED-79 done. Deferred: ED-23 (particle lab), ED-35b (fast swap across scene classes).
+The final pass, 2026-10-27: test:node (2,398), test:demos, check:types, make_bundle, buildEditor, test:node:bundle,
+test:bundle, smokeEditorBundle, sceneCycleSmoke, and the 11 editor smokes (M1, shell, handles, format, panels, assets,
+layout, tree, console, export, session) all pass; dist/ put back.
 
 **How the work is split:**
 - Four agents in worktrees, each on its own files, merged here:
@@ -2071,6 +2074,14 @@ server still writes nothing. What changed for this plan:
 42. **ED-77 left the collider handles writing the scaled size**: they read the live collider, which the record's scale
     multiplies, and wrote it as the param, which the respawn multiplied again. They divide by the scale since db24a8aa
     (a box per axis, a ring by the larger factor, a points param in the entity's frame drawn and written through it).
+43. **ED-78's 💡 made the bar wrap to two lines at 800 px** (ED-51: it never wraps): the toolbar's own buttons never
+    shortened. Since 53396877 they are a glyph and a label, as the editor page's buttons: the bar 36 px at 1920, 1366,
+    1100 and 800 px.
+44. **editorConsoleSmoke clicked a Debug tab the bottom dock no longer has** (since ED-50; it was not in the smokes run
+    after each change): it closes the Console with its own tab since 093f04d2, 9/9.
+45. **Two smoke races found by the full pass, under load:** editorLayoutSmoke read the pointer while a resized frame
+    still settled (it waits for the canvas to follow its frame since b5a0557f), and editorSessionSmoke pasted before the
+    game had read the pointer's point (it waits for it since 9cbefc8d). Neither is the editor's.
 
 **New items:**
 
