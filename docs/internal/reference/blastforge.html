@@ -1,0 +1,2434 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Blastforge – pixel explosion lab</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600&family=Work+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #e9e4ee;
+  --surface: #f6f3f8;
+  --ink: #2a2430;
+  --muted: #6c6274;
+  --line: #d2c9d9;
+  --accent: #b8560c;
+  --accent-ink: #ffffff;
+  --viewport: #141217;
+  --pixel: "Pixelify Sans", "Silkscreen", "Courier New", monospace;
+  --body: "Work Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #221e27; --surface: #2c2732; --ink: #efe6d8; --muted: #a69caa;
+    --line: #3f3847; --accent: #f2a33a; --accent-ink: #221e27; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #221e27; --surface: #2c2732; --ink: #efe6d8; --muted: #a69caa;
+  --line: #3f3847; --accent: #f2a33a; --accent-ink: #221e27; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink); font: 14px/1.45 var(--body);
+  display: grid; grid-template-columns: minmax(0, 1fr) 330px; height: 100%; overflow: hidden;
+}
+#stage {
+  position: relative; background: var(--viewport); overflow: hidden; cursor: crosshair;
+  touch-action: none;
+}
+#stage canvas { position: absolute; left: 0; top: 0; image-rendering: pixelated; image-rendering: crisp-edges; }
+#hud {
+  position: absolute; left: 12px; bottom: 12px; display: flex; gap: 10px;
+  font: 13px/1 var(--pixel); color: #e9dfcf; pointer-events: none;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+#hud span { background: rgba(20, 18, 23, .72); padding: 6px 8px; border-radius: 3px; }
+#hint {
+  position: absolute; left: 50%; top: 18px; transform: translateX(-50%);
+  font: 15px/1.2 var(--pixel); color: #e9dfcf; background: rgba(20,18,23,.72);
+  padding: 8px 12px; border-radius: 3px; pointer-events: none; transition: opacity .6s;
+  white-space: nowrap;
+}
+#hint.gone { opacity: 0; }
+#err {
+  position: absolute; inset: 0; display: none; place-items: center; padding: 24px;
+  color: #e9dfcf; text-align: center; font-size: 15px;
+}
+aside {
+  border-left: 1px solid var(--line); overflow-y: auto; padding: 18px 18px 40px;
+  padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+}
+h1 { font: 600 28px/1 var(--pixel); margin: 0 0 6px; letter-spacing: .5px; }
+.lede { color: var(--muted); margin: 0 0 18px; max-width: 34ch; }
+h2 { font: 600 16px/1.2 var(--pixel); margin: 22px 0 10px; }
+.presets { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.preset {
+  appearance: none; border: 1px solid var(--line); background: transparent; color: var(--ink);
+  border-radius: 4px; padding: 8px 8px 7px; text-align: left; cursor: pointer;
+  font: 15px/1.1 var(--pixel); display: flex; flex-direction: column; gap: 6px;
+}
+.preset:hover { border-color: var(--muted); }
+.preset[aria-pressed="true"] { border-color: var(--accent); background: var(--surface); box-shadow: inset 0 0 0 1px var(--accent); }
+.strip { display: flex; height: 6px; }
+.strip i { flex: 1; }
+.row { margin: 10px 0; }
+.row label { display: flex; justify-content: space-between; gap: 8px; font-weight: 500; }
+.row output { color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 0; }
+select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 5px 6px; }
+.check { display: flex; align-items: center; gap: 8px; margin: 8px 0; font-weight: 500; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+button.act, a.act {
+  appearance: none; font: 500 14px/1 var(--body); padding: 9px 12px; border-radius: 4px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none;
+}
+button.act.primary, a.act.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+button.act:hover, a.act:hover { border-color: var(--muted); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+details { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 4px; }
+summary { cursor: pointer; font: 600 16px/1.2 var(--pixel); padding: 10px 0 4px; }
+.note { color: var(--muted); font-size: 13px; margin: 6px 0; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 10px; }
+.grid2 label { display: flex; flex-direction: column; gap: 4px; font-weight: 500; }
+#bakeOut { margin-top: 12px; display: none; }
+#bakePreview { background: repeating-conic-gradient(#3a3440 0 25%, #2e2934 0 50%) 0 0 / 16px 16px; image-rendering: pixelated; display: block; margin-bottom: 8px; max-width: 100%; border-radius: 3px; }
+input[type=number] { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 5px 6px; width: 100%; }
+button.act:disabled { opacity: .55; cursor: progress; }
+dialog#weedDlg {
+  width: min(980px, calc(100vw - 24px)); height: min(860px, calc(100vh - 24px)); max-width: none; max-height: none;
+  border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); padding: 16px;
+  display: none; flex-direction: column; gap: 10px;
+}
+dialog#weedDlg[open] { display: flex; }
+dialog#weedDlg::backdrop { background: rgba(20, 18, 23, .6); }
+.dlg-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.dlg-head h2 { margin: 0; font-size: 20px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.tabs button {
+  appearance: none; border: 1px solid var(--line); background: transparent; color: var(--ink); border-radius: 4px;
+  padding: 6px 10px; font: 500 13px/1.1 var(--body); cursor: pointer;
+}
+.tabs button[aria-selected="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--surface); }
+#weedHint { margin: 0; }
+#weedCode {
+  flex: 1; min-height: 0; overflow: auto; margin: 0; padding: 12px; border-radius: 4px;
+  background: var(--viewport); color: #e9dfcf; font: 12.5px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; tab-size: 2;
+}
+@media (max-width: 760px) {
+  body { grid-template-columns: 1fr; grid-template-rows: 58vh auto; overflow: auto; height: auto; }
+  #stage { height: 58vh; position: sticky; top: 0; z-index: 1; }
+  aside { border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+}
+@media (prefers-reduced-motion: reduce) { #hint { transition: none; } }
+</style>
+</head>
+<body>
+<main id="stage" aria-label="Explosion viewport. Click to detonate.">
+  <div id="hint">Click anywhere to detonate</div>
+  <div id="hud"><span id="hudCount">0 particles</span><span id="hudFps">– fps</span></div>
+  <div id="err"></div>
+</main>
+
+<aside>
+  <h1>Blastforge</h1>
+  <p class="lede">Pixel-art explosions built from thousands of circle particles, shaded on the GPU. Click the ground to set one off. Space detonates at the cursor.</p>
+
+  <h2>Presets</h2>
+  <div class="presets" id="presets"></div>
+
+  <details open>
+    <summary>View</summary>
+    <div class="row"><label for="pxSize">Pixel size <output id="pxSizeOut"></output></label><input id="pxSize" type="range" min="1" max="6" step="1" value="3"></div>
+    <div class="row"><label for="amount">Particle amount <output id="amountOut"></output></label><input id="amount" type="range" min="0.25" max="4" step="0.25" value="1"></div>
+    <div class="row"><label for="speed">Speed <output id="speedOut"></output></label><input id="speed" type="range" min="0.05" max="1.5" step="0.05" value="1"></div>
+    <div class="row"><label for="dither">Dither <output id="ditherOut"></output></label><input id="dither" type="range" min="0" max="1" step="0.05" value="0.6"></div>
+    <div class="row"><label for="wind">Wind <output id="windOut"></output></label><input id="wind" type="range" min="-60" max="60" step="1" value="0"></div>
+    <div class="row"><label for="ground" style="justify-content:flex-start;gap:10px;align-items:center">Ground
+      <select id="ground"><option value="grass">Grass</option><option value="dirt">Dirt</option><option value="stone">Stone tiles</option><option value="void">Dark void</option></select></label></div>
+    <label class="check"><input type="checkbox" id="outline" checked> Dark outlines on smoke</label>
+    <label class="check"><input type="checkbox" id="guide"> Show a 64×64 LPC frame at the cursor</label>
+    <label class="check"><input type="checkbox" id="auto"> Auto-detonate</label>
+    <label class="check"><input type="checkbox" id="field"> Show raw particle field</label>
+    <div class="btns"><button class="act" id="clearScorch" type="button">Clear scorch marks</button></div>
+  </details>
+
+  <details id="tuneBox">
+    <summary id="tuneTitle">Tune preset</summary>
+    <p class="note">The color palette is shared by everything on screen.</p>
+    <div class="row"><label for="palette" style="justify-content:flex-start;gap:10px;align-items:center">Palette <select id="palette"></select></label></div>
+    <div id="tune"></div>
+    <div class="btns">
+      <button class="act" id="resetPreset" type="button">Reset preset</button>
+      <button class="act" id="copyJson" type="button">Copy settings as JSON</button>
+    </div>
+  </details>
+
+  <details id="bakeBox">
+    <summary>Export sprite sheet</summary>
+    <p class="note">Renders the current preset on a transparent background, frame by frame, into one PNG. Fit everything measures how far every spark, chunk and smoke puff travels across all frames and sizes the frame to hold it.</p>
+    <div class="grid2">
+      <label>Frame size<select id="bakeSize"><option value="auto" selected>Fit everything</option><option>48</option><option>64</option><option>96</option><option>128</option><option>192</option><option>256</option></select></label>
+      <label>Frame rate (fps)<input id="bakeFps" type="number" min="1" max="60" step="1" value="12" inputmode="numeric"></label>
+      <label>Duration (s)<input id="bakeDur" type="number" min="0.1" max="30" step="0.1" value="1.5" inputmode="decimal"></label>
+      <label>Columns<select id="bakeCols"><option value="0" selected>Auto</option><option>1</option><option>4</option><option>8</option><option>16</option><option value="999">One row</option></select></label>
+    </div>
+    <label class="check"><input type="checkbox" id="bakeWhole" checked> Run until the last particle is gone</label>
+    <label class="check"><input type="checkbox" id="bakeCenter" checked> Keep the blast point at the frame center</label>
+    <p class="note" id="bakeCount"></p>
+    <div class="btns"><button class="act primary" id="bake" type="button">Bake sprite sheet</button></div>
+    <div id="bakeOut">
+      <canvas id="bakePreview"></canvas>
+      <p class="note" id="bakeInfo"></p>
+      <div class="btns"><a class="act primary" id="bakeDl" download="explosion.png">Download PNG</a></div>
+    </div>
+  </details>
+
+  <details id="weedBox">
+    <summary>Use in Weed.js</summary>
+    <p class="note">Exports this explosion for Weed.js: explosionPresets.js with your tuned presets, explosions.js, the two look shaders and an example scene. Put textures/softCircle.png next to explosions.js.</p>
+    <label class="check"><input type="checkbox" id="weedAll" checked> Include every preset, not only the current one</label>
+    <div class="btns">
+      <button class="act primary" id="weedOpen" type="button">Show Weed.js code</button>
+      <a class="act" id="weedGlow" download="softCircle.png">Download softCircle.png</a>
+    </div>
+  </details>
+</aside>
+
+<dialog id="weedDlg" aria-labelledby="weedTitle">
+  <div class="dlg-head">
+    <h2 id="weedTitle">Weed.js code</h2>
+    <button class="act" id="weedClose" type="button">Close</button>
+  </div>
+  <div class="tabs" role="tablist" id="weedTabs"></div>
+  <p class="note" id="weedHint"></p>
+  <pre id="weedCode" tabindex="0"><code></code></pre>
+  <div class="btns">
+    <button class="act primary" id="weedCopy" type="button">Copy</button>
+    <button class="act" id="weedDl" type="button">Download file</button>
+  </div>
+</dialog>
+
+<script type="text/plain" id="tplExplosions">// explosions.js – pixel-art explosions for Weed.js, ported from Blastforge.
+//
+// explode(x, y, preset) spawns a few thousand particles of two kinds:
+//
+//   Field puffs: fire, smoke and dust. Soft glow sprites in the explosionField
+//   layer, which adds them up into a low-resolution texture. The layer's look
+//   shader (shaders/explosionField.frag) turns that sum into banded, dithered,
+//   lit pixel art. A puff's tint is data, not a color: red adds heat, green
+//   adds smoke, blue adds dust.
+//
+//   Pieces: sparks, embers and debris. The engine's built-in 8 px circle in the
+//   explosionPieces layer, drawn as hard pixels on the same grid. Sparks and
+//   debris have height: they fly up, fall, bounce and land. Debris leaves a
+//   decal where it lands, and the blast stamps a scorch mark.
+//
+// Some bursts start later: smoke once the fire cools, embers, follow-up blasts
+// and ground flames. updateExplosions(deltaMs) runs them, so the worker that
+// calls explode() must also call updateExplosions() every tick. They follow
+// game time, so they pause when the game does.
+//
+// Units: presets use px, px/s and seconds. Weed particles move in px per frame
+// at 60 fps, their gravity is px/frame², and lifespans are milliseconds.
+
+const { ParticleEmitter, Decal, Camera, Layer, BLEND_MODES, LAYER_SCALE_MODE, PARTICLE_EASE } = WEED;
+
+export const FIELD_LAYER = 'explosionField';
+export const PIECES_LAYER = 'explosionPieces';
+
+const GLOW_TEXTURE = 'explosionGlow'; // textures/softCircle.png, 64×64
+const GLOW_RADIUS = 32;
+const PIECE_TEXTURE = '_whiteCircle'; // built-in, 8×8
+const PIECE_SIZE = 8;
+const SCORCH_TEXTURE = '_whiteCircle_64x64'; // built-in
+const SCORCH_RADIUS = 32;
+
+const FPS = 60;
+/** A 3/4 top-down view sees the ground squashed vertically. */
+const SQUASH = 0.85;
+
+// The field layer renders into an 8-bit texture, so values above 1 would clip.
+// Puffs write 1/FIELD_SCALE of their strength and the look shader multiplies it
+// back. A puff fainter than MIN_PUFF_ALPHA would round down to nothing.
+const FIELD_SCALE = 2;
+const MIN_PUFF_ALPHA = 4 / 255;
+
+const here = (path) => new URL(path, import.meta.url).href;
+
+// ---------------------------------------------------------------------------
+// Scene setup
+// ---------------------------------------------------------------------------
+
+/**
+ * The two layers explode() draws into, for a scene's static config.layers.
+ * @param {object} options
+ * @param {number} options.pixelZoom - The camera zoom. One layer texel covers one world pixel.
+ * @param {object} options.palette - Starting colors, one of the PALETTES in explosionPresets.js.
+ */
+export function explosionLayers({ pixelZoom, palette }) {
+  const resolution = 1 / pixelZoom;
+  return {
+    [FIELD_LAYER]: {
+      zIndex: 3.5, // above the entities layer (3)
+      resolution,
+      scaleMode: LAYER_SCALE_MODE.NEAREST,
+      blendMode: BLEND_MODES.NORMAL,
+      maxItems: 60000,
+      ySorting: false,
+      shader: {
+        fragment: 'explosionField',
+        containerBlend: BLEND_MODES.ADD, // overlapping puffs add up into the field
+        uniforms: {
+          uLayerResolution: { value: resolution, type: 'f32' },
+          uFieldScale: { value: FIELD_SCALE, type: 'f32' },
+          uDither: { value: 0.6, type: 'f32', min: 0, max: 1, step: 0.05, label: 'Dither' },
+          uOutline: { value: 1, type: 'f32', widget: 'check', label: 'Dark smoke outline' },
+          uLightDirection: { value: [-0.55, -0.83], type: 'vec2<f32>', min: -1, max: 1, step: 0.05, label: 'Light direction' },
+          uShowField: { value: 0, type: 'f32', widget: 'check', label: 'Show the raw field' },
+          ...paletteUniforms(palette),
+        },
+      },
+    },
+    [PIECES_LAYER]: {
+      zIndex: 3.6,
+      resolution,
+      scaleMode: LAYER_SCALE_MODE.NEAREST,
+      blendMode: BLEND_MODES.NORMAL,
+      maxItems: 20000,
+      ySorting: false,
+      shader: { fragment: 'crispPixels', containerBlend: BLEND_MODES.NORMAL },
+    },
+  };
+}
+
+/** Textures and shaders the layers need, for a scene's static assets. */
+export const explosionAssets = {
+  textures: {
+    [GLOW_TEXTURE]: here('./textures/softCircle.png'),
+  },
+  shaders: {
+    explosionField: here('./shaders/explosionField.frag'),
+    crispPixels: here('./shaders/crispPixels.frag'),
+  },
+};
+
+/** Recolors the field layer. Blasts already on screen change too. Any thread. */
+export function setExplosionPalette(palette) {
+  const layer = Layer.get(FIELD_LAYER);
+  for (const [name, uniform] of Object.entries(paletteUniforms(palette))) {
+    layer.setUniform(name, uniform.value);
+  }
+}
+
+function paletteUniforms(palette) {
+  const uniforms = {};
+  for (const part of ['fire', 'smoke', 'dust']) {
+    const prefix = 'u' + part[0].toUpperCase() + part.slice(1); // uFire0, uSmoke0, uDust0…
+    palette[part].forEach((color, i) => {
+      uniforms[prefix + i] = { value: colorToRgb(color), type: 'vec3<f32>' };
+    });
+  }
+  return uniforms;
+}
+
+// ---------------------------------------------------------------------------
+// Timing: bursts that start later, in game time
+// ---------------------------------------------------------------------------
+
+let clockMs = 0;
+let scheduled = []; // { atMs, run }
+let groundFires = []; // patches still burning, see startGroundFire()
+
+function after(seconds, run) {
+  if (seconds <= 0) run();
+  else scheduled.push({ atMs: clockMs + seconds * 1000, run });
+}
+
+/** Runs delayed bursts and ground flames. Call it every tick, on the worker that calls explode(). */
+export function updateExplosions(deltaMs) {
+  clockMs += deltaMs;
+  if (scheduled.length > 0) {
+    const due = scheduled.filter((task) => task.atMs <= clockMs);
+    if (due.length > 0) {
+      scheduled = scheduled.filter((task) => task.atMs > clockMs);
+      for (const task of due) task.run();
+    }
+  }
+  groundFires = groundFires.filter((fire) => burnGroundFire(fire, deltaMs / 1000));
+}
+
+// ---------------------------------------------------------------------------
+// explode()
+// ---------------------------------------------------------------------------
+
+/**
+ * Sets off an explosion at world (x, y).
+ * @param {number} x
+ * @param {number} y
+ * @param {object} preset - One of the PRESETS in explosionPresets.js.
+ * @param {object} [options]
+ * @param {number} [options.size=1] - Scales the whole blast.
+ * @param {number} [options.amount=1] - Scales the number of puffs.
+ * @param {number} [options.wind=0] - Sideways push on fire, smoke and embers, px/s.
+ */
+export function explode(x, y, preset, { size = 1, amount = 1, wind = 0 } = {}) {
+  const blast = { x, y, preset, size, amount, wind, palette: preset.palette, radius: Math.max(2, preset.radius * size) };
+
+  emitFlash(blast);
+  emitFireball(blast);
+  releaseSmoke(blast);
+  emitDustRing(blast);
+  emitSparks(blast);
+  releaseEmbers(blast);
+  emitDebris(blast);
+  stampScorch(blast);
+  startGroundFire(blast);
+  scheduleFollowUps(blast);
+
+  if (preset.shake > 0) Camera.shake(preset.shake * Math.sqrt(size), 450);
+}
+
+/** A short hot disc at the center. */
+function emitFlash({ x, y, preset, radius }) {
+  if (preset.flash <= 0) return;
+  for (let i = 0; i < 7; i++) {
+    after(i * 0.012, () =>
+      emitFieldPuff({
+        x: x + gauss() * radius * 0.15,
+        y: y + gauss() * radius * 0.12,
+        seconds: random(0.07, 0.13),
+        startRadius: radius * 0.35 * preset.flash,
+        endRadius: radius * random(0.9, 1.25) * preset.flash,
+        from: fieldColor(1, 0, 0),
+        to: fieldColor(1, 0, 0),
+        strength: 0.55 / FIELD_SCALE,
+        ease: PARTICLE_EASE.QUAD_OUT,
+      })
+    );
+  }
+}
+
+/**
+ * The fireball: puffs grouped into lobes for a cauliflower silhouette.
+ * Each puff starts as heat and ends as smoke: its tint goes from red to green
+ * while its alpha fades, on one shared ease. Heat adds (1-e)² of the puff's
+ * strength and smoke adds e(1-e), which peaks at a quarter.
+ */
+function emitFireball(blast) {
+  const { x, y, preset: p, size, radius, wind } = blast;
+  const puffRadius = p.fireSize * size;
+  const { count, strength } = fieldStrength(Math.round(p.fire * blast.amount * size * size), puffRadius * 1.35, radius * radius, p.fireHeat * 0.48);
+  if (count === 0) return;
+
+  const smokeShare = 4 * clamp((p.smokeDensity * 0.6) / (p.fireHeat * 0.48), 0, 4);
+  const lobes = makeLobes(p);
+  for (let i = 0; i < count; i++) {
+    const lobe = lobes[(Math.random() * lobes.length) | 0];
+    const angle = lobe.angle + gauss() * lobe.width;
+    const depth = Math.random() < 0.12 ? Math.random() * 0.35 : Math.pow(Math.random(), 0.42); // 0 = core, 1 = lobe tip
+    const seconds = p.fireLife * random(0.55, 1.15);
+    // Reach the puff's spot by three quarters of its life (see speedToCover).
+    const speed = speedToCover(radius * 1.15 * lobe.length * depth, 0.75 * seconds);
+    const heat = 0.8 + 0.2 * (1 - depth);
+    const smoke = smokeShare * random(0.6, 1.2);
+    const peak = Math.max(heat, smoke);
+    const startRadius = puffRadius * random(0.5, 1.1);
+    emitFieldPuff({
+      x: x + gauss() * puffRadius * 0.3,
+      y: y + gauss() * puffRadius * 0.3,
+      vx: Math.cos(angle) * speed + perFrame(wind * 0.5),
+      vy: Math.sin(angle) * speed * SQUASH - perFrame(p.rise * 0.2),
+      seconds,
+      startRadius,
+      endRadius: startRadius * random(1.8, 2.6),
+      from: fieldColor(heat / peak, 0, 0),
+      to: fieldColor(0, smoke / peak, 0),
+      strength: strength * peak,
+      ease: PARTICLE_EASE.QUAD_IN,
+    });
+  }
+}
+
+function makeLobes(p) {
+  const count = Math.max(1, Math.round(p.lobes));
+  const start = Math.random() * Math.PI * 2;
+  const lobes = [];
+  for (let k = 0; k < count; k++) {
+    lobes.push({
+      angle: start + (k / count) * Math.PI * 2 + (gauss() * 0.35 * Math.PI) / count,
+      length: 1 - p.lobeVar * 0.5 + p.lobeVar * Math.random(),
+      width: (p.lobeSpread * Math.PI) / count,
+    });
+  }
+  return lobes;
+}
+
+/** Smoke billows: groups of puffs released one by one while the fire cools. */
+function releaseSmoke(blast) {
+  const { x, y, preset: p, size, radius, wind } = blast;
+  const puffRadius = p.smokeSize * size;
+  const cloudArea = (radius * p.smokeSpread * 1.1 + puffRadius) ** 2 / 0.55;
+  const { count, strength } = fieldStrength(Math.round(p.smoke * blast.amount * size * size), puffRadius * 1.25, cloudArea, p.smokeDensity * 0.7);
+  if (count === 0) return;
+
+  const billows = Math.max(3, Math.round(5 + radius / 4));
+  const puffsPerBillow = Math.ceil(count / billows);
+  for (let b = 0; b < billows; b++) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = radius * p.smokeSpread * Math.pow(Math.random(), 0.6);
+    const centerX = x + Math.cos(angle) * distance;
+    const centerY = y + Math.sin(angle) * distance * SQUASH;
+    const billowRadius = puffRadius * random(0.8, 2);
+    const riseSpeed = perFrame(p.rise * random(0.7, 1.4));
+
+    after(p.fireLife * random(0.12, 0.6), () => {
+      for (let i = 0; i < puffsPerBillow; i++) {
+        const targetX = centerX + gauss() * billowRadius * 0.6;
+        const targetY = centerY + gauss() * billowRadius * 0.5;
+        const startX = x + (targetX - x) * 0.3;
+        const startY = y + (targetY - y) * 0.3;
+        const seconds = p.smokeLife * random(0.5, 1.2);
+        const frames = seconds * FPS;
+        const startRadius = puffRadius * random(0.4, 0.8);
+        emitFieldPuff({
+          x: startX,
+          y: startY,
+          vx: (targetX - startX) / (0.6 * frames) + perFrame(gauss() * p.turbulence * 0.3 + wind),
+          vy: (targetY - startY) / (0.6 * frames) - riseSpeed * 0.3,
+          gravity: (-riseSpeed * 0.7) / frames, // speeds up as it rises
+          seconds,
+          startRadius,
+          endRadius: puffRadius * random(1.4, 2.5),
+          from: fieldColor(0, 1, 0),
+          to: fieldColor(0, 1, 0),
+          strength: strength * random(0.7, 1.3),
+          ease: PARTICLE_EASE.QUAD_OUT,
+        });
+      }
+    });
+  }
+}
+
+/** A ring of dust thrown along the ground. */
+function emitDustRing(blast) {
+  const { x, y, preset: p, size, radius, wind } = blast;
+  const puffRadius = 3.2 * Math.sqrt(size) + radius * 0.05;
+  const ringRadius = radius * 0.35 + ((p.ringSpeed * size) / 3.1) * 0.8;
+  const ringArea = (2 * ringRadius * (ringRadius * 0.5 + 2 * puffRadius)) / 0.6;
+  const { count, strength } = fieldStrength(Math.round(p.dust * blast.amount * size * size), puffRadius * 1.7, ringArea, 0.14);
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const startDistance = radius * random(0.15, 0.45);
+    const seconds = random(0.7, 1.8) * Math.sqrt(size);
+    const speed = speedToCover((p.ringSpeed * size * random(0.55, 1.15)) / random(2.6, 3.6), 0.7 * seconds);
+    const startRadius = puffRadius * random(0.6, 1.3);
+    emitFieldPuff({
+      x: x + Math.cos(angle) * startDistance,
+      y: y + Math.sin(angle) * startDistance * SQUASH,
+      vx: Math.cos(angle) * speed + perFrame(wind * 0.35),
+      vy: Math.sin(angle) * speed * SQUASH,
+      seconds,
+      startRadius,
+      endRadius: startRadius * random(2, 3.2),
+      from: fieldColor(0, 0, 1),
+      to: fieldColor(0, 0, 1),
+      strength: strength * random(0.7, 1.3),
+      ease: PARTICLE_EASE.QUAD_OUT,
+    });
+  }
+}
+
+/** Sparks: thrown up and out, they bounce once and fade on the floor. */
+function emitSparks(blast) {
+  const { x, y, preset: p, size, radius, palette } = blast;
+  const count = Math.round(p.sparks * Math.sqrt(blast.amount) * size);
+  for (let i = 0; i < count; i++) {
+    const seconds = random(0.25, 0.9);
+    const angle = Math.random() * Math.PI * 2;
+    const launchSpeed = p.sparkSpeed * size * (0.25 + 0.95 * Math.pow(Math.random(), 0.7));
+    // A Blastforge spark slows down with drag; this one keeps the speed that covers the same distance.
+    const speed = draggedDistance(launchSpeed, random(1.8, 3), seconds) / seconds;
+    const vx = Math.cos(angle) * speed;
+    const vy = Math.sin(angle) * speed * SQUASH;
+    const up = random(20, 150) * size;
+    const length = clamp(Math.hypot(launchSpeed, up) * 0.03, 1.2, 7);
+    emitPiece({
+      airborne: true,
+      x: x + gauss() * radius * 0.2,
+      y: y + gauss() * radius * 0.15,
+      z: -Math.max(1, random(0, radius * 0.3)),
+      vx: perFrame(vx),
+      vy: perFrame(vy),
+      vz: -perFrame(up),
+      gravity: perFrameSquared(260 * Math.sqrt(size)),
+      seconds,
+      startLength: length,
+      endLength: Math.max(1.2, length * 0.4),
+      thickness: Math.random() < 0.3 ? 2 : 1.4,
+      angle: (Math.atan2(vy - up, vx) * 180) / Math.PI,
+      from: palette.fire[6 - ((Math.random() * 2) | 0)],
+      to: palette.fire[1],
+      ease: PARTICLE_EASE.LERP,
+      bounces: 1,
+      bounciness: 0.3,
+      bounceFriction: 0.6,
+      fadeOnTheFloor: 150,
+    });
+  }
+}
+
+/** Embers: glowing pixels drifting up with the smoke. */
+function releaseEmbers(blast) {
+  const { x, y, preset: p, size, radius, palette, wind } = blast;
+  const count = Math.round(p.embers * Math.sqrt(blast.amount) * size);
+  if (count === 0) return;
+  after(p.fireLife * 0.4, () => {
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = radius * Math.sqrt(Math.random()) * 0.9;
+      const speed = perFrame(random(10, 60) * size);
+      const seconds = random(1.2, 3.5);
+      const rise = perFrame(p.rise * random(0.8, 1.6) + 6);
+      emitPiece({
+        airborne: false,
+        x: x + Math.cos(angle) * distance,
+        y: y + Math.sin(angle) * distance * SQUASH,
+        vx: Math.cos(angle) * speed + perFrame(wind),
+        vy: Math.sin(angle) * speed * SQUASH - rise * 0.5,
+        gravity: (-rise * 0.5) / (seconds * FPS),
+        seconds,
+        startLength: 1.2,
+        endLength: 1.2,
+        thickness: 1.2,
+        angle: 0,
+        from: palette.fire[5],
+        to: palette.fire[1],
+        ease: PARTICLE_EASE.QUAD_IN,
+      });
+    }
+  });
+}
+
+/** Debris: chunks that leave hot, cool to rock, bounce, and stay on the ground as decals. */
+function emitDebris(blast) {
+  const { x, y, preset: p, size, radius, palette } = blast;
+  const count = Math.round(p.debris * size);
+  const rock = palette.smoke[1];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = draggedDistance(random(50, 230) * size, random(0.4, 1), 1); // about one second in the air
+    const chunk = Math.max(1, Math.round(random(1, 3.2) * Math.min(1.4, Math.sqrt(size)))) + 0.2;
+    emitPiece({
+      airborne: true,
+      x: x + gauss() * radius * 0.2,
+      y: y + gauss() * radius * 0.15,
+      z: -Math.max(1, random(0, radius * 0.2)),
+      vx: perFrame(Math.cos(angle) * speed),
+      vy: perFrame(Math.sin(angle) * speed * SQUASH),
+      vz: -perFrame(random(90, 280) * Math.sqrt(size)),
+      gravity: perFrameSquared(520 * Math.sqrt(size)),
+      seconds: random(1.8, 2.6), // lands in about 1.5 s; the last landing stamps and removes it
+      startLength: chunk,
+      endLength: chunk,
+      thickness: chunk,
+      angle: 0,
+      from: p.fire > 0 ? palette.fire[5] : rock,
+      to: rock,
+      ease: PARTICLE_EASE.CUBIC_OUT, // mostly rock by the time it lands
+      bounces: { min: 1, max: 2 },
+      bounciness: 0.35,
+      bounceFriction: 0.55,
+      stayOnTheFloor: true, // stamps a decal on the last landing
+    });
+  }
+}
+
+/**
+ * A scorch mark on the floor decals: rings of hard dark circles. Where they
+ * overlap the ground gets darker in steps, darkest at the center.
+ */
+const SCORCH_RINGS = [
+  { stamps: 14, spread: 0.45, radius: [0.3, 0.55], alpha: 0.07 },
+  { stamps: 8, spread: 0.22, radius: [0.3, 0.45], alpha: 0.12 },
+  { stamps: 4, spread: 0.08, radius: [0.25, 0.35], alpha: 0.2 },
+];
+function stampScorch({ x, y, preset: p, size, radius }) {
+  if (p.scorch <= 0) return;
+  const darkness = p.scorch * Math.min(1, size * 1.2);
+  for (const ring of SCORCH_RINGS) {
+    for (let i = 0; i < ring.stamps; i++) {
+      Decal.stamp({
+        texture: SCORCH_TEXTURE,
+        x: x + gauss() * radius * ring.spread,
+        y: y + gauss() * radius * ring.spread * SQUASH,
+        scale: (radius * random(ring.radius[0], ring.radius[1])) / SCORCH_RADIUS,
+        tint: 0x15100d,
+        alpha: clamp(darkness * ring.alpha, 0, 1),
+      });
+    }
+  }
+}
+
+/** Presets with flames leave the ground burning for a while (see burnGroundFire). */
+function startGroundFire(blast) {
+  const p = blast.preset;
+  if (p.flames <= 0 || p.flameTime <= 0) return;
+  groundFires.push({ blast, age: -p.fireLife * 0.35, carry: 0 });
+}
+
+/** Advances one burning patch. Returns false once it has burned out. */
+function burnGroundFire(fire, deltaSeconds) {
+  const { blast } = fire;
+  const p = blast.preset;
+  fire.age += deltaSeconds;
+  if (fire.age >= p.flameTime) return false;
+  if (fire.age < 0) return true;
+
+  const left = 1 - fire.age / p.flameTime; // 1 when it starts, 0 when it dies
+  fire.carry += p.flames * blast.amount * blast.size * left * deltaSeconds;
+  for (; fire.carry >= 1; fire.carry -= 1) {
+    const angle = Math.random() * Math.PI * 2;
+    const distance = blast.radius * 0.95 * Math.sqrt(Math.random());
+    const seconds = random(0.35, 0.9);
+    const rise = perFrame(p.rise * 2.2 + 18);
+    const startRadius = random(1.5, 3.4) * Math.sqrt(blast.size);
+    const heat = (0.55 + 0.45 * left) * random(0.7, 1.2);
+    const smoke = 4 * 0.5 * p.smokeDensity * Math.random();
+    const peak = Math.max(heat, smoke);
+    emitFieldPuff({
+      x: blast.x + Math.cos(angle) * distance,
+      y: blast.y + Math.sin(angle) * distance * SQUASH,
+      vx: perFrame(gauss() * 6 + blast.wind),
+      vy: -rise * 0.6,
+      gravity: (-rise * 0.4) / (seconds * FPS),
+      seconds,
+      startRadius,
+      endRadius: startRadius * random(1.4, 2.1),
+      from: fieldColor(heat / peak, 0, 0),
+      to: fieldColor(0, smoke / peak, 0),
+      strength: ((0.42 + 0.1 * p.fireHeat) / FIELD_SCALE) * peak,
+      ease: PARTICLE_EASE.QUAD_IN,
+    });
+  }
+  return true;
+}
+
+/** Chain-reaction presets set off smaller blasts around the first one. */
+function scheduleFollowUps(blast) {
+  const p = blast.preset;
+  const count = Math.round(p.secondary);
+  for (let i = 0; i < count; i++) {
+    const delay = p.secondaryDelay * (i + 1) * random(0.6, 1.4);
+    const angle = Math.random() * Math.PI * 2;
+    const distance = blast.radius * random(0.9, 2.4);
+    const followUp = { ...p, secondary: 0, shake: p.shake * 0.6 };
+    const size = blast.size * p.secondaryScale * random(0.75, 1.15);
+    after(delay, () =>
+      explode(blast.x + Math.cos(angle) * distance, blast.y + Math.sin(angle) * distance * SQUASH, followUp, {
+        size,
+        amount: blast.amount,
+        wind: blast.wind,
+      })
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Emitting one particle
+// ---------------------------------------------------------------------------
+
+// emit() copies the fields it reads, so one config object is reused for every particle.
+const puffConfig = {
+  count: 1,
+  x: 0,
+  y: 0,
+  vx: 0,
+  vy: 0,
+  gravity: 0,
+  lifespan: 1000,
+  texture: GLOW_TEXTURE,
+  layer: FIELD_LAYER,
+  tint: { from: 0, to: 0, ease: 0 },
+  alpha: { from: 1, to: 0, ease: 0 },
+  scale: { from: 1, to: 1, ease: 0 },
+};
+
+/** One field puff: a flat glow sprite that fades out over its life. Radii in px. */
+function emitFieldPuff(puff) {
+  const c = puffConfig;
+  c.x = puff.x;
+  c.y = puff.y;
+  c.vx = puff.vx ?? 0;
+  c.vy = puff.vy ?? 0;
+  c.gravity = puff.gravity ?? 0;
+  c.lifespan = lifespanMs(puff.seconds);
+  c.scale.from = puff.startRadius / GLOW_RADIUS;
+  c.scale.to = puff.endRadius / GLOW_RADIUS;
+  c.scale.ease = puff.ease;
+  c.tint.from = puff.from;
+  c.tint.to = puff.to;
+  c.tint.ease = puff.ease;
+  c.alpha.from = Math.min(1, puff.strength);
+  c.alpha.ease = puff.ease;
+  ParticleEmitter.emitFlat(c);
+}
+
+const pieceConfig = {
+  count: 1,
+  x: 0,
+  y: 0,
+  z: 0,
+  vx: 0,
+  vy: 0,
+  vz: 0,
+  gravity: 0,
+  lifespan: 1000,
+  texture: PIECE_TEXTURE,
+  layer: PIECES_LAYER,
+  alpha: 1,
+  rotation: 0,
+  tint: { from: 0, to: 0, ease: 0 },
+  scaleX: { from: 1, to: 1, ease: 0 },
+  scaleY: 1,
+  bounces: undefined,
+  bounciness: undefined,
+  bounceFriction: undefined,
+  fadeOnTheFloor: 0,
+  stayOnTheFloor: false,
+};
+
+/**
+ * One piece: a hard-edged dot or streak. Sizes in px.
+ * airborne pieces have height (z < 0 is up) and land; the others stay flat.
+ * bounces, bounciness and bounceFriction need an engine with particle bounce;
+ * without it, pieces land on the first contact.
+ */
+function emitPiece(piece) {
+  const c = pieceConfig;
+  c.x = piece.x;
+  c.y = piece.y;
+  c.z = piece.z ?? 0;
+  c.vx = piece.vx;
+  c.vy = piece.vy;
+  c.vz = piece.vz ?? 0;
+  c.gravity = piece.gravity;
+  c.lifespan = lifespanMs(piece.seconds);
+  c.scaleX.from = piece.startLength / PIECE_SIZE;
+  c.scaleX.to = piece.endLength / PIECE_SIZE;
+  c.scaleX.ease = piece.ease;
+  c.scaleY = piece.thickness / PIECE_SIZE;
+  c.rotation = piece.angle;
+  c.tint.from = piece.from;
+  c.tint.to = piece.to;
+  c.tint.ease = piece.ease;
+  c.bounces = piece.bounces;
+  c.bounciness = piece.bounciness;
+  c.bounceFriction = piece.bounceFriction;
+  c.fadeOnTheFloor = piece.fadeOnTheFloor ?? 0;
+  c.stayOnTheFloor = piece.stayOnTheFloor ?? false;
+  if (piece.airborne) ParticleEmitter.emit(c);
+  else ParticleEmitter.emitFlat(c);
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * How strong each of `count` overlapping puffs must be for their sum to reach
+ * `target`, given their radius and the area they share. If each puff would be
+ * too faint for the 8-bit texture, fewer, stronger puffs are used instead.
+ */
+function fieldStrength(count, puffRadius, area, target) {
+  if (count <= 0) return { count: 0, strength: 0 };
+  const coverage = (count * puffRadius * puffRadius) / Math.max(1, area);
+  let strength = target / (coverage * 0.33) / FIELD_SCALE;
+  if (strength < MIN_PUFF_ALPHA) {
+    count = Math.max(1, Math.round((count * strength) / MIN_PUFF_ALPHA));
+    strength = MIN_PUFF_ALPHA;
+  }
+  return { count, strength: Math.min(strength, 1) };
+}
+
+/** Packs field amounts (0-1) into a tint: red = heat, green = smoke, blue = dust. */
+function fieldColor(heat, smoke, dust) {
+  return (toByte(heat) << 16) | (toByte(smoke) << 8) | toByte(dust);
+}
+
+// Weed particles keep their speed: there is no drag yet. To end where a
+// Blastforge particle with drag would, a particle gets the steady speed that
+// covers the same distance.
+
+/** Steady speed, px per frame, that covers `distance` px in `seconds`. */
+function speedToCover(distance, seconds) {
+  return distance / (seconds * FPS);
+}
+
+/** Distance, px, that a particle launched at `speed` px/s covers in `seconds` with `drag` per second. */
+function draggedDistance(speed, drag, seconds) {
+  return (speed * (1 - Math.exp(-drag * seconds))) / drag;
+}
+
+const perFrame = (pxPerSecond) => pxPerSecond / FPS;
+const perFrameSquared = (pxPerSecondSquared) => pxPerSecondSquared / (FPS * FPS);
+/** Lifespans are stored as Uint16 milliseconds. */
+const lifespanMs = (seconds) => clamp(Math.round(seconds * 1000), 1, 65535);
+
+const random = (min, max) => min + (max - min) * Math.random();
+/** Roughly normal, mean 0, spread about 1. */
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 1.15;
+const clamp = (v, min, max) => (v < min ? min : v > max ? max : v);
+const toByte = (v) => clamp(Math.round(v * 255), 0, 255);
+const colorToRgb = (color) => [((color >> 16) & 255) / 255, ((color >> 8) & 255) / 255, (color & 255) / 255];
+</script>
+<script type="text/plain" id="tplFieldFrag">// explosionField.frag – look shader for the explosionField layer.
+//
+// The layer draws every field puff additively into uTexture, one texel per
+// world pixel. Each channel is an amount: red = heat, green = smoke,
+// blue = dust (see fieldColor() in explosions.js). This shader turns those
+// amounts into pixel art:
+//   - each amount picks a color band from the palette (7 fire, 5 smoke, 4 dust),
+//   - a 4×4 Bayer pattern dithers the band edges,
+//   - the slope of each amount lights it from uLightDirection,
+//   - thin smoke gets a dark outline, and smoke glows where hidden fire is.
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+
+varying vec2 vTextureCoord;
+uniform sampler2D uTexture;
+
+// Set by the engine every frame
+uniform vec2 uCanvasSize;
+
+// Layer uniforms (explosionLayers() in explosions.js)
+uniform float uLayerResolution; // the layer's resolution, to find texel size
+uniform float uFieldScale;      // puffs were written at 1/uFieldScale of their strength
+uniform float uDither;          // 0 = hard band edges, 1 = full dither
+uniform float uOutline;         // 1 = dark outline on thin smoke
+uniform vec2 uLightDirection;   // where the light comes from, screen space
+uniform float uShowField;       // 1 = show the raw amounts instead (debug)
+uniform vec3 uFire0; uniform vec3 uFire1; uniform vec3 uFire2; uniform vec3 uFire3;
+uniform vec3 uFire4; uniform vec3 uFire5; uniform vec3 uFire6;
+uniform vec3 uSmoke0; uniform vec3 uSmoke1; uniform vec3 uSmoke2; uniform vec3 uSmoke3; uniform vec3 uSmoke4;
+uniform vec3 uDust0; uniform vec3 uDust1; uniform vec3 uDust2; uniform vec3 uDust3;
+
+// 4×4 ordered dither, -0.47..0.47
+float bayer2(vec2 a) { a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }
+float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+
+vec3 fireColor(float heat) {
+  return heat > 0.86 ? uFire6 : heat > 0.68 ? uFire5 : heat > 0.52 ? uFire4 : heat > 0.38 ? uFire3
+       : heat > 0.26 ? uFire2 : heat > 0.16 ? uFire1 : uFire0;
+}
+vec3 smokeColor(float shade) {
+  return shade < 0.2 ? uSmoke0 : shade < 0.4 ? uSmoke1 : shade < 0.6 ? uSmoke2 : shade < 0.8 ? uSmoke3 : uSmoke4;
+}
+vec3 dustColor(float shade) {
+  return shade < 0.25 ? uDust0 : shade < 0.5 ? uDust1 : shade < 0.75 ? uDust2 : uDust3;
+}
+
+vec3 amountsAt(vec2 uv) { return texture2D(uTexture, uv).rgb * uFieldScale; }
+
+void main() {
+  vec2 texels = max(uCanvasSize * uLayerResolution, vec2(1.0));
+  vec2 texel = 1.0 / texels;
+  vec2 pixel = floor(vTextureCoord * texels);
+  vec2 uv = (pixel + 0.5) * texel;
+  float dither = bayer4(pixel) - 0.46875;
+
+  vec3 here = amountsAt(uv);
+  if (uShowField > 0.5) { gl_FragColor = vec4(clamp(here * 0.5, 0.0, 1.0), 1.0); return; }
+
+  // Slope of each amount, three texels apart, lit from uLightDirection.
+  vec3 left = amountsAt(uv - vec2(3.0 * texel.x, 0.0));
+  vec3 right = amountsAt(uv + vec2(3.0 * texel.x, 0.0));
+  vec3 up = amountsAt(uv - vec2(0.0, 3.0 * texel.y));
+  vec3 down = amountsAt(uv + vec2(0.0, 3.0 * texel.y));
+  vec2 light = normalize(uLightDirection);
+  float heat = here.r, smoke = here.g, dust = here.b;
+  float heatLight = clamp(dot(-vec2(right.r - left.r, down.r - up.r), light) * 1.4, -0.3, 0.3);
+  float smokeLight = clamp(dot(-vec2(right.g - left.g, down.g - up.g), light) / (0.3 + smoke) * 1.05, -0.4, 0.4);
+  float dustLight = clamp(dot(-vec2(right.b - left.b, down.b - up.b), light) / (0.25 + dust) * 1.6, -0.5, 0.5);
+
+  vec3 color = vec3(0.0);
+  float alpha = 0.0;
+
+  // Dust, at the bottom
+  float dustEdge = dust + dither * uDither * 0.28;
+  if (dustEdge > 0.13) {
+    float shade = clamp(0.58 + dustLight - (min(dust, 1.2) - 0.13) * 0.4 + dither * uDither * 0.3, 0.0, 0.999);
+    color = dustColor(shade);
+    if (uOutline > 0.5 && dustEdge < 0.17) color = uDust0;
+    alpha = 1.0;
+  }
+
+  // Smoke over the dust
+  float smokeEdge = smoke + dither * uDither * 0.3;
+  if (smokeEdge > 0.14) {
+    float shade = clamp(0.47 + smokeLight - (min(smoke, 1.2) - 0.14) * 0.22 + dither * uDither * 0.32, 0.0, 0.999);
+    vec3 smokeTone = smokeColor(shade);
+    if (uOutline > 0.5 && smokeEdge < 0.185) smokeTone = uSmoke0;
+    // Fire hidden inside the smoke glows through its shadow side.
+    float glow = smoothstep(0.06, 0.32, heat + dither * 0.06);
+    if (glow > 0.0 && shade < 0.16 + glow * 0.3) smokeTone = glow > 0.55 ? uFire1 : uFire0;
+    color = smokeTone;
+    alpha = 1.0;
+  }
+
+  // Fire on top, unless thick smoke covers it
+  float heatEdge = heat + heatLight * 0.12 + dither * uDither * 0.12;
+  if (heatEdge > 0.08 && (heatEdge > smoke * 0.45 || heatEdge > 0.3)) {
+    color = fireColor(heatEdge);
+    alpha = 1.0;
+  }
+
+  gl_FragColor = vec4(color * alpha, alpha);
+}
+</script>
+<script type="text/plain" id="tplCrispFrag">// crispPixels.frag – look shader for the explosionPieces layer.
+//
+// The layer draws sparks, embers and debris into a texture with one texel per
+// world pixel. Sprite edges come out soft; this makes every texel fully on or
+// fully off, so the pieces are hard pixels on the same grid as the field.
+precision mediump float;
+
+varying vec2 vTextureCoord;
+uniform sampler2D uTexture;
+
+void main() {
+  vec4 color = texture2D(uTexture, vTextureCoord);
+  if (color.a < 0.5) {
+    gl_FragColor = vec4(0.0);
+    return;
+  }
+  gl_FragColor = vec4(color.rgb / color.a, 1.0); // un-premultiply, then draw opaque
+}
+</script>
+<script type="text/plain" id="tplScene">// yourScene.js – a small scene that uses explosions.js.
+// (Blastforge's Weed.js demo, blastforgeScene.js, is a fuller one.)
+//
+// explode() queues its delayed bursts in the worker that runs it, and
+// updateExplosions() must run there too. So one entity owns both: Explosions.
+// Any entity that wants a blast sends it a message, and the blast runs on the
+// logic worker that owns Explosions.
+
+import { explode, explosionAssets, explosionLayers, updateExplosions } from './explosions.js';
+import { PRESETS } from './explosionPresets.js';
+
+const { Scene, GameObject, Camera } = WEED;
+
+/** Your camera zoom. The explosion layers draw one texel per world pixel at this zoom. */
+const PIXEL_ZOOM = 3;
+/** Messages carry numbers, so presets travel as an index into this list. */
+const PRESET_LIST = Object.values(PRESETS);
+
+/** Runs every explosion in the scene. Spawn exactly one. */
+export class Explosions extends GameObject {
+  static components = [];
+
+  /** From any entity: Explosions.request(this, x, y, PRESETS.grenade). */
+  static request(sender, x, y, preset, size = 1) {
+    const target = Explosions.getFirstActiveIndex();
+    if (target !== null) sender.sendTo(target, 'explode', x, y, PRESET_LIST.indexOf(preset), size);
+  }
+
+  onMessage(name, from, x, y, presetIndex, size) {
+    if (name === 'explode') explode(x, y, PRESET_LIST[presetIndex], { size });
+  }
+
+  tick(dtRatio, deltaTime) {
+    updateExplosions(deltaTime);
+  }
+}
+
+/** Example: a grenade that goes off a second and a half after it is spawned. */
+export class Grenade extends GameObject {
+  static components = []; // add your sprite, collider…
+
+  onSpawned({ x, y }) {
+    this.x = x;
+    this.y = y;
+    this.fuseMs = 1500;
+  }
+
+  tick(dtRatio, deltaTime) {
+    this.fuseMs -= deltaTime;
+    if (this.fuseMs > 0) return;
+    Explosions.request(this, this.x, this.y, PRESETS.grenade);
+    this.despawn();
+  }
+}
+
+export class YourScene extends Scene {
+  static config = {
+    // ...your other settings
+    renderer: { backend: 'webgl', atlasScaleMode: 'nearest' }, // the look shaders are GLSL
+    particle: { maxParticles: 60000, decals: true, decalsResolution: 1 },
+    layers: {
+      ...explosionLayers({ pixelZoom: PIXEL_ZOOM, palette: PRESETS.grenade.palette }),
+    },
+  };
+
+  static messages = ['explode'];
+
+  static entities = [
+    [Explosions, 1],
+    [Grenade, 32],
+  ];
+
+  static assets = {
+    textures: { ...explosionAssets.textures },
+    shaders: { ...explosionAssets.shaders },
+  };
+
+  create() {
+    Camera.setZoom(PIXEL_ZOOM);
+  }
+
+  createNewGame() {
+    Explosions.spawn();
+    // Two grenades in the middle of the view, to see it work.
+    Grenade.spawn({ x: Camera.centerX - 60, y: Camera.centerY });
+    Grenade.spawn({ x: Camera.centerX + 60, y: Camera.centerY + 20 });
+  }
+}
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.4.2/pixi.min.js"></script>
+<script>
+(() => {
+'use strict';
+const $ = (s) => document.querySelector(s);
+
+if (!window.PIXI) {
+  const e = $('#err'); e.style.display = 'grid';
+  e.textContent = 'PixiJS could not load. This page needs an internet connection the first time to fetch pixi.js from cdnjs.';
+  return;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Palettes (dark → bright). Fire 7, smoke 5, dust 4.
+ * ------------------------------------------------------------------ */
+const PALETTES = {
+  fire:   { label: 'Fire',   fire: ['#4a1621','#8c2421','#cf4519','#f07c1e','#fbb13c','#ffe373','#fffbe0'], smoke: ['#1d1820','#342c35','#4e4549','#71676a','#9a8f8c'], dust: ['#3e2f25','#5a4535','#7a5f48','#987a5c'], light: '#ff9c48' },
+  plasma: { label: 'Plasma', fire: ['#1a1650','#2b3196','#2c66d8','#30a6f2','#74dcff','#c3f6ff','#ffffff'], smoke: ['#15142b','#252546','#383b66','#555c8a','#7e88b3'], dust: ['#2c3049','#45506e','#677596','#93a1bd'], light: '#5aa8ff' },
+  toxic:  { label: 'Toxic',  fire: ['#18321b','#22601f','#3e9324','#7cc72b','#bde93d','#e8ff80','#fbffe2'], smoke: ['#191e16','#2b3426','#424f37','#61704d','#8a9a6f'], dust: ['#3c3a24','#5d5a35','#83804d','#aaa66c'], light: '#a6ff5c' },
+  arcane: { label: 'Arcane', fire: ['#2b0f3d','#56167c','#8d25b9','#c449e0','#ee7cf1','#ffc3f8','#fff3ff'], smoke: ['#1b1323','#2e2239','#473754','#695579','#917aa0'], dust: ['#3a2c44','#5a4766','#7e6b8a','#a693ae'], light: '#e07dff' },
+};
+
+/* ------------------------------------------------------------------ *
+ *  Preset parameters
+ * ------------------------------------------------------------------ */
+const SCHEMA = [
+  ['radius', 'Fireball radius', 4, 140, 1],
+  ['fire', 'Fire particles', 0, 8000, 50],
+  ['lobes', 'Lobes', 1, 18, 1],
+  ['lobeSpread', 'Lobe spread', 0.05, 2, 0.01],
+  ['lobeVar', 'Lobe length variation', 0, 1, 0.01],
+  ['fireLife', 'Fire duration (s)', 0.1, 3, 0.05],
+  ['fireSize', 'Fire puff size', 1, 30, 0.5],
+  ['fireHeat', 'Fire intensity', 0.2, 3, 0.05],
+  ['drag', 'Expansion drag', 0.5, 15, 0.1],
+  ['smoke', 'Smoke particles', 0, 8000, 50],
+  ['smokeLife', 'Smoke duration (s)', 0.2, 9, 0.1],
+  ['smokeSize', 'Smoke puff size', 1, 40, 0.5],
+  ['smokeDensity', 'Smoke density', 0, 3, 0.05],
+  ['smokeSpread', 'Smoke spread', 0.2, 3, 0.05],
+  ['rise', 'Rise speed', 0, 80, 1],
+  ['turbulence', 'Turbulence', 0, 80, 1],
+  ['dust', 'Dust ring particles', 0, 5000, 50],
+  ['ringSpeed', 'Dust ring speed', 0, 700, 5],
+  ['wave', 'Shockwave distortion', 0, 8, 0.1],
+  ['sparks', 'Sparks', 0, 1500, 10],
+  ['sparkSpeed', 'Spark speed', 20, 900, 5],
+  ['debris', 'Debris chunks', 0, 300, 1],
+  ['embers', 'Embers', 0, 800, 5],
+  ['flash', 'Flash', 0, 2, 0.05],
+  ['light', 'Ground light', 0, 3, 0.05],
+  ['scorch', 'Scorch mark', 0, 2, 0.05],
+  ['shake', 'Screen shake', 0, 20, 0.5],
+  ['secondary', 'Follow-up blasts', 0, 12, 1],
+  ['secondaryDelay', 'Follow-up delay (s)', 0.02, 1, 0.01],
+  ['secondaryScale', 'Follow-up size', 0.1, 1, 0.05],
+  ['flames', 'Ground flames per second', 0, 500, 5],
+  ['flameTime', 'Ground flame duration (s)', 0, 12, 0.1],
+];
+
+const DEFAULTS = {
+  palette: 'fire', radius: 30, fire: 1400, lobes: 7, lobeSpread: 0.45, lobeVar: 0.5, fireLife: 0.9,
+  fireSize: 7, fireHeat: 1.2, drag: 5, smoke: 700, smokeLife: 2.4, smokeSize: 9, smokeDensity: 1.1,
+  smokeSpread: 1.1, rise: 16, turbulence: 20, dust: 400, ringSpeed: 200, wave: 3, sparks: 150,
+  sparkSpeed: 300, debris: 25, embers: 60, flash: 1.1, light: 1.2, scorch: 1, shake: 6,
+  secondary: 0, secondaryDelay: 0.15, secondaryScale: 0.6, flames: 0, flameTime: 0,
+};
+
+const PRESETS = {
+  grenade: { name: 'Grenade', radius: 20, fire: 700, lobes: 5, lobeSpread: 0.5, lobeVar: 0.45, fireLife: 0.7, fireSize: 5, fireHeat: 1.25, drag: 7, smoke: 380, smokeLife: 1.7, smokeSize: 6.5, smokeDensity: 1.05, smokeSpread: 1.05, rise: 10, turbulence: 14, dust: 200, ringSpeed: 120, wave: 2, sparks: 90, sparkSpeed: 250, debris: 18, embers: 24, flash: 1, light: 1, scorch: 0.8, shake: 3 },
+  fireball: { name: 'Fireball', radius: 32, fire: 1800, lobes: 7, lobeSpread: 0.45, lobeVar: 0.5, fireLife: 1.0, fireSize: 8, fireHeat: 1.3, drag: 5, smoke: 900, smokeLife: 2.6, smokeSize: 9.5, smokeDensity: 1.15, smokeSpread: 1.1, rise: 22, turbulence: 20, dust: 300, ringSpeed: 130, wave: 3, sparks: 150, sparkSpeed: 300, debris: 25, embers: 70, flash: 1.2, light: 1.3, scorch: 1, shake: 6 },
+  barrel: { name: 'Fuel barrel', radius: 40, fire: 2600, lobes: 9, lobeSpread: 0.35, lobeVar: 0.7, fireLife: 1.35, fireSize: 9, fireHeat: 1.4, drag: 4, smoke: 2000, smokeLife: 4.6, smokeSize: 13, smokeDensity: 1.5, smokeSpread: 1.35, rise: 22, turbulence: 26, dust: 420, ringSpeed: 160, wave: 3.5, sparks: 230, sparkSpeed: 340, debris: 60, embers: 150, flash: 1.3, light: 1.5, scorch: 1.3, shake: 9, flames: 70, flameTime: 2.5 },
+  napalm: { name: 'Napalm', radius: 46, fire: 2000, lobes: 12, lobeSpread: 0.3, lobeVar: 0.3, fireLife: 1.6, fireSize: 7, fireHeat: 1.15, drag: 3.5, smoke: 1700, smokeLife: 5, smokeSize: 12, smokeDensity: 1.45, smokeSpread: 1.25, rise: 24, turbulence: 30, dust: 250, ringSpeed: 120, wave: 1.5, sparks: 100, sparkSpeed: 200, debris: 10, embers: 320, flash: 0.8, light: 1.6, scorch: 1.6, shake: 5, flames: 280, flameTime: 6 },
+  chain: { name: 'Chain reaction', radius: 16, fire: 520, lobes: 5, lobeSpread: 0.5, lobeVar: 0.5, fireLife: 0.7, fireSize: 5, fireHeat: 1.25, drag: 6.5, smoke: 320, smokeLife: 2.2, smokeSize: 7, smokeDensity: 1.1, smokeSpread: 1.1, rise: 14, turbulence: 18, dust: 140, ringSpeed: 110, wave: 2, sparks: 70, sparkSpeed: 240, debris: 12, embers: 25, flash: 1, light: 1, scorch: 0.8, shake: 4, secondary: 8, secondaryDelay: 0.13, secondaryScale: 0.85 },
+  mega: { name: 'Mega blast', radius: 78, fire: 5200, lobes: 11, lobeSpread: 0.4, lobeVar: 0.6, fireLife: 1.9, fireSize: 14, fireHeat: 1.5, drag: 3.2, smoke: 4000, smokeLife: 6.5, smokeSize: 22, smokeDensity: 1.55, smokeSpread: 1.3, rise: 30, turbulence: 38, dust: 2600, ringSpeed: 430, wave: 6, sparks: 700, sparkSpeed: 620, debris: 160, embers: 420, flash: 2, light: 2.4, scorch: 2, shake: 18, secondary: 4, secondaryDelay: 0.25, secondaryScale: 0.45 },
+  plasma: { name: 'Plasma burst', palette: 'plasma', radius: 26, fire: 1600, lobes: 16, lobeSpread: 1.1, lobeVar: 0.12, fireLife: 0.75, fireSize: 6, fireHeat: 1.6, drag: 8, smoke: 260, smokeLife: 1.3, smokeSize: 8, smokeDensity: 0.75, smokeSpread: 1.2, rise: 6, turbulence: 22, dust: 0, ringSpeed: 300, wave: 5, sparks: 320, sparkSpeed: 430, debris: 0, embers: 130, flash: 1.5, light: 1.6, scorch: 0.4, shake: 5 },
+  toxic: { name: 'Toxic cloud', palette: 'toxic', radius: 24, fire: 800, lobes: 6, lobeSpread: 0.5, lobeVar: 0.5, fireLife: 0.7, fireSize: 6, fireHeat: 1.05, drag: 6, smoke: 2600, smokeLife: 6.5, smokeSize: 15, smokeDensity: 1.35, smokeSpread: 2, rise: 7, turbulence: 34, dust: 120, ringSpeed: 110, wave: 1.5, sparks: 40, sparkSpeed: 180, debris: 6, embers: 200, flash: 0.6, light: 0.9, scorch: 0.6, shake: 3 },
+  arcane: { name: 'Arcane nova', palette: 'arcane', radius: 30, fire: 1300, lobes: 16, lobeSpread: 0.22, lobeVar: 0.9, fireLife: 0.8, fireSize: 5, fireHeat: 1.4, drag: 6, smoke: 420, smokeLife: 1.8, smokeSize: 8, smokeDensity: 0.85, smokeSpread: 1.2, rise: 10, turbulence: 25, dust: 0, ringSpeed: 260, wave: 4, sparks: 420, sparkSpeed: 380, debris: 0, embers: 220, flash: 1.4, light: 1.5, scorch: 0.3, shake: 5 },
+  impact: { name: 'Dust impact', radius: 10, fire: 0, lobes: 6, smoke: 520, smokeLife: 2.2, smokeSize: 9, smokeDensity: 0.7, smokeSpread: 1.6, rise: 6, turbulence: 18, dust: 1100, ringSpeed: 190, wave: 1.5, sparks: 0, debris: 55, embers: 0, flash: 0, light: 0, scorch: 0.3, shake: 4 },
+};
+for (const k in PRESETS) PRESETS[k] = Object.assign({}, DEFAULTS, PRESETS[k]);
+const tuned = {};
+for (const k in PRESETS) tuned[k] = Object.assign({}, PRESETS[k]);
+
+/* ------------------------------------------------------------------ *
+ *  Small helpers
+ * ------------------------------------------------------------------ */
+// Swappable so a bake can replay the exact same explosion from a seed.
+let R01 = Math.random;
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const rnd = (a, b) => a + (b - a) * R01();
+const gauss = () => (R01() + R01() + R01() - 1.5) * 1.15;
+const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+const hexInt = (h) => parseInt(h.slice(1), 16);
+const hexRgb = (h) => { const n = hexInt(h); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+let flowX = 0, flowY = 0;
+function flow(x, y, t) {
+  const a = Math.sin(x * 0.047 + t * 0.6) + Math.sin(y * 0.053 - t * 0.47) + Math.sin((x - y) * 0.031 + t * 0.83);
+  flowX = Math.cos(a * 1.9); flowY = Math.sin(a * 1.9);
+}
+
+function hash2(x, y, s) {
+  let h = Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177); h ^= h >>> 16;
+  return (h >>> 0) / 4294967296;
+}
+function vnoise(x, y, s) {
+  const xi = Math.floor(x), yi = Math.floor(y), xf = x - xi, yf = y - yi;
+  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf);
+  const a = hash2(xi, yi, s), b = hash2(xi + 1, yi, s), c = hash2(xi, yi + 1, s), d = hash2(xi + 1, yi + 1, s);
+  return a + (b - a) * u + (c - a) * v + (a - b - c + d) * u * v;
+}
+const fbm = (x, y, s) => vnoise(x, y, s) * 0.55 + vnoise(x * 2.1, y * 2.1, s + 7) * 0.3 + vnoise(x * 4.3, y * 4.3, s + 13) * 0.15;
+const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((v) => v / 16 - 0.47);
+
+/* Circle textures, generated in JS. Soft one feeds the density field,
+   hard one draws crisp pixel sparks and debris. */
+function circleCanvas(size, soft) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d'); const img = ctx.createImageData(size, size); const r = size / 2;
+  for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
+    const dx = (x + 0.5 - r) / r, dy = (y + 0.5 - r) / r, d2 = dx * dx + dy * dy;
+    const a = soft ? (d2 < 1 ? (1 - d2) * (1 - d2) : 0) : (d2 <= 1 ? 1 : 0);
+    const i = (y * size + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = 255; img.data[i + 3] = Math.round(a * 255);
+  }
+  ctx.putImageData(img, 0, 0); return c;
+}
+
+/* ------------------------------------------------------------------ *
+ *  Ground generation (low-res, one texel = one game pixel)
+ * ------------------------------------------------------------------ */
+function paintGround(canvas, W, H, type) {
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext('2d'); const img = ctx.createImageData(W, H); const d = img.data;
+  const pal = {
+    grass: ['#2f5229', '#3b6531', '#47763a', '#548843', '#64994d'].map(hexInt),
+    gdirt: ['#4e3b2b', '#614a35', '#755a40'].map(hexInt),
+    dirt: ['#4a3727', '#5a4330', '#6b5039', '#7c5e43', '#8e6d4e'].map(hexInt),
+    stone: ['#3b3940', '#4c4a52', '#5b5962', '#6a6871', '#7a7881'].map(hexInt),
+  };
+  const put = (i, c) => { d[i] = c >> 16 & 255; d[i + 1] = c >> 8 & 255; d[i + 2] = c & 255; d[i + 3] = 255; };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = (y * W + x) * 4, b = BAYER[(y & 3) * 4 + (x & 3)];
+    let c;
+    if (type === 'grass') {
+      const m = fbm(x * 0.013, y * 0.013, 5), n = fbm(x * 0.045, y * 0.045, 1);
+      if (m + b * 0.06 < 0.34) c = pal.gdirt[clamp(Math.floor((n + b * 0.2) * 3.4 - 0.4), 0, 2)];
+      else {
+        let k = clamp(Math.floor((n - 0.22 + b * 0.16) * 8.5), 0, 4);
+        if (hash2(x, y, 9) > 0.975) k = Math.min(4, k + 1);
+        c = pal.grass[k];
+      }
+    } else if (type === 'dirt') {
+      const n = fbm(x * 0.05, y * 0.05, 3);
+      let k = clamp(Math.floor((n - 0.2 + b * 0.18) * 8), 0, 4);
+      if (hash2(x, y, 4) > 0.993) k = 4; else if (hash2(x, y - 1, 4) > 0.993) k = 0;
+      c = pal.dirt[k];
+    } else if (type === 'stone') {
+      const tx = Math.floor(x / 32), ty = Math.floor(y / 32), lx = x & 31, ly = y & 31;
+      const tone = hash2(tx, ty, 2), n = vnoise(x * 0.2, y * 0.2, 6);
+      let k = 1 + Math.floor(tone * 2.99);
+      if (n + b * 0.2 > 0.78) k = Math.min(4, k + 1); else if (n + b * 0.2 < 0.2) k = Math.max(0, k - 1);
+      if (lx === 0 || ly === 0) k = 0; else if (lx === 1 || ly === 1) k = Math.min(4, k + 1); else if (lx === 31 || ly === 31) k = Math.max(0, k - 1);
+      c = pal.stone[k];
+    } else {
+      c = (x % 32 === 0 && y % 32 === 0) ? 0x34303c : (hash2(x, y, 1) > 0.996 ? 0x24212b : 0x1c1a22);
+    }
+    put(i, c);
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+/* ------------------------------------------------------------------ *
+ *  GPU shaders. Particles are splatted additively into a low-res field:
+ *    R = heat, G = smoke density, B = dust density.
+ *  The composite shader turns that field into banded, dithered, lit
+ *  pixel art with palette colors, shockwave refraction, heat haze,
+ *  scorch marks and ground lighting.
+ * ------------------------------------------------------------------ */
+const VERT = `
+precision highp float;
+attribute vec2 aVertexPosition;
+attribute vec2 aUvs;
+uniform mat3 translationMatrix;
+uniform mat3 projectionMatrix;
+varying vec2 vUvs;
+void main() {
+  vUvs = aUvs;
+  gl_Position = vec4((projectionMatrix * translationMatrix * vec3(aVertexPosition, 1.0)).xy, 0.0, 1.0);
+}`;
+
+const FRAG = `
+#ifdef GL_FRAGMENT_PRECISION_HIGH
+precision highp float;
+#else
+precision mediump float;
+#endif
+varying vec2 vUvs;
+uniform sampler2D uFx;
+uniform sampler2D uGround;
+uniform sampler2D uScorch;
+uniform vec2 uRes;
+uniform float uTime;
+uniform float uDither;
+uniform float uOutline;
+uniform float uTransparent;
+uniform float uShowField;
+uniform vec3 uFire[7];
+uniform vec3 uSmoke[5];
+uniform vec3 uDust[4];
+uniform vec3 uLightCol;
+uniform vec4 uLights[8];
+uniform vec4 uWaves[6];
+
+float bayer2(vec2 a) { a = floor(a); return fract(a.x * 0.5 + a.y * a.y * 0.75); }
+float bayer4(vec2 a) { return bayer2(0.5 * a) * 0.25 + bayer2(a); }
+
+vec3 firePal(float h) {
+  return h > 0.86 ? uFire[6] : h > 0.68 ? uFire[5] : h > 0.52 ? uFire[4] : h > 0.38 ? uFire[3]
+       : h > 0.26 ? uFire[2] : h > 0.16 ? uFire[1] : uFire[0];
+}
+vec3 smokePal(float v) {
+  return v < 0.2 ? uSmoke[0] : v < 0.4 ? uSmoke[1] : v < 0.6 ? uSmoke[2] : v < 0.8 ? uSmoke[3] : uSmoke[4];
+}
+vec3 dustPal(float v) {
+  return v < 0.25 ? uDust[0] : v < 0.5 ? uDust[1] : v < 0.75 ? uDust[2] : uDust[3];
+}
+
+void main() {
+  vec2 px = floor(vUvs * uRes);
+  vec2 tx = 1.0 / uRes;
+  float dth = bayer4(px) - 0.46875;
+
+  // Shockwave refraction: shift whole pixels around expanding rings.
+  vec2 off = vec2(0.0);
+  for (int i = 0; i < 6; i++) {
+    vec4 w = uWaves[i];
+    if (w.w <= 0.0) continue;
+    vec2 dv = (px - w.xy) * vec2(1.0, 1.18);
+    float d = length(dv);
+    float k = (d - w.z) / 5.0;
+    off += (dv / max(d, 0.001)) * w.w * exp(-k * k);
+  }
+  vec2 cpx = px - floor(off + 0.5);
+  vec2 uv = (cpx + 0.5) * tx;
+
+  vec4 f = texture2D(uFx, uv);
+  vec4 fl = texture2D(uFx, uv - vec2(3.0 * tx.x, 0.0));
+  vec4 fr = texture2D(uFx, uv + vec2(3.0 * tx.x, 0.0));
+  vec4 fu = texture2D(uFx, uv - vec2(0.0, 3.0 * tx.y));
+  vec4 fd = texture2D(uFx, uv + vec2(0.0, 3.0 * tx.y));
+  float h = f.r, s = f.g, du = f.b;
+
+  // Light comes from the top-left. Gradient of each density = surface normal.
+  vec2 L = vec2(-0.55, -0.83);
+  vec2 gh = vec2(fr.r - fl.r, fd.r - fu.r);
+  vec2 gs = vec2(fr.g - fl.g, fd.g - fu.g);
+  vec2 gd = vec2(fr.b - fl.b, fd.b - fu.b);
+  float litH = clamp(dot(-gh, L) * 1.4, -0.3, 0.3);
+  float litS = clamp(dot(-gs, L) / (0.3 + s) * 1.05, -0.4, 0.4);
+  float litD = clamp(dot(-gd, L) / (0.25 + du) * 1.6, -0.5, 0.5);
+
+  // Ground, with heat haze wobble near hot edges.
+  float haze = smoothstep(0.015, 0.09, h);
+  vec2 guv = uv + vec2(floor(sin(px.y * 0.9 + uTime * 15.0) * haze * 1.6 + 0.5), 0.0) * tx;
+  vec3 g = texture2D(uGround, guv).rgb;
+  float sc = texture2D(uScorch, guv).r + dth * 0.22;
+  g *= sc > 0.78 ? vec3(0.22, 0.2, 0.2) : sc > 0.5 ? vec3(0.42, 0.38, 0.36) : sc > 0.24 ? vec3(0.68, 0.64, 0.6) : vec3(1.0);
+
+  float lt = 0.0;
+  for (int i = 0; i < 8; i++) {
+    vec4 l = uLights[i];
+    if (l.w <= 0.0) continue;
+    float d = length((px - l.xy) * vec2(1.0, 1.18)) / l.z;
+    float q = max(0.0, 1.0 - d);
+    lt += l.w * q * q;
+  }
+  float lq = floor(clamp(lt + dth * 0.3, 0.0, 1.25) * 4.0) / 4.0;
+  g += g * uLightCol * lq * 1.7 + uLightCol * lq * 0.05;
+
+  vec3 col = g;
+  float a = 1.0 - uTransparent;
+
+  // Dust (ground level, under everything else)
+  float dq = du + dth * uDither * 0.28;
+  if (dq > 0.13) {
+    float sh = clamp(0.58 + litD - (min(du, 1.2) - 0.13) * 0.4 + dth * uDither * 0.3 + lq * 0.15, 0.0, 0.999);
+    vec3 dc = dustPal(sh);
+    if (uOutline > 0.5 && dq < 0.17) dc = uDust[0];
+    col = dc; a = 1.0;
+  }
+
+  // Smoke
+  float sq = s + dth * uDither * 0.3;
+  bool smokeOn = sq > 0.14;
+  if (smokeOn) {
+    float sh = clamp(0.47 + litS - (min(s, 1.2) - 0.14) * 0.22 + dth * uDither * 0.32 + lq * 0.18, 0.0, 0.999);
+    vec3 c = smokePal(sh);
+    if (uOutline > 0.5 && sq < 0.185) c = uSmoke[0];
+    // Glow from fire hidden inside the smoke
+    float glow = smoothstep(0.06, 0.32, h + dth * 0.06);
+    if (glow > 0.0 && sh < 0.16 + glow * 0.3) c = glow > 0.55 ? uFire[1] : uFire[0];
+    col = c; a = 1.0;
+  }
+
+  // Fire on top, unless thick smoke hides it
+  float hq = h + litH * 0.12 + dth * uDither * 0.12;
+  if (hq > 0.08 && (hq > s * 0.45 || hq > 0.3)) {
+    col = firePal(hq); a = 1.0;
+  }
+
+  if (uShowField > 0.5) { col = f.rgb; a = 1.0; }
+  gl_FragColor = vec4(col * a, a);
+}`;
+
+/* ------------------------------------------------------------------ *
+ *  Particle stores (structure-of-arrays, swap-remove)
+ * ------------------------------------------------------------------ */
+const T_FIRE = 1, T_FLASH = 2, T_SMOKE = 3, T_DUST = 4, T_FLAME = 5;
+const K_SPARK = 0, K_EMBER = 1, K_DEBRIS = 2;
+const MAX_FIELD = 64000, MAX_OVER = 9000;
+
+class Store {
+  constructor(cap, names) {
+    this.cap = cap; this.n = 0; this.arrs = [];
+    for (const nm of names) { this[nm] = new Float32Array(cap); this.arrs.push(this[nm]); }
+  }
+  alloc() { return this.n < this.cap ? this.n++ : -1; }
+  kill(i) {
+    const last = --this.n;
+    if (i !== last) for (const a of this.arrs) a[i] = a[last];
+  }
+}
+const FIELD_KEYS = ['type', 'x', 'y', 'vx', 'vy', 'age', 'life', 's0', 's1', 'h0', 'cool', 'sm', 'du', 'drag', 'rise', 'turb', 'seed'];
+const OVER_KEYS = ['kind', 'x', 'y', 'z', 'vx', 'vy', 'vz', 'age', 'life', 'size', 'drag', 'grav', 'seed', 'burn', 'trail', 'rise'];
+
+/* ------------------------------------------------------------------ *
+ *  Simulation + rendering
+ * ------------------------------------------------------------------ */
+let SOFT_TEX, HARD_TEX;
+
+class Sim {
+  constructor(renderer, W, H, opt = {}) {
+    this.r = renderer; this.W = W; this.H = H; this.transparent = !!opt.transparent;
+    this.time = 0; this.amount = 1; this.wind = 0; this.dither = 0.6; this.outline = 1; this.showField = 0;
+    this.F = new Store(MAX_FIELD, FIELD_KEYS);
+    this.O = new Store(MAX_OVER, OVER_KEYS);
+    this.events = []; this.emitters = []; this.lights = []; this.waves = []; this.shake = 0;
+
+    // The field is accumulated in a half-float target when available, so thousands
+    // of faint particles can add up without 8-bit banding. Particle colors are only
+    // 8-bit, so faint particles go into a container scaled down by 1/K (uniform, float)
+    // and strong ones into an unscaled container.
+    const ctx = renderer.context;
+    this.isFloat = ctx.webGLVersion === 2 && !!(ctx.extensions && ctx.extensions.colorBufferFloat);
+    this.K = this.isFloat ? 24 : 4;
+    const mkPC = () => {
+      const pc = new PIXI.ParticleContainer(MAX_FIELD, { vertices: true, position: true, rotation: false, uvs: false, tint: true }, 16384, false);
+      pc.blendMode = PIXI.BLEND_MODES.ADD; pc.roundPixels = false; return pc;
+    };
+    this.densePC = mkPC(); this.densePC.alpha = 1 / this.K;
+    this.sparsePC = mkPC();
+    this.fieldRoot = new PIXI.Container(); this.fieldRoot.addChild(this.densePC, this.sparsePC);
+    this.densePool = []; this.sparsePool = [];
+    this.overPC = new PIXI.ParticleContainer(MAX_OVER * 2, { vertices: true, position: true, rotation: true, uvs: false, tint: true }, 16384, false);
+    this.overPC.roundPixels = false;
+    this.overPool = [];
+    this.guide = new PIXI.Graphics();
+    this.overRoot = new PIXI.Container();
+    this.overRoot.addChild(this.overPC, this.guide);
+
+    const mk = (extra) => PIXI.RenderTexture.create(Object.assign({ width: W, height: H, scaleMode: PIXI.SCALE_MODES.NEAREST }, extra));
+    this.fxRT = mk(this.isFloat ? { type: PIXI.TYPES.HALF_FLOAT, format: PIXI.FORMATS.RGBA } : null);
+    this.compRT = mk(); this.scorchRT = mk();
+    this.scorchC = new PIXI.Container();
+    for (let i = 0; i < 28; i++) { const s = new PIXI.Sprite(SOFT_TEX); s.anchor.set(0.5); s.blendMode = PIXI.BLEND_MODES.ADD; this.scorchC.addChild(s); }
+
+    this.groundCanvas = document.createElement('canvas');
+    this.groundType = opt.ground || 'grass';
+    this.groundTex = null;
+
+    this.lightBuf = new Float32Array(32);
+    this.waveBuf = new Float32Array(24);
+    this.uniforms = {
+      uFx: this.fxRT, uGround: PIXI.Texture.WHITE, uScorch: this.scorchRT,
+      uRes: new Float32Array([W, H]), uTime: 0, uDither: 0.6, uOutline: 1,
+      uTransparent: this.transparent ? 1 : 0, uShowField: 0,
+      uFire: new Float32Array(21), uSmoke: new Float32Array(15), uDust: new Float32Array(12),
+      uLightCol: new Float32Array(3), uLights: this.lightBuf, uWaves: this.waveBuf,
+    };
+    this.geom = new PIXI.Geometry()
+      .addAttribute('aVertexPosition', new Float32Array([0, 0, W, 0, W, H, 0, H]), 2)
+      .addAttribute('aUvs', new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]), 2)
+      .addIndex([0, 1, 2, 0, 2, 3]);
+    this.quad = new PIXI.Mesh(this.geom, PIXI.Shader.from(VERT, FRAG, this.uniforms));
+
+    this.setPalette('fire');
+    if (!this.transparent) this.buildGround();
+    this.clearScorch();
+  }
+
+  setPalette(key) {
+    const p = PALETTES[key] || PALETTES.fire; this.palKey = key;
+    const put = (arr, list) => list.forEach((h, i) => { const c = hexRgb(h); arr[i * 3] = c[0]; arr[i * 3 + 1] = c[1]; arr[i * 3 + 2] = c[2]; });
+    put(this.uniforms.uFire, p.fire); put(this.uniforms.uSmoke, p.smoke); put(this.uniforms.uDust, p.dust);
+    this.uniforms.uLightCol.set(hexRgb(p.light));
+    this.firePal = p.fire.map(hexInt); this.smokePal = p.smoke.map(hexInt); this.dustPal = p.dust.map(hexInt);
+  }
+
+  setGround(type) { this.groundType = type; if (!this.transparent) this.buildGround(); }
+  buildGround() {
+    paintGround(this.groundCanvas, this.W, this.H, this.groundType);
+    if (this.groundTex) this.groundTex.destroy(true);
+    this.groundTex = new PIXI.Texture(new PIXI.BaseTexture(this.groundCanvas, { scaleMode: PIXI.SCALE_MODES.NEAREST }));
+    this.uniforms.uGround = this.groundTex;
+  }
+
+  clearScorch() { this.r.render(new PIXI.Container(), { renderTexture: this.scorchRT, clear: true }); }
+
+  resize(W, H) {
+    if (W === this.W && H === this.H) return;
+    this.W = W; this.H = H;
+    this.fxRT.resize(W, H); this.compRT.resize(W, H); this.scorchRT.resize(W, H);
+    this.uniforms.uRes[0] = W; this.uniforms.uRes[1] = H;
+    this.geom.getBuffer('aVertexPosition').update(new Float32Array([0, 0, W, 0, W, H, 0, H]));
+    if (!this.transparent) this.buildGround();
+    this.clearScorch();
+  }
+
+  reset() {
+    this.F.n = 0; this.O.n = 0; this.events.length = 0; this.emitters.length = 0;
+    this.lights.length = 0; this.waves.length = 0; this.shake = 0;
+  }
+
+  get count() { return this.F.n + this.O.n; }
+
+  addField(type, x, y, vx, vy, delay, life, s0, s1, h0, cool, sm, du, drag, rise, turb) {
+    const F = this.F, i = F.alloc(); if (i < 0) return;
+    F.type[i] = type; F.x[i] = x; F.y[i] = y; F.vx[i] = vx; F.vy[i] = vy; F.age[i] = -delay; F.life[i] = life;
+    F.s0[i] = s0; F.s1[i] = s1; F.h0[i] = h0; F.cool[i] = cool; F.sm[i] = sm; F.du[i] = du;
+    F.drag[i] = drag; F.rise[i] = rise; F.turb[i] = turb; F.seed[i] = R01() * 100;
+  }
+  addOver(kind, x, y, z, vx, vy, vz, delay, life, size, drag, grav, burn, rise) {
+    const O = this.O, i = O.alloc(); if (i < 0) return;
+    O.kind[i] = kind; O.x[i] = x; O.y[i] = y; O.z[i] = z; O.vx[i] = vx; O.vy[i] = vy; O.vz[i] = vz;
+    O.age[i] = -delay; O.life[i] = life; O.size[i] = size; O.drag[i] = drag; O.grav[i] = grav;
+    O.seed[i] = R01() * 100; O.burn[i] = burn; O.trail[i] = 0; O.rise[i] = rise;
+  }
+
+  scorchAt(x, y, R, amt) {
+    if (amt <= 0 || this.transparent) return;
+    const kids = this.scorchC.children, n = kids.length;
+    for (let i = 0; i < n; i++) {
+      const s = kids[i], core = i < 6;
+      s.position.set(x + gauss() * R * (core ? 0.12 : 0.38), y + gauss() * R * (core ? 0.1 : 0.3));
+      s.scale.set((R * (core ? rnd(0.35, 0.55) : rnd(0.18, 0.42))) / 32);
+      const v = Math.round(clamp(amt * (core ? 0.42 : 0.2), 0, 1) * 255);
+      s.tint = (v << 16) | (v << 8) | v;
+    }
+    this.r.render(this.scorchC, { renderTexture: this.scorchRT, clear: false });
+  }
+
+  /* One explosion. P = preset params, s = size scale. */
+  detonate(x, y, P, s = 1) {
+    const A = this.amount, R = Math.max(2, P.radius * s);
+    const SQ = 0.85; // vertical squash: LPC is a 3/4 top-down view
+
+    // Flash
+    if (P.flash > 0) {
+      for (let i = 0; i < 7; i++) {
+        this.addField(T_FLASH, x + gauss() * R * 0.15, y + gauss() * R * 0.12, 0, 0, i * 0.012, rnd(0.07, 0.13),
+          R * 0.35 * P.flash, R * rnd(0.9, 1.25) * P.flash, 0.55, 0, 0, 0, 0, 0, 0);
+      }
+    }
+    if (P.light > 0 && !this.transparent) {
+      this.lights.push({ x, y, r: R * 3.4 * Math.sqrt(P.light), i0: Math.min(1.2, 0.55 * P.light + 0.2), age: 0, life: P.fireLife * 1.5 + 0.25 });
+    }
+
+    // Fireball: particles grouped into lobes for the cauliflower silhouette.
+    const nF = Math.round(P.fire * A * s * s);
+    if (nF > 0) {
+      const fsz = P.fireSize * s;
+      const cov = nF * (fsz * 1.35) ** 2 / (R * R);
+      const gF = clamp(P.fireHeat * 0.48 / (cov * 0.33), 0.0005, 2);
+      const gFS = clamp(P.smokeDensity * 0.6 / (cov * 0.33), 0, 2);
+      const lobes = Math.max(1, Math.round(P.lobes)), base = R01() * Math.PI * 2;
+      const lobeAng = [], lobeLen = [];
+      for (let k = 0; k < lobes; k++) {
+        lobeAng.push(base + (k / lobes) * Math.PI * 2 + gauss() * 0.35 * Math.PI / lobes);
+        lobeLen.push(1 - P.lobeVar * 0.5 + P.lobeVar * R01());
+      }
+      const spreadA = P.lobeSpread * Math.PI / lobes;
+      for (let i = 0; i < nF; i++) {
+        const k = (R01() * lobes) | 0;
+        const ang = lobeAng[k] + gauss() * spreadA;
+        const core = R01() < 0.12;
+        const u = core ? R01() * 0.35 : Math.pow(R01(), 0.42);
+        const dist = R * 1.15 * lobeLen[k] * u;
+        const drag = P.drag * rnd(0.8, 1.2);
+        const v0 = dist * drag;
+        const s0 = fsz * rnd(0.5, 1.1);
+        this.addField(T_FIRE, x + gauss() * fsz * 0.3, y + gauss() * fsz * 0.3,
+          Math.cos(ang) * v0, Math.sin(ang) * v0 * SQ, R01() * 0.06, P.fireLife * rnd(0.55, 1.15),
+          s0, s0 * rnd(1.8, 2.6), gF * (0.8 + 0.2 * (1 - u)), rnd(0.68, 1.0), gFS * rnd(0.6, 1.2), 0,
+          drag, P.rise * 0.45, P.turbulence * 0.35);
+      }
+    }
+
+    // Smoke clouds, appearing as the fire cools.
+    const nS = Math.round(P.smoke * A * s * s);
+    if (nS > 0) {
+      const ssz = P.smokeSize * s, Rs = R * P.smokeSpread * 1.1 + ssz;
+      const cov = nS * (ssz * 1.25) ** 2 / (Rs * Rs);
+      const gS = clamp(P.smokeDensity * 0.7 / (cov * 0.33 * 0.55), 0.0005, 2);
+      const gH = clamp(P.fireHeat * 0.12 / (cov * 0.33), 0, 0.3);
+      // Particles gather into billows so the cloud reads as distinct round puffs.
+      const nP = Math.max(3, Math.round(5 + R / 4));
+      const puffs = [];
+      for (let k = 0; k < nP; k++) {
+        const ang = R01() * Math.PI * 2;
+        const dist = R * P.smokeSpread * Math.pow(R01(), 0.6);
+        puffs.push({ tx: x + Math.cos(ang) * dist, ty: y + Math.sin(ang) * dist * SQ, pr: ssz * rnd(0.8, 2), dl: P.fireLife * rnd(0.12, 0.6), rm: rnd(0.7, 1.4) });
+      }
+      for (let i = 0; i < nS; i++) {
+        const pf = puffs[(R01() * nP) | 0];
+        const txp = pf.tx + gauss() * pf.pr * 0.6, typ = pf.ty + gauss() * pf.pr * 0.5;
+        const sx = x + (txp - x) * 0.3, sy = y + (typ - y) * 0.3;
+        const drag = rnd(1.4, 2.2);
+        const s0 = ssz * rnd(0.4, 0.8);
+        this.addField(T_SMOKE, sx, sy, (txp - sx) * drag, (typ - sy) * drag, pf.dl + R01() * 0.15, P.smokeLife * rnd(0.5, 1.2),
+          s0, ssz * rnd(1.4, 2.5), gH * R01(), 0, gS * rnd(0.7, 1.3), 0, drag, P.rise * pf.rm, P.turbulence);
+      }
+    }
+
+    // Dust ring kicked up along the ground.
+    const nD = Math.round(P.dust * A * s * s);
+    if (nD > 0) {
+      const dsz = 3.2 * Math.sqrt(s) + R * 0.05;
+      const Rr = R * 0.35 + P.ringSpeed * s / 3.1 * 0.8;
+      const area = 2 * Rr * (Rr * 0.5 + 2 * dsz);
+      const cov = nD * (dsz * 1.7) ** 2 / area;
+      const gD = clamp(0.14 / (cov * 0.33 * 0.6), 0.0005, 2);
+      for (let i = 0; i < nD; i++) {
+        const ang = R01() * Math.PI * 2, r0 = R * rnd(0.15, 0.45);
+        const drag = rnd(2.6, 3.6), v0 = P.ringSpeed * s * rnd(0.55, 1.15);
+        const s0 = dsz * rnd(0.6, 1.3);
+        this.addField(T_DUST, x + Math.cos(ang) * r0, y + Math.sin(ang) * r0 * SQ,
+          Math.cos(ang) * v0, Math.sin(ang) * v0 * SQ, R01() * 0.05, rnd(0.7, 1.8) * Math.sqrt(s),
+          s0, s0 * rnd(2, 3.2), 0, 0, 0, gD * rnd(0.7, 1.3), drag, P.rise * 0.15, P.turbulence * 0.5);
+      }
+    }
+
+    // Sparks
+    const nSp = Math.round(P.sparks * Math.sqrt(A) * s);
+    for (let i = 0; i < nSp; i++) {
+      const ang = R01() * Math.PI * 2, sp = P.sparkSpeed * s * (0.25 + 0.95 * Math.pow(R01(), 0.7));
+      this.addOver(K_SPARK, x + gauss() * R * 0.2, y + gauss() * R * 0.15, rnd(0, R * 0.3),
+        Math.cos(ang) * sp, Math.sin(ang) * sp * SQ, rnd(20, 150) * s, R01() * 0.08, rnd(0.25, 0.9),
+        R01() < 0.3 ? 2 : 1, rnd(1.8, 3), 260 * Math.sqrt(s), 0, 0);
+    }
+    // Embers drifting up with the smoke
+    const nE = Math.round(P.embers * Math.sqrt(A) * s);
+    for (let i = 0; i < nE; i++) {
+      const ang = R01() * Math.PI * 2, r0 = R * Math.sqrt(R01()) * 0.9, sp = rnd(10, 60) * s;
+      this.addOver(K_EMBER, x + Math.cos(ang) * r0, y + Math.sin(ang) * r0 * SQ, 0,
+        Math.cos(ang) * sp, Math.sin(ang) * sp * SQ, 0, P.fireLife * rnd(0.1, 0.9), rnd(1.2, 3.5),
+        1, rnd(0.6, 1.4), 0, 0, P.rise * rnd(0.8, 1.6) + 6);
+    }
+    // Debris chunks with height, shadows and burning trails
+    const nDb = Math.round(P.debris * s);
+    for (let i = 0; i < nDb; i++) {
+      const ang = R01() * Math.PI * 2, sp = rnd(50, 230) * s;
+      this.addOver(K_DEBRIS, x + gauss() * R * 0.2, y + gauss() * R * 0.15, rnd(0, R * 0.2),
+        Math.cos(ang) * sp, Math.sin(ang) * sp * SQ, rnd(90, 280) * Math.sqrt(s), 0, rnd(1.8, 3.6),
+        Math.max(1, Math.round(rnd(1, 3.2) * Math.min(1.4, Math.sqrt(s)))), rnd(0.4, 1), 520 * Math.sqrt(s),
+        P.fire > 0 ? (R01() < 0.35 ? 1 : 0.5) : 0, 0);
+    }
+
+    if (P.wave > 0) this.waves.push({ x, y, r0: R * 0.3, sp: Math.max(160, P.ringSpeed * 1.6) * Math.sqrt(s), str: P.wave * Math.sqrt(s), age: 0, life: 0.55 + 0.2 * s });
+    this.scorchAt(x, y, R, P.scorch * Math.min(1, s * 1.2));
+    this.shake = Math.max(this.shake, P.shake * Math.sqrt(s));
+
+    if (P.flames > 0 && P.flameTime > 0) {
+      this.emitters.push({ x, y, R: R * 0.95, rate: P.flames * A * s, dur: P.flameTime, age: -P.fireLife * 0.35, acc: 0, s, P });
+    }
+    const nSec = Math.round(P.secondary);
+    for (let i = 0; i < nSec; i++) {
+      const at = this.time + P.secondaryDelay * (i + 1) * rnd(0.6, 1.4);
+      const ang = R01() * Math.PI * 2, d = R * rnd(0.9, 2.4);
+      const sx = x + Math.cos(ang) * d, sy = y + Math.sin(ang) * d * SQ;
+      const sub = Object.assign({}, P, { secondary: 0, shake: P.shake * 0.6 });
+      this.events.push({ t: at, fn: () => this.detonate(sx, sy, sub, s * P.secondaryScale * rnd(0.75, 1.15)) });
+    }
+  }
+
+  update(dt) {
+    this.time += dt;
+    const t0 = this.time;
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      if (t0 >= this.events[i].t) { const e = this.events[i]; this.events.splice(i, 1); e.fn(); }
+    }
+
+    // Lingering ground flames
+    for (let i = this.emitters.length - 1; i >= 0; i--) {
+      const e = this.emitters[i]; e.age += dt;
+      if (e.age >= e.dur) { this.emitters.splice(i, 1); continue; }
+      if (e.age < 0) continue;
+      const k = 1 - e.age / e.dur, s = e.s;
+      e.acc += e.rate * k * dt;
+      const gFl = 0.42 + 0.1 * e.P.fireHeat;
+      while (e.acc >= 1) {
+        e.acc -= 1;
+        const ang = R01() * Math.PI * 2, r = e.R * Math.sqrt(R01());
+        const fx = e.x + Math.cos(ang) * r, fy = e.y + Math.sin(ang) * r * 0.85;
+        const s0 = rnd(1.5, 3.4) * Math.sqrt(s);
+        this.addField(T_FLAME, fx, fy, gauss() * 6, 0, 0, rnd(0.35, 0.9), s0, s0 * rnd(1.4, 2.1),
+          gFl * rnd(0.7, 1.2) * (0.55 + 0.45 * k), 0, 0.5 * e.P.smokeDensity * R01(), 0, 2, e.P.rise * 2.2 + 18, e.P.turbulence * 0.5);
+        if (R01() < 0.08) {
+          const ss = rnd(4, 8) * Math.sqrt(s);
+          this.addField(T_SMOKE, fx, fy - 4, gauss() * 8, 0, 0, rnd(1.2, 2.6), ss * 0.5, ss * 1.8, 0.05, 0,
+            0.42 * e.P.smokeDensity, 0, 1.5, e.P.rise * 1.3 + 8, e.P.turbulence);
+        }
+        if (R01() < 0.02) this.addOver(K_EMBER, fx, fy, 0, gauss() * 15, gauss() * 10, 0, 0, rnd(1, 2.4), 1, 1, 0, 0, e.P.rise + 14);
+      }
+    }
+
+    for (let i = this.lights.length - 1; i >= 0; i--) { const l = this.lights[i]; l.age += dt; if (l.age >= l.life) this.lights.splice(i, 1); }
+    for (let i = this.waves.length - 1; i >= 0; i--) { const w = this.waves[i]; w.age += dt; if (w.age >= w.life) this.waves.splice(i, 1); }
+
+    // Field particles
+    const F = this.F, wind = this.wind, time = this.time;
+    for (let i = F.n - 1; i >= 0; i--) {
+      const age = (F.age[i] += dt);
+      if (age < 0) continue;
+      if (age >= F.life[i]) { F.kill(i); continue; }
+      const t = age / F.life[i];
+      const d = Math.exp(-F.drag[i] * dt);
+      F.vx[i] *= d; F.vy[i] *= d;
+      let ox = 0, oy = 0;
+      const turb = F.turb[i];
+      if (turb > 0) { flow(F.x[i], F.y[i], time + F.seed[i] * 0.01); ox = flowX * turb * Math.min(1, t * 3); oy = flowY * turb * Math.min(1, t * 3); }
+      const ty = F.type[i];
+      const lift = ty === T_FLAME ? 1 : Math.min(1, t * 2.2);
+      const wk = ty === T_DUST ? 0.35 : ty === T_FIRE ? 0.5 : 1;
+      F.x[i] += (F.vx[i] + ox + wind * wk * lift) * dt;
+      F.y[i] += (F.vy[i] + oy - F.rise[i] * lift) * dt;
+    }
+
+    // Overlay particles (sparks, embers, debris)
+    const O = this.O;
+    for (let i = O.n - 1; i >= 0; i--) {
+      const age = (O.age[i] += dt);
+      if (age < 0) continue;
+      if (age >= O.life[i]) { O.kill(i); continue; }
+      const d = Math.exp(-O.drag[i] * dt);
+      O.vx[i] *= d; O.vy[i] *= d;
+      const kind = O.kind[i];
+      if (kind === K_EMBER) {
+        flow(O.x[i], O.y[i], time); 
+        O.x[i] += (O.vx[i] + flowX * 14 + wind) * dt;
+        O.y[i] += (O.vy[i] + flowY * 10 - O.rise[i]) * dt;
+        continue;
+      }
+      O.vz[i] -= O.grav[i] * dt;
+      O.z[i] += O.vz[i] * dt;
+      if (O.z[i] < 0) {
+        O.z[i] = 0;
+        if (O.vz[i] < -40) { O.vz[i] *= -0.32; O.vx[i] *= 0.55; O.vy[i] *= 0.55; }
+        else { O.vz[i] = 0; O.vx[i] *= Math.exp(-8 * dt); O.vy[i] *= Math.exp(-8 * dt); }
+      }
+      O.x[i] += (O.vx[i] + wind * 0.2) * dt;
+      O.y[i] += O.vy[i] * dt;
+      if (kind === K_DEBRIS && O.burn[i] > 0.75 && age < O.life[i] * 0.75) {
+        O.trail[i] -= dt;
+        if (O.trail[i] <= 0) {
+          O.trail[i] = 0.035;
+          const ss = O.size[i] + 1.5;
+          this.addField(T_SMOKE, O.x[i], O.y[i] - O.z[i], 0, 0, 0, rnd(0.35, 0.7), ss * 0.6, ss * 2.2, 0.22 * (1 - age / O.life[i]), 0, 0.34, 0, 1, 3, 6);
+        }
+      }
+    }
+  }
+
+  render(guidePos) {
+    const F = this.F, O = this.O;
+    // --- field sprites
+    const K = this.K, dp = this.densePool, spp = this.sparsePool;
+    let nd = 0, ns = 0;
+    for (let i = 0; i < F.n; i++) {
+      const age = F.age[i];
+      if (age < 0) continue;
+      const t = age / F.life[i], ty = F.type[i];
+      let heat = 0, smoke = 0, dust = 0, size;
+      const e = 1 - (1 - t) * (1 - t);
+      if (ty === T_FIRE) {
+        const fl = 0.88 + 0.12 * Math.sin(age * 31 + F.seed[i]);
+        heat = F.h0[i] * (1 - smooth(0.3, F.cool[i], t)) * fl;
+        smoke = F.sm[i] * smooth(F.cool[i] * 0.8, F.cool[i] + 0.12, t) * (1 - smooth(0.75, 1, t));
+        size = F.s0[i] + (F.s1[i] - F.s0[i]) * e;
+      } else if (ty === T_SMOKE) {
+        heat = F.h0[i] * (1 - smooth(0, 0.18, t));
+        smoke = F.sm[i] * smooth(0, 0.12, t) * Math.pow(1 - t, 1.3);
+        size = F.s0[i] + (F.s1[i] - F.s0[i]) * e;
+      } else if (ty === T_DUST) {
+        dust = F.du[i] * smooth(0, 0.06, t) * Math.pow(1 - t, 1.6);
+        size = F.s0[i] + (F.s1[i] - F.s0[i]) * e;
+      } else if (ty === T_FLASH) {
+        heat = F.h0[i] * (1 - t) * (1 - t);
+        size = F.s0[i] + (F.s1[i] - F.s0[i]) * Math.sqrt(t);
+      } else {
+        const fl = 0.8 + 0.2 * Math.sin(age * 40 + F.seed[i]);
+        heat = F.h0[i] * Math.pow(Math.sin(Math.PI * Math.min(1, t * 1.15)), 0.6) * fl;
+        smoke = F.sm[i] * smooth(0.45, 0.8, t) * (1 - smooth(0.8, 1, t));
+        size = F.s0[i] + (F.s1[i] - F.s0[i]) * t;
+      }
+      const peak = Math.max(heat, smoke, dust);
+      if (peak <= 0.0005) continue;
+      let sp, m;
+      if (peak * K <= 1) {
+        if (nd >= dp.length) { const n = new PIXI.Sprite(SOFT_TEX); n.anchor.set(0.5); dp.push(n); }
+        sp = dp[nd++]; m = K * 255;
+      } else {
+        if (ns >= spp.length) { const n = new PIXI.Sprite(SOFT_TEX); n.anchor.set(0.5); spp.push(n); }
+        sp = spp[ns++]; m = 255;
+      }
+      const rr = Math.min(255, heat * m + 0.5) | 0, gg = Math.min(255, smoke * m + 0.5) | 0, bb = Math.min(255, dust * m + 0.5) | 0;
+      // Write straight into the fields ParticleRenderer reads, skipping setters.
+      const tr = sp.transform; tr.position._x = F.x[i]; tr.position._y = F.y[i];
+      tr.scale._x = tr.scale._y = size / 32;
+      sp._tintRGB = (bb << 16) | (gg << 8) | rr; // little-endian, as Pixi stores it
+    }
+    const syncKids = (pc, pool, n) => {
+      const kids = pc.children;
+      if (kids.length > n) pc.removeChildren(n);
+      while (kids.length < n) pc.addChild(pool[kids.length]);
+    };
+    syncKids(this.densePC, dp, nd);
+    syncKids(this.sparsePC, spp, ns);
+
+    // --- overlay sprites
+    const op = this.overPool, opc = this.overPC;
+    let k = 0;
+    const take = () => {
+      if (k >= op.length) { const s = new PIXI.Sprite(HARD_TEX); s.anchor.set(0.5); op.push(s); }
+      return op[k++];
+    };
+    const fpal = this.firePal, rock = this.smokePal[1];
+    const put = (sp, x, y, sx, sy, rot, col, alpha) => {
+      const tr = sp.transform; tr.position._x = x; tr.position._y = y; tr.scale._x = sx; tr.scale._y = sy;
+      if (sp.rotation !== rot) sp.rotation = rot;
+      sp._tintRGB = ((col & 255) << 16) | (col & 0xff00) | (col >> 16 & 255); sp.alpha = alpha;
+    };
+    for (let i = 0; i < O.n; i++) {
+      const age = O.age[i]; if (age < 0) continue;
+      const t = age / O.life[i], kind = O.kind[i];
+      if (kind === K_SPARK) {
+        const sx = O.vx[i], sy = O.vy[i] - O.vz[i];
+        const spd = Math.hypot(sx, sy);
+        const len = clamp(spd * 0.03, 1.2, 7);
+        const thick = O.size[i] > 1 && t < 0.45 ? 2.2 : 1.45;
+        put(take(), Math.floor(O.x[i]) + 0.5, Math.floor(O.y[i] - O.z[i]) + 0.5, len / 64, thick / 64,
+          Math.atan2(sy, sx), fpal[clamp(6 - Math.floor(t * 5.6 + (O.seed[i] % 1)), 1, 6)], 1);
+      } else if (kind === K_EMBER) {
+        if (t > 0.88 && ((age * 18) | 0) % 2) continue;
+        const fl = Math.sin(age * 22 + O.seed[i]) > 0;
+        put(take(), Math.floor(O.x[i]) + 0.5, Math.floor(O.y[i]) + 0.5, 1.2 / 64, 1.2 / 64, 0,
+          fpal[t > 0.75 ? 1 : t > 0.5 ? 3 : fl ? 5 : 4], 1);
+      } else {
+        if (t > 0.85 && ((age * 16) | 0) % 2) continue;
+        const sz = O.size[i], half = (sz & 1) ? 0.5 : 0;
+        if (O.z[i] > 0.6) {
+          put(take(), Math.floor(O.x[i]) + half, Math.floor(O.y[i]) + half, (sz + 0.2) / 64, (sz + 0.2) / 64, 0, 0x000000, 0.32);
+        }
+        put(take(), Math.floor(O.x[i]) + half, Math.floor(O.y[i] - O.z[i]) + half, (sz + 0.2) / 64, (sz + 0.2) / 64, 0,
+          O.burn[i] > 0 && age < 0.1 ? fpal[5] : O.burn[i] > 0 && age < 0.22 ? fpal[3] : O.burn[i] > 0.75 ? (t < 0.35 ? fpal[4] : t < 0.6 ? fpal[2] : t < 0.75 ? fpal[1] : rock) : (O.burn[i] > 0 && age < 0.35 ? fpal[1] : rock), 1);
+      }
+    }
+    syncKids(opc, op, k);
+
+    // --- LPC frame guide
+    const g = this.guide; g.clear();
+    if (guidePos) {
+      const gx = Math.floor(guidePos.x) - 32, gy = Math.floor(guidePos.y) - 32, L = 7;
+      g.beginFill(0xf6efe0, 0.75);
+      for (const [cx, cy, sx, sy] of [[0, 0, 1, 1], [63, 0, -1, 1], [0, 63, 1, -1], [63, 63, -1, -1]]) {
+        g.drawRect(gx + cx + (sx < 0 ? -L + 1 : 0), gy + cy, L, 1);
+        g.drawRect(gx + cx, gy + cy + (sy < 0 ? -L + 1 : 0), 1, L);
+      }
+      g.endFill();
+    }
+
+    // --- uniforms
+    const U = this.uniforms;
+    U.uTime = this.time; U.uDither = this.dither; U.uOutline = this.outline; U.uShowField = this.showField;
+    this.lightBuf.fill(0);
+    const ls = this.lights.slice().sort((a, b) => b.i0 - a.i0).slice(0, 8);
+    ls.forEach((l, j) => {
+      const t = l.age / l.life;
+      const inten = l.i0 * (0.4 * Math.exp(-l.age * 14) + 0.6 * (1 - smooth(0, 1, t)));
+      this.lightBuf.set([l.x, l.y, l.r, inten], j * 4);
+    });
+    let j = ls.length;
+    for (const e of this.emitters) {
+      if (j >= 8 || e.age < 0) continue;
+      const k2 = 1 - e.age / e.dur;
+      this.lightBuf.set([e.x, e.y, e.R * 2.6, (0.32 + 0.06 * Math.sin(this.time * 23 + e.x)) * k2 * Math.min(1.5, e.P.light)], j * 4); j++;
+    }
+    this.waveBuf.fill(0);
+    this.waves.slice(-6).forEach((w, j2) => {
+      const t = w.age / w.life;
+      const r = w.r0 + w.sp * w.age * (1 - 0.45 * t);
+      this.waveBuf.set([w.x, w.y, r, w.str * (1 - t) * (1 - t)], j2 * 4);
+    });
+
+    const r = this.r;
+    r.render(this.fieldRoot, { renderTexture: this.fxRT, clear: true });
+    r.render(this.quad, { renderTexture: this.compRT, clear: true });
+    r.render(this.overRoot, { renderTexture: this.compRT, clear: false });
+  }
+
+  destroy() {
+    this.fieldRoot.destroy({ children: true }); this.overRoot.destroy({ children: true });
+    this.fxRT.destroy(true); this.compRT.destroy(true); this.scorchRT.destroy(true);
+    this.scorchC.destroy({ children: true }); this.quad.destroy(); this.geom.destroy();
+    if (this.groundTex) this.groundTex.destroy(true);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ *  App
+ * ------------------------------------------------------------------ */
+const stageEl = $('#stage');
+let app;
+try {
+  app = new PIXI.Application({ width: 320, height: 180, antialias: false, backgroundColor: 0x141217, resolution: 1, autoDensity: false, powerPreference: 'high-performance' });
+} catch (err) {
+  const e = $('#err'); e.style.display = 'grid'; e.textContent = 'WebGL is not available in this browser, so the particle renderer cannot start.'; return;
+}
+stageEl.appendChild(app.view);
+SOFT_TEX = new PIXI.Texture(new PIXI.BaseTexture(circleCanvas(64, true), { scaleMode: PIXI.SCALE_MODES.LINEAR, mipmap: PIXI.MIPMAP_MODES.ON }));
+HARD_TEX = new PIXI.Texture(new PIXI.BaseTexture(circleCanvas(64, false), { scaleMode: PIXI.SCALE_MODES.NEAREST, mipmap: PIXI.MIPMAP_MODES.OFF }));
+
+const state = { preset: 'fireball', ps: 3, speed: 1, auto: false, autoT: 1, guide: false, pointer: null };
+let sim = new Sim(app.renderer, 64, 64, { ground: 'grass' });
+const view = new PIXI.Sprite(sim.compRT);
+app.stage.addChild(view);
+
+function fit() {
+  const w = stageEl.clientWidth, h = stageEl.clientHeight;
+  const W = Math.max(32, Math.ceil(w / state.ps)), H = Math.max(32, Math.ceil(h / state.ps));
+  app.renderer.resize(W, H);
+  app.view.style.width = W * state.ps + 'px'; app.view.style.height = H * state.ps + 'px';
+  sim.resize(W, H);
+}
+let fitTimer = 0;
+new ResizeObserver(() => { clearTimeout(fitTimer); fitTimer = setTimeout(fit, 80); }).observe(stageEl);
+fit();
+
+const params = () => tuned[state.preset];
+
+function toLow(e) {
+  const rc = app.view.getBoundingClientRect();
+  return { x: (e.clientX - rc.left) / rc.width * sim.W, y: (e.clientY - rc.top) / rc.height * sim.H };
+}
+function boom(x, y) {
+  sim.detonate(x, y, params());
+  $('#hint').classList.add('gone');
+}
+stageEl.addEventListener('pointerdown', (e) => { const p = toLow(e); state.pointer = p; boom(p.x, p.y); });
+stageEl.addEventListener('pointermove', (e) => { state.pointer = toLow(e); });
+stageEl.addEventListener('pointerleave', () => { if (state.guide) state.pointer = null; });
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && !/^(INPUT|SELECT|BUTTON|TEXTAREA|A)$/.test(document.activeElement.tagName)) {
+    e.preventDefault();
+    const p = state.pointer || { x: sim.W / 2, y: sim.H / 2 };
+    boom(p.x, p.y);
+  }
+});
+
+let fpsAcc = 0, fpsFrames = 0, hudT = 0;
+app.ticker.add(() => {
+  const realDt = Math.min(app.ticker.deltaMS / 1000, 0.05);
+  const dt = realDt * state.speed;
+  if (state.auto) {
+    state.autoT -= realDt;
+    if (state.autoT <= 0) {
+      state.autoT = rnd(1.1, 2.4);
+      const m = Math.min(sim.W, sim.H) * 0.2;
+      boom(rnd(m, sim.W - m), rnd(m, sim.H - m));
+    }
+  }
+  sim.update(dt);
+  sim.render(state.guide ? state.pointer : null);
+  sim.shake *= Math.exp(-realDt * 7);
+  const sh = sim.shake > 0.3 ? sim.shake : 0;
+  view.position.set(Math.round(gauss() * sh * 0.6), Math.round(gauss() * sh * 0.6));
+
+  fpsAcc += app.ticker.deltaMS; fpsFrames++; hudT += realDt;
+  if (hudT > 0.25) {
+    $('#hudCount').textContent = sim.count.toLocaleString() + ' particles';
+    $('#hudFps').textContent = Math.round(1000 * fpsFrames / fpsAcc) + ' fps';
+    fpsAcc = 0; fpsFrames = 0; hudT = 0;
+  }
+});
+
+/* ------------------------------------------------------------------ *
+ *  UI
+ * ------------------------------------------------------------------ */
+const presetsEl = $('#presets');
+for (const key in PRESETS) {
+  const b = document.createElement('button');
+  b.className = 'preset'; b.type = 'button'; b.dataset.key = key;
+  b.setAttribute('aria-pressed', key === state.preset ? 'true' : 'false');
+  const name = document.createElement('span'); name.textContent = PRESETS[key].name;
+  const strip = document.createElement('span'); strip.className = 'strip'; strip.setAttribute('aria-hidden', 'true');
+  b.append(name, strip);
+  b.addEventListener('click', () => selectPreset(key, true));
+  presetsEl.appendChild(b);
+}
+function paintStrips() {
+  presetsEl.querySelectorAll('.preset').forEach((b) => {
+    const strip = b.querySelector('.strip'); strip.innerHTML = '';
+    for (const c of PALETTES[tuned[b.dataset.key].palette].fire) { const i = document.createElement('i'); i.style.background = c; strip.appendChild(i); }
+  });
+}
+const palSel = $('#palette');
+for (const k in PALETTES) { const o = document.createElement('option'); o.value = k; o.textContent = PALETTES[k].label; palSel.appendChild(o); }
+palSel.addEventListener('change', () => { params().palette = palSel.value; sim.setPalette(palSel.value); paintStrips(); });
+
+const fmt = (v, step) => (step >= 1 ? String(Math.round(v)) : v.toFixed(step < 0.05 ? 2 : step < 0.5 ? 2 : 1));
+function buildTune() {
+  const host = $('#tune'); host.innerHTML = '';
+  const P = params();
+  $('#tuneTitle').textContent = 'Tune ' + PRESETS[state.preset].name;
+  palSel.value = P.palette;
+  for (const [key, label, min, max, step] of SCHEMA) {
+    const row = document.createElement('div'); row.className = 'row';
+    const id = 't_' + key;
+    row.innerHTML = `<label for="${id}">${label} <output></output></label><input id="${id}" type="range" min="${min}" max="${max}" step="${step}">`;
+    const inp = row.querySelector('input'), out = row.querySelector('output');
+    inp.value = P[key]; out.textContent = fmt(P[key], step);
+    inp.addEventListener('input', () => { P[key] = parseFloat(inp.value); out.textContent = fmt(P[key], step); });
+    host.appendChild(row);
+  }
+}
+function selectPreset(key, fire) {
+  state.preset = key;
+  presetsEl.querySelectorAll('.preset').forEach((b) => b.setAttribute('aria-pressed', b.dataset.key === key ? 'true' : 'false'));
+  sim.setPalette(params().palette);
+  buildTune();
+  if (fire) {
+    const p = state.pointer && state.pointer.x > 0 && state.pointer.x < sim.W ? state.pointer : { x: sim.W / 2, y: sim.H * 0.55 };
+    boom(p.x, p.y);
+  }
+}
+$('#resetPreset').addEventListener('click', () => { tuned[state.preset] = Object.assign({}, PRESETS[state.preset]); selectPreset(state.preset, false); paintStrips(); });
+$('#copyJson').addEventListener('click', async (ev) => {
+  const txt = JSON.stringify(params(), null, 2);
+  try { await navigator.clipboard.writeText(txt); ev.target.textContent = 'Copied'; }
+  catch { window.prompt('Copy these settings:', txt); }
+  setTimeout(() => { ev.target.textContent = 'Copy settings as JSON'; }, 1400);
+});
+
+function bindRange(id, fn, show) {
+  const inp = $('#' + id), out = $('#' + id + 'Out');
+  const apply = () => { const v = parseFloat(inp.value); fn(v); if (out) out.textContent = show(v); };
+  inp.addEventListener('input', apply); apply();
+}
+bindRange('pxSize', (v) => { state.ps = v; fit(); }, (v) => v + '×');
+bindRange('amount', (v) => { sim.amount = v; }, (v) => '×' + v);
+bindRange('speed', (v) => { state.speed = v; }, (v) => Math.round(v * 100) + '%');
+bindRange('dither', (v) => { sim.dither = v; }, (v) => Math.round(v * 100) + '%');
+bindRange('wind', (v) => { sim.wind = v; }, (v) => (v === 0 ? 'calm' : (v < 0 ? '← ' : '→ ') + Math.abs(v)));
+$('#ground').addEventListener('change', (e) => sim.setGround(e.target.value));
+$('#outline').addEventListener('change', (e) => { sim.outline = e.target.checked ? 1 : 0; });
+$('#guide').addEventListener('change', (e) => { state.guide = e.target.checked; if (state.guide && !state.pointer) state.pointer = { x: sim.W / 2, y: sim.H / 2 }; });
+$('#auto').addEventListener('change', (e) => { state.auto = e.target.checked; state.autoT = 0.2; });
+$('#field').addEventListener('change', (e) => { sim.showField = e.target.checked ? 1 : 0; });
+$('#clearScorch').addEventListener('click', () => sim.clearScorch());
+
+/* ------------------------------------------------------------------ *
+ *  Sprite sheet baking
+ * ------------------------------------------------------------------ */
+let previewTimer = 0;
+const MAX_SHEET = 16384;
+
+/* Run the explosion in a working buffer and keep each frame trimmed to its
+   own opaque bounds. If anything reaches the buffer edge, the buffer was too
+   small: grow it and replay the identical explosion from the same seed. */
+function renderFrames(P, frames, fps, seed) {
+  const est = P.radius * (1.2 + P.smokeSpread) + P.sparkSpeed / 1.8 + P.ringSpeed / 2.5 + P.radius * P.secondary * 0.6 + Math.abs(sim.wind) * frames / fps + 40;
+  let W = clamp(Math.ceil(est * 2 / 16) * 16, 128, 4096);
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const H = W, cx = Math.floor(W / 2), cy = Math.floor(H / 2);
+    const saved = R01; R01 = mulberry32(seed);
+    const bs = new Sim(app.renderer, W, H, { transparent: true });
+    bs.amount = sim.amount; bs.dither = sim.dither; bs.outline = sim.outline; bs.wind = sim.wind;
+    bs.setPalette(P.palette);
+    const out = [];
+    let touched = false;
+    try {
+      bs.detonate(cx, cy, Object.assign({}, P, { shake: 0 }));
+      const step = 1 / fps;
+      for (let f = 0; f < frames; f++) {
+        if (f > 0) { let left = step; while (left > 1e-6) { const d = Math.min(1 / 60, left); bs.update(d); left -= d; } }
+        bs.render(null);
+        const c = app.renderer.extract.canvas(bs.compRT);
+        const data = c.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, W, H).data;
+        let x0 = W, y0 = H, x1 = -1, y1 = -1;
+        for (let y = 0; y < H; y++) {
+          const row = y * W * 4;
+          let first = -1, last = -1;
+          for (let x = 0; x < W; x++) if (data[row + x * 4 + 3]) { first = x; break; }
+          if (first < 0) continue;
+          for (let x = W - 1; x >= first; x--) if (data[row + x * 4 + 3]) { last = x; break; }
+          if (y < y0) y0 = y; y1 = y;
+          if (first < x0) x0 = first; if (last > x1) x1 = last;
+        }
+        if (x1 < 0) { out.push(null); continue; }
+        if (x0 === 0 || y0 === 0 || x1 === W - 1 || y1 === H - 1) touched = true;
+        const fc = document.createElement('canvas'); fc.width = x1 - x0 + 1; fc.height = y1 - y0 + 1;
+        fc.getContext('2d').drawImage(c, x0, y0, fc.width, fc.height, 0, 0, fc.width, fc.height);
+        out.push({ c: fc, x: x0 - cx, y: y0 - cy });
+      }
+    } finally {
+      bs.destroy(); R01 = saved;
+    }
+    if (!touched || W >= 4096) return { frames: out, clippedWork: touched };
+    W = Math.min(4096, Math.ceil(W * 1.6 / 16) * 16);
+  }
+}
+
+/* How long the effect lasts: replay it from the same seed without rendering
+   until nothing is left alive or pending. */
+function effectDuration(P, seed) {
+  const saved = R01; R01 = mulberry32(seed);
+  const bs = new Sim(app.renderer, 64, 64, { transparent: true });
+  bs.amount = sim.amount; bs.wind = sim.wind;
+  let t = 0;
+  try {
+    bs.detonate(32, 32, Object.assign({}, P, { shake: 0 }));
+    while (t < 30) {
+      bs.update(1 / 60); t += 1 / 60;
+      if (bs.count === 0 && !bs.events.length && !bs.emitters.length) break;
+    }
+  } finally { bs.destroy(); R01 = saved; }
+  return t;
+}
+
+const bakeFpsVal = () => clamp(Math.round(+$('#bakeFps').value || 12), 1, 60);
+const bakeDurVal = () => clamp(+$('#bakeDur').value || 1.5, 0.1, 30);
+function updateBakeCount() {
+  const whole = $('#bakeWhole').checked;
+  $('#bakeDur').disabled = whole;
+  $('#bakeCount').textContent = whole
+    ? 'The length is measured when you bake, from the blast until the last particle fades.'
+    : `${Math.max(1, Math.round(bakeDurVal() * bakeFpsVal()))} frames, each shown for ${Math.round(1000 / bakeFpsVal())} ms.`;
+}
+['#bakeFps', '#bakeDur', '#bakeWhole'].forEach((id) => $(id).addEventListener('input', updateBakeCount));
+updateBakeCount();
+
+$('#bake').addEventListener('click', () => {
+  const btn = $('#bake'); btn.disabled = true; btn.textContent = 'Baking…';
+  setTimeout(() => { try { bake(); } finally { btn.disabled = false; btn.textContent = 'Bake sprite sheet'; } }, 20);
+});
+
+function bake() {
+  const sizeSel = $('#bakeSize').value, fps = bakeFpsVal(), whole = $('#bakeWhole').checked;
+  const centered = $('#bakeCenter').checked;
+  const P = params();
+  const seed = (Math.random() * 4294967296) >>> 0;
+  const dur = whole ? effectDuration(P, seed) : bakeDurVal();
+  let frames = clamp(Math.ceil(dur * fps - 1e-6) + (whole ? 1 : 0), 1, 600);
+  const res = renderFrames(P, frames, fps, seed);
+  const list = res.frames;
+  // Drop empty frames at the end: smoke can stay alive while too faint to draw.
+  if (whole) while (list.length > 1 && !list[list.length - 1]) list.pop();
+  frames = list.length;
+
+  // Union of every frame's bounds, relative to the blast point.
+  let L = Infinity, T = Infinity, Rr = -Infinity, B = -Infinity;
+  for (const f of list) {
+    if (!f) continue;
+    L = Math.min(L, f.x); T = Math.min(T, f.y);
+    Rr = Math.max(Rr, f.x + f.c.width); B = Math.max(B, f.y + f.c.height);
+  }
+  if (!isFinite(L)) { L = -8; T = -8; Rr = 8; B = 8; }
+
+  let fw, fh, ox, oy;
+  if (sizeSel === 'auto') {
+    const pad = 1;
+    if (centered) {
+      const hw = Math.max(-L, Rr) + pad, hh = Math.max(-T, B) + pad;
+      fw = hw * 2; fh = hh * 2; ox = hw; oy = hh;
+    } else {
+      fw = Rr - L + pad * 2; fh = B - T + pad * 2; ox = -L + pad; oy = -T + pad;
+      fw += fw & 1; fh += fh & 1;
+    }
+  } else {
+    fw = fh = +sizeSel;
+    ox = Math.floor(fw / 2);
+    // Smoke drifts up, so a fixed frame sits the blast a little low when not forced to center.
+    oy = centered ? Math.floor(fh / 2) : Math.round(fh * 0.56);
+  }
+
+  // How much falls outside the frame on each side (only possible at a fixed size).
+  const cut = { left: Math.max(0, -L - ox), top: Math.max(0, -T - oy), right: Math.max(0, Rr - (fw - ox)), bottom: Math.max(0, B - (fh - oy)) };
+
+  let cols = +$('#bakeCols').value;
+  if (cols === 0) cols = Math.max(1, Math.ceil(Math.sqrt(frames * fh / fw)));
+  cols = Math.min(cols, frames, Math.max(1, Math.floor(MAX_SHEET / fw)));
+  const rows = Math.ceil(frames / cols);
+  if (rows * fh > MAX_SHEET) {
+    $('#bakeOut').style.display = 'block';
+    $('#bakeInfo').textContent = `The sheet would be ${cols * fw}×${rows * fh} px, which is larger than browsers can draw. Lower the frame rate, shorten the duration or pick a fixed frame size.`;
+    return;
+  }
+
+  const sheet = document.createElement('canvas'); sheet.width = cols * fw; sheet.height = rows * fh;
+  const ctx = sheet.getContext('2d'); ctx.imageSmoothingEnabled = false;
+  const frameCanvases = [];
+  list.forEach((f, i) => {
+    const fc = document.createElement('canvas'); fc.width = fw; fc.height = fh;
+    if (f) fc.getContext('2d').drawImage(f.c, ox + f.x, oy + f.y);
+    ctx.drawImage(fc, (i % cols) * fw, Math.floor(i / cols) * fh);
+    frameCanvases.push(fc);
+  });
+
+  const url = sheet.toDataURL('image/png');
+  const dl = $('#bakeDl'); dl.href = url;
+  dl.download = `explosion_${state.preset}_${fw}x${fh}_${frames}f.png`;
+
+  const cutSides = Object.entries(cut).filter(([, v]) => v > 0).map(([k, v]) => `${v} px on the ${k}`);
+  const lines = [
+    `${frames} frames of ${fw}×${fh} px in ${cols} columns and ${rows} rows, ${(frames / fps).toFixed(2)} s at ${fps} fps. Sheet size ${sheet.width}×${sheet.height} px.`,
+    `The blast point is at (${ox}, ${oy}) in each frame. In Phaser: sprite.setOrigin(${+(ox / fw).toFixed(4)}, ${+(oy / fh).toFixed(4)}).`,
+  ];
+  if (cutSides.length) lines.push(`This frame size cuts off ${cutSides.join(', ')}. Choose Fit everything to keep it all.`);
+  if (res.clippedWork) lines.push('Some particles travel past 4096 px and were cut off. Lower the spark or debris speed.');
+  $('#bakeInfo').textContent = lines.join(' ');
+  $('#bakeOut').style.display = 'block';
+
+  const pv = $('#bakePreview'), big = Math.max(fw, fh), pz = big <= 64 ? 3 : big <= 128 ? 2 : 1;
+  pv.width = fw; pv.height = fh; pv.style.width = fw * pz + 'px'; pv.style.height = fh * pz + 'px';
+  const pctx = pv.getContext('2d'); pctx.imageSmoothingEnabled = false;
+  clearInterval(previewTimer);
+  let fi = 0;
+  previewTimer = setInterval(() => {
+    pctx.clearRect(0, 0, fw, fh);
+    pctx.drawImage(frameCanvases[fi], 0, 0);
+    fi = (fi + 1) % frames;
+  }, 1000 / fps);
+}
+
+paintStrips();
+selectPreset('fireball', false);
+window.blastforge = { get sim() { return sim; }, presets: tuned, palettes: PALETTES };
+
+/* ------------------------------------------------------------------ *
+ *  Weed.js export: the same files as Blastforge's Weed.js demo, with the
+ *  presets tuned here written into explosionPresets.js.
+ * ------------------------------------------------------------------ */
+// Writes explosionPresets.js from Blastforge's palettes and presets.
+// Shared by Blastforge's "Use in Weed.js" panel and the demo build.
+
+/** Preset fields explosions.js reads, with their meaning. Order is the file's order. */
+const PRESET_FIELDS = [
+  ['radius', 'fireball radius, px'],
+  ['fire', 'fire puffs'],
+  ['lobes', 'lobes in the fireball silhouette'],
+  ['lobeSpread', 'how wide each lobe is (0.05-2)'],
+  ['lobeVar', 'how much lobe lengths vary (0-1)'],
+  ['fireLife', 'fire puff life, s'],
+  ['fireSize', 'fire puff radius, px'],
+  ['fireHeat', 'how hot the fireball burns'],
+  ['smoke', 'smoke puffs'],
+  ['smokeLife', 'smoke puff life, s'],
+  ['smokeSize', 'smoke puff radius, px'],
+  ['smokeDensity', 'how thick the smoke is'],
+  ['smokeSpread', 'how far the smoke spreads, times the radius'],
+  ['rise', 'how fast smoke and embers rise, px/s'],
+  ['turbulence', 'sideways jitter of the smoke, px/s'],
+  ['dust', 'dust puffs in the ground ring'],
+  ['ringSpeed', 'dust ring speed, px/s'],
+  ['sparks', 'sparks'],
+  ['sparkSpeed', 'spark speed, px/s'],
+  ['debris', 'debris chunks'],
+  ['embers', 'embers'],
+  ['flash', 'size of the opening flash (0 = none)'],
+  ['scorch', 'darkness of the scorch decal (0 = none)'],
+  ['shake', 'camera shake, px'],
+  ['secondary', 'follow-up blasts'],
+  ['secondaryDelay', 'time between follow-up blasts, s'],
+  ['secondaryScale', 'size of a follow-up blast, times this one'],
+  ['flames', 'ground flame puffs per second'],
+  ['flameTime', 'how long the ground keeps burning, s'],
+];
+
+/**
+ * @param {Record<string, {fire: string[], smoke: string[], dust: string[]}>} palettes - CSS hex colors
+ * @param {Record<string, object>} presets - Blastforge presets (name, palette key, fields)
+ * @param {string[]} keys - presets to write, in order
+ * @returns {string} the file's text
+ */
+function explosionPresetsModule(palettes, presets, keys) {
+  const hex = (css) => '0x' + parseInt(css.slice(1), 16).toString(16).padStart(6, '0');
+  const number = (v) => (Number.isInteger(v) ? String(v) : String(+v.toFixed(3)));
+  const usedPalettes = [...new Set(keys.map((key) => presets[key].palette))];
+  const out = [];
+  out.push('// explosionPresets.js – explosion presets for explosions.js, made in Blastforge.');
+  out.push('// To change one, tune it in Blastforge and export this file again ("Use in Weed.js").');
+  out.push('//');
+  out.push('// Preset fields (sizes in px, speeds in px/s, times in seconds):');
+  const width = Math.max(...PRESET_FIELDS.map(([name]) => name.length));
+  for (const [name, meaning] of PRESET_FIELDS) out.push(`//   ${name.padEnd(width)}  ${meaning}`);
+  out.push('');
+  out.push('/** Colors from dark to bright: 7 for fire, 5 for smoke, 4 for dust. */');
+  out.push('export const PALETTES = {');
+  for (const key of usedPalettes) {
+    const p = palettes[key];
+    out.push(`  ${key}: {`);
+    for (const part of ['fire', 'smoke', 'dust']) out.push(`    ${part}: [${p[part].map(hex).join(', ')}],`);
+    out.push('  },');
+  }
+  out.push('};');
+  out.push('');
+  out.push('export const PRESETS = {');
+  for (const key of keys) {
+    const preset = presets[key];
+    out.push(`  ${key}: {`);
+    out.push(`    name: '${preset.name.replace(/'/g, "\\'")}',`);
+    out.push(`    palette: PALETTES.${preset.palette},`);
+    let line = '   ';
+    for (const [name] of PRESET_FIELDS) {
+      const part = ` ${name}: ${number(preset[name])},`;
+      if (line.length + part.length > 100) {
+        out.push(line);
+        line = '   ';
+      }
+      line += part;
+    }
+    if (line.trim()) out.push(line);
+    out.push('  },');
+  }
+  out.push('};');
+  out.push('');
+  return out.join('\n');
+}
+
+
+let weedGlowUrl = null;
+function weedGlowDataUrl() {
+  if (weedGlowUrl) return weedGlowUrl;
+  // Opaque gray falloff: the additive layer shader reads only the texture's rgb.
+  const n = 64, c = document.createElement('canvas'); c.width = c.height = n;
+  const ctx = c.getContext('2d'), img = ctx.createImageData(n, n), r = n / 2;
+  for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+    const dx = (x + 0.5 - r) / r, dy = (y + 0.5 - r) / r, d2 = dx * dx + dy * dy;
+    const v = Math.round((d2 < 1 ? (1 - d2) * (1 - d2) : 0) * 255), i = (y * n + x) * 4;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v; img.data[i + 3] = 255;
+  }
+  ctx.putImageData(img, 0, 0);
+  weedGlowUrl = c.toDataURL('image/png');
+  return weedGlowUrl;
+}
+$('#weedGlow').href = weedGlowDataUrl();
+
+function weedFiles() {
+  const keys = $('#weedAll').checked ? Object.keys(tuned) : [state.preset];
+  const template = (id) => $(id).textContent.replace(/^\n/, '');
+  return [
+    { name: 'explosionPresets.js', text: explosionPresetsModule(PALETTES, tuned, keys),
+      hint: 'Your presets and their palettes. This is the only file that changes when you tune a preset here.' },
+    { name: 'explosions.js', text: template('#tplExplosions'),
+      hint: 'explode(), updateExplosions(), the two layers and setExplosionPalette(). It reads the global WEED, like a scene file.' },
+    { name: 'yourScene.js', text: template('#tplScene'),
+      hint: 'A small scene: one Explosions entity runs every blast, and other entities ask it for one with a message.' },
+    { name: 'shaders/explosionField.frag', text: template('#tplFieldFrag'),
+      hint: 'Look shader for the explosionField layer: turns summed heat, smoke and dust into pixel art.' },
+    { name: 'shaders/crispPixels.frag', text: template('#tplCrispFrag'),
+      hint: 'Look shader for the explosionPieces layer: draws sparks, embers and debris as hard pixels.' },
+  ];
+}
+
+let weedTab = 0, weedCache = null;
+function showWeedTab(i) {
+  weedTab = i;
+  const f = weedCache[i];
+  $('#weedTabs').querySelectorAll('button').forEach((b, j) => b.setAttribute('aria-selected', j === i ? 'true' : 'false'));
+  $('#weedCode code').textContent = f.text;
+  $('#weedHint').textContent = f.hint;
+  $('#weedCode').scrollTop = 0;
+}
+$('#weedOpen').addEventListener('click', () => {
+  weedCache = weedFiles();
+  const tabs = $('#weedTabs'); tabs.innerHTML = '';
+  weedCache.forEach((f, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.setAttribute('role', 'tab'); b.textContent = f.name;
+    b.addEventListener('click', () => showWeedTab(i));
+    tabs.appendChild(b);
+  });
+  showWeedTab(Math.min(weedTab, weedCache.length - 1));
+  $('#weedDlg').showModal();
+});
+$('#weedClose').addEventListener('click', () => $('#weedDlg').close());
+$('#weedCopy').addEventListener('click', async (ev) => {
+  const txt = weedCache[weedTab].text;
+  try { await navigator.clipboard.writeText(txt); ev.target.textContent = 'Copied'; }
+  catch { const r = document.createRange(); r.selectNodeContents($('#weedCode code')); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); ev.target.textContent = 'Selected, press Ctrl+C'; }
+  setTimeout(() => { ev.target.textContent = 'Copy'; }, 1600);
+});
+$('#weedDl').addEventListener('click', () => {
+  const f = weedCache[weedTab];
+  const url = URL.createObjectURL(new Blob([f.text], { type: 'text/plain' }));
+  const a = document.createElement('a'); a.href = url; a.download = f.name.split('/').pop(); document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+});
+window.blastforge.weedFiles = weedFiles;
+
+setTimeout(() => { sim.detonate(sim.W / 2, sim.H * 0.55, params()); }, 350);
+})();
+</script>
+</body>
+</html>
