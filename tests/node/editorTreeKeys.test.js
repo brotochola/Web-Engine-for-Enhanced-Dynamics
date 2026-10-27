@@ -542,6 +542,51 @@ test('↑ and ↓ move the selection along the rows shown, past a class’s row 
   }
 });
 
+test('a held ↓ moves the row at once and the selection once a frame, the last row winning; another key settles it first', () => {
+  const { doc, tree, selection, log } = makeEditorPage();
+  try {
+    // The list's window gives frames when asked (a browser's requestAnimationFrame).
+    const frames = new Map();
+    let next = 0;
+    doc.defaultView.requestAnimationFrame = (fn) => {
+      frames.set(++next, fn);
+      return next;
+    };
+    doc.defaultView.cancelAnimationFrame = (id) => frames.delete(id);
+    const frame = () => {
+      const due = [...frames.values()];
+      frames.clear();
+      for (const fn of due) fn();
+    };
+    click(tree, 1);
+    click(tree, 2); // Platform1
+    tree._list.focus();
+    log.length = 0;
+    for (let k = 0; k < 3; k++) press(doc, 'ArrowDown', { repeat: true });
+    assert.equal(selection.name, 'Platform1', 'the selection waits for the frame');
+    assert.equal(frames.size, 1, 'one frame asked for');
+    assert.equal(rowEl(tree, 5).style.background, 'rgba(74,222,128,0.32)', 'Platform4’s row shows as selected at once');
+    assert.equal(rowEl(tree, 2).style.background, '', 'Platform1’s not');
+    frame();
+    assert.equal(selection.name, 'Platform4');
+    assert.deepEqual(log.filter(([what]) => what === 'select'), [['select', 5, false]], 'selected once, not three times');
+
+    press(doc, 'ArrowDown', { repeat: true });
+    press(doc, 'Delete');
+    assert.deepEqual(log.filter(([what]) => what === 'delete'), [['delete', 'Platform5']], 'Del deletes the row shown');
+    assert.equal(frames.size, 0, 'the frame asked for is not needed any more');
+    press(doc, 'ArrowDown', { repeat: true }); // Platform6, the last row before Coin (closed)
+    press(doc, 'ArrowDown');
+    assert.equal(selection.name, 'Platform6', 'a single ↓ after held ones, at the end: the row shown, at once');
+    assert.equal(frames.size, 0);
+    press(doc, 'ArrowUp', { repeat: true });
+    press(doc, 'ArrowUp');
+    assert.equal(selection.name, 'Platform3', 'two rows up from it (Platform5 went), at once');
+  } finally {
+    done();
+  }
+});
+
 test('nothing selected, ↓ starts at the rows in view; after a delete it goes on from where the deleted entity was', () => {
   const { doc, tree, selection, scene, unselect } = makeEditorPage();
   try {

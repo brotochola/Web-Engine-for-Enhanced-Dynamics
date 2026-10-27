@@ -24,6 +24,8 @@
  *     select all            the menu's Select all: 1,243 selected, CityTree45 the inspector's; the pick's time
  *     menu placement and runtime   opened at the viewport's corner it stays inside; a runtime person's menu: Frame and
  *               Select all (disabled: no person is placed), read-only; a click elsewhere closes it
+ *     held key  20 repeated ↓ in a burst: 20 rows on, selected once (one frame), the burst well under a frame's work
+ *               per key (a selection rebuilds the inspector: one per repeat would queue)
  *   platformer
  *     filter    "PLAT" (case aside) keeps two classes whole, the player's (BluePlatformerPlayer) and the 13 platforms;
  *               "goal" the goal; Esc clears it
@@ -506,6 +508,35 @@ async function littleCity(browser, server, shots, errors) {
       afterOutside === null,
     `opened at the corner: ${corner?.box} in view ${corner?.inView}; a runtime person's: ${JSON.stringify(runtimeMenu?.labels)} ` +
       `(Select all disabled ${runtimeMenu?.disabled.at(-1)}), "${runtimeMenu?.caption}"; a click elsewhere closes it ${afterOutside === null}`,
+  );
+
+  // ---- a held ↓ (ED-63): a burst of repeats moves the row at once and selects once a frame (a selection rebuilds the
+  // inspector, 60 to 110 ms here: one per repeat would queue and run on after the key is let go) ----
+  const held = await page.evaluate(async () => {
+    const win = document.getElementById('game').contentWindow;
+    const tree = win.game.debugUI.hosted.tree;
+    const editMode = win.game.debugUI.editMode;
+    tree._list.focus();
+    const from = tree.model.rowOf(editMode.selection.index, editMode.selection.name);
+    let selects = 0;
+    const own = editMode.selectFromList;
+    editMode.selectFromList = function counted(index, center) {
+      selects++;
+      return own.call(this, index, center);
+    };
+    const t0 = performance.now();
+    for (let k = 0; k < 20; k++) {
+      tree._list.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', repeat: true, bubbles: true, cancelable: true }));
+    }
+    const burst = performance.now() - t0;
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+    delete editMode.selectFromList;
+    return { from, to: tree.model.rowOf(editMode.selection.index, editMode.selection.name), selects, burst };
+  });
+  check(
+    'littleCity held key',
+    held.from >= 0 && held.to - held.from === 20 && held.selects === 1 && held.burst < 50,
+    `20 repeated ↓ in ${ms(held.burst)}: row ${held.from} → ${held.to}, selected ${held.selects} time(s)`,
   );
   await page.close();
 }

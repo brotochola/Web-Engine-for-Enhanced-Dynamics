@@ -485,6 +485,14 @@ export class EntityTree {
      */
     this._cursorRow = -1;
     this._cursorIndex = -1;
+    /**
+     * A held ↑ or ↓ (repeated keydowns): the row it is on and its entity, shown as selected at once; the selection
+     * itself follows once a frame (_pendingFrame), as a selection rebuilds the inspector. -1: none.
+     */
+    this._pendingRow = -1;
+    this._pendingIndex = -1;
+    this._pendingFrame = 0;
+    this._pendingWindow = null;
     /** A change of the selection the list makes itself that must not move the list (a Ctrl+click). */
     this._quiet = false;
     // Rename in place (ED-63): the field over the row, made on the first F2; the name it renames (null: closed); its
@@ -518,6 +526,11 @@ export class EntityTree {
     this._onRenameBlur = () => this._commitRename(false);
     this._onRenameInput = () => this._markRename(false);
     this._onContextMenu = (e) => this._contextMenu(e);
+    this._onPendingFrame = () => {
+      this._pendingFrame = 0;
+      this._pendingWindow = null;
+      this._applyPending();
+    };
     this._list.addEventListener('scroll', this._onScroll);
     this._list.addEventListener('click', this._onClick);
     this._list.addEventListener('dblclick', this._onDoubleClick);
@@ -542,6 +555,7 @@ export class EntityTree {
   detach() {
     this._menu.close(false);
     this._closeRename(false);
+    this._cancelPending();
     this._scene = null;
     this.model.clear();
     this.render();
@@ -574,6 +588,7 @@ export class EntityTree {
     const selection = this.debugUI.editMode.selection;
     if (this._renameName !== null && selection.name !== this._renameName) this._closeRename(false);
     this._menu.close(false);
+    this._cancelPending(); // a pick in the view while ↓ is held: the pick wins
     this._fresh(); // a delete clears the selection: its row goes now, not at the next tick
     if (!this._quiet && this._scene !== null && selection.index >= 0) {
       const row = this.model.reveal(selection.index, selection.name);
@@ -611,6 +626,7 @@ export class EntityTree {
   _filterShown(cleared) {
     let top = 0;
     this._cursorRow = -1;
+    this._cancelPending();
     const selection = this.debugUI.editMode.selection;
     if (cleared && selection.index >= 0) {
       const row = this.model.reveal(selection.index, selection.name);
@@ -671,6 +687,7 @@ export class EntityTree {
   _listKey(e) {
     if (e.altKey) return false;
     const key = e.key;
+    if (key !== 'ArrowDown' && key !== 'ArrowUp') this._settle(); // Del after a held ↓ deletes the row it shows
     if (e.ctrlKey || e.metaKey) {
       if (key !== 'd' && key !== 'D') return false;
       this._edit(EDIT_DUPLICATE);
@@ -678,10 +695,10 @@ export class EntityTree {
     }
     switch (key) {
       case 'ArrowDown':
-        this._step(1);
+        this._step(1, e.repeat === true);
         return true;
       case 'ArrowUp':
-        this._step(-1);
+        this._step(-1, e.repeat === true);
         return true;
       case 'Enter':
         this._frame();
@@ -723,14 +740,19 @@ export class EntityTree {
    * ↓ (1) and ↑ (-1): select the entity on the next row the list shows; a class's row and an entity that is not live
    * are passed over. Nothing selected (or not shown): from the row the selection was last on, else from the rows in
    * view. Scrolled into view by the selection's change (onSelectionChanged).
+   *
+   * A held key (`held`: its repeated keydowns) moves the row at once, shown as selected and scrolled to, and the
+   * selection follows once a frame, the last row winning. A selection rebuilds the inspector, which in littleCity takes
+   * longer than a key's repeat (60 to 110 ms): the steps would queue, and run on after the key is let go.
    */
-  _step(step) {
+  _step(step, held = false) {
     if (this._scene === null) return;
     this._fresh();
     const model = this.model;
     const total = model.rowCount;
     const selection = this.debugUI.editMode.selection;
-    const row = selection.index >= 0 ? model.rowOf(selection.index, selection.name) : -1;
+    let row = this._pendingRow;
+    if (row < 0 && selection.index >= 0) row = model.rowOf(selection.index, selection.name);
     let start;
     if (row >= 0) {
       start = row + step;
@@ -749,9 +771,60 @@ export class EntityTree {
       if (at === null) break;
       const index = this._indexAt(at);
       if (index < 0) continue;
-      this._choose(index);
+      if (held) {
+        this._holdAt(r, index);
+      } else {
+        this._cancelPending();
+        this._choose(index);
+      }
       return;
     }
+    if (!held) this._settle(); // at an end: the row a held key showed is where the selection stays
+  }
+
+  /** A held key's row: shown as selected now; the selection follows at the next frame of the list's window. */
+  _holdAt(row, index) {
+    this._pendingRow = row;
+    this._pendingIndex = index;
+    this._scrollToRow(row);
+    this.render();
+    if (this._pendingFrame !== 0) return;
+    const win = this.el.ownerDocument?.defaultView;
+    if (!win || typeof win.requestAnimationFrame !== 'function') {
+      this._applyPending(); // a document without frames: at once
+      return;
+    }
+    this._pendingWindow = win;
+    this._pendingFrame = win.requestAnimationFrame(this._onPendingFrame);
+  }
+
+  /** The held key's row becomes the selection. */
+  _applyPending() {
+    const index = this._pendingIndex;
+    this._pendingRow = -1;
+    this._pendingIndex = -1;
+    if (index >= 0) this._choose(index);
+  }
+
+  /** Another key, a menu or a click acts on the selection as the list shows it: the held key's row, now. */
+  _settle() {
+    if (this._pendingIndex < 0) return;
+    this._cancelFrame();
+    this._applyPending();
+  }
+
+  /** The held key's row is dropped (another selection, another filter, the list going). */
+  _cancelPending() {
+    this._cancelFrame();
+    this._pendingRow = -1;
+    this._pendingIndex = -1;
+  }
+
+  _cancelFrame() {
+    if (this._pendingFrame === 0) return;
+    this._pendingWindow?.cancelAnimationFrame?.(this._pendingFrame);
+    this._pendingFrame = 0;
+    this._pendingWindow = null;
   }
 
   /** Select one entity from the list (a click, ↑ ↓): the others selected with it are let go. */
@@ -957,6 +1030,7 @@ export class EntityTree {
    */
   _contextMenu(e) {
     if (this._scene === null) return;
+    this._settle();
     const el = e.target?.closest ? e.target.closest('[data-row]') : null;
     if (el !== null) {
       e.preventDefault();
@@ -1186,13 +1260,17 @@ export class EntityTree {
       matches = model.matchesOf(group);
     } else {
       const selection = editMode.selection;
+      // A held ↑ ↓ shows its row as the selection until the selection follows (_holdAt).
+      const pending = this._pendingIndex;
       if (kind === ROW_AUTHORED) {
         name = group.authored[at.item];
         index = liveIndexOf(this._scene, name);
-        if ((selection.name === name && selection.index >= 0) || editMode.multi?.has(name) === true) flags |= F_SELECTED;
+        if (pending >= 0 ? index === pending : (selection.name === name && selection.index >= 0) || editMode.multi?.has(name) === true) {
+          flags |= F_SELECTED;
+        }
       } else {
         index = group.runtime[at.item];
-        if (selection.index === index && selection.name === null) flags |= F_SELECTED;
+        if (pending >= 0 ? index === pending : selection.index === index && selection.name === null) flags |= F_SELECTED;
       }
       if (index >= 0) {
         flags |= F_LIVE;
@@ -1351,6 +1429,7 @@ export class EntityTree {
   destroy() {
     this._menu.close(false);
     this._closeRename(false);
+    this._cancelPending();
     this._list.removeEventListener('scroll', this._onScroll);
     this._list.removeEventListener('click', this._onClick);
     this._list.removeEventListener('dblclick', this._onDoubleClick);
