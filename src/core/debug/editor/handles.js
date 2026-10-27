@@ -20,6 +20,10 @@
 // so a box's size is divided by the scale on its axis, a circle's radius by the larger, and a points param in the
 // entity's frame is drawn times the scale and written divided by it.
 //
+// A box whose class has neither a width nor a height param, or a circle with no radius param (a collider set in code:
+// a house, a tree), scales the entity instead (ED-79), as Unity's rect tool does: an edge its scale on that axis, a
+// corner both (Shift keeps the aspect), the ring both alike; the record's scaleX and scaleY, one undo.
+//
 // Cost: what the handles are (the plan) is worked out when the selection, the document or the collider's shape
 // changes. A frame reads the live components into buffers made then, and draws with whole-pixel coordinates: nothing
 // is allocated per frame.
@@ -32,6 +36,7 @@ import { LIGHT_INFLUENCE_RADIUS_SCALE } from '../../../util/lightRadius.js';
 import { Camera } from '../../camera.js';
 import { KIND_NUMBER, KIND_ENTITY, KIND_POINTS } from '../../spawnParams.js';
 import { snapTo } from './moveTool.js';
+import { recordValue, writeValue } from './transformFields.js';
 import { recordOf, paramsOf, indexOfName, writeParam, writePosition } from './sceneDocument.js';
 
 /** Handle kinds. */
@@ -88,6 +93,8 @@ const RING_DASH = Object.freeze([10, 6]);
 const LINK_DASH = Object.freeze([3, 4]);
 const NO_DASH = Object.freeze([]);
 const NO_CONFIG = Object.freeze({});
+/** The keys of a class without spawnParams. */
+const NO_KEYS = Object.freeze([]);
 
 // The live shape as a frame lays it out (G) and as a drag started and would end (D): indices into Float64Arrays.
 const G_CX = 0; // the collider's center
@@ -254,6 +261,9 @@ export class HandlesTool {
     this._scaleX = 1;
     this._scaleY = 1;
     this._scaleR = 1;
+    /** A box with no size param, a ring with no radius param: its handles scale the entity (ED-79). */
+    this._boxScales = false;
+    this._ringScales = false;
 
     // ---- the handles now: world positions (and on screen, a frame's), what each is; buffers grown with the plan ----
     this._count = 0;
@@ -342,6 +352,8 @@ export class HandlesTool {
     this._scaleX = 1;
     this._scaleY = 1;
     this._scaleR = 1;
+    this._boxScales = false;
+    this._ringScales = false;
     this._clearHover();
     const found = recordOf(scene, selection.name);
     if (found === null) return;
@@ -360,9 +372,11 @@ export class HandlesTool {
         this._shape = SHAPE_BOX;
         this._widthK = numberParam(description, 'width');
         this._heightK = numberParam(description, 'height');
+        this._boxScales = this._widthK < 0 && this._heightK < 0;
       } else if (type === ShapeType.Circle) {
         this._shape = SHAPE_CIRCLE;
         this._radiusK = numberParam(description, 'radius');
+        this._ringScales = this._radiusK < 0;
       } else if (type === ShapeType.Polygon && (Collider.polyCount[index] | 0) >= 3 && !(Collider.fixtureCount?.[index] > 0)) {
         this._shape = SHAPE_POLYGON;
       }
@@ -486,7 +500,7 @@ export class HandlesTool {
           const ly = BOX_DY[d] * hh;
           hx[n] = G[G_CX] + c * lx - s * ly;
           hy[n] = G[G_CY] + s * lx + c * ly;
-          n = this._tag(n, H_BOX, -1, d, (BOX_DX[d] === 0 || this._widthK >= 0) && (BOX_DY[d] === 0 || this._heightK >= 0) ? 1 : 0);
+          n = this._tag(n, H_BOX, -1, d, this._boxScales || ((BOX_DX[d] === 0 || this._widthK >= 0) && (BOX_DY[d] === 0 || this._heightK >= 0)) ? 1 : 0);
         }
         break;
       }
@@ -499,7 +513,7 @@ export class HandlesTool {
         for (let k = 0; k < 4; k++) {
           hx[n] = G[G_CX] + RING_X[k] * r;
           hy[n] = G[G_CY] + RING_Y[k] * r;
-          n = this._tag(n, H_CIRCLE, -1, k, this._radiusK >= 0 ? 1 : 0);
+          n = this._tag(n, H_CIRCLE, -1, k, this._radiusK >= 0 || this._ringScales ? 1 : 0);
         }
         break;
       }
@@ -648,13 +662,21 @@ export class HandlesTool {
     let label = '';
     switch (this._drag) {
       case H_BOX:
-        this._dragBox(x, y, e?.altKey === true, step);
-        label = `${tidy(V[D_TO_W] / Math.abs(this._scaleX))} × ${tidy(V[D_TO_H] / Math.abs(this._scaleY))}`;
+        this._dragBox(x, y, e?.altKey === true, step, e?.shiftKey === true);
+        label = this._boxScales
+          ? `scale ${tidy(V[D_TO_W] / V[D_FROM_W])} × ${tidy(V[D_TO_H] / V[D_FROM_H])}`
+          : `${tidy(V[D_TO_W] / Math.abs(this._scaleX))} × ${tidy(V[D_TO_H] / Math.abs(this._scaleY))}`;
         break;
       case H_CIRCLE: {
         const grown = this._outward(x, y, F[G_CX], F[G_CY]);
-        V[D_TO_R] = this._clampScaled(this._radiusK, snapTo(V[D_FROM_R] + grown, step), this._scaleR);
-        label = `radius ${tidy(V[D_TO_R] / this._scaleR)}`;
+        if (this._ringScales) {
+          const r = snapTo(V[D_FROM_R] + grown, step);
+          V[D_TO_R] = r > 1 ? r : 1;
+          label = `scale ${tidy(V[D_TO_R] / V[D_FROM_R])}`;
+        } else {
+          V[D_TO_R] = this._clampScaled(this._radiusK, snapTo(V[D_FROM_R] + grown, step), this._scaleR);
+          label = `radius ${tidy(V[D_TO_R] / this._scaleR)}`;
+        }
         break;
       }
       case H_LIGHT: {
@@ -708,7 +730,7 @@ export class HandlesTool {
    * the size snapped, and the opposite one stays (the center moves by half the change); with Alt the center stays and
    * both sides move.
    */
-  _dragBox(x, y, aboutCenter, step) {
+  _dragBox(x, y, aboutCenter, step, uniform = false) {
     const F = this._from;
     const V = this._values;
     const c = F[G_C];
@@ -723,16 +745,24 @@ export class HandlesTool {
     const sides = aboutCenter ? 2 : 1;
     let w = F[G_W];
     let h = F[G_H];
-    let shiftX = 0;
-    let shiftY = 0;
+    const scales = this._boxScales;
     if (dx !== 0) {
-      w = this._clampScaled(this._widthK, snapTo(F[G_W] + sides * dx * lx, step), Math.abs(this._scaleX));
-      if (!aboutCenter) shiftX = (dx * (w - F[G_W])) * 0.5;
+      const to = snapTo(F[G_W] + sides * dx * lx, step);
+      w = scales ? (to > 1 ? to : 1) : this._clampScaled(this._widthK, to, Math.abs(this._scaleX));
     }
     if (dy !== 0) {
-      h = this._clampScaled(this._heightK, snapTo(F[G_H] + sides * dy * ly, step), Math.abs(this._scaleY));
-      if (!aboutCenter) shiftY = (dy * (h - F[G_H])) * 0.5;
+      const to = snapTo(F[G_H] + sides * dy * ly, step);
+      h = scales ? (to > 1 ? to : 1) : this._clampScaled(this._heightK, to, Math.abs(this._scaleY));
     }
+    if (scales && uniform && dx !== 0 && dy !== 0 && F[G_W] > 0 && F[G_H] > 0) {
+      // Shift on a corner: both sides by the larger factor, the aspect kept.
+      const k = w / F[G_W] > h / F[G_H] ? w / F[G_W] : h / F[G_H];
+      w = F[G_W] * k;
+      h = F[G_H] * k;
+    }
+    // The opposite edge stays where it was (Alt: the center does).
+    const shiftX = dx !== 0 && !aboutCenter ? (dx * (w - F[G_W])) * 0.5 : 0;
+    const shiftY = dy !== 0 && !aboutCenter ? (dy * (h - F[G_H])) * 0.5 : 0;
     V[D_TO_W] = w;
     V[D_TO_H] = h;
     V[D_SHIFT_X] = c * shiftX - s * shiftY;
@@ -765,13 +795,25 @@ export class HandlesTool {
     const V = this._values;
     const editMode = this.editMode;
     const name = editMode.selection.name;
-    const keys = this._description.keys;
+    // A class without spawnParams has none: its handles only scale it (ED-79).
+    const keys = this._description !== null ? this._description.keys : NO_KEYS;
     switch (drag) {
       case H_BOX: {
         const toW = V[D_TO_W];
         const toH = V[D_TO_H];
         const shiftX = V[D_SHIFT_X];
         const shiftY = V[D_SHIFT_Y];
+        if (this._boxScales) {
+          const fx = toW / V[D_FROM_W];
+          const fy = toH / V[D_FROM_H];
+          if (fx === 1 && fy === 1) return;
+          editMode.editSelected(`scale ${name}`, (record) => {
+            writeValue(record, 'scaleX', recordValue(record, 'scaleX') * fx);
+            writeValue(record, 'scaleY', recordValue(record, 'scaleY') * fy);
+            if (shiftX !== 0 || shiftY !== 0) writePosition(record, tidy(record.x + shiftX), tidy(record.y + shiftY));
+          });
+          break;
+        }
         const widthKey = toW !== V[D_FROM_W] ? keys[this._widthK] : null;
         const heightKey = toH !== V[D_FROM_H] ? keys[this._heightK] : null;
         if (widthKey === null && heightKey === null) return;
@@ -784,6 +826,16 @@ export class HandlesTool {
       }
       case H_CIRCLE: {
         const toR = V[D_TO_R];
+        if (this._ringScales) {
+          const k = toR / V[D_FROM_R];
+          if (k !== 1) {
+            editMode.editSelected(`scale ${name}`, (record) => {
+              writeValue(record, 'scaleX', recordValue(record, 'scaleX') * k);
+              writeValue(record, 'scaleY', recordValue(record, 'scaleY') * k);
+            });
+          }
+          break;
+        }
         const key = keys[this._radiusK];
         const radius = tidy(toR / this._scaleR);
         if (toR !== V[D_FROM_R]) editMode.editSelected(`${name}.${key}`, (record, description) => writeParam(record, description, key, radius));

@@ -176,7 +176,7 @@ test('a light: its reach is a ring with four handles; a drag sets lightIntensity
   }
 });
 
-test('a handle whose param the class does not declare is dimmed, and a press on it says why and changes nothing', () => {
+test('a light or polygon handle whose param the class does not declare is dimmed; a press says why, changes nothing', () => {
   const world = makeWorld();
   try {
     const { handles, editMode, calls } = world;
@@ -190,15 +190,42 @@ test('a handle whose param the class does not declare is dimmed, and a press on 
       assert.equal(editMode.statusIsError, true);
       return editMode.status;
     };
-    assert.equal(pressOn('Door1', 0), 'Door has no width or height param: its collider is set in code');
-    assert.equal(pressOn('Door1', 1), 'Door has no width param: its collider is set in code');
-    assert.equal(pressOn('Pebble1', 0), 'Pebble has no radius param: its collider is set in code');
     assert.equal(pressOn('Torch1', 0), 'Torch has no lightIntensity param: its light is set in code');
     world.select('Shard1');
     assert.deepEqual(handles.handles().map((h) => h.kind), [H_VERTEX, H_VERTEX, H_VERTEX]);
     assert.equal(pressOn('Shard1', 0), 'Shard has no points param: its polygon is set in code');
     assert.deepEqual(calls, [], 'nothing respawned');
     assert.equal(editMode.history.canUndo, false);
+  } finally {
+    world.done();
+  }
+});
+
+test('a box or ring its class sizes in code scales the entity (ED-79): an edge one axis, a corner with Shift both alike', () => {
+  const world = makeWorld();
+  try {
+    const { handles, editMode } = world;
+    // Door: a 40 × 80 box set in code, at (1200, 400). Its right edge 20 out: 60 wide, scaleX 1.5, its left edge kept.
+    world.select('Door1');
+    const box = handles.handles();
+    assert.ok(box.every((h) => h.on), 'not dimmed: they scale it');
+    drag(handles, [box[6].x, box[6].y], [box[6].x + 20, box[6].y]);
+    assert.deepEqual(world.record('Door1'), { name: 'Door1', class: 'Door', x: 1210, y: 400, scaleX: 1.5 });
+    assert.deepEqual(editMode.history._done.map((c) => c.label), ['scale Door1'], 'one undo');
+    // Door2's bottom-right corner with Shift, 10 right and 60 down: both by the larger factor, 1.75.
+    world.select('Door2');
+    const corner = handles.handles()[7];
+    assert.equal(handles.press(corner.x, corner.y, { clientX: corner.x, clientY: corner.y }), true);
+    handles.move(corner.x + 10, corner.y + 60, { clientX: corner.x + 10, clientY: corner.y + 60, shiftKey: true });
+    handles.release();
+    assert.deepEqual(world.record('Door2'), { name: 'Door2', class: 'Door', x: 1415, y: 430, scaleX: 1.75, scaleY: 1.75 });
+    // Pebble: a ring of 8 set in code; dragged 4 out, 12: scale 1.5 on both axes.
+    world.select('Pebble1');
+    const ring = handles.handles()[0];
+    drag(handles, [ring.x, ring.y], [ring.x + 4, ring.y]);
+    assert.deepEqual(world.record('Pebble1'), { name: 'Pebble1', class: 'Pebble', x: 600, y: 600, scaleX: 1.5, scaleY: 1.5 });
+    editMode.undo();
+    assert.deepEqual(world.record('Pebble1'), { name: 'Pebble1', class: 'Pebble', x: 600, y: 600 });
   } finally {
     world.done();
   }

@@ -11,7 +11,8 @@
  *   polygon  (ED-20, ED-27) a Rock's top vertex dragged 30 px up: its points param, in its frame, and its collider's
  *            vertex; Alt+click on its bottom edge adds a fourth vertex there
  *   light    (ED-22) a Lamp's reach ring dragged from 300 to 200 px: lightIntensity 900 → 400, in the record and the light
- *   dimmed   a Door's collider is set in code: a press on its corner says so, and nothing changes
+ *   scaled   a Door's collider is set in code: a drag on its corner scales it (ED-79), its record's scaleX and
+ *            scaleY, the opposite corner kept, and the respawned collider is that much larger (ED-77)
  *   route    (ED-27) a Guard's route point dragged, a point added by Alt+click on its line and taken out with Del over
  *            it, one more from the inspector's +
  *   pick     (ED-45) the door row's pick button, a click on a Ball (wrong class: said, still picking), a click on Door2:
@@ -104,6 +105,7 @@ const read = (page, name) =>
           ? null
           : {
               width: Collider.width[i],
+              height: Collider.height[i],
               radius: Collider.radius[i],
               polyCount: Collider.polyCount[i],
               vertex0: [Collider.polyVertexX[base], Collider.polyVertexY[base]],
@@ -211,18 +213,25 @@ async function checkLight(page) {
     `lightIntensity 900 → ${value} (reach 300 → ${reach} px), the light has ${after.live?.lightIntensity}`);
 }
 
-async function checkDimmed(page) {
+async function checkScaled(page) {
   await look(page, 1000, 800, 1);
   const [center, corner] = await toScreen(page, [[1000, 800], [980, 760]]);
   await selectAt(page, center, 'Door1');
   const before = await read(page, 'Door1');
+  // Its top-left corner 40 out each way: 80 × 120 from 40 × 80, its bottom-right corner kept.
   await dragScreen(page, corner, [corner[0] - 40, corner[1] - 40]);
-  const after = await read(page, 'Door1');
+  let after = await read(page, 'Door1');
+  for (let k = 0; k < 20 && !(after.live?.width === 80); k++) {
+    await page.waitForTimeout(50);
+    after = await read(page, 'Door1');
+  }
+  const r = after.record;
   check(
-    'dimmed',
-    after.status === 'Door has no width or height param: its collider is set in code' && after.statusIsError &&
-      JSON.stringify(after.record) === JSON.stringify(before.record) && after.undo.length === before.undo.length && after.selected === 'Door1',
-    `status "${after.status}", record kept ${JSON.stringify(after.record) === JSON.stringify(before.record)}`,
+    'scaled',
+    r.scaleX === 2 && r.scaleY === 1.5 && r.x === before.record.x - 20 && r.y === before.record.y - 20 &&
+      after.live?.width === 80 && after.live?.height === 120 && after.undo.at(-1) === 'scale Door1' && after.selected === 'Door1',
+    `record scale ${r.scaleX} × ${r.scaleY} at ${r.x}, ${r.y} (was ${before.record.x}, ${before.record.y}); ` +
+      `the collider ${after.live?.width} × ${after.live?.height}; undo "${after.undo.at(-1)}"`,
   );
 }
 
@@ -373,7 +382,7 @@ async function main() {
     await page.waitForTimeout(300);
     const editing = await page.evaluate(() => globalThis.__h.game.debugUI.editing);
     if (!editing) throw new Error('Shift+E did not enter edit mode');
-    for (const step of [checkBox, checkCircle, checkPolygon, checkLight, checkDimmed, checkRoute, checkPick]) {
+    for (const step of [checkBox, checkCircle, checkPolygon, checkLight, checkScaled, checkRoute, checkPick]) {
       try {
         await step(page);
       } catch (error) {
