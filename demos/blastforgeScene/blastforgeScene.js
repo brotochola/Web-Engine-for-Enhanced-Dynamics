@@ -1,24 +1,31 @@
 // blastforgeScene.js – Blastforge's pixel-art explosions as a Weed.js scene.
 //
-// Click the ground (or press Space) to set off the preset picked in the panel.
+// Click the ground (or press Space) to set off the preset picked in the panel. Trees, rocks, barrels and crates
+// stand on the ground, y-sorted; each blast's fire and smoke is sorted among them (the field layer's
+// sortWithEntities), so whatever stands in front of a blast hides it.
 //
 // Who does what:
 //   - The panel (main thread, blastforgePanel.js) writes its choices into BlastSettings.
-//   - Detonator, the only entity, runs on a logic worker. It reads the mouse, the keyboard and BlastSettings in
-//     tick() and calls explode().
-//   - The particle worker moves the particles, and the renderer draws the explosion layers (see explosions.js).
+//   - Detonator runs on a logic worker. It reads the mouse, the keyboard and BlastSettings in tick() and calls
+//     explode().
+//   - The vertex shader moves the fire, smoke, dust and embers (GPU particles), the particle worker moves the
+//     sparks and debris, and the renderer draws the explosion layers (see explosions.js).
 
 import WEED from '/src/index.js';
 import { FIELD_LAYER, explode, explosionAssets, explosionLayers, setExplosionPalette, updateExplosions } from './explosions.js';
 import { PRESETS } from './explosionPresets.js';
 
-const { Scene, GameObject, SharedResource, Mouse, Keyboard, Camera, Layer, LAYER_KIND } = WEED;
+const { Scene, GameObject, SpriteRenderer, SharedResource, Mouse, Keyboard, Camera, Layer, LAYER_KIND } = WEED;
 
 const WORLD_WIDTH = 2048;
 const WORLD_HEIGHT = 1536;
 /** Camera zoom. Every world pixel is drawn as PIXEL_ZOOM × PIXEL_ZOOM screen pixels. */
 const PIXEL_ZOOM = 3;
 const AUTO_BLAST_EVERY_MS = { min: 1100, max: 2400 };
+/** Props on the ground, by weight. Each is a texture in textures/, standing on its bottom edge. */
+const PROP_KINDS = [['tree', 7], ['bush', 5], ['rock', 4], ['barrel', 2], ['crate', 2]];
+/** One prop at most per cell of this size (px), in a third of the cells. */
+const PROP_CELL = { w: 96, h: 80 };
 
 /** Presets in panel order. BlastSettings.preset holds an index into this list. */
 export const PRESET_LIST = Object.values(PRESETS);
@@ -35,6 +42,18 @@ export class BlastSettings extends SharedResource {
     wind: Float32Array, // px/s, + pushes right
     autoDetonate: Uint8Array, // 1 = random blasts around the view
   };
+}
+
+/** A tree, bush, rock, barrel or crate, y-sorted by its foot. */
+export class Prop extends GameObject {
+  static components = [SpriteRenderer];
+
+  onSpawned({ x = 0, y = 0, kind = 'rock' } = {}) {
+    this.x = x;
+    this.y = y;
+    this.setSprite(kind);
+    this.setAnchor(0.5, 1);
+  }
 }
 
 /** Turns clicks, Space and the auto-detonate switch into explosions. */
@@ -97,10 +116,11 @@ export class BlastforgeScene extends Scene {
     worldHeight: WORLD_HEIGHT,
     // Nothing here collides, so the scene runs without Box2D: no physics worker, no WASM.
     physics: { enabled: false },
-    // The look shaders are GLSL. Nearest sampling keeps textures as hard pixels.
-    renderer: { backend: 'webgl', atlasScaleMode: 'nearest' },
+    // The look shaders are GLSL. Nearest sampling keeps textures as hard pixels. The y-sort orders the props, and
+    // the blasts among them.
+    renderer: { backend: 'webgl', atlasScaleMode: 'nearest', ySort: true },
     particle: {
-      maxParticles: 60000, // pool indices are Uint16, so the pool stays under 65536
+      maxParticles: 20000, // sparks and debris; fire, smoke, dust and embers are GPU particles
       decals: true, // scorch marks and landed debris
       decalsResolution: 1, // one decal texel per world pixel
     },
@@ -110,13 +130,17 @@ export class BlastforgeScene extends Scene {
     },
   };
 
-  static entities = [[Detonator, 1]];
+  static entities = [
+    [Detonator, 1],
+    [Prop, 220],
+  ];
 
   static sharedResources = [[BlastSettings, BlastSettings.schema]];
 
   static assets = {
     textures: {
       ground: '/demos/blastforgeScene/textures/ground.png',
+      ...Object.fromEntries(PROP_KINDS.map(([kind]) => [kind, `/demos/blastforgeScene/textures/${kind}.png`])),
       ...explosionAssets.textures,
     },
     shaders: explosionAssets.shaders,
@@ -139,12 +163,41 @@ export class BlastforgeScene extends Scene {
 
   createNewGame() {
     Detonator.spawn();
+    spawnProps();
   }
 
   async destroy() {
     if (this._removePanel) this._removePanel();
     this._removePanel = null;
     await super.destroy();
+  }
+}
+
+/**
+ * Props in a third of the cells of a grid, jittered, the same every time (a fixed seed). Two stand by the middle of
+ * the view, where the first blast goes off: a tree just in front of it and one behind.
+ */
+function spawnProps() {
+  let seed = 0x1b1a57;
+  const next = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const total = PROP_KINDS.reduce((sum, [, weight]) => sum + weight, 0);
+  const pick = () => {
+    let r = next() * total;
+    for (const [kind, weight] of PROP_KINDS) if ((r -= weight) < 0) return kind;
+    return PROP_KINDS[0][0];
+  };
+  const cx = WORLD_WIDTH / 2;
+  const cy = WORLD_HEIGHT / 2;
+  Prop.spawn({ x: cx + 14, y: cy + 26, kind: 'tree' });
+  Prop.spawn({ x: cx - 30, y: cy - 22, kind: 'tree' });
+  for (let y = PROP_CELL.h / 2; y < WORLD_HEIGHT; y += PROP_CELL.h) {
+    for (let x = PROP_CELL.w / 2; x < WORLD_WIDTH; x += PROP_CELL.w) {
+      if (next() > 0.33) continue;
+      const px = x + (next() - 0.5) * PROP_CELL.w * 0.7;
+      const py = y + (next() - 0.5) * PROP_CELL.h * 0.7;
+      if (Math.abs(px - cx) < 90 && Math.abs(py - cy) < 70) continue; // keep the first blast's spot clear
+      Prop.spawn({ x: px, y: py, kind: pick() });
+    }
   }
 }
 

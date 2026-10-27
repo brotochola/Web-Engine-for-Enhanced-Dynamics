@@ -1,34 +1,44 @@
-// explosions.js – pixel-art explosions for Weed.js, ported from Blastforge.
+// explosions.js – pixel-art explosions for Weed.js, ported from Blastforge (a standalone PixiJS explosion lab).
 //
-// explode(x, y, preset) spawns a few thousand particles of two kinds:
+// explode(x, y, preset) sets off three kinds of particles:
 //
-//   Field puffs: fire, smoke and dust. Soft glow sprites in the explosionField
-//   layer, which adds them up into a low-resolution texture. The layer's look
-//   shader (shaders/explosionField.frag) turns that sum into banded, dithered,
-//   lit pixel art. A puff's tint is data, not a color: red adds heat, green
-//   adds smoke, blue adds dust.
+//   Field puffs: fire, smoke and dust. GPU particles (ParticleEmitter.emitGpu) in the explosionField layer, which
+//   adds them up into a low-resolution texture. The layer's look shader (shaders/explosionField.frag) turns that sum
+//   into banded, dithered, lit pixel art. A puff's tint is data, not a color: red adds heat, green adds smoke, blue
+//   adds dust. The layer sorts with the entities, so a tree standing in front of a blast hides it.
 //
-//   Pieces: sparks, embers and debris. The engine's built-in 8 px circle in the
-//   explosionPieces layer, drawn as hard pixels on the same grid. Sparks and
-//   debris have height: they fly up, fall, bounce and land. Debris leaves a
-//   decal where it lands, and the blast stamps a scorch mark.
+//   Embers: GPU particles too, in explosionEmbers, drawn as hard pixels.
 //
-// Some bursts start later: smoke once the fire cools, embers, follow-up blasts
-// and ground flames. updateExplosions(deltaMs) runs them, so the worker that
-// calls explode() must also call updateExplosions() every tick. They follow
-// game time, so they pause when the game does.
+//   Pieces: sparks and debris. CPU particles (ParticleEmitter.emit) in explosionPieces, also hard pixels. They have
+//   height: they fly up, fall, bounce and land. Debris leaves a decal where it lands, and the blast stamps a scorch
+//   mark. They stay on the CPU because GPU particles have no floor.
 //
-// Ported from Blastforge (a standalone PixiJS explosion lab) with the engine's
-// CPU particles.
+// A GPU emit is one call for many particles, each drawn from ranges, so a blast is a few dozen calls: one per
+// fireball lobe, smoke billow, dust-ring sector... The CPU emits are one call per particle. GPU particles slow down
+// with `drag`, start later with `delay`, and rise through `gravity` (with drag, a negative gravity gives a steady
+// rise speed of gravity / drag), all in the vertex shader: nothing is scheduled on the CPU but follow-up blasts,
+// which updateExplosions(deltaMs) sets off, so the worker that calls explode() must also call updateExplosions()
+// every tick. Everything follows game time and pauses when the game does.
 //
-// Units: presets use px, px/s and seconds. Weed particles move in px per frame
-// at 60 fps, their gravity is px/frame², and lifespans are milliseconds.
+// Units: presets use px, px/s and seconds. Particles move in px per frame at 60 fps, gravity is px/frame², drag is
+// 1/s, delays and lifespans are milliseconds.
+//
+// What the engine does not have yet, worked around where it matters:
+//   - CPU particles have no drag: a spark or a chunk of debris gets the steady speed that covers the distance a
+//     dragged one would (draggedDistance).
+//   - GPU particles have no sideways acceleration: wind is a push at launch that their drag slows, so smoke and
+//     embers use a low drag and get the push that covers the drift.
+//   - Shader layers render into 8-bit textures, so puffs are written at half strength and never below 4/255.
+//   - The palette is 16 separate vec3 uniforms: layer uniforms have no arrays.
+//   - A look layer among the entities is drawn in regions, one per cloud of overlapping groups, sorted at the
+//     cloud's furthest-back group: a chain reaction's blasts all sort at the first one's ground y.
 
 import WEED from '/src/index.js';
 
-const { ParticleEmitter, Decal, Camera, Layer, BLEND_MODES, LAYER_SCALE_MODE, PARTICLE_EASE } = WEED;
+const { ParticleEmitter, Decal, Camera, Layer, BLEND_MODES, LAYER_KIND, LAYER_SCALE_MODE, PARTICLE_EASE } = WEED;
 
 export const FIELD_LAYER = 'explosionField';
+export const EMBERS_LAYER = 'explosionEmbers';
 export const PIECES_LAYER = 'explosionPieces';
 
 const GLOW_TEXTURE = 'explosionGlow'; // textures/softCircle.png, 64×64
@@ -41,12 +51,20 @@ const SCORCH_RADIUS = 32;
 const FPS = 60;
 /** A 3/4 top-down view sees the ground squashed vertically. */
 const SQUASH = 0.85;
+const TAU = Math.PI * 2;
 
-// The field layer renders into an 8-bit texture, so values above 1 would clip.
-// Puffs write 1/FIELD_SCALE of their strength and the look shader multiplies it
-// back. A puff fainter than MIN_PUFF_ALPHA would round down to nothing.
+// The field layer renders into an 8-bit texture, so values above 1 would clip. Puffs write 1/FIELD_SCALE of their
+// strength and the look shader multiplies it back. A puff fainter than MIN_PUFF_ALPHA would round down to nothing.
 const FIELD_SCALE = 2;
 const MIN_PUFF_ALPHA = 4 / 255;
+
+/** Smoke expands, rises and drifts on one drag, low enough that the wind keeps pushing for most of its life. */
+const SMOKE_DRAG = 0.9;
+const DUST_RING_SECTORS = 12;
+const EMBER_SECTORS = 6;
+const GROUND_FIRE_SLICES = 6;
+/** The ground fire's patch: a centre and four sides, roughly a disc. */
+const GROUND_FIRE_CELLS = [[0, 0], [0.6, 0], [-0.6, 0], [0, 0.6], [0, -0.6]];
 
 const here = (path) => `/demos/blastforgeScene/${path}`;
 
@@ -55,21 +73,25 @@ const here = (path) => `/demos/blastforgeScene/${path}`;
 // ---------------------------------------------------------------------------
 
 /**
- * The two layers explode() draws into, for a scene's static config.layers.
+ * The layers explode() draws into, for a scene's static config.layers.
  * @param {object} options
  * @param {number} options.pixelZoom - The camera zoom. One layer texel covers one world pixel.
  * @param {object} options.palette - Starting colors, one of the PALETTES in explosionPresets.js.
  */
 export function explosionLayers({ pixelZoom, palette }) {
   const resolution = 1 / pixelZoom;
+  // Explosions are set off from a logic worker: its rings get nearly all the records.
+  const gpuRings = { main: 0.02, logic: 1, particle: 0.02 };
   return {
     [FIELD_LAYER]: {
-      zIndex: 3.5, // above the entities layer (3)
+      kind: LAYER_KIND.GPU_PARTICLES,
+      zIndex: 3.5, // where it draws while the entities do not y-sort
+      maxParticles: 140000,
+      gpuRings,
+      sortWithEntities: true, // each blast among the entities, at its ground y
       resolution,
       scaleMode: LAYER_SCALE_MODE.NEAREST,
       blendMode: BLEND_MODES.NORMAL,
-      maxItems: 60000,
-      ySorting: false,
       shader: {
         fragment: 'explosionField',
         containerBlend: BLEND_MODES.ADD, // overlapping puffs add up into the field
@@ -83,6 +105,16 @@ export function explosionLayers({ pixelZoom, palette }) {
           ...paletteUniforms(palette),
         },
       },
+    },
+    [EMBERS_LAYER]: {
+      kind: LAYER_KIND.GPU_PARTICLES,
+      zIndex: 3.55,
+      maxParticles: 16384,
+      gpuRings,
+      resolution,
+      scaleMode: LAYER_SCALE_MODE.NEAREST,
+      blendMode: BLEND_MODES.NORMAL,
+      shader: { fragment: 'crispPixels', containerBlend: BLEND_MODES.NORMAL },
     },
     [PIECES_LAYER]: {
       zIndex: 3.6,
@@ -127,29 +159,20 @@ function paletteUniforms(palette) {
 }
 
 // ---------------------------------------------------------------------------
-// Timing: bursts that start later, in game time
+// Follow-up blasts, in game time
 // ---------------------------------------------------------------------------
 
 let clockMs = 0;
 let scheduled = []; // { atMs, run }
-let groundFires = []; // patches still burning, see startGroundFire()
 
-function after(seconds, run) {
-  if (seconds <= 0) run();
-  else scheduled.push({ atMs: clockMs + seconds * 1000, run });
-}
-
-/** Runs delayed bursts and ground flames. Call it every tick, on the worker that calls explode(). */
+/** Sets off follow-up blasts that are due. Call it every tick, on the worker that calls explode(). */
 export function updateExplosions(deltaMs) {
   clockMs += deltaMs;
-  if (scheduled.length > 0) {
-    const due = scheduled.filter((task) => task.atMs <= clockMs);
-    if (due.length > 0) {
-      scheduled = scheduled.filter((task) => task.atMs > clockMs);
-      for (const task of due) task.run();
-    }
-  }
-  groundFires = groundFires.filter((fire) => burnGroundFire(fire, deltaMs / 1000));
+  if (scheduled.length === 0) return;
+  const due = scheduled.filter((task) => task.atMs <= clockMs);
+  if (due.length === 0) return;
+  scheduled = scheduled.filter((task) => task.atMs > clockMs);
+  for (const task of due) task.run();
 }
 
 // ---------------------------------------------------------------------------
@@ -164,50 +187,51 @@ export function updateExplosions(deltaMs) {
  * @param {object} [options]
  * @param {number} [options.size=1] - Scales the whole blast.
  * @param {number} [options.amount=1] - Scales the number of puffs.
- * @param {number} [options.wind=0] - Sideways push on fire, smoke and embers, px/s.
+ * @param {number} [options.wind=0] - Sideways push on fire, smoke, dust and embers, px/s.
+ * @param {number} [options.sortY=y] - The ground y the blast's fire and smoke sort at among the entities.
  */
-export function explode(x, y, preset, { size = 1, amount = 1, wind = 0 } = {}) {
-  const blast = { x, y, preset, size, amount, wind, palette: preset.palette, radius: Math.max(2, preset.radius * size) };
+export function explode(x, y, preset, { size = 1, amount = 1, wind = 0, sortY = y } = {}) {
+  const blast = { x, y, sortY, preset, size, amount, wind, palette: preset.palette, radius: Math.max(2, preset.radius * size) };
 
   emitFlash(blast);
   emitFireball(blast);
-  releaseSmoke(blast);
+  emitSmoke(blast);
   emitDustRing(blast);
+  emitEmbers(blast);
+  emitGroundFire(blast);
   emitSparks(blast);
-  releaseEmbers(blast);
   emitDebris(blast);
   stampScorch(blast);
-  startGroundFire(blast);
   scheduleFollowUps(blast);
 
   if (preset.shake > 0) Camera.shake(preset.shake * Math.sqrt(size), 450);
 }
 
-/** A short hot disc at the center. */
-function emitFlash({ x, y, preset, radius }) {
+/** A short hot disc at the center: seven puffs, 12 ms apart. */
+function emitFlash({ x, y, sortY, preset, radius }) {
   if (preset.flash <= 0) return;
-  for (let i = 0; i < 7; i++) {
-    after(i * 0.012, () =>
-      emitFieldPuff({
-        x: x + gauss() * radius * 0.15,
-        y: y + gauss() * radius * 0.12,
-        seconds: random(0.07, 0.13),
-        startRadius: radius * 0.35 * preset.flash,
-        endRadius: radius * random(0.9, 1.25) * preset.flash,
-        from: fieldColor(1, 0, 0),
-        to: fieldColor(1, 0, 0),
-        strength: 0.55 / FIELD_SCALE,
-        ease: PARTICLE_EASE.QUAD_OUT,
-      })
-    );
-  }
+  emitField({
+    count: 7,
+    x: around(x, radius * 0.15),
+    y: around(y, radius * 0.12),
+    delay: { min: 0, max: 72 },
+    lifespan: ms(0.07, 0.13),
+    scale: {
+      from: (radius * 0.35 * preset.flash) / GLOW_RADIUS,
+      to: { min: (radius * 0.9 * preset.flash) / GLOW_RADIUS, max: (radius * 1.25 * preset.flash) / GLOW_RADIUS },
+      ease: PARTICLE_EASE.QUAD_OUT,
+    },
+    alpha: { from: 0.55 / FIELD_SCALE, to: 0, ease: PARTICLE_EASE.QUAD_OUT },
+    tint: fieldColor(1, 0, 0),
+    sortY,
+  });
 }
 
 /**
- * The fireball: puffs grouped into lobes for a cauliflower silhouette.
- * Each puff starts as heat and ends as smoke: its tint goes from red to green
- * while its alpha fades, on one shared ease. Heat adds (1-e)² of the puff's
- * strength and smoke adds e(1-e), which peaks at a quarter.
+ * The fireball: puffs grouped into lobes for a cauliflower silhouette, one emit per lobe for its far puffs and one
+ * for its core. Each puff is thrown out at distance × drag and coasts to a stop there, as in Blastforge. It starts
+ * as heat and ends as smoke: its tint goes from red to green while its alpha fades, on one ease, so heat adds (1-e)²
+ * of the puff's strength and smoke adds e(1-e), which peaks at a quarter.
  */
 function emitFireball(blast) {
   const { x, y, preset: p, size, radius, wind } = blast;
@@ -215,42 +239,60 @@ function emitFireball(blast) {
   const { count, strength } = fieldStrength(Math.round(p.fire * blast.amount * size * size), puffRadius * 1.35, radius * radius, p.fireHeat * 0.48);
   if (count === 0) return;
 
+  const drag = p.drag ?? 5; // 1/s
   const smokeShare = 4 * clamp((p.smokeDensity * 0.6) / (p.fireHeat * 0.48), 0, 4);
+  const lifespan = ms(p.fireLife * 0.55, p.fireLife * 1.15);
   const lobes = makeLobes(p);
-  for (let i = 0; i < count; i++) {
-    const lobe = lobes[(Math.random() * lobes.length) | 0];
-    const angle = lobe.angle + gauss() * lobe.width;
-    const depth = Math.random() < 0.12 ? Math.random() * 0.35 : Math.pow(Math.random(), 0.42); // 0 = core, 1 = lobe tip
-    const seconds = p.fireLife * random(0.55, 1.15);
-    // Reach the puff's spot by three quarters of its life (see speedToCover).
-    const speed = speedToCover(radius * 1.15 * lobe.length * depth, 0.75 * seconds);
-    const heat = 0.8 + 0.2 * (1 - depth);
-    const smoke = smokeShare * random(0.6, 1.2);
-    const peak = Math.max(heat, smoke);
-    const startRadius = puffRadius * random(0.5, 1.1);
-    emitFieldPuff({
-      x: x + gauss() * puffRadius * 0.3,
-      y: y + gauss() * puffRadius * 0.3,
-      vx: Math.cos(angle) * speed + perFrame(wind * 0.5),
-      vy: Math.sin(angle) * speed * SQUASH - perFrame(p.rise * 0.2),
-      seconds,
-      startRadius,
-      endRadius: startRadius * random(1.8, 2.6),
-      from: fieldColor(heat / peak, 0, 0),
-      to: fieldColor(0, smoke / peak, 0),
-      strength: strength * peak,
-      ease: PARTICLE_EASE.QUAD_IN,
-    });
-  }
+  const perLobe = splitCount(count, lobes.length);
+  // depth: 0 = core, 1 = lobe tip. Far puffs take 88 %, the core 12 %.
+  const parts = [{ share: 0.88, depth: [0.4, 1] }, { share: 0.12, depth: [0, 0.35] }];
+  lobes.forEach((lobe, k) => {
+    for (const part of parts) {
+      const n = Math.round(perLobe[k] * part.share);
+      if (n === 0) continue;
+      const depth = (part.depth[0] + part.depth[1]) / 2;
+      const heat = 0.8 + 0.2 * (1 - depth);
+      const peak = Math.max(heat, smokeShare * 0.9);
+      const reach = radius * 1.15 * lobe.length;
+      const speed = { min: perFrame(reach * part.depth[0] * drag), max: perFrame(reach * part.depth[1] * drag) };
+      // Wind leans the lobe: the push is a share of the lobe's own speed.
+      const lean = (wind * 0.5) / Math.max(1, reach * depth * drag);
+      emitField({
+        count: n,
+        x: around(x, puffRadius * 0.3),
+        y: around(y, puffRadius * 0.3),
+        dirX: Math.cos(lobe.angle) + lean,
+        dirY: Math.sin(lobe.angle) * SQUASH,
+        spread: lobe.width,
+        speed,
+        drag: { min: drag * 0.8, max: drag * 1.2 },
+        gravity: riseGravity(p.rise * 0.45, drag),
+        delay: { min: 0, max: 60 },
+        lifespan,
+        scale: {
+          from: { min: (puffRadius * 0.5) / GLOW_RADIUS, max: (puffRadius * 1.1) / GLOW_RADIUS },
+          to: { min: (puffRadius * 1.0) / GLOW_RADIUS, max: (puffRadius * 2.6) / GLOW_RADIUS },
+          ease: PARTICLE_EASE.QUAD_IN,
+        },
+        tint: {
+          from: fieldColor(heat / peak, 0, 0),
+          to: { min: fieldColor(0, (smokeShare * 0.6) / peak, 0), max: fieldColor(0, (smokeShare * 1.2) / peak, 0) },
+          ease: PARTICLE_EASE.QUAD_IN,
+        },
+        alpha: { from: { min: strength * peak * 0.85, max: strength * peak * 1.15 }, to: 0, ease: PARTICLE_EASE.QUAD_IN },
+        sortY: blast.sortY,
+      });
+    }
+  });
 }
 
 function makeLobes(p) {
   const count = Math.max(1, Math.round(p.lobes));
-  const start = Math.random() * Math.PI * 2;
+  const start = Math.random() * TAU;
   const lobes = [];
   for (let k = 0; k < count; k++) {
     lobes.push({
-      angle: start + (k / count) * Math.PI * 2 + (gauss() * 0.35 * Math.PI) / count,
+      angle: start + (k / count) * TAU + (gauss() * 0.35 * Math.PI) / count,
       length: 1 - p.lobeVar * 0.5 + p.lobeVar * Math.random(),
       width: (p.lobeSpread * Math.PI) / count,
     });
@@ -258,8 +300,11 @@ function makeLobes(p) {
   return lobes;
 }
 
-/** Smoke billows: groups of puffs released one by one while the fire cools. */
-function releaseSmoke(blast) {
+/**
+ * Smoke billows: one emit per billow, released while the fire cools (delay). Its puffs start 30 % of the way out
+ * and drift to the billow, rising faster as they go, with the wind.
+ */
+function emitSmoke(blast) {
   const { x, y, preset: p, size, radius, wind } = blast;
   const puffRadius = p.smokeSize * size;
   const cloudArea = (radius * p.smokeSpread * 1.1 + puffRadius) ** 2 / 0.55;
@@ -267,69 +312,193 @@ function releaseSmoke(blast) {
   if (count === 0) return;
 
   const billows = Math.max(3, Math.round(5 + radius / 4));
-  const puffsPerBillow = Math.ceil(count / billows);
+  const perBillow = splitCount(count, billows);
+  const lifeS = p.smokeLife * 0.85; // the middle of 0.5-1.2 × smokeLife
+  // With drag d a puff covers v0 (1 - e^(-d T)) / d by the end of its life T: speeds that cover a distance.
+  const cover = SMOKE_DRAG / (1 - Math.exp(-SMOKE_DRAG * lifeS));
   for (let b = 0; b < billows; b++) {
-    const angle = Math.random() * Math.PI * 2;
+    if (perBillow[b] === 0) continue;
+    const angle = Math.random() * TAU;
     const distance = radius * p.smokeSpread * Math.pow(Math.random(), 0.6);
     const centerX = x + Math.cos(angle) * distance;
     const centerY = y + Math.sin(angle) * distance * SQUASH;
     const billowRadius = puffRadius * random(0.8, 2);
-    const riseSpeed = perFrame(p.rise * random(0.7, 1.4));
-
-    after(p.fireLife * random(0.12, 0.6), () => {
-      for (let i = 0; i < puffsPerBillow; i++) {
-        const targetX = centerX + gauss() * billowRadius * 0.6;
-        const targetY = centerY + gauss() * billowRadius * 0.5;
-        const startX = x + (targetX - x) * 0.3;
-        const startY = y + (targetY - y) * 0.3;
-        const seconds = p.smokeLife * random(0.5, 1.2);
-        const frames = seconds * FPS;
-        const startRadius = puffRadius * random(0.4, 0.8);
-        emitFieldPuff({
-          x: startX,
-          y: startY,
-          vx: (targetX - startX) / (0.6 * frames) + perFrame(gauss() * p.turbulence * 0.3 + wind),
-          vy: (targetY - startY) / (0.6 * frames) - riseSpeed * 0.3,
-          gravity: (-riseSpeed * 0.7) / frames, // speeds up as it rises
-          seconds,
-          startRadius,
-          endRadius: puffRadius * random(1.4, 2.5),
-          from: fieldColor(0, 1, 0),
-          to: fieldColor(0, 1, 0),
-          strength: strength * random(0.7, 1.3),
-          ease: PARTICLE_EASE.QUAD_OUT,
-        });
-      }
+    const travelX = (centerX - x) * 0.7;
+    const travelY = (centerY - y) * 0.7;
+    const spreadX = billowRadius * 0.6 * 0.7 + p.turbulence * 0.6;
+    const spreadY = billowRadius * 0.5 * 0.7 + p.turbulence * 0.4;
+    const startMs = p.fireLife * random(0.12, 0.6) * 1000;
+    emitField({
+      count: perBillow[b],
+      x: around(x + (centerX - x) * 0.3, billowRadius * 0.18),
+      y: around(y + (centerY - y) * 0.3, billowRadius * 0.15),
+      vx: around(perFrame((travelX + wind * lifeS * 0.8) * cover), perFrame(spreadX * cover)),
+      vy: around(perFrame(travelY * cover), perFrame(spreadY * cover)),
+      drag: SMOKE_DRAG,
+      gravity: riseGravity(p.rise * random(0.7, 1.4), SMOKE_DRAG),
+      delay: { min: startMs, max: startMs + 150 },
+      lifespan: ms(p.smokeLife * 0.5, p.smokeLife * 1.2),
+      scale: {
+        from: { min: (puffRadius * 0.4) / GLOW_RADIUS, max: (puffRadius * 0.8) / GLOW_RADIUS },
+        to: { min: (puffRadius * 1.4) / GLOW_RADIUS, max: (puffRadius * 2.5) / GLOW_RADIUS },
+        ease: PARTICLE_EASE.QUAD_OUT,
+      },
+      tint: fieldColor(0, 1, 0),
+      alpha: { from: { min: strength * 0.7, max: strength * 1.3 }, to: 0, ease: PARTICLE_EASE.QUAD_OUT },
+      sortY: blast.sortY,
     });
   }
 }
 
-/** A ring of dust thrown along the ground. */
+/** A ring of dust thrown along the ground: one emit per sector. */
 function emitDustRing(blast) {
   const { x, y, preset: p, size, radius, wind } = blast;
   const puffRadius = 3.2 * Math.sqrt(size) + radius * 0.05;
   const ringRadius = radius * 0.35 + ((p.ringSpeed * size) / 3.1) * 0.8;
   const ringArea = (2 * ringRadius * (ringRadius * 0.5 + 2 * puffRadius)) / 0.6;
   const { count, strength } = fieldStrength(Math.round(p.dust * blast.amount * size * size), puffRadius * 1.7, ringArea, 0.14);
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const startDistance = radius * random(0.15, 0.45);
-    const seconds = random(0.7, 1.8) * Math.sqrt(size);
-    const speed = speedToCover((p.ringSpeed * size * random(0.55, 1.15)) / random(2.6, 3.6), 0.7 * seconds);
-    const startRadius = puffRadius * random(0.6, 1.3);
-    emitFieldPuff({
-      x: x + Math.cos(angle) * startDistance,
-      y: y + Math.sin(angle) * startDistance * SQUASH,
-      vx: Math.cos(angle) * speed + perFrame(wind * 0.35),
-      vy: Math.sin(angle) * speed * SQUASH,
-      seconds,
-      startRadius,
-      endRadius: startRadius * random(2, 3.2),
-      from: fieldColor(0, 0, 1),
-      to: fieldColor(0, 0, 1),
-      strength: strength * random(0.7, 1.3),
-      ease: PARTICLE_EASE.QUAD_OUT,
+  if (count === 0) return;
+
+  const perSector = splitCount(count, DUST_RING_SECTORS);
+  const speed = p.ringSpeed * size;
+  const start = Math.random() * TAU;
+  for (let k = 0; k < DUST_RING_SECTORS; k++) {
+    if (perSector[k] === 0) continue;
+    const angle = start + ((k + 0.5) / DUST_RING_SECTORS) * TAU;
+    emitField({
+      count: perSector[k],
+      x: around(x + Math.cos(angle) * radius * 0.3, radius * 0.15),
+      y: around(y + Math.sin(angle) * radius * 0.3 * SQUASH, radius * 0.15 * SQUASH),
+      dirX: Math.cos(angle) + (wind * 0.35) / Math.max(1, speed),
+      dirY: Math.sin(angle) * SQUASH,
+      spread: Math.PI / DUST_RING_SECTORS,
+      speed: { min: perFrame(speed * 0.55), max: perFrame(speed * 1.15) },
+      drag: { min: 2.6, max: 3.6 },
+      gravity: riseGravity(p.rise * 0.15, 3.1),
+      delay: { min: 0, max: 50 },
+      lifespan: ms(0.7 * Math.sqrt(size), 1.8 * Math.sqrt(size)),
+      scale: {
+        from: { min: (puffRadius * 0.6) / GLOW_RADIUS, max: (puffRadius * 1.3) / GLOW_RADIUS },
+        to: { min: (puffRadius * 1.6) / GLOW_RADIUS, max: (puffRadius * 3.6) / GLOW_RADIUS },
+        ease: PARTICLE_EASE.QUAD_OUT,
+      },
+      tint: fieldColor(0, 0, 1),
+      alpha: { from: { min: strength * 0.7, max: strength * 1.3 }, to: 0, ease: PARTICLE_EASE.QUAD_OUT },
+      sortY: blast.sortY,
     });
+  }
+}
+
+/** Embers: glowing pixels drifting up with the smoke, released while the fire burns. One emit per sector. */
+function emitEmbers(blast) {
+  const { x, y, preset: p, size, radius, palette, wind } = blast;
+  const count = Math.round(p.embers * Math.sqrt(blast.amount) * size);
+  if (count === 0) return;
+  const perSector = splitCount(count, EMBER_SECTORS);
+  const start = Math.random() * TAU;
+  for (let k = 0; k < EMBER_SECTORS; k++) {
+    if (perSector[k] === 0) continue;
+    const angle = start + ((k + 0.5) / EMBER_SECTORS) * TAU;
+    const out = 35 * size; // px/s
+    const rise = p.rise * 1.2 + 6;
+    emitEmber({
+      count: perSector[k],
+      x: around(x + Math.cos(angle) * radius * 0.55, radius * 0.35),
+      y: around(y + Math.sin(angle) * radius * 0.55 * SQUASH, radius * 0.35 * SQUASH),
+      vx: around(perFrame(Math.cos(angle) * out + wind), perFrame(25 * size + 14)),
+      vy: around(perFrame(Math.sin(angle) * out * SQUASH), perFrame(25 * size * SQUASH + 10)),
+      gravity: riseGravity(rise, 1),
+      delay: { min: p.fireLife * 100, max: p.fireLife * 900 },
+      lifespan: ms(1.2, 3.5),
+      from: palette.fire[5],
+      to: palette.fire[1],
+    });
+  }
+}
+
+/**
+ * Presets with flames leave the ground burning for flameTime seconds, fewer and cooler flames as it dies down.
+ * All of it is emitted at once: each slice of that time is a few emits whose delays fall in the slice.
+ */
+function emitGroundFire(blast) {
+  const { x, y, preset: p, size, radius, wind, palette } = blast;
+  if (p.flames <= 0 || p.flameTime <= 0) return;
+  const startS = p.fireLife * 0.35;
+  const sliceS = p.flameTime / GROUND_FIRE_SLICES;
+  const rate = p.flames * blast.amount * size; // flames per second at the start
+  const rise = p.rise * 2.2 + 18;
+  const cell = radius * 0.3;
+  const gFl = 0.42 + 0.1 * p.fireHeat;
+  for (let j = 0; j < GROUND_FIRE_SLICES; j++) {
+    const left = 1 - (j + 0.5) / GROUND_FIRE_SLICES; // 1 when it starts, 0 when it dies
+    const n = Math.round(rate * sliceS * left);
+    if (n === 0) continue;
+    const delay = { min: (startS + j * sliceS) * 1000, max: (startS + (j + 1) * sliceS) * 1000 };
+    const heat = 0.55 + 0.45 * left;
+    const smoke = p.smokeDensity; // the middle of 0 to 2 × smokeDensity
+    const peak = Math.max(heat, smoke);
+    const perCell = splitCount(n, GROUND_FIRE_CELLS.length);
+    GROUND_FIRE_CELLS.forEach(([cx, cy], c) => {
+      if (perCell[c] === 0) return;
+      emitField({
+        count: perCell[c],
+        x: around(x + cx * radius, cell),
+        y: around(y + cy * radius * SQUASH, cell * SQUASH),
+        vx: around(perFrame(wind), perFrame(6)),
+        vy: -perFrame(rise), // already at its rise speed
+        drag: 2,
+        gravity: riseGravity(rise, 2),
+        delay,
+        lifespan: ms(0.35, 0.9),
+        scale: {
+          from: { min: (1.5 * Math.sqrt(size)) / GLOW_RADIUS, max: (3.4 * Math.sqrt(size)) / GLOW_RADIUS },
+          to: { min: (2.5 * Math.sqrt(size)) / GLOW_RADIUS, max: (6 * Math.sqrt(size)) / GLOW_RADIUS },
+          ease: PARTICLE_EASE.QUAD_IN,
+        },
+        tint: {
+          from: { min: fieldColor((heat * 0.7) / peak, 0, 0), max: fieldColor(Math.min(1, (heat * 1.2) / peak), 0, 0) },
+          to: { min: fieldColor(0, 0, 0), max: fieldColor(0, (2 * smoke) / peak, 0) },
+          ease: PARTICLE_EASE.QUAD_IN,
+        },
+        alpha: { from: (gFl / FIELD_SCALE) * peak, to: 0, ease: PARTICLE_EASE.QUAD_IN },
+        sortY: blast.sortY,
+      });
+    });
+    // Now and then a flame leaves smoke, or an ember.
+    const smokeN = Math.round(n * 0.08);
+    if (smokeN > 0) {
+      const ss = 6 * Math.sqrt(size);
+      emitField({
+        count: smokeN,
+        x: around(x, radius * 0.6),
+        y: around(y - 4, radius * 0.6 * SQUASH),
+        vx: around(perFrame(wind), perFrame(8)),
+        vy: 0,
+        drag: 1.5,
+        gravity: riseGravity(p.rise * 1.3 + 8, 1.5),
+        delay,
+        lifespan: ms(1.2, 2.6),
+        scale: { from: (ss * 0.5) / GLOW_RADIUS, to: { min: (ss * 1.2) / GLOW_RADIUS, max: (ss * 2.4) / GLOW_RADIUS }, ease: PARTICLE_EASE.QUAD_OUT },
+        tint: fieldColor(0, 1, 0),
+        alpha: { from: (0.42 * p.smokeDensity) / FIELD_SCALE, to: 0, ease: PARTICLE_EASE.QUAD_OUT },
+        sortY: blast.sortY,
+      });
+    }
+    const emberN = Math.round(n * 0.02);
+    if (emberN > 0) {
+      emitEmber({
+        count: emberN,
+        x: around(x, radius * 0.6),
+        y: around(y, radius * 0.6 * SQUASH),
+        vx: around(perFrame(wind), perFrame(15)),
+        vy: around(0, perFrame(10)),
+        gravity: riseGravity(p.rise + 14, 1),
+        delay,
+        lifespan: ms(1, 2.4),
+        from: palette.fire[5],
+        to: palette.fire[1],
+      });
+    }
   }
 }
 
@@ -339,16 +508,16 @@ function emitSparks(blast) {
   const count = Math.round(p.sparks * Math.sqrt(blast.amount) * size);
   for (let i = 0; i < count; i++) {
     const seconds = random(0.25, 0.9);
-    const angle = Math.random() * Math.PI * 2;
+    const angle = Math.random() * TAU;
     const launchSpeed = p.sparkSpeed * size * (0.25 + 0.95 * Math.pow(Math.random(), 0.7));
-    // A Blastforge spark slows down with drag; this one keeps the speed that covers the same distance.
+    // A Blastforge spark slows down with drag; CPU particles have none, so this one keeps the speed that covers
+    // the same distance.
     const speed = draggedDistance(launchSpeed, random(1.8, 3), seconds) / seconds;
     const vx = Math.cos(angle) * speed;
     const vy = Math.sin(angle) * speed * SQUASH;
     const up = random(20, 150) * size;
     const length = clamp(Math.sqrt(launchSpeed * launchSpeed + up * up) * 0.03, 1.2, 7);
     emitPiece({
-      airborne: true,
       x: x + gauss() * radius * 0.2,
       y: y + gauss() * radius * 0.15,
       z: -Math.max(1, random(0, radius * 0.3)),
@@ -372,49 +541,16 @@ function emitSparks(blast) {
   }
 }
 
-/** Embers: glowing pixels drifting up with the smoke. */
-function releaseEmbers(blast) {
-  const { x, y, preset: p, size, radius, palette, wind } = blast;
-  const count = Math.round(p.embers * Math.sqrt(blast.amount) * size);
-  if (count === 0) return;
-  after(p.fireLife * 0.4, () => {
-    for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const distance = radius * Math.sqrt(Math.random()) * 0.9;
-      const speed = perFrame(random(10, 60) * size);
-      const seconds = random(1.2, 3.5);
-      const rise = perFrame(p.rise * random(0.8, 1.6) + 6);
-      emitPiece({
-        airborne: false,
-        x: x + Math.cos(angle) * distance,
-        y: y + Math.sin(angle) * distance * SQUASH,
-        vx: Math.cos(angle) * speed + perFrame(wind),
-        vy: Math.sin(angle) * speed * SQUASH - rise * 0.5,
-        gravity: (-rise * 0.5) / (seconds * FPS),
-        seconds,
-        startLength: 1.2,
-        endLength: 1.2,
-        thickness: 1.2,
-        angle: 0,
-        from: palette.fire[5],
-        to: palette.fire[1],
-        ease: PARTICLE_EASE.QUAD_IN,
-      });
-    }
-  });
-}
-
 /** Debris: chunks that leave hot, cool to rock, bounce, and stay on the ground as decals. */
 function emitDebris(blast) {
   const { x, y, preset: p, size, radius, palette } = blast;
   const count = Math.round(p.debris * size);
   const rock = palette.smoke[1];
   for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
+    const angle = Math.random() * TAU;
     const speed = draggedDistance(random(50, 230) * size, random(0.4, 1), 1); // about one second in the air
     const chunk = Math.max(1, Math.round(random(1, 3.2) * Math.min(1.4, Math.sqrt(size)))) + 0.2;
     emitPiece({
-      airborne: true,
       x: x + gauss() * radius * 0.2,
       y: y + gauss() * radius * 0.15,
       z: -Math.max(1, random(0, radius * 0.2)),
@@ -439,8 +575,8 @@ function emitDebris(blast) {
 }
 
 /**
- * A scorch mark on the floor decals: rings of hard dark circles. Where they
- * overlap the ground gets darker in steps, darkest at the center.
+ * A scorch mark on the floor decals: rings of hard dark circles. Where they overlap the ground gets darker in
+ * steps, darkest at the center.
  */
 const SCORCH_RINGS = [
   { stamps: 14, spread: 0.45, radius: [0.3, 0.55], alpha: 0.07 },
@@ -464,110 +600,54 @@ function stampScorch({ x, y, preset: p, size, radius }) {
   }
 }
 
-/** Presets with flames leave the ground burning for a while (see burnGroundFire). */
-function startGroundFire(blast) {
-  const p = blast.preset;
-  if (p.flames <= 0 || p.flameTime <= 0) return;
-  groundFires.push({ blast, age: -p.fireLife * 0.35, carry: 0 });
-}
-
-/** Advances one burning patch. Returns false once it has burned out. */
-function burnGroundFire(fire, deltaSeconds) {
-  const { blast } = fire;
-  const p = blast.preset;
-  fire.age += deltaSeconds;
-  if (fire.age >= p.flameTime) return false;
-  if (fire.age < 0) return true;
-
-  const left = 1 - fire.age / p.flameTime; // 1 when it starts, 0 when it dies
-  fire.carry += p.flames * blast.amount * blast.size * left * deltaSeconds;
-  for (; fire.carry >= 1; fire.carry -= 1) {
-    const angle = Math.random() * Math.PI * 2;
-    const distance = blast.radius * 0.95 * Math.sqrt(Math.random());
-    const seconds = random(0.35, 0.9);
-    const rise = perFrame(p.rise * 2.2 + 18);
-    const startRadius = random(1.5, 3.4) * Math.sqrt(blast.size);
-    const heat = (0.55 + 0.45 * left) * random(0.7, 1.2);
-    const smoke = 4 * 0.5 * p.smokeDensity * Math.random();
-    const peak = Math.max(heat, smoke);
-    emitFieldPuff({
-      x: blast.x + Math.cos(angle) * distance,
-      y: blast.y + Math.sin(angle) * distance * SQUASH,
-      vx: perFrame(gauss() * 6 + blast.wind),
-      vy: -rise * 0.6,
-      gravity: (-rise * 0.4) / (seconds * FPS),
-      seconds,
-      startRadius,
-      endRadius: startRadius * random(1.4, 2.1),
-      from: fieldColor(heat / peak, 0, 0),
-      to: fieldColor(0, smoke / peak, 0),
-      strength: ((0.42 + 0.1 * p.fireHeat) / FIELD_SCALE) * peak,
-      ease: PARTICLE_EASE.QUAD_IN,
-    });
-  }
-  return true;
-}
-
-/** Chain-reaction presets set off smaller blasts around the first one. */
+/**
+ * Chain-reaction presets set off smaller blasts around the first one. Their smoke merges with the first one's into
+ * one cloud, and a merged cloud sorts as one item, so they all sort at the first blast's ground y.
+ */
 function scheduleFollowUps(blast) {
   const p = blast.preset;
   const count = Math.round(p.secondary);
   for (let i = 0; i < count; i++) {
     const delay = p.secondaryDelay * (i + 1) * random(0.6, 1.4);
-    const angle = Math.random() * Math.PI * 2;
+    const angle = Math.random() * TAU;
     const distance = blast.radius * random(0.9, 2.4);
     const followUp = { ...p, secondary: 0, shake: p.shake * 0.6 };
     const size = blast.size * p.secondaryScale * random(0.75, 1.15);
-    after(delay, () =>
-      explode(blast.x + Math.cos(angle) * distance, blast.y + Math.sin(angle) * distance * SQUASH, followUp, {
-        size,
-        amount: blast.amount,
-        wind: blast.wind,
-      })
-    );
+    scheduled.push({
+      atMs: clockMs + delay * 1000,
+      run: () =>
+        explode(blast.x + Math.cos(angle) * distance, blast.y + Math.sin(angle) * distance * SQUASH, followUp, {
+          size,
+          amount: blast.amount,
+          wind: blast.wind,
+          sortY: blast.sortY,
+        }),
+    });
   }
 }
 
 // ---------------------------------------------------------------------------
-// Emitting one particle
+// Emitting
 // ---------------------------------------------------------------------------
 
-// emit() copies the fields it reads, so one config object is reused for every particle.
-const puffConfig = {
-  count: 1,
-  x: 0,
-  y: 0,
-  vx: 0,
-  vy: 0,
-  gravity: 0,
-  lifespan: 1000,
-  texture: GLOW_TEXTURE,
-  layer: FIELD_LAYER,
-  tint: { from: 0, to: 0, ease: 0 },
-  alpha: { from: 1, to: 0, ease: 0 },
-  scale: { from: 1, to: 1, ease: 0 },
-};
-
-/** One field puff: a flat glow sprite that fades out over its life. Radii in px. */
-function emitFieldPuff(puff) {
-  const c = puffConfig;
-  c.x = puff.x;
-  c.y = puff.y;
-  c.vx = puff.vx ?? 0;
-  c.vy = puff.vy ?? 0;
-  c.gravity = puff.gravity ?? 0;
-  c.lifespan = lifespanMs(puff.seconds);
-  c.scale.from = puff.startRadius / GLOW_RADIUS;
-  c.scale.to = puff.endRadius / GLOW_RADIUS;
-  c.scale.ease = puff.ease;
-  c.tint.from = puff.from;
-  c.tint.to = puff.to;
-  c.tint.ease = puff.ease;
-  c.alpha.from = Math.min(1, puff.strength);
-  c.alpha.ease = puff.ease;
-  ParticleEmitter.emitFlat(c);
+/** One emit of field puffs: flat glow sprites that fade out over their life. */
+function emitField(cfg) {
+  cfg.layer = FIELD_LAYER;
+  cfg.texture = GLOW_TEXTURE;
+  ParticleEmitter.emitGpu(cfg);
 }
 
+/** One emit of embers: 1.2 px dots, hot to cool. */
+function emitEmber({ from, to, ...cfg }) {
+  cfg.layer = EMBERS_LAYER;
+  cfg.texture = PIECE_TEXTURE;
+  cfg.drag = 1;
+  cfg.scale = 1.2 / PIECE_SIZE;
+  cfg.tint = { from, to, ease: PARTICLE_EASE.QUAD_IN };
+  ParticleEmitter.emitGpu(cfg);
+}
+
+// emit() copies the fields it reads, so one config object is reused for every piece.
 const pieceConfig = {
   count: 1,
   x: 0,
@@ -592,12 +672,7 @@ const pieceConfig = {
   stayOnTheFloor: false,
 };
 
-/**
- * One piece: a hard-edged dot or streak. Sizes in px.
- * airborne pieces have height (z < 0 is up) and land; the others stay flat.
- * bounces, bounciness and bounceFriction need an engine with particle bounce;
- * without it, pieces land on the first contact.
- */
+/** One piece: a hard-edged dot or streak with height (z < 0 is up) that lands. Sizes in px. */
 function emitPiece(piece) {
   const c = pieceConfig;
   c.x = piece.x;
@@ -621,8 +696,7 @@ function emitPiece(piece) {
   c.bounceFriction = piece.bounceFriction;
   c.fadeOnTheFloor = piece.fadeOnTheFloor ?? 0;
   c.stayOnTheFloor = piece.stayOnTheFloor ?? false;
-  if (piece.airborne) ParticleEmitter.emit(c);
-  else ParticleEmitter.emitFlat(c);
+  ParticleEmitter.emit(c);
 }
 
 // ---------------------------------------------------------------------------
@@ -630,9 +704,8 @@ function emitPiece(piece) {
 // ---------------------------------------------------------------------------
 
 /**
- * How strong each of `count` overlapping puffs must be for their sum to reach
- * `target`, given their radius and the area they share. If each puff would be
- * too faint for the 8-bit texture, fewer, stronger puffs are used instead.
+ * How strong each of `count` overlapping puffs must be for their sum to reach `target`, given their radius and the
+ * area they share. If each puff would be too faint for the 8-bit texture, fewer, stronger puffs are used instead.
  */
 function fieldStrength(count, puffRadius, area, target) {
   if (count <= 0) return { count: 0, strength: 0 };
@@ -645,18 +718,24 @@ function fieldStrength(count, puffRadius, area, target) {
   return { count, strength: Math.min(strength, 1) };
 }
 
+/**
+ * The gravity that, with `drag` (1/s), settles to rising at `pxPerSecond`: a particle with drag d under gravity g
+ * reaches the speed g / d. px/frame².
+ */
+function riseGravity(pxPerSecond, drag) {
+  return -perFrame(pxPerSecond) * (drag / FPS);
+}
+
+/** `count` split into `parts` whole numbers that add up to it, at random. */
+function splitCount(count, parts) {
+  const out = new Array(parts).fill(Math.floor(count / parts));
+  for (let r = count - out[0] * parts; r > 0; r--) out[(Math.random() * parts) | 0]++;
+  return out;
+}
+
 /** Packs field amounts (0-1) into a tint: red = heat, green = smoke, blue = dust. */
 function fieldColor(heat, smoke, dust) {
   return (toByte(heat) << 16) | (toByte(smoke) << 8) | toByte(dust);
-}
-
-// Weed particles keep their speed: there is no drag yet. To end where a
-// Blastforge particle with drag would, a particle gets the steady speed that
-// covers the same distance.
-
-/** Steady speed, px per frame, that covers `distance` px in `seconds`. */
-function speedToCover(distance, seconds) {
-  return distance / (seconds * FPS);
 }
 
 /** Distance, px, that a particle launched at `speed` px/s covers in `seconds` with `drag` per second. */
@@ -664,9 +743,12 @@ function draggedDistance(speed, drag, seconds) {
   return (speed * (1 - Math.exp(-drag * seconds))) / drag;
 }
 
+/** A range of `half` either side of `center`. */
+const around = (center, half) => ({ min: center - half, max: center + half });
+/** A lifespan range in ms, from seconds. Lifespans are stored as Uint16 milliseconds on the CPU, floats on the GPU. */
+const ms = (minSeconds, maxSeconds) => ({ min: minSeconds * 1000, max: maxSeconds * 1000 });
 const perFrame = (pxPerSecond) => pxPerSecond / FPS;
 const perFrameSquared = (pxPerSecondSquared) => pxPerSecondSquared / (FPS * FPS);
-/** Lifespans are stored as Uint16 milliseconds. */
 const lifespanMs = (seconds) => clamp(Math.round(seconds * 1000), 1, 65535);
 
 const random = (min, max) => min + (max - min) * Math.random();

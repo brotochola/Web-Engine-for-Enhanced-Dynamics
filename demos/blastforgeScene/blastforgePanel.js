@@ -56,6 +56,10 @@ export function buildBlastPanel({ presets, settings, fieldLayer }) {
   panel.append(
     el('h1', { textContent: 'Blastforge' }),
     el('p', { textContent: 'Pixel-art explosions made of thousands of particles. Click the ground or press Space.' }),
+    el('p', {
+      textContent: 'Fire, smoke, dust and embers are GPU particles, sorted among the trees and rocks; sparks and ' +
+        'debris bounce on the CPU.',
+    }),
     el('h2', { textContent: 'Presets' })
   );
 
