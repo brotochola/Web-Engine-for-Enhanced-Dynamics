@@ -2865,6 +2865,7 @@ class PixiRenderer extends AbstractWorker {
   }
 
   resume() {
+    if (!this.isPaused) return; // running already: no second loop (AbstractWorker.resume)
     this.isPaused = false;
     this.lastFrameTime = performance.now();
     if (this.usesCustomScheduler) {

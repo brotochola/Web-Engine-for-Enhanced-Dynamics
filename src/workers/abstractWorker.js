@@ -129,6 +129,7 @@ export class AbstractWorker {
     this.fixedFps = 0; // >0 → setInterval at that rate AND constant sim dt; overrides noLimitFPS/RAF
     this.timeoutId = null; // Store timeout ID for clearing
     this.intervalId = null; // Store interval ID for fixedFps
+    this.rafId = 0; // The pending requestAnimationFrame: a pause cancels it
 
     // Script loading (ALL workers now load scripts and initialize components)
     // This flag now indicates if worker needs to CREATE GameObject instances (logic workers only)
@@ -429,11 +430,17 @@ export class AbstractWorker {
       // Run as fast as possible while still yielding to event loop
       this.timeoutId = setTimeout(this.gameLoop, 2);
     } else {
-      requestAnimationFrame(this.gameLoop);
+      this.rafId = requestAnimationFrame(this.gameLoop);
     }
   }
 
   _clearFrameSchedulers() {
+    // A frame left pending would run after a resume beside the loop resume() starts: a pause and resume within one
+    // frame (a fast swap takes 2-6 ms) made a second loop, every frame twice.
+    if (this.rafId !== 0) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = 0;
+    }
     if (this.timeoutId !== null) {
       clearTimeout(this.timeoutId);
       this.timeoutId = null;
@@ -1450,6 +1457,8 @@ export class AbstractWorker {
    * Resume the worker
    */
   resume() {
+    // Running already: its loop goes on (a second gameLoop here would be a second loop).
+    if (!this.isPaused) return;
     this.isPaused = false;
     this.lastFrameTime = performance.now(); // Reset timing to avoid large delta
     // The pause is not scheduler idle: the first frame after it reports 0 (M4).
