@@ -8429,6 +8429,27 @@
       "records": [
         "R-0649"
       ]
+    },
+    {
+      "id": "ED-5",
+      "title": "Visual editor: Predator and littleCity place their maps from scene files; the loader costs little at 2,000 entities",
+      "status": "answered",
+      "statusText": "Measured 2026-10-26: full loads by phase, and a position parity check before and after",
+      "date": "2026-10-26",
+      "result": "The scene-file loader turns Predator's 1,939 records into spawns in 2.9 ms and littleCity's 1,308 in 1.7 ms (warm); the spawn flush (149 and 86 ms) is the cost, as before. Every map entity keeps its pool index and position; Predator's random tree and rock sizes are drawn in another order.",
+      "area": "load",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md"
+      ],
+      "aliases": [
+        "map scene files",
+        "loader size check"
+      ],
+      "next": "None.",
+      "records": [
+        "R-0650"
+      ]
     }
   ],
   "records": [
@@ -14238,6 +14259,19 @@
       "text": "**ED-44: the editor open and idle (VISUAL_EDITOR_PLAN.md ED-44).** 2026-10-26.\n\n`tests/bench/editorIdleCost.mjs`: one headless Chrome page, the platformer on `levels/1-1.scene.json`, `debug: true`; 4 s to settle, then 8 s sampled with edit mode off, Shift+E, 4 s, 8 s sampled with it on and idle (nothing selected, the pointer still). Two runs (the second added the workers' work per frame).\n\n- **Allocation, KB/s, closed → open** (run 2; run 1 alike): page 60.7 → 45.0; physics 94.7 → 17.5; spatial 27.8 → 10.9; logic 42.4 → 24.0; pixi 589.4 → 543.4; particle 52.1 → 18.9; preRender 104.7 → 23.4.\n- **The page:** rAF interval 16.66 → 16.67 ms median (p95 17.04 both); updateInternal 0.13 → 0.06 ms (run 1: 0.08 → 0.09), within the noise.\n- **Workers, STEP_MS − WAIT_MS per frame:** physics 0.271 → 0.002 (no steps at scale 0), renderer 0.937 → 0.777, preRender 0.399 → 0.293, logic0 0.127 → 0.068, particle 0.086 → 0.048, spatial0 0.057 → 0.036.\n\n**Verdict: passed.** Nothing rises with the editor open: allocation and the workers' work drop (the world holds still), and the page's frame does not move beyond its noise. The editor's own per-frame work (the free camera, the debug UI's tick at its interval) is under what this can see (about 0.01 ms).",
       "commits": [
         "89aa51ca"
+      ]
+    },
+    {
+      "id": "R-0650",
+      "date": "2026-10-26",
+      "time": "21:07",
+      "timeFrom": "recorded",
+      "title": "ED-5: the maps from scene files; the loader 2.9 ms for Predator's 1,939 records, positions unchanged",
+      "verdict": "answered",
+      "text": "**ED-5: Predator's and littleCity's maps from scene files; the loader's size check (VISUAL_EDITOR_PLAN.md ED-5).** 2026-10-26.\n\n1707dcef moves Predator's rocks, trees and houses (1,939 records, 139 KB) and littleCity's houses and trees (1,308 records, 158 KB) from their JSON files to `levels/*.scene.json`, named by `defaultSceneFile`.\n\n- **Parity** (a scratch snapshot in Chromium before and after, full loads): every Rock, Tree, House, CityHouse and CityTree at the same pool index and position, with the same counts (24, 1,764, 151, 65, 1,243). Predator's trees and rocks take their sprite and scale from the scene's seeded rng in `onSpawned`, and they now spawn before the soldiers: their collider radii differ tree by tree (0 of 1,764 equal), from the same distribution (scale uniform in [1, 1.5)). littleCity's tree radii come from the file: all equal.\n- **The loader** (`sceneLoadPhases.mjs`, c6dc2d0b, which now times `_spawnSceneFileEntities`): 1 cold + 5 warm full loads, headless. Predator: the file's records into spawns **2.9 ms** [1.7..3.6] (cold 4.9), its `_flushCreateSpawns` 149 ms, `createNewGame` 6.1 ms (no JSON fetch any more), total 1.85 s warm. littleCity: **1.7 ms** [1.6..2.2] (cold 4.4), flush 86 ms, `preload` 14.8 ms, total 2.18 s warm.\n\n**Verdict: answered.** The scene-file loader adds about 3 ms to a load of 2,000 placed entities; their cost is the spawn flush, as when code spawned them. Predator's content is the same map with its random tree and rock sizes drawn in another order.",
+      "commits": [
+        "1707dcef",
+        "c6dc2d0b"
       ]
     }
   ],
