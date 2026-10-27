@@ -1,11 +1,12 @@
 // transformFields.js — the inspector's Transform rows (VISUAL_EDITOR_PLAN.md ED-53), first as in Unity: a placed
-// entity's position (its record's x, y), its rotation in degrees and its sprite's scale (the record's rotation in
-// radians, scaleX, scaleY: sceneFile.js; 0 and 1 are left out of the record). A value is typed (Enter or leaving the
-// field writes it), or dragged by its label: 1 px is a world unit, a degree or 0.01 of scale, ×10 with Shift, ×0.1
-// with Ctrl; a position snaps to the grid as a drag in the view does, unless Alt is held. As a drag goes, the moved or
-// turned box is drawn over the view (ghost.js: a body's pose is the physics worker's) and the sprite's scale shows on
-// the entity; the record is written once, on letting go: one undo, one respawn (EditMode.editSelected). Esc during a
-// drag drops it.
+// entity's position (its record's x, y), its rotation in degrees and its scale (the record's rotation in radians,
+// scaleX, scaleY: sceneFile.js; 0 and 1 are left out of the record). The scale multiplies the size the class gives the
+// entity, its sprite and its collider alike (ED-77: 1.5 makes a platform half as wide again). A value is typed
+// (Enter or leaving the field writes it), or dragged by its label: 1 px is a world unit, a degree or 0.01 of scale,
+// ×10 with Shift, ×0.1 with Ctrl; a position snaps to the grid as a drag in the view does, unless Alt is held. As a
+// drag goes, the moved or turned box is drawn over the view (ghost.js: a body's pose is the physics worker's) and the
+// sprite's scale shows on the entity; the record is written once, on letting go: one undo, one respawn
+// (EditMode.editSelected). Esc during a drag drops it.
 //
 // With several selected (ED-55), a value they do not share shows "—"; a typed value is written into each of them, a
 // dragged one moves each by the same amount, as one undo (EditMode.editMany).
@@ -104,6 +105,8 @@ export class TransformFields {
     this._dragStartX = 0;
     this._dragStartValue = 0;
     this._dragValue = 0;
+    /** A scale drag: the scale the class itself gave the sprite (the live one over the record's, ED-77). */
+    this._dragBase = 1;
     /** The entities a drag with several selected moves: their live indices. */
     this._dragIndices = [];
     this._build();
@@ -169,7 +172,7 @@ export class TransformFields {
         value.key === 'rotation'
           ? 'Drag to turn: 1 px is a degree; Shift ×10, Ctrl ×0.1'
           : value.row === 'Scale'
-            ? 'Drag to scale the sprite: 1 px is 0.01; Shift ×10, Ctrl ×0.1 (a collider keeps the size its params give)'
+            ? 'Drag to scale: 1 px is 0.01; Shift ×10, Ctrl ×0.1. Times the size its class gives it: the sprite and its collider'
             : `Drag to move along ${value.axis}: 1 px is a world unit, on the grid unless Alt is held; Shift ×10, Ctrl ×0.1`;
       const input = document.createElement('input');
       input.type = 'text';
@@ -219,6 +222,15 @@ export class TransformFields {
     this._drag = v;
     this._dragStartX = e.clientX;
     this._dragStartValue = this._dragValue = recordValue(this._record, VALUES[v].key);
+    this._dragBase = 1;
+    const i = this.selection.index;
+    const key = VALUES[v].key;
+    if ((key === 'scaleX' || key === 'scaleY') && i >= 0 && SpriteRenderer.active && SpriteRenderer.active[i] === 1) {
+      // The record's scale multiplies the class's (GameObject._spawnAt): what the class gave is the live scale over it.
+      const flip = SpriteRenderer.flip ? SpriteRenderer.flip[i] : 0;
+      const live = flip & (key === 'scaleX' ? 1 : 2) ? -SpriteRenderer[key][i] : SpriteRenderer[key][i];
+      if (this._dragStartValue !== 0) this._dragBase = live / this._dragStartValue;
+    }
     // Several selected: the ghost moves them all (ED-55).
     const names = this._names();
     const scene = this.selection.debugUI?.scene;
@@ -307,9 +319,10 @@ export class TransformFields {
         break;
       default: {
         if (!SpriteRenderer.active || SpriteRenderer.active[i] !== 1) return;
-        // A flip is the stored scale's sign (GameObject.setScale).
+        // The class's own scale times the record's (GameObject._spawnAt); a flip is the stored scale's sign.
         const flip = SpriteRenderer.flip ? SpriteRenderer.flip[i] : 0;
-        SpriteRenderer[key][i] = flip & (key === 'scaleX' ? 1 : 2) ? -value : value;
+        const scale = this._dragBase * value;
+        SpriteRenderer[key][i] = flip & (key === 'scaleX' ? 1 : 2) ? -scale : scale;
         SpriteRenderer.updateBounds?.(i);
         if (SpriteRenderer.renderDirty) SpriteRenderer.renderDirty[i] = 1;
       }

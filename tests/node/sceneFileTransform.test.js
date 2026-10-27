@@ -1,7 +1,8 @@
-// A scene file's entity record may give its rotation (radians) and its sprite's scale beside x and y (ED-53): the
-// spawn config carries them as `_rotation`, `_scaleX`, `_scaleY` before `_seed`, and GameObject._spawnAt sets them
-// after onSpawned, so the file's win over a class that sets its own (littleCity's houses reset their scale). Code
-// spawns are unchanged; onSpawned never sees the keys.
+// A scene file's entity record may give its rotation (radians) and its scale beside x and y (ED-53): the spawn config
+// carries them as `_rotation`, `_scaleX`, `_scaleY` before `_seed`, and GameObject._spawnAt applies them after
+// onSpawned: the file's rotation wins over a class that sets its own, and its scale multiplies the size the class gave
+// (ED-77: the sprite's scale, a platform stretched to its width, and the collider's shape). Code spawns are unchanged;
+// onSpawned never sees the keys.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -28,7 +29,7 @@ test('the format: numbers; the writer puts them after x and y, before config and
   assert.match(text, /\{ "name": "A", "class": "Rock", "x": 0, "y": 0, "rotation": 1, "scaleX": 2, "config": \{ "k": 1 \}, "seed": 3 \}/);
 });
 
-test('_spawnAt sets the file’s rotation and scale after onSpawned, over what the class set; code spawns unchanged', () => {
+test('_spawnAt: the file’s rotation over what the class set, its scale times the class’s; code spawns unchanged', () => {
   const N = 3;
   Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(N)), N);
   for (const k of ['x', 'y', 'rotation', 'rotC', 'rotS']) Transform[k] = new Float32Array(N);
@@ -47,7 +48,7 @@ test('_spawnAt sets the file’s rotation and scale after onSpawned, over what t
     onSpawned(config) {
       seen[index] = Object.keys(config);
       this.rotation = 0; // a class that sets its own
-      this.setScale(1, 1);
+      this.setScale(3, 1.5); // and sizes its sprite (a platform: its width over the texture's)
     },
   }));
   const top = new Int32Array(new SharedArrayBuffer(16));
@@ -59,7 +60,7 @@ test('_spawnAt sets the file’s rotation and scale after onSpawned, over what t
   GameObject.forceProcessOnLogicWorker = null;
   try {
     GameObject._spawnAt(House, spawnConfigOf({ name: 'H1', class: 'House', x: 0, y: 0, rotation: 0.75, scaleX: 2 }), 0);
-    assert.deepEqual([pooled[0].rotation, pooled[0].scaleX, pooled[0].scaleY], [0.75, 2, 1], 'the file’s, scaleY left as the class set it');
+    assert.deepEqual([pooled[0].rotation, pooled[0].scaleX, pooled[0].scaleY], [0.75, 6, 1.5], 'the file’s turn; twice the class’s width, its height as the class set it');
     assert.deepEqual(seen[0], ['x', 'y'], 'onSpawned sees none of the file’s keys');
     GameObject._spawnAt(House, { x: 0, y: 0, rotation: 0.75 }, 1);
     assert.equal(pooled[1].rotation, 0, 'a code spawn: onSpawned has the last word, as before');

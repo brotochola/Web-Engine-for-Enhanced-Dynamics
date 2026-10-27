@@ -98,6 +98,49 @@ function isMainThread() {
   return typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
 }
 
+/**
+ * A scene file's scale on a placed entity's collider (ED-77), as on its sprite: a box's size, a circle's radius (by the
+ * larger factor: it stays round), a polygon's points (its normals made again; a mirror reverses the winding), the
+ * offset and the visual range. A compound body's extra pieces and a chain keep their size.
+ * @param {Collider} collider - the entity's, after onSpawned set it
+ * @param {number} sx
+ * @param {number} sy
+ */
+export function scalePlacedCollider(collider, sx, sy) {
+  const i = collider.index;
+  const ax = Math.abs(sx);
+  const ay = Math.abs(sy);
+  const larger = ax > ay ? ax : ay;
+  switch (Collider.shapeType[i]) {
+    case ShapeType.Box:
+      collider.width = Collider.width[i] * ax;
+      collider.height = Collider.height[i] * ay;
+      break;
+    case ShapeType.Circle:
+      collider.radius = Collider.radius[i] * larger;
+      break;
+    case ShapeType.Polygon: {
+      const n = Collider.polyCount[i];
+      if (n < 3 || collider.fixtureCount > 0) break; // makePolygon would drop a compound body's pieces
+      const base = Collider.polyBase(i);
+      const mirror = (sx < 0) !== (sy < 0);
+      const points = new Array(n * 2);
+      for (let k = 0; k < n; k++) {
+        const at = base + (mirror ? n - 1 - k : k);
+        points[2 * k] = Collider.polyVertexX[at] * sx;
+        points[2 * k + 1] = Collider.polyVertexY[at] * sy;
+      }
+      Collider.makePolygon(i, points);
+      break;
+    }
+    default:
+      break;
+  }
+  collider.offsetX = Collider.offsetX[i] * sx;
+  collider.offsetY = Collider.offsetY[i] * sy;
+  Collider.visualRange[i] *= larger;
+}
+
 /** Classes already warned that despawn(index) got another class's entity. */
 const _warnedDespawnOtherClass = new Set();
 function warnDespawnOtherClassOnce(className, index) {
@@ -3021,6 +3064,15 @@ export class GameObject {
         }
       }
 
+      // A scene file's scale (above) multiplies what onSpawned set: the sprite as the class sized and flipped it (a
+      // platform stretches a texture to its width), and the collider's shape, so the entity is that much larger as it
+      // draws and as it collides (ED-77). Before the mass is taken from the collider.
+      if (placedScaleX !== undefined || placedScaleY !== undefined) {
+        const sx = placedScaleX !== undefined ? placedScaleX : 1;
+        const sy = placedScaleY !== undefined ? placedScaleY : 1;
+        instance.setScale(instance.scaleX * sx, instance.scaleY * sy);
+        if (has.Collider && Collider.active[i]) scalePlacedCollider(instance.collider, sx, sy);
+      }
       if (has.RigidBody && RigidBody.active[i]) {
         RigidBody.syncMassFromCollider(i);
       }
@@ -3029,11 +3081,8 @@ export class GameObject {
       } else if (spawnConfig.layer != null) {
         instance.setLayer(spawnConfig.layer);
       }
-      // A scene file's rotation and scale (above), over what onSpawned set.
+      // A scene file's rotation (above), over what onSpawned set.
       if (placedRotation !== undefined) instance.rotation = placedRotation;
-      if (placedScaleX !== undefined || placedScaleY !== undefined) {
-        instance.setScale(placedScaleX !== undefined ? placedScaleX : instance.scaleX, placedScaleY !== undefined ? placedScaleY : instance.scaleY);
-      }
 
       const entityComponentMap = EntityClass._componentClassMap || {};
       for (const name in entityComponentMap) {

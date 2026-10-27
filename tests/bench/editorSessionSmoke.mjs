@@ -8,6 +8,7 @@
  *   open       the editor page shows the level, and the toolbar's Edit enters edit mode
  *   filter     the scene list's filter keeps the platforms; a click on a row selects it, F frames it
  *   transform  typed into the inspector: a position, a rotation in degrees, a scale; one undo each, the entity respawned
+ *              (the scale times the class's: the platform's sprite and its collider half as wide again, ED-77)
  *   paste      Ctrl+C, then Ctrl+V with the pointer over the view: a renamed copy at the pointer (moved from the original
  *              in steps of 16), its turn and scale kept
  *   place      a class dragged from the palette onto the view lands where it is dropped, selected
@@ -84,13 +85,15 @@ const state = (page) =>
     const game = win.game;
     const editMode = game.debugUI.editMode;
     const scene = game.currentScene;
-    const { Transform, Camera } = win.WEED;
+    const { Transform, Camera, SpriteRenderer, Collider } = win.WEED;
     const live = {};
     for (const record of scene.sceneFile.entities) {
       const packed = scene._namedEntities.get(record.name);
       const i = packed === undefined ? -1 : Math.floor(packed / 65536);
       live[record.name] =
-        i >= 0 && Transform.active[i] === 1 ? { x: Transform.x[i], y: Transform.y[i], rotation: Transform.rotation[i] } : null;
+        i >= 0 && Transform.active[i] === 1
+          ? { x: Transform.x[i], y: Transform.y[i], rotation: Transform.rotation[i], sprite: SpriteRenderer.scaleX[i], width: Collider.width[i] }
+          : null;
     }
     return {
       editing: editMode.active,
@@ -269,13 +272,15 @@ async function main() {
 
     // ---- transform ----
     const undoBefore = s.undo.length;
+    const unscaled = s.live.Platform3;
     await typeInto(page, 'Position X', '2240');
     s = await until(page, (s) => recordOf(s, 'Platform3').x === 2240 && near(s.live.Platform3?.x ?? 0, 2240, 0.5));
     await typeInto(page, 'Rotation in degrees', '30');
     s = await until(page, (s) => near(recordOf(s, 'Platform3').rotation, TURN, 1e-3) && near(s.live.Platform3?.rotation ?? 0, TURN, 1e-3));
     await typeInto(page, 'Scale X', '1.5');
-    s = await until(page, (s) => recordOf(s, 'Platform3').scaleX === 1.5);
+    s = await until(page, (s) => recordOf(s, 'Platform3').scaleX === 1.5 && near(s.live.Platform3?.width ?? 0, unscaled.width * 1.5, 0.01));
     const turned = recordOf(s, 'Platform3');
+    const scaled = s.live.Platform3;
     check(
       'transform',
       turned.x === 2240 &&
@@ -283,9 +288,12 @@ async function main() {
         turned.scaleX === 1.5 &&
         near(s.live.Platform3?.x ?? 0, 2240, 0.5) &&
         near(s.live.Platform3?.rotation ?? 0, TURN, 1e-3) &&
+        near(scaled.sprite, unscaled.sprite * 1.5, 1e-3) &&
+        near(scaled.width, unscaled.width * 1.5, 0.01) &&
         s.undo.length === undoBefore + 3,
       `record x ${turned.x}, rotation ${turned.rotation.toFixed(4)}, scaleX ${turned.scaleX}; live x ${s.live.Platform3?.x}, ` +
-        `rotation ${s.live.Platform3?.rotation?.toFixed(4)}; undo ${s.undo.slice(undoBefore).join(' | ')}`,
+        `rotation ${s.live.Platform3?.rotation?.toFixed(4)}, sprite scale ${unscaled.sprite} → ${scaled.sprite}, ` +
+        `collider ${unscaled.width} → ${scaled.width} wide; undo ${s.undo.slice(undoBefore).join(' | ')}`,
     );
     await shot(page, 'transform');
 

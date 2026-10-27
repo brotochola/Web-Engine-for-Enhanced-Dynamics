@@ -5,6 +5,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Transform } from '../../src/components/transform.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { TransformFields, formatValue, recordValue, writeValue } from '../../src/core/debug/editor/transformFields.js';
 import { TransformGhost } from '../../src/core/debug/editor/ghost.js';
 
@@ -131,6 +132,32 @@ test('a drag on a label draws the moved or turned box as it goes, snapped, and w
     assert.equal(ghost.active, false, 'Esc: dropped');
     rotationAxis.onpointerup();
     assert.deepEqual(writes, ['move Block1'], 'a cancelled drag writes nothing');
+  });
+});
+
+test('a scale drag shows the class’s own scale times the value (ED-77): a platform stretched to its width stays so', () => {
+  withDocument(() => {
+    SpriteRenderer.initializeArrays(new SharedArrayBuffer(SpriteRenderer.getBufferSize(2)), 2);
+    SpriteRenderer.active[0] = 1;
+    // A platform 280 wide: its class scales an 8 px texture by 35; the record already scales it by 2.
+    SpriteRenderer.scaleX[0] = 70;
+    const record = { name: 'Block1', class: 'Block', x: 300, y: 200, scaleX: 2 };
+    const { fields, axes, writes } = fieldsFor(record);
+    const scaleXAxis = axes[3];
+    scaleXAxis.onpointerdown(pointer(0));
+    scaleXAxis.onpointermove(pointer(50));
+    assert.ok(Math.abs(SpriteRenderer.scaleX[0] - 35 * 2.5) < 1e-4, `2.5 times the class’s 35, not 2.5: ${SpriteRenderer.scaleX[0]}`);
+    fields.cancelDrag();
+    assert.equal(SpriteRenderer.scaleX[0], 70, 'Esc: as the record has it');
+    assert.deepEqual(writes, []);
+
+    SpriteRenderer.flip[0] = 1; // flipped: the stored scale's sign
+    SpriteRenderer.scaleX[0] = -70;
+    scaleXAxis.onpointerdown(pointer(0));
+    scaleXAxis.onpointermove(pointer(-50));
+    assert.ok(Math.abs(SpriteRenderer.scaleX[0] + 35 * 1.5) < 1e-4, `still flipped: ${SpriteRenderer.scaleX[0]}`);
+    scaleXAxis.onpointerup();
+    assert.deepEqual([writes, record.scaleX], [['scale Block1'], 1.5]);
   });
 });
 

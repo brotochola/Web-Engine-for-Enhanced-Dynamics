@@ -171,7 +171,11 @@ export interface SceneFileEntity {
   y: number;
   /** Its rotation in radians, set after its onSpawned (the file's wins over what the class sets). */
   rotation?: number;
-  /** Its sprite's scale (a collider keeps the size its params give), set after its onSpawned; 1 when left out. */
+  /**
+   * Its scale, 1 when left out: after its onSpawned it multiplies the size the class gave it, its sprite's scale and its
+   * collider (a box's size, a circle's radius, a polygon's points, the offset); a compound body's extra pieces and a
+   * chain keep theirs.
+   */
   scaleX?: number;
   scaleY?: number;
   /** The spawn params that differ from the class's defaults; an entity param holds another entity's name. */
