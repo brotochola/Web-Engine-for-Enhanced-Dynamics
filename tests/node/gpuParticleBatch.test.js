@@ -22,7 +22,7 @@ import { Texture } from '../../src/vendor/pixi.min.js';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WGSL = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.wgsl'), 'utf8');
 
-function setup(maxParticles = 64 * 3) {
+function setup(maxParticles = 64 * 3, batchOpts = {}) {
   const layers = { smoke: { kind: LAYER_KIND.GPU_PARTICLES, maxParticles } };
   Layer.reset();
   Layer.initializeFromConfig(layers, { decals: {}, castedShadows: {}, entities: {}, lighting: {} });
@@ -40,6 +40,7 @@ function setup(maxParticles = 64 * 3) {
     lutSource: Texture.WHITE.source,
     animStartSource: Texture.WHITE.source,
     blendMode: 'normal',
+    ...batchOpts,
   });
   return {
     batch,
@@ -71,6 +72,46 @@ test('a frame uploads only the records published since the last one, out of a pr
     const id = draw.buffer._updateID;
     batch.update(Time.simNowMs);
     assert.equal(draw.buffer._updateID, id, 'nothing new, nothing uploaded');
+  } finally {
+    restore();
+  }
+});
+
+/**
+ * Pixi's WebGL buffer upload (GlBufferSystem.updateBuffer in src/vendor/pixi.min.js): the whole array the first
+ * time, then only the buffer's last pending range, and nothing when that range already went up.
+ */
+function glBufferModel() {
+  const gl = { data: null, updateID: -1 };
+  const upload = (buffer) => {
+    if (gl.data === null) {
+      gl.data = Float32Array.from(buffer.data);
+      gl.updateID = buffer._updateID;
+      return;
+    }
+    if (buffer._updateID === gl.updateID) return;
+    gl.updateID = buffer._updateID;
+    const off = buffer._updateOffset / 4;
+    const len = (buffer._updateSize || buffer.data.byteLength) / 4;
+    gl.data.set(buffer.data.subarray(off, off + len), off);
+  };
+  return { gl, upload };
+}
+
+test('every published range reaches the GPU, in a frame that draws nothing of the ring too', { concurrency: false }, () => {
+  const { gl, upload } = glBufferModel();
+  const { batch, draw, restore } = setup(64 * 3, { flush: upload });
+  try {
+    emit(8, 1000);
+    batch.update(Time.simNowMs);
+    upload(draw.buffer); // drawn
+    emit(10, 1000);
+    batch.update(Time.simNowMs); // nothing of this ring drawn: a hidden layer, or groups all off-screen
+    emit(5, 1000);
+    batch.update(Time.simNowMs);
+    upload(draw.buffer); // drawn
+    const floats = (23 * GPU_RECORD_BYTES) / 4;
+    assert.deepEqual(Array.from(gl.data.subarray(0, floats)), Array.from(draw.ring.records.subarray(0, floats)));
   } finally {
     restore();
   }

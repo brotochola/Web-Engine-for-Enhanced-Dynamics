@@ -92,7 +92,7 @@ export function packAnimStartLookup(animationFrameStart, whiteTexture) {
 
 /** One ring's draw state on the renderer. */
 class RingDraw {
-  constructor(ring, shader, state, label) {
+  constructor(ring, shader, state, label, flush) {
     this.ring = ring;
     this.shader = shader;
     this.mirror = new Float32Array(ring.records.length);
@@ -101,6 +101,8 @@ class RingDraw {
       label: `${label}-records`,
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
     });
+    // Sends the buffer's pending range to the GPU now (GpuParticleLayerBatch's `flush`), or null.
+    this.flush = flush || null;
     this.quad = new Buffer({ data: QUAD, usage: BufferUsage.VERTEX });
     this.index = new Buffer({ data: QUAD_INDEX, usage: BufferUsage.INDEX });
     // Two meshes: a live window that wraps the ring end is drawn as two ranges.
@@ -148,6 +150,9 @@ class RingDraw {
     } else {
       this.buffer.update(head * GPU_RECORD_BYTES, from * GPU_RECORD_BYTES);
     }
+    // A buffer keeps one pending range; the next update replaces it. Sent now, a frame that draws nothing of this
+    // ring cannot lose what it published.
+    if (this.flush !== null) this.flush(this.buffer);
     this.uploaded = published >>> 0;
   }
 
@@ -246,6 +251,10 @@ export class GpuParticleLayerBatch {
    *   layer's zIndex; a look layer still draws its rings into its density target
    * @param {boolean} [opts.look] the layer has a look shader
    * @param {string} [opts.label]
+   * @param {(buffer: Buffer) => void} [opts.flush] uploads a ring's newly published range at once (the Pixi
+   *   worker passes its renderer's `buffer.updateBuffer`). Pixi's WebGL buffers upload their last range only when
+   *   next drawn, so without it a ring that draws nothing in a frame (a hidden layer; with `sorted`, groups that
+   *   are all off-screen) loses that frame's records.
    */
   constructor(opts) {
     this.info = opts.info;
@@ -267,7 +276,7 @@ export class GpuParticleLayerBatch {
     const shaders = opts.shaders || {};
     for (let r = 0; r < this.info.rings.length; r++) {
       const shader = this._makeShader(shaders, opts, `${this.label}-ring${r}`);
-      const draw = new RingDraw(this.info.rings[r], shader, this.state, `${this.label}-ring${r}`);
+      const draw = new RingDraw(this.info.rings[r], shader, this.state, `${this.label}-ring${r}`, opts.flush);
       for (const m of draw.meshes) {
         m.blendMode = this.state.blendMode;
         this.container.addChild(m);

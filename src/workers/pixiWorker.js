@@ -7035,6 +7035,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           pixelSnap: !!config.gpuParticles?.pixelSnap,
           look: looks,
           label: `gpu-particles-${layerName}`,
+          // New records go up as they are published, drawn this frame or not (WebGL uploads only at the next draw).
+          flush: (buffer) => this.pixiApp.renderer.buffer.updateBuffer(buffer),
         });
         gpuBatch.container.blendMode = blend;
         this._gpuParticleBatches.push(gpuBatch);
