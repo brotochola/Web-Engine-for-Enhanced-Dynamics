@@ -332,8 +332,18 @@ async function main() {
     const view = await box(page, '#game');
     const pasteAt = { x: view.x + view.w * 0.25, y: view.y + view.h * 0.2 };
     await page.mouse.move(pasteAt.x, pasteAt.y);
-    await page.waitForTimeout(200);
     const pasteWorld = await worldAt(page, pasteAt);
+    // The game reads the pointer at its own ticks: paste once it has this point (under load a fixed wait lost the race).
+    await page
+      .waitForFunction(
+        ({ x, y }) => {
+          const mouse = document.getElementById('game').contentWindow.WEED.Mouse;
+          return mouse.isPresent && Math.abs(mouse.x - x) < 2 && Math.abs(mouse.y - y) < 2;
+        },
+        pasteWorld,
+        { timeout: 5000 },
+      )
+      .catch(() => {});
     const count = s.records.length;
     await page.keyboard.press('Control+c');
     await page.keyboard.press('Control+v');
