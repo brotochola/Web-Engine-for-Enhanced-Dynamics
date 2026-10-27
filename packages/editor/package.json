@@ -1,0 +1,33 @@
+{
+  "name": "@weed.js/editor",
+  "version": "0.13.0",
+  "description": "The WeedJS visual editor: place, tune and play your levels in the browser, beside your running game",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/weed.editor.esm.min.js",
+  "exports": {
+    ".": "./dist/weed.editor.esm.min.js",
+    "./script": "./dist/weed.editor.min.js",
+    "./server": "./server/index.js"
+  },
+  "files": [
+    "dist",
+    "shell",
+    "server",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@weed.js/engine": ">=0.13.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics.git",
+    "directory": "packages/editor"
+  },
+  "keywords": [
+    "weedjs",
+    "game",
+    "editor",
+    "level editor"
+  ]
+}

@@ -17,12 +17,15 @@ import { fileURLToPath } from 'url';
 import { devBanner } from './devBanner.js';
 import { handleDevRoute } from './devRoutes.js';
 import { serveStaticFile, listenHost } from './staticFiles.js';
+import { serveEditorPage } from './editorPage.js';
 
 const SW_MODE = process.argv.includes('--sw');
 const PORT = Number(process.env.PORT) || (SW_MODE ? 8090 : 8000);
 // This machine only, unless --host or WEED_HOST opens it to the network (review N-80: it listened on every interface).
 const HOST = listenHost(process.argv, process.env);
 const ISOLATION_WORKER = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/workers/isolationServiceWorker.js');
+/** The editor page's files, served at /__weed/editor/ (server/editorPage.js). */
+const EDITOR_SHELL = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/core/debug/editor/shell');
 /** What makes a page cross-origin isolated; left out in --sw mode, where weed-sw.js adds it. */
 const ISOLATION_HEADERS = SW_MODE
   ? {}
@@ -89,8 +92,9 @@ function watchForReload() {
 const server = http.createServer((req, res) => {
   if (LOG_REQUESTS) console.log(`${req.method} ${req.url}`);
 
-  // The editor saves scene files and lists them (localhost only).
+  // The editor saves scene files and lists them (localhost only), and its page is at /__weed/editor/.
   if (handleDevRoute(req, res, process.cwd(), ISOLATION_HEADERS)) return;
+  if (serveEditorPage(req, res, { shellDir: EDITOR_SHELL, headers: ISOLATION_HEADERS })) return;
 
   const urlPath = req.url.split('?')[0];
 

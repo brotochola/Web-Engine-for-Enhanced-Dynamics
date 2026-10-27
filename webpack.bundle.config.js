@@ -51,7 +51,12 @@ const debugStubAliases = isProd ? {
         path.resolve(__dirname, 'src/core/debug/stubs/hotReload.js'),
     [path.resolve(__dirname, 'src/core/debug/spawnParamsCheck.js')]:
         path.resolve(__dirname, 'src/core/debug/stubs/spawnParamsCheck.js'),
-} : {};
+} : {
+    // The editor ships on its own (@weed.js/editor, VISUAL_EDITOR_PLAN.md ED-29): the debug bundle finds it at run
+    // time (editorLoader.bundle.js) and carries none of its code.
+    [path.resolve(__dirname, 'src/core/debug/editorLoader.js')]:
+        path.resolve(__dirname, 'src/core/debug/editorLoader.bundle.js'),
+};
 
 // UMD build (for <script> tags and CommonJS)
 const umdConfig = {
