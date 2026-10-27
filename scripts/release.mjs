@@ -91,7 +91,7 @@ function main() {
   const pinned = template.replace(/("@weed\.js\/(?:engine|editor)":\s*")[^"]*(")/g, `$1^${version}$2`);
   if (!/"@weed\.js\/engine":\s*"\^/.test(pinned)) fail(`no @weed.js/engine range in ${TEMPLATE_PACKAGE}`);
   fs.writeFileSync(templatePath, pinned);
-  // The editor reads the engine's own modules (WEED.editorKit): it is published for this very engine.
+  // The editor reads the engine's own modules (WEED_EDITOR_KIT): it is published for this very engine.
   const editorPath = path.join(root, EDITOR_PACKAGE);
   const editor = JSON.parse(fs.readFileSync(editorPath, 'utf8'));
   editor.version = version;

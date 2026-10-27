@@ -2,6 +2,8 @@
 // @weed.js/editor package's script (weed.editor.min.js, which sets globalThis.WEED_EDITOR), or its ES module through an
 // import map entry for '@weed.js/editor'. The bundles alias editorLoader.js to this file.
 
+import { nativeImport } from '../../util/sceneScript.js';
+
 /** Said once when the editor is asked for and is not there. */
 export const EDITOR_MISSING =
   'WeedJS: the editor is not loaded. Install @weed.js/editor (npm i -D @weed.js/editor) and add its ' +
@@ -11,7 +13,8 @@ export const EDITOR_MISSING =
 export async function loadEditorModule() {
   if (globalThis.WEED_EDITOR) return globalThis.WEED_EDITOR;
   try {
-    return await import(/* webpackIgnore: true */ '@weed.js/editor');
+    // The page's import, not the bundler's (it would resolve the name at build time, and find nothing).
+    return await nativeImport('@weed.js/editor');
   } catch {
     throw new Error(EDITOR_MISSING);
   }

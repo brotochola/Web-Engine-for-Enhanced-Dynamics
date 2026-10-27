@@ -8,8 +8,10 @@ import { injectStyles, createTab } from './ui/debugDom.js';
 import { StatsCollector } from './stats/statsCollector.js';
 import { DebugCanvas } from './rendering/debugCanvas.js';
 import { ToolManager } from './tools/toolManager.js';
-import { EditMode } from './editor/editMode.js';
-import { findEditorHost, HostedEditor } from './editor/editorHost.js';
+import { findEditorHost } from './editorPage.js';
+import { loadEditorModule } from './editorLoader.js';
+import { editorKit } from './editorKit.js';
+import { Time, sanitizeTimeScale } from '../timeScale.js';
 import { DebugDraw } from './debugDraw.js';
 import { DEBUG_DEFAULTS } from '../../util/configDefaults.js';
 
@@ -24,6 +26,10 @@ import { LayersPanel } from './panels/layersPanel.js';
 import { NavigationPanel } from './panels/navigationPanel.js';
 import { MemoryPanel } from './panels/memoryPanel.js';
 import { SavesPanel } from './panels/savesPanel.js';
+
+// The engine's modules the editor reads (editorKit.js, ED-29): a debug build publishes them as it loads, before the
+// @weed.js/editor script that reads them.
+if (!globalThis.WEED_EDITOR_KIT) globalThis.WEED_EDITOR_KIT = editorKit;
 
 /**
  * DebugUI — Self-contained debug overlay managed by GameEngine.
@@ -61,11 +67,19 @@ export class DebugUI {
     // Sub-systems
     this.stats = new StatsCollector();
     this.canvas = new DebugCanvas(this);
-    this.editMode = new EditMode(this);
+    /**
+     * The editor's edit mode (editor/editMode.js), null until the editor is loaded: it ships on its own
+     * (@weed.js/editor, ED-29) and loads the first time it is asked for (ensureEditor).
+     */
+    this.editMode = null;
+    this._editorLoad = null;
     this.tools = new ToolManager(this);
-    // In the editor page (D9): its docks hold the editor's panels and this bar. Null in a page of its own.
-    const host = findEditorHost();
-    this.hosted = host === null ? null : new HostedEditor(this, host);
+    // In the editor page (D9): its docks hold the editor's panels and this bar. Null in a page of its own, and until
+    // the editor has loaded.
+    this.hosted = null;
+    this._host = findEditorHost();
+    /** Console calls that came before the editor page's console was there (the editor still loading), for it. */
+    this._consoleBacklog = [];
 
     // Panels (keyed by section id for the accordion)
     this.panels = {
@@ -102,7 +116,44 @@ export class DebugUI {
       if (this.container) this.container.style.visibility = '';
     });
     this.tools.init();
-    if (this.hosted !== null) this.hosted.connect();
+    if (this._host !== null) this.ensureEditor();
+  }
+
+  /**
+   * The editor, loaded the first time it is asked for (Shift+E, the Edit and Stop buttons, the editor page): from
+   * source its modules, in the bundles the @weed.js/editor package (editorLoader.js). In the editor page it connects
+   * to the page once loaded.
+   * @returns {Promise<object|null>} the edit mode, or null when the editor is not there (said once on the console)
+   */
+  ensureEditor() {
+    if (this._editorLoad === null) {
+      this._editorLoad = loadEditorModule().then(
+        (editor) => {
+          this.editMode = new editor.EditMode(this);
+          if (this._host !== null) this._connectHosted(editor);
+          return this.editMode;
+        },
+        (error) => {
+          console.warn(error.message);
+          return null;
+        },
+      );
+    }
+    return this._editorLoad;
+  }
+
+  /** In the editor page: fill its docks; a scene already running is attached to it now. */
+  _connectHosted(editor) {
+    this.hosted = new editor.HostedEditor(this, this._host);
+    this.hosted.connect();
+    const backlog = this._consoleBacklog;
+    this._consoleBacklog = [];
+    for (const [source, entry] of backlog) this.onConsoleEntry(source, entry);
+    const scene = this.scene;
+    if (!scene) return;
+    scene._setConsoleForward?.(true);
+    this.hosted.onAttach(scene);
+    if (this.gameEngine?.state === 1) this.hosted.onSceneReady();
   }
 
   // ========================================
@@ -139,13 +190,13 @@ export class DebugUI {
 
     this.canvas.syncLoop();
     this.start();
-    this.editMode.onAttach();
+    this.editMode?.onAttach();
     this.hosted?.onAttach(scene);
   }
 
   detach() {
     this.hosted?.onDetach();
-    this.editMode.onDetach();
+    this.editMode?.onDetach();
     this.stop();
     this.canvas.detach();
     this.tools.attach(); // resets tool state
@@ -178,9 +229,9 @@ export class DebugUI {
     if (!this.scene) return false;
     if (!this.container?.classList.contains('hidden')) return true;
     const tools = this.tools;
+    const editMode = this.editMode;
     return !!(
-      this.editMode.active ||
-      this.editMode.selection.index >= 0 ||
+      (editMode !== null && (editMode.active || editMode.selection.index >= 0)) ||
       tools.inspectorActive ||
       tools.activeSpawnerType ||
       tools.eraserActive ||
@@ -221,32 +272,40 @@ export class DebugUI {
 
   /** Whether edit mode is on: GameEngine then hands keys to onEditKey, not to the game. */
   get editing() {
-    return this.editMode.active;
+    return this.editMode !== null && this.editMode.active;
   }
 
-  /** Shift+E and the Scene panel's Edit button. */
+  /** Shift+E and the Scene panel's Edit button: the editor is loaded the first time. */
   toggleEditMode() {
-    this.editMode.toggle();
+    if (this.editMode !== null) this.editMode.toggle();
+    else this.ensureEditor().then((editMode) => editMode?.toggle());
+  }
+
+  /** Stop (ED-16), from the Scene panel. */
+  stopPlaying() {
+    this.ensureEditor().then((editMode) => editMode?.stop());
   }
 
   /** @param {KeyboardEvent} e @returns {boolean} whether the editor took it */
   onEditKey(e) {
-    return this.editMode.onKey(e);
+    return this.editMode !== null && this.editMode.onKey(e);
   }
 
   /** Scene._fastSwap, after the new content and before the workers resume. */
   onContentSwapped() {
-    this.editMode.onContentSwapped();
+    this.editMode?.onContentSwapped();
   }
 
   /** A scene made its workers (Scene.init): in the editor page, their console calls go to its console (ED-18). */
   onWorkersCreated(scene) {
-    if (this.hosted !== null) scene._setConsoleForward(true);
+    if (this._host !== null) scene._setConsoleForward(true);
   }
 
   /** A worker's console call (Scene, ED-18): the editor page's console shows it. */
   onConsoleEntry(source, entry) {
-    this.hosted?.console?.add(source, entry.level, entry.text);
+    const console = this.hosted?.console;
+    if (console) console.add(source, entry.level, entry.text);
+    else if (this._host !== null && this._consoleBacklog.length < 500) this._consoleBacklog.push([source, entry]);
   }
 
   /** A game code error a worker reported (Scene._onEntityError): the editor page's console lists it. */
@@ -261,18 +320,21 @@ export class DebugUI {
 
   /** The speed the game plays at: Time.scale, or while editing, the scale leaving edit mode puts back. */
   get playSpeed() {
-    return this.editMode.playSpeed;
+    return this.editMode !== null ? this.editMode.playSpeed : Time.scale;
   }
 
   set playSpeed(value) {
-    this.editMode.playSpeed = value;
+    if (this.editMode !== null) this.editMode.playSpeed = value;
+    else Time.scale = sanitizeTimeScale(value);
   }
 
   destroy() {
     this.hosted?.destroy();
-    this.editMode.exit();
-    this.editMode.selection.destroy();
-    this.editMode.palette.destroy();
+    if (this.editMode !== null) {
+      this.editMode.exit();
+      this.editMode.selection.destroy();
+      this.editMode.palette.destroy();
+    }
     this.stop();
     this.canvas.destroy();
     this.tools.destroy();
@@ -294,7 +356,7 @@ export class DebugUI {
       this.panels[this.openSection].update();
     }
 
-    this.editMode.update();
+    this.editMode?.update();
     this.hosted?.update();
     this.tools.update();
   }

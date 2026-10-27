@@ -2,7 +2,7 @@
  * Webpack config for the editor (VISUAL_EDITOR_PLAN.md ED-29): src/core/debug/editor/ as the @weed.js/editor
  * package's weed.editor files, built by scripts/buildEditor.js into packages/editor/dist/.
  *
- * Every import the editor makes from outside its folder is the engine's own module, read from WEED.editorKit
+ * Every import the editor makes from outside its folder is the engine's own module, read from WEED_EDITOR_KIT
  * (src/core/debug/editorKit.js, published by a debug build of the engine), never a copy: the editor and the game
  * share one Time, one Camera, the same component arrays. An import the kit does not publish fails the build, naming it.
  *
@@ -40,7 +40,7 @@ export function kitExternal(keys) {
     if (!keys.has(key)) {
       return callback(new Error(`the editor imports src/${key}, which src/core/debug/editorKit.js does not publish: add it there`));
     }
-    return callback(null, `globalThis.WEED.editorKit[${JSON.stringify(key)}]`, 'var');
+    return callback(null, `globalThis.WEED_EDITOR_KIT[${JSON.stringify(key)}]`, 'var');
   };
 }
 

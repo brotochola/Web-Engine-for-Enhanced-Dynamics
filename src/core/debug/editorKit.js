@@ -1,6 +1,6 @@
 // editorKit.js — the engine modules the editor uses (VISUAL_EDITOR_PLAN.md ED-29), by their path under src/. The
 // editor (src/core/debug/editor/) ships on its own, as the @weed.js/editor package (weed.editor); a debug build of the
-// engine publishes these as WEED.editorKit, and the editor's bundle resolves every import from outside its folder to
+// engine publishes these as WEED_EDITOR_KIT, and the editor's bundle resolves every import from outside its folder to
 // them (webpack.editor.config.js), so the editor and the game share one Time, one Camera, the same component arrays.
 // From source the editor imports the modules themselves. editorKit.test.js checks that every import the editor makes
 // from outside its folder is here.
@@ -22,6 +22,7 @@ import * as colliderUtils from '../../util/colliderUtils.js';
 import * as floatingPanel from './ui/floatingPanel.js';
 import * as debugDom from './ui/debugDom.js';
 import * as hotReload from './hotReload.js';
+import * as editorPage from './editorPage.js';
 
 /** Module namespaces by their path under src/. */
 export const editorKit = Object.freeze({
@@ -42,4 +43,5 @@ export const editorKit = Object.freeze({
   'core/debug/ui/floatingPanel.js': floatingPanel,
   'core/debug/ui/debugDom.js': debugDom,
   'core/debug/hotReload.js': hotReload,
+  'core/debug/editorPage.js': editorPage,
 });

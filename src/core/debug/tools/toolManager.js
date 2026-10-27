@@ -249,7 +249,7 @@ export class ToolManager {
     } else if (this.inspectorActive) {
       el.textContent = 'Inspector: click a ' + (this.inspectKind || 'entity');
       el.className = 'debug-ui-tool-indicator visible inspector';
-    } else if (this.debugUI.editMode.active) {
+    } else if (this.debugUI.editing) {
       const editMode = this.debugUI.editMode;
       el.textContent =
         editMode.status ||
@@ -687,7 +687,7 @@ export class ToolManager {
 
   _syncDebugToolFlag() {
     Mouse.isDebugToolActive = !!(
-      this.debugUI.editMode.active ||
+      this.debugUI.editing ||
       this.activeSpawnerType ||
       this.eraserActive ||
       this.poolPaintKind ||

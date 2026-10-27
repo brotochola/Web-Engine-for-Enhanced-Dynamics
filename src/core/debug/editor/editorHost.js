@@ -16,40 +16,7 @@ import { EntityTree } from './entityTree.js';
 import { ConsolePanel } from './consolePanel.js';
 import { createConsoleForward } from '../../../util/consoleForward.js';
 
-/** Where the editor page puts its host (shell/editorShell.js). */
-export const HOST_KEY = '__weedEditorHost';
-/** The protocol this side speaks: a host of another version is not used. */
-export const HOST_VERSION = 1;
-
-/**
- * The editor page this page runs in, or null: not in a frame, a frame of another origin (the read throws), or a
- * parent that is no editor page of this version.
- * @param {object} [win]
- */
-export function findEditorHost(win = typeof window !== 'undefined' ? window : null) {
-  try {
-    const parent = win?.parent;
-    if (!parent || parent === win) return null;
-    const host = parent[HOST_KEY];
-    return host && host.version === HOST_VERSION ? host : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * The editor page for this page, from this module's own URL; null where it is not served beside the page (a bundle).
- * @param {string} [moduleUrl]
- * @param {string} [pageOrigin]
- */
-export function editorPageUrl(moduleUrl = import.meta.url, pageOrigin = typeof location !== 'undefined' ? location.origin : '') {
-  try {
-    const url = new URL('./shell/', moduleUrl);
-    return url.origin === pageOrigin ? url.href : null;
-  } catch {
-    return null;
-  }
-}
+export { HOST_KEY, HOST_VERSION, findEditorHost, editorPageUrl } from '../editorPage.js';
 
 export class HostedEditor {
   /**

@@ -135,10 +135,14 @@ test('findEditorHost: only a parent of this origin with a host of this version',
   assert.equal(findEditorHost(null), null);
 });
 
-test('editorPageUrl: beside the editor modules, on the page’s own origin only', () => {
-  const moduleUrl = 'http://127.0.0.1:8000/src/core/debug/editor/editorHost.js';
+test('editorPageUrl: beside the editor’s source when served from it, else the dev server’s route', () => {
+  const moduleUrl = 'http://127.0.0.1:8000/src/core/debug/editorPage.js';
   assert.equal(editorPageUrl(moduleUrl, 'http://127.0.0.1:8000'), 'http://127.0.0.1:8000/src/core/debug/editor/shell/');
-  assert.equal(editorPageUrl('file:///build/src/core/debug/editor/editorHost.js', 'http://127.0.0.1:8000'), null, 'a bundle');
+  assert.equal(
+    editorPageUrl('file:///build/src/core/debug/editorPage.js', 'http://127.0.0.1:8000'),
+    'http://127.0.0.1:8000/__weed/editor/',
+    'a bundle: the route of npm run dev and of a game with @weed.js/editor',
+  );
 });
 
 // ---- the game page's side ----

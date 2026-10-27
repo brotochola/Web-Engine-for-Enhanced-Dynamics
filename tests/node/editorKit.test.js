@@ -1,5 +1,5 @@
 // The editor as its own package (VISUAL_EDITOR_PLAN.md ED-29): every module the editor imports from outside its
-// folder is one the engine's debug build publishes in WEED.editorKit, under its path from src/, as that very module;
+// folder is one the engine's debug build publishes in WEED_EDITOR_KIT, under its path from src/, as that very module;
 // the editor's bundle reads them from there (webpack.editor.config.js), and an import the kit lacks fails its build.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -49,7 +49,7 @@ test('the editor bundle bundles its own modules and reads the engine’s from th
     return out;
   };
   assert.equal(ask(editorDir, './history.js'), 'bundled');
-  assert.deepEqual(ask(editorDir, '../../camera.js'), { value: 'globalThis.WEED.editorKit["core/camera.js"]', type: 'var' });
+  assert.deepEqual(ask(editorDir, '../../camera.js'), { value: 'globalThis.WEED_EDITOR_KIT["core/camera.js"]', type: 'var' });
   assert.match(ask(editorDir, '../../layer.js').error, /imports src\/core\/layer\.js, which src\/core\/debug\/editorKit\.js does not publish/);
   assert.equal(ask(path.join(src, 'core'), './camera.js'), 'bundled', 'not an import of the editor');
   assert.equal(ask(editorDir, 'node:fs'), 'bundled', 'a bare name is not the kit’s');

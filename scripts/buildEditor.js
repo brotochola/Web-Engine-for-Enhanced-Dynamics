@@ -1,7 +1,7 @@
 /**
  * Build the @weed.js/editor package (VISUAL_EDITOR_PLAN.md ED-29, ED-30) into packages/editor/:
  *   dist/    weed.editor.min.js and weed.editor.esm.min.js (webpack.editor.config.js: the editor's modules, the
- *            engine's own read from WEED.editorKit)
+ *            engine's own read from WEED_EDITOR_KIT)
  *   shell/   the editor page (src/core/debug/editor/shell/), served by a game's dev server at /__weed/editor/
  *   server/  the dev server's routes for the editor: saving and listing scene files (server/devRoutes.js) and the
  *            editor page (server/editorPage.js), for a game's scripts/dev.mjs
