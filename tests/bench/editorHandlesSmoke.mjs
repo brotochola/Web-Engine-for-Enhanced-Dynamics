@@ -16,6 +16,8 @@
  *            it, one more from the inspector's +
  *   pick     (ED-45) the door row's pick button, a click on a Ball (wrong class: said, still picking), a click on Door2:
  *            the door param names Door2, the Guard stays selected; then the button and Esc stop a pick
+ *   hosted   the same game in the editor page (D9): the Inspector dock's pick button, a click on Door2 in the game's
+ *            frame, and Esc typed in the editor page
  *
  *   node tests/bench/editorHandlesSmoke.mjs [--headed]
  */
@@ -283,6 +285,80 @@ async function checkPick(page) {
   );
 }
 
+/**
+ * The editor page (D9): the same game in its iframe. The pick button is in the editor page's Inspector dock, the click
+ * on Door2 goes into the game's frame, and Esc typed in the editor page stops a pick.
+ */
+async function checkHosted(browser, port, log) {
+  const page = await browser.newPage({ viewport: { width: 1400, height: 860 } });
+  page.on('pageerror', (error) => log.errors.push(String(error)));
+  try {
+    const game = encodeURIComponent('/tests/bench/integratedWorkerBenchmark.html?src=1');
+    await page.goto(`http://127.0.0.1:${port}/src/core/debug/editor/shell/?game=${game}`);
+    await page.waitForFunction(() => document.getElementById('game').contentDocument?.body?.dataset.benchmarkReady === 'true', undefined, {
+      timeout: 30000,
+    });
+    // The game's frame, not the editor page (whose own URL names the game page in its query).
+    const frame = page.frames().find((f) => f.parentFrame() !== null);
+    await frame.evaluate(async (FILE) => {
+      const { default: WEED } = await import('/src/index.js');
+      if (typeof WEED.ensureEmbeddedSources === 'function') await WEED.ensureEmbeddedSources();
+      const game = new WEED.GameEngine({ autoResize: true, debug: true, injectStyles: false });
+      globalThis.__h = { WEED, game };
+      await game.loadScene(FILE);
+      return true;
+    }, FILE);
+    await page.waitForTimeout(1500);
+    await frame.evaluate(() => {
+      const { WEED, game } = globalThis.__h;
+      const editMode = game.debugUI.editMode;
+      editMode.enter();
+      editMode.selectFromList(game.currentScene.getByName('Guard1').index, false);
+      WEED.Camera.setZoom(1);
+      WEED.Camera.setFreeTarget(1050, 800);
+      return true;
+    });
+    await page.waitForTimeout(400);
+    const button = '[data-slot=inspector] button[data-pick="door"]';
+    await page.click(button);
+    await page.waitForTimeout(150);
+    const pressed = await page.$eval(button, (b) => b.classList.contains('active'));
+    // Door2's point on the page: the frame's place, the canvas's place in it, its screen point on the canvas.
+    const inFrame = await frame.evaluate(() => {
+      const { WEED, game } = globalThis.__h;
+      const rect = game.canvas.getBoundingClientRect();
+      const s = WEED.Camera.worldToScreen(1300, 800);
+      return [rect.left + s.x, rect.top + s.y];
+    });
+    const box = await page.locator('#game').boundingBox();
+    await page.mouse.click(box.x + inFrame[0], box.y + inFrame[1]);
+    await page.waitForTimeout(400);
+    const picked = await frame.evaluate(() => {
+      const { game } = globalThis.__h;
+      const editMode = game.debugUI.editMode;
+      const record = game.currentScene.sceneFile.entities.find((e) => e.name === 'Guard1');
+      return { door: record.config?.door ?? null, picking: editMode.picker.picking, selected: editMode.selection.name };
+    });
+    await page.click(button);
+    await page.waitForTimeout(100);
+    await page.keyboard.press('Escape'); // typed in the editor page: the host hands it to the game's editor
+    await page.waitForTimeout(150);
+    const escaped = await frame.evaluate(() => {
+      const editMode = globalThis.__h.game.debugUI.editMode;
+      return { picking: editMode.picker.picking, selected: editMode.selection.name };
+    });
+    const toolbar = await page.locator('[data-slot=toolbar]').innerText();
+    check(
+      'hosted',
+      pressed && picked.door === 'Door2' && !picked.picking && picked.selected === 'Guard1' && !escaped.picking && escaped.selected === 'Guard1',
+      `the dock's button pressed ${pressed}; a click on Door2 in the frame: door ${picked.door}, selected ${picked.selected}; ` +
+        `Esc in the editor page: picking ${escaped.picking}, selected ${escaped.selected}; toolbar "${toolbar.replace(/\s*\n\s*/g, ' | ')}"`,
+    );
+  } finally {
+    await page.close();
+  }
+}
+
 async function main() {
   const headed = process.argv.includes('--headed');
   const server = await createStaticBenchmarkServer(repoRoot, 0, {
@@ -305,6 +381,11 @@ async function main() {
       }
     }
     await page.close();
+    try {
+      await checkHosted(browser, server.port, log);
+    } catch (error) {
+      check('hosted', false, error.message);
+    }
   } finally {
     await browser.close();
     await server.close();
