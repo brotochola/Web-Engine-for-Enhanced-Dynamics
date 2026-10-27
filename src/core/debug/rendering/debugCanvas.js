@@ -278,6 +278,8 @@ export class DebugCanvas {
 
   hasActiveVisualization() {
     if (this.nav.hasActiveVisualization()) return true;
+    // An editor tool that draws with nothing selected (the scatter brush's circle).
+    if (this.debugUI.editMode?.wantsOverlay?.()) return true;
 
     const flags = this.debugUI.debugFlags;
     if (!flags) return false;

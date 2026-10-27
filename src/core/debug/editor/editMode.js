@@ -57,6 +57,7 @@ import {
 } from './sceneDocument.js';
 import { jointsBeforeDelete, replaceJoints } from './sceneJoints.js';
 import { applyJointsChange } from './jointsPanel.js';
+import { ScatterBrush } from './scatterBrush.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -113,6 +114,8 @@ export class EditMode {
      *   onKey?: (e: KeyboardEvent) => boolean, cancel?: () => void }[]}
      */
     this.tools = [];
+    /** The scatter brush for the file's decorations (scatterBrush.js, ED-25); the palette shows its section. */
+    this.brush = this.addTool(new ScatterBrush(this));
     /** The tool a press went to, until its button is let go. */
     this._toolWithPointer = null;
 
@@ -220,6 +223,13 @@ export class EditMode {
   _cancelTools() {
     this._toolWithPointer = null;
     for (const tool of this.tools) tool.cancel?.();
+  }
+
+  /** Whether a tool draws on the overlay with nothing selected (the brush's circle): the overlay runs while one does. */
+  wantsOverlay() {
+    if (!this.active) return false;
+    for (const tool of this.tools) if (tool.wantsOverlay?.() === true) return true;
+    return false;
   }
 
   /** The overlay's frame while editing (debugCanvas.js): the move ghost, then each tool's drawing. */
@@ -448,6 +458,9 @@ export class EditMode {
       case 'joints':
         applyJointsChange(this, change, forward);
         break;
+      case 'decorations':
+        this.brush.apply(change, forward);
+        break;
       default:
         throw new Error(`editor: no such change: ${change.kind}`);
     }
@@ -586,6 +599,7 @@ export class EditMode {
     }
     this.placing = this.placing === className ? null : className;
     if (this.placing !== null) this.selection.clear();
+    if (this.placing !== null && this.brush.className !== null) this.brush.select(null); // the brush goes down
     this.palette.refresh();
     this._notify();
   }

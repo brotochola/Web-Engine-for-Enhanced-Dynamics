@@ -64,6 +64,7 @@ export class Palette {
       if (UNPLACEABLE.has(name)) continue;
       list.appendChild(this._row(name, placed.get(name) || 0, EntityClass.poolSize | 0));
     }
+    this.editMode.brush?.refreshPalette(); // the decoration classes (scatterBrush.js, ED-25)
   }
 
   /** The level row: the folder's scene files (the running one chosen), Open, New and Save As. */
@@ -152,6 +153,7 @@ export class Palette {
     this._files.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
     this._list = document.createElement('div');
     this._body.append(this._files, this._list);
+    this.editMode.brush?.mountPalette(this._body);
   }
 
   _createPanel() {
