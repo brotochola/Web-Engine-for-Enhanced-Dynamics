@@ -59,8 +59,10 @@ import {
   removePlaced,
   renamePlaced,
   writePosition,
+  keepSeed,
 } from './sceneDocument.js';
-import { jointsBeforeDelete, replaceJoints } from './sceneJoints.js';
+import { jointsBeforeDelete, replaceJoints, jointsOf } from './sceneJoints.js';
+import { copyEntities, writeClipboard, readClipboard, pastePlan } from './clipboard.js';
 import { applyJointsChange } from './jointsPanel.js';
 import { ScatterBrush } from './scatterBrush.js';
 import { JointTool } from './jointTool.js';
@@ -387,6 +389,17 @@ export class EditMode {
         case 'D':
           this.duplicateSelected();
           return true;
+        case 'c':
+        case 'C':
+          return this.copySelected();
+        case 'v':
+        case 'V':
+          return this.paste();
+        case 'x':
+        case 'X':
+          if (!this.copySelected()) return false;
+          this.deleteSelected();
+          return true;
         case 'z':
         case 'Z':
           if (e.shiftKey) this.redo();
@@ -705,6 +718,7 @@ export class EditMode {
     record.name = uniqueName(scene, found.record.name);
     record.x = found.record.x + offset;
     record.y = found.record.y + offset;
+    keepSeed(record, found.record);
     return this._add(record, found.position + 1, `duplicate ${selection.name}`);
   }
 
@@ -844,6 +858,7 @@ export class EditMode {
         record.name = uniqueName(scene, found.record.name);
         record.x = found.record.x + offset;
         record.y = found.record.y + offset;
+        keepSeed(record, found.record);
         const at = scene.sceneFile.entities.length;
         if (addPlaced(scene, record, at) < 0) continue;
         changes.push({ kind: 'add', editorId: editorIdOf(record), at, copy: structuredClone(record) });
@@ -859,6 +874,70 @@ export class EditMode {
     this.palette.refresh();
     this._notify();
     return this.selection.index;
+  }
+
+  /**
+   * Ctrl+C (ED-59): the selected placed entities, with the file's joints between them, to the clipboard
+   * (clipboard.js). Runtime entities are not the file's: nothing to copy.
+   * @returns {boolean} whether something was copied
+   */
+  copySelected() {
+    const names = this.multi.count > 0 ? this.multi.selectedNames() : this.selection.authored ? [this.selection.name] : [];
+    const payload = copyEntities(this.debugUI.scene, names);
+    if (payload === null) return false;
+    writeClipboard(payload);
+    const n = payload.entities.length;
+    this._setStatus(`Copied ${n === 1 ? payload.entities[0].name : `${n} entities`}: Ctrl+V pastes them where the pointer is`, false);
+    return true;
+  }
+
+  /**
+   * Ctrl+V: the copied entities again, where the pointer is over the view (else a grid step from where they were),
+   * named anew, with their joints: one undo, and selected.
+   * @returns {boolean} whether the key was the editor's
+   */
+  paste() {
+    const scene = this.debugUI.scene;
+    if (!this.active || !scene?.sceneFile) return false;
+    const payload = readClipboard();
+    if (payload === null) {
+      this._setStatus('Nothing copied: Ctrl+C copies the selected entities', false);
+      return true;
+    }
+    const step = Math.max(this.move.snap, 16);
+    const plan = pastePlan(scene, payload, Mouse.isPresent ? Mouse.x : NaN, Mouse.isPresent ? Mouse.y : NaN, step);
+    const selectBefore = this.multi.selectedNames();
+    const changes = [];
+    const names = [];
+    this._quiet = true;
+    try {
+      for (const record of plan.records) {
+        const at = scene.sceneFile.entities.length;
+        if (addPlaced(scene, record, at) < 0) continue;
+        changes.push({ kind: 'add', editorId: editorIdOf(record), at, copy: structuredClone(record) });
+        names.push(record.name);
+      }
+      const joints = plan.joints.filter((joint) => names.includes(joint.a) && names.includes(joint.b));
+      if (joints.length > 0) {
+        const before = structuredClone(jointsOf(scene));
+        const after = before.concat(joints);
+        replaceJoints(scene, structuredClone(after));
+        changes.push({ kind: 'joints', editorId: 0, before, after });
+      }
+    } finally {
+      this._quiet = false;
+    }
+    if (names.length === 0) {
+      this._setStatus(plan.skipped > 0 ? 'The copied entities’ classes are not in this scene' : 'Nothing pasted: the pools are full', true);
+      return true;
+    }
+    this.history.push({ id: 0, label: `paste ${names.length === 1 ? names[0] : `${names.length} entities`}`, kind: 'batch', changes, selectBefore, selectAfter: names });
+    this.multi.selectNames(names);
+    this.debugUI.hosted?.onDocumentChanged();
+    this.palette.refresh();
+    this._notify();
+    if (plan.skipped > 0) this._setStatus(`Pasted ${names.length}; ${plan.skipped} left out: their classes are not in this scene`, true);
+    return true;
   }
 
   /** Del: take the selected placed entity out of the file; kept for undo. */

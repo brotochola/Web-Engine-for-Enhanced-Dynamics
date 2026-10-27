@@ -176,6 +176,16 @@ export function withEditorId(record, id) {
   return record;
 }
 
+/**
+ * A copy of a record under another name (duplicate, paste) looks like its original: the seed its spawn draws from
+ * (sceneFile.js placedSeed) is written into the copy when the new name would give another.
+ */
+export function keepSeed(copy, original) {
+  const seed = placedSeed(original);
+  if (placedSeed(copy) !== seed) copy.seed = seed;
+  return copy;
+}
+
 /** The current name of the record with that editor id, or null when the file has none. */
 export function nameOfEditorId(scene, id) {
   for (const record of scene?.sceneFile?.entities || []) if (record._editorId === id) return record.name;

@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 import { Messages } from '../../src/core/messages.js';
 import { Transform } from '../../src/components/transform.js';
-import { serializeSceneFile } from '../../src/core/sceneFile.js';
+import { serializeSceneFile, placedSeed } from '../../src/core/sceneFile.js';
 import {
   uniqueName,
   addPlaced,
@@ -139,8 +139,8 @@ test('place, duplicate, delete and rename are each one undo, and survive one ano
   const copy = recordOf(scene, 'Platform3');
   assert.deepEqual(
     { ...copy.record },
-    { name: 'Platform3', class: 'Platform', x: 116, y: 216, config: { width: 400 } },
-    'a grid step of at least 16 px away',
+    { name: 'Platform3', class: 'Platform', x: 116, y: 216, config: { width: 400 }, seed: placedSeed({ name: 'Platform1' }) },
+    'a grid step of at least 16 px away, looking like its original (its seed)',
   );
   assert.equal(copy.position, 1, 'right after the original in the file');
 
