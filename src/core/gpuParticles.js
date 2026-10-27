@@ -235,6 +235,9 @@ export class GpuParticles {
     const count = Math.round(randomRange(cfg.count, 1));
     if (!(count > 0)) return 0;
     const n = count > ring.capacity ? ring.capacity : count;
+    if (n < count) {
+      this._warnOnce(`clamp:${info.name}`, `ParticleEmitter.emitGpu: ${count} particles is more than this thread's ring in "${info.name}" holds (${ring.capacity}); ${n} were written. Raise the layer's maxParticles or this thread's gpuRings share.`);
+    }
 
     // Epoch: births are float32 ms after it, so a quiet ring moves it to now.
     const header = ring.header;
@@ -253,7 +256,10 @@ export class GpuParticles {
       const g = (ring.oldestLive & (ring.groupCapacity - 1)) * GPU_GROUP_WORDS;
       const firstLive = ring.groupBits[g + GPU_GROUP.FIRST] >>> 0;
       const groupsFull = ((groupCursor - ring.oldestLive) >>> 0) >= ring.groupCapacity;
-      if (((cursor + n - firstLive) >>> 0) > ring.capacity || groupsFull) Atomics.add(header, GPU_RING.OVERFLOW, 1);
+      if (((cursor + n - firstLive) >>> 0) > ring.capacity || groupsFull) {
+        Atomics.add(header, GPU_RING.OVERFLOW, 1);
+        this._warnOnce(`overflow:${info.name}`, `ParticleEmitter.emitGpu: "${info.name}" wrote over particles that were still alive: this thread's ring holds ${ring.capacity} particles and ${ring.groupCapacity} emitGpu calls. Raise the layer's maxParticles or this thread's gpuRings share, or make fewer, larger calls.`);
+      }
     }
 
     const heighted = cfg.heighted === true;

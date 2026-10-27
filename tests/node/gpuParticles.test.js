@@ -227,17 +227,28 @@ test('frames: an array cycles over life; anim random keeps one per particle', { 
   }
 });
 
-test('a writer that laps live records counts an overflow; a count past the ring is clamped', { concurrency: false }, () => {
+test('a writer that laps live records counts an overflow; a count past the ring is clamped; each warns once', { concurrency: false }, () => {
   const restore = setup({ kind: LAYER_KIND.GPU_PARTICLES, maxParticles: 64 * 3 });
+  const warn = console.warn;
+  const warned = [];
+  console.warn = (m) => warned.push(String(m));
   try {
     const r = ring(0);
     assert.equal(r.capacity, 64);
     assert.equal(ParticleEmitter.emitGpu({ layer: 'smoke', count: 50, x: 0, y: 0, lifespan: 10000 }), 50);
     assert.equal(Atomics.load(r.header, GPU_RING.OVERFLOW), 0);
+    assert.equal(warned.length, 0);
     ParticleEmitter.emitGpu({ layer: 'smoke', count: 50, x: 0, y: 0, lifespan: 10000 });
     assert.equal(Atomics.load(r.header, GPU_RING.OVERFLOW), 1, 'the second emit overwrote live records');
+    ParticleEmitter.emitGpu({ layer: 'smoke', count: 50, x: 0, y: 0, lifespan: 10000 });
+    assert.equal(Atomics.load(r.header, GPU_RING.OVERFLOW), 2);
+    assert.equal(warned.length, 1, 'one warning for both overflows');
+    assert.match(warned[0], /still alive.*64 particles and 2048 emitGpu calls/);
     assert.equal(ParticleEmitter.emitGpu({ layer: 'smoke', count: 500, x: 0, y: 0, lifespan: 10 }), 64, 'clamped to the ring');
+    assert.equal(ParticleEmitter.emitGpu({ layer: 'smoke', count: 500, x: 0, y: 0, lifespan: 10 }), 64);
+    assert.equal(warned.filter((m) => /500 particles is more than/.test(m)).length, 1, 'one warning for both clamps');
   } finally {
+    console.warn = warn;
     restore();
   }
 });
