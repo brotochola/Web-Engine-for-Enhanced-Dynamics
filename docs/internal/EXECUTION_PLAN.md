@@ -2336,6 +2336,40 @@ what the custom layers lose. Then a prototype on adobeAnimateScene.
 - **Mesh uploads.** meshApiStressScene's Pixi is 32 % the mesh UV upload and 32 % `rewrite_corners`.
 - **Decal uploads.** In decalBlitStressScene, Pixi's own code takes 228 ms/s, the decal tile uploads.
 
+### E-148 Tilemap layers drawn in fewer GPU passes (not ranked)
+
+The owner asked, 2026-10-26, whether the engine could bake a tilemap's layers on its own.
+
+**How tilemaps draw now.** Each Tiled layer of a tilemap scenery layer is one quad per page of 2048 tiles, with a GID
+texture of 4 bytes per cell. The fragment shader reads the cell's GID, then the atlas, then blends. Pixi's CPU cost per
+frame is close to zero, so the cost left is on the GPU. littleCity has 8 tile layers, each about 26 % full. Each
+screen pixel therefore runs the shader 8 times: 8 GID reads, plus an atlas read and a blend wherever the cell has a tile.
+
+**A bake to pixels is out.** It costs too much memory:
+
+| Map | Tiles (24 px) | Baked RGBA8 | GIDs today (8 layers) |
+|---|---|---|---|
+| littleCity | 416 × 208 | ≈ 200 MB | 2.8 MB |
+| map_n_flowfield `tilemap2` | 2082 × 416 | ≈ 2 GB | 27 MB |
+
+Baking chunks around the camera would bring back what the GID path removed: hitches when the camera moves fast, and
+more chunks or blur at other zooms.
+
+**The variants**, each with output identical to today's:
+1. **Hidden cells cleared at load.** Mark each tile of the atlas as fully opaque or not, once. Where an upper layer's cell is opaque and the layer's opacity is 1, clear the cells below it. Those layers then stop after the GID read. No memory is added.
+2. **Up to 4 layers per draw.** Their GIDs go into one shader, which composites them from the top down and stops at the first opaque texel. One blend per pixel instead of up to 8, and fewer draws.
+   - It can be automatic: one scenery layer's Tiled layers share a container and a parallax, and nothing is drawn between them.
+   - Per-layer opacity goes into the composite.
+3. Both together.
+
+**Limits today:** only the first tileset is drawn, and the render side has no runtime tile edits. If tile edits come,
+they would re-upload one page.
+
+**The premise comes first.** The harness reads each worker's CPU (`STEP_MS − WAIT_MS`), and this cost is GPU time:
+1. Time the tilemap passes on the GPU: WebGPU timestamp queries, `EXT_disjoint_timer_query_webgl2` on WebGL2.
+2. Run littleCity at 1080p and at 4K, and on a weak GPU too.
+3. If the passes are a small share of the frame, the hypothesis is rejected on its premise. If they are not, variant 1 goes first (load only, nothing changes per frame), then 2.
+
 ### Step 4: physics
 
 ### E-144 Box2D's solver threads: their idle cost and their clock reads
