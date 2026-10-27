@@ -399,22 +399,25 @@ async function platformer(browser, origin, errors) {
       `+ and a click: goals ${goalBefore.records} → ${goalAfter.records} → ${goalUndone.records}`,
   );
 
-  // ---- the engine's layers apart (ED-67): bloom is the platformer's own ----
+  // ---- the engine's layers apart (ED-67): the platformer's own first (entities, and bloom when it is on) ----
   const layers = await readLayers(page);
-  const lock = page.locator('[data-slot=assets] [data-layer="bloom"] input[data-switch=lock]');
+  const own = layers.rows.filter((r) => !r.engine).map((r) => r.name);
+  const lockName = own[0];
+  const lock = page.locator(`[data-slot=assets] [data-layer="${lockName}"] input[data-switch=lock]`);
   await lock.check();
-  const locked = await gameFrame(page).evaluate(async () => {
+  const locked = await gameFrame(page).evaluate(async (name) => {
     const { default: WEED } = await import('/src/index.js');
-    return window.game.debugUI.editMode.layers.isLocked(WEED.Layer.getId('bloom'));
-  });
+    return window.game.debugUI.editMode.layers.isLocked(WEED.Layer.getId(name));
+  }, lockName);
   await lock.uncheck();
   check(
     'platformergame layers',
-    layers.order.join(' ') === 'bloom entities FOLD lightGlows lighting castedShadows' &&
+    layers.order.join(' ') === `${own.join(' ')} FOLD lightGlows lighting castedShadows` &&
+      own.includes('entities') &&
       layers.rows.every((r) => r.shown === !r.engine) &&
       layers.fold === '▸ Engine layers · 3' &&
       locked,
-    `order ${layers.order.join(' ')}; "${layers.fold}"; bloom's lock works ${locked}`,
+    `order ${layers.order.join(' ')}; "${layers.fold}"; ${lockName}'s lock works ${locked}`,
   );
   await page.close();
 }
