@@ -20,6 +20,9 @@
 // the indices the names have. A joint whose entities are not there (no such name, a class the scene lacks, a full
 // pool) is skipped, with one warning naming the file. A save brings back every joint itself, so a restore skips them.
 
+import { Joint } from './joint.js';
+import { Messages } from './messages.js';
+
 /** The joint types a file can name, as Joint has them. */
 export const JOINT_TYPES = Object.freeze(['distance', 'revolute', 'prismatic', 'weld']);
 
@@ -98,4 +101,121 @@ export function checkSceneFileJoints(joints, where) {
     }
   }
   return joints;
+}
+
+// ---- loading: the joints between the file's entities ----
+
+const ORIGIN = Object.freeze([0, 0]);
+
+/** How a joint reads in a message: its name, or its position, type and entities. */
+export function jointLabel(joint, position) {
+  return joint.name ? `joint ${joint.name}` : `joints[${position}] (${joint.type} ${joint.a}–${joint.b})`;
+}
+
+/**
+ * The live index of the entity the running scene file names `name` (Scene._namedEntities, held against the slot's
+ * spawn generation), or -1.
+ */
+export function namedEntityIndex(scene, name) {
+  const packed = scene._namedEntities.get(name);
+  if (packed === undefined) return -1;
+  const index = Math.floor(packed / 65536);
+  return Messages.spawnGen[index] === packed - index * 65536 ? index : -1;
+}
+
+/**
+ * Joint's options for a file joint between entity indices `a` and `b`: its anchors and its type's settings. A
+ * distance joint without a length gets the distance between its anchors where the records place the entities.
+ * @param {object} joint - the file's joint record
+ * @param {number} a
+ * @param {number} b
+ * @param {object} [recordA] - the file's records of the two entities
+ * @param {object} [recordB]
+ */
+export function fileJointOptions(joint, a, b, recordA, recordB) {
+  const anchorA = joint.anchorA || ORIGIN;
+  const anchorB = joint.anchorB || ORIGIN;
+  const opts = {
+    entityA: a,
+    entityB: b,
+    localAnchorAX: anchorA[0],
+    localAnchorAY: anchorA[1],
+    localAnchorBX: anchorB[0],
+    localAnchorBY: anchorB[1],
+  };
+  for (const key of JOINT_SETTINGS[joint.type]) if (joint[key] !== undefined) opts[key] = joint[key];
+  for (const key of JOINT_BREAK_KEYS) if (joint[key] !== undefined) opts[key] = joint[key];
+  if (joint.type === 'distance' && joint.length === undefined && recordA && recordB) {
+    const dx = recordB.x + anchorB[0] - (recordA.x + anchorA[0]);
+    const dy = recordB.y + anchorB[1] - (recordA.y + anchorA[1]);
+    opts.length = Math.sqrt(dx * dx + dy * dy);
+  }
+  return opts;
+}
+
+/**
+ * Make one file joint between entity indices `a` and `b`.
+ * @returns {number} its joint pool index, or -1 (the pool is full: Joint warns)
+ */
+export function addFileJoint(joint, a, b, recordA, recordB) {
+  const opts = fileJointOptions(joint, a, b, recordA, recordB);
+  switch (joint.type) {
+    case 'distance':
+      return Joint.addDistance(opts);
+    case 'revolute':
+      return Joint.addRevolute(opts);
+    case 'prismatic':
+      return Joint.addPrismatic(opts);
+    case 'weld':
+      return Joint.addWeld(opts);
+    default:
+      return -1;
+  }
+}
+
+/**
+ * Make the running scene file's joints (the load, once the file's entities are spawned), each between the entities
+ * its names have. Each is kept in `scene._fileJoints` (its record → { index, entityA, entityB }), which the editor
+ * uses to make it again. A joint whose entities are not there is skipped, all of them with one warning naming the
+ * file; a scene without a joint pool (config.physics.maxJoints) skips them all, with one warning. On a restore it
+ * makes none: the save brings back every joint (logic0's restoreSave).
+ * @param {object} scene
+ * @returns {number} how many it made
+ */
+export function spawnSceneFileJoints(scene) {
+  const joints = scene.sceneFile?.joints;
+  if (!Array.isArray(joints) || joints.length === 0) return 0;
+  if (scene._restorePayload !== null && scene._restorePayload !== undefined) return 0;
+  const where = scene.sceneFileUrl || 'scene file';
+  if (!Joint.active) {
+    console.warn(
+      `WeedJS: ${where} places ${joints.length} joint${joints.length === 1 ? '' : 's'}, and ${scene.constructor.name} ` +
+        'has no joint pool: set its config.physics.maxJoints',
+    );
+    return 0;
+  }
+  const records = new Map();
+  for (const record of scene.sceneFile.entities) records.set(record.name, record);
+  const skipped = [];
+  let made = 0;
+  for (let i = 0; i < joints.length; i++) {
+    const joint = joints[i];
+    const a = namedEntityIndex(scene, joint.a);
+    const b = namedEntityIndex(scene, joint.b);
+    if (a < 0 || b < 0) {
+      skipped.push(`${jointLabel(joint, i)}: no ${a < 0 ? joint.a : joint.b}`);
+      continue;
+    }
+    const index = addFileJoint(joint, a, b, records.get(joint.a), records.get(joint.b));
+    if (index < 0) continue;
+    scene._fileJoints.set(joint, { index, entityA: a, entityB: b });
+    made++;
+  }
+  if (skipped.length > 0) {
+    console.warn(
+      `WeedJS: ${where}: ${skipped.length} joint${skipped.length === 1 ? ' is' : 's are'} skipped, ` +
+        `${skipped.length === 1 ? 'its' : 'their'} entities are not there (${skipped.join('; ')})`,
+    );
+  }
+  return made;
 }

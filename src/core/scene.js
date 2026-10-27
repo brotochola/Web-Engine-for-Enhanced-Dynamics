@@ -141,6 +141,8 @@ import {
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import { describeSpawnParams } from './spawnParams.js';
 import { sceneFileSpawnOrder, sceneFileSpawnConfig } from './sceneFile.js';
+import { spawnSceneFileJoints } from './sceneFileJoints.js';
+import { spawnSceneFileDecorations } from './sceneFileDecorations.js';
 import { isEntityClassSerializable } from './save/entitySaveSnapshot.js';
 import { clearSceneDirty, sceneDirtyReason } from './sceneDirty.js';
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
@@ -203,6 +205,13 @@ class Scene {
    * level. null: none.
    */
   static defaultSceneFile = null;
+  /**
+   * The decoration classes this scene's files can place (their `decorations` section, the editor's brush): name →
+   * a Decoration.spawn config its decorations share. `texture` may be a list (the file picks one per decoration),
+   * `scale` sets both axes, and scale, rotation, alpha and tint may be ranges ({ min, max }). null: none.
+   * See sceneFileDecorations.js.
+   */
+  static decorations = null;
 
   constructor(game) {
     this.game = game; // Reference to GameEngine orchestrator
@@ -231,6 +240,12 @@ class Scene {
      * then (getByName). Replaced on every load; never sent to a worker.
      */
     this._namedEntities = new Map();
+    /**
+     * Page only: the joints the scene file made (its joint record → { index, entityA, entityB }) and the decorations
+     * (its decoration record → each decoration's pool index), for the editor. Replaced on every load.
+     */
+    this._fileJoints = new Map();
+    this._fileDecorations = new Map();
     // A full load starts from fresh workers and buffers: nothing is left that a fast swap
     // could not reset (sceneDirty.js).
     clearSceneDirty();
@@ -1175,8 +1190,14 @@ class Scene {
     await this.preload(this.data);
 
     // A scene file's entities: after preload(), before create() (which can find them with
-    // getByName), in the same create-time batch as create()'s own spawns.
-    if (this.sceneFile !== null) this._spawnSceneFileEntities();
+    // getByName), in the same create-time batch as create()'s own spawns. Then its joints,
+    // between the indices those spawns reserved (a joint waits in its pool until both bodies
+    // exist), and its decorations, one spawnMany per class (ED-21, ED-25).
+    if (this.sceneFile !== null) {
+      this._spawnSceneFileEntities();
+      spawnSceneFileJoints(this);
+      spawnSceneFileDecorations(this);
+    }
 
     // LIFECYCLE PHASE 2: create()
     // Static / always-on world setup (runs for new game AND save load).
@@ -1244,6 +1265,9 @@ class Scene {
       this.sceneFile = sceneFile;
       this.sceneFileUrl = sceneFileUrl;
       this._namedEntities = new Map();
+      // The clear removed every joint and decoration the last file made.
+      this._fileJoints = new Map();
+      this._fileDecorations = new Map();
       this._eventListeners = new Map();
       this._restorePayload = restorePayload;
       this._restoreAllTypes = false;

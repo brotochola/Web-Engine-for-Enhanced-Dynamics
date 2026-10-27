@@ -233,6 +233,23 @@ export interface SceneFileDecorations {
   [key: string]: unknown;
 }
 
+/**
+ * A decoration class of `Scene.decorations`: a Decoration.spawn config its decorations share, where `texture` may
+ * be a list (a file's `frame` picks one), `scale` sets both axes, and scale, rotation, alpha and tint may be ranges:
+ * the editor's brush draws one value per decoration from them, and writes it to the file.
+ */
+export interface SceneDecorationClass
+  extends Omit<DecorationSpawnConfig, 'x' | 'y' | 'texture' | 'rotation' | 'alpha' | 'tint' | 'parent' | 'localX' | 'localY'> {
+  texture: string | string[];
+  scale?: WeedNumOrRange;
+  rotation?: WeedNumOrRange;
+  alpha?: WeedNumOrRange;
+  tint?: number | { min: number; max: number };
+  swaySkew?: boolean;
+  layer?: string | number;
+  layers?: Array<string | number>;
+}
+
 /** A `*.scene.json` file (format 1), as `game.loadScene(url)` reads it. */
 export interface SceneFile {
   format: 1;
@@ -1747,6 +1764,11 @@ export declare class Scene {
    * loaded by its module or class instead of a scene file: its first level. Default null.
    */
   static defaultSceneFile: string | null;
+  /**
+   * The decoration classes this scene's files can place (their `decorations` section, the editor's brush): name →
+   * what its decorations share. Default null: none.
+   */
+  static decorations: Record<string, SceneDecorationClass> | null;
   game: GameEngine;
   loadedTextures: unknown;
   /** Absolute scene module href workers import(), or null when using leftover entity scriptUrl. */
