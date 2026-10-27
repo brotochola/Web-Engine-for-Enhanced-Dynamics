@@ -3821,7 +3821,6 @@ export declare class GpuParticles {
   static stats(layer: string | number): Array<{ capacity: number; published: number; groups: number; overflows: number }> | null;
   /** Where record `slot` of writer ring `ring` is now, through an evaluator such as gpuParticleEval's. */
   static evaluate(layer: string | number, ring: number, slot: number, evaluate: (rec: Float32Array, base: number, now: number) => object): object | null;
-  static emit(config: ParticleGpuEmitConfig): number;
   static initializeFromConfig(layersConfig: Record<string, LayerSceneConfigEntry>, numberOfLogicWorkers?: number): typeof GpuParticles;
   static getSerializableData(): { writers: number; layers: object[] };
   static initializeFromBuffers(data: { writers: number; layers: object[] } | null | undefined): void;

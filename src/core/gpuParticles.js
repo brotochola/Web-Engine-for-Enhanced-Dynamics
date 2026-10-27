@@ -210,10 +210,10 @@ export class GpuParticles {
   }
 
   /**
-   * Emit GPU particles (ParticleEmitter.emitGpu). Returns how many were written.
+   * Emit GPU particles: ParticleEmitter.emitGpu's body (the one public way to emit). Returns how many were written.
    * @param {object} cfg
    */
-  static emit(cfg) {
+  static _emit(cfg) {
     if (!cfg) return 0;
     const info = this.layerOf(cfg.layer);
     if (!info) {

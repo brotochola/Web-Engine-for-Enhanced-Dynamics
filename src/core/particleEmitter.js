@@ -174,7 +174,7 @@ export class ParticleEmitter extends SharedAtomicPool {
    * @returns {number} particles written
    */
   static emitGpu(config) {
-    return GpuParticles.emit(config);
+    return GpuParticles._emit(config);
   }
 
   /**
