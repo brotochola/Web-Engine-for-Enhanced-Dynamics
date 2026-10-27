@@ -12,8 +12,8 @@
 import { entityBox, pointOnEntity } from './pick.js';
 import { recordOf, writePosition } from './sceneDocument.js';
 
-/** The grid steps the editor offers, in world pixels; 1 is no snap. */
-export const SNAP_STEPS = Object.freeze([1, 8, 16, 32]);
+/** The grid steps the editor offers, in world pixels; 1 is no snap (grid.js draws the lines, ED-60). */
+export const SNAP_STEPS = Object.freeze([1, 4, 8, 16, 32, 64]);
 /** Screen pixels a press must travel before it is a drag, not a click. */
 const DRAG_THRESHOLD_PX = 3;
 
@@ -25,6 +25,8 @@ export class MoveTool {
     this.selection = selection;
     /** The grid step, one of SNAP_STEPS. */
     this.snap = 1;
+    /** Alt held during this drag: off the grid (EditMode sets it from each pointer move). */
+    this.free = false;
 
     this._pressed = false;
     this._dragging = false;
@@ -77,8 +79,9 @@ export class MoveTool {
       this._fromX = found.record.x;
       this._fromY = found.record.y;
     }
-    this._toX = snapTo(this._fromX + (x - this._pressWorldX), this.snap);
-    this._toY = snapTo(this._fromY + (y - this._pressWorldY), this.snap);
+    const step = this.free ? 1 : this.snap;
+    this._toX = snapTo(this._fromX + (x - this._pressWorldX), step);
+    this._toY = snapTo(this._fromY + (y - this._pressWorldY), step);
   }
 
   release() {

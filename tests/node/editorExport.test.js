@@ -187,6 +187,8 @@ test('the toolbar’s Export goes through the Assets dock’s row when there is 
       sceneFileName: '1-1.scene.json',
       history: { canUndo: false, canRedo: false },
       palette: { ship: null },
+      move: { snap: 1 },
+      grid: { show: true },
       _setStatus() {},
     };
     const toolbar = new EditorToolbar(editMode);

@@ -77,7 +77,7 @@ test('entering holds the world, the camera and the input; leaving puts them back
     assert.equal(Mouse.isEditModeActive, true);
     assert.equal(Mouse.isDebugToolActive, true);
     assert.deepEqual(calls, ['tools off', 'palette', 'indicator', 'button', 'tick'], 'other tools off, the palette shown, the UI told');
-    assert.deepEqual([...document.listeners.keys()].sort(), ['contextmenu', 'pointerdown', 'pointermove', 'pointerup']);
+    assert.deepEqual([...document.listeners.keys()].sort(), ['contextmenu', 'keyup', 'pointerdown', 'pointermove', 'pointerup']);
 
     editMode.exit();
     assert.equal(editMode.active, false);
@@ -147,7 +147,7 @@ test('a left click on the game canvas selects at the mouse; Esc lets go of the s
   }
 });
 
-test('the arrow keys nudge (Shift: ten steps) and G cycles the grid step', () => {
+test('the arrow keys nudge (Shift: ten steps), G cycles the snap step and Shift+G the grid’s lines', () => {
   const { editMode } = setup();
   try {
     editMode.enter();
@@ -161,12 +161,14 @@ test('the arrow keys nudge (Shift: ten steps) and G cycles the grid step', () =>
     assert.equal(key('ArrowLeft', { ctrlKey: true }), false, 'not with Ctrl');
     assert.deepEqual(nudges, [[1, 0], [0, -10], [-1, 0], [0, 10]]);
     const steps = [];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 6; i++) {
       key('g');
       steps.push(editMode.move.snap);
     }
-    assert.deepEqual(steps, [8, 16, 32, 1]);
-    assert.equal(editMode.status, 'No grid');
+    assert.deepEqual(steps, [4, 8, 16, 32, 64, 1]);
+    assert.equal(editMode.status, 'No snap');
+    key('G', { shiftKey: true });
+    assert.deepEqual([editMode.grid.show, editMode.status], [false, 'Grid hidden']);
     clearTimeout(editMode._statusTimer);
   } finally {
     teardown();

@@ -74,7 +74,7 @@ function setup() {
 }
 
 test('snapTo puts a position on the grid; 1 is whole pixels', () => {
-  assert.deepEqual(SNAP_STEPS, [1, 8, 16, 32]);
+  assert.deepEqual(SNAP_STEPS, [1, 4, 8, 16, 32, 64]);
   assert.equal(snapTo(603.4, 1), 603);
   assert.equal(snapTo(603.4, 8), 600);
   assert.equal(snapTo(605, 8), 608);

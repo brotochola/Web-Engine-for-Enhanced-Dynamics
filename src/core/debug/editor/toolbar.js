@@ -1,9 +1,10 @@
 // toolbar.js — the editor page's toolbar (VISUAL_EDITOR_PLAN.md D9, ED-15), made by the game page and put into the
 // editor page's bar: Play or Edit, Stop (D8, ED-16), Save, Undo, Redo, the running scene file with its unsaved
-// marker, and the editor's status line. refresh() writes only what changed; EditMode asks for it on each change of
+// marker, and the editor's status line; the snap step and the grid's lines (ED-60). refresh() writes only what changed; EditMode asks for it on each change of
 // its own, never per frame. Export (ED-32) builds the game into a static site (shipRow.js).
 
 import { exportFromEditor } from './shipRow.js';
+import { SNAP_STEPS } from './moveTool.js';
 
 const BUTTON_CLASS = 'weed-editor-button';
 
@@ -19,13 +20,25 @@ export class EditorToolbar {
     this._undo = this._button('Undo', () => editMode.undo(), 'Undo (Ctrl+Z), while editing');
     this._redo = this._button('Redo', () => editMode.redo(), 'Redo (Ctrl+Y), while editing');
     this._export = this._button('Export', () => exportFromEditor(editMode), 'Build the game into a static site, with its atlas baked (the Assets dock says where it went)');
+    // The snap step (G cycles it) and the grid's lines (Shift+G).
+    this._snap = document.createElement('select');
+    this._snap.className = BUTTON_CLASS;
+    this._snap.title = 'Snap: drags, arrow keys, placing and pasting land on this grid (G cycles it; Alt while dragging: off the grid)';
+    for (const step of SNAP_STEPS) {
+      const option = document.createElement('option');
+      option.value = String(step);
+      option.textContent = step > 1 ? `Snap ${step}` : 'No snap';
+      this._snap.appendChild(option);
+    }
+    this._snap.onchange = () => editMode.setSnap(Number(this._snap.value));
+    this._grid = this._button('#', () => editMode.toggleGrid(), 'Show or hide the grid’s lines (Shift+G)');
     this._file = document.createElement('span');
     this._file.style.cssText = 'color:#c8ccd8;white-space:nowrap;margin-left:6px';
     this._status = document.createElement('span');
     this._status.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0';
-    this.el.append(this._mode, this._stop, this._save, this._undo, this._redo, this._export, this._file, this._status);
+    this.el.append(this._mode, this._stop, this._save, this._undo, this._redo, this._snap, this._grid, this._export, this._file, this._status);
     /** What is shown, so a refresh that changes nothing writes nothing. */
-    this._shown = { editing: null, playing: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, error: null };
+    this._shown = { editing: null, playing: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, error: null, snap: null, grid: null };
     this.refresh();
   }
 
@@ -51,6 +64,13 @@ export class EditorToolbar {
     const canRedo = editing && editMode.history.canRedo;
     if (shown.canUndo !== canUndo) this._undo.disabled = !(shown.canUndo = canUndo);
     if (shown.canRedo !== canRedo) this._redo.disabled = !(shown.canRedo = canRedo);
+    const snap = editMode.move.snap;
+    const grid = editMode.grid.show;
+    if (shown.snap !== snap) this._snap.value = String((shown.snap = snap));
+    if (shown.grid !== grid) {
+      shown.grid = grid;
+      this._grid.classList.toggle('active', grid);
+    }
     const dirty = editMode.dirty;
     const file = editMode.sceneFileName;
     if (shown.dirty !== dirty || shown.file !== file) {

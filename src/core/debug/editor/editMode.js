@@ -67,6 +67,7 @@ import { applyJointsChange } from './jointsPanel.js';
 import { ScatterBrush } from './scatterBrush.js';
 import { JointTool } from './jointTool.js';
 import { frameSelection, frameAll } from './frame.js';
+import { GridOverlay, loadGrid, saveGrid } from './grid.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -106,6 +107,13 @@ export class EditMode {
     this.selection = new Selection(debugUI);
     this.selection.editor = this;
     this.move = new MoveTool(this.selection);
+    /** The grid's lines (grid.js, ED-60); the step is move.snap. Both as the viewer left them. */
+    this.grid = new GridOverlay(this);
+    const grid = loadGrid(SNAP_STEPS);
+    this.move.snap = grid.snap;
+    this.grid.show = grid.show;
+    /** Space held over the game page: a primary drag pans (ED-61). */
+    this._space = false;
     this.history = new History((change, forward) => this._apply(change, forward));
     this.palette = new Palette(this);
     /** Per-layer hide and lock (ED-24): the palette's Layers section, the click and the move tool ask it. */
@@ -154,8 +162,9 @@ export class EditMode {
     /** The save under way, so that a second Ctrl+S waits for it instead of writing twice at once. */
     this._saving = null;
 
-    // A drag that pans: its pointer, where it started on screen, and the free camera's target then.
+    // A drag that pans: its pointer and buttons, where it started on screen, and the free camera's target then.
     this._panPointer = -1;
+    this._panButtons = 0;
     this._panX = NaN;
     this._panY = NaN;
     this._panFromX = NaN;
@@ -163,30 +172,36 @@ export class EditMode {
 
     this._onPointerDown = (e) => {
       if (e.target !== this.debugUI.gameEngine?.canvas) return;
-      if (e.buttons === SELECT_BUTTON) {
+      // Space held: the primary button pans, as in Unity, Godot and every drawing program (ED-61).
+      const spacePan = e.buttons === SELECT_BUTTON && this._space;
+      if (e.buttons === SELECT_BUTTON && !spacePan) {
         // The engine's canvas listener ran first: Mouse holds this point in the world.
         if (this.placing !== null) this.place(this.placing, Mouse.x, Mouse.y);
         else if (!this._pressTool(e)) this.move.press(Mouse.x, Mouse.y, e.clientX, e.clientY);
         return;
       }
-      if ((e.buttons & PAN_BUTTONS) === 0) return;
+      if (!spacePan && (e.buttons & PAN_BUTTONS) === 0) return;
       e.preventDefault(); // no autoscroll on a middle press
       this._panPointer = e.pointerId;
+      this._panButtons = spacePan ? SELECT_BUTTON : PAN_BUTTONS;
       this._panX = e.clientX;
       this._panY = e.clientY;
       this._panFromX = Camera._freeFollowX;
       this._panFromY = Camera._freeFollowY;
     };
     this._onPointerMove = (e) => {
-      if ((e.buttons & SELECT_BUTTON) !== 0) {
-        if (this._toolWithPointer !== null) this._toolWithPointer.move?.(Mouse.x, Mouse.y, e);
-        else this.move.move(Mouse.x, Mouse.y, e.clientX, e.clientY);
-      } else if (e.buttons === 0) {
-        for (const tool of this.tools) tool.hover?.(Mouse.x, Mouse.y, e);
-      }
-      if (e.pointerId !== this._panPointer) return;
-      if ((e.buttons & PAN_BUTTONS) === 0) {
-        this._panPointer = -1;
+      if (e.pointerId === this._panPointer && (e.buttons & this._panButtons) === 0) this._panPointer = -1;
+      if (e.pointerId !== this._panPointer) {
+        if ((e.buttons & SELECT_BUTTON) !== 0) {
+          if (this._toolWithPointer !== null) {
+            this._toolWithPointer.move?.(Mouse.x, Mouse.y, e);
+          } else {
+            this.move.free = e.altKey; // Alt: off the grid (ED-60)
+            this.move.move(Mouse.x, Mouse.y, e.clientX, e.clientY);
+          }
+        } else if (e.buttons === 0) {
+          for (const tool of this.tools) tool.hover?.(Mouse.x, Mouse.y, e);
+        }
         return;
       }
       const zoom = Camera.zoom || 1;
@@ -202,8 +217,12 @@ export class EditMode {
           this.move.release();
         }
       }
-      if (e.pointerId === this._panPointer && (e.buttons & PAN_BUTTONS) === 0) this._panPointer = -1;
+      if (e.pointerId === this._panPointer && (e.buttons & this._panButtons) === 0) this._panPointer = -1;
     };
+    this._onKeyUp = (e) => {
+      if (e.key === ' ') this._holdSpace(false);
+    };
+    this._onBlur = () => this._holdSpace(false);
     this._onContextMenu = (e) => {
       if (e.target === this.debugUI.gameEngine?.canvas) e.preventDefault(); // a right drag pans
     };
@@ -250,6 +269,7 @@ export class EditMode {
   /** Whether a tool draws on the overlay with nothing selected (the brush's circle): the overlay runs while one does. */
   wantsOverlay() {
     if (!this.active) return false;
+    if (this.grid.wantsOverlay()) return true;
     const tools = this.tools; // each overlay frame: an index, no iterator
     for (let k = 0; k < tools.length; k++) if (tools[k].wantsOverlay?.() === true) return true;
     return false;
@@ -257,6 +277,7 @@ export class EditMode {
 
   /** The overlay's frame while editing (debugCanvas.js): the move ghost, then each tool's drawing. */
   drawOverlay(ctx, camera, zoom) {
+    this.grid.drawOverlay(ctx, camera, zoom);
     this.move.drawOverlay(ctx, camera, zoom);
     for (const tool of this.tools) tool.drawOverlay?.(ctx, camera, zoom);
   }
@@ -430,12 +451,14 @@ export class EditMode {
         else this.frameSelection();
         return true;
       case 'g':
-      case 'G': {
-        const next = SNAP_STEPS[(SNAP_STEPS.indexOf(this.move.snap) + 1) % SNAP_STEPS.length];
-        this.move.snap = next;
-        this._setStatus(next > 1 ? `Grid ${next} px` : 'No grid', false);
+      case 'G':
+        if (e.shiftKey) this.toggleGrid();
+        else this.setSnap(SNAP_STEPS[(SNAP_STEPS.indexOf(this.move.snap) + 1) % SNAP_STEPS.length]);
         return true;
-      }
+      case ' ':
+        // Held over the game page (its own key event; one the editor page passes on has no keyup here): a drag pans.
+        if (e.target?.ownerDocument === document) this._holdSpace(true);
+        return true; // no page scroll
       default:
         return false;
     }
@@ -683,6 +706,34 @@ export class EditMode {
   frameSelection() {
     if (!this.active) return false;
     return frameSelection(this) || frameAll(this);
+  }
+
+  /**
+   * The snap step (ED-60): drags, nudges, placing and pasting snap to it; the grid's lines are drawn at it. Remembered.
+   * @param {number} step - one of SNAP_STEPS (1: no snap)
+   */
+  setSnap(step) {
+    if (!SNAP_STEPS.includes(step)) return;
+    this.move.snap = step;
+    saveGrid(step, this.grid.show);
+    this._setStatus(step > 1 ? `Snap to ${step} px` : 'No snap', false);
+    this.debugUI.canvas?.startLoop();
+  }
+
+  /** Shift+G: the grid's lines shown or not (the snap stays). Remembered. */
+  toggleGrid() {
+    this.grid.show = !this.grid.show;
+    saveGrid(this.move.snap, this.grid.show);
+    this._setStatus(this.grid.show ? 'Grid shown' : 'Grid hidden', false);
+    this.debugUI.canvas?.startLoop();
+  }
+
+  /** Space held or let go: the view's cursor says that a drag pans. */
+  _holdSpace(held) {
+    if (this._space === held) return;
+    this._space = held;
+    const canvas = this.debugUI.gameEngine?.canvas;
+    if (canvas?.style) canvas.style.cursor = held ? 'grab' : '';
   }
 
   /** Shift+F: every placed entity of the level (with none, the world). */
@@ -1193,6 +1244,9 @@ export class EditMode {
     document[method]('pointermove', this._onPointerMove);
     document[method]('pointerup', this._onPointerUp);
     document[method]('contextmenu', this._onContextMenu);
+    document[method]('keyup', this._onKeyUp);
+    globalThis[method]?.('blur', this._onBlur);
+    if (!on) this._holdSpace(false);
   }
 
   /** The indicator, and in the editor page the toolbar, show the editor's state again. */
