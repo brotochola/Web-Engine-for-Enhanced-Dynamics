@@ -1,7 +1,53 @@
-/* editorShell.css — the editor page's layout (VISUAL_EDITOR_PLAN.md D9, ED-15): a bar on top, the scene list on the
-   left, the game in the middle, the inspector and the assets on the right, the debug panels and the console below.
-   The docks hold what the game page puts into them; the debug bar it puts below is the in-page one, made to sit in a
-   dock here. */
+/* editorShell.css — the editor page's layout (VISUAL_EDITOR_PLAN.md D9, ED-15; ED-50 to ED-52): a bar on top, the
+   scene list on the left, the game in the middle with its status bar under it, the inspector and the assets on the
+   right, and the bottom dock: the debug bar's strip, with the Console's button, and above it a pane of its own height
+   while the Console or a debug panel is open. The docks hold what the game page puts into them; the debug bar is the
+   in-page one, made to sit in the strip here.
+
+   Sizes (editorLayout.js): a handle's drag writes one number, on the one element that reads it. They are registered
+   as not inherited, so a change restyles that element alone and lays the page out; nothing under it is restyled.
+     --weed-left, --weed-right   the side docks' widths (px): the body's grid, or the dock itself over the view
+     --weed-bottom               the bottom pane's height (px), on the bottom dock
+     --weed-assets               the Assets section's share of the right column, on that section
+   Widths: below 1280 px the side docks narrow (size × (100vw − 680px) / 600: all of it at 1280 px, 70 % at 1100 px),
+   so the view keeps its width; below 1100 px they open over the view, which keeps the whole width. */
+
+@property --weed-left {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 250;
+}
+
+@property --weed-right {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 320;
+}
+
+@property --weed-bottom {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 240;
+}
+
+@property --weed-assets {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 0.4;
+}
+
+/* 1 while a side dock shows, 0 folded: its grid track's width is multiplied by it. */
+@property --weed-left-on {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
+
+@property --weed-right-on {
+  syntax: '<number>';
+  inherits: false;
+  initial-value: 1;
+}
 
 :root {
   --weed-bg: #0e1016;
@@ -10,9 +56,9 @@
   --weed-text: #e3e6ee;
   --weed-dim: #8a90a0;
   --weed-accent: #4ade80;
-  --weed-left: 260px;
-  --weed-right: 330px;
-  --weed-bottom: 230px;
+  --weed-handle: 5px;
+  --weed-strip: 33px;
+  --weed-mono: 'JetBrains Mono', 'Fira Code', 'SF Mono', Consolas, monospace;
   color-scheme: dark;
 }
 
@@ -28,20 +74,43 @@ body.weed-editor {
 
 body.weed-editor {
   display: grid;
-  grid-template-columns: var(--weed-left) minmax(0, 1fr) var(--weed-right);
-  grid-template-rows: 36px minmax(0, 1fr) var(--weed-bottom);
+  grid-template-columns:
+    calc(var(--weed-left-on) * clamp(140px, var(--weed-left) * 1px, 32vw))
+    minmax(0, 1fr)
+    calc(var(--weed-right-on) * clamp(200px, var(--weed-right) * 1px, 40vw));
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   grid-template-areas:
     'bar bar bar'
     'left game right'
+    'left status right'
     'bottom bottom bottom';
 }
+
+body.weed-fold-left {
+  --weed-left-on: 0;
+}
+
+body.weed-fold-right {
+  --weed-right-on: 0;
+}
+
+.weed-fold-left .weed-editor-left,
+.weed-fold-right .weed-editor-right,
+.weed-fold-bottom .weed-editor-bottom {
+  display: none;
+}
+
+/* ---- the bar ---- */
 
 .weed-editor-bar {
   grid-area: bar;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
+  gap: 4px 8px;
+  min-height: 36px;
+  box-sizing: border-box;
+  padding: 4px 10px;
   background: var(--weed-panel);
   border-bottom: 1px solid var(--weed-line);
   min-width: 0;
@@ -60,6 +129,12 @@ body.weed-editor {
   min-width: 0;
 }
 
+/* The game page's toolbar: its buttons wrap rather than leave the bar when the bar is too narrow for them. */
+.weed-editor-toolbar > div {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
 .weed-editor-spacer {
   flex: 1;
 }
@@ -69,6 +144,16 @@ body.weed-editor {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.weed-editor-status:empty {
+  display: none;
+}
+
+.weed-editor-docks {
+  display: flex;
+  gap: 2px;
 }
 
 .weed-editor-button {
@@ -97,57 +182,312 @@ body.weed-editor {
   color: var(--weed-accent);
 }
 
+.weed-editor-glyph {
+  display: inline-block;
+  min-width: 1em;
+  text-align: center;
+}
+
+/* The bar's dock buttons: a window with its dock drawn in, filled while the dock shows. */
+.weed-editor-button.weed-editor-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 5px;
+  color: var(--weed-dim);
+  border-color: transparent;
+  background: transparent;
+}
+
+.weed-editor-button.weed-editor-icon:hover {
+  color: var(--weed-text);
+  border-color: #343a4c;
+}
+
+.weed-editor-button.weed-editor-icon.active {
+  color: var(--weed-text);
+  border-color: transparent;
+}
+
+.weed-editor-icon svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+}
+
+.weed-editor-icon svg .pane {
+  stroke: none;
+  fill: currentColor;
+  opacity: 0;
+}
+
+.weed-editor-icon.active svg .pane {
+  opacity: 0.9;
+}
+
+/* ---- docks ---- */
+
 .weed-editor-dock {
   background: var(--weed-panel);
   min-width: 0;
   min-height: 0;
   display: flex;
-  flex-direction: column;
   overflow: hidden;
 }
 
-.weed-editor-dock h2 {
+.weed-editor-left {
+  grid-area: left;
+}
+
+.weed-editor-right {
+  grid-area: right;
+}
+
+.weed-editor-column {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 0;
+}
+
+.weed-editor-head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  flex: none;
+  box-sizing: border-box;
+  padding: 0 4px 0 10px;
+  border-bottom: 1px solid var(--weed-line);
+}
+
+.weed-editor-head h2 {
+  flex: 1;
+  min-width: 0;
   margin: 0;
-  padding: 6px 10px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--weed-dim);
-  border-bottom: 1px solid var(--weed-line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* A section's title folds it (the Inspector, the Assets). */
+.weed-editor-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0;
+  margin-left: -2px;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.weed-editor-section-toggle:hover {
+  color: var(--weed-text);
+}
+
+.weed-editor-section-toggle svg,
+.weed-editor-fold svg {
+  width: 12px;
+  height: 12px;
   flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.weed-editor-left {
-  grid-area: left;
-  border-right: 1px solid var(--weed-line);
+.weed-editor-section-toggle svg {
+  width: 10px;
+  height: 10px;
+  transition: transform 0.12s ease;
 }
 
-.weed-editor-right {
-  grid-area: right;
-  border-left: 1px solid var(--weed-line);
+.weed-fold-inspector [data-fold='inspector'] svg,
+.weed-fold-assets [data-fold='assets'] svg {
+  transform: rotate(-90deg);
+}
+
+/* A dock's fold button. */
+.weed-editor-fold {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--weed-dim);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.weed-editor-fold:hover {
+  color: var(--weed-text);
+  border-color: #343a4c;
+  background: #1e2230;
 }
 
 .weed-editor-section {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  flex: 2 1 0;
 }
 
-/* The inspector gets more of the column than the assets: its live values run long. */
-.weed-editor-section:first-child {
-  flex: 3 1 0;
+/* The Inspector takes what the Assets leave: their share is --weed-assets (the split's handle). */
+.weed-editor-section[data-section='inspector'] {
+  flex: 1 1 0;
+  min-height: 56px;
 }
 
-.weed-editor-section + .weed-editor-section {
+.weed-editor-section[data-section='assets'] {
+  flex: 0 1 calc(var(--weed-assets) * 100%);
+  min-height: 56px;
+}
+
+.weed-fold-inspector .weed-editor-section[data-section='inspector'] {
+  flex: none;
+  min-height: 0;
+}
+
+.weed-fold-inspector .weed-editor-section[data-section='assets'] {
+  flex: 1 1 0;
+}
+
+.weed-fold-assets .weed-editor-section[data-section='assets'] {
+  flex: none;
+  min-height: 0;
+}
+
+.weed-fold-inspector [data-section='inspector'] > .weed-editor-slot,
+.weed-fold-assets [data-section='assets'] > .weed-editor-slot,
+.weed-fold-inspector [data-handle='split'],
+.weed-fold-assets [data-handle='split'] {
+  display: none;
+}
+
+.weed-fold-inspector [data-section='assets'] > .weed-editor-head {
   border-top: 1px solid var(--weed-line);
 }
 
-.weed-editor-bottom {
-  grid-area: bottom;
-  border-top: 1px solid var(--weed-line);
+/* ---- handles ---- */
+
+.weed-editor-handle {
+  position: relative;
+  flex: none;
+  touch-action: none;
+  z-index: 1;
 }
+
+.weed-editor-handle::after {
+  content: '';
+  position: absolute;
+  background: var(--weed-line);
+  transition: background-color 0.1s ease 0.1s;
+}
+
+.weed-editor-handle:hover::after,
+.weed-editor-handle.active::after {
+  background: rgba(74, 222, 128, 0.75);
+}
+
+.weed-editor-handle[data-handle='left'],
+.weed-editor-handle[data-handle='right'] {
+  width: var(--weed-handle);
+  cursor: col-resize;
+}
+
+.weed-editor-handle[data-handle='left']::after {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 1px;
+}
+
+.weed-editor-handle[data-handle='right']::after {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+}
+
+.weed-editor-handle[data-handle='left']:hover::after,
+.weed-editor-handle[data-handle='left'].active::after,
+.weed-editor-handle[data-handle='right']:hover::after,
+.weed-editor-handle[data-handle='right'].active::after {
+  width: 3px;
+}
+
+.weed-editor-handle[data-handle='bottom'],
+.weed-editor-handle[data-handle='split'] {
+  height: var(--weed-handle);
+  cursor: row-resize;
+}
+
+.weed-editor-handle[data-handle='bottom']::after {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 1px;
+}
+
+.weed-editor-handle[data-handle='split']::after {
+  left: 0;
+  right: 0;
+  top: 2px;
+  height: 1px;
+}
+
+.weed-editor-handle[data-handle='bottom']:hover::after,
+.weed-editor-handle[data-handle='bottom'].active::after {
+  height: 3px;
+}
+
+.weed-editor-handle[data-handle='split']:hover::after,
+.weed-editor-handle[data-handle='split'].active::after {
+  top: 1px;
+  height: 3px;
+}
+
+/* While a handle is held: the game's frame takes no pointer (the drag keeps its moves over it), and the cursor is the
+   handle's everywhere. */
+.weed-resizing .weed-editor-game iframe {
+  pointer-events: none;
+}
+
+.weed-resizing,
+.weed-resizing * {
+  user-select: none;
+}
+
+.weed-resizing-x,
+.weed-resizing-x * {
+  cursor: col-resize !important;
+}
+
+.weed-resizing-y,
+.weed-resizing-y * {
+  cursor: row-resize !important;
+}
+
+/* ---- slots: each scrolls on its own ---- */
 
 .weed-editor-slot {
   flex: 1;
@@ -174,28 +514,7 @@ body.weed-editor {
   display: none;
 }
 
-.weed-editor-tabs {
-  display: flex;
-  gap: 2px;
-  padding: 4px 8px 0;
-  border-bottom: 1px solid var(--weed-line);
-  flex: none;
-}
-
-.weed-editor-tab {
-  font: inherit;
-  color: var(--weed-dim);
-  background: none;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 4px 10px;
-  cursor: pointer;
-}
-
-.weed-editor-tab.active {
-  color: var(--weed-text);
-  border-bottom-color: var(--weed-accent);
-}
+/* ---- the game and its status bar ---- */
 
 .weed-editor-game {
   grid-area: game;
@@ -243,22 +562,283 @@ body.weed-editor {
   padding: 5px 8px;
 }
 
-/* The game page's debug bar, in the bottom dock: in place, its open panel scrolling under its tabs. */
+/* The status bar (ED-52): one line under the view, written by the game page's editor (editor/statusBar.js). */
+.weed-editor-statusbar {
+  grid-area: status;
+  display: flex;
+  height: 22px;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--weed-panel);
+  border-top: 1px solid var(--weed-line);
+  color: var(--weed-dim);
+  font-size: 11px;
+}
+
+.weed-editor-status-line {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.weed-editor-status-line > span {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 0 9px;
+  border-left: 1px solid var(--weed-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.weed-editor-status-line > [data-status='mode'] {
+  border-left: 0;
+  padding: 0 8px 0 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.weed-editor-status-line > [data-status='mode'][data-mode='edit'] {
+  color: var(--weed-accent);
+}
+
+.weed-editor-status-line > [data-status='mode'][data-mode='play'] {
+  color: #93c5fd;
+}
+
+.weed-editor-status-line > [data-status='hint'] {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 21px;
+  border-left: 0;
+  padding-left: 2px;
+  color: #c3c8d6;
+}
+
+.weed-editor-status-line > [data-status='hint'].error {
+  color: #f87171;
+}
+
+.weed-editor-status-line > [data-status='pointer'] {
+  min-width: 11ch;
+  justify-content: flex-end;
+}
+
+.weed-editor-status-line > [data-status='zoom'] {
+  min-width: 4ch;
+  justify-content: flex-end;
+}
+
+/* ---- the bottom dock: the strip, and the pane above it ---- */
+
+.weed-editor-bottom {
+  grid-area: bottom;
+  flex-direction: column;
+  position: relative;
+}
+
+.weed-editor-bottom > [data-handle='bottom'] {
+  display: none;
+}
+
+/* A pane is open (the Console, or one of the debug bar's panels): the dock takes the pane's height. */
+body.weed-console-open .weed-editor-bottom,
+.weed-editor-bottom:has(.debug-ui-panel.open) {
+  height: clamp(96px, var(--weed-bottom) * 1px, 100vh - 200px);
+}
+
+body.weed-console-open .weed-editor-bottom > [data-handle='bottom'],
+.weed-editor-bottom:has(.debug-ui-panel.open) > [data-handle='bottom'] {
+  display: block;
+}
+
+.weed-editor-slot[data-pane='console'] {
+  flex: 1 1 0;
+}
+
+.weed-editor-strip {
+  display: flex;
+  align-items: stretch;
+  flex: none;
+  height: var(--weed-strip);
+  box-sizing: border-box;
+  border-top: 1px solid var(--weed-line);
+  margin-top: auto;
+}
+
+/* The Console's button, drawn as one of the debug bar's tabs beside them. */
+.weed-editor-strip > .weed-editor-tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 0 14px;
+  font: 12px var(--weed-mono);
+  color: rgba(255, 255, 255, 0.6);
+  background: none;
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.weed-editor-strip > .weed-editor-tab:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.weed-editor-strip > .weed-editor-tab.active {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--weed-accent);
+}
+
+.weed-editor-strip > .weed-editor-fold {
+  align-self: center;
+  margin: 0 6px;
+}
+
+.weed-editor-strip > .weed-editor-slot[data-slot='debug'] {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.weed-editor-strip > .weed-editor-slot[data-slot='debug']:empty::before {
+  padding: 0 10px;
+  line-height: 32px;
+}
+
+/* The game page's debug bar, in the strip: its tabs in place, its open panel in the pane above the strip. */
 .weed-editor-slot[data-slot='debug'] > .debug-ui {
   position: static;
   height: 100%;
-  display: flex;
-  flex-direction: column;
   font-size: 12px;
 }
 
-.weed-editor-slot[data-slot='debug'] > .debug-ui > .debug-ui-panel.open {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  animation: none;
+.weed-editor-slot[data-slot='debug'] > .debug-ui > .debug-ui-header {
+  height: 100%;
+  background: transparent;
+  backdrop-filter: none;
+  border-bottom: 0;
 }
 
-.weed-editor-slot[data-slot='debug'] > .debug-ui .debug-ui-toggle {
+.weed-editor-slot[data-slot='debug'] .debug-ui-tab {
+  padding: 0 12px;
+}
+
+/* The panels open upward from the strip: the tabs' arrows point there. */
+.weed-editor-slot[data-slot='debug'] .debug-ui-tab .arrow {
+  transform: rotate(180deg);
+}
+
+.weed-editor-slot[data-slot='debug'] .debug-ui-tab.active .arrow {
+  transform: none;
+}
+
+.weed-editor-slot[data-slot='debug'] .debug-ui-toggle {
   display: none;
+}
+
+.weed-editor-bottom .debug-ui-panel.open {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: var(--weed-handle);
+  bottom: var(--weed-strip);
+  overflow: auto;
+  animation: none;
+  background: var(--weed-panel);
+  backdrop-filter: none;
+  border-bottom: 0;
+}
+
+/* ---- narrower windows ---- */
+
+/* Below 1280 px the side docks narrow: they give up what the window loses, so the view keeps its width. */
+@media (1100px <= width < 1280px) {
+  body.weed-editor {
+    grid-template-columns:
+      calc(var(--weed-left-on) * clamp(140px, var(--weed-left) * (100vw - 680px) / 600, 32vw))
+      minmax(0, 1fr)
+      calc(var(--weed-right-on) * clamp(200px, var(--weed-right) * (100vw - 680px) / 600, 40vw));
+  }
+}
+
+/* Below 1100 px the side docks are panels over the view, opened from the bar (or Ctrl+1, Ctrl+2): the view keeps the
+   whole width. Each overflows its empty grid track into the view. */
+@media (width < 1100px) {
+  body.weed-editor {
+    grid-template-columns: 0px minmax(0, 1fr) 0px;
+  }
+
+  .weed-editor-game,
+  .weed-editor-statusbar {
+    grid-column: 1 / -1;
+  }
+
+  .weed-editor-left,
+  .weed-editor-right {
+    display: none;
+    grid-row: 2;
+    z-index: 20;
+    box-shadow: 0 0 28px rgba(0, 0, 0, 0.65);
+  }
+
+  .weed-editor-left {
+    grid-column: 1;
+    justify-self: start;
+    width: clamp(140px, var(--weed-left) * 1px, 85vw);
+  }
+
+  .weed-editor-right {
+    grid-column: 3;
+    justify-self: end;
+    width: clamp(200px, var(--weed-right) * 1px, 85vw);
+  }
+
+  body.weed-open-left .weed-editor-left,
+  body.weed-open-right .weed-editor-right {
+    display: flex;
+  }
+
+  /* The bar: labels shorten to their marks. */
+  .weed-editor-wide {
+    display: none;
+  }
+
+  .weed-editor-bar {
+    gap: 4px 6px;
+    padding: 4px 8px;
+  }
+
+  .weed-editor-toolbar .weed-editor-button {
+    padding: 3px 7px;
+  }
+
+  .weed-editor-slot[data-slot='debug'] .debug-ui-tab {
+    padding: 0 9px;
+    gap: 4px;
+  }
+}
+
+/* The strip: the debug bar's tabs show their marks only, the open one its name too. */
+@media (width < 900px) {
+  .weed-editor-slot[data-slot='debug'] .debug-ui-tab > span:not(.icon) {
+    display: none;
+  }
+
+  .weed-editor-slot[data-slot='debug'] .debug-ui-tab.active > span:not(.icon):not(.arrow) {
+    display: inline;
+  }
+}
+
+@media (width < 640px) {
+  .weed-editor-title {
+    display: none;
+  }
 }

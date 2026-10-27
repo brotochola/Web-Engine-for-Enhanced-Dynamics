@@ -9,32 +9,43 @@
 //
 // The address follows the game page open in it, in its shortest form, so a reload or a bookmark opens it again.
 //
+// The docks resize and fold, and below 1100 px the side ones open over the view (editorLayout.js, ED-50, ED-51);
+// Ctrl+1, Ctrl+2 and Ctrl+3 fold them, typed here or in the game page (its editor passes them on: dockKey).
+//
 // Nothing of the game page is kept past its pagehide: its nodes are taken out of the docks, its objects are dropped,
 // and the state it hands over is copied with this page's own structuredClone. Any object of a reloaded page's realm
 // (a node, a function, a plain object) would keep that realm alive, and its shared memories with it. The styles it
 // sends are text, put into a style element of this page's.
 
+import { DockLayout, dockLayoutElements } from './editorLayout.js';
+
 /** Where the game page looks for the host (editorHost.js). */
 export const HOST_KEY = '__weedEditorHost';
-/** The protocol's version: a game page of another version runs as if it were not hosted. */
+/**
+ * The protocol's version: a game page of another version runs as if it were not hosted. What was added since its
+ * first form is optional on both sides: the `status` dock (a game page that has none to fill leaves it empty, an
+ * older editor page has none to give) and dockKey.
+ */
 export const HOST_VERSION = 1;
-/** The docks a game page fills. */
-export const SLOT_NAMES = ['toolbar', 'tree', 'inspector', 'assets', 'console', 'debug'];
+/** The docks a game page fills; `status` is the line under the view (ED-52). */
+export const SLOT_NAMES = ['toolbar', 'tree', 'inspector', 'assets', 'console', 'debug', 'status'];
 /** The last game page opened here, for the form (this viewer's convenience only). */
 const LAST_GAME_KEY = 'weed.editor.lastGame';
 
 export class EditorHost {
   /**
    * @param {{ slots: Record<string, Element>, frame?: { focus(): void, contentWindow?: object } | null,
-   *   document?: Document | null, onStatus?: (text: string) => void, onSceneReady?: () => void }} parts
+   *   document?: Document | null, onStatus?: (text: string) => void, onSceneReady?: () => void,
+   *   onDockKey?: (digit: number) => boolean }} parts
    */
-  constructor({ slots, frame = null, document: doc = null, onStatus = null, onSceneReady = null }) {
+  constructor({ slots, frame = null, document: doc = null, onStatus = null, onSceneReady = null, onDockKey = null }) {
     this.version = HOST_VERSION;
     this._slots = slots;
     this._frame = frame;
     this._document = doc;
     this._onStatus = onStatus;
     this._onSceneReady = onSceneReady;
+    this._onDockKey = onDockKey;
     /** The game page connected now (its editorHost.js), or null. */
     this._client = null;
     /** What the last game page handed over, as this page's own copy, until the next one takes it. */
@@ -121,6 +132,16 @@ export class EditorHost {
     if (this._client !== null) this._client.onHostKey(e);
   }
 
+  /**
+   * Ctrl+1, Ctrl+2 or Ctrl+3 typed in the game page (its editor passes them on): fold or unfold a dock of this page.
+   * Optional in the protocol: a game page checks that it is there.
+   * @param {number} digit
+   * @returns {boolean} whether this page took it
+   */
+  dockKey(digit) {
+    return this._onDockKey !== null && this._onDockKey(digit) === true;
+  }
+
   _dropClient() {
     this._client = null;
     for (const name of SLOT_NAMES) this._slots[name]?.replaceChildren();
@@ -193,7 +214,7 @@ function storage() {
   }
 }
 
-/** Build the editor page from its markup (index.html): the host, the game's iframe, the tabs, the keys. */
+/** Build the editor page from its markup (index.html): the host, the game's iframe, the docks, the keys. */
 export function startEditorShell(doc) {
   const win = doc.defaultView;
   const slots = {};
@@ -202,6 +223,8 @@ export function startEditorShell(doc) {
   const status = doc.getElementById('status');
   const gameOnly = doc.getElementById('gameOnly');
   const defaultPage = doc.querySelector('meta[name="weed-game-page"]')?.getAttribute('content') || '';
+  // The docks: this viewer's sizes and folds, the handles, the fold buttons, the Console's pane.
+  const layout = new DockLayout(dockLayoutElements(doc), { win, storage: storage() }).start();
   // The address follows the game page open here (a demo chosen in it, a link followed), in its shortest form.
   const showGamePage = () => {
     let href = '';
@@ -229,9 +252,13 @@ export function startEditorShell(doc) {
       status.textContent = text;
     },
     onSceneReady: showGamePage,
+    onDockKey: (digit) => layout.toggleDock(digit),
   });
   win[HOST_KEY] = host;
-  win.addEventListener('keydown', (e) => host.onKeyDown(e));
+  // Ctrl+1, 2, 3 are the docks'; the rest goes to the game page's editor.
+  win.addEventListener('keydown', (e) => {
+    if (!layout.onKey(e)) host.onKeyDown(e);
+  });
   // Reloading or closing this page drops the editor's state with it: ask first when it has unsaved changes. A reload
   // of the game page alone keeps them (the handover).
   win.addEventListener('beforeunload', (e) => {
@@ -239,14 +266,6 @@ export function startEditorShell(doc) {
     e.preventDefault();
     e.returnValue = '';
   });
-
-  // The bottom dock's tabs.
-  for (const tab of doc.querySelectorAll('[data-tab]')) {
-    tab.addEventListener('click', () => {
-      for (const t of doc.querySelectorAll('[data-tab]')) t.classList.toggle('active', t === tab);
-      for (const pane of doc.querySelectorAll('[data-pane]')) pane.hidden = pane.dataset.pane !== tab.dataset.tab;
-    });
-  }
 
   const game = gamePageFor(win.location.search, win.location.href, defaultPage);
   const form = doc.getElementById('open');

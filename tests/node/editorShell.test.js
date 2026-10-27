@@ -6,7 +6,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { EditorHost, gamePageUrl, gamePageFor, editorQueryFor, SLOT_NAMES } from '../../src/core/debug/editor/shell/editorShell.js';
-import { findEditorHost, editorPageUrl, HostedEditor, HOST_KEY, HOST_VERSION } from '../../src/core/debug/editor/editorHost.js';
+import { findEditorHost, editorPageUrl, HostedEditor, HOST_KEY, HOST_VERSION, dockDigitOf } from '../../src/core/debug/editor/editorHost.js';
+import { dockKeyOf } from '../../src/core/debug/editor/shell/editorLayout.js';
 import { editorPageFor } from '../../src/core/debug/editorPage.js';
 
 /** A dock: what was put into it, and replaceChildren. */
@@ -52,6 +53,88 @@ test('the host hands a page the docks and what the page before it handed over, o
   assert.notEqual(kept, state, 'a copy of its own, not the page’s object');
   assert.notEqual(kept.history, state.history);
   assert.equal(host.connect(second).kept, null, 'taken: the next connect gets nothing');
+});
+
+test('the status dock (ED-52) is one of the docks: what the page put there goes on its pagehide', () => {
+  const { host, slots } = makeHost();
+  assert.ok(SLOT_NAMES.includes('status'));
+  const page = { onHostKey() {} };
+  assert.equal(host.connect(page).slots.status, slots.status);
+  slots.status.appendChild({ node: 'the status line' });
+  host.disconnect(page, null);
+  assert.deepEqual(slots.status.children, []);
+});
+
+test('Ctrl+1, 2, 3 typed in the game page fold the editor page’s docks, and reach neither the game nor the browser', () => {
+  const taken = [];
+  const host = new EditorHost({ slots: {}, onDockKey: (digit) => (taken.push(digit), digit !== 9) });
+  assert.equal(host.dockKey(2), true);
+  assert.equal(host.dockKey(9), false);
+  assert.deepEqual(taken, [2, 9]);
+  assert.equal(new EditorHost({ slots: {} }).dockKey(1), false, 'an editor page without docks to fold');
+
+  const passed = [];
+  const hosted = new HostedEditor({}, { dockKey: (digit) => (passed.push(digit), true) });
+  const typed = (key, extra) => {
+    const e = keyEvent(key, extra);
+    e.stopped = false;
+    e.stopPropagation = () => {
+      e.stopped = true;
+    };
+    hosted._onDockKey(e);
+    return e;
+  };
+  const two = typed('2', { ctrlKey: true, code: 'Digit2' });
+  assert.deepEqual(passed, [2]);
+  assert.equal(two.prevented && two.stopped, true, 'not the game’s, not a tab switch');
+  const held = typed('3', { ctrlKey: true, code: 'Digit3', repeat: true });
+  assert.equal(held.prevented, true);
+  assert.deepEqual(passed, [2], 'a held key folds once');
+  const undo = typed('z', { ctrlKey: true, code: 'KeyZ' });
+  assert.equal(undo.prevented || undo.stopped, false, 'the editor’s own keys pass');
+  // The two sides read the keys alike.
+  for (const e of [keyEvent('1', { ctrlKey: true }), keyEvent('"', { code: 'Digit3', metaKey: true }), keyEvent('2', { ctrlKey: true, shiftKey: true })]) {
+    assert.equal(dockDigitOf(e), dockKeyOf(e));
+  }
+});
+
+test('the status bar into the status dock: the indicator over the view and the overlay’s lines give way to it', () => {
+  class Node {
+    constructor() {
+      this.children = [];
+      this.dataset = {};
+      this.classList = { toggle() {} };
+      this.textContent = '';
+      this.title = '';
+    }
+    appendChild(node) {
+      this.children.push(node);
+      return node;
+    }
+  }
+  const saved = globalThis.document;
+  globalThis.document = { createElement: () => new Node() };
+  try {
+    const debugUI = {
+      scene: null,
+      editMode: null,
+      tools: { showIndicator: true, shown: 0, updateToolIndicator() {
+        this.shown++;
+      } },
+      canvas: { showHud: true },
+    };
+    const hosted = new HostedEditor(debugUI, {});
+    const slot = new Slot();
+    hosted.mountStatus(slot);
+    assert.equal(slot.children.length, 1);
+    assert.equal(slot.children[0], hosted.status.el);
+    assert.equal(debugUI.tools.showIndicator, false);
+    assert.equal(debugUI.tools.shown, 1, 'the indicator is hidden now');
+    assert.equal(debugUI.canvas.showHud, false);
+    hosted.update(); // the debug UI's tick reaches it
+  } finally {
+    globalThis.document = saved;
+  }
 });
 
 test('only the connected page disconnects; a page that hands over nothing leaves nothing kept', () => {

@@ -7,6 +7,11 @@
 // What the host gets from here is let go of on pagehide (shell/editorShell.js says why); this side only puts nodes
 // of its own into the docks and never listens on the host's.
 //
+// Two parts of the protocol came after its first form, and a page uses them only when its host has them: the dock
+// keys (Ctrl+1, 2, 3 typed in this page fold the editor page's docks: host.dockKey) and the `status` dock (the line
+// under the view, statusBar.js, ED-52), which then says what the indicator over the view and the overlay's pointer
+// lines said.
+//
 // Cost: a page that is not in the editor page pays one property read, at construction.
 
 import { isTypingTarget } from '../../../util/typingTarget.js';
@@ -14,9 +19,25 @@ import { loadDebugCss } from '../ui/debugDom.js';
 import { EditorToolbar } from './toolbar.js';
 import { EntityTree } from './entityTree.js';
 import { ConsolePanel } from './consolePanel.js';
+import { StatusBar } from './statusBar.js';
 import { createConsoleForward } from '../../../util/consoleForward.js';
 
 export { HOST_KEY, HOST_VERSION, findEditorHost, editorPageUrl } from '../editorPage.js';
+
+/** The editor page's dock keys by KeyboardEvent.code, so a layout that shifts its digits has them too. */
+const DOCK_DIGIT_CODES = Object.freeze({ Digit1: 1, Digit2: 2, Digit3: 3, Numpad1: 1, Numpad2: 2, Numpad3: 3 });
+
+/**
+ * The digit of Ctrl+1, Ctrl+2 or Ctrl+3 (Cmd on a Mac), or 0. The editor page reads its own keys the same way
+ * (shell/editorLayout.js, dockKeyOf).
+ * @param {KeyboardEvent} e
+ */
+export function dockDigitOf(e) {
+  if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) return 0;
+  const byCode = DOCK_DIGIT_CODES[e.code];
+  if (byCode !== undefined) return byCode;
+  return e.key === '1' ? 1 : e.key === '2' ? 2 : e.key === '3' ? 3 : 0;
+}
 
 export class HostedEditor {
   /**
@@ -35,7 +56,18 @@ export class HostedEditor {
     /** The Console dock (ED-18), and this page's console passed on to it. */
     this.console = null;
     this._pageConsole = null;
+    /** The status bar under the view (ED-52), when the editor page has a `status` dock. */
+    this.status = null;
     this._onPageHide = () => this.disconnect();
+    // Ctrl+1, 2, 3 typed in this page fold the editor page's docks: neither the game nor the browser (a tab switch)
+    // gets them. A capture listener, so it sees them before the engine hands keys to the game or the editor.
+    this._onDockKey = (e) => {
+      const digit = dockDigitOf(e);
+      if (digit === 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.repeat) this.host.dockKey(digit);
+    };
   }
 
   /** Connect to the host and fill its docks (the debug UI's constructor, once its own DOM is built). */
@@ -54,12 +86,31 @@ export class HostedEditor {
     slots.toolbar.appendChild(this.toolbar.el);
     slots.tree.appendChild(this.tree.el);
     slots.debug.appendChild(debugUI.container);
+    this._nameDebugTabs();
     // The console: this page's calls from now on, the workers' from each scene's attach.
     const panel = new ConsolePanel(debugUI);
     this.console = panel;
     slots.console.appendChild(panel.el);
     this._pageConsole = createConsoleForward(console, (entry) => panel.add('page', entry.level, entry.text));
     this._pageConsole.set(true);
+    if (typeof this.host.dockKey === 'function') window.addEventListener('keydown', this._onDockKey, true);
+    if (slots.status) this.mountStatus(slots.status);
+  }
+
+  /**
+   * The status bar into the editor page's `status` dock: from now on it says what the tool indicator over the view
+   * and the overlay's pointer and camera lines said, so those are not shown.
+   * @param {Element} slot
+   */
+  mountStatus(slot) {
+    const debugUI = this.debugUI;
+    const status = new StatusBar(debugUI);
+    this.status = status;
+    slot.appendChild(status.el);
+    debugUI.tools.showIndicator = false;
+    debugUI.tools.updateToolIndicator();
+    debugUI.canvas.showHud = false;
+    status.update();
   }
 
   /** Whether the docks are there (connected, and the page has not hidden). */
@@ -84,7 +135,9 @@ export class HostedEditor {
       }
     }
     window.removeEventListener('pagehide', this._onPageHide);
+    window.removeEventListener('keydown', this._onDockKey, true);
     this.slots = null;
+    this.status = null;
     this._pageConsole?.set(false);
     this.tree?.destroy();
     this.host.disconnect(this, state);
@@ -98,6 +151,14 @@ export class HostedEditor {
     this.tree?.attach(scene);
     this.toolbar?.refresh();
     this.console?.newScene();
+    this._nameDebugTabs(); // the Nav tab's own title goes when the scene has navigation
+  }
+
+  /** A narrow editor page shows the debug bar's tabs by their icons (editorShell.css): each names itself on hover. */
+  _nameDebugTabs() {
+    for (const tab of this.debugUI.container.querySelectorAll('.debug-ui-tab')) {
+      if (!tab.title) tab.title = tab.children[1]?.textContent || '';
+    }
   }
 
   onDetach() {
@@ -171,6 +232,7 @@ export class HostedEditor {
   update() {
     this.tree?.update();
     this.console?.update();
+    this.status?.update();
   }
 
   destroy() {

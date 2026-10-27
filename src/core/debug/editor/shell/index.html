@@ -9,17 +9,38 @@
 </head>
 <body class="weed-editor">
   <header class="weed-editor-bar">
-    <span class="weed-editor-title">WeedJS editor</span>
+    <span class="weed-editor-title" title="WeedJS editor">WeedJS<span class="weed-editor-wide"> editor</span></span>
     <div class="weed-editor-toolbar" data-slot="toolbar"></div>
     <span class="weed-editor-spacer"></span>
     <span class="weed-editor-status" id="status"></span>
-    <button type="button" class="weed-editor-button" id="reload" title="Reload the game's page; the editor keeps its document, undo and selection">Reload game</button>
-    <a class="weed-editor-button" id="gameOnly" target="_blank" rel="noopener" title="The game's page on its own, in a new tab">Game only ↗</a>
+    <div class="weed-editor-docks" role="group" aria-label="Docks">
+      <button type="button" class="weed-editor-button weed-editor-icon" data-toggle="left" aria-pressed="true" title="The scene list: show or hide it (Ctrl+1)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect class="pane" x="2.5" y="3.5" width="3.5" height="9" /><rect x="1.5" y="2.5" width="13" height="11" rx="2" /></svg>
+      </button>
+      <button type="button" class="weed-editor-button weed-editor-icon" data-toggle="right" aria-pressed="true" title="The inspector and the assets: show or hide them (Ctrl+2)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect class="pane" x="10" y="3.5" width="3.5" height="9" /><rect x="1.5" y="2.5" width="13" height="11" rx="2" /></svg>
+      </button>
+      <button type="button" class="weed-editor-button weed-editor-icon" data-toggle="bottom" aria-pressed="true" title="The debug bar and the console: show or hide them (Ctrl+3)">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect class="pane" x="2.5" y="9" width="11" height="3.5" /><rect x="1.5" y="2.5" width="13" height="11" rx="2" /></svg>
+      </button>
+    </div>
+    <button type="button" class="weed-editor-button" id="reload" title="Reload the game's page; the editor keeps its document, undo and selection"><span class="weed-editor-glyph" aria-hidden="true">↻</span><span class="weed-editor-wide"> Reload game</span></button>
+    <a class="weed-editor-button" id="gameOnly" target="_blank" rel="noopener" title="The game's page on its own, in a new tab"><span class="weed-editor-wide">Game only </span><span aria-hidden="true">↗</span></a>
   </header>
-  <aside class="weed-editor-dock weed-editor-left">
-    <h2>Scene</h2>
-    <div class="weed-editor-slot" data-slot="tree" data-empty="The scene's entities show here once the game is running."></div>
+
+  <aside class="weed-editor-dock weed-editor-left" data-dock="left" aria-label="Scene">
+    <div class="weed-editor-column">
+      <div class="weed-editor-head">
+        <h2>Scene</h2>
+        <button type="button" class="weed-editor-fold" data-fold="left" title="Fold the scene list (Ctrl+1)" aria-label="Fold the scene list">
+          <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M7.5 2.5 4 6l3.5 3.5" /></svg>
+        </button>
+      </div>
+      <div class="weed-editor-slot" data-slot="tree" data-empty="The scene's entities show here once the game is running."></div>
+    </div>
+    <div class="weed-editor-handle" data-handle="left" role="separator" aria-orientation="vertical" aria-label="Resize the scene list" title="Drag to resize the scene list; double-click for its default width"></div>
   </aside>
+
   <main class="weed-editor-game">
     <iframe id="game" title="The game"></iframe>
     <form class="weed-editor-open" id="open" hidden>
@@ -29,23 +50,42 @@
       <p>The page must create its GameEngine with <code>debug: true</code>.</p>
     </form>
   </main>
-  <aside class="weed-editor-dock weed-editor-right">
-    <section class="weed-editor-section">
-      <h2>Inspector</h2>
-      <div class="weed-editor-slot" data-slot="inspector" data-empty="Nothing selected. Shift+E edits; then click an entity in the view or the scene list."></div>
-    </section>
-    <section class="weed-editor-section">
-      <h2>Assets</h2>
-      <div class="weed-editor-slot" data-slot="assets" data-empty="The scene's files and classes show here once the game is running."></div>
-    </section>
+  <div class="weed-editor-statusbar" data-slot="status"></div>
+
+  <aside class="weed-editor-dock weed-editor-right" data-dock="right" aria-label="Inspector and assets">
+    <div class="weed-editor-handle" data-handle="right" role="separator" aria-orientation="vertical" aria-label="Resize the inspector and the assets" title="Drag to resize the inspector and the assets; double-click for their default width"></div>
+    <div class="weed-editor-column">
+      <section class="weed-editor-section" data-section="inspector">
+        <div class="weed-editor-head">
+          <h2><button type="button" class="weed-editor-section-toggle" data-fold="inspector" aria-expanded="true" title="Fold or unfold the inspector">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" /></svg>Inspector</button></h2>
+          <button type="button" class="weed-editor-fold" data-fold="right" title="Fold the inspector and the assets (Ctrl+2)" aria-label="Fold the inspector and the assets">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M4.5 2.5 8 6 4.5 9.5" /></svg>
+          </button>
+        </div>
+        <div class="weed-editor-slot" data-slot="inspector" data-empty="Nothing selected. Shift+E edits; then click an entity in the view or the scene list."></div>
+      </section>
+      <div class="weed-editor-handle" data-handle="split" role="separator" aria-orientation="horizontal" aria-label="Share the column between the inspector and the assets" title="Drag to share the column between the inspector and the assets; double-click for the default"></div>
+      <section class="weed-editor-section" data-section="assets">
+        <div class="weed-editor-head">
+          <h2><button type="button" class="weed-editor-section-toggle" data-fold="assets" aria-expanded="true" title="Fold or unfold the assets">
+            <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 4.5 6 7.5l3-3" /></svg>Assets</button></h2>
+        </div>
+        <div class="weed-editor-slot" data-slot="assets" data-empty="The scene's files and classes show here once the game is running."></div>
+      </section>
+    </div>
   </aside>
-  <footer class="weed-editor-dock weed-editor-bottom">
-    <nav class="weed-editor-tabs">
-      <button type="button" class="weed-editor-tab active" data-tab="debug">Debug</button>
-      <button type="button" class="weed-editor-tab" data-tab="console">Console</button>
-    </nav>
-    <div class="weed-editor-slot" data-slot="debug" data-pane="debug" data-empty="The game's debug panels show here once it is running."></div>
+
+  <footer class="weed-editor-dock weed-editor-bottom" data-dock="bottom" aria-label="Debug bar and console">
+    <div class="weed-editor-handle" data-handle="bottom" role="separator" aria-orientation="horizontal" aria-label="Resize the open panel" title="Drag to resize the panel; double-click for its default height"></div>
     <div class="weed-editor-slot" data-slot="console" data-pane="console" data-empty="The game's console." hidden></div>
+    <div class="weed-editor-strip">
+      <button type="button" class="weed-editor-tab" data-tab="console" aria-pressed="false" title="The game's console: what the game and its workers log, and its errors"><span class="icon" aria-hidden="true">📜</span>Console</button>
+      <div class="weed-editor-slot" data-slot="debug" data-pane="debug" data-empty="The game's debug panels show here once it is running."></div>
+      <button type="button" class="weed-editor-fold" data-fold="bottom" title="Fold the debug bar and the console (Ctrl+3)" aria-label="Fold the debug bar and the console">
+        <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M2.5 4.5 6 8l3.5-3.5" /></svg>
+      </button>
+    </div>
   </footer>
   <script type="module">
     import { startEditorShell } from './editorShell.js';
