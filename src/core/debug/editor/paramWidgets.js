@@ -2,8 +2,9 @@
 // row per declared param with the widget its kind asks for, its default beside it, and a button back to the default
 // when it differs; for a class that declares none, a key/value box (the config as JSON). Built when the selection
 // changes, never per frame. A change is reported once per user action: a number when its field is left or its
-// slider let go, a color when the picker closes, a text when its field is left. With the hook for it, a points
-// param's row has a + (handles.js: its points are dragged in the view).
+// slider let go, a color when the picker closes, a text when its field is left. With the hooks for them, an entity
+// param's row has a button to pick the entity in the view (entityPicker.js), and a points param's a + (handles.js:
+// its points are dragged in the view).
 
 import {
   KIND_NUMBER,
@@ -54,7 +55,9 @@ export function defaultText(kind, entry, value) {
  * @param {object|null} description - describeSpawnParams of the class, or null when it declares none
  * @param {object} config - the record's config, `{}` when it has none
  * @param {{ onChange: (key: string, value: unknown) => void, onConfig: (config: object) => void,
- *   entityNames: (className?: string) => string[], addPoint?: (key: string) => void }} hooks
+ *   entityNames: (className?: string) => string[],
+ *   pickEntity?: (key: string, className: string|undefined, button: HTMLElement) => void,
+ *   addPoint?: (key: string) => void }} hooks
  */
 export function buildParamFields(container, description, config, hooks) {
   container.textContent = '';
@@ -156,7 +159,12 @@ function widget(kind, entry, value, commit, hooks, key) {
       if (typeof value === 'string' && !names.includes(value)) choices.push([value, `${value} (missing)`]);
       const select = selectOf(choices, typeof value === 'string' ? value : '');
       select.onchange = () => commit(select.value === '' ? null : select.value);
-      return select;
+      if (!hooks.pickEntity) return select;
+      // Or a click on the entity in the view (entityPicker.js).
+      const pick = button('⌖', `Pick ${entry.class ? `the ${entry.class}` : 'the entity'} in the view (Esc cancels)`);
+      pick.dataset.pick = key;
+      pick.onclick = () => hooks.pickEntity(key, entry.class, pick);
+      return inRow(select, pick);
     }
     case KIND_POINTS: {
       const text = document.createElement('span');

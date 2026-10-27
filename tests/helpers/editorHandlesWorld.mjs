@@ -1,8 +1,8 @@
-// A small world for the editor's handles tests (tests/node/editorHandles.test.js): the components' columns on shared
-// buffers, entity classes whose spawn does what their onSpawned would (a logic worker's fill of the params, then the
-// collider or light they set), a scene file that places one of each, and the real EditMode over a fake debug UI. A
-// despawn bumps the slot's spawn generation and a spawn takes the lowest free slot, so a respawn usually lands in the
-// slot it left, as the pools' free lists make it.
+// A small world for the editor's handles and entity picker tests (tests/node/editorHandles.test.js,
+// tests/node/editorPicker.test.js): the components' columns on shared buffers, entity classes whose spawn does what
+// their onSpawned would (a logic worker's fill of the params, then the collider or light they set), a scene file that
+// places one of each, and the real EditMode over a fake debug UI. A despawn bumps the slot's spawn generation and a
+// spawn takes the lowest free slot, so a respawn usually lands in the slot it left, as the pools' free lists make it.
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
@@ -160,6 +160,7 @@ export function makeWorld() {
     canvas,
     editMode,
     handles: editMode.handles,
+    picker: editMode.picker,
     classOf,
     indexOf: (name) => indexOfName(scene, name),
     record: (name) => recordOf(scene, name)?.record ?? null,
