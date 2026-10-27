@@ -30,6 +30,7 @@ export const SHORTCUTS = Object.freeze([
       ['Arrows', 'nudge one grid step (Shift: ten)'],
       ['G · Shift+G', 'the snap step · the grid’s lines'],
       ['Ctrl+D', 'duplicate'],
+      ['Drag a class from Assets', 'place one where it drops (or + then a click)'],
       ['Ctrl+C · Ctrl+X · Ctrl+V', 'copy · cut · paste where the pointer is'],
       ['Del', 'delete'],
       ['Alt+drag', 'a joint’s anchor; Alt+click on a route adds a point'],
@@ -43,6 +44,24 @@ export const SHORTCUTS = Object.freeze([
       ['Wheel', 'zoom about the pointer'],
       ['Right or middle drag · Space+drag', 'pan'],
       ['W A S D', 'pan'],
+    ],
+  ],
+  [
+    'Scene list (the editor page)',
+    [
+      ['Ctrl+F', 'filter it by name or class (Esc clears it)'],
+      ['↑ ↓', 'select the next row'],
+      ['Enter · double click', 'frame the selection'],
+      ['F2', 'rename in place (Enter keeps it, Esc leaves it)'],
+      ['Shift or Ctrl+click', 'add to the selection, or take out'],
+      ['Right click · Shift+F10', 'its menu: frame, rename, duplicate, copy, delete, select all of the class'],
+    ],
+  ],
+  [
+    'Docks (the editor page)',
+    [
+      ['Ctrl+1 · Ctrl+2 · Ctrl+3', 'show or hide the scene list · inspector and assets · debug bar and console'],
+      ['Drag a dock’s edge', 'resize it (double click: its default size)'],
     ],
   ],
   [

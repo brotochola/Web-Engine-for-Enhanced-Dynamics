@@ -140,6 +140,7 @@ export class HostedEditor {
     this.status = null;
     this._pageConsole?.set(false);
     this.tree?.destroy();
+    this.console?.destroy(); // its observer of the docks goes now, not once it sees itself detached
     this.host.disconnect(this, state);
   }
 
@@ -184,6 +185,8 @@ export class HostedEditor {
    * @param {KeyboardEvent} e
    */
   onHostKey(e) {
+    // A key a panel already took (the scene list's arrows, a filter's Esc) is not the editor's too.
+    if (e.defaultPrevented) return;
     const key = typeof e.key === 'string' ? e.key.toLowerCase() : '';
     const typing = isTypingTarget(e.target);
     const debugUI = this.debugUI;
