@@ -171,6 +171,64 @@ create() {
 
 On the page, from `create()` on. It returns `null` when the running file has no such name, or when that entity has despawned: its pool slot may hold another entity by then, and a name never points at the wrong one. Entities refer to each other through entity params instead.
 
+## Joints between placed entities
+
+A file can join its entities with physics joints, by name, in a `joints` section after its entities:
+
+```json
+"joints": [
+  { "type": "revolute", "a": "Door1", "b": "Wall1", "anchorA": [-40, 0], "anchorB": [20, 0], "enableLimit": true, "lowerAngle": -1.5, "upperAngle": 0 },
+  { "name": "Rope", "type": "distance", "a": "Lamp1", "b": "Ceiling", "anchorA": [0, -16], "enableSpring": true, "hertz": 3 }
+]
+```
+
+- `type`: one of the four joints `Joint` makes (`Joint.addRevolute` and the others).
+- `a`, `b`: the names of two entities of the file.
+- `anchorA`, `anchorB`: where the joint holds each entity, in pixels from its position and turning with it (`Joint`'s local anchors). Left out, `[0, 0]`: the entity's position.
+- The type's settings, under `Joint`'s own names; the ones left out take `Joint`'s defaults. Angles are radians.
+- `forceThreshold`, `torqueThreshold`: the force or torque that breaks the joint (a `JointBreakListener` hears it). Left out, it never breaks.
+- `name`: optional, unique among the joints.
+
+| Type | What it does | Settings |
+| --- | --- | --- |
+| `distance` | Keeps the two anchors at a distance, or springs toward it | `length`, `enableSpring`, `hertz`, `dampingRatio` |
+| `revolute` | A hinge: the anchors stay together, the entities turn | `enableLimit`, `lowerAngle`, `upperAngle`, `enableMotor`, `motorSpeed`, `maxMotorTorque` |
+| `prismatic` | A slider along `axisAngle`, without turning | `axisAngle`, `enableLimit`, `lowerTranslation`, `upperTranslation`, `enableMotor`, `motorSpeed`, `maxMotorForce` |
+| `weld` | Holds the two together, stiffly or springily | `linearHertz`, `angularHertz`, `linearDampingRatio`, `angularDampingRatio` |
+
+A distance joint without `length` keeps its anchors as far apart as the file places them. The scene makes the joints once the file's entities have spawned, before `create()`, so the joints are there for it; a joint waits until both bodies exist. A joint naming an entity that is not there (a typo, a class the scene lacks, a full pool) is skipped, and one warning names the file and every joint skipped. The scene's `config.physics.maxJoints` must hold them. In the editor, the inspector of a placed entity lists the joints that name it, adds and removes them; renaming an entity renames it in its joints, and deleting it deletes its joints (undo brings them back).
+
+## Decorations
+
+Grass, rocks, flowers: what a level scatters by the thousand, drawn and swayed but never ticked (`Decoration`). The scene class declares the kinds a file can place, and what all decorations of a kind share:
+
+```js
+static decorations = {
+  Grass: { texture: ['grass1', 'grass2', 'grass3'], scale: { min: 0.2, max: 0.3 }, anchorY: 1, sway: true },
+  Rock: { texture: 'rock', scale: 0.5 },
+};
+```
+
+Each kind is a `Decoration.spawn` config, where `texture` may list several textures, `scale` sets both axes, and `scale`, `rotation`, `alpha` and `tint` may be ranges (`{ min, max }`). The file's `decorations` section holds, per kind, one array per value with one entry per decoration, not one object per decoration:
+
+```json
+"decorations": [
+  {
+    "class": "Grass",
+    "x": [120, 136, 152],
+    "y": [400, 400, 416],
+    "frame": [0, 2, 1],
+    "scale": [0.25, 0.3, 0.22]
+  }
+]
+```
+
+- `class`: a kind of the scene's `static decorations`, one record per kind.
+- `x`, `y`: where each decoration is.
+- Optional, as long as `x`: `frame` (which of the kind's textures, from 0), `scale`, `rotation` (radians), `alpha`, `tint`. An array left out takes the kind's value; a range the file has no values for is drawn per decoration with the scene's random numbers, so it changes from load to load.
+
+The scene spawns each record with one `Decoration.spawnMany`, whose values may be arrays like these (`Decoration.spawnMany({ x: [10, 50], y: [40, 42], texture: 'rock' })`), and needs `config.decoration.maxDecorations` to hold them. A kind the scene does not declare, a texture the atlas lacks, or a full pool warns once, naming the file. In the editor, the palette's Decorations section paints them: choose a kind, drag to fill the brush's circle up to its density (Shift+drag erases); each stroke is one undo.
+
 ## Changing level
 
 An entity cannot load a scene: its code runs on a logic worker, and `loadScene` on the page. In the platformer, the goal tells the scene, and the scene loads the level the goal names:
@@ -245,4 +303,5 @@ A fast swap keeps what a full load makes again:
 
 - A fast swap needs the running scene's class. A level of another class loads fully.
 - Colors are numbers: `0xffcc33` is `16763955` in a file.
-- An entity param names an entity of the same file.
+- An entity param, and a joint, names an entity of the same file.
+- A decoration's kind is one the scene class declares; its textures are in the scene's atlas.
