@@ -724,10 +724,15 @@ export class Layer {
 
     /**
      * Apply scenery declared in config.layers (cover / static / tiling / tilemap).
-     * Called by Scene after workers are ready, before preload().
+     * Called by Scene after workers are ready, before preload(). With a tilemap's id, only
+     * the layers whose configured content shows that tilemap are posted again: a hot reload
+     * of its Tiled file put new tiles in its memory, and the renderer packs its pages anew
+     * (debug builds, src/core/debug/tilemapReload.js). Either way the scene is not marked
+     * dirty: this is the content a load puts there.
+     * @param {string|null} [onlyTilemap] a tilemap id (scene assets.tilemaps), or null for all
      * @returns {Promise<void>}
      */
-    static async applyConfiguredContent() {
+    static async applyConfiguredContent(onlyTilemap = null) {
         const waits = [];
         this._applyingConfiguredContent = true;
         try {
@@ -736,6 +741,7 @@ export class Layer {
                 if (!layer || layer._builtIn || !isSceneryKind(layer._kind)) continue;
                 const content = layer._content || {};
                 const kind = layer._kind;
+                if (onlyTilemap !== null && (kind !== LAYER_KIND.TILEMAP || content.tilemap !== onlyTilemap)) continue;
                 if (kind === LAYER_KIND.COVER && content.texture) {
                     layer.setCover({
                         texture: content.texture,

@@ -362,3 +362,45 @@ test('restoreBootLiveValues puts alpha, visibility and uniforms back, with the r
     Layer.reset();
   }
 });
+
+test('applyConfiguredContent with a tilemap posts only the layers configured to show it, and marks nothing dirty', async () => {
+  // VISUAL_EDITOR_PLAN.md ED-26: a hot reload of a Tiled file puts its tiles in place, then the renderer packs the
+  // pages of the layers that show that map again.
+  const posted = [];
+  try {
+    clearSceneDirty();
+    Layer.reset();
+    Layer.initializeFromConfig(
+      {
+        sky: { kind: LAYER_KIND.COVER, texture: 'landscape', zIndex: 0 },
+        ground: { kind: LAYER_KIND.TILEMAP, tilemap: 'roads', scale: 2, layers: ['bg'], zIndex: 0.5 },
+        overlay: { kind: LAYER_KIND.TILEMAP, tilemap: 'roads', zIndex: 0.6 },
+        caves: { kind: LAYER_KIND.TILEMAP, tilemap: 'caves', zIndex: 0.7 },
+      },
+      BUILT_IN_LAYERS,
+      true
+    );
+    Layer._postToRenderer = (msg) => {
+      posted.push(msg);
+      Layer.resolveLayerContentReady(msg.layerId, msg.requestId);
+    };
+    await Layer.applyConfiguredContent('roads');
+    assert.deepEqual(
+      posted.map((msg) => [msg.type, Layer.getName(msg.layerId), msg.tilemapId]),
+      [
+        ['tilemap', 'ground', 'roads'],
+        ['tilemap', 'overlay', 'roads'],
+      ]
+    );
+    assert.deepEqual(posted[0].options, { scale: 2, layers: ['bg'], parallax: undefined }, 'the configured options');
+    assert.equal(sceneDirtyReason(), null);
+    posted.length = 0;
+    await Layer.applyConfiguredContent('nowhere');
+    assert.equal(posted.length, 0, 'a tilemap no layer shows: nothing to draw again');
+    await Layer.applyConfiguredContent();
+    assert.equal(posted.length, 4, 'without one, every configured layer, as at boot');
+  } finally {
+    clearSceneDirty();
+    Layer.reset();
+  }
+});
