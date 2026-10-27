@@ -89,6 +89,8 @@ async function runPage(page, { sceneModule, sceneExport, loads, settleMs, swap }
       wrap(proto, 'create', 'create');
       wrap(proto, 'createNewGame', 'createNewGame');
       wrap(proto, '_flushCreateSpawns', 'flushCreateSpawns');
+      // A scene file's entities (ED-2), between preload and create: parse to spawn calls, not their flush.
+      wrapSync(proto, '_spawnSceneFileEntities', 'sceneFileSpawns');
       wrap(proto, 'destroy', 'previousDestroy');
       wrap(WEED.Layer, 'applyConfiguredContent', 'applyConfiguredContent');
       // The fast swap's own steps (ED-35): every worker settled, the clear, the resets, the tiny physics step.
