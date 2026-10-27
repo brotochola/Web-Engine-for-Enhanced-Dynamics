@@ -1554,7 +1554,7 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 - **Size:** `weed.editor.min.js` is 128 KB after Stage 4 (57 KB at ED-29). It loads only
   in debug and only on first use. Splitting is not worth it yet.
 
-**State 2026-10-27, evening:** ED-50 to ED-69 done (four agents merged, their worktrees removed); open: ED-70 to ED-75.
+**State 2026-10-27, late:** ED-50 to ED-71 and ED-74, ED-75 done; open: ED-72 (littleCity's houses as a param), ED-73 (a session smoke).
 
 **How the work is split:**
 - Four agents in worktrees, each on its own files, merged here:
@@ -1688,12 +1688,12 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 
 **Speed (here):**
 
-- [ ] **ED-70 What the editor costs.**
+- [x] **ED-70 What the editor costs.** Done 2026-10-27 (bdb68583 the tool, 11fba919, R-0653): editorIdleCost.mjs measures any scene file in three windows (off, open, an entity selected with the grid). The editor's per-frame cost is its overlay: with a selection and the grid the page allocated 218 KB/s (52 open), 134 once the grid and the rotate handle drew through whole pixels (a canvas call boxes a double that is no small integer). Workers drop in edit mode, but not littleCity's logic0 and spatial0 (ED-71).
   - `tests/bench/editorIdleCost.mjs` on the platformer and littleCity: edit mode at rest,
     playing with the editor page, and the game alone.
   - Per worker, STEP − WAIT, the page's frame time, and the page's allocation.
   - Before and after Stage 6, in the register. A cost with no reason is fixed here.
-- [ ] **ED-71 (was ED-19) A held world costs less.** After ED-70: in edit mode, skip what
+- [x] **ED-71 (was ED-19) A held world costs less.** Done 2026-10-27 (fbcf6d2d, R-0654): Time.held, a second slot of the shared clock, set by edit mode: the logic workers run no entity ticks while held (spawns, list updates, contacts and messages go on). littleCity's logic0 in edit mode 3.668 → 0.375 ms a frame, its logic worker's allocation 9,779 → 13.7 KB/s. A class sets up its look in onSpawned to show right while editing (littleCity's do). spatial0 keeps 2.8 ms (found item 34). After ED-70: in edit mode, skip what
   a world that does not move needs no work for (for example particles and physics
   stepping at dt 0), worker by worker, if ED-70 shows them. The logic worker keeps running:
   the editor's respawns need it.
@@ -1712,10 +1712,10 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
   - copy and paste, place a class by dragging;
   - fold and resize docks;
   - undo everything, save, and reload: the file and the view as left.
-- [ ] **ED-74 (engine) Static sprites past 255** (found item 26): bigAtlas as proxy sheets of 256 animations each;
+- [x] **ED-74 (engine) Static sprites past 255** Done 2026-10-27 (376c33f7): addBigAtlasChunks; setSprite stores the chunk's sheet and an index under 256; nothing per frame changes. All 65 houses draw houses in Chromium (20 did not). (found item 26): bigAtlas as proxy sheets of 256 animations each;
   `setSprite` stores the chunk's sheet and the local index. A test of every sheet's indices, and littleCity's 65
   houses all drawing houses in Chromium.
-- [ ] **ED-75 Selecting costs less** (found item 28): profile an inspector rebuild in littleCity; build what a folded
+- [x] **ED-75 Selecting costs less** Done 2026-10-27 (92b1f989): a selection in littleCity 9.8 → 0.6 ms (houses), 9.1 → 1.6 (trees), median: the scene list read the layout right after the inspector rebuilt (a forced layout of the page), and the folded Joints section built a 1,307-option select. editorFormatSmoke opens the section first. (found item 28): profile an inspector rebuild in littleCity; build what a folded
   section holds only when it opens (the Joints row lists every entity of the file), keep rows across selections.
 
 ---
@@ -2001,6 +2001,13 @@ server still writes nothing. What changed for this plan:
     branch and copy the lock file.
 32. **littleCity's `Car` class has a pool of 0** and shows "0 / 0" in the palette; a class that cannot be placed could
     be hidden or dimmed there. **A 224 px inspector** (a 1100 px window) squeezes the params' sliders to their thumbs.
+
+33. **littleCity's logic worker allocates about 10 MB/s while playing** (R-0653, R-0654): its 8,000 people's ticks
+    (gone while the editor holds the world). An engine or demo finding, outside the editor: a heap profile of a person's
+    tick is the next step.
+34. **The spatial worker rebuilds its grid every frame for a held world** (littleCity: 2.8 ms in edit mode). Skipping
+    it needs the entities the editor moves, places or deletes kept right in the grid (picking does not use it; the
+    renderer's culling may).
 
 **New items:**
 
