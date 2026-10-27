@@ -124,23 +124,29 @@ const worldAt = (page, x, y) =>
   );
 
 /**
- * Until the drawn view (scene.camera, what a click and a drop map through) has not moved for 400 ms: entering edit mode
- * and a zoom ease in (Found item 23), and a point mapped before that is not where a drop lands.
+ * Until the drawn view (scene.camera, what a click and a drop map through) is the camera's, for 300 ms. Entering edit
+ * mode holds the camera, but the drawn view keeps the last frame the workers published until the next one: 0.3 to 0.8 s
+ * in the platformer's page, then it jumps (Found item 23). A point mapped before that is not where a later drop lands.
  * @param {import('playwright').Page|import('playwright').Frame} target - where window.game is
  */
 async function settled(target) {
+  await target.evaluate(async () => {
+    window.__smokeCamera = (await import('/src/index.js')).default.Camera;
+    window.__smokeSince = NaN;
+    return true;
+  });
   await target.waitForFunction(
     () => {
-      const c = window.game.currentScene.camera;
-      const key = `${c.x},${c.y},${c.zoom},${c.rotation}`;
-      const now = performance.now();
-      const s = (window.__smokeView ??= { key: '', since: now });
-      if (s.key !== key) {
-        s.key = key;
-        s.since = now;
+      const drawn = window.game.currentScene.camera;
+      const camera = window.__smokeCamera;
+      const same = Math.abs(drawn.x - camera.x) < 0.01 && Math.abs(drawn.y - camera.y) < 0.01 && Math.abs(drawn.zoom - camera.zoom) < 1e-6;
+      if (!same) {
+        window.__smokeSince = NaN;
         return false;
       }
-      return now - s.since > 400;
+      const now = performance.now();
+      if (!(window.__smokeSince <= now)) window.__smokeSince = now;
+      return now - window.__smokeSince > 300;
     },
     undefined,
     { timeout: 20000, polling: 50 },
