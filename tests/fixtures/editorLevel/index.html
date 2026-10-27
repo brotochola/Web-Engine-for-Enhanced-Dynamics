@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Editor level fixture</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
+  </style>
+</head>
+<body>
+  <script type="module">
+    // A game page that loads the scene file its address names (?file=/path/to/a.scene.json) with the debug UI: the
+    // editor smokes open a scratch copy of a level in the editor page through it (tests/bench/editorSessionSmoke.mjs).
+    import WEED from '/src/index.js';
+
+    window.WEED = WEED;
+    const file = new URLSearchParams(location.search).get('file');
+    const game = new WEED.GameEngine({ autoResize: true, debug: true, hotReload: true });
+    window.game = game;
+    if (file && file.startsWith('/') && file.endsWith('.scene.json')) game.loadScene(file);
+  </script>
+</body>
+</html>
