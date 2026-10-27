@@ -154,8 +154,28 @@ const copyLabels = (page, count = '') =>
     return typeof editMode.copySelected === 'function' ? [n ? `Copy ${n}` : 'Copy'] : [];
   }, count);
 
-/** Whether the free camera's target is on the selected entity (Enter, a double click: frame or center). */
-const framed = (state) => state.at !== null && Math.abs(state.camera[0] - state.at[0]) < 2 && Math.abs(state.camera[1] - state.at[1]) < 2;
+/**
+ * Where framing the selection puts the free camera: the center of its box (EditMode.frameSelection, frame.js, ED-57),
+ * or before the editor had it, the entity's position (the view centered on it).
+ */
+const frameCenter = (page) =>
+  page
+    .frames()
+    .find((frame) => frame.parentFrame() !== null)
+    .evaluate(async () => {
+      const editMode = window.game.debugUI.editMode;
+      const i = editMode.selection.index;
+      if (i < 0) return null;
+      const { Transform } = window.WEED;
+      if (typeof editMode.frameSelection !== 'function') return [Transform.x[i], Transform.y[i]];
+      const { entityBox } = await import('/src/core/debug/editor/pick.js'); // the editor's own module
+      const box = new Float64Array(6);
+      return entityBox(i, box) ? [box[0], box[1]] : [Transform.x[i], Transform.y[i]];
+    });
+
+/** Whether the free camera's target is where framing the selection puts it (Enter, a double click). */
+const framed = (state, center) =>
+  center !== null && Math.abs(state.camera[0] - center[0]) < 2 && Math.abs(state.camera[1] - center[1]) < 2;
 
 /** Edit mode, from the toolbar. */
 async function enterEdit(page) {
@@ -311,6 +331,7 @@ async function littleCity(browser, server, shots, errors) {
   await page.keyboard.press('Enter');
   await page.waitForTimeout(800);
   const entered = await readEditor(page);
+  const enteredCenter = await frameCenter(page);
   check(
     'littleCity keys',
     first.focus === 'list' &&
@@ -318,11 +339,11 @@ async function littleCity(browser, server, shots, errors) {
       stepped.selection === 'CityTree2' &&
       far.selection === 'CityTree42' &&
       far.rowShown &&
-      framed(entered) &&
+      framed(entered, enteredCenter) &&
       entered.undo.length === 0 &&
       !entered.dirty,
     `↓ from the filter: ${first.selection} (focus ${first.focus}); ↓ ↓ ↑: ${stepped.selection}; 40 × ↓: ${far.selection}, its row in ` +
-      `view ${far.rowShown}; Enter: camera ${entered.camera.map(Math.round)} on ${entered.at?.map(Math.round)}; ` +
+      `view ${far.rowShown}; Enter: camera ${entered.camera.map(Math.round)}, framed at ${enteredCenter?.map(Math.round)}; ` +
       `undo stack ${entered.undo.length} (an arrow the editor also took would move the tree)`,
   );
 
@@ -404,10 +425,11 @@ async function littleCity(browser, server, shots, errors) {
   await page.locator('[data-slot=tree] [data-row]', { hasText: /^CityTree45\s/ }).dblclick();
   await page.waitForTimeout(800);
   const doubled = await readEditor(page);
+  const doubledCenter = await frameCenter(page);
   check(
     'littleCity double click',
-    doubled.selection === 'CityTree45' && framed(doubled),
-    `${doubled.selection}: camera ${doubled.camera.map(Math.round)} on ${doubled.at?.map(Math.round)}`,
+    doubled.selection === 'CityTree45' && framed(doubled, doubledCenter),
+    `${doubled.selection}: camera ${doubled.camera.map(Math.round)}, framed at ${doubledCenter?.map(Math.round)}`,
   );
 
   // ---- the menu (ED-64): a placed row's, Esc, Select all ----
