@@ -117,13 +117,12 @@ const D_PRESS_X = 14; // where the drag was pressed, in the world
 const D_PRESS_Y = 15;
 const D_SIZE = 16;
 
-/** The view a frame draws with: the camera's x and y (the world at the screen's top-left) and the zoom. */
+/**
+ * The view a frame draws with: the camera's x and y (the world at the screen's top-left) and the zoom. A frame works
+ * its screen points out inline, in whole pixels, so no double crosses a call (a call TurboFan leaves out of line
+ * boxes it: CLAUDE.md, E-85) and a canvas call takes small integers.
+ */
 const VIEW = new Float64Array(3);
-/** A world point on screen, in whole pixels (a canvas call then takes small integers). */
-const screenX = (x) => Math.round((x - VIEW[0]) * VIEW[2]) | 0;
-const screenY = (y) => Math.round((y - VIEW[1]) * VIEW[2]) | 0;
-/** A world radius on screen, in whole pixels, never below 0 (arc throws on a negative radius). */
-const screenRadius = (r) => (r > 0 ? Math.round(r * VIEW[2]) | 0 : 0);
 
 /** A position written into a record: to the thousandth of a pixel. */
 const tidy = (value) => Math.round(value * 1000) / 1000;
@@ -245,10 +244,12 @@ export class HandlesTool {
     /** Points params found holding their entity's polygon, in its frame (`Class.key`): kept across selections. */
     this._localKeys = new Set();
 
-    // ---- the handles now: world positions and what each is, in buffers grown with the plan ----
+    // ---- the handles now: world positions (and on screen, a frame's), what each is; buffers grown with the plan ----
     this._count = 0;
     this._hx = new Float64Array(0);
     this._hy = new Float64Array(0);
+    this._sx = new Int32Array(0);
+    this._sy = new Int32Array(0);
     this._kind = new Uint8Array(0);
     this._slot = new Int32Array(0);
     this._sub = new Int32Array(0);
@@ -400,6 +401,8 @@ export class HandlesTool {
       const size = (need + 31) & ~31;
       this._hx = new Float64Array(size);
       this._hy = new Float64Array(size);
+      this._sx = new Int32Array(size);
+      this._sy = new Int32Array(size);
       this._kind = new Uint8Array(size);
       this._slot = new Int32Array(size);
       this._sub = new Int32Array(size);
@@ -410,10 +413,15 @@ export class HandlesTool {
 
   // ---- the handles, where they are now ----
 
-  /** Lay the handles out from the live components, in world coordinates. */
+  /**
+   * Lay the handles out from the live components, in world coordinates. The positions are stored here, inline, and
+   * only integers go to _tag: a double passed to a call TurboFan leaves out of line is boxed, and this runs each frame.
+   */
   _layout(zoom) {
     const i = this._planIndex;
     const G = this._geo;
+    const hx = this._hx;
+    const hy = this._hy;
     const tx = Transform.x[i];
     const ty = Transform.y[i];
     const c = Transform.rotC ? Transform.rotC[i] : 1;
@@ -433,12 +441,13 @@ export class HandlesTool {
     for (let k = 0; k < slots.length; k++) {
       const slot = slots[k];
       const pts = slot.pts;
+      const local = slot.local;
       for (let j = 0; j + 1 < pts.length; j += 2) {
         const px = pts[j];
         const py = pts[j + 1];
-        const x = slot.local ? G[G_OX] + c * px - s * py : px;
-        const y = slot.local ? G[G_OY] + s * px + c * py : py;
-        n = this._put(n, H_POINT, k, j >> 1, x, y, 1);
+        hx[n] = local ? G[G_OX] + c * px - s * py : px;
+        hy[n] = local ? G[G_OY] + s * px + c * py : py;
+        n = this._tag(n, H_POINT, k, j >> 1, 1);
       }
     }
 
@@ -455,8 +464,9 @@ export class HandlesTool {
           if (d === 4) continue;
           const lx = BOX_DX[d] * hw;
           const ly = BOX_DY[d] * hh;
-          const on = (BOX_DX[d] === 0 || this._widthK >= 0) && (BOX_DY[d] === 0 || this._heightK >= 0) ? 1 : 0;
-          n = this._put(n, H_BOX, -1, d, G[G_CX] + c * lx - s * ly, G[G_CY] + s * lx + c * ly, on);
+          hx[n] = G[G_CX] + c * lx - s * ly;
+          hy[n] = G[G_CY] + s * lx + c * ly;
+          n = this._tag(n, H_BOX, -1, d, (BOX_DX[d] === 0 || this._widthK >= 0) && (BOX_DY[d] === 0 || this._heightK >= 0) ? 1 : 0);
         }
         break;
       }
@@ -466,8 +476,11 @@ export class HandlesTool {
         G[G_CY] = ty + oy;
         G[G_R] = Collider.radius[i];
         const r = G[G_R] > minRing ? G[G_R] : minRing;
-        const on = this._radiusK >= 0 ? 1 : 0;
-        for (let k = 0; k < 4; k++) n = this._put(n, H_CIRCLE, -1, k, G[G_CX] + RING_X[k] * r, G[G_CY] + RING_Y[k] * r, on);
+        for (let k = 0; k < 4; k++) {
+          hx[n] = G[G_CX] + RING_X[k] * r;
+          hy[n] = G[G_CY] + RING_Y[k] * r;
+          n = this._tag(n, H_CIRCLE, -1, k, this._radiusK >= 0 ? 1 : 0);
+        }
         break;
       }
       case SHAPE_POLYGON:
@@ -477,7 +490,9 @@ export class HandlesTool {
           for (let v = 0; v < count; v++) {
             const vx = Collider.polyVertexX[base + v];
             const vy = Collider.polyVertexY[base + v];
-            n = this._put(n, H_VERTEX, -1, v, G[G_OX] + c * vx - s * vy, G[G_OY] + s * vx + c * vy, 0);
+            hx[n] = G[G_OX] + c * vx - s * vy;
+            hy[n] = G[G_OY] + s * vx + c * vy;
+            n = this._tag(n, H_VERTEX, -1, v, 0);
           }
         }
         break;
@@ -490,20 +505,33 @@ export class HandlesTool {
       G[G_LY] = ty;
       G[G_LR] = LightEmitter.sqrtLightIntensity[i] * LIGHT_INFLUENCE_RADIUS_SCALE;
       const r = G[G_LR] > minRing ? G[G_LR] : minRing;
-      const on = this._lightK >= 0 ? 1 : 0;
-      for (let k = 0; k < 4; k++) n = this._put(n, H_LIGHT, -1, k, tx + LIGHT_X[k] * r, ty + LIGHT_Y[k] * r, on);
+      for (let k = 0; k < 4; k++) {
+        hx[n] = tx + LIGHT_X[k] * r;
+        hy[n] = ty + LIGHT_Y[k] * r;
+        n = this._tag(n, H_LIGHT, -1, k, this._lightK >= 0 ? 1 : 0);
+      }
     }
     this._count = n;
   }
 
-  _put(n, kind, slot, sub, x, y, on) {
+  /** What handle `n` is (its position is already stored); the next handle's index. */
+  _tag(n, kind, slot, sub, on) {
     this._kind[n] = kind;
     this._slot[n] = slot;
     this._sub[n] = sub;
-    this._hx[n] = x;
-    this._hy[n] = y;
     this._on[n] = on;
     return n + 1;
+  }
+
+  /** The handles on screen, in whole pixels, for a frame's drawing (VIEW holds its camera). */
+  _project() {
+    const vx = VIEW[0];
+    const vy = VIEW[1];
+    const zoom = VIEW[2];
+    for (let h = 0; h < this._count; h++) {
+      this._sx[h] = Math.round((this._hx[h] - vx) * zoom) | 0;
+      this._sy[h] = Math.round((this._hy[h] - vy) * zoom) | 0;
+    }
   }
 
   /** The handle nearest a world point within HIT_PX on screen, or -1. */
@@ -966,6 +994,7 @@ export class HandlesTool {
     VIEW[0] = camera.x;
     VIEW[1] = camera.y;
     VIEW[2] = zoom;
+    this._project();
     ctx.save();
     ctx.lineWidth = 1.5;
     this._drawOutlines(ctx);
@@ -978,22 +1007,39 @@ export class HandlesTool {
 
   _drawOutlines(ctx) {
     const G = this._geo;
+    const vx = VIEW[0];
+    const vy = VIEW[1];
+    const zoom = VIEW[2];
     if (this._shape === SHAPE_CIRCLE) {
       ctx.strokeStyle = this._radiusK >= 0 ? COLLIDER_COLOR : DIM_COLOR;
       ctx.beginPath();
-      ctx.arc(screenX(G[G_CX]), screenY(G[G_CY]), screenRadius(G[G_R]), 0, TWO_PI);
+      ctx.arc(
+        Math.round((G[G_CX] - vx) * zoom) | 0,
+        Math.round((G[G_CY] - vy) * zoom) | 0,
+        G[G_R] > 0 ? Math.round(G[G_R] * zoom) | 0 : 0, // arc throws on a negative radius
+        0,
+        TWO_PI,
+      );
       ctx.stroke();
     }
     if (this._light) {
       ctx.strokeStyle = this._lightK >= 0 ? LIGHT_COLOR : DIM_COLOR;
       ctx.setLineDash(RING_DASH);
       ctx.beginPath();
-      ctx.arc(screenX(G[G_LX]), screenY(G[G_LY]), screenRadius(G[G_LR]), 0, TWO_PI);
+      ctx.arc(
+        Math.round((G[G_LX] - vx) * zoom) | 0,
+        Math.round((G[G_LY] - vy) * zoom) | 0,
+        G[G_LR] > 0 ? Math.round(G[G_LR] * zoom) | 0 : 0,
+        0,
+        TWO_PI,
+      );
       ctx.stroke();
       ctx.setLineDash(NO_DASH);
     }
     // Each points param's line (a polygon's closed), and a polygon no param holds, from the handles laid out: the
     // handles of one param (or the vertices) are next to each other.
+    const sx = this._sx;
+    const sy = this._sy;
     let h = 0;
     while (h < this._count) {
       const kind = this._kind[h];
@@ -1006,8 +1052,8 @@ export class HandlesTool {
       while (end < this._count && this._kind[end] === kind && this._slot[end] === slot) end++;
       ctx.strokeStyle = kind === H_VERTEX ? DIM_COLOR : POINTS_COLOR;
       ctx.beginPath();
-      ctx.moveTo(screenX(this._hx[h]), screenY(this._hy[h]));
-      for (let k = h + 1; k < end; k++) ctx.lineTo(screenX(this._hx[k]), screenY(this._hy[k]));
+      ctx.moveTo(sx[h], sy[h]);
+      for (let k = h + 1; k < end; k++) ctx.lineTo(sx[k], sy[k]);
       if (kind === H_VERTEX || this._slots[slot].polygon) ctx.closePath();
       ctx.stroke();
       h = end;
@@ -1015,14 +1061,16 @@ export class HandlesTool {
     // A line to each entity the entity params name.
     if (this._linkCount > 0) {
       const i = this._planIndex;
+      const fromX = Math.round((Transform.x[i] - vx) * zoom) | 0;
+      const fromY = Math.round((Transform.y[i] - vy) * zoom) | 0;
       ctx.strokeStyle = LINK_COLOR;
       ctx.setLineDash(LINK_DASH);
       ctx.beginPath();
       for (let k = 0; k < this._linkCount; k++) {
         const t = this._links[k];
         if (Transform.active[t] !== 1) continue;
-        ctx.moveTo(screenX(Transform.x[i]), screenY(Transform.y[i]));
-        ctx.lineTo(screenX(Transform.x[t]), screenY(Transform.y[t]));
+        ctx.moveTo(fromX, fromY);
+        ctx.lineTo(Math.round((Transform.x[t] - vx) * zoom) | 0, Math.round((Transform.y[t] - vy) * zoom) | 0);
       }
       ctx.stroke();
       ctx.setLineDash(NO_DASH);
@@ -1033,6 +1081,9 @@ export class HandlesTool {
   _drawGhost(ctx) {
     const F = this._from;
     const V = this._values;
+    const vx = VIEW[0];
+    const vy = VIEW[1];
+    const zoom = VIEW[2];
     ctx.strokeStyle = GHOST_COLOR;
     ctx.lineWidth = 2;
     ctx.setLineDash(GHOST_DASH);
@@ -1054,19 +1105,27 @@ export class HandlesTool {
         p[5] = cy + s * hw + c * hh;
         p[6] = cx - c * hw - s * hh;
         p[7] = cy - s * hw + c * hh;
-        ctx.moveTo(screenX(p[0]), screenY(p[1]));
-        ctx.lineTo(screenX(p[2]), screenY(p[3]));
-        ctx.lineTo(screenX(p[4]), screenY(p[5]));
-        ctx.lineTo(screenX(p[6]), screenY(p[7]));
+        for (let k = 0; k < 8; k += 2) {
+          const x = Math.round((p[k] - vx) * zoom) | 0;
+          const y = Math.round((p[k + 1] - vy) * zoom) | 0;
+          if (k === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
         ctx.closePath();
         break;
       }
       case H_CIRCLE:
-        ctx.arc(screenX(F[G_CX]), screenY(F[G_CY]), screenRadius(V[D_TO_R]), 0, TWO_PI);
+      case H_LIGHT: {
+        const ring = this._drag === H_LIGHT;
+        ctx.arc(
+          Math.round(((ring ? F[G_LX] : F[G_CX]) - vx) * zoom) | 0,
+          Math.round(((ring ? F[G_LY] : F[G_CY]) - vy) * zoom) | 0,
+          V[D_TO_R] > 0 ? Math.round(V[D_TO_R] * zoom) | 0 : 0,
+          0,
+          TWO_PI,
+        );
         break;
-      case H_LIGHT:
-        ctx.arc(screenX(F[G_LX]), screenY(F[G_LY]), screenRadius(V[D_TO_R]), 0, TWO_PI);
-        break;
+      }
       case H_POINT: {
         const slot = this._slots[this._dragSlot];
         const pts = slot.pts;
@@ -1075,10 +1134,12 @@ export class HandlesTool {
           const moved = j === this._dragSub;
           const px = moved ? V[D_TO_PX] : pts[2 * j];
           const py = moved ? V[D_TO_PY] : pts[2 * j + 1];
-          const x = slot.local ? F[G_OX] + F[G_C] * px - F[G_S] * py : px;
-          const y = slot.local ? F[G_OY] + F[G_S] * px + F[G_C] * py : py;
-          if (j === 0) ctx.moveTo(screenX(x), screenY(y));
-          else ctx.lineTo(screenX(x), screenY(y));
+          const wx = slot.local ? F[G_OX] + F[G_C] * px - F[G_S] * py : px;
+          const wy = slot.local ? F[G_OY] + F[G_S] * px + F[G_C] * py : py;
+          const x = Math.round((wx - vx) * zoom) | 0;
+          const y = Math.round((wy - vy) * zoom) | 0;
+          if (j === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
         }
         if (slot.polygon) ctx.closePath();
         break;
@@ -1092,14 +1153,16 @@ export class HandlesTool {
   }
 
   _drawHandles(ctx) {
+    const sx = this._sx;
+    const sy = this._sy;
     for (let h = 0; h < this._count; h++) {
       const kind = this._kind[h];
       const on = this._on[h] === 1;
       const hovered = on && kind === this._hoverKind && this._slot[h] === this._hoverSlot && this._sub[h] === this._hoverSub;
       const color = !on ? DIM_COLOR : kind === H_LIGHT ? LIGHT_COLOR : kind === H_POINT ? POINTS_COLOR : COLLIDER_COLOR;
       const size = hovered ? HOVER_PX : HANDLE_PX;
-      const x = screenX(this._hx[h]);
-      const y = screenY(this._hy[h]);
+      const x = sx[h];
+      const y = sy[h];
       ctx.fillStyle = !on ? DIM_FILL : hovered ? color : HANDLE_FILL;
       ctx.strokeStyle = color;
       if (kind === H_BOX) {
@@ -1119,8 +1182,8 @@ export class HandlesTool {
     ctx.font = LABEL_FONT;
     if (this._labelWidth !== this._labelWidth) this._labelWidth = Math.ceil(ctx.measureText(this._label).width) | 0;
     const V = this._values;
-    const x = screenX(V[D_LABEL_X]) + 14;
-    const y = screenY(V[D_LABEL_Y]) - 14;
+    const x = (Math.round((V[D_LABEL_X] - VIEW[0]) * VIEW[2]) | 0) + 14;
+    const y = (Math.round((V[D_LABEL_Y] - VIEW[1]) * VIEW[2]) | 0) - 14;
     ctx.fillStyle = LABEL_BACK;
     ctx.fillRect(x - 4, y - 9, this._labelWidth + 8, 18);
     ctx.fillStyle = LABEL_TEXT;
