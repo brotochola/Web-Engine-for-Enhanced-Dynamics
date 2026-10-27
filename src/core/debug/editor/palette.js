@@ -1,14 +1,17 @@
 // palette.js — the editor's palette (VISUAL_EDITOR_PLAN.md ED-11): the running scene's entity classes, each with how
 // many the open scene file places against its pool, and a button that places new ones (each click on the view puts
 // one there, until Esc or the button again). Above them, the level row (ED-38): the scene files of the running one's
-// folder, Open, New and Save As. Shown while edit mode is on; rebuilt when the document or the file list changes,
-// never per frame. In the editor page (D9) it is the Assets dock, shown whether or not edit mode is on: its + enters
-// edit mode.
+// folder, Open, New and Save As. Below it, the scene's layers with hide and lock (editorLayers.js, ED-24). Shown while
+// edit mode is on; rebuilt when the document or the file list changes, never per frame. In the editor page (D9) it
+// is the Assets dock, shown whether or not edit mode is on: its + enters edit mode.
 
 import { FloatingPanel } from '../ui/floatingPanel.js';
 
 /** Classes the editor does not offer: the engine's own helpers. */
 const UNPLACEABLE = new Set(['Flash']);
+
+/** A section above the classes: the level row, the layers. */
+const SECTION_STYLE = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
 
 const SELECT_STYLE =
   'flex:1;min-width:0;font-size:11px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;' +
@@ -22,6 +25,8 @@ export class Palette {
     /** The palette's content: in the floating panel, or in the editor page's Assets dock. */
     this._body = null;
     this._files = null;
+    /** The Layers section: hide and lock per layer (editorLayers.js, ED-24), built when the scene changes. */
+    this._layers = null;
     this._list = null;
   }
 
@@ -55,6 +60,7 @@ export class Palette {
     const list = this._list;
     if (list === null) return;
     this._fillFiles();
+    if (this._layers !== null) this.editMode.layers?.fill(this._layers);
     list.textContent = '';
     const scene = this.editMode.debugUI.scene;
     const placed = new Map();
@@ -149,9 +155,11 @@ export class Palette {
   _createBody() {
     this._body = document.createElement('div');
     this._files = document.createElement('div');
-    this._files.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
+    this._files.style.cssText = SECTION_STYLE;
+    this._layers = document.createElement('div');
+    this._layers.style.cssText = SECTION_STYLE;
     this._list = document.createElement('div');
-    this._body.append(this._files, this._list);
+    this._body.append(this._files, this._layers, this._list);
   }
 
   _createPanel() {

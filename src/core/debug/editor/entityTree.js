@@ -181,6 +181,9 @@ function liveIndexOf(scene, name) {
   return Messages.spawnGen[i] === packed - i * 65536 && Transform.active?.[i] ? i : -1;
 }
 
+/** After the row of an entity on a locked layer: the view does not pick it, the move tool leaves it (ED-24). */
+const LOCKED_MARK = '  🔒 locked';
+
 const ROW_STYLE =
   'position:absolute;left:0;right:0;height:20px;line-height:20px;padding:0 8px;box-sizing:border-box;' +
   'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;font-size:12px';
@@ -292,6 +295,8 @@ export class EntityTree {
 
   _fill(el, at, selection) {
     const group = at.group;
+    // A locked layer's entity is marked (editorLayers.js, ED-24).
+    const layers = this.debugUI.editMode.layers;
     let text;
     let color = '#d6d9e2';
     let selected = false;
@@ -305,11 +310,13 @@ export class EntityTree {
       const index = liveIndexOf(this._scene, name);
       text = index >= 0 ? `${name}  #${index}` : `${name}  (not live)`;
       if (index < 0) color = '#6b7080';
+      else if (layers?.locked(index)) text += LOCKED_MARK;
       selected = selection.name === name && selection.index >= 0;
       indent = 22;
     } else {
       const index = group.runtime[at.item];
       text = `#${index}  runtime`;
+      if (layers?.locked(index)) text += LOCKED_MARK;
       color = '#8a90a0';
       selected = selection.index === index && selection.name === null;
       indent = 22;

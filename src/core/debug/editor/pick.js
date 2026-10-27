@@ -119,9 +119,11 @@ function hitArea(i, byCollider) {
  * @param {number} y
  * @param {number} current - the selected entity, or -1: when it is among the hits, the next one is returned
  * @param {(entityType: number) => string} classNameOf
+ * @param {((index: number) => boolean)|null} [skip] - asked of each hit: true leaves it out (a locked or hidden
+ *   layer's entity, ED-24)
  * @returns {number}
  */
-export function pickEntityAt(x, y, current, classNameOf) {
+export function pickEntityAt(x, y, current, classNameOf, skip = null) {
   const active = Transform.active;
   if (!active) return -1;
   const types = Transform.entityType;
@@ -131,6 +133,7 @@ export function pickEntityAt(x, y, current, classNameOf) {
     if (!active[i] || UNPICKABLE.has(classNameOf(types[i]))) continue;
     const byCollider = colliders !== undefined && colliders !== null && colliders[i] === 1;
     if (byCollider ? !pointInCollider(i, x, y) : !pointInSprite(i, x, y)) continue;
+    if (skip !== null && skip(i)) continue;
     // Insertion by area, smallest first; equal areas keep index order.
     const area = hitArea(i, byCollider);
     let k = n++;

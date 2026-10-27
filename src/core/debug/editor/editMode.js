@@ -39,6 +39,7 @@ import { Selection } from './selection.js';
 import { MoveTool, SNAP_STEPS, snapTo } from './moveTool.js';
 import { History } from './history.js';
 import { Palette } from './palette.js';
+import { EditorLayers } from './editorLayers.js';
 import {
   editPlaced,
   restorePlaced,
@@ -96,6 +97,8 @@ export class EditMode {
     this.move = new MoveTool(this.selection);
     this.history = new History((change, forward) => this._apply(change, forward));
     this.palette = new Palette(this);
+    /** Per-layer hide and lock (ED-24): the palette's Layers section, the click and the move tool ask it. */
+    this.layers = new EditorLayers(this);
     /** The class each click on the view places (the palette's button), or null. */
     this.placing = null;
     /** The scene files in the running one's folder, for the palette's level list (ED-38). */
@@ -299,6 +302,7 @@ export class EditMode {
     this._savedFreeSmoothing = Camera._freeSmoothing;
     debugUI.tools.deactivateAll();
     this._hold();
+    this.layers.apply();
     this._listen(true);
     this.palette.show();
     this.refreshSceneFiles();
@@ -314,6 +318,7 @@ export class EditMode {
     this.palette.hide();
     this.move.cancel();
     this._cancelTools();
+    this.layers.restore(); // the game plays with the layers it had
     // The selection stays: the inspector shows its live values while the game plays (ED-17).
     this._setStatus('', false);
     Mouse.isEditModeActive = false;
@@ -840,6 +845,7 @@ export class EditMode {
     this._cancelTools();
     this.selection.clear();
     if (!this._ownSwap) this.history.clear(); // another document (Stop and resume put theirs back)
+    this.layers.onSwapped(this.active); // the swap showed every layer as it booted: hide again while editing
     this.debugUI.hosted?.onDocumentChanged();
     this.palette.refresh();
     this._notify();
@@ -855,6 +861,7 @@ export class EditMode {
     this.history.clear();
     this._resumeOnAttach = this.active;
     this.exit();
+    this.layers.reset(); // the next scene's layers are others
     this.selection.clear();
   }
 
