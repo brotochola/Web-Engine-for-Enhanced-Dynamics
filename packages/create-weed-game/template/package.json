@@ -13,5 +13,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "devDependencies": {
+    "@weed.js/editor": "^0.13.0"
   }
 }

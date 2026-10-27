@@ -51,6 +51,10 @@ test('the template depends on this engine minor, no newer than this version', ()
   assert.ok(m, `range ${range}`);
   assert.deepEqual([+m[1], +m[2]], engine.slice(0, 2));
   assert.ok(+m[3] <= engine[2], `${range} is newer than ${engine.join('.')}`);
+  const template = JSON.parse(fs.readFileSync(path.join(TEMPLATE, 'package.json'), 'utf8'));
+  assert.equal(template.devDependencies['@weed.js/editor'], range, 'the editor (ED-29) at the engine’s range: they are released together');
+  const editor = JSON.parse(fs.readFileSync(path.join(ROOT, 'packages/editor/package.json'), 'utf8'));
+  assert.equal(editor.version, engine.join('.'), 'the editor package has the engine’s version');
 });
 
 test('npm run build swaps in the production engine and writes _headers', () => {
@@ -73,6 +77,8 @@ test('npm run build swaps in the production engine and writes _headers', () => {
     assert.match(html, /"@weed\.js\/engine": "\.\/vendor\/weed\.js"/);
     assert.match(html, /const DEV = false;/);
     assert.doesNotMatch(html, /node_modules/);
+    const importMap = JSON.parse(/<script type="importmap">([\s\S]*?)<\/script>/.exec(html)[1]);
+    assert.deepEqual(Object.keys(importMap.imports), ['@weed.js/engine'], 'the editor stays home, and the map is still JSON');
     assert.equal(fs.readFileSync(path.join(dir, 'dist/vendor/weed.js'), 'utf8'), '/* prod */');
     assert.ok(fs.existsSync(path.join(dir, 'dist/src/gameScene.js')));
     assert.equal(fs.readFileSync(path.join(dir, 'dist/weed-sw.js'), 'utf8'), '/* sw */');
@@ -156,6 +162,33 @@ test('the dev server sends the isolation headers, guards the root and pings on s
       setTimeout(() => reject(new Error('no reload ping')), 5000);
     });
     assert.equal(ping.file, 'src/gameScene.js');
+  } finally {
+    await server.stop();
+    removeDir(parent);
+  }
+});
+
+test('with @weed.js/editor installed the dev server gives it its routes; --host is no folder', async () => {
+  const parent = tempDir();
+  const { dir } = scaffold(parent, 'game');
+  const editorDir = path.join(dir, 'node_modules/@weed.js/editor');
+  fs.mkdirSync(path.join(editorDir, 'server'), { recursive: true });
+  fs.writeFileSync(
+    path.join(editorDir, 'package.json'),
+    JSON.stringify({ name: '@weed.js/editor', type: 'module', exports: { './server': './server/index.js' } }),
+  );
+  fs.writeFileSync(
+    path.join(editorDir, 'server/index.js'),
+    [
+      "export function handleDevRoute(req, res) { if (!req.url.startsWith('/__weed/file')) return false; res.end('save route'); return true; }",
+      "export function serveEditorPage(req, res) { if (!req.url.startsWith('/__weed/editor/')) return false; res.end('editor page'); return true; }",
+    ].join('\n'),
+  );
+  const server = await startServer(dir, ['--host']);
+  try {
+    assert.equal((await get(server.port, '/__weed/editor/?game=/index.html')).body, 'editor page');
+    assert.equal((await get(server.port, '/__weed/file?path=/levels/a.scene.json')).body, 'save route');
+    assert.equal((await get(server.port, '/')).status, 200, 'the project folder, not one named --host');
   } finally {
     await server.stop();
     removeDir(parent);

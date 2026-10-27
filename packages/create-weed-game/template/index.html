@@ -22,9 +22,14 @@
         pointer-events: none;
       }
     </style>
-    <!-- npm run build swaps in the production engine -->
+    <!-- npm run build swaps in the production engine. The editor (Shift+E) loads only when it is asked for. -->
     <script type="importmap">
-      { "imports": { "@weed.js/engine": "./node_modules/@weed.js/engine/dist/weed.bundle.esm.min.js" } }
+      {
+        "imports": {
+          "@weed.js/editor": "./node_modules/@weed.js/editor/dist/weed.editor.esm.min.js",
+          "@weed.js/engine": "./node_modules/@weed.js/engine/dist/weed.bundle.esm.min.js"
+        }
+      }
     </script>
   </head>
   <body>

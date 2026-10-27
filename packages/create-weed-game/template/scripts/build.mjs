@@ -22,6 +22,8 @@ function swap(text, from, to) {
 
 let html = fs.readFileSync('index.html', 'utf8');
 html = swap(html, DEBUG_ENGINE, './vendor/weed.js');
+// The editor stays home: the production engine has no editor to load.
+html = html.replace(/^[ \t]*"@weed\.js\/editor":[^\n]*\n/m, '');
 html = swap(html, 'const DEV = true;', 'const DEV = false;');
 
 fs.rmSync(OUT, { recursive: true, force: true });

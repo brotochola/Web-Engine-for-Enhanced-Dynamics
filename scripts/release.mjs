@@ -2,14 +2,15 @@
 //
 // The one place the version changes; commits leave it alone. In order, stopping at the first failure:
 //  1. checks: on main, a clean tree, not behind origin/main, logged in to npm;
-//  2. the new version into package.json and src/version.js, and the create-weed-game template's
-//     engine range (^x.y.z), so a new game asks for the engine just published;
-//  3. the 8 bundles (make_bundle), then every check: check:dist, the embed and browser smokes, the
-//     node tests against the bundles, and the node suite;
+//  2. the new version into package.json and src/version.js, the editor package (@weed.js/editor,
+//     packages/editor, the same version, for this very engine), and the create-weed-game template's
+//     engine and editor ranges (^x.y.z), so a new game asks for what was just published;
+//  3. the 8 bundles (make_bundle) and the editor's (scripts/buildEditor.js), then every check:
+//     check:dist, the embed and browser smokes, the node tests against the bundles, and the node suite;
 //  4. one commit, "release vX.Y.Z", with exactly those files, and the tag vX.Y.Z;
-//  5. npm publish, then git push of main and the tag.
+//  5. npm publish of the engine, then of the editor, then git push of main and the tag.
 // Before step 4 nothing is committed: `git checkout -- package.json src/version.js dist
-// packages/create-weed-game/template/package.json` undoes a failed run.
+// packages/create-weed-game/template/package.json packages/editor/package.json` undoes a failed run.
 
 import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -18,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TEMPLATE_PACKAGE = 'packages/create-weed-game/template/package.json';
+const EDITOR_PACKAGE = 'packages/editor/package.json';
 
 const args = process.argv.slice(2);
 const otpAt = args.indexOf('--otp');
@@ -86,12 +88,19 @@ function main() {
   step('src/version.js', process.execPath, ['scripts/syncVersion.js']);
   const templatePath = path.join(root, TEMPLATE_PACKAGE);
   const template = fs.readFileSync(templatePath, 'utf8');
-  const pinned = template.replace(/("@weed\.js\/engine":\s*")[^"]*(")/, `$1^${version}$2`);
-  if (pinned === template && !template.includes(`"^${version}"`)) fail(`no @weed.js/engine range in ${TEMPLATE_PACKAGE}`);
+  const pinned = template.replace(/("@weed\.js\/(?:engine|editor)":\s*")[^"]*(")/g, `$1^${version}$2`);
+  if (!/"@weed\.js\/engine":\s*"\^/.test(pinned)) fail(`no @weed.js/engine range in ${TEMPLATE_PACKAGE}`);
   fs.writeFileSync(templatePath, pinned);
+  // The editor reads the engine's own modules (WEED.editorKit): it is published for this very engine.
+  const editorPath = path.join(root, EDITOR_PACKAGE);
+  const editor = JSON.parse(fs.readFileSync(editorPath, 'utf8'));
+  editor.version = version;
+  editor.peerDependencies = { ...editor.peerDependencies, '@weed.js/engine': version };
+  fs.writeFileSync(editorPath, `${JSON.stringify(editor, null, 2)}\n`);
 
   // 3. the bundles, and every check
   step('build the bundles', 'npm', ['run', 'make_bundle']);
+  step('build the editor', process.execPath, ['scripts/buildEditor.js']);
   step('dist matches the sources', process.execPath, ['scripts/assertDistFresh.js']);
   step('bundle embed smoke', process.execPath, ['scripts/smokeBundleEmbed.mjs']);
   step('bundle browser smoke', process.execPath, ['scripts/smokeBundleBrowser.mjs']);
@@ -99,7 +108,7 @@ function main() {
   step('node suite', 'npm', ['run', 'test:node']);
 
   // 4. commit and tag
-  step('stage the release', 'git', ['add', 'package.json', 'src/version.js', 'dist', TEMPLATE_PACKAGE]);
+  step('stage the release', 'git', ['add', 'package.json', 'src/version.js', 'dist', TEMPLATE_PACKAGE, EDITOR_PACKAGE]);
   step('commit', 'git', ['commit', '-m', `release v${version}`]);
   step('tag', 'git', ['tag', '-a', `v${version}`, '-m', `release v${version}`]);
 
@@ -113,8 +122,20 @@ function main() {
         `  npm publish --access public [--otp <code>]\n  git push origin main --follow-tags`,
     );
   }
+  console.log('\n▶ npm publish (@weed.js/editor)');
+  const editorPublished = spawnSync('npm', publishArgs, {
+    cwd: path.join(root, 'packages', 'editor'),
+    stdio: 'inherit',
+    shell: shellFor('npm'),
+  });
+  if (editorPublished.status !== 0) {
+    fail(
+      `the engine is on npm, the editor is not. Fix it, then, in packages/editor:\n` +
+        `  npm publish --access public [--otp <code>]\nand git push origin main --follow-tags`,
+    );
+  }
   step('push main and the tag', 'git', ['push', 'origin', 'main', '--follow-tags']);
-  console.log(`\nrelease: ${pkg.name}@${version} is on npm, and v${version} is on GitHub.`);
+  console.log(`\nrelease: ${pkg.name}@${version} and @weed.js/editor@${version} are on npm, and v${version} is on GitHub.`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) main();
