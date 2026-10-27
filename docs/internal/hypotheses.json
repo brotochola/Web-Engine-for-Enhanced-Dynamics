@@ -921,10 +921,10 @@
     {
       "id": "E-76",
       "title": "WASM migration: which JavaScript hot loops are faster as WebAssembly",
-      "status": "running",
-      "statusText": "IN PROGRESS (Phases 0–2 done 2026-10-22)",
+      "status": "kept",
+      "statusText": "DONE 2026-10-26: merged and released in v0.13.0 (R-0642, R-0643)",
       "date": "2026-10-22",
-      "result": "measured (Node 22, AC), premise. `tests/bench/wasmFloorPremise.mjs`. Each shipped loop is set against a patched copy that keeps its loads and stores and drops its float maths (E-18's method). …",
+      "result": "done 2026-10-26: every kernel runs only in WebAssembly (18 kernels in one engine.wasm), their JS in tests/reference. All WASM against the last commit before E-76: pre-render -42 % on Predator and -70 % on adobeAnimateScene at the minimum zoom (R-0640), -39 % and -76 % on four cores (R-0642); the scoreboard has no row worse (R-0641); engine.wasm is neutral against the kernels apart (R-0643).",
       "area": "spatial",
       "kind": "wasm",
       "refs": [
@@ -969,7 +969,8 @@
         "R-0640",
         "R-0642",
         "R-0643"
-      ]
+      ],
+      "next": "Nothing: EXECUTION_PLAN's Wave 7 holds what is left."
     },
     {
       "id": "E-50",
@@ -8177,6 +8178,177 @@
       "kind": "wasm",
       "result": "kept (product) 2026-10-25: adobeAnimateScene at the minimum zoom, renderer 7.939 → 6.545 ms (−17.8 %, 0/8); the copy 1.99 → 1.25 ms for 15 MB in Chrome 155; the glow, cookie and caster batches too (629e812a): Predator Pixi 3.684 → 3.440 ms (−8.1 %, −3.6 % against the others)",
       "next": "Nothing pending: every batch Pixi fills from the render-queue memory copies by memory.copy."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-144"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-144",
+      "title": "Box2D's solver threads: their idle cost and their clock reads",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "physics",
+      "kind": "wasm",
+      "rank": 1,
+      "result": "Wave 7 sweep (R-0645): the three solver threads read 1000 ms/s in every scene with physics, even with no bodies (bunnyMarkStressScene: 99.6 % in wasm-function[108]); on ballsHeavyStressScene each spends 9 % in _emscripten_get_now (90 ms/s), Predator 3 %. The scheduler reads the clock at each spin start and every 64th spin (W24). Physics is Predator's largest worker (6.7 ms, R-0618).",
+      "next": "Step 0: the threads' CPU time from the OS with no bodies (bunnyMarkStressScene) and with many (ballsHeavyStressScene). Then, in the Box2D repo (SIMD and no-SIMD builds): a spin bounded by a count, a shorter spin, or a futex wait in the stage syncs. Owner ballsHeavyStressScene physics; gate Predator, reading the other workers too."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-139"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-139",
+      "title": "Component getters read a lazily filled object by name",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "logic",
+      "kind": "js",
+      "rank": 2,
+      "result": "Wave 7 sweep (R-0645): the component getter (gameObject.js, one per component, defined at registration) is 44 % of adobeAnimateScene's logic at the minimum zoom (226 ms/s) and 10-14 % of Predator's two logic workers. Each reads this._componentCache[name], an object filled lazily in the order an entity's code touches its components: many maps, and a keyed load by a string that differs per closure.",
+      "next": "A kernel of the getter over several entity classes; then per-class component slots (an array read by a closure integer) or the components built with the entity as constructor fields. Owner adobeAnimateScene logic; gate Predator logic."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-140"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-140",
+      "title": "The logic loop's own cost per ticked entity",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "logic",
+      "kind": "js",
+      "rank": 3,
+      "result": "Wave 7 sweep (R-0645): _tickIntervalBucket is 89 % of painterSortStressScene's logic and 7-8 % of Predator's; _tickNonDecimatedOne 37 % of painterMoveStressScene's (720 ms/s); update 21 % of adobeAnimateScene's.",
+      "next": "Read the per-entity work around the game tick (bucket walk, active test, 17 arguments, forced scan) and how much self time is inlined game code (--trace-turbo-inlining); owner scenes minimalTickScene and minimalTickIntervalScene; a leaner loop, one copy per case."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-141"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-141",
+      "title": "Neighbour accessors called from game code",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "logic",
+      "kind": "js",
+      "rank": 4,
+      "result": "Wave 7 sweep (R-0645): neighborCount and getNeighbor are 7-8 % each of Predator's logic and 5-7 % of littleCity's and Boids'. Both are two-line typed-array reads, so the cost is the call on receivers of every entity class (a polymorphic load of _neighborOffset).",
+      "next": "A kernel first. Candidates: _neighborOffset at the same place in every instance, a per-index offset table on Grid, a documented call-free path (getAllNeighborIds and a local loop) in the guide."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-142"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-142",
+      "title": "`getTileId` divides twice per call",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "logic",
+      "kind": "js",
+      "rank": 5,
+      "result": "Wave 7 sweep (R-0645): getTileId is 82 % of tilemapStressScene's logic (469 ms/s at that scene's fixed call rate). Reciprocals stored with the map remove both divisions; N-78 (a negative coordinate truncated to tile 0) is fixed with it.",
+      "next": "A kernel of getTileId with Math.floor and reciprocals against the shipped one, then tilemapStressScene logic."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-146"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-146",
+      "title": "The FSM tick and the collision-callback dispatch",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "logic",
+      "kind": "js",
+      "rank": 6,
+      "result": "Wave 7 sweep (R-0645): fsm.js tick is 7 % of Predator's logic; _processBox2dCollisionCallbacks is 58 % of waterAndBoxesScene's logic and 5-7 % of Predator's, as the engine function's own self time.",
+      "next": "Read the per-state and per-event costs. W18's verdict (game callbacks, and E-131's Atomics.load) came from another scene."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-147"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-147",
+      "title": "The spatial kernels wait on memory: less work per frame",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "spatial",
+      "kind": "wasm",
+      "rank": 7,
+      "result": "Wave 7 sweep (R-0645): gather_batch 1 599 ms/s and publish_batch 1 447 summed over 18 scenes (Boids gather 44 %, orientedBox 76 %; movedBodiesMixed publish 46 %; stationarySpatialWide publish_u32 61 %). Both wait on memory: the gather's float32 variants lost in Node (R-0571), the publish's f32x4 tied double (W8a).",
+      "next": "Rows rebuilt and republished per frame in each scene against the reuse skin; the Chrome entry for the gather's float32 variants; then W7 and E-136."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-143"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-143",
+      "title": "Tweens",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "logic",
+      "kind": "js",
+      "rank": 8,
+      "result": "Wave 7 sweep (R-0645): the tween tick is 49 % and _apply 35 % of tweenStressScene's logic (159 ms/s).",
+      "next": "Read the per-tween work, then JavaScript tuning or a kernel over the tween slots (typed arrays already)."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-145"
+      ],
+      "records": [
+        "R-0645"
+      ],
+      "id": "E-145",
+      "title": "Adobe Animate pieces expanded on the GPU",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "date": "2026-10-26",
+      "area": "pre-render",
+      "kind": "gpu",
+      "rank": 9,
+      "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
+      "next": "A design note first (batch layout, sort, shadows, custom layers), then a prototype on adobeAnimateScene."
     }
   ],
   "records": [
@@ -13924,6 +14096,18 @@
       "title": "WASM close-out step 4: every kernel ships in one engine.wasm (same code per function; Predator, adobeAnimateScene, visPoly, bullets neutral; 61/61 boot in Chrome and Firefox)",
       "verdict": "kept",
       "text": "**WASM close-out step 4: every kernel ships in one engine.wasm (branch wasm_group, 3e035db7). The kernels' code is the same as their own builds', and the owner scenes are neutral against the kernels apart. Kept as structure.** 2026-10-26.\n\n**Built.**\n- `scripts/buildWasm.mjs` links the 18 shipped kernels' sources into `src/wasm/engine.wasm` (`wasm/modules.json`'s \"engine\": one wasm-ld link over the objects, then wasm-opt; 78 exports).\n  - Size: 240 471 B, 60 246 B gzipped, against 241 765 B and 62 963 B for the modules apart.\n  - The kernels' own builds are now test fixtures (`tests/fixtures/wasm/`), byte for byte the binaries they replaced.\n- **Same code, function by function.** Of the 88 named functions in the kernels' own builds, 65 are byte for byte the same in engine.wasm. The other 23 have the same size and differ only in their calls' function indices, which change with the module. None is missing, and none differs in size.\n- **Loading.** `src/wasm/engine.js` is the only module that names the binary.\n  - Each worker compiles it once and instantiates it once per memory (`util/wasmKernel.js`). The clients of one memory share the instance, each taking its own exports. That is safe because a kernel has no globals and no data of its own.\n  - The bundle carries one copy, in the workers' common chunk: the prod compressed bundle is 1664 KB, against 1671 KB with the modules apart and 1680 KB on main.\n- **Not done, on purpose:**\n  - The main thread's compile and post of the module. Each worker's one compile costs no frame (L4, R-0640), and the bundle already holds one copy.\n  - One `.c` per worker with a shared header. wasm-ld links the sources, and wasm-opt already merges identical helpers. W7's calls across kernels are a speed hypothesis of their own.\n\n**Gate** (`runPredatorAbab --vs 0c94caff --hyp-rev 3e035db7`: the kernels apart, then engine.wasm; 4 pairs each, worktrees, headed, detailed stats off, AB BA order). Every scene NEUTRAL:\n- **Predator:**\n  - pre-render 3.829 → 3.799 ms, −0.7 % (worse 2/4);\n  - renderer −4.6 %, logic −1.9 %, spatial −0.8 %;\n  - physics −10.8 % (1/4, cv 7/8 %): drift, since the change does not reach physics;\n  - presented 60.0 fps on both sides.\n- **adobeAnimateScene at the minimum zoom:** pre-render 11.088 → 11.160 ms, +0.6 % (cv 1/0 %); every other worker within ±1.2 %; presented 59.9 → 60.0 fps.\n- **visPolyStressScene:** pre-render 2.858 → 2.822 ms (−1.3 %, under the 3 ms floor).\n- **bulletStressScene:** particle 3.166 → 3.169 ms, +0.1 % (cv 1/1 %).\n\n**Correctness.**\n- Suite 1986/1986.\n- `buildWasm --check` passes.\n- The bundles build, and their embed and browser smokes pass (all 8).\n- Boot: 61/61 scenes in Chrome. 61/61 in release Firefox 158.0.1.\n\n**Verdict: kept (structure).** The migration's plan is complete. The branch is wasm_hyp plus this step."
+    },
+    {
+      "id": "R-0645",
+      "date": "2026-10-26",
+      "time": "17:26",
+      "timeFrom": "recorded",
+      "title": "CPU profile of every scene after the WASM migration, Wave 7's source: Box2D's solver threads at 1000 ms/s even with no bodies, half of Predator's logic is engine code, spatial the largest engine sum",
+      "verdict": "note",
+      "text": "**CPU profile of every scene after the WASM migration (v0.13.0 plus comment fixes, 7922d724), the source of EXECUTION_PLAN's Wave 7.** 2026-10-26, 16:47 to 17:11.\n\n**Protocol.** `node tests/bench/profileSceneSweep.mjs --pass cpu --set all`:\n- 65 scenes, one at a time, headed, from source, detailed stats off;\n- 6 s of warm-up, then an 8 s window;\n- the sweep's list now also has Q1's scenes (visPoly, compoundVisPoly at `ringSegments=64`, particleIntegrate with tweens) and stationarySpatialWideScene (7922d724).\n\n64 scenes were profiled. particleEmitStressScene failed on a 404 for `src/core/debug/spawnParamsCheck.js`, an import another session was writing into `gameObject.js` at that moment. CPU samples say where a worker spends its busy time, not `STEP_MS`.\n\n**Not a quiet sitting.** A visual-editor session worked in the same folder.\n- **Contended scenes.** It ran headless scene loads (ED-39, R-0644) at least from 16:53 to 16:56, so scenes 16 to 23 may read high.\n- **Half-edited code.** From about 17:08 its uncommitted spawn checks were in `gameObject.js`, `scene.js` and `logicWorker.js`, so scenes 58 to 65 ran on that code.\n\nProfile both groups again before deciding anything on them.\n\n**Findings** (ms/s busy, and % of that worker):\n- **Box2D's solver threads read 1000 ms/s in every scene with physics, even with no bodies.** In bunnyMarkStressScene, physics steps in 0.13 ms with `BODY_COUNT 0`, and the threads are 99.6 % in `wasm-function[108]`. Either the sampler counts a blocked semaphore wait as busy, or the threads spin; an OS thread-time check decides it (E-144).\n  - On a physics-bound scene, each solver thread spends 9 % in `_emscripten_get_now` (ballsHeavyStressScene, 90 ms/s per thread). Predator spends 3 %.\n- **Logic: about half of Predator's logic is engine code around the game's.**\n  - Each of its two workers (345 and 330 ms/s): the component getter 14 and 10 %, `neighborCount` 8, `_tickIntervalBucket` 8, the FSM tick 7, `getNeighbor` 7 and 7, the collision dispatch 5 and 7.\n  - Game code is 27 %.\n  - adobeAnimateScene: 44 % of its logic (226 ms/s) is the component getter.\n  - painterSortStressScene: logic is 89 % `_tickIntervalBucket`; painterMoveStressScene: 37 % `_tickNonDecimatedOne` (720 ms/s).\n  - tilemapStressScene: logic is 82 % `getTileId` (576 ms/s).\n  - tweenStressScene: tween tick 49 %, `_apply` 35 %.\n  - waterAndBoxesScene: `_processBox2dCollisionCallbacks` 58 % of logic.\n  - spawnStormScene: `_spawnAt` 40 %, `despawn` 12 %.\n- **Spatial is the largest engine sum.** `gather_batch` is 1 599 ms/s over 18 scenes and `publish_batch` 1 447.\n  - Boids: spatial 583 ms/s on each of its two workers, gather 44 %, `rebuildOwnedRows` 26 %.\n  - orientedBox: gather 76 % of 352.\n  - movedBodiesMixed: publish 46 % of 553.\n  - stationarySpatialWide: `publish_batch_u32` 61 % of 783.\n  - Predator: gather 37 %, publish 31 %, rebuild 17 % of 412.\n- **Pre-render and Pixi.**\n  - painterMove and painterSort saturate pre-render (995 and 968 ms/s), 40–48 % in `pack_sprites_split_scatter`.\n  - adobeAnimateScene at the minimum zoom: pre-render 696 ms/s, `emit_rows` 44 %, `pack_sprites_split` 28 %.\n  - Predator: pre-render 368 ms/s, 39 % in `stamp_light_range`.\n  - textureUpload: Pixi 900 ms/s, 96 % in `uploadSharedImage`.\n  - meshApi: Pixi 351 ms/s, 32 % `rewrite_corners` and 32 % the UV upload.\n- **Scenes that load nothing.** Several stress scenes load no worker past 50 ms/s at their default knobs: bunnyMarkStress, spritePack, painterAdobe, decorationSway, audioStorm.\n\n**Outcome.** EXECUTION_PLAN's Wave 7 orders what is left:\n- step 0's checks;\n- nine hypotheses, ranked 1 to 9: E-144, E-139, E-140, E-141, E-142, E-146, E-147, E-143, E-145;\n- the review items, among them a new one, N-78;\n- a triage of the 39 older pending rows: 14 done, 22 stale and 3 small speed items, with the register moves listed and not applied yet.",
+      "commits": [
+        "7922d724"
+      ]
     }
   ],
   "leads": [
@@ -13945,17 +14129,17 @@
     {
       "source": "Q1b sweep",
       "finding": "Predator logic: engine accessors called by game code (gameObject get, getNeighbor, neighborCount) are 15–30 % of logic.",
-      "next": "JS tuning (inlining, typed access); they stay JS-callable."
+      "next": "E-139 (the component getter) and E-141 (the neighbour accessors), Wave 7."
     },
     {
       "source": "Q1b sweep",
       "finding": "One Box2D solver thread spins in the scheduler loop in Predator (wasm-function[291], 71 % self); the other two sleep.",
-      "next": "With W24 (the spin reads the clock every iteration)."
+      "next": "E-144 (Wave 7): the solver threads read 1000 ms/s in every scene with physics on 2026-10-26."
     },
     {
       "source": "Q1b sweep",
       "finding": "Ten stress scenes loaded no worker past 50 ms/s at their default knobs.",
-      "next": "Raise their knobs, then profile again."
+      "next": "Still so on 2026-10-26 (R-0645): Wave 7 step 0 raises their knobs, then profiles them."
     },
     {
       "source": "Owner question (2026-10-23)",
@@ -13970,12 +14154,12 @@
     {
       "source": "Pending passes",
       "finding": "The deopt and heap passes of the sweep have not run yet.",
-      "next": "node tests/bench/profileSceneSweep.mjs --pass deopt / --pass heap on the ~20 busiest scenes."
+      "next": "Wave 7 step 0: node tests/bench/profileSceneSweep.mjs --pass deopt / --pass heap --only on the busiest scenes of R-0645."
     },
     {
       "source": "W24 (2026-10-23)",
       "finding": "Box2D's scheduler spins 50 µs between tasks with an empty b2Pause in WASM; E-34 measured ~2.4 cores burnt in the waits.",
-      "next": "Time a shorter spin, or a futex wait, against physics STEP_MS and the other workers' CPU in Predator."
+      "next": "E-144 (Wave 7): the threads' CPU time from the OS first, then a spin by count, a shorter spin or a futex wait."
     },
     {
       "source": "E-85 heap passes (2026-10-23)",
