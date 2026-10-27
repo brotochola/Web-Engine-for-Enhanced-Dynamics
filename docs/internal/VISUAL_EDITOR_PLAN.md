@@ -615,6 +615,8 @@ fallback).
   scene file: a fast swap once ED-35 exists, a fresh page reload before that.
 - **Stage 3:** Play never changes the document; Stop is a fast swap to the scene file.
   That gives Unity's "changes made while playing are thrown away" at no cost.
+- **Since ED-80:** edit mode is always the level at its start. One button plays and stops, Stop leaves the view where
+  it is, the editor page opens editing, and an edit started while playing stops first.
 - While playing, a live-values inspector (component columns, ED-17) has a "copy to
   scene" button.
 
@@ -1554,7 +1556,7 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 - **Size:** `weed.editor.min.js` is 128 KB after Stage 4 (57 KB at ED-29). It loads only
   in debug and only on first use. Splitting is not worth it yet.
 
-**State 2026-10-27, night:** ED-50 to ED-79 done. Deferred: ED-23 (particle lab), ED-35b (fast swap across scene classes).
+**State 2026-10-27, night:** ED-50 to ED-80 done. Deferred: ED-23 (particle lab), ED-35b (fast swap across scene classes).
 The final pass, 2026-10-27: test:node (2,398), test:demos, check:types, make_bundle, buildEditor, test:node:bundle,
 test:bundle, smokeEditorBundle, sceneCycleSmoke, and the 11 editor smokes (M1, shell, handles, format, panels, assets,
 layout, tree, console, export, session) all pass; dist/ put back.
@@ -1650,6 +1652,25 @@ layout, tree, console, export, session) all pass; dist/ put back.
   ring both alike; one undo. A class with the params keeps writing them, divided by the record's scale (db24a8aa).
   editorHandlesSmoke 'scaled': a Door's corner 40 out each way, scale 2 × 1.5, its collider 80 × 120. The shortcuts
   sheet names the ring and the handles (61cc5b05).
+- [x] **ED-80 Play and Stop as Unity's (added 2026-10-27, the author's).** The author placed platforms in the
+  platformer and pressed Edit while playing, expecting the level to start again from zero. Edit paused into edit mode
+  where the game was, and Play went on from there. Now edit mode is always the level at its start:
+  - **One button, as Unity's.** The toolbar's first button (and Shift+E) is ▶ Play while editing and ■ Stop while
+    playing. A scene with no scene file keeps ❚❚ Edit, which holds the world where it is. ⏸ and ⏭ pause and step the
+    game, and the live inspector (ED-17) edits it.
+  - **Stop leaves the view where it is**, as Mario Maker's editor does (one view here, not Unity's two), so what was
+    just played is in front of the author. Back in another file (a goal): the view Play started from.
+  - **The editor page opens editing**, at the level's start: edit mode at the scene's attach, then a quiet Stop once
+    the scene is ready, undoing the frames its boot ran. A reload in edit mode opens the file again for the same
+    reason. A scene with no scene file opens playing.
+  - **An edit started while playing stops first** and is made at the level's start (`EditMode.edit`): the palette's
+    +, a drop, the brush, an entity pick, and Del, Ctrl+D and F2 in the list. Hiding a layer while playing only keeps
+    the choice. Esc no longer leaves edit mode. A second Stop while one swaps waits for it (it began a second swap).
+  - Tests: editorHandover.test.js (Shift+E, the opening, the reset after a full load, the view), and editorDropPlace,
+    editorTreeKeys, editorLayers, editorShell, editorShellLayout, editorTools. The smokes wait for `EditMode.settled`.
+    editorShellSmoke now checks that the page opens editing, that a list click while playing keeps playing, and that
+    Stop comes back with the selection. editorAssetsSmoke drops a tree while littleCity plays.
+  - The same report found N-82 (found item 46): each Stop added a loop to five workers.
 
 **View (here):**
 
