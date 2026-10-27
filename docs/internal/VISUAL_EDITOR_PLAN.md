@@ -3,8 +3,7 @@
 **Opened:** 2026-10-22. **Updated:** 2026-10-26, against the code after the WASM migration
 (E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stages 1 and 2
 done 2026-10-26 (milestone M1 reached); Stage 3 started with ED-15, the editor page (D9).
-**Next step:** merge Stage 4's branches and ED-31/32, then ED-33 and ED-28, and a full test
-pass. **Time box (the author, 2026-10-26):** 12 hours,
+**Next step:** merge Stage 4's three branches, then a full test pass. **Time box (the author, 2026-10-26):** 12 hours,
 14 at most, for the rest of the plan with its tests. So Stage 4's items run in parallel in
 three agent worktrees (handles: ED-20, ED-22, ED-27 with ED-45's view parts; scene file:
 ED-21, ED-25; panels: ED-24, ED-26, ED-45's pickers) and a fourth runs ED-31 and ED-32, on
@@ -1323,7 +1322,17 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
   number arrays, not one object per decoration.
 - [ ] **ED-26** Show Tiled tilemaps and reload them on change. Painting stays in Tiled.
 - [ ] **ED-27** Viewport handles for `points` and `entity` params.
-- [ ] **ED-28** Box select, multi-select, editor-only groups.
+- [x] **ED-28** Box select, multi-select, editor-only groups. Done 2026-10-26 (522cce84,
+  `editor/multiSelect.js`).
+  - A drag on empty ground boxes the placed entities it touches; Shift+click adds or takes
+    out one; Ctrl+A takes them all; Esc lets go of the others first. The inspector shows the
+    first and says how many more; the others are outlined and marked in the scene list.
+  - A move (drag, arrows), Del and Ctrl+D act on all of them, each one undo: the history's
+    `batch` kind (data, undone the other way; Del puts each back at its place).
+  - Ctrl+G groups them, Ctrl+Shift+G ungroups (one undo each); a click on one of a group
+    selects the group. Groups are kept in the scene file under `editor.groups`, a key the
+    game never reads; a rename follows into them.
+  - Tests: `editorMulti.test.js`; `editorM1Smoke.mjs` ED-28 with real input (17/17).
 
 ### Stage 5: ship and export
 
@@ -1366,10 +1375,19 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
     read as the folder to serve). The template has the editor as a dev dependency at the
     engine's range and names it in its import map; `npm run build` drops that line.
   - Tests: `createWeedGame.test.js`.
-- [ ] **ED-31** Bake the atlas from the editor.
+- [x] **ED-31** Bake the atlas from the editor.
   - Save the scene's built atlas canvas as PNG plus JSON through the save route
     (extension allow-list extended), and point `assets.bigAtlas` at it. No Playwright.
   - Verify first that the canvas is kept after loading outside debug mode.
+  - Done 2026-10-26 by the export agent (0ebf2742, 3c58e035; merged in ad356f84). The
+    canvas is kept after loading in every build: `_installBigAtlas` stores
+    `bigAtlasCanvas` and `bigAtlasJson` whatever the mode, only teardown drops them. The
+    Assets dock's **Bake atlas** (`editor/atlasBake.js`, `editor/shipRow.js`) writes
+    `<Scene>.atlas.png` and `.atlas.json` next to the scene's module through the file
+    route, whose allow-list gains `.atlas.json` (JSON, 8 MB) and `.atlas.png` (PNG
+    signature, 64 MB: a 4096² atlas). The editor shows the `bigAtlas` entry that loads them;
+    the scene's code is the author's to change. Tests: `devRoutes.test.js`,
+    `editorAtlasBake.test.js`, the bake check of `editorExportSmoke.mjs`.
 - [ ] **ED-32** Export:
   - esbuild on the dev server builds the scene classes, entity classes and scene files
     into `game.min.js`;
@@ -1381,8 +1399,31 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
     `game.min.js`, `assets/`, `_headers`;
   - a headless smoke load of the result, on the pattern of
     `scripts/smokeBundleBrowser.mjs`, including one fast swap between two scene files.
-- [ ] **ED-33** `create-weed-game` template: the editor, and export in place of today's
+  - Done 2026-10-26 by the export agent (7f63285d, 652c1260, 5d11b277, 4923dd2e, f46b74e0,
+    aafe44db; build tool 66c8aa89; merged in ad356f84).
+    - **Export** (the editor page's toolbar, the Assets dock) posts the running game to
+      `POST /__weed/export` (localhost only), which runs `server/exportGame.js`: esbuild with
+      keepNames; every engine import becomes the global `WEED`; an engine-internal import is
+      refused, naming it.
+    - Output: `index.html`, `vendor/weed.js` (byte for byte), `game.min.js`, `assets/`
+      (the declared files and the baked atlas), `_headers`, `weed-sw.js`.
+    - The workers load `game.min.js` as the blob loader does any scene module: it ends in
+      `export { … }`, and anything else the loader's regular expressions would rewrite is
+      refused.
+    - Levels travel inside `game.min.js` through `registerSceneFile` (Found item 15).
+      `npm run dev` exports to `scratch/export/<Scene>/`.
+    - Smoke (`tests/bench/editorExportSmoke.mjs`, against a fresh build) 16/16: the export
+      loads 1-1 with the production engine and its baked atlas, and the goal swaps to 1-2 from
+      `game.min.js` (12.9 KB). `scripts/buildBundle.js` builds into `WEED_DIST_DIR` when set.
+- [x] **ED-33** `create-weed-game` template: the editor, and export in place of today's
   copy-only `build.mjs`.
+  - Done 2026-10-26 (9c17259e, d372a416). A new game has `@weed.js/editor` and esbuild as
+    dev dependencies, the editor in its import map, and its dev server gives the editor's
+    routes `dist/` as Export's folder, so Export builds the game for a host where
+    `npm run preview` serves it. `npm run build` stays, as the copy-only build for a game
+    without the editor, and says Export makes a minified one. The package ships the export
+    with its routes (`exportGame.js`, `exportRuntime.js`).
+  - Tests: `createWeedGame.test.js`.
 
 ---
 
@@ -1594,6 +1635,17 @@ server still writes nothing. What changed for this plan:
     saves and hot reload go to. The editor needs it to go back to an unsaved document: its
     resume after a reload (ED-15) and Stop (ED-16). A game can load a level it built in
     code. In `types/weed.d.ts`; not yet in the guide.
+
+15. **`registerSceneFile(url, doc)` (new API, for the author to confirm).** Added by ED-32: a
+    registry `fetchSceneFile` reads before fetching, so `loadScene`, `defaultSceneFile` and
+    saves find a level a game carries in its code (an export's `game.min.js`) with nothing
+    to fetch. In `src/index.js` and `types/weed.d.ts`; page only.
+16. **A bundled engine's blob workers rewrite import and export text by regular
+    expressions,** so a string in game code that looks like an import statement is
+    rewritten in the workers. Export checks for it; the engine itself does not.
+17. **Today's `dist/` predates `registerSceneFile`:** until the bundles are rebuilt (the
+    next release), an export from `npm run dev` is refused with "rebuild it";
+    `WEED_EXPORT_ENGINE` can point at a fresh build meanwhile.
 
 **New items:**
 
