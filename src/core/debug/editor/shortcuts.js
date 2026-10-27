@@ -129,12 +129,16 @@ export function toggleShortcutSheet(doc) {
   const close = () => {
     open.delete(doc);
     doc.removeEventListener('keydown', onKey, true);
+    globalThis.removeEventListener?.('pagehide', close);
     backdrop.remove();
   };
   backdrop.onclick = (e) => {
     if (e.target === backdrop) close();
   };
   doc.addEventListener('keydown', onKey, true);
+  // In the editor page the sheet is its document's: the game page going takes it along, so that page keeps no handler
+  // of a game page that reloaded.
+  globalThis.addEventListener?.('pagehide', close);
   doc.body.appendChild(backdrop);
   open.set(doc, { close });
   return true;

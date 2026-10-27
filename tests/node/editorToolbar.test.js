@@ -126,4 +126,19 @@ test('the sheet: every key listed; ?, Esc or a click outside closes it; one per 
   toggleShortcutSheet(doc);
   doc.body.children[0].onclick({ target: doc.body.children[0] });
   assert.equal(doc.body.children.length, 0, 'a click outside the sheet');
+
+  // The game page going (pagehide) closes it: the editor page keeps no handler of it. Node's global has no listeners.
+  const page = new Map();
+  globalThis.addEventListener = (type, fn) => page.set(type, fn);
+  globalThis.removeEventListener = (type, fn) => {
+    if (page.get(type) === fn) page.delete(type);
+  };
+  try {
+    toggleShortcutSheet(doc);
+    page.get('pagehide')();
+    assert.deepEqual([doc.body.children.length, doc.listeners.has('keydown'), page.size], [0, false, 0]);
+  } finally {
+    delete globalThis.addEventListener;
+    delete globalThis.removeEventListener;
+  }
 });
