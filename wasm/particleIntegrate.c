@@ -102,6 +102,15 @@ static inline uint32_t lerp_rgb(uint32_t from, uint32_t to, double t) {
   return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
+/* MIXED_EASE (tweened properties with different eases, ParticleComponent.easeIds) is rare: such a particle's tweens
+   go through these, out of line (defined after lerp_rgb_x4), and each kernel's own path stays as it was. Inlined,
+   the per-property eases made the module twice the size and integrate_batch 12 % slower: apply_ease, inlined there
+   only while it has one caller, became a call on every particle. Each returns the particle's angle. */
+static double tween_mixed_f64(const uint32_t *cols, uint32_t i, uint32_t mask, int spinning, double lifeProgress,
+                              const float *lut, uint32_t lutSize);
+static double tween_mixed_f32x4(const uint32_t *cols, uint32_t i, uint32_t mask, int spinning, int rotates,
+                                uint16_t life, const float *lut, uint32_t lutSize);
+
 #define COL(T, k) ((T *)(uintptr_t)cols[k])
 
 __attribute__((export_name("integrate_batch")))
@@ -141,7 +150,6 @@ void integrate_batch(
   const uint8_t *despawnOnGroundContact = COL(uint8_t, DESPAWN_ON_GROUND);
   const uint16_t *tweenMask = COL(uint16_t, TWEEN_MASK);
   const uint8_t *easeId = COL(uint8_t, EASE_ID);
-  const uint32_t *easeIds = COL(uint32_t, EASE_IDS);
   const float *alphaFrom = COL(float, ALPHA_FROM), *alphaTo = COL(float, ALPHA_TO);
   const float *scaleXFrom = COL(float, SCALE_X_FROM), *scaleXTo = COL(float, SCALE_X_TO);
   const float *scaleYFrom = COL(float, SCALE_Y_FROM), *scaleYTo = COL(float, SCALE_Y_TO);
@@ -182,33 +190,25 @@ void integrate_batch(
     const int cycling = animMode[i] != 0;
     if (mask || spinning || cycling) {
       const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
-      double eA, eSX, eSY, eT, eR, eV;
+      double angle;
       if (mask & TWEEN_MIXED) {
-        /* One ease per tweened property; only the tweened ones are eased. */
-        const uint32_t ids = easeIds[i];
-        eA = (mask & TWEEN_ALPHA) ? apply_ease(lifeProgress, ids & 15u, lut, lutSize) : 0;
-        eSX = (mask & TWEEN_SCALEX) ? apply_ease(lifeProgress, (ids >> 4) & 15u, lut, lutSize) : 0;
-        eSY = (mask & TWEEN_SCALEY) ? apply_ease(lifeProgress, (ids >> 8) & 15u, lut, lutSize) : 0;
-        eT = (mask & TWEEN_TINT) ? apply_ease(lifeProgress, (ids >> 12) & 15u, lut, lutSize) : 0;
-        eR = (mask & TWEEN_ROT) ? apply_ease(lifeProgress, (ids >> 16) & 15u, lut, lutSize) : 0;
-        eV = spinning ? apply_ease(lifeProgress, (ids >> 20) & 15u, lut, lutSize) : 0;
+        angle = tween_mixed_f64(cols, i, mask, spinning, lifeProgress, lut, lutSize);
       } else {
         const double eased = mask || spinning ? apply_ease(lifeProgress, easeId[i], lut, lutSize) : lifeProgress;
-        eA = eSX = eSY = eT = eR = eV = eased;
-      }
-      if (mask & TWEEN_ALPHA) alpha[i] = (float)((double)alphaFrom[i] + ((double)alphaTo[i] - (double)alphaFrom[i]) * eA);
-      if (mask & TWEEN_SCALEX) scaleX[i] = (float)((double)scaleXFrom[i] + ((double)scaleXTo[i] - (double)scaleXFrom[i]) * eSX);
-      if (mask & TWEEN_SCALEY) scaleY[i] = (float)((double)scaleYFrom[i] + ((double)scaleYTo[i] - (double)scaleYFrom[i]) * eSY);
-      if (mask & TWEEN_TINT) {
-        const uint32_t c = lerp_rgb(tintFrom[i], tintTo[i], eT);
-        tint[i] = c;
-        baseTint[i] = c;
-      }
-      double angle = (double)rotFrom[i];
-      if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eR;
-      if (spinning) {
-        const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eV;
-        angle += av * (double)currentLife[i];
+        if (mask & TWEEN_ALPHA) alpha[i] = (float)((double)alphaFrom[i] + ((double)alphaTo[i] - (double)alphaFrom[i]) * eased);
+        if (mask & TWEEN_SCALEX) scaleX[i] = (float)((double)scaleXFrom[i] + ((double)scaleXTo[i] - (double)scaleXFrom[i]) * eased);
+        if (mask & TWEEN_SCALEY) scaleY[i] = (float)((double)scaleYFrom[i] + ((double)scaleYTo[i] - (double)scaleYFrom[i]) * eased);
+        if (mask & TWEEN_TINT) {
+          const uint32_t c = lerp_rgb(tintFrom[i], tintTo[i], eased);
+          tint[i] = c;
+          baseTint[i] = c;
+        }
+        angle = (double)rotFrom[i];
+        if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eased;
+        if (spinning) {
+          const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eased;
+          angle += av * (double)currentLife[i];
+        }
       }
       if ((mask & TWEEN_ROT) || spinning) {
         double s, c;
@@ -468,6 +468,15 @@ INLINE float ease_f32(float t, uint32_t easeId, const float *lut, uint32_t lutSi
   }
 }
 
+/* The eases of tween_mixed_f64 / tween_mixed_f32x4, out of line: one copy each instead of one per property. */
+__attribute__((noinline)) static double ease_rare_f64(double t, uint32_t easeId, const float *lut, uint32_t lutSize) {
+  return ease_f64(t, easeId, lut, lutSize);
+}
+
+__attribute__((noinline)) static float ease_rare_f32(float t, uint32_t easeId, const float *lut, uint32_t lutSize) {
+  return ease_f32(t, easeId, lut, lutSize);
+}
+
 /* lerpRgb in float32: each 0xRRGGBB channel lerped, rounded by `+ 0.5 | 0`, clamped to 0..255. */
 INLINE uint32_t lerp_rgb_f32(uint32_t from, uint32_t to, float t) {
   const int32_t fr = (int32_t)((from >> 16) & 0xff), fg = (int32_t)((from >> 8) & 0xff), fb = (int32_t)(from & 0xff);
@@ -575,7 +584,6 @@ void integrate_batch_f32x4(
   const uint8_t *despawnOnGroundContact = COL(uint8_t, DESPAWN_ON_GROUND);
   const uint16_t *tweenMask = COL(uint16_t, TWEEN_MASK);
   const uint8_t *easeId = COL(uint8_t, EASE_ID);
-  const uint32_t *easeIds = COL(uint32_t, EASE_IDS);
   const float *alphaFrom = COL(float, ALPHA_FROM), *alphaTo = COL(float, ALPHA_TO);
   const float *scaleXFrom = COL(float, SCALE_X_FROM), *scaleXTo = COL(float, SCALE_X_TO);
   const float *scaleYFrom = COL(float, SCALE_Y_FROM), *scaleYTo = COL(float, SCALE_Y_TO);
@@ -618,50 +626,38 @@ void integrate_batch_f32x4(
     const int cycling = animMode[i] != 0;
     if (mask || spinning || cycling) {
       const int rotates = (mask & TWEEN_ROT) || spinning;
-      double eR = 0, eV = 0;
-      float eA, eSX, eSY, eT;
+      double angle = 0;
       if (mask & TWEEN_MIXED) {
-        /* integrate_batch's per-property eases, at this kernel's precision: double for a rotating particle. */
-        const uint32_t ids = easeIds[i];
+        angle = tween_mixed_f32x4(cols, i, mask, spinning, rotates, life, lut, lutSize);
+      } else {
+        double eased = 0;
+        float easedF;
         if (rotates) {
           const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
-          eA = (mask & TWEEN_ALPHA) ? (float)ease_f64(lifeProgress, ids & 15u, lut, lutSize) : 0.0f;
-          eSX = (mask & TWEEN_SCALEX) ? (float)ease_f64(lifeProgress, (ids >> 4) & 15u, lut, lutSize) : 0.0f;
-          eSY = (mask & TWEEN_SCALEY) ? (float)ease_f64(lifeProgress, (ids >> 8) & 15u, lut, lutSize) : 0.0f;
-          eT = (mask & TWEEN_TINT) ? (float)ease_f64(lifeProgress, (ids >> 12) & 15u, lut, lutSize) : 0.0f;
-          eR = (mask & TWEEN_ROT) ? ease_f64(lifeProgress, (ids >> 16) & 15u, lut, lutSize) : 0;
-          eV = spinning ? ease_f64(lifeProgress, (ids >> 20) & 15u, lut, lutSize) : 0;
+          eased = ease_f64(lifeProgress, easeId[i], lut, lutSize);
+          easedF = (float)eased;
         } else {
           const float lifeProgress = lifespan[i] > 0 ? (float)life / (float)lifespan[i] : 1.0f;
-          eA = (mask & TWEEN_ALPHA) ? ease_f32(lifeProgress, ids & 15u, lut, lutSize) : 0.0f;
-          eSX = (mask & TWEEN_SCALEX) ? ease_f32(lifeProgress, (ids >> 4) & 15u, lut, lutSize) : 0.0f;
-          eSY = (mask & TWEEN_SCALEY) ? ease_f32(lifeProgress, (ids >> 8) & 15u, lut, lutSize) : 0.0f;
-          eT = (mask & TWEEN_TINT) ? ease_f32(lifeProgress, (ids >> 12) & 15u, lut, lutSize) : 0.0f;
+          easedF = mask ? ease_f32(lifeProgress, easeId[i], lut, lutSize) : lifeProgress;
         }
-      } else if (rotates) {
-        const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
-        const double eased = ease_f64(lifeProgress, easeId[i], lut, lutSize);
-        eR = eV = eased;
-        eA = eSX = eSY = eT = (float)eased;
-      } else {
-        const float lifeProgress = lifespan[i] > 0 ? (float)life / (float)lifespan[i] : 1.0f;
-        eA = eSX = eSY = eT = mask ? ease_f32(lifeProgress, easeId[i], lut, lutSize) : lifeProgress;
-      }
-      if (mask & TWEEN_ALPHA) alpha[i] = alphaFrom[i] + (alphaTo[i] - alphaFrom[i]) * eA;
-      if (mask & TWEEN_SCALEX) scaleX[i] = scaleXFrom[i] + (scaleXTo[i] - scaleXFrom[i]) * eSX;
-      if (mask & TWEEN_SCALEY) scaleY[i] = scaleYFrom[i] + (scaleYTo[i] - scaleYFrom[i]) * eSY;
-      if (mask & TWEEN_TINT) {
-        const uint32_t c = lerp_rgb_f32(tintFrom[i], tintTo[i], eT);
-        tint[i] = c;
-        baseTint[i] = c;
+        if (mask & TWEEN_ALPHA) alpha[i] = alphaFrom[i] + (alphaTo[i] - alphaFrom[i]) * easedF;
+        if (mask & TWEEN_SCALEX) scaleX[i] = scaleXFrom[i] + (scaleXTo[i] - scaleXFrom[i]) * easedF;
+        if (mask & TWEEN_SCALEY) scaleY[i] = scaleYFrom[i] + (scaleYTo[i] - scaleYFrom[i]) * easedF;
+        if (mask & TWEEN_TINT) {
+          const uint32_t c = lerp_rgb_f32(tintFrom[i], tintTo[i], easedF);
+          tint[i] = c;
+          baseTint[i] = c;
+        }
+        if (rotates) {
+          angle = (double)rotFrom[i];
+          if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eased;
+          if (spinning) {
+            const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eased;
+            angle += av * (double)currentLife[i];
+          }
+        }
       }
       if (rotates) {
-        double angle = (double)rotFrom[i];
-        if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eR;
-        if (spinning) {
-          const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eV;
-          angle += av * (double)currentLife[i];
-        }
         const uint32_t ix = hi_bits(angle);
         if (ix < 0x413921fbu) {
           staged--;
@@ -836,6 +832,102 @@ INLINE uint32_t lerp_rgb_x4(uint32_t from, uint32_t to, double t) {
   return ((uint32_t)r << 16) | ((uint32_t)g << 8) | (uint32_t)b;
 }
 
+/* A MIXED_EASE particle's tweens for integrate_batch and integrate_batch_u32, in their arithmetic: alpha, scale and
+   tint each with its own ease. Returns the angle its rotation and spin give. */
+__attribute__((noinline)) static double tween_mixed_f64(const uint32_t *cols, uint32_t i, uint32_t mask, int spinning,
+                                                        double lifeProgress, const float *lut, uint32_t lutSize) {
+  const uint32_t ids = COL(uint32_t, EASE_IDS)[i];
+  if (mask & TWEEN_ALPHA) {
+    const float *f = COL(float, ALPHA_FROM), *t = COL(float, ALPHA_TO);
+    const double e = ease_rare_f64(lifeProgress, ids & 15u, lut, lutSize);
+    COL(float, ALPHA)[i] = (float)((double)f[i] + ((double)t[i] - (double)f[i]) * e);
+  }
+  if (mask & TWEEN_SCALEX) {
+    const float *f = COL(float, SCALE_X_FROM), *t = COL(float, SCALE_X_TO);
+    const double e = ease_rare_f64(lifeProgress, (ids >> 4) & 15u, lut, lutSize);
+    COL(float, SCALE_X)[i] = (float)((double)f[i] + ((double)t[i] - (double)f[i]) * e);
+  }
+  if (mask & TWEEN_SCALEY) {
+    const float *f = COL(float, SCALE_Y_FROM), *t = COL(float, SCALE_Y_TO);
+    const double e = ease_rare_f64(lifeProgress, (ids >> 8) & 15u, lut, lutSize);
+    COL(float, SCALE_Y)[i] = (float)((double)f[i] + ((double)t[i] - (double)f[i]) * e);
+  }
+  if (mask & TWEEN_TINT) {
+    const double e = ease_rare_f64(lifeProgress, (ids >> 12) & 15u, lut, lutSize);
+    const uint32_t c = lerp_rgb_x4(COL(uint32_t, TINT_FROM)[i], COL(uint32_t, TINT_TO)[i], e);
+    COL(uint32_t, TINT)[i] = c;
+    COL(uint32_t, BASE_TINT)[i] = c;
+  }
+  const float *rotFrom = COL(float, ROT_FROM);
+  double angle = (double)rotFrom[i];
+  if (mask & TWEEN_ROT) {
+    const double e = ease_rare_f64(lifeProgress, (ids >> 16) & 15u, lut, lutSize);
+    angle = (double)rotFrom[i] + ((double)COL(float, ROT_TO)[i] - (double)rotFrom[i]) * e;
+  }
+  if (spinning) {
+    const float *f = COL(float, ANG_FROM), *t = COL(float, ANG_TO);
+    const double e = ease_rare_f64(lifeProgress, (ids >> 20) & 15u, lut, lutSize);
+    const double av = (double)f[i] + ((double)t[i] - (double)f[i]) * e;
+    angle += av * (double)COL(uint16_t, CURRENT_LIFE)[i];
+  }
+  return angle;
+}
+
+/* The same for integrate_batch_f32x4 and integrate_batch_f32x4_u32, at their precision: a rotating particle's eases
+   in double, the others' in float32. Returns the angle (0 when the particle does not rotate). */
+__attribute__((noinline)) static double tween_mixed_f32x4(const uint32_t *cols, uint32_t i, uint32_t mask,
+                                                          int spinning, int rotates, uint16_t life, const float *lut,
+                                                          uint32_t lutSize) {
+  const uint32_t ids = COL(uint32_t, EASE_IDS)[i];
+  const uint16_t span = COL(uint16_t, LIFESPAN)[i];
+  float eA, eSX, eSY, eT;
+  double eR = 0, eV = 0;
+  if (rotates) {
+    const double lifeProgress = span > 0 ? (double)life / (double)span : 1;
+    eA = (mask & TWEEN_ALPHA) ? (float)ease_rare_f64(lifeProgress, ids & 15u, lut, lutSize) : 0.0f;
+    eSX = (mask & TWEEN_SCALEX) ? (float)ease_rare_f64(lifeProgress, (ids >> 4) & 15u, lut, lutSize) : 0.0f;
+    eSY = (mask & TWEEN_SCALEY) ? (float)ease_rare_f64(lifeProgress, (ids >> 8) & 15u, lut, lutSize) : 0.0f;
+    eT = (mask & TWEEN_TINT) ? (float)ease_rare_f64(lifeProgress, (ids >> 12) & 15u, lut, lutSize) : 0.0f;
+    eR = (mask & TWEEN_ROT) ? ease_rare_f64(lifeProgress, (ids >> 16) & 15u, lut, lutSize) : 0;
+    eV = spinning ? ease_rare_f64(lifeProgress, (ids >> 20) & 15u, lut, lutSize) : 0;
+  } else {
+    const float lifeProgress = span > 0 ? (float)life / (float)span : 1.0f;
+    eA = (mask & TWEEN_ALPHA) ? ease_rare_f32(lifeProgress, ids & 15u, lut, lutSize) : 0.0f;
+    eSX = (mask & TWEEN_SCALEX) ? ease_rare_f32(lifeProgress, (ids >> 4) & 15u, lut, lutSize) : 0.0f;
+    eSY = (mask & TWEEN_SCALEY) ? ease_rare_f32(lifeProgress, (ids >> 8) & 15u, lut, lutSize) : 0.0f;
+    eT = (mask & TWEEN_TINT) ? ease_rare_f32(lifeProgress, (ids >> 12) & 15u, lut, lutSize) : 0.0f;
+  }
+  if (mask & TWEEN_ALPHA) {
+    const float *f = COL(float, ALPHA_FROM), *t = COL(float, ALPHA_TO);
+    COL(float, ALPHA)[i] = f[i] + (t[i] - f[i]) * eA;
+  }
+  if (mask & TWEEN_SCALEX) {
+    const float *f = COL(float, SCALE_X_FROM), *t = COL(float, SCALE_X_TO);
+    COL(float, SCALE_X)[i] = f[i] + (t[i] - f[i]) * eSX;
+  }
+  if (mask & TWEEN_SCALEY) {
+    const float *f = COL(float, SCALE_Y_FROM), *t = COL(float, SCALE_Y_TO);
+    COL(float, SCALE_Y)[i] = f[i] + (t[i] - f[i]) * eSY;
+  }
+  if (mask & TWEEN_TINT) {
+    const uint32_t c = lerp_rgb_f32(COL(uint32_t, TINT_FROM)[i], COL(uint32_t, TINT_TO)[i], eT);
+    COL(uint32_t, TINT)[i] = c;
+    COL(uint32_t, BASE_TINT)[i] = c;
+  }
+  double angle = 0;
+  if (rotates) {
+    const float *rotFrom = COL(float, ROT_FROM);
+    angle = (double)rotFrom[i];
+    if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)COL(float, ROT_TO)[i] - (double)rotFrom[i]) * eR;
+    if (spinning) {
+      const float *f = COL(float, ANG_FROM), *t = COL(float, ANG_TO);
+      const double av = (double)f[i] + ((double)t[i] - (double)f[i]) * eV;
+      angle += av * (double)COL(uint16_t, CURRENT_LIFE)[i];
+    }
+  }
+  return angle;
+}
+
 /* Four entries of a u32 list from k that are four consecutive slots. */
 INLINE int run_of_four_u32(const uint32_t *list, uint32_t k) {
   const v128_t got = wasm_v128_load(list + k);
@@ -881,7 +973,6 @@ void integrate_batch_u32(
   const uint8_t *despawnOnGroundContact = COL(uint8_t, DESPAWN_ON_GROUND);
   const uint16_t *tweenMask = COL(uint16_t, TWEEN_MASK);
   const uint8_t *easeId = COL(uint8_t, EASE_ID);
-  const uint32_t *easeIds = COL(uint32_t, EASE_IDS);
   const float *alphaFrom = COL(float, ALPHA_FROM), *alphaTo = COL(float, ALPHA_TO);
   const float *scaleXFrom = COL(float, SCALE_X_FROM), *scaleXTo = COL(float, SCALE_X_TO);
   const float *scaleYFrom = COL(float, SCALE_Y_FROM), *scaleYTo = COL(float, SCALE_Y_TO);
@@ -922,33 +1013,25 @@ void integrate_batch_u32(
     const int cycling = animMode[i] != 0;
     if (mask || spinning || cycling) {
       const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
-      double eA, eSX, eSY, eT, eR, eV;
+      double angle;
       if (mask & TWEEN_MIXED) {
-        /* One ease per tweened property; only the tweened ones are eased. */
-        const uint32_t ids = easeIds[i];
-        eA = (mask & TWEEN_ALPHA) ? ease_f64(lifeProgress, ids & 15u, lut, lutSize) : 0;
-        eSX = (mask & TWEEN_SCALEX) ? ease_f64(lifeProgress, (ids >> 4) & 15u, lut, lutSize) : 0;
-        eSY = (mask & TWEEN_SCALEY) ? ease_f64(lifeProgress, (ids >> 8) & 15u, lut, lutSize) : 0;
-        eT = (mask & TWEEN_TINT) ? ease_f64(lifeProgress, (ids >> 12) & 15u, lut, lutSize) : 0;
-        eR = (mask & TWEEN_ROT) ? ease_f64(lifeProgress, (ids >> 16) & 15u, lut, lutSize) : 0;
-        eV = spinning ? ease_f64(lifeProgress, (ids >> 20) & 15u, lut, lutSize) : 0;
+        angle = tween_mixed_f64(cols, i, mask, spinning, lifeProgress, lut, lutSize);
       } else {
         const double eased = mask || spinning ? ease_f64(lifeProgress, easeId[i], lut, lutSize) : lifeProgress;
-        eA = eSX = eSY = eT = eR = eV = eased;
-      }
-      if (mask & TWEEN_ALPHA) alpha[i] = (float)((double)alphaFrom[i] + ((double)alphaTo[i] - (double)alphaFrom[i]) * eA);
-      if (mask & TWEEN_SCALEX) scaleX[i] = (float)((double)scaleXFrom[i] + ((double)scaleXTo[i] - (double)scaleXFrom[i]) * eSX);
-      if (mask & TWEEN_SCALEY) scaleY[i] = (float)((double)scaleYFrom[i] + ((double)scaleYTo[i] - (double)scaleYFrom[i]) * eSY);
-      if (mask & TWEEN_TINT) {
-        const uint32_t c = lerp_rgb_x4(tintFrom[i], tintTo[i], eT);
-        tint[i] = c;
-        baseTint[i] = c;
-      }
-      double angle = (double)rotFrom[i];
-      if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eR;
-      if (spinning) {
-        const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eV;
-        angle += av * (double)currentLife[i];
+        if (mask & TWEEN_ALPHA) alpha[i] = (float)((double)alphaFrom[i] + ((double)alphaTo[i] - (double)alphaFrom[i]) * eased);
+        if (mask & TWEEN_SCALEX) scaleX[i] = (float)((double)scaleXFrom[i] + ((double)scaleXTo[i] - (double)scaleXFrom[i]) * eased);
+        if (mask & TWEEN_SCALEY) scaleY[i] = (float)((double)scaleYFrom[i] + ((double)scaleYTo[i] - (double)scaleYFrom[i]) * eased);
+        if (mask & TWEEN_TINT) {
+          const uint32_t c = lerp_rgb_x4(tintFrom[i], tintTo[i], eased);
+          tint[i] = c;
+          baseTint[i] = c;
+        }
+        angle = (double)rotFrom[i];
+        if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eased;
+        if (spinning) {
+          const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eased;
+          angle += av * (double)currentLife[i];
+        }
       }
       if ((mask & TWEEN_ROT) || spinning) {
         double s, c;
@@ -1075,7 +1158,6 @@ void integrate_batch_f32x4_u32(
   const uint8_t *despawnOnGroundContact = COL(uint8_t, DESPAWN_ON_GROUND);
   const uint16_t *tweenMask = COL(uint16_t, TWEEN_MASK);
   const uint8_t *easeId = COL(uint8_t, EASE_ID);
-  const uint32_t *easeIds = COL(uint32_t, EASE_IDS);
   const float *alphaFrom = COL(float, ALPHA_FROM), *alphaTo = COL(float, ALPHA_TO);
   const float *scaleXFrom = COL(float, SCALE_X_FROM), *scaleXTo = COL(float, SCALE_X_TO);
   const float *scaleYFrom = COL(float, SCALE_Y_FROM), *scaleYTo = COL(float, SCALE_Y_TO);
@@ -1118,50 +1200,38 @@ void integrate_batch_f32x4_u32(
     const int cycling = animMode[i] != 0;
     if (mask || spinning || cycling) {
       const int rotates = (mask & TWEEN_ROT) || spinning;
-      double eR = 0, eV = 0;
-      float eA, eSX, eSY, eT;
+      double angle = 0;
       if (mask & TWEEN_MIXED) {
-        /* integrate_batch's per-property eases, at this kernel's precision: double for a rotating particle. */
-        const uint32_t ids = easeIds[i];
+        angle = tween_mixed_f32x4(cols, i, mask, spinning, rotates, life, lut, lutSize);
+      } else {
+        double eased = 0;
+        float easedF;
         if (rotates) {
           const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
-          eA = (mask & TWEEN_ALPHA) ? (float)ease_f64(lifeProgress, ids & 15u, lut, lutSize) : 0.0f;
-          eSX = (mask & TWEEN_SCALEX) ? (float)ease_f64(lifeProgress, (ids >> 4) & 15u, lut, lutSize) : 0.0f;
-          eSY = (mask & TWEEN_SCALEY) ? (float)ease_f64(lifeProgress, (ids >> 8) & 15u, lut, lutSize) : 0.0f;
-          eT = (mask & TWEEN_TINT) ? (float)ease_f64(lifeProgress, (ids >> 12) & 15u, lut, lutSize) : 0.0f;
-          eR = (mask & TWEEN_ROT) ? ease_f64(lifeProgress, (ids >> 16) & 15u, lut, lutSize) : 0;
-          eV = spinning ? ease_f64(lifeProgress, (ids >> 20) & 15u, lut, lutSize) : 0;
+          eased = ease_f64(lifeProgress, easeId[i], lut, lutSize);
+          easedF = (float)eased;
         } else {
           const float lifeProgress = lifespan[i] > 0 ? (float)life / (float)lifespan[i] : 1.0f;
-          eA = (mask & TWEEN_ALPHA) ? ease_f32(lifeProgress, ids & 15u, lut, lutSize) : 0.0f;
-          eSX = (mask & TWEEN_SCALEX) ? ease_f32(lifeProgress, (ids >> 4) & 15u, lut, lutSize) : 0.0f;
-          eSY = (mask & TWEEN_SCALEY) ? ease_f32(lifeProgress, (ids >> 8) & 15u, lut, lutSize) : 0.0f;
-          eT = (mask & TWEEN_TINT) ? ease_f32(lifeProgress, (ids >> 12) & 15u, lut, lutSize) : 0.0f;
+          easedF = mask ? ease_f32(lifeProgress, easeId[i], lut, lutSize) : lifeProgress;
         }
-      } else if (rotates) {
-        const double lifeProgress = lifespan[i] > 0 ? (double)life / (double)lifespan[i] : 1;
-        const double eased = ease_f64(lifeProgress, easeId[i], lut, lutSize);
-        eR = eV = eased;
-        eA = eSX = eSY = eT = (float)eased;
-      } else {
-        const float lifeProgress = lifespan[i] > 0 ? (float)life / (float)lifespan[i] : 1.0f;
-        eA = eSX = eSY = eT = mask ? ease_f32(lifeProgress, easeId[i], lut, lutSize) : lifeProgress;
-      }
-      if (mask & TWEEN_ALPHA) alpha[i] = alphaFrom[i] + (alphaTo[i] - alphaFrom[i]) * eA;
-      if (mask & TWEEN_SCALEX) scaleX[i] = scaleXFrom[i] + (scaleXTo[i] - scaleXFrom[i]) * eSX;
-      if (mask & TWEEN_SCALEY) scaleY[i] = scaleYFrom[i] + (scaleYTo[i] - scaleYFrom[i]) * eSY;
-      if (mask & TWEEN_TINT) {
-        const uint32_t c = lerp_rgb_f32(tintFrom[i], tintTo[i], eT);
-        tint[i] = c;
-        baseTint[i] = c;
+        if (mask & TWEEN_ALPHA) alpha[i] = alphaFrom[i] + (alphaTo[i] - alphaFrom[i]) * easedF;
+        if (mask & TWEEN_SCALEX) scaleX[i] = scaleXFrom[i] + (scaleXTo[i] - scaleXFrom[i]) * easedF;
+        if (mask & TWEEN_SCALEY) scaleY[i] = scaleYFrom[i] + (scaleYTo[i] - scaleYFrom[i]) * easedF;
+        if (mask & TWEEN_TINT) {
+          const uint32_t c = lerp_rgb_f32(tintFrom[i], tintTo[i], easedF);
+          tint[i] = c;
+          baseTint[i] = c;
+        }
+        if (rotates) {
+          angle = (double)rotFrom[i];
+          if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eased;
+          if (spinning) {
+            const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eased;
+            angle += av * (double)currentLife[i];
+          }
+        }
       }
       if (rotates) {
-        double angle = (double)rotFrom[i];
-        if (mask & TWEEN_ROT) angle = (double)rotFrom[i] + ((double)rotTo[i] - (double)rotFrom[i]) * eR;
-        if (spinning) {
-          const double av = (double)angFrom[i] + ((double)angTo[i] - (double)angFrom[i]) * eV;
-          angle += av * (double)currentLife[i];
-        }
         const uint32_t ix = hi_bits(angle);
         if (ix < 0x413921fbu) {
           staged--;
