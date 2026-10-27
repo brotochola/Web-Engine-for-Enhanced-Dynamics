@@ -1554,7 +1554,7 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 - **Size:** `weed.editor.min.js` is 128 KB after Stage 4 (57 KB at ED-29). It loads only
   in debug and only on first use. Splitting is not worth it yet.
 
-**State 2026-10-27, late:** ED-50 to ED-71 and ED-74, ED-75 done; open: ED-72 (littleCity's houses as a param), ED-73 (a session smoke).
+**State 2026-10-27, night:** ED-50 to ED-72 and ED-74 to ED-76 done; open: ED-73 (a session smoke).
 
 **How the work is split:**
 - Four agents in worktrees, each on its own files, merged here:
@@ -1618,6 +1618,19 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
     another of its 63 sprites, a tree another tint.
   - Undo goes back.
   - It is the per-entity stream of fe41a30c put to use; no class code needed.
+- [x] **ED-76 Pick a picture (added 2026-10-27, after ED-72).** Done 2026-10-27 (49fab6e3, b6716466): a sprite or
+  animation param's thumbnail opens the scene's pictures as a grid, as Unity's object picker: a search field (every
+  word, any case), 64 px thumbnails with their names, the value outlined; it opens on the family of the name shown
+  (house_12: every house_), and with an empty value on what the entity shows now (the seed's pick); None first when
+  the default is empty. A click or Enter picks (one undo), the arrows and Page keys move the outline while the search
+  keeps the focus, Esc, a press outside, the focus leaving and the game page going close it. pictureGrid.js; the rows in
+  view are built from a pool of cells (littleCity: 1,158 names, 35 cells), each thumbnail drawn when its cell takes
+  another name. Opened under its thumbnail, shorter rather than over it. The field takes the kind's datalist when it
+  gets the focus. editorPictureGrid.test.js; editorPanelsSmoke 'grid'; in Chromium on littleCity: opened on house_12
+  (the seed's pick of CityHouse3), the wheel and the scroll bar scroll it, "tree", →, →, ↓ and Enter made it tree_08
+  (record, live sprite, undo "CityHouse3.sprite"); Esc closes it and keeps the selection.
+  - Why: a house is chosen by how it looks. 63 names (house_07 is a 23 × 122 pole) told nothing, and the field's
+    28 px thumbnail showed only the name already picked.
 
 **View (here):**
 
@@ -1700,8 +1713,12 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 
 **Demos (here):**
 
-- [ ] **ED-72 littleCity's houses declare their sprite.** A `house` param (1–63), so the
-  inspector picks the house; without it, the house comes from the entity's seed as now.
+- [x] **ED-72 littleCity's houses declare their sprite.** Done 2026-10-27 (2138d6fe): houses and trees declare
+  `sprite: { value: '', type: 'sprite' }` (a sprite param, not a number: the inspector shows it, and ED-76 picks it by
+  its picture); empty, the seed picks as before, and the draw happens either way, so a tree's flip after it is the same
+  (demos/tests/littleCitySprites.test.js). Checked in Chromium: CityHouse1 typed house_07, its record and its live
+  sheet and index (bigAtlas@3, 236) follow. A house's sprite field cost its selection 2.2 ms until b6716466 (found
+  item 37).
 
 **Last:**
 
@@ -2008,6 +2025,15 @@ server still writes nothing. What changed for this plan:
 34. **The spatial worker rebuilds its grid every frame for a held world** (littleCity: 2.8 ms in edit mode). Skipping
     it needs the entities the editor moves, places or deletes kept right in the grid (picking does not use it; the
     renderer's culling may).
+35. **The animation picker listed bigAtlas's chunk sheets** (since ED-74: `bigAtlas@k` are proxy sheets): littleCity
+    offered its 902 sprites past index 255 as animations. Fixed in e09707bb (`isBigAtlasChunk`).
+36. **The Scale row hid after any param edit:** it read the selected slot, which is respawning right after an edit.
+    It follows the class (a SpriteRenderer) since 40ed597b.
+37. **A sprite field's datalist cost a selection 2.2 ms** in littleCity (its 1,158 options went into the page with
+    every inspector): houses 3.0 → 0.8 ms, trees 4.4 → 2.0 since b6716466 (taken on focus). ED-75 measured 0.6 and 1.6
+    before the field existed.
+38. **The shortcuts sheet kept its key handler in the editor page** across a game page reload, until closed. Closed on
+    pagehide since 9cb858a4. The picture grid does the same.
 
 **New items:**
 
