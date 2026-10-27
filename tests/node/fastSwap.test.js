@@ -195,3 +195,42 @@ test('loadScene swaps for the running class, and loads fully for another class o
     console.error = quiet.error;
   }
 });
+
+test('loadScene with a sceneFile: that content in place of the file, checked and copied; the URL still names the file', async () => {
+  class FileLevel extends Level {
+    static defaultSceneFile = './levels/a.scene.json';
+  }
+  const loads = [];
+  const scene = runningLevel([]);
+  Object.setPrototypeOf(scene, FileLevel.prototype);
+  scene._fastSwap = async (load) => loads.push(load);
+  const engine = engineRunning(scene);
+  const quiet = { error: console.error, fetch: globalThis.fetch };
+  console.error = () => {};
+  globalThis.fetch = () => {
+    throw new Error('the file was fetched');
+  };
+  try {
+    clearSceneDirty();
+    const doc = { format: 1, script: '../level.js', entities: [{ name: 'Rock1', class: 'Rock', x: 1, y: 2 }] };
+    assert.equal(await engine.loadScene(FileLevel, { scriptUrl: '/x/level.js', sceneFile: doc }), true);
+    assert.equal(loads.length, 1, 'a fast swap, with no fetch');
+    assert.deepEqual(loads[0].sceneFile, doc);
+    assert.notEqual(loads[0].sceneFile, doc, 'a copy: the scene edits its own');
+    assert.notEqual(loads[0].sceneFile.entities[0], doc.entities[0]);
+    assert.equal(loads[0].sceneFileUrl, 'http://localhost/x/levels/a.scene.json');
+
+    await assert.rejects(
+      engine.loadScene(FileLevel, { scriptUrl: '/x/level.js', sceneFile: { format: 2, script: 'x.js' } }),
+      /format 2 is not supported/,
+    );
+    await assert.rejects(
+      engine.loadScene(Level, { scriptUrl: '/x/level.js', sceneFile: doc }),
+      /a sceneFile needs a scene file URL, or a scene class with defaultSceneFile \(Level has none\)/,
+    );
+    assert.equal(engine.state, GameEngine.states.READY, 'a refused load leaves the engine ready');
+  } finally {
+    console.error = quiet.error;
+    globalThis.fetch = quiet.fetch;
+  }
+});

@@ -1439,8 +1439,10 @@ export declare class GameEngine {
    * data: handed to the scene as scene.data and as the argument of preload / create / createNewGame.
    * A load of the running scene class (another level of it) is a fast swap: workers, memories, atlas and
    * WASM are kept and only the content changes. fullLoad: true asks for a full load anyway.
+   * sceneFile: a scene file's content to load in place of what its file holds (checked, and copied); the URL,
+   * or the class's defaultSceneFile, still names the file.
    */
-  loadScene(source: string | typeof Scene, options?: { data?: unknown; onProgress?: (done: number, total: number, stage: string) => void; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string; fullLoad?: boolean }): Promise<boolean>;
+  loadScene(source: string | typeof Scene, options?: { data?: unknown; onProgress?: (done: number, total: number, stage: string) => void; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string; fullLoad?: boolean; sceneFile?: SceneFile }): Promise<boolean>;
   readonly presenting: boolean;
   setPresenting(on: boolean): void;
   rebindSurface(): void;
