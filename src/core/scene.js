@@ -43,6 +43,7 @@ import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
   setupWorkerCommunication,
   seededRandom,
+  setPlacedSeedBase,
   loadEntityScripts,
   collectAllComponentsFromClasses,
   initializeComponentViews,
@@ -276,6 +277,7 @@ class Scene {
     this.rng = seededRandom(this.seed, 'main');
     // Make seeded random available globally for entity code
     globalThis.rng = this.rng;
+    setPlacedSeedBase(this.seed);
 
     // State
     this.keyboard = {};

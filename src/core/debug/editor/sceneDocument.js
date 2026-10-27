@@ -11,7 +11,7 @@
 // after it, which is what undo and redo put back (restorePlaced; history.js).
 
 import { describeSpawnParams, KIND_ENTITY, KIND_POINTS } from '../../spawnParams.js';
-import { sceneFileSpawnConfig } from '../../sceneFile.js';
+import { sceneFileSpawnConfig, placedSeed } from '../../sceneFile.js';
 import { Messages } from '../../messages.js';
 // The file's joints follow its entities (ED-21): made again on a respawn, renamed, taken out with a delete.
 import { dropJointsAt, remakeJointsOf, renameInJoints, removeJointsNaming } from './sceneJoints.js';
@@ -239,7 +239,12 @@ export function renamePlaced(scene, from, to) {
   if (typeof to !== 'string' || to.trim() === '' || to === from || recordOf(scene, to) !== null) return false;
   const found = recordOf(scene, from);
   if (found === null) return false;
+  // Its spawn's random numbers come from its name unless it has a seed (sceneFile.js placedSeed): it keeps the old
+  // name's, so the next load shows what this one does; a seed its name gives again is left out.
+  const seed = placedSeed(found.record);
   found.record.name = to;
+  if (seed === placedSeed({ name: to })) delete found.record.seed;
+  else found.record.seed = seed;
   const packed = scene._namedEntities.get(from);
   scene._namedEntities.delete(from);
   if (packed !== undefined) scene._namedEntities.set(to, packed);

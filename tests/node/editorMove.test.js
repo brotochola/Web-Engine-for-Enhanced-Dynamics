@@ -38,7 +38,8 @@ function setup() {
   class Platform {
     static spawnParams = { width: { value: 220 }, height: { value: 36 } };
     static spawn(cfg) {
-      calls.push(['spawn', { ...cfg }]);
+      const { _seed, ...config } = cfg; // the record's seed: sceneFileSeed.test.js checks it
+      calls.push(['spawn', config]);
       return { index: next++ };
     }
     static despawn(i) {

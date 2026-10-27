@@ -982,6 +982,25 @@ export function rng() {
   return globalThis.rng();
 }
 
+/** The scene's seed, which the streams of a scene file's entities mix in (placedRandom). */
+let placedSeedBase = 0;
+
+/** Set where this thread's rng is seeded (AbstractWorker.initSeededRandom; the scene, on the page). */
+export function setPlacedSeedBase(seed) {
+  placedSeedBase = seed;
+}
+
+/**
+ * A stream of its own for an entity a scene file places, fixed by the scene's seed and the entity's (sceneFile.js
+ * placedSeed): its onSpawned draws from it (GameObject._spawnAt), so a load and each of the editor's respawns draw
+ * the same numbers, whatever spawned before it.
+ * @param {number} seed
+ * @returns {() => number}
+ */
+export function placedRandom(seed) {
+  return seededRandom(placedSeedBase, seed | 0);
+}
+
 // ============================================================================
 // TEXTURE GENERATION UTILITIES
 // ============================================================================

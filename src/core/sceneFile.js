@@ -22,13 +22,14 @@
 // reads and writes as before.
 
 import { describeSpawnParams, KIND_ENTITY, KIND_POINTS } from './spawnParams.js';
+import { stringToHash } from '../util/utils.js';
 import { checkSceneFileJoints, jointKeyOrder } from './sceneFileJoints.js';
 import { checkSceneFileDecorations, DECORATION_KEYS } from './sceneFileDecorations.js';
 
 export const SCENE_FILE_FORMAT = 1;
 
 const ROOT_KEYS = ['format', 'script', 'export', 'entities', 'joints', 'decorations'];
-const ENTITY_KEYS = ['name', 'class', 'x', 'y', 'config'];
+const ENTITY_KEYS = ['name', 'class', 'x', 'y', 'config', 'seed'];
 
 /** Whether a loadScene source is a scene file (by its name: `*.scene.json`). */
 export function isSceneFileUrl(source) {
@@ -89,6 +90,7 @@ export function checkSceneFile(doc, where = 'scene file', { scriptRequired = tru
     if (e.config !== undefined && !isPlainObject(e.config)) {
       throw new Error(`${prefix(at)} (${e.name}): "config" must be an object`);
     }
+    if (e.seed !== undefined && !Number.isInteger(e.seed)) throw new Error(`${prefix(at)} (${e.name}): "seed" must be an integer`);
   }
   if (doc.joints !== undefined) checkSceneFileJoints(doc.joints, where);
   if (doc.decorations !== undefined) checkSceneFileDecorations(doc.decorations, where);
@@ -324,9 +326,21 @@ export function sceneFileSpawnOrder(entities, classOf) {
 }
 
 /**
+ * The seed an entity of a file draws its spawn's random numbers from (rng() in its onSpawned): the record's `seed`,
+ * else a hash of its name. The same numbers at each load and each of the editor's respawns, whatever spawned before
+ * it: a house that picks its sprite at random keeps it when it is moved, or when others are added or deleted.
+ * @param {object} record
+ * @returns {number}
+ */
+export function placedSeed(record) {
+  return Number.isInteger(record.seed) ? record.seed | 0 : stringToHash(String(record.name)) | 0;
+}
+
+/**
  * The spawn config for one entity of a file: x, y and its config, with each entity param's name turned into the
  * index `indexOf(name)` gives (−1 when the file has no such entity, or the reference is in `backRefs`), and each
- * points param into a Float64Array. Called on the page at load: it allocates.
+ * points param into a Float64Array; and last, `_seed` (placedSeed), which the logic worker takes out before
+ * onSpawned (GameObject._spawnAt). Called on the page at load: it allocates.
  * @param {object} record - the file's entity record
  * @param {number} position - its position in the file
  * @param {Function} EntityClass
@@ -337,25 +351,28 @@ export function sceneFileSpawnOrder(entities, classOf) {
 export function sceneFileSpawnConfig(record, position, EntityClass, indexOf, backRefs, onMissing) {
   const spawnConfig = { x: record.x, y: record.y };
   const config = record.config;
-  if (!isPlainObject(config)) return spawnConfig;
-  const description = describeSpawnParams(EntityClass);
-  for (const key of Object.keys(config)) {
-    let value = config[key];
-    const k = description !== null ? description.indexOf[key] : undefined;
-    if (k !== undefined && description.kinds[k] === KIND_ENTITY) {
-      if (value === null) {
-        value = -1;
-      } else if (backRefs.has(`${position}:${key}`)) {
-        value = -1;
-      } else {
-        const index = typeof value === 'string' ? indexOf(value) : -1;
-        if (index < 0 && onMissing) onMissing(key, value);
-        value = index;
+  if (isPlainObject(config)) {
+    const description = describeSpawnParams(EntityClass);
+    for (const key of Object.keys(config)) {
+      let value = config[key];
+      const k = description !== null ? description.indexOf[key] : undefined;
+      if (k !== undefined && description.kinds[k] === KIND_ENTITY) {
+        if (value === null) {
+          value = -1;
+        } else if (backRefs.has(`${position}:${key}`)) {
+          value = -1;
+        } else {
+          const index = typeof value === 'string' ? indexOf(value) : -1;
+          if (index < 0 && onMissing) onMissing(key, value);
+          value = index;
+        }
+      } else if (k !== undefined && description.kinds[k] === KIND_POINTS && Array.isArray(value)) {
+        value = Float64Array.from(value);
       }
-    } else if (k !== undefined && description.kinds[k] === KIND_POINTS && Array.isArray(value)) {
-      value = Float64Array.from(value);
+      spawnConfig[key] = value;
     }
-    spawnConfig[key] = value;
   }
+  delete spawnConfig._seed; // a config key of that name would not be last
+  spawnConfig._seed = placedSeed(record);
   return spawnConfig;
 }

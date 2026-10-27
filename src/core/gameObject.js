@@ -22,7 +22,7 @@ import { ColliderFixture } from './colliderFixture.js';
 import { ChainPoints } from './chainPoints.js';
 import { MeshGeometry } from './meshGeometry.js';
 import { ShapeType, SPRITE_TILE_MODE, LAYER_SUBSCRIBE_KIND, LAYER_FEEDER_KIND } from '../util/configDefaults.js';
-import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog } from '../util/utils.js';
+import { collectComponents, collisionPairKey, distanceSq2D, debugWorkerLog, placedRandom } from '../util/utils.js';
 import { entityIdBytes, EntityIdArray } from '../util/entityIdWidth.js';
 import {
   resetEntity,
@@ -2762,6 +2762,12 @@ export class GameObject {
       if (handedOff) return instance;
     }
 
+    // A scene file's entity brings its seed (sceneFile.js placedSeed): its onSpawned draws from a stream of its own,
+    // the same at each load and each respawn. Out of the config onSpawned gets; it is the config's last key, so the
+    // delete leaves its shape as it was.
+    const placedSeed = spawnConfig._seed;
+    if (placedSeed !== undefined) delete spawnConfig._seed;
+
     // ========================================
     // COMPONENT DATA SETUP (SAFE - unique index)
     // ========================================
@@ -2984,6 +2990,8 @@ export class GameObject {
         const params = GameObject._spawnParamsByType[EntityClass.entityType];
         const filled = params !== undefined && params !== null && params.EntityClass === EntityClass;
         if (filled) checkSpawnConfig(params, spawnConfig, instance);
+        const threadRng = globalThis.rng;
+        if (placedSeed !== undefined) globalThis.rng = placedRandom(placedSeed);
         try {
           instance.onSpawned(filled ? fillSpawnParams(params, spawnConfig, GameObject.instances) : spawnConfig);
         } catch (error) {
@@ -2992,6 +3000,7 @@ export class GameObject {
           if (!logicWorkerCtx) throw error;
           reportWorkerError(error, 'onSpawned', EntityClass.name, i);
         } finally {
+          if (placedSeed !== undefined) globalThis.rng = threadRng;
           if (filled) releaseSpawnParams(params);
         }
       }

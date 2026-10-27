@@ -22,6 +22,7 @@ import {
 import { swapModule, hotModuleUrl } from '../core/debug/hotSwap.js';
 import {
   seededRandom,
+  setPlacedSeedBase,
   loadEntityScripts,
   evaluateBlobModule,
   blobModules,
@@ -1218,6 +1219,8 @@ export class AbstractWorker {
     self.rng = seededRandom(seed, workerId ?? 'worker');
     // Also make it available globally without 'self.' prefix for entity code
     globalThis.rng = self.rng;
+    // A scene file's entities draw from streams of their own, mixed with this seed (GameObject._spawnAt).
+    setPlacedSeedBase(seed);
   }
 
   /**

@@ -102,7 +102,8 @@ export function makeWorld() {
       let i = 0;
       while (i < N && Transform.active[i] === 1) i++;
       if (i === N) return null;
-      calls.push(['spawn', name, { ...cfg }]);
+      const { _seed, ...config } = cfg; // the record's seed: sceneFileSeed.test.js checks it
+      calls.push(['spawn', name, config]);
       Transform.active[i] = 1;
       Transform.entityType[i] = type;
       Transform.x[i] = cfg.x ?? 0;

@@ -20,7 +20,8 @@ function makeScene() {
   let next = 10;
   const spawner = (name) => ({
     spawn(cfg) {
-      calls.push(['spawn', name, { ...cfg }]);
+      const { _seed, ...config } = cfg; // the record's seed: sceneFileSeed.test.js checks it
+      calls.push(['spawn', name, config]);
       return { index: next++ };
     },
     despawn(i) {

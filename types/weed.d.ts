@@ -171,6 +171,11 @@ export interface SceneFileEntity {
   y: number;
   /** The spawn params that differ from the class's defaults; an entity param holds another entity's name. */
   config?: Record<string, unknown>;
+  /**
+   * The seed its onSpawned's `rng()` draws from (an integer). Left out, a hash of its name: each load and each of the
+   * editor's respawns draw the same numbers. The editor writes it when a rename would change them.
+   */
+  seed?: number;
   [key: string]: unknown;
 }
 

@@ -38,6 +38,7 @@ Rule of thumb: **if you would drag it in an editor, it goes in the file; if it i
   - `class`: an entity class in the scene's `static entities`. An entity of a class that is not there is skipped, with a warning.
   - `x`, `y`: where it spawns.
   - `config`: the spawn params that differ from the class's defaults (next section). Leave it out when none do.
+  - `seed` (optional, an integer): what `rng()` draws from in the entity's `onSpawned`. Left out, a hash of its name. So an entity that picks its look at random (a house among 63 sprites) picks the same one at every load, when the editor moves it, and when others are added or deleted. The editor writes `seed` when a rename would change it.
 
 Keys the format does not know are allowed and kept. One entity per line, with its keys in this order, keeps a moved platform a one-line diff.
 
