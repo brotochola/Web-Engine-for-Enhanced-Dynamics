@@ -4,7 +4,8 @@
 // pasting snap to it. The toolbar sets both; G cycles the step, Shift+G shows or hides the lines.
 //
 // Cost: while the lines show, two paths per overlay frame (minor, major), drawn from loops over numbers: nothing is
-// allocated.
+// allocated. The lines go through whole pixels under a half-pixel translate, crisp: a canvas call given a double that
+// is not a small integer boxes it, every call (38.7 KB/s at 1:1 with 16 px lines, ED-70).
 
 const GRID_KEY = 'weed.editor.grid';
 /** The closest two drawn lines come on screen, in pixels: closer, every other one is left out. */
@@ -77,18 +78,19 @@ export class GridOverlay {
     const height = ctx.canvas.height;
     const width = ctx.canvas.width;
     ctx.save();
+    ctx.translate(0.5, 0.5);
     ctx.lineWidth = 1;
     for (let major = 0; major < 2; major++) {
       ctx.beginPath();
       for (let k = first; k <= last; k++) {
         if ((k % 4 === 0) !== (major === 1)) continue;
-        const sx = Math.round((k * cell - camera.x) * zoom) + 0.5;
+        const sx = Math.round((k * cell - camera.x) * zoom) | 0;
         ctx.moveTo(sx, 0);
         ctx.lineTo(sx, height);
       }
       for (let k = top; k <= end; k++) {
         if ((k % 4 === 0) !== (major === 1)) continue;
-        const sy = Math.round((k * cell - camera.y) * zoom) + 0.5;
+        const sy = Math.round((k * cell - camera.y) * zoom) | 0;
         ctx.moveTo(0, sy);
         ctx.lineTo(width, sy);
       }

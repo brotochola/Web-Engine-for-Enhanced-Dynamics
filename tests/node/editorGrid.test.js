@@ -35,6 +35,7 @@ function lineContext(width, height) {
     strokes,
     save() {},
     restore() {},
+    translate() {},
     beginPath() {
       lines = 0;
     },

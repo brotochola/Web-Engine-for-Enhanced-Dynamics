@@ -21,6 +21,7 @@ const GAP_PX = 22;
 const RADIUS_PX = 5;
 const HIT_PX = 9;
 const SNAP = Math.PI / 12; // 15°
+const TWO_PI = Math.PI * 2;
 const DEG = 180 / Math.PI;
 const HANDLE_COLOR = 'rgba(52, 211, 153, 1)';
 const HANDLE_FILL = 'rgba(255, 255, 255, 0.95)';
@@ -219,22 +220,27 @@ export class RotateTool {
     const hy = (this._py + (this._hx - this._px) * s + (this._hy - this._py) * c - camera.y) * zoom;
     const tx = (this._px + (this._tx - this._px) * c - (this._ty - this._py) * s - camera.x) * zoom;
     const ty = (this._py + (this._tx - this._px) * s + (this._ty - this._py) * c - camera.y) * zoom;
+    // Whole pixels under a half-pixel translate: crisp, and a canvas call gets small integers (a double that is not
+    // one is boxed on every call: 28 KB/s while something was selected, ED-70).
+    const hxi = Math.round(hx) | 0;
+    const hyi = Math.round(hy) | 0;
     ctx.save();
+    ctx.translate(0.5, 0.5);
     ctx.strokeStyle = HANDLE_COLOR;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(Math.round(tx) + 0.5, Math.round(ty) + 0.5);
-    ctx.lineTo(Math.round(hx) + 0.5, Math.round(hy) + 0.5);
+    ctx.moveTo(Math.round(tx) | 0, Math.round(ty) | 0);
+    ctx.lineTo(hxi, hyi);
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(Math.round(hx) + 0.5, Math.round(hy) + 0.5, RADIUS_PX, 0, Math.PI * 2);
+    ctx.arc(hxi, hyi, RADIUS_PX, 0, TWO_PI);
     ctx.fillStyle = HANDLE_FILL;
     ctx.fill();
     ctx.lineWidth = 1.5;
     ctx.stroke();
     if (this._dragging) {
-      const px = Math.round((this._px - camera.x) * zoom) + 0.5;
-      const py = Math.round((this._py - camera.y) * zoom) + 0.5;
+      const px = Math.round((this._px - camera.x) * zoom) | 0;
+      const py = Math.round((this._py - camera.y) * zoom) | 0;
       ctx.beginPath();
       ctx.moveTo(px - 5, py);
       ctx.lineTo(px + 5, py);
@@ -246,9 +252,9 @@ export class RotateTool {
       ctx.font = LABEL_FONT;
       const w = ctx.measureText ? ctx.measureText(text).width : text.length * 7;
       ctx.fillStyle = LABEL_BACK;
-      ctx.fillRect(Math.round(hx) + 10, Math.round(hy) - 9, w + 8, 16);
+      ctx.fillRect(hxi + 10, hyi - 9, w + 8, 16);
       ctx.fillStyle = HANDLE_FILL;
-      ctx.fillText(text, Math.round(hx) + 14, Math.round(hy) + 3);
+      ctx.fillText(text, hxi + 14, hyi + 3);
     }
     ctx.restore();
   }

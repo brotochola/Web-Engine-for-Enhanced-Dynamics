@@ -173,8 +173,10 @@ try {
   const closed = await sampleWindow();
 
   await page.keyboard.press('Shift+E');
-  const editing = await page.evaluate(() => globalThis.__idle.game.debugUI.editing);
-  if (!editing) throw new Error('Shift+E did not enter edit mode');
+  // The first Shift+E loads the editor (ED-29: on demand), then enters edit mode.
+  await page.waitForFunction(() => globalThis.__idle.game.debugUI.editing === true, undefined, { timeout: 15000 }).catch(() => {
+    throw new Error('Shift+E did not enter edit mode');
+  });
   await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
   const open = await sampleWindow();
 
