@@ -3,7 +3,7 @@
 **Opened:** 2026-10-22. **Updated:** 2026-10-26, against the code after the WASM migration
 (E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stages 1 and 2
 done 2026-10-26 (milestone M1 reached); Stage 3 started with ED-15, the editor page (D9).
-**Next step:** Stage 3 in item order (ED-17 to ED-19).
+**Next step:** Stage 3 in item order (ED-18, ED-19).
 
 A visual editor for WeedJS: click an entity in the running scene, move it, change its
 settings, save the result to a scene file, play it, stop it. Unity, Godot and PlayCanvas
@@ -1262,8 +1262,23 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
   - Tests: `editorHandover.test.js`. In Chromium, `editorShellSmoke.mjs` 'stop' (9/9):
     Play, the player on the goal loads 1-2, Stop comes back to 1-1 with its unsaved width.
   - Also (e1f49107): the editor page asks before it unloads while the document is unsaved.
-- [ ] **ED-17 Live inspector while playing:** component columns from `ARRAY_SCHEMA`,
+- [x] **ED-17 Live inspector while playing:** component columns from `ARRAY_SCHEMA`,
   editable, refreshed at the UI interval, lost on Stop, with "copy to scene".
+  - Done 2026-10-26 (2cee9076, `editor/liveInspector.js`). Below the params, each
+    component of the selected entity (Transform first) with every column, refreshed at the
+    UI interval, written only on change and never over a focused field.
+  - **A field** changes the live entity through its page instance: `setPosition`, the
+    rotation setter, a component's setter where it has one (a Collider's size recomputes
+    its mass), else the column. Velocities are read-only. A column a worker writes every
+    frame shows the worker's value again.
+  - **Copy to scene** is one undoable change: the position, and each param named like a
+    column of the entity's components (number, color, bool, enum: a Platform's width from
+    its Collider, its tint and alpha from its SpriteRenderer). Floats go in at 7
+    significant digits; a default is left out.
+  - **The selection now stays when edit mode is left** (ED-8 cleared it), so the inspector
+    follows the entity while playing. A click in the scene list selects without leaving
+    play.
+  - Tests: `editorLive.test.js`; in Chromium, `editorShellSmoke.mjs` 'live' (10/10).
 - [ ] **ED-18 Console panel:** worker logs and `entityError` reports.
 - [ ] **ED-19 Proper edit pause** (D5): pause only the simulation workers, after checking
   pose interpolation. If the frame code changes, the hygiene check applies.
