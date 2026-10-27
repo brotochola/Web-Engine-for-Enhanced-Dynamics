@@ -8512,6 +8512,27 @@
       "records": [
         "R-0652"
       ]
+    },
+    {
+      "id": "ED-70",
+      "title": "Visual editor (Stage 6): editing costs nothing per frame but its overlay; a held littleCity still runs its ticks and spatial grid",
+      "status": "passed",
+      "statusText": "Measured 2026-10-27: the platformer and littleCity, edit mode off, on and idle, on with an entity selected and the grid shown",
+      "date": "2026-10-27",
+      "result": "The editor's own per-frame cost is its overlay's drawing: with an entity selected and the grid shown the page allocated 218 KB/s (52 open and idle), 134 once the grid and the rotate handle drew through whole pixels (11fba919). Workers drop in edit mode, but littleCity's logic0 (3.6 ms a frame) and spatial0 (2.8 ms) keep most of their work at a time scale of 0 (ED-71); its logic worker allocates about 10 MB/s with or without the editor.",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md"
+      ],
+      "aliases": [
+        "editor cost",
+        "editor idle cost stage 6"
+      ],
+      "next": "ED-71: skip what a held world needs no work for (entity ticks at dt 0, the spatial grid of a world that does not move). littleCity logic allocation: an engine finding outside the editor.",
+      "records": [
+        "R-0653"
+      ]
     }
   ],
   "records": [
@@ -14355,6 +14376,17 @@
       "commits": [
         "041692fd",
         "dcaff75a"
+      ]
+    },
+    {
+      "id": "R-0653",
+      "date": "2026-10-27",
+      "title": "ED-70: the editor's cost after Stage 6, the platformer and littleCity; the overlay's boxing fixed",
+      "verdict": "passed",
+      "text": "**ED-70: what the editor costs after Stage 6 (VISUAL_EDITOR_PLAN.md ED-70).** 2026-10-27, evening; the author's own Chrome open on the machine (no other benchmark running).\n\n`tests/bench/editorIdleCost.mjs` (headless Chrome, the bench page with the source tree, `debug: true`): 4 s to settle and 8 s sampled in each of three windows in one page: edit mode off (\"closed\"), on and idle (\"open\"), on with the file's first placed entity selected and the grid's lines at 16 px (\"selected\": the overlay draws every frame). Allocation from CDP heap sampling on the page and every worker; work per frame STEP_MS − WAIT_MS from the frame totals.\n\n| | the platformer 1-1 (Platform1 selected) | littleCity (CityHouse1 selected) |\n| --- | --- | --- |\n| page allocation, KB/s | 74.6 / 51.6 / 218.1 | 64.7 / 49.6 / 175.8 |\n| page allocation after 11fba919 | 73.6 / 54.6 / 134.4 | (not run again) |\n| frame interval, median ms | 16.665 / 16.665 / 16.66 | 16.66 / 16.665 / 16.665 |\n| updateInternal, median ms | 0.05 / 0.075 / 0.065 | 0.075 / 0.07 / 0.04 |\n| physics work, ms | 0.264 / 0.003 / 0.003 | 4.24 / 0.002 / 0.002 |\n| logic0 work, ms | 0.103 / 0.069 / 0.072 | 4.595 / 3.668 / 3.604 |\n| spatial0 work, ms | 0.052 / 0.037 / 0.036 | 4.41 / 2.817 / 2.771 |\n| preRender work, ms | 0.355 / 0.285 / 0.284 | 0.563 / 0.523 / 0.456 |\n| renderer work, ms | 0.675 / 0.627 / 0.648 | 0.70 / 0.662 / 0.568 |\n| logic worker allocation, KB/s | 39 / 22.3 / 19.7 | 10,773 / 9,779 / 9,731 |\n\n- **The page with a selection:** a heap sampling profile (512 B) put 38.7 KB/s in grid.js's drawOverlay and 28.2 KB/s in the rotate handle's: lines went to the canvas at `Math.round(x) + 0.5`, a double that is no small integer, boxed on every canvas call. Both draw through whole pixels under a half-pixel translate now (11fba919): 218 → 134 KB/s; the grid is gone from the sites. Left: the debug overlay's selected-entity drawing (about 35 KB/s, `_writeLocalQuad`'s twelve doubles and the corners' canvas calls) and once-a-frame functions still warming up.\n- **Workers:** edit mode lowers every one, as in ED-44. But littleCity's logic0 keeps 3.6 of its 4.6 ms and spatial0 2.8 of 4.4: its 8,000 people tick at dt 0 and the grid is rebuilt for a world that does not move.\n- **littleCity's logic worker allocates about 10 MB/s** with the editor closed: the game's or the engine's, not the editor's (an engine finding).\n\n**Verdict: passed** for the editor: its per-frame cost is its overlay's drawing, now without boxing in its own code. Next: ED-71 (a held world skips its ticks and its spatial rebuild).\n",
+      "commits": [
+        "bdb68583",
+        "11fba919"
       ]
     }
   ],
