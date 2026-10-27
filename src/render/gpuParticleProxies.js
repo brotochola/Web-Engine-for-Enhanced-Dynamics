@@ -112,6 +112,12 @@ export function groupSortKey(sortY, band) {
   return Math.fround(orderSortKey(spriteYSortKey(sortY, DECORATION_Y_SORT_SCALE) + PARTICLE_SORT_BIAS, 0, true, band));
 }
 
+/** `a` with `old` copied to its start. */
+function withPrefix(a, old) {
+  a.set(old);
+  return a;
+}
+
 /** Slots of a proxy camera (proxyView's input): what the worker's camera draws this frame. */
 export const PROXY_CAMERA = Object.freeze({ X: 0, Y: 1, ZOOM: 2, ROT: 3, CANVAS_W: 4, CANVAS_H: 5 });
 
@@ -169,20 +175,16 @@ export class ProxyCollector {
     this.dropped = 0;
   }
 
+  /** Room for `n` groups. No closure here: one would make every call allocate its context, the calls that grow nothing too. */
   _grow(n) {
     if (n <= this.cap) return;
     const cap = Math.max(64, n * 2);
-    const grow = (A, old, k = 1) => {
-      const a = new A(cap * k);
-      a.set(old);
-      return a;
-    };
-    this.keys = grow(Float64Array, this.keys);
-    this.layer = grow(Int32Array, this.layer);
-    this.ring = grow(Int32Array, this.ring);
-    this.group = grow(Int32Array, this.group);
-    this.rect = grow(Float32Array, this.rect, 4);
-    this.look = grow(Uint8Array, this.look);
+    this.keys = withPrefix(new Float64Array(cap), this.keys);
+    this.layer = withPrefix(new Int32Array(cap), this.layer);
+    this.ring = withPrefix(new Int32Array(cap), this.ring);
+    this.group = withPrefix(new Int32Array(cap), this.group);
+    this.rect = withPrefix(new Float32Array(cap * 4), this.rect);
+    this.look = withPrefix(new Uint8Array(cap), this.look);
     this.order = new Int32Array(cap);
     this._merged = new Int32Array(cap);
     this._sortScratch = new Int32Array(cap);
@@ -232,7 +234,7 @@ export class ProxyCollector {
           const maxX = ring.groups[b + GPU_GROUP.MAX_X_F];
           const maxY = ring.groups[b + GPU_GROUP.MAX_Y_F];
           if (view !== null && (maxX < view[0] || minX > view[2] || maxY < view[1] || minY > view[3])) continue;
-          this._grow(n + 1);
+          if (n === this.cap) this._grow(n + 1);
           // groupSortKey, written out: its double came back boxed from the call. floor(y + 0.5) is its
           // Math.round for a float32 y, and the entities' zIndex band is 0.
           this.keys[n] = Math.fround(
