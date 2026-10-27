@@ -1554,7 +1554,7 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 - **Size:** `weed.editor.min.js` is 128 KB after Stage 4 (57 KB at ED-29). It loads only
   in debug and only on first use. Splitting is not worth it yet.
 
-**State 2026-10-27, night:** ED-50 to ED-72 and ED-74 to ED-76 done; open: ED-73 (a session smoke).
+**State 2026-10-27, night:** ED-50 to ED-78 done. Open: polish from found items 29, 32 and the deferred ED-23, ED-35b.
 
 **How the work is split:**
 - Four agents in worktrees, each on its own files, merged here:
@@ -1631,6 +1631,16 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
   (record, live sprite, undo "CityHouse3.sprite"); Esc closes it and keeps the selection.
   - Why: a house is chosen by how it looks. 63 names (house_07 is a 23 × 122 pole) told nothing, and the field's
     28 px thumbnail showed only the name already picked.
+- [x] **ED-77 (engine) A scale is the entity's (added 2026-10-27, found by ED-73).** Done 2026-10-27 (ba4f6e18): a
+  scene file's scaleX, scaleY multiply what onSpawned set, the sprite's scale (a platform stretches an 8 px texture by
+  its width: scale 1.5 drew it 12 px wide, it replaced the 35) and the collider's shape (a box's size, a circle's
+  radius by the larger factor, a polygon's points with its normals made again, the offset, the visual range), before
+  the mass is taken; the inspector's drag previews the same. placedColliderScale.test.js; in Chromium the platform's
+  sprite scale 35 → 52.5 and its collider 280 → 420 wide. A compound body's extra pieces and a chain keep their size.
+- [x] **ED-78 Edit unlit (added 2026-10-27, found by ED-73).** Done 2026-10-27 (c4640500): L or the toolbar's 💡, as
+  Unity's scene-lighting switch: the engine's lighting layer hidden while editing (the Assets row of lighting kept in
+  step), only for a scene with lighting, remembered for the viewer. The platformer's ambient is 0.05: its platforms away
+  from the player's light were black while editing (a pixel 42,44,46 → 107,142,177).
 
 **View (here):**
 
@@ -1722,7 +1732,10 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 
 **Last:**
 
-- [ ] **ED-73 One smoke of a dev's session** (`tests/bench/editorSessionSmoke.mjs`, at
+- [x] **ED-73 One smoke of a dev's session** Done 2026-10-27 (9ee9666a; ba4f6e18, c4640500 grew it): 12 steps on a
+  scratch copy of the platformer's 1-1 through tests/fixtures/editorLevel/ (a game page that loads the level its
+  address names), 12/12 in Chromium; its screenshots (--shots) wait four rendered frames. It found ED-77 (a scale
+  replaced a platform's size) and ED-78 (the level was black while editing). (`tests/bench/editorSessionSmoke.mjs`, at
   1366×768). On a scratch level:
   - filter the list, select, frame;
   - type a position, rotate, scale;
@@ -2034,6 +2047,17 @@ server still writes nothing. What changed for this plan:
     before the field existed.
 38. **The shortcuts sheet kept its key handler in the editor page** across a game page reload, until closed. Closed on
     pagehide since 9cb858a4. The picture grid does the same.
+39. **A held world takes no physics step, so a body the editor spawns waits for Play to be made in Box2D** (no
+    syncBodies at dt 0: no pose published, no moved list for the spatial grid). Not visible today: the pose published
+    for a reused slot is not live (its rotation 0, 0), and the renderer then draws Transform (checked on the
+    platformer's static platforms and a dynamic crate). Tried and not kept (no visible gain): syncing bodies, commands
+    and joints and publishing the pose and the moved list at dt 0. The same holds for a game's hitstop (a time scale of
+    0): a body spawned in it is not in Box2D's queries until it ends. Engine; open.
+40. **Headless Chromium paces the platformer at about 3 frames a second** (the physics worker's frames; the pre-render
+    follows them, the other workers report 60): a screenshot right after a change can show the frame before it.
+    editorSessionSmoke's shots wait four rendered frames. A test environment matter, not the editor's.
+41. **Placing, duplicating and pasting left the status line as it was** ("Copied …" after a drop): they say what they
+    made since ca47e176.
 
 **New items:**
 
