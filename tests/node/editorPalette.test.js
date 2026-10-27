@@ -181,6 +181,25 @@ test('a full pool places nothing and says which count to raise', () => {
   clearTimeout(editMode._statusTimer);
 });
 
+test('an edit of an entity its level’s pool holds full says it is gone until Stop, and which count to raise', () => {
+  const { scene, Platform } = makeScene({ platformPool: 1 });
+  // As in the engine: the despawned slot is free only once the logic worker has despawned it, after this frame.
+  Platform.despawn = () => {};
+  const editMode = editorFor(scene);
+  editMode.selection.select(1);
+  assert.equal(editMode.selection.name, 'Platform1');
+  editMode.selection._hooks.onChange('width', 640);
+  assert.equal(recordOf(scene, 'Platform1').record.config.width, 640, 'the record has it: Stop spawns it so');
+  assert.equal(editMode.selection.index, -1);
+  assert.equal(
+    editMode.status,
+    'Platform1 is gone until Stop: an edit respawns it, and the pool of 1 Platform has no free slot for that. ' +
+      'Raise its count in PlatformerGameScene.entities',
+  );
+  assert.equal(editMode.statusIsError, true);
+  clearTimeout(editMode._statusTimer);
+});
+
 test('the keys: Ctrl+D, Del, and Esc stops placing before it clears the selection', () => {
   const { scene } = makeScene();
   const editMode = editorFor(scene);

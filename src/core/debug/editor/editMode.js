@@ -561,11 +561,31 @@ export class EditMode {
     if (found === null) return -1;
     // Undo finds the record by its editor id: it may be renamed, or removed and put back, by then.
     const id = editorIdOf(found.record);
-    const result = editPlaced(scene, selection.name, write);
+    const name = selection.name;
+    const result = editPlaced(scene, name, write);
     if (result === null) return -1;
     this.history.push({ id: 0, label, kind: 'edit', editorId: id, before: result.before, after: result.after });
     this._showRestored(result.index);
+    if (result.index < 0) this._sayNoSlot(name);
     return result.index;
+  }
+
+  /**
+   * A respawn found no free slot: an edit despawns the entity and spawns it again at once, and the old slot is free
+   * only once the logic worker has despawned it. So a class whose pool its level fills (one player in a pool of one)
+   * cannot be edited in place. The entity is gone until Stop: say so, and which count to raise.
+   */
+  _sayNoSlot(name) {
+    const scene = this.debugUI.scene;
+    const found = recordOf(scene, name);
+    if (found === null) return;
+    const className = found.record.class;
+    const pool = classNamed(scene, className)?.poolSize | 0;
+    this._setStatus(
+      `${name} is gone until Stop: an edit respawns it, and the pool of ${pool} ${className} has no free slot for that. ` +
+        `Raise its count in ${scene.constructor.name}.entities`,
+      true,
+    );
   }
 
   /**
@@ -618,7 +638,9 @@ export class EditMode {
   _restore(id, snapshot) {
     const scene = this.debugUI.scene;
     const name = nameOfEditorId(scene, id);
-    this._showRestored(name === null ? -1 : restorePlaced(scene, name, snapshot));
+    const index = name === null ? -1 : restorePlaced(scene, name, snapshot);
+    this._showRestored(index);
+    if (name !== null && index < 0) this._sayNoSlot(name);
   }
 
   /**
@@ -884,6 +906,7 @@ export class EditMode {
   editMany(label, names, write) {
     const scene = this.debugUI.scene;
     const changes = [];
+    let gone = null;
     this._quiet = true;
     try {
       for (const name of names) {
@@ -891,7 +914,9 @@ export class EditMode {
         if (found === null) continue;
         const id = editorIdOf(found.record);
         const result = editPlaced(scene, name, write);
-        if (result !== null) changes.push({ kind: 'edit', editorId: id, before: result.before, after: result.after });
+        if (result === null) continue;
+        changes.push({ kind: 'edit', editorId: id, before: result.before, after: result.after });
+        if (result.index < 0 && gone === null) gone = name;
       }
     } finally {
       this._quiet = false;
@@ -902,6 +927,7 @@ export class EditMode {
     this.debugUI.hosted?.onDocumentChanged();
     this.palette.refresh();
     this._notify();
+    if (gone !== null) this._sayNoSlot(gone);
     return true;
   }
 
