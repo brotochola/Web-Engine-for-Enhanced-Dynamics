@@ -171,12 +171,47 @@ export function defaultSceneFileUrl(SceneClass, sceneScriptUrl, origin = '') {
   return new URL(file, new URL(sceneScriptUrl || '/', origin || 'http://localhost')).href;
 }
 
+/** Scene files a game carries in its code, by absolute URL (registerSceneFile): checked once, copied on each load. */
+const bundledSceneFiles = new Map();
+
+/** A scene file URL as a key: absolute (against the page when there is one), without its fragment. */
+function sceneFileKey(url) {
+  const base = typeof location !== 'undefined' ? location.href : undefined;
+  const absolute = new URL(url, base);
+  absolute.hash = '';
+  return absolute.href;
+}
+
 /**
- * Fetch, parse and check a scene file.
+ * Carry a scene file in the game's code: a load of its URL (`loadScene`, a scene class's `defaultSceneFile`, a save
+ * that recorded the file) takes this document and fetches nothing. An exported game (the editor's Export,
+ * game.min.js) registers every level it bundles. Checked now (it throws on a malformed one, naming the URL); each
+ * load gets its own copy.
+ * @param {string} url - the file's URL: absolute, or relative to the page
+ * @param {object} doc - the scene file (format 1)
+ */
+export function registerSceneFile(url, doc) {
+  const key = sceneFileKey(url);
+  bundledSceneFiles.set(key, checkSceneFile(structuredClone(doc), key));
+}
+
+/**
+ * Fetch, parse and check a scene file; a file the game carries (registerSceneFile) is a copy of that, fetched from
+ * nowhere.
  * @param {string} url
  * @returns {Promise<object>}
  */
 export async function fetchSceneFile(url) {
+  if (bundledSceneFiles.size > 0) {
+    let key = null;
+    try {
+      key = sceneFileKey(url);
+    } catch {
+      // not a URL: the fetch below says so
+    }
+    const bundled = key === null ? undefined : bundledSceneFiles.get(key);
+    if (bundled !== undefined) return structuredClone(bundled);
+  }
   const response = await fetch(url, { cache: 'no-cache' });
   if (!response.ok) throw new Error(`WeedJS: scene file ${url}: HTTP ${response.status}`);
   return parseSceneFile(await response.text(), url);

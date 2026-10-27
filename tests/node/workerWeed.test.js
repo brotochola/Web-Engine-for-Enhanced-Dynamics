@@ -24,6 +24,8 @@ const MAIN_THREAD_ONLY = [
   'encodeSave',
   'decodeSave',
   'setupWorkerCommunication',
+  // Scene files are loaded on the page only (an exported game registers its levels there).
+  'registerSceneFile',
 ];
 
 test('worker WEED has every WEED name except the main-thread-only ones', () => {
