@@ -2509,9 +2509,12 @@ export interface LayerSceneConfigEntry {
   kind?: string;
   zIndex?: number;
   blendMode?: number;
-  /** `kind: LAYER_KIND.GPU_PARTICLES`: records across all writer rings (each ring a power of two). Default 100000. */
+  /**
+   * `kind: LAYER_KIND.GPU_PARTICLES`: particles across the writer rings (main thread, each logic worker, particle worker),
+   * split by `gpuRings`; each ring rounds down to a power of two. Default 100000.
+   */
   maxParticles?: number;
-  /** `kind: LAYER_KIND.GPU_PARTICLES`: weights of the writer rings' shares of `maxParticles` (default 1 each). */
+  /** `kind: LAYER_KIND.GPU_PARTICLES`: weights of the writer rings' shares of `maxParticles` (default 1 each): put the share where you emit. */
   gpuRings?: { main?: number; logic?: number; particle?: number };
   /**
    * `kind: LAYER_KIND.GPU_PARTICLES` with `renderer.ySort`: every emitGpu call joins the entities' y-sort painter as

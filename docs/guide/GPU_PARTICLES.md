@@ -50,7 +50,7 @@ The keys of `emit` / `emitFlat` wherever the motion has a closed form, plus four
 | --- | --- | --- |
 | `layer` | required | a `GPU_PARTICLES` layer |
 | `count`, `x`, `y`, `vx`, `vy`, `angleXY`, `speed`, `dirX`, `dirY`, `spread`, `lifespan`, `gravity` | yes | sampled at spawn exactly as CPU particles sample them. `gravity` defaults to 0.15 heighted, 0 flat |
-| `z`, `vz` | heighted only | |
+| `z`, `vz` | heighted only | without `heighted: true` they are ignored, with a warning once |
 | `scale`, `scaleX`, `scaleY`, `alpha`, `tint`, `rotation`, `angularVelocity` | yes | over-life `{ from, to, ease }` ops, each with its own ease |
 | `texture`, `spritesheet` / `animation` / `frame`, `anim` | yes | up to 8 frames cycled over life, or one picked per particle (`anim: 'random'`) |
 | `flipX`, `flipY` | yes | |
@@ -60,13 +60,29 @@ The keys of `emit` / `emitFlat` wherever the motion has a closed form, plus four
 | `sortY` | new | the group's ground y among the entities, for a layer with `sortWithEntities`. Default: the middle of `y` |
 | `fadeOnTheFloor`, `stayOnTheFloor`, `despawnOnGroundContact`, `bounces`, `lightIntensity`, `layers`, `renderOnly` | no | reported once, then ignored |
 
-`emitGpu` returns the number of particles written. A call larger than the writer's ring is cut to the ring.
+`emitGpu` returns the number of particles written. A call larger than the writer's ring is cut to the ring, with a warning once ([Capacity and overflow](#capacity-and-overflow)).
 
 ### Motion
 
 `t` is the age in frames (ms / 16.67), the unit CPU particles move in, so velocities and gravity mean the same thing for both. Without drag a GPU particle is where the CPU integrate puts the same particle at every whole frame (semi-implicit Euler's closed form, `p0 + v0·t + a·(t² + t)/2`); with drag it is the exact solution of dv/dt = a − drag·v. Heighted particles have no floor: `z` stops at 0, so give falling ones a life that ends near the ground, or keep them on the CPU.
 
 `src/util/gpuParticleEval.js` is the vertex shader's math in JavaScript. `GpuParticles.evaluate(layer, ring, slot, evaluateGpuParticle)` answers "where is that particle now?" while debugging.
+
+### Units
+
+The same as CPU particles':
+
+| Keys | Unit |
+| --- | --- |
+| `x`, `y`, `z`, `sortY` | world px |
+| `vx`, `vy`, `vz`, `speed` | px per frame (16.67 ms) |
+| `gravity` | px per frame² |
+| `drag` | 1/s |
+| `lifespan`, `delay` | ms |
+| `angleXY`, `rotation` | degrees |
+| `angularVelocity` | degrees per ms |
+
+A speed in px/s is `speed / 60` here.
 
 ## Layer config
 
@@ -108,7 +124,7 @@ How it is drawn:
 
 - **Nothing in the painter changes.** The entities are sorted and packed as always. The worker that packs them (pre-render by default; Pixi with `renderer.interpolation` or `preRender.packGpuSprites: 'pixi'`) lists the frame's live, visible groups and finds where each one's key goes in the packed order by binary search. That is O(groups · log entities) a frame; the particles themselves never reach the CPU.
 - **The entities batch is drawn in chunks** with the groups between them: the same buffers drawn from an instance, nothing copied or uploaded again. Each group is one or two instanced draws of its own ring slots. Groups with no sprite between them share a gap; past `renderer.maxPainterSplits` gaps a frame (default 32), the closest gaps merge, and a group then draws a few sprites early.
-- **Look layers** draw their finished look target in regions instead: a group's rectangle on screen, sampled from the target. Overlapping groups of the layer merge into one region at the place of the one furthest back, since the look runs over all of them at once. A look that spreads past the particles is cut at the group's bounds. A region blends as the full-screen look does, with the layer's `blendMode`.
+- **Look layers** draw their finished look target in regions instead: a group's rectangle on screen, sampled from the target. Overlapping groups of the layer merge into one region at the place of the one furthest back, since the look runs over all of them at once. The merge is transitive: in a field of clouds that touch one another, every cloud can end up in one region, which then sorts at the furthest-back cloud. When each cloud's own depth matters, use a layer without a look shader, whose groups sort one by one. A look that spreads past the particles is cut at the group's bounds. A region blends as the full-screen look does, with the layer's `blendMode`.
 - **Limits:** 1024 groups and regions a frame among the entities (pre-render warns once past it; the rest are not drawn that frame). The groups are children of the entities layer: hiding the entities layer or lowering its alpha also applies to them.
 
 ## How it works
@@ -122,7 +138,9 @@ How it is drawn:
 
 ## Capacity and overflow
 
-A writer that laps its ring writes over its oldest records; a particle still alive there disappears early, and the ring's overflow count goes up (`GpuParticles.stats('smoke')`). Raise `maxParticles` or that writer's share in `gpuRings`.
+- **Particles:** `maxParticles` is split between the layer's rings, one per writer thread (the main thread, each logic worker, the particle worker), in equal shares unless `gpuRings` says otherwise, and each ring rounds **down** to a power of two (at least 64). With one logic worker, `maxParticles: 120000` makes three rings of 32 768; a scene that emits only from entities' ticks writes the logic worker's ring alone, so 32 768 of them are usable. Put the share where you emit, and check what you got with `GpuParticles.stats('smoke')` (each ring's `capacity`).
+- **Calls:** each ring also keeps the last 2 048 `emitGpu` calls (groups), live or not. A call per entity per frame fills that fast (40 entities emitting every frame make 2 400 calls a second), so emit fewer, larger calls: one call with a `delay` range spreads its particles over time.
+- **Overflow:** a writer that laps its ring, in particles or in calls, writes over its oldest; a particle still alive there disappears early, the ring's `overflows` count goes up, and `emitGpu` warns once. Raise `maxParticles` or that writer's share in `gpuRings`, or make fewer, larger calls.
 
 ## Backends
 
