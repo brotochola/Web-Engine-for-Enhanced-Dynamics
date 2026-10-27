@@ -1,10 +1,30 @@
 // shipRow.js — the last row of the editor's Assets dock (the palette, VISUAL_EDITOR_PLAN.md Stage 5): Bake atlas
-// (ED-31), and a line that says what the last one made and where it went. Built once with the palette's body; the
-// DOM changes only when a button is used.
+// (ED-31) and Export (ED-32), and a line that says what the last one made and where it went. Built once with the
+// palette's body; the DOM changes only when a button is used. The editor page's toolbar exports through it too
+// (exportFromEditor).
 
 import { bakeAtlas } from './atlasBake.js';
+import { exportRunningGame } from './gameExport.js';
 
 const NOTE_STYLE = 'font-size:10px;white-space:normal;overflow-wrap:anywhere;margin-top:4px';
+
+/** A row for an EditMode whose palette has none yet (its body is made when it is first shown). */
+const detachedRows = new WeakMap();
+
+/**
+ * Export from the editor page's toolbar: through the Assets dock's row when it is there, so its line says where the
+ * game went, else through a row of its own (the status line says it).
+ * @param {object} editMode
+ * @returns {Promise<object|null>}
+ */
+export function exportFromEditor(editMode) {
+  let row = editMode.palette?.ship ?? detachedRows.get(editMode);
+  if (!row) {
+    row = new ShipRow(editMode);
+    detachedRows.set(editMode, row);
+  }
+  return row.exportGame();
+}
 
 export class ShipRow {
   /** @param {object} editMode - the EditMode whose running scene it bakes */
@@ -19,7 +39,13 @@ export class ShipRow {
       'Write the atlas this scene packed at load as <Scene>.atlas.png and .atlas.json next to its module: a scene whose assets name them loads them instead of packing',
       () => this.bake(),
     );
+    this._export = this._button(
+      'Export',
+      'Build this game into a static site (index.html, vendor/weed.js, game.min.js, assets/, _headers) with its atlas baked, in the folder the dev server exports to',
+      () => this.exportGame(),
+    );
     this._buttons.appendChild(this._bake);
+    this._buttons.appendChild(this._export);
     this._note = document.createElement('div');
     this._note.style.cssText = NOTE_STYLE;
     this.el.appendChild(this._buttons);
@@ -44,6 +70,38 @@ export class ShipRow {
       );
       this.editMode._setStatus(`Baked ${file}`, false);
       return baked;
+    });
+  }
+
+  /**
+   * Export the running game through the dev server (gameExport.js) and say where it went, with a link to it when the
+   * server serves that folder. Unsaved edits are not exported: with some, it asks first.
+   * @returns {Promise<object|null>} the route's answer, or null when it did not export
+   */
+  exportGame() {
+    const editMode = this.editMode;
+    if (editMode.dirty) {
+      const go = typeof confirm === 'function' && confirm(`${editMode.sceneFileName} has unsaved changes, which the export leaves out. Export the saved files?`);
+      if (!go) return Promise.resolve(null);
+    }
+    return this._run('Exporting: baking the atlas, bundling the game…', async () => {
+      const done = await exportRunningGame(editMode.debugUI.scene);
+      const mb = (done.bytes / (1024 * 1024)).toFixed(1);
+      const kb = (done.gameBytes / 1024).toFixed(1);
+      const warned = done.warnings.length ? ` ${done.warnings.join('; ')}.` : '';
+      this._say(`Exported to ${done.outDir}: ${done.files.length} files, ${mb} MB (game.min.js ${kb} KB).${warned}`, false);
+      if (done.url) {
+        const link = document.createElement('a');
+        link.href = done.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = ` Open ${done.url}`;
+        link.style.color = '#7dd3fc';
+        this._note.appendChild(link);
+      }
+      editMode._setStatus(`Exported to ${done.outDir}`, false);
+      console.info(`[WeedJS] editor: exported to ${done.outDir}${done.url ? ` (served at ${done.url})` : ''}`);
+      return done;
     });
   }
 
