@@ -2052,7 +2052,7 @@ server still writes nothing. What changed for this plan:
     for a reused slot is not live (its rotation 0, 0), and the renderer then draws Transform (checked on the
     platformer's static platforms and a dynamic crate). Tried and not kept (no visible gain): syncing bodies, commands
     and joints and publishing the pose and the moved list at dt 0. The same holds for a game's hitstop (a time scale of
-    0): a body spawned in it is not in Box2D's queries until it ends. Engine; open.
+    0): a body spawned in it is not in Box2D's queries until it ends. Engine; open: REVIEW_PLAN.md N-81.
 40. **Headless Chromium paces the platformer at about 3 frames a second** (the physics worker's frames; the pre-render
     follows them, the other workers report 60): a screenshot right after a change can show the frame before it.
     editorSessionSmoke's shots wait four rendered frames. A test environment matter, not the editor's.
