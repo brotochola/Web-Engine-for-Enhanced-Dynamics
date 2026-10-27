@@ -13,6 +13,9 @@
 // In the editor page (D9) the panel's body goes into its Inspector dock instead of a floating panel, and the scene
 // list hears of each change of the selection.
 //
+// Below the params, the live values of the entity's components (liveInspector.js, ED-17): the selection stays while
+// the game plays, so they show the entity as it plays; they change the live entity, and "Copy to scene" its record.
+//
 // Cost: the panel is made on the first selection, its fields on each selection. A click or an edit allocates; a
 // frame does not.
 
@@ -21,6 +24,7 @@ import { Messages } from '../../messages.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
 import { pickEntityAt } from './pick.js';
 import { buildParamFields } from './paramWidgets.js';
+import { LiveInspector } from './liveInspector.js';
 import { recordOf, paramsOf, writeParam, writeConfig } from './sceneDocument.js';
 
 export class Selection {
@@ -44,6 +48,8 @@ export class Selection {
     this._nameRow = null;
     this._nameInput = null;
     this._fields = null;
+    /** The live values (liveInspector.js), made with the panel. */
+    this.live = null;
     this._classNameOf = (entityType) => debugUI.tools._classNameForType(entityType);
     this._hooks = {
       onChange: (key, value) =>
@@ -86,6 +92,7 @@ export class Selection {
     this.className = '';
     this.debugUI.debugFlags?.clearSelectedEntity();
     this.debugUI.canvas.syncLoop();
+    this.live?.clear();
     if (this._panel) this._panel.hide();
     else if (this._body !== null) this._body.remove(); // the Inspector dock says nothing is selected
     this.debugUI.hosted?.onSelectionChanged();
@@ -99,6 +106,7 @@ export class Selection {
     const i = this.index;
     if (i < 0) return;
     if (i * 65536 + (Messages.spawnGen[i] | 0) !== this.packed) this.clear();
+    else this.live?.update();
   }
 
   destroy() {
@@ -145,10 +153,11 @@ export class Selection {
     this._nameRow.style.display = found === null ? 'none' : 'flex';
     if (found === null) {
       this._fields.textContent = '';
-      return;
+    } else {
+      this._nameInput.value = this.name;
+      buildParamFields(this._fields, paramsOf(scene, found.record), found.record.config || {}, this._hooks);
     }
-    this._nameInput.value = this.name;
-    buildParamFields(this._fields, paramsOf(scene, found.record), found.record.config || {}, this._hooks);
+    this.live.show(this.index);
   }
 
   _createBody() {
@@ -174,7 +183,8 @@ export class Selection {
     this._nameRow.appendChild(nameLabel);
     this._nameRow.appendChild(this._nameInput);
     this._fields = document.createElement('div');
-    this._body.append(this._title, this._detail, this._nameRow, this._fields);
+    this.live = new LiveInspector(this);
+    this._body.append(this._title, this._detail, this._nameRow, this._fields, this.live.el);
   }
 
   _onPanelClosed() {

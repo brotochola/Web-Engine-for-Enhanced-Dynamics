@@ -7,7 +7,8 @@
  *   docks    the page connects and fills the docks: the toolbar names 1-1.scene.json, the scene list has the
  *            platforms, the assets list the level files and the classes, the debug bar is below, and the debug UI's
  *            styles are in the editor page
- *   list     a click on Platform1's row enters edit mode and selects it; the inspector shows its fields
+ *   list     a click on Platform1's row selects it and the game plays on (ED-17); the inspector shows its fields and
+ *            its live values; the toolbar's Edit then holds the world with Platform1 still selected
  *   keys     Shift+E typed in the editor page plays and edits again; Ctrl+Z typed there undoes
  *   edit     the inspector's width field makes Platform1 640 wide, unsaved
  *   reload   Reload game: a new game page has the unsaved document, edit mode, the selection and the view, and the
@@ -16,6 +17,9 @@
  *            within 2 MB of where it was
  *   stop     (ED-16) Play runs the game; the player put on the goal loads 1-2; Stop comes back to 1-1 in edit mode,
  *            with its unsaved document and undo stack
+ *   live     (ED-17) while playing, a click in the list selects Platform1 without leaving play; its live fields
+ *            follow the entity; a live alpha written in the inspector reaches the entity; Copy to scene puts it in
+ *            the record (one undo); a live tint not copied is gone after Stop
  *
  * Every wait's predicate returns a boolean: Playwright keeps a handle to what it returns, and a handle to the game's
  * scene would keep each reloaded page alive (it did, in the first leak runs of this script).
@@ -56,7 +60,7 @@ const readGame = (page) =>
       width: record?.config?.width ?? null,
       view: [win.WEED?.Camera?._freeFollowX ?? null, win.WEED?.Camera?.zoom ?? null],
       toolbar: document.querySelector('[data-slot=toolbar]').innerText.replace(/\s*\n\s*/g, ' | '),
-      inspector: document.querySelector('[data-slot=inspector]').innerText.replace(/\s*\n\s*/g, ' | ').slice(0, 160),
+      inspector: document.querySelector('[data-slot=inspector]').innerText.replace(/\s*\n\s*/g, ' | '),
     };
   });
 
@@ -138,10 +142,21 @@ async function main() {
     await rows.filter({ hasText: /^Platform1\s/ }).click();
     await page.waitForTimeout(300);
     let state = await readGame(page);
+    const listed = state;
+    await page.click('[data-slot=toolbar] button:has-text("Edit")');
+    await page.waitForTimeout(300);
+    state = await readGame(page);
     check(
       'list',
-      state.active && state.selection === 'Platform1' && state.inspector.startsWith('Platform1') && state.inspector.includes('width'),
-      `editing ${state.active}, selected ${state.selection}, inspector "${state.inspector.slice(0, 60)}…"`,
+      !listed.active &&
+        listed.selection === 'Platform1' &&
+        listed.inspector.startsWith('Platform1') &&
+        listed.inspector.includes('width') &&
+        listed.inspector.includes('Live') &&
+        state.active &&
+        state.selection === 'Platform1',
+      `playing on ${!listed.active}, selected ${listed.selection}, inspector "${listed.inspector.slice(0, 60)}…"; ` +
+        `after Edit: editing ${state.active}, selected ${state.selection}`,
     );
 
     // Keys typed in the editor page (the scene list has the focus).
@@ -243,6 +258,70 @@ async function main() {
       'stop',
       playing.scale > 0 && !playing.editing && playing.playing && state.active && state.width === 640 && state.dirty && state.canUndo,
       `playing at ${playing.scale}×; after Stop: editing ${state.active}, width ${state.width}, unsaved ${state.dirty}, undo ${state.canUndo}`,
+    );
+
+    // The live inspector (ED-17), while playing.
+    await page.click('[data-slot=toolbar] button:has-text("Play")');
+    await page.waitForTimeout(300);
+    await rows.filter({ hasText: /^Platform1\s/ }).click();
+    await page.waitForTimeout(300);
+    const liveField = (label) =>
+      page
+        .locator('[data-slot=inspector] .debug-ui-inspector-prop', {
+          has: page.locator('.debug-ui-inspector-prop-label', { hasText: new RegExp('^' + label + '$') }),
+        })
+        .locator('input')
+        .first();
+    const liveRead = () =>
+      page.evaluate(() => {
+        const win = document.getElementById('game').contentWindow;
+        const scene = win.game.currentScene;
+        const editMode = win.game.debugUI.editMode;
+        const i = editMode.selection.index;
+        const record = scene.sceneFile.entities.find((e) => e.name === 'Platform1');
+        return {
+          editing: editMode.active,
+          selected: editMode.selection.name,
+          alpha: win.WEED.SpriteRenderer.alpha[i],
+          tint: win.WEED.SpriteRenderer.tint[i],
+          x: win.WEED.Transform.x[i],
+          recordAlpha: record.config?.alpha ?? null,
+          undo: editMode.history._done.at(-1)?.label ?? null,
+        };
+      });
+    const beforeLive = await liveRead();
+    const xShown = await liveField('x').inputValue();
+    await liveField('alpha').fill('0.5');
+    await liveField('alpha').press('Enter');
+    await page.waitForTimeout(300);
+    const afterAlpha = await liveRead();
+    await page.click('[data-slot=inspector] button:has-text("Copy to scene")');
+    await page.waitForTimeout(400);
+    const copied = await liveRead();
+    await liveField('tint').fill('0xff0000');
+    await liveField('tint').press('Enter');
+    await page.waitForTimeout(300);
+    const tinted = await liveRead();
+    await page.click('[data-slot=toolbar] button:has-text("Stop")');
+    await page.waitForFunction(() => document.getElementById('game').contentWindow.game.debugUI.editMode.active === true, undefined, {
+      timeout: 10000,
+    });
+    await page.waitForTimeout(400);
+    const stopped = await liveRead();
+    check(
+      'live',
+      !beforeLive.editing &&
+        beforeLive.selected === 'Platform1' &&
+        Math.abs(Number(xShown) - beforeLive.x) < 1 &&
+        Math.abs(afterAlpha.alpha - 0.5) < 1e-6 &&
+        copied.recordAlpha === 0.5 &&
+        copied.undo === 'copy live Platform1 to the scene' &&
+        tinted.tint === 0xff0000 &&
+        stopped.tint !== 0xff0000 &&
+        Math.abs(stopped.alpha - 0.5) < 1e-6,
+      'selected while playing ' + (!beforeLive.editing && beforeLive.selected === 'Platform1') + ', x field ' + xShown +
+        '; live alpha ' + afterAlpha.alpha + '; copied alpha ' + copied.recordAlpha + ' (' + copied.undo + '); live tint ' +
+        tinted.tint.toString(16) + ' → after Stop ' + stopped.tint.toString(16) + ', alpha ' + stopped.alpha,
     );
 
     check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

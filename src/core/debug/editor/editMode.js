@@ -252,7 +252,7 @@ export class EditMode {
     this.placing = null;
     this.palette.hide();
     this.move.cancel();
-    this.selection.clear();
+    // The selection stays: the inspector shows its live values while the game plays (ED-17).
     this._setStatus('', false);
     Mouse.isEditModeActive = false;
     Camera.held = false;
@@ -521,11 +521,10 @@ export class EditMode {
    * in the middle of the view.
    */
   selectFromList(index, center) {
-    if (!this.active) this.enter();
-    if (!this.active) return;
     if (this.placing !== null) this.startPlacing(this.placing);
+    // While playing it stays playing: the inspector shows the entity live (ED-17).
     this.selection.select(index);
-    if (center) Camera.setFreeTarget(Transform.x[index], Transform.y[index]);
+    if (center && this.active) Camera.setFreeTarget(Transform.x[index], Transform.y[index]);
   }
 
   /**
@@ -691,7 +690,7 @@ export class EditMode {
     this._notify();
   }
 
-  /** The debug UI's tick, while edit mode is on. */
+  /** The debug UI's tick: the selection lets go of an entity that despawned, and its live values refresh. */
   update() {
     this.selection.update();
   }
@@ -792,6 +791,7 @@ export class EditMode {
     this.history.clear();
     this._resumeOnAttach = this.active;
     this.exit();
+    this.selection.clear();
   }
 
   onAttach() {

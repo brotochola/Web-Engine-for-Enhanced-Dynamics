@@ -180,6 +180,7 @@ export class DebugUI {
     const tools = this.tools;
     return !!(
       this.editMode.active ||
+      this.editMode.selection.index >= 0 ||
       tools.inspectorActive ||
       tools.activeSpawnerType ||
       tools.eraserActive ||
@@ -278,7 +279,7 @@ export class DebugUI {
       this.panels[this.openSection].update();
     }
 
-    if (this.editMode.active) this.editMode.update();
+    this.editMode.update();
     this.hosted?.update();
     this.tools.update();
   }
