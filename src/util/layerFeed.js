@@ -59,21 +59,6 @@ function addToList(indices, countArr, lock, feedMax, overflowKey, layerId, index
   releaseLayerLock(lock, layerId);
 }
 
-function forEachChangedBit(oldMask, newMask, onCleared, onSet) {
-  let removed = (oldMask & ~newMask) & 0xffff;
-  let added = (newMask & ~oldMask) & 0xffff;
-  while (removed) {
-    const lsb = removed & -removed;
-    onCleared(31 - Math.clz32(lsb));
-    removed ^= lsb;
-  }
-  while (added) {
-    const lsb = added & -added;
-    onSet(31 - Math.clz32(lsb));
-    added ^= lsb;
-  }
-}
-
 /**
  * Sync Collider index into compute-layer body feed lists.
  * @param {number} index
@@ -89,18 +74,22 @@ export function syncColliderFeed(index, oldMask, newMask) {
   const counts = Layer._feedCount;
   const locks = Layer._feedLock;
   const maxs = Layer._feedMax;
-  forEachChangedBit(
-    oldM,
-    newM,
-    (id) => {
-      if (lists[id]) removeFromList(lists[id], counts, locks, id, i);
-    },
-    (id) => {
-      if (lists[id]) {
-        addToList(lists[id], counts, locks, maxs, '_feedOverflowWarned', id, i, 'syncColliderFeed');
-      }
-    },
-  );
+  // The changed bits, the cleared ones then the set ones, each lowest first. Written out, with no callbacks: two
+  // closures a call made garbage on every spawn and despawn.
+  let cleared = oldM & ~newM;
+  while (cleared) {
+    const lsb = cleared & -cleared;
+    const id = 31 - Math.clz32(lsb);
+    if (lists[id]) removeFromList(lists[id], counts, locks, id, i);
+    cleared ^= lsb;
+  }
+  let set = newM & ~oldM;
+  while (set) {
+    const lsb = set & -set;
+    const id = 31 - Math.clz32(lsb);
+    if (lists[id]) addToList(lists[id], counts, locks, maxs, '_feedOverflowWarned', id, i, 'syncColliderFeed');
+    set ^= lsb;
+  }
 }
 
 /**
@@ -118,27 +107,22 @@ export function syncParticleFeed(index, oldMask, newMask) {
   const counts = Layer._particleFeedCount;
   const locks = Layer._particleFeedLock;
   const maxs = Layer._particleFeedMax;
-  forEachChangedBit(
-    oldM,
-    newM,
-    (id) => {
-      if (lists[id]) removeFromList(lists[id], counts, locks, id, i);
-    },
-    (id) => {
-      if (lists[id]) {
-        addToList(
-          lists[id],
-          counts,
-          locks,
-          maxs,
-          '_particleFeedOverflowWarned',
-          id,
-          i,
-          'syncParticleFeed',
-        );
-      }
-    },
-  );
+  // The changed bits, the cleared ones then the set ones, each lowest first. Written out, with no callbacks: two
+  // closures a call made garbage on every spawn and despawn.
+  let cleared = oldM & ~newM;
+  while (cleared) {
+    const lsb = cleared & -cleared;
+    const id = 31 - Math.clz32(lsb);
+    if (lists[id]) removeFromList(lists[id], counts, locks, id, i);
+    cleared ^= lsb;
+  }
+  let set = newM & ~oldM;
+  while (set) {
+    const lsb = set & -set;
+    const id = 31 - Math.clz32(lsb);
+    if (lists[id]) addToList(lists[id], counts, locks, maxs, '_particleFeedOverflowWarned', id, i, 'syncParticleFeed');
+    set ^= lsb;
+  }
 }
 
 function snapshotList(indices, counts, lock, layerId, scratchRef) {
