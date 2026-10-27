@@ -373,6 +373,36 @@ test('a refresh keeps the rows and their pictures, and writes only the counts an
   }
 });
 
+test('a row drags its class to the view: the editor’s type, its picture under the pointer; the end lets go (ED-66)', () => {
+  const { scene } = makeScene();
+  globalThis.document = { createElement: (tag) => new El(tag) };
+  try {
+    const editMode = { debugUI: { scene }, placing: null, startPlacing() {} };
+    const palette = new Palette(editMode);
+    palette._list = new El('div');
+    palette.refresh();
+    const [platform] = palette._list.children;
+    assert.equal(platform.draggable, true);
+    assert.match(platform.title, /drag it onto the view/);
+    const data = {};
+    const transfer = {
+      effectAllowed: 'all',
+      setData: (type, value) => (data[type] = value),
+      setDragImage: (image, x, y) => (data.image = [image, x, y]),
+    };
+    platform.ondragstart({ dataTransfer: transfer });
+    assert.deepEqual(data, { 'application/x-weed-class': 'Platform', image: [thumbOf(platform), 16, 16] });
+    assert.equal(transfer.effectAllowed, 'copy');
+    assert.equal(palette.drops.dragging, 'Platform', 'the view’s cross knows what it carries');
+    assert.equal(platform.style.opacity, '0.55');
+    platform.ondragend();
+    assert.equal(palette.drops.dragging, null);
+    assert.equal(platform.style.opacity, '');
+  } finally {
+    delete globalThis.document;
+  }
+});
+
 test('more than 8 classes: a field filters them by name, Esc clears it; 8 or fewer, none (ED-65)', () => {
   const { scene } = makeScene();
   const names = ['CityHouse', 'CityTree', 'CityPerson', 'TrafficCar', 'Bird', 'Boat', 'Bench', 'Lamp', 'Fountain'];

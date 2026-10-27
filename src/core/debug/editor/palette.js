@@ -1,10 +1,11 @@
-// palette.js — the editor's palette (VISUAL_EDITOR_PLAN.md ED-11, ED-65): the running scene's entity classes, each
-// with a picture of what it looks like (classThumbs.js), how many the open scene file places against its pool, and a
-// + that places new ones (each click on the view puts one there, until Esc or + again). With more than 8 classes, a
-// field above them filters them by name. Above the classes, the level row (ED-38): the scene files of the running
-// one's folder, Open, New and Save As; then the scene's layers with hide and lock (editorLayers.js, ED-24), and its
-// Tiled tilemaps with a button that loads one again in place (tilemapList.js, ED-26). Shown while edit mode is on. In
-// the editor page (D9) it is the Assets dock, shown whether or not edit mode is on: its + enters edit mode.
+// palette.js — the editor's palette (VISUAL_EDITOR_PLAN.md ED-11, ED-65, ED-66): the running scene's entity classes,
+// each with a picture of what it looks like (classThumbs.js), how many the open scene file places against its pool,
+// and a + that places new ones (each click on the view puts one there, until Esc or + again). A class dragged from
+// here onto the view is placed where it drops (dropPlace.js). With more than 8 classes, a field above them filters
+// them by name. Above the classes, the level row (ED-38): the scene files of the running one's folder, Open, New and
+// Save As; then the scene's layers with hide and lock (editorLayers.js, ED-24), and its Tiled tilemaps with a button
+// that loads one again in place (tilemapList.js, ED-26). Shown while edit mode is on. In the editor page (D9) it is
+// the Assets dock, shown whether or not edit mode is on: its + and a drop on the view enter edit mode.
 //
 // Cost: nothing per frame. The class rows are made once per scene and kept: a refresh (a change to the document, a
 // swap, the file list, what is being placed) writes only the counts and marks that changed, and draws again only the
@@ -13,7 +14,8 @@
 import { TilemapList } from './tilemapList.js';
 import { FloatingPanel } from '../ui/floatingPanel.js';
 import { ShipRow } from './shipRow.js';
-import { ClassThumbs } from './classThumbs.js';
+import { ClassThumbs, CLASS_THUMB_SIZE } from './classThumbs.js';
+import { DropPlacer, CLASS_DRAG_TYPE } from './dropPlace.js';
 
 /** Classes the editor does not offer: the engine's own helpers. */
 const UNPLACEABLE = new Set(['Flash']);
@@ -37,7 +39,9 @@ const SELECT_STYLE =
 const FILTER_STYLE =
   'display:block;width:100%;box-sizing:border-box;margin:0 0 4px;font-size:11px;padding:3px 6px;' +
   'background:rgba(0,0,0,0.5);color:white;border:1px solid rgba(255,255,255,0.3);border-radius:3px';
-const ROW_STYLE = 'display:flex;align-items:center;gap:6px;margin:1px 0;padding:2px 4px 2px 2px;border-radius:4px';
+const ROW_STYLE =
+  'display:flex;align-items:center;gap:6px;margin:1px 0;padding:2px 4px 2px 2px;border-radius:4px;' +
+  'cursor:grab;user-select:none;-webkit-user-select:none';
 
 /**
  * Rules the inline styles cannot hold (a row's hover), in an element that goes with the palette's body into whichever
@@ -45,7 +49,8 @@ const ROW_STYLE = 'display:flex;align-items:center;gap:6px;margin:1px 0;padding:
  */
 const PALETTE_CSS =
   '.weed-palette-class:hover{background:rgba(255,255,255,0.06)}' +
-  '.weed-palette-class button{flex:none}';
+  '.weed-palette-class:active{cursor:grabbing}' +
+  '.weed-palette-class button{flex:none;cursor:pointer}';
 
 /** The scene's classes the palette offers, in the order it registered them. */
 export function placeableClasses(scene) {
@@ -54,6 +59,13 @@ export function placeableClasses(scene) {
     if (!UNPLACEABLE.has(EntityClass.name)) classes.push(EntityClass);
   }
   return classes;
+}
+
+/** The running scene's class of that name that the palette offers, or null. */
+export function placeableClassOf(scene, name) {
+  if (UNPLACEABLE.has(name)) return null;
+  for (const { class: EntityClass } of scene?.registeredClasses || []) if (EntityClass.name === name) return EntityClass;
+  return null;
 }
 
 /** A row of the class list: its picture, its name, the file's count against its pool, and its +. */
@@ -80,10 +92,14 @@ class ClassRow {
     el.className = 'weed-palette-class';
     el.dataset.className = name;
     el.style.cssText = ROW_STYLE;
+    // Dragged onto the view, it places one there (ED-66).
+    el.draggable = true;
+    el.title = `${name}: drag it onto the view to place one there`;
+    el.ondragstart = (e) => palette._dragStart(this, e);
+    el.ondragend = () => palette._dragEnd(this);
     const label = document.createElement('span');
     label.style.cssText = 'flex:1;min-width:0;font-size:11px;color:#ddd;overflow:hidden;text-overflow:ellipsis;white-space:nowrap';
     label.textContent = name;
-    label.title = name;
     const count = document.createElement('span');
     count.dataset.count = '';
     count.style.cssText = 'flex:none;font-size:10px;color:#888';
@@ -158,6 +174,8 @@ export class Palette {
     this._retryTimer = 0;
     this._retries = 0;
     this._onListEnter = () => this._retryPictures();
+    /** A class dragged from a row and dropped on the view is placed there (ED-66): listening once shown. */
+    this.drops = new DropPlacer(editMode, (name) => placeableClassOf(editMode.debugUI.scene, name));
   }
 
   show() {
@@ -170,6 +188,8 @@ export class Palette {
     } else {
       this._panel.show();
     }
+    // The game page's document: where its view is, whichever document shows the palette.
+    if (typeof document !== 'undefined') this.drops.attach(document);
     this.refresh();
   }
 
@@ -180,6 +200,7 @@ export class Palette {
 
   destroy() {
     this._stopRetry();
+    this.drops.detach();
     if (this._panel === null) return;
     this._panel.onClose = null;
     this._panel.close();
@@ -210,6 +231,22 @@ export class Palette {
     const placing = editMode.placing;
     for (const row of this._rows) row.update(placed.get(row.name) || 0, placing === row.name);
     this._retryPictures();
+  }
+
+  /** A row's drag starts: it carries the class's name, its picture under the pointer. */
+  _dragStart(row, e) {
+    const transfer = e.dataTransfer;
+    if (!transfer) return;
+    transfer.setData(CLASS_DRAG_TYPE, row.name);
+    transfer.effectAllowed = 'copy';
+    if (typeof transfer.setDragImage === 'function') transfer.setDragImage(row.thumb.canvas, CLASS_THUMB_SIZE / 2, CLASS_THUMB_SIZE / 2);
+    row.el.style.opacity = '0.55';
+    this.drops.begin(row.name);
+  }
+
+  _dragEnd(row) {
+    row.el.style.opacity = '';
+    this.drops.end();
   }
 
   _sameClasses(classes) {
@@ -245,9 +282,9 @@ export class Palette {
     top.textContent = '';
     if (count === 0) return;
     const head = document.createElement('div');
-    head.textContent = 'Classes';
+    head.textContent = 'Classes · drag one onto the view';
     head.style.cssText = HEAD_STYLE;
-    head.title = 'The scene’s entity classes: + places one with each click on the view (Esc stops)';
+    head.title = 'Drag a class onto the view to place one where it drops, or press its + and click the view (Esc stops)';
     top.appendChild(head);
     if (count < FILTER_FROM) {
       this._applyFilter('');
