@@ -203,7 +203,7 @@ test('POST /__weed/export exports into the folder the server was given, never on
   const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-export-route-'));
   const engineBundle = path.join(work, 'weed.prod.bundle.min.js');
-  fs.writeFileSync(engineBundle, '/* engine */');
+  fs.writeFileSync(engineBundle, '/* engine */ WEED.registerSceneFile');
   const options = { export: { dir: path.join(work, 'exports'), engineBundle } };
   const server = http.createServer((req, res) => {
     if (!handleDevRoute(req, res, repo, {}, options)) {

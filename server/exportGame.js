@@ -61,7 +61,14 @@ export function findEngineBundle(root, given) {
   const candidates = given
     ? [path.resolve(given)]
     : [path.join(root, 'node_modules', '@weed.js', 'engine', 'dist', ENGINE_BUNDLE_FILE), path.join(ENGINE_ROOT, 'dist', ENGINE_BUNDLE_FILE)];
-  for (const file of candidates) if (fs.existsSync(file) && fs.statSync(file).isFile()) return file;
+  for (const file of candidates) {
+    if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
+    // The game registers its scene files through the engine: an engine from before that cannot run an export.
+    if (!fs.readFileSync(file, 'utf8').includes('registerSceneFile')) {
+      throw new ExportError(`the engine bundle ${file} is older than exports (it has no registerSceneFile): rebuild it (npm run make_bundle) or ship a newer one`, 500);
+    }
+    return file;
+  }
   throw new ExportError(`no engine bundle to ship (${candidates.join(', ')}): build it (npm run make_bundle) or install @weed.js/engine`, 500);
 }
 

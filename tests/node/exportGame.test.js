@@ -18,6 +18,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const F = '/tests/fixtures/exportGame';
 const PNG_1PX = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
 const ATLAS_JSON = JSON.stringify({ frames: { crate: {} }, animations: { crate: ['crate'] }, meta: { size: { w: 1, h: 1 } } });
+/** A stand-in for the engine's production bundle: an engine that can run an export names registerSceneFile. */
+const ENGINE = '/* the engine */ WEED.registerSceneFile';
 
 const asset = (p) => ({ url: p, path: p });
 const request = (over = {}) => ({
@@ -36,7 +38,7 @@ function workspace() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-export-'));
   fs.mkdirSync(path.join(dir, 'engine'));
   const engineBundle = path.join(dir, 'engine', 'weed.prod.bundle.min.js');
-  fs.writeFileSync(engineBundle, '/* the engine */');
+  fs.writeFileSync(engineBundle, ENGINE);
   fs.writeFileSync(path.join(dir, 'engine', 'weed-sw.js'), '/* sw */');
   return { dir, engineBundle, outDir: path.join(dir, 'out'), remove: () => fs.rmSync(dir, { recursive: true, force: true }) };
 }
@@ -68,7 +70,7 @@ test('the export’s layout: page, engine, game, assets, baked atlas, headers', 
     'weed-sw.js',
   ]);
   const out = (rel) => path.join(ws.outDir, rel);
-  assert.equal(fs.readFileSync(out('vendor/weed.js'), 'utf8'), '/* the engine */', 'the engine bundle, unchanged');
+  assert.equal(fs.readFileSync(out('vendor/weed.js'), 'utf8'), ENGINE, 'the engine bundle, unchanged');
   assert.ok(fs.readFileSync(out('assets/img/crate.png')).equals(fs.readFileSync(path.join(ROOT, F, 'img/crate.png'))));
   assert.ok(fs.readFileSync(out('assets/FixtureScene.atlas.png')).equals(Buffer.from(PNG_1PX, 'base64')));
   assert.equal(fs.readFileSync(out('assets/FixtureScene.atlas.json'), 'utf8'), ATLAS_JSON);
@@ -179,6 +181,12 @@ test('what an export refuses, and what it only warns about', async () => {
     await refuses({ atlas: { json: ATLAS_JSON, png: Buffer.from('not a png').toString('base64') } }, 400, /not a PNG/);
     await refuses({ scene: `${F}/outside/internalScene.js`, export: 'InternalScene', start: null, sceneFiles: [] }, 400,
       /imports \/src\/core\/sceneFile\.js, an engine module/);
+    // An engine from before exports cannot load the game's levels: refused before anything is built.
+    const old = path.join(ws.dir, 'old', 'weed.prod.bundle.min.js');
+    fs.mkdirSync(path.dirname(old));
+    fs.writeFileSync(old, '/* an older engine */');
+    await assert.rejects(exportGame(request(), { root: ROOT, outDir: ws.outDir, engineBundle: old }),
+      (error) => error.status === 500 && /older than exports \(it has no registerSceneFile\)/.test(error.message));
     assert.equal(fs.existsSync(ws.outDir), false, 'a refused export writes nothing');
 
     // A folder of other files is not replaced; an earlier export is.
