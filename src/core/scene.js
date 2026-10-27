@@ -37,7 +37,7 @@ import { CameraInOutListener } from '../components/cameraInOutListener.js';
 import { CollisionListener } from '../components/collisionListener.js';
 import { JointBreakListener } from '../components/jointBreakListener.js';
 import { Grab } from '../components/grab.js';
-import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
+import { SpriteSheetRegistry, addBigAtlasChunks } from './spriteSheetRegistry.js';
 import { AdobeAnimRegistry } from './adobeAnimRegistry.js';
 import { AdobeAnimCompiler } from '../util/adobeAnimCompiler.js';
 import {
@@ -1805,7 +1805,9 @@ class Scene {
    */
   _installBigAtlas(atlas, compiledAdobeAssets = {}) {
     const { json, imageBitmap, canvas } = atlas;
-    const proxySheets = json?.meta?.proxySheets || {};
+    // A copy: bigAtlas's chunk sheets (ED-74) are added to it, not to the JSON a bake writes out.
+    const proxySheets = { ...(json?.meta?.proxySheets || {}) };
+    addBigAtlasChunks(json, proxySheets);
     const individualTextures = json?.meta?.individualTextures || [];
 
     this.loadedSpritesheets['bigAtlas'] = {

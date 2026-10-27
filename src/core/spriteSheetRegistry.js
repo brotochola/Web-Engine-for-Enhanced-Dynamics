@@ -181,6 +181,45 @@ class MaxRectsPacker {
  * 4. Game loop: Use numeric indices (no registry access)
  */
 /**
+ * bigAtlas's animations in sheets of 256 (VISUAL_EDITOR_PLAN.md ED-74): a static sprite is its bigAtlas animation in
+ * SpriteRenderer's spritesheetId and animationState, and both are bytes, as are the pre-render emit's [sheet][state]
+ * texture tables (wasm/preRenderEmit.c). An index past 255 drew another sprite (littleCity's houses go to 1,067). Each
+ * further 256 of bigAtlas's animations is a proxy sheet of its own, bigAtlas@1, bigAtlas@2, …, mapping its local
+ * index to the global one, so setSprite stores that sheet and an index under 256, and every table already reaches
+ * them. bigAtlas itself holds the first 256.
+ */
+export const BIG_ATLAS_CHUNK = 256;
+
+/** The proxy sheet of bigAtlas's animations k·256 … k·256 + 255 (k ≥ 1). */
+export function bigAtlasChunkName(k) {
+  return `bigAtlas@${k}`;
+}
+
+/**
+ * Add bigAtlas's chunk sheets to a set of proxy sheets (the scene's, which the workers register too).
+ * @param {{ animations?: Record<string, unknown> }} json - bigAtlas's JSON: its animations, in index order
+ * @param {Record<string, object>} proxySheets
+ * @returns {number} how many chunk sheets were added
+ */
+export function addBigAtlasChunks(json, proxySheets) {
+  const names = Object.keys(json?.animations || {});
+  let added = 0;
+  for (let k = 1; k * BIG_ATLAS_CHUNK < names.length; k++) {
+    const animations = {};
+    const indexToName = {};
+    for (let local = 0; local < BIG_ATLAS_CHUNK; local++) {
+      const name = names[k * BIG_ATLAS_CHUNK + local];
+      if (name === undefined) break;
+      animations[name] = { originalName: name, prefixedName: name, index: local };
+      indexToName[local] = name;
+    }
+    proxySheets[bigAtlasChunkName(k)] = { isProxy: true, targetSheet: 'bigAtlas', prefix: '', animations, indexToName };
+    added++;
+  }
+  return added;
+}
+
+/**
  * Put the atlas inputs back in the order the scene declares its assets. Loads
  * finish in network order, but animation indices and spritesheet ids come from
  * insertion order and are stored in components (saves, hot reload): a load in a
@@ -423,7 +462,8 @@ class SpriteSheetRegistry {
 
     if (sheet.isProxy) {
       targetSheet = 'bigAtlas';
-      targetAnimName = `${sheetName}_${animName}`;
+      // Its animation's bigAtlas name (a spritesheet's is prefixed; a bigAtlas chunk's is the name itself).
+      targetAnimName = sheet.animations?.[animName]?.prefixedName ?? `${sheetName}_${animName}`;
     }
 
     // Get animation data to find first frame name
