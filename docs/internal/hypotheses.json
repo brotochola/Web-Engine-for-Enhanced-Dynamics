@@ -8555,6 +8555,28 @@
       "records": [
         "R-0654"
       ]
+    },
+    {
+      "id": "N-81",
+      "title": "A paused world (time scale 0) makes no body: spawns and teleports wait for the next step to be in Box2D",
+      "status": "open",
+      "statusText": "found 2026-10-27, a bug: probed in Chromium, not visible today, a fix tried and not kept",
+      "date": "2026-10-27",
+      "result": "The physics host steps only when the scaled dt is above 0, and doStep at dt 0 only services queries: no syncBodies, command drain, joint sync, pose publish or moved list. A body spawned in a hitstop is missing from Box2D's queries until it ends (the editor's held world: until Play). Not visible: a reused slot's published pose has rotation (0, 0), read as not live, so the collect draws Transform.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-81"
+      ],
+      "aliases": [
+        "paused physics",
+        "hitstop spawn",
+        "dt 0 sync"
+      ],
+      "next": "Take it up if a game queries what it spawns during a hitstop: at dt 0, syncBodies, drainCommands and syncJoints, then the moved list of the teleports and the pose when something changed (tried: the pose right 27 ms after an edit).",
+      "records": [
+        "R-0655"
+      ]
     }
   ],
   "records": [
@@ -14420,6 +14442,13 @@
       "commits": [
         "fbcf6d2d"
       ]
+    },
+    {
+      "id": "R-0655",
+      "date": "2026-10-27",
+      "title": "N-81: in the editor's held world a respawned body's pose is not published; tried a dt-0 sync, not kept",
+      "verdict": "open",
+      "text": "**N-81: a paused world makes no body (REVIEW_PLAN.md N-81, VISUAL_EDITOR_PLAN.md found item 39).** 2026-10-27, headless Chromium, the editor page on scratch copies of the platformer's 1-1 and tests/fixtures/levels/editorFormat.scene.json.\n\nProbes (scratch scripts, page-side reads of `scene.buffers.poseSync` and the two pose buffers):\n\n| | without a dt-0 sync | with it (not kept) |\n| --- | --- | --- |\n| Platform5 moved once (slot 32 → 23): published x, rotC | 0, 0.00 (ready frame stuck) | 3470, 1.00 (27 ms after the edit) |\n| moved again (slot 23 → 32) | 3070 (its first place), 0.00 | 3870, 1.00 |\n| the format level's dynamic Crate, twice | 0, 0.00; then 400 (its first place), 0.00 | 800, 1.00; then 1200, 1.00 |\n\nA stale pose with rotation (0, 0) is not live for the collect (`poseRotationLive`), which then draws `Transform`, where the spawn put the body: nothing wrong shows. The visible lag first suspected (1.5 s before a moved platform drew) is headless Chromium's pacing: the physics worker gets about 3 frames a second there and the pre-render follows it (VISUAL_EDITOR_PLAN.md found item 40).\n\nThe change tried, on the physics host and weedjsPost.js: the host calls the step at dt 0; doStep at dt 0 runs syncBodies, drainCommands and syncJoints, publishes the moved list of the teleports (not the WASM's move events, the last step's) and the pose when something changed. Reverted: no visible gain, and the step path is the physics worker's hot path.\n\n**Verdict: open** (a latent bug, no fix kept).\n"
     }
   ],
   "leads": [
