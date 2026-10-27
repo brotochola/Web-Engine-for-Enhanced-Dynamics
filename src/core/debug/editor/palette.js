@@ -54,11 +54,14 @@ const PALETTE_CSS =
   '.weed-palette-class button{flex:none;cursor:pointer}' +
   '.weed-layers-fold:hover{color:#ddd}';
 
-/** The scene's classes the palette offers, in the order it registered them. */
+/**
+ * The scene's classes the palette offers, in the order it registered them: not the engine's own, nor a class with a
+ * pool of 0 (a parent class the scene registers for its subclasses, as littleCity's Car: nothing of it can be placed).
+ */
 export function placeableClasses(scene) {
   const classes = [];
-  for (const { class: EntityClass } of scene?.registeredClasses || []) {
-    if (!UNPLACEABLE.has(EntityClass.name)) classes.push(EntityClass);
+  for (const { class: EntityClass, count } of scene?.registeredClasses || []) {
+    if (!UNPLACEABLE.has(EntityClass.name) && count !== 0) classes.push(EntityClass);
   }
   return classes;
 }
@@ -66,7 +69,9 @@ export function placeableClasses(scene) {
 /** The running scene's class of that name that the palette offers, or null. */
 export function placeableClassOf(scene, name) {
   if (UNPLACEABLE.has(name)) return null;
-  for (const { class: EntityClass } of scene?.registeredClasses || []) if (EntityClass.name === name) return EntityClass;
+  for (const { class: EntityClass, count } of scene?.registeredClasses || []) {
+    if (EntityClass.name === name) return count === 0 ? null : EntityClass;
+  }
   return null;
 }
 

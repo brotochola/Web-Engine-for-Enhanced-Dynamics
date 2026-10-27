@@ -13,7 +13,7 @@ import { Camera } from '../../src/core/camera.js';
 import { EditMode } from '../../src/core/debug/editor/editMode.js';
 import { recordOf } from '../../src/core/debug/editor/sceneDocument.js';
 import { DropPlacer, viewPointToWorld, carriesClass, CLASS_DRAG_TYPE } from '../../src/core/debug/editor/dropPlace.js';
-import { Palette, placeableClassOf } from '../../src/core/debug/editor/palette.js';
+import { Palette, placeableClassOf, placeableClasses } from '../../src/core/debug/editor/palette.js';
 
 /** A view's box on the page. */
 const RECT = { left: 260, top: 36, right: 1070, bottom: 630, width: 810, height: 594 };
@@ -113,6 +113,13 @@ function dragEvent(target, clientX, clientY, { types = [CLASS_DRAG_TYPE], data =
   };
   return e;
 }
+
+test('a class with a pool of 0 is not offered, and a drop of its name places nothing: nothing of it can spawn', () => {
+  const scene = { registeredClasses: [{ class: { name: 'Car' }, count: 0 }, { class: { name: 'TrafficCar' }, count: 500 }] };
+  assert.deepEqual(placeableClasses(scene).map((C) => C.name), ['TrafficCar']);
+  assert.equal(placeableClassOf(scene, 'Car'), null);
+  assert.equal(placeableClassOf(scene, 'TrafficCar').name, 'TrafficCar');
+});
 
 test('the placer listens on the page’s document once, and is the editor’s tool once', () => {
   const { editMode, placer } = fakeEditor();

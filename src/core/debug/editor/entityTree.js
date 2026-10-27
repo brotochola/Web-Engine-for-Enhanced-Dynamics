@@ -128,6 +128,9 @@ export class TreeModel {
       byName.set(name, group);
     }
     for (const record of scene?.sceneFile?.entities || []) byName.get(record.class)?.authored.push(record.name);
+    // A class with a pool of 0 (a parent class the scene registers for its subclasses) has nothing to list, unless the
+    // file places some of it (they cannot spawn: shown, not hidden).
+    for (let g = groups.length - 1; g >= 0; g--) if (groups[g].end === groups[g].start && groups[g].authored.length === 0) groups.splice(g, 1);
     this.groups = groups;
     let slots = 0;
     for (const group of groups) if (group.end > slots) slots = group.end;

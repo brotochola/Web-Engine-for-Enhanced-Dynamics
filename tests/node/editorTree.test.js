@@ -53,6 +53,17 @@ test('groups follow the scene’s classes, without the engine’s own; closed gr
   assert.equal(model.locate(3), null, 'past the last row');
 });
 
+test('a class with a pool of 0 (a parent the scene registers for its subclasses) has no group, unless the file places one', () => {
+  const scene = makeScene();
+  scene.registeredClasses.unshift({ class: { name: 'Car', startIndex: 0, poolSize: 0, endIndex: 0 } });
+  const model = new TreeModel();
+  model.build(scene);
+  assert.deepEqual(model.groups.map((g) => g.name), ['Player', 'Platform', 'Coin']);
+  scene.sceneFile.entities.push({ name: 'Car1', class: 'Car' });
+  model.build(scene);
+  assert.deepEqual(model.groups.map((g) => g.name), ['Car', 'Player', 'Platform', 'Coin'], 'a record of it is shown: it cannot spawn');
+});
+
 test('an open group lists the file’s records, then the live entities the file does not name', () => {
   const scene = makeScene();
   const model = new TreeModel();
