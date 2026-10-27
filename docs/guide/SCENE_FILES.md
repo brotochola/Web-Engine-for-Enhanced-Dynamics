@@ -37,6 +37,7 @@ Rule of thumb: **if you would drag it in an editor, it goes in the file; if it i
   - `name`: unique in the file. The scene finds the entity by it (`getByName`), and other entities refer to it by it.
   - `class`: an entity class in the scene's `static entities`. An entity of a class that is not there is skipped, with a warning.
   - `x`, `y`: where it spawns.
+  - `rotation` (radians), `scaleX`, `scaleY` (optional): set after the class's `onSpawned`, so the file's win over what the class sets. The scale is the sprite's: a collider keeps the size its params give.
   - `config`: the spawn params that differ from the class's defaults (next section). Leave it out when none do.
   - `seed` (optional, an integer): what `rng()` draws from in the entity's `onSpawned`. Left out, a hash of its name. So an entity that picks its look at random (a house among 63 sprites) picks the same one at every load, when the editor moves it, and when others are added or deleted. The editor writes `seed` when a rename would change it.
 

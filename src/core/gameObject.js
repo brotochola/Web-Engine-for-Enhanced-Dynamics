@@ -2763,10 +2763,21 @@ export class GameObject {
     }
 
     // A scene file's entity brings its seed (sceneFile.js placedSeed): its onSpawned draws from a stream of its own,
-    // the same at each load and each respawn. Out of the config onSpawned gets; it is the config's last key, so the
-    // delete leaves its shape as it was.
+    // the same at each load and each respawn; and its rotation and scale, set after onSpawned so the file's win.
+    // Out of the config onSpawned gets, its last key first, so each delete leaves the config's shape as it was.
     const placedSeed = spawnConfig._seed;
-    if (placedSeed !== undefined) delete spawnConfig._seed;
+    let placedRotation;
+    let placedScaleX;
+    let placedScaleY;
+    if (placedSeed !== undefined) {
+      delete spawnConfig._seed;
+      placedScaleY = spawnConfig._scaleY;
+      if (placedScaleY !== undefined) delete spawnConfig._scaleY;
+      placedScaleX = spawnConfig._scaleX;
+      if (placedScaleX !== undefined) delete spawnConfig._scaleX;
+      placedRotation = spawnConfig._rotation;
+      if (placedRotation !== undefined) delete spawnConfig._rotation;
+    }
 
     // ========================================
     // COMPONENT DATA SETUP (SAFE - unique index)
@@ -3012,6 +3023,11 @@ export class GameObject {
         instance.setLayers(spawnConfig.layers);
       } else if (spawnConfig.layer != null) {
         instance.setLayer(spawnConfig.layer);
+      }
+      // A scene file's rotation and scale (above), over what onSpawned set.
+      if (placedRotation !== undefined) instance.rotation = placedRotation;
+      if (placedScaleX !== undefined || placedScaleY !== undefined) {
+        instance.setScale(placedScaleX !== undefined ? placedScaleX : instance.scaleX, placedScaleY !== undefined ? placedScaleY : instance.scaleY);
       }
 
       const entityComponentMap = EntityClass._componentClassMap || {};

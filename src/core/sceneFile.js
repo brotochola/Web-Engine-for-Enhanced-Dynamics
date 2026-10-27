@@ -29,7 +29,9 @@ import { checkSceneFileDecorations, DECORATION_KEYS } from './sceneFileDecoratio
 export const SCENE_FILE_FORMAT = 1;
 
 const ROOT_KEYS = ['format', 'script', 'export', 'entities', 'joints', 'decorations'];
-const ENTITY_KEYS = ['name', 'class', 'x', 'y', 'config', 'seed'];
+const ENTITY_KEYS = ['name', 'class', 'x', 'y', 'rotation', 'scaleX', 'scaleY', 'config', 'seed'];
+/** An entity record's optional transform beside x and y: set after onSpawned (GameObject._spawnAt). */
+const TRANSFORM_KEYS = ['rotation', 'scaleX', 'scaleY'];
 
 /** Whether a loadScene source is a scene file (by its name: `*.scene.json`). */
 export function isSceneFileUrl(source) {
@@ -91,6 +93,9 @@ export function checkSceneFile(doc, where = 'scene file', { scriptRequired = tru
       throw new Error(`${prefix(at)} (${e.name}): "config" must be an object`);
     }
     if (e.seed !== undefined && !Number.isInteger(e.seed)) throw new Error(`${prefix(at)} (${e.name}): "seed" must be an integer`);
+    for (const key of TRANSFORM_KEYS) {
+      if (e[key] !== undefined && !isFiniteNumber(e[key])) throw new Error(`${prefix(at)} (${e.name}): "${key}" must be a number`);
+    }
   }
   if (doc.joints !== undefined) checkSceneFileJoints(doc.joints, where);
   if (doc.decorations !== undefined) checkSceneFileDecorations(doc.decorations, where);
@@ -339,8 +344,9 @@ export function placedSeed(record) {
 /**
  * The spawn config for one entity of a file: x, y and its config, with each entity param's name turned into the
  * index `indexOf(name)` gives (−1 when the file has no such entity, or the reference is in `backRefs`), and each
- * points param into a Float64Array; and last, `_seed` (placedSeed), which the logic worker takes out before
- * onSpawned (GameObject._spawnAt). Called on the page at load: it allocates.
+ * points param into a Float64Array; then the record's rotation and scale as `_rotation`, `_scaleX`, `_scaleY`, and
+ * last `_seed` (placedSeed): the logic worker takes them out before onSpawned, and sets the rotation and scale after
+ * it, so the file's win over what the class sets (GameObject._spawnAt). Called on the page at load: it allocates.
  * @param {object} record - the file's entity record
  * @param {number} position - its position in the file
  * @param {Function} EntityClass
@@ -372,6 +378,9 @@ export function sceneFileSpawnConfig(record, position, EntityClass, indexOf, bac
       spawnConfig[key] = value;
     }
   }
+  if (isFiniteNumber(record.rotation)) spawnConfig._rotation = record.rotation;
+  if (isFiniteNumber(record.scaleX)) spawnConfig._scaleX = record.scaleX;
+  if (isFiniteNumber(record.scaleY)) spawnConfig._scaleY = record.scaleY;
   delete spawnConfig._seed; // a config key of that name would not be last
   spawnConfig._seed = placedSeed(record);
   return spawnConfig;
