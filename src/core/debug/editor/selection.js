@@ -68,8 +68,17 @@ export class Selection {
     /** A click in the view leaves out what a locked or hidden layer holds (editorLayers.js, ED-24). */
     this._unpickable = (index) => this.editor?.layers?.unpickable(index) === true;
     this._hooks = {
-      onChange: (key, value) =>
-        this.editor.editSelected(`${this.name}.${key}`, (record, description) => writeParam(record, description, key, value)),
+      // With several selected (ED-55): into each whose class declares that param, as one undo.
+      onChange: (key, value) => {
+        const multi = this.editor.multi;
+        if (multi?.count > 0) {
+          const names = multi.selectedNames();
+          return this.editor.editMany(`${key} of ${names.length} entities`, names, (record, description) => {
+            if (description !== null && description.indexOf[key] !== undefined) writeParam(record, description, key, value);
+          });
+        }
+        return this.editor.editSelected(`${this.name}.${key}`, (record, description) => writeParam(record, description, key, value));
+      },
       onConfig: (config) => this.editor.editSelected(`${this.name} config`, (record) => writeConfig(record, config)),
       entityNames: (className) => namesOf(debugUI.scene, className, this.name),
       // Stage 4: an entity param picked in the view, a point added to a points param (entityPicker.js, handles.js).
@@ -175,7 +184,7 @@ export class Selection {
     const found = this.authored ? recordOf(scene, this.name) : null;
     const sections = this._sections;
     this._nameRow.style.display = found === null ? 'none' : 'flex';
-    this.transform.show(found === null ? null : found.record, this.index);
+    this.transform.show(found === null ? null : found.record, this.index, this._otherRecords());
     sections.transform.visible = found !== null;
     sections.params.visible = found !== null;
     if (found === null) {
@@ -256,9 +265,28 @@ export class Selection {
     this._body.append(this._title, this._detail, this._nameRow, sections.transform.el, sections.params.el, sections.joints.el, sections.live.el);
   }
 
-  /** How many others are selected with it (ED-28): a line under its name. */
+  /** The records of the others selected with it (ED-28): what the inspector's changes apply to too (ED-55). */
+  _otherRecords() {
+    const multi = this.editor?.multi;
+    if (!multi || multi.count === 0) return [];
+    const scene = this.debugUI.scene;
+    const records = [];
+    for (const name of multi.names) {
+      if (name === this.name) continue;
+      const found = recordOf(scene, name);
+      if (found !== null) records.push(found.record);
+    }
+    return records;
+  }
+
+  /** How many others are selected with it (ED-28): a line under its name; the Transform shows what they share. */
   showCount(count) {
     if (this._detail === null || !this.authored) return;
+    const found = recordOf(this.debugUI.scene, this.name);
+    if (found !== null && this.transform !== null) this.transform.show(found.record, this.index, this._otherRecords());
+    if (this._sections !== null) {
+      this._sections.params.note.textContent = count > 0 ? `a change goes to each of the ${count + 1} selected that has it` : '';
+    }
     const file = this.debugUI.scene?.sceneFileUrl ? new URL(this.debugUI.scene.sceneFileUrl).pathname.split('/').pop() : 'the scene file';
     this._detail.textContent =
       count > 0

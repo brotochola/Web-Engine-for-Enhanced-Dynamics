@@ -7,15 +7,19 @@
 // the entity; the record is written once, on letting go: one undo, one respawn (EditMode.editSelected). Esc during a
 // drag drops it.
 //
+// With several selected (ED-55), a value they do not share shows "—"; a typed value is written into each of them, a
+// dragged one moves each by the same amount, as one undo (EditMode.editMany).
+//
 // Cost: built once, filled when the selection changes; a drag writes one field's text and a few component values per
 // pointer move, and allocates nothing.
 
 import { Transform } from '../../../components/transform.js';
 import { SpriteRenderer } from '../../../components/spriteRenderer.js';
-import { writePosition } from './sceneDocument.js';
+import { writePosition, indexOfName } from './sceneDocument.js';
 import { snapTo } from './moveTool.js';
 
 const DEG = 180 / Math.PI;
+const NO_OTHERS = Object.freeze([]);
 const LABEL_STYLE = 'font-size:11px;color:#ccc;width:84px;flex:none';
 const AXIS_STYLE = 'font-size:11px;color:#8a90a0;cursor:ew-resize;user-select:none;padding:0 3px 0 6px;touch-action:none';
 const INPUT_STYLE =
@@ -76,14 +80,20 @@ export function writeValue(record, key, value) {
   }
 }
 
+/** The undo label's verb for a value. */
+function verbOf(key) {
+  return key === 'x' || key === 'y' ? 'move' : key === 'rotation' ? 'turn' : 'scale';
+}
+
 export class TransformFields {
   /** @param {object} selection - the editor's Selection: its editor writes, its index is the live entity */
   constructor(selection) {
     this.selection = selection;
     this.el = document.createElement('div');
     this.el.style.cssText = 'display:flex;flex-direction:column;gap:4px;margin-bottom:8px';
-    /** The record shown, or null. */
+    /** The record shown, or null; and the other selected entities' records (ED-55). */
     this._record = null;
+    this._others = NO_OTHERS;
     /** Per value (VALUES' order): its input and axis label. */
     this._inputs = [];
     this._axes = [];
@@ -94,16 +104,29 @@ export class TransformFields {
     this._dragStartX = 0;
     this._dragStartValue = 0;
     this._dragValue = 0;
+    /** The entities a drag with several selected moves: their live indices. */
+    this._dragIndices = [];
     this._build();
   }
 
-  /** Show a placed entity's record (null: hide the rows, for a runtime entity or none). */
-  show(record, index) {
+  /**
+   * Show a placed entity's record (null: hide the rows, for a runtime entity or none); with several selected, the
+   * others' records: a value they do not all share shows "—".
+   */
+  show(record, index, others = NO_OTHERS) {
     this.cancelDrag();
     this._record = record;
+    this._others = others;
     this.el.style.display = record === null ? 'none' : 'flex';
     if (record === null) return;
-    for (let v = 0; v < VALUES.length; v++) this._inputs[v].value = formatValue(recordValue(record, VALUES[v].key), VALUES[v].decimals);
+    for (let v = 0; v < VALUES.length; v++) {
+      const value = recordValue(record, VALUES[v].key);
+      let mixed = false;
+      for (let k = 0; k < others.length && !mixed; k++) mixed = recordValue(others[k], VALUES[v].key) !== value;
+      this._inputs[v].value = mixed ? '' : formatValue(value, VALUES[v].decimals);
+      this._inputs[v].placeholder = mixed ? '—' : '';
+      this._inputs[v].title = mixed ? 'They differ: a value typed here is written into each' : this._inputs[v].dataset.title || this._inputs[v].title;
+    }
     const sprite = index >= 0 && SpriteRenderer.active && SpriteRenderer.active[index] === 1;
     this._scaleRow.style.display = sprite || record.scaleX !== undefined || record.scaleY !== undefined ? 'flex' : 'none';
   }
@@ -151,6 +174,7 @@ export class TransformFields {
       input.spellcheck = false;
       input.style.cssText = INPUT_STYLE;
       input.title = value.key === 'rotation' ? 'Rotation in degrees' : `${value.row} ${value.axis}`;
+      input.dataset.title = input.title;
       input.onchange = () => this._typed(v);
       input.onkeydown = (e) => {
         if (e.key === 'Enter') input.blur();
@@ -178,8 +202,9 @@ export class TransformFields {
   _typed(v) {
     const record = this._record;
     if (record === null) return;
-    const value = Number(this._inputs[v].value.trim());
-    if (!Number.isFinite(value)) {
+    const text = this._inputs[v].value.trim();
+    const value = Number(text);
+    if (text === '' || !Number.isFinite(value)) {
       this._inputs[v].value = formatValue(recordValue(record, VALUES[v].key), VALUES[v].decimals);
       return;
     }
@@ -191,6 +216,10 @@ export class TransformFields {
     this._drag = v;
     this._dragStartX = e.clientX;
     this._dragStartValue = this._dragValue = recordValue(this._record, VALUES[v].key);
+    // Several selected: the ghost moves them all (ED-55).
+    const names = this._names();
+    const scene = this.selection.debugUI?.scene;
+    this._dragIndices = names.length > 1 && scene ? names.map((name) => indexOfName(scene, name)).filter((i) => i >= 0) : [];
     e.currentTarget.setPointerCapture?.(e.pointerId);
     e.preventDefault();
   }
@@ -211,7 +240,23 @@ export class TransformFields {
     if (this._drag !== v) return;
     this._drag = -1;
     this.selection.editor?.ghost?.clear();
-    if (this._dragValue !== this._dragStartValue) this._write(v, this._dragValue);
+    if (this._dragValue === this._dragStartValue) return;
+    const names = this._names();
+    if (names.length > 1) {
+      // Several: each moved by the same amount from its own value.
+      const key = VALUES[v].key;
+      const delta = this._dragValue - this._dragStartValue;
+      this.selection.editor.editMany(`${verbOf(key)} ${names.length} entities`, names, (record) => writeValue(record, key, recordValue(record, key) + delta));
+      return;
+    }
+    this._write(v, this._dragValue);
+  }
+
+  /** What a change applies to: the selected placed entities, the inspector's first. */
+  _names() {
+    const editor = this.selection.editor;
+    if (editor?.multi?.count > 0) return editor.multi.selectedNames();
+    return this.selection.name === null ? [] : [this.selection.name];
   }
 
   _write(v, value) {
@@ -219,7 +264,15 @@ export class TransformFields {
     const editor = this.selection.editor;
     const name = this.selection.name;
     if (!editor || name === null) return;
-    const label = key === 'x' || key === 'y' ? `move ${name}` : key === 'rotation' ? `turn ${name}` : `scale ${name}`;
+    const names = this._names();
+    if (names.length > 1) {
+      // Several: the typed value into each of them, as one undo.
+      if (!editor.editMany(`${verbOf(key)} ${names.length} entities`, names, (record) => writeValue(record, key, value)) && this._record !== null) {
+        this.show(this._record, this.selection.index, this._others);
+      }
+      return;
+    }
+    const label = `${verbOf(key)} ${name}`;
     if (editor.editSelected(label, (record) => writeValue(record, key, value)) < 0 && this._record !== null) {
       // Nothing changed (the same value): the field shows the record's again.
       this._inputs[v].value = formatValue(recordValue(this._record, key), VALUES[v].decimals);
@@ -235,15 +288,19 @@ export class TransformFields {
     if (i < 0) return;
     const ghost = this.selection.editor?.ghost;
     const from = this._dragStartValue;
+    const several = this._dragIndices.length > 1;
     switch (key) {
       case 'x':
-        ghost?.showOne(i, value - from, 0, 0, Transform.x[i], Transform.y[i]);
+        if (several) ghost?.show(this._dragIndices, value - from, 0, 0, 0, 0);
+        else ghost?.showOne(i, value - from, 0, 0, Transform.x[i], Transform.y[i]);
         break;
       case 'y':
-        ghost?.showOne(i, 0, value - from, 0, Transform.x[i], Transform.y[i]);
+        if (several) ghost?.show(this._dragIndices, 0, value - from, 0, 0, 0);
+        else ghost?.showOne(i, 0, value - from, 0, Transform.x[i], Transform.y[i]);
         break;
       case 'rotation':
-        ghost?.showOne(i, 0, 0, (value - from) / DEG, Transform.x[i], Transform.y[i]);
+        // Several turn each about its own origin: written on letting go, with no ghost (it has one pivot).
+        if (!several) ghost?.showOne(i, 0, 0, (value - from) / DEG, Transform.x[i], Transform.y[i]);
         break;
       default: {
         if (!SpriteRenderer.active || SpriteRenderer.active[i] !== 1) return;

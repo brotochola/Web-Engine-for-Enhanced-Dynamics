@@ -171,3 +171,55 @@ test('on the real editor: a rotation, scale or seed edit respawns the entity onc
     world.done();
   }
 });
+
+test('several selected: a value they do not share shows “—”; typed, it goes into each; dragged, each moves by it; one undo each', () => {
+  withDocument(() => {
+    const records = {
+      Block1: { name: 'Block1', class: 'Block', x: 300, y: 200 },
+      Block2: { name: 'Block2', class: 'Block', x: 500, y: 200 },
+    };
+    const batches = [];
+    const selection = {
+      name: 'Block1',
+      index: 0,
+      editor: {
+        move: { snap: 1 },
+        ghost: new TransformGhost(),
+        multi: { count: 1, selectedNames: () => ['Block1', 'Block2'] },
+        editMany(label, names, write) {
+          for (const name of names) write(records[name]);
+          batches.push(label);
+          return true;
+        },
+      },
+    };
+    const fields = new TransformFields(selection);
+    fields.show(records.Block1, 0, [records.Block2]);
+    const inputs = [...fields.el.all()].filter((el) => el.tagName === 'INPUT');
+    assert.deepEqual([inputs[0].value, inputs[0].placeholder, inputs[1].value], ['', '—', '200'], 'x differs, y is shared');
+    inputs[0].value = '640';
+    inputs[0].onchange();
+    assert.deepEqual([records.Block1.x, records.Block2.x, batches], [640, 640, ['move 2 entities']]);
+    const yAxis = [...fields.el.all()].filter((el) => el.tagName === 'SPAN' && el.style.cssText?.includes('ew-resize'))[1];
+    yAxis.onpointerdown(pointer(0));
+    yAxis.onpointermove(pointer(25));
+    yAxis.onpointerup();
+    assert.deepEqual([records.Block1.y, records.Block2.y, batches.length], [225, 225, 2], 'each moved by 25, one more undo');
+  });
+});
+
+test('several selected: a param goes into each whose class declares it, as one undo', async () => {
+  const { makeWorld } = await import('../helpers/editorHandlesWorld.mjs');
+  const world = makeWorld();
+  try {
+    const { editMode } = world;
+    editMode.multi.selectNames(['Block1', 'Pebble1']); // a Block has width; a Pebble has none
+    assert.equal(editMode.selection._hooks.onChange('width', 300), true);
+    assert.deepEqual([world.record('Block1').config.width, world.record('Pebble1').config], [300, undefined]);
+    assert.equal(editMode.history.undoLabel, 'width of 2 entities');
+    editMode.undo();
+    assert.equal(world.record('Block1').config.width, 100);
+  } finally {
+    world.done();
+  }
+});
