@@ -3,7 +3,8 @@
 **Opened:** 2026-10-22. **Updated:** 2026-10-26, against the code after the WASM migration
 (E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stages 1 and 2
 done 2026-10-26 (milestone M1 reached); Stage 3 started with ED-15, the editor page (D9).
-**Next step:** merge Stage 4's three branches, then a full test pass. **Time box (the author, 2026-10-26):** 12 hours,
+**Next step:** the final test pass (all suites and smokes, fresh bundles). Deferred:
+ED-19, ED-23, ED-35b. For the author: confirm the new APIs in Found items 15 and 18. **Time box (the author, 2026-10-26):** 12 hours,
 14 at most, for the rest of the plan with its tests. So Stage 4's items run in parallel in
 three agent worktrees (handles: ED-20, ED-22, ED-27 with ED-45's view parts; scene file:
 ED-21, ED-25; panels: ED-24, ED-26, ED-45's pickers) and a fourth runs ED-31 and ED-32, on
@@ -1311,17 +1312,93 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
 
 ### Stage 4: 2D tools (independent, any order)
 
-- [ ] **ED-20** Collider shape handles: box, circle, polygon.
-- [ ] **ED-21** Joint anchors. Joints in the scene file reference entities by `name`.
-- [ ] **ED-22** Light radius and emitter handles.
+- [x] **ED-20** Collider shape handles: box, circle, polygon. Done 2026-10-26 by the handles
+  agent (2e3f1f7c, e9262db7; merged in eaefbded; `editor/handles.js`).
+  - A box collider gets 8 handles (edges, corners) for its `width` and `height` params, a
+    circle 4 for `radius`: the param named like the collider column, as Copy to scene pairs
+    them. A polygon's vertices come from the points param that holds them (matched to the
+    live vertices, in the entity's frame, remembered per class); it stays convex, 3 to 8.
+  - A drag draws a ghost and writes once on release (one undo, one respawn), snapped. A box
+    keeps its opposite edge (x and y follow); Alt keeps the center. Thin boxes' handles stay
+    12 px off the middle, so a press on the body still moves the entity.
+  - No param to set: the handle is dimmed and the status line says why. Runtime entities,
+    and entities of a locked layer (87e6a34b), get none. Not done: chains, compound polygons,
+    offsets, sprite-only sizes.
+  - The frame passes no double to a call and allocates nothing (positions inline, screen
+    points in Int32Arrays). Tests: `editorHandles.test.js`; `editorHandlesSmoke.mjs`.
+- [x] **ED-21** Joint anchors. Joints in the scene file reference entities by `name`. Done
+  2026-10-26 by the format agent (867bdc5f, 726b82f3, 22b36c57, 6325397b, 26f9d02f; merged in
+  3d1a1548).
+  - An optional `joints` section, one joint per line: `{ name?, type, a, b, anchorA?,
+    anchorB?, …settings }` with Joint's type names (distance, revolute, prismatic, weld), local
+    anchors and setting names (`sceneFileJoints.js`). Made right after the file's entities
+    spawn, before `create()`; a joint waits in its pool until both bodies exist. Missing
+    entities: skipped, one warning naming the file. A restore makes none (the save brings them
+    back). The fast swap's clear removes them. A distance joint without `length` keeps its
+    anchors as placed.
+  - The inspector lists the entity's joints (type, the other entity, anchors, settings as
+    JSON) with add and remove; Alt+drag on the overlay moves an anchor (`jointsPanel.js`,
+    `jointTool.js`). Each change one undo (kind `joints`, the lists before and after). A
+    respawn or delete first drops the joints on the slot (`Joint.removeAllForEntity`: despawn
+    removes none) and remakes the file's; a rename follows; a delete's undo puts them back.
+  - Tests: `sceneFile.test.js`, `sceneFileContent.test.js`, `editorJoints.test.js`;
+    `editorFormatSmoke.mjs` (the joint holds in physics: a pushed block swings at 80.06 px).
+- [x] **ED-22** Light radius and emitter handles. Done 2026-10-26 by the handles agent
+  (2e3f1f7c): a LightEmitter's reach (√intensity × 10 px) as a dashed ring with 4 handles
+  setting `lightIntensity` ((reach / 10)²) or `sqrtLightIntensity`; dimmed without either. No
+  offset handle: LightEmitter has no 2D offset, and ParticleEmitter is a static API, not a
+  component.
 - [-] **ED-23** The particle lab as an editor panel. **Deferred 2026-10-26** (time box): the
   particle lab already exists as a scene of its own (`demos/particleLabScene`).
-- [ ] **ED-24** Per-layer hide and lock.
-- [ ] **ED-25** Scatter brush for decorations (trees, grass, rocks), through
+- [x] **ED-24** Per-layer hide and lock. Done 2026-10-26 by the panels agent (74e6a27b;
+  merged in 3e571cce; `editor/editorLayers.js`).
+  - The palette (Assets dock) has a Layers section: a row per layer the scene uses, highest
+    first, with hide, and lock where entities can go.
+  - Hide sets `Layer.visible` only while editing; leaving edit mode puts back what each
+    layer showed; a fast swap hides again; a full load drops the choices (not saved, not
+    handed over).
+  - Lock: clicks in the view skip the layer's entities (`pickEntityAt`'s `skip`), and so do
+    Shift+click, the box and an entity param's pick (87e6a34b); the move tool neither drags
+    nor nudges them; they get no handles; the scene list marks them. The list and the
+    inspector still reach them, as in Godot and Unity. An entity drawn only in hidden layers
+    is not picked.
+  - Tests: `editorLayers.test.js`; `editorPanelsSmoke.mjs` 'lock', 'hide'.
+- [x] **ED-25** Scatter brush for decorations (trees, grass, rocks), through
   `Decoration.spawnMany`. The scene file gets a `decorations` section stored as flat
   number arrays, not one object per decoration.
-- [ ] **ED-26** Show Tiled tilemaps and reload them on change. Painting stays in Tiled.
-- [ ] **ED-27** Viewport handles for `points` and `entity` params.
+  - Done 2026-10-26 by the format agent (867bdc5f, d1f349b9, 726b82f3, 09e6d9f5; merged in
+    3d1a1548): an optional `decorations` section, one record per class with flat arrays (x,
+    y, and optional frame, scale, rotation, alpha, tint); the scene class declares its
+    classes in a new `static decorations` (Found item 18); a load spawns each class with one
+    `Decoration.spawnMany`, which now takes per-decoration arrays and an `out` list; the
+    fast swap's `DecorationPool.despawnAll` clears them. The brush (`scatterBrush.js`, the
+    palette's Decorations section: Paint, radius, density) fills the circle on the grid up
+    to the density; Shift+drag erases; `[` and `]` change the radius. One stroke one undo
+    (kind `decorations`), undo and redo touching only the difference. Tests:
+    `decorationPool.test.js`, `sceneFileContent.test.js`, `editorBrush.test.js`,
+    `fastSwap.test.js`; `editorFormatSmoke.mjs`.
+- [x] **ED-26** Show Tiled tilemaps and reload them on change. Painting stays in Tiled. Done
+  2026-10-26 by the panels agent (5f50832f, cd5be84e, afac7f1f; merged in 3e571cce).
+  - Hot reload puts a changed Tiled file in place when its shape holds: the new tiles go into
+    the tilemap's shared memory, and the layers showing it are posted to the renderer again
+    (`Layer.applyConfiguredContent(id)`, an internal argument). No page reload, no worker
+    change: the editor keeps its document, undo and selection.
+  - Another shape (size, layers, tilesets) reloads the page with the scene's state, and D9's
+    handover keeps the editor's (checked in Chromium). What a scene derived from the tiles at
+    load follows on the level's next load. `TILEMAP.md` says so (87e6a34b).
+  - The Assets dock lists each tilemap with a ↻ that does the same (`editor/tilemapList.js`).
+  - Tests: `tilemapReload.test.js`, `layer.test.js`; `editorPanelsSmoke.mjs`.
+- [x] **ED-27** Viewport handles for `points` and `entity` params. Done 2026-10-26 by the
+  handles agent (2e3f1f7c, 0f46f27c).
+  - A points param's points as handles on a line, in world coordinates unless it holds the
+    polygon: drag moves one (snapped), Alt+click on the line adds one, Del over one removes
+    it, the row's + appends one; each one undo. Which frame a points param means is not in
+    its declaration (Found item 19).
+  - An entity param's ⌖ button: the next click on a placed entity of the declared class sets
+    it to that entity's name, the selection kept; anything else is explained and picking goes
+    on; Esc stops. While picking, the entity under the pointer is boxed green or red; the
+    selection shows a dashed line to each entity its params name. Works in the editor page.
+  - Tests: `editorHandles.test.js`, `editorPicker.test.js`; `editorHandlesSmoke.mjs` (10/10).
 - [x] **ED-28** Box select, multi-select, editor-only groups. Done 2026-10-26 (522cce84,
   `editor/multiSelect.js`).
   - A drag on empty ground boxes the placed entities it touches; Shift+click adds or takes
@@ -1647,12 +1724,44 @@ server still writes nothing. What changed for this plan:
     next release), an export from `npm run dev` is refused with "rebuild it";
     `WEED_EXPORT_ENGINE` can point at a fresh build meanwhile.
 
+18. **`static decorations` on a scene class, and `Decoration.spawnMany` with per-decoration
+    arrays (new API, for the author to confirm).** Added by ED-25: name → a `Decoration.spawn`
+    config, where `texture` may be a list, `scale` sets both axes, and scale, rotation, alpha
+    and tint may be `{ min, max }` ranges; spawnMany takes x, y, texture, scaleX, scaleY,
+    rotation, alpha and tint as arrays, and `out`. Ranges a file does not fill are drawn with
+    the scene's seeded rng at each load; the brush writes what it drew. Types:
+    `SceneFileJoint`, `SceneFileDecorations`, `SceneDecorationClass`, `Scene.decorations`.
+19. **A points param does not say its frame** (world, or the entity's): the handles draw
+    world coordinates unless the param holds the polygon collider. An optional declaration
+    field would be engine API (`spawnParams.js`): the author's call.
+20. **Entering edit mode jumped the view to the world's corner** in a scene that only
+    centers its camera: `setFree` adopted the camera's top-left as its target. Fixed in
+    87e6a34b (the view's center).
+21. **Measuring allocation in Node:** a forced `gc()` right before the window deoptimizes code
+    that embeds objects the GC frees ("weak objects"), and showed a false 50 to 200 bytes a
+    frame (the handles agent). Measure after warm-up without that forced gc.
+22. **`box2dQueryProtocol.test.js` (N-25)** failed once while three agents ran Chromium,
+    and passed on reruns: timing-sensitive under load.
+23. **Smoke writers:** after `Camera.setZoom` or `setFreeTarget` the view eases in;
+    `Camera.worldToScreen` (the drawn view) and the point a click maps to (`scene.camera`)
+    agree only once it has settled. `setZoom` also stops at the zoom where the world fills
+    the view. WEED exports no `DecorationPool` (`DecorationComponent.active` reads it).
+
 **New items:**
 
-- [ ] **ED-45 The rest of D4's widgets:** a picker over the loaded sprites and animations
+- [x] **ED-45 The rest of D4's widgets:** a picker over the loaded sprites and animations
   (SpriteSheetRegistry, the atlas) for `sprite` and `animation` params; clicking a placed
   entity in the view to fill an `entity` param; and handles dragged in the view for
   `points`, drawn on the overlay from a preallocated buffer.
+  - Done 2026-10-26: the entity click and the points handles by the handles agent (ED-27);
+    the pickers by the panels agent (c615371b, `editor/assetPicker.js`): sprite and animation
+    fields suggest what the scene loaded (atlas entries, the engine's own last; spritesheet
+    animations with their sheets), typed names still allowed, unknown names marked red, a
+    28 px first-frame thumbnail drawn from the atlas on change. A pick from the list commits
+    at once, typing when the field is left. Tests: `editorAssetPicker.test.js`;
+    `editorPanelsSmoke.mjs` 'picker'. Not confirmable by automation: that Chrome reports a pick
+    from its native list as an `insertReplacementText` input event (a plain one is accepted
+    too).
 - [-] **Deferred 2026-10-26** (time box; the same-class swap covers a game's levels).
   **ED-35b Fast swap to another scene class with the same setup** (a `BossLevel`
   subclass). Needs the setup fingerprint (D3, a `WeakMap` per class), the new module
