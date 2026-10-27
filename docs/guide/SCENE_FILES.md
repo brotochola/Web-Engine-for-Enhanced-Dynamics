@@ -72,6 +72,18 @@ A scene class can name its first level, relative to its module, so that loading 
 
 Pools are the class's, so size them for its biggest level. A file that places more entities of a class than its pool holds warns, naming the count to raise.
 
+### A level built in code
+
+`loadScene` also takes a level's content in place of a file: a generated cave, a level a server sent.
+
+```js
+const rocks = [];
+for (let i = 0; i < 20; i++) rocks.push({ class: 'Rock', x: 100 + i * 64, y: 900 });
+await game.loadScene(CaveScene, { sceneFile: { entities: rocks } });
+```
+
+It is checked as a file is, and copied. `format` may be left out, `script` too when the scene class is given, and an entity without a `name` gets its class and a free number (`Rock1`, `Rock2`, …), so `getByName` finds it. Such a level has no file: nothing saves it, and hot reload does not reload it. When the class names a `defaultSceneFile`, the content loads in that file's place, and the editor saves to that file.
+
 ## Spawn params: what a level sets per entity
 
 A class declares, once, the config its `onSpawned` reads: a default for each key, and a range for numbers. The engine fills in what a file or a `spawn()` call leaves out, and an editor can build its fields from the same declaration. Unity's `[SerializeField, Range]` and Godot's `@export_range` do the same.

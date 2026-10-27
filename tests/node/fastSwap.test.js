@@ -224,11 +224,26 @@ test('loadScene with a sceneFile: that content in place of the file, checked and
       engine.loadScene(FileLevel, { scriptUrl: '/x/level.js', sceneFile: { format: 2, script: 'x.js' } }),
       /format 2 is not supported/,
     );
-    await assert.rejects(
-      engine.loadScene(Level, { scriptUrl: '/x/level.js', sceneFile: doc }),
-      /a sceneFile needs a scene file URL, or a scene class with defaultSceneFile \(Level has none\)/,
-    );
     assert.equal(engine.state, GameEngine.states.READY, 'a refused load leaves the engine ready');
+
+    // A level built in code, for a class that names no file: no format, no script, no names; nothing to save to.
+    Object.setPrototypeOf(scene, Level.prototype);
+    loads.length = 0;
+    const built = { entities: [{ class: 'Rock', x: 0, y: 0 }, { name: 'Rock1', class: 'Rock', x: 64, y: 0 }, { class: 'Rock', x: 128, y: 0 }] };
+    assert.equal(await engine.loadScene(Level, { scriptUrl: '/x/level.js', sceneFile: built }), true);
+    assert.equal(loads[0].sceneFileUrl, null, 'no file');
+    assert.deepEqual(
+      loads[0].sceneFile.entities.map((e) => e.name),
+      ['Rock2', 'Rock1', 'Rock3'],
+      'the names the file has are kept, the others are its class and a free number',
+    );
+    assert.equal(loads[0].sceneFile.format, 1);
+    assert.equal(built.entities[0].name, undefined, 'the caller’s object is not touched');
+    await assert.rejects(
+      engine.loadScene('/x/levels/b.scene.json', { sceneFile: { entities: [] } }),
+      /"script" must name the scene's module/,
+      'a scene file URL names its class through the file: its script is needed',
+    );
   } finally {
     console.error = quiet.error;
     globalThis.fetch = quiet.fetch;

@@ -52,15 +52,17 @@ export function parseSceneFile(text, where = 'scene file') {
  * Check a parsed scene file (format 1) and return it. Throws an Error naming the file and the entity.
  * @param {object} doc
  * @param {string} [where]
+ * @param {{ scriptRequired?: boolean }} [options] - scriptRequired false: the scene class is known already (a level
+ *   built in code for a class), so `script` may be left out
  */
-export function checkSceneFile(doc, where = 'scene file') {
+export function checkSceneFile(doc, where = 'scene file', { scriptRequired = true } = {}) {
   if (!isPlainObject(doc)) throw new Error(`WeedJS: ${where} must hold a JSON object`);
   if (doc.format !== SCENE_FILE_FORMAT) {
     throw new Error(
       `WeedJS: ${where}: scene file format ${JSON.stringify(doc.format)} is not supported (this engine reads format ${SCENE_FILE_FORMAT})`,
     );
   }
-  if (typeof doc.script !== 'string' || doc.script === '') {
+  if (doc.script === undefined ? scriptRequired : typeof doc.script !== 'string' || doc.script === '') {
     throw new Error(`WeedJS: ${where}: "script" must name the scene's module, relative to the file`);
   }
   if (doc.export !== undefined && (typeof doc.export !== 'string' || doc.export === '')) {
@@ -86,6 +88,34 @@ export function checkSceneFile(doc, where = 'scene file') {
 }
 
 const prefix = (at) => `WeedJS: ${at}`;
+
+/**
+ * A scene file's content given to loadScene in code (a level the game builds, the editor's document): copied (the
+ * scene edits its own) and checked as a file is, with what a level written in code may leave out filled in: `format`
+ * (this one), `script` when the scene class is given, and the name of an entity that has none (its class and the
+ * smallest free number: Rock1, Rock2, as the editor names what it places).
+ * @param {object} doc
+ * @param {string} where - for the messages
+ * @param {boolean} classKnown - the scene class is given (a class or module source), so `script` is not needed
+ * @returns {object} the document the scene runs
+ */
+export function prepareSceneFile(doc, where, classKnown) {
+  if (!isPlainObject(doc)) throw new Error(`WeedJS: ${where} must be an object`);
+  const copy = structuredClone(doc);
+  if (copy.format === undefined) copy.format = SCENE_FILE_FORMAT;
+  if (Array.isArray(copy.entities)) {
+    const used = new Set();
+    for (const e of copy.entities) if (isPlainObject(e) && typeof e.name === 'string' && e.name !== '') used.add(e.name);
+    for (const e of copy.entities) {
+      if (!isPlainObject(e) || (typeof e.name === 'string' && e.name !== '') || typeof e.class !== 'string') continue;
+      let n = 1;
+      while (used.has(`${e.class}${n}`)) n++;
+      e.name = `${e.class}${n}`;
+      used.add(e.name);
+    }
+  }
+  return checkSceneFile(copy, where, { scriptRequired: !classKnown });
+}
 
 /**
  * A scene file's text: two-space JSON, one entity per line, keys in a fixed order (format, script, export,

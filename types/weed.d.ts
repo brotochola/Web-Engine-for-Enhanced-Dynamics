@@ -185,6 +185,18 @@ export interface SceneFile {
   [key: string]: unknown;
 }
 
+/**
+ * What `game.loadScene(source, { sceneFile })` takes: a scene file's content. A level built in code may leave out
+ * `format`, `script` when the scene class is given, and an entity's `name` (it gets its class and a free number).
+ */
+export interface SceneFileInput {
+  format?: 1;
+  script?: string;
+  export?: string;
+  entities?: Array<Omit<SceneFileEntity, 'name'> & { name?: string }>;
+  [key: string]: unknown;
+}
+
 /** Do not force this entity onto one worker: use stride `activeListSlot % logicWorkerCount`. */
 export const FORCE_PROCESS_ON_LOGIC_WORKER_NONE: -1;
 export function resolveForceProcessOnLogicWorker(
@@ -1440,9 +1452,9 @@ export declare class GameEngine {
    * A load of the running scene class (another level of it) is a fast swap: workers, memories, atlas and
    * WASM are kept and only the content changes. fullLoad: true asks for a full load anyway.
    * sceneFile: a scene file's content to load in place of what its file holds (checked, and copied); the URL,
-   * or the class's defaultSceneFile, still names the file.
+   * or the class's defaultSceneFile, still names the file. For a class that names none, a level built in code.
    */
-  loadScene(source: string | typeof Scene, options?: { data?: unknown; onProgress?: (done: number, total: number, stage: string) => void; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string; fullLoad?: boolean; sceneFile?: SceneFile }): Promise<boolean>;
+  loadScene(source: string | typeof Scene, options?: { data?: unknown; onProgress?: (done: number, total: number, stage: string) => void; restorePayload?: object; restoreSlot?: string; export?: string; scriptUrl?: string; fullLoad?: boolean; sceneFile?: SceneFileInput }): Promise<boolean>;
   readonly presenting: boolean;
   setPresenting(on: boolean): void;
   rebindSurface(): void;

@@ -22,16 +22,19 @@ import {
   nativeImport,
   toAbsoluteScriptUrl,
 } from '../util/sceneScript.js';
-import { checkSceneFile, defaultSceneFileUrl, fetchSceneFile, isSceneFileUrl, sceneFileScriptUrl } from './sceneFile.js';
+import { defaultSceneFileUrl, fetchSceneFile, isSceneFileUrl, prepareSceneFile, sceneFileScriptUrl } from './sceneFile.js';
 import { isTypingTarget } from '../util/typingTarget.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
 ]);
 
-/** A scene file's content: the caller's document (checked, and copied: the scene edits its own), or the file's. */
-function sceneFileFor(url, doc) {
-  return doc === undefined ? fetchSceneFile(url) : checkSceneFile(structuredClone(doc), url);
+/**
+ * A scene file's content: the caller's document (prepareSceneFile: copied, checked, `format`, `script` when the class
+ * is known and missing names filled in), or the file's.
+ */
+function sceneFileFor(url, doc, classKnown = false) {
+  return doc === undefined ? fetchSceneFile(url) : prepareSceneFile(doc, url ?? 'loadScene sceneFile', classKnown);
 }
 
 class GameEngine {
@@ -336,9 +339,11 @@ class GameEngine {
    * @param {{ data?: unknown, onProgress?: (done: number, total: number, stage: string) => void, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string, fullLoad?: boolean, sceneFile?: object }} [options]
    *   data: handed to the scene as scene.data and as the argument of preload / create /
    *   createNewGame (level number, a menu choice, …).
-   *   sceneFile: a scene file's content (format 1) to load in place of what its file holds:
-   *   checked, and copied. The URL (or the class's defaultSceneFile) still names the file,
-   *   which saves and hot reload go to. The editor's Stop and its resume after a reload.
+   *   sceneFile: a scene file's content to load in place of what its file holds: checked,
+   *   and copied. The URL (or the class's defaultSceneFile) still names the file, which saves
+   *   and hot reload go to; with a class that names none, it is a level built in code, with no
+   *   file. `format` may be left out, `script` too when the class is given, and an entity
+   *   without a name gets one (Rock1, Rock2). The editor's Stop and its resume after a reload.
    *   onProgress(done, total, stage): the same calls as Scene.onLoadProgress, for a
    *   loading screen the caller owns.
    *   A load of the running scene class (another level of it) is a fast swap: the workers,
@@ -371,7 +376,7 @@ class GameEngine {
         // A scene file: its "script" (relative to the file) and "export" name the class;
         // its entities spawn between preload and create (Scene._spawnSceneFileEntities).
         sceneFileUrl = toAbsoluteScriptUrl(source, origin);
-        sceneFile = await sceneFileFor(sceneFileUrl, options.sceneFile);
+        sceneFile = await sceneFileFor(sceneFileUrl, options.sceneFile, false);
         sceneScriptUrl = sceneFileScriptUrl(sceneFile, sceneFileUrl, origin);
         const ns = await nativeImport(sceneScriptUrl);
         SceneClass = pickSceneClass(ns, options.export || sceneFile.export, Scene);
@@ -403,9 +408,9 @@ class GameEngine {
       // Loaded by its module or class: the scene's own first level, if it names one.
       if (sceneFile === null) {
         sceneFileUrl = defaultSceneFileUrl(SceneClass, sceneScriptUrl, origin);
-        if (sceneFileUrl !== null) sceneFile = await sceneFileFor(sceneFileUrl, options.sceneFile);
-        else if (options.sceneFile !== undefined) {
-          throw new TypeError(`loadScene: a sceneFile needs a scene file URL, or a scene class with defaultSceneFile (${SceneClass.name} has none)`);
+        // A level built in code, for a class that names no file: it runs with no file to save to.
+        if (sceneFileUrl !== null || options.sceneFile !== undefined) {
+          sceneFile = await sceneFileFor(sceneFileUrl, options.sceneFile, true);
         }
       }
 
