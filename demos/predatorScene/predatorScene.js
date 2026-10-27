@@ -416,6 +416,10 @@ export class PredatorScene extends WEED.Scene {
     // Grass now uses Decoration instead of GameObject
   ];
 
+  // The map's rocks, trees and houses (from demos/trees_and_rocks.json, VISUAL_EDITOR_PLAN.md ED-5): they spawn
+  // before create(), and the editor can move them.
+  static defaultSceneFile = './levels/map.scene.json';
+
   // ========================================
   // INSTANCE LIFECYCLE HOOKS
   // ========================================
@@ -456,18 +460,16 @@ export class PredatorScene extends WEED.Scene {
     console.log('onLoadGame', payload);
   }
 
-  async createNewGame() {
+  createNewGame() {
     this.spawnBarrels(this.numberOfBarrels);
-    // The map's rocks, trees and houses come from a JSON file. Fetched here, they spawn after the rest as before,
-    // and createNewGame waits for them: the scene flushes its spawns and starts the first frame after it, so they do
-    // not pop in a moment later.
-    const map = this.spawnRocksTreesAndHouses();
     this.spawnLights(100);
     this.spawnTrash(100);
     this.spawnCivilians(10000);
     this.spawnMySoldiers(6000);
     this.spawnDestination();
-    await map;
+    // The map came from the scene file before create(); update() builds the flowfield's grid again on its first
+    // frame, once every spawn is live.
+    this.createNavGridForTheFlowField();
   }
 
   spawnTrash(count) {
@@ -478,38 +480,6 @@ export class PredatorScene extends WEED.Scene {
       });
     }
   }
-  spawnRocksTreesAndHouses() {
-    return fetch('/demos/trees_and_rocks.json')
-      .then((response) => response.json())
-      .then((data) => {
-        data.rocks.forEach((rock) => {
-          Rock.spawn({
-            x: rock.x,
-            y: rock.y,
-            radius: rock.radius,
-          });
-        });
-        data.trees.forEach((tree) => {
-          Tree.spawn({
-            x: tree.x,
-            y: tree.y,
-            radius: tree.radius,
-          });
-        });
-        data.houses.forEach((house, i) => {
-          if (i % 2 == 0) return;
-          House.spawn({
-            x: house.x,
-            y: house.y,
-          });
-        });
-        this.createNavGridForTheFlowField();
-      });
-    // this.spawnRocks(this.numberOfRocks);
-    // this.spawnTrees(this.numberOfTrees);
-    // this.spawnHouses(this.numberOfHouses);
-  }
-
   createNavGridForTheFlowField() {
     NavGrid.updateNavGrid([
       ...Tree.getAllActive(),

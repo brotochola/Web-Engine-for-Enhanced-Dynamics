@@ -267,6 +267,10 @@ export class LittleCityScene extends WEED.Scene {
     [CityTree, 1300],
   ];
 
+  // The houses and trees (from the objects JSON, VISUAL_EDITOR_PLAN.md ED-5): they spawn after preload(), and the
+  // editor can move them. People and cars stay random, from the same JSON's sidewalks and roads.
+  static defaultSceneFile = './levels/city.scene.json';
+
   createNavGridForTheFlowField() {
     NavGrid.updateNavGrid([
       ...CityTree.getAllActive(),
@@ -277,20 +281,9 @@ export class LittleCityScene extends WEED.Scene {
   async preload() {
     console.log('🏙️ LittleCityScene: Preloading...');
 
+    // The sidewalks and roads the people and cars spawn on; the houses and trees are in the scene file.
     const res = await fetch('/demos/littleCity/objects_208x104_1790114635638.json');
     const data = await res.json();
-
-    const houses = data.houses || [];
-    for (let i = 0; i < houses.length; i++) {
-      const h = houses[i];
-      CityHouse.spawn({ x: h.x, y: h.y });
-    }
-
-    const trees = data.trees || [];
-    for (let i = 0; i < trees.length; i++) {
-      const t = trees[i];
-      CityTree.spawn({ x: t.x, y: t.y, radius: t.radius });
-    }
 
     const sidewalks = data.sidewalks || [];
     const personCount = Math.min(PERSON_SPAWN_COUNT, sidewalks.length);
@@ -314,8 +307,6 @@ export class LittleCityScene extends WEED.Scene {
       });
     }
 
-    this.createNavGridForTheFlowField();
-
     const cx = this.config.worldWidth / 2;
     const cy = this.config.worldHeight / 2;
     Camera.setFree(true, { panSpeed: 14, zoomSensitivity: 0.001 });
@@ -324,12 +315,12 @@ export class LittleCityScene extends WEED.Scene {
     this._pinZoom = littleCityNumberParam('zoom', 0);
     if (this._pinZoom > 0) Camera.setZoom(this._pinZoom);
 
-    console.log(
-      `🏙️ LittleCityScene: Preloaded — houses=${houses.length} trees=${trees.length} people=${personCount} cars=${carCount}`,
-    );
+    console.log(`🏙️ LittleCityScene: Preloaded — people=${personCount} cars=${carCount}`);
   }
 
   create() {
+    // After the scene file's houses and trees, as preload() did after spawning them.
+    this.createNavGridForTheFlowField();
     console.log('🏙️ LittleCityScene: WASD/Arrows pan, wheel zoom. People follow sidewalks; cars follow roads.');
   }
 
