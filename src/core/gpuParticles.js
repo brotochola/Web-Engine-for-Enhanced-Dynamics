@@ -300,7 +300,6 @@ export class GpuParticles {
       proxySab: this.proxySab,
       layers: this._layers
         .filter(Boolean)
-        // eslint-disable-next-line no-unused-vars
         .map(({ rings, warnedClamp, warnedOverflow, ...rest }) => rest),
     };
   }
