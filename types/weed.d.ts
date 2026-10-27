@@ -174,6 +174,65 @@ export interface SceneFileEntity {
   [key: string]: unknown;
 }
 
+/**
+ * One joint a scene file places between two of its entities (by name). Anchors are relative to each entity's
+ * position, in its own frame, in pixels ([0, 0] when left out). The type's settings use Joint's names; a distance
+ * joint without `length` holds its anchors at the distance the file places them. Angles are radians.
+ */
+export interface SceneFileJoint {
+  /** Optional, unique among the file's joints. */
+  name?: string;
+  type: 'distance' | 'revolute' | 'prismatic' | 'weld';
+  /** The names of the two entities it holds. */
+  a: string;
+  b: string;
+  anchorA?: [number, number];
+  anchorB?: [number, number];
+  // distance
+  length?: number;
+  enableSpring?: boolean;
+  hertz?: number;
+  dampingRatio?: number;
+  // revolute and prismatic
+  enableLimit?: boolean;
+  lowerAngle?: number;
+  upperAngle?: number;
+  enableMotor?: boolean;
+  motorSpeed?: number;
+  maxMotorTorque?: number;
+  axisAngle?: number;
+  lowerTranslation?: number;
+  upperTranslation?: number;
+  maxMotorForce?: number;
+  // weld
+  linearHertz?: number;
+  angularHertz?: number;
+  linearDampingRatio?: number;
+  angularDampingRatio?: number;
+  /** The force or torque that breaks it; left out, it never breaks. */
+  forceThreshold?: number;
+  torqueThreshold?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * A scene file's decorations of one class (`Scene.decorations`), as flat arrays with one value per decoration.
+ * x and y are required; the others, when present, have as many values (left out: the class's value).
+ */
+export interface SceneFileDecorations {
+  class: string;
+  x: number[];
+  y: number[];
+  /** Which of the class's textures, from 0. */
+  frame?: number[];
+  scale?: number[];
+  /** Radians. */
+  rotation?: number[];
+  alpha?: number[];
+  tint?: number[];
+  [key: string]: unknown;
+}
+
 /** A `*.scene.json` file (format 1), as `game.loadScene(url)` reads it. */
 export interface SceneFile {
   format: 1;
@@ -182,6 +241,10 @@ export interface SceneFile {
   /** The scene class's export name; optional when the module exports one scene. */
   export?: string;
   entities: SceneFileEntity[];
+  /** Joints between the file's entities, by name (optional). */
+  joints?: SceneFileJoint[];
+  /** Decorations, per class of the scene's `static decorations` (optional). */
+  decorations?: SceneFileDecorations[];
   [key: string]: unknown;
 }
 

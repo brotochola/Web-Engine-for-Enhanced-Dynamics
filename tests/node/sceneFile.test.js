@@ -40,6 +40,110 @@ test('a scene file reads and writes back byte for byte, keys this format does no
   assert.equal(serializeSceneFile(doc), FIXTURE);
 });
 
+// ED-21 and ED-25: the optional joints and decorations sections.
+const WITH_SECTIONS = `{
+  "format": 1,
+  "script": "../scene.js",
+  "entities": [
+    { "name": "Door", "class": "Block", "x": 100, "y": 200 },
+    { "name": "Frame", "class": "Block", "x": 160, "y": 200 }
+  ],
+  "joints": [
+    { "type": "revolute", "a": "Door", "b": "Frame", "anchorA": [30, 0], "anchorB": [-30, 0], "enableLimit": true, "lowerAngle": -0.5, "upperAngle": 0.5, "note": "hinge" },
+    { "name": "Rope", "type": "distance", "a": "Door", "b": "Frame", "length": 80, "forceThreshold": 5000 }
+  ],
+  "decorations": [
+    {
+      "class": "Grass",
+      "x": [10, 20.5, 30],
+      "y": [40, 40, 41],
+      "frame": [0, 2, 1],
+      "scale": [0.25, 0.3, 0.2],
+      "seed": 7
+    },
+    {
+      "class": "Rock",
+      "x": [],
+      "y": []
+    }
+  ],
+  "camera": {
+    "x": 10,
+    "y": 20
+  }
+}
+`;
+
+test('joints and decorations read and write back byte for byte, keys this format does not know included', () => {
+  const doc = parseSceneFile(WITH_SECTIONS, 'sections.scene.json');
+  assert.equal(doc.joints.length, 2);
+  assert.equal(doc.joints[0].note, 'hinge');
+  assert.deepEqual(doc.decorations[0].frame, [0, 2, 1]);
+  assert.equal(serializeSceneFile(doc), WITH_SECTIONS);
+});
+
+test('a joint’s keys are written in its type’s order, a decoration record’s in the file’s; empty sections stay', () => {
+  const text = serializeSceneFile({
+    format: 1,
+    script: 's.js',
+    entities: [],
+    decorations: [{ y: [2], tint: [255], x: [1], class: 'Flower', frame: [0] }],
+    joints: [
+      { maxMotorForce: 9, b: 'B', axisAngle: 1.5, a: 'A', type: 'prismatic', enableLimit: false, extra: 1, anchorB: [0, 1] },
+      { b: 'B', angularHertz: 2, a: 'A', type: 'weld', torqueThreshold: 10 },
+    ],
+  });
+  assert.equal(
+    text,
+    '{\n  "format": 1,\n  "script": "s.js",\n  "entities": [],\n  "joints": [\n' +
+      '    { "type": "prismatic", "a": "A", "b": "B", "anchorB": [0, 1], "axisAngle": 1.5, "enableLimit": false, "maxMotorForce": 9, "extra": 1 },\n' +
+      '    { "type": "weld", "a": "A", "b": "B", "angularHertz": 2, "torqueThreshold": 10 }\n  ],\n' +
+      '  "decorations": [\n    {\n      "class": "Flower",\n      "x": [1],\n      "y": [2],\n      "frame": [0],\n      "tint": [255]\n    }\n  ]\n}\n',
+  );
+  assert.equal(
+    serializeSceneFile({ format: 1, script: 's.js', entities: [], joints: [], decorations: [] }),
+    '{\n  "format": 1,\n  "script": "s.js",\n  "entities": [],\n  "joints": [],\n  "decorations": []\n}\n',
+  );
+});
+
+test('a malformed joint is an error naming the file and the joint', () => {
+  const at = 'levels/j.scene.json';
+  const base = { format: 1, script: 's.js', entities: [] };
+  const joint = (fields) => checkSceneFile({ ...base, joints: [{ type: 'weld', a: 'A', b: 'B', ...fields }] }, at);
+  assert.throws(() => checkSceneFile({ ...base, joints: {} }, at), /levels\/j\.scene\.json: "joints" must be an array/);
+  assert.throws(() => joint({ type: 'rope' }), /joints\[0\]: "type" must be one of distance, revolute, prismatic, weld, not "rope"/);
+  assert.throws(() => joint({ b: undefined }), /joints\[0\]: "a" and "b" must name two entities of the file/);
+  assert.throws(() => joint({ b: 'A' }), /"a" and "b" both name A: a joint holds two entities/);
+  assert.throws(() => joint({ anchorA: [1] }), /"anchorA" must be \[x, y\]/);
+  assert.throws(() => joint({ name: 'W', linearHertz: '4' }), /joints\[0\] \(W\): "linearHertz" must be a number/);
+  assert.throws(
+    () => checkSceneFile({ ...base, joints: [{ type: 'revolute', a: 'A', b: 'B', enableMotor: 1 }] }, at),
+    /"enableMotor" must be true or false/,
+  );
+  assert.throws(
+    () => checkSceneFile({ ...base, joints: [{ name: 'J', type: 'weld', a: 'A', b: 'B' }, { name: 'J', type: 'weld', a: 'A', b: 'C' }] }, at),
+    /joints\[1\]: the joint name "J" is used twice/,
+  );
+  assert.equal(joint({ length: 'not a weld setting' }).joints[0].length, 'not a weld setting', 'another type’s key is kept, unread');
+});
+
+test('a malformed decoration record is an error naming the file, the class and the key', () => {
+  const at = 'levels/d.scene.json';
+  const base = { format: 1, script: 's.js', entities: [] };
+  const record = (fields) => checkSceneFile({ ...base, decorations: [{ class: 'Grass', x: [1, 2], y: [3, 4], ...fields }] }, at);
+  assert.throws(() => checkSceneFile({ ...base, decorations: {} }, at), /"decorations" must be an array/);
+  assert.throws(() => record({ class: '' }), /decorations\[0\] needs a "class"/);
+  assert.throws(() => record({ y: [3] }), /\(Grass\): "x" has 2 values and "y" 1/);
+  assert.throws(() => record({ scale: [1] }), /\(Grass\): "scale" has 1 values, and the class 2 decorations/);
+  assert.throws(() => record({ alpha: [1, '0.5'] }), /alpha\[1\] is "0\.5", not a number/);
+  assert.throws(() => record({ frame: [0, 1.5] }), /frame\[1\] is 1\.5, not a texture index/);
+  assert.throws(() => record({ x: 'many' }), /"x" and "y" must be arrays of numbers/);
+  assert.throws(
+    () => checkSceneFile({ ...base, decorations: [{ class: 'Grass', x: [], y: [] }, { class: 'Grass', x: [], y: [] }] }, at),
+    /decorations\[1\] \(Grass\): the class has a record already/,
+  );
+});
+
 test('serializeSceneFile writes keys in the file order, one entity per line, no empty config', () => {
   const text = serializeSceneFile({
     entities: [{ config: {}, y: 2, x: 1, class: 'Rock', name: 'Rock1' }],
