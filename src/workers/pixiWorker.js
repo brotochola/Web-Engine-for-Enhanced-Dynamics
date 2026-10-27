@@ -2137,7 +2137,7 @@ class PixiRenderer extends AbstractWorker {
     }
     const list = this._proxyLayerList;
     const alphas = Layer._alpha;
-    let regions = false;
+    let view = false;
     for (let i = 0; i < list.length; i++) {
       const pl = list[i];
       // The layer's alpha for this frame's group meshes and regions, set once here rather than passed per entry.
@@ -2151,17 +2151,20 @@ class PixiRenderer extends AbstractWorker {
         // The composite's blend follows Layer blend changes (handleSetLayerProps); the regions follow it.
         const blend = pl.cl.displaySprite ? pl.cl.displaySprite.blendMode : 'normal';
         if (blend !== pl.regions.blendMode) pl.regions.setBlendMode(blend);
+        if (!view) {
+          // World to screen px this frame, once for every look layer's regions.
+          this._writeCameraRtTransform(this._proxyMatrix, null);
+          view = true;
+        }
+        pl.regions.setView(this._proxyMatrix, this.canvasWidth || 1, this.canvasHeight || 1);
         pl.regions.beginFrame();
-        regions = true;
       }
     }
-    if (regions) this._writeCameraRtTransform(this._proxyMatrix, null);
     this._proxyApplyHalf = half;
     const mesh = this.entitiesBatch.mesh;
     chunks.apply(half, count, mesh.visible ? mesh.geometry.instanceCount | 0 : 0, this._proxyDrawEntry);
   }
 
-  /** One entry's meshes: a group's ring slices, or a look layer's region. */
   /** One entry's meshes at out[n…] (a group's ring slices, or a look layer's region); returns the next index. */
   _drawProxyEntry(w, out, n) {
     const half = this._proxyApplyHalf;
@@ -2173,7 +2176,7 @@ class PixiRenderer extends AbstractWorker {
       return pl.batch.groupMeshes(ints[w + PROXY.RING], ints[w + PROXY.GROUP], out, n);
     }
     if (pl.regions === null) return n;
-    out[n] = pl.regions.quad(half.floats, w, this._proxyMatrix, this.canvasWidth || 1, this.canvasHeight || 1);
+    out[n] = pl.regions.quad(half.floats, w);
     return n + 1;
   }
 

@@ -222,8 +222,28 @@ test('a look layer\'s region blends as its full-screen composite, and samples wh
     const quad = kids[1];
     assert.equal(regions.blendMode, 'screen');
     assert.equal(quad.blendMode, 'screen', 'not the containerBlend its particles were summed with');
-    const uv = Array.from(regions.pool[0].uvs.data);
-    assert.deepEqual(uv, [0, 0, 1, 0, 1, 1, 0, 1], 'world (100, 50)-(740, 410) at zoom 2 fills the 1280x720 canvas');
+    // The vertex shader's UV: dot(uUvX.xyz, (x, y, 1)), dot(uUvY.xyz, (x, y, 1)), at the quad's corners.
+    const p = regions.pool[0].positions.data;
+    const uv = [];
+    for (let v = 0; v < 4; v++) {
+      const x = p[v * 2];
+      const y = p[v * 2 + 1];
+      uv.push(regions.uvX[0] * x + regions.uvX[1] * y + regions.uvX[2], regions.uvY[0] * x + regions.uvY[1] * y + regions.uvY[2]);
+    }
+    [0, 0, 1, 0, 1, 1, 0, 1].forEach((want, k) => {
+      assert.ok(Math.abs(uv[k] - want) < 1e-6, `world (100, 50)-(740, 410) at zoom 2 fills the 1280x720 canvas: ${uv}`);
+    });
+    // The same frame again uploads nothing; a camera move updates the uniforms, not the quad.
+    let uploads = 0;
+    regions.pool[0].positions.on('update', () => uploads++);
+    const view = regions.view._dirtyId;
+    Pixi._applyProxies.call(ctx, half);
+    assert.equal(uploads, 0, 'the rect did not change');
+    assert.equal(regions.view._dirtyId, view, 'nor did the camera');
+    ctx._renderCameraX = 140;
+    Pixi._applyProxies.call(ctx, half);
+    assert.equal(uploads, 0, 'the quad stays where it was in the world');
+    assert.equal(regions.view._dirtyId, view + 1, 'the camera moved its UVs');
   } finally {
     regions.destroy();
     restore();

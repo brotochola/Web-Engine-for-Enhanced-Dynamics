@@ -6,7 +6,7 @@
 // uploaded again. Proxies with no sprite between them share one gap; past `maxSplits` gaps, the closest gaps merge
 // (a group then draws a few sprites early or late). Without proxies the root holds the batch's mesh, as before.
 
-import { Buffer, BufferUsage, Geometry, GlProgram, GpuProgram, Mesh, Shader, State } from '../vendor/pixi.min.js';
+import { Buffer, BufferUsage, Geometry, GlProgram, GpuProgram, Mesh, Shader, State, UniformGroup } from '../vendor/pixi.min.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 import { RENDERER_DEFAULTS } from '../util/configDefaults.js';
 import { PROXY, PROXY_ENTRY_WORDS } from './gpuParticleProxies.js';
@@ -85,21 +85,23 @@ function regionGpuProgram(source, name) {
     name,
     vertex: { source, entryPoint: 'mainVert' },
     fragment: { source, entryPoint: 'mainFrag' },
-    layout: { 0: { globalUniforms: 0 }, 1: { localUniforms: 0 }, 2: { uTexture: 0, uSampler: 1 } },
+    layout: { 0: { globalUniforms: 0 }, 1: { localUniforms: 0 }, 2: { uTexture: 0, uSampler: 1, uniforms: 2 } },
     gpuLayout: [
       [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
       [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
       [
         { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 1, visibility: f, sampler: { type: 'filtering' } },
+        { binding: 2, visibility: vf, buffer: { type: 'uniform' } },
       ],
     ],
   });
 }
 
 /**
- * Quads for one look layer's regions: world-space rectangles sampling the layer's finished look target at the
- * UVs where the camera puts them on screen.
+ * Quads for one look layer's regions: world-space rectangles sampling the layer's finished look target where the
+ * camera puts them on screen. The camera's world-to-UV map is a uniform of the layer (setView), so a quad's vertices
+ * go up only when its rectangle changes.
  */
 export class RegionQuads {
   /**
@@ -115,7 +117,16 @@ export class RegionQuads {
     const source = opts.texture.source;
     /** The texture source the quads sample (the layer's look output). */
     this.source = source;
-    const resources = { uTexture: source, uSampler: source.style };
+    // u = dot(uvX.xyz, (x, y, 1)), v = dot(uvY.xyz, (x, y, 1)). Static: it syncs once after an update, not at every
+    // quad's draw, and the first update makes its buffer before the first draw binds it.
+    this.uvX = new Float32Array(4);
+    this.uvY = new Float32Array(4);
+    this.view = new UniformGroup(
+      { uUvX: { value: this.uvX, type: 'vec4<f32>' }, uUvY: { value: this.uvY, type: 'vec4<f32>' } },
+      { isStatic: true }
+    );
+    this.view.update();
+    const resources = { uTexture: source, uSampler: source.style, uniforms: this.view };
     if (opts.useWebGpu) {
       this.shader = new Shader({ gpuProgram: regionGpuProgram(opts.shaders.gpuRegion, this.label), resources });
     } else {
@@ -155,46 +166,57 @@ export class RegionQuads {
   }
 
   /**
+   * The camera this frame, for every quad of the layer: `m` maps world to screen px (a, b, c, d, tx, ty), and the
+   * UV is screen px / canvas. The uniforms go up when they changed.
+   */
+  setView(m, canvasW, canvasH) {
+    const x = this.uvX;
+    const y = this.uvY;
+    const x0 = x[0];
+    const x1 = x[1];
+    const x2 = x[2];
+    const y0 = y[0];
+    const y1 = y[1];
+    const y2 = y[2];
+    x[0] = m.a / canvasW;
+    x[1] = m.c / canvasW;
+    x[2] = m.tx / canvasW;
+    y[0] = m.b / canvasH;
+    y[1] = m.d / canvasH;
+    y[2] = m.ty / canvasH;
+    if (x[0] !== x0 || x[1] !== x1 || x[2] !== x2 || y[0] !== y0 || y[1] !== y1 || y[2] !== y2) this.view.update();
+  }
+
+  /**
    * A quad over the world rect of the entry at `floats[at…]` (PROXY.MIN_X_F … MAX_Y_F), with the layer's `alpha`.
-   * `m` maps world to screen px (a, b, c, d, tx, ty); the UVs are screen / canvas. The rect is read here, not
-   * passed: a double argument to a call TurboFan does not inline is boxed.
+   * The rect is read here, not passed: a double argument to a call TurboFan does not inline is boxed.
    * @param {Float32Array} floats a proxy half's floats
    * @param {number} at the entry's first word
    */
-  quad(floats, at, m, canvasW, canvasH) {
+  quad(floats, at) {
     const minX = floats[at + PROXY.MIN_X_F];
     const minY = floats[at + PROXY.MIN_Y_F];
     const maxX = floats[at + PROXY.MAX_X_F];
     const maxY = floats[at + PROXY.MAX_Y_F];
     let q = this.pool[this.used];
-    if (!q) {
+    if (q === undefined) {
       const positions = new Buffer({ data: new Float32Array(8), usage: BufferUsage.VERTEX | BufferUsage.COPY_DST });
-      const uvs = new Buffer({ data: new Float32Array(8), usage: BufferUsage.VERTEX | BufferUsage.COPY_DST });
       const geometry = new Geometry({
-        attributes: {
-          aPosition: { buffer: positions, format: 'float32x2', stride: 8, offset: 0 },
-          aUV: { buffer: uvs, format: 'float32x2', stride: 8, offset: 0 },
-        },
+        attributes: { aPosition: { buffer: positions, format: 'float32x2', stride: 8, offset: 0 } },
         indexBuffer: this.index,
       });
       const mesh = new Mesh({ geometry, shader: this.shader, state: this.state });
       mesh.cullable = false;
       mesh.blendMode = this.blendMode;
-      q = { mesh, positions, uvs };
+      q = { mesh, positions };
       this.pool.push(q);
     }
     this.used++;
     const p = q.positions.data;
-    p[0] = minX; p[1] = minY; p[2] = maxX; p[3] = minY; p[4] = maxX; p[5] = maxY; p[6] = minX; p[7] = maxY;
-    const u = q.uvs.data;
-    for (let v = 0; v < 4; v++) {
-      const x = p[v * 2];
-      const y = p[v * 2 + 1];
-      u[v * 2] = (m.a * x + m.c * y + m.tx) / canvasW;
-      u[v * 2 + 1] = (m.b * x + m.d * y + m.ty) / canvasH;
+    if (p[0] !== minX || p[1] !== minY || p[2] !== maxX || p[5] !== maxY) {
+      p[0] = minX; p[1] = minY; p[2] = maxX; p[3] = minY; p[4] = maxX; p[5] = maxY; p[6] = minX; p[7] = maxY;
+      q.positions.update();
     }
-    q.positions.update();
-    q.uvs.update();
     q.mesh.alpha = this.alpha;
     return q.mesh;
   }
@@ -204,7 +226,6 @@ export class RegionQuads {
       q.mesh.geometry.destroy();
       q.mesh.destroy();
       q.positions.destroy();
-      q.uvs.destroy();
     }
     this.pool.length = 0;
     this.index.destroy();
