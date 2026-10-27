@@ -8450,6 +8450,25 @@
       "records": [
         "R-0650"
       ]
+    },
+    {
+      "aliases": [
+        "tilemap bake",
+        "bake tilemap layers"
+      ],
+      "refs": [
+        "EXECUTION_PLAN.md#E-148"
+      ],
+      "records": [],
+      "id": "E-148",
+      "title": "Tilemap layers drawn in fewer GPU passes",
+      "status": "open",
+      "statusText": "opened 2026-10-26 (the owner's question, not ranked)",
+      "date": "2026-10-26",
+      "area": "pixi",
+      "kind": "gpu",
+      "result": "Not measured. Each Tiled layer is one GID quad per 2048-tile page, so Pixi's CPU cost is close to zero, and littleCity's 8 layers run the fragment shader 8 times per screen pixel. A bake to pixels is out on memory (littleCity about 200 MB, tilemap2 about 2 GB, against 2.8 and 27 MB of GIDs). Instead: clear at load the cells hidden under opaque tiles, and composite up to 4 layers per draw, from the top down, stopping at the first opaque texel.",
+      "next": "Time the tilemap passes on the GPU (timestamp queries) on littleCity at 1080p and 4K, and on a weak GPU too. If they are a small share of the frame, reject on the premise; if not, hidden cells first, then layers per draw."
     }
   ],
   "records": [
