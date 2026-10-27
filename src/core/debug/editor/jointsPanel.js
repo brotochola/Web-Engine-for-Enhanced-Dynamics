@@ -9,6 +9,7 @@
 //
 // Built when the selection or the document changes (Selection._show), never per frame.
 
+import { Joint } from '../../joint.js';
 import { checkSceneFileJoints, JOINT_TYPES, JOINT_SETTINGS, JOINT_BREAK_KEYS } from '../../sceneFileJoints.js';
 import { recordOf, editorIdOf, nameOfEditorId, indexOfName } from './sceneDocument.js';
 import { jointsOf, replaceJoints } from './sceneJoints.js';
@@ -48,6 +49,10 @@ export function editJoints(editMode, label, write) {
   const editorId = found === null ? 0 : editorIdOf(found.record);
   editMode.history.push({ id: 0, label, kind: 'joints', editorId, before, after: structuredClone(joints) });
   editMode._showRestored(selection.index);
+  // The file has the joint either way; the world only with a pool to make it in.
+  if (!Joint.active && joints.length > 0) {
+    editMode._setStatus(`${scene.constructor.name} has no joint pool: set its config.physics.maxJoints`, true);
+  }
   return true;
 }
 

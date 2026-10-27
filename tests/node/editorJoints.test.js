@@ -308,6 +308,19 @@ test('the overlay: a handle on each anchor of the selected entity’s joints; a 
   Joint.reset();
 });
 
+test('a scene without a joint pool: the file gets the joint, and the status line says what to set', () => {
+  const scene = makeScene();
+  Joint.reset();
+  scene._fileJoints.clear();
+  const editMode = editorFor(scene);
+  editMode.selection.select(1);
+  assert.equal(editJoints(editMode, 'add', (js) => js.push(newJoint(scene, 'Door', 'Lamp', 'weld'))), true);
+  assert.equal(scene.sceneFile.joints.length, 2);
+  assert.equal(editMode.status, 'Level has no joint pool: set its config.physics.maxJoints');
+  assert.equal(editMode.statusIsError, true);
+  clearTimeout(editMode._statusTimer);
+});
+
 test('newJoint: a distance joint holds the centers; the others hold the entities where they are', () => {
   const scene = makeScene();
   assert.deepEqual(newJoint(scene, 'Door', 'Frame', 'distance').anchorA, [0, 0]);
