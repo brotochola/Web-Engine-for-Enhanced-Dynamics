@@ -115,6 +115,21 @@ test('the packer lists live groups in key order, each with the entity it is draw
   }
 });
 
+test('hundreds of groups come out in key order, ties in the order they were collected', { concurrency: false }, () => {
+  const restore = setup({ smoke: { kind: LAYER_KIND.GPU_PARTICLES, maxParticles: 1024 * 3, sortWithEntities: true } });
+  try {
+    const rows = seededRandom(3, 'proxy-sort');
+    const n = 700;
+    for (let g = 0; g < n; g++) emit({ count: 1, sortY: Math.floor(rows() * 40) * 10 }); // 40 rows: many ties
+    const collector = new ProxyCollector();
+    assert.equal(collector.collect(GpuParticles.layers, Time.simNowMs, null, BAND), n);
+    const expected = Array.from({ length: n }, (_, i) => i).sort((a, b) => collector.keys[a] - collector.keys[b] || a - b);
+    assert.deepEqual(Array.from(collector.order.subarray(0, n)), expected);
+  } finally {
+    restore();
+  }
+});
+
 test('ended groups are skipped and the cursor moves past them; unborn ones are listed; the view culls', { concurrency: false }, () => {
   const restore = setup();
   try {

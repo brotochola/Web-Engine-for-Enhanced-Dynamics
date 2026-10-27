@@ -42,6 +42,65 @@ export function upperBoundByKey(keys, order, count, key) {
   return lo;
 }
 
+/** Runs insertion-sorted before sortByKey merges them. */
+const SORT_RUN = 32;
+
+/**
+ * Stable sort of order[0, n) by keys[order[k]], through scratch (length >= n): pre-render's mergeSortPrefix (E-08)
+ * on the keys themselves. Runs of SORT_RUN are insertion-sorted, then merged bottom-up; runs or halves already in
+ * order are not merged. A few dozen groups mostly in order cost about n compares, and the thousands of live groups
+ * the rings can hold cost n log n, where an insertion sort of them cost n² / 4 (1.5 ms a frame at 2 048).
+ * @param {Int32Array} order
+ * @param {Int32Array} scratch
+ * @param {Float64Array} keys
+ * @param {number} n
+ */
+export function sortByKey(order, scratch, keys, n) {
+  for (let lo = 0; lo < n; lo += SORT_RUN) {
+    const hi = lo + SORT_RUN < n ? lo + SORT_RUN : n;
+    for (let i = lo + 1; i < hi; i++) {
+      const v = order[i];
+      const kv = keys[v];
+      let j = i - 1;
+      while (j >= lo && keys[order[j]] > kv) {
+        order[j + 1] = order[j];
+        j--;
+      }
+      order[j + 1] = v;
+    }
+  }
+  let ordered = true;
+  for (let r = SORT_RUN; r < n; r += SORT_RUN) {
+    if (keys[order[r - 1]] > keys[order[r]]) {
+      ordered = false;
+      break;
+    }
+  }
+  if (ordered) return;
+  let src = order;
+  let dst = scratch;
+  for (let width = SORT_RUN; width < n; width *= 2) {
+    for (let lo = 0; lo < n; lo += 2 * width) {
+      const mid = lo + width < n ? lo + width : n;
+      const hi = lo + 2 * width < n ? lo + 2 * width : n;
+      let i = lo;
+      let j = mid;
+      let k = lo;
+      if (j >= hi || keys[src[j - 1]] <= keys[src[j]]) {
+        while (k < hi) dst[k] = src[k++];
+        continue;
+      }
+      while (i < mid && j < hi) dst[k++] = keys[src[i]] <= keys[src[j]] ? src[i++] : src[j++];
+      while (i < mid) dst[k++] = src[i++];
+      while (j < hi) dst[k++] = src[j++];
+    }
+    const t = src;
+    src = dst;
+    dst = t;
+  }
+  if (src !== order) for (let i = 0; i < n; i++) order[i] = src[i];
+}
+
 /**
  * The painter key of a group whose ground y is `sortY` (see the header), as the queue's Float32 column holds
  * keys. `band` is zSortBand(worldHeight).
@@ -94,6 +153,7 @@ export class ProxyCollector {
     this.look = new Uint8Array(0);
     this.order = new Int32Array(0);
     this._merged = new Int32Array(0);
+    this._sortScratch = new Int32Array(0);
     /** Entries the last write could not fit (PROXY_MAX_ENTRIES). */
     this.dropped = 0;
   }
@@ -114,6 +174,7 @@ export class ProxyCollector {
     this.look = grow(Uint8Array, this.look);
     this.order = new Int32Array(cap);
     this._merged = new Int32Array(cap);
+    this._sortScratch = new Int32Array(cap);
     this.cap = cap;
   }
 
@@ -175,19 +236,10 @@ export class ProxyCollector {
       }
     }
     this.n = n;
-    // Key order (insertion sort: a few dozen groups, mostly in order already).
+    // Key order, stable.
     const order = this.order;
     for (let i = 0; i < n; i++) order[i] = i;
-    for (let i = 1; i < n; i++) {
-      const v = order[i];
-      const kv = this.keys[v];
-      let j = i - 1;
-      while (j >= 0 && this.keys[order[j]] > kv) {
-        order[j + 1] = order[j];
-        j--;
-      }
-      order[j + 1] = v;
-    }
+    sortByKey(order, this._sortScratch, this.keys, n);
     return n;
   }
 
