@@ -26,6 +26,7 @@ import { pickEntityAt } from './pick.js';
 import { buildParamFields } from './paramWidgets.js';
 import { LiveInspector } from './liveInspector.js';
 import { recordOf, paramsOf, writeParam, writeConfig } from './sceneDocument.js';
+import { AssetCatalog } from './assetPicker.js';
 
 export class Selection {
   constructor(debugUI) {
@@ -51,12 +52,17 @@ export class Selection {
     /** The live values (liveInspector.js), made with the panel. */
     this.live = null;
     this._classNameOf = (entityType) => debugUI.tools._classNameForType(entityType);
+    /** A click in the view leaves out what a locked or hidden layer holds (editorLayers.js, ED-24). */
+    this._unpickable = (index) => this.editor?.layers?.unpickable(index) === true;
     this._hooks = {
       onChange: (key, value) =>
         this.editor.editSelected(`${this.name}.${key}`, (record, description) => writeParam(record, description, key, value)),
       onConfig: (config) => this.editor.editSelected(`${this.name} config`, (record) => writeConfig(record, config)),
       entityNames: (className) => namesOf(debugUI.scene, className, this.name),
     };
+
+    // What the scene loaded, for the sprite and animation params' pickers (assetPicker.js, ED-45).
+    this._hooks.assets = new AssetCatalog(() => debugUI.scene);
   }
 
   /** Placed by the running scene file (it has a name there). */
@@ -66,7 +72,7 @@ export class Selection {
 
   /** A left click at a world point: what is there (the next one on a click at the same spot), or nothing. */
   pickAt(x, y) {
-    const index = pickEntityAt(x, y, this.index, this._classNameOf);
+    const index = pickEntityAt(x, y, this.index, this._classNameOf, this._unpickable);
     if (index < 0) this.clear();
     else this.select(index);
   }

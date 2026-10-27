@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Editor panels fixture</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
+  </style>
+</head>
+<body>
+  <script type="module">
+    // The game page of tests/bench/editorPanelsSmoke.mjs, run in the editor page: a page of its own, so a reload of
+    // it (hot reload, Reload game) loads the level again.
+    import WEED from '/src/index.js';
+
+    const game = new WEED.GameEngine({ autoResize: true, debug: true, hotReload: true });
+    window.game = game;
+    game.loadScene('/tests/fixtures/editorPanels/level.scene.json');
+  </script>
+</body>
+</html>

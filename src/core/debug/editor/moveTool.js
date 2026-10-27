@@ -4,7 +4,8 @@
 // moves it, and a click there without a drag takes the next entity under it. While dragging, nothing is spawned or
 // written: the overlay draws a ghost of the entity's box where it would land, snapped to the grid. Letting go
 // writes x and y into its record and respawns it, once (sceneDocument.js). The arrow keys nudge the selection by the
-// grid step (Shift: ten steps), one respawn per press. Runtime entities are not in the file and do not move.
+// grid step (Shift: ten steps), one respawn per press. Runtime entities are not in the file and do not move, nor do
+// entities of a locked layer (editorLayers.js, ED-24).
 //
 // The ghost's corners live in a buffer made once: drawing it allocates nothing per frame.
 
@@ -49,7 +50,9 @@ export class MoveTool {
   /** A primary press on the game canvas, at a world point and a screen point. */
   press(x, y, screenX, screenY) {
     const selection = this.selection;
-    this._pressedSelected = selection.index >= 0 && pointOnEntity(selection.index, x, y);
+    // An entity of a locked or hidden layer (selected in the scene list) is not kept by a press in the view (ED-24).
+    this._pressedSelected =
+      selection.index >= 0 && selection.editor?.layers?.unpickable(selection.index) !== true && pointOnEntity(selection.index, x, y);
     if (!this._pressedSelected) selection.pickAt(x, y);
     this._pressed = true;
     this._dragging = false;
@@ -102,6 +105,11 @@ export class MoveTool {
   nudge(stepsX, stepsY) {
     const selection = this.selection;
     if (!selection.authored || this._dragging) return false;
+    const layers = selection.editor?.layers;
+    if (layers && layers.locked(selection.index)) {
+      selection.editor._setStatus(`${selection.name} is on a locked layer (${layers.lockedLayerOf(selection.index)})`, true);
+      return false;
+    }
     const found = recordOf(selection.debugUI.scene, selection.name);
     if (found === null) return false;
     const step = this.snap;
