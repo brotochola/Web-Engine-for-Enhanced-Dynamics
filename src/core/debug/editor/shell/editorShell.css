@@ -188,6 +188,11 @@ body.weed-fold-right {
   text-align: center;
 }
 
+/* A glyph shown only in a label's place, while the labels are hidden (under 1100 px). */
+.weed-editor-glyph.weed-editor-narrow {
+  display: none;
+}
+
 /* The bar's dock buttons: a window with its dock drawn in, filled while the dock shows. */
 .weed-editor-button.weed-editor-icon {
   display: inline-flex;
@@ -809,6 +814,10 @@ body.weed-console-open .weed-editor-bottom > [data-handle='bottom'],
   /* The bar: labels shorten to their marks. */
   .weed-editor-wide {
     display: none;
+  }
+
+  .weed-editor-glyph.weed-editor-narrow {
+    display: inline-block;
   }
 
   .weed-editor-bar {

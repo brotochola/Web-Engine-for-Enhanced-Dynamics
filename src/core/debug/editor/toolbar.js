@@ -2,7 +2,8 @@
 // editor page's bar: Play or Edit, Stop (D8, ED-16), Save, Undo, Redo, the running scene file with its unsaved
 // marker (the editor's messages are the status bar's, statusBar.js, ED-52); the snap step and the grid's lines (ED-60); while not editing, ⏸ and ⏭
 // (pause, one frame); the shortcuts sheet (?), and Undo and Redo naming the change they would make (ED-69). refresh() writes only what changed; EditMode asks for it on each change of
-// its own, never per frame. Export (ED-32) builds the game into a static site (shipRow.js).
+// its own, never per frame. Export (ED-32) builds the game into a static site (shipRow.js). A button is a glyph and a
+// label, as the editor page's own: under 1100 px its CSS hides the labels (ED-51), so the bar does not wrap.
 
 import { exportFromEditor } from './shipRow.js';
 import { SNAP_STEPS } from './moveTool.js';
@@ -15,14 +16,15 @@ export class EditorToolbar {
     this.editMode = editMode;
     this.el = document.createElement('div');
     this.el.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0';
-    this._mode = this._button('', () => editMode.toggle());
-    this._stop = this._button('■ Stop', () => editMode.stop());
+    this._mode = this._button('Edit', () => editMode.toggle(), '', '❚❚');
+    this._stop = this._button('Stop', () => editMode.stop(), '', '■');
     this._pause = this._button('⏸', () => editMode.togglePause(), '');
     this._step = this._button('⏭', () => editMode.stepFrame(), 'One frame of the paused game');
-    this._save = this._button('Save', () => editMode.save(), 'Write the scene file (Ctrl+S)');
-    this._undo = this._button('Undo', () => editMode.undo(), 'Undo (Ctrl+Z), while editing');
-    this._redo = this._button('Redo', () => editMode.redo(), 'Redo (Ctrl+Y), while editing');
-    this._export = this._button('Export', () => exportFromEditor(editMode), 'Build the game into a static site, with its atlas baked (the Assets dock says where it went)');
+    // Their glyph only while the labels are hidden: the wide bar keeps its width.
+    this._save = this._button('Save', () => editMode.save(), 'Write the scene file (Ctrl+S)', '💾', true);
+    this._undo = this._button('Undo', () => editMode.undo(), 'Undo (Ctrl+Z), while editing', '↶', true);
+    this._redo = this._button('Redo', () => editMode.redo(), 'Redo (Ctrl+Y), while editing', '↷', true);
+    this._export = this._button('Export', () => exportFromEditor(editMode), 'Build the game into a static site, with its atlas baked (the Assets dock says where it went)', '📦', true);
     // The snap step (G cycles it) and the grid's lines (Shift+G).
     this._snap = document.createElement('select');
     this._snap.className = BUTTON_CLASS;
@@ -54,7 +56,7 @@ export class EditorToolbar {
     if (shown.editing !== editing || shown.playing !== playing) {
       shown.editing = editing;
       shown.playing = playing;
-      this._mode.textContent = editing ? '▶ Play' : '❚❚ Edit';
+      relabelButton(this._mode, editing ? '▶' : '❚❚', editing ? 'Play' : 'Edit');
       this._mode.title = editing
         ? 'Play from here (Shift+E); Stop comes back'
         : 'Pause into edit mode: the world holds still, the view is yours (Shift+E)';
@@ -112,13 +114,38 @@ export class EditorToolbar {
     }
   }
 
-  _button(text, onclick, title = '') {
+  _button(text, onclick, title = '', glyph = '', narrowGlyph = false) {
     const button = document.createElement('button');
     button.type = 'button';
     button.className = BUTTON_CLASS;
-    button.textContent = text;
+    if (glyph !== '') labelButton(button, glyph, text, narrowGlyph);
+    else button.textContent = text;
     button.title = title;
     button.onclick = onclick;
     return button;
   }
+}
+
+/** Another glyph and label for a button labelButton made (the spans stay). */
+function relabelButton(button, glyph, label) {
+  button.children[0].textContent = glyph;
+  button.children[1].textContent = ` ${label}`;
+  button.setAttribute('aria-label', label);
+}
+
+/**
+ * A glyph and a label the editor page's CSS hides when narrow; the label names the button. A narrow glyph shows only
+ * then, in the label's place.
+ */
+function labelButton(button, glyph, label, narrowGlyph = false) {
+  button.textContent = '';
+  const mark = document.createElement('span');
+  mark.className = narrowGlyph ? 'weed-editor-glyph weed-editor-narrow' : 'weed-editor-glyph';
+  mark.setAttribute('aria-hidden', 'true');
+  mark.textContent = glyph;
+  const text = document.createElement('span');
+  text.className = 'weed-editor-wide';
+  text.textContent = narrowGlyph ? label : ` ${label}`;
+  button.append(mark, text);
+  button.setAttribute('aria-label', label);
 }

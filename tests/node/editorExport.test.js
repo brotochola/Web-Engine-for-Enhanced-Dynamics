@@ -119,6 +119,9 @@ class El {
   append(...nodes) {
     for (const node of nodes) this.appendChild(node);
   }
+  setAttribute(name, value) {
+    (this.attributes ||= {})[name] = String(value);
+  }
   get textContent() {
     return this._text + this.children.map((c) => c.textContent).join('');
   }
@@ -192,7 +195,7 @@ test('the toolbar’s Export goes through the Assets dock’s row when there is 
       _setStatus() {},
     };
     const toolbar = new EditorToolbar(editMode);
-    const button = toolbar.el.children.find((b) => b.textContent === 'Export');
+    const button = toolbar.el.children.find((b) => b.textContent.endsWith('Export')); // after its glyph
     assert.ok(button, 'the toolbar has an Export button');
     assert.deepEqual(await button.onclick(), done, 'with no dock yet: a row of its own');
     const dockRow = new ShipRow(editMode);

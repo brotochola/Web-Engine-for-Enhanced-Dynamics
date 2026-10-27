@@ -84,7 +84,8 @@ function toolbarFor({ active = false, paused = false } = {}) {
   }
 }
 
-const byText = (toolbar, text) => toolbar.el.children.find((b) => b.textContent === text);
+/** A button by its text: a glyph alone, or the label after its glyph (labelButton). */
+const byText = (toolbar, text) => toolbar.el.children.find((b) => b.textContent === text || (b.children.length === 2 && b.children[1].textContent.trim() === text));
 
 test('while the game runs: ⏸, and ⏭ only once paused; editing: neither', () => {
   const { toolbar, editMode, scene, calls } = toolbarFor();
