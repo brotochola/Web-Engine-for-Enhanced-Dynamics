@@ -56,8 +56,9 @@ export function addEntityBounds(i, out = bounds) {
 }
 
 /**
- * Where the camera goes to frame a world box: its center, and the zoom at which it takes FRAME_FILL of the view
- * (within minZoom and maxZoom); a box no larger than a point keeps `zoom`.
+ * Where the camera goes to frame a world box: its center, and a zoom out far enough that it takes at most FRAME_FILL
+ * of the view; never in closer than 1:1, or than `zoom` when that is closer (a house is not blown up to fill the
+ * view). Within minZoom and maxZoom; a box no larger than a point keeps `zoom`.
  * @returns {Float64Array} out: x, y, zoom
  */
 export function frameFor(minX, minY, maxX, maxY, viewW, viewH, zoom, minZoom, maxZoom, out = target) {
@@ -67,7 +68,8 @@ export function frameFor(minX, minY, maxX, maxY, viewW, viewH, zoom, minZoom, ma
   const h = maxY - minY;
   let z = zoom;
   if ((w > POINT_SIZE || h > POINT_SIZE) && viewW > 0 && viewH > 0) {
-    z = Math.min((viewW * FRAME_FILL) / Math.max(w, POINT_SIZE), (viewH * FRAME_FILL) / Math.max(h, POINT_SIZE));
+    const fit = Math.min((viewW * FRAME_FILL) / Math.max(w, POINT_SIZE), (viewH * FRAME_FILL) / Math.max(h, POINT_SIZE));
+    z = Math.min(fit, Math.max(zoom, 1));
   }
   out[2] = Math.max(minZoom, Math.min(maxZoom, z));
   return out;

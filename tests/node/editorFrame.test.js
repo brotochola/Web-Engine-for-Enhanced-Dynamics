@@ -22,12 +22,13 @@ function setupCamera({ zoom = 1, canvasW = 800, canvasH = 600 } = {}) {
 
 const key = (k, extra = {}) => ({ key: k, shiftKey: false, ctrlKey: false, metaKey: false, altKey: false, ...extra });
 
-test('frameFor: the box’s center, filling FRAME_FILL of the view on its tighter axis, within the zoom limits', () => {
-  const out = frameFor(100, 100, 300, 200, 800, 600, 1, 0.1, 8, new Float64Array(3));
-  assert.deepEqual([out[0], out[1]], [200, 150]);
-  assert.equal(out[2], Math.min((800 * FRAME_FILL) / 200, (600 * FRAME_FILL) / 100));
+test('frameFor: the box’s center; out far enough that it takes FRAME_FILL of the view, never in past 1:1 or the zoom', () => {
+  const out = frameFor(0, 0, 2000, 400, 800, 600, 1, 0.1, 8, new Float64Array(3));
+  assert.deepEqual([out[0], out[1]], [1000, 200]);
+  assert.equal(out[2], (800 * FRAME_FILL) / 2000, 'a wide level: out until it fits');
+  assert.equal(frameFor(100, 100, 300, 200, 800, 600, 0.3, 0.1, 8, new Float64Array(3))[2], 1, 'a house from far out: 1:1, not blown up');
+  assert.equal(frameFor(100, 100, 300, 200, 800, 600, 2.5, 0.1, 8, new Float64Array(3))[2], 2.5, 'already closer: the zoom stays');
   assert.equal(frameFor(0, 0, 1, 1, 800, 600, 1.5, 0.1, 8, new Float64Array(3))[2], 1.5, 'a point keeps the zoom');
-  assert.equal(frameFor(0, 0, 10, 10, 800, 600, 1, 0.1, 4, new Float64Array(3))[2], 4, 'no closer than maxZoom');
   assert.equal(frameFor(0, 0, 1e6, 10, 800, 600, 1, 0.25, 8, new Float64Array(3))[2], 0.25, 'no farther than minZoom');
 });
 
@@ -52,7 +53,7 @@ test('F frames the selection, Shift+F the level, a double click in the list its 
     world.select('Block1');
     assert.equal(editMode.onKey(key('f')), true);
     assert.deepEqual([Camera._freeFollowX, Camera._freeFollowY], [300, 200]);
-    assert.equal(Camera.targetZoom, Math.fround(Math.min((800 * FRAME_FILL) / 100, (600 * FRAME_FILL) / 20)), 'the 100 px block fills 80 %');
+    assert.equal(Camera.targetZoom, 1, 'a 100 px block from 1:1: the zoom stays');
 
     editMode.multi.selectNames(['Block1', 'Ball1']); // Ball1: radius 16 at (500, 100)
     editMode.onKey(key('F'));
