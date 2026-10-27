@@ -12,9 +12,10 @@
  *   missing    the engine alone: Shift+E says how to add the editor, and nothing breaks
  *   no src     neither bundle asks the server for /src/ (a game's server has no engine source)
  *
- * Needs the bundles: npm run make_bundle, then node scripts/buildEditor.js.
+ * Needs the bundles: npm run make_bundle (or WEED_DIST_DIR=<folder> node scripts/buildBundle.js, then --dist <folder>),
+ * and node scripts/buildEditor.js.
  *
- *   node scripts/smokeEditorBundle.mjs [--headed]
+ *   node scripts/smokeEditorBundle.mjs [--dist <folder inside the repo>] [--headed]
  */
 import fs from 'fs';
 import path from 'path';
@@ -25,9 +26,16 @@ import { createStaticBenchmarkServer } from '../tests/helpers/createStaticBenchm
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCENE = '/packages/create-weed-game/template/src/gameScene.js';
+// The engine's bundles: dist/, or a fresh build elsewhere in the repo (served from the same root).
+const distArg = process.argv.indexOf('--dist');
+const DIST = distArg > 0 ? path.relative(root, path.resolve(process.argv[distArg + 1])).split(path.sep).join('/') : 'dist';
+if (DIST.startsWith('..')) {
+  console.error(`--dist must be a folder inside the repo (it is served from there): ${DIST}`);
+  process.exit(1);
+}
 const FILES = {
-  debugUmd: 'dist/weed.bundle.min.js',
-  debugEsm: 'dist/weed.bundle.esm.min.js',
+  debugUmd: `${DIST}/weed.bundle.min.js`,
+  debugEsm: `${DIST}/weed.bundle.esm.min.js`,
   editorUmd: 'packages/editor/dist/weed.editor.min.js',
   editorEsm: 'packages/editor/dist/weed.editor.esm.min.js',
 };
