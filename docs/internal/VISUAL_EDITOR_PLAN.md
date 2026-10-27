@@ -603,6 +603,62 @@ fallback).
 - While playing, a live-values inspector (component columns, ED-17) has a "copy to
   scene" button.
 
+### D9. The editor page (Stage 3)
+
+Written 2026-10-26, before ED-15.
+
+- **Shape.** The editor page (`src/core/debug/editor/shell/`, served by the dev server)
+  shows the game's own page in a same-origin iframe (`?game=<url>`). The editor's code
+  stays in the game page, in the debug build, as in Stage 2: its EditMode, its panels, its
+  overlay. The editor page is a **host**:
+  - the layout: a toolbar, the game in the middle, docks around it;
+  - a store that outlives the game page;
+  - the keys typed in the editor page.
+- **Connection.** The game page's DebugUI looks for the host at
+  `window.parent.__weedEditorHost`. A page of another origin throws on that read: it is
+  not hosted. Hosted, the DebugUI mounts its panels into the host's docks on attach. On the
+  page's `pagehide` it hands its state to the host, and the host takes out everything the
+  page mounted.
+- **What it mounts:**
+  - the tree (new);
+  - the inspector (the Editor panel's body);
+  - the assets (the palette's body: the level row and the classes);
+  - the console (ED-18);
+  - the toolbar: Edit or Play, Save, Undo, Redo, the file and its unsaved marker;
+  - the debug bar with its panels (scene, performance, memory, layers, nav, …), as it is.
+
+  The game page does not show the floating Editor and Palette panels while it is hosted.
+- **No leak of a reloaded page.** A page that reloads leaves its realm behind. Any object
+  of that realm the host keeps (a node, a function, a plain object) keeps the whole realm
+  alive, its shared memories with it. So the host keeps only what it made itself:
+  - it copies a handed state with its own `structuredClone`;
+  - it removes the nodes the page mounted;
+  - it drops the page's objects on disconnect.
+- **The state that survives a reload of the game page:**
+  - the scene file's URL and the scene's script;
+  - edit mode on or off;
+  - the document, when it has unsaved changes;
+  - the records' editor ids;
+  - the undo stack as data, and where it was saved;
+  - the selection's name;
+  - the grid step, the view (free camera target and zoom), the play speed.
+- **Resume.** On the next attach of the same scene (same script):
+  - the editor opens the kept file again when another file is running or the kept
+    document has unsaved changes, with the kept document (`loadScene(url, { sceneFile })`,
+    new): a fast swap;
+  - then edit mode, the selection by name, and the view.
+
+  Another scene drops the state, with a console warning when it had unsaved changes.
+- **Undo entries are data** (a kind, an editor id, before and after), applied by EditMode,
+  so a new page can apply the entries of the page before it.
+- **Keys** typed in the editor page go to the connected editor, handled as in the game
+  page: Shift+E, and every key while editing. A field keeps its keys, except Ctrl+S.
+- **Cost.**
+  - Not hosted, the game page pays one property read at construction.
+  - Hosted, the docks change only on a document, selection or file-list change. The tree
+    refreshes at the debug UI's interval and draws only its visible rows. Nothing per
+    frame.
+
 ---
 
 ## Execution order
