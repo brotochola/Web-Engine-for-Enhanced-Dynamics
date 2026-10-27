@@ -489,7 +489,7 @@ test('a scene that uses none of the engine’s layers has no fold line', () => {
   }
 });
 
-test('in the editor page, hiding a layer while the game plays enters edit mode, as the palette’s + does', () => {
+test('in the editor page, hiding a layer while the game plays keeps the choice for edit mode: the game plays on, all of it', () => {
   initLayers();
   initSoA();
   const { editMode, debugUI } = makeEditor();
@@ -497,8 +497,10 @@ test('in the editor page, hiding a layer while the game plays enters edit mode, 
     debugUI.hosted = { tree: null, onEditorChanged() {}, onPlay() {}, onDocumentChanged() {}, onSelectionChanged() {} };
     const props = Layer.get('props');
     editMode.layers.setHidden(props.id, true);
-    assert.equal(editMode.active, true);
-    assert.equal(props.visible, false);
+    assert.equal(editMode.active, false, 'going back to editing is a Stop (ED-80): not for a checkbox');
+    assert.equal(props.visible, true, 'the game plays with its layers');
+    editMode.enter();
+    assert.equal(props.visible, false, 'editing, the choice applies');
     editMode.layers.setHidden(props.id, false);
     assert.equal(props.visible, true);
   } finally {

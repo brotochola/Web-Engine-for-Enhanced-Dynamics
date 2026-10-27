@@ -8,8 +8,8 @@
 //
 // The drop's point maps to the world as a click's does (Mouse: the canvas's box, then the drawn camera, scene.camera),
 // so a drop and a click at one spot land at one point. The point is mapped through the view the drop was made in: a
-// drop while the game plays (the editor page's palette shows then) enters edit mode after it, and entering holds that
-// view.
+// drop while the game plays (the editor page's palette shows then) goes back to editing after it, at the level's start
+// (EditMode.edit, ED-80), and that leaves the view where it is.
 //
 // While a drag is over the view in edit mode, the overlay shows where it would land: a cross at the snapped point, and
 // the class's name.
@@ -133,8 +133,9 @@ export class DropPlacer {
 
   /**
    * Place `className` at a world point, as a drop does: through EditMode.place (on the grid, under a free name, one
-   * undo), entering edit mode first when it is off; the new entity selected.
-   * @returns {number} its index, or -1 (no such class, no scene file, a full pool: the status line says which)
+   * undo), the new entity selected. While the game plays it goes back to editing first, and places it then.
+   * @returns {number} its index, or -1 (no such class, no scene file, a full pool: the status line says which; or the
+   *   game plays, and it is placed once the editor is editing again)
    */
   placeAt(className, x, y) {
     const editMode = this.editMode;
@@ -143,8 +144,10 @@ export class DropPlacer {
       return -1;
     }
     if (!editMode.active) {
-      editMode.enter();
-      if (!editMode.active) return -1;
+      editMode.edit().then((editing) => {
+        if (editing) this.placeAt(className, x, y);
+      });
+      return -1;
     }
     const index = editMode.place(className, x, y);
     if (index >= 0 && editMode.selection.index !== index) editMode.selection.select(index);

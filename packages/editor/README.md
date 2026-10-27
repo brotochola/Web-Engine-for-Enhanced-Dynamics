@@ -45,11 +45,11 @@ The routes answer only pages of this machine, and write only `*.scene.json` file
 
 | Key | What it does |
 | --- | --- |
-| Shift+E | Edit mode on and off (Play) |
+| Shift+E | Play the level from its start; Stop: back to its start, in edit mode |
 | Click, drag | Select, move |
 | Arrows (Shift: ×10) | Nudge by the grid step |
 | G | Grid step: 1, 8, 16, 32 px |
 | Ctrl+S | Save the level |
 | Ctrl+Z, Ctrl+Y | Undo, redo |
 | Ctrl+D, Del | Duplicate, delete |
-| Esc | Stop placing, clear the selection, leave edit mode |
+| Esc | Stop placing, clear the selection |

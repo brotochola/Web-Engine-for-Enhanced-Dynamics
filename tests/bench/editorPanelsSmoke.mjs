@@ -160,7 +160,11 @@ async function pixelAt(page, x, y) {
  * view's, and this level never sets one (it only centers the camera): the view would go to the world's corner.
  */
 async function enterEdit(page) {
-  await page.click('[data-slot=toolbar] button:has-text("Edit")');
+  // The page opens editing; playing, the toolbar's Stop goes back to the level's start (a fast swap, ED-80).
+  if (await gameFrame(page).evaluate(() => !window.game.debugUI.editMode.active)) {
+    await page.click('[data-slot=toolbar] button:has-text("Stop")');
+  }
+  await gameFrame(page).waitForFunction(() => window.game.debugUI.editMode.settled === true, undefined, { timeout: 30000 });
   await gameFrame(page).evaluate(async () => {
     const { default: WEED } = await import('/src/index.js');
     WEED.Camera.setFreeTarget(768, 480);
@@ -329,7 +333,10 @@ async function main() {
       timeout: 30000,
     });
     await gameReady(page);
-    await page.waitForTimeout(2500); // the resume: a fast swap to the unsaved document
+    await page.waitForTimeout(500);
+    // The resume: a fast swap to the unsaved document, at the level's start (ED-80).
+    await gameFrame(page).waitForFunction(() => window.game.debugUI.editMode.settled === true, undefined, { timeout: 30000 });
+    await page.waitForTimeout(500);
     const reloaded = await readEditor(page);
     const rows41 = await gameFrame(page).evaluate(async () => {
       const { default: WEED } = await import('/src/index.js');

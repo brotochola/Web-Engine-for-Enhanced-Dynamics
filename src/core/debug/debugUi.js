@@ -275,7 +275,7 @@ export class DebugUI {
     return this.editMode !== null && this.editMode.active;
   }
 
-  /** Shift+E and the Scene panel's Edit button: the editor is loaded the first time. */
+  /** Shift+E and the Scene panel's Edit button, Play or back to editing (ED-80): the editor is loaded the first time. */
   toggleEditMode() {
     if (this.editMode !== null) this.editMode.toggle();
     else this.ensureEditor().then((editMode) => editMode?.toggle());
@@ -313,9 +313,10 @@ export class DebugUI {
     this.hosted?.console?.entityError(key, rec);
   }
 
-  /** GameEngine.loadScene, once the engine takes loads again: the editor page's resume (D9). */
+  /** GameEngine.loadScene, once the engine takes loads again: the editor page's resume (D9), edit mode's reset (ED-80). */
   onSceneReady() {
-    this.hosted?.onSceneReady();
+    if (this.hosted) this.hosted.onSceneReady();
+    else this.editMode?.onSceneReady();
   }
 
   /** The speed the game plays at: Time.scale, or while editing, the scale leaving edit mode puts back. */

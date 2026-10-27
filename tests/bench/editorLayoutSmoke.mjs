@@ -149,6 +149,10 @@ async function ready(page) {
     undefined,
     { timeout: 30000 },
   );
+  // The editor page opens editing, at the level's start once the scene is ready (ED-80).
+  await page.waitForFunction(() => document.getElementById('game').contentWindow.game.debugUI.editMode?.settled === true, undefined, {
+    timeout: 30000,
+  });
   await page.waitForTimeout(1200);
 }
 

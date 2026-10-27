@@ -116,7 +116,10 @@ async function checkM1(browser, port, log) {
   await load(page, `${LEVELS}/${SCRATCH}`, 2500);
 
   await page.keyboard.press('Shift+E');
-  await page.waitForTimeout(300);
+  // Back to the level's start (a Stop: a fast swap, ED-80), in edit mode.
+  await page
+    .waitForFunction(() => globalThis.__m1.game.debugUI.editMode?.settled === true, undefined, { timeout: 10000 })
+    .catch(() => {});
   const editing = await page.evaluate(() => globalThis.__m1.game.debugUI.editing);
   check('M1 Shift+E enters edit mode', editing === true);
 
@@ -223,7 +226,7 @@ async function checkEd28(browser, port, log) {
   const page = await enginePage(browser, port, log);
   await load(page, `${LEVELS}/1-1.scene.json`, 2500);
   await page.keyboard.press('Shift+E');
-  await page.waitForFunction(() => globalThis.__m1.game.debugUI.editing === true, undefined, { timeout: 5000 });
+  await page.waitForFunction(() => globalThis.__m1.game.debugUI.editMode?.settled === true, undefined, { timeout: 10000 });
   // Zoomed out with the wheel, as an author does, so several platforms are in view; the zoom eases in, so wait
   // until the drawn view and the one clicks map through agree.
   await page.mouse.move(640, 360);

@@ -902,20 +902,24 @@ export class EntityTree {
       editMode._setStatus(`#${selection.index} was spawned by code, not placed by the scene file: read-only`, true);
       return;
     }
-    if (!this._editing()) return;
+    if (!this._editing(() => this._edit(kind))) return;
     if (kind === EDIT_DELETE) editMode.deleteSelected();
     else editMode.duplicateSelected();
   }
 
   /**
-   * An edit from the list while the game plays enters edit mode first, as the Assets dock's + does: the world holds
-   * still, and the edit can be undone at once (the editor's undo is edit mode's).
-   * @returns {boolean} whether the editor is editing
+   * An edit from the list while the game plays goes back to editing first, as the Assets dock's + does
+   * (EditMode.edit: the level's start, ED-80), then `again` makes it: the selection is taken back by name.
+   * @param {() => unknown} again
+   * @returns {boolean} whether the editor is editing now
    */
-  _editing() {
+  _editing(again) {
     const editMode = this.debugUI.editMode;
-    if (!editMode.active) editMode.enter();
-    return editMode.active === true;
+    if (editMode.active) return true;
+    editMode.edit().then((editing) => {
+      if (editing) again();
+    });
+    return false;
   }
 
   // ---- rename in place (ED-63) ----
@@ -940,7 +944,7 @@ export class EntityTree {
       editMode._setStatus(`${selection.name} is not in the list: the filter leaves it out`, true);
       return false;
     }
-    if (!this._editing()) return false;
+    if (!this._editing(() => this.startRename())) return false;
     this._scrollToRow(row);
     const field = this._renameField();
     this._renameName = selection.name;

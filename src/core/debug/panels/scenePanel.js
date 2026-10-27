@@ -75,7 +75,8 @@ export class ScenePanel {
     controlsRow.appendChild(this.elements.stepBtn);
 
     this.elements.editBtn = createButton('✏ Edit', '', () => this.debugUI.toggleEditMode());
-    this.elements.editBtn.title = 'Edit mode (Shift+E): the world holds still, the view is yours';
+    this.elements.editBtn.title =
+      'Edit mode (Shift+E): the game stops, back to the level’s start, and the view is yours; again, it plays from there';
     controlsRow.appendChild(this.elements.editBtn);
 
     // Stop (ED-16): the level as its scene file's document has it, in edit mode.

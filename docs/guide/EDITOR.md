@@ -2,20 +2,26 @@
 
 The editor works on a running game: you place and tune what a level holds, try it, and save it to its scene file ([SCENE_FILES.md](./SCENE_FILES.md)). It runs inside a debug build of the engine (`new GameEngine({ debug: true })`), in two ways:
 
-- **In the game page.** Press Shift+E. The world holds still and the view is yours; the Editor and Palette panels float over the game.
+- **In the game page.** Press Shift+E. The level goes back to its start and holds still, and the view is yours; the Editor and Palette panels float over the game.
 - **In the editor page.** The game page runs in the middle of a page with docks around it: the scene's entities on the left, the inspector and the assets on the right, the console and the debug panels below. Open `/editor` on the dev server (in this repository `/editor?scene=platformergame` opens that demo, and `/editor` alone the demo list), or press the Scene panel's "Editor page" button. The address follows the game page open in it, so a reload or a bookmark comes back to it; `/editor?game=<a page of the server>` opens any other page.
 
 The editor is the package `@weed.js/editor`. Games made with `npm create weed-game` have it as a dev dependency, and `npm run dev` serves its page and its routes. `npm run build` leaves it out: players never download it. To add it to another game, see the package's README.
 
 ## Edit and play
 
+Edit mode shows the level at its start, as its scene file has it. Play plays it from there, and Stop comes back to it, as in Unity.
+
 | | |
 | --- | --- |
-| Shift+E, or ✎ Edit | Edit mode: the world holds still (time scale 0), the camera is free and the game gets no input |
-| ▶ Play | Leave edit mode: the game runs from here |
-| ■ Stop | Back to the level as its scene file's document has it, in edit mode |
+| ▶ Play, or Shift+E while editing | Play the level from its start: the game runs with its own camera and input |
+| ■ Stop, or Shift+E while playing | Back to the level's start as its scene file's document has it, in edit mode; the view stays where it is |
+| ⏸, ⏭ (while playing) | Pause the game; step it one frame |
 
-Stop throws away what happened while playing: where things moved, what spawned, the score. It keeps what you changed in the level, saved or not, with its undo. If the game went to another level while you played (a goal), Stop goes back to the one Play started from.
+In edit mode the world holds still (time scale 0), the camera is yours and the game gets no input. The editor page opens in edit mode.
+
+Stop throws away what happened while playing: where things moved, what spawned, the score. It keeps what you changed in the level, saved or not, with its undo. The view stays where the game left it, so what you just played is in front of you. If the game went to another level while you played (a goal), Stop goes back to the one Play started from, and to the view you had there. Stop does not reload the page: the engine swaps the level's content on its running workers.
+
+An edit you start while the game plays stops it first, then is made at the level's start. That covers the Palette's `+`, a class dragged onto the view, and Del, Ctrl+D or F2 in the scene list. A scene that was not loaded from a scene file has no start to go back to. For one of those, Shift+E (✎ Edit) holds the world where it is.
 
 In edit mode:
 
@@ -29,7 +35,7 @@ In edit mode:
 | Ctrl+S | Save the level to its scene file |
 | Ctrl+Z, Ctrl+Y | Undo, redo |
 | Ctrl+D, Del | Duplicate, delete |
-| Esc | Stop placing; clear the selection; leave edit mode |
+| Esc | Stop placing; clear the selection |
 
 ## Placed and runtime entities
 

@@ -317,7 +317,9 @@ async function checkHosted(browser, port, log) {
       await game.loadScene(FILE);
       return true;
     }, FILE);
-    await page.waitForTimeout(1500);
+    // The editor page opens editing, at the level's start once the scene is ready (ED-80).
+    await frame.waitForFunction(() => globalThis.__h.game.debugUI.editMode?.settled === true, undefined, { timeout: 15000 });
+    await page.waitForTimeout(500);
     await frame.evaluate(() => {
       const { WEED, game } = globalThis.__h;
       const editMode = game.debugUI.editMode;
@@ -379,7 +381,10 @@ async function main() {
     const page = await enginePage(browser, server.port, log);
     await page.mouse.click(5, H - 5); // the page has the focus
     await page.keyboard.press('Shift+E');
-    await page.waitForTimeout(300);
+    // Back to the level's start (a Stop, ED-80), in edit mode.
+    await page
+      .waitForFunction(() => globalThis.__h.game.debugUI.editMode?.settled === true, undefined, { timeout: 10000 })
+      .catch(() => {});
     const editing = await page.evaluate(() => globalThis.__h.game.debugUI.editing);
     if (!editing) throw new Error('Shift+E did not enter edit mode');
     for (const step of [checkBox, checkCircle, checkPolygon, checkLight, checkScaled, checkRoute, checkPick]) {

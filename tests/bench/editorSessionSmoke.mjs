@@ -5,7 +5,7 @@
  * steps run in order, each on what the last left, as a session does. Each check prints PASS or FAIL with what it read;
  * the exit code is the number of failures.
  *
- *   open       the editor page shows the level, and the toolbar's Edit enters edit mode
+ *   open       the editor page shows the level, editing at its start (ED-80): the toolbar's first button is Play
  *   unlit      L shows the dark level unlit while editing (ED-78): the lighting layer hidden, the toolbar's 💡 off; the
  *              rest of the session runs so
  *   filter     the scene list's filter keeps the platforms; a click on a row selects it, F frames it
@@ -89,6 +89,10 @@ async function ready(page) {
     undefined,
     { timeout: 60000 },
   );
+  // The editor page opens editing, at the level's start once the scene is ready (ED-80); a reload resumes so too.
+  await page.waitForFunction(() => document.getElementById('game').contentWindow.game.debugUI.editMode?.settled === true, undefined, {
+    timeout: 30000,
+  });
   await page.waitForTimeout(1200);
 }
 
@@ -251,14 +255,15 @@ async function main() {
     await page.goto(editorUrl);
     await ready(page);
 
-    // ---- open ----
+    // ---- open (editing, ED-80) ----
     const view0 = await box(page, '#game');
-    await page.click('[data-slot=toolbar] button:has-text("Edit")');
     let s = await until(page, (s) => s.editing);
+    const toolbar = await page.locator('[data-slot=toolbar]').innerText();
     check(
       'open',
-      s.editing && view0.w > 700 && view0.h > 550 && s.records.length === originalRecords.length && !s.dirty,
-      `view ${Math.round(view0.w)}×${Math.round(view0.h)}, ${s.records.length} records, editing ${s.editing}`,
+      s.editing && view0.w > 700 && view0.h > 550 && s.records.length === originalRecords.length && !s.dirty && /Play/.test(toolbar),
+      `view ${Math.round(view0.w)}×${Math.round(view0.h)}, ${s.records.length} records, opened editing ${s.editing}, ` +
+        `the toolbar's first button "${toolbar.split('\n')[0]}"`,
     );
     await shot(page, 'open');
 

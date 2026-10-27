@@ -8,8 +8,8 @@ export const SHORTCUTS = Object.freeze([
   [
     'Modes',
     [
-      ['Shift+E', 'edit (the world holds still) or play'],
-      ['Esc', 'stop placing, then clear the selection, then leave edit mode'],
+      ['Shift+E', 'play the level from its start, or stop: back to its start, in edit mode'],
+      ['Esc', 'stop placing, then clear the selection'],
       ['?', 'this sheet'],
     ],
   ],

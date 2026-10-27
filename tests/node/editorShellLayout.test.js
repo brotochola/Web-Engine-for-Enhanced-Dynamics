@@ -624,10 +624,10 @@ test('playing, the bar says so; without a scene it is empty', () => {
   s.editMode.active = false;
   s.bar.update();
   assert.equal(s.parts.mode.textContent, 'PLAY');
-  assert.equal(s.parts.hint.textContent, 'Playing · Shift+E pauses into edit mode');
-  s.editMode.playing = true;
+  assert.match(s.parts.hint.textContent, /^Playing · Shift\+E holds the world here, in edit mode: this scene has no scene file/);
+  s.debugUI.scene.sceneFileUrl = 'http://host/levels/1-1.scene.json';
   s.bar.update();
-  assert.match(s.parts.hint.textContent, /^Playing from edit mode · Stop goes back/);
+  assert.equal(s.parts.hint.textContent, 'Playing · Stop (Shift+E) goes back to the level’s start, in edit mode · ⏸ pauses');
   s.debugUI.scene = null;
   s.mouse.isPresent = true;
   s.bar.update();

@@ -1,5 +1,5 @@
 // editMode.js — the editor's edit mode (VISUAL_EDITOR_PLAN.md D5, ED-6; the Stage 2 version). Shift+E, or the Edit
-// button of the debug UI's Scene panel, toggles it.
+// button of the debug UI's Scene panel, plays the level while editing and stops it while it plays (ED-80).
 //
 // While it is on, the world holds still and the view and the input are the editor's:
 // - Time.scale is 0: every worker steps with a zero delta, so physics takes no step (a step of 0 s moves no body)
@@ -18,13 +18,16 @@
 //
 // A left click selects (selection.js, ED-8), and a drag moves the selection (moveTool.js, ED-10), as do the arrow
 // keys (Shift: ten steps); G cycles the grid step; F frames the selection and Shift+F the level (frame.js, ED-57). Other tools (Stage 4: handles, brushes, pickers) are added with
-// addTool(): one may take a press before the move tool does, and has the pointer until it is let go. Esc clears the selection, and with none leaves edit mode. Ctrl+S
+// addTool(): one may take a press before the move tool does, and has the pointer until it is let go. Esc clears the selection. Ctrl+S
 // saves the running scene file through the dev server (sceneFileStore.js, ED-13). Every change to the document goes
 // through editSelected and is kept for Ctrl+Z / Ctrl+Y (history.js, ED-12).
 //
-// Play and Stop (D8, ED-16): Play leaves edit mode and remembers what it started from; Stop goes back to the level as
-// the document has it (a fast swap) in edit mode. What happened while playing is thrown away, the document's edits
-// are not; a game that went to another file while playing is taken back to the one Play started from.
+// Play and Stop (D8, ED-16, ED-80): Play leaves edit mode and remembers what it started from; Stop goes back to the
+// level as the document has it (a fast swap) in edit mode, the view where it is. What happened while playing is thrown
+// away, the document's edits are not; a game that went to another file while playing is taken back to the one Play
+// started from. So edit mode always shows the level at its start, and Play always plays it from there: going back to
+// editing from a game that plays is a Stop (edit()), for Shift+E and for every editing action taken while it plays.
+// The editor page opens editing, at the level's start (editFromStart).
 //
 // In the editor page (D9) the game page reloads under a running editor: handover() gives what a reload keeps, as
 // plain data, and resume() takes it up in the next page.
@@ -158,10 +161,14 @@ export class EditMode {
     this._savedFreeSmoothing = NaN;
     /** A full load left edit mode: enter it again when the new scene is attached. */
     this._resumeOnAttach = false;
+    /** Edit mode was entered while the scene booted: once it is ready, back to the level's start (onSceneReady). */
+    this._resetWhenReady = false;
     /** What Play started from (play()), for Stop: the file, its data and document, the undo stack, the view. */
     this._playStart = null;
     /** A swap the editor makes itself (Stop, resume): the document is the same, its undo stack stays. */
     this._ownSwap = false;
+    /** The Stop under way: a second one (Shift+E again, an edit waiting for edit mode) waits for it. */
+    this._stopping = null;
 
     /** What the indicator says instead of the help for a moment (a save's outcome), and whether it went wrong. */
     this.status = '';
@@ -241,9 +248,32 @@ export class EditMode {
     this._quiet = false;
   }
 
+  /** Shift+E, the toolbar's main button, the Scene panel's Edit: Play while editing, else back to editing (edit). */
   toggle() {
     if (this.active) this.play();
-    else this.enter();
+    else this.edit();
+  }
+
+  /**
+   * Back to editing from a game that plays (ED-80): Stop, so edit mode shows the level at its start as its document
+   * has it, the view where it is. A scene with no scene file has no start to go back to: edit mode holds it where it
+   * is. The editing actions taken while the game plays (a drop, the palette's +, the brush, an entity pick, a list
+   * edit) wait for it.
+   * @returns {Promise<boolean>} whether the editor is editing
+   */
+  async edit() {
+    if (this.active) return true;
+    const scene = this.debugUI.scene;
+    if (!scene) return false;
+    if (!scene.sceneFileUrl) this.enter();
+    else {
+      try {
+        await this.stop();
+      } catch (error) {
+        console.error('[WeedJS] editor: could not go back to the level’s start', error);
+      }
+    }
+    return this.active;
   }
 
   /**
@@ -305,11 +335,22 @@ export class EditMode {
 
   /**
    * Stop (D8): the level as its document has it, by a fast swap, in edit mode. What happened while playing is thrown
-   * away; edits made to the document are not. A game that went to another file while playing is taken back to the
-   * one Play started from, with its document and undo stack as they were then.
+   * away; edits made to the document are not. The view stays where it is (ED-80): what was just played is in front of
+   * the author, at the level's start. A game that went to another file while playing is taken back to the one Play
+   * started from, with its document and undo stack as they were then, and to the view Play started from.
+   * @param {boolean} [quiet] - no status line (the editor page opening at the level's start)
    * @returns {Promise<boolean>} whether it went back
    */
-  async stop() {
+  stop(quiet = false) {
+    if (this._stopping === null) {
+      this._stopping = this._stop(quiet).finally(() => {
+        this._stopping = null;
+      });
+    }
+    return this._stopping;
+  }
+
+  async _stop(quiet) {
     const scene = this.debugUI.scene;
     if (!scene) return false;
     const start = this._playStart;
@@ -320,11 +361,18 @@ export class EditMode {
     }
     if (back === start && !this._mayDiscard()) return false;
     back.active = true;
-    if (start !== null) back.view = start.view;
+    back.view = back === start ? start.view : this._viewHere();
     this._playStart = null;
     const ok = await this._restoreState(back, true, start === null ? scene.data : start.data);
-    if (ok) this._setStatus(`Stopped: ${this.sceneFileName} as its document has it`, false);
+    if (ok && !quiet) this._setStatus(`Stopped: ${this.sceneFileName} as its document has it`, false);
     return ok;
+  }
+
+  /** The view as the author sees it now: the free camera's target while editing, the game camera's center while it plays. */
+  _viewHere() {
+    return this.active
+      ? { x: Camera._freeFollowX, y: Camera._freeFollowY, zoom: Camera.zoom }
+      : { x: Camera.centerX, y: Camera.centerY, zoom: Camera.zoom };
   }
 
   /**
@@ -404,9 +452,9 @@ export class EditMode {
     for (const tool of this.tools) if (tool.onKey && tool.onKey(e) === true) return true;
     if (e.key === '?') return this.toggleShortcuts();
     if (e.key === 'Escape') {
+      // Not edit mode itself: leaving it is Play (ED-80), which Shift+E and the toolbar say.
       if (this.placing !== null) this.startPlacing(this.placing);
       else if (this.selection.index >= 0) this.selection.clear();
-      else this.exit();
       return true;
     }
     if (e.key === 'Delete' || (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey)) return this.deleteSelected();
@@ -691,10 +739,12 @@ export class EditMode {
 
   /** The palette's button: each click on the view places one of `className`, until Esc or the button again. */
   startPlacing(className) {
-    // The editor page's Assets dock shows the palette while playing too: its + enters edit mode.
+    // The editor page's Assets dock shows the palette while playing too: its + goes back to editing first (edit).
     if (!this.active && this.debugUI.hosted) {
-      this.enter();
-      if (!this.active) return;
+      this.edit().then((editing) => {
+        if (editing && this.placing !== className) this.startPlacing(className);
+      });
+      return;
     }
     this.placing = this.placing === className ? null : className;
     if (this.placing !== null) this.selection.clear();
@@ -1225,7 +1275,10 @@ export class EditMode {
   async resume(kept) {
     const running = this.debugUI.scene;
     if (!running || !kept || kept.version !== 1 || kept.sceneScriptUrl !== running.sceneScriptUrl) return false;
-    const reload = kept.sceneFileUrl !== null && (kept.document !== null || kept.sceneFileUrl !== running.sceneFileUrl);
+    // Editing, the file is opened again even when the page loaded it: edit mode shows the level at its start, and the
+    // page ran frames before this (ED-80).
+    const reload =
+      kept.sceneFileUrl !== null && (kept.active || kept.document !== null || kept.sceneFileUrl !== running.sceneFileUrl);
     if (!(await this._restoreState(kept, reload, running.data))) return false;
     if (kept.playStart) this._playStart = { ...kept.playStart, data: running.data };
     return true;
@@ -1305,6 +1358,32 @@ export class EditMode {
     if (!this._resumeOnAttach) return;
     this._resumeOnAttach = false;
     this.enter();
+    this._resetWhenReady = true; // the new scene ran frames before this
+  }
+
+  /**
+   * The editor page opens editing its first scene's level (ED-80): edit mode now, and back to the level's start once
+   * the scene is ready, undoing the frames it ran before edit mode held it. A scene with no scene file has no level to
+   * edit (nothing to place into, no start to go back to): it plays.
+   */
+  editFromStart() {
+    const scene = this.debugUI.scene;
+    if (!scene || !scene.sceneFileUrl) return;
+    this.enter();
+    this._resetWhenReady = true;
+  }
+
+  /** The scene takes loads again (GameEngine.loadScene): edit mode entered while it booted goes back to its start. */
+  onSceneReady() {
+    if (!this._resetWhenReady) return;
+    this._resetWhenReady = false;
+    if (!this.active || !this.debugUI.scene?.sceneFileUrl) return;
+    this.stop(true).catch((error) => console.error('[WeedJS] editor: could not go back to the level’s start', error));
+  }
+
+  /** Edit mode is on, and nothing is on its way to it: the reset of a scene that booted, a Stop's swap. */
+  get settled() {
+    return this.active && !this._resetWhenReady && !this._ownSwap && this._stopping === null;
   }
 
   _hold() {

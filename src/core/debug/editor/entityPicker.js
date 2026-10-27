@@ -77,8 +77,8 @@ export class EntityPickTool {
   }
 
   /**
-   * The pick button of an entity param's row: the next click on the view fills it (the button again stops). Enters
-   * edit mode when the game plays (the editor page's inspector shows while playing).
+   * The pick button of an entity param's row: the next click on the view fills it (the button again stops). While the
+   * game plays (the editor page's inspector shows then) it goes back to editing first, and picks from there.
    * @param {string} key - the param
    * @param {string|undefined|null} className - the class it takes, or any
    * @param {object} [button] - the row's button, shown pressed while picking
@@ -91,8 +91,11 @@ export class EntityPickTool {
     this.stop();
     if (again || !selection.authored) return false;
     if (!editMode.active) {
-      editMode.enter();
-      if (!editMode.active) return false;
+      // Back to editing first (EditMode.edit: the level's start, ED-80); the selection is taken back by name.
+      editMode.edit().then((editing) => {
+        if (editing) this.start(key, className, button);
+      });
+      return false;
     }
     if (editMode.placing !== null) editMode.startPlacing(editMode.placing);
     this.key = key;

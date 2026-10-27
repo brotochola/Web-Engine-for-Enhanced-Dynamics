@@ -21,8 +21,10 @@ const HINT_UNSET = -1;
 const HINT_NONE = 0;
 const HINT_TOOL = 1;
 const HINT_STATUS = 2;
+/** Playing a scene with no scene file: edit mode holds it where it is. */
 const HINT_PLAYING = 3;
-const HINT_SESSION = 4;
+/** Playing a level of a scene file: Stop goes back to its start (ED-80). */
+const HINT_PLAYING_LEVEL = 4;
 const HINT_PLACING = 5;
 const HINT_BRUSH = 6;
 const HINT_MOVING = 7;
@@ -155,13 +157,14 @@ export class StatusBar {
       this._argN = toolKind * 2 + (tools.bulkSpawnEnabled ? 1 : 0);
       return HINT_TOOL;
     }
-    if (editMode === null) return HINT_PLAYING;
+    const playing = scene.sceneFileUrl ? HINT_PLAYING_LEVEL : HINT_PLAYING;
+    if (editMode === null) return playing;
     if (editMode.status) {
       this._argS = editMode.status;
       this._argN = editMode.statusIsError ? 1 : 0;
       return HINT_STATUS;
     }
-    if (!editMode.active) return editMode.playing ? HINT_SESSION : HINT_PLAYING;
+    if (!editMode.active) return playing;
     if (editMode.placing !== null) {
       this._argS = editMode.placing;
       return HINT_PLACING;
@@ -211,9 +214,9 @@ export class StatusBar {
       case HINT_STATUS:
         return name;
       case HINT_PLAYING:
-        return 'Playing · Shift+E pauses into edit mode';
-      case HINT_SESSION:
-        return 'Playing from edit mode · Stop goes back to the level · Shift+E pauses here';
+        return 'Playing · Shift+E holds the world here, in edit mode: this scene has no scene file to go back to';
+      case HINT_PLAYING_LEVEL:
+        return 'Playing · Stop (Shift+E) goes back to the level’s start, in edit mode · ⏸ pauses';
       case HINT_PLACING:
         return `Placing ${name}: each click on the view puts one there · Esc stops`;
       case HINT_BRUSH:

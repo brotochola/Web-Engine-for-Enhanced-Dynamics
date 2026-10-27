@@ -51,6 +51,8 @@ export class HostedEditor {
     this.slots = null;
     /** What the page before this one handed over, until this page's scene takes it up. */
     this._kept = null;
+    /** Nothing was handed over: the page opens editing, at the level's start, once a scene is attached (ED-80). */
+    this._startEditing = false;
     this.toolbar = null;
     this.tree = null;
     /** The Console dock (ED-18), and this page's console passed on to it. */
@@ -76,6 +78,7 @@ export class HostedEditor {
     this.slots = slots;
     // The host's copy is of its realm: this page works on a copy of its own.
     this._kept = kept === null || kept === undefined ? null : structuredClone(kept);
+    this._startEditing = this._kept === null;
     window.addEventListener('pagehide', this._onPageHide);
     loadDebugCss().then((css) => {
       if (css && this.slots !== null) this.host.addStyles('debug-ui-styles', css);
@@ -144,7 +147,7 @@ export class HostedEditor {
     this.host.disconnect(this, state);
   }
 
-  /** A scene is attached: the assets show its classes and files, the tree its entities. */
+  /** A scene is attached: the assets show its classes and files, the tree its entities. The first opens editing. */
   onAttach(scene) {
     const editMode = this.debugUI.editMode;
     editMode.palette.show();
@@ -153,6 +156,10 @@ export class HostedEditor {
     this.toolbar?.refresh();
     this.console?.newScene();
     this._nameDebugTabs(); // the Nav tab's own title goes when the scene has navigation
+    if (this._startEditing) {
+      this._startEditing = false;
+      editMode.editFromStart();
+    }
   }
 
   /** A narrow editor page shows the debug bar's tabs by their icons (editorShell.css): each names itself on hover. */
@@ -172,7 +179,10 @@ export class HostedEditor {
     this.host.sceneReady?.(this);
     const kept = this._kept;
     const scene = this.debugUI.scene;
-    if (kept === null || !scene || kept.sceneScriptUrl !== scene.sceneScriptUrl) return;
+    if (kept === null || !scene || kept.sceneScriptUrl !== scene.sceneScriptUrl) {
+      this.debugUI.editMode.onSceneReady();
+      return;
+    }
     this._kept = null;
     this.debugUI.editMode.resume(kept).catch((error) => {
       console.error('[WeedJS] editor: could not take up the editor state from before the reload', error);

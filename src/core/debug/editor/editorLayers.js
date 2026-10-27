@@ -216,8 +216,8 @@ export class EditorLayers {
   }
 
   /**
-   * Hide or show layer `id` while editing. In the editor page the palette shows while the game plays: hiding a
-   * layer then enters edit mode, as its + does.
+   * Hide or show layer `id` while editing. In the editor page the palette shows while the game plays: the choice is
+   * then kept for edit mode, and the game plays on with all its layers (going back to editing is a Stop, ED-80).
    */
   setHidden(id, hidden) {
     const bit = 1 << id;
@@ -230,11 +230,7 @@ export class EditorLayers {
       saveUnlit(hidden);
     }
     this.editMode.debugUI.hosted?.onEditorChanged?.();
-    const editMode = this.editMode;
-    if (!editMode.active) {
-      if (hidden && editMode.debugUI.hosted) editMode.enter(); // applies the choices
-      return;
-    }
+    if (!this.editMode.active) return;
     if (hidden) this._hide(id);
     else this._show(id);
   }

@@ -330,6 +330,12 @@ function makeEditorPage({ editing = true } = {}) {
       log.push(['enter edit mode']);
       editMode.active = true;
     },
+    // EditMode.edit: back to editing from a game that plays, a Stop (ED-80); it resolves once the swap is done.
+    async edit() {
+      log.push(['back to editing']);
+      editMode.active = true;
+      return true;
+    },
     selectFromList(index, center) {
       log.push(['select', index, center]);
       select(index);
@@ -733,7 +739,7 @@ test('Del and Ctrl+D: the editor’s delete and duplicate, once each, not again 
   }
 });
 
-test('while the game plays, ↑ ↓ and Enter select and frame; F2, Del and Ctrl+D enter edit mode first, as the Assets dock’s + does', () => {
+test('while the game plays, ↑ ↓ and Enter select and frame; F2, Del and Ctrl+D go back to editing first, as the Assets dock’s + does', async () => {
   const { doc, tree, editMode, log } = makeEditorPage({ editing: false });
   try {
     click(tree, 1);
@@ -743,11 +749,12 @@ test('while the game plays, ↑ ↓ and Enter select and frame; F2, Del and Ctrl
     press(doc, 'Enter');
     assert.equal(editMode.active, false, 'looking does not edit');
     press(doc, 'd', { ctrlKey: true });
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(editMode.active, true);
     assert.deepEqual(
-      log.filter(([what]) => what === 'enter edit mode' || what === 'duplicate'),
-      [['enter edit mode'], ['duplicate', 'Platform2']],
-      'edit mode, then the duplicate: one undo away',
+      log.filter(([what]) => what === 'back to editing' || what === 'duplicate'),
+      [['back to editing'], ['duplicate', 'Platform2']],
+      'the level’s start in edit mode (a Stop), then the duplicate: one undo away',
     );
     assert.deepEqual(editorKeys(log), []);
   } finally {
@@ -934,15 +941,16 @@ test('a runtime row’s menu: Frame and Select all; the keyboard’s (ContextMen
   }
 });
 
-test('the menu is kept in the viewport; an edit from it while the game plays enters edit mode first', () => {
+test('the menu is kept in the viewport; an edit from it while the game plays goes back to editing first', async () => {
   const { tree, editMode, log } = makeEditorPage({ editing: false });
   try {
     click(tree, 1);
     rightClick(tree, 2, 990, 690); // the fake menu measures 160 × 100
     assert.deepEqual([tree._menu.el.style.left, tree._menu.el.style.top], [`${1000 - 4 - 160}px`, `${690 - 100}px`]);
     pick(tree, 'Duplicate');
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(editMode.active, true);
-    assert.deepEqual(log.filter(([what]) => what === 'enter edit mode' || what === 'duplicate'), [['enter edit mode'], ['duplicate', 'Platform1']]);
+    assert.deepEqual(log.filter(([what]) => what === 'back to editing' || what === 'duplicate'), [['back to editing'], ['duplicate', 'Platform1']]);
   } finally {
     done();
   }

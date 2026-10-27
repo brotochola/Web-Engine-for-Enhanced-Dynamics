@@ -91,8 +91,15 @@ export class ScatterBrush {
   select(className) {
     const editMode = this.editMode;
     const next = className === this.className ? null : className;
-    if (next !== null && !editMode.active && editMode.debugUI.hosted) editMode.enter();
-    if (next !== null && !editMode.active) return;
+    if (next !== null && !editMode.active) {
+      // The editor page's palette shows while the game plays: back to editing first (EditMode.edit, ED-80).
+      if (editMode.debugUI.hosted) {
+        editMode.edit().then((editing) => {
+          if (editing && this.className !== next) this.select(next);
+        });
+      }
+      return;
+    }
     if (next !== null && editMode.placing !== null) editMode.startPlacing(editMode.placing); // placing stops
     this.className = next;
     this._stroke = null;

@@ -121,8 +121,9 @@ test('the first tool that takes it wins; hover, overlay, keys and cancel reach e
     assert.deepEqual(log.splice(0), ['a draw', 'b draw', 'c draw']);
     assert.equal(editMode.onKey({ key: 'r' }), true, 'b took it');
     assert.deepEqual(log.splice(0), ['a key r', 'b key r']);
-    editMode.onKey({ key: 'Escape', ctrlKey: false, metaKey: false, shiftKey: false, altKey: false });
-    assert.equal(editMode.active, false, 'a key no tool takes is the editor’s');
+    assert.equal(editMode.onKey({ key: 'Escape', ctrlKey: false, metaKey: false, shiftKey: false, altKey: false }), true, 'a key no tool takes is the editor’s');
+    assert.deepEqual(log.splice(0), ['a key Escape', 'b key Escape', 'c key Escape']);
+    editMode.exit(); // Play
     assert.deepEqual(log.splice(0).filter((l) => l.endsWith('cancel')), ['a cancel', 'b cancel', 'c cancel'], 'leaving cancels');
     editMode.onContentSwapped();
     assert.deepEqual(log.splice(0).filter((l) => l.endsWith('cancel')), ['a cancel', 'b cancel', 'c cancel'], 'a swap too');

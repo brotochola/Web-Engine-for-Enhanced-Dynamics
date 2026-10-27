@@ -1,5 +1,5 @@
 // toolbar.js — the editor page's toolbar (VISUAL_EDITOR_PLAN.md D9, ED-15), made by the game page and put into the
-// editor page's bar: Play or Edit, Stop (D8, ED-16), Save, Undo, Redo, the running scene file with its unsaved
+// editor page's bar: Play or Stop in one button, as Unity's (D8, ED-16, ED-80), Save, Undo, Redo, the running scene file with its unsaved
 // marker (the editor's messages are the status bar's, statusBar.js, ED-52); the snap step and the grid's lines (ED-60); while not editing, ⏸ and ⏭
 // (pause, one frame); the shortcuts sheet (?), and Undo and Redo naming the change they would make (ED-69). refresh() writes only what changed; EditMode asks for it on each change of
 // its own, never per frame. Export (ED-32) builds the game into a static site (shipRow.js). A button is a glyph and a
@@ -16,8 +16,8 @@ export class EditorToolbar {
     this.editMode = editMode;
     this.el = document.createElement('div');
     this.el.style.cssText = 'display:flex;align-items:center;gap:6px;min-width:0';
-    this._mode = this._button('Edit', () => editMode.toggle(), '', '❚❚');
-    this._stop = this._button('Stop', () => editMode.stop(), '', '■');
+    // Play while editing, Stop while playing (Shift+E either way); a scene with no file has no start to stop back to.
+    this._mode = this._button('Play', () => editMode.toggle(), '', '▶');
     this._pause = this._button('⏸', () => editMode.togglePause(), '');
     this._step = this._button('⏭', () => editMode.stepFrame(), 'One frame of the paused game');
     // Their glyph only while the labels are hidden: the wide bar keeps its width.
@@ -42,9 +42,9 @@ export class EditorToolbar {
     this._help = this._button('?', () => editMode.toggleShortcuts(), 'Every key of the editor (?)');
     this._file = document.createElement('span');
     this._file.style.cssText = 'color:#c8ccd8;white-space:nowrap;margin-left:6px;overflow:hidden;text-overflow:ellipsis;min-width:0';
-    this.el.append(this._mode, this._stop, this._pause, this._step, this._save, this._undo, this._redo, this._snap, this._grid, this._light, this._export, this._help, this._file);
+    this.el.append(this._mode, this._pause, this._step, this._save, this._undo, this._redo, this._snap, this._grid, this._light, this._export, this._help, this._file);
     /** What is shown, so a refresh that changes nothing writes nothing. */
-    this._shown = { editing: null, playing: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, snap: null, grid: null, lit: undefined, paused: null, undoLabel: null, redoLabel: null };
+    this._shown = { editing: null, stops: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, snap: null, grid: null, lit: undefined, paused: null, undoLabel: null, redoLabel: null };
     this.refresh();
   }
 
@@ -52,19 +52,20 @@ export class EditorToolbar {
     const editMode = this.editMode;
     const shown = this._shown;
     const editing = editMode.active;
-    const playing = editMode.playing;
-    if (shown.editing !== editing || shown.playing !== playing) {
+    // Playing, the button stops back to the level's start; a scene with no file has none, and edit mode holds it.
+    const stops = !editing && !!editMode.debugUI?.scene?.sceneFileUrl;
+    if (shown.editing !== editing || shown.stops !== stops) {
       shown.editing = editing;
-      shown.playing = playing;
-      relabelButton(this._mode, editing ? '▶' : '❚❚', editing ? 'Play' : 'Edit');
+      shown.stops = stops;
+      if (editing) relabelButton(this._mode, '▶', 'Play');
+      else if (stops) relabelButton(this._mode, '■', 'Stop');
+      else relabelButton(this._mode, '❚❚', 'Edit');
       this._mode.title = editing
-        ? 'Play from here (Shift+E); Stop comes back'
-        : 'Pause into edit mode: the world holds still, the view is yours (Shift+E)';
-      this._mode.classList.toggle('active', editing);
-      this._stop.classList.toggle('active', playing);
-      this._stop.title = playing
-        ? 'Stop: back to the level Play started from, as its document has it, in edit mode'
-        : 'Back to the level’s start as its document has it, in edit mode (a fast swap)';
+        ? 'Play the level from its start (Shift+E); Stop comes back to it'
+        : stops
+          ? 'Stop: back to the level’s start as its document has it, in edit mode, the view where it is (Shift+E)'
+          : 'Edit: this scene has no scene file, so edit mode holds the world where it is (Shift+E)';
+      this._mode.classList.toggle('active', !editing);
     }
     const paused = editing ? null : editMode.debugUI?.scene?.state?.pause === true;
     if (shown.paused !== paused) {
@@ -110,7 +111,6 @@ export class EditorToolbar {
       this._file.textContent = file === null ? 'no scene file' : dirty ? `${file} ●` : file;
       this._file.title = dirty ? 'Unsaved changes: Ctrl+S writes them' : '';
       this._save.disabled = file === null;
-      this._stop.disabled = file === null;
     }
   }
 

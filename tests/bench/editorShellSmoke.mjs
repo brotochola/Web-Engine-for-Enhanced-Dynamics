@@ -6,10 +6,10 @@
  *
  *   docks    the page connects and fills the docks: the toolbar names 1-1.scene.json, the scene list has the
  *            platforms, the assets list the level files and the classes, the debug bar is below, and the debug UI's
- *            styles are in the editor page
- *   list     a click on Platform1's row selects it and the game plays on (ED-17); the inspector shows its fields and
- *            its live values; the toolbar's Edit then holds the world with Platform1 still selected
- *   keys     Shift+E typed in the editor page plays and edits again; Ctrl+Z typed there undoes
+ *            styles are in the editor page; it opens editing (ED-80)
+ *   list     playing, a click on Platform1's row selects it and the game plays on (ED-17); the inspector shows its
+ *            fields and its live values; the toolbar's Stop then comes back to editing with Platform1 still selected
+ *   keys     Shift+E typed in the editor page plays and stops again; Ctrl+Z typed there undoes
  *   edit     the inspector's width field makes Platform1 640 wide, unsaved
  *   reload   Reload game: a new game page has the unsaved document, edit mode, the selection and the view, and the
  *            toolbar's Undo then takes the width back to the file's
@@ -85,6 +85,12 @@ async function gameReady(page) {
   );
 }
 
+/** Edit mode at the level's start, nothing on its way (the opening's reset, a Stop's swap: ED-80). */
+const settled = (page) =>
+  page.waitForFunction(() => document.getElementById('game').contentWindow.game?.debugUI.editMode?.settled === true, undefined, {
+    timeout: 30000,
+  });
+
 async function reloadGame(page) {
   const before = await page.evaluate(() => document.getElementById('game').contentWindow.__smokePage ?? null);
   await page.click('#reload');
@@ -92,8 +98,10 @@ async function reloadGame(page) {
     timeout: 30000,
   });
   await gameReady(page);
-  // The resume runs once the scene is ready: a fast swap when the document had unsaved changes.
-  await page.waitForTimeout(2500);
+  // The resume runs once the scene is ready: in edit mode, a fast swap to the level's start (ED-80).
+  await page.waitForTimeout(500);
+  await settled(page);
+  await page.waitForTimeout(500);
 }
 
 async function domCounters(page, cdp) {
@@ -125,6 +133,7 @@ async function main() {
     const cdp = await page.context().newCDPSession(page);
     await page.goto(`http://127.0.0.1:${server.port}/src/core/debug/editor/shell/?game=${encodeURIComponent(GAME)}`);
     await gameReady(page);
+    await settled(page);
     await page.waitForTimeout(1500);
 
     const docks = await page.evaluate(() => {
@@ -135,6 +144,7 @@ async function main() {
         assets: text('assets'),
         debug: document.querySelector('[data-slot=debug] .debug-ui') !== null,
         styles: document.querySelector('style[data-weed-styles="debug-ui-styles"]')?.textContent.length ?? 0,
+        editing: document.getElementById('game').contentWindow.game.debugUI.editMode.active,
       };
     });
     check(
@@ -144,17 +154,23 @@ async function main() {
         docks.assets.includes('1-2.scene.json') &&
         docks.assets.includes('Goal') &&
         docks.debug &&
-        docks.styles > 1000,
-      `toolbar "${docks.toolbar.replace(/\n/g, ' ')}", list "${docks.tree.split('\n')[1]}", debug bar ${docks.debug}, styles ${docks.styles} chars`,
+        docks.styles > 1000 &&
+        docks.editing,
+      `toolbar "${docks.toolbar.replace(/\n/g, ' ')}", list "${docks.tree.split('\n')[1]}", debug bar ${docks.debug}, ` +
+        `styles ${docks.styles} chars, opened editing ${docks.editing}`,
     );
 
+    // Playing, a click in the list selects without leaving play (ED-17); Stop then comes back to editing.
+    await page.click('[data-slot=toolbar] button:has-text("Play")');
+    await page.waitForTimeout(300);
     const rows = page.locator('[data-slot=tree] [data-row]');
     await rows.filter({ hasText: /^▸ Platform\s+·/ }).click();
     await rows.filter({ hasText: /^Platform1\s/ }).click();
     await page.waitForTimeout(300);
     let state = await readGame(page);
     const listed = state;
-    await page.click('[data-slot=toolbar] button:has-text("Edit")');
+    await page.click('[data-slot=toolbar] button:has-text("Stop")');
+    await settled(page);
     await page.waitForTimeout(300);
     state = await readGame(page);
     check(
@@ -167,7 +183,7 @@ async function main() {
         state.active &&
         state.selection === 'Platform1',
       `playing on ${!listed.active}, selected ${listed.selection}, inspector "${listed.inspector.slice(0, 60)}…"; ` +
-        `after Edit: editing ${state.active}, selected ${state.selection}`,
+        `after Stop: editing ${state.active}, selected ${state.selection}`,
     );
 
     // Keys typed in the editor page (the scene list has the focus).
@@ -176,7 +192,7 @@ async function main() {
     const played = (await readGame(page)).active;
     await page.locator('[data-slot=tree]').click({ position: { x: 5, y: 5 } });
     await page.keyboard.press('Shift+E');
-    await page.waitForTimeout(200);
+    await settled(page);
     const editingAgain = (await readGame(page)).active;
     await page.evaluate(() => {
       const editMode = document.getElementById('game').contentWindow.game.debugUI.editMode;
@@ -197,7 +213,7 @@ async function main() {
     await page.keyboard.press('Control+Y');
     await page.waitForTimeout(300);
     const redone = (await readGame(page)).width;
-    check('keys', played === false && editingAgain === true && undone === 1200 && redone === 640, `Shift+E played ${played === false}, edited again ${editingAgain}; Ctrl+Z ${undone}, Ctrl+Y ${redone}`);
+    check('keys', played === false && editingAgain === true && undone === 1200 && redone === 640, `Shift+E played ${played === false}, stopped back to editing ${editingAgain}; Ctrl+Z ${undone}, Ctrl+Y ${redone}`);
 
     // The view, to see it come back.
     await page.evaluate(() => {

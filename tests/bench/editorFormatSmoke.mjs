@@ -172,7 +172,8 @@ async function checkJoints(page) {
   }, `${LEVELS}/${SCRATCH}`);
   await page.waitForTimeout(500);
   await page.keyboard.press('Shift+E');
-  await page.waitForFunction(() => globalThis.__fmt.game.debugUI.editing === true, undefined, { timeout: 5000 });
+  // Back to the level's start (a Stop, ED-80), in edit mode.
+  await page.waitForFunction(() => globalThis.__fmt.game.debugUI.editMode?.settled === true, undefined, { timeout: 10000 });
   await page.evaluate(() => {
     const { game } = globalThis.__fmt;
     game.debugUI.editMode.selectFromList(game.currentScene.getByName('Anchor').index, false);

@@ -288,11 +288,16 @@ function hostedFor({ scene = { sceneScriptUrl: '/s.js' }, editing = false, hando
     handover: () => handover,
     resume: async (kept) => log.push(['resume', kept]),
     save: () => log.push(['save']),
+    onSceneReady: () => log.push(['ready']),
+    editFromStart: () => log.push(['edit from start']),
+    palette: { show() {} },
+    refreshSceneFiles() {},
   };
   const debugUI = {
     scene,
     editing,
     editMode,
+    container: { querySelectorAll: () => [] },
     toggleEditMode: () => log.push(['toggle']),
     onEditKey: (e) => {
       log.push(['editKey', e.key]);
@@ -328,7 +333,7 @@ test('a page hands over its editor’s state; one that has not taken up what it 
     const pending = { version: 1, sceneScriptUrl: '/other.js' };
     b.hosted._kept = pending;
     b.hosted.onSceneReady(); // another scene runs: not its state
-    assert.deepEqual(b.log, []);
+    assert.deepEqual(b.log, [['ready']], 'edit mode’s own ready only (its reset to the level’s start, ED-80)');
     b.hosted.disconnect();
     assert.equal(b.disconnects[0], pending, 'handed back as it was');
   } finally {
@@ -342,8 +347,19 @@ test('the state is taken up once the same scene is ready', () => {
   hosted._kept = kept;
   hosted.onSceneReady();
   hosted.onSceneReady();
-  assert.deepEqual(log, [['resume', kept]]);
+  assert.deepEqual(log, [['resume', kept], ['ready']], 'taken up once; the next load is edit mode’s own');
   assert.equal(hosted._kept, null);
+});
+
+test('a page handed nothing opens editing, at the level’s start, with its first scene (ED-80)', () => {
+  const fresh = hostedFor();
+  fresh.hosted._startEditing = true; // connect() with nothing kept
+  fresh.hosted.onAttach(fresh.debugUI.scene);
+  fresh.hosted.onAttach(fresh.debugUI.scene); // a full load later: edit mode's own onAttach decides
+  assert.deepEqual(fresh.log, [['edit from start']]);
+  const reloaded = hostedFor();
+  reloaded.hosted.onAttach(reloaded.debugUI.scene); // a reload: resume() puts back what the page had
+  assert.deepEqual(reloaded.log, []);
 });
 
 test('keys from the editor page: Shift+E toggles, Ctrl+S saves even while playing, the rest only while editing', () => {

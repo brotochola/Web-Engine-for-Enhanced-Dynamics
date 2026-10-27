@@ -103,6 +103,26 @@ test('while the game runs: ⏸, and ⏭ only once paused; editing: neither', () 
   assert.deepEqual([pause.style.display, step.style.display], ['none', 'none'], 'edit mode holds the world its own way');
 });
 
+test('one button plays and stops, as Unity’s (ED-80): Play editing, Stop playing a level, Edit for a scene with no file', () => {
+  const { toolbar, editMode, scene } = toolbarFor({ active: true });
+  const toggles = [];
+  editMode.toggle = () => toggles.push(editMode.active ? 'play' : 'back to editing');
+  const mode = toolbar.el.children[0];
+  const shown = () => [mode.children[0].textContent, mode.children[1].textContent.trim(), mode.classList.contains('active')];
+  assert.deepEqual(shown(), ['▶', 'Play', false]);
+  assert.match(mode.title, /^Play the level from its start/);
+  editMode.active = false;
+  toolbar.refresh();
+  assert.deepEqual(shown(), ['❚❚', 'Edit', true], 'no scene file: no start to stop back to, edit mode holds it where it is');
+  scene.sceneFileUrl = 'http://host/levels/1-1.scene.json';
+  toolbar.refresh();
+  assert.deepEqual(shown(), ['■', 'Stop', true]);
+  assert.match(mode.title, /^Stop: back to the level’s start/);
+  mode.onclick();
+  assert.deepEqual(toggles, ['back to editing']);
+  assert.equal(toolbar.el.children.filter((b) => /Stop/.test(b.textContent)).length, 1, 'no Stop beside it');
+});
+
 test('💡 only for a scene with lighting: lit as the game is, or unlit while editing (ED-78)', () => {
   const { toolbar, editMode, calls } = toolbarFor({ active: true });
   const light = byText(toolbar, '💡');

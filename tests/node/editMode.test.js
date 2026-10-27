@@ -120,7 +120,7 @@ test('a right or middle drag on the game canvas pans; elsewhere, or with the lef
   }
 });
 
-test('a left click on the game canvas selects at the mouse; Esc lets go of the selection, then of edit mode', () => {
+test('a left click on the game canvas selects at the mouse; Esc lets go of the selection, not of edit mode', () => {
   const { editMode, canvas } = setup();
   try {
     editMode.tools.length = 0; // the move tool's routing alone: box select has its tests (editorMulti.test.js)
@@ -140,8 +140,8 @@ test('a left click on the game canvas selects at the mouse; Esc lets go of the s
     editMode.selection.index = 4;
     editMode.onKey({ key: 'Escape' });
     assert.deepEqual([cleared, editMode.active], [1, true]);
-    editMode.onKey({ key: 'Escape' });
-    assert.equal(editMode.active, false);
+    assert.equal(editMode.onKey({ key: 'Escape' }), true, 'the editor’s key still');
+    assert.equal(editMode.active, true, 'leaving edit mode is Play (ED-80), not Esc');
   } finally {
     teardown();
   }

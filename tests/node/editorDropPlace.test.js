@@ -1,6 +1,6 @@
 // Drag to place (VISUAL_EDITOR_PLAN.md ED-66): a class dragged from the palette and dropped on the view is placed
 // where it drops, as a click maps the point (Mouse: the canvas's box, then the drawn camera), on the grid, as one undo,
-// and selected. A drop while the game plays enters edit mode first. A drag of anything else is left to the page; over
+// and selected. A drop while the game plays goes back to editing first (a Stop, ED-80). A drag of anything else is left to the page; over
 // the view in edit mode, the overlay draws where the drag would land.
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -79,6 +79,12 @@ function fakeEditor({ active = true, snap = 16 } = {}) {
     enter() {
       calls.push('enter');
       this.active = true;
+    },
+    // EditMode.edit: back to editing from a game that plays (a Stop, ED-80).
+    async edit() {
+      calls.push('edit');
+      this.active = true;
+      return true;
     },
     place(className, x, y) {
       calls.push(`place ${className} ${x} ${y}`);
@@ -192,17 +198,30 @@ test('a drop on the view places the class at the mapped point and selects it; el
   assert.equal(placer.dragging, null);
 });
 
-test('a drop while the game plays enters edit mode first, through the view it was made in', () => {
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+test('a drop while the game plays goes back to editing first (a Stop), then lands at the point of its own view', async () => {
   const { editMode, placer, canvas, scene, calls } = fakeEditor({ active: false });
   const doc = fakeDocument();
   placer.attach(doc);
-  editMode.enter = () => {
-    calls.push('enter');
+  editMode.edit = async () => {
+    calls.push('edit');
     editMode.active = true;
-    scene.camera.x = 0; // entering holds the view; a point mapped after it would be off
+    scene.camera.x = 0; // the swap put the camera back; a point mapped after it would be off
+    return true;
   };
   doc.listeners.get('drop')(dragEvent(canvas, RECT.left + 10, RECT.top + 10, { data: { [CLASS_DRAG_TYPE]: 'Platform' } }));
-  assert.deepEqual(calls, ['enter', 'place Platform 1005 505', 'select 42']);
+  assert.deepEqual(calls, ['edit'], 'nothing placed in the game that plays');
+  await tick();
+  assert.deepEqual(calls, ['edit', 'place Platform 1005 505', 'select 42']);
+
+  // Not back to editing (an unsaved level the author kept): nothing placed.
+  calls.length = 0;
+  editMode.active = false;
+  editMode.edit = async () => (calls.push('edit'), false);
+  doc.listeners.get('drop')(dragEvent(canvas, RECT.left + 10, RECT.top + 10, { data: { [CLASS_DRAG_TYPE]: 'Platform' } }));
+  await tick();
+  assert.deepEqual(calls, ['edit']);
 });
 
 test('a class the scene does not have, or the engine’s own, is not placed: the status line says so', () => {
@@ -262,7 +281,7 @@ function makeEditor() {
   return { editMode, scene, canvas };
 }
 
-test('through the editor: a drop is a record on the grid, selected, one undo; undo takes it out', () => {
+test('through the editor: a drop is a record on the grid, selected, one undo; undo takes it out', async () => {
   const doc = fakeDocument();
   globalThis.document = doc;
   const { editMode, scene, canvas } = makeEditor();
@@ -279,7 +298,8 @@ test('through the editor: a drop is a record on the grid, selected, one undo; un
     assert.equal(editMode.active, false);
     // At zoom 1.25, 251 px right of the view's left edge is 100 + 200.8 = 300.8; 125 px down is 1500 + 100 = 1600.
     doc.listeners.get('drop')(dragEvent(canvas, RECT.left + 251, RECT.top + 125, { data: { [CLASS_DRAG_TYPE]: 'Platform' } }));
-    assert.equal(editMode.active, true, 'edit mode entered');
+    assert.equal(editMode.active, true, 'edit mode entered: a scene with no file holds the world where it is');
+    await tick(); // the drop lands once EditMode.edit has resolved
     const found = recordOf(scene, 'Platform2');
     assert.deepEqual(found.record, { name: 'Platform2', class: 'Platform', x: 304, y: 1600 }, 'on the 16 px grid');
     assert.equal(editMode.selection.name, 'Platform2', 'selected');

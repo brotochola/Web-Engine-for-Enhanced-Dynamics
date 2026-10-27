@@ -70,6 +70,10 @@ async function editorReady(page) {
     undefined,
     { timeout: 60000 },
   );
+  // The editor page opens editing, at the level's start once the scene is ready (ED-80).
+  await page.waitForFunction(() => document.getElementById('game').contentWindow.game.debugUI.editMode?.settled === true, undefined, {
+    timeout: 30000,
+  });
 }
 
 /** What the scene list shows: the model's counts, the rows drawn, the field's count, where the focus is. */
@@ -177,11 +181,12 @@ const frameCenter = (page) =>
 const framed = (state, center) =>
   center !== null && Math.abs(state.camera[0] - center[0]) < 2 && Math.abs(state.camera[1] - center[1]) < 2;
 
-/** Edit mode, from the toolbar. */
+/** Edit mode: the page opens in it; playing, the toolbar's Stop goes back to the level's start (ED-80). */
 async function enterEdit(page) {
-  await page.click('[data-slot=toolbar] button:has-text("Edit")');
-  await page.waitForFunction(() => document.getElementById('game').contentWindow.game.debugUI.editMode.active === true, undefined, {
-    timeout: 10000,
+  const playing = await page.evaluate(() => !document.getElementById('game').contentWindow.game.debugUI.editMode.active);
+  if (playing) await page.click('[data-slot=toolbar] button:has-text("Stop")');
+  await page.waitForFunction(() => document.getElementById('game').contentWindow.game.debugUI.editMode.settled === true, undefined, {
+    timeout: 30000,
   });
 }
 

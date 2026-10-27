@@ -158,6 +158,20 @@ async function settled(target) {
   );
 }
 
+/**
+ * Until the editor is editing with nothing on its way (EditMode.settled): the editor page opens editing, at the level's
+ * start, and going back to editing from a game that plays is a Stop, a fast swap (ED-80).
+ * @param {import('playwright').Page|import('playwright').Frame} target - where window.game is
+ */
+const editingAtStart = (target) =>
+  target.waitForFunction(() => window.game?.debugUI?.editMode?.settled === true, undefined, { timeout: 30000 });
+
+/** Play from the toolbar, until the game plays. */
+async function play(page) {
+  await page.click('[data-slot=toolbar] button:has-text("Play")');
+  await gameFrame(page).waitForFunction(() => window.game.debugUI.editMode.active === false, undefined, { timeout: 10000 });
+}
+
 /** The view's middle, in the editor page's coordinates. */
 async function viewMiddle(page) {
   const box = await page.locator('#game').boundingBox();
@@ -233,6 +247,7 @@ async function openEditor(browser, origin, scene, errors) {
 async function littleCity(browser, origin, errors) {
   const page = await openEditor(browser, origin, 'littlecity', errors);
   await gameReady(page);
+  await editingAtStart(gameFrame(page));
   await page.waitForTimeout(1500);
 
   // ---- pictures (ED-65) ----
@@ -249,13 +264,20 @@ async function littleCity(browser, origin, errors) {
     rows.map((r) => `${r.name} ${r.size}px ${r.drawn} px drawn (${r.title.split(': ')[1]}) ${r.count}`).join('; '),
   );
 
-  // ---- a tree dragged onto the view while the game plays (ED-66) ----
+  // ---- a tree dragged onto the view while the game plays (ED-66): it stops, then lands at its point (ED-80) ----
+  await play(page);
   const before = await readEditor(page, 'CityTree');
   const middle = await viewMiddle(page);
   const target = { x: middle.x + 37, y: middle.y - 23 };
   await settled(gameFrame(page)); // littleCity follows nothing: the view stays while it plays
   const aimed = await worldAt(page, target.x, target.y);
   await dragRowTo(page, 'CityTree', target);
+  await editingAtStart(gameFrame(page));
+  await gameFrame(page)
+    .waitForFunction((n) => window.game.currentScene.sceneFile.entities.filter((e) => e.class === 'CityTree').length > n, before.records, {
+      timeout: 10000,
+    })
+    .catch(() => {});
   const after = await readEditor(page, 'CityTree');
   await page.screenshot({ path: `${SHOTS}/littlecity-dropped.png` });
   const step = Math.max(after.snap, 1);
@@ -312,6 +334,7 @@ async function littleCity(browser, origin, errors) {
 async function platformer(browser, origin, errors) {
   const page = await openEditor(browser, origin, 'platformergame', errors);
   await gameReady(page);
+  await editingAtStart(gameFrame(page));
   await page.waitForTimeout(1500);
 
   // ---- pictures (ED-65) ----
@@ -328,8 +351,7 @@ async function platformer(browser, origin, errors) {
     rows.map((r) => `${r.name} ${r.drawn} px drawn (${r.title.split(': ')[1]}) ${r.count}`).join('; '),
   );
 
-  // ---- a platform dragged onto the view in edit mode, on a 16 px grid (ED-66) ----
-  await page.click('[data-slot=toolbar] button:has-text("Edit")');
+  // ---- a platform dragged onto the view in edit mode (the page opens in it: ED-80), on a 16 px grid (ED-66) ----
   await gameFrame(page).evaluate(() => {
     window.game.debugUI.editMode.move.snap = 16;
     return true;
@@ -408,9 +430,10 @@ async function gamePageAlone(browser, origin, errors) {
   await page.waitForFunction(() => !!(window.game?.state === 1 && window.game.currentScene?.sceneFile), undefined, { timeout: 60000 });
   await page.waitForTimeout(1000);
   await page.evaluate(() => {
-    window.game.debugUI.toggleEditMode(); // Shift+E
+    window.game.debugUI.toggleEditMode(); // Shift+E: back to the level's start, in edit mode (ED-80)
     return true;
   });
+  await editingAtStart(page);
   await page.waitForFunction(() => document.querySelectorAll('[data-class-name]').length === 3, undefined, { timeout: 30000 });
   await settled(page);
   const read = () =>
