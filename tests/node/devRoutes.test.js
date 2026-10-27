@@ -1,6 +1,7 @@
 // The dev server's editor routes (VISUAL_EDITOR_PLAN.md D7, ED-13): PUT /__weed/file writes a scene file inside the
 // served folder, atomically; GET /__weed/list lists a folder's scene files. Only this machine, its own pages, paths
-// inside the folder, .scene.json names, JSON bodies of at most 8 MB.
+// inside the folder, .scene.json names (and the baked atlas: .atlas.json, .atlas.png), JSON bodies of at most 8 MB
+// (a PNG of at most 64 MB).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
@@ -9,7 +10,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
-import { handleDevRoute, MAX_BODY_BYTES, resolveInside } from '../../server/devRoutes.js';
+import { handleDevRoute, MAX_ATLAS_PNG_BYTES, MAX_BODY_BYTES, resolveInside } from '../../server/devRoutes.js';
 
 async function withServer(fn) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'weed-devroutes-'));
@@ -97,6 +98,35 @@ test('PUT refuses paths out of the folder, other endings, bodies that are not JS
     assert.deepEqual(fs.readdirSync(path.join(root, 'levels')), [], 'nothing written');
     const wrongMethod = await fetch(`${base}/__weed/file?path=/levels/a.scene.json`);
     assert.equal(wrongMethod.status, 405);
+  });
+});
+
+test('PUT writes the atlas the editor bakes: a PNG of up to 64 MB and its JSON (ED-31)', async () => {
+  await withServer(async ({ root, base }) => {
+    // Past the 8 MB of a scene file: an atlas image may be that big.
+    const png = Buffer.alloc(MAX_BODY_BYTES + 1024, 7);
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(png);
+    assert.ok(png.length <= MAX_ATLAS_PNG_BYTES);
+    const res = await put(base, '/levels/Level.atlas.png', png);
+    assert.equal(res.status, 200, JSON.stringify(await res.clone().json()));
+    assert.ok(fs.readFileSync(path.join(root, 'levels', 'Level.atlas.png')).equals(png), 'written byte for byte');
+    const json = '{"frames":{},"animations":{},"meta":{"size":{"w":1,"h":1}}}';
+    assert.equal((await put(base, '/levels/Level.atlas.json', json)).status, 200);
+    assert.equal(fs.readFileSync(path.join(root, 'levels', 'Level.atlas.json'), 'utf8'), json);
+
+    const refused = [
+      ['/levels/Other.atlas.png', '{"not":"a png"}', 400, /not a PNG/],
+      ['/levels/Other.atlas.json', 'not json', 400, /not JSON/],
+      ['/levels/Other.png', png.subarray(0, 64), 400, /can be written/],
+      ['/levels/Other.json', '{}', 400, /can be written/],
+      ['/levels/Other.atlas.json', `"${'x'.repeat(MAX_BODY_BYTES)}"`, 413, /at most/],
+    ];
+    for (const [sitePath, body, status, why] of refused) {
+      const answer = await put(base, sitePath, body);
+      assert.equal(answer.status, status, sitePath);
+      assert.match((await answer.json()).error, why, sitePath);
+    }
+    assert.deepEqual(fs.readdirSync(path.join(root, 'levels')).sort(), ['Level.atlas.json', 'Level.atlas.png']);
   });
 });
 

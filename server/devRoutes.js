@@ -10,15 +10,20 @@
 // Who may: a request from this machine (the socket's address), addressed to it by a loopback name (Host), and, when
 // it says where it comes from (Origin), from a page of this server. A page of another site open in the same browser
 // is also "from this machine", and DNS rebinding can give it a loopback address under its own name.
-// What: a path inside the served folder, after normalization and through links; a name ending in .scene.json; a
-// body of at most 8 MB that parses as JSON. Anything else is refused (400, 403, 404, 405, 413) and writes nothing.
+// What: a path inside the served folder, after normalization and through links; a name ending in .scene.json, or in
+// .atlas.json / .atlas.png (the atlas the editor bakes, ED-31); a body of at most 8 MB that parses as JSON, or for
+// .atlas.png one of at most 64 MB that is a PNG. Anything else is refused (400, 403, 404, 405, 413) and writes nothing.
 
 import fs from 'node:fs';
 import path from 'node:path';
 
 export const MAX_BODY_BYTES = 8 * 1024 * 1024;
-/** The file endings the routes write and list (Stage 5 adds the atlas files). */
-export const DEV_FILE_EXTENSIONS = Object.freeze(['.scene.json']);
+/** An atlas image may be bigger than a scene file: a 4096 × 4096 one holds 64 MB of pixels. */
+export const MAX_ATLAS_PNG_BYTES = 64 * 1024 * 1024;
+/** The file endings the routes write and list: scene files, and the atlas the editor bakes (ED-31). */
+export const DEV_FILE_EXTENSIONS = Object.freeze(['.scene.json', '.atlas.json', '.atlas.png']);
+/** The first bytes of every PNG file. */
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 const LOOPBACK_ADDRESSES = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
@@ -116,34 +121,45 @@ function writeFileRoute(req, url, root, send) {
     send(400, { error: `only ${DEV_FILE_EXTENSIONS.join(', ')} files can be written` });
     return;
   }
+  const png = file.endsWith('.png');
+  const limit = png ? MAX_ATLAS_PNG_BYTES : MAX_BODY_BYTES;
   const chunks = [];
   let size = 0;
   let refused = false;
   req.on('data', (chunk) => {
     if (refused) return;
     size += chunk.length;
-    if (size > MAX_BODY_BYTES) {
+    if (size > limit) {
       refused = true;
       chunks.length = 0;
-      send(413, { error: `a file is at most ${MAX_BODY_BYTES} bytes` });
+      send(413, { error: `a ${png ? 'PNG' : 'file'} is at most ${limit} bytes` });
       return;
     }
     chunks.push(chunk);
   });
   req.on('end', () => {
     if (refused) return;
-    const text = Buffer.concat(chunks).toString('utf8');
-    try {
-      JSON.parse(text);
-    } catch (error) {
-      send(400, { error: `not JSON: ${error.message}` });
-      return;
+    const body = Buffer.concat(chunks);
+    let content = body;
+    if (png) {
+      if (body.length < PNG_SIGNATURE.length || !body.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+        send(400, { error: 'not a PNG' });
+        return;
+      }
+    } else {
+      content = body.toString('utf8');
+      try {
+        JSON.parse(content);
+      } catch (error) {
+        send(400, { error: `not JSON: ${error.message}` });
+        return;
+      }
     }
     if (!fs.existsSync(path.dirname(file))) {
       send(404, { error: `no folder ${path.posix.dirname(sitePath)}` });
       return;
     }
-    writeAtomic(file, text).then(
+    writeAtomic(file, content).then(
       (mtimeMs) => send(200, { mtimeMs }),
       (error) => send(500, { error: `could not write ${sitePath}: ${error.code || error.message}` }),
     );
