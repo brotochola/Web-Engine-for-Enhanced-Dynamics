@@ -32,6 +32,7 @@ import { AssetCatalog } from './assetPicker.js';
 import { TransformFields } from './transformFields.js';
 import { InspectorSection } from './inspectorSection.js';
 import { RigidBody } from '../../../components/rigidBody.js';
+import { SpriteRenderer } from '../../../components/spriteRenderer.js';
 import { describeSpawnParams } from '../../spawnParams.js';
 import { jointsOf } from './sceneJoints.js';
 
@@ -184,7 +185,7 @@ export class Selection {
     const found = this.authored ? recordOf(scene, this.name) : null;
     const sections = this._sections;
     this._nameRow.style.display = found === null ? 'none' : 'flex';
-    this.transform.show(found === null ? null : found.record, this.index, this._otherRecords());
+    this.transform.show(found === null ? null : found.record, found !== null && drawsSprite(scene, found.record.class), this._otherRecords());
     sections.transform.visible = found !== null;
     sections.params.visible = found !== null;
     if (found === null) {
@@ -287,7 +288,9 @@ export class Selection {
   showCount(count) {
     if (this._detail === null || !this.authored) return;
     const found = recordOf(this.debugUI.scene, this.name);
-    if (found !== null && this.transform !== null) this.transform.show(found.record, this.index, this._otherRecords());
+    if (found !== null && this.transform !== null) {
+      this.transform.show(found.record, drawsSprite(this.debugUI.scene, found.record.class), this._otherRecords());
+    }
     if (this._sections !== null) {
       this._sections.params.note.textContent = count > 0 ? `a change goes to each of the ${count + 1} selected that has it` : '';
     }
@@ -308,6 +311,14 @@ export class Selection {
 function registeredOf(scene, entityType) {
   for (const registered of scene?.registeredClasses || []) if (registered.entityType === entityType) return registered;
   return null;
+}
+
+/** Whether the scene's class of that name draws a sprite (has a SpriteRenderer). */
+function drawsSprite(scene, className) {
+  for (const registered of scene?.registeredClasses || []) {
+    if (registered.class.name === className) return (registered.components || []).includes(SpriteRenderer);
+  }
+  return false;
 }
 
 /** The Live section's note: its components. */

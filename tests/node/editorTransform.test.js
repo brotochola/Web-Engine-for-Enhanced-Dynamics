@@ -45,7 +45,7 @@ function withDocument(fn) {
 }
 
 /** The rows over a fake selection whose editor applies each write to `record` and counts them. */
-function fieldsFor(record) {
+function fieldsFor(record, sprite = true) {
   const writes = [];
   const selection = {
     name: 'Block1',
@@ -58,13 +58,13 @@ function fieldsFor(record) {
         write(record);
         if (JSON.stringify(record) === before) return -1;
         writes.push(label);
-        fields.show(record, 0);
+        fields.show(record, sprite);
         return 0;
       },
     },
   };
   const fields = new TransformFields(selection);
-  fields.show(record, 0);
+  fields.show(record, sprite);
   const inputs = [...fields.el.all()].filter((el) => el.tagName === 'INPUT');
   const axes = [...fields.el.all()].filter((el) => el.tagName === 'SPAN' && el.style.cssText?.includes('ew-resize'));
   return { fields, inputs, axes, writes };
@@ -137,11 +137,11 @@ test('a drag on a label draws the moved or turned box as it goes, snapped, and w
 test('a runtime entity (no record) has no rows; an entity without a sprite has no scale row unless its record scales it', () => {
   withDocument(() => {
     const record = { name: 'Door1', class: 'Door', x: 0, y: 0 };
-    const { fields } = fieldsFor(record);
+    const { fields } = fieldsFor(record, false);
     assert.equal(fields._scaleRow.style.display, 'none');
-    fields.show({ ...record, scaleX: 2 }, 0);
+    fields.show({ ...record, scaleX: 2 }, false);
     assert.equal(fields._scaleRow.style.display, 'flex');
-    fields.show(null, -1);
+    fields.show(null, false);
     assert.equal(fields.el.style.display, 'none');
   });
 });
@@ -194,7 +194,7 @@ test('several selected: a value they do not share shows “—”; typed, it goe
       },
     };
     const fields = new TransformFields(selection);
-    fields.show(records.Block1, 0, [records.Block2]);
+    fields.show(records.Block1, true, [records.Block2]);
     const inputs = [...fields.el.all()].filter((el) => el.tagName === 'INPUT');
     assert.deepEqual([inputs[0].value, inputs[0].placeholder, inputs[1].value], ['', '—', '200'], 'x differs, y is shared');
     inputs[0].value = '640';

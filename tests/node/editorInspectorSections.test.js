@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 import { InspectorSection, resetRememberedFolds } from '../../src/core/debug/editor/inspectorSection.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
+import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { makeWorld } from '../helpers/editorHandlesWorld.mjs';
 
 class El {
@@ -117,6 +118,26 @@ test('the inspector: Transform and Params open; Joints only with a body; Live fo
       assert.equal(selection.live._index, world.indexOf('Block1'), 'opened: the live rows');
       live.head.onclick({ target: live.head });
       assert.equal(selection.live._index, -1, 'folded again: cleared');
+    } finally {
+      world.done();
+    }
+  });
+});
+
+test('the Scale row follows the class (a SpriteRenderer), not the slot: right after an edit the entity is respawning', () => {
+  withDom(memoryStorage(), () => {
+    const world = makeWorld();
+    try {
+      const selection = world.editMode.selection;
+      delete selection._show;
+      selection.debugUI.hosted = { slot: () => new El('div'), onSelectionChanged() {} };
+      const block = world.scene.registeredClasses.find((r) => r.class.name === 'Block');
+      block.components = [SpriteRenderer]; // its slot is not on: the world has no SpriteRenderer columns
+      world.select('Block1');
+      assert.equal(selection.transform._scaleRow.style.display, 'flex', 'a class that draws a sprite');
+      block.components = [RigidBody];
+      world.select('Block1');
+      assert.equal(selection.transform._scaleRow.style.display, 'none', 'one that draws none, its record not scaled');
     } finally {
       world.done();
     }

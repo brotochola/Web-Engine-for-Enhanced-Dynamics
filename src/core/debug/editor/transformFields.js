@@ -112,8 +112,12 @@ export class TransformFields {
   /**
    * Show a placed entity's record (null: hide the rows, for a runtime entity or none); with several selected, the
    * others' records: a value they do not all share shows "—".
+   * @param {object|null} record
+   * @param {boolean} sprite - its class draws a sprite (a SpriteRenderer): the Scale row shows. The class, not the live
+   *   slot: right after an edit the entity is respawning, and its slot is not on.
+   * @param {object[]} [others]
    */
-  show(record, index, others = NO_OTHERS) {
+  show(record, sprite, others = NO_OTHERS) {
     this.cancelDrag();
     this._record = record;
     this._others = others;
@@ -127,7 +131,6 @@ export class TransformFields {
       this._inputs[v].placeholder = mixed ? '—' : '';
       this._inputs[v].title = mixed ? 'They differ: a value typed here is written into each' : this._inputs[v].dataset.title || this._inputs[v].title;
     }
-    const sprite = index >= 0 && SpriteRenderer.active && SpriteRenderer.active[index] === 1;
     this._scaleRow.style.display = sprite || record.scaleX !== undefined || record.scaleY !== undefined ? 'flex' : 'none';
   }
 
