@@ -86,6 +86,14 @@ import { bindPoolExhaustion } from '../util/poolExhaustion.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
+import { createConsoleForward } from '../util/consoleForward.js';
+
+/**
+ * The editor's console (VISUAL_EDITOR_PLAN.md ED-18): this worker's console calls also go to the page while the
+ * editor page shows its console ('consoleForward'). Module-level, as errorReport.js's reporter is: a field would
+ * reshape the worker classes.
+ */
+let consoleForward = null;
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -1301,6 +1309,13 @@ export class AbstractWorker {
 
       case 'rebindSurface':
         this.rebindSurface();
+        break;
+
+      case 'consoleForward':
+        if (consoleForward === null) {
+          consoleForward = createConsoleForward(console, (entry) => self.postMessage({ msg: 'log', ...entry }));
+        }
+        consoleForward.set(e.data.on === true);
         break;
 
       case 'hotSwap':

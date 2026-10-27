@@ -239,6 +239,21 @@ export class DebugUI {
     this.editMode.onContentSwapped();
   }
 
+  /** A scene made its workers (Scene.init): in the editor page, their console calls go to its console (ED-18). */
+  onWorkersCreated(scene) {
+    if (this.hosted !== null) scene._setConsoleForward(true);
+  }
+
+  /** A worker's console call (Scene, ED-18): the editor page's console shows it. */
+  onConsoleEntry(source, entry) {
+    this.hosted?.console?.add(source, entry.level, entry.text);
+  }
+
+  /** A game code error a worker reported (Scene._onEntityError): the editor page's console lists it. */
+  onEntityError(key, rec) {
+    this.hosted?.console?.entityError(key, rec);
+  }
+
   /** GameEngine.loadScene, once the engine takes loads again: the editor page's resume (D9). */
   onSceneReady() {
     this.hosted?.onSceneReady();

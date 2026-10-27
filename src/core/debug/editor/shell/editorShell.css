@@ -157,7 +157,8 @@ body.weed-editor {
 }
 
 .weed-editor-slot[data-slot='tree'],
-.weed-editor-slot[data-slot='debug'] {
+.weed-editor-slot[data-slot='debug'],
+.weed-editor-slot[data-slot='console'] {
   padding: 0;
   overflow: hidden;
 }

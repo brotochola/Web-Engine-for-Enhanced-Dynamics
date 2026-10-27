@@ -20,6 +20,9 @@
  *   live     (ED-17) while playing, a click in the list selects Platform1 without leaving play; its live fields
  *            follow the entity; a live alpha written in the inspector reaches the entity; Copy to scene puts it in
  *            the record (one undo); a live tint not copied is gone after Stop
+ *   console  (ED-18) another game, tests/fixtures/editorConsoleScene.js in the bench page: the Console dock has a
+ *            logic worker's log from the load and one after it, the game page's own warning, and one row for the
+ *            talkers' tick error with its count; a click on that row selects the entity that threw
  *
  * Every wait's predicate returns a boolean: Playwright keeps a handle to what it returns, and a handle to the game's
  * scene would keep each reloaded page alive (it did, in the first leak runs of this script).
@@ -322,6 +325,60 @@ async function main() {
       'selected while playing ' + (!beforeLive.editing && beforeLive.selected === 'Platform1') + ', x field ' + xShown +
         '; live alpha ' + afterAlpha.alpha + '; copied alpha ' + copied.recordAlpha + ' (' + copied.undo + '); live tint ' +
         tinted.tint.toString(16) + ' → after Stop ' + stopped.tint.toString(16) + ', alpha ' + stopped.alpha,
+    );
+
+    // The console (ED-18), with a game that logs and throws.
+    await page.close();
+    const consolePage = await browser.newPage({ viewport: { width: 1400, height: 860 } });
+    consolePage.on('pageerror', (error) => errors.push(String(error)));
+    await consolePage.goto(
+      `http://127.0.0.1:${server.port}/src/core/debug/editor/shell/?game=${encodeURIComponent('/tests/bench/integratedWorkerBenchmark.html?src=1')}`,
+    );
+    await consolePage.waitForFunction(
+      () => document.getElementById('game').contentDocument?.body?.dataset.benchmarkReady === 'true',
+      undefined,
+      { timeout: 30000 },
+    );
+    // The game's frame, not the editor page (whose own URL names the game page in its query).
+    const frame = consolePage.frames().find((f) => f.parentFrame() !== null);
+    await frame.evaluate(async () => {
+      const { default: WEED } = await import('/src/index.js');
+      if (typeof WEED.ensureEmbeddedSources === 'function') await WEED.ensureEmbeddedSources();
+      const game = new WEED.GameEngine({ autoResize: true, debug: true, injectStyles: false });
+      globalThis.game = game;
+      await game.loadScene('/tests/fixtures/editorConsoleScene.js', { export: 'EditorConsoleScene' });
+      return true;
+    });
+    await consolePage.waitForTimeout(800);
+    await frame.evaluate(async () => {
+      const { Talker } = await import('/tests/fixtures/editorConsoleScene.js');
+      Talker.spawn({ x: 400, y: 400 });
+      console.warn('a warning of the game page');
+      return true;
+    });
+    await consolePage.waitForTimeout(1500);
+    await consolePage.click('[data-tab=console]');
+    // Each row: its source, its text, its count.
+    const lines = await consolePage.evaluate(() =>
+      [...document.querySelectorAll('[data-console-rows] > div')].map((row) => [...row.children].map((cell) => cell.innerText)),
+    );
+    const spawned = lines.filter(([source, text]) => source === 'logic0' && /^talker #\d+ spawned$/.test(text));
+    const warned = lines.findIndex(([source, text]) => source === 'page' && text === 'a warning of the game page');
+    const errorRow = lines.find(([, text]) => /^Talker #\d+ · tick threw: talker tick broke$/.test(text)) || ['', '', ''];
+    const thrower = Number((/Talker #(\d+)/.exec(errorRow[1]) || [])[1]);
+    await consolePage.locator('[data-slot=console] [data-entity]').first().click();
+    await consolePage.waitForTimeout(300);
+    const selected = await frame.evaluate(() => globalThis.game.debugUI.editMode.selection.index);
+    check(
+      'console',
+      spawned.length === 3 &&
+        lines.indexOf(spawned[1]) < warned &&
+        lines.indexOf(spawned[2]) > warned &&
+        /^logic/.test(errorRow[0]) &&
+        /^×\d+$/.test(errorRow[2]) &&
+        selected === thrower,
+      `${spawned.length} talkers' logs from logic0 (2 from the load, before the page's warning, row ${warned}); ` +
+        `error row ${JSON.stringify(errorRow)}; a click selected #${selected}`,
     );
 
     check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

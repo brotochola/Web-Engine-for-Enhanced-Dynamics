@@ -1127,6 +1127,8 @@ class Scene {
     // Create workers
 
     await this.createWorkers();
+    // The editor page's console (ED-18): from their first message, so it has what they log while loading.
+    this.game?.debugUI?.onWorkersCreated?.(this);
 
     // Wait for all workers to be ready (workers stay paused until we send 'start')
     await this.readyPromise;
@@ -2224,6 +2226,8 @@ class Scene {
 
   handleMessageFromWorker(e) {
     if (e.data.msg === 'log') {
+      // A worker's console call, while the editor page shows its console (_setConsoleForward, ED-18).
+      if (e.data.level !== undefined) this.game?.debugUI?.onConsoleEntry?.(e.currentTarget.name, e.data);
       return;
     } else if (e.data.msg === 'stepDone') {
       const waiter = this._stepWaiters.get(e.data.id | 0);
@@ -2411,6 +2415,20 @@ class Scene {
     }
     rec.counts.set(data.workerName, data.count);
     this._renderEntityErrors();
+    this.game?.debugUI?.onEntityError?.(data.key, rec);
+  }
+
+  /**
+   * The editor's console (ED-18): every worker that runs game code passes its console calls on to the page (as
+   * `log` messages), or stops. Physics' own worker is not one of them.
+   * @param {boolean} on
+   */
+  _setConsoleForward(on) {
+    const w = this.workers;
+    if (!w) return;
+    const message = { msg: 'consoleForward', on: on === true };
+    const all = [...(w.logicWorkers || []), ...(w.spatialWorkers || []), ...(w.preRenderWorkers || []), w.particle, w.renderer];
+    for (const worker of all) if (worker) worker.postMessage(message);
   }
 
   /**

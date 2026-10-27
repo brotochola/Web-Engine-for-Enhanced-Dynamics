@@ -13,6 +13,8 @@ import { isTypingTarget } from '../../../util/typingTarget.js';
 import { loadDebugCss } from '../ui/debugDom.js';
 import { EditorToolbar } from './toolbar.js';
 import { EntityTree } from './entityTree.js';
+import { ConsolePanel } from './consolePanel.js';
+import { createConsoleForward } from '../../../util/consoleForward.js';
 
 /** Where the editor page puts its host (shell/editorShell.js). */
 export const HOST_KEY = '__weedEditorHost';
@@ -63,6 +65,9 @@ export class HostedEditor {
     this._kept = null;
     this.toolbar = null;
     this.tree = null;
+    /** The Console dock (ED-18), and this page's console passed on to it. */
+    this.console = null;
+    this._pageConsole = null;
     this._onPageHide = () => this.disconnect();
   }
 
@@ -82,6 +87,12 @@ export class HostedEditor {
     slots.toolbar.appendChild(this.toolbar.el);
     slots.tree.appendChild(this.tree.el);
     slots.debug.appendChild(debugUI.container);
+    // The console: this page's calls from now on, the workers' from each scene's attach.
+    const panel = new ConsolePanel(debugUI);
+    this.console = panel;
+    slots.console.appendChild(panel.el);
+    this._pageConsole = createConsoleForward(console, (entry) => panel.add('page', entry.level, entry.text));
+    this._pageConsole.set(true);
   }
 
   /** Whether the docks are there (connected, and the page has not hidden). */
@@ -107,6 +118,7 @@ export class HostedEditor {
     }
     window.removeEventListener('pagehide', this._onPageHide);
     this.slots = null;
+    this._pageConsole?.set(false);
     this.tree?.destroy();
     this.host.disconnect(this, state);
   }
@@ -118,6 +130,7 @@ export class HostedEditor {
     editMode.refreshSceneFiles();
     this.tree?.attach(scene);
     this.toolbar?.refresh();
+    this.console?.newScene();
   }
 
   onDetach() {
@@ -188,6 +201,7 @@ export class HostedEditor {
   /** The debug UI's tick. */
   update() {
     this.tree?.update();
+    this.console?.update();
   }
 
   destroy() {
