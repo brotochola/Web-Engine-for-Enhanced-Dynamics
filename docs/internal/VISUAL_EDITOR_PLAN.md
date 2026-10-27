@@ -3,7 +3,8 @@
 **Opened:** 2026-10-22. **Updated:** 2026-10-26, against the code after the WASM migration
 (E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stages 1 and 2
 done 2026-10-26 (milestone M1 reached); Stage 3 started with ED-15, the editor page (D9).
-**Next step:** ED-19, then Stages 4 and 5. **Time box (the author, 2026-10-26):** 12 hours,
+**Next step:** merge Stage 4's branches and ED-31/32, then ED-33 and ED-28, and a full test
+pass. **Time box (the author, 2026-10-26):** 12 hours,
 14 at most, for the rest of the plan with its tests. So Stage 4's items run in parallel in
 three agent worktrees (handles: ED-20, ED-22, ED-27 with ED-45's view parts; scene file:
 ED-21, ED-25; panels: ED-24, ED-26, ED-45's pickers) and a fourth runs ED-31 and ED-32, on
@@ -1301,8 +1302,13 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
     (eaeacb88).
   - Tests: `consoleForward.test.js`; in Chromium, `editorShellSmoke.mjs` 'console' with
     `tests/fixtures/editorConsoleScene.js` (11/11).
-- [ ] **ED-19 Proper edit pause** (D5): pause only the simulation workers, after checking
-  pose interpolation. If the frame code changes, the hygiene check applies.
+- [-] **ED-19 Proper edit pause** (D5): pause only the simulation workers, after checking
+  pose interpolation. If the frame code changes, the hygiene check applies. **Deferred
+  2026-10-26** (time box): the editor applies every change by a respawn, which logic0 runs
+  from the spawn ring in its frame; with the logic workers paused, a change would show only
+  after Play. It needs a way to run spawns outside the frame loop (a message logic0 handles
+  while paused) and the hygiene check. Time scale 0 already holds the world still, at little
+  cost (ED-44: physics 0.27 → 0.002 ms a frame while editing).
 
 ### Stage 4: 2D tools (independent, any order)
 
@@ -1321,11 +1327,45 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
 
 ### Stage 5: ship and export
 
-- [ ] **ED-29** The editor in the npm bundles: part of the debug bundle, or a separate
+- [x] **ED-29** The editor in the npm bundles: part of the debug bundle, or a separate
   `weed.editor` file loaded on first Edit. Production keeps stubs. Measure the debug
   bundle size change, and check `scripts/assertDistBundles.js`.
-- [ ] **ED-30** `server/devRoutes.mjs` published in the package and used by the
+  - Done 2026-10-26 (041692fd, dcaff75a), as the author decided: the package
+    `@weed.js/editor` (`packages/editor`), built by `scripts/buildEditor.js` with
+    `webpack.editor.config.js` into `dist/weed.editor.min.js` (a script: `WEED_EDITOR`) and
+    `weed.editor.esm.min.js` (an import map entry), 57 KB each, plus the editor page
+    (`shell/`) and the dev server's routes (`server/`).
+  - **One engine, not a copy:** every import the editor makes from outside its folder
+    resolves to the engine's own module, which a debug build publishes as
+    `WEED_EDITOR_KIT` (`src/core/debug/editorKit.js`) when it loads. An import the kit lacks
+    fails the editor's build, naming it; `editorKit.test.js` checks the kit against the
+    editor's imports.
+  - **Loaded on demand:** the DebugUI starts without the editor and loads it the first time
+    it is asked for (Shift+E, Edit, Stop, the editor page): its modules from source
+    (`editorLoader.js`), the package's script or import map entry in the bundles
+    (`editorLoader.bundle.js`, through `nativeImport`). Without the package, Shift+E says how
+    to add it. Production keeps its stub DebugUI: no editor, no kit.
+  - **Size:** the debug bundle went from 3,277,713 to 3,241,992 bytes (−35.7 KB, −1.1 %;
+    the compressed one −35.7 KB too). `assertDistBundles.js` checks only that the 8 bundles
+    exist: nothing to change.
+  - **Release:** `npm run release` builds the editor, gives `packages/editor` the release's
+    version with that very engine as its peer, and publishes it after the engine (9c17259e).
+  - Tests: `editorKit.test.js`, `editorPage.test.js`; `scripts/smokeEditorBundle.mjs` against
+    the real bundles (5/5): import map and script tag both load the editor, which selects the
+    template's Player reading the engine's own arrays; the engine alone says how to add it;
+    nothing asks for `/src/`.
+- [x] **ED-30** `server/devRoutes.mjs` published in the package and used by the
   template's `scripts/dev.mjs`. The `package.json` `files` change is a commit of its own.
+  - Done 2026-10-26 (041692fd, 9c17259e). The routes ship in `@weed.js/editor`, not the
+    engine (the author's decision), as `@weed.js/editor/server`: `handleDevRoute` (save and
+    list scene files) and `serveEditorPage` (`/__weed/editor/`, `server/editorPage.js`);
+    the engine's `package.json` `files` is unchanged. `npm run dev` serves the editor page
+    at `/__weed/editor/` too.
+  - The template's `scripts/dev.mjs` uses them when the package is installed (not for
+    preview), and listens on this machine only unless `--host` (N-80's rule; `--host` was
+    read as the folder to serve). The template has the editor as a dev dependency at the
+    engine's range and names it in its import map; `npm run build` drops that line.
+  - Tests: `createWeedGame.test.js`.
 - [ ] **ED-31** Bake the atlas from the editor.
   - Save the scene's built atlas canvas as PNG plus JSON through the save route
     (extension allow-list extended), and point `assets.bigAtlas` at it. No Playwright.
