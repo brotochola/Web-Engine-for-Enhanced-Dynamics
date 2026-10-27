@@ -2,7 +2,7 @@
 // thumbnails (assetPicker.js, ED-45) and the palette's class pictures (classThumbs.js, ED-65). Each is drawn when what
 // it shows changes, never per frame.
 
-import { SpriteSheetRegistry } from '../../spriteSheetRegistry.js';
+import { SpriteSheetRegistry, isBigAtlasChunk } from '../../spriteSheetRegistry.js';
 
 /** No tint: the frame's own colors. */
 export const NO_TINT = 0xffffff;
@@ -19,17 +19,44 @@ const MAX_ASPECT = 4;
  * @returns {string|null} null when the registry has nothing there
  */
 export function spriteFrameOf(spritesheetId, animIndex) {
+  const entry = atlasEntryOf(spritesheetId, animIndex);
+  const atlas = SpriteSheetRegistry.spritesheets.get('bigAtlas');
+  const animation = entry === null || !atlas ? undefined : atlas.animations[entry];
+  return animation && animation.frames && animation.frames.length > 0 ? animation.frames[0] : null;
+}
+
+/**
+ * The atlas's name for what a sprite shows, as a sprite param holds it: a static sprite's texture (house_37), or a
+ * spritesheet's animation under the sheet's prefix (civil1_walk_down). From the SpriteRenderer columns.
+ * @param {number} spritesheetId - SpriteRenderer.spritesheetId
+ * @param {number} animIndex - SpriteRenderer.animationState
+ * @returns {string|null} null when the registry has nothing there
+ */
+export function atlasEntryOf(spritesheetId, animIndex) {
   if (!(spritesheetId > 0)) return null;
   const sheetName = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
   const sheet = sheetName ? SpriteSheetRegistry.spritesheets.get(sheetName) : undefined;
-  const atlas = SpriteSheetRegistry.spritesheets.get('bigAtlas');
-  if (!sheet || !atlas) return null;
-  const name = sheet.indexToName ? sheet.indexToName[animIndex] : undefined;
+  const name = sheet && sheet.indexToName ? sheet.indexToName[animIndex] : undefined;
   if (name === undefined) return null;
   // A proxy sheet's animations are the atlas's under the sheet's prefix (SpriteSheetRegistry.getBigAtlasAnimName).
-  const entry = sheet.isProxy ? sheet.animations[name]?.prefixedName : sheetName === 'bigAtlas' ? name : `${sheetName}_${name}`;
-  const animation = entry === undefined ? undefined : atlas.animations[entry];
-  return animation && animation.frames && animation.frames.length > 0 ? animation.frames[0] : null;
+  if (sheet.isProxy) return sheet.animations[name]?.prefixedName ?? null;
+  return sheetName === 'bigAtlas' ? name : `${sheetName}_${name}`;
+}
+
+/**
+ * The animation a sprite plays, as an animation param holds it: its name in its spritesheet (walk_down); null for a
+ * static sprite (bigAtlas and its chunks have no animations of their own).
+ * @param {number} spritesheetId
+ * @param {number} animIndex
+ * @returns {string|null}
+ */
+export function animationNameOf(spritesheetId, animIndex) {
+  if (!(spritesheetId > 0)) return null;
+  const sheetName = SpriteSheetRegistry.getSpritesheetName(spritesheetId);
+  if (!sheetName || sheetName === 'bigAtlas' || isBigAtlasChunk(sheetName)) return null;
+  const sheet = SpriteSheetRegistry.spritesheets.get(sheetName);
+  const name = sheet && sheet.indexToName ? sheet.indexToName[animIndex] : undefined;
+  return name === undefined ? null : name;
 }
 
 /**

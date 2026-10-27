@@ -58,7 +58,9 @@ export function defaultText(kind, entry, value) {
  * @param {{ onChange: (key: string, value: unknown) => void, onConfig: (config: object) => void,
  *   entityNames: (className?: string) => string[],
  *   pickEntity?: (key: string, className: string|undefined, button: HTMLElement) => void,
- *   addPoint?: (key: string) => void }} hooks
+ *   addPoint?: (key: string) => void, assets?: import('./assetPicker.js').AssetCatalog,
+ *   shownAsset?: (kind: number) => string }} hooks - assets: what the scene loaded, for the sprite and animation
+ *   fields; shownAsset: the sprite or animation the entity shows now (their picture grid opens on it)
  */
 export function buildParamFields(container, description, config, hooks) {
   container.textContent = '';
@@ -181,8 +183,8 @@ function widget(kind, entry, value, commit, hooks, key) {
     }
     case KIND_SPRITE:
     case KIND_ANIMATION:
-      // A picker over what the scene loaded, with a thumbnail (assetPicker.js, ED-45).
-      return assetPickerWidget(kind, value, commit, hooks.assets ?? null);
+      // A picker over what the scene loaded, with a thumbnail that opens them as a grid (assetPicker.js, ED-45, ED-76).
+      return assetPickerWidget(kind, value, commit, hooks.assets ?? null, { none: entry.value === '', shown: hooks.shownAsset });
     default: {
       // string
       const input = document.createElement('input');

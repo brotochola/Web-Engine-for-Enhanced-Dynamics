@@ -21,6 +21,8 @@
  *            engine's own, with a thumbnail drawn from the atlas; a name the scene lacks is marked; a typed name
  *            changes the crate's record and its frame; a walker's animation param lists the civil1 animations, and a
  *            pick from the list (as Chrome sends it) changes the record and the walker's animation at once
+ *   grid     (ED-76) a crate's sprite thumbnail opens the picture grid on its value (every sprite: barrel has no number),
+ *            the search field focused and the value under the cursor; typed "bun" and Enter pick bunny and close it
  *
  * Every wait's predicate returns a boolean (a handle to the game's objects would keep a reloaded page alive).
  *
@@ -423,6 +425,47 @@ async function main() {
         `"nope" marked ${marked}; typed civil1_walk_down: record ${crate2.value}, frame ${crate2.width} px wide; ` +
         `animation choices ${anim.options.slice(0, 3).join(', ')}…, thumbnail ${anim.drawn} px; a pick of walk_up: ` +
         `record ${walker2.value}, animation ${walker2.animation} (walk_up is ${walker2.walkUp})`,
+    );
+
+    // ---- grid (ED-76) ----
+    await select('Crate1');
+    await page.waitForTimeout(300);
+    await spriteRow.locator('[data-pictures]').click();
+    await page.waitForSelector('[data-picture-grid]');
+    const grid = await page.evaluate(() => {
+      const g = document.querySelector('[data-picture-grid]');
+      const cells = [...g.querySelectorAll('[data-cell]')].filter((c) => c.style.display !== 'none');
+      return {
+        search: g.querySelector('input').value,
+        focused: document.activeElement === g.querySelector('input'),
+        names: cells.map((c) => c.title),
+        cursor: cells.find((c) => c.getAttribute('aria-selected') === 'true')?.title ?? null,
+        drawn: cells.filter((c) => {
+          const canvas = c.querySelector('canvas');
+          const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
+          for (let k = 3; k < pixels.length; k += 4) if (pixels[k] > 0) return true;
+          return false;
+        }).length,
+      };
+    });
+    await page.keyboard.press('Control+A');
+    await page.keyboard.type('bun');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(400);
+    const crate1 = await placed('Crate1', 'sprite');
+    const closed = await page.evaluate(() => document.querySelector('[data-picture-grid]') === null);
+    check(
+      'grid',
+      grid.search === '' &&
+        grid.focused &&
+        grid.cursor === 'barrel' &&
+        ['barrel', 'bunny', 'civil1_walk_down'].every((name) => grid.names.includes(name)) &&
+        grid.drawn >= 3 &&
+        crate1.value === 'bunny' &&
+        closed,
+      `opened on "${grid.search}" (barrel has no number: every sprite), the field focused ${grid.focused}, ` +
+        `${grid.names.length} cells (${grid.drawn} drawn), cursor ${grid.cursor}; typed "bun" and Enter: ` +
+        `record ${crate1.value}, closed ${closed}`,
     );
 
     check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

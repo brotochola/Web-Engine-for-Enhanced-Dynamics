@@ -33,7 +33,9 @@ import { TransformFields } from './transformFields.js';
 import { InspectorSection } from './inspectorSection.js';
 import { RigidBody } from '../../../components/rigidBody.js';
 import { SpriteRenderer } from '../../../components/spriteRenderer.js';
-import { describeSpawnParams } from '../../spawnParams.js';
+import { describeSpawnParams, KIND_ANIMATION } from '../../spawnParams.js';
+import { atlasEntryOf, animationNameOf } from './atlasThumb.js';
+import { closePictureGrid } from './pictureGrid.js';
 import { jointsOf } from './sceneJoints.js';
 
 export class Selection {
@@ -87,8 +89,10 @@ export class Selection {
       addPoint: (key) => this.editor.handles?.addPoint(key),
     };
 
-    // What the scene loaded, for the sprite and animation params' pickers (assetPicker.js, ED-45).
+    // What the scene loaded, for the sprite and animation params' pickers (assetPicker.js, ED-45), and what the entity
+    // shows now: the picture grid opens on it when the param is empty (the seed's pick, ED-76).
     this._hooks.assets = new AssetCatalog(() => debugUI.scene);
+    this._hooks.shownAsset = (kind) => shownAssetOf(this.index, kind);
   }
 
   /** Placed by the running scene file (it has a name there). */
@@ -117,6 +121,7 @@ export class Selection {
   }
 
   clear() {
+    closePictureGrid();
     if (this.index < 0) return;
     this.index = -1;
     this.packed = -1;
@@ -170,6 +175,7 @@ export class Selection {
   }
 
   _show() {
+    closePictureGrid(); // a grid open for the last selection would write into this one
     this._mount();
     const scene = this.debugUI.scene;
     if (this.authored) {
@@ -311,6 +317,14 @@ export class Selection {
 function registeredOf(scene, entityType) {
   for (const registered of scene?.registeredClasses || []) if (registered.entityType === entityType) return registered;
   return null;
+}
+
+/** What the live entity shows, as its sprite or animation param would hold it; '' for nothing. */
+function shownAssetOf(index, kind) {
+  if (index < 0 || !SpriteRenderer.active || SpriteRenderer.active[index] !== 1) return '';
+  const sheet = SpriteRenderer.spritesheetId[index];
+  const state = SpriteRenderer.animationState[index];
+  return (kind === KIND_ANIMATION ? animationNameOf(sheet, state) : atlasEntryOf(sheet, state)) ?? '';
 }
 
 /** Whether the scene's class of that name draws a sprite (has a SpriteRenderer). */

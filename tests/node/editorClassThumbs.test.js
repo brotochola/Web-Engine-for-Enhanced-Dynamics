@@ -5,11 +5,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
+import { SpriteSheetRegistry, bigAtlasChunkName } from '../../src/core/spriteSheetRegistry.js';
 import { Transform } from '../../src/components/transform.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { AssetCatalog } from '../../src/core/debug/editor/assetPicker.js';
-import { spriteFrameOf, drawAtlasFrame, NO_TINT } from '../../src/core/debug/editor/atlasThumb.js';
+import { spriteFrameOf, atlasEntryOf, animationNameOf, drawAtlasFrame, NO_TINT } from '../../src/core/debug/editor/atlasThumb.js';
 import {
   classPicture,
   livePictureOf,
@@ -129,6 +129,31 @@ test('a sprite’s first frame from its columns: a static sprite of the atlas, a
   assert.equal(spriteFrameOf(civil1, 9), null, 'no such animation');
   assert.equal(spriteFrameOf(0, 0), null, 'no sheet');
   assert.equal(spriteFrameOf(77, 0), null, 'an id the registry does not have');
+});
+
+test('what a sprite shows, as a param holds it: the atlas entry (a sprite), the animation’s own name (an animation)', () => {
+  loadAtlas();
+  // A chunk of the atlas (ED-74): its names are the atlas's sprites.
+  SpriteSheetRegistry.registerProxy(bigAtlasChunkName(1), {
+    isProxy: true,
+    targetSheet: 'bigAtlas',
+    prefix: '',
+    animations: { barrel: { originalName: 'barrel', prefixedName: 'barrel', index: 0 } },
+    indexToName: { 0: 'barrel' },
+  });
+  const atlas = SpriteSheetRegistry.getSpritesheetId('bigAtlas');
+  const civil1 = SpriteSheetRegistry.getSpritesheetId('civil1');
+  const chunk = SpriteSheetRegistry.getSpritesheetId(bigAtlasChunkName(1));
+  const barrel = SpriteSheetRegistry.getAnimationIndex('bigAtlas', 'barrel');
+  assert.deepEqual(
+    [atlasEntryOf(atlas, barrel), atlasEntryOf(civil1, 1), atlasEntryOf(chunk, 0), atlasEntryOf(civil1, 9), atlasEntryOf(0, 0)],
+    ['barrel', 'civil1_walk_left', 'barrel', null, null],
+  );
+  assert.deepEqual(
+    [animationNameOf(civil1, 0), animationNameOf(civil1, 1), animationNameOf(atlas, barrel), animationNameOf(chunk, 0), animationNameOf(77, 0)],
+    ['walk_down', 'walk_left', null, null, null],
+    'a static sprite (the atlas or a chunk of it) plays no animation',
+  );
 });
 
 test('the picture’s source: a live entity first, else a sprite or animation param’s default, else the mark', () => {
