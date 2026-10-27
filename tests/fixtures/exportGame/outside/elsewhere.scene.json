@@ -1,0 +1,6 @@
+{
+  "format": 1,
+  "script": "../game/fixtureScene.js",
+  "export": "FixtureScene",
+  "entities": []
+}
