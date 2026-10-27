@@ -41,6 +41,8 @@ import { MoveTool, SNAP_STEPS, snapTo } from './moveTool.js';
 import { History } from './history.js';
 import { Palette } from './palette.js';
 import { MultiSelect, groupsOf, writeGroups } from './multiSelect.js';
+import { EntityPickTool } from './entityPicker.js';
+import { HandlesTool } from './handles.js';
 import {
   editPlaced,
   restorePlaced,
@@ -116,6 +118,10 @@ export class EditMode {
      *   onKey?: (e: KeyboardEvent) => boolean, cancel?: () => void }[]}
      */
     this.tools = [];
+    /** An entity param filled by a click on the entity (entityPicker.js): while picking, it takes every press. */
+    this.picker = this.addTool(new EntityPickTool(this));
+    /** The selection's collider, light and points handles (handles.js: ED-20, ED-22, ED-27). */
+    this.handles = this.addTool(new HandlesTool(this));
     /** The tool a press went to, until its button is let go. */
     this._toolWithPointer = null;
 

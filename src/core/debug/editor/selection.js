@@ -59,6 +59,9 @@ export class Selection {
         this.editor.editSelected(`${this.name}.${key}`, (record, description) => writeParam(record, description, key, value)),
       onConfig: (config) => this.editor.editSelected(`${this.name} config`, (record) => writeConfig(record, config)),
       entityNames: (className) => namesOf(debugUI.scene, className, this.name),
+      // Stage 4: an entity param picked in the view, a point added to a points param (entityPicker.js, handles.js).
+      pickEntity: (key, className, button) => this.editor.picker?.start(key, className, button),
+      addPoint: (key) => this.editor.handles?.addPoint(key),
     };
 
     // What the scene loaded, for the sprite and animation params' pickers (assetPicker.js, ED-45).

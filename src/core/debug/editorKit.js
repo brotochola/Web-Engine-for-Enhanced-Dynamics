@@ -10,6 +10,7 @@ import * as collider from '../../components/collider.js';
 import * as spriteRenderer from '../../components/spriteRenderer.js';
 import * as adobeAnimComponent from '../../components/adobeAnimComponent.js';
 import * as meshRenderer from '../../components/meshRenderer.js';
+import * as lightEmitter from '../../components/lightEmitter.js';
 import * as spawnParams from '../spawnParams.js';
 import * as messages from '../messages.js';
 import * as sceneFile from '../sceneFile.js';
@@ -24,6 +25,7 @@ import * as typingTarget from '../../util/typingTarget.js';
 import * as consoleForward from '../../util/consoleForward.js';
 import * as colliderUtils from '../../util/colliderUtils.js';
 import * as configDefaults from '../../util/configDefaults.js';
+import * as lightRadius from '../../util/lightRadius.js';
 import * as floatingPanel from './ui/floatingPanel.js';
 import * as debugDom from './ui/debugDom.js';
 import * as hotReload from './hotReload.js';
@@ -37,6 +39,7 @@ export const editorKit = Object.freeze({
   'components/spriteRenderer.js': spriteRenderer,
   'components/adobeAnimComponent.js': adobeAnimComponent,
   'components/meshRenderer.js': meshRenderer,
+  'components/lightEmitter.js': lightEmitter,
   'core/spawnParams.js': spawnParams,
   'core/messages.js': messages,
   'core/sceneFile.js': sceneFile,
@@ -51,6 +54,7 @@ export const editorKit = Object.freeze({
   'util/consoleForward.js': consoleForward,
   'util/colliderUtils.js': colliderUtils,
   'util/configDefaults.js': configDefaults,
+  'util/lightRadius.js': lightRadius,
   'core/debug/ui/floatingPanel.js': floatingPanel,
   'core/debug/ui/debugDom.js': debugDom,
   'core/debug/hotReload.js': hotReload,
