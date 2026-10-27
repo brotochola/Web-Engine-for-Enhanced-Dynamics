@@ -22,6 +22,16 @@ import { FloatingPanel } from '../ui/floatingPanel.js';
 
 const PICK_CAP = 64;
 
+/** Which debug tool is on (activeToolKind): the indicator's text and color, and the editor page's status bar. */
+const TOOL_NONE = 0;
+const TOOL_SPAWNER = 1;
+const TOOL_ERASER = 2;
+const TOOL_POOL_PAINT = 3;
+const TOOL_POOL_ERASER = 4;
+const TOOL_INSPECTOR = 5;
+const TOOL_CLASSES = ['', 'spawner', 'eraser', 'spawner', 'eraser', 'inspector'];
+const INDICATOR_HIDDEN = 'debug-ui-tool-indicator';
+
 /**
  * Unified manager for all debug tools: paint / erase / inspect.
  * Handles mouse event wiring, tool state, and the inspector side-panel.
@@ -55,6 +65,8 @@ export class ToolManager {
     this._pickCycle = 0;
 
     this._toolIndicator = null;
+    /** False in the editor page: its status bar says what the indicator would (editor/statusBar.js, ED-52). */
+    this.showIndicator = true;
     this._inspectorFloat = null;
     this._inspectorPanel = null;
     this._inspectorEntityInfo = null;
@@ -229,26 +241,63 @@ export class ToolManager {
     document.body.appendChild(this._toolIndicator);
   }
 
+  /** Which debug tool is on: 0 for none (the status bar compares it, so it allocates nothing). */
+  activeToolKind() {
+    if (this.activeSpawnerType) return TOOL_SPAWNER;
+    if (this.eraserActive) return TOOL_ERASER;
+    if (this.poolPaintKind) return TOOL_POOL_PAINT;
+    if (this.poolEraserKind) return TOOL_POOL_ERASER;
+    if (this.inspectorActive) return TOOL_INSPECTOR;
+    return TOOL_NONE;
+  }
+
+  /** What the hint of the tool that is on names (the class, the pool, the kind inspected), or null. */
+  toolHintArg() {
+    switch (this.activeToolKind()) {
+      case TOOL_SPAWNER:
+        return this.activeSpawnerType;
+      case TOOL_POOL_PAINT:
+        return this.poolPaintKind;
+      case TOOL_POOL_ERASER:
+        return this.poolEraserKind;
+      case TOOL_INSPECTOR:
+        return this.inspectKind;
+      default:
+        return null;
+    }
+  }
+
+  /** The hint for the tool that is on, or '' when none is. */
+  toolHint() {
+    switch (this.activeToolKind()) {
+      case TOOL_SPAWNER:
+        return `Painting: ${this.activeSpawnerType}${this.bulkSpawnEnabled ? ' ×50' : ''} (click & drag to spawn)`;
+      case TOOL_ERASER:
+        return 'Eraser Active (click & drag to despawn entities)';
+      case TOOL_POOL_PAINT:
+        return 'Painting: ' + this.poolPaintKind + ' (click & drag)';
+      case TOOL_POOL_ERASER:
+        return 'Eraser: ' + this.poolEraserKind + ' (click & drag)';
+      case TOOL_INSPECTOR:
+        return 'Inspector: click a ' + (this.inspectKind || 'entity');
+      default:
+        return '';
+    }
+  }
+
   updateToolIndicator() {
     const el = this._toolIndicator;
     if (!el) return;
+    // In the editor page the status bar under the view says it (editor/statusBar.js, ED-52).
+    if (!this.showIndicator) {
+      if (el.className !== INDICATOR_HIDDEN) el.className = INDICATOR_HIDDEN;
+      return;
+    }
 
-    if (this.activeSpawnerType) {
-      const bulk = this.bulkSpawnEnabled ? ' ×50' : '';
-      el.textContent = `Painting: ${this.activeSpawnerType}${bulk} (click & drag to spawn)`;
-      el.className = 'debug-ui-tool-indicator visible spawner';
-    } else if (this.eraserActive) {
-      el.textContent = 'Eraser Active (click & drag to despawn entities)';
-      el.className = 'debug-ui-tool-indicator visible eraser';
-    } else if (this.poolPaintKind) {
-      el.textContent = 'Painting: ' + this.poolPaintKind + ' (click & drag)';
-      el.className = 'debug-ui-tool-indicator visible spawner';
-    } else if (this.poolEraserKind) {
-      el.textContent = 'Eraser: ' + this.poolEraserKind + ' (click & drag)';
-      el.className = 'debug-ui-tool-indicator visible eraser';
-    } else if (this.inspectorActive) {
-      el.textContent = 'Inspector: click a ' + (this.inspectKind || 'entity');
-      el.className = 'debug-ui-tool-indicator visible inspector';
+    const kind = this.activeToolKind();
+    if (kind !== TOOL_NONE) {
+      el.textContent = this.toolHint();
+      el.className = 'debug-ui-tool-indicator visible ' + TOOL_CLASSES[kind];
     } else if (this.debugUI.editing) {
       const editMode = this.debugUI.editMode;
       el.textContent =
@@ -260,7 +309,7 @@ export class ToolManager {
             : 'Edit mode: click selects, drag or arrows move, G grid, right drag pans, wheel zooms, Ctrl+S saves. Shift+E plays');
       el.className = editMode.statusIsError ? 'debug-ui-tool-indicator visible editor error' : 'debug-ui-tool-indicator visible editor';
     } else {
-      el.className = 'debug-ui-tool-indicator';
+      el.className = INDICATOR_HIDDEN;
     }
   }
 

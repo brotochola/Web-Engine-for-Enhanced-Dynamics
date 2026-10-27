@@ -23,11 +23,12 @@ import { DockLayout, dockLayoutElements } from './editorLayout.js';
 export const HOST_KEY = '__weedEditorHost';
 /**
  * The protocol's version: a game page of another version runs as if it were not hosted. What was added since its
- * first form is optional: dockKey (a game page checks that its host has it).
+ * first form is optional on both sides: the `status` dock (a game page that has none to fill leaves it empty, an
+ * older editor page has none to give) and dockKey.
  */
 export const HOST_VERSION = 1;
-/** The docks a game page fills. */
-export const SLOT_NAMES = ['toolbar', 'tree', 'inspector', 'assets', 'console', 'debug'];
+/** The docks a game page fills; `status` is the line under the view (ED-52). */
+export const SLOT_NAMES = ['toolbar', 'tree', 'inspector', 'assets', 'console', 'debug', 'status'];
 /** The last game page opened here, for the form (this viewer's convenience only). */
 const LAST_GAME_KEY = 'weed.editor.lastGame';
 

@@ -1,8 +1,8 @@
-/* editorShell.css — the editor page's layout (VISUAL_EDITOR_PLAN.md D9, ED-15; ED-50, ED-51): a bar on top, the
-   scene list on the left, the game in the middle, the inspector and the assets on the right, and the bottom dock:
-   the debug bar's strip, with the Console's button, and above it a pane of its own height while the Console or a
-   debug panel is open. The docks hold what the game page puts into them; the debug bar is the in-page one, made to
-   sit in the strip here.
+/* editorShell.css — the editor page's layout (VISUAL_EDITOR_PLAN.md D9, ED-15; ED-50 to ED-52): a bar on top, the
+   scene list on the left, the game in the middle with its status bar under it, the inspector and the assets on the
+   right, and the bottom dock: the debug bar's strip, with the Console's button, and above it a pane of its own height
+   while the Console or a debug panel is open. The docks hold what the game page puts into them; the debug bar is the
+   in-page one, made to sit in the strip here.
 
    Sizes (editorLayout.js): a handle's drag writes one number, on the one element that reads it. They are registered
    as not inherited, so a change restyles that element alone and lays the page out; nothing under it is restyled.
@@ -78,10 +78,11 @@ body.weed-editor {
     calc(var(--weed-left-on) * clamp(140px, var(--weed-left) * 1px, 32vw))
     minmax(0, 1fr)
     calc(var(--weed-right-on) * clamp(200px, var(--weed-right) * 1px, 40vw));
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   grid-template-areas:
     'bar bar bar'
     'left game right'
+    'left status right'
     'bottom bottom bottom';
 }
 
@@ -513,7 +514,7 @@ body.weed-fold-right {
   display: none;
 }
 
-/* ---- the game ---- */
+/* ---- the game and its status bar ---- */
 
 .weed-editor-game {
   grid-area: game;
@@ -559,6 +560,79 @@ body.weed-fold-right {
   border: 1px solid #343a4c;
   border-radius: 5px;
   padding: 5px 8px;
+}
+
+/* The status bar (ED-52): one line under the view, written by the game page's editor (editor/statusBar.js). */
+.weed-editor-statusbar {
+  grid-area: status;
+  display: flex;
+  height: 22px;
+  min-width: 0;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--weed-panel);
+  border-top: 1px solid var(--weed-line);
+  color: var(--weed-dim);
+  font-size: 11px;
+}
+
+.weed-editor-status-line {
+  display: flex;
+  align-items: stretch;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.weed-editor-status-line > span {
+  display: flex;
+  align-items: center;
+  flex: none;
+  padding: 0 9px;
+  border-left: 1px solid var(--weed-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.weed-editor-status-line > [data-status='mode'] {
+  border-left: 0;
+  padding: 0 8px 0 10px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.weed-editor-status-line > [data-status='mode'][data-mode='edit'] {
+  color: var(--weed-accent);
+}
+
+.weed-editor-status-line > [data-status='mode'][data-mode='play'] {
+  color: #93c5fd;
+}
+
+.weed-editor-status-line > [data-status='hint'] {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 21px;
+  border-left: 0;
+  padding-left: 2px;
+  color: #c3c8d6;
+}
+
+.weed-editor-status-line > [data-status='hint'].error {
+  color: #f87171;
+}
+
+.weed-editor-status-line > [data-status='pointer'] {
+  min-width: 11ch;
+  justify-content: flex-end;
+}
+
+.weed-editor-status-line > [data-status='zoom'] {
+  min-width: 4ch;
+  justify-content: flex-end;
 }
 
 /* ---- the bottom dock: the strip, and the pane above it ---- */
@@ -702,7 +776,8 @@ body.weed-console-open .weed-editor-bottom > [data-handle='bottom'],
     grid-template-columns: 0px minmax(0, 1fr) 0px;
   }
 
-  .weed-editor-game {
+  .weed-editor-game,
+  .weed-editor-statusbar {
     grid-column: 1 / -1;
   }
 

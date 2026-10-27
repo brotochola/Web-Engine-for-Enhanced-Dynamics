@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 /**
- * The editor page's docks in Chromium (VISUAL_EDITOR_PLAN.md ED-50, ED-51): the dev server's
+ * The editor page's docks and status bar in Chromium (VISUAL_EDITOR_PLAN.md ED-50, ED-51, ED-52): the dev server's
  * /editor?scene=platformergame. Each check prints PASS or FAIL with what it read; the exit code is the number of
  * failures. Nothing is saved: the level files are not touched.
  *
- *   docks       at 1366×768 the bottom dock is the debug bar's strip alone
+ *   docks       at 1366×768 the bottom dock is the debug bar's strip alone; the status bar is under the view; the
+ *               game page shows neither its tool indicator nor the overlay's pointer lines
  *   drag left, drag right, drag split
  *               a drag on a handle sizes its dock (the view gives or takes the same), writing one style per pointer
  *               move; the game's canvas then follows its frame (autoResize: the canvas and the camera have the frame's
@@ -17,6 +18,8 @@
  *   no storage  with localStorage throwing, the page opens with the default sizes and a drag still works
  *   widths      the view at 1920, 1366, 1100 and 800 px wide: the side docks narrow under 1280 and open over the view
  *               under 1100, from the bar, with the view keeping the width; nothing leaves the bar
+ *   status      the status bar follows the selection, the pointer (the world point the game reads), the zoom, the
+ *               grid (G), placing; and writes nothing while nothing changes
  *
  *   node tests/bench/editorLayoutSmoke.mjs [--headed] [--shots <dir>]   (--shots: screenshots, e.g. D:\tmp\claude\editor-shell)
  */
@@ -158,6 +161,35 @@ const editPlatform1 = (page) =>
     return true;
   });
 
+const statusText = (page) =>
+  page.evaluate(() => {
+    const out = {};
+    for (const span of document.querySelectorAll('[data-slot=status] [data-status]')) out[span.dataset.status] = span.textContent;
+    return out;
+  });
+
+/**
+ * Wait until the status bar's parts say what `want` says, or `timeout` ms; a check then reads them as they are.
+ * @param {Record<string, string>} want - a part's text; 'hint^' a start of the hint, 'hint!^' a start it must not have
+ */
+async function statusWhen(page, want, timeout = 5000) {
+  await page
+    .waitForFunction(
+      (w) => {
+        const parts = {};
+        for (const span of document.querySelectorAll('[data-slot=status] [data-status]')) parts[span.dataset.status] = span.textContent;
+        for (const [key, value] of Object.entries(w)) {
+          const hint = parts.hint ?? '';
+          if (key === 'hint^' ? !hint.startsWith(value) : key === 'hint!^' ? hint.startsWith(value) : parts[key] !== value) return false;
+        }
+        return true;
+      },
+      want,
+      { timeout },
+    )
+    .catch(() => {});
+}
+
 async function main() {
   const server = await createStaticBenchmarkServer(repoRoot, 0, {
     before: (req, res, headers) =>
@@ -172,17 +204,25 @@ async function main() {
     const page = await openEditor(browser, origin, { width: 1366, height: 768, errors });
     await editPlatform1(page);
     await page.waitForTimeout(400);
-    const first = await page.evaluate(() => ({
-      bottom: document.querySelector('[data-dock=bottom]').getBoundingClientRect().height,
-      handleShown: getComputedStyle(document.querySelector('[data-handle=bottom]')).display !== 'none',
-      viewBottom: document.getElementById('game').getBoundingClientRect().bottom,
-      bottomTop: document.querySelector('[data-dock=bottom]').getBoundingClientRect().top,
-    }));
+    const first = await page.evaluate(() => {
+      const win = document.getElementById('game').contentWindow;
+      const indicator = win.document.querySelector('.debug-ui-tool-indicator');
+      return {
+        bottom: document.querySelector('[data-dock=bottom]').getBoundingClientRect().height,
+        handleShown: getComputedStyle(document.querySelector('[data-handle=bottom]')).display !== 'none',
+        status: document.querySelector('[data-slot=status] .weed-editor-status-line') !== null,
+        statusTop: document.querySelector('[data-slot=status]').getBoundingClientRect().top,
+        viewBottom: document.getElementById('game').getBoundingClientRect().bottom,
+        indicatorShown: indicator !== null && indicator.classList.contains('visible'),
+        hud: win.game.debugUI.canvas.showHud,
+      };
+    });
     await shot(page, 'docks-1366');
     check(
       'docks',
-      first.bottom <= 34 && !first.handleShown && near(first.viewBottom, first.bottomTop, 1),
-      `bottom dock ${first.bottom} px (the strip) right under the view, its handle ${first.handleShown ? 'shown' : 'hidden'}`,
+      first.bottom <= 34 && !first.handleShown && first.status && near(first.statusTop, first.viewBottom, 1) && !first.indicatorShown && first.hud === false,
+      `bottom dock ${first.bottom} px (the strip), its handle ${first.handleShown ? 'shown' : 'hidden'}; status bar under the view ` +
+        `${first.status && near(first.statusTop, first.viewBottom, 1)}; indicator ${first.indicatorShown ? 'shown' : 'hidden'}, overlay lines ${first.hud ? 'on' : 'off'}`,
     );
 
     // Drags: a handle sizes its dock, one style write per move; the game's canvas follows its frame.
@@ -277,15 +317,16 @@ async function main() {
     await page.click('.weed-editor-title'); // the keys go to the editor page
     await page.keyboard.press('Control+2');
     await page.keyboard.press('Control+3');
-    // The engine resizes 150 ms after the frame did; its render worker shows the new size a moment later (in this
-    // software-rendered Chromium a second or two: the screenshot waits for it).
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(600); // the engine resizes 150 ms after its frame did
     const allFolded = await page.evaluate(() => ({
       right: getComputedStyle(document.querySelector('[data-dock=right]')).display,
       bottom: getComputedStyle(document.querySelector('[data-dock=bottom]')).display,
       pressed: [...document.querySelectorAll('[data-toggle]')].map((b) => b.getAttribute('aria-pressed')),
     }));
     const viewFolded = await gameView(page);
+    // Its render worker shows a frame of the new size a moment later: in this software-rendered Chromium, a few seconds
+    // after resizes in a row (the game page alone does the same). The screenshot waits for it.
+    if (shotsDir) await page.waitForTimeout(5000);
     await shot(page, 'folded-1366');
     // The game's frame has the keys now: Ctrl+1, 2, 3 there unfold all three.
     await page.evaluate(() => {
@@ -351,6 +392,76 @@ async function main() {
       restored.left === 'none' && near(restored.right, kept.right) && near(restored.bottom, kept.bottom) && near(restored.inspector, kept.inspector) && restored.console,
       `scene list ${restored.left === 'none' ? 'folded' : 'shown'}, right ${kept.right} → ${restored.right} px, bottom ${kept.bottom} → ` +
         `${restored.bottom} px, inspector ${kept.inspector} → ${restored.inspector} px, Console ${restored.console ? 'open' : 'closed'}`,
+    );
+
+    // The status bar, on this page: the selection, the pointer, the zoom, the grid, placing; no writes at rest. It follows
+    // at the game page's ticks (100 ms), which run late while a page that just loaded is busy: each step waits for what
+    // it expects, a few seconds at most, then reads.
+    await page.click('[data-toggle=left]'); // unfolded again, from the bar (its own button is folded with it)
+    await page.click('[data-tab=console]');
+    await editPlatform1(page);
+    await statusWhen(page, { mode: 'EDIT', selection: '1 selected' });
+    const selected = await statusText(page);
+    const view = await box(page, '#game');
+    await page.mouse.move(view.x + view.w * 0.4, view.y + view.h * 0.4);
+    // The world point the game reads under the pointer, as the status bar writes it.
+    const pointerText = () =>
+      page.evaluate(() => {
+        const WEED = document.getElementById('game').contentWindow.WEED;
+        const coord = (n) => (n < 0 ? `\u2212${-n}` : `${n}`);
+        return WEED.Mouse.isPresent ? `x ${coord(Math.round(WEED.Mouse.x))}\u2002y ${coord(Math.round(WEED.Mouse.y))}` : '';
+      });
+    const expectedPointer = await page.waitForFunction(() => document.getElementById('game').contentWindow.WEED.Mouse.isPresent).then(pointerText);
+    await statusWhen(page, { pointer: expectedPointer });
+    const pointed = await statusText(page);
+    const world = await page.evaluate(() => {
+      const WEED = document.getElementById('game').contentWindow.WEED;
+      return { x: Math.round(WEED.Mouse.x), y: Math.round(WEED.Mouse.y), zoom: Math.round(WEED.Camera.zoom * 100) };
+    });
+    const coord = (n) => (n < 0 ? `\u2212${-n}` : `${n}`);
+    // At rest: nothing written into the status bar for a second.
+    const quiet = await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          let writes = 0;
+          const observer = new MutationObserver((records) => (writes += records.length));
+          observer.observe(document.querySelector('[data-slot=status]'), { subtree: true, childList: true, characterData: true, attributes: true });
+          setTimeout(() => {
+            observer.disconnect();
+            resolve(writes);
+          }, 1000);
+        }),
+    );
+    await page.keyboard.press('g'); // the focus is in the editor page: its keys go to the game page's editor
+    const snap = await page.evaluate(() => document.getElementById('game').contentWindow.game.debugUI.editMode.move.snap);
+    await statusWhen(page, { grid: `Grid ${snap} px` });
+    const gridded = await statusText(page);
+    await page.evaluate(() => {
+      document.getElementById('game').contentWindow.game.debugUI.editMode.startPlacing('Goal');
+      return true;
+    });
+    // The grid's own status line ("Grid 8 px") holds the hint for 3 s first.
+    await statusWhen(page, { 'hint^': 'Placing Goal:' }, 8000);
+    const placing = await statusText(page);
+    await shot(page, 'status-placing-1366');
+    await page.keyboard.press('Escape');
+    await statusWhen(page, { 'hint!^': 'Placing' });
+    const stopped = await statusText(page);
+    check(
+      'status',
+      selected.mode === 'EDIT' &&
+        selected.selection === '1 selected' &&
+        selected.hint.startsWith('Platform1: ') &&
+        pointed.pointer === `x ${coord(world.x)}\u2002y ${coord(world.y)}` &&
+        pointed.zoom === `${world.zoom}%` &&
+        quiet === 0 &&
+        snap > 1 &&
+        gridded.grid === `Grid ${snap} px` &&
+        placing.hint.startsWith('Placing Goal:') &&
+        !stopped.hint.startsWith('Placing'),
+      `"${selected.mode}" "${selected.hint.slice(0, 40)}…" "${selected.selection}"; pointer "${pointed.pointer}" (the game reads ` +
+        `${world.x}, ${world.y}), zoom "${pointed.zoom}"; ${quiet} writes in a second at rest; G: "${gridded.grid}" (step ${snap}); ` +
+        `placing: "${placing.hint.slice(0, 32)}…", Esc: "${stopped.hint.slice(0, 32)}…"`,
     );
     await page.close();
 

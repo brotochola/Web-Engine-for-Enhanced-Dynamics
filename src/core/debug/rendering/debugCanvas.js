@@ -53,6 +53,8 @@ export class DebugCanvas {
     this._hudCz = 0;
     this._hudLine1 = '';
     this._hudLine2 = '';
+    /** The pointer and camera lines at the bottom left; off in the editor page, whose status bar shows them (ED-52). */
+    this.showHud = true;
   }
 
   // ------- canvas management -------
@@ -404,7 +406,7 @@ export class DebugCanvas {
     if (editMode?.active) editMode.drawOverlay(ctx, camera, zoom);
 
     if (rolled) ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this._drawHud(ctx, canvas, camera, zoom);
+    if (this.showHud) this._drawHud(ctx, canvas, camera, zoom);
     if (flags?.isEnabled(DEBUG_FLAGS.SHOW_FPS_GRAPH))
       this._drawFpsGraph(ctx, canvas, scene);
   }

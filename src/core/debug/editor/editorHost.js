@@ -7,8 +7,10 @@
 // What the host gets from here is let go of on pagehide (shell/editorShell.js says why); this side only puts nodes
 // of its own into the docks and never listens on the host's.
 //
-// A part of the protocol came after its first form, and a page uses it only when its host has it: the dock keys
-// (Ctrl+1, 2, 3 typed in this page fold the editor page's docks: host.dockKey).
+// Two parts of the protocol came after its first form, and a page uses them only when its host has them: the dock
+// keys (Ctrl+1, 2, 3 typed in this page fold the editor page's docks: host.dockKey) and the `status` dock (the line
+// under the view, statusBar.js, ED-52), which then says what the indicator over the view and the overlay's pointer
+// lines said.
 //
 // Cost: a page that is not in the editor page pays one property read, at construction.
 
@@ -17,6 +19,7 @@ import { loadDebugCss } from '../ui/debugDom.js';
 import { EditorToolbar } from './toolbar.js';
 import { EntityTree } from './entityTree.js';
 import { ConsolePanel } from './consolePanel.js';
+import { StatusBar } from './statusBar.js';
 import { createConsoleForward } from '../../../util/consoleForward.js';
 
 export { HOST_KEY, HOST_VERSION, findEditorHost, editorPageUrl } from '../editorPage.js';
@@ -53,6 +56,8 @@ export class HostedEditor {
     /** The Console dock (ED-18), and this page's console passed on to it. */
     this.console = null;
     this._pageConsole = null;
+    /** The status bar under the view (ED-52), when the editor page has a `status` dock. */
+    this.status = null;
     this._onPageHide = () => this.disconnect();
     // Ctrl+1, 2, 3 typed in this page fold the editor page's docks: neither the game nor the browser (a tab switch)
     // gets them. A capture listener, so it sees them before the engine hands keys to the game or the editor.
@@ -89,6 +94,23 @@ export class HostedEditor {
     this._pageConsole = createConsoleForward(console, (entry) => panel.add('page', entry.level, entry.text));
     this._pageConsole.set(true);
     if (typeof this.host.dockKey === 'function') window.addEventListener('keydown', this._onDockKey, true);
+    if (slots.status) this.mountStatus(slots.status);
+  }
+
+  /**
+   * The status bar into the editor page's `status` dock: from now on it says what the tool indicator over the view
+   * and the overlay's pointer and camera lines said, so those are not shown.
+   * @param {Element} slot
+   */
+  mountStatus(slot) {
+    const debugUI = this.debugUI;
+    const status = new StatusBar(debugUI);
+    this.status = status;
+    slot.appendChild(status.el);
+    debugUI.tools.showIndicator = false;
+    debugUI.tools.updateToolIndicator();
+    debugUI.canvas.showHud = false;
+    status.update();
   }
 
   /** Whether the docks are there (connected, and the page has not hidden). */
@@ -115,6 +137,7 @@ export class HostedEditor {
     window.removeEventListener('pagehide', this._onPageHide);
     window.removeEventListener('keydown', this._onDockKey, true);
     this.slots = null;
+    this.status = null;
     this._pageConsole?.set(false);
     this.tree?.destroy();
     this.host.disconnect(this, state);
@@ -209,6 +232,7 @@ export class HostedEditor {
   update() {
     this.tree?.update();
     this.console?.update();
+    this.status?.update();
   }
 
   destroy() {

@@ -2,6 +2,9 @@
 // the bottom dock's Console pane, this viewer's layout kept in localStorage (a storage that throws keeps the defaults),
 // and the narrow layouts (below 1280 px the side docks narrow, below 1100 px they open over the view). The layout runs
 // here on stand-in elements; tests/bench/editorLayoutSmoke.mjs runs the real page in Chromium.
+//
+// And the status bar under the view (ED-52): what it says, that it writes nothing while nothing changes, the debug
+// tools' hint it shows, and the indicator and the overlay's lines it takes the place of.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -24,6 +27,9 @@ import {
   splitFor,
   writeLayout,
 } from '../../src/core/debug/editor/shell/editorLayout.js';
+import { StatusBar } from '../../src/core/debug/editor/statusBar.js';
+import { ToolManager } from '../../src/core/debug/tools/toolManager.js';
+import { DebugCanvas } from '../../src/core/debug/rendering/debugCanvas.js';
 
 // ---- stand-ins for the page's elements ----
 
@@ -461,4 +467,234 @@ test('in the narrow band a drag keeps the size that shows the reached width at t
   drag(handle.left, [[35, 0]]);
   assert.equal(layout.layout.left, 300, '210 px shown at 70 %');
   assert.ok(Math.abs(sideWidth('left', layout.layout.left, 1100) - 210) < 1e-9);
+});
+
+// ---- the status bar (ED-52) ----
+
+/** A node of the status bar: what is written into it, counted. */
+class Node {
+  constructor() {
+    this.children = [];
+    this.dataset = {};
+    this.classList = new ClassList();
+    this.className = '';
+    this._text = '';
+    this._title = '';
+    this.writes = 0;
+  }
+  get textContent() {
+    return this._text;
+  }
+  set textContent(value) {
+    this._text = value;
+    this.writes++;
+  }
+  get title() {
+    return this._title;
+  }
+  set title(value) {
+    this._title = value;
+    this.writes++;
+  }
+  appendChild(node) {
+    this.children.push(node);
+    return node;
+  }
+}
+
+const fakeDoc = { createElement: () => new Node() };
+
+function statusFor() {
+  const selection = { index: -1, name: null, className: '' };
+  const handles = { dragging: false };
+  const joints = { dragging: false };
+  const editMode = {
+    active: true,
+    playing: false,
+    status: '',
+    statusIsError: false,
+    placing: null,
+    brush: { className: null },
+    selection,
+    multi: { count: 0 },
+    move: { snap: 1, dragging: false },
+    handles,
+    tools: [handles, {}, joints],
+  };
+  const tools = {
+    kind: 0,
+    bulkSpawnEnabled: false,
+    activeToolKind() {
+      return this.kind;
+    },
+    toolHintArg() {
+      return this.kind === 0 ? null : 'Ball';
+    },
+    toolHint() {
+      return 'Painting: Ball (click & drag to spawn)';
+    },
+  };
+  const debugUI = { scene: {}, editMode, tools };
+  const mouse = { isPresent: false, x: 0, y: 0 };
+  const camera = { zoom: 1.25 };
+  const bar = new StatusBar(debugUI, { doc: fakeDoc, mouse, camera });
+  const parts = Object.fromEntries(bar.el.children.map((span) => [span.dataset.status, span]));
+  const writes = () => bar.el.children.reduce((sum, span) => sum + span.writes, 0);
+  return { bar, debugUI, editMode, selection, handles, joints, tools, mouse, camera, parts, writes };
+}
+
+test('the status bar writes each part when it changes, and nothing at all while nothing does', () => {
+  const s = statusFor();
+  assert.deepEqual(Object.keys(s.parts), ['mode', 'hint', 'pointer', 'zoom', 'selection', 'grid']);
+  s.bar.update();
+  assert.equal(s.parts.mode.textContent, 'EDIT');
+  assert.equal(s.parts.mode.dataset.mode, 'edit');
+  assert.match(s.parts.hint.textContent, /^Click selects/);
+  assert.equal(s.parts.pointer.textContent, 'x –\u2002y –');
+  assert.equal(s.parts.zoom.textContent, '125%');
+  assert.equal(s.parts.selection.textContent, 'Nothing selected');
+  assert.equal(s.parts.grid.textContent, 'No grid');
+  const after = s.writes();
+  for (let k = 0; k < 5; k++) s.bar.update();
+  assert.equal(s.writes(), after, 'no write while nothing changed');
+  s.mouse.isPresent = true;
+  s.mouse.x = 12.4;
+  s.mouse.y = -5.6;
+  s.bar.update();
+  assert.equal(s.parts.pointer.textContent, 'x 12\u2002y −6');
+  const moved = s.writes();
+  s.mouse.x = 12.3; // the same whole pixel
+  s.bar.update();
+  assert.equal(s.writes(), moved);
+  s.camera.zoom = 0.5;
+  s.editMode.move.snap = 16;
+  s.selection.index = 4;
+  s.selection.name = 'Platform1';
+  s.editMode.multi.count = 2;
+  s.bar.update();
+  assert.equal(s.parts.zoom.textContent, '50%');
+  assert.equal(s.parts.grid.textContent, 'Grid 16 px');
+  assert.equal(s.parts.selection.textContent, '3 selected');
+});
+
+test('the hint says what the editor is doing: placing, painting, moving, a handle, the selection', () => {
+  const s = statusFor();
+  const hint = () => {
+    s.bar.update();
+    return s.parts.hint.textContent;
+  };
+  assert.match(hint(), /^Click selects/);
+  s.selection.index = 7;
+  s.selection.name = 'Platform1';
+  s.selection.className = 'Platform';
+  assert.match(hint(), /^Platform1: drag or the arrows move it/);
+  s.editMode.move.dragging = true;
+  assert.equal(hint(), 'Moving Platform1: release to drop it');
+  s.editMode.multi.count = 2;
+  assert.equal(hint(), 'Moving 3 entities: release to drop them');
+  s.editMode.move.dragging = false;
+  assert.match(hint(), /^3 selected: drag or the arrows move them/);
+  s.editMode.multi.count = 0;
+  s.handles.dragging = true;
+  assert.match(hint(), /^Dragging a handle of Platform1: release to apply it/);
+  s.handles.dragging = false;
+  s.joints.dragging = true;
+  assert.equal(hint(), 'Dragging: release to apply it');
+  s.joints.dragging = false;
+  s.selection.name = null; // a runtime entity
+  assert.equal(hint(), 'Platform #7: spawned by code, not by the scene file, so read-only');
+  s.editMode.brush.className = 'Grass';
+  assert.match(hint(), /^Painting Grass: drag to scatter/);
+  s.editMode.placing = 'Goal';
+  assert.match(hint(), /^Placing Goal: each click on the view puts one there · Esc stops/);
+  s.editMode.status = 'Saved 1-1.scene.json';
+  assert.equal(hint(), 'Saved 1-1.scene.json', 'what was just done, for a moment');
+  assert.equal(s.parts.hint.classList.contains('error'), false);
+  s.editMode.status = 'Could not save';
+  s.editMode.statusIsError = true;
+  assert.equal(hint(), 'Could not save');
+  assert.equal(s.parts.hint.classList.contains('error'), true, 'in red');
+  s.tools.kind = 1;
+  assert.equal(hint(), 'Painting: Ball (click & drag to spawn)', 'a debug tool’s hint first');
+  assert.equal(s.parts.hint.classList.contains('error'), false);
+});
+
+test('playing, the bar says so; without a scene it is empty', () => {
+  const s = statusFor();
+  s.editMode.active = false;
+  s.bar.update();
+  assert.equal(s.parts.mode.textContent, 'PLAY');
+  assert.equal(s.parts.hint.textContent, 'Playing · Shift+E pauses into edit mode');
+  s.editMode.playing = true;
+  s.bar.update();
+  assert.match(s.parts.hint.textContent, /^Playing from edit mode · Stop goes back/);
+  s.debugUI.scene = null;
+  s.mouse.isPresent = true;
+  s.bar.update();
+  assert.equal(s.parts.mode.textContent, '');
+  assert.equal(s.parts.hint.textContent, '');
+  assert.equal(s.parts.zoom.textContent, '');
+  assert.equal(s.parts.pointer.textContent, 'x –\u2002y –');
+});
+
+test('the debug tools say what they do once: in the indicator over the view, or (hosted) in the status bar', () => {
+  const editMode = { status: '', statusIsError: false, placing: null, dirty: false };
+  const debugUI = { editing: false, editMode, panels: {} };
+  const tools = new ToolManager(debugUI);
+  const indicator = { textContent: '', className: '' };
+  tools._toolIndicator = indicator;
+  tools.updateToolIndicator();
+  assert.equal(indicator.className, 'debug-ui-tool-indicator', 'nothing on: hidden');
+  assert.equal(tools.activeToolKind(), 0);
+  assert.equal(tools.toolHint(), '');
+  assert.equal(tools.toolHintArg(), null);
+  tools.activeSpawnerType = 'Ball';
+  tools.bulkSpawnEnabled = true;
+  tools.updateToolIndicator();
+  assert.equal(indicator.textContent, 'Painting: Ball ×50 (click & drag to spawn)');
+  assert.equal(indicator.className, 'debug-ui-tool-indicator visible spawner');
+  assert.equal(tools.toolHintArg(), 'Ball');
+  tools.activeSpawnerType = null;
+  tools.poolEraserKind = 'decoration';
+  tools.updateToolIndicator();
+  assert.equal(indicator.textContent, 'Eraser: decoration (click & drag)');
+  assert.equal(indicator.className, 'debug-ui-tool-indicator visible eraser');
+  tools.poolEraserKind = null;
+  tools.inspectorActive = true;
+  tools.inspectKind = 'particle';
+  tools.updateToolIndicator();
+  assert.equal(indicator.textContent, 'Inspector: click a particle');
+  tools.inspectorActive = false;
+  debugUI.editing = true;
+  editMode.placing = 'Goal';
+  tools.updateToolIndicator();
+  assert.equal(indicator.textContent, 'Placing Goal: each click puts one there. Esc stops');
+  assert.equal(indicator.className, 'debug-ui-tool-indicator visible editor');
+  // In the editor page: hidden, whatever is on; the hint is still there for the status bar.
+  tools.showIndicator = false;
+  tools.eraserActive = true;
+  tools.updateToolIndicator();
+  assert.equal(indicator.className, 'debug-ui-tool-indicator');
+  assert.equal(tools.toolHint(), 'Eraser Active (click & drag to despawn entities)');
+});
+
+test('the overlay draws its pointer and camera lines unless the editor page’s status bar shows them', () => {
+  const debugUI = { editMode: { active: true, wantsOverlay: () => true, drawOverlay() {} }, debugFlags: null, scene: null, tools: null };
+  const canvas = new DebugCanvas(debugUI);
+  assert.equal(canvas.showHud, true);
+  const texts = [];
+  const ctx = {
+    setTransform() {},
+    clearRect() {},
+    fillRect() {},
+    fillText: (text) => texts.push(text),
+  };
+  canvas._canvas = { width: 800, height: 600 };
+  canvas._ctx = ctx;
+  canvas.render();
+  assert.deepEqual(texts, ['mouse --', 'cam 0.0, 0.0  z1.00']);
+  canvas.showHud = false;
+  texts.length = 0;
+  canvas.render();
+  assert.deepEqual(texts, []);
 });
