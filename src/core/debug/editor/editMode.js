@@ -468,6 +468,9 @@ export class EditMode {
         if (e.shiftKey) this.toggleGrid();
         else this.setSnap(SNAP_STEPS[(SNAP_STEPS.indexOf(this.move.snap) + 1) % SNAP_STEPS.length]);
         return true;
+      case 'l':
+      case 'L':
+        return this.toggleLighting();
       case ' ':
         // Held over the game page (its own key event; one the editor page passes on has no keyup here): a drag pans.
         if (e.target?.ownerDocument === document) this._holdSpace(true);
@@ -739,6 +742,16 @@ export class EditMode {
     saveGrid(this.move.snap, this.grid.show);
     this._setStatus(this.grid.show ? 'Grid shown' : 'Grid hidden', false);
     this.debugUI.canvas?.startLoop();
+  }
+
+  /** L: the scene unlit while editing, or lit as the game is (ED-78; editorLayers.js). Remembered. */
+  toggleLighting() {
+    if (!this.layers.toggleLighting()) {
+      this._setStatus('This scene has no lighting to turn off', false);
+      return true;
+    }
+    this._setStatus(this.layers.lit ? 'Lit as the game is' : 'Unlit while editing: L lights it again', false);
+    return true;
   }
 
   /** Space held or let go: the view's cursor says that a drag pans. */

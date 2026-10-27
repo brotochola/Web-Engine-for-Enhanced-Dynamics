@@ -29,6 +29,7 @@ export const SHORTCUTS = Object.freeze([
       ['Drag', 'move, on the grid (Alt: off it)'],
       ['Arrows', 'nudge one grid step (Shift: ten)'],
       ['G · Shift+G', 'the snap step · the grid’s lines'],
+      ['L', 'the scene unlit while editing, or lit as the game is'],
       ['Ctrl+D', 'duplicate'],
       ['Drag a class from Assets', 'place one where it drops (or + then a click)'],
       ['Ctrl+C · Ctrl+X · Ctrl+V', 'copy · cut · paste where the pointer is'],

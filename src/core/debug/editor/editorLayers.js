@@ -13,6 +13,11 @@
 // and in `entities` when no sprite layer is among them, as the renderer draws it (preRenderWorker collectRenderable).
 // The choices last while the scene runs, fast swaps included, and go with it (a full load).
 //
+// Unlit (ED-78, Unity's scene-lighting switch): with the scene's lighting on, L or the toolbar's 💡 hides the engine's
+// lighting layer while editing, so a dark level shows its entities as their sprites are, not as its lights leave them
+// (the platformer's ambient is 0.05). It is the lighting row's hide, remembered for the viewer (localStorage, every
+// access guarded) and taken to the next scene that has lighting.
+//
 // The game's layers come first (ED-67): the ones its config.layers declares, and `entities`, where its entities draw
 // unless they name another. The engine's own pipeline layers (Layer.builtIn: decals, castedShadows, lighting,
 // lightGlows) follow under a folded "Engine layers" line, which says how many of them are hidden while folded.
@@ -26,6 +31,35 @@ import { MeshRenderer } from '../../../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../../../components/adobeAnimComponent.js';
 import { Collider } from '../../../components/collider.js';
 import { isSkipSubscribeKind } from '../../../util/configDefaults.js';
+
+/** The engine's layer the lights are drawn into (multiplied over the scene). */
+const LIGHTING = 'lighting';
+const UNLIT_KEY = 'weed.editor.unlit';
+
+function storage() {
+  try {
+    return typeof localStorage !== 'undefined' ? localStorage : null;
+  } catch {
+    return null; // a sandboxed page: localStorage throws when read
+  }
+}
+
+/** Whether this viewer last chose to edit unlit. */
+export function loadUnlit() {
+  try {
+    return storage()?.getItem(UNLIT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function saveUnlit(unlit) {
+  try {
+    storage()?.setItem(UNLIT_KEY, unlit ? '1' : '0');
+  } catch {
+    // full or blocked: the choice lasts as long as the page
+  }
+}
 
 /**
  * The layers entity `i` is in, as a mask (bit = Layer.id): its renderers' and collider's masks, with `entities` when
@@ -104,6 +138,32 @@ export class EditorLayers {
     this._fold = null;
     this._engineRows = [];
     this._engineMask = 0;
+    /** The rows' hide switches by layer id: a switch made elsewhere (the toolbar's 💡) shows on its row too. */
+    this._hideBoxes = new Map();
+    /** The viewer's choice: the scene unlit while editing (ED-78). */
+    this.unlit = loadUnlit();
+  }
+
+  /** The running scene's lighting layer, -1 when its lighting is off (nothing to hide). */
+  lightingId() {
+    const scene = this.editMode.debugUI.scene ?? null;
+    if (scene?.config?.lighting?.enabled !== true || !Layer._visible) return -1;
+    const layer = Layer.get(LIGHTING);
+    return layer ? layer.id : -1;
+  }
+
+  /** Whether the scene shows lit while editing: null when it has no lighting. */
+  get lit() {
+    const id = this.lightingId();
+    return id < 0 ? null : !this.isHidden(id);
+  }
+
+  /** L, the toolbar's 💡: the scene unlit while editing, or lit again. Remembered. */
+  toggleLighting() {
+    const id = this.lightingId();
+    if (id < 0) return false;
+    this.setHidden(id, !this.isHidden(id));
+    return true;
   }
 
   isHidden(id) {
@@ -116,6 +176,9 @@ export class EditorLayers {
 
   /** Hide the layers chosen hidden: entering edit mode, or after a swap while editing. */
   apply() {
+    // The viewer's unlit choice reaches a scene the choices were not made in.
+    const lighting = this.unlit ? this.lightingId() : -1;
+    if (lighting >= 0) this.hiddenMask |= 1 << lighting;
     let pending = this.hiddenMask & ~this._appliedMask;
     while (pending !== 0) {
       const bit = pending & -pending;
@@ -160,6 +223,13 @@ export class EditorLayers {
     const bit = 1 << id;
     this.hiddenMask = hidden ? this.hiddenMask | bit : this.hiddenMask & ~bit;
     if ((this._engineMask & bit) !== 0) this._showFold();
+    const box = this._hideBoxes.get(id);
+    if (box !== undefined) box.checked = hidden;
+    if (id === this.lightingId() && this.unlit !== hidden) {
+      this.unlit = hidden;
+      saveUnlit(hidden);
+    }
+    this.editMode.debugUI.hosted?.onEditorChanged?.();
     const editMode = this.editMode;
     if (!editMode.active) {
       if (hidden && editMode.debugUI.hosted) editMode.enter(); // applies the choices
@@ -230,6 +300,7 @@ export class EditorLayers {
     this._fold = null;
     this._engineRows = [];
     this._engineMask = 0;
+    this._hideBoxes.clear();
     const layers = editorLayersOf(scene);
     if (layers.length === 0) return;
     const head = document.createElement('div');
@@ -296,6 +367,7 @@ export class EditorLayers {
     const hide = checkbox(this.isHidden(layer.id), `Hide ${layer.name} while editing (a view setting: not saved)`);
     hide.dataset.switch = 'hide';
     hide.onchange = () => this.setHidden(layer.id, hide.checked);
+    this._hideBoxes.set(layer.id, hide);
     row.appendChild(hide);
     if (lockable(layer)) {
       const lock = checkbox(this.isLocked(layer.id), `Lock ${layer.name}: the editor does not pick or move its entities`);

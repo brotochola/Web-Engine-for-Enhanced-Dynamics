@@ -73,6 +73,8 @@ function toolbarFor({ active = false, paused = false } = {}) {
     togglePause: () => calls.push('pause'),
     stepFrame: () => calls.push('step'),
     toggleShortcuts: () => calls.push('help'),
+    toggleLighting: () => calls.push('light'),
+    layers: { lit: null },
   };
   globalThis.document = fakeDocument();
   try {
@@ -98,6 +100,22 @@ test('while the game runs: ⏸, and ⏭ only once paused; editing: neither', () 
   editMode.active = true;
   toolbar.refresh();
   assert.deepEqual([pause.style.display, step.style.display], ['none', 'none'], 'edit mode holds the world its own way');
+});
+
+test('💡 only for a scene with lighting: lit as the game is, or unlit while editing (ED-78)', () => {
+  const { toolbar, editMode, calls } = toolbarFor({ active: true });
+  const light = byText(toolbar, '💡');
+  assert.equal(light.style.display, 'none', 'no lighting: nothing to turn off');
+  editMode.layers.lit = true;
+  toolbar.refresh();
+  assert.deepEqual([light.style.display, light.classList.contains('active')], ['', true]);
+  assert.match(light.title, /^Lit as the game is/);
+  editMode.layers.lit = false;
+  toolbar.refresh();
+  assert.equal(light.classList.contains('active'), false);
+  assert.match(light.title, /^Unlit while editing/);
+  light.onclick();
+  assert.deepEqual(calls, ['light']);
 });
 
 test('Undo and Redo name what they would do', () => {

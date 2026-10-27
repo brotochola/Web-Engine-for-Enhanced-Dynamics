@@ -35,12 +35,14 @@ export class EditorToolbar {
     }
     this._snap.onchange = () => editMode.setSnap(Number(this._snap.value));
     this._grid = this._button('#', () => editMode.toggleGrid(), 'Show or hide the grid’s lines (Shift+G); they show once a snap step is chosen');
+    // The scene lit as the game is, or unlit while editing (L, ED-78); only for a scene with lighting.
+    this._light = this._button('💡', () => editMode.toggleLighting(), '');
     this._help = this._button('?', () => editMode.toggleShortcuts(), 'Every key of the editor (?)');
     this._file = document.createElement('span');
     this._file.style.cssText = 'color:#c8ccd8;white-space:nowrap;margin-left:6px;overflow:hidden;text-overflow:ellipsis;min-width:0';
-    this.el.append(this._mode, this._stop, this._pause, this._step, this._save, this._undo, this._redo, this._snap, this._grid, this._export, this._help, this._file);
+    this.el.append(this._mode, this._stop, this._pause, this._step, this._save, this._undo, this._redo, this._snap, this._grid, this._light, this._export, this._help, this._file);
     /** What is shown, so a refresh that changes nothing writes nothing. */
-    this._shown = { editing: null, playing: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, snap: null, grid: null, paused: null, undoLabel: null, redoLabel: null };
+    this._shown = { editing: null, playing: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, snap: null, grid: null, lit: undefined, paused: null, undoLabel: null, redoLabel: null };
     this.refresh();
   }
 
@@ -88,6 +90,15 @@ export class EditorToolbar {
     if (shown.grid !== lines) {
       shown.grid = lines;
       this._grid.classList.toggle('active', lines);
+    }
+    const lit = editMode.layers ? editMode.layers.lit : null;
+    if (shown.lit !== lit) {
+      shown.lit = lit;
+      this._light.style.display = lit === null ? 'none' : '';
+      this._light.classList.toggle('active', lit === true);
+      this._light.title = lit
+        ? 'Lit as the game is: L or a click shows the scene unlit while editing (the play keeps its lights)'
+        : 'Unlit while editing: every sprite as it is, not as the lights leave it. L or a click lights it again';
     }
     const dirty = editMode.dirty;
     const file = editMode.sceneFileName;

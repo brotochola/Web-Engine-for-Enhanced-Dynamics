@@ -507,6 +507,88 @@ test('in the editor page, hiding a layer while the game plays enters edit mode, 
   }
 });
 
+/** A localStorage for the test, and the page's back after. */
+function withStorage(fn) {
+  const map = new Map();
+  const had = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: { getItem: (k) => (map.has(k) ? map.get(k) : null), setItem: (k, v) => map.set(k, String(v)) },
+  });
+  try {
+    return fn(map);
+  } finally {
+    if (had) Object.defineProperty(globalThis, 'localStorage', had);
+    else delete globalThis.localStorage;
+  }
+}
+
+test('unlit (ED-78): L hides the lighting layer while editing, back on leaving; remembered, and taken to the next scene', () =>
+  withStorage((stored) => {
+    initLayers();
+    initSoA();
+    const { editMode, scene } = makeEditor();
+    scene.config.lighting.enabled = true;
+    const lighting = Layer.get('lighting');
+    try {
+      editMode.enter();
+      assert.deepEqual([lighting.visible, editMode.layers.lit], [true, true], 'lit as the game is, at first');
+      assert.equal(editMode.onKey({ key: 'l', shiftKey: false, ctrlKey: false, metaKey: false, altKey: false }), true);
+      assert.deepEqual([lighting.visible, editMode.layers.lit, stored.get('weed.editor.unlit')], [false, false, '1']);
+      assert.equal(editMode.status, 'Unlit while editing: L lights it again');
+      editMode.exit();
+      assert.equal(lighting.visible, true, 'the game plays with its lights');
+
+      // The next scene (a full load drops the choices): the viewer's choice comes along.
+      editMode.onDetach();
+      const next = makeEditor();
+      next.scene.config.lighting.enabled = true;
+      next.editMode.enter();
+      assert.equal(lighting.visible, false, 'remembered');
+      next.editMode.toggleLighting();
+      assert.deepEqual([lighting.visible, stored.get('weed.editor.unlit')], [true, '0']);
+      done(next.editMode);
+    } finally {
+      done(editMode);
+      Layer.reset();
+    }
+  }));
+
+test('unlit: a scene without lighting has no switch; the Assets row of lighting and L are one switch', () =>
+  withStorage(() => {
+    initLayers();
+    initSoA();
+    const { editMode, scene } = makeEditor();
+    globalThis.document = { createElement: (tag) => new El(tag), addEventListener() {}, removeEventListener() {} };
+    try {
+      assert.equal(editMode.layers.lit, null, 'lighting off in its config: nothing to turn off');
+      assert.equal(editMode.layers.toggleLighting(), false);
+      editMode.toggleLighting();
+      assert.equal(editMode.status, 'This scene has no lighting to turn off');
+
+      scene.config.lighting.enabled = true;
+      const palette = new Palette(editMode);
+      palette._files = new El('div');
+      palette._layers = new El('div');
+      palette._list = new El('div');
+      editMode.palette = palette;
+      palette.refresh();
+      palette.show = () => {}; // its floating panel: no page here
+      palette.hide = () => {};
+      editMode.enter();
+      const row = palette._layers.children.find((r) => r.dataset.layer === 'lighting');
+      const hide = [...row.all()].find((el) => el.dataset.switch === 'hide');
+      editMode.toggleLighting();
+      assert.equal(hide.checked, true, 'L ticks its row');
+      hide.checked = false;
+      hide.onchange();
+      assert.deepEqual([editMode.layers.lit, Layer.get('lighting').visible], [true, true], 'its row lights it again');
+    } finally {
+      done(editMode);
+      Layer.reset();
+    }
+  }));
+
 test('EditorLayers alone: no scene, no layers, nothing to do', () => {
   Layer.reset();
   const layers = new EditorLayers({ active: true, debugUI: { scene: null } });

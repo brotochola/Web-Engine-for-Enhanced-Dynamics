@@ -6,6 +6,8 @@
  * the exit code is the number of failures.
  *
  *   open       the editor page shows the level, and the toolbar's Edit enters edit mode
+ *   unlit      L shows the dark level unlit while editing (ED-78): the lighting layer hidden, the toolbar's 💡 off; the
+ *              rest of the session runs so
  *   filter     the scene list's filter keeps the platforms; a click on a row selects it, F frames it
  *   transform  typed into the inspector: a position, a rotation in degrees, a scale; one undo each, the entity respawned
  *              (the scale times the class's: the platform's sprite and its collider half as wide again, ED-77)
@@ -45,8 +47,20 @@ const TURN = Math.PI / 6; // 30° typed
 const args = parseArgs();
 const shotsDir = typeof args.shots === 'string' ? path.resolve(args.shots) : null;
 if (shotsDir) fs.mkdirSync(shotsDir, { recursive: true });
+/**
+ * A screenshot once the renderer has drawn four frames since: headless Chromium paces a physics scene's frames at the
+ * physics worker's, about 3 a second here, so a shot taken at once can show the frame before the last change.
+ */
 async function shot(page, name) {
-  if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `session-${name}.png`) });
+  if (!shotsDir) return;
+  await page
+    .waitForFunction(
+      (start) => Atomics.load(new Int32Array(document.getElementById('game').contentWindow.game.currentScene.buffers.renderQueueSync), 1) >= start + 4,
+      await page.evaluate(() => Atomics.load(new Int32Array(document.getElementById('game').contentWindow.game.currentScene.buffers.renderQueueSync), 1)),
+      { timeout: 8000 },
+    )
+    .catch(() => {});
+  await page.screenshot({ path: path.join(shotsDir, `session-${name}.png`) });
 }
 
 const results = [];
@@ -247,6 +261,23 @@ async function main() {
       `view ${Math.round(view0.w)}×${Math.round(view0.h)}, ${s.records.length} records, editing ${s.editing}`,
     );
     await shot(page, 'open');
+
+    // ---- unlit ----
+    const lighting = () =>
+      page.evaluate(() => {
+        const win = document.getElementById('game').contentWindow;
+        const bulb = [...document.querySelectorAll('[data-slot=toolbar] button')].find((b) => b.textContent === '💡');
+        return { shown: win.WEED.Layer.get('lighting').visible, bulb: bulb ? bulb.classList.contains('active') : null };
+      });
+    const lit = await lighting();
+    await page.keyboard.press('l');
+    await page.waitForTimeout(300);
+    const unlit = await lighting();
+    check(
+      'unlit',
+      lit.shown && lit.bulb === true && !unlit.shown && unlit.bulb === false,
+      `lighting drawn ${lit.shown}, 💡 on ${lit.bulb}; after L: drawn ${unlit.shown}, 💡 on ${unlit.bulb}`,
+    );
 
     // ---- filter ----
     await page.click('[data-slot=tree] .weed-tree-filter');
