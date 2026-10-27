@@ -8533,6 +8533,28 @@
       "records": [
         "R-0653"
       ]
+    },
+    {
+      "id": "ED-71",
+      "title": "Visual editor: a world the editor holds runs no entity ticks (Time.held), keeping spawns and messages",
+      "status": "passed",
+      "statusText": "Measured 2026-10-27: littleCity, editorIdleCost.mjs, one sitting before (R-0653) and one after",
+      "date": "2026-10-27",
+      "result": "littleCity's logic0 in edit mode 3.668 → 0.375 ms a frame (selected 3.604 → 0.377); the logic worker's allocation in edit mode 9,779 → 13.7 KB/s. Playing is unchanged. spatial0 keeps 2.8 ms in edit mode (its grid rebuilt for a world that does not move).",
+      "area": "engine",
+      "kind": "speed",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md"
+      ],
+      "aliases": [
+        "held world",
+        "edit mode ticks",
+        "ED-19"
+      ],
+      "next": "The spatial worker's rebuild while held (2.8 ms in littleCity), if a moved entity can be kept right. littleCity's people allocate ~10 MB/s while playing: an engine or demo finding.",
+      "records": [
+        "R-0654"
+      ]
     }
   ],
   "records": [
@@ -14387,6 +14409,16 @@
       "commits": [
         "bdb68583",
         "11fba919"
+      ]
+    },
+    {
+      "id": "R-0654",
+      "date": "2026-10-27",
+      "title": "ED-71: littleCity's logic0 in edit mode 3.7 → 0.4 ms with no entity ticks while held",
+      "verdict": "passed",
+      "text": "**ED-71: a held world runs no entity ticks (VISUAL_EDITOR_PLAN.md ED-71, was ED-19).** 2026-10-27; the author's Chrome open on the machine.\n\n`tests/bench/editorIdleCost.mjs --scene /demos/littleCity/levels/city.scene.json` (as R-0653): headless Chrome, three windows of 8 s after 4 s each (edit mode off, on and idle, on with CityHouse1 selected and the grid shown). Before: R-0653's sitting (the same tool, an hour earlier). After: one sitting on fbcf6d2d.\n\n| | before (off / open / selected) | after (off / open / selected) |\n| --- | --- | --- |\n| logic0 work, ms a frame | 4.595 / 3.668 / 3.604 | 4.496 / 0.375 / 0.377 |\n| spatial0 work, ms | 4.41 / 2.817 / 2.771 | 4.597 / 2.791 / 2.872 |\n| logic worker allocation, KB/s | 10,773 / 9,779 / 9,731 | 6,720 / 13.7 / 12 |\n| page frame interval, median ms | 16.66 / 16.665 / 16.665 | 16.665 / 16.665 / 16.665 |\n\nThe change is mechanical (the tick loops do not run while held), so two sittings decide it: −90 % of logic0's work in edit mode, far above any run-to-run noise. Playing (\"off\") is the same code path, unchanged within the noise. The ~10 MB/s the logic worker allocates while playing is the people's ticks (gone while held): an engine or demo finding, outside the editor.\n\n**Verdict: passed.**\n",
+      "commits": [
+        "fbcf6d2d"
       ]
     }
   ],
