@@ -1,14 +1,13 @@
 // The editor's console (VISUAL_EDITOR_PLAN.md ED-18): a console's calls passed on as text while it is on, off by
 // default and put back exactly when turned off; at most MAX_PER_SECOND a second, the rest counted in one line. A
 // worker turns it on and off with a 'consoleForward' message and posts each call as a `log` message; the scene hands
-// those to the debug UI, and the console panel draws them, one row per line repeated, errors with their counts.
+// those to the debug UI. The console panel that draws them is tested in editorConsoleFilter.test.js.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createConsoleForward, formatConsoleArgs, MAX_PER_SECOND, MAX_TEXT, CONSOLE_LEVELS } from '../../src/util/consoleForward.js';
 import { AbstractWorker } from '../../src/workers/abstractWorker.js';
 import { Scene } from '../../src/core/scene.js';
-import { ConsolePanel } from '../../src/core/debug/editor/consolePanel.js';
 
 test('formatConsoleArgs: one line, as DevTools joins a call', () => {
   assert.equal(formatConsoleArgs(['hit', 3, true, null, undefined]), 'hit 3 true null undefined');
@@ -115,77 +114,4 @@ test('the scene hands a worker’s console call to the debug UI, and its own sta
   };
   scene._setConsoleForward(true);
   assert.deepEqual(sent, [['logic0', true], ['preRender0', true], ['renderer', true]], 'not physics’ own worker');
-});
-
-// ---- the panel, against a small fake DOM ----
-
-class El {
-  constructor(tag) {
-    this.tagName = tag.toUpperCase();
-    this.children = [];
-    this.style = {};
-    this.dataset = {};
-    this._text = '';
-    this.classList = { add() {}, toggle() {} };
-    this.scrollTop = 0;
-    this.scrollHeight = 0;
-    this.clientHeight = 0;
-  }
-  get textContent() {
-    return this._text;
-  }
-  set textContent(text) {
-    this._text = text;
-    this.children = []; // as the DOM: setting it takes the children out
-  }
-  append(...nodes) {
-    this.children.push(...nodes);
-  }
-  appendChild(node) {
-    this.children.push(node);
-    node.parent = this;
-    return node;
-  }
-  remove() {
-    const list = this.parent?.children;
-    if (list) list.splice(list.indexOf(this), 1);
-  }
-}
-
-test('the panel draws at the tick, counts a repeated line on its row, and keeps one row per game code error', () => {
-  globalThis.document = { createElement: (tag) => new El(tag) };
-  try {
-    const panel = new ConsolePanel({ editMode: {}, scene: null });
-    panel.add('logic0', 'log', 'tick');
-    panel.add('logic0', 'log', 'tick');
-    assert.equal(panel._list.children.length, 0, 'nothing drawn before the tick');
-    panel.update();
-    assert.equal(panel._list.children.length, 1);
-    panel.add('logic0', 'log', 'tick');
-    panel.update();
-    assert.equal(panel._list.children.length, 1, 'the same line again: its count');
-    assert.equal(panel.entries[0].countEl.textContent, '×3');
-    panel.add('logic1', 'log', 'tick');
-    panel.update();
-    assert.equal(panel._list.children.length, 2, 'another worker’s line is a row of its own');
-
-    const rec = { phase: 'tick', className: 'Enemy', entityIndex: 12, message: 'x is undefined', counts: new Map([['logic0', 1]]) };
-    panel.entityError('Enemy|tick|x is undefined', rec);
-    panel.update();
-    const row = panel._list.children[2];
-    assert.equal(row.children[1].textContent, 'Enemy #12 · tick threw: x is undefined');
-    assert.equal(row.dataset.entity, '12', 'a click selects it');
-    rec.counts.set('logic0', 40);
-    rec.counts.set('logic1', 2);
-    panel.entityError('Enemy|tick|x is undefined', rec);
-    assert.equal(row.children[2].textContent, '×42', 'the count of every worker, on the same row');
-    panel.newScene();
-    panel.entityError('Enemy|tick|x is undefined', rec);
-    panel.update();
-    assert.equal(panel._list.children.length, 4, 'another scene’s error is a row of its own');
-    panel.clear();
-    assert.deepEqual([panel.entries.length, panel._list.children.length], [0, 0]);
-  } finally {
-    delete globalThis.document;
-  }
 });
