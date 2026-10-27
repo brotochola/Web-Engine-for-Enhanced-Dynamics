@@ -16,7 +16,7 @@
 // ED-19 pauses the simulation workers instead.
 //
 // A left click selects (selection.js, ED-8), and a drag moves the selection (moveTool.js, ED-10), as do the arrow
-// keys (Shift: ten steps); G cycles the grid step. Other tools (Stage 4: handles, brushes, pickers) are added with
+// keys (Shift: ten steps); G cycles the grid step; F frames the selection and Shift+F the level (frame.js, ED-57). Other tools (Stage 4: handles, brushes, pickers) are added with
 // addTool(): one may take a press before the move tool does, and has the pointer until it is let go. Esc clears the selection, and with none leaves edit mode. Ctrl+S
 // saves the running scene file through the dev server (sceneFileStore.js, ED-13). Every change to the document goes
 // through editSelected and is kept for Ctrl+Z / Ctrl+Y (history.js, ED-12).
@@ -64,6 +64,7 @@ import { jointsBeforeDelete, replaceJoints } from './sceneJoints.js';
 import { applyJointsChange } from './jointsPanel.js';
 import { ScatterBrush } from './scatterBrush.js';
 import { JointTool } from './jointTool.js';
+import { frameSelection, frameAll } from './frame.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -410,6 +411,11 @@ export class EditMode {
         return this.move.nudge(0, -steps);
       case 'ArrowDown':
         return this.move.nudge(0, steps);
+      case 'f':
+      case 'F':
+        if (e.shiftKey) this.frameAll();
+        else this.frameSelection();
+        return true;
       case 'g':
       case 'G': {
         const next = SNAP_STEPS[(SNAP_STEPS.indexOf(this.move.snap) + 1) % SNAP_STEPS.length];
@@ -653,7 +659,22 @@ export class EditMode {
     if (this.placing !== null) this.startPlacing(this.placing);
     // While playing it stays playing: the inspector shows the entity live (ED-17).
     this.selection.select(index);
-    if (center && this.active) Camera.setFreeTarget(Transform.x[index], Transform.y[index]);
+    if (center) this.frameSelection();
+  }
+
+  /**
+   * F (ED-57): the selection in the middle of the view, as large as fits (several selected: their box); with nothing
+   * selected, the whole level. Only while editing: playing, the game's camera is the game's.
+   * @returns {boolean} whether the camera was sent
+   */
+  frameSelection() {
+    if (!this.active) return false;
+    return frameSelection(this) || frameAll(this);
+  }
+
+  /** Shift+F: every placed entity of the level (with none, the world). */
+  frameAll() {
+    return this.active && frameAll(this);
   }
 
   /**
