@@ -8469,6 +8469,49 @@
       "kind": "gpu",
       "result": "Not measured. Each Tiled layer is one GID quad per 2048-tile page, so Pixi's CPU cost is close to zero, and littleCity's 8 layers run the fragment shader 8 times per screen pixel. A bake to pixels is out on memory (littleCity about 200 MB, tilemap2 about 2 GB, against 2.8 and 27 MB of GIDs). Instead: clear at load the cells hidden under opaque tiles, and composite up to 4 layers per draw, from the top down, stopping at the first opaque texel.",
       "next": "Time the tilemap passes on the GPU (timestamp queries) on littleCity at 1080p and 4K, and on a weak GPU too. If they are a small share of the frame, reject on the premise; if not, hidden cells first, then layers per draw."
+    },
+    {
+      "id": "ED-15",
+      "title": "Visual editor: the editor page keeps nothing of a game page that reloads (no realm, no shared memory left alive)",
+      "status": "passed",
+      "statusText": "Measured 2026-10-26: Chromium, the platformer in the editor page, reloads of the game page",
+      "date": "2026-10-26",
+      "result": "Over 6 reloads of the game page, each handing over an unsaved document that the next page took up by a fast swap, Chrome's document count stayed at 2 and the JS heap after a GC flat (4.6-4.7 MB); nodes and listeners did not grow.",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md"
+      ],
+      "aliases": [
+        "editor page leak",
+        "editor shell"
+      ],
+      "next": "None: tests/bench/editorShellSmoke.mjs checks it on every run (no leak, 5 reloads).",
+      "records": [
+        "R-0651"
+      ]
+    },
+    {
+      "id": "ED-29",
+      "title": "Visual editor: the editor ships as @weed.js/editor, and the engine's debug bundle carries none of its code",
+      "status": "passed",
+      "statusText": "Measured 2026-10-26: the debug bundle built with and without the editor in it",
+      "date": "2026-10-26",
+      "result": "weed.bundle.min.js 3,277,713 -> 3,241,992 bytes (-35.7 KB, -1.1 %), the compressed one 1,964,434 -> 1,928,711; the editor is weed.editor.min.js, 57.3 KB (71.8 KB with Bake atlas and Export), and works against the bundles through WEED_EDITOR_KIT (smokeEditorBundle.mjs 5/5).",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md"
+      ],
+      "aliases": [
+        "weed.editor",
+        "editor package",
+        "editor bundle size"
+      ],
+      "next": "None.",
+      "records": [
+        "R-0652"
+      ]
     }
   ],
   "records": [
@@ -14291,6 +14334,27 @@
       "commits": [
         "1707dcef",
         "c6dc2d0b"
+      ]
+    },
+    {
+      "id": "R-0651",
+      "date": "2026-10-26",
+      "title": "ED-15: the editor page over 6 reloads of the game page: 2 documents, heap flat",
+      "verdict": "passed",
+      "text": "**ED-15: does the editor page keep reloaded game pages alive? (VISUAL_EDITOR_PLAN.md D9, ED-15).** 2026-10-26.\n\nA page that reloads leaves its realm behind, and anything of it the editor page keeps (a node, a function, a plain object) keeps that realm alive with its shared memories. Headless Chromium, the platformer's own page in the editor page; an edit left unsaved, so every reload hands the document over and the next page takes it up by a fast swap. After each reload: `HeapProfiler.collectGarbage` three times, then `Memory.getDOMCounters` and `Runtime.getHeapUsage`.\n\n| | documents | nodes | listeners | heap after GC |\n| --- | --- | --- | --- | --- |\n| start | 2 | 3,785 | 242 | 4.6 MB |\n| after reloads 1 to 6 | 2 | 3,784 | 242 | 4.6 to 4.7 MB |\n\nThe first run grew by one document, ~3,700 nodes and ~2.9 MB of heap per reload, and a plain iframe page with no editor grew the same way. A heap snapshot named the retainer: \"DevTools console\", a `PlatformerGameScene` held by a Playwright handle, because the test's wait predicate returned the scene object (Playwright keeps a handle to a predicate's truthy result). With predicates that return booleans, the plain iframe stayed at 2 documents too.\n\n**Verdict: passed.** The editor page copies what a page hands over with its own `structuredClone`, takes the page's nodes out of its docks and drops the page on `pagehide`. `editorShellSmoke.mjs` keeps the check ('no leak', 5 reloads), with boolean waits.\n",
+      "commits": [
+        "e785e800"
+      ]
+    },
+    {
+      "id": "R-0652",
+      "date": "2026-10-26",
+      "title": "ED-29: the debug bundle without the editor: -35.7 KB; the editor package works against the bundles",
+      "verdict": "passed",
+      "text": "**ED-29: the editor out of the engine's debug bundle (VISUAL_EDITOR_PLAN.md ED-29).** 2026-10-26.\n\n`npm run make_bundle` twice on the same tree: once with the DebugUI's sources from before dcaff75a (the editor imported statically), once as committed (the editor loaded on demand from `@weed.js/editor`); the tracked `dist/` restored after.\n\n| | with the editor | without | change |\n| --- | --- | --- | --- |\n| weed.bundle.min.js | 3,277,713 B | 3,241,992 B | -35,721 B (-1.1 %) |\n| weed.bundle.compressed.min.js | 1,964,434 B | 1,928,711 B | -35,723 B |\n\nThe editor's own bundle, `weed.editor.min.js`, was 57.3 KB then (71.8 KB once Bake atlas and Export joined it); it carries its own webpack runtime and reads the engine's modules from `WEED_EDITOR_KIT`, so none of the engine is copied into it. `assertDistBundles.js` checks only that the 8 bundles exist.\n\n`scripts/smokeEditorBundle.mjs` against the built bundles (5/5): the debug bundle holds none of the editor's strings; with an import map and with two script tags, Shift+E loads the editor, which selects the template's Player reading the engine's own arrays; with the engine alone, Shift+E says how to add the editor and nothing breaks; no request reaches /src/.\n\n**Verdict: passed.**\n",
+      "commits": [
+        "041692fd",
+        "dcaff75a"
       ]
     }
   ],
