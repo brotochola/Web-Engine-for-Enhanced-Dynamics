@@ -54,7 +54,7 @@ export class LiveInspector {
   constructor(selection) {
     this.selection = selection;
     this.el = document.createElement('div');
-    this.el.style.cssText = 'margin-top:10px';
+    this.el.style.cssText = '';
     this._index = -1;
     /** Per section: its component, its rows, whether it is open. */
     this._sections = [];
@@ -83,15 +83,13 @@ export class LiveInspector {
     // Transform first: where it is, what most edits are about.
     components = components === null ? [Transform] : [Transform, ...components.filter((C) => C !== Transform)];
 
+    // Its title is the inspector section's (selection.js, ED-54).
     const head = document.createElement('div');
-    head.style.cssText = 'display:flex;align-items:center;gap:6px;margin:4px 0 6px';
-    const title = document.createElement('span');
-    title.textContent = 'Live';
-    title.style.cssText = 'font-weight:bold;color:#fff';
+    head.style.cssText = 'display:flex;align-items:center;gap:6px;margin:0 0 6px';
     const note = document.createElement('span');
     note.textContent = 'the entity now; Stop throws changes away';
     note.style.cssText = 'font-size:10px;color:#777;flex:1';
-    head.append(title, note);
+    head.append(note);
     this._copy = null;
     this._pairs = [];
     if (this.selection.authored && EntityClass !== null) {

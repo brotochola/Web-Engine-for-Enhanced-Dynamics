@@ -92,7 +92,7 @@ export class JointsPanel {
     this.addType = 'revolute';
     this.el = document.createElement('div');
     this.el.dataset.joints = '';
-    this.el.style.cssText = 'margin-top:8px;padding-top:6px;border-top:1px solid rgba(255,255,255,0.1);display:none';
+    this.el.style.cssText = 'display:none';
   }
 
   get _editMode() {
@@ -109,11 +109,8 @@ export class JointsPanel {
       return;
     }
     el.style.display = '';
-    const title = document.createElement('div');
-    title.textContent = 'Joints';
-    title.title = 'The scene file’s joints that name this entity. In the view, Alt+drag a handle to move its anchor.';
-    title.style.cssText = 'font-size:11px;color:#ccc;font-weight:bold;margin-bottom:3px';
-    el.appendChild(title);
+    // Its title is the inspector section's (selection.js, ED-54); this says how to move an anchor.
+    el.title = 'The scene file’s joints that name this entity. In the view, Alt+drag a handle to move its anchor.';
     const others = scene.sceneFile.entities.filter((e) => e.name !== name).map((e) => e.name);
     const joints = jointsOf(scene);
     for (let p = 0; p < joints.length; p++) {

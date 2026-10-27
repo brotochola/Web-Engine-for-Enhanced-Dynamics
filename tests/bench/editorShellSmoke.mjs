@@ -183,7 +183,7 @@ async function main() {
       editMode.selectFromList(editMode.debugUI.scene._namedEntities.get('Platform1') >> 16 >>> 0, false);
     });
 
-    const width = page.locator('[data-slot=inspector] input:not([type=range]):not([type=color])').nth(1);
+    const width = page.locator('[data-slot=inspector] div[data-key="width"] input[type="number"]');
     await width.fill('640');
     await width.press('Tab');
     await page.waitForTimeout(300);
@@ -276,6 +276,10 @@ async function main() {
     await page.waitForTimeout(300);
     await rows.filter({ hasText: /^Platform1\s/ }).click();
     await page.waitForTimeout(300);
+    // The Live section starts folded (ED-54): open it.
+    const liveSection = page.locator('[data-slot=inspector] [data-section=live]');
+    if ((await liveSection.locator('.debug-ui-inspector-prop').count()) === 0) await liveSection.locator('> div').first().click();
+    await page.waitForTimeout(200);
     const liveField = (label) =>
       page
         .locator('[data-slot=inspector] .debug-ui-inspector-prop', {

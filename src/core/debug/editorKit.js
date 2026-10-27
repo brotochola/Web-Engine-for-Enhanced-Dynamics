@@ -8,6 +8,7 @@
 import * as transform from '../../components/transform.js';
 import * as collider from '../../components/collider.js';
 import * as spriteRenderer from '../../components/spriteRenderer.js';
+import * as rigidBody from '../../components/rigidBody.js';
 import * as adobeAnimComponent from '../../components/adobeAnimComponent.js';
 import * as meshRenderer from '../../components/meshRenderer.js';
 import * as lightEmitter from '../../components/lightEmitter.js';
@@ -40,6 +41,7 @@ import * as tilemapReload from './tilemapReload.js';
 export const editorKit = Object.freeze({
   'components/transform.js': transform,
   'components/collider.js': collider,
+  'components/rigidBody.js': rigidBody,
   'components/spriteRenderer.js': spriteRenderer,
   'components/adobeAnimComponent.js': adobeAnimComponent,
   'components/meshRenderer.js': meshRenderer,

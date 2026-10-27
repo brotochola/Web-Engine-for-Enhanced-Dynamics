@@ -30,6 +30,10 @@ import { JointsPanel } from './jointsPanel.js';
 import { recordOf, paramsOf, writeParam, writeConfig } from './sceneDocument.js';
 import { AssetCatalog } from './assetPicker.js';
 import { TransformFields } from './transformFields.js';
+import { InspectorSection } from './inspectorSection.js';
+import { RigidBody } from '../../../components/rigidBody.js';
+import { describeSpawnParams } from '../../spawnParams.js';
+import { jointsOf } from './sceneJoints.js';
 
 export class Selection {
   constructor(debugUI) {
@@ -54,6 +58,8 @@ export class Selection {
     this._fields = null;
     /** Position, rotation and scale (transformFields.js, ED-53), made with the panel. */
     this.transform = null;
+    /** The sections that fold (inspectorSection.js, ED-54): transform, params, joints, live. */
+    this._sections = null;
     /** The live values (liveInspector.js), made with the panel. */
     this.live = null;
     /** The file's joints that name the entity (jointsPanel.js, ED-21), made with the panel. */
@@ -167,16 +173,32 @@ export class Selection {
       this._detail.style.color = '#888';
     }
     const found = this.authored ? recordOf(scene, this.name) : null;
+    const sections = this._sections;
     this._nameRow.style.display = found === null ? 'none' : 'flex';
     this.transform.show(found === null ? null : found.record, this.index);
+    sections.transform.visible = found !== null;
+    sections.params.visible = found !== null;
     if (found === null) {
       this._fields.textContent = '';
     } else {
       this._nameInput.value = this.name;
-      buildParamFields(this._fields, paramsOf(scene, found.record), found.record.config || {}, this._hooks);
+      const description = paramsOf(scene, found.record);
+      sections.params.title = description === null ? 'Config' : 'Params';
+      buildParamFields(this._fields, description, found.record.config || {}, this._hooks);
     }
-    this.joints.show(found === null ? null : this.name);
-    this.live.show(this.index);
+    // Joints: for a class with a body; open when the entity has joints, else as the author left it (folded at first).
+    const registered = registeredOf(scene, Transform.entityType[this.index]);
+    const withBody = found !== null && registered !== null && (registered.components || []).includes(RigidBody);
+    let joints = 0;
+    if (withBody) for (const joint of jointsOf(scene)) if (joint.a === this.name || joint.b === this.name) joints++;
+    sections.joints.visible = withBody;
+    sections.joints.note.textContent = joints > 0 ? String(joints) : '';
+    sections.joints.setOpen(joints > 0 || sections.joints.rememberedOpen(false), false);
+    this.joints.show(withBody ? this.name : null);
+    // Live: folded until opened; folded, it has no rows and its tick reads nothing.
+    sections.live.note.textContent = registered !== null ? describeLive(registered) : '';
+    if (sections.live.open) this.live.show(this.index);
+    else this.live.clear();
   }
 
   _createBody() {
@@ -205,7 +227,24 @@ export class Selection {
     this.transform = new TransformFields(this);
     this.joints = new JointsPanel(this);
     this.live = new LiveInspector(this);
-    this._body.append(this._title, this._detail, this._nameRow, this.transform.el, this._fields, this.joints.el, this.live.el);
+    const sections = {
+      transform: new InspectorSection('transform', 'Transform'),
+      params: new InspectorSection('params', 'Params'),
+      joints: new InspectorSection('joints', 'Joints', { open: false }),
+      live: new InspectorSection('live', 'Live', {
+        open: false,
+        onToggle: (open) => {
+          if (open && this.index >= 0) this.live.show(this.index);
+          else this.live.clear();
+        },
+      }),
+    };
+    sections.transform.body.appendChild(this.transform.el);
+    sections.params.body.appendChild(this._fields);
+    sections.joints.body.appendChild(this.joints.el);
+    sections.live.body.appendChild(this.live.el);
+    this._sections = sections;
+    this._body.append(this._title, this._detail, this._nameRow, sections.transform.el, sections.params.el, sections.joints.el, sections.live.el);
   }
 
   /** How many others are selected with it (ED-28): a line under its name. */
@@ -222,6 +261,18 @@ export class Selection {
     this._panel = null;
     this.clear();
   }
+}
+
+/** The scene's registered class for an entity type, or null. */
+function registeredOf(scene, entityType) {
+  for (const registered of scene?.registeredClasses || []) if (registered.entityType === entityType) return registered;
+  return null;
+}
+
+/** The Live section's note: its components. */
+function describeLive(registered) {
+  const names = (registered.components || []).map((C) => C.name).filter((name) => name !== 'Transform');
+  return names.length > 0 ? `Transform, ${names.join(', ')}` : 'Transform';
 }
 
 /** The names an entity param can take: the file's entities of `className` (any class without one), but `self`. */
