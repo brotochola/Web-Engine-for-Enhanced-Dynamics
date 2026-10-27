@@ -1036,8 +1036,23 @@ export interface DecorationSpawnConfig {
   inheritParentRotation?: boolean;
 }
 
-export interface DecorationSpawnManyConfig extends DecorationSpawnConfig {
+/**
+ * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha and tint may also be arrays
+ * (or typed arrays) with one value per decoration. count then defaults to the first array's length.
+ */
+export interface DecorationSpawnManyConfig
+  extends Omit<DecorationSpawnConfig, 'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint'> {
   count?: number;
+  x?: WeedNumOrRange | ArrayLike<number>;
+  y?: WeedNumOrRange | ArrayLike<number>;
+  texture?: string | ArrayLike<string>;
+  scaleX?: WeedNumOrRange | ArrayLike<number>;
+  scaleY?: WeedNumOrRange | ArrayLike<number>;
+  rotation?: number | ArrayLike<number>;
+  alpha?: WeedNumOrRange | ArrayLike<number>;
+  tint?: number | ArrayLike<number>;
+  /** With per-decoration arrays: receives each spawned decoration's pool index, in order. */
+  out?: Int32Array | Uint32Array | number[];
 }
 
 export interface BulletSpawnConfig {
