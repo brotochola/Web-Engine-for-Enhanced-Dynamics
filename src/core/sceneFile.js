@@ -16,12 +16,18 @@
 // the class's defaults (an entity param holds the name of another entity in the file). Keys this format does not
 // know are kept on load and written back on save. On disk: two-space JSON with one entity per line, its keys in a
 // fixed order, so moving one platform is a one-line diff.
+//
+// Two optional sections follow the entities: `joints` between them, by name (sceneFileJoints.js, one joint per
+// line), and `decorations`, flat number arrays per decoration class (sceneFileDecorations.js). A file without them
+// reads and writes as before.
 
 import { describeSpawnParams, KIND_ENTITY, KIND_POINTS } from './spawnParams.js';
+import { checkSceneFileJoints, jointKeyOrder } from './sceneFileJoints.js';
+import { checkSceneFileDecorations, DECORATION_KEYS } from './sceneFileDecorations.js';
 
 export const SCENE_FILE_FORMAT = 1;
 
-const ROOT_KEYS = ['format', 'script', 'export', 'entities'];
+const ROOT_KEYS = ['format', 'script', 'export', 'entities', 'joints', 'decorations'];
 const ENTITY_KEYS = ['name', 'class', 'x', 'y', 'config'];
 
 /** Whether a loadScene source is a scene file (by its name: `*.scene.json`). */
@@ -84,6 +90,8 @@ export function checkSceneFile(doc, where = 'scene file', { scriptRequired = tru
       throw new Error(`${prefix(at)} (${e.name}): "config" must be an object`);
     }
   }
+  if (doc.joints !== undefined) checkSceneFileJoints(doc.joints, where);
+  if (doc.decorations !== undefined) checkSceneFileDecorations(doc.decorations, where);
   return doc;
 }
 
@@ -119,7 +127,8 @@ export function prepareSceneFile(doc, where, classKnown) {
 
 /**
  * A scene file's text: two-space JSON, one entity per line, keys in a fixed order (format, script, export,
- * entities, then any others; per entity name, class, x, y, config, then any others). An empty config is left out.
+ * entities, joints, decorations, then any others; per entity name, class, x, y, config, then any others). An empty
+ * config is left out. Joints are one per line too; each decoration record has its keys on lines of their own.
  * @param {object} doc
  * @returns {string}
  */
@@ -136,6 +145,16 @@ export function serializeSceneFile(doc) {
         const rows = entities.map((e) => `    ${inlineJson(orderedEntity(e))}`);
         fields.push(`  "entities": [\n${rows.join(',\n')}\n  ]`);
       }
+    } else if (key === 'joints') {
+      const rows = doc.joints.map((j) => `    ${inlineJson(ordered(j, jointKeyOrder(j.type)))}`);
+      fields.push(rows.length === 0 ? '  "joints": []' : `  "joints": [\n${rows.join(',\n')}\n  ]`);
+    } else if (key === 'decorations') {
+      const blocks = doc.decorations.map((d) => {
+        const record = ordered(d, DECORATION_KEYS);
+        const keys = Object.keys(record).map((k) => `      ${JSON.stringify(k)}: ${inlineJson(record[k])}`);
+        return `    {\n${keys.join(',\n')}\n    }`;
+      });
+      fields.push(blocks.length === 0 ? '  "decorations": []' : `  "decorations": [\n${blocks.join(',\n')}\n  ]`);
     } else {
       fields.push(`  ${JSON.stringify(key)}: ${JSON.stringify(doc[key])}`);
     }
@@ -147,6 +166,14 @@ export function serializeSceneFile(doc) {
   lines.push(fields.join(',\n'));
   lines.push('}');
   return `${lines.join('\n')}\n`;
+}
+
+/** A record with `keys` first, in that order, then its other keys; undefined values are left out. */
+function ordered(record, keys) {
+  const out = {};
+  for (const key of keys) if (record[key] !== undefined) out[key] = record[key];
+  for (const key of Object.keys(record)) if (!keys.includes(key) && record[key] !== undefined) out[key] = record[key];
+  return out;
 }
 
 /** An entity record with its keys in the file's order; an empty config is dropped. */

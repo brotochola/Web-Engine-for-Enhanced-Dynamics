@@ -4,6 +4,10 @@ import assert from 'node:assert/strict';
 import { Scene } from '../../src/core/scene.js';
 import { GameEngine } from '../../src/core/gameEngine.js';
 import { clearSceneDirty, markSceneDirty } from '../../src/core/sceneDirty.js';
+import { DecorationPool } from '../../src/core/decorationPool.js';
+import { DecorationComponent } from '../../src/components/decorationComponent.js';
+import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
+import { buildPoolScene } from '../helpers/poolScene.mjs';
 
 // VISUAL_EDITOR_PLAN.md ED-35: the fast swap's decisions and order, with stand-in workers. What each worker does
 // on its side has its own tests (clearScene.test.js, swapClears.test.js, layer.test.js).
@@ -138,6 +142,33 @@ test('a fast swap settles, clears, resets, steps physics, then runs the new cont
   assert.equal(scene._spawnBatchOpen, false);
   assert.equal(scene.state.pause, false);
   assert.deepEqual(progress, [[Scene.LOAD_STEPS.length, Scene.LOAD_STEPS.length, 'world']]);
+});
+
+test('a fast swap leaves none of the last file’s decorations, and spawns the next file’s (ED-25)', async () => {
+  class Meadow extends Level {
+    static decorations = { Rock: { texture: 'rock' } };
+  }
+  buildPoolScene({ decorations: 8 });
+  SpriteSheetRegistry.register('bigAtlas', { animations: { rock: ['rock'] } });
+  try {
+    const scene = runningLevel([], { decoration: { maxDecorations: 8 } });
+    Object.setPrototypeOf(scene, Meadow.prototype);
+    // What the last file spawned, and the maps that held it.
+    const last = { class: 'Rock', x: [1, 2, 3], y: [1, 2, 3] };
+    for (let k = 0; k < 3; k++) DecorationPool.spawn({ x: k, y: k, texture: 'rock' });
+    scene._fileDecorations = new Map([[last, [0, 1, 2]]]);
+    scene._fileJoints = new Map([[{ type: 'weld', a: 'A', b: 'B' }, { index: 0, entityA: 0, entityB: 1 }]]);
+    const next = { format: 1, script: 'x.js', entities: [], decorations: [{ class: 'Rock', x: [500, 600], y: [10, 20] }] };
+    await scene._fastSwap({ data: null, sceneFile: next, sceneFileUrl: 'http://host/levels/b.scene.json', restorePayload: null, onProgress: null });
+    assert.equal(DecorationPool.getActiveCount(), 2, 'the last file’s three are gone, the next file’s two are there');
+    assert.deepEqual([...scene._fileDecorations.keys()], [next.decorations[0]]);
+    const xs = scene._fileDecorations.get(next.decorations[0]).map((i) => DecorationComponent.x[i]);
+    assert.deepEqual(xs, [500, 600]);
+    assert.equal(scene._fileJoints.size, 0, 'the joints the last file made are forgotten (logic0’s clear removed them)');
+  } finally {
+    SpriteSheetRegistry.spritesheets.delete('bigAtlas');
+    DecorationPool.reset();
+  }
 });
 
 test('a hook that throws during the swap still resumes the workers', async () => {

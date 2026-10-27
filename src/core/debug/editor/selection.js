@@ -25,6 +25,7 @@ import { FloatingPanel } from '../ui/floatingPanel.js';
 import { pickEntityAt } from './pick.js';
 import { buildParamFields } from './paramWidgets.js';
 import { LiveInspector } from './liveInspector.js';
+import { JointsPanel } from './jointsPanel.js';
 import { recordOf, paramsOf, writeParam, writeConfig } from './sceneDocument.js';
 import { AssetCatalog } from './assetPicker.js';
 
@@ -51,6 +52,8 @@ export class Selection {
     this._fields = null;
     /** The live values (liveInspector.js), made with the panel. */
     this.live = null;
+    /** The file's joints that name the entity (jointsPanel.js, ED-21), made with the panel. */
+    this.joints = null;
     this._classNameOf = (entityType) => debugUI.tools._classNameForType(entityType);
     /** A click in the view leaves out what a locked or hidden layer holds (editorLayers.js, ED-24). */
     this._unpickable = (index) => this.editor?.layers?.unpickable(index) === true;
@@ -166,6 +169,7 @@ export class Selection {
       this._nameInput.value = this.name;
       buildParamFields(this._fields, paramsOf(scene, found.record), found.record.config || {}, this._hooks);
     }
+    this.joints.show(found === null ? null : this.name);
     this.live.show(this.index);
   }
 
@@ -192,8 +196,9 @@ export class Selection {
     this._nameRow.appendChild(nameLabel);
     this._nameRow.appendChild(this._nameInput);
     this._fields = document.createElement('div');
+    this.joints = new JointsPanel(this);
     this.live = new LiveInspector(this);
-    this._body.append(this._title, this._detail, this._nameRow, this._fields, this.live.el);
+    this._body.append(this._title, this._detail, this._nameRow, this._fields, this.joints.el, this.live.el);
   }
 
   /** How many others are selected with it (ED-28): a line under its name. */

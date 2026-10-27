@@ -174,6 +174,82 @@ export interface SceneFileEntity {
   [key: string]: unknown;
 }
 
+/**
+ * One joint a scene file places between two of its entities (by name). Anchors are relative to each entity's
+ * position, in its own frame, in pixels ([0, 0] when left out). The type's settings use Joint's names; a distance
+ * joint without `length` holds its anchors at the distance the file places them. Angles are radians.
+ */
+export interface SceneFileJoint {
+  /** Optional, unique among the file's joints. */
+  name?: string;
+  type: 'distance' | 'revolute' | 'prismatic' | 'weld';
+  /** The names of the two entities it holds. */
+  a: string;
+  b: string;
+  anchorA?: [number, number];
+  anchorB?: [number, number];
+  // distance
+  length?: number;
+  enableSpring?: boolean;
+  hertz?: number;
+  dampingRatio?: number;
+  // revolute and prismatic
+  enableLimit?: boolean;
+  lowerAngle?: number;
+  upperAngle?: number;
+  enableMotor?: boolean;
+  motorSpeed?: number;
+  maxMotorTorque?: number;
+  axisAngle?: number;
+  lowerTranslation?: number;
+  upperTranslation?: number;
+  maxMotorForce?: number;
+  // weld
+  linearHertz?: number;
+  angularHertz?: number;
+  linearDampingRatio?: number;
+  angularDampingRatio?: number;
+  /** The force or torque that breaks it; left out, it never breaks. */
+  forceThreshold?: number;
+  torqueThreshold?: number;
+  [key: string]: unknown;
+}
+
+/**
+ * A scene file's decorations of one class (`Scene.decorations`), as flat arrays with one value per decoration.
+ * x and y are required; the others, when present, have as many values (left out: the class's value).
+ */
+export interface SceneFileDecorations {
+  class: string;
+  x: number[];
+  y: number[];
+  /** Which of the class's textures, from 0. */
+  frame?: number[];
+  scale?: number[];
+  /** Radians. */
+  rotation?: number[];
+  alpha?: number[];
+  tint?: number[];
+  [key: string]: unknown;
+}
+
+/**
+ * A decoration class of `Scene.decorations`: a Decoration.spawn config its decorations share, where `texture` may
+ * be a list (a file's `frame` picks one), `scale` sets both axes, and scale, rotation, alpha and tint may be ranges:
+ * the editor's brush draws one value per decoration from them, and writes it to the file.
+ */
+export interface SceneDecorationClass
+  extends Omit<DecorationSpawnConfig, 'x' | 'y' | 'texture' | 'rotation' | 'alpha' | 'tint' | 'parent' | 'localX' | 'localY'> {
+  texture: string | string[];
+  scale?: WeedNumOrRange;
+  rotation?: WeedNumOrRange;
+  alpha?: WeedNumOrRange;
+  tint?: number | { min: number; max: number };
+  swaySkew?: boolean;
+  layer?: string | number;
+  layers?: Array<string | number>;
+}
+
 /** A `*.scene.json` file (format 1), as `game.loadScene(url)` reads it. */
 export interface SceneFile {
   format: 1;
@@ -182,6 +258,10 @@ export interface SceneFile {
   /** The scene class's export name; optional when the module exports one scene. */
   export?: string;
   entities: SceneFileEntity[];
+  /** Joints between the file's entities, by name (optional). */
+  joints?: SceneFileJoint[];
+  /** Decorations, per class of the scene's `static decorations` (optional). */
+  decorations?: SceneFileDecorations[];
   [key: string]: unknown;
 }
 
@@ -993,8 +1073,23 @@ export interface DecorationSpawnConfig {
   inheritParentRotation?: boolean;
 }
 
-export interface DecorationSpawnManyConfig extends DecorationSpawnConfig {
+/**
+ * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha and tint may also be arrays
+ * (or typed arrays) with one value per decoration. count then defaults to the first array's length.
+ */
+export interface DecorationSpawnManyConfig
+  extends Omit<DecorationSpawnConfig, 'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint'> {
   count?: number;
+  x?: WeedNumOrRange | ArrayLike<number>;
+  y?: WeedNumOrRange | ArrayLike<number>;
+  texture?: string | ArrayLike<string>;
+  scaleX?: WeedNumOrRange | ArrayLike<number>;
+  scaleY?: WeedNumOrRange | ArrayLike<number>;
+  rotation?: number | ArrayLike<number>;
+  alpha?: WeedNumOrRange | ArrayLike<number>;
+  tint?: number | ArrayLike<number>;
+  /** With per-decoration arrays: receives each spawned decoration's pool index, in order. */
+  out?: Int32Array | Uint32Array | number[];
 }
 
 export interface BulletSpawnConfig {
@@ -1689,6 +1784,11 @@ export declare class Scene {
    * loaded by its module or class instead of a scene file: its first level. Default null.
    */
   static defaultSceneFile: string | null;
+  /**
+   * The decoration classes this scene's files can place (their `decorations` section, the editor's brush): name →
+   * what its decorations share. Default null: none.
+   */
+  static decorations: Record<string, SceneDecorationClass> | null;
   game: GameEngine;
   loadedTextures: unknown;
   /** Absolute scene module href workers import(), or null when using leftover entity scriptUrl. */

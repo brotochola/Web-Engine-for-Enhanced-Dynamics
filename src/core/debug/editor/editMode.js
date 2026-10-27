@@ -60,6 +60,10 @@ import {
   renamePlaced,
   writePosition,
 } from './sceneDocument.js';
+import { jointsBeforeDelete, replaceJoints } from './sceneJoints.js';
+import { applyJointsChange } from './jointsPanel.js';
+import { ScatterBrush } from './scatterBrush.js';
+import { JointTool } from './jointTool.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -122,6 +126,10 @@ export class EditMode {
     this.picker = this.addTool(new EntityPickTool(this));
     /** The selection's collider, light and points handles (handles.js: ED-20, ED-22, ED-27). */
     this.handles = this.addTool(new HandlesTool(this));
+    /** The scatter brush for the file's decorations (scatterBrush.js, ED-25); the palette shows its section. */
+    this.brush = this.addTool(new ScatterBrush(this));
+    /** The selected entity's joints on the overlay, their anchors dragged (jointTool.js, ED-21). */
+    this.addTool(new JointTool(this));
     /** The tool a press went to, until its button is let go. */
     this._toolWithPointer = null;
 
@@ -234,6 +242,14 @@ export class EditMode {
   _cancelTools() {
     this._toolWithPointer = null;
     for (const tool of this.tools) tool.cancel?.();
+  }
+
+  /** Whether a tool draws on the overlay with nothing selected (the brush's circle): the overlay runs while one does. */
+  wantsOverlay() {
+    if (!this.active) return false;
+    const tools = this.tools; // each overlay frame: an index, no iterator
+    for (let k = 0; k < tools.length; k++) if (tools[k].wantsOverlay?.() === true) return true;
+    return false;
   }
 
   /** The overlay's frame while editing (debugCanvas.js): the move ghost, then each tool's drawing. */
@@ -480,6 +496,12 @@ export class EditMode {
       case 'rename':
         this._renameTo(change.editorId, forward ? change.to : change.from);
         break;
+      case 'joints':
+        applyJointsChange(this, change, forward);
+        break;
+      case 'decorations':
+        this.brush.apply(change, forward);
+        break;
       default:
         throw new Error(`editor: no such change: ${change.kind}`);
     }
@@ -491,9 +513,15 @@ export class EditMode {
     this._showRestored(name === null ? -1 : restorePlaced(scene, name, snapshot));
   }
 
-  /** An added record again, or a removed one back: a copy of it at its place in the file, with its editor id. */
-  _putBack({ editorId, at, copy }) {
-    this._showRestored(addPlaced(this.debugUI.scene, withEditorId(structuredClone(copy), editorId), at));
+  /**
+   * An added record again, or a removed one back: a copy of it at its place in the file, with its editor id; and the
+   * joints its delete took out (ED-21), as they were.
+   */
+  _putBack({ editorId, at, copy, joints }) {
+    const scene = this.debugUI.scene;
+    const index = addPlaced(scene, withEditorId(structuredClone(copy), editorId), at);
+    if (joints !== undefined) replaceJoints(scene, structuredClone(joints));
+    this._showRestored(index);
   }
 
   // ---- scene files: the level list, Open, New, Save As (ED-38) ----
@@ -612,6 +640,7 @@ export class EditMode {
     }
     this.placing = this.placing === className ? null : className;
     if (this.placing !== null) this.selection.clear();
+    if (this.placing !== null && this.brush.className !== null) this.brush.select(null); // the brush goes down
     this.palette.refresh();
     this._notify();
   }
@@ -827,6 +856,8 @@ export class EditMode {
       editorId: id,
       at: found.position,
       copy: structuredClone(found.record),
+      // The file's joints, when the delete takes some out with it: undo puts the list back.
+      joints: jointsBeforeDelete(scene, selection.name),
     });
     this._remove(id);
     return true;

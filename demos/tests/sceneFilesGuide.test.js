@@ -21,6 +21,10 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Component } from '../../src/core/component.js';
 import { Layer } from '../../src/core/layer.js';
 import { clearSceneDirty } from '../../src/core/sceneDirty.js';
+import { Joint } from '../../src/core/joint.js';
+import { resetFreeList } from '../../src/util/atomicFreeList.js';
+import { addFileJoint, JOINT_TYPES, JOINT_SETTINGS } from '../../src/core/sceneFileJoints.js';
+import { decorationClassOf, decorationSpawnConfig } from '../../src/core/sceneFileDecorations.js';
 
 const { PlatformerGameScene } = await import('../platformerGameScene/platformerGameScene.js');
 const { Platform } = await import('../platformerGameScene/gameObjects/platform.js');
@@ -30,6 +34,13 @@ const read = (path) => readFileSync(new URL(path, root), 'utf8').replace(/\r\n/g
 const guide = read('docs/guide/SCENE_FILES.md');
 const blocks = [...guide.matchAll(/^```(\w+)\n([\s\S]*?)\n```$/gm)].map(([, lang, body]) => ({ lang, body }));
 const jsonBlocks = blocks.filter((b) => b.lang === 'json');
+/** A block that is one of a file's sections (joints, decorations), as it sits in the file. */
+const SECTION = /^"(joints|decorations)": \[/;
+const sectionBlock = (name) => {
+  const found = jsonBlocks.filter((b) => b.body.startsWith(`"${name}": [`));
+  assert.equal(found.length, 1, `one "${name}" block`);
+  return found[0].body;
+};
 
 /** The lines of a block in runs, split at its `// …` lines, without blank lines at either end of a run. */
 function runs(lines) {
@@ -100,7 +111,7 @@ test('Guard: the door spawns first, and onSpawned keeps its index, the speed and
   const { Guard } = evaluate(free[0].body);
   assert.deepEqual(describeSpawnParams(Guard).kindNames, ['points', 'enum', 'number', 'entity']);
 
-  const lines = jsonBlocks.filter((b) => !b.body.includes('"format"'));
+  const lines = jsonBlocks.filter((b) => !b.body.includes('"format"') && !SECTION.test(b.body));
   assert.equal(lines.length, 1);
   const doc = parseSceneFile(`{ "format": 1, "script": "x.js", "entities": [${lines[0].body}] }`, 'SCENE_FILES.md');
   const { order, backRefs } = sceneFileSpawnOrder(doc.entities, (name) => (name === 'Guard' ? Guard : undefined));
@@ -188,4 +199,60 @@ test('the full-load table quotes what the console says for each reason', () => {
   }
   assert.deepEqual(quoted, reasons);
   assert.equal(scene({})._fastSwapBlocker(PlatformerGameScene), null, 'and none of them: a fast swap');
+});
+
+// ---- ED-21 and ED-25: joints and decorations ----
+
+test('the joints example: each joint is made between the entities it names, with its anchors and settings', () => {
+  const body = sectionBlock('joints');
+  const names = [...new Set([...body.matchAll(/"[ab]": "(\w+)"/g)].map((m) => m[1]))];
+  // The entities it names, 100 px apart in a row.
+  const entities = names.map((name, i) => ({ name, class: 'Block', x: i * 100, y: 0 }));
+  const doc = parseSceneFile(`{ "format": 1, "script": "x.js", "entities": ${JSON.stringify(entities)}, ${body} }`, 'SCENE_FILES.md');
+  Joint.reset();
+  Joint.initializeArrays(new SharedArrayBuffer(Joint.getBufferSize(8, 8)), 8, 8);
+  const freeList = new SharedArrayBuffer(16);
+  const freeListTop = new SharedArrayBuffer(8);
+  resetFreeList(new Int32Array(freeListTop), new Uint16Array(freeList), 8, 1);
+  Joint.initialize(8);
+  Joint.initializeFreeList(freeList, freeListTop);
+  try {
+    const at = (name) => names.indexOf(name);
+    const made = doc.joints.map((j) => addFileJoint(j, at(j.a), at(j.b), entities[at(j.a)], entities[at(j.b)]));
+    const [hinge, rope] = made;
+    assert.equal(Joint.type[hinge], Joint.TYPE.REVOLUTE);
+    assert.deepEqual([Joint.localAnchorAX[hinge], Joint.localAnchorBX[hinge]], [-40, 20]);
+    assert.deepEqual([Joint.enableLimit[hinge], Joint.lowerAngle[hinge], Joint.upperAngle[hinge]], [1, -1.5, 0]);
+    assert.equal(Joint.type[rope], Joint.TYPE.DISTANCE);
+    assert.deepEqual([Joint.enableSpring[rope], Joint.hertz[rope]], [1, 3]);
+    // Without a length, its anchors as far apart as the file places them: (200, -16) to (300, 0).
+    assert.ok(Math.abs(Joint.length[rope] - Math.sqrt(100 * 100 + 16 * 16)) < 1e-3);
+  } finally {
+    Joint.reset();
+  }
+});
+
+test('the joint table lists each type’s settings as the engine reads them', () => {
+  const rows = [...guide.matchAll(/^\| `(\w+)` \| [^|]+ \| ([^|]+) \|$/gm)].map(([, type, settings]) => [
+    type,
+    [...settings.matchAll(/`(\w+)`/g)].map((m) => m[1]),
+  ]);
+  assert.deepEqual(Object.fromEntries(rows), Object.fromEntries(JOINT_TYPES.map((t) => [t, [...JOINT_SETTINGS[t]]])));
+});
+
+test('the decorations example: a kind the scene declares and the file’s arrays make one spawnMany config', () => {
+  const declared = blocks.filter((b) => b.lang === 'js' && b.body.startsWith('static decorations = {'));
+  assert.equal(declared.length, 1);
+  const Meadow = new Function(`return class Meadow { ${declared[0].body} };`)();
+  const doc = parseSceneFile(`{ "format": 1, "script": "x.js", "entities": [], ${sectionBlock('decorations')} }`, 'SCENE_FILES.md');
+  const record = doc.decorations[0];
+  const kind = decorationClassOf(Meadow, record.class);
+  assert.ok(kind, `${record.class} is declared`);
+  const config = decorationSpawnConfig(kind, record, null);
+  assert.equal(config.count, 3);
+  assert.deepEqual(config.x, [120, 136, 152]);
+  assert.deepEqual(config.texture, ['grass1', 'grass3', 'grass2'], 'frame picks among the textures');
+  assert.deepEqual(config.scaleX, [0.25, 0.3, 0.22]);
+  assert.equal(config.scaleY, config.scaleX, 'scale: both axes');
+  assert.deepEqual([config.anchorY, config.sway], [1, true], 'the rest is the kind’s');
 });

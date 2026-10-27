@@ -20,6 +20,10 @@ import * as camera from '../camera.js';
 import * as gameObject from '../gameObject.js';
 import * as layer from '../layer.js';
 import * as spriteSheetRegistry from '../spriteSheetRegistry.js';
+import * as joint from '../joint.js';
+import * as sceneFileJoints from '../sceneFileJoints.js';
+import * as sceneFileDecorations from '../sceneFileDecorations.js';
+import * as decorationPool from '../decorationPool.js';
 import * as utils from '../../util/utils.js';
 import * as typingTarget from '../../util/typingTarget.js';
 import * as consoleForward from '../../util/consoleForward.js';
@@ -49,6 +53,10 @@ export const editorKit = Object.freeze({
   'core/gameObject.js': gameObject,
   'core/layer.js': layer,
   'core/spriteSheetRegistry.js': spriteSheetRegistry,
+  'core/joint.js': joint,
+  'core/sceneFileJoints.js': sceneFileJoints,
+  'core/sceneFileDecorations.js': sceneFileDecorations,
+  'core/decorationPool.js': decorationPool,
   'util/utils.js': utils,
   'util/typingTarget.js': typingTarget,
   'util/consoleForward.js': consoleForward,
