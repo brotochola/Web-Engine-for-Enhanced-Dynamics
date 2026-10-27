@@ -23,6 +23,10 @@
  *   console  (ED-18) another game, tests/fixtures/editorConsoleScene.js in the bench page: the Console dock has a
  *            logic worker's log from the load and one after it, the game page's own warning, and one row for the
  *            talkers' tick error with its count; a click on that row selects the entity that threw
+ *   short url  the dev server's /editor (server/editorPage.js, the game page /demos/): /editor?scene=platformergame
+ *            opens the platformer and keeps that address; /editor alone shows the demo list, and choosing the
+ *            platformer there turns the address into /editor?scene=platformergame; the game page's own Scene panel
+ *            button opens /editor?game=…, which becomes /editor?scene=platformergame
  *
  * Every wait's predicate returns a boolean: Playwright keeps a handle to what it returns, and a handle to the game's
  * scene would keep each reloaded page alive (it did, in the first leak runs of this script).
@@ -36,10 +40,12 @@ import { chromium } from 'playwright';
 
 import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkServer.mjs';
 import { handleDevRoute } from '../../server/devRoutes.js';
+import { serveEditorPage } from '../../server/editorPage.js';
 import { parseArgs } from './microbenchHelpers.mjs';
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 const GAME = '/demos/index.html?scene=platformergame';
+const SHELL_DIR = path.join(repoRoot, 'src/core/debug/editor/shell');
 
 const results = [];
 function check(name, ok, detail) {
@@ -103,7 +109,9 @@ async function domCounters(page, cdp) {
 async function main() {
   const args = parseArgs();
   const server = await createStaticBenchmarkServer(repoRoot, 0, {
-    before: (req, res, headers) => handleDevRoute(req, res, repoRoot, headers),
+    before: (req, res, headers) =>
+      handleDevRoute(req, res, repoRoot, headers) ||
+      serveEditorPage(req, res, { shellDir: SHELL_DIR, headers, gamePage: '/demos/', root: repoRoot }),
   });
   const browser = await chromium.launch({ headless: !args.headed });
   const errors = [];
@@ -380,6 +388,57 @@ async function main() {
       `${spawned.length} talkers' logs from logic0 (2 from the load, before the page's warning, row ${warned}); ` +
         `error row ${JSON.stringify(errorRow)}; a click selected #${selected}`,
     );
+
+    // The short route (/editor), its address following the game page.
+    await consolePage.close();
+    const origin = `http://127.0.0.1:${server.port}`;
+    const shortPage = await browser.newPage({ viewport: { width: 1400, height: 860 } });
+    shortPage.on('pageerror', (error) => errors.push(String(error)));
+    // The editor page's address and its game page's, once the address has followed the game page (the demos page
+    // sets its own key for a scene: ?scene=platformergamescene).
+    const follows = async () => {
+      await shortPage
+        .waitForFunction(() => location.search === document.getElementById('game').contentWindow.location.search, undefined, {
+          timeout: 10000,
+        })
+        .catch(() => {});
+      return shortPage.evaluate(() => {
+        const game = document.getElementById('game').contentWindow.location;
+        return { address: location.pathname + location.search, game: game.pathname + game.search };
+      });
+    };
+    const isPlatformer = ({ address, game }) =>
+      /^\/demos\/(index\.html)?\?scene=platformergame(scene)?$/.test(game) && address === `/editor${game.slice(game.indexOf('?'))}`;
+    await shortPage.goto(`${origin}/editor?scene=platformergame`);
+    await gameReady(shortPage);
+    const opened = await follows();
+    await shortPage.goto(`${origin}/editor`);
+    await shortPage.waitForFunction(
+      () => document.getElementById('game').contentDocument?.querySelectorAll('.scene_chooser_button').length > 0,
+      undefined,
+      { timeout: 30000 },
+    );
+    const listAddress = await shortPage.evaluate(() => location.pathname + location.search);
+    const listFrame = shortPage.frames().find((f) => f.parentFrame() !== null);
+    await listFrame.locator('.scene_chooser_button', { hasText: 'platformer game' }).click();
+    await gameReady(shortPage);
+    const chosen = await follows();
+    await shortPage.goto(`${origin}${GAME}`);
+    await shortPage.waitForFunction(() => !!window.game?.currentScene?.sceneFile, undefined, { timeout: 30000 });
+    await shortPage.evaluate(() => {
+      [...document.querySelectorAll('button')].find((b) => b.textContent.includes('Editor page')).click();
+      return true;
+    });
+    await shortPage.waitForURL(/\/editor\?/, { timeout: 10000 });
+    await gameReady(shortPage);
+    const fromButton = await follows();
+    check(
+      'short url',
+      isPlatformer(opened) && listAddress === '/editor' && isPlatformer(chosen) && isPlatformer(fromButton),
+      `/editor?scene=platformergame: ${opened.address} with ${opened.game}; /editor: ${listAddress}, the platformer chosen: ` +
+        `${chosen.address}; the Scene panel's button: ${fromButton.address} with ${fromButton.game}`,
+    );
+    await shortPage.close();
 
     check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   } finally {

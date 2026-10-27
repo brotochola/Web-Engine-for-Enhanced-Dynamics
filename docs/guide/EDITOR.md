@@ -3,7 +3,7 @@
 The editor works on a running game: you place and tune what a level holds, try it, and save it to its scene file ([SCENE_FILES.md](./SCENE_FILES.md)). It runs inside a debug build of the engine (`new GameEngine({ debug: true })`), in two ways:
 
 - **In the game page.** Press Shift+E. The world holds still and the view is yours; the Editor and Palette panels float over the game.
-- **In the editor page.** The game page runs in the middle of a page with docks around it: the scene's entities on the left, the inspector and the assets on the right, the console and the debug panels below. Open `/__weed/editor/?game=/index.html` on the dev server, or press the Scene panel's "Editor page" button.
+- **In the editor page.** The game page runs in the middle of a page with docks around it: the scene's entities on the left, the inspector and the assets on the right, the console and the debug panels below. Open `/editor` on the dev server (in this repository `/editor?scene=platformergame` opens that demo, and `/editor` alone the demo list), or press the Scene panel's "Editor page" button. The address follows the game page open in it, so a reload or a bookmark comes back to it; `/editor?game=<a page of the server>` opens any other page.
 
 The editor is the package `@weed.js/editor`. Games made with `npm create weed-game` have it as a dev dependency, and `npm run dev` serves its page and its routes. `npm run build` leaves it out: players never download it. To add it to another game, see the package's README.
 

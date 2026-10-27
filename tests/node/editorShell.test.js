@@ -5,8 +5,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { EditorHost, gamePageUrl, SLOT_NAMES } from '../../src/core/debug/editor/shell/editorShell.js';
+import { EditorHost, gamePageUrl, gamePageFor, editorQueryFor, SLOT_NAMES } from '../../src/core/debug/editor/shell/editorShell.js';
 import { findEditorHost, editorPageUrl, HostedEditor, HOST_KEY, HOST_VERSION } from '../../src/core/debug/editor/editorHost.js';
+import { editorPageFor } from '../../src/core/debug/editorPage.js';
 
 /** A dock: what was put into it, and replaceChildren. */
 class Slot {
@@ -116,6 +117,57 @@ test('the game page must be on the editor page’s server', () => {
   assert.equal(gamePageUrl('https://elsewhere.example/game.html', page), null);
   assert.equal(gamePageUrl('', page), null);
   assert.equal(gamePageUrl(null, page), null);
+});
+
+test('/editor?scene=x opens the server’s game page with that query; ?game= any page of this server', () => {
+  const page = 'http://localhost:8000/editor?scene=littlecityscene';
+  assert.equal(gamePageFor('?scene=littlecityscene', page, '/demos/'), 'http://localhost:8000/demos/?scene=littlecityscene');
+  assert.equal(gamePageFor('', 'http://localhost:8000/editor', '/demos/'), 'http://localhost:8000/demos/', 'none: the list');
+  assert.equal(gamePageFor('?game=%2Fgame.html%3Flevel%3D2', page, '/demos/'), 'http://localhost:8000/game.html?level=2');
+  assert.equal(gamePageFor('?game=https%3A%2F%2Felsewhere.example%2F', page, '/demos/'), null);
+  assert.equal(gamePageFor('?scene=x', 'http://localhost:8000/src/core/debug/editor/shell/?scene=x', ''), null, 'no server: the form');
+});
+
+test('the address in its shortest form: the server’s game page’s own query, else ?game= and the path', () => {
+  const page = 'http://localhost:8000/editor?game=x';
+  assert.equal(editorQueryFor('http://localhost:8000/demos/?scene=littlecityscene', page, '/demos/'), '?scene=littlecityscene');
+  assert.equal(editorQueryFor('http://localhost:8000/demos/index.html?scene=a', page, '/demos/'), '?scene=a', 'index.html is the folder');
+  assert.equal(editorQueryFor('http://localhost:8000/demos/', page, '/demos/'), '');
+  assert.equal(editorQueryFor('http://localhost:8000/game.html?level=2', page, '/demos/'), '?game=%2Fgame.html%3Flevel%3D2');
+  assert.equal(editorQueryFor('http://localhost:8000/demos/?game=1', page, '/demos/'), '?game=%2Fdemos%2F%3Fgame%3D1', 'its own game param');
+  assert.equal(editorQueryFor('http://localhost:8000/?a=1', page, ''), '?game=%2F%3Fa%3D1', 'no server game page');
+  for (const game of ['http://localhost:8000/demos/?scene=a&debug=1', 'http://localhost:8000/x/y.html#z']) {
+    const query = editorQueryFor(game, page, '/demos/');
+    assert.equal(gamePageFor(query, page, '/demos/'), game, 'the short form opens the same page');
+  }
+});
+
+test('the connected page’s scene being ready tells the editor page; another page’s does not', () => {
+  const slots = {};
+  for (const name of SLOT_NAMES) slots[name] = new Slot();
+  let shown = 0;
+  const host = new EditorHost({ slots, onSceneReady: () => shown++ });
+  const page = { onHostKey() {} };
+  host.sceneReady(page);
+  assert.equal(shown, 0, 'not connected');
+  host.connect(page);
+  host.sceneReady({});
+  host.sceneReady(page);
+  assert.equal(shown, 1);
+});
+
+test('the Scene panel’s button opens the route the dev server names, else the page beside the source', async () => {
+  const answer = (ok, route) => async () => ({ ok, headers: { get: (k) => (k === 'X-Weed-Editor' ? route : null) } });
+  const fallback = 'http://localhost:8000/src/core/debug/editor/shell/';
+  assert.equal(await editorPageFor('/demos/?scene=a', fallback, answer(true, '/editor')), '/editor?game=%2Fdemos%2F%3Fscene%3Da');
+  assert.equal(await editorPageFor('/', fallback, answer(true, '/__weed/editor/')), '/__weed/editor/?game=%2F');
+  const besideTheSource = `${fallback}?game=%2F`;
+  assert.equal(await editorPageFor('/', fallback, answer(false, null)), besideTheSource, 'no route');
+  assert.equal(await editorPageFor('/', fallback, answer(true, null)), besideTheSource, 'a page that is not the editor’s');
+  const offline = async () => {
+    throw new TypeError('Failed to fetch');
+  };
+  assert.equal(await editorPageFor('/', fallback, offline), besideTheSource);
 });
 
 test('findEditorHost: only a parent of this origin with a host of this version', () => {

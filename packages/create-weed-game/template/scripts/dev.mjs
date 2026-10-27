@@ -14,9 +14,9 @@ const port = Number(process.env.PORT) || 8000;
 const host = process.env.WEED_HOST || (args.includes('--host') ? '0.0.0.0' : '127.0.0.1');
 const hotReload = !folder;
 
-// The editor (@weed.js/editor, a devDependency): it saves and lists the levels' scene files, its page is at
-// /__weed/editor/, and its Export builds the game, minified, into dist/ (with esbuild). Not with npm run preview;
-// without the package the game runs as before.
+// The editor (@weed.js/editor, a devDependency): it saves and lists the levels' scene files, its page is at /editor
+// (the game in it, with the scene list, inspector and assets around), and its Export builds the game, minified, into
+// dist/ (with esbuild). Not with npm run preview; without the package the game runs as before.
 const editor = hotReload ? await import('@weed.js/editor/server').catch(() => null) : null;
 
 const HEADERS = {
@@ -93,7 +93,7 @@ function handle(req, res) {
   const { pathname } = new URL(req.url, 'http://localhost');
 
   const routes = { export: { outDir: path.join(root, 'dist') } };
-  if (editor && (editor.handleDevRoute(req, res, root, HEADERS, routes) || editor.serveEditorPage(req, res, { headers: HEADERS }))) {
+  if (editor && (editor.handleDevRoute(req, res, root, HEADERS, routes) || editor.serveEditorPage(req, res, { headers: HEADERS, gamePage: '/', root }))) {
     return;
   }
 
@@ -159,5 +159,5 @@ async function listen(port) {
 
 const at = await listen(port);
 console.log(`${hotReload ? 'Dev server' : 'Serving ' + path.relative('.', root)}: http://localhost:${at}`);
-if (editor) console.log(`Editor: http://localhost:${at}/__weed/editor/?game=/index.html (or Shift+E in the game)`);
+if (editor) console.log(`Editor: http://localhost:${at}/editor (or Shift+E in the game)`);
 if (host !== '127.0.0.1') console.log(`Open to the network (${host}): anyone on it can load these files.`);

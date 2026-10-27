@@ -3,7 +3,11 @@
 // code runs in the game page, as in edit mode there; this page lays it out, keeps what a reload of the game page
 // hands over, and passes on the keys typed here.
 //
-//   /src/core/debug/editor/shell/?game=<the game's page, on this server>
+//   /editor?scene=platformergame        the dev server's game page (/demos/ in the engine's repository, / for a game)
+//                                       with this query (server/editorPage.js fills it into index.html)
+//   /editor?game=<a page of this server> any game page; also /src/core/debug/editor/shell/?game=… from the source
+//
+// The address follows the game page open in it, in its shortest form, so a reload or a bookmark opens it again.
 //
 // Nothing of the game page is kept past its pagehide: its nodes are taken out of the docks, its objects are dropped,
 // and the state it hands over is copied with this page's own structuredClone. Any object of a reloaded page's realm
@@ -22,14 +26,15 @@ const LAST_GAME_KEY = 'weed.editor.lastGame';
 export class EditorHost {
   /**
    * @param {{ slots: Record<string, Element>, frame?: { focus(): void, contentWindow?: object } | null,
-   *   document?: Document | null, onStatus?: (text: string) => void }} parts
+   *   document?: Document | null, onStatus?: (text: string) => void, onSceneReady?: () => void }} parts
    */
-  constructor({ slots, frame = null, document: doc = null, onStatus = null }) {
+  constructor({ slots, frame = null, document: doc = null, onStatus = null, onSceneReady = null }) {
     this.version = HOST_VERSION;
     this._slots = slots;
     this._frame = frame;
     this._document = doc;
     this._onStatus = onStatus;
+    this._onSceneReady = onSceneReady;
     /** The game page connected now (its editorHost.js), or null. */
     this._client = null;
     /** What the last game page handed over, as this page's own copy, until the next one takes it. */
@@ -101,6 +106,11 @@ export class EditorHost {
     frame.contentWindow?.focus();
   }
 
+  /** The connected game page's scene is ready: the page may have changed its address since it loaded (a demo chosen). */
+  sceneReady(client) {
+    if (client === this._client && this._onSceneReady !== null) this._onSceneReady();
+  }
+
   /** Whether the connected game page's editor has changes its file does not hold (this page's unload asks first). */
   hasUnsavedChanges() {
     return this._client !== null && this._client.hasUnsavedChanges?.() === true;
@@ -137,6 +147,44 @@ export function gamePageUrl(game, pageUrl) {
   return url.origin === new URL(pageUrl).origin ? url.href : null;
 }
 
+/**
+ * The game page this editor page opens: its `game` query (a page of this server); else the server's game page
+ * (`defaultPage`) with this page's query, so /editor?scene=x opens /demos/?scene=x; else null (the form asks).
+ * @param {string} search - this page's query
+ * @param {string} pageUrl - this page's URL
+ * @param {string} defaultPage - index.html's weed-game-page ('' when nothing filled it)
+ */
+export function gamePageFor(search, pageUrl, defaultPage) {
+  const params = new URLSearchParams(search);
+  if (params.has('game')) return gamePageUrl(params.get('game'), pageUrl);
+  const home = gamePageUrl(defaultPage, pageUrl);
+  if (home === null) return null;
+  const url = new URL(home);
+  for (const [key, value] of params) url.searchParams.append(key, value);
+  return url.href;
+}
+
+/**
+ * This page's query for the game page open in it, the shortest: the game page's own query when it is the server's
+ * game page (`?scene=x`, or none), else `?game=` and its path.
+ * @param {string} gameUrl
+ * @param {string} pageUrl - this page's URL
+ * @param {string} defaultPage
+ */
+export function editorQueryFor(gameUrl, pageUrl, defaultPage) {
+  const url = new URL(gameUrl);
+  if (defaultPage) {
+    const home = new URL(defaultPage, pageUrl);
+    if (url.origin === home.origin && pagePath(url.pathname) === pagePath(home.pathname) && !url.searchParams.has('game') && url.hash === '') {
+      return url.search;
+    }
+  }
+  return `?game=${encodeURIComponent(url.pathname + url.search + url.hash)}`;
+}
+
+/** A folder's page and its index.html are one page. */
+const pagePath = (pathname) => (pathname.endsWith('/index.html') ? pathname.slice(0, -'index.html'.length) : pathname);
+
 function storage() {
   try {
     return typeof localStorage !== 'undefined' ? localStorage : null;
@@ -152,6 +200,27 @@ export function startEditorShell(doc) {
   for (const el of doc.querySelectorAll('[data-slot]')) slots[el.dataset.slot] = el;
   const frame = doc.getElementById('game');
   const status = doc.getElementById('status');
+  const gameOnly = doc.getElementById('gameOnly');
+  const defaultPage = doc.querySelector('meta[name="weed-game-page"]')?.getAttribute('content') || '';
+  // The address follows the game page open here (a demo chosen in it, a link followed), in its shortest form.
+  const showGamePage = () => {
+    let href = '';
+    try {
+      href = frame.contentWindow?.location.href || '';
+    } catch {
+      return; // a page of another origin
+    }
+    if (!href.startsWith('http')) return; // about:blank
+    gameOnly.href = href;
+    const query = editorQueryFor(href, win.location.href, defaultPage);
+    if (query !== win.location.search) win.history.replaceState(win.history.state, '', `${win.location.pathname}${query}`);
+    const url = new URL(href);
+    try {
+      storage()?.setItem(LAST_GAME_KEY, url.pathname + url.search);
+    } catch {
+      // full or blocked: the form starts empty next time
+    }
+  };
   const host = new EditorHost({
     slots,
     frame,
@@ -159,6 +228,7 @@ export function startEditorShell(doc) {
     onStatus: (text) => {
       status.textContent = text;
     },
+    onSceneReady: showGamePage,
   });
   win[HOST_KEY] = host;
   win.addEventListener('keydown', (e) => host.onKeyDown(e));
@@ -178,7 +248,7 @@ export function startEditorShell(doc) {
     });
   }
 
-  const game = gamePageUrl(new URLSearchParams(win.location.search).get('game'), win.location.href);
+  const game = gamePageFor(win.location.search, win.location.href, defaultPage);
   const form = doc.getElementById('open');
   const input = doc.getElementById('gameUrl');
   if (game === null) {
@@ -198,15 +268,11 @@ export function startEditorShell(doc) {
     });
     return host;
   }
-  try {
-    storage()?.setItem(LAST_GAME_KEY, new URLSearchParams(win.location.search).get('game'));
-  } catch {
-    // full or blocked: the form starts empty next time
-  }
-  doc.getElementById('gameOnly').href = game;
+  gameOnly.href = game;
   doc.getElementById('reload').addEventListener('click', () => frame.contentWindow?.location.reload());
   status.textContent = 'Loading the game…';
   frame.addEventListener('load', () => {
+    showGamePage();
     // The page loaded and has not connected: it has no debug UI (debug: true), or another version of it.
     if (!host.connected) status.textContent = 'This page has no WeedJS debug UI: create its GameEngine with debug: true';
   });

@@ -106,6 +106,8 @@ export class HostedEditor {
 
   /** The running scene is ready for loads: take up what the page before this one handed over, if it is its scene. */
   onSceneReady() {
+    // The editor page shows this page's address (a demo page sets its ?scene= when one is chosen).
+    this.host.sceneReady?.(this);
     const kept = this._kept;
     const scene = this.debugUI.scene;
     if (kept === null || !scene || kept.sceneScriptUrl !== scene.sceneScriptUrl) return;

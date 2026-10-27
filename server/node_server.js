@@ -98,10 +98,10 @@ function watchForReload() {
 const handleRequest = (req, res) => {
   if (LOG_REQUESTS) console.log(`${req.method} ${req.url}`);
 
-  // The editor saves scene files, lists them and exports the game (localhost only), and its page is at
-  // /__weed/editor/.
+  // The editor saves scene files, lists them and exports the game (localhost only), and its page is at /editor
+  // (/editor?scene=platformergame opens that demo in it) and /__weed/editor/.
   if (handleDevRoute(req, res, process.cwd(), ISOLATION_HEADERS, { export: EXPORT })) return;
-  if (serveEditorPage(req, res, { shellDir: EDITOR_SHELL, headers: ISOLATION_HEADERS })) return;
+  if (serveEditorPage(req, res, { shellDir: EDITOR_SHELL, headers: ISOLATION_HEADERS, gamePage: '/demos/', root: process.cwd() })) return;
 
   const urlPath = req.url.split('?')[0];
 

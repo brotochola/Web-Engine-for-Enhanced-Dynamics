@@ -23,6 +23,7 @@ test('npm run dev: the logo, the version, the URLs, the headers and hot reload',
   // The hot-reload test waits for this line to know the server is up.
   assert.match(text, /Server running at http:\/\/localhost:8000\//);
   assert.match(text, /Demos: http:\/\/localhost:8000\/demos\//);
+  assert.match(text, /Editor: http:\/\/localhost:8000\/editor  \(a demo in it: \/editor\?scene=platformergame\)/);
   assert.match(text, /Serving \/games/);
   assert.match(text, /COOP\/COEP headers on every response/);
   assert.match(text, /Hot reload  on/);

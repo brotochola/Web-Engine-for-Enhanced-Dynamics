@@ -37,7 +37,7 @@ npm i -D @weed.js/editor
    if (serveEditorPage(req, res, { headers: HEADERS })) return;
    ```
 
-3. Open `http://localhost:8000/__weed/editor/?game=/index.html`, or press Shift+E in the game to edit it in place.
+3. Open `http://localhost:8000/editor`, or press Shift+E in the game to edit it in place.
 
 The routes answer only pages of this machine, and write only `*.scene.json` files inside the served folder.
 

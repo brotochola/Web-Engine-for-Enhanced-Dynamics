@@ -40,3 +40,24 @@ export function editorPageUrl(moduleUrl = import.meta.url, pageOrigin = typeof l
   }
   return pageOrigin ? new URL(EDITOR_PAGE_ROUTE, pageOrigin).href : EDITOR_PAGE_ROUTE;
 }
+
+/**
+ * The editor page for a game page (its path and query), which the Scene panel's button opens: the dev server's route
+ * when it serves the editor page (its X-Weed-Editor header names it: /editor, unless the served folder has an `editor`
+ * of its own), else `fallback` (editorPageUrl's). The editor page shortens the query itself (/editor?scene=x).
+ * @param {string} gamePath
+ * @param {string} fallback
+ * @param {typeof fetch} [fetchFn]
+ * @returns {Promise<string>}
+ */
+export async function editorPageFor(gamePath, fallback, fetchFn = globalThis.fetch) {
+  const query = `?game=${encodeURIComponent(gamePath)}`;
+  try {
+    const res = await fetchFn(EDITOR_PAGE_ROUTE, { method: 'HEAD', cache: 'no-store' });
+    const route = res.ok ? res.headers.get('X-Weed-Editor') : null;
+    if (route) return `${route}${query}`;
+  } catch {
+    // no dev server: the page beside the source
+  }
+  return `${fallback}${query}`;
+}

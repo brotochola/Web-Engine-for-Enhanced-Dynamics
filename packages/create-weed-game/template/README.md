@@ -13,7 +13,7 @@ npm run preview   # serves dist/ like a host would
 
 ## The editor
 
-`npm run dev` also serves the editor: open http://localhost:8000/__weed/editor/?game=/index.html, or press Shift+E in the game to edit it in place. Click an entity to select it, drag it, tune its params in the inspector, place new ones from the Assets list, press Play to try the level and Stop to come back to it, and Ctrl+S to save the level's `*.scene.json` file. It is `@weed.js/editor`, a dev dependency: `npm run build` leaves it out.
+`npm run dev` also serves the editor: open http://localhost:8000/editor, or press Shift+E in the game to edit it in place. Click an entity to select it, drag it, tune its params in the inspector, place new ones from the Assets list, press Play to try the level and Stop to come back to it, and Ctrl+S to save the level's `*.scene.json` file. It is `@weed.js/editor`, a dev dependency: `npm run build` leaves it out.
 
 The editor's **Export** builds the game for a host into `dist/`: the production engine, your game minified into `game.min.js` with its levels inside, its assets and a baked atlas, and `_headers`. `npm run build` copies the game as it is instead, without minifying; Export refuses a `dist/` that holds something else than an export, so remove it first.
 

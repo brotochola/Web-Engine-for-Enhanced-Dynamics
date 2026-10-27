@@ -113,6 +113,7 @@ export function devBanner({ port, host = '127.0.0.1', swMode, hotReload, logRequ
   out.push('');
   out.push(`  ${paint.green('➜')}  Server running at ${paint.cyan(url)}`);
   out.push(`  ${paint.green('➜')}  Demos: ${paint.cyan(`${url}demos/`)}`);
+  out.push(`  ${paint.green('➜')}  Editor: ${paint.cyan(`${url}editor`)}  ${paint.dim('(a demo in it: /editor?scene=platformergame)')}`);
   out.push(`     ${paint.dim(`Serving ${root}`)}`);
   out.push('');
   const row = (label, ...text) => {

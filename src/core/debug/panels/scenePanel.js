@@ -2,7 +2,7 @@
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 import { MAX_TIME_SCALE } from '../../timeScale.js';
-import { editorPageUrl } from '../editorPage.js';
+import { editorPageUrl, editorPageFor } from '../editorPage.js';
 
 function sceneEntryIsActive(scene, entry) {
   if (!scene) return false;
@@ -83,11 +83,11 @@ export class ScenePanel {
     this.elements.stopBtn.title = 'Back to the level as its scene file’s document has it, in edit mode';
     controlsRow.appendChild(this.elements.stopBtn);
 
-    // This page in the editor page (D9, ED-15), where it is served beside the engine's source.
+    // This page in the editor page (D9, ED-15): the dev server's /editor, else the page beside the engine's source.
     const editorPage = this.debugUI._host ? null : editorPageUrl();
     if (editorPage !== null) {
-      const open = createButton('🧩 Editor page', '', () => {
-        location.href = `${editorPage}?game=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+      const open = createButton('🧩 Editor page', '', async () => {
+        location.href = await editorPageFor(location.pathname + location.search + location.hash, editorPage);
       });
       open.title = 'This game in the editor page: the scene list, the inspector and the assets docked around it';
       controlsRow.appendChild(open);
