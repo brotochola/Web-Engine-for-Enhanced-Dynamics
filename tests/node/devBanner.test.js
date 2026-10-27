@@ -52,3 +52,10 @@ test('colour only where the terminal shows it, the logo in bands of green and ye
   assert.equal(palette256.depth, 8);
   assert.match(palette256.gradient(['@'])[0], /\x1b\[38;5;\d+m/);
 });
+
+test('the banner says who can reach the server: this machine, or the network with --host', () => {
+  const local = devBanner({ port: 8000, swMode: false, hotReload: true, root: '/games', paint: plain, commit: null });
+  assert.match(local, /Network\s+this machine only\. npm run dev -- --host \(or WEED_HOST=0\.0\.0\.0\) opens it to the network/);
+  const open = devBanner({ port: 8000, host: '0.0.0.0', swMode: false, hotReload: true, root: '/games', paint: plain, commit: null });
+  assert.match(open, /Network\s+listening on 0\.0\.0\.0: anyone on this network can open the served files\./);
+});
