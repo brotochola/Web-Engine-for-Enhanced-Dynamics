@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 /**
- * ED-44 (VISUAL_EDITOR_PLAN.md): what the editor costs while it is open and idle. One headless Chrome page (the bench
- * page, ?src=1), the platformer on its scene file with the debug UI on. Twice, in one page: edit mode off, then on
- * and idle (nothing selected, the pointer still), each for --sample-ms after --settle-ms:
+ * ED-44, ED-70 (VISUAL_EDITOR_PLAN.md): what the editor costs while it is open and idle. One headless Chrome page (the
+ * bench page, ?src=1), a scene file (--scene, the platformer's 1-1 by default) with the debug UI on. Three windows, in
+ * one page: edit mode off; on and idle (nothing selected, the pointer still); on with the file's first placed entity
+ * selected and the grid's lines shown at 16 px (the overlay draws every frame then: the selection's box, its handles,
+ * the rotate handle, the grid), each for --sample-ms after --settle-ms:
  *   - allocation, sampled on the page and on every worker the page starts (CDP HeapProfiler sampling, counting the
  *     objects minor and major GCs have already collected), in KB/s;
  *   - the page's frames: the rAF interval and the time updateInternal takes (scene.mainStepMs), median and p95;
@@ -10,7 +12,8 @@
  * Edit mode holds the world still (Time.scale 0), so the workers have less to do then: the claim is that nothing
  * rises with the editor open, not that the two windows are alike.
  *
- *   node tests/bench/editorIdleCost.mjs [--settle-ms 4000] [--sample-ms 8000] [--output path]
+ *   node tests/bench/editorIdleCost.mjs [--scene /demos/littleCity/levels/city.scene.json] [--settle-ms 4000]
+ *     [--sample-ms 8000] [--output path]
  */
 import fs from 'node:fs';
 import os from 'node:os';
@@ -29,6 +32,7 @@ const argValue = (name, fallback) => {
 const SETTLE_MS = Number(argValue('settle-ms', 4000));
 const SAMPLE_MS = Number(argValue('sample-ms', 8000));
 const OUTPUT = argValue('output', null);
+const SCENE = argValue('scene', '/demos/platformerGameScene/levels/1-1.scene.json');
 
 const server = await createStaticBenchmarkServer(repoRoot);
 const launchArgs = ['--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows'];
@@ -67,7 +71,7 @@ try {
 
   await page.goto(`http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html?src=1`, { waitUntil: 'networkidle' });
   await page.waitForFunction(() => document.body.dataset.benchmarkReady === 'true', undefined, { timeout: 30000 });
-  await page.evaluate(async () => {
+  await page.evaluate(async (sceneUrl) => {
     const [{ default: WEED }, totals, clock] = await Promise.all([
       import('/src/index.js'),
       import('/src/util/frameTotals.js'),
@@ -75,7 +79,7 @@ try {
     ]);
     if (typeof WEED.ensureEmbeddedSources === 'function') await WEED.ensureEmbeddedSources();
     const game = new WEED.GameEngine({ autoResize: false, canvasWidth: 1280, canvasHeight: 720, injectStyles: false, debug: true });
-    await game.loadScene('/demos/platformerGameScene/levels/1-1.scene.json');
+    await game.loadScene(sceneUrl);
     const slots = { ...clock.FRAME_CLOCK_SLOTS, logic0: clock.LOGIC_SLOT0, spatial0: clock.SPATIAL_SLOT0 };
     /** Every slot's totals now; `workSince(start)` turns two reads into each worker's ms of work per frame. */
     const readAll = () => {
@@ -109,7 +113,7 @@ try {
         requestAnimationFrame(tick);
       });
     globalThis.__idle = { game, frames, readAll, workSince };
-  });
+  }, SCENE);
 
   const stats = (values) => {
     const v = values.slice().sort((a, b) => a - b);
@@ -174,19 +178,36 @@ try {
   await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
   const open = await sampleWindow();
 
-  const report = { scene: 'platformer 1-1', settleMs: SETTLE_MS, sampleMs: SAMPLE_MS, closed, open };
+  // Editing: the first placed entity selected (the inspector shown) and the grid's lines on.
+  const picked = await page.evaluate(() => {
+    const { game } = globalThis.__idle;
+    const scene = game.currentScene;
+    const editMode = game.debugUI.editMode;
+    const record = scene.sceneFile.entities[0];
+    editMode.selectFromList(scene.getByName(record.name).index, false);
+    editMode.setSnap(16);
+    if (!editMode.grid.show) editMode.toggleGrid();
+    return `${record.name} (${record.class})`;
+  });
+  await new Promise((resolve) => setTimeout(resolve, SETTLE_MS));
+  const selected = await sampleWindow();
+
+  const report = { scene: SCENE, settleMs: SETTLE_MS, sampleMs: SAMPLE_MS, closed, open, selected, picked };
   if (OUTPUT) fs.writeFileSync(OUTPUT, JSON.stringify(report, null, 2));
-  const names = [...new Set([...Object.keys(closed.allocationKbPerS), ...Object.keys(open.allocationKbPerS)])];
-  console.log('allocation KB/s     closed     open');
+  const windows = [closed, open, selected];
+  console.log(`${SCENE}; selected: ${picked}`);
+  const names = [...new Set(windows.flatMap((w) => Object.keys(w.allocationKbPerS)))];
+  console.log('allocation KB/s                closed     open selected');
   for (const name of names) {
-    console.log(`  ${name.padEnd(28)} ${String(closed.allocationKbPerS[name] ?? '-').padStart(8)} ${String(open.allocationKbPerS[name] ?? '-').padStart(8)}`);
+    console.log(`  ${name.padEnd(28)} ${windows.map((w) => String(w.allocationKbPerS[name] ?? '-').padStart(8)).join(' ')}`);
   }
-  console.log(`frame interval ms    closed ${JSON.stringify(closed.frameIntervalMs)}  open ${JSON.stringify(open.frameIntervalMs)}`);
-  console.log(`updateInternal ms    closed ${JSON.stringify(closed.updateInternalMs)}  open ${JSON.stringify(open.updateInternalMs)}`);
-  console.log('work per frame ms   closed            open   (STEP_MS − WAIT_MS, p95)');
-  for (const name of new Set([...Object.keys(closed.workerWorkMs), ...Object.keys(open.workerWorkMs)])) {
+  for (const [label, key] of [['frame interval ms', 'frameIntervalMs'], ['updateInternal ms', 'updateInternalMs']]) {
+    console.log(`${label.padEnd(20)} closed ${JSON.stringify(closed[key])}  open ${JSON.stringify(open[key])}  selected ${JSON.stringify(selected[key])}`);
+  }
+  console.log('work per frame ms   closed            open        selected   (STEP_MS − WAIT_MS, p95)');
+  for (const name of new Set(windows.flatMap((w) => Object.keys(w.workerWorkMs)))) {
     const fmt = (w) => (w ? `${w.workMs} (${w.p95Ms})` : '-');
-    console.log(`  ${name.padEnd(16)} ${fmt(closed.workerWorkMs[name]).padStart(16)} ${fmt(open.workerWorkMs[name]).padStart(16)}`);
+    console.log(`  ${name.padEnd(16)} ${windows.map((w) => fmt(w.workerWorkMs[name]).padStart(16)).join(' ')}`);
   }
 } finally {
   await browser.close();
