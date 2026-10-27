@@ -16,6 +16,10 @@
 // the class does not declare is drawn dimmed: pressing it says why in the status line, and a drag does nothing.
 // Runtime entities have no handles.
 //
+// A record's scale (ED-77) multiplies the collider the class sizes: a handle reads the live shape and writes the param,
+// so a box's size is divided by the scale on its axis, a circle's radius by the larger, and a points param in the
+// entity's frame is drawn times the scale and written divided by it.
+//
 // Cost: what the handles are (the plan) is worked out when the selection, the document or the collider's shape
 // changes. A frame reads the live components into buffers made then, and draws with whole-pixel coordinates: nothing
 // is allocated per frame.
@@ -127,6 +131,9 @@ const VIEW = new Float64Array(3);
 /** A position written into a record: to the thousandth of a pixel. */
 const tidy = (value) => Math.round(value * 1000) / 1000;
 
+/** A record's scale on an axis (ED-77): 1 when it gives none, or one no shape could be divided by. */
+const scaleOf = (value) => (typeof value === 'number' && Number.isFinite(value) && value !== 0 ? value : 1);
+
 /**
  * The position of a declared number param named `key`, or -1.
  * @param {object|null} description - describeSpawnParams
@@ -148,16 +155,16 @@ function shapeSignature(i) {
   return signature;
 }
 
-/** Whether flat x, y pairs are the entity's polygon vertices (local, in any order). */
-function holdsPolygon(i, pts) {
+/** Whether flat x, y pairs, times the record's scale, are the entity's polygon vertices (local, in any order). */
+function holdsPolygon(i, pts, sx = 1, sy = 1) {
   const n = Collider.polyCount[i] | 0;
   if (n < 3 || pts.length !== n * 2) return false;
   const base = i * MAX_POLYGON_VERTICES;
   const vx = Collider.polyVertexX;
   const vy = Collider.polyVertexY;
   for (let j = 0; j < n; j++) {
-    const x = pts[2 * j];
-    const y = pts[2 * j + 1];
+    const x = pts[2 * j] * sx;
+    const y = pts[2 * j + 1] * sy;
     let found = false;
     for (let v = 0; v < n && !found; v++) {
       found = Math.abs(vx[base + v] - x) <= 1e-3 * (1 + Math.abs(x)) && Math.abs(vy[base + v] - y) <= 1e-3 * (1 + Math.abs(y));
@@ -243,6 +250,10 @@ export class HandlesTool {
     this._linkCount = 0;
     /** Points params found holding their entity's polygon, in its frame (`Class.key`): kept across selections. */
     this._localKeys = new Set();
+    /** The record's scale on each axis and the larger of the two (ED-77): the live shape over the params. */
+    this._scaleX = 1;
+    this._scaleY = 1;
+    this._scaleR = 1;
 
     // ---- the handles now: world positions (and on screen, a frame's), what each is; buffers grown with the plan ----
     this._count = 0;
@@ -328,10 +339,16 @@ export class HandlesTool {
     this._slots = [];
     this._polygonSlot = -1;
     this._linkCount = 0;
+    this._scaleX = 1;
+    this._scaleY = 1;
+    this._scaleR = 1;
     this._clearHover();
     const found = recordOf(scene, selection.name);
     if (found === null) return;
     const record = found.record;
+    this._scaleX = scaleOf(record.scaleX);
+    this._scaleY = scaleOf(record.scaleY);
+    this._scaleR = Math.max(Math.abs(this._scaleX), Math.abs(this._scaleY));
     const description = paramsOf(scene, record);
     const config = record.config || NO_CONFIG;
     this._description = description;
@@ -376,7 +393,7 @@ export class HandlesTool {
     if (this._shape === SHAPE_POLYGON) {
       for (let s = 0; s < this._slots.length; s++) {
         const slot = this._slots[s];
-        if (!slot.local && holdsPolygon(index, slot.pts)) {
+        if (!slot.local && holdsPolygon(index, slot.pts, this._scaleX, this._scaleY)) {
           slot.local = true;
           this._localKeys.add(`${record.class}.${slot.key}`);
         }
@@ -443,9 +460,11 @@ export class HandlesTool {
       const slot = slots[k];
       const pts = slot.pts;
       const local = slot.local;
+      const sx = local ? this._scaleX : 1;
+      const sy = local ? this._scaleY : 1;
       for (let j = 0; j + 1 < pts.length; j += 2) {
-        const px = pts[j];
-        const py = pts[j + 1];
+        const px = pts[j] * sx;
+        const py = pts[j + 1] * sy;
         hx[n] = local ? G[G_OX] + c * px - s * py : px;
         hy[n] = local ? G[G_OY] + s * px + c * py : py;
         n = this._tag(n, H_POINT, k, j >> 1, 1);
@@ -630,12 +649,12 @@ export class HandlesTool {
     switch (this._drag) {
       case H_BOX:
         this._dragBox(x, y, e?.altKey === true, step);
-        label = `${V[D_TO_W]} × ${V[D_TO_H]}`;
+        label = `${tidy(V[D_TO_W] / Math.abs(this._scaleX))} × ${tidy(V[D_TO_H] / Math.abs(this._scaleY))}`;
         break;
       case H_CIRCLE: {
         const grown = this._outward(x, y, F[G_CX], F[G_CY]);
-        V[D_TO_R] = this._clamp(this._radiusK, snapTo(V[D_FROM_R] + grown, step), 1);
-        label = `radius ${V[D_TO_R]}`;
+        V[D_TO_R] = this._clampScaled(this._radiusK, snapTo(V[D_FROM_R] + grown, step), this._scaleR);
+        label = `radius ${tidy(V[D_TO_R] / this._scaleR)}`;
         break;
       }
       case H_LIGHT: {
@@ -657,8 +676,8 @@ export class HandlesTool {
         let dy = y - V[D_PRESS_Y];
         if (slot.local) {
           const rx = dx;
-          dx = F[G_C] * rx + F[G_S] * dy;
-          dy = -F[G_S] * rx + F[G_C] * dy;
+          dx = (F[G_C] * rx + F[G_S] * dy) / this._scaleX;
+          dy = (-F[G_S] * rx + F[G_C] * dy) / this._scaleY;
         }
         V[D_TO_PX] = snapTo(pts[2 * this._dragSub] + dx, step);
         V[D_TO_PY] = snapTo(pts[2 * this._dragSub + 1] + dy, step);
@@ -707,17 +726,22 @@ export class HandlesTool {
     let shiftX = 0;
     let shiftY = 0;
     if (dx !== 0) {
-      w = this._clamp(this._widthK, snapTo(F[G_W] + sides * dx * lx, step), 1);
+      w = this._clampScaled(this._widthK, snapTo(F[G_W] + sides * dx * lx, step), Math.abs(this._scaleX));
       if (!aboutCenter) shiftX = (dx * (w - F[G_W])) * 0.5;
     }
     if (dy !== 0) {
-      h = this._clamp(this._heightK, snapTo(F[G_H] + sides * dy * ly, step), 1);
+      h = this._clampScaled(this._heightK, snapTo(F[G_H] + sides * dy * ly, step), Math.abs(this._scaleY));
       if (!aboutCenter) shiftY = (dy * (h - F[G_H])) * 0.5;
     }
     V[D_TO_W] = w;
     V[D_TO_H] = h;
     V[D_SHIFT_X] = c * shiftX - s * shiftY;
     V[D_SHIFT_Y] = s * shiftX + c * shiftY;
+  }
+
+  /** A live size within the param's min and max (and at least 1) once divided by the record's scale; live again. */
+  _clampScaled(k, value, scale) {
+    return this._clamp(k, value / scale, 1) * scale;
   }
 
   /** A value within a number param's min and max, and at least `floor`. */
@@ -752,8 +776,8 @@ export class HandlesTool {
         const heightKey = toH !== V[D_FROM_H] ? keys[this._heightK] : null;
         if (widthKey === null && heightKey === null) return;
         editMode.editSelected(`resize ${name}`, (record, description) => {
-          if (widthKey !== null) writeParam(record, description, widthKey, toW);
-          if (heightKey !== null) writeParam(record, description, heightKey, toH);
+          if (widthKey !== null) writeParam(record, description, widthKey, tidy(toW / Math.abs(this._scaleX)));
+          if (heightKey !== null) writeParam(record, description, heightKey, tidy(toH / Math.abs(this._scaleY)));
           if (shiftX !== 0 || shiftY !== 0) writePosition(record, tidy(record.x + shiftX), tidy(record.y + shiftY));
         });
         break;
@@ -761,7 +785,8 @@ export class HandlesTool {
       case H_CIRCLE: {
         const toR = V[D_TO_R];
         const key = keys[this._radiusK];
-        if (toR !== V[D_FROM_R]) editMode.editSelected(`${name}.${key}`, (record, description) => writeParam(record, description, key, toR));
+        const radius = tidy(toR / this._scaleR);
+        if (toR !== V[D_FROM_R]) editMode.editSelected(`${name}.${key}`, (record, description) => writeParam(record, description, key, radius));
         break;
       }
       case H_LIGHT: {
@@ -919,8 +944,8 @@ export class HandlesTool {
     if (slot.local) {
       const rx = x - F[G_OX];
       const ry = y - F[G_OY];
-      px = F[G_C] * rx + F[G_S] * ry;
-      py = -F[G_S] * rx + F[G_C] * ry;
+      px = (F[G_C] * rx + F[G_S] * ry) / this._scaleX;
+      py = (-F[G_S] * rx + F[G_C] * ry) / this._scaleY;
     }
     const step = this.editMode.move.snap;
     const next = Array.from(slot.pts);
@@ -1135,8 +1160,10 @@ export class HandlesTool {
           const moved = j === this._dragSub;
           const px = moved ? V[D_TO_PX] : pts[2 * j];
           const py = moved ? V[D_TO_PY] : pts[2 * j + 1];
-          const wx = slot.local ? F[G_OX] + F[G_C] * px - F[G_S] * py : px;
-          const wy = slot.local ? F[G_OY] + F[G_S] * px + F[G_C] * py : py;
+          const qx = slot.local ? px * this._scaleX : px;
+          const qy = slot.local ? py * this._scaleY : py;
+          const wx = slot.local ? F[G_OX] + F[G_C] * qx - F[G_S] * qy : qx;
+          const wy = slot.local ? F[G_OY] + F[G_S] * qx + F[G_C] * qy : qy;
           const x = Math.round((wx - vx) * zoom) | 0;
           const y = Math.round((wy - vy) * zoom) | 0;
           if (j === 0) ctx.moveTo(x, y);

@@ -72,6 +72,21 @@ test('a box with Alt held keeps its center; a corner sets both sides; a default 
   }
 });
 
+test('a scaled box (ED-77): the handles sit on the live collider, and a drag writes the param divided by the scale', () => {
+  const world = makeWorld();
+  try {
+    world.record('Block1').scaleX = 2;
+    Collider.width[world.indexOf('Block1')] = 200; // as the engine spawns it: the file's scale doubles the collider
+    world.select('Block1');
+    assert.deepEqual(positions(world.handles.handles()).slice(6, 7), [[400, 200]], 'its right edge, on the live box');
+    drag(world.handles, [400, 200], [440, 200]);
+    // Live 240 wide, its left edge kept: the center 20 to the right; the file's width 240 / 2.
+    assert.deepEqual(world.record('Block1'), { name: 'Block1', class: 'Block', x: 320, y: 200, scaleX: 2, config: { width: 120, height: 20 } });
+  } finally {
+    world.done();
+  }
+});
+
 test('a turned box: its handles turn with it, and the edge moves along its own axis', () => {
   const world = makeWorld();
   try {
