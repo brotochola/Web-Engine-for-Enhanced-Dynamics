@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "script": "./editorHandlesScene.js",
+  "export": "EditorHandlesScene",
+  "entities": [
+    { "name": "Block1", "class": "Block", "x": 400, "y": 300, "config": { "width": 200 } },
+    { "name": "Ball1", "class": "Ball", "x": 800, "y": 300 },
+    { "name": "Rock1", "class": "Rock", "x": 1200, "y": 300 },
+    { "name": "Lamp1", "class": "Lamp", "x": 700, "y": 1000, "config": { "lightIntensity": 900 } },
+    { "name": "Door1", "class": "Door", "x": 1000, "y": 800 },
+    { "name": "Door2", "class": "Door", "x": 1300, "y": 800 },
+    { "name": "Guard1", "class": "Guard", "x": 800, "y": 800, "config": { "route": [760, 860, 900, 860], "door": "Door1" } }
+  ]
+}
