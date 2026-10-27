@@ -1554,6 +1554,8 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 - **Size:** `weed.editor.min.js` is 128 KB after Stage 4 (57 KB at ED-29). It loads only
   in debug and only on first use. Splitting is not worth it yet.
 
+**State 2026-10-27, evening:** ED-50 to ED-69 done (four agents merged, their worktrees removed); open: ED-70 to ED-75.
+
 **How the work is split:**
 - Four agents in worktrees, each on its own files, merged here:
   - shell: ED-50, ED-51, ED-52;
@@ -1565,7 +1567,7 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 
 **Layout (agent "shell"):**
 
-- [ ] **ED-50 Docks that resize and fold.**
+- [x] **ED-50 Docks that resize and fold.** Done 2026-10-27 by the shell agent (60fe2475): a handle between the view and each dock and between Inspector and Assets (double click: the default), fold buttons and Ctrl+1/2/3 (also typed in the game's frame: `host.dockKey`), sizes and folds kept per viewer; the bottom dock a 33 px strip (Console and the debug tabs) with one resizable pane above it while a panel is open. A drag writes one registered CSS property per move. editorLayoutSmoke.mjs.
   - A drag handle between the view and each dock (left, right, bottom) and between the
     Inspector and Assets.
   - A fold button on each dock and keys: Ctrl+1 the scene list, Ctrl+2 the right column,
@@ -1575,13 +1577,13 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
     own size.
   - Each dock scrolls on its own.
   - The view's canvas follows its box (the game page's autoResize): no stretched frame.
-- [ ] **ED-51 Responsive.**
+- [x] **ED-51 Responsive.** Done 2026-10-27 by the shell agent (469c47b2): the side docks shrink from 1280 to 1100 px and float over the view below it; the bar shortens its labels and never wraps. The view: 1366×768 776×502 → 796×677, 1100 px 701×677, 800 px 800×509.
   - Below ~1280 px the side docks narrow.
   - Below ~1100 px they become panels over the view, opened from the bar, and the view
     keeps the width.
   - Checked by screenshots and by the view's size at 1920, 1366, 1100 and 800 px wide.
   - Nothing overflows the bar: its buttons wrap or shorten.
-- [ ] **ED-52 A status bar.**
+- [x] **ED-52 A status bar.** Done 2026-10-27 by the shell agent (591bc724): statusBar.js in a `status` dock: the mode, a contextual hint (or the editor's message, red on error), the world point and zoom, the selection count, the grid; written at the debug UI's tick, only what changed (0 writes a second at rest). It replaces the tool indicator and the overlay's mouse/cam text in the editor page; the toolbar's own status text went (e3d25da3).
   - Under the view, one line: the edit hint (contextual: placing, dragging, handles), the
     world point under the pointer, the zoom, the selection's count, grid and snap.
   - In the editor page it replaces the hint over the view (toolManager.js's tool
@@ -1589,7 +1591,7 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 
 **Inspector (here):**
 
-- [ ] **ED-53 Transform first.** At the top of a placed entity:
+- [x] **ED-53 Transform first.** Done 2026-10-27 (1be884ad the format, ef054073 the rows): `rotation`, `scaleX`, `scaleY` on an entity record, set after onSpawned for a scene file's entity; Position, Rotation (degrees) and Scale rows typed or dragged by their labels. Found on the way: an edit's snapshot held x, y and config only, so rotation, scale and seed edits neither respawned nor undid (fixed with it). The dragged values show as a ghost (c7111e37). At the top of a placed entity:
   - Position x, y (the record's);
   - Rotation in degrees;
   - Scale x, y.
@@ -1601,17 +1603,17 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
     `_seed`), so the file wins over a class that resets its scale. Code spawns are
     unchanged.
   - Format check, types, SCENE_FILES.md.
-- [ ] **ED-54 Sections that fold, as Unity's components.**
+- [x] **ED-54 Sections that fold, as Unity's components.** Done 2026-10-27 (c30b9bc4): inspectorSection.js; Transform and Params (Config) open, Joints only for a class with a RigidBody (open with joints, counted), Live folded and building nothing until opened; folds remembered.
   - Transform, Params (or Config for a class without spawnParams), Joints, Live.
   - Joints shows only for an entity with a RigidBody, and opens only when it has joints.
   - Live is folded until opened; the choice is remembered.
   - A folded section costs nothing per frame (Live already updates only while shown).
-- [ ] **ED-55 Edit several at once.**
+- [x] **ED-55 Edit several at once.** Done 2026-10-27 (3371c550): a value the selection does not share shows "—"; typed, it goes into each; dragged, each moves by it; a param goes into each whose class declares it; one undo (editMany).
   - With several selected, the inspector shows the transform and the params their classes
     share.
   - A change writes every one of them, as one undo (the batch kind).
   - A field whose values differ shows "—" until set.
-- [ ] **ED-56 Another look.**
+- [x] **ED-56 Another look.** Done 2026-10-27 (69e91cbf): 🎲 beside the name, each selected entity its own new seed, one undo.
   - A 🎲 button on a placed entity writes a new `seed` and respawns it: a house picks
     another of its 63 sprites, a tree another tint.
   - Undo goes back.
@@ -1619,67 +1621,67 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 
 **View (here):**
 
-- [ ] **ED-57 Frame.**
+- [x] **ED-57 Frame.** Done 2026-10-27 (939c98d2, 2059a0e7): frame.js; F, Shift+F, a list row's double click; zooms out until it fits, never in past 1:1 or the zoom shown.
   - F frames the selection (several: their box), Shift+F the whole level.
   - A double click on a scene-list row frames it.
   - The camera eases there; the zoom stays within the scene's limits.
-- [ ] **ED-58 Rotate handle.**
+- [x] **ED-58 Rotate handle.** Done 2026-10-27 (c7111e37): rotateTool.js, and ghost.js: a turn or a dragged inspector value draws the moved and turned boxes, because a body's pose is the physics worker's (writing Transform did not show; found in Chromium).
   - A ring handle above the selection's box: a drag turns it about its center.
   - Shift snaps to 15°.
   - Several selected turn about their common center: positions and rotations, one undo.
-- [ ] **ED-59 Copy and paste.**
+- [x] **ED-59 Copy and paste.** Done 2026-10-27 (aa0a4de9): clipboard.js; Ctrl+C, Ctrl+X, Ctrl+V at the pointer, entity params and joints between copies renamed, localStorage across levels and tabs; a copy and a duplicate keep their original's seed (keepSeed).
   - Ctrl+C copies the selected placed entities: their records, with joints between them.
   - Ctrl+V pastes them at the pointer with new names, one undo.
   - The system clipboard carries them as JSON, so a paste works in another level and in
     another tab.
-- [ ] **ED-60 Grid and snap in the toolbar.**
+- [x] **ED-60 Grid and snap in the toolbar.** Done 2026-10-27 (50e625d7): grid.js; steps 1, 4, 8, 16, 32, 64 in the toolbar (G, Shift+G), lines thinned below 8 px, Alt off the grid, remembered. The tile size as a step is not offered (the steps are fixed).
   - A snap toggle and its size (1, 4, 8, 16, 32, 64 px; the default from the scene's tile
     size when it has a tilemap).
   - The grid shown while editing.
   - Alt held while dragging does not snap.
   - Saved per viewer.
-- [ ] **ED-61 Pan like the others.** The middle button and Space+drag pan; right drag
+- [x] **ED-61 Pan like the others.** Done 2026-10-27 (50e625d7): Space+drag pans; the middle and right buttons already did. The middle button and Space+drag pan; right drag
   still does.
 
 **Scene list (agent "scene list"):**
 
-- [ ] **ED-62 A filter.**
+- [x] **ED-62 A filter.** Done 2026-10-27 by the scene list agent (08d40b41): 0.2 to 1.5 ms a keystroke over littleCity in Chromium.
   - A field over the list (Ctrl+F while the list has focus).
   - It matches name or class: the matching rows show under their classes, unfolded, with
     the count.
   - It works over 10,000 rows without a frame drop (filtering over the names, the
     virtualized rows unchanged).
-- [ ] **ED-63 Keys and rename.**
+- [x] **ED-63 Keys and rename.** Done 2026-10-27 by the scene list agent (7f571c36, 58bee1ee): a held arrow selects once a frame (an inspector rebuild in littleCity costs more than a key repeat: found item 28).
   - Up and down move the selection along the visible rows.
   - Enter frames (ED-57), F2 renames in place, Del deletes, Ctrl+D duplicates.
   - A double click frames.
-- [ ] **ED-64 A context menu.** On a row: Frame, Rename, Duplicate, Copy, Delete, Select
+- [x] **ED-64 A context menu.** Done 2026-10-27 by the scene list agent (798d2615): treeMenu.js; Shift+F10 too; runtime rows Frame and Select all. On a row: Frame, Rename, Duplicate, Copy, Delete, Select
   all of this class.
 
 **Assets (agent "assets"):**
 
-- [ ] **ED-65 Pictures and a filter in the palette.**
+- [x] **ED-65 Pictures and a filter in the palette.** Done 2026-10-27 by the assets agent (9e25e9c1): classThumbs.js, atlasThumb.js; rows kept across refreshes.
   - Each class shows a thumbnail: the first frame of what a live entity of it shows (its
     SpriteRenderer's sheet and animation), else its spawnParams' sprite default, else a
     plain mark. Drawn once per class from the atlas, as assetPicker.js draws.
   - A filter field when there are more than 8 classes.
-- [ ] **ED-66 Drag to place.**
+- [x] **ED-66 Drag to place.** Done 2026-10-27 by the assets agent (b833c119): dropPlace.js, HTML5 drag and drop (`application/x-weed-class`), a cross where it lands; mapped through viewBounds.js as Mouse does (125947c2).
   - A class dragged from the palette onto the view is placed where it is dropped, snapped,
     one undo, selected.
   - Works in the editor page (the drop lands in the game page's frame) and in the game page
     itself.
   - "+" then a click stays.
-- [ ] **ED-67 The engine's layers apart.** The layers the engine makes (lighting,
+- [x] **ED-67 The engine's layers apart.** Done 2026-10-27 by the assets agent (fc72f0ba): an engine layer is `builtIn` (but `entities`); bloom stays the platformer's own. The layers the engine makes (lighting,
   lightGlows, bloom, castedShadows) go under a folded "Engine layers" line; the game's
   layers come first.
 
 **Console and toolbar:**
 
-- [ ] **ED-68 (agent "console") Filter the console.**
+- [x] **ED-68 (agent "console") Filter the console.** Done 2026-10-27 by the console agent (3ed90cab): ConsoleLog, a ring of 2,000 rows (ED-18 kept 1,000), rows in blocks of 50, nothing drawn while hidden, the observer let go on pagehide (it kept every reloaded page alive before: found and fixed in its smoke).
   - Errors, warnings and logs as toggles with their counts, a search field, Clear.
   - The view stays at the bottom while new rows come, unless scrolled up.
   - A dock that is not shown costs no layout per row.
-- [ ] **ED-69 (here) Toolbar.**
+- [x] **ED-69 (here) Toolbar.** Done 2026-10-27 (02237440): ⏸ and ⏭ while not editing (GameEngine.pause, Scene.stepPaused), Undo and Redo titled with their change, shortcuts.js (`?`).
   - While playing: Pause and Step (one frame).
   - Undo and Redo name the change in their tooltip.
   - A shortcuts sheet (`?`) lists every key of the editor.
@@ -1710,6 +1712,11 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
   - copy and paste, place a class by dragging;
   - fold and resize docks;
   - undo everything, save, and reload: the file and the view as left.
+- [ ] **ED-74 (engine) Static sprites past 255** (found item 26): bigAtlas as proxy sheets of 256 animations each;
+  `setSprite` stores the chunk's sheet and the local index. A test of every sheet's indices, and littleCity's 65
+  houses all drawing houses in Chromium.
+- [ ] **ED-75 Selecting costs less** (found item 28): profile an inspector rebuild in littleCity; build what a folded
+  section holds only when it opens (the Joints row lists every entity of the file), keep rows across selections.
 
 ---
 
@@ -1972,6 +1979,28 @@ server still writes nothing. What changed for this plan:
       at every interface on both stacks), so the port they print reaches them, or the port
       counts as in use.
     - The editor page's address became `/editor?scene=…` (ae3b8fac).
+
+26. **A sprite whose bigAtlas index passes 255 draws another one** (the assets agent, 2026-10-27). littleCity's
+    bigAtlas has 1,158 animations; a house's index runs from 3 to 1,067, and `SpriteRenderer.animationState` is a
+    Uint8Array, so `setSprite('house_NN')` stores the index modulo 256: 20 of the 65 houses draw cars, trees or blood
+    (`house_…` at 497 draws 241, `blue_car_135`), on littleCity's own page too, without the editor. Engine work: the
+    emit kernel's texture table is [sheet u8][state u8] (wasm/preRenderEmit.c, E-112). Plan: bigAtlas registered as
+    proxy sheets of 256 animations each, so a static sprite is (its chunk's sheet, a local index) and nothing per frame
+    changes (ED-74).
+27. **The rotate handle's first preview wrote the live Transform**, which a body's pose overwrites every step (Box2D
+    writes rotation and position): only the collider handles caught the value. Previews are ghosts now (ghost.js).
+28. **Selecting an entity in littleCity costs about 60 ms** (the scene list agent: an inspector rebuild of 23 ms and
+    37 ms of layout), more than a key repeat. To find and cut (ED-75).
+29. **After Shift+E the drawn view holds the last frame 0.3 to 0.8 s, then jumps up to 156 px** to the held camera
+    (the assets agent, the platformer's own page). A click in that window maps through what is on screen.
+30. **A resized game frame is stale or stretched for a moment** (the shell agent): `GameEngine.resize` sets the
+    canvas's CSS size at once, the render worker its backing store later; up to 2.5 s after several resizes in a row
+    in headless Chromium, a frame or two on a GPU. Engine; untested idea: leave the CSS size to the new frame.
+31. **Agent worktrees** were made from `main`, not the branch in use; `npm ci` needs a `package-lock.json`, which the
+    repo ignores (only pnpm-lock.yaml is tracked): each agent copied the main checkout's. Brief agents to check out the
+    branch and copy the lock file.
+32. **littleCity's `Car` class has a pool of 0** and shows "0 / 0" in the palette; a class that cannot be placed could
+    be hidden or dimmed there. **A 224 px inspector** (a 1100 px window) squeezes the params' sliders to their thumbs.
 
 **New items:**
 
