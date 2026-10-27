@@ -3,7 +3,12 @@
 **Opened:** 2026-10-22. **Updated:** 2026-10-26, against the code after the WASM migration
 (E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stages 1 and 2
 done 2026-10-26 (milestone M1 reached); Stage 3 started with ED-15, the editor page (D9).
-**Next step:** Stage 3 in item order (ED-18, ED-19).
+**Next step:** ED-19, then Stages 4 and 5. **Time box (the author, 2026-10-26):** 12 hours,
+14 at most, for the rest of the plan with its tests. So Stage 4's items run in parallel in
+three agent worktrees (handles: ED-20, ED-22, ED-27 with ED-45's view parts; scene file:
+ED-21, ED-25; panels: ED-24, ED-26, ED-45's pickers) and a fourth runs ED-31 and ED-32, on
+the editor tools extension point (2ab97e45); the lead does ED-19, ED-29, ED-30, ED-33, ED-28
+and the merges. ED-23 and ED-35b are deferred (below).
 
 A visual editor for WeedJS: click an entity in the running scene, move it, change its
 settings, save the result to a scene file, play it, stop it. Unity, Godot and PlayCanvas
@@ -1279,7 +1284,23 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
     follows the entity while playing. A click in the scene list selects without leaving
     play.
   - Tests: `editorLive.test.js`; in Chromium, `editorShellSmoke.mjs` 'live' (10/10).
-- [ ] **ED-18 Console panel:** worker logs and `entityError` reports.
+- [x] **ED-18 Console panel:** worker logs and `entityError` reports. Done 2026-10-26
+  (bc0f8a2c).
+  - The editor page's Console dock: what the game page and its workers log, and one row per
+    distinct game code error with its count; a click on an error selects the entity that
+    threw. Levels can be hidden, the text filtered, the list cleared; a repeated line counts on
+    its row; rows drawn at the UI tick, 1,000 kept.
+  - `src/util/consoleForward.js` wraps a console while on (each call still reaches it; at
+    most 200 a second pass, the rest counted in one line). Workers that run game code turn it
+    on with a `consoleForward` message; the editor page asks as soon as a scene has made its
+    workers (`debugUI.onWorkersCreated`, from `Scene.init`), so load-time logs are there.
+    Physics' own worker is not forwarded. Only the editor page turns it on; while on, DevTools
+    names consoleForward.js as each call's source.
+  - Found: a game code error's counts from two logic workers overwrote each other (their
+    reporters both say "logic"); the scene now keys them by the page's worker name
+    (eaeacb88).
+  - Tests: `consoleForward.test.js`; in Chromium, `editorShellSmoke.mjs` 'console' with
+    `tests/fixtures/editorConsoleScene.js` (11/11).
 - [ ] **ED-19 Proper edit pause** (D5): pause only the simulation workers, after checking
   pose interpolation. If the frame code changes, the hygiene check applies.
 
@@ -1288,7 +1309,8 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
 - [ ] **ED-20** Collider shape handles: box, circle, polygon.
 - [ ] **ED-21** Joint anchors. Joints in the scene file reference entities by `name`.
 - [ ] **ED-22** Light radius and emitter handles.
-- [ ] **ED-23** The particle lab as an editor panel.
+- [-] **ED-23** The particle lab as an editor panel. **Deferred 2026-10-26** (time box): the
+  particle lab already exists as a scene of its own (`demos/particleLabScene`).
 - [ ] **ED-24** Per-layer hide and lock.
 - [ ] **ED-25** Scatter brush for decorations (trees, grass, rocks), through
   `Decoration.spawnMany`. The scene file gets a `decorations` section stored as flat
@@ -1352,8 +1374,8 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
 2. **Colors in scene files:** numbers (format 1), or `"#rrggbb"` for params declared as
    `color`. Numbers until a hand-editing need appears.
 3. ~~Pool sizes.~~ **Decided:** in the scene class.
-4. **Editor page for npm users** (ED-15, ED-29): which file ships it, and how a game
-   opens it.
+4. ~~Editor page for npm users~~ **Decided 2026-10-26:** the editor ships as its own npm
+   package, `@weed.js/editor`, with the file `weed.editor` (ED-29).
 5. ~~Hot reload.~~ **Decided:** fast swap to the same file (ED-4b).
 6. Whether a runtime-spawned entity can be promoted to authored ("add to scene").
 7. ~~Which level a save starts in.~~ **Decided:** the save records the scene file
@@ -1448,7 +1470,8 @@ server still writes nothing. What changed for this plan:
    generation column (`Messages.spawnGen`, bumped by every despawn) existed only in scenes
    with message listeners; it is now always made (2 bytes per entity), inboxes still only
    with listeners. The name map keeps index and generation (`index · 65536 + gen`).
-2. **`static defaultSceneFile` on a scene class (new API, for the author to confirm).**
+2. **`static defaultSceneFile` on a scene class** (new API; **confirmed by the author
+   2026-10-26**: "easy for devs").
    Loaded by its module or class, a scene loads the scene file it names (relative to its
    module). Without it, everything that loads the platformer by module (the bench page,
    `profileSceneSweep.mjs`, old links) would have had no platforms. Godot calls the same
@@ -1524,7 +1547,8 @@ server still writes nothing. What changed for this plan:
     a new game: a scene-ready hook (or `getAllActive` counting the batch) would remove the
     trap. Belongs to the API work, with the guide's lifecycle section.
 
-14. **`loadScene(url, { sceneFile })` (new API, for the author to confirm).** It loads a scene
+14. **`loadScene(url, { sceneFile })`** (new API; **confirmed by the author 2026-10-26**:
+    keep it easy for devs). It loads a scene
     file's URL with a document held in memory (checked, and copied) in place of what the
     file holds. The URL, or the class's `defaultSceneFile`, still names the file that
     saves and hot reload go to. The editor needs it to go back to an unsaved document: its
@@ -1537,7 +1561,8 @@ server still writes nothing. What changed for this plan:
   (SpriteSheetRegistry, the atlas) for `sprite` and `animation` params; clicking a placed
   entity in the view to fill an `entity` param; and handles dragged in the view for
   `points`, drawn on the overlay from a preallocated buffer.
-- [ ] **ED-35b Fast swap to another scene class with the same setup** (a `BossLevel`
+- [-] **Deferred 2026-10-26** (time box; the same-class swap covers a game's levels).
+  **ED-35b Fast swap to another scene class with the same setup** (a `BossLevel`
   subclass). Needs the setup fingerprint (D3, a `WeakMap` per class), the new module
   imported on the page and in every worker, and the class changed without building a new
   scene instance (the constructor's global side effects, item 8 above).
