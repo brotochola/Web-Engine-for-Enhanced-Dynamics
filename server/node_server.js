@@ -16,9 +16,12 @@ import { fileURLToPath } from 'url';
 
 import { devBanner } from './devBanner.js';
 import { handleDevRoute } from './devRoutes.js';
+import { serveStaticFile, listenHost } from './staticFiles.js';
 
 const SW_MODE = process.argv.includes('--sw');
 const PORT = Number(process.env.PORT) || (SW_MODE ? 8090 : 8000);
+// This machine only, unless --host or WEED_HOST opens it to the network (review N-80: it listened on every interface).
+const HOST = listenHost(process.argv, process.env);
 const ISOLATION_WORKER = path.join(path.dirname(fileURLToPath(import.meta.url)), '../src/workers/isolationServiceWorker.js');
 /** What makes a page cross-origin isolated; left out in --sw mode, where weed-sw.js adds it. */
 const ISOLATION_HEADERS = SW_MODE
@@ -83,33 +86,13 @@ function watchForReload() {
   }
 }
 
-// MIME types for common files
-const mimeTypes = {
-  '.html': 'text/html',
-  '.js': 'text/javascript',
-  '.css': 'text/css',
-  '.json': 'application/json',
-  '.png': 'image/png',
-  '.jpg': 'image/jpg',
-  '.gif': 'image/gif',
-  '.svg': 'image/svg+xml',
-  '.wav': 'audio/wav',
-  '.mp4': 'video/mp4',
-  '.woff': 'application/font-woff',
-  '.ttf': 'application/font-ttf',
-  '.eot': 'application/vnd.ms-fontobject',
-  '.otf': 'application/font-otf',
-  '.wasm': 'application/wasm',
-};
-
 const server = http.createServer((req, res) => {
   if (LOG_REQUESTS) console.log(`${req.method} ${req.url}`);
 
   // The editor saves scene files and lists them (localhost only).
   if (handleDevRoute(req, res, process.cwd(), ISOLATION_HEADERS)) return;
 
-  // Parse URL and strip query parameters
-  const [urlPath, query = ''] = req.url.split('?');
+  const urlPath = req.url.split('?')[0];
 
   if (urlPath === '/__weed/reload') {
     if (!HOT_RELOAD) {
@@ -128,69 +111,18 @@ const server = http.createServer((req, res) => {
     req.on('close', () => reloadClients.delete(res));
     return;
   }
-  const querySuffix = query ? `?${query}` : '';
-
-  // Get file path
-  let filePath = '.' + urlPath;
-  if (filePath === './') {
-    filePath = './index.html';
-  }
-  // From source the engine looks for its isolation service worker at the site root.
-  if (SW_MODE && urlPath === '/weed-sw.js') filePath = ISOLATION_WORKER;
-
-  // Directory without trailing slash: redirect so relative assets
-  // (e.g. weed.bundle.min.js under /dist/) resolve correctly.
-  // /dist + src="weed.bundle.min.js" otherwise fetches /weed.bundle.min.js.
-  if (
-    !urlPath.endsWith('/') &&
-    fs.existsSync(filePath) &&
-    fs.statSync(filePath).isDirectory()
-  ) {
-    res.writeHead(301, { Location: `${urlPath}/${querySuffix}` });
-    res.end();
-    return;
-  }
-
-  // Check if path is a directory and append index.html
-  if (fs.existsSync(filePath) && fs.statSync(filePath).isDirectory()) {
-    filePath = path.join(filePath, 'index.html');
-  }
-
-  // Get file extension
-  const extname = String(path.extname(filePath)).toLowerCase();
-  const mimeType = mimeTypes[extname] || 'application/octet-stream';
-
-  // Read and serve file
-  fs.readFile(filePath, (error, content) => {
-    if (error) {
-      console.log(`${error.code === 'ENOENT' ? '404' : '500'} ${req.method} ${req.url}`);
-      if (error.code === 'ENOENT') {
-        res.writeHead(404, { 'Content-Type': 'text/html' });
-        res.end('<h1>404 Not Found</h1>', 'utf-8');
-      } else {
-        res.writeHead(500);
-        res.end(`Server Error: ${error.code}`, 'utf-8');
-      }
-    } else {
-      // Set required headers for SharedArrayBuffer
-      res.writeHead(200, {
-        'Content-Type': mimeType,
-        ...ISOLATION_HEADERS,
-        'Access-Control-Allow-Origin': '*',
-        // Disable caching for JavaScript files (especially workers)
-        'Cache-Control':
-          extname === '.js' ? 'no-cache, no-store, must-revalidate' : 'public, max-age=3600',
-        Pragma: extname === '.js' ? 'no-cache' : '',
-        Expires: extname === '.js' ? '0' : '',
-      });
-      res.end(content, 'utf-8');
-    }
+  // A file of the served folder (staticFiles.js keeps the path inside it: review N-80). From source the engine
+  // looks for its isolation service worker at the site root.
+  serveStaticFile(req, res, {
+    root: process.cwd(),
+    headers: ISOLATION_HEADERS,
+    special: SW_MODE ? (sitePath) => (sitePath === '/weed-sw.js' ? ISOLATION_WORKER : null) : null,
   });
 });
 
 const startServer = (port) => {
-  server.listen(port, () => {
-    console.log(devBanner({ port, swMode: SW_MODE, hotReload: HOT_RELOAD, logRequests: LOG_REQUESTS, root: process.cwd() }));
+  server.listen(port, HOST, () => {
+    console.log(devBanner({ port, host: HOST, swMode: SW_MODE, hotReload: HOT_RELOAD, logRequests: LOG_REQUESTS, root: process.cwd() }));
   });
 
   server.on('error', (e) => {

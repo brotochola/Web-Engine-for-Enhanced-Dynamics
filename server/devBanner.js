@@ -100,7 +100,7 @@ export function gitCommitLabel(cwd = ROOT) {
   }
 }
 
-export function devBanner({ port, swMode, hotReload, logRequests = false, root, paint = terminalPaint(), commit = gitCommitLabel() }) {
+export function devBanner({ port, host = '127.0.0.1', swMode, hotReload, logRequests = false, root, paint = terminalPaint(), commit = gitCommitLabel() }) {
   const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
   const url = `http://localhost:${port}/`;
   const out = [''];
@@ -136,6 +136,11 @@ export function devBanner({ port, swMode, hotReload, logRequests = false, root, 
     row('Hot reload', 'off (WEED_HOT_RELOAD=0).');
   }
   row('Requests', logRequests ? 'every one is logged (WEED_LOG_REQUESTS=1).' : 'only failures are logged; WEED_LOG_REQUESTS=1 logs every one.');
+  if (host === '127.0.0.1' || host === 'localhost' || host === '::1') {
+    row('Network', 'this machine only. npm run dev -- --host (or WEED_HOST=0.0.0.0) opens it to the network,', 'to try a game on a phone.');
+  } else {
+    row('Network', `listening on ${host}: anyone on this network can open the served files.`);
+  }
   out.push('');
   out.push(`  ${paint.dim('Ctrl+C stops.')}`);
   out.push('');
