@@ -5,7 +5,7 @@
  * from logic0 when they spawn and the odd ones throw in their tick; the game page logs what each check needs. Each
  * check prints PASS or FAIL with what it read; the exit code is the number of failures.
  *
- *   hidden   while the Debug tab is in front the game logs, and the console's DOM does not change (a MutationObserver
+ *   hidden   while the Console is closed the game logs, and the console's DOM does not change (a MutationObserver
  *            of the editor page counts every change in it); the Console tab shows the rows at once, before the next
  *            tick or frame
  *   counts   logs, warnings and errors arrive: each toggle's count is the sum of its rows' (a repeated line ×n); the
@@ -129,7 +129,7 @@ async function main() {
         return true;
       }, lines);
 
-    // ---- hidden: the Debug tab is in front ----
+    // ---- hidden: the Console is closed ----
     await page.evaluate(() => {
       window.__consoleChanges = 0;
       new MutationObserver((records) => {
@@ -310,7 +310,9 @@ async function main() {
     );
 
     // ---- cap: 2,050 rows, through the panel (the console forward passes 200 calls a second) ----
-    await page.click('[data-tab=debug]');
+    // The Console tab again closes its pane (the editor page's bottom dock, ED-50: it once had a Debug tab of its own).
+    await page.click('[data-tab=console]');
+    if ((await page.getAttribute('[data-tab=console]', 'aria-pressed')) !== 'false') throw new Error('the console did not close');
     await frame.evaluate(() => {
       const panel = globalThis.game.debugUI.hosted.console;
       panel.clear();
