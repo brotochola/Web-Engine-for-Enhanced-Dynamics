@@ -20,6 +20,10 @@
 // saves the running scene file through the dev server (sceneFileStore.js, ED-13). Every change to the document goes
 // through editSelected and is kept for Ctrl+Z / Ctrl+Y (history.js, ED-12).
 //
+// Play and Stop (D8, ED-16): Play leaves edit mode and remembers what it started from; Stop goes back to the level as
+// the document has it (a fast swap) in edit mode. What happened while playing is thrown away, the document's edits
+// are not; a game that went to another file while playing is taken back to the one Play started from.
+//
 // In the editor page (D9) the game page reloads under a running editor: handover() gives what a reload keeps, as
 // plain data, and resume() takes it up in the next page.
 //
@@ -102,6 +106,10 @@ export class EditMode {
     this._savedFreeSmoothing = NaN;
     /** A full load left edit mode: enter it again when the new scene is attached. */
     this._resumeOnAttach = false;
+    /** What Play started from (play()), for Stop: the file, its data and document, the undo stack, the view. */
+    this._playStart = null;
+    /** A swap the editor makes itself (Stop, resume): the document is the same, its undo stack stays. */
+    this._ownSwap = false;
 
     /** What the indicator says instead of the help for a moment (a save's outcome), and whether it went wrong. */
     this.status = '';
@@ -153,8 +161,72 @@ export class EditMode {
   }
 
   toggle() {
-    if (this.active) this.exit();
+    if (this.active) this.play();
     else this.enter();
+  }
+
+  /** Whether the game is playing a session Play started, which Stop ends. */
+  get playing() {
+    return !this.active && this._playStart !== null;
+  }
+
+  /** Play (D8): leave edit mode, the game runs from here. Stop comes back to the level as it is now. */
+  play() {
+    if (!this.active) return;
+    this._playStart = this._snapshot(true);
+    this.exit();
+  }
+
+  /**
+   * Stop (D8): the level as its document has it, by a fast swap, in edit mode. What happened while playing is thrown
+   * away; edits made to the document are not. A game that went to another file while playing is taken back to the
+   * one Play started from, with its document and undo stack as they were then.
+   * @returns {Promise<boolean>} whether it went back
+   */
+  async stop() {
+    const scene = this.debugUI.scene;
+    if (!scene) return false;
+    const start = this._playStart;
+    const back = start !== null && start.sceneFileUrl !== scene.sceneFileUrl ? start : this._snapshot(true);
+    if (back.sceneFileUrl === null) {
+      this._setStatus('This scene was not loaded from a scene file: there is no level to go back to', true);
+      return false;
+    }
+    if (back === start && !this._mayDiscard()) return false;
+    back.active = true;
+    if (start !== null) back.view = start.view;
+    this._playStart = null;
+    const ok = await this._restoreState(back, true, start === null ? scene.data : start.data);
+    if (ok) this._setStatus(`Stopped: ${this.sceneFileName} as its document has it`, false);
+    return ok;
+  }
+
+  /**
+   * The running file, its document (a copy) and the records' editor ids, the undo stack (a copy), edit mode, the
+   * selection, the grid and the view: what Stop and a resume put back.
+   * @param {boolean} withDocument - the document even when the file has it (Stop swaps to it either way)
+   */
+  _snapshot(withDocument) {
+    const scene = this.debugUI.scene;
+    const editorIds = [];
+    for (const record of scene.sceneFile?.entities || []) {
+      if (Object.prototype.hasOwnProperty.call(record, '_editorId')) editorIds.push([record.name, record._editorId]);
+    }
+    return {
+      version: 1,
+      sceneScriptUrl: scene.sceneScriptUrl ?? null,
+      sceneFileUrl: scene.sceneFileUrl ?? null,
+      data: scene.data,
+      document: scene.sceneFile && (withDocument || this.dirty) ? structuredClone(scene.sceneFile) : null,
+      editorIds,
+      nextEditorId: nextEditorIdToGive(),
+      history: structuredClone(this.history.toData()),
+      active: this.active,
+      selection: this.selection.authored ? this.selection.name : null,
+      snap: this.move.snap,
+      view: this.active ? { x: Camera._freeFollowX, y: Camera._freeFollowY, zoom: Camera.zoom } : null,
+      playSpeed: this.playSpeed,
+    };
   }
 
   enter() {
@@ -628,30 +700,16 @@ export class EditMode {
 
   /**
    * What a reload of the game page keeps, as plain data the editor page copies: the file and its unsaved document,
-   * the records' editor ids, the undo stack, edit mode, the selection, the grid and the view.
+   * the records' editor ids, the undo stack, edit mode, the selection, the grid and the view. A play session hands
+   * over what Stop goes back to, so Stop works after a reload too.
    * @returns {object|null} null without a scene
    */
   handover() {
-    const scene = this.debugUI.scene;
-    if (!scene) return null;
-    const editorIds = [];
-    for (const record of scene.sceneFile?.entities || []) {
-      if (Object.prototype.hasOwnProperty.call(record, '_editorId')) editorIds.push([record.name, record._editorId]);
-    }
-    return {
-      version: 1,
-      sceneScriptUrl: scene.sceneScriptUrl ?? null,
-      sceneFileUrl: scene.sceneFileUrl ?? null,
-      document: this.dirty ? scene.sceneFile : null,
-      editorIds,
-      nextEditorId: nextEditorIdToGive(),
-      history: this.history.toData(),
-      active: this.active,
-      selection: this.selection.authored ? this.selection.name : null,
-      snap: this.move.snap,
-      view: this.active ? { x: Camera._freeFollowX, y: Camera._freeFollowY, zoom: Camera.zoom } : null,
-      playSpeed: this.playSpeed,
-    };
+    if (!this.debugUI.scene) return null;
+    const state = this._snapshot(false);
+    state.data = undefined; // the page's own: the next page runs with its own data
+    state.playStart = this._playStart === null ? null : { ...this._playStart, data: undefined };
+    return state;
   }
 
   /**
@@ -662,15 +720,34 @@ export class EditMode {
    * @returns {Promise<boolean>} whether it was taken up
    */
   async resume(kept) {
-    const debugUI = this.debugUI;
-    const running = debugUI.scene;
+    const running = this.debugUI.scene;
     if (!running || !kept || kept.version !== 1 || kept.sceneScriptUrl !== running.sceneScriptUrl) return false;
+    const reload = kept.sceneFileUrl !== null && (kept.document !== null || kept.sceneFileUrl !== running.sceneFileUrl);
+    if (!(await this._restoreState(kept, reload, running.data))) return false;
+    if (kept.playStart) this._playStart = { ...kept.playStart, data: running.data };
+    return true;
+  }
+
+  /**
+   * Put a snapshot back (Stop, resume): its file opened again with its document when `reload` (a swap the editor
+   * makes itself: the undo stack stays), the records' editor ids by name, the undo stack, edit mode, the view, the
+   * grid, the play speed and the selection.
+   */
+  async _restoreState(kept, reload, data) {
+    const debugUI = this.debugUI;
     reserveEditorIds(kept.nextEditorId);
-    const file = kept.sceneFileUrl;
-    if (file !== null && (kept.document !== null || file !== running.sceneFileUrl)) {
-      const options = { data: running.data };
+    if (reload) {
+      const options = { data };
       if (kept.document !== null) options.sceneFile = kept.document;
-      if ((await debugUI.gameEngine.loadScene(file, options)) === false) return false;
+      this.move.cancel();
+      this._ownSwap = true;
+      let ok;
+      try {
+        ok = await debugUI.gameEngine.loadScene(kept.sceneFileUrl, options);
+      } finally {
+        this._ownSwap = false;
+      }
+      if (ok === false) return false;
     }
     const scene = debugUI.scene;
     for (const [name, id] of kept.editorIds) {
@@ -678,7 +755,7 @@ export class EditMode {
       if (found !== null) withEditorId(found.record, id);
     }
     this.history.load(kept.history);
-    this.debugUI.hosted?.onDocumentChanged();
+    debugUI.hosted?.onDocumentChanged();
     this.move.snap = kept.snap;
     if (kept.active) {
       this.enter();
@@ -699,7 +776,7 @@ export class EditMode {
   onContentSwapped() {
     this.move.cancel();
     this.selection.clear();
-    this.history.clear(); // another document
+    if (!this._ownSwap) this.history.clear(); // another document (Stop and resume put theirs back)
     this.debugUI.hosted?.onDocumentChanged();
     this.palette.refresh();
     this._notify();

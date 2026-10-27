@@ -2,7 +2,7 @@
 // handover() is plain data (a copy survives structuredClone, and holds no object of the page), and resume() in the
 // next page opens the kept file again with its unsaved document, gives the records their editor ids back by name,
 // takes up the undo stack where it was, and comes back to edit mode, the view and the selection. Another scene's
-// state is not taken up.
+// state is not taken up. Play and Stop (D8, ED-16) go back the same way: Stop swaps to the document, in edit mode.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -218,6 +218,110 @@ test('another scene’s state is not taken up', async () => {
     assert.equal(editMode.active, false);
     assert.equal(editMode.history.canUndo, false);
     assert.equal(await editMode.resume({ ...kept, version: 2 }), false, 'another version');
+  } finally {
+    teardown(editMode);
+  }
+});
+
+// ---- Play and Stop (D8, ED-16): the same restore path ----
+
+test('Stop: back to the level as the document has it now, in edit mode, the undo stack kept', async () => {
+  const scene = makeScene();
+  const { editMode, loads } = setup(scene);
+  try {
+    editMode.enter();
+    editMode.selection.select(1);
+    editMode.selection._hooks.onChange('width', 640);
+    Camera.setFreeTarget(321, 654);
+    editMode.play();
+    assert.equal(editMode.active, false);
+    assert.equal(editMode.playing, true);
+    Camera.setFreeTarget(9999, 9999); // the game moved the view while playing
+
+    assert.equal(await editMode.stop(), true);
+    assert.equal(loads.length, 1);
+    assert.equal(loads[0][0], FILE);
+    assert.equal(loads[0][1].sceneFile.entities[0].config.width, 640, 'the document, edits and all');
+    assert.equal(editMode.active, true, 'in edit mode');
+    assert.equal(editMode.playing, false);
+    assert.equal(Camera._freeFollowX, 321, 'the view Play started from');
+    assert.equal(editMode.dirty, true, 'Stop does not save or drop edits');
+    assert.equal(editMode.history.canUndo, true, 'the undo stack is the document’s, kept');
+    assert.match(editMode.status, /^Stopped: 1-1\.scene\.json/);
+    editMode.undo();
+    assert.equal(recordOf(scene, 'Platform1').record.config.width, 400);
+  } finally {
+    teardown(editMode);
+  }
+});
+
+test('Stop after the game went to another level: back to the file Play started from, with its document', async () => {
+  const scene = makeScene();
+  const { editMode, loads } = setup(scene);
+  try {
+    editMode.enter();
+    editMode.selection.select(2);
+    editMode.renameSelected('Ledge'); // unsaved, in 1-1
+    editMode.play();
+    // The goal: the game loads 1-2 (another document: its stack starts empty).
+    await editMode.debugUI.gameEngine.loadScene('http://host/levels/1-2.scene.json', {
+      data: { levelsDone: 1 },
+      sceneFile: { format: 1, script: '../platformer.js', entities: [{ name: 'Boss', class: 'Platform', x: 0, y: 0 }] },
+    });
+    assert.equal(editMode.history.canUndo, false);
+    loads.length = 0;
+
+    assert.equal(await editMode.stop(), true);
+    assert.equal(loads[0][0], FILE, 'the file Play started from');
+    assert.deepEqual(loads[0][1].data, { levelsDone: 0 }, 'with the data it was loaded with');
+    assert.deepEqual(scene.sceneFile.entities.map((e) => e.name), ['Platform1', 'Ledge'], 'its unsaved document');
+    assert.equal(editMode.history.canUndo, true, 'and its undo stack');
+    editMode.undo();
+    assert.deepEqual(scene.sceneFile.entities.map((e) => e.name), ['Platform1', 'Platform2']);
+  } finally {
+    teardown(editMode);
+  }
+});
+
+test('Stop with no play session resets the level to its document; a scene without a file has nothing to go back to', async () => {
+  const scene = makeScene();
+  const { editMode, loads } = setup(scene);
+  try {
+    assert.equal(await editMode.stop(), true, 'playing since the page loaded');
+    assert.equal(loads.length, 1);
+    assert.equal(editMode.active, true);
+  } finally {
+    teardown(editMode);
+  }
+  const fileless = makeScene(null);
+  const second = setup(fileless);
+  try {
+    assert.equal(await second.editMode.stop(), false);
+    assert.equal(second.loads.length, 0);
+    assert.match(second.editMode.status, /not loaded from a scene file/);
+  } finally {
+    teardown(second.editMode);
+  }
+});
+
+test('a play session goes along with a reload: Stop in the next page goes back to where Play started', async () => {
+  const scene = makeScene();
+  const first = setup(scene);
+  first.editMode.enter();
+  first.editMode.play();
+  const kept = structuredClone(first.editMode.handover());
+  teardown(first.editMode);
+  assert.ok(kept.playStart, 'handed over');
+  assert.equal(kept.playStart.data, undefined, 'without the page’s data');
+
+  const next = makeScene();
+  const { editMode, loads } = setup(next);
+  try {
+    assert.equal(await editMode.resume(kept), true);
+    assert.equal(editMode.playing, true);
+    assert.equal(await editMode.stop(), true);
+    assert.equal(loads.at(-1)[0], FILE);
+    assert.deepEqual(loads.at(-1)[1].data, { levelsDone: 0 }, 'the next page’s data');
   } finally {
     teardown(editMode);
   }

@@ -14,6 +14,8 @@
  *            toolbar's Undo then takes the width back to the file's
  *   no leak  5 more reloads with an unsaved document: Chrome's document count stays 2, and the JS heap after a GC
  *            within 2 MB of where it was
+ *   stop     (ED-16) Play runs the game; the player put on the goal loads 1-2; Stop comes back to 1-1 in edit mode,
+ *            with its unsaved document and undo stack
  *
  * Every wait's predicate returns a boolean: Playwright keeps a handle to what it returns, and a handle to the game's
  * scene would keep each reloaded page alive (it did, in the first leak runs of this script).
@@ -205,6 +207,42 @@ async function main() {
       'no leak',
       last.documents === 2 && last.heapMb - first.heapMb < 2 && state.width === 640,
       `documents ${first.documents} → ${last.documents}, heap ${first.heapMb.toFixed(1)} → ${last.heapMb.toFixed(1)} MB, width ${state.width}`,
+    );
+
+    // Play and Stop (ED-16): play, the goal loads 1-2, Stop comes back to 1-1 with its unsaved document.
+    await page.click('[data-slot=toolbar] button:has-text("Play")');
+    await page.waitForTimeout(500);
+    const playing = await page.evaluate(() => {
+      const win = document.getElementById('game').contentWindow;
+      const editMode = win.game.debugUI.editMode;
+      const scene = win.game.currentScene;
+      const goal = scene.getByName('Goal1');
+      const player = win.WEED.GameObject.instances[scene.playerIndex];
+      const out = { editing: editMode.active, playing: editMode.playing, scale: win.WEED.Time.scale };
+      player.setPosition(goal.x, goal.y - 140); // it falls onto the goal
+      return out;
+    });
+    await page.waitForFunction(
+      () => String(document.getElementById('game').contentWindow.game.currentScene.sceneFileUrl).endsWith('/1-2.scene.json'),
+      undefined,
+      { timeout: 10000 },
+    );
+    await page.waitForTimeout(500);
+    await page.click('[data-slot=toolbar] button:has-text("Stop")');
+    await page.waitForFunction(
+      () => {
+        const game = document.getElementById('game').contentWindow.game;
+        return String(game.currentScene.sceneFileUrl).endsWith('/1-1.scene.json') && game.debugUI.editMode.active === true;
+      },
+      undefined,
+      { timeout: 10000 },
+    );
+    await page.waitForTimeout(300);
+    state = await readGame(page);
+    check(
+      'stop',
+      playing.scale > 0 && !playing.editing && playing.playing && state.active && state.width === 640 && state.dirty && state.canUndo,
+      `playing at ${playing.scale}×; after Stop: editing ${state.active}, width ${state.width}, unsaved ${state.dirty}, undo ${state.canUndo}`,
     );
 
     check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));

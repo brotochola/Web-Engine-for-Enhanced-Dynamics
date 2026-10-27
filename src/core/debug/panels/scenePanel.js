@@ -78,6 +78,11 @@ export class ScenePanel {
     this.elements.editBtn.title = 'Edit mode (Shift+E): the world holds still, the view is yours';
     controlsRow.appendChild(this.elements.editBtn);
 
+    // Stop (ED-16): the level as its scene file's document has it, in edit mode.
+    this.elements.stopBtn = createButton('■ Stop', '', () => this.debugUI.editMode.stop());
+    this.elements.stopBtn.title = 'Back to the level as its scene file’s document has it, in edit mode';
+    controlsRow.appendChild(this.elements.stopBtn);
+
     // This page in the editor page (D9, ED-15), where it is served beside the engine's source.
     const editorPage = this.debugUI.hosted === null ? editorPageUrl() : null;
     if (editorPage !== null) {
@@ -133,6 +138,10 @@ export class ScenePanel {
   /** The Edit button shows whether edit mode is on (EditMode calls it on every change), and Step and the speed follow. */
   updateEditButton() {
     if (this.elements.editBtn) this.elements.editBtn.classList.toggle('active', this.debugUI.editing);
+    if (this.elements.stopBtn) {
+      this.elements.stopBtn.disabled = !this.debugUI.scene?.sceneFileUrl;
+      this.elements.stopBtn.classList.toggle('active', this.debugUI.editMode?.playing === true);
+    }
     this._updatePlayPauseState();
     this._showSpeed();
   }
