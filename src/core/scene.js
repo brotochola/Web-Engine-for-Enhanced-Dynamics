@@ -1941,7 +1941,7 @@ class Scene {
     } else if (e.data.msg === 'gameObjectEvent') {
       this._dispatchEntityEvent(e.data.name, e.data.data, e.data.entityIndex, e.data.className);
     } else if (e.data.msg === 'entityError' || e.data.msg === 'entityErrorCount') {
-      this._onEntityError(e.data);
+      this._onEntityError(e.data, e.currentTarget.name);
     } else if (e.data.msg === 'box2dReady') {
       const payload = {
         msg: 'box2dReady',
@@ -2078,10 +2078,12 @@ class Scene {
   /**
    * A worker's ErrorReporter posts the first throw of each distinct error, then
    * counts at most once a second. The worker already printed the Error; here
-   * the scene keeps the list (getEntityErrors) and, in debug, shows it.
+   * the scene keeps the list (getEntityErrors) and, in debug, shows it. Counts are kept per worker by the name the
+   * page gave it: a worker's own name is empty for logic workers, and two of them would overwrite each other's.
    * @param {object} data - entityError or entityErrorCount message
+   * @param {string} [workerName] - the posting worker's name on the page (logic0, logic1, …)
    */
-  _onEntityError(data) {
+  _onEntityError(data, workerName = data.workerName) {
     let rec = this._entityErrors.get(data.key);
     if (data.msg === 'entityError') {
       if (!rec) {
@@ -2098,7 +2100,7 @@ class Scene {
     } else if (!rec) {
       return;
     }
-    rec.counts.set(data.workerName, data.count);
+    rec.counts.set(workerName, data.count);
     this._renderEntityErrors();
   }
 

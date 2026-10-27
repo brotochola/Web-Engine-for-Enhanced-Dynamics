@@ -112,3 +112,18 @@ test('a throwing tick names the entity and the rest of the type still ticks', as
   assert.equal(msgs[0].entityIndex, 1);
   assert.equal(msgs[0].phase, 'tick');
 });
+
+test('the scene adds up one error’s counts from every logic worker, whose reporters share a name', async () => {
+  const { Scene } = await import('../../src/core/scene.js');
+  const scene = Object.create(Scene.prototype);
+  scene._entityErrors = new Map();
+  scene._entityErrorsDismissed = false;
+  const post = (worker, data) => scene.handleMessageFromWorker({ data: { workerName: 'logic', ...data }, currentTarget: { name: worker } });
+  const first = { msg: 'entityError', key: 'Enemy|tick|boom', phase: 'tick', className: 'Enemy', entityIndex: 4, message: 'boom', stack: '', count: 1 };
+  post('logic0', first);
+  post('logic1', { ...first, entityIndex: 9 });
+  post('logic0', { msg: 'entityErrorCount', key: 'Enemy|tick|boom', count: 50 });
+  post('logic1', { msg: 'entityErrorCount', key: 'Enemy|tick|boom', count: 30 });
+  const [row] = scene.getEntityErrors();
+  assert.equal(row.count, 80, 'logic0’s 50 and logic1’s 30, not the last one alone');
+});
