@@ -38,6 +38,21 @@ test('every class a level places is in the scene, within its pool', () => {
   }
 });
 
+test('each level places the player as Player, where it starts; its tuning is spawn params, and a save does not keep it', async () => {
+  const { BluePlatformerPlayer } = await import('../platformerGameScene/gameObjects/bluePlatformerPlayer.js');
+  for (const name of ['1-1.scene.json', '1-2.scene.json']) {
+    const players = level(name).entities.filter((e) => e.class === 'BluePlatformerPlayer');
+    assert.deepEqual(players.map((e) => e.name), ['Player'], `${name}: one, by the name the scene finds it by`);
+  }
+  const d = describeSpawnParams(BluePlatformerPlayer);
+  for (const key of ['jumpSpeed', 'moveAcceleration', 'scale', 'radius', 'friction', 'linearDamping', 'lightIntensity']) {
+    assert.ok(d.indexOf[key] >= 0, `${key}: a field of the editor's inspector`);
+  }
+  assert.equal(d.defaults[d.indexOf.jumpSpeed], 1333);
+  assert.equal(d.defaults[d.indexOf.scale], 0.35, 'what its ticks draw it at, so the editor shows it as it plays');
+  assert.notEqual(BluePlatformerPlayer.serializable, true, 'a level places it: a save does not keep it');
+});
+
 test('Goal declares next as a string param, for the editor', () => {
   const d = describeSpawnParams(Goal);
   assert.equal(d.kindNames[d.indexOf.next], 'string');

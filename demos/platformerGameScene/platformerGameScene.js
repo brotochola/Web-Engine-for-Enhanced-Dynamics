@@ -7,6 +7,8 @@ const { Scene, Camera, Transform, Layer, BLEND_MODES } = WEED;
 
 const BLOOM_LAYER = 'bloom';
 const BLOOM_RESOLUTION = 1;
+/** The player's name in every level file. */
+const PLAYER = 'Player';
 
 export class PlatformerGameScene extends Scene {
   static config = {
@@ -88,7 +90,8 @@ export class PlatformerGameScene extends Scene {
   };
 
   static entities = [
-    [BluePlatformerPlayer, 1],
+    // One player, and a free slot: the editor respawns it on each edit before the old one's slot is free.
+    [BluePlatformerPlayer, 2],
     [Platform, 64],
     [Goal, 4],
   ];
@@ -101,10 +104,13 @@ export class PlatformerGameScene extends Scene {
     this.playerIndex = -1;
   }
 
-  // The platforms and the goal are in the level's scene file (levels/1-1.scene.json, 1-2, …).
+  // The player, the platforms and the goal are in the level's scene file (levels/1-1.scene.json, 1-2, …): the
+  // player is its Player record, where it starts and its params (BluePlatformerPlayer.spawnParams).
   create() {
     Camera.setZoom(1.25);
     // this._syncBloomTexels();
+    this.playerIndex = this.getByName(PLAYER)?.index ?? -1;
+    if (this.playerIndex >= 0) Camera.centerOn(Transform.x[this.playerIndex], Transform.y[this.playerIndex]);
     // The player reached a goal (Goal.onCollisionEnter, on a logic worker): the next level.
     this.on('goalReached', (_data, goalIndex) => this.goToNextLevel(goalIndex));
   }
@@ -124,24 +130,6 @@ export class PlatformerGameScene extends Scene {
     this.game.loadScene(new URL(next, this.sceneFileUrl).href, { data: { levelsDone } });
   }
 
-  createNewGame() {
-    const playerHandle = BluePlatformerPlayer.spawn({
-      x: 240,
-      y: 1700,
-      scaleX: 0.42,
-      scaleY: 0.42,
-      worldWidth: this.config.worldWidth,
-      worldHeight: this.config.worldHeight,
-      // layer: BLOOM_LAYER,
-    });
-
-    this.playerIndex = playerHandle.index;
-    const startX = this.playerIndex >= 0 ? Transform.x[this.playerIndex] : 240;
-    const startY = this.playerIndex >= 0 ? Transform.y[this.playerIndex] : 1700;
-    Camera.centerOn(startX, startY);
-
-  }
-
   _syncBloomTexels() {
     const w = Camera.canvasWidth * BLOOM_RESOLUTION;
     const h = Camera.canvasHeight * BLOOM_RESOLUTION;
@@ -154,6 +142,10 @@ export class PlatformerGameScene extends Scene {
 
   update() {
     // this._syncBloomTexels();
+    // By name each frame: the editor respawns the player when one of its params changes, at another index.
+    const player = this.getByName(PLAYER);
+    if (player === null) return; // a level without one
+    this.playerIndex = player.index;
     this._playerX = Transform.x[this.playerIndex];
     this._playerY = Transform.y[this.playerIndex];
     Camera.follow(this._playerX, this._playerY, 0.15);

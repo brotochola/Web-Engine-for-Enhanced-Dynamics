@@ -5,14 +5,14 @@ A scene has two parts:
 - **The scene class** (code): its settings (`static config`), its pools (`static entities`), its message names, and its rules: `preload`, `create`, `createNewGame`, `update`, the `scene.on` listeners.
 - **A scene file** (`*.scene.json`, data): which entities a level places, where, and with what settings.
 
-Levels that share their rules share one class, and each level is a file. The platformer demo is one `PlatformerGameScene` with two levels, [`levels/1-1.scene.json`](../../demos/platformerGameScene/levels/1-1.scene.json) and [`levels/1-2.scene.json`](../../demos/platformerGameScene/levels/1-2.scene.json); a goal at the end of each loads the other. Scene files are plain JSON, laid out to be edited by hand and read in a diff.
+Levels that share their rules share one class, and each level is a file. The platformer demo is one `PlatformerGameScene` with two levels, [`levels/1-1.scene.json`](../../demos/platformerGameScene/levels/1-1.scene.json) and [`levels/1-2.scene.json`](../../demos/platformerGameScene/levels/1-2.scene.json); a goal at the end of each loads the other. Each level places its player too, as `Player`: where it starts, and its jump, speed and light (its class's `spawnParams`); the scene finds it with `getByName('Player')`. Scene files are plain JSON, laid out to be edited by hand and read in a diff.
 
 ## What goes where
 
 | In the scene file | In the scene class |
 | --- | --- |
-| What a designer places and moves: platforms, walls, goals, doors, trees | What every level shares: settings, pools, layers, shaders, the lights `create()` sets up |
-| The settings that differ between placed entities: a platform's size, which door a lever opens | What follows from the game being played: the player, the score, enemies spawned by rules |
+| What a designer places and moves: platforms, walls, goals, doors, trees, the player where it starts | What every level shares: settings, pools, layers, shaders, the lights `create()` sets up |
+| The settings that differ between placed entities: a platform's size, which door a lever opens, how high the player jumps | What follows from the game being played: the score, enemies spawned by rules, what a save brings back |
 
 Rule of thumb: **if you would drag it in an editor, it goes in the file; if it is the same in every level, or it depends on the state of the game, it stays in code.**
 
@@ -63,7 +63,8 @@ A scene class can name its first level, relative to its module, so that loading 
 ```js
 // demos/platformerGameScene/platformerGameScene.js
   static entities = [
-    [BluePlatformerPlayer, 1],
+    // One player, and a free slot: the editor respawns it on each edit before the old one's slot is free.
+    [BluePlatformerPlayer, 2],
     [Platform, 64],
     [Goal, 4],
   ];

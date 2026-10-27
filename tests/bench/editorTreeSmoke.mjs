@@ -32,7 +32,7 @@
  *     keys      in edit mode, "platform1", Enter: Platform1 selected; F2 "Ledge" renames it (the inspector follows),
  *               Ctrl+Z takes it back; Del deletes it, Ctrl+Z puts it back; nothing left unsaved
  *     menu      Platform3's menu; its Delete takes it out (one undo), Ctrl+Z puts it back; Shift+F10 in the list opens
- *               the selection's, its first item active; the player's (runtime) row: Frame and Select all, disabled
+ *               the selection's, its first item active; the player's row (the level's Player): a placed entity's menu
  *
  *   node tests/bench/editorTreeSmoke.mjs [--headed] [--shots <dir>]
  */
@@ -630,7 +630,7 @@ async function platformer(browser, server, shots, errors) {
       `${start.records} → ${deleted.records}; Ctrl+Z: ${restored.records}, ${restored.selection}, unsaved ${restored.dirty}`,
   );
 
-  // ---- the menu (ED-64): Delete from it and undo; the player's (runtime) row ----
+  // ---- the menu (ED-64): Delete from it and undo; the player's row (the level's Player, placed) ----
   await page.fill(FILTER, 'platform');
   await page.waitForTimeout(150);
   await page.locator('[data-slot=tree] [data-row]', { hasText: /^Platform3\s/ }).click({ button: 'right' });
@@ -649,7 +649,7 @@ async function platformer(browser, server, shots, errors) {
   await page.keyboard.press('Escape');
   await page.fill(FILTER, 'blue');
   await page.waitForTimeout(150);
-  await page.locator('[data-slot=tree] [data-row]', { hasText: /^#\d+\s+runtime/ }).first().click({ button: 'right' });
+  await page.locator('[data-slot=tree] [data-row]', { hasText: /^Player\s/ }).first().click({ button: 'right' });
   await page.waitForTimeout(100);
   const player = await readMenu(page);
   await page.keyboard.press('Escape');
@@ -666,12 +666,11 @@ async function platformer(browser, server, shots, errors) {
       byKey.caption.startsWith('Platform3') &&
       byKey.active === 0 &&
       player !== null &&
-      JSON.stringify(player.labels) === JSON.stringify(['Frame', '—', 'Select all BluePlatformerPlayer']) &&
-      player.disabled.at(-1) === true,
+      player.caption.startsWith('Player') &&
+      JSON.stringify(player.labels) === JSON.stringify(['Frame', 'Rename…', 'Duplicate', ...copy, 'Delete', '—', 'Select all BluePlatformerPlayer (1)']),
     `Platform3's ${JSON.stringify(menu?.labels)}; Delete: records ${start.records} → ${deletedByMenu.records} ` +
       `(${deletedByMenu.undo}); Ctrl+Z ${back.records} (focus ${back.focus}); Shift+F10: "${byKey?.caption}", item ` +
-      `${byKey?.active} active; the player's ${JSON.stringify(player?.labels)}, ` +
-      `Select all disabled ${player?.disabled.at(-1)}`,
+      `${byKey?.active} active; the player's (placed by the level) "${player?.caption}": ${JSON.stringify(player?.labels)}`,
   );
   await page.close();
 }

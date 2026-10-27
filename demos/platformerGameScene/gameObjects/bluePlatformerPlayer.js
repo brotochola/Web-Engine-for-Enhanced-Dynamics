@@ -5,17 +5,25 @@ import { PlatformerCharacterComponent } from '../components/platformerCharacterC
 const { LightEmitter, GameObject, AdobeAnimComponent, ParticleEmitter, AdobeAnimRegistry, RigidBody, Collider, Keyboard, Gamepad, CollisionListener, Transform } = WEED;
 
 export class BluePlatformerPlayer extends GameObject {
-  static serializable = true;
   static components = [PlatformerCharacterComponent, AdobeAnimComponent, RigidBody, Collider, LightEmitter, CollisionListener];
   static assetName = 'blue_character';
 
-  // One-shot kick: addVelocity, not an acceleration burst (whose height
-  // depended on how many physics steps ran before the next tick).
-  static jumpSpeed = 1333; // px/s, what the old -80000 px/s² burst gave on one 60 Hz step
-  static moveAcceleration = 3800; // px/s²
+  // What a level file (levels/*.scene.json: its Player, where it starts) and the editor set for the player:
+  // onSpawned gets every one, the default filled in when the file leaves it out. A level places it, so a save
+  // does not keep it (not serializable).
+  static spawnParams = {
+    // One-shot kick: addVelocity, not an acceleration burst (whose height
+    // depended on how many physics steps ran before the next tick).
+    jumpSpeed: { value: 1333, min: 200, max: 4000, step: 1, tip: 'px/s: what the old -80000 px/s² burst gave on one 60 Hz step' },
+    moveAcceleration: { value: 3800, min: 100, max: 20000, step: 10, tip: 'px/s² while left or right is held' },
+    scale: { value: 0.35, min: 0.05, max: 2, step: 0.01, tip: 'The character’s size' },
+    radius: { value: 30, min: 4, max: 200, step: 1, tip: 'Its collider’s radius, px' },
+    friction: { value: 0.2, min: 0, max: 2, step: 0.01 },
+    linearDamping: { value: 0.5, min: 0, max: 10, step: 0.05, tip: 'How fast it slows down by itself' },
+    lightIntensity: { value: 3000, min: 0, max: 30000, step: 100, tip: 'The light it carries' },
+  };
   static stickThreshold = 0.35; // left stick past this counts as left/right
   static stickJumpThreshold = 0.6; // stick pushed up this far jumps, like the up arrow
-  static scale = 0.35;
   static clips = Object.freeze({
     idle: 'idle',
     running: 'running',
@@ -62,35 +70,38 @@ export class BluePlatformerPlayer extends GameObject {
     }
   }
 
-  onSpawned(spawnConfig = {}) {
-    this.rigidBody.static = 0;
-    this.rigidBody.linearDamping = 0.5;
+  onSpawned(params) {
+    // What each tick reads.
+    this.jumpSpeed = params.jumpSpeed;
+    this.moveAcceleration = params.moveAcceleration;
+    this.spriteScale = params.scale;
 
-    this.collider.radius = 30;
-    this.collider.friction = 0.2
+    this.rigidBody.static = 0;
+    this.rigidBody.linearDamping = params.linearDamping;
+
+    this.collider.radius = params.radius;
+    this.collider.friction = params.friction;
     this.collider.visualRange = 120;
     this.setFixedRotation(1);
     this.platformerCharacterComponent.isItStandingOnPlatform = -1
 
     this.lightEmitter.lightColor = 0xffffff;
-    this.lightEmitter.lightIntensity = 3000;
+    this.lightEmitter.lightIntensity = params.lightIntensity;
     this.lightEmitter.height = 0;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0.5;
 
-    this.x = spawnConfig.x ?? 100;
-    this.y = spawnConfig.y ?? 100;
+    this.x = params.x;
+    this.y = params.y;
     this.setVelocity(0, 0);
     this.jumpWasDown = false;
 
-    const defaultClip =
-      spawnConfig.clipName ??
-      this._resolveClipName(BluePlatformerPlayer.clips.idle, BluePlatformerPlayer.clips.running);
+    const defaultClip = this._resolveClipName(BluePlatformerPlayer.clips.idle, BluePlatformerPlayer.clips.running);
 
     this.adobeAnimComponent.setAsset(BluePlatformerPlayer.assetName, defaultClip, {
       loop: true,
-      scaleX: spawnConfig.scaleX ?? BluePlatformerPlayer.scale,
-      scaleY: spawnConfig.scaleY ?? BluePlatformerPlayer.scale,
+      scaleX: params.scale,
+      scaleY: params.scale,
       anchorX: 0.5,
       anchorY: 0.73,
       alpha: 1,
@@ -131,9 +142,9 @@ export class BluePlatformerPlayer extends GameObject {
       }
     }
 
-    if (this.rigidBody.vx > 0) this.adobeAnimComponent.scaleX = BluePlatformerPlayer.scale;
-    else this.adobeAnimComponent.scaleX = -BluePlatformerPlayer.scale;
-    this.adobeAnimComponent.scaleY = BluePlatformerPlayer.scale;
+    if (this.rigidBody.vx > 0) this.adobeAnimComponent.scaleX = this.spriteScale;
+    else this.adobeAnimComponent.scaleX = -this.spriteScale;
+    this.adobeAnimComponent.scaleY = this.spriteScale;
   }
 
   tick(dtRatio) {
@@ -149,10 +160,10 @@ export class BluePlatformerPlayer extends GameObject {
 
     // console.log(left, right, jumpHeld);
 
-    if (left) this.addAcceleration(-BluePlatformerPlayer.moveAcceleration * ratioOfSideMovement, 0);
-    if (right) this.addAcceleration(BluePlatformerPlayer.moveAcceleration * ratioOfSideMovement, 0);
+    if (left) this.addAcceleration(-this.moveAcceleration * ratioOfSideMovement, 0);
+    if (right) this.addAcceleration(this.moveAcceleration * ratioOfSideMovement, 0);
     if (jumpHeld && this.rigidBody.vy == 0 && this.platformerCharacterComponent.isItStandingOnPlatform > -1) {
-      this.addVelocity(0, -BluePlatformerPlayer.jumpSpeed);
+      this.addVelocity(0, -this.jumpSpeed);
     }
 
     if (Math.abs(this.rigidBody.vx) < 3) {

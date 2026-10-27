@@ -3,6 +3,7 @@
   "script": "../platformerGameScene.js",
   "export": "PlatformerGameScene",
   "entities": [
+    { "name": "Player", "class": "BluePlatformerPlayer", "x": 240, "y": 1700 },
     { "name": "Platform1", "class": "Platform", "x": 600, "y": 2050, "config": { "width": 1200, "height": 60, "tint": 5927055 } },
     { "name": "Platform2", "class": "Platform", "x": 1820, "y": 1760, "config": { "width": 420, "height": 50, "tint": 5204355 } },
     { "name": "Platform3", "class": "Platform", "x": 2300, "y": 1630, "config": { "width": 280, "height": 44, "tint": 5204355 } },
