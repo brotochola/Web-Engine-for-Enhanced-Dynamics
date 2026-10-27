@@ -18,6 +18,7 @@
 // while a drag is over the view: then the cross, a few lines.
 
 import { snapTo } from './moveTool.js';
+import { viewScreenToWorld } from '../../../util/viewBounds.js';
 
 /** The drag data type that carries a class's name from the palette. */
 export const CLASS_DRAG_TYPE = 'application/x-weed-class';
@@ -32,9 +33,8 @@ const TWO_PI = Math.PI * 2;
 
 /**
  * A client point (an event's clientX and clientY) as a world point, as Mouse maps a click (Mouse._place, _writeWorld):
- * the point in the view's box, then through the drawn camera, turned about the canvas's center when the camera is.
- * The arithmetic is util/viewBounds.js's viewScreenToWorld, which the editor's bundle cannot import (editorKit.js does
- * not publish it); editorDropPlace.test.js holds it to Mouse's.
+ * the point in the view's box, then through the drawn camera, turned about the canvas's center when the camera is
+ * (util/viewBounds.js viewScreenToWorld, Mouse's own arithmetic).
  * @param {number} clientX
  * @param {number} clientY
  * @param {{ left: number, top: number }} rect - the view's (canvas's) box
@@ -44,25 +44,17 @@ const TWO_PI = Math.PI * 2;
  * @returns {{ x: number, y: number }} out
  */
 export function viewPointToWorld(clientX, clientY, rect, camera, out) {
-  const zoom = camera.zoom || 1;
-  const rotation = camera.rotation || 0;
-  const width = camera.canvasWidth || 0;
-  const height = camera.canvasHeight || 0;
-  const sx = clientX - rect.left;
-  const sy = clientY - rect.top;
-  if (!rotation || !(width > 0 && height > 0 && zoom > 0)) {
-    out.x = sx / zoom + camera.x;
-    out.y = sy / zoom + camera.y;
-    return out;
-  }
-  const dx = sx - width * 0.5;
-  const dy = sy - height * 0.5;
-  const c = Math.cos(rotation);
-  const s = Math.sin(rotation);
-  const inv = 1 / zoom;
-  out.x = camera.x + width / (2 * zoom) + (c * dx + s * dy) * inv;
-  out.y = camera.y + height / (2 * zoom) + (-s * dx + c * dy) * inv;
-  return out;
+  return viewScreenToWorld(
+    camera.x,
+    camera.y,
+    camera.zoom || 1,
+    camera.rotation || 0,
+    camera.canvasWidth || 0,
+    camera.canvasHeight || 0,
+    clientX - rect.left,
+    clientY - rect.top,
+    out,
+  );
 }
 
 /** Whether a drag carries a class from the palette (its types can be read while it is under way; its data cannot). */
