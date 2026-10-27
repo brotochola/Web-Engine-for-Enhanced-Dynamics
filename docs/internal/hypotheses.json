@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-26",
+  "updated": "2026-10-27",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`) and bugs (kind `bug`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -8577,6 +8577,28 @@
       "records": [
         "R-0655"
       ]
+    },
+    {
+      "id": "N-82",
+      "title": "A pause and a resume within one display frame left a worker running two loops",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-10-27 (cdb6af67), a bug the author hit in the editor page",
+      "date": "2026-10-27",
+      "result": "A pause cleared the workers' timers but not the requestAnimationFrame their loop had asked for, and resume() started a loop even while one ran. A fast swap pauses and resumes in 2-6 ms, so each one (the editor's Stop, a game's next level) added a loop to logic, spatial, particle, pre-render and physics: 60, 121, 180, 237 and 300 frames/s in Chrome after 0 to 4 Stops. Each extra physics frame stepped the world 1/60 s. Now a pause cancels the frame and a resume while running does nothing: 60 after each Stop.",
+      "area": "workers",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-82"
+      ],
+      "aliases": [
+        "double loop",
+        "stop speeds up",
+        "resume twice",
+        "raf after pause"
+      ],
+      "records": [
+        "R-0656"
+      ]
     }
   ],
   "records": [
@@ -14449,6 +14471,18 @@
       "title": "N-81: in the editor's held world a respawned body's pose is not published; tried a dt-0 sync, not kept",
       "verdict": "open",
       "text": "**N-81: a paused world makes no body (REVIEW_PLAN.md N-81, VISUAL_EDITOR_PLAN.md found item 39).** 2026-10-27, headless Chromium, the editor page on scratch copies of the platformer's 1-1 and tests/fixtures/levels/editorFormat.scene.json.\n\nProbes (scratch scripts, page-side reads of `scene.buffers.poseSync` and the two pose buffers):\n\n| | without a dt-0 sync | with it (not kept) |\n| --- | --- | --- |\n| Platform5 moved once (slot 32 → 23): published x, rotC | 0, 0.00 (ready frame stuck) | 3470, 1.00 (27 ms after the edit) |\n| moved again (slot 23 → 32) | 3070 (its first place), 0.00 | 3870, 1.00 |\n| the format level's dynamic Crate, twice | 0, 0.00; then 400 (its first place), 0.00 | 800, 1.00; then 1200, 1.00 |\n\nA stale pose with rotation (0, 0) is not live for the collect (`poseRotationLive`), which then draws `Transform`, where the spawn put the body: nothing wrong shows. The visible lag first suspected (1.5 s before a moved platform drew) is headless Chromium's pacing: the physics worker gets about 3 frames a second there and the pre-render follows it (VISUAL_EDITOR_PLAN.md found item 40).\n\nThe change tried, on the physics host and weedjsPost.js: the host calls the step at dt 0; doStep at dt 0 runs syncBodies, drainCommands and syncJoints, publishes the moved list of the teleports (not the WASM's move events, the last step's) and the pose when something changed. Reverted: no visible gain, and the step path is the physics worker's hot path.\n\n**Verdict: open** (a latent bug, no fix kept).\n"
+    },
+    {
+      "id": "R-0656",
+      "date": "2026-10-27",
+      "time": "13:19",
+      "timeFrom": "recorded",
+      "title": "N-82: a fast swap left two loops per worker (60 → 121 → 180 → 237 → 300 frames/s over 4 Stops); a pause cancels the frame, a resume while running does nothing",
+      "verdict": "kept-hygiene",
+      "text": "**N-82: each fast swap added a loop to five workers (REVIEW_PLAN.md N-82, VISUAL_EDITOR_PLAN.md found item 46).** 2026-10-27. The author saw the logic worker at 5000 fps (the meter's floor of 0.2 ms: two frames in one tick) after a few Stops in the editor page.\n\nProbe (scratch script, the platformer in the editor page, 1366 × 768, Chrome with a window): each worker's frames in one second, from the frame numbers in `frameRateData`, after edit mode, Play and each Stop.\n\n| | physics | particle | logic0 | pre-render | renderer |\n| --- | --- | --- | --- | --- | --- |\n| before the fix: Play | 59 | 60 | 60 | 60 | 60 |\n| after Stop 1, 2, 3, 4 | 121, 180, 237, 300 | the same | the same | the same | 61, 60, 59, 60 |\n| a fifth Stop, while playing | 356 | 356 | 356 | 356 | 59 |\n| after the fix: every Stop | 59-60 | 59-60 | 59-60 | 59-60 | 59-60 |\n\nThe swap's pause-to-resume window measured 2.2 to 5.7 ms, within one display frame. The requestAnimationFrame that each worker had asked for before the pause ran after the resume, beside the loop `resume()` started. The renderer runs on Pixi's ticker, which is not doubled. Headless Chromium did not show it: logic0 stayed at 47-60 over the same steps, so its worker frames are paced another way. Each extra physics frame had dt under 1 ms, which the host takes as 1/60 s, so the world sped up with the loops.\n\nThe fix (cdb6af67): AbstractWorker and the physics host keep the id of the frame they asked for and cancel it on a pause. AbstractWorker, the Pixi worker and the physics host ignore a resume while running, since `Scene.resume` posts to every worker. `workerLoopResume.test.js` replays a pause and a resume within one frame with display frames run by hand: one loop with the fix, two without it, for an AbstractWorker and for the physics host.\n\n**Verdict: kept-hygiene** (a bug fix; nothing on the per-frame path but a stored id).",
+      "commits": [
+        "cdb6af67"
+      ]
     }
   ],
   "leads": [
