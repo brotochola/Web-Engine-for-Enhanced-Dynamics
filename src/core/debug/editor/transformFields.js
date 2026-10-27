@@ -2,9 +2,10 @@
 // entity's position (its record's x, y), its rotation in degrees and its sprite's scale (the record's rotation in
 // radians, scaleX, scaleY: sceneFile.js; 0 and 1 are left out of the record). A value is typed (Enter or leaving the
 // field writes it), or dragged by its label: 1 px is a world unit, a degree or 0.01 of scale, ×10 with Shift, ×0.1
-// with Ctrl; a position snaps to the grid as a drag in the view does, unless Alt is held. A drag shows on the live
-// entity as it goes and writes the record once, on letting go: one undo, one respawn (EditMode.editSelected). Esc
-// during a drag puts the entity back.
+// with Ctrl; a position snaps to the grid as a drag in the view does, unless Alt is held. As a drag goes, the moved or
+// turned box is drawn over the view (ghost.js: a body's pose is the physics worker's) and the sprite's scale shows on
+// the entity; the record is written once, on letting go: one undo, one respawn (EditMode.editSelected). Esc during a
+// drag drops it.
 //
 // Cost: built once, filled when the selection changes; a drag writes one field's text and a few component values per
 // pointer move, and allocates nothing.
@@ -112,9 +113,11 @@ export class TransformFields {
     if (this._drag < 0) return;
     const v = this._drag;
     this._drag = -1;
+    this.selection.editor?.ghost?.clear();
     if (this._record !== null) {
-      this._preview(VALUES[v].key, recordValue(this._record, VALUES[v].key));
-      this._inputs[v].value = formatValue(recordValue(this._record, VALUES[v].key), VALUES[v].decimals);
+      const key = VALUES[v].key;
+      if (key === 'scaleX' || key === 'scaleY') this._preview(key, recordValue(this._record, key));
+      this._inputs[v].value = formatValue(recordValue(this._record, key), VALUES[v].decimals);
     }
   }
 
@@ -207,6 +210,7 @@ export class TransformFields {
   _dragEnd(v) {
     if (this._drag !== v) return;
     this._drag = -1;
+    this.selection.editor?.ghost?.clear();
     if (this._dragValue !== this._dragStartValue) this._write(v, this._dragValue);
   }
 
@@ -222,24 +226,25 @@ export class TransformFields {
     }
   }
 
-  /** The live entity as it would be: a drag's value shown before it is written. */
+  /**
+   * A drag's value shown before it is written: a moved or turned box drawn over the view (the editor's ghost: the
+   * physics worker owns a body's pose), or the sprite's scale on the entity (no worker writes that).
+   */
   _preview(key, value) {
     const i = this.selection.index;
     if (i < 0) return;
+    const ghost = this.selection.editor?.ghost;
+    const from = this._dragStartValue;
     switch (key) {
       case 'x':
-        Transform.x[i] = value;
+        ghost?.showOne(i, value - from, 0, 0, Transform.x[i], Transform.y[i]);
         break;
       case 'y':
-        Transform.y[i] = value;
+        ghost?.showOne(i, 0, value - from, 0, Transform.x[i], Transform.y[i]);
         break;
-      case 'rotation': {
-        const rad = value / DEG;
-        if (Transform.rotation) Transform.rotation[i] = rad;
-        if (Transform.rotC) Transform.rotC[i] = Math.cos(rad);
-        if (Transform.rotS) Transform.rotS[i] = Math.sin(rad);
+      case 'rotation':
+        ghost?.showOne(i, 0, 0, (value - from) / DEG, Transform.x[i], Transform.y[i]);
         break;
-      }
       default: {
         if (!SpriteRenderer.active || SpriteRenderer.active[i] !== 1) return;
         // A flip is the stored scale's sign (GameObject.setScale).

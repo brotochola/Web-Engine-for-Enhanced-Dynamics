@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 import { Transform } from '../../src/components/transform.js';
 import { TransformFields, formatValue, recordValue, writeValue } from '../../src/core/debug/editor/transformFields.js';
+import { TransformGhost } from '../../src/core/debug/editor/ghost.js';
 
 class El {
   constructor(tag) {
@@ -51,6 +52,7 @@ function fieldsFor(record) {
     index: 0,
     editor: {
       move: { snap: 8 },
+      ghost: new TransformGhost(),
       editSelected(label, write) {
         const before = JSON.stringify(record);
         write(record);
@@ -104,27 +106,29 @@ test('typed: one write per field left; the same value writes nothing; text that 
   });
 });
 
-test('a drag on a label shows on the live entity as it goes, snapped, and writes once on letting go; Esc puts it back', () => {
+test('a drag on a label draws the moved or turned box as it goes, snapped, and writes once on letting go; Esc drops it', () => {
   withDocument(() => {
     Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(2)), 2);
     for (const k of ['x', 'y', 'rotation', 'rotC', 'rotS']) Transform[k] = new Float32Array(2);
     const record = { name: 'Block1', class: 'Block', x: 300, y: 200 };
     const { fields, axes, writes } = fieldsFor(record);
+    const ghost = fields.selection.editor.ghost;
     const [xAxis, , rotationAxis] = axes;
     xAxis.onpointerdown(pointer(100));
     xAxis.onpointermove(pointer(113));
-    assert.equal(Transform.x[0], 312, '13 px is 13 units, on the 8 px grid');
+    assert.deepEqual([ghost.active, ghost._dx, ghost._dy], [true, 12, 0], '13 px is 13 units, on the 8 px grid: 312');
     xAxis.onpointermove(pointer(123, { altKey: true }));
-    assert.equal(Transform.x[0], 323, 'Alt: off the grid');
+    assert.equal(ghost._dx, 23, 'Alt: off the grid');
+    assert.equal(Transform.x[0], 0, 'the live entity is not moved (a body’s pose is the physics worker’s)');
     assert.deepEqual(writes, [], 'nothing written while dragging');
     xAxis.onpointerup();
-    assert.deepEqual([writes, record.x], [['move Block1'], 323]);
+    assert.deepEqual([writes, record.x, ghost.active], [['move Block1'], 323, false]);
 
     rotationAxis.onpointerdown(pointer(0));
     rotationAxis.onpointermove(pointer(9, { shiftKey: true }));
-    assert.ok(Math.abs(Transform.rotation[0] - Math.PI / 2) < 1e-6, '9 px with Shift: 90°');
+    assert.ok(Math.abs(ghost._dr - Math.PI / 2) < 1e-6, '9 px with Shift: 90°');
     fields.cancelDrag();
-    assert.equal(Transform.rotation[0], 0, 'Esc: as the record has it');
+    assert.equal(ghost.active, false, 'Esc: dropped');
     rotationAxis.onpointerup();
     assert.deepEqual(writes, ['move Block1'], 'a cancelled drag writes nothing');
   });

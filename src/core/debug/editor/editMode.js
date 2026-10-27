@@ -69,6 +69,8 @@ import { JointTool } from './jointTool.js';
 import { frameSelection, frameAll } from './frame.js';
 import { GridOverlay, loadGrid, saveGrid } from './grid.js';
 import { toggleShortcutSheet } from './shortcuts.js';
+import { RotateTool } from './rotateTool.js';
+import { TransformGhost } from './ghost.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -110,6 +112,8 @@ export class EditMode {
     this.move = new MoveTool(this.selection);
     /** The grid's lines (grid.js, ED-60); the step is move.snap. Both as the viewer left them. */
     this.grid = new GridOverlay(this);
+    /** Where a turn or a dragged inspector value would put entities, before it is written (ghost.js). */
+    this.ghost = new TransformGhost();
     const grid = loadGrid(SNAP_STEPS);
     this.move.snap = grid.snap;
     this.grid.show = grid.show;
@@ -142,6 +146,8 @@ export class EditMode {
     this.brush = this.addTool(new ScatterBrush(this));
     /** The selected entity's joints on the overlay, their anchors dragged (jointTool.js, ED-21). */
     this.addTool(new JointTool(this));
+    /** The rotate handle above the selection (rotateTool.js, ED-58). */
+    this.rotate = this.addTool(new RotateTool(this));
     /** The tool a press went to, until its button is let go. */
     this._toolWithPointer = null;
 
@@ -270,7 +276,7 @@ export class EditMode {
   /** Whether a tool draws on the overlay with nothing selected (the brush's circle): the overlay runs while one does. */
   wantsOverlay() {
     if (!this.active) return false;
-    if (this.grid.wantsOverlay()) return true;
+    if (this.grid.wantsOverlay() || this.ghost.wantsOverlay()) return true;
     const tools = this.tools; // each overlay frame: an index, no iterator
     for (let k = 0; k < tools.length; k++) if (tools[k].wantsOverlay?.() === true) return true;
     return false;
@@ -280,6 +286,7 @@ export class EditMode {
   drawOverlay(ctx, camera, zoom) {
     this.grid.drawOverlay(ctx, camera, zoom);
     this.move.drawOverlay(ctx, camera, zoom);
+    this.ghost.drawOverlay(ctx, camera, zoom);
     for (const tool of this.tools) tool.drawOverlay?.(ctx, camera, zoom);
   }
 

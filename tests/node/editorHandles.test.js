@@ -287,6 +287,7 @@ test('drawn in whole screen pixels: the handles, a drag’s ghost and value, a r
   const world = makeWorld();
   try {
     const { handles, editMode } = world;
+    editMode.tools.splice(editMode.tools.indexOf(editMode.rotate), 1); // the handles’ drawing only (editorRotate.test.js has the rotate handle’s)
     const camera = { x: 200, y: 100 };
     let ctx = fakeContext();
     editMode.drawOverlay(ctx, camera, 2);
