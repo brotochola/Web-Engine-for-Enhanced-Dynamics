@@ -1246,6 +1246,16 @@ export class Layer {
         return id >= 0 ? (1 << id) : 0;
     }
 
+    /** Whether some layer y-sorts now (a layer's flag can change at run time: the debug panel's checkbox). */
+    static anyYSorting() {
+        const ySorting = this._ySorting;
+        if (!ySorting) return false;
+        for (let i = 0; i < ySorting.length; i++) {
+            if (ySorting[i] === 1) return true;
+        }
+        return false;
+    }
+
     /**
      * True when this layer bit should receive instanced sprites (not density/compute).
      * @param {number} layerId

@@ -13,9 +13,10 @@ import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 
 const K = DECORATION_Y_SORT_SCALE;
 
-async function collectKeys(rows) {
+/** The keys pre-render collects for `rows`, and the y the queue draws them at; the entities y-sort unless told not to. */
+async function collectKeys(rows, { ySorting = true } = {}) {
   Layer.reset();
-  Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
+  Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: { ySorting }, lighting: {} });
   try {
     const n = rows.length;
     const visible = new SharedArrayBuffer(2 * (n + 1));
@@ -108,4 +109,15 @@ test('flat particles take the same key; zenithal ones keep sorting by height', a
   ]);
   assert.equal(keys[0], spriteYSortKey(80.3, K) + PARTICLE_SORT_BIAS);
   assert.equal(keys[1], 30);
+});
+
+test('with no layer y-sorting, particles take one key, computed for none, and draw the same rows', async () => {
+  // Nothing orders them then: orderSortKey keeps the zIndex alone, and the emit writes no key.
+  const rows = [{ y: 200.4, z: -60 }, { y: 140.4 }, { y: 80.3, flat: true }, { y: 80.3, z: -30, zenithal: true }];
+  const sorted = await collectKeys(rows);
+  const unsorted = await collectKeys(rows, { ySorting: false });
+  assert.deepEqual(unsorted.keys, [0, 0, 0, 0]);
+  const drawn = (r) => r.yRows.map((v) => Math.round(v * 10) / 10).sort((a, b) => a - b);
+  assert.deepEqual(drawn(unsorted), drawn(sorted), 'the same rows, drawn at the same y');
+  assert.notDeepEqual(sorted.keys, unsorted.keys, 'the keys a y-sorting layer orders by');
 });

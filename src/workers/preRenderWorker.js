@@ -1631,16 +1631,29 @@ class PreRenderWorker extends AbstractWorker {
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
-        const y = ParticleComponent.y;
-        const z = ParticleComponent.z;
-        const flat = ParticleComponent.flat;
-        const viewMode = ParticleComponent.viewMode;
         // renderOnly particles are drawn by their compute layer. Dropped here,
         // before they take a collector slot or a queue row.
         const renderOnly = ParticleComponent.renderOnlyLive &&
             Atomics.load(ParticleComponent.renderOnlyLive, 0) > 0
             ? ParticleComponent.renderOnly
             : null;
+        if (!Layer.anyYSorting()) {
+            // A particle's key orders it only in a layer that y-sorts: orderSortKey keeps the zIndex alone otherwise,
+            // and the emit writes no key. With none this frame they all take one key, and none is computed (its
+            // floor and loads cost pre-render 3 % with 65 000 particles in view), in a loop of its own.
+            COLLECT_Y[0] = 0;
+            for (let idx = 0; idx < visibleCount; idx++) {
+                const i = visibleData[1 + idx];
+                if (renderOnly && renderOnly[i]) continue;
+                this.collectRenderable(1, i);
+                this.visibleParticlesCount++;
+            }
+            return;
+        }
+        const y = ParticleComponent.y;
+        const z = ParticleComponent.z;
+        const flat = ParticleComponent.flat;
+        const viewMode = ParticleComponent.viewMode;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
