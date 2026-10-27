@@ -9,11 +9,11 @@
 // - animation: an animation's name, for setAnimation: the animations of the scene's spritesheets, each once, with the
 //   sheets that have it. The param holds only the name; the sheet is the one the class sets in its code.
 //
-// The lists are made once per atlas (a full load registers another), and so is each kind's datalist, which every field
-// of the kind names and the last one built holds: a selection change builds the field alone (littleCity's atlas has
-// 1,158 names). A pick from the list or the grid commits at once; typing commits when the field is left, as the other
-// text fields do. The palette's class pictures (classThumbs.js, ED-65) resolve a sprite param's default through the
-// same catalog.
+// The lists are made once per atlas (a full load registers another), and so is each kind's datalist, which a field
+// takes when it gets the focus: in the page with every inspector, its options cost littleCity's selection 2.2 ms (its
+// atlas has 1,158 names). A pick from the list or the grid commits at once; typing commits when the field is left, as
+// the other text fields do. The palette's class pictures (classThumbs.js, ED-65) resolve a sprite param's default
+// through the same catalog.
 
 import { SpriteSheetRegistry, isBigAtlasChunk } from '../../spriteSheetRegistry.js';
 import { KIND_ANIMATION } from '../../spawnParams.js';
@@ -92,8 +92,8 @@ export class AssetCatalog {
   }
 
   /**
-   * The suggestions of a kind's fields: one datalist per kind, its options made once per atlas and moved into each
-   * field as it is built, so a selection change makes none. Every field of the kind names it by its id.
+   * The suggestions of a kind's fields: one datalist per kind, its options made once per atlas, moved into a field when
+   * it gets the focus (only there is it needed), so a selection change neither makes nor moves one.
    * @param {number} kind - KIND_SPRITE or KIND_ANIMATION
    * @returns {HTMLDataListElement}
    */
@@ -171,8 +171,12 @@ export function assetPickerWidget(kind, value, commit, catalog, options = NO_OPT
     return box;
   }
   const what = kind === KIND_ANIMATION ? 'animation' : 'sprite';
-  const list = catalog.listFor(kind);
-  input.setAttribute('list', list.id);
+  // The scene's names as suggestions, from the kind's one datalist, taken when typing may start.
+  input.onfocus = () => {
+    const list = catalog.listFor(kind);
+    if (list.parentNode !== box) box.appendChild(list);
+    input.setAttribute('list', list.id);
+  };
   if (options.none === true) input.placeholder = '(none: the class picks)';
   const thumb = document.createElement('canvas');
   thumb.width = THUMB_SIZE;
@@ -217,6 +221,6 @@ export function assetPickerWidget(kind, value, commit, catalog, options = NO_OPT
     if (replaced && catalog.has(kind, input.value)) commit(input.value);
   };
   show();
-  box.append(pick, input, list);
+  box.append(pick, input);
   return box;
 }

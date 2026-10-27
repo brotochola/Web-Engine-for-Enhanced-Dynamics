@@ -460,10 +460,15 @@ test('the field: its thumbnail opens the grid on its value, or on what the entit
       pick.dispatch('click');
       assert.equal(doc.body.children.some((el) => 'pictureGrid' in el.dataset), false, 'its thumbnail again: closed');
 
-      // One datalist for every sprite field, its options made once.
+      // One datalist for every sprite field, its options made once, in the field that has the focus.
       const other = assetPickerWidget(KIND_SPRITE, 'tree_01', () => {}, catalog);
-      const list = [...other.all()].find((el) => el.tagName === 'DATALIST');
-      assert.equal([...field.all()].find((el) => el.tagName === 'DATALIST'), undefined, 'moved into the field built last');
+      doc.body.appendChild(other);
+      const listIn = (box) => [...box.all()].find((el) => el.tagName === 'DATALIST');
+      assert.deepEqual([listIn(field), listIn(other)], [undefined, undefined], 'built: no list in the page');
+      [...field.all()].find((el) => el.tagName === 'INPUT').onfocus();
+      const list = listIn(field);
+      [...other.all()].find((el) => el.tagName === 'INPUT').onfocus();
+      assert.deepEqual([listIn(field), listIn(other)], [undefined, list], 'the focus takes it along');
       assert.equal(list.children.length, NAMES.length, 'every sprite the scene loaded, the engine’s last');
       assert.equal([...other.all()].find((el) => el.tagName === 'INPUT').getAttribute('list'), list.id);
       assert.equal([...field.all()].find((el) => el.tagName === 'INPUT').getAttribute('list'), list.id, 'both name it');

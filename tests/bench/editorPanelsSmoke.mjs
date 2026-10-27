@@ -17,7 +17,8 @@
  *   shape    (ED-26) the file changes size: hot reload reloads the game page with the scene's state, and the editor
  *            page hands the editor's state over (D9): the new size loaded, the document still unsaved with its undo,
  *            edit mode and the selection
- *   picker   (ED-45) a crate's sprite param is a field whose list holds the scene's textures, sheet animations and the
+ *   picker   (ED-45) a crate's sprite param is a field whose list (taken when it gets the focus, ED-76) holds the
+ *            scene's textures, sheet animations and the
  *            engine's own, with a thumbnail drawn from the atlas; a name the scene lacks is marked; a typed name
  *            changes the crate's record and its frame; a walker's animation param lists the civil1 animations, and a
  *            pick from the list (as Chrome sends it) changes the record and the walker's animation at once
@@ -372,7 +373,10 @@ async function main() {
       );
     const pickerOf = (row) =>
       row.evaluate((row) => {
-        const input = row.querySelector('input[list]');
+        // The field takes its suggestions when it gets the focus (none in the page before: ED-76).
+        const input = row.querySelector('input');
+        const before = row.querySelector('datalist');
+        input.focus();
         const list = row.querySelector('datalist');
         const thumb = row.querySelector('canvas');
         const pixels = thumb.getContext('2d').getImageData(0, 0, thumb.width, thumb.height).data;
@@ -380,7 +384,7 @@ async function main() {
         for (let k = 3; k < pixels.length; k += 4) if (pixels[k] > 0) drawn++;
         return {
           value: input.value,
-          linked: input.getAttribute('list') === list.id,
+          linked: before === null && input.getAttribute('list') === list.id,
           options: [...list.options].map((o) => (o.textContent ? `${o.value}:${o.textContent}` : o.value)),
           drawn,
         };
@@ -389,10 +393,10 @@ async function main() {
     await page.waitForTimeout(300);
     const spriteRow = page.locator('[data-slot=inspector] [data-key=sprite]');
     const sprite = await pickerOf(spriteRow);
-    await spriteRow.locator('input[list]').fill('nope');
-    const marked = await spriteRow.locator('input[list]').evaluate((el) => el.style.borderColor);
-    await spriteRow.locator('input[list]').fill('civil1_walk_down');
-    await spriteRow.locator('input[list]').press('Tab');
+    await spriteRow.locator('input').fill('nope');
+    const marked = await spriteRow.locator('input').evaluate((el) => el.style.borderColor);
+    await spriteRow.locator('input').fill('civil1_walk_down');
+    await spriteRow.locator('input').press('Tab');
     await page.waitForTimeout(400);
     const crate2 = await placed('Crate2', 'sprite');
     await select('Walker2');
@@ -400,7 +404,7 @@ async function main() {
     const animRow = page.locator('[data-slot=inspector] [data-key=anim]');
     const anim = await pickerOf(animRow);
     // A pick from the list as Chrome sends it (its native popup is not scriptable): the text replaced in one go.
-    await animRow.locator('input[list]').evaluate((input) => {
+    await animRow.locator('input').evaluate((input) => {
       input.focus();
       input.value = 'walk_up';
       input.dispatchEvent(new InputEvent('input', { inputType: 'insertReplacementText', bubbles: true }));

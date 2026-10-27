@@ -201,6 +201,8 @@ test('the field: the scene’s names as its list, its thumbnail, a pick commits 
     const commits = [];
     const box = assetPickerWidget(KIND_SPRITE, 'barrel', (v) => commits.push(v), catalog);
     const input = box.find((el) => el.tagName === 'INPUT');
+    assert.equal(box.find((el) => el.tagName === 'DATALIST'), null, 'no list in the page until the field gets the focus');
+    input.onfocus();
     const list = box.find((el) => el.tagName === 'DATALIST');
     const thumb = box.find((el) => el.tagName === 'CANVAS');
     assert.equal(input.value, 'barrel');
@@ -252,6 +254,7 @@ test('the panel builds the picker for sprite and animation params, a text field 
     });
     const row = (key) => container.children.find((r) => r.dataset.key === key);
     const anim = row('anim');
+    anim.find((el) => el.tagName === 'INPUT').onfocus();
     const options = anim.find((el) => el.tagName === 'DATALIST').children;
     assert.deepEqual(options.map((o) => [o.value, o.textContent]), [['walk_down', 'civil1'], ['walk_left', 'civil1, civil2']]);
     assert.equal(anim.find((el) => el.tagName === 'INPUT').value, 'walk_left');
