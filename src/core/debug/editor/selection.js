@@ -223,6 +223,15 @@ export class Selection {
     };
     this._nameRow.appendChild(nameLabel);
     this._nameRow.appendChild(this._nameInput);
+    // Another look (ED-56): a new seed for what onSpawned draws at random; with several selected, for each.
+    const reroll = document.createElement('button');
+    reroll.type = 'button';
+    reroll.className = 'debug-ui-btn';
+    reroll.textContent = '🎲';
+    reroll.title = 'Another look: a new seed for what its onSpawned draws at random (a house picks another sprite); with several selected, each its own. Ctrl+Z goes back';
+    reroll.style.cssText = 'flex:none;padding:1px 6px';
+    reroll.onclick = () => this.editor.rerollSelected();
+    this._nameRow.appendChild(reroll);
     this._fields = document.createElement('div');
     this.transform = new TransformFields(this);
     this.joints = new JointsPanel(this);

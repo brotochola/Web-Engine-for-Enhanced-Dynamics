@@ -822,6 +822,22 @@ export class EditMode {
     return true;
   }
 
+  /**
+   * 🎲 (ED-56): another look for each selected placed entity: a new seed for what its onSpawned draws at random (a
+   * house picks another sprite, a tree another tint); each its own, as one undo. The per-entity streams of fe41a30c
+   * put to use: no class code needed.
+   * @returns {boolean} whether anything changed
+   */
+  rerollSelected() {
+    const names = this.multi.count > 0 ? this.multi.selectedNames() : this.selection.authored ? [this.selection.name] : [];
+    if (names.length === 0) return false;
+    const write = (record) => {
+      record.seed = (Math.random() * 4294967296) | 0;
+    };
+    if (names.length === 1) return this.editSelected(`another look for ${names[0]}`, write) >= 0;
+    return this.editMany(`another look for ${names.length} entities`, names, write);
+  }
+
   /** The move tool's release and nudge: the selection to (x, y), the others selected by the same step. */
   moveSelectedTo(x, y) {
     const selection = this.selection;
