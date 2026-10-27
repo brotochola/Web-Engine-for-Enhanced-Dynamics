@@ -644,7 +644,9 @@ class PreRenderWorker extends AbstractWorker {
         // when a GPU layer sorts with the entities and this worker packs them; null otherwise.
         this._proxyHalves = null;
         this._proxyCollector = null;
-        this._proxyView = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+        // Doubles from the start: a field turned from a small integer to a double in the frame loop moves the
+        // object to a new map (N-32).
+        this._proxyView = { minX: NaN, minY: NaN, maxX: NaN, maxY: NaN };
         this._proxyDroppedWarned = false;
         this._stampLightCmp = stampLightOrder;
         // Stamp lights and their scratch: first written when a light first shows.

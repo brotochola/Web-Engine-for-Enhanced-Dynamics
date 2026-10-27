@@ -586,7 +586,8 @@ class PixiRenderer extends AbstractWorker {
     this._proxyReadHalf = 0;
     this._proxyLocal = null;
     this._proxyCollector = null;
-    this._proxyView = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+    // Doubles from the start (a Smi field turned double in the frame loop moves the object to a new map: N-32).
+    this._proxyView = { minX: NaN, minY: NaN, maxX: NaN, maxY: NaN };
     this._proxyBand = 0;
     this._proxyApplyHalf = null;
     this._proxyDrawEntry = null;
