@@ -399,6 +399,10 @@ async function main() {
     // it expects, a few seconds at most, then reads.
     await page.click('[data-toggle=left]'); // unfolded again, from the bar (its own button is folded with it)
     await page.click('[data-tab=console]');
+    // The view grew: the pointer's world point is read once the canvas follows its frame (a resized frame settles late
+    // in headless Chromium, found item 30), or the "at rest" second sees it change.
+    for (let k = 0; k < 50 && !followsFrame(await gameView(page)); k++) await page.waitForTimeout(100);
+    await page.waitForTimeout(300);
     await editPlatform1(page);
     await statusWhen(page, { mode: 'EDIT', selection: '1 selected' });
     const selected = await statusText(page);
