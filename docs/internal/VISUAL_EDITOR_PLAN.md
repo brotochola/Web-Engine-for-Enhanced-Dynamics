@@ -1554,7 +1554,7 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
 - **Size:** `weed.editor.min.js` is 128 KB after Stage 4 (57 KB at ED-29). It loads only
   in debug and only on first use. Splitting is not worth it yet.
 
-**State 2026-10-27, night:** ED-50 to ED-78 done. Open: polish from found items 29, 32 and the deferred ED-23, ED-35b.
+**State 2026-10-27, night:** ED-50 to ED-79 done. Deferred: ED-23 (particle lab), ED-35b (fast swap across scene classes).
 
 **How the work is split:**
 - Four agents in worktrees, each on its own files, merged here:
@@ -1641,6 +1641,12 @@ platformer and littleCity at 1920×1080, 1366×768 and 1024×768:**
   Unity's scene-lighting switch: the engine's lighting layer hidden while editing (the Assets row of lighting kept in
   step), only for a scene with lighting, remembered for the viewer. The platformer's ambient is 0.05: its platforms away
   from the player's light were black while editing (a pixel 42,44,46 → 107,142,177).
+- [x] **ED-79 Resize anything in the view (added 2026-10-27).** Done 2026-10-27 (1a580d6d): a box or ring a class sizes
+  in code (no width and height, no radius param: a house, a tree, a door) scales the entity instead of being dimmed, as
+  Unity's rect tool does: an edge its scale on that axis, a corner both (Shift keeps the aspect, Alt the center), the
+  ring both alike; one undo. A class with the params keeps writing them, divided by the record's scale (db24a8aa).
+  editorHandlesSmoke 'scaled': a Door's corner 40 out each way, scale 2 × 1.5, its collider 80 × 120. The shortcuts
+  sheet names the ring and the handles (61cc5b05).
 
 **View (here):**
 
@@ -2022,7 +2028,9 @@ server still writes nothing. What changed for this plan:
 28. **Selecting an entity in littleCity costs about 60 ms** (the scene list agent: an inspector rebuild of 23 ms and
     37 ms of layout), more than a key repeat. To find and cut (ED-75).
 29. **After Shift+E the drawn view holds the last frame 0.3 to 0.8 s, then jumps up to 156 px** to the held camera
-    (the assets agent, the platformer's own page). A click in that window maps through what is on screen.
+    (the assets agent, the platformer's own page). A click in that window maps through what is on screen. Closed
+    2026-10-27: headless Chromium's pacing (item 40); the page's view does not move on Shift+E, the player walking right
+    (drawn and logic centers the same before and after, measured).
 30. **A resized game frame is stale or stretched for a moment** (the shell agent): `GameEngine.resize` sets the
     canvas's CSS size at once, the render worker its backing store later; up to 2.5 s after several resizes in a row
     in headless Chromium, a frame or two on a GPU. Engine; untested idea: leave the CSS size to the new frame.
@@ -2031,6 +2039,8 @@ server still writes nothing. What changed for this plan:
     branch and copy the lock file.
 32. **littleCity's `Car` class has a pool of 0** and shows "0 / 0" in the palette; a class that cannot be placed could
     be hidden or dimmed there. **A 224 px inspector** (a 1100 px window) squeezes the params' sliders to their thumbs.
+    Done 2026-10-27: a pool of 0 is left out of the palette and of the scene list unless the file places one
+    (db9bd80a); a param row stacks under 250 px, a 219 px dock's slider 129 px wide (3de2130e).
 
 33. **littleCity's logic worker allocates about 10 MB/s while playing** (R-0653, R-0654): its 8,000 people's ticks
     (gone while the editor holds the world). An engine or demo finding, outside the editor: a heap profile of a person's
@@ -2058,6 +2068,9 @@ server still writes nothing. What changed for this plan:
     editorSessionSmoke's shots wait four rendered frames. A test environment matter, not the editor's.
 41. **Placing, duplicating and pasting left the status line as it was** ("Copied …" after a drop): they say what they
     made since ca47e176.
+42. **ED-77 left the collider handles writing the scaled size**: they read the live collider, which the record's scale
+    multiplies, and wrote it as the param, which the respawn multiplied again. They divide by the scale since db24a8aa
+    (a box per axis, a ring by the larger factor, a points param in the entity's frame drawn and written through it).
 
 **New items:**
 
