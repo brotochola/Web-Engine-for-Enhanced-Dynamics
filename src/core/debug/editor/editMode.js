@@ -55,6 +55,8 @@ import {
   removePlaced,
   renamePlaced,
 } from './sceneDocument.js';
+import { jointsBeforeDelete, replaceJoints } from './sceneJoints.js';
+import { applyJointsChange } from './jointsPanel.js';
 
 /** The buttons that pan (Pointer Events `buttons`: 2 secondary, 4 auxiliary). */
 const PAN_BUTTONS = 2 | 4;
@@ -443,6 +445,9 @@ export class EditMode {
       case 'rename':
         this._renameTo(change.editorId, forward ? change.to : change.from);
         break;
+      case 'joints':
+        applyJointsChange(this, change, forward);
+        break;
       default:
         throw new Error(`editor: no such change: ${change.kind}`);
     }
@@ -454,9 +459,15 @@ export class EditMode {
     this._showRestored(name === null ? -1 : restorePlaced(scene, name, snapshot));
   }
 
-  /** An added record again, or a removed one back: a copy of it at its place in the file, with its editor id. */
-  _putBack({ editorId, at, copy }) {
-    this._showRestored(addPlaced(this.debugUI.scene, withEditorId(structuredClone(copy), editorId), at));
+  /**
+   * An added record again, or a removed one back: a copy of it at its place in the file, with its editor id; and the
+   * joints its delete took out (ED-21), as they were.
+   */
+  _putBack({ editorId, at, copy, joints }) {
+    const scene = this.debugUI.scene;
+    const index = addPlaced(scene, withEditorId(structuredClone(copy), editorId), at);
+    if (joints !== undefined) replaceJoints(scene, structuredClone(joints));
+    this._showRestored(index);
   }
 
   // ---- scene files: the level list, Open, New, Save As (ED-38) ----
@@ -650,6 +661,8 @@ export class EditMode {
       editorId: id,
       at: found.position,
       copy: structuredClone(found.record),
+      // The file's joints, when the delete takes some out with it: undo puts the list back.
+      joints: jointsBeforeDelete(scene, selection.name),
     });
     this._remove(id);
     return true;

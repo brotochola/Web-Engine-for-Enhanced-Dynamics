@@ -13,6 +13,8 @@
 import { describeSpawnParams, KIND_ENTITY, KIND_POINTS } from '../../spawnParams.js';
 import { sceneFileSpawnConfig } from '../../sceneFile.js';
 import { Messages } from '../../messages.js';
+// The file's joints follow its entities (ED-21): made again on a respawn, renamed, taken out with a delete.
+import { dropJointsAt, remakeJointsOf, renameInJoints, removeJointsNaming } from './sceneJoints.js';
 
 const NO_BACK_REFS = new Set();
 
@@ -218,9 +220,13 @@ export function removePlaced(scene, name) {
   if (found === null) return null;
   const index = indexOfName(scene, name);
   const EntityClass = classNamed(scene, found.record.class);
-  if (index >= 0 && EntityClass !== undefined) EntityClass.despawn(index);
+  if (index >= 0 && EntityClass !== undefined) {
+    dropJointsAt(index);
+    EntityClass.despawn(index);
+  }
   scene._namedEntities.delete(name);
   scene.sceneFile.entities.splice(found.position, 1);
+  removeJointsNaming(scene, name);
   respawnReferrers(scene, name);
   return found;
 }
@@ -246,6 +252,7 @@ export function renamePlaced(scene, from, to) {
       if (description.kinds[k] === KIND_ENTITY && config[key] === from) config[key] = to;
     }
   }
+  renameInJoints(scene, from, to);
   return true;
 }
 
@@ -255,16 +262,21 @@ function respawnOne(scene, name) {
   const EntityClass = classNamed(scene, found.record.class);
   if (EntityClass === undefined) return -1;
   const old = indexOfName(scene, name);
-  if (old >= 0) EntityClass.despawn(old);
+  if (old >= 0) {
+    dropJointsAt(old);
+    EntityClass.despawn(old);
+  }
   const indexOf = (target) => indexOfName(scene, target);
   const spawnConfig = sceneFileSpawnConfig(found.record, found.position, EntityClass, indexOf, NO_BACK_REFS);
   const entity = EntityClass.spawn(spawnConfig);
   if (entity === null) {
     scene._namedEntities.delete(name);
+    remakeJointsOf(scene, name);
     return -1;
   }
   const index = entity.index;
   scene._namedEntities.set(name, index * 65536 + (Messages.spawnGen[index] | 0));
+  remakeJointsOf(scene, name);
   return index;
 }
 
