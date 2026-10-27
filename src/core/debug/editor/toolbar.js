@@ -1,6 +1,6 @@
 // toolbar.js — the editor page's toolbar (VISUAL_EDITOR_PLAN.md D9, ED-15), made by the game page and put into the
 // editor page's bar: Play or Edit, Stop (D8, ED-16), Save, Undo, Redo, the running scene file with its unsaved
-// marker, and the editor's status line; the snap step and the grid's lines (ED-60); while not editing, ⏸ and ⏭
+// marker (the editor's messages are the status bar's, statusBar.js, ED-52); the snap step and the grid's lines (ED-60); while not editing, ⏸ and ⏭
 // (pause, one frame); the shortcuts sheet (?), and Undo and Redo naming the change they would make (ED-69). refresh() writes only what changed; EditMode asks for it on each change of
 // its own, never per frame. Export (ED-32) builds the game into a static site (shipRow.js).
 
@@ -34,15 +34,13 @@ export class EditorToolbar {
       this._snap.appendChild(option);
     }
     this._snap.onchange = () => editMode.setSnap(Number(this._snap.value));
-    this._grid = this._button('#', () => editMode.toggleGrid(), 'Show or hide the grid’s lines (Shift+G)');
+    this._grid = this._button('#', () => editMode.toggleGrid(), 'Show or hide the grid’s lines (Shift+G); they show once a snap step is chosen');
     this._help = this._button('?', () => editMode.toggleShortcuts(), 'Every key of the editor (?)');
     this._file = document.createElement('span');
-    this._file.style.cssText = 'color:#c8ccd8;white-space:nowrap;margin-left:6px';
-    this._status = document.createElement('span');
-    this._status.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0';
-    this.el.append(this._mode, this._stop, this._pause, this._step, this._save, this._undo, this._redo, this._snap, this._grid, this._export, this._help, this._file, this._status);
+    this._file.style.cssText = 'color:#c8ccd8;white-space:nowrap;margin-left:6px;overflow:hidden;text-overflow:ellipsis;min-width:0';
+    this.el.append(this._mode, this._stop, this._pause, this._step, this._save, this._undo, this._redo, this._snap, this._grid, this._export, this._help, this._file);
     /** What is shown, so a refresh that changes nothing writes nothing. */
-    this._shown = { editing: null, playing: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, error: null, snap: null, grid: null, paused: null, undoLabel: null, redoLabel: null };
+    this._shown = { editing: null, playing: null, dirty: null, canUndo: null, canRedo: null, file: null, status: null, snap: null, grid: null, paused: null, undoLabel: null, redoLabel: null };
     this.refresh();
   }
 
@@ -85,9 +83,11 @@ export class EditorToolbar {
     const snap = editMode.move.snap;
     const grid = editMode.grid.show;
     if (shown.snap !== snap) this._snap.value = String((shown.snap = snap));
-    if (shown.grid !== grid) {
-      shown.grid = grid;
-      this._grid.classList.toggle('active', grid);
+    // The lines show only with a step: without one, # reads as off.
+    const lines = grid && snap > 1;
+    if (shown.grid !== lines) {
+      shown.grid = lines;
+      this._grid.classList.toggle('active', lines);
     }
     const dirty = editMode.dirty;
     const file = editMode.sceneFileName;
@@ -98,13 +98,6 @@ export class EditorToolbar {
       this._file.title = dirty ? 'Unsaved changes: Ctrl+S writes them' : '';
       this._save.disabled = file === null;
       this._stop.disabled = file === null;
-    }
-    const status = editMode.status || (playing ? 'Playing: Stop goes back to the level' : '');
-    if (shown.status !== status || shown.error !== editMode.statusIsError) {
-      shown.status = status;
-      shown.error = editMode.statusIsError;
-      this._status.textContent = status;
-      this._status.style.color = editMode.statusIsError ? '#f87171' : '#8a90a0';
     }
   }
 
