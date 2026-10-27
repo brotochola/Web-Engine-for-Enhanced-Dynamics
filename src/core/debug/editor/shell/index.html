@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WeedJS editor</title>
+  <link rel="stylesheet" href="./editorShell.css" />
+</head>
+<body class="weed-editor">
+  <header class="weed-editor-bar">
+    <span class="weed-editor-title">WeedJS editor</span>
+    <div class="weed-editor-toolbar" data-slot="toolbar"></div>
+    <span class="weed-editor-spacer"></span>
+    <span class="weed-editor-status" id="status"></span>
+    <button type="button" class="weed-editor-button" id="reload" title="Reload the game's page; the editor keeps its document, undo and selection">Reload game</button>
+    <a class="weed-editor-button" id="gameOnly" target="_blank" rel="noopener" title="The game's page on its own, in a new tab">Game only ↗</a>
+  </header>
+  <aside class="weed-editor-dock weed-editor-left">
+    <h2>Scene</h2>
+    <div class="weed-editor-slot" data-slot="tree" data-empty="The scene's entities show here once the game is running."></div>
+  </aside>
+  <main class="weed-editor-game">
+    <iframe id="game" title="The game"></iframe>
+    <form class="weed-editor-open" id="open" hidden>
+      <label for="gameUrl">The game's page, on this server:</label>
+      <input id="gameUrl" type="text" placeholder="/demos/index.html?scene=platformer" spellcheck="false" />
+      <button type="submit" class="weed-editor-button">Open</button>
+      <p>The page must create its GameEngine with <code>debug: true</code>.</p>
+    </form>
+  </main>
+  <aside class="weed-editor-dock weed-editor-right">
+    <section class="weed-editor-section">
+      <h2>Inspector</h2>
+      <div class="weed-editor-slot" data-slot="inspector" data-empty="Nothing selected. Shift+E edits; then click an entity in the view or the scene list."></div>
+    </section>
+    <section class="weed-editor-section">
+      <h2>Assets</h2>
+      <div class="weed-editor-slot" data-slot="assets" data-empty="The scene's files and classes show here once the game is running."></div>
+    </section>
+  </aside>
+  <footer class="weed-editor-dock weed-editor-bottom">
+    <nav class="weed-editor-tabs">
+      <button type="button" class="weed-editor-tab active" data-tab="debug">Debug</button>
+      <button type="button" class="weed-editor-tab" data-tab="console">Console</button>
+    </nav>
+    <div class="weed-editor-slot" data-slot="debug" data-pane="debug" data-empty="The game's debug panels show here once it is running."></div>
+    <div class="weed-editor-slot" data-slot="console" data-pane="console" data-empty="The game's console." hidden></div>
+  </footer>
+  <script type="module">
+    import { startEditorShell } from './editorShell.js';
+    startEditorShell(document);
+  </script>
+</body>
+</html>

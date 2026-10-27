@@ -10,6 +10,9 @@
 // (EditMode.editSelected): it edits the record in the scene file's document, respawns the entity (sceneDocument.js,
 // ED-9), keeps the change for undo, and selects the respawned entity.
 //
+// In the editor page (D9) the panel's body goes into its Inspector dock instead of a floating panel, and the scene
+// list hears of each change of the selection.
+//
 // Cost: the panel is made on the first selection, its fields on each selection. A click or an edit allocates; a
 // frame does not.
 
@@ -34,6 +37,8 @@ export class Selection {
     this.editor = null;
 
     this._panel = null;
+    /** The panel's content: in the floating panel, or in the editor page's Inspector dock. */
+    this._body = null;
     this._title = null;
     this._detail = null;
     this._nameRow = null;
@@ -70,6 +75,7 @@ export class Selection {
     debugUI.debugFlags?.setSelectedEntity(index);
     debugUI.canvas.startLoop();
     this._show();
+    debugUI.hosted?.onSelectionChanged();
   }
 
   clear() {
@@ -81,6 +87,8 @@ export class Selection {
     this.debugUI.debugFlags?.clearSelectedEntity();
     this.debugUI.canvas.syncLoop();
     if (this._panel) this._panel.hide();
+    else if (this._body !== null) this._body.remove(); // the Inspector dock says nothing is selected
+    this.debugUI.hosted?.onSelectionChanged();
   }
 
   /**
@@ -102,9 +110,26 @@ export class Selection {
     }
   }
 
+  /** Put the panel's body where it shows: the editor page's Inspector dock, or a floating panel of this page. */
+  _mount() {
+    if (this._body === null) this._createBody();
+    const dock = this.debugUI.hosted?.slot('inspector') ?? null;
+    if (dock !== null) {
+      if (this._body.parentNode !== dock) dock.replaceChildren(this._body);
+      return;
+    }
+    if (this._panel === null) {
+      const panel = new FloatingPanel({ title: 'Editor', left: 12, top: 78, width: 320, onClose: () => this._onPanelClosed() });
+      panel.body.appendChild(this._body);
+      panel.mount();
+      this._panel = panel;
+    } else {
+      this._panel.show();
+    }
+  }
+
   _show() {
-    if (this._panel === null) this._createPanel();
-    else this._panel.show();
+    this._mount();
     const scene = this.debugUI.scene;
     if (this.authored) {
       this._title.textContent = `${this.name}  ·  ${this.className} #${this.index}`;
@@ -126,8 +151,8 @@ export class Selection {
     buildParamFields(this._fields, paramsOf(scene, found.record), found.record.config || {}, this._hooks);
   }
 
-  _createPanel() {
-    const panel = new FloatingPanel({ title: 'Editor', left: 12, top: 78, width: 320, onClose: () => this._onPanelClosed() });
+  _createBody() {
+    this._body = document.createElement('div');
     this._title = document.createElement('div');
     this._title.style.cssText = 'color:#fff;font-weight:bold;margin-bottom:4px';
     this._detail = document.createElement('div');
@@ -149,12 +174,7 @@ export class Selection {
     this._nameRow.appendChild(nameLabel);
     this._nameRow.appendChild(this._nameInput);
     this._fields = document.createElement('div');
-    panel.body.appendChild(this._title);
-    panel.body.appendChild(this._detail);
-    panel.body.appendChild(this._nameRow);
-    panel.body.appendChild(this._fields);
-    panel.mount();
-    this._panel = panel;
+    this._body.append(this._title, this._detail, this._nameRow, this._fields);
   }
 
   _onPanelClosed() {

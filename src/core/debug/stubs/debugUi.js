@@ -23,6 +23,7 @@ export class DebugUI {
     return false;
   }
   onContentSwapped() {}
+  onSceneReady() {}
 }
 
 DebugUI.drawLine = noop;

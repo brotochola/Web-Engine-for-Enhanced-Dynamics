@@ -20,11 +20,15 @@
 // saves the running scene file through the dev server (sceneFileStore.js, ED-13). Every change to the document goes
 // through editSelected and is kept for Ctrl+Z / Ctrl+Y (history.js, ED-12).
 //
+// In the editor page (D9) the game page reloads under a running editor: handover() gives what a reload keeps, as
+// plain data, and resume() takes it up in the next page.
+//
 // Cost: nothing before the first Shift+E. Its listeners are on the document only while it is on.
 
 import { Time, sanitizeTimeScale } from '../../timeScale.js';
 import { Camera } from '../../camera.js';
 import { Mouse } from '../../mouse.js';
+import { Transform } from '../../../components/transform.js';
 import { saveSceneFile, listSceneFiles } from './sceneFileStore.js';
 import { Selection } from './selection.js';
 import { MoveTool, SNAP_STEPS, snapTo } from './moveTool.js';
@@ -39,6 +43,8 @@ import {
   editorIdOf,
   withEditorId,
   nameOfEditorId,
+  nextEditorIdToGive,
+  reserveEditorIds,
   uniqueName,
   addPlaced,
   removePlaced,
@@ -53,9 +59,12 @@ const SELECT_BUTTON = 1;
 /** How long a status line (saved, could not save) stays on the indicator. */
 const STATUS_MS = 3000;
 
-/** Leave the field that has the focus, so its change event commits what was typed into it. */
-function commitFocusedField() {
-  const field = typeof document !== 'undefined' ? document.activeElement : null;
+/**
+ * Leave the field that has the focus, so its change event commits what was typed into it.
+ * @param {Document} [doc] - the document the key was typed in: the editor page's, for a docked panel's field
+ */
+function commitFocusedField(doc = typeof document !== 'undefined' ? document : null) {
+  const field = doc ? doc.activeElement : null;
   if (field && (field.tagName === 'INPUT' || field.tagName === 'TEXTAREA' || field.tagName === 'SELECT')) field.blur();
 }
 
@@ -179,6 +188,7 @@ export class EditMode {
     Time.scale = this._savedTimeScale;
     this.debugUI.tools._syncDebugToolFlag();
     this._changed();
+    this.debugUI.hosted?.onPlay();
   }
 
   /**
@@ -200,7 +210,7 @@ export class EditMode {
         case 'S':
           // A value typed into a field and not yet committed (no change event: the field still has the focus) is
           // part of the document the author means to save: leaving the field commits it first.
-          commitFocusedField();
+          commitFocusedField(e.target?.ownerDocument);
           this.save();
           return true;
         case 'd':
@@ -423,10 +433,27 @@ export class EditMode {
 
   /** The palette's button: each click on the view places one of `className`, until Esc or the button again. */
   startPlacing(className) {
+    // The editor page's Assets dock shows the palette while playing too: its + enters edit mode.
+    if (!this.active && this.debugUI.hosted) {
+      this.enter();
+      if (!this.active) return;
+    }
     this.placing = this.placing === className ? null : className;
     if (this.placing !== null) this.selection.clear();
     this.palette.refresh();
-    this.debugUI.tools.updateToolIndicator();
+    this._notify();
+  }
+
+  /**
+   * The editor page's scene list (ED-15): select an entity, entering edit mode; `center` (a double click) puts it
+   * in the middle of the view.
+   */
+  selectFromList(index, center) {
+    if (!this.active) this.enter();
+    if (!this.active) return;
+    if (this.placing !== null) this.startPlacing(this.placing);
+    this.selection.select(index);
+    if (center) Camera.setFreeTarget(Transform.x[index], Transform.y[index]);
   }
 
   /**
@@ -543,10 +570,11 @@ export class EditMode {
 
   /** Select the entity a change respawned (or nothing: deleted, or its pool was full), and count the palette again. */
   _showRestored(index) {
+    this.debugUI.hosted?.onDocumentChanged();
     if (index >= 0) this.selection.select(index);
     else this.selection.clear();
     this.palette.refresh();
-    this.debugUI.tools.updateToolIndicator();
+    this._notify();
   }
 
   /**
@@ -588,7 +616,7 @@ export class EditMode {
     this.statusIsError = isError;
     clearTimeout(this._statusTimer);
     this._statusTimer = text === '' ? 0 : setTimeout(() => this._setStatus('', false), STATUS_MS);
-    this.debugUI.tools.updateToolIndicator();
+    this._notify();
   }
 
   /** The debug UI's tick, while edit mode is on. */
@@ -596,12 +624,85 @@ export class EditMode {
     this.selection.update();
   }
 
+  // ---- across a reload of the game page, in the editor page (D9) ----
+
+  /**
+   * What a reload of the game page keeps, as plain data the editor page copies: the file and its unsaved document,
+   * the records' editor ids, the undo stack, edit mode, the selection, the grid and the view.
+   * @returns {object|null} null without a scene
+   */
+  handover() {
+    const scene = this.debugUI.scene;
+    if (!scene) return null;
+    const editorIds = [];
+    for (const record of scene.sceneFile?.entities || []) {
+      if (Object.prototype.hasOwnProperty.call(record, '_editorId')) editorIds.push([record.name, record._editorId]);
+    }
+    return {
+      version: 1,
+      sceneScriptUrl: scene.sceneScriptUrl ?? null,
+      sceneFileUrl: scene.sceneFileUrl ?? null,
+      document: this.dirty ? scene.sceneFile : null,
+      editorIds,
+      nextEditorId: nextEditorIdToGive(),
+      history: this.history.toData(),
+      active: this.active,
+      selection: this.selection.authored ? this.selection.name : null,
+      snap: this.move.snap,
+      view: this.active ? { x: Camera._freeFollowX, y: Camera._freeFollowY, zoom: Camera.zoom } : null,
+      playSpeed: this.playSpeed,
+    };
+  }
+
+  /**
+   * Take up what the page before a reload handed over (handover), once the running scene is ready: the same scene
+   * script, or nothing is done. The file it had open is opened again (a fast swap) when another one runs or its
+   * document had unsaved changes, with that document; then its undo stack, edit mode, the view and the selection.
+   * @param {object} kept - a copy of handover()'s data, made in this page
+   * @returns {Promise<boolean>} whether it was taken up
+   */
+  async resume(kept) {
+    const debugUI = this.debugUI;
+    const running = debugUI.scene;
+    if (!running || !kept || kept.version !== 1 || kept.sceneScriptUrl !== running.sceneScriptUrl) return false;
+    reserveEditorIds(kept.nextEditorId);
+    const file = kept.sceneFileUrl;
+    if (file !== null && (kept.document !== null || file !== running.sceneFileUrl)) {
+      const options = { data: running.data };
+      if (kept.document !== null) options.sceneFile = kept.document;
+      if ((await debugUI.gameEngine.loadScene(file, options)) === false) return false;
+    }
+    const scene = debugUI.scene;
+    for (const [name, id] of kept.editorIds) {
+      const found = recordOf(scene, name);
+      if (found !== null) withEditorId(found.record, id);
+    }
+    this.history.load(kept.history);
+    this.debugUI.hosted?.onDocumentChanged();
+    this.move.snap = kept.snap;
+    if (kept.active) {
+      this.enter();
+      if (kept.view !== null) {
+        Camera.setFreeTarget(kept.view.x, kept.view.y);
+        Camera.setZoom(kept.view.zoom);
+      }
+    }
+    this.playSpeed = kept.playSpeed;
+    const index = kept.selection === null ? -1 : indexOfName(scene, kept.selection);
+    if (index >= 0 && this.active) this.selection.select(index);
+    this.palette.refresh();
+    this._changed();
+    return true;
+  }
+
   /** A fast swap put the time scale and the camera back to the level's start: hold them again. */
   onContentSwapped() {
     this.move.cancel();
     this.selection.clear();
     this.history.clear(); // another document
+    this.debugUI.hosted?.onDocumentChanged();
     this.palette.refresh();
+    this._notify();
     if (!this.active) return;
     this._savedTimeScale = Time.scale;
     this._savedFree = Camera._free;
@@ -638,9 +739,15 @@ export class EditMode {
     document[method]('contextmenu', this._onContextMenu);
   }
 
+  /** The indicator, and in the editor page the toolbar, show the editor's state again. */
+  _notify() {
+    this.debugUI.tools.updateToolIndicator();
+    this.debugUI.hosted?.onEditorChanged();
+  }
+
   _changed() {
     const debugUI = this.debugUI;
-    debugUI.tools.updateToolIndicator();
+    this._notify();
     debugUI.panels.scene.updateEditButton();
     debugUI._ensureTickLoop();
   }

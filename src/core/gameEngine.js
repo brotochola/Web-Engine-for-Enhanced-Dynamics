@@ -23,17 +23,11 @@ import {
   toAbsoluteScriptUrl,
 } from '../util/sceneScript.js';
 import { checkSceneFile, defaultSceneFileUrl, fetchSceneFile, isSceneFileUrl, sceneFileScriptUrl } from './sceneFile.js';
+import { isTypingTarget } from '../util/typingTarget.js';
 
 const PREVENT_DEFAULT_KEYS = new Set([
   'arrowup', 'arrowdown', 'arrowleft', 'arrowright', ' ', 'tab',
 ]);
-
-/** A key typed into a field (a debug panel's input, the page's own form) is the field's. */
-function isTypingTarget(target) {
-  if (!target || typeof target !== 'object') return false;
-  const tag = target.tagName;
-  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || target.isContentEditable === true;
-}
 
 /** A scene file's content: the caller's document (checked, and copied: the scene edits its own), or the file's. */
 function sceneFileFor(url, doc) {
@@ -453,6 +447,7 @@ class GameEngine {
           });
           await new Promise((resolve) => setTimeout(resolve, this.transitionCooldown));
           this.state = GameEngine.states.READY;
+          if (this.debugUI) this.debugUI.onSceneReady();
           return true;
         }
         if (blocker !== null) console.info(`[WeedJS] loadScene: full load (${blocker})`);
@@ -508,6 +503,8 @@ class GameEngine {
       // Scene loaded successfully
       this.state = GameEngine.states.READY;
       if (hotRestore) HotReload.discardSlot();
+      // The editor page's resume (D9) loads again from here: the engine takes loads now.
+      if (this.debugUI) this.debugUI.onSceneReady();
       return true;
     } catch (error) {
       console.error('❌ Error loading scene:', error);

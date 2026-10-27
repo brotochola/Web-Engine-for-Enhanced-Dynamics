@@ -1,0 +1,258 @@
+/* editorShell.css — the editor page's layout (VISUAL_EDITOR_PLAN.md D9, ED-15): a bar on top, the scene list on the
+   left, the game in the middle, the inspector and the assets on the right, the debug panels and the console below.
+   The docks hold what the game page puts into them; the debug bar it puts below is the in-page one, made to sit in a
+   dock here. */
+
+:root {
+  --weed-bg: #0e1016;
+  --weed-panel: #151821;
+  --weed-line: #262b38;
+  --weed-text: #e3e6ee;
+  --weed-dim: #8a90a0;
+  --weed-accent: #4ade80;
+  --weed-left: 260px;
+  --weed-right: 330px;
+  --weed-bottom: 230px;
+  color-scheme: dark;
+}
+
+html,
+body.weed-editor {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: var(--weed-bg);
+  color: var(--weed-text);
+  font: 12px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+body.weed-editor {
+  display: grid;
+  grid-template-columns: var(--weed-left) minmax(0, 1fr) var(--weed-right);
+  grid-template-rows: 36px minmax(0, 1fr) var(--weed-bottom);
+  grid-template-areas:
+    'bar bar bar'
+    'left game right'
+    'bottom bottom bottom';
+}
+
+.weed-editor-bar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  background: var(--weed-panel);
+  border-bottom: 1px solid var(--weed-line);
+  min-width: 0;
+}
+
+.weed-editor-title {
+  font-weight: 600;
+  color: var(--weed-accent);
+  white-space: nowrap;
+}
+
+.weed-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.weed-editor-spacer {
+  flex: 1;
+}
+
+.weed-editor-status {
+  color: var(--weed-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.weed-editor-button {
+  font: inherit;
+  color: var(--weed-text);
+  background: #1e2230;
+  border: 1px solid #343a4c;
+  border-radius: 5px;
+  padding: 3px 9px;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.weed-editor-button:hover {
+  border-color: #59617a;
+}
+
+.weed-editor-button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.weed-editor-button.active {
+  border-color: var(--weed-accent);
+  color: var(--weed-accent);
+}
+
+.weed-editor-dock {
+  background: var(--weed-panel);
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.weed-editor-dock h2 {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--weed-dim);
+  border-bottom: 1px solid var(--weed-line);
+  flex: none;
+}
+
+.weed-editor-left {
+  grid-area: left;
+  border-right: 1px solid var(--weed-line);
+}
+
+.weed-editor-right {
+  grid-area: right;
+  border-left: 1px solid var(--weed-line);
+}
+
+.weed-editor-section {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 50%;
+}
+
+.weed-editor-section + .weed-editor-section {
+  border-top: 1px solid var(--weed-line);
+}
+
+.weed-editor-bottom {
+  grid-area: bottom;
+  border-top: 1px solid var(--weed-line);
+}
+
+.weed-editor-slot {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+}
+
+.weed-editor-slot[data-slot='tree'],
+.weed-editor-slot[data-slot='debug'] {
+  padding: 0;
+  overflow: hidden;
+}
+
+.weed-editor-slot:empty::before {
+  content: attr(data-empty);
+  color: var(--weed-dim);
+  display: block;
+  padding: 8px 10px;
+}
+
+.weed-editor-slot[hidden] {
+  display: none;
+}
+
+.weed-editor-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--weed-line);
+  flex: none;
+}
+
+.weed-editor-tab {
+  font: inherit;
+  color: var(--weed-dim);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.weed-editor-tab.active {
+  color: var(--weed-text);
+  border-bottom-color: var(--weed-accent);
+}
+
+.weed-editor-game {
+  grid-area: game;
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  background: #000;
+}
+
+.weed-editor-game iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+
+.weed-editor-game iframe[hidden] {
+  display: none;
+}
+
+.weed-editor-open {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--weed-dim);
+}
+
+.weed-editor-open[hidden] {
+  display: none;
+}
+
+.weed-editor-open input {
+  width: min(420px, 80%);
+  font: inherit;
+  color: var(--weed-text);
+  background: #0b0d12;
+  border: 1px solid #343a4c;
+  border-radius: 5px;
+  padding: 5px 8px;
+}
+
+/* The game page's debug bar, in the bottom dock: in place, its open panel scrolling under its tabs. */
+.weed-editor-slot[data-slot='debug'] > .debug-ui {
+  position: static;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+}
+
+.weed-editor-slot[data-slot='debug'] > .debug-ui > .debug-ui-panel.open {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  animation: none;
+}
+
+.weed-editor-slot[data-slot='debug'] > .debug-ui .debug-ui-toggle {
+  display: none;
+}

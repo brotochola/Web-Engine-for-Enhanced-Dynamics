@@ -192,7 +192,8 @@ export class NavigationPanel {
   }
 
   _setCount(id, value) {
-    const el = document.getElementById(id);
+    // The panel's own document: the editor page's when it is docked there (D9).
+    const el = (this.panel?.ownerDocument ?? document).getElementById(id);
     if (el) el.textContent = value;
   }
 

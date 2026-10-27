@@ -1,5 +1,30 @@
 // DebugDOM.js — Shared DOM creation helpers used by all debug panels
 
+let cssPromise = null;
+
+/**
+ * The DebugUI's CSS text, loaded once: embedded in a bundle (WEED.DebugUICSS), fetched from its file from source.
+ * @returns {Promise<string|null>}
+ */
+export function loadDebugCss() {
+  if (cssPromise === null) cssPromise = readDebugCss();
+  return cssPromise;
+}
+
+async function readDebugCss() {
+  if (typeof globalThis.WEED?.ensureEmbeddedSources === 'function') {
+    await globalThis.WEED.ensureEmbeddedSources();
+  }
+  if (typeof globalThis.WEED !== 'undefined' && globalThis.WEED.DebugUICSS) return globalThis.WEED.DebugUICSS;
+  try {
+    const response = await fetch(new URL('../debugUi.css', import.meta.url).href);
+    return await response.text();
+  } catch (error) {
+    console.error('Failed to load DebugUI.css:', error);
+    return null;
+  }
+}
+
 /**
  * Inject DebugUI CSS styles into <head>.
  * Supports both bundled mode (WEED.DebugUICSS) and dev-mode (fetch from file).
@@ -7,23 +32,7 @@
 export async function injectStyles() {
   if (document.getElementById('debug-ui-styles')) return;
 
-  let cssText = null;
-
-  if (typeof globalThis.WEED?.ensureEmbeddedSources === 'function') {
-    await globalThis.WEED.ensureEmbeddedSources();
-  }
-
-  if (typeof globalThis.WEED !== 'undefined' && globalThis.WEED.DebugUICSS) {
-    cssText = globalThis.WEED.DebugUICSS;
-  } else {
-    try {
-      const cssPath = new URL('../debugUi.css', import.meta.url).href;
-      const response = await fetch(cssPath);
-      cssText = await response.text();
-    } catch (error) {
-      console.error('Failed to load DebugUI.css:', error);
-    }
-  }
+  const cssText = await loadDebugCss();
 
   if (cssText) {
     const style = document.createElement('style');

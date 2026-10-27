@@ -160,6 +160,14 @@ export function editorIdOf(record) {
   return record._editorId;
 }
 
+/** The editor id the next new record gets: a handed-over history (D9) uses the ids below it. */
+export const nextEditorIdToGive = () => nextEditorId;
+
+/** Give no id below `next` from now on: the ids of a history the page before a reload made (D9). */
+export function reserveEditorIds(next) {
+  if (next > nextEditorId) nextEditorId = next;
+}
+
 /** Give a record (a copy put back by undo) its editor id. */
 export function withEditorId(record, id) {
   Object.defineProperty(record, '_editorId', { value: id, enumerable: false, configurable: true });

@@ -9,6 +9,7 @@ import { StatsCollector } from './stats/statsCollector.js';
 import { DebugCanvas } from './rendering/debugCanvas.js';
 import { ToolManager } from './tools/toolManager.js';
 import { EditMode } from './editor/editMode.js';
+import { findEditorHost, HostedEditor } from './editor/editorHost.js';
 import { DebugDraw } from './debugDraw.js';
 import { DEBUG_DEFAULTS } from '../../util/configDefaults.js';
 
@@ -62,6 +63,9 @@ export class DebugUI {
     this.canvas = new DebugCanvas(this);
     this.editMode = new EditMode(this);
     this.tools = new ToolManager(this);
+    // In the editor page (D9): its docks hold the editor's panels and this bar. Null in a page of its own.
+    const host = findEditorHost();
+    this.hosted = host === null ? null : new HostedEditor(this, host);
 
     // Panels (keyed by section id for the accordion)
     this.panels = {
@@ -98,6 +102,7 @@ export class DebugUI {
       if (this.container) this.container.style.visibility = '';
     });
     this.tools.init();
+    if (this.hosted !== null) this.hosted.connect();
   }
 
   // ========================================
@@ -135,9 +140,11 @@ export class DebugUI {
     this.canvas.syncLoop();
     this.start();
     this.editMode.onAttach();
+    this.hosted?.onAttach(scene);
   }
 
   detach() {
+    this.hosted?.onDetach();
     this.editMode.onDetach();
     this.stop();
     this.canvas.detach();
@@ -231,6 +238,11 @@ export class DebugUI {
     this.editMode.onContentSwapped();
   }
 
+  /** GameEngine.loadScene, once the engine takes loads again: the editor page's resume (D9). */
+  onSceneReady() {
+    this.hosted?.onSceneReady();
+  }
+
   /** The speed the game plays at: Time.scale, or while editing, the scale leaving edit mode puts back. */
   get playSpeed() {
     return this.editMode.playSpeed;
@@ -241,6 +253,7 @@ export class DebugUI {
   }
 
   destroy() {
+    this.hosted?.destroy();
     this.editMode.exit();
     this.editMode.selection.destroy();
     this.editMode.palette.destroy();
@@ -266,6 +279,7 @@ export class DebugUI {
     }
 
     if (this.editMode.active) this.editMode.update();
+    this.hosted?.update();
     this.tools.update();
   }
 

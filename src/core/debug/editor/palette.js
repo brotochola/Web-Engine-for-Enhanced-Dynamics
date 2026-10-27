@@ -2,7 +2,8 @@
 // many the open scene file places against its pool, and a button that places new ones (each click on the view puts
 // one there, until Esc or the button again). Above them, the level row (ED-38): the scene files of the running one's
 // folder, Open, New and Save As. Shown while edit mode is on; rebuilt when the document or the file list changes,
-// never per frame.
+// never per frame. In the editor page (D9) it is the Assets dock, shown whether or not edit mode is on: its + enters
+// edit mode.
 
 import { FloatingPanel } from '../ui/floatingPanel.js';
 
@@ -18,16 +19,26 @@ export class Palette {
   constructor(editMode) {
     this.editMode = editMode;
     this._panel = null;
+    /** The palette's content: in the floating panel, or in the editor page's Assets dock. */
+    this._body = null;
     this._files = null;
     this._list = null;
   }
 
   show() {
-    if (this._panel === null) this._create();
-    else this._panel.show();
+    if (this._body === null) this._createBody();
+    const dock = this.editMode.debugUI.hosted?.slot('assets') ?? null;
+    if (dock !== null) {
+      if (this._body.parentNode !== dock) dock.replaceChildren(this._body);
+    } else if (this._panel === null) {
+      this._createPanel();
+    } else {
+      this._panel.show();
+    }
     this.refresh();
   }
 
+  /** Leaving edit mode: the floating panel goes; the editor page's Assets dock stays. */
   hide() {
     if (this._panel !== null) this._panel.hide();
   }
@@ -135,7 +146,15 @@ export class Palette {
     return row;
   }
 
-  _create() {
+  _createBody() {
+    this._body = document.createElement('div');
+    this._files = document.createElement('div');
+    this._files.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
+    this._list = document.createElement('div');
+    this._body.append(this._files, this._list);
+  }
+
+  _createPanel() {
     const left = typeof window !== 'undefined' ? Math.max(12, window.innerWidth - 252) : 12;
     const panel = new FloatingPanel({
       title: 'Palette',
@@ -144,15 +163,9 @@ export class Palette {
       width: 240,
       onClose: () => {
         this._panel = null;
-        this._files = null;
-        this._list = null;
       },
     });
-    this._files = document.createElement('div');
-    this._files.style.cssText = 'margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(255,255,255,0.1)';
-    this._list = document.createElement('div');
-    panel.body.appendChild(this._files);
-    panel.body.appendChild(this._list);
+    panel.body.appendChild(this._body);
     panel.mount();
     this._panel = panel;
   }

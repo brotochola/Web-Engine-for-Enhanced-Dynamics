@@ -5,6 +5,9 @@ import { FloatingPanel } from '../ui/floatingPanel.js';
 import { DEFAULT_LAYERS, LAYER_DENSITY_SOURCE } from '../../../util/configDefaults.js';
 import { Layer, RESERVED_LOOK_UNIFORMS } from '../../layer.js';
 
+/** Whether a field has the focus, in the document it is in: the editor page's, for a docked panel (D9). */
+const isFocused = (el) => el.ownerDocument.activeElement === el;
+
 function computeSizeLabel(meta) {
   const size = meta?.compute?.size;
   if (!size) return 'canvas';
@@ -551,13 +554,13 @@ export class LayersPanel {
           continue;
         }
         if (row.kind === 'check') {
-          if (document.activeElement !== row.input) {
+          if (!isFocused(row.input)) {
             row.input.checked = floats[entry.offset] > 0.5;
           }
           continue;
         }
         if (row.kind === 'slider') {
-          if (document.activeElement === row.input) continue;
+          if (isFocused(row.input)) continue;
           let v = floats[entry.offset];
           if (row.hint.negate) v = -v;
           row.input.value = String(v);
@@ -565,7 +568,7 @@ export class LayersPanel {
           continue;
         }
         for (let i = 0; i < row.inputs.length; i++) {
-          if (document.activeElement === row.inputs[i]) continue;
+          if (isFocused(row.inputs[i])) continue;
           const display = parseFloat(floats[entry.offset + i].toFixed(4));
           if (parseFloat(row.inputs[i].value) !== display) row.inputs[i].value = display;
         }
@@ -629,17 +632,17 @@ export class LayersPanel {
 
       if (layer) {
         const meta = Layer._metadata?.layers?.[layer.id];
-        if (document.activeElement !== shaderSelect) {
+        if (!isFocused(shaderSelect)) {
           shaderSelect.value = meta?.shaderName || '';
         }
         controls.uniformsBtn.style.display = (isAvailable && hasSceneUniforms(layer, meta)) ? '' : 'none';
         controls.computeBtn.style.display = (isAvailable && !!layer.compute) ? '' : 'none';
         controls.ySorting.checked = layer.ySorting;
-        if (document.activeElement !== controls.visible) {
+        if (!isFocused(controls.visible)) {
           controls.visible.checked = layer.visible;
         }
         controls.resolution.textContent = `Res ${layer.resolution.toFixed(3)}x`;
-        if (document.activeElement !== controls.alpha) {
+        if (!isFocused(controls.alpha)) {
           const pct = Math.round(layer.alpha * 100);
           controls.alpha.value = pct;
           controls.alphaValue.textContent = pct + '%';

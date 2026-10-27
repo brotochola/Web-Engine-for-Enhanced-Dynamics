@@ -2,6 +2,7 @@
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 import { MAX_TIME_SCALE } from '../../timeScale.js';
+import { editorPageUrl } from '../editor/editorHost.js';
 
 function sceneEntryIsActive(scene, entry) {
   if (!scene) return false;
@@ -76,6 +77,16 @@ export class ScenePanel {
     this.elements.editBtn = createButton('✏ Edit', '', () => this.debugUI.toggleEditMode());
     this.elements.editBtn.title = 'Edit mode (Shift+E): the world holds still, the view is yours';
     controlsRow.appendChild(this.elements.editBtn);
+
+    // This page in the editor page (D9, ED-15), where it is served beside the engine's source.
+    const editorPage = this.debugUI.hosted === null ? editorPageUrl() : null;
+    if (editorPage !== null) {
+      const open = createButton('🧩 Editor page', '', () => {
+        location.href = `${editorPage}?game=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+      });
+      open.title = 'This game in the editor page: the scene list, the inspector and the assets docked around it';
+      controlsRow.appendChild(open);
+    }
 
     this.panel.appendChild(controlsRow);
 
