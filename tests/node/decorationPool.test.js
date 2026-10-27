@@ -6,6 +6,7 @@ import { Decoration } from '../../src/core/decoration.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { DecorationSpatial } from '../../src/core/decorationSpatial.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
+import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
 
 function assertApprox(actual, expected, epsilon = 0.00001) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be close to ${expected}`);
@@ -202,6 +203,43 @@ test('Decoration.spawn and DecorationPool.spawn share the same pool indices', { 
     const recycled = Decoration.spawn({ x: 1, y: 1 });
     assert.equal(recycled, viaFacade);
   } finally {
+    restore();
+  }
+});
+
+test('spawnMany takes one value per decoration from arrays, and reports their pool indices', { concurrency: false }, () => {
+  const restore = setupDecorationPool(4);
+  SpriteSheetRegistry.register('bigAtlas', { animations: { rock: ['rock'], grass1: ['grass1'], grass2: ['grass2'] } });
+  const C = DecorationComponent;
+  try {
+    const out = new Int32Array(3).fill(-1);
+    const spawned = Decoration.spawnMany({
+      x: [10, 50, 90],
+      y: new Float64Array([40, 42, 44]),
+      texture: ['grass2', 'rock', 'grass2'],
+      scaleX: [1, 1.5, 0.5],
+      scaleY: 2,
+      rotation: [0, Math.PI / 2, 0],
+      alpha: [1, 0.5, 0.25],
+      tint: [0xff0000, 0x00ff00, 0x0000ff],
+      anchorY: 1,
+      out,
+    });
+    assert.equal(spawned, 3, 'count defaults to the arrays’ length');
+    const read = (i) => [C.x[i], C.y[i], C.textureId[i], C.scaleX[i], C.scaleY[i], C.alpha[i], C.tint[i], C.anchorY[i]];
+    assert.deepEqual(read(out[0]), [10, 40, 2, 1, 2, 1, 0xff0000, 1]);
+    assert.deepEqual(read(out[1]), [50, 42, 0, 1.5, 2, 0.5, 0x00ff00, 1]);
+    assert.deepEqual(read(out[2]), [90, 44, 2, 0.5, 2, 0.25, 0x0000ff, 1]);
+    assertApprox(C.rotS[out[1]], 1);
+    assert.equal(new Set(out).size, 3);
+
+    const more = new Int32Array(3).fill(-1);
+    assert.equal(DecorationPool.spawnMany({ x: [1, 2, 3], y: [1, 2, 3], out: more }), 1, 'the pool had room for one');
+    assert.ok(more[0] >= 0);
+    assert.deepEqual([...more.subarray(1)], [-1, -1], 'out has only the spawned ones');
+    assert.equal(DecorationPool.spawnMany({ count: 2, x: 5, y: 5 }), 0, 'and the plain path still stops at a full pool');
+  } finally {
+    SpriteSheetRegistry.spritesheets.delete('bigAtlas');
     restore();
   }
 });

@@ -51,6 +51,17 @@ export {
   advanceImpulsePhase,
 } from '../util/decorationSway.js';
 
+/** The spawn config keys spawnMany also takes as arrays, one value per decoration. */
+const PER_DECORATION_KEYS = Object.freeze(['x', 'y', 'texture', 'scaleX', 'scaleY', 'rotation', 'alpha', 'tint']);
+
+const isValueList = (value) => Array.isArray(value) || ArrayBuffer.isView(value);
+
+/** Whether a spawnMany config gives any key one value per decoration. */
+function hasPerDecorationValues(config) {
+  for (let k = 0; k < PER_DECORATION_KEYS.length; k++) if (isValueList(config[PER_DECORATION_KEYS[k]])) return true;
+  return false;
+}
+
 export class DecorationPool extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'DecorationPool';
@@ -472,8 +483,14 @@ export class DecorationPool extends SharedAtomicPool {
   /**
    * Spawn multiple decorations at once (batch spawn)
    *
+   * Any of x, y, texture, scaleX, scaleY, rotation, alpha and tint may be an array or a typed array instead: one
+   * value per decoration, decoration i taking element i (a scene file's decorations load this way, one call per
+   * class). count then defaults to the first such array's length, and `out`, when given, receives each decoration's
+   * pool index (the first `spawned` of its entries).
+   *
    * @param {Object} config - Same as spawn(), but spawns multiple
    * @param {number} [config.count=1] - Number of decorations to spawn
+   * @param {Int32Array|Uint32Array|number[]} [config.out] - With per-decoration arrays: their pool indices, in order
    * @returns {number} - Number of decorations actually spawned
    *
    * @example
@@ -485,8 +502,12 @@ export class DecorationPool extends SharedAtomicPool {
    *   texture: "grass1",
    *   anchorY: 1.0,
    * });
+   *
+   * // Three, where they were placed
+   * DecorationPool.spawnMany({ x: [10, 50, 90], y: [40, 42, 40], scaleX: [1, 1.2, 0.9], texture: "rock1" });
    */
   static spawnMany(config) {
+    if (hasPerDecorationValues(config)) return this._spawnManyPerDecoration(config);
     const count = config.count ?? 1;
     let spawned = 0;
 
@@ -499,6 +520,32 @@ export class DecorationPool extends SharedAtomicPool {
       }
     }
 
+    return spawned;
+  }
+
+  /** spawnMany with per-decoration arrays: its own loop, so the plain one keeps no branch for them. */
+  static _spawnManyPerDecoration(config) {
+    const keys = [];
+    const lists = [];
+    for (let k = 0; k < PER_DECORATION_KEYS.length; k++) {
+      const value = config[PER_DECORATION_KEYS[k]];
+      if (isValueList(value)) {
+        keys.push(PER_DECORATION_KEYS[k]);
+        lists.push(value);
+      }
+    }
+    const count = config.count ?? lists[0].length;
+    const out = config.out;
+    // One config for every decoration, its per-decoration keys written before each spawn.
+    const one = Object.assign({}, config);
+    let spawned = 0;
+    for (let i = 0; i < count; i++) {
+      for (let k = 0; k < keys.length; k++) one[keys[k]] = lists[k][i];
+      const index = this.spawn(one);
+      if (index < 0) break; // Pool is full
+      if (out) out[spawned] = index;
+      spawned++;
+    }
     return spawned;
   }
 
