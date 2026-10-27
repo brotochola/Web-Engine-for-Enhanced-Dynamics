@@ -8,6 +8,8 @@ import { MINIFY_RESERVED_NAMES } from './scripts/minifyReservedNames.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+// scripts/buildBundle.js passes WEED_DIST_DIR (absolute) to build into another folder than dist/.
+const distDir = process.env.WEED_DIST_DIR ? path.resolve(process.env.WEED_DIST_DIR) : path.resolve(__dirname, 'dist');
 
 // After Terser and the obfuscator. An earlier stage is stripped (comments: false)
 // or rewritten when OBFUSCATE=true.
@@ -124,7 +126,7 @@ const mainConfig = {
         'weed': './src/index.js'
     },
     output: {
-        path: path.resolve(__dirname, 'dist'),
+        path: distDir,
         filename: '[name].min.js',
         library: {
             name: 'WEED',
@@ -163,7 +165,7 @@ const workersConfig = {
     devtool: false,
     entry: workerEntries,
     output: {
-        path: path.resolve(__dirname, 'dist'),
+        path: distDir,
         filename: '[name].min.js',
         chunkFilename: '[name].min.js',
         globalObject: 'self',
