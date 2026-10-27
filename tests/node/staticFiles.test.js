@@ -1,6 +1,7 @@
 // The dev server's static files (server/staticFiles.js, review N-80): a request's path is decoded and kept inside the
 // served folder, so a raw `/../` (a browser removes the dots; curl --path-as-is and a socket do not) gets 403, not a
-// file of the machine; and the server listens on this machine only unless --host or WEED_HOST opens it.
+// file of the machine; and the server listens on this machine only (both loopback addresses) unless --host or
+// WEED_HOST opens it.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -8,7 +9,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
-import { serveStaticFile, listenHost } from '../../server/staticFiles.js';
+import { serveStaticFile, listenHost, listenAddresses, listenFrom } from '../../server/staticFiles.js';
 
 /** A served folder with a page, a folder with its index, a file with a space, and a secret beside the folder. */
 function makeSite() {
@@ -96,4 +97,51 @@ test('the server listens on this machine only, unless --host or WEED_HOST opens 
   assert.equal(listenHost(['node', 'node_server.js'], {}), '127.0.0.1');
   assert.equal(listenHost(['node', 'node_server.js', '--host'], {}), '0.0.0.0');
   assert.equal(listenHost(['node', 'node_server.js'], { WEED_HOST: '192.168.0.10' }), '192.168.0.10');
+});
+
+/** The body a GET of / at host:port answers. */
+function textAt(host, port) {
+  return new Promise((resolve, reject) => {
+    http
+      .get({ host, port, path: '/' }, (res) => {
+        let body = '';
+        res.setEncoding('utf8');
+        res.on('data', (c) => (body += c));
+        res.on('end', () => resolve(body));
+      })
+      .on('error', reject);
+  });
+}
+
+test('this machine only is both loopback addresses: localhost reaches the server even beside one left on its port', async () => {
+  assert.deepEqual(listenAddresses('127.0.0.1'), ['127.0.0.1', '::1']);
+  assert.deepEqual(listenAddresses('0.0.0.0'), [undefined], '--host: every interface, IPv6 and IPv4');
+  assert.deepEqual(listenAddresses('192.168.0.10'), ['192.168.0.10']);
+
+  const probe = http.createServer();
+  await new Promise((resolve) => probe.listen(0, '127.0.0.1', resolve));
+  const port = probe.address().port;
+  await new Promise((resolve) => probe.close(resolve));
+  // A server left running on every interface, as `npm run dev` listened before N-80.
+  const stale = http.createServer((req, res) => res.end('stale'));
+  await new Promise((resolve) => stale.listen({ port }, resolve));
+  const servers = [stale];
+  try {
+    const inUse = [];
+    const first = await listenFrom(port, listenAddresses('127.0.0.1'), () => http.createServer((req, res) => res.end('first')), (p) => inUse.push(p));
+    servers.push(...first.servers);
+    // Windows lets it bind the loopback addresses beside the other, and gives it their connections; elsewhere the
+    // port is in use and it takes the next. Either way the port it reports reaches it, over IPv4 and IPv6.
+    assert.equal(inUse.length, first.port - port);
+    assert.equal(await textAt('127.0.0.1', first.port), 'first');
+    if (first.servers.length === 2) assert.equal(await textAt('::1', first.port), 'first');
+
+    const second = await listenFrom(first.port, listenAddresses('127.0.0.1'), () => http.createServer((req, res) => res.end('second')));
+    servers.push(...second.servers);
+    assert.ok(second.port > first.port, 'a port this server holds is in use for the next one');
+    assert.equal(await textAt('127.0.0.1', second.port), 'second');
+    assert.equal(await textAt('127.0.0.1', first.port), 'first');
+  } finally {
+    await Promise.all(servers.map((s) => new Promise((resolve) => s.close(resolve))));
+  }
 });

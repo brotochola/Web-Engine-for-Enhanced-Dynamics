@@ -89,7 +89,7 @@ if (hotReload) {
   }
 }
 
-const server = http.createServer((req, res) => {
+function handle(req, res) {
   const { pathname } = new URL(req.url, 'http://localhost');
 
   const routes = { export: { outDir: path.join(root, 'dist') } };
@@ -130,10 +130,34 @@ const server = http.createServer((req, res) => {
     const type = TYPES[path.extname(file).toLowerCase()] || 'application/octet-stream';
     res.writeHead(200, { ...HEADERS, 'Content-Type': type }).end(data);
   });
-});
+}
 
-server.listen(port, host, () => {
-  console.log(`${hotReload ? 'Dev server' : 'Serving ' + path.relative('.', root)}: http://localhost:${port}`);
-  if (editor) console.log(`Editor: http://localhost:${port}/__weed/editor/?game=/index.html (or Shift+E in the game)`);
-  if (host !== '127.0.0.1') console.log(`Open to the network (${host}): anyone on it can load these files.`);
-});
+// A browser may take localhost for ::1 or for 127.0.0.1: listen at both, or another server left on the port could
+// answer one of them (Windows lets both listen). --host: every interface. A port in use moves on to the next one.
+const addresses = host === '127.0.0.1' ? ['127.0.0.1', '::1'] : [host === '0.0.0.0' ? undefined : host];
+async function listen(port) {
+  const servers = [];
+  for (const address of addresses) {
+    const server = http.createServer(handle);
+    const error = await new Promise((resolve) => {
+      server.once('error', resolve);
+      server.listen({ port, host: address }, () => {
+        server.off('error', resolve);
+        resolve(null);
+      });
+    });
+    if (error?.code === 'EADDRINUSE') {
+      for (const s of servers) s.close();
+      console.log(`Port ${port} is in use, trying ${port + 1}`);
+      return listen(port + 1);
+    }
+    if (error && address !== '::1') throw error; // a machine without IPv6 has no ::1
+    if (!error) servers.push(server);
+  }
+  return port;
+}
+
+const at = await listen(port);
+console.log(`${hotReload ? 'Dev server' : 'Serving ' + path.relative('.', root)}: http://localhost:${at}`);
+if (editor) console.log(`Editor: http://localhost:${at}/__weed/editor/?game=/index.html (or Shift+E in the game)`);
+if (host !== '127.0.0.1') console.log(`Open to the network (${host}): anyone on it can load these files.`);

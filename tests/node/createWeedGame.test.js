@@ -97,10 +97,10 @@ test('npm run build swaps in the production engine and writes _headers', () => {
   }
 });
 
-function get(port, urlPath) {
+function get(port, urlPath, host = '127.0.0.1') {
   return new Promise((resolve, reject) => {
     http
-      .get({ host: '127.0.0.1', port, path: urlPath }, (res) => {
+      .get({ host, port, path: urlPath }, (res) => {
         let body = '';
         res.setEncoding('utf8');
         res.on('data', (c) => (body += c));
@@ -110,15 +110,20 @@ function get(port, urlPath) {
   });
 }
 
-async function startServer(dir, args) {
-  const port = 20000 + Math.floor(Math.random() * 20000);
+/** Start the template's dev server from `port` up; its port is the one it prints. */
+async function startServer(dir, args, from = 20000 + Math.floor(Math.random() * 20000)) {
   const child = spawn(process.execPath, ['scripts/dev.mjs', ...args], {
     cwd: dir,
-    env: { ...process.env, PORT: String(port) },
+    env: { ...process.env, PORT: String(from) },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
-  await new Promise((resolve, reject) => {
-    child.stdout.on('data', (d) => String(d).includes(`:${port}`) && resolve());
+  const port = await new Promise((resolve, reject) => {
+    let out = '';
+    child.stdout.on('data', (d) => {
+      out += d;
+      const printed = /http:\/\/localhost:(\d+)/.exec(out);
+      if (printed) resolve(Number(printed[1]));
+    });
     child.on('exit', (code) => reject(new Error(`dev server exited ${code}`)));
   });
   const stop = () =>
@@ -193,6 +198,33 @@ test('with @weed.js/editor installed the dev server gives it its routes; --host 
     assert.equal((await get(server.port, '/')).status, 200, 'the project folder, not one named --host');
   } finally {
     await server.stop();
+    removeDir(parent);
+  }
+});
+
+test('localhost reaches the dev server beside a server left on its port, and a second one takes the next port', async () => {
+  const parent = tempDir();
+  const { dir } = scaffold(parent, 'game');
+  const ipv6 = await new Promise((resolve) => {
+    const probe = http.createServer();
+    probe.once('error', () => resolve(false));
+    probe.listen(0, '::1', () => probe.close(() => resolve(true)));
+  });
+  // A server left on every interface, as dev servers listened before they kept to this machine.
+  const stale = http.createServer((req, res) => res.end('stale'));
+  await new Promise((resolve) => stale.listen({ port: 20000 + Math.floor(Math.random() * 20000) }, resolve));
+  const servers = [];
+  try {
+    servers.push(await startServer(dir, [], stale.address().port));
+    servers.push(await startServer(dir, [], servers[0].port));
+    assert.ok(servers[1].port > servers[0].port, 'the port the first one holds is in use for the second');
+    for (const server of servers) {
+      assert.match((await get(server.port, '/')).body, /<html/i);
+      if (ipv6) assert.match((await get(server.port, '/', '::1')).body, /<html/i, 'localhost over IPv6');
+    }
+  } finally {
+    for (const server of servers) await server.stop();
+    await new Promise((resolve) => stale.close(resolve));
     removeDir(parent);
   }
 });
