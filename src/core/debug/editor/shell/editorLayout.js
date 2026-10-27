@@ -1,5 +1,5 @@
-// editorLayout.js — the editor page's docks (VISUAL_EDITOR_PLAN.md ED-50): their sizes, which a drag on a handle
-// changes, and their folds.
+// editorLayout.js — the editor page's docks (VISUAL_EDITOR_PLAN.md ED-50, ED-51): their sizes, which a drag on a
+// handle changes, their folds, and the narrow layouts.
 //
 //   - A handle between the view and each dock (the scene list, the right column, the bottom dock) and one between
 //     the Inspector and the Assets. A double click puts its size back to the default.
@@ -7,6 +7,9 @@
 //     column) and Ctrl+3 (the bottom dock) fold and unfold them.
 //   - The bottom dock is the debug bar's strip, with the Console's button: a pane of its own height opens above the
 //     strip only while the Console or one of the debug bar's panels is open (editorShell.css, :has()).
+//   - Below NARROW_PX the side docks narrow: they give up what the window loses, so the view keeps its width down to
+//     OVERLAY_PX. Below OVERLAY_PX they are panels over the view, which keeps the whole width; the bar's dock buttons
+//     open and close them.
 //   - Sizes and folds are this viewer's, kept in localStorage (every access in try/catch: a blocked or full storage
 //     leaves the defaults).
 //
@@ -44,8 +47,18 @@ export const SIZE_LIMITS = Object.freeze({
   split: Object.freeze([0.15, 0.85]),
 });
 
-/** The widest a side dock gets, as a share of the window. */
+/** Window widths: below NARROW_PX the side docks narrow; below OVERLAY_PX they open over the view. */
+export const NARROW_PX = 1280;
+export const OVERLAY_PX = 1100;
+/**
+ * Between OVERLAY_PX and NARROW_PX a side dock is its size × (width − NARROW_BASE_PX) / NARROW_SPAN_PX: all of it at
+ * 1280 px, 70 % at 1100 px. editorShell.css writes the same: `var(--weed-left) * (100vw - 680px) / 600`.
+ */
+export const NARROW_BASE_PX = 680;
+export const NARROW_SPAN_PX = 600;
+/** The widest a side dock gets, as a share of the window: docked, and over the view. */
 export const DOCKED_MAX_SHARE = Object.freeze({ left: 0.32, right: 0.4 });
+export const OVERLAY_MAX_SHARE = 0.85;
 /** The bottom pane leaves this much of the window above it: `100vh - 200px` in editorShell.css. */
 export const PANE_RESERVE_PX = 200;
 
@@ -56,9 +69,18 @@ const DIGIT_CODES = Object.freeze({ Digit1: 1, Digit2: 2, Digit3: 3, Numpad1: 1,
 
 const clamp = (value, min, max) => Math.max(min, Math.min(value, max));
 
+/** Whether a window this wide shows the side docks over the view. */
+export const isOverlay = (viewportWidth) => viewportWidth < OVERLAY_PX;
+
+/** What a side dock's size is multiplied by in a window this wide (1 outside the narrow band). */
+export function narrowFactor(viewportWidth) {
+  if (viewportWidth >= NARROW_PX || viewportWidth < OVERLAY_PX) return 1;
+  return (viewportWidth - NARROW_BASE_PX) / NARROW_SPAN_PX;
+}
+
 /** The widest a side dock shows in a window this wide. */
 function sideMax(side, viewportWidth) {
-  return DOCKED_MAX_SHARE[side] * viewportWidth;
+  return (isOverlay(viewportWidth) ? OVERLAY_MAX_SHARE : DOCKED_MAX_SHARE[side]) * viewportWidth;
 }
 
 /**
@@ -68,7 +90,7 @@ function sideMax(side, viewportWidth) {
  * @param {number} viewportWidth
  */
 export function sideWidth(side, size, viewportWidth) {
-  return clamp(size, SIZE_LIMITS[side][0], sideMax(side, viewportWidth));
+  return clamp(size * narrowFactor(viewportWidth), SIZE_LIMITS[side][0], sideMax(side, viewportWidth));
 }
 
 // The functions a drag calls on each move read their bounds by index: no destructuring, which may make an iterator.
@@ -83,7 +105,7 @@ export function sideWidth(side, size, viewportWidth) {
 export function sideSizeFor(side, width, viewportWidth) {
   const limits = SIZE_LIMITS[side];
   const shown = clamp(width, limits[0], sideMax(side, viewportWidth));
-  return Math.round(clamp(shown, limits[0], limits[1]));
+  return Math.round(clamp(shown / narrowFactor(viewportWidth), limits[0], limits[1]));
 }
 
 /** The height the bottom pane shows, from its kept size, in a window this tall. */
@@ -197,6 +219,7 @@ const FOLD_CLASSES = Object.freeze({
   inspector: 'weed-fold-inspector',
   assets: 'weed-fold-assets',
 });
+const OPEN_CLASSES = Object.freeze({ left: 'weed-open-left', right: 'weed-open-right' });
 const CONSOLE_CLASS = 'weed-console-open';
 const RESIZING_CLASS = 'weed-resizing';
 const RESIZING_X_CLASS = 'weed-resizing-x';
@@ -240,7 +263,7 @@ export function dockLayoutElements(doc) {
 export class DockLayout {
   /**
    * @param {LayoutElements} elements
-   * @param {{ win: { innerWidth: number, innerHeight: number }, storage?: object|null }} options
+   * @param {{ win: { innerWidth: number, innerHeight: number, matchMedia?: Function }, storage?: object|null }} options
    */
   constructor(elements, { win, storage = null }) {
     this.el = elements;
@@ -248,6 +271,9 @@ export class DockLayout {
     this.storage = storage;
     /** The layout now: sizes and folds (readLayout's shape). */
     this.layout = readLayout(storage);
+    /** Which side docks are open over the view (below OVERLAY_PX): not kept, a narrow window starts with neither. */
+    this.openLeft = false;
+    this.openRight = false;
 
     // A drag: what its handle sizes, its pointer, where it was pressed, and what the press read of the layout.
     this._drag = DRAG_NONE;
@@ -259,6 +285,7 @@ export class DockLayout {
     this._dragSpan = NaN;
     this._dragViewW = NaN;
     this._dragViewH = NaN;
+    this._dragOverlay = false;
 
     this._onHandleDown = (e) => this._beginDrag(e);
     this._onHandleMove = (e) => this._moveDrag(e);
@@ -280,6 +307,8 @@ export class DockLayout {
       const header = this.el.debugSlot?.querySelector('.debug-ui-header');
       if (header && header.scrollWidth > header.clientWidth) header.scrollLeft += e.deltaY;
     };
+    this._overlayQuery = null;
+    this._onOverlayChange = () => this._showToggles();
   }
 
   /** Show the kept layout and listen to the handles, the fold buttons, the bar's dock buttons and the Console's. */
@@ -299,29 +328,48 @@ export class DockLayout {
     el.consoleTab?.addEventListener('click', this._onConsoleTab);
     el.debugSlot?.addEventListener('click', this._onDebugClick);
     el.debugSlot?.addEventListener('wheel', this._onDebugWheel, { passive: true });
+    // The bar's dock buttons show folds in a wide window and the open panels in a narrow one.
+    if (typeof this.win.matchMedia === 'function') {
+      this._overlayQuery = this.win.matchMedia(`(width < ${OVERLAY_PX}px)`);
+      this._overlayQuery.addEventListener?.('change', this._onOverlayChange);
+    }
     return this;
+  }
+
+  /** Whether the side docks are panels over the view now. */
+  get overlay() {
+    return isOverlay(this.win.innerWidth);
   }
 
   /** Write every size and fold of the layout to the page. */
   apply() {
     const layout = this.layout;
-    this._writeSize(DRAG_LEFT);
-    this._writeSize(DRAG_RIGHT);
-    this._writeSize(DRAG_BOTTOM);
-    this._writeSize(DRAG_SPLIT);
+    this._writeSize(DRAG_LEFT, true);
+    this._writeSize(DRAG_RIGHT, true);
+    this._writeSize(DRAG_BOTTOM, true);
+    this._writeSize(DRAG_SPLIT, true);
     const classes = this.el.body.classList;
     classes.toggle(FOLD_CLASSES.left, layout.leftFolded);
     classes.toggle(FOLD_CLASSES.right, layout.rightFolded);
     classes.toggle(FOLD_CLASSES.bottom, layout.bottomFolded);
     classes.toggle(FOLD_CLASSES.inspector, layout.inspectorFolded);
     classes.toggle(FOLD_CLASSES.assets, layout.assetsFolded);
+    classes.toggle(OPEN_CLASSES.left, this.openLeft);
+    classes.toggle(OPEN_CLASSES.right, this.openRight);
     this._showConsole();
     this._showToggles();
     this._showSections();
   }
 
-  /** Fold or unfold a dock or a section: 'left', 'right', 'bottom', 'inspector' or 'assets'. */
+  /**
+   * Fold or unfold a dock or a section: 'left', 'right', 'bottom', 'inspector' or 'assets'. Below OVERLAY_PX a side
+   * dock's fold button closes it over the view instead.
+   */
   toggleFold(name) {
+    if ((name === 'left' || name === 'right') && this.overlay) {
+      this.setOpen(name, false);
+      return;
+    }
     this.setFolded(name, !this.layout[`${name}Folded`]);
   }
 
@@ -336,16 +384,33 @@ export class DockLayout {
     this.save();
   }
 
+  /** Open or close a side dock over the view (below OVERLAY_PX). */
+  setOpen(side, open) {
+    if (side === 'left') this.openLeft = open;
+    else if (side === 'right') this.openRight = open;
+    else return;
+    this.el.body.classList.toggle(OPEN_CLASSES[side], open);
+    this._showToggles();
+  }
+
   /**
-   * A dock button of the bar, or its key (Ctrl+1, 2, 3): the dock folds or unfolds.
+   * A dock button of the bar, or its key (Ctrl+1, 2, 3): a side dock folds or unfolds, or below OVERLAY_PX opens or
+   * closes over the view; the bottom dock folds or unfolds.
    * @param {'left'|'right'|'bottom'|number} dock - a name, or the key's digit
    * @returns {boolean} whether it was a dock
    */
   toggleDock(dock) {
     const name = typeof dock === 'number' ? DOCK_KEYS[dock] : dock;
-    if (name !== 'left' && name !== 'right' && name !== 'bottom') return false;
-    this.setFolded(name, !this.layout[`${name}Folded`]);
-    return true;
+    if (name === 'left' || name === 'right') {
+      if (this.overlay) this.setOpen(name, !(name === 'left' ? this.openLeft : this.openRight));
+      else this.setFolded(name, !this.layout[`${name}Folded`]);
+      return true;
+    }
+    if (name === 'bottom') {
+      this.setFolded('bottom', !this.layout.bottomFolded);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -381,7 +446,7 @@ export class DockLayout {
     const kind = DRAG_KINDS[name];
     if (kind === undefined) return;
     this.layout[name] = LAYOUT_DEFAULTS[name];
-    this._writeSize(kind);
+    this._writeSize(kind, true);
     this.save();
   }
 
@@ -406,6 +471,7 @@ export class DockLayout {
     this._dragY = e.clientY;
     this._dragViewW = this.win.innerWidth;
     this._dragViewH = this.win.innerHeight;
+    this._dragOverlay = isOverlay(this._dragViewW);
     // What the layout is at the press: the only layout read of the drag.
     if (kind === DRAG_LEFT) this._dragFrom = el.left.getBoundingClientRect().width;
     else if (kind === DRAG_RIGHT) this._dragFrom = el.right.getBoundingClientRect().width;
@@ -448,7 +514,7 @@ export class DockLayout {
       if (split === layout.split) return;
       layout.split = split;
     }
-    this._writeSize(kind);
+    this._writeSize(kind, false);
   }
 
   _endDrag(e) {
@@ -468,20 +534,26 @@ export class DockLayout {
     classes.remove(RESIZING_CLASS);
     classes.remove(RESIZING_X_CLASS);
     classes.remove(RESIZING_Y_CLASS);
+    // A side dock's size goes to both places that read it (docked and over the view), once.
+    this._writeSize(kind, true);
     this.save();
   }
 
   /**
-   * Write one size where the page reads it: a side dock's width on the body's grid, the pane's height on the bottom
-   * dock, the split on the Assets section.
+   * Write one size where the page reads it: a side dock's width on the body's grid when docked and on the dock itself
+   * over the view (a drag writes the one it shows; `both` writes the two), the pane's height on the bottom dock, the
+   * split on the Assets section.
    */
-  _writeSize(kind) {
+  _writeSize(kind, both) {
     const el = this.el;
     const layout = this.layout;
-    if (kind === DRAG_LEFT) {
-      el.body.style.setProperty('--weed-left', numberText(layout.left));
-    } else if (kind === DRAG_RIGHT) {
-      el.body.style.setProperty('--weed-right', numberText(layout.right));
+    if (kind === DRAG_LEFT || kind === DRAG_RIGHT) {
+      const left = kind === DRAG_LEFT;
+      const name = left ? '--weed-left' : '--weed-right';
+      const text = numberText(left ? layout.left : layout.right);
+      const overlay = this._drag !== DRAG_NONE ? this._dragOverlay : this.overlay;
+      if (both || !overlay) el.body.style.setProperty(name, text);
+      if (both || overlay) (left ? el.left : el.right).style.setProperty(name, text);
     } else if (kind === DRAG_BOTTOM) {
       el.bottom.style.setProperty('--weed-bottom', numberText(layout.bottom));
     } else {
@@ -512,12 +584,16 @@ export class DockLayout {
     }
   }
 
-  /** The bar's dock buttons: pressed while their dock shows. */
+  /** The bar's dock buttons: pressed while their dock shows (wide: not folded; narrow: open over the view). */
   _showToggles() {
+    const overlay = this.overlay;
     const layout = this.layout;
     for (const button of this.el.toggles) {
       const name = button.dataset.toggle;
-      const shown = name === 'left' ? !layout.leftFolded : name === 'right' ? !layout.rightFolded : !layout.bottomFolded;
+      let shown;
+      if (name === 'left') shown = overlay ? this.openLeft : !layout.leftFolded;
+      else if (name === 'right') shown = overlay ? this.openRight : !layout.rightFolded;
+      else shown = !layout.bottomFolded;
       button.classList.toggle('active', shown);
       button.setAttribute('aria-pressed', shown ? 'true' : 'false');
     }

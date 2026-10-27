@@ -81,6 +81,7 @@ export class HostedEditor {
     slots.toolbar.appendChild(this.toolbar.el);
     slots.tree.appendChild(this.tree.el);
     slots.debug.appendChild(debugUI.container);
+    this._nameDebugTabs();
     // The console: this page's calls from now on, the workers' from each scene's attach.
     const panel = new ConsolePanel(debugUI);
     this.console = panel;
@@ -127,6 +128,14 @@ export class HostedEditor {
     this.tree?.attach(scene);
     this.toolbar?.refresh();
     this.console?.newScene();
+    this._nameDebugTabs(); // the Nav tab's own title goes when the scene has navigation
+  }
+
+  /** A narrow editor page shows the debug bar's tabs by their icons (editorShell.css): each names itself on hover. */
+  _nameDebugTabs() {
+    for (const tab of this.debugUI.container.querySelectorAll('.debug-ui-tab')) {
+      if (!tab.title) tab.title = tab.children[1]?.textContent || '';
+    }
   }
 
   onDetach() {

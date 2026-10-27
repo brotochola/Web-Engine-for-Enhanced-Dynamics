@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * The editor page's docks in Chromium (VISUAL_EDITOR_PLAN.md ED-50): the dev server's
+ * The editor page's docks in Chromium (VISUAL_EDITOR_PLAN.md ED-50, ED-51): the dev server's
  * /editor?scene=platformergame. Each check prints PASS or FAIL with what it read; the exit code is the number of
  * failures. Nothing is saved: the level files are not touched.
  *
@@ -15,6 +15,8 @@
  *               the docks; a section's title folds it and the other takes the column
  *   reload      the editor page reloaded: the sizes and folds are as they were left
  *   no storage  with localStorage throwing, the page opens with the default sizes and a drag still works
+ *   widths      the view at 1920, 1366, 1100 and 800 px wide: the side docks narrow under 1280 and open over the view
+ *               under 1100, from the bar, with the view keeping the width; nothing leaves the bar
  *
  *   node tests/bench/editorLayoutSmoke.mjs [--headed] [--shots <dir>]   (--shots: screenshots, e.g. D:\tmp\claude\editor-shell)
  */
@@ -363,6 +365,86 @@ async function main() {
       `scene list ${blockedLeft.w} px (the default), dragged: ${blockedAfter.w} px`,
     );
     await blocked.close();
+
+    // ---- widths: the view at 1920, 1366, 1100 and 800 ----
+    const rows = [];
+    let barOk = true;
+    let overlay = null;
+    for (const [width, height] of [
+      [1920, 1080],
+      [1366, 768],
+      [1100, 768],
+      [800, 600],
+    ]) {
+      const p = await openEditor(browser, origin, { width, height, errors });
+      await editPlatform1(p);
+      await p.waitForTimeout(500);
+      const v = await gameView(p);
+      const docks = await p.evaluate(() =>
+        ['left', 'right'].map((d) => {
+          const el = document.querySelector(`[data-dock=${d}]`);
+          return getComputedStyle(el).display === 'none' ? 0 : Math.round(el.getBoundingClientRect().width);
+        }),
+      );
+      // Nothing leaves the bar: each of its parts inside it, on one line.
+      const bar = await p.evaluate(() => {
+        const bar = document.querySelector('.weed-editor-bar').getBoundingClientRect();
+        const out = [];
+        for (const el of document.querySelectorAll('.weed-editor-bar > *, .weed-editor-toolbar button, .weed-editor-toolbar span')) {
+          const r = el.getBoundingClientRect();
+          if (r.width === 0) continue;
+          if (r.left < bar.left - 0.5 || r.right > bar.right + 0.5) out.push(el.id || el.className || el.textContent);
+        }
+        return { height: bar.height, outside: out };
+      });
+      if (bar.outside.length > 0 || bar.height > 40) barOk = false;
+      // The side docks: their default widths from 1280 up, 70 % of them at 1100, over the view (closed) below.
+      const expected = width >= 1280 ? [250, 320] : width >= 1100 ? [175, 224] : [0, 0];
+      rows.push({
+        text: `${width}: view ${v.w}×${v.h}, docks ${docks.join(' + ')}, bar ${bar.height} px${bar.outside.length ? ` (outside: ${bar.outside})` : ''}`,
+        ok: near(docks[0], expected[0], 1) && near(docks[1], expected[1], 1) && v.w === width - docks[0] - docks[1] && followsFrame(v),
+      });
+      await shot(p, `width-${width}`);
+      if (width === 800) {
+        // The debug strip's tabs by their icons, each naming itself on hover.
+        const tabs = await p.evaluate(() =>
+          [...document.querySelectorAll('[data-slot=debug] .debug-ui-tab')].map((tab) => ({
+            title: tab.title,
+            label: getComputedStyle(tab.children[1]).display,
+          })),
+        );
+        if (tabs.length === 0 || !tabs.every((tab) => tab.title !== '' && tab.label === 'none')) {
+          barOk = false;
+          rows.push({ text: `strip tabs ${JSON.stringify(tabs)}`, ok: false });
+        }
+        await p.click('[data-toggle=right]');
+        await p.waitForTimeout(500);
+        const right = await box(p, '[data-dock=right]');
+        const after = await gameView(p);
+        await shot(p, 'width-800-inspector');
+        await p.click('[data-toggle=left]');
+        await p.waitForTimeout(300);
+        await shot(p, 'width-800-both');
+        const left = await box(p, '[data-dock=left]');
+        overlay = { right, left, view: after.w, docksBefore: docks };
+      }
+      await p.close();
+    }
+    check(
+      'widths',
+      barOk &&
+        rows.every((row) => row.ok) &&
+        overlay !== null &&
+        overlay.docksBefore.join() === '0,0' &&
+        overlay.view === 800 &&
+        overlay.right.shown &&
+        near(overlay.right.x + overlay.right.w, 800, 1) &&
+        overlay.left.shown &&
+        near(overlay.left.x, 0, 1),
+      `${rows.map((row) => row.text).join('; ')}; at 800 the inspector opens over the view (${Math.round(overlay?.right.x)}–${Math.round(
+        (overlay?.right.x ?? 0) + (overlay?.right.w ?? 0),
+      )} px) and the view keeps ${overlay?.view} px`,
+    );
 
     check('no page errors', errors.length === 0, errors.slice(0, 3).join(' | '));
   } finally {

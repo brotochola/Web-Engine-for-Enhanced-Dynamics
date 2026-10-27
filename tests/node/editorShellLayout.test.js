@@ -1,7 +1,7 @@
-// The editor page's docks (VISUAL_EDITOR_PLAN.md ED-50): sizes a handle's drag changes, folds, Ctrl+1, 2, 3, the
-// bottom dock's Console pane, and this viewer's layout kept in localStorage (a storage that throws keeps the
-// defaults). The layout runs here on stand-in elements; tests/bench/editorLayoutSmoke.mjs runs the real page in
-// Chromium.
+// The editor page's docks (VISUAL_EDITOR_PLAN.md ED-50, ED-51): sizes a handle's drag changes, folds, Ctrl+1, 2, 3,
+// the bottom dock's Console pane, this viewer's layout kept in localStorage (a storage that throws keeps the defaults),
+// and the narrow layouts (below 1280 px the side docks narrow, below 1100 px they open over the view). The layout runs
+// here on stand-in elements; tests/bench/editorLayoutSmoke.mjs runs the real page in Chromium.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -13,6 +13,7 @@ import {
   SIZE_KEYS,
   SIZE_LIMITS,
   dockKeyOf,
+  narrowFactor,
   numberText,
   paneHeight,
   paneSizeFor,
@@ -184,24 +185,41 @@ const ctrl = (digit, extra = {}) => {
 
 // ---- sizes ----
 
-test('a side dock shows its size, within its bounds and a share of the window', () => {
+test('a side dock shows its size from 1280 px up, within its bounds and a share of the window', () => {
   assert.equal(sideWidth('left', 250, 1920), 250);
   assert.equal(sideWidth('right', 320, 1366), 320);
   assert.equal(sideWidth('left', 50, 1920), SIZE_LIMITS.left[0], 'the minimum');
   assert.equal(sideWidth('left', 640, 1366), 0.32 * 1366, 'a third of the window at most');
   assert.equal(sideWidth('right', 760, 1366), 0.4 * 1366);
-  assert.equal(sideWidth('right', 320, 400), SIZE_LIMITS.right[0], 'a window too small: the minimum wins, as CSS clamp');
+  assert.equal(sideWidth('right', 320, 300), 0.85 * 300, 'over the view: 85 % of the window at most');
+  assert.equal(sideWidth('right', 320, 200), SIZE_LIMITS.right[0], 'a window too small: the minimum wins, as CSS clamp');
+});
+
+test('below 1280 px the side docks give up what the window loses, down to 70 % at 1100 px', () => {
+  assert.equal(narrowFactor(1280), 1);
+  assert.equal(narrowFactor(1920), 1);
+  assert.ok(Math.abs(narrowFactor(1100) - 0.7) < 1e-12);
+  assert.ok(Math.abs(narrowFactor(1190) - 0.85) < 1e-12);
+  assert.ok(Math.abs(sideWidth('left', 250, 1100) - 175) < 1e-9);
+  assert.ok(Math.abs(sideWidth('right', 320, 1100) - 224) < 1e-9);
+  // The view keeps about the width it had at 1280 px.
+  const view = (w) => w - sideWidth('left', 250, w) - sideWidth('right', 320, w);
+  assert.ok(Math.abs(view(1100) - view(1280)) < 15, `${view(1100)} vs ${view(1280)}`);
+  // Below 1100 px they are over the view, at their size again (up to 85 % of the window).
+  assert.equal(narrowFactor(1099), 1);
+  assert.equal(sideWidth('left', 250, 800), 250);
+  assert.equal(sideWidth('right', 640, 600), 0.85 * 600);
 });
 
 test('a drag keeps the size that shows the width it reached, whatever the window', () => {
-  for (const viewport of [1920, 1366, 1100, 800]) {
+  for (const viewport of [1920, 1366, 1279, 1190, 1100, 1099, 800]) {
     for (const side of ['left', 'right']) {
       for (const width of [100, 180, 260, 333, 420, 900]) {
         const size = sideSizeFor(side, width, viewport);
         assert.equal(size, Math.round(size), 'whole px');
         assert.ok(size >= SIZE_LIMITS[side][0] && size <= SIZE_LIMITS[side][1]);
         const [min, sizeMax] = SIZE_LIMITS[side];
-        const max = Math.min((side === 'left' ? 0.32 : 0.4) * viewport, sizeMax);
+        const max = Math.min((viewport < 1100 ? 0.85 : side === 'left' ? 0.32 : 0.4) * viewport, sizeMax * narrowFactor(viewport));
         const wanted = Math.max(min, Math.min(width, max));
         assert.ok(Math.abs(sideWidth(side, size, viewport) - wanted) < 1, `${side} ${width} px at ${viewport}: ${sideWidth(side, size, viewport)}`);
       }
@@ -287,6 +305,7 @@ test('the kept layout is shown at start: each size on the element that reads it,
   const storage = memoryStorage(JSON.stringify({ left: 300, right: 400, bottom: 333, split: 0.7, rightFolded: true, assetsFolded: true }));
   const { el, toggle, fold } = makeLayout({ storage });
   assert.equal(el.body.style.props.get('--weed-left'), '300');
+  assert.equal(el.left.style.props.get('--weed-left'), '300', 'over the view the dock reads it itself');
   assert.equal(el.body.style.props.get('--weed-right'), '400');
   assert.equal(el.bottom.style.props.get('--weed-bottom'), '333');
   assert.equal(el.assets.style.props.get('--weed-assets'), '0.300');
@@ -304,8 +323,9 @@ test('a drag writes one property per move that changes the size, reads the layou
   const { el, handle, storage } = makeLayout();
   const reads = () => el.left.rectReads + el.right.rectReads + el.bottom.rectReads + el.assets.rectReads + el.column.rectReads;
   drag(handle.left, [[10, 0], [10.2, 3], [35, 0], [60, 0]]);
-  // 260, 260 (unchanged: no write), 285, 310.
-  assert.deepEqual(el.body.style.writes.slice(-3), [['--weed-left', '260'], ['--weed-left', '285'], ['--weed-left', '310']]);
+  // 260, 260 (unchanged: no write), 285, 310; the release writes both places once.
+  assert.deepEqual(el.body.style.writes.slice(-4), [['--weed-left', '260'], ['--weed-left', '285'], ['--weed-left', '310'], ['--weed-left', '310']]);
+  assert.deepEqual(el.left.style.writes.at(-1), ['--weed-left', '310']);
   assert.equal(reads(), 1, 'one layout read, at the press');
   assert.equal(storage.sets, 1, 'kept once, at the release');
   assert.equal(JSON.parse(storage.getItem(LAYOUT_KEY)).left, 310);
@@ -405,4 +425,40 @@ test('the Console opens a pane over the strip; it closes a debug panel that is o
   delete queries['.debug-ui-tab.active'];
   el.consoleTab.click();
   assert.equal(layout.layout.bottomFolded, false);
+});
+
+test('below 1100 px the side docks open over the view from the bar and Ctrl+1, 2; their fold button closes them', () => {
+  const { layout, el, win, toggle, fold, handle } = makeLayout({ width: 900, height: 600 });
+  assert.equal(layout.overlay, true);
+  assert.deepEqual(['left', 'right', 'bottom'].map((t) => toggle[t].getAttribute('aria-pressed')), ['false', 'false', 'true']);
+  toggle.right.click();
+  assert.equal(el.body.classList.contains('weed-open-right'), true);
+  assert.equal(el.body.classList.contains('weed-fold-right'), false, 'not a fold');
+  assert.equal(toggle.right.getAttribute('aria-pressed'), 'true');
+  layout.onKey(ctrl(1));
+  assert.equal(el.body.classList.contains('weed-open-left'), true);
+  fold.left.click();
+  assert.equal(el.body.classList.contains('weed-open-left'), false);
+  assert.equal(layout.layout.leftFolded, false, 'closing is not folding');
+  // A drag over the view writes the dock's own width; the release, both places.
+  const bodyWrites = el.body.style.writes.length;
+  el.right.rect = { width: 320, height: 500 };
+  handle.right.dispatch('pointerdown', { button: 0, pointerId: 1, clientX: 580, clientY: 200 });
+  handle.right.dispatch('pointermove', { pointerId: 1, clientX: 530, clientY: 200 });
+  assert.deepEqual(el.right.style.writes.at(-1), ['--weed-right', '370']);
+  assert.equal(el.body.style.writes.length, bodyWrites);
+  handle.right.dispatch('pointerup', { pointerId: 1 });
+  assert.deepEqual(el.body.style.writes.at(-1), ['--weed-right', '370']);
+  // Wide again: the bar's buttons show the folds.
+  win.innerWidth = 1400;
+  layout.apply();
+  assert.equal(toggle.left.getAttribute('aria-pressed'), 'true');
+});
+
+test('in the narrow band a drag keeps the size that shows the reached width at this window', () => {
+  const { layout, el, handle } = makeLayout({ width: 1100 });
+  el.left.rect = { width: 175, height: 700 };
+  drag(handle.left, [[35, 0]]);
+  assert.equal(layout.layout.left, 300, '210 px shown at 70 %');
+  assert.ok(Math.abs(sideWidth('left', layout.layout.left, 1100) - 210) < 1e-9);
 });

@@ -9,8 +9,8 @@
 //
 // The address follows the game page open in it, in its shortest form, so a reload or a bookmark opens it again.
 //
-// The docks resize and fold (editorLayout.js, ED-50); Ctrl+1, Ctrl+2 and Ctrl+3 fold them, typed here or in the game
-// page (its editor passes them on: dockKey).
+// The docks resize and fold, and below 1100 px the side ones open over the view (editorLayout.js, ED-50, ED-51);
+// Ctrl+1, Ctrl+2 and Ctrl+3 fold them, typed here or in the game page (its editor passes them on: dockKey).
 //
 // Nothing of the game page is kept past its pagehide: its nodes are taken out of the docks, its objects are dropped,
 // and the state it hands over is copied with this page's own structuredClone. Any object of a reloaded page's realm

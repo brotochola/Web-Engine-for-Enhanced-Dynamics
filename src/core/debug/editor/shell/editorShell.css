@@ -1,4 +1,4 @@
-/* editorShell.css — the editor page's layout (VISUAL_EDITOR_PLAN.md D9, ED-15; ED-50): a bar on top, the
+/* editorShell.css — the editor page's layout (VISUAL_EDITOR_PLAN.md D9, ED-15; ED-50, ED-51): a bar on top, the
    scene list on the left, the game in the middle, the inspector and the assets on the right, and the bottom dock:
    the debug bar's strip, with the Console's button, and above it a pane of its own height while the Console or a
    debug panel is open. The docks hold what the game page puts into them; the debug bar is the in-page one, made to
@@ -6,9 +6,11 @@
 
    Sizes (editorLayout.js): a handle's drag writes one number, on the one element that reads it. They are registered
    as not inherited, so a change restyles that element alone and lays the page out; nothing under it is restyled.
-     --weed-left, --weed-right   the side docks' widths (px), on the body's grid
+     --weed-left, --weed-right   the side docks' widths (px): the body's grid, or the dock itself over the view
      --weed-bottom               the bottom pane's height (px), on the bottom dock
-     --weed-assets               the Assets section's share of the right column, on that section */
+     --weed-assets               the Assets section's share of the right column, on that section
+   Widths: below 1280 px the side docks narrow (size × (100vw − 680px) / 600: all of it at 1280 px, 70 % at 1100 px),
+   so the view keeps its width; below 1100 px they open over the view, which keeps the whole width. */
 
 @property --weed-left {
   syntax: '<number>';
@@ -177,6 +179,12 @@ body.weed-fold-right {
 .weed-editor-button.active {
   border-color: var(--weed-accent);
   color: var(--weed-accent);
+}
+
+.weed-editor-glyph {
+  display: inline-block;
+  min-width: 1em;
+  text-align: center;
 }
 
 /* The bar's dock buttons: a window with its dock drawn in, filled while the dock shows. */
@@ -673,4 +681,89 @@ body.weed-console-open .weed-editor-bottom > [data-handle='bottom'],
   background: var(--weed-panel);
   backdrop-filter: none;
   border-bottom: 0;
+}
+
+/* ---- narrower windows ---- */
+
+/* Below 1280 px the side docks narrow: they give up what the window loses, so the view keeps its width. */
+@media (1100px <= width < 1280px) {
+  body.weed-editor {
+    grid-template-columns:
+      calc(var(--weed-left-on) * clamp(140px, var(--weed-left) * (100vw - 680px) / 600, 32vw))
+      minmax(0, 1fr)
+      calc(var(--weed-right-on) * clamp(200px, var(--weed-right) * (100vw - 680px) / 600, 40vw));
+  }
+}
+
+/* Below 1100 px the side docks are panels over the view, opened from the bar (or Ctrl+1, Ctrl+2): the view keeps the
+   whole width. Each overflows its empty grid track into the view. */
+@media (width < 1100px) {
+  body.weed-editor {
+    grid-template-columns: 0px minmax(0, 1fr) 0px;
+  }
+
+  .weed-editor-game {
+    grid-column: 1 / -1;
+  }
+
+  .weed-editor-left,
+  .weed-editor-right {
+    display: none;
+    grid-row: 2;
+    z-index: 20;
+    box-shadow: 0 0 28px rgba(0, 0, 0, 0.65);
+  }
+
+  .weed-editor-left {
+    grid-column: 1;
+    justify-self: start;
+    width: clamp(140px, var(--weed-left) * 1px, 85vw);
+  }
+
+  .weed-editor-right {
+    grid-column: 3;
+    justify-self: end;
+    width: clamp(200px, var(--weed-right) * 1px, 85vw);
+  }
+
+  body.weed-open-left .weed-editor-left,
+  body.weed-open-right .weed-editor-right {
+    display: flex;
+  }
+
+  /* The bar: labels shorten to their marks. */
+  .weed-editor-wide {
+    display: none;
+  }
+
+  .weed-editor-bar {
+    gap: 4px 6px;
+    padding: 4px 8px;
+  }
+
+  .weed-editor-toolbar .weed-editor-button {
+    padding: 3px 7px;
+  }
+
+  .weed-editor-slot[data-slot='debug'] .debug-ui-tab {
+    padding: 0 9px;
+    gap: 4px;
+  }
+}
+
+/* The strip: the debug bar's tabs show their marks only, the open one its name too. */
+@media (width < 900px) {
+  .weed-editor-slot[data-slot='debug'] .debug-ui-tab > span:not(.icon) {
+    display: none;
+  }
+
+  .weed-editor-slot[data-slot='debug'] .debug-ui-tab.active > span:not(.icon):not(.arrow) {
+    display: inline;
+  }
+}
+
+@media (width < 640px) {
+  .weed-editor-title {
+    display: none;
+  }
 }

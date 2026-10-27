@@ -9,7 +9,7 @@
 </head>
 <body class="weed-editor">
   <header class="weed-editor-bar">
-    <span class="weed-editor-title">WeedJS editor</span>
+    <span class="weed-editor-title" title="WeedJS editor">WeedJS<span class="weed-editor-wide"> editor</span></span>
     <div class="weed-editor-toolbar" data-slot="toolbar"></div>
     <span class="weed-editor-spacer"></span>
     <span class="weed-editor-status" id="status"></span>
@@ -24,8 +24,8 @@
         <svg viewBox="0 0 16 16" aria-hidden="true"><rect class="pane" x="2.5" y="9" width="11" height="3.5" /><rect x="1.5" y="2.5" width="13" height="11" rx="2" /></svg>
       </button>
     </div>
-    <button type="button" class="weed-editor-button" id="reload" title="Reload the game's page; the editor keeps its document, undo and selection">Reload game</button>
-    <a class="weed-editor-button" id="gameOnly" target="_blank" rel="noopener" title="The game's page on its own, in a new tab">Game only ↗</a>
+    <button type="button" class="weed-editor-button" id="reload" title="Reload the game's page; the editor keeps its document, undo and selection"><span class="weed-editor-glyph" aria-hidden="true">↻</span><span class="weed-editor-wide"> Reload game</span></button>
+    <a class="weed-editor-button" id="gameOnly" target="_blank" rel="noopener" title="The game's page on its own, in a new tab"><span class="weed-editor-wide">Game only </span><span aria-hidden="true">↗</span></a>
   </header>
 
   <aside class="weed-editor-dock weed-editor-left" data-dock="left" aria-label="Scene">
