@@ -6,8 +6,9 @@ import { Layer } from '../../src/core/layer.js';
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { CLOCK_BYTES, Time } from '../../src/core/timeScale.js';
-import { LAYER_KIND } from '../../src/util/configDefaults.js';
-import { seededRandom } from '../../src/util/utils.js';
+import { LAYER_KIND, PARTICLE_EASE } from '../../src/util/configDefaults.js';
+import { randomRange, rngFill, seededRandom } from '../../src/util/utils.js';
+import { resolveParticleColorOp, resolveParticleOp } from '../../src/util/particleTween.js';
 import {
   GPU_FRAME_MS,
   GPU_GROUP,
@@ -44,6 +45,82 @@ function setup(layer = { kind: LAYER_KIND.GPU_PARTICLES, maxParticles: 4096 }, {
 }
 
 const ring = (slot = 0) => GpuParticles.layerOf('smoke').rings[slot];
+
+test('seededRandom fills a batch with the numbers as many calls return, and rngFill draws from rng', () => {
+  const calls = seededRandom(99, 'fill');
+  const batch = seededRandom(99, 'fill');
+  const out = new Float64Array(1000);
+  batch.fill(out, 0, 500);
+  batch.fill(out, 500, 500);
+  for (let i = 0; i < 1000; i++) assert.equal(out[i], calls(), `number ${i}`);
+  assert.equal(batch(), calls(), 'both left at the same place');
+  const previous = globalThis.rng;
+  try {
+    globalThis.rng = seededRandom(5, 'fill');
+    const expected = seededRandom(5, 'fill');
+    rngFill(out, 3, 4);
+    for (let i = 3; i < 7; i++) assert.equal(out[i], expected());
+    globalThis.rng = () => 0.5;
+    assert.throws(() => rngFill(out, 0, 1), /seededRandom/);
+  } finally {
+    globalThis.rng = previous;
+  }
+});
+
+test('emitGpu writes the particles the per-key resolvers draw from the same seed, in their order', { concurrency: false }, () => {
+  const restore = setup();
+  try {
+    const cfg = {
+      count: 64,
+      x: { min: -40, max: 40 },
+      y: 12,
+      angleXY: { min: 0, max: 360 },
+      speed: { min: 0.1, max: 2 },
+      lifespan: { min: 400, max: 900 },
+      drag: { min: 0, max: 3 },
+      scale: { from: { min: 0.2, max: 0.6 }, to: 1.5, ease: PARTICLE_EASE.QUAD_OUT },
+      alpha: { min: 0.3, max: 1 },
+      tint: { from: { min: 0x102030, max: 0xf0e0d0 }, to: { min: 0, max: 0x808080 }, ease: PARTICLE_EASE.CUBIC_IN },
+      rotation: { from: 0, to: { min: -90, max: 90 } },
+    };
+    globalThis.rng = seededRandom(31337, 'resolvers');
+    ParticleEmitter.emitGpu({ layer: 'smoke', ...cfg });
+    const afterEmit = globalThis.rng;
+    globalThis.rng = seededRandom(31337, 'resolvers');
+    const r = ring(0);
+    const f32 = (v) => Math.fround(v);
+    for (let k = 0; k < cfg.count; k++) {
+      const b = k * GPU_RECORD_FLOATS;
+      const x0 = randomRange(cfg.x, 0);
+      const y0 = randomRange(cfg.y, 0);
+      const angle = (randomRange(cfg.angleXY, 0) * Math.PI) / 180;
+      const speed = randomRange(cfg.speed, 0);
+      const drag = (randomRange(cfg.drag, 0) * GPU_FRAME_MS) / 1000;
+      const life = randomRange(cfg.lifespan, 1000);
+      randomRange(undefined, 0); // delay: none
+      const scale = resolveParticleOp(cfg.scale, 1);
+      const alpha = resolveParticleOp(cfg.alpha, 1);
+      const tint = resolveParticleColorOp(cfg.tint, 0xffffff);
+      const rot = resolveParticleOp(cfg.rotation, 0);
+      assert.equal(r.records[b + GPU_REC.X0], f32(x0), `x of ${k}`);
+      assert.equal(r.records[b + GPU_REC.Y0], f32(y0));
+      assert.equal(r.records[b + GPU_REC.VX], f32(speed * Math.cos(angle)));
+      assert.equal(r.records[b + GPU_REC.VY], f32(speed * Math.sin(angle)));
+      assert.equal(r.records[b + GPU_REC.DRAG], f32(drag));
+      assert.equal(r.records[b + GPU_REC.LIFE], f32(life));
+      assert.equal(r.records[b + GPU_REC.SCALE_X_FROM], f32(scale.from));
+      assert.equal(r.records[b + GPU_REC.SCALE_Y_TO], f32(scale.to));
+      assert.equal(r.records[b + GPU_REC.ALPHA_FROM], f32(alpha.from));
+      assert.equal(r.records[b + GPU_REC.ALPHA_TO], f32(alpha.to));
+      assert.equal(r.recordBits[b + GPU_REC.TINT_FROM_T], tint.from & 0xffffff);
+      assert.equal(r.recordBits[b + GPU_REC.TINT_TO_T], tint.to & 0xffffff);
+      assert.equal(r.records[b + GPU_REC.ROT_TO], f32((rot.to * Math.PI) / 180));
+    }
+    assert.equal(afterEmit(), globalThis.rng(), 'the emit drew as many numbers as the resolvers');
+  } finally {
+    restore();
+  }
+});
 
 test('ring capacities are powers of two, split by the writers\' shares', () => {
   assert.equal(gpuWriterCount(3), 5, 'main, three logic workers, the particle worker');

@@ -110,7 +110,7 @@ export function resolveEaseId(ease) {
  * @param {unknown} v
  * @returns {boolean}
  */
-function isFromToObject(v) {
+export function isFromToObject(v) {
   return (
     v != null &&
     typeof v === 'object' &&
