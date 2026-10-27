@@ -101,6 +101,11 @@ export class EditorHost {
     frame.contentWindow?.focus();
   }
 
+  /** Whether the connected game page's editor has changes its file does not hold (this page's unload asks first). */
+  hasUnsavedChanges() {
+    return this._client !== null && this._client.hasUnsavedChanges?.() === true;
+  }
+
   /** A key typed in this page: the connected game page's editor takes the ones it wants. */
   onKeyDown(e) {
     if (this._client !== null) this._client.onHostKey(e);
@@ -157,6 +162,13 @@ export function startEditorShell(doc) {
   });
   win[HOST_KEY] = host;
   win.addEventListener('keydown', (e) => host.onKeyDown(e));
+  // Reloading or closing this page drops the editor's state with it: ask first when it has unsaved changes. A reload
+  // of the game page alone keeps them (the handover).
+  win.addEventListener('beforeunload', (e) => {
+    if (!host.hasUnsavedChanges()) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
 
   // The bottom dock's tabs.
   for (const tab of doc.querySelectorAll('[data-tab]')) {

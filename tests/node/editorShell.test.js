@@ -83,6 +83,20 @@ test('a state that cannot be copied is dropped with a warning, and the page is l
   assert.equal(host.connect({ onHostKey() {} }).kept, null);
 });
 
+test('the editor page asks before it unloads only while the connected page has unsaved changes', () => {
+  const { host } = makeHost();
+  assert.equal(host.hasUnsavedChanges(), false, 'no page');
+  let dirty = true;
+  const page = { onHostKey() {}, hasUnsavedChanges: () => dirty };
+  host.connect(page);
+  assert.equal(host.hasUnsavedChanges(), true);
+  dirty = false;
+  assert.equal(host.hasUnsavedChanges(), false);
+  host.disconnect(page, null);
+  dirty = true;
+  assert.equal(host.hasUnsavedChanges(), false, 'a page that has gone');
+});
+
 test('keys typed in the editor page go to the connected page only', () => {
   const { host } = makeHost();
   const got = [];

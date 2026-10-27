@@ -160,6 +160,11 @@ export class HostedEditor {
     if (debugUI.editing && (save || !typing) && debugUI.onEditKey(e)) e.preventDefault();
   }
 
+  /** Whether the document has changes its file does not hold: the editor page asks before it unloads. */
+  hasUnsavedChanges() {
+    return this.debugUI.editMode.dirty;
+  }
+
   /** Edit mode, the document, the status or the file changed: the toolbar shows it. */
   onEditorChanged() {
     this.toolbar?.refresh();
