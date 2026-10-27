@@ -56,6 +56,8 @@ export class Selection {
         this.editor.editSelected(`${this.name}.${key}`, (record, description) => writeParam(record, description, key, value)),
       onConfig: (config) => this.editor.editSelected(`${this.name} config`, (record) => writeConfig(record, config)),
       entityNames: (className) => namesOf(debugUI.scene, className, this.name),
+      // Stage 4: a point added to a points param (handles.js).
+      addPoint: (key) => this.editor.handles?.addPoint(key),
     };
   }
 

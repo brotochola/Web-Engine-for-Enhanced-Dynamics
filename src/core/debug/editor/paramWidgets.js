@@ -2,7 +2,8 @@
 // row per declared param with the widget its kind asks for, its default beside it, and a button back to the default
 // when it differs; for a class that declares none, a key/value box (the config as JSON). Built when the selection
 // changes, never per frame. A change is reported once per user action: a number when its field is left or its
-// slider let go, a color when the picker closes, a text when its field is left.
+// slider let go, a color when the picker closes, a text when its field is left. With the hook for it, a points
+// param's row has a + (handles.js: its points are dragged in the view).
 
 import {
   KIND_NUMBER,
@@ -53,7 +54,7 @@ export function defaultText(kind, entry, value) {
  * @param {object|null} description - describeSpawnParams of the class, or null when it declares none
  * @param {object} config - the record's config, `{}` when it has none
  * @param {{ onChange: (key: string, value: unknown) => void, onConfig: (config: object) => void,
- *   entityNames: (className?: string) => string[] }} hooks
+ *   entityNames: (className?: string) => string[], addPoint?: (key: string) => void }} hooks
  */
 export function buildParamFields(container, description, config, hooks) {
   container.textContent = '';
@@ -84,7 +85,7 @@ function paramRow(key, kind, entry, fallback, value, set, hooks) {
   row.appendChild(label);
 
   const commit = (next) => hooks.onChange(key, next);
-  row.appendChild(widget(kind, entry, value, commit, hooks));
+  row.appendChild(widget(kind, entry, value, commit, hooks, key));
 
   const reset = document.createElement('button');
   reset.type = 'button';
@@ -102,7 +103,29 @@ function paramRow(key, kind, entry, fallback, value, set, hooks) {
   return row;
 }
 
-function widget(kind, entry, value, commit, hooks) {
+/** A small button of the debug UI's. */
+function button(text, title) {
+  const el = document.createElement('button');
+  el.type = 'button';
+  el.className = 'debug-ui-btn';
+  el.textContent = text;
+  el.title = title;
+  el.style.cssText = 'flex:none;padding:1px 6px';
+  return el;
+}
+
+/** A field and a button side by side, in the widget's column. */
+function inRow(field, side) {
+  const box = document.createElement('div');
+  box.style.cssText = 'display:flex;gap:4px;align-items:center;min-width:0';
+  field.style.flex = '1';
+  field.style.minWidth = '0';
+  box.appendChild(field);
+  box.appendChild(side);
+  return box;
+}
+
+function widget(kind, entry, value, commit, hooks, key) {
   switch (kind) {
     case KIND_NUMBER:
       return numberWidget(entry, value, commit);
@@ -139,9 +162,13 @@ function widget(kind, entry, value, commit, hooks) {
       const text = document.createElement('span');
       const pairs = value ? value.length >> 1 : 0;
       text.textContent = `${pairs} point${pairs === 1 ? '' : 's'}`;
-      text.title = 'Edited in the scene file for now; dragging handles in the view comes later';
-      text.style.cssText = 'font-size:11px;color:#aaa';
-      return text;
+      text.title = 'Drag its points in the view; Alt+click on its line adds one there, Del over one removes it';
+      text.style.cssText = 'font-size:11px;color:#aaa;flex:1';
+      if (!hooks.addPoint) return text;
+      const add = button('+', 'Add a point after the last');
+      add.dataset.addPoint = key;
+      add.onclick = () => hooks.addPoint(key);
+      return inRow(text, add);
     }
     default: {
       // string, sprite, animation
