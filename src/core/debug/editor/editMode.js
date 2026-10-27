@@ -80,7 +80,7 @@ export class EditMode {
     this.selection = new Selection(debugUI);
     this.selection.editor = this;
     this.move = new MoveTool(this.selection);
-    this.history = new History();
+    this.history = new History((change, forward) => this._apply(change, forward));
     this.palette = new Palette(this);
     /** The class each click on the view places (the palette's button), or null. */
     this.placing = null;
@@ -276,21 +276,42 @@ export class EditMode {
     const id = editorIdOf(found.record);
     const result = editPlaced(scene, selection.name, write);
     if (result === null) return -1;
-    const { before, after } = result;
-    this.history.push({
-      id: 0,
-      label,
-      undo: () => this._restore(id, before),
-      redo: () => this._restore(id, after),
-    });
+    this.history.push({ id: 0, label, kind: 'edit', editorId: id, before: result.before, after: result.after });
     this._showRestored(result.index);
     return result.index;
+  }
+
+  /**
+   * Carry out a change of the history (history.js): forward for a redo, backward for an undo. A change is data, so
+   * a change made by the game page before a reload applies here too (D9).
+   */
+  _apply(change, forward) {
+    switch (change.kind) {
+      case 'edit':
+        this._restore(change.editorId, forward ? change.after : change.before);
+        break;
+      case 'add':
+      case 'remove':
+        if (forward === (change.kind === 'add')) this._putBack(change);
+        else this._remove(change.editorId);
+        break;
+      case 'rename':
+        this._renameTo(change.editorId, forward ? change.to : change.from);
+        break;
+      default:
+        throw new Error(`editor: no such change: ${change.kind}`);
+    }
   }
 
   _restore(id, snapshot) {
     const scene = this.debugUI.scene;
     const name = nameOfEditorId(scene, id);
     this._showRestored(name === null ? -1 : restorePlaced(scene, name, snapshot));
+  }
+
+  /** An added record again, or a removed one back: a copy of it at its place in the file, with its editor id. */
+  _putBack({ editorId, at, copy }) {
+    this._showRestored(addPlaced(this.debugUI.scene, withEditorId(structuredClone(copy), editorId), at));
   }
 
   // ---- scene files: the level list, Open, New, Save As (ED-38) ----
@@ -447,15 +468,8 @@ export class EditMode {
       this._setStatus(`${record.class}: its pool of ${pool} is full. Raise its count in ${scene.constructor.name}.entities`, true);
       return -1;
     }
-    const id = editorIdOf(record);
     const at = scene.sceneFile.entities.indexOf(record);
-    const copy = structuredClone(record);
-    this.history.push({
-      id: 0,
-      label,
-      undo: () => this._remove(id),
-      redo: () => this._showRestored(addPlaced(this.debugUI.scene, withEditorId(structuredClone(copy), id), at)),
-    });
+    this.history.push({ id: 0, label, kind: 'add', editorId: editorIdOf(record), at, copy: structuredClone(record) });
     this._showRestored(index);
     return index;
   }
@@ -468,13 +482,13 @@ export class EditMode {
     const found = recordOf(scene, selection.name);
     if (found === null) return false;
     const id = editorIdOf(found.record);
-    const copy = structuredClone(found.record);
-    const at = found.position;
     this.history.push({
       id: 0,
       label: `delete ${selection.name}`,
-      undo: () => this._showRestored(addPlaced(this.debugUI.scene, withEditorId(structuredClone(copy), id), at)),
-      redo: () => this._remove(id),
+      kind: 'remove',
+      editorId: id,
+      at: found.position,
+      copy: structuredClone(found.record),
     });
     this._remove(id);
     return true;
@@ -503,12 +517,7 @@ export class EditMode {
       return false;
     }
     const id = editorIdOf(found.record);
-    this.history.push({
-      id: 0,
-      label: `rename ${from} to ${to}`,
-      undo: () => this._renameTo(id, from),
-      redo: () => this._renameTo(id, to),
-    });
+    this.history.push({ id: 0, label: `rename ${from} to ${to}`, kind: 'rename', editorId: id, from, to });
     this._showRestored(indexOfName(scene, to));
     return true;
   }
