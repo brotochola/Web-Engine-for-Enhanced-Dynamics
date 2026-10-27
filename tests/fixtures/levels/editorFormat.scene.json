@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "script": "../editorFormatScene.js",
+  "export": "EditorFormatScene",
+  "entities": [
+    { "name": "Anchor", "class": "FormatBlock", "x": 600, "y": 400, "config": { "fixed": true } },
+    { "name": "Swing", "class": "FormatBlock", "x": 760, "y": 400 },
+    { "name": "Crate", "class": "FormatBlock", "x": 400, "y": 600 }
+  ],
+  "joints": [
+    { "type": "revolute", "a": "Anchor", "b": "Swing", "anchorA": [80, 0], "anchorB": [-80, 0] }
+  ],
+  "decorations": [
+    {
+      "class": "Pebble",
+      "x": [300, 340, 380],
+      "y": [800, 810, 805]
+    }
+  ]
+}
