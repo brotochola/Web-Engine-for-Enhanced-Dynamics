@@ -87,10 +87,15 @@ export function writeConfig(record, config) {
 
 /** What a change can touch in a record, copied: its position and its config. */
 export function snapshotOf(record) {
-  return { x: record.x, y: record.y, config: record.config === undefined ? undefined : structuredClone(record.config) };
+  const snapshot = { config: record.config === undefined ? undefined : structuredClone(record.config) };
+  for (const key of SNAPSHOT_KEYS) snapshot[key] = record[key];
+  return snapshot;
 }
 
-const sameSnapshot = (a, b) => a.x === b.x && a.y === b.y && JSON.stringify(a.config) === JSON.stringify(b.config);
+/** What an edit may change beside the config, and undo puts back: the transform (ED-53) and the seed (ED-56). */
+const SNAPSHOT_KEYS = ['x', 'y', 'rotation', 'scaleX', 'scaleY', 'seed'];
+
+const sameSnapshot = (a, b) => SNAPSHOT_KEYS.every((key) => a[key] === b[key]) && JSON.stringify(a.config) === JSON.stringify(b.config);
 
 /**
  * Change a placed entity's record with `write(record, description)`, and respawn the entity.
@@ -118,8 +123,11 @@ export function restorePlaced(scene, name, snapshot) {
   const found = recordOf(scene, name);
   if (found === null) return -1;
   const { record } = found;
-  record.x = snapshot.x;
-  record.y = snapshot.y;
+  // A key the snapshot has not (rotation 0, scale 1, no seed; a history from before ED-53) leaves the record.
+  for (const key of SNAPSHOT_KEYS) {
+    if (snapshot[key] === undefined) delete record[key];
+    else record[key] = snapshot[key];
+  }
   if (snapshot.config === undefined) delete record.config;
   else record.config = structuredClone(snapshot.config);
   return respawnPlaced(scene, name);

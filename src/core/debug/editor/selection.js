@@ -6,7 +6,8 @@
 // The selection is the entity, not its slot: it keeps the spawn generation, and an entity that despawns (or whose
 // slot goes to another) is not selected any more. A fast swap clears it.
 //
-// An authored entity's panel has a field per spawn param (paramWidgets.js, ED-7). A change goes through the editor
+// An authored entity's panel has its position, rotation and scale first (transformFields.js, ED-53), then a field
+// per spawn param (paramWidgets.js, ED-7). A change goes through the editor
 // (EditMode.editSelected): it edits the record in the scene file's document, respawns the entity (sceneDocument.js,
 // ED-9), keeps the change for undo, and selects the respawned entity.
 //
@@ -28,6 +29,7 @@ import { LiveInspector } from './liveInspector.js';
 import { JointsPanel } from './jointsPanel.js';
 import { recordOf, paramsOf, writeParam, writeConfig } from './sceneDocument.js';
 import { AssetCatalog } from './assetPicker.js';
+import { TransformFields } from './transformFields.js';
 
 export class Selection {
   constructor(debugUI) {
@@ -50,6 +52,8 @@ export class Selection {
     this._nameRow = null;
     this._nameInput = null;
     this._fields = null;
+    /** Position, rotation and scale (transformFields.js, ED-53), made with the panel. */
+    this.transform = null;
     /** The live values (liveInspector.js), made with the panel. */
     this.live = null;
     /** The file's joints that name the entity (jointsPanel.js, ED-21), made with the panel. */
@@ -104,6 +108,7 @@ export class Selection {
     this.className = '';
     this.debugUI.debugFlags?.clearSelectedEntity();
     this.debugUI.canvas.syncLoop();
+    this.transform?.cancelDrag();
     this.live?.clear();
     if (this._panel) this._panel.hide();
     else if (this._body !== null) this._body.remove(); // the Inspector dock says nothing is selected
@@ -163,6 +168,7 @@ export class Selection {
     }
     const found = this.authored ? recordOf(scene, this.name) : null;
     this._nameRow.style.display = found === null ? 'none' : 'flex';
+    this.transform.show(found === null ? null : found.record, this.index);
     if (found === null) {
       this._fields.textContent = '';
     } else {
@@ -196,9 +202,10 @@ export class Selection {
     this._nameRow.appendChild(nameLabel);
     this._nameRow.appendChild(this._nameInput);
     this._fields = document.createElement('div');
+    this.transform = new TransformFields(this);
     this.joints = new JointsPanel(this);
     this.live = new LiveInspector(this);
-    this._body.append(this._title, this._detail, this._nameRow, this._fields, this.joints.el, this.live.el);
+    this._body.append(this._title, this._detail, this._nameRow, this.transform.el, this._fields, this.joints.el, this.live.el);
   }
 
   /** How many others are selected with it (ED-28): a line under its name. */
