@@ -523,6 +523,8 @@
     posePublish: null,
     workerPorts: new Map(),
     timeoutId: 0,
+    // The pending requestAnimationFrame: a pause cancels it (clearSchedulers).
+    rafId: 0,
     collectDetailedStats: false,
     // Box2D aborted (out of memory, first of all): the error is on screen and the module is dead.
     box2dAborted: false,
@@ -1272,7 +1274,7 @@
     } else if (state.noLimitFPS) {
       state.timeoutId = setTimeout(gameLoop, 2);
     } else {
-      requestAnimationFrame(gameLoop);
+      state.rafId = requestAnimationFrame(gameLoop);
     }
     pumpQueryWake();
   }
@@ -1307,6 +1309,12 @@
   }
 
   function clearSchedulers() {
+    // A frame left pending would run after a resume beside the loop it starts: a pause and resume within one frame (a
+    // fast swap) made a second loop, and each extra frame stepped the world another 1/60 s.
+    if (state.rafId) {
+      cancelAnimationFrame(state.rafId);
+      state.rafId = 0;
+    }
     if (state.timeoutId) {
       clearTimeout(state.timeoutId);
       state.timeoutId = 0;
@@ -1375,7 +1383,8 @@
         // Between steps by construction: the reply proves the world is idle.
         self.postMessage({ msg: 'barrierDone', id: data.id | 0 });
       } else if (data.msg === 'resume') {
-        startGameLoop();
+        // Running already: its loop goes on (a frame started here would step the world an extra 1/60 s).
+        if (state.isPaused) startGameLoop();
       } else if (data.msg === 'step') {
         var stepMs = Number(data.deltaTime);
         state.isPaused = false;
