@@ -1,15 +1,24 @@
 # Visual editor plan
 
-**Opened:** 2026-10-22. **Updated:** 2026-10-26, against the code after the WASM migration
-(E-76, merged in 2958b6aa); see "Changes since 2026-10-22". **Status:** Stages 1 and 2
-done 2026-10-26 (milestone M1 reached); Stage 3 started with ED-15, the editor page (D9).
-**Next step:** the final test pass (all suites and smokes, fresh bundles). Deferred:
-ED-19, ED-23, ED-35b. For the author: confirm the new APIs in Found items 15 and 18. **Time box (the author, 2026-10-26):** 12 hours,
-14 at most, for the rest of the plan with its tests. So Stage 4's items run in parallel in
-three agent worktrees (handles: ED-20, ED-22, ED-27 with ED-45's view parts; scene file:
-ED-21, ED-25; panels: ED-24, ED-26, ED-45's pickers) and a fourth runs ED-31 and ED-32, on
-the editor tools extension point (2ab97e45); the lead does ED-19, ED-29, ED-30, ED-33, ED-28
-and the merges. ED-23 and ED-35b are deferred (below).
+**Opened:** 2026-10-22. **Updated:** 2026-10-27. **Status: done** on branch `visual_editor`,
+every stage, but three items deferred with their reasons: ED-19 (pause only the simulation
+workers), ED-23 (the particle lab as a panel), ED-35b (a fast swap to another scene class).
+Stage 4 and ED-31/32 were built in parallel by four agents in worktrees, on the editor tools
+extension point (2ab97e45), and merged; the author set a 12 to 14 hour time box for Stages
+3 (rest) to 5.
+
+**Final test pass, 2026-10-27 00:04** (one run, on the merged tree): node 2,233/2,233; demos
+105/105; check:types; editorM1Smoke 17/17, editorShellSmoke 11/11, editorHandlesSmoke 10/10,
+editorFormatSmoke 10/10, editorPanelsSmoke 7/7, editorExportSmoke 16/16 (its own fresh
+engine); fresh bundles (make_bundle, the editor's build): node tests on the bundles 244 × 5,
+smoke-bundle-browser all 8, smokeEditorBundle 5/5, sceneCycleSmoke OK (heap 9.5 → 9.5 MB);
+`dist/` put back as committed.
+
+**For the author:** confirm the new APIs of Found items 15 (`registerSceneFile`) and 18
+(`static decorations`, `spawnMany` with arrays); `static defaultSceneFile` and
+`loadScene(url, { sceneFile })` are confirmed. `npm run release` now publishes
+`@weed.js/editor` with the engine; publish `create-weed-game` only after that, since a new
+game asks for it.
 
 A visual editor for WeedJS: click an entity in the running scene, move it, change its
 settings, save the result to a scene file, play it, stop it. Unity, Godot and PlayCanvas
