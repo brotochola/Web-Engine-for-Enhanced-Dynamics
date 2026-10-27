@@ -26,6 +26,7 @@ import { pickEntityAt } from './pick.js';
 import { buildParamFields } from './paramWidgets.js';
 import { LiveInspector } from './liveInspector.js';
 import { recordOf, paramsOf, writeParam, writeConfig } from './sceneDocument.js';
+import { AssetCatalog } from './assetPicker.js';
 
 export class Selection {
   constructor(debugUI) {
@@ -59,6 +60,9 @@ export class Selection {
       onConfig: (config) => this.editor.editSelected(`${this.name} config`, (record) => writeConfig(record, config)),
       entityNames: (className) => namesOf(debugUI.scene, className, this.name),
     };
+
+    // What the scene loaded, for the sprite and animation params' pickers (assetPicker.js, ED-45).
+    this._hooks.assets = new AssetCatalog(() => debugUI.scene);
   }
 
   /** Placed by the running scene file (it has a name there). */

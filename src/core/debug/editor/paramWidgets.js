@@ -15,6 +15,7 @@ import {
   KIND_ENTITY,
   KIND_POINTS,
 } from '../../spawnParams.js';
+import { assetPickerWidget } from './assetPicker.js';
 
 const FIELD_STYLE =
   'font-size:11px;padding:2px 4px;background:rgba(0,0,0,0.5);color:white;' +
@@ -143,8 +144,12 @@ function widget(kind, entry, value, commit, hooks) {
       text.style.cssText = 'font-size:11px;color:#aaa';
       return text;
     }
+    case KIND_SPRITE:
+    case KIND_ANIMATION:
+      // A picker over what the scene loaded, with a thumbnail (assetPicker.js, ED-45).
+      return assetPickerWidget(kind, value, commit, hooks.assets ?? null);
     default: {
-      // string, sprite, animation
+      // string
       const input = document.createElement('input');
       input.type = 'text';
       input.value = value;
