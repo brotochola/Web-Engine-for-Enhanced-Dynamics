@@ -433,6 +433,11 @@ export class EntityTree {
     this._sizeObserver = null;
     this._observedView = null;
     this._shownHeight = -1;
+    /**
+     * The list's scroll, as its scroll events report it: drawing and scrolling to a row read these, not the layout,
+     * since a selection rebuilds the inspector in the same task and a layout read there costs a whole page's layout.
+     */
+    this._scrollTop = 0;
     this._onResize = () => {
       const height = this._list.clientHeight;
       if (height === this._shownHeight) return;
@@ -525,7 +530,8 @@ export class EntityTree {
     this._menuScrollTop = 0;
 
     this._onScroll = () => {
-      if (this._menu.isOpen && this._list.scrollTop !== this._menuScrollTop) this._menu.close(false);
+      this._scrollTop = this._list.scrollTop;
+      if (this._menu.isOpen && this._scrollTop !== this._menuScrollTop) this._menu.close(false);
       this.render();
     };
     this._onClick = (e) => this._clicked(e, false);
@@ -645,10 +651,13 @@ export class EntityTree {
     const selection = this.debugUI.editMode.selection;
     if (cleared && selection.index >= 0) {
       const row = this.model.reveal(selection.index, selection.name);
-      if (row >= 0) top = Math.max(0, row * ROW_HEIGHT - (this._list.clientHeight >> 1));
+      if (row >= 0) top = Math.max(0, row * ROW_HEIGHT - (this._viewHeight() >> 1));
     }
     this._sizeSpacer(this.model.rowCount);
-    if (this._list.scrollTop !== top) this._list.scrollTop = top;
+    if (this._scrollTop !== top) {
+      this._scrollTop = top;
+      this._list.scrollTop = top;
+    }
     this.render();
   }
 
@@ -777,8 +786,8 @@ export class EntityTree {
       const same = at !== null && this._indexAt(at) === this._cursorIndex;
       start = step > 0 ? (same ? this._cursorRow + 1 : this._cursorRow) : this._cursorRow - 1;
     } else {
-      const first = Math.floor(this._list.scrollTop / ROW_HEIGHT);
-      const view = Math.max(1, Math.floor(this._list.clientHeight / ROW_HEIGHT));
+      const first = Math.floor(this._scrollTop / ROW_HEIGHT);
+      const view = Math.max(1, Math.floor(this._viewHeight() / ROW_HEIGHT));
       start = step > 0 ? first : Math.min(total - 1, first + view - 1);
     }
     for (let r = start; r >= 0 && r < total; r += step) {
@@ -1196,9 +1205,8 @@ export class EntityTree {
     const model = this.model;
     const total = model.rowCount;
     this._sizeSpacer(total);
-    const list = this._list;
-    const first = Math.floor(list.scrollTop / ROW_HEIGHT);
-    const fit = Math.ceil((list.clientHeight || 400) / ROW_HEIGHT) + 1;
+    const first = Math.floor(this._scrollTop / ROW_HEIGHT);
+    const fit = Math.ceil((this._viewHeight() || 400) / ROW_HEIGHT) + 1;
     while (this._rows.length < fit) this._addRow();
     for (let k = 0; k < this._rows.length; k++) {
       const r = first + k;
@@ -1230,15 +1238,21 @@ export class EntityTree {
     this._sizeSpacer(this.model.rowCount);
     const list = this._list;
     const top = row * ROW_HEIGHT;
-    const view = list.clientHeight;
-    const scroll = list.scrollTop;
+    const view = this._viewHeight();
+    const scroll = this._scrollTop;
     if (top >= scroll && top + ROW_HEIGHT <= scroll + view) return;
     const near = NEAR_ROWS * ROW_HEIGHT;
     let to;
     if (top < scroll && top >= scroll - near) to = top;
     else if (top >= scroll && top < scroll + view + near) to = top + ROW_HEIGHT - view;
     else to = top - (view >> 1);
-    list.scrollTop = Math.max(0, to);
+    this._scrollTop = Math.max(0, to);
+    list.scrollTop = this._scrollTop;
+  }
+
+  /** The list's height: as its observer last saw it, read from the layout only before it has. */
+  _viewHeight() {
+    return this._shownHeight > 0 ? this._shownHeight : this._list.clientHeight;
   }
 
   _addRow() {

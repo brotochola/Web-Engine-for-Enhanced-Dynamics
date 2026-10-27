@@ -203,7 +203,8 @@ export class Selection {
     sections.joints.visible = withBody;
     sections.joints.note.textContent = joints > 0 ? String(joints) : '';
     sections.joints.setOpen(joints > 0 || sections.joints.rememberedOpen(false), false);
-    this.joints.show(withBody ? this.name : null);
+    // Built only while open: its rows list every entity of the file (littleCity: 1,307 names a selection).
+    this.joints.show(withBody && sections.joints.open ? this.name : null);
     // Live: folded until opened; folded, it has no rows and its tick reads nothing.
     sections.live.note.textContent = registered !== null ? describeLive(registered) : '';
     if (sections.live.open) this.live.show(this.index);
@@ -248,7 +249,10 @@ export class Selection {
     const sections = {
       transform: new InspectorSection('transform', 'Transform'),
       params: new InspectorSection('params', 'Params'),
-      joints: new InspectorSection('joints', 'Joints', { open: false }),
+      joints: new InspectorSection('joints', 'Joints', {
+        open: false,
+        onToggle: (open) => this.joints.show(open && this.authored ? this.name : null),
+      }),
       live: new InspectorSection('live', 'Live', {
         open: false,
         onToggle: (open) => {

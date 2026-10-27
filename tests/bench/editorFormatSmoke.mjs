@@ -179,6 +179,8 @@ async function checkJoints(page) {
     return true;
   });
   await page.waitForTimeout(200);
+  // The Joints section starts folded for an entity without joints (ED-54), and builds its rows only when open (ED-75).
+  if ((await page.locator('[data-joint-add-type]').count()) === 0) await page.click('[data-section=joints] > div');
   await page.selectOption('[data-joint-add-type]', 'distance');
   await page.selectOption('[data-joint-add-other]', 'Crate');
   await page.click('[data-joint-add]');
