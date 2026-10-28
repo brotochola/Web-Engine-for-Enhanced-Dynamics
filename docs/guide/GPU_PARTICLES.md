@@ -4,7 +4,7 @@
 
 In exchange, nothing reads them back. They do not collide, cannot be queried, never land or stamp decals, and are not saved. Nobody reads CPU particles either, so for smoke, fire, embers, rain, dust and sparkles that is nothing lost. Anything gameplay touches, and anything that bounces or stamps a decal, stays a CPU particle ([PARTICLES.md](./PARTICLES.md)).
 
-Related: [CPU particles](./PARTICLES.md), [Layer routing](./LAYER_ROUTING.md), [Workers](./WORKERS_ARCHITECTURE.md). In action: the Blastforge demo (`demos/blastforgeScene`, listed in `demos/index.html`) draws its fire, smoke, dust and embers with GPU particles, sorted among y-sorted props, and keeps its bouncing sparks and debris on the CPU.
+Related: [CPU particles](./PARTICLES.md), [Layer routing](./LAYER_ROUTING.md), [Workers](./WORKERS_ARCHITECTURE.md). In action: the Blastforge demo (`demos/blastforgeScene`, listed in `demos/index.html`) draws its fire, smoke, dust and embers with GPU particles, sorted among y-sorted props, and keeps its bouncing sparks and debris on the CPU. The GPU Galaxy demo (`demos/gpuGalaxyScene`) keeps four million alive at once, one ring per logic worker, each refilled at the rate that keeps it full.
 
 ## Quick start
 
