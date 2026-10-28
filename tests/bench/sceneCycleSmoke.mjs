@@ -8,6 +8,7 @@
 // 128 MB over the first's, or the commit after destroy more than 128 MB over the start. The commit after destroy is
 // read once it settles (the workers' memories go some seconds after their threads exit): sampled each second, up to
 // 15 s, at least 6 s and until a second's fall is under 8 MB.
+// It prints the commit by process type too (this process, and Chrome's by --type: browser, renderer, gpu-process, …).
 // The page runs the source tree (?src=1); --dist runs the committed bundle, the page's default.
 //
 // Usage: node tests/bench/sceneCycleSmoke.mjs [--cycles 4] [--scene /demos/ballsScene/ballsScene.js] [--scene-export BallsScene] [--headed] [--commit] [--dist]
@@ -22,11 +23,14 @@ import { createStaticBenchmarkServer } from '../helpers/createStaticBenchmarkSer
 
 const repoRoot = path.resolve(fileURLToPath(new URL('../../', import.meta.url)));
 
+/** The last commitMB's split by process: this node process, Chrome's by its --type (browser, renderer, gpu-process, …). */
+let lastCommitByType = null;
+
 /** Windows: the commit charge of process `rootPid` and every process under it, in MB (null elsewhere). */
 function commitMB(rootPid) {
   if (process.platform !== 'win32' || !rootPid) return null;
   const json = execFileSync('powershell', ['-NoProfile', '-Command',
-    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,PrivatePageCount | ConvertTo-Json -Compress'],
+    'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,PrivatePageCount,Name,CommandLine | ConvertTo-Json -Compress'],
   { encoding: 'utf8', maxBuffer: 1 << 26 });
   const rows = JSON.parse(json);
   const byPid = new Map(rows.map((r) => [r.ProcessId, r]));
@@ -36,16 +40,28 @@ function commitMB(rootPid) {
     children.get(r.ParentProcessId).push(r.ProcessId);
   }
   let bytes = 0;
+  const byType = {};
   const seen = new Set();
   const stack = [rootPid];
   while (stack.length) {
     const pid = stack.pop();
     if (seen.has(pid)) continue;
     seen.add(pid);
-    bytes += Number(byPid.get(pid)?.PrivatePageCount || 0);
+    const row = byPid.get(pid);
+    const b = Number(row?.PrivatePageCount || 0);
+    bytes += b;
+    const type = pid === rootPid ? 'node' : /--type=([\w-]+)/.exec(row?.CommandLine || '')?.[1] || String(row?.Name || 'other').replace(/\.exe$/i, '');
+    byType[type] = (byType[type] || 0) + b;
     for (const child of children.get(pid) || []) stack.push(child);
   }
+  lastCommitByType = Object.fromEntries(Object.entries(byType).map(([k, v]) => [k, +(v / 1048576).toFixed(1)]));
   return +(bytes / 1048576).toFixed(1);
+}
+
+/** A commit split as `gpu-process 111.2, renderer 107.0, …`, the largest first. */
+function formatByType(byType) {
+  if (!byType) return '';
+  return Object.entries(byType).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ');
 }
 
 function parseArgs(argv) {
@@ -127,6 +143,7 @@ async function main() {
       { sceneModule, sceneExport }
     );
     const startCommitMB = commit();
+    const startByType = lastCommitByType;
 
     const cyclesReport = [];
     for (let i = 0; i < cycles; i++) {
@@ -155,7 +172,7 @@ async function main() {
           return { usedJSHeapSizeMB: +(heap() / (1024 * 1024)).toFixed(1), ...running };
         }
       );
-      cyclesReport.push({ cycle: i + 1, ...cycle, commitMB: commit() });
+      cyclesReport.push({ cycle: i + 1, ...cycle, commitMB: commit(), byType: lastCommitByType });
     }
 
     const afterDestroy = await page.evaluate(async () => {
@@ -184,6 +201,7 @@ async function main() {
       };
     });
     afterDestroy.commitMB = commit();
+    let destroyByType = lastCommitByType;
     if (sampleCommit) {
       // At least 6 s, then until a second's fall is under 8 MB.
       let prev = afterDestroy.commitMB;
@@ -193,7 +211,10 @@ async function main() {
           if (typeof globalThis.gc === 'function') globalThis.gc();
         });
         const now = commit();
-        afterDestroy.commitMB = Math.min(afterDestroy.commitMB, now);
+        if (now < afterDestroy.commitMB) {
+          afterDestroy.commitMB = now;
+          destroyByType = lastCommitByType;
+        }
         if (s >= 5 && prev - now < 8) break;
         prev = now;
       }
@@ -262,6 +283,9 @@ async function main() {
       const c0 = report.cycles[0].commitMB;
       const cN = report.cycles[report.cycles.length - 1].commitMB;
       console.log(`Commit: ${startCommitMB}MB before the first scene, ${c0}MB after cycle 1, ${cN}MB after cycle ${report.cycles.length}, ${ad.commitMB}MB after destroy`);
+      console.log(`  by process before the first scene: ${formatByType(startByType)}`);
+      console.log(`  after cycle ${report.cycles.length}: ${formatByType(report.cycles[report.cycles.length - 1].byType)}`);
+      console.log(`  after destroy: ${formatByType(destroyByType)}`);
       if (cN - c0 > 128) {
         failed = true;
         console.error('FAIL: the commit grew more than 128 MB across scene cycles - a memory not given back');
