@@ -35,6 +35,8 @@ class TileMapLayer {
         this.mapHeight = mapHeight;
         this.tileWidth = tileWidth;
         this.tileHeight = tileHeight;
+        this.widthPx = mapWidth * tileWidth;
+        this.heightPx = mapHeight * tileHeight;
         this.visible = visible;
         this.opacity = opacity;
     }
@@ -43,12 +45,16 @@ class TileMapLayer {
      * Get tile GID at world pixel coordinates.
      * @param {number} worldX
      * @param {number} worldY
-     * @returns {number} Raw tile GID (includes flip flags in top 3 bits). 0 = empty.
+     * @returns {number} Raw tile GID (includes flip flags in top 3 bits). 0 = empty, and outside the map (a negative,
+     *   NaN or infinite coordinate too).
      */
     getTileId(worldX, worldY) {
+        // The world bounds first: truncation would put (-tileWidth, 0), NaN and the infinities on tile 0 (N-78).
+        if (!(worldX >= 0 && worldX < this.widthPx && worldY >= 0 && worldY < this.heightPx)) return 0;
         const tileX = (worldX / this.tileWidth) | 0;
         const tileY = (worldY / this.tileHeight) | 0;
-        if (tileX < 0 || tileX >= this.mapWidth || tileY < 0 || tileY >= this.mapHeight) return 0;
+        // A tile size that is not a power of two can round a quotient just under the edge up to it.
+        if (tileX >= this.mapWidth || tileY >= this.mapHeight) return 0;
         return this.data[tileY * this.mapWidth + tileX];
     }
 
@@ -199,9 +205,10 @@ export class TileMap {
      * @returns {Object<string, number>} Reused object. Copy values if you need to store them.
      */
     getAllTileIds(worldX, worldY) {
-        const tileX = (worldX / this.tileWidth) | 0;
-        const tileY = (worldY / this.tileHeight) | 0;
-        const oob = tileX < 0 || tileX >= this.mapWidth || tileY < 0 || tileY >= this.mapHeight;
+        const inside = worldX >= 0 && worldX < this.widthPx && worldY >= 0 && worldY < this.heightPx;
+        const tileX = inside ? (worldX / this.tileWidth) | 0 : 0;
+        const tileY = inside ? (worldY / this.tileHeight) | 0 : 0;
+        const oob = !inside || tileX >= this.mapWidth || tileY >= this.mapHeight;
         const idx = tileY * this.mapWidth + tileX;
         const result = this._allTileIdsResult;
         const layers = this._layers;
@@ -212,7 +219,8 @@ export class TileMap {
     }
 
     /**
-     * Convert world pixel coordinates to tile grid coordinates.
+     * Convert world pixel coordinates to tile grid coordinates: the tile holding the point, so a point left of or
+     * above the map gets a negative tile (-1 for (-tileWidth, 0)), not tile 0.
      * Writes into caller-owned output storage to avoid borrowed-object footguns.
      * @param {number} worldX
      * @param {number} worldY
@@ -220,8 +228,8 @@ export class TileMap {
      * @returns {{tileX: number, tileY: number}} The same `out` object.
      */
     worldToTile(worldX, worldY, out) {
-        out.tileX = (worldX / this.tileWidth) | 0;
-        out.tileY = (worldY / this.tileHeight) | 0;
+        out.tileX = Math.floor(worldX / this.tileWidth);
+        out.tileY = Math.floor(worldY / this.tileHeight);
         return out;
     }
 
