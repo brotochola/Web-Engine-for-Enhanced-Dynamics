@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-27",
+  "updated": "2026-10-28",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -8523,6 +8523,62 @@
         "R-0659"
       ],
       "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-156"
+      ],
+      "records": [
+        "R-0660"
+      ],
+      "id": "E-156",
+      "title": "A wrapped GPU particle upload goes up as its two ranges",
+      "status": "kept",
+      "statusText": "kept 2026-10-28 (PR #5, GPU particles)",
+      "date": "2026-10-28",
+      "area": "renderer",
+      "kind": "js",
+      "result": "kept (c451e2a6): GPU Galaxy at 8 388 608 particles (8 arms, WebGPU), renderer 3.870 → 3.229 ms (−16.6 %, worse 0/4, cv 2/1 %), frames drawn 36.2 → 38.1 a second, presented 57.4 → 60.0 fps",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-157"
+      ],
+      "records": [
+        "R-0660"
+      ],
+      "id": "E-157",
+      "title": "GPU particles on WebGL fall behind WebGPU past a few hundred thousand",
+      "status": "open",
+      "statusText": "opened 2026-10-28 (the GPU Galaxy demo)",
+      "date": "2026-10-28",
+      "area": "renderer",
+      "kind": "gpu",
+      "rank": 10,
+      "result": "GTX 1650, ANGLE D3D11: WebGL draws 262 144 at 60 fps, 1 048 576 at 15 to 44 with the renderer CPU at 0.9 ms; WebGPU draws 1 048 576 and 4 194 304 at 60.",
+      "next": "A WebGL kernel drawing N instances with and without a per-frame bufferSubData into the drawn buffer; then base-instance against re-pointed attributes."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-158"
+      ],
+      "records": [
+        "R-0660"
+      ],
+      "id": "E-158",
+      "title": "A GPU particle costs four vertex evaluations and two triangles",
+      "status": "open",
+      "statusText": "opened 2026-10-28 (the GPU Galaxy demo)",
+      "date": "2026-10-28",
+      "area": "renderer",
+      "kind": "gpu",
+      "rank": 11,
+      "result": "GTX 1650, WebGPU, 1 to 2 px dots: about 3.3 ms of GPU per million particles (4 194 304 at 60 fps, 8 388 608 at 38, 16 777 216 at 19).",
+      "next": "One evaluation per particle (a WebGPU compute pass), or a point or single-triangle mode for dots this small; GPU Galaxy at 8 388 608 is the scene."
     }
   ],
   "records": [
@@ -14422,6 +14478,19 @@
       "text": "Found while adding a run-time `Layer.resolution` for Blastforge's Pixel size (PR #5's branch). `_resizeCustomLayerRTs` releases the bind groups on a look layer's old render textures before destroying them; a `sortWithEntities` layer's `RegionQuads` samples `rtOut` through its own bind group, so the release destroyed it and the next frame's `setTexture` threw in `BindGroup.setResource`. From then on the layer drew nothing.\n\nReproduced in Chrome on the plain canvas-resize path: Blastforge, `scene.resize(1100, 700)`, then a Fireball: no fire and no smoke, only its ground light, and the Pixi worker logged \"frame threw … Cannot read properties of null (reading '0')\". With the fix (the regions go to `Texture.EMPTY` before the release and onto the new `rtOut` after it) the Fireball draws after the resize, sorted behind the tree, and nothing throws; Pixel size at 6×, 1× and 3× likewise.\n\nTest: `gpuParticleProxiesPixi.test.js` runs the real resize path on a `RegionQuads` and fails without the fix (4 of 5 pass, the new one fails), passes with it. A resize is not per frame: a hygiene keep, no sitting. `main` is not affected (the regions came with the branch).",
       "commits": [
         "64b76ea7"
+      ]
+    },
+    {
+      "id": "R-0660",
+      "date": "2026-10-28",
+      "time": "00:19",
+      "timeFrom": "recorded",
+      "title": "E-156 sitting: a wrapped GPU particle upload as two ranges (GPU Galaxy 8M), and the galaxy's ceilings",
+      "verdict": "kept",
+      "text": "GPU Galaxy (`demos/gpuGalaxyScene`, c451e2a6's parent 2b8dca9f against c451e2a6), `particles=8388608&arms=8`, WebGPU, headed Chrome on the GTX 1650, 4 pairs from worktrees, warm-up and window 10 s each, owner renderer.\n\n| | A (whole ring on a wrap) | B (two ranges) | paired |\n| --- | --- | --- | --- |\n| renderer STEP_MS | 3.870 ms | 3.229 ms | −16.6 %, worse 0/4, cv 2/1 % |\n| frames drawn per 10 s (renderer, every frame) | 357–368 | 379–383 | +5 %, 4/4 |\n| presented (main thread) | 57.4 fps | 60.0 fps | +4.4 %, fewer 0/4 |\n\nLogic, pre-render and particle stay below the 3 ms floor. No A/A this session; the pairs' cv is 1 to 2 %.\n\nThe same scene, single runs on the working tree: the default 4 194 304 (4 arms) draws 601 frames in 10 s with the fix (renderer 1.55 ms, p95 2.59), 349 in 6 s before it; 16 777 216 (8 arms) draws 152 frames in 8 s (renderer 12.2 ms), the GPU's limit (E-158). WebGL: 262 144 at 60 fps, 1 048 576 at 15 to 44 (E-157).",
+      "commits": [
+        "c451e2a6",
+        "2b8dca9f"
       ]
     }
   ],
