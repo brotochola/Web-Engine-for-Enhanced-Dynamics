@@ -220,7 +220,7 @@ export function explode(x, y, preset, { size = 1, amount = 1, wind = 0, sortY = 
   scheduleFollowUps(blast);
   addBlastEffects(blast);
 
-  if (preset.shake > 0) Camera.shake(preset.shake * Math.sqrt(size), 450);
+  // if (preset.shake > 0) Camera.shake(preset.shake * Math.sqrt(size), 450);
 }
 
 /** A short hot disc at the center: seven puffs, 12 ms apart. */

@@ -104,7 +104,7 @@ export function buildBlastPanel({ presets, settings, pixelZoom, fieldLayer, grou
 
   slider('Pixel size', 1, 6, 1, pixelZoom, (v) => (settings.pixelZoom[0] = v), (v) => v + '×');
   slider('Blast size', 0.25, 2, 0.05, 1, (v) => (settings.size[0] = v), (v) => '×' + v.toFixed(2));
-  slider('Particle amount', 0.25, 3, 0.25, 1, (v) => (settings.amount[0] = v), (v) => '×' + v);
+  slider('Particle amount', 0.25, 100, 0.25, 1, (v) => (settings.amount[0] = v), (v) => '×' + v);
   panel.append(tune.speed);
   slider('Wind', -60, 60, 1, 0, (v) => (settings.wind[0] = v), (v) => (v === 0 ? 'calm' : (v < 0 ? '← ' : '→ ') + Math.abs(v)));
   slider('Dither', 0, 1, 0.05, 0.6, (v) => fieldLayer.setUniform('uDither', v), (v) => Math.round(v * 100) + '%');

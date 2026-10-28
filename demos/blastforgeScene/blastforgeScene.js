@@ -27,10 +27,10 @@ import { GROUND_LAYER, ScorchMap, groundAssets, groundLayer, scorchSchema } from
 
 const { Scene, GameObject, SpriteRenderer, SharedResource, Mouse, Keyboard, Camera, Layer } = WEED;
 
-const WORLD_WIDTH = 2048;
-const WORLD_HEIGHT = 1536;
+const WORLD_WIDTH = 20480;
+const WORLD_HEIGHT = 15360;
 /** Camera zoom. Every world pixel is drawn as PIXEL_ZOOM × PIXEL_ZOOM screen pixels. */
-const PIXEL_ZOOM = 3;
+const PIXEL_ZOOM = 2;
 const AUTO_BLAST_EVERY_MS = { min: 1100, max: 2400 };
 /** The LPC frame guide's layer, over everything. */
 const GUIDE_LAYER = 'guide';
@@ -179,7 +179,7 @@ export class BlastforgeScene extends Scene {
     // the blasts among them.
     renderer: { backend: 'webgl', atlasScaleMode: 'nearest', ySort: true },
     particle: {
-      maxParticles: 20000, // sparks and debris; fire, smoke, dust and embers are GPU particles
+      maxParticles: 500000, // sparks and debris; fire, smoke, dust and embers are GPU particles
       decals: true, // landed debris (the ground keeps the scorch marks: blastGround.js)
       decalsResolution: 1, // one decal texel per world pixel
     },
