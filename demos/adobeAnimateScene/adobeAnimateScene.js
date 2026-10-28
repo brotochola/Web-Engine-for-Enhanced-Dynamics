@@ -3,6 +3,19 @@ import { AdobeAnimateCharacter } from './gameObjects/adobeAnimateCharacter.js';
 import WEED from '/src/index.js';
 const { Scene, Camera } = WEED;
 
+// `?adobeTablesMB=<n>` sizes the Adobe tables' region (preRender.adobeTablesMB, default 4): with physics on, the
+// region is part of the block reserved in Box2D's heap before the world, so its size moves the world's arrays
+// (REVIEW_PLAN N-74).
+function queryTablesMB() {
+  try {
+    const n = parseInt(new URLSearchParams(globalThis.location?.search || '').get('adobeTablesMB'), 10);
+    return n >= 0 ? n : undefined;
+  } catch {
+    return undefined;
+  }
+}
+const TABLES_MB = queryTablesMB();
+
 export class AdobeAnimateScene extends Scene {
   static config = {
     worldWidth: 20600,
@@ -39,6 +52,7 @@ export class AdobeAnimateScene extends Scene {
     preRender: {
       // packGpuSprites: 'pixi',
       // sortSprites: 'pixi',
+      ...(TABLES_MB === undefined ? {} : { adobeTablesMB: TABLES_MB }),
     }
   };
 
