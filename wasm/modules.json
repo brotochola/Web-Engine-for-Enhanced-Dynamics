@@ -486,6 +486,19 @@
       ],
       "maxMemoryPages": 8192,
       "test": true
+    },
+    {
+      "name": "spatialGatherExact",
+      "source": "wasm/test/spatialGatherExact.c",
+      "output": "tests/fixtures/wasm/spatialGatherExact.wasm",
+      "exports": [
+        "gather_batch_exact",
+        "order_batch_by_cell",
+        "gather_batch_exact_u32",
+        "order_batch_by_cell_u32"
+      ],
+      "maxMemoryPages": 32768,
+      "test": true
     }
   ]
 }

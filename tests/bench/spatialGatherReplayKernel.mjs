@@ -3,9 +3,11 @@
  * frame (tests/bench/spatialGatherSnapshot.mjs: the WebAssembly memory and every worker's gather_batch call) on the
  * same bytes with each variant, a fresh frame stamp per replay so each one does the frame's whole work:
  *
- *   f64    gather_batch, the shipped kernel (src/wasm/engine.wasm; float32x4 with a double edge band since E-147)
+ *   f64    gather_batch, the shipped kernel (src/wasm/engine.wasm)
  *   f32    gather_batch_f32, the range test in float32 (tests/fixtures/wasm/spatialGatherF32.wasm)
  *   f32x4  gather_batch_f32x4, four ids of a cell a step
+ *   exact  gather_batch_exact (tests/fixtures/wasm/spatialGatherExact.wasm): f32x4 with the double test on the edge band
+ *          and past a cell's last block of four, so the shipped rows exactly (E-147, not shipped: Boids +3.0 %)
  *
  * Browser module (chromeKernel.mjs calls run): capture first, then
  *   node tests/bench/spatialGatherSnapshot.mjs --config rebuild
@@ -49,7 +51,13 @@ export async function run({ dir = '/tests/results/spatial-gather-snapshot', roun
   new Uint8Array(memory.buffer).set(bytes);
   const engine = await instantiate('/src/wasm/engine.wasm', memory);
   const test = await instantiate('/tests/fixtures/wasm/spatialGatherF32.wasm', memory);
-  const variants = { f64: engine.gather_batch, f32: test.gather_batch_f32, f32x4: test.gather_batch_f32x4 };
+  const exact = await instantiate('/tests/fixtures/wasm/spatialGatherExact.wasm', memory);
+  const variants = {
+    f64: engine.gather_batch,
+    f32: test.gather_batch_f32,
+    f32x4: test.gather_batch_f32x4,
+    exact: exact.gather_batch_exact,
+  };
   for (const [name, url] of Object.entries(extra)) variants[name] = (await instantiate(url, memory)).gather_batch;
   let stamp = meta.calls[0].args[ARG.stampFrame];
   const replay = (fn) => {
