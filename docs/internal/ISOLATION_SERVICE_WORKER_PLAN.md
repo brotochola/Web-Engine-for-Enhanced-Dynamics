@@ -232,6 +232,13 @@ it: DevTools → Application → Service workers → Unregister.
 a server without isolation headers, with the worker at the root (src mode) or next to
 `dist/index.html` (bundles). The bundle cases need `dist/` rebuilt.
 
+**The bundles, 2026-10-28** (`tests/bench/isolationBundleSmoke.mjs`, 48c26573; Chrome 156, headed): all
+eight bundles built from the working tree at 417b5f0a (`check:dist` matching), each through `dist/weed-sw.js`
+on a server without the headers (first visit 2 loads, return visit 1, hard reload 2) and on one with them
+(1 load, nothing registered): **32/32**. Every case isolated, BallsScene running (204 entities, Box2D on four
+threads and the renderer past 10 frames each), drawn, no page error, no overlay. Load time on that build
+(`isolationLoadTime --mode bundle`, 5 runs): first visit 552 → 670 ms, return visit 430 → 430 ms.
+
 | Case | Expected |
 |---|---|
 | First visit | 2 loads; isolated; the scene runs; no Box2D thread errors; the overlay never appears (checked by a `MutationObserver` added with `addInitScript`); black until the first frame (screenshots) |
