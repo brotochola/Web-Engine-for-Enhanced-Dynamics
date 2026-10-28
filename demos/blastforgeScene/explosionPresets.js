@@ -27,7 +27,7 @@
 //   embers          embers
 //   flash           size of the opening flash (0 = none)
 //   light           how much the blast lights the ground, in its palette's light color (0 = none)
-//   scorch          darkness of the scorch decal (0 = none)
+//   scorch          how dark the blast scorches the ground (0 = none)
 //   shake           camera shake, px
 //   secondary       follow-up blasts
 //   secondaryDelay  time between follow-up blasts, s

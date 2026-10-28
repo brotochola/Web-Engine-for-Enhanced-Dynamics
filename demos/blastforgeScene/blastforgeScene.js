@@ -15,8 +15,9 @@ import WEED from '/src/index.js';
 import { FIELD_LAYER, explode, explosionAssets, explosionLayers, setExplosionPalette, updateExplosions } from './explosions.js';
 import { PRESETS } from './explosionPresets.js';
 import { BlastTuning, tunedPreset } from './blastTuning.js';
+import { GROUND_LAYER, ScorchMap, groundAssets, groundLayer, scorchSchema } from './blastGround.js';
 
-const { Scene, GameObject, SpriteRenderer, SharedResource, Mouse, Keyboard, Camera, Layer, LAYER_KIND } = WEED;
+const { Scene, GameObject, SpriteRenderer, SharedResource, Mouse, Keyboard, Camera, Layer } = WEED;
 
 const WORLD_WIDTH = 2048;
 const WORLD_HEIGHT = 1536;
@@ -133,11 +134,11 @@ export class BlastforgeScene extends Scene {
     renderer: { backend: 'webgl', atlasScaleMode: 'nearest', ySort: true },
     particle: {
       maxParticles: 20000, // sparks and debris; fire, smoke, dust and embers are GPU particles
-      decals: true, // scorch marks and landed debris
+      decals: true, // landed debris (the ground keeps the scorch marks: blastGround.js)
       decalsResolution: 1, // one decal texel per world pixel
     },
     layers: {
-      ground: { kind: LAYER_KIND.TILING, texture: 'ground', zIndex: 0 },
+      [GROUND_LAYER]: groundLayer({ worldWidth: WORLD_WIDTH, worldHeight: WORLD_HEIGHT }),
       ...explosionLayers({ pixelZoom: PIXEL_ZOOM, palette: PRESET_LIST[0].palette }),
     },
   };
@@ -150,15 +151,15 @@ export class BlastforgeScene extends Scene {
   static sharedResources = [
     [BlastSettings, BlastSettings.schema],
     [BlastTuning, BlastTuning.schema],
+    [ScorchMap, scorchSchema(WORLD_WIDTH, WORLD_HEIGHT)],
   ];
 
   static assets = {
     textures: {
-      ground: '/demos/blastforgeScene/textures/ground.png',
       ...Object.fromEntries(PROP_KINDS.map(([kind]) => [kind, `/demos/blastforgeScene/textures/${kind}.png`])),
       ...explosionAssets.textures,
     },
-    shaders: explosionAssets.shaders,
+    shaders: { ...explosionAssets.shaders, ...groundAssets.shaders },
   };
 
   async create() {
@@ -173,7 +174,13 @@ export class BlastforgeScene extends Scene {
 
     // The panel is DOM: main thread only, so it is loaded here rather than imported by the workers.
     const { buildBlastPanel } = await import('./blastforgePanel.js');
-    this._removePanel = buildBlastPanel({ presets: PRESET_LIST, settings: BlastSettings, fieldLayer: Layer.get(FIELD_LAYER) });
+    this._removePanel = buildBlastPanel({
+      presets: PRESET_LIST,
+      settings: BlastSettings,
+      fieldLayer: Layer.get(FIELD_LAYER),
+      ground: Layer.get(GROUND_LAYER),
+      scorch: ScorchMap,
+    });
   }
 
   createNewGame() {

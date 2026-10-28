@@ -2,7 +2,7 @@
 // removes it in destroy(). Blast choices go to BlastSettings (read by the Detonator on a logic worker); the look
 // goes straight to the field layer's uniforms.
 
-import { buildTuneSection } from './tunePanel.js';
+import { buildGroundControls, buildTuneSection } from './tunePanel.js';
 
 const PANEL_ID = 'blastforge-panel';
 
@@ -51,8 +51,10 @@ function hex(color) {
  * @param {object[]} opts.presets the presets, in BlastSettings.preset's order
  * @param {typeof import('./blastforgeScene.js').BlastSettings} opts.settings
  * @param {object} opts.fieldLayer the field layer (Layer.get), for its look uniforms
+ * @param {object} opts.ground the ground layer (Layer.get), for its ground type
+ * @param {object} opts.scorch ScorchMap, for Clear scorch marks
  */
-export function buildBlastPanel({ presets, settings, fieldLayer }) {
+export function buildBlastPanel({ presets, settings, fieldLayer, ground, scorch }) {
   const style = el('style', { textContent: CSS });
   const panel = el('aside', { id: PANEL_ID });
   panel.append(
@@ -107,6 +109,8 @@ export function buildBlastPanel({ presets, settings, fieldLayer }) {
   check('Dark outline on smoke', true, (on) => fieldLayer.setUniform('uOutline', on));
   check('Auto-detonate', false, (on) => (settings.autoDetonate[0] = on));
   check('Show the raw field', false, (on) => fieldLayer.setUniform('uShowField', on));
+  const groundControls = buildGroundControls({ ground, scorch });
+  panel.append(groundControls.ground, groundControls.clear);
 
   panel.append(tune.tune);
 

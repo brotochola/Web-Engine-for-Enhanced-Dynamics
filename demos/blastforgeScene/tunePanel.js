@@ -1,29 +1,30 @@
-// tunePanel.js – the Blastforge panel's Speed slider and Tune section, as in Blastforge: a slider per preset field
-// (SCHEMA), the palette, Reset preset and Copy settings as JSON. Main thread only. It keeps a tuned copy of every
-// preset and writes the active one to BlastTuning, where the Detonator reads it.
+// tunePanel.js – the Blastforge panel's controls from the lab that the panel places: Speed, the Tune section (a slider
+// per preset field, the palette, Reset preset and Copy settings as JSON), the Ground select and Clear scorch marks.
+// Main thread only. The Tune section keeps a tuned copy of every preset and writes the active one to BlastTuning, where
+// the Detonator reads it.
 
 import WEED from '/src/index.js';
 import { PALETTES, SCHEMA } from './explosionPresets.js';
 import { PALETTE_KEYS, paletteKey, writeTuning } from './blastTuning.js';
+import { GROUND_TYPES } from './blastGround.js';
 
 const { Time } = WEED;
 
 const CSS = `
-.bf-tune { margin-top: 16px; }
-.bf-tune summary { font: 600 14px/1.2 ui-monospace, Menlo, Consolas, monospace; cursor: pointer; padding: 4px 0; }
-.bf-tune summary:focus-visible, .bf-tune .act:focus-visible, .bf-tune select:focus-visible { outline: 2px solid #f2a33a; outline-offset: 2px; }
-.bf-tune .palette { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; font-weight: 500; }
-.bf-tune .note { color: #a69caa; margin: 8px 0 0; }
-.bf-tune select {
+.bf-ctl { margin-top: 16px; }
+.bf-ctl summary { font: 600 14px/1.2 ui-monospace, Menlo, Consolas, monospace; cursor: pointer; padding: 4px 0; }
+.bf-ctl summary:focus-visible, .bf-ctl .act:focus-visible, .bf-ctl select:focus-visible { outline: 2px solid #f2a33a; outline-offset: 2px; }
+.bf-ctl .palette { display: flex; align-items: center; gap: 10px; margin: 10px 0 4px; font-weight: 500; }
+.bf-ctl select {
   flex: 1; background: #2c2732; color: inherit; border: 1px solid #3f3847; border-radius: 4px; padding: 5px 6px;
   font: 13px/1.2 system-ui, -apple-system, "Segoe UI", sans-serif;
 }
-.bf-tune .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
-.bf-tune .act {
+.bf-ctl .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.bf-ctl .act {
   appearance: none; border: 1px solid #3f3847; background: transparent; color: inherit; border-radius: 4px;
   padding: 7px 10px; cursor: pointer; font: 13px/1.1 ui-monospace, Menlo, Consolas, monospace;
 }
-.bf-tune .act:hover { border-color: #a69caa; }
+.bf-ctl .act:hover { border-color: #a69caa; }
 `;
 
 function el(tag, props = {}, children = []) {
@@ -121,9 +122,8 @@ export function buildTuneSection({ presets, settings, buttons = [] }) {
     setTimeout(() => (copy.textContent = 'Copy settings as JSON'), 1400);
   });
 
-  const tune = el('details', { className: 'bf-tune' }, [
+  const tune = el('details', { className: 'bf-ctl' }, [
     summary,
-    el('p', { className: 'note', textContent: 'Shockwave distortion and Ground light are kept with the preset; the demo does not draw them yet.' }),
     el('label', { className: 'palette', htmlFor: 'bf-tune-palette' }, ['Palette', paletteSelect]),
     ...sliders.map((s) => s.row),
     el('div', { className: 'btns' }, [reset, copy]),
@@ -147,4 +147,23 @@ export function buildTuneSection({ presets, settings, buttons = [] }) {
   refresh();
   send();
   return { speed, tune, select, remove: () => style.remove() };
+}
+
+/**
+ * The lab's Ground select and Clear scorch marks, for the panel to place (styled by buildTuneSection's rules).
+ * @param {object} opts
+ * @param {object} opts.ground the ground layer (Layer.get(GROUND_LAYER)), for its uGround uniform
+ * @param {object} opts.scorch ScorchMap: Clear asks the Detonator's worker to empty it
+ * @returns {{ ground: HTMLElement, clear: HTMLElement }}
+ */
+export function buildGroundControls({ ground, scorch }) {
+  const select = el('select', { id: 'bf-ground' });
+  GROUND_TYPES.forEach(([, label], index) => select.append(el('option', { value: String(index), textContent: label })));
+  select.addEventListener('change', () => ground.setUniform('uGround', Number(select.value)));
+  const clear = el('button', { type: 'button', className: 'act', textContent: 'Clear scorch marks' });
+  clear.addEventListener('click', () => Atomics.add(scorch.clear, 0, 1));
+  return {
+    ground: el('div', { className: 'bf-ctl' }, [el('label', { className: 'palette', htmlFor: 'bf-ground' }, ['Ground', select])]),
+    clear: el('div', { className: 'bf-ctl' }, [el('div', { className: 'btns' }, [clear])]),
+  };
 }

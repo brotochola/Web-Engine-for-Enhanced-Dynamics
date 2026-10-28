@@ -10,8 +10,11 @@
 //   Embers: GPU particles too, in explosionEmbers, drawn as hard pixels.
 //
 //   Pieces: sparks and debris. CPU particles (ParticleEmitter.emit) in explosionPieces, also hard pixels. They have
-//   height: they fly up, fall, bounce and land. Debris leaves a decal where it lands, and the blast stamps a scorch
-//   mark. They stay on the CPU because GPU particles have no floor.
+//   height: they fly up, fall, bounce and land. Debris leaves a decal where it lands. They stay on the CPU because
+//   GPU particles have no floor.
+//
+//   The ground (blastGround.js): each blast lights it, bends it with a shockwave, makes it shimmer with heat and
+//   scorches it. The field takes the same lights and shockwaves.
 //
 // A GPU emit is one call for many particles, each drawn from ranges, so a blast is a few dozen calls: one per
 // fireball lobe, smoke billow, dust-ring sector... The CPU emits are one call per particle. GPU particles slow down
@@ -34,8 +37,9 @@
 //     cloud's furthest-back group: a chain reaction's blasts all sort at the first one's ground y.
 
 import WEED from '/src/index.js';
+import { addBlastEffects, effectUniforms, scorchGround, setBlastLightColor, updateBlastEffects } from './blastGround.js';
 
-const { ParticleEmitter, Decal, Camera, Layer, BLEND_MODES, LAYER_KIND, LAYER_SCALE_MODE, PARTICLE_EASE } = WEED;
+const { ParticleEmitter, Camera, Layer, BLEND_MODES, LAYER_KIND, LAYER_SCALE_MODE, PARTICLE_EASE } = WEED;
 
 export const FIELD_LAYER = 'explosionField';
 export const EMBERS_LAYER = 'explosionEmbers';
@@ -45,8 +49,6 @@ const GLOW_TEXTURE = 'explosionGlow'; // textures/softCircle.png, 64×64
 const GLOW_RADIUS = 32;
 const PIECE_TEXTURE = '_whiteCircle'; // built-in, 8×8
 const PIECE_SIZE = 8;
-const SCORCH_TEXTURE = '_whiteCircle_64x64'; // built-in
-const SCORCH_RADIUS = 32;
 
 const FPS = 60;
 /** A 3/4 top-down view sees the ground squashed vertically. */
@@ -103,6 +105,7 @@ export function explosionLayers({ pixelZoom, palette }) {
           uLightDirection: { value: [-0.55, -0.83], type: 'vec2<f32>', min: -1, max: 1, step: 0.05, label: 'Light direction' },
           uShowField: { value: 0, type: 'f32', widget: 'check', label: 'Show the raw field' },
           ...paletteUniforms(palette),
+          ...effectUniforms(), // the ground's lights and shockwaves (blastGround.js)
         },
       },
     },
@@ -145,6 +148,7 @@ export function setExplosionPalette(palette) {
   for (const [name, uniform] of Object.entries(paletteUniforms(palette))) {
     layer.setUniform(name, uniform.value);
   }
+  setBlastLightColor(palette.light);
 }
 
 function paletteUniforms(palette) {
@@ -168,6 +172,7 @@ let scheduled = []; // { atMs, run }
 /** Sets off follow-up blasts that are due. Call it every tick, on the worker that calls explode(). */
 export function updateExplosions(deltaMs) {
   clockMs += deltaMs;
+  updateBlastEffects(deltaMs);
   if (scheduled.length === 0) return;
   const due = scheduled.filter((task) => task.atMs <= clockMs);
   if (due.length === 0) return;
@@ -203,6 +208,7 @@ export function explode(x, y, preset, { size = 1, amount = 1, wind = 0, sortY = 
   emitDebris(blast);
   stampScorch(blast);
   scheduleFollowUps(blast);
+  addBlastEffects(blast);
 
   if (preset.shake > 0) Camera.shake(preset.shake * Math.sqrt(size), 450);
 }
@@ -574,30 +580,9 @@ function emitDebris(blast) {
   }
 }
 
-/**
- * A scorch mark on the floor decals: rings of hard dark circles. Where they overlap the ground gets darker in
- * steps, darkest at the center.
- */
-const SCORCH_RINGS = [
-  { stamps: 14, spread: 0.45, radius: [0.3, 0.55], alpha: 0.07 },
-  { stamps: 8, spread: 0.22, radius: [0.3, 0.45], alpha: 0.12 },
-  { stamps: 4, spread: 0.08, radius: [0.25, 0.35], alpha: 0.2 },
-];
+/** The blast's scorch, on the ground's scorch picture (blastGround.js), which the ground bands into dark steps. */
 function stampScorch({ x, y, preset: p, size, radius }) {
-  if (p.scorch <= 0) return;
-  const darkness = p.scorch * Math.min(1, size * 1.2);
-  for (const ring of SCORCH_RINGS) {
-    for (let i = 0; i < ring.stamps; i++) {
-      Decal.stamp({
-        texture: SCORCH_TEXTURE,
-        x: x + gauss() * radius * ring.spread,
-        y: y + gauss() * radius * ring.spread * SQUASH,
-        scale: (radius * random(ring.radius[0], ring.radius[1])) / SCORCH_RADIUS,
-        tint: 0x15100d,
-        alpha: clamp(darkness * ring.alpha, 0, 1),
-      });
-    }
-  }
+  scorchGround(x, y, radius, p.scorch * Math.min(1, size * 1.2));
 }
 
 /**
