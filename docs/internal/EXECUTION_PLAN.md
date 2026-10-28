@@ -2380,8 +2380,15 @@ Predator 3.7 / 5.9 / 89.5 %, orientedBoxScene 99.1 / 0.9 / 0 %, movedBodiesMixed
 - **`rebuildOwnedRows` (JavaScript).** It is 26 % of Boids' spatial, 22 % of Adobe's and 17 % of Predator's.
   - W6's exact C port was only 10.9 % faster in its kernel, about 1.4 % of Predator's spatial, so it was screened.
   - The question now is why these scenes take the full rebuild rather than `_rebuildMovedRows`, the rows of moved entities only.
+    *Answered 2026-10-28:* none of them can take it. Boids moves every boid every frame; Predator moves about a third of
+    its bodies (Moved 5 740 of 17 570), over the 20 % past which the rewrite is slower (E-126's crossover); adobeAnimateScene
+    has `sleeping: false`, so all 20 000 bodies stay awake and in Box2D's move list (`BODY_MOVED_COUNT` 20 000,
+    `GRID_MOVERS` 0 on every frame).
   - The register's "H-ROW / H-OWN spatial" row belongs here (step 6): with two or more spatial workers, each worker scans every active entity and skips the rows it does not own.
 - **Adobe's characters.** They set `collider.visualRange = 50`, so spatial spends 367 ms/s finding their neighbours. Check whether their code ever reads them.
+  *Answered 2026-10-28:* their code never reads them, and nothing else does (their cull uses the clip's bounds), so the
+  demo drops the range. Spatial did not move (2.631 → 2.633 ms, 4 pairs at the minimum zoom): standing characters'
+  kept rows are already skipped since E-136. The engine option below is not needed for this demo.
   - If it does not, in the demo that is a demo setting.
   - In the engine, an entity whose code never reads neighbours could stay out of the gather: an engine option, measured on its own.
 
