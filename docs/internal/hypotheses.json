@@ -975,8 +975,8 @@
     {
       "id": "E-50",
       "title": "Small review items",
-      "status": "running",
-      "statusText": "in progress",
+      "status": "kept",
+      "statusText": "kept 2026-10-28 (Wave 7 triage, R-0645): its two kernel keeps stand; its tail E-50b is E-91",
       "date": "2026-10-21",
       "result": "two kept on kernels, four screened with no change. `collectSolidSegments` order, kept (`64d0caa9`; kernel cases `6b7ad641`): the facing test runs before the range test, and a back-facing edge is range-tested only until something hit. …",
       "area": "physics",
@@ -986,7 +986,8 @@
       ],
       "aliases": [],
       "records": [
-        "R-0384"
+        "R-0384",
+        "R-0661"
       ]
     },
     {
@@ -1009,8 +1010,8 @@
     {
       "id": "E-31",
       "title": "Toolchain is available — the \"no C compiler\" blocker is gone",
-      "status": "open",
-      "statusText": "opened 2026-10-18",
+      "status": "answered",
+      "statusText": "answered 2026-10-28 (Wave 7 triage, R-0645): the toolchain built the WASM migration (E-76)",
       "date": "2026-10-18",
       "result": "The sibling repo `D:\\xampp\\htdocs\\Box2d_3.2_C_-_liquidfun` ships `emsdk/` and `emcc 6.0.4` runs. Two consequences, both previously written off as impossible: 1. E-18 — a WASM SIMD transpose is buildable. 2. …",
       "area": "spatial",
@@ -1018,83 +1019,91 @@
       "refs": [
         "EXECUTION_PLAN.md#E-31"
       ],
-      "aliases": []
+      "aliases": [],
+      "records": [
+        "R-0661"
+      ]
     },
     {
       "id": null,
       "title": "Time scale",
-      "status": "open",
-      "statusText": "one `Float32` on `clockData`. `Time.scaleSimMs` multiplies worker sim dt; the physics …",
+      "status": "answered",
+      "statusText": "answered 2026-10-28 (Wave 7 triage, R-0645): Time.scale shipped",
       "date": "2026-10-17",
       "result": "one `Float32` on `clockData`. `Time.scaleSimMs` multiplies worker sim dt; the physics host multiplies the seconds passed to `weedjsDoStep` after the hitch cap. Wall `STEP_MS` and FPS stay on `performance.now()`. …",
       "area": "physics",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0347"
+        "R-0347",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Camera dead zone and shake",
-      "status": "open",
-      "statusText": "`deadzoneCenter` runs inside `followEntity` before look-ahead. `advanceShake` runs once …",
+      "status": "answered",
+      "statusText": "answered 2026-10-28 (Wave 7 triage, R-0645): both shipped",
       "date": "2026-10-17",
       "result": "`deadzoneCenter` runs inside `followEntity` before look-ahead. `advanceShake` runs once in pre-render `latchCamera` and is added after the world clamp. …",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0346"
+        "R-0346",
+        "R-0661"
       ]
     },
     {
       "id": "H-15",
       "title": "Math-allocation audit, H-15 castAll sort",
-      "status": "open",
-      "statusText": "one headless baseline each, `--src`, detailed stats off, warmup 10 s, measure 10 s. …",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): by E-85's second change (R-0462)",
       "date": "2026-10-14",
       "result": "one headless baseline each, `--src`, detailed stats off, warmup 10 s, measure 10 s. `RayStressScene`: logic0 4.906 ms, `BODY_COUNT` 2000, and the scene calls `Ray.castAll` with `maxHits` 4 among line-of-sight, linecast, and `cast`. …",
       "area": "physics",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0331"
+        "R-0331",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Interleaved pack record",
-      "status": "open",
-      "statusText": "microbench of 8 fields × 16384 rows, the read only, columns against one block. +25.5 % …",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-10-06",
       "result": "microbench of 8 fields × 16384 rows, the read only, columns against one block. +25.5 % ops/s. It does not include the extra write on emit. Without that write measured on Predator there is no second layout. Not-measured as a scene keep. …",
       "area": "pixi",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0323"
+        "R-0323",
+        "R-0661"
       ]
     },
     {
       "id": "P2",
       "title": "P2 sway without `Math.sin`",
-      "status": "open",
-      "statusText": "Predator spawns 20000 blades of grass with `swayFrequency: 1 + rng() * 2`. A sample of …",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-10-01",
       "result": "Predator spawns 20000 blades of grass with `swayFrequency: 1 + rng() * 2`. A sample of 20000 floats like that has 19979 distinct `float32` values. The sine-of-a-sum identity does not apply. Not-measured (not worth it). …",
       "area": "particle",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0305"
+        "R-0305",
+        "R-0661"
       ]
     },
     {
       "id": "D1",
       "title": "D1 and D2 (deopts) no longer reproduce",
-      "status": "open",
-      "statusText": "new trace and deopt log on the branch with L2 (`tests/results/v8-deopt/after-l2/`). …",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-30",
       "result": "new trace and deopt log on the branch with L2 (`tests/results/v8-deopt/after-l2/`). D1 (`packInstancedRows:349`, `ctx.particleCount = particles`, 421 steady-state deopts in the old capture): 5 in total in the new one, none steady; …",
       "area": "spatial",
@@ -1103,63 +1112,68 @@
         "D2"
       ],
       "records": [
-        "R-0271"
+        "R-0271",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Second batch, not measured",
-      "status": "open",
-      "statusText": "R3 (emit in entity order) is the same memory-order idea as X5, which did not pay in the …",
+      "status": "answered",
+      "statusText": "answered 2026-10-28 (Wave 7 triage, R-0645): its record settled each item",
       "date": "2026-09-30",
       "result": "R3 (emit in entity order) is the same memory-order idea as X5, which did not pay in the browser because of the cross-core effect, and it needs a pre-render kernel with the real worker that does not exist yet. …",
       "area": "physics",
       "kind": "wasm",
       "aliases": [],
       "records": [
-        "R-0293"
+        "R-0293",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "R2 emit type 0",
-      "status": "open",
-      "statusText": "the plan asked to pick it by hot line. In the after-H9 trace the `emitSpriteQueue` lines …",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-30",
       "result": "the plan asked to pick it by hot line. In the after-H9 trace the `emitSpriteQueue` lines are spread out (the hottest is 8 % of self time, `srScaleX[idx]`); there is no line that justifies a hypothesis. Not-measured. …",
       "area": "spatial",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0281"
+        "R-0281",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Caster ids per cell from spatial",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): by E-114's stamp grid",
       "date": "2026-09-26",
       "result": "Stamp stops being lights×all packed casters. — — — Same protocol ceiling as the 256 grid at zoom 0.4 night.",
       "area": "spatial",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0219"
+        "R-0219",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Bitonic H1/H2/H3 + combo (GPU numbers)",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-25",
       "result": "One encoder / pack keys / direct pack, each against a new snapshot, and the three together, with real `GPU_STEP_MS` and `GPU_SORT_MS`. — H1 `GPU_SORT` 6.440→0.097 (−98.5 %), `GPU_STEP` 7.653→1.105. H2 sort 5.432 (−15.7 %). …",
       "area": "pixi",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0209"
+        "R-0209",
+        "R-0661"
       ]
     },
     {
@@ -1179,43 +1193,46 @@
     {
       "id": null,
       "title": "lightGlow sprite versus add",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "answered",
+      "statusText": "answered 2026-10-28 (Wave 7 triage, R-0645): no keep, the knob stays, default add",
       "date": "2026-09-23",
       "result": "In Predator, sprite mode lowers `SPRITES_MS` ≥3% versus the ADD batch, same fight. — Sprites 5.168 vs 6.660. Step 10.382 vs 11.171. `ACTIVE_PARTICLES` 168 vs 215. Moved 3342 vs 6891. — No keep. The knob stays. Default `add`. …",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0158"
+        "R-0158",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "useZBuffer, one pass",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-23",
       "result": "`renderer.useZBuffer` (default false) skips the painter and writes the Y key into Z. In Predator the step drops ≥3% with the same fight. A single cut at 1/255. — Step 10.650 → 5.830 ms. `SORT_MS` 2.209 → 0. Upload 5.383 → 2.373. …",
       "area": "pixi",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0156"
+        "R-0156",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Doc+Doubao filter",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "answered",
+      "statusText": "answered 2026-10-28 (Wave 7 triage, R-0645): its record filtered the list",
       "date": "2026-09-22",
       "result": "Stats padding, SoA hot/cold, instancing, `fround`, spatial sleep, hierarchical grid, query bitset, and worker WASM are new hyps. — Stats already go to 64 B (`16*4`) and are written once per frame. …",
       "area": "spatial",
       "kind": "wasm",
       "aliases": [],
       "records": [
-        "R-0152"
+        "R-0152",
+        "R-0661"
       ]
     },
     {
@@ -1235,64 +1252,68 @@
     {
       "id": null,
       "title": "H-VIS previous list",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-22",
       "result": "Clearing `isItOnScreen` only for the visibles from the previous frame lowers `preRender_STEP_MS` ≥3% on bunny N=1. — preRender 23.686 ms, COLLECT 18.675, EMIT 5.017, queue 250000. — All fit in the camera. …",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0143"
+        "R-0143",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "CELL u32",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "answered",
+      "statusText": "answered 2026-10-28 (Wave 7 triage, R-0645): not needed, the grid stays at 65 535 cells",
       "date": "2026-09-20",
       "result": "Widen the cell index for 300k. — Target grid ≤65535. — It is not needed for the compose.",
       "area": "engine",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0106"
+        "R-0106",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Facades vs `main` (screen)",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-17",
       "result": "`Box2d`/`Decal`/`Query` do not make the kernels and stress that `main` still shares ≥3% more expensive. — Kernels: emit +4.0%, ray +4.0%, integrate +2.1%, spatial −0.5%. Bullets r1 −9.6%, r2 −2.7% TIE. …",
       "area": "physics",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0067"
+        "R-0067",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Keep set after drops (2-run screen)",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-15",
       "result": "HASH + P2 + P6 + HYGIENE + COLLIDE + PACT + LIGHT together beat `main`. — Balls physics 7.35 → 7.02 ms (−4.5%); Predator particle 2.53 → 2.63 ms (+3.8%) — Too few runs; PACT/LIGHT still in the tree. Superseded by the 5-run product confirm.",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0011"
+        "R-0011",
+        "R-0661"
       ]
     },
     {
       "id": "E-11",
       "title": "Flowfield/A\\* clear the whole grid per request",
-      "status": "open",
-      "statusText": "not a STEP_MS claim while the loop is deadline-capped. Not implemented.",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): by E-122",
       "date": null,
       "result": "The vehicle runs (E-38). `processNavigationRequests` exits when `performance.now()` passes `maxProcessingMsPerFrame` (8 on NavStress). The measured particle step is 8.532 ms, so the budget is full. …",
       "area": "spatial",
@@ -1300,13 +1321,16 @@
       "refs": [
         "EXECUTION_PLAN.md#E-11 Flowfield/A clear"
       ],
-      "aliases": []
+      "aliases": [],
+      "records": [
+        "R-0661"
+      ]
     },
     {
       "id": "E-12",
       "title": "`requestVector` does a linear slot scan with one `Atomics.load` per slot",
-      "status": "open",
-      "statusText": "vehicle under the floor. Not sat.",
+      "status": "answered",
+      "statusText": "closed 2026-10-28 (Wave 7 triage, R-0645): the slot scan costs 0.005–0.02 ms a frame",
       "date": null,
       "result": "logic0 on the working NavStress run is 0.710 ms. A scene pair would be FAIL under the 3 ms floor. The scan does run (256 agents, up to 64 slots). It is not rejected the way E-13 was. It is not measurable as a keep on this scene. …",
       "area": "particle",
@@ -1314,13 +1338,16 @@
       "refs": [
         "EXECUTION_PLAN.md#E-12"
       ],
-      "aliases": []
+      "aliases": [],
+      "records": [
+        "R-0661"
+      ]
     },
     {
       "id": "E-14",
       "title": "`performance.now()` per iteration in the nav deadline loop",
-      "status": "open",
-      "statusText": "same budget as E-11. Not implemented.",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": null,
       "result": "The clock read is how the loop knows it has spent its 8 ms. Reading it less often does not end the frame earlier while requests remain, and the NavStress step is that budget. Primary `particle_STEP_MS` does not move. …",
       "area": "spatial",
@@ -1328,7 +1355,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-14"
       ],
-      "aliases": []
+      "aliases": [],
+      "records": [
+        "R-0661"
+      ]
     },
     {
       "id": "E-83",
@@ -1402,8 +1432,8 @@
     {
       "id": "E-55",
       "title": "Box2D's step profiler calls `emscripten_get_now` every step",
-      "status": "blocked",
-      "statusText": "parked",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-10-28 (Wave 7 triage, R-0645): done as W24 (R-0460)",
       "date": null,
       "result": "Found fixing `mapWasmFunctions` (review D11). On the 10-19 wasm, `step_world` (chrome 325) has 34 inlined `call $fimport$0` (`_emscripten_get_now`); …",
       "area": "physics",
@@ -1413,7 +1443,8 @@
       ],
       "aliases": [],
       "records": [
-        "R-0460"
+        "R-0460",
+        "R-0661"
       ]
     },
     {
@@ -4319,197 +4350,211 @@
     {
       "id": null,
       "title": "Protocol ceiling 16 ms, Predator far",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-26",
       "result": "With detail off and the fight loaded, each worker and the GPU stay under 16 ms. — Loaded screening (moved ~7400): preRender 20.0, logic ~10, physics 9.2, pixi 5.0, spatial ~6, particle 3.1. GPU 4.8. …",
       "area": "pixi",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0237"
+        "R-0237",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "H-pub: do not repack sprites on publish, N>1",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-26",
       "result": "Skipping the second `_packGpuSprites` in `_publishGpuQueue` when there is more than one preRender (the emit already wrote the AoS) lowers the max `preRender_STEP_MS` ≥3 % vs the current join on Predator far, without inflating Pixi or …",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0233"
+        "R-0233",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Stamp by half the lights + sun concat (N>1)",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-26",
       "result": "Concatenating sun rows and stamping half the lights per thread, without `_packGpuShadows` in the publish, lowers the max `preRender_STEP_MS` ≥3 % vs N=1 on Predator far, Pixi not +3 %, casters close. …",
       "area": "particle",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0224"
+        "R-0224",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Bunny N=2/N=4 after the shadow parallel",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-26",
       "result": "The −44 % / −58 % keep (250k) does not break. — N=1 28.29, N=2 28.97, N=4 23.84 (−16 %). Historical 23.06 / 12.99 / 9.61. MARK 250000. — The ratio does not reproduce at 8/10. Do not revert Predator.",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0218"
+        "R-0218",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Confirm N=2 vs N=1 Predator far 5×25/18",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-26",
       "result": "The screening STEP keep (≥3 %) holds; Pixi not +3 %; then default 2 is considered. — preRender median 12.26→9.04 (−26.3 %, cv 4.7 %/1.8 %). Pixi 2.83→3.16 (+11.5 %). Casters 12229→13181 (+7.8 %). BODY 16575/16622. Moved cv 129 %/60 %. …",
       "area": "pixi",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0217"
+        "R-0217",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "K-way `preRenderMerge` N=2 vs join `preRender` (Predator/LittleCity far)",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-26",
       "result": "The pre-render max lowers ≥3 % vs the joined painter and Pixi does not eat the max. — Predator merge 19.39 vs join 22.97 (−15.6 %), Pixi 5.80/5.77. LittleCity 2.74 vs 2.69 (+1.6 %). — Predator: keep only vs join. LittleCity: drop. …",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0214"
+        "R-0214",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "preRender.skipCull (AABB vs emit-all)",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "kept",
+      "statusText": "kept 2026-10-28 (Wave 7 triage, R-0645): the knob shipped and is documented",
       "date": "2026-09-20",
       "result": "`skipCull` (default false) is ≥3% cheaper on `preRender_STEP_MS` when all fit in the camera, same queue; with many off-screen it grows `RENDER_QUEUE_SIZE`. Scenes with the flag off do not worsen physics/logic/particle/spatial ≥3%. …",
       "area": "spatial",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0103"
+        "R-0103",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "SAB spawn command ring",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-10-28 (Wave 7 triage, R-0645): the ring shipped (tryPushSpawn)",
       "date": "2026-09-20",
       "result": "MPSC ring `SPAWN`/`DESPAWN` + owner in the act does not worsen SpawnStorm ≥3%. Kernel push/drain+merge ≥3% more ops/s than building N `spawnBatch` payloads. It is not the ECB. — Kernel 10396→5166 ops/s (−50.3%, kernel claim dropped). …",
       "area": "logic",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0105"
+        "R-0105",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Headed median vs `0695a8d` (Balls + Predator + LiquidFun stress)",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-17",
       "result": "The working tree `more_micro_opts` is cheaper than `main` on physics `STEP_MS` for those three scenes. — Balls WORSE: physics 11.529 → 12.770 ms (+10.8%), `BODY_COUNT` 9004/9004. …",
       "area": "physics",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0043"
+        "R-0043",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Keep set as package vs `0695a8d`",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-16",
       "result": "HASH+P2+P6+hygiene+collide plus load counts beat main on emit, Balls, and steady combat. — emit KEPT; box2d TIE; steadyCombat KEPT. Balls logic0 +39.6% that night (TICK leftover still in tree). Lockstep spawn timeout. …",
       "area": "pixi",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0041"
+        "R-0041",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "visPoly detailed-stats retry",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-16",
       "result": "With `collectDetailedStats`, `VISIBILITY_MS` is the vis-poly primary. — VISIBILITY_MS −1.2%; preRender −3.3%; kernel −7.8% on unchanged `angularSweep.js` — Do not reopen VP cache.",
       "area": "pre-render",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0038"
+        "R-0038",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Keep set after strip vs `0695a8d`",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-16",
       "result": "True keep package (HASH+P2+P6+hygiene+collide+load+N2) beats main on emit/box2d/steadyCombat. — emit KEPT (kernel 5545→8195 +47.8%; particle 0.434→0.385 −11.2%). box2d KEPT (physics 12.152→6.896 −43.3%; logic0 0.601→0.292 −51.4%; …",
       "area": "physics",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0030"
+        "R-0030",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "queryAabb after full strip",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": "2026-09-16",
       "result": "Without burst API, QueryAABB stays main-like (no +thousands %). — physics 0.201→0.213 (+6.3%) WORSE on protocol; BODY_COUNT 201/201. Not +1964%. — Burst is gone. Tiny absolute ms; do not reopen burst.",
       "area": "logic",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0029"
+        "R-0029",
+        "R-0661"
       ]
     },
     {
       "id": null,
       "title": "Feature program waves C–K leftovers",
-      "status": "mixed",
-      "statusText": "mixed",
+      "status": "superseded",
+      "statusText": "superseded 2026-10-28 (Wave 7 triage, R-0645): the code it names is gone or rewritten",
       "date": null,
       "result": "AngularSweep, NavGrid, QuerySystem, decorations, tilemap, Treiber rings, and the older “Wave H light skip / vis-poly” notes. — Treat `FEATURE_HYP_PROGRAM.md` as a catalog, this log as the verdict. …",
       "area": "particle",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0007"
+        "R-0007",
+        "R-0661"
       ]
     },
     {
@@ -14492,6 +14537,12 @@
         "c451e2a6",
         "2b8dca9f"
       ]
+    },
+    {
+      "id": "R-0661",
+      "date": "2026-10-28",
+      "title": "Wave 7 step 6: the register's older pending rows moved as R-0645's triage listed them",
+      "text": "R-0645 triaged the 39 pending rows older than Wave 7 against the code at 7922d724 (a desk review, no sitting) and listed the moves without applying them. Applied on 2026-10-28 after checking that the code they name is still gone (useZBuffer, the bitonic sort, preRenderMerge) or still there (skipCull, the spawn ring). Two small speed items stay open: \"H-ROW / H-OWN spatial\" (with step 2's rebuildOwnedRows) and \"Floor occlusion\" (count the casters first).\n\n- E-50: kept: its two kernel keeps stand; its tail E-50b is E-91\n- \"preRender.skipCull (AABB vs emit-all)\": kept: the knob shipped and is documented\n- E-55: kept-hygiene: done as W24 (R-0460)\n- \"SAB spawn command ring\": kept-hygiene: the ring shipped (tryPushSpawn)\n- E-31: answered: the toolchain built the WASM migration (E-76)\n- \"Time scale\": answered: Time.scale shipped\n- \"Camera dead zone and shake\": answered: both shipped\n- \"Second batch, not measured\": answered: its record settled each item\n- \"lightGlow sprite versus add\": answered: no keep, the knob stays, default add\n- \"Doc+Doubao filter\": answered: its record filtered the list\n- \"CELL u32\": answered: not needed, the grid stays at 65 535 cells\n- E-12: answered: the slot scan costs 0.005–0.02 ms a frame\n- E-11: superseded: by E-122\n- H-15: superseded: by E-85's second change (R-0462)\n- \"Caster ids per cell from spatial\": superseded: by E-114's stamp grid\n- E-14: superseded: the code it names is gone or rewritten\n- P2: superseded: the code it names is gone or rewritten\n- D1: superseded: the code it names is gone or rewritten\n- \"Interleaved pack record\": superseded: the code it names is gone or rewritten\n- \"R2 emit type 0\": superseded: the code it names is gone or rewritten\n- \"Bitonic H1/H2/H3 + combo (GPU numbers)\": superseded: the code it names is gone or rewritten\n- \"useZBuffer, one pass\": superseded: the code it names is gone or rewritten\n- \"H-VIS previous list\": superseded: the code it names is gone or rewritten\n- \"Facades vs `main` (screen)\": superseded: the code it names is gone or rewritten\n- \"Keep set after drops (2-run screen)\": superseded: the code it names is gone or rewritten\n- \"Protocol ceiling 16 ms, Predator far\": superseded: the code it names is gone or rewritten\n- \"H-pub: do not repack sprites on publish, N>1\": superseded: the code it names is gone or rewritten\n- \"Stamp by half the lights + sun concat (N>1)\": superseded: the code it names is gone or rewritten\n- \"Bunny N=2/N=4 after the shadow parallel\": superseded: the code it names is gone or rewritten\n- \"Confirm N=2 vs N=1 Predator far 5×25/18\": superseded: the code it names is gone or rewritten\n- \"K-way `preRenderMerge` N=2 vs join `preRender` (Predator/LittleCity far)\": superseded: the code it names is gone or rewritten\n- \"Headed median vs `0695a8d` (Balls + Predator + LiquidFun stress)\": superseded: the code it names is gone or rewritten\n- \"Keep set as package vs `0695a8d`\": superseded: the code it names is gone or rewritten\n- \"visPoly detailed-stats retry\": superseded: the code it names is gone or rewritten\n- \"Keep set after strip vs `0695a8d`\": superseded: the code it names is gone or rewritten\n- \"queryAabb after full strip\": superseded: the code it names is gone or rewritten\n- \"Feature program waves C–K leftovers\": superseded: the code it names is gone or rewritten"
     }
   ],
   "leads": [
