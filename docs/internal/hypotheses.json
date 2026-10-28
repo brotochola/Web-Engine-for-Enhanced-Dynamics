@@ -8625,18 +8625,18 @@
         "EXECUTION_PLAN.md#E-158"
       ],
       "records": [
-        "R-0660"
+        "R-0660",
+        "R-0678"
       ],
       "id": "E-158",
       "title": "A GPU particle costs four vertex evaluations and two triangles",
-      "status": "open",
-      "statusText": "opened 2026-10-28 (the GPU Galaxy demo)",
+      "status": "screened",
+      "statusText": "screened 2026-10-28: the per-vertex evaluation is not the cost",
       "date": "2026-10-28",
       "area": "renderer",
       "kind": "gpu",
-      "rank": 11,
-      "result": "GTX 1650, WebGPU, 1 to 2 px dots: about 3.3 ms of GPU per million particles (4 194 304 at 60 fps, 8 388 608 at 38, 16 777 216 at 19).",
-      "next": "One evaluation per particle (a WebGPU compute pass), or a point or single-triangle mode for dots this small; GPU Galaxy at 8 388 608 is the scene."
+      "result": "webglParticleUploadKernel (6749b471), 4 194 304 records from the record texture: one triangle around the quad 13.0 / 8.0 ms against the quad 12.4 / 7.3 (two rounds); the engine's kind of vertex work +0.5 ms. Neither a compute pass nor a single triangle pays.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -14758,6 +14758,16 @@
       "text": "Predator, 4 pairs from worktrees, 7445a6a6 against e6ee4ed3 (E-146's FSM tick, the spatial row counters of E-147 and E-157's WebGL record texture together), detailed stats off: logic 3.688 → 3.645 ms (−1.2 %, worse 1/4, cv 3/2 %), spatial −2.1 %, physics −5.1 % (cv 2/12 %), renderer −5.6 % (cv 9/4 %), pre-render −3.5 %, presented 60.0 both; BODY_COUNT and GPU_CASTERS within 0.4 %. NEUTRAL: no worker worse, every one lower, physics among them, which none of these changes reaches (drift). Predator draws no GPU particles, so its renderer says nothing about E-157. **Passed.**",
       "commits": [
         "e6ee4ed3"
+      ]
+    },
+    {
+      "id": "R-0678",
+      "date": "2026-10-28",
+      "title": "E-158 screened: a single triangle loses to the quad and the vertex math is 0.5 ms at 4 million",
+      "verdict": "screened",
+      "text": "Screened in the WebGL kernel (`webglParticleUploadKernel`, `tri` and `heavy`, 6749b471; headed, GTX 1650, ANGLE D3D11), 4 194 304 records read from the record texture as the engine now does (E-157), 2 rounds, the synchronous frame time per round:\n\n| draw | light vertex | `heavy` vertex (six eases, a rotation, a drag curve) |\n| --- | --- | --- |\n| a quad: 4 vertices, 2 triangles (the engine) | 12.4 / 7.3 ms | 12.9 / 7.8 ms |\n| one triangle around the quad, 3 vertices, outside discarded | 13.0 / 8.0 ms | 13.3 / 8.4 ms |\n\nAll at 60 fps. The rounds differ by 5 ms (the GPU's clocks), but inside each round the triangle is slower than the quad, and the engine's kind of vertex work adds about 0.5 ms at 4 million. So the per-vertex evaluation is not what a GPU particle costs: one evaluation per particle (a WebGPU compute pass) would save a fraction of 0.5 ms, and the single triangle loses on its larger raster. What grows with the count is the record fetch and the raster of tiny quads. **Screened.** Since E-157 both backends draw 4 million at 60 fps on this GPU.",
+      "commits": [
+        "6749b471"
       ]
     }
   ],
