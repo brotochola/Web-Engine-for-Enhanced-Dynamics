@@ -8,9 +8,13 @@
  * each owns interleaved rows. One "frame" is all three updates in sequence.
  * Entities drift each frame so the neighbor-reuse skin and the tick stagger
  * both run the way they do in Predator (skin 0.01, 30 frames, interval 15).
+ * `--still` (setupSpatialKernel's `still`) leaves every entity where it spawned: the stationary regime of
+ * E-136, with the reuse settings from `--skin`, `--max-frames` and `--tick` (the engine's defaults, which
+ * stationarySpatialWideScene runs on, are 0.04, 15 and 1).
  *
  *   node tests/bench/spatialWorkerMicrobench.mjs
  *   node tests/bench/spatialWorkerMicrobench.mjs --n 16500 --output tests/results/spatial-worker.json
+ *   node tests/bench/spatialWorkerMicrobench.mjs --still --skin 0.04 --max-frames 15 --tick 1
  */
 import assert from 'node:assert/strict';
 
@@ -166,8 +170,8 @@ export async function setupSpatialKernel(opts = {}) {
     Collider.visualRange[i] = kind < 0.7 ? 150 : kind < 0.8 ? 250 : kind < 0.97 ? 0 : 400;
     SpriteRenderer.active[i] = 1;
     RigidBody.active[i] = kind < 0.8 ? 1 : 0;
-    vx[i] = kind < 0.8 ? (rng() - 0.5) * 2 : 0;
-    vy[i] = kind < 0.8 ? (rng() - 0.5) * 2 : 0;
+    vx[i] = kind < 0.8 && !opts.still ? (rng() - 0.5) * 2 : 0;
+    vy[i] = kind < 0.8 && !opts.still ? (rng() - 0.5) * 2 : 0;
     ids.push(i);
   }
   setActiveList(buffers.activeEntitiesData, ids);
@@ -227,7 +231,12 @@ export async function setupSpatialKernel(opts = {}) {
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'base');
-  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant });
+  const still = Boolean(args.still);
+  const spatial = {};
+  if (args.skin !== undefined) spatial.neighborReuseSkin = Number(args.skin);
+  if (args['max-frames'] !== undefined) spatial.neighborReuseMaxFrames = Number(args['max-frames']);
+  if (args.tick !== undefined) spatial.neighborTickInterval = Number(args.tick);
+  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial });
   // 45 frames: every entity passes a full rebuild and the stagger at least twice.
   for (let f = 0; f < 45; f++) k.frame();
   const checksum = k.checksum();
@@ -236,11 +245,13 @@ async function main() {
   assert.ok(pairs > 0, 'no neighbors published');
 
   const cases = {
-    frame: timeIt(`spatial frame ${variant} (${k.workers.length} workers, n=${k.n})`, () => k.frame(), { iterations: 20, warmup: 30 }),
+    frame: timeIt(`spatial frame ${variant}${still ? ' still' : ''} (${k.workers.length} workers, n=${k.n})`, () => k.frame(), { iterations: 20, warmup: 30 }),
   };
   const report = {
     feature: 'spatial-worker-frame',
     variant,
+    still,
+    spatial: k.cfg,
     functions: ['SpatialWorker.rebuildOwnedRows', 'SpatialWorker._findNeighbors (spatialGather, spatialPublish)'],
     n: k.n,
     seed: Number(args.seed ?? 0x5a71a1),
