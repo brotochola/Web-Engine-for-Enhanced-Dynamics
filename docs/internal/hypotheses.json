@@ -8307,18 +8307,18 @@
         "EXECUTION_PLAN.md#E-142"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-0662"
       ],
       "id": "E-142",
       "title": "`getTileId` divides twice per call",
-      "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "status": "rejected",
+      "statusText": "rejected 2026-10-28 (Wave 7): the divisions are not the cost; N-78 fixed with it",
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 5,
-      "result": "Wave 7 sweep (R-0645): getTileId is 82 % of tilemapStressScene's logic (469 ms/s at that scene's fixed call rate). Reciprocals stored with the map remove both divisions; N-78 (a negative coordinate truncated to tile 0) is fixed with it.",
-      "next": "A kernel of getTileId with Math.floor and reciprocals against the shipped one, then tilemapStressScene logic."
+      "result": "tileMapMicrobench (44bdf560): shipped 2.44 ns a call, the reciprocal 2.6 ns and one tile low 203 times with 49 px tiles, Math.floor alone 3.6 ns (and data[NaN] for NaN). N-78 fixed with the world-pixel bounds first (9c6739dc): tilemapStressScene logic 8.240 → 8.229 ms (−0.1 %, 4 pairs).",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -8624,6 +8624,24 @@
       "rank": 11,
       "result": "GTX 1650, WebGPU, 1 to 2 px dots: about 3.3 ms of GPU per million particles (4 194 304 at 60 fps, 8 388 608 at 38, 16 777 216 at 19).",
       "next": "One evaluation per particle (a WebGPU compute pass), or a point or single-triangle mode for dots this small; GPU Galaxy at 8 388 608 is the scene."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-77"
+      ],
+      "records": [
+        "R-0663"
+      ],
+      "id": "N-77",
+      "title": "After game.destroy() Chrome's GPU process keeps about 87 MB",
+      "status": "answered",
+      "statusText": "answered 2026-10-28: a cache of headless Chrome, not freed by disposing the device or context",
+      "date": "2026-10-26",
+      "area": "renderer",
+      "kind": "bug",
+      "result": "The GPU process holds the same amount after every cycle; the dispose (device.destroy / loseContext before the terminate) changed it by noise: Predator +82 vs +90 MB, balls +79 vs +85; headed WebGPU gives it all back either way. Not committed; sceneCycleSmoke judges after-destroy outside the GPU process (cf090ed1).",
+      "next": "Nothing pending."
     }
   ],
   "records": [
@@ -14543,6 +14561,28 @@
       "date": "2026-10-28",
       "title": "Wave 7 step 6: the register's older pending rows moved as R-0645's triage listed them",
       "text": "R-0645 triaged the 39 pending rows older than Wave 7 against the code at 7922d724 (a desk review, no sitting) and listed the moves without applying them. Applied on 2026-10-28 after checking that the code they name is still gone (useZBuffer, the bitonic sort, preRenderMerge) or still there (skipCull, the spawn ring). Two small speed items stay open: \"H-ROW / H-OWN spatial\" (with step 2's rebuildOwnedRows) and \"Floor occlusion\" (count the casters first).\n\n- E-50: kept: its two kernel keeps stand; its tail E-50b is E-91\n- \"preRender.skipCull (AABB vs emit-all)\": kept: the knob shipped and is documented\n- E-55: kept-hygiene: done as W24 (R-0460)\n- \"SAB spawn command ring\": kept-hygiene: the ring shipped (tryPushSpawn)\n- E-31: answered: the toolchain built the WASM migration (E-76)\n- \"Time scale\": answered: Time.scale shipped\n- \"Camera dead zone and shake\": answered: both shipped\n- \"Second batch, not measured\": answered: its record settled each item\n- \"lightGlow sprite versus add\": answered: no keep, the knob stays, default add\n- \"Doc+Doubao filter\": answered: its record filtered the list\n- \"CELL u32\": answered: not needed, the grid stays at 65 535 cells\n- E-12: answered: the slot scan costs 0.005–0.02 ms a frame\n- E-11: superseded: by E-122\n- H-15: superseded: by E-85's second change (R-0462)\n- \"Caster ids per cell from spatial\": superseded: by E-114's stamp grid\n- E-14: superseded: the code it names is gone or rewritten\n- P2: superseded: the code it names is gone or rewritten\n- D1: superseded: the code it names is gone or rewritten\n- \"Interleaved pack record\": superseded: the code it names is gone or rewritten\n- \"R2 emit type 0\": superseded: the code it names is gone or rewritten\n- \"Bitonic H1/H2/H3 + combo (GPU numbers)\": superseded: the code it names is gone or rewritten\n- \"useZBuffer, one pass\": superseded: the code it names is gone or rewritten\n- \"H-VIS previous list\": superseded: the code it names is gone or rewritten\n- \"Facades vs `main` (screen)\": superseded: the code it names is gone or rewritten\n- \"Keep set after drops (2-run screen)\": superseded: the code it names is gone or rewritten\n- \"Protocol ceiling 16 ms, Predator far\": superseded: the code it names is gone or rewritten\n- \"H-pub: do not repack sprites on publish, N>1\": superseded: the code it names is gone or rewritten\n- \"Stamp by half the lights + sun concat (N>1)\": superseded: the code it names is gone or rewritten\n- \"Bunny N=2/N=4 after the shadow parallel\": superseded: the code it names is gone or rewritten\n- \"Confirm N=2 vs N=1 Predator far 5×25/18\": superseded: the code it names is gone or rewritten\n- \"K-way `preRenderMerge` N=2 vs join `preRender` (Predator/LittleCity far)\": superseded: the code it names is gone or rewritten\n- \"Headed median vs `0695a8d` (Balls + Predator + LiquidFun stress)\": superseded: the code it names is gone or rewritten\n- \"Keep set as package vs `0695a8d`\": superseded: the code it names is gone or rewritten\n- \"visPoly detailed-stats retry\": superseded: the code it names is gone or rewritten\n- \"Keep set after strip vs `0695a8d`\": superseded: the code it names is gone or rewritten\n- \"queryAabb after full strip\": superseded: the code it names is gone or rewritten\n- \"Feature program waves C–K leftovers\": superseded: the code it names is gone or rewritten"
+    },
+    {
+      "id": "R-0662",
+      "date": "2026-10-28",
+      "title": "E-142 rejected: getTileId's divisions are not its cost; N-78 fixed with the world bounds",
+      "verdict": "rejected",
+      "text": "tileMapMicrobench (44bdf560), Node, one loop per case after warmNormalCompile, three to four runs: shipped `map.getTileId(x, y, name)` 2.44 ns a call, the layer method alone the same (the name lookup is free), `Math.floor(x / w)` 3.6 ns, a guard then `(x / w) | 0` 2.3 ns, the stored reciprocal 2.6 ns, the world-pixel bounds then truncation 2.5 to 2.8 ns (machine noise about ±10 %). Parity against `Math.floor(x / w)` on quarter pixels: the reciprocal reads one tile low 203 times with 49 px tiles; `Math.floor` alone reads `data[NaN]` for NaN.\n\nSo the reciprocal is out and the speed claim with it. N-78 is fixed with the bounds form (9c6739dc), the only one that answers 0 for (−w, 0), NaN, the infinities and past the far side; `worldToTile` floors. Hygiene keep, tilemapStressScene, 4 pairs from worktrees: logic 8.240 → 8.229 ms (−0.1 %, worse 1/4, cv 0/0 %).",
+      "commits": [
+        "44bdf560",
+        "9c6739dc"
+      ]
+    },
+    {
+      "id": "R-0663",
+      "date": "2026-10-28",
+      "title": "N-77 answered: headless Chrome's GPU process keeps a cache the dispose does not free",
+      "verdict": "answered",
+      "text": "`sceneCycleSmoke --commit` now splits the commit by process (ab033c25). Predator, 3 cycles, headless, the commit after destroy over the start: GPU process +90 MB, renderer +76 MB; the GPU process holds about 215 MB after the first cycle and after the third, so nothing grows with loads.\n\nThe fix N-77 proposed was built: the Pixi worker, asked to dispose, destroys its `GPUDevice` (WebGPU) or loses its WebGL context and answers, and `Scene.destroy` waits for the answer (at most 1 s) before the terminate. Against the same tree without it, the GPU process after destroy: Predator (WebGL) +82 MB with it, +90 without; balls (WebGL) +79 and +85; GPU Galaxy (WebGPU, headed Chrome, since the headless shell has no WebGPU) 81 and 80 MB against 100 at the start, everything given back either way. It freed nothing, so it was not committed.\n\nThe smoke judges the commit after destroy outside the GPU process, which it prints apart (cf090ed1): Predator +68.8 MB there, under the 128 MB limit.",
+      "commits": [
+        "ab033c25",
+        "cf090ed1"
+      ]
     }
   ],
   "leads": [
