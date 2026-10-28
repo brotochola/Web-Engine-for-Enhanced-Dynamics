@@ -8157,7 +8157,9 @@
     {
       "aliases": [],
       "refs": [],
-      "records": [],
+      "records": [
+        "R-0676"
+      ],
       "id": "E-136",
       "title": "Spatial does not republish the rows of all-static neighbourhoods",
       "status": "open",
@@ -8166,7 +8168,7 @@
       "area": "spatial",
       "kind": "js",
       "rank": 20,
-      "result": "In stationarySpatialWideScene (70 000 stationary entities, 32-bit ids, a CPU trace after W8b), spatial is publish_batch_u32 60.6 %, gather_batch_u32 14.8 %, rebuildOwnedRows 14.2 %: the publish refilters rows nobody's movement changed. With static isStatic (E-127), a row whose entity and every candidate are static is unchanged while its candidate list is reused; the worker could leave it out of the publish batch (no kernel change) and clear the marks when the static counter moves. Pays only where static entities have large visual ranges (Predator's props have 0 or 50), so the regime is narrow.",
+      "result": "In stationarySpatialWideScene (70 000 stationary entities, 32-bit ids, a CPU trace after W8b), spatial is publish_batch_u32 60.6 %, gather_batch_u32 14.8 %, rebuildOwnedRows 14.2 %: the publish refilters rows nobody's movement changed. With static isStatic (E-127), a row whose entity and every candidate are static is unchanged while its candidate list is reused; the worker could leave it out of the publish batch (no kernel change) and clear the marks when the static counter moves. Pays only where static entities have large visual ranges (Predator's props have 0 or 50), so the regime is narrow. 2026-10-28 (E-147 step 1): stationarySpatialWide republishes 96.1 % of its rows from kept lists every frame, movedBodiesMixed 99.0 %, Predator 5.9 %; the stationary entities are not isStatic, so the regime is \"a kept row nothing in it moved\", wider than static entities.",
       "next": "Only if a real scene has static entities with large visual ranges: the owner scene with isStatic on the stationary type; a parity test on the published rows."
     },
     {
@@ -8234,18 +8236,18 @@
       ],
       "records": [
         "R-0645",
-        "R-0665"
+        "R-0665",
+        "R-0675"
       ],
       "id": "E-144",
       "title": "Box2D's solver threads: their idle cost and their clock reads",
-      "status": "open",
-      "statusText": "open; step 0 answered 2026-10-28: idle solver threads burn nothing (the sampler counted their wait)",
+      "status": "answered",
+      "statusText": "answered 2026-10-28: the clock readers wait for work; yielding less was NEUTRAL",
       "date": "2026-10-26",
       "area": "physics",
       "kind": "wasm",
-      "rank": 5,
-      "result": "Step 0 (threadCpuProbe): bunnyMarkStressScene with physics and no bodies, the whole renderer 73 ms/s, no thread over 800; ballsHeavy four threads at 513-643 ms/s doing work. Left: the clock reads while solver threads wait (9 % of each thread in a profile that counts waits).",
-      "next": "A names build of Box2D (--profiling-funcs, not shipped) to see who reads the clock: the scheduler spin or the step profiler; then the spin variants on ballsHeavyStressScene."
+      "result": "Step 0: idle solver threads burn nothing. The clock reads are sched_yield (Emscripten: emscripten_get_now) in the solver's stage wait (every 6th spin) and the physics thread's task wait (every idle pass); both every 64th spin: ballsHeavy physics 8.606 → 8.692 ms (+1.4 %), not kept. They wait for work, off the critical path.",
+      "next": "Nothing pending, unless a profile shows the clock on the physics thread's own path."
     },
     {
       "aliases": [],
@@ -8333,18 +8335,19 @@
       "records": [
         "R-0645",
         "R-0670",
-        "R-0672"
+        "R-0672",
+        "R-0673",
+        "R-0677"
       ],
       "id": "E-146",
       "title": "The FSM tick and the collision-callback dispatch",
-      "status": "open",
-      "statusText": "the collision dispatch kept 2026-10-28; the FSM tick open",
+      "status": "kept",
+      "statusText": "kept 2026-10-28: the collision dispatch and the FSM tick",
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 2,
-      "result": "Kept (a5eb013e): the stay walk calls onCollisionStay only for classes that define it. contactsMicrobench --no-stays +64 % (7 800 pairs) and +34 % (42 861); waterAndBoxesScene logic 1.833 → 1.378 ms (−23.1 %, below the floor). Sweep (R-0645): fsm.js tick 7 % of Predator's logic.",
-      "next": "The FSM tick: a kernel over Predator's three FSM classes (polymorphic static loads, the owner's tickInterval read)."
+      "result": "Kept: onCollisionStay only for classes that define it (a5eb013e; contactsMicrobench --no-stays +64 % / +34 %); FSM.tick reads onUpdate from a per-class array and the owner's ms per tick once (bc478827; fsmTickMicrobench +6.4 % at 3 000 owners, +11.3 % at 1 000). Predator gates passed.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -8352,7 +8355,9 @@
         "EXECUTION_PLAN.md#E-147"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-0676",
+        "R-0677"
       ],
       "id": "E-147",
       "title": "The spatial kernels wait on memory: less work per frame",
@@ -8362,8 +8367,8 @@
       "area": "spatial",
       "kind": "wasm",
       "rank": 3,
-      "result": "Wave 7 sweep (R-0645): gather_batch 1 599 ms/s and publish_batch 1 447 summed over 18 scenes (Boids gather 44 %, orientedBox 76 %; movedBodiesMixed publish 46 %; stationarySpatialWide publish_u32 61 %). Both wait on memory: the gather's float32 variants lost in Node (R-0571), the publish's f32x4 tied double (W8a).",
-      "next": "Rows rebuilt and republished per frame in each scene against the reuse skin; the Chrome entry for the gather's float32 variants; then W7 and E-136."
+      "result": "Step 1 (5803ca42): rows rebuilt / kept by the skin and republished / skipped by the stagger: Boids 6.7 / 0 / 93.3 %, Predator 3.7 / 5.9 / 89.5 %, orientedBox 99.1 / 0.9 / 0 % (its turning boxes fail the half-extent check), movedBodiesMixed 1.0 / 99.0 / 0 %, stationarySpatialWide 3.9 / 96.1 / 0 %. Sweep: gather 1 599 ms/s, publish 1 447 over 18 scenes; both wait on memory.",
+      "next": "The Chrome entry for the gather's float32 variants; W7; E-136 (skip kept rows whose entity and candidates did not move); orientedBox's extent check (a correctness trade)."
     },
     {
       "aliases": [],
@@ -8600,18 +8605,19 @@
         "EXECUTION_PLAN.md#E-157"
       ],
       "records": [
-        "R-0660"
+        "R-0660",
+        "R-0674",
+        "R-0677"
       ],
       "id": "E-157",
       "title": "GPU particles on WebGL fall behind WebGPU past a few hundred thousand",
-      "status": "open",
-      "statusText": "opened 2026-10-28 (the GPU Galaxy demo)",
+      "status": "kept",
+      "statusText": "kept 2026-10-28: WebGL reads GPU particle records from a texture",
       "date": "2026-10-28",
       "area": "renderer",
       "kind": "gpu",
-      "rank": 10,
-      "result": "GTX 1650, ANGLE D3D11: WebGL draws 262 144 at 60 fps, 1 048 576 at 15 to 44 with the renderer CPU at 0.9 ms; WebGPU draws 1 048 576 and 4 194 304 at 60.",
-      "next": "A WebGL kernel drawing N instances with and without a per-frame bufferSubData into the drawn buffer; then base-instance against re-pointed attributes."
+      "result": "Kept (e6ee4ed3): the upload was not the cost, the seven instanced attributes were (about 7 ms each per million on ANGLE D3D11; webglParticleUploadKernel 51.5 ms a frame → 6.1 ms from a texture). GPU Galaxy WebGL 1 048 576: 144 and 141 → 480 and 480 frames in 8 s; 2 and 4 million at 60 fps.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -14702,6 +14708,56 @@
       "text": "Predator, 4 pairs from worktrees, ce52192d against c8c3fc6a (E-140, E-146's collision dispatch and E-109's `updateLighting` together), detailed stats off: logic 3.821 → 3.663 ms (−3.3 %, worse 0/4, cv 2/2 %, +0.8 % against the other workers), spatial −2.0 %, physics −8.4 % (cv 5/7 %), renderer −2.9 %, pre-render −2.1 %, presented 60.0 both; BODY_COUNT and GPU_CASTERS within 0.3 %. Every worker moved down, physics most, and none of the three changes reaches physics: drift. Against it logic is level, so the gate says no worker got worse, not that Predator gained. **Passed.**",
       "commits": [
         "c8c3fc6a"
+      ]
+    },
+    {
+      "id": "R-0673",
+      "date": "2026-10-28",
+      "title": "E-146: FSM.tick reads onUpdate from a per-class array and the ms per tick once, kernel +6.4 % / +11.3 %",
+      "verdict": "kept",
+      "text": "The FSM half of E-146. `FSM.tick` read the current state's `onUpdate` from the state class (Predator: 17 state classes over three FSMs, so that load saw 17 maps) and the time step from `owner.constructor.tickInterval` on every tick.\n\n**Kernel** (`fsmTickMicrobench`, b26281f6: three FSM classes with Predator's state counts, 3, 9 and 5; two owner classes with its tickIntervals, 4 and 6, each ticking an animation FSM and a behaviour FSM; transitions at a few per hundred ticks; one variant per process, alternating, the checksum after 600 ticks equal for every variant):\n\n| variant | 3000 owners (6 rounds) | 1000 owners (5 rounds) |\n| --- | --- | --- |\n| shipped | 6 477.5 ops/s | 19 420.1 |\n| `onUpdate` from a per-class array | −8.3 % (3000, 5 rounds) | −1.8 % |\n| the ms per tick cached on the FSM instance | +3.1 % | −0.1 % |\n| both | **+6.4 %** | **+11.3 %** |\n\nEach half alone ties or loses; together they win, at both counts. **Kept** (bc478827): each FSM class keeps its states' `onUpdate` by state number (built where the states are linked) and calls it with the state class as `this`; each FSM instance keeps its owner's ms per tick (`_msPerTick`, NaN until the first tick, declared in a constructor). With a dt of 1 the times are bit-identical; with another dt the product is formed in another order (one rounding apart). Scene: the Predator gate below; the FSM is 7 % of Predator's logic, so a 6–11 % kernel gain is under 1 % there, below what a sitting sees.",
+      "commits": [
+        "b26281f6",
+        "bc478827"
+      ]
+    },
+    {
+      "id": "R-0674",
+      "date": "2026-10-28",
+      "title": "E-157: WebGL GPU particles from a texture, GPU Galaxy 1M 18 → 60 fps (the attributes were the cost)",
+      "verdict": "kept",
+      "text": "The suspect was the upload (a per-frame `bufferSubData` into a ring the GPU still draws from). It was not.\n\n**Kernel** (`webglParticleUploadKernel`, 2f27006d, run headed with `chromeKernel --headed`, ba236be8; GTX 1650, Chrome on ANGLE D3D11; N instanced quads from one buffer of 112-byte records, the engine's layout). 1 048 576 records, 3 rounds, synchronous frame time (1-pixel `readPixels`) and frames presented:\n- no upload at all: 50.9 ms, 18.5 fps; the frame's 3 500 records by `bufferSubData` 51.4 ms; through a staging buffer and `copyBufferSubData` 51.4 ms; drawn as two ranges with the attributes re-pointed 55.5 ms; the whole 117 MB every frame 85.6 ms. **The upload is not the cost; the draw is.**\n- What the draw costs: the attribute count. Seven vec4 attributes 51.1 ms, six 46.0, five 41.1, three 25.3, one 11.6 (unread attributes made shader constants). A triangle strip instead of 6 indices (52.1), quads a quarter the size (52.1) and no blending (51.0) change nothing. About 7 ms per instanced attribute per million records: ANGLE's D3D11 fetches instance attributes slowly.\n- **The records in an RGBA32F texture**, seven texels each, read with `texelFetch` by `gl_InstanceID`: **6.1 ms**, 60 fps; with the frame's rows sent by `texSubImage2D` 7.7 ms. 8.4 times the attributes.\n\n**The change** (e6ee4ed3): on WebGL each ring's records are an RGBA32UI texture (seven texels a record, rows of 512, the ring's own copy as the texels; integer, so the bit fields go through a bitcast), filled by row with raw GL as the lookup textures are; the vertex shader is gpuParticle.vert.glsl with the seven attributes turned into globals it fetches from record `uFirstInstance + gl_InstanceID`, the first record a uniform of each mesh (each mesh has its own shader sharing the ring's resources and clock). WebGPU keeps its instance buffer.\n\n**GPU Galaxy** `?backend=webgl&particles=1048576`, headed, 6 s warm-up, 8 s measured, two runs a side, alternating, the parent (worktree) against the change: frames drawn **144 and 141 → 480 and 480** (18 → 60 fps, the display's); the renderer's CPU step 0.80 → 0.50 ms. With the change 2 097 152 and 4 194 304 particles also draw at 60 fps on WebGL. Checked by screenshots: GPU Galaxy on WebGL against WebGPU, and gpuParticlesStressScene on WebGL with `sort=1` (groups drawn among y-sorted trees, each from its own first record) against WebGPU, and with `look=1`. Node tests: the shader transform on the real source, rows sent per frame, both pieces across the ring end, each mesh's first record (tests/node/gpuParticleBatch.test.js).\n\n**Kept.**",
+      "commits": [
+        "ba236be8",
+        "2f27006d",
+        "e6ee4ed3"
+      ]
+    },
+    {
+      "id": "R-0675",
+      "date": "2026-10-28",
+      "title": "E-144: the clock readers are sched_yield in waits; yielding every 64th spin NEUTRAL on ballsHeavy",
+      "verdict": "answered",
+      "text": "Who reads the clock, found without a names build: under Emscripten `b2Yield` is `sched_yield()`, and Emscripten's `sched_yield` is `_emscripten_yield(emscripten_get_now())` (emsdk `system/lib/libc/musl/src/sched/sched_yield.c`): a clock import call and a mailbox check. `b2Pause` is empty in WASM. Two loops yield: the solver workers' stage wait (`b2SolverTask`, every 6th spin) and the physics thread's task wait (`b2SchedulerFinishTask`, every idle pass). The scheduler's own spin already reads the clock every 64th spin (3b2d4c8).\n\n**The variant** (Box2D repo, not committed): both loops yield every 64th spin under Emscripten, native builds unchanged. The SIMD and no-SIMD builds both passed (`build_for_weed.bat`). A clean build of Box2D's HEAD first reproduced WeedJS's shipped `box2dWasm.wasm` byte for byte (an incremental build had not: a stale build directory, 49 bytes off), so the pair compares only this change.\n\n**ballsHeavyStressScene** (owner physics, 4 pairs from worktrees): physics 8.606 → 8.692 ms (+1.4 %, worse 3/4, cv 2/2 %), presented 60.0 both; the other workers under the floor. **NEUTRAL: not kept.** WeedJS's module and Box2D's sources are back at their HEADs.\n\nAs step 0 said: the threads that read the clock are waiting for work, off the critical path; reading it less does not shorten physics' step. What is left of E-144 is the names build only if a profile shows the clock on the physics thread's own critical path."
+    },
+    {
+      "id": "R-0676",
+      "date": "2026-10-28",
+      "title": "E-147 step 1: rows rebuilt, republished and skipped per frame in five spatial scenes",
+      "verdict": "answered",
+      "text": "Step 1 of E-147: how many neighbour rows each spatial scene rebuilds and republishes per frame. `NEIGHBORS_REBUILT` and `NEIGHBORS_PUBLISHED` (5803ca42) are written with the frame's other counters, detailed stats off. One run per scene, headed, from source, 6 s warm-up and 5 s measured, averages per spatial worker per frame. Rebuilt rows go through the gather and the publish; rows kept within the skin skip the gather but are published again; stagger-skipped rows (`neighborTickInterval`) skip both.\n\n| Scene | spatial step | rows | rebuilt | kept by skin, republished | stagger-skipped |\n| --- | --- | --- | --- | --- | --- |\n| Boids (2 workers) | 6.2 ms | 20 000 | 6.7 % | 0 % | 93.3 % |\n| orientedBoxScene | 3.7 ms | 1 044 | 99.1 % | 0.9 % | 0 % |\n| Predator | 4.8 ms | 17 583 | 3.7 % | 5.9 % | 89.5 % |\n| movedBodiesMixedScene | 4.1 ms | 22 000 | 1.0 % | 99.0 % | 0 % |\n| stationarySpatialWideScene (2 workers) | 11.3 ms | 35 000 | 3.9 % | 96.1 % | 0 % |\n\nWhat it says:\n- **Boids and Predator** already skip nine rows in ten with the stagger. Boids' gather (44 % of its spatial) is the 6.7 % it rebuilds: few rows, each expensive.\n- **orientedBoxScene** rebuilds every row every frame although the default skin (0.04) is on: `_canReuseNeighbors` requires the entity's half extent unchanged, and a rotating box's bounding box changes every frame. Neither range test uses the entity's own extent (the gather adds the candidate's to the search range, the publish the candidate's to the visual range), so the check stands in for \"the shapes changed\". Relaxing it would have to budget the candidates' extent growth inside the skin (a 200 px box grows by up to 100 px as it turns, against a 12 px skin), or neighbours go missing for up to 15 frames: a correctness trade, a lead, not done.\n- **movedBodiesMixed and stationarySpatialWide** republish 96–99 % of their rows from candidate lists kept within the skin: that republish is their publish share (46 % and 61 %). The rows of entities that did not move, among candidates that did not move, come out the same each time: E-136's regime, wider than \"static entities with large visual ranges\" (stationarySpatialWide's entities are not `isStatic`; movedBodiesMixed has the grid's mover list on 96 % of frames). In the stationary scene the rebuilt 3.9 % is the list-age cap (`maxReuseFrames`) alone.\n\nSo the \"less work\" left to E-147 is in the publish of kept rows (E-136, generalised: skip a kept row when neither its entity nor a candidate moved since its last publish), not in the gather. Predator publishes 5.9 % of its rows that way, so the gain is in the stress scenes, not in Predator.",
+      "commits": [
+        "5803ca42"
+      ]
+    },
+    {
+      "id": "R-0677",
+      "date": "2026-10-28",
+      "title": "Predator gate over the FSM, the WebGL record texture and the spatial row counters",
+      "verdict": "passed",
+      "text": "Predator, 4 pairs from worktrees, 7445a6a6 against e6ee4ed3 (E-146's FSM tick, the spatial row counters of E-147 and E-157's WebGL record texture together), detailed stats off: logic 3.688 → 3.645 ms (−1.2 %, worse 1/4, cv 3/2 %), spatial −2.1 %, physics −5.1 % (cv 2/12 %), renderer −5.6 % (cv 9/4 %), pre-render −3.5 %, presented 60.0 both; BODY_COUNT and GPU_CASTERS within 0.4 %. NEUTRAL: no worker worse, every one lower, physics among them, which none of these changes reaches (drift). Predator draws no GPU particles, so its renderer says nothing about E-157. **Passed.**",
+      "commits": [
+        "e6ee4ed3"
       ]
     }
   ],
