@@ -1154,6 +1154,8 @@ class LogicWorker extends AbstractWorker {
     }
 
     activeCount += this._runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa);
+    // E-140: the entities the paths above processed, counted once rather than written on `this` per entity.
+    this.entitiesProcessedThisFrame += activeCount;
 
     if (collectDetailed) {
       this.entityTimeThisFrame = performance.now() - tEntity0;
@@ -1256,7 +1258,6 @@ class LogicWorker extends AbstractWorker {
           reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
         }
       }
-      this.entitiesProcessedThisFrame += n;
       packed += n;
     }
     return packed;
@@ -1319,7 +1320,6 @@ class LogicWorker extends AbstractWorker {
             rbAy[entityIndex] = 0;
             rbAa[entityIndex] = 0;
             obj.tick(dtRatio, deltaTime, accTime, frameNum);
-            this.entitiesProcessedThisFrame++;
             visited++;
           }
           break;
@@ -1341,7 +1341,6 @@ class LogicWorker extends AbstractWorker {
             rbAy[entityIndex] = 0;
             rbAa[entityIndex] = 0;
             obj.tick(dtRatio, deltaTime, accTime, frameNum);
-            this.entitiesProcessedThisFrame++;
             visited++;
           }
           break;
@@ -1392,7 +1391,7 @@ class LogicWorker extends AbstractWorker {
     rbAa,
     collectDetailed
   ) {
-    this._lastTickMs = 0;
+    if (collectDetailed) this._lastTickMs = 0;
     if (transformActive[entityIndex] === 0) return 0;
     const obj = gameObjects[entityIndex];
     if (!obj || typeof obj.tick !== 'function') return 0;
@@ -1407,7 +1406,6 @@ class LogicWorker extends AbstractWorker {
       obj.tick(dtRatio, deltaTime, accTime, frameNum);
     }
     if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
-    this.entitiesProcessedThisFrame++;
     return 1;
   }
 
@@ -1427,12 +1425,13 @@ class LogicWorker extends AbstractWorker {
     nextTick,
     collectDetailed
   ) {
-    this._lastTickMs = 0;
-    this._lastDecimateMs = 0;
+    if (collectDetailed) {
+      this._lastTickMs = 0;
+      this._lastDecimateMs = 0;
+    }
     if (transformActive[entityIndex] === 0) return 0;
     const obj = gameObjects[entityIndex];
     if (!obj || typeof obj.tick !== 'function') return 0;
-    this.entitiesProcessedThisFrame++;
     const tVisit0 = collectDetailed ? performance.now() : 0;
     if (--nextTick[entityIndex] > 0) {
       if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
