@@ -17,7 +17,7 @@ export const ENGINE_INSTANCE_KEYS = new Set([
   '_hasComponents',
   '_neighborOffset',
   '_neighbors',
-  '_componentCache',
+  '_components',
   '_spawnAborted',
 ]);
 

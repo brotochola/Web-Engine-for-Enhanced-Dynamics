@@ -116,6 +116,8 @@ export class GameObject {
   // Component composition - define which components this entity type has
   // Override in subclasses, e.g.: static components = [RigidBody, Collider, SpriteRenderer]
   static components = []; // By default, only Transform (added automatically)
+  /** Slots in an instance's `_components`, one per component getter (E-139); set by _ensureComponentAccessors. */
+  static _componentSlotCount = 0;
 
   // Tick decimation - override in subclasses to reduce tick frequency
   // 0 = logic workers never visit this type (unless CameraInOutListener)
@@ -541,8 +543,9 @@ export class GameObject {
       this._neighbors = null;
     }
 
-    this._componentCache = {};
     Ctor._ensureComponentAccessors();
+    // E-139: this entity's component instances, one slot per component of its class, made on first use.
+    this._components = new Array(Ctor._componentSlotCount).fill(null);
   }
 
   /**
@@ -585,12 +588,18 @@ export class GameObject {
   /**
    * Ensure component accessors are defined on the class prototype (called once per class)
    * This makes both core and custom components accessible via this.componentName
+   *
+   * E-139: the class numbers its components, and each getter reads its slot of the instance's `_components` by the
+   * integer it captured. An integer-keyed load stays monomorphic whatever the slot, where the old getters, closures
+   * of one function, read `_componentCache[name]` by a name that differed per closure, from an object filled in the
+   * order each entity first touched its components (23 ns a read in componentGetterMicrobench against 7).
    */
   static _ensureComponentAccessors() {
     // Skip if already created for THIS SPECIFIC class (not inherited from parent)
     if (this.prototype.hasOwnProperty('_componentAccessorsCreated')) {
       return;
     }
+    let slots = 0;
 
     // Core component class map
     const coreComponents = {
@@ -617,12 +626,11 @@ export class GameObject {
       }
 
       // Define getter on prototype (shared by all instances)
+      const slot = slots++;
       Object.defineProperty(this.prototype, componentName, {
         get: function () {
-          // Return cached instance if exists
-          if (this._componentCache[componentName]) {
-            return this._componentCache[componentName];
-          }
+          const cached = this._components[slot];
+          if (cached !== null) return cached;
 
           // Check if this entity TYPE has this component
           if (!this._hasComponents[componentName]) {
@@ -633,7 +641,7 @@ export class GameObject {
           // Create and cache the component instance using entity index directly
           const instance = new ComponentClass(this.index);
           instance.owner = this; // Store owner reference for instance methods
-          this._componentCache[componentName] = instance;
+          this._components[slot] = instance;
           return instance;
         },
         enumerable: true,
@@ -642,6 +650,7 @@ export class GameObject {
     }
 
     // Mark as created
+    this._componentSlotCount = slots;
     this.prototype._componentAccessorsCreated = true;
   }
 
