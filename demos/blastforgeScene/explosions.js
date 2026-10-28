@@ -142,6 +142,16 @@ export const explosionAssets = {
   },
 };
 
+/**
+ * The explosion layers at a new camera zoom: one layer texel per world pixel again. Blasts already on screen
+ * change too. Any thread.
+ */
+export function setExplosionPixelZoom(pixelZoom) {
+  const resolution = 1 / pixelZoom;
+  for (const name of [FIELD_LAYER, EMBERS_LAYER, PIECES_LAYER]) Layer.get(name).resolution = resolution;
+  Layer.get(FIELD_LAYER).setUniform('uLayerResolution', resolution);
+}
+
 /** Recolors the field layer. Blasts already on screen change too. Any thread. */
 export function setExplosionPalette(palette) {
   const layer = Layer.get(FIELD_LAYER);

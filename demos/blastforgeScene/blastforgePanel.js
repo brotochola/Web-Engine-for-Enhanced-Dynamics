@@ -50,11 +50,12 @@ function hex(color) {
  * @param {object} opts
  * @param {object[]} opts.presets the presets, in BlastSettings.preset's order
  * @param {typeof import('./blastforgeScene.js').BlastSettings} opts.settings
+ * @param {number} opts.pixelZoom the camera zoom the scene starts at
  * @param {object} opts.fieldLayer the field layer (Layer.get), for its look uniforms
  * @param {object} opts.ground the ground layer (Layer.get), for its ground type
  * @param {object} opts.scorch ScorchMap, for Clear scorch marks
  */
-export function buildBlastPanel({ presets, settings, fieldLayer, ground, scorch }) {
+export function buildBlastPanel({ presets, settings, pixelZoom, fieldLayer, ground, scorch }) {
   const style = el('style', { textContent: CSS });
   const panel = el('aside', { id: PANEL_ID });
   panel.append(
@@ -101,6 +102,7 @@ export function buildBlastPanel({ presets, settings, fieldLayer, ground, scorch 
     panel.append(el('label', { className: 'check' }, [input, label]));
   };
 
+  slider('Pixel size', 1, 6, 1, pixelZoom, (v) => (settings.pixelZoom[0] = v), (v) => v + '×');
   slider('Blast size', 0.25, 2, 0.05, 1, (v) => (settings.size[0] = v), (v) => '×' + v.toFixed(2));
   slider('Particle amount', 0.25, 3, 0.25, 1, (v) => (settings.amount[0] = v), (v) => '×' + v);
   panel.append(tune.speed);

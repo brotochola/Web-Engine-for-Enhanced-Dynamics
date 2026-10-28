@@ -12,7 +12,15 @@
 //     sparks and debris, and the renderer draws the explosion layers (see explosions.js).
 
 import WEED from '/src/index.js';
-import { FIELD_LAYER, explode, explosionAssets, explosionLayers, setExplosionPalette, updateExplosions } from './explosions.js';
+import {
+  FIELD_LAYER,
+  explode,
+  explosionAssets,
+  explosionLayers,
+  setExplosionPalette,
+  setExplosionPixelZoom,
+  updateExplosions,
+} from './explosions.js';
 import { PRESETS } from './explosionPresets.js';
 import { BlastTuning, tunedPreset } from './blastTuning.js';
 import { GROUND_LAYER, ScorchMap, groundAssets, groundLayer, scorchSchema } from './blastGround.js';
@@ -46,6 +54,7 @@ export class BlastSettings extends SharedResource {
     wind: Float32Array, // px/s, + pushes right
     autoDetonate: Uint8Array, // 1 = random blasts around the view
     guide: Uint8Array, // 1 = the LPC frame guide follows the mouse
+    pixelZoom: Uint8Array, // the camera zoom: every world pixel is pixelZoom × pixelZoom screen px
   };
 }
 
@@ -91,9 +100,13 @@ export class Detonator extends GameObject {
     this.preset = PRESET_LIST[0]; // the picked preset, as tuned in the panel
     this.palette = null; // the palette the field layer has
     this.untilAutoBlastMs = 0;
+    this.pixelZoom = PIXEL_ZOOM; // the zoom the camera and the explosion layers have
   }
 
   tick(dtRatio, deltaTime) {
+    const pixelZoom = BlastSettings.pixelZoom[0];
+    if (pixelZoom > 0 && pixelZoom !== this.pixelZoom) this.zoomTo(pixelZoom);
+
     const presetIndex = BlastSettings.preset[0];
     const generation = Atomics.load(BlastTuning.generation, 0);
     if (presetIndex !== this.shownPreset || generation !== this.tuning) {
@@ -135,6 +148,16 @@ export class Detonator extends GameObject {
 
     // Smoke, embers, follow-up blasts and ground flames that start later.
     updateExplosions(deltaTime);
+  }
+
+  /** The panel's Pixel size: the camera zooms about the view's center, and the explosion layers follow. */
+  zoomTo(pixelZoom) {
+    this.pixelZoom = pixelZoom;
+    const x = Camera.centerX;
+    const y = Camera.centerY;
+    Camera.setZoom(pixelZoom);
+    Camera.centerOn(x, y);
+    setExplosionPixelZoom(pixelZoom);
   }
 
   detonate(preset, x, y) {
@@ -195,6 +218,7 @@ export class BlastforgeScene extends Scene {
     BlastSettings.wind[0] = 0;
     BlastSettings.autoDetonate[0] = 0;
     BlastSettings.guide[0] = 0;
+    BlastSettings.pixelZoom[0] = PIXEL_ZOOM;
 
     Camera.setZoom(PIXEL_ZOOM);
     Camera.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
@@ -204,6 +228,7 @@ export class BlastforgeScene extends Scene {
     this._removePanel = buildBlastPanel({
       presets: PRESET_LIST,
       settings: BlastSettings,
+      pixelZoom: PIXEL_ZOOM,
       fieldLayer: Layer.get(FIELD_LAYER),
       ground: Layer.get(GROUND_LAYER),
       scorch: ScorchMap,
