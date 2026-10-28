@@ -2461,6 +2461,8 @@ In [`REVIEW_PLAN.md`](./REVIEW_PLAN.md):
 | N-65 | A NaN animation clock advances on persist frames only. A behaviour change, for the owner of the animation API to decide. | decision |
 | N-6, N-9, N-31, N-36, N-38, N-44, N-46 | Older items: logic single-writer isolation, headed console probes, Predator's dead flocking code, spatial drift, lit fills, type gaps, the README's bundler advice. | as written there |
 
+*N-6 answered 2026-10-28: the owner-follows-tick tweens cost +49 % to +79 % of logic in their own stress scene (REVIEW_PLAN), so the contract stays, now in the API types.*
+
 ### Step 6: the register's leftovers
 
 - **E-76.** It was still `running`; it is kept: done 2026-10-26 (R-0642, R-0643).
