@@ -13,10 +13,6 @@ export class Civilian extends Person {
 
   static components = [...Person.components, CivilianBehaviorFSM, CivilianComponent];
 
-  // Match MySoldier (literals — avoid class-init pull of MySoldier statics)
-  static groupingForce = 1188;
-  static separationForce = 60000;
-
   onSpawned(spawnConfig = {}) {
     // Random spritesheet for variety
     const spritesheets = ['civil5', 'civil6', 'civil7'];
@@ -26,7 +22,6 @@ export class Civilian extends Person {
 
     super.onSpawned(spawnConfig);
 
-    // groupingForce now uses static class property (Civilian.groupingForce)
     this.collider.visualRange = 150;
     this.setFixedRotation(1);
     this.rigidBody.linearDamping = 2; // match MySoldier

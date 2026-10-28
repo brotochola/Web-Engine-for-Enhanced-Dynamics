@@ -34,12 +34,6 @@ export class Person extends Lootable {
   static muzzleDistancePx = 30; // Distance from actor center to muzzle in world px
   static muzzleHeightPx = -30; // Visual muzzle height (negative = above ground)
 
-  // Flocking behavior (static - same for all Person instances)
-  static minSquaredDistanceToGroup = 140 ** 2;
-  static groupingForce = 0; // Default: no grouping (subclasses override)
-  static separationForce = 0; // Default: no separation (subclasses override)
-  static separationRadius = 30;
-  static separationRadiusSq = this.separationRadius * this.separationRadius;
   // Damage resistance (static - same for all Person instances)
   static resistance = 0.5;
   // Civilian panic sprint — 1/r accel coeff (faster than flee); subclasses may override
@@ -139,7 +133,6 @@ export class Person extends Lootable {
     PersonComponent.aimingAccuracy[this.index] = spawnConfig.aimingAccuracy ?? 0.8;
 
     // Reset team-throttle timestamp (entity indices are reused)
-    PersonComponent.lastTeamDataUpdateTime[this.index] = 0;
 
     this.setScale(scale, scale);
   }
@@ -212,102 +205,6 @@ export class Person extends Lootable {
     // if (PersonAnimationFSM.isInState(this.index, PersonAnimationFSM.states.DEAD)) {
     // this.onDeathAnimationComplete();
     // }
-  }
-
-  updateTeamData() {
-    const neighborCount = this.neighborCount;
-    const myX = this.x;
-    const myY = this.y;
-
-    const separationRadiusSq = this.constructor.separationRadiusSq;
-
-    let myTeamAvgX = 0;
-    let myTeamAvgY = 0;
-    let myTeamMemberCount = 0;
-    let separateX = 0;
-    let separateY = 0;
-
-    for (let n = 0; n < neighborCount; n++) {
-      const neighborIndex = this.getNeighbor(n);
-      // Skip if not same entity type
-      if (Transform.entityType[neighborIndex] !== this.entityType) continue;
-      // Skip if no line of sight to neighbor
-      // if (!Ray.hasLineOfSight(myIndex, neighborIndex)) continue
-
-      const nx = Transform.x[neighborIndex];
-      const ny = Transform.y[neighborIndex];
-
-      // Cohesion: accumulate for average
-
-      myTeamAvgX += nx;
-      myTeamAvgY += ny;
-      myTeamMemberCount++;
-
-      // Separation: check if too close
-      const dx = myX - nx;
-      const dy = myY - ny;
-      const distSq = dx * dx + dy * dy;
-
-      // Guard: distSq must be > 1 to avoid division producing huge/Infinity values
-      // (entities at same position would have distSq ≈ 0, causing Infinity)
-      if (distSq < separationRadiusSq && distSq > 1) {
-        const strength = (separationRadiusSq - distSq) / separationRadiusSq;
-        separateX += (dx / distSq) * strength;
-        separateY += (dy / distSq) * strength;
-      }
-    }
-
-    const i = this.index;
-    PersonComponent.separateX[i] = separateX;
-    PersonComponent.separateY[i] = separateY;
-
-    if (myTeamMemberCount > 0) {
-      myTeamAvgX /= myTeamMemberCount;
-      myTeamAvgY /= myTeamMemberCount;
-      PersonComponent.myTeamAvgX[i] = myTeamAvgX;
-      PersonComponent.myTeamAvgY[i] = myTeamAvgY;
-      PersonComponent.numberOfTeamMembersICanSee[i] = myTeamMemberCount;
-      PersonComponent.squaredDistanceToGroup[i] = (myTeamAvgX - myX) ** 2 + (myTeamAvgY - myY) ** 2;
-    } else {
-      PersonComponent.myTeamAvgX[i] = -1;
-      PersonComponent.myTeamAvgY[i] = -1;
-      PersonComponent.numberOfTeamMembersICanSee[i] = 0;
-      PersonComponent.squaredDistanceToGroup[i] = -1;
-    }
-  }
-
-  groupWithMyTeam() {
-
-    if (PersonComponent.numberOfTeamMembersICanSee[this.index] == 0) return;
-
-    const dist = PersonComponent.squaredDistanceToGroup[this.index];
-    const minDist = this.constructor.minSquaredDistanceToGroup;
-    const groupingForce = this.constructor.groupingForce;
-
-    if (groupingForce == 0) return;
-    if (dist < minDist) return;
-
-    this.accelerateTowards(
-      PersonComponent.myTeamAvgX[this.index],
-      PersonComponent.myTeamAvgY[this.index],
-      groupingForce
-    );
-  }
-
-  separateFromTeam() {
-    const separationForce = this.constructor.separationForce;
-    if (separationForce == 0) return;
-
-    const separateX = PersonComponent.separateX[this.index];
-    const separateY = PersonComponent.separateY[this.index];
-
-    if (separateX == 0 && separateY == 0) return
-
-    this.addAcceleration(
-      separateX * separationForce,
-      separateY * separationForce
-    );
-
   }
 
   // ==========================================
