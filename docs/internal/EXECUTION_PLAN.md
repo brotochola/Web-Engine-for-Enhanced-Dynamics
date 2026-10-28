@@ -2442,6 +2442,7 @@ physics thread's own path.
 ### Other physics items
 
 - **N-74 / L5.** physics +7 % on adobeAnimateScene against the engine before E-76. E-144 and the names build come first; then the place of the engine block in Box2D's heap (before or after the world).
+  **Answered 2026-10-28:** the world's arrays 4 MB further on (the tables' region 4 → 8 MB, one build) read physics +1.2 % (worse 2/4, NEUTRAL): the place is not a knob; the +7 % is L5.
 - **`publishPose` and `applyForcesAndTorque`.** They are 11 % and 9 % of Boids' physics thread (`publishPose` sums 242 ms/s over 18 scenes).
   - W15 and W28 were screened on Predator's ceilings (1.8 % and 2 %).
   - Boids shows larger shares, so screen them again there.
