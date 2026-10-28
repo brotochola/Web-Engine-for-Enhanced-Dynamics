@@ -1093,8 +1093,7 @@ class LogicWorker extends AbstractWorker {
           activeCount += this._tickIntervalBucket(
             typeInfo, activeList, count, tickInterval, frameNum,
             dtRatio, deltaTime, accTime, transformActive, gameObjects,
-            rbAx, rbAy, rbAa, totalWorkers, myIndex,
-            typeForced, forceProcessOnLogicWorker
+            rbAx, rbAy, rbAa, totalWorkers, myIndex
           );
           continue;
         }
@@ -1283,11 +1282,11 @@ class LogicWorker extends AbstractWorker {
    * Phase matches the old countdown: first frame is frameNumber 1, entity i starts at (i % interval) + 1.
    * Rebuild only when the active count or query version changes. No alloc on the steady frame.
    */
+  /** The tickInterval buckets of a type no entity of which is forced onto a worker (update() sends forced ones elsewhere). */
   _tickIntervalBucket(
     typeInfo, activeList, count, interval, frameNum,
     dtRatio, deltaTime, accTime, transformActive, gameObjects,
-    rbAx, rbAy, rbAa, totalWorkers, myIndex,
-    typeForced, forceProcessOnLogicWorker
+    rbAx, rbAy, rbAa, totalWorkers, myIndex
   ) {
     const ver = this.queryVersionData ? Atomics.load(this.queryVersionData, 0) : 0;
     if (
@@ -1305,68 +1304,36 @@ class LogicWorker extends AbstractWorker {
     const nAll = typeInfo._bucketCounts[phase];
     let from = 0;
     let to = nAll;
-    let forcedScan = false;
-    if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
-      forcedScan = true;
-    } else if (totalWorkers > 1) {
+    if (totalWorkers > 1) {
       const range = logicBlockRange(nAll, myIndex, totalWorkers);
       from = range.start;
       to = range.end;
     }
 
-    if (!forcedScan && !typeInfo.hasRigidBody) {
+    if (!typeInfo.hasRigidBody) {
       return this._tickBucketNoBody(list, from, to, dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects);
     }
 
     let visited = 0;
     // Same resume-after-the-throw shape as update(): try outside the loop.
-    if (forcedScan) {
-      let i = 0;
-      for (;;) {
-        try {
-          for (; i < nAll; i++) {
-            const entityIndex = list[i];
-            if (
-              logicWorkerThatShouldTick(i, entityIndex, totalWorkers, forceProcessOnLogicWorker) !==
-              myIndex
-            ) {
-              continue;
-            }
-            if (transformActive[entityIndex] === 0) continue;
-            const obj = gameObjects[entityIndex];
-            if (!obj || typeof obj.tick !== 'function') continue;
-            rbAx[entityIndex] = 0;
-            rbAy[entityIndex] = 0;
-            rbAa[entityIndex] = 0;
-            obj.tick(dtRatio, deltaTime, accTime, frameNum);
-            visited++;
-          }
-          break;
-        } catch (error) {
-          this._entityThrew(error, list[i], 'tick');
-          i++;
+    let i = from;
+    for (;;) {
+      try {
+        for (; i < to; i++) {
+          const entityIndex = list[i];
+          if (transformActive[entityIndex] === 0) continue;
+          const obj = gameObjects[entityIndex];
+          if (!obj || typeof obj.tick !== 'function') continue;
+          rbAx[entityIndex] = 0;
+          rbAy[entityIndex] = 0;
+          rbAa[entityIndex] = 0;
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+          visited++;
         }
-      }
-    } else {
-      let i = from;
-      for (;;) {
-        try {
-          for (; i < to; i++) {
-            const entityIndex = list[i];
-            if (transformActive[entityIndex] === 0) continue;
-            const obj = gameObjects[entityIndex];
-            if (!obj || typeof obj.tick !== 'function') continue;
-            rbAx[entityIndex] = 0;
-            rbAy[entityIndex] = 0;
-            rbAa[entityIndex] = 0;
-            obj.tick(dtRatio, deltaTime, accTime, frameNum);
-            visited++;
-          }
-          break;
-        } catch (error) {
-          this._entityThrew(error, list[i], 'tick');
-          i++;
-        }
+        break;
+      } catch (error) {
+        this._entityThrew(error, list[i], 'tick');
+        i++;
       }
     }
     return visited;
