@@ -2,8 +2,8 @@
 
 **Opened:** 2026-10-22 (planned in a chat session), saved here 2026-10-23. **Status:** in progress
 on branch `isolation_sw` (from 2026-10-23); the four decisions are taken (see "Decisions").
-**Next step:** phase 3 (load time; Predator through the worker) and the phase 2 rows not run yet
-(Firefox, hot reload, audio, the allowed frame). SW-1 to SW-8 are done. **Registry:** `DX-SW` in
+**Next step:** the phase 2 rows not run yet (Firefox, hot reload, audio, the allowed frame). SW-1 to
+SW-8 are done; phase 3 is measured (2026-10-28, below) and SW-9 is not needed. **Registry:** `DX-SW` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: WeedJS runs exactly as it does today, with SharedArrayBuffers and Box2D's 4 threads,
@@ -153,6 +153,10 @@ On the first visit the engine bundle downloads once (the reload gets it from cac
 parsed twice. The scene and its assets load only after the reload. If phase 3 shows the double
 parse matters, a small inline gate in the template HTML can skip it.
 
+**Measured (phase 3, 2026-10-28):** with the bundle the first visit reaches its first frame about
+125 ms later than real headers (698 against 572 ms, the reload at 179 ms), once. Not worth an
+inline gate.
+
 ### Hot reload during development
 
 It keeps working as today, because during development the worker never gets involved (worked
@@ -254,6 +258,35 @@ a server without isolation headers, with the worker at the root (src mode) or ne
   visit and a first visit. Also compare rewriting everything against rewriting only page loads
   and worker scripts. Keep the narrow version only if it is not slower and passes phase 2.
 
+**Phase 3 done (2026-10-28, Chrome 156, GTX 1650, headed).** `tests/bench/isolationLoadTime.mjs`
+(1ade2dea, e8f4ba74): the time from the navigation to the renderer's first published frame, 10
+runs a row in rotating order, a fresh context a run, after one unrecorded warm-up visit (the
+session's first paid 4.7 s for the GPU process). Medians (p25–p75), ms:
+
+| Page | Visit | Real headers | weed-sw.js (narrow) | Every response (wide) | Static Routing |
+| --- | --- | --- | --- | --- | --- |
+| bundle (`dist/index.html`, 300 balls) | first | 572 (552–580) | 698 (681–707), reload at 179 | 713 (704–721) | 690 (677–699) |
+| bundle | return | 429 (413–441) | 443 (432–447) | 446 (433–458) | 442 (429–465) |
+| source (`isolationSmoke.html`) | first | 1 151 (1 142–1 211) | 1 664 (1 651–1 686) | 1 877 (1 857–2 029) | 1 708 (1 644–1 807) |
+| source | return | 1 063 (1 047–1 101) | 1 431 (1 429–1 456) | 1 680 (1 649–1 720) | 1 432 (1 414–1 549) |
+
+The Static Routing column is a second sitting (headers 552 / 442 / 1 181 / 1 118, narrow
+680 / 431 / 1 673 / 1 446 in it).
+- **A deploy (the bundle):** the first visit costs about 125 ms once; a return visit is within
+  the noise of real headers (443 against 429 ms, and 431 against 442 in the second sitting).
+- **Narrow against wide:** a tie with the bundle, and the wide worker 17 % slower on a return
+  visit from source (1 680 against 1 431 ms), where every module request goes through it. Decision 2
+  stands.
+- **Source through the worker** (`npm run dev:sw`): a return visit is 330 to 370 ms slower than
+  real headers even with the narrow worker. Not the fetch events of the module requests: with
+  Chrome's Static Routing API sending them straight to the network (`addRoutes` accepted, read from
+  the running worker) it ties the narrow worker. What costs is unknown; the plain dev servers send the
+  headers, so only `dev:sw` meets it.
+- **Runtime:** Predator, 4 pairs, one build, real headers against the worker on a return visit
+  (`weedIsolation=sw`, f5eb5417): logic +0.7 %, spatial 0.0 %, renderer −3.1 %, pre-render −3.2 %,
+  physics −5.9 % (cv 8/12 %), presented 60 both. No difference, as expected: the worker only touches
+  loading.
+
 **Phase 4, manual:**
 - Should work: Safari on macOS and iOS, Chrome on Android.
 - Should show a clear reason: a Firefox private window, an iOS in-app browser.
@@ -305,8 +338,10 @@ a server without isolation headers, with the worker at the root (src mode) or ne
   `isolationServiceWorker.test.js` runs from the guide's text), GitHub Pages without
   coi-serviceworker; `SHARED_ARRAY_BUFFER_MISSING` names `weed-sw.js` first; the README, the CLI's
   README and the template's README say the same.
-- [ ] **SW-9** optional, only with phase 3 numbers: rewrite everything if the narrow worker
-  loses, or send static assets past the worker with Chrome's Static Routing API.
+- [x] **SW-9** optional, only with phase 3 numbers: rewrite everything if the narrow worker
+  loses, or send static assets past the worker with Chrome's Static Routing API. **Not needed
+  (2026-10-28):** the narrow worker does not lose (a tie with the bundle, 17 % ahead of the wide one
+  from source), and the Static Routing API ties it (phase 3 above).
 
 ## 6. Decisions (taken 2026-10-23)
 
