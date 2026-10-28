@@ -2362,6 +2362,7 @@ Predator 3.7 / 5.9 / 89.5 %, orientedBoxScene 99.1 / 0.9 / 0 %, movedBodiesMixed
 - movedBodiesMixed and stationarySpatialWide republish nearly every row from a kept list each frame: that is their
   publish share. A kept row whose entity and candidates did not move comes out the same (E-136, wider than static
   entities). Predator republishes 5.9 % of its rows that way, so it pays in the stress scenes, not in Predator.
+  *E-136 kept 2026-10-28 for frames where no pose moved (below).*
 
 ### Spatial's other items
 
@@ -2369,6 +2370,13 @@ Predator 3.7 / 5.9 / 89.5 %, orientedBoxScene 99.1 / 0.9 / 0 %, movedBodiesMixed
   **Screened 2026-10-28:** the JS loop is about 8 % of the spatial frame, the rebuild in C ties, and the loop's
   counter writes in locals tie (−0.2 % / −0.9 %): a port's ceiling is under what a sitting resolves.
 - **E-136.** Spatial would leave out of the publish the rows of neighbourhoods where every entity is static. Its owner scene is profiled now: stationarySpatialWideScene's publish is 61 % of 783 ms/s.
+  **Kept 2026-10-28 (64899791), in its wide form:** a row kept within the skin is not published again while no pose
+  changed since its last publish. The spatial workers share a pose generation (the publish memory's `sync` region):
+  each compares the poses it writes until one differs and moves it after that frame. stationarySpatialWide's spatial
+  11.539 → 5.163 ms (−55.2 %), movedBodiesMixed −2.3 %, Predator +0.3 % against its drifting other workers; rows
+  identical to the full publish (`spatialKeptRowSkip.test.js`). One pose anywhere moves the generation, so a scene
+  where anything moves every frame gets nothing: a per-neighbourhood form would need a check per candidate, about
+  what the publish costs.
 - **`rebuildOwnedRows` (JavaScript).** It is 26 % of Boids' spatial, 22 % of Adobe's and 17 % of Predator's.
   - W6's exact C port was only 10.9 % faster in its kernel, about 1.4 % of Predator's spatial, so it was screened.
   - The question now is why these scenes take the full rebuild rather than `_rebuildMovedRows`, the rows of moved entities only.
