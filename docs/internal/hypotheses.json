@@ -90,17 +90,19 @@
       "status": "open",
       "statusText": "open",
       "date": "2026-10-23",
-      "result": "GameObject instance fields with fractional doubles allocate per write in Chrome (21 MB/s painterMove, 7 MB/s bichos, game code); Pixi vendored WebGL bind for…in (0.5–0.7 MB/s); _emscripten_get_now (0.2–0.3 MB/s); Pixi updateLighting (0.2–0.3 MB/s); syncParticleFeed (0.1–0.2 MB/s).",
+      "result": "updateLighting done (c8c3fc6a): Predator Pixi 443.2 → 342 KB/s, updateLighting 93.7 KB/s → not listed. Instance fields: a rule in bible_of_weed_js.md (fed06cbc). Left: Pixi vendored WebGL bind (0.5–0.7 MB/s), _emscripten_get_now (0.2–0.3 MB/s, E-144), syncParticleFeed (0.1–0.2 MB/s).",
       "area": "engine",
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#E-109"
       ],
       "aliases": [],
-      "next": "A guide note on per-entity doubles (components, not instance fields); then the Box2D clock and updateLighting.",
+      "next": "syncParticleFeed; the Box2D clock goes with E-144; Pixi's bind is Pixi's code.",
       "rank": 18,
       "records": [
-        "R-0512"
+        "R-0512",
+        "R-0671",
+        "R-0672"
       ]
     },
     {
@@ -8270,18 +8272,20 @@
         "EXECUTION_PLAN.md#E-140"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-0669",
+        "R-0672"
       ],
       "id": "E-140",
       "title": "The logic loop's own cost per ticked entity",
       "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "statusText": "first change kept 2026-10-28 (the per-entity counters); the bucket loop itself still open",
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
       "rank": 1,
-      "result": "Wave 7 sweep (R-0645): _tickIntervalBucket is 89 % of painterSortStressScene's logic and 7-8 % of Predator's; _tickNonDecimatedOne 37 % of painterMoveStressScene's (720 ms/s); update 21 % of adobeAnimateScene's.",
-      "next": "Read the per-entity work around the game tick (bucket walk, active test, 17 arguments, forced scan) and how much self time is inlined game code (--trace-turbo-inlining); owner scenes minimalTickScene and minimalTickIntervalScene; a leaner loop, one copy per case."
+      "result": "Kept (e5b2f5d8): the tick paths stop writing the frame's counters on `this` per entity. minimalTickScene?props=130000 (2259287c): logic 4.654 → 4.271 ms (−8.7 %, worse 1/4). Sweep (R-0645): _tickIntervalBucket 89 % of painterSort's logic, 7–8 % of Predator's; _tickNonDecimatedOne 37 % of painterMove's.",
+      "next": "The bucket loop's 17 parameters and the forced-scan branch; how much self time is inlined game code (--trace-turbo-inlining); minimalTickIntervalScene."
     },
     {
       "aliases": [],
@@ -8327,18 +8331,20 @@
         "EXECUTION_PLAN.md#E-146"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-0670",
+        "R-0672"
       ],
       "id": "E-146",
       "title": "The FSM tick and the collision-callback dispatch",
       "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "statusText": "the collision dispatch kept 2026-10-28; the FSM tick open",
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
       "rank": 2,
-      "result": "Wave 7 sweep (R-0645): fsm.js tick is 7 % of Predator's logic; _processBox2dCollisionCallbacks is 58 % of waterAndBoxesScene's logic and 5-7 % of Predator's, as the engine function's own self time.",
-      "next": "Read the per-state and per-event costs. W18's verdict (game callbacks, and E-131's Atomics.load) came from another scene."
+      "result": "Kept (a5eb013e): the stay walk calls onCollisionStay only for classes that define it. contactsMicrobench --no-stays +64 % (7 800 pairs) and +34 % (42 861); waterAndBoxesScene logic 1.833 → 1.378 ms (−23.1 %, below the floor). Sweep (R-0645): fsm.js tick 7 % of Predator's logic.",
+      "next": "The FSM tick: a kernel over Predator's three FSM classes (polymorphic static loads, the owner's tickInterval read)."
     },
     {
       "aliases": [],
@@ -14653,6 +14659,49 @@
       "commits": [
         "413110a1",
         "14d40f19"
+      ]
+    },
+    {
+      "id": "R-0669",
+      "date": "2026-10-28",
+      "title": "E-140: the tick paths stop writing the frame's counters per entity, minimalTick?props=130000 logic −8.7 %",
+      "verdict": "kept",
+      "text": "The logic loop wrote the frame's counters on `this` for every ticked entity: `entitiesProcessedThisFrame++` in the bucket walk and in both single-entity paths, and `_lastTickMs` / `_lastDecimateMs` reset per entity although only detailed stats read them. Every path already returned what it counted, so the frame's count is now added once from `activeCount`, and the two timers are reset only with detailed stats on (9601cb65).\n\n**Owner, minimalTickScene?props=130000** (0e50c580 adds the knob: 60 000 props put logic at 1.8 ms, under the floor; past 65 535 the scene runs without physics, which Box2D would refuse). 4 pairs from worktrees, the knob commit against the change: logic 4.654 → 4.271 ms (**−8.7 %**, worse 1/4, cv 19/6 %). The worse pair is one baseline side at 3.06 ms, below every other side of the sitting (A 4.59–4.79, B 3.95–4.56), so the base's spread is that side; the other three pairs are −14.0, −12.5 and −4.9 %. Spatial +0.0 %, pre-render −0.4 %, presented 60.0 both; ENTITIES_PROCESSED 130 000 on both sides (the count is unchanged). **Kept.** No A/A this session for this scene.\n\nAn earlier sitting at 60 000 props (logic 1.825 → 1.995 ms, below the floor) is void: the node suite ran during one of its sides.",
+      "commits": [
+        "2259287c",
+        "e5b2f5d8"
+      ]
+    },
+    {
+      "id": "R-0670",
+      "date": "2026-10-28",
+      "title": "E-146: onCollisionStay only for classes that define it, contact kernel +64 % / +34 %",
+      "verdict": "kept",
+      "text": "The stay walk in `_processBox2dCollisionCallbacks` called `onCollisionStay` for every type that listens to collisions, so a class that overrides only `onCollisionEnter` (waterAndBoxes' water balls, Predator's rain drops) had the base class's empty `onCollisionStay` called for each of its touching pairs, every frame. The change keeps a second per-type table, `collisionStayByType`, set only when the class defines `onCollisionStay` below `GameObject` (the same test that decides `onMessage` and `onAnimationEnd`), and the stay walk reads that one (9bf13f33).\n\n**Kernel** (`contactsMicrobench --no-stays`, 0fcd7168: the contact flow through the real logic worker with classes that define no `onCollisionStay`): two runs a side, the parent (9601cb65) against the change: 7 800 pairs 8.45–8.69 → 13.89–14.27 ops/s (+64 %), 42 861 pairs 1.51–1.60 → 1.98–2.20 ops/s (+34 %). Classes that define it are timed as before (8.7 and 1.5 ops/s).\n\n**Owner, waterAndBoxesScene** (4 pairs from worktrees, the parent against the change): logic 1.833 → 1.378 ms (−23.1 %, 4/4 lower, cv 5/6 %), below the 3 ms floor, so not judged; the scene has no load knob. Spatial −0.8 %, physics +1.1 %, renderer +1.3 %, pre-render −4.2 %, presented 60.0 both. The scene is not worse, so the kernel claim stands: **kept.** No A/A this session for this scene.",
+      "commits": [
+        "326d5645",
+        "a5eb013e"
+      ]
+    },
+    {
+      "id": "R-0671",
+      "date": "2026-10-28",
+      "title": "E-109: updateLighting writes its texels itself, Predator Pixi 443.2 → 342 KB/s",
+      "verdict": "kept",
+      "text": "The heap pass of 2026-10-23 listed Pixi's `updateLighting` at 0.2–0.3 MB/s in Predator. It decoded each light's colour into `_rgbResult`'s fields (three heap numbers per light per frame in Chrome) and wrote the light's texel through `packLightDataTexel`, a call with seven doubles.\n\n**First version** (colours into locals, here and at the three other per-light colour reads: the visibility-polygon lights, the self-lit batch, its sprite masks): `heapSampleWorkers`, Predator, Pixi worker, 10 s warm-up, 8 s sample: `updateLighting` 93.7 → 79.5 KB/s. Still there: the call was left out, so its double arguments were boxed instead.\n\n**Kept version** (c8c3fc6a: `updateLighting` writes the texel itself; `packLightDataTexel` stays as the layout the tests read): `updateLighting` 93.7 KB/s → not listed; Pixi in all 443.2 → 342 KB/s. The rest is Pixi's own code (`bind` 90 KB/s, `push`, `startRenderPass`, `emit`). Garbage only, no time claim: the Predator gate over this and E-140 and E-146 passed (no worker worse; every worker lower, physics most, which is drift).\n\nLeft of the 2026-10-23 leads: game-code instance fields (documented in `bible_of_weed_js.md`, fed06cbc), Pixi's vendored `bind`, `_emscripten_get_now` (E-144) and `syncParticleFeed`.",
+      "commits": [
+        "fed06cbc",
+        "c8c3fc6a"
+      ]
+    },
+    {
+      "id": "R-0672",
+      "date": "2026-10-28",
+      "title": "Predator gate over E-140, E-146 and E-109",
+      "verdict": "passed",
+      "text": "Predator, 4 pairs from worktrees, ce52192d against c8c3fc6a (E-140, E-146's collision dispatch and E-109's `updateLighting` together), detailed stats off: logic 3.821 → 3.663 ms (−3.3 %, worse 0/4, cv 2/2 %, +0.8 % against the other workers), spatial −2.0 %, physics −8.4 % (cv 5/7 %), renderer −2.9 %, pre-render −2.1 %, presented 60.0 both; BODY_COUNT and GPU_CASTERS within 0.3 %. Every worker moved down, physics most, and none of the three changes reaches physics: drift. Against it logic is level, so the gate says no worker got worse, not that Predator gained. **Passed.**",
+      "commits": [
+        "c8c3fc6a"
       ]
     }
   ],
