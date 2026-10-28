@@ -445,8 +445,15 @@ async function main() {
   if (stockFirefox && (trace || usePhasedScreenshots)) {
     throw new Error('--browser firefox: no trace or screenshots (they use Chrome CDP)');
   }
-  const server = await createStaticBenchmarkServer(repoRoot, 0, stockFirefox ? { routes: stockFirefox.routes } : {});
   const extraQuery = typeof cliArgs.query === 'string' ? cliArgs.query.replace(/^\?/, '') : '';
+  // DX-SW phase 3: `weedIsolation=sw` in --query serves the page as a host without COOP/COEP does, isolated by
+  // weed-sw.js at the site root, and measures a return visit (the worker registered and active first). The page
+  // ignores the parameter; runPredatorAbab can set it on one side (--query-b weedIsolation=sw).
+  const isolationSw = new URLSearchParams(extraQuery).get('weedIsolation') === 'sw';
+  const server = await createStaticBenchmarkServer(repoRoot, 0, {
+    ...(stockFirefox ? { routes: stockFirefox.routes } : {}),
+    ...(isolationSw ? { isolationHeaders: false, files: { '/weed-sw.js': 'src/workers/isolationServiceWorker.js' } } : {}),
+  });
   const qs = [];
   if (srcModules) qs.push('src=1');
   if (extraQuery) qs.push(extraQuery);
@@ -644,7 +651,21 @@ async function main() {
       });
     }
 
+    if (isolationSw) {
+      // The first visit, done here: register weed-sw.js and wait until it is active. The load below is controlled.
+      await page.goto(benchmarkUrl, { waitUntil: 'load' });
+      await page.evaluate(async () => {
+        const reg = await navigator.serviceWorker.register('/weed-sw.js');
+        const w = reg.installing || reg.waiting || reg.active;
+        if (w && w.state !== 'activated') {
+          await new Promise((resolve) => w.addEventListener('statechange', () => w.state === 'activated' && resolve()));
+        }
+      });
+    }
     await page.goto(benchmarkUrl, { waitUntil: 'networkidle' });
+    if (isolationSw && !(await page.evaluate(() => self.crossOriginIsolated === true))) {
+      throw new Error('weedIsolation=sw: weed-sw.js did not isolate the page');
+    }
     await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, {
       timeout: 30000,
     });
