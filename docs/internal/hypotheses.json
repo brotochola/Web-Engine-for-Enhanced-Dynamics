@@ -8704,6 +8704,24 @@
       "kind": "bug",
       "result": "mallinfo every 60 steps (28f24e0b); ballsHeavy physics −1.4 % over 8 pairs, NEUTRAL.",
       "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-6"
+      ],
+      "records": [
+        "R-0691"
+      ],
+      "id": "N-6",
+      "title": "A tween and its entity's own tick on different logic workers",
+      "status": "answered",
+      "statusText": "answered 2026-10-28: the contract stays (R-0691)",
+      "date": "2026-10-20",
+      "area": "logic",
+      "kind": "bug",
+      "result": "Answered 2026-10-28, no engine change: tweens advanced by the entity's tick worker cost logic +49 % (65 535 tweens) to +79 % (150 000) in tweenStressScene ?tick=1 with two workers (+67 % with cached shares; +10 % in Chrome's kernel); the race needs a tween and a tick writing one prop, so the contract stays, now in Tween.to's declaration and the guide.",
+      "next": "Nothing pending; the attempt is on branch n6-tween-owner."
     }
   ],
   "records": [
@@ -14929,6 +14947,18 @@
       "text": "E-136 in the wide form E-147's step 1 pointed at: a kept row is left out of the publish while no pose changed since its last publish (64899791).\n\n**What changed.** The publish reads only the poses, the entity's range and its candidate list. A list kept within the skin is the same list, and its range is the one it was built with (`_canReuseNeighbors`), so the row comes out of the publish as it went in unless a pose moved. Each spatial worker compares the poses it writes with the ones already there, until one differs (the full rebuild, its latched copy and the movers rewrite), and after such a frame adds 2 to a generation in the publish memory's new `sync` region (Atomics, after the pose writes). Each row remembers the generation read before its last publish; a kept row whose generation is unchanged is skipped. A row cleared for a range of 0 is marked so it is published again. A layout without the region (hand-made metadata) keeps the old behaviour.\n\n**Exact.** `tests/node/spatialKeptRowSkip.test.js` runs three workers on a still world with the engine's reuse defaults and a script (a move in worker 0's rows, a move only worker 2 writes, an extent change, a range to 0 and back, a move and back a frame apart, a step every third frame), and holds the rows to the run without the skip frame by frame. It catches two mutants: a generation per worker (another worker's pose unseen) and a cleared row not marked. Node suite 2 086 green, demos 100.\n\n**Kernel** (spatialWorkerMicrobench, 3 workers, 16 500 entities, Node, 5 alternating rounds against 2ac7b1f9): still with skin 0.04 (`--still`, 2ac7b1f9's own commit) 149.0 → 52.0 ms per 20 frames (−65 %), checksum unchanged; Predator's drift 57.7 → 58.3 ms (+1 %), the compare in the full rebuild. Writing the worker's flag once after the loop instead of in it halved that cost (variants timed in the same sitting).\n\n**Scenes**, 4 pairs each from worktrees, 2ac7b1f9 against 64899791's tree, owner spatial, detailed stats off:\n\n| scene | spatial | worse | verdict |\n| --- | --- | --- | --- |\n| stationarySpatialWideScene | 11.539 → 5.163 ms (**−55.2 %**) | 0/4, cv 1/1 % | KEPT |\n| movedBodiesMixedScene | 4.152 → 4.028 ms (−2.3 %) | 0/4, cv 1/1 % | NEUTRAL |\n| Predator | 4.793 → 4.846 ms (+2.4 %) | 3/4, cv 2/3 % | see below |\n\nmovedBodiesMixed gains on the frames where physics published no move. In Predator every worker the change cannot reach read higher in that sitting (renderer +4.2 %, logic +2.1 %, pre-render +2.1 %): read against them, spatial is +0.3 %. The session's A/A (Predator, 747c388a on both sides, 4 pairs) reads spatial +0.1 %, renderer +0.3 %, pre-render +0.4 %, logic +2.0 % (cv 5 %) and physics −3.4 % (cv 8/12 %): the detection limit is about 2 % on spatial, renderer and pre-render, 3.5 % on logic and physics.\n\n**Kept.** The regime is frames where no pose moved anywhere: a scene where something moves every frame gets nothing. A per-neighbourhood form (skip a row whose own candidates did not move) needs a check per candidate, about what the publish costs, so it is not pursued.",
       "commits": [
         "64899791"
+      ]
+    },
+    {
+      "id": "R-0691",
+      "date": "2026-10-28",
+      "time": "20:21",
+      "timeFrom": "recorded",
+      "title": "N-6 answered: tweens that follow their entity's worker, three forms, none shipped",
+      "verdict": "answered",
+      "text": "N-6: with two or more logic workers, a tween is advanced by the worker whose block of slots holds it, and its entity is ticked by the worker whose share of the type's list holds it, so the two can write the same prop from two threads. The fix the item names (tweens advanced by the worker that ticks the entity) was built in three forms and measured. None shipped.\n\n**The owner scene.** `tweenStressScene ?workers=2&tick=1` (7be61a49): one alpha tween per entity, entities with an empty tick, two logic workers. It is the worst case: every tween is on a ticking entity. Sittings: 4 pairs from worktrees against 7be61a49, owner logic, detailed stats off. Logic is under the 3 ms floor at 65 535 entities, so 150 000 (32-bit ids) was sat too.\n\n| form | where | before → after |\n| --- | --- | --- |\n| index by entity (rebuilt when the pool changes), each type's share advanced before its loop, entity then slots | scene, 65 535 | 1.411 → 2.104 ms (+49 %) |\n| the same | scene, 150 000 | 2.783 → 4.976 ms (+79 %) |\n| every slot walked in order, kept when its entity id is in this worker's range of the type's list | Chrome kernel, 150 000, one worker's share | 1.48 → 2.30 ms (+55 %) |\n| the index, with each share's slots cached in list order (rebuilt when the index or the list moves) | Chrome kernel, 150 000 | 1.485 → 1.638 ms (+10 %) |\n| the same | scene, 150 000 | 2.755 → 4.609 ms (+67 %) |\n\nThe first version (a call per entity) read 1.41 → 2.74 ms at 65 535. The kernel (`tweenShareKernel.mjs`, branch `n6-tween-owner`) runs on the page's thread; in the scene the same code costs several times more (traces: the cached share's loop 437 ms and `_apply` 370 ms per 4 s on a logic thread, against Tween.tick's 181 ms and 211 ms before), which the kernel does not reproduce. Every form gives the same alphas as the blocks (checksums), and the worker test (two instances on a pool laid out against their shares: every tween once a frame, by its entity's worker) passed for the index forms.\n\n**Answered, not done.** The race only matters when a tween and the entity's own tick write the same prop; reading a tweened prop is fine, and one logic worker has no race. Against +49 % to +79 % of logic where tweens are many, the contract stays: it is now in `Tween.to`'s declaration (`types/weed.d.ts`) and in the guide's tween section, besides MEMORY_STRUCTURE's tween row. The attempt is kept on the local branch `n6-tween-owner` (the cached form, its test and its kernel).",
+      "commits": [
+        "7be61a49"
       ]
     }
   ],
