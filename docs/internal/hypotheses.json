@@ -8231,18 +8231,19 @@
         "EXECUTION_PLAN.md#E-144"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-0665"
       ],
       "id": "E-144",
       "title": "Box2D's solver threads: their idle cost and their clock reads",
       "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "statusText": "open; step 0 answered 2026-10-28: idle solver threads burn nothing (the sampler counted their wait)",
       "date": "2026-10-26",
       "area": "physics",
       "kind": "wasm",
-      "rank": 1,
-      "result": "Wave 7 sweep (R-0645): the three solver threads read 1000 ms/s in every scene with physics, even with no bodies (bunnyMarkStressScene: 99.6 % in wasm-function[108]); on ballsHeavyStressScene each spends 9 % in _emscripten_get_now (90 ms/s), Predator 3 %. The scheduler reads the clock at each spin start and every 64th spin (W24). Physics is Predator's largest worker (6.7 ms, R-0618).",
-      "next": "Step 0: the threads' CPU time from the OS with no bodies (bunnyMarkStressScene) and with many (ballsHeavyStressScene). Then, in the Box2D repo (SIMD and no-SIMD builds): a spin bounded by a count, a shorter spin, or a futex wait in the stage syncs. Owner ballsHeavyStressScene physics; gate Predator, reading the other workers too."
+      "rank": 8,
+      "result": "Step 0 (threadCpuProbe): bunnyMarkStressScene with physics and no bodies, the whole renderer 73 ms/s, no thread over 800; ballsHeavy four threads at 513-643 ms/s doing work. Left: the clock reads while solver threads wait (9 % of each thread in a profile that counts waits).",
+      "next": "A names build of Box2D (--profiling-funcs, not shipped) to see who reads the clock: the scheduler spin or the step profiler; then the spin variants on ballsHeavyStressScene."
     },
     {
       "aliases": [],
@@ -8259,7 +8260,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 2,
+      "rank": 1,
       "result": "Wave 7 sweep (R-0645): the component getter (gameObject.js, one per component, defined at registration) is 44 % of adobeAnimateScene's logic at the minimum zoom (226 ms/s) and 10-14 % of Predator's two logic workers. Each reads this._componentCache[name], an object filled lazily in the order an entity's code touches its components: many maps, and a keyed load by a string that differs per closure.",
       "next": "A kernel of the getter over several entity classes; then per-class component slots (an array read by a closure integer) or the components built with the entity as constructor fields. Owner adobeAnimateScene logic; gate Predator logic."
     },
@@ -8278,7 +8279,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 3,
+      "rank": 2,
       "result": "Wave 7 sweep (R-0645): _tickIntervalBucket is 89 % of painterSortStressScene's logic and 7-8 % of Predator's; _tickNonDecimatedOne 37 % of painterMoveStressScene's (720 ms/s); update 21 % of adobeAnimateScene's.",
       "next": "Read the per-entity work around the game tick (bucket walk, active test, 17 arguments, forced scan) and how much self time is inlined game code (--trace-turbo-inlining); owner scenes minimalTickScene and minimalTickIntervalScene; a leaner loop, one copy per case."
     },
@@ -8297,7 +8298,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 4,
+      "rank": 3,
       "result": "Wave 7 sweep (R-0645): neighborCount and getNeighbor are 7-8 % each of Predator's logic and 5-7 % of littleCity's and Boids'. Both are two-line typed-array reads, so the cost is the call on receivers of every entity class (a polymorphic load of _neighborOffset).",
       "next": "A kernel first. Candidates: _neighborOffset at the same place in every instance, a per-index offset table on Grid, a documented call-free path (getAllNeighborIds and a local loop) in the guide."
     },
@@ -8335,7 +8336,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 6,
+      "rank": 4,
       "result": "Wave 7 sweep (R-0645): fsm.js tick is 7 % of Predator's logic; _processBox2dCollisionCallbacks is 58 % of waterAndBoxesScene's logic and 5-7 % of Predator's, as the engine function's own self time.",
       "next": "Read the per-state and per-event costs. W18's verdict (game callbacks, and E-131's Atomics.load) came from another scene."
     },
@@ -8354,7 +8355,7 @@
       "date": "2026-10-26",
       "area": "spatial",
       "kind": "wasm",
-      "rank": 7,
+      "rank": 5,
       "result": "Wave 7 sweep (R-0645): gather_batch 1 599 ms/s and publish_batch 1 447 summed over 18 scenes (Boids gather 44 %, orientedBox 76 %; movedBodiesMixed publish 46 %; stationarySpatialWide publish_u32 61 %). Both wait on memory: the gather's float32 variants lost in Node (R-0571), the publish's f32x4 tied double (W8a).",
       "next": "Rows rebuilt and republished per frame in each scene against the reuse skin; the Chrome entry for the gather's float32 variants; then W7 and E-136."
     },
@@ -8373,7 +8374,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 8,
+      "rank": 6,
       "result": "Wave 7 sweep (R-0645): the tween tick is 49 % and _apply 35 % of tweenStressScene's logic (159 ms/s).",
       "next": "Read the per-tween work, then JavaScript tuning or a kernel over the tween slots (typed arrays already)."
     },
@@ -8392,7 +8393,7 @@
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
-      "rank": 9,
+      "rank": 7,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "A design note first (batch layout, sort, shadows, custom layers), then a prototype on adobeAnimateScene."
     },
@@ -14610,6 +14611,16 @@
       "text": "updateSpritesFromRenderQueue returns before reading the queue on a frame with no new queue when a sync exists (before the first frame, or a resume): the entity and glow batches keep what they committed, nothing before the first frame. _refusePackedFrame had kept the batch only when the header read incomplete; a complete-looking frame pre-render was writing was committed with two frames' rows. gpuPackSplitPixi.test.js commits nothing of such a frame (fails without the change). Predator (pre-render packs) draws 13 666 entities and BunnyMark (Pixi packs) 250 000, as before. One compare a frame: no sitting.",
       "commits": [
         "e71250cc"
+      ]
+    },
+    {
+      "id": "R-0665",
+      "date": "2026-10-28",
+      "title": "E-144 step 0: idle solver threads burn no CPU; the sampler counted their wait",
+      "verdict": "answered",
+      "text": "Step 0 of E-144: each thread's CPU time read from Windows (`threadCpuProbe.mjs`, 91434298: every thread of Chrome's renderer process, `TotalProcessorTime` twice over a 5 s window, after 8 s of warm-up), headless, from source.\n\n- **bunnyMarkStressScene** (physics on, no bodies): the whole renderer process uses 73 ms/s over its 36 threads; the busiest thread 34 ms/s; none over 800 ms/s. The sweep's 1000 ms/s for each of Box2D's three solver threads (99.6 % in one function) was the sampling profiler counting threads blocked in their wait as busy. Idle solver threads burn nothing: there are no cores to win back.\n- **ballsHeavyStressScene** (physics-bound): 2 665 ms/s in all; four threads at 643, 538, 538 and 513 ms/s (the physics thread and the three solver threads doing work), one at 301 ms/s; none spins at 1000.\n\nWhat is left of E-144 is the clock reads while the solver threads wait for work (`_emscripten_get_now`, 9 % of each thread in ballsHeavy's profile, which also counted blocked time, so the real share is unknown). A thread spinning for work is off the critical path, so the gain would be cores for the other workers, not physics' step. It needs the names build of Box2D to see who reads the clock (the scheduler spin, the step profiler) before any change. Lowered behind the logic items.\n",
+      "commits": [
+        "91434298"
       ]
     }
   ],
