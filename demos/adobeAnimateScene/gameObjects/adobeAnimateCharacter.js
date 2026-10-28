@@ -71,7 +71,6 @@ export class AdobeAnimateCharacter extends GameObject {
     this.collider.radius = 16;
     this.setFixedRotation(1);
     this.rigidBody.linearDamping = 0.5;
-    this.collider.visualRange = 50;
     this.adobeAnimComponent.rotation = spawnConfig.localRotation ?? 0;
   }
 
