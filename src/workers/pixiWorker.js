@@ -574,6 +574,8 @@ class PixiRenderer extends AbstractWorker {
     /** @type {GpuParticleLayerBatch[]} */
     this._gpuParticleBatches = [];
     this._gpuParticleLiveRecords = 0;
+    // WebGL: the rings' record textures, made and filled here (E-157); null until the first GPU particle layer.
+    this._gpuRecordTextureOps = null;
     // GPU particle groups among the entities (gpuParticleProxies.js): the sortWithEntities layers by id, as
     // { layerId, cl, batch, regions }, the entities batch in chunks, and the frame's entries. Pre-render's split
     // halves when it packs the entities; Pixi's own half and collector when Pixi packs them.
@@ -2026,6 +2028,56 @@ class PixiRenderer extends AbstractWorker {
       return;
     }
     this._uploadRgba32FloatGl(source, this._gpuAnimStartRgba, this._gpuAnimStartWidth, this._gpuAnimStartHeight);
+  }
+
+  /**
+   * WebGL's GPU particle record textures (E-157): RGBA32UI, seven texels a record, filled with raw GL as the lookups
+   * are. Pixi only binds them: their upload method is 'unknown', so it never sends or reallocates them itself.
+   */
+  _gpuRecordTexture() {
+    if (this._gpuRecordTextureOps !== null) return this._gpuRecordTextureOps;
+    this._gpuRecordTextureOps = {
+      make: (bits, width, height, label) => {
+        const source = PIXI.TextureSource.from({
+          resource: bits,
+          width,
+          height,
+          format: 'rgba32uint',
+          scaleMode: 'nearest',
+          addressMode: 'clamp-to-edge',
+          autoGenerateMipmaps: false,
+          label,
+        });
+        source.uploadMethodId = 'unknown';
+        this._gpuRecordRowsGl(source, bits, width, height, 0, -1);
+        return source;
+      },
+      upload: (source, bits, width, height, y0, rows) => this._gpuRecordRowsGl(source, bits, width, height, y0, rows),
+    };
+    return this._gpuRecordTextureOps;
+  }
+
+  /** Rows [y0, y0 + rows) of a record texture from `bits`; rows < 0 allocates it with all of `bits`. */
+  _gpuRecordRowsGl(source, bits, width, height, y0, rows) {
+    const renderer = this.pixiApp?.renderer;
+    const gl = renderer?.gl;
+    const texSys = renderer?.texture;
+    if (!gl || !texSys) return;
+    texSys.bind(source, 0);
+    const glSource = texSys.getGlSource(source);
+    gl.bindTexture(gl.TEXTURE_2D, glSource.texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    if (rows < 0) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32UI, width, height, 0, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return;
+    }
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, y0 * width * 4);
   }
 
   /** Every frame: new GPU particle records up, each ring's live window and clock set. */
@@ -7092,6 +7144,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           label: `gpu-particles-${layerName}`,
           // New records go up as they are published, drawn this frame or not (WebGL uploads only at the next draw).
           flush: (buffer) => this.pixiApp.renderer.buffer.updateBuffer(buffer),
+          recordTexture: this._useWebGpu ? null : this._gpuRecordTexture(),
         });
         gpuBatch.container.blendMode = blend;
         this._gpuParticleBatches.push(gpuBatch);

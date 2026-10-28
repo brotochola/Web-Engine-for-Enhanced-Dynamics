@@ -11,9 +11,15 @@ import { CLOCK_BYTES, Time } from '../../src/core/timeScale.js';
 import { LAYER_KIND } from '../../src/util/configDefaults.js';
 import { seededRandom } from '../../src/util/utils.js';
 import { GPU_RECORD_BYTES } from '../../src/util/gpuParticleLayout.js';
-import { GpuParticleLayerBatch, packAnimStartLookup } from '../../src/render/gpuParticleBatch.js';
+import {
+  GPU_PARTICLE_ATTRIBUTES,
+  GpuParticleLayerBatch,
+  gpuParticleTextureVertex,
+  gpuRecordTextureSize,
+  packAnimStartLookup,
+} from '../../src/render/gpuParticleBatch.js';
 import { installInstanceRangeDraw } from '../../src/render/instanceRangeDraw.js';
-import { Texture } from '../../src/vendor/pixi.min.js';
+import { Texture, TextureSource } from '../../src/vendor/pixi.min.js';
 
 // The renderer's side of a GPU particle layer, without a GPU: what it uploads each frame (only what was published,
 // copied out of the shared memory first) and which slice of each ring it draws (the live window, two ranges when it
@@ -258,4 +264,75 @@ test('instance ranges: WebGL without the extension points the instance attribute
   geometry.weedFirstInstance = 0;
   geometrySystem.draw('triangle-list', 6, 0, 2);
   assert.equal(log[log.length - 1][0], 'pixi-draw', 'no range: Pixi\'s own draw');
+});
+
+// GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
+globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
+const VERT = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.vert.glsl'), 'utf8');
+const FRAG = fs.readFileSync(path.join(root, 'src/shaders/gpuParticle.frag.glsl'), 'utf8');
+
+test('the texture vertex shader reads the seven record vec4 from texels of record uFirstInstance + gl_InstanceID', () => {
+  const tex = gpuParticleTextureVertex(VERT);
+  for (const name of GPU_PARTICLE_ATTRIBUTES) {
+    assert.ok(!new RegExp(`^in vec4 ${name};`, 'm').test(tex), `${name} is no longer an attribute`);
+    assert.ok(new RegExp(`^vec4 ${name};`, 'm').test(tex), `${name} is a global`);
+  }
+  assert.match(tex, /uniform highp usampler2D uRecords;/);
+  assert.match(tex, /uniform int uFirstInstance;/);
+  assert.equal((tex.match(/uintBitsToFloat\(texelFetch\(uRecords, weedTexel \+ ivec2\(\d, 0\), 0\)\)/g) || []).length, 7);
+  assert.match(tex, /^in vec2 aQuad;/m, 'the corner stays an attribute');
+  assert.equal(tex.split('void main() {').length - 1, 1);
+  assert.throws(() => gpuParticleTextureVertex(VERT.replace('in vec4 aSpin;', 'in vec4 aSpinX;')), /aSpin/);
+});
+
+test('WebGL draws from a record texture: the rows each frame publishes go up, both pieces across the ring end', { concurrency: false }, () => {
+  const made = [];
+  const uploads = [];
+  const recordTexture = {
+    make(bits, width, height, label) {
+      made.push({ bits, width, height, label });
+      return new TextureSource({ width, height, label });
+    },
+    upload(source, bits, width, height, y0, rows) {
+      uploads.push([y0, rows]);
+    },
+  };
+  // 2048 records a ring: four rows of 512.
+  const { batch, draw, restore } = setup(2048 * 3, {
+    useWebGpu: false,
+    shaders: { gpuParticleVert: VERT, gpuParticleFrag: FRAG },
+    recordTexture,
+  });
+  try {
+    assert.equal(draw.buffer, null, 'no instance buffer');
+    assert.equal(made.length, batch.rings.length);
+    assert.equal(made[0].bits, draw.mirrorBits, 'the texture holds the ring\'s own copy');
+    assert.deepEqual([made[0].width, made[0].height], [7 * 512, 4]);
+    assert.deepEqual(gpuRecordTextureSize(64), { width: 7 * 64, height: 1 }, 'a small ring is one row');
+    const [a, b] = draw.meshes;
+    assert.equal(a.shader.resources.uniforms, draw.shader.resources.uniforms, 'the meshes share the ring\'s clock');
+    assert.notEqual(a.shader.resources.firstInstance, b.shader.resources.firstInstance, 'each mesh has its own first record');
+
+    emit(600, 5000);
+    batch.update(clockNow());
+    assert.deepEqual(uploads.splice(0), [[0, 2]], 'records 0..599: rows 0 and 1');
+    emit(1000, 5000);
+    batch.update(clockNow());
+    assert.deepEqual(uploads.splice(0), [[1, 3]], 'records 600..1599: rows 1 to 3');
+    batch.update(clockNow());
+    assert.deepEqual(uploads, [], 'nothing published, nothing sent');
+
+    emit(600, 5000); // 1600..2199 of a 2048-record ring: wraps
+    batch.update(clockNow());
+    assert.deepEqual(uploads.splice(0), [[3, 1], [0, 1]], 'the head on row 3, the tail on row 0');
+    assert.equal(a.visible && b.visible, true, 'the live window wraps: two draws');
+    // The tail wrote over records 0..151, so the first group is gone: the window starts at the second, record 600.
+    assert.equal(a.shader.resources.firstInstance.uniforms.uFirstInstance, 600, 'from the oldest group still whole');
+    assert.equal(a.geometry.instanceCount, 2048 - 600);
+    assert.equal(b.shader.resources.firstInstance.uniforms.uFirstInstance, 0);
+    assert.equal(b.geometry.instanceCount, 152);
+    assert.equal(a.geometry.weedFirstInstance, 0, 'the range is the uniform\'s, not the geometry\'s');
+  } finally {
+    restore();
+  }
 });

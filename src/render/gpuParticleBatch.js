@@ -8,6 +8,10 @@
 // one pending range per buffer (without a flush, the whole array). Then draw only the live window: from the first
 // record of the oldest group that may still be alive to the last published one.
 // A window that wraps the ring is two draws. Unborn and dead records inside it cost four vertex invocations each.
+//
+// WebGL reads the records from a texture instead (`recordTexture`, E-157): seven texels a record, fetched by
+// gl_InstanceID from a first instance each mesh holds in a uniform. Seven instanced vec4 attributes cost ANGLE's D3D11
+// about 51 ms a frame for a million records, the texture 6 (tests/bench/webglParticleUploadKernel.mjs).
 
 import {
   Buffer,
@@ -19,6 +23,7 @@ import {
   Mesh,
   Shader,
   State,
+  UniformGroup,
 } from '../vendor/pixi.min.js';
 
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
@@ -42,6 +47,55 @@ const COPY_BLOCK_SHIFT = 8;
 
 const QUAD = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
 const QUAD_INDEX = new Uint32Array([0, 1, 2, 0, 2, 3]);
+
+/** Records per row of a ring's record texture (WebGL): 512 records, 3584 texels. */
+export const GPU_RECORD_TEX_ROW_SHIFT = 9;
+const TEX_ROW = 1 << GPU_RECORD_TEX_ROW_SHIFT;
+/** Texels per record in the record texture: the seven vec4 of GPU_PARTICLE_ATTRIBUTES. */
+const TEXELS_PER_RECORD = 7;
+
+/**
+ * The record texture's size for a ring of `capacity` records (a power of two): rows of 512 records, or one row of
+ * all of them for a smaller ring. Its texels are the record array as it is, four uint32 words each.
+ * @param {number} capacity
+ * @returns {{ width: number, height: number }}
+ */
+export function gpuRecordTextureSize(capacity) {
+  const cap = capacity | 0;
+  return { width: TEXELS_PER_RECORD * Math.min(cap, TEX_ROW), height: Math.max(1, cap >> GPU_RECORD_TEX_ROW_SHIFT) };
+}
+
+/**
+ * gpuParticle.vert.glsl reading its record from the record texture: the seven instance attributes become globals
+ * the shader fills first, from the texels of record uFirstInstance + gl_InstanceID. Their bits go through
+ * uintBitsToFloat, a bitcast, so the fields the shader reads back with floatBitsToUint keep every bit.
+ * @param {string} source gpuParticle.vert.glsl
+ * @returns {string}
+ */
+export function gpuParticleTextureVertex(source) {
+  let out = source;
+  for (const name of GPU_PARTICLE_ATTRIBUTES) {
+    const declaration = new RegExp(`^in vec4 ${name};`, 'm');
+    if (!declaration.test(out)) throw new Error(`WeedJS: gpuParticle.vert.glsl has no "in vec4 ${name};"`);
+    out = out.replace(declaration, `vec4 ${name};`);
+  }
+  const main = 'void main() {\n';
+  const at = out.indexOf(main);
+  if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: gpuParticle.vert.glsl needs one "void main() {"');
+  const fetches = GPU_PARTICLE_ATTRIBUTES.map(
+    (name, k) => `  ${name} = uintBitsToFloat(texelFetch(uRecords, weedTexel + ivec2(${k}, 0), 0));\n`,
+  ).join('');
+  return (
+    out.slice(0, at) +
+    'uniform highp usampler2D uRecords; // the ring\'s records, seven texels each (E-157)\n' +
+    'uniform int uFirstInstance;\n\n' +
+    main +
+    '  int weedRecord = uFirstInstance + gl_InstanceID;\n' +
+    `  ivec2 weedTexel = ivec2((weedRecord & ${TEX_ROW - 1}) * ${TEXELS_PER_RECORD}, weedRecord >> ${GPU_RECORD_TEX_ROW_SHIFT});\n` +
+    fetches +
+    out.slice(at + main.length)
+  );
+}
 
 /**
  * WebGPU program: the sprite batch's bind groups plus the anim-start lookup at group 2, binding 4.
@@ -98,7 +152,16 @@ export function packAnimStartLookup(animationFrameStart, whiteTexture) {
 
 /** One ring's draw state on the renderer. */
 class RingDraw {
-  constructor(ring, shader, state, label, flush) {
+  /**
+   * @param {object} ring
+   * @param {Shader} shader the ring's shader; with `records`, only the program and resources the meshes' copy
+   * @param {State} state
+   * @param {string} label
+   * @param {((buffer: Buffer) => void)|null} flush
+   * @param {object|null} records WebGL's record texture (GpuParticleLayerBatch's `recordTexture`): `make` and
+   *   `upload`, and `resources`, the ring's shader resources every mesh's shader shares
+   */
+  constructor(ring, shader, state, label, flush, records) {
     this.ring = ring;
     this.shader = shader;
     this.mirror = new Float32Array(ring.records.length);
@@ -113,11 +176,24 @@ class RingDraw {
       this.srcBlocks[k] = ring.records.subarray(k * blockWords, (k + 1) * blockWords);
       this.dstBlocks[k] = this.mirror.subarray(k * blockWords, (k + 1) * blockWords);
     }
-    this.buffer = new Buffer({
-      data: this.mirror,
-      label: `${label}-records`,
-      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
-    });
+    // WebGPU: the records are the meshes' instance buffer. WebGL: a texture they read by instance (E-157).
+    this.records = records || null;
+    this.buffer = null;
+    this.recordSource = null;
+    this.texWidth = 0;
+    this.texHeight = 0;
+    if (this.records === null) {
+      this.buffer = new Buffer({
+        data: this.mirror,
+        label: `${label}-records`,
+        usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      });
+    } else {
+      const size = gpuRecordTextureSize(ring.capacity);
+      this.texWidth = size.width;
+      this.texHeight = size.height;
+      this.recordSource = this.records.make(this.mirrorBits, size.width, size.height, `${label}-records`);
+    }
     // Sends the buffer's pending range to the GPU now (GpuParticleLayerBatch's `flush`), or null.
     this.flush = flush || null;
     this.quad = new Buffer({ data: QUAD, usage: BufferUsage.VERTEX });
@@ -135,18 +211,76 @@ class RingDraw {
   }
 
   _mesh(state) {
-    const stride = GPU_RECORD_BYTES;
     const attributes = { aQuad: { buffer: this.quad, format: 'float32x2', stride: 8, offset: 0 } };
-    GPU_PARTICLE_ATTRIBUTES.forEach((name, k) => {
-      attributes[name] = { buffer: this.buffer, format: 'float32x4', stride, offset: k * 16, instance: true };
-    });
+    let shader = this.shader;
+    if (this.records === null) {
+      const stride = GPU_RECORD_BYTES;
+      GPU_PARTICLE_ATTRIBUTES.forEach((name, k) => {
+        attributes[name] = { buffer: this.buffer, format: 'float32x4', stride, offset: k * 16, instance: true };
+      });
+    } else {
+      // Each mesh draws from a first record of its own: a uniform group of its own beside the ring's resources.
+      shader = new Shader({
+        glProgram: this.shader.glProgram,
+        resources: {
+          ...this.records.resources,
+          uRecords: this.recordSource,
+          firstInstance: new UniformGroup({ uFirstInstance: { value: 0, type: 'i32' } }),
+        },
+      });
+    }
     const geometry = new Geometry({ attributes, indexBuffer: this.index });
     geometry.instanceCount = 0;
     geometry.weedFirstInstance = 0;
-    const mesh = new Mesh({ geometry, shader: this.shader, state });
+    const mesh = new Mesh({ geometry, shader, state });
     mesh.cullable = false;
     mesh.visible = false;
     return mesh;
+  }
+
+  /** Point `mesh` at the ring's slots from `slot` on: its geometry's first instance, or its shader's uniform. */
+  _setFirst(mesh, slot) {
+    if (this.records === null) {
+      mesh.geometry.weedFirstInstance = slot;
+      return;
+    }
+    const group = mesh.shader.resources.firstInstance;
+    if (group.uniforms.uFirstInstance !== slot) {
+      group.uniforms.uFirstInstance = slot;
+      group.update();
+    }
+  }
+
+  /** Rebind the atlas, its lookup and the anim-start lookup on the ring's shader, and on each mesh's own. */
+  setTextures(atlasSource, lutSource, animStartSource) {
+    const shaders = [this.shader];
+    if (this.records !== null) for (const m of this.meshes.concat(this.pool)) shaders.push(m.shader);
+    for (const shader of shaders) {
+      const res = shader.resources;
+      if (atlasSource) {
+        res.uTexture = atlasSource;
+        res.uSampler = atlasSource.style;
+      }
+      if (lutSource) res.uTexLut = lutSource;
+      if (animStartSource) res.uAnimStart = animStartSource;
+    }
+    if (this.records !== null) {
+      // Meshes made later copy these.
+      const res = this.records.resources;
+      if (atlasSource) {
+        res.uTexture = atlasSource;
+        res.uSampler = atlasSource.style;
+      }
+      if (lutSource) res.uTexLut = lutSource;
+      if (animStartSource) res.uAnimStart = animStartSource;
+    }
+  }
+
+  /** Records [from, from + n) of the mirror to the record texture: the rows they are on. */
+  _sendRows(from, n) {
+    const y0 = from >> GPU_RECORD_TEX_ROW_SHIFT;
+    const y1 = (from + n - 1) >> GPU_RECORD_TEX_ROW_SHIFT;
+    this.records.upload(this.recordSource, this.mirrorBits, this.texWidth, this.texHeight, y0, y1 - y0 + 1);
   }
 
   /** Records [from, from + n) of the ring into the mirror (a range that does not wrap the ring end). */
@@ -183,6 +317,13 @@ class RingDraw {
     this._copy(from, head);
     const tail = fresh - head;
     if (tail > 0) this._copy(0, tail);
+    if (this.records !== null) {
+      // The texture takes both pieces at once; sent now, as the buffer's flush does.
+      this._sendRows(from, head);
+      if (tail > 0) this._sendRows(0, tail);
+      this.uploaded = published >>> 0;
+      return;
+    }
     // A buffer keeps one pending range; the next update replaces it. Across the ring end the head is sent before the
     // tail's range replaces it; without a flush, the whole array goes.
     if (tail > 0 && this.flush === null) {
@@ -239,7 +380,7 @@ class RingDraw {
       this.pool.push(mesh);
     }
     this.poolUsed++;
-    mesh.geometry.weedFirstInstance = slot;
+    this._setFirst(mesh, slot);
     mesh.geometry.instanceCount = count;
     return mesh;
   }
@@ -256,12 +397,12 @@ class RingDraw {
     }
     const slot = first & (cap - 1);
     const headCount = Math.min(count, cap - slot);
-    a.geometry.weedFirstInstance = slot;
+    this._setFirst(a, slot);
     a.geometry.instanceCount = headCount;
     a.visible = true;
     const tail = count - headCount;
     if (tail > 0) {
-      b.geometry.weedFirstInstance = 0;
+      this._setFirst(b, 0);
       b.geometry.instanceCount = tail;
       b.visible = true;
     } else {
@@ -272,9 +413,11 @@ class RingDraw {
   destroy() {
     for (const m of this.meshes.concat(this.pool)) {
       m.geometry.destroy();
+      if (this.records !== null) m.shader.destroy();
       m.destroy();
     }
-    this.buffer.destroy();
+    if (this.buffer !== null) this.buffer.destroy();
+    if (this.recordSource !== null) this.recordSource.destroy();
     this.quad.destroy();
     this.index.destroy();
   }
@@ -300,6 +443,10 @@ export class GpuParticleLayerBatch {
    *   worker passes its renderer's `buffer.updateBuffer`). Pixi's WebGL buffers upload their last range only when
    *   next drawn, so without it a ring that draws nothing in a frame (a hidden layer; with `sorted`, groups that
    *   are all off-screen) loses that frame's records.
+   * @param {object|null} [opts.recordTexture] WebGL: the rings' records as textures (E-157), made and filled
+   *   where the GL context is: `make(bits, width, height, label)` returns a TextureSource holding `bits` (the
+   *   ring's Uint32Array, RGBA32UI, already on the GPU); `upload(source, bits, width, height, y0, rows)` sends
+   *   rows [y0, y0 + rows). Without it WebGL draws from instance attributes, as WebGPU does.
    */
   constructor(opts) {
     this.info = opts.info;
@@ -321,9 +468,13 @@ export class GpuParticleLayerBatch {
     /** The layer's alpha for this frame's group meshes (groupMeshes); the Pixi worker sets it each frame. */
     this.alpha = NaN;
     const shaders = opts.shaders || {};
+    const textured = !this.useWebGpu && !!opts.recordTexture;
     for (let r = 0; r < this.info.rings.length; r++) {
-      const shader = this._makeShader(shaders, opts, `${this.label}-ring${r}`);
-      const draw = new RingDraw(this.info.rings[r], shader, this.state, `${this.label}-ring${r}`, opts.flush);
+      const name = `${this.label}-ring${r}`;
+      const resources = this._resources(opts, textured);
+      const shader = this._makeShader(shaders, opts, name, resources, textured);
+      const records = textured ? { make: opts.recordTexture.make, upload: opts.recordTexture.upload, resources } : null;
+      const draw = new RingDraw(this.info.rings[r], shader, this.state, name, opts.flush, records);
       for (const m of draw.meshes) {
         m.blendMode = this.state.blendMode;
         this.container.addChild(m);
@@ -332,35 +483,36 @@ export class GpuParticleLayerBatch {
     }
   }
 
-  _makeShader(shaders, opts, name) {
-    const resources = {
+  /**
+   * A ring's shader resources. With the record texture the ring's uniforms are one group every mesh's shader shares,
+   * so the clock set once a frame reaches them all.
+   */
+  _resources(opts, textured) {
+    const uGpuParticles = { value: new Float32Array(4), type: 'vec4<f32>' };
+    return {
       uTexture: opts.atlasSource,
       uSampler: opts.atlasSource?.style,
       uTexLut: opts.lutSource,
       uAnimStart: opts.animStartSource,
-      uniforms: { uGpuParticles: { value: new Float32Array(4), type: 'vec4<f32>' } },
+      uniforms: textured ? new UniformGroup({ uGpuParticles }) : { uGpuParticles },
     };
+  }
+
+  _makeShader(shaders, opts, name, resources, textured) {
     if (this.useWebGpu) {
       const gpuProgram = gpuParticleGpuProgram(GpuProgram, shaders.gpuParticle, opts.additive ? 'mainFragAdd' : 'mainFrag', name);
       return new Shader({ gpuProgram, resources });
     }
     const fragment = opts.additive ? shaders.gpuParticleFragAdd : shaders.gpuParticleFrag;
     if (!shaders.gpuParticleVert || !fragment) throw new Error('WeedJS: GPU particle GLSL was not loaded before GlProgram creation.');
-    const glProgram = GlProgram.from({ vertex: shaders.gpuParticleVert, fragment, name });
+    const vertex = textured ? gpuParticleTextureVertex(shaders.gpuParticleVert) : shaders.gpuParticleVert;
+    const glProgram = GlProgram.from({ vertex, fragment, name });
     return new Shader({ glProgram, resources });
   }
 
   /** Rebind the atlas, its lookup and the anim-start lookup (they are rebuilt when spritesheets load). */
   setTextures(atlasSource, lutSource, animStartSource) {
-    for (const r of this.rings) {
-      const res = r.shader.resources;
-      if (atlasSource) {
-        res.uTexture = atlasSource;
-        res.uSampler = atlasSource.style;
-      }
-      if (lutSource) res.uTexLut = lutSource;
-      if (animStartSource) res.uAnimStart = animStartSource;
-    }
+    for (const r of this.rings) r.setTextures(atlasSource, lutSource, animStartSource);
   }
 
   /**
