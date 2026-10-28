@@ -7561,7 +7561,8 @@
       "next": "Phase 2 rows for Firefox (needs Playwright's Firefox), npm run dev hot reload, the AudioWorklet and an allowed frame. Optional: register the worker from an inline snippet before the engine loads, to bring the first visit's reload forward (about 180-235 ms in now).",
       "records": [
         "R-0681",
-        "R-0682"
+        "R-0682",
+        "R-0683"
       ]
     },
     {
@@ -14814,6 +14815,17 @@
       "text": "Why a boot from source through weed-sw.js was 330–370 ms slower than real headers, found by narrowing:\n- The page's timeline: the navigation and the worker scripts cost the same; the slow requests were the engine workers' module imports (Chrome lists them in the page's Resource Timing): 728 of them, 55 ms each (median) with real headers and 204 through the worker, every one with a workerStart.\n- The main thread's own graph (175 modules, a page that only imports /src/index.js): 140–153 ms with real headers, without isolation, and controlled by the shipped worker, the routed one, one with an empty fetch handler and one with none. Being controlled costs nothing there.\n- A probe worker recording each request: a module worker's imports have destination 'worker' (the HTML spec gives the module graph the worker's destination) and mode 'cors', no resulting client; a worker's own script has mode 'same-origin' and a resulting client (6 engine workers, 3 Box2D threads). So the filter for page loads and worker scripts rewrote all 728 imports, and the Static Routing rules (destination worker → fetch handler) did too.\n\n**The fix** (417b5f0a): weed-sw.js rewrites page loads and worker scripts whose mode is not 'cors'. dist/weed-sw.js is the same bytes. tests/node/isolationServiceWorker.test.js: imports with destination worker or sharedworker and mode cors go to the network untouched; isolationWorkerSmoke 11/11.\n\n**isolationLoadTime**, 10 runs (dbd1e427: weedSwImports.js, the same condition, against the shipped worker in one sitting), medians: from source, return visit real headers 1 071 ms, before 1 415, after 1 114; first visit 1 159, 1 684, 1 363. Bundle: return 431 / 433 / 446, first 550 / 705 / 688 (its worker scripts are blobs). With Static Routing on top (weedSwImportsRouted.js) a 2-run screen tied (1 107 against 1 087), so it is not shipped.",
       "commits": [
         "dbd1e427",
+        "417b5f0a"
+      ]
+    },
+    {
+      "id": "R-0683",
+      "date": "2026-10-28",
+      "title": "DX-SW: all eight bundles through weed-sw.js, 32/32; the bundle's return visit as fast as real headers",
+      "verdict": "passed",
+      "text": "Phase 2's bundle rows. dist/ built from the working tree at 417b5f0a (npm run make_bundle; check:dist matching), tested, then restored to its committed state (the release builds it).\n\n**isolationBundleSmoke** (48c26573), headed, Chrome 156: dist/index.html?bundle=<file>&balls=200 (BallsScene, Box2D on four threads) for each of the eight bundles (plain, ESM, prod, compressed and their combinations). On a server without the headers, weed-sw.js next to the page: first visit 2 loads, return visit 1, hard reload 2; on a server with them: 1 load and nothing registered. Every case cross-origin isolated, 204 entities active, physics and the renderer past 10 frames each, pixels drawn, no page error, no error overlay: **32/32**.\n\n**Load time on that build** (isolationLoadTime --mode bundle --servers headers,narrow, 5 runs): first visit 552 ms with real headers, 670 through the worker (the reload at 169 ms); return visit 430 and 430.",
+      "commits": [
+        "48c26573",
         "417b5f0a"
       ]
     }
