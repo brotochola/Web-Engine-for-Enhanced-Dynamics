@@ -8241,7 +8241,7 @@
       "date": "2026-10-26",
       "area": "physics",
       "kind": "wasm",
-      "rank": 8,
+      "rank": 7,
       "result": "Step 0 (threadCpuProbe): bunnyMarkStressScene with physics and no bodies, the whole renderer 73 ms/s, no thread over 800; ballsHeavy four threads at 513-643 ms/s doing work. Left: the clock reads while solver threads wait (9 % of each thread in a profile that counts waits).",
       "next": "A names build of Box2D (--profiling-funcs, not shipped) to see who reads the clock: the scheduler spin or the step profiler; then the spin variants on ballsHeavyStressScene."
     },
@@ -8251,18 +8251,18 @@
         "EXECUTION_PLAN.md#E-139"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-0666"
       ],
       "id": "E-139",
       "title": "Component getters read a lazily filled object by name",
-      "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "status": "kept",
+      "statusText": "kept 2026-10-28 (Wave 7)",
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 1,
-      "result": "Wave 7 sweep (R-0645): the component getter (gameObject.js, one per component, defined at registration) is 44 % of adobeAnimateScene's logic at the minimum zoom (226 ms/s) and 10-14 % of Predator's two logic workers. Each reads this._componentCache[name], an object filled lazily in the order an entity's code touches its components: many maps, and a keyed load by a string that differs per closure.",
-      "next": "A kernel of the getter over several entity classes; then per-class component slots (an array read by a closure integer) or the components built with the entity as constructor fields. Owner adobeAnimateScene logic; gate Predator logic."
+      "result": "kept (9fa90154): numbered slots read by a captured integer. Kernel 23 → 6.7 ns a read; Predator logic 3.979 → 3.620 ms (−8.0 %, worse 0/4); Adobe at min zoom logic 2.418 → 1.775 ms (−26.6 %, below the floor).",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -8279,7 +8279,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 2,
+      "rank": 1,
       "result": "Wave 7 sweep (R-0645): _tickIntervalBucket is 89 % of painterSortStressScene's logic and 7-8 % of Predator's; _tickNonDecimatedOne 37 % of painterMoveStressScene's (720 ms/s); update 21 % of adobeAnimateScene's.",
       "next": "Read the per-entity work around the game tick (bucket walk, active test, 17 arguments, forced scan) and how much self time is inlined game code (--trace-turbo-inlining); owner scenes minimalTickScene and minimalTickIntervalScene; a leaner loop, one copy per case."
     },
@@ -8298,7 +8298,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 3,
+      "rank": 2,
       "result": "Wave 7 sweep (R-0645): neighborCount and getNeighbor are 7-8 % each of Predator's logic and 5-7 % of littleCity's and Boids'. Both are two-line typed-array reads, so the cost is the call on receivers of every entity class (a polymorphic load of _neighborOffset).",
       "next": "A kernel first. Candidates: _neighborOffset at the same place in every instance, a per-index offset table on Grid, a documented call-free path (getAllNeighborIds and a local loop) in the guide."
     },
@@ -8336,7 +8336,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 4,
+      "rank": 3,
       "result": "Wave 7 sweep (R-0645): fsm.js tick is 7 % of Predator's logic; _processBox2dCollisionCallbacks is 58 % of waterAndBoxesScene's logic and 5-7 % of Predator's, as the engine function's own self time.",
       "next": "Read the per-state and per-event costs. W18's verdict (game callbacks, and E-131's Atomics.load) came from another scene."
     },
@@ -8355,7 +8355,7 @@
       "date": "2026-10-26",
       "area": "spatial",
       "kind": "wasm",
-      "rank": 5,
+      "rank": 4,
       "result": "Wave 7 sweep (R-0645): gather_batch 1 599 ms/s and publish_batch 1 447 summed over 18 scenes (Boids gather 44 %, orientedBox 76 %; movedBodiesMixed publish 46 %; stationarySpatialWide publish_u32 61 %). Both wait on memory: the gather's float32 variants lost in Node (R-0571), the publish's f32x4 tied double (W8a).",
       "next": "Rows rebuilt and republished per frame in each scene against the reuse skin; the Chrome entry for the gather's float32 variants; then W7 and E-136."
     },
@@ -8374,7 +8374,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 6,
+      "rank": 5,
       "result": "Wave 7 sweep (R-0645): the tween tick is 49 % and _apply 35 % of tweenStressScene's logic (159 ms/s).",
       "next": "Read the per-tween work, then JavaScript tuning or a kernel over the tween slots (typed arrays already)."
     },
@@ -8393,7 +8393,7 @@
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
-      "rank": 7,
+      "rank": 6,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "A design note first (batch layout, sort, shadows, custom layers), then a prototype on adobeAnimateScene."
     },
@@ -14621,6 +14621,17 @@
       "text": "Step 0 of E-144: each thread's CPU time read from Windows (`threadCpuProbe.mjs`, 91434298: every thread of Chrome's renderer process, `TotalProcessorTime` twice over a 5 s window, after 8 s of warm-up), headless, from source.\n\n- **bunnyMarkStressScene** (physics on, no bodies): the whole renderer process uses 73 ms/s over its 36 threads; the busiest thread 34 ms/s; none over 800 ms/s. The sweep's 1000 ms/s for each of Box2D's three solver threads (99.6 % in one function) was the sampling profiler counting threads blocked in their wait as busy. Idle solver threads burn nothing: there are no cores to win back.\n- **ballsHeavyStressScene** (physics-bound): 2 665 ms/s in all; four threads at 643, 538, 538 and 513 ms/s (the physics thread and the three solver threads doing work), one at 301 ms/s; none spins at 1000.\n\nWhat is left of E-144 is the clock reads while the solver threads wait for work (`_emscripten_get_now`, 9 % of each thread in ballsHeavy's profile, which also counted blocked time, so the real share is unknown). A thread spinning for work is off the critical path, so the gain would be cores for the other workers, not physics' step. It needs the names build of Box2D to see who reads the clock (the scheduler spin, the step profiler) before any change. Lowered behind the logic items.\n",
       "commits": [
         "91434298"
+      ]
+    },
+    {
+      "id": "R-0666",
+      "date": "2026-10-28",
+      "title": "E-139 kept: component getters read numbered slots (Predator logic −8.0 %)",
+      "verdict": "kept",
+      "text": "The getter (gameObject.js `_ensureComponentAccessors`) read `this._componentCache[name]`: the getters were closures of one function, so the keyed load saw every component name, from objects filled in the order each entity first touched its components. The variant numbers each class's components; an instance keeps them in `_components`, an array made in `bindToEntitySlot`, and each getter reads its slot by the integer it captured (9fa90154).\n\n**Kernel** (`componentGetterMicrobench`, 02d5b0c3: five classes, each tick reading its components in its own order): 23 ns a getter read shipped, 7.3 ns with the slots copy; after the change the shipped getter reads in 6.7 ns.\n\n**Owner, adobeAnimateScene at the minimum zoom** (4 pairs from worktrees, 02d5b0c3 against the change): logic 2.418 → 1.775 ms (−26.6 %), below the 3 ms floor, so not judged; the scene has no load knob. Physics +1.7 % (4/4, cv 2/2 %), a worker the change does not reach.\n\n**Predator** (owner logic and the gate, 4 pairs): logic 3.979 → 3.620 ms (−8.0 %, worse 0/4, cv 2/4 %, −4.9 % against the other workers, lower 4/4); spatial −0.8 %, physics −3.4 % (cv 9/6 %), renderer −2.4 %, pre-render +0.1 %; presented 60.0 both. **Kept.** No A/A this session for these scenes.\n",
+      "commits": [
+        "02d5b0c3",
+        "9fa90154"
       ]
     }
   ],
