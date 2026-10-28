@@ -124,6 +124,29 @@ test('every published range reaches the GPU, in a frame that draws nothing of th
   }
 });
 
+test('a range across the ring end goes up as its two pieces, not the whole ring', { concurrency: false }, () => {
+  const { gl, upload } = glBufferModel();
+  const ranges = []; // [first slot, slots] of each range that went up after the first upload
+  const flush = (buffer) => {
+    if (gl.data !== null && buffer._updateID !== gl.updateID) {
+      ranges.push([buffer._updateOffset / GPU_RECORD_BYTES, buffer._updateSize / GPU_RECORD_BYTES]);
+    }
+    upload(buffer);
+  };
+  const { batch, draw, restore } = setup(64 * 3, { flush });
+  try {
+    emit(50, 5000);
+    batch.update(clockNow());
+    emit(30, 5000); // slots 50..79 of a 64-slot ring: wraps
+    batch.update(clockNow());
+    assert.deepEqual(ranges, [[50, 14], [0, 16]], 'the head up to the ring end, then the rest from slot 0');
+    const floats = (64 * GPU_RECORD_BYTES) / 4;
+    assert.deepEqual(Array.from(gl.data.subarray(0, floats)), Array.from(draw.ring.records.subarray(0, floats)));
+  } finally {
+    restore();
+  }
+});
+
 test('the live window starts at the oldest group still alive, and wraps the ring end as two draws', { concurrency: false }, () => {
   const { batch, draw, restore } = setup();
   try {
@@ -147,7 +170,7 @@ test('the live window starts at the oldest group still alive, and wraps the ring
     assert.equal(b.visible, true);
     assert.equal(b.geometry.weedFirstInstance, 0);
     assert.equal(b.geometry.instanceCount, 16, 'the rest from slot 0');
-    assert.equal(draw.buffer._updateSize, 64 * GPU_RECORD_BYTES, 'a range across the ring end uploads the whole array');
+    assert.equal(draw.buffer._updateSize, 64 * GPU_RECORD_BYTES, 'without a flush, a range across the ring end uploads the whole array');
     Time._advanceSimNow(6000);
     batch.update(clockNow());
     assert.equal(a.visible || b.visible, false, 'all ended');

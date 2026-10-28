@@ -4,8 +4,9 @@
 //
 // Each frame, per ring: copy what was published since the last frame out of the shared memory into the ring's own
 // array and upload that range (uploading from the shared memory itself slows the other workers: E-123); a range
-// that wraps the ring end uploads the whole array, since Pixi keeps one pending range per buffer. Then draw only
-// the live window: from the first record of the oldest group that may still be alive to the last published one.
+// that wraps the ring end goes up as its two pieces, the first sent before the second replaces it, since Pixi keeps
+// one pending range per buffer (without a flush, the whole array). Then draw only the live window: from the first
+// record of the oldest group that may still be alive to the last published one.
 // A window that wraps the ring is two draws. Unborn and dead records inside it cost four vertex invocations each.
 
 import {
@@ -180,14 +181,20 @@ class RingDraw {
     const from = start & (cap - 1);
     const head = fresh < cap - from ? fresh : cap - from;
     this._copy(from, head);
-    if (fresh > head) {
-      this._copy(0, fresh - head);
-      this.buffer.update(cap * GPU_RECORD_BYTES, 0); // across the ring end: the whole array
+    const tail = fresh - head;
+    if (tail > 0) this._copy(0, tail);
+    // A buffer keeps one pending range; the next update replaces it. Across the ring end the head is sent before the
+    // tail's range replaces it; without a flush, the whole array goes.
+    if (tail > 0 && this.flush === null) {
+      this.buffer.update(cap * GPU_RECORD_BYTES, 0);
     } else {
       this.buffer.update(head * GPU_RECORD_BYTES, from * GPU_RECORD_BYTES);
+      if (tail > 0) {
+        this.flush(this.buffer);
+        this.buffer.update(tail * GPU_RECORD_BYTES, 0);
+      }
     }
-    // A buffer keeps one pending range; the next update replaces it. Sent now, a frame that draws nothing of this
-    // ring cannot lose what it published.
+    // Sent now, a frame that draws nothing of this ring cannot lose what it published.
     if (this.flush !== null) this.flush(this.buffer);
     this.uploaded = published >>> 0;
   }
