@@ -2484,6 +2484,30 @@ nothing y-sorts (an experiment commit, 0/4 worse). With no layer y-sorting, the 
 
 Kept (c08f3548): pre-render −4.3 % in that scene (worse 0/4). The branch against main went from +7.0 % to −4.6 % there.
 
+### E-156 A wrapped upload goes up as its two ranges
+
+A frame whose new GPU particle records wrapped a ring's end uploaded the whole ring, since Pixi keeps one pending
+range per buffer: on WebGPU each `buffer.update()` writes at once, and a ring of 1 048 576 particles is 112 MB. The
+head now goes up before the tail's range replaces it (the Pixi worker's flush); without a flush, the whole array.
+
+Kept (c451e2a6), GPU Galaxy (`demos/gpuGalaxyScene`) at 8 388 608 particles, 8 arms, WebGPU, 4 pairs: renderer
+3.870 → 3.229 ms (−16.6 %, worse 0/4), frames drawn 36.2 → 38.1 a second, presented 57.4 → 60.0 fps.
+
+### E-157 GPU particles on WebGL fall behind WebGPU past a few hundred thousand
+
+GPU Galaxy, GTX 1650, Chrome on ANGLE D3D11: WebGL draws 262 144 particles at 60 fps but 1 048 576 at 15 to 44
+(124 frames in 8 s), with the renderer's CPU step at 0.9 ms; WebGPU draws 1 048 576 and 4 194 304 at 60. The CPU
+is idle, so the GPU side stalls. Suspects: the per-frame `bufferSubData` into a ring the GPU still draws from (ANGLE
+may copy or wait), and the attribute re-pointing for ranged draws without base-instance. Next: a WebGL kernel that
+draws N instances with and without a per-frame update.
+
+### E-158 A GPU particle costs four vertex evaluations and two triangles
+
+On the GTX 1650 a frame's GPU time grows about 3.3 ms per million GPU particles (GPU Galaxy, WebGPU, 1 to 2 px dots:
+4 194 304 at 60 fps, 8 388 608 at 38, 16 777 216 at 19). Every particle is a quad: its record is evaluated at each
+of its four vertices, and two triangles go through setup for a pixel or two. Next: one evaluation per particle (a
+WebGPU compute pass), or a point or single-triangle mode for dots this small.
+
 ### Left open (design calls for the owner)
 
 - **Look regions merge transitively.** 256 scattered look groups became one region, which sorts at the group
