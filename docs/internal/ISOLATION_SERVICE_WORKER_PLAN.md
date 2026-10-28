@@ -277,11 +277,17 @@ The Static Routing column is a second sitting (headers 552 / 442 / 1 181 / 1 118
 - **Narrow against wide:** a tie with the bundle, and the wide worker 17 % slower on a return
   visit from source (1 680 against 1 431 ms), where every module request goes through it. Decision 2
   stands.
-- **Source through the worker** (`npm run dev:sw`): a return visit is 330 to 370 ms slower than
-  real headers even with the narrow worker. Not the fetch events of the module requests: with
-  Chrome's Static Routing API sending them straight to the network (`addRoutes` accepted, read from
-  the running worker) it ties the narrow worker. What costs is unknown; the plain dev servers send the
-  headers, so only `dev:sw` meets it.
+- **Source through the worker** (`npm run dev:sw`): a return visit was 330 to 370 ms slower than
+  real headers, and the Static Routing API did not help. **Found and fixed the same day (417b5f0a):**
+  a module worker's imports carry the worker's destination (`worker`), so the filter for "worker
+  scripts" rewrote all 728 imports of the engine's workers through `fetch` and a new `Response`; the
+  Static Routing rules sent them to the fetch handler for the same reason. The imports are mode
+  `cors`, a worker's own script `same-origin` (seen by a probe worker: 6 engine workers and 3 Box2D
+  threads `same-origin` with a resulting client, 728 imports `cors` without). weed-sw.js now leaves
+  `cors` requests alone. 10 runs, from source: return visit 1 415 → 1 114 ms (real headers 1 071),
+  first visit 1 684 → 1 363 (1 159); the bundle unchanged. With routes on top it ties (screen: 1 107
+  against 1 087), so the worker ships without them. The main thread's own 175 modules were never the
+  cost: 140–153 ms to load the graph controlled or not, with or without a fetch handler.
 - **Runtime:** Predator, 4 pairs, one build, real headers against the worker on a return visit
   (`weedIsolation=sw`, f5eb5417): logic +0.7 %, spatial 0.0 %, renderer −3.1 %, pre-render −3.2 %,
   physics −5.9 % (cv 8/12 %), presented 60 both. No difference, as expected: the worker only touches
