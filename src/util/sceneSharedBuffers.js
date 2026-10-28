@@ -1253,6 +1253,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       rangeByte: publish ? publish.rangeByte : 0,
       listByte: publish ? publish.listByte : 0,
       listStride: publish ? publish.listStride : 0,
+      // E-136: the pose generation the spatial workers share.
+      syncByte: publish ? publish.syncByte : 0,
       // The WASM candidate gather's regions (E-78); 0 without the publish memory.
       gridByte: publish ? publish.gridByte : 0,
       markerByte: publish ? publish.markerByte : 0,

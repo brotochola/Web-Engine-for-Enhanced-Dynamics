@@ -28,6 +28,7 @@ export const SPATIAL_MAX_CELL_RADIUS = 12;
  *   candByte: number,
  *   listByte: number,
  *   listStride: number,
+ *   syncByte: number,
  *   gridByte: number,
  *   markerByte: number,
  *   markerStride: number,
@@ -71,6 +72,7 @@ export function createSpatialPublishMemory(entityCount, maxNeighbors, spatialWor
       candByte: regions.cand.byte,
       listByte: regions.lists.byte,
       listStride: layout.listStride,
+      syncByte: regions.sync.byte,
       // 0 without a grid spec: no gather regions.
       gridByte: gather ? regions.grid.byte : 0,
       markerByte: gather ? regions.markers.byte : 0,

@@ -122,6 +122,7 @@ export function bindPublishMemory(buffers, gridMetadata, mem) {
     candByte: mem.candByte,
     listByte: mem.listByte,
     listStride: mem.listStride,
+    syncByte: mem.syncByte | 0,
     gridByte: mem.gridByte | 0,
     markerByte: mem.markerByte | 0,
     markerStride: mem.markerStride | 0,

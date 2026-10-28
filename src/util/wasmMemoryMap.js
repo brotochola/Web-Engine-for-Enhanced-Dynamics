@@ -46,6 +46,8 @@ export function layoutRegions(regions) {
  *   spatial worker for the entities it owns, read by logic.
  * - cand: candidate rows, same shape, written by the spatial gather.
  * - lists: one batch list per spatial worker, each its own `listStride`-byte slice on a line.
+ * - sync: an i32 every spatial worker adds 2 to (Atomics) after a frame in which it wrote a pose that
+ *   changed: a kept row whose last publish saw the same value has the same inputs (E-136).
  * Ids are 16-bit: the module has no 32-bit form (W8).
  * @param {number} entityCount
  * @param {number} maxNeighbors
@@ -549,6 +551,7 @@ export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorke
     { name: 'rows', owner: 'spatial (publish_batch)', bytes: rowBytes },
     { name: 'cand', owner: 'spatial', bytes: rowBytes },
     { name: 'lists', owner: 'spatial, one slice per worker', bytes: workers * listStride },
+    { name: 'sync', owner: 'spatial, every worker (Atomics)', bytes: CACHE_LINE_BYTES },
   ];
   if (!gather) return { regions, listStride };
   const markerStride = alignToLine(count * 4);
