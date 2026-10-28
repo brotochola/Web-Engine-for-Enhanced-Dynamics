@@ -2348,6 +2348,9 @@ So what is left is doing less work:
    with identical rows. The scenes: orientedBox spatial −2.3 %, Predator −1.8 %, Boids **+3.0 % (worse 4/4)**, its small
    cells rarely filling a block of four. Kept as a test module (`spatialGatherExact`); a lead: blocks only in cells of
    eight ids or more.
+   *The lead, 2026-10-28:* shipped into the gather with blocks only from 8 and then 16 ids (rows unchanged), Boids'
+   spatial still read +1.4 % (worse 4/4) and +1.8 % (3/4): its cells hold 20 ids at most, so the cost is not the blocks
+   alone. With the gains elsewhere near 2 %, not shipped; nothing pending in E-147.
 3. **W7 and E-136**, below.
 
 **Step 1 answered 2026-10-28** (`NEIGHBORS_REBUILT` and `NEIGHBORS_PUBLISHED`, 5803ca42, detailed stats off). Rows a
