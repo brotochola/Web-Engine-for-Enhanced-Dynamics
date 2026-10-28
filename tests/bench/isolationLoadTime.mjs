@@ -18,7 +18,8 @@
  *
  * Servers: `headers` sends COOP/COEP (DEPLOY.md's setup); `narrow` and `wide` send neither and serve their worker
  * where the page looks for it; `routed` serves tests/bench/isolation/weedSwRouted.js (the narrow worker with Chrome's
- * Static Routing API, SW-9). Each run takes, for every mode and server in a rotating order, a fresh browser
+ * Static Routing API, SW-9); `imports` and `importsRouted` serve weedSwImports.js and weedSwImportsRouted.js (module
+ * imports left alone). Each run takes, for every mode and server in a rotating order, a fresh browser
  * context and makes two visits: the first, then a return visit to the same URL. A visit is timed from just before
  * the navigation to the renderer's first published frame (frameTotals, read by the page on every animation frame),
  * on the same wall clock. Headed by default: the first frame needs the real GPU.
@@ -52,6 +53,8 @@ const WORKER_FILES = {
   narrow: 'src/workers/isolationServiceWorker.js',
   wide: 'tests/bench/isolation/weedSwWide.js',
   routed: 'tests/bench/isolation/weedSwRouted.js',
+  imports: 'tests/bench/isolation/weedSwImports.js',
+  importsRouted: 'tests/bench/isolation/weedSwImportsRouted.js',
 };
 /** frameTotals' `frames` (f64) for the renderer's slot: the first frame drawn is the first it counts. */
 const RENDERER_FRAMES_F64 = (FRAME_CLOCK_SLOTS.renderer * SLOT_BYTES) / 8 + 1;
