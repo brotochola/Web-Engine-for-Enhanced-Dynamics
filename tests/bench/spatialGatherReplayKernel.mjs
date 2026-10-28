@@ -3,13 +3,14 @@
  * frame (tests/bench/spatialGatherSnapshot.mjs: the WebAssembly memory and every worker's gather_batch call) on the
  * same bytes with each variant, a fresh frame stamp per replay so each one does the frame's whole work:
  *
- *   f64    gather_batch, the shipped kernel (src/wasm/engine.wasm)
+ *   f64    gather_batch, the shipped kernel (src/wasm/engine.wasm; float32x4 with a double edge band since E-147)
  *   f32    gather_batch_f32, the range test in float32 (tests/fixtures/wasm/spatialGatherF32.wasm)
  *   f32x4  gather_batch_f32x4, four ids of a cell a step
  *
  * Browser module (chromeKernel.mjs calls run): capture first, then
  *   node tests/bench/spatialGatherSnapshot.mjs --config rebuild
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/spatialGatherReplayKernel.mjs --args '{"rounds":7}'
+ * `extra` adds variants: { name: url } of another module's gather_batch (an older engine.wasm, say).
  * Reports per variant the median ms of a replayed frame (rounds alternate the variants) and, against f64, how many
  * candidate rows differ (a float32 range test may keep or drop a candidate on the edge: spatialGatherTolerance.mjs).
  */
@@ -41,7 +42,7 @@ function rows(memory, calls) {
   return out;
 }
 
-export async function run({ dir = '/tests/results/spatial-gather-snapshot', rounds = 7, frames = 20, warmup = 60 } = {}) {
+export async function run({ dir = '/tests/results/spatial-gather-snapshot', rounds = 7, frames = 20, warmup = 60, extra = {} } = {}) {
   const meta = await (await fetch(`${dir}/calls.json`)).json();
   const bytes = new Uint8Array(await (await fetch(`${dir}/memory.bin`)).arrayBuffer());
   const memory = new WebAssembly.Memory({ initial: meta.pages, maximum: meta.pages, shared: true });
@@ -49,6 +50,7 @@ export async function run({ dir = '/tests/results/spatial-gather-snapshot', roun
   const engine = await instantiate('/src/wasm/engine.wasm', memory);
   const test = await instantiate('/tests/fixtures/wasm/spatialGatherF32.wasm', memory);
   const variants = { f64: engine.gather_batch, f32: test.gather_batch_f32, f32x4: test.gather_batch_f32x4 };
+  for (const [name, url] of Object.entries(extra)) variants[name] = (await instantiate(url, memory)).gather_batch;
   let stamp = meta.calls[0].args[ARG.stampFrame];
   const replay = (fn) => {
     stamp = (stamp % STAMP_MASK) + 1;
