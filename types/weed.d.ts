@@ -122,7 +122,8 @@ export interface DefaultLayerEntry {
 export const DEFAULT_LAYERS: Readonly<Record<string, DefaultLayerEntry>>;
 export const CAMERA_TYPES: Readonly<Record<string, number>>;
 
-export type SpawnConfig = Record<string, unknown> & {
+/** What `Type.spawn(config)` passes to `onSpawned`: the game's own keys, whatever they are (always an object). */
+export type SpawnConfig = Record<string, any> & {
   /** Worker index that must run this entity’s logic. Omit or −1 to keep stride. */
   forceProcessOnLogicWorker?: number;
 };
@@ -1034,6 +1035,12 @@ export declare class Component {
 }
 
 /**
+ * A component instance's per-entity fields (`this.collider.radius`): one number per column of its `ARRAY_SCHEMA`, read
+ * and written at the entity's index. Merged into each engine component below.
+ */
+export type ComponentFields<S> = { -readonly [K in keyof S]: number };
+
+/**
  * Integer SharedResource mailbox. Bound when a field is `atomic: true` / `mailbox: true`.
  * Index last; default 0. Raw TypedArray: `view`.
  */
@@ -1174,8 +1181,11 @@ export declare class GameObject {
 
   // Lifecycle hooks (override). The collision / screen / joint ones need their tag
   // component in static components; the scene warns at load when one is missing.
-  /** Each spawn from the pool; spawnConfig keys were applied first. */
-  onSpawned(spawnConfig?: SpawnConfig): void;
+  /**
+   * Each spawn from the pool; spawnConfig keys were applied first. The config is the object `Type.spawn` was given
+   * (a SpawnConfig, `{}` when none): typed any so a subclass declares the keys it reads, `onSpawned({ x, y })`.
+   */
+  onSpawned(spawnConfig: any): void;
   /** Before the entity returns to the pool. */
   onDespawned(): void;
   /** Needs CollisionListener. */
@@ -1583,7 +1593,11 @@ export declare class Scene {
   static config: SceneConfig;
   static assets: SceneAssetsManifest;
   static audios: string[];
-  static entities: SceneEntityDefinitionTuple[];
+  /**
+   * Entity pools: `[Class, count]` pairs. Plain arrays are accepted too, since JavaScript infers `[[Player, 2]]` as
+   * `(number | typeof Player)[][]` rather than tuples (TypeScript users can write `as const`).
+   */
+  static entities: ReadonlyArray<SceneEntityDefinitionTuple | ReadonlyArray<typeof GameObject | number>>;
   static sharedResources: Array<[typeof SharedResource, Record<string, unknown>]>;
   static queries: SceneQueryTuple[];
   /** Optional scene module href. `loadScene(url)` sets this when missing. */
@@ -3746,6 +3760,22 @@ export declare class BulletComponent extends Component {
   static layerId: Uint8Array;
   static bulletCount: number;
 }
+
+// Every engine component's per-entity fields, from its ARRAY_SCHEMA (ComponentFields).
+export interface FSM extends ComponentFields<(typeof FSM)['ARRAY_SCHEMA']> {}
+export interface Transform extends ComponentFields<(typeof Transform)['ARRAY_SCHEMA']> {}
+export interface RigidBody extends ComponentFields<(typeof RigidBody)['ARRAY_SCHEMA']> {}
+export interface Collider extends ComponentFields<(typeof Collider)['ARRAY_SCHEMA']> {}
+export interface MeshRenderer extends ComponentFields<(typeof MeshRenderer)['ARRAY_SCHEMA']> {}
+export interface SpriteRenderer extends ComponentFields<(typeof SpriteRenderer)['ARRAY_SCHEMA']> {}
+export interface AdobeAnimComponent extends ComponentFields<(typeof AdobeAnimComponent)['ARRAY_SCHEMA']> {}
+export interface ParticleComponent extends ComponentFields<(typeof ParticleComponent)['ARRAY_SCHEMA']> {}
+export interface DecorationComponent extends ComponentFields<(typeof DecorationComponent)['ARRAY_SCHEMA']> {}
+export interface LightEmitter extends ComponentFields<(typeof LightEmitter)['ARRAY_SCHEMA']> {}
+export interface ShadowCaster extends ComponentFields<(typeof ShadowCaster)['ARRAY_SCHEMA']> {}
+export interface LightOccluder extends ComponentFields<(typeof LightOccluder)['ARRAY_SCHEMA']> {}
+export interface FlashComponent extends ComponentFields<(typeof FlashComponent)['ARRAY_SCHEMA']> {}
+export interface BulletComponent extends ComponentFields<(typeof BulletComponent)['ARRAY_SCHEMA']> {}
 
 export declare class SharedAtomicPool {
   static maxCount: number;
