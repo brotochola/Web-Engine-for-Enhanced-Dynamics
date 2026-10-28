@@ -1,13 +1,23 @@
 /**
  * 65535 entities, one alpha tween each.
  * `?workers=1` or `?workers=2` sets the logic worker count.
+ * `?entities=<n>` sets the entity (and tween) count: past 65535 the ids are 32-bit, and one worker's logic passes 3 ms.
  * The tweens are created in entity order, so slot i belongs to entity i.
  */
 import WEED from '/src/index.js';
 
 const { Scene, GameObject, SpriteRenderer, Tween } = WEED;
 
-const ENTITY_COUNT = 65535;
+function queryEntities() {
+  try {
+    const n = parseInt(new URLSearchParams(globalThis.location?.search || '').get('entities'), 10);
+    return n > 0 ? n : 65535;
+  } catch {
+    return 65535;
+  }
+}
+
+const ENTITY_COUNT = queryEntities();
 
 function queryWorkers() {
   try {
