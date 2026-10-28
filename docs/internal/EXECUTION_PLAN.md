@@ -1013,6 +1013,9 @@ GameObject instance fields that hold fractional doubles allocate per write in Ch
 21 MB/s, `bichosScene` 7 MB/s in game code): a guide note, or an engine-side per-entity scratch. Pixi's
 vendored WebGL bind (`for…in` per draw, 0.5–0.7 MB/s). `_emscripten_get_now` in the Box2D thread
 (0.2–0.3 MB/s). Pixi `updateLighting` (0.2–0.3 MB/s in Predator). `syncParticleFeed` (0.1–0.2 MB/s).
+**2026-10-28:** the instance fields are a rule in `bible_of_weed_js.md` (fed06cbc). `updateLighting` is done (c8c3fc6a):
+it wrote each light through a call with seven doubles that TurboFan left out, and colours through `_rgbResult`'s
+fields; it writes the texel itself now. Predator's Pixi 443.2 → 342 KB/s, `updateLighting` 93.7 KB/s → not listed.
 
 ### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
 Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin
@@ -2249,6 +2252,12 @@ painterMove's logic, and `update` 21 % of Adobe's.
 
 The ceiling depends on how much of that self time is the loop rather than inlined game code. `--trace-turbo-inlining` tells which.
 
+**First change kept 2026-10-28 (e5b2f5d8).** Every path wrote the frame's counters on `this` per ticked entity
+(`entitiesProcessedThisFrame++`, and the two detailed-stats timers reset). The count is added once from what the paths
+return, the timers only with detailed stats on. minimalTickScene?props=130000 (the knob, 2259287c: 60 000 props put logic
+at 1.8 ms): logic 4.654 → 4.271 ms (−8.7 %, worse 1/4, the worse pair one baseline side at 3.06 ms). The 17-parameter
+bucket loop and the forced-scan branch are still to read.
+
 ### E-141 Neighbour accessors called from game code
 
 `neighborCount` and `getNeighbor` are each 7–8 % of Predator's logic and 5–7 % of littleCity's and Boids'. Both are
@@ -2295,6 +2304,12 @@ tick; tweenStressScene?entities=131072 logic 3.641 → 3.107 ms (−14.2 %, wors
   - W18 (dropped) had found its owner scene's cost in the game callbacks and in an `Atomics.load` that E-131 then removed. This is another scene, so read why before changing anything.
 
 Read the per-event and per-state costs, then a kernel for each.
+
+**The collision dispatch: kept 2026-10-28 (a5eb013e).** The stay walk called `onCollisionStay` for every type that
+listens to collisions, so a class that defines only `onCollisionEnter` had the base's empty method called for each of
+its touching pairs, every frame. It now calls only the types whose class defines it. `contactsMicrobench --no-stays`
+(326d5645) +64 % at 7 800 pairs and +34 % at 42 861; waterAndBoxesScene logic 1.833 → 1.378 ms (−23.1 %, worse 0/4,
+below the floor). **The FSM is still open.**
 
 **Not now: the spawn path** (`_spawnAt` 40 % and `despawn` 12 % of spawnStorm's logic). It is being changed by the
 visual editor's spawn parameters work (VISUAL_EDITOR_PLAN). Profile it again after that work lands. The register's
