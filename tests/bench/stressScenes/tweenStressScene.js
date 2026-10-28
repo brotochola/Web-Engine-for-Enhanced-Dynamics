@@ -2,6 +2,8 @@
  * 65535 entities, one alpha tween each.
  * `?workers=1` or `?workers=2` sets the logic worker count.
  * `?entities=<n>` sets the entity (and tween) count: past 65535 the ids are 32-bit, and one worker's logic passes 3 ms.
+ * `?tick=1` gives the entities an empty tick, so with two workers their tweens follow the worker that ticks each one
+ * (N-6) instead of Tween.tick's blocks of slots.
  * The tweens are created in entity order, so slot i belongs to entity i.
  */
 import WEED from '/src/index.js';
@@ -31,17 +33,35 @@ function queryWorkers() {
 
 const LOGIC_WORKERS = queryWorkers();
 
+function queryTick() {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('tick') === '1';
+  } catch {
+    return false;
+  }
+}
+
+const TICK = queryTick();
+
 export const stressSceneConfig = {
-  requested: { entities: ENTITY_COUNT, tweens: ENTITY_COUNT, logicWorkers: LOGIC_WORKERS },
+  requested: { entities: ENTITY_COUNT, tweens: ENTITY_COUNT, logicWorkers: LOGIC_WORKERS, tick: TICK },
 };
 
-class TweenEntity extends GameObject {
+// Exported: a worker finds entity classes among the module's exports, and its own copy of this module does not
+// see the page's query.
+export class TweenEntity extends GameObject {
   static components = [SpriteRenderer];
 
   onSpawned() {
     this.spriteRenderer.alpha = 1;
   }
 }
+
+export class TickingTweenEntity extends TweenEntity {
+  tick() {}
+}
+
+const Entity = TICK ? TickingTweenEntity : TweenEntity;
 
 export class TweenStressScene extends Scene {
   static config = {
@@ -60,11 +80,11 @@ export class TweenStressScene extends Scene {
 
   static assets = { textures: {} };
 
-  static entities = [[TweenEntity, ENTITY_COUNT]];
+  static entities = [[Entity, ENTITY_COUNT]];
 
   create() {
     for (let i = 0; i < ENTITY_COUNT; i++) {
-      const spawned = TweenEntity.spawn({ x: 100, y: 100 });
+      const spawned = Entity.spawn({ x: 100, y: 100 });
       if (!spawned) throw new Error(`tween stress: spawn failed at ${i}`);
       const slot = Tween.to(spawned.index, { alpha: 0 }, 1e9, 0);
       if (slot < 0) throw new Error(`tween stress: tween failed at ${i}`);
