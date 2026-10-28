@@ -6,6 +6,7 @@
  *
  *   node tests/bench/contactsMicrobench.mjs                      # shipped code
  *   node tests/bench/contactsMicrobench.mjs --output out.json
+ *   node tests/bench/contactsMicrobench.mjs --no-stays           # classes without onCollisionStay (E-146)
  *
  * Variants live here until they are decided (HOW_WE_MEASURE: kernels never
  * write src/). `base` is the shipped LogicWorker; a variant is a subclass that
@@ -147,6 +148,8 @@ export async function setupContactKernel(opts = {}) {
     workerIndex: opts.workerIndex ?? 0,
     types: fx.arrays.entityType,
   });
+  // E-146: classes that do not define onCollisionStay get no stay calls; --no-stays times the walk for them.
+  if (opts.stays === false) worker.collisionStayByType.fill(0);
   const pairs = fixturePairs(fx, opts.maxPairs ?? 120000, opts.reach ?? 0.5);
   const P = pairs.length / 2;
   const rng = mulberry32(opts.seed ?? 0xc0417ac7);
@@ -196,15 +199,16 @@ export async function setupContactKernel(opts = {}) {
 async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'base');
+  const stays = !args['no-stays'];
   const cases = {};
   const regimes = {};
   // contact: bodies touching in the fixture. dense: +24 px reach, the sensor /
   // crowd regime closer to the contact stay cost in the Predator trace.
   for (const [name, reach] of [['contact', 0.5], ['dense', 24]]) {
-    const k = await setupContactKernel({ variant, reach });
+    const k = await setupContactKernel({ variant, reach, stays });
     for (let f = 0; f < 60; f++) k.frame();
     regimes[name] = { pairs: k.pairs, churnPerFrame: k.churn, checksum: k.checksum() };
-    cases[name] = timeIt(`contact flow ${variant} ${name} (${k.pairs} pairs)`, () => k.frame(), { iterations: 20, warmup: 20 });
+    cases[name] = timeIt(`contact flow ${variant}${stays ? '' : ' no-stays'} ${name} (${k.pairs} pairs)`, () => k.frame(), { iterations: 20, warmup: 20 });
   }
   const report = {
     feature: 'logic-contact-flow',
