@@ -133,8 +133,8 @@ How it is drawn:
 - **A record per particle (112 bytes)** written once at spawn: start position and velocity, height, gravity, drag, birth and life, the tween endpoints, eases, frames. Layout: `src/util/gpuParticleLayout.js`.
 - **A group per call:** the slots it wrote, when it is alive (earliest birth, latest death), its bounds and `sortY`. Records and the group row are written before the counts are published (`Atomics.store`), so a reader never sees half a call.
 - **One shared clock.** Births and the renderer's "now" both come from `Time.simNowMs`, the scene's sim clock: a pause or a hitstop stops GPU particles too, and `Time.scale` slows them. Births are float32 ms after the ring's epoch, which a quiet ring moves to now.
-- **The renderer** copies each ring's newly published records out of the shared memory and uploads them (one range a frame; a range across the ring end uploads the whole ring). It then draws only the live window: from the first record of the oldest group still alive to the last one published, as one instanced draw per ring, or two when the window wraps the ring end. Unborn and dead records inside the window cost four vertex invocations and no fragments.
-- **Ranges** start at an instance: WebGPU's `firstInstance`; on WebGL2 the `WEBGL_draw_instanced_base_vertex_base_instance` extension where it exists, else the instance attributes are pointed further for the draw (`src/render/instanceRangeDraw.js`).
+- **The renderer** copies each ring's newly published records out of the shared memory and uploads them (one range a frame; across the ring end, its two pieces). It then draws only the live window: from the first record of the oldest group still alive to the last one published, as one instanced draw per ring, or two when the window wraps the ring end. Unborn and dead records inside the window cost four vertex invocations and no fragments.
+- **Ranges** start at an instance: WebGPU's `firstInstance` (`src/render/instanceRangeDraw.js`); on WebGL2 a uniform of each draw, the first record its vertex shader reads.
 
 ## Capacity and overflow
 
@@ -144,4 +144,7 @@ How it is drawn:
 
 ## Backends
 
-WebGL2 and WebGPU, no compute: instanced attributes, a small lookup texture and vertex math (`src/shaders/gpuParticle.vert.glsl`, `gpuParticle.wgsl`).
+WebGL2 and WebGPU, no compute: the records, a small lookup texture and vertex math (`src/shaders/gpuParticle.vert.glsl`, `gpuParticle.wgsl`).
+
+- **WebGPU** reads each record as seven instance attributes (vec4).
+- **WebGL2** reads it from a texture, seven texels a record, by `gl_InstanceID`. On Chrome over Direct3D 11 (ANGLE), seven instance attributes cost about 50 ms a frame per million particles; the texture costs about 6. With it a GTX 1650 draws 4 million at 60 fps on either backend.

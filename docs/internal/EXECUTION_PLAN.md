@@ -2309,7 +2309,12 @@ Read the per-event and per-state costs, then a kernel for each.
 listens to collisions, so a class that defines only `onCollisionEnter` had the base's empty method called for each of
 its touching pairs, every frame. It now calls only the types whose class defines it. `contactsMicrobench --no-stays`
 (326d5645) +64 % at 7 800 pairs and +34 % at 42 861; waterAndBoxesScene logic 1.833 → 1.378 ms (−23.1 %, worse 0/4,
-below the floor). **The FSM is still open.**
+below the floor).
+
+**The FSM: kept 2026-10-28 (bc478827).** `tick` read `onUpdate` from the current state class (17 maps in Predator) and
+`owner.constructor.tickInterval` every tick. Each FSM class keeps its states' `onUpdate` by state number, each FSM
+instance its owner's ms per tick. `fsmTickMicrobench` (b26281f6) +6.4 % at 3 000 owners, +11.3 % at 1 000; each half
+alone ties or loses. The FSM is 7 % of Predator's logic, so the scene cannot see it; the Predator gate passed.
 
 **Not now: the spawn path** (`_spawnAt` 40 % and `despawn` 12 % of spawnStorm's logic). It is being changed by the
 visual editor's spawn parameters work (VISUAL_EDITOR_PLAN). Profile it again after that work lands. The register's
@@ -2330,6 +2335,19 @@ So what is left is doing less work:
 1. **Read the reuse rates.** Count how many rows each scene rebuilds and republishes per frame, against the neighbour-reuse skin and its frame limit.
 2. **The Chrome entry for the gather's float32 variants.** They have none yet. The owner's rule is that Chrome decides between kernel variants; it closes the flags pass.
 3. **W7 and E-136**, below.
+
+**Step 1 answered 2026-10-28** (`NEIGHBORS_REBUILT` and `NEIGHBORS_PUBLISHED`, 5803ca42, detailed stats off). Rows a
+frame per spatial worker, rebuilt / kept by the skin and republished / skipped by the stagger: Boids 6.7 / 0 / 93.3 %,
+Predator 3.7 / 5.9 / 89.5 %, orientedBoxScene 99.1 / 0.9 / 0 %, movedBodiesMixed 1.0 / 99.0 / 0 %, stationarySpatialWide
+3.9 / 96.1 / 0 %.
+- Boids and Predator already skip nine rows in ten. Boids' gather is the few rows it rebuilds, each expensive.
+- orientedBoxScene's skin never holds: `_canReuseNeighbors` wants the entity's half extent unchanged, and a turning box's
+  bounding box changes every frame. Neither range test uses the entity's own extent, so the check stands in for "the
+  shapes changed"; relaxing it needs the candidates' extent growth inside the skin (up to 100 px against 12 px there),
+  or neighbours go missing for up to 15 frames. A correctness trade: a lead, not done.
+- movedBodiesMixed and stationarySpatialWide republish nearly every row from a kept list each frame: that is their
+  publish share. A kept row whose entity and candidates did not move comes out the same (E-136, wider than static
+  entities). Predator republishes 5.9 % of its rows that way, so it pays in the stress scenes, not in Predator.
 
 ### Spatial's other items
 
@@ -2388,6 +2406,14 @@ Both builds must keep working (SIMD and no-SIMD), with `build_for_weed.bat` befo
 **How it is decided:**
 - **Owner:** ballsHeavyStressScene physics.
 - **Gate:** Predator, reading the other workers too, since freed cores help them.
+
+**Who reads the clock, 2026-10-28.** No names build needed: under Emscripten `b2Yield` is `sched_yield()`, which is
+`_emscripten_yield(emscripten_get_now())`, a clock import call; `b2Pause` is empty. The solver workers' stage wait yields
+every 6th spin and the physics thread's task wait (`b2SchedulerFinishTask`) every idle pass. Both every 64th spin
+(both builds passed): ballsHeavy physics 8.606 → 8.692 ms (+1.4 %, worse 3/4), **NEUTRAL, not kept**. The readers wait
+for work, off the critical path, as step 0 said. A clean build of Box2D's HEAD reproduces WeedJS's module byte for
+byte (an incremental one did not: a stale build directory). Nothing left here unless a profile puts the clock on the
+physics thread's own path.
 
 ### Other physics items
 
@@ -2532,6 +2558,13 @@ GPU Galaxy, GTX 1650, Chrome on ANGLE D3D11: WebGL draws 262 144 particles at 60
 is idle, so the GPU side stalls. Suspects: the per-frame `bufferSubData` into a ring the GPU still draws from (ANGLE
 may copy or wait), and the attribute re-pointing for ranged draws without base-instance. Next: a WebGL kernel that
 draws N instances with and without a per-frame update.
+
+**Kept 2026-10-28 (e6ee4ed3).** `webglParticleUploadKernel` (2f27006d, headed): the upload costs nothing (no upload
+50.9 ms a frame at a million records, the frame's records 51.4, a staging copy 51.4); the seven instanced vec4
+attributes are the cost, about 7 ms each per million on ANGLE's D3D11 (one 11.6 ms, seven 51.1). The records as a
+texture read by `gl_InstanceID`: 6.1 ms. So WebGL's rings are RGBA32UI textures now (seven texels a record), the first
+record a uniform of each mesh; WebGPU is unchanged. GPU Galaxy WebGL at 1 048 576: 144 and 141 → 480 and 480 frames in
+8 s (18 → 60 fps); 2 and 4 million draw at 60 too.
 
 ### E-158 A GPU particle costs four vertex evaluations and two triangles
 
