@@ -1016,6 +1016,8 @@ vendored WebGL bind (`for…in` per draw, 0.5–0.7 MB/s). `_emscripten_get_now`
 **2026-10-28:** the instance fields are a rule in `bible_of_weed_js.md` (fed06cbc). `updateLighting` is done (c8c3fc6a):
 it wrote each light through a call with seven doubles that TurboFan left out, and colours through `_rgbResult`'s
 fields; it writes the texel itself now. Predator's Pixi 443.2 → 342 KB/s, `updateLighting` 93.7 KB/s → not listed.
+**Closed 2026-10-28.** `syncParticleFeed` lost its closures in E-149 (a2398952); the Box2D clock is E-144's (answered: its
+readers wait for work); Pixi's `bind` is Pixi's own code, after E-148 took its `for…in` out.
 
 ### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
 Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin
