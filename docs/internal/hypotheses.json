@@ -8642,6 +8642,24 @@
       "kind": "bug",
       "result": "The GPU process holds the same amount after every cycle; the dispose (device.destroy / loseContext before the terminate) changed it by noise: Predator +82 vs +90 MB, balls +79 vs +85; headed WebGPU gives it all back either way. Not committed; sceneCycleSmoke judges after-destroy outside the GPU process (cf090ed1).",
       "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-76"
+      ],
+      "records": [
+        "R-0664"
+      ],
+      "id": "N-76",
+      "title": "Pixi frames outside the consume/release handshake read a queue pre-render may be writing",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-28 (e71250cc)",
+      "date": "2026-10-25",
+      "area": "renderer",
+      "kind": "bug",
+      "result": "A frame with no new queue (before the first, or a resume) committed a complete-looking frame pre-render was writing. Now such a frame keeps the committed batches when a sync exists. Predator 13 666 and BunnyMark 250 000 entities drawn as before.",
+      "next": "Nothing pending."
     }
   ],
   "records": [
@@ -14582,6 +14600,16 @@
       "commits": [
         "ab033c25",
         "cf090ed1"
+      ]
+    },
+    {
+      "id": "R-0664",
+      "date": "2026-10-28",
+      "title": "N-76 fixed: no commit from a queue Pixi did not take",
+      "verdict": "kept-hygiene",
+      "text": "updateSpritesFromRenderQueue returns before reading the queue on a frame with no new queue when a sync exists (before the first frame, or a resume): the entity and glow batches keep what they committed, nothing before the first frame. _refusePackedFrame had kept the batch only when the header read incomplete; a complete-looking frame pre-render was writing was committed with two frames' rows. gpuPackSplitPixi.test.js commits nothing of such a frame (fails without the change). Predator (pre-render packs) draws 13 666 entities and BunnyMark (Pixi packs) 250 000, as before. One compare a frame: no sitting.",
+      "commits": [
+        "e71250cc"
       ]
     }
   ],
