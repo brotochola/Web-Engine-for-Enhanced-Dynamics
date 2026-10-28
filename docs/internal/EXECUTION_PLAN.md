@@ -2191,6 +2191,7 @@ Summed over every scene, the most expensive engine functions are:
   - Tool: a small script that reads Chrome's renderer threads (`Get-Process` → `Threads.TotalProcessorTime`), committed on its own.
   - About 15 minutes.
   - If the threads burn cores with no bodies, E-144's fix comes first in the whole plan. Every scene with physics would get up to three cores back.
+  - **Done 2026-10-28 (`threadCpuProbe.mjs`): they do not.** bunnyMarkStressScene with no bodies uses 73 ms/s in its whole renderer process, no thread over 800 ms/s; the 1000 ms/s was the profiler counting the wait. In ballsHeavyStressScene four threads work at 513–643 ms/s. E-144 keeps its clock reads (needs the names build) and moves behind the logic items.
 - **Names for Box2D in profiles.** A profiling build of `box2dWasm.wasm` that keeps its name section (`--profiling-funcs`), not shipped, so traces name the solver's functions instead of `wasm-function[37]`.
   - It is needed to read N-71 (mallinfo every step) and N-74.
   - Tool only. Keep both builds working (SIMD and no-SIMD).
