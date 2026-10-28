@@ -25,6 +25,9 @@ const KIND_ZOOM = TWEEN_KIND_ZOOM;
 // Slot states in `active`. A claim goes 0 -> CLAIMING, writes every field, then
 // publishes LIVE; tick, cancel and save act on LIVE only. Several logic workers tick
 // the pool, so a slot must never read LIVE with the previous tween's fields.
+/** The eased progress tick hands _apply (E-143): a double passed to a call TurboFan leaves out is boxed. */
+const EASED = new Float64Array(1);
+
 const SLOT_FREE = 0;
 const SLOT_LIVE = 1;
 const SLOT_CLAIMING = 2;
@@ -477,19 +480,24 @@ export class Tween {
       from = range.start;
       to = range.end;
     }
+    const durations = this.duration;
+    const elapsedMs = this.elapsed;
+    const eases = this.ease;
     let n = 0;
     for (let i = from; i < to; i++) {
       if (active[i] !== SLOT_LIVE) continue;
       n++;
-      const dur = this.duration[i];
-      const elapsed = this.elapsed[i] + step;
-      this.elapsed[i] = elapsed;
+      const dur = durations[i];
+      const elapsed = elapsedMs[i] + step;
+      elapsedMs[i] = elapsed;
       if (elapsed < 0) continue; // still in its delay
-      let t = dur > 0 ? elapsed / dur : 1;
-      if (t < 1) {
-        this._apply(i, applyParticleEase(t, this.ease[i]));
+      // E-143: the eased value goes to _apply through EASED, not as an argument (too big to inline, it boxed one).
+      if (dur > 0 && elapsed < dur) {
+        EASED[0] = applyParticleEase(elapsed / dur, eases[i]);
+        this._apply(i);
       } else {
-        this._apply(i, applyParticleEase(1, this.ease[i]));
+        EASED[0] = applyParticleEase(1, eases[i]);
+        this._apply(i);
         this._cycleEnd(i, elapsed - dur);
       }
     }
@@ -529,7 +537,9 @@ export class Tween {
     this.tintTo[slot] = v;
   }
 
-  static _apply(slot, eased) {
+  /** Write slot's tween at the eased progress in EASED[0]. */
+  static _apply(slot) {
+    const eased = EASED[0];
     const kind = this.kind[slot];
     const mask = this.mask[slot];
     const ent = this.entity[slot];
