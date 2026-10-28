@@ -8241,7 +8241,7 @@
       "date": "2026-10-26",
       "area": "physics",
       "kind": "wasm",
-      "rank": 6,
+      "rank": 5,
       "result": "Step 0 (threadCpuProbe): bunnyMarkStressScene with physics and no bodies, the whole renderer 73 ms/s, no thread over 800; ballsHeavy four threads at 513-643 ms/s doing work. Left: the clock reads while solver threads wait (9 % of each thread in a profile that counts waits).",
       "next": "A names build of Box2D (--profiling-funcs, not shipped) to see who reads the clock: the scheduler spin or the step profiler; then the spin variants on ballsHeavyStressScene."
     },
@@ -8365,18 +8365,18 @@
         "EXECUTION_PLAN.md#E-143"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-0668"
       ],
       "id": "E-143",
       "title": "Tweens",
-      "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "status": "kept",
+      "statusText": "kept 2026-10-28 (Wave 7)",
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 4,
-      "result": "Wave 7 sweep (R-0645): the tween tick is 49 % and _apply 35 % of tweenStressScene's logic (159 ms/s).",
-      "next": "Read the per-tween work, then JavaScript tuning or a kernel over the tween slots (typed arrays already)."
+      "result": "kept (14d40f19): the eased value through a module Float64Array (a boxed argument per tween per frame before). Kernel 755 → 865 ops/s, no allocation in tick; tweenStressScene?entities=131072 logic 3.641 → 3.107 ms (−14.2 %, worse 0/4).",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -8393,7 +8393,7 @@
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
-      "rank": 5,
+      "rank": 4,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "A design note first (batch layout, sort, shadows, custom layers), then a prototype on adobeAnimateScene."
     },
@@ -14642,6 +14642,17 @@
       "text": "`neighborAccessMicrobench` (five classes, 2 000 entities, 12 neighbours each, each class's own tick loop, three runs):\n- the shipped accessors, `this.neighborCount` and `this.getNeighbor(k)`: 3.8 to 4.0 ns a neighbour read;\n- the entity's row of the neighbour memory read in a local loop (`Grid._neighborData` from `_neighborOffset`, the engine's private fields): 2.35 to 2.46 ns, −39 %;\n- a public `this.neighborIds` returning the entity's cached view of that row (`_neighborView()`), tried and not committed: 5.3 ns, slower than the accessors (a view per entity behind a field that starts as null).\n\nThe accessors are already two typed-array reads; what costs is the call on receivers of many classes, which the engine cannot take out of them. The one faster form needs the private fields, so there is no engine change that pays: screened. Game code that walks neighbours in a hot loop gains about 1.5 ns a read by hoisting `this.neighborCount` out of its loop condition.\n",
       "commits": [
         "d47d900b"
+      ]
+    },
+    {
+      "id": "R-0668",
+      "date": "2026-10-28",
+      "title": "E-143 kept: the tween tick stops boxing the eased value (logic −14.2 %)",
+      "verdict": "kept",
+      "text": "Tween.tick passed the eased progress to _apply, too big to inline, so it was boxed: one heap number per live tween per frame. It now goes through a module Float64Array (EASED), and the tick reads duration, elapsed and ease into locals.\n\n**Kernel** (tweenPoolMicrobench, 65 535 alpha tweens): 755 → 865 ops/s (+14.6 %). heapSampleNode: Tween.tick allocated 29.8 MB of a 0.2 s run before (the run total 50.7 MB), nothing after (17.9 MB in all, setup and module loading).\n\n**Owner** (tweenStressScene, which took ?entities= for this, 413110a1; 131 072 entities and tweens, one logic worker, 4 pairs from worktrees): logic 3.641 → 3.107 ms (−14.2 %, worse 0/4, cv 1/1 %). The other workers are under the 3 ms floor. **Kept.**",
+      "commits": [
+        "413110a1",
+        "14d40f19"
       ]
     }
   ],
