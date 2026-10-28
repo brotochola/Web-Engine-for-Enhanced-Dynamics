@@ -258,6 +258,11 @@
   };
 
   let heapHighWaterKb = 0;
+  // HEAP_USED_KB is mallinfo, which walks every chunk of the heap under its lock: read every HEAP_READ_STEPS
+  // steps (about a second), the last figure kept in between (N-71). The memory panel is its only reader.
+  const HEAP_READ_STEPS = 60;
+  let heapUsedKb = 0;
+  let stepsUntilHeapRead = 0;
   let weedjsHeapBytesUsed = null;
   let weedjsMemoryPeakBytes = null;
   // 90 % of Box2D's memory, in KB (0 = unknown): past it, one warning to raise physics.wasmMemoryMB.
@@ -2553,9 +2558,12 @@
       statsF32[PS.AWAKE_COUNT] = 0;
     }
     if (typeof weedjsHeapBytesUsed === 'function') {
-      const usedKbEarly = ((weedjsHeapBytesUsed() | 0) / 1024) | 0;
-      if (usedKbEarly > heapHighWaterKb) heapHighWaterKb = usedKbEarly;
-      statsF32[PS.HEAP_USED_KB] = usedKbEarly;
+      if (--stepsUntilHeapRead <= 0) {
+        stepsUntilHeapRead = HEAP_READ_STEPS;
+        heapUsedKb = ((weedjsHeapBytesUsed() | 0) / 1024) | 0;
+        if (heapUsedKb > heapHighWaterKb) heapHighWaterKb = heapUsedKb;
+      }
+      statsF32[PS.HEAP_USED_KB] = heapUsedKb;
       statsF32[PS.HEAP_HIGH_WATER_KB] = heapHighWaterKb;
     } else {
       statsF32[PS.HEAP_USED_KB] = 0;
@@ -2881,6 +2889,8 @@
     memoryWarnKb = Module.HEAPF32 ? (Module.HEAPF32.buffer.byteLength / 1024) * 0.9 : 0;
     memoryWarned = false;
     heapHighWaterKb = 0;
+    heapUsedKb = 0;
+    stepsUntilHeapRead = 0;
     hostEntityCount = data.entityCount | 0;
     hostSubSteps = Math.max(1, data.subSteps | 0 || 4);
     if (data.commandSab) {
