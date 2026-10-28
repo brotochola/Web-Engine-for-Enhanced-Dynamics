@@ -2572,6 +2572,8 @@ attributes are the cost, about 7 ms each per million on ANGLE's D3D11 (one 11.6 
 texture read by `gl_InstanceID`: 6.1 ms. So WebGL's rings are RGBA32UI textures now (seven texels a record), the first
 record a uniform of each mesh; WebGPU is unchanged. GPU Galaxy WebGL at 1 048 576: 144 and 141 → 480 and 480 frames in
 8 s (18 → 60 fps); 2 and 4 million draw at 60 too.
+A layer whose rings would need a texture past the GPU's MAX_TEXTURE_SIZE keeps the instance attributes and warns
+(5696abb1); Blastforge on WebGL checked against main by screenshots.
 
 ### E-158 A GPU particle costs four vertex evaluations and two triangles
 
