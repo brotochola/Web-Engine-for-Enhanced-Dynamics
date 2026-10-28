@@ -2,6 +2,8 @@
 // removes it in destroy(). Blast choices go to BlastSettings (read by the Detonator on a logic worker); the look
 // goes straight to the field layer's uniforms.
 
+import { buildTuneSection } from './tunePanel.js';
+
 const PANEL_ID = 'blastforge-panel';
 
 const CSS = `
@@ -64,6 +66,7 @@ export function buildBlastPanel({ presets, settings, fieldLayer }) {
   );
 
   const grid = el('div', { className: 'presets' });
+  const tune = buildTuneSection({ presets, settings, buttons: grid.children });
   presets.forEach((preset, index) => {
     const strip = el('span', { className: 'strip' });
     strip.setAttribute('aria-hidden', 'true');
@@ -71,7 +74,7 @@ export function buildBlastPanel({ presets, settings, fieldLayer }) {
     const button = el('button', { type: 'button', className: 'preset' }, [el('span', { textContent: preset.name }), strip]);
     button.setAttribute('aria-pressed', String(index === settings.preset[0]));
     button.addEventListener('click', () => {
-      settings.preset[0] = index; // the Detonator recolors the field layer and sets the preset off once
+      tune.select(index); // its tuning, then the index: the Detonator recolors the field layer and sets it off once
       for (const other of grid.children) other.setAttribute('aria-pressed', String(other === button));
     });
     grid.append(button);
@@ -98,15 +101,19 @@ export function buildBlastPanel({ presets, settings, fieldLayer }) {
 
   slider('Blast size', 0.25, 2, 0.05, 1, (v) => (settings.size[0] = v), (v) => '×' + v.toFixed(2));
   slider('Particle amount', 0.25, 3, 0.25, 1, (v) => (settings.amount[0] = v), (v) => '×' + v);
+  panel.append(tune.speed);
   slider('Wind', -60, 60, 1, 0, (v) => (settings.wind[0] = v), (v) => (v === 0 ? 'calm' : (v < 0 ? '← ' : '→ ') + Math.abs(v)));
   slider('Dither', 0, 1, 0.05, 0.6, (v) => fieldLayer.setUniform('uDither', v), (v) => Math.round(v * 100) + '%');
   check('Dark outline on smoke', true, (on) => fieldLayer.setUniform('uOutline', on));
   check('Auto-detonate', false, (on) => (settings.autoDetonate[0] = on));
   check('Show the raw field', false, (on) => fieldLayer.setUniform('uShowField', on));
 
+  panel.append(tune.tune);
+
   document.head.append(style);
   document.body.append(panel);
   return () => {
+    tune.remove();
     panel.remove();
     style.remove();
   };

@@ -14,6 +14,7 @@
 import WEED from '/src/index.js';
 import { FIELD_LAYER, explode, explosionAssets, explosionLayers, setExplosionPalette, updateExplosions } from './explosions.js';
 import { PRESETS } from './explosionPresets.js';
+import { BlastTuning, tunedPreset } from './blastTuning.js';
 
 const { Scene, GameObject, SpriteRenderer, SharedResource, Mouse, Keyboard, Camera, Layer, LAYER_KIND } = WEED;
 
@@ -61,20 +62,31 @@ export class Detonator extends GameObject {
   static components = [];
 
   onSpawned() {
-    this.shownPreset = -1; // the preset whose palette the field layer has
+    this.shownPreset = -1; // the preset last picked in the panel
+    this.tuning = -1; // the BlastTuning generation this.preset was built from
+    this.preset = PRESET_LIST[0]; // the picked preset, as tuned in the panel
+    this.palette = null; // the palette the field layer has
     this.untilAutoBlastMs = 0;
   }
 
   tick(dtRatio, deltaTime) {
     const presetIndex = BlastSettings.preset[0];
-    const preset = PRESET_LIST[presetIndex] ?? PRESET_LIST[0];
-
-    // A newly picked preset recolors the field layer and goes off once in the middle of the view.
-    if (presetIndex !== this.shownPreset) {
-      this.shownPreset = presetIndex;
-      setExplosionPalette(preset.palette);
-      this.detonate(preset, Camera.centerX, Camera.centerY);
+    const generation = Atomics.load(BlastTuning.generation, 0);
+    if (presetIndex !== this.shownPreset || generation !== this.tuning) {
+      // The preset as tuned in the panel: rebuilt when the panel writes, never per blast.
+      this.tuning = generation;
+      this.preset = tunedPreset(presetIndex, PRESET_LIST[presetIndex] ?? PRESET_LIST[0]);
+      if (this.preset.palette !== this.palette) {
+        this.palette = this.preset.palette;
+        setExplosionPalette(this.palette);
+      }
+      // A newly picked preset goes off once in the middle of the view.
+      if (presetIndex !== this.shownPreset) {
+        this.shownPreset = presetIndex;
+        this.detonate(this.preset, Camera.centerX, Camera.centerY);
+      }
     }
+    const preset = this.preset;
 
     if (Mouse.isButton0Pressed) this.detonate(preset, Mouse.x, Mouse.y);
     if (Keyboard.isPressed('space')) {
@@ -135,7 +147,10 @@ export class BlastforgeScene extends Scene {
     [Prop, 220],
   ];
 
-  static sharedResources = [[BlastSettings, BlastSettings.schema]];
+  static sharedResources = [
+    [BlastSettings, BlastSettings.schema],
+    [BlastTuning, BlastTuning.schema],
+  ];
 
   static assets = {
     textures: {
