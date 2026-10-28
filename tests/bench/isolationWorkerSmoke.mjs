@@ -13,7 +13,8 @@
  * Servers: `plain` sends no isolation headers (GitHub Pages, `npx serve`) and serves the worker's
  * source at /weed-sw.js; `isolated` sends them (a host set up as DEPLOY.md says); `second` is
  * another origin without them, for the embedding case. The page is tests/bench/isolation/
- * isolationSmoke.html (the engine from source, orientedBoxScene). Each case gets a fresh browser
+ * isolationSmoke.html (the engine from source, orientedBoxScene). 'audio' also checks the engine's mixer and posts
+ * a SharedArrayBuffer to a worklet. Each case gets a fresh browser
  * context, so no service worker carries over unless the case says so. Exit code 1 on any failure.
  */
 import fs from 'node:fs';
@@ -267,7 +268,8 @@ if (value('--browser') === 'firefox') {
 const plain = await createStaticBenchmarkServer(repoRoot, 0, { isolationHeaders: false, files: SW_FILES });
 const isolated = await createStaticBenchmarkServer(repoRoot, 0, { files: SW_FILES });
 const second = await createStaticBenchmarkServer(repoRoot, 0, { isolationHeaders: false });
-const launchArgs = headed ? [] : ['--enable-unsafe-swiftshader'];
+// No user gesture in a test: the autoplay policy would keep the audio context suspended.
+const launchArgs = ['--autoplay-policy=no-user-gesture-required', ...(headed ? [] : ['--enable-unsafe-swiftshader'])];
 const browser = await chromium.launch({ channel: 'chrome', headless: !headed, args: launchArgs });
 
 try {
@@ -352,6 +354,49 @@ try {
     const s = await settle(frame);
     const seen = await inspect(frame());
     expectReason({ ...s, ...seen, loads: p.loads.frame }, /embedded in a page/, checks, 2);
+    await p.context.close();
+  });
+
+  await runCase('audio', async (checks) => {
+    // Isolated through the worker (a first visit), the engine's mixer is up, and a worklet loaded by URL as the
+    // mixer is gets a SharedArrayBuffer posted to it (tests/bench/isolation/sabProbeProcessor.js).
+    const p = await newPage(browser);
+    const r = await visit(p, at(plain));
+    expectRunning(r, 2, checks);
+    const audio = await p.page.evaluate(async () => {
+      const SM = window.__smoke.game && (await import('/src/index.js')).default.SoundManager;
+      const engine = { node: !!SM?._workletNode, sab: !!SM?._sab, state: SM?._audioCtx?.state ?? null };
+      const ctx = new AudioContext();
+      await ctx.audioWorklet.addModule('/tests/bench/isolation/sabProbeProcessor.js');
+      const node = new AudioWorkletNode(ctx, 'weed-sab-probe');
+      const sab = new SharedArrayBuffer(4);
+      new Int32Array(sab)[0] = 42;
+      const reply = await new Promise((resolve) => {
+        node.port.onmessage = (e) => resolve(e.data);
+        node.port.postMessage(sab);
+        setTimeout(() => resolve({ timeout: true }), 5000);
+      });
+      await ctx.close();
+      return { engine, reply };
+    });
+    checks.push(['engine mixer node', audio.engine.node && audio.engine.sab, JSON.stringify(audio.engine)]);
+    checks.push(['worklet got the SharedArrayBuffer', audio.reply.shared === true && audio.reply.value === 42, JSON.stringify(audio.reply)]);
+    await p.context.close();
+  });
+
+  await runCase('allowed-frame', async (checks) => {
+    // An isolated portal (real headers) embedding the game from a host without them, isolation allowed: a known limit.
+    // The portal's COEP refuses a cross-origin document whose response lacks CORP and COEP, and that first response
+    // comes before weed-sw.js can be installed there (nor would a worker from a direct visit reach a third-party frame).
+    const p = await newPage(browser);
+    const blocked = [];
+    p.page.on('requestfailed', (r) => {
+      if (r.url().includes(SMOKE)) blocked.push(r.failure()?.errorText || '');
+    });
+    const src = encodeURIComponent(at(plain));
+    await p.page.goto(`http://127.0.0.1:${isolated.port}/tests/bench/isolation/frame.html?allow=cross-origin-isolated&src=${src}`);
+    await sleep(3000);
+    checks.push(['the frame is refused (a known limit)', blocked.some((e) => /BLOCKED_BY_RESPONSE/.test(e)), JSON.stringify(blocked)]);
     await p.context.close();
   });
 
