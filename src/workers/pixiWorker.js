@@ -5562,6 +5562,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (cl.displaySprite) cl.displaySprite.texture = PIXI.Texture.EMPTY;
     this._unbindLookShaderTexture(cl.shader);
+    // A sorted layer's regions sample rtOut too. Releasing rtOut's bind groups would destroy theirs, and the next
+    // setTexture would write into the destroyed group: off it first, onto the new rtOut below.
+    const regions = this._proxyLayers[cl.layerId]?.regions ?? null;
+    if (regions !== null) regions.setTexture(PIXI.Texture.EMPTY);
 
     if (cl.rt) {
       this._releaseTextureBindGroups(cl.rt);
@@ -5573,6 +5577,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       cl.rtOut.destroy(true);
       cl.rtOut = PIXI.RenderTexture.create({ width: lw, height: lh });
     }
+    if (regions !== null && cl.rtOut) regions.setTexture(cl.rtOut);
 
     if (cl.shader) {
       const lookTex = Layer.customLayerLookTexture(cl);

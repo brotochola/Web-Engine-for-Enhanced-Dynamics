@@ -8,13 +8,13 @@ import { GpuParticles } from '../../src/core/gpuParticles.js';
 import { Layer } from '../../src/core/layer.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { CLOCK_BYTES, Time } from '../../src/core/timeScale.js';
-import { DECORATION_Y_SORT_SCALE, LAYER_KIND } from '../../src/util/configDefaults.js';
+import { DECORATION_Y_SORT_SCALE, LAYER_KIND, LAYER_SCALE_MODE } from '../../src/util/configDefaults.js';
 import { orderSortKey, spriteYSortKey, zSortBand } from '../../src/util/sortIndexByKey.js';
 import { seededRandom } from '../../src/util/utils.js';
 import { PROXY, PROXY_KIND, ProxyCollector, localProxyHalf } from '../../src/render/gpuParticleProxies.js';
 import { EntityChunks, RegionQuads } from '../../src/render/gpuParticleChunks.js';
 import { GpuParticleLayerBatch } from '../../src/render/gpuParticleBatch.js';
-import { Container, Matrix, Texture } from '../../src/vendor/pixi.min.js';
+import { Container, Matrix, RenderTexture, Texture } from '../../src/vendor/pixi.min.js';
 
 // The Pixi worker's side of the y-sort proxies: the entries of the frame it draws put the groups' meshes between
 // chunks of the entities batch under the entities root, a hidden layer's groups are left out, and the layers go
@@ -247,5 +247,40 @@ test('a look layer\'s region blends as its full-screen composite, and samples wh
   } finally {
     regions.destroy();
     restore();
+  }
+});
+
+test('a resize moves a look layer\'s regions onto its new look target, with their bind group alive', { concurrency: false }, () => {
+  const layerId = 3;
+  const rtOut = RenderTexture.create({ width: 64, height: 32 });
+  const regions = new RegionQuads({
+    useWebGpu: true,
+    shaders: { gpuRegion: REGION_WGSL },
+    texture: rtOut,
+    blendMode: 'normal',
+  });
+  const cl = { layerId, resolution: 0.5, rt: null, rtOut, shader: null, displaySprite: null, scaleMode: LAYER_SCALE_MODE.NEAREST };
+  // The real resize path, as a canvas resize or a Layer.resolution change runs it; no renderer, so no texture hash.
+  const ctx = {
+    _proxyLayers: [],
+    pixiApp: null,
+    _unbindLookShaderTexture: Pixi._unbindLookShaderTexture,
+    _releaseTextureBindGroups: Pixi._releaseTextureBindGroups,
+    _applyCustomLayerScaleMode: Pixi._applyCustomLayerScaleMode,
+    _setRtScaleMode: Pixi._setRtScaleMode,
+  };
+  ctx._proxyLayers[layerId] = { layerId, cl, regions };
+  try {
+    Pixi._resizeCustomLayerRTs.call(ctx, cl, 200, 100);
+    assert.notEqual(cl.rtOut, rtOut);
+    assert.equal(cl.rtOut.width, 100, 'the canvas at the layer\'s resolution');
+    assert.equal(regions.source, cl.rtOut.source, 'the regions sample the new target');
+    const holder = Object.values(regions.shader.groups).find(
+      (group) => group.resources && Object.values(group.resources).includes(cl.rtOut.source)
+    );
+    assert.ok(holder, 'their bind group holds it: releasing the old target did not destroy it');
+  } finally {
+    regions.destroy();
+    cl.rtOut.destroy(true);
   }
 });
