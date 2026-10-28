@@ -2262,6 +2262,9 @@ already two-line typed-array reads, so the cost is the call itself: the receiver
 
 Kernel first.
 
+**Screened 2026-10-28.** `neighborAccessMicrobench`: the accessors 3.9 ns a read, the row read with the private fields 2.4 ns,
+a public cached view (`neighborIds`) 5.3 ns. No engine change beats the accessors.
+
 ### E-142 `getTileId` divides twice per call
 
 **Speed.** `getTileId` is 82 % of tilemapStressScene's logic (469 ms/s; that scene calls it at a fixed rate). It
@@ -2279,6 +2282,10 @@ shipped call is 2.44 ns, the reciprocal 2.6 ns, and the reciprocal reads one til
 
 The tween `tick` (49 %) and `_apply` (35 %) take tweenStressScene's logic (159 ms/s). Read the per-tween work first,
 then decide between JavaScript tuning and a kernel over the tween slots: the tween slots are typed arrays already.
+
+**Kept 2026-10-28 (14d40f19).** The tick handed `_apply` the eased value as an argument, boxed since `_apply` is not inlined: one
+heap number per live tween per frame. Through a module `Float64Array` instead: `tweenPoolMicrobench` +14.6 %, no allocation in the
+tick; tweenStressScene?entities=131072 logic 3.641 → 3.107 ms (−14.2 %, worse 0/4).
 
 ### E-146 The FSM tick and the collision-callback dispatch
 
