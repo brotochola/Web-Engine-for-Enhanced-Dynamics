@@ -8276,18 +8276,18 @@
       "records": [
         "R-0645",
         "R-0669",
-        "R-0672"
+        "R-0672",
+        "R-0680"
       ],
       "id": "E-140",
       "title": "The logic loop's own cost per ticked entity",
-      "status": "open",
-      "statusText": "first change kept 2026-10-28 (the per-entity counters); the bucket loop itself still open",
+      "status": "kept",
+      "statusText": "kept 2026-10-28: the per-entity counters, and the acceleration resets for types without a RigidBody",
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 1,
-      "result": "Kept (e5b2f5d8): the tick paths stop writing the frame's counters on `this` per entity. minimalTickScene?props=130000 (2259287c): logic 4.654 → 4.271 ms (−8.7 %, worse 1/4). Sweep (R-0645): _tickIntervalBucket 89 % of painterSort's logic, 7–8 % of Predator's; _tickNonDecimatedOne 37 % of painterMove's.",
-      "next": "The bucket loop's 17 parameters and the forced-scan branch; how much self time is inlined game code (--trace-turbo-inlining); minimalTickIntervalScene."
+      "result": "Kept: the tick paths stop writing the frame's counters per entity (e5b2f5d8; minimalTick?props=130000 logic 4.654 → 4.271 ms, −8.7 %); types without a RigidBody tick through loops without the acceleration resets (03980fb2; 4.088 → 3.382 ms, −18.0 %; the bucket scene 2.683 → 2.130, below the floor). Predator gates passed.",
+      "next": "Hygiene only: the bucket's forced-scan loop never runs (its caller sends no forced type there)."
     },
     {
       "aliases": [],
@@ -14778,6 +14778,16 @@
       "text": "The last leads of the 2026-10-23 heap pass. `syncParticleFeed` (0.1–0.2 MB/s then) walked the changed bits through two closures a call; E-149 wrote the walks out (a2398952, PR #5), so it is gone. `_emscripten_get_now` in the Box2D threads is E-144's: its readers are `sched_yield` in the solver's waits, off the critical path, and yielding less was NEUTRAL in time (R-0675). Pixi's vendored `bind` (90 KB/s in Predator after c8c3fc6a) is Pixi's own per-draw code once E-148 took its `for…in` out. With `updateLighting` done (R-0671) and the instance-field rule written (fed06cbc), nothing of the pass is open.",
       "commits": [
         "a2398952"
+      ]
+    },
+    {
+      "id": "R-0680",
+      "date": "2026-10-28",
+      "title": "E-140: types without a RigidBody skip the acceleration resets, minimalTick logic −18.0 %",
+      "verdict": "kept",
+      "text": "Every tick path reset the entity's three accelerations (`RigidBody.ax`, `ay`, `angularAccel`: physics applies them each step until the next tick), whether or not its type has a RigidBody. RigidBody's arrays exist for every entity (a core component), so the stores were in bounds, and wasted for every type without a body.\n\n**The upper bound first** (a throwaway commit that dropped the three stores in the every-frame path, never merged): minimalTickScene?props=130000 (its props have no RigidBody), 4 pairs: logic 4.138 → 3.202 ms (−22.4 %, worse 0/4). Far more than three stores should cost; worth the copies.\n\n**The change**: a type without a RigidBody takes its own copies, chosen once per type so no branch enters the loops (the hot-loop rule): `_tickNonDecimatedTypeNoBody` (update()'s two loops, forced and block range) with `_tickNonDecimatedOneNoBody`, and `_tickBucketNoBody` for the tickInterval buckets. Types with a body run exactly the code they ran. tests/node/tickNoBody.test.js: both kinds tick every entity, in both paths; the accelerations reset only with a body (the old code fails it).\n\n**minimalTickScene?props=130000** (4 pairs from worktrees, the parent against the change): logic **4.088 → 3.382 ms (−18.0 %, worse 0/4, cv 6/4 %)**; spatial −2.4 %. **minimalTickIntervalBucketScene** (160 000 props, tickInterval 4, the bucket path): logic 2.683 → 2.130 ms (−20.6 %), below the 3 ms floor, not judged; spatial −2.2 %. **Kept.** Predator gate (4 pairs, 9ed173d0 against the change): NEUTRAL, logic 3.705 → 3.760 ms (+0.8 %, worse 2/4); physics +6.1 % but worse in 2 of 4 pairs, and it cannot be reached (the stores left out belong to entities without a Box2D body): noise, within Predator's 8–13 % per worker. Passed.",
+      "commits": [
+        "03980fb2"
       ]
     }
   ],
