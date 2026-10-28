@@ -87,22 +87,22 @@
     {
       "id": "E-109",
       "title": "Leads from the 2026-10-23 heap pass",
-      "status": "open",
-      "statusText": "open",
+      "status": "answered",
+      "statusText": "answered 2026-10-28: every lead done or owned elsewhere",
       "date": "2026-10-23",
-      "result": "updateLighting done (c8c3fc6a): Predator Pixi 443.2 → 342 KB/s, updateLighting 93.7 KB/s → not listed. Instance fields: a rule in bible_of_weed_js.md (fed06cbc). Left: Pixi vendored WebGL bind (0.5–0.7 MB/s), _emscripten_get_now (0.2–0.3 MB/s, E-144), syncParticleFeed (0.1–0.2 MB/s).",
+      "result": "Instance fields: a rule in bible_of_weed_js.md (fed06cbc). updateLighting: texels written in place (c8c3fc6a; Predator Pixi 443.2 → 342 KB/s). syncParticleFeed: no closures since E-149 (a2398952). The Box2D clock: E-144 (answered). Pixi's vendored bind: Pixi's code (E-148 took its for…in out).",
       "area": "engine",
       "kind": "js",
       "refs": [
         "EXECUTION_PLAN.md#E-109"
       ],
       "aliases": [],
-      "next": "syncParticleFeed; the Box2D clock goes with E-144; Pixi's bind is Pixi's code.",
-      "rank": 18,
+      "next": "Nothing pending.",
       "records": [
         "R-0512",
         "R-0671",
-        "R-0672"
+        "R-0672",
+        "R-0679"
       ]
     },
     {
@@ -14768,6 +14768,16 @@
       "text": "Screened in the WebGL kernel (`webglParticleUploadKernel`, `tri` and `heavy`, 6749b471; headed, GTX 1650, ANGLE D3D11), 4 194 304 records read from the record texture as the engine now does (E-157), 2 rounds, the synchronous frame time per round:\n\n| draw | light vertex | `heavy` vertex (six eases, a rotation, a drag curve) |\n| --- | --- | --- |\n| a quad: 4 vertices, 2 triangles (the engine) | 12.4 / 7.3 ms | 12.9 / 7.8 ms |\n| one triangle around the quad, 3 vertices, outside discarded | 13.0 / 8.0 ms | 13.3 / 8.4 ms |\n\nAll at 60 fps. The rounds differ by 5 ms (the GPU's clocks), but inside each round the triangle is slower than the quad, and the engine's kind of vertex work adds about 0.5 ms at 4 million. So the per-vertex evaluation is not what a GPU particle costs: one evaluation per particle (a WebGPU compute pass) would save a fraction of 0.5 ms, and the single triangle loses on its larger raster. What grows with the count is the record fetch and the raster of tiny quads. **Screened.** Since E-157 both backends draw 4 million at 60 fps on this GPU.",
       "commits": [
         "6749b471"
+      ]
+    },
+    {
+      "id": "R-0679",
+      "date": "2026-10-28",
+      "title": "E-109 closed: syncParticleFeed was fixed by E-149, the clock is E-144's, Pixi's bind is Pixi's",
+      "verdict": "answered",
+      "text": "The last leads of the 2026-10-23 heap pass. `syncParticleFeed` (0.1–0.2 MB/s then) walked the changed bits through two closures a call; E-149 wrote the walks out (a2398952, PR #5), so it is gone. `_emscripten_get_now` in the Box2D threads is E-144's: its readers are `sched_yield` in the solver's waits, off the critical path, and yielding less was NEUTRAL in time (R-0675). Pixi's vendored `bind` (90 KB/s in Predator after c8c3fc6a) is Pixi's own per-draw code once E-148 took its `for…in` out. With `updateLighting` done (R-0671) and the instance-field rule written (fed06cbc), nothing of the pass is open.",
+      "commits": [
+        "a2398952"
       ]
     }
   ],
