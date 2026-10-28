@@ -2257,8 +2257,13 @@ The ceiling depends on how much of that self time is the loop rather than inline
 **First change kept 2026-10-28 (e5b2f5d8).** Every path wrote the frame's counters on `this` per ticked entity
 (`entitiesProcessedThisFrame++`, and the two detailed-stats timers reset). The count is added once from what the paths
 return, the timers only with detailed stats on. minimalTickScene?props=130000 (the knob, 2259287c: 60 000 props put logic
-at 1.8 ms): logic 4.654 → 4.271 ms (−8.7 %, worse 1/4, the worse pair one baseline side at 3.06 ms). The 17-parameter
-bucket loop and the forced-scan branch are still to read.
+at 1.8 ms): logic 4.654 → 4.271 ms (−8.7 %, worse 1/4, the worse pair one baseline side at 3.06 ms).
+
+**Second change kept 2026-10-28 (03980fb2).** Every tick path reset the three accelerations whether or not the type has
+a RigidBody. Types without one take their own copies of the every-frame loops and of the bucket loop, chosen once per
+type. minimalTickScene?props=130000: logic 4.088 → 3.382 ms (−18.0 %, worse 0/4); minimalTickIntervalBucketScene
+2.683 → 2.130 ms (−20.6 %, below the floor); Predator NEUTRAL. What is left is hygiene: the bucket's forced-scan loop
+never runs (its caller sends no forced type there).
 
 ### E-141 Neighbour accessors called from game code
 
