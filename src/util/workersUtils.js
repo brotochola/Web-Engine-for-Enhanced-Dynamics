@@ -239,6 +239,10 @@ export const SPATIAL_STATS = Object.freeze({
   IDLE_MS: 12,
   /** 1 when the frame's grid was rewritten for the bodies that moved, 0 when it was rebuilt (E-126). */
   GRID_MOVERS: 13,
+  /** Neighbour lists searched again this frame (the gather's rows). See E-147. */
+  NEIGHBORS_REBUILT: 14,
+  /** Neighbour lists published this frame: the rebuilt ones and the ones kept within the skin. See E-147. */
+  NEIGHBORS_PUBLISHED: 15,
   STRIDE_FLOATS: 16,
   BUFFER_SIZE_PER_WORKER: 16 * 4,
 });

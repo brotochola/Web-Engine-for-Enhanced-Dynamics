@@ -156,6 +156,8 @@ class SpatialWorker extends AbstractWorker {
     this.rebuildTimeThisFrame = 0;
     this.neighborSearchTimeThisFrame = 0;
     this.neighborsReusedThisFrame = 0;
+    this.neighborsRebuiltThisFrame = 0;
+    this.neighborsPublishedThisFrame = 0;
     this.sleepNeighborSkipsThisFrame = 0;
 
     /** Fraction of visualRange (0 = off). */
@@ -400,6 +402,8 @@ class SpatialWorker extends AbstractWorker {
     this.rebuildTimeThisFrame = 0;
     this.neighborSearchTimeThisFrame = 0;
     this.neighborsReusedThisFrame = 0;
+    this.neighborsRebuiltThisFrame = 0;
+    this.neighborsPublishedThisFrame = 0;
     this.sleepNeighborSkipsThisFrame = 0;
 
     // STEP 1: Rebuild grid (only owned rows), or rewrite it for what changed (E-126)
@@ -1300,6 +1304,7 @@ class SpatialWorker extends AbstractWorker {
       }
     }
 
+    this.neighborsRebuiltThisFrame += rebuilds;
     if (rebuilds) {
       const meta = this._wasmMeta;
       // The same results in any order; in cell order the cells each entity walks are still in cache.
@@ -1352,6 +1357,7 @@ class SpatialWorker extends AbstractWorker {
     if (this._wasmPub && this._wasmPub.queued) {
       const n = this._wasmPub.queued;
       this._wasmPub.queued = 0;
+      this.neighborsPublishedThisFrame += n;
       const meta = this._wasmMeta;
       this._wasmPub.publish(
         n,
@@ -1401,6 +1407,8 @@ class SpatialWorker extends AbstractWorker {
     this.stats[SPATIAL_STATS.NEIGHBORS_REUSED] = this.neighborsReusedThisFrame;
     this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
     this.stats[SPATIAL_STATS.GRID_MOVERS] = this._gridMoversThisFrame;
+    this.stats[SPATIAL_STATS.NEIGHBORS_REBUILT] = this.neighborsRebuiltThisFrame;
+    this.stats[SPATIAL_STATS.NEIGHBORS_PUBLISHED] = this.neighborsPublishedThisFrame;
     if (!this.collectDetailedStats) return;
     this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
     this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;
