@@ -8241,7 +8241,7 @@
       "date": "2026-10-26",
       "area": "physics",
       "kind": "wasm",
-      "rank": 7,
+      "rank": 6,
       "result": "Step 0 (threadCpuProbe): bunnyMarkStressScene with physics and no bodies, the whole renderer 73 ms/s, no thread over 800; ballsHeavy four threads at 513-643 ms/s doing work. Left: the clock reads while solver threads wait (9 % of each thread in a profile that counts waits).",
       "next": "A names build of Box2D (--profiling-funcs, not shipped) to see who reads the clock: the scheduler spin or the step profiler; then the spin variants on ballsHeavyStressScene."
     },
@@ -8289,18 +8289,18 @@
         "EXECUTION_PLAN.md#E-141"
       ],
       "records": [
-        "R-0645"
+        "R-0645",
+        "R-0667"
       ],
       "id": "E-141",
       "title": "Neighbour accessors called from game code",
-      "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "status": "screened",
+      "statusText": "screened 2026-10-28 (Wave 7): no engine change pays",
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 2,
-      "result": "Wave 7 sweep (R-0645): neighborCount and getNeighbor are 7-8 % each of Predator's logic and 5-7 % of littleCity's and Boids'. Both are two-line typed-array reads, so the cost is the call on receivers of every entity class (a polymorphic load of _neighborOffset).",
-      "next": "A kernel first. Candidates: _neighborOffset at the same place in every instance, a per-index offset table on Grid, a documented call-free path (getAllNeighborIds and a local loop) in the guide."
+      "result": "neighborAccessMicrobench: accessors 3.9 ns a read, the row read with private fields 2.4 ns, a public cached view 5.3 ns (slower). Nothing to change in the engine.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -8336,7 +8336,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 3,
+      "rank": 2,
       "result": "Wave 7 sweep (R-0645): fsm.js tick is 7 % of Predator's logic; _processBox2dCollisionCallbacks is 58 % of waterAndBoxesScene's logic and 5-7 % of Predator's, as the engine function's own self time.",
       "next": "Read the per-state and per-event costs. W18's verdict (game callbacks, and E-131's Atomics.load) came from another scene."
     },
@@ -8355,7 +8355,7 @@
       "date": "2026-10-26",
       "area": "spatial",
       "kind": "wasm",
-      "rank": 4,
+      "rank": 3,
       "result": "Wave 7 sweep (R-0645): gather_batch 1 599 ms/s and publish_batch 1 447 summed over 18 scenes (Boids gather 44 %, orientedBox 76 %; movedBodiesMixed publish 46 %; stationarySpatialWide publish_u32 61 %). Both wait on memory: the gather's float32 variants lost in Node (R-0571), the publish's f32x4 tied double (W8a).",
       "next": "Rows rebuilt and republished per frame in each scene against the reuse skin; the Chrome entry for the gather's float32 variants; then W7 and E-136."
     },
@@ -8374,7 +8374,7 @@
       "date": "2026-10-26",
       "area": "logic",
       "kind": "js",
-      "rank": 5,
+      "rank": 4,
       "result": "Wave 7 sweep (R-0645): the tween tick is 49 % and _apply 35 % of tweenStressScene's logic (159 ms/s).",
       "next": "Read the per-tween work, then JavaScript tuning or a kernel over the tween slots (typed arrays already)."
     },
@@ -8393,7 +8393,7 @@
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
-      "rank": 6,
+      "rank": 5,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "A design note first (batch layout, sort, shadows, custom layers), then a prototype on adobeAnimateScene."
     },
@@ -14632,6 +14632,16 @@
       "commits": [
         "02d5b0c3",
         "9fa90154"
+      ]
+    },
+    {
+      "id": "R-0667",
+      "date": "2026-10-28",
+      "title": "E-141 screened: the neighbour accessors cost 1.5 ns a read over the row, and no public form beats them",
+      "verdict": "screened",
+      "text": "`neighborAccessMicrobench` (five classes, 2 000 entities, 12 neighbours each, each class's own tick loop, three runs):\n- the shipped accessors, `this.neighborCount` and `this.getNeighbor(k)`: 3.8 to 4.0 ns a neighbour read;\n- the entity's row of the neighbour memory read in a local loop (`Grid._neighborData` from `_neighborOffset`, the engine's private fields): 2.35 to 2.46 ns, −39 %;\n- a public `this.neighborIds` returning the entity's cached view of that row (`_neighborView()`), tried and not committed: 5.3 ns, slower than the accessors (a view per entity behind a field that starts as null).\n\nThe accessors are already two typed-array reads; what costs is the call on receivers of many classes, which the engine cannot take out of them. The one faster form needs the private fields, so there is no engine change that pays: screened. Game code that walks neighbours in a hot loop gains about 1.5 ns a read by hoisting `this.neighborCount` out of its loop condition.\n",
+      "commits": [
+        "d47d900b"
       ]
     }
   ],
