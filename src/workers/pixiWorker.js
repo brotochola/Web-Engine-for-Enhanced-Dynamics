@@ -87,7 +87,6 @@ import {
   extractRGBNormalizedMut,
   lightInfluenceRadius,
   lightDataTextureFloatCount,
-  packLightDataTexel,
   clearUnusedLightDataTexels,
   LIGHT_DATA_TEX_HEIGHT,
   stashResizeWhileHidden,
@@ -3557,8 +3556,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
     const lightHeight = LightEmitter.height;
 
-    const rgb = this._rgbResult;
-
     // E-96. Each light's umbra disc, then its visibility fan (the order the per-light meshes were
     // added to the container in, so the additive blend sums in the same sequence), into one mesh.
     let needVerts = 0;
@@ -3589,10 +3586,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const lightY = ly - (lightHeight[lightIdx] || 0);
       const intensity = lightIntensityArr[lightIdx];
       const radius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
-      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
-      const r = rgb.r;
-      const g = rgb.g;
-      const b = rgb.b;
+      const color = lightColor[lightIdx];
+      const r = ((color >> 16) & 0xff) / 255;
+      const g = ((color >> 8) & 0xff) / 255;
+      const b = (color & 0xff) / 255;
 
       // The umbra disc: a quad around the light at the umbra floor.
       const disc = vtx;
@@ -3710,7 +3707,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-    const rgb = this._rgbResult;
     const maxVerts = this._selfLitMaxFillVerts;
     const segs = this._selfLitCircleSegs;
     const fanCos = this._selfLitCircleCos;
@@ -3748,7 +3744,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const lx = Transform.x[light];
       const ly = Transform.y[light] - (lightHeight[light] || 0);
       const intensity = lightIntensityArr[light];
-      extractRGBNormalizedMut(lightColor[light], rgb);
+      const color = lightColor[light];
+      const cr = ((color >> 16) & 0xff) / 255;
+      const cg = ((color >> 8) & 0xff) / 255;
+      const cb = (color & 0xff) / 255;
       const lightR = lightInfluenceRadius(sqrtLightIntensity ? sqrtLightIntensity[light] : 0);
 
       if (vtx + lightVerts > batch.vertCap || iCount + lightIndices > batch.idxCap) {
@@ -3938,9 +3937,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
 
       // The light's terms on every vertex it wrote.
-      const r = rgb.r;
-      const g = rgb.g;
-      const b = rgb.b;
+      const r = cr;
+      const g = cg;
+      const b = cb;
       for (let v = lightBase; v < vtx; v++) {
         const o = v * SELF_LIT_BATCH_FLOATS;
         data[o + 2] = lx;
@@ -3999,7 +3998,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightIntensityArr = LightEmitter.lightIntensity;
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
-    const rgb = this._rgbResult;
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
@@ -4017,7 +4015,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const lx = Transform.x[lightIdx];
       const ly = Transform.y[lightIdx] - (lightHeight[lightIdx] || 0);
       const intensity = lightIntensityArr[lightIdx];
-      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
+      const color = lightColor[lightIdx];
+      const cr = ((color >> 16) & 0xff) / 255;
+      const cg = ((color >> 8) & 0xff) / 255;
+      const cb = (color & 0xff) / 255;
 
       // --- Sprite mask fills for this light ---
       if (this._selfLitSpriteProgramOpts) {
@@ -4114,9 +4115,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           uniforms.uLightPos[0] = lx;
           uniforms.uLightPos[1] = ly;
           uniforms.uLightIntensity = intensity;
-          uniforms.uLightColor[0] = rgb.r;
-          uniforms.uLightColor[1] = rgb.g;
-          uniforms.uLightColor[2] = rgb.b;
+          uniforms.uLightColor[0] = cr;
+          uniforms.uLightColor[1] = cg;
+          uniforms.uLightColor[2] = cb;
           const bodyCx = ox + (Collider.offsetX[entityIdx] || 0);
           const bodyCy = oy + (Collider.offsetY[entityIdx] || 0);
           uniforms.uBodyCenter[0] = bodyCx;
@@ -4354,30 +4355,28 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const visibleLights = this._visibleLightsAll;
     const countToRender = Math.min(this._visibleLightsAllCount, maxLights);
 
-    // OPTIMIZED: Reuse preallocated RGB object to avoid allocation per light
-    const rgb = this._rgbResult;
+    const rgb = this._rgbResult; // the sun's colour, once a frame
+    const vr = Collider.visualRange;
+    const row1 = maxLights * 4;
 
     for (let i = 0; i < countToRender; i++) {
       const entityIndex = visibleLights[i].entityId;
       const color = lightColor[entityIndex];
-
-      // Always use world coordinates for lights (shader converts screen to world)
-      // Apply height offset to position light above the entity
-      extractRGBNormalizedMut(color, rgb);
-      const vr = Collider.visualRange;
       const range = vr ? (vr[entityIndex] || 0) : 0;
-      packLightDataTexel(
-        lightData,
-        maxLights,
-        i,
-        worldX[entityIndex],
-        worldY[entityIndex] - (lightHeight[entityIndex] || 0),
-        lightIntensity[entityIndex],
-        rgb.r,
-        rgb.g,
-        rgb.b,
-        range * range
-      );
+
+      // packLightDataTexel's layout, written here (E-109): where TurboFan left that call out, each of its seven
+      // doubles was a heap number per light per frame. World coordinates (the shader converts screen to world),
+      // the light raised by its height.
+      const i0 = i * 4;
+      lightData[i0] = worldX[entityIndex];
+      lightData[i0 + 1] = worldY[entityIndex] - (lightHeight[entityIndex] || 0);
+      lightData[i0 + 2] = lightIntensity[entityIndex];
+      lightData[i0 + 3] = range * range;
+      const i1 = row1 + i0;
+      lightData[i1] = ((color >> 16) & 0xff) / 255;
+      lightData[i1 + 1] = ((color >> 8) & 0xff) / 255;
+      lightData[i1 + 2] = (color & 0xff) / 255;
+      lightData[i1 + 3] = 0;
     }
 
     clearUnusedLightDataTexels(lightData, maxLights, countToRender);
