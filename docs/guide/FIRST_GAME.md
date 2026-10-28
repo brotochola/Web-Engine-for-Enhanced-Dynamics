@@ -172,6 +172,8 @@ onMessage(name) {
 
 `onComplete: 'gone'` sends the coin the message `gone` when the fade ends. A despawn cancels an entity's tweens, so a recycled coin never inherits a fade.
 
+Tween props the entity's own `tick` does not write. With two or more logic workers a tween can advance on another worker than the entity's `tick`, so a prop both write ends the frame with either value; reading a tweened prop in `tick` is fine.
+
 ## 9. Slimes
 
 ```js

@@ -841,6 +841,8 @@ export declare class Tween {
   static unbind(): void;
   /**
    * Animate props of an entity over `ms`. `ms <= 0` applies the target values at once.
+   * With two or more logic workers the tween may advance on a different worker than the entity's
+   * `tick`: do not tween a prop the entity's own `tick` also writes (reading it is fine).
    * @returns the slot, or -1 (immediate, refused, pool full or nothing to animate). With
    * both xy and paint props two slots are used and the xy slot is returned when claimed.
    */
