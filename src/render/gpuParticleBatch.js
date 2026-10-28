@@ -66,6 +66,20 @@ export function gpuRecordTextureSize(capacity) {
 }
 
 /**
+ * Whether every ring of a layer fits a record texture of at most `maxSize` texels a side (the context's
+ * MAX_TEXTURE_SIZE; WebGL2 promises only 2048, and a ring of 512 records or more is 3584 wide).
+ * @param {{ capacity: number }[]} rings
+ * @param {number} maxSize
+ */
+export function gpuRecordTexturesFit(rings, maxSize) {
+  for (const ring of rings) {
+    const size = gpuRecordTextureSize(ring.capacity);
+    if (!(size.width <= maxSize && size.height <= maxSize)) return false; // no maxSize: no texture
+  }
+  return true;
+}
+
+/**
  * gpuParticle.vert.glsl reading its record from the record texture: the seven instance attributes become globals
  * the shader fills first, from the texels of record uFirstInstance + gl_InstanceID. Their bits go through
  * uintBitsToFloat, a bitcast, so the fields the shader reads back with floatBitsToUint keep every bit.
@@ -446,7 +460,8 @@ export class GpuParticleLayerBatch {
    * @param {object|null} [opts.recordTexture] WebGL: the rings' records as textures (E-157), made and filled
    *   where the GL context is: `make(bits, width, height, label)` returns a TextureSource holding `bits` (the
    *   ring's Uint32Array, RGBA32UI, already on the GPU); `upload(source, bits, width, height, y0, rows)` sends
-   *   rows [y0, y0 + rows). Without it WebGL draws from instance attributes, as WebGPU does.
+   *   rows [y0, y0 + rows); `maxSize`, the context's MAX_TEXTURE_SIZE. Without it, or when a ring would need a
+   *   larger texture, WebGL draws from instance attributes, as WebGPU does.
    */
   constructor(opts) {
     this.info = opts.info;
@@ -468,7 +483,15 @@ export class GpuParticleLayerBatch {
     /** The layer's alpha for this frame's group meshes (groupMeshes); the Pixi worker sets it each frame. */
     this.alpha = NaN;
     const shaders = opts.shaders || {};
-    const textured = !this.useWebGpu && !!opts.recordTexture;
+    let textured = !this.useWebGpu && !!opts.recordTexture;
+    if (textured && !gpuRecordTexturesFit(this.info.rings, opts.recordTexture.maxSize)) {
+      textured = false;
+      console.warn(
+        `WeedJS: GPU particle layer "${this.info.name}" draws from instance attributes: a ring of ` +
+          `${Math.max(...this.info.rings.map((r) => r.capacity))} needs a record texture past this GPU's ` +
+          `${opts.recordTexture.maxSize} texels (slower on WebGL; lower maxParticles or split the layer).`
+      );
+    }
     for (let r = 0; r < this.info.rings.length; r++) {
       const name = `${this.label}-ring${r}`;
       const resources = this._resources(opts, textured);

@@ -2036,7 +2036,10 @@ class PixiRenderer extends AbstractWorker {
    */
   _gpuRecordTexture() {
     if (this._gpuRecordTextureOps !== null) return this._gpuRecordTextureOps;
+    const gl = this.pixiApp?.renderer?.gl;
     this._gpuRecordTextureOps = {
+      // A layer whose rings need more falls back to instance attributes (gpuRecordTexturesFit).
+      maxSize: gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 0,
       make: (bits, width, height, label) => {
         const source = PIXI.TextureSource.from({
           resource: bits,

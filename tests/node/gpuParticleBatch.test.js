@@ -16,6 +16,7 @@ import {
   GpuParticleLayerBatch,
   gpuParticleTextureVertex,
   gpuRecordTextureSize,
+  gpuRecordTexturesFit,
   packAnimStartLookup,
 } from '../../src/render/gpuParticleBatch.js';
 import { installInstanceRangeDraw } from '../../src/render/instanceRangeDraw.js';
@@ -289,6 +290,7 @@ test('WebGL draws from a record texture: the rows each frame publishes go up, bo
   const made = [];
   const uploads = [];
   const recordTexture = {
+    maxSize: 16384,
     make(bits, width, height, label) {
       made.push({ bits, width, height, label });
       return new TextureSource({ width, height, label });
@@ -334,5 +336,39 @@ test('WebGL draws from a record texture: the rows each frame publishes go up, bo
     assert.equal(a.geometry.weedFirstInstance, 0, 'the range is the uniform\'s, not the geometry\'s');
   } finally {
     restore();
+  }
+});
+
+test('a layer whose rings need a texture past the GPU limit draws from instance attributes, with a warning', { concurrency: false }, () => {
+  assert.equal(gpuRecordTexturesFit([{ capacity: 2048 }], 4096), true);
+  assert.equal(gpuRecordTexturesFit([{ capacity: 2048 }], 2048), false, '3584 texels wide');
+  assert.equal(gpuRecordTexturesFit([{ capacity: 1 << 22 }], 4096), false, '8192 rows');
+  assert.equal(gpuRecordTexturesFit([{ capacity: 64 }], undefined), false, 'no limit known, no texture');
+  let made = 0;
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (m) => warnings.push(String(m));
+  let restoreLayer = null;
+  try {
+    const { draw, restore } = setup(2048 * 3, {
+      useWebGpu: false,
+      shaders: { gpuParticleVert: VERT, gpuParticleFrag: FRAG },
+      recordTexture: {
+        maxSize: 2048,
+        make() {
+          made++;
+          return new TextureSource({ width: 1, height: 1 });
+        },
+        upload() {},
+      },
+    });
+    restoreLayer = restore;
+    assert.equal(made, 0, 'no texture made');
+    assert.notEqual(draw.buffer, null, 'the instance buffer, as before');
+    assert.equal(draw.records, null);
+    assert.ok(warnings.some((m) => /draws from instance attributes/.test(m) && /2048 texels/.test(m)), warnings.join(' | '));
+  } finally {
+    console.warn = warn;
+    if (restoreLayer) restoreLayer();
   }
 });
