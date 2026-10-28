@@ -8722,6 +8722,24 @@
       "kind": "bug",
       "result": "Answered 2026-10-28, no engine change: tweens advanced by the entity's tick worker cost logic +49 % (65 535 tweens) to +79 % (150 000) in tweenStressScene ?tick=1 with two workers (+67 % with cached shares; +10 % in Chrome's kernel); the race needs a tween and a tick writing one prop, so the contract stays, now in Tween.to's declaration and the guide.",
       "next": "Nothing pending; the attempt is on branch n6-tween-owner."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-74"
+      ],
+      "records": [
+        "R-0692"
+      ],
+      "id": "N-74",
+      "title": "The engine block's place in Box2D's heap and physics on adobeAnimateScene",
+      "status": "answered",
+      "statusText": "answered 2026-10-28: not the heap (R-0692)",
+      "date": "2026-10-24",
+      "area": "physics",
+      "kind": "bug",
+      "result": "Answered 2026-10-28: one build, the Adobe tables' region 4 vs 8 MB (Box2D's world 4 MB further on), adobeAnimateScene at min zoom: physics 6.009 → 5.988 ms (+1.2 %, worse 2/4), NEUTRAL; not the heap, the +7 % is L5.",
+      "next": "Nothing pending."
     }
   ],
   "records": [
@@ -14959,6 +14977,18 @@
       "text": "N-6: with two or more logic workers, a tween is advanced by the worker whose block of slots holds it, and its entity is ticked by the worker whose share of the type's list holds it, so the two can write the same prop from two threads. The fix the item names (tweens advanced by the worker that ticks the entity) was built in three forms and measured. None shipped.\n\n**The owner scene.** `tweenStressScene ?workers=2&tick=1` (7be61a49): one alpha tween per entity, entities with an empty tick, two logic workers. It is the worst case: every tween is on a ticking entity. Sittings: 4 pairs from worktrees against 7be61a49, owner logic, detailed stats off. Logic is under the 3 ms floor at 65 535 entities, so 150 000 (32-bit ids) was sat too.\n\n| form | where | before → after |\n| --- | --- | --- |\n| index by entity (rebuilt when the pool changes), each type's share advanced before its loop, entity then slots | scene, 65 535 | 1.411 → 2.104 ms (+49 %) |\n| the same | scene, 150 000 | 2.783 → 4.976 ms (+79 %) |\n| every slot walked in order, kept when its entity id is in this worker's range of the type's list | Chrome kernel, 150 000, one worker's share | 1.48 → 2.30 ms (+55 %) |\n| the index, with each share's slots cached in list order (rebuilt when the index or the list moves) | Chrome kernel, 150 000 | 1.485 → 1.638 ms (+10 %) |\n| the same | scene, 150 000 | 2.755 → 4.609 ms (+67 %) |\n\nThe first version (a call per entity) read 1.41 → 2.74 ms at 65 535. The kernel (`tweenShareKernel.mjs`, branch `n6-tween-owner`) runs on the page's thread; in the scene the same code costs several times more (traces: the cached share's loop 437 ms and `_apply` 370 ms per 4 s on a logic thread, against Tween.tick's 181 ms and 211 ms before), which the kernel does not reproduce. Every form gives the same alphas as the blocks (checksums), and the worker test (two instances on a pool laid out against their shares: every tween once a frame, by its entity's worker) passed for the index forms.\n\n**Answered, not done.** The race only matters when a tween and the entity's own tick write the same prop; reading a tweened prop is fine, and one logic worker has no race. Against +49 % to +79 % of logic where tweens are many, the contract stays: it is now in `Tween.to`'s declaration (`types/weed.d.ts`) and in the guide's tween section, besides MEMORY_STRUCTURE's tween row. The attempt is kept on the local branch `n6-tween-owner` (the cached form, its test and its kernel).",
       "commits": [
         "7be61a49"
+      ]
+    },
+    {
+      "id": "R-0692",
+      "date": "2026-10-28",
+      "time": "20:30",
+      "timeFrom": "recorded",
+      "title": "N-74 answered: the world's arrays 4 MB further on do not move physics",
+      "verdict": "answered",
+      "text": "N-74: does the place of the engine block in Box2D's heap move physics? The block (the render-queue memory and its regions, Phase 4) is malloc'ed before the world, so a bigger region there moves every body and contact array the world allocates after it. W27's pair saw physics +3.6 % with its Adobe tables on (R-0589), and all WASM against all JS read +7 % on the same demo (R-0640), where the other workers also ran faster (L5).\n\n**The pair that separates it.** One build (f3afbf83) on both sides, adobeAnimateScene at the minimum zoom, the only difference the Adobe tables' region: 4 MB on side A (the default), 8 MB on side B (`?adobeTablesMB=`, a demo knob), so side B's world arrays sit 4 MB further on. 4 pairs, `runPredatorAbab --vs f3afbf83 --query-a adobeTablesMB=4 --query-b adobeTablesMB=8 --owner physics --camera-zoom min`, detailed stats off.\n\n| worker | A → B | paired | worse |\n| --- | --- | --- | --- |\n| physics (owner) | 6.009 → 5.988 ms | +1.2 % | 2/4, cv 3/3 % |\n| pre-render | 10.768 → 10.826 ms | +0.5 % | 3/4 |\n| renderer | 6.647 → 6.641 ms | −0.1 % | 2/4 |\n\nBODY_COUNT 20 000 both. NEUTRAL: physics is within the session's noise (the A/A put physics at ±3.4 %).\n\n**Answered.** Where the block puts the world does not move physics, so there is no knob to add; the +7 % against the JS engine is L5 (the other workers busier on the same cores). Nothing pending.",
+      "commits": [
+        "f3afbf83"
       ]
     }
   ],
