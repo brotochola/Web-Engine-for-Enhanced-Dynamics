@@ -1708,6 +1708,19 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
+    // N-76. A frame with no new queue (before the first one, or a resume redrawing the last) reads its buffer outside
+    // the consume/release handshake, while pre-render may be writing it: a frame whose header already reads complete
+    // would be committed with two frames' rows. The batches keep what they last committed (nothing before the first
+    // frame). Without a sync there is no handshake, and every frame reads the queue.
+    if (this._newQueueThisFrame === 0 && this.renderQueueSync) {
+      if (this.lastReadFrame <= 0) {
+        this.entitiesBatch.mesh.visible = false;
+        if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
+        this.visibleEntityCount = 0;
+      }
+      return;
+    }
+
     const gpu = this._gpuQueueRead;
     const packedN = gpu && gpu.header ? (gpu.header[GPU_HDR_SPRITE] | 0) : 0;
     const soaN = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
@@ -1768,14 +1781,13 @@ class PixiRenderer extends AbstractWorker {
     // In pre-render pack mode pre-render packs every frame (close-out group B: Pixi has no rows of its own there), so
     // a frame its GPU queue does not describe is one _refusePackedFrame handles; with no rows nothing is lost.
     if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI) {
-      const kept = this._newQueueThisFrame === 0 && this.lastReadFrame > 0;
       const warn = soaN > 0 && this._newQueueThisFrame !== 0 && !this._refusedFrameWarned;
       this.visibleEntityCount = this._refusePackedFrame(warn
         ? `${soaN} rows that its GPU queue frame does not describe (${this._uncommittedFrameReason(gpu, packedN, packedFlags, needOrder)})`
         : null);
-      if (!kept && this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
+      if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
       // A frame drawn without its entities still draws its groups.
-      if (!kept && this._proxiesOn) this._applyPackedProxies();
+      if (this._proxiesOn) this._applyPackedProxies();
       return;
     }
 
@@ -1838,14 +1850,11 @@ class PixiRenderer extends AbstractWorker {
   }
 
   /**
-   * A frame of pre-render's GPU queue Pixi cannot commit. A frame read outside the consume/release handshake (no new
-   * queue this frame: before the first one, or a resume redrawing the last) can catch pre-render's next frame half
-   * written, so the entity batch keeps what it last committed (nothing before the first frame) and nothing is said.
-   * A frame Pixi took is drawn empty, `reason` said once (null: no rows were lost).
+   * A frame of pre-render's GPU queue Pixi cannot commit: drawn empty, `reason` said once (null: no rows were lost).
+   * Frames read outside the consume/release handshake never get here (N-76, updateSpritesFromRenderQueue).
    * @returns {number} the entities drawn
    */
   _refusePackedFrame(reason) {
-    if (this._newQueueThisFrame === 0 && this.lastReadFrame > 0) return this.visibleEntityCount;
     if (reason !== null && this._newQueueThisFrame !== 0 && !this._refusedFrameWarned) {
       this._refusedFrameWarned = true;
       console.error(`[PIXI WORKER] ${reason}: the entities are not drawn this frame`);
