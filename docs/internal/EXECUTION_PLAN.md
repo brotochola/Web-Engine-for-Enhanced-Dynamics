@@ -2265,6 +2265,11 @@ divides by the tile width and height on each call. Reciprocals stored with the m
 **A correctness bug, filed as N-78.** `| 0` truncates toward zero, so a coordinate in (−tileWidth, 0) reads tile 0
 instead of empty. `Math.floor` fixes it. Use it in the faster version too.
 
+**Decided 2026-10-28: rejected; N-78 fixed.** In `tileMapMicrobench` (44bdf560) the divisions are not the cost: the
+shipped call is 2.44 ns, the reciprocal 2.6 ns, and the reciprocal reads one tile low 203 times with 49 px tiles.
+`Math.floor` alone is 3.6 ns and reads `data[NaN]` for NaN. The fix tests the world-pixel bounds first, then truncates:
+2.5 to 2.8 ns in the kernel, and tilemapStressScene logic 8.240 → 8.229 ms (−0.1 %, 4 pairs; 9c6739dc).
+
 ### E-143 Tweens
 
 The tween `tick` (49 %) and `_apply` (35 %) take tweenStressScene's logic (159 ms/s). Read the per-tween work first,
@@ -2389,7 +2394,7 @@ In [`REVIEW_PLAN.md`](./REVIEW_PLAN.md):
     - **"H-ROW / H-OWN spatial":** about 0.2–0.45 ms in scenes with two or more spatial workers (boidsScene), and zero with one. It goes with step 2's `rebuildOwnedRows` item.
     - **"Floor occlusion (do not project if it covers the ground)":** the share is unknown. First count the casters that cover the ground in Predator at night, and close the row if there are almost none.
     - **E-12 (the flowfield slot scan):** 0.005–0.02 ms a frame. Close it, with that number in its row.
-- **The moves to apply in the register.** None is applied yet, and each comes after a look at its row:
+- **The moves to apply in the register.** Applied 2026-10-28 (de7ede05's record), after checking the code each row names:
   - **kept:** E-50 (its tail E-50b is E-91) and "preRender.skipCull (AABB vs emit-all)";
   - **kept-hygiene:** E-55 (done as W24, R-0460) and "SAB spawn command ring";
   - **answered:** E-31, "Time scale", "Camera dead zone and shake", "Second batch, not measured", "lightGlow sprite versus add", "Doc+Doubao filter" and "CELL u32";
