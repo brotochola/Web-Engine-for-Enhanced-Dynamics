@@ -2233,6 +2233,10 @@ So there are many shapes and a keyed load by a string that differs per closure.
 
 The ceiling is most of 44 % of Adobe's logic, and 10–14 % of Predator's.
 
+**Kept 2026-10-28 (9fa90154): per-class slots.** `componentGetterMicrobench` 23 → 6.7 ns a read; Predator logic 3.979 →
+3.620 ms (−8.0 %, worse 0/4, nothing worse elsewhere); adobeAnimateScene at the minimum zoom logic 2.418 → 1.775 ms (−26.6 %,
+under the 3 ms floor there).
+
 ### E-140 The logic loop's own cost per ticked entity
 
 `_tickIntervalBucket` is 89 % of painterSort's logic and 7–8 % of Predator's. `_tickNonDecimatedOne` is 37 % of
