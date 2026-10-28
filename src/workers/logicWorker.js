@@ -218,6 +218,8 @@ class LogicWorker extends AbstractWorker {
     // Collision listener per-type flags (indexed by entityType)
     // Resolved once in createGameObjectInstances, never changes
     this.collisionListenerByType = null; // Uint8Array sized to max entity types
+    // Of those, the types whose class defines onCollisionStay (E-146): the stay walk calls only them.
+    this.collisionStayByType = null;
     this.anyTypeNeedsCollisions = false; // Scene-level kill switch
 
     // Joint-break listener per-type flags (indexed by entityType)
@@ -400,6 +402,7 @@ class LogicWorker extends AbstractWorker {
   createGameObjectInstances() {
     const numTypes = this.registeredClasses.length;
     this.collisionListenerByType = new Uint8Array(numTypes);
+    this.collisionStayByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
     this.messageListenerByType = new Uint8Array(numTypes);
     this.animEndListenerByType = new Uint8Array(numTypes);
@@ -448,6 +451,7 @@ class LogicWorker extends AbstractWorker {
 
         if (needsCollisionCallbacks) {
           this.collisionListenerByType[entityType] = 1;
+          if (definesBelow(EntityClass, GameObject, 'onCollisionStay')) this.collisionStayByType[entityType] = 1;
         }
         if (needsJointBreakCallbacks) {
           this.jointBreakListenerByType[entityType] = 1;
@@ -1881,7 +1885,7 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const entityType = Transform.entityType;
     const active = Transform.active;
-    const collisionFlags = this.collisionListenerByType;
+    const stayFlags = this.collisionStayByType;
     const gen = this.bodyGeneration;
     const pairMin = this._pairMin;
     const pairMax = this._pairMax;
@@ -1917,8 +1921,8 @@ class LogicWorker extends AbstractWorker {
           s++;
           if (beganNow) continue;
           const sides = pairSides[s - 1];
-          const aListens = (sides & 1) !== 0 && collisionFlags[entityType[minE]];
-          const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
+          const aListens = (sides & 1) !== 0 && stayFlags[entityType[minE]];
+          const bListens = (sides & 2) !== 0 && stayFlags[entityType[maxE]];
           calling = minE;
           if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
           calling = maxE;
