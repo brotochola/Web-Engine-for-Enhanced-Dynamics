@@ -5,7 +5,7 @@
 // every process under it, before the first scene, after each cycle and after the engine is destroyed: every shared memory a scene
 // makes (Box2D's with the engine block, the particle, decal, navigation and spatial memories) is committed whole
 // when it is made, and the scene's teardown must give it back. Fails when the last cycle's commit is more than
-// 128 MB over the first's, or the commit after destroy more than 128 MB over the start. The commit after destroy is
+// 128 MB over the first's, or the commit after destroy, outside the GPU process (N-77), more than 128 MB over the start. The commit after destroy is
 // read once it settles (the workers' memories go some seconds after their threads exit): sampled each second, up to
 // 15 s, at least 6 s and until a second's fall is under 8 MB.
 // It prints the commit by process type too (this process, and Chrome's by --type: browser, renderer, gpu-process, …).
@@ -290,9 +290,16 @@ async function main() {
         failed = true;
         console.error('FAIL: the commit grew more than 128 MB across scene cycles - a memory not given back');
       }
-      if (ad.commitMB - startCommitMB > 128) {
+      // The GPU process is judged apart: headless Chrome's keeps a cache of about 80-90 MB after the first scene
+      // (stable across cycles; destroying the GPU device or losing the context before the terminate does not free it,
+      // N-77), and headed Chrome's gives it all back. The scene's memories live in the other processes.
+      const gpu = (byType) => (byType && byType['gpu-process']) || 0;
+      const gpuGrowth = +(gpu(destroyByType) - gpu(startByType)).toFixed(1);
+      const restGrowth = +(ad.commitMB - gpu(destroyByType) - (startCommitMB - gpu(startByType))).toFixed(1);
+      console.log(`After destroy over the start: ${restGrowth} MB outside the GPU process, ${gpuGrowth} MB in it`);
+      if (restGrowth > 128) {
         failed = true;
-        console.error('FAIL: the commit after destroy is more than 128 MB over the start');
+        console.error('FAIL: the commit after destroy, outside the GPU process, is more than 128 MB over the start');
       }
     }
 
