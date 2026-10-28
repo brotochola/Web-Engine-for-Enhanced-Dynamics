@@ -8370,7 +8370,8 @@
         "R-0645",
         "R-0676",
         "R-0677",
-        "R-0686"
+        "R-0686",
+        "R-0693"
       ],
       "id": "E-147",
       "title": "The spatial kernels wait on memory: less work per frame",
@@ -8380,7 +8381,7 @@
       "area": "spatial",
       "kind": "wasm",
       "result": "Step 1: rows rebuilt / republished / skipped per scene (R-0676). Step 2: Chrome replay, f32x4 +10.5 % / +8.1 %, an exact form +9.0 % / +12.2 % (identical rows); scenes orientedBox −2.3 %, Predator −1.8 %, Boids +3.0 % (worse 4/4): not shipped, a test module (spatialGatherExact). W7 screened.",
-      "next": "Leads: the f32x4 blocks only in cells of eight ids or more; E-136; orientedBox's half-extent check (a correctness trade)."
+      "next": "Nothing pending: the full-cell lead lost Boids too (R-0693); E-136 kept; orientedBox's half-extent check stays a correctness trade."
     },
     {
       "aliases": [],
@@ -14990,6 +14991,15 @@
       "commits": [
         "f3afbf83"
       ]
+    },
+    {
+      "id": "R-0693",
+      "date": "2026-10-28",
+      "time": "20:57",
+      "timeFrom": "recorded",
+      "title": "E-147's lead: float32x4 blocks only in cells of 8 or 16 ids, Boids still worse",
+      "verdict": "rejected",
+      "text": "E-147's lead: the exact float32x4 gather (spatialGatherExact's form) shipped into `wasm/spatialGather.c` with its blocks of four only in cells that hold BLOCK_MIN_IDS ids or more, so Boids' few-id cells keep the double test throughout.\n\n**Exact.** With the threshold at 8 and at 16 the node suite stays green and spatialGatherWasmMicrobench's checksums are unchanged (predator 2053291771, rebuild 1527620844): the rows are the double gather's.\n\n**Boids first** (the scene the earlier form lost, +3.0 % from four ids), 4 pairs from worktrees against e3825d58, owner spatial, detailed stats off:\n\n| BLOCK_MIN_IDS | spatial | worse | cv |\n| --- | --- | --- | --- |\n| 8 | 6.696 → 6.754 ms (+1.4 %) | 4/4 | 1/1 % |\n| 16 | 6.640 → 6.784 ms (+1.8 %) | 3/4 | 2/2 % |\n\nBoids' cells hold at most 20 ids (maxEntitiesPerCell 20), so at 16 almost none take a block, and Boids is no better: what costs there is not the blocks alone. The likely remainder is the reshaped scalar path (the double test now a helper beside the SIMD loop, the per-entity splats), which every cell takes. The 8-id sitting's FAIL (load) was VISIBLE_ENTITIES +6.1 % at cv 8/7 %, the flock's spread in view, which the gather cannot reach.\n\n**Not shipped, not pursued.** The scenes that gain read about 2 % (Predator −1.8 %, orientedBoxScene −2.3 % with the earlier form), under the 3 % a keep needs, and Boids stays 1.4–1.8 % worse in 3–4 pairs of 4. The form stays as the test module (`spatialGatherExact`). E-147 has nothing pending."
     }
   ],
   "leads": [
