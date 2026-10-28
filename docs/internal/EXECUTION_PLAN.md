@@ -2573,6 +2573,11 @@ On the GTX 1650 a frame's GPU time grows about 3.3 ms per million GPU particles 
 of its four vertices, and two triangles go through setup for a pixel or two. Next: one evaluation per particle (a
 WebGPU compute pass), or a point or single-triangle mode for dots this small.
 
+**Screened 2026-10-28.** `webglParticleUploadKernel` (6749b471) at 4 194 304 records from the record texture: one
+triangle around the quad is slower than the quad (13.0 against 12.4 ms, 8.0 against 7.3 in the other round), and the
+engine's kind of per-vertex work adds about 0.5 ms. The evaluation is not the cost, so neither a compute pass nor a
+single triangle pays; the fetch and the raster of tiny quads grow with the count. Both backends draw 4 million at 60.
+
 ### Left open (design calls for the owner)
 
 - **Look regions merge transitively.** 256 scattered look groups became one region, which sorts at the group
