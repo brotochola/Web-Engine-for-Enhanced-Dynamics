@@ -3,7 +3,7 @@ import { ContactDrainBody } from './contactDrain/contactDrainBody.js';
 
 const { Scene, Camera } = WEED;
 
-/** Frozen after 8 ms hunt. Tax uses pool 65535 (u16 legal). Capacity scene uses 70000. */
+/** Frozen after 8 ms hunt. Pool 65535: the most bodies a scene with physics allows (u16 legal). */
 export const CONTACT_DRAIN_HUNT = {
   balls: 4096,
   pool: 65535,
@@ -167,9 +167,4 @@ export class ContactDrainBest32Scene extends ContactDrainHuntScene {
     Camera.centerOn(cx, WORLD_H * 0.62);
     Camera.setZoom(0.35);
   }
-}
-
-export class ContactDrainCap32Scene extends ContactDrainHuntScene {
-  static config = { ...ContactDrainHuntScene.config, entityIdWidth: 32 };
-  static entities = [[ContactDrainBody, 70000]];
 }
