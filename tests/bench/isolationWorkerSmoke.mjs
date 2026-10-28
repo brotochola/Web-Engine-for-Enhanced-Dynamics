@@ -4,6 +4,11 @@
  * isolated through weed-sw.js, and every way that can fail is named on the page.
  *
  *   node tests/bench/isolationWorkerSmoke.mjs [--headed] [--only first-visit,embedded] [--output report.json]
+ *   node tests/bench/isolationWorkerSmoke.mjs --browser firefox [--headed]
+ *
+ * --browser firefox runs the first visit, the return visit and real headers in the Firefox installed here
+ * (stockFirefox.mjs: the page takes the calls over HTTP; loads are counted from the line each document logs, and
+ * "drawn" is the renderer's first published frame, since there are no screenshots).
  *
  * Servers: `plain` sends no isolation headers (GitHub Pages, `npx serve`) and serves the worker's
  * source at /weed-sw.js; `isolated` sends them (a host set up as DEPLOY.md says); `second` is
@@ -140,6 +145,7 @@ function expectReason(r, pattern, checks, maxLoads = 1) {
   checks.push(['reason shown', !!r.overlay && pattern.test(r.overlay), (r.overlay || '(no overlay)').slice(0, 160)]);
 }
 
+const at = (server, query = '') => `http://127.0.0.1:${server.port}${SMOKE}${query}`;
 const results = [];
 async function runCase(name, fn) {
   if (only && !only.has(name)) return;
@@ -158,12 +164,111 @@ async function runCase(name, fn) {
   }
 }
 
+if (value('--browser') === 'firefox') {
+  const { createStockFirefox, stockFirefoxExe } = await import('./stockFirefox.mjs');
+  const { FRAME_CLOCK_SLOTS } = await import('../../src/util/frameClock.js');
+  const { SLOT_BYTES } = await import('../../src/util/frameTotals.js');
+  const stock = createStockFirefox();
+  // Every server answers the driver's calls, so the one Firefox moves between origins in the page.
+  const plainF = await createStaticBenchmarkServer(repoRoot, 0, { routes: stock.routes, isolationHeaders: false, files: SW_FILES });
+  const isolatedF = await createStaticBenchmarkServer(repoRoot, 0, { routes: stock.routes, files: SW_FILES });
+  const firefox = stock.launch(stockFirefoxExe(), { headed });
+  const page = await firefox.newPage();
+  const loads = [];
+  const errors = [];
+  page.on('console', (m) => {
+    if (m.text().startsWith('[smoke] load')) loads.push(m.text());
+  });
+  page.on('pageerror', (e) => errors.push(e.message));
+  const framesIndex = (FRAME_CLOCK_SLOTS.renderer * SLOT_BYTES) / 8 + 1;
+  // Short asks, again and again: a call the page took just before a reload (the first visit's) is never answered,
+  // and the next one goes to the new document.
+  // A navigation the test asks for waits 300 ms, so the answer leaves before the page does (a reload cancels it).
+  const until = async (fn, arg, timeoutMs) => {
+    const end = Date.now() + timeoutMs;
+    while (Date.now() < end) {
+      let v;
+      try {
+        v = await Promise.race([page.evaluate(fn, arg), sleep(3000).then(() => undefined)]);
+      } catch {
+        v = undefined;
+      }
+      if (v) return v;
+      await sleep(250);
+    }
+    throw new Error(`no answer from Firefox in ${timeoutMs} ms`);
+  };
+  const visitFirefox = async (navigate) => {
+    loads.length = 0;
+    errors.length = 0;
+    await navigate();
+    // The old document answers until the new one has loaded: wait for its line.
+    for (const end = Date.now() + 60000; loads.length === 0 && Date.now() < end; ) await sleep(100);
+    const s = await until(
+      () => window.__smoke && window.__smoke.state !== 'loading' && { state: window.__smoke.state, error: window.__smoke.error },
+      null,
+      90000,
+    );
+    // The first frame can take a moment after the scene starts.
+    const seen = await until(
+      async (idx) => {
+        const sab = window.__smoke.game?.currentScene?.buffers?.frameTotals;
+        const frames = sab ? new Float64Array(sab)[idx] : 0;
+        if (window.__smoke.state === 'running' && frames < 1) return false;
+        return {
+          frames,
+          isolated: self.crossOriginIsolated === true,
+          overlay: document.getElementById('fatal-error-overlay')?.textContent || null,
+          registrations: navigator.serviceWorker
+            ? (await navigator.serviceWorker.getRegistrations()).map((r) => (r.active || r.waiting || r.installing)?.scriptURL || null)
+            : null,
+          ua: navigator.userAgent,
+        };
+      },
+      framesIndex,
+      30000,
+    );
+    return { ...s, ...seen, loads: loads.length, errors: [...errors] };
+  };
+  const expectFirefox = (r, want, registered, checks) => {
+    checks.push(['loads', r.loads === want, `${r.loads} (want ${want})`]);
+    checks.push(['isolated', r.isolated === true, String(r.isolated)]);
+    checks.push(['scene running', r.state === 'running', r.state + (r.error ? `: ${r.error}` : '')]);
+    checks.push(['drawn', r.frames >= 1, `${r.frames} renderer frames`]);
+    checks.push(['no overlay', !r.overlay, r.overlay || '']);
+    checks.push(['no page errors', r.errors.length === 0, r.errors.slice(0, 2).join(' | ')]);
+    checks.push(['registrations', JSON.stringify(r.registrations) === JSON.stringify(registered), JSON.stringify(r.registrations)]);
+  };
+  try {
+    const sw = [`http://127.0.0.1:${plainF.port}/weed-sw.js`];
+    await runCase('firefox first-visit', async (checks) => {
+      const r = await visitFirefox(() => page.goto(at(plainF)));
+      console.log(`   ${r.ua}`);
+      expectFirefox(r, 2, sw, checks);
+    });
+    await runCase('firefox return-visit', async (checks) => {
+      expectFirefox(await visitFirefox(() => until(() => (setTimeout(() => location.reload(), 300), true), null, 10000)), 1, sw, checks);
+    });
+    await runCase('firefox real-headers', async (checks) => {
+      const url = `${at(isolatedF)}?stockDriver=1`;
+      expectFirefox(await visitFirefox(() => until((u) => (setTimeout(() => (location.href = u), 300), true), url, 10000)), 1, [], checks);
+    });
+  } finally {
+    await firefox.close();
+    await plainF.close();
+    await isolatedF.close();
+  }
+  const failedF = results.filter((r) => !r.ok);
+  console.log(`\n${results.length - failedF.length}/${results.length} passed`);
+  if (output) fs.writeFileSync(output, JSON.stringify({ when: new Date().toISOString(), browser: 'firefox', results }, null, 2));
+  process.exit(failedF.length ? 1 : 0);
+}
+
 const plain = await createStaticBenchmarkServer(repoRoot, 0, { isolationHeaders: false, files: SW_FILES });
 const isolated = await createStaticBenchmarkServer(repoRoot, 0, { files: SW_FILES });
 const second = await createStaticBenchmarkServer(repoRoot, 0, { isolationHeaders: false });
 const launchArgs = headed ? [] : ['--enable-unsafe-swiftshader'];
 const browser = await chromium.launch({ channel: 'chrome', headless: !headed, args: launchArgs });
-const at = (server, query = '') => `http://127.0.0.1:${server.port}${SMOKE}${query}`;
 
 try {
   // One context through the first four: the visits a player makes.
