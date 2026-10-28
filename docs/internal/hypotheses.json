@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-26",
+  "updated": "2026-10-27",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -8505,6 +8505,24 @@
       "kind": "js",
       "result": "kept (1fe2d1c2): Node, collect and write per frame with 20 000 entities, 2 048 groups 1.48–1.58 → 0.22–0.29 ms, 1 024 groups 0.43–0.58 → 0.12–0.20 ms",
       "next": "Nothing pending."
+    },
+    {
+      "id": "N-83",
+      "title": "A canvas resize stopped a sorted look layer from drawing",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "result": "fixed (64b76ea7): a resize released rtOut's bind groups, which destroyed the sorted regions' own; the next setTexture threw and the layer drew nothing. The regions move to Texture.EMPTY first and onto the new rtOut after.",
+      "area": "renderer",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-83"
+      ],
+      "aliases": [],
+      "records": [
+        "R-0659"
+      ],
+      "next": "Nothing pending."
     }
   ],
   "records": [
@@ -14393,6 +14411,18 @@
       "title": "PR #5 merge gates against main: Predator, the particle scene, the frames",
       "verdict": "passed",
       "text": "**PR #5 merge gates against main (468d2ef3), 2026-10-27.** ABAB from worktrees, Chrome headed, from source, 4 pairs\neach, regression gates (no owner).\n\n- **Predator, e5e8d4bd (the branch with main merged): NEUTRAL, no worker worse.** logic 6.120 -> 5.575 ms (-4.7 %),\n  spatial 7.491 -> 7.038 (-2.6 %), physics 10.657 -> 9.648 (-3.6 %), renderer 5.913 -> 5.121 (-8.2 %, the WebGL\n  shader sync), pre-render 6.517 -> 6.078 (-3.0 %), particle under the floor; presented 60.0 -> 60.0 fps.\n- **particleIntegrateStressScene?tween=1, e5e8d4bd: REGRESSION, pre-render 3.664 -> 3.927 ms (+7.0 %, worse 4/4, cv\n  1/5 %).** Not the later work: HEAD against 043d9d10 (where the earlier sitting put the branch at +2.4 %) is NEUTRAL,\n  +0.5 % (cv 1/4 %). The PR's ground-row key: HEAD against HEAD with main's key formula, -3.1 % for main's (0/4 worse,\n  cv 3/3 %, an unreferenced experiment commit). In that scene nothing y-sorts and the key orders nothing: c08f3548\n  skips it when no layer y-sorts. The gate again with it (388f0682, the tree of c08f3548): NEUTRAL, pre-render\n  3.128 -> 3.023 ms, paired -4.6 %, worse 0/4, cv 3/2 %: the branch now spends less than main there.\n- **Frames.** gpuParticlesStressScene, lockstep (150 injected steps), the PR's head 9459055f against e5e8d4bd:\n  byte-identical on webgl sort=1, webgpu sort=1, webgl look=1, webgl interp=1, webgl sort=0. The lockstep catalog\n  (tests/bench/lockstepVisualScenes.mjs) main against e5e8d4bd: 8/9 exact (balls, water, liquidfun, particles,\n  oriented, lfstress, vispoly, compoundvis); Predator drifts, as it does between two runs of one commit."
+    },
+    {
+      "id": "R-0659",
+      "date": "2026-10-27",
+      "time": "23:13",
+      "timeFrom": "recorded",
+      "title": "N-83 fixed: a resize keeps a sorted look layer's regions on its look target",
+      "verdict": "kept-hygiene",
+      "text": "Found while adding a run-time `Layer.resolution` for Blastforge's Pixel size (PR #5's branch). `_resizeCustomLayerRTs` releases the bind groups on a look layer's old render textures before destroying them; a `sortWithEntities` layer's `RegionQuads` samples `rtOut` through its own bind group, so the release destroyed it and the next frame's `setTexture` threw in `BindGroup.setResource`. From then on the layer drew nothing.\n\nReproduced in Chrome on the plain canvas-resize path: Blastforge, `scene.resize(1100, 700)`, then a Fireball: no fire and no smoke, only its ground light, and the Pixi worker logged \"frame threw … Cannot read properties of null (reading '0')\". With the fix (the regions go to `Texture.EMPTY` before the release and onto the new `rtOut` after it) the Fireball draws after the resize, sorted behind the tree, and nothing throws; Pixel size at 6×, 1× and 3× likewise.\n\nTest: `gpuParticleProxiesPixi.test.js` runs the real resize path on a `RegionQuads` and fails without the fix (4 of 5 pass, the new one fails), passes with it. A resize is not per frame: a hygiene keep, no sitting. `main` is not affected (the regions came with the branch).",
+      "commits": [
+        "64b76ea7"
+      ]
     }
   ],
   "leads": [
