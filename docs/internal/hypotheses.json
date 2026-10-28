@@ -555,18 +555,20 @@
     {
       "id": "W7",
       "title": "W5 + W6 + the existing publish",
-      "status": "open",
-      "statusText": "open, blocked on Phase 4; ceiling under 10 % of spatial after the W6 screen",
+      "status": "screened",
+      "statusText": "screened 2026-10-28: a port's ceiling is a few per cent of spatial",
       "date": null,
-      "result": "The whole spatial step in one call beats JS + WASM publish. Q1: the three are ~98 % of Predator spatial; the publish module itself 17.5 %. Needs `Transform.x/y` in the same memory: arena or Box2D's memory",
+      "result": "The JS decision loop is about 8 % of the spatial frame (kernel profile); the rebuild in C ties (+2.0 % / −2.2 %); the loop's counter writes in locals tie (−0.2 % / −0.9 %).",
       "area": "spatial",
       "kind": "wasm",
       "refs": [
         "WASM_HYPOTHESES.md#W7"
       ],
       "aliases": [],
-      "next": "After W4 makes the Phase 4 move: one C call per frame saves the glue (8 % of Predator spatial) and W6's 1.4 %.",
-      "rank": 10
+      "next": "Nothing pending.",
+      "records": [
+        "R-0685"
+      ]
     },
     {
       "id": "E-82",
@@ -7548,10 +7550,10 @@
     {
       "id": "DX-SW",
       "title": "SharedArrayBuffer without COOP/COEP headers: our own isolation service worker (`weed-sw.js`)",
-      "status": "open",
-      "statusText": "SW-1 to SW-8 done; phase 3 measured 2026-10-28 (SW-9 not needed; the boot from source through the worker fixed). Left: the phase 2 rows for Firefox, hot reload, audio and the allowed frame",
+      "status": "kept",
+      "statusText": "done 2026-10-28: SW-1 to SW-8, phases 2 and 3 run; phase 4 by hand",
       "date": "2026-10-22",
-      "result": "weed-sw.js (adds COOP/COEP to page loads and worker scripts only) and a gate in engine boot: registers it next to the page, waits until active, reloads once with the screen black; never replaces another service worker; every failure named first in the error. On by default (isolationServiceWorker). Chromium end to end, 11 cases: first visit 2 loads then isolated and drawing, return visit 1, hard reload 2, stopped worker 1, real headers register nothing, and the failure cases show their reason. Found on the way: new GameEngine() threw without SharedArrayBuffer (SW-1); the isolated page gets its own copy of sessionStorage (COOP), so the reload guard counts two reloads; a reload during a hard reload stays uncontrolled, so the gate waits for load. Shipped as dist/weed-sw.js, in the package exports and the template build; DEPLOY.md rewritten.",
+      "result": "weed-sw.js isolates a page served without COOP/COEP: Chromium 13/13 (with audio and the allowed-frame limit), Firefox 3/3, the 8 bundles 32/32, npm run dev hot reload 4/4; a deploy's first visit +125 ms once, return visits and runtime as real headers; the worker leaves module imports alone (417b5f0a). An isolated portal cannot embed a game whose host sends no headers.",
       "area": "engine",
       "kind": "dx",
       "refs": [
@@ -7561,11 +7563,12 @@
       "aliases": [
         "coi-serviceworker"
       ],
-      "next": "Phase 2 rows for Firefox (needs Playwright's Firefox), npm run dev hot reload, the AudioWorklet and an allowed frame. Optional: register the worker from an inline snippet before the engine loads, to bring the first visit's reload forward (about 180-235 ms in now).",
+      "next": "Phase 4 by hand: Safari on macOS and iOS, Chrome on Android, GitHub Pages and itch.io deploys.",
       "records": [
         "R-0681",
         "R-0682",
-        "R-0683"
+        "R-0683",
+        "R-0687"
       ]
     },
     {
@@ -8365,18 +8368,18 @@
       "records": [
         "R-0645",
         "R-0676",
-        "R-0677"
+        "R-0677",
+        "R-0686"
       ],
       "id": "E-147",
       "title": "The spatial kernels wait on memory: less work per frame",
-      "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "status": "answered",
+      "statusText": "answered 2026-10-28: rates read; the float32 gather wins in Chrome but loses Boids, not shipped; W7 screened",
       "date": "2026-10-26",
       "area": "spatial",
       "kind": "wasm",
-      "rank": 3,
-      "result": "Step 1 (5803ca42): rows rebuilt / kept by the skin and republished / skipped by the stagger: Boids 6.7 / 0 / 93.3 %, Predator 3.7 / 5.9 / 89.5 %, orientedBox 99.1 / 0.9 / 0 % (its turning boxes fail the half-extent check), movedBodiesMixed 1.0 / 99.0 / 0 %, stationarySpatialWide 3.9 / 96.1 / 0 %. Sweep: gather 1 599 ms/s, publish 1 447 over 18 scenes; both wait on memory.",
-      "next": "The Chrome entry for the gather's float32 variants; W7; E-136 (skip kept rows whose entity and candidates did not move); orientedBox's extent check (a correctness trade)."
+      "result": "Step 1: rows rebuilt / republished / skipped per scene (R-0676). Step 2: Chrome replay, f32x4 +10.5 % / +8.1 %, an exact form +9.0 % / +12.2 % (identical rows); scenes orientedBox −2.3 %, Predator −1.8 %, Boids +3.0 % (worse 4/4): not shipped, a test module (spatialGatherExact). W7 screened.",
+      "next": "Leads: the f32x4 blocks only in cells of eight ids or more; E-136; orientedBox's half-extent check (a correctness trade)."
     },
     {
       "aliases": [],
@@ -8680,6 +8683,24 @@
       "area": "renderer",
       "kind": "bug",
       "result": "A frame with no new queue (before the first, or a resume) committed a complete-looking frame pre-render was writing. Now such a frame keeps the committed batches when a sync exists. Predator 13 666 and BunnyMark 250 000 entities drawn as before.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-71"
+      ],
+      "records": [
+        "R-0688"
+      ],
+      "id": "N-71",
+      "title": "Box2D's mallinfo on every physics step",
+      "status": "kept-hygiene",
+      "statusText": "hygiene keep 2026-10-28: once every 60 steps",
+      "date": "2026-10-24",
+      "area": "physics",
+      "kind": "bug",
+      "result": "mallinfo every 60 steps (28f24e0b); ballsHeavy physics −1.4 % over 8 pairs, NEUTRAL.",
       "next": "Nothing pending."
     }
   ],
@@ -14838,6 +14859,50 @@
       "title": "H-ROW / H-OWN screened: the rebuild's skipped entities are not its cost",
       "verdict": "screened",
       "text": "One index per row or one owned list lowers `spatialMax` ≥3% when the rebuild or the home-row skip dominate. — 30k rebuild 1.518 / step 10.409 (14%). 300k rebuild 13.235 / step 145.427 (9%); neighbor 132.182. Home-row skip 7.5% and 7.1%. … 2026-10-28 (spatialRebuildWasmMicrobench, Predator mix, 16 500 entities, 4 rounds): a worker's rebuild costs as much with two or three workers as one worker's doing every row (357, 426, 363 µs a frame each), yet leaving other workers' circles before reading their columns wins +3.2 % with two workers and loses 21.2 % with one; the cell range inline +6.4 % and −7.6 %; W6's C port +2.0 % and −2.2 %. The rebuild is not in the entities a worker skips."
+    },
+    {
+      "id": "R-0685",
+      "date": "2026-10-28",
+      "title": "W7 screened: the spatial glue is about 8 % of the frame, its counters and the rebuild in C tie",
+      "verdict": "screened",
+      "text": "W7 (one WebAssembly call per frame for the spatial rebuild, gather and publish) was blocked on the components living in one memory, which the WASM migration finished. Screened before porting, on what it could save:\n\n- **The share of the glue.** A CPU profile of spatialGatherWasmMicrobench (Predator's settings, 3 workers): of the spatial frame, gather_batch about 43 %, rebuildOwnedRows 29 %, the JS decision loop in _findNeighbors about 8 %, publish_batch 7 %. (The profile charges about 12 % to JS-to-WASM transitions, which three calls a worker a frame cannot cost; it attributes WASM time to the wrappers.) So the JS a port would remove is about 8 % of the frame, and a C version of the same decisions still costs part of that.\n- **The rebuild in C** (W6) ties: +2.0 % and −2.2 % with one and two workers in spatialRebuildWasmMicrobench (2026-10-28), as in its first screen.\n- **The loop's own writes.** It wrote three counters per entity on `this` and the publish object, as logic's tick paths did before E-140 (−8.7 % there). In locals instead (written once a frame): the kernel ties, −0.2 % on Predator's settings and −0.9 % on a frame that rebuilds every list, checksums equal (6 alternating rounds a tree, the parent against the change from worktrees). Not committed.\n\n**Screened**: a port's ceiling is a few per cent of spatial, under what a sitting resolves, for a large change. The spatial frame is the gather and the rebuild; see E-147.",
+      "commits": [
+        "79f45bdf"
+      ]
+    },
+    {
+      "id": "R-0686",
+      "date": "2026-10-28",
+      "title": "E-147: the gather in float32x4 wins Chrome's replay (+9–12 %, exact) but Boids is 3.0 % worse: not shipped",
+      "verdict": "rejected",
+      "text": "The Chrome entry for the gather's float32 variants (E-147's step 2), and the shipped gather that came of it.\n\n**How Chrome was asked.** The gather's Node kernel builds real spatial workers in Node, which a page cannot. So `spatialGatherSnapshot.mjs` (2466cb37) runs that kernel (16 500 entities, 3 workers) and captures one frame: every worker's `gather_batch` call and the WebAssembly memory after it (grid, poses, ranges, the batch lists). `spatialGatherReplayKernel.mjs` replays it in Chrome (chromeKernel, Chrome 156) on the same bytes with each variant, a fresh frame stamp per replay, rounds alternating, and compares every candidate row with the shipped gather's. Two captures: every list rebuilt (13 743 rows a frame, the gather's own cost) and Predator's skin and stagger (933 rows).\n\n**The variants in Chrome**, ms per replayed frame (median of 9 rounds), against the shipped double gather:\n\n| capture | double (shipped) | f32 | f32x4 |\n| --- | --- | --- | --- |\n| every list rebuilt | 18.174 | 17.594 (+3.3 %) | 16.450 (**+10.5 %**) |\n| Predator's | 1.365 | 1.331 (+2.6 %) | 1.263 (**+8.1 %**) |\n\nNo candidate row differed in either capture. Node had f32x4 at −1.2 % (R-0571): Chrome decides, and it differs.\n\n**Exact, not just tolerated.** f32x4 ported into `wasm/spatialGather.c` alone kept the speed but not the bits: a frame with a skin of 0 (the gather's edge is the publish's) and rows at their 64-candidate cap published a different set in the 32-bit parity test, and the rebuild kernel's checksum changed. A margin on the squared range (a superset of the candidates) fixed neither, since an extra edge candidate moves a truncated row's cut. The exact form decides in float32 only outside a band of 2^-19 (relative, on the squared range) around the edge; a candidate inside it, which the tolerance analysis bounds at about 5e-7 relative, takes the double test JS does. So the gather keeps exactly what the double gather keeps: the node suite unchanged and green (2 084), and spatialGatherWasmMicrobench's checksums unchanged (predator 2053291771, rebuild 1527620844).\n\n**The exact form in Chrome** (the replay with the previous engine.wasm as `before`): every list rebuilt 17.747 → 16.261 ms (**+9.1 %**), Predator's 1.307 → 1.172 ms (**+11.5 %**); rows identical. The same speed as the plain f32x4 (+8.3 %, +11.8 % in that sitting): the band costs nothing measurable.\n\nA second form kept the double test also past a cell's last block of four (a cell of three or fewer is then all double): +9.0 % and +12.2 % against the old gather in Chrome, rows identical.\n\n**The scenes** (4 pairs each from worktrees, owner spatial, the commit before the gather against it):\n- orientedBoxScene (gather 76 % of its spatial): 3.647 → 3.552 ms (−2.3 %, worse 0/4), and with the second form 3.529 → 3.431 ms (−2.3 %, worse 0/4).\n- Boids (gather 44 %, 20 px cells of at most 20 boids): +1.4 % (pairs −3.3 / +0.7 / +2.1 / +5.3), and with the second form 6.578 → 6.824 ms (**+3.0 %, worse 4/4**, cv 1/2 %).\n- Predator (gather 37 %): 4.914 → 4.826 ms (−1.8 %, worse 1/4); physics +4.7 % (cv 7/6 %), which the gather cannot reach.\n\n**Not shipped.** A kernel claim needs the kernel win and no scene 3 % worse, and Boids is 3.0 % worse in every pair: where cells hold few ids, a block of four loads and shuffles rows the scalar loop would have left at the first test. The exact form stays as a test module (`wasm/test/spatialGatherExact.c`, 2e7d42b2) and a replay variant (`exact`, +12.6 % on Predator's capture). A lead, not measured: the blocks only in cells with more ids (eight or more, say), where Predator's and orientedBox's cells are.",
+      "commits": [
+        "2466cb37",
+        "02cbbb90",
+        "2e7d42b2"
+      ]
+    },
+    {
+      "id": "R-0687",
+      "date": "2026-10-28",
+      "title": "DX-SW phase 2: Firefox 3/3, audio, npm run dev 4/4; an isolated portal cannot embed a headerless host",
+      "verdict": "passed",
+      "text": "Phase 2's remaining rows, 2026-10-28.\n\n- **Firefox** (isolationWorkerSmoke.mjs --browser firefox, 26c24b2e): the installed Firefox 159 driven over HTTP (stockFirefox.mjs; Playwright's Firefox is not Firefox's speed and is not installed). First visit: 2 loads, isolated, the scene running and drawing, weed-sw.js registered; return visit: 1 load; real headers: 1 load, nothing registered. 3/3. Two driver lessons: a call the page takes just before the first visit's reload is never answered (short asks, repeated), and a navigation the test asks for must wait for the answer to leave (300 ms).\n- **Audio** (8a67ebe8): through the worker the engine's mixer node starts with its shared buffer, and a worklet loaded by URL as the mixer is (tests/bench/isolation/sabProbeProcessor.js) receives a SharedArrayBuffer posted to it (the value read back).\n- **The allowed frame** (8a67ebe8): an isolated portal (real headers) embedding the game from a host without them, `allow=\"cross-origin-isolated\"`: refused, `net::ERR_BLOCKED_BY_RESPONSE`. The parent's COEP needs CORP and COEP on the frame's response, which comes before weed-sw.js can be installed there, and a worker from a direct visit does not reach a third-party frame. A known limit, now asserted by the case and written in DEPLOY.md's \"Game portals\": a game in an isolated portal needs its host to send the headers (itch.io's SharedArrayBuffer option does).\n- **npm run dev** (isolationDevSmoke.mjs, 8304e508): a script of the running scene written again is hot swapped, nothing navigates, no worker is registered; an asset written again reloads the page once with the scene's state kept. The same with a weed-sw.js left on the port by npm run dev:sw. 4/4.\n\nThe Chromium smoke is 13/13 with the new cases. Phase 4 (Safari, Chrome on Android, real deploys) is by hand.",
+      "commits": [
+        "26c24b2e",
+        "8a67ebe8",
+        "8304e508"
+      ]
+    },
+    {
+      "id": "R-0688",
+      "date": "2026-10-28",
+      "title": "N-71: mallinfo once every 60 physics steps, a hygiene keep (ballsHeavy −1.4 %, NEUTRAL)",
+      "verdict": "kept-hygiene",
+      "text": "N-71: the physics stats read Box2D's live-heap figure (`weedjs_heap_bytes_used`, i.e. `mallinfo`, which walks every chunk of the heap under its lock) on every step, with detailed stats off too, for the memory panel and its high-water mark alone. Now once every 60 steps (about a second), the last figure published in between; MEMORY_PEAK_KB (sbrk, O(1)) stays per step (28f24e0b). tests/node/workloadCountsAlways.test.js checks the read sits behind the cadence.\n\nballsHeavyStressScene, physics owner, 8 pairs from worktrees (the first 4 read +3.5 %, worse 3/4; the next 4 all lower): physics 10.129 → 10.061 ms (−1.4 %, worse 3/8, cv 4/5 %), NEUTRAL. The walk was not measurable there; a **hygiene keep** (no worker worse).",
+      "commits": [
+        "28f24e0b"
+      ]
     }
   ],
   "leads": [
