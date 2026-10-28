@@ -990,6 +990,17 @@ class LogicWorker extends AbstractWorker {
         entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
       );
 
+      // E-140: a type without a RigidBody has no accelerations to reset; its own copy of these loops skips them.
+      if (!typeInfo.hasRigidBody) {
+        activeCount += this._tickNonDecimatedTypeNoBody(
+          activeList, count, needsScreenCallbacks, typeForced,
+          dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects,
+          totalWorkers, myIndex, forceProcessOnLogicWorker, collectDetailed
+        );
+        if (collectDetailed) tickMs += this._lastTickMs;
+        continue;
+      }
+
       // A throw from game code reports that entity and resumes after it. The
       // try sits outside the inner loop so the loop body compiles as before.
       if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
@@ -1303,6 +1314,10 @@ class LogicWorker extends AbstractWorker {
       to = range.end;
     }
 
+    if (!forcedScan && !typeInfo.hasRigidBody) {
+      return this._tickBucketNoBody(list, from, to, dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects);
+    }
+
     let visited = 0;
     // Same resume-after-the-throw shape as update(): try outside the loop.
     if (forcedScan) {
@@ -1379,6 +1394,126 @@ class LogicWorker extends AbstractWorker {
       buckets[phase][n] = id;
       counts[phase] = n + 1;
     }
+  }
+
+  /**
+   * The bucket's loop for a type without a RigidBody (E-140): _tickIntervalBucket's, without the acceleration
+   * resets.
+   */
+  _tickBucketNoBody(list, from, to, dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects) {
+    let visited = 0;
+    let i = from;
+    for (;;) {
+      try {
+        for (; i < to; i++) {
+          const entityIndex = list[i];
+          if (transformActive[entityIndex] === 0) continue;
+          const obj = gameObjects[entityIndex];
+          if (!obj || typeof obj.tick !== 'function') continue;
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+          visited++;
+        }
+        break;
+      } catch (error) {
+        this._entityThrew(error, list[i], 'tick');
+        i++;
+      }
+    }
+    return visited;
+  }
+
+  /**
+   * update()'s loops over a non-decimated type without a RigidBody (E-140): the same two (forced, block range),
+   * calling _tickNonDecimatedOneNoBody. Returns the entities ticked; with detailed stats, leaves their tick time in
+   * _lastTickMs.
+   */
+  _tickNonDecimatedTypeNoBody(
+    activeList, count, needsScreenCallbacks, typeForced,
+    dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects,
+    totalWorkers, myIndex, forceProcessOnLogicWorker, collectDetailed
+  ) {
+    let ticked = 0;
+    let tickMs = 0;
+    if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
+      let idx = 0;
+      for (;;) {
+        try {
+          for (; idx < count; idx++) {
+            const entityIndex = activeList[1 + idx];
+            if (
+              logicWorkerThatShouldTick(idx, entityIndex, totalWorkers, forceProcessOnLogicWorker) !== myIndex
+            ) {
+              continue;
+            }
+            ticked += this._tickNonDecimatedOneNoBody(
+              entityIndex, dtRatio, deltaTime, accTime, frameNum,
+              needsScreenCallbacks, transformActive, gameObjects, collectDetailed
+            );
+            if (collectDetailed) tickMs += this._lastTickMs;
+          }
+          break;
+        } catch (error) {
+          this._entityThrew(error, activeList[1 + idx], 'tick');
+          idx++;
+        }
+      }
+    } else {
+      let from = myIndex;
+      let to = count;
+      let step = totalWorkers;
+      if (totalWorkers > 1) {
+        const range = logicBlockRange(count, myIndex, totalWorkers);
+        from = range.start;
+        to = range.end;
+        step = 1;
+      }
+      let idx = from;
+      for (;;) {
+        try {
+          for (; idx < to; idx += step) {
+            const entityIndex = activeList[1 + idx];
+            ticked += this._tickNonDecimatedOneNoBody(
+              entityIndex, dtRatio, deltaTime, accTime, frameNum,
+              needsScreenCallbacks, transformActive, gameObjects, collectDetailed
+            );
+            if (collectDetailed) tickMs += this._lastTickMs;
+          }
+          break;
+        } catch (error) {
+          this._entityThrew(error, activeList[1 + idx], 'tick');
+          idx += step;
+        }
+      }
+    }
+    if (collectDetailed) this._lastTickMs = tickMs;
+    return ticked;
+  }
+
+  /** _tickNonDecimatedOne for a type without a RigidBody: no acceleration resets (E-140). */
+  _tickNonDecimatedOneNoBody(
+    entityIndex,
+    dtRatio,
+    deltaTime,
+    accTime,
+    frameNum,
+    needsScreenCallbacks,
+    transformActive,
+    gameObjects,
+    collectDetailed
+  ) {
+    if (collectDetailed) this._lastTickMs = 0;
+    if (transformActive[entityIndex] === 0) return 0;
+    const obj = gameObjects[entityIndex];
+    if (!obj || typeof obj.tick !== 'function') return 0;
+    if (collectDetailed) {
+      const tTick0 = performance.now();
+      obj.tick(dtRatio, deltaTime, accTime, frameNum);
+      this._lastTickMs = performance.now() - tTick0;
+    } else {
+      obj.tick(dtRatio, deltaTime, accTime, frameNum);
+    }
+    if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+    return 1;
   }
 
   _tickNonDecimatedOne(
