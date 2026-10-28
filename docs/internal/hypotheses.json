@@ -1181,8 +1181,8 @@
     {
       "id": null,
       "title": "Floor occlusion (do not project if it covers the ground)",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "dropped",
+      "statusText": "dropped 2026-10-28: its premise, a GPU shadow pass of 0.3–0.8 ms, has no owner scene that grew it",
       "date": "2026-09-24",
       "result": "A spatial filter saves more GPU than drawing covered casters. — — — If it is reopened: cheap heuristic and drop if `SHADOWS_MS` does not fall ≥3 % after the filter. In copy, GPU shadows is already ~0.3–0.8 ms.",
       "area": "spatial",
@@ -1190,7 +1190,8 @@
       "aliases": [],
       "records": [
         "R-0175"
-      ]
+      ],
+      "next": "Nothing pending; reopen with a scene whose shadow pass is a worker's cost."
     },
     {
       "id": null,
@@ -1240,16 +1241,18 @@
     {
       "id": null,
       "title": "H-ROW / H-OWN spatial",
-      "status": "open",
-      "statusText": "not-measured",
+      "status": "screened",
+      "statusText": "screened 2026-10-28: no rebuild variant wins with one worker or two",
       "date": "2026-09-22",
-      "result": "One index per row or one owned list lowers `spatialMax` ≥3% when the rebuild or the home-row skip dominate. — 30k rebuild 1.518 / step 10.409 (14%). 300k rebuild 13.235 / step 145.427 (9%); neighbor 132.182. Home-row skip 7.5% and 7.1%. …",
+      "result": "One index per row or one owned list lowers `spatialMax` ≥3% when the rebuild or the home-row skip dominate. — 30k rebuild 1.518 / step 10.409 (14%). 300k rebuild 13.235 / step 145.427 (9%); neighbor 132.182. Home-row skip 7.5% and 7.1%. … 2026-10-28 (spatialRebuildWasmMicrobench, Predator mix, 16 500 entities, 4 rounds): a worker's rebuild costs as much with two or three workers as one worker's doing every row (357, 426, 363 µs a frame each), yet leaving other workers' circles before reading their columns wins +3.2 % with two workers and loses 21.2 % with one; the cell range inline +6.4 % and −7.6 %; W6's C port +2.0 % and −2.2 %. The rebuild is not in the entities a worker skips.",
       "area": "spatial",
       "kind": "js",
       "aliases": [],
       "records": [
-        "R-0147"
-      ]
+        "R-0147",
+        "R-0684"
+      ],
+      "next": "Nothing pending."
     },
     {
       "id": null,
@@ -14828,6 +14831,13 @@
         "48c26573",
         "417b5f0a"
       ]
+    },
+    {
+      "id": "R-0684",
+      "date": "2026-10-28",
+      "title": "H-ROW / H-OWN screened: the rebuild's skipped entities are not its cost",
+      "verdict": "screened",
+      "text": "One index per row or one owned list lowers `spatialMax` ≥3% when the rebuild or the home-row skip dominate. — 30k rebuild 1.518 / step 10.409 (14%). 300k rebuild 13.235 / step 145.427 (9%); neighbor 132.182. Home-row skip 7.5% and 7.1%. … 2026-10-28 (spatialRebuildWasmMicrobench, Predator mix, 16 500 entities, 4 rounds): a worker's rebuild costs as much with two or three workers as one worker's doing every row (357, 426, 363 µs a frame each), yet leaving other workers' circles before reading their columns wins +3.2 % with two workers and loses 21.2 % with one; the cell range inline +6.4 % and −7.6 %; W6's C port +2.0 % and −2.2 %. The rebuild is not in the entities a worker skips."
     }
   ],
   "leads": [
