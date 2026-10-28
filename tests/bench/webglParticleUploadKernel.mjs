@@ -19,6 +19,9 @@
  * (a multiplier on the quads' size, for the fill), `blend` (false: no blending) and `layout`: 'attributes' (the
  * engine's: seven instanced vec4 attributes into one 112-byte-stride buffer) or 'texture' (the records in an
  * RGBA32F texture, seven texels each, read with texelFetch by gl_InstanceID; static and ranged modes only).
+ * E-158: `tri` draws each record as one triangle of three vertices that holds the quad (the fragments outside it
+ * discarded) instead of four vertices and two triangles; `heavy` gives each vertex the engine's kind of work (six
+ * eases, a rotation, a drag curve) so the vertex count weighs as it does there.
  * Reports per mode the frames presented per second (requestAnimationFrame, vsync caps it at the display rate)
  * and the median of frames timed through a 1-pixel readPixels (CPU and GPU, synchronous).
  */
@@ -45,8 +48,9 @@ const fetches = (layout) =>
       ATTRS.map((a, k) => `  vec4 ${a} = texelFetch(uRecords, base + ivec2(${k}, 0), 0);`).join('\n')
     : '';
 
-const vertexShader = (attrs, layout) => `#version 300 es
+const vertexShader = (attrs, layout, heavy) => `#version 300 es
 in vec2 aQuad;
+out vec2 vLocal;
 ${declarations(attrs, layout)}
 uniform float uNow;
 uniform vec2 uView;
@@ -59,14 +63,28 @@ ${fetches(layout)}
   vec2 p = aMove.xy + aMove.zw * age * 0.06 + vec2(0.0, aHeight.z * age * age * 1e-5);
   float s = (mix(aScale.x, aScale.y, t) + aSpin.x * 0.0 + aFrames.x * 0.0) * uSize;
   float a = mix(aColor.x, aColor.y, t) * step(age, aTime.y) * step(0.0, age) + 0.05;
+${
+  heavy
+    ? `  float e = 0.0;
+  for (int k = 0; k < 6; k++) e += pow(t + float(k) * 0.1, 2.0 + float(k));
+  float r = mix(aTime.z, aTime.w, e) + aSpin.y * age;
+  p += vec2(cos(r), sin(r)) * 0.01 + vec2(1.0 - exp(-aHeight.w * age)) * 0.01;`
+    : ''
+}
   gl_Position = vec4((p + aQuad * s) / uView * 2.0 - 1.0, 0.0, 1.0);
   vColor = vec4(1.0, 0.8, 0.5, a);
+  vLocal = aQuad;
 }`;
-const FS = `#version 300 es
+const fragmentShader = (tri) => `#version 300 es
 precision mediump float;
 in vec4 vColor;
+in vec2 vLocal;
 out vec4 outColor;
-void main() { outColor = vec4(vColor.rgb * vColor.a, vColor.a); }`;
+void main() {
+${
+  tri ? '  if (max(abs(vLocal.x), abs(vLocal.y)) > 1.0) discard;\n' : ''
+}  outColor = vec4(vColor.rgb * vColor.a, vColor.a);
+}`;
 
 function compile(gl, type, src) {
   const s = gl.createShader(type);
@@ -107,7 +125,7 @@ const frame = () => new Promise((resolve) => requestAnimationFrame(resolve));
 
 export async function run({
   n = 1048576, fresh = 3500, seconds = 4, rounds = 3, modes, width = 1280, height = 720,
-  attrs = 7, strip = false, size = 1, blend = true, layout = 'attributes',
+  attrs = 7, strip = false, size = 1, blend = true, layout = 'attributes', tri = false, heavy = false,
 } = {}) {
   const list = modes || ['static', 'ranged', 'staging', 'twoRanges', 'whole'];
   const canvas = document.createElement('canvas');
@@ -121,8 +139,8 @@ export async function run({
   const renderer = dbg ? gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER);
 
   const prog = gl.createProgram();
-  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, vertexShader(attrs, layout)));
-  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, FS));
+  gl.attachShader(prog, compile(gl, gl.VERTEX_SHADER, vertexShader(attrs, layout, heavy)));
+  gl.attachShader(prog, compile(gl, gl.FRAGMENT_SHADER, fragmentShader(tri)));
   gl.linkProgram(prog);
   if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
   gl.useProgram(prog);
@@ -135,7 +153,9 @@ export async function run({
   const quad = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, quad);
   // Indexed: the corners in order around the quad. Strip: the order a 4-vertex triangle strip needs.
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(strip ? [-1, -1, 1, -1, -1, 1, 1, 1] : [-1, -1, 1, -1, 1, 1, -1, 1]), gl.STATIC_DRAW);
+  // Tri: one triangle around the [-1, 1] square.
+  const corners = tri ? [-1, -1, 3, -1, -1, 3] : strip ? [-1, -1, 1, -1, -1, 1, 1, 1] : [-1, -1, 1, -1, 1, 1, -1, 1];
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(corners), gl.STATIC_DRAW);
   const qLoc = gl.getAttribLocation(prog, 'aQuad');
   gl.enableVertexAttribArray(qLoc);
   gl.vertexAttribPointer(qLoc, 2, gl.FLOAT, false, 8, 0);
@@ -187,7 +207,8 @@ export async function run({
   const t0 = performance.now();
 
   const draw = (count) => {
-    if (strip) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
+    if (tri) gl.drawArraysInstanced(gl.TRIANGLES, 0, 3, count);
+    else if (strip) gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, count);
     else gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, count);
   };
 
@@ -275,5 +296,5 @@ export async function run({
   gl.readPixels(0, height >> 1, width, 1, gl.RGBA, gl.UNSIGNED_BYTE, row);
   let lit = 0;
   for (let k = 0; k < 64; k++) if (row[((k * width) >> 6) * 4] > 0) lit++;
-  return { renderer, n, fresh, seconds, rounds, attrs, strip, size, blend, layout, glError: error, litOf64: lit, summary };
+  return { renderer, n, fresh, seconds, rounds, attrs, strip, size, blend, layout, tri, heavy, glError: error, litOf64: lit, summary };
 }
