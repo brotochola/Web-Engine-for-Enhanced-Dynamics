@@ -107,6 +107,7 @@ export function buildBlastPanel({ presets, settings, fieldLayer, ground, scorch 
   slider('Wind', -60, 60, 1, 0, (v) => (settings.wind[0] = v), (v) => (v === 0 ? 'calm' : (v < 0 ? '← ' : '→ ') + Math.abs(v)));
   slider('Dither', 0, 1, 0.05, 0.6, (v) => fieldLayer.setUniform('uDither', v), (v) => Math.round(v * 100) + '%');
   check('Dark outline on smoke', true, (on) => fieldLayer.setUniform('uOutline', on));
+  check('Show a 64×64 LPC frame at the cursor', false, (on) => (settings.guide[0] = on));
   check('Auto-detonate', false, (on) => (settings.autoDetonate[0] = on));
   check('Show the raw field', false, (on) => fieldLayer.setUniform('uShowField', on));
   const groundControls = buildGroundControls({ ground, scorch });

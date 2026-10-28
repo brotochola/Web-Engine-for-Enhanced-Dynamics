@@ -7,7 +7,7 @@
 // Who does what:
 //   - The panel (main thread, blastforgePanel.js) writes its choices into BlastSettings.
 //   - Detonator runs on a logic worker. It reads the mouse, the keyboard and BlastSettings in tick() and calls
-//     explode().
+//     explode(). FrameGuide keeps the LPC frame under the mouse while the panel shows it.
 //   - The vertex shader moves the fire, smoke, dust and embers (GPU particles), the particle worker moves the
 //     sparks and debris, and the renderer draws the explosion layers (see explosions.js).
 
@@ -24,6 +24,8 @@ const WORLD_HEIGHT = 1536;
 /** Camera zoom. Every world pixel is drawn as PIXEL_ZOOM × PIXEL_ZOOM screen pixels. */
 const PIXEL_ZOOM = 3;
 const AUTO_BLAST_EVERY_MS = { min: 1100, max: 2400 };
+/** The LPC frame guide's layer, over everything. */
+const GUIDE_LAYER = 'guide';
 /** Props on the ground, by weight. Each is a texture in textures/, standing on its bottom edge. */
 const PROP_KINDS = [['tree', 7], ['bush', 5], ['rock', 4], ['barrel', 2], ['crate', 2]];
 /** One prop at most per cell of this size (px), in a third of the cells. */
@@ -43,6 +45,7 @@ export class BlastSettings extends SharedResource {
     amount: Float32Array, // scales the number of puffs
     wind: Float32Array, // px/s, + pushes right
     autoDetonate: Uint8Array, // 1 = random blasts around the view
+    guide: Uint8Array, // 1 = the LPC frame guide follows the mouse
   };
 }
 
@@ -55,6 +58,26 @@ export class Prop extends GameObject {
     this.y = y;
     this.setSprite(kind);
     this.setAnchor(0.5, 1);
+  }
+}
+
+/** A 64×64 LPC character frame at the mouse, as the lab draws it: what a blast looks like next to a character. */
+export class FrameGuide extends GameObject {
+  static components = [SpriteRenderer];
+
+  onSpawned() {
+    this.setSprite('lpcFrame');
+    this.setAnchor(0, 0);
+    this.setLayer(GUIDE_LAYER);
+    this.visible = false;
+  }
+
+  tick() {
+    const shown = BlastSettings.guide[0] === 1 && Mouse.isPresent;
+    this.visible = shown;
+    if (!shown) return;
+    this.x = Math.floor(Mouse.x) - 32;
+    this.y = Math.floor(Mouse.y) - 32;
   }
 }
 
@@ -140,12 +163,14 @@ export class BlastforgeScene extends Scene {
     layers: {
       [GROUND_LAYER]: groundLayer({ worldWidth: WORLD_WIDTH, worldHeight: WORLD_HEIGHT }),
       ...explosionLayers({ pixelZoom: PIXEL_ZOOM, palette: PRESET_LIST[0].palette }),
+      [GUIDE_LAYER]: { zIndex: 5, maxItems: 1, ySorting: false },
     },
   };
 
   static entities = [
     [Detonator, 1],
     [Prop, 220],
+    [FrameGuide, 1],
   ];
 
   static sharedResources = [
@@ -158,6 +183,7 @@ export class BlastforgeScene extends Scene {
     textures: {
       ...Object.fromEntries(PROP_KINDS.map(([kind]) => [kind, `/demos/blastforgeScene/textures/${kind}.png`])),
       ...explosionAssets.textures,
+      lpcFrame: '/demos/blastforgeScene/textures/lpcFrame.png',
     },
     shaders: { ...explosionAssets.shaders, ...groundAssets.shaders },
   };
@@ -168,6 +194,7 @@ export class BlastforgeScene extends Scene {
     BlastSettings.amount[0] = 1;
     BlastSettings.wind[0] = 0;
     BlastSettings.autoDetonate[0] = 0;
+    BlastSettings.guide[0] = 0;
 
     Camera.setZoom(PIXEL_ZOOM);
     Camera.centerOn(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
@@ -185,6 +212,7 @@ export class BlastforgeScene extends Scene {
 
   createNewGame() {
     Detonator.spawn();
+    FrameGuide.spawn();
     spawnProps();
   }
 
