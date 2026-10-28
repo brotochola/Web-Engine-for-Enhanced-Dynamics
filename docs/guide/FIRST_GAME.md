@@ -31,7 +31,7 @@ The file does not import the engine. The workers load it too, and `WEED` is alre
 
 ```js
 const { Scene, GameObject, Component, RigidBody, Collider, SpriteRenderer, CollisionListener } = WEED;
-const { Keyboard, Camera, Tween, Transform, ShapeType } = WEED;
+const { Keyboard, Camera, Tween, Transform, ShapeType, PARTICLE_EASE } = WEED;
 ```
 
 ```js
@@ -152,7 +152,7 @@ onCollisionEnter(other) {
 
 ```js
 // in Coin.onSpawned: pulse forever
-Tween.to(this.index, { scaleX: this.scaleX * 1.3, scaleY: this.scaleY * 1.3 }, 450, 'quad.inout', {
+Tween.to(this.index, { scaleX: this.scaleX * 1.3, scaleY: this.scaleY * 1.3 }, 450, PARTICLE_EASE.QUAD_INOUT, {
   repeat: -1,
   yoyo: true,
 });
@@ -163,7 +163,7 @@ onMessage(name) {
     this.collider.active = 0; // no second pickup while it fades
     this.emit('coin');
     Tween.cancel(this.index);
-    Tween.to(this.index, { alpha: 0 }, 200, 'quad.out', { onComplete: 'gone' });
+    Tween.to(this.index, { alpha: 0 }, 200, PARTICLE_EASE.QUAD_OUT, { onComplete: 'gone' });
   } else if (name === 'gone') {
     this.despawn();
   }

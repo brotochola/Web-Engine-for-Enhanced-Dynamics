@@ -45,5 +45,5 @@ test('a back.out tint stays between and at its endpoints', () => {
 test('entity and particle tweens use the same lerp', () => {
   const tween = readFileSync(join(root, 'src/core/tween.js'), 'utf8');
   assert.ok(!/function lerpRgb/.test(tween), 'no private copy');
-  assert.match(tween, /import \{ applyParticleEase, lerpRgb \} from '\.\.\/util\/particleTween\.js'/);
+  assert.match(tween, /import \{ applyParticleEase, lerpRgb\b[^}]*\} from '\.\.\/util\/particleTween\.js'/);
 });

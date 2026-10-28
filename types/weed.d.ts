@@ -63,6 +63,8 @@ export const LAYER_KIND: Readonly<{
   DENSITY: 'density';
   COMPUTE: 'compute';
   MESH: 'mesh';
+  /** Particles computed in the vertex shader ({@link ParticleEmitter.emitGpu}). */
+  GPU_PARTICLES: 'gpuParticles';
   DECALS: 'decals';
   SHADOWS: 'shadows';
   LIGHTING: 'lighting';
@@ -726,7 +728,7 @@ export type WeedParticleOp =
       to?: WeedNumOrRange;
       start?: WeedNumOrRange;
       end?: WeedNumOrRange;
-      ease?: number | string;
+      ease?: ParticleEase;
     };
 
 /** Tint: number | spawn {min,max} | from/to over life. */
@@ -738,7 +740,7 @@ export type WeedParticleColorOp =
       to?: number | { min: number; max: number };
       start?: number | { min: number; max: number };
       end?: number | { min: number; max: number };
-      ease?: number | string;
+      ease?: ParticleEase;
     };
 
 export interface ParticleEmitConfig {
@@ -778,6 +780,15 @@ export interface ParticleEmitConfig {
   fadeOnTheFloor?: number;
   stayOnTheFloor?: boolean;
   despawnOnGroundContact?: boolean;
+  /**
+   * Floor bounces before the floor behaviour (`despawnOnGroundContact`, `stayOnTheFloor`, `fadeOnTheFloor`) runs.
+   * Heighted particles only: `emitFlat` has no floor and ignores it. Rounded, clamped to 0-255. Default: none.
+   */
+  bounces?: WeedNumOrRange;
+  /** Share of the falling speed kept, upward, on each bounce (0-1). Default 0.5. */
+  bounciness?: WeedNumOrRange;
+  /** Share of the ground speed (`vx`, `vy`) kept on each bounce (0-1). Default 0.7. */
+  bounceFriction?: WeedNumOrRange;
   /** 0 = normal, 1 = multiply (see {@link DECAL_STAMPS_BLEND_MODE}). */
   blendMode?: number;
   /** Layer name or id to render on. Omitted (and no `layers`) = the entities layer. */
@@ -790,14 +801,8 @@ export interface ParticleEmitConfig {
   lightIntensity?: WeedNumOrRange;
 }
 
-/** Ease name or id (see {@link PARTICLE_EASE}). Unknown values fall back to `lerp`. */
-export type WeedEaseName =
-  | 'lerp'
-  | 'quad.in' | 'quad.out' | 'quad.inout'
-  | 'cubic.in' | 'cubic.out' | 'cubic.inout'
-  | 'expo.in' | 'expo.out' | 'expo.inout'
-  | 'back.in' | 'back.out' | 'back.inout'
-  | 'bounce.out';
+/** An ease: a {@link PARTICLE_EASE} value (particles' over-life ops and Tween). Anything else throws. */
+export type ParticleEase = (typeof PARTICLE_EASE)[keyof typeof PARTICLE_EASE];
 
 /** Properties {@link Tween.to} can animate. */
 export interface TweenProps {
@@ -838,9 +843,9 @@ export declare class Tween {
    * @returns the slot, or -1 (immediate, refused, pool full or nothing to animate). With
    * both xy and paint props two slots are used and the xy slot is returned when claimed.
    */
-  static to(entityIndex: number, props: TweenProps, ms: number, ease?: WeedEaseName | number, options?: TweenOptions): number;
+  static to(entityIndex: number, props: TweenProps, ms: number, ease?: ParticleEase, options?: TweenOptions): number;
   /** Tween `Camera.targetZoom`. `ms <= 0` sets it at once and returns -1. */
-  static toZoom(zoom: number, ms: number, ease?: WeedEaseName | number, options?: Omit<TweenOptions, 'onComplete'>): number;
+  static toZoom(zoom: number, ms: number, ease?: ParticleEase, options?: Omit<TweenOptions, 'onComplete'>): number;
   /** Cancel live tweens of an entity; `kind` is 0 paint, 1 xy, 2 zoom, omitted = all. */
   static cancel(entityIndex: number, kind?: number | null): void;
   /** Advance this worker's slot block by `dt` ms. Returns live slots advanced. */
@@ -857,6 +862,12 @@ export declare class Time {
   static set scale(value: number);
   /** `simMs * Time.scale`. */
   static scaleSimMs(simMs: number): number;
+  /**
+   * The scene's sim clock in ms, the same in every thread: 0 at scene start, advanced once per main-thread frame by
+   * the scaled frame time (clamped to 100 ms, as the workers clamp theirs), so a pause or a hitstop stops it. GPU
+   * particles age by it. 0 when unbound.
+   */
+  static get simNowMs(): number;
 }
 
 /** Particle ease ids (`PARTICLE_EASE` / `WEED.enums.PARTICLE_EASE`). */
@@ -2488,8 +2499,24 @@ export interface LayerUniformDef {
 
 /** Per-layer entry in scene `config.layers` (custom layers). */
 export interface LayerSceneConfigEntry {
+  /** {@link LAYER_KIND}; omitted = sprites (or density / compute from `shader`). */
+  kind?: string;
   zIndex?: number;
   blendMode?: number;
+  /**
+   * `kind: LAYER_KIND.GPU_PARTICLES`: particles across the writer rings (main thread, each logic worker, particle worker),
+   * split by `gpuRings`; each ring rounds down to a power of two. Default 100000.
+   */
+  maxParticles?: number;
+  /** `kind: LAYER_KIND.GPU_PARTICLES`: weights of the writer rings' shares of `maxParticles` (default 1 each): put the share where you emit. */
+  gpuRings?: { main?: number; logic?: number; particle?: number };
+  /**
+   * `kind: LAYER_KIND.GPU_PARTICLES` with `renderer.ySort`: every emitGpu call joins the entities' y-sort painter as
+   * one item at its ground y (`sortY`), so trees in front of it hide it. Off: the layer draws at its zIndex.
+   */
+  sortWithEntities?: boolean;
+  /** `kind: LAYER_KIND.GPU_PARTICLES`: snap each particle's center to the pixel grid. */
+  pixelSnap?: boolean;
   ySorting?: boolean;
   resolution?: number;
   /** Pixi upsample filter when resolution &lt; 1. Default {@link LAYER_SCALE_MODE}.LINEAR. */
@@ -2604,6 +2631,11 @@ export declare class Layer {
 
   get zIndex(): number;
   get resolution(): number;
+  /**
+   * A look layer's render-texture scale (viewport × this). Any worker; the renderer remakes the layer's render
+   * textures before it next draws the layer. Layers without a look shader ignore it. Throws unless finite and > 0.
+   */
+  set resolution(value: number);
   get scaleMode(): LayerScaleMode;
   get alpha(): number;
   set alpha(value: number);
@@ -3752,6 +3784,48 @@ export declare class ParticleEmitter extends SharedAtomicPool {
   static emitAlongLine(
     config: Omit<ParticleEmitConfig, 'x' | 'y'> & { x0: number; y0: number; x1: number; y1: number },
   ): number;
+  /**
+   * GPU particles into a `LAYER_KIND.GPU_PARTICLES` layer: written once, computed in the vertex shader after that.
+   * No CPU cost per frame; nothing reads them back (no collisions, decals or floor) and they are not saved. From the
+   * main thread, a logic worker or the particle worker. Returns the particles written.
+   */
+  static emitGpu(config: ParticleGpuEmitConfig): number;
+  static reset(): void;
+}
+
+/** {@link ParticleEmitter.emitGpu}: the closed-form keys of {@link ParticleEmitConfig}, plus the GPU ones. */
+export interface ParticleGpuEmitConfig extends Omit<ParticleEmitConfig,
+  'fadeOnTheFloor' | 'stayOnTheFloor' | 'despawnOnGroundContact' | 'bounces' | 'bounciness' | 'bounceFriction'
+  | 'layer' | 'layers' | 'renderOnly' | 'lightIntensity' | 'blendMode' | 'rotC' | 'rotS' | 'gravity'> {
+  /** A `LAYER_KIND.GPU_PARTICLES` layer's name or id. */
+  layer: string | number;
+  /** emit's height model: the ground point moves, `z` / `vz` / `gravity` act on the height (`z < 0` is up), drawn at `y + z`. No floor: `z` stops at 0. Default false (emitFlat's model: gravity on `vy`). */
+  heighted?: boolean;
+  /** px/frame². Default 0.15 heighted, 0 flat (as emit / emitFlat). */
+  gravity?: number;
+  /** Air drag, 1/s: velocities decay as e^(-drag·t). Default 0. */
+  drag?: WeedNumOrRange;
+  /** Each particle is born this many ms after the call. Default 0. */
+  delay?: WeedNumOrRange;
+  /** The group's ground y among the entities (`sortWithEntities`). Default: the middle of `y`. */
+  sortY?: number;
+}
+
+/** The rings behind `LAYER_KIND.GPU_PARTICLES` layers (gpuParticles.js); emit with {@link ParticleEmitter.emitGpu}. */
+export declare class GpuParticles {
+  /** This thread's ring in every GPU layer: 0 main, 1..L logic workers, L+1 the particle worker; -1 cannot emit. */
+  static writerSlot: number;
+  static writers: number;
+  static readonly particleWorkerSlot: number;
+  static readonly layers: ReadonlyArray<object | null>;
+  static layerOf(layer: string | number): object | null;
+  /** Per writer ring: capacity, records and groups ever published, and times live records were written over. */
+  static stats(layer: string | number): Array<{ capacity: number; published: number; groups: number; overflows: number }> | null;
+  /** Where record `slot` of writer ring `ring` is now, through an evaluator such as gpuParticleEval's. */
+  static evaluate(layer: string | number, ring: number, slot: number, evaluate: (rec: Float32Array, base: number, now: number) => object): object | null;
+  static initializeFromConfig(layersConfig: Record<string, LayerSceneConfigEntry>, numberOfLogicWorkers?: number): typeof GpuParticles;
+  static getSerializableData(): { writers: number; layers: object[] };
+  static initializeFromBuffers(data: { writers: number; layers: object[] } | null | undefined): void;
   static reset(): void;
 }
 
@@ -3830,6 +3904,8 @@ export declare const DECORATION_Y_SORT_SCALE: number;
 export declare const DECORATION_INNER_Z_MIN: number;
 export declare const DECORATION_INNER_Z_MAX: number;
 export declare const ENTITY_GLOW_SORT_BIAS: number;
+/** Particles' y-sort offset inside their ground pixel row: in front of a body on the same row, behind its glow. */
+export declare const PARTICLE_SORT_BIAS: number;
 export declare const DECORATION_NO_PARENT: number;
 export declare const SWAY_OFF: 0;
 export declare const SWAY_LOOP: 1;
@@ -4118,6 +4194,7 @@ export interface WeedNamespace extends WeedEnums {
   JointBreakListener: typeof JointBreakListener;
   Grab: typeof Grab;
   ParticleEmitter: typeof ParticleEmitter;
+  GpuParticles: typeof GpuParticles;
   LiquidFun: typeof LiquidFun;
   LIQUIDFUN_FLAGS: typeof LIQUIDFUN_FLAGS;
   LIQUIDFUN_GROUP_FLAGS: typeof LIQUIDFUN_GROUP_FLAGS;
@@ -4135,6 +4212,7 @@ export interface WeedNamespace extends WeedEnums {
   DECORATION_INNER_Z_MIN: number;
   DECORATION_INNER_Z_MAX: number;
   ENTITY_GLOW_SORT_BIAS: number;
+  PARTICLE_SORT_BIAS: number;
   DECORATION_NO_PARENT: number;
   /** The "no parent" id for the scene's entity id width. */
   decorationNoParent(): number;

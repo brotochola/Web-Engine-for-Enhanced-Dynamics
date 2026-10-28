@@ -2403,6 +2403,127 @@ In [`REVIEW_PLAN.md`](./REVIEW_PLAN.md):
 
 ---
 
+## GPU particles (PR #5, 2026-10-27)
+
+The branch that brought `LAYER_KIND.GPU_PARTICLES` and its y-sort proxies (`feat/gpu-particles-painter-proxies`),
+made ready to merge: what was fixed and measured on the way. The register holds the sittings, under each row.
+
+### E-148 Pixi's WebGL shader sync walks a per-shader plan, not for…in
+
+Every WebGL draw ran `pixi.js/unsafe-eval`'s shader sync, which walked the shader's groups and resources with
+`for…in` over integer keys, and V8 builds a key array for each such loop. The build swaps in a plan per shader,
+checked by each group's BindGroup and its key count (`scripts/pixi-stubs/shaderSyncPolyfill.mjs`).
+
+Kept (f2d34f6a): Pixi in Predator 1 214.5 → 522.6 KB/s; in gpuParticlesStressScene 8 073.5 → 663 KB/s.
+
+### E-149 The GPU particle path makes no garbage per frame
+
+The render path (92fdd105), emitGpu (18c99ee5), the feed syncs (a2398952) and the proxy collector's growth (5d625253).
+
+Kept: gpuParticlesStressScene at 30 columns a second, KB/s sampled per worker:
+
+| worker | before | after |
+| --- | --- | --- |
+| Pixi | 663 | 81.7 |
+| pre-render | 174.7 | 16.4 |
+| logic | 1 838.6 | 106.5 |
+| particle | 88.7 | 33.9 |
+
+emitGpu also emits 66–80 % faster (Node, 400 particles a call). The same branch fixed WebGL dropping the records of a
+ring that published in a frame that drew none of them (cf88429f).
+
+### E-150 The entities chunks leave the stage still while the batch flips
+
+The chunk meshes followed the entities batch's two ring geometries, so every frame hid, showed and swapped them,
+and Pixi rebuilt the stage's instructions every frame. Pairs of meshes, with the idle one at alpha 0, leave a
+stable frame untouched.
+
+A hygiene keep (6292504b): NEUTRAL in time with 1 000 groups held still (renderer −1.4 %, cv 9/3 %).
+
+### E-151 A look layer's regions map world to UV in a uniform
+
+Region quads uploaded their positions and their camera-dependent UVs every frame. The world-to-UV map is now a
+uniform of the layer, set once a frame, and a quad uploads only when its rectangle changes.
+
+A hygiene keep (0c51068b): pixel-identical, garbage unchanged; it saves two uploads per region per frame.
+
+### E-152 Pixi's WebGPU draw path makes no garbage
+
+Each WebGPU draw walked integer-keyed objects with `for…in` (the encoder, BindGroup `_touch` and `_key`), built a
+string key (the bind group cache), made an options object (the mesh adapter), or boxed a double key (the pipeline
+cache). The build patches them (`scripts/buildPixi.mjs`, `patchPixiDrawGarbage`).
+
+Kept (55c6ba0f), gpuParticlesStressScene on WebGPU:
+- Pixi garbage 6 000.7 → 131.2 KB/s;
+- renderer 5.216 → 3.625 ms (−35.6 %, worse 0/4).
+
+### E-153 Particles' ground-row key without Math.round
+
+The PR keyed CPU particles in pre-render's collect with `Math.round`. `floor(y + 0.5)` gives the same keys for
+every float32 y.
+
+Kept (159143bc): the PR's +10.9 % on pre-render (particleIntegrateStressScene?tween=1) came down to +2.4 %, under the
+gate.
+
+### E-154 The y-sort proxies sort their groups by merging runs
+
+The proxy collector sorted its groups by insertion. It now insertion-sorts runs of 32 and merges them; a frame
+already in order costs about n compares.
+
+Kept (1fe2d1c2), Node, collect and write per frame with 20 000 entities:
+- 2 048 groups: 1.48–1.58 → 0.22–0.29 ms;
+- 1 024 groups: 0.43–0.58 → 0.12–0.20 ms.
+
+### E-155 Particles skip their sort key when no layer y-sorts
+
+A particle's key orders it only in a layer that y-sorts: otherwise `orderSortKey` keeps the zIndex alone, and the
+emit writes no key. Pre-render computed every visible particle's key anyway.
+
+The ground-row key alone cost pre-render 3.1 % against main's key in particleIntegrateStressScene?tween=1, where
+nothing y-sorts (an experiment commit, 0/4 worse). With no layer y-sorting, the particles now take one key.
+
+Kept (c08f3548): pre-render −4.3 % in that scene (worse 0/4). The branch against main went from +7.0 % to −4.6 % there.
+
+### E-156 A wrapped upload goes up as its two ranges
+
+A frame whose new GPU particle records wrapped a ring's end uploaded the whole ring, since Pixi keeps one pending
+range per buffer: on WebGPU each `buffer.update()` writes at once, and a ring of 1 048 576 particles is 112 MB. The
+head now goes up before the tail's range replaces it (the Pixi worker's flush); without a flush, the whole array.
+
+Kept (c451e2a6), GPU Galaxy (`demos/gpuGalaxyScene`) at 8 388 608 particles, 8 arms, WebGPU, 4 pairs: renderer
+3.870 → 3.229 ms (−16.6 %, worse 0/4), frames drawn 36.2 → 38.1 a second, presented 57.4 → 60.0 fps.
+
+### E-157 GPU particles on WebGL fall behind WebGPU past a few hundred thousand
+
+GPU Galaxy, GTX 1650, Chrome on ANGLE D3D11: WebGL draws 262 144 particles at 60 fps but 1 048 576 at 15 to 44
+(124 frames in 8 s), with the renderer's CPU step at 0.9 ms; WebGPU draws 1 048 576 and 4 194 304 at 60. The CPU
+is idle, so the GPU side stalls. Suspects: the per-frame `bufferSubData` into a ring the GPU still draws from (ANGLE
+may copy or wait), and the attribute re-pointing for ranged draws without base-instance. Next: a WebGL kernel that
+draws N instances with and without a per-frame update.
+
+### E-158 A GPU particle costs four vertex evaluations and two triangles
+
+On the GTX 1650 a frame's GPU time grows about 3.3 ms per million GPU particles (GPU Galaxy, WebGPU, 1 to 2 px dots:
+4 194 304 at 60 fps, 8 388 608 at 38, 16 777 216 at 19). Every particle is a quad: its record is evaluated at each
+of its four vertices, and two triangles go through setup for a pixel or two. Next: one evaluation per particle (a
+WebGPU compute pass), or a point or single-triangle mode for dots this small.
+
+### Left open (design calls for the owner)
+
+- **Look regions merge transitively.** 256 scattered look groups became one region, which sorts at the group
+  furthest back. A depth per cloud needs another scheme: split the overlaps, or give each region a depth band.
+- **No per-layer clear.** GPU particles cannot be cleared one layer at a time, for a level restart without a scene
+  reload. Each ring has one writer.
+- **No continuous emitter.** Anything that follows an entity needs a call every frame, against 2 048 calls a ring.
+- **Sizing.** `maxParticles` splits equally between the writer rings and rounds each share down to a power of two:
+  120 000 becomes 3 × 32 768, of which one is used when emitting from entities.
+- **The sim clock.** GPU particles age by `Time.simNowMs`, stepped on the main thread's rAF, so main-thread jank
+  freezes them while CPU particles keep moving. Unmeasured.
+- **Missing pieces.** CPU particles have no drag, GPU particles no sideways acceleration (wind), look targets are
+  8-bit, and layer uniforms take no arrays.
+
+---
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

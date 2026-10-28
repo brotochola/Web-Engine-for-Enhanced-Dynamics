@@ -122,6 +122,8 @@ export const LAYER_KIND = Object.freeze({
   DENSITY: 'density',
   COMPUTE: 'compute',
   MESH: 'mesh',
+  /** Particles computed in the vertex shader (ParticleEmitter.emitGpu). No render queue: rings per writer thread. */
+  GPU_PARTICLES: 'gpuParticles',
   DECALS: 'decals',
   SHADOWS: 'shadows',
   LIGHTING: 'lighting',
@@ -135,6 +137,7 @@ const SCENERY_KIND_SET = new Set([
 ]);
 
 const SKIP_SUBSCRIBE_KIND_SET = new Set([
+  LAYER_KIND.GPU_PARTICLES,
   LAYER_KIND.COVER,
   LAYER_KIND.STATIC,
   LAYER_KIND.TILING,
@@ -542,6 +545,11 @@ export const DECORATION_INNER_Z_MAX = DECORATION_Y_SORT_SCALE - 2;
 export const DECORATION_INNER_Z_MIN = -(DECORATION_Y_SORT_SCALE - 1);
 /** Light glow (type 3) sort offset vs entity body at same foot Y; separate from DecorationPool and above child decorations. */
 export const ENTITY_GLOW_SORT_BIAS = DECORATION_Y_SORT_SCALE - 1;
+/**
+ * Particles' sort offset inside their ground pixel row (CPU particles and GPU particle groups): in front of a
+ * body whose feet are on the same row, behind its light glow.
+ */
+export const PARTICLE_SORT_BIAS = DECORATION_Y_SORT_SCALE >> 1;
 
 // ============================================================================
 // TWEEN DEFAULTS
@@ -626,6 +634,11 @@ export const RENDERER_DEFAULTS = Object.freeze({
   maxMeshVerts: 0,
   /** Explicit MeshRenderer index arena. 0 = convex fans only. Caps at 2^22 at either width. */
   maxMeshIndices: 0,
+  /**
+   * GPU particle layers with `sortWithEntities`: most places a frame where the entities batch is cut to draw a group
+   * between its sprites (docs/guide/GPU_PARTICLES.md). Past it, the closest places merge.
+   */
+  maxPainterSplits: 32,
 });
 
 // ============================================================================

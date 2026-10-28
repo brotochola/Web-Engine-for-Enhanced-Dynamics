@@ -58,7 +58,7 @@ import Keyboard from './keyboard.js';
 import { Flash } from './flash.js';
 import { BigAtlasInspector } from './bigAtlasInspector.js';
 import { Camera } from './camera.js';
-import { Time } from './timeScale.js';
+import { Time, simClockStepMs } from './timeScale.js';
 import { Tween } from './tween.js';
 import {
   buildMemoryUsageSummary,
@@ -2282,6 +2282,7 @@ class Scene {
       throw new Error('stepFrame needs deltaTime > 0');
     }
 
+    Time._advanceSimNow(simClockStepMs(dt, Time.scale, true));
     this.updateInternal(dt);
 
     await this._stepWorkerGroup(this.workers.logicWorkers, dt);
@@ -2565,6 +2566,9 @@ class Scene {
       if (!this.state.pause) {
         const deltaTime = currentTime - this.lastFrameTime;
         this.lastFrameTime = currentTime;
+
+        // The shared sim clock (Time.simNowMs): the frame time clamped as the workers clamp theirs, scaled.
+        Time._advanceSimNow(simClockStepMs(deltaTime, Time.scale));
 
         const t0 = performance.now();
         this.updateInternal(deltaTime);

@@ -200,6 +200,18 @@ export class Layer {
 
     get zIndex() { return Layer._zIndex[this.id]; }
     get resolution() { return Layer._resolution[this.id]; }
+    /**
+     * A look layer (one with a shader) draws into render textures the size of the viewport times this. Mutable from
+     * any worker: the renderer remakes the layer's render textures before it next draws the layer, as a canvas
+     * resize does. Layers without a look shader draw straight to the screen and ignore it.
+     * @example Layer.get("smoke").resolution = 1 / 3; // one texel per 3×3 screen px
+     */
+    set resolution(v) {
+        if (!(v > 0) || !Number.isFinite(v)) {
+            throw new Error(`WeedJS: layer "${this.name}" resolution must be a finite number above 0 (got ${v})`);
+        }
+        Layer._resolution[this.id] = v;
+    }
     /** Pixi upsample filter for shader RTs ({@link LAYER_SCALE_MODE}). */
     get scaleMode() { return this._scaleMode ?? LAYER_SCALE_MODE.LINEAR; }
     /**
@@ -825,11 +837,12 @@ export class Layer {
             });
             if (!layer) continue;
             layer._sharedPictures = shaderTextureList(config.shader).length > 0;
-            // LF density, compute, and scenery skip the sprite render queue.
+            // LF density, compute, GPU particles and scenery skip the sprite render queue.
             this._hasRenderQueue[layer.id] = (
                 densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                 || compute
                 || kind === LAYER_KIND.MESH
+                || kind === LAYER_KIND.GPU_PARTICLES
                 || hasSharedPictures(config)
                 || isSceneryKind(kind)
             ) ? 0 : 1;
@@ -907,6 +920,7 @@ export class Layer {
             || kind === LAYER_KIND.TILING || kind === LAYER_KIND.TILEMAP
             || kind === LAYER_KIND.SPRITES || kind === LAYER_KIND.DENSITY
             || kind === LAYER_KIND.COMPUTE || kind === LAYER_KIND.MESH
+            || kind === LAYER_KIND.GPU_PARTICLES
             || kind === LAYER_KIND.DECALS
             || kind === LAYER_KIND.SHADOWS || kind === LAYER_KIND.LIGHTING) {
             if (isSceneryKind(kind) && builtIn) {
@@ -1222,6 +1236,7 @@ export class Layer {
         if (!layer || !this._feederKind) return;
         let kind = LAYER_FEEDER_KIND.BUILTIN;
         if (isSceneryKind(layer._kind)) kind = LAYER_FEEDER_KIND.NONE;
+        else if (layer._kind === LAYER_KIND.GPU_PARTICLES) kind = LAYER_FEEDER_KIND.NONE;
         else if (layer._kind === LAYER_KIND.MESH) kind = LAYER_FEEDER_KIND.MESH;
         else if (layer._compute) kind = LAYER_FEEDER_KIND.COMPUTE;
         else if (layer._sharedPictures) kind = LAYER_FEEDER_KIND.NONE;
@@ -1241,6 +1256,16 @@ export class Layer {
     static entitiesMask() {
         const id = this.entitiesId | 0;
         return id >= 0 ? (1 << id) : 0;
+    }
+
+    /** Whether some layer y-sorts now (a layer's flag can change at run time: the debug panel's checkbox). */
+    static anyYSorting() {
+        const ySorting = this._ySorting;
+        if (!ySorting) return false;
+        for (let i = 0; i < ySorting.length; i++) {
+            if (ySorting[i] === 1) return true;
+        }
+        return false;
     }
 
     /**
@@ -1606,6 +1631,7 @@ export class Layer {
                 maxItems: isBuiltIn
                     || densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     || layer._kind === LAYER_KIND.MESH
+                    || layer._kind === LAYER_KIND.GPU_PARTICLES
                     || hasSharedPictures(config)
                     || isSceneryKind(layer._kind)
                     ? 0
@@ -1625,6 +1651,13 @@ export class Layer {
                 resource: typeof config.resource === 'string' ? config.resource : null,
                 worldRect: worldRectOf(config.shader),
                 shaderTextures: shaderTextureList(config.shader),
+                // LAYER_KIND.GPU_PARTICLES: the rings are GpuParticles' (gpuParticles.js); these are the draw options.
+                gpuParticles: layer._kind === LAYER_KIND.GPU_PARTICLES
+                    ? {
+                        sortWithEntities: config.sortWithEntities === true,
+                        pixelSnap: config.pixelSnap === true,
+                    }
+                    : null,
             };
 
             if (config.shader) {

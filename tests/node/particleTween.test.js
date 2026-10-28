@@ -38,10 +38,10 @@ import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
   assert.strictEqual(a.ease, PARTICLE_EASE.LERP);
 }
 
-// nested min/max endpoints + ease string
+// nested min/max endpoints + ease id
 {
   const a = resolveParticleOp(
-    { from: { min: 0.5, max: 0.5 }, to: 0, ease: 'quad.out' },
+    { from: { min: 0.5, max: 0.5 }, to: 0, ease: PARTICLE_EASE.QUAD_OUT },
     1
   );
   assert.strictEqual(a.from, 0.5);
@@ -70,7 +70,16 @@ assert.strictEqual(applyParticleEase(1, PARTICLE_EASE.LERP), 1);
 assert.ok(Math.abs(applyParticleEase(0.5, PARTICLE_EASE.LERP) - 0.5) < 1e-9);
 assert.ok(applyParticleEase(0.5, PARTICLE_EASE.QUAD_IN) < 0.5);
 assert.ok(applyParticleEase(0.5, PARTICLE_EASE.QUAD_OUT) > 0.5);
-assert.strictEqual(resolveEaseId('bounce.out'), PARTICLE_EASE.BOUNCE_OUT);
+assert.strictEqual(resolveEaseId(undefined), PARTICLE_EASE.LERP);
+assert.strictEqual(resolveEaseId(null), PARTICLE_EASE.LERP);
+assert.strictEqual(resolveEaseId(PARTICLE_EASE.BOUNCE_OUT), PARTICLE_EASE.BOUNCE_OUT);
+// An ease is a PARTICLE_EASE value: a name, a fraction or an id past the table throws.
+assert.throws(() => resolveEaseId('bounce.out'), /ease must be a PARTICLE_EASE value .*not "bounce\.out"/);
+assert.throws(() => resolveEaseId(PARTICLE_EASE.BOUNCE_OUT + 1), TypeError);
+assert.throws(() => resolveEaseId(-1), TypeError);
+assert.throws(() => resolveEaseId(1.5), TypeError);
+assert.throws(() => resolveParticleOp({ from: 1, to: 0, ease: 'quad.out' }, 1), TypeError);
+assert.throws(() => resolveParticleColorOp({ from: 0xff0000, to: 0, ease: 'quad.out' }, 0xffffff), TypeError);
 assert.strictEqual(resolveEaseId(PARTICLE_EASE.CUBIC_IN), PARTICLE_EASE.CUBIC_IN);
 
 // Expo LUT tracks Math.pow within ~1e-3 (256 samples)

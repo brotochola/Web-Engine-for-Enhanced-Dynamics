@@ -47,7 +47,9 @@ import { CAMERA_TYPES, PARTICLE_EASE } from '../util/configDefaults.js';
 import { randomRange, randomColor, rng } from '../util/utils.js';
 import { Layer } from './layer.js';
 import { syncParticleFeed } from '../util/layerFeed.js';
+import { GpuParticles } from './gpuParticles.js';
 import {
+  PARTICLE_EASE_SHIFT,
   PARTICLE_TWEEN,
   resolveParticleOp,
   resolveParticleColorOp,
@@ -81,6 +83,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'scale', 'scaleX', 'scaleY', 'alpha', 'tint',
     'rotC', 'rotS', 'rotation', 'angularVelocity', 'flipX', 'flipY',
     'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact',
+    'bounces', 'bounciness', 'bounceFriction',
     'blendMode', 'layer', 'layers', 'renderOnly', 'lightIntensity',
   ];
   static _alongLineScratch = Object.create(null);
@@ -130,7 +133,7 @@ export class ParticleEmitter extends SharedAtomicPool {
   }
 
   /**
-   * Heighted particles: screenY = y + z (topdown / side / iso).
+   * Heighted particles: drawn at screenY = y + z (topdown / side / iso), y-sorted by their ground row y.
    * @param {Object} config - Particle emission configuration
    * @returns {number} - Number of particles actually spawned
    */
@@ -158,6 +161,20 @@ export class ParticleEmitter extends SharedAtomicPool {
     const o = this._flatOverrides;
     o.gravity = config.gravity ?? 0;
     return this._spawn(config, o);
+  }
+
+  /**
+   * GPU particles: written once into a LAYER_KIND.GPU_PARTICLES layer and computed in the vertex shader from then
+   * on. No CPU cost per frame, and no 65 535 ceiling; in exchange nothing reads them back (no collisions, no
+   * decals, no floor), and they are not saved. `layer` names the GPU layer. The keys of emit / emitFlat where the
+   * motion has a closed form, plus `heighted` (emit's height model; default flat), `drag` (1/s), `delay` (ms) and
+   * `sortY` (the group's ground y among the entities, with the layer's `sortWithEntities`). Any thread that runs
+   * game code can call it: the main thread, a logic worker, the particle worker.
+   * @param {Object} config
+   * @returns {number} particles written
+   */
+  static emitGpu(config) {
+    return GpuParticles._emit(config);
   }
 
   /**
@@ -296,8 +313,14 @@ export class ParticleEmitter extends SharedAtomicPool {
     const initialAlpha = ParticleComponent.initialAlpha;
     const stayOnTheFloor = ParticleComponent.stayOnTheFloor;
     const despawnOnGroundContact = ParticleComponent.despawnOnGroundContact;
+    const bounces = ParticleComponent.bounces;
+    const bounciness = ParticleComponent.bounciness;
+    const bounceFriction = ParticleComponent.bounceFriction;
+    // Floor bounces: heighted particles only (emitFlat has no floor).
+    const bouncing = !flatMode && cfg.bounces != null;
     const tweenMask = ParticleComponent.tweenMask;
     const easeIdArr = ParticleComponent.easeId;
+    const easeIdsArr = ParticleComponent.easeIds;
     const alphaFrom = ParticleComponent.alphaFrom;
     const alphaTo = ParticleComponent.alphaTo;
     const scaleXFrom = ParticleComponent.scaleXFrom;
@@ -390,9 +413,15 @@ export class ParticleEmitter extends SharedAtomicPool {
 
       gravity[i] = cfg.gravity ?? 0.15;
 
-      // Visual ops: number | {min,max} | {from,to[,ease]} (endpoints may nest {min,max})
+      // Visual ops: number | {min,max} | {from,to[,ease]} (endpoints may nest {min,max}). Each tweened
+      // property keeps its own ease (below).
       let mask = 0;
-      let ease = PARTICLE_EASE.LERP;
+      let easeAlpha = 0;
+      let easeScaleX = 0;
+      let easeScaleY = 0;
+      let easeTint = 0;
+      let easeRot = 0;
+      let easeAngVel = -1; // -1: angular velocity is not tweened
 
       if (cfg.scale == null && cfg.scaleX != null && cfg.scaleY != null) {
         const ox = resolveParticleOp(cfg.scaleX, 1, this._opA);
@@ -403,8 +432,8 @@ export class ParticleEmitter extends SharedAtomicPool {
         scaleXTo[i] = ox.to;
         scaleYFrom[i] = oy.from;
         scaleYTo[i] = oy.to;
-        if (ox.tween) { mask |= PARTICLE_TWEEN.SCALEX; ease = ox.ease; }
-        if (oy.tween) { mask |= PARTICLE_TWEEN.SCALEY; ease = oy.ease; }
+        if (ox.tween) { mask |= PARTICLE_TWEEN.SCALEX; easeScaleX = ox.ease; }
+        if (oy.tween) { mask |= PARTICLE_TWEEN.SCALEY; easeScaleY = oy.ease; }
       } else {
         const os = resolveParticleOp(cfg.scale ?? cfg.scaleX ?? cfg.scaleY, 1, this._opA);
         scaleX[i] = os.from;
@@ -415,7 +444,8 @@ export class ParticleEmitter extends SharedAtomicPool {
         scaleYTo[i] = os.to;
         if (os.tween) {
           mask |= PARTICLE_TWEEN.SCALEX | PARTICLE_TWEEN.SCALEY;
-          ease = os.ease;
+          easeScaleX = os.ease;
+          easeScaleY = os.ease;
         }
       }
 
@@ -423,14 +453,14 @@ export class ParticleEmitter extends SharedAtomicPool {
       alpha[i] = oa.from;
       alphaFrom[i] = oa.from;
       alphaTo[i] = oa.to;
-      if (oa.tween) { mask |= PARTICLE_TWEEN.ALPHA; ease = oa.ease; }
+      if (oa.tween) { mask |= PARTICLE_TWEEN.ALPHA; easeAlpha = oa.ease; }
 
       const oc = resolveParticleColorOp(cfg.tint, 0xffffff, this._opA);
       tint[i] = oc.from;
       baseTint[i] = oc.from;
       tintFrom[i] = oc.from;
       tintTo[i] = oc.to;
-      if (oc.tween) { mask |= PARTICLE_TWEEN.TINT; ease = oc.ease; }
+      if (oc.tween) { mask |= PARTICLE_TWEEN.TINT; easeTint = oc.ease; }
 
       if (cfg.rotC != null && cfg.rotS != null) {
         rotC[i] = cfg.rotC;
@@ -445,7 +475,7 @@ export class ParticleEmitter extends SharedAtomicPool {
         rotTo[i] = toRad;
         rotC[i] = Math.cos(fromRad);
         rotS[i] = Math.sin(fromRad);
-        if (or.tween) { mask |= PARTICLE_TWEEN.ROT; ease = or.ease; }
+        if (or.tween) { mask |= PARTICLE_TWEEN.ROT; easeRot = or.ease; }
       }
 
       if (cfg.angularVelocity != null) {
@@ -454,7 +484,7 @@ export class ParticleEmitter extends SharedAtomicPool {
         angularVelFrom[i] = fromRad;
         angularVelTo[i] = ov.tween ? (ov.to * Math.PI) / 180 : fromRad;
         hasAngularVel[i] = 1;
-        if (ov.tween) ease = ov.ease;
+        if (ov.tween) easeAngVel = ov.ease;
       } else {
         angularVelFrom[i] = 0;
         angularVelTo[i] = 0;
@@ -467,8 +497,30 @@ export class ParticleEmitter extends SharedAtomicPool {
       timeOnFloor[i] = 0;
       initialAlpha[i] = 0;
 
+      // One ease for every tweened property when they agree (the usual case: the kernel eases once);
+      // otherwise MIXED_EASE, and easeIds holds each property's.
+      let ease = -1;
+      let mixed = false;
+      if (mask & PARTICLE_TWEEN.ALPHA) ease = easeAlpha;
+      if (mask & PARTICLE_TWEEN.SCALEX) { if (ease < 0) ease = easeScaleX; else if (easeScaleX !== ease) mixed = true; }
+      if (mask & PARTICLE_TWEEN.SCALEY) { if (ease < 0) ease = easeScaleY; else if (easeScaleY !== ease) mixed = true; }
+      if (mask & PARTICLE_TWEEN.TINT) { if (ease < 0) ease = easeTint; else if (easeTint !== ease) mixed = true; }
+      if (mask & PARTICLE_TWEEN.ROT) { if (ease < 0) ease = easeRot; else if (easeRot !== ease) mixed = true; }
+      if (easeAngVel >= 0) { if (ease < 0) ease = easeAngVel; else if (easeAngVel !== ease) mixed = true; }
+      if (mixed) {
+        mask |= PARTICLE_TWEEN.MIXED_EASE;
+        easeIdsArr[i] =
+          ((easeAlpha << PARTICLE_EASE_SHIFT.ALPHA) |
+            (easeScaleX << PARTICLE_EASE_SHIFT.SCALEX) |
+            (easeScaleY << PARTICLE_EASE_SHIFT.SCALEY) |
+            (easeTint << PARTICLE_EASE_SHIFT.TINT) |
+            (easeRot << PARTICLE_EASE_SHIFT.ROT) |
+            ((easeAngVel < 0 ? 0 : easeAngVel) << PARTICLE_EASE_SHIFT.ANGULAR_VELOCITY)) >>> 0;
+      } else {
+        easeIdsArr[i] = 0;
+      }
       tweenMask[i] = mask;
-      easeIdArr[i] = ease;
+      easeIdArr[i] = ease < 0 ? PARTICLE_EASE.LERP : ease;
 
       animCountArr[i] = 0;
       animModeArr[i] = 0;
@@ -500,6 +552,14 @@ export class ParticleEmitter extends SharedAtomicPool {
 
       stayOnTheFloor[i] = flatMode ? 0 : (cfg.stayOnTheFloor ? 1 : 0);
       despawnOnGroundContact[i] = flatMode ? 0 : (cfg.despawnOnGroundContact ? 1 : 0);
+      if (bouncing) {
+        const n = Math.round(randomRange(cfg.bounces, 0));
+        bounces[i] = n > 255 ? 255 : n > 0 ? n : 0;
+        bounciness[i] = randomRange(cfg.bounciness, 0.5);
+        bounceFriction[i] = randomRange(cfg.bounceFriction, 0.7);
+      } else {
+        bounces[i] = 0;
+      }
 
       blendMode[i] = cfg.blendMode ?? DECAL_STAMPS_BLEND_MODE.normal;
       if (layerMask) {

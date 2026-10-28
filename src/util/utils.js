@@ -962,7 +962,37 @@ export function seededRandom(seed, workerId) {
     r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
   };
+  // The next `n` numbers into out[start…], the ones `n` calls would return. A batch consumer (emitGpu) draws
+  // them this way: each double returned from a call TurboFan does not inline is boxed.
+  fn.fill = function (out, start, n) {
+    let s = state[0];
+    for (let k = 0; k < n; k++) {
+      s = (s + 0x6d2b79f5) | 0;
+      let r = Math.imul(s ^ (s >>> 15), 1 | s);
+      r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+      out[start + k] = ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    }
+    state[0] = s;
+  };
   return fn;
+}
+
+/**
+ * The next `n` numbers of the seeded generator (rng) into out[start…], as `n` rng() calls would return them.
+ * @param {Float64Array} out
+ * @param {number} start
+ * @param {number} n
+ */
+export function rngFill(out, start, n) {
+  if (typeof globalThis.rng !== 'function') {
+    console.warn('rng() called before initialization, seeding with 0');
+    globalThis.rng = seededRandom(0, 'uninit');
+  }
+  const fill = globalThis.rng.fill;
+  if (typeof fill !== 'function') {
+    throw new Error('rngFill: globalThis.rng must be a seededRandom generator');
+  }
+  fill(out, start, n);
 }
 
 /**

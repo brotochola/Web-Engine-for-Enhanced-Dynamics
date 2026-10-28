@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-26",
+  "updated": "2026-10-28",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -1505,7 +1505,8 @@
         "R-0529",
         "R-0530",
         "R-0571",
-        "R-0593"
+        "R-0593",
+        "R-0648"
       ]
     },
     {
@@ -8349,6 +8350,235 @@
       "rank": 9,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "A design note first (batch layout, sort, shadows, custom layers), then a prototype on adobeAnimateScene."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-148"
+      ],
+      "records": [
+        "R-0652",
+        "R-0658"
+      ],
+      "id": "E-148",
+      "title": "Pixi's WebGL shader sync walks a per-shader plan, not for…in",
+      "status": "kept",
+      "statusText": "kept 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "area": "pixi",
+      "kind": "js",
+      "result": "kept (f2d34f6a): Pixi in Predator 1 214.5 → 522.6 KB/s, in gpuParticlesStressScene 8 073.5 → 663 KB/s (G_ gone); its GL calls match Pixi’s polyfill (tests/node/pixiShaderSync.test.js)",
+      "next": "Nothing pending. A Pixi upgrade that moves the patched code fails the build (replaceOnce)."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-149"
+      ],
+      "records": [
+        "R-0650",
+        "R-0653",
+        "R-0654",
+        "R-0658"
+      ],
+      "id": "E-149",
+      "title": "The GPU particle path makes no garbage per frame",
+      "status": "kept",
+      "statusText": "kept 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "area": "engine",
+      "kind": "js",
+      "result": "kept: gpuParticlesStressScene at 30 columns a second, Pixi 663 → 81.7, pre-render 174.7 → 16.4, logic 1 838.6 → 106.5, particle 88.7 → 33.9 KB/s (92fdd105, 18c99ee5, a2398952, 5d625253); emitGpu 66–80 % faster",
+      "next": "What is left is the engine’s own per-frame sites and once-a-frame functions still in Sparkplug during warm-up (proxyView, _writeCameraRtTransform)."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-150"
+      ],
+      "records": [
+        "R-0655",
+        "R-0658"
+      ],
+      "id": "E-150",
+      "title": "The entities chunks leave the stage still while the batch flips",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "area": "pixi",
+      "kind": "js",
+      "result": "hygiene keep (6292504b): no stage instruction rebuild on a frame whose groups and gaps held; renderer 5.210 → 5.190 ms with 1 000 groups held (−1.4 %, cv 9/3 %, NEUTRAL)",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-151"
+      ],
+      "records": [
+        "R-0656",
+        "R-0658"
+      ],
+      "id": "E-151",
+      "title": "A look layer's regions map world to UV in a uniform",
+      "status": "kept-hygiene",
+      "statusText": "kept-hygiene 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "area": "pixi",
+      "kind": "gpu",
+      "result": "hygiene keep (0c51068b): pixel-identical on webgl and webgpu; Pixi garbage unchanged (163.5 → 167 KB/s); two uploads per region per frame saved",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-152"
+      ],
+      "records": [
+        "R-0657",
+        "R-0658"
+      ],
+      "id": "E-152",
+      "title": "Pixi's WebGPU draw path makes no garbage",
+      "status": "kept",
+      "statusText": "kept 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "area": "pixi",
+      "kind": "js",
+      "result": "kept (55c6ba0f): gpuParticlesStressScene?backend=webgpu, Pixi 6 000.7 → 131.2 KB/s; renderer 5.216 → 3.625 ms (−35.6 %, worse 0/4, cv 8/8 %); frames byte-identical",
+      "next": "Nothing pending. A Pixi upgrade that moves the patched code fails the build (replaceOnce)."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-153"
+      ],
+      "records": [
+        "R-0646",
+        "R-0649",
+        "R-0658"
+      ],
+      "id": "E-153",
+      "title": "Particles' ground-row key without Math.round",
+      "status": "kept",
+      "statusText": "kept 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "area": "preRender",
+      "kind": "js",
+      "result": "kept (159143bc): the PR’s +10.9 % on pre-render (particleIntegrateStressScene?tween=1) down to +2.4 % against main, under the gate; the same keys for every float32 y",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-155"
+      ],
+      "records": [
+        "R-0647",
+        "R-0658"
+      ],
+      "id": "E-155",
+      "title": "Particles skip their sort key when no layer y-sorts",
+      "status": "kept",
+      "statusText": "kept 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "area": "preRender",
+      "kind": "js",
+      "result": "kept (c08f3548): particleIntegrateStressScene?tween=1, pre-render 3.402 → 3.232 ms (−4.3 %, worse 0/4, cv 3/2 %); the branch against main went from +7.0 % to −4.6 % there",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-154"
+      ],
+      "records": [
+        "R-0651",
+        "R-0658"
+      ],
+      "id": "E-154",
+      "title": "The y-sort proxies sort their groups by merging runs",
+      "status": "kept",
+      "statusText": "kept 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "area": "preRender",
+      "kind": "js",
+      "result": "kept (1fe2d1c2): Node, collect and write per frame with 20 000 entities, 2 048 groups 1.48–1.58 → 0.22–0.29 ms, 1 024 groups 0.43–0.58 → 0.12–0.20 ms",
+      "next": "Nothing pending."
+    },
+    {
+      "id": "N-83",
+      "title": "A canvas resize stopped a sorted look layer from drawing",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-27 (PR #5, GPU particles)",
+      "date": "2026-10-27",
+      "result": "fixed (64b76ea7): a resize released rtOut's bind groups, which destroyed the sorted regions' own; the next setTexture threw and the layer drew nothing. The regions move to Texture.EMPTY first and onto the new rtOut after.",
+      "area": "renderer",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-83"
+      ],
+      "aliases": [],
+      "records": [
+        "R-0659"
+      ],
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-156"
+      ],
+      "records": [
+        "R-0660"
+      ],
+      "id": "E-156",
+      "title": "A wrapped GPU particle upload goes up as its two ranges",
+      "status": "kept",
+      "statusText": "kept 2026-10-28 (PR #5, GPU particles)",
+      "date": "2026-10-28",
+      "area": "renderer",
+      "kind": "js",
+      "result": "kept (c451e2a6): GPU Galaxy at 8 388 608 particles (8 arms, WebGPU), renderer 3.870 → 3.229 ms (−16.6 %, worse 0/4, cv 2/1 %), frames drawn 36.2 → 38.1 a second, presented 57.4 → 60.0 fps",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-157"
+      ],
+      "records": [
+        "R-0660"
+      ],
+      "id": "E-157",
+      "title": "GPU particles on WebGL fall behind WebGPU past a few hundred thousand",
+      "status": "open",
+      "statusText": "opened 2026-10-28 (the GPU Galaxy demo)",
+      "date": "2026-10-28",
+      "area": "renderer",
+      "kind": "gpu",
+      "rank": 10,
+      "result": "GTX 1650, ANGLE D3D11: WebGL draws 262 144 at 60 fps, 1 048 576 at 15 to 44 with the renderer CPU at 0.9 ms; WebGPU draws 1 048 576 and 4 194 304 at 60.",
+      "next": "A WebGL kernel drawing N instances with and without a per-frame bufferSubData into the drawn buffer; then base-instance against re-pointed attributes."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-158"
+      ],
+      "records": [
+        "R-0660"
+      ],
+      "id": "E-158",
+      "title": "A GPU particle costs four vertex evaluations and two triangles",
+      "status": "open",
+      "statusText": "opened 2026-10-28 (the GPU Galaxy demo)",
+      "date": "2026-10-28",
+      "area": "renderer",
+      "kind": "gpu",
+      "rank": 11,
+      "result": "GTX 1650, WebGPU, 1 to 2 px dots: about 3.3 ms of GPU per million particles (4 194 304 at 60 fps, 8 388 608 at 38, 16 777 216 at 19).",
+      "next": "One evaluation per particle (a WebGPU compute pass), or a point or single-triangle mode for dots this small; GPU Galaxy at 8 388 608 is the scene."
     }
   ],
   "records": [
@@ -14107,6 +14337,160 @@
       "text": "**CPU profile of every scene after the WASM migration (v0.13.0 plus comment fixes, 7922d724), the source of EXECUTION_PLAN's Wave 7.** 2026-10-26, 16:47 to 17:11.\n\n**Protocol.** `node tests/bench/profileSceneSweep.mjs --pass cpu --set all`:\n- 65 scenes, one at a time, headed, from source, detailed stats off;\n- 6 s of warm-up, then an 8 s window;\n- the sweep's list now also has Q1's scenes (visPoly, compoundVisPoly at `ringSegments=64`, particleIntegrate with tweens) and stationarySpatialWideScene (7922d724).\n\n64 scenes were profiled. particleEmitStressScene failed on a 404 for `src/core/debug/spawnParamsCheck.js`, an import another session was writing into `gameObject.js` at that moment. CPU samples say where a worker spends its busy time, not `STEP_MS`.\n\n**Not a quiet sitting.** A visual-editor session worked in the same folder.\n- **Contended scenes.** It ran headless scene loads (ED-39, R-0644) at least from 16:53 to 16:56, so scenes 16 to 23 may read high.\n- **Half-edited code.** From about 17:08 its uncommitted spawn checks were in `gameObject.js`, `scene.js` and `logicWorker.js`, so scenes 58 to 65 ran on that code.\n\nProfile both groups again before deciding anything on them.\n\n**Findings** (ms/s busy, and % of that worker):\n- **Box2D's solver threads read 1000 ms/s in every scene with physics, even with no bodies.** In bunnyMarkStressScene, physics steps in 0.13 ms with `BODY_COUNT 0`, and the threads are 99.6 % in `wasm-function[108]`. Either the sampler counts a blocked semaphore wait as busy, or the threads spin; an OS thread-time check decides it (E-144).\n  - On a physics-bound scene, each solver thread spends 9 % in `_emscripten_get_now` (ballsHeavyStressScene, 90 ms/s per thread). Predator spends 3 %.\n- **Logic: about half of Predator's logic is engine code around the game's.**\n  - Each of its two workers (345 and 330 ms/s): the component getter 14 and 10 %, `neighborCount` 8, `_tickIntervalBucket` 8, the FSM tick 7, `getNeighbor` 7 and 7, the collision dispatch 5 and 7.\n  - Game code is 27 %.\n  - adobeAnimateScene: 44 % of its logic (226 ms/s) is the component getter.\n  - painterSortStressScene: logic is 89 % `_tickIntervalBucket`; painterMoveStressScene: 37 % `_tickNonDecimatedOne` (720 ms/s).\n  - tilemapStressScene: logic is 82 % `getTileId` (576 ms/s).\n  - tweenStressScene: tween tick 49 %, `_apply` 35 %.\n  - waterAndBoxesScene: `_processBox2dCollisionCallbacks` 58 % of logic.\n  - spawnStormScene: `_spawnAt` 40 %, `despawn` 12 %.\n- **Spatial is the largest engine sum.** `gather_batch` is 1 599 ms/s over 18 scenes and `publish_batch` 1 447.\n  - Boids: spatial 583 ms/s on each of its two workers, gather 44 %, `rebuildOwnedRows` 26 %.\n  - orientedBox: gather 76 % of 352.\n  - movedBodiesMixed: publish 46 % of 553.\n  - stationarySpatialWide: `publish_batch_u32` 61 % of 783.\n  - Predator: gather 37 %, publish 31 %, rebuild 17 % of 412.\n- **Pre-render and Pixi.**\n  - painterMove and painterSort saturate pre-render (995 and 968 ms/s), 40–48 % in `pack_sprites_split_scatter`.\n  - adobeAnimateScene at the minimum zoom: pre-render 696 ms/s, `emit_rows` 44 %, `pack_sprites_split` 28 %.\n  - Predator: pre-render 368 ms/s, 39 % in `stamp_light_range`.\n  - textureUpload: Pixi 900 ms/s, 96 % in `uploadSharedImage`.\n  - meshApi: Pixi 351 ms/s, 32 % `rewrite_corners` and 32 % the UV upload.\n- **Scenes that load nothing.** Several stress scenes load no worker past 50 ms/s at their default knobs: bunnyMarkStress, spritePack, painterAdobe, decorationSway, audioStorm.\n\n**Outcome.** EXECUTION_PLAN's Wave 7 orders what is left:\n- step 0's checks;\n- nine hypotheses, ranked 1 to 9: E-144, E-139, E-140, E-141, E-142, E-146, E-147, E-143, E-145;\n- the review items, among them a new one, N-78;\n- a triage of the 39 older pending rows: 14 done, 22 stale and 3 small speed items, with the register moves listed and not applied yet.",
       "commits": [
         "7922d724"
+      ]
+    },
+    {
+      "id": "R-0646",
+      "date": "2026-10-27",
+      "title": "The ground-row key alone costs pre-render 3.1 % against main’s key, where nothing y-sorts",
+      "verdict": "answered",
+      "text": "What the ground-row key costs, alone. ABAB from worktrees, Chrome headed, owner preRender,\nparticleIntegrateStressScene?tween=1 (65 000 particles in view, nothing y-sorts), 4 pairs: A = e5e8d4bd, B = the same\ntree with collectVisibleParticles' key as on main ((y + z) * K, or y * K for a flat particle; b6bfa546, an\nunreferenced experiment commit, not on the branch). Pre-render 3.648 -> 3.499 ms, paired -3.1 % for main's key,\nworse in 0/4 (pairs -3.0, -3.1, -4.9, -3.2 %), cv 3/3 %. The floor and the bias cost about 2 ns a particle; in that\nscene the key orders nothing (no layer y-sorts), so c08f3548 skips it there (E-155)."
+    },
+    {
+      "id": "R-0647",
+      "date": "2026-10-27",
+      "title": "Particles skip their sort key when no layer y-sorts: pre-render −4.3 %, the branch now 4.6 % under main there",
+      "verdict": "kept",
+      "text": "collectVisibleParticles computed every particle's sort key, every frame, though a key orders a particle only in a\nlayer that y-sorts: without one, orderSortKey keeps the zIndex alone and the emit writes no key. c08f3548 reads\nLayer.anyYSorting() once a frame (a layer's flag can change at run time) and, with none y-sorting, gives the\nparticles one key in a loop of their own: no floor, no viewMode / flat / y / z loads. tests/node/particleSortKey.test.js\nholds the drawn rows and their y to the keyed run's.\n\nABAB from worktrees, Chrome headed, owner preRender, particleIntegrateStressScene?tween=1, 4 pairs, e5e8d4bd (A)\nagainst 388f0682 (B; amended into c08f3548, the same tree): pre-render 3.402 -> 3.232 ms, paired -4.3 %, worse in 0/4\n(pairs -10.3, -2.5, -2.0, -6.2 %), cv 3/2 %. KEPT (product).",
+      "commits": [
+        "c08f3548"
+      ]
+    },
+    {
+      "id": "R-0648",
+      "date": "2026-10-27",
+      "title": "PR #5: the integrate kernels after floor bounces and per-property eases; a MIXED_EASE particle’s tweens out of line",
+      "verdict": "kept",
+      "text": "PR #5 (GPU particles) gave the integrate kernels floor bounces for flat particles and an ease per tweened property\n(PARTICLE_TWEEN.MIXED_EASE). Node, particleIntegrateWasmMicrobench, against main: with the PR's clang 18 binary\nf32x4 tween -8.8 % (4/5) and double tween -14.1 % (5/5); rebuilt with the pinned toolchain (5de8bff9) f32x4 -1.7 %,\nspin 0.0 %, double -11.6 % / -6.6 %: the C, not the compiler. apply_ease had six more callers in integrate_batch and\nclang stopped inlining it (the binary carried an apply_ease function; main's has none). c474adfb moves a MIXED_EASE\nparticle's tweens out of line (tween_mixed_f64, tween_mixed_f32x4, ease_rare_f64/f32), each kernel's own path main's\ncode again: double tween -14.3 % -> -1.7 % (2/4), spin -6.3 % -> -1.7 %; f32x4 tween -0.5 %, spin +1.4 % (6 rounds,\nnoise). engine.wasm 264 817 -> 245 067 B (main 240 471). Chrome, particleIntegrateStressScene?tween=1, 4 pairs,\nbranch 043d9d10 against main: particle 2.367 -> 2.462 ms (below the 3 ms floor, not judged). Kept.",
+      "commits": [
+        "c474adfb"
+      ]
+    },
+    {
+      "id": "R-0649",
+      "date": "2026-10-27",
+      "title": "PR #5: particles’ ground-row key, Math.round cost pre-render 10 %; floor(y + 0.5) gives the same keys",
+      "verdict": "kept",
+      "text": "PR #5 keyed CPU particles in pre-render's collect by their ground row (spriteYSortKey's Math.round), so particles sort\namong y-sorted sprites. Chrome, particleIntegrateStressScene?tween=1, y-sort off: the PR (pinned build) against main,\npre-render 3.203 -> 3.561 ms (+10.9 %, 4/4); bisected to 04117160: 3.111 -> 3.426 ms (+10.4 %, 4/4). CPU trace: the\nparticle collect 256 -> 406 ms per 8 s, in the inlined Math.round (no allocation, no deopt). Node, the shipped\ncollectVisibleParticles with 38 000 particles: main's key 688-982 us, Math.round about 1 015, floor(y + 0.5) 791-818,\nthe same keys for every float32 y (tests/node/particleSortKey.test.js: parity, and an arithmetic sweep up to\n|y| <= 131 071, where float32 keys stay exact). 159143bc: -3.0 % against 5de8bff9 (0/4 worse, cv 5/6 %); branch\n043d9d10 against main +2.4 % (4/4 worse, cv 8/1 %), under the 3 % gate. Kept.",
+      "commits": [
+        "04117160",
+        "159143bc"
+      ]
+    },
+    {
+      "id": "R-0650",
+      "date": "2026-10-27",
+      "title": "PR #5: WebGL dropped the GPU particle records a frame drew none of",
+      "verdict": "kept-hygiene",
+      "text": "Bug, fixed in cf88429f. Pixi's WebGL buffers upload the range of their last update() at the next draw that binds\nthem; a GPU particle ring that published records in a frame that drew none of them (a hidden layer, or a\nsortWithEntities layer whose groups were all off screen) lost that range, and those particles drew stale records\nlater. The ring now flushes through renderer.buffer.updateBuffer when it publishes. tests/node/gpuParticleBatch.test.js\nmodels the vendored GlBufferSystem.updateBuffer's lazy range and fails without the fix. Kept (hygiene).",
+      "commits": [
+        "cf88429f"
+      ]
+    },
+    {
+      "id": "R-0651",
+      "date": "2026-10-27",
+      "title": "PR #5: the y-sort proxies sort groups by merging runs, 2 048 groups 1.5 → 0.25 ms a frame",
+      "verdict": "kept",
+      "text": "The y-sort proxies sorted the frame's groups by insertion: n^2/4 compares, 1.5 ms a frame at 2 048 live groups.\n1fe2d1c2 sorts runs of 32 by insertion and merges them bottom-up (pre-render's mergeSortPrefix, E-08, on the keys\nthemselves); runs already in order are not merged, so a frame mostly in order costs about n compares. Node, collect\nand write per frame with 20 000 entities: 2 048 groups 1.48-1.58 -> 0.22-0.29 ms; 1 024 groups 0.43-0.58 -> 0.12-0.20\nms; 256 groups 42 -> 26 us. Stable, as before: tests/node/gpuParticleProxies.test.js. Kept.",
+      "commits": [
+        "1fe2d1c2"
+      ]
+    },
+    {
+      "id": "R-0652",
+      "date": "2026-10-27",
+      "title": "PR #5: Pixi's WebGL shader sync without for…in: 7.4 MB/s of garbage gone in the GPU particle scene, 0.7 MB/s in Predator",
+      "verdict": "kept",
+      "text": "Pixi's WebGL shader sync (pixi.js/unsafe-eval's generateShaderSyncPolyfill, the bundle's G_) walked every shader's\ngroups and resources with for...in over integer keys on every draw: V8 builds a key array for each such loop, so\nevery WebGL draw made garbage, in every scene. f2d34f6a replaces the polyfill at build time\n(scripts/pixi-stubs/shaderSyncPolyfill.mjs): a per-shader plan of (group, resource) pairs in a WeakMap, built once,\nchecked per draw by each group slot's BindGroup identity and its key count (BindGroup patched to count its keys,\n_weedKeys), rebuilt when either changes; the per-resource body is upstream's. tests/node/pixiShaderSync.test.js\ncompares its GL calls with upstream's.\n\nChrome heap samples, Pixi worker: gpuParticlesStressScene sort 8 073.5 -> 663 KB/s (G_ 7 431 -> gone); Predator\n1 214.5 -> 522.6 KB/s (G_ 695.6 -> gone). Engine-wide: every WebGL draw of every scene took that path.",
+      "commits": [
+        "f2d34f6a"
+      ]
+    },
+    {
+      "id": "R-0653",
+      "date": "2026-10-27",
+      "title": "PR #5: the GPU particle path’s garbage taken out (logic 1 838.6 → 106.5, Pixi 663 → 81.7, pre-render 174.7 → 16.4 KB/s)",
+      "verdict": "kept",
+      "text": "The garbage PR #5's GPU particle path made per frame, and the engine-wide Pixi site it exposed, taken out over one\nsitting day. Chrome heap samples (tests/bench/heapSampleWorkers.mjs, 10 s warm-up, 8 s sample unless noted),\ngpuParticlesStressScene (webgl) unless noted, KB/s per worker. \"Before\" is the branch as it came, with the bug\nfixes of that morning (cf88429f's WebGL flush, the pre-render key) and before any allocation work.\n\n| worker, mode | before | after | what took it |\n| --- | --- | --- | --- |\n| Pixi, default (sort) | 8 073.5 | 79.1 | f2d34f6a (Pixi's WebGL shader sync, 7 431 of it), 92fdd105 (render path), 545a0e5c |\n| Pixi, interp=1 | 8 306 | 84.1 | the same, and collect's 138.6 in 545a0e5c |\n| Pixi, Predator | 1 214.5 | 522.6 | f2d34f6a alone (G_ 695.6 -> gone): every WebGL scene |\n| pre-render, default | 174.7 | 20 | 545a0e5c (collect 135.8 -> gone) |\n| logic, default | 1 838.6 | 106.5 | 18c99ee5 (emitGpu: _emit, resolveParticleOp, randomRange, travelExtent), a2398952 |\n| particle, default | 88.7 | 33.9 | a2398952 (syncParticleFeed 50.4 -> gone) |\n\nSites left on those workers are the engine's own per-frame ones that every scene has (_runFrame, camera latch,\nPixi's bind / startRenderPass / instruction GC tick) and once-a-frame functions still in Sparkplug during warm-up\n(proxyView, _writeCameraRtTransform: every double they make is boxed until they tier up; gone from the 20 s runs).",
+      "commits": [
+        "92fdd105",
+        "18c99ee5",
+        "a2398952",
+        "5d625253"
+      ]
+    },
+    {
+      "id": "R-0654",
+      "date": "2026-10-27",
+      "title": "ProxyCollector._grow’s closure allocated a context per listed group, every frame (Chrome only)",
+      "verdict": "kept",
+      "text": "ProxyCollector._grow built its arrays through an arrow function that captured `cap`, so every call allocated a\ncontext (the calls that grew nothing too), and collect called it for every listed group, every frame. Fixed in\n545a0e5c: a module function copies, and collect calls _grow only when n reaches the capacity.\n\nChrome heap sample (heapSampleWorkers.mjs), gpuParticlesStressScene, 20 s warm-up, 8 s sample:\n- default (pre-render lists the groups): pre-render 176.5 -> 20 KB/s, collect 131.3 KB/s -> not sampled.\n- interp=1 (Pixi lists them): Pixi 220 -> 84.1 KB/s, collect 138.6 KB/s -> not sampled.\n\nNode never showed it: under heapSampleNode.mjs the collect probe allocated only during warm-up, before and after\n(Node 22's TurboFan inlined _grow and dropped the context). A Node micro-test of the same shape (a method whose\nclosure captures a local, returning early) made 784 scavenges over 20 M calls against 3 without the closure, and\nran 2.7x slower: the pattern allocates wherever the method is not inlined.",
+      "commits": [
+        "5d625253"
+      ]
+    },
+    {
+      "id": "R-0655",
+      "date": "2026-10-27",
+      "title": "Chunk twins: no stage rebuild per frame while the batch flips; NEUTRAL in time",
+      "verdict": "kept-hygiene",
+      "text": "EntityChunks kept its chunk meshes per ring geometry of the entities batch, and the batch draws from its two\ngeometries in turn: every frame the last frame's chunks were hidden, this frame's shown and swapped into place, and\neach set structureDidChange (Pixi's swapChildren and the visible setter both do), so the stage's instructions were\nrebuilt every frame while GPU particles sorted among the entities. 6292504b keeps chunk j as a pair of meshes, one\nper geometry, both children (slot 0 first), the idle one at alpha 0, which MeshPipe.execute skips (isRenderable\nneeds groupAlpha > 0) without a rebuild. tests/node/gpuParticleProxies.test.js checks structureDidChange stays false\nover frames that flip the geometry (fails on the old code).\n\nABAB, Chrome headed, owner renderer, worktrees ea9b1983 (A, with the new ?hold knob) against 6292504b (B):\n- gpuParticlesStressScene?hold=500&count=20 (1 000 groups held still: the layout this helps most), 4 pairs:\n  renderer 5.210 -> 5.190 ms, paired -1.4 %, worse in 2/4, cv 9/3 % (A's own sides 4.98-5.97 ms). NEUTRAL.\n- columns=30&count=300 (a group every few frames, so both sides rebuild most frames), 4 pairs: every worker under\n  the 3 ms floor (renderer 1.447 -> 1.548 ms, pairs +23 / +22 / -7 / -10 %), not judged.\nGarbage at 30 columns (heapSampleWorkers): Pixi 99.6 -> 81.7 KB/s, its instruction-building sites as they were\n(next 6.9 -> 7.3, Ua 7.0 -> 6.1 KB/s).\n\nVerdict: a hygiene keep. A stage rebuild of about 1 100 renderables is under this scene's detection limit; the change\nremoves a per-frame rebuild that grows with the stage (text, graphics, other layers), not a measured cost here.",
+      "commits": [
+        "ea9b1983",
+        "6292504b"
+      ]
+    },
+    {
+      "id": "R-0656",
+      "date": "2026-10-27",
+      "title": "Region UVs from a uniform: pixel-identical, two uploads per region per frame saved, garbage unchanged",
+      "verdict": "kept-hygiene",
+      "text": "A look layer's region quads carried their UVs as vertex data that the CPU recomputed from the camera every frame, so\nevery region uploaded both its buffers every frame (two Buffer.update emits each, through Pixi's emitter). The\nworld-to-UV map is now a static UniformGroup of the layer's region shader (uUvX, uUvY: RegionQuads.setView, once a\nframe, update() only when it changed), the vertex shaders apply it (gpuRegion.vert.glsl, gpuRegion.wgsl: a uniform\nat @group(2) @binding(2)), and a quad's positions go up only when its rectangle changes.\n\nLockstep frames (150 injected steps) against the commit before, gpuParticlesStressScene: pixel-identical on\nwebgl look=1, webgpu look=1, webgl look=1 interp=1 and webgl sort=1 (0 differing pixels each).\nWhat it saves is work, not garbage: two uploads and a UV loop per region per frame (regions are few: overlapping\ngroups merge). Pixi, look=1 at 30 columns (heapSampleWorkers, 20 s warm-up): 163.5 -> 167 KB/s, noise; the update\nemits were not among the steady-state sites before either. Kept as hygiene (0c51068b).",
+      "commits": [
+        "0c51068b"
+      ]
+    },
+    {
+      "id": "R-0657",
+      "date": "2026-10-27",
+      "title": "Pixi's WebGPU draw path without garbage: 6 000.7 → 131.2 KB/s, renderer −35.6 %",
+      "verdict": "kept",
+      "text": "Pixi's WebGPU draw path made garbage on every draw, in every WebGPU scene: the encoder walked its bind groups, a\ngroup's resources and the vertex buffers with for…in over integer keys (a key array per loop, and a parseInt per\nbuffer), BindGroup._touch did the same on every bind group switch and _key when dirty, the bind group cache built\n`${key}:${layout}` per call, the mesh adapter passed a new options object to encoder.draw, and the pipeline cache was\nlooked up by a double key (boxed for Map.get). 477dfb39 patches them at build time (scripts/buildPixi.mjs,\npatchPixiDrawGarbage), as f2d34f6a did WebGL's shader sync: BindGroup keeps its keys in for…in order (_weedKeyList),\nthe encoder walks indices, a BindGroup keeps its GPU bind groups per layout for its key and owning system, the mesh\nadapter draws through one options object it empties after (firstInstance declared for instanceRangeDraw's hook), and\na Geometry keeps its last pipeline for its cache and key. tests/node/pixiDrawGarbage.test.js holds each patched\nmethod to Pixi's own on the same input; the bundle rebuild is byte-reproducible.\n\nChrome heap sample, Pixi worker, gpuParticlesStressScene?backend=webgpu at 30 columns a second, 20 s warm-up, 8 s\nsample: 6 000.7 -> 131.2 KB/s (_syncBindGroup 1 781.8, _touch 1 365.2, getBindGroup 699.9, _setShaderBindGroups\n688.3, setGeometry 591, the adapter's execute 341.6, setBindGroup 229.8, getPipeline 91.9: all gone).\nLockstep frames against the commit before: byte-identical PNGs on webgpu sort=1, sort=0, look=1, interp=1 and\nwebgl sort=1.\nABAB from worktrees, Chrome headed, owner renderer, 0c51068b (A) against 477dfb39 (B, the same tree as 55c6ba0f),\ngpuParticlesStressScene?hold=500&count=20&backend=webgpu, 4 pairs: renderer 5.216 -> 3.625 ms, paired -35.6 %,\nworse in 0/4 (pairs -37.2, -22.9, -36.3, -34.9 %), cv 8/8 %. KEPT (product). The loops cost time as well as garbage.",
+      "commits": [
+        "55c6ba0f"
+      ]
+    },
+    {
+      "id": "R-0658",
+      "date": "2026-10-27",
+      "title": "PR #5 merge gates against main: Predator, the particle scene, the frames",
+      "verdict": "passed",
+      "text": "**PR #5 merge gates against main (468d2ef3), 2026-10-27.** ABAB from worktrees, Chrome headed, from source, 4 pairs\neach, regression gates (no owner).\n\n- **Predator, e5e8d4bd (the branch with main merged): NEUTRAL, no worker worse.** logic 6.120 -> 5.575 ms (-4.7 %),\n  spatial 7.491 -> 7.038 (-2.6 %), physics 10.657 -> 9.648 (-3.6 %), renderer 5.913 -> 5.121 (-8.2 %, the WebGL\n  shader sync), pre-render 6.517 -> 6.078 (-3.0 %), particle under the floor; presented 60.0 -> 60.0 fps.\n- **particleIntegrateStressScene?tween=1, e5e8d4bd: REGRESSION, pre-render 3.664 -> 3.927 ms (+7.0 %, worse 4/4, cv\n  1/5 %).** Not the later work: HEAD against 043d9d10 (where the earlier sitting put the branch at +2.4 %) is NEUTRAL,\n  +0.5 % (cv 1/4 %). The PR's ground-row key: HEAD against HEAD with main's key formula, -3.1 % for main's (0/4 worse,\n  cv 3/3 %, an unreferenced experiment commit). In that scene nothing y-sorts and the key orders nothing: c08f3548\n  skips it when no layer y-sorts. The gate again with it (388f0682, the tree of c08f3548): NEUTRAL, pre-render\n  3.128 -> 3.023 ms, paired -4.6 %, worse 0/4, cv 3/2 %: the branch now spends less than main there.\n- **Frames.** gpuParticlesStressScene, lockstep (150 injected steps), the PR's head 9459055f against e5e8d4bd:\n  byte-identical on webgl sort=1, webgpu sort=1, webgl look=1, webgl interp=1, webgl sort=0. The lockstep catalog\n  (tests/bench/lockstepVisualScenes.mjs) main against e5e8d4bd: 8/9 exact (balls, water, liquidfun, particles,\n  oriented, lfstress, vispoly, compoundvis); Predator drifts, as it does between two runs of one commit."
+    },
+    {
+      "id": "R-0659",
+      "date": "2026-10-27",
+      "time": "23:13",
+      "timeFrom": "recorded",
+      "title": "N-83 fixed: a resize keeps a sorted look layer's regions on its look target",
+      "verdict": "kept-hygiene",
+      "text": "Found while adding a run-time `Layer.resolution` for Blastforge's Pixel size (PR #5's branch). `_resizeCustomLayerRTs` releases the bind groups on a look layer's old render textures before destroying them; a `sortWithEntities` layer's `RegionQuads` samples `rtOut` through its own bind group, so the release destroyed it and the next frame's `setTexture` threw in `BindGroup.setResource`. From then on the layer drew nothing.\n\nReproduced in Chrome on the plain canvas-resize path: Blastforge, `scene.resize(1100, 700)`, then a Fireball: no fire and no smoke, only its ground light, and the Pixi worker logged \"frame threw … Cannot read properties of null (reading '0')\". With the fix (the regions go to `Texture.EMPTY` before the release and onto the new `rtOut` after it) the Fireball draws after the resize, sorted behind the tree, and nothing throws; Pixel size at 6×, 1× and 3× likewise.\n\nTest: `gpuParticleProxiesPixi.test.js` runs the real resize path on a `RegionQuads` and fails without the fix (4 of 5 pass, the new one fails), passes with it. A resize is not per frame: a hygiene keep, no sitting. `main` is not affected (the regions came with the branch).",
+      "commits": [
+        "64b76ea7"
+      ]
+    },
+    {
+      "id": "R-0660",
+      "date": "2026-10-28",
+      "time": "00:19",
+      "timeFrom": "recorded",
+      "title": "E-156 sitting: a wrapped GPU particle upload as two ranges (GPU Galaxy 8M), and the galaxy's ceilings",
+      "verdict": "kept",
+      "text": "GPU Galaxy (`demos/gpuGalaxyScene`, c451e2a6's parent 2b8dca9f against c451e2a6), `particles=8388608&arms=8`, WebGPU, headed Chrome on the GTX 1650, 4 pairs from worktrees, warm-up and window 10 s each, owner renderer.\n\n| | A (whole ring on a wrap) | B (two ranges) | paired |\n| --- | --- | --- | --- |\n| renderer STEP_MS | 3.870 ms | 3.229 ms | −16.6 %, worse 0/4, cv 2/1 % |\n| frames drawn per 10 s (renderer, every frame) | 357–368 | 379–383 | +5 %, 4/4 |\n| presented (main thread) | 57.4 fps | 60.0 fps | +4.4 %, fewer 0/4 |\n\nLogic, pre-render and particle stay below the 3 ms floor. No A/A this session; the pairs' cv is 1 to 2 %.\n\nThe same scene, single runs on the working tree: the default 4 194 304 (4 arms) draws 601 frames in 10 s with the fix (renderer 1.55 ms, p95 2.59), 349 in 6 s before it; 16 777 216 (8 arms) draws 152 frames in 8 s (renderer 12.2 ms), the GPU's limit (E-158). WebGL: 262 144 at 60 fps, 1 048 576 at 15 to 44 (E-157).",
+      "commits": [
+        "c451e2a6",
+        "2b8dca9f"
       ]
     }
   ],

@@ -66,6 +66,9 @@ import {
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand } from '../util/sortIndexByKey.js';
+import { Time } from '../core/timeScale.js';
+import { GpuParticles } from '../core/gpuParticles.js';
+import { PROXY_CAMERA, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, proxyView } from '../render/gpuParticleProxies.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -74,6 +77,7 @@ import {
     CAMERA_TYPES,
     DECORATION_Y_SORT_SCALE,
     ENTITY_GLOW_SORT_BIAS,
+    PARTICLE_SORT_BIAS,
     ShapeType,
     MAX_POLYGON_VERTICES,
     resolveZenithalMaxHeight,
@@ -636,6 +640,16 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuCounts = null;
         this._gpuShadowsResult = null;
         this._gpuSpritesResult = null;
+        // GPU particle groups in the y-sort painter (gpuParticleProxies.js): the split memory's halves, A and B,
+        // when a GPU layer sorts with the entities and this worker packs them; null otherwise.
+        this._proxyHalves = null;
+        this._proxyCollector = null;
+        // The proxies' camera, culled view and sim clock (gpuParticleProxies.js proxyView): typed arrays, so no
+        // double crosses a call.
+        this._proxyCamera = new Float64Array(6);
+        this._proxyView = new Float64Array(4);
+        this._proxyClock = new Float64Array(1);
+        this._proxyDroppedWarned = false;
         this._stampLightCmp = stampLightOrder;
         // Stamp lights and their scratch: first written when a light first shows.
         this._stampLights = null;
@@ -855,6 +869,10 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPackCtx = {};
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
+        if (GpuParticles.proxySab && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER) {
+            this._proxyHalves = bindProxyHalves(GpuParticles.proxySab);
+            this._proxyCollector = new ProxyCollector();
+        }
 
         // ========================================
         // RENDER QUEUE - Initialize (DOUBLE BUFFERED)
@@ -1613,16 +1631,29 @@ class PreRenderWorker extends AbstractWorker {
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
-        const y = ParticleComponent.y;
-        const z = ParticleComponent.z;
-        const flat = ParticleComponent.flat;
-        const viewMode = ParticleComponent.viewMode;
         // renderOnly particles are drawn by their compute layer. Dropped here,
         // before they take a collector slot or a queue row.
         const renderOnly = ParticleComponent.renderOnlyLive &&
             Atomics.load(ParticleComponent.renderOnlyLive, 0) > 0
             ? ParticleComponent.renderOnly
             : null;
+        if (!Layer.anyYSorting()) {
+            // A particle's key orders it only in a layer that y-sorts: orderSortKey keeps the zIndex alone otherwise,
+            // and the emit writes no key. With none this frame they all take one key, and none is computed (its
+            // floor and loads cost pre-render 3 % with 65 000 particles in view), in a loop of its own.
+            COLLECT_Y[0] = 0;
+            for (let idx = 0; idx < visibleCount; idx++) {
+                const i = visibleData[1 + idx];
+                if (renderOnly && renderOnly[i]) continue;
+                this.collectRenderable(1, i);
+                this.visibleParticlesCount++;
+            }
+            return;
+        }
+        const y = ParticleComponent.y;
+        const z = ParticleComponent.z;
+        const flat = ParticleComponent.flat;
+        const viewMode = ParticleComponent.viewMode;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
@@ -1631,13 +1662,11 @@ class PreRenderWorker extends AbstractWorker {
                 viewMode &&
                 viewMode[i] === CAMERA_TYPES.ZENITHAL &&
                 !(flat && flat[i]);
-            const isFlat = !!(flat && flat[i]);
-            const sortKey = isZenithal
-                ? -z[i]
-                : isFlat
-                    ? y[i] * Y_SORT_K
-                    : (y[i] + z[i]) * Y_SORT_K;
-            COLLECT_Y[0] = sortKey;
+            // Heighted and flat particles sort by their ground row, as a sprite sorts by its feet: a spark in
+            // the air is in front of the tree it flies in front of, though it is drawn at y + z. The row is
+            // spriteYSortKey's Math.round(y) written as floor(y + 0.5): the same for every float32 y (the sum is
+            // exact in double), and Math.round here cost pre-render 10 % with 38 000 particles in view.
+            COLLECT_Y[0] = isZenithal ? -z[i] : Math.floor(y[i] + 0.5) * Y_SORT_K + PARTICLE_SORT_BIAS;
             this.collectRenderable(1, i);
             this.visibleParticlesCount++;
         }
@@ -3407,7 +3436,7 @@ class PreRenderWorker extends AbstractWorker {
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
         const res = this._gpuSpritesResult
-            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0 });
+            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0, indices: null });
         this._packSplitUsed = false;
         this._packSplitGen = 0;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
@@ -3416,6 +3445,7 @@ class PreRenderWorker extends AbstractWorker {
             res.particle = 0;
             res.flags = 0;
             res.staticGen = 0;
+            res.indices = null;
             return res;
         }
         this._bindGpuPackWriters();
@@ -3448,6 +3478,7 @@ class PreRenderWorker extends AbstractWorker {
         res.particle = this._packParticles | 0;
         res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0) | (presorted ? GPU_FLAG_SORTED : 0);
         res.staticGen = this._packSplitUsed ? this._packSplitGen : 0;
+        res.indices = packed.spriteIndices;
         return res;
     }
 
@@ -3460,6 +3491,7 @@ class PreRenderWorker extends AbstractWorker {
         const q = this._gpuSoAFromBound();
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
         const sprites = this._packGpuSprites(dst, q, this._allowGpuPainter());
+        if (this._proxyHalves !== null) this._writeProxies(q, sprites);
         if (detail) {
             const sortDelta = this.sortTimeThisFrame - sortBefore;
             let ms = performance.now() - tSprites;
@@ -3479,6 +3511,45 @@ class PreRenderWorker extends AbstractWorker {
         counts.staticGen = sprites.staticGen | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
+    }
+
+    /**
+     * The frame's GPU particle groups among the entities (gpuParticleProxies.js), into the split half of the
+     * queue buffer being written: each group with the packed entity it is drawn before. Nothing listed when the
+     * entities are not y-sorted (the layers then draw at their zIndex).
+     */
+    _writeProxies(q, sprites) {
+        const half = this._proxyHalves[this._queueBuf & 1];
+        const collector = this._proxyCollector;
+        // Packed in painter order (or nothing packed): Pixi commits only such a frame when the entities y-sort.
+        const ordered = (sprites.sprite | 0) === 0 || (sprites.flags & GPU_FLAG_SORTED) !== 0;
+        let n = 0;
+        if (this._entitySortY && ordered) {
+            Time.readSimNowInto(this._proxyClock, 0);
+            n = collector.collect(GpuParticles.layers, this._proxyClock, this._proxyFrameView());
+        }
+        if (n === 0) {
+            half.header[1] = 0;
+            Atomics.store(half.header, 0, 0);
+            return;
+        }
+        collector.write(half, q.sortKey, sprites.indices, sprites.sprite | 0);
+        if (collector.dropped > 0 && !this._proxyDroppedWarned) {
+            this._proxyDroppedWarned = true;
+            console.warn(`[PRE_RENDER] ${collector.dropped} GPU particle groups past the ${PROXY_MAX_ENTRIES} a frame among the entities are not drawn`);
+        }
+    }
+
+    _proxyFrameView() {
+        if (!this.cameraData) return null;
+        const cam = this._proxyCamera;
+        cam[PROXY_CAMERA.X] = this._frameCameraX;
+        cam[PROXY_CAMERA.Y] = this._frameCameraY;
+        cam[PROXY_CAMERA.ZOOM] = this._frameCameraZoom;
+        cam[PROXY_CAMERA.ROT] = this._frameCameraRot || 0;
+        cam[PROXY_CAMERA.CANVAS_W] = this.canvasWidth;
+        cam[PROXY_CAMERA.CANVAS_H] = this.canvasHeight;
+        return proxyView(this._proxyView, cam);
     }
 
     /**

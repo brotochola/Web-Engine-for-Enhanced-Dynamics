@@ -86,6 +86,7 @@ import { bindPoolExhaustion } from '../util/poolExhaustion.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
+import { GpuParticles } from '../core/gpuParticles.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -821,6 +822,8 @@ export class AbstractWorker {
     if (data.layerData) {
       Layer.initializeFromBuffers(data.layerData);
     }
+    // GPU particle rings (LAYER_KIND.GPU_PARTICLES). Logic and particle workers take their writer slot.
+    GpuParticles.initializeFromBuffers(data.gpuParticles);
 
     // Initialize TileMap static class (SAB-backed tile data shared across workers)
     if (data.tilemapData) {

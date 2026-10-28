@@ -56,6 +56,7 @@ export class ParticleComponent extends Component {
     // === Over-life tweens (from/to) ===
     // tweenMask bits: ALPHA=1 SCALEX=2 SCALEY=4 TINT=8 ROT=16 (see particleTween.PARTICLE_TWEEN)
     tweenMask: Uint16Array,
+    // The ease of every tweened property, when they share one (the usual case).
     easeId: Uint8Array,
     alphaFrom: Float32Array,
     alphaTo: Float32Array,
@@ -96,6 +97,18 @@ export class ParticleComponent extends Component {
     renderOnly: Uint8Array,
     // sqrt(lightIntensity). 0 = this particle does not light the scene.
     lightSqrt: Float32Array,
+
+    // === Floor bounces (heighted particles; ParticleEmitter.emit / emitZenithal `bounces`) ===
+    // Bounces left. A falling particle that reaches the floor with bounces left rebounds instead of
+    // landing: vz becomes -vz * bounciness, vx and vy keep bounceFriction of themselves. A rebound
+    // weaker than two frames of gravity lands. 0 = lands on first contact, as without bounces.
+    bounces: Uint8Array,
+    bounciness: Float32Array, // share of the falling speed kept, 0-1
+    bounceFriction: Float32Array, // share of the ground speed kept, 0-1
+
+    // Each tweened property's ease when they differ (tweenMask has PARTICLE_TWEEN.MIXED_EASE): 4 bits per
+    // property at particleTween.PARTICLE_EASE_SHIFT (alpha, scaleX, scaleY, tint, rotation, angular velocity).
+    easeIds: Uint32Array,
     // Note: Anchor is always 0.5, 0.5 for particles (centered)
   };
 

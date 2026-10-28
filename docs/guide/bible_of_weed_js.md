@@ -1024,12 +1024,13 @@ WEED.Camera.follow(this.x, this.y);
 WEED.Camera.followEntity(index, lookAheadSec, smoothing, dtRatio); // pose xy + vel frozen to pose publishes
 WEED.Camera.setDeadzone(80, 60); // world-pixel box; the camera holds while the entity stays inside
 WEED.Camera.shake(12, 180);      // punch added when the camera is packed; decays on sim time
-WEED.Tween.to(this.index, { alpha: 0 }, 200, 'quad.out'); // sprite or mesh; not a dynamic body's x/y
+WEED.Tween.to(this.index, { alpha: 0 }, 200, WEED.PARTICLE_EASE.QUAD_OUT); // sprite or mesh; not a dynamic body's x/y
+// The ease is a WEED.PARTICLE_EASE value (default LERP); a name such as 'quad.out' throws.
 // Options: delay (ms), repeat (extra cycles; -1 = forever), yoyo, onComplete (a static messages name):
-WEED.Tween.to(this.index, { scaleX: 1.2, scaleY: 1.2 }, 150, 'quad.out', { repeat: -1, yoyo: true }); // pulse
-WEED.Tween.to(this.index, { alpha: 0 }, 300, 'lerp', { delay: 500, onComplete: 'faded' });
+WEED.Tween.to(this.index, { scaleX: 1.2, scaleY: 1.2 }, 150, WEED.PARTICLE_EASE.QUAD_OUT, { repeat: -1, yoyo: true }); // pulse
+WEED.Tween.to(this.index, { alpha: 0 }, 300, WEED.PARTICLE_EASE.LERP, { delay: 500, onComplete: 'faded' });
 //   → onMessage('faded', -1, slot) on this entity after the last cycle. A despawn cancels the entity's tweens.
-WEED.Tween.toZoom(0.5, 400, 'quad.out');
+WEED.Tween.toZoom(0.5, 400, WEED.PARTICLE_EASE.QUAD_OUT);
 WEED.Camera.targetZoom = 0.5; // then follow / followEntity — lerps zoom, keeps screen center
 WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while following)
 WEED.Camera.setAngle(rad);    // turn the view about the screen center (Camera.rotation)
