@@ -458,7 +458,9 @@ behind the same barrier. **W6 screen, the same day:** the rebuild in C is +10.9 
 Predator spatial, so spatial no longer justifies the move by itself; W4 does, once its premise is measured again
 after E-98 (pre-render's collect went 21 → 6 ms in JS). A cheaper boot than the barrier above: start the physics
 worker before the scene buffers exist, have it `_malloc` the engine block as soon as its module is ready, and build
-the moved buffers inside that block, so nothing binds twice.
+the moved buffers inside that block, so nothing binds twice. **W7 screened 2026-10-28 (R-0685):** the move is done (E-76), and the
+ceiling is smaller than that: in the spatial kernel's profile the JS decision loop is about 8 % of the frame, the
+rebuild in C still ties (+2.0 % / −2.2 %), and the loop's per-entity counter writes in locals tie (−0.2 % / −0.9 %).
 
 **Design for the build (2026-10-24, from W4b's needs).** BunnyMark's collect is 70 % of its pre-render
 (E-128), and the collect is what Phase 4 moves first. What one kernel must see together:

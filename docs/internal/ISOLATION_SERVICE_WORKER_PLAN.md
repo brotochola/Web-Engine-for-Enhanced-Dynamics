@@ -1,9 +1,9 @@
 # Isolation service worker plan (SharedArrayBuffer without COOP/COEP headers)
 
-**Opened:** 2026-10-22 (planned in a chat session), saved here 2026-10-23. **Status:** in progress
-on branch `isolation_sw` (from 2026-10-23); the four decisions are taken (see "Decisions").
-**Next step:** the phase 2 rows not run yet (Firefox, hot reload, audio, the allowed frame). SW-1 to
-SW-8 are done; phase 3 is measured (2026-10-28, below) and SW-9 is not needed. **Registry:** `DX-SW` in
+**Opened:** 2026-10-22 (planned in a chat session), saved here 2026-10-23. **Status:** done in the
+engine (merged); the four decisions are taken (see "Decisions"). SW-1 to SW-8 are done, phases 2 and 3
+are run (2026-10-28, below), SW-9 is not needed. **Next step:** phase 4, by hand (Safari, Chrome on
+Android, real deploys). **Registry:** `DX-SW` in
 [`hypotheses.json`](./hypotheses.json).
 
 The goal: WeedJS runs exactly as it does today, with SharedArrayBuffers and Box2D's 4 threads,
@@ -257,6 +257,22 @@ threads and the renderer past 10 frames each), drawn, no page error, no overlay.
 | `npm run dev`, edit a scene script | Swapped in place; `navigator.serviceWorker.getRegistrations()` is empty |
 | `npm run dev`, edit an asset | The page reloads with the scene's state kept |
 | Both of the above with a leftover `weed-sw.js` on the same port | Both still work; the `/__weed/reload` stream never reaches the worker |
+
+**The rows run 2026-10-28.**
+- **Firefox** (`isolationWorkerSmoke.mjs --browser firefox`, 26c24b2e; the installed Firefox 159 through
+  `stockFirefox.mjs`, Playwright's Firefox not being Firefox's speed): first visit (2 loads, isolated, the scene
+  drawing, the worker registered), return visit (1 load), real headers (1 load, nothing registered): 3/3.
+- **Audio** (8a67ebe8): through the worker the engine's mixer starts with its shared buffer, and a worklet loaded
+  by URL as the mixer is receives a `SharedArrayBuffer` posted to it (`isolation/sabProbeProcessor.js`).
+- **The allowed frame** (8a67ebe8): **does not work, and cannot.** An isolated parent refuses a frame from another
+  site whose response lacks CORP and COEP (`net::ERR_BLOCKED_BY_RESPONSE`), and that first response comes before
+  `weed-sw.js` can be installed there (nor does a worker from a direct visit reach a third-party frame). A game in
+  an isolated portal needs its host to send the headers (itch.io's SharedArrayBuffer option does). The case
+  asserts the refusal; DEPLOY.md's "Game portals" says so.
+- **`npm run dev`** (`isolationDevSmoke.mjs`, 8304e508): a scene script written again is hot swapped with no
+  navigation and no worker registered; an asset reloads the page once with the scene's state kept. The same with
+  a `weed-sw.js` left registered on the port by `npm run dev:sw`: 4/4. The Chromium smoke is 13/13 with the new
+  cases.
 
 **Phase 3, performance:**
 - **Runtime:** Predator ABAB, real headers against the worker (return visit). Expect no

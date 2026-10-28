@@ -119,7 +119,7 @@ Upload the game as an HTML project, then in the project's edit page, under **Emb
 
 ### Game portals and other iframes
 
-A game inside an iframe is only isolated when the page around it is isolated too and allows it on the frame (`<iframe allow="cross-origin-isolated">`). You do not control the portal's page, so ask the portal whether it supports `SharedArrayBuffer` games before you target it.
+A game inside an iframe is only isolated when the page around it is isolated too and allows it on the frame (`<iframe allow="cross-origin-isolated">`). You do not control the portal's page, so ask the portal whether it supports `SharedArrayBuffer` games before you target it. The game's own host must also send the two headers for this: an isolated page refuses a frame from another site whose response does not carry them, and that first response comes before `weed-sw.js` could be installed there.
 
 ## What `require-corp` changes for your own page
 

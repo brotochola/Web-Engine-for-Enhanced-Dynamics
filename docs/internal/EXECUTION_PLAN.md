@@ -2254,6 +2254,8 @@ painterMove's logic, and `update` 21 % of Adobe's.
 
 The ceiling depends on how much of that self time is the loop rather than inlined game code. `--trace-turbo-inlining` tells which.
 
+**Hygiene 2026-10-28 (d977187b):** the bucket's forced-scan loop, which never ran, is gone.
+
 **First change kept 2026-10-28 (e5b2f5d8).** Every path wrote the frame's counters on `this` per ticked entity
 (`entitiesProcessedThisFrame++`, and the two detailed-stats timers reset). The count is added once from what the paths
 return, the timers only with detailed stats on. minimalTickScene?props=130000 (the knob, 2259287c: 60 000 props put logic
@@ -2341,6 +2343,11 @@ Both kernels are bound by memory, not arithmetic:
 So what is left is doing less work:
 1. **Read the reuse rates.** Count how many rows each scene rebuilds and republishes per frame, against the neighbour-reuse skin and its frame limit.
 2. **The Chrome entry for the gather's float32 variants.** They have none yet. The owner's rule is that Chrome decides between kernel variants; it closes the flags pass.
+   **Done 2026-10-28, not shipped:** a captured frame replayed in Chrome (`spatialGatherReplayKernel.mjs`) puts f32x4
+   at +10.5 % / +8.1 %, and an exact form (float32 decides outside an edge band, double inside it) at +9.0 % / +12.2 %
+   with identical rows. The scenes: orientedBox spatial −2.3 %, Predator −1.8 %, Boids **+3.0 % (worse 4/4)**, its small
+   cells rarely filling a block of four. Kept as a test module (`spatialGatherExact`); a lead: blocks only in cells of
+   eight ids or more.
 3. **W7 and E-136**, below.
 
 **Step 1 answered 2026-10-28** (`NEIGHBORS_REBUILT` and `NEIGHBORS_PUBLISHED`, 5803ca42, detailed stats off). Rows a
@@ -2359,6 +2366,8 @@ Predator 3.7 / 5.9 / 89.5 %, orientedBoxScene 99.1 / 0.9 / 0 %, movedBodiesMixed
 ### Spatial's other items
 
 - **W7 (rank 10).** One call per frame for gather, publish and rebuild saves the glue, about 8 % of Predator's spatial.
+  **Screened 2026-10-28:** the JS loop is about 8 % of the spatial frame, the rebuild in C ties, and the loop's
+  counter writes in locals tie (−0.2 % / −0.9 %): a port's ceiling is under what a sitting resolves.
 - **E-136.** Spatial would leave out of the publish the rows of neighbourhoods where every entity is static. Its owner scene is profiled now: stationarySpatialWideScene's publish is 61 % of 783 ms/s.
 - **`rebuildOwnedRows` (JavaScript).** It is 26 % of Boids' spatial, 22 % of Adobe's and 17 % of Predator's.
   - W6's exact C port was only 10.9 % faster in its kernel, about 1.4 % of Predator's spatial, so it was screened.
