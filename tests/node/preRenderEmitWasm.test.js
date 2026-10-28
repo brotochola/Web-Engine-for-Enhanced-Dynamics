@@ -910,9 +910,8 @@ async function withPersistOrder(ySort, fn) {
  * (the queue's own columns, E-98d, or the other buffer's), changes shadow casters with no dirty flag (the
  * persist frames must refresh their terms) and makes what misses on schedule: dirty sprites, a changed
  * animation, swapped collector rows, a frame past its animation's end and, with adobe, an Adobe root for
- * six frames. Some animated sprites get NaN clocks first (the persist path
- * advances them on every frame, !(clock < duration); the full emit never does). The same calls give the
- * same frames on both runs.
+ * six frames. Some animated sprites get NaN clocks first: neither path advances them (N-65). The same calls give
+ * the same frames on both runs.
  */
 function persistSchedule(k, { inQueue, seed, adobe, casters = true }) {
   const { worker, count } = k;

@@ -851,7 +851,7 @@ function _advancePersistFrame(i, idx) {
     const frameAccum = this.entityFrameAccumulator;
     frameAccum[idx] += PERSIST_DT[0];
     const frameDuration = 1 / (SpriteRenderer.animationSpeed[idx] * 60);
-    if (frameAccum[idx] < frameDuration) return 0;
+    if (!(frameAccum[idx] >= frameDuration)) return 0; // the full emit's test: a NaN clock never advances (N-65)
     frameAccum[idx] -= frameDuration;
     const currentFrame = frameIndex[idx];
     if (SpriteRenderer.loop[idx] !== 1 && currentFrame >= animFrameCount - 1) {

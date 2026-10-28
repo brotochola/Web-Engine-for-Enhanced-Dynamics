@@ -1120,7 +1120,7 @@ INLINE int32_t global_anim(const int32_t *proxy, uint32_t nSheets, uint32_t shee
    the frame ends as the two JS passes leave it. The clocks, which that full emit would advance a second
    time, wait until every row has passed: the animated sprites' rows are listed in R_FOREIGN (unused on a
    persist frame) and advanced in row order after it (_advancePersistFrame, which advances on
-   !(clock < duration), where the full emit advances on clock >= duration).
+   clock >= duration, as the full emit does: a NaN speed or clock advances on neither, N-65).
    Returns PERSIST_MISS or the rows of other types; R_COUNTS gets [play-once ends ([entity, state] pairs in
    R_ENDS), sprites whose frame moved, repairs]. */
 __attribute__((export_name("persist_frame")))
@@ -1258,7 +1258,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
     const float acc = (float)((double)aAccum[idx] + deltaSeconds);
     aAccum[idx] = acc;
     const double duration = 1.0 / ((double)sSpeed[idx] * 60.0);
-    if ((double)acc < duration) continue;
+    if (!((double)acc >= duration)) continue; /* the full emit's test: a NaN clock never advances (N-65) */
     aAccum[idx] = (float)((double)acc - duration);
     const int32_t cur = aFrame[idx];
     if (sLoop[idx] != 1 && cur >= fc - 1) {
