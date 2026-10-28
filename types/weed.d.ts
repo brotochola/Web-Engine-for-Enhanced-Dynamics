@@ -2631,6 +2631,11 @@ export declare class Layer {
 
   get zIndex(): number;
   get resolution(): number;
+  /**
+   * A look layer's render-texture scale (viewport × this). Any worker; the renderer remakes the layer's render
+   * textures before it next draws the layer. Layers without a look shader ignore it. Throws unless finite and > 0.
+   */
+  set resolution(value: number);
   get scaleMode(): LayerScaleMode;
   get alpha(): number;
   set alpha(value: number);

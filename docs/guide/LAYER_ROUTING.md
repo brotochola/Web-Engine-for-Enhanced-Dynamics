@@ -219,6 +219,22 @@ layers: {
 }
 ```
 
+## Layer Resolution (Cross-Worker)
+
+A look layer (a layer with a shader) draws into render textures the size of the viewport times its `resolution`.
+That too can change from any worker at any time:
+
+```javascript
+// Pixel art at a new zoom: one layer texel per world pixel again.
+Camera.setZoom(4);
+Layer.get("smoke").resolution = 1 / 4;
+```
+
+The renderer compares each look layer's slot in the config SAB with the resolution its render textures have, once
+per drawn frame, and remakes them on a change, as a canvas resize does. A uniform the layer's shader keeps for its
+own resolution is the scene's to update (`setUniform`). Layers without a look shader draw straight to the screen and
+ignore it. The setter throws unless the value is finite and above 0.
+
 ---
 
 ## Important Constraints

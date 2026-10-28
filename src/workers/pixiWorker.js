@@ -2458,6 +2458,22 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
+  /**
+   * Layer.resolution set at run time: the look layer's render textures at the new scale, as a canvas resize makes
+   * them. Before the passes that draw them, so this frame fills them.
+   */
+  syncLayerResolutionFromSharedState() {
+    const list = this._customLayerList;
+    const resolutions = Layer._resolution;
+    for (let i = 0; i < list.length; i++) {
+      const cl = list[i];
+      const resolution = resolutions[cl.layerId];
+      if (resolution === cl.resolution) continue;
+      cl.resolution = resolution;
+      this._resizeCustomLayerRTs(cl, this.canvasWidth, this.canvasHeight);
+    }
+  }
+
   uploadTextureLookupIfNeeded() {
     if (!this._texLutNeedsGpuUpload) return;
     const started = this.collectDetailedStats ? performance.now() : 0;
@@ -2580,6 +2596,7 @@ class PixiRenderer extends AbstractWorker {
       this.syncLayerAlphaFromSharedState();
       this.updateDecalTiles();
       if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
+        this.syncLayerResolutionFromSharedState();
         this.uploadTextureLookupIfNeeded();
         this.drawFrameLights();
         this.drawFrameShadows();

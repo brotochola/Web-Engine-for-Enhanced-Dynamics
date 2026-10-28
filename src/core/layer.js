@@ -200,6 +200,18 @@ export class Layer {
 
     get zIndex() { return Layer._zIndex[this.id]; }
     get resolution() { return Layer._resolution[this.id]; }
+    /**
+     * A look layer (one with a shader) draws into render textures the size of the viewport times this. Mutable from
+     * any worker: the renderer remakes the layer's render textures before it next draws the layer, as a canvas
+     * resize does. Layers without a look shader draw straight to the screen and ignore it.
+     * @example Layer.get("smoke").resolution = 1 / 3; // one texel per 3×3 screen px
+     */
+    set resolution(v) {
+        if (!(v > 0) || !Number.isFinite(v)) {
+            throw new Error(`WeedJS: layer "${this.name}" resolution must be a finite number above 0 (got ${v})`);
+        }
+        Layer._resolution[this.id] = v;
+    }
     /** Pixi upsample filter for shader RTs ({@link LAYER_SCALE_MODE}). */
     get scaleMode() { return this._scaleMode ?? LAYER_SCALE_MODE.LINEAR; }
     /**
