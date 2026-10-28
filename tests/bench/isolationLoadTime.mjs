@@ -6,7 +6,8 @@
  * scripts only) and with tests/bench/isolation/weedSwWide.js (every response, as coi-serviceworker does), the
  * comparison ISOLATION_SERVICE_WORKER_PLAN's phase 3 asks for.
  *
- *   node tests/bench/isolationLoadTime.mjs [--runs 10] [--mode bundle,src] [--headless] [--output report.json]
+ *   node tests/bench/isolationLoadTime.mjs [--runs 10] [--mode bundle,src] [--servers headers,narrow,wide]
+ *     [--headless] [--output report.json]
  *
  * Modes:
  *   bundle  dist/index.html (the bundle's own page, BallsScene with ?balls=300) with weed-sw.js next to it, as a
@@ -16,7 +17,8 @@
  *           requests, every one a fetch event for a worker that controls the page) with weed-sw.js at the root.
  *
  * Servers: `headers` sends COOP/COEP (DEPLOY.md's setup); `narrow` and `wide` send neither and serve their worker
- * where the page looks for it. Each run takes, for every mode and server in a rotating order, a fresh browser
+ * where the page looks for it; `routed` serves tests/bench/isolation/weedSwRouted.js (the narrow worker with Chrome's
+ * Static Routing API, SW-9). Each run takes, for every mode and server in a rotating order, a fresh browser
  * context and makes two visits: the first, then a return visit to the same URL. A visit is timed from just before
  * the navigation to the renderer's first published frame (frameTotals, read by the page on every animation frame),
  * on the same wall clock. Headed by default: the first frame needs the real GPU.
@@ -38,6 +40,7 @@ const value = (name, fallback) => {
 };
 const runs = Number(value('--runs', 10));
 const modes = String(value('--mode', 'bundle,src')).split(',');
+const serverNames = String(value('--servers', 'headers,narrow,wide')).split(',');
 const headed = !argv.includes('--headless');
 const output = value('--output', null);
 
@@ -48,6 +51,7 @@ const MODES = {
 const WORKER_FILES = {
   narrow: 'src/workers/isolationServiceWorker.js',
   wide: 'tests/bench/isolation/weedSwWide.js',
+  routed: 'tests/bench/isolation/weedSwRouted.js',
 };
 /** frameTotals' `frames` (f64) for the renderer's slot: the first frame drawn is the first it counts. */
 const RENDERER_FRAMES_F64 = (FRAME_CLOCK_SLOTS.renderer * SLOT_BYTES) / 8 + 1;
@@ -68,17 +72,16 @@ const FIRST_FRAME_WATCH = (framesIndex) => {
   requestAnimationFrame(look);
 };
 
-const servers = {
-  headers: await createStaticBenchmarkServer(repoRoot, 0),
-  narrow: await createStaticBenchmarkServer(repoRoot, 0, {
+// headers is always there: the warm-up visits use it.
+const servers = { headers: await createStaticBenchmarkServer(repoRoot, 0) };
+for (const name of serverNames) {
+  if (name === 'headers') continue;
+  if (!WORKER_FILES[name]) throw new Error(`unknown server ${name} (headers, ${Object.keys(WORKER_FILES).join(', ')})`);
+  servers[name] = await createStaticBenchmarkServer(repoRoot, 0, {
     isolationHeaders: false,
-    files: { '/weed-sw.js': WORKER_FILES.narrow, '/dist/weed-sw.js': WORKER_FILES.narrow },
-  }),
-  wide: await createStaticBenchmarkServer(repoRoot, 0, {
-    isolationHeaders: false,
-    files: { '/weed-sw.js': WORKER_FILES.wide, '/dist/weed-sw.js': WORKER_FILES.wide },
-  }),
-};
+    files: { '/weed-sw.js': WORKER_FILES[name], '/dist/weed-sw.js': WORKER_FILES[name] },
+  });
+}
 const launchArgs = [
   '--disable-background-timer-throttling',
   '--disable-renderer-backgrounding',
@@ -127,7 +130,7 @@ try {
     console.log(`warm-up ${mode}: ${w.ms} ms (not counted)`);
     await context.close();
   }
-  const order = ['headers', 'narrow', 'wide'];
+  const order = serverNames;
   for (let r = 0; r < runs; r++) {
     for (const mode of modes) {
       const rotated = order.slice(r % order.length).concat(order.slice(0, r % order.length));
@@ -168,7 +171,7 @@ const quantile = (sorted, q) => {
 };
 const summary = [];
 for (const mode of modes) {
-  for (const server of ['headers', 'narrow', 'wide']) {
+  for (const server of serverNames) {
     for (const which of ['first', 'return']) {
       const rows = samples.filter((s) => s.mode === mode && s.server === server && s.visit === which);
       const ms = rows.filter((s) => s.ms !== null && s.isolated).map((s) => s.ms).sort((a, b) => a - b);
@@ -190,5 +193,7 @@ for (const s of summary) {
       `${`${f(s.p25)}–${f(s.p75)}`.padEnd(11)}  ${s.loads.padEnd(5)}  ${f(s.reloadMedian)}${s.failed ? `  (${s.failed} failed)` : ''}`,
   );
 }
-if (output) fs.writeFileSync(output, JSON.stringify({ when: new Date().toISOString(), runs, headed, summary, samples }, null, 2));
+if (output) {
+  fs.writeFileSync(output, JSON.stringify({ when: new Date().toISOString(), runs, headed, servers: serverNames, summary, samples }, null, 2));
+}
 process.exitCode = samples.some((s) => s.ms === null || !s.isolated) ? 1 : 0;
