@@ -2854,11 +2854,27 @@ layouts' attributes made Pixi warn per attribute, per geometry and program (Enti
 - **The proof, first half:** painterMove in Chromium, 40 lockstep steps, drawn split and indexed: the same pixels,
   all 921 600, the indexed run's headers GPU_FLAG_INDEXED over 300 000 rows.
 
-**What is left:** painterMove's sitting (pre-render and Pixi owners, `--query-a indexed=0 --query-b indexed=1`),
-painterSort and a Predator gate with the option off (the default path); then step 4 (WGSL: a `texture_2d<u32>` and
-`textureLoad`, or a storage buffer) so the default backend gets it, the pixel check on WebGPU, and the default.
-Before the option is on by default: Pixi checks the texture's size (3 072 texels wide, a row per 1 024 sprites) at its
-init and throws on a GPU that cannot hold it; the main thread would have to know the limit first.
+**painterMove on WebGL, 2026-10-29 (R-0750): KEPT.** Indexed against split, one build: pre-render 37.3 → 19.8 ms
+(−43.6 %), Pixi 5.0 → 2.3 ms (−54.4 %), 4/4 pairs; pre-render publishes 52 to 57 frames a second instead of 28 to 32.
+
+**Step 4 done the same day** (7ac90cf5, 768b4ade): `spriteIndexedWgsl` rewrites instancedSprite.wgsl, the statics
+three vec4<u32> of a read-only storage buffer (group 2, binding 4) over the batch's own copy, sent on a new generation;
+Pixi throws at init past the device's storage binding size. Both shaders now read the tint's bits as the integer they
+are (an opaque white tint is a NaN pattern). Chrome 156 compiles both WGSL programs and makes their pipelines
+(`spriteIndexedCompileCheck.mjs`); painterMove on WebGPU, 40 lockstep steps, split against indexed: the same pixels.
+
+**The sittings, same day** (R-0753 to R-0755): painterMove on WebGPU KEPT, pre-render 23.9 → 17.5 ms (−28.0 %), Pixi
+3.4 → 2.9 ms (−17.5 %), 4/4; painterSort, whose order holds, pre-render −9.4 % but Pixi 1.67 → 2.16 ms (+0.49 ms,
+under its floor): an indexed frame sends the slot pairs (8 bytes a sprite) though they are the last frame's, where a
+split frame sends the pose alone. The Predator gate with the option off, against main: neutral.
+
+**What is left:**
+- **The slot stream only when it moved:** a slots generation (the painter's orderGen, the rows, the depth scale) per GPU
+  queue buffer in pre-render, which then writes the pairs only when its buffer lacks them, and per ring slot in Pixi,
+  which then copies and uploads them only then. painterSort's indexed frames then send the pose alone.
+- **The default:** renderer.indexedSprites on, the main thread leaving it off where a GPU might not hold the statics
+  (WebGPU's default storage binding, 128 MiB, is 2.79 million rows; WebGL's texture a row per 1 024 sprites, 4 096 rows
+  on every WebGL2 GPU we target), since Pixi throws there; then a Predator gate with it on.
 
 ### E-163 The gather's cell order past 65 536 cells
 
