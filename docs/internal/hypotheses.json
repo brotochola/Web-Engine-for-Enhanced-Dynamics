@@ -8257,7 +8257,8 @@
         "R-0645",
         "R-0665",
         "R-0675",
-        "R-0719"
+        "R-0719",
+        "R-0739"
       ],
       "id": "E-144",
       "title": "Box2D's solver threads: their idle cost and their clock reads",
@@ -8922,7 +8923,8 @@
       ],
       "records": [
         "R-0701",
-        "R-0709"
+        "R-0709",
+        "R-0739"
       ],
       "id": "E-162",
       "title": "painterMove: the moving rows' scatter pack and reinsert",
@@ -9208,7 +9210,8 @@
         "R-0716",
         "R-0718",
         "R-0722",
-        "R-0736"
+        "R-0736",
+        "R-0739"
       ],
       "id": "E-168",
       "title": "rng() boxes its double twice in a worker (littleCity: 2.7 MB/s)",
@@ -16070,6 +16073,15 @@
       "title": "W9-final2-galaxy: GPU Galaxy 8M neutral at 8 pairs (presented -2.1 %, renderer +1.7 %), leaning worse in 6-7 of 8",
       "verdict": "note",
       "text": "**W9-final2-galaxy: the whole branch against main on GPU Galaxy 8M, neutral at 8 pairs, leaning about 2 % worse.**\n2026-10-29, main bfd7ccf1 against 33350fb6, headed, source, detailed stats off, `particles=8388608&arms=8`, owner the\nrenderer; 4 pairs, then 4 more (`--append`, the same stamp) because the first four did not decide.\n\n- First 4 pairs: REGRESSION, renderer 3.898 → 3.963 ms (+3.3 %, worse 4/4, cv 3/3 %), presented 56.0 → 55.1 fps\n  (−2.6 %, fewer 3/4).\n- **All 8 pairs: NEUTRAL, renderer 3.898 → 3.971 ms (+1.7 %, worse 7/8, cv 3/3 %), presented 56.0 → 55.1 fps (−2.1 %,\n  fewer 6/8, cv 1/2 %)**; logic 1.232 → 1.230 ms (under the floor).\n\nRead against the session's Galaxy A/A (R-0737: +2.0 % renderer and −1.2 % presented on identical code, 2/4 each):\nunder the runner's 3 % and at the scene's detection limit, but most pairs lean the same way, so about 2 % of\nDX-GPCLOCK's cost may remain with the hold (R-0724 read −4.9 % before it). The branch's only change on this scene's\nrenderer and page is the clock (the hold reads the wall clock once a read; the old clock read one stored value); the\nemitters' changes (E-161, E-172, N-91) are on the logic workers, under the floor here."
+    },
+    {
+      "id": "R-0739",
+      "date": "2026-10-29",
+      "time": "10:05",
+      "timeFrom": "recorded",
+      "title": "Wave 9's third map and second heap pass: no new lead; Pixi's own cost is the instance upload (E-162)",
+      "verdict": "note",
+      "text": "**Wave 9's third map: eight more demos, no new lead; Pixi's own cost is the instance upload.** 2026-10-29,\n`profileSceneSweep --pass cpu` on the final tree (33350fb6 and after), headed, source, detailed stats off: carScene,\nbichosScene, mamushkaDigScene, badPiggiesScene, ballsScene, platformerGameScene, liquidFunDemoScene (blastforgeScene\nis not in the sweep's list).\n\n- At their defaults none loads an engine worker past 100 ms/s except Box2D's own work (ballsScene's physics 449 ms/s,\n  its solver) and the solver threads' waits (E-144). carScene's spatial is `publish_batch` 68 %, bichos' pre-render\n  and particle workers are under 65 ms/s; nothing in them is engine code of E-169's or E-173's kind.\n- **Pixi's own share** in the second map's scenes is almost all `updateBuffer` (pixi.min.js:792, the instance\n  buffer's upload each frame): 12.3 % of Predator's Pixi worker, 24.4 % of Boids', 35.9 % of Adobe's, 41.0 % of\n  painterMove's, beside W30's copy out of the shared memory (10–49 %). Uploading only what changed is E-162's design\n  (the statics out of draw order), the owner's call.\n\n**The heap pass on the final tree** (`--pass heap`, predatorScene, littleCityScene, spawnStormScene,\nadobeAnimateScene; KB/s per worker): nothing new from the session's second half.\n- Predator logic 352 and 330 (728 in the morning, before the trees stopped ticking): `_spawn` (the soldiers' sparks)\n  68, then the demo's `shoot` and `shootingSparks`; Pixi 377, Pixi's own `bind` the top site (87).\n- littleCity logic 7 241: `rng` 5 591, TrafficCar.tick 815, CityPerson.tick 305. After E-168 (R-0718) it read 6 601,\n  `rng` 4 201: the same box (the double `rng` returns to a tick too large to inline it), in an emergent scene.\n- spawnStorm logic 2 167, 2 119 of it the bench driver's configs; Adobe's logic 29.\n- Box2D's worker 58–585, nearly all `_emscripten_get_now` (the solver waits' clock reads, E-144)."
     }
   ],
   "leads": [
