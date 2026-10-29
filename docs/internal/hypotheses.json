@@ -9275,7 +9275,8 @@
       ],
       "records": [
         "R-0762",
-        "R-0763"
+        "R-0763",
+        "R-0765"
       ],
       "id": "N-94",
       "title": "The Pixi worker's raw texture uploads could leave a texture unit holding another texture than Pixi tracks",
@@ -9440,7 +9441,8 @@
       "records": [
         "R-0751",
         "R-0761",
-        "R-0763"
+        "R-0763",
+        "R-0765"
       ],
       "id": "E-175",
       "title": "Predator's decal tiles: up to 800 Pixi sprites re-transformed and re-batched every frame",
@@ -16570,6 +16572,18 @@
       "commits": [
         "51b3a00b",
         "b18dd9be"
+      ]
+    },
+    {
+      "id": "R-0765",
+      "date": "2026-10-29",
+      "time": "18:09",
+      "timeFrom": "recorded",
+      "title": "wave10 merged into main a third time (72a76c92): E-175, N-94; bundles built, tested and measured, pushed",
+      "verdict": "note",
+      "text": "**wave10 merged into main a third time (72a76c92), bundles built, tested and measured, pushed.** 2026-10-29.\n\n- **Since b8fe0cea:** E-175 (Predator's decal tiles: the render group and the culling), N-94 (the Pixi worker's raw\n  texture uploads), the bench's `weedBundle` key, and the register and plan commits.\n- **Checks at 51b3a00b (the dist rebuilt there):** test:node 2129/2129, test:demos 100/100, check:dist (inputs\n  b0b3b419a3ce2da3), test:bundle (the 8 bundles in Chromium), test:node:bundle 254/254; the prod bundle measured\n  against its sources (R-0764): equal or better.\n- main fast-forwarded from b8fe0cea to 72a76c92 and pushed.",
+      "commits": [
+        "72a76c92"
       ]
     }
   ],
