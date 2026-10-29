@@ -85,7 +85,7 @@ import {
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
 import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
-import { bindGpuPack, packInstancedRowsWasm, packSplitRowsWasm } from '../render/gpuPackClient.js';
+import { bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packSplitRowsWasm } from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
 import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
@@ -123,6 +123,7 @@ import {
     GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
     GPU_FLAG_SPLIT,
+    GPU_FLAG_INDEXED,
     createGpuQueueViews,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
@@ -415,6 +416,16 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuStaticRows = new Int32Array(2);
         this._packSplitUsed = false;
         this._packSplitGen = 0;
+        // E-162: with caps.indexedSprites a painter-sorted frame goes as an indexed frame: the poses and the slot pairs
+        // in draw order, every queue row's statics in row order, written only when the GPU queue buffer does not hold
+        // the queue's generation for the same rows. Per GPU queue buffer: that generation (0: none) and its rows; and
+        // this frame's.
+        this._gpuIndexed = false;
+        this._gpuIndexedGen = new Uint32Array(2);
+        this._gpuIndexedRows = new Int32Array(2);
+        this._packIndexedUsed = false;
+        this._packIndexedGen = 0;
+        this._packIndexedRows = 0;
         // A painter-sorted frame's statics generation (_sortedStaticGen): its number, and the queue generation, the
         // painter's orderGen, the rows and the depth scale it was given for.
         this._sortedContentGen = 0;
@@ -1061,6 +1072,8 @@ class PreRenderWorker extends AbstractWorker {
                 // E-82b: plain sprites in two streams (a nearest atlas, which snaps every pose, keeps 15-float rows).
                 this._gpuSplit = true;
                 this._gpuStaticGen.fill(0);
+                this._gpuIndexed = !!caps.indexedSprites;
+                this._gpuIndexedGen.fill(0);
                 // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions (made with
                 // shadows and sun casters; without them nothing is stamped).
                 this._stampWasm = null;
@@ -3388,6 +3401,7 @@ class PreRenderWorker extends AbstractWorker {
                 if (n < 0) {
                     // 15-float rows: whatever statics this buffer held are gone.
                     this._gpuStaticGen[this._queueBuf & 1] = 0;
+                    this._gpuIndexedGen[this._queueBuf & 1] = 0;
                     n = this._packRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, cap, false);
                 }
             }
@@ -3417,13 +3431,18 @@ class PreRenderWorker extends AbstractWorker {
      * does not hold the queue's current generation (renderQueueStaticGen) for the same rows. The glow split's
      * list (_gpuIdxEntity: the rows that are not glows, in order) follows from the queue's types, which the
      * generation covers. A painter's order may move with the poses alone, so a sorted frame's generation also
-     * follows the painter's order (_sortedStaticGen). -1 when the kernel does not take the call; the caller then
-     * packs 15-float rows and the frame goes without GPU_FLAG_SPLIT.
+     * follows the painter's order (_sortedStaticGen). With indexed frames (E-162) a sorted frame goes as one when the
+     * kernel takes it. -1 when the kernel does not take the call; the caller then packs 15-float rows and the frame goes
+     * without GPU_FLAG_SPLIT.
      */
     _packSpritesSplit(q, ctx, dst, cap) {
         const slot = this._queueBuf & 1;
         const genView = this.renderQueueStaticGen;
         const sorted = ctx.useIndices && ctx.indices !== this._gpuIdxEntity;
+        if (sorted && this._gpuIndexed) {
+            const indexed = this._packSpritesIndexed(q, ctx, dst, cap, slot, genView);
+            if (indexed >= 0) return indexed;
+        }
         const scan = ctx.scanCount | 0;
         const rows = scan < cap ? scan : cap;
         const gen = sorted ? this._sortedStaticGen(ctx, genView, rows) : genView.length ? genView[0] >>> 0 : 0;
@@ -3432,8 +3451,35 @@ class PreRenderWorker extends AbstractWorker {
         if (n < 0) return -1;
         this._gpuStaticGen[slot] = gen;
         this._gpuStaticRows[slot] = n;
+        // The split statics lie over an indexed frame's slots and statics.
+        this._gpuIndexedGen[slot] = 0;
         this._packSplitUsed = true;
         this._packSplitGen = gen;
+        return n;
+    }
+
+    /**
+     * E-162: a painter-sorted frame as an indexed frame through gpuPack.wasm (pack_sprites_indexed_scatter): the poses
+     * and the slot pairs (each slot's row and depth) in draw order, and every queue row's statics in row order, those
+     * only when this GPU queue buffer does not hold the queue's current generation (renderQueueStaticGen) for the same
+     * rows. The painter's order and the depth scale are the slots', so they move no statics. -1 when the kernel does not
+     * take the frame (a list under SCATTER_MIN_ROWS or under half the queue); the caller then packs it split.
+     */
+    _packSpritesIndexed(q, ctx, dst, cap, slot, genView) {
+        const gen = genView.length ? genView[0] >>> 0 : 0;
+        const rows = q.count | 0;
+        const current = gen !== 0 && this._gpuIndexedGen[slot] === gen && this._gpuIndexedRows[slot] === rows;
+        const n = packIndexedRowsWasm(
+            this._gpuPackWasm, q, ctx, dst.spritePose, dst.spriteSlots, current ? null : dst.spriteRowStatics, cap
+        );
+        if (n < 0) return -1;
+        this._gpuIndexedGen[slot] = gen;
+        this._gpuIndexedRows[slot] = rows;
+        // The slot pairs lie over the split statics.
+        this._gpuStaticGen[slot] = 0;
+        this._packIndexedUsed = true;
+        this._packIndexedGen = gen;
+        this._packIndexedRows = rows;
         return n;
     }
 
@@ -3472,15 +3518,19 @@ class PreRenderWorker extends AbstractWorker {
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
         const res = this._gpuSpritesResult
-            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0, indices: null });
+            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0, indexedRows: 0, indices: null });
         this._packSplitUsed = false;
         this._packSplitGen = 0;
+        this._packIndexedUsed = false;
+        this._packIndexedGen = 0;
+        this._packIndexedRows = 0;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
             res.sprite = 0;
             res.glow = 0;
             res.particle = 0;
             res.flags = 0;
             res.staticGen = 0;
+            res.indexedRows = 0;
             res.indices = null;
             return res;
         }
@@ -3512,8 +3562,10 @@ class PreRenderWorker extends AbstractWorker {
         res.sprite = packed.sprite;
         res.glow = packed.glow;
         res.particle = this._packParticles | 0;
-        res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0) | (presorted ? GPU_FLAG_SORTED : 0);
-        res.staticGen = this._packSplitUsed ? this._packSplitGen : 0;
+        res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0) | (this._packIndexedUsed ? GPU_FLAG_INDEXED : 0)
+            | (presorted ? GPU_FLAG_SORTED : 0);
+        res.staticGen = this._packSplitUsed ? this._packSplitGen : this._packIndexedUsed ? this._packIndexedGen : 0;
+        res.indexedRows = this._packIndexedUsed ? this._packIndexedRows : 0;
         res.indices = packed.spriteIndices;
         return res;
     }
@@ -3545,6 +3597,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.cookie = shadows.cookie | 0;
         counts.flags = sprites.flags | 0;
         counts.staticGen = sprites.staticGen | 0;
+        counts.indexedRows = sprites.indexedRows | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
     }
