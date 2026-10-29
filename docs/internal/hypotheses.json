@@ -8750,6 +8750,24 @@
       "kind": "bug",
       "result": "Answered 2026-10-28: one build, the Adobe tables' region 4 vs 8 MB (Box2D's world 4 MB further on), adobeAnimateScene at min zoom: physics 6.009 → 5.988 ms (+1.2 %, worse 2/4), NEUTRAL; not the heap, the +7 % is L5.",
       "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#Pre-render and Pixi items not ranked yet"
+      ],
+      "records": [
+        "R-0698"
+      ],
+      "id": "E-159",
+      "title": "A painter-sorted frame rewrites and re-uploads its statics though its order stands",
+      "status": "kept",
+      "statusText": "kept 2026-10-29 (R-0698)",
+      "date": "2026-10-29",
+      "area": "pre-render",
+      "kind": "js",
+      "result": "Kept 2026-10-29 (c2e3e46a): painterSort pre-render 23.377 → 16.380 ms (−29.9 %), renderer 5.140 → 1.794 ms (−65.1 %); painterMove neutral.",
+      "next": "Nothing pending; painterMove keeps its scatter pack and reinsert."
     }
   ],
   "records": [
@@ -15054,6 +15072,18 @@
       "text": "The merge gate for wave8: the whole branch (496a7a24) against main (e04c188f), 4 pairs each from worktrees, owner physics, detailed stats off. The branch's engine changes: N-71, E-140's dead loop, E-136, the pose epoch fix, W28.\n\n**Predator: KEPT (product).** physics 8.424 → 7.322 ms (−11.3 %, worse 0/4), logic −2.9 %, spatial +0.5 %, renderer −1.1 %, pre-render −4.2 %; presented 60.0 both. A noisy sitting: cv 11–17 % on every worker and every worker slower than in the day's other sittings (only these runs were going; the rest of the machine was busy), so the per-worker numbers are wide, but no worker is worse.\n\n**Boids: FAIL (load), on VISIBLE_ENTITIES −10.5 % (cv 6/9 %), the flock in view, which no change reaches.** physics 8.822 → 7.974 ms (−10.4 %, worse 0/4), pre-render −6.6 % (0/4, with the fewer visible boids), spatial +2.8 % (worse 2/4, cv 24/3 %).\n\n**Passed.** No worker is 3 % worse in either scene; physics −10 to −11 % in both. wave8 merged into main by fast-forward.",
       "commits": [
         "496a7a24"
+      ]
+    },
+    {
+      "id": "R-0698",
+      "date": "2026-10-29",
+      "time": "03:12",
+      "timeFrom": "recorded",
+      "title": "E-159 kept: a sorted frame keeps its statics while the painter's order holds",
+      "verdict": "kept",
+      "text": "From the 2026-10-29 profile of the unranked pre-render and Pixi items (six scenes, `profileSceneSweep --pass cpu`): in painterSortStressScene (300 000 sprites standing, Y-sorted in pre-render, skipCull) the pre-render worker is saturated (989 ms/s), `pack_sprites_split_scatter` 49.1 % of it, and Pixi's 285 ms/s are 41 % an unnamed module (W30's `memory.copy`) and 47 % Pixi's own code.\n\n**Why.** E-82b splits each sprite into a pose stream (16 B) and a static stream (44 B) and writes the statics only when the GPU queue buffer lacks the queue's generation; Pixi uploads them only when that generation moves. A painter-sorted frame gave generation 0: the order may move with the poses alone, and a slot's statics follow its row. So every sorted frame wrote 300 000 statics, scattered by the order, and Pixi copied and uploaded them, although nothing stood to move.\n\n**The change** (c2e3e46a):\n- The painter state carries `orderGen`, moved by a full sort or by a reinsert that moved a key; a reinsert that moved none (the same set, no key changed) leaves the order as it was, which `reinsert` in `painterRadix.c` confirms (it returns 0 before touching the order).\n- `_sortedStaticGen` gives a sorted frame a statics generation of its own (bit 31 set, apart from the queue's), the same number while the queue's staticGen, the painter's orderGen, the row count and the depth scale hold, a new one when any moves; 0 when the order is not the painter's or the queue's generation is unknown. Both GPU queue buffers then hold the same number, so each writes its statics once and Pixi uploads them once.\n- `tests/node/gpuPackSplitWired.test.js`: sorted frames whose keys stand rewrite the statics on the unsorted pattern and with the 15-float rows' words; frames whose keys move rewrite every time under a new generation.\n\n**Measured**, 4 pairs from worktrees against bfd7ccf1, owner pre-render, detailed stats off:\n- painterSortStressScene: pre-render 23.377 → 16.380 ms (**−29.9 %**, worse 0/4, cv 4/7 %), renderer 5.140 → 1.794 ms (**−65.1 %**, worse 0/4): **KEPT (product)**.\n- painterMoveStressScene (10 % of the sprites cross a neighbour every swing: keys move every frame): pre-render −0.9 %, renderer −1.7 %, logic +0.8 %: NEUTRAL, as expected.\n\nPredator sorts in Pixi (`sortSprites: 'pixi'`), whose path this does not change.",
+      "commits": [
+        "c2e3e46a"
       ]
     }
   ],
