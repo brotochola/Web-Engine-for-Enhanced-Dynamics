@@ -2417,13 +2417,22 @@ what keeps the CPU path is there.*
 - **Painter scenes.** `pack_sprites_split_scatter` is 40–48 % of a saturated pre-render in painterSort and painterMove.
   - Pixi there is 40 % in an unnamed module (most likely W30's `memory.copy`) and 47 % in Pixi's own code.
   - The register's lead: the persist path pays only when the visible set is unchanged, which a moving camera rarely gives.
+  - *E-159, kept 2026-10-29 (c2e3e46a):* a painter-sorted frame wrote its statics every time and Pixi uploaded them, the
+    order being unknown. The painter now says when its order moved (orderGen), and a sorted frame keeps its statics
+    while it holds: painterSort pre-render 23.377 → 16.380 ms (−29.9 %), renderer 5.140 → 1.794 ms (−65.1 %); painterMove,
+    whose keys move every frame, neutral. Left there: the scatter pack of painterMove's moving rows and its reinsert.
 - **Predator's sprite statics** (R-0607). Pixi rewrites them every frame, because Predator sorts in Pixi (`sortSprites: 'pixi'`), so E-82b cannot skip them.
   *Answered 2026-10-28 (R-0696):* E-05 sat again on today's engine: pack and sort in pre-render take the renderer
   3.729 → 2.596 ms (−31.2 %) and pre-render 4.038 → 5.087 ms (+26.0 %, worse 4/4), the slower of the two. Predator keeps
   them in Pixi; its moving camera changes the order most frames anyway.
 - **Predator's shadow stamp.** `stamp_light_range` is 39 % of its pre-render, after W23 and E-133.
 - **Texture uploads.** `uploadSharedImage` is 96 % of textureUploadStressScene's Pixi (900 ms/s). This is the GPU side, the register's first lead.
+  *Answered 2026-10-29 (a trace):* the whole 97 % is the `texSubImage2D` call itself, an 8192 × 8192 picture every tick by
+  the scene's design; dirty rectangles already go up alone. Nothing on the engine's side.
 - **Mesh uploads.** meshApiStressScene's Pixi is 32 % the mesh UV upload and 32 % `rewrite_corners`.
+  *Answered 2026-10-29 (a trace):* the upload is all the copy of the rows out of the shared memory into the Buffer's
+  own array, which E-123 chose (uploading from the shared rows cost every other worker about 6 %), and the scene edits
+  nearly every mesh every frame, so copying changed rows only would not save it.
 - **Decal uploads.** In decalBlitStressScene, Pixi's own code takes 228 ms/s, the decal tile uploads.
 
 ### Step 4: physics
