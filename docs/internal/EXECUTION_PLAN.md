@@ -2695,6 +2695,30 @@ from a new map of the scenes.
    - The records and the page.
    - Then the owner is asked about the merge to main, which ships the bundles built, tested and pushed.
 
+**Where it stood after four hours** (each line's record holds its numbers):
+- **Kept:** E-164 with E-164b and E-167, the entity slimmed to what is its own (minimalTick logic −36.7 %, painterMove
+  −12.4 % then −7.5 %); E-165, spawn and despawn off the worker's global (spawnStorm logic −27.8 %); E-161, a frame's
+  emitGpu calls in one group (18 048 → 60 groups a second, no overflows); E-160, the stamp's packed grid (kernel −13.9 %
+  in Chrome, −11.8 % in the scene, Predator's pre-render under what four pairs resolve); E-168, rng without a boxed
+  call (littleCity's logic garbage −38 %).
+- **Bugs fixed:** N-85 (the clock's stale fallback), N-86 (publishPose's fast path), N-87 (the clock in a hidden tab),
+  N-88 (a subclass entity read its parent's component flags), N-89 (E-164 and E-167 broke the page's frozen entities
+  and hot swap's shared config), and Blastforge's demo test after E-161.
+- **Answered or dropped:** N-84 (no spinning thread), E-166 (the spatial ownership branch: neutral), E-163 (no scene
+  passes 65 536 cells: planetScene is the largest, at exactly 65 536), the deopt pass (no deopts in eight scenes),
+  Box2D's names (its own work, a game's settings).
+- **For the owner:** DX-GPCLOCK costs GPU Galaxy 8M about 9 % of its presented frames (R-0707); E-162's lever, the
+  sprite statics out of draw order (a GPU-side table per entity for scrolling scenes), is a design change to decide.
+- **Predator's logic** read 306 and 281 ms/s in the morning's map and 273 and 258 after these changes.
+
+**The closing gates** (main bfd7ccf1 against the branch at df2a63a3, 4 pairs each):
+- **Predator:** logic −7.8 % (worse 0/4); the runner's physics +3.5 % is its load (the branch's runs moved 10 % more
+  bodies; per moved body the two sides differ by −0.2 %); every other worker under 3 %. Passed.
+- **gpuParticlesStressScene `?hold=1000`:** every worker under the floor, presented 60 on both sides: it cannot load
+  a worker's CPU, and E-161's own sitting is the reading.
+- **GPU Galaxy 8M:** renderer +3.2 % and presented 55.3 → 52.4 fps (−4.9 %), worse 4/4: DX-GPCLOCK's cost, about half
+  the bisect's −9.4 % now that E-161 groups a frame's emits. Its mechanism is the next item.
+
 ### E-160 Predator's shadow stamp, on the inputs the scene gives it
 
 `stamp_light_range` is 39 % of Predator's pre-render (R-0645; 46.7 % in R-0607). It is the largest engine function in
