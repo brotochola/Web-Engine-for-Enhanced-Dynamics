@@ -16,6 +16,7 @@ import {
 // browser's WebGL2.
 
 const shipped = readFileSync(new URL('../../src/shaders/instancedSprite.vert.glsl', import.meta.url), 'utf8');
+const STATICS = ['aInstScale', 'aInstAnchor', 'aInstDepth', 'aInstTexId', 'aInstTileInv', 'aInstTileOff'];
 
 test('a statics row is three RGBA texels: the 11 words of the split statics and a zero', () => {
   assert.equal(STATICS_TEXELS_PER_ROW * 4, GPU_INDEXED_STATIC_FLOATS);
@@ -26,10 +27,13 @@ test('a statics row is three RGBA texels: the 11 words of the split statics and 
 
 test('the indexed shader reads the slot pair and the texture, and fills every static', () => {
   const out = spriteIndexedVertex(shipped);
-  for (const name of ['aInstScale', 'aInstAnchor', 'aInstDepth', 'aInstTintBits', 'aInstTexId', 'aInstTileInv', 'aInstTileOff']) {
+  for (const name of [...STATICS, 'aInstTintBits']) {
     assert.doesNotMatch(out, new RegExp(`^in \\w+ ${name};`, 'm'), `${name} is no attribute`);
-    assert.match(out, new RegExp(`^\\s+${name} = `, 'm'), `${name} is filled in main`);
   }
+  for (const name of STATICS) assert.match(out, new RegExp(`^\\s+${name} = `, 'm'), `${name} is filled in main`);
+  // The tint's bits as the uint they are: no float between the texture and the shader (a NaN pattern could change).
+  assert.match(out, /^\s+uint tintBits = weedS1\.y;/m);
+  assert.doesNotMatch(out, /floatBitsToUint\(aInstTintBits\)|aInstTintBits = /);
   for (const kept of ['aQuad', 'aInstXY', 'aInstRotCS']) assert.match(out, new RegExp(`^in vec2 ${kept};`, 'm'), `${kept} stays`);
   assert.match(out, /^in vec2 aInstSlot;/m, 'the slot pair, an attribute of its own name');
   assert.match(out, /aInstDepth = aInstSlot\.y;/);
@@ -41,4 +45,5 @@ test('the indexed shader reads the slot pair and the texture, and fills every st
 test('the rewrite refuses a shader it does not know', () => {
   assert.throws(() => spriteIndexedVertex(shipped.replace('in vec2 aInstTileOff;', '')), /aInstTileOff/);
   assert.throws(() => spriteIndexedVertex(shipped.replace('void main() {', 'void notMain() {')), /void main/);
+  assert.throws(() => spriteIndexedVertex(shipped.replace('floatBitsToUint(aInstTintBits)', 'floatBitsToUint(aInstTexId)')), /tintBits/);
 });

@@ -30,14 +30,20 @@ const STATIC_ATTRIBUTES = [
   ['vec2', 'aInstTileOff'],
 ];
 
+/** Replace the one `from` in `source`, or say the shader is not the one this rewrite knows. */
+function replaceOnce(source, from, to, what) {
+  const at = source.indexOf(from);
+  if (at < 0 || source.indexOf(from, at + 1) >= 0) throw new Error(`WeedJS: the sprite ${what} needs one "${from.trim()}"`);
+  return source.slice(0, at) + to + source.slice(at + from.length);
+}
+
 /**
  * instancedSprite.vert.glsl reading its statics from the statics texture: the static attributes become globals the
  * shader fills first, from the three texels of the statics row (the words of gpuPack.c sprite_static: scale, anchor,
  * an unused depth, tint bits, texture, tile terms, and a zero) and the slot pair. The words go through
- * uintBitsToFloat, a bitcast, so the tint bits the shader reads back with floatBitsToUint keep every bit; an RGBA32F
- * texture could change a NaN pattern. `aInstSlot` is the slot stream's pair (the row, as a float, and the depth), an
- * instance attribute of its own name, so one geometry holds both layouts' buffers and each program binds what it
- * reads; per instance, a chunk drawn from any first instance reads its own, whatever the backend's range draw
+ * uintBitsToFloat, a bitcast; the tint's bits are read as the uint they are, with no float between that could change a
+ * NaN pattern (an opaque white tint is one). `aInstSlot` is the slot stream's pair (the row, as a float, and the
+ * depth), per instance, so a chunk drawn from any first instance reads its own, whatever the backend's range draw
  * (instanceRangeDraw.js).
  * @param {string} source instancedSprite.vert.glsl
  * @returns {string}
@@ -49,6 +55,7 @@ export function spriteIndexedVertex(source) {
     if (!declaration.test(out)) throw new Error(`WeedJS: the sprite vertex shader has no "in ${type} ${name};"`);
     out = out.replace(declaration, `${type} ${name};`);
   }
+  out = replaceOnce(out, 'uint tintBits = floatBitsToUint(aInstTintBits);', 'uint tintBits = weedS1.y;', 'vertex shader');
   const main = 'void main() {\n';
   const at = out.indexOf(main);
   if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: the sprite vertex shader needs one "void main() {"');
@@ -65,10 +72,10 @@ export function spriteIndexedVertex(source) {
     '  uvec4 weedS2 = texelFetch(uStatics, weedTexel + ivec2(2, 0), 0);\n' +
     '  aInstScale = uintBitsToFloat(weedS0.xy);\n' +
     '  aInstAnchor = uintBitsToFloat(weedS0.zw);\n' +
-    '  aInstTintBits = uintBitsToFloat(weedS1.y);\n' +
     '  aInstTexId = uintBitsToFloat(weedS1.z);\n' +
     '  aInstTileInv = uintBitsToFloat(uvec2(weedS1.w, weedS2.x));\n' +
     '  aInstTileOff = uintBitsToFloat(weedS2.yz);\n' +
     out.slice(at + main.length)
   );
 }
+
