@@ -1,4 +1,4 @@
-// ScenePanel.js — Scene switching and play/pause controls
+// ScenePanel.js — Scene switching, play/pause and restart controls
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 
@@ -65,6 +65,10 @@ export class ScenePanel {
     });
     controlsRow.appendChild(this.elements.resumeBtn);
 
+    // Restart: the scene loads again, fresh, with the data it was loaded with
+    this.elements.restartBtn = createButton('↻ Restart', '', () => this._restartScene());
+    controlsRow.appendChild(this.elements.restartBtn);
+
     this.panel.appendChild(controlsRow);
     return this.panel;
   }
@@ -110,6 +114,16 @@ export class ScenePanel {
   }
 
   // ------- internal -------
+
+  async _restartScene() {
+    const gameEngine = this.debugUI.gameEngine;
+    const scene = this.debugUI.scene;
+    if (!gameEngine || !scene) return;
+    await gameEngine.loadScene(scene.constructor, {
+      data: scene.data,
+      scriptUrl: scene.sceneScriptUrl || undefined,
+    });
+  }
 
   _updatePlayPauseState() {
     const isPaused = this.debugUI.scene?.state?.pause;
