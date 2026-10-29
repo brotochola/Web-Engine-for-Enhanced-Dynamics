@@ -485,8 +485,6 @@ class SpatialWorker extends AbstractWorker {
     const gridEntities = Grid._gridEntities;
     const cellStride = Grid._cellIdStride;
     const cellHeader = Grid._headerIds;
-    const maxPerCell = Grid.maxEntitiesPerCell;
-    const cellByteSize = Grid.cellByteSize;
 
     const maxCol = gridWidth - 1;
     const maxRow = this.gridHeight - 1;
@@ -552,10 +550,7 @@ class SpatialWorker extends AbstractWorker {
       // Home row from the Float32 Y that findNeighbors reads back from entityPosData.
       let homeRow = (Math.fround(posY) * invCellSize) | 0;
       homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
-      // E-166: written always, kept when this worker owns the row: with two or more spatial workers the rows
-      // alternate owners, and a branch on it was mispredicted about every other entity.
-      ownedList[ownedCount] = i;
-      ownedCount += rowOwnership[homeRow] === workerId ? 1 : 0;
+      if (rowOwnership[homeRow] === workerId) ownedList[ownedCount++] = i;
 
       getCellRange(posX, posY, halfW, halfH, invCellSize, maxCol, maxRow, _cellRangeResult);
       const minCol = _cellRangeResult.minCol;
@@ -590,7 +585,7 @@ class SpatialWorker extends AbstractWorker {
           const cellIndex = rowBase + col;
           const localCount = localCounts[cellIndex];
 
-          if (localCount < maxPerCell) {
+          if (localCount < Grid.maxEntitiesPerCell) {
             gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
             localCounts[cellIndex] = localCount + 1;
           }
@@ -603,7 +598,7 @@ class SpatialWorker extends AbstractWorker {
       const rowBase = row * gridWidth;
       for (let col = 0; col < gridWidth; col++) {
         const cellIndex = rowBase + col;
-        const byteOffset = cellIndex * cellByteSize;
+        const byteOffset = cellIndex * Grid.cellByteSize;
         gridCounts[byteOffset] = localCounts[cellIndex];
       }
     }
@@ -1323,10 +1318,6 @@ class SpatialWorker extends AbstractWorker {
     const stampFrame = this._processedFrameCounter;
 
     let rebuilds = 0;
-    // E-166: per-entity counters in locals, stored on the worker once after the loop.
-    let processed = 0;
-    let reused = 0;
-    let queued = pub.queued;
     const ownedList = this._ownedEntityList;
     const ownedCount = this._ownedEntityCount;
     for (let oi = 0; oi < ownedCount; oi++) {
@@ -1338,7 +1329,7 @@ class SpatialWorker extends AbstractWorker {
       const myY = entityPosData[baseIdxA + 1];
       const myHalfExtent = entityPosData[baseIdxA + 2];
 
-      processed++;
+      this.entitiesProcessedThisFrame++;
 
       const myVisualRange = visualRange[entityA];
       if (myVisualRange <= 0) {
@@ -1361,7 +1352,7 @@ class SpatialWorker extends AbstractWorker {
         candCountOf[entityA] > 0 &&
         framesSinceBuild[entityA] < maxReuseFrames
       ) {
-        reused++;
+        this.neighborsReusedThisFrame++;
         framesSinceBuild[entityA]++;
         continue;
       }
@@ -1369,20 +1360,17 @@ class SpatialWorker extends AbstractWorker {
       // The publish and the gather both read the range from the memory.
       pub.range[entityA] = myVisualRange;
       if (skinFrac > 0 && this._canReuseNeighbors(entityA, myX, myY, myHalfExtent, myVisualRange)) {
-        reused++;
+        this.neighborsReusedThisFrame++;
         framesSinceBuild[entityA]++;
         // E-136: the same list, range and poses as at its last publish: the row stands.
         if (rowPoseGen[entityA] === poseGen) continue;
         rowPoseGen[entityA] = poseGen;
-        pub.list[queued++] = entityA;
+        pub.list[pub.queued++] = entityA;
       } else {
         rebuild[rebuilds++] = entityA;
       }
     }
 
-    this.entitiesProcessedThisFrame += processed;
-    this.neighborsReusedThisFrame += reused;
-    pub.queued = queued;
     this.neighborsRebuiltThisFrame += rebuilds;
     if (rebuilds) {
       const meta = this._wasmMeta;
