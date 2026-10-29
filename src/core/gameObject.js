@@ -109,6 +109,8 @@ const FIELD_GETTERS = [
   function () { const c = this._c7; return c !== null ? c : this._makeComponent(7); },
 ];
 const NO_COMPONENT_SLOTS = [];
+/** The constructor's config when none is given: one object, not a new one per entity. */
+const EMPTY_CONFIG = Object.freeze({});
 
 /**
  * E-165: this realm's LogicWorker, which binds itself when it is made. `self.logicWorker` is a load through the
@@ -529,11 +531,14 @@ export class GameObject {
    * This simplifies code: just use SpriteRenderer.property[entityIndex] directly.
    * Unused slots have default values (0/false).
    */
-  constructor(index, config = {}, logicWorker = null, options = {}) {
+  constructor(index, config = EMPTY_CONFIG, logicWorker = null, options = {}) {
     this.index = index;
-    this.config = config;
-    // LogicWorker API object (postMessage, queues). Not forceProcessOnLogicWorker.
-    this.logicWorker = logicWorker;
+    // E-167: the scene's config and this realm's LogicWorker (its API object: postMessage, queues) are the same for
+    // every entity, so they live on the prototype and an entity carries only what is its own: every tick that
+    // walks the entities reads their bytes.
+    const proto = GameObject.prototype;
+    if (proto.config !== config) proto.config = config;
+    if (proto.logicWorker !== logicWorker) proto.logicWorker = logicWorker;
     // E-164: one field per component of the class (at most COMPONENT_FIELDS), declared here so every instance of a
     // class has one shape, and no more than it uses: every byte an entity carries is read by every tick that walks
     // the entities (painterMoveStressScene's ticks touch 300 000 of them).
@@ -578,7 +583,8 @@ export class GameObject {
       }
       Ctor._sharedHasComponents = flags;
     }
-    this._hasComponents = flags;
+    // E-167: on the class's prototype, not in every entity.
+    if (!Object.prototype.hasOwnProperty.call(Ctor.prototype, '_hasComponents')) Ctor.prototype._hasComponents = flags;
 
     if (!page) {
       Transform.entityType[index] = Ctor.entityType || 0;
@@ -607,7 +613,8 @@ export class GameObject {
     if (slots > 5) this._c5 = null;
     if (slots > 6) this._c6 = null;
     if (slots > 7) this._c7 = null;
-    this._components = slots > COMPONENT_FIELDS ? new Array(slots).fill(null) : NO_COMPONENT_SLOTS;
+    // E-167: only a class with more components than fields has the slot array.
+    if (slots > COMPONENT_FIELDS) this._components = new Array(slots).fill(null);
   }
 
   /**
