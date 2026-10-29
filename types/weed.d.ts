@@ -867,8 +867,8 @@ export declare class Time {
   static scaleSimMs(simMs: number): number;
   /**
    * The scene's sim clock in ms, the same in every thread: 0 at scene start, advanced once per main-thread frame by
-   * the scaled frame time (clamped to 100 ms, as the workers clamp theirs), so a pause or a hitstop stops it. GPU
-   * particles age by it. 0 when unbound.
+   * the scaled frame time, so a pause or a hitstop stops it. A main thread that gives no frame for 100 ms does not
+   * hold it back: the workers carry it on at Time.scale. GPU particles age by it. 0 when unbound.
    */
   static get simNowMs(): number;
 }

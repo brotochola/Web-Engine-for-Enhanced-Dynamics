@@ -2568,8 +2568,8 @@ class Scene {
         const deltaTime = currentTime - this.lastFrameTime;
         this.lastFrameTime = currentTime;
 
-        // The shared sim clock (Time.simNowMs) keeps its own time once started; pause() stops it.
-        if (!Time.simRunning) Time._startSimClock();
+        // The shared sim clock (Time.simNowMs) moves once a frame, at this frame's wall time; pause() stops it.
+        Time._stepSimFrame(frameAbs);
 
         const t0 = performance.now();
         this.updateInternal(deltaTime);

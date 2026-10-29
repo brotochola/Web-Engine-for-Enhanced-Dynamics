@@ -26,6 +26,13 @@ function wallNowMs() {
 export const SIM_CLOCK_MAX_STEP_MS = 100;
 
 /**
+ * How long a running clock holds at its last main frame before its readers carry it on (ms). While frames come, the
+ * clock moves once a main frame: a clock every reader moved by the wall time cost GPU Galaxy 8M 4 to 6 % of its
+ * presented frames (the GPU was no busier a frame; the page drew fewer, DX-GPCLOCK).
+ */
+export const SIM_CLOCK_HOLD_MS = 100;
+
+/**
  * Sim ms the shared clock advances for one main-thread frame: the wall delta clamped to
  * [0, SIM_CLOCK_MAX_STEP_MS] as the workers clamp theirs, then scaled. A lockstep step's injected dt is not clamped.
  * @param {number} deltaMs
@@ -103,10 +110,10 @@ export class Time {
   }
 
   /**
-   * The scene's sim clock in ms, the same in every thread: 0 when the scene starts; while it runs, its base plus the
-   * wall time since the base times Time.scale, so a pause or a hitstop stops it and `Time.scale` slows it, and it
-   * keeps time on its own: a main thread that stalls does not hold it back, as it holds no worker's frame back.
-   * GPU particles age by it. 0 when the clock is unbound.
+   * The scene's sim clock in ms, the same in every thread: 0 when the scene starts; while it runs, it moves once a
+   * main-thread frame by the frame's wall time times Time.scale, so a pause or a hitstop stops it and `Time.scale`
+   * slows it. A main thread that gives no frame for SIM_CLOCK_HOLD_MS does not hold it back: past that its readers
+   * carry it on at the scale, and the next frame goes on from there. GPU particles age by it. 0 when unbound.
    */
   static get simNowMs() {
     this.readSimNowInto(SIM_NOW, 0);
@@ -141,17 +148,33 @@ export class Time {
         SIM_LAST[1] = at;
         SIM_LAST[2] = scale;
         SIM_LAST[3] = running;
-        out[index] = running !== 0 && wall > at ? base + (wall - at) * scale : base;
+        const late = wall - at - SIM_CLOCK_HOLD_MS;
+        out[index] = running !== 0 && late > 0 ? base + late * scale : base;
         return;
       }
     }
     // The writer held the clock through every try (descheduled inside its few stores): go on from this realm's last
     // consistent read, not from the base of the last rebase, which can be minutes old (N-85).
-    out[index] = SIM_LAST[3] !== 0 && wall > SIM_LAST[1] ? SIM_LAST[0] + (wall - SIM_LAST[1]) * SIM_LAST[2] : SIM_LAST[0];
+    const late = wall - SIM_LAST[1] - SIM_CLOCK_HOLD_MS;
+    out[index] = SIM_LAST[3] !== 0 && late > 0 ? SIM_LAST[0] + late * SIM_LAST[2] : SIM_LAST[0];
   }
 
   /**
-   * Take the clock's sequence for a write (writers are rare: a start, a stop, a scale, a manual step; any thread).
+   * The main frame's step (Scene's frame loop, at the frame's wall time): it starts a stopped clock, and moves a
+   * running one by the frame (or on from where its readers carried it past a hold).
+   */
+  static _stepSimFrame(wall) {
+    if (this._simRun === null || this._simRun[0] === 0) {
+      this._startSimClock();
+      return;
+    }
+    if (!this._lockSim()) return;
+    this._rebaseSim(wall);
+    this._unlockSim();
+  }
+
+  /**
+   * Take the clock's sequence for a write (a main frame's step, a start, a stop, a scale, a manual step; any thread).
    * @returns {boolean} false when the clock is unbound
    */
   static _lockSim() {
@@ -167,10 +190,17 @@ export class Time {
     Atomics.add(this._simSeq, 0, 1);
   }
 
-  /** The base moved to `wall` at the time the clock reads there (the caller holds the sequence). */
+  /** The base moved to `wall`, the time since the last stepped as a main frame steps it (the caller holds the lock). */
   static _rebaseSim(wall) {
     const now = this._simNow;
-    if (this._simRun[0] !== 0 && wall > now[1]) now[0] += (wall - now[1]) * sanitizeTimeScale(this.view[TIME_SCALE_INDEX]);
+    const elapsed = wall - now[1];
+    if (this._simRun[0] !== 0 && elapsed > 0) {
+      // Within the hold the readers showed the base: the step is the frame. Past it they ran from the base, so the
+      // step is at least what they showed (and at least a hold, as the old clamp gave a long frame).
+      const late = elapsed - SIM_CLOCK_HOLD_MS;
+      const step = elapsed <= SIM_CLOCK_HOLD_MS ? elapsed : late > SIM_CLOCK_HOLD_MS ? late : SIM_CLOCK_HOLD_MS;
+      now[0] += step * sanitizeTimeScale(this.view[TIME_SCALE_INDEX]);
+    }
     now[1] = wall;
   }
 

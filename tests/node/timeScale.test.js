@@ -9,6 +9,7 @@ import { AbstractWorker } from '../../src/workers/abstractWorker.js';
 import {
   CLOCK_BYTES,
   MAX_TIME_SCALE,
+  SIM_CLOCK_HOLD_MS,
   SIM_CLOCK_MAX_STEP_MS,
   Time,
   sanitizeTimeScale,
@@ -172,12 +173,12 @@ test('a clock SAB without the sim clock reads 0 and ignores advances', { concurr
   }
 });
 
-test('the scene allocates the sim clock; the frame loop starts it, pause stops it, stepFrame advances it', () => {
+test('the scene allocates the sim clock; the frame loop steps it, pause stops it, stepFrame advances it', () => {
   const sharedBuffers = readFileSync(join(root, 'src/util/sceneSharedBuffers.js'), 'utf8');
   assert.match(sharedBuffers, /buffers\.clockData = new SharedArrayBuffer\(CLOCK_BYTES\)/);
   const scene = readFileSync(join(root, 'src/core/scene.js'), 'utf8');
   assert.equal((scene.match(/Time\._advanceSimNow\(simClockStepMs\(/g) || []).length, 1, 'stepFrame');
-  assert.match(scene, /if \(!Time\.simRunning\) Time\._startSimClock\(\);/, 'the frame loop starts it');
+  assert.match(scene, /Time\._stepSimFrame\(frameAbs\);/, 'the frame loop steps it');
   assert.match(scene, /pause\(\) \{\s*this\.state\.pause = true;\s*Time\._stopSimClock\(\);/, 'pause stops it');
 });
 
@@ -187,35 +188,70 @@ function busy(ms) {
   while (performance.now() < end);
 }
 
-test('a started sim clock keeps time on its own, at Time.scale; a stop freezes it', { concurrency: false }, () => {
+/** A main frame at this wall time, as Scene's frame loop gives it. */
+function mainFrame() {
+  Time._stepSimFrame(performance.timeOrigin + performance.now());
+}
+
+test('a running sim clock moves once a main frame, by the frame, at Time.scale; a stop freezes it', { concurrency: false }, () => {
   const sab = new SharedArrayBuffer(CLOCK_BYTES);
   new Float32Array(sab, 0, 1)[0] = 1;
   Time.bind(sab);
   try {
-    Time._startSimClock();
-    assert.equal(Time.simRunning, true);
+    mainFrame();
+    assert.equal(Time.simRunning, true, 'the first frame starts it');
+    const t0 = Time.simNowMs;
     busy(25);
+    assert.equal(Time.simNowMs, t0, 'between frames it holds');
+    mainFrame();
     const t1 = Time.simNowMs;
-    assert.ok(t1 >= 24 && t1 < 200, `25 ms run: ${t1}`);
-    // A scale change rebases: what ran keeps the old scale, no jump.
+    assert.ok(t1 - t0 >= 24 && t1 - t0 < 60, `a 25 ms frame: ${t1 - t0}`);
+    // A scale change steps what ran at the old scale: no jump past the frame.
+    busy(5);
     Time.scale = 0;
     const held = Time.simNowMs;
-    assert.ok(held >= t1 && held - t1 < 5, `no jump at the hitstop: ${t1} -> ${held}`);
+    assert.ok(held >= t1 && held - t1 < 20, `no jump at the hitstop: ${t1} -> ${held}`);
     busy(15);
+    mainFrame();
     assert.equal(Time.simNowMs, held, 'a hitstop stops it');
     Time.scale = 2;
     busy(10);
+    mainFrame();
     const fast = Time.simNowMs - held;
-    assert.ok(fast >= 19 && fast < 60, `twice the wall time at scale 2: ${fast}`);
+    assert.ok(fast >= 19 && fast < 60, `twice the frame at scale 2: ${fast}`);
+    Time.scale = 1;
     Time._stopSimClock();
     assert.equal(Time.simRunning, false);
     const stopped = Time.simNowMs;
     busy(10);
     assert.equal(Time.simNowMs, stopped, 'a stop freezes it');
-    Time._startSimClock();
+    mainFrame();
     busy(5);
+    mainFrame();
     assert.ok(Time.simNowMs - stopped < 20, 'a start goes on from where it stopped, not from the wall time missed');
     assert.equal(Atomics.load(new Int32Array(sab, 4, 1), 0) & 1, 0, 'the sequence is even between writes');
+  } finally {
+    Time.unbind();
+  }
+});
+
+test('past SIM_CLOCK_HOLD_MS without a main frame the readers carry the clock on, and the next frame goes on from there', { concurrency: false }, () => {
+  const sab = new SharedArrayBuffer(CLOCK_BYTES);
+  new Float32Array(sab, 0, 1)[0] = 1;
+  Time.bind(sab);
+  try {
+    mainFrame();
+    const t0 = Time.simNowMs;
+    busy(SIM_CLOCK_HOLD_MS + 60);
+    const carried = Time.simNowMs - t0;
+    assert.ok(carried >= 55 && carried < 120, `60 ms past the hold: ${carried}`);
+    mainFrame();
+    const after = Time.simNowMs - t0;
+    assert.ok(after >= SIM_CLOCK_HOLD_MS && after < SIM_CLOCK_HOLD_MS + 40, `the stall's frame steps a hold: ${after}`);
+    busy(3 * SIM_CLOCK_HOLD_MS);
+    const before = Time.simNowMs;
+    mainFrame();
+    assert.ok(Time.simNowMs - before >= 0 && Time.simNowMs - before < 20, 'a long stall\'s frame does not jump past the readers');
   } finally {
     Time.unbind();
   }
@@ -228,14 +264,15 @@ test('a reader that never finds the clock unlocked goes on from its last consist
   const seq = new Int32Array(sab, 4, 1);
   const base = new Float64Array(sab, 8, 2);
   try {
-    Time._startSimClock();
+    mainFrame();
     busy(20);
+    mainFrame();
     const t1 = Time.simNowMs;
     assert.ok(t1 >= 19, `the clock runs: ${t1}`);
     // A writer descheduled inside its stores: the sequence stays odd, and the base it was rewriting reads 0.
     Atomics.store(seq, 0, Atomics.load(seq, 0) + 1);
     base[0] = 0;
-    busy(10);
+    busy(SIM_CLOCK_HOLD_MS + 10);
     const t2 = Time.simNowMs;
     assert.ok(t2 - t1 >= 9 && t2 - t1 < 60, `${t1} -> ${t2}: on from the last read, not back to the stale base`);
   } finally {
@@ -249,26 +286,26 @@ test('another thread reads the clock moving while this one stalls', { concurrenc
   new Float32Array(sab, 0, 1)[0] = 1;
   Time.bind(sab);
   try {
-    Time._startSimClock();
+    mainFrame();
     const url = new URL('../../src/core/timeScale.js', import.meta.url).href;
     const worker = new Worker(
       `const { parentPort, workerData } = require('node:worker_threads');
-      import(workerData.url).then(({ Time }) => {
+      import(workerData.url).then(({ Time, SIM_CLOCK_HOLD_MS }) => {
         Time.bind(workerData.sab);
         const a = Time.simNowMs;
-        const end = performance.now() + 40;
+        const end = performance.now() + SIM_CLOCK_HOLD_MS + 100;
         while (performance.now() < end);
         parentPort.postMessage([a, Time.simNowMs]);
       });`,
       { eval: true, workerData: { sab, url } },
     );
-    // This thread stands for the stalled main thread: it never touches the clock while the worker reads it.
+    // This thread stands for the stalled main thread: it gives no frame while the worker reads the clock.
     const [a, b] = await new Promise((resolve, reject) => {
       worker.once('message', resolve);
       worker.once('error', reject);
     });
     await worker.terminate();
-    assert.ok(b - a >= 35, `the worker saw ${b - a} ms in 40 of wall time`);
+    assert.ok(b - a >= 90, `the worker saw ${b - a} ms in ${SIM_CLOCK_HOLD_MS + 100} of wall time`);
   } finally {
     Time.unbind();
   }
