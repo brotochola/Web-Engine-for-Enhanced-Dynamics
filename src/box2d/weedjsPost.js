@@ -581,6 +581,18 @@
       outC[i] = rotC[i];
       outS[i] = rotS[i];
     }
+    // N-86: the fast path checked the epoch once, before a loop that takes about a millisecond. A slot despawned and
+    // respawned inside it got its old body's pose over the invalidation (rotC and rotS 0): put that back for every
+    // slot whose body is not the one this worker last saw, as the slow path would have skipped it.
+    if (epochSame && (Atomics.load(poseGenEpoch, 0) | 0) !== epoch && bodyGeneration && seenBodyGeneration) {
+      for (let d = 0; d < n; d++) {
+        const i = list[d];
+        if ((seenBodyGeneration[i] | 0) === (Atomics.load(bodyGeneration, i) | 0)) continue;
+        outC[i] = 0;
+        outS[i] = 0;
+        skipped++;
+      }
+    }
     if (poseGenEpoch && skipped === 0) seenPoseGenEpoch = epoch;
     poseFrame++;
     Atomics.store(poseSync, 0, poseFrame);
