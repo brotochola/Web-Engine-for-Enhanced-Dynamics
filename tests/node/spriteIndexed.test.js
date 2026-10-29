@@ -11,8 +11,8 @@ import {
   staticsTextureHeight,
 } from '../../src/render/spriteIndexed.js';
 
-// E-162: the indexed sprite vertex shader takes its statics from three texels of a statics row, the row an instance
-// attribute, and its depth from the draw slot. tests/bench/spriteIndexedCompileCheck.mjs compiles and links it in a
+// E-162: the indexed sprite vertex shader takes its statics from three texels of a statics row; the row and the depth
+// are instance attributes (the slot stream). tests/bench/spriteIndexedCompileCheck.mjs compiles and links it in a
 // browser's WebGL2.
 
 const shipped = readFileSync(new URL('../../src/shaders/instancedSprite.vert.glsl', import.meta.url), 'utf8');
@@ -24,16 +24,17 @@ test('a statics row is three RGBA texels: the 11 words of the split statics and 
   assert.deepEqual([0, 1, 1024, 1025, 300000].map(staticsTextureHeight), [1, 1, 1, 2, 293]);
 });
 
-test('the indexed shader declares the row, the texture and the draw slot, and no static attribute', () => {
+test('the indexed shader declares the row and the texture, keeps the depth, and fills the other statics', () => {
   const out = spriteIndexedVertex(shipped);
-  for (const name of ['aInstScale', 'aInstAnchor', 'aInstDepth', 'aInstTintBits', 'aInstTexId', 'aInstTileInv', 'aInstTileOff']) {
+  for (const name of ['aInstScale', 'aInstAnchor', 'aInstTintBits', 'aInstTexId', 'aInstTileInv', 'aInstTileOff']) {
     assert.doesNotMatch(out, new RegExp(`^in \\w+ ${name};`, 'm'), `${name} is no attribute`);
     assert.match(out, new RegExp(`^\\s+${name} = `, 'm'), `${name} is filled in main`);
   }
   for (const kept of ['aQuad', 'aInstXY', 'aInstRotCS']) assert.match(out, new RegExp(`^in vec2 ${kept};`, 'm'), `${kept} stays`);
+  assert.match(out, /^in float aInstDepth;/m, 'the depth stays an attribute (the slot stream)');
   assert.match(out, /^in float aInstRow;/m);
   assert.match(out, /^uniform highp usampler2D uStatics;/m);
-  assert.match(out, /aInstDepth = 1\.0 - float\(uFirstInstance \+ gl_InstanceID \+ 1\) \* uInvDepthDenom;/);
+  assert.doesNotMatch(out, /gl_InstanceID|uFirstInstance/, 'nothing depends on where a chunk starts');
   assert.equal(out.split('void main() {').length, 2, 'one main');
 });
 

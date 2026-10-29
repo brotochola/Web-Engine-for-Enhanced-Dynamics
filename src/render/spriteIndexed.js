@@ -1,6 +1,6 @@
 // E-162: an indexed sprite frame. Its statics stay in the render queue's row order and come from a texture; each
-// instance carries its pose and the row of its statics (gpuPack.c pack_sprites_indexed_scatter), so a frame whose
-// painter order moved uploads 20 bytes a sprite instead of 60. This turns the sprite vertex shader into one that
+// instance carries its pose, the row of its statics and its depth (gpuPack.c pack_sprites_indexed_scatter), so a frame
+// whose painter order moved uploads 24 bytes a sprite instead of 60. This turns the sprite vertex shader into one that
 // fetches its statics, as gpuParticleTextureVertex does for GPU particle records (E-157).
 
 import { GPU_INDEXED_STATIC_FLOATS } from './gpuQueueLayout.js';
@@ -15,11 +15,13 @@ export function staticsTextureHeight(rows) {
   return Math.max(1, Math.ceil(Math.max(0, rows | 0) / STATICS_TEX_ROW));
 }
 
-/** instancedSprite.vert.glsl's static attributes, which the indexed shader fills from the texture instead. */
+/**
+ * instancedSprite.vert.glsl's static attributes, which the indexed shader fills from the texture instead. The depth
+ * stays an attribute: it follows the draw order, so the slot stream carries it.
+ */
 const STATIC_ATTRIBUTES = [
   ['vec2', 'aInstScale'],
   ['vec2', 'aInstAnchor'],
-  ['float', 'aInstDepth'],
   ['float', 'aInstTintBits'],
   ['float', 'aInstTexId'],
   ['vec2', 'aInstTileInv'],
@@ -28,11 +30,11 @@ const STATIC_ATTRIBUTES = [
 
 /**
  * instancedSprite.vert.glsl reading its statics from the statics texture: the static attributes become globals the
- * shader fills first, from the three texels of row `aInstRow` (the words of gpuPack.c sprite_static: scale, anchor,
- * depth, tint bits, texture, tile terms, and a zero). The words go through uintBitsToFloat, a bitcast, so the tint
- * bits the shader reads back with floatBitsToUint keep every bit; an RGBA32F texture could change a NaN pattern. The
- * depth is the draw slot's, `1 − (k + 1) × uInvDepthDenom` at slot k = uFirstInstance + gl_InstanceID, as the split
- * pack writes it.
+ * shader fills first, from the three texels of row `aInstRow` (the words of gpuPack.c sprite_static: scale, anchor, an
+ * unused depth, tint bits, texture, tile terms, and a zero). The words go through uintBitsToFloat, a bitcast, so the
+ * tint bits the shader reads back with floatBitsToUint keep every bit; an RGBA32F texture could change a NaN pattern.
+ * `aInstRow` and `aInstDepth` are the slot stream's pair, per instance, so a chunk drawn from any first instance reads
+ * its own, whatever the backend's range draw (instanceRangeDraw.js).
  * @param {string} source instancedSprite.vert.glsl
  * @returns {string}
  */
@@ -48,10 +50,8 @@ export function spriteIndexedVertex(source) {
   if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: the sprite vertex shader needs one "void main() {"');
   return (
     out.slice(0, at) +
-    'in float aInstRow; // the row of this instance\'s statics (E-162)\n' +
-    'uniform highp usampler2D uStatics; // the statics in the queue\'s row order, three texels a row\n' +
-    'uniform int uFirstInstance; // this draw\'s first draw slot\n' +
-    'uniform float uInvDepthDenom;\n\n' +
+    "in float aInstRow; // the row of this instance's statics (E-162)\n" +
+    "uniform highp usampler2D uStatics; // the statics in the queue's row order, three texels a row\n\n" +
     main +
     '  int weedRow = int(aInstRow + 0.5);\n' +
     `  ivec2 weedTexel = ivec2((weedRow & ${STATICS_TEX_ROW - 1}) * ${STATICS_TEXELS_PER_ROW}, weedRow >> ${STATICS_TEX_ROW_SHIFT});\n` +
@@ -60,7 +60,6 @@ export function spriteIndexedVertex(source) {
     '  uvec4 weedS2 = texelFetch(uStatics, weedTexel + ivec2(2, 0), 0);\n' +
     '  aInstScale = uintBitsToFloat(weedS0.xy);\n' +
     '  aInstAnchor = uintBitsToFloat(weedS0.zw);\n' +
-    '  aInstDepth = 1.0 - float(uFirstInstance + gl_InstanceID + 1) * uInvDepthDenom;\n' +
     '  aInstTintBits = uintBitsToFloat(weedS1.y);\n' +
     '  aInstTexId = uintBitsToFloat(weedS1.z);\n' +
     '  aInstTileInv = uintBitsToFloat(uvec2(weedS1.w, weedS2.x));\n' +
