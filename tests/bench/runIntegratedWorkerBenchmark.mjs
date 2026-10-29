@@ -434,7 +434,14 @@ async function main() {
   const screenshotDir = resolveScreenshotDir(cliArgs, outputPath);
   const usePhasedScreenshots = Boolean(screenshotDir);
 
-  const srcModules = Boolean(cliArgs.src);
+  // `weedBundle=<file>` in --query: the page measures that dist ESM bundle instead of /src, even under --src, so one
+  // side of an ABAB sitting (runPredatorAbab --query-b weedBundle=weed.prod.bundle.esm.min.js) times the shipped bundle
+  // against the sources it was built from.
+  const bundleFile = new URLSearchParams(typeof cliArgs.query === 'string' ? cliArgs.query.replace(/^\?/, '') : '').get('weedBundle');
+  if (bundleFile !== null && !/^weed(\.prod)?\.bundle\.esm(\.compressed)?\.min\.js$/.test(bundleFile)) {
+    throw new Error(`weedBundle=${bundleFile}: name one of dist/'s ESM bundles (weed[.prod].bundle.esm[.compressed].min.js)`);
+  }
+  const srcModules = Boolean(cliArgs.src) && bundleFile === null;
   // Fail before a browser is launched: without --src the page importmaps
   // /src/index.js to the committed dist/ bundle, and a stale bundle measures a
   // different engine than the working tree with nothing in the output to say so.
@@ -500,6 +507,8 @@ async function main() {
     (qs.length ? `?${qs.join('&')}` : '');
   if (srcModules) {
     console.log('Benchmark: live /src modules (not dist bundle).');
+  } else {
+    console.log(`Benchmark: the dist bundle ${bundleFile || 'weed.bundle.esm.min.js'}.`);
   }
 
   if (headed) {
