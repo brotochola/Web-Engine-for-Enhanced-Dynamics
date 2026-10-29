@@ -2725,6 +2725,22 @@ clock): the page drew fewer frames, and every worker followed it. The clock now 
 readers carry it on only past a 100 ms hold without one (`4072de40`): presented 51.8 → 54.7 fps (+6.0 %, 3/4), and a
 stalled page still does not freeze GPU particles.
 
+**After five and a half hours** (a second map of eight scenes, R-0728 on; a review of the day's commits by an agent
+that read the code apart from mine):
+- **Kept, one kind of cost in four places:** keyed reads and writes by many names in one engine loop, and closures of
+  one function literal sharing their feedback, both megamorphic in every game. E-169, a spawn config's x and y by name
+  (spawnStorm logic −22.4 %); E-170, each component field's accessors compiled apart (26.6 → 8.8 ns a field access in
+  Chrome); E-172, emitGpu's ignored-key check by name (−23 % a call); E-173, the CPU emit's config merge by name into a
+  scratch of one shape (emits −36 % to −54 %). E-171 (the FSM's boxed ms per tick) dropped: a tie at 20 000 owners.
+- **Bugs:** N-89 (E-164 and E-167 broke the page's frozen entities and hot swap's shared config), N-90 (every hot
+  swap of an entity class reloaded the page since E-164b, and a swap past that broke its components), N-91 (an emitGpu
+  call could join a group the renderer had retired, E-161). The review found N-90 and N-91; it read the shadow stamp,
+  the clock's hold, rng and the entity commits clean.
+- **The closing gates on the final tree** (main bfd7ccf1 against 33350fb6): Predator neutral, nothing worse, logic
+  −8.1 % (0/4), pre-render −3.9 %. GPU Galaxy 8M at 8 pairs: neutral, presented 56.0 → 55.1 fps (−2.1 %, 6/8)
+  and the renderer +1.7 % (7/8), against −4.9 % before the hold; the session's Galaxy A/A read −1.2 % and +2.0 %, so
+  about 2 % may remain, at the scene's detection limit (R-0736 to R-0738).
+
 ### E-160 Predator's shadow stamp, on the inputs the scene gives it
 
 `stamp_light_range` is 39 % of Predator's pre-render (R-0645; 46.7 % in R-0607). It is the largest engine function in
