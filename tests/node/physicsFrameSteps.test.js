@@ -50,7 +50,7 @@ function hostStepLoop(steps, radialGravityAccel = 0) {
   const fns = new Function(
     'world', 'calls', 'hostSteps', 'hostEntityCount', 'radialGravityAccel',
     `let gatherMovedSlots = null, gatherMovedAsleep = null, gatherMovedAt = null, gatherMovedCount = 0;
-    function applyForcesAndTorque() { calls.push('forces'); }
+    function applyAccelerations() { calls.push('forces'); }
     function cullLiquidFunOutsideWorld() { calls.push('cull'); }
     function applyRadialGravity(dt) { calls.push('radial ' + dt); }
     function publishContactRingFromWasm() { calls.push('contacts'); }
