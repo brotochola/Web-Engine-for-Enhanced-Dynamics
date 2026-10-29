@@ -8778,17 +8778,20 @@
       ],
       "records": [
         "R-0699",
-        "R-0707"
+        "R-0707",
+        "R-0722",
+        "R-0723",
+        "R-0724"
       ],
       "date": "2026-10-29",
       "area": "particle",
       "kind": "dx",
-      "result": "GPU particle gate: GPU Galaxy 8M renderer +6.0 %, presented -8.2 % (4/4); bisected to cb72506a (+12.9 %, -9.4 %, 2/2). Same records and drawn window; the per-tick cadence explains logic, not the frames. Open: keep, look further, or go back.",
-      "next": "Keep the clock at this cost, look further at the GPU side (WebGPU timestamps), or go back to a clock stepped by the main frame.",
+      "result": "GPU particle gate: GPU Galaxy 8M renderer +6.0 %, presented -8.2 % (4/4); bisected to cb72506a (+12.9 %, -9.4 %, 2/2). Same records and drawn window; the per-tick cadence explains logic, not the frames. On the final branch (with E-161): renderer +3.2 %, presented -4.9 % (4/4).",
+      "next": "Find the GPU-side mechanism (which share is the clock's and which E-161's), then keep, fix or go back.",
       "id": "DX-GPCLOCK",
       "title": "GPU particles' sim clock keeps its own time (a stalled main thread does not freeze them)",
       "status": "blocked",
-      "statusText": "blocked: the owner's call, GPU Galaxy 8M loses about 9 % of its presented frames (R-0707)"
+      "statusText": "blocked: the owner's call; GPU Galaxy 8M presents 4.9 % fewer frames on the branch (R-0724, 9 % before E-161)"
     },
     {
       "aliases": [],
@@ -8865,7 +8868,8 @@
         "R-0701",
         "R-0702",
         "R-0703",
-        "R-0711"
+        "R-0711",
+        "R-0722"
       ],
       "id": "E-160",
       "title": "Predator's shadow stamp, on the inputs the scene gives it",
@@ -8886,7 +8890,10 @@
         "R-0701",
         "R-0704",
         "R-0711",
-        "R-0717"
+        "R-0717",
+        "R-0722",
+        "R-0723",
+        "R-0724"
       ],
       "id": "E-161",
       "title": "emitGpu: the calls of one frame share a group",
@@ -8943,18 +8950,18 @@
         "EXECUTION_PLAN.md#E-163"
       ],
       "records": [
-        "R-0701"
+        "R-0701",
+        "R-0720"
       ],
       "id": "E-163",
       "title": "The gather's cell order past 65 536 cells",
-      "status": "open",
-      "statusText": "open: Wave 9 (2026-10-29)",
+      "status": "answered",
+      "statusText": "answered 2026-10-29 (R-0720)",
       "date": "2026-10-29",
       "area": "spatial",
       "kind": "wasm",
-      "rank": 6,
-      "result": "order_by_cell keys cells in 16 bits, so a grid of more than 65 536 cells keeps its order and loses the gather's cache order.",
-      "next": "No scene in the map passes 65 536 cells (stationarySpatialWide has about 10 000); a knob for a large world first, then the coarser key."
+      "result": "No scene passes the limit: planetScene's 256 x 256 grid is the largest and the 16-bit key holds it. The coarser key is the fix for a game past it, decided only with a scene knob that builds one.",
+      "next": "When a game needs it: a scene knob that builds a world past 65 536 cells, then the coarser key."
     },
     {
       "aliases": [],
@@ -8963,7 +8970,8 @@
       ],
       "records": [
         "R-0705",
-        "R-0711"
+        "R-0711",
+        "R-0722"
       ],
       "id": "N-85",
       "title": "The sim clock's reader falls back to a stale time",
@@ -8982,7 +8990,8 @@
       ],
       "records": [
         "R-0705",
-        "R-0711"
+        "R-0711",
+        "R-0722"
       ],
       "id": "N-86",
       "title": "publishPose's epoch fast path holds for a whole publish",
@@ -9001,7 +9010,8 @@
       ],
       "records": [
         "R-0705",
-        "R-0711"
+        "R-0711",
+        "R-0722"
       ],
       "id": "N-87",
       "title": "The sim clock follows wall time through a hidden tab",
@@ -9024,7 +9034,8 @@
         "R-0708",
         "R-0711",
         "R-0713",
-        "R-0716"
+        "R-0716",
+        "R-0722"
       ],
       "id": "E-164",
       "title": "A component read waits on memory: the slot array and its elements",
@@ -9044,7 +9055,8 @@
       "records": [
         "R-0701",
         "R-0710",
-        "R-0716"
+        "R-0716",
+        "R-0722"
       ],
       "id": "E-165",
       "title": "Spawn and despawn read the logic worker through the worker's global",
@@ -9080,7 +9092,8 @@
         "EXECUTION_PLAN.md#E-167"
       ],
       "records": [
-        "R-0715"
+        "R-0715",
+        "R-0722"
       ],
       "id": "E-167",
       "title": "An entity carries only its own fields",
@@ -9098,7 +9111,8 @@
         "REVIEW_PLAN.md#N-88"
       ],
       "records": [
-        "R-0714"
+        "R-0714",
+        "R-0722"
       ],
       "id": "N-88",
       "title": "A subclass entity read its parent's component flags",
@@ -9113,11 +9127,30 @@
     {
       "aliases": [],
       "refs": [
+        "REVIEW_PLAN.md#N-89"
+      ],
+      "records": [
+        "R-0721"
+      ],
+      "id": "N-89",
+      "title": "Page entities could not make a component, and a hot swap reset the shared config and LogicWorker (E-164, E-167)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0721)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Fixed 741035f5: a page instance keeps its components in the slot array; an instance made without a config or worker leaves the realm's, and hotSwap passes none. spawnDespawnApi.test.js and hotSwap.test.js.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
         "EXECUTION_PLAN.md#E-168"
       ],
       "records": [
         "R-0716",
-        "R-0718"
+        "R-0718",
+        "R-0722"
       ],
       "id": "E-168",
       "title": "rng() boxes its double twice in a worker (littleCity: 2.7 MB/s)",
@@ -15685,6 +15718,54 @@
       "title": "Predator's physics with Box2D's function names: the narrow phase, the solver, finalize and the tree",
       "verdict": "note",
       "text": "**Predator's physics with Box2D's function names.** 2026-10-29, a profiling build (the shipped flags plus\n`--profiling-funcs` through `CMAKE_EXE_LINKER_FLAGS`, a build directory of its own, never copied into WeedJS; the\nBox2D repo's `weedjs/` artifacts it overwrote were put back from WeedJS's copies), in a worktree of 0487c881, headed,\nsource, detailed stats off, an 8 s window after 8 s.\n\nFour physics threads, self time as % of their busy time: `_do_futex_wait` 65.2 % (the solver threads waiting, which the\nsampler counts as busy: E-144's step 0), `b2CollideTask` 7.2 % (the narrow phase), `b2ExecuteBlock` 7.0 % (the solver's\nstages), `b2FinalizeBodiesTask` 3.6 %, `_emscripten_get_now` 2.2 %, `b2ComputeFatShapeAABB` 2.2 % and `b2PlaceLeaf` 2.1 %\n(the broad-phase tree for moving bodies), `step_world` 1.6 % (WeedJS's wrapper), `b2SchedulerWorkerMain` 1.4 %,\n`b2SplitIsland` 1.0 %, `b2CollideCrossPairs` 0.9 %, `b2Body_ApplyForceToCenter` 0.7 %. The physics thread itself was\n411 ms/s busy, the three solver threads 1000 ms/s (waiting).\n\nWhat is left in physics is Box2D's own work (contacts, solver, finalize, tree). The levers are its settings (sub-steps,\nthe AABB margin, sleeping), a game's choice; nothing in WeedJS's wrapper stands out."
+    },
+    {
+      "id": "R-0720",
+      "date": "2026-10-29",
+      "time": "07:53",
+      "timeFrom": "recorded",
+      "title": "E-163 answered: no scene's grid passes 65 536 cells (planetScene is the largest, at exactly 65 536)",
+      "verdict": "answered",
+      "text": "**E-163 answered: no scene's grid passes 65 536 cells.** 2026-10-29, from the scenes' configs (world size over\n`spatial.cellSize`, 128 by default):\n- the largest is planetScene, 8 192 px at 32 px cells: 256 × 256 = 65 536 cells, which the 16-bit key still holds\n  (cells 0 to 65 535), so `order_by_cell` sorts it;\n- badPiggiesScene's 120 000 × 40 000 world uses 512 px cells (235 × 79 = 18 565); carScene 391 × 78 = 30 498;\n  blastforge 160 × 120 = 19 200; adobeAnimate 161 × 118 = 18 998; bigWorldCullStress has no spatial worker;\n- every other scene is under 20 000.\n\nSo nothing measures the lever: a game whose grid passes the limit (a 20 000 px square world at 64 px cells has 97 656)\nkeeps its list order and loses the gather's cache order. The coarser key (cells grouped so the index fits 16 bits)\nstays the fix for that case; it needs a scene knob that builds such a world before a sitting can decide it."
+    },
+    {
+      "id": "R-0721",
+      "date": "2026-10-29",
+      "time": "07:56",
+      "timeFrom": "recorded",
+      "title": "N-89 fixed: page entities could not make a component, and a hot swap reset the shared config and LogicWorker",
+      "verdict": "kept-hygiene",
+      "text": "**N-89: two regressions of Wave 9's entity layout, fixed.** 2026-10-29, found while looking for more to drop from\nthe entity after E-167 (the component's `owner` stays: fsm.js reads it).\n\n- **The page's entities could not make a component.** `Scene._createPageInstances` freezes them, and since E-164 a\n  component made on its first read is kept in a field of the entity (`_c0` …). On the page, the first read threw\n  \"Cannot assign to read only property '_c0'\": `enemy.transform`, `enemy.health.hp`, `setTint`, anything that reaches\n  a component there. A page instance now keeps its components in the slot array, as every instance did before E-164;\n  the logic workers' entities keep the fields (their shape is unchanged).\n- **A hot swap reset the config and LogicWorker every entity shares.** E-167 put both on GameObject's prototype,\n  written by the constructor. The instance hotSwap builds to list a class's fields passed `{}` and null, so after a\n  swap on a logic worker every entity's `this.config` was `{}` and `this.logicWorker` null. The constructor no longer\n  writes them from an instance made without them (the prototype starts with an empty config and null), and hotSwap\n  passes none.\n\nTests: `spawnDespawnApi.test.js` (a frozen page instance reads its Transform, gets the same object twice and writes\nthe slot through it) and `hotSwap.test.js` (a swap leaves an entity's config and LogicWorker); both fail without the\nfix. No timing: the changed lines are the first read of a component and the constructor.",
+      "commits": [
+        "741035f5"
+      ]
+    },
+    {
+      "id": "R-0722",
+      "date": "2026-10-29",
+      "time": "07:57",
+      "timeFrom": "recorded",
+      "title": "W9-final-predator passed: the whole branch against main on Predator (logic -7.8 %; physics follows its moved bodies)",
+      "verdict": "passed",
+      "text": "**W9-final-predator: the whole branch against main on Predator, passed.** 2026-10-29, main bfd7ccf1 against\ndf2a63a3 (everything Wave 9 kept: E-160, E-161, E-164 with E-164b and E-167, E-165, E-168, N-85 to N-88, DX-GPCLOCK),\n4 pairs, worktrees, headed, source, detailed stats off. The demos are the working tree's on both sides, so the tree's\ndead tick (15ad67ee) is in A too.\n\nThe runner's word is REGRESSION, for physics; read against its load it is not:\n- **logic 3.724 → 3.458 ms (−7.8 %, worse 0/4, cv 2/1 %; lower than the others 4/4, −8.9 %)**;\n- physics 6.033 → 6.240 ms (+3.5 %, worse 3/4, cv 7/3 %). Its load key differed: the branch's runs moved 7 984 bodies a\n  frame on average against main's 7 238 (+10 %; Predator's fights are emergent). Fitted over the eight runs, physics\n  is 3.37 ms + 0.366 ms per 1 000 moved bodies, and the two sides' residuals differ by −0.011 ms (−0.2 %): the same\n  time per moved body (review E-50's reading). The branch's one change on that worker is N-86's epoch check after\n  publishPose's loop (one atomic load a frame). The session's A/A moved physics 7.5 % on identical code;\n- renderer +2.1 % (worse 4/4, cv 2/2 %) and spatial +1.3 %: under 3 %, and under the A/A's renderer reading (3.6 %);\n- pre-render 3.889 → 3.868 ms (−1.8 %); presented 60.0 both; BODY_COUNT, casters, visible entities and the render\n  queue within 0.1 %.\n\nThe logic gain is the engine's (E-164 with E-164b and E-167, E-165, E-168): the morning's W9-gate read −6.0 % with\nE-164 alone."
+    },
+    {
+      "id": "R-0723",
+      "date": "2026-10-29",
+      "time": "07:57",
+      "timeFrom": "recorded",
+      "title": "W9-final-gpustress: gpuParticlesStressScene ?hold=1000 under the floor, presented 60 on both sides",
+      "verdict": "note",
+      "text": "**W9-final-gpustress: the branch against main on gpuParticlesStressScene, under the floor.** 2026-10-29, main\nbfd7ccf1 against df2a63a3, 4 pairs, worktrees, headed, source, `?hold=1000` (a thousand smoke columns alive for the\nwhole run), owner the renderer.\n\nNEUTRAL (below the floor): presented 60.0 on both sides (fewer 2/4), every worker the same to the microsecond and far\nunder 3 ms (renderer 1.082 ms both, pre-render 0.219 / 0.218, logic 0.023); 112 entities. The scene's GPU particles\ncost the GPU, not a worker's CPU, and `hold` emits once: it cannot load a worker past the floor. What it shows is that\nthe branch draws the scene at the same rate. E-161's own sitting (`?trail=`, the call-per-tick pattern) and GPU Galaxy\n8M are the readings for the GPU particle changes."
+    },
+    {
+      "id": "R-0724",
+      "date": "2026-10-29",
+      "time": "07:57",
+      "timeFrom": "recorded",
+      "title": "W9-final-galaxy: GPU Galaxy 8M presented -4.9 % on the branch (renderer +3.2 %), the clock's cost about halved since E-161",
+      "verdict": "mixed",
+      "text": "**W9-final-galaxy: the branch against main on GPU Galaxy 8M, the clock's cost about halved.** 2026-10-29, main\nbfd7ccf1 against df2a63a3, 4 pairs, worktrees, headed, source, detailed stats off, `particles=8388608&arms=8`, owner\nthe renderer (the same protocol as R-0707's gate).\n\nREGRESSION: renderer 4.000 → 4.129 ms (+3.2 %, worse 4/4, cv 2/2 %), presented 55.3 → 52.4 fps (−4.9 %, fewer 4/4,\ncv 2/2 %); logic 1.212 → 1.416 ms (under the floor: the arms emit on every tick with the wall clock, R-0707).\n\nR-0707 read −8.2 % presented on the branch at 5b01605a and the bisect −9.4 % on cb72506a alone. The branch now also\nhas E-161, which joins a frame's emitGpu calls into one group (the renderer draws fewer, larger groups), and the loss\nis about half. The two are the branch's only changes on this scene's path; which share is whose, and the clock's\nmechanism on the GPU side, are the next item."
     }
   ],
   "leads": [
