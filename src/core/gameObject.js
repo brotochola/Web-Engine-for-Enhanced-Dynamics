@@ -565,8 +565,9 @@ export class GameObject {
     this._onPage = page;
     this._spawnAborted = false;
 
-    // One flag object per class. Composition does not vary per instance.
-    let flags = Ctor._sharedHasComponents;
+    // One flag object per class. Composition does not vary per instance. Its own: a subclass that read the static it
+    // inherits took its parent's flags when a parent instance was made first, missing its own components (N-88).
+    let flags = Object.prototype.hasOwnProperty.call(Ctor, '_sharedHasComponents') ? Ctor._sharedHasComponents : null;
     if (!flags) {
       flags = {};
       const entityComponents = collectComponents(Ctor, GameObject, Transform);
