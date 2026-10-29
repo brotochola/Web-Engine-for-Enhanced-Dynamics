@@ -2461,6 +2461,9 @@ physics thread's own path.
   because the workers' buffer list left the epoch out. With it (a412603f) Boids' physics is 7.182 → 6.669 ms (−7.2 %,
   KEPT; Predator NEUTRAL over 8 pairs). `applyForcesAndTorque` is 8.6 % (0.6 ms, 15 ns a body, the call 38 % of it):
   W28's batched export would save part of the call, a ceiling near 4 % of Boids' physics, and needs Box2D's repo.
+  *W28 done 2026-10-28 (62eddb50, Box2D 1a750de):* `bodies_apply_accelerations`, the pass in C over the list and the
+  columns in Box2D's memory: kernel 14.1 → 11.8 ns a body (−16 %), Boids physics −1.9 %, Predator NEUTRAL over 8
+  pairs. Kept (kernel, product-neutral).
 
 ### Step 5: the open review items
 
