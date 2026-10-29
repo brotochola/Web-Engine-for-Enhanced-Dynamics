@@ -366,6 +366,7 @@ class Scene {
       bodyDirtyFlags: null,
       bodyDirtyWords: null,
       bodyGeneration: null,
+      bodyGenEpoch: null,
     };
 
     // Component type ID tracking (similar to entityType)

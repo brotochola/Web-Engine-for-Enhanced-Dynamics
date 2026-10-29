@@ -170,7 +170,8 @@ function buildSharedResourcesInit(scene) {
 }
 
 
-function buildSceneSharedBuffers(scene) {
+/** The SharedArrayBuffers every worker's init gets (exported for tests). */
+export function buildSceneSharedBuffers(scene) {
   return {
     neighborData: scene.buffers.neighborData,
     activeEntitiesData: scene.buffers.activeEntitiesData,
@@ -212,6 +213,8 @@ function buildSceneSharedBuffers(scene) {
     bodyDirtyFlags: scene.buffers.bodyDirtyFlags,
     bodyDirtyWords: scene.buffers.bodyDirtyWords,
     bodyGeneration: scene.buffers.bodyGeneration,
+    // A spawn bumps it with the generation; physics' pose publish skips the per-body check while it holds.
+    bodyGenEpoch: scene.buffers.bodyGenEpoch || null,
     staticSceneryGen: scene.buffers.staticSceneryGen || null,
     liquidFunRender: scene.buffers.liquidFunRender || null,
     liquidFunRenderByte: scene.buffers.liquidFunRenderByte | 0,
