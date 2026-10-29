@@ -764,6 +764,10 @@ class PixiRenderer extends AbstractWorker {
     this.decalTileContainer = null; // Container for decal tile sprites
     this.decalTileSprites = []; // Array of Sprite per tile
     this.decalTileTextureSources = []; // TextureSource per tile (for updating)
+    // E-175: which tiles have been stamped, and the tile range the camera's view covers (x0, y0, x1, y1; -1: none
+    // yet): only stamped tiles in it are drawn.
+    this._decalTileStamped = new Uint8Array(0);
+    this._decalView = new Int32Array([-1, -1, -1, -1]);
 
     // ========================================
     // LIGHTING SYSTEM
@@ -1529,6 +1533,7 @@ class PixiRenderer extends AbstractWorker {
 
     if (this.decalTileContainer) {
       this._placeWorldCamera(this.decalTileContainer, zoom, cameraX, cameraY, rot);
+      this._cullDecalTiles(zoom, cameraX, cameraY, rot);
     }
 
     // Shadow sprites render in screen space directly to shadowRT (no camera transform needed here)
@@ -2851,7 +2856,7 @@ class PixiRenderer extends AbstractWorker {
         sprite.y = ty * tileSize;
         sprite.width = tileSize;
         sprite.height = tileSize;
-        sprite.visible = false; // Hidden until first decal splat
+        sprite.visible = false; // Hidden until first decal splat, and while outside the view (_cullDecalTiles)
 
         this.decalTileSprites[tileIndex] = sprite;
         this.decalTileTextureSources[tileIndex] = null; // Created on first update
@@ -2859,7 +2864,79 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
+    this._decalTileStamped = new Uint8Array(this.decalsTilesX * this.decalsTilesY);
+    this._decalView.fill(-1);
     debugWorkerLog(`PIXI WORKER: Created ${this.decalsTotalTiles} decal tile sprites`);
+  }
+
+  /**
+   * E-175: only the stamped decal tiles the camera's view covers are drawn (with a rotation, the view's bounding box).
+   * The decal container is a render group, so a tile shown or hidden rebuilds its few instructions; a frame whose view
+   * stays on the same tiles changes nothing.
+   */
+  _cullDecalTiles(zoom, cameraX, cameraY, rot) {
+    const sprites = this.decalTileSprites;
+    const tilesX = this.decalsTilesX | 0;
+    const tilesY = this.decalsTilesY | 0;
+    const size = this.decalsTileSize;
+    if (tilesX <= 0 || tilesY <= 0 || !(size > 0) || sprites.length === 0) return;
+    const z = zoom || 1;
+    const w = (this.canvasWidth || 0) / z;
+    const h = (this.canvasHeight || 0) / z;
+    let x0 = cameraX;
+    let y0 = cameraY;
+    let x1 = cameraX + w;
+    let y1 = cameraY + h;
+    if (rot) {
+      const cx = cameraX + w * 0.5;
+      const cy = cameraY + h * 0.5;
+      const c = Math.abs(Math.cos(rot));
+      const s = Math.abs(Math.sin(rot));
+      const hw = (w * c + h * s) * 0.5;
+      const hh = (w * s + h * c) * 0.5;
+      x0 = cx - hw;
+      x1 = cx + hw;
+      y0 = cy - hh;
+      y1 = cy + hh;
+    }
+    const tx0 = Math.max(0, Math.min(tilesX - 1, Math.floor(x0 / size)));
+    const tx1 = Math.max(0, Math.min(tilesX - 1, Math.floor(x1 / size)));
+    const ty0 = Math.max(0, Math.min(tilesY - 1, Math.floor(y0 / size)));
+    const ty1 = Math.max(0, Math.min(tilesY - 1, Math.floor(y1 / size)));
+    const view = this._decalView;
+    if (view[0] === tx0 && view[1] === ty0 && view[2] === tx1 && view[3] === ty1) return;
+    const stamped = this._decalTileStamped;
+    // The old range's tiles out, the new range's stamped tiles in.
+    if (view[0] >= 0) {
+      for (let ty = view[1]; ty <= view[3]; ty++) {
+        for (let tx = view[0]; tx <= view[2]; tx++) {
+          if (tx >= tx0 && tx <= tx1 && ty >= ty0 && ty <= ty1) continue;
+          const sprite = sprites[tx + ty * tilesX];
+          if (sprite.visible) sprite.visible = false;
+        }
+      }
+    }
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const i = tx + ty * tilesX;
+        const show = stamped[i] === 1;
+        if (sprites[i].visible !== show) sprites[i].visible = show;
+      }
+    }
+    view[0] = tx0;
+    view[1] = ty0;
+    view[2] = tx1;
+    view[3] = ty1;
+  }
+
+  /** E-175: whether decal tile `tileIndex` is in the camera's view (_cullDecalTiles' last range). */
+  _decalTileInView(tileIndex) {
+    const view = this._decalView;
+    if (view[0] < 0) return false;
+    const tilesX = this.decalsTilesX | 0;
+    const tx = tileIndex % tilesX;
+    const ty = (tileIndex - tx) / tilesX;
+    return tx >= view[0] && tx <= view[2] && ty >= view[1] && ty <= view[3];
   }
 
   /**
@@ -2933,7 +3010,8 @@ class PixiRenderer extends AbstractWorker {
         this.decalTileTextureSources[tileIndex] = source;
       }
       this._uploadDecalRgba8(source, tileRGBA, tilePixelSize, tilePixelSize);
-      sprite.visible = true;
+      this._decalTileStamped[tileIndex] = 1;
+      sprite.visible = this._decalTileInView(tileIndex);
 
       processed++;
       tileIndex = (tileIndex + 1) % totalTiles;
