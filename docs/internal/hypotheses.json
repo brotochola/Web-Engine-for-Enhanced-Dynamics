@@ -4957,7 +4957,8 @@
       ],
       "aliases": [],
       "records": [
-        "R-0366"
+        "R-0366",
+        "R-0696"
       ]
     },
     {
@@ -15030,6 +15031,15 @@
         "62eddb50",
         "c770f980"
       ]
+    },
+    {
+      "id": "R-0696",
+      "date": "2026-10-28",
+      "time": "22:17",
+      "timeFrom": "recorded",
+      "title": "E-05 sat again: pack and sort in pre-render still move Predator's bottleneck",
+      "verdict": "answered",
+      "text": "E-05 sat again, for EXECUTION_PLAN's \"Predator's sprite statics\" item: Pixi packs Predator's sprites every frame, statics included, because Predator sorts and packs in Pixi (`sortSprites: 'pixi'`, `packGpuSprites: 'pixi'`), so E-82b's split cannot skip unchanged statics. Pre-render is much faster than on 2026-10-18 (WASM: Predator pre-render −42 % steady, R-0640), so the pre-render side might take the work now.\n\n**The pair.** One build (f4341c44), Predator's own query knobs on side B: `?packGpuSprites=preRender&sortSprites=preRender`; 4 pairs, owner renderer, detailed stats off.\n\n| worker | A (pixi) → B (preRender) | paired | worse |\n| --- | --- | --- | --- |\n| renderer | 3.729 → 2.596 ms | **−31.2 %** | 0/4 |\n| pre-render | 4.038 → 5.087 ms | **+26.0 %** | 4/4 |\n| physics | 5.768 → 6.327 ms | +6.1 % (cv 5/11 %) | 3/4 |\n| logic | 3.908 → 3.969 ms | +2.4 % | 3/4 |\n\nThe slowest of the two render workers: 4.038 ms (A) against 5.087 ms (B), 26 % worse. As on 2026-10-18 (renderer −36.6 %, max +12.6 %), the work moves and the bottleneck with it; pre-render is now the busier of the two by more. Physics +6.1 % at cv 11 % is outside what the knobs reach.\n\n**Answered.** Predator keeps sorting and packing in Pixi, and its statics are rewritten every frame by design: its camera follows squads, so the order changes most frames anyway (E-82b's note). The item is closed."
     }
   ],
   "leads": [
