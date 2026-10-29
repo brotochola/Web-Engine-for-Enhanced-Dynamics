@@ -110,6 +110,23 @@ const FIELD_GETTERS = [
 ];
 const NO_COMPONENT_SLOTS = [];
 
+/**
+ * E-165: this realm's LogicWorker, which binds itself when it is made. `self.logicWorker` is a load through the
+ * worker's global proxy that V8 leaves slow: in spawnStormScene the spawn and despawn lines that read it were about a
+ * third of logic (Wave 9's map). Null on the page and in the other workers, which read the global as before.
+ */
+let logicWorkerRef = null;
+
+/** @param {object|null} worker the LogicWorker of this realm */
+export function bindLogicWorkerRef(worker) {
+  logicWorkerRef = worker || null;
+}
+
+function currentLogicWorker() {
+  if (logicWorkerRef !== null) return logicWorkerRef;
+  return typeof self !== 'undefined' ? self.logicWorker || null : null;
+}
+
 /** The page (main thread), not a worker: a window, and no logic worker set up here. */
 function isMainThread() {
   return typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
@@ -375,7 +392,7 @@ export class GameObject {
   static _forwardDespawnAllToLogic0(EntityClass) {
     if (typeof self === 'undefined') return null;
 
-    const logicWorker = self.logicWorker;
+    const logicWorker = currentLogicWorker();
     if (!logicWorker || logicWorker.workerIndex === 0) {
       return null;
     }
@@ -2139,8 +2156,8 @@ export class GameObject {
     const otherIndex = typeof other === 'number' ? other : other.index;
 
     // Access collision tracking from logic worker context
-    // self.logicWorker is the LogicWorker instance in logic_worker.js
-    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
+    // The LogicWorker of this realm (currentLogicWorker, E-165)
+    const logicWorker = currentLogicWorker();
     if (!logicWorker || !logicWorker.frameCollisions) {
       return false;
     }
@@ -2344,7 +2361,7 @@ export class GameObject {
     // ========================================
     // Queue list removal for logic0 to process at start of next frame
     // This avoids race conditions in sorted list operations
-    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
+    const logicWorker = currentLogicWorker();
     if (logicWorker) {
       logicWorker.queueDespawnListUpdate(i, entityType, EntityClass);
     }
@@ -2768,7 +2785,7 @@ export class GameObject {
         : typeof EntityClass.forceProcessOnLogicWorker === 'number'
           ? EntityClass.forceProcessOnLogicWorker
           : FORCE_PROCESS_ON_LOGIC_WORKER_NONE;
-    const logicWorkerCtx = typeof self !== 'undefined' ? self.logicWorker : null;
+    const logicWorkerCtx = currentLogicWorker();
     const totalLogic = logicWorkerCtx ? logicWorkerCtx.totalLogicWorkers : 1;
     const forcedLogicWorker = resolveForceProcessOnLogicWorker(
       requestedForceProcessOnLogicWorker,
@@ -3109,7 +3126,7 @@ export class GameObject {
     // ========================================
     // Queue list update for logic0 to process at start of next frame
     // This avoids race conditions in sorted list operations
-    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
+    const logicWorker = currentLogicWorker();
     if (logicWorker) {
       logicWorker.queueSpawnListUpdate(i, EntityClass.entityType, EntityClass);
     }

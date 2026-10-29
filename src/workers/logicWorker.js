@@ -7,7 +7,7 @@ self.postMessage({
 // Runs GameObject.tick / AI; steering writes RigidBody accel fields for Box2D
 
 // Import engine dependencies
-import { GameObject } from '../core/gameObject.js';
+import { GameObject, bindLogicWorkerRef } from '../core/gameObject.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
@@ -301,6 +301,8 @@ class LogicWorker extends AbstractWorker {
     this._despawnType = new Int32Array(256);
     this._despawnClass = new Array(256);
     this._despawnN = 0;
+    // E-165: GameObject's spawn and despawn read this worker through a module reference, not self.logicWorker.
+    bindLogicWorkerRef(this);
   }
 
   /**

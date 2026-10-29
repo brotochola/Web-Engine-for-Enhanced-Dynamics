@@ -5,7 +5,7 @@ import { loadWorker } from '../bench/workerHarness.mjs';
 import { collectSerializableEntities, applyEntitySaveRestore, SAVE_MAGIC } from '../../src/core/save/entitySaveSnapshot.js';
 import { Transform } from '../../src/components/transform.js';
 import { applySavePayloadToScene } from '../../src/core/save/saveGame.js';
-import { GameObject } from '../../src/core/gameObject.js';
+import { GameObject, bindLogicWorkerRef } from '../../src/core/gameObject.js';
 import { resetEntity, popEntity } from '../../src/util/atomicFreeList.js';
 import { savePopulation } from '../bench/saveEncodeMicrobench.mjs';
 
@@ -251,6 +251,8 @@ test('a hot restore spawns a pinned class right here; a normal spawn hands it to
   GameObject.nextTick = null;
   GameObject.forceProcessOnLogicWorker = new Int16Array(N).fill(-1);
   globalThis.self = { ...(globalThis.self || {}), logicWorker: { workerIndex: 0, totalLogicWorkers: 2, sendDataToWorker: (to) => sent.push(to), queueSpawnListUpdate() {} } };
+  // This realm's logic worker for GameObject is the one its LogicWorker binds (E-165): the stub here.
+  bindLogicWorkerRef(globalThis.self.logicWorker);
   try {
     assert.equal(GameObject._spawnAt(Pinned, { _saveRestore: {}, _hotRestore: true }, 1), pooled[1]);
     assert.equal(sent.length, 0);
@@ -262,5 +264,6 @@ test('a hot restore spawns a pinned class right here; a normal spawn hands it to
     GameObject.nextTick = prev.nextTick;
     GameObject.forceProcessOnLogicWorker = prev.force;
     globalThis.self = prev.self;
+    bindLogicWorkerRef(prev.self?.logicWorker || null);
   }
 });
