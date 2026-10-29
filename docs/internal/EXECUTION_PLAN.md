@@ -3033,6 +3033,12 @@ recomputes every visible tile's transform and quad.
 the binds stay, the tiles as one instanced batch of the engine's over an atlas or an array texture. Owner: Predator's
 renderer, 4 pairs. Expected about 0.8 to 1.2 ms of its step, more as a match's blood spreads.
 
+**Done 2026-10-29, kept** (R-0761, R-0763): (a) the container as a render group, Predator's renderer 4.40 → 4.06 ms
+(−5.0 %, 3/4); then the tiles outside the view hidden (`_cullDecalTiles`), 3.82 → 3.67 ms (−3.2 %, 3/4, at the edge of
+Predator's noise: every worker moved 2 to 3 %), the pixels the same over six panned views. Less than the 0.8 to 1.2 ms
+expected: in a 20-second run few tiles are stamped. (b) is not needed. The culling's check found N-94 (the raw texture
+uploads left a unit holding another texture than Pixi tracks).
+
 ### E-176 Spatial finds neighbours for types that never read them
 
 **Premise:** adobeAnimateScene's 20 000 characters never read a neighbour (their tick reads the mouse and the clip),
