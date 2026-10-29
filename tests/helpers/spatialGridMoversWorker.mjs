@@ -418,7 +418,9 @@ function checksum() {
     ]) {
       h = Math.imul(h ^ (c >>> 0), 16777619) >>> 0;
     }
-    h = hashWords(h, w._ownedEntityList);
+    // The owned list up to its count: the full rebuild writes each entity there before it knows whether its row is
+    // this worker's (E-166), so what lies past the count is not state either path reads.
+    h = hashWords(h, w._ownedEntityList, w._ownedEntityCount);
     h = hashWords(h, w._localCellCounts);
   }
   return h >>> 0;
