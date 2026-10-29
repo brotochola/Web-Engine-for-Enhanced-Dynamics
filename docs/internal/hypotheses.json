@@ -9443,20 +9443,22 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0752"
+      ],
       "status": "open",
       "date": "2026-10-29",
       "result": "",
       "refs": [
         "EXECUTION_PLAN.md#E-178"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "statusText": "open: rewritten 2026-10-29 at the owner's word, the derive stays in the particle worker",
       "id": "E-178",
       "rank": 12,
       "area": "particle",
       "kind": "speed",
-      "title": "RigidBody.speed derived on read, not every frame for every body",
-      "next": "The getter computes it from vx, vy; updateDerivedProperties goes (13 % of Predator particle). Owner ballsHeavyStressScene particle; waterAndBoxes logic must not get slower. EXECUTION_PLAN.md#E-178."
+      "title": "RigidBody.speed's derive pass, cheaper where it runs (the particle worker)",
+      "next": "A dense f32x4 pass over RigidBody's block (Box2D memory), masked by active, static and the class flag; else the JS loop with sqrt in place. Kernel on Predator's bodies; owner a stress scene whose bodies opt in (a knob first). EXECUTION_PLAN.md#E-178."
     },
     {
       "aliases": [],
@@ -16385,6 +16387,15 @@
       "title": "Pixi's own cost by layer: the upload everywhere, and Predator's decal tiles (2.2 ms of its 6.5 ms renderer step)",
       "verdict": "note",
       "text": "**Pixi's own cost, split by layer: almost all of it is the upload, except Predator's decal tiles.** 2026-10-29,\n`profileSceneSweep --pass cpu --keep-traces` on fd34cf36 (headed, source, detailed stats off, 6 s warm-up, 8 s window),\npredatorScene, adobeAnimateScene (min zoom), bunnyMarkScene, painterMoveStressScene. Each sample of the renderer worker\nwas given to the first JS frame from its leaf (pixi.min.js or ours), so WASM our code calls counts as ours; WebGL calls\nhave no node of their own in Chrome's profile, so `bufferSubData` is `updateBuffer`'s self time (R-0162: no copy in it).\n\n| renderer worker, ms/s | busy | WASM (pack, copy) | Pixi `updateBuffer` | Pixi, the rest | our JS | (program) |\n|---|---|---|---|---|---|---|\n| Predator (step 6.46 ms, 60 drawn) | 456.7 | 170.8 | 67.3 | 130.7 | 56.8 | 28.9 |\n| Adobe (pre-render 14.7 ms limits) | 386.8 | 174.2 | 149.7 | 23.9 | 17.4 | 19.3 |\n| BunnyMark (GPU-bound, 283 frames in 8 s) | 172.2 | 112.7 | 30.2 | 9.2 | 8.9 | 10.5 |\n| painterMove (pre-render saturated, 28 fps) | 254.5 | 88.7 | 124.0 | 13.0 | 8.3 | 20.2 |\n\nOutside Predator, what Pixi does besides uploading is 0.15–0.4 ms a frame. **Predator's 130.7 ms/s (≈2.2 ms of its\n6.46 ms step)** is, inclusive: the render groups' transform walk (`_updateRenderGroups` → `Fa`/`zd`, the recursive\nupdateTransform under a container that is not a render group) 35.7, the sprite batcher (`execute` of the batch pipe,\n`packQuadAttributes`, `updateElement`) about 21, shader and uniform sync (`bind` :188, our E-148 plan `N_`) 23.4,\ntexture binds (`bindSource`) 14.6, the rest render targets, clears and draw issue. The only plain sprites Predator has\nin number are the decal tiles: 40 × 20 `PIXI.Sprite`s of 256 world units (10 000 × 5 000 world), each with a texture of\nits own, made visible at their first splat and never culled, under `decalTileContainer`, which `_placeWorldCamera`\nmoves every frame. A moved plain container makes Pixi recompute every visible child's group transform and re-pack\nits quads; one texture per tile breaks the batch at each texture-unit limit. Opened as E-175 (the attribution is from\nthe call tree, not yet a sitting).\n\nFor the question this answered (does Pixi limit the engine): in none of the four scenes is the renderer the worker\nthat sets the frame (physics in Predator, pre-render in Adobe and painterMove, the GPU in BunnyMark); the bytes moved\n(pack, W30 copy, upload) are the renderer's cost and stay with any renderer; E-162 is the lever for them."
+    },
+    {
+      "id": "R-0752",
+      "date": "2026-10-29",
+      "time": "16:24",
+      "timeFrom": "recorded",
+      "title": "E-178 rewritten: speed stays derived in the particle worker",
+      "verdict": "note",
+      "text": "The owner, 2026-10-29: computing RigidBody.speed on read would move the work to the logic workers, which the particle worker's derive pass exists to spare. The first premise was also wrong twice: the derive is already opt-in per class (`static deriveSpeed = true`; Predator's Person and Boid), and game code reads `RigidBody.speed[i]` from the array (boid.js, person.js, personAnimationFsm.js), which a getter cannot serve. E-178 now makes the pass cheaper where it runs: a dense f32x4 kernel over RigidBody's block in Box2D's memory, or the JS loop with the square root in place. No stress scene opts its bodies in, so a knob comes first."
     }
   ],
   "leads": [
