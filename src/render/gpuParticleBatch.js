@@ -597,6 +597,10 @@ export class GpuParticleLayerBatch {
       first = floor;
       count -= lost;
     }
+    // A group grows while its writer's calls join it (E-161): draw only the records this ring has uploaded.
+    const uploadedHere = (published - first) >>> 0;
+    if (count > uploadedHere) count = uploadedHere;
+    if (count === 0) return n;
     const cap = ring.capacity;
     const slot = first & (cap - 1);
     const head = count < cap - slot ? count : cap - slot;

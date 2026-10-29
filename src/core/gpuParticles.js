@@ -36,6 +36,13 @@ import {
 
 /** A ring with nothing alive moves its epoch to now when it is this far behind (keeps float32 births precise). */
 const EPOCH_REBASE_MS = 60000;
+/**
+ * E-161: a call this soon (sim ms) after the call that opened the ring's last group joins that group, so the calls
+ * of one frame (an entity's tick each) share a group instead of spending one each out of the ring's 2 048.
+ */
+export const GPU_GROUP_JOIN_MS = 8;
+/** A group that ends sooner than this after a call takes no more calls: a reader may already have passed it. */
+const GPU_GROUP_JOIN_LIVE_MS = 100;
 /** Bounds padding when a frame's size is unknown, px per unit of scale. */
 const DEFAULT_HALF_SIZE = 32;
 
@@ -212,6 +219,8 @@ function travelExtent() {
 function bindRing(sab, r) {
   const liveUntil = new Float64Array(1);
   liveUntil[0] = -Infinity;
+  const joinUntil = new Float64Array(1);
+  joinUntil[0] = -Infinity;
   return {
     capacity: r.capacity,
     groupCapacity: r.groupCapacity,
@@ -224,6 +233,8 @@ function bindRing(sab, r) {
     // writer-side: the oldest group that may still be alive, and the absolute time its newest group ends
     oldestLive: 0,
     liveUntil,
+    // writer-side: until when (absolute sim ms) the ring's last group takes more calls (E-161)
+    joinUntil,
   };
 }
 
@@ -664,29 +675,55 @@ export class GpuParticles {
       }
     }
 
-    // Group row, then publish records before groups (a reader never sees a group whose records are unpublished).
-    const g = (groupCursor & (ring.groupCapacity - 1)) * GPU_GROUP_WORDS;
     const gw = ring.groups;
     const gb = ring.groupBits;
-    gb[g + GPU_GROUP.FIRST] = cursor;
-    gb[g + GPU_GROUP.COUNT] = n;
-    gw[g + GPU_GROUP.BIRTH_F] = birthMin;
-    gw[g + GPU_GROUP.END_F] = endMax;
-    if (cfg.sortY !== undefined && cfg.sortY !== null) {
-      gw[g + GPU_GROUP.SORT_Y_F] = cfg.sortY;
+    const groupFlags = heighted ? GPU_GROUP_FLAG.HEIGHTED : 0;
+    const epochGen = Atomics.load(header, GPU_RING.EPOCH_GEN) >>> 0;
+    if (cfg.sortY !== undefined && cfg.sortY !== null) CALL[CENTER_Y] = cfg.sortY;
+    else setCenterY(cfg.y);
+    // E-161: a call soon after the one that opened the ring's last group joins it, where the group's place among
+    // the entities cannot move: any layer that does not sort with them, a sorted one on the same row (the same
+    // key), never a sorted look layer (its region is its groups' rectangle). The last group must be this epoch's,
+    // end where this call's records start, carry the same flags, have room in the ring, and live a while yet.
+    const lg = (((groupCursor - 1) >>> 0) & (ring.groupCapacity - 1)) * GPU_GROUP_WORDS;
+    if (
+      now <= ring.joinUntil[0] &&
+      ((gb[lg + GPU_GROUP.FIRST] + gb[lg + GPU_GROUP.COUNT]) >>> 0) === cursor &&
+      gb[lg + GPU_GROUP.EPOCH_GEN] === epochGen &&
+      gb[lg + GPU_GROUP.FLAGS] === groupFlags &&
+      gb[lg + GPU_GROUP.COUNT] + n <= cap &&
+      gw[lg + GPU_GROUP.END_F] > nowRel + GPU_GROUP_JOIN_LIVE_MS &&
+      (!info.sortWithEntities ||
+        (!info.look && Math.floor(gw[lg + GPU_GROUP.SORT_Y_F] + 0.5) === Math.floor(Math.fround(CALL[CENTER_Y]) + 0.5)))
+    ) {
+      // Widen, then grow, then publish: a reader that sees the new records sees the group that holds them.
+      if (birthMin < gw[lg + GPU_GROUP.BIRTH_F]) gw[lg + GPU_GROUP.BIRTH_F] = birthMin;
+      if (endMax > gw[lg + GPU_GROUP.END_F]) gw[lg + GPU_GROUP.END_F] = endMax;
+      if (minX < gw[lg + GPU_GROUP.MIN_X_F]) gw[lg + GPU_GROUP.MIN_X_F] = minX;
+      if (minY < gw[lg + GPU_GROUP.MIN_Y_F]) gw[lg + GPU_GROUP.MIN_Y_F] = minY;
+      if (maxX > gw[lg + GPU_GROUP.MAX_X_F]) gw[lg + GPU_GROUP.MAX_X_F] = maxX;
+      if (maxY > gw[lg + GPU_GROUP.MAX_Y_F]) gw[lg + GPU_GROUP.MAX_Y_F] = maxY;
+      gb[lg + GPU_GROUP.COUNT] = gb[lg + GPU_GROUP.COUNT] + n;
+      Atomics.store(header, GPU_RING.PUBLISHED, (cursor + n) | 0);
     } else {
-      setCenterY(cfg.y);
+      // Group row, then publish records before groups (a reader never sees a group whose records are unpublished).
+      const g = (groupCursor & (ring.groupCapacity - 1)) * GPU_GROUP_WORDS;
+      gb[g + GPU_GROUP.FIRST] = cursor;
+      gb[g + GPU_GROUP.COUNT] = n;
+      gw[g + GPU_GROUP.BIRTH_F] = birthMin;
+      gw[g + GPU_GROUP.END_F] = endMax;
       gw[g + GPU_GROUP.SORT_Y_F] = CALL[CENTER_Y];
+      gw[g + GPU_GROUP.MIN_X_F] = minX;
+      gw[g + GPU_GROUP.MIN_Y_F] = minY;
+      gw[g + GPU_GROUP.MAX_X_F] = maxX;
+      gw[g + GPU_GROUP.MAX_Y_F] = maxY;
+      gb[g + GPU_GROUP.EPOCH_GEN] = epochGen;
+      gb[g + GPU_GROUP.FLAGS] = groupFlags;
+      gb[g + GPU_GROUP.RESERVED] = 0;
+      Atomics.store(header, GPU_RING.PUBLISHED, (cursor + n) | 0);
+      Atomics.store(header, GPU_RING.GROUPS, (groupCursor + 1) | 0);
+      ring.joinUntil[0] = now + GPU_GROUP_JOIN_MS;
     }
-    gw[g + GPU_GROUP.MIN_X_F] = minX;
-    gw[g + GPU_GROUP.MIN_Y_F] = minY;
-    gw[g + GPU_GROUP.MAX_X_F] = maxX;
-    gw[g + GPU_GROUP.MAX_Y_F] = maxY;
-    gb[g + GPU_GROUP.EPOCH_GEN] = Atomics.load(header, GPU_RING.EPOCH_GEN) >>> 0;
-    gb[g + GPU_GROUP.FLAGS] = heighted ? GPU_GROUP_FLAG.HEIGHTED : 0;
-    gb[g + GPU_GROUP.RESERVED] = 0;
-    Atomics.store(header, GPU_RING.PUBLISHED, (cursor + n) | 0);
-    Atomics.store(header, GPU_RING.GROUPS, (groupCursor + 1) | 0);
     const endAbs = ring.epoch[0] + endMax;
     if (endAbs > ring.liveUntil[0]) ring.liveUntil[0] = endAbs;
     return n;

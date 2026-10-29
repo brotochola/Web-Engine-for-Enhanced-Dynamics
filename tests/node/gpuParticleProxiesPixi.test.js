@@ -154,6 +154,8 @@ test('a hidden layer\'s groups are left out; its alpha goes on their meshes', { 
   const { ctx, batch, layerId, entitiesMesh, entitiesRoot, restore } = setup();
   try {
     ParticleEmitter.emitGpu({ layer: 'smoke', count: 4, x: 0, y: 0, lifespan: 5000, sortY: 200 });
+    // The frame uploads before it draws the groups, which draw only what their ring has uploaded.
+    batch.update(clockNow());
     ctx.renderQueueSortKey = new Float32Array(3);
     entitiesMesh.geometry.instanceCount = 0;
     Pixi._syncProxiesOn.call(ctx);

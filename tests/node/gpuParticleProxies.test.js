@@ -12,6 +12,7 @@ import { DECORATION_Y_SORT_SCALE, LAYER_KIND, PARTICLE_SORT_BIAS } from '../../s
 import { orderSortKey, spriteYSortKey, zSortBand } from '../../src/util/sortIndexByKey.js';
 import { seededRandom } from '../../src/util/utils.js';
 import { GPU_FLAG_SORTED } from '../../src/render/gpuQueueLayout.js';
+import { GPU_RING } from '../../src/util/gpuParticleLayout.js';
 import {
   PROXY,
   PROXY_ENTRY_WORDS,
@@ -132,10 +133,13 @@ test('hundreds of groups come out in key order, ties in the order they were coll
     const rows = seededRandom(3, 'proxy-sort');
     const n = 700;
     for (let g = 0; g < n; g++) emit({ count: 1, sortY: Math.floor(rows() * 40) * 10 }); // 40 rows: many ties
+    // Consecutive calls on the same row share a group (E-161): the groups are the ring's count.
+    const groups = Atomics.load(GpuParticles.layerOf('smoke').rings[0].header, GPU_RING.GROUPS) >>> 0;
+    assert.ok(groups > 600 && groups < n, `${groups} groups`);
     const collector = new ProxyCollector();
-    assert.equal(collector.collect(GpuParticles.layers, clockNow(), null), n);
-    const expected = Array.from({ length: n }, (_, i) => i).sort((a, b) => collector.keys[a] - collector.keys[b] || a - b);
-    assert.deepEqual(Array.from(collector.order.subarray(0, n)), expected);
+    assert.equal(collector.collect(GpuParticles.layers, clockNow(), null), groups);
+    const expected = Array.from({ length: groups }, (_, i) => i).sort((a, b) => collector.keys[a] - collector.keys[b] || a - b);
+    assert.deepEqual(Array.from(collector.order.subarray(0, groups)), expected);
   } finally {
     restore();
   }

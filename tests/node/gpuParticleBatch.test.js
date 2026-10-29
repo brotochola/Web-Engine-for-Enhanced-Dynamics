@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { GpuParticles } from '../../src/core/gpuParticles.js';
+import { GpuParticles, GPU_GROUP_JOIN_MS } from '../../src/core/gpuParticles.js';
 import { Layer } from '../../src/core/layer.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { CLOCK_BYTES, Time } from '../../src/core/timeScale.js';
@@ -318,12 +318,15 @@ test('WebGL draws from a record texture: the rows each frame publishes go up, bo
     emit(600, 5000);
     batch.update(clockNow());
     assert.deepEqual(uploads.splice(0), [[0, 2]], 'records 0..599: rows 0 and 1');
+    // Calls a frame apart: each opens its own group (calls closer than GPU_GROUP_JOIN_MS share one, E-161).
+    Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
     emit(1000, 5000);
     batch.update(clockNow());
     assert.deepEqual(uploads.splice(0), [[1, 3]], 'records 600..1599: rows 1 to 3');
     batch.update(clockNow());
     assert.deepEqual(uploads, [], 'nothing published, nothing sent');
 
+    Time._advanceSimNow(GPU_GROUP_JOIN_MS + 1);
     emit(600, 5000); // 1600..2199 of a 2048-record ring: wraps
     batch.update(clockNow());
     assert.deepEqual(uploads.splice(0), [[3, 1], [0, 1]], 'the head on row 3, the tail on row 0');
