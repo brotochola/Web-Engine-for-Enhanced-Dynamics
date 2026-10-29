@@ -1126,6 +1126,10 @@ export declare class GameObject {
   static scene: Scene | null;
   static instances: GameObject[];
   index: number;
+  /** The scene's config, the same object for every entity of a realm (an empty one before the scene binds it). */
+  readonly config: SceneConfig;
+  /** This realm's LogicWorker (its API object); null on the page and in the other workers. */
+  readonly logicWorker: object | null;
   get transform(): Transform;
   get rigidBody(): RigidBody | null;
   get collider(): Collider | null;

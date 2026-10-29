@@ -150,7 +150,8 @@ function instanceFields(C) {
   if (typeof C.prototype?.bindToEntitySlot !== 'function') return null;
   try {
     // A page instance: it builds the fields, writes no shared memory, joins no pool.
-    return Object.keys(new C(0, {}, null, { page: true })).sort().join(',');
+    // No config and no worker: the realm keeps the ones its entities share (E-167).
+    return Object.keys(new C(0, undefined, null, { page: true })).sort().join(',');
   } catch {
     return 'unbuildable';
   }

@@ -535,10 +535,11 @@ export class GameObject {
     this.index = index;
     // E-167: the scene's config and this realm's LogicWorker (its API object: postMessage, queues) are the same for
     // every entity, so they live on the prototype and an entity carries only what is its own: every tick that
-    // walks the entities reads their bytes.
+    // walks the entities reads their bytes. An instance made without them (hotSwap lists a class's fields from one,
+    // on a logic worker too) leaves this realm's as they are.
     const proto = GameObject.prototype;
-    if (proto.config !== config) proto.config = config;
-    if (proto.logicWorker !== logicWorker) proto.logicWorker = logicWorker;
+    if (config !== EMPTY_CONFIG && proto.config !== config) proto.config = config;
+    if (logicWorker !== null && proto.logicWorker !== logicWorker) proto.logicWorker = logicWorker;
     // E-164: one field per component of the class (at most COMPONENT_FIELDS), declared here so every instance of a
     // class has one shape, and no more than it uses: every byte an entity carries is read by every tick that walks
     // the entities (painterMoveStressScene's ticks touch 300 000 of them).
@@ -613,8 +614,9 @@ export class GameObject {
     if (slots > 5) this._c5 = null;
     if (slots > 6) this._c6 = null;
     if (slots > 7) this._c7 = null;
-    // E-167: only a class with more components than fields has the slot array.
-    if (slots > COMPONENT_FIELDS) this._components = new Array(slots).fill(null);
+    // E-167: only a class with more components than fields has the slot array. The page's instances have it too:
+    // they are frozen (Scene._createPageInstances), so a component made on their first read is kept there.
+    if (slots > COMPONENT_FIELDS || page) this._components = new Array(slots).fill(null);
   }
 
   /**
@@ -623,10 +625,20 @@ export class GameObject {
    * @param {number} slot 0 … COMPONENT_FIELDS - 1
    */
   _makeComponent(slot) {
+    // A page instance's fields stay null (it is frozen): its components are in the slot array.
+    const onPage = this._onPage;
+    if (onPage) {
+      const kept = this._components[slot];
+      if (kept !== null) return kept;
+    }
     const spec = this.constructor._componentSlotSpecs[slot];
     if (!this._hasComponents[spec.name]) return null;
     const instance = new spec.Class(this.index);
     instance.owner = this;
+    if (onPage) {
+      this._components[slot] = instance;
+      return instance;
+    }
     switch (slot) {
       case 0: this._c0 = instance; break;
       case 1: this._c1 = instance; break;
@@ -3372,3 +3384,7 @@ export class GameObject {
     return activeList ? activeList[0] : 0;
   }
 }
+
+// E-167: the realm's config and LogicWorker before the first entity binds them (and on the page, which has no worker).
+GameObject.prototype.config = EMPTY_CONFIG;
+GameObject.prototype.logicWorker = null;

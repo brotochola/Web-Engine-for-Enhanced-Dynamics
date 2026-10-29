@@ -68,6 +68,18 @@ test('a swap gives running instances the new code, keeps the engine’s statics 
   assert.ok(live.Boid.prototype instanceof Object.getPrototypeOf(fresh.Boid), 'subclass checks through the new base class');
 });
 
+test('a swap leaves the config and LogicWorker the running entities share', () => {
+  // E-167 put both on the prototype; the instance a swap builds to list a class's fields set them to {} and null.
+  const live = register(version());
+  const config = { worldWidth: 100 };
+  const worker = { postMessage() {} };
+  const entity = new live.Boid(10, config, worker, { page: true });
+  const result = swapModule({ FlockScene: live.FlockScene }, { FlockScene: version({ speed: 5 }).FlockScene });
+  assert.equal(result.reload, null);
+  assert.equal(entity.config, config);
+  assert.equal(entity.logicWorker, worker);
+});
+
 test('what the engine built from a class’s shape asks for a reload, and nothing is patched', () => {
   const cases = [
     [{ components: '[]' }, /Boid.components changed/],
