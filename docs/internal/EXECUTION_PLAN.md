@@ -2994,6 +2994,71 @@ from 610 to 1 298 ns.
 and reads take it (the hold is 100 ms, far coarser than a frame); `timeOrigin` is read once per realm. Chrome, running
 clock: 1 285 → 625 ns an emitGpu call (−51 %).
 
+## Wave 10 candidates — STEP_MS headroom (2026-10-29)
+
+The owner's measure for these sessions is every worker's STEP_MS, not the frame rate. rAF holds the page at 60, so a
+saving shows as headroom: more entities and particles before a worker reaches its frame. A worker that does not set
+the frame still counts. Source: R-0751's split of the renderer by layer and its sweep's inventory of every worker
+(predatorScene, adobeAnimateScene at the minimum zoom, bunnyMarkScene, painterMoveStressScene; fd34cf36). Ranked in the
+register; what it did not turn into rows is in the register's leads.
+
+### E-175 Predator's decal tiles: up to 800 Pixi sprites re-transformed and re-batched every frame
+
+**Premise (R-0751):** Pixi's own code other than the upload is 130.7 ms/s of Predator's renderer (about 2.2 ms of a
+6.46 ms step), against 9 to 24 ms/s in the other three scenes. The call tree puts most of it in the render groups'
+transform walk (35.7 ms/s), the sprite batcher (about 21) and texture binds (14.6). The decal tiles are the only plain
+sprites Predator has in number: 40 × 20 `PIXI.Sprite`s, a texture each, visible from their first splat, never culled,
+under `decalTileContainer`. The camera moves that container every frame, and it is not a render group, so Pixi
+recomputes every visible tile's transform and quad.
+**Plan:** (a) `decalTileContainer.isRenderGroup = true`, and the tiles outside the view hidden; (b) if the batch and
+the binds stay, the tiles as one instanced batch of the engine's over an atlas or an array texture. Owner: Predator's
+renderer, 4 pairs. Expected about 0.8 to 1.2 ms of its step, more as a match's blood spreads.
+
+### E-176 Spatial finds neighbours for types that never read them
+
+**Premise:** adobeAnimateScene's 20 000 characters never read a neighbour (their tick reads the mouse and the clip),
+yet `_findNeighbors` is 34.6 % of its spatial worker (184 ms/s, step 2.9 ms) at `maxNeighbors: 64`. Only GameObject's
+accessors (`neighbors`, `neighborCount`, `getNeighbor`) and the physics debug renderer read `Grid.neighborData`.
+**Plan:** step 0, which types read neighbours in each demo. Then the accessors mark their type in a shared byte array,
+spatial skips the neighbour pass for an entity whose type was not marked in the last K frames, and a type's first read
+gets its lists a frame later (written in the guide). The accessors' extra store is checked with E-141's
+neighborAccessMicrobench. Owner: adobeAnimateScene's spatial worker; Predator, which reads neighbours, must stay
+neutral.
+
+### E-177 Sprite statics per entity on the GPU, for scenes whose camera scrolls
+
+**Premise:** E-162's lever (the statics out of draw order, R-0709) is built for painter frames. Predator and littleCity
+still write and move every visible row's statics each frame: Predator's `emit_rows` is 24 % of its pre-render, and the
+renderer's copy and upload are 124 ms/s there. With a table per entity on the GPU, written only for the entities whose
+statics changed, a frame would carry an index and a pose per row (about 20 bytes against 60 or more).
+**Plan:** step 0, a counter of the rows per frame whose statics changed, in Predator, littleCity and adobeAnimateScene
+(an animated sprite changes its frame often, and Adobe's statics move every frame: R-0626). Build only where most rows
+keep theirs. Owners: the pre-render and renderer workers of the scene the counter picks; a Predator gate.
+
+### E-178 RigidBody.speed derived on read, not every frame for every body
+
+**Premise:** the particle worker writes `RigidBody.speed` for every dynamic body of a type that derives it, every frame
+(`updateDerivedProperties` with `calculateSpeed`: 13 % of Predator's particle worker, about 10 ms/s). In the engine
+only GameObject's `speed` getter reads the array.
+**Plan:** the getter returns `Math.sqrt(vx * vx + vy * vy)` from the body's velocity, and the pass goes. Kernel: the
+getter against the array read. Owner: a scene with many bodies above the 3 ms floor (ballsHeavyStressScene's particle
+worker); waterAndBoxesScene, whose logic reads `speed` on 20 000 balls a tick, must not get slower.
+
+### E-179 Decorations' screen visibility, every frame in JavaScript
+
+**Premise:** `updateDecorationScreenVisibility` tests every active decoration against the camera each frame: 17.3 % of
+Predator's particle worker, beside the sway kernel (`sway_decorations_f32x4`, 23.4 %) that reads the same positions.
+**Plan:** the test inside the sway kernel's walk of the same arrays, or skipped while neither the camera nor a
+decoration moved. Owner: decorationSwayStressScene's particle worker.
+
+### E-180 Interval tick buckets rebuilt for every type when any query moves
+
+**Premise:** `_tickIntervalBucket` rebuilds a type's buckets whenever its count or the global query version changes
+(`_rebuildTickBuckets`, 2 to 3 % of each Predator logic worker; the bucket loop itself 7.7 %). The version is global,
+so any spawn or despawn of any type rebuilds the buckets of every type that ticks on an interval.
+**Plan:** step 0, rebuilds a second per type in Predator. If most are of types whose own list did not change, stamp
+the buckets with the type's own list (a per-type version). Owner: Predator's logic.
+
 ---
 
 ## Not doing (read the log first)
