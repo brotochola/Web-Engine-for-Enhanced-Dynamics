@@ -2791,6 +2791,10 @@ class Scene {
   }
 
   setPresenting(on) {
+    // N-87: a hidden page stops the frame loops (requestAnimationFrame, here and in the workers), so the sim clock
+    // stops too, or GPU particles would age through the hidden time while everything else stood still. The loop's
+    // next frame starts it again, from where it stopped.
+    if (!on) Time._stopSimClock();
     const worker = this.workers.renderer;
     if (worker) worker.postMessage({ msg: 'presenting', value: !!on });
   }
