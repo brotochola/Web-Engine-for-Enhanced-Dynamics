@@ -9258,6 +9258,42 @@
       "title": "The FSM's per-instance ms per tick as a small integer, not a boxed double",
       "area": "logic",
       "kind": "speed"
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0734"
+      ],
+      "date": "2026-10-29",
+      "status": "kept-kernel",
+      "statusText": "kept 2026-10-29 (R-0734)",
+      "result": "Kept 7dda9864: one condition of named reads instead of a loop of fourteen keyed reads a call; emitGpuCallMicrobench 758 -> 582 ns a call (-23 %); trail=1024 logic -11.4 % (under the floor).",
+      "next": "Predator gate with the batch.",
+      "id": "E-172",
+      "refs": [
+        "EXECUTION_PLAN.md#E-172"
+      ],
+      "title": "Every emitGpu call reads fourteen keys by name in a loop",
+      "area": "logic",
+      "kind": "speed"
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0735"
+      ],
+      "date": "2026-10-29",
+      "status": "kept-kernel",
+      "statusText": "kept 2026-10-29 (R-0735)",
+      "result": "Kept aa8fff46: copyEmitFields and emitScratch; particleEmitMicrobench emitFlat bursts -36 %, emitZenithal -38 %, emitAlongLine -54 %, one particle a call -52 %.",
+      "next": "Predator gate with the batch.",
+      "id": "E-173",
+      "refs": [
+        "EXECUTION_PLAN.md#E-173"
+      ],
+      "title": "The CPU emit's config merge: keyed copies into a dictionary",
+      "area": "logic",
+      "kind": "speed"
     }
   ],
   "records": [
@@ -15960,6 +15996,32 @@
       "title": "E-171 dropped: the FSM's ms per tick as a small integer (+8.3 % at 3 000 owners, a tie at 20 000)",
       "verdict": "dropped",
       "text": "**E-171 dropped: the FSM's per-instance ms per tick as a small integer.** 2026-10-29, a kernel screen.\n\nWave 9's second map: in Predator's FSM `tick`, `let msPerTick = this._msPerTick` is 32 % of its self time. E-146\ncached the owner's ms per tick on each FSM instance as a double, which pointer compression keeps boxed (a dependent\nload). The variant kept the owner's `tickInterval` as a small integer and multiplied (`dt * (16.67 * ti)`, the same\nvalue). `fsmTickMicrobench` through `runKernelVariants`, 4 alternating rounds: +8.3 % at 3 000 owners (7 028 against\n6 490 ops/s), −2.4 % at 20 000 (986 against 1 010, a tie). The variant added its field beside the old one (a subclass),\nso the large case is not clean either way; at 1–2 % of Predator's logic at best, not worth another sitting. The\nbench file was put back."
+    },
+    {
+      "id": "R-0734",
+      "date": "2026-10-29",
+      "time": "09:29",
+      "timeFrom": "recorded",
+      "title": "E-172 kept (kernel): emitGpu checks the ignored keys with named reads (758 -> 582 ns a call)",
+      "verdict": "kept-kernel",
+      "text": "**E-172 kept (kernel): emitGpu checks the keys GPU particles ignore with named reads.** 2026-10-29, 7dda9864 (kernel\n`emitGpuCallMicrobench`, ba8b03f5).\n\n**The finding:** looking for E-169's and E-170's kind in the engine, `_emit` ran, on every emitGpu call, a loop over\nthe fourteen `UNSUPPORTED_KEYS` reading `cfg[key]`: a keyed read by a different name each (megamorphic), for keys a\nconfig normally does not have, to warn once per key. The call-per-entity-per-tick pattern (E-161) pays it each call.\n\n**The change:** one condition of fourteen named reads (absent on a config that has none: a cheap miss), and the warning\nloop only for a config that has one. `UNSUPPORTED_KEYS` is exported, and `gpuParticleUnsupportedKeys.test.js` holds the\ntwo lists together (each listed key warns once; a config without them warns of nothing).\n\n**The kernel** (four emit sites with their own config shapes, 4 096 small calls a round, median of 50 rounds; three\nalternated processes a side, Node): **758 → 582 ns a call (−23 %)** (755–772 before, 567–618 after); checksum 5 120\non both.\n\n**The scene** (gpuParticlesStressScene `?trail=1024`, the call-per-tick pattern, 4 pairs, worktrees, headed, source,\nowner logic, A = ba8b03f5): logic 1.845 → 1.635 ms (−11.4 %, under the 3 ms floor: the knob stops at 1 024 callers),\nrenderer 3.958 → 3.799 ms (−2.5 %, worse 0/4), presented 60.0 both. Not judged; not worse.",
+      "commits": [
+        "7dda9864",
+        "ba8b03f5"
+      ]
+    },
+    {
+      "id": "R-0735",
+      "date": "2026-10-29",
+      "time": "09:29",
+      "timeFrom": "recorded",
+      "title": "E-173 kept (kernel): the CPU emit's config merge by name into a scratch of one shape (emits -36 % to -54 %)",
+      "verdict": "kept-kernel",
+      "text": "**E-173 kept (kernel): the CPU emit's config merge copies by name into a scratch of one shape.** 2026-10-29, aa8fff46\n(kernel case `emit_small`, 19e896c1).\n\n**The finding:** `_mergeCfg`, which every `emit`, `emitZenithal`, `emitFlat` and `emitAlongLine` call runs, copied the\ncaller's config into a scratch with a loop of keyed reads and writes by the forty-three names of `_cfgFieldList`\n(megamorphic), and the scratch was `Object.create(null)`, which V8 keeps as a dictionary, so `_spawn` read the config's\nfields from a hash table, per particle. `emitAlongLine`'s bag was the same.\n\n**The change:** `copyEmitFields` copies the keys by name, and `emitScratch` makes both scratches with every key declared\n(one shape, a fast object). `particleEmitConfigKeys.test.js`: the copy, the scratches' keys and `_cfgFieldList` are the\nsame list.\n\n**The kernel** (`particleEmitMicrobench`, Node, before against after in alternated processes; median ms for 2 000 ops):\nemitFlat bursts of 256 180.1 → 115.3 (−36 %), emitZenithal bursts 209.2 → 128.7 (−38 %), emitAlongLine 714.6 → 326.5\n(−54 %), one particle a call from three sites 890.0 → 431.2 (−52 %); acquire only (no config) 32.8 → 33.1. Three more\nalternated pairs on emitFlat and one-a-call: 177.4 → 111.9 and 921.3 → 419.3 (medians).\n\n**The scene** (particleEmitStressScene, 4 pairs, worktrees, headed, source, owner logic, A = 19e896c1): logic 2.911 →\n2.895 ms (under the floor), pre-render +0.8 %, presented 60.0 both. Its pool stays near full (about 60 000 of 65 535\nalive), so a burst of 11 000 spawns only the free slots: it does not load the per-particle path. Not worse.",
+      "commits": [
+        "aa8fff46",
+        "19e896c1"
+      ]
     }
   ],
   "leads": [
