@@ -415,6 +415,13 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuStaticRows = new Int32Array(2);
         this._packSplitUsed = false;
         this._packSplitGen = 0;
+        // A painter-sorted frame's statics generation (_sortedStaticGen): its number, and the queue generation, the
+        // painter's orderGen, the rows and the depth scale it was given for.
+        this._sortedContentGen = 0;
+        this._sortedSeenQueueGen = 0;
+        this._sortedSeenOrderGen = 0;
+        this._sortedSeenRows = -1;
+        this._sortedSeenDepth = NaN;
         /** The main queue's painter state (painterRadixClient's wasmPainterState), when pre-render sorts it. */
         this._gpuPainter = null;
         /** The painter sort kernel (W10) on pre-render's painter regions of the render-queue memory, when laid out. */
@@ -3409,17 +3416,17 @@ class PreRenderWorker extends AbstractWorker {
      * E-82b: the main sprites as two streams through gpuPack.wasm, the statics only when this GPU queue buffer
      * does not hold the queue's current generation (renderQueueStaticGen) for the same rows. The glow split's
      * list (_gpuIdxEntity: the rows that are not glows, in order) follows from the queue's types, which the
-     * generation covers; a painter's order may move with the poses alone, so a sorted frame writes both. -1 when
-     * the kernel does not take the call; the caller then packs 15-float rows and the frame goes without
-     * GPU_FLAG_SPLIT.
+     * generation covers. A painter's order may move with the poses alone, so a sorted frame's generation also
+     * follows the painter's order (_sortedStaticGen). -1 when the kernel does not take the call; the caller then
+     * packs 15-float rows and the frame goes without GPU_FLAG_SPLIT.
      */
     _packSpritesSplit(q, ctx, dst, cap) {
         const slot = this._queueBuf & 1;
         const genView = this.renderQueueStaticGen;
         const sorted = ctx.useIndices && ctx.indices !== this._gpuIdxEntity;
-        const gen = !sorted && genView.length ? genView[0] >>> 0 : 0;
         const scan = ctx.scanCount | 0;
         const rows = scan < cap ? scan : cap;
+        const gen = sorted ? this._sortedStaticGen(ctx, genView, rows) : genView.length ? genView[0] >>> 0 : 0;
         const current = gen !== 0 && this._gpuStaticGen[slot] === gen && this._gpuStaticRows[slot] === rows;
         const n = packSplitRowsWasm(this._gpuPackWasm, q, ctx, dst.spritePose, current ? null : dst.spriteStatic, cap);
         if (n < 0) return -1;
@@ -3428,6 +3435,35 @@ class PreRenderWorker extends AbstractWorker {
         this._packSplitUsed = true;
         this._packSplitGen = gen;
         return n;
+    }
+
+    /**
+     * A painter-sorted frame's statics generation: the same number while the queue's statics (its staticGen), the
+     * painter's order (orderGen moves on a full sort or a reinsert that moved a key), the rows and the depth scale
+     * are the ones it was given for, so both GPU queue buffers keep their statics and Pixi uploads them once; a
+     * new number when any moved. Bit 31 keeps these apart from the queue's own generations. 0 (statics written,
+     * Pixi uploads) when the order is not the painter's or the queue's generation is unknown.
+     */
+    _sortedStaticGen(ctx, genView, rows) {
+        const painter = this._gpuPainter;
+        const queueGen = genView.length ? genView[0] >>> 0 : 0;
+        if (painter === null || ctx.indices !== painter.order || queueGen === 0) return 0;
+        const order = painter.orderGen | 0;
+        const depth = +(ctx.depthDenom || 1);
+        if (
+            this._sortedContentGen === 0 ||
+            queueGen !== this._sortedSeenQueueGen ||
+            order !== this._sortedSeenOrderGen ||
+            rows !== this._sortedSeenRows ||
+            depth !== this._sortedSeenDepth
+        ) {
+            this._sortedContentGen = ((this._sortedContentGen + 1) & 0x7fffffff) || 1;
+            this._sortedSeenQueueGen = queueGen;
+            this._sortedSeenOrderGen = order;
+            this._sortedSeenRows = rows;
+            this._sortedSeenDepth = depth;
+        }
+        return (0x80000000 | this._sortedContentGen) >>> 0;
     }
 
     _packGpuSprites(dst, q, allowPainter) {
