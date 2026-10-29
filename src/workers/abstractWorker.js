@@ -371,6 +371,8 @@ export class AbstractWorker {
     const frameStart = performance.now();
     // Absolute ms. performance.now() alone is not comparable with other workers.
     const frameStartAbs = performance.timeOrigin + frameStart;
+    // This frame's clock reads take its start (E-174): the sim clock moves by frames, and asking the wall clock is slow.
+    Time._noteFrameWall(frameStartAbs);
     this.idleTimeThisFrame = this._lastFrameEndAt > 0 ? Math.max(0, frameStart - this._lastFrameEndAt) : 0;
 
     this.frameNumber++;

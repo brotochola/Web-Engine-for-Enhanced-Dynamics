@@ -193,6 +193,11 @@ function mainFrame() {
   Time._stepSimFrame(performance.timeOrigin + performance.now());
 }
 
+/** A reader's frame starting now, as a worker's frame loop notes it (E-174: reads take their frame's wall time). */
+function readerFrame() {
+  Time._noteFrameWall(performance.timeOrigin + performance.now());
+}
+
 test('a running sim clock moves once a main frame, by the frame, at Time.scale; a stop freezes it', { concurrency: false }, () => {
   const sab = new SharedArrayBuffer(CLOCK_BYTES);
   new Float32Array(sab, 0, 1)[0] = 1;
@@ -243,12 +248,15 @@ test('past SIM_CLOCK_HOLD_MS without a main frame the readers carry the clock on
     mainFrame();
     const t0 = Time.simNowMs;
     busy(SIM_CLOCK_HOLD_MS + 60);
+    assert.equal(Time.simNowMs, t0, 'a read in the same frame takes the time it started at');
+    readerFrame();
     const carried = Time.simNowMs - t0;
     assert.ok(carried >= 55 && carried < 120, `60 ms past the hold: ${carried}`);
     mainFrame();
     const after = Time.simNowMs - t0;
     assert.ok(after >= SIM_CLOCK_HOLD_MS && after < SIM_CLOCK_HOLD_MS + 40, `the stall's frame steps a hold: ${after}`);
     busy(3 * SIM_CLOCK_HOLD_MS);
+    readerFrame();
     const before = Time.simNowMs;
     mainFrame();
     assert.ok(Time.simNowMs - before >= 0 && Time.simNowMs - before < 20, 'a long stall\'s frame does not jump past the readers');
@@ -273,6 +281,7 @@ test('a reader that never finds the clock unlocked goes on from its last consist
     Atomics.store(seq, 0, Atomics.load(seq, 0) + 1);
     base[0] = 0;
     busy(SIM_CLOCK_HOLD_MS + 10);
+    readerFrame();
     const t2 = Time.simNowMs;
     assert.ok(t2 - t1 >= 9 && t2 - t1 < 60, `${t1} -> ${t2}: on from the last read, not back to the stale base`);
   } finally {

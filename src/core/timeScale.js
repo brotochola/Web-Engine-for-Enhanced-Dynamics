@@ -17,9 +17,26 @@ const SIM_NOW = new Float64Array(1);
 /** This realm's last consistent read of the clock: base, its wall time, the scale, running (readSimNowInto's fallback). */
 const SIM_LAST = new Float64Array(4);
 
+/** This realm's time origin: a constant, and a slow read through the bindings (about 150 ns in Chrome 156). */
+const TIME_ORIGIN = performance.timeOrigin;
+
+/**
+ * E-174: the wall time of this realm's current frame (ms since the epoch), noted by its frame loop
+ * (AbstractWorker._runFrame, Scene's loop through _stepSimFrame); NaN in a realm that runs none. A running clock's
+ * read took the wall time from performance.now() (about 170 ns in Chrome 156, 320 with timeOrigin), which more than
+ * doubled a busy emitGpu caller's call; the hold it serves is a hundred milliseconds, far coarser than a frame.
+ */
+const FRAME_WALL = new Float64Array([NaN]);
+
 /** The wall time in ms since the epoch, comparable between threads. */
 function wallNowMs() {
-  return performance.timeOrigin + performance.now();
+  return TIME_ORIGIN + performance.now();
+}
+
+/** The wall time a read uses: this realm's frame's, or the clock's where no frame loop runs. */
+function readerWallMs() {
+  const w = FRAME_WALL[0];
+  return w === w ? w : wallNowMs();
 }
 
 /** The longest frame the sim clock advances by: the clamp the workers put on their wall delta (abstractWorker). */
@@ -107,6 +124,12 @@ export class Time {
     this._simSeq = null;
     this._simNow = null;
     this._simRun = null;
+    FRAME_WALL[0] = NaN;
+  }
+
+  /** This realm's frame starts at `wall` (ms since the epoch): its clock reads take that time (E-174). */
+  static _noteFrameWall(wall) {
+    FRAME_WALL[0] = wall;
   }
 
   /**
@@ -135,7 +158,7 @@ export class Time {
     const now = this._simNow;
     const run = this._simRun;
     const view = this.view;
-    const wall = run[0] !== 0 ? wallNowMs() : 0;
+    const wall = run[0] !== 0 ? readerWallMs() : 0;
     for (let tries = 0; tries < 64; tries++) {
       const before = Atomics.load(seq, 0);
       if (before & 1) continue;
@@ -164,6 +187,7 @@ export class Time {
    * running one by the frame (or on from where its readers carried it past a hold).
    */
   static _stepSimFrame(wall) {
+    FRAME_WALL[0] = wall;
     if (this._simRun === null || this._simRun[0] === 0) {
       this._startSimClock();
       return;
