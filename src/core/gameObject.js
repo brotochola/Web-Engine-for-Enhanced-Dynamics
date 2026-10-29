@@ -534,15 +534,19 @@ export class GameObject {
     this.config = config;
     // LogicWorker API object (postMessage, queues). Not forceProcessOnLogicWorker.
     this.logicWorker = logicWorker;
-    // E-164: the component fields, declared here so every instance of a class has one shape.
-    this._c0 = null;
-    this._c1 = null;
-    this._c2 = null;
-    this._c3 = null;
-    this._c4 = null;
-    this._c5 = null;
-    this._c6 = null;
-    this._c7 = null;
+    // E-164: one field per component of the class (at most COMPONENT_FIELDS), declared here so every instance of a
+    // class has one shape, and no more than it uses: every byte an entity carries is read by every tick that walks
+    // the entities (painterMoveStressScene's ticks touch 300 000 of them).
+    this.constructor._ensureComponentAccessors();
+    const fields = this.constructor._componentSlotCount;
+    if (fields > 0) this._c0 = null;
+    if (fields > 1) this._c1 = null;
+    if (fields > 2) this._c2 = null;
+    if (fields > 3) this._c3 = null;
+    if (fields > 4) this._c4 = null;
+    if (fields > 5) this._c5 = null;
+    if (fields > 6) this._c6 = null;
+    if (fields > 7) this._c7 = null;
     this.bindToEntitySlot({ page: options.page === true });
   }
 
@@ -591,17 +595,17 @@ export class GameObject {
     }
 
     Ctor._ensureComponentAccessors();
-    // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c7, the rest
-    // in E-139's slot array.
-    this._c0 = null;
-    this._c1 = null;
-    this._c2 = null;
-    this._c3 = null;
-    this._c4 = null;
-    this._c5 = null;
-    this._c6 = null;
-    this._c7 = null;
+    // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c7 (only
+    // the fields the constructor declared for this class), the rest in E-139's slot array.
     const slots = Ctor._componentSlotCount;
+    if (slots > 0) this._c0 = null;
+    if (slots > 1) this._c1 = null;
+    if (slots > 2) this._c2 = null;
+    if (slots > 3) this._c3 = null;
+    if (slots > 4) this._c4 = null;
+    if (slots > 5) this._c5 = null;
+    if (slots > 6) this._c6 = null;
+    if (slots > 7) this._c7 = null;
     this._components = slots > COMPONENT_FIELDS ? new Array(slots).fill(null) : NO_COMPONENT_SLOTS;
   }
 
