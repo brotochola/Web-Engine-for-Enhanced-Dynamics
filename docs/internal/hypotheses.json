@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-28",
+  "updated": "2026-10-29",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -841,7 +841,8 @@
       "records": [
         "R-0614",
         "R-0694",
-        "R-0695"
+        "R-0695",
+        "R-0697"
       ],
       "next": "Nothing pending; publishMovedBodies and snapshotPrevPose stay JS."
     },
@@ -8176,7 +8177,8 @@
       "refs": [],
       "records": [
         "R-0676",
-        "R-0690"
+        "R-0690",
+        "R-0697"
       ],
       "id": "E-136",
       "title": "Spatial does not republish the rows of all-static neighbourhoods",
@@ -8700,7 +8702,8 @@
       ],
       "records": [
         "R-0688",
-        "R-0689"
+        "R-0689",
+        "R-0697"
       ],
       "id": "N-71",
       "title": "Box2D's mallinfo on every physics step",
@@ -15040,6 +15043,18 @@
       "title": "E-05 sat again: pack and sort in pre-render still move Predator's bottleneck",
       "verdict": "answered",
       "text": "E-05 sat again, for EXECUTION_PLAN's \"Predator's sprite statics\" item: Pixi packs Predator's sprites every frame, statics included, because Predator sorts and packs in Pixi (`sortSprites: 'pixi'`, `packGpuSprites: 'pixi'`), so E-82b's split cannot skip unchanged statics. Pre-render is much faster than on 2026-10-18 (WASM: Predator pre-render −42 % steady, R-0640), so the pre-render side might take the work now.\n\n**The pair.** One build (f4341c44), Predator's own query knobs on side B: `?packGpuSprites=preRender&sortSprites=preRender`; 4 pairs, owner renderer, detailed stats off.\n\n| worker | A (pixi) → B (preRender) | paired | worse |\n| --- | --- | --- | --- |\n| renderer | 3.729 → 2.596 ms | **−31.2 %** | 0/4 |\n| pre-render | 4.038 → 5.087 ms | **+26.0 %** | 4/4 |\n| physics | 5.768 → 6.327 ms | +6.1 % (cv 5/11 %) | 3/4 |\n| logic | 3.908 → 3.969 ms | +2.4 % | 3/4 |\n\nThe slowest of the two render workers: 4.038 ms (A) against 5.087 ms (B), 26 % worse. As on 2026-10-18 (renderer −36.6 %, max +12.6 %), the work moves and the bottleneck with it; pre-render is now the busier of the two by more. Physics +6.1 % at cv 11 % is outside what the knobs reach.\n\n**Answered.** Predator keeps sorting and packing in Pixi, and its statics are rewritten every frame by design: its camera follows squads, so the order changes most frames anyway (E-82b's note). The item is closed."
+    },
+    {
+      "id": "R-0697",
+      "date": "2026-10-29",
+      "time": "02:26",
+      "timeFrom": "recorded",
+      "title": "wave8 merge gate: the branch against main, Predator and Boids, passed",
+      "verdict": "passed",
+      "text": "The merge gate for wave8: the whole branch (496a7a24) against main (e04c188f), 4 pairs each from worktrees, owner physics, detailed stats off. The branch's engine changes: N-71, E-140's dead loop, E-136, the pose epoch fix, W28.\n\n**Predator: KEPT (product).** physics 8.424 → 7.322 ms (−11.3 %, worse 0/4), logic −2.9 %, spatial +0.5 %, renderer −1.1 %, pre-render −4.2 %; presented 60.0 both. A noisy sitting: cv 11–17 % on every worker and every worker slower than in the day's other sittings (only these runs were going; the rest of the machine was busy), so the per-worker numbers are wide, but no worker is worse.\n\n**Boids: FAIL (load), on VISIBLE_ENTITIES −10.5 % (cv 6/9 %), the flock in view, which no change reaches.** physics 8.822 → 7.974 ms (−10.4 %, worse 0/4), pre-render −6.6 % (0/4, with the fewer visible boids), spatial +2.8 % (worse 2/4, cv 24/3 %).\n\n**Passed.** No worker is 3 % worse in either scene; physics −10 to −11 % in both. wave8 merged into main by fast-forward.",
+      "commits": [
+        "496a7a24"
+      ]
     }
   ],
   "leads": [
