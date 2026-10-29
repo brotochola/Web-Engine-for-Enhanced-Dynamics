@@ -8775,18 +8775,18 @@
         "EXECUTION_PLAN.md#Left open (design calls for the owner)"
       ],
       "records": [
-        "R-0699"
+        "R-0699",
+        "R-0707"
       ],
       "date": "2026-10-29",
       "area": "particle",
       "kind": "dx",
-      "result": "",
-      "next": "Wave 9's close: the GPU particle gate (gpuParticlesStressScene and GPU Galaxy, WebGL and WebGPU).",
+      "result": "GPU particle gate: GPU Galaxy 8M renderer +6.0 %, presented -8.2 % (4/4); bisected to cb72506a (+12.9 %, -9.4 %, 2/2). Same records and drawn window; the per-tick cadence explains logic, not the frames. Open: keep, look further, or go back.",
+      "next": "Keep the clock at this cost, look further at the GPU side (WebGPU timestamps), or go back to a clock stepped by the main frame.",
       "id": "DX-GPCLOCK",
       "title": "GPU particles' sim clock keeps its own time (a stalled main thread does not freeze them)",
-      "status": "open",
-      "statusText": "built 2026-10-29 (cb72506a); the GPU particle gate pending",
-      "rank": 6
+      "status": "blocked",
+      "statusText": "blocked: the owner's call, GPU Galaxy 8M loses about 9 % of its presented frames (R-0707)"
     },
     {
       "aliases": [],
@@ -8859,75 +8859,89 @@
       "refs": [
         "EXECUTION_PLAN.md#E-160"
       ],
-      "records": [],
+      "records": [
+        "R-0701",
+        "R-0702",
+        "R-0703",
+        "R-0711"
+      ],
       "id": "E-160",
       "title": "Predator's shadow stamp, on the inputs the scene gives it",
-      "status": "open",
-      "statusText": "open: Wave 9 (2026-10-29)",
+      "status": "kept-kernel",
+      "statusText": "kept (kernel) 2026-10-29 (R-0703)",
       "date": "2026-10-29",
       "area": "pre-render",
       "kind": "wasm",
-      "rank": 1,
-      "result": "stamp_light_range is 39 % of Predator's pre-render (R-0645; 46.7 % in R-0607). The kernel's one-frame fixture predicts about a quarter of the scene's cost a frame.",
-      "next": "Capture the real stamp inputs over a run of frames and replay them in the kernel (own commit); the algorithm first, then flags, SIMD and float32; Predator pre-render ABAB."
+      "result": "Kept (kernel), 856cecca: Predator's own frames replayed, Node +14.7 %, Chrome 0.541 -> 0.466 ms a frame (-13.9 %); the stamp in Predator 1.139 -> 1.005 ms a call (-11.8 %, 3/3); pre-render STEP_MS +0.9 % over 4 pairs, inside the A/A.",
+      "next": "Nothing pending: what is left of the stamp is its append and the selection."
     },
     {
       "aliases": [],
       "refs": [
         "EXECUTION_PLAN.md#E-161"
       ],
-      "records": [],
+      "records": [
+        "R-0701",
+        "R-0704",
+        "R-0711"
+      ],
       "id": "E-161",
       "title": "emitGpu: the calls of one frame share a group",
-      "status": "open",
-      "statusText": "open: Wave 9 (2026-10-29)",
+      "status": "kept-hygiene",
+      "statusText": "kept (hygiene) 2026-10-29 (R-0704)",
       "date": "2026-10-29",
       "area": "particle",
       "kind": "js",
-      "rank": 2,
-      "result": "One group per call and 2 048 live groups a ring: about 34 entities emitting every frame with one-second particles fill a ring; a sorted layer draws each group apart and drops what passes 1 024 visible groups.",
-      "next": "A gpuParticlesStressScene knob for many small calls a frame (own commit); extend the last group when written the same frame (sorted layers within a sortY band); tests; groups, overflows, Pixi and renderer."
+      "result": "Kept (hygiene), d2827622: ?trail=300 plain layer 18 048 -> 60 groups a second, 18 048 -> 0 overflows a second; a sorted layer unchanged (a row is a key); the gate's regression bisects elsewhere (DX-GPCLOCK).",
+      "next": "Nothing pending; a sorted layer stays a group per row."
     },
     {
       "aliases": [],
       "refs": [
         "EXECUTION_PLAN.md#E-162"
       ],
-      "records": [],
+      "records": [
+        "R-0701",
+        "R-0709"
+      ],
       "id": "E-162",
       "title": "painterMove: the moving rows' scatter pack and reinsert",
       "status": "open",
-      "statusText": "open: Wave 9 (2026-10-29)",
+      "statusText": "open: a design question for the owner (R-0709)",
       "date": "2026-10-29",
       "area": "pre-render",
       "kind": "wasm",
-      "rank": 3,
+      "rank": 5,
       "result": "Left by E-159: with keys that move every frame, pack_sprites_split_scatter is 40 % and reinsert_simd_inplace 25 % of a saturated pre-render (R-0645).",
-      "next": "A kernel on the scene's rows, then painterMove pre-render ABAB; a Predator gate if the pack path changes."
+      "next": "Statics out of draw order: row order for a still camera, per entity with dirty tracking for a scrolling one, an index stream, fetched in the vertex shader on both backends. The owner's call before building it."
     },
     {
       "aliases": [],
       "refs": [
         "REVIEW_PLAN.md#N-84"
       ],
-      "records": [],
+      "records": [
+        "R-0701",
+        "R-0706"
+      ],
       "id": "N-84",
       "title": "meshGalleryScene shows a second main thread at 1000 ms/s",
-      "status": "open",
-      "statusText": "open: Wave 9 (2026-10-29)",
+      "status": "answered",
+      "statusText": "answered 2026-10-29 (R-0706)",
       "date": "2026-10-29",
       "area": "engine",
       "kind": "bug",
-      "rank": 4,
-      "result": "R-0645: a second main thread at 1000 ms/s with no function over 2 %. A spinning thread, or one the profiler counts while it waits.",
-      "next": "threadCpuProbe.mjs for its operating-system CPU time, then name it."
+      "result": "threadCpuProbe: Boids' busiest thread 363 ms/s, the mesh gallery 43; none over 800. The profile's 1000 ms/s thread waits. Nothing to fix.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
       "refs": [
         "EXECUTION_PLAN.md#E-163"
       ],
-      "records": [],
+      "records": [
+        "R-0701"
+      ],
       "id": "E-163",
       "title": "The gather's cell order past 65 536 cells",
       "status": "open",
@@ -8935,9 +8949,106 @@
       "date": "2026-10-29",
       "area": "spatial",
       "kind": "wasm",
-      "rank": 5,
+      "rank": 6,
       "result": "order_by_cell keys cells in 16 bits, so a grid of more than 65 536 cells keeps its order and loses the gather's cache order.",
-      "next": "A coarser key that fits 16 bits; spatialGatherReplayKernel on a large grid, then the spatial worker of a scene past 65 536 cells."
+      "next": "No scene in the map passes 65 536 cells (stationarySpatialWide has about 10 000); a knob for a large world first, then the coarser key."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-85"
+      ],
+      "records": [
+        "R-0705",
+        "R-0711"
+      ],
+      "id": "N-85",
+      "title": "The sim clock's reader falls back to a stale time",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0705)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Fixed 2026-10-29: N-85 9173b1ea, N-86 b8d5d08d, N-87 5b01605a, each with a test; hygiene keeps.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-86"
+      ],
+      "records": [
+        "R-0705",
+        "R-0711"
+      ],
+      "id": "N-86",
+      "title": "publishPose's epoch fast path holds for a whole publish",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0705)",
+      "date": "2026-10-29",
+      "area": "physics",
+      "kind": "bug",
+      "result": "Fixed 2026-10-29: N-85 9173b1ea, N-86 b8d5d08d, N-87 5b01605a, each with a test; hygiene keeps.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-87"
+      ],
+      "records": [
+        "R-0705",
+        "R-0711"
+      ],
+      "id": "N-87",
+      "title": "The sim clock follows wall time through a hidden tab",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0705)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Fixed 2026-10-29: N-85 9173b1ea, N-86 b8d5d08d, N-87 5b01605a, each with a test; hygiene keeps.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-164"
+      ],
+      "records": [
+        "R-0701",
+        "R-0702",
+        "R-0708",
+        "R-0711"
+      ],
+      "id": "E-164",
+      "title": "A component read waits on memory: the slot array and its elements",
+      "status": "kept",
+      "statusText": "kept 2026-10-29 (R-0708)",
+      "date": "2026-10-29",
+      "area": "logic",
+      "kind": "js",
+      "result": "Kept, 50a2c168: minimalTickScene?props=130000 logic 3.456 -> 2.909 ms (-17.6 %, worse 0/4, cv 6/4 %), 4 pairs from worktrees.",
+      "next": "Nothing pending: Predator logic -6.0 % in the branch gate (R-0711)."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-165"
+      ],
+      "records": [
+        "R-0701",
+        "R-0710"
+      ],
+      "id": "E-165",
+      "title": "Spawn and despawn read the logic worker through the worker's global",
+      "status": "kept",
+      "statusText": "kept 2026-10-29 (R-0710)",
+      "date": "2026-10-29",
+      "area": "logic",
+      "kind": "js",
+      "result": "Kept, dd119417: spawnStormScene logic 5.023 -> 3.597 ms (-27.8 %, worse 0/4, cv 1/1 %); same entities processed; the BODY_COUNT drift is the churn pipeline's timing, not load.",
+      "next": "Nothing pending."
     }
   ],
   "records": [
@@ -15279,6 +15390,129 @@
       "commits": [
         "6d0de541"
       ]
+    },
+    {
+      "id": "R-0701",
+      "date": "2026-10-29",
+      "time": "05:58",
+      "timeFrom": "recorded",
+      "title": "Wave 9's map: a CPU profile of 34 scenes on today's tree (the stamp first in Predator, the component getter 36 % of waterAndBoxes' logic)",
+      "verdict": "note",
+      "text": "**Wave 9's map: a CPU profile of 34 scenes on today's tree.** 2026-10-29, 04:00 to 04:25, `profileSceneSweep --pass cpu`\nover R-0645's busiest scenes and those it could not read; headed, source, detailed stats off, 6 s warm-up, 8 s window.\nA grep of a large file ran for about two minutes during littleCity and mamushkaDig, which may read a little high.\n\n**Where the time is** (busy ms/s, % of that worker):\n- **Predator:** pre-render 329, `stamp_light_range` 36.8 %, `emit_rows` 25.5 %, `collect_sprites` 11.8 %; Pixi 326,\n  `pack_sprites_split` 19.6 %, the unnamed copy module 10.7 %, Pixi's own code 31 %; spatial 362, gather 38 %,\n  publish 31 %, `rebuildOwnedRows` 15 %; logic 306 and 281, the component getter 9.1 and 7.5 %, the FSM tick 9–11 %,\n  `neighborCount` and `getNeighbor` 7–9 % each.\n- **waterAndBoxesScene:** logic 78, the component getter 36.2 % (one `this.rigidBody.speed` a tick on 20 000 balls).\n- **painterMove:** pre-render saturated (998), `pack_sprites_split_scatter` 40.8 %, `reinsert_simd_inplace` 23.9 %;\n  Pixi 228, 40 % the copy. painterSort: `collect_sprites` 34.8 %, `pack_sprites_split` 27.3 %, `persist_frame` 15.4 %.\n- **Spatial in JS:** `rebuildOwnedRows` is 30 % of Boids' spatial, 32 % of stationaryWide's, 42 % of ballsHeavy's.\n- **spawnStorm:** `_spawnAt` 40 %, `despawn` 12 % of logic. **rayStress:** the ray API in JS about 85 % of logic.\n  **tween:** `_apply` 38 %, `tick` 36 %. **tilemap:** `getTileId` 81 % (by the scene's design).\n- **No load at their defaults:** audioStorm, steadyCombat, sceneryCam, particleEmit, compute, cmdSamePose.\n- **Boids' profile shows a \"main\" thread at 1000 ms/s** with no function (N-84).\n\n**Leads written down:** E-160 to E-164 and N-84 in the register, the order in EXECUTION_PLAN's Wave 9."
+    },
+    {
+      "id": "R-0702",
+      "date": "2026-10-29",
+      "time": "05:59",
+      "timeFrom": "recorded",
+      "title": "W9-AA: the session's noise reference on Predator (identical code, 2-7 % one-sided)",
+      "verdict": "note",
+      "text": "**W9-AA: the session's noise reference, Predator.** 856cecca on both sides (two worktrees), headed, source, detailed\nstats off, 4 pairs. NEUTRAL: logic 3.781 → 3.712 ms (−1.8 %, cv 5/4 %), spatial −1.6 %, physics 5.477 → 5.250 (−7.5 %,\ncv 13/6 %), renderer −3.6 % (cv 7/1 %), pre-render 3.697 → 3.621 (−2.7 %, worse 0/4), presented 60.0 both. Identical\ncode read side B 2–7 % faster on every worker: four Predator pairs resolve about 3–4 % here (7.5 % on physics), and\na one-sided few percent on a worker a change cannot reach is this."
+    },
+    {
+      "id": "R-0703",
+      "date": "2026-10-29",
+      "time": "05:59",
+      "timeFrom": "recorded",
+      "title": "E-160 kept (kernel): the stamp packs its grid's x and y and carries distances (Chrome -13.9 %, in the scene -11.8 %)",
+      "verdict": "kept-kernel",
+      "text": "**E-160: the shadow stamp on Predator's own inputs.** 2026-10-29, Wave 9.\n\n**The tool (45505141).** `captureStampInputs.mjs` wraps pre-render's `_stampRange` through the worker's global and\nrecords, call after call, the sun caster rows, the light table, the limits, the stamp written and the call's time.\n`shadowStampReplay.mjs` replays a capture, each frame's rows in a region of their own, and folds every frame's\noutput into a checksum the capture's own output must match. Predator, 48 calls: 13 288–13 339 casters, 48 lights,\n4 657–5 735 rows a call, 1.285 ms a call in the scene. The old fixture (one frame, 48 lights picked by hand) said\nabout a quarter of that.\n\n**Where the time went** (phases cut one at a time, Node, 0.50 ms a frame): building the grid 38 % (three passes over\n88-byte rows), the selection and the per-caster nearest lights 29 % (each kept caster's row read again), the append\n20 %, the walk 13 %.\n\n**The change (856cecca).** The grid build reads each row once and packs x and y in the grid's own order; a light's\nwalk reads them there; the walk keeps each candidate's double distance for the nearest lights; a caster row is\ncopied in v128s (an 88-byte memcpy is `memory.copy`, a runtime call in V8, and made the first try slower). Four\nregions of the render-queue memory, table slots 28–31. The stamp is the same bit for bit: every replayed frame's\nchecksum is the scene's, and the node suite's parity tests pass.\n\n| measure | before | after | |\n| --- | --- | --- | --- |\n| replay, Node (5 alternating processes) | 41.5 ops/s | 47.6 | +14.7 % |\n| replay, Chrome (9 rounds) | 0.541 ms a frame | 0.466 | −13.9 % |\n| the stamp in the scene, Predator (3 alternating runs a side, 480 calls each) | 1.139 ms a call | 1.005 | −11.8 %, 3/3 |\n| Predator pre-render STEP_MS (4 pairs, worktrees) | 3.960 ms | 3.951 | +0.9 % paired, cv 2/1 % |\n\n**Reading.** The kernel is faster in the scene's own call; the 0.13 ms it saves is about 3 % of pre-render, and the\nsitting's pre-render read +0.9 % (pairs −0.5, +6.8, −0.4, +2.8 %). Pre-render has no wait inside its step, so the\nsaving is real time, under what four pairs resolve. The sitting flagged logic +4.8 % (4/4, cv 4 %), a worker the\nstamp does not reach; physics read −7.6 % and the renderer −1.7 % the other way.\n\n**Against the session's A/A** (W9-AA, Predator, 856cecca on both sides, 4 pairs): identical code read logic −1.8 %\n(cv 5/4 %), spatial −1.6 %, physics −7.5 % (cv 13/6 %), renderer −3.6 %, pre-render −2.7 % (0/4 worse). Four\nPredator pairs resolve about 3–4 % on these workers, 7.5 % on physics, so the sitting's pre-render +0.9 % and logic\n+4.8 % (a worker the stamp does not reach) are inside its noise. **Kept (kernel), product-neutral in Predator's\nSTEP_MS**: the stamp itself is −11.8 % in the scene.",
+      "commits": [
+        "45505141",
+        "856cecca",
+        "ed7e1aec"
+      ]
+    },
+    {
+      "id": "R-0704",
+      "date": "2026-10-29",
+      "time": "05:59",
+      "timeFrom": "recorded",
+      "title": "E-161 kept (hygiene): emitGpu calls of one frame share a group (300 movers: 18 048 -> 60 groups/s, overflows to 0)",
+      "verdict": "kept-hygiene",
+      "text": "**E-161: emitGpu calls of one frame share a group.** 2026-10-29. Tools a87b16ee (`?trail=N` on gpuParticlesStressScene,\n`gpuParticleRingProbe.mjs`), change d2827622.\n\nA call within 8 ms of the one that opened its ring's last group joins it (records back to back, bounds widened,\nearliest birth, latest end, written before the count grows and the records are published), on any layer that does\nnot sort with the entities and on a sorted one only for the same row; never across an epoch, other flags, past the\nring, into a group ending within 100 ms, or in a sorted look layer. A sorted group draws only what its ring uploaded.\n`gpuParticleGroupJoin.test.js` checks the records are each call's own, the union of bounds, the cases that do not\njoin and the order of the stores; three older tests that emitted at one instant now say what they meant.\n\n**The probe** (`?trail=300&columns=0`, 300 movers that emitGpu every tick, 5 s window), main thread's view of the\nring headers:\n\n| layer | before | after |\n| --- | --- | --- |\n| plain | 18 048 groups/s, 18 048 overflows/s | 60 groups/s, 0 overflows/s |\n| sorted (each mover its own row) | 18 002 groups/s, 18 002 overflows/s | 17 940 groups/s, 17 999 overflows/s |\n\nRecords are 18 000 a second either way. Before, every call lapped a live group, so a call per entity per tick wiped\nparticles early; after, one group a frame. The sorted case is the documented limit (a row is a key): there, fewer,\nlarger calls.\n\n**Timings.** The GPU particle gate's stress scene at its defaults is under the 3 ms floor on every worker (renderer\n0.67 ms); GPU Galaxy's regression on the branch bisects to cb72506a (DX-GPCLOCK), not to this change. Kept (hygiene:\na limit fixed, nothing it reaches measured worse).",
+      "commits": [
+        "a87b16ee",
+        "d2827622"
+      ]
+    },
+    {
+      "id": "R-0705",
+      "date": "2026-10-29",
+      "time": "05:59",
+      "timeFrom": "recorded",
+      "title": "N-85, N-86, N-87 found by Wave 9's desk review and fixed (the clock's fallback, publishPose's fast path, the clock in a hidden tab)",
+      "verdict": "kept-hygiene",
+      "text": "**N-85, N-86, N-87: Wave 9's desk review of the branch's riskiest commits, and their fixes.** 2026-10-29. A Sonnet\nagent read 64899791 (E-136), cb72506a (the sim clock), 62eddb50 (W28), a412603f (the pose epoch) and c2e3e46a (E-159)\nfor correctness. E-136's shared generation, W28's batch and E-159's sorted generation were found sound (their\nreasoning is in the agent's report: every pose change flags, the generation is loaded before any pose, ownership\nflips change the pose, W28 matches the JS loop and frees its probe, the sorted generation covers queue content,\norder, rows and depth). It found:\n- **N-85** (low): `readSimNowInto` fell back, after 64 tries on an odd sequence, to the base of the last rebase.\n  Fixed (9173b1ea): each realm keeps its last consistent read and extrapolates from it; `timeScale.test.js` holds the\n  sequence odd and reads on.\n- **N-86** (low): `publishPose`'s fast path read the epoch once before a loop of about a millisecond; a slot\n  respawned inside it got its old body's pose for a frame. Fixed (b8d5d08d): a moved epoch after the loop sends the\n  slots whose body changed back to rotC = rotS = 0; `publishPoseEpoch.test.js` respawns a slot mid-loop.\n- **N-87** (question): the clock followed wall time through a hidden tab while the workers' rAF loops stood still.\n  Decided and fixed (5b01605a): `Scene.setPresenting(false)` stops the clock; the frame loop starts it again.\n- A note on E-136: a kept row read between a writer's pose write and its generation bump lags one reader frame,\n  within the file's documented one-frame consistency.\n\nAll three kept as hygiene: one Atomics.load a publish for N-86, nothing on a hot path for the others; the whole\nbranch's Predator gate covers them.",
+      "commits": [
+        "9173b1ea",
+        "b8d5d08d",
+        "5b01605a"
+      ]
+    },
+    {
+      "id": "R-0706",
+      "date": "2026-10-29",
+      "time": "05:59",
+      "timeFrom": "recorded",
+      "title": "N-84 answered: no thread spins in Boids or the mesh gallery (the sampler counts a waiting thread)",
+      "verdict": "answered",
+      "text": "**N-84 answered: no spinning thread.** 2026-10-29, `threadCpuProbe.mjs` (each Chrome renderer thread's CPU time from\nWindows, twice, 5 s apart), headed. boidsScene, whose profile in Wave 9's map had a \"main\" thread at 1000 ms/s with\nno function: no thread over 800 ms/s, the busiest 363 ms/s (a worker). meshGalleryScene (R-0645's case): 178 ms/s\nover all 57 threads, the busiest 43. The sampler counts that thread while it waits, as it did Box2D's solver threads\n(E-144's step 0). Nothing to fix."
+    },
+    {
+      "id": "R-0707",
+      "date": "2026-10-29",
+      "time": "05:59",
+      "timeFrom": "recorded",
+      "title": "DX-GPCLOCK costs GPU Galaxy 8M about 9 % of its presented frames (bisected; same load, same window; owner's call)",
+      "verdict": "mixed",
+      "text": "**DX-GPCLOCK costs GPU Galaxy 8M about 9 % of its presented frames.** 2026-10-29, the GPU particle gate.\n\n**The gate** (main bfd7ccf1 against the branch at 5b01605a, 4 pairs, worktrees, headed, WebGPU,\n`particles=8388608&arms=8`): REGRESSION, renderer 4.097 → 4.341 ms (+6.0 %, worse 4/4, cv 1/0 %), presented\n55.0 → 50.1 fps (−8.2 %, fewer 4/4); logic 1.24 → 1.44 ms (under the floor). gpuParticlesStressScene at its defaults\nis under the 3 ms floor everywhere (renderer 0.67 ms; presented 60 both).\n\n**Bisected** to cb72506a alone (dd40caea against cb72506a, 2 pairs): renderer 3.994 → 4.510 ms (+12.9 %, 2/2),\npresented 55.1 → 49.9 fps (−9.4 %, 2/2); every worker drew fewer frames (logic 55 → 50 a second, frames drawn 28.5 →\n25.2 a second).\n\n**What it is not:**\n- **Load.** `gpuParticleRingProbe`: 204 164 against 203 418 records a second a ring, no overflows on either side.\n- **The drawn window.** Pixi's live records, sampled 25 times: 8.199 / 8.202 M before, 8.171 / 8.179 M after.\n- **The arms' cadence.** With the wall clock every tick of every arm emits (48 calls a second a ring against 43, the\n  same records), and logic is about 15 % busier for the same records (its `_emit` and `travelExtent` both). The\n  demo's new `?batchMs=33` (7114f7e0) puts the old cadence back: logic 1.420 → 1.217 ms (−14 %), but the renderer\n  4.145 → 4.126 and presented 52.1 → 50.9 fps do not come back.\n\nThe mechanism on the GPU side is open: no hot loop reads the clock (emitGpu once a call, Pixi once a frame), and the\nWebGPU timestamps read 0 in this configuration. **The owner's call:** keep the clock (GPU particles keep moving when\nthe main thread stalls, and pause with a hidden page since N-87) at this cost, look further, or go back.",
+      "commits": [
+        "cb72506a",
+        "7114f7e0"
+      ]
+    },
+    {
+      "id": "R-0708",
+      "date": "2026-10-29",
+      "time": "05:59",
+      "timeFrom": "recorded",
+      "title": "E-164 kept: component instances in fields of the entity (minimalTick 130k: logic -17.6 %)",
+      "verdict": "kept",
+      "text": "**E-164 kept: the component instances in fields of the entity.** 2026-10-29, 50a2c168.\n\nWave 9's map put the component getter at 36 % of waterAndBoxesScene's logic: 20 000 balls each read\n`this.rigidBody.speed` once a tick, 1.2 million reads a second at about 23 ns, all on `this._components[slot]`: the\nentity, its slot array and the array's elements, three objects out of cache. E-139's kernel timed the getter hot\n(6.7 ns). A class's first eight components now live in `_c0` … `_c7`, declared in the constructor, and each getter\nreads its own field by name (`FIELD_GETTERS`); made on first read as before; a ninth and later keep the slot array.\n\n**The sitting** (minimalTickScene `?props=130000`, 130 000 ticks a frame of `this.spriteRenderer.alpha = …`, one\nlogic worker; 7114f7e0 against the change, 4 pairs, worktrees): **KEPT**, logic 3.456 → 2.909 ms (−17.6 %, worse 0/4,\ncv 6/4 %); spatial 4.352 → 4.336 (−0.4 %); the rest under the floor. waterAndBoxesScene's logic is 1.3 ms, under the\nfloor, so the stress scene is the owner. Predator's whole-branch gate covers it there.",
+      "commits": [
+        "50a2c168"
+      ]
+    },
+    {
+      "id": "R-0709",
+      "date": "2026-10-29",
+      "time": "05:59",
+      "timeFrom": "recorded",
+      "title": "E-162 read: the reinsert is right for painterMove's 10 % movers; the lever is statics out of draw order",
+      "verdict": "note",
+      "text": "**E-162 read: painterMove's rows, and the lever behind them.** 2026-10-29, a desk read after Wave 9's map.\n\npainterMoveStressScene moves 10 % of its 300 000 sprites (1 in `MOVE_EVERY` drifts), so the reinsert (24 % of its\nsaturated pre-render) is the right tool: a full radix of 300 000 rows costs more than the moved 30 000 merged in. The\nscatter pack (41 %) writes every row's pose and statics in the new draw order each frame, because the statics stream\nis in draw order and any reinsert shifts it; Pixi then copies it (40 % of its time).\n\n**The lever** is the statics out of draw order: kept in the queue's row order (or, for a scrolling camera whose rows\nshift, per entity, written when an entity's statics change), with a per-frame index stream that maps draw order to\nthem, fetched in the vertex shader (a texture on WebGL2, as E-157 did for GPU particle records; a storage buffer on\nWebGPU). painterMove would write 4 bytes of index and 16 of pose a sprite instead of 60. A scrolling scene such as\nPredator gains only with the per-entity table, which needs dirty tracking of every static field. A design, not a\nsitting: open until the owner says it is worth the change to the sprite batch on both backends."
+    },
+    {
+      "id": "R-0710",
+      "date": "2026-10-29",
+      "time": "06:14",
+      "timeFrom": "recorded",
+      "title": "E-165 kept: spawn and despawn read the logic worker through a bound reference (spawnStorm logic -27.8 %)",
+      "verdict": "kept",
+      "text": "**E-165 kept: spawn and despawn read the logic worker through a bound reference.** 2026-10-29, dd119417.\n\nWave 9's map (spawnStormScene, logic 375 ms/s): `despawn`'s line `typeof self !== 'undefined' ? self.logicWorker :\nnull` was 91 % of its self time, and two such lines 43 % of `_spawnAt`'s: about a third of logic in a named load\nthrough the worker's global proxy. The LogicWorker now binds itself to a module reference of gameObject.js; spawn,\ndespawn, `isCollidingWith` and the despawnAll forward read it, the global only where nothing is bound.\n`hotReloadWholeScene.test.js`, which stubs `self.logicWorker` in a process that already made a real LogicWorker, binds\nits stub.\n\n**The sitting** (spawnStormScene: 1 800 spawns and 1 800 despawns a tick; 50a2c168 against the change, 4 pairs,\nworktrees): logic 5.023 → 3.597 ms (**−27.8 %**, worse 0/4, cv 1/1 %). ENTITIES_PROCESSED 2001 and Moved 1800 on both\nsides, visible entities +2.5 %. The runner refused the verdict on BODY_COUNT 886 → 504 (−43 %): every entity here\nlives one tick, and with logic done 1.4 ms earlier physics more often sees an entity's create and destroy in the same\ndrain and never makes its body (physics 2.20 → 1.55 ms). The workload is the same; the body count measures the\npipeline's timing in this scene. **Kept.**",
+      "commits": [
+        "dd119417"
+      ]
+    },
+    {
+      "id": "R-0711",
+      "date": "2026-10-29",
+      "time": "06:14",
+      "timeFrom": "recorded",
+      "title": "W9-gate passed: Wave 9's branch against main on Predator (logic -6.0 %, nothing worse)",
+      "verdict": "passed",
+      "text": "**W9-gate: Wave 9's branch against main on Predator, passed.** 2026-10-29, main bfd7ccf1 against 50a2c168 (E-159,\nDX-GPCLOCK, DX-GPSIZE, E-160, E-161, N-85 to N-87, the galaxy knob, E-164), 4 pairs, worktrees, headed, source,\ndetailed stats off. NEUTRAL, nothing worse:\n- logic 3.800 → 3.499 ms (−6.0 %, worse 0/4, cv 6/3 %; lower than the others 4/4, −6.7 %): E-164's fields;\n- physics −5.6 % (cv 10/13 %), renderer −3.2 %, pre-render 3.745 → 3.683 (−2.2 %, worse 0/4), spatial +0.1 %;\n- presented 60.0 both; load keys within 0.5 %.\nRead against W9-AA (identical code: logic −1.8 %, physics −7.5 %, pre-render −2.7 %): the logic gain is the one\npast the session's noise. E-165 came after it; its own sitting is spawnStorm."
     }
   ],
   "leads": [
