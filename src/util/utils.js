@@ -962,6 +962,8 @@ export function seededRandom(seed, workerId) {
     r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
     return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
   };
+  // rng() steps this state itself when this generator is globalThis.rng (E-168).
+  fn._state = state;
   // The next `n` numbers into out[start…], the ones `n` calls would return. A batch consumer (emitGpu) draws
   // them this way: each double returned from a call TurboFan does not inline is boxed.
   fn.fill = function (out, start, n) {
@@ -1003,8 +1005,18 @@ export function rngFill(out, start, n) {
  * @returns {number} Random number between 0 and 1
  */
 export function rng() {
-  if (typeof globalThis.rng === 'function') {
-    return globalThis.rng();
+  const generator = globalThis.rng;
+  const state = generator !== undefined && generator !== null ? generator._state : undefined;
+  if (state !== undefined) {
+    // E-168: seededRandom's step on the generator's own state, here: no call whose double comes back boxed.
+    const t = (state[0] + 0x6d2b79f5) | 0;
+    state[0] = t;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  }
+  if (typeof generator === 'function') {
+    return generator();
   }
 
   console.warn('rng() called before initialization, seeding with 0');
