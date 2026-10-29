@@ -8932,7 +8932,8 @@
         "R-0709",
         "R-0739",
         "R-0746",
-        "R-0747"
+        "R-0747",
+        "R-0748"
       ],
       "id": "E-162",
       "title": "painterMove: the moving rows' scatter pack and reinsert",
@@ -16234,6 +16235,15 @@
         "199bb5be",
         "3fff9b14"
       ]
+    },
+    {
+      "id": "R-0748",
+      "date": "2026-10-29",
+      "time": "15:04",
+      "timeFrom": "recorded",
+      "title": "wave10 merged into main (b8d1ba3f): E-162's inert groundwork, bundles built and tested, pushed",
+      "verdict": "note",
+      "text": "**wave10 merged into main.** 2026-10-29, the owner's go: main fast-forwarded to b8d1ba3f and pushed. What it carries\nis inert so far: E-162's design, step 1 (the indexed pack kernel, its parity test and bench) and step 3's groundwork\n(the 12-word statics row, the indexed vertex shader and its compile check); nothing calls them yet.\n\nThe checklist on wave10: `npm run test:node` 2 117/2 117, `npm run test:demos` 100/100, `npm run make_bundle`,\n`npm run check:dist` (fresh, inputs 197bfbf8e1541686), `npm run test:bundle` (all eight in the browser),\n`npm run test:node:bundle` (254/254 on each bundle); `dist` committed (b8d1ba3f). No gate: no frame path changed\n(engine.wasm gained an export no code calls)."
     }
   ],
   "leads": [
