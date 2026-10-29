@@ -9419,12 +9419,13 @@
         "EXECUTION_PLAN.md#E-175"
       ],
       "records": [
-        "R-0751"
+        "R-0751",
+        "R-0761"
       ],
       "id": "E-175",
       "title": "Predator's decal tiles: up to 800 Pixi sprites re-transformed and re-batched every frame",
-      "status": "open",
-      "statusText": "open: from the 2026-10-29 layer split of the renderer (no sitting yet)",
+      "status": "running",
+      "statusText": "running: the render group kept (-5.0 %), the culling next, 2026-10-29 (R-0761)",
       "date": "2026-10-29",
       "area": "pixi",
       "kind": "speed",
@@ -16501,6 +16502,18 @@
       "text": "**wave10 merged into main again (b8fe0cea), bundles built and tested, pushed.** 2026-10-29, after E-162 closed.\n\n- **What it carries since b8d1ba3f:** E-162 whole (the indexed queue layout, pre-render's and Pixi's indexed frames on\n  WebGL and WebGPU, the slot pairs only when the order moves, renderer.indexedSprites on by default), N-93 (carScene's\n  people), painterMove's and painterSort's knobs, and the plan and register commits of the day (E-175 to E-180 opened\n  by the renderer layer split, R-0751).\n- **Checks:** test:node 2129/2129, test:demos 100/100; make_bundle, check:dist (inputs d560491c01156cf2),\n  test:bundle (the 8 bundles in Chromium, named exports and Box2D memory), test:node:bundle 254/254.\n- main fast-forwarded from b8d1ba3f to b8fe0cea and pushed.",
       "commits": [
         "b8fe0cea"
+      ]
+    },
+    {
+      "id": "R-0761",
+      "date": "2026-10-29",
+      "time": "17:13",
+      "timeFrom": "recorded",
+      "title": "E175-decal-rendergroup: the decal tiles as a render group, Predator renderer -5.0 % (KEPT, product)",
+      "verdict": "kept",
+      "text": "**E175-decal-rendergroup: the decal tile container as a render group (3bc9bceb), KEPT (product).** 2026-10-29,\n17:07 to 17:12, 8a3088a7 against 3bc9bceb, Predator, 4 pairs, worktrees, headed, source, detailed stats off.\n\n- **renderer 4.403 → 4.056 ms (−5.0 %, worse 1/4, cv 10/7 %; −3.3 % against the others, lower 3/4).**\n- physics −9.5 % (worse 0/4; −11.0 % against the others): a worker the change cannot reach, its moved bodies 5 664 to\n  8 293 a frame across the runs; read as its load. logic +0.9 %, spatial −2.5 %, pre-render −3.4 %; presented 60.0\n  both; BODY_COUNT equal; DECAL_TILES_DIRTY 0.8 a frame on both sides.\n- Pixels: decalStampStressScene in lockstep (every tile stamped), before against after, exact.\n\nAbout 0.35 ms of the renderer's frame, under the 0.8 to 1.2 ms R-0751 expected: the transform walk and the re-batch\ngo, the draws and binds of every stamped tile stay, on screen or not. Next, the tiles outside the view hidden.",
+      "commits": [
+        "3bc9bceb"
       ]
     }
   ],
