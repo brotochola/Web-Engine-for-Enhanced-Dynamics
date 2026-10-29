@@ -2568,8 +2568,8 @@ class Scene {
         const deltaTime = currentTime - this.lastFrameTime;
         this.lastFrameTime = currentTime;
 
-        // The shared sim clock (Time.simNowMs): the frame time clamped as the workers clamp theirs, scaled.
-        Time._advanceSimNow(simClockStepMs(deltaTime, Time.scale));
+        // The shared sim clock (Time.simNowMs) keeps its own time once started; pause() stops it.
+        if (!Time.simRunning) Time._startSimClock();
 
         const t0 = performance.now();
         this.updateInternal(deltaTime);
@@ -2740,6 +2740,7 @@ class Scene {
 
   pause() {
     this.state.pause = true;
+    Time._stopSimClock();
     const allWorkers = this.getAllWorkers();
 
     allWorkers.forEach((worker) => {
