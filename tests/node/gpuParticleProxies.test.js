@@ -25,7 +25,7 @@ import {
   proxyView,
   upperBoundByKey,
 } from '../../src/render/gpuParticleProxies.js';
-import { EntityChunks, assignGaps } from '../../src/render/gpuParticleChunks.js';
+import { EntityChunks, assignGaps, rangeGeometryOf } from '../../src/render/gpuParticleChunks.js';
 import { GpuParticleLayerBatch } from '../../src/render/gpuParticleBatch.js';
 import { Container, Texture } from '../../src/vendor/pixi.min.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
@@ -318,8 +318,28 @@ test('the batch drawing from its two geometries in turn leaves the stage as it w
       assert.equal(twin.label, `entities-chunk-0-${(f & 1) ^ 1}`, 'its twin is next to it, slot 0 first');
       assert.equal(twin.alpha, 0);
     }
-    entities.mesh.geometry = batch.rings[0].meshes[0].geometry;
-    assert.throws(() => chunks.apply(half, 3, 10, draw), /third geometry/);
+    // E-162: a batch with indexed frames draws from two more geometries; their chunks join the others once, and then
+    // the stage holds still whichever base a frame draws from. A fifth geometry is none of the batch's.
+    const all = [...geometries, batch.rings[0].meshes[0].geometry, batch.rings[0].meshes[1].geometry];
+    for (const g of all.slice(2)) {
+      entities.mesh.geometry = g;
+      chunks.apply(half, 3, 10, draw);
+    }
+    const four = rootNode.children.slice();
+    for (let f = 0; f < 8; f++) {
+      const live = (f * 3) & 3;
+      rootNode.renderGroup.structureDidChange = false;
+      entities.mesh.geometry = all[live];
+      chunks.apply(half, 3, 10, draw);
+      assert.equal(rootNode.renderGroup.structureDidChange, false, `four bases, frame ${f}: nothing hidden, shown or moved`);
+      assert.deepEqual(rootNode.children, four, 'the same children in the same order');
+      const kids = drawn(rootNode);
+      assert.deepEqual(kids.map((c) => c.label || ''), ['', `entities-chunk-0-${live}`, '', '', `entities-chunk-1-${live}`],
+        'one mesh per chunk is drawn: the one over the live base');
+      assert.equal(kids[1].geometry.attributes.aMove.buffer, all[live].attributes.aMove.buffer);
+    }
+    entities.mesh.geometry = rangeGeometryOf(geometries[0]);
+    assert.throws(() => chunks.apply(half, 3, 10, draw), /fifth geometry/);
     entities.mesh.geometry = geometries[0];
     chunks.destroy();
   } finally {

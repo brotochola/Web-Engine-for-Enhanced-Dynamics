@@ -244,11 +244,12 @@ export class EntityChunks {
     this.batch = opts.batch;
     this.root = opts.root;
     this.maxSplits = opts.maxSplits | 0 || DEFAULT_MAX_PAINTER_SPLITS;
-    // The batch draws from its two ring geometries in turn (one per upload), so chunk j is a pair of meshes, one
-    // over each. Both stay children, slot 0's first: the idle one has alpha 0, which Pixi's mesh pipe skips when it
-    // draws. Hiding it (visible) or putting the other in its place would rebuild the stage's instructions every frame.
-    this.bases = [null, null];
-    this.chunks = [[], []];
+    // The batch draws from its two ring geometries in turn (one per upload), and with indexed frames (E-162) from two
+    // more, so chunk j is a mesh over each base it has drawn from, with that frame's program. They all stay children,
+    // in base order: the idle ones have alpha 0, which Pixi's mesh pipe skips when it draws. Hiding them (visible) or
+    // putting one in another's place would rebuild the stage's instructions every frame.
+    this.bases = [null, null, null, null];
+    this.chunks = [[], [], [], []];
     // The frame's draw order, [0, count). The array keeps its length (resetting it would free its storage and
     // every frame would grow it again).
     this.children = [];
@@ -258,20 +259,17 @@ export class EntityChunks {
     this.active = false;
   }
 
-  /** 0 or 1: which of the batch's two ring geometries `base` is, in the order they first show up. */
+  /** Which of the batch's geometries `base` is, in the order they first show up. */
   _baseSlot(base) {
     const bases = this.bases;
-    if (bases[0] === base) return 0;
-    if (bases[1] === base) return 1;
-    if (bases[0] === null) {
-      bases[0] = base;
-      return 0;
+    for (let s = 0; s < bases.length; s++) {
+      if (bases[s] === base) return s;
+      if (bases[s] === null) {
+        bases[s] = base;
+        return s;
+      }
     }
-    if (bases[1] === null) {
-      bases[1] = base;
-      return 1;
-    }
-    throw new Error('EntityChunks: the entities batch drew from a third geometry');
+    throw new Error('EntityChunks: the entities batch drew from a fifth geometry');
   }
 
   _chunk(slot, j) {
@@ -288,26 +286,23 @@ export class EntityChunks {
   }
 
   /**
-   * Chunk j draws instances [first, first + count) with the mesh over the live geometry; its twin, if made yet,
-   * stays next to it, idle. Writes them at order[n…] (slot 0's first), returns the next free index.
+   * Chunk j draws instances [first, first + count) with the mesh over the live geometry; its twins over the other
+   * bases, those made yet, stay next to it, idle. Writes them at order[n…] in base order, returns the next free index.
    */
   _pushChunk(order, n, live, j, first, count) {
     const m = this._chunk(live, j);
     m.geometry.weedFirstInstance = first;
     m.geometry.instanceCount = count;
-    // E-162: the batch's program for this frame's layout (an indexed frame's reads the statics texture).
-    m.shader = this.batch.mesh.shader;
     m.alpha = 1;
-    const twin = this.chunks[live ^ 1][j];
-    if (twin === undefined) {
-      order[n] = m;
-      return n + 1;
-    }
-    twin.alpha = 0;
+    const chunks = this.chunks;
     // In index order: a write past the end would leave a hole, and the array would stay holey.
-    order[n] = live === 0 ? m : twin;
-    order[n + 1] = live === 0 ? twin : m;
-    return n + 2;
+    for (let s = 0; s < chunks.length; s++) {
+      const twin = chunks[s][j];
+      if (twin === undefined) continue;
+      if (s !== live) twin.alpha = 0;
+      order[n++] = twin;
+    }
+    return n;
   }
 
   /**
@@ -391,7 +386,6 @@ export class EntityChunks {
       }
       list.length = 0;
     }
-    this.bases[0] = null;
-    this.bases[1] = null;
+    this.bases.fill(null);
   }
 }

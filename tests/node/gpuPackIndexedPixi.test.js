@@ -199,10 +199,14 @@ test('Pixi commits an indexed frame: the poses and slots every frame, the static
   assert.notEqual(indexedShader, splitShader);
   assert.equal(indexedShader.resources.uStatics, batch._staticsSource);
   assert.equal(indexedShader.resources.uniforms, splitShader.resources.uniforms, 'one uniform group for both programs');
-  for (const geometry of batch._geometries) {
-    assert.equal(geometry.attributes.aInstSlot.buffer, batch._slotBuffers[batch._geometries.indexOf(geometry)]);
-    assert.ok(geometry.attributes.aInstScale, 'and the split program\'s attributes');
-  }
+  // Each layout draws from geometries of its own (Pixi warns of a geometry attribute its program lacks), over the same
+  // pose buffers.
+  batch._indexedGeometries.forEach((geometry, r) => {
+    assert.deepEqual(Object.keys(geometry.attributes).sort(), ['aInstRotCS', 'aInstSlot', 'aInstXY', 'aQuad']);
+    assert.equal(geometry.attributes.aInstSlot.buffer, batch._slotBuffers[r]);
+    assert.equal(geometry.attributes.aInstXY.buffer, batch._geometries[r].attributes.aInstXY.buffer);
+    assert.equal(batch._geometries[r].attributes.aInstSlot, undefined);
+  });
 
   // [slots, queue rows, generation]
   const frames = [[2500, 2600, 5], [2500, 2600, 5], [2400, 2600, 5], [2400, 2600, 6], [2400, 2500, 6], [2400, 2500, 6]];
@@ -215,6 +219,7 @@ test('Pixi commits an indexed frame: the poses and slots every frame, the static
     px.updateSpritesFromRenderQueue();
     assert.equal(px.visibleEntityCount, n, `frame ${f}: slots`);
     assert.equal(batch.mesh.shader, indexedShader, `frame ${f}: the indexed program`);
+    assert.ok(batch._indexedGeometries.includes(batch.mesh.geometry), `frame ${f}: an indexed geometry`);
     assert.equal(batch.mesh.visible, true);
     assert.equal(batch.mesh.geometry.instanceCount, n);
     same(batch.data, want.pose, n * GPU_POSE_FLOATS, `frame ${f} pose`);
@@ -234,6 +239,7 @@ test('Pixi commits an indexed frame: the poses and slots every frame, the static
   px.updateSpritesFromRenderQueue();
   assert.equal(px.visibleEntityCount, 2400);
   assert.equal(batch.mesh.shader, splitShader, 'a split frame: the split program');
+  assert.ok(batch._geometries.includes(batch.mesh.geometry), 'a split geometry');
   same(batch.data, split.pose, 2400 * GPU_POSE_FLOATS, 'split pose');
   same(batch.staticData, split.stat, 2400 * GPU_STATIC_FLOATS, 'split statics');
   assert.equal(log.statics, 1, 'the split statics go up');

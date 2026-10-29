@@ -305,11 +305,12 @@ export class InstancedSpriteBatch {
     this._slotBuffers = this.indexed
       ? [this._makeSlotBuffer(labelName + '-slots'), this._makeSlotBuffer(labelName + '-slots-ring')]
       : null;
-    this._geometries = this._buffers.map((buf, r) => this._geometryFor(
-      buf,
-      this._staticBuffers ? this._staticBuffers[r] : null,
-      this._slotBuffers ? this._slotBuffers[r] : null
-    ));
+    this._geometries = this._buffers.map((buf, r) => this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null));
+    // E-162: an indexed frame's geometries, over the same pose buffers and the slot buffers: the indexed program's
+    // attributes and no other (a program bound to a geometry with attributes it lacks makes Pixi warn, per pair).
+    this._indexedGeometries = this.indexed
+      ? this._buffers.map((buf, r) => this._indexedGeometryFor(buf, this._slotBuffers[r]))
+      : null;
     this._ring = 0;
     this.buffer = this._buffers[0];
     this.geometry = this._geometries[0];
@@ -432,30 +433,28 @@ export class InstancedSpriteBatch {
     });
   }
 
-  _geometryFor(buf, staticBuf, slotBuf) {
+  _geometryFor(buf, staticBuf) {
     if (this._twoStreams) {
       // E-82: the pose stream (24-byte stride) and the static stream (44). E-82b, a split batch: a 16-byte
       // pose whose previous xy is the current one (the pose shader's mix at uPoseAlpha 1 gives it back).
       const ds = this._floats * 4;
       const ss = POSE_STATIC_FLOATS * 4;
-      const attributes = {
-        aQuad: { buffer: this._quad, format: 'float32x2' },
-        aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
-        aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-        aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: this.poseInterp ? 16 : 0, instance: true },
-        aInstScale: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 0, instance: true },
-        aInstAnchor: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 8, instance: true },
-        aInstDepth: { buffer: staticBuf, format: 'float32', stride: ss, offset: 16, instance: true },
-        aInstTintBits: { buffer: staticBuf, format: 'float32', stride: ss, offset: 20, instance: true },
-        aInstTexId: { buffer: staticBuf, format: 'float32', stride: ss, offset: 24, instance: true },
-        aInstTileInv: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 28, instance: true },
-        aInstTileOff: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 36, instance: true },
-      };
-      // E-162: the slot stream, which only the indexed program reads (each program binds the attributes it has).
-      if (slotBuf) {
-        attributes.aInstSlot = { buffer: slotBuf, format: 'float32x2', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true };
-      }
-      const geometry = new Geometry({ attributes, indexBuffer: this._index });
+      const geometry = new Geometry({
+        attributes: {
+          aQuad: { buffer: this._quad, format: 'float32x2' },
+          aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
+          aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
+          aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: this.poseInterp ? 16 : 0, instance: true },
+          aInstScale: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 0, instance: true },
+          aInstAnchor: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 8, instance: true },
+          aInstDepth: { buffer: staticBuf, format: 'float32', stride: ss, offset: 16, instance: true },
+          aInstTintBits: { buffer: staticBuf, format: 'float32', stride: ss, offset: 20, instance: true },
+          aInstTexId: { buffer: staticBuf, format: 'float32', stride: ss, offset: 24, instance: true },
+          aInstTileInv: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 28, instance: true },
+          aInstTileOff: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 36, instance: true },
+        },
+        indexBuffer: this._index,
+      });
       geometry.instanceCount = 0;
       return geometry;
     }
@@ -477,6 +476,21 @@ export class InstancedSpriteBatch {
       attributes.aInstLight = { buffer: buf, format: 'float32x4', stride, offset: 72, instance: true };
     }
     const geometry = new Geometry({ attributes, indexBuffer: this._index });
+    geometry.instanceCount = 0;
+    return geometry;
+  }
+
+  _indexedGeometryFor(buf, slotBuf) {
+    const ds = this._floats * 4;
+    const geometry = new Geometry({
+      attributes: {
+        aQuad: { buffer: this._quad, format: 'float32x2' },
+        aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
+        aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
+        aInstSlot: { buffer: slotBuf, format: 'float32x2', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
+      },
+      indexBuffer: this._index,
+    });
     geometry.instanceCount = 0;
     return geometry;
   }
@@ -715,7 +729,7 @@ export class InstancedSpriteBatch {
     this._show(true);
     const ring = this._ring;
     this._ring = ring ^ 1;
-    const geometry = this._geometries[ring];
+    const geometry = indexed ? this._indexedGeometries[ring] : this._geometries[ring];
     this._buffers[ring].update(out * stride);
     if (indexed) {
       // E-162: the slot stream goes up; the statics are the texture's.
