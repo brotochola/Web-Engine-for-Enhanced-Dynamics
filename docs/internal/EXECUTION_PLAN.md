@@ -2408,6 +2408,9 @@ the expansion is bound by its stores: float32 and SIMD tied.
 
 It is large and changes the render path, so a design note comes first: the batch layout, the sort, the shadows, and
 what the custom layers lose. Then a prototype on adobeAnimateScene.
+*The design note is [`ADOBE_GPU_PLAN.md`](./ADOBE_GPU_PLAN.md) (2026-10-28): one record per visible character, the piece
+table a static texture, one instanced draw with a character's pieces drawn by vertex index; the prototype order and
+what keeps the CPU path is there.*
 
 ### Pre-render and Pixi items not ranked yet
 
