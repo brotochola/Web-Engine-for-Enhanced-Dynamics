@@ -170,6 +170,10 @@ test('with the stamp spec, the shadow stamp scratch and light table are regions 
     ['nearDist', s.nearDistByte, MAX * 3 * 4],
     ['nearSlot', s.nearSlotByte, MAX * 3 * 4],
     ['nearCount', s.nearCountByte, MAX],
+    ['packedX', s.packedXByte, MAX * 4],
+    ['packedY', s.packedYByte, MAX * 4],
+    ['cellOf', s.cellOfByte, MAX * 4],
+    ['dist64', s.dist64Byte, MAX * 8],
     ['lights', s.lightsByte, 20 * STAMP_LIGHT_DOUBLES * 8],
     ['table', s.tableByte, STAMP_TABLE_SLOTS * 4],
   ].sort((a, b) => a[1] - b[1]);

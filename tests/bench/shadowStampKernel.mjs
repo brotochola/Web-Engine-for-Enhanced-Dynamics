@@ -108,6 +108,10 @@ export async function createStampKernel(fx, opts, kernelUrl) {
     { name: 'nearDist', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
     { name: 'nearSlot', owner: 'pre-render', bytes: Math.max(1, s.sunN * maxPE) * 4 },
     { name: 'nearCount', owner: 'pre-render', bytes: Math.max(1, s.sunN) },
+    { name: 'packedX', owner: 'pre-render', bytes: Math.max(1, s.sunN) * 4 },
+    { name: 'packedY', owner: 'pre-render', bytes: Math.max(1, s.sunN) * 4 },
+    { name: 'cellOf', owner: 'pre-render', bytes: Math.max(1, s.sunN) * 4 },
+    { name: 'dist64', owner: 'pre-render', bytes: Math.max(1, s.sunN) * 8 },
     { name: 'table', owner: 'pre-render', bytes: STAMP_SLOTS.length * 4 },
   );
   const layout = layoutRegions(regions);
@@ -151,6 +155,10 @@ export async function createStampKernel(fx, opts, kernelUrl) {
   put('nearDist', R.nearDist.byte);
   put('nearSlot', R.nearSlot.byte);
   put('nearCount', R.nearCount.byte);
+  put('packedX', R.packedX.byte);
+  put('packedY', R.packedY.byte);
+  put('cellOf', R.cellOf.byte);
+  put('dist64', R.dist64.byte);
 
   const { stamp_light_range: stampRange } = await loadWasmKernel('shadowStamp', kernelUrl, memory, ['stamp_light_range']);
   /** The product wrapper: the light objects into the table, then one call of `fn` (a variant's export). */

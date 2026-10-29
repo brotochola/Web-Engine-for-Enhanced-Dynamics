@@ -6,8 +6,13 @@
    stamp output are GPU-queue regions, the scratch and the lights the stamp regions); the lights are a table of five
    doubles each (x, y, intensity, rangeSq, maxShadows), NaN rangeSq for an empty slot. Arithmetic as the
    JS does it: positions and distances in double, stored as float where the JS stores into a
-   Float32Array, Math.floor(..) | 0 through an exact ToInt32. Returns the stamp cursor. */
+   Float32Array, Math.floor(..) | 0 through an exact ToInt32. Returns the stamp cursor.
+   E-160: the grid also packs the casters' x and y in its own order (two float arrays), so a light's walk reads them
+   there and not out of each candidate's 88-byte row; the build reads each row once. The walk keeps each candidate's
+   double distance, which the per-caster nearest lights take instead of reading the row again; a caster row is copied
+   in v128s. The stamp is the same, bit for bit (tests/bench/shadowStampReplay.mjs replays Predator's own frames). */
 #include <stdint.h>
+#include <wasm_simd128.h>
 
 #define INLINE static inline __attribute__((always_inline))
 #define STAMP_CELL 256.0
@@ -19,6 +24,7 @@ enum {
   T_GRID_COUNTS, T_GRID_STARTS, T_GRID_ITEMS, T_GRID_COUNTS_CAP, T_GRID_ITEMS_CAP,
   T_STAMP, T_STAMP_FLOATS, T_STAMP_CAP, T_STAMP_BASE, T_STAMP_LIGHT_IDX, T_LIGHT_FLOAT,
   T_NEAR_DIST, T_NEAR_SLOT, T_NEAR_COUNT,
+  T_PACKED_X, T_PACKED_Y, T_CELL_OF, T_DIST64,
   SLOT_COUNT
 };
 
@@ -48,8 +54,9 @@ INLINE int32_t floor_int32(double x) { return js_to_int32(__builtin_floor(x)); }
 
 typedef struct { double minX, minY; int32_t gw, gh; } Grid;
 
-/* buildStampGrid. 0: no grid (the full scan runs). Inlined, so g stays in locals (no stack). */
-INLINE int build_grid(const float *sun, uint32_t nSun, uint32_t sf, int32_t *counts, int32_t *starts,
+/* buildStampGrid. 0: no grid (the full scan runs). Inlined, so g stays in locals (no stack). The stamp below builds
+   build_grid_packed; this one is the float32 test module's (wasm/test/shadowStampF32.c). */
+__attribute__((unused)) INLINE int build_grid(const float *sun, uint32_t nSun, uint32_t sf, int32_t *counts, int32_t *starts,
                       uint32_t *items, uint32_t countsCap, uint32_t itemsCap, Grid *g) {
   double minX = __builtin_inf();
   double minY = __builtin_inf();
@@ -98,6 +105,69 @@ INLINE int build_grid(const float *sun, uint32_t nSun, uint32_t sf, int32_t *cou
     if (row < 0) row = 0;
     else if (row >= gh) row = gh - 1;
     items[cursor[row * gw + col]++] = c;
+  }
+  g->minX = minX;
+  g->minY = minY;
+  g->gw = gw;
+  g->gh = gh;
+  return 1;
+}
+
+/* build_grid, with the casters' x and y packed in its item order (cell by cell, caster order within a cell) at px
+   and py. The first pass keeps each row's x and y at tx and ty (scratch the gather does not use until the first
+   light), and the other passes read them there: the same cells and items as build_grid. */
+INLINE int build_grid_packed(const float *sun, uint32_t nSun, uint32_t sf, int32_t *counts, int32_t *starts,
+                             uint32_t *items, uint32_t countsCap, uint32_t itemsCap, Grid *g, float *tx, float *ty,
+                             float *px, float *py, int32_t *cellOf) {
+  double minX = __builtin_inf();
+  double minY = __builtin_inf();
+  double maxX = -__builtin_inf();
+  double maxY = -__builtin_inf();
+  for (uint32_t c = 0; c < nSun; c++) {
+    const float fx = sun[c * sf];
+    const float fy = sun[c * sf + 1];
+    tx[c] = fx;
+    ty[c] = fy;
+    const double x = fx;
+    const double y = fy;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+  }
+  if (!(minX - minX == 0.0)) return 0; /* !Number.isFinite(minX) */
+  const int64_t gw64 = (int64_t)floor_int32((maxX - minX) / STAMP_CELL) + 1;
+  const int64_t gh64 = (int64_t)floor_int32((maxY - minY) / STAMP_CELL) + 1;
+  const int64_t cells = gw64 * gh64;
+  if (gw64 < 1 || gh64 < 1 || cells > (int64_t)countsCap || cells > (int64_t)STAMP_GRID_MAX_CELLS || nSun > itemsCap) return 0;
+  const int32_t gw = (int32_t)gw64;
+  const int32_t gh = (int32_t)gh64;
+  const int32_t n = (int32_t)cells;
+  for (int32_t i = 0; i < n; i++) counts[i] = 0;
+  for (uint32_t c = 0; c < nSun; c++) {
+    int32_t col = floor_int32(((double)tx[c] - minX) / STAMP_CELL);
+    int32_t row = floor_int32(((double)ty[c] - minY) / STAMP_CELL);
+    if (col < 0) col = 0;
+    else if (col >= gw) col = gw - 1;
+    if (row < 0) row = 0;
+    else if (row >= gh) row = gh - 1;
+    const int32_t cell = row * gw + col;
+    cellOf[c] = cell;
+    counts[cell]++;
+  }
+  int32_t sum = 0;
+  for (int32_t i = 0; i < n; i++) {
+    starts[i] = sum;
+    sum += counts[i];
+  }
+  starts[n] = (int32_t)nSun;
+  int32_t *cursor = counts;
+  for (int32_t i = 0; i < n; i++) cursor[i] = starts[i];
+  for (uint32_t c = 0; c < nSun; c++) {
+    const int32_t p = cursor[cellOf[c]]++;
+    items[p] = c;
+    px[p] = tx[c];
+    py[p] = ty[c];
   }
   g->minX = minX;
   g->minY = minY;
@@ -251,14 +321,28 @@ INLINE uint32_t take_closest(const uint32_t *tmpIdx, const float *tmpDist, uint3
   return m;
 }
 
+/* One caster row into a stamp row: a caster row's 22 floats in five v128 and a 64-bit lane when both strides are
+   that (a memcpy of 88 bytes would be memory.copy, a runtime call in V8); otherwise float by float. */
+INLINE void copy_row(float *d, const float *s, uint32_t sf, uint32_t df) {
+  if (sf == 22 && df == 22) {
+    wasm_v128_store(d, wasm_v128_load(s));
+    wasm_v128_store(d + 4, wasm_v128_load(s + 4));
+    wasm_v128_store(d + 8, wasm_v128_load(s + 8));
+    wasm_v128_store(d + 12, wasm_v128_load(s + 12));
+    wasm_v128_store(d + 16, wasm_v128_load(s + 16));
+    wasm_v128_store64_lane(d + 20, wasm_v128_load64_zero(s + 20), 0);
+    return;
+  }
+  const uint32_t row = sf < df ? sf : df;
+  for (uint32_t f = 0; f < row; f++) d[f] = s[f];
+}
+
 /* appendStampedCasters for one light vec4 (already float, as the JS Float32Array lightVec holds it). */
 INLINE int32_t append_stamped(float *dst, uint32_t df, int32_t out, const float *src, uint32_t sf, const uint32_t *indices,
                               uint32_t n, const float *lightVec, int32_t cap, uint32_t lightAt) {
-  const uint32_t row = sf < df ? sf : df;
   for (uint32_t k = 0; k < n && out < cap; k++) {
-    const uint32_t s0 = indices[k] * sf;
     float *d = dst + (uint32_t)out * df;
-    for (uint32_t f = 0; f < row; f++) d[f] = src[s0 + f];
+    copy_row(d, src + indices[k] * sf, sf, df);
     d[lightAt] = lightVec[0];
     d[lightAt + 1] = lightVec[1];
     d[lightAt + 2] = lightVec[2];
@@ -297,14 +381,21 @@ int32_t stamp_light_range(uint32_t table) {
   float *nearDist = (float *)(uintptr_t)t[T_NEAR_DIST];
   int32_t *nearSlot = (int32_t *)(uintptr_t)t[T_NEAR_SLOT];
   uint8_t *nearCount = (uint8_t *)(uintptr_t)t[T_NEAR_COUNT];
+  float *px = (float *)(uintptr_t)t[T_PACKED_X];
+  float *py = (float *)(uintptr_t)t[T_PACKED_Y];
+  int32_t *cellOf = (int32_t *)(uintptr_t)t[T_CELL_OF];
+  double *d64 = (double *)(uintptr_t)t[T_DIST64];
   float lightVec[4];
 
   if (begin < 0) begin = 0;
   if (nSun == 0) return cursor;
   if (maxPE > 0) for (uint32_t c = 0; c < nSun; c++) nearCount[c] = 0;
   Grid g;
+  /* tmpIdx and dist hold the rows' x and y while the grid is built: they are maxSun long, and the gather does not
+     use them until the first light. */
   const int grid = gridCounts && gridStarts && gridItems
-    ? build_grid(sun, nSun, sf, gridCounts, gridStarts, gridItems, t[T_GRID_COUNTS_CAP], t[T_GRID_ITEMS_CAP], &g)
+    ? build_grid_packed(sun, nSun, sf, gridCounts, gridStarts, gridItems, t[T_GRID_COUNTS_CAP], t[T_GRID_ITEMS_CAP], &g,
+                        dist, (float *)tmpIdx, px, py, cellOf)
     : 0;
   for (int32_t i = begin; i < capL && (maxPE > 0 || cursor < cap); i += stride) {
     const double *L = lights + (uint32_t)i * LIGHT_DOUBLES;
@@ -339,13 +430,13 @@ int32_t stamp_light_range(uint32_t table) {
           const int32_t from = gridStarts[cell];
           const int32_t to = gridStarts[cell + 1];
           for (int32_t p = from; p < to && m < tmpCap; p++) {
-            const uint32_t c = gridItems[p];
-            const double dx = (double)sun[c * sf] - lx;
-            const double dy = (double)sun[c * sf + 1] - ly;
+            const double dx = (double)px[p] - lx;
+            const double dy = (double)py[p] - ly;
             const double d2 = dx * dx + dy * dy;
             if (d2 > rangeSq) continue;
-            tmpIdx[m] = c;
+            tmpIdx[m] = gridItems[p];
             dist[m] = (float)d2;
+            d64[m] = d2;
             m++;
           }
         }
@@ -358,21 +449,28 @@ int32_t stamp_light_range(uint32_t table) {
         if (d2 > rangeSq) continue;
         tmpIdx[m] = c;
         dist[m] = (float)d2;
+        d64[m] = d2;
         m++;
       }
     }
-    if (grid && m > 1 && maxPE == 0 && !(lim > 0 && m > (uint32_t)lim)) sort_pairs_by_index(tmpIdx, dist, m);
     if (m == 0) continue;
-    m = take_closest(tmpIdx, dist, order, m, lim, keep, maxPE == 0);
     if (maxPE > 0) {
-      for (uint32_t k = 0; k < m; k++) {
-        const uint32_t c = keep[k];
-        const double dx = (double)sun[c * sf] - lx;
-        const double dy = (double)sun[c * sf + 1] - ly;
-        note_nearest(nearDist, nearSlot, nearCount, c, i, dx * dx + dy * dy, maxPE);
+      /* takeClosest without its copy (the kept slice is not sorted here, E-133): the kept are order[0..lim) when it
+         selects, else every candidate, and each brings its own distance. */
+      if (lim > 0 && m > (uint32_t)lim) {
+        for (uint32_t k = 0; k < m; k++) order[k] = k;
+        quickselect_order(order, dist, 0, (int32_t)m - 1, lim - 1);
+        for (int32_t k = 0; k < lim; k++) {
+          const uint32_t at = order[k];
+          note_nearest(nearDist, nearSlot, nearCount, tmpIdx[at], i, d64[at], maxPE);
+        }
+      } else {
+        for (uint32_t k = 0; k < m; k++) note_nearest(nearDist, nearSlot, nearCount, tmpIdx[k], i, d64[k], maxPE);
       }
       continue;
     }
+    if (grid && m > 1 && !(lim > 0 && m > (uint32_t)lim)) sort_pairs_by_index(tmpIdx, dist, m);
+    m = take_closest(tmpIdx, dist, order, m, lim, keep, 1);
     lightVec[0] = (float)lx;
     lightVec[1] = (float)ly;
     lightVec[2] = (float)intensity;
@@ -392,10 +490,14 @@ int32_t stamp_light_range(uint32_t table) {
       lightVec[1] = (float)L[1];
       lightVec[2] = (float)L[2];
       lightVec[3] = (float)L[3];
-      keep[0] = c;
-      const int32_t written = append_stamped(stamp, df, cursor, sun, sf, keep, 1, lightVec, cap, lightAt);
-      if (stampLightIdx && written > cursor) stampLightIdx[cursor] = (uint16_t)li;
-      cursor = written;
+      float *d = stamp + (uint32_t)cursor * df;
+      copy_row(d, sun + c * sf, sf, df);
+      d[lightAt] = lightVec[0];
+      d[lightAt + 1] = lightVec[1];
+      d[lightAt + 2] = lightVec[2];
+      d[lightAt + 3] = lightVec[3];
+      if (stampLightIdx) stampLightIdx[cursor] = (uint16_t)li;
+      cursor++;
     }
   }
   return cursor;

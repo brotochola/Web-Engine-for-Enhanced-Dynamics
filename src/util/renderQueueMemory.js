@@ -251,6 +251,10 @@ function stampLayout(r, stamp) {
     nearDistByte: r.stampNearDist.byte,
     nearSlotByte: r.stampNearSlot.byte,
     nearCountByte: r.stampNearCount.byte,
+    packedXByte: r.stampPackedX.byte,
+    packedYByte: r.stampPackedY.byte,
+    cellOfByte: r.stampCellOf.byte,
+    dist64Byte: r.stampDist64.byte,
     lightsByte: r.stampLights.byte,
     tableByte: r.stampTable.byte,
     // The cookies' queue (createRenderQueueViews at cookieQueueByte, cookies rows), -1 without one.

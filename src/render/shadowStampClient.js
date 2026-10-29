@@ -17,6 +17,8 @@ export const STAMP_SLOTS = [
   'gridCounts', 'gridStarts', 'gridItems', 'gridCountsCap', 'gridItemsCap',
   'stamp', 'stampFloats', 'stampCap', 'stampBase', 'stampLightIdx', 'lightFloat',
   'nearDist', 'nearSlot', 'nearCount',
+  // E-160: the casters' x and y packed in the grid's order, each caster's cell, the candidates' double distances.
+  'packedX', 'packedY', 'cellOf', 'dist64',
 ];
 if (STAMP_SLOTS.length > STAMP_TABLE_SLOTS) throw new Error('shadowStamp: the column table outgrew its region');
 
@@ -48,6 +50,10 @@ const LIGHT_FLOAT = 24;
 const NEAR_DIST = 25;
 const NEAR_SLOT = 26;
 const NEAR_COUNT = 27;
+const PACKED_X = 28;
+const PACKED_Y = 29;
+const CELL_OF = 30;
+const DIST64 = 31;
 
 /**
  * Bind the kernel to the render-queue memory.
@@ -67,6 +73,10 @@ export async function bindShadowStamp(memory, stamp) {
   table[NEAR_DIST] = stamp.nearDistByte;
   table[NEAR_SLOT] = stamp.nearSlotByte;
   table[NEAR_COUNT] = stamp.nearCountByte;
+  table[PACKED_X] = stamp.packedXByte;
+  table[PACKED_Y] = stamp.packedYByte;
+  table[CELL_OF] = stamp.cellOfByte;
+  table[DIST64] = stamp.dist64Byte;
   return {
     buffer,
     stampRange: k.stamp_light_range,

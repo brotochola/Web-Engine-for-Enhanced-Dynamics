@@ -212,6 +212,11 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampNearDist', owner: 'pre-render', bytes: near * 4 },
       { name: 'stampNearSlot', owner: 'pre-render', bytes: near * 4 },
       { name: 'stampNearCount', owner: 'pre-render', bytes: sun },
+      // E-160: the grid's packed x and y, each caster's cell, and the candidates' double distances.
+      { name: 'stampPackedX', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampPackedY', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampCellOf', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampDist64', owner: 'pre-render', bytes: sun * 8 },
       { name: 'stampLights', owner: 'pre-render', bytes: (stamp.maxLights | 0) * STAMP_LIGHT_DOUBLES * 8 },
       { name: 'stampTable', owner: 'pre-render', bytes: STAMP_TABLE_SLOTS * 4 },
       // The light cookies' queue, the render queue's layout at maxCookie rows (renderQueueLayout.js).

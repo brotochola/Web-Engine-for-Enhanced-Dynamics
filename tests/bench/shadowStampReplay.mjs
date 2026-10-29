@@ -70,7 +70,7 @@ export async function createStampReplay(capture, kernelUrl) {
     regions.push({ name: `sun${i}`, owner: 'pre-render', bytes: Math.max(4, f.sun.byteLength) });
     regions.push({ name: `lights${i}`, owner: 'pre-render', bytes: Math.max(8, f.lights.byteLength) });
   });
-  for (const name of ['tmpIdx', 'dist', 'order', 'keep', 'gridItems', 'nearCount']) {
+  for (const name of ['tmpIdx', 'dist', 'order', 'keep', 'gridItems', 'nearCount', 'packedX', 'packedY', 'cellOf']) {
     regions.push({ name, owner: 'pre-render', bytes: maxSun * 4 });
   }
   regions.push(
@@ -80,6 +80,7 @@ export async function createStampReplay(capture, kernelUrl) {
     { name: 'nearSlot', owner: 'pre-render', bytes: maxSun * maxPE * 4 },
     { name: 'stamp', owner: 'pre-render', bytes: maxCap * floats * 4 },
     { name: 'stampLightIdx', owner: 'pre-render', bytes: maxCap * 2 },
+    { name: 'dist64', owner: 'pre-render', bytes: maxSun * 8 },
     { name: 'table', owner: 'pre-render', bytes: STAMP_TABLE_SLOTS * 4 },
   );
   const layout = layoutRegions(regions);
@@ -124,6 +125,10 @@ export async function createStampReplay(capture, kernelUrl) {
     put('nearDist', R.nearDist.byte);
     put('nearSlot', R.nearSlot.byte);
     put('nearCount', R.nearCount.byte);
+    put('packedX', R.packedX.byte);
+    put('packedY', R.packedY.byte);
+    put('cellOf', R.cellOf.byte);
+    put('dist64', R.dist64.byte);
     return t;
   });
   const table = new Uint32Array(buffer, R.table.byte, STAMP_TABLE_SLOTS);
