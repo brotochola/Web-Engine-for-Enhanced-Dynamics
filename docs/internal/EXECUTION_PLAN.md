@@ -2872,7 +2872,36 @@ components' fields this way (`this.health.hp`).
 **Kept 2026-10-29** (60bbe557, kernel `componentFieldMicrobench`, 20b0d11f): each field's pair compiled on its own with
 `new Function`, reading its column by a constant name; the shared closures where compiling throws (a CSP without
 'unsafe-eval'). Chrome 156: 26.6 → 8.8 ns a field access; Node 44.7 → 10.0. No scene loads a worker past the floor
-with these reads (Adobe's logic is 91 ms/s): Predator is the regression guard, with E-169.
+with these reads (Adobe's logic is 91 ms/s): Predator is the regression guard, with E-169. Predator: neutral (logic
++0.4 %, 2/4; R-0730).
+
+### E-171 The FSM's ms per tick, a boxed double on each instance
+
+Wave 9's second map: in Predator's FSM `tick`, reading `this._msPerTick` (E-146's cache, a double field, which pointer
+compression keeps boxed) is 32 % of its self time. **Dropped 2026-10-29** (R-0733): the owner's tickInterval as a small
+integer was +8.3 % in `fsmTickMicrobench` at 3 000 owners and a tie at 20 000.
+
+### E-172 Every emitGpu call reads fourteen keys by name in a loop
+
+Found looking for E-169's and E-170's kind in the engine: `_emit` checked the CPU emit keys GPU particles ignore
+(`UNSUPPORTED_KEYS`, fourteen) with `cfg[key]` in a loop on every call, a keyed read by a different name each
+(megamorphic), for keys a config normally does not have. The call-per-entity-per-tick pattern (E-161) pays it on
+every call.
+
+**Kept 2026-10-29** (7dda9864, kernel `emitGpuCallMicrobench` ba8b03f5): one condition of named reads, and the warning
+loop only for a config that has one of them. Kernel 758 → 582 ns a call (−23 %). gpuParticlesStressScene `?trail=1024`
+(the call-per-tick pattern): logic 1.845 → 1.635 ms (−11.4 %, under the floor), renderer −2.5 % (0/4).
+
+### E-173 The CPU emit's config merge: keyed copies into a dictionary
+
+The same search: `_mergeCfg`, which every `emit`, `emitZenithal`, `emitFlat` and `emitAlongLine` call runs, copied the
+caller's config into a scratch with a loop of keyed reads and writes by the forty-three names of `_cfgFieldList`
+(megamorphic), and the scratch was `Object.create(null)`, which V8 keeps as a dictionary: `_spawn` then read the
+config's fields from a hash table, per particle.
+
+**Kept 2026-10-29** (aa8fff46, kernel case `emit_small` 19e896c1): the keys copied by name into a scratch that declares
+them all (one shape). `particleEmitMicrobench`: emitFlat bursts −36 %, emitZenithal −38 %, emitAlongLine −54 %, one
+particle a call −52 %; the case with no config flat.
 
 ---
 
