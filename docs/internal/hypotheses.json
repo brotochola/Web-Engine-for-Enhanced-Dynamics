@@ -9204,6 +9204,24 @@
     {
       "aliases": [],
       "refs": [
+        "REVIEW_PLAN.md#N-92"
+      ],
+      "records": [
+        "R-0740"
+      ],
+      "id": "N-92",
+      "title": "N-90's hot swap deleted a component's field accessors, and kept old code for a member named like a component",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0740)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Fixed 1b4d235f: engineAccessors.js marks the accessors the engine defines; patchClass keeps those and the engine's prototype flags, and copies and deletes everything else. hotSwap.test.js.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
         "EXECUTION_PLAN.md#E-168"
       ],
       "records": [
@@ -16082,6 +16100,18 @@
       "title": "Wave 9's third map and second heap pass: no new lead; Pixi's own cost is the instance upload (E-162)",
       "verdict": "note",
       "text": "**Wave 9's third map: eight more demos, no new lead; Pixi's own cost is the instance upload.** 2026-10-29,\n`profileSceneSweep --pass cpu` on the final tree (33350fb6 and after), headed, source, detailed stats off: carScene,\nbichosScene, mamushkaDigScene, badPiggiesScene, ballsScene, platformerGameScene, liquidFunDemoScene (blastforgeScene\nis not in the sweep's list).\n\n- At their defaults none loads an engine worker past 100 ms/s except Box2D's own work (ballsScene's physics 449 ms/s,\n  its solver) and the solver threads' waits (E-144). carScene's spatial is `publish_batch` 68 %, bichos' pre-render\n  and particle workers are under 65 ms/s; nothing in them is engine code of E-169's or E-173's kind.\n- **Pixi's own share** in the second map's scenes is almost all `updateBuffer` (pixi.min.js:792, the instance\n  buffer's upload each frame): 12.3 % of Predator's Pixi worker, 24.4 % of Boids', 35.9 % of Adobe's, 41.0 % of\n  painterMove's, beside W30's copy out of the shared memory (10–49 %). Uploading only what changed is E-162's design\n  (the statics out of draw order), the owner's call.\n\n**The heap pass on the final tree** (`--pass heap`, predatorScene, littleCityScene, spawnStormScene,\nadobeAnimateScene; KB/s per worker): nothing new from the session's second half.\n- Predator logic 352 and 330 (728 in the morning, before the trees stopped ticking): `_spawn` (the soldiers' sparks)\n  68, then the demo's `shoot` and `shootingSparks`; Pixi 377, Pixi's own `bind` the top site (87).\n- littleCity logic 7 241: `rng` 5 591, TrafficCar.tick 815, CityPerson.tick 305. After E-168 (R-0718) it read 6 601,\n  `rng` 4 201: the same box (the double `rng` returns to a tick too large to inline it), in an emergent scene.\n- spawnStorm logic 2 167, 2 119 of it the bench driver's configs; Adobe's logic 29.\n- Box2D's worker 58–585, nearly all `_emscripten_get_now` (the solver waits' clock reads, E-144)."
+    },
+    {
+      "id": "R-0740",
+      "date": "2026-10-29",
+      "time": "10:19",
+      "timeFrom": "recorded",
+      "title": "N-92 fixed: hot swap kept the engine's accessors by name; now by a mark, and a class's own members are its code",
+      "verdict": "kept-hygiene",
+      "text": "**N-92 fixed: N-90's hot swap deleted a component's field accessors, and kept old code for a member named like a\ncomponent.** 2026-10-29, found by Wave 9's second review of the day's commits (an agent's read of E-169, E-170, E-172,\nE-173, N-90 and N-91, which found nothing in the others), fixed in 1b4d235f.\n\n- `patchClass` deletes from the running prototype what the new version lacks. A component defined in the swapped\n  module has field accessors made by `initializeArrays` (E-170's, or the shared ones) and `_propertiesCreated`; its\n  new version, never initialized, has neither, so after the swap `new Health(3).hp` and `boid.health.hp` read\n  `undefined` until the class was initialized again (a scene reload). A module of components alone did this before\n  N-90 too; N-90 made modules with entity classes swap instead of reload, which reached it.\n- N-90's copy skipped every key named like one of the class's components. Registration leaves a member the class\n  defines under such a name in place of the component getter, so that member kept its old code through a swap, and\n  one the new version removed stayed.\n\nThe fix: `engineAccessors.js` marks the accessors the engine defines on game classes' prototypes (`FIELD_GETTERS` and\nthe slot-array getters in gameObject.js, the field accessor pairs in component.js, compiled or shared). The swap\nkeeps exactly those and the engine's prototype flags (`_componentAccessorsCreated`, `_hasComponents`,\n`_propertiesCreated`), and copies and deletes everything else as the class's code. `hotSwap.test.js`: a module whose\ncomponent was initialized keeps its field accessors through a swap (reads and writes the column), and a member named\nlike a component gets the new code; both fail without the fix. The older test's fake getter is marked as the engine's\nare. No timing: the marks are made once per accessor; `componentFieldMicrobench` reads 10.6 ns a field access after.",
+      "commits": [
+        "1b4d235f"
+      ]
     }
   ],
   "leads": [
