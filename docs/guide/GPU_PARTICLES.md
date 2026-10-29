@@ -138,7 +138,15 @@ How it is drawn:
 
 ## Capacity and overflow
 
-- **Particles:** `maxParticles` is split between the layer's rings, one per writer thread (the main thread, each logic worker, the particle worker), in equal shares unless `gpuRings` says otherwise, and each ring rounds **down** to a power of two (at least 64). With one logic worker, `maxParticles: 120000` makes three rings of 32 768; a scene that emits only from entities' ticks writes the logic worker's ring alone, so 32 768 of them are usable. Put the share where you emit, and check what you got with `GpuParticles.stats('smoke')` (each ring's `capacity`).
+- **Particles:** `maxParticles` is split between the layer's rings, one per writer thread (the main thread, each logic worker, the particle worker), in equal shares unless `gpuRings` says otherwise, and each ring rounds **down** to a power of two (at least 64). A thread can only use its own ring, so what counts is the ring of the thread that emits. With one logic worker:
+
+  | Layer config | Rings (main, logic, particle) | Usable when only entities emit |
+  | --- | --- | --- |
+  | `maxParticles: 120000` | 32 768, 32 768, 32 768 | 32 768 |
+  | `maxParticles: 120000, gpuRings: { main: 0, logic: 1, particle: 0 }` | 64, 65 536, 64 | 65 536 (120 000 rounds down) |
+  | `maxParticles: 131072, gpuRings: { main: 0, logic: 1, particle: 0 }` | 64, 131 072, 64 | 131 072 |
+
+  Put the share where you emit, ask for a power of two, and check what you got with `GpuParticles.stats('smoke')` (each ring's `capacity`). When a call is cut or a ring laps live particles, the warning says how much of `maxParticles` that thread's ring got and how to give it more.
 - **Calls:** each ring also keeps the last 2 048 `emitGpu` calls (groups), live or not. A call per entity per frame fills that fast (40 entities emitting every frame make 2 400 calls a second), so emit fewer, larger calls: one call with a `delay` range spreads its particles over time.
 - **Overflow:** a writer that laps its ring, in particles or in calls, writes over its oldest; a particle still alive there disappears early, the ring's `overflows` count goes up, and `emitGpu` warns once. Raise `maxParticles` or that writer's share in `gpuRings`, or make fewer, larger calls.
 

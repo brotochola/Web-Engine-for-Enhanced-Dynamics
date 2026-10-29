@@ -269,6 +269,8 @@ export class GpuParticles {
         look: !!config.shader?.fragment,
         pixelSnap: config.pixelSnap === true,
         maxParticles: caps.reduce((a, b) => a + b, 0),
+        // What the config asked for, for the warnings that say how much of it a thread's ring got.
+        requested: config.maxParticles ?? 100000,
       });
     }
     if (this._layers.some((l) => l && l.sortWithEntities)) this.proxySab = new SharedArrayBuffer(proxyMemoryBytes());
@@ -339,6 +341,12 @@ export class GpuParticles {
   }
 
   /** Warn once per key in this realm; the message is built only the first time. */
+  /** How a thread's ring came out of the layer's maxParticles, and how to give it more (the warnings' advice). */
+  static _ringShareText(info, ring) {
+    const writers = info.rings.length;
+    return `maxParticles ${info.requested} is split between ${writers} writer rings (the main thread, each logic worker, the particle worker), each rounded down to a power of two: this one got ${ring.capacity}. Give the thread that emits a larger share with gpuRings (for example { main: 0, logic: 1, particle: 0 } when only entities emit), or raise maxParticles.`;
+  }
+
   static _warnOnce(key, msg) {
     if (this._warned.has(key)) return;
     this._warned.add(key);
@@ -384,7 +392,7 @@ export class GpuParticles {
     const n = count > ring.capacity ? ring.capacity : count;
     if (n < count && !info.warnedClamp) {
       info.warnedClamp = true;
-      console.warn(`ParticleEmitter.emitGpu: ${count} particles is more than this thread's ring in "${info.name}" holds (${ring.capacity}); ${n} were written. Raise the layer's maxParticles or this thread's gpuRings share.`);
+      console.warn(`ParticleEmitter.emitGpu: ${count} particles is more than this thread's ring in "${info.name}" holds (${ring.capacity}); ${n} were written. ${this._ringShareText(info, ring)}`);
     }
 
     // Epoch: births are float32 ms after it, so a quiet ring moves it to now.
@@ -409,7 +417,7 @@ export class GpuParticles {
         Atomics.add(header, GPU_RING.OVERFLOW, 1);
         if (!info.warnedOverflow) {
           info.warnedOverflow = true;
-          console.warn(`ParticleEmitter.emitGpu: "${info.name}" wrote over particles that were still alive: this thread's ring holds ${ring.capacity} particles and ${ring.groupCapacity} emitGpu calls. Raise the layer's maxParticles or this thread's gpuRings share, or make fewer, larger calls.`);
+          console.warn(`ParticleEmitter.emitGpu: "${info.name}" wrote over particles that were still alive: this thread's ring holds ${ring.capacity} particles and ${ring.groupCapacity} emitGpu calls. ${this._ringShareText(info, ring)} Or make fewer, larger calls.`);
         }
       }
     }
