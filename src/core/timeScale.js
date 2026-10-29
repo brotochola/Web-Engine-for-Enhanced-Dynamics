@@ -14,6 +14,8 @@ export const CLOCK_BYTES = 32;
 
 /** Time.simNowMs's result (readSimNowInto writes it). */
 const SIM_NOW = new Float64Array(1);
+/** This realm's last consistent read of the clock: base, its wall time, the scale, running (readSimNowInto's fallback). */
+const SIM_LAST = new Float64Array(4);
 
 /** The wall time in ms since the epoch, comparable between threads. */
 function wallNowMs() {
@@ -135,11 +137,17 @@ export class Time {
       const running = run[0];
       const scale = sanitizeTimeScale(view[TIME_SCALE_INDEX]);
       if (Atomics.load(seq, 0) === before) {
+        SIM_LAST[0] = base;
+        SIM_LAST[1] = at;
+        SIM_LAST[2] = scale;
+        SIM_LAST[3] = running;
         out[index] = running !== 0 && wall > at ? base + (wall - at) * scale : base;
         return;
       }
     }
-    out[index] = now[0];
+    // The writer held the clock through every try (descheduled inside its few stores): go on from this realm's last
+    // consistent read, not from the base of the last rebase, which can be minutes old (N-85).
+    out[index] = SIM_LAST[3] !== 0 && wall > SIM_LAST[1] ? SIM_LAST[0] + (wall - SIM_LAST[1]) * SIM_LAST[2] : SIM_LAST[0];
   }
 
   /**

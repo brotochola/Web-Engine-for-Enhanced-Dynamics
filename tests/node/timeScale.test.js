@@ -221,6 +221,29 @@ test('a started sim clock keeps time on its own, at Time.scale; a stop freezes i
   }
 });
 
+test('a reader that never finds the clock unlocked goes on from its last consistent read (N-85)', { concurrency: false }, () => {
+  const sab = new SharedArrayBuffer(CLOCK_BYTES);
+  new Float32Array(sab, 0, 1)[0] = 1;
+  Time.bind(sab);
+  const seq = new Int32Array(sab, 4, 1);
+  const base = new Float64Array(sab, 8, 2);
+  try {
+    Time._startSimClock();
+    busy(20);
+    const t1 = Time.simNowMs;
+    assert.ok(t1 >= 19, `the clock runs: ${t1}`);
+    // A writer descheduled inside its stores: the sequence stays odd, and the base it was rewriting reads 0.
+    Atomics.store(seq, 0, Atomics.load(seq, 0) + 1);
+    base[0] = 0;
+    busy(10);
+    const t2 = Time.simNowMs;
+    assert.ok(t2 - t1 >= 9 && t2 - t1 < 60, `${t1} -> ${t2}: on from the last read, not back to the stale base`);
+  } finally {
+    Atomics.store(seq, 0, (Atomics.load(seq, 0) + 1) & ~1);
+    Time.unbind();
+  }
+});
+
 test('another thread reads the clock moving while this one stalls', { concurrency: false }, async () => {
   const sab = new SharedArrayBuffer(CLOCK_BYTES);
   new Float32Array(sab, 0, 1)[0] = 1;
