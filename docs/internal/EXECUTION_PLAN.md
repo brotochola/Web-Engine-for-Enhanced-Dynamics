@@ -2816,6 +2816,10 @@ and one that steps the generator's state itself, were both 2–4 times slower in
 **Next:** why Chrome's workers do not inline `globalThis.rng()` (its property cell, written twice as `self.rng` and
 `globalThis.rng`); a heap sample of littleCity in Chrome decides any variant.
 
+**Kept (hygiene) 2026-10-29** (1971f620, R-0718): `rng()` steps a seeded generator's state itself when `globalThis.rng` is one.
+littleCity's logic allocates 10 573 → 6 601 KB/s (−38 %); logic −3.9 % over 4 pairs. One box remains where a large
+tick does not inline `rng()`.
+
 ---
 
 ## Not doing (read the log first)
