@@ -2835,6 +2835,26 @@ word for word (the depth aside). At 300 000 rows a moved painter frame's pack go
 the statics kept (−71.8 %), 3.675 writing them too. Steps 2 and 3 go together: pre-render cannot send a frame Pixi
 cannot draw.
 
+**Step 3's groundwork, same day** (199bb5be, 3fff9b14): the indexed statics take 12 words a row
+(GPU_INDEXED_STATIC_FLOATS, three RGBA32UI texels), and `spriteIndexedVertex` (src/render/spriteIndexed.js) rewrites
+instancedSprite.vert.glsl to fetch them by row, the depth from the draw slot; it compiles and links with the sprite
+fragment shader in Chrome 156's WebGL2 (`spriteIndexedCompileCheck.mjs`), 4 vertex attributes against 10.
+
+**What is left, as a map for the next session:**
+- **The queue (step 2):** GPU_FLAG_INDEXED; the sprite region as poses (capacity × 4 floats), rows (capacity u32) and
+  statics (staticsTextureHeight(capacity) × 1 024 rows × 12 words), sized in renderQueueMemory; GPU_HDR_STATIC_GEN
+  then names the row-order statics' generation.
+- **Pre-render (step 2):** where the painter-sorted frame calls `packSplitRowsWasm`, call `packIndexedRowsWasm`
+  instead when Pixi has said it draws indexed frames (a flag at init), with the statics only when their generation
+  moved: the queue's staticGen without E-159's orderGen. A frame the indexed pack declines stays split.
+- **Pixi on WebGL2 (step 3):** an `indexed` mode in InstancedSpriteBatch: the pose and row buffers as instance
+  attributes (the row a 'uint32' attribute with `in uint aInstRow`, or the kernel writes it as a float, exact under
+  2^24), the statics an RGBA32UI texture (3 072 texels wide) re-uploaded on a new generation, the program from
+  spriteIndexedVertex, `uFirstInstance` set per drawn chunk and `uInvDepthDenom` per frame.
+- **The proof:** a Chromium pixel check (painterMove's shape drawn split and indexed, the same pixels), then step 4
+  (WGSL, `textureLoad` on a `texture_2d<u32>`), painterMove (pre-render and Pixi owners), painterSort and a Predator
+  gate.
+
 ### E-163 The gather's cell order past 65 536 cells
 
 `order_by_cell` (`spatialGather.c`) sorts a rebuild list by home cell with two radix passes on a 16-bit cell index. A
