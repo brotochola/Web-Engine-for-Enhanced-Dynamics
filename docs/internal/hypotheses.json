@@ -9164,6 +9164,24 @@
       "kind": "js",
       "result": "Kept (hygiene), 1971f620: littleCity logic allocation 10 573 -> 6 601 KB/s (-38 %); logic -3.9 % (load keys drifted in the emergent scene). One box is left where a tick too large to inline rng() receives its double.",
       "next": "Find why Chrome workers do not inline globalThis.rng() (the property cell, the two assignments self.rng and globalThis.rng); a heap sample of littleCity in Chrome decides any variant."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-169"
+      ],
+      "records": [
+        "R-0728"
+      ],
+      "id": "E-169",
+      "title": "A spawn config's keys go through instance[key]: x and y by name, other keys read once",
+      "status": "kept",
+      "statusText": "kept 2026-10-29 (R-0728)",
+      "date": "2026-10-29",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Kept d11d29f3: _spawnAt sets x and y by name in their place in the config's order and reads every other key once; spawnStormScene logic 3.431 -> 2.644 ms (-22.4 %, 0/4 worse).",
+      "next": "Nothing pending; Predator gate with the next batch."
     }
   ],
   "records": [
@@ -15798,6 +15816,18 @@
       "text": "**DX-GPCLOCK kept with a hold: the clock moves once a main frame, and its readers carry it on past 100 ms.**\n2026-10-29, `4072de40`.\n\n**The change.** Scene's frame loop steps the clock at each main frame (`Time._stepSimFrame`, at the frame's wall\ntime), by the frame's time times the scale, as before cb72506a. A main thread that gives no frame for\n`SIM_CLOCK_HOLD_MS` (100 ms) does not hold it back: past that the readers carry it on at the scale, and the next frame\ngoes on from where they were (a stall's frame steps at least a hold, as the old 100 ms clamp gave a long frame). So\nDX-GPCLOCK's point stays (a stalled page does not freeze GPU particles), and the page's frames come back.\n\n**The sitting** W9-clock-hybrid (A = the branch at 1bf13c42, B = the change as a throwaway commit aedc04f9; 4 pairs,\nworktrees, headed, source, detailed stats off, GPU Galaxy `particles=8388608&arms=8`, owner the renderer): KEPT\n(product). Presented 51.8 → 54.7 fps (+6.0 %, fewer 1/4, cv 6/2 %); renderer 4.203 → 4.060 ms (−4.7 %, worse 1/4,\ncv 7/2 %); logic 1.410 → 1.213 ms (under the floor: the arms' old cadence). That is the whole loss of R-0724 (−4.9 %)\nand of W9-clock-share (−3.7 %), within the pairs' spread.\n\n**Why it costs** is Chrome's frame scheduling of a GPU-heavy page, not the GPU's work (the diagnostic record): a clock\nthat moves with the main frame keeps the page at a higher frame rate; R-0707's `?batchMs` showed it is not the arms'\nemit cadence.\n\nTests: `timeScale.test.js` (the clock holds between frames, steps by the frame at the scale, a hitstop and a stop\nfreeze it, past the hold the readers carry it on and the next frame goes on from there, N-85's fallback, another\nthread sees it move while this one stalls). `npm run test:node` 2 102/2 102, `test:demos` 100/100.",
       "commits": [
         "4072de40"
+      ]
+    },
+    {
+      "id": "R-0728",
+      "date": "2026-10-29",
+      "time": "08:39",
+      "timeFrom": "recorded",
+      "title": "E-169 kept: a spawn config's x and y by name, other keys read once (spawnStorm logic -22.4 %)",
+      "verdict": "kept",
+      "text": "**E-169 kept: a spawn config's x and y by name, other keys read once.** 2026-10-29, d11d29f3.\n\n**The finding** (Wave 9's second map, `profileSceneSweep --pass cpu` over eight scenes on the branch after\nDX-GPCLOCK's hold): spawnStormScene's logic is 232 ms/s (375 in the morning, before E-165), and `_spawnAt` is still\n33.8 % of it. Its hot lines: `instance[key] = spawnConfig[key]` 41 % and `if (instance[key] !== undefined && typeof\ninstance[key] !== 'function')` 10 %, the loop that applies the spawn config. Keyed reads and writes by the config's\nnames, over every class this one loop sees, go megamorphic, and for an accessor each read is a getter call (two per\nkey). spawnStorm's driver spawns `{ x, y }`, as nearly every config in the demos starts.\n\n**The change:** x and y are plain named writes at their place in the config's order (a setter that runs before them\nstill sees the slot's old position); every other key reads its current value once. `spawnConfigKeys.test.js` pins\nthe order and the single getter read (it fails on the second without the change).\n\n**The sitting** (4 pairs, worktrees, headed, source, detailed stats off, owner logic, A = 28b10399, B = the change):\n**logic 3.431 → 2.644 ms (−22.4 %, worse 0/4, cv 2/4 %)**; BODY_COUNT 476 → 460 (−3.5 %, within 5 %), entities\nprocessed 2 001 both, presented 60.0 both; every other worker under the floor.",
+      "commits": [
+        "d11d29f3"
       ]
     }
   ],
