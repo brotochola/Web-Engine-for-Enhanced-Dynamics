@@ -179,3 +179,24 @@ test('a joined group widens before its count grows, and its records are publishe
     restore();
   }
 });
+
+test('a call whose records took long does not join a group that may have ended meanwhile', { concurrency: false }, () => {
+  const restore = setup();
+  const read = Time.readSimNowInto;
+  try {
+    ParticleEmitter.emitGpu({ ...A, lifespan: 120 }); // its group ends 120 ms after now
+    // The next call reads the clock at its start, and again 50 ms later, after its records: its loop ran long.
+    const seen = [];
+    Time.readSimNowInto = function (out, index) {
+      read.call(Time, out, index);
+      if (seen.length === 1) out[index] += 50;
+      seen.push(out[index]);
+    };
+    ParticleEmitter.emitGpu({ ...B, delay: 0 });
+    assert.equal(seen.length, 2, 'the join read the clock again');
+    assert.equal(groups(), 2, 'a group of its own: the first ends within the join margin of the later read');
+  } finally {
+    Time.readSimNowInto = read;
+    restore();
+  }
+});

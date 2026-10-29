@@ -686,7 +686,7 @@ export class GpuParticles {
     // key), never a sorted look layer (its region is its groups' rectangle). The last group must be this epoch's,
     // end where this call's records start, carry the same flags, have room in the ring, and live a while yet.
     const lg = (((groupCursor - 1) >>> 0) & (ring.groupCapacity - 1)) * GPU_GROUP_WORDS;
-    if (
+    let join =
       now <= ring.joinUntil[0] &&
       ((gb[lg + GPU_GROUP.FIRST] + gb[lg + GPU_GROUP.COUNT]) >>> 0) === cursor &&
       gb[lg + GPU_GROUP.EPOCH_GEN] === epochGen &&
@@ -694,8 +694,16 @@ export class GpuParticles {
       gb[lg + GPU_GROUP.COUNT] + n <= cap &&
       gw[lg + GPU_GROUP.END_F] > nowRel + GPU_GROUP_JOIN_LIVE_MS &&
       (!info.sortWithEntities ||
-        (!info.look && Math.floor(gw[lg + GPU_GROUP.SORT_Y_F] + 0.5) === Math.floor(Math.fround(CALL[CENTER_Y]) + 0.5)))
-    ) {
+        (!info.look && Math.floor(gw[lg + GPU_GROUP.SORT_Y_F] + 0.5) === Math.floor(Math.fround(CALL[CENTER_Y]) + 0.5)));
+    if (join) {
+      // The records above can take long (a large call, a GC, a descheduled thread), and a renderer frame meanwhile
+      // retires a group that has ended for good: records published into it would be drawn by no later frame. The
+      // window and the group's life are checked again on the clock as it reads now.
+      Time.readSimNowInto(CALL, NOW);
+      const later = CALL[NOW];
+      join = later <= ring.joinUntil[0] && gw[lg + GPU_GROUP.END_F] > later - ring.epoch[0] + GPU_GROUP_JOIN_LIVE_MS;
+    }
+    if (join) {
       // Widen, then grow, then publish: a reader that sees the new records sees the group that holds them.
       if (birthMin < gw[lg + GPU_GROUP.BIRTH_F]) gw[lg + GPU_GROUP.BIRTH_F] = birthMin;
       if (endMax > gw[lg + GPU_GROUP.END_F]) gw[lg + GPU_GROUP.END_F] = endMax;
