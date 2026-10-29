@@ -9390,7 +9390,9 @@
     },
     {
       "aliases": [],
-      "refs": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-175"
+      ],
       "records": [
         "R-0751"
       ],
@@ -9402,7 +9404,93 @@
       "area": "pixi",
       "kind": "speed",
       "result": "",
-      "next": "Owner Predator renderer. First the cheapest: decalTileContainer.isRenderGroup = true (the camera moves the group, not 800 children) and the tiles outside the view hidden; if the batch and the texture binds stay, the tiles as one instanced batch of the engine over one atlas or array texture. ABAB 4 pairs, renderer STEP_MS - WAIT_MS."
+      "next": "Owner Predator renderer. First the cheapest: decalTileContainer.isRenderGroup = true (the camera moves the group, not 800 children) and the tiles outside the view hidden; if the batch and the texture binds stay, the tiles as one instanced batch of the engine over one atlas or array texture. ABAB 4 pairs, renderer STEP_MS - WAIT_MS.",
+      "rank": 8
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-10-29",
+      "result": "",
+      "refs": [
+        "EXECUTION_PLAN.md#E-176"
+      ],
+      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "id": "E-176",
+      "rank": 9,
+      "area": "spatial",
+      "kind": "speed",
+      "title": "Spatial finds neighbours for types that never read them",
+      "next": "Step 0: which types read neighbours in each demo. Then the accessors mark their type in a shared byte array and spatial skips types unmarked in the last K frames. Owner adobeAnimateScene spatial (_findNeighbors 34.6 % of 184 ms/s); Predator neutral. EXECUTION_PLAN.md#E-176."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-10-29",
+      "result": "",
+      "refs": [
+        "EXECUTION_PLAN.md#E-177"
+      ],
+      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "id": "E-177",
+      "rank": 10,
+      "area": "pre-render",
+      "kind": "speed",
+      "title": "Sprite statics per entity on the GPU, for scenes whose camera scrolls",
+      "next": "Step 0: a counter of rows per frame whose statics changed (Predator, littleCity, Adobe). Build only where most rows keep theirs. EXECUTION_PLAN.md#E-177."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-10-29",
+      "result": "",
+      "refs": [
+        "EXECUTION_PLAN.md#E-178"
+      ],
+      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "id": "E-178",
+      "rank": 12,
+      "area": "particle",
+      "kind": "speed",
+      "title": "RigidBody.speed derived on read, not every frame for every body",
+      "next": "The getter computes it from vx, vy; updateDerivedProperties goes (13 % of Predator particle). Owner ballsHeavyStressScene particle; waterAndBoxes logic must not get slower. EXECUTION_PLAN.md#E-178."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-10-29",
+      "result": "",
+      "refs": [
+        "EXECUTION_PLAN.md#E-179"
+      ],
+      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "id": "E-179",
+      "rank": 11,
+      "area": "particle",
+      "kind": "speed",
+      "title": "Decorations' screen visibility, every frame in JavaScript",
+      "next": "The test inside the sway kernel walk, or skipped while camera and decorations hold (17.3 % of Predator particle). Owner decorationSwayStressScene particle. EXECUTION_PLAN.md#E-179."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-10-29",
+      "result": "",
+      "refs": [
+        "EXECUTION_PLAN.md#E-180"
+      ],
+      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "id": "E-180",
+      "rank": 13,
+      "area": "logic",
+      "kind": "speed",
+      "title": "Interval tick buckets rebuilt for every type when any query moves",
+      "next": "Step 0: rebuilds a second per type in Predator; then a per-type stamp. Owner Predator logic. EXECUTION_PLAN.md#E-180."
     }
   ],
   "records": [
@@ -16369,6 +16457,36 @@
       "source": "Reopen review (2026-10-24)",
       "finding": "The persist path (E-115 to E-117) pays only on frames whose visible set is the one the queue buffer last held, and E-82b notes that a moving camera rarely gives one (Predator).",
       "next": "Find what breaks it under a moving camera (the set changing at the view's edges, or rows written in screen space), then keep rows in place through small changes (a free list of queue slots for the sprites that enter and leave) instead of a full emit; measure on a panning BunnyMark."
+    },
+    {
+      "source": "Renderer layer split and sweep inventory (R-0751, 2026-10-29)",
+      "finding": "(program) is 19 to 29 ms/s (5 to 8 %) of the renderer in all four scenes: native time outside any JS frame.",
+      "next": "A Chrome trace with the GPU command-buffer categories: the GL flush, or the worker message and rAF dispatch."
+    },
+    {
+      "source": "Renderer layer split and sweep inventory (R-0751, 2026-10-29)",
+      "finding": "Predator's renderer: shader and uniform sync (bind 23.4 ms/s inclusive, E-148's plan N_ 19) and texture binds (bindSource 14.6).",
+      "next": "Re-read after E-175; if still past 0.2 ms a frame, count draws and render passes per frame and cut those."
+    },
+    {
+      "source": "Renderer layer split and sweep inventory (R-0751, 2026-10-29)",
+      "finding": "Predator's decal uploads: _uploadDecalRgba8 7.8, premultiplyDecalTile 5.2 (the copy from the premultiply scratch into the tile's array, TypedArray.set from shared memory, W30's kind), premultiply_simd 7.2 ms/s.",
+      "next": "That copy by memory.copy, or the premultiply writing the tile's private array; owner decalBlitStressScene (228 ms/s of Pixi, Wave 9's lead)."
+    },
+    {
+      "source": "Renderer layer split and sweep inventory (R-0751, 2026-10-29)",
+      "finding": "BunnyMark's renderer: pack_pose (pose interpolation) is 76.7 ms/s, 44.5 % of it.",
+      "next": "Read poseQueueInterp: if the GPU kept the previous pose, the vertex shader could interpolate and the pack become a copy."
+    },
+    {
+      "source": "Renderer layer split and sweep inventory (R-0751, 2026-10-29)",
+      "finding": "Physics is Predator's largest STEP_MS (10.0 ms, 59 % load), all Box2D's own work (R-0719); Adobe's three solver threads and 432 ms/s main.",
+      "next": "Engine defaults are what a dev gets: sweep sub-steps, solver threads and sleeping against physics STEP_MS on Predator and ballsHeavy."
+    },
+    {
+      "source": "Renderer layer split and sweep inventory (R-0751, 2026-10-29)",
+      "finding": "Adobe's logic: Mouse.isDownAt 5.1 %, the game's Mouse.isButton0Down read for 20 000 characters a tick.",
+      "next": "A button state noted once a frame and read as a field; a kernel of the getter."
     }
   ],
   "howToFindNew": [
