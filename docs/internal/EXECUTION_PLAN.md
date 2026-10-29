@@ -2804,6 +2804,18 @@ flags to the class's prototype, the slot array only for a class with more than e
 
 **How it is decided:** painterMove's and minimalTick's logic, against N-88's commit.
 
+**Kept 2026-10-29** (R-0715): painterMove's logic 8.141 → 7.526 ms (−7.5 %, 4 pairs).
+
+### E-168 rng() boxes its double twice in a worker
+
+Wave 9's heap pass: in littleCity's logic the engine's `rng` wrapper and the seeded generator it calls are 1.4 and
+1.3 MB/s of garbage, each double boxed on its way back from a call the caller did not inline. In Node the same code
+allocates nothing (`globalThis.rng()` is inlined whole). A module-variable `rng` behind a `globalThis.rng` accessor,
+and one that steps the generator's state itself, were both 2–4 times slower in Node and were not kept.
+
+**Next:** why Chrome's workers do not inline `globalThis.rng()` (its property cell, written twice as `self.rng` and
+`globalThis.rng`); a heap sample of littleCity in Chrome decides any variant.
+
 ---
 
 ## Not doing (read the log first)
