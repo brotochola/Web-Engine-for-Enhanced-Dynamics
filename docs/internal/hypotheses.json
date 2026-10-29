@@ -8419,13 +8419,13 @@
       "id": "E-145",
       "title": "Adobe Animate pieces expanded on the GPU",
       "status": "open",
-      "statusText": "opened 2026-10-26 (Wave 7, from the sweep R-0645)",
+      "statusText": "open: design note written 2026-10-28 (ADOBE_GPU_PLAN.md), no prototype yet",
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
       "rank": 4,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
-      "next": "A design note first (batch layout, sort, shadows, custom layers), then a prototype on adobeAnimateScene."
+      "next": "The prototype in ADOBE_GPU_PLAN.md's order: the piece table texture, the record writer, the Adobe batch in Pixi, the sitting on adobeAnimateScene."
     },
     {
       "aliases": [],
