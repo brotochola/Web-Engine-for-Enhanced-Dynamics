@@ -8789,16 +8789,17 @@
         "R-0730",
         "R-0736",
         "R-0737",
-        "R-0738"
+        "R-0738",
+        "R-0741"
       ],
       "date": "2026-10-29",
       "area": "particle",
       "kind": "dx",
-      "result": "Kept 4072de40: the sim clock moves once a main frame (Time._stepSimFrame) and its readers carry it on past SIM_CLOCK_HOLD_MS (100 ms) without one. The continuous clock (cb72506a) cost GPU Galaxy 8M 4-6 % of its presented frames at the same GPU time a frame; with the hold, presented 51.8 -> 54.7 fps (+6.0 %, 3/4). On the final branch against main (8 pairs, R-0738): presented -2.1 %, renderer +1.7 %, neutral at the scene's detection limit (A/A R-0737: -1.2 %, +2.0 %).",
+      "result": "Kept c29140c3: reads take the realm's frame wall time (noted once a frame), timeOrigin read once; Chrome emitGpu with a running clock 1 285 -> 625 ns a call (-51 %); trail=1024 logic -25.8 % (under the floor).",
       "next": "If GPU-bound pages must match main exactly: find what the hold still costs (the readers' wall-clock read is the remaining difference).",
       "id": "DX-GPCLOCK",
       "title": "GPU particles' sim clock keeps its own time (a stalled main thread does not freeze them)",
-      "status": "kept",
+      "status": "kept-kernel",
       "statusText": "kept 2026-10-29 with a 100 ms hold (R-0727)"
     },
     {
@@ -9186,12 +9187,13 @@
       "aliases": [],
       "records": [
         "R-0732",
-        "R-0736"
+        "R-0736",
+        "R-0741"
       ],
       "date": "2026-10-29",
-      "status": "kept-hygiene",
+      "status": "kept-kernel",
       "statusText": "fixed 2026-10-29 (R-0732)",
-      "result": "Fixed 6e35e00b: a call that could join reads the clock again after its records and joins only inside the window with the group alive past the margin. gpuParticleGroupJoin.test.js.",
+      "result": "Kept c29140c3: reads take the realm's frame wall time (noted once a frame), timeOrigin read once; Chrome emitGpu with a running clock 1 285 -> 625 ns a call (-51 %); trail=1024 logic -25.8 % (under the floor).",
       "next": "Nothing pending.",
       "id": "N-91",
       "refs": [
@@ -9336,6 +9338,24 @@
       "title": "The CPU emit's config merge: keyed copies into a dictionary",
       "area": "logic",
       "kind": "speed"
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-174"
+      ],
+      "records": [
+        "R-0741"
+      ],
+      "id": "E-174",
+      "title": "A running clock's read asked the wall clock, twice per joining emitGpu call",
+      "status": "kept-kernel",
+      "statusText": "kept 2026-10-29 (R-0741)",
+      "date": "2026-10-29",
+      "area": "logic",
+      "kind": "speed",
+      "result": "Kept c29140c3: reads take the realm's frame wall time (noted once a frame), timeOrigin read once; Chrome emitGpu with a running clock 1 285 -> 625 ns a call (-51 %); trail=1024 logic -25.8 % (under the floor).",
+      "next": "Predator gate with the next batch."
     }
   ],
   "records": [
@@ -16111,6 +16131,19 @@
       "text": "**N-92 fixed: N-90's hot swap deleted a component's field accessors, and kept old code for a member named like a\ncomponent.** 2026-10-29, found by Wave 9's second review of the day's commits (an agent's read of E-169, E-170, E-172,\nE-173, N-90 and N-91, which found nothing in the others), fixed in 1b4d235f.\n\n- `patchClass` deletes from the running prototype what the new version lacks. A component defined in the swapped\n  module has field accessors made by `initializeArrays` (E-170's, or the shared ones) and `_propertiesCreated`; its\n  new version, never initialized, has neither, so after the swap `new Health(3).hp` and `boid.health.hp` read\n  `undefined` until the class was initialized again (a scene reload). A module of components alone did this before\n  N-90 too; N-90 made modules with entity classes swap instead of reload, which reached it.\n- N-90's copy skipped every key named like one of the class's components. Registration leaves a member the class\n  defines under such a name in place of the component getter, so that member kept its old code through a swap, and\n  one the new version removed stayed.\n\nThe fix: `engineAccessors.js` marks the accessors the engine defines on game classes' prototypes (`FIELD_GETTERS` and\nthe slot-array getters in gameObject.js, the field accessor pairs in component.js, compiled or shared). The swap\nkeeps exactly those and the engine's prototype flags (`_componentAccessorsCreated`, `_hasComponents`,\n`_propertiesCreated`), and copies and deletes everything else as the class's code. `hotSwap.test.js`: a module whose\ncomponent was initialized keeps its field accessors through a swap (reads and writes the column), and a member named\nlike a component gets the new code; both fail without the fix. The older test's fake getter is marked as the engine's\nare. No timing: the marks are made once per accessor; `componentFieldMicrobench` reads 10.6 ns a field access after.",
       "commits": [
         "1b4d235f"
+      ]
+    },
+    {
+      "id": "R-0741",
+      "date": "2026-10-29",
+      "time": "10:37",
+      "timeFrom": "recorded",
+      "title": "E-174 kept (kernel): a clock read takes its frame's wall time (emitGpu 1 285 -> 625 ns a call in Chrome, trail logic -25.8 %)",
+      "verdict": "kept-kernel",
+      "text": "**E-174 kept (kernel): a clock read takes its realm's frame's wall time; timeOrigin read once.** 2026-10-29,\nc29140c3 (kernel 77abb019).\n\n**The finding:** a Node CPU profile of `emitGpuCallMicrobench` (E-172's kernel) put 9 % of an emitGpu call in\n`Time.readSimNowInto`, with the clock stopped. In a game the clock runs, and since DX-GPCLOCK every read of a running\nclock took the wall time, `performance.timeOrigin + performance.now()`. A Chrome probe (`chromeKernel`, Chrome 156):\n`performance.now()` about 173 ns a call, `timeOrigin + now()` 321 ns, a typed-array read 1.5 ns. emitGpu reads the\nclock once a call, and N-91 added a second read for calls that can join a group.\n\n**The kernel** (reworked in 77abb019: browser-safe, rounds as frames, `running` starts the sim clock and notes a frame\nwall each round where the tree can): Chrome, running clock, before 1 311 / 1 285 / 1 285 ns a call, after 621 / 656 /\n625 (−51 %, alternated); stepped clock 672 → 604 (one run each). Node: running 756 ns before, 572–638 after.\n\n**The change:** each realm's frame loop notes its frame's wall time (AbstractWorker._runFrame; Scene's loop through\n`_stepSimFrame`), and reads take it; a realm with no frame loop (a test, a bare thread) asks the clock as before.\nThe hold it serves is 100 ms, far coarser than a frame: past it, a reader carries the clock on at its own frames.\n`timeOrigin`, a constant, is read once per realm. N-91's second read stays: it still sees the main thread's steps\nduring a long call. timeScale.test.js notes the reader's frames where one thread stands for two, and checks that a\nread in the same frame takes that frame's time.\n\n**The scene** (gpuParticlesStressScene `?trail=1024`, 4 pairs, worktrees, headed, source, owner logic, A = 77abb019):\nlogic 1.618 → 1.201 ms (−25.8 %, under the 3 ms floor: the knob stops at 1 024 callers), renderer 3.695 → 3.596 ms\n(−3.0 %, worse 0/4), presented 60.0 both. With E-172 the scene's logic went 1.845 → 1.201 ms today.",
+      "commits": [
+        "c29140c3",
+        "77abb019"
       ]
     }
   ],
