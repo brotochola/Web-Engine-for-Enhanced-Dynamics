@@ -8931,18 +8931,19 @@
         "R-0701",
         "R-0709",
         "R-0739",
-        "R-0746"
+        "R-0746",
+        "R-0747"
       ],
       "id": "E-162",
       "title": "painterMove: the moving rows' scatter pack and reinsert",
       "status": "running",
-      "statusText": "running: step 1 of 5 done 2026-10-29 (R-0746)",
+      "statusText": "running: step 1 done, step 3's shader ready, 2026-10-29 (R-0747)",
       "date": "2026-10-29",
       "area": "pre-render",
       "kind": "wasm",
       "rank": 5,
       "result": "Step 1: pack_sprites_indexed_scatter, the pose and the statics' row in draw order and the statics in row order; parity with the split scatter; Chrome 4.965 -> 1.400 ms a moved painter frame at 300 000 rows (-71.8 %).",
-      "next": "Steps 2 and 3 together: the queue's indexed region and pre-render choosing it where the renderer can draw it; Pixi's indexed batch on WebGL2 (statics texture, E-157's fetch). Then step 4 (WebGPU) and the sittings."
+      "next": "Steps 2 and 3 wired together (the queue's indexed region, pre-render's choice, Pixi's indexed batch on WebGL2) with a Chromium pixel check; the map is in EXECUTION_PLAN.md#E-162. Then step 4 (WGSL) and the sittings."
     },
     {
       "aliases": [],
@@ -16219,6 +16220,19 @@
       "commits": [
         "d32354f8",
         "90c67844"
+      ]
+    },
+    {
+      "id": "R-0747",
+      "date": "2026-10-29",
+      "time": "11:40",
+      "timeFrom": "recorded",
+      "title": "E-162 step 3 groundwork: 12-word statics rows, and the indexed vertex shader compiling and linking in Chrome",
+      "verdict": "note",
+      "text": "**E-162 step 3's groundwork: the 12-word statics row and the indexed vertex shader.** 2026-10-29, 199bb5be and\n3fff9b14.\n\n- **The statics row:** 11 words do not fill whole RGBA texels, so the indexed pack now writes each row's 11 statics and\n  a zero (GPU_INDEXED_STATIC_FLOATS 12, three RGBA32UI texels); the parity test checks the pad, and the kernel's time\n  is unchanged (1.43 ms against the split pack's 4.64 at 300 000 rows, Node).\n- **The shader:** `spriteIndexedVertex` (src/render/spriteIndexed.js) rewrites instancedSprite.vert.glsl as E-157's\n  gpuParticleTextureVertex rewrote the particle shader: the seven static attributes become globals filled from three\n  texels of an integer statics texture (`uintBitsToFloat`, so the packed tint, often a NaN pattern, keeps every bit),\n  the row is an instance attribute (`aInstRow`), and the depth is the draw slot's,\n  `1 − (uFirstInstance + gl_InstanceID + 1) × uInvDepthDenom`, the formula the split pack's depth matches exactly in\n  double (the parity test). `spriteIndexedCompileCheck.mjs` (chromeKernel, Chrome 156): the shipped and the indexed\n  vertex shaders both compile and link with the sprite fragment shader; the indexed program has 4 vertex attributes\n  (aQuad, aInstXY, aInstRotCS, aInstRow) against 10.\n\nNothing is wired: the queue's indexed region, pre-render's choice and Pixi's indexed batch (steps 2 and 3) go together\nnext, with a Chromium pixel check (EXECUTION_PLAN.md#E-162 holds the map).",
+      "commits": [
+        "199bb5be",
+        "3fff9b14"
       ]
     }
   ],
