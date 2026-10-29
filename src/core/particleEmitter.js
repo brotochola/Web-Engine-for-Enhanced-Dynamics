@@ -62,6 +62,75 @@ export const DECAL_STAMPS_BLEND_MODE = Object.freeze({
   multiply: 1,
 });
 
+/**
+ * E-173: the merge's copy, one named read and write per key of ParticleEmitter._cfgFieldList, in its order
+ * (particleEmitConfigKeys.test.js holds the two together). A loop of keyed reads and writes by these forty-three names
+ * was megamorphic on every emit, into a scratch V8 kept as a dictionary (it was Object.create(null)).
+ * @param {object} s the scratch (emitScratch)
+ * @param {object} c the caller's config
+ */
+function copyEmitFields(s, c) {
+  s.count = c.count;
+  s.flat = c.flat;
+  s.viewMode = c.viewMode;
+  s.texture = c.texture;
+  s.spritesheet = c.spritesheet;
+  s.animation = c.animation;
+  s.frame = c.frame;
+  s.anim = c.anim;
+  s.x = c.x;
+  s.y = c.y;
+  s.z = c.z;
+  s.dirX = c.dirX;
+  s.dirY = c.dirY;
+  s.speed = c.speed;
+  s.spread = c.spread;
+  s.angleXY = c.angleXY;
+  s.vx = c.vx;
+  s.vy = c.vy;
+  s.vz = c.vz;
+  s.lifespan = c.lifespan;
+  s.gravity = c.gravity;
+  s.scale = c.scale;
+  s.scaleX = c.scaleX;
+  s.scaleY = c.scaleY;
+  s.alpha = c.alpha;
+  s.tint = c.tint;
+  s.rotC = c.rotC;
+  s.rotS = c.rotS;
+  s.rotation = c.rotation;
+  s.angularVelocity = c.angularVelocity;
+  s.flipX = c.flipX;
+  s.flipY = c.flipY;
+  s.fadeOnTheFloor = c.fadeOnTheFloor;
+  s.stayOnTheFloor = c.stayOnTheFloor;
+  s.despawnOnGroundContact = c.despawnOnGroundContact;
+  s.bounces = c.bounces;
+  s.bounciness = c.bounciness;
+  s.bounceFriction = c.bounceFriction;
+  s.blendMode = c.blendMode;
+  s.layer = c.layer;
+  s.layers = c.layers;
+  s.renderOnly = c.renderOnly;
+  s.lightIntensity = c.lightIntensity;
+}
+
+/** A scratch with every merged key declared: one shape, a fast object (not a dictionary). */
+function emitScratch() {
+  return {
+    count: undefined, flat: undefined, viewMode: undefined, texture: undefined, spritesheet: undefined,
+    animation: undefined, frame: undefined, anim: undefined, x: undefined, y: undefined,
+    z: undefined, dirX: undefined, dirY: undefined, speed: undefined, spread: undefined,
+    angleXY: undefined, vx: undefined, vy: undefined, vz: undefined, lifespan: undefined,
+    gravity: undefined, scale: undefined, scaleX: undefined, scaleY: undefined, alpha: undefined,
+    tint: undefined, rotC: undefined, rotS: undefined, rotation: undefined, angularVelocity: undefined,
+    flipX: undefined, flipY: undefined, fadeOnTheFloor: undefined, stayOnTheFloor: undefined,
+    despawnOnGroundContact: undefined,
+    bounces: undefined, bounciness: undefined, bounceFriction: undefined, blendMode: undefined, layer: undefined,
+    layers: undefined, renderOnly: undefined, lightIntensity: undefined,
+  };
+}
+
 export class ParticleEmitter extends SharedAtomicPool {
   // Pool name for logging (used by base class)
   static poolName = 'ParticleEmitter';
@@ -72,7 +141,7 @@ export class ParticleEmitter extends SharedAtomicPool {
   static _opB = { from: 0, to: 0, tween: false, ease: 0 };
 
   // Hot-path scratches (per-worker module instance; emit is sync/non-reentrant)
-  static _cfgScratch = Object.create(null);
+  static _cfgScratch = emitScratch();
   // Every key _spawn reads from cfg, plus `layer` / `layers` (read by
   // Layer.resolveSubscriptions). Every public emit path copies only these keys, so a
   // missing one is silently ignored (tests/node/particleEmitConfigKeys.test.js).
@@ -86,7 +155,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     'bounces', 'bounciness', 'bounceFriction',
     'blendMode', 'layer', 'layers', 'renderOnly', 'lightIntensity',
   ];
-  static _alongLineScratch = Object.create(null);
+  static _alongLineScratch = emitScratch();
   static _acquireBatch = ACQUIRE_BATCH_U16;
   static _topdownOverrides = { flat: 0, viewMode: CAMERA_TYPES.TOPDOWN };
   static _zenithalOverrides = { flat: 0, viewMode: CAMERA_TYPES.ZENITHAL };
@@ -199,11 +268,7 @@ export class ParticleEmitter extends SharedAtomicPool {
     const o = this._flatOverrides;
     o.gravity = config.gravity ?? 0;
     const bag = this._alongLineScratch;
-    const fields = this._cfgFieldList;
-    for (let f = 0; f < fields.length; f++) {
-      const k = fields[f];
-      bag[k] = config[k];
-    }
+    copyEmitFields(bag, config);
     bag.count = 1;
     let spawned = 0;
     for (let i = 1; i <= n; i++) {
@@ -221,11 +286,7 @@ export class ParticleEmitter extends SharedAtomicPool {
    */
   static _mergeCfg(config, modeOverrides) {
     const s = this._cfgScratch;
-    const fields = this._cfgFieldList;
-    for (let f = 0; f < fields.length; f++) {
-      const k = fields[f];
-      s[k] = config[k];
-    }
+    copyEmitFields(s, config);
     if (modeOverrides) {
       for (const k in modeOverrides) s[k] = modeOverrides[k];
     }
