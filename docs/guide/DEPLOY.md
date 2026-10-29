@@ -132,6 +132,13 @@ Module scripts are always fetched with CORS, and jsDelivr allows any origin, so 
 
 `Cross-Origin-Embedder-Policy: credentialless` is a looser alternative that loads cross-origin resources without cookies instead of refusing them. Check browser support before you rely on it; `require-corp` is the safe default.
 
+## A Content-Security-Policy
+
+Most games set none. If yours does, its `script-src` (the page's, and the one the engine's worker scripts are served
+with) must allow `'unsafe-eval'`: the engine compiles a few small functions at run time (each worker's import of the
+scene's module, the field accessors of every component) and compiles its WebAssembly, which `'unsafe-eval'` also
+allows. Without it the engine does not start.
+
 ## Builds
 
 - Develop with the debug build (`@weed.js/engine/debug`, or `weed.bundle*.min.js` on the CDN): debug panel, `DebugDraw`, overlays.
