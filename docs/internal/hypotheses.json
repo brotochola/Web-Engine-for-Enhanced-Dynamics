@@ -828,10 +828,10 @@
     {
       "id": "W28",
       "title": "`applyForcesAndTorque`, `publishMovedBodies`, `snapshotPrevPose` in weedjsPost.js (new from Q1b)",
-      "status": "screened",
-      "statusText": "open (with Phase 4)",
+      "status": "kept-kernel",
+      "statusText": "kept (kernel) 2026-10-28 (R-0695)",
       "date": null,
-      "result": "screened 2026-10-24: body_apply_force_center 5.1 ns a body including Box2D's work; a batched export saves ~60-70 µs a step, ~2 % of Predator physics",
+      "result": "Kept (kernel) 2026-10-28: bodies_apply_accelerations (Box2D 1a750de, 62eddb50), kernel 14.1 → 11.8 ns a body (−16 %), Boids physics −1.9 %, Predator NEUTRAL over 8 pairs; velocities bit-identical (bodyAccelerationsBatch.wasm.test.js).",
       "area": "physics",
       "kind": "wasm",
       "refs": [
@@ -840,9 +840,10 @@
       "aliases": [],
       "records": [
         "R-0614",
-        "R-0694"
+        "R-0694",
+        "R-0695"
       ],
-      "next": "Boids (R-0694): applyForcesAndTorque 8.6 % of physics, the call 38 % of it: a batched export in Box2D's repo, ceiling near 4 % of Boids physics."
+      "next": "Nothing pending; publishMovedBodies and snapshotPrevPose stay JS."
     },
     {
       "id": "W4",
@@ -15015,6 +15016,19 @@
       "text": "The plan's physics item: screen `publishPose` (W15) and `applyForcesAndTorque` (W28) again on Boids, where their shares are larger than Predator's.\n\n**The screen.** A CPU trace of boidsScene (40 000 bodies, detailed stats off, 5 s after 6 s): the physics thread is busy 414 ms/s; `publishPose` 268.8 ms in 5 s (13 %, 0.9 ms a step, 22 ns a body), `applyForcesAndTorque` 178.4 ms (8.6 %, 0.6 ms, 15 ns a body, the `body_apply_force_center` call 38 % of it).\n\n**A bug in publishPose's way.** 42 % of `publishPose` was one line: the per-body generation load, which a fast path skips while the generation epoch has not moved since the last full publish (no body respawned). Boids never respawns, yet the fast path never ran. A probe (the skip count and the path written to two printed stat slots, not committed) showed `poseGenEpoch` null in the physics worker: the workers' buffer list (`sceneWorkerBootstrap.js`) carried `bodyGeneration` but not `bodyGenEpoch`, so physics never bound the epoch, and a spawn on a logic worker could not move it either (its box2dBodySync bound none). W15's screen blamed Predator's respawns for the fast path never latching; it never latched anywhere.\n\n**The fix** (a412603f): the list carries `bodyGenEpoch`; `tests/node/bodyGenEpochWired.test.js` checks that the workers' buffers hold it and that a worker's spawn moves it. Every write to a body generation goes through `advanceBodyGeneration`, which moves the epoch too.\n\n**Measured**, 4 pairs from worktrees against 95e90ce2, owner physics, detailed stats off:\n- Boids: physics 7.182 → 6.669 ms (**−7.2 %**, worse 0/4, cv 2/1 %), **KEPT**; spatial +0.2 %.\n- Predator gate: the first 4 pairs read physics +15.3 % (worse 3/4, cv 6/13 %) with the renderer +10.6 % and logic +4.0 %, which the change cannot reach; 4 more pairs (`--append`): over 8, physics 6.097 → 5.372 ms (−12.1 %, worse 3/8, cv 10/14 %), logic +1.1 %, spatial −1.4 %, renderer −1.7 %, pre-render −1.7 %: **NEUTRAL**, passed. Predator respawns often, so its epoch moves most frames and the fast path holds less there.\n\n**applyForcesAndTorque on Boids:** W28's batched export would remove most of the per-body call (Node: 5.1 ns of 7.4 ns a body, R-0614); here the call is 38 % of 0.6 ms, so the ceiling is near 0.25–0.3 ms, about 4 % of Boids' physics. It needs a batch export in Box2D's repo (both builds); left as W28's lead with that number.",
       "commits": [
         "a412603f"
+      ]
+    },
+    {
+      "id": "R-0695",
+      "date": "2026-10-28",
+      "time": "22:08",
+      "timeFrom": "recorded",
+      "title": "W28 shipped: the force and torque pass as one call into Box2D",
+      "verdict": "kept",
+      "text": "W28 on Boids: `applyForcesAndTorque` (8.6 % of Boids' physics thread, 15 ns a body, the per-body `body_apply_force_center` / `body_apply_torque` calls 38 % of it) as one call into Box2D.\n\n**What shipped.** Box2D (1a750de, both builds pass `build_for_weed.bat`): `bodies_apply_accelerations(list, count, ax, ay, angularAccel, mass, inertia, isStatic, fixedRotation)`, the host's pass in C: a static body's accelerations cleared; any other pushed by body_apply_force_center with ax, ay times its mass (1 when not positive) and body_apply_torque with angularAccel times its inertia (its mass when not positive) unless its rotation is fixed; the products in float, as JS rounds them at the call. WeedJS (62eddb50): when the RigidBody columns are in Box2D's memory (the engine block), the dense body list is malloc'ed there too and the force pass calls the batch; otherwise the JS loop. A SharedArrayBuffer posted to the physics worker is another object than Module's own even when it is the same memory, so the host checks with a probe byte of its own in the heap (two markers written through the heap, read back through the column's buffer); and the build exports HEAPF32, not HEAPU8. The first sitting ran the JS fallback for those two reasons (a stat probe showed it), so it measured only the rebuilt module: Boids physics +1.7 % (worse 4/4).\n\n**Exact.** `tests/node/bodyAccelerationsBatch.wasm.test.js`: after a step, every velocity is bit for bit the per-body calls' over static, massless, inertia-free, fixed-rotation and idle bodies; absent inertia and fixed-rotation columns read as none. `physicsFrameSteps.test.js` follows the call's new name. Node suite 2 089.\n\n**Measured.**\n- Kernel (`bodyForceCallMicrobench`, Node, the Predator fixture's 16 551 bodies; batch case c770f980): 14.1 ns a body per call, 11.8 ns in the batch (−16 %); the loop without any call 2.3 ns, so Box2D's own per-body work is most of what is left.\n- Boids, 4 pairs from worktrees against b309b642, owner physics: 6.889 → 6.656 ms (−1.9 %, worse 2/4, cv 3/2 %); FAIL (load) from VISIBLE_ENTITIES (the flocks in view).\n- Predator gate, 8 pairs (4 + 4 appended): physics 5.755 → 5.871 ms (+3.1 %, worse 5/8, cv 9/8 %), −0.4 % against the other workers, which all drifted up (renderer +5.0 %, pre-render +4.0 %, spatial +2.4 %, logic +1.3 %): NEUTRAL.\n\n**Kept (kernel, product-neutral).**",
+      "commits": [
+        "62eddb50",
+        "c770f980"
       ]
     }
   ],
