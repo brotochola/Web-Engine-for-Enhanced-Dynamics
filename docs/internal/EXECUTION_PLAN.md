@@ -2734,8 +2734,10 @@ that read the code apart from mine):
   scratch of one shape (emits −36 % to −54 %). E-171 (the FSM's boxed ms per tick) dropped: a tie at 20 000 owners.
 - **Bugs:** N-89 (E-164 and E-167 broke the page's frozen entities and hot swap's shared config), N-90 (every hot
   swap of an entity class reloaded the page since E-164b, and a swap past that broke its components), N-91 (an emitGpu
-  call could join a group the renderer had retired, E-161). The review found N-90 and N-91; it read the shadow stamp,
-  the clock's hold, rng and the entity commits clean.
+  call could join a group the renderer had retired, E-161), N-92 (N-90's swap deleted a component's field accessors,
+  and kept old code for a member named like a component). The first review found N-90 and N-91 and read the shadow
+  stamp, the clock's hold, rng and the entity commits clean; the second found N-92 and read E-169, E-170, E-172 and
+  E-173 clean.
 - **The closing gates on the final tree** (main bfd7ccf1 against 33350fb6): Predator neutral, nothing worse, logic
   −8.1 % (0/4), pre-render −3.9 %. GPU Galaxy 8M at 8 pairs: neutral, presented 56.0 → 55.1 fps (−2.1 %, 6/8)
   and the renderer +1.7 % (7/8), against −4.9 % before the hold; the session's Galaxy A/A read −1.2 % and +2.0 %, so
