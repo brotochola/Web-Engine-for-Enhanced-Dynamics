@@ -13,6 +13,9 @@ const { Scene, GameObject, SpriteRenderer, ParticleEmitter, Camera, SharedResour
 //   ?interp=1               renderer.interpolation: Pixi packs the entities (and lists the groups) itself
 //   ?hold=<n>               n columns started at once, alive for the whole run, and none after (columns is ignored):
 //                           the painter's groups and gaps stay as they are from frame to frame
+//   ?trail=<n>              n movers (at most 1024) that each call emitGpu every tick, one particle with a second of
+//                           life a call, on a layer of their own whose rings go to the logic worker: the call-per-tick
+//                           pattern (E-161). With ?sort=1 each mover sorts at its own row.
 
 function param(name, fallback) {
   try {
@@ -30,9 +33,11 @@ const COUNT = Math.max(1, parseInt(param('count', '400'), 10) || 400);
 const LOOK = param('look', '0') === '1';
 const INTERP = param('interp', '0') === '1';
 const HOLD = Math.max(0, parseInt(param('hold', '0'), 10) || 0);
+const MAX_TRAIL = 1024;
+const TRAIL = Math.min(MAX_TRAIL, Math.max(0, parseInt(param('trail', '0'), 10) || 0));
 
 export const stressSceneConfig = {
-  requested: { backend: BACKEND, sort: SORT, columns: COLUMNS, count: COUNT, look: LOOK, interp: INTERP, hold: HOLD },
+  requested: { backend: BACKEND, sort: SORT, columns: COLUMNS, count: COUNT, look: LOOK, interp: INTERP, hold: HOLD, trail: TRAIL },
 };
 
 /** The page's knobs, for the logic worker (which does not see the page's query string). */
@@ -151,6 +156,46 @@ export class Smoker extends GameObject {
   }
 }
 
+/** A trail mover's call, one object for every call (x, y and sortY are set before each). */
+const TRAIL_CALL = {
+  layer: 'trail',
+  count: 1,
+  x: 0,
+  y: 0,
+  angleXY: { min: 0, max: 360 },
+  speed: { min: 0.1, max: 0.6 },
+  lifespan: 1000,
+  scale: { from: 0.16, to: 0.04 },
+  tint: { from: 0xa0e0ff, to: 0x2050ff },
+  texture: '_whiteCircle_64x64',
+  sortY: 0,
+};
+
+/** Circles its own centre and leaves a GPU particle every tick (?trail=). */
+export class Trailer extends GameObject {
+  static components = [];
+
+  onSpawned({ x = 0, y = 0, phase = 0 } = {}) {
+    this.cx = x;
+    this.cy = y;
+    this.phase = phase;
+    this.x = x;
+    this.y = y;
+  }
+
+  tick(dtRatio) {
+    this.phase += 0.05 * dtRatio;
+    const x = this.cx + Math.cos(this.phase) * 40;
+    const y = this.cy + Math.sin(this.phase) * 25;
+    this.x = x;
+    this.y = y;
+    TRAIL_CALL.x = x;
+    TRAIL_CALL.y = y;
+    TRAIL_CALL.sortY = y;
+    ParticleEmitter.emitGpu(TRAIL_CALL);
+  }
+}
+
 export class GpuParticlesStressScene extends Scene {
   static config = {
     worldWidth: WORLD_W,
@@ -176,6 +221,14 @@ export class GpuParticlesStressScene extends Scene {
         blendMode: BLEND_MODES.ADD,
         sortWithEntities: SORT,
       },
+      trail: {
+        kind: LAYER_KIND.GPU_PARTICLES,
+        zIndex: 3.7,
+        maxParticles: 120000,
+        gpuRings: { main: 0, logic: 1, particle: 0 },
+        blendMode: BLEND_MODES.ADD,
+        sortWithEntities: SORT,
+      },
     },
   };
 
@@ -186,6 +239,7 @@ export class GpuParticlesStressScene extends Scene {
   static entities = [
     [Tree, 200],
     [Smoker, 1],
+    [Trailer, MAX_TRAIL],
   ];
 
   static sharedResources = [[GpuStressSettings, GpuStressSettings.schema]];
@@ -205,5 +259,8 @@ export class GpuParticlesStressScene extends Scene {
       }
     }
     Smoker.spawn();
+    for (let i = 0; i < TRAIL; i++) {
+      Trailer.spawn({ x: 80 + rng() * (WORLD_W - 160), y: 80 + rng() * (WORLD_H - 160), phase: rng() * 6.283 });
+    }
   }
 }
