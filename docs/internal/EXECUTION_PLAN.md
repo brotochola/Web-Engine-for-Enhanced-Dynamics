@@ -2830,6 +2830,11 @@ fetches its statics by that row from a texture (E-157's way for GPU particle rec
 
 E-145 (Adobe's pieces on the GPU) is the same kind of change, one step further: it can reuse step 3's texture fetch.
 
+**Step 1 done 2026-10-29** (d32354f8, bench 90c67844): `pack_sprites_indexed_scatter`, parity with the split scatter
+word for word (the depth aside). At 300 000 rows a moved painter frame's pack goes 4.965 → 1.400 ms in Chrome with
+the statics kept (−71.8 %), 3.675 writing them too. Steps 2 and 3 go together: pre-render cannot send a frame Pixi
+cannot draw.
+
 ### E-163 The gather's cell order past 65 536 cells
 
 `order_by_cell` (`spatialGather.c`) sorts a rebuild list by home cell with two radix passes on a 16-bit cell index. A
