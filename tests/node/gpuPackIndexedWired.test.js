@@ -14,6 +14,7 @@ import {
   GPU_FLAG_SPLIT,
   GPU_HDR_FLAGS,
   GPU_HDR_INDEXED_ROWS,
+  GPU_HDR_SLOTS_GEN,
   GPU_HDR_SPRITE,
   GPU_HDR_STATIC_GEN,
   GPU_INDEXED_SLOT_FLOATS,
@@ -45,12 +46,12 @@ const FRAMES = [
   { n: 4900, gen: 9, split: true }, { n: 4900, gen: 9 }, { n: 4900, gen: 9 }, { n: 4900, gen: 9 },
 ];
 
-function writeQueue(q, fr, f, ySort) {
+function writeQueue(q, fr, f, ySort, still) {
   q.count[0] = fr.n;
   q.staticGen[0] = fr.gen;
   for (let i = 0; i < fr.n; i++) {
     q.x[i] = (i % 97) * 30 + f * 1.5;
-    q.y[i] = ((i * 37) % 3000) - f * ((i % 3) + 1);
+    q.y[i] = ((i * 37) % 3000) - (still ? 0 : f * ((i % 3) + 1));
     q.scaleX[i] = 1 + (i % 3) * 0.25 + (fr.scale || 0);
     q.scaleY[i] = 1;
     q.rotC[i] = 1;
@@ -67,7 +68,7 @@ function writeQueue(q, fr, f, ySort) {
 
 const words = (v, k) => Uint32Array.from(new Uint32Array(v.buffer, v.byteOffset, k));
 
-async function run(pre, indexed, ySort = true) {
+async function run(pre, indexed, ySort = true, still = false) {
   const caps = gpuQueueCaps(MAX, { enabled: false }, true);
   const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(64), null, null, false, null,
     ySort ? { preRender: true, pixi: false } : null);
@@ -108,7 +109,7 @@ async function run(pre, indexed, ySort = true) {
   FRAMES.forEach((fr, f) => {
     if (indexed) pre._gpuIndexed = !fr.split;
     pre.selectWriteBuffers();
-    writeQueue(pre.renderQueueBuffers[pre._queueBuf], fr, f, ySort);
+    writeQueue(pre.renderQueueBuffers[pre._queueBuf], fr, f, ySort, still);
     pre._emitWriteCount = 0;
     const dst = pre.gpuQueueBuffers[pre._queueBuf];
     new Uint32Array(dst.spriteRowStatics.buffer, dst.spriteRowStatics.byteOffset, dst.spriteRowStatics.length).fill(POISON);
@@ -119,6 +120,7 @@ async function run(pre, indexed, ySort = true) {
       flags: dst.header[GPU_HDR_FLAGS] | 0,
       gen: dst.header[GPU_HDR_STATIC_GEN] >>> 0,
       indexedRows: dst.header[GPU_HDR_INDEXED_ROWS] | 0,
+      slotsGen: dst.header[GPU_HDR_SLOTS_GEN] >>> 0,
       rows: words(dst.sprites, n * GPU_SPRITE_FLOATS),
       pose: words(dst.spritePose, n * GPU_POSE_FLOATS),
       slots: Float32Array.from(dst.spriteSlots.subarray(0, n * GPU_INDEXED_SLOT_FLOATS)),
@@ -188,5 +190,29 @@ test('an unsorted frame stays split with indexed frames on', async () => {
   for (let f = 0; f < FRAMES.length; f++) {
     assert.equal(on[f].flags & (GPU_FLAG_SPLIT | GPU_FLAG_INDEXED), GPU_FLAG_SPLIT, `frame ${f}: split`);
     assert.equal(on[f].indexedRows, 0, `frame ${f}: no indexed rows`);
+  }
+});
+
+test('an indexed frame\x27s slot pairs keep their generation while the painter\x27s order holds, and take a new one when it moves', async () => {
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const moving = await run(pre, true);
+  const still = await run(pre, true, true, true);
+  let last = 0;
+  let lastStill = 0;
+  for (let f = 0; f < FRAMES.length; f++) {
+    if (FRAMES[f].split) {
+      assert.equal(still[f].slotsGen, 0, `frame ${f}: a split frame has no slot pairs`);
+      continue;
+    }
+    assert.ok((moving[f].slotsGen & 0x80000000) !== 0, `frame ${f}: a generation of the painter\x27s order`);
+    if (f > 0) assert.notEqual(moving[f].slotsGen, last, `frame ${f}: the keys moved, new pairs`);
+    last = moving[f].slotsGen;
+    // The keys stand: the pairs hold through the statics' generations and the split frame, and move with the rows.
+    if (f > 1) {
+      const rowsMoved = FRAMES[f].n !== FRAMES[f - 1].n;
+      if (rowsMoved) assert.notEqual(still[f].slotsGen, lastStill, `frame ${f}: fewer rows, new pairs`);
+      else assert.equal(still[f].slotsGen, lastStill, `frame ${f}: the order holds, the same pairs`);
+    }
+    lastStill = still[f].slotsGen;
   }
 });

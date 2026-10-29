@@ -81,6 +81,7 @@ import {
   GPU_FLAG_SPLIT,
   GPU_FLAG_INDEXED,
   GPU_HDR_INDEXED_ROWS,
+  GPU_HDR_SLOTS_GEN,
   GPU_INDEXED_SLOT_FLOATS,
   GPU_INDEXED_STATIC_FLOATS,
   gpuIndexedStaticRows,
@@ -1759,7 +1760,7 @@ class PixiRenderer extends AbstractWorker {
           // E-162: the poses and slot pairs, every queue row's statics to the texture when their generation moved.
           this.visibleEntityCount = batch.commitIndexed(
             gpu.spritePose, gpu.spriteSlots, gpu.spriteRowStatics, packedN,
-            gpu.header[GPU_HDR_INDEXED_ROWS], gpu.header[GPU_HDR_STATIC_GEN]
+            gpu.header[GPU_HDR_INDEXED_ROWS], gpu.header[GPU_HDR_STATIC_GEN], gpu.header[GPU_HDR_SLOTS_GEN]
           );
         } else if (packedN === 0) {
           // No sprite rows: pre-render's pack wrote none, so it split none. Nothing to draw.

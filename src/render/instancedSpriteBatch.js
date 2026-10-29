@@ -296,6 +296,11 @@ export class InstancedSpriteBatch {
     this._rowStaticsU32 = new Uint32Array(this._rowStatics.buffer, this._rowStatics.byteOffset, staticFloats);
     this._ixGen = 0;
     this._ixRows = -1;
+    // The slot pairs' generation and slots the CPU copy holds, its version, and each ring slot's GPU copy's (-1: none).
+    this._ixSlotsGen = 0;
+    this._ixSlots = -1;
+    this._slotsVersion = 0;
+    this._ringSlotsVersion = [-1, -1];
     this._quad = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
     this._index = [0, 1, 2, 0, 2, 3];
     const labelName = label || 'instanced-sprites';
@@ -773,8 +778,12 @@ export class InstancedSpriteBatch {
     const geometry = indexed ? this._indexedGeometries[ring] : this._geometries[ring];
     this._buffers[ring].update(out * stride);
     if (indexed) {
-      // E-162: the slot stream goes up; the statics are the texture's.
-      this._slotBuffers[ring].update(out * GPU_INDEXED_SLOT_FLOATS * 4);
+      // E-162: the slot stream goes up when this ring slot's copy is older than the CPU one; the statics are the
+      // texture's.
+      if (this._ringSlotsVersion[ring] !== this._slotsVersion) {
+        this._slotBuffers[ring].update(out * GPU_INDEXED_SLOT_FLOATS * 4);
+        this._ringSlotsVersion[ring] = this._slotsVersion;
+      }
     } else {
       // E-82: a ring slot's static copy goes up only when it is older than the CPU one.
       const statics = this._staticBuffers;
@@ -941,9 +950,10 @@ export class InstancedSpriteBatch {
    * E-162: commit `count` slots of an indexed frame another worker packed (pre-render's GPU queue with
    * GPU_FLAG_INDEXED): the poses and the slot pairs in draw order, and `rows` queue rows' statics in row order, `gen`
    * their generation (0: unknown). The statics go up, the texture rows they fill, only when the generation or the
-   * rows moved; the other frames upload 24 bytes a sprite.
+   * rows moved; the slot pairs only when their own generation `slotsGen` (the painter's order) or the slots moved.
+   * A frame whose order moved uploads 24 bytes a sprite, one whose order holds 16.
    */
-  commitIndexed(pose, slots, rowStatics, count, rows, gen) {
+  commitIndexed(pose, slots, rowStatics, count, rows, gen, slotsGen) {
     const n = count | 0;
     const keep = n > this.capacity ? this.capacity : n;
     if (keep <= 0) return this._finishUpload(0, SPLIT_POSE_FLOATS * 4);
@@ -961,8 +971,14 @@ export class InstancedSpriteBatch {
         this._statics.upload(this._staticsSource, this._rowStaticsU32, width, this._staticsHeight, 0, staticsTextureHeight(r));
       }
     }
+    const sg = slotsGen >>> 0;
+    if (sg === 0 || sg !== this._ixSlotsGen || keep !== this._ixSlots) {
+      this._ixSlotsGen = sg;
+      this._ixSlots = keep;
+      this._slotsVersion++;
+      this.copyIn(this._slotData, slots, keep * GPU_INDEXED_SLOT_FLOATS);
+    }
     this.copyIn(this.data, pose, keep * SPLIT_POSE_FLOATS);
-    this.copyIn(this._slotData, slots, keep * GPU_INDEXED_SLOT_FLOATS);
     return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4, true);
   }
 

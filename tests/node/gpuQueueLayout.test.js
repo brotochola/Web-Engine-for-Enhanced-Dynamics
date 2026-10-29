@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   GPU_SPRITE_FLOATS, GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT, GPU_QUEUE_VERSION, GPU_HDR_SPRITE, GPU_HDR_VERSION, GPU_HDR_FLAGS,
-  GPU_HDR_STATIC_GEN, GPU_HDR_INDEXED_ROWS, GPU_HEADER_INTS, GPU_FLAG_INDEXED, GPU_POSE_FLOATS, GPU_INDEXED_SLOT_FLOATS,
+  GPU_HDR_STATIC_GEN, GPU_HDR_INDEXED_ROWS, GPU_HDR_SLOTS_GEN, GPU_HEADER_INTS, GPU_FLAG_INDEXED, GPU_POSE_FLOATS, GPU_INDEXED_SLOT_FLOATS,
   GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW, gpuQueueCaps, gpuSpriteRegionFloats, computeGpuQueueBufferSize, createGpuQueueViews,
   writeGpuQueueHeader, clearGpuQueueHeader, makePackContext, fillQueueIndices,
 } from '../../src/render/gpuQueueLayout.js';
@@ -259,16 +259,18 @@ test('E-162: caps.indexedSprites makes room for an indexed frame in the sprite r
   }
 });
 
-test('E-162: the header carries an indexed frame\'s rows, and a cleared header none', () => {
+test('E-162: the header carries an indexed frame\'s rows and slot pairs\' generation, and a cleared header none', () => {
   const caps = gpuQueueCaps(8, null, true);
   const views = createGpuQueueViews(new ArrayBuffer(computeGpuQueueBufferSize(caps)), caps);
-  writeGpuQueueHeader(views.header, { sprite: 5, staticGen: 7, indexedRows: 8 }, GPU_FLAG_INDEXED);
+  writeGpuQueueHeader(views.header, { sprite: 5, staticGen: 7, indexedRows: 8, slotsGen: 0x80000003 | 0 }, GPU_FLAG_INDEXED);
   assert.equal(views.header[GPU_HDR_INDEXED_ROWS], 8);
+  assert.equal(views.header[GPU_HDR_SLOTS_GEN] >>> 0, 0x80000003);
   assert.equal(views.header[GPU_HDR_FLAGS], GPU_FLAG_INDEXED);
   assert.equal(views.header[GPU_HDR_STATIC_GEN], 7);
   clearGpuQueueHeader(views.header);
   assert.equal(views.header[GPU_HDR_INDEXED_ROWS], 0);
-  assert.ok(GPU_HDR_INDEXED_ROWS < GPU_HEADER_INTS);
+  assert.equal(views.header[GPU_HDR_SLOTS_GEN], 0);
+  assert.ok(GPU_HDR_INDEXED_ROWS < GPU_HEADER_INTS && GPU_HDR_SLOTS_GEN < GPU_HEADER_INTS);
 });
 
 test('E-162: indexed frames only on request, on either backend', () => {

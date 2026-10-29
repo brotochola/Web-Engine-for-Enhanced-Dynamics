@@ -149,12 +149,14 @@ async function bindPixi(px, s, { webgpu = false, maxStorageBytes = 1 << 27 } = {
 }
 
 /**
- * One indexed frame in buffer b: n slots over `rows` queue rows, the slots in a frame-dependent order, the poses moving
- * every frame, the statics the generation's. Returns what the batch should hold: the poses, the slots and the statics.
+ * One indexed frame in buffer b: n slots over `rows` queue rows, the slots in an order from `orderSeed` (the frame's by
+ * default), their generation `slotsGen` (0: none), the poses moving every frame, the statics the generation's. Returns
+ * what the batch should hold: the poses, the slots and the statics.
  */
-function writeIndexedFrame(px, b, n, rows, gen, frame) {
+function writeIndexedFrame(px, b, n, rows, gen, frame, slotsGen = 0, orderSeed = frame) {
   const g = px.gpuQueueBuffers[b];
-  const order = Array.from({ length: rows }, (_, i) => i).sort((a, c) => ((a * 7919 + frame * 31) % rows) - ((c * 7919 + frame * 31) % rows));
+  const key = (i) => (i * 7919 + orderSeed * 31) % rows;
+  const order = Array.from({ length: rows }, (_, i) => i).sort((a, c) => key(a) - key(c));
   const pose = new Float32Array(n * GPU_POSE_FLOATS);
   const slots = new Float32Array(n * GPU_INDEXED_SLOT_FLOATS);
   const stat = new Float32Array(rows * GPU_INDEXED_STATIC_FLOATS);
@@ -169,7 +171,7 @@ function writeIndexedFrame(px, b, n, rows, gen, frame) {
   g.spritePose.set(pose);
   g.spriteSlots.set(slots);
   g.spriteRowStatics.set(stat);
-  writeGpuQueueHeader(g.header, { sprite: n, staticGen: gen, indexedRows: rows }, GPU_FLAG_INDEXED);
+  writeGpuQueueHeader(g.header, { sprite: n, staticGen: gen, indexedRows: rows, slotsGen: slotsGen | 0 }, GPU_FLAG_INDEXED);
   px.renderQueueBuffers[b].count[0] = rows;
   return { pose, slots, stat };
 }
@@ -336,4 +338,35 @@ test('on WebGPU a device that cannot bind the statics stops the entity batch, sa
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
   const s = await quietly(() => scene(true));
   await assert.rejects(() => quietly(() => bindPixi(px, s, { webgpu: true, maxStorageBytes: 1024 })), /storage buffer of \d+ bytes/);
+});
+
+test('the slot pairs go up only when their generation or the slots move', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const s = await quietly(() => scene(true));
+  const log = await quietly(() => bindPixi(px, s));
+  const batch = px.entitiesBatch;
+  // [slots, queue rows, statics generation, slots generation, the order's seed]
+  const frames = [
+    [2500, 2600, 5, 0x80000001, 1], [2500, 2600, 5, 0x80000001, 1], [2500, 2600, 5, 0x80000001, 1],
+    [2500, 2600, 6, 0x80000001, 1], [2500, 2600, 6, 0x80000002, 2], [2400, 2600, 6, 0x80000002, 2],
+    [2400, 2600, 6, 0x80000002, 2], [2400, 2600, 6, 0, 2],
+  ];
+  const copies = [];
+  const sent = [];
+  frames.forEach(([n, rows, gen, slotsGen, seed], f) => {
+    const b = f & 1;
+    const want = writeIndexedFrame(px, b, n, rows, gen, f, slotsGen, seed);
+    px._setReadBuffer(b);
+    const version = batch._slotsVersion;
+    const uploads = log.slots;
+    px.updateSpritesFromRenderQueue();
+    assert.equal(px.visibleEntityCount, n, `frame ${f}: slots`);
+    same(batch.data, want.pose, n * GPU_POSE_FLOATS, `frame ${f} pose`);
+    same(batch._slotData, want.slots, n * GPU_INDEXED_SLOT_FLOATS, `frame ${f} slots`);
+    copies.push(batch._slotsVersion - version);
+    sent.push(log.slots - uploads);
+  });
+  // A copy for a new generation, fewer slots or generation 0; a ring slot's buffer goes up when it lacks the copy.
+  assert.deepEqual(copies, [1, 0, 0, 0, 1, 1, 0, 1]);
+  assert.deepEqual(sent, [1, 1, 0, 0, 1, 1, 1, 1]);
 });

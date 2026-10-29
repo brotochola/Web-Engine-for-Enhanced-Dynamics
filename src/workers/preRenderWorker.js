@@ -426,6 +426,13 @@ class PreRenderWorker extends AbstractWorker {
         this._packIndexedUsed = false;
         this._packIndexedGen = 0;
         this._packIndexedRows = 0;
+        this._packIndexedSlotsGen = 0;
+        // An indexed frame's slot pairs' generation (_sortedSlotsGen): its number, and the painter's orderGen, the
+        // slots and the depth scale it was given for.
+        this._slotsContentGen = 0;
+        this._slotsSeenOrderGen = 0;
+        this._slotsSeenCount = -1;
+        this._slotsSeenDepth = NaN;
         // A painter-sorted frame's statics generation (_sortedStaticGen): its number, and the queue generation, the
         // painter's orderGen, the rows and the depth scale it was given for.
         this._sortedContentGen = 0;
@@ -3480,7 +3487,33 @@ class PreRenderWorker extends AbstractWorker {
         this._packIndexedUsed = true;
         this._packIndexedGen = gen;
         this._packIndexedRows = rows;
+        this._packIndexedSlotsGen = this._sortedSlotsGen(ctx, n);
         return n;
+    }
+
+    /**
+     * E-162: an indexed frame's slot pairs' generation: the same number while the painter's order (orderGen), the
+     * slots and the depth scale are the ones it was given for, so Pixi copies and uploads the pairs once; a new number
+     * when any moved. Pre-render writes them every frame all the same (the scatter that writes them reads the queue in
+     * order, which a pose gather in draw order does not). 0 (Pixi takes them) when the order is not the painter's.
+     */
+    _sortedSlotsGen(ctx, n) {
+        const painter = this._gpuPainter;
+        if (painter === null || ctx.indices !== painter.order) return 0;
+        const order = painter.orderGen | 0;
+        const depth = +(ctx.depthDenom || 1);
+        if (
+            this._slotsContentGen === 0 ||
+            order !== this._slotsSeenOrderGen ||
+            n !== this._slotsSeenCount ||
+            depth !== this._slotsSeenDepth
+        ) {
+            this._slotsContentGen = ((this._slotsContentGen + 1) & 0x7fffffff) || 1;
+            this._slotsSeenOrderGen = order;
+            this._slotsSeenCount = n;
+            this._slotsSeenDepth = depth;
+        }
+        return (0x80000000 | this._slotsContentGen) >>> 0;
     }
 
     /**
@@ -3518,12 +3551,15 @@ class PreRenderWorker extends AbstractWorker {
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
         const res = this._gpuSpritesResult
-            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0, indexedRows: 0, indices: null });
+            || (this._gpuSpritesResult = {
+                sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0, indexedRows: 0, slotsGen: 0, indices: null,
+            });
         this._packSplitUsed = false;
         this._packSplitGen = 0;
         this._packIndexedUsed = false;
         this._packIndexedGen = 0;
         this._packIndexedRows = 0;
+        this._packIndexedSlotsGen = 0;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
             res.sprite = 0;
             res.glow = 0;
@@ -3531,6 +3567,7 @@ class PreRenderWorker extends AbstractWorker {
             res.flags = 0;
             res.staticGen = 0;
             res.indexedRows = 0;
+            res.slotsGen = 0;
             res.indices = null;
             return res;
         }
@@ -3566,6 +3603,7 @@ class PreRenderWorker extends AbstractWorker {
             | (presorted ? GPU_FLAG_SORTED : 0);
         res.staticGen = this._packSplitUsed ? this._packSplitGen : this._packIndexedUsed ? this._packIndexedGen : 0;
         res.indexedRows = this._packIndexedUsed ? this._packIndexedRows : 0;
+        res.slotsGen = this._packIndexedUsed ? this._packIndexedSlotsGen : 0;
         res.indices = packed.spriteIndices;
         return res;
     }
@@ -3598,6 +3636,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.flags = sprites.flags | 0;
         counts.staticGen = sprites.staticGen | 0;
         counts.indexedRows = sprites.indexedRows | 0;
+        counts.slotsGen = sprites.slotsGen | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
     }

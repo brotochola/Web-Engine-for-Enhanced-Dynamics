@@ -51,6 +51,11 @@ export const GPU_FLAG_SPLIT = 2;
  */
 export const GPU_FLAG_INDEXED = 4;
 export const GPU_HDR_INDEXED_ROWS = 9;
+/**
+ * E-162. An indexed frame's slot pairs' generation: the same while the painter's order, the slots and the depth
+ * scale hold, so the renderer takes the pairs again only when it moves (0: take them).
+ */
+export const GPU_HDR_SLOTS_GEN = 10;
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
@@ -198,6 +203,7 @@ export function clearGpuQueueHeader(header) {
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
   header[GPU_HDR_STATIC_GEN] = 0;
   header[GPU_HDR_INDEXED_ROWS] = 0;
+  header[GPU_HDR_SLOTS_GEN] = 0;
 }
 
 export function writeGpuQueueHeader(header, counts, flags) {
@@ -212,6 +218,7 @@ export function writeGpuQueueHeader(header, counts, flags) {
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
   header[GPU_HDR_STATIC_GEN] = counts.staticGen | 0;
   header[GPU_HDR_INDEXED_ROWS] = counts.indexedRows | 0;
+  header[GPU_HDR_SLOTS_GEN] = counts.slotsGen | 0;
 }
 
 /**
