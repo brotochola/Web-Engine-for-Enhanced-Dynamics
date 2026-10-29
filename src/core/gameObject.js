@@ -91,6 +91,25 @@ function warnNoSpriteOnce(className, method) {
   console.warn(`WeedJS: ${className}.${method} needs a sprite: call setSprite / setSpritesheet first.`);
 }
 
+/**
+ * E-164: a class's first COMPONENT_FIELDS components live in fields of the instance (_c0 … _c7, declared in the
+ * constructor), so `this.rigidBody` is one load from the entity, not three (the entity, its slot array, the array's
+ * elements). With 20 000 entities none of those is in cache: waterAndBoxesScene's getter read in about 23 ns. Each
+ * getter reads its field by name; a class's further components keep E-139's slot array.
+ */
+const COMPONENT_FIELDS = 8;
+const FIELD_GETTERS = [
+  function () { const c = this._c0; return c !== null ? c : this._makeComponent(0); },
+  function () { const c = this._c1; return c !== null ? c : this._makeComponent(1); },
+  function () { const c = this._c2; return c !== null ? c : this._makeComponent(2); },
+  function () { const c = this._c3; return c !== null ? c : this._makeComponent(3); },
+  function () { const c = this._c4; return c !== null ? c : this._makeComponent(4); },
+  function () { const c = this._c5; return c !== null ? c : this._makeComponent(5); },
+  function () { const c = this._c6; return c !== null ? c : this._makeComponent(6); },
+  function () { const c = this._c7; return c !== null ? c : this._makeComponent(7); },
+];
+const NO_COMPONENT_SLOTS = [];
+
 /** The page (main thread), not a worker: a window, and no logic worker set up here. */
 function isMainThread() {
   return typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
@@ -118,6 +137,8 @@ export class GameObject {
   static components = []; // By default, only Transform (added automatically)
   /** Slots in an instance's `_components`, one per component getter (E-139); set by _ensureComponentAccessors. */
   static _componentSlotCount = 0;
+  /** Each slot's component, `{ name, Class }`, for _makeComponent (E-164); set by _ensureComponentAccessors. */
+  static _componentSlotSpecs = NO_COMPONENT_SLOTS;
 
   // Tick decimation - override in subclasses to reduce tick frequency
   // 0 = logic workers never visit this type (unless CameraInOutListener)
@@ -496,6 +517,15 @@ export class GameObject {
     this.config = config;
     // LogicWorker API object (postMessage, queues). Not forceProcessOnLogicWorker.
     this.logicWorker = logicWorker;
+    // E-164: the component fields, declared here so every instance of a class has one shape.
+    this._c0 = null;
+    this._c1 = null;
+    this._c2 = null;
+    this._c3 = null;
+    this._c4 = null;
+    this._c5 = null;
+    this._c6 = null;
+    this._c7 = null;
     this.bindToEntitySlot({ page: options.page === true });
   }
 
@@ -544,8 +574,41 @@ export class GameObject {
     }
 
     Ctor._ensureComponentAccessors();
-    // E-139: this entity's component instances, one slot per component of its class, made on first use.
-    this._components = new Array(Ctor._componentSlotCount).fill(null);
+    // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c7, the rest
+    // in E-139's slot array.
+    this._c0 = null;
+    this._c1 = null;
+    this._c2 = null;
+    this._c3 = null;
+    this._c4 = null;
+    this._c5 = null;
+    this._c6 = null;
+    this._c7 = null;
+    const slots = Ctor._componentSlotCount;
+    this._components = slots > COMPONENT_FIELDS ? new Array(slots).fill(null) : NO_COMPONENT_SLOTS;
+  }
+
+  /**
+   * E-164: a component's instance on its first read through FIELD_GETTERS, kept in its field; null when this type
+   * does not have the component.
+   * @param {number} slot 0 … COMPONENT_FIELDS - 1
+   */
+  _makeComponent(slot) {
+    const spec = this.constructor._componentSlotSpecs[slot];
+    if (!this._hasComponents[spec.name]) return null;
+    const instance = new spec.Class(this.index);
+    instance.owner = this;
+    switch (slot) {
+      case 0: this._c0 = instance; break;
+      case 1: this._c1 = instance; break;
+      case 2: this._c2 = instance; break;
+      case 3: this._c3 = instance; break;
+      case 4: this._c4 = instance; break;
+      case 5: this._c5 = instance; break;
+      case 6: this._c6 = instance; break;
+      default: this._c7 = instance; break;
+    }
+    return instance;
   }
 
   /**
@@ -600,6 +663,7 @@ export class GameObject {
       return;
     }
     let slots = 0;
+    const specs = [];
 
     // Core component class map
     const coreComponents = {
@@ -627,6 +691,15 @@ export class GameObject {
 
       // Define getter on prototype (shared by all instances)
       const slot = slots++;
+      specs[slot] = { name: componentName, Class: ComponentClass };
+      if (slot < COMPONENT_FIELDS) {
+        Object.defineProperty(this.prototype, componentName, {
+          get: FIELD_GETTERS[slot],
+          enumerable: true,
+          configurable: true,
+        });
+        continue;
+      }
       Object.defineProperty(this.prototype, componentName, {
         get: function () {
           const cached = this._components[slot];
@@ -651,6 +724,7 @@ export class GameObject {
 
     // Mark as created
     this._componentSlotCount = slots;
+    this._componentSlotSpecs = specs;
     this.prototype._componentAccessorsCreated = true;
   }
 
