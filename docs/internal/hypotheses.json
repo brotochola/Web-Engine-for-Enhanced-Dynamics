@@ -8781,17 +8781,20 @@
         "R-0707",
         "R-0722",
         "R-0723",
-        "R-0724"
+        "R-0724",
+        "R-0725",
+        "R-0726",
+        "R-0727"
       ],
       "date": "2026-10-29",
       "area": "particle",
       "kind": "dx",
-      "result": "GPU particle gate: GPU Galaxy 8M renderer +6.0 %, presented -8.2 % (4/4); bisected to cb72506a (+12.9 %, -9.4 %, 2/2). Same records and drawn window; the per-tick cadence explains logic, not the frames. On the final branch (with E-161): renderer +3.2 %, presented -4.9 % (4/4).",
-      "next": "Find the GPU-side mechanism (which share is the clock's and which E-161's), then keep, fix or go back.",
+      "result": "Kept 4072de40: the sim clock moves once a main frame (Time._stepSimFrame) and its readers carry it on past SIM_CLOCK_HOLD_MS (100 ms) without one. The continuous clock (cb72506a) cost GPU Galaxy 8M 4-6 % of its presented frames at the same GPU time a frame; with the hold, presented 51.8 -> 54.7 fps (+6.0 %, 3/4).",
+      "next": "Nothing pending.",
       "id": "DX-GPCLOCK",
       "title": "GPU particles' sim clock keeps its own time (a stalled main thread does not freeze them)",
-      "status": "blocked",
-      "statusText": "blocked: the owner's call; GPU Galaxy 8M presents 4.9 % fewer frames on the branch (R-0724, 9 % before E-161)"
+      "status": "kept",
+      "statusText": "kept 2026-10-29 with a 100 ms hold (R-0727)"
     },
     {
       "aliases": [],
@@ -15766,6 +15769,36 @@
       "title": "W9-final-galaxy: GPU Galaxy 8M presented -4.9 % on the branch (renderer +3.2 %), the clock's cost about halved since E-161",
       "verdict": "mixed",
       "text": "**W9-final-galaxy: the branch against main on GPU Galaxy 8M, the clock's cost about halved.** 2026-10-29, main\nbfd7ccf1 against df2a63a3, 4 pairs, worktrees, headed, source, detailed stats off, `particles=8388608&arms=8`, owner\nthe renderer (the same protocol as R-0707's gate).\n\nREGRESSION: renderer 4.000 → 4.129 ms (+3.2 %, worse 4/4, cv 2/2 %), presented 55.3 → 52.4 fps (−4.9 %, fewer 4/4,\ncv 2/2 %); logic 1.212 → 1.416 ms (under the floor: the arms emit on every tick with the wall clock, R-0707).\n\nR-0707 read −8.2 % presented on the branch at 5b01605a and the bisect −9.4 % on cb72506a alone. The branch now also\nhas E-161, which joins a frame's emitGpu calls into one group (the renderer draws fewer, larger groups), and the loss\nis about half. The two are the branch's only changes on this scene's path; which share is whose, and the clock's\nmechanism on the GPU side, are the next item."
+    },
+    {
+      "id": "R-0725",
+      "date": "2026-10-29",
+      "time": "08:23",
+      "timeFrom": "recorded",
+      "title": "W9-clock-share: on the final branch the clock alone costs GPU Galaxy 8M 3.7 % of its presented frames",
+      "verdict": "mixed",
+      "text": "**W9-clock-share: the clock's share of GPU Galaxy 8M's loss on the final branch.** 2026-10-29, A = the branch with\nDX-GPCLOCK reverted (cb72506a with its follow-ups N-85 and N-87, a throwaway commit 8471c257), B = the branch at\n1bf13c42; 4 pairs, worktrees, headed, source, detailed stats off, `particles=8388608&arms=8`, owner the renderer.\n\nREGRESSION on presented frames: 54.9 → 53.2 fps (−3.7 %, fewer 3/4, cv 2/2 %); the renderer's step 4.054 → 4.037 ms\n(+1.2 % paired, worse 2/4); logic 1.248 → 1.379 ms (under the floor; the arms emit on every tick with the wall clock).\nSo most of the final gate's −4.9 % (R-0724) is the clock's; the rest is within a pair's spread.\n\n**Where the frames go** (the final gate's runs, R-0724): every worker's exact frames follow the main thread's (main\n553 → 527 in 10 s, logic and particle the same, renderer and pre-render 292 → 276, every other main frame). The\nrenderer is paced by the GPU (E-97's pacer: two frames in flight), its CPU per drawn frame +3.3 %. The GPU particle\nwork per frame has the same structure on both sides: one draw per ring of the same live window, one or two upload\nranges a frame, a shader that reads only `now − birth`."
+    },
+    {
+      "id": "R-0726",
+      "date": "2026-10-29",
+      "time": "08:23",
+      "timeFrom": "recorded",
+      "title": "DX-GPCLOCK's frames are not lost on the GPU: the same GPU time a frame, the GPU idle more, the page's frame clock slower",
+      "verdict": "note",
+      "text": "**DX-GPCLOCK's frames are not lost on the GPU.** 2026-10-29, one 30 s run per side of GPU Galaxy 8M\n(`particles=8388608&arms=8`, headed, source, detailed stats off; A = the branch with the clock reverted, 8471c257;\nB = the branch, 1bf13c42), with the NVIDIA GPU's clock, power and use (`nvidia-smi`) and Windows' GPU engine counters\nsampled about every 1.6 s (23 steady samples a side):\n\n| | main frames | drawn | NVIDIA use | clock | power | dGPU 3D engine | iGPU 3D |\n|---|---|---|---|---|---|---|---|\n| A, clock reverted | 1 690 (56.3/s) | 895 (29.8/s) | 79.6 % | 1 669 MHz | 43.9 W | 70.4 % | 10.1 % |\n| B, the branch | 1 592 (53.1/s) | 835 (27.8/s) | 74.9 % | 1 679 MHz | 41.1 W | 66.6 % | 9.6 % |\n\n- The GTX 1650 renders (Chrome's GPU process on it at about 70 %); the integrated Radeon drives the display.\n- **Same GPU time per frame** (2.67 against 2.69 % of the GPU a drawn frame), at the same clock: the branch does not\n  give the GPU more work. It leaves it idle more: the page's frame clock is slower (main −5.8 %), and every worker's\n  frames follow it (the gate's runs: logic and particle at main's count, the renderer and pre-render at every other\n  main frame).\n- So the cost is in the frame scheduling of a GPU-heavy page, and it follows how the clock moves, not how much the\n  arms emit: R-0707's `?batchMs=33` took the cadence back without the frames."
+    },
+    {
+      "id": "R-0727",
+      "date": "2026-10-29",
+      "time": "08:23",
+      "timeFrom": "recorded",
+      "title": "DX-GPCLOCK kept with a hold: the clock moves once a main frame, its readers carry it on past 100 ms (GPU Galaxy 8M presented +6.0 %)",
+      "verdict": "kept",
+      "text": "**DX-GPCLOCK kept with a hold: the clock moves once a main frame, and its readers carry it on past 100 ms.**\n2026-10-29, `4072de40`.\n\n**The change.** Scene's frame loop steps the clock at each main frame (`Time._stepSimFrame`, at the frame's wall\ntime), by the frame's time times the scale, as before cb72506a. A main thread that gives no frame for\n`SIM_CLOCK_HOLD_MS` (100 ms) does not hold it back: past that the readers carry it on at the scale, and the next frame\ngoes on from where they were (a stall's frame steps at least a hold, as the old 100 ms clamp gave a long frame). So\nDX-GPCLOCK's point stays (a stalled page does not freeze GPU particles), and the page's frames come back.\n\n**The sitting** W9-clock-hybrid (A = the branch at 1bf13c42, B = the change as a throwaway commit aedc04f9; 4 pairs,\nworktrees, headed, source, detailed stats off, GPU Galaxy `particles=8388608&arms=8`, owner the renderer): KEPT\n(product). Presented 51.8 → 54.7 fps (+6.0 %, fewer 1/4, cv 6/2 %); renderer 4.203 → 4.060 ms (−4.7 %, worse 1/4,\ncv 7/2 %); logic 1.410 → 1.213 ms (under the floor: the arms' old cadence). That is the whole loss of R-0724 (−4.9 %)\nand of W9-clock-share (−3.7 %), within the pairs' spread.\n\n**Why it costs** is Chrome's frame scheduling of a GPU-heavy page, not the GPU's work (the diagnostic record): a clock\nthat moves with the main frame keeps the page at a higher frame rate; R-0707's `?batchMs` showed it is not the arms'\nemit cadence.\n\nTests: `timeScale.test.js` (the clock holds between frames, steps by the frame at the scale, a hitstop and a stop\nfreeze it, past the hold the readers carry it on and the next frame goes on from there, N-85's fallback, another\nthread sees it move while this one stalls). `npm run test:node` 2 102/2 102, `test:demos` 100/100.",
+      "commits": [
+        "4072de40"
+      ]
     }
   ],
   "leads": [
