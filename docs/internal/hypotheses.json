@@ -8935,7 +8935,8 @@
         "R-0747",
         "R-0748",
         "R-0749",
-        "R-0750"
+        "R-0750",
+        "R-0751"
       ],
       "id": "E-162",
       "title": "painterMove: the moving rows' scatter pack and reinsert",
@@ -9386,6 +9387,22 @@
       "kind": "speed",
       "result": "Kept c29140c3: reads take the realm's frame wall time (noted once a frame), timeOrigin read once; Chrome emitGpu with a running clock 1 285 -> 625 ns a call (-51 %); trail=1024 logic -25.8 % (under the floor).",
       "next": "Nothing pending (the merge candidate's gates passed, R-0742, R-0743)."
+    },
+    {
+      "aliases": [],
+      "refs": [],
+      "records": [
+        "R-0751"
+      ],
+      "id": "E-175",
+      "title": "Predator's decal tiles: up to 800 Pixi sprites re-transformed and re-batched every frame",
+      "status": "open",
+      "statusText": "open: from the 2026-10-29 layer split of the renderer (no sitting yet)",
+      "date": "2026-10-29",
+      "area": "pixi",
+      "kind": "speed",
+      "result": "",
+      "next": "Owner Predator renderer. First the cheapest: decalTileContainer.isRenderGroup = true (the camera moves the group, not 800 children) and the tiles outside the view hidden; if the batch and the texture binds stay, the tiles as one instanced batch of the engine over one atlas or array texture. ABAB 4 pairs, renderer STEP_MS - WAIT_MS."
     }
   ],
   "records": [
@@ -16271,6 +16288,15 @@
       "title": "E162-painterMove: indexed frames on WebGL, pre-render -43.6 %, Pixi -54.4 % (KEPT, product)",
       "verdict": "kept",
       "text": "**E162-painterMove: indexed frames against split frames on painterMove (WebGL), KEPT (product).** 2026-10-29, 15:48\nto 15:55, wave10 at 9aab6049 (the code of fd34cf36), one worktree for both sides (`--vs HEAD --query-a indexed=0\n--query-b indexed=1`: one build, the option the only difference), 4 pairs, headed, source, detailed stats off.\n\n- **pre-render 37.326 → 19.834 ms (−43.6 %, worse 0/4, cv 5/13 %; lower than the others 4/4, −10.6 %)**: a moved\n  frame no longer scatters the statics, and pre-render publishes 52 to 57 frames a second instead of 28 to 32.\n- **renderer (Pixi) 4.988 → 2.278 ms (−54.4 %, worse 0/4, cv 11/10 %)**: 24 bytes a sprite copied and uploaded instead\n  of 60, the statics only on a new generation.\n- logic 9.934 → 8.372 ms (−12.3 %, worse 0/4): a worker the change cannot reach, read as the CPU pre-render no longer\n  takes (235 % of a core on side A, 107 to 121 % on side B).\n- presented 59.5 → 60.0 fps; VISIBLE_ENTITIES and RENDER_QUEUE_SIZE 300 000 on both sides.\n\nNo A/A this sitting: both owners moved 4/4 by several times Predator's run-to-run spread (8 to 13 %). The option stays\noff by default until WebGPU (step 4), painterSort and a Predator gate say more."
+    },
+    {
+      "id": "R-0751",
+      "date": "2026-10-29",
+      "time": "15:56",
+      "timeFrom": "recorded",
+      "title": "Pixi's own cost by layer: the upload everywhere, and Predator's decal tiles (2.2 ms of its 6.5 ms renderer step)",
+      "verdict": "note",
+      "text": "**Pixi's own cost, split by layer: almost all of it is the upload, except Predator's decal tiles.** 2026-10-29,\n`profileSceneSweep --pass cpu --keep-traces` on fd34cf36 (headed, source, detailed stats off, 6 s warm-up, 8 s window),\npredatorScene, adobeAnimateScene (min zoom), bunnyMarkScene, painterMoveStressScene. Each sample of the renderer worker\nwas given to the first JS frame from its leaf (pixi.min.js or ours), so WASM our code calls counts as ours; WebGL calls\nhave no node of their own in Chrome's profile, so `bufferSubData` is `updateBuffer`'s self time (R-0162: no copy in it).\n\n| renderer worker, ms/s | busy | WASM (pack, copy) | Pixi `updateBuffer` | Pixi, the rest | our JS | (program) |\n|---|---|---|---|---|---|---|\n| Predator (step 6.46 ms, 60 drawn) | 456.7 | 170.8 | 67.3 | 130.7 | 56.8 | 28.9 |\n| Adobe (pre-render 14.7 ms limits) | 386.8 | 174.2 | 149.7 | 23.9 | 17.4 | 19.3 |\n| BunnyMark (GPU-bound, 283 frames in 8 s) | 172.2 | 112.7 | 30.2 | 9.2 | 8.9 | 10.5 |\n| painterMove (pre-render saturated, 28 fps) | 254.5 | 88.7 | 124.0 | 13.0 | 8.3 | 20.2 |\n\nOutside Predator, what Pixi does besides uploading is 0.15–0.4 ms a frame. **Predator's 130.7 ms/s (≈2.2 ms of its\n6.46 ms step)** is, inclusive: the render groups' transform walk (`_updateRenderGroups` → `Fa`/`zd`, the recursive\nupdateTransform under a container that is not a render group) 35.7, the sprite batcher (`execute` of the batch pipe,\n`packQuadAttributes`, `updateElement`) about 21, shader and uniform sync (`bind` :188, our E-148 plan `N_`) 23.4,\ntexture binds (`bindSource`) 14.6, the rest render targets, clears and draw issue. The only plain sprites Predator has\nin number are the decal tiles: 40 × 20 `PIXI.Sprite`s of 256 world units (10 000 × 5 000 world), each with a texture of\nits own, made visible at their first splat and never culled, under `decalTileContainer`, which `_placeWorldCamera`\nmoves every frame. A moved plain container makes Pixi recompute every visible child's group transform and re-pack\nits quads; one texture per tile breaks the batch at each texture-unit limit. Opened as E-175 (the attribution is from\nthe call tree, not yet a sitting).\n\nFor the question this answered (does Pixi limit the engine): in none of the four scenes is the renderer the worker\nthat sets the frame (physics in Predator, pre-render in Adobe and painterMove, the GPU in BunnyMark); the bytes moved\n(pack, W30 copy, upload) are the renderer's cost and stay with any renderer; E-162 is the lever for them."
     }
   ],
   "leads": [
