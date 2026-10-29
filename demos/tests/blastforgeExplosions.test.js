@@ -99,7 +99,10 @@ for (const [key, preset] of Object.entries(PRESETS)) {
       const field = GpuParticles.layerOf(FIELD_LAYER).rings[1];
       const written = Atomics.load(field.header, GPU_RING.PUBLISHED);
       if (preset.fire + preset.smoke + preset.dust > 0) assert.ok(written > 0, 'field puffs written');
-      assert.equal(groupsOf(FIELD_LAYER) + groupsOf(EMBERS_LAYER), calls.length, 'one group per emit');
+      // A blast's emits share groups (E-161: a call within a few ms of its ring's last group joins it, on a sorted
+      // layer when it is on the same row): at least one group, at most one an emit.
+      const groups = groupsOf(FIELD_LAYER) + groupsOf(EMBERS_LAYER);
+      assert.ok(groups >= 1 && groups <= calls.length, `${groups} groups for ${calls.length} emits`);
       for (let g = 0; g < groupsOf(FIELD_LAYER); g++) {
         const b = g * GPU_GROUP_WORDS;
         for (const word of [GPU_GROUP.BIRTH_F, GPU_GROUP.END_F, GPU_GROUP.MIN_X_F, GPU_GROUP.MAX_X_F, GPU_GROUP.MIN_Y_F, GPU_GROUP.MAX_Y_F]) {
