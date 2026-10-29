@@ -33,6 +33,7 @@ export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', engineWasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
+    'pack_sprites_indexed_scatter',
   ]);
   return {
     buffer: memory.buffer,
@@ -42,6 +43,8 @@ export async function bindGpuPack(memory, layout) {
     castersScatter: k.pack_casters_scatter,
     spritesSplit: k.pack_sprites_split,
     spritesSplitScatter: k.pack_sprites_split_scatter,
+    // E-162: the pose and the statics' row in draw order, the statics in the queue's row order.
+    spritesIndexedScatter: k.pack_sprites_indexed_scatter,
     // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
@@ -206,6 +209,33 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
     out = b.spritesSplit(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
       stat !== null ? stat.byteOffset : 0, typeByte, b.particlesByte);
   }
+  ctx.particleCount = b.u32[b.particlesByte >> 2];
+  return out;
+}
+
+/**
+ * E-162: a painter-sorted frame's indexed streams through the kernel: each drawn row's pose (GPU_POSE_FLOATS) and
+ * its row number (a u32) at its draw slot, and, unless `stat` is null, its statics at its row (the queue's row order,
+ * GPU_STATIC_FLOATS a row, the depth term 0: the vertex shader takes it from the draw slot). Only for an index list
+ * over most of the queue, as packSplitRowsWasm's scatter takes it.
+ * @returns {number} the rows written, or -1 when this call is not one the kernel packs (the caller packs it split)
+ */
+export function packIndexedRowsWasm(b, q, ctx, pose, rows, stat, capacity) {
+  if (!b || !q || !pose || !rows || !ctx || !b.spritesIndexedScatter) return -1;
+  const o = ctx.o || ctx;
+  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  if (pose.buffer !== b.buffer || rows.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
+  const typeArr = ctx.typeArr;
+  if (typeArr && typeArr.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const count = ctx.scanCount | 0;
+  const indexByte = indexByteFor(b, ctx, count, capacity);
+  const n = q.count | 0;
+  if (indexByte <= 0 || !b.inverseByte || count < SCATTER_MIN_ROWS || count * 2 < n || n > b.indexCap) return -1;
+  const out = b.spritesIndexedScatter(table, indexByte, count, capacity | 0, pose.byteOffset, rows.byteOffset,
+    stat !== null ? stat.byteOffset : 0, typeArr ? typeArr.byteOffset : 0, b.particlesByte, b.inverseByte, n);
+  if (out < 0) return -1;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;
 }
