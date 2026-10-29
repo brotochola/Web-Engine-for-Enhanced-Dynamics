@@ -2850,6 +2850,17 @@ and one that steps the generator's state itself, were both 2–4 times slower in
 littleCity's logic allocates 10 573 → 6 601 KB/s (−38 %); logic −3.9 % over 4 pairs. One box remains where a large
 tick does not inline `rng()`.
 
+### E-169 A spawn config's keys go through `instance[key]`
+
+Wave 9's second map (after E-165): `_spawnAt` is still 34 % of spawnStormScene's logic (232 ms/s), and 51 % of its
+self time is two lines of the loop that applies the spawn config: `instance[key] = spawnConfig[key]` (41 %) and the
+check before it, which read `instance[key]` twice (10 %). Keyed reads and writes by the config's names, over every
+class one loop sees, go megamorphic; for an accessor each read is a getter call. Nearly every config is `{ x, y, … }`.
+
+**Kept 2026-10-29** (d11d29f3): x and y are set by name, in their place in the config's order, and every other key
+reads its current value once. spawnStormScene logic 3.431 → 2.644 ms (−22.4 %, worse 0/4, cv 2/4 %), BODY_COUNT
+−3.5 %. `spawnConfigKeys.test.js` keeps the order and the single read.
+
 ---
 
 ## Not doing (read the log first)
