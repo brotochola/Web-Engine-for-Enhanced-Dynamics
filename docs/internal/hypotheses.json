@@ -8421,11 +8421,11 @@
       "id": "E-145",
       "title": "Adobe Animate pieces expanded on the GPU",
       "status": "open",
-      "statusText": "open: design note written 2026-10-28 (ADOBE_GPU_PLAN.md), no prototype yet",
+      "statusText": "open: design note written 2026-10-28 (ADOBE_GPU_PLAN.md), no prototype yet; the owner keeps Adobe out for now (2026-10-29)",
       "date": "2026-10-26",
       "area": "pre-render",
       "kind": "gpu",
-      "rank": 4,
+      "rank": 7,
       "result": "Wave 7 sweep (R-0645): at the minimum zoom emit_rows is 44 % and pack_sprites_split 28 % of a 696 ms/s pre-render, and W27b showed the expansion bound by its stores. One row per character, with the piece tables on the GPU, writes far fewer bytes and drops most of Pixi's 15 MB copy (W30).",
       "next": "The prototype in ADOBE_GPU_PLAN.md's order: the piece table texture, the record writer, the Adobe batch in Pixi, the sitting on adobeAnimateScene."
     },
@@ -8781,11 +8781,12 @@
       "area": "particle",
       "kind": "dx",
       "result": "",
-      "next": "",
+      "next": "Wave 9's close: the GPU particle gate (gpuParticlesStressScene and GPU Galaxy, WebGL and WebGPU).",
       "id": "DX-GPCLOCK",
       "title": "GPU particles' sim clock keeps its own time (a stalled main thread does not freeze them)",
       "status": "open",
-      "statusText": "built 2026-10-29 (cb72506a); the GPU particle gate pending"
+      "statusText": "built 2026-10-29 (cb72506a); the GPU particle gate pending",
+      "rank": 6
     },
     {
       "aliases": [],
@@ -8818,9 +8819,8 @@
       "next": "A per-layer clear time the vertex shader compares with each birth; an API on every writer thread; a test and the GPU particle gate.",
       "id": "DX-GPCLEAR",
       "title": "Clear a GPU particle layer (a level restart without a scene reload)",
-      "status": "open",
-      "rank": 1,
-      "statusText": "approved by the owner 2026-10-29"
+      "status": "blocked",
+      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it"
     },
     {
       "aliases": [],
@@ -8835,9 +8835,8 @@
       "next": "A sideways acceleration in the GPU record and the closed form (with drag); drag in the CPU integrate; tests against the JS evaluator.",
       "id": "DX-GPWIND",
       "title": "Wind for GPU particles, drag for CPU particles",
-      "status": "open",
-      "rank": 2,
-      "statusText": "approved by the owner 2026-10-29"
+      "status": "blocked",
+      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it"
     },
     {
       "aliases": [],
@@ -8849,12 +8848,96 @@
       "area": "particle",
       "kind": "dx",
       "result": "",
-      "next": "Design: which worker emits for it each frame (the entity pose is there), the group budget (2 048 calls a ring), the API.",
+      "next": "Not a speed item: E-161 takes the group each emitGpu call costs, so a call per tick is cheap. The comfort API (a rate a second, no tick, an offset that turns, even trails) waits for a game.",
       "id": "DX-GPFOLLOW",
       "title": "A GPU particle emitter that follows an entity without a call every frame",
+      "status": "blocked",
+      "statusText": "nice to have (owner, 2026-10-29): a feature, not speed; waits until a game asks for it"
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-160"
+      ],
+      "records": [],
+      "id": "E-160",
+      "title": "Predator's shadow stamp, on the inputs the scene gives it",
       "status": "open",
+      "statusText": "open: Wave 9 (2026-10-29)",
+      "date": "2026-10-29",
+      "area": "pre-render",
+      "kind": "wasm",
+      "rank": 1,
+      "result": "stamp_light_range is 39 % of Predator's pre-render (R-0645; 46.7 % in R-0607). The kernel's one-frame fixture predicts about a quarter of the scene's cost a frame.",
+      "next": "Capture the real stamp inputs over a run of frames and replay them in the kernel (own commit); the algorithm first, then flags, SIMD and float32; Predator pre-render ABAB."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-161"
+      ],
+      "records": [],
+      "id": "E-161",
+      "title": "emitGpu: the calls of one frame share a group",
+      "status": "open",
+      "statusText": "open: Wave 9 (2026-10-29)",
+      "date": "2026-10-29",
+      "area": "particle",
+      "kind": "js",
+      "rank": 2,
+      "result": "One group per call and 2 048 live groups a ring: about 34 entities emitting every frame with one-second particles fill a ring; a sorted layer draws each group apart and drops what passes 1 024 visible groups.",
+      "next": "A gpuParticlesStressScene knob for many small calls a frame (own commit); extend the last group when written the same frame (sorted layers within a sortY band); tests; groups, overflows, Pixi and renderer."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-162"
+      ],
+      "records": [],
+      "id": "E-162",
+      "title": "painterMove: the moving rows' scatter pack and reinsert",
+      "status": "open",
+      "statusText": "open: Wave 9 (2026-10-29)",
+      "date": "2026-10-29",
+      "area": "pre-render",
+      "kind": "wasm",
       "rank": 3,
-      "statusText": "approved by the owner 2026-10-29"
+      "result": "Left by E-159: with keys that move every frame, pack_sprites_split_scatter is 40 % and reinsert_simd_inplace 25 % of a saturated pre-render (R-0645).",
+      "next": "A kernel on the scene's rows, then painterMove pre-render ABAB; a Predator gate if the pack path changes."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-84"
+      ],
+      "records": [],
+      "id": "N-84",
+      "title": "meshGalleryScene shows a second main thread at 1000 ms/s",
+      "status": "open",
+      "statusText": "open: Wave 9 (2026-10-29)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "rank": 4,
+      "result": "R-0645: a second main thread at 1000 ms/s with no function over 2 %. A spinning thread, or one the profiler counts while it waits.",
+      "next": "threadCpuProbe.mjs for its operating-system CPU time, then name it."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-163"
+      ],
+      "records": [],
+      "id": "E-163",
+      "title": "The gather's cell order past 65 536 cells",
+      "status": "open",
+      "statusText": "open: Wave 9 (2026-10-29)",
+      "date": "2026-10-29",
+      "area": "spatial",
+      "kind": "wasm",
+      "rank": 5,
+      "result": "order_by_cell keys cells in 16 bits, so a grid of more than 65 536 cells keeps its order and loses the gather's cache order.",
+      "next": "A coarser key that fits 16 bits; spatialGatherReplayKernel on a large grid, then the spatial worker of a scene past 65 536 cells."
     }
   ],
   "records": [

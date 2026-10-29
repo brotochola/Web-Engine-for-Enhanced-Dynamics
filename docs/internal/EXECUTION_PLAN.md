@@ -2647,6 +2647,9 @@ single triangle pays; the fetch and the raster of tiny quads grow with the count
 numbers (DX-GPSIZE, done 6d0de541); move the sim clock off the main thread's frames (DX-GPCLOCK, done cb72506a: it keeps
 wall time times the scale, any thread reads it). Look regions stay as they are.
 
+**Changed later the same day:** speed and bugs come first. DX-GPCLEAR, DX-GPWIND and DX-GPFOLLOW are nice to have and
+wait until a game asks for them. What the follow emitter had to do with speed, a group per emitGpu call, is E-161.
+
 - **Look regions merge transitively.** 256 scattered look groups became one region, which sorts at the group
   furthest back. A depth per cloud needs another scheme: split the overlaps, or give each region a depth band.
 - **No per-layer clear.** GPU particles cannot be cleared one layer at a time, for a level restart without a scene
@@ -2658,6 +2661,91 @@ wall time times the scale, any thread reads it). Look regions stay as they are.
   freezes them while CPU particles keep moving. Unmeasured.
 - **Missing pieces.** CPU particles have no drag, GPU particles no sideways acceleration (wind), look targets are
   8-bit, and layer uniforms take no arrays.
+
+---
+
+## Wave 9 — speed and bugs (2026-10-29)
+
+Written 2026-10-29 for ten hours of work. The owner's call that day: speed and bugs first, features later (see
+"Left open" above). Wave 7's ranked items are done except E-145, which the owner keeps out for now, so the wave starts
+from a new map of the scenes.
+
+**The order, with its time:**
+1. **The map (1 h 10).**
+   - A CPU pass over R-0645's busiest scenes and the ones it could not read: the contended ones, those that ran on
+     half-edited code, and particleEmitStressScene.
+   - The deopt and heap passes, `--only` on the top eight. It is the first deopt pass since the WASM migration.
+   - Each scene run also reports its console errors.
+   - In parallel, a desk review of the branch's riskiest changes, looking for bugs: E-136's shared generation, the pose
+     epoch's wiring (a412603f), W28's aliasing probe, E-159's `orderGen` and DX-GPCLOCK's seqlock.
+   - What the map and the review find becomes register rows, ranked.
+2. **E-160, Predator's shadow stamp (2 h 30).**
+3. **E-161, GPU particles: one group a frame (1 h 15).**
+4. **E-162, painterMove's moving rows (1 h 30).**
+5. **The map's top two (1 h 30).** The known candidates, if the map keeps them on top:
+   - E-163, the gather's cell order past 65 536 cells;
+   - the spawn path: `_spawnAt` 40 % and `despawn` 12 % of spawnStormScene's logic;
+   - the ray API in JavaScript, about 80 % of rayStressScene's logic;
+   - `requestVectorFromStaticFlowfield`, 6 % of littleCityScene's logic;
+   - the decal tile uploads, 228 ms/s of decalBlitStressScene's Pixi.
+6. **Bugs (1 h).** What the review and the passes found, and N-84.
+7. **The close (45 min).**
+   - The GPU particle gate, for DX-GPCLOCK and E-161: gpuParticlesStressScene and GPU Galaxy, WebGL and WebGPU.
+   - One Predator gate over the batch, read against the session's A/A.
+   - The records and the page.
+   - Then the owner is asked about the merge to main, which ships the bundles built, tested and pushed.
+
+### E-160 Predator's shadow stamp, on the inputs the scene gives it
+
+`stamp_light_range` is 39 % of Predator's pre-render (R-0645; 46.7 % in R-0607). It is the largest engine function in
+the gameplay scene, already in C (W23) and without the kept-slice sort (E-133).
+
+**Why a new tool.** The kernel's fixture is one captured frame, with the 48 lights nearest the casters' centroid. On
+2026-10-29 the scene's stamp cost about four times what that fixture predicts a frame, so a variant screened on it says
+little.
+
+**The steps:**
+1. **The tool, in its own commit.** Capture the stamp's real inputs from the running scene (the light table, the caster
+   rows, the limits) over a run of frames, and replay them in the kernel.
+2. **The algorithm first:** which casters each light walks, lights whose inputs did not change since the last frame,
+   the sun.
+3. **Then the pass every WASM kernel gets:** flags, SIMD and float32 (HOW_WE_MEASURE).
+
+**How it is decided:** the replay in Node and in Chrome, then Predator's pre-render, ABAB from worktrees.
+
+### E-161 emitGpu: the calls of one frame share a group
+
+**The limit.** Each emitGpu call writes one group, and a ring holds 2 048 live ones. An entity that emits every frame
+with one-second particles keeps 60 alive, so about 34 such entities fill a ring, and the rest write over live
+particles. In a `sortWithEntities` layer each group is also a draw of its own among the sprites, and past 1 024 visible
+groups a frame the rest are not drawn.
+
+**The change.** Each record carries its own birth, so a call can extend the ring's last group when that group was
+written in the same frame: more records, the bounds widened, the latest death. In a sorted layer only a call whose
+sortY falls in the group's band can join it.
+
+**How it is decided:**
+- The tool first: a gpuParticlesStressScene knob for many small calls a frame, in a plain and a sorted layer.
+- Tests: the records are the same, and the bounds cover them.
+- The sitting: groups a frame and overflows, then Pixi and the renderer in the sorted case.
+
+### E-162 painterMove: the moving rows' scatter pack and reinsert
+
+Left by E-159. In painterMoveStressScene, whose keys move every frame, `pack_sprites_split_scatter` is 40 % and
+`reinsert_simd_inplace` 25 % of a saturated pre-render (R-0645). Moving y-sorted sprites are a top-down game's common
+case.
+
+**How it is decided:** a kernel on the scene's rows first (the scatter pack's stores, the reinsert's moves), then
+painterMove's pre-render, ABAB. A Predator gate if the pack path changes.
+
+### E-163 The gather's cell order past 65 536 cells
+
+`order_by_cell` (`spatialGather.c`) sorts a rebuild list by home cell with two radix passes on a 16-bit cell index. A
+grid of more than 65 536 cells keeps its order, so a large world loses the cache order the gather gets from it. A
+coarser key, cells grouped so the index fits in 16 bits, would keep most of the locality without a third pass.
+
+**How it is decided:** `spatialGatherReplayKernel` on a large grid, then the spatial worker of a scene whose grid passes
+65 536 cells.
 
 ---
 
