@@ -8785,13 +8785,16 @@
         "R-0725",
         "R-0726",
         "R-0727",
-        "R-0730"
+        "R-0730",
+        "R-0736",
+        "R-0737",
+        "R-0738"
       ],
       "date": "2026-10-29",
       "area": "particle",
       "kind": "dx",
-      "result": "Kept 4072de40: the sim clock moves once a main frame (Time._stepSimFrame) and its readers carry it on past SIM_CLOCK_HOLD_MS (100 ms) without one. The continuous clock (cb72506a) cost GPU Galaxy 8M 4-6 % of its presented frames at the same GPU time a frame; with the hold, presented 51.8 -> 54.7 fps (+6.0 %, 3/4).",
-      "next": "Nothing pending.",
+      "result": "Kept 4072de40: the sim clock moves once a main frame (Time._stepSimFrame) and its readers carry it on past SIM_CLOCK_HOLD_MS (100 ms) without one. The continuous clock (cb72506a) cost GPU Galaxy 8M 4-6 % of its presented frames at the same GPU time a frame; with the hold, presented 51.8 -> 54.7 fps (+6.0 %, 3/4). On the final branch against main (8 pairs, R-0738): presented -2.1 %, renderer +1.7 %, neutral at the scene's detection limit (A/A R-0737: -1.2 %, +2.0 %).",
+      "next": "If GPU-bound pages must match main exactly: find what the hold still costs (the readers' wall-clock read is the remaining difference).",
       "id": "DX-GPCLOCK",
       "title": "GPU particles' sim clock keeps its own time (a stalled main thread does not freeze them)",
       "status": "kept",
@@ -8873,7 +8876,8 @@
         "R-0702",
         "R-0703",
         "R-0711",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "E-160",
       "title": "Predator's shadow stamp, on the inputs the scene gives it",
@@ -8897,7 +8901,9 @@
         "R-0717",
         "R-0722",
         "R-0723",
-        "R-0724"
+        "R-0724",
+        "R-0736",
+        "R-0738"
       ],
       "id": "E-161",
       "title": "emitGpu: the calls of one frame share a group",
@@ -8975,7 +8981,8 @@
       "records": [
         "R-0705",
         "R-0711",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "N-85",
       "title": "The sim clock's reader falls back to a stale time",
@@ -8995,7 +9002,8 @@
       "records": [
         "R-0705",
         "R-0711",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "N-86",
       "title": "publishPose's epoch fast path holds for a whole publish",
@@ -9015,7 +9023,8 @@
       "records": [
         "R-0705",
         "R-0711",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "N-87",
       "title": "The sim clock follows wall time through a hidden tab",
@@ -9039,7 +9048,8 @@
         "R-0711",
         "R-0713",
         "R-0716",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "E-164",
       "title": "A component read waits on memory: the slot array and its elements",
@@ -9060,7 +9070,8 @@
         "R-0701",
         "R-0710",
         "R-0716",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "E-165",
       "title": "Spawn and despawn read the logic worker through the worker's global",
@@ -9097,7 +9108,8 @@
       ],
       "records": [
         "R-0715",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "E-167",
       "title": "An entity carries only its own fields",
@@ -9116,7 +9128,8 @@
       ],
       "records": [
         "R-0714",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "N-88",
       "title": "A subclass entity read its parent's component flags",
@@ -9135,7 +9148,8 @@
       ],
       "records": [
         "R-0721",
-        "R-0730"
+        "R-0730",
+        "R-0736"
       ],
       "id": "N-89",
       "title": "Page entities could not make a component, and a hot swap reset the shared config and LogicWorker (E-164, E-167)",
@@ -9150,7 +9164,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0731"
+        "R-0731",
+        "R-0736"
       ],
       "date": "2026-10-29",
       "status": "kept-hygiene",
@@ -9168,7 +9183,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0732"
+        "R-0732",
+        "R-0736"
       ],
       "date": "2026-10-29",
       "status": "kept-hygiene",
@@ -9191,7 +9207,8 @@
       "records": [
         "R-0716",
         "R-0718",
-        "R-0722"
+        "R-0722",
+        "R-0736"
       ],
       "id": "E-168",
       "title": "rng() boxes its double twice in a worker (littleCity: 2.7 MB/s)",
@@ -9210,7 +9227,8 @@
       ],
       "records": [
         "R-0728",
-        "R-0730"
+        "R-0730",
+        "R-0736"
       ],
       "id": "E-169",
       "title": "A spawn config's keys go through instance[key]: x and y by name, other keys read once",
@@ -9226,7 +9244,8 @@
       "aliases": [],
       "records": [
         "R-0729",
-        "R-0730"
+        "R-0730",
+        "R-0736"
       ],
       "date": "2026-10-29",
       "status": "kept-kernel",
@@ -9262,7 +9281,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0734"
+        "R-0734",
+        "R-0736"
       ],
       "date": "2026-10-29",
       "status": "kept-kernel",
@@ -9280,7 +9300,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0735"
+        "R-0735",
+        "R-0736"
       ],
       "date": "2026-10-29",
       "status": "kept-kernel",
@@ -16022,6 +16043,33 @@
         "aa8fff46",
         "19e896c1"
       ]
+    },
+    {
+      "id": "R-0736",
+      "date": "2026-10-29",
+      "time": "09:55",
+      "timeFrom": "recorded",
+      "title": "W9-final2-predator passed: the whole branch against main on Predator (logic -8.1 %, nothing worse)",
+      "verdict": "passed",
+      "text": "**W9-final2-predator: the whole branch against main on Predator, passed.** 2026-10-29, main bfd7ccf1 against\n33350fb6 (Wave 9 complete: E-160, E-161, E-164 with E-164b and E-167, E-165, E-168, E-169, E-170, E-172, E-173,\nDX-GPCLOCK with its hold, N-85 to N-91), 4 pairs, worktrees, headed, source, detailed stats off.\n\nNEUTRAL, nothing worse:\n- **logic 3.594 → 3.284 ms (−8.1 %, worse 0/4, cv 3/2 %; lower than the others 4/4, −6.6 %)**;\n- pre-render 3.841 → 3.704 ms (−3.9 %, worse 1/4), renderer −2.0 %, physics −1.7 % (cv 8/9 %), spatial −0.4 %;\n- presented 60.0 both; BODY_COUNT, casters, visible entities, entities processed and the render queue within 0.2 %.\n\nThe morning's W9-final read logic −7.8 % before the session's second half; the second half's changes are in game\npaths Predator touches lightly (spawns, emits, component field reads), so the reading holds."
+    },
+    {
+      "id": "R-0737",
+      "date": "2026-10-29",
+      "time": "09:55",
+      "timeFrom": "recorded",
+      "title": "W9-galaxy-AA: GPU Galaxy 8M on identical code, renderer +2.0 % and presented -1.2 % (the scene's noise)",
+      "verdict": "note",
+      "text": "**W9-galaxy-AA: GPU Galaxy 8M on identical code, the scene's noise for the session.** 2026-10-29, main bfd7ccf1 on\nboth sides (two worktrees), 4 pairs, headed, source, detailed stats off, `particles=8388608&arms=8`, owner the\nrenderer.\n\nNEUTRAL: renderer 3.820 → 3.956 ms (+2.0 % paired, worse 2/4, cv 3/2 %; the sides' means 3.6 % apart), presented\n56.2 → 55.1 fps (−1.2 %, fewer 2/4, cv 2/2 %); logic 1.239 → 1.257 ms (under the floor). This GPU-bound scene's frame\nrate moves with the page's frame scheduling: about 2 % on the renderer's step and 1–2 % on presented frames is what\nidentical code reads here today."
+    },
+    {
+      "id": "R-0738",
+      "date": "2026-10-29",
+      "time": "09:55",
+      "timeFrom": "recorded",
+      "title": "W9-final2-galaxy: GPU Galaxy 8M neutral at 8 pairs (presented -2.1 %, renderer +1.7 %), leaning worse in 6-7 of 8",
+      "verdict": "note",
+      "text": "**W9-final2-galaxy: the whole branch against main on GPU Galaxy 8M, neutral at 8 pairs, leaning about 2 % worse.**\n2026-10-29, main bfd7ccf1 against 33350fb6, headed, source, detailed stats off, `particles=8388608&arms=8`, owner the\nrenderer; 4 pairs, then 4 more (`--append`, the same stamp) because the first four did not decide.\n\n- First 4 pairs: REGRESSION, renderer 3.898 → 3.963 ms (+3.3 %, worse 4/4, cv 3/3 %), presented 56.0 → 55.1 fps\n  (−2.6 %, fewer 3/4).\n- **All 8 pairs: NEUTRAL, renderer 3.898 → 3.971 ms (+1.7 %, worse 7/8, cv 3/3 %), presented 56.0 → 55.1 fps (−2.1 %,\n  fewer 6/8, cv 1/2 %)**; logic 1.232 → 1.230 ms (under the floor).\n\nRead against the session's Galaxy A/A (R-0737: +2.0 % renderer and −1.2 % presented on identical code, 2/4 each):\nunder the runner's 3 % and at the scene's detection limit, but most pairs lean the same way, so about 2 % of\nDX-GPCLOCK's cost may remain with the hold (R-0724 read −4.9 % before it). The branch's only change on this scene's\nrenderer and page is the clock (the hold reads the wall clock once a read; the old clock read one stored value); the\nemitters' changes (E-161, E-172, N-91) are on the logic workers, under the floor here."
     }
   ],
   "leads": [
