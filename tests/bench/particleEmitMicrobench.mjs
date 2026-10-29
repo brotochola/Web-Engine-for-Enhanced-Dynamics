@@ -193,6 +193,28 @@ cases.emitAlongLine_burst = timeIt(
   { iterations: BURSTS }
 );
 
+// E-173: the per-entity pattern, one particle a call from three emit sites (each call merges its config once).
+const smallSites = [
+  { count: 1, x: 0, y: 0, vx: { min: -2, max: 2 }, vy: -3, lifespan: 600, scale: 0.8 },
+  { count: 1, x: 0, y: 0, z: -10, vz: 2, gravity: 0.2, lifespan: 900, alpha: 0.5 },
+  { count: 1, x: 0, y: 0, speed: { min: 1, max: 2 }, angleXY: { min: 0, max: 360 }, lifespan: 400, tint: 0xffaa00 },
+];
+cases.emit_small = timeIt(
+  `emit, one particle a call (${BURST_SIZE} calls, recycled)`,
+  (iters) => {
+    for (let b = 0; b < iters; b++) {
+      for (let i = 0; i < BURST_SIZE; i++) {
+        const cfg = smallSites[i % 3];
+        cfg.x = (i * 37) % 800;
+        cfg.y = (i * 53) % 600;
+        sink += ParticleEmitter.emit(cfg);
+      }
+      recycleAllActive();
+    }
+  },
+  { iterations: BURSTS }
+);
+
 cases.acquire_only = timeIt(
   `acquireIndex+returnToPool (${BURST_SIZE}/burst, no field writes)`,
   (iters) => {
