@@ -3037,6 +3037,17 @@ export class GameObject {
         if (spawnConfig.height != null) instance.height = spawnConfig.height;
       }
       for (const key in spawnConfig) {
+        // E-169: the position, in nearly every config, by name and in its place in the config's order. A key read and
+        // written through `instance[key]` goes megamorphic over the names and classes this one loop sees, and the
+        // check below read it twice (two getter calls).
+        if (key === 'x') {
+          instance.x = spawnConfig.x;
+          continue;
+        }
+        if (key === 'y') {
+          instance.y = spawnConfig.y;
+          continue;
+        }
         if (
           key === 'active' ||
           key === 'width' ||
@@ -3048,7 +3059,8 @@ export class GameObject {
         ) {
           continue;
         }
-        if (instance[key] !== undefined && typeof instance[key] !== 'function') {
+        const current = instance[key];
+        if (current !== undefined && typeof current !== 'function') {
           instance[key] = spawnConfig[key];
         }
       }
