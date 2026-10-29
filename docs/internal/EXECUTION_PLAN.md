@@ -2642,6 +2642,11 @@ single triangle pays; the fetch and the raster of tiny quads grow with the count
 
 ### Left open (design calls for the owner)
 
+**Decided 2026-10-29 by the owner:** add a per-layer clear (DX-GPCLEAR), an emitter that follows an entity
+(DX-GPFOLLOW), wind for GPU particles and drag for CPU ones (DX-GPWIND); document the ring sizing and warn with the
+numbers (DX-GPSIZE, done 6d0de541); move the sim clock off the main thread's frames (DX-GPCLOCK, done cb72506a: it keeps
+wall time times the scale, any thread reads it). Look regions stay as they are.
+
 - **Look regions merge transitively.** 256 scattered look groups became one region, which sorts at the group
   furthest back. A depth per cloud needs another scheme: split the overlaps, or give each region a depth band.
 - **No per-layer clear.** GPU particles cannot be cleared one layer at a time, for a level restart without a scene
