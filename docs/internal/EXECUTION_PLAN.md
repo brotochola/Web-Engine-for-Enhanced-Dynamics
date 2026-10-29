@@ -2456,6 +2456,11 @@ physics thread's own path.
 - **`publishPose` and `applyForcesAndTorque`.** They are 11 % and 9 % of Boids' physics thread (`publishPose` sums 242 ms/s over 18 scenes).
   - W15 and W28 were screened on Predator's ceilings (1.8 % and 2 %).
   - Boids shows larger shares, so screen them again there.
+  *Screened on Boids 2026-10-28 (a CPU trace, 40 000 bodies):* `publishPose` 13 % of the physics thread (0.9 ms a
+  step), 42 % of it the per-body generation load, which a fast path skips while no body respawned: it never ran,
+  because the workers' buffer list left the epoch out. With it (a412603f) Boids' physics is 7.182 → 6.669 ms (−7.2 %,
+  KEPT; Predator NEUTRAL over 8 pairs). `applyForcesAndTorque` is 8.6 % (0.6 ms, 15 ns a body, the call 38 % of it):
+  W28's batched export would save part of the call, a ceiling near 4 % of Boids' physics, and needs Box2D's repo.
 
 ### Step 5: the open review items
 
