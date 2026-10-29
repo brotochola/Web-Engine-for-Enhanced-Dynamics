@@ -8940,18 +8940,19 @@
         "R-0753",
         "R-0754",
         "R-0755",
-        "R-0756"
+        "R-0756",
+        "R-0758"
       ],
       "id": "E-162",
       "title": "painterMove: the moving rows' scatter pack and reinsert",
       "status": "running",
-      "statusText": "running: kept on both backends (painterMove), gate passed, 2026-10-29 (R-0755)",
+      "statusText": "running: on by default, Predator on its path left, 2026-10-29 (R-0758)",
       "date": "2026-10-29",
       "area": "pre-render",
       "kind": "wasm",
       "rank": 5,
       "result": "painterMove, indexed frames against split: WebGL pre-render -43.6 %, Pixi -54.4 %; WebGPU pre-render -28.0 %, Pixi -17.5 %; 4/4 pairs, pixels exact on both. painterSort (order holds): pre-render -9.4 %, Pixi +0.49 ms under its floor. Predator gate with the option off: neutral.",
-      "next": "The slot stream only when the painter's order moves (painterSort's +0.49 ms); then renderer.indexedSprites on by default, the main thread leaving it off where a GPU might not hold the statics, with a Predator gate with it on. EXECUTION_PLAN.md#E-162."
+      "next": "Predator with packGpuSprites=preRender&sortSprites=preRender before and after the default (89b0cf31 against 83f7a34b). EXECUTION_PLAN.md#E-162."
     },
     {
       "aliases": [],
@@ -9245,6 +9246,24 @@
       "area": "engine",
       "kind": "bug",
       "result": "Fixed 1b4d235f: engineAccessors.js marks the accessors the engine defines; patchClass keeps those and the engine's prototype flags, and copies and deletes everything else. hotSwap.test.js.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-93"
+      ],
+      "records": [
+        "R-0757"
+      ],
+      "id": "N-93",
+      "title": "carScene's people threw in onSpawned and never got their shadow (a field N-31 removed)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0757)",
+      "date": "2026-10-29",
+      "area": "demo",
+      "kind": "bug",
+      "result": "Fixed f40ed631: the write to the field N-31 removed is gone; carScene runs without errors in Chromium.",
       "next": "Nothing pending."
     },
     {
@@ -16436,6 +16455,30 @@
       "title": "E162-painterSort-slots: the slot pairs only when the order moved, pre-render -11.7 %, Pixi no longer worse",
       "verdict": "kept",
       "text": "**E162-painterSort-slots: painterSort again, the slot pairs sent only when the order moved (00a719e4).** 2026-10-29,\n16:31 to 16:37, wave10 at 00a719e4, one worktree (`--vs HEAD --query-a indexed=0 --query-b indexed=1`), 4 pairs,\nheaded, source, detailed stats off, WebGL.\n\n- **pre-render 14.113 → 12.301 ms (−11.7 %, worse 0/4, cv 1/2 %).**\n- **renderer (Pixi) 1.797 → 1.550 ms (−13.7 %)**, under its 3 ms floor, not judged: where R-0754 read +0.49 ms (the\n  pairs sent every frame), an indexed frame whose order holds now sends the pose alone, as a split one does.\n- logic under its floor; presented 60.0 both; VISIBLE_ENTITIES and RENDER_QUEUE_SIZE 300 000 on both sides.\n\nSo no layout of the queue loses to the split frames in either stress scene: the option can be the default."
+    },
+    {
+      "id": "R-0757",
+      "date": "2026-10-29",
+      "time": "16:45",
+      "timeFrom": "recorded",
+      "title": "N-93 fixed: carScene's people threw in onSpawned and never got their shadow",
+      "verdict": "kept-hygiene",
+      "text": "**N-93 fixed: carScene's people threw in onSpawned and never got their shadow.** 2026-10-29, found by E-162's pixel\ncheck of the y-sorted demos, fixed in f40ed631.\n\ncarScene's `PersonThatFollowsAFlowfield` shares Predator's `PersonComponent`. N-31 (2a2c6ca2) removed the component's\n`lastTeamDataUpdateTime`; the car demo still wrote `PersonComponent.lastTeamDataUpdateTime[this.index] = 0`, so every\nperson's `onSpawned` threw there and stopped before `addShadowDecoration()`. With the write gone, carScene runs 60\nlockstep steps in Chromium without an error (before: one per person, the first six logged). test:demos 100/100.",
+      "commits": [
+        "f40ed631"
+      ]
+    },
+    {
+      "id": "R-0758",
+      "date": "2026-10-29",
+      "time": "16:45",
+      "timeFrom": "recorded",
+      "title": "E-162's default: renderer.indexedSprites on, the y-sorted demos drawn the same",
+      "verdict": "note",
+      "text": "**E-162's default: renderer.indexedSprites on (83f7a34b), and the y-sorted demos drawn the same.** 2026-10-29.\n\n- **The default.** Where pre-render sorts the sprites (ySort, preRender.sortSprites 'preRender'), a frame whose\n  painter order moved goes as poses and rows. The main thread lays the region out only for a queue every GPU of the\n  backend holds (2 796 202 rows on WebGPU, its default storage binding; 4 194 304 on WebGL, 4 096 texture rows of\n  1 024); past that, and with indexedSprites false, frames go in draw order as before. A frame the indexed kernel\n  declines (a list under 4 096 rows or under half the queue) goes split as before.\n- **The demos it reaches:** bichos, blastforge and car y-sort on pre-render (Predator, littleCity and adobeAnimate sort\n  on Pixi). Drawn in Chromium in lockstep (60 steps) before the flip (a worktree at 89b0cf31) and after: bichos and car\n  the same pixels, blastforge not deterministic (before against before drifts as much). None of them sends indexed\n  frames: under 4 096 sprites the scatter kernels decline, so their frames stay split or in 15-float rows. The default\n  reaches the scenes that gain, the large y-sorted ones.\n- The check found N-93 (carScene's people threw in onSpawned).\n\nNext: Predator with `packGpuSprites=preRender&sortSprites=preRender` before and after the flip, the gameplay scene on\nthe path the default changes.",
+      "commits": [
+        "83f7a34b"
+      ]
     }
   ],
   "leads": [
