@@ -192,6 +192,33 @@ function patchPixiDrawGarbage() {
   };
 }
 
+/**
+ * Pixi's WebGL format map gives the integer formats RED, RG or RGBA; WebGL 2 wants RED_INTEGER, RG_INTEGER or
+ * RGBA_INTEGER with an integer internal format. Pixi allocated each texture of such a source (the GPU particle record
+ * textures, rgba32uint) with an invalid texImage2D, a GL_INVALID_OPERATION in the console, before the engine's own
+ * upload reallocated it.
+ */
+function patchPixiIntegerFormats() {
+  const formats = [
+    ['r8uint', 'RED'], ['r8sint', 'RED'], ['r16uint', 'RED'], ['r16sint', 'RED'],
+    ['rg8uint', 'RG'], ['rg8sint', 'RG'], ['r32uint', 'RED'], ['r32sint', 'RED'],
+    ['rg16uint', 'RG'], ['rg16sint', 'RG'], ['rgba8uint', 'RGBA'], ['rgba8sint', 'RGBA'],
+    ['rg32uint', 'RG'], ['rg32sint', 'RG'], ['rgba16uint', 'RGBA'], ['rgba16sint', 'RGBA'],
+    ['rgba32uint', 'RGBA'], ['rgba32sint', 'RGBA'],
+  ];
+  return {
+    name: 'patch-pixi-integer-formats',
+    setup(build) {
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gl[\\/]texture[\\/]utils[\\/]mapFormatToGlFormat\.mjs$/, (src, file) => {
+        for (const [name, base] of formats) {
+          src = replaceOnce(src, `    ${name}: gl.${base},\n`, `    ${name}: gl.${base}_INTEGER,\n`, file);
+        }
+        return src;
+      });
+    },
+  };
+}
+
 const result = await esbuild.build({
   absWorkingDir: root,
   entryPoints: [path.join(root, 'scripts', 'buildPixiWorker.js')],
@@ -199,7 +226,7 @@ const result = await esbuild.build({
   format: 'esm',
   minify: true,
   outfile: path.join(root, 'src', 'vendor', 'pixi.min.js'),
-  plugins: [stubPixiBackends(), patchPixiDrawGarbage()],
+  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiIntegerFormats()],
   logLevel: 'info',
 });
 
