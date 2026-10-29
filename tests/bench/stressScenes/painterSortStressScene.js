@@ -2,7 +2,8 @@
  * Y-sort painter (reinsert). Copy of the render-queue stress row with a higher N.
  * Catalog scene stays at 16k. Physics off: Box2D caps bodies at 65535.
  * skipCull keeps every sprite in the queue so Pixi sees N.
- * ?indexed=1: renderer.indexedSprites (E-162); ?backend=webgpu|webgl (default webgl).
+ * ?indexed=1 or 0: renderer.indexedSprites (E-162) on or off, without it the engine's default; ?backend=webgpu|webgl
+ * (default webgl).
  */
 import WEED from '/src/index.js';
 import { RenderQueueStressEntity } from './renderQueue/renderQueueStressEntity.js';
@@ -25,7 +26,7 @@ function sortBackend() {
 
 function sortIndexed() {
   const q = queryParam('indexed');
-  return q === '1' || q === 'true';
+  return q === null ? {} : { indexedSprites: q === '1' || q === 'true' };
 }
 
 export class PainterSortStressScene extends Scene {
@@ -60,7 +61,7 @@ export class PainterSortStressScene extends Scene {
       noLimitFPS: false,
       ySort: true,
       maxVisibleRenderables: N,
-      indexedSprites: sortIndexed(),
+      ...sortIndexed(),
     },
     preRender: {
       noLimitFPS: false,
