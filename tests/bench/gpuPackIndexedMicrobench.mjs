@@ -4,8 +4,9 @@
  * painter's order), through gpuPack.wasm on one shared memory:
  *   - split:          today's frame whose order moved: pack_sprites_split_scatter, the pose and the statics in draw
  *                     order (60 bytes a sprite);
- *   - indexed:        E-162's frame whose order moved and statics held: the pose and the row in draw order (20 bytes);
- *   - indexedStatics: E-162's frame whose statics moved too: also the statics, in row order.
+ *   - indexed:        E-162's frame whose order moved and statics held: the pose and the slot pair (the row and the
+ *                     depth) in draw order (24 bytes);
+ *   - indexedStatics: E-162's frame whose statics moved too: also every row's statics, in row order.
  * `order` is `random` (the painter's order unrelated to the queue's) or `near` (the queue's order with a tenth of the
  * rows moved, painterMove's drift).
  *
@@ -16,7 +17,7 @@
  * Browser-safe (chromeKernel.mjs runs `run`); the Node helpers load only from the command line.
  */
 import {
-  GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_SPACE_WORLD, GPU_STATIC_FLOATS, makePackContext,
+  GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_SPACE_WORLD, GPU_STATIC_FLOATS, makePackContext,
 } from '../../src/render/gpuQueueLayout.js';
 import { bindGpuPack, packIndexedRowsWasm, packSplitRowsWasm } from '../../src/render/gpuPackClient.js';
 
@@ -83,7 +84,7 @@ async function setup(rows, orderKind) {
   const splitPose = alloc(Float32Array, rows * GPU_POSE_FLOATS);
   const splitStat = alloc(Float32Array, rows * GPU_STATIC_FLOATS);
   const pose = alloc(Float32Array, rows * GPU_POSE_FLOATS);
-  const rowStream = alloc(Uint32Array, rows);
+  const slots = alloc(Float32Array, rows * GPU_INDEXED_SLOT_FLOATS);
   const stat = alloc(Float32Array, rows * GPU_INDEXED_STATIC_FLOATS);
   const tableByte = (top = (top + 15) & ~15);
   top += 4 * 18 * 4;
@@ -95,7 +96,7 @@ async function setup(rows, orderKind) {
   top += 16 + 16 * 8;
   if (top > buf.byteLength) throw new Error('gpuPackIndexedMicrobench: the memory is too small');
   const b = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: rows, particlesByte, inverseByte });
-  return { q, b, order, splitPose, splitStat, pose, rowStream, stat };
+  return { q, b, order, splitPose, splitStat, pose, slots, stat };
 }
 
 function medianMs(fn, reps = 15) {
@@ -121,8 +122,8 @@ export async function run({ rows = 300000, order = 'near' } = {}) {
   const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: rows, type: s.q.type };
   const ctx = () => makePackContext(s.q, opts, rows, {});
   const split = () => packSplitRowsWasm(s.b, s.q, ctx(), s.splitPose, s.splitStat, rows);
-  const indexed = () => packIndexedRowsWasm(s.b, s.q, ctx(), s.pose, s.rowStream, null, rows);
-  const indexedStatics = () => packIndexedRowsWasm(s.b, s.q, ctx(), s.pose, s.rowStream, s.stat, rows);
+  const indexed = () => packIndexedRowsWasm(s.b, s.q, ctx(), s.pose, s.slots, null, rows);
+  const indexedStatics = () => packIndexedRowsWasm(s.b, s.q, ctx(), s.pose, s.slots, s.stat, rows);
   const cases = {};
   if (split() !== rows) throw new Error('the split pack did not take the frame');
   cases.split = { ms: medianMs(split), check: poseSum(s.splitPose, rows) };

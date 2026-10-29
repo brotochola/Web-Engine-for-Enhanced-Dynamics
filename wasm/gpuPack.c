@@ -189,17 +189,19 @@ INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t
   return n;
 }
 
-/* E-162: a painter-sorted frame whose order moved while its statics held. Each drawn row's pose and its row number go
-   to its draw slot (the pose stream and the row stream, both in draw order); with statics set, its statics go to its
-   row (the queue's row order, not the draw order), INDEXED_STATIC_FLOATS a row: the 11 of sprite_static and a zero, so
-   a row is three RGBA texels of the texture the vertex shader fetches them from. Their depth term is 0: the shader
-   takes the depth from the draw slot, the one static that follows the order. The draw slots' statics are
-   statics[rows[k]]. Refuses, as the scatter does, indices that are not distinct rows below rowCount. */
+/* E-162: a painter-sorted frame whose order moved while its statics held. Each drawn row's pose goes to its draw
+   slot, and its slot pair: the row, as a float (exact under 2^24), and the depth the split pack writes at that slot,
+   the one static that follows the order. With statics set, every queue row's statics go to its row (the queue's
+   order, not the draw order; drawn or not, so a row a later frame draws holds its own), INDEXED_STATIC_FLOATS a row:
+   the 11 of sprite_static, their depth term 0, and a zero, so a row is three RGBA texels of the texture the vertex
+   shader fetches them from. The draw slots' statics are statics[slots[2k]]. Refuses, as the scatter does, indices
+   that are not distinct rows below rowCount. */
 #define INDEXED_STATIC_FLOATS 12
+#define SLOT_FLOATS 2
 
-INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, float *pose,
-                                     uint32_t *rows, float *stat, uint32_t typeByte, uint32_t *particles,
-                                     uint32_t invByte, uint32_t rowCount, int statics) {
+INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap,
+                                     double invDepthDenom, float *pose, float *slots, float *stat, uint32_t typeByte,
+                                     uint32_t *particles, uint32_t invByte, uint32_t rowCount, int statics) {
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
   uint32_t *inv = (uint32_t *)(uintptr_t)invByte;
@@ -212,16 +214,17 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
   }
   uint32_t p = 0;
   for (uint32_t i = 0; i < rowCount; i++) {
-    const uint32_t k = inv[i];
-    if (k == 0xffffffffu) continue;
-    if (type) p += type[i] == 1;
-    sprite_pose(t, i, pose + k * POSE_FLOATS);
-    rows[k] = i;
     if (statics) {
       float *d = stat + i * INDEXED_STATIC_FLOATS;
       sprite_static(t, i, d, 0.0);
       d[11] = 0;
     }
+    const uint32_t k = inv[i];
+    if (k == 0xffffffffu) continue;
+    if (type) p += type[i] == 1;
+    sprite_pose(t, i, pose + k * POSE_FLOATS);
+    slots[k * SLOT_FLOATS] = (float)i;
+    slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
   }
   *particles = p;
   return n;
@@ -276,19 +279,22 @@ uint32_t pack_sprites_split_scatter(uint32_t table, uint32_t indices, uint32_t c
                             (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount);
 }
 
-/* E-162: the pose and row streams at dstPose and dstRows, and the statics in row order at dstStatic unless it is 0. */
+/* E-162: the pose and slot streams at dstPose and dstSlots, and every row's statics in row order at dstStatic unless it
+   is 0. */
 __attribute__((export_name("pack_sprites_indexed_scatter")))
-uint32_t pack_sprites_indexed_scatter(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, uint32_t dstPose,
-                                      uint32_t dstRows, uint32_t dstStatic, uint32_t typeByte, uint32_t particlesOut,
-                                      uint32_t invByte, uint32_t rowCount) {
+uint32_t pack_sprites_indexed_scatter(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap,
+                                      double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t dstStatic,
+                                      uint32_t typeByte, uint32_t particlesOut, uint32_t invByte, uint32_t rowCount) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
   float *pose = (float *)(uintptr_t)dstPose;
-  uint32_t *rows = (uint32_t *)(uintptr_t)dstRows;
+  float *slots = (float *)(uintptr_t)dstSlots;
   float *stat = (float *)(uintptr_t)dstStatic;
   uint32_t *particles = (uint32_t *)(uintptr_t)particlesOut;
   if (dstStatic)
-    return pack_indexed_scatter(t, indices, count, cap, pose, rows, stat, typeByte, particles, invByte, rowCount, 1);
-  return pack_indexed_scatter(t, indices, count, cap, pose, rows, stat, typeByte, particles, invByte, rowCount, 0);
+    return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
+                                rowCount, 1);
+  return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
+                              rowCount, 0);
 }
 
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags

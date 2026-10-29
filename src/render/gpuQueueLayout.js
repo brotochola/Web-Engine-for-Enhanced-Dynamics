@@ -26,6 +26,8 @@ export const GPU_STATIC_FLOATS = 11;
  * texels of the texture its vertex shader fetches them from (gpuPack.c pack_sprites_indexed_scatter).
  */
 export const GPU_INDEXED_STATIC_FLOATS = 12;
+/** E-162. An indexed frame's slot pair, in draw order: the statics' row (a float) and the slot's depth. */
+export const GPU_INDEXED_SLOT_FLOATS = 2;
 export const GPU_HEADER_INTS = 12;
 export const GPU_QUEUE_VERSION = 6;
 

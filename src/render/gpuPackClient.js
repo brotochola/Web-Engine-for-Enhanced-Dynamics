@@ -5,7 +5,7 @@
 // copied into the memory's index scratch first. Anything else returns -1 and the caller packs in JS.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
-import { GPU_CASTER_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
+import { GPU_CASTER_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
 
@@ -214,17 +214,18 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
 }
 
 /**
- * E-162: a painter-sorted frame's indexed streams through the kernel: each drawn row's pose (GPU_POSE_FLOATS) and
- * its row number (a u32) at its draw slot, and, unless `stat` is null, its statics at its row (the queue's row order,
- * GPU_INDEXED_STATIC_FLOATS a row, the depth term 0: the vertex shader takes it from the draw slot). Only for an index list
- * over most of the queue, as packSplitRowsWasm's scatter takes it.
+ * E-162: a painter-sorted frame's indexed streams through the kernel: each drawn row's pose (GPU_POSE_FLOATS) and its
+ * slot pair (GPU_INDEXED_SLOT_FLOATS: its row, as a float, and the slot's depth, as the split pack writes it) at its
+ * draw slot, and, unless `stat` is null, every queue row's statics at its row (GPU_INDEXED_STATIC_FLOATS a row, the
+ * depth term 0). Only for an index list over most of the queue, as packSplitRowsWasm's scatter takes it, and a queue
+ * whose rows `stat` holds.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs (the caller packs it split)
  */
-export function packIndexedRowsWasm(b, q, ctx, pose, rows, stat, capacity) {
-  if (!b || !q || !pose || !rows || !ctx || !b.spritesIndexedScatter) return -1;
+export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity) {
+  if (!b || !q || !pose || !slots || !ctx || !b.spritesIndexedScatter) return -1;
   const o = ctx.o || ctx;
   if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
-  if (pose.buffer !== b.buffer || rows.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
+  if (pose.buffer !== b.buffer || slots.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
   const typeArr = ctx.typeArr;
   if (typeArr && typeArr.buffer !== b.buffer) return -1;
   const table = tableFor(b, q);
@@ -233,8 +234,12 @@ export function packIndexedRowsWasm(b, q, ctx, pose, rows, stat, capacity) {
   const indexByte = indexByteFor(b, ctx, count, capacity);
   const n = q.count | 0;
   if (indexByte <= 0 || !b.inverseByte || count < SCATTER_MIN_ROWS || count * 2 < n || n > b.indexCap) return -1;
-  const out = b.spritesIndexedScatter(table, indexByte, count, capacity | 0, pose.byteOffset, rows.byteOffset,
-    stat !== null ? stat.byteOffset : 0, typeArr ? typeArr.byteOffset : 0, b.particlesByte, b.inverseByte, n);
+  if (stat !== null && stat.length < n * GPU_INDEXED_STATIC_FLOATS) return -1;
+  const depthDenom = ctx.depthDenom || 1;
+  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
+  const out = b.spritesIndexedScatter(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+    slots.byteOffset, stat !== null ? stat.byteOffset : 0, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+    b.inverseByte, n);
   if (out < 0) return -1;
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;
