@@ -2921,6 +2921,18 @@ config's fields from a hash table, per particle.
 them all (one shape). `particleEmitMicrobench`: emitFlat bursts −36 %, emitZenithal −38 %, emitAlongLine −54 %, one
 particle a call −52 %; the case with no config flat.
 
+### E-174 A running clock's read asked the wall clock, twice per joining emitGpu call
+
+A Node profile of `emitGpuCallMicrobench` put 9 % of the call in `readSimNowInto` with the clock stopped. Started (as
+in a game), each read takes the wall time, `performance.timeOrigin + performance.now()`: in Chrome 156 about 320 ns
+(170 for `now()`, 150 for `timeOrigin`, both slow bindings), against 1.5 for a typed-array read. DX-GPCLOCK made every
+read do it, and N-91 added a second read for calls that can join a group: in Chrome a running clock took the call
+from 610 to 1 298 ns.
+
+**Kept 2026-10-29** (c29140c3, kernel 77abb019): each realm's frame loop notes its frame's wall time once a frame,
+and reads take it (the hold is 100 ms, far coarser than a frame); `timeOrigin` is read once per realm. Chrome, running
+clock: 1 285 → 625 ns an emitGpu call (−51 %).
+
 ---
 
 ## Not doing (read the log first)
