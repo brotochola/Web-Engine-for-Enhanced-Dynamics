@@ -1292,6 +1292,7 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Spatial: `cellSize = 128`
 - Logic: `staggeredUpdates = false`
 - Renderer: `maxVisibleRenderables` defaults to auto (pool sum + particles/decorations/bullets/glows + Adobe piece expansion); set explicitly only to cap below that floor
+- Renderer: `indexedSprites = true`. Where pre-render y-sorts the sprites, a frame whose draw order moved sends each sprite's position and row (24 bytes) instead of everything it draws with in the new order (60); the shader reads the rest from a texture (WebGL) or a storage buffer (WebGPU). `false` sends every frame in draw order
 - Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = false` (built-in), `blendMode = BLEND_MODES.NORMAL` (0)
 - Audio: `maxSlots = 128`, `mixGain = 0.5`, `masterVolume = 1.0`, one bus named `main` unless `audio.channels` says otherwise
 - Navigation: `enabled = false` by default
