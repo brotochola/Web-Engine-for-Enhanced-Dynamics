@@ -1931,6 +1931,9 @@ class PixiRenderer extends AbstractWorker {
 
     const glSource = typeof texSys.getGlSource === 'function' ? texSys.getGlSource(source) : null;
     const target = glSource?.target || gl.TEXTURE_2D;
+    // N-94: the active unit's binding goes back after the upload (texSys.bind leaves the active unit where it was when
+    // the source is bound on unit 0 already, and Pixi would draw that unit's texture as the one it last bound there).
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
     if (glSource?.texture) {
       gl.bindTexture(target, glSource.texture);
     }
@@ -1957,6 +1960,7 @@ class PixiRenderer extends AbstractWorker {
     gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(target, prev);
   }
 
   _bindLutToBatches() {
@@ -2083,6 +2087,8 @@ class PixiRenderer extends AbstractWorker {
     if (!gl || !texSys) return;
     texSys.bind(source, 0);
     const glSource = texSys.getGlSource(source);
+    // N-94: the active unit's binding goes back after the upload (see _uploadRgba32FloatGl).
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
     gl.bindTexture(gl.TEXTURE_2D, glSource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
@@ -2093,9 +2099,10 @@ class PixiRenderer extends AbstractWorker {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      return;
+    } else {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, y0 * width * 4);
     }
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, y0 * width * 4);
+    gl.bindTexture(gl.TEXTURE_2D, prev);
   }
 
   /** Every frame: new GPU particle records up, each ring's live window and clock set. */
@@ -2955,6 +2962,8 @@ class PixiRenderer extends AbstractWorker {
     else if (typeof texSys.bindSource === 'function') texSys.bindSource(source, 0);
     const glSource = typeof texSys.getGlSource === 'function' ? texSys.getGlSource(source) : null;
     const target = glSource?.target || gl.TEXTURE_2D;
+    // N-94: the active unit's binding goes back after the upload (see _uploadRgba32FloatGl).
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
     if (glSource?.texture) gl.bindTexture(target, glSource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     if (gl.UNPACK_FLIP_Y_WEBGL != null) gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
@@ -2962,6 +2971,7 @@ class PixiRenderer extends AbstractWorker {
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
     }
     gl.texSubImage2D(target, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.bindTexture(target, prev);
   }
 
   /* =====================
