@@ -28,8 +28,11 @@ import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
-import { GPU_POSE_FLOATS, GPU_STATIC_FLOATS } from './gpuQueueLayout.js';
+import {
+  GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
+} from './gpuQueueLayout.js';
 import { packInstancedRowsWasm, packPoseRowsWasm, packSplitRowsWasm } from './gpuPackClient.js';
+import { STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, staticsTextureHeight } from './spriteIndexed.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -208,6 +211,8 @@ export class InstancedSpriteBatch {
    * @param {string} [opts.blendMode='normal'] - Pixi State blend mode
    * @param {boolean} [opts.useWebGpu=true] - compile GpuProgram vs GlProgram
    * @param {object} opts.shaders - fetched engine sources (`sprite` or spriteVert/frag*)
+   * @param {object|null} [opts.statics] - E-162, a split batch on WebGL: Pixi's RGBA32UI texture helper (`maxSize`,
+   *   `make`, `upload`: pixiWorker._gpuRecordTexture), with which it also commits indexed frames (commitIndexed)
    */
   constructor({
     capacity,
@@ -228,11 +233,15 @@ export class InstancedSpriteBatch {
     gpuPack = null,
     split = false,
     arena = null,
+    statics = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
     this.split = !!split && !this.poseInterp && !this.shadowCast;
+    // E-162: a split batch on WebGL given the texture helper also takes indexed frames: the poses, a slot stream (each
+    // instance's statics row and depth) and every queue row's statics, which a texture holds in row order.
+    this.indexed = this.split && !useWebGpu && statics !== null;
     // Two streams, a pose and the statics: a pose batch's (E-82) or a split batch's (E-82b).
     this._twoStreams = this.poseInterp || this.split;
     this._floats = this.poseInterp ? POSE_DYN_FLOATS : this.split ? SPLIT_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
@@ -271,6 +280,15 @@ export class InstancedSpriteBatch {
     this._stRows = -1;
     this._stScale = NaN;
     this._stFilter = -1;
+    // E-162: the slot stream's CPU copy, the statics rows' (whole texture rows), and the generation and rows the
+    // statics texture holds (_ixRows -1: nothing yet).
+    const slotFloats = this.indexed ? this.capacity * GPU_INDEXED_SLOT_FLOATS : 0;
+    const staticFloats = this.indexed ? gpuIndexedStaticRows(this.capacity) * GPU_INDEXED_STATIC_FLOATS : 0;
+    this._slotData = (this.indexed && arena && arena.f32(slotFloats)) || new Float32Array(slotFloats);
+    this._rowStatics = (this.indexed && arena && arena.f32(staticFloats)) || new Float32Array(staticFloats);
+    this._rowStaticsU32 = new Uint32Array(this._rowStatics.buffer, this._rowStatics.byteOffset, staticFloats);
+    this._ixGen = 0;
+    this._ixRows = -1;
     this._quad = new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]);
     this._index = [0, 1, 2, 0, 2, 3];
     const labelName = label || 'instanced-sprites';
@@ -284,7 +302,14 @@ export class InstancedSpriteBatch {
     this._staticBuffers = this._twoStreams
       ? [this._makeStaticBuffer(labelName + '-static'), this._makeStaticBuffer(labelName + '-static-ring')]
       : null;
-    this._geometries = this._buffers.map((buf, r) => this._geometryFor(buf, this._staticBuffers ? this._staticBuffers[r] : null));
+    this._slotBuffers = this.indexed
+      ? [this._makeSlotBuffer(labelName + '-slots'), this._makeSlotBuffer(labelName + '-slots-ring')]
+      : null;
+    this._geometries = this._buffers.map((buf, r) => this._geometryFor(
+      buf,
+      this._staticBuffers ? this._staticBuffers[r] : null,
+      this._slotBuffers ? this._slotBuffers[r] : null
+    ));
     this._ring = 0;
     this.buffer = this._buffers[0];
     this.geometry = this._geometries[0];
@@ -301,6 +326,11 @@ export class InstancedSpriteBatch {
     const atlas = atlasSource || Texture.WHITE.source;
     const lut = lutSource || dummyLutSource(useWebGpu);
     this.shader = this._makeSpriteShader(atlas, lut, cut, label || 'instanced-sprites');
+    // E-162: the statics texture and the program that reads it; the mesh draws with it on indexed frames.
+    this._statics = this.indexed ? statics : null;
+    this._staticsSource = null;
+    this._staticsHeight = 0;
+    this._indexedShader = this.indexed ? this._makeIndexedShader(labelName) : null;
     this.shadowShader = null;
     if (this.shadowCast && (shaders?.shadowVert || shaders?.shadowWgsl)) {
       const sunUniforms = {
@@ -394,28 +424,38 @@ export class InstancedSpriteBatch {
     });
   }
 
-  _geometryFor(buf, staticBuf) {
+  _makeSlotBuffer(label) {
+    return new Buffer({
+      data: this._slotData,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      label,
+    });
+  }
+
+  _geometryFor(buf, staticBuf, slotBuf) {
     if (this._twoStreams) {
       // E-82: the pose stream (24-byte stride) and the static stream (44). E-82b, a split batch: a 16-byte
       // pose whose previous xy is the current one (the pose shader's mix at uPoseAlpha 1 gives it back).
       const ds = this._floats * 4;
       const ss = POSE_STATIC_FLOATS * 4;
-      const geometry = new Geometry({
-        attributes: {
-          aQuad: { buffer: this._quad, format: 'float32x2' },
-          aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
-          aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-          aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: this.poseInterp ? 16 : 0, instance: true },
-          aInstScale: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 0, instance: true },
-          aInstAnchor: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 8, instance: true },
-          aInstDepth: { buffer: staticBuf, format: 'float32', stride: ss, offset: 16, instance: true },
-          aInstTintBits: { buffer: staticBuf, format: 'float32', stride: ss, offset: 20, instance: true },
-          aInstTexId: { buffer: staticBuf, format: 'float32', stride: ss, offset: 24, instance: true },
-          aInstTileInv: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 28, instance: true },
-          aInstTileOff: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 36, instance: true },
-        },
-        indexBuffer: this._index,
-      });
+      const attributes = {
+        aQuad: { buffer: this._quad, format: 'float32x2' },
+        aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
+        aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
+        aInstPrevXY: { buffer: buf, format: 'float32x2', stride: ds, offset: this.poseInterp ? 16 : 0, instance: true },
+        aInstScale: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 0, instance: true },
+        aInstAnchor: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 8, instance: true },
+        aInstDepth: { buffer: staticBuf, format: 'float32', stride: ss, offset: 16, instance: true },
+        aInstTintBits: { buffer: staticBuf, format: 'float32', stride: ss, offset: 20, instance: true },
+        aInstTexId: { buffer: staticBuf, format: 'float32', stride: ss, offset: 24, instance: true },
+        aInstTileInv: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 28, instance: true },
+        aInstTileOff: { buffer: staticBuf, format: 'float32x2', stride: ss, offset: 36, instance: true },
+      };
+      // E-162: the slot stream, which only the indexed program reads (each program binds the attributes it has).
+      if (slotBuf) {
+        attributes.aInstSlot = { buffer: slotBuf, format: 'float32x2', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true };
+      }
+      const geometry = new Geometry({ attributes, indexBuffer: this._index });
       geometry.instanceCount = 0;
       return geometry;
     }
@@ -486,6 +526,40 @@ export class InstancedSpriteBatch {
     return new Shader({ glProgram, resources });
   }
 
+  /**
+   * E-162: the statics texture, made at its full height, and the indexed program (spriteIndexed.js: the plain sprite
+   * vertex shader reading its statics from the texture) over the split program's resources and uniform group.
+   */
+  _makeIndexedShader(name) {
+    const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
+    const height = staticsTextureHeight(this.capacity);
+    const max = this._statics.maxSize | 0;
+    if (width > max || height > max) {
+      throw new Error(
+        `WeedJS: renderer.indexedSprites needs a ${width} x ${height} texture for ${this.capacity} sprites, and this GPU ` +
+          `allows ${max} texels a side: turn the option off or lower renderer.maxVisibleRenderables.`
+      );
+    }
+    this._staticsHeight = height;
+    this._staticsSource = this._statics.make(this._rowStaticsU32, width, height, `${name}-statics`);
+    const shaders = this._engineShaders;
+    const glProgram = instancedSpriteGlProgram(
+      GlProgram,
+      shaders?.spriteVert ? spriteIndexedVertex(shaders.spriteVert) : null,
+      pickInstancedSpriteFragmentGlsl(this._premultiplyAlpha, this._alphaDiscard, shaders),
+      `${name}-indexed`
+    );
+    const r = this.shader.resources;
+    const resources = {
+      uTexture: r.uTexture,
+      uSampler: r.uSampler,
+      uTexLut: r.uTexLut,
+      uniforms: r.uniforms,
+      uStatics: this._staticsSource,
+    };
+    return new Shader({ glProgram, resources });
+  }
+
   _show(on) {
     this.mesh.visible = on;
   }
@@ -499,12 +573,18 @@ export class InstancedSpriteBatch {
       sh.resources.uTexture = source;
       sh.resources.uSampler = source.style;
     }
+    const ix = this._indexedShader;
+    if (ix) {
+      ix.resources.uTexture = source;
+      ix.resources.uSampler = source.style;
+    }
   }
 
   setLutSource(source) {
     if (!source) return;
     this.shader.resources.uTexLut = source;
     if (this.shadowShader) this.shadowShader.resources.uTexLut = source;
+    if (this._indexedShader) this._indexedShader.resources.uTexLut = source;
   }
 
   /** Match `_beginUpload` tileWorld when committing pre-packed rows. */
@@ -626,7 +706,7 @@ export class InstancedSpriteBatch {
     return ctx;
   }
 
-  _finishUpload(out, stride) {
+  _finishUpload(out, stride, indexed = false) {
     if (out <= 0) {
       this.geometry.instanceCount = 0;
       this._show(false);
@@ -637,11 +717,21 @@ export class InstancedSpriteBatch {
     this._ring = ring ^ 1;
     const geometry = this._geometries[ring];
     this._buffers[ring].update(out * stride);
-    // E-82: a ring slot's static copy goes up only when it is older than the CPU one.
-    const statics = this._staticBuffers;
-    if (statics && this._slotStaticVersion[ring] !== this._staticVersion) {
-      statics[ring].update(out * POSE_STATIC_FLOATS * 4);
-      this._slotStaticVersion[ring] = this._staticVersion;
+    if (indexed) {
+      // E-162: the slot stream goes up; the statics are the texture's.
+      this._slotBuffers[ring].update(out * GPU_INDEXED_SLOT_FLOATS * 4);
+    } else {
+      // E-82: a ring slot's static copy goes up only when it is older than the CPU one.
+      const statics = this._staticBuffers;
+      if (statics && this._slotStaticVersion[ring] !== this._staticVersion) {
+        statics[ring].update(out * POSE_STATIC_FLOATS * 4);
+        this._slotStaticVersion[ring] = this._staticVersion;
+      }
+    }
+    if (this.indexed) {
+      // E-162: the program that reads this frame's layout.
+      const shader = indexed ? this._indexedShader : this.shader;
+      if (this.mesh.shader !== shader) this.mesh.shader = shader;
     }
     geometry.instanceCount = out;
     this.geometry = geometry;
@@ -790,6 +880,31 @@ export class InstancedSpriteBatch {
     }
     this.copyIn(this.data, pose, keep * SPLIT_POSE_FLOATS);
     return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4);
+  }
+
+  /**
+   * E-162: commit `count` slots of an indexed frame another worker packed (pre-render's GPU queue with
+   * GPU_FLAG_INDEXED): the poses and the slot pairs in draw order, and `rows` queue rows' statics in row order, `gen`
+   * their generation (0: unknown). The statics go up, the texture rows they fill, only when the generation or the
+   * rows moved; the other frames upload 24 bytes a sprite.
+   */
+  commitIndexed(pose, slots, rowStatics, count, rows, gen) {
+    const n = count | 0;
+    const keep = n > this.capacity ? this.capacity : n;
+    if (keep <= 0) return this._finishUpload(0, SPLIT_POSE_FLOATS * 4);
+    const cap = (this._rowStatics.length / GPU_INDEXED_STATIC_FLOATS) | 0;
+    const r = rows > cap ? cap : rows | 0;
+    const g = gen >>> 0;
+    if (g === 0 || g !== this._ixGen || r !== this._ixRows) {
+      this._ixGen = g;
+      this._ixRows = r;
+      this.copyIn(this._rowStatics, rowStatics, r * GPU_INDEXED_STATIC_FLOATS);
+      const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
+      this._statics.upload(this._staticsSource, this._rowStaticsU32, width, this._staticsHeight, 0, staticsTextureHeight(r));
+    }
+    this.copyIn(this.data, pose, keep * SPLIT_POSE_FLOATS);
+    this.copyIn(this._slotData, slots, keep * GPU_INDEXED_SLOT_FLOATS);
+    return this._finishUpload(keep, SPLIT_POSE_FLOATS * 4, true);
   }
 
   /**

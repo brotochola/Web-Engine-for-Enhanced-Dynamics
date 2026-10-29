@@ -79,6 +79,11 @@ import {
   GPU_HDR_STATIC_GEN,
   GPU_FLAG_SORTED,
   GPU_FLAG_SPLIT,
+  GPU_FLAG_INDEXED,
+  GPU_HDR_INDEXED_ROWS,
+  GPU_INDEXED_SLOT_FLOATS,
+  GPU_INDEXED_STATIC_FLOATS,
+  gpuIndexedStaticRows,
   createGpuQueueViews,
 } from '../render/gpuQueueLayout.js';
 import {
@@ -1738,6 +1743,7 @@ class PixiRenderer extends AbstractWorker {
       !(packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0 && soaN > 0) &&
       (!needOrder || (packedFlags & GPU_FLAG_SORTED)) &&
       ((packedFlags & GPU_FLAG_SPLIT) === 0 || this.entitiesBatch.split) &&
+      ((packedFlags & GPU_FLAG_INDEXED) === 0 || this.entitiesBatch.indexed) &&
       this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI
     );
     if (packedOk) {
@@ -1749,6 +1755,12 @@ class PixiRenderer extends AbstractWorker {
         } else if (packedFlags & GPU_FLAG_SPLIT) {
           // E-82b: the two streams, the statics copied when their generation or the row count moved.
           this.visibleEntityCount = batch.commitSplit(gpu.spritePose, gpu.spriteStatic, packedN, gpu.header[GPU_HDR_STATIC_GEN]);
+        } else if (packedFlags & GPU_FLAG_INDEXED) {
+          // E-162: the poses and slot pairs, every queue row's statics to the texture when their generation moved.
+          this.visibleEntityCount = batch.commitIndexed(
+            gpu.spritePose, gpu.spriteSlots, gpu.spriteRowStatics, packedN,
+            gpu.header[GPU_HDR_INDEXED_ROWS], gpu.header[GPU_HDR_STATIC_GEN]
+          );
         } else if (packedN === 0) {
           // No sprite rows: pre-render's pack wrote none, so it split none. Nothing to draw.
           batch.mesh.visible = false;
@@ -1847,6 +1859,7 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesBatch.poseInterp) return 'the entity batch interpolates poses';
     if (packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0) return 'pre-render packed none of them';
     if (needOrder && !(packedFlags & GPU_FLAG_SORTED)) return 'they need an order and pre-render did not sort them';
+    if ((packedFlags & GPU_FLAG_INDEXED) && !this.entitiesBatch.indexed) return 'an indexed frame for an entity batch that reads none';
     return 'two streams for a plain entity batch';
   }
 
@@ -2360,6 +2373,8 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxEntity = painterWasm ? painterSlotList(painterWasm, 'entity', maxItems) : new Uint32Array(maxItems);
     this._rqIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
     this._painter = this._ySort ? this._newEntityPainter() : null;
+    const gpuCaps = this.gpuQueueBuffers && this.gpuQueueBuffers[0] ? this.gpuQueueBuffers[0].caps : null;
+    const indexed = !this._useWebGpu && !!(gpuCaps && gpuCaps.indexedSprites);
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -2378,8 +2393,12 @@ class PixiRenderer extends AbstractWorker {
       // E-82b: the plain sprites in two streams, the statics uploaded when they change. A nearest atlas snaps every
       // pose, which the split kernel does not pack, so it keeps 15-float rows.
       split: !this._queueInterp && this.atlasScaleMode !== 'nearest',
-      // W30: room for its two streams at their widest (a pose batch's 17 floats a row).
-      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)),
+      // E-162: with the queue's indexed frames (renderer.indexedSprites), the statics texture's helper.
+      statics: indexed ? this._gpuRecordTexture() : null,
+      // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
+      // stream and statics rows.
+      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)
+        + (indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)),
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 

@@ -295,6 +295,8 @@ export class EntityChunks {
     const m = this._chunk(live, j);
     m.geometry.weedFirstInstance = first;
     m.geometry.instanceCount = count;
+    // E-162: the batch's program for this frame's layout (an indexed frame's reads the statics texture).
+    m.shader = this.batch.mesh.shader;
     m.alpha = 1;
     const twin = this.chunks[live ^ 1][j];
     if (twin === undefined) {
