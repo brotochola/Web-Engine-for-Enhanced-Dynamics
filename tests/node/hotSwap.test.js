@@ -80,6 +80,19 @@ test('a swap leaves the config and LogicWorker the running entities share', () =
   assert.equal(entity.logicWorker, worker);
 });
 
+test('a class registered as the engine does swaps in place, and its entities still make their components', () => {
+  // E-164b declared only a registered class's component fields, so the unregistered new version listed fewer and
+  // every swap became a reload; past that, the swap gave the running class the probe's empty component slots.
+  const live = version();
+  GameObject._assignComponentClassMap(live.Boid);
+  Object.assign(live.Boid, { entityType: 3, startIndex: 10, poolSize: 4, instances: [] });
+  const boid = new live.Boid(10, undefined, null, { page: true });
+  const result = swapModule({ FlockScene: live.FlockScene }, { FlockScene: version({ speed: 5 }).FlockScene });
+  assert.equal(result.reload, null, 'the same fields: no reload');
+  assert.equal(live.Boid.SPEED, 5, 'the new code is in');
+  assert.ok(boid.health instanceof live.Health, 'a component first read after the swap is made');
+});
+
 test('what the engine built from a class’s shape asks for a reload, and nothing is patched', () => {
   const cases = [
     [{ components: '[]' }, /Boid.components changed/],
