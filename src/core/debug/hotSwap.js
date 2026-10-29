@@ -18,6 +18,7 @@
 // that are not classes when their value changed (other modules keep the old
 // binding).
 
+import { isEngineAccessor } from '../engineAccessors.js';
 import { ENGINE_INSTANCE_KEYS } from '../save/instanceFields.js';
 
 /** Statics the engine writes on registered classes; the running class keeps them. */
@@ -46,6 +47,9 @@ const ENGINE_STATICS = new Set([
   'clearValue',
   'scriptUrl',
 ]);
+
+/** Flags the engine writes on game classes' prototypes; the running class keeps them (`_hasComponents`: E-167). */
+const ENGINE_PROTO_KEYS = new Set(['constructor', '_componentAccessorsCreated', '_hasComponents', '_propertiesCreated']);
 
 /** Statics the engine builds buffers, pools or dispatch from: a change needs a reload. */
 const SHAPE_STATICS = [
@@ -183,22 +187,22 @@ function exportChange(name, a, b) {
 
 /** Copy `fresh`'s code onto `old`, and make `fresh` an alias of `old`. */
 export function patchClass(old, fresh) {
-  // Methods and accessors. The engine's own prototype keys (component accessors) stay.
+  // Methods and accessors: the new version's code replaces the running class's, members named like a component
+  // included (registration leaves those in place). The engine's own keys stay: its flags, and the accessors it made
+  // (an entity's component getters, a component's field accessors), which the new version, never registered or
+  // initialized, lacks or has only from the probe that listed its fields (N-90).
   const op = old.prototype;
   const fp = fresh.prototype;
-  // E-167 keeps the class's component flags on its prototype (`_hasComponents`): the running class's stay too.
-  const engineProtoKeys = new Set([
-    'constructor',
-    '_componentAccessorsCreated',
-    '_hasComponents',
-    ...Object.keys(old._componentClassMap || {}),
-  ]);
   for (const key of Reflect.ownKeys(fp)) {
-    if (engineProtoKeys.has(key)) continue;
-    Object.defineProperty(op, key, Object.getOwnPropertyDescriptor(fp, key));
+    if (ENGINE_PROTO_KEYS.has(key)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(fp, key);
+    if (isEngineAccessor(descriptor)) continue;
+    Object.defineProperty(op, key, descriptor);
   }
   for (const key of Reflect.ownKeys(op)) {
-    if (!engineProtoKeys.has(key) && !hasOwn(fp, key)) delete op[key];
+    if (ENGINE_PROTO_KEYS.has(key) || hasOwn(fp, key)) continue;
+    if (isEngineAccessor(Object.getOwnPropertyDescriptor(op, key))) continue;
+    delete op[key];
   }
 
   // The class's own statics (methods, values), except what the engine owns or built from.

@@ -3,6 +3,7 @@
 
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
 import { Camera } from './camera.js';
+import { markEngineAccessor } from './engineAccessors.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -108,6 +109,7 @@ const FIELD_GETTERS = [
   function () { const c = this._c6; return c !== null ? c : this._makeComponent(6); },
   function () { const c = this._c7; return c !== null ? c : this._makeComponent(7); },
 ];
+FIELD_GETTERS.forEach(markEngineAccessor);
 const NO_COMPONENT_SLOTS = [];
 /** The constructor's config when none is given: one object, not a new one per entity. */
 const EMPTY_CONFIG = Object.freeze({});
@@ -742,7 +744,7 @@ export class GameObject {
         continue;
       }
       Object.defineProperty(this.prototype, componentName, {
-        get: function () {
+        get: markEngineAccessor(function () {
           const cached = this._components[slot];
           if (cached !== null) return cached;
 
@@ -757,7 +759,7 @@ export class GameObject {
           instance.owner = this; // Store owner reference for instance methods
           this._components[slot] = instance;
           return instance;
-        },
+        }),
         enumerable: true,
         configurable: true,
       });

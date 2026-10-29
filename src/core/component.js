@@ -25,6 +25,8 @@
 // _createInstanceProperties(), while other properties (offsetX, offsetY, etc.)
 // will still get auto-generated accessors.
 
+import { markEngineAccessor } from './engineAccessors.js';
+
 /** False once compiling an accessor has thrown (a CSP without 'unsafe-eval'): the shared closures from then on. */
 let compileAccessors = true;
 
@@ -37,10 +39,11 @@ let compileAccessors = true;
  * @returns {{ get(): number, set(value: number): void }}
  */
 function fieldAccessors(ComponentClass, name) {
+  let pair = null;
   if (compileAccessors) {
     try {
       const key = JSON.stringify(name);
-      return new Function(
+      pair = new Function(
         'C',
         `return { get() { return C[${key}][this.index]; }, set(value) { C[${key}][this.index] = value; } };`,
       )(ComponentClass);
@@ -48,6 +51,15 @@ function fieldAccessors(ComponentClass, name) {
       compileAccessors = false;
     }
   }
+  if (pair === null) pair = sharedFieldAccessors(ComponentClass, name);
+  // A hot swap keeps them on the running class (engineAccessors.js).
+  markEngineAccessor(pair.get);
+  markEngineAccessor(pair.set);
+  return pair;
+}
+
+/** The fallback pair: closures of one literal (they share their feedback, so their column read is megamorphic). */
+function sharedFieldAccessors(ComponentClass, name) {
   return {
     get() {
       return ComponentClass[name][this.index];
