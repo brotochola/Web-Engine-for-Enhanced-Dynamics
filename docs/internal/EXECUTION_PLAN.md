@@ -2868,13 +2868,16 @@ are (an opaque white tint is a NaN pattern). Chrome 156 compiles both WGSL progr
 under its floor): an indexed frame sends the slot pairs (8 bytes a sprite) though they are the last frame's, where a
 split frame sends the pose alone. The Predator gate with the option off, against main: neutral.
 
-**What is left:**
-- **The slot stream only when it moved:** a slots generation (the painter's orderGen, the rows, the depth scale) per GPU
-  queue buffer in pre-render, which then writes the pairs only when its buffer lacks them, and per ring slot in Pixi,
-  which then copies and uploads them only then. painterSort's indexed frames then send the pose alone.
-- **The default:** renderer.indexedSprites on, the main thread leaving it off where a GPU might not hold the statics
-  (WebGPU's default storage binding, 128 MiB, is 2.79 million rows; WebGL's texture a row per 1 024 sprites, 4 096 rows
-  on every WebGL2 GPU we target), since Pixi throws there; then a Predator gate with it on.
+**Done 2026-10-29: kept, on by default** (R-0756 to R-0759).
+- **The slot pairs only when they moved** (00a719e4): pre-render gives them a generation (GPU_HDR_SLOTS_GEN: the
+  painter's orderGen, the slots, the depth scale) and still writes them every frame, the scatter reading the queue in
+  order; Pixi copies and sends them only when it moved. painterSort again: pre-render −11.7 %, Pixi 1.80 → 1.55 ms
+  (under its floor; +0.49 ms before).
+- **The default** (83f7a34b): renderer.indexedSprites on where pre-render y-sorts, for a queue every GPU of the backend
+  holds (2 796 202 rows on WebGPU, 4 194 304 on WebGL); false, or past that, frames go in draw order. The y-sorted demos
+  (bichos, blastforge, car) drew the same pixels before and after, none of them past the scatter's 4 096 rows; the
+  check found N-93 in carScene. Predator on pre-render's pack and sort, whose frames go indexed (15 832 sprites):
+  neutral.
 
 ### E-163 The gather's cell order past 65 536 cells
 
