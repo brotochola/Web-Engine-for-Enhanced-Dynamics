@@ -8930,18 +8930,19 @@
       "records": [
         "R-0701",
         "R-0709",
-        "R-0739"
+        "R-0739",
+        "R-0746"
       ],
       "id": "E-162",
       "title": "painterMove: the moving rows' scatter pack and reinsert",
-      "status": "open",
-      "statusText": "open: a design question for the owner (R-0709)",
+      "status": "running",
+      "statusText": "running: step 1 of 5 done 2026-10-29 (R-0746)",
       "date": "2026-10-29",
       "area": "pre-render",
       "kind": "wasm",
       "rank": 5,
-      "result": "Left by E-159: with keys that move every frame, pack_sprites_split_scatter is 40 % and reinsert_simd_inplace 25 % of a saturated pre-render (R-0645).",
-      "next": "Statics out of draw order: row order for a still camera, per entity with dirty tracking for a scrolling one, an index stream, fetched in the vertex shader on both backends. The owner's call before building it."
+      "result": "Step 1: pack_sprites_indexed_scatter, the pose and the statics' row in draw order and the statics in row order; parity with the split scatter; Chrome 4.965 -> 1.400 ms a moved painter frame at 300 000 rows (-71.8 %).",
+      "next": "Steps 2 and 3 together: the queue's indexed region and pre-render choosing it where the renderer can draw it; Pixi's indexed batch on WebGL2 (statics texture, E-157's fetch). Then step 4 (WebGPU) and the sittings."
     },
     {
       "aliases": [],
@@ -16206,6 +16207,19 @@
       "title": "Wave 9 merged into main (3e1e9988), bundles built and tested, pushed",
       "verdict": "note",
       "text": "**Wave 9 merged into main.** 2026-10-29, the owner's go: main fast-forwarded to 3e1e9988 (wave9's tip, 73 commits over\nbfd7ccf1) and pushed.\n\nThe checklist, on wave9 before the merge: `npm run test:node` 2 111/2 111, `npm run test:demos` 100/100,\n`npm run make_bundle` (the eight bundles; prod esm 3 034.5 KB, compressed 1 733.6 KB), `npm run check:dist` (fresh,\ninputs 19609821103a283e), `npm run test:bundle` (all eight in the browser, the 9 000-ball scene drawn, Box2D memory at\n128, 64 and 16 MB as expected), `npm run test:node:bundle` (254/254 on each bundle); then `dist` committed (3e1e9988).\nThe merge gates are R-0742 (Predator, logic −8.1 %, nothing worse) and R-0743 (GPU Galaxy 8M at parity). No version\nchange: a release is `npm run release`."
+    },
+    {
+      "id": "R-0746",
+      "date": "2026-10-29",
+      "time": "11:34",
+      "timeFrom": "recorded",
+      "title": "E-162 step 1: the indexed pack kernel (Chrome: a moved painter frame's pack 4.965 -> 1.400 ms at 300 000 rows)",
+      "verdict": "note",
+      "text": "**E-162 step 1: the indexed pack kernel, parity-tested and measured.** 2026-10-29, d32354f8 (bench 90c67844), the\nowner's go on E-162's design (EXECUTION_PLAN, 4af9f4ee).\n\n**The kernel:** `pack_sprites_indexed_scatter` (gpuPack.c, in the engine module and the gpuPack fixture) scatters\neach drawn row's pose (16 bytes) and its row number (4) to its draw slot, and, when asked, writes its statics at its\nrow (the queue's order, 44 bytes) with the depth term 0, for the shader to take from the draw slot.\n`packIndexedRowsWasm` (gpuPackClient.js) binds it for an index list over most of the queue (as the split scatter);\nnothing calls it yet.\n\n**Parity** (`gpuPackIndexed.test.js`, two seeds, five list shapes): through the same list, the pose at each slot and\nthe statics at each row are the split scatter's word for word, the depth aside, which the split pack writes as\n`fround(1 − (k + 1) / depthDenom)` at slot k; the pose alone leaves the statics; a frame without a list, a short\nlist, screen space, pixel snap, rows outside the memory and a repeated row are refused.\n\n**The kernel bench** (`gpuPackIndexedMicrobench`, 300 000 queue rows, all in the painter's order, ms a frame):\n\n| | split (today) | indexed, statics kept | indexed, statics written |\n|---|---|---|---|\n| Chrome 156, a tenth of the rows moved | 4.965 | 1.400 (−71.8 %) | 3.675 (−26.0 %) |\n| Chrome 156, an unrelated order | 13.950 | 4.570 (−67.2 %) | 10.790 (−22.7 %) |\n| Node, a tenth moved | 4.586 | 1.385 | 3.603 |\n| Node, unrelated | 13.246 | 4.531 | 10.488 |\n\nThe pack is 39.6 % of painterMove's saturated pre-render (R-0728); the bigger share is Pixi's (40.6 % W30's copy,\n41.0 % the upload), which steps 3 and 4 reach. Next: step 2 (the queue's indexed region and pre-render choosing it\nwhere the renderer can draw it) with step 3 (Pixi on WebGL2), together, since pre-render cannot send a frame Pixi\ncannot draw.",
+      "commits": [
+        "d32354f8",
+        "90c67844"
+      ]
     }
   ],
   "leads": [
