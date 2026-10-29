@@ -8379,7 +8379,8 @@
         "R-0676",
         "R-0677",
         "R-0686",
-        "R-0693"
+        "R-0693",
+        "R-0712"
       ],
       "id": "E-147",
       "title": "The spatial kernels wait on memory: less work per frame",
@@ -9019,16 +9020,17 @@
         "R-0701",
         "R-0702",
         "R-0708",
-        "R-0711"
+        "R-0711",
+        "R-0713"
       ],
       "id": "E-164",
       "title": "A component read waits on memory: the slot array and its elements",
       "status": "kept",
-      "statusText": "kept 2026-10-29 (R-0708)",
+      "statusText": "kept 2026-10-29 with E-164b (R-0708, R-0713)",
       "date": "2026-10-29",
       "area": "logic",
       "kind": "js",
-      "result": "Kept, 50a2c168: minimalTickScene?props=130000 logic 3.456 -> 2.909 ms (-17.6 %, worse 0/4, cv 6/4 %), 4 pairs from worktrees.",
+      "result": "Kept, 50a2c168 + d5213176: against 7114f7e0, painterMoveStressScene logic 8.870 -> 7.769 ms (-12.4 %), minimalTickScene?props=130000 3.329 -> 2.163 ms (-36.7 %), both worse 0/4; E-164 alone had cost painterMove +13.9 %.",
       "next": "Nothing pending: Predator logic -6.0 % in the branch gate (R-0711)."
     },
     {
@@ -9048,6 +9050,60 @@
       "area": "logic",
       "kind": "js",
       "result": "Kept, dd119417: spawnStormScene logic 5.023 -> 3.597 ms (-27.8 %, worse 0/4, cv 1/1 %); same entities processed; the BODY_COUNT drift is the churn pipeline's timing, not load.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-166"
+      ],
+      "records": [
+        "R-0712"
+      ],
+      "id": "E-166",
+      "title": "The spatial rebuild's ownership branch and grid statics",
+      "status": "dropped",
+      "statusText": "dropped 2026-10-29 (R-0712)",
+      "date": "2026-10-29",
+      "area": "spatial",
+      "kind": "js",
+      "result": "Dropped: Boids spatial 6.674 -> 6.690 ms (+0.6 %, 4 pairs); the lines cost their memory, not a branch or a property load. 574d7958, reverted.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "EXECUTION_PLAN.md#E-167"
+      ],
+      "records": [
+        "R-0715"
+      ],
+      "id": "E-167",
+      "title": "An entity carries only its own fields",
+      "status": "kept",
+      "statusText": "kept 2026-10-29 (R-0715)",
+      "date": "2026-10-29",
+      "area": "logic",
+      "kind": "js",
+      "result": "Kept, da4491b4: painterMoveStressScene logic 8.141 -> 7.526 ms (-7.5 %, worse 0/4, cv 4/2 %); minimalTick under the floor since E-164b.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-88"
+      ],
+      "records": [
+        "R-0714"
+      ],
+      "id": "N-88",
+      "title": "A subclass entity read its parent's component flags",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0714)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Fixed 2f12cca0: the flags are read only when the class owns them; subclassComponentFlags.test.js.",
       "next": "Nothing pending."
     }
   ],
@@ -15513,6 +15569,54 @@
       "title": "W9-gate passed: Wave 9's branch against main on Predator (logic -6.0 %, nothing worse)",
       "verdict": "passed",
       "text": "**W9-gate: Wave 9's branch against main on Predator, passed.** 2026-10-29, main bfd7ccf1 against 50a2c168 (E-159,\nDX-GPCLOCK, DX-GPSIZE, E-160, E-161, N-85 to N-87, the galaxy knob, E-164), 4 pairs, worktrees, headed, source,\ndetailed stats off. NEUTRAL, nothing worse:\n- logic 3.800 → 3.499 ms (−6.0 %, worse 0/4, cv 6/3 %; lower than the others 4/4, −6.7 %): E-164's fields;\n- physics −5.6 % (cv 10/13 %), renderer −3.2 %, pre-render 3.745 → 3.683 (−2.2 %, worse 0/4), spatial +0.1 %;\n- presented 60.0 both; load keys within 0.5 %.\nRead against W9-AA (identical code: logic −1.8 %, physics −7.5 %, pre-render −2.7 %): the logic gain is the one\npast the session's noise. E-165 came after it; its own sitting is spawnStorm."
+    },
+    {
+      "id": "R-0712",
+      "date": "2026-10-29",
+      "time": "06:26",
+      "timeFrom": "recorded",
+      "title": "E-166 dropped: the spatial rebuild's ownership branch and grid statics (Boids spatial +0.6 %)",
+      "verdict": "dropped",
+      "text": "**E-166 dropped: the owned-row append without a branch, the grid statics hoisted, the neighbour counters in locals.**\n2026-10-29, 574d7958, reverted.\n\nWave 9's map put 28 % of Boids' `rebuildOwnedRows` (30 % of each of its two spatial workers) on `if (rowOwnership[homeRow]\n=== workerId) ownedList[ownedCount++] = i`, and 15–19 % on `localCount < Grid.maxEntitiesPerCell`. The change wrote\nthe entity always and added the comparison (no branch), read `Grid.maxEntitiesPerCell` and `Grid.cellByteSize` once\nbefore their loops, and kept `_findNeighbors`' per-entity counters in locals. The movers parity test then hashed each\nowned list up to its count.\n\n**The sitting** (boidsScene, 55009b21 against 574d7958, 4 pairs, worktrees): NEUTRAL, spatial 6.674 → 6.690 ms\n(+0.6 %, worse 2/4, cv 1/1 %); physics +0.4 %. The lines the profile named cost their memory (the row's ownership\nand the entity's cells), not a misprediction or a property load. Reverted.",
+      "commits": [
+        "574d7958"
+      ]
+    },
+    {
+      "id": "R-0713",
+      "date": "2026-10-29",
+      "time": "06:50",
+      "timeFrom": "recorded",
+      "title": "E-164b kept: an entity declares only the component fields its class uses (painterMove -12.4 %, minimalTick -36.7 % against before E-164)",
+      "verdict": "kept",
+      "text": "**E-164b: an entity declares only the component fields its class uses.** 2026-10-29, d5213176.\n\n**What E-164 cost.** Checked on painterMoveStressScene, whose ticks read fields of the subclass (`_drift`, `_phase`)\nand no component, over 300 000 entities: 7114f7e0 against 50a2c168 (E-164), 4 pairs, worktrees: REGRESSION, logic\n8.788 → 10.010 ms (+13.9 %, worse 4/4, cv 1/1 %). Every entity had grown by eight fields, and a tick loop reads every\nentity's bytes.\n\n**The change.** The constructor declares one field per component of the class (at most eight), the same sequence\nfor every instance of a class; `bindToEntitySlot` resets only those; a class with eight or fewer components has no\nper-entity slot array (the shared empty one).\n\n**Against the code before E-164** (7114f7e0 against d5213176, 4 pairs each, worktrees):\n\n| scene | logic | |\n| --- | --- | --- |\n| painterMoveStressScene | 8.870 → 7.769 ms | −12.4 %, worse 0/4, cv 2/4 % |\n| minimalTickScene ?props=130000 | 3.329 → 2.163 ms | −36.7 %, worse 0/4, cv 5/4 % |\n\npainterMove's pre-render read +3.8 % (worse 3/4, cv 10/2 %), a worker the change does not reach, its renderer −2.1 %.\n**Kept**: E-164 and E-164b together are faster on both kinds of tick.",
+      "commits": [
+        "d5213176"
+      ]
+    },
+    {
+      "id": "R-0714",
+      "date": "2026-10-29",
+      "time": "06:50",
+      "timeFrom": "recorded",
+      "title": "N-88 fixed: a subclass entity read its parent's component flags",
+      "verdict": "kept-hygiene",
+      "text": "**N-88 found and fixed: a subclass entity read its parent's component flags.** 2026-10-29, 2f12cca0.\n\nFound while moving the flags off the entity (E-167). `bindToEntitySlot` took `Ctor._sharedHasComponents`, a static\neach class sets on itself; a subclass made after an instance of its parent read the parent's through the inherited\nstatic, so its own components read as absent. Shown with `class Enemy { components [SpriteRenderer] }` and\n`class Boss extends Enemy { components [RigidBody] }`: Boss's flags were Enemy's, `boss.rigidBody` null,\n`boss._hasBox2dBody()` false (spawn and despawn read it for the body). The flags are now read only when the class owns\nthem; `subclassComponentFlags.test.js` fails without the fix. Kept (a fix).",
+      "commits": [
+        "2f12cca0"
+      ]
+    },
+    {
+      "id": "R-0715",
+      "date": "2026-10-29",
+      "time": "07:01",
+      "timeFrom": "recorded",
+      "title": "E-167 kept: an entity carries only its own fields (painterMove logic -7.5 %)",
+      "verdict": "kept",
+      "text": "**E-167 kept: an entity carries only its own fields.** 2026-10-29, da4491b4.\n\nAfter E-164b, what was left on every entity that is not its own: the scene's config and the realm's LogicWorker (the\nsame for every entity: now on GameObject.prototype, set when they differ, before the frame loop), the component flags\n(per class: now on the class's prototype, which N-88's fix keeps per class), and the slot array (now only for a class\nwith more than eight components). `this.config` and `this.logicWorker` still read the same values; the\nconstructor's default config is one frozen object, not a new one per entity.\n\n**The sittings** (2f12cca0 against da4491b4, 4 pairs each, worktrees):\n- painterMoveStressScene: **KEPT**, logic 8.141 → 7.526 ms (−7.5 %, worse 0/4, cv 4/2 %; lower than the others 3/4);\n  pre-render −4.2 %, renderer +2.4 % (cv 6/2 %), workers the change does not reach;\n- minimalTickScene ?props=130000: logic 2.093 → 2.142 ms, under the 3 ms floor since E-164b, not judged; spatial\n  +1.3 %.\n\nWith E-164 and E-164b, painterMove's logic went 8.870 → about 7.5 ms and minimalTick's 3.329 → about 2.1 ms on the\nsame machine today.",
+      "commits": [
+        "da4491b4"
+      ]
     }
   ],
   "leads": [
