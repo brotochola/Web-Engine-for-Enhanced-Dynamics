@@ -3035,14 +3035,19 @@ statics changed, a frame would carry an index and a pose per row (about 20 bytes
 (an animated sprite changes its frame often, and Adobe's statics move every frame: R-0626). Build only where most rows
 keep theirs. Owners: the pre-render and renderer workers of the scene the counter picks; a Predator gate.
 
-### E-178 RigidBody.speed derived on read, not every frame for every body
+### E-178 RigidBody.speed's derive pass, cheaper where it runs (the particle worker)
 
-**Premise:** the particle worker writes `RigidBody.speed` for every dynamic body of a type that derives it, every frame
-(`updateDerivedProperties` with `calculateSpeed`: 13 % of Predator's particle worker, about 10 ms/s). In the engine
-only GameObject's `speed` getter reads the array.
-**Plan:** the getter returns `Math.sqrt(vx * vx + vy * vy)` from the body's velocity, and the pass goes. Kernel: the
-getter against the array read. Owner: a scene with many bodies above the 3 ms floor (ballsHeavyStressScene's particle
-worker); waterAndBoxesScene, whose logic reads `speed` on 20 000 balls a tick, must not get slower.
+**Premise:** the particle worker writes `RigidBody.speed` every frame for every dynamic body of a class that sets
+`static deriveSpeed = true` (`updateDerivedProperties` with `calculateSpeed`: 13 % of Predator's particle worker, about
+10 ms/s). Predator's Person and Boid opt in, and their code and the animation FSM read `RigidBody.speed[i]` from the
+array. The pass sits in the particle worker on purpose: it is the light worker, and it spares the logic workers. It
+walks the RigidBody query's list and reads five columns per body.
+**Plan:** the pass stays in the particle worker, opted in per class. A dense pass over RigidBody's block (in Box2D's
+memory since Phase 4) as an f32x4 kernel, masked by active, static and the class's flag; if a kernel does not pay, the
+JS loop with the square root written in place. Kernel against today's loop on Predator's bodies. Owner: a stress scene
+whose bodies opt in, past the 3 ms floor (none yet: a knob first, in its own commit).
+*Rewritten 2026-10-29 at the owner's word: computing speed on read would move the work to the logic workers, and game
+code reads the array directly.*
 
 ### E-179 Decorations' screen visibility, every frame in JavaScript
 
