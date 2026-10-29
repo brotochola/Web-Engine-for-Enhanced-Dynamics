@@ -25,6 +25,41 @@
 // _createInstanceProperties(), while other properties (offsetX, offsetY, etc.)
 // will still get auto-generated accessors.
 
+/** False once compiling an accessor has thrown (a CSP without 'unsafe-eval'): the shared closures from then on. */
+let compileAccessors = true;
+
+/**
+ * E-170: a scalar field's accessor pair, compiled on its own. Closures of one function literal share their feedback,
+ * so `ComponentClass[name]` in a shared getter saw every field of every component (megamorphic, and its column's
+ * element kind with it): componentFieldMicrobench read and wrote a field in 26.6 ns in Chrome, 8.8 compiled apart.
+ * @param {typeof Component} ComponentClass
+ * @param {string} name
+ * @returns {{ get(): number, set(value: number): void }}
+ */
+function fieldAccessors(ComponentClass, name) {
+  if (compileAccessors) {
+    try {
+      const key = JSON.stringify(name);
+      return new Function(
+        'C',
+        `return { get() { return C[${key}][this.index]; }, set(value) { C[${key}][this.index] = value; } };`,
+      )(ComponentClass);
+    } catch {
+      compileAccessors = false;
+    }
+  }
+  return {
+    get() {
+      return ComponentClass[name][this.index];
+    },
+    set(value) {
+      // Store value directly - no boolean conversion
+      // Uint8Array can store 0-255, so animationState and other numeric fields work correctly
+      ComponentClass[name][this.index] = value;
+    },
+  };
+}
+
 export class Component {
   // Shared memory buffer for this component type, and where its block starts in it
   static sharedBuffer = null;
@@ -129,18 +164,8 @@ export class Component {
         return;
       }
 
-      Object.defineProperty(ComponentClass.prototype, name, {
-        get() {
-          return ComponentClass[name][this.index];
-        },
-        set(value) {
-          // Store value directly - no boolean conversion
-          // Uint8Array can store 0-255, so animationState and other numeric fields work correctly
-          ComponentClass[name][this.index] = value;
-        },
-        enumerable: true,
-        configurable: true,
-      });
+      const { get, set } = fieldAccessors(ComponentClass, name);
+      Object.defineProperty(ComponentClass.prototype, name, { get, set, enumerable: true, configurable: true });
     });
 
     ComponentClass.prototype._propertiesCreated = true;
