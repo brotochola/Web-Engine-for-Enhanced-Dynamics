@@ -16197,6 +16197,15 @@
       "title": "Wave 9's second deopt pass on the merge candidate: no deopts, no megamorphic engine IC in four scenes",
       "verdict": "note",
       "text": "**Wave 9's second deopt pass, on the merge candidate: clean.** 2026-10-29, `profileSceneSweep --pass deopt` on\npredatorScene, waterAndBoxesScene, adobeAnimateScene and littleCityScene (the scenes that read component fields\nthrough E-170's compiled accessors, whose arrays `initializeArrays` and Box2D's heap growth can rebind), headed,\nsource.\n\nV8's logs were captured (Predator: 21 418 IC lines, 8 888 megamorphic IC lines, nine isolates' files), and they hold\nno deopt event in any of the four, and no megamorphic IC the summary attributes to an engine site: the same reading as\nthe morning's pass (R-0716). The compiled accessors (anonymous functions from `new Function`) show in neither list."
+    },
+    {
+      "id": "R-0745",
+      "date": "2026-10-29",
+      "time": "11:25",
+      "timeFrom": "recorded",
+      "title": "Wave 9 merged into main (3e1e9988), bundles built and tested, pushed",
+      "verdict": "note",
+      "text": "**Wave 9 merged into main.** 2026-10-29, the owner's go: main fast-forwarded to 3e1e9988 (wave9's tip, 73 commits over\nbfd7ccf1) and pushed.\n\nThe checklist, on wave9 before the merge: `npm run test:node` 2 111/2 111, `npm run test:demos` 100/100,\n`npm run make_bundle` (the eight bundles; prod esm 3 034.5 KB, compressed 1 733.6 KB), `npm run check:dist` (fresh,\ninputs 19609821103a283e), `npm run test:bundle` (all eight in the browser, the 9 000-ball scene drawn, Box2D memory at\n128, 64 and 16 MB as expected), `npm run test:node:bundle` (254/254 on each bundle); then `dist` committed (3e1e9988).\nThe merge gates are R-0742 (Predator, logic −8.1 %, nothing worse) and R-0743 (GPU Galaxy 8M at parity). No version\nchange: a release is `npm run release`."
     }
   ],
   "leads": [
