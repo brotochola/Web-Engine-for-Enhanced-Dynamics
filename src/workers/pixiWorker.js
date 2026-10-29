@@ -6578,8 +6578,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._decalPremultiply = await bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout);
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
 
-      // Create decal tile container (renders between background and entities)
-      this.decalTileContainer = new PIXI.Container();
+      // Create decal tile container (renders between background and entities). E-175: a render group, so the camera
+      // moving it each frame moves the group's transform, not every tile's, and its batches are kept until a tile changes.
+      this.decalTileContainer = new PIXI.Container({ isRenderGroup: true });
       this._registerLayerDisplayObject('decals', this.decalTileContainer);
 
       // Create sprites for each tile
