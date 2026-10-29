@@ -16558,6 +16558,19 @@
       "commits": [
         "fbc8e29c"
       ]
+    },
+    {
+      "id": "R-0764",
+      "date": "2026-10-29",
+      "time": "18:06",
+      "timeFrom": "recorded",
+      "title": "The prod bundle against its sources (51b3a00b): equal or better, logic -3 to -6 %, physics and spatial lower at equal load",
+      "verdict": "passed",
+      "text": "**The prod bundle against the sources it was built from: equal or better.** 2026-10-29, 17:55 to 18:06, wave10 at\n51b3a00b (the dist rebuilt there), one worktree for both sides: A `--src`, B `weed.prod.bundle.esm.min.js` (npm's\ndefault import) through the bench's new `weedBundle` key (b18dd9be), 4 pairs each, headed, detailed stats off. As in\nR-0420 (the earlier tie, explained by E-77), the same tree both ways.\n\n- **Predator** (the runner said REGRESSION on physics and spatial, which the load explains): logic 3.546 → 3.253 ms\n  (−6.2 %, better 4/4); renderer +1.8 %, pre-render +0.9 %; presented 60.0 both. Physics 5.426 → 6.156 ms (+18.2 %) and\n  spatial +4.7 % came with 38 % more moved bodies on the bundle's side, in all four pairs (7 750 against 5 606 a frame\n  on average). Fitted against the moved bodies (+0.48 ms of physics and +0.19 ms of spatial per 1 000), the bundle's\n  term is −0.31 ms of physics (−5.2 % at the mean load) and −0.36 ms of spatial (−6.9 %).\n- **painterMove** (NEUTRAL): logic 6.255 → 6.046 ms (−3.4 %), pre-render 16.229 → 16.624 ms (+2.5 %, worse 3/4, under\n  the 3 % line), renderer 2.10 → 2.13 ms under its floor; presented 60.0 both; 300 000 rows both sides.\n- The bundles keep the modern syntax (native classes, `for…of`, `?.`, `??`): Babel's preset-env, though its targets\n  name Opera Mini, transpiles nothing the engine ships; Terser's compression is the only difference.\n\nThe shipped bundle runs as fast as the sources, logic a little faster.",
+      "commits": [
+        "51b3a00b",
+        "b18dd9be"
+      ]
     }
   ],
   "leads": [
