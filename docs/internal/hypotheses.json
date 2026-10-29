@@ -8933,18 +8933,19 @@
         "R-0739",
         "R-0746",
         "R-0747",
-        "R-0748"
+        "R-0748",
+        "R-0749"
       ],
       "id": "E-162",
       "title": "painterMove: the moving rows' scatter pack and reinsert",
       "status": "running",
-      "statusText": "running: step 1 done, step 3's shader ready, 2026-10-29 (R-0747)",
+      "statusText": "running: steps 1 to 3 done on WebGL, pixels exact, 2026-10-29 (R-0749)",
       "date": "2026-10-29",
       "area": "pre-render",
       "kind": "wasm",
       "rank": 5,
       "result": "Step 1: pack_sprites_indexed_scatter, the pose and the statics' row in draw order and the statics in row order; parity with the split scatter; Chrome 4.965 -> 1.400 ms a moved painter frame at 300 000 rows (-71.8 %).",
-      "next": "Steps 2 and 3 wired together (the queue's indexed region, pre-render's choice, Pixi's indexed batch on WebGL2) with a Chromium pixel check; the map is in EXECUTION_PLAN.md#E-162. Then step 4 (WGSL) and the sittings."
+      "next": "painterMove's sitting (--query-a indexed=0 --query-b indexed=1; pre-render and Pixi owners), painterSort and a Predator gate; then step 4 (WGSL) so the default backend gets it, and the default. EXECUTION_PLAN.md#E-162."
     },
     {
       "aliases": [],
@@ -16244,6 +16245,22 @@
       "title": "wave10 merged into main (b8d1ba3f): E-162's inert groundwork, bundles built and tested, pushed",
       "verdict": "note",
       "text": "**wave10 merged into main.** 2026-10-29, the owner's go: main fast-forwarded to b8d1ba3f and pushed. What it carries\nis inert so far: E-162's design, step 1 (the indexed pack kernel, its parity test and bench) and step 3's groundwork\n(the 12-word statics row, the indexed vertex shader and its compile check); nothing calls them yet.\n\nThe checklist on wave10: `npm run test:node` 2 117/2 117, `npm run test:demos` 100/100, `npm run make_bundle`,\n`npm run check:dist` (fresh, inputs 197bfbf8e1541686), `npm run test:bundle` (all eight in the browser),\n`npm run test:node:bundle` (254/254 on each bundle); `dist` committed (b8d1ba3f). No gate: no frame path changed\n(engine.wasm gained an export no code calls)."
+    },
+    {
+      "id": "R-0749",
+      "date": "2026-10-29",
+      "time": "15:45",
+      "timeFrom": "recorded",
+      "title": "E-162 steps 2 and 3: indexed frames wired on WebGL, the same pixels as split frames",
+      "verdict": "note",
+      "text": "**E-162 steps 2 and 3: indexed frames wired on WebGL, the same pixels as split frames.** 2026-10-29, wave10\n(957d7b36 layout, 97e38731 painterMove's `?indexed=1`, c1e31aa9 Pixi, 4d690829 pre-render, fd34cf36 geometries).\n\n- **renderer.indexedSprites** (default off; WebGL only until step 4) gives the GPU queue's caps `indexedSprites`: the\n  sprite region also holds the poses, the slot pairs (row, depth) and every queue row's statics in whole texture\n  rows. Without it the layout is the one before.\n- **Pre-render** packs a painter-sorted frame with `pack_sprites_indexed_scatter`, the statics only when the GPU queue\n  buffer lacks the queue's generation for the same rows: the painter's order moves none of them\n  (gpuPackIndexedWired.test.js: 19 frames, the rewrites follow the generation and the rows only; a split frame in\n  between makes its buffer write them again).\n- **Pixi** keeps the statics in an RGBA32UI texture (3 072 texels wide) and draws indexed frames with the indexed\n  program from geometries of their own (gpuPackIndexedPixi.test.js). One geometry with both layouts' attributes made\n  Pixi warn for each attribute a program lacks, per geometry and program, so each layout has its own and EntityChunks\n  keeps up to four bases.\n- **Pixels:** painterMove in Chromium, 40 lockstep steps, split against indexed: exact, 0 of 921 600 pixels differ\n  (split against split exact too); the indexed run's headers say GPU_FLAG_INDEXED over 300 000 rows. Its lockstep\n  step times were not a measurement (the test suite ran beside it): pre-render 24.3 ms against 25.6 and 34.3 split,\n  Pixi 1.9 ms against 5.1 and 5.6.\n\nNext: painterMove's sitting (pre-render and Pixi), then painterSort and a Predator gate, then step 4 (WGSL).",
+      "commits": [
+        "957d7b36",
+        "97e38731",
+        "c1e31aa9",
+        "4d690829",
+        "fd34cf36"
+      ]
     }
   ],
   "leads": [
