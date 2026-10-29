@@ -2786,6 +2786,24 @@ bound (the page, the other workers, tests that stub `self`).
 
 **How it is decided:** spawnStormScene's logic (the owner), Predator's gate.
 
+### E-166 The spatial rebuild's ownership branch and grid statics
+
+Wave 9's map put 28 % of Boids' `rebuildOwnedRows` on the owned-row append (rows alternate owners between its two
+spatial workers) and 15–19 % on `Grid.maxEntitiesPerCell` in its cell loop. **Dropped 2026-10-29** (574d7958,
+reverted): the append without a branch, the statics hoisted and `_findNeighbors`' counters in locals left Boids'
+spatial at +0.6 % (4 pairs). The lines cost their memory.
+
+### E-167 An entity carries only its own fields
+
+E-164's eight component fields on every entity cost painterMoveStressScene's logic +13.9 %: its ticks read
+subclass fields over 300 000 entities, and every byte of an entity is read by a loop that walks them. E-164b
+(d5213176) declares one field per component of the class, and the per-entity slot array went with it: against the
+code before E-164, painterMove's logic −12.4 % and minimalTick's −36.7 %. E-167 (da4491b4) takes the rest of what is
+not the entity's own off it: the scene's config and the realm's LogicWorker to GameObject.prototype, the component
+flags to the class's prototype, the slot array only for a class with more than eight components.
+
+**How it is decided:** painterMove's and minimalTick's logic, against N-88's commit.
+
 ---
 
 ## Not doing (read the log first)
