@@ -9271,6 +9271,25 @@
     {
       "aliases": [],
       "refs": [
+        "REVIEW_PLAN.md#N-94"
+      ],
+      "records": [
+        "R-0762",
+        "R-0763"
+      ],
+      "id": "N-94",
+      "title": "The Pixi worker's raw texture uploads could leave a texture unit holding another texture than Pixi tracks",
+      "status": "kept",
+      "statusText": "fixed 2026-10-29 (R-0762)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Fixed 2f96ab60: _uploadDecalRgba8, _gpuRecordRowsGl and _uploadRgba32FloatGl put back the active unit's binding after a raw upload, as sharedTextureUpload.js does.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
         "EXECUTION_PLAN.md#E-168"
       ],
       "records": [
@@ -9420,18 +9439,18 @@
       ],
       "records": [
         "R-0751",
-        "R-0761"
+        "R-0761",
+        "R-0763"
       ],
       "id": "E-175",
       "title": "Predator's decal tiles: up to 800 Pixi sprites re-transformed and re-batched every frame",
-      "status": "running",
-      "statusText": "running: the render group kept (-5.0 %), the culling next, 2026-10-29 (R-0761)",
+      "status": "kept",
+      "statusText": "kept 2026-10-29 (R-0763)",
       "date": "2026-10-29",
       "area": "pixi",
       "kind": "speed",
-      "result": "",
-      "next": "Owner Predator renderer. First the cheapest: decalTileContainer.isRenderGroup = true (the camera moves the group, not 800 children) and the tiles outside the view hidden; if the batch and the texture binds stay, the tiles as one instanced batch of the engine over one atlas or array texture. ABAB 4 pairs, renderer STEP_MS - WAIT_MS.",
-      "rank": 8
+      "result": "Predator: the decal tile container as a render group, renderer -5.0 % (R-0761); the tiles outside the view hidden, renderer -3.2 % at the edge of Predator's noise (pixels exact). Found N-94.",
+      "next": "Nothing pending: one batch over an atlas (step b) is not needed once only the view's tiles are drawn."
     },
     {
       "aliases": [],
@@ -16514,6 +16533,30 @@
       "text": "**E175-decal-rendergroup: the decal tile container as a render group (3bc9bceb), KEPT (product).** 2026-10-29,\n17:07 to 17:12, 8a3088a7 against 3bc9bceb, Predator, 4 pairs, worktrees, headed, source, detailed stats off.\n\n- **renderer 4.403 → 4.056 ms (−5.0 %, worse 1/4, cv 10/7 %; −3.3 % against the others, lower 3/4).**\n- physics −9.5 % (worse 0/4; −11.0 % against the others): a worker the change cannot reach, its moved bodies 5 664 to\n  8 293 a frame across the runs; read as its load. logic +0.9 %, spatial −2.5 %, pre-render −3.4 %; presented 60.0\n  both; BODY_COUNT equal; DECAL_TILES_DIRTY 0.8 a frame on both sides.\n- Pixels: decalStampStressScene in lockstep (every tile stamped), before against after, exact.\n\nAbout 0.35 ms of the renderer's frame, under the 0.8 to 1.2 ms R-0751 expected: the transform walk and the re-batch\ngo, the draws and binds of every stamped tile stay, on screen or not. Next, the tiles outside the view hidden.",
       "commits": [
         "3bc9bceb"
+      ]
+    },
+    {
+      "id": "R-0762",
+      "date": "2026-10-29",
+      "time": "17:25",
+      "timeFrom": "recorded",
+      "title": "N-94 fixed: the Pixi worker's raw texture uploads put back the unit's binding",
+      "verdict": "kept-hygiene",
+      "text": "**N-94 fixed: the Pixi worker's raw texture uploads could leave a texture unit holding another texture than Pixi\ntracks.** 2026-10-29, found by E-175's culling check, fixed in 2f96ab60.\n\n- **Found:** decalStampStressScene in lockstep, then the camera panned and zoomed over six views. With the decal tiles\n  outside the view hidden, one view (zoom 1.5) drew tile (3, 4) with another tile's texture: 10 746 pixels, the same\n  every run; the same code twice was exact. A plain container with the culling did the same, so it was not the\n  render group.\n- **Cause:** `_uploadDecalRgba8`, `_gpuRecordRowsGl` and `_uploadRgba32FloatGl` call `texSys.bind(source, 0)`, then\n  `gl.bindTexture`. When unit 0 already holds the source, Pixi's bind does nothing, not even select unit 0, so the raw\n  bind lands on the active unit; Pixi still takes that unit to hold the texture it last bound there and skips binding\n  it for the next batch. The culling changed the batches enough to show it.\n- **Fix:** the three put back the active unit's binding after the upload (`sharedTextureUpload.js` already did). With\n  it on both sides, the six views are the same pixels with and without the culling.\n- test:node 2129/2129, test:demos 100/100.",
+      "commits": [
+        "2f96ab60"
+      ]
+    },
+    {
+      "id": "R-0763",
+      "date": "2026-10-29",
+      "time": "17:36",
+      "timeFrom": "recorded",
+      "title": "E175-decal-cull: decal tiles outside the view hidden, Predator renderer -3.2 % at its noise edge (kept)",
+      "verdict": "kept",
+      "text": "**E175-decal-cull: the decal tiles outside the camera's view hidden (fbc8e29c), KEPT by the runner, at the edge of\nPredator's noise.** 2026-10-29, 17:30 to 17:36, 2f96ab60 (the render group and N-94) against fbc8e29c (written as\n4d865c38, the same tree), Predator, 4 pairs, worktrees, headed, source, detailed stats off.\n\n- **renderer 3.819 → 3.669 ms (−3.2 %, worse 1/4, cv 10/1 %; −2.2 % against the others, lower 3/4).**\n- Every other worker moved down too: logic −2.6 %, spatial −1.9 %, physics −7.5 % (its moved bodies vary), pre-render\n  −3.3 %: drift of about 2 to 3 %, so the culling's own share is under Predator's limit. Presented 60.0 both;\n  BODY_COUNT equal; DECAL_TILES_DIRTY under 1 a frame.\n- Kept as it can only take draws away and the pixels are exact (six panned and zoomed views of decalStampStressScene);\n  it grows with the stamped tiles a match leaves off screen, which a 20-second run does not reach.\n- Its check found N-94 (the raw texture uploads), fixed before it.\n\nE-175 done: the render group −5.0 % (R-0761) and the culling; step (b), one batch over an atlas, is not needed once\nonly the view's tiles are drawn.",
+      "commits": [
+        "fbc8e29c"
       ]
     }
   ],
