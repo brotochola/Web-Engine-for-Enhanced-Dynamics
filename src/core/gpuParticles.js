@@ -47,7 +47,7 @@ const GPU_GROUP_JOIN_LIVE_MS = 100;
 const DEFAULT_HALF_SIZE = 32;
 
 /** CPU emit keys GPU particles do not have; each is reported once. */
-const UNSUPPORTED_KEYS = [
+export const UNSUPPORTED_KEYS = [
   'fadeOnTheFloor', 'stayOnTheFloor', 'despawnOnGroundContact', 'bounces', 'bounciness', 'bounceFriction',
   'lightIntensity', 'layers', 'renderOnly', 'blendMode', 'rotC', 'rotS', 'wind', 'turbulence',
 ];
@@ -364,6 +364,16 @@ export class GpuParticles {
     console.warn(msg);
   }
 
+  /** Once per key: the config's keys GPU particles ignore (a config that has one, off the hot path). */
+  static _warnUnsupported(cfg) {
+    for (let k = 0; k < UNSUPPORTED_KEYS.length; k++) {
+      const key = UNSUPPORTED_KEYS[k];
+      if (cfg[key] !== undefined) {
+        this._warnOnce(key, `ParticleEmitter.emitGpu: "${key}" is not supported by GPU particles and is ignored`);
+      }
+    }
+  }
+
   /**
    * Emit GPU particles: ParticleEmitter.emitGpu's body (the one public way to emit). Returns how many were written.
    * @param {object} cfg
@@ -381,11 +391,25 @@ export class GpuParticles {
       this._warnOnce('writer', 'ParticleEmitter.emitGpu: GPU particles are emitted from the main thread, a logic worker or the particle worker');
       return 0;
     }
-    for (let k = 0; k < UNSUPPORTED_KEYS.length; k++) {
-      const key = UNSUPPORTED_KEYS[k];
-      if (cfg[key] !== undefined && !this._warned.has(key)) {
-        this._warnOnce(key, `ParticleEmitter.emitGpu: "${key}" is not supported by GPU particles and is ignored`);
-      }
+    // E-172: one named read per key (a config normally has none of them), not a loop of keyed reads by fourteen names
+    // on every call; the keys are UNSUPPORTED_KEYS (gpuParticleUnsupportedKeys.test.js holds the two lists together).
+    if (
+      cfg.fadeOnTheFloor !== undefined ||
+      cfg.stayOnTheFloor !== undefined ||
+      cfg.despawnOnGroundContact !== undefined ||
+      cfg.bounces !== undefined ||
+      cfg.bounciness !== undefined ||
+      cfg.bounceFriction !== undefined ||
+      cfg.lightIntensity !== undefined ||
+      cfg.layers !== undefined ||
+      cfg.renderOnly !== undefined ||
+      cfg.blendMode !== undefined ||
+      cfg.rotC !== undefined ||
+      cfg.rotS !== undefined ||
+      cfg.wind !== undefined ||
+      cfg.turbulence !== undefined
+    ) {
+      this._warnUnsupported(cfg);
     }
     // count: randomRange(cfg.count, 1), rounded
     let count;
