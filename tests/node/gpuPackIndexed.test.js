@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { GPU_POSE_FLOATS, GPU_SPACE_SCREEN, GPU_SPACE_WORLD, GPU_STATIC_FLOATS, makePackContext } from '../../src/render/gpuQueueLayout.js';
+import {
+  GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_SPACE_SCREEN, GPU_SPACE_WORLD, GPU_STATIC_FLOATS, makePackContext,
+} from '../../src/render/gpuQueueLayout.js';
 import { SCATTER_MIN_ROWS, bindGpuPack, packIndexedRowsWasm, packSplitRowsWasm } from '../../src/render/gpuPackClient.js';
 
 // E-162: the indexed scatter writes, for each draw slot, the pose the split scatter writes there and the row it came
@@ -66,7 +68,7 @@ async function setup(seed) {
   const splitStat = alloc(Float32Array, N * GPU_STATIC_FLOATS);
   const pose = alloc(Float32Array, N * GPU_POSE_FLOATS);
   const rows = alloc(Uint32Array, N);
-  const stat = alloc(Float32Array, N * GPU_STATIC_FLOATS);
+  const stat = alloc(Float32Array, N * GPU_INDEXED_STATIC_FLOATS);
   const tableByte = (top = (top + 15) & ~15);
   top += 4 * 18 * 4;
   const indexByte = (top = (top + 15) & ~15);
@@ -107,7 +109,7 @@ test('the indexed scatter is the split scatter with the statics at their rows an
       const sp = words(s.splitPose, n * GPU_POSE_FLOATS);
       const ss = words(s.splitStat, n * GPU_STATIC_FLOATS);
       const ip = words(s.pose, n * GPU_POSE_FLOATS);
-      const is = words(s.stat, N * GPU_STATIC_FLOATS);
+      const is = words(s.stat, N * GPU_INDEXED_STATIC_FLOATS);
       for (let k = 0; k < n; k++) {
         const row = s.rows[k];
         if (row !== list[k]) assert.fail(`${label}: slot ${k} holds row ${row}, the list says ${list[k]}`);
@@ -116,8 +118,9 @@ test('the indexed scatter is the split scatter with the statics at their rows an
         }
         for (let j = 0; j < GPU_STATIC_FLOATS; j++) {
           const want = j === DEPTH ? 0 : ss[k * GPU_STATIC_FLOATS + j];
-          if (is[row * GPU_STATIC_FLOATS + j] !== want) assert.fail(`${label}: row ${row} static ${j}`);
+          if (is[row * GPU_INDEXED_STATIC_FLOATS + j] !== want) assert.fail(`${label}: row ${row} static ${j}`);
         }
+        if (is[row * GPU_INDEXED_STATIC_FLOATS + GPU_STATIC_FLOATS] !== 0) assert.fail(`${label}: row ${row}'s pad word`);
         // The split pack's depth is the draw slot's, which the shader computes.
         if (s.splitStat[k * GPU_STATIC_FLOATS + DEPTH] !== Math.fround(1 - (k + 1) * invDepth)) {
           assert.fail(`${label}: slot ${k}'s depth is not 1 - (k + 1) / depthDenom`);
@@ -133,12 +136,12 @@ test('without the statics the indexed scatter writes the pose and the rows and l
   const splitCtx = makePackContext(s.q, opts, N, {});
   const n = packSplitRowsWasm(s.b, s.q, splitCtx, s.splitPose, null, N);
   s.stat.fill(-7);
-  const before = Uint32Array.from(words(s.stat, N * GPU_STATIC_FLOATS));
+  const before = Uint32Array.from(words(s.stat, N * GPU_INDEXED_STATIC_FLOATS));
   const ctx = makePackContext(s.q, opts, N, {});
   assert.equal(packIndexedRowsWasm(s.b, s.q, ctx, s.pose, s.rows, null, N), n);
   assert.deepEqual(words(s.pose, n * GPU_POSE_FLOATS), words(s.splitPose, n * GPU_POSE_FLOATS));
   assert.deepEqual(Array.from(s.rows.subarray(0, n)), s.order.slice(0, n));
-  assert.deepEqual(words(s.stat, N * GPU_STATIC_FLOATS), before, 'the statics as they were');
+  assert.deepEqual(words(s.stat, N * GPU_INDEXED_STATIC_FLOATS), before, 'the statics as they were');
   assert.equal(ctx.particleCount, splitCtx.particleCount);
 });
 

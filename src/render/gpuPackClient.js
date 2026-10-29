@@ -216,7 +216,7 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
 /**
  * E-162: a painter-sorted frame's indexed streams through the kernel: each drawn row's pose (GPU_POSE_FLOATS) and
  * its row number (a u32) at its draw slot, and, unless `stat` is null, its statics at its row (the queue's row order,
- * GPU_STATIC_FLOATS a row, the depth term 0: the vertex shader takes it from the draw slot). Only for an index list
+ * GPU_INDEXED_STATIC_FLOATS a row, the depth term 0: the vertex shader takes it from the draw slot). Only for an index list
  * over most of the queue, as packSplitRowsWasm's scatter takes it.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs (the caller packs it split)
  */

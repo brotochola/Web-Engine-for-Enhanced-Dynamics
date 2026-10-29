@@ -191,9 +191,12 @@ INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t
 
 /* E-162: a painter-sorted frame whose order moved while its statics held. Each drawn row's pose and its row number go
    to its draw slot (the pose stream and the row stream, both in draw order); with statics set, its statics go to its
-   row (the queue's row order, not the draw order), their depth term 0: the vertex shader takes the depth from the
-   draw slot, the one static that follows the order. The draw slots' statics are statics[rows[k]]. Refuses, as the
-   scatter does, indices that are not distinct rows below rowCount. */
+   row (the queue's row order, not the draw order), INDEXED_STATIC_FLOATS a row: the 11 of sprite_static and a zero, so
+   a row is three RGBA texels of the texture the vertex shader fetches them from. Their depth term is 0: the shader
+   takes the depth from the draw slot, the one static that follows the order. The draw slots' statics are
+   statics[rows[k]]. Refuses, as the scatter does, indices that are not distinct rows below rowCount. */
+#define INDEXED_STATIC_FLOATS 12
+
 INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap, float *pose,
                                      uint32_t *rows, float *stat, uint32_t typeByte, uint32_t *particles,
                                      uint32_t invByte, uint32_t rowCount, int statics) {
@@ -214,7 +217,11 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
     if (type) p += type[i] == 1;
     sprite_pose(t, i, pose + k * POSE_FLOATS);
     rows[k] = i;
-    if (statics) sprite_static(t, i, stat + i * STATIC_FLOATS, 0.0);
+    if (statics) {
+      float *d = stat + i * INDEXED_STATIC_FLOATS;
+      sprite_static(t, i, d, 0.0);
+      d[11] = 0;
+    }
   }
   *particles = p;
   return n;

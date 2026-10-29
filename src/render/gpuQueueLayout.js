@@ -21,6 +21,11 @@ export const GPU_CASTER_FLOATS = GPU_CASTER_LIGHT_FLOAT + 4;
  */
 export const GPU_POSE_FLOATS = 4;
 export const GPU_STATIC_FLOATS = 11;
+/**
+ * E-162. An indexed frame's statics, in the queue's row order: GPU_STATIC_FLOATS and a zero, so a row is three RGBA
+ * texels of the texture its vertex shader fetches them from (gpuPack.c pack_sprites_indexed_scatter).
+ */
+export const GPU_INDEXED_STATIC_FLOATS = 12;
 export const GPU_HEADER_INTS = 12;
 export const GPU_QUEUE_VERSION = 6;
 

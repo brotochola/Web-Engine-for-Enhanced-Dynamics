@@ -15,7 +15,9 @@
  * Reports the median ms of a pack, and a checksum of the pose stream (the same on every case).
  * Browser-safe (chromeKernel.mjs runs `run`); the Node helpers load only from the command line.
  */
-import { GPU_POSE_FLOATS, GPU_SPACE_WORLD, GPU_STATIC_FLOATS, makePackContext } from '../../src/render/gpuQueueLayout.js';
+import {
+  GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_SPACE_WORLD, GPU_STATIC_FLOATS, makePackContext,
+} from '../../src/render/gpuQueueLayout.js';
 import { bindGpuPack, packIndexedRowsWasm, packSplitRowsWasm } from '../../src/render/gpuPackClient.js';
 
 function mulberry32(seed) {
@@ -82,7 +84,7 @@ async function setup(rows, orderKind) {
   const splitStat = alloc(Float32Array, rows * GPU_STATIC_FLOATS);
   const pose = alloc(Float32Array, rows * GPU_POSE_FLOATS);
   const rowStream = alloc(Uint32Array, rows);
-  const stat = alloc(Float32Array, rows * GPU_STATIC_FLOATS);
+  const stat = alloc(Float32Array, rows * GPU_INDEXED_STATIC_FLOATS);
   const tableByte = (top = (top + 15) & ~15);
   top += 4 * 18 * 4;
   const indexByte = (top = (top + 15) & ~15);
