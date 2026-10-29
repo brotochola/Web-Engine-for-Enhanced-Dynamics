@@ -2840,20 +2840,25 @@ cannot draw.
 instancedSprite.vert.glsl to fetch them by row, the depth from the draw slot; it compiles and links with the sprite
 fragment shader in Chrome 156's WebGL2 (`spriteIndexedCompileCheck.mjs`), 4 vertex attributes against 10.
 
-**What is left, as a map for the next session:**
-- **The queue (step 2):** GPU_FLAG_INDEXED; the sprite region as poses (capacity × 4 floats), rows (capacity u32) and
-  statics (staticsTextureHeight(capacity) × 1 024 rows × 12 words), sized in renderQueueMemory; GPU_HDR_STATIC_GEN
-  then names the row-order statics' generation.
-- **Pre-render (step 2):** where the painter-sorted frame calls `packSplitRowsWasm`, call `packIndexedRowsWasm`
-  instead when Pixi has said it draws indexed frames (a flag at init), with the statics only when their generation
-  moved: the queue's staticGen without E-159's orderGen. A frame the indexed pack declines stays split.
-- **Pixi on WebGL2 (step 3):** an `indexed` mode in InstancedSpriteBatch: the pose and row buffers as instance
-  attributes (the row a 'uint32' attribute with `in uint aInstRow`, or the kernel writes it as a float, exact under
-  2^24), the statics an RGBA32UI texture (3 072 texels wide) re-uploaded on a new generation, the program from
-  spriteIndexedVertex, `uFirstInstance` set per drawn chunk and `uInvDepthDenom` per frame.
-- **The proof:** a Chromium pixel check (painterMove's shape drawn split and indexed, the same pixels), then step 4
-  (WGSL, `textureLoad` on a `texture_2d<u32>`), painterMove (pre-render and Pixi owners), painterSort and a Predator
-  gate.
+**Steps 2 and 3 done 2026-10-29** (957d7b36, c1e31aa9, 4d690829, fd34cf36; the knob 97e38731), with three changes
+from the map: the slot stream carries the row and the depth (a pair of floats, `aInstSlot`), since a chunk of the
+y-sort painter's proxies restarts `gl_InstanceID`; renderer.indexedSprites (WebGL only for now) lays out the region
+for both workers, so Pixi sends no flag; and each layout draws from geometries of its own, since one geometry with both
+layouts' attributes made Pixi warn per attribute, per geometry and program (EntityChunks keeps up to four bases).
+- **The queue:** caps.indexedSprites sizes the sprite region for the poses, the slot pairs and every queue row's
+  statics in whole texture rows (`gpuSpriteRegionFloats`); without it the layout is the one before.
+- **Pre-render:** `_packSpritesIndexed` for a painter-sorted frame, the statics only when the GPU queue buffer lacks
+  the queue's generation for the same rows; a frame the kernel declines (a short list) goes split.
+- **Pixi on WebGL2:** the entity batch's statics texture (RGBA32UI, from its own copy, through the record texture
+  helper) and indexed program; `commitIndexed` uploads the texture rows on a new generation only.
+- **The proof, first half:** painterMove in Chromium, 40 lockstep steps, drawn split and indexed: the same pixels,
+  all 921 600, the indexed run's headers GPU_FLAG_INDEXED over 300 000 rows.
+
+**What is left:** painterMove's sitting (pre-render and Pixi owners, `--query-a indexed=0 --query-b indexed=1`),
+painterSort and a Predator gate with the option off (the default path); then step 4 (WGSL: a `texture_2d<u32>` and
+`textureLoad`, or a storage buffer) so the default backend gets it, the pixel check on WebGPU, and the default.
+Before the option is on by default: Pixi checks the texture's size (3 072 texels wide, a row per 1 024 sprites) at its
+init and throws on a GPU that cannot hold it; the main thread would have to know the limit first.
 
 ### E-163 The gather's cell order past 65 536 cells
 
