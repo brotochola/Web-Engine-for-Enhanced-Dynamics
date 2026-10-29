@@ -23,7 +23,11 @@ import {
   TextureSource,
 } from '../vendor/pixi.min.js';
 
-import { instancedSpriteGpuProgram, instancedSpriteShadowGpuProgram } from './webgpu/instancedSpriteWgsl.js';
+import {
+  instancedSpriteGpuProgram,
+  instancedSpriteIndexedGpuProgram,
+  instancedSpriteShadowGpuProgram,
+} from './webgpu/instancedSpriteWgsl.js';
 import {
   instancedSpriteGlProgram,
   pickInstancedSpriteFragmentGlsl,
@@ -32,7 +36,9 @@ import {
   GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
 import { packInstancedRowsWasm, packPoseRowsWasm, packSplitRowsWasm } from './gpuPackClient.js';
-import { STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, staticsTextureHeight } from './spriteIndexed.js';
+import {
+  STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, spriteIndexedWgsl, staticsTextureHeight,
+} from './spriteIndexed.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -211,8 +217,9 @@ export class InstancedSpriteBatch {
    * @param {string} [opts.blendMode='normal'] - Pixi State blend mode
    * @param {boolean} [opts.useWebGpu=true] - compile GpuProgram vs GlProgram
    * @param {object} opts.shaders - fetched engine sources (`sprite` or spriteVert/frag*)
-   * @param {object|null} [opts.statics] - E-162, a split batch on WebGL: Pixi's RGBA32UI texture helper (`maxSize`,
-   *   `make`, `upload`: pixiWorker._gpuRecordTexture), with which it also commits indexed frames (commitIndexed)
+   * @param {object|null} [opts.statics] - E-162, a split batch: what it keeps indexed frames' statics in, with which it
+   *   also commits them (commitIndexed). WebGL: Pixi's RGBA32UI texture helper (`maxSize`, `make`, `upload`:
+   *   pixiWorker._gpuRecordTexture); WebGPU: `{ maxStorageBytes }`, the device's storage binding size
    */
   constructor({
     capacity,
@@ -239,9 +246,9 @@ export class InstancedSpriteBatch {
     this.poseInterp = !!poseInterp;
     this.shadowCast = !!shadowCast && !poseInterp;
     this.split = !!split && !this.poseInterp && !this.shadowCast;
-    // E-162: a split batch on WebGL given the texture helper also takes indexed frames: the poses, a slot stream (each
-    // instance's statics row and depth) and every queue row's statics, which a texture holds in row order.
-    this.indexed = this.split && !useWebGpu && statics !== null;
+    // E-162: a split batch given `statics` also takes indexed frames: the poses, a slot stream (each instance's statics
+    // row and depth) and every queue row's statics in row order, in a texture (WebGL) or a storage buffer (WebGPU).
+    this.indexed = this.split && statics !== null;
     // Two streams, a pose and the statics: a pose batch's (E-82) or a split batch's (E-82b).
     this._twoStreams = this.poseInterp || this.split;
     this._floats = this.poseInterp ? POSE_DYN_FLOATS : this.split ? SPLIT_POSE_FLOATS : INSTANCED_SPRITE_FLOATS;
@@ -541,10 +548,12 @@ export class InstancedSpriteBatch {
   }
 
   /**
-   * E-162: the statics texture, made at its full height, and the indexed program (spriteIndexed.js: the plain sprite
-   * vertex shader reading its statics from the texture) over the split program's resources and uniform group.
+   * E-162: where the statics go, and the indexed program (spriteIndexed.js: the plain sprite vertex shader reading
+   * them by row) over the split program's resources and uniform group. WebGL: a texture made at its full height;
+   * WebGPU: a read-only storage buffer over the same copy.
    */
   _makeIndexedShader(name) {
+    if (this._useWebGpu) return this._makeIndexedGpuShader(name);
     const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
     const height = staticsTextureHeight(this.capacity);
     const max = this._statics.maxSize | 0;
@@ -572,6 +581,38 @@ export class InstancedSpriteBatch {
       uStatics: this._staticsSource,
     };
     return new Shader({ glProgram, resources });
+  }
+
+  _makeIndexedGpuShader(name) {
+    const bytes = this._rowStatics.byteLength;
+    const max = this._statics.maxStorageBytes || 0;
+    if (bytes > max) {
+      throw new Error(
+        `WeedJS: renderer.indexedSprites needs a storage buffer of ${bytes} bytes for ${this.capacity} sprites, and this ` +
+          `GPU binds ${max}: turn the option off or lower renderer.maxVisibleRenderables.`
+      );
+    }
+    this._staticsSource = new Buffer({
+      data: this._rowStatics,
+      usage: BufferUsage.STORAGE | BufferUsage.COPY_DST,
+      label: `${name}-statics`,
+    });
+    const shaders = this._engineShaders;
+    const gpuProgram = instancedSpriteIndexedGpuProgram(
+      GpuProgram,
+      shaders?.sprite ? spriteIndexedWgsl(shaders.sprite) : null,
+      this._premultiplyAlpha ? 'mainFrag' : 'mainFragAdd',
+      `${name}-indexed`
+    );
+    const r = this.shader.resources;
+    const resources = {
+      uTexture: r.uTexture,
+      uSampler: r.uSampler,
+      uTexLut: r.uTexLut,
+      uniforms: r.uniforms,
+      uStatics: this._staticsSource,
+    };
+    return new Shader({ gpuProgram, resources });
   }
 
   _show(on) {
@@ -913,8 +954,12 @@ export class InstancedSpriteBatch {
       this._ixGen = g;
       this._ixRows = r;
       this.copyIn(this._rowStatics, rowStatics, r * GPU_INDEXED_STATIC_FLOATS);
-      const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
-      this._statics.upload(this._staticsSource, this._rowStaticsU32, width, this._staticsHeight, 0, staticsTextureHeight(r));
+      if (this._useWebGpu) {
+        this._staticsSource.update(r * GPU_INDEXED_STATIC_FLOATS * 4);
+      } else {
+        const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
+        this._statics.upload(this._staticsSource, this._rowStaticsU32, width, this._staticsHeight, 0, staticsTextureHeight(r));
+      }
     }
     this.copyIn(this.data, pose, keep * SPLIT_POSE_FLOATS);
     this.copyIn(this._slotData, slots, keep * GPU_INDEXED_SLOT_FLOATS);

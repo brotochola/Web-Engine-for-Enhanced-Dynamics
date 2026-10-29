@@ -271,10 +271,10 @@ test('E-162: the header carries an indexed frame\'s rows, and a cleared header n
   assert.ok(GPU_HDR_INDEXED_ROWS < GPU_HEADER_INTS);
 });
 
-test('E-162: indexed frames only on request, and on WebGL for now', () => {
+test('E-162: indexed frames only on request, on either backend', () => {
   assert.equal(indexedSpritesEnabled({ indexedSprites: true, backend: 'webgl' }), true);
-  assert.equal(indexedSpritesEnabled({ indexedSprites: true, backend: 'webgpu' }), false);
-  assert.equal(indexedSpritesEnabled({ indexedSprites: true }), false, 'the default backend is WebGPU');
+  assert.equal(indexedSpritesEnabled({ indexedSprites: true, backend: 'webgpu' }), true);
+  assert.equal(indexedSpritesEnabled({ indexedSprites: true }), true);
   assert.equal(indexedSpritesEnabled({ indexedSprites: 1, backend: 'webgl' }), false);
   assert.equal(indexedSpritesEnabled({ backend: 'webgl' }), false);
   assert.equal(indexedSpritesEnabled(undefined), false);

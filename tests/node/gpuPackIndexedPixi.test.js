@@ -1,15 +1,16 @@
-// E-162, wired: Pixi's entity batch on WebGL taking pre-render's indexed frames (renderer.indexedSprites), through
-// updateSpritesFromRenderQueue. An indexed frame commits its poses and slot pairs every frame and the statics rows to
-// the statics texture only when their generation or the rows moved, drawn by the indexed program; a split frame between
-// them draws with the split program again, its statics its own; the chunks of the y-sort painter's proxies draw with
-// the batch's program of the frame; and a batch made without the texture refuses an indexed frame, saying why.
+// E-162, wired: Pixi's entity batch taking pre-render's indexed frames (renderer.indexedSprites), through
+// updateSpritesFromRenderQueue. On WebGL an indexed frame commits its poses and slot pairs every frame and the statics
+// rows to the statics texture only when their generation or the rows moved, drawn by the indexed program; a split frame
+// between them draws with the split program again, its statics its own; the chunks of the y-sort painter's proxies draw
+// with the batch's program of the frame; and a batch made without the texture refuses an indexed frame, saying why. On
+// WebGPU the statics go to a storage buffer the same way, and a device that cannot bind it stops the batch.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { Container, TextureSource } from '../../src/vendor/pixi.min.js';
+import { BufferUsage, Container, TextureSource } from '../../src/vendor/pixi.min.js';
 import { Transform } from '../../src/components/transform.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { GameObject } from '../../src/core/gameObject.js';
@@ -50,6 +51,7 @@ const GL_SHADERS = {
   spriteFragBlend: readShader('instancedSpriteBlend.frag.glsl'),
   spriteFragAdd: readShader('instancedSpriteAdditive.frag.glsl'),
 };
+const GPU_SHADERS = { sprite: readShader('instancedSprite.wgsl'), spritePose: readShader('instancedSpritePose.wgsl') };
 
 class Thing extends GameObject {}
 Thing.components = [SpriteRenderer];
@@ -96,8 +98,11 @@ function scene(indexedSprites) {
   return s;
 }
 
-/** Pixi on WebGL on the scene's queues, its texture helper a stand-in that records what is made and sent. */
-async function bindPixi(px, s) {
+/**
+ * Pixi on the scene's queues: on WebGL its texture helper a stand-in that records what is made and sent; on WebGPU a
+ * device whose storage binding size is `maxStorageBytes`.
+ */
+async function bindPixi(px, s, { webgpu = false, maxStorageBytes = 1 << 27 } = {}) {
   const m = s.renderQueueMemory;
   const caps = s.gpuQueueCaps;
   px.config = s.config;
@@ -105,8 +110,9 @@ async function bindPixi(px, s) {
   px._packGpuSpritesOn = 'preRender';
   px._queueInterp = false;
   px._lightGlowAdd = false;
-  px._useWebGpu = false;
-  px._engineShaders = GL_SHADERS;
+  px._useWebGpu = webgpu;
+  px._engineShaders = webgpu ? GPU_SHADERS : GL_SHADERS;
+  if (webgpu) px.pixiApp = { renderer: { gpu: { device: { limits: { maxStorageBufferBindingSize: maxStorageBytes } } } } };
   px.renderQueueEnabled = true;
   px.renderQueueMaxItems = MAX;
   px.atlasScaleMode = 'linear';
@@ -295,4 +301,39 @@ test('an entity batch without the statics texture refuses an indexed frame, and 
   assert.equal(px.visibleEntityCount, 0);
   assert.equal(px.entitiesBatch.mesh.visible, false);
   assert.equal(errors.filter((e) => e.includes('an indexed frame for an entity batch that reads none')).length, 1);
+});
+
+test('on WebGPU the statics go to a storage buffer, sent when their generation or the rows move', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const s = await quietly(() => scene(true));
+  const log = await quietly(() => bindPixi(px, s, { webgpu: true }));
+  const batch = px.entitiesBatch;
+  assert.equal(batch.indexed, true, 'a split batch on WebGPU takes indexed frames');
+  assert.equal(log.made.length, 0, 'no texture');
+  const statics = batch._staticsSource;
+  assert.ok((statics.descriptor.usage & BufferUsage.STORAGE) !== 0, 'a storage buffer');
+  assert.equal(statics.data, batch._rowStatics, 'over the batch\'s own copy of the statics');
+  assert.equal(batch._indexedShader.resources.uStatics, statics);
+  assert.ok(batch._indexedShader.gpuProgram, 'a WGSL program');
+  const sent = [];
+  statics.update = (bytes) => sent.push(bytes);
+  const frames = [[2500, 2600, 5], [2500, 2600, 5], [2400, 2500, 6], [2400, 2500, 6]];
+  frames.forEach(([n, rows, gen], f) => {
+    const b = f & 1;
+    const want = writeIndexedFrame(px, b, n, rows, gen, f);
+    px._setReadBuffer(b);
+    px.updateSpritesFromRenderQueue();
+    assert.equal(px.visibleEntityCount, n, `frame ${f}: slots`);
+    assert.equal(batch.mesh.shader, batch._indexedShader, `frame ${f}: the indexed program`);
+    assert.ok(batch._indexedGeometries.includes(batch.mesh.geometry), `frame ${f}: an indexed geometry`);
+    same(batch._slotData, want.slots, n * GPU_INDEXED_SLOT_FLOATS, `frame ${f} slots`);
+    same(batch._rowStatics, want.stat, rows * GPU_INDEXED_STATIC_FLOATS, `frame ${f} statics`);
+  });
+  assert.deepEqual(sent, [2600 * GPU_INDEXED_STATIC_FLOATS * 4, 2500 * GPU_INDEXED_STATIC_FLOATS * 4], 'the rows\' bytes, twice');
+});
+
+test('on WebGPU a device that cannot bind the statics stops the entity batch, saying why', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const s = await quietly(() => scene(true));
+  await assert.rejects(() => quietly(() => bindPixi(px, s, { webgpu: true, maxStorageBytes: 1024 })), /storage buffer of \d+ bytes/);
 });

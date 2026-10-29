@@ -65,3 +65,40 @@ export function instancedSpriteGpuProgram(GpuProgram, source, fragEntry, name) {
     ],
   });
 }
+
+/**
+ * E-162: the indexed sprite program (spriteIndexed.js spriteIndexedWgsl), the sprite program's bindings and the
+ * statics as group 2's binding 4, a read-only storage buffer.
+ */
+export function instancedSpriteIndexedGpuProgram(GpuProgram, source, fragEntry, name) {
+  if (!source) {
+    throw new Error('WeedJS: Instanced sprite WGSL was not loaded before GpuProgram creation.');
+  }
+  const vf = gpuStageVF();
+  const f = gpuStageF();
+  return GpuProgram.from({
+    name,
+    vertex: { source, entryPoint: 'mainVert' },
+    fragment: { source, entryPoint: fragEntry },
+    layout: {
+      0: { globalUniforms: 0 },
+      1: { localUniforms: 0 },
+      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uniforms: 3, uStatics: 4 },
+    },
+    gpuLayout: [
+      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
+      [
+        { binding: 0, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
+        { binding: 1, visibility: f, sampler: { type: 'filtering' } },
+        {
+          binding: 2,
+          visibility: vf,
+          texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false },
+        },
+        { binding: 3, visibility: vf, buffer: { type: 'uniform' } },
+        { binding: 4, visibility: vf, buffer: { type: 'read-only-storage' } },
+      ],
+    ],
+  });
+}

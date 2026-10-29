@@ -2374,7 +2374,7 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
     this._painter = this._ySort ? this._newEntityPainter() : null;
     const gpuCaps = this.gpuQueueBuffers && this.gpuQueueBuffers[0] ? this.gpuQueueBuffers[0].caps : null;
-    const indexed = !this._useWebGpu && !!(gpuCaps && gpuCaps.indexedSprites);
+    const indexed = !!(gpuCaps && gpuCaps.indexedSprites);
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -2393,8 +2393,13 @@ class PixiRenderer extends AbstractWorker {
       // E-82b: the plain sprites in two streams, the statics uploaded when they change. A nearest atlas snaps every
       // pose, which the split kernel does not pack, so it keeps 15-float rows.
       split: !this._queueInterp && this.atlasScaleMode !== 'nearest',
-      // E-162: with the queue's indexed frames (renderer.indexedSprites), the statics texture's helper.
-      statics: indexed ? this._gpuRecordTexture() : null,
+      // E-162: with the queue's indexed frames (renderer.indexedSprites), where their statics go: a texture through the
+      // record texture helper (WebGL), or a storage buffer within the device's binding size (WebGPU).
+      statics: !indexed
+        ? null
+        : this._useWebGpu
+          ? { maxStorageBytes: this.pixiApp?.renderer?.gpu?.device?.limits?.maxStorageBufferBindingSize ?? 0 }
+          : this._gpuRecordTexture(),
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
       // stream and statics rows.
       arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)
