@@ -6,6 +6,7 @@
 //   ?particles=<n>       the layer's maxParticles, split between the arms (default 4 194 304)
 //   ?arms=<n>            logic workers, one arm each (default 4)
 //   ?backend=webgl       Pixi's WebGL backend (default WebGPU, the engine's)
+//   ?batchMs=<n>         an arm throws its dots once every n ms of the clock, not every tick (default 0)
 
 import WEED from '/src/index.js';
 
@@ -20,6 +21,7 @@ function param(name, fallback) {
 const PARTICLES = Math.max(1024, parseInt(param('particles', '4194304'), 10) || 4194304);
 const ARMS = Math.max(1, Math.min(8, parseInt(param('arms', '4'), 10) || 4));
 const BACKEND = param('backend', 'webgpu') === 'webgl' ? 'webgl' : 'webgpu';
+const BATCH_MS = Math.max(0, Math.min(50, Number(param('batchMs', '0')) || 0));
 
 const WORLD_W = typeof globalThis.innerWidth === 'number' ? globalThis.innerWidth : 1920;
 const WORLD_H = typeof globalThis.innerHeight === 'number' ? globalThis.innerHeight : 1080;
@@ -46,7 +48,8 @@ const COLORS = [0x47c6ff, 0xff4fd8, 0xffa63d, 0x8f6bff, 0x5dffa8, 0xff5a5a, 0xff
 export class Arm extends GameObject {
   static components = [];
 
-  onSpawned({ arm = 0, arms = 1 } = {}) {
+  onSpawned({ arm = 0, arms = 1, batchMs = 0 } = {}) {
+    this.batchMs = batchMs; // ?batchMs: one call per batchMs of the clock, its dots born over it
     this.angle = (arm * 360) / arms; // where the arm throws its dots now (degrees)
     this.sweptFrom = this.angle; // the angle at its last call
     this.rate = NaN; // dots per ms that keep this worker's ring full
@@ -80,6 +83,7 @@ export class Arm extends GameObject {
       return;
     }
     const elapsed = now - this.lastNowMs;
+    if (elapsed < this.batchMs) return;
     this.lastNowMs = now;
     this.angle += TURN * elapsed;
     const dt = elapsed < STEP_MS ? elapsed : STEP_MS;
@@ -135,7 +139,7 @@ export class GpuGalaxyScene extends Scene {
   }
 
   createNewGame() {
-    for (let arm = 0; arm < ARMS; arm++) Arm.spawn({ arm, arms: ARMS, forceProcessOnLogicWorker: arm });
+    for (let arm = 0; arm < ARMS; arm++) Arm.spawn({ arm, arms: ARMS, batchMs: BATCH_MS, forceProcessOnLogicWorker: arm });
   }
 
   async destroy() {
