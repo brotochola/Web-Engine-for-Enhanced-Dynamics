@@ -2742,6 +2742,9 @@ that read the code apart from mine):
   −8.1 % (0/4), pre-render −3.9 %. GPU Galaxy 8M at 8 pairs: neutral, presented 56.0 → 55.1 fps (−2.1 %, 6/8)
   and the renderer +1.7 % (7/8), against −4.9 % before the hold; the session's Galaxy A/A read −1.2 % and +2.0 %, so
   about 2 % may remain, at the scene's detection limit (R-0736 to R-0738).
+- **The merge candidate** (13dee3cc, with N-92 and E-174): Predator logic −8.1 % (0/4), nothing worse; GPU Galaxy 8M
+  at parity, presented +1.6 % and the renderer −2.1 % over 8 pairs (R-0742, R-0743). E-174 took the wall-clock calls
+  out of the clock's reads, and with them what the hold had left of DX-GPCLOCK's cost.
 
 ### E-160 Predator's shadow stamp, on the inputs the scene gives it
 
