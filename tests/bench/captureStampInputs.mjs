@@ -14,7 +14,9 @@
  *
  *   node tests/bench/captureStampInputs.mjs [--frames 48] [--every 4] [--warmup-ms 12000] [--settle-ms 3000]
  *        [--scene /demos/predatorScene/predatorScene.js] [--scene-export PredatorScene] [--query "hour=0"]
- *        [--output tests/results/stamp-capture/predator.bin]
+ *        [--output tests/results/stamp-capture/predator.bin] [--root <dir>] [--frames-only]
+ * --root serves another tree (an ABAB worktree) with this script; --frames 0 records no frame and only times the
+ * stamp in the scene (the mean over the calls of --window-ms).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -36,6 +38,8 @@ const sceneModule = String(args.scene ?? '/demos/predatorScene/predatorScene.js'
 const sceneExport = String(args['scene-export'] ?? 'PredatorScene');
 const query = typeof args.query === 'string' ? args.query.replace(/^\?/, '') : '';
 const out = path.resolve(repoRoot, String(args.output ?? 'tests/results/stamp-capture/predator.bin'));
+const serveRoot = args.root ? path.resolve(String(args.root)) : repoRoot;
+const windowMs = Number(args['window-ms'] ?? 5000);
 
 /** Installed in the pre-render worker: the wrapper and its store (self.__stampCapture). */
 function installCapture({ max, every: k }) {
@@ -48,9 +52,10 @@ function installCapture({ max, every: k }) {
     const t0 = performance.now();
     const written = orig.call(this, spec, sunN, stampBase);
     const ms = performance.now() - t0;
-    if (!cap.recording || cap.frames.length >= max) return written;
+    if (!cap.recording) return written;
     cap.msSum += ms;
     cap.msCount++;
+    if (cap.frames.length >= max) return written;
     if (cap.calls++ % k !== 0) return written;
     const n = sunN | 0;
     const sf = spec.sunFloats | 0;
@@ -116,7 +121,7 @@ function readFrame(i) {
 
 const TYPED = { sun: Float32Array, lights: Float64Array, stamp: Float32Array, lightIdx: Uint16Array };
 
-const server = await createStaticBenchmarkServer(repoRoot);
+const server = await createStaticBenchmarkServer(serveRoot);
 const url = `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html?src=1${query ? `&${query}` : ''}`;
 const browser = await chromium.launch({
   headless: false,
@@ -157,6 +162,12 @@ try {
   await worker.evaluate(() => {
     self.__stampCapture.recording = true;
   });
+  if (frames === 0) {
+    await page.waitForTimeout(windowMs);
+    const { msSum, msCount } = await worker.evaluate(() => ({ msSum: self.__stampCapture.msSum, msCount: self.__stampCapture.msCount }));
+    console.log(`${path.relative(repoRoot, serveRoot) || '.'}: the stamp in the scene ${(msSum / msCount).toFixed(3)} ms a call over ${msCount} calls`);
+    process.exitCode = 0;
+  } else {
   const t0 = Date.now();
   for (;;) {
     const have = await worker.evaluate(() => self.__stampCapture.frames.length);
@@ -197,6 +208,7 @@ try {
   console.log(`${frames} stamp calls → ${path.relative(repoRoot, out)}`);
   console.log(`  in the scene: ${meta.sceneMsPerCall.toFixed(3)} ms a call over ${msCount} calls`);
   console.log(`  casters ${meta.sunN.join('–')}, lights ${meta.lights.join('–')}, rows written ${meta.written.join('–')}`);
+  }
 } finally {
   await browser.close();
   await server.close();
