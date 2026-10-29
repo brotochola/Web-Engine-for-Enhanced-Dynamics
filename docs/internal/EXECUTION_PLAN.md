@@ -2773,6 +2773,19 @@ fixed order per class, so a read is one load from an object the tick has just to
 
 **How it is decided:** waterAndBoxesScene's logic (the owner), then Predator's logic as the gate.
 
+### E-165 Spawn and despawn read the logic worker through the worker's global
+
+**The finding (Wave 9's map).** In spawnStormScene's logic (375 ms/s), the hottest lines of `_spawnAt` and `despawn`
+are `typeof self !== 'undefined' ? self.logicWorker : null`: 91 % of `despawn`'s self time and 43 % of `_spawnAt`'s,
+about a third of the worker. `self` in a worker is the global proxy, and V8 does not make a named load through it
+fast.
+
+**The change.** The LogicWorker binds itself to a module reference of `gameObject.js` when it is made; spawn,
+despawn, `isCollidingWith` and the despawnAll forward read that, and fall back to the global only where nothing is
+bound (the page, the other workers, tests that stub `self`).
+
+**How it is decided:** spawnStormScene's logic (the owner), Predator's gate.
+
 ---
 
 ## Not doing (read the log first)
