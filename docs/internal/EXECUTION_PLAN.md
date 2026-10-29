@@ -2713,6 +2713,14 @@ little.
 
 **How it is decided:** the replay in Node and in Chrome, then Predator's pre-render, ABAB from worktrees.
 
+**Kept (kernel), 2026-10-29 (856cecca; tools 45505141, ed7e1aec).** The capture showed 13 300 casters, not the
+fixture's few, and the time in building the grid (38 %), the selection with the nearest lights (29 %), the append
+(20 %) and the walk (13 %). The grid now packs x and y in its order from one read of each row, the walk keeps each
+candidate's distance, and rows are copied in v128s; the stamp is bit-identical. Replay: Node +14.7 %, Chrome
+0.541 → 0.466 ms a frame (−13.9 %); in Predator the stamp itself 1.139 → 1.005 ms a call (−11.8 %, 3/3). Predator's
+pre-render STEP_MS did not move (+0.9 % paired over 4 pairs, inside the session's A/A, which read −2.7 % on
+identical code): about 3 % of that worker is under what four pairs resolve here.
+
 ### E-161 emitGpu: the calls of one frame share a group
 
 **The limit.** Each emitGpu call writes one group, and a ring holds 2 048 live ones. An entity that emits every frame
@@ -2728,6 +2736,11 @@ sortY falls in the group's band can join it.
 - The tool first: a gpuParticlesStressScene knob for many small calls a frame, in a plain and a sorted layer.
 - Tests: the records are the same, and the bounds cover them.
 - The sitting: groups a frame and overflows, then Pixi and the renderer in the sorted case.
+
+**Done 2026-10-29 (d2827622; tools a87b16ee).** gpuParticlesStressScene `?trail=300&columns=0`, 300 movers that call
+emitGpu every tick, `gpuParticleRingProbe` over 5 s: on a plain layer 18 048 → 60 groups a second and 18 048 → 0
+overflows a second; a sorted layer is unchanged, each mover being on its own row. The GPU particle gate covers its
+timings.
 
 ### E-162 painterMove: the moving rows' scatter pack and reinsert
 
@@ -2746,6 +2759,19 @@ coarser key, cells grouped so the index fits in 16 bits, would keep most of the 
 
 **How it is decided:** `spatialGatherReplayKernel` on a large grid, then the spatial worker of a scene whose grid passes
 65 536 cells.
+
+### E-164 A component read waits on memory: the slot array and its elements
+
+**The finding (Wave 9's map, 2026-10-29).** In waterAndBoxesScene the component getter (`gameObject.js`, E-139's
+numbered slots) is 36 % of logic. Its 20 000 water balls each read `this.rigidBody.speed` once a tick: 1.2 million
+reads a second, about 23 ns each, all on the line `this._components[slot]`. That is memory, not code: the entity, its
+`_components` array and the array's elements are three objects, and with 20 000 entities none of them is in cache.
+In Predator the getter is 7–9 % of each logic worker. E-139's kernel timed a hot cache, where the read was 6.7 ns.
+
+**The idea.** The component instances as fields of the entity, made with it before the frame loop and declared in a
+fixed order per class, so a read is one load from an object the tick has just touched.
+
+**How it is decided:** waterAndBoxesScene's logic (the owner), then Predator's logic as the gate.
 
 ---
 
