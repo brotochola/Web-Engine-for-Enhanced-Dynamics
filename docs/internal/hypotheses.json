@@ -9287,7 +9287,8 @@
         "R-0729",
         "R-0730",
         "R-0736",
-        "R-0742"
+        "R-0742",
+        "R-0744"
       ],
       "date": "2026-10-29",
       "status": "kept-kernel",
@@ -9368,7 +9369,8 @@
       "records": [
         "R-0741",
         "R-0742",
-        "R-0743"
+        "R-0743",
+        "R-0744"
       ],
       "id": "E-174",
       "title": "A running clock's read asked the wall clock, twice per joining emitGpu call",
@@ -16186,6 +16188,15 @@
       "title": "W9-final3-galaxy: the merge candidate against main on GPU Galaxy 8M at parity (presented +1.6 %, 8 pairs)",
       "verdict": "passed",
       "text": "**W9-final3-galaxy: the merge candidate against main on GPU Galaxy 8M, at parity.** 2026-10-29, main bfd7ccf1 against\n13dee3cc, 8 pairs (4 did not decide at R-0738), worktrees, headed, source, detailed stats off,\n`particles=8388608&arms=8`, owner the renderer.\n\nNEUTRAL: renderer 4.013 → 3.891 ms (−2.1 %, worse 2/8, cv 3/2 %), presented 55.1 → 55.8 fps (+1.6 %, fewer 3/8, cv\n1/2 %); logic 1.205 → 1.233 ms (under the floor).\n\nR-0738 read presented −2.1 % (fewer 6/8) and the renderer +1.7 % (worse 7/8) on the tree before N-92 and E-174. Of\nthose two, only E-174 reaches this scene: every clock read in the eight arms' workers and the renderer called\n`performance.timeOrigin` and `performance.now()` (slow bindings) before it, and reads a typed array after. Whether\nthose calls cost the page's frames or that reading was the edge of the scene's noise (R-0737), the candidate no\nlonger gives anything up here: DX-GPCLOCK's cost is gone (R-0707 −9.4 %, R-0724 −4.9 %, R-0738 −2.1 %, now +1.6 %)."
+    },
+    {
+      "id": "R-0744",
+      "date": "2026-10-29",
+      "time": "10:59",
+      "timeFrom": "recorded",
+      "title": "Wave 9's second deopt pass on the merge candidate: no deopts, no megamorphic engine IC in four scenes",
+      "verdict": "note",
+      "text": "**Wave 9's second deopt pass, on the merge candidate: clean.** 2026-10-29, `profileSceneSweep --pass deopt` on\npredatorScene, waterAndBoxesScene, adobeAnimateScene and littleCityScene (the scenes that read component fields\nthrough E-170's compiled accessors, whose arrays `initializeArrays` and Box2D's heap growth can rebind), headed,\nsource.\n\nV8's logs were captured (Predator: 21 418 IC lines, 8 888 megamorphic IC lines, nine isolates' files), and they hold\nno deopt event in any of the four, and no megamorphic IC the summary attributes to an engine site: the same reading as\nthe morning's pass (R-0716). The compiled accessors (anonymous functions from `new Function`) show in neither list."
     }
   ],
   "leads": [
