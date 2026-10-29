@@ -2802,6 +2802,34 @@ case.
 **How it is decided:** a kernel on the scene's rows first (the scatter pack's stores, the reinsert's moves), then
 painterMove's pre-render, ABAB. A Predator gate if the pack path changes.
 
+**The design (the owner's go, 2026-10-29; R-0709 read the lever).** Today a painter-sorted frame writes both of E-82b's
+streams in draw order: the pose (x, y, rotC, rotS: 16 bytes) and the statics (scale, anchor, depth, tint, texture,
+tile terms: 44 bytes), and when the painter's order moves (painterMove, every frame) both are scattered again and Pixi
+uploads 60 bytes a sprite. Second map (R-0728 on): painterMove's pre-render is saturated, the scatter pack 39.6 % and
+the reinsert 24.2 %; Pixi spends 40.6 % in W30's copy and 41.0 % in `updateBuffer`, the upload. The depth is the one
+static that follows the order (`1 − (k + 1) × invDepthDenom` at draw slot k); the rest belong to the sprite.
+
+**The idea: the statics in the queue's row order, and an index in draw order.** Per draw slot: the pose and the row
+of its statics (4 bytes), 20 bytes a sprite. The statics stay in row order and are written, and uploaded, only when
+their own generation moves (a sprite's static field, the visible set), not when the order does. The vertex shader
+fetches its statics by that row from a texture (E-157's way for GPU particle records: `texelFetch` on WebGL2,
+`textureLoad` on WebGPU) and computes the depth from its draw slot (`uFirstInstance + gl_InstanceID`).
+
+**The steps:**
+1. **The pack kernel** (`gpuPack.c`): `pack_sprites_indexed_scatter`, the pose and the row index scattered to their
+   draw slots, the statics in row order only when asked. A parity test (pose + statics[row] + the slot's depth gives
+   the split pack's rows bit for bit) and a kernel A/B on painterMove's shape (300 000 rows, a tenth moved).
+2. **The queue and pre-render:** a GPU_FLAG_INDEXED region (poses, rows, then the statics in row order: E-82b's bytes
+   plus 4 a sprite), its statics generation without the painter's order (E-159's orderGen), and the sorted path
+   choosing it where the renderer can draw it.
+3. **Pixi on WebGL2:** an indexed sprite batch, the pose and row as instance attributes, the statics an RGBA32F
+   texture (three texels a row) uploaded on a new generation, the vertex shader rewritten as E-157's to fetch them.
+4. **Pixi on WebGPU:** the same in WGSL.
+5. **The proof:** pixels in Chromium on both backends (the indexed path draws what the split path draws), then
+   painterMove (pre-render and Pixi owners), painterSort (nothing should move) and a Predator gate.
+
+E-145 (Adobe's pieces on the GPU) is the same kind of change, one step further: it can reuse step 3's texture fetch.
+
 ### E-163 The gather's cell order past 65 536 cells
 
 `order_by_cell` (`spatialGather.c`) sorts a rebuild list by home cell with two radix passes on a 16-bit cell index. A
