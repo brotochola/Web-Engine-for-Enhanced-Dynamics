@@ -8784,7 +8784,8 @@
         "R-0724",
         "R-0725",
         "R-0726",
-        "R-0727"
+        "R-0727",
+        "R-0730"
       ],
       "date": "2026-10-29",
       "area": "particle",
@@ -9133,7 +9134,8 @@
         "REVIEW_PLAN.md#N-89"
       ],
       "records": [
-        "R-0721"
+        "R-0721",
+        "R-0730"
       ],
       "id": "N-89",
       "title": "Page entities could not make a component, and a hot swap reset the shared config and LogicWorker (E-164, E-167)",
@@ -9144,6 +9146,42 @@
       "kind": "bug",
       "result": "Fixed 741035f5: a page instance keeps its components in the slot array; an instance made without a config or worker leaves the realm's, and hotSwap passes none. spawnDespawnApi.test.js and hotSwap.test.js.",
       "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0731"
+      ],
+      "date": "2026-10-29",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0731)",
+      "result": "Fixed fc6412eb: the probes' fields compared without ENGINE_INSTANCE_KEYS; _componentSlotCount, _componentSlotSpecs and the prototype's _hasComponents stay the running class's. hotSwap.test.js.",
+      "next": "Nothing pending.",
+      "id": "N-90",
+      "refs": [
+        "REVIEW_PLAN.md#N-90"
+      ],
+      "title": "Every hot swap of an entity class became a reload (E-164b), and a swap past that broke its components",
+      "area": "engine",
+      "kind": "bug"
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0732"
+      ],
+      "date": "2026-10-29",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-10-29 (R-0732)",
+      "result": "Fixed 6e35e00b: a call that could join reads the clock again after its records and joins only inside the window with the group alive past the margin. gpuParticleGroupJoin.test.js.",
+      "next": "Nothing pending.",
+      "id": "N-91",
+      "refs": [
+        "REVIEW_PLAN.md#N-91"
+      ],
+      "title": "An emitGpu call could join a group the renderer had retired (E-161)",
+      "area": "engine",
+      "kind": "bug"
     },
     {
       "aliases": [],
@@ -9171,17 +9209,55 @@
         "EXECUTION_PLAN.md#E-169"
       ],
       "records": [
-        "R-0728"
+        "R-0728",
+        "R-0730"
       ],
       "id": "E-169",
       "title": "A spawn config's keys go through instance[key]: x and y by name, other keys read once",
       "status": "kept",
-      "statusText": "kept 2026-10-29 (R-0728)",
+      "statusText": "kept 2026-10-29 (R-0730)",
       "date": "2026-10-29",
       "area": "logic",
       "kind": "speed",
       "result": "Kept d11d29f3: _spawnAt sets x and y by name in their place in the config's order and reads every other key once; spawnStormScene logic 3.431 -> 2.644 ms (-22.4 %, 0/4 worse).",
-      "next": "Nothing pending; Predator gate with the next batch."
+      "next": "Nothing pending (Predator gate passed with the batch, R-0730)."
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0729",
+        "R-0730"
+      ],
+      "date": "2026-10-29",
+      "status": "kept-kernel",
+      "statusText": "kept 2026-10-29 (R-0730)",
+      "result": "Kept 60bbe557: each scalar field's accessor pair compiled with new Function (the shared closures where that throws); componentFieldMicrobench Chrome 26.6 -> 8.8 ns a field access, Node 44.7 -> 10.0; Predator neutral (logic +0.4 %, 2/4).",
+      "next": "Nothing pending.",
+      "id": "E-170",
+      "refs": [
+        "EXECUTION_PLAN.md#E-170"
+      ],
+      "title": "A component's field accessors share one closure's feedback",
+      "area": "logic",
+      "kind": "speed"
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0733"
+      ],
+      "date": "2026-10-29",
+      "status": "dropped",
+      "statusText": "dropped 2026-10-29 (R-0733)",
+      "result": "Dropped: fsmTickMicrobench +8.3 % at 3 000 owners, -2.4 % (tie) at 20 000; 1-2 % of Predator's logic at best.",
+      "next": "Only if a scene shows the FSM tick bound by that read.",
+      "id": "E-171",
+      "refs": [
+        "EXECUTION_PLAN.md#E-146"
+      ],
+      "title": "The FSM's per-instance ms per tick as a small integer, not a boxed double",
+      "area": "logic",
+      "kind": "speed"
     }
   ],
   "records": [
@@ -15829,6 +15905,61 @@
       "commits": [
         "d11d29f3"
       ]
+    },
+    {
+      "id": "R-0729",
+      "date": "2026-10-29",
+      "time": "09:09",
+      "timeFrom": "recorded",
+      "title": "E-170 kept: each component field's accessors compiled on their own (26.6 -> 8.8 ns a field access in Chrome)",
+      "verdict": "kept-kernel",
+      "text": "**E-170 kept: each component field's accessors compiled on their own.** 2026-10-29, 60bbe557 (kernel 20b0d11f).\n\n**The finding** (Wave 9's second map): `get` in component.js, `return ComponentClass[name][this.index]`, is 5.2 % of\nadobeAnimateScene's logic (the characters' tick) and 11.5 ms of waterAndBoxes' window. `_createInstanceProperties`\nmade every scalar field's getter and setter as closures of the same function literal, and V8 gives closures of one\nliteral one feedback vector: the keyed load `ComponentClass[name]` saw every field name of every component\n(megamorphic) and the element load every column type. E-139 found the same on the entity's component getters.\n\n**The change:** `fieldAccessors(ComponentClass, name)` compiles each field's pair with `new Function`, reading its column\nby a constant name (`C[\"hp\"][this.index]`, a named load), so each has its own feedback; if compiling throws (a CSP\nwithout 'unsafe-eval') it falls back to the shared closures for good. `componentFieldAccessors.test.js`: each field its\nown column, the current column after `initializeArrays` replaces it, a strided field has none, and the fallback with\n`Function` blocked.\n\n**The kernel** (`componentFieldMicrobench`, five entity classes' ticks reading and writing 11 fields of four game\ncomponents with Float32, Float64, Int16, Int32, Uint8, Uint16 and Uint32 columns; 2 048 entities, 200 ticks of all,\nmedian of 7, warmed by short calls; checksum 339 388.77 on both):\n- Chrome 156 (`chromeKernel.mjs`): shipped 104.6 ms (26.6 ns a field access), per field 34.5 ms (8.8 ns): −67 %.\n- Node: shipped 175.9 ms (44.7 ns) before the change, 39.3 ms (10.0 ns) after it, against 35.1 ms for the variant.\n\n**The scene:** no scene loads a worker past the floor with these reads at its defaults (Adobe's logic is 91 ms/s);\nPredator gates it with E-169 (the batch's record).",
+      "commits": [
+        "60bbe557",
+        "20b0d11f"
+      ]
+    },
+    {
+      "id": "R-0730",
+      "date": "2026-10-29",
+      "time": "09:09",
+      "timeFrom": "recorded",
+      "title": "W9-batch2: Predator over N-89, the clock's hold, E-169 and E-170: logic +4.4 % in one sitting, neutral in both halves",
+      "verdict": "passed",
+      "text": "**W9-batch2: Predator over N-89, DX-GPCLOCK's hold, E-169 and E-170, passed on its decompositions.** 2026-10-29,\n4 pairs each, worktrees, headed, source, detailed stats off.\n\n- **The batch** (df2a63a3 against 60bbe557): REGRESSION on logic, 3.245 → 3.331 ms (+4.4 % paired, worse 4/4, cv 2/4 %;\n  +3.5 % against the others); spatial +0.3 %, physics −2.6 %, renderer +1.9 %, pre-render +1.3 %; presented 60.0 both;\n  BODY_COUNT, casters, visible entities, entities processed and the render queue within 0.1 %.\n- **E-170 alone** (20b0d11f against 60bbe557): NEUTRAL, logic 3.324 → 3.345 ms (+0.4 %, worse 2/4, cv 3/2 %), every\n  worker within 1.3 %.\n- **The batch without E-170** (df2a63a3 against 20b0d11f): NEUTRAL, logic 3.389 → 3.387 ms (+1.7 % paired, worse 2/4,\n  cv 4/2 %); spatial +2.8 % (3/4), physics +3.3 % (3/4, cv 12/4 %), renderer −4.2 %, pre-render +1.8 %; presented 60.0\n  and 60.1.\n\nNeither half reproduces the first sitting's logic reading (+0.4 % and +1.7 %, each 2/4); none of N-89 (page instances\nand construction only), the hold (Predator's logic reads the clock in emitGpu only) or E-169 (spawns) reaches a\nsteady-state logic path. Read as that sitting's noise: the batch passes."
+    },
+    {
+      "id": "R-0731",
+      "date": "2026-10-29",
+      "time": "09:09",
+      "timeFrom": "recorded",
+      "title": "N-90 fixed: hot swap of an entity class reloaded the page (E-164b), and past that broke its components",
+      "verdict": "kept-hygiene",
+      "text": "**N-90 fixed: hot swap of an entity class reloaded the page (E-164b), and past that broke its components (E-164).**\n2026-10-29, found by Wave 9's review of the day's commits (an agent's read, confirmed by running a swap of a\nregistered class), fixed in fc6412eb.\n\n`instanceFields` compared the own keys of a probe of the running class with one of its new version. Since E-164b an\nentity declares one `_cK` field per component of its class, counted from its registration, and the new version is\nnever registered: its probe declared none, so any edit to a file with an entity class answered \"its instance fields\nchanged\" and reloaded. At 844d0f20 (before E-164b) the same swap went through, and then `patchClass` copied the\nprobe's `_componentSlotCount` and `_componentSlotSpecs` (0 and `[]`) onto the running class: the first read of a\ncomponent not yet made threw in `_makeComponent`.\n\nThe fix compares the probes' fields without `ENGINE_INSTANCE_KEYS` (the save system's list), adds the two slot\nstatics to `ENGINE_STATICS`, and keeps the running prototype's `_hasComponents` (E-167). `hotSwap.test.js` now\nregisters a class as the engine does (the older tests fake registration), swaps it and reads a component after the\nswap; it fails without the fix. No timing: the swap path only.",
+      "commits": [
+        "fc6412eb"
+      ]
+    },
+    {
+      "id": "R-0732",
+      "date": "2026-10-29",
+      "time": "09:09",
+      "timeFrom": "recorded",
+      "title": "N-91 fixed: an emitGpu call could join a group the renderer had retired (E-161)",
+      "verdict": "kept-hygiene",
+      "text": "**N-91 fixed: an emitGpu call could join a group the renderer had retired (E-161).** 2026-10-29, found by the same\nreview (reproduced there with the real emitGpu and a real GpuParticleLayerBatch in Node), fixed in 6e35e00b.\n\n`_emit` decides the join after writing the call's records, but tested the join window and the group's remaining life\n(`END_F > nowRel + 100 ms`) on the clock read at the call's start. A call whose records took long (a large burst, a\nGC, a descheduled thread; at `Time.scale` 4 the margin is 25 ms of wall time) could join a group that a renderer frame\nretired meanwhile; the renderer's `oldestLive` only moves forward, so no later frame drew those records. A call that\npasses every other condition now reads the clock again and joins only inside the window and with the group alive past\nthe margin on that reading (one more clock read for joining calls only). `gpuParticleGroupJoin.test.js` makes the\nsecond read 50 ms later and fails without the fix.",
+      "commits": [
+        "6e35e00b"
+      ]
+    },
+    {
+      "id": "R-0733",
+      "date": "2026-10-29",
+      "time": "09:09",
+      "timeFrom": "recorded",
+      "title": "E-171 dropped: the FSM's ms per tick as a small integer (+8.3 % at 3 000 owners, a tie at 20 000)",
+      "verdict": "dropped",
+      "text": "**E-171 dropped: the FSM's per-instance ms per tick as a small integer.** 2026-10-29, a kernel screen.\n\nWave 9's second map: in Predator's FSM `tick`, `let msPerTick = this._msPerTick` is 32 % of its self time. E-146\ncached the owner's ms per tick on each FSM instance as a double, which pointer compression keeps boxed (a dependent\nload). The variant kept the owner's `tickInterval` as a small integer and multiplied (`dt * (16.67 * ti)`, the same\nvalue). `fsmTickMicrobench` through `runKernelVariants`, 4 alternating rounds: +8.3 % at 3 000 owners (7 028 against\n6 490 ops/s), −2.4 % at 20 000 (986 against 1 010, a tie). The variant added its field beside the old one (a subclass),\nso the large case is not clean either way; at 1–2 % of Predator's logic at best, not worth another sitting. The\nbench file was put back."
     }
   ],
   "leads": [
