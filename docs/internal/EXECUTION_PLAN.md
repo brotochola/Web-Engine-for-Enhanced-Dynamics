@@ -2861,6 +2861,19 @@ class one loop sees, go megamorphic; for an accessor each read is a getter call.
 reads its current value once. spawnStormScene logic 3.431 → 2.644 ms (−22.4 %, worse 0/4, cv 2/4 %), BODY_COUNT
 −3.5 %. `spawnConfigKeys.test.js` keeps the order and the single read.
 
+### E-170 A component's field accessors share one closure's feedback
+
+Wave 9's second map: `get` in component.js (`return ComponentClass[name][this.index]`) is 5–6 % of adobeAnimateScene's
+logic and shows in waterAndBoxes'. Every scalar field's accessor pair is a closure of the same function literal, and V8
+gives closures of one literal one feedback vector: the getter's keyed load saw every field name of every component
+(megamorphic), and its element load every column type. E-139's kind, on the component side: every game reads its own
+components' fields this way (`this.health.hp`).
+
+**Kept 2026-10-29** (60bbe557, kernel `componentFieldMicrobench`, 20b0d11f): each field's pair compiled on its own with
+`new Function`, reading its column by a constant name; the shared closures where compiling throws (a CSP without
+'unsafe-eval'). Chrome 156: 26.6 → 8.8 ns a field access; Node 44.7 → 10.0. No scene loads a worker past the floor
+with these reads (Adobe's logic is 91 ms/s): Predator is the regression guard, with E-169.
+
 ---
 
 ## Not doing (read the log first)
