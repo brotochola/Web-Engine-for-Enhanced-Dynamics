@@ -4,10 +4,10 @@
 // turns the sprite vertex shader into one that fetches its statics, as gpuParticleTextureVertex does for GPU particle
 // records (E-157).
 
-import { GPU_INDEXED_STATIC_FLOATS } from './gpuQueueLayout.js';
+import { GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW } from './gpuQueueLayout.js';
 
 /** Statics rows a texture row holds, and its log2: three RGBA32UI texels a statics row, a texture 3 072 texels wide. */
-export const STATICS_TEX_ROW = 1024;
+export const STATICS_TEX_ROW = GPU_INDEXED_TEX_ROW;
 export const STATICS_TEX_ROW_SHIFT = 10;
 export const STATICS_TEXELS_PER_ROW = GPU_INDEXED_STATIC_FLOATS / 4;
 

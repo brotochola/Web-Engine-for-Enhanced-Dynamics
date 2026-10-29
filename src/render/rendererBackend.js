@@ -148,6 +148,16 @@ export function normalizeRendererBackend(value) {
   );
 }
 
+/**
+ * E-162: whether the main sprites go to the renderer as indexed frames when the painter's order moved
+ * (renderer.indexedSprites). WebGL only for now: the WebGPU sprite shader reads no statics texture yet.
+ * @param {object} [renderer] config.renderer
+ * @returns {boolean}
+ */
+export function indexedSpritesEnabled(renderer) {
+  return !!renderer && renderer.indexedSprites === true && normalizeRendererBackend(renderer.backend) === RENDERER_BACKEND_WEBGL;
+}
+
 export function pixiRendererTypeName(type, RendererType) {
   if (RendererType) {
     if (type === RendererType.WEBGPU) return 'WEBGPU';

@@ -28,6 +28,8 @@ export const GPU_STATIC_FLOATS = 11;
 export const GPU_INDEXED_STATIC_FLOATS = 12;
 /** E-162. An indexed frame's slot pair, in draw order: the statics' row (a float) and the slot's depth. */
 export const GPU_INDEXED_SLOT_FLOATS = 2;
+/** E-162. Statics rows a texture row holds: three RGBA32UI texels each, a texture 3 072 texels wide. */
+export const GPU_INDEXED_TEX_ROW = 1024;
 export const GPU_HEADER_INTS = 12;
 export const GPU_QUEUE_VERSION = 6;
 
@@ -43,9 +45,34 @@ export const GPU_HDR_STATIC_GEN = 8;
 
 export const GPU_FLAG_SORTED = 1;
 export const GPU_FLAG_SPLIT = 2;
+/**
+ * E-162. The sprite region holds an indexed frame: the poses and slot pairs in draw order, every queue row's statics in
+ * row order; GPU_HDR_STATIC_GEN names those statics' generation and GPU_HDR_INDEXED_ROWS how many queue rows they cover.
+ */
+export const GPU_FLAG_INDEXED = 4;
+export const GPU_HDR_INDEXED_ROWS = 9;
 
 export const GPU_SPACE_WORLD = 0;
 export const GPU_SPACE_SCREEN = 1;
+
+/** E-162. An indexed frame's statics rows for `maxSprites`: whole texture rows. */
+export function gpuIndexedStaticRows(maxSprites) {
+  const n = maxSprites | 0;
+  return n > 0 ? Math.ceil(n / GPU_INDEXED_TEX_ROW) * GPU_INDEXED_TEX_ROW : 0;
+}
+
+/**
+ * The sprite region's floats: the 15-float rows, which E-82b's two streams fill too; with `indexed` (caps.indexedSprites)
+ * room for E-162's indexed frame as well (the poses, the slot pairs, then every row's statics in whole texture rows).
+ */
+export function gpuSpriteRegionFloats(maxSprites, indexed) {
+  const n = maxSprites | 0;
+  if (n <= 0) return 0;
+  const rows = n * GPU_SPRITE_FLOATS;
+  if (!indexed) return rows;
+  const frame = n * (GPU_POSE_FLOATS + GPU_INDEXED_SLOT_FLOATS) + gpuIndexedStaticRows(n) * GPU_INDEXED_STATIC_FLOATS;
+  return frame > rows ? frame : rows;
+}
 
 function align4(n) {
   return (n + 3) & ~3;
@@ -54,8 +81,9 @@ function align4(n) {
 /**
  * @param {number} maxSprites
  * @param {object} [lighting]
+ * @param {boolean} [indexedSprites] E-162: room for indexed frames (rendererBackend.indexedSpritesEnabled)
  */
-export function gpuQueueCaps(maxSprites, lighting) {
+export function gpuQueueCaps(maxSprites, lighting, indexedSprites = false) {
   const sprites = Math.max(1, maxSprites | 0);
   const lightsOn = !!(lighting && lighting.enabled);
   const shadowOn = !!(lighting && lighting.shadowsEnabled);
@@ -78,13 +106,14 @@ export function gpuQueueCaps(maxSprites, lighting) {
     maxSun: shadowOn ? sprites : 0,
     maxStamp: stamp,
     maxCookie: shadowOn ? Math.max(1, Math.min(maxLights, castLights || maxLights)) : 0,
+    indexedSprites: !!indexedSprites,
   };
 }
 
 export function computeGpuQueueBufferSize(caps) {
   const c = caps || gpuQueueCaps(1, null);
   let offset = GPU_HEADER_INTS * 4;
-  offset += (c.maxSprites | 0) * GPU_SPRITE_FLOATS * 4;
+  offset += gpuSpriteRegionFloats(c.maxSprites, c.indexedSprites) * 4;
   offset += (c.maxGlow | 0) * GPU_SPRITE_FLOATS * 4;
   offset += (c.maxSun | 0) * GPU_CASTER_FLOATS * 4;
   offset += (c.maxStamp | 0) * GPU_CASTER_FLOATS * 4;
@@ -114,7 +143,12 @@ export function createGpuQueueViews(sab, caps, base = 0) {
   // E-82b: the same region as two streams.
   const spritePose = regionF32(sab, offset, (c.maxSprites | 0) * GPU_POSE_FLOATS);
   const spriteStatic = regionF32(sab, spritePose.next, (c.maxSprites | 0) * GPU_STATIC_FLOATS);
-  offset = sprites.next;
+  // E-162: and, with caps.indexedSprites, as an indexed frame: the same poses, the slot pairs, then every row's statics
+  // in whole texture rows.
+  const indexed = !!c.indexedSprites;
+  const spriteSlots = regionF32(sab, spritePose.next, indexed ? (c.maxSprites | 0) * GPU_INDEXED_SLOT_FLOATS : 0);
+  const spriteRowStatics = regionF32(sab, spriteSlots.next, indexed ? gpuIndexedStaticRows(c.maxSprites) * GPU_INDEXED_STATIC_FLOATS : 0);
+  offset += gpuSpriteRegionFloats(c.maxSprites, indexed) * 4;
   const glow = regionF32(sab, offset, (c.maxGlow | 0) * GPU_SPRITE_FLOATS);
   offset = glow.next;
   const sun = regionF32(sab, offset, (c.maxSun | 0) * GPU_CASTER_FLOATS);
@@ -135,6 +169,9 @@ export function createGpuQueueViews(sab, caps, base = 0) {
     spritePose: spritePose.view,
     spriteStatic: spriteStatic.view,
     spriteStaticU32: spriteStatic.u32,
+    spriteSlots: spriteSlots.view,
+    spriteRowStatics: spriteRowStatics.view,
+    spriteRowStaticsU32: spriteRowStatics.u32,
     glow: glow.view,
     glowU32: glow.u32,
     sun: sun.view,
@@ -160,6 +197,7 @@ export function clearGpuQueueHeader(header) {
   header[GPU_HDR_FLAGS] = 0;
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
   header[GPU_HDR_STATIC_GEN] = 0;
+  header[GPU_HDR_INDEXED_ROWS] = 0;
 }
 
 export function writeGpuQueueHeader(header, counts, flags) {
@@ -173,6 +211,7 @@ export function writeGpuQueueHeader(header, counts, flags) {
   header[GPU_HDR_FLAGS] = flags | 0;
   header[GPU_HDR_VERSION] = GPU_QUEUE_VERSION;
   header[GPU_HDR_STATIC_GEN] = counts.staticGen | 0;
+  header[GPU_HDR_INDEXED_ROWS] = counts.indexedRows | 0;
 }
 
 /**

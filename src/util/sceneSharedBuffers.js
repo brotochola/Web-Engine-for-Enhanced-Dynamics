@@ -46,7 +46,7 @@ import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
-import { SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, ySortEnabled } from '../render/rendererBackend.js';
+import { SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, ySortEnabled } from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
@@ -548,7 +548,7 @@ export function renderQueueMemorySpec(scene) {
   const { config } = scene;
   initializeSceneLayers(scene);
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
-  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
+  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting, indexedSpritesEnabled(config.renderer));
   const emit = emitBlocks(scene);
   // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
   const lighting = config.lighting || {};
