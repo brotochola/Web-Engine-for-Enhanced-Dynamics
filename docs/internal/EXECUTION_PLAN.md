@@ -2707,8 +2707,8 @@ from a new map of the scenes.
 - **Answered or dropped:** N-84 (no spinning thread), E-166 (the spatial ownership branch: neutral), E-163 (no scene
   passes 65 536 cells: planetScene is the largest, at exactly 65 536), the deopt pass (no deopts in eight scenes),
   Box2D's names (its own work, a game's settings).
-- **For the owner:** DX-GPCLOCK costs GPU Galaxy 8M about 9 % of its presented frames (R-0707); E-162's lever, the
-  sprite statics out of draw order (a GPU-side table per entity for scrolling scenes), is a design change to decide.
+- **For the owner:** E-162's lever, the sprite statics out of draw order (a GPU-side table per entity for scrolling
+  scenes), is a design change to decide. DX-GPCLOCK's cost (GPU Galaxy 8M, R-0707) was resolved after the gates.
 - **Predator's logic** read 306 and 281 ms/s in the morning's map and 273 and 258 after these changes.
 
 **The closing gates** (main bfd7ccf1 against the branch at df2a63a3, 4 pairs each):
@@ -2717,7 +2717,13 @@ from a new map of the scenes.
 - **gpuParticlesStressScene `?hold=1000`:** every worker under the floor, presented 60 on both sides: it cannot load
   a worker's CPU, and E-161's own sitting is the reading.
 - **GPU Galaxy 8M:** renderer +3.2 % and presented 55.3 → 52.4 fps (−4.9 %), worse 4/4: DX-GPCLOCK's cost, about half
-  the bisect's −9.4 % now that E-161 groups a frame's emits. Its mechanism is the next item.
+  the bisect's −9.4 % now that E-161 groups a frame's emits.
+
+**DX-GPCLOCK, resolved** (R-0725 to R-0727). On the final branch the clock alone cost 3.7 % of Galaxy's presented frames.
+The GPU was not busier a frame (79.6 against 74.9 % NVIDIA use for 29.8 against 27.8 drawn frames a second, same
+clock): the page drew fewer frames, and every worker followed it. The clock now moves once a main frame again, and its
+readers carry it on only past a 100 ms hold without one (`4072de40`): presented 51.8 → 54.7 fps (+6.0 %, 3/4), and a
+stalled page still does not freeze GPU particles.
 
 ### E-160 Predator's shadow stamp, on the inputs the scene gives it
 
