@@ -255,6 +255,7 @@ import {
   resolveSpritePipeline,
   PACK_GPU_SPRITES_PIXI,
   SORT_SPRITES_NONE,
+  WEBGPU_DEFAULT_STORAGE_BINDING,
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
@@ -2399,7 +2400,7 @@ class PixiRenderer extends AbstractWorker {
       statics: !indexed
         ? null
         : this._useWebGpu
-          ? { maxStorageBytes: this.pixiApp?.renderer?.gpu?.device?.limits?.maxStorageBufferBindingSize ?? 0 }
+          ? { maxStorageBytes: this.pixiApp?.renderer?.gpu?.device?.limits?.maxStorageBufferBindingSize ?? WEBGPU_DEFAULT_STORAGE_BINDING }
           : this._gpuRecordTexture(),
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
       // stream and statics rows.

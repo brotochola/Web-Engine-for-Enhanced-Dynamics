@@ -640,11 +640,12 @@ export const RENDERER_DEFAULTS = Object.freeze({
    */
   maxPainterSplits: 32,
   /**
-   * E-162, being measured: with pre-render's painter sort (ySort), a frame whose painter order moved sends each sprite's
-   * pose and its row instead of all its terms in the new order (24 bytes a sprite instead of 60); the vertex shader
-   * reads the rest from a texture (WebGL) or a storage buffer (WebGPU).
+   * E-162: with pre-render's painter sort (ySort), a frame whose painter order moved sends each sprite's pose and its
+   * row instead of all its terms in the new order (24 bytes a sprite instead of 60); the vertex shader reads the rest
+   * from a texture (WebGL) or a storage buffer (WebGPU). false sends every frame in draw order. Past 2 796 202 rows on
+   * WebGPU or 4 194 304 on WebGL (rendererBackend.indexedSpritesEnabled) the frames go in draw order.
    */
-  indexedSprites: false,
+  indexedSprites: true,
 });
 
 // ============================================================================

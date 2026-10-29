@@ -6,7 +6,9 @@ import {
   GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW, gpuQueueCaps, gpuSpriteRegionFloats, computeGpuQueueBufferSize, createGpuQueueViews,
   writeGpuQueueHeader, clearGpuQueueHeader, makePackContext, fillQueueIndices,
 } from '../../src/render/gpuQueueLayout.js';
-import { indexedSpritesEnabled } from '../../src/render/rendererBackend.js';
+import {
+  INDEXED_SPRITES_MAX_WEBGL, INDEXED_SPRITES_MAX_WEBGPU, indexedSpritesEnabled,
+} from '../../src/render/rendererBackend.js';
 import {
   writeGpuSpriteRow,
   gatherInstancedRows,
@@ -273,11 +275,17 @@ test('E-162: the header carries an indexed frame\'s rows and slot pairs\' genera
   assert.ok(GPU_HDR_INDEXED_ROWS < GPU_HEADER_INTS && GPU_HDR_SLOTS_GEN < GPU_HEADER_INTS);
 });
 
-test('E-162: indexed frames only on request, on either backend', () => {
-  assert.equal(indexedSpritesEnabled({ indexedSprites: true, backend: 'webgl' }), true);
-  assert.equal(indexedSpritesEnabled({ indexedSprites: true, backend: 'webgpu' }), true);
-  assert.equal(indexedSpritesEnabled({ indexedSprites: true }), true);
-  assert.equal(indexedSpritesEnabled({ indexedSprites: 1, backend: 'webgl' }), false);
-  assert.equal(indexedSpritesEnabled({ backend: 'webgl' }), false);
-  assert.equal(indexedSpritesEnabled(undefined), false);
+test('E-162: indexed frames unless turned off, for a queue every GPU of the backend holds', () => {
+  assert.equal(indexedSpritesEnabled({ indexedSprites: true, backend: 'webgl' }, 300000), true);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgpu' }, 300000), true, 'on by default');
+  assert.equal(indexedSpritesEnabled({}, 300000), true);
+  assert.equal(indexedSpritesEnabled({ indexedSprites: false, backend: 'webgl' }, 300000), false, 'off when asked');
+  assert.equal(indexedSpritesEnabled(undefined, 300000), false);
+  // WebGPU's default storage binding holds 2 796 202 statics rows; WebGL's texture 4 096 rows of 1 024.
+  assert.equal(INDEXED_SPRITES_MAX_WEBGPU * GPU_INDEXED_STATIC_FLOATS * 4 <= 134217728, true);
+  assert.equal(INDEXED_SPRITES_MAX_WEBGL, 4096 * GPU_INDEXED_TEX_ROW);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgpu' }, INDEXED_SPRITES_MAX_WEBGPU), true);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgpu' }, INDEXED_SPRITES_MAX_WEBGPU + 1), false);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgl' }, INDEXED_SPRITES_MAX_WEBGPU + 1), true);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgl' }, INDEXED_SPRITES_MAX_WEBGL + 1), false);
 });

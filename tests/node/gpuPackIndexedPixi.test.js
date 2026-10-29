@@ -80,7 +80,7 @@ function scene(indexedSprites) {
       logic: { staggeredUpdates: false },
       debug: { maxDebugDrawEntries: 1 },
       navigation: { enabled: false },
-      renderer: { maxVisibleRenderables: MAX, ySort: false, backend: 'webgl', indexedSprites },
+      renderer: { maxVisibleRenderables: MAX, ySort: true, backend: 'webgl', indexedSprites },
       preRender: { packGpuSprites: 'preRender', sortSprites: 'preRender' },
       layers: {},
       wasm: { ...WASM_DEFAULTS },

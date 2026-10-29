@@ -548,7 +548,10 @@ export function renderQueueMemorySpec(scene) {
   const { config } = scene;
   initializeSceneLayers(scene);
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
-  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting, indexedSpritesEnabled(config.renderer));
+  // E-162: room for indexed frames where pre-render sorts the sprites (the painter whose order they follow).
+  const indexed = ySortEnabled(config.renderer?.ySort) && config.preRender?.sortSprites === SORT_SPRITES_PRERENDER
+    && indexedSpritesEnabled(config.renderer, maxVisibleRenderables);
+  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting, indexed);
   const emit = emitBlocks(scene);
   // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
   const lighting = config.lighting || {};
