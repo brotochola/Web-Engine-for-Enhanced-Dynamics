@@ -8256,7 +8256,8 @@
       "records": [
         "R-0645",
         "R-0665",
-        "R-0675"
+        "R-0675",
+        "R-0719"
       ],
       "id": "E-144",
       "title": "Box2D's solver threads: their idle cost and their clock reads",
@@ -9115,17 +9116,17 @@
         "EXECUTION_PLAN.md#E-168"
       ],
       "records": [
-        "R-0716"
+        "R-0716",
+        "R-0718"
       ],
       "id": "E-168",
       "title": "rng() boxes its double twice in a worker (littleCity: 2.7 MB/s)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "open: Wave 9 (2026-10-29)",
       "date": "2026-10-29",
       "area": "logic",
       "kind": "js",
-      "rank": 4,
-      "result": "Heap pass: in littleCity's logic the engine's rng wrapper and the seeded generator are 1.4 and 1.3 MB/s, each double boxed on return. In Node globalThis.rng() is inlined whole and allocates nothing; a module-variable rng (or one that steps the state itself) behind a globalThis.rng accessor was 2-4x slower there, so it was not kept.",
+      "result": "Kept (hygiene), 1971f620: littleCity logic allocation 10 573 -> 6 601 KB/s (-38 %); logic -3.9 % (load keys drifted in the emergent scene). One box is left where a tick too large to inline rng() receives its double.",
       "next": "Find why Chrome workers do not inline globalThis.rng() (the property cell, the two assignments self.rng and globalThis.rng); a heap sample of littleCity in Chrome decides any variant."
     }
   ],
@@ -15663,6 +15664,27 @@
       "commits": [
         "4940957b"
       ]
+    },
+    {
+      "id": "R-0718",
+      "date": "2026-10-29",
+      "time": "07:34",
+      "timeFrom": "recorded",
+      "title": "E-168 kept (hygiene): rng() steps a seeded generator's state itself (littleCity logic garbage -38 %)",
+      "verdict": "kept-hygiene",
+      "text": "**E-168 kept (hygiene): rng() steps a seeded generator's state itself.** 2026-10-29, 1971f620.\n\nA seededRandom generator exposes its Int32Array state (`fn._state`); `rng()` reads `globalThis.rng` as before and,\nwhen it is such a generator, steps the state in place: the same numbers, one stream with the generator's own calls\nand `fill`. Any other `globalThis.rng` (a test's `() => 0.5`) is still called. In Node, 20 million calls: 34–36 ms and\n6–7 scavenges, as before. (Two earlier variants behind a `globalThis.rng` accessor were 2–4× slower in Node and were\nnot committed.)\n\n**littleCity, heap pass** (logic worker, KB/s): 10 573 → **6 601** (−38 %). The sites moved: CityPerson.tick 6 530 →\n1 094, the generator `fn` 1 311 → gone, `rng` 1 431 → 4 201: one box left a call, the double `rng` returns to a tick\ntoo large to inline it.\n\n**The sitting** (littleCityScene, 0487c881 against 1971f620, 4 pairs, worktrees): logic 3.882 → 3.745 ms (−3.9 %,\nworse 1/4, cv 6/3 %); spatial +0.9 %, physics +0.5 %. The runner refused it on VISIBLE_ENTITIES −12 % and\nRENDER_QUEUE_SIZE −13 % (cv 8/5 %): wandering people in an emergent scene; ENTITIES_PROCESSED −0.8 %. Kept as a GC\nfix: less garbage, nothing worse.",
+      "commits": [
+        "1971f620"
+      ]
+    },
+    {
+      "id": "R-0719",
+      "date": "2026-10-29",
+      "time": "07:34",
+      "timeFrom": "recorded",
+      "title": "Predator's physics with Box2D's function names: the narrow phase, the solver, finalize and the tree",
+      "verdict": "note",
+      "text": "**Predator's physics with Box2D's function names.** 2026-10-29, a profiling build (the shipped flags plus\n`--profiling-funcs` through `CMAKE_EXE_LINKER_FLAGS`, a build directory of its own, never copied into WeedJS; the\nBox2D repo's `weedjs/` artifacts it overwrote were put back from WeedJS's copies), in a worktree of 0487c881, headed,\nsource, detailed stats off, an 8 s window after 8 s.\n\nFour physics threads, self time as % of their busy time: `_do_futex_wait` 65.2 % (the solver threads waiting, which the\nsampler counts as busy: E-144's step 0), `b2CollideTask` 7.2 % (the narrow phase), `b2ExecuteBlock` 7.0 % (the solver's\nstages), `b2FinalizeBodiesTask` 3.6 %, `_emscripten_get_now` 2.2 %, `b2ComputeFatShapeAABB` 2.2 % and `b2PlaceLeaf` 2.1 %\n(the broad-phase tree for moving bodies), `step_world` 1.6 % (WeedJS's wrapper), `b2SchedulerWorkerMain` 1.4 %,\n`b2SplitIsland` 1.0 %, `b2CollideCrossPairs` 0.9 %, `b2Body_ApplyForceToCenter` 0.7 %. The physics thread itself was\n411 ms/s busy, the three solver threads 1000 ms/s (waiting).\n\nWhat is left in physics is Box2D's own work (contacts, solver, finalize, tree). The levers are its settings (sub-steps,\nthe AABB margin, sleeping), a game's choice; nothing in WeedJS's wrapper stands out."
     }
   ],
   "leads": [
