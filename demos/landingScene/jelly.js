@@ -6,12 +6,15 @@
 // asks LiquidFun which particles lie along the swipe (rayCast, a sync query only logic workers make), destroys them,
 // and extracts the particles on one side of the swipe into a group of their own in the same step: each half rebuilds
 // its rest shape from where its particles are and wobbles on as a jelly of its own. A tap pokes the jellies under it.
+// The same blade cuts the ropes and the bridge of chapter 3 (ropes.js).
 
 import { WORD_COLORS } from './bricksTitle.js';
+import { Plank, RopeLink, cutLinks } from './ropes.js';
 import { groundY } from './terrain.js';
 
 const {
   GameObject,
+  Component,
   Mouse,
   LiquidFun,
   LIQUIDFUN_FLAGS,
@@ -96,8 +99,13 @@ export function spawnJellies(left, width, height, unit) {
  * The blade, one per scene, pinned to logic worker 0 (`forceProcessOnLogicWorker: 0`): while the pointer is held in
  * [x0, x1) it cuts jellies along each frame's stroke (and leaves a glint along it).
  */
+/** The blade's rope cuts so far, for the page (it rebuilds the ropes some seconds after the last). */
+export class BladeState extends Component {
+  static ARRAY_SCHEMA = { cuts: Uint32Array };
+}
+
 export class Blade extends GameObject {
-  static components = [];
+  static components = [BladeState];
 
   onSpawned({ x0 = 0, x1 = 0, particleMass = 1 } = {}) {
     this.x0 = x0;
@@ -126,6 +134,8 @@ export class Blade extends GameObject {
     const len2 = dx * dx + dy * dy;
     if (len2 < 9) return;
     this.glint(x1, y1, dx, dy, Math.sqrt(len2));
+    const cuts = cutLinks(x1, y1, dx, dy, RopeLink.getAllActive()) + cutLinks(x1, y1, dx, dy, Plank.getAllActive());
+    if (cuts > 0) BladeState.cuts[this.index] += cuts;
     const n = LiquidFun.rayCast(x1, y1, x2, y2, HITS);
     if (n > 0) this.cut(x1, y1, dx, dy, n);
   }

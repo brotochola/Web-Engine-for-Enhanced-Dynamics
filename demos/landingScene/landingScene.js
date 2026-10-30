@@ -4,7 +4,8 @@
 // over the ground's heights (terrain.js); one Box2D chain makes the ground solid.
 //
 // Chapter 0: "Web Engine for Enhanced Dynamics" in Box2D bricks (bricksTitle.js) on the hills. Chapter 1: a lake fed by
-// a waterfall, LiquidFun water (water.js). Chapter 2: LiquidFun soft bodies a swipe cuts in two (jelly.js). Chapter 4:
+// a waterfall, LiquidFun water (water.js). Chapter 2: LiquidFun soft bodies a swipe cuts in two (jelly.js). Chapter 3:
+// lanterns and crates on ropes and a rope bridge, cut by the same swipe, lit by ray-cast lights (ropes.js). Chapter 4:
 // a night camp
 // (camp.js). A click blows up the spot (fx.js: GPU particle fire, smoke and embers) and the nearest bodies burn in
 // burningBoxesScene's fire.
@@ -12,10 +13,11 @@
 
 import { fireAssets, fireLayer } from '../burningBoxesScene/fireLayer.js';
 import { Brick, BrickState, FIRE_LAYER, KICK, MAX_BRICKS, TRAILS_LAYER, layoutWord } from './bricksTitle.js';
-import { Camp, CampLog, CampProp } from './camp.js';
+import { Camp, CampLight, CampLog, CampProp } from './camp.js';
 import { CHAPTERS, ChapterTour } from './chapters.js';
 import { fxAssets, fxExplosion, fxLayers } from './fx.js';
-import { Blade, JELLY_LAYER, jellyAssets, jellyLayer, pokeJellies, spawnJellies } from './jelly.js';
+import { Blade, BladeState, JELLY_LAYER, jellyAssets, jellyLayer, pokeJellies, spawnJellies } from './jelly.js';
+import { Beam, HungCrate, Lantern, Plank, RopeLink, RopeWorks } from './ropes.js';
 import { Floater, Paddle, WATER_LAYER, WATER_RADIUS, Waterworks, waterAssets, waterLayer } from './water.js';
 import {
   Ground,
@@ -29,7 +31,7 @@ import {
   writeHeights,
 } from './terrain.js';
 
-const { Scene, Layer, Mouse, Camera, LAYER_KIND, BLEND_MODES } = WEED;
+const { Scene, Layer, Mouse, Camera, Sun, LAYER_KIND, BLEND_MODES } = WEED;
 
 function param(name, fallback) {
   const search = globalThis.location?.search;
@@ -97,13 +99,27 @@ export class LandingScene extends Scene {
       numberOfPhysicsWorkers: 4,
       commandRingCapacity: 32768,
       maxChainPoints: groundChainPoints(WORLD_W) + 64,
+      maxJoints: 1024, // the ropes and the bridge, twice over while a rebuild waits for the old ones to go
       // No world gravity: the title's bricks float at their places. Water falls by setRadialGravity (water.js).
       liquidFun: { enabled: true, radius: WATER_RADIUS, maxCount: 16000, subSteps: 2 },
     },
     spatial: { numberOfSpatialWorkers: 0, maxNeighbors: 0 },
     logic: { numberOfLogicWorkers: LOGIC_WORKERS },
     particle: { maxParticles: 0, decals: false },
-    lighting: { enabled: false },
+    // Ray-cast lights (the lanterns, the campfire) with shadows from what carries LightOccluder. The ambient follows
+    // the camera (chapters.js): 1 leaves the picture as drawn, lower lets the lights show. The sun is only that ambient
+    // (Sun.intensity, written every frame): nothing casts its shadows.
+    lighting: {
+      enabled: true,
+      raycasted: true,
+      shadowsEnabled: false,
+      baseAmbient: 0,
+      maxLights: 16,
+      maxPolygonVertices: 4096,
+      maxOccluderSelfLit: 512,
+      resolution: 0.5,
+      sun: { enabled: true, intensity: 1 },
+    },
     renderer: { backend: BACKEND },
     layers: {
       // Sky, sun and moon, stars, clouds, mountains and the ground, behind everything.
@@ -151,6 +167,12 @@ export class LandingScene extends Scene {
     [Floater, 16],
     [Paddle, 1],
     [Blade, 1],
+    [RopeLink, 320],
+    [Plank, 48],
+    [Lantern, 8],
+    [HungCrate, 6],
+    [Beam, 16],
+    [CampLight, 1],
   ];
 
   static sharedResources = [[TerrainMap, terrainSchema(WORLD_W)]];
@@ -169,6 +191,7 @@ export class LandingScene extends Scene {
     this.camp = new Camp(CAMP * VIEW_W, VIEW_W, VIEW_H, this.unit);
     this.water = new Waterworks(FLUIDS * VIEW_W, VIEW_W, VIEW_H, this.unit);
     this.waterLayer = Layer.get(WATER_LAYER);
+    this.ropes = new RopeWorks(ROPES * VIEW_W, VIEW_W, VIEW_H, this.unit);
     this.buildHud();
   }
 
@@ -193,9 +216,10 @@ export class LandingScene extends Scene {
     this.camp.spawn();
     this.water.spawn(WORLD_W);
     spawnJellies(SOFT * VIEW_W, VIEW_W, VIEW_H, this.unit);
+    this.ropes.spawn();
     // The blade cuts in the soft bodies' and the ropes' chapters.
     const diameter = WATER_RADIUS * 2;
-    Blade.spawn({
+    this.blade = Blade.spawn({
       x0: SOFT * VIEW_W,
       x1: (ROPES + 1) * VIEW_W,
       particleMass: diameter * diameter, // LiquidFun density 1
@@ -206,6 +230,7 @@ export class LandingScene extends Scene {
   update(dtRatio, deltaTimeMs) {
     this.tour.update(dtRatio, deltaTimeMs);
     const day = this.tour.day();
+    Sun.intensity = this.tour.ambient();
     this.landscape.setUniform('uDay', day);
     this.waterLayer.setUniform('uDay', day);
     if (Mouse.isButton0Pressed) {
@@ -225,6 +250,7 @@ export class LandingScene extends Scene {
     }
     this.camp.update(deltaTimeMs, this.near(CAMP));
     this.water.update(deltaTimeMs, this.near(FLUIDS));
+    if (this.blade) this.ropes.update(deltaTimeMs, BladeState.cuts[this.blade.index]);
   }
 
   /** Whether chapter i is on screen or next to it. */

@@ -5,15 +5,18 @@
 
 const { Mouse, Keyboard, Camera } = WEED;
 
-/** The chapters, left to right: the page's copy panel for each (data-chapter) and its time of day (0 = midnight,
- *  0.25 = dawn, 0.5 = noon, 0.75 = dusk; past 1 wraps). */
+/**
+ * The chapters, left to right: the page's copy panel for each (data-chapter), its time of day (0 = midnight,
+ * 0.25 = dawn, 0.5 = noon, 0.75 = dusk; past 1 wraps) and the ambient light on what is drawn under the lighting layer
+ * (1 = as drawn; lower, the lights show: the lanterns at sunset, the campfire at night).
+ */
 export const CHAPTERS = [
-  { id: 'hero', day: 0.27 },
-  { id: 'fluids', day: 0.48 },
-  { id: 'soft', day: 0.6 },
-  { id: 'ropes', day: 0.735 },
-  { id: 'fire', day: 0.93 },
-  { id: 'hood', day: 1.28 },
+  { id: 'hero', day: 0.27, ambient: 1 },
+  { id: 'fluids', day: 0.48, ambient: 1 },
+  { id: 'soft', day: 0.6, ambient: 1 },
+  { id: 'ropes', day: 0.735, ambient: 0.42 },
+  { id: 'fire', day: 0.93, ambient: 0.6 },
+  { id: 'hood', day: 1.28, ambient: 1 },
 ];
 
 /** Wheel distance (raw deltaY) that turns the page, and the pause after a turn (ms) so one flick turns one page. */
@@ -81,11 +84,20 @@ export class ChapterTour {
 
   /** The time of day at the camera: the chapters' times, blended across the pan. */
   day() {
+    return this.blend('day');
+  }
+
+  /** The ambient light at the camera, blended the same way. */
+  ambient() {
+    return this.blend('ambient');
+  }
+
+  blend(key) {
     const c = Math.max(0, Math.min(CHAPTERS.length - 1, Camera.centerX / this.width - 0.5));
     const k = Math.min(CHAPTERS.length - 2, Math.floor(c));
     const t = c - k;
     const s = t * t * (3 - 2 * t);
-    return CHAPTERS[k].day + (CHAPTERS[k + 1].day - CHAPTERS[k].day) * s;
+    return CHAPTERS[k][key] + (CHAPTERS[k + 1][key] - CHAPTERS[k][key]) * s;
   }
 
   destroy() {

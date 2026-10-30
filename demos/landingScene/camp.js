@@ -9,7 +9,7 @@ import { Campfire, fxExplosion } from './fx.js';
 import { groundY } from './terrain.js';
 import { fall } from './water.js';
 
-const { GameObject, Component, RigidBody, Collider, SpriteRenderer, Box2d } = WEED;
+const { GameObject, Component, RigidBody, Collider, SpriteRenderer, LightEmitter, Box2d } = WEED;
 
 const BURNING = ['entities', FIRE_LAYER];
 const PLAIN = ['entities'];
@@ -88,6 +88,29 @@ export class CampLog extends GameObject {
   }
 }
 
+/** The campfire's light: a warm flicker on everything near, under the night's ambient. */
+export class CampLight extends GameObject {
+  static components = [Collider, LightEmitter];
+
+  onSpawned({ range = 600 } = {}) {
+    this.collider.radius = 4;
+    this.collider.isTrigger = 1;
+    this.collider.visualRange = range; // how far the light reaches
+    const light = this.lightEmitter;
+    light.active = 1;
+    light.lightColor = 0xff9a40;
+    light.lightIntensity = 16000;
+    light.height = 0;
+    light.hasGlowSprite = 0;
+  }
+
+  tick(dtRatio, deltaTimeMs, accTime) {
+    const t = accTime * 0.001;
+    const flick = 1 + Math.sin(t * 9) * 0.1 + Math.sin(t * 13.7 + 1.3) * 0.08 + Math.sin(t * 23.1) * 0.05;
+    this.lightEmitter.lightIntensity = 16000 * flick;
+  }
+}
+
 /** Page only: builds the camp in the chapter at [left, left + width), and runs it. */
 export class Camp {
   constructor(left, width, height, unit) {
@@ -108,6 +131,7 @@ export class Camp {
     // Three logs in a little pile: two on the ground, one on top.
     const w = 64 * this.unit + 16;
     const h = 13;
+    CampLight.spawn({ x: this.fireX, y: this.fireY - 30 * this.unit, range: 640 * Math.max(0.7, this.unit) });
     for (const [dx, dy] of [[-0.52, 0.5], [0.52, 0.5], [0, 1.5]]) {
       const x = this.fireX + dx * w;
       const log = CampLog.spawn({ x, y: this.fireY - h * dy - 2, w, h });
