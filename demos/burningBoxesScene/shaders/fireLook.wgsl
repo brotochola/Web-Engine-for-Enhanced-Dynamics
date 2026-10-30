@@ -128,6 +128,8 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
     let pale = mix(soot, ash, clamp(s * 1.25, 0.0, 1.0));
     let sootMix = clamp((customUniforms.uSmokeDens - 0.4) / 2.1, 0.0, 1.0);
     rgb = mix(pale, soot, sootMix * 0.82);
+    // uSmokeLift (0 in burningBoxesScene) pales the soot toward ash gray, for a dark sky where soot would not show.
+    rgb = mix(rgb, vec3<f32>(0.42, 0.40, 0.38) * (0.75 + 0.5 * n), clamp(customUniforms.uSmokeLift, 0.0, 1.0));
   } else if (t > cutoff && customUniforms.uFireOn > 0.5) {
     let nAmt = clamp(customUniforms.uFireNoise, 0.0, 1.0);
     let fireN = fireGrain(uv);

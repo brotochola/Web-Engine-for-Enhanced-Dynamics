@@ -143,6 +143,7 @@ export function fireLayer({ worldWidth, worldHeight, cellSize, lfRadius, maxBodi
         uBlowForce: { value: 900, type: 'f32', min: 0, max: 4000, step: 10, label: 'Blow force', tip: 'Wind speed written in front of blower bodies (local +X).' },
         uBlowReach: { value: 14, type: 'f32', min: 0, max: 40, step: 0.5, label: 'Blow reach', tip: 'Blower wind slab length, in grid cells.' },
         uJetForce: { value: 1200, type: 'f32', min: 0, max: 4000, step: 10, label: 'Jet force', tip: 'Exhaust speed on the nozzle face of jet crates.' },
+        uSmokeLift: { value: 0, type: 'f32', min: 0, max: 1, step: 0.01, label: 'Smoke lift', tip: 'Pales the soot toward ash gray. Raise it over a dark sky, where soot does not show.' },
       },
     },
   };
