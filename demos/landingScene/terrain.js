@@ -19,8 +19,8 @@ const PROFILE = [
   // rim high enough to keep the water in
   [1.08, 0.64], [1.14, 0.47], [1.17, 0.495], [1.3, 0.525], [1.33, 0.93], [1.5, 0.965], [1.74, 0.955], [1.88, 0.7],
   [1.96, 0.69],
-  // the soft bodies' valley
-  [2.22, 0.855], [2.56, 0.835], [2.84, 0.785],
+  // the soft bodies' valley: a wide flat floor, so they stay where they land
+  [2.12, 0.835], [2.82, 0.835], [2.98, 0.765],
   // the ropes: a post on each side of a ravine with a pond
   [3.14, 0.735], [3.3, 0.775], [3.37, 0.935], [3.63, 0.945], [3.7, 0.775], [3.86, 0.735],
   // the camp

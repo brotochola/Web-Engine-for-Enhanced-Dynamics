@@ -4,7 +4,8 @@
 // over the ground's heights (terrain.js); one Box2D chain makes the ground solid.
 //
 // Chapter 0: "Web Engine for Enhanced Dynamics" in Box2D bricks (bricksTitle.js) on the hills. Chapter 1: a lake fed by
-// a waterfall, LiquidFun water (water.js). Chapter 4: a night camp
+// a waterfall, LiquidFun water (water.js). Chapter 2: LiquidFun soft bodies a swipe cuts in two (jelly.js). Chapter 4:
+// a night camp
 // (camp.js). A click blows up the spot (fx.js: GPU particle fire, smoke and embers) and the nearest bodies burn in
 // burningBoxesScene's fire.
 //   ?backend=webgl   Pixi's WebGL backend (default WebGPU where the browser has it; the fire needs WebGPU)
@@ -14,6 +15,7 @@ import { Brick, BrickState, FIRE_LAYER, KICK, MAX_BRICKS, TRAILS_LAYER, layoutWo
 import { Camp, CampLog, CampProp } from './camp.js';
 import { CHAPTERS, ChapterTour } from './chapters.js';
 import { fxAssets, fxExplosion, fxLayers } from './fx.js';
+import { Blade, JELLY_LAYER, jellyAssets, jellyLayer, pokeJellies, spawnJellies } from './jelly.js';
 import { Floater, Paddle, WATER_LAYER, WATER_RADIUS, Waterworks, waterAssets, waterLayer } from './water.js';
 import {
   Ground,
@@ -57,6 +59,8 @@ const BURN_REACH = 0.42;
 /** The chapters the scene acts in. */
 const HERO = 0;
 const FLUIDS = 1;
+const SOFT = 2;
+const ROPES = 3;
 const CAMP = 4;
 
 /** The fragment's file for this backend, next to this scene. */
@@ -123,6 +127,7 @@ export class LandingScene extends Scene {
         blendMode: BLEND_MODES.ADD,
       },
       [WATER_LAYER]: waterLayer(),
+      [JELLY_LAYER]: jellyLayer(WATER_RADIUS),
       ...fxLayers(),
       ...(FIRE_ON ? { [FIRE_LAYER]: landingFire() } : {}),
     },
@@ -134,7 +139,7 @@ export class LandingScene extends Scene {
       campCrate: '/demos/img/box_100_100.png',
       campBarrel: '/demos/img/barrel1.png',
     },
-    shaders: { ...fireAssets.shaders, ...waterAssets.shaders },
+    shaders: { ...fireAssets.shaders, ...waterAssets.shaders, ...jellyAssets.shaders },
   };
 
   static entities = [
@@ -145,6 +150,7 @@ export class LandingScene extends Scene {
     [CampLog, 4],
     [Floater, 16],
     [Paddle, 1],
+    [Blade, 1],
   ];
 
   static sharedResources = [[TerrainMap, terrainSchema(WORLD_W)]];
@@ -158,6 +164,8 @@ export class LandingScene extends Scene {
     this.word = layoutWord(VIEW_W, VIEW_H);
     this.unit = Math.min(VIEW_W, VIEW_H) / 1000; // sizes that follow the screen
     this.tour = new ChapterTour(VIEW_W, VIEW_H);
+    this.pressX = 0; // where the pointer went down, canvas px: a tap or a swipe
+    this.pressY = 0;
     this.camp = new Camp(CAMP * VIEW_W, VIEW_W, VIEW_H, this.unit);
     this.water = new Waterworks(FLUIDS * VIEW_W, VIEW_W, VIEW_H, this.unit);
     this.waterLayer = Layer.get(WATER_LAYER);
@@ -184,6 +192,15 @@ export class LandingScene extends Scene {
     }
     this.camp.spawn();
     this.water.spawn(WORLD_W);
+    spawnJellies(SOFT * VIEW_W, VIEW_W, VIEW_H, this.unit);
+    // The blade cuts in the soft bodies' and the ropes' chapters.
+    const diameter = WATER_RADIUS * 2;
+    Blade.spawn({
+      x0: SOFT * VIEW_W,
+      x1: (ROPES + 1) * VIEW_W,
+      particleMass: diameter * diameter, // LiquidFun density 1
+      forceProcessOnLogicWorker: 0,
+    });
   }
 
   update(dtRatio, deltaTimeMs) {
@@ -191,6 +208,16 @@ export class LandingScene extends Scene {
     const day = this.tour.day();
     this.landscape.setUniform('uDay', day);
     this.waterLayer.setUniform('uDay', day);
+    if (Mouse.isButton0Pressed) {
+      this.pressX = Mouse.canvasXAt(0);
+      this.pressY = Mouse.canvasYAt(0);
+    }
+    // A tap (a press and release in place) pokes the jellies; a swipe is the blade's (jelly.js).
+    if (Mouse.isButton0Released && this.tour.index === SOFT) {
+      const mx = Mouse.canvasXAt(0) - this.pressX;
+      const my = Mouse.canvasYAt(0) - this.pressY;
+      if (mx * mx + my * my < 64) pokeJellies(Mouse.x, Mouse.y, 160 * Math.max(0.7, this.unit));
+    }
     if (Mouse.isButton0Pressed) {
       if (this.tour.index === HERO) this.blast(Mouse.x, Mouse.y);
       else if (this.tour.index === FLUIDS) this.water.click(Mouse.x, Mouse.y);
