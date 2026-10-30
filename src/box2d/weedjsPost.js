@@ -152,6 +152,7 @@
   let jointHandle = null; // Int32Array, -1 = none, -2 = fail this revision
   let jointSeenRev = null; // Uint32Array — last synced Joint.revision
   let jointDense = null; // Uint16Array — indices with live WASM handles
+  let jointDenseNext = null; // Uint16Array — syncJoints builds the next list here, then the two swap
   let jointDenseCount = 0;
   let jointLive = null; // Uint8Array scratch (dense-sized marks only)
   let maxJoints = 0;
@@ -381,6 +382,7 @@
       jointHandle = null;
       jointSeenRev = null;
       jointDense = null;
+      jointDenseNext = null;
       jointDenseCount = 0;
       jointLive = null;
       maxJoints = 0;
@@ -423,6 +425,7 @@
     jointHandle.fill(-1);
     jointSeenRev = new Uint32Array(maxJoints);
     jointDense = new Uint16Array(maxJoints);
+    jointDenseNext = new Uint16Array(maxJoints);
     jointDenseCount = 0;
     jointLive = new Uint8Array(maxJoints);
   }
@@ -1329,6 +1332,7 @@
 
   function syncJoints() {
     if (!jointViews || !jointHandle || !world) return 0;
+    // joint-sync-start
     const jv = jointViews;
     const activeCount = Atomics.load(jv.activeCount, 0) | 0;
     let changes = 0;
@@ -1358,10 +1362,12 @@
         changes++;
       }
       if (jointHandle[idx] >= 0) {
-        jointDense[nextDenseCount++] = idx;
+        jointDenseNext[nextDenseCount++] = idx;
       }
     }
 
+    // The joints live last step and gone from the active list now (Joint.remove): the last step's list, intact. Built
+    // in place, the new list overwrote the removed joint's entry with the one moved into its slot, and Box2D kept it.
     for (let i = 0; i < jointDenseCount; i++) {
       const idx = jointDense[i];
       if (!jointLive[idx] && jointHandle[idx] >= 0) {
@@ -1369,7 +1375,11 @@
         changes++;
       }
     }
+    const lastDense = jointDense;
+    jointDense = jointDenseNext;
+    jointDenseNext = lastDense;
     jointDenseCount = nextDenseCount;
+    // joint-sync-end
     return changes;
   }
 
