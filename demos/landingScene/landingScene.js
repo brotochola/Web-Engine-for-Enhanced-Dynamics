@@ -3,22 +3,16 @@
 // move between them, and the time of day follows the camera. The landscape is one shader (shaders/landscape.wgsl)
 // over the ground's heights (terrain.js); one Box2D chain makes the ground solid.
 //
-// Chapter 0: "Web Engine for Enhanced Dynamics" in Box2D bricks (bricksTitle.js) on the hills. A click sets off one of
-// blastforgeScene's explosions; the nearest bricks burn in burningBoxesScene's fire.
+// Chapter 0: "Web Engine for Enhanced Dynamics" in Box2D bricks (bricksTitle.js) on the hills. Chapter 4: a night camp
+// (camp.js). A click blows up the spot (fx.js: GPU particle fire, smoke and embers) and the nearest bodies burn in
+// burningBoxesScene's fire.
 //   ?backend=webgl   Pixi's WebGL backend (default WebGPU where the browser has it; the fire needs WebGPU)
 
-import {
-  explode,
-  explosionAssets,
-  explosionAssetsWgsl,
-  explosionLayers,
-  FIELD_LAYER,
-  updateExplosions,
-} from '../blastforgeScene/explosions.js';
-import { PRESETS } from '../blastforgeScene/explosionPresets.js';
 import { fireAssets, fireLayer } from '../burningBoxesScene/fireLayer.js';
 import { Brick, BrickState, FIRE_LAYER, KICK, MAX_BRICKS, TRAILS_LAYER, layoutWord } from './bricksTitle.js';
+import { Camp, CampLog, CampProp } from './camp.js';
 import { CHAPTERS, ChapterTour } from './chapters.js';
+import { fxAssets, fxExplosion, fxLayers } from './fx.js';
 import {
   Ground,
   TERRAIN_STEP,
@@ -58,33 +52,14 @@ const FIRE_BODIES = 2048;
 /** How long a brick burns (ms), and how much of the blast's reach lights bricks. */
 const BURN_MS = [6000, 10000];
 const BURN_REACH = 0.42;
-/** blastforgeScene's fuel barrel, without the parts that need its ground: dust ring, landing pieces, scorch, flames. */
-const BLAST = { ...PRESETS.barrel, dust: 0, sparks: 0, debris: 0, scorch: 0, flames: 0, flameTime: 0, secondary: 0 };
-/** Puffs per blast, times the preset's: a denser, softer fireball. */
-const BLAST_AMOUNT = 2.5;
-/** The explosion layers' texel, in world px: one, and no bands or dither (uSmooth), so the blast reads real. */
-const BLAST_PIXEL = 1;
+/** The chapters the scene acts in. */
+const HERO = 0;
+const CAMP = 4;
 
 /** The fragment's file for this backend, next to this scene. */
 const shaderUrl = (name) => new URL(`./shaders/${name}`, import.meta.url).href;
 
-/**
- * blastforgeScene's explosion layers, smooth: no bands, dither or outline. They expect a logic worker to set blasts
- * off; here the page does.
- */
-function blastLayers() {
-  const layers = explosionLayers({ pixelZoom: BLAST_PIXEL, palette: BLAST.palette });
-  for (const layer of Object.values(layers)) {
-    if (layer.gpuRings) layer.gpuRings = { main: 1, logic: 0, particle: 0 };
-  }
-  const field = layers[FIELD_LAYER].shader.uniforms;
-  field.uSmooth.value = 1;
-  field.uDither.value = 0;
-  field.uOutline.value = 0;
-  return layers;
-}
-
-/** burningBoxesScene's fire, its smoke paled: soot does not show on a dark sky. */
+/** burningBoxesScene's fire, its smoke paled (soot does not show on a dark sky) and its flames shorter. */
 function landingFire() {
   const layer = fireLayer({
     worldWidth: WORLD_W,
@@ -94,8 +69,14 @@ function landingFire() {
     maxBodies: FIRE_BODIES,
     maxParticles: 64, // no LiquidFun in it: only burning bodies feed it
   });
-  layer.shader.uniforms.uSmokeLift.value = 0.75;
-  layer.shader.uniforms.uSmokeDens.value = 1;
+  const u = layer.shader.uniforms;
+  u.uSmokeLift.value = 0.75;
+  u.uSmokeDens.value = 1;
+  // Small bodies: shorter, livelier flames than burningBoxesScene's crates.
+  u.uRise.value = -600;
+  u.uFireCool.value = 3;
+  u.uFireNoise.value = 0.35;
+  u.uSwirlForce.value = 0.85;
   return layer;
 }
 
@@ -136,20 +117,26 @@ export class LandingScene extends Scene {
         gpuRings: { main: 0, logic: 1, particle: 0 }, // the bricks' ticks
         blendMode: BLEND_MODES.ADD,
       },
-      ...blastLayers(),
+      ...fxLayers(),
       ...(FIRE_ON ? { [FIRE_LAYER]: landingFire() } : {}),
     },
   };
 
   static assets = {
-    textures: { ...explosionAssets.textures },
-    shaders: { ...(BACKEND === 'webgpu' ? explosionAssetsWgsl : explosionAssets).shaders, ...fireAssets.shaders },
+    textures: {
+      ...fxAssets.textures,
+      campCrate: '/demos/img/box_100_100.png',
+      campBarrel: '/demos/img/barrel1.png',
+    },
+    shaders: { ...fireAssets.shaders },
   };
 
   static entities = [
     [Brick, MAX_BRICKS],
     [Ground, 1],
     [Wall, 3],
+    [CampProp, 16],
+    [CampLog, 4],
   ];
 
   static sharedResources = [[TerrainMap, terrainSchema(WORLD_W)]];
@@ -162,8 +149,8 @@ export class LandingScene extends Scene {
     this.landscape.updateTexture('heights', TerrainMap.heights);
     this.word = layoutWord(VIEW_W, VIEW_H);
     this.unit = Math.min(VIEW_W, VIEW_H) / 1000; // sizes that follow the screen
-    this.blastSize = Math.max(1, 2 * this.unit); // the fireball: 40 px of radius at size 1
     this.tour = new ChapterTour(VIEW_W, VIEW_H);
+    this.camp = new Camp(CAMP * VIEW_W, VIEW_W, VIEW_H, this.unit);
     this.buildHud();
   }
 
@@ -185,18 +172,23 @@ export class LandingScene extends Scene {
         color: b.color,
       });
     }
+    this.camp.spawn();
   }
 
   update(dtRatio, deltaTimeMs) {
     this.tour.update(dtRatio, deltaTimeMs);
     this.landscape.setUniform('uDay', this.tour.day());
-    if (Mouse.isButton0Pressed) this.blast(Mouse.x, Mouse.y);
-    updateExplosions(deltaTimeMs); // the blasts' lights and shockwaves, on the thread that sets them off
+    if (Mouse.isButton0Pressed) {
+      if (this.tour.index === HERO) this.blast(Mouse.x, Mouse.y);
+      else if (this.tour.index === CAMP) this.camp.blast(Mouse.x, Mouse.y);
+    }
+    const nearCamp = Math.abs(Camera.centerX - (CAMP + 0.5) * VIEW_W) < VIEW_W * 1.2;
+    this.camp.update(deltaTimeMs, nearCamp);
   }
 
   /**
-   * One of blastforgeScene's fireballs at (x, y). The bricks within reach fly off (the page writes their kick, their
-   * own ticks apply it), and the nearest ones catch fire.
+   * An explosion at (x, y) (fx.js). The bricks within reach fly off (the page writes their kick, their own ticks apply
+   * it), and the nearest ones catch fire.
    */
   blast(x, y) {
     const reach = 150 * this.unit + 40;
@@ -220,7 +212,7 @@ export class LandingScene extends Scene {
       if (FIRE_ON && d < lit) BrickState.burn[i] = BURN_MS[0] + Math.random() * (BURN_MS[1] - BURN_MS[0]);
       BrickState.mode[i] = KICK;
     }
-    explode(x, y, BLAST, { size: this.blastSize, amount: BLAST_AMOUNT });
+    fxExplosion(x, y, Math.max(0.6, this.unit));
     Camera.shake(7 * Math.max(0.6, this.unit), 300);
   }
 
