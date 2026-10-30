@@ -104,6 +104,8 @@ export function explosionLayers({ pixelZoom, palette }) {
           uOutline: { value: 1, type: 'f32', widget: 'check', label: 'Dark smoke outline' },
           uLightDirection: { value: [-0.55, -0.83], type: 'vec2<f32>', min: -1, max: 1, step: 0.05, label: 'Light direction' },
           uShowField: { value: 0, type: 'f32', widget: 'check', label: 'Show the raw field' },
+          // 1 = no bands: soft edges and the palette as a continuous ramp (the landing page's realistic blasts)
+          uSmooth: { value: 0, type: 'f32', widget: 'check', label: 'Smooth (no bands)' },
           ...paletteUniforms(palette),
           ...effectUniforms(), // the ground's lights and shockwaves (blastGround.js)
         },

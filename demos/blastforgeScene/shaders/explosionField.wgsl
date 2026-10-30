@@ -1,5 +1,5 @@
 // explosionField.wgsl – explosionField.frag for WebGPU (the landing page runs Blastforge's explosions there), the same
-// pixel art step for step.
+// pixel art step for step, and the same smooth mode (uSmooth).
 //
 // The layer draws every field puff additively into uTexture, one texel per
 // world pixel. Each channel is an amount: red = heat, green = smoke,
@@ -46,6 +46,32 @@ fn dustColor(shade: f32) -> vec3<f32> {
   if (shade < 0.5) { return customUniforms.uDust1; }
   if (shade < 0.75) { return customUniforms.uDust2; }
   return customUniforms.uDust3;
+}
+
+// Smooth mode (uSmooth): the palettes as continuous ramps, fire through its band thresholds.
+fn fireRamp(h: f32) -> vec3<f32> {
+  if (h < 0.16) { return customUniforms.uFire0; }
+  if (h < 0.26) { return mix(customUniforms.uFire0, customUniforms.uFire1, (h - 0.16) / 0.10); }
+  if (h < 0.38) { return mix(customUniforms.uFire1, customUniforms.uFire2, (h - 0.26) / 0.12); }
+  if (h < 0.52) { return mix(customUniforms.uFire2, customUniforms.uFire3, (h - 0.38) / 0.14); }
+  if (h < 0.68) { return mix(customUniforms.uFire3, customUniforms.uFire4, (h - 0.52) / 0.16); }
+  if (h < 0.86) { return mix(customUniforms.uFire4, customUniforms.uFire5, (h - 0.68) / 0.18); }
+  return mix(customUniforms.uFire5, customUniforms.uFire6, clamp((h - 0.86) / 0.3, 0.0, 1.0));
+}
+
+fn smokeRamp(shade: f32) -> vec3<f32> {
+  let x = clamp(shade, 0.0, 1.0) * 4.0;
+  if (x < 1.0) { return mix(customUniforms.uSmoke0, customUniforms.uSmoke1, x); }
+  if (x < 2.0) { return mix(customUniforms.uSmoke1, customUniforms.uSmoke2, x - 1.0); }
+  if (x < 3.0) { return mix(customUniforms.uSmoke2, customUniforms.uSmoke3, x - 2.0); }
+  return mix(customUniforms.uSmoke3, customUniforms.uSmoke4, x - 3.0);
+}
+
+fn dustRamp(shade: f32) -> vec3<f32> {
+  let x = clamp(shade, 0.0, 1.0) * 3.0;
+  if (x < 1.0) { return mix(customUniforms.uDust0, customUniforms.uDust1, x); }
+  if (x < 2.0) { return mix(customUniforms.uDust1, customUniforms.uDust2, x - 1.0); }
+  return mix(customUniforms.uDust2, customUniforms.uDust3, x - 2.0);
 }
 
 // A shockwave's push at world px p: along the ring, falling off a few pixels either side.
@@ -102,6 +128,29 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let smokeLight = clamp(dot(-vec2<f32>(right.g - left.g, down.g - up.g), light) / (0.3 + smoke) * 1.05, -0.4, 0.4);
   let dustLight = clamp(dot(-vec2<f32>(right.b - left.b, down.b - up.b), light) / (0.25 + dust) * 1.6, -0.5, 0.5);
   let dith = customUniforms.uDither;
+
+  if (customUniforms.uSmooth > 0.5) {
+    // No bands: each amount fades in softly and takes its color from a ramp, lit by the same slopes; dust, then
+    // smoke, then fire composited over each other (premultiplied).
+    var p = vec3<f32>(0.0);
+    var a = 0.0;
+    let dustA = smoothstep(0.05, 0.3, dust);
+    let dustTone = dustRamp(0.58 + dustLight - (min(dust, 1.2) - 0.13) * 0.4 + lit * 0.15);
+    p = dustTone * dustA;
+    a = dustA;
+    let smokeA = smoothstep(0.04, 0.4, smoke) * 0.95;
+    let smokeShade = clamp(0.47 + smokeLight - (min(smoke, 1.2) - 0.14) * 0.22 + lit * 0.18, 0.0, 1.0);
+    let ember = smoothstep(0.04, 0.35, heat); // fire inside the smoke glows through its shadow side
+    let smokeTone = mix(smokeRamp(smokeShade), fireRamp(0.2 + 0.25 * ember), ember * (1.0 - smokeShade) * 0.9);
+    p = smokeTone * smokeA + p * (1.0 - smokeA);
+    a = smokeA + a * (1.0 - smokeA);
+    let heatV = heat + heatLight * 0.12;
+    let cover = select(1.0, clamp(heatV / max(smoke * 0.25, 0.0001), 0.0, 1.0), heatV < 0.3); // only thick smoke hides weak fire
+    let fireA = smoothstep(0.02, 0.15, heatV) * cover;
+    p = fireRamp(heatV) * fireA + p * (1.0 - fireA);
+    a = fireA + a * (1.0 - fireA);
+    return vec4<f32>(p, a);
+  }
 
   var color = vec3<f32>(0.0);
   var alpha = 0.0;

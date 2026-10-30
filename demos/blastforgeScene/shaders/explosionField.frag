@@ -36,6 +36,7 @@ uniform float uDither;          // 0 = hard band edges, 1 = full dither
 uniform float uOutline;         // 1 = dark outline on thin smoke
 uniform vec2 uLightDirection;   // where the light comes from, screen space
 uniform float uShowField;       // 1 = show the raw amounts instead (debug)
+uniform float uSmooth;          // 1 = no bands: soft edges, the palette as a continuous ramp
 uniform vec3 uFire0; uniform vec3 uFire1; uniform vec3 uFire2; uniform vec3 uFire3;
 uniform vec3 uFire4; uniform vec3 uFire5; uniform vec3 uFire6;
 uniform vec3 uSmoke0; uniform vec3 uSmoke1; uniform vec3 uSmoke2; uniform vec3 uSmoke3; uniform vec3 uSmoke4;
@@ -54,6 +55,30 @@ vec3 smokeColor(float shade) {
 }
 vec3 dustColor(float shade) {
   return shade < 0.25 ? uDust0 : shade < 0.5 ? uDust1 : shade < 0.75 ? uDust2 : uDust3;
+}
+
+// Smooth mode (uSmooth): the palettes as continuous ramps, fire through its band thresholds.
+vec3 fireRamp(float h) {
+  if (h < 0.16) return uFire0;
+  if (h < 0.26) return mix(uFire0, uFire1, (h - 0.16) / 0.10);
+  if (h < 0.38) return mix(uFire1, uFire2, (h - 0.26) / 0.12);
+  if (h < 0.52) return mix(uFire2, uFire3, (h - 0.38) / 0.14);
+  if (h < 0.68) return mix(uFire3, uFire4, (h - 0.52) / 0.16);
+  if (h < 0.86) return mix(uFire4, uFire5, (h - 0.68) / 0.18);
+  return mix(uFire5, uFire6, clamp((h - 0.86) / 0.3, 0.0, 1.0));
+}
+vec3 smokeRamp(float shade) {
+  float x = clamp(shade, 0.0, 1.0) * 4.0;
+  if (x < 1.0) return mix(uSmoke0, uSmoke1, x);
+  if (x < 2.0) return mix(uSmoke1, uSmoke2, x - 1.0);
+  if (x < 3.0) return mix(uSmoke2, uSmoke3, x - 2.0);
+  return mix(uSmoke3, uSmoke4, x - 3.0);
+}
+vec3 dustRamp(float shade) {
+  float x = clamp(shade, 0.0, 1.0) * 3.0;
+  if (x < 1.0) return mix(uDust0, uDust1, x);
+  if (x < 2.0) return mix(uDust1, uDust2, x - 1.0);
+  return mix(uDust2, uDust3, x - 2.0);
 }
 
 vec3 amountsAt(vec2 uv) { return texture2D(uTexture, uv).rgb * uFieldScale; }
@@ -101,6 +126,27 @@ void main() {
   float heatLight = clamp(dot(-vec2(right.r - left.r, down.r - up.r), light) * 1.4, -0.3, 0.3);
   float smokeLight = clamp(dot(-vec2(right.g - left.g, down.g - up.g), light) / (0.3 + smoke) * 1.05, -0.4, 0.4);
   float dustLight = clamp(dot(-vec2(right.b - left.b, down.b - up.b), light) / (0.25 + dust) * 1.6, -0.5, 0.5);
+
+  if (uSmooth > 0.5) {
+    // No bands: each amount fades in softly and takes its color from a ramp, lit by the same slopes; dust, then
+    // smoke, then fire composited over each other (premultiplied).
+    float dustA = smoothstep(0.05, 0.3, dust);
+    vec3 p = dustRamp(0.58 + dustLight - (min(dust, 1.2) - 0.13) * 0.4 + lit * 0.15) * dustA;
+    float a = dustA;
+    float smokeA = smoothstep(0.04, 0.4, smoke) * 0.95;
+    float smokeShade = clamp(0.47 + smokeLight - (min(smoke, 1.2) - 0.14) * 0.22 + lit * 0.18, 0.0, 1.0);
+    float ember = smoothstep(0.04, 0.35, heat); // fire inside the smoke glows through its shadow side
+    vec3 smokeTone = mix(smokeRamp(smokeShade), fireRamp(0.2 + 0.25 * ember), ember * (1.0 - smokeShade) * 0.9);
+    p = smokeTone * smokeA + p * (1.0 - smokeA);
+    a = smokeA + a * (1.0 - smokeA);
+    float heatV = heat + heatLight * 0.12;
+    float cover = heatV < 0.3 ? clamp(heatV / max(smoke * 0.25, 0.0001), 0.0, 1.0) : 1.0; // only thick smoke hides weak fire
+    float fireA = smoothstep(0.02, 0.15, heatV) * cover;
+    p = fireRamp(heatV) * fireA + p * (1.0 - fireA);
+    a = fireA + a * (1.0 - fireA);
+    gl_FragColor = vec4(p, a);
+    return;
+  }
 
   vec3 color = vec3(0.0);
   float alpha = 0.0;
