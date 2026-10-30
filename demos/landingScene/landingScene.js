@@ -31,7 +31,7 @@ import {
   writeHeights,
 } from './terrain.js';
 
-const { Scene, Layer, Mouse, Camera, Sun, LAYER_KIND, BLEND_MODES } = WEED;
+const { Scene, Layer, Mouse, Camera, Sun, LiquidFun, LAYER_KIND, BLEND_MODES } = WEED;
 
 function param(name, fallback) {
   const search = globalThis.location?.search;
@@ -294,24 +294,64 @@ export class LandingScene extends Scene {
     await super.destroy();
   }
 
-  /** Live numbers: bodies, threads, fps. */
+  /**
+   * Live numbers: the HUD (entities, fluid particles, threads, fps) and the hood card's thread bars, each worker's
+   * ms of work per frame (readWorkerStepMs) against a 60 fps frame.
+   */
   buildHud() {
     const hud = document.getElementById('weed-hud');
-    if (!hud) return;
+    const bars = document.getElementById('weed-threads');
     const w = this.workers;
+    const logicN = w.logicWorkers.length;
+    const physicsN = w.physics ? this.config.physics.numberOfPhysicsWorkers : 0;
     const threads =
-      1 +
-      w.logicWorkers.length +
-      w.spatialWorkers.length +
-      w.preRenderWorkers.length +
-      (w.particle ? 1 : 0) +
-      (w.renderer ? 1 : 0) +
-      (w.physics ? this.config.physics.numberOfPhysicsWorkers : 0);
+      1 + logicN + w.spatialWorkers.length + w.preRenderWorkers.length + (w.particle ? 1 : 0) + (w.renderer ? 1 : 0) +
+      physicsN;
     const fmt = (n) => n.toLocaleString('en-US');
+    // [label, key in readWorkerStepMs, workers it sums]
+    const rows = [
+      ['main thread', 'main', 1],
+      [`logic ×${logicN}`, 'logic', logicN],
+      [`physics ×${physicsN}`, 'physics', 1],
+      ['particles', 'particle', 1],
+      ['pre-render', 'preRender', 1],
+      ['renderer', 'renderer', 1],
+    ];
+    const fills = [];
+    const values = [];
+    if (bars) {
+      bars.textContent = '';
+      for (const [label] of rows) {
+        const name = document.createElement('span');
+        name.textContent = label;
+        const bar = document.createElement('span');
+        bar.className = 'bar';
+        const fill = document.createElement('i');
+        bar.append(fill);
+        const ms = document.createElement('span');
+        ms.className = 'ms';
+        bars.append(name, bar, ms);
+        fills.push(fill);
+        values.push(ms);
+      }
+    }
     this.hudTimer = setInterval(() => {
-      hud.innerHTML =
-        `<b>${fmt(Brick.activeCount + 4)}</b> Box2D bodies<br>` +
-        `<b>${threads}</b> threads · <b>${Math.round(this.mainFPS || 0)}</b> fps`;
+      if (hud) {
+        const views = LiquidFun.getViews();
+        const fluid = views && views.count ? views.count[0] : 0;
+        hud.innerHTML =
+          `<b>${fmt(this.countActiveTransforms())}</b> entities · <b>${fmt(fluid)}</b> fluid particles<br>` +
+          `<b>${threads}</b> threads · <b>${Math.round(this.mainFPS || 0)}</b> fps`;
+      }
+      if (bars && document.body.dataset.chapter === 'hood') {
+        const step = this.readWorkerStepMs();
+        for (let k = 0; k < rows.length; k++) {
+          const [, key, n] = rows[k];
+          const ms = (step[key] || 0) / Math.max(1, n); // a worker's average
+          fills[k].style.width = `${Math.min(100, (ms / 16.7) * 100).toFixed(1)}%`;
+          values[k].textContent = `${ms.toFixed(2)} ms`;
+        }
+      }
     }, 250);
   }
 }

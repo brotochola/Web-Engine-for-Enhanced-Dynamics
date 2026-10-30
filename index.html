@@ -282,6 +282,39 @@
       color: var(--yellow);
     }
 
+    /* The hood card's live thread bars (landingScene.js fills them): each worker's ms of work per frame. */
+    .threads {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 5px 10px;
+      align-items: center;
+      margin: 0 0 16px;
+      font: 11.5px/1 ui-monospace, "SF Mono", Consolas, monospace;
+      color: var(--dim);
+    }
+
+    .threads .bar {
+      height: 7px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.07);
+      overflow: hidden;
+    }
+
+    .threads .bar i {
+      display: block;
+      height: 100%;
+      width: 0;
+      border-radius: 4px;
+      background: linear-gradient(90deg, var(--green), var(--lime), var(--yellow));
+      transition: width 240ms;
+    }
+
+    .threads .ms {
+      color: var(--ink);
+      text-align: right;
+      min-width: 4.2em;
+    }
+
     .stats {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -396,8 +429,28 @@
         padding: 16px 18px 12px;
       }
 
-      .card p {
-        font-size: 13.5px;
+      /* A phone shows the world, not the essay: the title and what to do; the bars and numbers under the hood. */
+      .card p,
+      .card .chips {
+        display: none;
+      }
+
+      .card h2 {
+        margin: 6px 0 8px;
+        font-size: 20px;
+      }
+
+      .card .stats {
+        gap: 6px;
+        margin-bottom: 10px;
+      }
+
+      .card .stats div {
+        padding: 6px 8px;
+      }
+
+      .card .stats b {
+        font-size: 15px;
       }
 
       .dots {
@@ -518,6 +571,7 @@
       <p>Physics, logic, spatial queries, particles, render prep, rendering and audio each run in their own worker and
         <b>share memory through SharedArrayBuffer</b>: no copies, no main-thread stalls. The hottest loops are
         hand-written C compiled to WebAssembly.</p>
+      <div class="threads" id="weed-threads" aria-label="This page's threads, live: milliseconds of work per frame"></div>
       <div class="stats">
         <div><b>50,000+</b>entities at 60 fps</div>
         <div><b>250,000</b>sprites (bunnymark)</div>
