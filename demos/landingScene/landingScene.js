@@ -1,12 +1,25 @@
 // landingScene.js – the landing page (index.html at the repo root, served by GitHub Pages).
 //
-// The word WEED.JS is built from Box2D bricks. Each brick's own tick pulls it to its place with a spring, so the word
-// wobbles when something knocks it, and the pointer pushes the bricks aside. A click or a tap blasts the bricks around
-// it: they spin away, fall, pile up on the floor and fly back. Behind them the view flies through hyperspace: GPU
-// particles stream out of a vanishing point that leans toward the pointer, slow far stars and fast near streaks, one
-// warp lane per logic worker. Holding the button jumps to warp speed.
-//   ?particles=<n>   the stars' and streaks' maxParticles together (default 2 097 152, 1 048 576 on a touch screen)
-//   ?backend=webgl   Pixi's WebGL backend (default WebGPU where the browser has it)
+// "Web Engine for Enhanced Dynamics" is built from Box2D bricks. Each brick's own tick pulls it to its place with a
+// spring, so the words wobble when something knocks them, and the pointer pushes the bricks aside. A click or a tap
+// sets off one of blastforgeScene's explosions there: the bricks around it spin away, fall, pile up on the floor and
+// fly back, and the nearest ones burn for a while in burningBoxesScene's fire, smoke and all. Behind them the view
+// flies through hyperspace: GPU particles stream out of a vanishing point that leans toward the pointer: slow far
+// stars, fast comet streaks and tumbling cubes, one warp lane per logic worker (the four workers also share the
+// bricks' ticks). Holding the button jumps to warp speed.
+//   ?particles=<n>   the warp layers' maxParticles together (default 2 097 152, 1 048 576 on a touch screen)
+//   ?backend=webgl   Pixi's WebGL backend (default WebGPU where the browser has it; the fire needs WebGPU)
+
+import {
+  explode,
+  explosionAssets,
+  explosionAssetsWgsl,
+  explosionLayers,
+  FIELD_LAYER,
+  updateExplosions,
+} from '../blastforgeScene/explosions.js';
+import { PRESETS } from '../blastforgeScene/explosionPresets.js';
+import { FIRE_HEAT, fireAssets, fireLayer } from '../burningBoxesScene/fireLayer.js';
 
 const {
   Scene,
@@ -38,13 +51,32 @@ const BACKEND = param('backend', globalThis.navigator?.gpu ? 'webgpu' : 'webgl')
 const WORLD_W = typeof globalThis.innerWidth === 'number' ? globalThis.innerWidth : 1920;
 const WORLD_H = typeof globalThis.innerHeight === 'number' ? globalThis.innerHeight : 1080;
 const LANES = 4; // logic workers, one warp lane each
-/** Pool size: the word takes as many as fit, with bricks as small as the screen allows. */
-const MAX_BRICKS = 2400;
+/** Pool size: the words take as many as fit, with bricks as small as the screen allows. */
+const MAX_BRICKS = 12000;
+/** The words, wide screens and narrow ones. */
+const LINES_WIDE = ['WEB ENGINE FOR', 'ENHANCED DYNAMICS'];
+const LINES_NARROW = ['WEB', 'ENGINE FOR', 'ENHANCED', 'DYNAMICS'];
 
 const STARS = 'stars'; // far: slow dots
-const STREAKS = 'streaks'; // near: fast streaks, each turned along its way
+const STREAKS = 'streaks'; // near: fast comets, each turned along its way
+const DEBRIS = 'debris'; // near: tumbling cubes in the word's colors
 const TRAILS = 'trails';
-const BURST = 'burst';
+const FIRE = 'fire';
+/** The fire is a WebGPU compute layer: on WebGL the bricks blast without burning. */
+const FIRE_ON = BACKEND === 'webgpu';
+/** World px per fire cell: a brick spans about one. */
+const FIRE_CELL = 3;
+/** Bricks burning at once that the fire packs; a blast lights the nearest few hundred. */
+const FIRE_BODIES = 2048;
+/** How long a brick burns (ms), and how much of the blast's reach lights bricks. */
+const BURN_MS = [6000, 10000];
+const BURN_REACH = 0.42;
+/** blastforgeScene's fuel barrel, without the parts that need its ground: dust ring, landing pieces, scorch, flames. */
+const BLAST = { ...PRESETS.barrel, dust: 0, sparks: 0, debris: 0, scorch: 0, flames: 0, flameTime: 0, secondary: 0 };
+/** Puffs per blast, times the preset's: a denser, softer fireball. */
+const BLAST_AMOUNT = 2.5;
+/** The explosion layers' texel, in world px: one, and no bands or dither (uSmooth), so the blast reads real. */
+const BLAST_PIXEL = 1;
 const STEP_MS = 50;
 const FILL = 0.97;
 const FRAME_MS = 1000 / 60; // GPU particle speeds are px per frame
@@ -54,14 +86,17 @@ const STAR_SPEED = [1.2, 3.6];
 const STAR_BANDS = 3;
 const STREAK_SPEED = [5, 15];
 const STREAK_BANDS = 5;
+const DEBRIS_SPEED = [3, 11];
+/** streak.png's length (px): a comet's scaleX is its length over this. */
+const STREAK_TEXTURE_PX = 64;
 /** A streak call covers 360 / SECTORS degrees and is turned to its middle. */
 const SECTORS = 96;
 /** How far the vanishing point follows the pointer, and the speed while the button is held. */
 const LEAN = 0.3;
 const WARP = 3.2;
-const WARP_COLORS = [0xffffff, 0xdcefff, 0xffffff, 0xbfe2ff, 0xffffff, 0x5dffa8, 0x47e0ff, 0xb48cff, 0xff6bd8];
-/** The word's colors, left to right. */
-const WORD_COLORS = [0x5dffa8, 0x47e0ff, 0x7f8cff, 0xd86bff];
+const WARP_COLORS = [0xffffff, 0xeaffdc, 0xffffff, 0xf6ffd2, 0xffffff, 0x28dc46, 0xa0f03c, 0xffe646];
+/** The WeedJS logo's colors (server/devBanner.js, the browser's printLogo): leaf green to yellow. */
+const WORD_COLORS = [0x28dc46, 0xa0f03c, 0xffe646];
 
 // A brick's modes (BrickState.mode).
 const HOME = 0; // held at its place by the stiff spring
@@ -87,6 +122,9 @@ const SPIN_K = 140;
 const SPIN_C = 16;
 /** A brick moving faster than this (px/s) leaves a trail. */
 const TRAIL_SPEED = 380;
+/** A brick at home this close (px) and this slow (px/s), with the pointer away, stops pulling: Box2D lets it sleep. */
+const REST_DISTANCE = 0.4;
+const REST_SPEED = 3;
 
 /** Per brick, in shared memory: a brick's tick can run on any logic worker, and the page writes the blasts. */
 export class BrickState extends Component {
@@ -98,6 +136,7 @@ export class BrickState extends Component {
     kickX: Float32Array,
     kickY: Float32Array,
     spin: Float32Array,
+    burn: Float32Array, // ms of fire left; the page lights it, the brick's tick puts it out
   };
 }
 
@@ -107,8 +146,22 @@ function warpLife(speed, unit, reach) {
 }
 
 /**
+ * Each kind of warp dot: how many sectors share the circle (360 / sectors degrees per call), its speeds (px per
+ * frame at unit 1) split in bands, how far past the edge it lives (px at unit 1: a comet's tail trails its center by
+ * half its length), and the half size of the box it is born in around the vanishing point.
+ */
+const WARP_KINDS = [
+  { sectors: 32, speed: STAR_SPEED, bands: STAR_BANDS, margin: 10, spawn: 6 },
+  { sectors: SECTORS, speed: STREAK_SPEED, bands: STREAK_BANDS, margin: 130, spawn: 4 },
+  { sectors: 32, speed: DEBRIS_SPEED, bands: 4, margin: 20, spawn: 8 },
+];
+const KIND_STARS = 0;
+const KIND_STREAKS = 1;
+const KIND_DEBRIS = 2;
+
+/**
  * One warp lane, pinned to its own logic worker: its fields live there, its dots go to that worker's rings. It throws
- * a share of the stars and every lanes-th sector of the streaks.
+ * every lanes-th sector of the stars, the streaks and the cubes.
  */
 export class WarpLane extends GameObject {
   static components = [];
@@ -121,25 +174,27 @@ export class WarpLane extends GameObject {
     this.vpX = cx; // the vanishing point, easing toward the pointer
     this.vpY = cy;
     this.unit = unit;
-    this.reach = reach; // px from the vanishing point to past the farthest corner
+    this.reach = reach; // the farthest a dot goes: past the farthest corner, the point leaned all the way
     this.boost = 1; // speed factor, easing toward WARP while the button is held
     this.lastNowMs = NaN;
     this.starRate = NaN; // dots per ms at boost 1 that never overwrite a live one
     this.streakRate = NaN;
+    this.debrisRate = NaN;
     this.starsOwed = 0;
     this.streaksOwed = 0;
+    this.debrisOwed = 0;
     this.stars = {
       layer: STARS,
       count: 0,
       x: { min: 0, max: 0 },
       y: { min: 0, max: 0 },
-      angleXY: { min: 0, max: 360 },
+      angleXY: { min: 0, max: 0 },
       speed: { min: 0, max: 0 },
       delay: { min: 0, max: 0 },
       lifespan: 1000,
       scale: { from: 0.04, to: 0.55, ease: PARTICLE_EASE.QUAD_IN },
-      alpha: { from: 0, to: 1, ease: PARTICLE_EASE.QUAD_IN },
-      tint: { from: 0x1c2a4a, to: 0xffffff },
+      alpha: { from: 0, to: 0.7, ease: PARTICLE_EASE.QUAD_IN },
+      tint: { from: 0x18241a, to: 0xffffff },
       texture: '_whiteCircle',
     };
     this.streak = {
@@ -152,11 +207,28 @@ export class WarpLane extends GameObject {
       delay: { min: 0, max: 0 },
       lifespan: 1000,
       rotation: 0,
-      scaleX: { from: 0.2, to: 8, ease: PARTICLE_EASE.QUAD_IN },
-      scaleY: { from: 0.08, to: 0.4 },
-      alpha: { from: 0, to: 0.85, ease: PARTICLE_EASE.QUAD_IN },
-      tint: { from: 0x10203c, to: 0xffffff, ease: PARTICLE_EASE.QUAD_IN },
-      texture: '_whiteCircle',
+      scaleX: { from: 0.05, to: 1, ease: PARTICLE_EASE.QUAD_IN },
+      scaleY: { from: 0.12, to: 0.45 },
+      alpha: { from: 0, to: 0.6, ease: PARTICLE_EASE.QUAD_IN },
+      tint: { from: 0x0e2414, to: 0xffffff, ease: PARTICLE_EASE.QUAD_IN },
+      texture: 'streak', // a comet: bright head, fading tail
+    };
+    // Cubes in the word's colors, each turned and spinning its own way, growing as they come.
+    this.debris = {
+      layer: DEBRIS,
+      count: 0,
+      x: { min: 0, max: 0 },
+      y: { min: 0, max: 0 },
+      angleXY: { min: 0, max: 0 },
+      speed: { min: 0, max: 0 },
+      delay: { min: 0, max: 0 },
+      lifespan: 1000,
+      rotation: { min: 0, max: 360 },
+      angularVelocity: { min: -0.5, max: 0.5 },
+      scale: { from: 0.05, to: { min: 0.7, max: 1.9 }, ease: PARTICLE_EASE.QUAD_IN },
+      alpha: { from: 0, to: 1, ease: PARTICLE_EASE.QUAD_IN },
+      tint: { from: 0x0a180c, to: 0xffffff, ease: PARTICLE_EASE.QUAD_OUT },
+      texture: '_white',
     };
   }
 
@@ -164,12 +236,14 @@ export class WarpLane extends GameObject {
     const now = Time.simNowMs;
     if (Number.isNaN(this.lastNowMs)) {
       this.lastNowMs = now;
-      // A ring holds one longest life of dots: the slowest band's.
+      // A ring holds one longest life of dots: the slowest band's, all the way to `reach`.
       const slot = GpuParticles.writerSlot;
       this.starRate =
         (GpuParticles.stats(STARS)[slot].capacity * FILL) / warpLife(STAR_SPEED[0], this.unit, this.reach);
       this.streakRate =
         (GpuParticles.stats(STREAKS)[slot].capacity * FILL) / warpLife(STREAK_SPEED[0], this.unit, this.reach);
+      this.debrisRate =
+        (GpuParticles.stats(DEBRIS)[slot].capacity * FILL) / warpLife(DEBRIS_SPEED[0], this.unit, this.reach);
       return;
     }
     const elapsed = now - this.lastNowMs;
@@ -183,73 +257,80 @@ export class WarpLane extends GameObject {
     this.vpY += (ty - this.vpY) * follow;
     const target = Mouse.isButton0Down ? WARP : 1;
     this.boost += (target - this.boost) * (1 - Math.exp(-dt / (target > this.boost ? 160 : 700)));
-    this.emitStars(dt);
-    this.emitStreaks(dt);
+    // At warp the dots move `boost` times faster and live `boost` times shorter, so they come `boost` times more
+    // often and the ring still never overwrites a live one.
+    const b = this.boost;
+    this.starsOwed = this.throwSectors(this.stars, KIND_STARS, this.starsOwed + this.starRate * b * dt, dt);
+    this.streaksOwed = this.throwSectors(this.streak, KIND_STREAKS, this.streaksOwed + this.streakRate * b * dt, dt);
+    this.debrisOwed = this.throwSectors(this.debris, KIND_DEBRIS, this.debrisOwed + this.debrisRate * b * dt, dt);
   }
 
   /**
-   * At warp the dots move `boost` times faster and live `boost` times shorter, so they come `boost` times more often
-   * and the ring still never overwrites a live one.
+   * Throws the whole dots `owed` holds over this lane's sectors (lane, lane + lanes, …) and returns what is left.
+   * Each sector takes a random speed band, and its dots live until they are just past the screen's edge in that
+   * direction: every one brightens all the way out, and none dies in view (an ease only goes one way).
    */
-  emitStars(dt) {
-    this.starsOwed += this.starRate * this.boost * dt;
-    const total = Math.floor(this.starsOwed);
-    if (total < STAR_BANDS) return;
-    this.starsOwed -= total;
-    const s = this.stars;
-    const r = 6 * this.unit;
-    s.x.min = this.vpX - r;
-    s.x.max = this.vpX + r;
-    s.y.min = this.vpY - r;
-    s.y.max = this.vpY + r;
-    s.delay.max = dt; // born over the frame, not all at its start
-    const per = Math.floor(total / STAR_BANDS);
-    const step = (STAR_SPEED[1] - STAR_SPEED[0]) / STAR_BANDS;
-    for (let b = 0; b < STAR_BANDS; b++) {
-      const lo = STAR_SPEED[0] + step * b;
-      s.count = b === STAR_BANDS - 1 ? total - per * (STAR_BANDS - 1) : per;
-      s.speed.min = lo * this.unit * this.boost;
-      s.speed.max = (lo + step) * this.unit * this.boost;
-      s.lifespan = warpLife(lo, this.unit, this.reach) / this.boost;
-      ParticleEmitter.emitGpu(s);
-    }
-  }
-
-  emitStreaks(dt) {
-    const mine = SECTORS / this.lanes; // this lane's sectors: lane, lane + lanes, …
-    this.streaksOwed += this.streakRate * this.boost * dt;
-    const total = Math.floor(this.streaksOwed);
-    if (total < mine) return;
-    this.streaksOwed -= total;
-    const st = this.streak;
-    const r = 4 * this.unit;
-    st.x.min = this.vpX - r;
-    st.x.max = this.vpX + r;
-    st.y.min = this.vpY - r;
-    st.y.max = this.vpY + r;
-    st.delay.max = dt;
+  throwSectors(cfg, kind, owed, dt) {
+    const k = WARP_KINDS[kind];
+    const mine = k.sectors / this.lanes;
+    const total = Math.floor(owed);
+    if (total < mine) return owed;
     const per = Math.floor(total / mine);
     let extra = total - per * mine;
-    const width = 360 / SECTORS;
-    const step = (STREAK_SPEED[1] - STREAK_SPEED[0]) / STREAK_BANDS;
-    for (let k = 0; k < mine; k++) {
-      const a0 = (this.lane + k * this.lanes) * width;
-      const band = Math.floor(Math.random() * STREAK_BANDS);
-      const lo = STREAK_SPEED[0] + step * band;
-      st.count = per + (extra > 0 ? 1 : 0);
+    const width = 360 / k.sectors;
+    const scale = this.unit * this.boost;
+    const step = ((k.speed[1] - k.speed[0]) / k.bands) * scale;
+    const r = k.spawn * this.unit;
+    cfg.x.min = this.vpX - r;
+    cfg.x.max = this.vpX + r;
+    cfg.y.min = this.vpY - r;
+    cfg.y.max = this.vpY + r;
+    cfg.delay.max = dt; // born over the frame, not all at its start
+    // Comets stretch with the square root of the boost: a full boost turned the screen white.
+    const stretch = this.unit * Math.sqrt(this.boost);
+    const margin = k.margin * stretch;
+    for (let s = 0; s < mine; s++) {
+      const a0 = (this.lane + s * this.lanes) * width;
+      const mid = a0 + width / 2;
+      const band = Math.floor(Math.random() * k.bands);
+      const lo = k.speed[0] * scale + step * band;
+      cfg.count = per + (extra > 0 ? 1 : 0);
       if (extra > 0) extra--;
-      st.angleXY.min = a0;
-      st.angleXY.max = a0 + width;
-      st.rotation = a0 + width / 2;
-      st.speed.min = lo * this.unit * this.boost;
-      st.speed.max = (lo + step) * this.unit * this.boost;
-      st.lifespan = warpLife(lo, this.unit, this.reach) / this.boost;
-      st.scaleX.to = (6 + (18 * (band + 1)) / STREAK_BANDS) * this.boost; // nearer is faster and longer
-      st.tint.to = WARP_COLORS[Math.floor(Math.random() * WARP_COLORS.length)];
-      ParticleEmitter.emitGpu(st);
+      cfg.angleXY.min = a0;
+      cfg.angleXY.max = a0 + width;
+      cfg.speed.min = lo;
+      cfg.speed.max = lo + step;
+      cfg.lifespan = (Math.min(this.edgeDistance(mid) + margin, this.reach) / lo) * FRAME_MS;
+      if (kind === KIND_STREAKS) {
+        cfg.rotation = mid;
+        // Nearer is faster and longer: 100 to 230 px at the edge (unit 1), more at warp.
+        cfg.scaleX.to = ((70 + (160 * (band + 1)) / k.bands) * stretch) / STREAK_TEXTURE_PX;
+        cfg.tint.to = WARP_COLORS[Math.floor(Math.random() * WARP_COLORS.length)];
+      } else if (kind === KIND_DEBRIS) {
+        cfg.tint.to = WORD_COLORS[Math.floor(Math.random() * WORD_COLORS.length)];
+      }
+      ParticleEmitter.emitGpu(cfg);
     }
+    return owed - total;
+  }
+
+  /** px from the vanishing point to the screen's edge along `deg` (0 = +x, 90 = +y, as angleXY). */
+  edgeDistance(deg) {
+    const a = (deg * Math.PI) / 180;
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    let t = this.reach;
+    if (c > 1e-6) t = Math.min(t, (this.config.worldWidth - this.vpX) / c);
+    else if (c < -1e-6) t = Math.min(t, -this.vpX / c);
+    if (s > 1e-6) t = Math.min(t, (this.config.worldHeight - this.vpY) / s);
+    else if (s < -1e-6) t = Math.min(t, -this.vpY / s);
+    return t;
   }
 }
+
+/** A burning brick is drawn with the entities and fed to the fire layer as a hot body. */
+const BURNING_LAYERS = ['entities', FIRE];
+const PLAIN_LAYERS = ['entities'];
 
 /** The trail dot a fast brick leaves, one config per worker. */
 const TRAIL = {
@@ -278,6 +359,7 @@ export class Brick extends GameObject {
     BrickState.kickX[i] = 0;
     BrickState.kickY[i] = 0;
     BrickState.spin[i] = 0;
+    BrickState.burn[i] = 0;
     const side = size * 0.86; // a gap between neighbours: at home they never touch
     this.collider.width = side;
     this.collider.height = side;
@@ -295,6 +377,7 @@ export class Brick extends GameObject {
 
   tick(dtRatio, deltaTimeMs) {
     const i = this.index;
+    if (BrickState.burn[i] > 0) this.burn(i, deltaTimeMs);
     let mode = BrickState.mode[i];
     if (mode === KICK) {
       this.addVelocity(BrickState.kickX[i], BrickState.kickY[i]);
@@ -323,6 +406,7 @@ export class Brick extends GameObject {
     let ax = k * dx - c * vx;
     let ay = k * dy - c * vy;
     // The pointer pushes the bricks around it aside.
+    let pushed = false;
     if (Mouse.isPresent) {
       const reach = this.config.worldHeight * 0.11;
       const px = this.x - Mouse.x;
@@ -333,7 +417,20 @@ export class Brick extends GameObject {
         const push = (1 - d / reach) * 14000;
         ax += (px / d) * push;
         ay += (py / d) * push;
+        pushed = true;
       }
+    }
+    // At rest at home: no pull, so Box2D puts the brick to sleep (thousands of awake springs cost the physics worker).
+    // A pull, the pointer or a loose brick's hit wakes it.
+    if (
+      mode === HOME &&
+      !pushed &&
+      dx * dx + dy * dy < REST_DISTANCE * REST_DISTANCE &&
+      vx * vx + vy * vy < REST_SPEED * REST_SPEED &&
+      Math.abs(this.rotation) < 0.02 &&
+      Math.abs(this.angularVelocity) < 0.05
+    ) {
+      return;
     }
     this.addAcceleration(ax, ay);
     RigidBody.angularAccel[i] = -SPIN_K * this.rotation - SPIN_C * this.angularVelocity;
@@ -347,8 +444,25 @@ export class Brick extends GameObject {
     }
   }
 
+  /** Lights the brick for the fire layer, and puts it out when its time is up. */
+  burn(i, deltaTimeMs) {
+    if ((this.getFeedBits() & FIRE_HEAT) === 0) {
+      this.setLayers(BURNING_LAYERS);
+      this.setFeedBits(FIRE_HEAT);
+    }
+    const left = BrickState.burn[i] - deltaTimeMs;
+    if (left > 0) {
+      BrickState.burn[i] = left;
+      return;
+    }
+    BrickState.burn[i] = 0;
+    this.setFeedBits(0);
+    this.setLayers(PLAIN_LAYERS);
+  }
+
   trail(vx, vy) {
-    if (vx * vx + vy * vy < TRAIL_SPEED * TRAIL_SPEED) return;
+    // Every other brick: thousands fly home at once.
+    if ((this.index & 1) !== 0 || vx * vx + vy * vy < TRAIL_SPEED * TRAIL_SPEED) return;
     TRAIL.x = this.x;
     TRAIL.y = this.y;
     const tint = this.tint;
@@ -386,13 +500,44 @@ function gradient(t) {
 }
 
 /**
- * Page only: draws the word on a canvas the size of the world and keeps one brick per grid cell that falls on a
- * letter, with cells as small as MAX_BRICKS allows. Narrow screens get two lines.
+ * blastforgeScene's explosion layers, smooth: no bands, dither or outline. They expect a logic worker to set blasts
+ * off; here the page does.
+ */
+function blastLayers() {
+  const layers = explosionLayers({ pixelZoom: BLAST_PIXEL, palette: BLAST.palette });
+  for (const layer of Object.values(layers)) {
+    if (layer.gpuRings) layer.gpuRings = { main: 1, logic: 0, particle: 0 };
+  }
+  const field = layers[FIELD_LAYER].shader.uniforms;
+  field.uSmooth.value = 1;
+  field.uDither.value = 0;
+  field.uOutline.value = 0;
+  return layers;
+}
+
+/** burningBoxesScene's fire, its smoke paled: soot does not show on a black sky. */
+function landingFire() {
+  const layer = fireLayer({
+    worldWidth: WORLD_W,
+    worldHeight: WORLD_H,
+    cellSize: FIRE_CELL,
+    lfRadius: 6,
+    maxBodies: FIRE_BODIES,
+    maxParticles: 64, // no LiquidFun here: only burning bricks feed it
+  });
+  layer.shader.uniforms.uSmokeLift.value = 0.75;
+  layer.shader.uniforms.uSmokeDens.value = 1;
+  return layer;
+}
+
+/**
+ * Page only: draws the words on a canvas the size of the world and keeps one brick per grid cell that falls on a
+ * letter, with cells as small as MAX_BRICKS allows. Narrow screens get more lines.
  * @returns {{ size: number, bricks: { x: number, y: number, color: number }[] }}
  */
 function layoutWord(width, height) {
   const portrait = width < height * 0.9;
-  const lines = portrait ? ['WEED', '.JS'] : ['WEED.JS'];
+  const lines = portrait ? LINES_NARROW : LINES_WIDE;
   const canvas = document.createElement('canvas');
   canvas.width = Math.ceil(width);
   canvas.height = Math.ceil(height);
@@ -402,8 +547,8 @@ function layoutWord(width, height) {
   let widest = 0;
   for (const line of lines) widest = Math.max(widest, g.measureText(line).width);
   const lineStep = 0.92; // line height, in font sizes
-  const boxW = width * (portrait ? 0.88 : 0.8);
-  const boxH = height * (portrait ? 0.38 : 0.34);
+  const boxW = width * (portrait ? 0.9 : 0.86);
+  const boxH = height * (portrait ? 0.44 : 0.36);
   const px = Math.floor(100 * Math.min(boxW / widest, boxH / (0.75 + lineStep * (lines.length - 1))));
   const centerY = height * (portrait ? 0.34 : 0.4);
   g.font = font(px);
@@ -416,7 +561,7 @@ function layoutWord(width, height) {
   const pixels = g.getImageData(0, 0, canvas.width, canvas.height).data;
   const filled = (x, y) => pixels[(Math.floor(y) * canvas.width + Math.floor(x)) * 4 + 3] > 127;
 
-  let size = Math.max(5, Math.min(width, height) / 95);
+  let size = Math.max(3, Math.min(width, height) / 260);
   let cells = [];
   for (;;) {
     cells = [];
@@ -430,15 +575,21 @@ function layoutWord(width, height) {
   }
   let minX = Infinity;
   let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
   for (let k = 0; k < cells.length; k += 2) {
     minX = Math.min(minX, cells[k]);
     maxX = Math.max(maxX, cells[k]);
+    minY = Math.min(minY, cells[k + 1]);
+    maxY = Math.max(maxY, cells[k + 1]);
   }
   const bricks = [];
   for (let k = 0; k < cells.length; k += 2) {
     const x = cells[k];
     const y = cells[k + 1];
-    const base = gradient((x - minX) / (maxX - minX || 1));
+    // The logo's diagonal bands, green, yellow, green, yellow, green from top left to bottom right.
+    const band = 0.5 - 0.5 * Math.cos(2 * Math.PI * ((x - minX) / (maxX - minX || 1) + (y - minY) / (maxY - minY || 1)));
+    const base = gradient(band);
     // A little light and dark per brick, so the letters read as built, not painted.
     const shade = Math.random();
     const color = shade < 0.5 ? mixColor(base, 0x000000, (0.5 - shade) * 0.35) : mixColor(base, 0xffffff, (shade - 0.5) * 0.3);
@@ -452,7 +603,8 @@ export class LandingScene extends Scene {
     worldWidth: WORLD_W,
     worldHeight: WORLD_H,
     seed: 7,
-    physics: { numberOfPhysicsWorkers: 4, commandRingCapacity: 16384 },
+    // A blast of the whole word kicks every brick: two commands each.
+    physics: { numberOfPhysicsWorkers: 4, commandRingCapacity: 32768 },
     spatial: { numberOfSpatialWorkers: 0, maxNeighbors: 0 },
     logic: { numberOfLogicWorkers: LANES },
     particle: { maxParticles: 0, decals: false },
@@ -462,7 +614,7 @@ export class LandingScene extends Scene {
       [STARS]: {
         kind: LAYER_KIND.GPU_PARTICLES,
         zIndex: 2.4,
-        maxParticles: Math.round(PARTICLES * 0.6),
+        maxParticles: Math.round(PARTICLES * 0.55),
         gpuRings: { main: 0, logic: 1, particle: 0 }, // only the lanes emit
         blendMode: BLEND_MODES.ADD,
       },
@@ -473,6 +625,12 @@ export class LandingScene extends Scene {
         gpuRings: { main: 0, logic: 1, particle: 0 },
         blendMode: BLEND_MODES.ADD,
       },
+      [DEBRIS]: {
+        kind: LAYER_KIND.GPU_PARTICLES,
+        zIndex: 2.6, // in front of the light, solid
+        maxParticles: Math.round(PARTICLES * 0.02),
+        gpuRings: { main: 0, logic: 1, particle: 0 },
+      },
       [TRAILS]: {
         kind: LAYER_KIND.GPU_PARTICLES,
         zIndex: 2.8,
@@ -480,14 +638,19 @@ export class LandingScene extends Scene {
         gpuRings: { main: 0, logic: 1, particle: 0 }, // the bricks' ticks
         blendMode: BLEND_MODES.ADD,
       },
-      [BURST]: {
-        kind: LAYER_KIND.GPU_PARTICLES,
-        zIndex: 6,
-        maxParticles: 262144,
-        gpuRings: { main: 1, logic: 0, particle: 0 }, // the page's blasts
-        blendMode: BLEND_MODES.ADD,
-      },
+      ...blastLayers(),
+      ...(FIRE_ON
+        ? {
+            [FIRE]: landingFire(),
+          }
+        : {}),
     },
+  };
+
+  // The page loads assets; import.meta.url keeps the path right wherever the site is served.
+  static assets = {
+    textures: { streak: new URL('./img/streak.png', import.meta.url).href, ...explosionAssets.textures },
+    shaders: { ...(BACKEND === 'webgpu' ? explosionAssetsWgsl : explosionAssets).shaders, ...fireAssets.shaders },
   };
 
   static entities = [
@@ -503,9 +666,9 @@ export class LandingScene extends Scene {
     this.unit = Math.min(WORLD_W, WORLD_H) / 1000; // sizes that follow the screen
     this.warpUnit = Math.max(0.6, this.unit);
     // From the vanishing point, leaned as far as it goes, to past the farthest corner.
-    this.warpReach = 0.62 * Math.sqrt(WORLD_W * WORLD_W + WORLD_H * WORLD_H);
+    this.warpReach = 0.66 * Math.sqrt(WORLD_W * WORLD_W + WORLD_H * WORLD_H) + 140 * this.warpUnit;
     this.blastCount = 0;
-    this.buildBlasts();
+    this.blastSize = Math.max(1, 2 * this.unit); // the fireball: 40 px of radius at size 1
     this.buildHud();
   }
 
@@ -540,13 +703,18 @@ export class LandingScene extends Scene {
     }
   }
 
-  update() {
+  update(dtRatio, deltaTimeMs) {
     if (Mouse.isButton0Pressed) this.blast(Mouse.x, Mouse.y);
+    updateExplosions(deltaTimeMs); // the blasts' lights and shockwaves, on the thread that sets them off
   }
 
-  /** The bricks within reach of (x, y) fly off; the page writes their kick, their own ticks apply it. */
+  /**
+   * One of blastforgeScene's fireballs at (x, y). The bricks within reach fly off (the page writes their kick, their
+   * own ticks apply it), and the nearest ones catch fire.
+   */
   blast(x, y) {
-    const reach = 380 * this.unit + 60;
+    const reach = 150 * this.unit + 40;
+    const lit = reach * BURN_REACH;
     const list = Brick.getAllActive();
     for (let k = 0; k < list.length; k++) {
       const i = list[k];
@@ -557,73 +725,18 @@ export class LandingScene extends Scene {
       if (d2 > reach * reach) continue;
       const d = Math.sqrt(d2) || 1;
       const f = 1 - d / reach;
-      const speed = (500 + 2600 * f) * Math.max(0.6, this.unit);
+      const speed = (450 + 2300 * f) * Math.max(0.6, this.unit);
       const angle = Math.atan2(dy, dx) + (Math.random() - 0.5) * 0.7;
       BrickState.kickX[i] = Math.cos(angle) * speed;
-      BrickState.kickY[i] = Math.sin(angle) * speed - 600 * this.unit;
+      BrickState.kickY[i] = Math.sin(angle) * speed - 500 * this.unit;
       BrickState.spin[i] = (Math.random() - 0.5) * 50 * f;
       BrickState.timer[i] = 2300 + Math.random() * 1000 + 600 * f;
+      if (FIRE_ON && d < lit) BrickState.burn[i] = BURN_MS[0] + Math.random() * (BURN_MS[1] - BURN_MS[0]);
       BrickState.mode[i] = KICK;
     }
-    const b = this.blasts;
-    for (const cfg of b) {
-      cfg.x = x;
-      cfg.y = y;
-      ParticleEmitter.emitGpu(cfg);
-    }
-    Camera.shake(9 * Math.max(0.6, this.unit), 260);
+    explode(x, y, BLAST, { size: this.blastSize, amount: BLAST_AMOUNT });
+    Camera.shake(7 * Math.max(0.6, this.unit), 300);
     this.blastCount++;
-  }
-
-  /** A blast's emits: sparks in the word's colors, a shock ring, a flash. Made once; blast() only moves them. */
-  buildBlasts() {
-    const u = Math.max(0.6, this.unit);
-    const sparks = (to) => ({
-      layer: BURST,
-      count: TOUCH ? 3500 : 8000,
-      x: 0,
-      y: 0,
-      angleXY: { min: 0, max: 360 },
-      speed: { min: 2 * u, max: 24 * u },
-      drag: 2.8,
-      lifespan: { min: 500, max: 1700 },
-      scale: { from: 0.42, to: 0, ease: PARTICLE_EASE.QUAD_IN },
-      alpha: { from: 0.9, to: 0, ease: PARTICLE_EASE.QUAD_IN },
-      tint: { from: 0xffffff, to, ease: PARTICLE_EASE.QUAD_OUT },
-      texture: '_whiteCircle',
-    });
-    this.blasts = [
-      sparks(WORD_COLORS[0]),
-      sparks(WORD_COLORS[1]),
-      sparks(WORD_COLORS[3]),
-      {
-        layer: BURST,
-        count: TOUCH ? 3000 : 6000,
-        x: 0,
-        y: 0,
-        angleXY: { min: 0, max: 360 },
-        speed: { min: 15 * u, max: 16 * u },
-        drag: 3.2,
-        lifespan: { min: 450, max: 650 },
-        scale: { from: 0.7, to: 0.15 },
-        alpha: { from: 0.9, to: 0, ease: PARTICLE_EASE.QUAD_IN },
-        tint: { from: 0xffffff, to: 0xd86bff },
-        texture: '_whiteCircle',
-      },
-      {
-        layer: BURST,
-        count: 6,
-        x: 0,
-        y: 0,
-        angleXY: { min: 0, max: 360 },
-        speed: { min: 0, max: 0.4 },
-        lifespan: { min: 260, max: 420 },
-        scale: { from: 1.1 * u, to: 2.4 * u, ease: PARTICLE_EASE.QUAD_OUT }, // _lightGradient is 200 px wide
-        alpha: { from: 0.4, to: 0, ease: PARTICLE_EASE.QUAD_IN },
-        tint: { from: 0xffffff, to: 0x7f8cff },
-        texture: '_lightGradient',
-      },
-    ];
   }
 
   async destroy() {
@@ -638,8 +751,8 @@ export class LandingScene extends Scene {
     const tracks = [
       { layer: STARS, lifeMs: warpLife(STAR_SPEED[0], this.warpUnit, this.warpReach) },
       { layer: STREAKS, lifeMs: warpLife(STREAK_SPEED[0], this.warpUnit, this.warpReach) },
+      { layer: DEBRIS, lifeMs: warpLife(DEBRIS_SPEED[0], this.warpUnit, this.warpReach) },
       { layer: TRAILS, lifeMs: 460 },
-      { layer: BURST, lifeMs: 1700 },
     ].map((t) => ({ ...t, samples: Math.round(t.lifeMs / 250) + 1, history: null, last: null, total: 0, at: 0 }));
     const w = this.workers;
     const threads =

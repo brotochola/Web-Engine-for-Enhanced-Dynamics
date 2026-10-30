@@ -14,8 +14,10 @@
     :root {
       --ink: #eafff4;
       --dim: rgba(234, 255, 244, 0.62);
-      --mint: #5dffa8;
-      --cyan: #47e0ff;
+      /* The WeedJS logo (server/devBanner.js): leaf green to yellow. */
+      --green: #28dc46;
+      --lime: #a0f03c;
+      --yellow: #ffe646;
       --glass: rgba(6, 10, 14, 0.55);
       --line: rgba(234, 255, 244, 0.18);
     }
@@ -96,7 +98,7 @@
     }
     .tagline em {
       font-style: normal;
-      background: linear-gradient(90deg, var(--mint), var(--cyan) 60%, #b48cff);
+      background: linear-gradient(90deg, var(--green), var(--lime) 55%, var(--yellow));
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
@@ -137,10 +139,10 @@
     }
     .btn:hover, .install:hover { border-color: rgba(234, 255, 244, 0.5); transform: translateY(-1px); }
     .btn.primary {
-      background: linear-gradient(90deg, var(--mint), var(--cyan));
+      background: linear-gradient(90deg, var(--green), var(--lime), var(--yellow));
       border-color: transparent;
       color: #03140b;
-      box-shadow: 0 0 28px rgba(93, 255, 168, 0.35);
+      box-shadow: 0 0 28px rgba(40, 220, 70, 0.35);
     }
     .btn svg { width: 18px; height: 18px; fill: currentColor; }
     .install {
@@ -148,7 +150,7 @@
       font: 13px/1 ui-monospace, "SF Mono", Consolas, monospace;
       color: var(--dim);
     }
-    .install .prompt { color: var(--mint); }
+    .install .prompt { color: var(--green); }
     .hint {
       font-size: 12px;
       color: var(--dim);
@@ -163,6 +165,11 @@
       .hud { min-width: 0; font-size: 11px; }
     }
   </style>
+  <!-- The engine: one bundle for the page and for the scene's helpers from other demos (blastforgeScene,
+       burningBoxesScene), which import it as '/src/index.js'. -->
+  <script type="importmap">
+    { "imports": { "/src/index.js": "./dist/weed.prod.bundle.esm.min.js" } }
+  </script>
 </head>
 <body>
   <div class="page">
@@ -202,9 +209,9 @@
     });
   </script>
   <script type="module">
-    // The production bundle. On a host without the isolation headers (GitHub Pages) it registers weed-sw.js, next
-    // to this page, and reloads once on the first visit.
-    import WEED from './dist/weed.prod.bundle.esm.min.js';
+    // The bundle the import map names. On a host without the isolation headers (GitHub Pages) it registers
+    // weed-sw.js, next to this page, and reloads once on the first visit.
+    import WEED from '/src/index.js';
 
     document.getElementById('weed-version').textContent = `v${WEED.VERSION}`;
     const game = new WEED.GameEngine({ debug: false, autoResize: true });
