@@ -185,7 +185,10 @@ test('burningBoxesScene: landscape bg + particle fuel pass', () => {
   assert.match(scene, /texture: 'landscape'/);
   assert.match(scene, /zoomParallax: 0\.35/);
   assert.match(scene, /background_lanscape\.jpg/);
-  assert.match(scene, /dispatchFrom: 'particles'/);
+  // The fire layer's passes live in fireLayer.js (shared with the landing page); the scene sizes it.
+  const fire = readFileSync(join(SHADER_DIR, '../fireLayer.js'), 'utf8');
+  assert.match(fire, /dispatchFrom: 'particles'/);
+  assert.match(scene, /fire: fireLayer\(/);
   assert.match(scene, /maxParticles: FIRE_LF_MAX/);
   assert.match(scene, /densitySource: LAYER_DENSITY_SOURCE.LIQUID_FUN/);
   assert.match(scene, /layers: burning \? \['fire'\] : \['oil', 'fire'\]/);
