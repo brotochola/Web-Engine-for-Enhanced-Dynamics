@@ -7,6 +7,7 @@ import { FIRE_HEAT } from '../burningBoxesScene/fireLayer.js';
 import { FIRE_LAYER } from './bricksTitle.js';
 import { Campfire, fxExplosion } from './fx.js';
 import { groundY } from './terrain.js';
+import { fall } from './water.js';
 
 const { GameObject, Component, RigidBody, Collider, SpriteRenderer, Box2d } = WEED;
 
@@ -46,6 +47,7 @@ export class CampProp extends GameObject {
   }
 
   tick(dtRatio, deltaTimeMs) {
+    fall(this);
     const i = this.index;
     if (PropState.burn[i] <= 0) return;
     if ((this.getFeedBits() & FIRE_HEAT) === 0) {
@@ -79,6 +81,10 @@ export class CampLog extends GameObject {
     this.setAnchor(0.5, 0.5);
     this.setDisplaySize(w, h);
     this.setTint(0x3a2414);
+  }
+
+  tick() {
+    fall(this);
   }
 }
 

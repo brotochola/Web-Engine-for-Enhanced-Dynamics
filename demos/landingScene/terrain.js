@@ -15,8 +15,10 @@ const CHAIN_STEP = 12;
  */
 const PROFILE = [
   [0, 0.8], [0.2, 0.765], [0.48, 0.815], [0.76, 0.775], [1.04, 0.8],
-  // the cliff the waterfall pours from, then the lake's basin
-  [1.12, 0.6], [1.16, 0.515], [1.3, 0.5], [1.33, 0.93], [1.5, 0.965], [1.74, 0.955], [1.9, 0.79],
+  // the cliff the waterfall pours from: a lip, then its top slopes down to the edge; then the lake's basin, its far
+  // rim high enough to keep the water in
+  [1.08, 0.64], [1.14, 0.47], [1.17, 0.495], [1.3, 0.525], [1.33, 0.93], [1.5, 0.965], [1.74, 0.955], [1.88, 0.7],
+  [1.96, 0.69],
   // the soft bodies' valley
   [2.22, 0.855], [2.56, 0.835], [2.84, 0.785],
   // the ropes: a post on each side of a ravine with a pond

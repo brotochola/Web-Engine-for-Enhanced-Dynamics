@@ -3,7 +3,8 @@
 // move between them, and the time of day follows the camera. The landscape is one shader (shaders/landscape.wgsl)
 // over the ground's heights (terrain.js); one Box2D chain makes the ground solid.
 //
-// Chapter 0: "Web Engine for Enhanced Dynamics" in Box2D bricks (bricksTitle.js) on the hills. Chapter 4: a night camp
+// Chapter 0: "Web Engine for Enhanced Dynamics" in Box2D bricks (bricksTitle.js) on the hills. Chapter 1: a lake fed by
+// a waterfall, LiquidFun water (water.js). Chapter 4: a night camp
 // (camp.js). A click blows up the spot (fx.js: GPU particle fire, smoke and embers) and the nearest bodies burn in
 // burningBoxesScene's fire.
 //   ?backend=webgl   Pixi's WebGL backend (default WebGPU where the browser has it; the fire needs WebGPU)
@@ -13,6 +14,7 @@ import { Brick, BrickState, FIRE_LAYER, KICK, MAX_BRICKS, TRAILS_LAYER, layoutWo
 import { Camp, CampLog, CampProp } from './camp.js';
 import { CHAPTERS, ChapterTour } from './chapters.js';
 import { fxAssets, fxExplosion, fxLayers } from './fx.js';
+import { Floater, Paddle, WATER_LAYER, WATER_RADIUS, Waterworks, waterAssets, waterLayer } from './water.js';
 import {
   Ground,
   TERRAIN_STEP,
@@ -54,6 +56,7 @@ const BURN_MS = [6000, 10000];
 const BURN_REACH = 0.42;
 /** The chapters the scene acts in. */
 const HERO = 0;
+const FLUIDS = 1;
 const CAMP = 4;
 
 /** The fragment's file for this backend, next to this scene. */
@@ -90,6 +93,8 @@ export class LandingScene extends Scene {
       numberOfPhysicsWorkers: 4,
       commandRingCapacity: 32768,
       maxChainPoints: groundChainPoints(WORLD_W) + 64,
+      // No world gravity: the title's bricks float at their places. Water falls by setRadialGravity (water.js).
+      liquidFun: { enabled: true, radius: WATER_RADIUS, maxCount: 16000, subSteps: 2 },
     },
     spatial: { numberOfSpatialWorkers: 0, maxNeighbors: 0 },
     logic: { numberOfLogicWorkers: LOGIC_WORKERS },
@@ -117,6 +122,7 @@ export class LandingScene extends Scene {
         gpuRings: { main: 0, logic: 1, particle: 0 }, // the bricks' ticks
         blendMode: BLEND_MODES.ADD,
       },
+      [WATER_LAYER]: waterLayer(),
       ...fxLayers(),
       ...(FIRE_ON ? { [FIRE_LAYER]: landingFire() } : {}),
     },
@@ -128,7 +134,7 @@ export class LandingScene extends Scene {
       campCrate: '/demos/img/box_100_100.png',
       campBarrel: '/demos/img/barrel1.png',
     },
-    shaders: { ...fireAssets.shaders },
+    shaders: { ...fireAssets.shaders, ...waterAssets.shaders },
   };
 
   static entities = [
@@ -137,6 +143,8 @@ export class LandingScene extends Scene {
     [Wall, 3],
     [CampProp, 16],
     [CampLog, 4],
+    [Floater, 16],
+    [Paddle, 1],
   ];
 
   static sharedResources = [[TerrainMap, terrainSchema(WORLD_W)]];
@@ -151,6 +159,8 @@ export class LandingScene extends Scene {
     this.unit = Math.min(VIEW_W, VIEW_H) / 1000; // sizes that follow the screen
     this.tour = new ChapterTour(VIEW_W, VIEW_H);
     this.camp = new Camp(CAMP * VIEW_W, VIEW_W, VIEW_H, this.unit);
+    this.water = new Waterworks(FLUIDS * VIEW_W, VIEW_W, VIEW_H, this.unit);
+    this.waterLayer = Layer.get(WATER_LAYER);
     this.buildHud();
   }
 
@@ -173,17 +183,26 @@ export class LandingScene extends Scene {
       });
     }
     this.camp.spawn();
+    this.water.spawn(WORLD_W);
   }
 
   update(dtRatio, deltaTimeMs) {
     this.tour.update(dtRatio, deltaTimeMs);
-    this.landscape.setUniform('uDay', this.tour.day());
+    const day = this.tour.day();
+    this.landscape.setUniform('uDay', day);
+    this.waterLayer.setUniform('uDay', day);
     if (Mouse.isButton0Pressed) {
       if (this.tour.index === HERO) this.blast(Mouse.x, Mouse.y);
+      else if (this.tour.index === FLUIDS) this.water.click(Mouse.x, Mouse.y);
       else if (this.tour.index === CAMP) this.camp.blast(Mouse.x, Mouse.y);
     }
-    const nearCamp = Math.abs(Camera.centerX - (CAMP + 0.5) * VIEW_W) < VIEW_W * 1.2;
-    this.camp.update(deltaTimeMs, nearCamp);
+    this.camp.update(deltaTimeMs, this.near(CAMP));
+    this.water.update(deltaTimeMs, this.near(FLUIDS));
+  }
+
+  /** Whether chapter i is on screen or next to it. */
+  near(i) {
+    return Math.abs(Camera.centerX - (i + 0.5) * VIEW_W) < VIEW_W * 1.2;
   }
 
   /**
