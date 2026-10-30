@@ -142,6 +142,15 @@ export const explosionAssets = {
   },
 };
 
+/** The same, with the look shaders in WGSL: for a scene on WebGPU (the landing page). */
+export const explosionAssetsWgsl = {
+  textures: explosionAssets.textures,
+  shaders: {
+    explosionField: here('shaders/explosionField.wgsl'),
+    crispPixels: here('shaders/crispPixels.wgsl'),
+  },
+};
+
 /**
  * The explosion layers at a new camera zoom: one layer texel per world pixel again. Blasts already on screen
  * change too. Any thread.
