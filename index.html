@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>WeedJS · multithreaded 2D game engine for the web</title>
+  <meta name="description" content="WeedJS is a multithreaded 2D web game engine: Box2D physics, millions of GPU particles and every system on its own thread, in a browser tab." />
+  <meta name="theme-color" content="#000000" />
+  <meta property="og:title" content="WeedJS" />
+  <meta property="og:description" content="A multithreaded 2D game engine for the web: Box2D physics, millions of GPU particles, every system on its own thread." />
+  <meta property="og:image" content="https://brotochola.github.io/Web-Engine-for-Enhanced-Dynamics/screenshot.jpg" />
+  <link rel="icon" href="demos/favicon.ico" />
+  <style>
+    :root {
+      --ink: #eafff4;
+      --dim: rgba(234, 255, 244, 0.62);
+      --mint: #5dffa8;
+      --cyan: #47e0ff;
+      --glass: rgba(6, 10, 14, 0.55);
+      --line: rgba(234, 255, 244, 0.18);
+    }
+    html, body {
+      margin: 0;
+      height: 100%;
+      overflow: hidden;
+      background: #000;
+      color: var(--ink);
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Over the engine's canvas; only the controls take the pointer, the rest goes to the bricks. */
+    .page {
+      position: fixed;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      padding: max(14px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right))
+        max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+      box-sizing: border-box;
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 12px;
+    }
+    .hud {
+      font: 12px/1.55 ui-monospace, "SF Mono", Consolas, monospace;
+      color: var(--dim);
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      min-width: 150px;
+    }
+    .hud b { color: var(--ink); font-weight: 600; }
+    .meta {
+      font-size: 12px;
+      color: var(--dim);
+      text-align: right;
+      line-height: 1.6;
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 7px 10px;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+    .meta a { color: var(--dim); pointer-events: auto; }
+    .bottom {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      gap: 14px;
+      animation: rise 900ms 300ms both cubic-bezier(0.2, 0.7, 0.2, 1);
+    }
+    h1 {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+    }
+    .tagline {
+      margin: 0;
+      font-size: clamp(19px, 2.6vw, 34px);
+      font-weight: 750;
+      letter-spacing: -0.01em;
+      text-shadow: 0 2px 18px #000, 0 0 2px #000;
+    }
+    .tagline em {
+      font-style: normal;
+      background: linear-gradient(90deg, var(--mint), var(--cyan) 60%, #b48cff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      /* A text-shadow would paint over the clipped gradient. */
+      text-shadow: none;
+      filter: drop-shadow(0 2px 10px rgba(0, 0, 0, 0.9));
+    }
+    .sub {
+      margin: -4px 0 4px;
+      max-width: 46em;
+      font-size: clamp(13px, 1.25vw, 16px);
+      color: var(--dim);
+      text-shadow: 0 1px 10px #000;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+    }
+    .btn, .install {
+      pointer-events: auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      height: 44px;
+      padding: 0 20px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--glass);
+      color: var(--ink);
+      font: 600 15px/1 system-ui, -apple-system, "Segoe UI", sans-serif;
+      text-decoration: none;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      transition: transform 120ms, border-color 120ms, background 120ms;
+      cursor: pointer;
+    }
+    .btn:hover, .install:hover { border-color: rgba(234, 255, 244, 0.5); transform: translateY(-1px); }
+    .btn.primary {
+      background: linear-gradient(90deg, var(--mint), var(--cyan));
+      border-color: transparent;
+      color: #03140b;
+      box-shadow: 0 0 28px rgba(93, 255, 168, 0.35);
+    }
+    .btn svg { width: 18px; height: 18px; fill: currentColor; }
+    .install {
+      height: 38px;
+      font: 13px/1 ui-monospace, "SF Mono", Consolas, monospace;
+      color: var(--dim);
+    }
+    .install .prompt { color: var(--mint); }
+    .hint {
+      font-size: 12px;
+      color: var(--dim);
+      letter-spacing: 0.04em;
+      text-shadow: 0 1px 6px #000, 0 0 2px #000;
+      animation: pulse 2.6s 2s infinite ease-in-out;
+    }
+    @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes pulse { 50% { opacity: 0.45; } }
+    @media (max-width: 520px) {
+      .btn { height: 42px; padding: 0 16px; font-size: 14px; }
+      .hud { min-width: 0; font-size: 11px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="top">
+      <div class="hud" id="weed-hud" aria-live="off">starting the threads…</div>
+      <div class="meta"><span id="weed-version"></span><br /><a href="https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics/blob/main/LICENSE">MIT license</a></div>
+    </div>
+    <div class="bottom">
+      <h1>WeedJS</h1>
+      <p class="tagline">The <em>multithreaded</em> 2D game engine for the web</p>
+      <p class="sub">Box2D physics, millions of GPU particles, and every system on its own thread. All of it in a browser tab.</p>
+      <div class="actions">
+        <a class="btn primary" href="demos/">▶ Play the demos</a>
+        <a class="btn" href="https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+          GitHub
+        </a>
+        <a class="btn" href="https://www.npmjs.com/package/@weed.js/engine">npm</a>
+      </div>
+      <button class="install" id="weed-install" type="button" title="Copy"><span class="prompt">$</span><span id="weed-install-text">npm i @weed.js/engine</span></button>
+      <div class="hint" id="weed-hint">click anywhere to blast it · move the pointer to push the bricks</div>
+    </div>
+  </div>
+  <script>
+    if (matchMedia('(pointer: coarse)').matches) {
+      document.getElementById('weed-hint').textContent = 'tap to blast it · drag to push the bricks';
+    }
+    document.getElementById('weed-install').addEventListener('click', async () => {
+      const text = document.getElementById('weed-install-text');
+      try {
+        await navigator.clipboard.writeText('npm i @weed.js/engine');
+        text.textContent = 'copied!';
+      } catch {
+        text.textContent = 'npm i @weed.js/engine';
+      }
+      setTimeout(() => (text.textContent = 'npm i @weed.js/engine'), 1400);
+    });
+  </script>
+  <script type="module">
+    // The production bundle. On a host without the isolation headers (GitHub Pages) it registers weed-sw.js, next
+    // to this page, and reloads once on the first visit.
+    import WEED from './dist/weed.prod.bundle.esm.min.js';
+
+    document.getElementById('weed-version').textContent = `v${WEED.VERSION}`;
+    const game = new WEED.GameEngine({ debug: false, autoResize: true });
+    await game.loadScene(new URL('./demos/landingScene/landingScene.js', import.meta.url).href, {
+      export: 'LandingScene',
+    });
+  </script>
+</body>
+</html>
