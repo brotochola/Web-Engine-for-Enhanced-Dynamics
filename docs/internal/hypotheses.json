@@ -9558,6 +9558,60 @@
       "kind": "speed",
       "title": "Interval tick buckets rebuilt for every type when any query moves",
       "next": "Step 0: rebuilds a second per type in Predator; then a per-type stamp. Owner Predator logic. EXECUTION_PLAN.md#E-180."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-96"
+      ],
+      "records": [
+        "R-0767"
+      ],
+      "id": "N-96",
+      "title": "A bundle's workers cannot load a module with export default; its importer fails with \"X is not defined\"",
+      "status": "open",
+      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "",
+      "next": "Default exports get a binding the loader registers per module URL, or the guide says \"named exports only\" and the error names the file."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-97"
+      ],
+      "records": [
+        "R-0767"
+      ],
+      "id": "N-97",
+      "title": "collider.collisionMask = 0 collides with every layer (the Box2D glue reads 0 as the default mask)",
+      "status": "open",
+      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "date": "2026-10-29",
+      "area": "physics",
+      "kind": "bug",
+      "result": "",
+      "next": "Make 0 mean \"nothing\" for bodies (queries keep their default), or document it beside collisionMask."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-98"
+      ],
+      "records": [
+        "R-0767"
+      ],
+      "id": "N-98",
+      "title": "A spawn key named like a read-only accessor (speed) stops the logic worker that sets the spawn up",
+      "status": "open",
+      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "",
+      "next": "Skip spawn keys whose property has no setter (descriptor lookup cached per class) and warn once naming the key."
     }
   ],
   "records": [
@@ -16614,6 +16668,18 @@
       "text": "**N-95 fixed: Pixi allocated the WebGL integer textures with an invalid texImage2D.** 2026-10-29, found by the owner\nopening carScene (two GL_INVALID_OPERATION warnings in the console), fixed in f3d3d33f.\n\n- **Cause:** Pixi 8.20.1's `mapFormatToGlFormat` gives the integer formats (`r8uint` … `rgba32sint`) `RED`, `RG` or\n  `RGBA`; WebGL 2 wants `RED_INTEGER`, `RG_INTEGER` or `RGBA_INTEGER` beside an integer internal format. A source\n  with the upload method `unknown` gets an empty texture from Pixi first: E-162's indexed-sprite statics texture\n  (`rgba32uint`, 3072×37 in carScene) logged \"Invalid combination of format, type and internalFormat\" once, shown\n  twice (worker and page), before the engine's upload reallocated it right. No wrong pixels, only the noise.\n- **Fix:** `scripts/buildPixi.mjs` patches the map at build. The rebuilt vendor differs from HEAD's only there (the\n  unpatched build is HEAD's byte for byte).\n- **Check:** carScene in Chrome with a `texImage2D` spy in the Pixi worker: one invalid call before (RGBA32UI\n  3072x37 RGBA UNSIGNED_INT), none after; 23 calls both sides.\n- test:node 2129/2129, test:demos 100/100.",
       "commits": [
         "f3d3d33f"
+      ]
+    },
+    {
+      "id": "R-0767",
+      "date": "2026-10-29",
+      "time": "23:45",
+      "timeFrom": "recorded",
+      "title": "Three engine bugs found building the GitHub Pages site: bundle export default, mask 0, read-only spawn keys",
+      "verdict": "note",
+      "text": "**Three engine bugs found building the GitHub Pages site (`pages-site`).** 2026-10-29, a local server that\nimitates Pages (the repo under `/Web-Engine-for-Enhanced-Dynamics/`, no isolation headers), Chrome through\nPlaywright; times from the result files.\n\n- **Sweep:** all 32 scenes of `demos/menu.js` on the debug bundle through the root `weed-sw.js`: 30 started\n  clean, destructibleTerrainScene and planetPhysicsScene each had one entity error, `simplify2 is not defined`\n  (both clean from `src/`). The cause is N-96: their vendor wraps end in `export default`, which the bundle's\n  worker loader leaves as it is. Fixed on the demo side in `1e8e93a0`; both clean on bundle and source after it.\n- **N-97:** the landing's bricks flying home with `collisionMask = 0` stayed jammed (709 of 1,261 bricks over\n  20 px from home and under 20 px/s after 7 s, their `ax` equal to the spring's; an 800 px/s kick died in two\n  frames). `normalize_mask_bits` in `wasm_wrapper.c` reads 0 as `B2_DEFAULT_MASK_BITS`. With `1 << 31` all\n  1,261 were home at 3 s.\n- **N-98:** `GalaxyArm.spawn({ speed })` threw \"Cannot set property speed … which has only a getter\" in\n  `_spawnAt`; all four logic workers (one lane pinned to each) logged FATAL ERROR and stopped.",
+      "commits": [
+        "1e8e93a0"
       ]
     }
   ],
