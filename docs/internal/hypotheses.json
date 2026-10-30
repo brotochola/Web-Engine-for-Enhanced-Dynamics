@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-29",
+  "updated": "2026-10-30",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -9612,6 +9612,42 @@
       "kind": "bug",
       "result": "",
       "next": "Skip spawn keys whose property has no setter (descriptor lookup cached per class) and warn once naming the key."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-99"
+      ],
+      "records": [
+        "R-0768"
+      ],
+      "id": "N-99",
+      "title": "Joint.remove left the Box2D joint in place unless it was the last active joint",
+      "status": "kept",
+      "statusText": "fixed 2026-10-30 (5adce35c)",
+      "date": "2026-10-30",
+      "area": "physics",
+      "kind": "bug",
+      "result": "Fixed 5adce35c: syncJoints builds the next live list in a second array; jointRemoveSync.test.js failed before.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-100"
+      ],
+      "records": [
+        "R-0768"
+      ],
+      "id": "N-100",
+      "title": "Joint.getJointCount() with no argument never returns (the walk loops on undefined)",
+      "status": "open",
+      "statusText": "open: found building the GitHub Pages site (2026-10-30)",
+      "date": "2026-10-30",
+      "area": "engine",
+      "kind": "bug",
+      "result": "",
+      "next": "Guard non-integer entity indices in getJointCount, getJoint and the other per-entity walks."
     }
   ],
   "records": [
@@ -16680,6 +16716,17 @@
       "text": "**Three engine bugs found building the GitHub Pages site (`pages-site`).** 2026-10-29, a local server that\nimitates Pages (the repo under `/Web-Engine-for-Enhanced-Dynamics/`, no isolation headers), Chrome through\nPlaywright; times from the result files.\n\n- **Sweep:** all 32 scenes of `demos/menu.js` on the debug bundle through the root `weed-sw.js`: 30 started\n  clean, destructibleTerrainScene and planetPhysicsScene each had one entity error, `simplify2 is not defined`\n  (both clean from `src/`). The cause is N-96: their vendor wraps end in `export default`, which the bundle's\n  worker loader leaves as it is. Fixed on the demo side in `1e8e93a0`; both clean on bundle and source after it.\n- **N-97:** the landing's bricks flying home with `collisionMask = 0` stayed jammed (709 of 1,261 bricks over\n  20 px from home and under 20 px/s after 7 s, their `ax` equal to the spring's; an 800 px/s kick died in two\n  frames). `normalize_mask_bits` in `wasm_wrapper.c` reads 0 as `B2_DEFAULT_MASK_BITS`. With `1 << 31` all\n  1,261 were home at 3 s.\n- **N-98:** `GalaxyArm.spawn({ speed })` threw \"Cannot set property speed … which has only a getter\" in\n  `_spawnAt`; all four logic workers (one lane pinned to each) logged FATAL ERROR and stopped.",
       "commits": [
         "1e8e93a0"
+      ]
+    },
+    {
+      "id": "R-0768",
+      "date": "2026-10-30",
+      "title": "Joint.remove kept Box2D joints (fixed); getJointCount() with no argument hangs",
+      "verdict": "kept-hygiene",
+      "text": "**Two engine bugs found building the landing page's ropes (`pages-site`), one fixed.** 2026-10-30, the\nlanding page on a Pages-like server and from source on the dev server, Chrome through Playwright.\n\n- **N-99, fixed in `5adce35c`:** a swipe across two ropes and through the bridge removed 3 joints on the JS\n  side (125 -> 122, every cut link's `jointPrev`/`jointNext` -1, `Joint.active` off), yet the lanterns kept\n  their y for 1.4 s. `syncJoints` built the new live list over the old one in place; `Joint.remove`'s\n  swap-remove meant the removed entry was overwritten before the destroy pass read it. After the fix, from\n  source and then on the rebuilt bundle (`079ef01d`), the same swipes drop both hung things and split the\n  bridge; the rebuild restores 125. `jointRemoveSync.test.js`: 2 cases, both failed before. test:node\n  2131/2131, test:node:bundle 256/256, test:bundle 8/8.\n- **N-100, open:** a probe that called `Joint.getJointCount()` with no argument froze the page's evaluate\n  (the walk loops on `undefined`).",
+      "commits": [
+        "5adce35c",
+        "079ef01d"
       ]
     }
   ],
