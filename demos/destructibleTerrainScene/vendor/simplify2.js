@@ -1,4 +1,6 @@
 // simplify2-js — BSD-2-Clause. ESM wrap of https://github.com/leeoniya/simplify2-js
+// A named export: the bundle's workers load demo modules without `export default`.
+export const simplify2 = (() => {
 const module = { exports: {} };
 /**
  * (c) 2015, Anders Goettsche
@@ -144,4 +146,5 @@ const module = { exports: {} };
         }
     };
 });
-export default module.exports;
+return module.exports;
+})();
