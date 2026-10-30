@@ -9291,6 +9291,24 @@
     {
       "aliases": [],
       "refs": [
+        "REVIEW_PLAN.md#N-95"
+      ],
+      "records": [
+        "R-0766"
+      ],
+      "id": "N-95",
+      "title": "Pixi allocated the WebGL integer textures with an invalid texImage2D",
+      "status": "kept",
+      "statusText": "fixed 2026-10-29 (R-0766)",
+      "date": "2026-10-29",
+      "area": "engine",
+      "kind": "bug",
+      "result": "Fixed f3d3d33f: buildPixi.mjs maps Pixi's integer formats to RED/RG/RGBA_INTEGER; carScene's statics texture no longer logs GL_INVALID_OPERATION.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
         "EXECUTION_PLAN.md#E-168"
       ],
       "records": [
@@ -16584,6 +16602,18 @@
       "text": "**wave10 merged into main a third time (72a76c92), bundles built, tested and measured, pushed.** 2026-10-29.\n\n- **Since b8fe0cea:** E-175 (Predator's decal tiles: the render group and the culling), N-94 (the Pixi worker's raw\n  texture uploads), the bench's `weedBundle` key, and the register and plan commits.\n- **Checks at 51b3a00b (the dist rebuilt there):** test:node 2129/2129, test:demos 100/100, check:dist (inputs\n  b0b3b419a3ce2da3), test:bundle (the 8 bundles in Chromium), test:node:bundle 254/254; the prod bundle measured\n  against its sources (R-0764): equal or better.\n- main fast-forwarded from b8fe0cea to 72a76c92 and pushed.",
       "commits": [
         "72a76c92"
+      ]
+    },
+    {
+      "id": "R-0766",
+      "date": "2026-10-29",
+      "time": "21:00",
+      "timeFrom": "recorded",
+      "title": "N-95 fixed: Pixi's WebGL integer texture formats take *_INTEGER, no invalid texImage2D",
+      "verdict": "kept-hygiene",
+      "text": "**N-95 fixed: Pixi allocated the WebGL integer textures with an invalid texImage2D.** 2026-10-29, found by the owner\nopening carScene (two GL_INVALID_OPERATION warnings in the console), fixed in f3d3d33f.\n\n- **Cause:** Pixi 8.20.1's `mapFormatToGlFormat` gives the integer formats (`r8uint` … `rgba32sint`) `RED`, `RG` or\n  `RGBA`; WebGL 2 wants `RED_INTEGER`, `RG_INTEGER` or `RGBA_INTEGER` beside an integer internal format. A source\n  with the upload method `unknown` gets an empty texture from Pixi first: E-162's indexed-sprite statics texture\n  (`rgba32uint`, 3072×37 in carScene) logged \"Invalid combination of format, type and internalFormat\" once, shown\n  twice (worker and page), before the engine's upload reallocated it right. No wrong pixels, only the noise.\n- **Fix:** `scripts/buildPixi.mjs` patches the map at build. The rebuilt vendor differs from HEAD's only there (the\n  unpatched build is HEAD's byte for byte).\n- **Check:** carScene in Chrome with a `texImage2D` spy in the Pixi worker: one invalid call before (RGBA32UI\n  3072x37 RGBA UNSIGNED_INT), none after; 23 calls both sides.\n- test:node 2129/2129, test:demos 100/100.",
+      "commits": [
+        "f3d3d33f"
       ]
     }
   ],
