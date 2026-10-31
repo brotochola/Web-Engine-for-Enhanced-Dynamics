@@ -275,6 +275,8 @@ export class GameObject {
    * @param {SharedArrayBuffer} [forceProcessOnLogicWorkerBuffer] - Int16 per entity (−1 = not forced)
    * @param {SharedArrayBuffer} [entityTypeHasForcedLogicWorkerBuffer] - Uint8 per entityType
    * @param {SharedArrayBuffer} [entityTypeForcedLogicWorkerCountBuffer] - Uint16 per entityType
+   * @param {number} [neighborByte] - the neighbour rows' offset in neighborBuffer
+   * @param {SharedArrayBuffer} [neighborReadersBuffer] - Uint8 per entityType: reads neighbours (E-176, Grid.neighborReaders)
    */
   static initializeArrays(
     count,
@@ -283,7 +285,8 @@ export class GameObject {
     forceProcessOnLogicWorkerBuffer = null,
     entityTypeHasForcedLogicWorkerBuffer = null,
     entityTypeForcedLogicWorkerCountBuffer = null,
-    neighborByte = 0
+    neighborByte = 0,
+    neighborReadersBuffer = null
   ) {
     this.globalEntityCount = count;
 
@@ -309,6 +312,7 @@ export class GameObject {
     this.entityTypeForcedLogicWorkerCount = entityTypeForcedLogicWorkerCountBuffer
       ? new Uint16Array(entityTypeForcedLogicWorkerCountBuffer)
       : null;
+    Grid.neighborReaders = neighborReadersBuffer ? new Uint8Array(neighborReadersBuffer) : null;
   }
 
   /**
@@ -603,6 +607,9 @@ export class GameObject {
       this._neighborOffset = -1;
       this._neighbors = null;
     }
+    // E-176: this instance has marked its type a neighbour reader (Grid.neighborReaders). A page instance is frozen:
+    // true from the start, and its reads mark through Grid.markNeighborReader.
+    this._neighborReaderMarked = page;
 
     Ctor._ensureComponentAccessors();
     // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c7 (only
@@ -2438,7 +2445,18 @@ export class GameObject {
   get neighborCount() {
     const nd = Grid._neighborData;
     const o = this._neighborOffset;
-    return nd !== null && o >= 0 ? nd[o] : 0;
+    if (nd === null || o < 0) return 0;
+    // E-176: this type reads neighbours, so the spatial worker builds its lists. Once per instance: a loop that reads
+    // neighborCount each pass pays one field test.
+    if (!this._neighborReaderMarked) this._markNeighborReader();
+    else if (this._onPage) Grid.markNeighborReader(this.index);
+    return nd[o];
+  }
+
+  /** E-176: marks this entity's type a neighbour reader, once per (worker) instance. */
+  _markNeighborReader() {
+    Grid.markNeighborReader(this.index);
+    this._neighborReaderMarked = true;
   }
 
   /** Typed view into the neighbor SAB. Created on first read, not at bind. */

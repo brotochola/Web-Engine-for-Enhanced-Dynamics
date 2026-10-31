@@ -16,6 +16,7 @@ export const ENGINE_INSTANCE_KEYS = new Set([
   '_onPage',
   '_hasComponents',
   '_neighborOffset',
+  '_neighborReaderMarked',
   '_neighbors',
   '_components',
   '_c0',

@@ -578,6 +578,7 @@ export class AbstractWorker {
       data.buffers?.entityTypeHasForcedLogicWorker,
       data.buffers?.entityTypeForcedLogicWorkerCount,
       data.gridMetadata?.neighborByte | 0,
+      data.buffers?.neighborReaders,
     );
 
     // Initialize ParticleComponent arrays (separate particle pool system)

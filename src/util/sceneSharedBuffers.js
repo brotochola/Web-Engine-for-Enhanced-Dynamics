@@ -254,6 +254,8 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   buffers.entityTypeForcedLogicWorkerCount = new SharedArrayBuffer(
     GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT * 2,
   );
+  // E-176: which entity types read their neighbours (Grid.neighborReaders).
+  buffers.neighborReaders = new SharedArrayBuffer(GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT);
 
   GameObject.initializeArrays(
     totalEntityCount,
@@ -263,6 +265,7 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     buffers.entityTypeHasForcedLogicWorker,
     buffers.entityTypeForcedLogicWorkerCount,
     scene.spatialPublish ? scene.spatialPublish.neighborByte : 0,
+    buffers.neighborReaders,
   );
 
   for (const [componentName, pool] of Object.entries(componentPools)) {

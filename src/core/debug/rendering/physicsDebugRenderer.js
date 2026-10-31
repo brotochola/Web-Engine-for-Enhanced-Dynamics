@@ -794,6 +794,7 @@ export class PhysicsDebugRenderer {
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.arc(mySx, mySy, highlightRadius, 0, Math.PI * 2); ctx.stroke();
 
+    Grid.markNeighborReader(closest); // E-176: its lists are built from now on
     const offset = closest * Grid._stride;
     const neighborCount = Grid.neighborData[offset];
 

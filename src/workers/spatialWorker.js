@@ -41,6 +41,7 @@ import { debugWorkerLog } from '../util/debugLog.js';
 import { RigidBody as RigidBodyImport } from '../components/rigidBody.js';
 import { Collider as ColliderImport } from '../components/collider.js';
 import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
+import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { Grid as GridImport } from '../core/grid.js';
 import {
@@ -63,6 +64,7 @@ const Transform = TransformImport;
 const RigidBody = RigidBodyImport;
 const Collider = ColliderImport;
 const SpriteRenderer = SpriteRendererImport;
+const LightEmitter = LightEmitterImport;
 const Grid = GridImport;
 const getColliderBounds = getColliderBoundsImport;
 const getCellRange = getCellRangeImport;
@@ -1293,6 +1295,10 @@ class SpatialWorker extends AbstractWorker {
   _findNeighbors() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
+    // E-176: lists only for types whose code reads them, and for active lights (pre-render reads theirs).
+    const readers = Grid.neighborReaders;
+    const entityType = Transform.entityType;
+    const lightActive = LightEmitter.active || null; // null: the scene has no lights
     const maxNeighbors = Grid.maxNeighbors;
     const stride = Grid._stride;
     const skinFrac = this._neighborReuseSkin;
@@ -1332,7 +1338,10 @@ class SpatialWorker extends AbstractWorker {
       this.entitiesProcessedThisFrame++;
 
       const myVisualRange = visualRange[entityA];
-      if (myVisualRange <= 0) {
+      if (
+        myVisualRange <= 0 ||
+        (readers !== null && readers[entityType[entityA]] === 0 && !(lightActive !== null && lightActive[entityA]))
+      ) {
         neighborData[entityA * stride] = 0;
         rowPoseGen[entityA] = POSE_GEN_NONE;
         continue;
