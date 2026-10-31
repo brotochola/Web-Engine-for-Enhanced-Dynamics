@@ -142,6 +142,7 @@ static assets = {
   - `this.neighborCount`
   - `this.getNeighbor(i)`
   - `this.getAllNeighborIds()`
+  - Lists are built only for classes whose code reads them (and for lights, whose occluders come from theirs). The first read of a class turns its lists on: that read and the next frame or two see none. A class that reads only now and then still gets its lists every frame from then on.
 
 Lifecycle hooks:
 

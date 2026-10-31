@@ -3049,6 +3049,10 @@ spatial skips the neighbour pass for an entity whose type was not marked in the 
 gets its lists a frame later (written in the guide). The accessors' extra store is checked with E-141's
 neighborAccessMicrobench. Owner: adobeAnimateScene's spatial worker; Predator, which reads neighbours, must stay
 neutral.
+**Result (2026-10-31, R-0770, R-0771):** kept on movedBodiesMixedScene, spatial -78 %; Predator neutral. The premise
+was wrong about adobeAnimateScene: its characters have a range of 0, and the cost was the skip writing each row's
+count every frame. E-176b writes a row only when it is not clear: spatial -30 % there at 20 000 characters, logic
++5.7 % (7/8, A/A 2.1 %), mixed; it waits for a logic fit or a second scene before main.
 
 ### E-177 Sprite statics per entity on the GPU, for scenes whose camera scrolls
 
