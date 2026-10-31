@@ -16,6 +16,20 @@ function queryTablesMB() {
 }
 const TABLES_MB = queryTablesMB();
 
+// `?adobeCharacters=<n>`: the characters spawned (default 10 000), the bench's load knob; the pool holds twice as many.
+const CHARACTERS = (() => {
+  try {
+    const n = parseInt(new URLSearchParams(globalThis.location?.search || '').get('adobeCharacters'), 10);
+    return n > 0 ? Math.min(n, 100000) : 10000;
+  } catch {
+    return 10000;
+  }
+})();
+
+export const stressSceneConfig = {
+  requested: { adobeCharacters: CHARACTERS },
+};
+
 export class AdobeAnimateScene extends Scene {
   static config = {
     worldWidth: 20600,
@@ -71,7 +85,7 @@ export class AdobeAnimateScene extends Scene {
     },
   };
 
-  static entities = [[AdobeAnimateCharacter, 20000]];
+  static entities = [[AdobeAnimateCharacter, Math.max(20000, CHARACTERS * 2)]];
 
   constructor(game) {
     super(game);
@@ -92,8 +106,8 @@ export class AdobeAnimateScene extends Scene {
   createNewGame() {
     const cx = this.config.worldWidth * 0.5;
     const cy = this.config.worldHeight * 0.5;
-    const totalCharacters = 10000;
-    const gridCols = Math.sqrt(totalCharacters);
+    const totalCharacters = CHARACTERS;
+    const gridCols = Math.round(Math.sqrt(totalCharacters));
     const spacingX = 50;
     const spacingY = 50;
     const startX = cx;
