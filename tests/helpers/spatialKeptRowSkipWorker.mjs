@@ -4,16 +4,18 @@
 // `skip` false hands the workers a layout without the sync region: every kept row is published again (the engine
 // before E-136).
 // Mutants the test must catch: `perWorker` gives each worker a generation of its own, so a pose another worker
-// wrote goes unseen; `noClear` forgets that a row cleared for a range of 0 no longer holds what was published.
+// wrote goes unseen; `noClear` forgets that a row cleared for a range of 0 no longer holds what was published;
+// `noSharedClear` trusts its own mark for a row another worker published (an entity that changed workers).
 import { parentPort, workerData } from 'node:worker_threads';
 
 import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
+import { Grid } from '../../src/core/grid.js';
 import { createSpatialPublishMemory } from '../../src/util/spatialPublishMemory.js';
 import { variantClass } from '../bench/methodVariant.mjs';
 import { SCOPE, setupSpatialKernel } from '../bench/spatialWorkerMicrobench.mjs';
 
-const { skip, mutant = null, frames = 70 } = workerData;
+const { skip, mutant = null, frames = 72 } = workerData;
 
 const CFG = {
   worldWidth: 4096,
@@ -42,11 +44,20 @@ const k = await setupSpatialKernel({
         syncByte: 0,
       }),
   make:
-    mutant === 'noClear'
+    mutant === 'noClear' || mutant === 'noSharedClear'
       ? (Base) =>
           variantClass(
             Base,
-            [{ method: '_findNeighbors', edits: [['rowPoseGen[entityA] = POSE_GEN_NONE;', '']] }],
+            [
+              {
+                method: '_findNeighbors',
+                edits: [
+                  mutant === 'noClear'
+                    ? ['rowPoseGen[entityA] = POSE_GEN_NONE;', '']
+                    : ['} else if (sharedRows && ', '} else if (false && '],
+                ],
+              },
+            ],
             { ...SCOPE, POSE_GEN_NONE: 1 },
           )
       : undefined,
@@ -74,6 +85,7 @@ const reshaped = entityOf(1);
 const hidden = entityOf(0, first + 1);
 const hiddenRange = Collider.visualRange[hidden];
 const walker = entityOf(1, reshaped + 1);
+const mover = entityOf(0, hidden + 1);
 
 function script(f) {
   // Within the skin (0.04 of a 150 px range is 6 px): the lists are kept, the poses are not the same.
@@ -90,16 +102,23 @@ function script(f) {
   if (f === 41) Transform.x[walker] -= 1;
   // One step every third frame.
   if (f >= 50 && f % 3 === 0) Transform.y[walker] += 0.5;
+  // Into worker 1's rows with a range of 0, in one frame: worker 1 never published its row, worker 0 did.
+  if (f === 62) {
+    Transform.y[mover] += CFG.rowsPerBlock * CFG.cellSize;
+    Collider.visualRange[mover] = 0;
+  }
 }
 
 const sums = [];
 const published = [];
 const rebuilt = [];
+const moverRow = [];
 for (let f = 0; f < frames; f++) {
   script(f);
   k.frame();
   sums.push(k.checksum());
   published.push(k.workers.map((w) => w.neighborsPublishedThisFrame));
   rebuilt.push(k.workers.map((w) => w.neighborsRebuiltThisFrame));
+  moverRow.push(Grid.neighborData[mover * Grid._stride]);
 }
-parentPort.postMessage({ sums, published, rebuilt, entities: { first, last, reshaped, hidden, walker } });
+parentPort.postMessage({ sums, published, rebuilt, moverRow, entities: { first, last, reshaped, hidden, walker, mover } });

@@ -1315,6 +1315,7 @@ class SpatialWorker extends AbstractWorker {
     // E-136: read before the publish reads a pose (update() adds to it after this worker's poses).
     const poseGen = Atomics.load(this._poseGen, 0);
     const rowPoseGen = this._rowPoseGen;
+    const sharedRows = this.totalSpatialWorkers > 1;
 
     this._processedFrameCounter++;
     if (this._processedFrameCounter > SPATIAL_STAMP_FRAME_MASK) {
@@ -1342,8 +1343,15 @@ class SpatialWorker extends AbstractWorker {
         myVisualRange <= 0 ||
         (readers !== null && readers[entityType[entityA]] === 0 && !(lightActive !== null && lightActive[entityA]))
       ) {
-        neighborData[entityA * stride] = 0;
-        rowPoseGen[entityA] = POSE_GEN_NONE;
+        // A row this worker cleared stays clear: only its publish writes it. Its own write each frame
+        // dirtied a cache line per entity (130 bytes a row at maxNeighbors 64). With other spatial
+        // workers, one of them may have published the row before this one took the entity over.
+        if (rowPoseGen[entityA] !== POSE_GEN_NONE) {
+          neighborData[entityA * stride] = 0;
+          rowPoseGen[entityA] = POSE_GEN_NONE;
+        } else if (sharedRows && neighborData[entityA * stride] !== 0) {
+          neighborData[entityA * stride] = 0;
+        }
         continue;
       }
 

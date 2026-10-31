@@ -44,6 +44,13 @@ test('kept rows left out of the publish leave the rows the full publish leaves',
   assert.equal(skip.published[19][2], skip.rebuilt[19][2]);
 });
 
+test('a row another worker published is cleared when its entity arrives with a range of 0', async () => {
+  const [r, mutant] = await Promise.all([run({ skip: true }), run({ skip: true, mutant: 'noSharedClear' })]);
+  assert.ok(r.moverRow[61] > 0, 'the mover has neighbours in worker 0');
+  assert.deepEqual(r.moverRow.slice(62), [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
+  assert.ok(mutant.moverRow[71] > 0, 'mutant noSharedClear was not caught');
+});
+
 test('a mutant of the skip is caught', async () => {
   const [plain, perWorker, noClear] = await Promise.all([
     run({ skip: false }),
