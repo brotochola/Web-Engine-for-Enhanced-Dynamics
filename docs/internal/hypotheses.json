@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-30",
+  "updated": "2026-10-31",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -16726,6 +16726,19 @@
       "text": "**Two engine bugs found building the landing page's ropes (`pages-site`), one fixed.** 2026-10-30, the\nlanding page on a Pages-like server and from source on the dev server, Chrome through Playwright.\n\n- **N-99, fixed in `5adce35c`:** a swipe across two ropes and through the bridge removed 3 joints on the JS\n  side (125 -> 122, every cut link's `jointPrev`/`jointNext` -1, `Joint.active` off), yet the lanterns kept\n  their y for 1.4 s. `syncJoints` built the new live list over the old one in place; `Joint.remove`'s\n  swap-remove meant the removed entry was overwritten before the destroy pass read it. After the fix, from\n  source and then on the rebuilt bundle (`079ef01d`), the same swipes drop both hung things and split the\n  bridge; the rebuild restores 125. `jointRemoveSync.test.js`: 2 cases, both failed before. test:node\n  2131/2131, test:node:bundle 256/256, test:bundle 8/8.\n- **N-100, open:** a probe that called `Joint.getJointCount()` with no argument froze the page's evaluate\n  (the walk loops on `undefined`).",
       "commits": [
         "5adce35c",
+        "079ef01d"
+      ]
+    },
+    {
+      "id": "R-0769",
+      "date": "2026-10-31",
+      "time": "18:55",
+      "timeFrom": "recorded",
+      "title": "The prod bundle against its sources at the pages-site merge: equal or better",
+      "verdict": "passed",
+      "text": "**The prod bundle against its sources at the pages-site merge (492759bd): equal or better.** 2026-10-31, 18:2x to\n18:55 (the log's times), one worktree for both sides: A `--src`, B `weed.prod.bundle.esm.min.js` through the\n`weedBundle` key, 4 pairs each, headed, detailed stats off.\n\n- **Predator** (NEUTRAL): logic 4.104 -> 3.480 ms (-11.6 %, worse 0/4), spatial -6.9 %, physics -8.4 %, renderer\n  -8.5 %, pre-render -10.9 %; presented 60.0 both. Against the others, logic -5.1 % and pre-render -3.2 %: most of the\n  rest is drift shared by every worker.\n- **painterMove** (NEUTRAL): logic 8.392 -> 8.161 ms (-5.5 %), pre-render 20.212 -> 20.180 ms (-4.2 % paired); presented\n  59.8 -> 60.0.",
+      "commits": [
+        "492759bd",
         "079ef01d"
       ]
     }
