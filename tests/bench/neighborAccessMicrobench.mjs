@@ -88,7 +88,9 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12 } 
     const classes = makeClasses();
     for (const C of classes) GameObject._assignComponentClassMap(C);
     const ents = [];
-    for (let i = 0; i < entities; i++) ents.push(new classes[i % classes.length](i, {}, null, { page: true }));
+    // Worker instances, as entities' ticks run on (a page instance is frozen and reads by another path).
+    for (let i = 0; i < entities; i++) ents.push(new classes[i % classes.length](i, {}, null));
+    for (let e = 0; e < entities; e++) Transform.entityType[e] = 1 + (e % 5);
     const shipped = (list) => {
       let s = 0;
       for (let i = 0; i < list.length; i++) s += list[i].sumShipped();
