@@ -12,6 +12,7 @@
  */
 import { Grid } from '../../src/core/grid.js';
 import { GameObject } from '../../src/core/gameObject.js';
+import { Transform } from '../../src/components/transform.js';
 import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 
 function makeClasses() {
@@ -75,6 +76,12 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12 } 
   Grid.maxNeighbors = stride - 1;
   Grid._stride = stride;
   Grid._neighborData = data;
+  // E-176's state: every entity has a type, every type already marked as a neighbour reader (the steady state after
+  // its first read). Before E-176 nothing reads them.
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(entities)), entities);
+  for (let e = 0; e < entities; e++) Transform.entityType[e] = 1 + (e % 5);
+  const savedReaders = Grid.neighborReaders;
+  Grid.neighborReaders = new Uint8Array(256).fill(1);
   const savedDescriptor = Object.getOwnPropertyDescriptor(Grid, 'neighborData');
   Object.defineProperty(Grid, 'neighborData', { get: () => data, configurable: true });
   try {
@@ -107,6 +114,7 @@ export function runNeighborAccessMicrobench({ entities = 2000, neighbors = 12 } 
   } finally {
     if (savedDescriptor) Object.defineProperty(Grid, 'neighborData', savedDescriptor);
     Grid.maxNeighbors = savedMax;
+    Grid.neighborReaders = savedReaders;
   }
 }
 
