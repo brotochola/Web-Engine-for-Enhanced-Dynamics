@@ -16736,7 +16736,7 @@
       "timeFrom": "recorded",
       "title": "The prod bundle against its sources at the pages-site merge: equal or better",
       "verdict": "passed",
-      "text": "**The prod bundle against its sources at the pages-site merge (492759bd): equal or better.** 2026-10-31, 18:2x to\n18:55 (the log's times), one worktree for both sides: A `--src`, B `weed.prod.bundle.esm.min.js` through the\n`weedBundle` key, 4 pairs each, headed, detailed stats off.\n\n- **Predator** (NEUTRAL): logic 4.104 -> 3.480 ms (-11.6 %, worse 0/4), spatial -6.9 %, physics -8.4 %, renderer\n  -8.5 %, pre-render -10.9 %; presented 60.0 both. Against the others, logic -5.1 % and pre-render -3.2 %: most of the\n  rest is drift shared by every worker.\n- **painterMove** (NEUTRAL): logic 8.392 -> 8.161 ms (-5.5 %), pre-render 20.212 -> 20.180 ms (-4.2 % paired); presented\n  59.8 -> 60.0.",
+      "text": "**The prod bundle against its sources at the pages-site merge (492759bd): equal or better.** 2026-10-31, 18:43 to\n18:55 (the log's times), one worktree for both sides: A `--src`, B `weed.prod.bundle.esm.min.js` through the\n`weedBundle` key, 4 pairs each, headed, detailed stats off.\n\n- **Predator** (NEUTRAL): logic 4.104 -> 3.480 ms (-11.6 %, worse 0/4), spatial -6.9 %, physics -8.4 %, renderer\n  -8.5 %, pre-render -10.9 %; presented 60.0 both. Against the others, logic -5.1 % and pre-render -3.2 %: most of the\n  rest is drift shared by every worker.\n- **painterMove** (NEUTRAL): logic 8.392 -> 8.161 ms (-5.5 %), pre-render 20.212 -> 20.180 ms (-4.2 % paired); presented\n  59.8 -> 60.0.",
       "commits": [
         "492759bd",
         "079ef01d"
