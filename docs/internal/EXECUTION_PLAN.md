@@ -3084,6 +3084,8 @@ code reads the array directly.*
 Predator's particle worker, beside the sway kernel (`sway_decorations_f32x4`, 23.4 %) that reads the same positions.
 **Plan:** the test inside the sway kernel's walk of the same arrays, or skipped while neither the camera nor a
 decoration moved. Owner: decorationSwayStressScene's particle worker.
+**2026-10-31 (R-0772):** the branchless test, alone, is rejected: x2-3 on Predator's random order, worse where the
+order is predictable (the grid stress scene +18 %). Next: both loops, picked per frame from the last frame's flips.
 
 ### E-180 Interval tick buckets rebuilt for every type when any query moves
 
