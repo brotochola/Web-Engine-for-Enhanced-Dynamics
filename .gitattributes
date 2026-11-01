@@ -1,0 +1,2 @@
+# The register merges by key, not as text: scripts/mergeRegister.mjs, defined once per clone as that file says.
+docs/internal/hypotheses.json merge=hypotheses

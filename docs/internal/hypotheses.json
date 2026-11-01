@@ -10326,6 +10326,77 @@
       "records": [
         "R-2011"
       ]
+    },
+    {
+      "id": "N-80",
+      "title": "The dev server could serve any file of the machine, to anyone who reached it",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-10-26, fixed on visual_editor (dcc9cc3a, 410697f8) and on main (9fc54a2d, 79bd2500)",
+      "date": "2026-10-26",
+      "result": "server/node_server.js read the raw request path, so a raw /../ (curl --path-as-is, a socket) read outside the served folder, and it listened on every interface. The path goes through resolveInside now (403 outside the folder, 400 for bad encoding), and the dev servers, the template's too, listen on this machine's two loopback addresses; --host or WEED_HOST opens them to the network. Still open: every file answers Access-Control-Allow-Origin: *.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-80"
+      ],
+      "aliases": [
+        "path traversal",
+        "dev server",
+        "--host",
+        "WEED_HOST"
+      ]
+    },
+    {
+      "id": "N-106",
+      "title": "A static sprite past bigAtlas index 255 drew another one",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-10-27, fixed on visual_editor (376c33f7, ED-74) and on main (aa984567)",
+      "date": "2026-10-27",
+      "result": "setSprite stored a static sprite's bigAtlas index in a Uint8Array, and the emit kernel's texture table is [sheet u8][state u8]: 20 of littleCity's 65 houses drew cars, trees or blood. bigAtlas's animations past 256 are proxy sheets of 256 each now (bigAtlas@1, …), and setSprite stores the chunk's sheet and a local index; nothing per frame changes.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-106"
+      ],
+      "aliases": [
+        "bigAtlas 255",
+        "wrong house sprite",
+        "sprite chunks"
+      ]
+    },
+    {
+      "id": "N-107",
+      "title": "Two logic workers throwing the same error showed one worker’s count",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-10-26, fixed on visual_editor (eaeacb88) and on main (4e610e46)",
+      "date": "2026-10-26",
+      "result": "Logic workers have no self.name, so each one's ErrorReporter reported as 'logic' and the scene's counts per worker overwrote each other in getEntityErrors and the debug box. The scene keys them by the name the page gave the worker (logic0, logic1, …).",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-107"
+      ],
+      "aliases": [
+        "error counts",
+        "entityError"
+      ]
+    },
+    {
+      "id": "N-108",
+      "title": "Arrows, space and Tab typed into a text field lost their default",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-10-26, fixed on visual_editor (db5b75ac) and on main (d6797d91)",
+      "date": "2026-10-26",
+      "result": "GameEngine's preventDefaultKeys took them from every keydown, a game's own HTML input too: no space, no arrow step, no Tab to the next field. A key typed into an input, textarea, select or editable element keeps its default; the game still gets it.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-108"
+      ],
+      "aliases": [
+        "preventDefaultKeys",
+        "typing in a field"
+      ]
     }
   ],
   "records": [
