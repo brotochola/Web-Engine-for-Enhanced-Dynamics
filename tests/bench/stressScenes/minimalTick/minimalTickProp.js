@@ -55,3 +55,46 @@ export class MinimalTickAllProp extends GameObject {
     }
   }
 }
+
+/** E-180's churn: a short-lived prop of another type, no tick. */
+export class MinimalChurnProp extends GameObject {
+  static components = [SpriteRenderer];
+
+  onSpawned({ x = 0, y = 0 } = {}) {
+    this.x = x;
+    this.y = y;
+    this.spriteRenderer.renderVisible = 0;
+  }
+}
+
+/**
+ * E-180's churn driver: every frame it despawns its oldest `churn` props and spawns as many, so some type's list
+ * changes every frame (the global query version moves) while the interval props' own list never does.
+ */
+export class MinimalChurnDriver extends GameObject {
+  static components = [];
+
+  constructor(...args) {
+    super(...args);
+    this.churn = 0;
+    this.ring = [];
+    this.head = 0;
+  }
+
+  onSpawned({ churn = 0 } = {}) {
+    this.churn = churn | 0;
+    this.ring = [];
+    this.head = 0;
+    for (let j = 0; j < this.churn; j++) this.ring.push(MinimalChurnProp.spawn({ x: 100 + j, y: 100 }));
+  }
+
+  tick() {
+    const ring = this.ring;
+    for (let j = 0; j < this.churn; j++) {
+      const old = ring[this.head];
+      if (old) old.despawn();
+      ring[this.head] = MinimalChurnProp.spawn({ x: 100 + j, y: 120 });
+      this.head = (this.head + 1) % ring.length;
+    }
+  }
+}

@@ -3,14 +3,29 @@
  * Countdown scene sets tickBuckets false. Bucket scene leaves the default on.
  * N=160000 and entityIdWidth 32 so the fast side can clear the 3 ms floor.
  * Physics off: Box2D caps bodies at 65535.
+ * `?churn=N` (default 0): a driver despawns and spawns N props of another type every frame, so the global query
+ * version moves every frame while the interval props' own list does not (E-180).
  */
 import WEED from '/src/index.js';
-import { MinimalTickIntervalProp } from './minimalTick/minimalTickProp.js';
+import { MinimalChurnDriver, MinimalChurnProp, MinimalTickIntervalProp } from './minimalTick/minimalTickProp.js';
 
 const { Scene, Camera } = WEED;
 
 const N = 160000;
 const WORLD = 28000;
+
+const CHURN = (() => {
+  try {
+    const n = parseInt(new URLSearchParams(globalThis.location?.search || '').get('churn'), 10);
+    return n > 0 ? Math.min(n, 4096) : 0;
+  } catch {
+    return 0;
+  }
+})();
+
+export const stressSceneConfig = {
+  requested: { churn: CHURN },
+};
 
 export class MinimalTickIntervalScene extends Scene {
   static config = {
@@ -45,9 +60,13 @@ export class MinimalTickIntervalScene extends Scene {
 
   static assets = { textures: {} };
 
-  static entities = [[MinimalTickIntervalProp, N]];
+  static entities =
+    CHURN > 0
+      ? [[MinimalTickIntervalProp, N], [MinimalChurnProp, CHURN * 2], [MinimalChurnDriver, 1]]
+      : [[MinimalTickIntervalProp, N]];
 
   create() {
+    if (CHURN > 0) MinimalChurnDriver.spawn({ churn: CHURN });
     const cols = 400;
     const spacing = 64;
     const startX = 280;
@@ -74,3 +93,7 @@ export class MinimalTickIntervalBucketScene extends MinimalTickIntervalScene {
     },
   };
 }
+
+// The churn classes by name in every realm: a worker reads its own URL, not the page's, so its CHURN is 0 and its
+// scene class does not list them.
+export { MinimalChurnDriver, MinimalChurnProp };
