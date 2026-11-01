@@ -1,8 +1,11 @@
 // E-177, wired: Pixi's entity batch on a Predator-shaped scene (packGpuSprites and sortSprites 'pixi', WebGL), through
-// updateSpritesFromRenderQueue. The scene lays out the keyed regions, Pixi's batch goes keyed with them, and every frame
-// draws with the indexed program: each slot's pose is its queue row's in the painter's order, and its key's row of the
-// statics texture, after the frame's scatter, holds that row's statics; rows without an entity take the slots past the
-// entities. A frame changes few statics, so few go up. On WebGPU the batch stays split.
+// updateSpritesFromRenderQueue. The scene lays out the keyed regions, Pixi's batch goes keyed with them, and the queue is
+// written as pre-render's emit writes it (the changed bit in a sprite's key, the resync header answered). Every frame
+// draws each slot's pose from its queue row in the painter's order; a keyed frame (the indexed program) also finds, in its
+// key's row of the statics texture after the frame's scatter, that row's statics; rows without an entity take the slots
+// past the entities. A frame changes few statics, so few go up. The first frame, and the frame after one Pixi did not
+// draw, are drawn split while the batch asks for every sprite; the next frame sends them all. On WebGPU the batch stays
+// split.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -18,11 +21,12 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Query } from '../../src/core/query.js';
 import { createViews } from '../../src/render/renderQueueLayout.js';
 import { GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, gpuIndexedStaticRows } from '../../src/render/gpuQueueLayout.js';
-import { GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS } from '../../src/render/gpuPackClient.js';
+import { GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS } from '../../src/render/gpuPackClient.js';
 import { SPLIT_POSE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
 import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
+import { PIXI_KEYED_HEADER as H } from '../../src/util/wasmMemoryMap.js';
 import { loadWorker, quietly } from '../bench/workerHarness.mjs';
 
 const MAX = 4000;
@@ -187,36 +191,36 @@ function restyle(w, k, r) {
   w.anchorY[k] = r();
 }
 
-/** A frame: every sprite moves, a twentieth change a static; its first n rows go into queue buffer q. */
-function writeQueue(q, w, n, r) {
+/**
+ * Queue frame `frame` as pre-render's emit writes it (preRenderWorker.emitSpriteQueue, preRenderEmit.c): every sprite
+ * moves and a twentieth change a static, which flags them; a resync request is answered by flagging every sprite; the
+ * first n rows go into the frame's buffer, a sprite's key its entity with the changed bit when it was flagged (the emit
+ * clears the flag); the request served goes into the buffer's word of the header. Returns the buffer.
+ */
+function emitFrame(px, m, w, dirty, frame, n, r) {
   for (let k = 0; k < MAX; k++) {
     w.x[k] += 1;
-    if (r() < 0.05) restyle(w, k, r);
+    if (r() < 0.05) {
+      restyle(w, k, r);
+      dirty[k] = 1;
+    }
   }
+  const h = new Uint32Array(m.buffer, m.layout.emit.keyHeaderByte, 4);
+  if (Atomics.load(h, H.REQUEST) !== Atomics.load(h, H.SERVED)) {
+    dirty.fill(1);
+    Atomics.store(h, H.SERVED, Atomics.load(h, H.REQUEST));
+  }
+  const b = (frame - 1) & 1;
+  const q = px.renderQueueBuffers[b];
   q.count[0] = n;
   for (const c of COLUMNS) q[c].set(w[c].subarray(0, n));
-}
-
-/**
- * What pre-render's emit does after writing the queue (preRenderEmit.c key_store): each sprite's statics into its
- * entity's row of the store, a change rung, the head stored after the frame's pushes.
- */
-function emitStore(m, q, n, st) {
-  const L = m.layout.emit;
-  const store = new Uint32Array(m.buffer, L.keyStoreByte, ENTITIES * 12);
-  const ring = new Uint32Array(m.buffer, L.keyRingByte, L.keyRingEntries);
-  for (let i = 0; i < n; i++) {
-    const e = q.key[i];
-    if (e >= ENTITIES) continue;
-    const row = rowStatics(q, i);
-    let same = true;
-    for (let j = 0; j < 12; j++) if (store[e * 12 + j] !== row[j]) same = false;
-    if (same) continue;
-    store.set(row, e * 12);
-    ring[st.head & (L.keyRingEntries - 1)] = e;
-    st.head = (st.head + 1) >>> 0;
+  for (let k = 0; k < n; k++) {
+    if (w.key[k] === KEY_NONE) continue;
+    q.key[k] = (w.key[k] | (dirty[k] << 31)) >>> 0;
+    dirty[k] = 0;
   }
-  Atomics.store(new Uint32Array(m.buffer, L.keyRingHeadByte, 1), 0, st.head);
+  Atomics.store(h, H.BUFFER0 + b, Atomics.load(h, H.SERVED));
+  return b;
 }
 
 /** The statics words gpuPack.c sprite_static writes for queue row i, in the indexed layout (depth 0, a zero). */
@@ -245,6 +249,7 @@ test('Pixi draws a WebGL scene\'s sprites as keyed frames: poses in the painter\
   const layout = scene.renderQueueMemory.layout;
   assert.equal(layout.pixiKeyBase, ENTITIES, 'the scene lays out the keyed regions');
   assert.equal(layout.pixiKeyRows, gpuIndexedStaticRows(ENTITIES + MAX));
+  assert.ok(layout.pixiKeyHeaderByte >= 0 && layout.pixiKeyHeaderByte === layout.emit.keyHeaderByte, 'one resync header');
   const tex = await quietly(() => bindPixi(px, scene, false));
   const batch = px.entitiesBatch;
   assert.equal(batch.keyed, true, 'the entity batch goes keyed');
@@ -256,29 +261,32 @@ test('Pixi draws a WebGL scene\'s sprites as keyed frames: poses in the painter\
   };
   const r = rng(177);
   const world = makeWorld(r);
+  const dirty = new Uint8Array(MAX).fill(1);
   const scattered = [];
-  const emit = { head: 0 };
-  for (let f = 0; f < 8; f++) {
-    const b = f & 1;
+  // Frame 9 is written but not drawn (Pixi took frame 10 next).
+  for (let f = 1; f <= 12; f++) {
+    const b = emitFrame(px, scene.renderQueueMemory, world, dirty, f, f < 7 ? MAX - 100 : MAX - 300, r);
+    if (f === 9) continue;
     const q = px.renderQueueBuffers[b];
-    writeQueue(q, world, f < 6 ? MAX - 100 : MAX - 300, r);
-    emitStore(scene.renderQueueMemory, q, q.count[0], emit);
+    px.lastReadFrame = f;
     px._setReadBuffer(b);
     const before = tex.scattered;
     px.updateSpritesFromRenderQueue();
-    scattered.push(tex.scattered - before);
+    scattered[f] = tex.scattered - before;
     const n = px.visibleEntityCount | 0;
     assert.equal(n, q.count[0], `frame ${f}: every row drawn`);
-    assert.equal(batch.mesh.shader, batch._indexedShader, `frame ${f}: the indexed program`);
     assert.ok(order && order.length === n, `frame ${f}: the painter's order`);
+    const split = f === 1 || f === 10;
+    assert.equal(batch.mesh.shader, split ? batch.shader : batch._indexedShader, `frame ${f}: drawn ${split ? 'split' : 'keyed'}`);
     const taken = new Set();
     for (let k = 0; k < n; k++) {
       const i = order[k];
       if (batch.data[k * SPLIT_POSE_FLOATS] !== q.x[i] || batch.data[k * SPLIT_POSE_FLOATS + 1] !== q.y[i]) {
         assert.fail(`frame ${f}: slot ${k}'s pose is not row ${i}'s`);
       }
+      if (split) continue;
       const row = batch._slotData[k * GPU_INDEXED_SLOT_FLOATS];
-      const key = q.key[i];
+      const key = q.key[i] === KEY_NONE ? KEY_NONE : (q.key[i] & ~GPU_KEYED_CHANGED) >>> 0;
       if (key !== KEY_NONE && row !== key) assert.fail(`frame ${f}: slot ${k} takes row ${row}, its key is ${key}`);
       if (key === KEY_NONE && row !== ENTITIES + k) assert.fail(`frame ${f}: a row without a key takes ${row}`);
       assert.ok(!taken.has(row));
@@ -289,10 +297,15 @@ test('Pixi draws a WebGL scene\'s sprites as keyed frames: poses in the painter\
       }
     }
   }
-  // The first frame sends the whole store; every frame scatters the rows without a key and the sprites whose statics
-  // changed (a twentieth).
-  assert.equal(tex.uploads, 1, 'the store went up once');
-  for (let f = 1; f < 8; f++) assert.ok(scattered[f] < MAX / 5, `frame ${f}: ${scattered[f]} scattered`);
+  // The frames drawn split scatter nothing and ask for every sprite; the frames that answer send every row; the others
+  // the rows without a key and the sprites whose statics changed (a twentieth).
+  const h = new Uint32Array(scene.renderQueueMemory.buffer, layout.pixiKeyHeaderByte, 4);
+  assert.equal(Atomics.load(h, H.REQUEST), 2, 'two requests');
+  assert.equal(tex.uploads, 0, 'the texture takes scatters only');
+  for (const f of [1, 10]) assert.equal(scattered[f], 0, `frame ${f}: drawn split`);
+  assert.equal(scattered[2], MAX - 100, 'frame 2 answers: every row');
+  assert.equal(scattered[11], MAX - 300, 'frame 11 answers: every row');
+  for (const f of [3, 4, 5, 6, 7, 8, 12]) assert.ok(scattered[f] < MAX / 5, `frame ${f}: ${scattered[f]} scattered`);
 });
 
 test('on WebGPU the entity batch stays split', async () => {

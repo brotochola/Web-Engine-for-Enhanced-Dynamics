@@ -6,19 +6,17 @@ import {
   GPU_STATIC_FLOATS, makePackContext,
 } from '../../src/render/gpuQueueLayout.js';
 import {
-  GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_STORE_WORDS, bindGpuPack, keyedRingUpdatesWasm, packKeyedRowsWasm,
-  packSplitRowsWasm,
+  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack, packKeyedRowsWasm, packSplitRowsWasm,
 } from '../../src/render/gpuPackClient.js';
 
 // E-177: the keyed pack writes, for each draw slot, the pose the split pack writes there and the slot pair (the row's
-// key, its entity, or for a row without one the slot past the entities, and the depth the split pack writes at that
-// slot), and lists the statics of the rows without a key as updates, as the split pack packs them. keyed_ring_updates
-// turns the ring's entries into updates of those entities' store rows, in ring order, as many as fit.
+// key, its entity without the changed bit, or for a row without one the slot past the entities, and the depth the split
+// pack writes at that slot), and lists as updates the statics, as the split pack packs them, of the rows the emit marked
+// changed and of the rows without a key.
 
 const N = 5000;
 const ENTITIES = 12000;
 const KEY_BASE = ENTITIES;
-const RING = 4096;
 const DEPTH = 4; // the depth's float in the statics (gpuPack.c sprite_static)
 const KEY_NONE = 0xffffffff;
 
@@ -69,9 +67,10 @@ async function setup(seed) {
     q.tileOffsetU[i] = (rng() * 65535) | 0;
     q.tileOffsetV[i] = (rng() * 65535) | 0;
     q.type[i] = (rng() * 7) | 0;
-    // Sprites keyed by entity; a few rows without a key or past the entities.
+    // Sprites keyed by entity, a tenth marked changed; a few rows without a key or past the entities.
     const r = rng();
-    q.key[i] = r < 0.05 ? KEY_NONE : r < 0.07 ? KEY_BASE + ((rng() * 100) | 0) : (rng() * ENTITIES) | 0;
+    const e = (rng() * ENTITIES) | 0;
+    q.key[i] = r < 0.05 ? KEY_NONE : r < 0.07 ? KEY_BASE + ((rng() * 100) | 0) : rng() < 0.1 ? (e | GPU_KEYED_CHANGED) >>> 0 : e;
   }
   const order = alloc(Uint32Array, N);
   for (let i = 0; i < N; i++) order[i] = i;
@@ -86,8 +85,6 @@ async function setup(seed) {
   const pose = alloc(Float32Array, N * GPU_POSE_FLOATS);
   const slots = alloc(Float32Array, N * GPU_INDEXED_SLOT_FLOATS);
   const updates = alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS);
-  const store = alloc(Uint32Array, ENTITIES * GPU_KEYED_STORE_WORDS);
-  const ring = alloc(Uint32Array, RING);
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
   const indexByte = (top = (top + 63) & ~63);
@@ -96,11 +93,8 @@ async function setup(seed) {
   top += 16 + 16 * 8;
   if (top > buf.byteLength) throw new Error('the test memory is too small');
   const b = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
-  const keyed = {
-    keyBase: KEY_BASE, updatesByte: updates.byteOffset, updates: 0,
-    storeByte: store.byteOffset, ringByte: ring.byteOffset, ringEntries: RING, ringAt: 0,
-  };
-  return { rng, q, b, order, splitPose, splitStat, pose, slots, updates, store, ring, keyed };
+  const keyed = { keyBase: KEY_BASE, updatesByte: updates.byteOffset, updates: 0 };
+  return { rng, q, b, order, splitPose, splitStat, pose, slots, updates, keyed };
 }
 
 const words = (f32, n) => new Uint32Array(f32.buffer, f32.byteOffset, n);
@@ -121,16 +115,18 @@ function checkPack(s, label, opts, cap) {
   let u = 0;
   for (let k = 0; k < n; k++) {
     const i = opts.indices ? opts.indices[k] : k;
-    const key = s.q.key[i];
+    const raw = s.q.key[i];
+    const key = (raw & ~GPU_KEYED_CHANGED) >>> 0;
     const keyless = key >= KEY_BASE;
     const slot = keyless ? KEY_BASE + k : key;
+    const send = keyless || (raw & GPU_KEYED_CHANGED) !== 0;
     if (s.slots[k * GPU_INDEXED_SLOT_FLOATS] !== slot) assert.fail(`${label}: slot ${k} takes row ${s.slots[k * 2]}, not ${slot}`);
     if (kSlot[k * GPU_INDEXED_SLOT_FLOATS + 1] !== ss[k * GPU_STATIC_FLOATS + DEPTH]) assert.fail(`${label}: slot ${k}'s depth`);
     for (let j = 0; j < GPU_POSE_FLOATS; j++) {
       if (kp[k * GPU_POSE_FLOATS + j] !== sp[k * GPU_POSE_FLOATS + j]) assert.fail(`${label}: slot ${k} pose ${j}`);
     }
-    if (!keyless) continue;
-    // A row without a key: its statics, as the split pack packs them, go up as the next update.
+    if (!send) continue;
+    // A changed row or a row without a key: its statics, as the split pack packs them, go up as the next update.
     const rec = s.updates.subarray(u * GPU_KEYED_ROW_WORDS, (u + 1) * GPU_KEYED_ROW_WORDS);
     for (let j = 0; j < GPU_STATIC_FLOATS; j++) {
       const want = j === DEPTH ? 0 : ss[k * GPU_STATIC_FLOATS + j];
@@ -140,59 +136,21 @@ function checkPack(s, label, opts, cap) {
     if (rec[GPU_KEYED_KEY_WORD] !== slot) assert.fail(`${label}: slot ${k}'s update key ${rec[GPU_KEYED_KEY_WORD]}`);
     u++;
   }
-  assert.equal(s.keyed.updates, u, `${label}: one update a row without a key`);
+  assert.equal(s.keyed.updates, u, `${label}: one update a changed row or a row without a key`);
   return u;
 }
 
-test('the keyed pack is the split pack: the pose and depth at each slot, the key, the keyless rows\' statics', async () => {
+test('the keyed pack is the split pack: the pose and depth at each slot, the key, the changed and keyless rows\' statics', async () => {
   for (const seed of [177, 178]) {
     const s = await setup(seed);
     const sorted = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N, type: s.q.type };
-    assert.ok(checkPack(s, 'painter order', sorted, N) > 0, 'some rows without a key');
+    const sent = checkPack(s, 'painter order', sorted, N);
+    assert.ok(sent > N * 0.1 && sent < N * 0.3, `the changed rows and the rows without a key go up (${sent})`);
     checkPack(s, 'capacity under count', sorted, 3210);
     checkPack(s, 'no list', { space: GPU_SPACE_WORLD, type: s.q.type }, N);
     checkPack(s, 'no type column', { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N }, N);
     checkPack(s, 'indices copied', { space: GPU_SPACE_WORLD, indices: Uint32Array.from(s.order), indexCount: N, type: s.q.type }, N);
   }
-});
-
-test('keyed_ring_updates turns the ring\'s entries into the store rows of their entities, in order, as many as fit', async () => {
-  const s = await setup(9);
-  for (let w = 0; w < s.store.length; w++) s.store[w] = (s.rng() * 0xffffffff) >>> 0;
-  // 1 500 entries from position 4 000 (so the ring wraps), a few past the entities, some entities twice.
-  const from = 4000;
-  const count = 1500;
-  const entries = [];
-  for (let m = 0; m < count; m++) {
-    const e = m % 97 === 0 ? ENTITIES + m : m % 13 === 0 && m > 0 ? entries[m - 1] : (s.rng() * ENTITIES) | 0;
-    entries.push(e);
-    s.ring[(from + m) & (RING - 1)] = e;
-  }
-  const to = (from + count) >>> 0;
-  const want = entries.filter((e) => e < ENTITIES);
-  // Into an update list that already holds 10 and takes 400 at a time.
-  const got = [];
-  let r = from;
-  let at = 10;
-  while (r !== to) {
-    const n = keyedRingUpdatesWasm(s.b, s.keyed, r, to, at, 400);
-    for (let u = at; u < at + n; u++) {
-      const rec = s.updates.subarray(u * GPU_KEYED_ROW_WORDS, (u + 1) * GPU_KEYED_ROW_WORDS);
-      const e = rec[GPU_KEYED_KEY_WORD];
-      for (let j = 0; j < GPU_KEYED_STORE_WORDS; j++) {
-        if (rec[j] !== s.store[e * GPU_KEYED_STORE_WORDS + j]) assert.fail(`update ${u}: entity ${e} word ${j}`);
-      }
-      for (let j = GPU_KEYED_KEY_WORD + 1; j < GPU_KEYED_ROW_WORDS; j++) assert.equal(rec[j], 0);
-      got.push(e);
-    }
-    assert.ok(at + n <= 400, 'no more than fit');
-    assert.ok(n > 0 || s.keyed.ringAt === to, 'progress');
-    r = s.keyed.ringAt;
-    at = 0;
-  }
-  assert.deepEqual(got, want, 'every entry within the entities, in ring order, the repeats too');
-  assert.equal(keyedRingUpdatesWasm(s.b, s.keyed, to, to, 0, 400), 0, 'an empty span');
-  assert.equal(s.keyed.ringAt, to);
 });
 
 test('the keyed pack declines what it does not take', async () => {

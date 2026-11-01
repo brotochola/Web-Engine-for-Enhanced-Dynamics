@@ -69,23 +69,18 @@ enum {
      E_PARAMS[3] is the pose alpha). Their default texture is PC_WHITE_TEX. */
   LF_X, LF_Y, LF_SCALE_X, LF_SCALE_Y, LF_ALPHA, LF_BASE_ALPHA, LF_ROT_C, LF_ROT_S, LF_TINT, LF_TEXTURE,
   LF_PREV_X, LF_PREV_Y, LF_PREV_COUNT,
-  /* E-177: the queue's key column (0: a queue without one): a sprite row's entity, KEY_NONE for every other row. */
+  /* E-177: the queue's key column (0: a queue without one, or one whose frames are not keyed): a sprite row's entity,
+     KEY_CHANGED or-ed in when its statics changed since the emit before; KEY_NONE for every other row. */
   Q_KEY,
-  /* E-177: the keyed frames' statics store (K_STORE_WORDS u32 an entity: each sprite's statics as Pixi draws them, as
-     this emit last wrote them; 0: none), the ring of entities whose statics changed, its mask (a value: its entries
-     - 1), its head (a u32 this emit advances and stores atomically after a frame's pushes) and the store's entities (a
-     value). */
-  K_STORE, K_RING, K_RING_MASK, K_RING_HEAD, K_ENTITIES,
-  /* E-177: SpriteRenderer.keyedDirty (set by whatever changes a sprite's statics; the emit clears it as it sends them). */
+  /* E-177: SpriteRenderer.keyedDirty (set by whatever changes a sprite's statics; the emit clears it as it flags them). */
   S_KEYED_DIRTY,
   SLOT_COUNT
 };
 
-/* E-177: the key of a row whose statics have no entity to stay with (rewritten every frame). */
+/* E-177: the key of a row whose statics have no entity to stay with (rewritten every frame), and the bit of a sprite's key
+   whose statics changed since the emit before (entities stay under 2^31 - 1, so a sprite's key never reads KEY_NONE). */
 #define KEY_NONE 0xffffffffu
-
-/* E-177: an entity's row of the statics store: the statics texture's row, three RGBA32UI texels. */
-#define K_STORE_WORDS 12
+#define KEY_CHANGED 0x80000000u
 
 /* emitSpriteQueue's loop-invariant switches. */
 #define F_SORT_KEY 1u    /* rqSortKey && source.hasOrder */
@@ -214,92 +209,6 @@ INLINE int32_t js_toint32(double v) {
   return (int32_t)(uint32_t)m;
 }
 
-/* E-177: the statics store and its ring, and the queue columns a sprite row's statics come from. */
-typedef struct {
-  uint32_t *store, *ring, *headPtr;
-  uint32_t mask, entities, head;
-  const float *qScaleX, *qScaleY, *qAnchorX, *qAnchorY, *qAlpha, *qTileMulX, *qTileMulY;
-  const uint32_t *qTint;
-  const uint16_t *qTexture, *qTileOffU, *qTileOffV;
-} KeyStore;
-
-INLINE void load_key_store(KeyStore *k, const uint32_t *t) {
-  k->store = PTR(uint32_t, K_STORE);
-  k->ring = PTR(uint32_t, K_RING);
-  k->headPtr = PTR(uint32_t, K_RING_HEAD);
-  if (!k->ring || !k->headPtr) k->store = 0;
-  k->mask = t[K_RING_MASK];
-  k->entities = t[K_ENTITIES];
-  k->head = k->store ? *k->headPtr : 0;
-  k->qScaleX = PTR(const float, Q_SCALE_X);
-  k->qScaleY = PTR(const float, Q_SCALE_Y);
-  k->qAnchorX = PTR(const float, Q_ANCHOR_X);
-  k->qAnchorY = PTR(const float, Q_ANCHOR_Y);
-  k->qAlpha = PTR(const float, Q_ALPHA);
-  k->qTileMulX = PTR(const float, Q_TILE_MUL_X);
-  k->qTileMulY = PTR(const float, Q_TILE_MUL_Y);
-  k->qTint = PTR(const uint32_t, Q_TINT);
-  k->qTexture = PTR(const uint16_t, Q_TEXTURE);
-  k->qTileOffU = PTR(const uint16_t, Q_TILE_OFF_U);
-  k->qTileOffV = PTR(const uint16_t, Q_TILE_OFF_V);
-}
-
-/* gpuPack.c packed_tint: alpha clamped and rounded in double, over the tint's rgb. */
-INLINE uint32_t key_packed_tint(double a, uint32_t tint) {
-  if (!(a >= 0)) a = 0;
-  else if (a > 1) a = 1;
-  const int32_t a8 = (int32_t)(a * 255.0 + 0.5);
-  return ((uint32_t)(a8 & 255) << 24) | (tint & 0xffffff);
-}
-
-/* Queue row out's statics as gpuPack.c packs them for an indexed frame (scale, anchor; the depth term 0, the packed
-   tint, the texture, the tile multiplier's x; its y, the tile offsets, a zero), from the columns as the row holds them,
-   against entity idx's row of the store: a change is written there and the entity rung. */
-INLINE void key_store(KeyStore *k, uint32_t idx, uint32_t out) {
-  if (idx >= k->entities) return;
-  const double inv65535 = 1.0 / 65535.0;
-  const float tmx = k->qTileMulX ? k->qTileMulX[out] : 0.0f;
-  const float tmy = k->qTileMulY ? k->qTileMulY[out] : 0.0f;
-  const double tou = k->qTileOffU ? (double)k->qTileOffU[out] : 0.0;
-  const double tov = k->qTileOffV ? (double)k->qTileOffV[out] : 0.0;
-  const v128_t s0 = wasm_f32x4_make(k->qScaleX[out], k->qScaleY[out], k->qAnchorX[out], k->qAnchorY[out]);
-  const v128_t s1 = wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)k->qTexture[out], tmx), 1,
-                                            (int32_t)key_packed_tint((double)k->qAlpha[out], k->qTint[out]));
-  const v128_t s2 = wasm_f32x4_make(tmy, (float)(tou * inv65535), (float)(tov * inv65535), 0.0f);
-  uint32_t *row = k->store + idx * K_STORE_WORDS;
-  const v128_t d = wasm_v128_or(wasm_v128_or(wasm_v128_xor(s0, wasm_v128_load(row)), wasm_v128_xor(s1, wasm_v128_load(row + 4))),
-                                wasm_v128_xor(s2, wasm_v128_load(row + 8)));
-  if (wasm_v128_any_true(d)) {
-    wasm_v128_store(row, s0);
-    wasm_v128_store(row + 4, s1);
-    wasm_v128_store(row + 8, s2);
-    k->ring[k->head & k->mask] = idx;
-    k->head++;
-  }
-}
-
-/* key_store without the compare: a full emit's sprite whose keyed flag was set or whose texture moved. */
-INLINE void key_store_write(KeyStore *k, uint32_t idx, uint32_t out) {
-  if (idx >= k->entities) return;
-  const double inv65535 = 1.0 / 65535.0;
-  const float tmx = k->qTileMulX ? k->qTileMulX[out] : 0.0f;
-  const float tmy = k->qTileMulY ? k->qTileMulY[out] : 0.0f;
-  const double tou = k->qTileOffU ? (double)k->qTileOffU[out] : 0.0;
-  const double tov = k->qTileOffV ? (double)k->qTileOffV[out] : 0.0;
-  uint32_t *row = k->store + idx * K_STORE_WORDS;
-  wasm_v128_store(row, wasm_f32x4_make(k->qScaleX[out], k->qScaleY[out], k->qAnchorX[out], k->qAnchorY[out]));
-  wasm_v128_store(row + 4, wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)k->qTexture[out], tmx), 1,
-                                                    (int32_t)key_packed_tint((double)k->qAlpha[out], k->qTint[out])));
-  wasm_v128_store(row + 8, wasm_f32x4_make(tmy, (float)(tou * inv65535), (float)(tov * inv65535), 0.0f));
-  k->ring[k->head & k->mask] = idx;
-  k->head++;
-}
-
-/* The frame's pushes, published: the store rows and ring entries written before the head moves. */
-INLINE void publish_key_store(const KeyStore *k) {
-  if (k->store) __atomic_store_n(k->headPtr, k->head, __ATOMIC_SEQ_CST);
-}
-
 /* Everything emit_rows reads, loaded from the table once (the stores may alias the table as far as the
    compiler knows); the row writers below are inlined into each of its loops. */
 typedef struct {
@@ -345,7 +254,6 @@ typedef struct {
   uint16_t *qTileOffU, *qTileOffV;
   float *qTileMulX, *qTileMulY, *qShadowH, *qShadowOffX, *qShadowOffY;
   uint32_t *qKey;
-  KeyStore ks;
   uint8_t *sKeyedDirty;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
@@ -459,7 +367,6 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->qShadowOffX = PTR(float, Q_SHADOW_OFF_X);
   e->qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
   e->qKey = PTR(uint32_t, Q_KEY);
-  load_key_store(&e->ks, t);
   e->sKeyedDirty = PTR(uint8_t, S_KEYED_DIRTY);
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
@@ -586,19 +493,16 @@ INLINE double order_key(const Emit *e, uint32_t i, int32_t idx) {
 /* emitSpriteQueue's sprite branch: collector row i at queue row out. */
 INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   const int32_t idx = e->cIndex[i];
-  /* E-177: whether this sprite's statics go to the store: its keyed flag, taken (an atomic exchange, a full barrier)
-     before its columns are read, so a change after this sets it again for the next frame; or its texture moving below.
-     Without the flags or the last textures the row is compared with the store instead. */
-  const int signals = e->ks.store && e->sKeyedDirty && e->aLastTex;
-  uint32_t keyed = 0;
-  uint32_t lastTex = INVALID_TEXTURE;
-  if (signals) {
-    if (e->sKeyedDirty[idx]) {
-      __atomic_exchange_n(&e->sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
-      keyed = 1;
-    }
-    lastTex = e->aLastTex[idx];
+  /* E-177: whether this sprite's statics changed since the emit before: its keyed flag, taken (an atomic exchange, a full
+     barrier) before its columns are read, so a change after this sets it again for the next frame; the clock below
+     moving its frame; or its texture not the last one this emit wrote for it (frame tables rewritten, an animation or a
+     sheet written without a setter), read before the clock writes it. */
+  uint32_t changed = 0;
+  if (e->sKeyedDirty && e->sKeyedDirty[idx]) {
+    __atomic_exchange_n(&e->sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
+    changed = 1;
   }
+  const uint32_t lastTex = e->qKey && e->aLastTex ? e->aLastTex[idx] : 0;
   if (e->sortKey) e->qSortKey[out] = (float)order_key(e, i, idx);
   const float x = e->stX[i];
   const float y = e->stY[i];
@@ -646,7 +550,6 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = e->sAnchorX[idx];
   e->qAnchorY[out] = e->sAnchorY[idx];
   if (e->qType) e->qType[out] = 0;
-  if (e->qKey) e->qKey[out] = (uint32_t)idx;
 
   const uint32_t sheet = e->sSheet[idx];
   const uint32_t anim = e->sAnim[idx];
@@ -655,7 +558,10 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   if (g >= 0) {
     const int known = (uint32_t)g < e->nAnims;
     const int32_t fc = known ? e->frameCount[g] : 1;
-    if ((int32_t)e->aFrame[idx] >= fc) e->aFrame[idx] = 0;
+    if ((int32_t)e->aFrame[idx] >= fc) {
+      e->aFrame[idx] = 0;
+      changed = 1;
+    }
     if (e->sAnimated[idx] && fc > 1) {
       const float acc = (float)((double)e->aAccum[idx] + e->deltaSeconds);
       e->aAccum[idx] = acc;
@@ -670,6 +576,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
           e->nEnds++;
         } else {
           e->aFrame[idx] = (uint16_t)((cur + 1) % fc);
+          changed = 1;
           if (e->bounds) {
             /* Bounds may change (variable frame sizes). */
             const int32_t texId = (known ? e->frameStart[g] : 0) + (int32_t)e->aFrame[idx];
@@ -704,12 +611,11 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
     }
   }
   e->qTexture[out] = (uint16_t)tex;
-  /* A repeating sprite is compared instead: its local tile multiplier follows the frame's size, which the clock above
-     changes for the next frame without a flag. */
-  if (signals && rx == 0 && ry == 0) {
-    if (keyed || tex != lastTex) key_store_write(&e->ks, (uint32_t)idx, out);
-  } else if (e->ks.store) {
-    key_store(&e->ks, (uint32_t)idx, out);
+  /* A repeating sprite is always flagged: its local tile multiplier follows the frame size the clock changes for the
+     next frame. */
+  if (e->qKey) {
+    const uint32_t moved = e->aLastTex != 0 && lastTex != (tex & 0xffffu);
+    e->qKey[out] = (uint32_t)idx | ((changed | moved | (rx != 0) | (ry != 0)) << 31);
   }
 }
 
@@ -1189,7 +1095,6 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   counts[2] = e.tiled;
   counts[3] = nForeign;
   counts[4] = overflow;
-  publish_key_store(&e.ks);
   return w;
 }
 
@@ -1325,9 +1230,10 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   const int shadows = qShadowH != 0 && (flags & F_NO_CASTERS) == 0;
   /* E-98d: the collect wrote the poses into this queue's columns. */
   const int inQueue = stX == qX;
-  /* E-177: with the statics store, a repaired texture flags its sprite for it: the walk may miss after this, and the full
-     emit then finds the last texture already moved. */
-  const int keyedStore = t[K_STORE] != 0 && t[K_RING] != 0 && t[K_RING_HEAD] != 0;
+  /* E-177: with keyed frames, a repaired or advanced texture flags its sprite (the walk may miss after a repair, and the
+     full emit then flags it), and a hit rewrites the sprites' keys below. */
+  uint32_t *qKey = PTR(uint32_t, Q_KEY);
+  const int keyed = qKey != 0 && sKeyedDirty != 0;
   /* Rows past the buffer pass the check (the JS reads undefined on both sides of each comparison there)
      and count as other types (their type reads undefined). */
   const uint32_t n = count < maxItems ? count : maxItems;
@@ -1354,7 +1260,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       const uint32_t tex = (uint32_t)(frameStart[g] + (int32_t)frame);
       qTexture[i] = (uint16_t)tex;
       if (aLastTex) aLastTex[idx] = (uint16_t)tex;
-      if (keyedStore && sKeyedDirty) sKeyedDirty[idx] = 1;
+      if (keyed) sKeyedDirty[idx] = 1;
       pFrame[i] = (uint16_t)frame;
       repaired++;
     }
@@ -1415,6 +1321,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
     const uint32_t frame = aFrame[idx];
     const int32_t tex = frameStart[g] + (int32_t)frame;
     qTexture[i] = (uint16_t)tex;
+    if (keyed) sKeyedDirty[idx] = 1;
     if (aLastTex) aLastTex[idx] = (uint16_t)tex;
     /* This buffer now shows the new frame: its next check needs no repair (E-98g). */
     pFrame[i] = (uint16_t)frame;
@@ -1432,15 +1339,22 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
     }
     moved++;
   }
-  /* E-177: a repair or an advance changed an animated row's texture; with no miss left, their statics go to the store. */
-  KeyStore ks;
-  load_key_store(&ks, t);
-  if (ks.store) {
-    for (uint32_t a = 0; a < nAnimated; a++) {
-      const uint32_t i = animated[a];
-      key_store(&ks, (uint32_t)cIndex[i], i);
+  /* E-177: a hit, so the sprites' rows stand as this buffer last held them, keys too: rewritten, a sprite flagged since
+     (a repair, an advance, a statics change) marked changed, and a repeating one too (as the full emit marks it: its
+     row's tile multiplier is the one this buffer last got, which may be older than the other buffer's). */
+  if (keyed) {
+    const uint16_t *qRepeatX = PTR(const uint16_t, Q_REPEAT_X);
+    const uint16_t *qRepeatY = PTR(const uint16_t, Q_REPEAT_Y);
+    for (uint32_t i = 0; i < n; i++) {
+      if (cType[i] != 0) continue;
+      const int32_t idx = cIndex[i];
+      uint32_t c = (qRepeatX && qRepeatX[i] != 0) | (qRepeatY && qRepeatY[i] != 0);
+      if (sKeyedDirty[idx]) {
+        __atomic_exchange_n(&sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
+        c = 1;
+      }
+      qKey[i] = (uint32_t)idx | (c << 31);
     }
-    publish_key_store(&ks);
   }
   counts[0] = nEnds;
   counts[1] = moved;

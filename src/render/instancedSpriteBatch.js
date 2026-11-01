@@ -36,12 +36,12 @@ import {
   GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
 import {
-  GPU_KEYED_ROW_WORDS, GPU_KEYED_STORE_WORDS, keyedRingUpdatesWasm, packInstancedRowsWasm, packKeyedRowsWasm,
-  packPoseRowsWasm, packSplitRowsWasm,
+  GPU_KEYED_ROW_WORDS, packInstancedRowsWasm, packKeyedRowsWasm, packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
 import {
   STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, spriteIndexedWgsl, staticsTextureHeight,
 } from './spriteIndexed.js';
+import { PIXI_KEYED_HEADER } from '../util/wasmMemoryMap.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -225,9 +225,9 @@ export class InstancedSpriteBatch {
    *   pixiWorker._gpuRecordTexture); WebGPU: `{ maxStorageBytes }`, the device's storage binding size
    * @param {object|null} [opts.keyed] - E-177, a split batch with `statics` whose helper scatters (`scatter`) and that
    *   packs through the kernel: the render-queue memory's keyed regions (renderQueueMemory.js pixiKey*: `keyBase`,
-   *   `keyRows`, `updatesByte`, and the emit's `storeByte`, `ringByte`, `ringEntries`, `ringHeadByte`), so its
-   *   frames go keyed: the poses and the slot pairs in draw order, the sprites' statics by entity in the texture, kept
-   *   from the emit's statics store by the entities its ring lists
+   *   `keyRows`, `updatesByte`, `headerByte`), so its frames go keyed: the poses and the slot pairs in draw order, the
+   *   sprites' statics by entity in the texture, sent when the emit marked them changed. Each upload then needs the
+   *   queue's frame number and buffer (`keyedFrame`, `keyedBuffer`, set by the caller)
    */
   constructor({
     capacity,
@@ -301,39 +301,37 @@ export class InstancedSpriteBatch {
     const slotFloats = this.indexed ? this.capacity * GPU_INDEXED_SLOT_FLOATS : 0;
     // E-177: a keyed batch's statics texture holds a row for every key: the scene's entities, then a slot per row.
     this.keyed = this.indexed && keyed !== null && (keyed.keyRows | 0) > 0 && this._gpuPack !== null
-      && typeof statics.scatter === 'function' && typeof statics.upload === 'function' && keyed.storeByte >= 0;
+      && typeof statics.scatter === 'function' && keyed.headerByte >= 0;
     const staticRows = this.indexed
       ? Math.max(gpuIndexedStaticRows(this.capacity), this.keyed ? keyed.keyRows | 0 : 0)
       : 0;
     const staticFloats = staticRows * GPU_INDEXED_STATIC_FLOATS;
     this._slotData = (this.indexed && arena && arena.f32(slotFloats)) || new Float32Array(slotFloats);
-    // A keyed batch's statics pass through this copy only when the whole store goes up (its first frame, a ring
-    // overrun), so it stays out of the arena.
+    // A keyed batch's statics never pass through this copy (the texture is made from its zeros, then scattered into), so
+    // it stays out of the arena.
     this._rowStatics = (this.indexed && !this.keyed && arena && arena.f32(staticFloats)) || new Float32Array(staticFloats);
     this._rowStaticsU32 = new Uint32Array(this._rowStatics.buffer, this._rowStatics.byteOffset, staticFloats);
-    // E-177: the keyed pack's regions (gpuPackClient.packKeyedRowsWasm's and keyedRingUpdatesWasm's `keyed`), the slot
-    // pairs it writes over the static stream's half of the shared rows, its updates and their copy, the emit's statics
-    // store and ring head, the ring position this batch's texture holds up to, and whether the whole store must go up.
+    // E-177: the keyed pack's regions (gpuPackClient.packKeyedRowsWasm's `keyed`), the slot pairs it writes over the
+    // static stream's half of the shared rows, its updates and their copy, and the resync header.
     const k = this.keyed ? keyed : null;
     const buf = this._sharedStatic.buffer;
     this._keyedPack = {
       keyBase: k ? k.keyBase | 0 : 0,
       updatesByte: k ? k.updatesByte | 0 : 0,
       updates: 0,
-      storeByte: k ? k.storeByte | 0 : 0,
-      ringByte: k ? k.ringByte | 0 : 0,
-      ringEntries: k ? k.ringEntries | 0 : 0,
-      ringAt: 0,
     };
     this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
     const updateWords = k ? this.capacity * GPU_KEYED_ROW_WORDS : 0;
     this._sharedUpdates = k ? new Uint32Array(buf, k.updatesByte, updateWords) : new Uint32Array(0);
     const updateCopy = (k && arena && arena.f32(updateWords)) || new Float32Array(updateWords);
     this._keyUpdates = new Uint32Array(updateCopy.buffer, updateCopy.byteOffset, updateWords);
-    this._keyStore = k ? new Uint32Array(buf, k.storeByte, (k.keyBase | 0) * GPU_KEYED_STORE_WORDS) : new Uint32Array(0);
-    this._keyRingHead = k ? new Uint32Array(buf, k.ringHeadByte, 1) : new Uint32Array(1);
-    this._keyTail = new Uint32Array(1);
-    this._keySendAll = true;
+    this._keyHeader = k ? new Uint32Array(buf, k.headerByte, 4) : new Uint32Array(4);
+    // The queue frame and buffer of the next upload (the caller's), the last frame the texture took keyed (-1: none since
+    // it last missed one), and the resync request this batch made (0: none outstanding).
+    this.keyedFrame = 0;
+    this.keyedBuffer = 0;
+    this._keyFrame = -1;
+    this._keyRequest = 0;
     this._ixGen = 0;
     this._ixRows = -1;
     // The slot pairs' generation and slots the CPU copy holds, its version, and each ring slot's GPU copy's (-1: none).
@@ -957,42 +955,39 @@ export class InstancedSpriteBatch {
   }
 
   /**
-   * E-177. A keyed batch's frame: the poses and the slot pairs (each row's key and depth) in draw order; the texture's
-   * entity rows brought up to the emit's statics store by the ring's entries since the last frame (the whole store on
-   * the first keyed frame and after the ring overran this batch), and the rows without a key sent as they are, both
-   * scattered by key (the statics helper's scatter). 24 bytes a sprite and 64 an update, against 60 a sprite for a
-   * split frame. Returns -1 for a frame the kernel does not take (no key column in the memory): the caller packs it
-   * split, and the keyed frames after it find the texture as they left it.
+   * E-177. A keyed batch's frame: the poses and the slot pairs (each row's key and depth) in draw order, and the statics
+   * of the sprites the emit marked changed and of the rows without a key, scattered into the texture by key (the statics
+   * helper's scatter): 24 bytes a sprite and 64 an update, against 60 a sprite for a split frame. The marks say what
+   * changed since the emit before, so the texture is right only after a keyed frame of every queue frame: on its first
+   * frame, after a frame it did not take keyed (a gap in the queue's frames, a frame drawn split), the batch asks
+   * pre-render for every sprite again (the header's request; pre-render flags every sprite for its next emit) and draws
+   * split until the queue buffer it reads answers that request. Returns -1 for a frame drawn split.
    */
   _uploadKeyed(q, ctx) {
+    const H = this._keyHeader;
+    const frame = this.keyedFrame;
+    const last = this._keyFrame;
+    if (last < 0 || (frame !== last && frame !== last + 1)) {
+      this._keyFrame = -1;
+      if (this._keyRequest === 0) {
+        this._keyRequest = (Atomics.load(H, PIXI_KEYED_HEADER.REQUEST) + 1) >>> 0 || 1;
+        Atomics.store(H, PIXI_KEYED_HEADER.REQUEST, this._keyRequest);
+      }
+      if (Atomics.load(H, PIXI_KEYED_HEADER.BUFFER0 + (this.keyedBuffer & 1)) !== this._keyRequest) return -1;
+    }
     const k = this._keyedPack;
     const out = packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
-    if (out < 0) return -1;
-    const head = Atomics.load(this._keyRingHead, 0);
-    const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
-    if (this._keySendAll || ((head - this._keyTail[0]) >>> 0) > k.ringEntries) {
-      this._keySendAll = false;
-      this._rowStaticsU32.set(this._keyStore);
-      this._statics.upload(this._staticsSource, this._rowStaticsU32, width, this._staticsHeight, 0, staticsTextureHeight(k.keyBase));
-      this._keyTail[0] = head;
+    if (out < 0) {
+      this._keyFrame = -1;
+      return -1;
     }
-    // The rows without a key's updates, then the rung entities' store rows, scattered whenever the updates fill.
-    const cap = this.capacity;
-    let n = k.updates;
-    let r = this._keyTail[0];
-    for (;;) {
-      if (r !== head && n < cap) {
-        n += keyedRingUpdatesWasm(this._gpuPack, k, r, head, n, cap);
-        r = k.ringAt;
-      }
-      if (n > 0 && (r === head || n >= cap)) {
-        this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
-        this._statics.scatter(this._staticsSource, this._keyUpdates, n, width, this._staticsHeight);
-        n = 0;
-      }
-      if (r === head) break;
+    this._keyFrame = frame;
+    this._keyRequest = 0;
+    const n = k.updates;
+    if (n > 0) {
+      this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
+      this._statics.scatter(this._staticsSource, this._keyUpdates, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight);
     }
-    this._keyTail[0] = head;
     if (out > 0) {
       this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
       this.copyIn(this._slotData, this._sharedSlots, out * GPU_INDEXED_SLOT_FLOATS);

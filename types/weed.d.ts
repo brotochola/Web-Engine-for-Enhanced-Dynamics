@@ -3340,7 +3340,7 @@ export declare class SpriteRenderer extends Component {
   static renderVisible: Uint8Array;
   static isItOnScreen: Uint8Array;
   static renderDirty: Uint8Array;
-  /** E-177: the statics the GPU draws changed since pre-render sent them to the keyed frames' store (1). */
+  /** E-177: the statics the GPU draws changed since pre-render's emit last marked them for the keyed frames (1). */
   static keyedDirty: Uint8Array;
   static screenX: Float32Array;
   static screenY: Float32Array;

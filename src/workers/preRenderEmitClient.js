@@ -47,9 +47,7 @@ export const EMIT_SLOTS = [
   'lfX', 'lfY', 'lfScaleX', 'lfScaleY', 'lfAlpha', 'lfBaseAlpha', 'lfRotC', 'lfRotS', 'lfTint', 'lfTexture',
   'lfPrevX', 'lfPrevY', 'lfPrevCount',
   'qKey',
-  // E-177: the keyed frames' statics store, its ring, the ring's mask (a value), its head, the store's entities (a value).
-  'kStore', 'kRing', 'kRingMask', 'kRingHead', 'kEntities',
-  // E-177: SpriteRenderer.keyedDirty, the statics changes the store has not taken.
+  // E-177: SpriteRenderer.keyedDirty, the statics changes the keyed frames have not been told of.
   'sKeyedDirty',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
@@ -166,14 +164,6 @@ export async function bindPreRenderEmit(memory, emit) {
   table[SLOT.tFrameW] = emit.frameWidthByte;
   table[SLOT.tFrameH] = emit.frameHeightByte;
   table[SLOT.eParams] = emit.paramsByte;
-  // E-177: the statics store and its ring, where the scene lays them out (keyed frames), written by every sprite row.
-  if (emit.keyStoreByte >= 0) {
-    table[SLOT.kStore] = emit.keyStoreByte;
-    table[SLOT.kRing] = emit.keyRingByte;
-    table[SLOT.kRingMask] = emit.keyRingEntries - 1;
-    table[SLOT.kRingHead] = emit.keyRingHeadByte;
-    table[SLOT.kEntities] = emit.entities;
-  }
   return {
     buffer,
     emitRows: k.emit_rows,
@@ -192,6 +182,8 @@ export async function bindPreRenderEmit(memory, emit) {
     endsAt: emit.endsByte >> 2,
     warnsAt: emit.warnsByte >> 2,
     foreignAt: emit.foreignByte >> 2,
+    // E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column there.
+    keyed: emit.keyHeaderByte >= 0,
     texturesReady: false,
     // The frame sizes' length in the kernel's copy (frameWidthByte, frameHeightByte), once written.
     frames: 0,
@@ -431,16 +423,17 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   if (!putSlot(b, 'aFrame', w.entityFrameIndex) || !putSlot(b, 'aAccum', w.entityFrameAccumulator)) return false;
   b.table[SLOT.aEntities] = w.entityFrameIndex.length;
   if (!putSlot(b, 'aLastTex', w.entityLastTextureId, true)) return false;
-  // E-177: with the statics store, the sprites' keyed flags, which (with a moved texture) send a sprite there.
-  if (!putSlot(b, 'sKeyedDirty', b.table[SLOT.kStore] !== 0 ? SpriteRenderer.keyedDirty : null, true)) return false;
+  // E-177: for the main queue of a scene that keys its frames (source.persist marks it; a custom layer's queue is not
+  // keyed), the sprites' keyed flags and the key column, whose changed bit the flags and a moved frame set.
+  const keyed = b.keyed && source.persist;
+  if (!putSlot(b, 'sKeyedDirty', keyed ? SpriteRenderer.keyedDirty : null, true)) return false;
   for (let k = 0; k < EMIT_QUEUE_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_QUEUE_COLUMNS[k][0], w[EMIT_QUEUE_COLUMNS[k][1]])) return false;
   }
   for (let k = 0; k < EMIT_OPTIONAL_QUEUE_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_OPTIONAL_QUEUE_COLUMNS[k][0], w[EMIT_OPTIONAL_QUEUE_COLUMNS[k][1]], true)) return false;
   }
-  // E-177: the key column only with the statics store, for the keyed frames that read it; a queue nobody keys pays nothing.
-  if (!putSlot(b, 'qKey', b.table[SLOT.kStore] !== 0 ? w.renderQueueKey : null, true)) return false;
+  if (!putSlot(b, 'qKey', keyed ? w.renderQueueKey : null, true)) return false;
   return true;
 }
 

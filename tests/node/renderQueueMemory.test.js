@@ -263,7 +263,7 @@ test("with the painter spec, each sorting worker's painter state is a set of reg
   assert.equal(none.queueAByte, L.queueAByte, 'the painter regions come after the queues');
 });
 
-test("E-177: with emit.pixiKeyed, the emit's statics store, ring and head and Pixi's updates are regions of their own", () => {
+test("E-177: with emit.pixiKeyed, the keyed frames' resync header and Pixi's updates are regions of their own", () => {
   const caps = gpuQueueCaps(MAX, { enabled: true });
   const queueBytes = computeBufferSize(MAX);
   const gpuBytes = computeGpuQueueBufferSize(caps);
@@ -272,28 +272,21 @@ test("E-177: with emit.pixiKeyed, the emit's statics store, ring and head and Pi
   const spec = (pixiKeyed) => ({ entities, spriteBytes, casterBytes: 0, decorationBytes: 0, pixiKeyed });
   const plain = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(false), null, null, true).layout;
   assert.equal(plain.pixiKeyRows, 0);
-  for (const k of ['pixiKeyUpdatesByte', 'pixiKeyStoreByte', 'pixiKeyRingByte', 'pixiKeyRingHeadByte']) assert.equal(plain[k], -1, k);
-  assert.equal(plain.emit.keyStoreByte, -1);
-  assert.equal(plain.emit.keyRingEntries, 0);
+  assert.equal(plain.pixiKeyUpdatesByte, -1);
+  assert.equal(plain.pixiKeyHeaderByte, -1);
+  assert.equal(plain.emit.keyHeaderByte, -1);
   const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(true), null, null, true);
   const L = m.layout;
   // The scene's entities, then a slot for each queue row, in whole texture rows of 1 024.
   assert.equal(L.pixiKeyBase, entities);
   assert.equal(L.pixiKeyRows, Math.ceil((entities + MAX) / 1024) * 1024);
-  // Two frames of every row changing, a power of two.
-  assert.equal(L.pixiKeyRingEntries, 16384);
-  assert.equal(L.emit.keyRingEntries, L.pixiKeyRingEntries);
-  assert.equal(L.emit.keyStoreByte, L.pixiKeyStoreByte, 'Pixi reads the store the emit writes');
-  assert.equal(L.emit.keyRingByte, L.pixiKeyRingByte);
-  assert.equal(L.emit.keyRingHeadByte, L.pixiKeyRingHeadByte);
+  assert.equal(L.emit.keyHeaderByte, L.pixiKeyHeaderByte, 'pre-render and Pixi share the header');
   const spans = [
     ['queueA', L.queueAByte, queueBytes],
     ['queueB', L.queueBByte, queueBytes],
     ['pixiInstances', L.pixiInstanceByte, MAX * 15 * 4],
     ['pixiTables', L.pixiTableByte, L.pixiTableSlots * GPU_PACK_COLUMNS.length * 4],
-    ['keyStore', L.pixiKeyStoreByte, entities * 48],
-    ['keyRing', L.pixiKeyRingByte, L.pixiKeyRingEntries * 4],
-    ['keyRingHead', L.pixiKeyRingHeadByte, 64],
+    ['keyHeader', L.pixiKeyHeaderByte, 64],
     ['keyUpdates', L.pixiKeyUpdatesByte, MAX * 64],
   ].sort((a, b) => a[1] - b[1]);
   for (let k = 0; k < spans.length; k++) {

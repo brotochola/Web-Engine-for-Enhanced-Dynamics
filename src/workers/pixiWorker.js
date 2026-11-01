@@ -1647,6 +1647,9 @@ class PixiRenderer extends AbstractWorker {
         packOpts.prevY = this._latchedPrevY;
         packOpts.snap = this._poseSnap;
       }
+      // E-177: a keyed batch takes the queue frame it draws (its changed marks are that frame's) and its buffer.
+      this.entitiesBatch.keyedFrame = this.lastReadFrame;
+      this.entitiesBatch.keyedBuffer = (this.lastReadFrame - 1) & 1;
       const n = this.entitiesBatch.upload(this._packQ, packOpts);
       packOpts.prevX = null;
       packOpts.prevY = null;
@@ -2405,17 +2408,13 @@ class PixiRenderer extends AbstractWorker {
     if ((layout.pixiGlowRows | 0) >= (this.renderQueueMaxItems | 0) && layout.pixiGlowByte >= 0) {
       this._pixiGlowRows = new Float32Array(memory.buffer, layout.pixiGlowByte, (this.renderQueueMaxItems | 0) * INSTANCED_SPRITE_FLOATS);
     }
-    // E-177: the keyed frames' updates and the emit's statics store, ring and head, for a scene whose sprites go keyed
-    // (keyedSpritesEnabled).
-    this._pixiKeyed = (layout.pixiKeyRows | 0) > 0 && layout.pixiKeyStoreByte >= 0
+    // E-177: the keyed frames' updates and resync header, for a scene whose sprites go keyed (keyedSpritesEnabled).
+    this._pixiKeyed = (layout.pixiKeyRows | 0) > 0 && layout.pixiKeyHeaderByte >= 0
       ? {
           keyBase: layout.pixiKeyBase | 0,
           keyRows: layout.pixiKeyRows | 0,
           updatesByte: layout.pixiKeyUpdatesByte,
-          storeByte: layout.pixiKeyStoreByte,
-          ringByte: layout.pixiKeyRingByte,
-          ringEntries: layout.pixiKeyRingEntries | 0,
-          ringHeadByte: layout.pixiKeyRingHeadByte,
+          headerByte: layout.pixiKeyHeaderByte,
         }
       : null;
   }

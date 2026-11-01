@@ -87,7 +87,7 @@ export class SpriteRenderer extends Component {
     zIndex: Int16Array, // draw order inside the layer. Larger is in front. 0 with ySort off is emit order.
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
     // E-177: 1 = the statics the GPU draws changed (scale, anchor, alpha, tint, texture, tiles) since pre-render's emit
-    // sent them to the keyed frames' store; set beside renderDirty by the setters that change them, cleared by the emit.
+    // marked them for the keyed frames; set beside renderDirty by the setters that change them, cleared by the emit.
     keyedDirty: Uint8Array,
     screenX: Float32Array,
     screenY: Float32Array,
