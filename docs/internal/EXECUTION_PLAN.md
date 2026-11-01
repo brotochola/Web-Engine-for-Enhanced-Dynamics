@@ -3288,6 +3288,9 @@ texture. A WebGPU batch keeps split frames.
 **Plan:** if E-177 keeps: the scatter as a compute pass over the statics storage buffer (the raw device, as
 computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU. Owner: a WebGPU scene that packs in Pixi
 (Predator with the WebGPU backend, or BunnyMark).
+**Since (2026-11-01):** E-177 kept on WebGL (R-0792), and E-191's keyed shadow passes and E-188's keyed decorations
+ride on its texture, so all three stay off on WebGPU until this one: the statics storage buffer scattered by a compute
+pass, then the shadow programs' WGSL forms reading it.
 
 ### E-188 Keyed frames for the main queue's other rows, by pool slot
 
@@ -3313,6 +3316,11 @@ LiquidFun stay keyless: liquidFunQueryStressScene is the next owner if its rows 
 **Plan:** count the marks by cause in Predator first. Then a texture-only update (key and texture, 8 bytes) into a
 per-key texture-id texture the indexed program reads, about 8 times fewer bytes for those rows. Owner: Predator's
 renderer.
+**Step 0 answered 2026-11-01 (R-0813):** in Predator at its defaults a frame marks 657 of its 13 477 sprites, and every
+one of them changed its texture alone (frames 600 to 1 200; in the first 600, 95 %, the rest spawns and a resync). The
+premise holds: the updates' 42 KB a frame would be 5 KB. Their share of the pack is the open question, since the pack
+gathers every sprite's pose and slot too (E-193); gpuPackKeyedMicrobench sets no marks (its 200 updates are its rows
+without a key), so it needs a case of marked rows before it can size this.
 
 ### E-190 Pre-render's 2 % that the keyed frames' build costs where they are off
 
@@ -3393,6 +3401,44 @@ there) at most.
 casters; the compaction and the full rows stay the fallback. Kernel (gpuPackCastersKeyedMicrobench) in Chrome 0.140 ->
 0.070 ms a frame (-53 %); Predator ?crowd=1.5, 4 pairs: pre-render 5.066 -> 4.718 ms (-6.5 %, 0/4), more than the
 kernel's saving: in the worker the JavaScript compaction cost twice the kernel's.
+
+### E-193 Pixi's keyed pack costs about ten times its kernel in the worker
+
+**Premise:** pack_sprites_keyed is the Pixi worker's largest function: 42 ms/s at Predator's defaults (R-0791's trace,
+13 400 sprites, about 0.7 ms a frame) and 91 to 118 ms/s at crowd 1.5 (R-0808's traces, about 23 000, 1.5 to 2 ms a
+frame). Its kernel packs 13 500 rows in 0.080 ms in Chrome with the painter's order random and 0.070 ms near the
+queue's order (gpuPackKeyedMicrobench through chromeKernel.mjs, 2026-11-01), 0.075 ms in Node: the worker pays about
+ten times the kernel. The likeliest cost is memory: the pack gathers each sprite's queue row in the painter's order, a
+random walk over columns pre-render wrote moments before on another core, where the kernel reads them from its own
+warm cache. W9c (R-0473) read the queue in its own order through an inverse of the painter's list, in the JavaScript
+pack at 13 400 rows, and lost 6.4 %; the pack is C now, and the rows have grown.
+**Plan:** step 0, where the time goes: the call timed in the worker against the kernel with its columns written by
+another worker first (a two-worker kernel), and the gather's order (random, near, queue order) in both. Then, as the
+step says: the queue read in its own order with an inverse made in C (W9c's order, without the JavaScript passes), a
+prefetch of the rows a few slots ahead, or the pose and slot streams written by pre-render, which holds those rows warm.
+Owner: Predator's renderer at crowd 1.5.
+
+### E-194 LiquidFun rows keyed by slot
+
+**Premise:** E-188 keyed the decorations; a LiquidFun particle drawn as a sprite is still a row without a key, which
+goes up whole every keyed frame (64 bytes). liquidFunQueryStressScene draws up to 16 000 of them, enough to make the
+keyed frames lose and pause (E-188's premise). Particles stay keyless on purpose: a particle's alpha fades every frame,
+so its statics change every frame.
+**Plan:** step 0: whether liquidFunQueryStressScene draws keyed at all (Pixi packs, WebGL) and how often its particles'
+statics change. Then keys past the decorations by LiquidFun particle index, the change marked as E-188 marks it (a
+record of the statics a slot last emitted), the texture sized for them where it fits. Owner: liquidFunQueryStressScene's
+renderer.
+
+### E-195 The shadow stamp's candidate test in float32x4, decided in Chrome
+
+**Premise:** the stamp is now pre-render's largest function at Predator crowd 1.5 (stamp_light_range 108 ms/s of a
+380 ms/s pre-render, R-0808's trace). The float32 pass over the shipped kernels (R-0571, 2026-10-24) measured its
+f32x4 form +7.3 % in Node (23/25, float only in the candidate test), and shadowStampF32.test.js holds its tolerance
+(a pair that differs is a tie within float rounding); the particle lists' and the sway's f32x4 forms shipped from that
+pass, the stamp's was never decided in Chrome.
+**Plan:** shadowStampWasmMicrobench's wasm against wasm-f32x4 in Chrome (chromeKernel.mjs), with E-191 step 2's keyed
+rows (7-float sun rows, 11-float stamp rows) as well as the full ones; into engine.wasm if faster, and Predator crowd
+1.5's pre-render not 3 % worse. Owner: the kernel, Predator's pre-render the guard.
 
 ---
 
