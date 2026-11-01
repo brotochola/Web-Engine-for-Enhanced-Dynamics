@@ -3071,6 +3071,22 @@ the ones their entity carried when last drawn. Predator: about 13 500 rows a fra
 queue's static generation moved on every frame, so all of them are packed and uploaded again; littleCity: about 290
 rows, 11 to 15 % changed. Build it for Predator: about 700 rows' statics a frame instead of 13 500 (about 30 KB instead
 of 590 KB). adobeAnimateScene's rows are expanded pieces, several per entity: E-145's ground.
+**Where the cost is (a CPU trace of Predator, 2026-11-01):** the Pixi worker, 300 ms/s busy (renderer STEP 4.3 ms),
+spends 20.3 % in `pack_sprites_split` (the split frame: pose and statics streams in draw order, the statics packed
+again whenever the queue's generation moved, which is every frame here), 14.3 % in Pixi's `updateBuffer` (the upload)
+and 13.4 % in the copy into its arena (W30): about 2.4 ms a frame, three quarters of whose bytes are statics.
+**Build plan:**
+1. A `key` column in the render queue (renderQueueLayout's FIELDS): the row's table slot, written by the emit (C and
+   JS): a sprite row's entity index; any other row a slot past the entities' range, `entityCount + row`, so its
+   statics are rewritten every frame as today.
+2. `pack_sprites_keyed` in gpuPack.c: per draw slot the pose and the slot pair (key, depth), as E-162's indexed frame;
+   per row its statics compared with the table's at its key (a persistent region of the batch's render-queue memory)
+   and written only when they differ, the written keys' runs returned (a run list in the same region).
+3. The Pixi batch: the dirty runs copied into its arena and uploaded alone (WebGL texSubImage2D by run, WebGPU
+   writeBuffer by run) into the statics texture or storage buffer, sized for every key; the indexed program draws.
+4. Tests: a keyed frame's instance data (poses, and the statics fetched by key) equal the split frame's for the same
+   queue, over frames that change some rows' statics and the row set; both backends' upload paths.
+5. Owners: Predator's renderer (and pre-render for the key column), 4 pairs; painterMove and BunnyMark as guards.
 
 ### E-178 RigidBody.speed's derive pass, cheaper where it runs (the particle worker)
 
