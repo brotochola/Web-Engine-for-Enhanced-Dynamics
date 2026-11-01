@@ -9712,7 +9712,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0810"
+        "R-0810",
+        "R-0811"
       ],
       "status": "kept",
       "date": "2026-11-01",
@@ -9769,7 +9770,8 @@
         "R-0800",
         "R-0801",
         "R-0802",
-        "R-0808"
+        "R-0808",
+        "R-0811"
       ],
       "refs": [
         "EXECUTION_PLAN.md#E-191"
@@ -9988,7 +9990,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0809"
+        "R-0809",
+        "R-0811"
       ],
       "status": "kept",
       "date": "2026-11-01",
@@ -17581,6 +17584,15 @@
       "commits": [
         "3c31583a"
       ]
+    },
+    {
+      "id": "R-0811",
+      "date": "2026-11-01",
+      "time": "14:52",
+      "timeFrom": "recorded",
+      "title": "wave14's gate against main: KEPT (product), Predator pre-render -23.6 % (0/4)",
+      "verdict": "passed",
+      "text": "**wave14's gate against main: KEPT (product), pre-render -23.6 % (0/4).** 2026-11-01, 14:47 to 14:52 (the result files' times), Chrome, headed, source, detailed\nstats off, Predator at its defaults, `runPredatorAbab --vs cd6183bb --hyp-rev e2abbb91 --owner preRender`, 4 pairs:\nmain against wave14 (E-191 step 2's keyed caster rows, E-192's scan, E-188's keyed decorations).\n\n- pre-render 4.408 -> 3.302 ms (-23.6 %, worse 0/4, cv 8/6 %; -16.6 % against the others), pairs -21.7 / -29.3 / -25.5 /\n  -19.9 %; renderer 2.794 -> 2.450 (under the floor, not judged; pairs -12.2 / -20.1 / -12.6 / -0.8 %); spatial -8.4 %,\n  physics -14.0 % (-3.9 % against the others), logic -3.8 %; load keys within 0.1 %.\n- No worker reads worse: the batch merges. At Predator's defaults the keyed frames hold (zoom under 0.5), so E-191 step\n  2 and E-192 carry the pre-render saving there; E-188 acts zoomed in (R-0810)."
     }
   ],
   "leads": [
