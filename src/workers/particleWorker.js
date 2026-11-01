@@ -340,6 +340,10 @@ class ParticleWorker extends AbstractWorker {
     this._swayFrameCounter = 0;
     this._activeDecorationSnapshot = null;
     this._activeDecorationSnapshotCount = 0;
+    // E-179: how often the screen test's outcome changed along the snapshot when last counted (picks the loop), and
+    // the frames since a count.
+    this._decorationScreenFlips = 0;
+    this._decorationScreenProbe = 0;
     // W22: the sway kernel on the render-queue memory, or null in a scene without decorations.
     this._swayWasm = null;
     // _swayRefused said its reason.
@@ -1017,23 +1021,49 @@ class ParticleWorker extends AbstractWorker {
     const maxY = cameraBounds.maxY;
 
     let visibleCount = 0;
+    // E-179: two copies of the test, the same output. The branch on the outcome mispredicts at each of its flips along
+    // the snapshot's order: a few in a grid scene, about half the list on Predator's random grass, where the copy
+    // without it is twice as fast (decorationVisibilityMicrobench); with few flips the branch wins, since it skips the
+    // stores for decorations off screen. Only the branchless copy counts the flips (counting in the other cost it 7 to
+    // 9 %): it runs while they are many, and one frame in 16 to count them again.
+    this._decorationScreenProbe = (this._decorationScreenProbe + 1) & 15;
 
-    // OPTIMIZED: Iterate over the stable active snapshot instead of maxDecorations.
-    for (let idx = 0; idx < activeCount; idx++) {
-      const i = activeData[idx];
-      if (!active[i]) continue;
+    if (this._decorationScreenProbe === 0 || this._decorationScreenFlips * 8 > activeCount) {
+      let flips = 0;
+      let prev = 0;
+      for (let idx = 0; idx < activeCount; idx++) {
+        const i = activeData[idx];
+        if (!active[i]) continue;
 
-      const screenXVal = x[i] * camZoom - cameraOffsetX;
-      const screenYVal = y[i] * camZoom - cameraOffsetY;
+        const screenXVal = x[i] * camZoom - cameraOffsetX;
+        const screenYVal = y[i] * camZoom - cameraOffsetY;
+        const onScreen = (screenXVal > minX) & (screenXVal < maxX) & (screenYVal > minY) & (screenYVal < maxY);
 
-      const onScreen = screenXVal > minX && screenXVal < maxX && screenYVal > minY && screenYVal < maxY;
-
-      if (onScreen) {
-        isItOnScreen[i] = 1;
+        isItOnScreen[i] = onScreen;
         visibleData[1 + visibleCount] = i;
-        visibleCount++;
-      } else {
-        isItOnScreen[i] = 0;
+        visibleCount += onScreen;
+        flips += onScreen ^ prev;
+        prev = onScreen;
+      }
+      this._decorationScreenFlips = flips;
+    } else {
+      // OPTIMIZED: Iterate over the stable active snapshot instead of maxDecorations.
+      for (let idx = 0; idx < activeCount; idx++) {
+        const i = activeData[idx];
+        if (!active[i]) continue;
+
+        const screenXVal = x[i] * camZoom - cameraOffsetX;
+        const screenYVal = y[i] * camZoom - cameraOffsetY;
+
+        const onScreen = screenXVal > minX && screenXVal < maxX && screenYVal > minY && screenYVal < maxY;
+
+        if (onScreen) {
+          isItOnScreen[i] = 1;
+          visibleData[1 + visibleCount] = i;
+          visibleCount++;
+        } else {
+          isItOnScreen[i] = 0;
+        }
       }
     }
 
