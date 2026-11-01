@@ -9604,20 +9604,21 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0780"
+      ],
+      "status": "answered",
       "date": "2026-11-01",
-      "result": "",
+      "result": "answered: six scenes' deopt logs, none after warm-up past 1-3 a site; the stale-OSR deopt loop happens to kernels calling one function back to back (bimodal kernels)",
       "refs": [
         "EXECUTION_PLAN.md#E-183"
       ],
-      "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
+      "statusText": "answered 2026-11-01 (R-0780)",
       "id": "E-183",
-      "rank": 6,
       "area": "engine",
       "kind": "speed",
       "title": "Per-frame loops stuck on stale OSR code: a statement after the loop deopts every call",
-      "next": "Step 0: Chrome deopt logs (--log-deopt, summarizeV8Deopt.mjs, steady state) on Predator and the stress scenes, the functions that deopt at one bytecode every frame. Then each loop in a function of its own that returns right after it. EXECUTION_PLAN.md#E-183."
+      "next": "Nothing pending in the engine; HOW_WE_MEASURE notes the bimodal kernels."
     },
     {
       "aliases": [],
@@ -16981,6 +16982,15 @@
         "c83315e4",
         "900098ae"
       ]
+    },
+    {
+      "id": "R-0780",
+      "date": "2026-11-01",
+      "time": "05:06",
+      "timeFrom": "recorded",
+      "title": "E-183 answered: no steady deopt loop in Chrome (six scenes); the stale-OSR loop is a kernel's",
+      "verdict": "answered",
+      "text": "**E-183 answered: no per-frame loop is stuck on stale OSR code in Chrome; the deopt loop is a kernel's.** 2026-11-01,\n05:03 to 05:06 (the result files' times), Chrome, headed, source, detailed stats off, `--js-flags=--log-deopt`, 10 s\nof warm-up and 10 s measured a scene; summarizeV8Deopt.mjs.\n\n- **Six scenes:** predatorScene (1 125 deopts in the whole run), adobeAnimateScene (383), bunnyMarkStressScene (194),\n  decorationSwayStressScene at 320 000 (679), ballsHeavyStressScene (139), spawnStormScene (56).\n- **After the warm-up every scene's deopts are one to three a site, in cold code** (the camera's and the sound\n  manager's dependency changes, the bench page's own). Nothing deopts every frame.\n- **The warm-up's:** Predator's biggest sites are logicWorker.js:749 and :760 (the spawn batch's sort, 126 each,\n  \"insufficient type feedback\" for a named access and a compare), decorationPool.js:105 (copyActiveSnapshot, 126) and\n  particleWorker.js:1125 (`visibleData[0] = visibleCount` after the decoration screen test, 16): the stale-OSR shape\n  E-179 found, deopting while the scene starts and stopping once V8 compiles the function normally.\n- **The loop E-179's kernel fell into is the kernel's:** called back to back thousands of times, a function around one\n  long loop kept entering its cached OSR code and deopted at the statement after the loop on every call (490 to 588\n  deopts a run, 2.7 times slower). A frame's single call does not. Kernels that time such a function are bimodal from\n  run to run (decorationVisibilityMicrobench, deriveSpeedMicrobench): read their rounds side by side, or count\n  `--trace-deopt` lines, before calling a few percent.\n\nNo change to make in the engine; the kernel caveat goes to HOW_WE_MEASURE."
     }
   ],
   "leads": [
