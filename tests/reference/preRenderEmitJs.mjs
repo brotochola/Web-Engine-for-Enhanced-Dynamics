@@ -203,7 +203,8 @@ function emitSpriteQueue(deltaTime, source) {
     ref.rotC = rqRotC; ref.rotS = rqRotS; ref.alpha = rqAlpha; ref.tint = rqTint;
     ref.textureId = rqTextureId; ref.anchorX = rqAnchorX; ref.anchorY = rqAnchorY;
     ref.type = rqType;
-    ref.key = this.renderQueueKey && this.renderQueueKey.length ? this.renderQueueKey : null;
+    // E-177: the key column only where the scene keys its frames (the kernel's slot is bound then alone).
+    ref.key = this._keyedFrames && this.renderQueueKey && this.renderQueueKey.length ? this.renderQueueKey : null;
     ref.sortKey = rqSortKey;
     ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
     ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;

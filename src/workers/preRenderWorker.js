@@ -448,6 +448,8 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPainterWasm = null;
         /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
         this._emitWasm = null;
+        /** E-177: the scene laid out the keyed frames' statics store, so the emit writes the key column and the store. */
+        this._keyedFrames = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
@@ -984,6 +986,7 @@ class PreRenderWorker extends AbstractWorker {
             }
             try {
                 this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
+                this._keyedFrames = emitLayout.keyStoreByte >= 0;
             } catch (err) {
                 throw new Error(`[PRE_RENDER] preRenderEmit.wasm did not load: ${err?.message ?? err}`, { cause: err });
             }

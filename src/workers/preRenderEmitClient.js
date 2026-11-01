@@ -143,7 +143,6 @@ export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
   ['qRepeatY', 'renderQueueRepeatY'], ['qTileMode', 'renderQueueTileMode'], ['qTileOffU', 'renderQueueTileOffsetU'],
   ['qTileOffV', 'renderQueueTileOffsetV'], ['qTileMulX', 'renderQueueTileMulX'], ['qTileMulY', 'renderQueueTileMulY'],
   ['qShadowH', 'renderQueueShadowH'], ['qShadowOffX', 'renderQueueShadowOffX'], ['qShadowOffY', 'renderQueueShadowOffY'],
-  ['qKey', 'renderQueueKey'],
 ];
 
 /**
@@ -438,6 +437,8 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   for (let k = 0; k < EMIT_OPTIONAL_QUEUE_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_OPTIONAL_QUEUE_COLUMNS[k][0], w[EMIT_OPTIONAL_QUEUE_COLUMNS[k][1]], true)) return false;
   }
+  // E-177: the key column only with the statics store, for the keyed frames that read it; a queue nobody keys pays nothing.
+  if (!putSlot(b, 'qKey', b.table[SLOT.kStore] !== 0 ? w.renderQueueKey : null, true)) return false;
   return true;
 }
 
