@@ -9763,7 +9763,9 @@
     {
       "aliases": [],
       "records": [
-        "R-0799"
+        "R-0799",
+        "R-0800",
+        "R-0801"
       ],
       "refs": [
         "EXECUTION_PLAN.md#E-191"
@@ -9771,13 +9773,13 @@
       "id": "E-191",
       "title": "Shadow casters keyed by entity: their sprite statics from E-177's statics texture, a pose and a key a row",
       "status": "open",
-      "statusText": "open: step 0 done 2026-11-01 (R-0799)",
+      "statusText": "open: step 1 kept 2026-11-01 (ebb4693c, R-0801), the sun pass over the keyed instances, renderer -4.4 %",
       "date": "2026-11-01",
       "rank": 11,
       "area": "render",
       "kind": "speed",
-      "result": "",
-      "next": "Predator's casters are 80 % of what Pixi copies and uploads a frame (sun 13 460 rows and point-light stamps 5 500 to 12 000, 88 bytes each: 1.6 to 2.1 MB, against the keyed entities' 0.38). A caster is a sprite of an entity the keyed frames already keep: its row could carry the pose, the key and the caster and light terms, its statics read by key from the entity batch's statics texture (48 bytes or less instead of 88), and pre-render's pack_casters_scatter would write less. Needs a renderer owner over the floor (Predator's renderer runs 2.9 ms: a knob for its crowd first)."
+      "result": "step 1 kept (efce1f5e, ebb4693c): the sun pass draws the entity batch's keyed instances; Predator crowd 1.5 renderer -4.4 % (6/8)",
+      "next": "Step 2: the point-light stamps as rows of a pose, a key, the shadow terms and a light (10 floats instead of 22), and pre-render's sun pack skipped where Pixi's keyed texture is current: a header word from Pixi saying so, the 22-float rows written otherwise (a resync, a pause). Owner Predator ?crowd=1.5, renderer and pre-render."
     },
     {
       "aliases": [],
@@ -17410,6 +17412,31 @@
       "title": "E-191 step 0: Predator's shadow casters are 80 % of the Pixi worker's copy and upload (1.6-2.1 MB a frame)",
       "verdict": "answered",
       "text": "**E-191 step 0: Predator's shadow casters are 80 % of what the Pixi worker copies and uploads a frame.** 2026-11-01,\n10:41 (the result file's time), Chrome, headed, source, detailed stats off, Predator (WebGL, Pixi packs and sorts, keyed\nframes on), one run (6 s warm-up, 4 s); pixiWorker.js and the batch's copyIn instrumented in the main folder for the run\n(rows per pass, bytes per batch, averaged over 120 frames) and reverted.\n\n| frames | sun casters | point-light stamps | cookies | copied: casters | keyed entities | glow |\n| --- | --- | --- | --- | --- | --- | --- |\n| first 120 | 13 292 | 11 871 | 48 | 2 145 KB | 1 086 KB (the resync's full send) | 4 KB |\n| then | 13 456 to 13 462 | 5 523 to 8 041 | 48 | 1 633 to 1 851 KB | 377 to 467 KB | 4 KB |\n\n- A caster row is GPU_CASTER_FLOATS, 22 floats (88 bytes): a sprite row's 15, three caster terms and four light\n  terms. The same bytes go through updateBuffer, so the casters are most of the Pixi worker's arena copy (34 ms/s in\n  the morning's trace) and of its upload (37 ms/s), and pre-render's pack_casters_scatter (29 ms/s) writes them.\n- The casters are sprites of entities the keyed frames already keep by entity: their statics could come from the\n  entity batch's statics texture, the rows carrying a pose, a key and the caster and light terms."
+    },
+    {
+      "id": "R-0800",
+      "date": "2026-11-01",
+      "time": "11:22",
+      "timeFrom": "recorded",
+      "title": "E-191 step 1's first sitting: renderer +0.0 % at crowd 1.5; the traces found the shadow stream copied word by word",
+      "verdict": "tie",
+      "text": "**E-191 step 1, the sun's pass over the entity batch's keyed instances (efce1f5e): renderer +0.0 % (2/4) at crowd 1.5;\nthe traces show the copy and the upload it removed, and a shadow stream copied word by word.** 2026-11-01, 11:02 to\n11:22 (the result files' times), Chrome, headed, source, detailed stats off, Predator `?crowd=1.5` (c5003321's knob:\n23 300 casters, every worker past the floor).\n\n- Before it, at default crowd: a probe (11:03, zoom 0.45, hour 9) counted the keyed sun pass on 599 of 600 frames\n  (the first is drawn split); screenshots against 1587def3's (11:04) show the same shadows. At zoom 1.6 (11:02) the keyed frames\n  pause (Predator's grass comes into the main queue: E-188), and the pass falls back to the sun rows, as built.\n- Sitting, `--vs HEAD~1 --hyp-rev HEAD` (1587def3 against efce1f5e), owner renderer, 4 pairs: renderer 3.434 -> 3.431\n  ms (+0.0 %, worse 2/4, cv 2/3 %; -2.0 % against the others); logic +4.1 % (3/4) and spatial +3.8 % (3/4), which the\n  change cannot reach, flagged it REGRESSION; pre-render -0.2 %, physics -0.9 %; load keys within 0.3 %.\n- A probe at crowd 1.5 (11:20) counted the keyed sun pass on 599 of 600 frames: it ran. Traces of both sides\n  (11:21, 11:22; single runs), the Pixi worker in ms a second: busy 336 -> 307, updateBuffer 40.7 -> 25.2, the arena\n  copy 37.6 -> 18.7, pack_sprites_keyed 66 -> 78 (it writes the shadow stream), and copyIn 6.2 new: the shadow\n  stream's copy fell outside the batch's arena (sized for its slots and updates only) and went word by word through\n  TypedArray.set. ebb4693c sizes the arena for it; the next sitting reads that.",
+      "commits": [
+        "efce1f5e"
+      ]
+    },
+    {
+      "id": "R-0801",
+      "date": "2026-11-01",
+      "time": "11:38",
+      "timeFrom": "recorded",
+      "title": "E-191 step 1 kept: the sun pass over the keyed instances, Predator's renderer -4.4 % at crowd 1.5 (6/8)",
+      "verdict": "kept",
+      "text": "**E-191 step 1 kept with the shadow stream in the arena (ebb4693c): Predator's renderer -4.4 % at crowd 1.5 (6/8).**\n2026-11-01, 11:27 to 11:38 (the result files' times), Chrome, headed, source, detailed stats off, Predator\n`?crowd=1.5`, `runPredatorAbab --vs 1587def3 --hyp-rev HEAD` (before E-191 against ebb4693c), owner renderer, 4 pairs\nand 4 appended (the first four alone read -9.1 %, cv 9/10 %).\n\n- renderer 3.547 -> 3.382 ms (-4.4 %, worse 2/8, cv 7/7 %; -3.2 % against the others, lower 7/8); pre-render -0.1 %,\n  physics -3.5 % (1/8), spatial -1.0 %, logic -0.7 %; load keys within 0.4 % (GPU_CASTERS 23 232 / 23 144,\n  VISIBLE_ENTITIES 23 352 / 23 263).\n- What the step leaves: pre-render still packs the sun rows (pack_casters_scatter, the fallback's and the stamps'\n  source) and the point-light stamps still go up at 88 bytes (5 500 to 12 000 a frame). Step 2: stamp rows of a pose,\n  a key, the shadow terms and a light (10 floats), and pre-render's sun pack skipped where Pixi's keyed texture is\n  current, which needs a word from Pixi saying so (a resync or a pause falls back).",
+      "commits": [
+        "efce1f5e",
+        "ebb4693c"
+      ]
     }
   ],
   "leads": [
