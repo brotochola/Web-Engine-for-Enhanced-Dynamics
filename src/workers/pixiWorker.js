@@ -79,6 +79,15 @@ import {
   GPU_HDR_STATIC_GEN,
   GPU_FLAG_SORTED,
   GPU_FLAG_SPLIT,
+  GPU_FLAG_INDEXED,
+  GPU_FLAG_KEYED_CASTERS,
+  GPU_KEYED_CASTER_FLOATS,
+  GPU_KEYED_STAMP_FLOATS,
+  GPU_HDR_INDEXED_ROWS,
+  GPU_HDR_SLOTS_GEN,
+  GPU_INDEXED_SLOT_FLOATS,
+  GPU_INDEXED_STATIC_FLOATS,
+  gpuIndexedStaticRows,
   createGpuQueueViews,
 } from '../render/gpuQueueLayout.js';
 import {
@@ -87,7 +96,6 @@ import {
   extractRGBNormalizedMut,
   lightInfluenceRadius,
   lightDataTextureFloatCount,
-  packLightDataTexel,
   clearUnusedLightDataTexels,
   LIGHT_DATA_TEX_HEIGHT,
   stashResizeWhileHidden,
@@ -250,10 +258,12 @@ import {
   resolveSpritePipeline,
   PACK_GPU_SPRITES_PIXI,
   SORT_SPRITES_NONE,
+  WEBGPU_DEFAULT_STORAGE_BINDING,
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
-import { bindGpuPack } from '../render/gpuPackClient.js';
+import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
+import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
 import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
 
@@ -295,6 +305,14 @@ function sortPrefixByDistSq(arr, count) {
 }
 
 import { RENDERER_STATS, createStatsWriter } from '../util/workersUtils.js';
+import { Time } from '../core/timeScale.js';
+import { GpuParticles } from '../core/gpuParticles.js';
+import { GpuParticleLayerBatch, packAnimStartLookup } from '../render/gpuParticleBatch.js';
+import { installInstanceRangeDraw } from '../render/instanceRangeDraw.js';
+import {
+  PROXY, PROXY_CAMERA, PROXY_KIND, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, localProxyHalf, proxyView,
+} from '../render/gpuParticleProxies.js';
+import { EntityChunks, RegionQuads } from '../render/gpuParticleChunks.js';
 
 // Import PixiJS 8 library (ES6 module with named exports)
 import {
@@ -520,6 +538,20 @@ class PixiRenderer extends AbstractWorker {
     // render-queue memory (the view below) and gpuPack.wasm packs them, on Pixi's own scratch.
     this._pixiGpuPack = null;
     this._pixiInstanceRows = null;
+    // E-177: the render-queue memory's keyed regions for the entity batch (renderQueueMemory.js pixiKey*), or null.
+    this._pixiKeyed = null;
+    // E-191: the sun's shadow pass over the entity batch's keyed instances (made on the first shadow pass that can use
+    // it; null where it cannot be), and whether that was tried.
+    this._keyedSunMesh = null;
+    this._keyedSunTried = false;
+    // E-191 step 2: the shadow passes over pre-render's keyed caster rows (the sun's, the stamps'), made with the keyed
+    // sun pass; whether that was tried; and whether a frame of such rows was refused for want of them (said once).
+    this._keyedSunRowsMesh = null;
+    this._keyedStampRowsMesh = null;
+    this._keyedCastersTried = false;
+    this._keyedRowsRefusedWarned = false;
+    // The statics scatter's GL objects (_scatterStaticsGl), made on its first call.
+    this._staticsScatterGl = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
     this._pixiGlowRows = null;
     // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
@@ -559,6 +591,35 @@ class PixiRenderer extends AbstractWorker {
     this._texLutSource = null;
     this._texLutRgba = null;
     this._texLutNeedsGpuUpload = false;
+    // GPU particle layers (LAYER_KIND.GPU_PARTICLES): animation index -> atlas lookup id, as RGBA32F (red).
+    this._gpuAnimStartSource = null;
+    this._gpuAnimStartRgba = new Float32Array(0);
+    this._gpuAnimStartWidth = 0;
+    this._gpuAnimStartHeight = 0;
+    /** @type {GpuParticleLayerBatch[]} */
+    this._gpuParticleBatches = [];
+    this._gpuParticleLiveRecords = 0;
+    // WebGL: the rings' record textures, made and filled here (E-157); null until the first GPU particle layer.
+    this._gpuRecordTextureOps = null;
+    // GPU particle groups among the entities (gpuParticleProxies.js): the sortWithEntities layers by id, as
+    // { layerId, cl, batch, regions }, the entities batch in chunks, and the frame's entries. Pre-render's split
+    // halves when it packs the entities; Pixi's own half and collector when Pixi packs them.
+    this._proxyLayers = [];
+    this._proxyLayerList = [];
+    this._entityChunks = null;
+    this._proxyHalves = null;
+    this._proxyReadHalf = 0;
+    this._proxyLocal = null;
+    this._proxyCollector = null;
+    // The proxies' camera and culled view (gpuParticleProxies.js proxyView), and the sim clock: typed arrays, so
+    // no double crosses a call.
+    this._proxyCamera = new Float64Array(6);
+    this._proxyView = new Float64Array(4);
+    this._gpuClock = new Float64Array(1);
+    this._proxyApplyHalf = null;
+    this._proxyDrawEntry = null;
+    this._proxyMatrix = new Matrix();
+    this._proxiesOn = false;
     this._rqIdxEntity = null;
     this._rqIdxGlow = null;
     /** @type {Array<{kind:string, displayObject:*, parallaxX:number, parallaxY:number, cover?:object, tilemap?:object}|null>} */
@@ -721,6 +782,10 @@ class PixiRenderer extends AbstractWorker {
     this.decalTileContainer = null; // Container for decal tile sprites
     this.decalTileSprites = []; // Array of Sprite per tile
     this.decalTileTextureSources = []; // TextureSource per tile (for updating)
+    // E-175: which tiles have been stamped, and the tile range the camera's view covers (x0, y0, x1, y1; -1: none
+    // yet): only stamped tiles in it are drawn.
+    this._decalTileStamped = new Uint8Array(0);
+    this._decalView = new Int32Array([-1, -1, -1, -1]);
 
     // ========================================
     // LIGHTING SYSTEM
@@ -982,6 +1047,8 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueShadowOffX = null;
     this.renderQueueShadowOffY = null;
     this.renderQueueStaticGen = null;
+    // E-177: the rows' statics keys (renderQueueLayout's key), which the keyed frames pack by.
+    this.renderQueueKey = null;
     this._poseSnapX = null;
     this._poseSnapY = null;
     this._poseSnapRotC = null;
@@ -1053,6 +1120,7 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueShadowOffX = buffer.shadowOffX;
     this.renderQueueShadowOffY = buffer.shadowOffY;
     this.renderQueueStaticGen = buffer.staticGen || null;
+    this.renderQueueKey = buffer.key || null;
     this.renderQueueType = buffer.type;
     this.renderQueueSortKey = buffer.sortKey;
     this._sortKeyU32 = this._sortKeyU32ByBuf[bufferIdx];
@@ -1486,6 +1554,7 @@ class PixiRenderer extends AbstractWorker {
 
     if (this.decalTileContainer) {
       this._placeWorldCamera(this.decalTileContainer, zoom, cameraX, cameraY, rot);
+      this._cullDecalTiles(zoom, cameraX, cameraY, rot);
     }
 
     // Shadow sprites render in screen space directly to shadowRT (no camera transform needed here)
@@ -1495,7 +1564,7 @@ class PixiRenderer extends AbstractWorker {
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
       if (!cl.rt) {
-        const mesh = cl.worldMesh || cl.batch?.mesh || cl.fillBatch?.mesh;
+        const mesh = cl.worldMesh || cl.batch?.mesh || cl.fillBatch?.mesh || cl.gpu?.container;
         if (mesh) this._placeWorldCamera(mesh, zoom, cameraX, cameraY, rot);
         const uvMesh = cl.uvFillBatch?.mesh;
         if (uvMesh) this._placeWorldCamera(uvMesh, zoom, cameraX, cameraY, rot);
@@ -1529,6 +1598,7 @@ class PixiRenderer extends AbstractWorker {
     q.shadowOffX = src.shadowOffX || null;
     q.shadowOffY = src.shadowOffY || null;
     q.staticGen = src.staticGen || null;
+    q.key = src.key || null;
   }
 
   _bindRenderQueueTo(q, count) {
@@ -1558,6 +1628,7 @@ class PixiRenderer extends AbstractWorker {
     src.shadowOffX = this.renderQueueShadowOffX;
     src.shadowOffY = this.renderQueueShadowOffY;
     src.staticGen = this.renderQueueStaticGen;
+    src.key = this.renderQueueKey;
     this._bindSpriteQueue(q, src, count);
   }
 
@@ -1589,6 +1660,9 @@ class PixiRenderer extends AbstractWorker {
         packOpts.prevY = this._latchedPrevY;
         packOpts.snap = this._poseSnap;
       }
+      // E-177: a keyed batch takes the queue frame it draws (its changed marks are that frame's) and its buffer.
+      this.entitiesBatch.keyedFrame = this.lastReadFrame;
+      this.entitiesBatch.keyedBuffer = (this.lastReadFrame - 1) & 1;
       const n = this.entitiesBatch.upload(this._packQ, packOpts);
       packOpts.prevX = null;
       packOpts.prevY = null;
@@ -1673,6 +1747,19 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
+    // N-76. A frame with no new queue (before the first one, or a resume redrawing the last) reads its buffer outside
+    // the consume/release handshake, while pre-render may be writing it: a frame whose header already reads complete
+    // would be committed with two frames' rows. The batches keep what they last committed (nothing before the first
+    // frame). Without a sync there is no handshake, and every frame reads the queue.
+    if (this._newQueueThisFrame === 0 && this.renderQueueSync) {
+      if (this.lastReadFrame <= 0) {
+        this.entitiesBatch.mesh.visible = false;
+        if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
+        this.visibleEntityCount = 0;
+      }
+      return;
+    }
+
     const gpu = this._gpuQueueRead;
     const packedN = gpu && gpu.header ? (gpu.header[GPU_HDR_SPRITE] | 0) : 0;
     const soaN = this.renderQueueCount ? (this.renderQueueCount[0] | 0) : 0;
@@ -1689,6 +1776,7 @@ class PixiRenderer extends AbstractWorker {
       !(packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0 && soaN > 0) &&
       (!needOrder || (packedFlags & GPU_FLAG_SORTED)) &&
       ((packedFlags & GPU_FLAG_SPLIT) === 0 || this.entitiesBatch.split) &&
+      ((packedFlags & GPU_FLAG_INDEXED) === 0 || this.entitiesBatch.indexed) &&
       this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI
     );
     if (packedOk) {
@@ -1700,6 +1788,12 @@ class PixiRenderer extends AbstractWorker {
         } else if (packedFlags & GPU_FLAG_SPLIT) {
           // E-82b: the two streams, the statics copied when their generation or the row count moved.
           this.visibleEntityCount = batch.commitSplit(gpu.spritePose, gpu.spriteStatic, packedN, gpu.header[GPU_HDR_STATIC_GEN]);
+        } else if (packedFlags & GPU_FLAG_INDEXED) {
+          // E-162: the poses and slot pairs, every queue row's statics to the texture when their generation moved.
+          this.visibleEntityCount = batch.commitIndexed(
+            gpu.spritePose, gpu.spriteSlots, gpu.spriteRowStatics, packedN,
+            gpu.header[GPU_HDR_INDEXED_ROWS], gpu.header[GPU_HDR_STATIC_GEN], gpu.header[GPU_HDR_SLOTS_GEN]
+          );
         } else if (packedN === 0) {
           // No sprite rows: pre-render's pack wrote none, so it split none. Nothing to draw.
           batch.mesh.visible = false;
@@ -1726,18 +1820,20 @@ class PixiRenderer extends AbstractWorker {
           this.entitiesGlowBatch.mesh.visible = false;
         }
       }
+      if (this._proxiesOn) this._applyPackedProxies();
       return;
     }
 
     // In pre-render pack mode pre-render packs every frame (close-out group B: Pixi has no rows of its own there), so
     // a frame its GPU queue does not describe is one _refusePackedFrame handles; with no rows nothing is lost.
     if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PIXI) {
-      const kept = this._newQueueThisFrame === 0 && this.lastReadFrame > 0;
       const warn = soaN > 0 && this._newQueueThisFrame !== 0 && !this._refusedFrameWarned;
       this.visibleEntityCount = this._refusePackedFrame(warn
         ? `${soaN} rows that its GPU queue frame does not describe (${this._uncommittedFrameReason(gpu, packedN, packedFlags, needOrder)})`
         : null);
-      if (!kept && this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
+      if (this.entitiesGlowBatch) this.entitiesGlowBatch.mesh.visible = false;
+      // A frame drawn without its entities still draws its groups.
+      if (this._proxiesOn) this._applyPackedProxies();
       return;
     }
 
@@ -1784,6 +1880,7 @@ class PixiRenderer extends AbstractWorker {
     const packed = packSpriteLayer(spec);
     this.visibleEntityCount = packed.sprite;
     this.visibleParticleCount = splitGlow ? packed.splitParticles : 0;
+    if (this._proxiesOn) this._applyLocalProxies(packed.spriteIndices, packed.sprite);
     if (!splitGlow && !glowBatch && this.spriteGlowMesh) this.spriteGlowMesh.visible = false;
   }
 
@@ -1795,18 +1892,16 @@ class PixiRenderer extends AbstractWorker {
     if (this.entitiesBatch.poseInterp) return 'the entity batch interpolates poses';
     if (packedN === 0 && (gpu.header[GPU_HDR_GLOW] | 0) === 0) return 'pre-render packed none of them';
     if (needOrder && !(packedFlags & GPU_FLAG_SORTED)) return 'they need an order and pre-render did not sort them';
+    if ((packedFlags & GPU_FLAG_INDEXED) && !this.entitiesBatch.indexed) return 'an indexed frame for an entity batch that reads none';
     return 'two streams for a plain entity batch';
   }
 
   /**
-   * A frame of pre-render's GPU queue Pixi cannot commit. A frame read outside the consume/release handshake (no new
-   * queue this frame: before the first one, or a resume redrawing the last) can catch pre-render's next frame half
-   * written, so the entity batch keeps what it last committed (nothing before the first frame) and nothing is said.
-   * A frame Pixi took is drawn empty, `reason` said once (null: no rows were lost).
+   * A frame of pre-render's GPU queue Pixi cannot commit: drawn empty, `reason` said once (null: no rows were lost).
+   * Frames read outside the consume/release handshake never get here (N-76, updateSpritesFromRenderQueue).
    * @returns {number} the entities drawn
    */
   _refusePackedFrame(reason) {
-    if (this._newQueueThisFrame === 0 && this.lastReadFrame > 0) return this.visibleEntityCount;
     if (reason !== null && this._newQueueThisFrame !== 0 && !this._refusedFrameWarned) {
       this._refusedFrameWarned = true;
       console.error(`[PIXI WORKER] ${reason}: the entities are not drawn this frame`);
@@ -1867,6 +1962,9 @@ class PixiRenderer extends AbstractWorker {
 
     const glSource = typeof texSys.getGlSource === 'function' ? texSys.getGlSource(source) : null;
     const target = glSource?.target || gl.TEXTURE_2D;
+    // N-94: the active unit's binding goes back after the upload (texSys.bind leaves the active unit where it was when
+    // the source is bound on unit 0 already, and Pixi would draw that unit's texture as the one it last bound there).
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
     if (glSource?.texture) {
       gl.bindTexture(target, glSource.texture);
     }
@@ -1893,6 +1991,7 @@ class PixiRenderer extends AbstractWorker {
     gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
     gl.texParameteri(target, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
     gl.texParameteri(target, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.bindTexture(target, prev);
   }
 
   _bindLutToBatches() {
@@ -1929,6 +2028,7 @@ class PixiRenderer extends AbstractWorker {
     this._texLutSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
     this._texLutNeedsGpuUpload = true;
     this._uploadTexLutTexture();
+    this._rebuildGpuAnimStartLookup();
     const src = this._resolveAtlasSource();
     if (this.entitiesBatch) this.entitiesBatch.setAtlasSource(src);
     if (this.entitiesGlowBatch) this.entitiesGlowBatch.setAtlasSource(src);
@@ -1939,8 +2039,276 @@ class PixiRenderer extends AbstractWorker {
       if (cl.batch) cl.batch.setAtlasSource(src);
       if (cl.fillBatch) cl.fillBatch.setAtlasSource(src);
       if (cl.uvFillBatch) cl.uvFillBatch.setAtlasSource(src);
+      if (cl.gpu) cl.gpu.setTextures(src, this._texLutSource, this._gpuAnimStartSource);
     }
     this._bindLutToBatches();
+  }
+
+  /**
+   * GPU particles store a texture as CPU particles do, an animation index; their vertex shader maps it to the
+   * atlas lookup's id through this table (animationFrameStart, 0 = the white circle, as the emit kernel does).
+   */
+  _rebuildGpuAnimStartLookup() {
+    if (!GpuParticles.layers.some(Boolean)) return;
+    const white = this.animationFrameStart?.[SpriteSheetRegistry.getTextureId('_whiteCircle')] ?? 0;
+    const packed = packAnimStartLookup(this.animationFrameStart || [], white);
+    this._gpuAnimStartRgba = packed.data;
+    this._gpuAnimStartWidth = packed.width;
+    this._gpuAnimStartHeight = packed.height;
+    this._gpuAnimStartSource = PIXI.TextureSource.from({
+      resource: packed.data,
+      width: packed.width,
+      height: packed.height,
+      format: 'rgba32float',
+      scaleMode: 'nearest',
+      addressMode: 'clamp-to-edge',
+      autoGenerateMipmaps: false,
+    });
+    this._gpuAnimStartSource.uploadMethodId = this._useWebGpu ? 'external' : 'unknown';
+    this._uploadGpuAnimStartLookup();
+  }
+
+  _uploadGpuAnimStartLookup() {
+    const source = this._gpuAnimStartSource;
+    if (!source) return;
+    if (this._useWebGpu) {
+      const renderer = this.pixiApp?.renderer;
+      if (!renderer?.gpu?.device) return;
+      writeRgba32Float(renderer, source, this._gpuAnimStartRgba, this._gpuAnimStartWidth, this._gpuAnimStartHeight, 'weed-gpu-anim-start');
+      return;
+    }
+    this._uploadRgba32FloatGl(source, this._gpuAnimStartRgba, this._gpuAnimStartWidth, this._gpuAnimStartHeight);
+  }
+
+  /**
+   * WebGL's GPU particle record textures (E-157): RGBA32UI, seven texels a record, filled with raw GL as the lookups
+   * are. Pixi only binds them: their upload method is 'unknown', so it never sends or reallocates them itself.
+   */
+  _gpuRecordTexture() {
+    if (this._gpuRecordTextureOps !== null) return this._gpuRecordTextureOps;
+    const gl = this.pixiApp?.renderer?.gl;
+    this._gpuRecordTextureOps = {
+      // A layer whose rings need more falls back to instance attributes (gpuRecordTexturesFit).
+      maxSize: gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 0,
+      make: (bits, width, height, label) => {
+        const source = PIXI.TextureSource.from({
+          resource: bits,
+          width,
+          height,
+          format: 'rgba32uint',
+          scaleMode: 'nearest',
+          addressMode: 'clamp-to-edge',
+          autoGenerateMipmaps: false,
+          label,
+        });
+        source.uploadMethodId = 'unknown';
+        this._gpuRecordRowsGl(source, bits, width, height, 0, -1);
+        return source;
+      },
+      upload: (source, bits, width, height, y0, rows) => this._gpuRecordRowsGl(source, bits, width, height, y0, rows),
+      // E-177: a keyed batch's changed statics into its texture.
+      scatter: (source, updates, count, width, height) => this._scatterStaticsGl(source, updates, count, width, height),
+    };
+    return this._gpuRecordTextureOps;
+  }
+
+  /** Rows [y0, y0 + rows) of a record texture from `bits`; rows < 0 allocates it with all of `bits`. */
+  _gpuRecordRowsGl(source, bits, width, height, y0, rows) {
+    const renderer = this.pixiApp?.renderer;
+    const gl = renderer?.gl;
+    const texSys = renderer?.texture;
+    if (!gl || !texSys) return;
+    texSys.bind(source, 0);
+    const glSource = texSys.getGlSource(source);
+    // N-94: the active unit's binding goes back after the upload (see _uploadRgba32FloatGl).
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
+    gl.bindTexture(gl.TEXTURE_2D, glSource.texture);
+    gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+    if (rows < 0) {
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32UI, width, height, 0, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    } else {
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, y0 * width * 4);
+    }
+    gl.bindTexture(gl.TEXTURE_2D, prev);
+  }
+
+  /**
+   * E-177: `count` updates of a keyed batch's statics (GPU_KEYED_ROW_WORDS u32 each) into its texture, `width` x
+   * `height` (staticsScatterGl.js), the scatter's GL objects made on the first call.
+   */
+  _scatterStaticsGl(source, updates, count, width, height) {
+    const renderer = this.pixiApp?.renderer;
+    const gl = renderer?.gl;
+    const texSys = renderer?.texture;
+    if (!gl || !texSys || count <= 0) return;
+    if (this._staticsScatterGl === null || this._staticsScatterGl.gl !== gl) this._staticsScatterGl = createStaticsScatterGl(gl);
+    scatterStaticsGl(this._staticsScatterGl, renderer, texSys.getGlSource(source).texture, updates, count, width, height);
+  }
+
+  /** Every frame: new GPU particle records up, each ring's live window and clock set. */
+  updateGpuParticleLayers() {
+    const batches = this._gpuParticleBatches;
+    if (batches.length === 0) return;
+    if (this._proxyLayerList.length > 0) this._syncProxiesOn();
+    Time.readSimNowInto(this._gpuClock, 0);
+    let live = 0;
+    for (let i = 0; i < batches.length; i++) live += batches[i].update(this._gpuClock);
+    this._gpuParticleLiveRecords = live;
+  }
+
+  /**
+   * The sortWithEntities layers draw among the entities while the entities y-sort (gpuParticleProxies.js); with
+   * the y-sort off they draw at their zIndex, as any layer.
+   */
+  _syncProxiesOn() {
+    const on = this._entityChunks !== null && this._entityYSort();
+    if (on === this._proxiesOn) return;
+    this._proxiesOn = on;
+    const list = this._proxyLayerList;
+    for (let i = 0; i < list.length; i++) {
+      const pl = list[i];
+      pl.batch.sorted = on;
+      // A look layer's full-screen composite gives way to its regions among the entities.
+      if (pl.cl.displaySprite) pl.cl.displaySprite.renderable = !on;
+    }
+    if (!on) this._entityChunks.clear();
+  }
+
+  /** After initializeCustomLayers' layers: the sortWithEntities layers, drawn among the entities. */
+  _initProxies() {
+    const old = this._proxyLayerList;
+    for (let i = 0; i < old.length; i++) if (old[i].regions) old[i].regions.destroy();
+    this._proxyLayers = [];
+    this._proxyLayerList = [];
+    this._proxiesOn = false;
+    if (this._entityChunks) this._entityChunks.clear();
+    for (let i = 0; i < this._customLayerList.length; i++) {
+      const cl = this._customLayerList[i];
+      if (!cl.gpu || !cl.gpu.info.sortWithEntities) continue;
+      let regions = null;
+      if (cl.gpu.look && cl.rtOut) {
+        regions = new RegionQuads({
+          useWebGpu: this._useWebGpu,
+          shaders: this._engineShaders,
+          texture: cl.rtOut,
+          // As the layer's full-screen composite draws (the layer's blendMode, not its containerBlend).
+          blendMode: cl.displaySprite?.blendMode || 'normal',
+          label: `gpu-regions-${cl.layerName}`,
+        });
+      }
+      const pl = { layerId: cl.layerId, cl, batch: cl.gpu, regions };
+      this._proxyLayers[cl.layerId] = pl;
+      this._proxyLayerList.push(pl);
+    }
+    if (this._proxyLayerList.length === 0) return;
+    if (!this._ySort) {
+      console.warn('[PIXI WORKER] sortWithEntities needs renderer.ySort: those GPU particle layers draw at their zIndex');
+    }
+    if (!this.entitiesBatch || !this._entitiesRoot) return;
+    if (!this._entityChunks) {
+      this._entityChunks = new EntityChunks({
+        batch: this.entitiesBatch,
+        root: this._entitiesRoot,
+        maxSplits: this.config?.renderer?.maxPainterSplits,
+      });
+    }
+    if (this._packGpuSpritesOn === PACK_GPU_SPRITES_PIXI) {
+      if (!this._proxyLocal) {
+        this._proxyLocal = localProxyHalf();
+        this._proxyCollector = new ProxyCollector();
+      }
+    } else if (GpuParticles.proxySab) {
+      this._proxyHalves = bindProxyHalves(GpuParticles.proxySab);
+    }
+    if (!this._proxyDrawEntry) this._proxyDrawEntry = (w, out, n) => this._drawProxyEntry(w, out, n);
+  }
+
+  /** Pre-render's entries for the frame Pixi took (it packed the entities). */
+  _applyPackedProxies() {
+    this._applyProxies(this._proxyHalves !== null ? this._proxyHalves[this._proxyReadHalf] : null);
+  }
+
+  /** Pixi packed the entities: it lists the groups itself, against the order it just packed. */
+  _applyLocalProxies(order, packedCount) {
+    const half = this._proxyLocal;
+    if (half === null) {
+      this._applyProxies(null);
+      return;
+    }
+    const collector = this._proxyCollector;
+    const cam = this._proxyCamera;
+    cam[PROXY_CAMERA.X] = this._renderCameraX;
+    cam[PROXY_CAMERA.Y] = this._renderCameraY;
+    cam[PROXY_CAMERA.ZOOM] = this._renderZoom;
+    cam[PROXY_CAMERA.ROT] = this._renderCameraRot || 0;
+    cam[PROXY_CAMERA.CANVAS_W] = this.canvasWidth;
+    cam[PROXY_CAMERA.CANVAS_H] = this.canvasHeight;
+    Time.readSimNowInto(this._gpuClock, 0);
+    const n = this._painter !== null
+      ? collector.collect(GpuParticles.layers, this._gpuClock, proxyView(this._proxyView, cam))
+      : 0;
+    if (n > 0) collector.write(half, this.renderQueueSortKey, order, packedCount | 0);
+    else Atomics.store(half.header, 0, 0);
+    this._applyProxies(half);
+  }
+
+  /** The entities root this frame: the entities batch in chunks, the entries in the gaps. */
+  _applyProxies(half) {
+    const chunks = this._entityChunks;
+    const count = half !== null ? Math.min(Atomics.load(half.header, 0), PROXY_MAX_ENTRIES) : 0;
+    if (count <= 0) {
+      chunks.clear();
+      return;
+    }
+    const list = this._proxyLayerList;
+    const alphas = Layer._alpha;
+    let view = false;
+    for (let i = 0; i < list.length; i++) {
+      const pl = list[i];
+      // The layer's alpha for this frame's group meshes and regions, set once here rather than passed per entry.
+      const alpha = alphas ? alphas[pl.layerId] : 1;
+      pl.batch.alpha = alpha;
+      pl.batch.beginGroups();
+      if (pl.regions !== null) {
+        pl.regions.alpha = alpha;
+        const out = pl.cl.rtOut;
+        if (out && pl.regions.source !== out.source) pl.regions.setTexture(out);
+        // The composite's blend follows Layer blend changes (handleSetLayerProps); the regions follow it.
+        const blend = pl.cl.displaySprite ? pl.cl.displaySprite.blendMode : 'normal';
+        if (blend !== pl.regions.blendMode) pl.regions.setBlendMode(blend);
+        if (!view) {
+          // World to screen px this frame, once for every look layer's regions.
+          this._writeCameraRtTransform(this._proxyMatrix, null);
+          view = true;
+        }
+        pl.regions.setView(this._proxyMatrix, this.canvasWidth || 1, this.canvasHeight || 1);
+        pl.regions.beginFrame();
+      }
+    }
+    this._proxyApplyHalf = half;
+    const mesh = this.entitiesBatch.mesh;
+    chunks.apply(half, count, mesh.visible ? mesh.geometry.instanceCount | 0 : 0, this._proxyDrawEntry);
+  }
+
+  /** One entry's meshes at out[n…] (a group's ring slices, or a look layer's region); returns the next index. */
+  _drawProxyEntry(w, out, n) {
+    const half = this._proxyApplyHalf;
+    const ints = half.ints;
+    const kindLayer = ints[w + PROXY.KIND_LAYER];
+    const pl = this._proxyLayers[kindLayer & 0xff];
+    if (!pl || !layerIsVisible(pl.layerId)) return n;
+    if ((kindLayer >> 8) === PROXY_KIND.GROUP) {
+      return pl.batch.groupMeshes(ints[w + PROXY.RING], ints[w + PROXY.GROUP], out, n);
+    }
+    if (pl.regions === null) return n;
+    out[n] = pl.regions.quad(half.floats, w);
+    return n + 1;
   }
 
   _entityYSort() {
@@ -2053,6 +2421,16 @@ class PixiRenderer extends AbstractWorker {
     if ((layout.pixiGlowRows | 0) >= (this.renderQueueMaxItems | 0) && layout.pixiGlowByte >= 0) {
       this._pixiGlowRows = new Float32Array(memory.buffer, layout.pixiGlowByte, (this.renderQueueMaxItems | 0) * INSTANCED_SPRITE_FLOATS);
     }
+    // E-177: the keyed frames' updates and resync header, for a scene whose sprites go keyed (keyedSpritesEnabled).
+    this._pixiKeyed = (layout.pixiKeyRows | 0) > 0 && layout.pixiKeyHeaderByte >= 0
+      ? {
+          keyBase: layout.pixiKeyBase | 0,
+          keyRows: layout.pixiKeyRows | 0,
+          updatesByte: layout.pixiKeyUpdatesByte,
+          headerByte: layout.pixiKeyHeaderByte,
+          shadowByte: layout.pixiKeyShadowByte ?? -1,
+        }
+      : null;
   }
 
   createEntitiesInstancedBatch(maxItems) {
@@ -2060,6 +2438,10 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxEntity = painterWasm ? painterSlotList(painterWasm, 'entity', maxItems) : new Uint32Array(maxItems);
     this._rqIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
     this._painter = this._ySort ? this._newEntityPainter() : null;
+    const gpuCaps = this.gpuQueueBuffers && this.gpuQueueBuffers[0] ? this.gpuQueueBuffers[0].caps : null;
+    // E-177: keyed frames where Pixi packs into the render-queue memory and the scene laid out their regions (WebGL).
+    const keyed = this._pixiKeyed !== null && this._pixiInstanceRows !== null && !this._useWebGpu ? this._pixiKeyed : null;
+    const indexed = !!(gpuCaps && gpuCaps.indexedSprites) || keyed !== null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -2078,8 +2460,21 @@ class PixiRenderer extends AbstractWorker {
       // E-82b: the plain sprites in two streams, the statics uploaded when they change. A nearest atlas snaps every
       // pose, which the split kernel does not pack, so it keeps 15-float rows.
       split: !this._queueInterp && this.atlasScaleMode !== 'nearest',
-      // W30: room for its two streams at their widest (a pose batch's 17 floats a row).
-      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)),
+      // E-162: with the queue's indexed frames (renderer.indexedSprites), where their statics go: a texture through the
+      // record texture helper (WebGL), or a storage buffer within the device's binding size (WebGPU).
+      statics: !indexed
+        ? null
+        : this._useWebGpu
+          ? { maxStorageBytes: this.pixiApp?.renderer?.gpu?.device?.limits?.maxStorageBufferBindingSize ?? WEBGPU_DEFAULT_STORAGE_BINDING }
+          : this._gpuRecordTexture(),
+      keyed,
+      // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
+      // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
+      // shadow stream of the sun's pass over its instances (3 floats a row).
+      arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)
+        + (keyed !== null
+          ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS + 3)
+          : indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)),
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 
@@ -2157,6 +2552,7 @@ class PixiRenderer extends AbstractWorker {
       consumedNewFrame = true;
       const readBufferIndex = (readyFrame - 1) & 1;
       this._setReadBuffer(readBufferIndex);
+      this._proxyReadHalf = readBufferIndex;
       for (let i = 0; i < this._customLayerList.length; i++) {
         const layer = this._customLayerList[i];
         if (layer.buffers) layer.readRef = layer.buffers[readBufferIndex];
@@ -2217,6 +2613,22 @@ class PixiRenderer extends AbstractWorker {
       const name = Layer.getName(i);
       const displayObject = name ? this._layerRuntime[name] : null;
       if (displayObject) displayObject.alpha = Layer._alpha[i];
+    }
+  }
+
+  /**
+   * Layer.resolution set at run time: the look layer's render textures at the new scale, as a canvas resize makes
+   * them. Before the passes that draw them, so this frame fills them.
+   */
+  syncLayerResolutionFromSharedState() {
+    const list = this._customLayerList;
+    const resolutions = Layer._resolution;
+    for (let i = 0; i < list.length; i++) {
+      const cl = list[i];
+      const resolution = resolutions[cl.layerId];
+      if (resolution === cl.resolution) continue;
+      cl.resolution = resolution;
+      this._resizeCustomLayerRTs(cl, this.canvasWidth, this.canvasHeight);
     }
   }
 
@@ -2338,13 +2750,17 @@ class PixiRenderer extends AbstractWorker {
       if (!consumedNewFrame) this.tickInterpolatedPose();
       this.ensureCameraBeforeFirstFrame();
       this.updateCameraTransform();
+      this.updateGpuParticleLayers();
       this.syncLayerAlphaFromSharedState();
       this.updateDecalTiles();
       if (this.shouldDrawFrameLockedPasses(consumedNewFrame, resuming)) {
+        this.syncLayerResolutionFromSharedState();
         this.uploadTextureLookupIfNeeded();
         this.drawFrameLights();
-        this.drawFrameShadows();
+        // E-191: the sprites first, so a keyed frame's statics texture and instances are this frame's when the sun's
+        // shadow pass draws them.
         this.drawFrameSprites();
+        this.drawFrameShadows();
         this.drawFrameCustomLayers();
         this.renderLightingToTexture();
       }
@@ -2500,7 +2916,7 @@ class PixiRenderer extends AbstractWorker {
         sprite.y = ty * tileSize;
         sprite.width = tileSize;
         sprite.height = tileSize;
-        sprite.visible = false; // Hidden until first decal splat
+        sprite.visible = false; // Hidden until first decal splat, and while outside the view (_cullDecalTiles)
 
         this.decalTileSprites[tileIndex] = sprite;
         this.decalTileTextureSources[tileIndex] = null; // Created on first update
@@ -2508,7 +2924,79 @@ class PixiRenderer extends AbstractWorker {
       }
     }
 
+    this._decalTileStamped = new Uint8Array(this.decalsTilesX * this.decalsTilesY);
+    this._decalView.fill(-1);
     debugWorkerLog(`PIXI WORKER: Created ${this.decalsTotalTiles} decal tile sprites`);
+  }
+
+  /**
+   * E-175: only the stamped decal tiles the camera's view covers are drawn (with a rotation, the view's bounding box).
+   * The decal container is a render group, so a tile shown or hidden rebuilds its few instructions; a frame whose view
+   * stays on the same tiles changes nothing.
+   */
+  _cullDecalTiles(zoom, cameraX, cameraY, rot) {
+    const sprites = this.decalTileSprites;
+    const tilesX = this.decalsTilesX | 0;
+    const tilesY = this.decalsTilesY | 0;
+    const size = this.decalsTileSize;
+    if (tilesX <= 0 || tilesY <= 0 || !(size > 0) || sprites.length === 0) return;
+    const z = zoom || 1;
+    const w = (this.canvasWidth || 0) / z;
+    const h = (this.canvasHeight || 0) / z;
+    let x0 = cameraX;
+    let y0 = cameraY;
+    let x1 = cameraX + w;
+    let y1 = cameraY + h;
+    if (rot) {
+      const cx = cameraX + w * 0.5;
+      const cy = cameraY + h * 0.5;
+      const c = Math.abs(Math.cos(rot));
+      const s = Math.abs(Math.sin(rot));
+      const hw = (w * c + h * s) * 0.5;
+      const hh = (w * s + h * c) * 0.5;
+      x0 = cx - hw;
+      x1 = cx + hw;
+      y0 = cy - hh;
+      y1 = cy + hh;
+    }
+    const tx0 = Math.max(0, Math.min(tilesX - 1, Math.floor(x0 / size)));
+    const tx1 = Math.max(0, Math.min(tilesX - 1, Math.floor(x1 / size)));
+    const ty0 = Math.max(0, Math.min(tilesY - 1, Math.floor(y0 / size)));
+    const ty1 = Math.max(0, Math.min(tilesY - 1, Math.floor(y1 / size)));
+    const view = this._decalView;
+    if (view[0] === tx0 && view[1] === ty0 && view[2] === tx1 && view[3] === ty1) return;
+    const stamped = this._decalTileStamped;
+    // The old range's tiles out, the new range's stamped tiles in.
+    if (view[0] >= 0) {
+      for (let ty = view[1]; ty <= view[3]; ty++) {
+        for (let tx = view[0]; tx <= view[2]; tx++) {
+          if (tx >= tx0 && tx <= tx1 && ty >= ty0 && ty <= ty1) continue;
+          const sprite = sprites[tx + ty * tilesX];
+          if (sprite.visible) sprite.visible = false;
+        }
+      }
+    }
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const i = tx + ty * tilesX;
+        const show = stamped[i] === 1;
+        if (sprites[i].visible !== show) sprites[i].visible = show;
+      }
+    }
+    view[0] = tx0;
+    view[1] = ty0;
+    view[2] = tx1;
+    view[3] = ty1;
+  }
+
+  /** E-175: whether decal tile `tileIndex` is in the camera's view (_cullDecalTiles' last range). */
+  _decalTileInView(tileIndex) {
+    const view = this._decalView;
+    if (view[0] < 0) return false;
+    const tilesX = this.decalsTilesX | 0;
+    const tx = tileIndex % tilesX;
+    const ty = (tileIndex - tx) / tilesX;
+    return tx >= view[0] && tx <= view[2] && ty >= view[1] && ty <= view[3];
   }
 
   /**
@@ -2582,7 +3070,8 @@ class PixiRenderer extends AbstractWorker {
         this.decalTileTextureSources[tileIndex] = source;
       }
       this._uploadDecalRgba8(source, tileRGBA, tilePixelSize, tilePixelSize);
-      sprite.visible = true;
+      this._decalTileStamped[tileIndex] = 1;
+      sprite.visible = this._decalTileInView(tileIndex);
 
       processed++;
       tileIndex = (tileIndex + 1) % totalTiles;
@@ -2611,6 +3100,8 @@ class PixiRenderer extends AbstractWorker {
     else if (typeof texSys.bindSource === 'function') texSys.bindSource(source, 0);
     const glSource = typeof texSys.getGlSource === 'function' ? texSys.getGlSource(source) : null;
     const target = glSource?.target || gl.TEXTURE_2D;
+    // N-94: the active unit's binding goes back after the upload (see _uploadRgba32FloatGl).
+    const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
     if (glSource?.texture) gl.bindTexture(target, glSource.texture);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 4);
     if (gl.UNPACK_FLIP_Y_WEBGL != null) gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0);
@@ -2618,6 +3109,7 @@ class PixiRenderer extends AbstractWorker {
       gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
     }
     gl.texSubImage2D(target, 0, 0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, data);
+    gl.bindTexture(target, prev);
   }
 
   /* =====================
@@ -3293,8 +3785,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
     const lightHeight = LightEmitter.height;
 
-    const rgb = this._rgbResult;
-
     // E-96. Each light's umbra disc, then its visibility fan (the order the per-light meshes were
     // added to the container in, so the additive blend sums in the same sequence), into one mesh.
     let needVerts = 0;
@@ -3325,10 +3815,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const lightY = ly - (lightHeight[lightIdx] || 0);
       const intensity = lightIntensityArr[lightIdx];
       const radius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
-      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
-      const r = rgb.r;
-      const g = rgb.g;
-      const b = rgb.b;
+      const color = lightColor[lightIdx];
+      const r = ((color >> 16) & 0xff) / 255;
+      const g = ((color >> 8) & 0xff) / 255;
+      const b = (color & 0xff) / 255;
 
       // The umbra disc: a quad around the light at the umbra floor.
       const disc = vtx;
@@ -3446,7 +3936,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-    const rgb = this._rgbResult;
     const maxVerts = this._selfLitMaxFillVerts;
     const segs = this._selfLitCircleSegs;
     const fanCos = this._selfLitCircleCos;
@@ -3484,7 +3973,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const lx = Transform.x[light];
       const ly = Transform.y[light] - (lightHeight[light] || 0);
       const intensity = lightIntensityArr[light];
-      extractRGBNormalizedMut(lightColor[light], rgb);
+      const color = lightColor[light];
+      const cr = ((color >> 16) & 0xff) / 255;
+      const cg = ((color >> 8) & 0xff) / 255;
+      const cb = (color & 0xff) / 255;
       const lightR = lightInfluenceRadius(sqrtLightIntensity ? sqrtLightIntensity[light] : 0);
 
       if (vtx + lightVerts > batch.vertCap || iCount + lightIndices > batch.idxCap) {
@@ -3674,9 +4166,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
 
       // The light's terms on every vertex it wrote.
-      const r = rgb.r;
-      const g = rgb.g;
-      const b = rgb.b;
+      const r = cr;
+      const g = cg;
+      const b = cb;
       for (let v = lightBase; v < vtx; v++) {
         const o = v * SELF_LIT_BATCH_FLOATS;
         data[o + 2] = lx;
@@ -3735,7 +4227,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightIntensityArr = LightEmitter.lightIntensity;
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
-    const rgb = this._rgbResult;
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
@@ -3753,7 +4244,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const lx = Transform.x[lightIdx];
       const ly = Transform.y[lightIdx] - (lightHeight[lightIdx] || 0);
       const intensity = lightIntensityArr[lightIdx];
-      extractRGBNormalizedMut(lightColor[lightIdx], rgb);
+      const color = lightColor[lightIdx];
+      const cr = ((color >> 16) & 0xff) / 255;
+      const cg = ((color >> 8) & 0xff) / 255;
+      const cb = (color & 0xff) / 255;
 
       // --- Sprite mask fills for this light ---
       if (this._selfLitSpriteProgramOpts) {
@@ -3850,9 +4344,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           uniforms.uLightPos[0] = lx;
           uniforms.uLightPos[1] = ly;
           uniforms.uLightIntensity = intensity;
-          uniforms.uLightColor[0] = rgb.r;
-          uniforms.uLightColor[1] = rgb.g;
-          uniforms.uLightColor[2] = rgb.b;
+          uniforms.uLightColor[0] = cr;
+          uniforms.uLightColor[1] = cg;
+          uniforms.uLightColor[2] = cb;
           const bodyCx = ox + (Collider.offsetX[entityIdx] || 0);
           const bodyCy = oy + (Collider.offsetY[entityIdx] || 0);
           uniforms.uBodyCenter[0] = bodyCx;
@@ -4090,30 +4584,28 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const visibleLights = this._visibleLightsAll;
     const countToRender = Math.min(this._visibleLightsAllCount, maxLights);
 
-    // OPTIMIZED: Reuse preallocated RGB object to avoid allocation per light
-    const rgb = this._rgbResult;
+    const rgb = this._rgbResult; // the sun's colour, once a frame
+    const vr = Collider.visualRange;
+    const row1 = maxLights * 4;
 
     for (let i = 0; i < countToRender; i++) {
       const entityIndex = visibleLights[i].entityId;
       const color = lightColor[entityIndex];
-
-      // Always use world coordinates for lights (shader converts screen to world)
-      // Apply height offset to position light above the entity
-      extractRGBNormalizedMut(color, rgb);
-      const vr = Collider.visualRange;
       const range = vr ? (vr[entityIndex] || 0) : 0;
-      packLightDataTexel(
-        lightData,
-        maxLights,
-        i,
-        worldX[entityIndex],
-        worldY[entityIndex] - (lightHeight[entityIndex] || 0),
-        lightIntensity[entityIndex],
-        rgb.r,
-        rgb.g,
-        rgb.b,
-        range * range
-      );
+
+      // packLightDataTexel's layout, written here (E-109): where TurboFan left that call out, each of its seven
+      // doubles was a heap number per light per frame. World coordinates (the shader converts screen to world),
+      // the light raised by its height.
+      const i0 = i * 4;
+      lightData[i0] = worldX[entityIndex];
+      lightData[i0 + 1] = worldY[entityIndex] - (lightHeight[entityIndex] || 0);
+      lightData[i0 + 2] = lightIntensity[entityIndex];
+      lightData[i0 + 3] = range * range;
+      const i1 = row1 + i0;
+      lightData[i1] = ((color >> 16) & 0xff) / 255;
+      lightData[i1 + 1] = ((color >> 8) & 0xff) / 255;
+      lightData[i1 + 2] = (color & 0xff) / 255;
+      lightData[i1 + 3] = 0;
     }
 
     clearUnusedLightDataTexels(lightData, maxLights, countToRender);
@@ -4259,6 +4751,71 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return true;
   }
 
+  /**
+   * E-191: the sun pass's mesh over the entity batch's keyed instances of this frame, or null (no keyed frame this
+   * frame, WebGPU, or no shadow stream). Made on first use: the shadow program reading the statics by key, the caster
+   * shader's resources and uniform group, the caster batch's state.
+   */
+  _keyedSunFor(sunShader) {
+    const b = this.entitiesBatch;
+    if (!this._keyedSunTried) {
+      this._keyedSunTried = true;
+      const casters = this.gpuCasterBatch;
+      if (b && b.keyed && !this._useWebGpu && casters && casters.mesh && b.enableKeyedShadows()) {
+        const shader = b.makeKeyedSunShader(sunShader);
+        if (shader) {
+          this._keyedSunMesh = new PIXI.Mesh({
+            geometry: b.keyedShadowGeometry,
+            shader,
+            state: casters.mesh.state,
+            label: 'keyed-sun-casters',
+          });
+        }
+      }
+    }
+    if (this._keyedSunMesh === null || !b || !b.keyedShadowReady) return null;
+    this._keyedSunMesh.geometry = b.keyedShadowGeometry;
+    return this._keyedSunMesh;
+  }
+
+  /**
+   * E-191 step 2: the shadow passes over pre-render's keyed caster rows, made once: the sun rows' and the stamp rows'
+   * programs (the entity batch's statics by key) on the caster batch's geometries for such rows. Once both are made the
+   * entity batch's keyed uploads tell pre-render (its header's LIVE word), which then writes such rows.
+   */
+  _ensureKeyedCasters(sunShader) {
+    if (this._keyedCastersTried) return;
+    this._keyedCastersTried = true;
+    const b = this.entitiesBatch;
+    const casters = this.gpuCasterBatch;
+    if (!b || !b.keyed || this._useWebGpu || !casters || !casters.mesh) return;
+    const sun = b.makeKeyedCasterShader(sunShader, false);
+    const stamp = b.makeKeyedCasterShader(sunShader, true);
+    if (sun === null || stamp === null) return;
+    const state = casters.mesh.state;
+    this._keyedSunRowsMesh = new PIXI.Mesh({ geometry: casters.keyedCasterGeometry(false), shader: sun, state, label: 'keyed-sun-rows' });
+    this._keyedStampRowsMesh = new PIXI.Mesh({ geometry: casters.keyedCasterGeometry(true), shader: stamp, state, label: 'keyed-stamp-rows' });
+    b.keyedCasters = true;
+  }
+
+  /**
+   * E-191 step 2: `mesh` over this frame's `count` keyed caster rows of `floats` floats from `src` (committed to the caster
+   * batch), or null: none, or no such pass (a frame of keyed rows Pixi cannot draw is left out, and that said once).
+   */
+  _keyedRowsMesh(mesh, src, count, floats) {
+    if (mesh === null) {
+      if (!this._keyedRowsRefusedWarned) {
+        this._keyedRowsRefusedWarned = true;
+        console.error('PIXI WORKER: keyed caster rows without their shadow passes: those shadows are not drawn');
+      }
+      return null;
+    }
+    const geometry = this.gpuCasterBatch.commitKeyedCasterRows(src, count, floats);
+    if (geometry === null) return null;
+    mesh.geometry = geometry;
+    return mesh;
+  }
+
   _drawGpuCasterShadows() {
     this._gpuSunDrew = false;
     this._gpuPassesThisFrame = 0;
@@ -4272,10 +4829,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const u = group && group.uniforms;
     if (!u || !u.uCam || !u.uSun || !u.uLight) return;
 
+    this._ensureKeyedCasters(shader);
     const gpu = this._gpuQueueRead;
     const sunN = gpu && gpu.header ? (gpu.header[GPU_HDR_SUN] | 0) : 0;
     const stampN = gpu && gpu.header ? (gpu.header[GPU_HDR_STAMP] | 0) : 0;
     const cookieN = gpu && gpu.header ? (gpu.header[GPU_HDR_COOKIE] | 0) : 0;
+    // E-191 step 2: pre-render's sun and stamp rows are keyed caster rows (a pose, a key, the shadow terms; a stamp's
+    // light) when it found Pixi's statics recent.
+    const keyedRows = gpu && gpu.header ? ((gpu.header[GPU_HDR_FLAGS] | 0) & GPU_FLAG_KEYED_CASTERS) !== 0 : false;
     this._gpuCastersThisFrame = sunN;
     this._gpuShadowLightsThisFrame = cookieN;
 
@@ -4309,8 +4870,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     batch.setTargetSpace(false, 0, 0, 1);
     if (u.uSun[3] > 0 && sunN > 0) {
-      this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
-      this._drawGpuCasterPass(mesh, group, true);
+      // E-191: on a keyed frame the sun's casters are the entity batch's own instances (a sprite that casts none has
+      // no height), already uploaded with their shadow terms; else pre-render's sun rows.
+      const keyedSun = this._keyedSunFor(shader);
+      if (keyedSun !== null) {
+        this._drawGpuCasterPass(keyedSun, group, true);
+      } else if (keyedRows) {
+        const rows = this._keyedRowsMesh(this._keyedSunRowsMesh, gpu.sun, sunN, GPU_KEYED_CASTER_FLOATS);
+        if (rows !== null) this._drawGpuCasterPass(rows, group, true);
+      } else {
+        this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
+        this._drawGpuCasterPass(mesh, group, true);
+      }
     }
 
     const sunI = sunOn ? Sun.intensity : 0;
@@ -4337,8 +4908,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       u.uLight[1] = 0;
       u.uLight[2] = 0;
       u.uLight[3] = 0;
-      this._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
-      this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
+      if (keyedRows) {
+        const rows = this._keyedRowsMesh(this._keyedStampRowsMesh, gpu.stamp, stampN, GPU_KEYED_STAMP_FLOATS);
+        if (rows !== null) this._drawGpuCasterPass(rows, group, !this._gpuSunDrew);
+      } else {
+        this._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
+        this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
+      }
     }
 
     if (!this._gpuSunDrew) {
@@ -4921,6 +5497,62 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
   }
 
+  /**
+   * A GPU particle layer's density pass: its meshes keep world positions, and the camera into the layer's RT is
+   * the render transform (as a MESH layer's fill).
+   */
+  _renderGpuParticlesToRt(cl) {
+    const container = cl.gpu.container;
+    container.x = 0;
+    container.y = 0;
+    container.rotation = 0;
+    container.pivot.set(0, 0);
+    if (container.scale.x !== 1 || container.scale.y !== 1) container.scale.set(1);
+    const rtOpts = this._rtRenderOpts;
+    rtOpts.container = cl.gpu.liveRecords > 0 ? container : this._rtEmptyContainer;
+    rtOpts.target = cl.rt;
+    rtOpts.clear = true;
+    rtOpts.clearColor = this._clearTransparent;
+    rtOpts.transform = this._writeCameraRtTransform(this._meshRtTransform, cl);
+    this._submitRender(rtOpts);
+    rtOpts.transform = null;
+  }
+
+  /** World px -> RT px of a viewport-sized layer RT at `resolution`, rotation included, into `mx`. */
+  _writeCameraRtTransform(mx, cl) {
+    // The layer's RT resolution (null: the screen, 1). Read here and written field by field: doubles passed to a
+    // call TurboFan does not inline (this one, or Matrix.set) are boxed.
+    const resolution = cl !== null ? cl.resolution || 1 : 1;
+    const z = this._renderZoom * resolution;
+    const rot = this._renderCameraRot || 0;
+    if (!rot) {
+      mx.a = z;
+      mx.b = 0;
+      mx.c = 0;
+      mx.d = z;
+      mx.tx = -this._renderCameraX * z;
+      mx.ty = -this._renderCameraY * z;
+      return mx;
+    }
+    const c = Math.cos(rot);
+    const s = Math.sin(rot);
+    const a = z * c;
+    const b = z * s;
+    const cc = -z * s;
+    const d = z * c;
+    const focusX = this._renderCameraX + (this.canvasWidth || 0) / (2 * (this._renderZoom || 1));
+    const focusY = this._renderCameraY + (this.canvasHeight || 0) / (2 * (this._renderZoom || 1));
+    const screenCx = (this.canvasWidth || 0) * resolution * 0.5;
+    const screenCy = (this.canvasHeight || 0) * resolution * 0.5;
+    mx.a = a;
+    mx.b = b;
+    mx.c = cc;
+    mx.d = d;
+    mx.tx = screenCx - a * focusX - cc * focusY;
+    mx.ty = screenCy - b * focusX - d * focusY;
+    return mx;
+  }
+
   _renderMeshFillToRt(cl, fillMesh) {
     const z = this._renderZoom * (cl.resolution || 1);
     const mx = this._meshRtTransform;
@@ -5268,6 +5900,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     if (cl.displaySprite) cl.displaySprite.texture = PIXI.Texture.EMPTY;
     this._unbindLookShaderTexture(cl.shader);
+    // A sorted layer's regions sample rtOut too. Releasing rtOut's bind groups would destroy theirs, and the next
+    // setTexture would write into the destroyed group: off it first, onto the new rtOut below.
+    const regions = this._proxyLayers[cl.layerId]?.regions ?? null;
+    if (regions !== null) regions.setTexture(PIXI.Texture.EMPTY);
 
     if (cl.rt) {
       this._releaseTextureBindGroups(cl.rt);
@@ -5279,6 +5915,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       cl.rtOut.destroy(true);
       cl.rtOut = PIXI.RenderTexture.create({ width: lw, height: lh });
     }
+    if (regions !== null && cl.rtOut) regions.setTexture(cl.rtOut);
 
     if (cl.shader) {
       const lookTex = Layer.customLayerLookTexture(cl);
@@ -5922,6 +6559,45 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         );
       }
     }
+    // GPU particle layers (LAYER_KIND.GPU_PARTICLES): their programs, only in a scene that has one.
+    if (data.gpuParticles?.layers?.length) {
+      // A look layer drawn among the entities draws its finished target in regions (gpuParticleChunks.js).
+      const regionShaders = data.gpuParticles.layers.some((l) => l.sortWithEntities && l.look);
+      if (this._useWebGpu) {
+        shaderFetches.push(
+          fetchEngineShader('/src/shaders/gpuParticle.wgsl').then((s) => {
+            sh.gpuParticle = s;
+          })
+        );
+        if (regionShaders) {
+          shaderFetches.push(fetchEngineShader('/src/shaders/gpuRegion.wgsl').then((s) => {
+            sh.gpuRegion = s;
+          }));
+        }
+      } else {
+        shaderFetches.push(
+          fetchEngineShader('/src/shaders/gpuParticle.vert.glsl').then((s) => {
+            sh.gpuParticleVert = s;
+          }),
+          fetchEngineShader('/src/shaders/gpuParticle.frag.glsl').then((s) => {
+            sh.gpuParticleFrag = s;
+          }),
+          fetchEngineShader('/src/shaders/gpuParticleAdditive.frag.glsl').then((s) => {
+            sh.gpuParticleFragAdd = s;
+          })
+        );
+        if (regionShaders) {
+          shaderFetches.push(
+            fetchEngineShader('/src/shaders/gpuRegion.vert.glsl').then((s) => {
+              sh.gpuRegionVert = s;
+            }),
+            fetchEngineShader('/src/shaders/gpuRegion.frag.glsl').then((s) => {
+              sh.gpuRegionFrag = s;
+            })
+          );
+        }
+      }
+    }
     await Promise.all(shaderFetches);
     this._initTilemapGidProgram();
 
@@ -6134,8 +6810,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       this._decalPremultiply = await bindDecalPremultiply(data.decals.memory, data.decals.memoryLayout);
       this.decalsTilesDirty = new Uint8Array(data.decals.tilesDirty);
 
-      // Create decal tile container (renders between background and entities)
-      this.decalTileContainer = new PIXI.Container();
+      // Create decal tile container (renders between background and entities). E-175: a render group, so the camera
+      // moving it each frame moves the group's transform, not every tile's, and its batches are kept until a tile changes.
+      this.decalTileContainer = new PIXI.Container({ isRenderGroup: true });
       this._registerLayerDisplayObject('decals', this.decalTileContainer);
 
       // Create sprites for each tile
@@ -6580,6 +7257,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     for (let i = 0; i < prev.length; i++) {
       const old = prev[i];
       if (old && old.worldMesh) old.worldMesh.destroy(true);
+      if (old && old.gpu) old.gpu.destroy();
       const sources = old && old.sharedSources;
       if (!sources) continue;
       const keys = Object.keys(sources);
@@ -6590,6 +7268,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     }
     this._destroyAllCustomLayerCompute();
     this._customLayers = {};
+    this._gpuParticleBatches = [];
     await this._bindMeshMemory(data);
     if (!data.layerData) return;
 
@@ -6615,12 +7294,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const isCompute = !!config.compute;
       const isMesh = config.kind === LAYER_KIND.MESH;
       const isWorldRect = !!(config.worldRect && config.shaderTextures && config.shaderTextures.length);
-      if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh && !isWorldRect) continue;
+      const isGpu = config.kind === LAYER_KIND.GPU_PARTICLES;
+      if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh && !isWorldRect && !isGpu) continue;
 
       const layerId = config.id;
       const layerName = config.name;
       const lrq = queues[layerId];
-      if (!isLfDensity && !isCompute && !isMesh && !isWorldRect && !lrq) continue;
+      if (!isLfDensity && !isCompute && !isMesh && !isWorldRect && !isGpu && !lrq) continue;
 
       const layerObj = Layer.getById(layerId);
       if (!layerObj) continue;
@@ -6703,6 +7383,35 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         batch.mesh.blendMode = containerBlend;
       }
 
+      // GPU particles: one instanced mesh per writer ring, evaluated in the vertex shader (gpuParticleBatch.js).
+      let gpuBatch = null;
+      if (isGpu) {
+        const info = GpuParticles.layerOf(layerId);
+        if (!info) continue;
+        installInstanceRangeDraw(this.pixiApp.renderer, this._useWebGpu);
+        if (!this._gpuAnimStartSource) this._rebuildGpuAnimStartLookup();
+        const looks = !!(hasShader && config.shaderFragment);
+        const blend = looks ? containerBlend : layerObj.blendMode;
+        gpuBatch = new GpuParticleLayerBatch({
+          info,
+          useWebGpu: this._useWebGpu,
+          shaders: this._engineShaders,
+          atlasSource: this._resolveAtlasSource(),
+          lutSource: this._texLutSource,
+          animStartSource: this._gpuAnimStartSource,
+          blendMode: blend,
+          additive: !looks && blend === 'add',
+          pixelSnap: !!config.gpuParticles?.pixelSnap,
+          look: looks,
+          label: `gpu-particles-${layerName}`,
+          // New records go up as they are published, drawn this frame or not (WebGL uploads only at the next draw).
+          flush: (buffer) => this.pixiApp.renderer.buffer.updateBuffer(buffer),
+          recordTexture: this._useWebGpu ? null : this._gpuRecordTexture(),
+        });
+        gpuBatch.container.blendMode = blend;
+        this._gpuParticleBatches.push(gpuBatch);
+      }
+
       let splatBatch = null;
       if (isLfDensity) {
         splatBatch = new LiquidFunDensitySplat({
@@ -6752,6 +7461,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         meshLook: false,
         compute: null,
         lookSource: null,
+        // LAYER_KIND.GPU_PARTICLES: the layer's GpuParticleLayerBatch, or null.
+        gpu: gpuBatch,
       };
 
       if (isCompute) {
@@ -6890,6 +7601,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._registerLayerDisplayObject(layerName, batch.mesh, true);
         this.pixiApp.stage.addChild(batch.mesh);
         debugWorkerLog(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
+      } else if (gpuBatch) {
+        // The layer's own blend mode on the container: its meshes draw with it (Pixi's group blend).
+        this._registerLayerDisplayObject(layerName, gpuBatch.container, false);
+        this.pixiApp.stage.addChild(gpuBatch.container);
+        debugWorkerLog(`PIXI WORKER: GPU particle layer "${layerName}" initialized (${gpuBatch.rings.length} rings)`);
       } else {
         console.warn(`PIXI WORKER: Layer "${layerName}" skipped (no shader RT and no sprite batch)`);
         continue;
@@ -6900,6 +7616,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     this._customLayerList = Object.values(this._customLayers);
     this._bindLutToBatches();
+    this._initProxies();
 
     if (this._customLayerList.length > 0) {
       this.pixiApp.stage.sortChildren();
@@ -6986,6 +7703,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         cl.splatBatch.upload(views, so);
         densityMesh = cl.splatBatch.mesh;
         cl.prevCount = views?.count ? views.count[0] | 0 : 0;
+      } else if (cl.gpu) {
+        // Updated this frame by updateGpuParticleLayers; with a look shader, its density pass is drawn here.
+        if (cl.rt) {
+          this._renderGpuParticlesToRt(cl);
+          if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+            rtOpts.transform = null;
+            rtOpts.container = cl.shaderMesh;
+            rtOpts.target = cl.rtOut;
+            rtOpts.clear = true;
+            rtOpts.clearColor = this._clearTransparent;
+            this._submitRender(rtOpts);
+          }
+        }
+        continue;
       } else if (cl.batch && cl.readRef) {
         const ref = cl.readRef;
         const count = ref.count[0];

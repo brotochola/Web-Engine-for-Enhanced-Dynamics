@@ -193,6 +193,12 @@ test('a page instance takes writes through accessors; a plain field throws', { c
   assert.throws(() => { crate.hp = 2; }, TypeError, 'a new field');
   assert.throws(() => { crate.index = 2; }, TypeError, 'an existing one');
   assert.ok(Object.isFrozen(crate));
+  // A component is made on its first read and kept, though the instance is frozen (it threw after E-164).
+  const transform = crate.transform;
+  assert.ok(transform instanceof Transform);
+  assert.equal(crate.transform, transform, 'the same object on the next read');
+  transform.x = 9;
+  assert.equal(Transform.x[1], 9, 'and it writes the slot');
 });
 
 test('on the page Enemy.spawn returns the entity (null when the pool is full)', { concurrency: false }, () => {

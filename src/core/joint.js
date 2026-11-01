@@ -703,7 +703,8 @@ export class Joint extends SharedAtomicPool {
   }
 
   static getJointCount(entityIdx) {
-    if (!this.head || entityIdx < 0 || entityIdx >= this._entityCount) return 0;
+    // Not `entityIdx < 0`: undefined and fractions pass it and the walk never ends (N-100).
+    if (!this.head || entityIdx >>> 0 !== entityIdx || entityIdx >= this._entityCount) return 0;
     const inv = this.INVALID_INDEX;
     let n = 0;
     let cur = this.head[entityIdx];
@@ -716,7 +717,7 @@ export class Joint extends SharedAtomicPool {
   }
 
   static getJoint(entityIdx, i) {
-    if (!this.head || i < 0 || entityIdx < 0 || entityIdx >= this._entityCount) {
+    if (!this.head || i < 0 || entityIdx >>> 0 !== entityIdx || entityIdx >= this._entityCount) {
       return -1;
     }
     const inv = this.INVALID_INDEX;
@@ -732,7 +733,7 @@ export class Joint extends SharedAtomicPool {
   }
 
   static forEachOnEntity(entityIdx, fn) {
-    if (!this.head || entityIdx < 0 || entityIdx >= this._entityCount) return;
+    if (!this.head || entityIdx >>> 0 !== entityIdx || entityIdx >= this._entityCount) return;
     const inv = this.INVALID_INDEX;
     let cur = this.head[entityIdx];
     while (cur !== inv) {

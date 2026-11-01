@@ -20,6 +20,7 @@ export const PARTICLE_INTEGRATE_COLUMNS = Object.freeze([
   'stayOnTheFloor', 'despawnOnGroundContact', 'tweenMask', 'easeId', 'alphaFrom', 'alphaTo', 'scaleXFrom',
   'scaleXTo', 'scaleYFrom', 'scaleYTo', 'tintFrom', 'tintTo', 'rotFrom', 'rotTo', 'angularVelFrom',
   'angularVelTo', 'hasAngularVel', 'animCount', 'animMode', 'animFrames', 'flat', 'renderOnly',
+  'bounces', 'bounciness', 'bounceFriction', 'easeIds',
 ]);
 
 /**

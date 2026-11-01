@@ -170,6 +170,10 @@ test('with the stamp spec, the shadow stamp scratch and light table are regions 
     ['nearDist', s.nearDistByte, MAX * 3 * 4],
     ['nearSlot', s.nearSlotByte, MAX * 3 * 4],
     ['nearCount', s.nearCountByte, MAX],
+    ['packedX', s.packedXByte, MAX * 4],
+    ['packedY', s.packedYByte, MAX * 4],
+    ['cellOf', s.cellOfByte, MAX * 4],
+    ['dist64', s.dist64Byte, MAX * 8],
     ['lights', s.lightsByte, 20 * STAMP_LIGHT_DOUBLES * 8],
     ['table', s.tableByte, STAMP_TABLE_SLOTS * 4],
   ].sort((a, b) => a[1] - b[1]);
@@ -257,4 +261,68 @@ test("with the painter spec, each sorting worker's painter state is a set of reg
   assert.equal(none.preRenderPainter, null, 'no spec, no regions');
   assert.equal(none.pixiPainter, null);
   assert.equal(none.queueAByte, L.queueAByte, 'the painter regions come after the queues');
+});
+
+test("E-177: with emit.pixiKeyed, the keyed frames' resync header and Pixi's updates are regions of their own", () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const entities = 3000;
+  const spriteBytes = SpriteRenderer.getBufferSize(entities);
+  const spec = (pixiKeyed) => ({ entities, spriteBytes, casterBytes: 0, decorationBytes: 0, pixiKeyed });
+  const plain = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(false), null, null, true).layout;
+  assert.equal(plain.pixiKeyRows, 0);
+  assert.equal(plain.pixiKeyUpdatesByte, -1);
+  assert.equal(plain.pixiKeyHeaderByte, -1);
+  assert.equal(plain.emit.keyHeaderByte, -1);
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(true), null, null, true);
+  const L = m.layout;
+  // The scene's entities, then a slot for each queue row, in whole texture rows of 1 024.
+  assert.equal(L.pixiKeyBase, entities);
+  assert.equal(L.pixiKeyRows, Math.ceil((entities + MAX) / 1024) * 1024);
+  assert.equal(L.emit.keyHeaderByte, L.pixiKeyHeaderByte, 'pre-render and Pixi share the header');
+  const spans = [
+    ['queueA', L.queueAByte, queueBytes],
+    ['queueB', L.queueBByte, queueBytes],
+    ['pixiInstances', L.pixiInstanceByte, MAX * 15 * 4],
+    ['pixiTables', L.pixiTableByte, L.pixiTableSlots * GPU_PACK_COLUMNS.length * 4],
+    ['keyHeader', L.pixiKeyHeaderByte, 64],
+    ['keyUpdates', L.pixiKeyUpdatesByte, MAX * 64],
+  ].sort((a, b) => a[1] - b[1]);
+  for (let k = 0; k < spans.length; k++) {
+    const [name, at, bytes] = spans[k];
+    assert.equal(at % 64, 0, `${name} starts on a line`);
+    assert.ok(at + bytes <= m.buffer.byteLength, `${name} fits`);
+    if (k > 0) assert.ok(at >= spans[k - 1][1] + spans[k - 1][2], `${name} overlaps ${spans[k - 1][0]}`);
+  }
+});
+
+// E-188: with emit.keyedDecorations the decorations' slots follow the entities in the keyed texture (the slots of rows
+// without a key after them), and their records are a region of their own.
+test('E-188: keyed decorations take the keys past the entities and a record each', () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const entities = 3000;
+  const decorations = 2000;
+  const spec = (keyedDecorations) => ({
+    entities, spriteBytes: SpriteRenderer.getBufferSize(entities), casterBytes: 0,
+    decorationBytes: DecorationComponent.getBufferSize(decorations), pixiKeyed: true, keyedDecorations,
+  });
+  const plain = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(0), null, null, true).layout;
+  assert.equal(plain.pixiKeyBase, entities);
+  assert.equal(plain.emit.decoKeyedByte, -1);
+  assert.equal(plain.emit.keyedDecorations, 0);
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(decorations), null, null, true);
+  const L = m.layout;
+  assert.equal(L.pixiKeyBase, entities + decorations, 'the decorations\' slots past the entities');
+  assert.equal(L.pixiKeyRows, Math.ceil((entities + decorations + MAX) / 1024) * 1024);
+  assert.equal(L.emit.keyedDecorations, decorations);
+  const records = L.emit.decoKeyedByte;
+  assert.ok(records > 0 && records % 64 === 0, 'the records start on a line');
+  assert.ok(records + decorations * 32 <= m.buffer.byteLength);
+  assert.ok(new Uint32Array(m.buffer, records, decorations * 8).every((x) => x === 0), 'stale from the start (epoch 0)');
+  for (const [name, at] of [['header', L.emit.keyHeaderByte], ['updates', L.pixiKeyUpdatesByte]]) {
+    assert.ok(at + 64 <= records || at >= records + decorations * 32, `the records do not overlap the ${name}`);
+  }
 });

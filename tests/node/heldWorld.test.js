@@ -6,17 +6,19 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { loadWorker } from '../bench/workerHarness.mjs';
-import { Time, TIME_HELD_INDEX } from '../../src/core/timeScale.js';
+import { CLOCK_BYTES, Time, TIME_HELD_INDEX } from '../../src/core/timeScale.js';
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 
-test('Time.held: the clock’s second slot; a clock with one slot is never held', () => {
-  Time.bind(new SharedArrayBuffer(8));
+test('Time.held: its own slot of the clock, past the sim clock; a clock without it is never held', () => {
+  const sab = new SharedArrayBuffer(CLOCK_BYTES);
+  Time.bind(sab);
   try {
     assert.equal(Time.held, false);
     Time.held = true;
     assert.equal(Time.held, true);
-    assert.equal(Time.view[TIME_HELD_INDEX], 1);
+    assert.equal(new Float32Array(sab)[TIME_HELD_INDEX], 1);
+    assert.equal(new Int32Array(sab, 4, 1)[0], 0, 'the sim clock\'s sequence is untouched');
     Time.scale = 0.5;
     assert.equal(Time.held, true, 'the scale is its own slot');
     Time.held = false;
@@ -65,7 +67,7 @@ test('held, the logic worker ticks no entity but takes its spawns and list updat
     Flock.tickAll(null, 1);
     return 1;
   };
-  Time.bind(new SharedArrayBuffer(8));
+  Time.bind(new SharedArrayBuffer(CLOCK_BYTES));
   try {
     w.update(16.67, 1, false);
     assert.deepEqual([ticked, tickedAll, w.activeEntityCount], [[0, 1, 2], [1], 4]);

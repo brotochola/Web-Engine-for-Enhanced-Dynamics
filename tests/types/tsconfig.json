@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "target": "es2022",
+    "module": "es2022",
+    "moduleResolution": "bundler",
+    "paths": { "@weed.js/engine": ["../../types/weed.d.ts"] }
+  },
+  "files": ["checkJsScene.js"]
+}

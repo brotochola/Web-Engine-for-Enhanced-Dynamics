@@ -21,9 +21,7 @@ export class MySoldier extends Person {
   static punchRangeSq = 35 ** 2; // Distance to start punching
   static punchDamage = 0.4; // Damage per punch
 
-  // Flocking / locomotion — px/s². Terminal ≈ accel / linearDamping (damping=10 → follow~80 px/s)
-  static groupingForce = 1188;
-  static separationForce = 20000;
+  // Locomotion — px/s². Terminal ≈ accel / linearDamping (damping=10 → follow~80 px/s)
   // 1/r chase coeff: |a| = chaseStrength / dist (floored at punchRange). At 35px → |a|≈700 → ~70 px/s
   static chaseStrength = 24500;
 
@@ -46,8 +44,6 @@ export class MySoldier extends Person {
     // resistance now uses static class property (MySoldier.resistance)
     this.lootableComponent.dropMoney = 100;
     this.lootableComponent.dropMachineGun = 1;
-
-    // groupingForce and separationForce now use static class properties (MySoldier.groupingForce, MySoldier.separationForce)
 
     this.collider.visualRange = 250;
     this.setFixedRotation(1);

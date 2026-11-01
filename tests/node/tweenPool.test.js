@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Tween, tweenBufferBytes, resetTweenFullWarn } from '../../src/core/tween.js';
-import { TWEEN_DEFAULTS } from '../../src/util/configDefaults.js';
+import { PARTICLE_EASE, TWEEN_DEFAULTS } from '../../src/util/configDefaults.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
@@ -24,6 +24,7 @@ function sprite(n = 1) {
   SpriteRenderer.scaleY = new Float32Array(n);
   SpriteRenderer.scaleY.fill(1);
   SpriteRenderer.renderDirty = new Uint8Array(n);
+  SpriteRenderer.keyedDirty = new Uint8Array(n);
 }
 
 test('TWEEN_DEFAULTS.maxTweens is the pool size', () => {
@@ -38,6 +39,7 @@ test('tween writes sprite alpha and refuses a dynamic body', { concurrency: fals
     scaleX: SpriteRenderer.scaleX,
     scaleY: SpriteRenderer.scaleY,
     renderDirty: SpriteRenderer.renderDirty,
+    keyedDirty: SpriteRenderer.keyedDirty,
     tx: Transform.x,
     ty: Transform.y,
     rbA: RigidBody.active,
@@ -47,11 +49,12 @@ test('tween writes sprite alpha and refuses a dynamic body', { concurrency: fals
   try {
     sprite();
     bind(4);
-    const slot = Tween.to(0, { alpha: 0 }, 100, 'quad.out');
+    const slot = Tween.to(0, { alpha: 0 }, 100, PARTICLE_EASE.QUAD_OUT);
     assert.equal(slot, 0);
     Tween.tick(100);
     assert.equal(SpriteRenderer.alpha[0], 0);
     assert.equal(SpriteRenderer.renderDirty[0], 1);
+    assert.equal(SpriteRenderer.keyedDirty[0], 1, 'E-177: alpha is a static the keyed frames take');
 
     Transform.x = new Float32Array([5]);
     Transform.y = new Float32Array([6]);
@@ -82,6 +85,7 @@ test('tween writes sprite alpha and refuses a dynamic body', { concurrency: fals
     SpriteRenderer.scaleX = prev.scaleX;
     SpriteRenderer.scaleY = prev.scaleY;
     SpriteRenderer.renderDirty = prev.renderDirty;
+    SpriteRenderer.keyedDirty = prev.keyedDirty;
     Transform.x = prev.tx;
     Transform.y = prev.ty;
     RigidBody.active = prev.rbA;
@@ -162,6 +166,7 @@ test('zero duration tween applies immediately without claiming SAB slot', { conc
   assert.equal(Transform.x[0], 99);
   assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.1) < 1e-5);
   assert.equal(SpriteRenderer.renderDirty[0], 1);
+  assert.equal(SpriteRenderer.keyedDirty[0], 1);
   // No slots claimed in SAB pool
   assert.equal(Tween.active[0], 0);
   assert.equal(Tween.active[1], 0);
@@ -187,6 +192,25 @@ test('Tween.cancel frees active slots for the target entity', { concurrency: fal
 
   Tween.cancel(1);
   assert.equal(Tween.active[1], 0);
+  Tween.unbind();
+});
+
+test('an ease that is not a PARTICLE_EASE value throws on every path and claims no slot', { concurrency: false }, () => {
+  sprite(2);
+  bind(2);
+  for (const ease of ['quad.out', 1.5, PARTICLE_EASE.BOUNCE_OUT + 1]) {
+    assert.throws(() => Tween.to(0, { alpha: 0 }, 100, ease), TypeError);
+    assert.throws(() => Tween.to(0, { alpha: 0 }, 100, ease, { delay: 10, onComplete: 'nope' }), TypeError);
+    assert.throws(() => Tween.to(0, { alpha: 0 }, 0, ease), TypeError, 'the immediate path too');
+    assert.throws(() => Tween.toZoom(2, 100, ease), TypeError);
+    assert.throws(() => Tween.toZoom(2, 0, ease), TypeError);
+  }
+  assert.equal(SpriteRenderer.alpha[0], 1, 'nothing was applied');
+  assert.equal(Tween.active[0] | Tween.active[1], 0, 'no slot was left claimed');
+  assert.equal(Tween.to(0, { alpha: 0 }, 100, PARTICLE_EASE.BOUNCE_OUT), 0);
+  assert.equal(Tween.to(1, { alpha: 0 }, 100), 1, 'both slots are still there');
+  assert.equal(Tween.ease[0], PARTICLE_EASE.BOUNCE_OUT);
+  assert.equal(Tween.ease[1], PARTICLE_EASE.LERP, 'no ease is lerp');
   Tween.unbind();
 });
 

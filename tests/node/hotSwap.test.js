@@ -8,6 +8,7 @@ import { pathToFileURL } from 'node:url';
 import { swapModule, hotModuleUrl } from '../../src/core/debug/hotSwap.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { Component } from '../../src/core/component.js';
+import { markEngineAccessor } from '../../src/core/engineAccessors.js';
 
 // Hot reload used to reload the page (save, F5, load). A game script now swaps
 // in place: the running classes get the new code, the shared memory and the
@@ -36,7 +37,8 @@ function version({ speed = 3, tickBody = 'return 1;', components = '[Health]', e
 function register(ns) {
   const { Boid, Health } = ns;
   Object.assign(Boid, { entityType: 3, startIndex: 10, poolSize: 4, instances: [], _activeList: new Uint16Array(5), _componentClassMap: { health: Health } });
-  Object.defineProperty(Boid.prototype, 'health', { get: () => 'accessor', configurable: true });
+  // The engine marks the accessors it defines (engineAccessors.js); a swap keeps those.
+  Object.defineProperty(Boid.prototype, 'health', { get: markEngineAccessor(() => 'accessor'), configurable: true });
   Boid.prototype._componentAccessorsCreated = true;
   Health.hp = new Float32Array(16);
   Boid.instances.push(Object.create(Boid.prototype));
@@ -66,6 +68,60 @@ test('a swap gives running instances the new code, keeps the engine’s statics 
   assert.equal(fresh.Health.hp, live.Health.hp, 'component views are shared');
   assert.ok(instance instanceof fresh.Boid);
   assert.ok(live.Boid.prototype instanceof Object.getPrototypeOf(fresh.Boid), 'subclass checks through the new base class');
+});
+
+test('a swap leaves the config and LogicWorker the running entities share', () => {
+  // E-167 put both on the prototype; the instance a swap builds to list a class's fields set them to {} and null.
+  const live = register(version());
+  const config = { worldWidth: 100 };
+  const worker = { postMessage() {} };
+  const entity = new live.Boid(10, config, worker, { page: true });
+  const result = swapModule({ FlockScene: live.FlockScene }, { FlockScene: version({ speed: 5 }).FlockScene });
+  assert.equal(result.reload, null);
+  assert.equal(entity.config, config);
+  assert.equal(entity.logicWorker, worker);
+});
+
+test('a class registered as the engine does swaps in place, and its entities still make their components', () => {
+  // E-164b declared only a registered class's component fields, so the unregistered new version listed fewer and
+  // every swap became a reload; past that, the swap gave the running class the probe's empty component slots.
+  const live = version();
+  GameObject._assignComponentClassMap(live.Boid);
+  Object.assign(live.Boid, { entityType: 3, startIndex: 10, poolSize: 4, instances: [] });
+  const boid = new live.Boid(10, undefined, null, { page: true });
+  const result = swapModule({ FlockScene: live.FlockScene }, { FlockScene: version({ speed: 5 }).FlockScene });
+  assert.equal(result.reload, null, 'the same fields: no reload');
+  assert.equal(live.Boid.SPEED, 5, 'the new code is in');
+  assert.ok(boid.health instanceof live.Health, 'a component first read after the swap is made');
+});
+
+test('a swap keeps the field accessors of a component the module defines', () => {
+  // The new version of a component is never initialized, so its prototype has no field accessors: a swap that
+  // dropped what the new version lacks left `health.hp` undefined.
+  const live = version();
+  live.Health.initializeArrays(new SharedArrayBuffer(live.Health.getBufferSize(16)), 16);
+  GameObject._assignComponentClassMap(live.Boid);
+  Object.assign(live.Boid, { entityType: 3, startIndex: 10, poolSize: 4, instances: [] });
+  const boid = new live.Boid(10, undefined, null, { page: true });
+  live.Health.hp[10] = 7;
+  const result = swapModule({ FlockScene: live.FlockScene }, { FlockScene: version({ speed: 5 }).FlockScene });
+  assert.equal(result.reload, null);
+  assert.equal(boid.health.hp, 7, 'the entity\'s component reads its column');
+  assert.equal(new live.Health(10).hp, 7, 'and so does a new one');
+  boid.health.hp = 9;
+  assert.equal(live.Health.hp[10], 9, 'and writes it');
+});
+
+test('a member named like one of the class\'s components is the class\'s code: a swap replaces it', () => {
+  // Registration leaves a member the class defines in place of the component getter, so the new code must reach it.
+  const live = version({ extra: 'health() { return 1; }' });
+  GameObject._assignComponentClassMap(live.Boid);
+  Object.assign(live.Boid, { entityType: 3, startIndex: 10, poolSize: 4, instances: [] });
+  const boid = new live.Boid(10, undefined, null, { page: true });
+  assert.equal(boid.health(), 1);
+  const result = swapModule({ FlockScene: live.FlockScene }, { FlockScene: version({ extra: 'health() { return 2; }' }).FlockScene });
+  assert.equal(result.reload, null);
+  assert.equal(boid.health(), 2);
 });
 
 test('what the engine built from a class’s shape asks for a reload, and nothing is patched', () => {

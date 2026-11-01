@@ -59,7 +59,7 @@ import Keyboard from './keyboard.js';
 import { Flash } from './flash.js';
 import { BigAtlasInspector } from './bigAtlasInspector.js';
 import { Camera } from './camera.js';
-import { Time } from './timeScale.js';
+import { Time, simClockStepMs } from './timeScale.js';
 import { Tween } from './tween.js';
 import {
   buildMemoryUsageSummary,
@@ -433,6 +433,7 @@ class Scene {
       bodyDirtyFlags: null,
       bodyDirtyWords: null,
       bodyGeneration: null,
+      bodyGenEpoch: null,
     };
 
     // Component type ID tracking (similar to entityType)
@@ -2665,8 +2666,9 @@ class Scene {
     return true;
   }
 
-  /** The page's frame, then each worker group in pipeline order, each awaited. */
+  /** The page's frame, then each worker group in pipeline order, each awaited; the shared sim clock first. */
   async _stepOneFrame(dt) {
+    Time._advanceSimNow(simClockStepMs(dt, Time.scale, true));
     this.updateInternal(dt);
 
     await this._stepWorkerGroup(this.workers.logicWorkers, dt);
@@ -2951,6 +2953,9 @@ class Scene {
         const deltaTime = currentTime - this.lastFrameTime;
         this.lastFrameTime = currentTime;
 
+        // The shared sim clock (Time.simNowMs) moves once a frame, at this frame's wall time; pause() stops it.
+        Time._stepSimFrame(frameAbs);
+
         const t0 = performance.now();
         this.updateInternal(deltaTime);
         this.mainStepMs = performance.now() - t0;
@@ -3120,6 +3125,7 @@ class Scene {
 
   pause() {
     this.state.pause = true;
+    Time._stopSimClock();
     const allWorkers = this.getAllWorkers();
 
     allWorkers.forEach((worker) => {
@@ -3170,6 +3176,10 @@ class Scene {
   }
 
   setPresenting(on) {
+    // N-87: a hidden page stops the frame loops (requestAnimationFrame, here and in the workers), so the sim clock
+    // stops too, or GPU particles would age through the hidden time while everything else stood still. The loop's
+    // next frame starts it again, from where it stopped.
+    if (!on) Time._stopSimClock();
     const worker = this.workers.renderer;
     if (worker) worker.postMessage({ msg: 'presenting', value: !!on });
   }

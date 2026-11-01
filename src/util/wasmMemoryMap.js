@@ -46,6 +46,8 @@ export function layoutRegions(regions) {
  *   spatial worker for the entities it owns, read by logic.
  * - cand: candidate rows, same shape, written by the spatial gather.
  * - lists: one batch list per spatial worker, each its own `listStride`-byte slice on a line.
+ * - sync: an i32 every spatial worker adds 2 to (Atomics) after a frame in which it wrote a pose that
+ *   changed: a kept row whose last publish saw the same value has the same inputs (E-136).
  * Ids are 16-bit: the module has no 32-bit form (W8).
  * @param {number} entityCount
  * @param {number} maxNeighbors
@@ -168,6 +170,10 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitPersistEntity', owner: 'pre-render', bytes: 2 * n * 4 },
       { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },
       { name: 'emitPersistAnim', owner: 'pre-render', bytes: 2 * n * 2 },
+      // E-177: the keyed frames' resync header on a line of its own (PIXI_KEYED_HEADER: Pixi asks, pre-render answers).
+      { name: 'emitKeyHeader', owner: 'pre-render and Pixi', bytes: emit.pixiKeyed ? CACHE_LINE_BYTES : 0 },
+      // E-188: the keyed decorations' records (EMIT_DECO_KEYED_BYTES a decoration slot: the statics it last emitted).
+      { name: 'emitDecoKeyed', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedDecorations | 0) * EMIT_DECO_KEYED_BYTES : 0 },
     );
     // Each custom sprite layer's two queue buffers (pre-render writes, Pixi reads) and its collector: y and index
     // (u32 each), the pose stash x, y, rotC, rotS (f32 each), then type (u8) per row: CUSTOM_COLLECTOR_ROW_BYTES.
@@ -210,6 +216,11 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'stampNearDist', owner: 'pre-render', bytes: near * 4 },
       { name: 'stampNearSlot', owner: 'pre-render', bytes: near * 4 },
       { name: 'stampNearCount', owner: 'pre-render', bytes: sun },
+      // E-160: the grid's packed x and y, each caster's cell, and the candidates' double distances.
+      { name: 'stampPackedX', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampPackedY', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampCellOf', owner: 'pre-render', bytes: sun * 4 },
+      { name: 'stampDist64', owner: 'pre-render', bytes: sun * 8 },
       { name: 'stampLights', owner: 'pre-render', bytes: (stamp.maxLights | 0) * STAMP_LIGHT_DOUBLES * 8 },
       { name: 'stampTable', owner: 'pre-render', bytes: STAMP_TABLE_SLOTS * 4 },
       // The light cookies' queue, the render queue's layout at maxCookie rows (renderQueueLayout.js).
@@ -245,6 +256,10 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackIndices', owner: 'Pixi', bytes: n * 4 },
       { name: 'pixiPackTables', owner: 'Pixi', bytes: pixiExtra ? pixiExtra.tableBytes | 0 : tableBytes },
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
+      // E-177: the entity batch's keyed frames' updates (gpuPack.c KEYED_ROW_WORDS each), as many as its rows.
+      { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
+      // E-191: their shadow stream (shadowH, offX, offY a draw slot), for the sun's pass over the entity batch.
+      { name: 'pixiKeyShadow', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_SHADOW_BYTES },
     );
   }
   if (collect) {
@@ -391,6 +406,25 @@ export const CUSTOM_COLLECTOR_ROW_BYTES = 25;
 /** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
 export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;
+/** E-177: the bytes of a keyed frame's update (gpuPack.c KEYED_ROW_WORDS u32). */
+export const PIXI_KEYED_ROW_BYTES = 64;
+
+/** E-188: the bytes of a keyed decoration's record (preRenderEmit.c DECO_KEYED_WORDS u32). */
+export const EMIT_DECO_KEYED_BYTES = 32;
+
+/** E-191: the bytes of a keyed frame's shadow terms a draw slot (shadowH, offX, offY). */
+export const PIXI_KEYED_SHADOW_BYTES = 12;
+
+/**
+ * E-177: the keyed frames' resync header, u32 words. Pixi raises REQUEST when its statics texture may miss a change (its
+ * first keyed frame, a frame it did not draw keyed); pre-render, seeing it, flags every sprite for its next emit
+ * (SpriteRenderer.keyedDirty) and sets SERVED, and after each emit of the main queue stores SERVED into that queue
+ * buffer's word, so Pixi draws a buffer keyed only once it carries the request it made. E-191: LIVE is the queue frame of
+ * Pixi's last keyed upload with shadow terms (0: none); pre-render writes keyed caster rows while it is recent.
+ */
+export const PIXI_KEYED_HEADER = Object.freeze({ REQUEST: 0, SERVED: 1, BUFFER0: 2, BUFFER1: 3, LIVE: 4 });
+/** The header's words, the view each worker takes of its line. */
+export const PIXI_KEYED_HEADER_WORDS = 5;
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its
@@ -549,6 +583,7 @@ export function spatialPublishRegionList(entityCount, maxNeighbors, spatialWorke
     { name: 'rows', owner: 'spatial (publish_batch)', bytes: rowBytes },
     { name: 'cand', owner: 'spatial', bytes: rowBytes },
     { name: 'lists', owner: 'spatial, one slice per worker', bytes: workers * listStride },
+    { name: 'sync', owner: 'spatial, every worker (Atomics)', bytes: CACHE_LINE_BYTES },
   ];
   if (!gather) return { regions, listStride };
   const markerStride = alignToLine(count * 4);

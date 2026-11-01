@@ -46,6 +46,11 @@ export const EMIT_SLOTS = [
   'pcTexture', 'pcFlat', 'pcView', 'pcWhiteTexture', 'eParams',
   'lfX', 'lfY', 'lfScaleX', 'lfScaleY', 'lfAlpha', 'lfBaseAlpha', 'lfRotC', 'lfRotS', 'lfTint', 'lfTexture',
   'lfPrevX', 'lfPrevY', 'lfPrevCount',
+  'qKey',
+  // E-177: SpriteRenderer.keyedDirty, the statics changes the keyed frames have not been told of.
+  'sKeyedDirty',
+  // E-188: the keyed decorations' records, the key of decoration slot 0 and the records' epoch.
+  'dKeyed', 'dKeyBase', 'dKeyEpoch',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -179,6 +184,13 @@ export async function bindPreRenderEmit(memory, emit) {
     endsAt: emit.endsByte >> 2,
     warnsAt: emit.warnsByte >> 2,
     foreignAt: emit.foreignByte >> 2,
+    // E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column there.
+    keyed: emit.keyHeaderByte >= 0,
+    // E-188: its decorations too, by pool slot past the entities (-1: keyless), and their records' epoch (from 1;
+    // bumpEmitDecorationEpoch).
+    decoKeyedByte: emit.keyHeaderByte >= 0 && emit.decoKeyedByte >= 0 ? emit.decoKeyedByte : -1,
+    decoKeyBase: emit.entities | 0,
+    decoKeyEpoch: 1,
     texturesReady: false,
     // The frame sizes' length in the kernel's copy (frameWidthByte, frameHeightByte), once written.
     frames: 0,
@@ -418,13 +430,31 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   if (!putSlot(b, 'aFrame', w.entityFrameIndex) || !putSlot(b, 'aAccum', w.entityFrameAccumulator)) return false;
   b.table[SLOT.aEntities] = w.entityFrameIndex.length;
   if (!putSlot(b, 'aLastTex', w.entityLastTextureId, true)) return false;
+  // E-177: for the main queue of a scene that keys its frames (source.persist marks it; a custom layer's queue is not
+  // keyed), the sprites' keyed flags and the key column, whose changed bit the flags and a moved frame set.
+  const keyed = b.keyed && source.persist;
+  if (!putSlot(b, 'sKeyedDirty', keyed ? SpriteRenderer.keyedDirty : null, true)) return false;
   for (let k = 0; k < EMIT_QUEUE_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_QUEUE_COLUMNS[k][0], w[EMIT_QUEUE_COLUMNS[k][1]])) return false;
   }
   for (let k = 0; k < EMIT_OPTIONAL_QUEUE_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_OPTIONAL_QUEUE_COLUMNS[k][0], w[EMIT_OPTIONAL_QUEUE_COLUMNS[k][1]], true)) return false;
   }
+  if (!putSlot(b, 'qKey', keyed ? w.renderQueueKey : null, true)) return false;
+  // E-188: the main queue's decoration rows keyed by pool slot, where the scene laid out their records.
+  const decoKeyed = keyed && b.decoKeyedByte >= 0;
+  b.table[SLOT.dKeyed] = decoKeyed ? b.decoKeyedByte : 0;
+  b.table[SLOT.dKeyBase] = decoKeyed ? b.decoKeyBase : 0;
+  b.table[SLOT.dKeyEpoch] = b.decoKeyEpoch;
   return true;
+}
+
+/**
+ * E-188: every keyed decoration's record stale from the next emit on (Pixi asked for every statics again), so each
+ * decoration row it writes is marked changed.
+ */
+export function bumpEmitDecorationEpoch(b) {
+  b.decoKeyEpoch = (b.decoKeyEpoch + 1) >>> 0 || 1;
 }
 
 /**

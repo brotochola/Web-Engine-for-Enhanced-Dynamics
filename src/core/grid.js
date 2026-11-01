@@ -83,6 +83,12 @@ export class Grid {
   // Uses Uint16 since max entities = 65535 (fits in 16 bits)
   static _neighborBuffer = null; // SharedArrayBuffer
   static _neighborData = null; // Uint16Array view
+  /**
+   * E-176. One byte per entity type, set to 1 the first time code reads that type's neighbours (the accessors below
+   * and GameObject's). The spatial worker builds lists only for marked types and for active lights (pre-render reads
+   * those); a type's first read gets its lists a frame or two later. Null: every type gets lists.
+   */
+  static neighborReaders = null; // Uint8Array, shared (GameObject.initializeArrays binds it)
 
   // ===== CELL SLEEPING STATE (Single Buffer - Written by particle_worker) =====
   // Layout: One Uint8 per cell (0 = awake, 1 = sleeping)
@@ -198,6 +204,7 @@ export class Grid {
     Grid._gridEntities = null;
     Grid._neighborBuffer = null;
     Grid._neighborData = null;
+    Grid.neighborReaders = null;
     Grid._cellSleepingBuffer = null;
     Grid._cellSleepingData = null;
     Grid._markerArray = null;
@@ -324,7 +331,16 @@ export class Grid {
    */
   static getNeighborCount(entityId) {
     if (!Grid._neighborData) return 0;
+    Grid.markNeighborReader(entityId);
     return Grid._neighborData[entityId * Grid._stride];
+  }
+
+  /** E-176: entityId's type reads neighbours from now on (see neighborReaders). */
+  static markNeighborReader(entityId) {
+    const readers = Grid.neighborReaders;
+    if (readers === null) return;
+    const type = Transform.entityType[entityId];
+    if (readers[type] === 0) readers[type] = 1;
   }
 
   /**
@@ -355,6 +371,7 @@ export class Grid {
    */
   static getNeighborsOfEntityId(idx) {
     if (!Grid._neighborData) return new Uint16Array(0);
+    Grid.markNeighborReader(idx);
     const offset = idx * Grid._stride;
     const count = Grid._neighborData[offset];
     return Grid._neighborData.subarray(offset + 1, offset + 1 + count);

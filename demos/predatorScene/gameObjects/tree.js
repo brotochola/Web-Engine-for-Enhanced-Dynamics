@@ -40,11 +40,6 @@ export class Tree extends GameObject {
     });
   }
 
-  tick(dtRatio, deltaTime, accumulatedTime, frameNumber) {
-    const factor = this.scaleY * 0.005
-    // this.rotation = factor * Math.sin(accumulatedTime * factor * 0.33 + this.index);
-  }
-
   onSpawned(spawnConfig = {}) {
     this.rigidBody.static = 1;
     const whichTree = rng() > 0.5 ? 1 : 2;

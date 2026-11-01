@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 
 import { GameEngine } from '../../src/core/gameEngine.js';
 import { Scene } from '../../src/core/scene.js';
+import { CLOCK_BYTES, Time } from '../../src/core/timeScale.js';
 import {
   usableCanvasSize,
   stashResizeWhileHidden,
@@ -41,6 +42,26 @@ test('Scene.setPresenting posts only to the renderer', () => {
   const { scene, posts } = fakeScene();
   Scene.prototype.setPresenting.call(scene, false);
   assert.deepEqual(posts, [['renderer', { msg: 'presenting', value: false }]]);
+});
+
+test('Scene.setPresenting(false) stops the sim clock: a hidden page stops every frame loop (N-87)', { concurrency: false }, () => {
+  const sab = new SharedArrayBuffer(CLOCK_BYTES);
+  new Float32Array(sab, 0, 1)[0] = 1;
+  Time.bind(sab);
+  try {
+    Time._startSimClock();
+    const { scene } = fakeScene();
+    Scene.prototype.setPresenting.call(scene, true);
+    assert.equal(Time.simRunning, true, 'presenting again leaves it to the frame loop');
+    Scene.prototype.setPresenting.call(scene, false);
+    assert.equal(Time.simRunning, false);
+    const held = Time.simNowMs;
+    const end = performance.now() + 10;
+    while (performance.now() < end);
+    assert.equal(Time.simNowMs, held, 'no GPU particle ages while the page is hidden');
+  } finally {
+    Time.unbind();
+  }
 });
 
 test('Scene.rebindSurface posts only to the renderer', () => {

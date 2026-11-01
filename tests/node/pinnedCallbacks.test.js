@@ -67,6 +67,7 @@ test('collision callbacks run each entity on its pinned worker; an unpinned pair
   }
   w.gameObjects = Array.from({ length: N }, (_, i) => new Body(i));
   w.collisionListenerByType = Uint8Array.of(1);
+  w.collisionStayByType = Uint8Array.of(1); // the class defines onCollisionStay
   w.totalLogicWorkers = 2;
   w.bodyGeneration = null;
   w.useBox2dContacts = true;

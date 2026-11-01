@@ -752,7 +752,7 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   Deferred 2026-10-26: the author asked for code only, no benchmarks for now. When it
   runs, its "before" side is the base revision in a worktree (the kernel compares two
   trees), so ED-41 and ED-42 can still be measured against it.
-  - Done 2026-10-26 (37013e51, R-0646): `runKernelsVsRev.mjs --vs ab451d27` (the commit
+  - Done 2026-10-26 (37013e51, R-2001): `runKernelsVsRev.mjs --vs ab451d27` (the commit
     before ED-41), 5 rounds a side. (a) 1.464 → 1.458 M spawns/s (−0.4 %, a tie);
     (b) 4.30 → 4.61 (+7.4 %, 96 % of rounds); (c) 2.34, (d) 1.39, (e) 2.36 M/s with
     **0 minor GCs over 1e6 spawns**; (a) 2 and (b) 7 in both trees. Catalog rows
@@ -779,8 +779,8 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   `GameObject.spawnParams` / `_spawnParamsByType`, the fill in `_spawnAt`, worker
   registration in `createGameObjectInstances`, page validation in `registerEntityClass`,
   `spawnParams` in hot swap's shape statics, types. `tests/node/spawnParams.test.js` (12
-  tests, the natives one included). **Measured 2026-10-26, kept as hygiene (R-0646,
-  R-0647):**
+  tests, the natives one included). **Measured 2026-10-26, kept as hygiene (R-2001,
+  R-2002):**
   - the ED-40 kernel: classes without params are not slower, and the params path makes
     0 minor GCs per 1e6 spawns;
   - spawn storm, the branch point against HEAD, 4 pairs: logic0 −1.6 % (0/4 worse, cv
@@ -826,7 +826,7 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
     - `heapSampleWorkers.mjs` on spawn-storm: allocation rate not up.
 - [x] **ED-42 No allocation for `spawn()` without a config,** after ED-41. Code and test
   done 2026-10-26 (b7d5c648): `NO_SPAWN_CONFIG` in `spawnParams.js`, used by
-  `GameObject.spawn`. **Measured 2026-10-26** (R-0646, R-0647): ED-40 case (c) makes 0
+  `GameObject.spawn`. **Measured 2026-10-26** (R-2001, R-2002): ED-40 case (c) makes 0
   minor GCs over 1e6 spawns; case (b) (a class without params, which keeps its fresh
   `{}`: 7 minor GCs per 1e6 spawns, as before) is 7.4 % faster than before; spawn storm is
   neutral.
@@ -903,9 +903,9 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
       at the clear, and every class matches a full load after it;
     - **fallback:** another class, and a dirty scene;
     - **no leak:** 100 swaps; page heap 6.55 → 6.81 MB, commit charge 778 → 655 MB.
-  - **ED-39 with `--swap`** (R-0648, the report's fast-swap section): platformer 0.16 s,
+  - **ED-39 with `--swap`** (R-2003, the report's fast-swap section): platformer 0.16 s,
     littleCity 0.23 s, Predator 0.26 s headed (4 to 13 times a full load; done when ✓).
-  - **Spawn storm** neutral, in the branch's batch pair (R-0647).
+  - **Spawn storm** neutral, in the branch's batch pair (R-2002).
   - **Steps:**
     1. Inventory every pool kind and scene-wide state, with owner, clear or reset path,
        and test. Record it in this item before coding. **Done 2026-10-26** (below).
@@ -1070,7 +1070,7 @@ Every item that touches `src/` lists its files, its tests, and its measurement.
   ED-2's loader; time it with ED-39's script. **Deferred 2026-10-26** to the sitting that
   runs the paused measurements: its point is that timing, and Predator is the gameplay
   gate, whose load path should change in the same sitting that measures it.
-  - Done 2026-10-26 (1707dcef, R-0650): `predatorScene/levels/map.scene.json` (1,939
+  - Done 2026-10-26 (1707dcef, R-2005): `predatorScene/levels/map.scene.json` (1,939
     records) and `littleCity/levels/city.scene.json` (1,308), named by `defaultSceneFile`;
     CityTree declares its radius. Every map entity keeps its pool index and position.
     Predator's trees and rocks draw their random sizes in another order: they now spawn
@@ -1086,7 +1086,7 @@ reload, and it is still there.
 **Status 2026-10-26:** the code of every Stage 2 item is in, with Node tests. **M1 passes
 in Chromium** (`tests/bench/editorM1Smoke.mjs`, fbae4b9c): Shift+E, a click selects a
 platform, a drag moves it, its Width field widens it, Ctrl+S writes the file, and after a
-reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1 reached.**
+reload it is still there. ED-44 passed (R-2004): **Stage 2 is done, milestone M1 reached.**
 
 - [x] **ED-6 Edit mode toggle** (D5, Stage 2 version).
   - Files: `src/core/debug/editor/editMode.js`; a button in
@@ -1217,7 +1217,7 @@ reload it is still there. ED-44 passed (R-0649): **Stage 2 is done, milestone M1
     in the folder: `.scene.json` is added, and `/`, `\` and `:` are refused. Unsaved changes
     are discarded only after the author confirms, and a file is replaced only after a
     confirm. `editorFiles.test.js`, and the row in `editorPalette.test.js`.
-- [x] **ED-44 Editor idle cost check** (measurement). Done 2026-10-26 (89aa51ca, R-0649),
+- [x] **ED-44 Editor idle cost check** (measurement). Done 2026-10-26 (89aa51ca, R-2004),
   with `tests/bench/editorIdleCost.mjs` (a script of its own: it needs the debug UI and
   samples the page; `heapSampleWorkers.mjs` drives the bench runner with debug off). With
   the editor open and idle, allocation drops on the page (60.7 → 45.0 KB/s) and in every
@@ -1761,12 +1761,12 @@ layout, tree, console, export, session) all pass; dist/ put back.
 
 **Speed (here):**
 
-- [x] **ED-70 What the editor costs.** Done 2026-10-27 (bdb68583 the tool, 11fba919, R-0653): editorIdleCost.mjs measures any scene file in three windows (off, open, an entity selected with the grid). The editor's per-frame cost is its overlay: with a selection and the grid the page allocated 218 KB/s (52 open), 134 once the grid and the rotate handle drew through whole pixels (a canvas call boxes a double that is no small integer). Workers drop in edit mode, but not littleCity's logic0 and spatial0 (ED-71).
+- [x] **ED-70 What the editor costs.** Done 2026-10-27 (bdb68583 the tool, 11fba919, R-2008): editorIdleCost.mjs measures any scene file in three windows (off, open, an entity selected with the grid). The editor's per-frame cost is its overlay: with a selection and the grid the page allocated 218 KB/s (52 open), 134 once the grid and the rotate handle drew through whole pixels (a canvas call boxes a double that is no small integer). Workers drop in edit mode, but not littleCity's logic0 and spatial0 (ED-71).
   - `tests/bench/editorIdleCost.mjs` on the platformer and littleCity: edit mode at rest,
     playing with the editor page, and the game alone.
   - Per worker, STEP − WAIT, the page's frame time, and the page's allocation.
   - Before and after Stage 6, in the register. A cost with no reason is fixed here.
-- [x] **ED-71 (was ED-19) A held world costs less.** Done 2026-10-27 (fbcf6d2d, R-0654): Time.held, a second slot of the shared clock, set by edit mode: the logic workers run no entity ticks while held (spawns, list updates, contacts and messages go on). littleCity's logic0 in edit mode 3.668 → 0.375 ms a frame, its logic worker's allocation 9,779 → 13.7 KB/s. A class sets up its look in onSpawned to show right while editing (littleCity's do). spatial0 keeps 2.8 ms (found item 34). After ED-70: in edit mode, skip what
+- [x] **ED-71 (was ED-19) A held world costs less.** Done 2026-10-27 (fbcf6d2d, R-2009): Time.held, a second slot of the shared clock, set by edit mode: the logic workers run no entity ticks while held (spawns, list updates, contacts and messages go on). littleCity's logic0 in edit mode 3.668 → 0.375 ms a frame, its logic worker's allocation 9,779 → 13.7 KB/s. A class sets up its look in onSpawned to show right while editing (littleCity's do). spatial0 keeps 2.8 ms (found item 34). After ED-70: in edit mode, skip what
   a world that does not move needs no work for (for example particles and physics
   stepping at dt 0), worker by worker, if ED-70 shows them. The logic worker keeps running:
   the editor's respawns need it.
@@ -2086,7 +2086,7 @@ server still writes nothing. What changed for this plan:
     Done 2026-10-27: a pool of 0 is left out of the palette and of the scene list unless the file places one
     (db9bd80a); a param row stacks under 250 px, a 219 px dock's slider 129 px wide (3de2130e).
 
-33. **littleCity's logic worker allocates about 10 MB/s while playing** (R-0653, R-0654): its 8,000 people's ticks
+33. **littleCity's logic worker allocates about 10 MB/s while playing** (R-2008, R-2009): its 8,000 people's ticks
     (gone while the editor holds the world). An engine or demo finding, outside the editor: a heap profile of a person's
     tick is the next step.
 34. **The spatial worker rebuilds its grid every frame for a held world** (littleCity: 2.8 ms in edit mode). Skipping

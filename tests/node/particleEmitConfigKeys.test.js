@@ -88,3 +88,20 @@ test('angularVelocity in config reaches the particle (degrees per ms)', () => {
   assert.equal(ParticleComponent.hasAngularVel[i], 1);
   assert.ok(Math.abs(ParticleComponent.angularVelFrom[i] - Math.PI / 2) < 1e-6);
 });
+
+// E-173: the merge copies the keys by name (copyEmitFields) into a scratch that declares them all (emitScratch), so
+// the copy, the scratch and _cfgFieldList are three lists of the same keys.
+test('the merge copies every listed key, the mode overrides over them, into a scratch of exactly those keys', () => {
+  const config = {};
+  ParticleEmitter._cfgFieldList.forEach((key, i) => {
+    config[key] = { key, i };
+  });
+  const merged = ParticleEmitter._mergeCfg(config, { flat: 7 });
+  for (const key of ParticleEmitter._cfgFieldList) {
+    if (key !== 'flat') assert.equal(merged[key], config[key], key);
+  }
+  assert.equal(merged.flat, 7, 'the override wins');
+  assert.deepEqual(Object.keys(merged).sort(), [...ParticleEmitter._cfgFieldList].sort(), 'the scratch\'s keys');
+  const line = ParticleEmitter._alongLineScratch;
+  assert.deepEqual(Object.keys(line).sort(), [...ParticleEmitter._cfgFieldList].sort(), 'emitAlongLine\'s too');
+});

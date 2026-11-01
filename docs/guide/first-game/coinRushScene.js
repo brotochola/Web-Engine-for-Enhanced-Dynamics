@@ -4,7 +4,7 @@
 
 // No import: the page imported the engine, which defines WEED here and in every worker.
 const { Scene, GameObject, Component, RigidBody, Collider, SpriteRenderer, CollisionListener } = WEED;
-const { Keyboard, Camera, Tween, Transform, ShapeType } = WEED;
+const { Keyboard, Camera, Tween, Transform, ShapeType, PARTICLE_EASE } = WEED;
 
 const WORLD_W = 1600;
 const WORLD_H = 1000;
@@ -82,7 +82,7 @@ class Coin extends GameObject {
     this.collider.fitToSprite();
     this.collider.isTrigger = 1; // a sensor: reported, not solid
     // Pulse forever: grow, shrink, grow…
-    Tween.to(this.index, { scaleX: this.scaleX * 1.3, scaleY: this.scaleY * 1.3 }, 450, 'quad.inout', {
+    Tween.to(this.index, { scaleX: this.scaleX * 1.3, scaleY: this.scaleY * 1.3 }, 450, PARTICLE_EASE.QUAD_INOUT, {
       repeat: -1,
       yoyo: true,
     });
@@ -93,7 +93,7 @@ class Coin extends GameObject {
       this.collider.active = 0; // no second pickup while it fades
       this.emit('coin');
       Tween.cancel(this.index);
-      Tween.to(this.index, { alpha: 0 }, 200, 'quad.out', { onComplete: 'gone' });
+      Tween.to(this.index, { alpha: 0 }, 200, PARTICLE_EASE.QUAD_OUT, { onComplete: 'gone' });
     } else if (name === 'gone') {
       this.despawn();
     }

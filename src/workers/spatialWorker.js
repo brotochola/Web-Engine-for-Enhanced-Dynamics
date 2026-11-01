@@ -41,6 +41,7 @@ import { debugWorkerLog } from '../util/debugLog.js';
 import { RigidBody as RigidBodyImport } from '../components/rigidBody.js';
 import { Collider as ColliderImport } from '../components/collider.js';
 import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
+import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { Grid as GridImport } from '../core/grid.js';
 import {
@@ -63,6 +64,7 @@ const Transform = TransformImport;
 const RigidBody = RigidBodyImport;
 const Collider = ColliderImport;
 const SpriteRenderer = SpriteRendererImport;
+const LightEmitter = LightEmitterImport;
 const Grid = GridImport;
 const getColliderBounds = getColliderBoundsImport;
 const getCellRange = getCellRangeImport;
@@ -86,6 +88,9 @@ const MV_IN_GRID = 2; // binned, with the cell range in _mvRange
 const MV_OWNED = 4; // home row owned here: in _ownedEntityList
 const MV_LOOSE = 8; // no collider, so no physics list reports it: compared every frame
 const MV_SPRITE = 16; // a loose entity's SpriteRenderer.active when it was binned
+// E-136. The pose generation moves by 2, so it is always even: a row marked with this was cleared and
+// is published again.
+const POSE_GEN_NONE = 1;
 
 /**
  * SpatialWorker - Row-based spatial hashing and neighbor detection
@@ -156,6 +161,8 @@ class SpatialWorker extends AbstractWorker {
     this.rebuildTimeThisFrame = 0;
     this.neighborSearchTimeThisFrame = 0;
     this.neighborsReusedThisFrame = 0;
+    this.neighborsRebuiltThisFrame = 0;
+    this.neighborsPublishedThisFrame = 0;
     this.sleepNeighborSkipsThisFrame = 0;
 
     /** Fraction of visualRange (0 = off). */
@@ -175,6 +182,20 @@ class SpatialWorker extends AbstractWorker {
     this._ownedEntityCount = 0;
     this._neighborCandidateTruncated = null;
     this._entityFramesSinceBuild = null;
+
+    // E-136: a kept row comes out of the publish as it went in when no pose changed since its last
+    // publish (the publish reads only the poses, the range and the list), so it is left as it is.
+    /**
+     * The pose generation, in the publish memory's sync region: every spatial worker adds 2 to it after
+     * a frame in which a pose it wrote changed.
+     */
+    this._poseGen = new Int32Array(0);
+    /** false without a sync region (a hand-made layout): the generation is this worker's and moves every frame. */
+    this._poseGenShared = false;
+    /** The generation each row was last published at (POSE_GEN_NONE once its row was cleared). */
+    this._rowPoseGen = new Int32Array(0);
+    /** A pose this worker wrote this frame was not the one already there. */
+    this._poseChanged = false;
 
     // E-126: when physics moved few bodies, the grid is rewritten for the entities that changed.
     /** GRID_MOVERS_AUTO, GRID_MOVERS_OFF (the full rebuild only) or GRID_MOVERS_FORCE (kernels, tests). */
@@ -325,6 +346,13 @@ class SpatialWorker extends AbstractWorker {
     this._neighborCandidateTruncated = new Uint8Array(this.globalEntityCount);
     this._entityFramesSinceBuild = new Uint16Array(this.globalEntityCount);
     this._noBodyCount = 0;
+    const syncByte = data.gridMetadata.syncByte | 0;
+    this._poseGenShared = syncByte > 0;
+    this._poseGen = this._poseGenShared
+      ? new Int32Array(data.spatialPublishMemory.buffer, syncByte, 1)
+      : new Int32Array(new SharedArrayBuffer(4));
+    this._rowPoseGen = new Int32Array(this.globalEntityCount).fill(POSE_GEN_NONE);
+    this._poseChanged = false;
 
     // Precompute circle patterns for all possible cellRadius values (0 to maxCellRadius)
     this._precomputeCirclePatterns();
@@ -400,12 +428,17 @@ class SpatialWorker extends AbstractWorker {
     this.rebuildTimeThisFrame = 0;
     this.neighborSearchTimeThisFrame = 0;
     this.neighborsReusedThisFrame = 0;
+    this.neighborsRebuiltThisFrame = 0;
+    this.neighborsPublishedThisFrame = 0;
     this.sleepNeighborSkipsThisFrame = 0;
 
     // STEP 1: Rebuild grid (only owned rows), or rewrite it for what changed (E-126)
     const detail = this.collectDetailedStats;
     let startTime = detail ? performance.now() : 0;
     this._rebuildGrid();
+    // E-136: after the poses, so a worker that reads the new generation reads them too.
+    if (this._poseChanged || !this._poseGenShared) Atomics.add(this._poseGen, 0, 2);
+    this._poseChanged = false;
     if (detail) {
       this.rebuildTimeThisFrame = performance.now() - startTime;
     }
@@ -465,6 +498,7 @@ class SpatialWorker extends AbstractWorker {
     const localCounts = this._localCellCounts;
     const ownedList = this._ownedEntityList;
     let ownedCount = 0;
+    let poseChanged = false;
 
     for (let r = 0; r < ownedRowCount; r++) {
       const row = ownedRows[r];
@@ -532,6 +566,15 @@ class SpatialWorker extends AbstractWorker {
 
         if (!wroteEntityPos) {
           const baseIdx = i * 4;
+          // E-136: one pose that changed is enough to move the generation this frame.
+          if (
+            !poseChanged &&
+            (entityPosData[baseIdx] !== Math.fround(posX) ||
+              entityPosData[baseIdx + 1] !== Math.fround(posY) ||
+              entityPosData[baseIdx + 2] !== Math.fround(maxHalfExtent))
+          ) {
+            poseChanged = true;
+          }
           entityPosData[baseIdx] = posX;
           entityPosData[baseIdx + 1] = posY;
           entityPosData[baseIdx + 2] = maxHalfExtent;
@@ -561,6 +604,7 @@ class SpatialWorker extends AbstractWorker {
         gridCounts[byteOffset] = localCounts[cellIndex];
       }
     }
+    if (poseChanged) this._poseChanged = true;
     this._noBodyCount = noBody;
     this._ownedEntityCount = ownedCount;
   }
@@ -684,6 +728,7 @@ class SpatialWorker extends AbstractWorker {
     const localCounts = this._localCellCounts;
     const ownedList = this._ownedEntityList;
     let ownedCount = 0;
+    let poseChanged = false;
 
     const n = this.globalEntityCount;
     const state = this._mvState;
@@ -788,6 +833,15 @@ class SpatialWorker extends AbstractWorker {
 
         if (!wroteEntityPos) {
           const baseIdx = i * 4;
+          // E-136, as in rebuildOwnedRows.
+          if (
+            !poseChanged &&
+            (entityPosData[baseIdx] !== Math.fround(posX) ||
+              entityPosData[baseIdx + 1] !== Math.fround(posY) ||
+              entityPosData[baseIdx + 2] !== Math.fround(maxHalfExtent))
+          ) {
+            poseChanged = true;
+          }
           entityPosData[baseIdx] = posX;
           entityPosData[baseIdx + 1] = posY;
           entityPosData[baseIdx + 2] = maxHalfExtent;
@@ -818,6 +872,7 @@ class SpatialWorker extends AbstractWorker {
         gridCounts[byteOffset] = localCounts[cellIndex];
       }
     }
+    if (poseChanged) this._poseChanged = true;
     this._noBodyCount = noBody;
     this._ownedEntityCount = ownedCount;
     this._mvLooseCount = looseCount;
@@ -963,6 +1018,7 @@ class SpatialWorker extends AbstractWorker {
     const joinCap = joinId.length;
     let joinCount = 0;
     let ownedChanged = false;
+    let poseChanged = false;
 
     for (let d = 0; d < nd; d++) {
       const i = dirtyIds[d];
@@ -1023,6 +1079,16 @@ class SpatialWorker extends AbstractWorker {
             maxRowBB = _cellRangeResult.maxRow;
             for (let row = minRow; row <= maxRowBB; row++) {
               if (rowOwnership[row] !== workerId) continue;
+              // E-136, as in rebuildOwnedRows (the field at once: a spent state returns early).
+              if (
+                !poseChanged &&
+                (entityPosData[r4] !== Math.fround(posX) ||
+                  entityPosData[r4 + 1] !== Math.fround(posY) ||
+                  entityPosData[r4 + 2] !== Math.fround(maxHalfExtent))
+              ) {
+                poseChanged = true;
+                this._poseChanged = true;
+              }
               entityPosData[r4] = posX;
               entityPosData[r4 + 1] = posY;
               entityPosData[r4 + 2] = maxHalfExtent;
@@ -1229,6 +1295,10 @@ class SpatialWorker extends AbstractWorker {
   _findNeighbors() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
+    // E-176: lists only for types whose code reads them, and for active lights (pre-render reads theirs).
+    const readers = Grid.neighborReaders;
+    const entityType = Transform.entityType;
+    const lightActive = LightEmitter.active || null; // null: the scene has no lights
     const maxNeighbors = Grid.maxNeighbors;
     const stride = Grid._stride;
     const skinFrac = this._neighborReuseSkin;
@@ -1242,6 +1312,10 @@ class SpatialWorker extends AbstractWorker {
     const pub = this._wasmPub;
     const g = this._wasmGather;
     const rebuild = g.rebuild;
+    // E-136: read before the publish reads a pose (update() adds to it after this worker's poses).
+    const poseGen = Atomics.load(this._poseGen, 0);
+    const rowPoseGen = this._rowPoseGen;
+    const sharedRows = this.totalSpatialWorkers > 1;
 
     this._processedFrameCounter++;
     if (this._processedFrameCounter > SPATIAL_STAMP_FRAME_MASK) {
@@ -1265,8 +1339,19 @@ class SpatialWorker extends AbstractWorker {
       this.entitiesProcessedThisFrame++;
 
       const myVisualRange = visualRange[entityA];
-      if (myVisualRange <= 0) {
-        neighborData[entityA * stride] = 0;
+      if (
+        myVisualRange <= 0 ||
+        (readers !== null && readers[entityType[entityA]] === 0 && !(lightActive !== null && lightActive[entityA]))
+      ) {
+        // A row this worker cleared stays clear: only its publish writes it. Its own write each frame
+        // dirtied a cache line per entity (130 bytes a row at maxNeighbors 64). With other spatial
+        // workers, one of them may have published the row before this one took the entity over.
+        if (rowPoseGen[entityA] !== POSE_GEN_NONE) {
+          neighborData[entityA * stride] = 0;
+          rowPoseGen[entityA] = POSE_GEN_NONE;
+        } else if (sharedRows && neighborData[entityA * stride] !== 0) {
+          neighborData[entityA * stride] = 0;
+        }
         continue;
       }
 
@@ -1294,12 +1379,16 @@ class SpatialWorker extends AbstractWorker {
       if (skinFrac > 0 && this._canReuseNeighbors(entityA, myX, myY, myHalfExtent, myVisualRange)) {
         this.neighborsReusedThisFrame++;
         framesSinceBuild[entityA]++;
+        // E-136: the same list, range and poses as at its last publish: the row stands.
+        if (rowPoseGen[entityA] === poseGen) continue;
+        rowPoseGen[entityA] = poseGen;
         pub.list[pub.queued++] = entityA;
       } else {
         rebuild[rebuilds++] = entityA;
       }
     }
 
+    this.neighborsRebuiltThisFrame += rebuilds;
     if (rebuilds) {
       const meta = this._wasmMeta;
       // The same results in any order; in cell order the cells each entity walks are still in cache.
@@ -1333,6 +1422,7 @@ class SpatialWorker extends AbstractWorker {
       for (let k = 0; k < rebuilds; k++) {
         const entityA = rebuild[k];
         candCountOf[entityA] = cand[entityA * stride];
+        rowPoseGen[entityA] = poseGen;
         pub.list[pub.queued++] = entityA;
         if (!truncatedOf[entityA]) {
           const b = entityA * 4;
@@ -1352,6 +1442,7 @@ class SpatialWorker extends AbstractWorker {
     if (this._wasmPub && this._wasmPub.queued) {
       const n = this._wasmPub.queued;
       this._wasmPub.queued = 0;
+      this.neighborsPublishedThisFrame += n;
       const meta = this._wasmMeta;
       this._wasmPub.publish(
         n,
@@ -1401,6 +1492,8 @@ class SpatialWorker extends AbstractWorker {
     this.stats[SPATIAL_STATS.NEIGHBORS_REUSED] = this.neighborsReusedThisFrame;
     this.stats[SPATIAL_STATS.ENTITIES_PROCESSED] = this.entitiesProcessedThisFrame;
     this.stats[SPATIAL_STATS.GRID_MOVERS] = this._gridMoversThisFrame;
+    this.stats[SPATIAL_STATS.NEIGHBORS_REBUILT] = this.neighborsRebuiltThisFrame;
+    this.stats[SPATIAL_STATS.NEIGHBORS_PUBLISHED] = this.neighborsPublishedThisFrame;
     if (!this.collectDetailedStats) return;
     this.stats[SPATIAL_STATS.NEIGHBOR_CHECKS] = this.neighborsFoundThisFrame;
     this.stats[SPATIAL_STATS.GRID_CELLS_CHECKED] = this.cellsCheckedThisFrame;

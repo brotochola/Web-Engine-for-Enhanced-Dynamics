@@ -1,4 +1,4 @@
-// ScenePanel.js — Scene switching, play/pause/step, game speed and edit mode
+// ScenePanel.js — Scene switching, play/pause/step, restart, game speed and edit mode
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
 import { MAX_TIME_SCALE } from '../../timeScale.js';
@@ -93,6 +93,10 @@ export class ScenePanel {
       open.title = 'This game in the editor page: the scene list, the inspector and the assets docked around it';
       controlsRow.appendChild(open);
     }
+
+    // Restart: the scene loads again, fresh, with the data it was loaded with
+    this.elements.restartBtn = createButton('↻ Restart', '', () => this._restartScene());
+    controlsRow.appendChild(this.elements.restartBtn);
 
     this.panel.appendChild(controlsRow);
 
@@ -189,6 +193,16 @@ export class ScenePanel {
   }
 
   // ------- internal -------
+
+  async _restartScene() {
+    const gameEngine = this.debugUI.gameEngine;
+    const scene = this.debugUI.scene;
+    if (!gameEngine || !scene) return;
+    await gameEngine.loadScene(scene.constructor, {
+      data: scene.data,
+      scriptUrl: scene.sceneScriptUrl || undefined,
+    });
+  }
 
   _updatePlayPauseState() {
     const isPaused = this.debugUI.scene?.state?.pause;

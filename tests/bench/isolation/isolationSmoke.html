@@ -6,6 +6,14 @@
 <style>html, body { margin: 0; background: #000; }</style>
 </head>
 <body>
+<script>
+  // A browser started without Playwright (isolationWorkerSmoke.mjs --browser firefox) takes the test's calls through
+  // stockDriver.js; each document says it loaded, so the test counts loads from the console.
+  if (new URLSearchParams(location.search).has('stockDriver')) {
+    document.write('<script src="../stockDriver.js"><\/script>');
+  }
+</script>
+<script>console.log('[smoke] load', self.crossOriginIsolated === true);</script>
 <script type="module">
 // DX-SW, SW-4. A game page as a host without COOP/COEP serves it: the engine from source, the
 // isolation service worker at the URL in ?sw= (the engine's default without it; "off" turns it off), the scene

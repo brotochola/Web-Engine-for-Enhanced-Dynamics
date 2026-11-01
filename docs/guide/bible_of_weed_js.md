@@ -137,10 +137,12 @@ static assets = {
 - A spawn is live at once when your thread sets it up. From the scene, or for a class pinned to another logic worker, a logic worker sets it up next frame: pass its setup in the spawn config, because the spawn overwrites anything written to it before.
 - The page holds an instance per pool slot too, so `GameObject.get(i)`, `Enemy.getFirstActiveInstance()` and the components (`e.health.hp`, `e.x`) work in scene code. `tick` and the callbacks run on the logic workers only. Page instances are frozen: a plain field written there (`e.hp = 2`) throws, since no `tick` would read it.
 - **Components are the entity's state; plain fields are per-thread scratch.** Every logic worker has its own copy of each instance, and an entity's code moves: with two or more logic workers its `tick` changes worker as the active list changes, and collision callbacks run on the worker of the pair's lower index (`min(a, b) % workers`), messages on `index % workers`, `onSpawned` on the thread that spawned it. A class pinned with `forceProcessOnLogicWorker` runs its tick, callbacks and messages on its worker. A plain field is right only where it was written. Use them for caches and temp buffers you can rebuild; anything another hook, a later frame, the page or a save must see goes in a component.
+- **A per-entity number that takes fractions every tick goes in a component, not a plain field.** Chrome keeps such a field as a pointer to a boxed number, so each write (`this.phase += dt * 0.01`) allocates one: a stress scene with that in every entity's tick made 21 MB/s of garbage. A component column is a typed array and allocates nothing. Integers and objects in plain fields are fine; start a field that will hold fractions as a fraction (`0.5`, or `NaN` for "not set"), never `0`.
 - Neighbor access in hot paths:
   - `this.neighborCount`
   - `this.getNeighbor(i)`
   - `this.getAllNeighborIds()`
+  - Lists are built only for classes whose code reads them (and for lights, whose occluders come from theirs). The first read of a class turns its lists on: that read and the next frame or two see none. A class that reads only now and then still gets its lists every frame from then on.
 
 Lifecycle hooks:
 
@@ -346,7 +348,7 @@ Add it to `static components` and use `Query.query([MyTag])` to find entities. N
 - **`collisionGroupIndex`** (Int32, Box2D-style `b2Filter.groupIndex`): overrides layer/mask for same-group pairs.
 - **`friction`** (Float32, on `Collider`): Box2D fixture μ. Not air drag — that is `RigidBody.linearDamping`. Pair μ = `min(μi, μj)` (not Box2D √). Either side `0` → no grip.
 - Two entities collide only if both see each other: A's layer in B's mask **and** B's layer in A's mask — **unless** group index overrides.
-- Defaults: layer `0`, mask `0xFFFFFFFF` (collide with all), group index `0` (no group override), `friction` `0` (no contact grip). Mask `0` = collide with nothing.
+- Defaults: layer `0`, mask `0xFFFFFFFF` (collide with all), group index `0` (no group override), `friction` `0` (no contact grip). Mask `0` = collide with nothing; Box2D's ray casts and overlap queries skip such a body too (they test its mask against the query's category, 1 by default).
 - Hard limit: **32 collision layers**.
 - Helper: `layerMask([0, 2, 4])` converts an array of layer indices to a bitmask.
 
@@ -1024,12 +1026,13 @@ WEED.Camera.follow(this.x, this.y);
 WEED.Camera.followEntity(index, lookAheadSec, smoothing, dtRatio); // pose xy + vel frozen to pose publishes
 WEED.Camera.setDeadzone(80, 60); // world-pixel box; the camera holds while the entity stays inside
 WEED.Camera.shake(12, 180);      // punch added when the camera is packed; decays on sim time
-WEED.Tween.to(this.index, { alpha: 0 }, 200, 'quad.out'); // sprite or mesh; not a dynamic body's x/y
+WEED.Tween.to(this.index, { alpha: 0 }, 200, WEED.PARTICLE_EASE.QUAD_OUT); // sprite or mesh; not a dynamic body's x/y
+// The ease is a WEED.PARTICLE_EASE value (default LERP); a name such as 'quad.out' throws.
 // Options: delay (ms), repeat (extra cycles; -1 = forever), yoyo, onComplete (a static messages name):
-WEED.Tween.to(this.index, { scaleX: 1.2, scaleY: 1.2 }, 150, 'quad.out', { repeat: -1, yoyo: true }); // pulse
-WEED.Tween.to(this.index, { alpha: 0 }, 300, 'lerp', { delay: 500, onComplete: 'faded' });
+WEED.Tween.to(this.index, { scaleX: 1.2, scaleY: 1.2 }, 150, WEED.PARTICLE_EASE.QUAD_OUT, { repeat: -1, yoyo: true }); // pulse
+WEED.Tween.to(this.index, { alpha: 0 }, 300, WEED.PARTICLE_EASE.LERP, { delay: 500, onComplete: 'faded' });
 //   → onMessage('faded', -1, slot) on this entity after the last cycle. A despawn cancels the entity's tweens.
-WEED.Tween.toZoom(0.5, 400, 'quad.out');
+WEED.Tween.toZoom(0.5, 400, WEED.PARTICLE_EASE.QUAD_OUT);
 WEED.Camera.targetZoom = 0.5; // then follow / followEntity — lerps zoom, keeps screen center
 WEED.Camera.setZoom(1.5);     // snap zoom (do not call every tick while following)
 WEED.Camera.setAngle(rad);    // turn the view about the screen center (Camera.rotation)
@@ -1290,6 +1293,7 @@ Recommended `<head>` meta tags (add these to your HTML — the engine can't inje
 - Spatial: `cellSize = 128`
 - Logic: `staggeredUpdates = false`
 - Renderer: `maxVisibleRenderables` defaults to auto (pool sum + particles/decorations/bullets/glows + Adobe piece expansion); set explicitly only to cap below that floor
+- Renderer: `indexedSprites = true`. Where pre-render y-sorts the sprites, a frame whose draw order moved sends each sprite's position and row (24 bytes) instead of everything it draws with in the new order (60); the shader reads the rest from a texture (WebGL) or a storage buffer (WebGPU). `false` sends every frame in draw order
 - Layers: `maxItems = 5000`, `resolution = 1.0`, `ySorting = false` (built-in), `blendMode = BLEND_MODES.NORMAL` (0)
 - Audio: `maxSlots = 128`, `mixGain = 0.5`, `masterVolume = 1.0`, one bus named `main` unless `audio.channels` says otherwise
 - Navigation: `enabled = false` by default
@@ -1354,7 +1358,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
   }
   ```
 - Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
-- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. If both `tick` and `tickAll` exist, instance `tick` wins.
+- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. A sprite whose statics you write that way (alpha, tint, scale, anchor, sprite, animation, tiles) needs `SpriteRenderer.renderDirty[i] = 1` and `SpriteRenderer.keyedDirty[i] = 1`, what `markDirty()` sets: without them, frames that reuse the last queue draw the old values. Positions need nothing. If both `tick` and `tickAll` exist, instance `tick` wins.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Entity pools (`static entities`) and the joint pool are finite too. A spawn into a full pool returns `null` (a joint returns `-1`); the first one warns once per scene, from whichever thread hit it, and the rest are counted in `getPoolStats(Type).dropped`.

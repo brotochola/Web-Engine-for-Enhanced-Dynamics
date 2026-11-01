@@ -4,11 +4,17 @@
  * isolated through weed-sw.js, and every way that can fail is named on the page.
  *
  *   node tests/bench/isolationWorkerSmoke.mjs [--headed] [--only first-visit,embedded] [--output report.json]
+ *   node tests/bench/isolationWorkerSmoke.mjs --browser firefox [--headed]
+ *
+ * --browser firefox runs the first visit, the return visit and real headers in the Firefox installed here
+ * (stockFirefox.mjs: the page takes the calls over HTTP; loads are counted from the line each document logs, and
+ * "drawn" is the renderer's first published frame, since there are no screenshots).
  *
  * Servers: `plain` sends no isolation headers (GitHub Pages, `npx serve`) and serves the worker's
  * source at /weed-sw.js; `isolated` sends them (a host set up as DEPLOY.md says); `second` is
  * another origin without them, for the embedding case. The page is tests/bench/isolation/
- * isolationSmoke.html (the engine from source, orientedBoxScene). Each case gets a fresh browser
+ * isolationSmoke.html (the engine from source, orientedBoxScene). 'audio' also checks the engine's mixer and posts
+ * a SharedArrayBuffer to a worklet. Each case gets a fresh browser
  * context, so no service worker carries over unless the case says so. Exit code 1 on any failure.
  */
 import fs from 'node:fs';
@@ -140,6 +146,7 @@ function expectReason(r, pattern, checks, maxLoads = 1) {
   checks.push(['reason shown', !!r.overlay && pattern.test(r.overlay), (r.overlay || '(no overlay)').slice(0, 160)]);
 }
 
+const at = (server, query = '') => `http://127.0.0.1:${server.port}${SMOKE}${query}`;
 const results = [];
 async function runCase(name, fn) {
   if (only && !only.has(name)) return;
@@ -158,12 +165,112 @@ async function runCase(name, fn) {
   }
 }
 
+if (value('--browser') === 'firefox') {
+  const { createStockFirefox, stockFirefoxExe } = await import('./stockFirefox.mjs');
+  const { FRAME_CLOCK_SLOTS } = await import('../../src/util/frameClock.js');
+  const { SLOT_BYTES } = await import('../../src/util/frameTotals.js');
+  const stock = createStockFirefox();
+  // Every server answers the driver's calls, so the one Firefox moves between origins in the page.
+  const plainF = await createStaticBenchmarkServer(repoRoot, 0, { routes: stock.routes, isolationHeaders: false, files: SW_FILES });
+  const isolatedF = await createStaticBenchmarkServer(repoRoot, 0, { routes: stock.routes, files: SW_FILES });
+  const firefox = stock.launch(stockFirefoxExe(), { headed });
+  const page = await firefox.newPage();
+  const loads = [];
+  const errors = [];
+  page.on('console', (m) => {
+    if (m.text().startsWith('[smoke] load')) loads.push(m.text());
+  });
+  page.on('pageerror', (e) => errors.push(e.message));
+  const framesIndex = (FRAME_CLOCK_SLOTS.renderer * SLOT_BYTES) / 8 + 1;
+  // Short asks, again and again: a call the page took just before a reload (the first visit's) is never answered,
+  // and the next one goes to the new document.
+  // A navigation the test asks for waits 300 ms, so the answer leaves before the page does (a reload cancels it).
+  const until = async (fn, arg, timeoutMs) => {
+    const end = Date.now() + timeoutMs;
+    while (Date.now() < end) {
+      let v;
+      try {
+        v = await Promise.race([page.evaluate(fn, arg), sleep(3000).then(() => undefined)]);
+      } catch {
+        v = undefined;
+      }
+      if (v) return v;
+      await sleep(250);
+    }
+    throw new Error(`no answer from Firefox in ${timeoutMs} ms`);
+  };
+  const visitFirefox = async (navigate) => {
+    loads.length = 0;
+    errors.length = 0;
+    await navigate();
+    // The old document answers until the new one has loaded: wait for its line.
+    for (const end = Date.now() + 60000; loads.length === 0 && Date.now() < end; ) await sleep(100);
+    const s = await until(
+      () => window.__smoke && window.__smoke.state !== 'loading' && { state: window.__smoke.state, error: window.__smoke.error },
+      null,
+      90000,
+    );
+    // The first frame can take a moment after the scene starts.
+    const seen = await until(
+      async (idx) => {
+        const sab = window.__smoke.game?.currentScene?.buffers?.frameTotals;
+        const frames = sab ? new Float64Array(sab)[idx] : 0;
+        if (window.__smoke.state === 'running' && frames < 1) return false;
+        return {
+          frames,
+          isolated: self.crossOriginIsolated === true,
+          overlay: document.getElementById('fatal-error-overlay')?.textContent || null,
+          registrations: navigator.serviceWorker
+            ? (await navigator.serviceWorker.getRegistrations()).map((r) => (r.active || r.waiting || r.installing)?.scriptURL || null)
+            : null,
+          ua: navigator.userAgent,
+        };
+      },
+      framesIndex,
+      30000,
+    );
+    return { ...s, ...seen, loads: loads.length, errors: [...errors] };
+  };
+  const expectFirefox = (r, want, registered, checks) => {
+    checks.push(['loads', r.loads === want, `${r.loads} (want ${want})`]);
+    checks.push(['isolated', r.isolated === true, String(r.isolated)]);
+    checks.push(['scene running', r.state === 'running', r.state + (r.error ? `: ${r.error}` : '')]);
+    checks.push(['drawn', r.frames >= 1, `${r.frames} renderer frames`]);
+    checks.push(['no overlay', !r.overlay, r.overlay || '']);
+    checks.push(['no page errors', r.errors.length === 0, r.errors.slice(0, 2).join(' | ')]);
+    checks.push(['registrations', JSON.stringify(r.registrations) === JSON.stringify(registered), JSON.stringify(r.registrations)]);
+  };
+  try {
+    const sw = [`http://127.0.0.1:${plainF.port}/weed-sw.js`];
+    await runCase('firefox first-visit', async (checks) => {
+      const r = await visitFirefox(() => page.goto(at(plainF)));
+      console.log(`   ${r.ua}`);
+      expectFirefox(r, 2, sw, checks);
+    });
+    await runCase('firefox return-visit', async (checks) => {
+      expectFirefox(await visitFirefox(() => until(() => (setTimeout(() => location.reload(), 300), true), null, 10000)), 1, sw, checks);
+    });
+    await runCase('firefox real-headers', async (checks) => {
+      const url = `${at(isolatedF)}?stockDriver=1`;
+      expectFirefox(await visitFirefox(() => until((u) => (setTimeout(() => (location.href = u), 300), true), url, 10000)), 1, [], checks);
+    });
+  } finally {
+    await firefox.close();
+    await plainF.close();
+    await isolatedF.close();
+  }
+  const failedF = results.filter((r) => !r.ok);
+  console.log(`\n${results.length - failedF.length}/${results.length} passed`);
+  if (output) fs.writeFileSync(output, JSON.stringify({ when: new Date().toISOString(), browser: 'firefox', results }, null, 2));
+  process.exit(failedF.length ? 1 : 0);
+}
+
 const plain = await createStaticBenchmarkServer(repoRoot, 0, { isolationHeaders: false, files: SW_FILES });
 const isolated = await createStaticBenchmarkServer(repoRoot, 0, { files: SW_FILES });
 const second = await createStaticBenchmarkServer(repoRoot, 0, { isolationHeaders: false });
-const launchArgs = headed ? [] : ['--enable-unsafe-swiftshader'];
+// No user gesture in a test: the autoplay policy would keep the audio context suspended.
+const launchArgs = ['--autoplay-policy=no-user-gesture-required', ...(headed ? [] : ['--enable-unsafe-swiftshader'])];
 const browser = await chromium.launch({ channel: 'chrome', headless: !headed, args: launchArgs });
-const at = (server, query = '') => `http://127.0.0.1:${server.port}${SMOKE}${query}`;
 
 try {
   // One context through the first four: the visits a player makes.
@@ -247,6 +354,49 @@ try {
     const s = await settle(frame);
     const seen = await inspect(frame());
     expectReason({ ...s, ...seen, loads: p.loads.frame }, /embedded in a page/, checks, 2);
+    await p.context.close();
+  });
+
+  await runCase('audio', async (checks) => {
+    // Isolated through the worker (a first visit), the engine's mixer is up, and a worklet loaded by URL as the
+    // mixer is gets a SharedArrayBuffer posted to it (tests/bench/isolation/sabProbeProcessor.js).
+    const p = await newPage(browser);
+    const r = await visit(p, at(plain));
+    expectRunning(r, 2, checks);
+    const audio = await p.page.evaluate(async () => {
+      const SM = window.__smoke.game && (await import('/src/index.js')).default.SoundManager;
+      const engine = { node: !!SM?._workletNode, sab: !!SM?._sab, state: SM?._audioCtx?.state ?? null };
+      const ctx = new AudioContext();
+      await ctx.audioWorklet.addModule('/tests/bench/isolation/sabProbeProcessor.js');
+      const node = new AudioWorkletNode(ctx, 'weed-sab-probe');
+      const sab = new SharedArrayBuffer(4);
+      new Int32Array(sab)[0] = 42;
+      const reply = await new Promise((resolve) => {
+        node.port.onmessage = (e) => resolve(e.data);
+        node.port.postMessage(sab);
+        setTimeout(() => resolve({ timeout: true }), 5000);
+      });
+      await ctx.close();
+      return { engine, reply };
+    });
+    checks.push(['engine mixer node', audio.engine.node && audio.engine.sab, JSON.stringify(audio.engine)]);
+    checks.push(['worklet got the SharedArrayBuffer', audio.reply.shared === true && audio.reply.value === 42, JSON.stringify(audio.reply)]);
+    await p.context.close();
+  });
+
+  await runCase('allowed-frame', async (checks) => {
+    // An isolated portal (real headers) embedding the game from a host without them, isolation allowed: a known limit.
+    // The portal's COEP refuses a cross-origin document whose response lacks CORP and COEP, and that first response
+    // comes before weed-sw.js can be installed there (nor would a worker from a direct visit reach a third-party frame).
+    const p = await newPage(browser);
+    const blocked = [];
+    p.page.on('requestfailed', (r) => {
+      if (r.url().includes(SMOKE)) blocked.push(r.failure()?.errorText || '');
+    });
+    const src = encodeURIComponent(at(plain));
+    await p.page.goto(`http://127.0.0.1:${isolated.port}/tests/bench/isolation/frame.html?allow=cross-origin-isolated&src=${src}`);
+    await sleep(3000);
+    checks.push(['the frame is refused (a known limit)', blocked.some((e) => /BLOCKED_BY_RESPONSE/.test(e)), JSON.stringify(blocked)]);
     await p.context.close();
   });
 

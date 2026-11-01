@@ -40,6 +40,13 @@ function predatorNumberParam(name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// E-191: `?crowd=<f>` scales the civilians and soldiers spawned (1 by default; their pools hold 1.5 times as many), so
+// the renderer can be loaded past the 3 ms floor.
+function predatorCrowd() {
+  const f = predatorNumberParam('crowd', 1);
+  return f > 0 ? Math.min(f, 1.5) : 1;
+}
+
 function predatorHourPin() {
   const q = predatorSearchParam('hour');
   if (q == null || q === '') return null;
@@ -192,6 +199,8 @@ export class PredatorScene extends WEED.Scene {
       ySort: true,
       autoGenerateMipmaps: false,
       interpolation: false,
+      // E-177: `?indexedSprites=0` draws the entities as split frames, without E-162's indexed and E-177's keyed ones.
+      ...(predatorSearchParam('indexedSprites') === '0' ? { indexedSprites: false } : {}),
       // atlasScaleMode: 'linear',
     },
     preRender: {
@@ -464,8 +473,9 @@ export class PredatorScene extends WEED.Scene {
     this.spawnBarrels(this.numberOfBarrels);
     this.spawnLights(100);
     this.spawnTrash(100);
-    this.spawnCivilians(10000);
-    this.spawnMySoldiers(6000);
+    const crowd = predatorCrowd();
+    this.spawnCivilians(Math.round(10000 * crowd));
+    this.spawnMySoldiers(Math.round(6000 * crowd));
     this.spawnDestination();
     // The map came from the scene file before create(); update() builds the flowfield's grid again on its first
     // frame, once every spawn is live.

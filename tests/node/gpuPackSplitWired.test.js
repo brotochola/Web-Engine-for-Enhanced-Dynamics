@@ -3,7 +3,8 @@
 // rows the same frames pack unsplit (a run with the worker's _gpuSplit off, the plain kernel pack); the header says
 // GPU_FLAG_SPLIT and the statics' generation;
 // and a GPU queue buffer's statics are rewritten only when it does not hold the queue's generation for the
-// same rows (a poisoned static stream stays poisoned on the frames that skip it).
+// same rows (a poisoned static stream stays poisoned on the frames that skip it). A painter-sorted frame's
+// generation also follows the painter's order: sprites that keep their keys keep their statics.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -36,12 +37,12 @@ const FRAMES = [
   { n: 3900, gen: 8 }, { n: 3900, gen: 0 }, { n: 3900, gen: 0 }, { n: 3900, gen: 9 }, { n: 3900, gen: 9 },
 ];
 
-function writeQueue(q, fr, f, ySort) {
+function writeQueue(q, fr, f, ySort, still = false) {
   q.count[0] = fr.n;
   q.staticGen[0] = fr.gen;
   for (let i = 0; i < fr.n; i++) {
     q.x[i] = (i % 97) * 30 + f * 1.5;
-    q.y[i] = ((i * 37) % 3000) - f;
+    q.y[i] = ((i * 37) % 3000) - (still ? 0 : f);
     q.scaleX[i] = 1 + (i % 3) * 0.25 + (fr.scale || 0);
     q.scaleY[i] = 1;
     q.rotC[i] = 1;
@@ -56,7 +57,7 @@ function writeQueue(q, fr, f, ySort) {
   }
 }
 
-async function run(pre, split, ySort = false) {
+async function run(pre, split, ySort = false, still = false) {
   const caps = gpuQueueCaps(MAX, { enabled: false });
   // With Y-sort pre-render sorts, so its painter state is laid out as the scene lays it.
   const m = createRenderQueueMemory(MAX, computeBufferSize(MAX), computeGpuQueueBufferSize(caps), emitSpec(64), null, null, false, null,
@@ -95,7 +96,7 @@ async function run(pre, split, ySort = false) {
   const out = [];
   FRAMES.forEach((fr, f) => {
     pre.selectWriteBuffers();
-    writeQueue(pre.renderQueueBuffers[pre._queueBuf], fr, f, ySort);
+    writeQueue(pre.renderQueueBuffers[pre._queueBuf], fr, f, ySort, still);
     pre._emitWriteCount = 0;
     const dst = pre.gpuQueueBuffers[pre._queueBuf];
     new Uint32Array(dst.spriteStatic.buffer, dst.spriteStatic.byteOffset, dst.spriteStatic.length).fill(POISON);
@@ -123,7 +124,12 @@ function compare(off, on, ySort) {
     assert.equal(b.n, a.n, `frame ${f}: rows`);
     assert.equal(a.flags & GPU_FLAG_SPLIT, 0, `frame ${f}: off writes 15-float rows`);
     assert.equal(b.flags & GPU_FLAG_SPLIT, GPU_FLAG_SPLIT, `frame ${f}: on says split`);
-    assert.equal(b.gen, ySort ? 0 : FRAMES[f].gen, `frame ${f}: the statics' generation`);
+    if (!ySort || FRAMES[f].gen === 0) {
+      assert.equal(b.gen, ySort ? 0 : FRAMES[f].gen, `frame ${f}: the statics' generation`);
+    } else {
+      // A sorted frame's own generation (bit 31), apart from the queue's.
+      assert.ok((b.gen & 0x80000000) !== 0, `frame ${f}: a sorted frame's generation, ${b.gen}`);
+    }
     for (let k = 0; k < a.n; k++) {
       for (let j = 0; j < GPU_POSE_FLOATS; j++) {
         if (b.pose[k * GPU_POSE_FLOATS + j] !== a.rows[k * GPU_SPRITE_FLOATS + POSE_FROM_ROW[j]]) {
@@ -157,8 +163,27 @@ test('pre-render writes the GPU queue in two streams, the statics only when a bu
   ]);
 });
 
-test('a painter-sorted frame writes both streams every time, with the terms of the 15-float rows', async () => {
+test('a painter-sorted frame whose keys move writes both streams every time, with the terms of the 15-float rows', async () => {
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-  const rewrote = compare(await run(pre, false, true), await run(pre, true, true), true);
-  assert.ok(rewrote.every(Boolean), 'the order may move with the poses: no frame skips the statics');
+  const on = await run(pre, true, true);
+  const rewrote = compare(await run(pre, false, true), on, true);
+  assert.ok(rewrote.every(Boolean), 'every key moves every frame: no frame skips the statics');
+  for (let f = 1; f < FRAMES.length; f++) {
+    if (FRAMES[f].gen !== 0) assert.notEqual(on[f].gen, on[f - 1].gen, `frame ${f}: a new order, a new generation`);
+  }
+});
+
+test('a painter-sorted frame whose keys stand keeps its statics as an unsorted one does', async () => {
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  const on = await run(pre, true, true, true);
+  const rewrote = compare(await run(pre, false, true, true), on, true);
+  // The order holds, so only the queue's generation, the row count or generation 0 rewrite them.
+  assert.deepEqual(rewrote, [
+    true, true, false, false, false,
+    true, true, false, true, true,
+    false, true, true, true, true,
+  ]);
+  assert.equal(on[1].gen, on[0].gen, 'one generation for both buffers, so Pixi uploads the statics once');
+  assert.equal(on[4].gen, on[0].gen);
+  assert.notEqual(on[5].gen, on[4].gen, 'the statics of the queue changed');
 });

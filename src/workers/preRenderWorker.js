@@ -55,6 +55,7 @@ import {
     unbindSolidSegments,
 } from '../render/visibility/solidSegmentsClient.js';
 import { VISIBILITY_MAX_OCCLUDERS, createVisibilityMemory, visibilityMemoryOpts } from '../util/visibilityMemory.js';
+import { PIXI_KEYED_HEADER, PIXI_KEYED_HEADER_WORDS } from '../util/wasmMemoryMap.js';
 import { Grid as GridImport } from '../core/grid.js';
 import { Sun } from '../core/sun.js';
 import {
@@ -66,6 +67,9 @@ import {
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { orderSortKey, spriteYSortKey, spriteSortFootY, zSortBand } from '../util/sortIndexByKey.js';
+import { Time } from '../core/timeScale.js';
+import { GpuParticles } from '../core/gpuParticles.js';
+import { PROXY_CAMERA, PROXY_MAX_ENTRIES, ProxyCollector, bindProxyHalves, proxyView } from '../render/gpuParticleProxies.js';
 import {
     RENDERER_DEFAULTS,
     PRE_RENDER_DEFAULTS,
@@ -74,6 +78,7 @@ import {
     CAMERA_TYPES,
     DECORATION_Y_SORT_SCALE,
     ENTITY_GLOW_SORT_BIAS,
+    PARTICLE_SORT_BIAS,
     ShapeType,
     MAX_POLYGON_VERTICES,
     resolveZenithalMaxHeight,
@@ -81,13 +86,16 @@ import {
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
 import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
-import { bindGpuPack, packInstancedRowsWasm, packSplitRowsWasm } from '../render/gpuPackClient.js';
+import {
+    bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
+} from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
 import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
 import {
     bindEmitAdobe,
     bindPreRenderEmit,
+    bumpEmitDecorationEpoch,
     writeEmitAdobeAssets,
     writeEmitAdobeColumns,
     writeEmitBulletColumns,
@@ -115,10 +123,15 @@ import {
 import {
     GPU_SPRITE_FLOATS,
     GPU_CASTER_FLOATS,
+    GPU_CASTER_LIGHT_FLOAT,
+    GPU_KEYED_CASTER_FLOATS,
+    GPU_KEYED_STAMP_FLOATS,
     GPU_SPACE_WORLD,
     GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
     GPU_FLAG_SPLIT,
+    GPU_FLAG_INDEXED,
+    GPU_FLAG_KEYED_CASTERS,
     createGpuQueueViews,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
@@ -157,6 +170,12 @@ const Grid = GridImport;
 
 const INVALID_TEXTURE_ID = 0xFFFF;
 const EMPTY_OWNED_IDS = new Uint32Array(0);
+/**
+ * E-191 step 2: how many queue frames Pixi's keyed statics may trail the frame being written for keyed caster rows. Pixi
+ * reads a frame while the next is written (one), and a frame it draws split leaves the texture one more behind; a
+ * texture that far behind draws those frames' shadows from the statics it holds.
+ */
+const KEYED_CASTERS_LAG = 2;
 // Placeholders for render-queue columns until initialize() binds the real views.
 const EMPTY_F32 = new Float32Array(0);
 const EMPTY_U8 = new Uint8Array(0);
@@ -389,6 +408,8 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = EMPTY_U16;
         this.renderQueueAnchorX = EMPTY_F32;
         this.renderQueueAnchorY = EMPTY_F32;
+        // E-177: the rows' statics keys (renderQueueLayout's key).
+        this.renderQueueKey = EMPTY_U32;
         /** The main queue's staticGen column (renderQueueLayout.js), and the count written there. */
         this.renderQueueStaticGen = EMPTY_U32;
         this._staticGen = 1;
@@ -411,12 +432,46 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuStaticRows = new Int32Array(2);
         this._packSplitUsed = false;
         this._packSplitGen = 0;
+        // E-162: with caps.indexedSprites a painter-sorted frame goes as an indexed frame: the poses and the slot pairs
+        // in draw order, every queue row's statics in row order, written only when the GPU queue buffer does not hold
+        // the queue's generation for the same rows. Per GPU queue buffer: that generation (0: none) and its rows; and
+        // this frame's.
+        this._gpuIndexed = false;
+        this._gpuIndexedGen = new Uint32Array(2);
+        this._gpuIndexedRows = new Int32Array(2);
+        this._packIndexedUsed = false;
+        this._packIndexedGen = 0;
+        this._packIndexedRows = 0;
+        this._packIndexedSlotsGen = 0;
+        // An indexed frame's slot pairs' generation (_sortedSlotsGen): its number, and the painter's orderGen, the
+        // slots and the depth scale it was given for.
+        this._slotsContentGen = 0;
+        this._slotsSeenOrderGen = 0;
+        this._slotsSeenCount = -1;
+        this._slotsSeenDepth = NaN;
+        // A painter-sorted frame's statics generation (_sortedStaticGen): its number, and the queue generation, the
+        // painter's orderGen, the rows and the depth scale it was given for.
+        this._sortedContentGen = 0;
+        this._sortedSeenQueueGen = 0;
+        this._sortedSeenOrderGen = 0;
+        this._sortedSeenRows = -1;
+        this._sortedSeenDepth = NaN;
         /** The main queue's painter state (painterRadixClient's wasmPainterState), when pre-render sorts it. */
         this._gpuPainter = null;
         /** The painter sort kernel (W10) on pre-render's painter regions of the render-queue memory, when laid out. */
         this._gpuPainterWasm = null;
         /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
         this._emitWasm = null;
+        /** E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column. */
+        this._keyedFrames = false;
+        /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
+        this._keyedHeader = EMPTY_U32;
+        /**
+         * E-191 step 2: the keys Pixi's statics texture holds by entity (the scene's entities; renderQueueLayout's
+         * pixiKeyBase), and whether this frame's sun rows, and so its stamp rows, are keyed caster rows.
+         */
+        this._keyedKeyBase = 0;
+        this._gpuSunKeyed = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
@@ -636,6 +691,16 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuCounts = null;
         this._gpuShadowsResult = null;
         this._gpuSpritesResult = null;
+        // GPU particle groups in the y-sort painter (gpuParticleProxies.js): the split memory's halves, A and B,
+        // when a GPU layer sorts with the entities and this worker packs them; null otherwise.
+        this._proxyHalves = null;
+        this._proxyCollector = null;
+        // The proxies' camera, culled view and sim clock (gpuParticleProxies.js proxyView): typed arrays, so no
+        // double crosses a call.
+        this._proxyCamera = new Float64Array(6);
+        this._proxyView = new Float64Array(4);
+        this._proxyClock = new Float64Array(1);
+        this._proxyDroppedWarned = false;
         this._stampLightCmp = stampLightOrder;
         // Stamp lights and their scratch: first written when a light first shows.
         this._stampLights = null;
@@ -855,6 +920,10 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPackCtx = {};
         this._zBand = zSortBand(this.config.worldHeight || 0);
         this._glowLayerAlpha = 1;
+        if (GpuParticles.proxySab && this._packGpuSpritesOn === PACK_GPU_SPRITES_PRERENDER) {
+            this._proxyHalves = bindProxyHalves(GpuParticles.proxySab);
+            this._proxyCollector = new ProxyCollector();
+        }
 
         // ========================================
         // RENDER QUEUE - Initialize (DOUBLE BUFFERED)
@@ -939,6 +1008,11 @@ class PreRenderWorker extends AbstractWorker {
             }
             try {
                 this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
+                this._keyedFrames = emitLayout.keyHeaderByte >= 0;
+                if (this._keyedFrames) {
+                    this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, PIXI_KEYED_HEADER_WORDS);
+                    this._keyedKeyBase = data.renderQueueLayout.pixiKeyBase | 0;
+                }
             } catch (err) {
                 throw new Error(`[PRE_RENDER] preRenderEmit.wasm did not load: ${err?.message ?? err}`, { cause: err });
             }
@@ -1036,6 +1110,8 @@ class PreRenderWorker extends AbstractWorker {
                 // E-82b: plain sprites in two streams (a nearest atlas, which snaps every pose, keeps 15-float rows).
                 this._gpuSplit = true;
                 this._gpuStaticGen.fill(0);
+                this._gpuIndexed = !!caps.indexedSprites;
+                this._gpuIndexedGen.fill(0);
                 // E-114: the shadow stamp in WASM, where its scratch and light table are stamp regions (made with
                 // shadows and sun casters; without them nothing is stamped).
                 this._stampWasm = null;
@@ -1355,6 +1431,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = buffer.textureId;
         this.renderQueueAnchorX = buffer.anchorX;
         this.renderQueueAnchorY = buffer.anchorY;
+        this.renderQueueKey = buffer.key || EMPTY_U32;
         this.renderQueueType = buffer.type;
         this.renderQueueSortKey = buffer.sortKey;
         this.renderQueueSortKeyU32 = buffer.sortKeyU32;
@@ -1539,6 +1616,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = views.textureId;
         this.renderQueueAnchorX = views.anchorX;
         this.renderQueueAnchorY = views.anchorY;
+        this.renderQueueKey = views.key || EMPTY_U32;
         this.renderQueueType = views.type;
         this.renderQueueSortKey = views.sortKey;
         this.renderQueueSortKeyU32 = views.sortKeyU32;
@@ -1568,6 +1646,7 @@ class PreRenderWorker extends AbstractWorker {
         saved.textureId = this.renderQueueTextureId;
         saved.anchorX = this.renderQueueAnchorX;
         saved.anchorY = this.renderQueueAnchorY;
+        saved.key = this.renderQueueKey;
         saved.type = this.renderQueueType;
         saved.sortKey = this.renderQueueSortKey;
         saved.sortKeyU32 = this.renderQueueSortKeyU32;
@@ -1613,16 +1692,29 @@ class PreRenderWorker extends AbstractWorker {
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
-        const y = ParticleComponent.y;
-        const z = ParticleComponent.z;
-        const flat = ParticleComponent.flat;
-        const viewMode = ParticleComponent.viewMode;
         // renderOnly particles are drawn by their compute layer. Dropped here,
         // before they take a collector slot or a queue row.
         const renderOnly = ParticleComponent.renderOnlyLive &&
             Atomics.load(ParticleComponent.renderOnlyLive, 0) > 0
             ? ParticleComponent.renderOnly
             : null;
+        if (!Layer.anyYSorting()) {
+            // A particle's key orders it only in a layer that y-sorts: orderSortKey keeps the zIndex alone otherwise,
+            // and the emit writes no key. With none this frame they all take one key, and none is computed (its
+            // floor and loads cost pre-render 3 % with 65 000 particles in view), in a loop of its own.
+            COLLECT_Y[0] = 0;
+            for (let idx = 0; idx < visibleCount; idx++) {
+                const i = visibleData[1 + idx];
+                if (renderOnly && renderOnly[i]) continue;
+                this.collectRenderable(1, i);
+                this.visibleParticlesCount++;
+            }
+            return;
+        }
+        const y = ParticleComponent.y;
+        const z = ParticleComponent.z;
+        const flat = ParticleComponent.flat;
+        const viewMode = ParticleComponent.viewMode;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
@@ -1631,13 +1723,11 @@ class PreRenderWorker extends AbstractWorker {
                 viewMode &&
                 viewMode[i] === CAMERA_TYPES.ZENITHAL &&
                 !(flat && flat[i]);
-            const isFlat = !!(flat && flat[i]);
-            const sortKey = isZenithal
-                ? -z[i]
-                : isFlat
-                    ? y[i] * Y_SORT_K
-                    : (y[i] + z[i]) * Y_SORT_K;
-            COLLECT_Y[0] = sortKey;
+            // Heighted and flat particles sort by their ground row, as a sprite sorts by its feet: a spark in
+            // the air is in front of the tree it flies in front of, though it is drawn at y + z. The row is
+            // spriteYSortKey's Math.round(y) written as floor(y + 0.5): the same for every float32 y (the sum is
+            // exact in double), and Math.round here cost pre-render 10 % with 38 000 particles in view.
+            COLLECT_Y[0] = isZenithal ? -z[i] : Math.floor(y[i] + 0.5) * Y_SORT_K + PARTICLE_SORT_BIAS;
             this.collectRenderable(1, i);
             this.visibleParticlesCount++;
         }
@@ -2648,6 +2738,18 @@ class PreRenderWorker extends AbstractWorker {
         const ySort = !!source.ySort;
         // -1 when off: buffer 0 is a valid persist target (it used to read as false).
         const persistBuf = source.persist ? this._queueBuf : -1;
+        // E-177: Pixi asked for every keyed statics again (its texture may miss changes): every sprite flagged for this emit,
+        // the request served.
+        const keyHeader = source.persist && this._keyedFrames ? this._keyedHeader : null;
+        if (keyHeader !== null) {
+            const request = Atomics.load(keyHeader, PIXI_KEYED_HEADER.REQUEST);
+            if (request !== keyHeader[PIXI_KEYED_HEADER.SERVED]) {
+                SpriteRenderer.keyedDirty.fill(1);
+                // E-188: and every keyed decoration's.
+                bumpEmitDecorationEpoch(this._emitWasm);
+                keyHeader[PIXI_KEYED_HEADER.SERVED] = request;
+            }
+        }
         if (!this._writeEmitTable(source, this._resolveBuiltinTextureId('_bulletTrail'))) {
             return this._emitRefused('a column it reads is outside the render-queue memory');
         }
@@ -2684,6 +2786,10 @@ class PreRenderWorker extends AbstractWorker {
                 this._staticGen = ((this._staticGen + 1) >>> 0) || 1;
             }
             if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;
+        }
+        // E-177: this queue buffer's keys answer the request served (Pixi draws it keyed once they answer its own).
+        if (keyHeader !== null) {
+            Atomics.store(keyHeader, PIXI_KEYED_HEADER.BUFFER0 + this._queueBuf, keyHeader[PIXI_KEYED_HEADER.SERVED]);
         }
         return writeCount;
     }
@@ -2934,6 +3040,8 @@ class PreRenderWorker extends AbstractWorker {
         q.shadowOffX = views.shadowOffX;
         q.shadowOffY = views.shadowOffY;
         q.type = views.type;
+        // E-191 step 2: the main queue's keys (the keyed caster rows read them), undefined for a queue without.
+        q.key = views.key;
         return q;
     }
 
@@ -2963,6 +3071,7 @@ class PreRenderWorker extends AbstractWorker {
         v.shadowOffX = this.renderQueueShadowOffX;
         v.shadowOffY = this.renderQueueShadowOffY;
         v.type = this.renderQueueType;
+        v.key = this.renderQueueKey;
         return this._gpuSoAFromViews(v);
     }
 
@@ -3092,12 +3201,34 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    /**
+     * E-191 step 2: whether Pixi's statics texture holds a queue frame near enough to the one being written
+     * (KEYED_CASTERS_LAG) for keyed caster rows: Pixi stores the frame of each keyed upload in the keyed header's LIVE
+     * word once it draws such rows. A pause, WebGPU or a scene not keyed leaves the word stale or zero.
+     */
+    _keyedCastersLive() {
+        if (!this._keyedFrames || this._keyedKeyBase <= 0) return false;
+        const live = Atomics.load(this._keyedHeader, PIXI_KEYED_HEADER.LIVE);
+        return live !== 0 && ((this.renderQueueFrame + 1 - live) >>> 0) <= KEYED_CASTERS_LAG;
+    }
+
     _packGpuSun(dst, q) {
+        this._gpuSunKeyed = false;
         const caps = this.gpuQueueCaps;
         if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) return 0;
         const opts = this._gpuPackOpts;
         const typeArr = q.type || this.renderQueueType;
         const count = q.count | 0;
+        if (count > 0 && this._keyedCastersLive()) {
+            // E-191 step 2: a pose, a key and the shadow terms a caster, for the casters the kernel finds in the queue
+            // (E-192); -1 when a caster has no entity key (its statics are not in Pixi's texture), and the frame lists
+            // the casters and packs the full rows.
+            const keyedN = packKeyedCastersScanWasm(this._gpuPackWasm, q, count, dst.sun, this._keyedKeyBase, caps.maxSun);
+            if (keyedN >= 0) {
+                this._gpuSunKeyed = true;
+                return keyedN;
+            }
+        }
         let sunN = compactShadowCasterIndices(q.shadowH, typeArr, count, this._gpuCasterIdx);
         if (sunN > caps.maxSun) sunN = caps.maxSun;
         if (sunN > 0) {
@@ -3197,8 +3328,14 @@ class PreRenderWorker extends AbstractWorker {
                 stampBase: 0,
                 stampLightIdx: null,
                 lightVec: null,
+                lightFloat: GPU_CASTER_LIGHT_FLOAT,
             };
         }
+        // E-191 step 2: keyed sun rows make keyed stamp rows, their light after the caster row's seven floats.
+        const keyed = this._gpuSunKeyed;
+        spec.sunFloats = keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_FLOATS;
+        spec.stampFloats = keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS;
+        spec.lightFloat = keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_LIGHT_FLOAT;
         spec.sun = sun;
         spec.sunN = sunN;
         spec.lights = lights;
@@ -3276,17 +3413,19 @@ class PreRenderWorker extends AbstractWorker {
 
     _packGpuShadows(dst, q) {
         const caps = this.gpuQueueCaps;
-        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, cookie: 0 });
+        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, cookie: 0, keyed: false });
         if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) {
             res.sun = 0;
             res.stamp = 0;
             res.cookie = 0;
+            res.keyed = false;
             return res;
         }
         const interval = this.shadowUpdateInterval | 0;
         const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
         this._shadowUpdateTick++;
-        if (skip) {
+        // E-191 step 2: keyed rows are republished only while Pixi's statics are still recent enough to draw them.
+        if (skip && !(res.keyed && !this._keyedCastersLive())) {
             this._republishGpuShadows(dst, res);
             return res;
         }
@@ -3296,6 +3435,7 @@ class PreRenderWorker extends AbstractWorker {
         res.sun = sunN;
         res.stamp = stamp;
         res.cookie = cookie;
+        res.keyed = this._gpuSunKeyed;
         this._gpuShadowsFrom = dst;
         return res;
     }
@@ -3309,8 +3449,8 @@ class PreRenderWorker extends AbstractWorker {
     _republishGpuShadows(dst, res) {
         const src = this._gpuShadowsFrom;
         if (!src || src === dst) return;
-        copyF32(dst.sun, src.sun, (res.sun | 0) * GPU_CASTER_FLOATS);
-        copyF32(dst.stamp, src.stamp, (res.stamp | 0) * GPU_CASTER_FLOATS);
+        copyF32(dst.sun, src.sun, (res.sun | 0) * (res.keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_FLOATS));
+        copyF32(dst.stamp, src.stamp, (res.stamp | 0) * (res.keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS));
         const stampN = res.stamp | 0;
         const di = dst.stampLightIdx;
         const si = src.stampLightIdx;
@@ -3352,6 +3492,7 @@ class PreRenderWorker extends AbstractWorker {
                 if (n < 0) {
                     // 15-float rows: whatever statics this buffer held are gone.
                     this._gpuStaticGen[this._queueBuf & 1] = 0;
+                    this._gpuIndexedGen[this._queueBuf & 1] = 0;
                     n = this._packRows(q, ctx, dst.sprites, dst.spritesU32, GPU_SPRITE_FLOATS, cap, false);
                 }
             }
@@ -3380,25 +3521,112 @@ class PreRenderWorker extends AbstractWorker {
      * E-82b: the main sprites as two streams through gpuPack.wasm, the statics only when this GPU queue buffer
      * does not hold the queue's current generation (renderQueueStaticGen) for the same rows. The glow split's
      * list (_gpuIdxEntity: the rows that are not glows, in order) follows from the queue's types, which the
-     * generation covers; a painter's order may move with the poses alone, so a sorted frame writes both. -1 when
-     * the kernel does not take the call; the caller then packs 15-float rows and the frame goes without
-     * GPU_FLAG_SPLIT.
+     * generation covers. A painter's order may move with the poses alone, so a sorted frame's generation also
+     * follows the painter's order (_sortedStaticGen). With indexed frames (E-162) a sorted frame goes as one when the
+     * kernel takes it. -1 when the kernel does not take the call; the caller then packs 15-float rows and the frame goes
+     * without GPU_FLAG_SPLIT.
      */
     _packSpritesSplit(q, ctx, dst, cap) {
         const slot = this._queueBuf & 1;
         const genView = this.renderQueueStaticGen;
         const sorted = ctx.useIndices && ctx.indices !== this._gpuIdxEntity;
-        const gen = !sorted && genView.length ? genView[0] >>> 0 : 0;
+        if (sorted && this._gpuIndexed) {
+            const indexed = this._packSpritesIndexed(q, ctx, dst, cap, slot, genView);
+            if (indexed >= 0) return indexed;
+        }
         const scan = ctx.scanCount | 0;
         const rows = scan < cap ? scan : cap;
+        const gen = sorted ? this._sortedStaticGen(ctx, genView, rows) : genView.length ? genView[0] >>> 0 : 0;
         const current = gen !== 0 && this._gpuStaticGen[slot] === gen && this._gpuStaticRows[slot] === rows;
         const n = packSplitRowsWasm(this._gpuPackWasm, q, ctx, dst.spritePose, current ? null : dst.spriteStatic, cap);
         if (n < 0) return -1;
         this._gpuStaticGen[slot] = gen;
         this._gpuStaticRows[slot] = n;
+        // The split statics lie over an indexed frame's slots and statics.
+        this._gpuIndexedGen[slot] = 0;
         this._packSplitUsed = true;
         this._packSplitGen = gen;
         return n;
+    }
+
+    /**
+     * E-162: a painter-sorted frame as an indexed frame through gpuPack.wasm (pack_sprites_indexed_scatter): the poses
+     * and the slot pairs (each slot's row and depth) in draw order, and every queue row's statics in row order, those
+     * only when this GPU queue buffer does not hold the queue's current generation (renderQueueStaticGen) for the same
+     * rows. The painter's order and the depth scale are the slots', so they move no statics. -1 when the kernel does not
+     * take the frame (a list under SCATTER_MIN_ROWS or under half the queue); the caller then packs it split.
+     */
+    _packSpritesIndexed(q, ctx, dst, cap, slot, genView) {
+        const gen = genView.length ? genView[0] >>> 0 : 0;
+        const rows = q.count | 0;
+        const current = gen !== 0 && this._gpuIndexedGen[slot] === gen && this._gpuIndexedRows[slot] === rows;
+        const n = packIndexedRowsWasm(
+            this._gpuPackWasm, q, ctx, dst.spritePose, dst.spriteSlots, current ? null : dst.spriteRowStatics, cap
+        );
+        if (n < 0) return -1;
+        this._gpuIndexedGen[slot] = gen;
+        this._gpuIndexedRows[slot] = rows;
+        // The slot pairs lie over the split statics.
+        this._gpuStaticGen[slot] = 0;
+        this._packIndexedUsed = true;
+        this._packIndexedGen = gen;
+        this._packIndexedRows = rows;
+        this._packIndexedSlotsGen = this._sortedSlotsGen(ctx, n);
+        return n;
+    }
+
+    /**
+     * E-162: an indexed frame's slot pairs' generation: the same number while the painter's order (orderGen), the
+     * slots and the depth scale are the ones it was given for, so Pixi copies and uploads the pairs once; a new number
+     * when any moved. Pre-render writes them every frame all the same (the scatter that writes them reads the queue in
+     * order, which a pose gather in draw order does not). 0 (Pixi takes them) when the order is not the painter's.
+     */
+    _sortedSlotsGen(ctx, n) {
+        const painter = this._gpuPainter;
+        if (painter === null || ctx.indices !== painter.order) return 0;
+        const order = painter.orderGen | 0;
+        const depth = +(ctx.depthDenom || 1);
+        if (
+            this._slotsContentGen === 0 ||
+            order !== this._slotsSeenOrderGen ||
+            n !== this._slotsSeenCount ||
+            depth !== this._slotsSeenDepth
+        ) {
+            this._slotsContentGen = ((this._slotsContentGen + 1) & 0x7fffffff) || 1;
+            this._slotsSeenOrderGen = order;
+            this._slotsSeenCount = n;
+            this._slotsSeenDepth = depth;
+        }
+        return (0x80000000 | this._slotsContentGen) >>> 0;
+    }
+
+    /**
+     * A painter-sorted frame's statics generation: the same number while the queue's statics (its staticGen), the
+     * painter's order (orderGen moves on a full sort or a reinsert that moved a key), the rows and the depth scale
+     * are the ones it was given for, so both GPU queue buffers keep their statics and Pixi uploads them once; a
+     * new number when any moved. Bit 31 keeps these apart from the queue's own generations. 0 (statics written,
+     * Pixi uploads) when the order is not the painter's or the queue's generation is unknown.
+     */
+    _sortedStaticGen(ctx, genView, rows) {
+        const painter = this._gpuPainter;
+        const queueGen = genView.length ? genView[0] >>> 0 : 0;
+        if (painter === null || ctx.indices !== painter.order || queueGen === 0) return 0;
+        const order = painter.orderGen | 0;
+        const depth = +(ctx.depthDenom || 1);
+        if (
+            this._sortedContentGen === 0 ||
+            queueGen !== this._sortedSeenQueueGen ||
+            order !== this._sortedSeenOrderGen ||
+            rows !== this._sortedSeenRows ||
+            depth !== this._sortedSeenDepth
+        ) {
+            this._sortedContentGen = ((this._sortedContentGen + 1) & 0x7fffffff) || 1;
+            this._sortedSeenQueueGen = queueGen;
+            this._sortedSeenOrderGen = order;
+            this._sortedSeenRows = rows;
+            this._sortedSeenDepth = depth;
+        }
+        return (0x80000000 | this._sortedContentGen) >>> 0;
     }
 
     _packGpuSprites(dst, q, allowPainter) {
@@ -3407,15 +3635,24 @@ class PreRenderWorker extends AbstractWorker {
         this._resetGpuPackOpts(opts);
         const count = q.count | 0;
         const res = this._gpuSpritesResult
-            || (this._gpuSpritesResult = { sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0 });
+            || (this._gpuSpritesResult = {
+                sprite: 0, glow: 0, particle: 0, flags: 0, staticGen: 0, indexedRows: 0, slotsGen: 0, indices: null,
+            });
         this._packSplitUsed = false;
         this._packSplitGen = 0;
+        this._packIndexedUsed = false;
+        this._packIndexedGen = 0;
+        this._packIndexedRows = 0;
+        this._packIndexedSlotsGen = 0;
         if (this._packGpuSpritesOn !== PACK_GPU_SPRITES_PRERENDER || count <= 0 || !caps) {
             res.sprite = 0;
             res.glow = 0;
             res.particle = 0;
             res.flags = 0;
             res.staticGen = 0;
+            res.indexedRows = 0;
+            res.slotsGen = 0;
+            res.indices = null;
             return res;
         }
         this._bindGpuPackWriters();
@@ -3446,8 +3683,12 @@ class PreRenderWorker extends AbstractWorker {
         res.sprite = packed.sprite;
         res.glow = packed.glow;
         res.particle = this._packParticles | 0;
-        res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0) | (presorted ? GPU_FLAG_SORTED : 0);
-        res.staticGen = this._packSplitUsed ? this._packSplitGen : 0;
+        res.flags = packed.flags | (this._packSplitUsed ? GPU_FLAG_SPLIT : 0) | (this._packIndexedUsed ? GPU_FLAG_INDEXED : 0)
+            | (presorted ? GPU_FLAG_SORTED : 0);
+        res.staticGen = this._packSplitUsed ? this._packSplitGen : this._packIndexedUsed ? this._packIndexedGen : 0;
+        res.indexedRows = this._packIndexedUsed ? this._packIndexedRows : 0;
+        res.slotsGen = this._packIndexedUsed ? this._packIndexedSlotsGen : 0;
+        res.indices = packed.spriteIndices;
         return res;
     }
 
@@ -3460,6 +3701,7 @@ class PreRenderWorker extends AbstractWorker {
         const q = this._gpuSoAFromBound();
         if ((this._emitWriteCount | 0) > (q.count | 0)) q.count = this._emitWriteCount | 0;
         const sprites = this._packGpuSprites(dst, q, this._allowGpuPainter());
+        if (this._proxyHalves !== null) this._writeProxies(q, sprites);
         if (detail) {
             const sortDelta = this.sortTimeThisFrame - sortBefore;
             let ms = performance.now() - tSprites;
@@ -3475,10 +3717,51 @@ class PreRenderWorker extends AbstractWorker {
         counts.sun = shadows.sun | 0;
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
-        counts.flags = sprites.flags | 0;
+        counts.flags = (sprites.flags | 0) | (shadows.keyed ? GPU_FLAG_KEYED_CASTERS : 0);
         counts.staticGen = sprites.staticGen | 0;
+        counts.indexedRows = sprites.indexedRows | 0;
+        counts.slotsGen = sprites.slotsGen | 0;
         writeGpuQueueHeader(dst.header, counts, counts.flags);
         if (detail) this.shadowQTimeThisFrame = performance.now() - tShadows;
+    }
+
+    /**
+     * The frame's GPU particle groups among the entities (gpuParticleProxies.js), into the split half of the
+     * queue buffer being written: each group with the packed entity it is drawn before. Nothing listed when the
+     * entities are not y-sorted (the layers then draw at their zIndex).
+     */
+    _writeProxies(q, sprites) {
+        const half = this._proxyHalves[this._queueBuf & 1];
+        const collector = this._proxyCollector;
+        // Packed in painter order (or nothing packed): Pixi commits only such a frame when the entities y-sort.
+        const ordered = (sprites.sprite | 0) === 0 || (sprites.flags & GPU_FLAG_SORTED) !== 0;
+        let n = 0;
+        if (this._entitySortY && ordered) {
+            Time.readSimNowInto(this._proxyClock, 0);
+            n = collector.collect(GpuParticles.layers, this._proxyClock, this._proxyFrameView());
+        }
+        if (n === 0) {
+            half.header[1] = 0;
+            Atomics.store(half.header, 0, 0);
+            return;
+        }
+        collector.write(half, q.sortKey, sprites.indices, sprites.sprite | 0);
+        if (collector.dropped > 0 && !this._proxyDroppedWarned) {
+            this._proxyDroppedWarned = true;
+            console.warn(`[PRE_RENDER] ${collector.dropped} GPU particle groups past the ${PROXY_MAX_ENTRIES} a frame among the entities are not drawn`);
+        }
+    }
+
+    _proxyFrameView() {
+        if (!this.cameraData) return null;
+        const cam = this._proxyCamera;
+        cam[PROXY_CAMERA.X] = this._frameCameraX;
+        cam[PROXY_CAMERA.Y] = this._frameCameraY;
+        cam[PROXY_CAMERA.ZOOM] = this._frameCameraZoom;
+        cam[PROXY_CAMERA.ROT] = this._frameCameraRot || 0;
+        cam[PROXY_CAMERA.CANVAS_W] = this.canvasWidth;
+        cam[PROXY_CAMERA.CANVAS_H] = this.canvasHeight;
+        return proxyView(this._proxyView, cam);
     }
 
     /**

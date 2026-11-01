@@ -8,6 +8,7 @@
    does it: alpha clamped and rounded in double, depth and the tile-offset scale in double, each
    stored as float. */
 #include <stdint.h>
+#include <wasm_simd128.h>
 
 #define INLINE static inline __attribute__((always_inline))
 
@@ -189,6 +190,115 @@ INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t
   return n;
 }
 
+/* E-162: a painter-sorted frame whose order moved while its statics held. Each drawn row's pose goes to its draw
+   slot, and its slot pair: the row, as a float (exact under 2^24), and the depth the split pack writes at that slot,
+   the one static that follows the order. With statics set, every queue row's statics go to its row (the queue's
+   order, not the draw order; drawn or not, so a row a later frame draws holds its own), INDEXED_STATIC_FLOATS a row:
+   the 11 of sprite_static, their depth term 0, and a zero, so a row is three RGBA texels of the texture the vertex
+   shader fetches them from. The draw slots' statics are statics[slots[2k]]. Refuses, as the scatter does, indices
+   that are not distinct rows below rowCount. */
+#define INDEXED_STATIC_FLOATS 12
+#define SLOT_FLOATS 2
+
+INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap,
+                                     double invDepthDenom, float *pose, float *slots, float *stat, uint32_t typeByte,
+                                     uint32_t *particles, uint32_t invByte, uint32_t rowCount, int statics) {
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
+  uint32_t *inv = (uint32_t *)(uintptr_t)invByte;
+  const uint32_t n = count < cap ? count : cap;
+  for (uint32_t i = 0; i < rowCount; i++) inv[i] = 0xffffffffu;
+  for (uint32_t k = 0; k < n; k++) {
+    const uint32_t r = idx[k];
+    if (r >= rowCount || inv[r] != 0xffffffffu) return 0xffffffffu;
+    inv[r] = k;
+  }
+  uint32_t p = 0;
+  for (uint32_t i = 0; i < rowCount; i++) {
+    if (statics) {
+      float *d = stat + i * INDEXED_STATIC_FLOATS;
+      sprite_static(t, i, d, 0.0);
+      d[11] = 0;
+    }
+    const uint32_t k = inv[i];
+    if (k == 0xffffffffu) continue;
+    if (type) p += type[i] == 1;
+    sprite_pose(t, i, pose + k * POSE_FLOATS);
+    slots[k * SLOT_FLOATS] = (float)i;
+    slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
+  }
+  *particles = p;
+  return n;
+}
+
+/* E-177: a split frame whose statics stay with their key, so only the ones that changed go to the GPU. Each drawn row's
+   pose goes to its draw slot, and its slot pair: its key's row of the statics texture, as a float, and the depth the
+   split pack writes at that slot. The key is the queue's key column: a sprite row's entity, with KEY_CHANGED when the emit
+   found its statics changed since the emit before (preRenderEmit.c), so the renderer's copy needs them; the pass reads
+   nothing per key. A row without one (KEY_NONE, or a key at or past keyBase) takes keyBase + its draw slot and always
+   sends its statics.
+   What goes up is the indexed frame's statics (INDEXED_STATIC_FLOATS: sprite_static's, the depth term 0, a zero), as an
+   update of KEYED_ROW_WORDS u32 (the statics, then the key). results[0] is the particle count (type 1 rows), results[1]
+   the update count. E-191: withShadow (a constant, so each form is a copy of its own) also writes each slot's shadow
+   terms at shadow (shadowH, offX, offY; zeros for a glow row, which casts none), for the sun's pass over these
+   instances. */
+#define KEYED_ROW_WORDS 16
+#define KEY_NONE 0xffffffffu
+#define KEY_CHANGED 0x80000000u
+
+INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count, uint32_t cap,
+                           double invDepthDenom, float *pose, float *slots, uint32_t keyBase, uint32_t *updates,
+                           uint32_t typeByte, uint32_t *results, float *shadow, const int withShadow) {
+  const double inv65535 = 1.0 / 65535.0;
+  const float *SH = withShadow ? F32(t, COL_SHADOW_H) : 0;
+  const float *SOX = withShadow ? F32(t, COL_SHADOW_OFF_X) : 0;
+  const float *SOY = withShadow ? F32(t, COL_SHADOW_OFF_Y) : 0;
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
+  const float *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y), *AX = F32(t, COL_ANCHOR_X), *AY = F32(t, COL_ANCHOR_Y);
+  const float *A = F32(t, COL_ALPHA), *TMX = F32(t, COL_TILE_MUL_X), *TMY = F32(t, COL_TILE_MUL_Y);
+  const uint32_t *TINT = (const uint32_t *)(uintptr_t)t[COL_TINT];
+  const uint16_t *TEX = U16(t, COL_TEXTURE), *TOU = U16(t, COL_TILE_OFF_U), *TOV = U16(t, COL_TILE_OFF_V);
+  const uint32_t n = count < cap ? count : cap;
+  uint32_t p = 0;
+  uint32_t u = 0;
+  for (uint32_t k = 0; k < n; k++) {
+    const uint32_t i = indices ? idx[k] : k;
+    if (type) p += type[i] == 1;
+    sprite_pose(t, i, pose + k * POSE_FLOATS);
+    const uint32_t raw = key[i];
+    uint32_t s = raw & ~KEY_CHANGED;
+    uint32_t send = raw >> 31;
+    if (s >= keyBase) {
+      s = keyBase + k;
+      send = 1;
+    }
+    if (send) {
+      /* sprite_static's words in the indexed order: scale, anchor; the depth term 0, the packed tint, the texture, the
+         tile multiplier's x; its y, the tile offsets, a zero. */
+      uint32_t *up = updates + u * KEYED_ROW_WORDS;
+      wasm_v128_store(up, wasm_f32x4_make(SX[i], SY[i], AX[i], AY[i]));
+      wasm_v128_store(up + 4, wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)TEX[i], TMX[i]), 1,
+                                                       (int32_t)packed_tint((double)A[i], TINT[i])));
+      wasm_v128_store(up + 8, wasm_f32x4_make(TMY[i], (float)((double)TOU[i] * inv65535), (float)((double)TOV[i] * inv65535), 0.0f));
+      wasm_v128_store(up + 12, wasm_i32x4_make((int32_t)s, 0, 0, 0));
+      u++;
+    }
+    slots[k * SLOT_FLOATS] = (float)s;
+    slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
+    if (withShadow) {
+      float *sh = shadow + k * 3;
+      const int glow = type && type[i] == 3;
+      sh[0] = glow ? 0.0f : SH[i];
+      sh[1] = glow ? 0.0f : SOX[i];
+      sh[2] = glow ? 0.0f : SOY[i];
+    }
+  }
+  results[0] = p;
+  results[1] = u;
+  return n;
+}
+
 __attribute__((export_name("pack_sprites")))
 uint32_t pack_sprites(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                       uint32_t dst, uint32_t typeByte, uint32_t particlesOut) {
@@ -236,6 +346,107 @@ uint32_t pack_sprites_split_scatter(uint32_t table, uint32_t indices, uint32_t c
   return pack_split_scatter((const uint32_t *)(uintptr_t)table, indices, count, cap, invDepthDenom,
                             (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstStatic, typeByte,
                             (uint32_t *)(uintptr_t)particlesOut, invByte, rowCount);
+}
+
+/* E-162: the pose and slot streams at dstPose and dstSlots, and every row's statics in row order at dstStatic unless it
+   is 0. */
+__attribute__((export_name("pack_sprites_indexed_scatter")))
+uint32_t pack_sprites_indexed_scatter(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap,
+                                      double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t dstStatic,
+                                      uint32_t typeByte, uint32_t particlesOut, uint32_t invByte, uint32_t rowCount) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  float *pose = (float *)(uintptr_t)dstPose;
+  float *slots = (float *)(uintptr_t)dstSlots;
+  float *stat = (float *)(uintptr_t)dstStatic;
+  uint32_t *particles = (uint32_t *)(uintptr_t)particlesOut;
+  if (dstStatic)
+    return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
+                                rowCount, 1);
+  return pack_indexed_scatter(t, indices, count, cap, invDepthDenom, pose, slots, stat, typeByte, particles, invByte,
+                              rowCount, 0);
+}
+
+/* E-177: the pose and slot streams at dstPose and dstSlots, the updates at updatesByte (room for cap), the two results at
+   resultsByte; the queue's key column at keyByte. */
+__attribute__((export_name("pack_sprites_keyed")))
+uint32_t pack_sprites_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
+                            double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
+                            uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *k = (const uint32_t *)(uintptr_t)keyByte;
+  float *pose = (float *)(uintptr_t)dstPose;
+  float *slots = (float *)(uintptr_t)dstSlots;
+  uint32_t *updates = (uint32_t *)(uintptr_t)updatesByte;
+  uint32_t *results = (uint32_t *)(uintptr_t)resultsByte;
+  if (dstShadow) {
+    return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results,
+                      (float *)(uintptr_t)dstShadow, 1);
+  }
+  return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0);
+}
+
+/* E-191: a keyed caster row (KEYED_CASTER_FLOATS) for each queue row listed at indices: its x and y, its key as a float
+   and a zero (the slot pair the shadow program reads the row's statics by, from the keyed frames' statics texture), and
+   its shadow terms (shadowH, offX, offY). 0xffffffff, and the rows not to be trusted, when a listed row has no key below
+   keyBase: its statics are not in the texture. */
+#define KEYED_CASTER_FLOATS 7
+
+__attribute__((export_name("pack_casters_keyed")))
+uint32_t pack_casters_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap, uint32_t dst,
+                            uint32_t keyBase) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
+  const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
+  const float *X = F32(t, COL_X), *Y = F32(t, COL_Y);
+  const float *SH = F32(t, COL_SHADOW_H), *SOX = F32(t, COL_SHADOW_OFF_X), *SOY = F32(t, COL_SHADOW_OFF_Y);
+  float *d = (float *)(uintptr_t)dst;
+  const uint32_t n = count < cap ? count : cap;
+  for (uint32_t k = 0; k < n; k++) {
+    const uint32_t i = idx[k];
+    const uint32_t s = key[i] & ~KEY_CHANGED;
+    if (s >= keyBase) return 0xffffffffu;
+    float *r = d + k * KEYED_CASTER_FLOATS;
+    r[0] = X[i];
+    r[1] = Y[i];
+    r[2] = (float)s;
+    r[3] = 0.0f;
+    r[4] = SH[i];
+    r[5] = SOX[i];
+    r[6] = SOY[i];
+  }
+  return n;
+}
+
+/* E-192: pack_casters_keyed over the casters it finds itself: the queue rows whose shadowH is above 0 and whose type is
+   not a glow's (compactShadowCasterIndices' test), in the queue's order, until cap rows; the same rows the compaction
+   and pack_casters_keyed write. 0xffffffff at a caster with no key below keyBase. typeByte 0: no type column. */
+__attribute__((export_name("pack_casters_keyed_scan")))
+uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap,
+                                 uint32_t dst, uint32_t keyBase) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  const float *X = F32(t, COL_X), *Y = F32(t, COL_Y);
+  const float *SH = F32(t, COL_SHADOW_H), *SOX = F32(t, COL_SHADOW_OFF_X), *SOY = F32(t, COL_SHADOW_OFF_Y);
+  float *d = (float *)(uintptr_t)dst;
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < count && n < cap; i++) {
+    if (type && type[i] == 3) continue;
+    const float sh = SH[i];
+    if (!(sh > 0.0f)) continue;
+    const uint32_t s = key[i] & ~KEY_CHANGED;
+    if (s >= keyBase) return 0xffffffffu;
+    float *r = d + n * KEYED_CASTER_FLOATS;
+    r[0] = X[i];
+    r[1] = Y[i];
+    r[2] = (float)s;
+    r[3] = 0.0f;
+    r[4] = sh;
+    r[5] = SOX[i];
+    r[6] = SOY[i];
+    n++;
+  }
+  return n;
 }
 
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags

@@ -3,6 +3,7 @@
 
 import { syncRotCSFromAngle } from '../box2d/box2dHotFields.js';
 import { Camera } from './camera.js';
+import { markEngineAccessor } from './engineAccessors.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
@@ -93,6 +94,45 @@ function warnNoSpriteOnce(className, method) {
   console.warn(`WeedJS: ${className}.${method} needs a sprite: call setSprite / setSpritesheet first.`);
 }
 
+/**
+ * E-164: a class's first COMPONENT_FIELDS components live in fields of the instance (_c0 … _c7, declared in the
+ * constructor), so `this.rigidBody` is one load from the entity, not three (the entity, its slot array, the array's
+ * elements). With 20 000 entities none of those is in cache: waterAndBoxesScene's getter read in about 23 ns. Each
+ * getter reads its field by name; a class's further components keep E-139's slot array.
+ */
+const COMPONENT_FIELDS = 8;
+const FIELD_GETTERS = [
+  function () { const c = this._c0; return c !== null ? c : this._makeComponent(0); },
+  function () { const c = this._c1; return c !== null ? c : this._makeComponent(1); },
+  function () { const c = this._c2; return c !== null ? c : this._makeComponent(2); },
+  function () { const c = this._c3; return c !== null ? c : this._makeComponent(3); },
+  function () { const c = this._c4; return c !== null ? c : this._makeComponent(4); },
+  function () { const c = this._c5; return c !== null ? c : this._makeComponent(5); },
+  function () { const c = this._c6; return c !== null ? c : this._makeComponent(6); },
+  function () { const c = this._c7; return c !== null ? c : this._makeComponent(7); },
+];
+FIELD_GETTERS.forEach(markEngineAccessor);
+const NO_COMPONENT_SLOTS = [];
+/** The constructor's config when none is given: one object, not a new one per entity. */
+const EMPTY_CONFIG = Object.freeze({});
+
+/**
+ * E-165: this realm's LogicWorker, which binds itself when it is made. `self.logicWorker` is a load through the
+ * worker's global proxy that V8 leaves slow: in spawnStormScene the spawn and despawn lines that read it were about a
+ * third of logic (Wave 9's map). Null on the page and in the other workers, which read the global as before.
+ */
+let logicWorkerRef = null;
+
+/** @param {object|null} worker the LogicWorker of this realm */
+export function bindLogicWorkerRef(worker) {
+  logicWorkerRef = worker || null;
+}
+
+function currentLogicWorker() {
+  if (logicWorkerRef !== null) return logicWorkerRef;
+  return typeof self !== 'undefined' ? self.logicWorker || null : null;
+}
+
 /** The page (main thread), not a worker: a window, and no logic worker set up here. */
 function isMainThread() {
   return typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
@@ -141,6 +181,35 @@ export function scalePlacedCollider(collider, sx, sy) {
   Collider.visualRange[i] *= larger;
 }
 
+/**
+ * N-98: class → the spawn config keys that name a read-only property of its instances (a getter without a setter, such
+ * as `speed`). The first spawn's write throws; the key is warned about once and skipped from then on. Null until then,
+ * so a spawn tests one variable.
+ */
+let readOnlySpawnKeys = null;
+
+/** A property the instance cannot be assigned (an accessor without a setter, or a data property not writable). */
+function isReadOnlyProperty(instance, key) {
+  for (let o = instance; o !== null; o = Object.getPrototypeOf(o)) {
+    const d = Object.getOwnPropertyDescriptor(o, key);
+    if (d !== undefined) return 'value' in d ? d.writable === false : d.set === undefined;
+  }
+  return false;
+}
+
+function skipReadOnlySpawnKey(EntityClass, key) {
+  if (readOnlySpawnKeys === null) readOnlySpawnKeys = new WeakMap();
+  let keys = readOnlySpawnKeys.get(EntityClass);
+  if (keys === undefined) {
+    keys = new Set();
+    readOnlySpawnKeys.set(EntityClass, keys);
+  }
+  keys.add(key);
+  console.warn(
+    `WeedJS: ${EntityClass.name}.spawn() skips the key "${key}": ${key} is read-only on ${EntityClass.name}.`
+  );
+}
+
 /** Classes already warned that despawn(index) got another class's entity. */
 const _warnedDespawnOtherClass = new Set();
 function warnDespawnOtherClassOnce(className, index) {
@@ -161,6 +230,10 @@ export class GameObject {
   // Component composition - define which components this entity type has
   // Override in subclasses, e.g.: static components = [RigidBody, Collider, SpriteRenderer]
   static components = []; // By default, only Transform (added automatically)
+  /** Slots in an instance's `_components`, one per component getter (E-139); set by _ensureComponentAccessors. */
+  static _componentSlotCount = 0;
+  /** Each slot's component, `{ name, Class }`, for _makeComponent (E-164); set by _ensureComponentAccessors. */
+  static _componentSlotSpecs = NO_COMPONENT_SLOTS;
 
   // Tick decimation - override in subclasses to reduce tick frequency
   // 0 = logic workers never visit this type (unless CameraInOutListener)
@@ -261,6 +334,10 @@ export class GameObject {
   // Decremented each frame; entity ticks when it reaches 0, then resets to tickInterval
   static nextTick = null;
 
+  // E-180: per entity type, a version its active list's edits bump (Int32Array, shared): the tickInterval buckets
+  // are rebuilt when their own type's list changed, not on every query version.
+  static typeListVersions = null;
+
   // Camera data (shared with main thread)
   static cameraData = null; // Float32Array Camera.FLOAT_COUNT (zoom, x, y, follow, targetZoom, followEntity stamp)
 
@@ -310,6 +387,9 @@ export class GameObject {
    * @param {SharedArrayBuffer} [forceProcessOnLogicWorkerBuffer] - Int16 per entity (−1 = not forced)
    * @param {SharedArrayBuffer} [entityTypeHasForcedLogicWorkerBuffer] - Uint8 per entityType
    * @param {SharedArrayBuffer} [entityTypeForcedLogicWorkerCountBuffer] - Uint16 per entityType
+   * @param {number} [neighborByte] - the neighbour rows' offset in neighborBuffer
+   * @param {SharedArrayBuffer} [neighborReadersBuffer] - Uint8 per entityType: reads neighbours (E-176, Grid.neighborReaders)
+   * @param {SharedArrayBuffer} [typeListVersionsBuffer] - Int32 per entityType: its active list's version (E-180)
    */
   static initializeArrays(
     count,
@@ -318,7 +398,9 @@ export class GameObject {
     forceProcessOnLogicWorkerBuffer = null,
     entityTypeHasForcedLogicWorkerBuffer = null,
     entityTypeForcedLogicWorkerCountBuffer = null,
-    neighborByte = 0
+    neighborByte = 0,
+    neighborReadersBuffer = null,
+    typeListVersionsBuffer = null
   ) {
     this.globalEntityCount = count;
 
@@ -344,6 +426,8 @@ export class GameObject {
     this.entityTypeForcedLogicWorkerCount = entityTypeForcedLogicWorkerCountBuffer
       ? new Uint16Array(entityTypeForcedLogicWorkerCountBuffer)
       : null;
+    Grid.neighborReaders = neighborReadersBuffer ? new Uint8Array(neighborReadersBuffer) : null;
+    this.typeListVersions = typeListVersionsBuffer ? new Int32Array(typeListVersionsBuffer) : null;
   }
 
   /**
@@ -431,7 +515,7 @@ export class GameObject {
   static _forwardDespawnAllToLogic0(EntityClass) {
     if (typeof self === 'undefined') return null;
 
-    const logicWorker = self.logicWorker;
+    const logicWorker = currentLogicWorker();
     if (!logicWorker || logicWorker.workerIndex === 0) {
       return null;
     }
@@ -457,6 +541,7 @@ export class GameObject {
    */
   static _removeFromTypeActiveList(EntityClass, entityIndex) {
     removeFromTypeActiveList(EntityClass._activeList, entityIndex);
+    GameObject._typeListChanged(EntityClass);
   }
 
   /**
@@ -466,6 +551,7 @@ export class GameObject {
    */
   static _clearTypeActiveList(EntityClass) {
     clearTypeActiveList(EntityClass._activeList);
+    GameObject._typeListChanged(EntityClass);
   }
 
   /**
@@ -476,6 +562,17 @@ export class GameObject {
    */
   static _addToTypeActiveList(EntityClass, entityIndex) {
     addToTypeActiveList(EntityClass._activeList, entityIndex);
+    GameObject._typeListChanged(EntityClass);
+  }
+
+  /**
+   * E-180: the type's active list changed; its version moves after the list's own writes (Atomics.add), so a logic
+   * worker that reads the new version reads the new list.
+   * @param {Class} EntityClass
+   */
+  static _typeListChanged(EntityClass) {
+    const versions = GameObject.typeListVersions;
+    if (versions !== null) Atomics.add(versions, EntityClass.entityType, 1);
   }
 
   /**
@@ -568,11 +665,28 @@ export class GameObject {
    * This simplifies code: just use SpriteRenderer.property[entityIndex] directly.
    * Unused slots have default values (0/false).
    */
-  constructor(index, config = {}, logicWorker = null, options = {}) {
+  constructor(index, config = EMPTY_CONFIG, logicWorker = null, options = {}) {
     this.index = index;
-    this.config = config;
-    // LogicWorker API object (postMessage, queues). Not forceProcessOnLogicWorker.
-    this.logicWorker = logicWorker;
+    // E-167: the scene's config and this realm's LogicWorker (its API object: postMessage, queues) are the same for
+    // every entity, so they live on the prototype and an entity carries only what is its own: every tick that
+    // walks the entities reads their bytes. An instance made without them (hotSwap lists a class's fields from one,
+    // on a logic worker too) leaves this realm's as they are.
+    const proto = GameObject.prototype;
+    if (config !== EMPTY_CONFIG && proto.config !== config) proto.config = config;
+    if (logicWorker !== null && proto.logicWorker !== logicWorker) proto.logicWorker = logicWorker;
+    // E-164: one field per component of the class (at most COMPONENT_FIELDS), declared here so every instance of a
+    // class has one shape, and no more than it uses: every byte an entity carries is read by every tick that walks
+    // the entities (painterMoveStressScene's ticks touch 300 000 of them).
+    this.constructor._ensureComponentAccessors();
+    const fields = this.constructor._componentSlotCount;
+    if (fields > 0) this._c0 = null;
+    if (fields > 1) this._c1 = null;
+    if (fields > 2) this._c2 = null;
+    if (fields > 3) this._c3 = null;
+    if (fields > 4) this._c4 = null;
+    if (fields > 5) this._c5 = null;
+    if (fields > 6) this._c6 = null;
+    if (fields > 7) this._c7 = null;
     this.bindToEntitySlot({ page: options.page === true });
   }
 
@@ -591,8 +705,9 @@ export class GameObject {
     this._onPage = page;
     this._spawnAborted = false;
 
-    // One flag object per class. Composition does not vary per instance.
-    let flags = Ctor._sharedHasComponents;
+    // One flag object per class. Composition does not vary per instance. Its own: a subclass that read the static it
+    // inherits took its parent's flags when a parent instance was made first, missing its own components (N-88).
+    let flags = Object.prototype.hasOwnProperty.call(Ctor, '_sharedHasComponents') ? Ctor._sharedHasComponents : null;
     if (!flags) {
       flags = {};
       const entityComponents = collectComponents(Ctor, GameObject, Transform);
@@ -603,7 +718,8 @@ export class GameObject {
       }
       Ctor._sharedHasComponents = flags;
     }
-    this._hasComponents = flags;
+    // E-167: on the class's prototype, not in every entity.
+    if (!Object.prototype.hasOwnProperty.call(Ctor.prototype, '_hasComponents')) Ctor.prototype._hasComponents = flags;
 
     if (!page) {
       Transform.entityType[index] = Ctor.entityType || 0;
@@ -619,9 +735,58 @@ export class GameObject {
       this._neighborOffset = -1;
       this._neighbors = null;
     }
+    // E-176: this instance has marked its type a neighbour reader (Grid.neighborReaders). A page instance is frozen:
+    // true from the start, and its reads mark through Grid.markNeighborReader.
+    this._neighborReaderMarked = page;
 
-    this._componentCache = {};
     Ctor._ensureComponentAccessors();
+    // E-164: this entity's component instances, made on first use: the first COMPONENT_FIELDS in _c0 … _c7 (only
+    // the fields the constructor declared for this class), the rest in E-139's slot array.
+    const slots = Ctor._componentSlotCount;
+    if (slots > 0) this._c0 = null;
+    if (slots > 1) this._c1 = null;
+    if (slots > 2) this._c2 = null;
+    if (slots > 3) this._c3 = null;
+    if (slots > 4) this._c4 = null;
+    if (slots > 5) this._c5 = null;
+    if (slots > 6) this._c6 = null;
+    if (slots > 7) this._c7 = null;
+    // E-167: only a class with more components than fields has the slot array. The page's instances have it too:
+    // they are frozen (Scene._createPageInstances), so a component made on their first read is kept there.
+    if (slots > COMPONENT_FIELDS || page) this._components = new Array(slots).fill(null);
+  }
+
+  /**
+   * E-164: a component's instance on its first read through FIELD_GETTERS, kept in its field; null when this type
+   * does not have the component.
+   * @param {number} slot 0 … COMPONENT_FIELDS - 1
+   */
+  _makeComponent(slot) {
+    // A page instance's fields stay null (it is frozen): its components are in the slot array.
+    const onPage = this._onPage;
+    if (onPage) {
+      const kept = this._components[slot];
+      if (kept !== null) return kept;
+    }
+    const spec = this.constructor._componentSlotSpecs[slot];
+    if (!this._hasComponents[spec.name]) return null;
+    const instance = new spec.Class(this.index);
+    instance.owner = this;
+    if (onPage) {
+      this._components[slot] = instance;
+      return instance;
+    }
+    switch (slot) {
+      case 0: this._c0 = instance; break;
+      case 1: this._c1 = instance; break;
+      case 2: this._c2 = instance; break;
+      case 3: this._c3 = instance; break;
+      case 4: this._c4 = instance; break;
+      case 5: this._c5 = instance; break;
+      case 6: this._c6 = instance; break;
+      default: this._c7 = instance; break;
+    }
+    return instance;
   }
 
   /**
@@ -664,12 +829,19 @@ export class GameObject {
   /**
    * Ensure component accessors are defined on the class prototype (called once per class)
    * This makes both core and custom components accessible via this.componentName
+   *
+   * E-139: the class numbers its components, and each getter reads its slot of the instance's `_components` by the
+   * integer it captured. An integer-keyed load stays monomorphic whatever the slot, where the old getters, closures
+   * of one function, read `_componentCache[name]` by a name that differed per closure, from an object filled in the
+   * order each entity first touched its components (23 ns a read in componentGetterMicrobench against 7).
    */
   static _ensureComponentAccessors() {
     // Skip if already created for THIS SPECIFIC class (not inherited from parent)
     if (this.prototype.hasOwnProperty('_componentAccessorsCreated')) {
       return;
     }
+    let slots = 0;
+    const specs = [];
 
     // Core component class map
     const coreComponents = {
@@ -696,12 +868,20 @@ export class GameObject {
       }
 
       // Define getter on prototype (shared by all instances)
+      const slot = slots++;
+      specs[slot] = { name: componentName, Class: ComponentClass };
+      if (slot < COMPONENT_FIELDS) {
+        Object.defineProperty(this.prototype, componentName, {
+          get: FIELD_GETTERS[slot],
+          enumerable: true,
+          configurable: true,
+        });
+        continue;
+      }
       Object.defineProperty(this.prototype, componentName, {
-        get: function () {
-          // Return cached instance if exists
-          if (this._componentCache[componentName]) {
-            return this._componentCache[componentName];
-          }
+        get: markEngineAccessor(function () {
+          const cached = this._components[slot];
+          if (cached !== null) return cached;
 
           // Check if this entity TYPE has this component
           if (!this._hasComponents[componentName]) {
@@ -712,15 +892,17 @@ export class GameObject {
           // Create and cache the component instance using entity index directly
           const instance = new ComponentClass(this.index);
           instance.owner = this; // Store owner reference for instance methods
-          this._componentCache[componentName] = instance;
+          this._components[slot] = instance;
           return instance;
-        },
+        }),
         enumerable: true,
         configurable: true,
       });
     }
 
     // Mark as created
+    this._componentSlotCount = slots;
+    this._componentSlotSpecs = specs;
     this.prototype._componentAccessorsCreated = true;
   }
 
@@ -972,6 +1154,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.alpha[this.index] = value;
@@ -995,6 +1178,7 @@ export class GameObject {
       if (SpriteRenderer.tint[this.index] !== value) {
         SpriteRenderer.tint[this.index] = value;
         SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.keyedDirty[this.index] = 1;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1017,6 +1201,7 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
+      // Which rows are drawn, not a row's statics (E-177: no keyed flag).
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1052,6 +1237,7 @@ export class GameObject {
         SpriteRenderer.scaleX[this.index] = v;
         SpriteRenderer.updateBounds(this.index);
         SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.keyedDirty[this.index] = 1;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1082,6 +1268,7 @@ export class GameObject {
         SpriteRenderer.scaleY[this.index] = v;
         SpriteRenderer.updateBounds(this.index);
         SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.keyedDirty[this.index] = 1;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1132,6 +1319,7 @@ export class GameObject {
       else SpriteRenderer.scaleY[i] = -SpriteRenderer.scaleY[i];
       SpriteRenderer.updateBounds(i);
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
     }
     if (this._hasComponents.adobeAnimComponent && ((AdobeAnimComponent.flip[i] & bit) !== 0) !== on) {
       AdobeAnimComponent.flip[i] ^= bit;
@@ -1205,6 +1393,7 @@ export class GameObject {
   markDirty() {
     if (this._hasComponents.SpriteRenderer) {
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
   }
 
@@ -1217,6 +1406,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
       AdobeAnimComponent.alpha[this.index] = value;
@@ -1239,6 +1429,7 @@ export class GameObject {
       if (SpriteRenderer.tint[this.index] !== value) {
         SpriteRenderer.tint[this.index] = value;
         SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.keyedDirty[this.index] = 1;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1260,6 +1451,7 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
+      // Which rows are drawn, not a row's statics (E-177: no keyed flag).
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1318,6 +1510,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerMask) {
       if (SpriteRenderer.layerMask[i] !== m) {
         SpriteRenderer.layerMask[i] = m;
+        // The layer a sprite is drawn in, not its statics (E-177: no keyed flag).
         SpriteRenderer.renderDirty[i] = 1;
       }
     }
@@ -1379,6 +1572,7 @@ export class GameObject {
       SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
       SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = rx;
@@ -1412,6 +1606,7 @@ export class GameObject {
       SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
       SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = rx;
@@ -1434,6 +1629,7 @@ export class GameObject {
       SpriteRenderer.tileOffsetU[i] = 0;
       SpriteRenderer.tileOffsetV[i] = 0;
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = 0;
@@ -1471,6 +1667,7 @@ export class GameObject {
           );
         }
         SpriteRenderer.renderDirty[i] = 1;
+        SpriteRenderer.keyedDirty[i] = 1;
       }
     }
     if (this._hasComponents.MeshRenderer) {
@@ -1522,6 +1719,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && changed) {
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
       const flip = AdobeAnimComponent.flip[this.index];
@@ -1564,6 +1762,7 @@ export class GameObject {
       SpriteRenderer.anchorX[this.index] = x;
       SpriteRenderer.anchorY[this.index] = y;
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.anchorX[this.index] = x;
@@ -1584,6 +1783,7 @@ export class GameObject {
       SpriteRenderer.animationState[this.index] = state;
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     return this;
   }
@@ -1598,6 +1798,8 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return this;
     if (SpriteRenderer.animationSpeed[this.index] !== speed) {
       SpriteRenderer.animationSpeed[this.index] = speed;
+      // The clock's rate, not the statics (a frame it moves is a texture the emit sees move). Games set it every tick
+      // (Predator's walkers, from their speed): a keyed flag here rewrote thousands of store rows a frame (E-177).
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;
@@ -2140,8 +2342,8 @@ export class GameObject {
     const otherIndex = typeof other === 'number' ? other : other.index;
 
     // Access collision tracking from logic worker context
-    // self.logicWorker is the LogicWorker instance in logic_worker.js
-    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
+    // The LogicWorker of this realm (currentLogicWorker, E-165)
+    const logicWorker = currentLogicWorker();
     if (!logicWorker || !logicWorker.frameCollisions) {
       return false;
     }
@@ -2345,7 +2547,7 @@ export class GameObject {
     // ========================================
     // Queue list removal for logic0 to process at start of next frame
     // This avoids race conditions in sorted list operations
-    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
+    const logicWorker = currentLogicWorker();
     if (logicWorker) {
       logicWorker.queueDespawnListUpdate(i, entityType, EntityClass);
     }
@@ -2396,7 +2598,18 @@ export class GameObject {
   get neighborCount() {
     const nd = Grid._neighborData;
     const o = this._neighborOffset;
-    return nd !== null && o >= 0 ? nd[o] : 0;
+    if (nd === null || o < 0) return 0;
+    // E-176: this type reads neighbours, so the spatial worker builds its lists. Once per instance: a loop that reads
+    // neighborCount each pass pays one field test.
+    if (!this._neighborReaderMarked) this._markNeighborReader();
+    else if (this._onPage) Grid.markNeighborReader(this.index);
+    return nd[o];
+  }
+
+  /** E-176: marks this entity's type a neighbour reader, once per (worker) instance. */
+  _markNeighborReader() {
+    Grid.markNeighborReader(this.index);
+    this._neighborReaderMarked = true;
   }
 
   /** Typed view into the neighbor SAB. Created on first read, not at bind. */
@@ -2774,7 +2987,7 @@ export class GameObject {
         : typeof EntityClass.forceProcessOnLogicWorker === 'number'
           ? EntityClass.forceProcessOnLogicWorker
           : FORCE_PROCESS_ON_LOGIC_WORKER_NONE;
-    const logicWorkerCtx = typeof self !== 'undefined' ? self.logicWorker : null;
+    const logicWorkerCtx = currentLogicWorker();
     const totalLogic = logicWorkerCtx ? logicWorkerCtx.totalLogicWorkers : 1;
     const forcedLogicWorker = resolveForceProcessOnLogicWorker(
       requestedForceProcessOnLogicWorker,
@@ -2975,6 +3188,7 @@ export class GameObject {
       SpriteRenderer.loop[i] = 1; // Default: animations loop
       SpriteRenderer.animationSpeed[i] = DEFAULT_ANIMATION_SPEED;
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
       SpriteRenderer.layerMask[i] = 0;
     }
 
@@ -3018,7 +3232,19 @@ export class GameObject {
         if (spawnConfig.width != null) instance.width = spawnConfig.width;
         if (spawnConfig.height != null) instance.height = spawnConfig.height;
       }
+      const skipKeys = readOnlySpawnKeys !== null ? readOnlySpawnKeys.get(EntityClass) ?? null : null;
       for (const key in spawnConfig) {
+        // E-169: the position, in nearly every config, by name and in its place in the config's order. A key read and
+        // written through `instance[key]` goes megamorphic over the names and classes this one loop sees, and the
+        // check below read it twice (two getter calls).
+        if (key === 'x') {
+          instance.x = spawnConfig.x;
+          continue;
+        }
+        if (key === 'y') {
+          instance.y = spawnConfig.y;
+          continue;
+        }
         if (
           key === 'active' ||
           key === 'width' ||
@@ -3030,8 +3256,15 @@ export class GameObject {
         ) {
           continue;
         }
-        if (instance[key] !== undefined && typeof instance[key] !== 'function') {
-          instance[key] = spawnConfig[key];
+        const current = instance[key];
+        if (current !== undefined && typeof current !== 'function') {
+          if (skipKeys !== null && skipKeys.has(key)) continue;
+          try {
+            instance[key] = spawnConfig[key];
+          } catch (error) {
+            if (!isReadOnlyProperty(instance, key)) throw error;
+            skipReadOnlySpawnKey(EntityClass, key);
+          }
         }
       }
 
@@ -3153,7 +3386,7 @@ export class GameObject {
     // ========================================
     // Queue list update for logic0 to process at start of next frame
     // This avoids race conditions in sorted list operations
-    const logicWorker = typeof self !== 'undefined' ? self.logicWorker : null;
+    const logicWorker = currentLogicWorker();
     if (logicWorker) {
       logicWorker.queueSpawnListUpdate(i, EntityClass.entityType, EntityClass);
     }
@@ -3387,3 +3620,7 @@ export class GameObject {
     return activeList ? activeList[0] : 0;
   }
 }
+
+// E-167: the realm's config and LogicWorker before the first entity binds them (and on the page, which has no worker).
+GameObject.prototype.config = EMPTY_CONFIG;
+GameObject.prototype.logicWorker = null;

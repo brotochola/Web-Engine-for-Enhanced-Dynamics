@@ -48,6 +48,9 @@ export class FSM extends Component {
   // Array of state names indexed by state number (built from states map)
   static _stateNames = null;
 
+  // Each state's onUpdate by state number: tick reads it from this one array, not from 17 state classes (E-146)
+  static _onUpdates = null;
+
   // Map of state name -> state index (for fast lookups)
   static _stateNameToIndex = null;
 
@@ -92,6 +95,7 @@ export class FSM extends Component {
     // Build state array and name->index map
     this._stateArray = [];
     this._stateNames = [];
+    this._onUpdates = [];
     this._stateNameToIndex = new Map();
 
     for (let index = 0; index < stateEntries.length; index++) {
@@ -106,6 +110,7 @@ export class FSM extends Component {
       // Store in array for index-based access
       this._stateArray[index] = StateClass;
       this._stateNames[index] = name;
+      this._onUpdates[index] = StateClass.onUpdate;
 
       // Store name->index mapping
       this._stateNameToIndex.set(name, index);
@@ -125,6 +130,13 @@ export class FSM extends Component {
   // ==========================================
   // INSTANCE METHODS (called on component instance)
   // ==========================================
+
+  constructor(index) {
+    super(index);
+    // The owner's ms per tick (16.67 × its class's tickInterval), read on the first tick: one FSM instance has one
+    // owner, and reading owner.constructor.tickInterval every tick cost (E-146). NaN until then.
+    this._msPerTick = NaN;
+  }
 
   /**
    * Process FSM for this entity - call this in entity's tick()
@@ -151,12 +163,13 @@ export class FSM extends Component {
     if (CurrentState) {
       // Update time in state (approximate ms based on 60fps baseline)
       // Scale by tickInterval so decimated entities track real elapsed time
-      const tickInterval = owner?.constructor?.tickInterval || 1;
-      FSMClass.time[i] += dt * 16.67 * tickInterval;
+      let msPerTick = this._msPerTick;
+      if (msPerTick !== msPerTick) msPerTick = this._msPerTick = 16.67 * (owner.constructor.tickInterval || 1);
+      FSMClass.time[i] += dt * msPerTick;
 
-      // Call state's onUpdate. The time goes as whole ms: a fractional double crossing this call
-      // (a different onUpdate per state, never inlined) was a heap number per tick (E-105).
-      CurrentState.onUpdate(owner, i, dt, FSMClass.time[i] | 0);
+      // Call state's onUpdate, with the state class as `this`. The time goes as whole ms: a fractional double
+      // crossing this call (a different onUpdate per state, never inlined) was a heap number per tick (E-105).
+      FSMClass._onUpdates[currentStateIndex].call(CurrentState, owner, i, dt, FSMClass.time[i] | 0);
     }
   }
 

@@ -1,7 +1,7 @@
 // VISUAL_EDITOR_PLAN.md ED-5: Predator's rocks, trees and houses (from demos/trees_and_rocks.json) and littleCity's
 // houses and trees (from its objects JSON) moved to scene files, which their scenes name as defaultSceneFile. Parity
 // with the JSON they came from, read the way the engine reads the file; and every class in the scene's pools.
-// In a browser: the same classes at the same pool indices and positions after a load (the ED-5 sitting, R-0650).
+// In a browser: the same classes at the same pool indices and positions after a load (the ED-5 sitting, R-2005).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

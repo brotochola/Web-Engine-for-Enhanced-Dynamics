@@ -8,6 +8,9 @@
  *         persist check missed: Y-sort on, the collect's poses already in the queue columns (E-98d)
  *   wasm  emit_rows, one call per frame; then the JS acts on the play-once ends, the warnings and
  *         the tiled flag it returns, as a product wrapper would
+ *   wasmKeyed  the same with E-177's keyed frames on: SpriteRenderer.keyedDirty and the queue's key column bound, so
+ *         the emit writes each sprite's key and takes its flag (every sprite flagged on the first frame, as spawns leave
+ *         them)
  *
  * The emit reads SpriteRenderer, ShadowCaster and DecorationComponent columns, pre-render's animation
  * state and collector, and the texture metadata; the kernel needs all of them in the memory it
@@ -22,7 +25,7 @@
  * props; 10 200 of 20 000 grass blades after them; shadow casters on every sprite; Y-sort on.
  *
  * One variant per process, through runKernelVariants.mjs, which rejects a variant whose checksum
- * differs. The checksum covers every queue column of every written row and the animation state
+ * differs; without --variant it times wasm, the shipped kernel (runKernelsVsRev.mjs passes none). The checksum covers every queue column of every written row and the animation state
  * (frame, clock, last texture, bounds) after each of 45 frames.
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderEmitWasmMicrobench.mjs --variants js,wasm --rounds 5
@@ -186,6 +189,8 @@ function regionList(tex) {
   col('rForeign', Uint32Array, 2 * MAX_ITEMS);
   col('rCounts', Uint32Array, 8);
   col('table', Uint32Array, SLOTS.length);
+  // E-177: the sprites' keyed flags (bound only by the wasmKeyed variant).
+  col('sKeyedDirty', Uint8Array, N);
   return list.map((r) => ({ ...r, owner: 'preRender' }));
 }
 
@@ -397,6 +402,12 @@ export async function setupEmitKernel(opts = {}) {
   at('tSheets', tex.propSheet + 1);
   at('tAnims', nAnims);
   at('tFrames', meta.totalFrames);
+  if (opts.keyed) {
+    if (!SLOTS.includes('sKeyedDirty')) throw new Error('this tree has no keyed frames');
+    SpriteRenderer.keyedDirty = moved(buffer, regions, 'sKeyedDirty', new Uint8Array(N).fill(1), N);
+    at('sKeyedDirty', regions.sKeyedDirty.byte);
+    at('qKey', worker.renderQueueKey.byteOffset);
+  }
 
   const source = () => worker._fillEmitSource(count, MAX_ITEMS, cY, cType, cIndex, qX, qY, qRotC, qRotS, false, true, true);
   source();
@@ -448,10 +459,11 @@ function hashBytes(h, bytes) {
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'js');
-  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
-  const k = await setupEmitKernel({ seed: Number(args.seed ?? 0x5e1d) });
-  const emit = variant === 'wasm' ? () => k.emitWasm() : () => k.emitJs();
+  const variant = String(args.variant || 'wasm');
+  if (!['js', 'wasm', 'wasmKeyed'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  const kernel = variant !== 'js';
+  const k = await setupEmitKernel({ seed: Number(args.seed ?? 0x5e1d), keyed: variant === 'wasmKeyed' });
+  const emit = kernel ? () => k.emitWasm() : () => k.emitJs();
 
   // 45 frames from the fixture's state: the animation clocks advance, play-once sprites end.
   let checksum = 2166136261;
@@ -465,7 +477,7 @@ async function main() {
 
   // Normal compiles, not OSR: short calls over the first 64 rows.
   let tier = null;
-  if (variant === 'wasm') {
+  if (kernel) {
     tier = await warmWasm(k.emitRows, () => k.emitWasm(64));
   } else {
     k.worker._emitSource.count = 64;

@@ -3,9 +3,9 @@
 
 import { Noise2D } from '../../src/core/noise2D.js';
 import { SharedResource } from '../../src/core/sharedResource.js';
-import Delaunator from './vendor/delaunator.js';
+import { Delaunator } from './vendor/delaunator.js';
 import { diff as martinezDiff, union as martinezUnion } from './vendor/martinez.js';
-import simplify2 from './vendor/simplify2.js';
+import { simplify2 } from './vendor/simplify2.js';
 
 export const CELL = 10;
 export const COLS = 900;

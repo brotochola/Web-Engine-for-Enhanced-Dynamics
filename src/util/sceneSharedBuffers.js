@@ -31,7 +31,8 @@ import { Gamepad } from '../core/gamepad.js';
 import Keyboard from '../core/keyboard.js';
 import { Flash } from '../core/flash.js';
 import { Camera } from '../core/camera.js';
-import { Time } from '../core/timeScale.js';
+import { CLOCK_BYTES, Time } from '../core/timeScale.js';
+import { GpuParticles } from '../core/gpuParticles.js';
 import { Tween, tweenBufferBytes } from '../core/tween.js';
 import {
   SUN_DEFAULTS,
@@ -45,7 +46,9 @@ import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
-import { SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, ySortEnabled } from '../render/rendererBackend.js';
+import {
+  SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, keyedDecorationsFit, keyedSpritesEnabled, ySortEnabled,
+} from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
@@ -253,6 +256,10 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   buffers.entityTypeForcedLogicWorkerCount = new SharedArrayBuffer(
     GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT * 2,
   );
+  // E-176: which entity types read their neighbours (Grid.neighborReaders).
+  buffers.neighborReaders = new SharedArrayBuffer(GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT);
+  // E-180: each entity type's active list version (GameObject.typeListVersions).
+  buffers.typeListVersions = new SharedArrayBuffer(GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT * 4);
 
   GameObject.initializeArrays(
     totalEntityCount,
@@ -262,6 +269,8 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     buffers.entityTypeHasForcedLogicWorker,
     buffers.entityTypeForcedLogicWorkerCount,
     scene.spatialPublish ? scene.spatialPublish.neighborByte : 0,
+    buffers.neighborReaders,
+    buffers.typeListVersions,
   );
 
   for (const [componentName, pool] of Object.entries(componentPools)) {
@@ -379,7 +388,8 @@ function initializeDecorationBuffers(scene) {
   DecorationPool.initializeFreeList(buffers.decorationFreeList, buffers.decorationFreeListTop);
 
   createCompactSlotListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
-  buffers.activeDecorationsLock = new SharedArrayBuffer(4);
+  // The list's lock and, past it on the same cache line, E-179c's change counts (decorationSpatial.js DECORATION_*_EPOCH).
+  buffers.activeDecorationsLock = new SharedArrayBuffer(64);
   DecorationPool.initializeActiveList(buffers.activeDecorationsData, buffers.activeDecorationsLock);
 
   const cellSize = config.spatial?.cellSize || config.cellSize;
@@ -547,7 +557,10 @@ export function renderQueueMemorySpec(scene) {
   const { config } = scene;
   initializeSceneLayers(scene);
   const maxVisibleRenderables = resolveMaxVisibleRenderables(scene);
-  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting);
+  // E-162: room for indexed frames where pre-render sorts the sprites (the painter whose order they follow).
+  const indexed = ySortEnabled(config.renderer?.ySort) && config.preRender?.sortSprites === SORT_SPRITES_PRERENDER
+    && indexedSpritesEnabled(config.renderer, maxVisibleRenderables);
+  const gpuCaps = gpuQueueCaps(maxVisibleRenderables, config.lighting, indexed);
   const emit = emitBlocks(scene);
   // E-114: the shadow stamp's scratch, sized by the sun casters' cap and the lighting config.
   const lighting = config.lighting || {};
@@ -748,6 +761,9 @@ export function initializeSceneLayers(scene) {
     };
   }
   Layer.initializeFromConfig(config.layers, builtInLayers);
+  // GPU_PARTICLES layers: one memory each, a ring per writer thread; the main thread writes ring 0.
+  GpuParticles.initializeFromConfig(config.layers, scene.numberOfLogicWorkers);
+  GpuParticles.writerSlot = 0;
   scene._sceneLayersReady = true;
 }
 
@@ -781,6 +797,8 @@ function emitBlocks(scene) {
   const adobeOn = Boolean(pools.AdobeAnimComponent?.ComponentClass);
   const tablesMB = config.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
   if (adobeOn) assertIntegerInRange('preRender.adobeTablesMB', tablesMB, 0, 1024);
+  const maxSprites = resolveMaxVisibleRenderables(scene);
+  const pixiKeyed = Boolean(pools.SpriteRenderer?.ComponentClass) && keyedSpritesEnabled(config, n, maxSprites);
   return {
     entities: n,
     spriteBytes: pools.SpriteRenderer?.ComponentClass ? SpriteRenderer.getBufferSize(n) : 0,
@@ -799,6 +817,10 @@ function emitBlocks(scene) {
       && (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite'
       ? resolveMaxVisibleRenderables(scene) : 0,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
+    // E-177: the entity batch's keyed frames' table and updates, for a scene with sprites whose frames go keyed.
+    pixiKeyed,
+    // E-188: and its decorations, keyed by pool slot past the entities, where the statics texture holds them.
+    keyedDecorations: pixiKeyed && keyedDecorationsFit(n, maxDecorations, maxSprites) ? maxDecorations : 0,
   };
 }
 
@@ -1161,8 +1183,9 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
   Keyboard.initialize(views.input, scene.keyMap);
   scene.updateKeyboardBuffer();
 
-  buffers.clockData = new SharedArrayBuffer(8); // the scale, and the editor's hold (timeScale.js)
-  views.clock = new Float32Array(buffers.clockData);
+  // The scale, the shared sim clock and the editor's hold (timeScale.js CLOCK_BYTES).
+  buffers.clockData = new SharedArrayBuffer(CLOCK_BYTES);
+  views.clock = new Float32Array(buffers.clockData, 0, 1);
   views.clock[0] = 1;
   Time.bind(buffers.clockData);
 
@@ -1247,6 +1270,8 @@ function initializeInputCameraDebugSpatialAndStatsBuffers(scene) {
       rangeByte: publish ? publish.rangeByte : 0,
       listByte: publish ? publish.listByte : 0,
       listStride: publish ? publish.listStride : 0,
+      // E-136: the pose generation the spatial workers share.
+      syncByte: publish ? publish.syncByte : 0,
       // The WASM candidate gather's regions (E-78); 0 without the publish memory.
       gridByte: publish ? publish.gridByte : 0,
       markerByte: publish ? publish.markerByte : 0,
@@ -1402,6 +1427,7 @@ function initializeSharedResourceBuffers(scene) {
 
 export function teardownSceneSharedState(scene) {
   scene._sceneLayersReady = false;
+  GpuParticles.reset();
   SoundManager.reset();
   if (scene.loadedAudioNames) scene.loadedAudioNames.length = 0;
 

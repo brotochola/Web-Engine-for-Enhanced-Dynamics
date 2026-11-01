@@ -75,7 +75,6 @@ export class PersonThatFollowsAFlowfield extends GameObject {
     PersonComponent.lastShotTime[this.index] = 0;
     PersonComponent.aimingAccuracy[this.index] =
       spawnConfig.aimingAccuracy ?? 0.8;
-    PersonComponent.lastTeamDataUpdateTime[this.index] = 0;
 
     this.addShadowDecoration();
   }

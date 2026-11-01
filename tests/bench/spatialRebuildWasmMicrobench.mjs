@@ -9,6 +9,9 @@
  *
  *   js    SpatialWorker.rebuildOwnedRows (shipped)
  *   wasm  rebuild_rows, one call per frame
+ *   jsInline  H-OWN: rebuildOwnedRows with the cell range computed inline (no getCellRange call, no result object)
+ *   jsSkip    H-OWN: jsInline, and a circle whose home row and rows are all another worker's is left before the
+ *             rest of its columns are read (with several spatial workers each one walks every entity)
  *
  * One variant per process, through runKernelVariants.mjs, which rejects a variant whose checksum
  * differs. The checksum covers the cells, poses, owned list and counts of 45 drifting frames, each
@@ -33,6 +36,8 @@ import { loadWasmKernel } from '../../src/util/wasmKernel.js';
 import { layoutRegions, spatialPatternTableBytes, spatialPublishRegions, WASM_PAGE_BYTES } from '../../src/util/wasmMemoryMap.js';
 import { SPATIAL_MAX_CELL_RADIUS } from '../../src/util/spatialPublishMemory.js';
 import { isCli, mulberry32, parseArgs, timeIt, writeReport } from './microbenchHelpers.mjs';
+import { Grid } from '../../src/core/grid.js';
+import { getColliderBounds, _boundsResult, SHAPE_CIRCLE } from '../../src/util/colliderUtils.js';
 import { setupSpatialKernel } from './spatialWorkerMicrobench.mjs';
 import { machineState, wasmTier } from './wasmKernelHelpers.mjs';
 
@@ -234,6 +239,125 @@ export async function setupRebuildKernel(opts = {}) {
   return { ...k, cols, tables, rebuildRows, gridBytes, posBytes };
 }
 
+/**
+ * H-OWN: SpatialWorker.rebuildOwnedRows, the cell range inline; with `skip`, a circle none of whose rows (home row
+ * included) is this worker's is left after its y and radius are read. The same bytes as the shipped method.
+ */
+function rebuildVariant(worker, skip) {
+  const x = Transform.x;
+  const y = Transform.y;
+  const offsetX = Collider.offsetX;
+  const offsetY = Collider.offsetY;
+  const shapeType = Collider.shapeType;
+  const radius = Collider.radius;
+  const colliderActive = Collider.active;
+  const spriteRendererActive = SpriteRenderer.active;
+  const rigidActive = RigidBody.active;
+  const countNoBody = worker.collectDetailedStats;
+  let noBody = 0;
+  const gridWidth = worker.gridWidth;
+  const invCellSize = worker.invCellSize;
+  const workerId = worker.workerId;
+  const entityPosData = worker.entityPosData;
+  const gridCounts = Grid._gridCounts;
+  const gridEntities = Grid._gridEntities;
+  const cellStride = Grid._cellIdStride;
+  const cellHeader = Grid._headerIds;
+  const maxPerCell = Grid.maxEntitiesPerCell;
+  const maxCol = gridWidth - 1;
+  const maxRow = worker.gridHeight - 1;
+  const ownedRows = worker.ownedRows;
+  const ownedRowCount = worker.ownedRowCount;
+  const rowOwnership = worker.rowOwnership;
+  const localCounts = worker._localCellCounts;
+  const ownedList = worker._ownedEntityList;
+  let ownedCount = 0;
+  for (let r = 0; r < ownedRowCount; r++) {
+    const rowBase = ownedRows[r] * gridWidth;
+    for (let col = 0; col < gridWidth; col++) localCounts[rowBase + col] = 0;
+  }
+  const activeEntitiesData = worker.activeEntitiesData;
+  const totalActiveEntities = activeEntitiesData ? activeEntitiesData[0] : 0;
+  for (let activeIdx = 0; activeIdx < totalActiveEntities; activeIdx++) {
+    const i = activeEntitiesData[1 + activeIdx];
+    if (!colliderActive[i] && !spriteRendererActive[i]) continue;
+    if (countNoBody && spriteRendererActive[i] && !colliderActive[i] && !(rigidActive && rigidActive[i])) noBody++;
+    let posX;
+    let posY;
+    let halfW = 0;
+    let halfH = 0;
+    if (colliderActive[i] && shapeType[i] === SHAPE_CIRCLE) {
+      posY = y[i] + (offsetY[i] || 0);
+      halfH = radius[i] || 0;
+      if (skip) {
+        if (posY !== posY) continue;
+        let lo = ((posY - halfH) * invCellSize) | 0;
+        let hi = ((posY + halfH) * invCellSize) | 0;
+        lo = lo < 0 ? 0 : lo > maxRow ? maxRow : lo;
+        hi = hi < 0 ? 0 : hi > maxRow ? maxRow : hi;
+        let home = (Math.fround(posY) * invCellSize) | 0;
+        home = home < 0 ? 0 : home > maxRow ? maxRow : home;
+        let mine = rowOwnership[home] === workerId;
+        for (let row = lo; !mine && row <= hi; row++) mine = rowOwnership[row] === workerId;
+        if (!mine) continue;
+      }
+      posX = x[i] + (offsetX[i] || 0);
+      halfW = halfH;
+    } else if (colliderActive[i]) {
+      getColliderBounds(i, _boundsResult);
+      posX = _boundsResult.posX;
+      posY = _boundsResult.posY;
+      halfW = _boundsResult.halfW;
+      halfH = _boundsResult.halfH;
+    } else {
+      posX = x[i] + offsetX[i];
+      posY = y[i] + offsetY[i];
+    }
+    if (posX !== posX || posY !== posY) continue;
+    const maxHalfExtent = halfW > halfH ? halfW : halfH;
+    let homeRow = (Math.fround(posY) * invCellSize) | 0;
+    homeRow = homeRow < 0 ? 0 : homeRow > maxRow ? maxRow : homeRow;
+    if (rowOwnership[homeRow] === workerId) ownedList[ownedCount++] = i;
+    let minCol = ((posX - halfW) * invCellSize) | 0;
+    let maxColBB = ((posX + halfW) * invCellSize) | 0;
+    let minRow = ((posY - halfH) * invCellSize) | 0;
+    let maxRowBB = ((posY + halfH) * invCellSize) | 0;
+    minCol = minCol < 0 ? 0 : minCol > maxCol ? maxCol : minCol;
+    maxColBB = maxColBB < 0 ? 0 : maxColBB > maxCol ? maxCol : maxColBB;
+    minRow = minRow < 0 ? 0 : minRow > maxRow ? maxRow : minRow;
+    maxRowBB = maxRowBB < 0 ? 0 : maxRowBB > maxRow ? maxRow : maxRowBB;
+    let wroteEntityPos = false;
+    for (let row = minRow; row <= maxRowBB; row++) {
+      if (rowOwnership[row] !== workerId) continue;
+      if (!wroteEntityPos) {
+        const baseIdx = i * 4;
+        entityPosData[baseIdx] = posX;
+        entityPosData[baseIdx + 1] = posY;
+        entityPosData[baseIdx + 2] = maxHalfExtent;
+        wroteEntityPos = true;
+      }
+      const rowBase = row * gridWidth;
+      for (let col = minCol; col <= maxColBB; col++) {
+        const cellIndex = rowBase + col;
+        const localCount = localCounts[cellIndex];
+        if (localCount < maxPerCell) {
+          gridEntities[cellIndex * cellStride + cellHeader + localCount] = i;
+          localCounts[cellIndex] = localCount + 1;
+        }
+      }
+    }
+  }
+  for (let r = 0; r < ownedRowCount; r++) {
+    const rowBase = ownedRows[r] * gridWidth;
+    for (let col = 0; col < gridWidth; col++) {
+      const cellIndex = rowBase + col;
+      gridCounts[cellIndex * Grid.cellByteSize] = localCounts[cellIndex];
+    }
+  }
+  worker._noBodyCount = noBody;
+  worker._ownedEntityCount = ownedCount;
+}
+
 function hashBytes(h, bytes) {
   for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 16777619) >>> 0;
   return h;
@@ -243,15 +367,19 @@ async function main() {
   const args = parseArgs();
   const variant = String(args.variant || 'js');
   const mix = String(args.mix || 'predator');
-  if (!['js', 'wasm'].includes(variant)) throw new Error(`unknown variant ${variant}`);
+  if (!['js', 'wasm', 'jsInline', 'jsSkip'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const k = await setupRebuildKernel({ n: Number(args.n ?? 16500), mix, workers: Number(args.workers ?? 1) });
   const rebuild = variant === 'wasm'
     ? () => {
         for (const { worker, tableByte } of k.tables) worker._ownedEntityCount = k.rebuildRows(tableByte, worker.invCellSize);
       }
-    : () => {
-        for (const { worker } of k.tables) worker.rebuildOwnedRows();
-      };
+    : variant === 'js'
+      ? () => {
+          for (const { worker } of k.tables) worker.rebuildOwnedRows();
+        }
+      : () => {
+          for (const { worker } of k.tables) rebuildVariant(worker, variant === 'jsSkip');
+        };
 
   // 45 drifting frames, each rebuilt from a zeroed grid and pose region.
   let checksum = 2166136261;

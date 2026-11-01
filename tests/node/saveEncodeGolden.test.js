@@ -11,7 +11,8 @@ import { savePopulation } from '../bench/saveEncodeMicrobench.mjs';
 // per save now; the bytes on disk must not change. The hash below was taken
 // from the code before the change (and matches it after).
 // DX 3.3 added SpriteRenderer.flip (one Uint8 per entity, saved like any
-// field): +17 bytes per entity here (24 × 17 = 408), size and hash re-taken.
+// field): +17 bytes per entity here (24 × 17 = 408), size and hash re-taken. E-177 added SpriteRenderer.keyedDirty
+// (one Uint8, saved like the other flags): +23 bytes per entity (24 × 23 = 552), size and hash re-taken.
 
 function payloadOf(entities) {
   return {
@@ -28,10 +29,10 @@ function payloadOf(entities) {
 test('a fixed population saves to the same bytes as before', () => {
   const entities = collectSerializableEntities(savePopulation(24, 0x5a7e));
   const bytes = encodeBinarySaveBody(payloadOf(entities));
-  assert.equal(bytes.length, 52316);
+  assert.equal(bytes.length, 52868);
   assert.equal(
     createHash('sha256').update(bytes).digest('hex'),
-    'f713a89c504797b403fca446bf8d4fca338169127088e434955c0e895361bef4',
+    '4e943d52d7eabd9aba2712663e5de7fa098cc5abc9f61e34ad2cd999d7026000',
   );
 });
 

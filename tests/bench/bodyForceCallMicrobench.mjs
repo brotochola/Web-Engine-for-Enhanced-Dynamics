@@ -6,6 +6,8 @@
  * most the difference, the JS → WASM boundary included.
  *
  * Node, the shipped box2dWasm.wasm, single-threaded, the Predator fixture's bodies as dynamic circles.
+ * `batch`: the same forces through bodies_apply_accelerations (W28), one call over the dense list and columns
+ * laid in the module's memory, as the host lays them when the RigidBody block is there.
  *
  *   node tests/bench/bodyForceCallMicrobench.mjs [--output path]
  */
@@ -15,13 +17,15 @@ import { isCli, parseArgs, timeIt, warmNormalCompile, writeReport } from './micr
 import { JS_PATH, WASM_PATH, parseWasmExportMap } from './wasmLfBenchLib.mjs';
 import { loadPredatorFixture } from './predatorFixture.mjs';
 
+let memoryRef = null;
+
 function instantiate() {
   const names = parseWasmExportMap(fs.readFileSync(JS_PATH, 'utf8'));
   const mod = new WebAssembly.Module(fs.readFileSync(WASM_PATH));
   const imports = {};
   for (const imp of WebAssembly.Module.imports(mod)) {
     if (!imports[imp.module]) imports[imp.module] = {};
-    if (imp.kind === 'memory') imports[imp.module][imp.name] = new WebAssembly.Memory({ initial: 8192, maximum: 8192, shared: true });
+    if (imp.kind === 'memory') imports[imp.module][imp.name] = memoryRef = new WebAssembly.Memory({ initial: 8192, maximum: 8192, shared: true });
     else if (imp.kind === 'table') imports[imp.module][imp.name] = new WebAssembly.Table({ initial: 1024, element: 'anyfunc' });
     else if (imp.kind === 'function') imports[imp.module][imp.name] = imp.module === 'a' && imp.name === 'b' ? () => performance.now() : () => 0;
     else if (imp.kind === 'global') imports[imp.module][imp.name] = 0;
@@ -103,14 +107,36 @@ async function main() {
     sink += s;
     return calls;
   }
+  // The batch: the list and the columns in the module's memory (angularAccel 0: no torque, as above).
+  const malloc = fn('malloc');
+  const batchFn = fn('bodies_apply_accelerations');
+  const heapList = new Uint16Array(memoryRef.buffer, malloc(count * 2), count);
+  for (let k = 0; k < count; k++) heapList[k] = list[k];
+  const n = ax.length;
+  const col = (src) => {
+    const view = new Float32Array(memoryRef.buffer, malloc(n * 4), n);
+    if (src) view.set(src);
+    return view;
+  };
+  const hAx = col(ax);
+  const hAy = col(ay);
+  const hAa = col(null);
+  const hMass = col(mass);
+  const hStatic = new Uint8Array(memoryRef.buffer, malloc(n), n);
+  function batch() {
+    batchFn(heapList.byteOffset, count, hAx.byteOffset, hAy.byteOffset, hAa.byteOffset, hMass.byteOffset, 0, hStatic.byteOffset, 0);
+    return count;
+  }
   warmNormalCompile(withCall, 40);
   warmNormalCompile(withoutCall, 40);
+  warmNormalCompile(batch, 40);
   const cases = {};
   const rounds = Number(args.rounds || 5);
   const calls = withCall();
   for (let r = 0; r < rounds; r++) {
     cases[`call r${r}`] = timeIt(`${calls} body_apply_force_center calls`, withCall, { iterations: 200, warmup: 20 });
     cases[`floor r${r}`] = timeIt(`the same loop without the call`, withoutCall, { iterations: 200, warmup: 20 });
+    cases[`batch r${r}`] = timeIt(`bodies_apply_accelerations over ${count} bodies`, batch, { iterations: 200, warmup: 20 });
   }
   const med = (key) => {
     const v = Object.entries(cases).filter(([k]) => k.startsWith(key)).map(([, c]) => 1e9 / c.opsPerSec).sort((a, b) => a - b);
@@ -118,7 +144,8 @@ async function main() {
   };
   const callNs = med('call') / calls;
   const floorNs = med('floor') / calls;
-  console.log(`bodies ${count}, calls ${calls}: ${callNs.toFixed(1)} ns a body with the call, ${floorNs.toFixed(1)} ns without (sink ${sink > 0})`);
+  const batchNs = med('batch') / calls;
+  console.log(`bodies ${count}, calls ${calls}: ${callNs.toFixed(1)} ns a body with the call, ${floorNs.toFixed(1)} ns without, ${batchNs.toFixed(1)} ns in the batch (sink ${sink > 0})`);
   const report = {
     feature: 'body-force-call',
     functions: ['body_apply_force_center (box2dWasm)'],
@@ -127,6 +154,7 @@ async function main() {
     checksum: calls,
     nsPerBodyWithCall: callNs,
     nsPerBodyWithoutCall: floorNs,
+    nsPerBodyBatch: batchNs,
     cases,
   };
   if (args.output) writeReport(String(args.output), report);

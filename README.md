@@ -274,10 +274,11 @@ await game.loadScene('/demos/predatorScene/predatorScene.js');
 
 From a scene's own methods (a restart, the next level): `this.game.loadScene(import.meta.url, { data })`.
 
-Bundlers — pass a static URL so the chunk is emitted:
+With a bundler, the scene file has to reach the browser as it is: `loadScene` hands its URL to every worker, which imports it with whatever it imports. Vite does not bundle a file named by `new URL('./scene.js', import.meta.url)`: it copies it as an asset (a small one becomes a `data:` URL), so a scene that imports a sibling fails once built (`Failed to resolve module specifier "./goblin.js"`, Vite 5.4). Put the scenes in Vite's `public/` folder, which is copied as it is, and load them by path. There they take the engine from the global `WEED`, which the page and every worker define, since nothing resolves a bare `import ... from '@weed.js/engine'` in a file the bundler does not process:
 
 ```javascript
-await game.loadScene(new URL('./scenes/dungeonScene.js', import.meta.url).href);
+// public/scenes/dungeonScene.js, its entities next to it, `const { Scene, GameObject } = WEED;`
+await game.loadScene('/scenes/dungeonScene.js');
 ```
 
 `loadScene(DungeonScene)` still works (class sugar). The engine infers the file from loaded JS when it can.

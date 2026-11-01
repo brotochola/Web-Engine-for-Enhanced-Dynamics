@@ -8,7 +8,7 @@ self.postMessage({
 
 // Import engine dependencies
 import { Time } from '../core/timeScale.js';
-import { GameObject } from '../core/gameObject.js';
+import { GameObject, bindLogicWorkerRef } from '../core/gameObject.js';
 import { debugWorkerLog } from '../util/debugLog.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
@@ -82,6 +82,8 @@ import {
 } from '../util/spawnCommandRing.js';
 import { collectInstanceFields, applyInstanceFields } from '../core/save/instanceFields.js';
 import { createSpawnParamsState } from '../core/spawnParams.js';
+import { GpuParticles } from '../core/gpuParticles.js';
+import { gpuLogicWriterSlot } from '../util/gpuParticleLayout.js';
 
 /** This worker's instance of the entity at `index` (hot reload field carry). */
 function instanceAtIndex(index) {
@@ -222,6 +224,8 @@ class LogicWorker extends AbstractWorker {
     // Collision listener per-type flags (indexed by entityType)
     // Resolved once in createGameObjectInstances, never changes
     this.collisionListenerByType = null; // Uint8Array sized to max entity types
+    // Of those, the types whose class defines onCollisionStay (E-146): the stay walk calls only them.
+    this.collisionStayByType = null;
     this.anyTypeNeedsCollisions = false; // Scene-level kill switch
 
     // Joint-break listener per-type flags (indexed by entityType)
@@ -303,6 +307,8 @@ class LogicWorker extends AbstractWorker {
     this._despawnType = new Int32Array(256);
     this._despawnClass = new Array(256);
     this._despawnN = 0;
+    // E-165: GameObject's spawn and despawn read this worker through a module reference, not self.logicWorker.
+    bindLogicWorkerRef(this);
   }
 
   /**
@@ -312,6 +318,8 @@ class LogicWorker extends AbstractWorker {
   initialize(data) {
     // Set worker index for identification
     this.workerIndex = data.workerIndex || 0;
+    // This worker's ring in every GPU particle layer (ParticleEmitter.emitGpu).
+    GpuParticles.writerSlot = gpuLogicWriterSlot(this.workerIndex);
 
     // Initialize stats buffer for writing metrics (strided access for multi-worker)
     if (data.buffers.logicStats) {
@@ -402,6 +410,7 @@ class LogicWorker extends AbstractWorker {
   createGameObjectInstances() {
     const numTypes = this.registeredClasses.length;
     this.collisionListenerByType = new Uint8Array(numTypes);
+    this.collisionStayByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
     this.messageListenerByType = new Uint8Array(numTypes);
     this.animEndListenerByType = new Uint8Array(numTypes);
@@ -452,6 +461,7 @@ class LogicWorker extends AbstractWorker {
 
         if (needsCollisionCallbacks) {
           this.collisionListenerByType[entityType] = 1;
+          if (definesBelow(EntityClass, GameObject, 'onCollisionStay')) this.collisionStayByType[entityType] = 1;
         }
         if (needsJointBreakCallbacks) {
           this.jointBreakListenerByType[entityType] = 1;
@@ -772,6 +782,7 @@ class LogicWorker extends AbstractWorker {
           runEnd - runStart,
           scratch,
         );
+        GameObject._typeListChanged(EntityClass);
       }
       runStart = runEnd;
     }
@@ -993,6 +1004,17 @@ class LogicWorker extends AbstractWorker {
         entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
       );
 
+      // E-140: a type without a RigidBody has no accelerations to reset; its own copy of these loops skips them.
+      if (!typeInfo.hasRigidBody) {
+        activeCount += this._tickNonDecimatedTypeNoBody(
+          activeList, count, needsScreenCallbacks, typeForced,
+          dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects,
+          totalWorkers, myIndex, forceProcessOnLogicWorker, collectDetailed
+        );
+        if (collectDetailed) tickMs += this._lastTickMs;
+        continue;
+      }
+
       // A throw from game code reports that entity and resumes after it. The
       // try sits outside the inner loop so the loop body compiles as before.
       if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
@@ -1085,8 +1107,7 @@ class LogicWorker extends AbstractWorker {
           activeCount += this._tickIntervalBucket(
             typeInfo, activeList, count, tickInterval, frameNum,
             dtRatio, deltaTime, accTime, transformActive, gameObjects,
-            rbAx, rbAy, rbAa, totalWorkers, myIndex,
-            typeForced, forceProcessOnLogicWorker
+            rbAx, rbAy, rbAa, totalWorkers, myIndex
           );
           continue;
         }
@@ -1161,6 +1182,8 @@ class LogicWorker extends AbstractWorker {
     }
 
     if (!held) activeCount += this._runTickAllTypes(dtRatio, transformActive, rbAx, rbAy, rbAa);
+    // E-140: the entities the paths above processed, counted once rather than written on `this` per entity.
+    this.entitiesProcessedThisFrame += activeCount;
 
     if (collectDetailed) {
       this.entityTimeThisFrame = performance.now() - tEntity0;
@@ -1263,7 +1286,6 @@ class LogicWorker extends AbstractWorker {
           reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
         }
       }
-      this.entitiesProcessedThisFrame += n;
       packed += n;
     }
     return packed;
@@ -1272,15 +1294,22 @@ class LogicWorker extends AbstractWorker {
   /**
    * tickInterval > 1 without per-frame screen callbacks: one prebuilt id list per phase.
    * Phase matches the old countdown: first frame is frameNumber 1, entity i starts at (i % interval) + 1.
-   * Rebuild only when the active count or query version changes. No alloc on the steady frame.
+   * Rebuild only when the active count or the type's own list version changes (E-180: the global query version
+   * moves with every spawn and despawn of any type, and every interval type rebuilt). No alloc on the steady frame.
    */
+  /** The tickInterval buckets of a type no entity of which is forced onto a worker (update() sends forced ones elsewhere). */
   _tickIntervalBucket(
     typeInfo, activeList, count, interval, frameNum,
     dtRatio, deltaTime, accTime, transformActive, gameObjects,
-    rbAx, rbAy, rbAa, totalWorkers, myIndex,
-    typeForced, forceProcessOnLogicWorker
+    rbAx, rbAy, rbAa, totalWorkers, myIndex
   ) {
-    const ver = this.queryVersionData ? Atomics.load(this.queryVersionData, 0) : 0;
+    const versions = GameObject.typeListVersions;
+    const ver =
+      versions !== null
+        ? Atomics.load(versions, typeInfo.entityType)
+        : this.queryVersionData
+          ? Atomics.load(this.queryVersionData, 0)
+          : 0;
     if (
       !typeInfo._buckets ||
       typeInfo._bucketStampCount !== count ||
@@ -1296,66 +1325,36 @@ class LogicWorker extends AbstractWorker {
     const nAll = typeInfo._bucketCounts[phase];
     let from = 0;
     let to = nAll;
-    let forcedScan = false;
-    if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
-      forcedScan = true;
-    } else if (totalWorkers > 1) {
+    if (totalWorkers > 1) {
       const range = logicBlockRange(nAll, myIndex, totalWorkers);
       from = range.start;
       to = range.end;
     }
 
+    if (!typeInfo.hasRigidBody) {
+      return this._tickBucketNoBody(list, from, to, dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects);
+    }
+
     let visited = 0;
     // Same resume-after-the-throw shape as update(): try outside the loop.
-    if (forcedScan) {
-      let i = 0;
-      for (;;) {
-        try {
-          for (; i < nAll; i++) {
-            const entityIndex = list[i];
-            if (
-              logicWorkerThatShouldTick(i, entityIndex, totalWorkers, forceProcessOnLogicWorker) !==
-              myIndex
-            ) {
-              continue;
-            }
-            if (transformActive[entityIndex] === 0) continue;
-            const obj = gameObjects[entityIndex];
-            if (!obj || typeof obj.tick !== 'function') continue;
-            rbAx[entityIndex] = 0;
-            rbAy[entityIndex] = 0;
-            rbAa[entityIndex] = 0;
-            obj.tick(dtRatio, deltaTime, accTime, frameNum);
-            this.entitiesProcessedThisFrame++;
-            visited++;
-          }
-          break;
-        } catch (error) {
-          this._entityThrew(error, list[i], 'tick');
-          i++;
+    let i = from;
+    for (;;) {
+      try {
+        for (; i < to; i++) {
+          const entityIndex = list[i];
+          if (transformActive[entityIndex] === 0) continue;
+          const obj = gameObjects[entityIndex];
+          if (!obj || typeof obj.tick !== 'function') continue;
+          rbAx[entityIndex] = 0;
+          rbAy[entityIndex] = 0;
+          rbAa[entityIndex] = 0;
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+          visited++;
         }
-      }
-    } else {
-      let i = from;
-      for (;;) {
-        try {
-          for (; i < to; i++) {
-            const entityIndex = list[i];
-            if (transformActive[entityIndex] === 0) continue;
-            const obj = gameObjects[entityIndex];
-            if (!obj || typeof obj.tick !== 'function') continue;
-            rbAx[entityIndex] = 0;
-            rbAy[entityIndex] = 0;
-            rbAa[entityIndex] = 0;
-            obj.tick(dtRatio, deltaTime, accTime, frameNum);
-            this.entitiesProcessedThisFrame++;
-            visited++;
-          }
-          break;
-        } catch (error) {
-          this._entityThrew(error, list[i], 'tick');
-          i++;
-        }
+        break;
+      } catch (error) {
+        this._entityThrew(error, list[i], 'tick');
+        i++;
       }
     }
     return visited;
@@ -1385,6 +1384,126 @@ class LogicWorker extends AbstractWorker {
     }
   }
 
+  /**
+   * The bucket's loop for a type without a RigidBody (E-140): _tickIntervalBucket's, without the acceleration
+   * resets.
+   */
+  _tickBucketNoBody(list, from, to, dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects) {
+    let visited = 0;
+    let i = from;
+    for (;;) {
+      try {
+        for (; i < to; i++) {
+          const entityIndex = list[i];
+          if (transformActive[entityIndex] === 0) continue;
+          const obj = gameObjects[entityIndex];
+          if (!obj || typeof obj.tick !== 'function') continue;
+          obj.tick(dtRatio, deltaTime, accTime, frameNum);
+          visited++;
+        }
+        break;
+      } catch (error) {
+        this._entityThrew(error, list[i], 'tick');
+        i++;
+      }
+    }
+    return visited;
+  }
+
+  /**
+   * update()'s loops over a non-decimated type without a RigidBody (E-140): the same two (forced, block range),
+   * calling _tickNonDecimatedOneNoBody. Returns the entities ticked; with detailed stats, leaves their tick time in
+   * _lastTickMs.
+   */
+  _tickNonDecimatedTypeNoBody(
+    activeList, count, needsScreenCallbacks, typeForced,
+    dtRatio, deltaTime, accTime, frameNum, transformActive, gameObjects,
+    totalWorkers, myIndex, forceProcessOnLogicWorker, collectDetailed
+  ) {
+    let ticked = 0;
+    let tickMs = 0;
+    if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
+      let idx = 0;
+      for (;;) {
+        try {
+          for (; idx < count; idx++) {
+            const entityIndex = activeList[1 + idx];
+            if (
+              logicWorkerThatShouldTick(idx, entityIndex, totalWorkers, forceProcessOnLogicWorker) !== myIndex
+            ) {
+              continue;
+            }
+            ticked += this._tickNonDecimatedOneNoBody(
+              entityIndex, dtRatio, deltaTime, accTime, frameNum,
+              needsScreenCallbacks, transformActive, gameObjects, collectDetailed
+            );
+            if (collectDetailed) tickMs += this._lastTickMs;
+          }
+          break;
+        } catch (error) {
+          this._entityThrew(error, activeList[1 + idx], 'tick');
+          idx++;
+        }
+      }
+    } else {
+      let from = myIndex;
+      let to = count;
+      let step = totalWorkers;
+      if (totalWorkers > 1) {
+        const range = logicBlockRange(count, myIndex, totalWorkers);
+        from = range.start;
+        to = range.end;
+        step = 1;
+      }
+      let idx = from;
+      for (;;) {
+        try {
+          for (; idx < to; idx += step) {
+            const entityIndex = activeList[1 + idx];
+            ticked += this._tickNonDecimatedOneNoBody(
+              entityIndex, dtRatio, deltaTime, accTime, frameNum,
+              needsScreenCallbacks, transformActive, gameObjects, collectDetailed
+            );
+            if (collectDetailed) tickMs += this._lastTickMs;
+          }
+          break;
+        } catch (error) {
+          this._entityThrew(error, activeList[1 + idx], 'tick');
+          idx += step;
+        }
+      }
+    }
+    if (collectDetailed) this._lastTickMs = tickMs;
+    return ticked;
+  }
+
+  /** _tickNonDecimatedOne for a type without a RigidBody: no acceleration resets (E-140). */
+  _tickNonDecimatedOneNoBody(
+    entityIndex,
+    dtRatio,
+    deltaTime,
+    accTime,
+    frameNum,
+    needsScreenCallbacks,
+    transformActive,
+    gameObjects,
+    collectDetailed
+  ) {
+    if (collectDetailed) this._lastTickMs = 0;
+    if (transformActive[entityIndex] === 0) return 0;
+    const obj = gameObjects[entityIndex];
+    if (!obj || typeof obj.tick !== 'function') return 0;
+    if (collectDetailed) {
+      const tTick0 = performance.now();
+      obj.tick(dtRatio, deltaTime, accTime, frameNum);
+      this._lastTickMs = performance.now() - tTick0;
+    } else {
+      obj.tick(dtRatio, deltaTime, accTime, frameNum);
+    }
+    if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
+    return 1;
+  }
+
   _tickNonDecimatedOne(
     entityIndex,
     dtRatio,
@@ -1399,7 +1518,7 @@ class LogicWorker extends AbstractWorker {
     rbAa,
     collectDetailed
   ) {
-    this._lastTickMs = 0;
+    if (collectDetailed) this._lastTickMs = 0;
     if (transformActive[entityIndex] === 0) return 0;
     const obj = gameObjects[entityIndex];
     if (!obj || typeof obj.tick !== 'function') return 0;
@@ -1414,7 +1533,6 @@ class LogicWorker extends AbstractWorker {
       obj.tick(dtRatio, deltaTime, accTime, frameNum);
     }
     if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
-    this.entitiesProcessedThisFrame++;
     return 1;
   }
 
@@ -1434,12 +1552,13 @@ class LogicWorker extends AbstractWorker {
     nextTick,
     collectDetailed
   ) {
-    this._lastTickMs = 0;
-    this._lastDecimateMs = 0;
+    if (collectDetailed) {
+      this._lastTickMs = 0;
+      this._lastDecimateMs = 0;
+    }
     if (transformActive[entityIndex] === 0) return 0;
     const obj = gameObjects[entityIndex];
     if (!obj || typeof obj.tick !== 'function') return 0;
-    this.entitiesProcessedThisFrame++;
     const tVisit0 = collectDetailed ? performance.now() : 0;
     if (--nextTick[entityIndex] > 0) {
       if (needsScreenCallbacks) this.checkScreenVisibility(entityIndex, obj);
@@ -1889,7 +2008,7 @@ class LogicWorker extends AbstractWorker {
     const gameObjects = this.gameObjects;
     const entityType = Transform.entityType;
     const active = Transform.active;
-    const collisionFlags = this.collisionListenerByType;
+    const stayFlags = this.collisionStayByType;
     const gen = this.bodyGeneration;
     const pairMin = this._pairMin;
     const pairMax = this._pairMax;
@@ -1925,8 +2044,8 @@ class LogicWorker extends AbstractWorker {
           s++;
           if (beganNow) continue;
           const sides = pairSides[s - 1];
-          const aListens = (sides & 1) !== 0 && collisionFlags[entityType[minE]];
-          const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
+          const aListens = (sides & 1) !== 0 && stayFlags[entityType[minE]];
+          const bListens = (sides & 2) !== 0 && stayFlags[entityType[maxE]];
           calling = minE;
           if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
           calling = maxE;

@@ -16,8 +16,17 @@ export const ENGINE_INSTANCE_KEYS = new Set([
   '_onPage',
   '_hasComponents',
   '_neighborOffset',
+  '_neighborReaderMarked',
   '_neighbors',
-  '_componentCache',
+  '_components',
+  '_c0',
+  '_c1',
+  '_c2',
+  '_c3',
+  '_c4',
+  '_c5',
+  '_c6',
+  '_c7',
   '_spawnAborted',
 ]);
 

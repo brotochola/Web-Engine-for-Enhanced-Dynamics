@@ -1013,6 +1013,11 @@ GameObject instance fields that hold fractional doubles allocate per write in Ch
 21 MB/s, `bichosScene` 7 MB/s in game code): a guide note, or an engine-side per-entity scratch. Pixi's
 vendored WebGL bind (`for…in` per draw, 0.5–0.7 MB/s). `_emscripten_get_now` in the Box2D thread
 (0.2–0.3 MB/s). Pixi `updateLighting` (0.2–0.3 MB/s in Predator). `syncParticleFeed` (0.1–0.2 MB/s).
+**2026-10-28:** the instance fields are a rule in `bible_of_weed_js.md` (fed06cbc). `updateLighting` is done (c8c3fc6a):
+it wrote each light through a call with seven doubles that TurboFan left out, and colours through `_rgbResult`'s
+fields; it writes the texel itself now. Predator's Pixi 443.2 → 342 KB/s, `updateLighting` 93.7 KB/s → not listed.
+**Closed 2026-10-28.** `syncParticleFeed` lost its closures in E-149 (a2398952); the Box2D clock is E-144's (answered: its
+readers wait for work); Pixi's `bind` is Pixi's own code, after E-148 took its `for…in` out.
 
 ### E-99 Caster positions in bin order for the shadow stamp — **rejected in the kernel, 2026-10-23**
 Predator's profile put 42 % of `stampLightRange` on `sun[c * floats]` per binned caster. Copying x and y in bin
@@ -2191,6 +2196,7 @@ Summed over every scene, the most expensive engine functions are:
   - Tool: a small script that reads Chrome's renderer threads (`Get-Process` → `Threads.TotalProcessorTime`), committed on its own.
   - About 15 minutes.
   - If the threads burn cores with no bodies, E-144's fix comes first in the whole plan. Every scene with physics would get up to three cores back.
+  - **Done 2026-10-28 (`threadCpuProbe.mjs`): they do not.** bunnyMarkStressScene with no bodies uses 73 ms/s in its whole renderer process, no thread over 800 ms/s; the 1000 ms/s was the profiler counting the wait. In ballsHeavyStressScene four threads work at 513–643 ms/s. E-144 keeps its clock reads (needs the names build) and moves behind the logic items.
 - **Names for Box2D in profiles.** A profiling build of `box2dWasm.wasm` that keeps its name section (`--profiling-funcs`), not shipped, so traces name the solver's functions instead of `wasm-function[37]`.
   - It is needed to read N-71 (mallinfo every step) and N-74.
   - Tool only. Keep both builds working (SIMD and no-SIMD).
@@ -2232,6 +2238,10 @@ So there are many shapes and a keyed load by a string that differs per closure.
 
 The ceiling is most of 44 % of Adobe's logic, and 10–14 % of Predator's.
 
+**Kept 2026-10-28 (9fa90154): per-class slots.** `componentGetterMicrobench` 23 → 6.7 ns a read; Predator logic 3.979 →
+3.620 ms (−8.0 %, worse 0/4, nothing worse elsewhere); adobeAnimateScene at the minimum zoom logic 2.418 → 1.775 ms (−26.6 %,
+under the 3 ms floor there).
+
 ### E-140 The logic loop's own cost per ticked entity
 
 `_tickIntervalBucket` is 89 % of painterSort's logic and 7–8 % of Predator's. `_tickNonDecimatedOne` is 37 % of
@@ -2243,6 +2253,19 @@ painterMove's logic, and `update` 21 % of Adobe's.
 3. Write a leaner loop, with one copy per case. Follow the hot-loop rule: no shared helper or loop-invariant branch inside it.
 
 The ceiling depends on how much of that self time is the loop rather than inlined game code. `--trace-turbo-inlining` tells which.
+
+**Hygiene 2026-10-28 (d977187b):** the bucket's forced-scan loop, which never ran, is gone.
+
+**First change kept 2026-10-28 (e5b2f5d8).** Every path wrote the frame's counters on `this` per ticked entity
+(`entitiesProcessedThisFrame++`, and the two detailed-stats timers reset). The count is added once from what the paths
+return, the timers only with detailed stats on. minimalTickScene?props=130000 (the knob, 2259287c: 60 000 props put logic
+at 1.8 ms): logic 4.654 → 4.271 ms (−8.7 %, worse 1/4, the worse pair one baseline side at 3.06 ms).
+
+**Second change kept 2026-10-28 (03980fb2).** Every tick path reset the three accelerations whether or not the type has
+a RigidBody. Types without one take their own copies of the every-frame loops and of the bucket loop, chosen once per
+type. minimalTickScene?props=130000: logic 4.088 → 3.382 ms (−18.0 %, worse 0/4); minimalTickIntervalBucketScene
+2.683 → 2.130 ms (−20.6 %, below the floor); Predator NEUTRAL. What is left is hygiene: the bucket's forced-scan loop
+never runs (its caller sends no forced type there).
 
 ### E-141 Neighbour accessors called from game code
 
@@ -2257,6 +2280,9 @@ already two-line typed-array reads, so the cost is the call itself: the receiver
 
 Kernel first.
 
+**Screened 2026-10-28.** `neighborAccessMicrobench`: the accessors 3.9 ns a read, the row read with the private fields 2.4 ns,
+a public cached view (`neighborIds`) 5.3 ns. No engine change beats the accessors.
+
 ### E-142 `getTileId` divides twice per call
 
 **Speed.** `getTileId` is 82 % of tilemapStressScene's logic (469 ms/s; that scene calls it at a fixed rate). It
@@ -2265,10 +2291,19 @@ divides by the tile width and height on each call. Reciprocals stored with the m
 **A correctness bug, filed as N-78.** `| 0` truncates toward zero, so a coordinate in (−tileWidth, 0) reads tile 0
 instead of empty. `Math.floor` fixes it. Use it in the faster version too.
 
+**Decided 2026-10-28: rejected; N-78 fixed.** In `tileMapMicrobench` (44bdf560) the divisions are not the cost: the
+shipped call is 2.44 ns, the reciprocal 2.6 ns, and the reciprocal reads one tile low 203 times with 49 px tiles.
+`Math.floor` alone is 3.6 ns and reads `data[NaN]` for NaN. The fix tests the world-pixel bounds first, then truncates:
+2.5 to 2.8 ns in the kernel, and tilemapStressScene logic 8.240 → 8.229 ms (−0.1 %, 4 pairs; 9c6739dc).
+
 ### E-143 Tweens
 
 The tween `tick` (49 %) and `_apply` (35 %) take tweenStressScene's logic (159 ms/s). Read the per-tween work first,
 then decide between JavaScript tuning and a kernel over the tween slots: the tween slots are typed arrays already.
+
+**Kept 2026-10-28 (14d40f19).** The tick handed `_apply` the eased value as an argument, boxed since `_apply` is not inlined: one
+heap number per live tween per frame. Through a module `Float64Array` instead: `tweenPoolMicrobench` +14.6 %, no allocation in the
+tick; tweenStressScene?entities=131072 logic 3.641 → 3.107 ms (−14.2 %, worse 0/4).
 
 ### E-146 The FSM tick and the collision-callback dispatch
 
@@ -2278,6 +2313,17 @@ then decide between JavaScript tuning and a kernel over the tween slots: the twe
   - W18 (dropped) had found its owner scene's cost in the game callbacks and in an `Atomics.load` that E-131 then removed. This is another scene, so read why before changing anything.
 
 Read the per-event and per-state costs, then a kernel for each.
+
+**The collision dispatch: kept 2026-10-28 (a5eb013e).** The stay walk called `onCollisionStay` for every type that
+listens to collisions, so a class that defines only `onCollisionEnter` had the base's empty method called for each of
+its touching pairs, every frame. It now calls only the types whose class defines it. `contactsMicrobench --no-stays`
+(326d5645) +64 % at 7 800 pairs and +34 % at 42 861; waterAndBoxesScene logic 1.833 → 1.378 ms (−23.1 %, worse 0/4,
+below the floor).
+
+**The FSM: kept 2026-10-28 (bc478827).** `tick` read `onUpdate` from the current state class (17 maps in Predator) and
+`owner.constructor.tickInterval` every tick. Each FSM class keeps its states' `onUpdate` by state number, each FSM
+instance its owner's ms per tick. `fsmTickMicrobench` (b26281f6) +6.4 % at 3 000 owners, +11.3 % at 1 000; each half
+alone ties or loses. The FSM is 7 % of Predator's logic, so the scene cannot see it; the Predator gate passed.
 
 **Not now: the spawn path** (`_spawnAt` 40 % and `despawn` 12 % of spawnStorm's logic). It is being changed by the
 visual editor's spawn parameters work (VISUAL_EDITOR_PLAN). Profile it again after that work lands. The register's
@@ -2297,17 +2343,55 @@ Both kernels are bound by memory, not arithmetic:
 So what is left is doing less work:
 1. **Read the reuse rates.** Count how many rows each scene rebuilds and republishes per frame, against the neighbour-reuse skin and its frame limit.
 2. **The Chrome entry for the gather's float32 variants.** They have none yet. The owner's rule is that Chrome decides between kernel variants; it closes the flags pass.
+   **Done 2026-10-28, not shipped:** a captured frame replayed in Chrome (`spatialGatherReplayKernel.mjs`) puts f32x4
+   at +10.5 % / +8.1 %, and an exact form (float32 decides outside an edge band, double inside it) at +9.0 % / +12.2 %
+   with identical rows. The scenes: orientedBox spatial −2.3 %, Predator −1.8 %, Boids **+3.0 % (worse 4/4)**, its small
+   cells rarely filling a block of four. Kept as a test module (`spatialGatherExact`); a lead: blocks only in cells of
+   eight ids or more.
+   *The lead, 2026-10-28:* shipped into the gather with blocks only from 8 and then 16 ids (rows unchanged), Boids'
+   spatial still read +1.4 % (worse 4/4) and +1.8 % (3/4): its cells hold 20 ids at most, so the cost is not the blocks
+   alone. With the gains elsewhere near 2 %, not shipped; nothing pending in E-147.
 3. **W7 and E-136**, below.
+
+**Step 1 answered 2026-10-28** (`NEIGHBORS_REBUILT` and `NEIGHBORS_PUBLISHED`, 5803ca42, detailed stats off). Rows a
+frame per spatial worker, rebuilt / kept by the skin and republished / skipped by the stagger: Boids 6.7 / 0 / 93.3 %,
+Predator 3.7 / 5.9 / 89.5 %, orientedBoxScene 99.1 / 0.9 / 0 %, movedBodiesMixed 1.0 / 99.0 / 0 %, stationarySpatialWide
+3.9 / 96.1 / 0 %.
+- Boids and Predator already skip nine rows in ten. Boids' gather is the few rows it rebuilds, each expensive.
+- orientedBoxScene's skin never holds: `_canReuseNeighbors` wants the entity's half extent unchanged, and a turning box's
+  bounding box changes every frame. Neither range test uses the entity's own extent, so the check stands in for "the
+  shapes changed"; relaxing it needs the candidates' extent growth inside the skin (up to 100 px against 12 px there),
+  or neighbours go missing for up to 15 frames. A correctness trade: a lead, not done.
+- movedBodiesMixed and stationarySpatialWide republish nearly every row from a kept list each frame: that is their
+  publish share. A kept row whose entity and candidates did not move comes out the same (E-136, wider than static
+  entities). Predator republishes 5.9 % of its rows that way, so it pays in the stress scenes, not in Predator.
+  *E-136 kept 2026-10-28 for frames where no pose moved (below).*
 
 ### Spatial's other items
 
 - **W7 (rank 10).** One call per frame for gather, publish and rebuild saves the glue, about 8 % of Predator's spatial.
+  **Screened 2026-10-28:** the JS loop is about 8 % of the spatial frame, the rebuild in C ties, and the loop's
+  counter writes in locals tie (−0.2 % / −0.9 %): a port's ceiling is under what a sitting resolves.
 - **E-136.** Spatial would leave out of the publish the rows of neighbourhoods where every entity is static. Its owner scene is profiled now: stationarySpatialWideScene's publish is 61 % of 783 ms/s.
+  **Kept 2026-10-28 (64899791), in its wide form:** a row kept within the skin is not published again while no pose
+  changed since its last publish. The spatial workers share a pose generation (the publish memory's `sync` region):
+  each compares the poses it writes until one differs and moves it after that frame. stationarySpatialWide's spatial
+  11.539 → 5.163 ms (−55.2 %), movedBodiesMixed −2.3 %, Predator +0.3 % against its drifting other workers; rows
+  identical to the full publish (`spatialKeptRowSkip.test.js`). One pose anywhere moves the generation, so a scene
+  where anything moves every frame gets nothing: a per-neighbourhood form would need a check per candidate, about
+  what the publish costs.
 - **`rebuildOwnedRows` (JavaScript).** It is 26 % of Boids' spatial, 22 % of Adobe's and 17 % of Predator's.
   - W6's exact C port was only 10.9 % faster in its kernel, about 1.4 % of Predator's spatial, so it was screened.
   - The question now is why these scenes take the full rebuild rather than `_rebuildMovedRows`, the rows of moved entities only.
+    *Answered 2026-10-28:* none of them can take it. Boids moves every boid every frame; Predator moves about a third of
+    its bodies (Moved 5 740 of 17 570), over the 20 % past which the rewrite is slower (E-126's crossover); adobeAnimateScene
+    has `sleeping: false`, so all 20 000 bodies stay awake and in Box2D's move list (`BODY_MOVED_COUNT` 20 000,
+    `GRID_MOVERS` 0 on every frame).
   - The register's "H-ROW / H-OWN spatial" row belongs here (step 6): with two or more spatial workers, each worker scans every active entity and skips the rows it does not own.
 - **Adobe's characters.** They set `collider.visualRange = 50`, so spatial spends 367 ms/s finding their neighbours. Check whether their code ever reads them.
+  *Answered 2026-10-28:* their code never reads them, and nothing else does (their cull uses the clip's bounds), so the
+  demo drops the range. Spatial did not move (2.631 → 2.633 ms, 4 pairs at the minimum zoom): standing characters'
+  kept rows are already skipped since E-136. The engine option below is not needed for this demo.
   - If it does not, in the demo that is a demo setting.
   - In the engine, an entity whose code never reads neighbours could stay out of the gather: an engine option, measured on its own.
 
@@ -2324,19 +2408,34 @@ the expansion is bound by its stores: float32 and SIMD tied.
 
 It is large and changes the render path, so a design note comes first: the batch layout, the sort, the shadows, and
 what the custom layers lose. Then a prototype on adobeAnimateScene.
+*The design note is [`ADOBE_GPU_PLAN.md`](./ADOBE_GPU_PLAN.md) (2026-10-28): one record per visible character, the piece
+table a static texture, one instanced draw with a character's pieces drawn by vertex index; the prototype order and
+what keeps the CPU path is there.*
 
 ### Pre-render and Pixi items not ranked yet
 
 - **Painter scenes.** `pack_sprites_split_scatter` is 40–48 % of a saturated pre-render in painterSort and painterMove.
   - Pixi there is 40 % in an unnamed module (most likely W30's `memory.copy`) and 47 % in Pixi's own code.
   - The register's lead: the persist path pays only when the visible set is unchanged, which a moving camera rarely gives.
+  - *E-159, kept 2026-10-29 (c2e3e46a):* a painter-sorted frame wrote its statics every time and Pixi uploaded them, the
+    order being unknown. The painter now says when its order moved (orderGen), and a sorted frame keeps its statics
+    while it holds: painterSort pre-render 23.377 → 16.380 ms (−29.9 %), renderer 5.140 → 1.794 ms (−65.1 %); painterMove,
+    whose keys move every frame, neutral. Left there: the scatter pack of painterMove's moving rows and its reinsert.
 - **Predator's sprite statics** (R-0607). Pixi rewrites them every frame, because Predator sorts in Pixi (`sortSprites: 'pixi'`), so E-82b cannot skip them.
+  *Answered 2026-10-28 (R-0696):* E-05 sat again on today's engine: pack and sort in pre-render take the renderer
+  3.729 → 2.596 ms (−31.2 %) and pre-render 4.038 → 5.087 ms (+26.0 %, worse 4/4), the slower of the two. Predator keeps
+  them in Pixi; its moving camera changes the order most frames anyway.
 - **Predator's shadow stamp.** `stamp_light_range` is 39 % of its pre-render, after W23 and E-133.
 - **Texture uploads.** `uploadSharedImage` is 96 % of textureUploadStressScene's Pixi (900 ms/s). This is the GPU side, the register's first lead.
+  *Answered 2026-10-29 (a trace):* the whole 97 % is the `texSubImage2D` call itself, an 8192 × 8192 picture every tick by
+  the scene's design; dirty rectangles already go up alone. Nothing on the engine's side.
 - **Mesh uploads.** meshApiStressScene's Pixi is 32 % the mesh UV upload and 32 % `rewrite_corners`.
+  *Answered 2026-10-29 (a trace):* the upload is all the copy of the rows out of the shared memory into the Buffer's
+  own array, which E-123 chose (uploading from the shared rows cost every other worker about 6 %), and the scene edits
+  nearly every mesh every frame, so copying changed rows only would not save it.
 - **Decal uploads.** In decalBlitStressScene, Pixi's own code takes 228 ms/s, the decal tile uploads.
 
-### E-148 Tilemap layers drawn in fewer GPU passes (not ranked)
+### E-196 Tilemap layers drawn in fewer GPU passes (not ranked)
 
 The owner asked, 2026-10-26, whether the engine could bake a tilemap's layers on its own.
 
@@ -2391,12 +2490,29 @@ Both builds must keep working (SIMD and no-SIMD), with `build_for_weed.bat` befo
 - **Owner:** ballsHeavyStressScene physics.
 - **Gate:** Predator, reading the other workers too, since freed cores help them.
 
+**Who reads the clock, 2026-10-28.** No names build needed: under Emscripten `b2Yield` is `sched_yield()`, which is
+`_emscripten_yield(emscripten_get_now())`, a clock import call; `b2Pause` is empty. The solver workers' stage wait yields
+every 6th spin and the physics thread's task wait (`b2SchedulerFinishTask`) every idle pass. Both every 64th spin
+(both builds passed): ballsHeavy physics 8.606 → 8.692 ms (+1.4 %, worse 3/4), **NEUTRAL, not kept**. The readers wait
+for work, off the critical path, as step 0 said. A clean build of Box2D's HEAD reproduces WeedJS's module byte for
+byte (an incremental one did not: a stale build directory). Nothing left here unless a profile puts the clock on the
+physics thread's own path.
+
 ### Other physics items
 
 - **N-74 / L5.** physics +7 % on adobeAnimateScene against the engine before E-76. E-144 and the names build come first; then the place of the engine block in Box2D's heap (before or after the world).
+  **Answered 2026-10-28:** the world's arrays 4 MB further on (the tables' region 4 → 8 MB, one build) read physics +1.2 % (worse 2/4, NEUTRAL): the place is not a knob; the +7 % is L5.
 - **`publishPose` and `applyForcesAndTorque`.** They are 11 % and 9 % of Boids' physics thread (`publishPose` sums 242 ms/s over 18 scenes).
   - W15 and W28 were screened on Predator's ceilings (1.8 % and 2 %).
   - Boids shows larger shares, so screen them again there.
+  *Screened on Boids 2026-10-28 (a CPU trace, 40 000 bodies):* `publishPose` 13 % of the physics thread (0.9 ms a
+  step), 42 % of it the per-body generation load, which a fast path skips while no body respawned: it never ran,
+  because the workers' buffer list left the epoch out. With it (a412603f) Boids' physics is 7.182 → 6.669 ms (−7.2 %,
+  KEPT; Predator NEUTRAL over 8 pairs). `applyForcesAndTorque` is 8.6 % (0.6 ms, 15 ns a body, the call 38 % of it):
+  W28's batched export would save part of the call, a ceiling near 4 % of Boids' physics, and needs Box2D's repo.
+  *W28 done 2026-10-28 (62eddb50, Box2D 1a750de):* `bodies_apply_accelerations`, the pass in C over the list and the
+  columns in Box2D's memory: kernel 14.1 → 11.8 ns a body (−16 %), Boids physics −1.9 %, Predator NEUTRAL over 8
+  pairs. Kept (kernel, product-neutral).
 
 ### Step 5: the open review items
 
@@ -2413,6 +2529,8 @@ In [`REVIEW_PLAN.md`](./REVIEW_PLAN.md):
 | N-65 | A NaN animation clock advances on persist frames only. A behaviour change, for the owner of the animation API to decide. | decision |
 | N-6, N-9, N-31, N-36, N-38, N-44, N-46 | Older items: logic single-writer isolation, headed console probes, Predator's dead flocking code, spatial drift, lit fills, type gaps, the README's bundler advice. | as written there |
 
+*N-6 answered 2026-10-28: the owner-follows-tick tweens cost +49 % to +79 % of logic in their own stress scene (REVIEW_PLAN), so the contract stays, now in the API types.*
+
 ### Step 6: the register's leftovers
 
 - **E-76.** It was still `running`; it is kept: done 2026-10-26 (R-0642, R-0643).
@@ -2423,7 +2541,7 @@ In [`REVIEW_PLAN.md`](./REVIEW_PLAN.md):
     - **"H-ROW / H-OWN spatial":** about 0.2–0.45 ms in scenes with two or more spatial workers (boidsScene), and zero with one. It goes with step 2's `rebuildOwnedRows` item.
     - **"Floor occlusion (do not project if it covers the ground)":** the share is unknown. First count the casters that cover the ground in Predator at night, and close the row if there are almost none.
     - **E-12 (the flowfield slot scan):** 0.005–0.02 ms a frame. Close it, with that number in its row.
-- **The moves to apply in the register.** None is applied yet, and each comes after a look at its row:
+- **The moves to apply in the register.** Applied 2026-10-28 (de7ede05's record), after checking the code each row names:
   - **kept:** E-50 (its tail E-50b is E-91) and "preRender.skipCull (AABB vs emit-all)";
   - **kept-hygiene:** E-55 (done as W24, R-0460) and "SAB spawn command ring";
   - **answered:** E-31, "Time scale", "Camera dead zone and shake", "Second batch, not measured", "lightGlow sprite versus add", "Doc+Doubao filter" and "CELL u32";
@@ -2434,6 +2552,927 @@ In [`REVIEW_PLAN.md`](./REVIEW_PLAN.md):
   - the gather's home-cell ordering, which silently stops past 65 536 cells (`order_by_cell` keys cells in 16 bits);
   - the A* tail (`computePath` in JS, for Predator's player only);
   - `requestVectorFromStaticFlowfield`, 6 % of littleCity's logic (a `Map.get` by name, two floors and two divides per call).
+
+---
+
+## GPU particles (PR #5, 2026-10-27)
+
+The branch that brought `LAYER_KIND.GPU_PARTICLES` and its y-sort proxies (`feat/gpu-particles-painter-proxies`),
+made ready to merge: what was fixed and measured on the way. The register holds the sittings, under each row.
+
+### E-148 Pixi's WebGL shader sync walks a per-shader plan, not for…in
+
+Every WebGL draw ran `pixi.js/unsafe-eval`'s shader sync, which walked the shader's groups and resources with
+`for…in` over integer keys, and V8 builds a key array for each such loop. The build swaps in a plan per shader,
+checked by each group's BindGroup and its key count (`scripts/pixi-stubs/shaderSyncPolyfill.mjs`).
+
+Kept (f2d34f6a): Pixi in Predator 1 214.5 → 522.6 KB/s; in gpuParticlesStressScene 8 073.5 → 663 KB/s.
+
+### E-149 The GPU particle path makes no garbage per frame
+
+The render path (92fdd105), emitGpu (18c99ee5), the feed syncs (a2398952) and the proxy collector's growth (5d625253).
+
+Kept: gpuParticlesStressScene at 30 columns a second, KB/s sampled per worker:
+
+| worker | before | after |
+| --- | --- | --- |
+| Pixi | 663 | 81.7 |
+| pre-render | 174.7 | 16.4 |
+| logic | 1 838.6 | 106.5 |
+| particle | 88.7 | 33.9 |
+
+emitGpu also emits 66–80 % faster (Node, 400 particles a call). The same branch fixed WebGL dropping the records of a
+ring that published in a frame that drew none of them (cf88429f).
+
+### E-150 The entities chunks leave the stage still while the batch flips
+
+The chunk meshes followed the entities batch's two ring geometries, so every frame hid, showed and swapped them,
+and Pixi rebuilt the stage's instructions every frame. Pairs of meshes, with the idle one at alpha 0, leave a
+stable frame untouched.
+
+A hygiene keep (6292504b): NEUTRAL in time with 1 000 groups held still (renderer −1.4 %, cv 9/3 %).
+
+### E-151 A look layer's regions map world to UV in a uniform
+
+Region quads uploaded their positions and their camera-dependent UVs every frame. The world-to-UV map is now a
+uniform of the layer, set once a frame, and a quad uploads only when its rectangle changes.
+
+A hygiene keep (0c51068b): pixel-identical, garbage unchanged; it saves two uploads per region per frame.
+
+### E-152 Pixi's WebGPU draw path makes no garbage
+
+Each WebGPU draw walked integer-keyed objects with `for…in` (the encoder, BindGroup `_touch` and `_key`), built a
+string key (the bind group cache), made an options object (the mesh adapter), or boxed a double key (the pipeline
+cache). The build patches them (`scripts/buildPixi.mjs`, `patchPixiDrawGarbage`).
+
+Kept (55c6ba0f), gpuParticlesStressScene on WebGPU:
+- Pixi garbage 6 000.7 → 131.2 KB/s;
+- renderer 5.216 → 3.625 ms (−35.6 %, worse 0/4).
+
+### E-153 Particles' ground-row key without Math.round
+
+The PR keyed CPU particles in pre-render's collect with `Math.round`. `floor(y + 0.5)` gives the same keys for
+every float32 y.
+
+Kept (159143bc): the PR's +10.9 % on pre-render (particleIntegrateStressScene?tween=1) came down to +2.4 %, under the
+gate.
+
+### E-154 The y-sort proxies sort their groups by merging runs
+
+The proxy collector sorted its groups by insertion. It now insertion-sorts runs of 32 and merges them; a frame
+already in order costs about n compares.
+
+Kept (1fe2d1c2), Node, collect and write per frame with 20 000 entities:
+- 2 048 groups: 1.48–1.58 → 0.22–0.29 ms;
+- 1 024 groups: 0.43–0.58 → 0.12–0.20 ms.
+
+### E-155 Particles skip their sort key when no layer y-sorts
+
+A particle's key orders it only in a layer that y-sorts: otherwise `orderSortKey` keeps the zIndex alone, and the
+emit writes no key. Pre-render computed every visible particle's key anyway.
+
+The ground-row key alone cost pre-render 3.1 % against main's key in particleIntegrateStressScene?tween=1, where
+nothing y-sorts (an experiment commit, 0/4 worse). With no layer y-sorting, the particles now take one key.
+
+Kept (c08f3548): pre-render −4.3 % in that scene (worse 0/4). The branch against main went from +7.0 % to −4.6 % there.
+
+### E-156 A wrapped upload goes up as its two ranges
+
+A frame whose new GPU particle records wrapped a ring's end uploaded the whole ring, since Pixi keeps one pending
+range per buffer: on WebGPU each `buffer.update()` writes at once, and a ring of 1 048 576 particles is 112 MB. The
+head now goes up before the tail's range replaces it (the Pixi worker's flush); without a flush, the whole array.
+
+Kept (c451e2a6), GPU Galaxy (`demos/gpuGalaxyScene`) at 8 388 608 particles, 8 arms, WebGPU, 4 pairs: renderer
+3.870 → 3.229 ms (−16.6 %, worse 0/4), frames drawn 36.2 → 38.1 a second, presented 57.4 → 60.0 fps.
+
+### E-157 GPU particles on WebGL fall behind WebGPU past a few hundred thousand
+
+GPU Galaxy, GTX 1650, Chrome on ANGLE D3D11: WebGL draws 262 144 particles at 60 fps but 1 048 576 at 15 to 44
+(124 frames in 8 s), with the renderer's CPU step at 0.9 ms; WebGPU draws 1 048 576 and 4 194 304 at 60. The CPU
+is idle, so the GPU side stalls. Suspects: the per-frame `bufferSubData` into a ring the GPU still draws from (ANGLE
+may copy or wait), and the attribute re-pointing for ranged draws without base-instance. Next: a WebGL kernel that
+draws N instances with and without a per-frame update.
+
+**Kept 2026-10-28 (e6ee4ed3).** `webglParticleUploadKernel` (2f27006d, headed): the upload costs nothing (no upload
+50.9 ms a frame at a million records, the frame's records 51.4, a staging copy 51.4); the seven instanced vec4
+attributes are the cost, about 7 ms each per million on ANGLE's D3D11 (one 11.6 ms, seven 51.1). The records as a
+texture read by `gl_InstanceID`: 6.1 ms. So WebGL's rings are RGBA32UI textures now (seven texels a record), the first
+record a uniform of each mesh; WebGPU is unchanged. GPU Galaxy WebGL at 1 048 576: 144 and 141 → 480 and 480 frames in
+8 s (18 → 60 fps); 2 and 4 million draw at 60 too.
+A layer whose rings would need a texture past the GPU's MAX_TEXTURE_SIZE keeps the instance attributes and warns
+(5696abb1); Blastforge on WebGL checked against main by screenshots.
+
+### E-158 A GPU particle costs four vertex evaluations and two triangles
+
+On the GTX 1650 a frame's GPU time grows about 3.3 ms per million GPU particles (GPU Galaxy, WebGPU, 1 to 2 px dots:
+4 194 304 at 60 fps, 8 388 608 at 38, 16 777 216 at 19). Every particle is a quad: its record is evaluated at each
+of its four vertices, and two triangles go through setup for a pixel or two. Next: one evaluation per particle (a
+WebGPU compute pass), or a point or single-triangle mode for dots this small.
+
+**Screened 2026-10-28.** `webglParticleUploadKernel` (6749b471) at 4 194 304 records from the record texture: one
+triangle around the quad is slower than the quad (13.0 against 12.4 ms, 8.0 against 7.3 in the other round), and the
+engine's kind of per-vertex work adds about 0.5 ms. The evaluation is not the cost, so neither a compute pass nor a
+single triangle pays; the fetch and the raster of tiny quads grow with the count. Both backends draw 4 million at 60.
+
+### Left open (design calls for the owner)
+
+**Decided 2026-10-29 by the owner:** add a per-layer clear (DX-GPCLEAR), an emitter that follows an entity
+(DX-GPFOLLOW), wind for GPU particles and drag for CPU ones (DX-GPWIND); document the ring sizing and warn with the
+numbers (DX-GPSIZE, done 6d0de541); move the sim clock off the main thread's frames (DX-GPCLOCK, done cb72506a: it keeps
+wall time times the scale, any thread reads it). Look regions stay as they are.
+
+**Changed later the same day:** speed and bugs come first. DX-GPCLEAR, DX-GPWIND and DX-GPFOLLOW are nice to have and
+wait until a game asks for them. What the follow emitter had to do with speed, a group per emitGpu call, is E-161.
+
+- **Look regions merge transitively.** 256 scattered look groups became one region, which sorts at the group
+  furthest back. A depth per cloud needs another scheme: split the overlaps, or give each region a depth band.
+- **No per-layer clear.** GPU particles cannot be cleared one layer at a time, for a level restart without a scene
+  reload. Each ring has one writer.
+- **No continuous emitter.** Anything that follows an entity needs a call every frame, against 2 048 calls a ring.
+- **Sizing.** `maxParticles` splits equally between the writer rings and rounds each share down to a power of two:
+  120 000 becomes 3 × 32 768, of which one is used when emitting from entities.
+- **The sim clock.** GPU particles age by `Time.simNowMs`, stepped on the main thread's rAF, so main-thread jank
+  freezes them while CPU particles keep moving. Unmeasured.
+- **Missing pieces.** CPU particles have no drag, GPU particles no sideways acceleration (wind), look targets are
+  8-bit, and layer uniforms take no arrays.
+
+---
+
+## Wave 9 — speed and bugs (2026-10-29)
+
+Written 2026-10-29 for ten hours of work. The owner's call that day: speed and bugs first, features later (see
+"Left open" above). Wave 7's ranked items are done except E-145, which the owner keeps out for now, so the wave starts
+from a new map of the scenes.
+
+**The order, with its time:**
+1. **The map (1 h 10).**
+   - A CPU pass over R-0645's busiest scenes and the ones it could not read: the contended ones, those that ran on
+     half-edited code, and particleEmitStressScene.
+   - The deopt and heap passes, `--only` on the top eight. It is the first deopt pass since the WASM migration.
+   - Each scene run also reports its console errors.
+   - In parallel, a desk review of the branch's riskiest changes, looking for bugs: E-136's shared generation, the pose
+     epoch's wiring (a412603f), W28's aliasing probe, E-159's `orderGen` and DX-GPCLOCK's seqlock.
+   - What the map and the review find becomes register rows, ranked.
+2. **E-160, Predator's shadow stamp (2 h 30).**
+3. **E-161, GPU particles: one group a frame (1 h 15).**
+4. **E-162, painterMove's moving rows (1 h 30).**
+5. **The map's top two (1 h 30).** The known candidates, if the map keeps them on top:
+   - E-163, the gather's cell order past 65 536 cells;
+   - the spawn path: `_spawnAt` 40 % and `despawn` 12 % of spawnStormScene's logic;
+   - the ray API in JavaScript, about 80 % of rayStressScene's logic;
+   - `requestVectorFromStaticFlowfield`, 6 % of littleCityScene's logic;
+   - the decal tile uploads, 228 ms/s of decalBlitStressScene's Pixi.
+6. **Bugs (1 h).** What the review and the passes found, and N-84.
+7. **The close (45 min).**
+   - The GPU particle gate, for DX-GPCLOCK and E-161: gpuParticlesStressScene and GPU Galaxy, WebGL and WebGPU.
+   - One Predator gate over the batch, read against the session's A/A.
+   - The records and the page.
+   - Then the owner is asked about the merge to main, which ships the bundles built, tested and pushed.
+
+**Where it stood after four hours** (each line's record holds its numbers):
+- **Kept:** E-164 with E-164b and E-167, the entity slimmed to what is its own (minimalTick logic −36.7 %, painterMove
+  −12.4 % then −7.5 %); E-165, spawn and despawn off the worker's global (spawnStorm logic −27.8 %); E-161, a frame's
+  emitGpu calls in one group (18 048 → 60 groups a second, no overflows); E-160, the stamp's packed grid (kernel −13.9 %
+  in Chrome, −11.8 % in the scene, Predator's pre-render under what four pairs resolve); E-168, rng without a boxed
+  call (littleCity's logic garbage −38 %).
+- **Bugs fixed:** N-85 (the clock's stale fallback), N-86 (publishPose's fast path), N-87 (the clock in a hidden tab),
+  N-88 (a subclass entity read its parent's component flags), N-89 (E-164 and E-167 broke the page's frozen entities
+  and hot swap's shared config), and Blastforge's demo test after E-161.
+- **Answered or dropped:** N-84 (no spinning thread), E-166 (the spatial ownership branch: neutral), E-163 (no scene
+  passes 65 536 cells: planetScene is the largest, at exactly 65 536), the deopt pass (no deopts in eight scenes),
+  Box2D's names (its own work, a game's settings).
+- **For the owner:** E-162's lever, the sprite statics out of draw order (a GPU-side table per entity for scrolling
+  scenes), is a design change to decide. DX-GPCLOCK's cost (GPU Galaxy 8M, R-0707) was resolved after the gates.
+- **Predator's logic** read 306 and 281 ms/s in the morning's map and 273 and 258 after these changes.
+
+**The closing gates** (main bfd7ccf1 against the branch at df2a63a3, 4 pairs each):
+- **Predator:** logic −7.8 % (worse 0/4); the runner's physics +3.5 % is its load (the branch's runs moved 10 % more
+  bodies; per moved body the two sides differ by −0.2 %); every other worker under 3 %. Passed.
+- **gpuParticlesStressScene `?hold=1000`:** every worker under the floor, presented 60 on both sides: it cannot load
+  a worker's CPU, and E-161's own sitting is the reading.
+- **GPU Galaxy 8M:** renderer +3.2 % and presented 55.3 → 52.4 fps (−4.9 %), worse 4/4: DX-GPCLOCK's cost, about half
+  the bisect's −9.4 % now that E-161 groups a frame's emits.
+
+**DX-GPCLOCK, resolved** (R-0725 to R-0727). On the final branch the clock alone cost 3.7 % of Galaxy's presented frames.
+The GPU was not busier a frame (79.6 against 74.9 % NVIDIA use for 29.8 against 27.8 drawn frames a second, same
+clock): the page drew fewer frames, and every worker followed it. The clock now moves once a main frame again, and its
+readers carry it on only past a 100 ms hold without one (`4072de40`): presented 51.8 → 54.7 fps (+6.0 %, 3/4), and a
+stalled page still does not freeze GPU particles.
+
+**After five and a half hours** (a second map of eight scenes, R-0728 on; a review of the day's commits by an agent
+that read the code apart from mine):
+- **Kept, one kind of cost in four places:** keyed reads and writes by many names in one engine loop, and closures of
+  one function literal sharing their feedback, both megamorphic in every game. E-169, a spawn config's x and y by name
+  (spawnStorm logic −22.4 %); E-170, each component field's accessors compiled apart (26.6 → 8.8 ns a field access in
+  Chrome); E-172, emitGpu's ignored-key check by name (−23 % a call); E-173, the CPU emit's config merge by name into a
+  scratch of one shape (emits −36 % to −54 %). E-171 (the FSM's boxed ms per tick) dropped: a tie at 20 000 owners.
+- **Bugs:** N-89 (E-164 and E-167 broke the page's frozen entities and hot swap's shared config), N-90 (every hot
+  swap of an entity class reloaded the page since E-164b, and a swap past that broke its components), N-91 (an emitGpu
+  call could join a group the renderer had retired, E-161), N-92 (N-90's swap deleted a component's field accessors,
+  and kept old code for a member named like a component). The first review found N-90 and N-91 and read the shadow
+  stamp, the clock's hold, rng and the entity commits clean; the second found N-92 and read E-169, E-170, E-172 and
+  E-173 clean.
+- **The closing gates on the final tree** (main bfd7ccf1 against 33350fb6): Predator neutral, nothing worse, logic
+  −8.1 % (0/4), pre-render −3.9 %. GPU Galaxy 8M at 8 pairs: neutral, presented 56.0 → 55.1 fps (−2.1 %, 6/8)
+  and the renderer +1.7 % (7/8), against −4.9 % before the hold; the session's Galaxy A/A read −1.2 % and +2.0 %, so
+  about 2 % may remain, at the scene's detection limit (R-0736 to R-0738).
+- **The merge candidate** (13dee3cc, with N-92 and E-174): Predator logic −8.1 % (0/4), nothing worse; GPU Galaxy 8M
+  at parity, presented +1.6 % and the renderer −2.1 % over 8 pairs (R-0742, R-0743). E-174 took the wall-clock calls
+  out of the clock's reads, and with them what the hold had left of DX-GPCLOCK's cost.
+
+### E-160 Predator's shadow stamp, on the inputs the scene gives it
+
+`stamp_light_range` is 39 % of Predator's pre-render (R-0645; 46.7 % in R-0607). It is the largest engine function in
+the gameplay scene, already in C (W23) and without the kept-slice sort (E-133).
+
+**Why a new tool.** The kernel's fixture is one captured frame, with the 48 lights nearest the casters' centroid. On
+2026-10-29 the scene's stamp cost about four times what that fixture predicts a frame, so a variant screened on it says
+little.
+
+**The steps:**
+1. **The tool, in its own commit.** Capture the stamp's real inputs from the running scene (the light table, the caster
+   rows, the limits) over a run of frames, and replay them in the kernel.
+2. **The algorithm first:** which casters each light walks, lights whose inputs did not change since the last frame,
+   the sun.
+3. **Then the pass every WASM kernel gets:** flags, SIMD and float32 (HOW_WE_MEASURE).
+
+**How it is decided:** the replay in Node and in Chrome, then Predator's pre-render, ABAB from worktrees.
+
+**Kept (kernel), 2026-10-29 (856cecca; tools 45505141, ed7e1aec).** The capture showed 13 300 casters, not the
+fixture's few, and the time in building the grid (38 %), the selection with the nearest lights (29 %), the append
+(20 %) and the walk (13 %). The grid now packs x and y in its order from one read of each row, the walk keeps each
+candidate's distance, and rows are copied in v128s; the stamp is bit-identical. Replay: Node +14.7 %, Chrome
+0.541 → 0.466 ms a frame (−13.9 %); in Predator the stamp itself 1.139 → 1.005 ms a call (−11.8 %, 3/3). Predator's
+pre-render STEP_MS did not move (+0.9 % paired over 4 pairs, inside the session's A/A, which read −2.7 % on
+identical code): about 3 % of that worker is under what four pairs resolve here.
+
+### E-161 emitGpu: the calls of one frame share a group
+
+**The limit.** Each emitGpu call writes one group, and a ring holds 2 048 live ones. An entity that emits every frame
+with one-second particles keeps 60 alive, so about 34 such entities fill a ring, and the rest write over live
+particles. In a `sortWithEntities` layer each group is also a draw of its own among the sprites, and past 1 024 visible
+groups a frame the rest are not drawn.
+
+**The change.** Each record carries its own birth, so a call can extend the ring's last group when that group was
+written in the same frame: more records, the bounds widened, the latest death. In a sorted layer only a call whose
+sortY falls in the group's band can join it.
+
+**How it is decided:**
+- The tool first: a gpuParticlesStressScene knob for many small calls a frame, in a plain and a sorted layer.
+- Tests: the records are the same, and the bounds cover them.
+- The sitting: groups a frame and overflows, then Pixi and the renderer in the sorted case.
+
+**Done 2026-10-29 (d2827622; tools a87b16ee).** gpuParticlesStressScene `?trail=300&columns=0`, 300 movers that call
+emitGpu every tick, `gpuParticleRingProbe` over 5 s: on a plain layer 18 048 → 60 groups a second and 18 048 → 0
+overflows a second; a sorted layer is unchanged, each mover being on its own row. The GPU particle gate covers its
+timings.
+
+### E-162 painterMove: the moving rows' scatter pack and reinsert
+
+Left by E-159. In painterMoveStressScene, whose keys move every frame, `pack_sprites_split_scatter` is 40 % and
+`reinsert_simd_inplace` 25 % of a saturated pre-render (R-0645). Moving y-sorted sprites are a top-down game's common
+case.
+
+**How it is decided:** a kernel on the scene's rows first (the scatter pack's stores, the reinsert's moves), then
+painterMove's pre-render, ABAB. A Predator gate if the pack path changes.
+
+**The design (the owner's go, 2026-10-29; R-0709 read the lever).** Today a painter-sorted frame writes both of E-82b's
+streams in draw order: the pose (x, y, rotC, rotS: 16 bytes) and the statics (scale, anchor, depth, tint, texture,
+tile terms: 44 bytes), and when the painter's order moves (painterMove, every frame) both are scattered again and Pixi
+uploads 60 bytes a sprite. Second map (R-0728 on): painterMove's pre-render is saturated, the scatter pack 39.6 % and
+the reinsert 24.2 %; Pixi spends 40.6 % in W30's copy and 41.0 % in `updateBuffer`, the upload. The depth is the one
+static that follows the order (`1 − (k + 1) × invDepthDenom` at draw slot k); the rest belong to the sprite.
+
+**The idea: the statics in the queue's row order, and an index in draw order.** Per draw slot: the pose and the row
+of its statics (4 bytes), 20 bytes a sprite. The statics stay in row order and are written, and uploaded, only when
+their own generation moves (a sprite's static field, the visible set), not when the order does. The vertex shader
+fetches its statics by that row from a texture (E-157's way for GPU particle records: `texelFetch` on WebGL2,
+`textureLoad` on WebGPU) and computes the depth from its draw slot (`uFirstInstance + gl_InstanceID`).
+
+**The steps:**
+1. **The pack kernel** (`gpuPack.c`): `pack_sprites_indexed_scatter`, the pose and the row index scattered to their
+   draw slots, the statics in row order only when asked. A parity test (pose + statics[row] + the slot's depth gives
+   the split pack's rows bit for bit) and a kernel A/B on painterMove's shape (300 000 rows, a tenth moved).
+2. **The queue and pre-render:** a GPU_FLAG_INDEXED region (poses, rows, then the statics in row order: E-82b's bytes
+   plus 4 a sprite), its statics generation without the painter's order (E-159's orderGen), and the sorted path
+   choosing it where the renderer can draw it.
+3. **Pixi on WebGL2:** an indexed sprite batch, the pose and row as instance attributes, the statics an RGBA32F
+   texture (three texels a row) uploaded on a new generation, the vertex shader rewritten as E-157's to fetch them.
+4. **Pixi on WebGPU:** the same in WGSL.
+5. **The proof:** pixels in Chromium on both backends (the indexed path draws what the split path draws), then
+   painterMove (pre-render and Pixi owners), painterSort (nothing should move) and a Predator gate.
+
+E-145 (Adobe's pieces on the GPU) is the same kind of change, one step further: it can reuse step 3's texture fetch.
+
+**Step 1 done 2026-10-29** (d32354f8, bench 90c67844): `pack_sprites_indexed_scatter`, parity with the split scatter
+word for word (the depth aside). At 300 000 rows a moved painter frame's pack goes 4.965 → 1.400 ms in Chrome with
+the statics kept (−71.8 %), 3.675 writing them too. Steps 2 and 3 go together: pre-render cannot send a frame Pixi
+cannot draw.
+
+**Step 3's groundwork, same day** (199bb5be, 3fff9b14): the indexed statics take 12 words a row
+(GPU_INDEXED_STATIC_FLOATS, three RGBA32UI texels), and `spriteIndexedVertex` (src/render/spriteIndexed.js) rewrites
+instancedSprite.vert.glsl to fetch them by row, the depth from the draw slot; it compiles and links with the sprite
+fragment shader in Chrome 156's WebGL2 (`spriteIndexedCompileCheck.mjs`), 4 vertex attributes against 10.
+
+**Steps 2 and 3 done 2026-10-29** (957d7b36, c1e31aa9, 4d690829, fd34cf36; the knob 97e38731), with three changes
+from the map: the slot stream carries the row and the depth (a pair of floats, `aInstSlot`), since a chunk of the
+y-sort painter's proxies restarts `gl_InstanceID`; renderer.indexedSprites (WebGL only for now) lays out the region
+for both workers, so Pixi sends no flag; and each layout draws from geometries of its own, since one geometry with both
+layouts' attributes made Pixi warn per attribute, per geometry and program (EntityChunks keeps up to four bases).
+- **The queue:** caps.indexedSprites sizes the sprite region for the poses, the slot pairs and every queue row's
+  statics in whole texture rows (`gpuSpriteRegionFloats`); without it the layout is the one before.
+- **Pre-render:** `_packSpritesIndexed` for a painter-sorted frame, the statics only when the GPU queue buffer lacks
+  the queue's generation for the same rows; a frame the kernel declines (a short list) goes split.
+- **Pixi on WebGL2:** the entity batch's statics texture (RGBA32UI, from its own copy, through the record texture
+  helper) and indexed program; `commitIndexed` uploads the texture rows on a new generation only.
+- **The proof, first half:** painterMove in Chromium, 40 lockstep steps, drawn split and indexed: the same pixels,
+  all 921 600, the indexed run's headers GPU_FLAG_INDEXED over 300 000 rows.
+
+**painterMove on WebGL, 2026-10-29 (R-0750): KEPT.** Indexed against split, one build: pre-render 37.3 → 19.8 ms
+(−43.6 %), Pixi 5.0 → 2.3 ms (−54.4 %), 4/4 pairs; pre-render publishes 52 to 57 frames a second instead of 28 to 32.
+
+**Step 4 done the same day** (7ac90cf5, 768b4ade): `spriteIndexedWgsl` rewrites instancedSprite.wgsl, the statics
+three vec4<u32> of a read-only storage buffer (group 2, binding 4) over the batch's own copy, sent on a new generation;
+Pixi throws at init past the device's storage binding size. Both shaders now read the tint's bits as the integer they
+are (an opaque white tint is a NaN pattern). Chrome 156 compiles both WGSL programs and makes their pipelines
+(`spriteIndexedCompileCheck.mjs`); painterMove on WebGPU, 40 lockstep steps, split against indexed: the same pixels.
+
+**The sittings, same day** (R-0753 to R-0755): painterMove on WebGPU KEPT, pre-render 23.9 → 17.5 ms (−28.0 %), Pixi
+3.4 → 2.9 ms (−17.5 %), 4/4; painterSort, whose order holds, pre-render −9.4 % but Pixi 1.67 → 2.16 ms (+0.49 ms,
+under its floor): an indexed frame sends the slot pairs (8 bytes a sprite) though they are the last frame's, where a
+split frame sends the pose alone. The Predator gate with the option off, against main: neutral.
+
+**Done 2026-10-29: kept, on by default** (R-0756 to R-0759).
+- **The slot pairs only when they moved** (00a719e4): pre-render gives them a generation (GPU_HDR_SLOTS_GEN: the
+  painter's orderGen, the slots, the depth scale) and still writes them every frame, the scatter reading the queue in
+  order; Pixi copies and sends them only when it moved. painterSort again: pre-render −11.7 %, Pixi 1.80 → 1.55 ms
+  (under its floor; +0.49 ms before).
+- **The default** (83f7a34b): renderer.indexedSprites on where pre-render y-sorts, for a queue every GPU of the backend
+  holds (2 796 202 rows on WebGPU, 4 194 304 on WebGL); false, or past that, frames go in draw order. The y-sorted demos
+  (bichos, blastforge, car) drew the same pixels before and after, none of them past the scatter's 4 096 rows; the
+  check found N-93 in carScene. Predator on pre-render's pack and sort, whose frames go indexed (15 832 sprites):
+  neutral.
+
+### E-163 The gather's cell order past 65 536 cells
+
+`order_by_cell` (`spatialGather.c`) sorts a rebuild list by home cell with two radix passes on a 16-bit cell index. A
+grid of more than 65 536 cells keeps its order, so a large world loses the cache order the gather gets from it. A
+coarser key, cells grouped so the index fits in 16 bits, would keep most of the locality without a third pass.
+
+**How it is decided:** `spatialGatherReplayKernel` on a large grid, then the spatial worker of a scene whose grid passes
+65 536 cells.
+
+### E-164 A component read waits on memory: the slot array and its elements
+
+**The finding (Wave 9's map, 2026-10-29).** In waterAndBoxesScene the component getter (`gameObject.js`, E-139's
+numbered slots) is 36 % of logic. Its 20 000 water balls each read `this.rigidBody.speed` once a tick: 1.2 million
+reads a second, about 23 ns each, all on the line `this._components[slot]`. That is memory, not code: the entity, its
+`_components` array and the array's elements are three objects, and with 20 000 entities none of them is in cache.
+In Predator the getter is 7–9 % of each logic worker. E-139's kernel timed a hot cache, where the read was 6.7 ns.
+
+**The idea.** The component instances as fields of the entity, made with it before the frame loop and declared in a
+fixed order per class, so a read is one load from an object the tick has just touched.
+
+**How it is decided:** waterAndBoxesScene's logic (the owner), then Predator's logic as the gate.
+
+### E-165 Spawn and despawn read the logic worker through the worker's global
+
+**The finding (Wave 9's map).** In spawnStormScene's logic (375 ms/s), the hottest lines of `_spawnAt` and `despawn`
+are `typeof self !== 'undefined' ? self.logicWorker : null`: 91 % of `despawn`'s self time and 43 % of `_spawnAt`'s,
+about a third of the worker. `self` in a worker is the global proxy, and V8 does not make a named load through it
+fast.
+
+**The change.** The LogicWorker binds itself to a module reference of `gameObject.js` when it is made; spawn,
+despawn, `isCollidingWith` and the despawnAll forward read that, and fall back to the global only where nothing is
+bound (the page, the other workers, tests that stub `self`).
+
+**How it is decided:** spawnStormScene's logic (the owner), Predator's gate.
+
+### E-166 The spatial rebuild's ownership branch and grid statics
+
+Wave 9's map put 28 % of Boids' `rebuildOwnedRows` on the owned-row append (rows alternate owners between its two
+spatial workers) and 15–19 % on `Grid.maxEntitiesPerCell` in its cell loop. **Dropped 2026-10-29** (574d7958,
+reverted): the append without a branch, the statics hoisted and `_findNeighbors`' counters in locals left Boids'
+spatial at +0.6 % (4 pairs). The lines cost their memory.
+
+### E-167 An entity carries only its own fields
+
+E-164's eight component fields on every entity cost painterMoveStressScene's logic +13.9 %: its ticks read
+subclass fields over 300 000 entities, and every byte of an entity is read by a loop that walks them. E-164b
+(d5213176) declares one field per component of the class, and the per-entity slot array went with it: against the
+code before E-164, painterMove's logic −12.4 % and minimalTick's −36.7 %. E-167 (da4491b4) takes the rest of what is
+not the entity's own off it: the scene's config and the realm's LogicWorker to GameObject.prototype, the component
+flags to the class's prototype, the slot array only for a class with more than eight components.
+
+**How it is decided:** painterMove's and minimalTick's logic, against N-88's commit.
+
+**Kept 2026-10-29** (R-0715): painterMove's logic 8.141 → 7.526 ms (−7.5 %, 4 pairs).
+
+### E-168 rng() boxes its double twice in a worker
+
+Wave 9's heap pass: in littleCity's logic the engine's `rng` wrapper and the seeded generator it calls are 1.4 and
+1.3 MB/s of garbage, each double boxed on its way back from a call the caller did not inline. In Node the same code
+allocates nothing (`globalThis.rng()` is inlined whole). A module-variable `rng` behind a `globalThis.rng` accessor,
+and one that steps the generator's state itself, were both 2–4 times slower in Node and were not kept.
+
+**Next:** why Chrome's workers do not inline `globalThis.rng()` (its property cell, written twice as `self.rng` and
+`globalThis.rng`); a heap sample of littleCity in Chrome decides any variant.
+
+**Kept (hygiene) 2026-10-29** (1971f620, R-0718): `rng()` steps a seeded generator's state itself when `globalThis.rng` is one.
+littleCity's logic allocates 10 573 → 6 601 KB/s (−38 %); logic −3.9 % over 4 pairs. One box remains where a large
+tick does not inline `rng()`.
+
+### E-169 A spawn config's keys go through `instance[key]`
+
+Wave 9's second map (after E-165): `_spawnAt` is still 34 % of spawnStormScene's logic (232 ms/s), and 51 % of its
+self time is two lines of the loop that applies the spawn config: `instance[key] = spawnConfig[key]` (41 %) and the
+check before it, which read `instance[key]` twice (10 %). Keyed reads and writes by the config's names, over every
+class one loop sees, go megamorphic; for an accessor each read is a getter call. Nearly every config is `{ x, y, … }`.
+
+**Kept 2026-10-29** (d11d29f3): x and y are set by name, in their place in the config's order, and every other key
+reads its current value once. spawnStormScene logic 3.431 → 2.644 ms (−22.4 %, worse 0/4, cv 2/4 %), BODY_COUNT
+−3.5 %. `spawnConfigKeys.test.js` keeps the order and the single read.
+
+### E-170 A component's field accessors share one closure's feedback
+
+Wave 9's second map: `get` in component.js (`return ComponentClass[name][this.index]`) is 5–6 % of adobeAnimateScene's
+logic and shows in waterAndBoxes'. Every scalar field's accessor pair is a closure of the same function literal, and V8
+gives closures of one literal one feedback vector: the getter's keyed load saw every field name of every component
+(megamorphic), and its element load every column type. E-139's kind, on the component side: every game reads its own
+components' fields this way (`this.health.hp`).
+
+**Kept 2026-10-29** (60bbe557, kernel `componentFieldMicrobench`, 20b0d11f): each field's pair compiled on its own with
+`new Function`, reading its column by a constant name; the shared closures where compiling throws (a CSP without
+'unsafe-eval'). Chrome 156: 26.6 → 8.8 ns a field access; Node 44.7 → 10.0. No scene loads a worker past the floor
+with these reads (Adobe's logic is 91 ms/s): Predator is the regression guard, with E-169. Predator: neutral (logic
++0.4 %, 2/4; R-0730).
+
+### E-171 The FSM's ms per tick, a boxed double on each instance
+
+Wave 9's second map: in Predator's FSM `tick`, reading `this._msPerTick` (E-146's cache, a double field, which pointer
+compression keeps boxed) is 32 % of its self time. **Dropped 2026-10-29** (R-0733): the owner's tickInterval as a small
+integer was +8.3 % in `fsmTickMicrobench` at 3 000 owners and a tie at 20 000.
+
+### E-172 Every emitGpu call reads fourteen keys by name in a loop
+
+Found looking for E-169's and E-170's kind in the engine: `_emit` checked the CPU emit keys GPU particles ignore
+(`UNSUPPORTED_KEYS`, fourteen) with `cfg[key]` in a loop on every call, a keyed read by a different name each
+(megamorphic), for keys a config normally does not have. The call-per-entity-per-tick pattern (E-161) pays it on
+every call.
+
+**Kept 2026-10-29** (7dda9864, kernel `emitGpuCallMicrobench` ba8b03f5): one condition of named reads, and the warning
+loop only for a config that has one of them. Kernel 758 → 582 ns a call (−23 %). gpuParticlesStressScene `?trail=1024`
+(the call-per-tick pattern): logic 1.845 → 1.635 ms (−11.4 %, under the floor), renderer −2.5 % (0/4).
+
+### E-173 The CPU emit's config merge: keyed copies into a dictionary
+
+The same search: `_mergeCfg`, which every `emit`, `emitZenithal`, `emitFlat` and `emitAlongLine` call runs, copied the
+caller's config into a scratch with a loop of keyed reads and writes by the forty-three names of `_cfgFieldList`
+(megamorphic), and the scratch was `Object.create(null)`, which V8 keeps as a dictionary: `_spawn` then read the
+config's fields from a hash table, per particle.
+
+**Kept 2026-10-29** (aa8fff46, kernel case `emit_small` 19e896c1): the keys copied by name into a scratch that declares
+them all (one shape). `particleEmitMicrobench`: emitFlat bursts −36 %, emitZenithal −38 %, emitAlongLine −54 %, one
+particle a call −52 %; the case with no config flat.
+
+### E-174 A running clock's read asked the wall clock, twice per joining emitGpu call
+
+A Node profile of `emitGpuCallMicrobench` put 9 % of the call in `readSimNowInto` with the clock stopped. Started (as
+in a game), each read takes the wall time, `performance.timeOrigin + performance.now()`: in Chrome 156 about 320 ns
+(170 for `now()`, 150 for `timeOrigin`, both slow bindings), against 1.5 for a typed-array read. DX-GPCLOCK made every
+read do it, and N-91 added a second read for calls that can join a group: in Chrome a running clock took the call
+from 610 to 1 298 ns.
+
+**Kept 2026-10-29** (c29140c3, kernel 77abb019): each realm's frame loop notes its frame's wall time once a frame,
+and reads take it (the hold is 100 ms, far coarser than a frame); `timeOrigin` is read once per realm. Chrome, running
+clock: 1 285 → 625 ns an emitGpu call (−51 %).
+
+## Wave 10 candidates — STEP_MS headroom (2026-10-29)
+
+The owner's measure for these sessions is every worker's STEP_MS, not the frame rate. rAF holds the page at 60, so a
+saving shows as headroom: more entities and particles before a worker reaches its frame. A worker that does not set
+the frame still counts. Source: R-0751's split of the renderer by layer and its sweep's inventory of every worker
+(predatorScene, adobeAnimateScene at the minimum zoom, bunnyMarkScene, painterMoveStressScene; fd34cf36). Ranked in the
+register; what it did not turn into rows is in the register's leads.
+
+### E-175 Predator's decal tiles: up to 800 Pixi sprites re-transformed and re-batched every frame
+
+**Premise (R-0751):** Pixi's own code other than the upload is 130.7 ms/s of Predator's renderer (about 2.2 ms of a
+6.46 ms step), against 9 to 24 ms/s in the other three scenes. The call tree puts most of it in the render groups'
+transform walk (35.7 ms/s), the sprite batcher (about 21) and texture binds (14.6). The decal tiles are the only plain
+sprites Predator has in number: 40 × 20 `PIXI.Sprite`s, a texture each, visible from their first splat, never culled,
+under `decalTileContainer`. The camera moves that container every frame, and it is not a render group, so Pixi
+recomputes every visible tile's transform and quad.
+**Plan:** (a) `decalTileContainer.isRenderGroup = true`, and the tiles outside the view hidden; (b) if the batch and
+the binds stay, the tiles as one instanced batch of the engine's over an atlas or an array texture. Owner: Predator's
+renderer, 4 pairs. Expected about 0.8 to 1.2 ms of its step, more as a match's blood spreads.
+
+**Done 2026-10-29, kept** (R-0761, R-0763): (a) the container as a render group, Predator's renderer 4.40 → 4.06 ms
+(−5.0 %, 3/4); then the tiles outside the view hidden (`_cullDecalTiles`), 3.82 → 3.67 ms (−3.2 %, 3/4, at the edge of
+Predator's noise: every worker moved 2 to 3 %), the pixels the same over six panned views. Less than the 0.8 to 1.2 ms
+expected: in a 20-second run few tiles are stamped. (b) is not needed. The culling's check found N-94 (the raw texture
+uploads left a unit holding another texture than Pixi tracks).
+
+### E-176 Spatial finds neighbours for types that never read them
+
+**Premise:** adobeAnimateScene's 20 000 characters never read a neighbour (their tick reads the mouse and the clip),
+yet `_findNeighbors` is 34.6 % of its spatial worker (184 ms/s, step 2.9 ms) at `maxNeighbors: 64`. Only GameObject's
+accessors (`neighbors`, `neighborCount`, `getNeighbor`) and the physics debug renderer read `Grid.neighborData`.
+**Plan:** step 0, which types read neighbours in each demo. Then the accessors mark their type in a shared byte array,
+spatial skips the neighbour pass for an entity whose type was not marked in the last K frames, and a type's first read
+gets its lists a frame later (written in the guide). The accessors' extra store is checked with E-141's
+neighborAccessMicrobench. Owner: adobeAnimateScene's spatial worker; Predator, which reads neighbours, must stay
+neutral.
+**Result (2026-10-31, R-0770, R-0771):** kept on movedBodiesMixedScene, spatial -78 %; Predator neutral. The premise
+was wrong about adobeAnimateScene: its characters have a range of 0, and the cost was the skip writing each row's
+count every frame. E-176b writes a row only when it is not clear: spatial -30 % there at 20 000 characters, logic
++5.7 % (7/8, A/A 2.1 %), mixed; it waits for a logic fit or a second scene before main.
+**Re-sat 2026-11-01 (R-0774), kept:** on a quiet machine spatial -29.2 % (0/4), logic -2.2 %, and a CPU profile pair put
+logic's busy time at -3 %. Those sittings ran twice the characters the knob named: the demo's `create()` called
+`createNewGame()` too (N-101, fixed in 8eb30060).
+
+### E-177 Sprite statics per entity on the GPU, for scenes whose camera scrolls
+
+**Premise:** E-162's lever (the statics out of draw order, R-0709) is built for painter frames. Predator and littleCity
+still write and move every visible row's statics each frame: Predator's `emit_rows` is 24 % of its pre-render, and the
+renderer's copy and upload are 124 ms/s there. With a table per entity on the GPU, written only for the entities whose
+statics changed, a frame would carry an index and a pose per row (about 20 bytes against 60 or more).
+**Plan:** step 0, a counter of the rows per frame whose statics changed, in Predator, littleCity and adobeAnimateScene
+(an animated sprite changes its frame often, and Adobe's statics move every frame: R-0626). Build only where most rows
+keep theirs. Owners: the pre-render and renderer workers of the scene the counter picks; a Predator gate.
+**Step 0, 2026-11-01 (R-0781):** an instrumented pre-render counted each frame's sprite rows whose statics differ from
+the ones their entity carried when last drawn. Predator: about 13 500 rows a frame, 4.8 to 5.6 % changed, and the
+queue's static generation moved on every frame, so all of them are packed and uploaded again; littleCity: about 290
+rows, 11 to 15 % changed. Build it for Predator: about 700 rows' statics a frame instead of 13 500 (about 30 KB instead
+of 590 KB). adobeAnimateScene's rows are expanded pieces, several per entity: E-145's ground.
+**Where the cost is (a CPU trace of Predator, 2026-11-01):** the Pixi worker, 300 ms/s busy (renderer STEP 4.3 ms),
+spends 20.3 % in `pack_sprites_split` (the split frame: pose and statics streams in draw order, the statics packed
+again whenever the queue's generation moved, which is every frame here), 14.3 % in Pixi's `updateBuffer` (the upload)
+and 13.4 % in the copy into its arena (W30): about 2.4 ms a frame, three quarters of whose bytes are statics.
+**Build plan:**
+1. A `key` column in the render queue (renderQueueLayout's FIELDS): the row's table slot, written by the emit (C and
+   JS): a sprite row's entity index; any other row a slot past the entities' range, `entityCount + row`, so its
+   statics are rewritten every frame as today.
+2. `pack_sprites_keyed` in gpuPack.c: per draw slot the pose and the slot pair (key, depth), as E-162's indexed frame;
+   per row its statics compared with the table's at its key (a persistent region of the batch's render-queue memory)
+   and written only when they differ, the written keys' runs returned (a run list in the same region).
+3. The Pixi batch: the dirty runs copied into its arena and uploaded alone (WebGL texSubImage2D by run, WebGPU
+   writeBuffer by run) into the statics texture or storage buffer, sized for every key; the indexed program draws.
+4. Tests: a keyed frame's instance data (poses, and the statics fetched by key) equal the split frame's for the same
+   queue, over frames that change some rows' statics and the row set; both backends' upload paths.
+5. Owners: Predator's renderer (and pre-render for the key column), 4 pairs; painterMove and BunnyMark as guards.
+
+**Step 0b, 2026-11-01 (R-0784): no dirty runs.** The 700 changed rows of a Predator frame are spread over 42 600 keys:
+chunks of 16 keys would send 8 000 rows in 310 runs, of 64 keys more rows than the frame. Items 2 and 3 change: the
+kernel lists the changed rows as updates (the statics, then the key: 64 bytes, about 45 KB a frame), and the GPU
+scatters them into its copy of the table: on WebGL a draw of one 3-texel rectangle per update into the statics texture
+(raw GL around Pixi's state, as the record textures are filled), on WebGPU a compute pass. Predator draws with WebGL,
+so WebGL first; a WebGPU batch keeps split frames until its pass exists. Built: the key column (69432150), the keyed
+kernel with a stamp per key for a key two rows take (f185a8c4). The kernel costs 38 % more than the split pack in
+Chrome (0.270 against 0.195 ms), all of it the table's reads (900 KB a frame), against 36 bytes a sprite less to copy
+and upload; Predator's sitting weighs the two. If the reads cost more than they save: a statics generation per row
+written by the emit (pre-render compares in entity order, and Pixi compares a u32 a row), at pre-render's expense.
+
+**Built and traced, 2026-11-01 (R-0785): the compare cannot be in Pixi.** Steps 2b to 2d (e6dc7781, 23956a85,
+0d72905b) draw right, and Predator's renderer ran 30 to 44 % slower (single runs and CPU traces, no pairs). The keyed
+pack took 181 ms of the Pixi worker a second against the split pack's 62; a fingerprint a key (8c378075) 164; the copy
+and upload fell only 23 %. Kernel variants traced the same way located it: the pose, key and slot alone cost 23, the
+stamps 62: a per-key array read at the address of a key read from the queue is two misses in a chain (about 40 ms/s
+each in Predator, whose other workers fill the caches), where the split pack's column reads run in parallel. Fixed on
+the way: the scatter's gl.getParameter(COLOR_WRITEMASK) waited for the GPU process (1.1 ms a frame; Pixi's caches now,
+1b230b05).
+**v4, next:** the change detection moves to pre-render's emit, whose per-entity reads are one level deep (the collector
+gives the entity): each sprite row's statics against an entity-indexed store in the render-queue memory (64 bytes an
+entity), and on a change the store row is written and the entity appended to a ring. Pixi packs the pose and the key
+(23 ms/s measured) and scatters the store rows of the entities the ring lists since its last frame, so a skipped frame
+loses nothing; a ring overrun re-sends the store. Rows without a key go up every frame from the queue, as now. On a
+persist frame only the repaired textures change, through the same path. The store's rows can tear while Pixi reads one
+(pre-render writing the next frame's): the ring lists that entity again, so a torn row lasts a frame. Owners Predator's
+renderer and pre-render (whose emit pays the compare: it runs 4.9 ms in Predator, the busier of the two).
+**v4 to v6, 2026-11-01 (R-0786 to R-0790): pre-render paid for the store.** The change detection moved into the emit.
+v4 compared each sprite's statics with the entity-indexed store: in a traced run the renderer ran 3.39 against 4.42 ms,
+but emit_rows took 162 against 60 ms/s, each store read a memory read with eleven workers busy. v5 replaced the compare
+by flags the statics setters set: Predator's walkers set theirs every tick through setAnimationSpeed (pre-render
++12.2 %, 4/4); v5b took the animation speed off them (+6.0 %, 3/4); v6 gave them a column of their own,
+SpriteRenderer.keyedDirty (+7.7 %, 4/4). The renderer read 16 to 20 % lower in all three (0/4). In the kernel, v6's
+store cost the emit 12.3 %: its writes 6.5 points, the per-row checks 4.9, the ring 0.9.
+**v8, kept 2026-11-01 (ce8ad4b9, 2970ba99; R-0791 to R-0793): a changed bit in the key, no store.** The emit marks a
+sprite row's key (KEY_CHANGED) when its keyed flag was set, its clock moved its frame, its texture is not the last one
+the emit wrote for it, or it repeats; a persist hit rewrites the keys the same way. The keyed pack sends the marked
+rows' statics and every row without a key, from the queue. The marks hold for one queue frame, so Pixi draws a frame
+keyed only after a keyed frame of the one before; otherwise it raises the render-queue memory's header request and
+draws split until the queue buffer it reads carries pre-render's answer (every sprite flagged for that emit). A batch
+whose updates outweigh what they save (a main queue of rows without a key, as a LiquidFun scene that draws its
+particles as sprites) pauses its keyed frames for 1 800 frames. The keyed emit costs 2.7 % in the kernel (a tie).
+Predator, the keyed frames on against off in one build: renderer -15.7 % (0/4), pre-render -1.7 % (1/4), KEPT; against
+main (8 pairs) renderer -16.7 % (0/8), pre-render +5.7 % raw and +2.2 % against the other workers; wave12 with them off
+against main NEUTRAL, pre-render +2.1 % (the build's, followed up below). The physics rises in these sittings followed
+its load (moved bodies, r = 0.88). The follow-ups are Wave 12's candidates.
+
+### E-178 RigidBody.speed's derive pass, cheaper where it runs (the particle worker)
+
+**Premise:** the particle worker writes `RigidBody.speed` every frame for every dynamic body of a class that sets
+`static deriveSpeed = true` (`updateDerivedProperties` with `calculateSpeed`: 13 % of Predator's particle worker, about
+10 ms/s). Predator's Person and Boid opt in, and their code and the animation FSM read `RigidBody.speed[i]` from the
+array. The pass sits in the particle worker on purpose: it is the light worker, and it spares the logic workers. It
+walks the RigidBody query's list and reads five columns per body.
+**Plan:** the pass stays in the particle worker, opted in per class. A dense pass over RigidBody's block (in Box2D's
+memory since Phase 4) as an f32x4 kernel, masked by active, static and the class's flag; if a kernel does not pay, the
+JS loop with the square root written in place. Kernel against today's loop on Predator's bodies. Owner: a stress scene
+whose bodies opt in, past the 3 ms floor (none yet: a knob first, in its own commit).
+*Rewritten 2026-10-29 at the owner's word: computing speed on read would move the work to the logic workers, and game
+code reads the array directly.*
+**Kept on its kernel 2026-11-01 (R-0778, 647f1d6a):** the pass walks the active list of each type that sets
+deriveSpeed instead of every body's query with a type test each; the JS loop's cost was the bodies it should not have
+visited. deriveSpeedMicrobench, 20 000 bodies in Predator's mix: +76 % (5/6). No scene's pass reaches the floor;
+Predator in wave11's gate. The f32x4 kernel is not needed for this step.
+
+### E-179 Decorations' screen visibility, every frame in JavaScript
+
+**Premise:** `updateDecorationScreenVisibility` tests every active decoration against the camera each frame: 17.3 % of
+Predator's particle worker, beside the sway kernel (`sway_decorations_f32x4`, 23.4 %) that reads the same positions.
+**Plan:** the test inside the sway kernel's walk of the same arrays, or skipped while neither the camera nor a
+decoration moved. Owner: decorationSwayStressScene's particle worker.
+**2026-10-31 (R-0772):** the branchless test, alone, is rejected: x2-3 on Predator's random order, worse where the
+order is predictable (the grid stress scene +18 %). Next: both loops, picked per frame from the last frame's flips.
+**Kept 2026-11-01 (R-0776), the seventh form (9e0d8e58):** `updateDecorationScreenVisibility` stays the shipped method,
+byte for byte; `updateDecorationScreen`, which `update()` calls, runs it or the branchless copy (its own functions, the
+candidates in the worker's scratch) and samples the flips on a 512-entry window one frame in 16. decorationSwayStressScene
+(`?order=random`, a19bd027), 4 pairs: random order with a third on screen, particle -10.0 % (0/4); the grid at 400 000,
++2.5 % (4/4, under the bar). On the way: counting the flips inside a loop, a whole branchless probe frame and moving the
+shipped loop into a function of its own each cost the predictable case 3 to 10 %, and the shipped loop's own deopt loop
+on stale OSR code became E-183.
+
+### E-180 Interval tick buckets rebuilt for every type when any query moves
+
+**Premise:** `_tickIntervalBucket` rebuilds a type's buckets whenever its count or the global query version changes
+(`_rebuildTickBuckets`, 2 to 3 % of each Predator logic worker; the bucket loop itself 7.7 %). The version is global,
+so any spawn or despawn of any type rebuilds the buckets of every type that ticks on an interval.
+**Plan:** step 0, rebuilds a second per type in Predator. If most are of types whose own list did not change, stamp
+the buckets with the type's own list (a per-type version). Owner: Predator's logic.
+*2026-11-01:* built without step 0 (5262c96f): only logic0 edits the type lists, through three helpers and the spawn
+batch's merge, so a per-type version is a few lines; the bucket rebuild is at most 2 to 3 % of a Predator logic worker,
+under Predator's noise, so the owner is minimalTickIntervalScene with `?churn=64` (e7363cf7): 160 000 props on a
+tickInterval of 4 while another type's 64 props come and go every frame.
+
+## Wave 11 candidates (2026-11-01)
+
+Found while measuring E-176b and E-179 (wave11).
+
+### E-181 Every awake body is "moved", still or not
+
+**Premise:** Box2D 3 writes a move event for every awake body every step (`b2FinalizeBodiesTask` sizes the array to the
+awake count), and the glue's `export_body_move_events` lists each one as moved and exports its state, an `atan2`
+included. A body that is awake and did not move (sleeping off, a body held awake, a kinematic body at rest) costs the
+export and puts its rows in spatial's moved list: adobeAnimateScene (sleeping off, 20 000 still characters after
+N-101) reads Moved 20 000 every frame, so spatial rebuilds the grid (2.1 ms) for bodies that never move.
+**Plan:** in the glue, a move event whose transform equals what the state channels hold (Transform.x, y, rotC and rotS
+are those channels) exports the velocities only and is not listed, unless the body fell asleep; teleports keep their
+own list. Owner: adobeAnimateScene's spatial worker; physics there too; Predator, whose bodies move, must stay neutral.
+**Kept 2026-11-01 (R-0775; c21c860a, Box2D 37b75c0):** the comparison is in the solver's finalize export, which WeedJS's
+Box2D runs for every awake body and which had written the channels before the glue looked; the glue leaves a body the
+finalize found still out of the list and out of its second export. adobeAnimateScene at 40 000 still characters, 4
+pairs: physics 5.235 -> 3.965 ms (-24.0 %, 0/4), spatial 2.651 -> 0.431 ms (-84 %, its base under the floor), Moved
+40 000 -> 0. Predator goes in wave11's gate.
+
+### E-182 Every moved body's state exported twice a step
+
+**Premise:** WeedJS's Box2D exports each awake body's state in the solver's finalize task (`b2ExportBodyState`: x, y, an
+`atan2` for the rotation, rotC, rotS, the velocities), and the glue's `export_body_move_events` exports it again for
+every moved body from the move event, with `b2Body_GetLinearVelocity` and `b2Body_GetAngularVelocity` calls. The second
+export only matters for a body whose pose changed after the finalize, which is continuous collision's (a fast body's
+time of impact).
+**Plan:** the glue re-exports a listed body only when the event's pose differs from what the channels hold. Owner: the
+physics worker of a scene full of moving bodies (ballsHeavyStressScene); Predator's physics (10 ms, most bodies
+moving) next.
+**Kept on its kernel 2026-11-01 (R-0779; 900098ae, Box2D c37ccc0):** the second export also reads the velocities after
+LiquidFun's coupling changed them, so they are still read; only the pose (an atan2, five stores) waits for a change.
+moveExportMicrobench, 20 000 moving bodies: +2.2 % (6/6); ballsHeavyStressScene physics +0.1 %, neutral. On the way it
+showed E-181's still bodies exporting a push from the water a frame late, fixed in c83315e4.
+
+### E-183 Per-frame loops stuck on stale OSR code
+
+**Premise:** found building E-179. A worker function called once a frame around one long loop runs that loop on OSR
+code from its first call. A statement after the loop that had no type feedback when the OSR code was compiled deopts
+when reached ("Insufficient type feedback for generic keyed access"), and V8 can keep entering the same cached OSR
+code, so the function deopts at that statement on every call. The shipped `updateDecorationScreenVisibility` did it at
+`visibleData[0] = visibleCount` in some runs of its kernel: 490 to 588 deopts and 8 000 calls/s, against 20 deopts and
+23 000 in the others. The same shape (a long loop, then a count stored into a shared list) is in many workers.
+**Plan:** step 0, Chrome's deopt log (`--js-flags="--log-deopt"`, summarizeV8Deopt.mjs, steady state only) on
+Predator and the stress scenes: the functions that deopt at the same bytecode every frame. Then each loop in a function
+of its own that returns right after it (E-179's form), one change per worker. Owners: the workers it finds.
+**Answered 2026-11-01 (R-0780):** Chrome's deopt logs of six scenes (Predator, adobeAnimateScene, BunnyMark, the
+decoration grid, ballsHeavy, spawnStorm) show nothing deopting after the warm-up beyond one to three a site in cold
+code; the stale-OSR sites deopt while a scene starts and stop. The every-call loop is a kernel's (back-to-back calls):
+HOW_WE_MEASURE's "Which tier it timed" says how to read such a kernel.
+
+### E-184 The particle cull's two copies, picked per frame
+
+**Premise:** E-65 timed a branchless visible-list write for the rotation-0 particle cull: -16 % at 82 % visible in random
+order, +8 % with all visible, and screened it because "the gain depends on the scene" (emitters' particles are
+clustered by index, so the branch usually predicts). E-179 picks between the two forms per frame from a sample of the
+outcome's flips, which takes the gain where it exists and keeps the branch where it predicts.
+**Plan:** after E-179's verdict, E-65's branchless write as a second copy, picked the same way; E-179's lesson kept (the
+shipped loop left as it was, the dispatch outside it). Owner: a particle stress scene with random emission.
+**Kept as a kernel change 2026-11-01 (e7111409, R-0797).** The WASM list build has written the visible list without a
+branch since the migration, so there was no pair of copies to pick between; the shortcut went the other way: a full
+block all on screen writes its visible entries as its active ones (vector stores), one all off writes none. Kernel
+(the catalog's new particleLists rows, 9 rounds): +6.1 % with the whole world in view, +4.4 % with a quarter in no
+order. particleIntegrateStressScene at 200 000 particles: neutral (the build is about 0.3 ms of the 3.2).
+
+### E-179c Decorations' screen test skipped while nothing it reads changed
+
+**Premise:** the test's output depends only on the camera bounds and the active decorations' positions; decorations
+sway (rotation) but rarely move. A frame whose bounds equal the last frame's and whose snapshot and positions did not
+change gives the same list and flags.
+**Plan:** step 0, how many frames a second hold the camera still in the demos (Predator's follows a player and moves
+nearly every frame). Then a stamp of the bounds and of DecorationPool's spawns, despawns and moves; skip when both
+hold. Owner: a scene with a still camera and many decorations.
+**Kept 2026-11-01 (f890c16a, R-0796): particle -50.9 % with a still camera.** Step 0 from the code: bichos centres its
+camera once, littleCity and proceduralTree hold a free camera between pans, Predator and carScene move every frame.
+The pool's list header (now a cache line) counts the active list's changes and the world-owned decorations' moves;
+the particle worker copies the snapshot only when the list moved and tests only when a count, the camera bounds or an
+attached decoration it placed changed. decorationSwayStressScene (320 000, random order, a third on screen): particle
+4.927 -> 2.424 ms (0/4).
+
+## Wave 12 candidates (2026-11-01)
+
+Found while building E-177's keyed frames (wave12).
+
+### E-185 Keyed frames: the rows without a key sent only when their slot's statics changed
+
+**Premise:** a keyed frame (E-177) sends the statics of every row without a key (particles, glows, decorations in the
+main queue) every frame, at keyBase + its slot: about 200 rows a Predator frame (13 KB). A fingerprint per slot, read
+in slot order (so in cache), would send only the slots whose occupant's statics changed.
+**Plan:** after E-177's verdict; worth it only for a scene with thousands of such rows in its main queue, where E-188
+(keys by pool slot) does the same with less guessing. Owner: that scene's renderer.
+
+### E-186 Keyed frames: the slot stream without the depth
+
+**Premise:** the entity batch draws with depthTest off, so the depth in a keyed frame's slot pair is never read. A
+4-byte key per instance (or the key in the pose stream, one buffer instead of two) saves 4 of the keyed frame's 24
+bytes a sprite (55 KB a Predator frame) and a buffer update.
+**Plan:** after E-177's verdict: the indexed program's variant without the depth (it takes the depth from the instance
+index and a uniform, or a constant), the kernel's slot stream at one word. Owner: Predator's renderer.
+
+### E-187 Keyed frames on WebGPU
+
+**Premise:** E-177 builds keyed frames for WebGL (Predator's backend): the changed statics are drawn into the statics
+texture. A WebGPU batch keeps split frames.
+**Plan:** if E-177 keeps: the scatter as a compute pass over the statics storage buffer (the raw device, as
+computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU. Owner: a WebGPU scene that packs in Pixi
+(Predator with the WebGPU backend, or BunnyMark).
+**Since (2026-11-01):** E-177 kept on WebGL (R-0792), and E-191's keyed shadow passes and E-188's keyed decorations
+ride on its texture, so all three stay off on WebGPU until this one: the statics storage buffer scattered by a compute
+pass, then the shadow programs' WGSL forms reading it.
+
+### E-188 Keyed frames for the main queue's other rows, by pool slot
+
+**Premise:** rows without an entity go up every frame in a keyed frame, 64 bytes an update against the 36 a keyed row
+saves. A scene that draws its LiquidFun particles as sprites (liquidFunQueryStressScene: up to 16 000 such rows) loses
+with keyed frames, which pause there (E-177's loss rule); so does Predator zoomed in past 0.5, where its 20 000 grass
+decorations come into the main queue (a probe at zoom 1.6: 10 keyed frames, then split). Particles, decorations and LiquidFun particles have pool
+slots that hold an occupant for many frames.
+**Plan:** keys past the entities by type and pool slot (particle, decoration, LiquidFun ranges), and a change mark for
+each type (flags of its own, or the emit comparing the few statics a type has), so those rows send their poses only.
+Owner: liquidFunQueryStressScene's renderer; pre-render pays the marks.
+**Decorations kept 2026-11-01 (3c31583a, R-0810): renderer -38.2 % zoomed in.** A keyed scene keys its decorations by
+pool slot past the entities (keyedDecorationsFit: the texture holds them too); the emit marks one changed when the
+statics its row got differ from the ones its slot last emitted (a 32-byte record a slot) or the record is from an earlier
+epoch (a resync). Predator crowd 1.5 zoom 0.6, 4 pairs: renderer 4.075 -> 2.604 ms (-38.2 %, 0/4), pre-render -8.3 %:
+the keyed frames and E-191's keyed caster rows no longer pause there. Particles (their alpha fades every frame) and
+LiquidFun stay keyless: liquidFunQueryStressScene is the next owner if its rows come up.
+
+### E-189 Keyed frames: an animated sprite whose frame moved sends its texture alone
+
+**Premise:** most of a Predator frame's marks are frame advances (about 700 rows changed a frame, R-0781): each sends
+64 bytes for a 2-byte texture change, and the pack reads the row's eleven statics columns for it.
+**Plan:** count the marks by cause in Predator first. Then a texture-only update (key and texture, 8 bytes) into a
+per-key texture-id texture the indexed program reads, about 8 times fewer bytes for those rows. Owner: Predator's
+renderer.
+**Step 0 answered 2026-11-01 (R-0813):** in Predator at its defaults a frame marks 657 of its 13 477 sprites, and every
+one of them changed its texture alone (frames 600 to 1 200; in the first 600, 95 %, the rest spawns and a resync). The
+premise holds: the updates' 42 KB a frame would be 5 KB. Their share of the pack is the open question, since the pack
+gathers every sprite's pose and slot too (E-193); gpuPackKeyedMicrobench sets no marks (its 200 updates are its rows
+without a key), so it needs a case of marked rows before it can size this.
+
+### E-190 Pre-render's 2 % that the keyed frames' build costs where they are off
+
+**Premise:** wave12 with its keyed frames off against main: pre-render +2.1 % (4/4, cv 3/3 %, R-0793), so every scene
+that does not key its frames pays it. What differs there: the key column in the render queue (every column after it
+moved, by 477 KB in Predator's queue, which changes how the emit's column streams alias in 4 KB), keyedDirty in
+SpriteRenderer's block (the columns after it moved by 42 KB), and the emit's keyed branches.
+**Plan:** the plain emit kernel on both trees (preRenderEmitWasmMicrobench's wasm variant); if it ties, the layouts:
+the key column at the queue's end, then keyedDirty at the block's end. Owner: Predator's pre-render, or a stress scene
+whose pre-render is the emit.
+**Answered 2026-11-01 (R-0795): no cost to find.** The emit kernel ties main (1 966 -> 1 950 ops/s, -0.8 %), and
+painterMoveStressScene, whose pre-render is the emit of 300 000 rows, reads -0.9 % (2/4) against main: neither the
+emit's code nor the queue's layout costs there. Predator's +2 % is within its spread for pre-render.
+
+### E-191 Shadow casters keyed by entity
+
+**Premise:** step 0 (R-0799): in Predator the casters are 80 % of what the Pixi worker copies and uploads a frame:
+13 460 sun rows and 5 500 to 12 000 point-light stamps of GPU_CASTER_FLOATS (22 floats, 88 bytes), 1.6 to 2.1 MB,
+against 0.38 MB for the keyed entities. Each caster is a sprite of an entity whose statics E-177's keyed frames already
+keep in the entity batch's statics texture.
+**Plan:** a caster row of its pose, its key and its caster and light terms (48 bytes or less), the caster programs
+reading the sprite statics by key from that texture where the keyed frames are on; pre-render's caster pack writes the
+shorter row. First a knob for Predator's crowd (its renderer runs 2.9 ms, under the floor), then the kernel and
+Predator's renderer and pre-render.
+**Options, 2026-11-01 (from the code):** the shadow program reads 18 of a row's 22 floats (rotC/rotS, depth and the
+tint only appear in a line that keeps them from being compiled out; the shadow's angle is the sun's or the light's),
+and the sun rows' light vec4 is zero. The stamp rows are copies of sun rows (shadowStamp.c copy_row) with a light.
+(a) A slim row of the 18 floats read: -20 % of the casters' bytes (about 340 KB a frame), every caster user touched
+(both kernels, the layout, the batch's geometry, GLSL and WGSL, seven tests). (b) Keyed rows (pose, key, caster and
+light terms, about 10 floats): -55 %. (e) The sun pass draws the entity batch's own instances (its pose and slot
+streams, already uploaded) with a shadow program that reads the statics and the caster terms by key: the sun rows'
+1.2 MB a frame go, and so does pre-render's sun pack (29 ms/s); the stamp rows shrink to a pose, a key and a light.
+(b) and (e) need the shadow passes after the entity batch's upload (updateShadowSprites runs before
+updateSpritesFromRenderQueue today), a fallback where the keyed texture is not current (a resync, a pause: pre-render
+must know which rows to write), the caster terms by key, and the casters' cull region against the sprites' (a caster
+just off screen whose shadow falls on it). (e) first: the largest saving and no new row format for the sun.
+**Knob:** `?crowd=1.5` (c5003321) loads Predator's renderer to 4.0 ms, pre-render 6.3, physics 9.0, spatial 7.3,
+logic 4.7: every worker past the floor.
+**Step 1 kept 2026-11-01 (efce1f5e, ebb4693c; R-0800, R-0801): the sun pass over the keyed instances, renderer
+-4.4 %.** On a keyed frame the sun pass draws the entity batch's own instances (their pose and slot streams, a
+shadow stream of three floats a slot from the keyed pack, the statics by key), the sprites drawn before the shadows;
+otherwise pre-render's sun rows. Predator ?crowd=1.5, 8 pairs: renderer -4.4 % (6/8), pre-render -0.1 %. The first
+sitting read +0.0 %: its shadow stream fell outside the arena and went word by word (ebb4693c). Step 2: the stamps as
+rows of a pose, a key, the shadow terms and a light, and pre-render's sun pack skipped where Pixi says its keyed
+texture is current.
+**Step 2, the design (2026-11-01):** the prize is pre-render's sun pack (pack_casters_scatter reads 18 columns and
+writes 22 floats a caster: about 45 ms/s at crowd 1.5) and the stamps' append (E-160: what is left of the stamp).
+(1) Pixi writes, in the keyed header's next word, the queue frame of its last keyed upload with shadows. (2) Pre-render,
+when that frame is within two of the one it writes, packs keyed caster rows instead: the pose, the key as a slot pair
+(key, 0) and the shadow terms (7 floats, no statics read), and the stamps copy them with the light (11 floats; copy_row
+already takes any strides), and it sets a flag in the GPU queue's header. (3) Pixi, on a flagged frame, draws the sun
+over the entity batch's instances (step 1) or, when its upload went split, over the keyed sun rows, and the stamps over
+the keyed stamp rows, both with the shadow program reading the statics by key (a form whose aInstRotCS is a constant and
+whose light is an attribute for the stamps). A texture behind by a frame or two (a resync, a pause starting) draws
+shadows from the statics it holds; an empty one (the first frames) draws none. Without the word (a pause, a scene not
+keyed) pre-render writes the 22-float rows as now.
+**Step 2 kept 2026-11-01 (de71ce66, R-0808): keyed caster rows, pre-render -16.8 %.** Built as designed: Pixi's entity
+batch stores each keyed upload's queue frame in the LIVE word once Pixi has the keyed caster passes; pre-render, within
+two frames of it, packs 7-float keyed sun rows (pack_casters_keyed) and 11-float stamp rows, flagged
+GPU_FLAG_KEYED_CASTERS; Pixi draws the sun from the instances (step 1) or those rows, and the stamps from theirs, with
+the shadow program reading the statics by key (spriteIndexedVertex's casterRows form). Its first build never ran: the
+GPU pack's view of the main queue dropped the key column (a probe: 22 860 of 22 860 casters keyless). Predator
+?crowd=1.5, 4 pairs: pre-render 6.226 -> 5.207 ms (-16.8 %, 0/4), renderer +1.2 % (-4.4 % against the others); traces:
+pack_casters_scatter's 48.6 ms/s become pack_casters_keyed's 13.0, the stamp 135 -> 108 ms/s. Zoomed in, the keyed
+frames pause (E-188) and the full rows return. E-191 is done; what is left of the sun pack is E-192.
+
+### E-192 The keyed sun pack scans the queue itself
+
+**Premise:** after E-191 step 2, pre-render's keyed sun rows cost compactShadowCasterIndices (JavaScript, 8.6 ms/s at
+Predator crowd 1.5), the copy of its index list into the memory (packKeyedCastersWasm, 2.4) and pack_casters_keyed
+(13.0), which reads the queue rows that list names (R-0808's trace).
+**Plan:** one kernel scans the queue's shadow and type columns and writes a keyed row for each caster as it finds it
+(the compaction's test, then pack_casters_keyed's row), returning the count, or -1 at the first caster without an entity
+key; the full rows then take the compaction and pack_casters_scatter as now. Kernel against compaction plus
+pack_casters_keyed on the Predator fixture, then Predator ?crowd=1.5's pre-render. About 11 ms/s (3 % of pre-render
+there) at most.
+**Kept 2026-11-01 (acac4bb7, R-0809): pre-render -6.5 %.** pack_casters_keyed_scan writes the keyed rows as it finds the
+casters; the compaction and the full rows stay the fallback. Kernel (gpuPackCastersKeyedMicrobench) in Chrome 0.140 ->
+0.070 ms a frame (-53 %); Predator ?crowd=1.5, 4 pairs: pre-render 5.066 -> 4.718 ms (-6.5 %, 0/4), more than the
+kernel's saving: in the worker the JavaScript compaction cost twice the kernel's.
+
+### E-193 Pixi's keyed pack costs about ten times its kernel in the worker
+
+**Premise:** pack_sprites_keyed is the Pixi worker's largest function: 42 ms/s at Predator's defaults (R-0791's trace,
+13 400 sprites, about 0.7 ms a frame) and 91 to 118 ms/s at crowd 1.5 (R-0808's traces, about 23 000, 1.5 to 2 ms a
+frame). Its kernel packs 13 500 rows in 0.080 ms in Chrome with the painter's order random and 0.070 ms near the
+queue's order (gpuPackKeyedMicrobench through chromeKernel.mjs, 2026-11-01), 0.075 ms in Node: the worker pays about
+ten times the kernel. The likeliest cost is memory: the pack gathers each sprite's queue row in the painter's order, a
+random walk over columns pre-render wrote moments before on another core, where the kernel reads them from its own
+warm cache. W9c (R-0473) read the queue in its own order through an inverse of the painter's list, in the JavaScript
+pack at 13 400 rows, and lost 6.4 %; the pack is C now, and the rows have grown.
+**Plan:** step 0, where the time goes: the call timed in the worker against the kernel with its columns written by
+another worker first (a two-worker kernel), and the gather's order (random, near, queue order) in both. Then, as the
+step says: the queue read in its own order with an inverse made in C (W9c's order, without the JavaScript passes), a
+prefetch of the rows a few slots ahead, or the pose and slot streams written by pre-render, which holds those rows warm.
+Owner: Predator's renderer at crowd 1.5.
+
+### E-194 LiquidFun rows keyed by slot
+
+**Premise:** E-188 keyed the decorations; a LiquidFun particle drawn as a sprite is still a row without a key, which
+goes up whole every keyed frame (64 bytes). liquidFunQueryStressScene draws up to 16 000 of them, enough to make the
+keyed frames lose and pause (E-188's premise). Particles stay keyless on purpose: a particle's alpha fades every frame,
+so its statics change every frame.
+**Plan:** step 0: whether liquidFunQueryStressScene draws keyed at all (Pixi packs, WebGL) and how often its particles'
+statics change. Then keys past the decorations by LiquidFun particle index, the change marked as E-188 marks it (a
+record of the statics a slot last emitted), the texture sized for them where it fits. Owner: liquidFunQueryStressScene's
+renderer.
+
+### E-195 The shadow stamp's candidate test in float32x4, decided in Chrome
+
+**Premise:** the stamp is now pre-render's largest function at Predator crowd 1.5 (stamp_light_range 108 ms/s of a
+380 ms/s pre-render, R-0808's trace). The float32 pass over the shipped kernels (R-0571, 2026-10-24) measured its
+f32x4 form +7.3 % in Node (23/25, float only in the candidate test), and shadowStampF32.test.js holds its tolerance
+(a pair that differs is a tie within float rounding); the particle lists' and the sway's f32x4 forms shipped from that
+pass, the stamp's was never decided in Chrome.
+**Plan:** shadowStampWasmMicrobench's wasm against wasm-f32x4 in Chrome (chromeKernel.mjs), with E-191 step 2's keyed
+rows (7-float sun rows, 11-float stamp rows) as well as the full ones; into engine.wasm if faster, and Predator crowd
+1.5's pre-render not 3 % worse. Owner: the kernel, Predator's pre-render the guard.
 
 ---
 

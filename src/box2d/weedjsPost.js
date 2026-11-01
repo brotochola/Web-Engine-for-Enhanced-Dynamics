@@ -152,6 +152,7 @@
   let jointHandle = null; // Int32Array, -1 = none, -2 = fail this revision
   let jointSeenRev = null; // Uint32Array — last synced Joint.revision
   let jointDense = null; // Uint16Array — indices with live WASM handles
+  let jointDenseNext = null; // Uint16Array — syncJoints builds the next list here, then the two swap
   let jointDenseCount = 0;
   let jointLive = null; // Uint8Array scratch (dense-sized marks only)
   let maxJoints = 0;
@@ -258,6 +259,11 @@
   };
 
   let heapHighWaterKb = 0;
+  // HEAP_USED_KB is mallinfo, which walks every chunk of the heap under its lock: read every HEAP_READ_STEPS
+  // steps (about a second), the last figure kept in between (N-71). The memory panel is its only reader.
+  const HEAP_READ_STEPS = 60;
+  let heapUsedKb = 0;
+  let stepsUntilHeapRead = 0;
   let weedjsHeapBytesUsed = null;
   let weedjsMemoryPeakBytes = null;
   // 90 % of Box2D's memory, in KB (0 = unknown): past it, one warning to raise physics.wasmMemoryMB.
@@ -376,6 +382,7 @@
       jointHandle = null;
       jointSeenRev = null;
       jointDense = null;
+      jointDenseNext = null;
       jointDenseCount = 0;
       jointLive = null;
       maxJoints = 0;
@@ -418,6 +425,7 @@
     jointHandle.fill(-1);
     jointSeenRev = new Uint32Array(maxJoints);
     jointDense = new Uint16Array(maxJoints);
+    jointDenseNext = new Uint16Array(maxJoints);
     jointDenseCount = 0;
     jointLive = new Uint8Array(maxJoints);
   }
@@ -575,6 +583,18 @@
       outY[i] = y[i];
       outC[i] = rotC[i];
       outS[i] = rotS[i];
+    }
+    // N-86: the fast path checked the epoch once, before a loop that takes about a millisecond. A slot despawned and
+    // respawned inside it got its old body's pose over the invalidation (rotC and rotS 0): put that back for every
+    // slot whose body is not the one this worker last saw, as the slow path would have skipped it.
+    if (epochSame && (Atomics.load(poseGenEpoch, 0) | 0) !== epoch && bodyGeneration && seenBodyGeneration) {
+      for (let d = 0; d < n; d++) {
+        const i = list[d];
+        if ((seenBodyGeneration[i] | 0) === (Atomics.load(bodyGeneration, i) | 0)) continue;
+        outC[i] = 0;
+        outS[i] = 0;
+        skipped++;
+      }
     }
     if (poseGenEpoch && skipped === 0) seenPoseGenEpoch = epoch;
     poseFrame++;
@@ -1312,6 +1332,7 @@
 
   function syncJoints() {
     if (!jointViews || !jointHandle || !world) return 0;
+    // joint-sync-start
     const jv = jointViews;
     const activeCount = Atomics.load(jv.activeCount, 0) | 0;
     let changes = 0;
@@ -1341,10 +1362,12 @@
         changes++;
       }
       if (jointHandle[idx] >= 0) {
-        jointDense[nextDenseCount++] = idx;
+        jointDenseNext[nextDenseCount++] = idx;
       }
     }
 
+    // The joints live last step and gone from the active list now (Joint.remove): the last step's list, intact. Built
+    // in place, the new list overwrote the removed joint's entry with the one moved into its slot, and Box2D kept it.
     for (let i = 0; i < jointDenseCount; i++) {
       const idx = jointDense[i];
       if (!jointLive[idx] && jointHandle[idx] >= 0) {
@@ -1352,7 +1375,11 @@
         changes++;
       }
     }
+    const lastDense = jointDense;
+    jointDense = jointDenseNext;
+    jointDenseNext = lastDense;
     jointDenseCount = nextDenseCount;
+    // joint-sync-end
     return changes;
   }
 
@@ -1360,6 +1387,12 @@
 
   let bodyApplyForceCenterFn = null;
   let bodyApplyTorqueFn = null;
+  // W28: bodies_apply_accelerations, applyForcesAndTorque's loop in one call, and the byte offsets it reads
+  // (denseList and the RigidBody columns in Box2D's memory). null: the JS loop.
+  let applyAccelerationsFn = null;
+  const accelBytes = new Int32Array(8);
+  /** The heap block allocDenseList took (0: none), freed when it takes another. */
+  let denseListPtr = 0;
   let bodyApplyLinearImpulseFn = null;
   let bodyApplyLinearImpulseCenterFn = null;
   let bodyApplyAngularImpulseFn = null;
@@ -1868,6 +1901,87 @@
     } else {
       LiquidFunExtract.servicePendingLiquidFunExtract(extractFn);
     }
+  }
+
+  /**
+   * W28. The dense body list in Box2D's heap when the RigidBody columns are in Box2D's memory (the engine block,
+   * Phase 4), so bodies_apply_accelerations reads both; a JS array otherwise, and the JS loop.
+   */
+  /**
+   * Whether `buffer` is Box2D's memory. A SharedArrayBuffer posted to this worker is another object than
+   * Module's own even when it is the same memory, so: a byte of our own in Box2D's heap, two markers written
+   * through the heap, both read back through `buffer` at that offset.
+   */
+  function aliasesHeap(buffer, heap) {
+    if (!buffer || !heap) return false;
+    if (buffer === heap) return true;
+    if (buffer.byteLength !== heap.byteLength || typeof Module._malloc !== 'function') return false;
+    let ptr = 0;
+    try {
+      ptr = Module._malloc(1);
+      if (!ptr) return false;
+      const probe = new Uint8Array(buffer, ptr, 1);
+      const own = new Uint8Array(heap, ptr, 1);
+      own[0] = 0x5a;
+      const first = probe[0] === 0x5a;
+      own[0] = 0xa5;
+      return first && probe[0] === 0xa5;
+    } catch (_) {
+      return false;
+    } finally {
+      if (ptr) Module._free(ptr);
+    }
+  }
+
+  function allocDenseList(entityCount) {
+    applyAccelerationsFn = null;
+    if (denseListPtr && typeof Module !== 'undefined' && typeof Module._free === 'function') Module._free(denseListPtr);
+    denseListPtr = 0;
+    // The build exports HEAPF32 and HEAP32 on Module, not HEAPU8.
+    const heap = typeof Module !== 'undefined' && Module.HEAPF32 ? Module.HEAPF32.buffer : null;
+    const v = views;
+    const inHeap = (a) => !a || aliasesHeap(a.buffer, heap);
+    if (
+      !heap ||
+      !(entityCount > 0) ||
+      typeof Module._bodies_apply_accelerations !== 'function' ||
+      typeof Module._malloc !== 'function' ||
+      !v ||
+      !inHeap(v.ax) || !inHeap(v.ay) || !inHeap(v.angularAccel) || !inHeap(v.mass) ||
+      !inHeap(v.inertia) || !inHeap(v.rbStatic) || !inHeap(v.fixedRotation)
+    ) {
+      return new Uint16Array(entityCount);
+    }
+    let ptr = 0;
+    try {
+      ptr = Module._malloc(entityCount * 2);
+    } catch (_) {
+      ptr = 0;
+    }
+    if (!ptr) return new Uint16Array(entityCount);
+    denseListPtr = ptr;
+    const list = new Uint16Array(heap, ptr, entityCount);
+    list.fill(0);
+    accelBytes[0] = list.byteOffset;
+    accelBytes[1] = v.ax.byteOffset;
+    accelBytes[2] = v.ay.byteOffset;
+    accelBytes[3] = v.angularAccel.byteOffset;
+    accelBytes[4] = v.mass.byteOffset;
+    accelBytes[5] = v.inertia ? v.inertia.byteOffset : 0;
+    accelBytes[6] = v.rbStatic.byteOffset;
+    accelBytes[7] = v.fixedRotation ? v.fixedRotation.byteOffset : 0;
+    applyAccelerationsFn = Module._bodies_apply_accelerations;
+    return list;
+  }
+
+  /** W28: the force pass, one call into Box2D when the columns are there, else applyForcesAndTorque. */
+  function applyAccelerations() {
+    if (applyAccelerationsFn) {
+      const b = accelBytes;
+      applyAccelerationsFn(b[0], denseCount, b[1], b[2], b[3], b[4], b[5], b[6], b[7]);
+      return;
+    }
+    applyForcesAndTorque();
   }
 
   // angular-mass-start
@@ -2410,7 +2524,7 @@
     const steps = hostSteps > 1 ? hostSteps : 1;
     for (let k = 0; k < steps; k++) {
       if (k > 0) {
-        applyForcesAndTorque();
+        applyAccelerations();
         cullLiquidFunOutsideWorld();
       }
       if (radialGravityAccel !== 0) applyRadialGravity(dt);
@@ -2553,9 +2667,12 @@
       statsF32[PS.AWAKE_COUNT] = 0;
     }
     if (typeof weedjsHeapBytesUsed === 'function') {
-      const usedKbEarly = ((weedjsHeapBytesUsed() | 0) / 1024) | 0;
-      if (usedKbEarly > heapHighWaterKb) heapHighWaterKb = usedKbEarly;
-      statsF32[PS.HEAP_USED_KB] = usedKbEarly;
+      if (--stepsUntilHeapRead <= 0) {
+        stepsUntilHeapRead = HEAP_READ_STEPS;
+        heapUsedKb = ((weedjsHeapBytesUsed() | 0) / 1024) | 0;
+        if (heapUsedKb > heapHighWaterKb) heapHighWaterKb = heapUsedKb;
+      }
+      statsF32[PS.HEAP_USED_KB] = heapUsedKb;
       statsF32[PS.HEAP_HIGH_WATER_KB] = heapHighWaterKb;
     } else {
       statsF32[PS.HEAP_USED_KB] = 0;
@@ -2675,7 +2792,7 @@
       serviceLiquidFunQuery();
       serviceLiquidFunExtract();
       snapshotPrevPose(entityCount);
-      applyForcesAndTorque();
+      applyAccelerations();
       cullLiquidFunOutsideWorld();
       stepWorld(dt, solverSteps);
       maybePublishPose(entityCount);
@@ -2697,7 +2814,7 @@
     serviceLiquidFunQuery();
     serviceLiquidFunExtract();
     snapshotPrevPose(entityCount);
-    applyForcesAndTorque();
+    applyAccelerations();
     const t4 = performance.now();
     cullLiquidFunOutsideWorld();
     stepWorld(dt, solverSteps);
@@ -2881,6 +2998,8 @@
     memoryWarnKb = Module.HEAPF32 ? (Module.HEAPF32.buffer.byteLength / 1024) * 0.9 : 0;
     memoryWarned = false;
     heapHighWaterKb = 0;
+    heapUsedKb = 0;
+    stepsUntilHeapRead = 0;
     hostEntityCount = data.entityCount | 0;
     hostSubSteps = Math.max(1, data.subSteps | 0 || 4);
     if (data.commandSab) {
@@ -3034,7 +3153,7 @@
     hasBody = new Uint8Array(entityCount);
     multiShape = new Uint8Array(entityCount);
     createFailed = new Uint8Array(entityCount);
-    denseList = new Uint16Array(entityCount);
+    denseList = allocDenseList(entityCount);
     densePositions = new Int32Array(entityCount);
     densePositions.fill(-1);
     seenBodyGeneration = new Int32Array(entityCount);

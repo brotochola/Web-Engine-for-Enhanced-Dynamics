@@ -80,6 +80,22 @@ test('images, scripts, WASM and other requests go to the network untouched', asy
   assert.equal(fetched, 0);
 });
 
+test("a module worker's imports go to the network untouched; only the worker's own script is rewritten", async () => {
+  // Every module a worker imports has the worker's destination too, but mode 'cors'; its own script is 'same-origin'.
+  // Rewriting the imports (728 on a boot from source) made that boot 330-370 ms slower than real headers (DX-SW).
+  let fetched = 0;
+  const worker = startWorker(async () => {
+    fetched++;
+    return okResponse();
+  });
+  for (const destination of ['worker', 'sharedworker']) {
+    assert.equal(await dispatchFetch(worker, { mode: 'cors', destination, cache: 'default' }), null, destination);
+  }
+  assert.equal(fetched, 0);
+  const own = await dispatchFetch(worker, { mode: 'same-origin', destination: 'worker', cache: 'default' });
+  assert.equal(own.headers.get('cross-origin-embedder-policy'), 'require-corp');
+});
+
 test('opaque responses pass through untouched, and DevTools only-if-cached requests are skipped', async () => {
   const opaque = { status: 0, type: 'opaqueredirect' };
   const worker = startWorker(async () => opaque);

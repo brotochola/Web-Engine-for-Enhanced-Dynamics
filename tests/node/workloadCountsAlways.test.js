@@ -82,6 +82,11 @@ test('physics reads mallinfo, the awake count and the moved list once per stats 
   assert.equal(count('weedjsHeapBytesUsed()'), 1);
   assert.equal(count('_getAwakeBodyCount('), 1);
   assert.equal(count('getMovedBodiesViews()'), 1);
+  // N-71: and mallinfo only every HEAP_READ_STEPS writes, the last figure published in between.
+  const read = fn.indexOf('weedjsHeapBytesUsed()');
+  const cadence = fn.indexOf('if (--stepsUntilHeapRead <= 0) {');
+  assert.ok(cadence >= 0 && cadence < read && read < fn.indexOf('}', cadence));
+  assert.match(src, /const HEAP_READ_STEPS = \d+;/);
 });
 
 test('preRender writes VISIBLE_ENTITIES before the detailed-stats gate', () => {

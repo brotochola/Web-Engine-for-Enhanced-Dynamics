@@ -18,6 +18,9 @@
 // that are not classes when their value changed (other modules keep the old
 // binding).
 
+import { isEngineAccessor } from '../engineAccessors.js';
+import { ENGINE_INSTANCE_KEYS } from '../save/instanceFields.js';
+
 /** Statics the engine writes on registered classes; the running class keeps them. */
 const ENGINE_STATICS = new Set([
   'prototype',
@@ -34,12 +37,19 @@ const ENGINE_STATICS = new Set([
   '_componentClassMap',
   '_componentList',
   '_sharedHasComponents',
+  // E-164: the class's component slots. The probe that lists a new version's fields leaves 0 and [] on it (it is not
+  // registered), and a running class given those threw on its next first read of a component.
+  '_componentSlotCount',
+  '_componentSlotSpecs',
   'entityIndices',
   'componentId',
   'sharedBuffer',
   'clearValue',
   'scriptUrl',
 ]);
+
+/** Flags the engine writes on game classes' prototypes; the running class keeps them (`_hasComponents`: E-167). */
+const ENGINE_PROTO_KEYS = new Set(['constructor', '_componentAccessorsCreated', '_hasComponents', '_propertiesCreated']);
 
 /** Statics the engine builds buffers, pools or dispatch from: a change needs a reload. */
 const SHAPE_STATICS = [
@@ -151,7 +161,11 @@ function instanceFields(C) {
   if (typeof C.prototype?.bindToEntitySlot !== 'function') return null;
   try {
     // A page instance: it builds the fields, writes no shared memory, joins no pool.
-    return Object.keys(new C(0, {}, null, { page: true })).sort().join(',');
+    // No config and no worker: the realm keeps the ones its entities share (E-167). The engine's own fields are left
+    // out: how many component fields a probe declares depends on whether its class is registered (E-164b), and the
+    // new version never is.
+    const probe = new C(0, undefined, null, { page: true });
+    return Object.keys(probe).filter((key) => !ENGINE_INSTANCE_KEYS.has(key)).sort().join(',');
   } catch {
     return 'unbuildable';
   }
@@ -174,16 +188,22 @@ function exportChange(name, a, b) {
 
 /** Copy `fresh`'s code onto `old`, and make `fresh` an alias of `old`. */
 export function patchClass(old, fresh) {
-  // Methods and accessors. The engine's own prototype keys (component accessors) stay.
+  // Methods and accessors: the new version's code replaces the running class's, members named like a component
+  // included (registration leaves those in place). The engine's own keys stay: its flags, and the accessors it made
+  // (an entity's component getters, a component's field accessors), which the new version, never registered or
+  // initialized, lacks or has only from the probe that listed its fields (N-90).
   const op = old.prototype;
   const fp = fresh.prototype;
-  const engineProtoKeys = new Set(['constructor', '_componentAccessorsCreated', ...Object.keys(old._componentClassMap || {})]);
   for (const key of Reflect.ownKeys(fp)) {
-    if (key === 'constructor') continue;
-    Object.defineProperty(op, key, Object.getOwnPropertyDescriptor(fp, key));
+    if (ENGINE_PROTO_KEYS.has(key)) continue;
+    const descriptor = Object.getOwnPropertyDescriptor(fp, key);
+    if (isEngineAccessor(descriptor)) continue;
+    Object.defineProperty(op, key, descriptor);
   }
   for (const key of Reflect.ownKeys(op)) {
-    if (!engineProtoKeys.has(key) && !hasOwn(fp, key)) delete op[key];
+    if (ENGINE_PROTO_KEYS.has(key) || hasOwn(fp, key)) continue;
+    if (isEngineAccessor(Object.getOwnPropertyDescriptor(op, key))) continue;
+    delete op[key];
   }
 
   // The class's own statics (methods, values), except what the engine owns or built from.

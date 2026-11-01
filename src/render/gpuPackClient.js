@@ -5,7 +5,7 @@
 // copied into the memory's index scratch first. Anything else returns -1 and the caller packs in JS.
 
 import { loadWasmKernel } from '../util/wasmKernel.js';
-import { GPU_CASTER_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
+import { GPU_CASTER_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_SPRITE_FLOATS } from './gpuQueueLayout.js';
 import { engineWasmUrl } from '../wasm/engine.js';
 
 
@@ -33,6 +33,7 @@ export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', engineWasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
+    'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
   ]);
   return {
     buffer: memory.buffer,
@@ -42,6 +43,14 @@ export async function bindGpuPack(memory, layout) {
     castersScatter: k.pack_casters_scatter,
     spritesSplit: k.pack_sprites_split,
     spritesSplitScatter: k.pack_sprites_split_scatter,
+    // E-162: the pose and the statics' row in draw order, the statics in the queue's row order.
+    spritesIndexedScatter: k.pack_sprites_indexed_scatter,
+    // E-177: the pose and the statics' key in draw order, the statics that changed as updates of a table by key.
+    spritesKeyed: k.pack_sprites_keyed,
+    // E-191: keyed caster rows (a pose, a key, the shadow terms) of a list of queue rows.
+    castersKeyed: k.pack_casters_keyed,
+    // E-192: the same rows for the casters it finds in the queue itself.
+    castersKeyedScan: k.pack_casters_keyed_scan,
     // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
@@ -208,6 +217,131 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
   }
   ctx.particleCount = b.u32[b.particlesByte >> 2];
   return out;
+}
+
+/**
+ * E-162: a painter-sorted frame's indexed streams through the kernel: each drawn row's pose (GPU_POSE_FLOATS) and its
+ * slot pair (GPU_INDEXED_SLOT_FLOATS: its row, as a float, and the slot's depth, as the split pack writes it) at its
+ * draw slot, and, unless `stat` is null, every queue row's statics at its row (GPU_INDEXED_STATIC_FLOATS a row, the
+ * depth term 0). Only for an index list over most of the queue, as packSplitRowsWasm's scatter takes it, and a queue
+ * whose rows `stat` holds.
+ * @returns {number} the rows written, or -1 when this call is not one the kernel packs (the caller packs it split)
+ */
+export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity) {
+  if (!b || !q || !pose || !slots || !ctx || !b.spritesIndexedScatter) return -1;
+  const o = ctx.o || ctx;
+  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  if (pose.buffer !== b.buffer || slots.buffer !== b.buffer || (stat !== null && stat.buffer !== b.buffer)) return -1;
+  const typeArr = ctx.typeArr;
+  if (typeArr && typeArr.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const count = ctx.scanCount | 0;
+  const indexByte = indexByteFor(b, ctx, count, capacity);
+  const n = q.count | 0;
+  if (indexByte <= 0 || !b.inverseByte || count < SCATTER_MIN_ROWS || count * 2 < n || n > b.indexCap) return -1;
+  if (stat !== null && stat.length < n * GPU_INDEXED_STATIC_FLOATS) return -1;
+  const depthDenom = ctx.depthDenom || 1;
+  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
+  const out = b.spritesIndexedScatter(table, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+    slots.byteOffset, stat !== null ? stat.byteOffset : 0, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+    b.inverseByte, n);
+  if (out < 0) return -1;
+  ctx.particleCount = b.u32[b.particlesByte >> 2];
+  return out;
+}
+
+/** E-177: the words of an update (gpuPack.c KEYED_ROW_WORDS): the statics, then the key. */
+export const GPU_KEYED_ROW_WORDS = 16;
+/** E-177: the word of an update that holds its key. */
+export const GPU_KEYED_KEY_WORD = 12;
+/** E-177: the bit of a sprite row's key that says its statics changed since the emit before (preRenderEmit.c KEY_CHANGED). */
+export const GPU_KEYED_CHANGED = 0x80000000;
+
+/**
+ * E-177: a split frame whose statics stay with their key, through the kernel. Each drawn row's pose (GPU_POSE_FLOATS)
+ * and slot pair (GPU_INDEXED_SLOT_FLOATS: its key's row of the statics texture, as a float, and the slot's depth, as the
+ * split pack writes it) at its draw slot. A sprite row's key is its entity, with GPU_KEYED_CHANGED set when the emit found
+ * its statics changed since the emit before; a row without one, or with one at or past `keyed.keyBase`, takes keyBase
+ * plus its slot. The changed rows and the rows without a key list their statics as updates at `keyed.updatesByte` (room
+ * for capacity updates of GPU_KEYED_ROW_WORDS: the statics, then the key at GPU_KEYED_KEY_WORD); the update count goes
+ * to `keyed.updates`. The queue's `key` column must be in the memory too. E-191: with `keyed.shadowByte` (0 for none) and
+ * the queue's shadow columns in the memory, each slot's shadow terms (shadowH, offX, offY; zeros for a glow row) go there
+ * too, and `keyed.shadowed` says whether they did.
+ * @returns {number} the rows written, or -1 when this call is not one the kernel packs
+ */
+export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
+  if (!b || !q || !pose || !slots || !ctx || !keyed || !b.spritesKeyed) return -1;
+  const o = ctx.o || ctx;
+  if (ctx.useScreen || o.pixelSnap || ctx.filterTypes) return -1;
+  const key = q.key;
+  if (!key || key.buffer !== b.buffer || pose.buffer !== b.buffer || slots.buffer !== b.buffer) return -1;
+  const typeArr = ctx.typeArr;
+  if (typeArr && typeArr.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const count = ctx.scanCount | 0;
+  const indexByte = indexByteFor(b, ctx, count, capacity);
+  if (indexByte < 0) return -1;
+  const depthDenom = ctx.depthDenom || 1;
+  const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
+  // E-191: the slots' shadow terms too where the caller asks for them (a byte, 0 for none) and the queue has them.
+  const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
+  const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+    shadowByte);
+  keyed.shadowed = shadowByte > 0;
+  const r = b.particlesByte >> 2;
+  ctx.particleCount = b.u32[r];
+  keyed.updates = b.u32[r + 1];
+  return out;
+}
+
+/**
+ * E-191: keyed caster rows (GPU_KEYED_CASTER_FLOATS: x, y, the key as a float and a zero, shadowH, offX, offY) for the
+ * queue rows listed in `indices` (the first `count`, at most `capacity`), into `dst`; the queue's key and shadow columns
+ * must be in the memory. -1 when the call is not one the kernel takes, or when a listed row has no key below
+ * `keyBase` (its statics are not in the keyed texture): the caller packs the full rows.
+ * @returns {number} the rows written, or -1
+ */
+export function packKeyedCastersWasm(b, q, indices, count, dst, keyBase, capacity) {
+  if (!b || !b.castersKeyed || !q || !dst || !indices) return -1;
+  const key = q.key;
+  if (!key || key.buffer !== b.buffer || dst.buffer !== b.buffer || !q.shadowH || q.shadowH.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const n = Math.min(count | 0, capacity | 0, indices.length);
+  if (n <= 0) return 0;
+  let indexByte;
+  if (indices.buffer === b.buffer) {
+    indexByte = indices.byteOffset;
+  } else {
+    if (n > b.indexCap) return -1;
+    b.u32.set(indices.subarray(0, n), b.indexByte >> 2);
+    indexByte = b.indexByte;
+  }
+  const out = b.castersKeyed(table, key.byteOffset, indexByte, n, n, dst.byteOffset, keyBase >>> 0);
+  return out === 0xffffffff ? -1 : out;
+}
+
+/**
+ * E-192: packKeyedCastersWasm's rows for the casters of the queue's first `count` rows (shadowH above 0, not a glow: the
+ * test of compactShadowCasterIndices, in the queue's order), at most `capacity`, without a list of them. -1 when the call
+ * is not one the kernel takes or a caster has no key below `keyBase`: the caller lists the casters and packs the full
+ * rows.
+ * @returns {number} the rows written, or -1
+ */
+export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity) {
+  if (!b || !b.castersKeyedScan || !q || !dst) return -1;
+  const key = q.key;
+  if (!key || key.buffer !== b.buffer || dst.buffer !== b.buffer || !q.shadowH || q.shadowH.buffer !== b.buffer) return -1;
+  const type = q.type;
+  if (type && type.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const out = b.castersKeyedScan(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
+    dst.byteOffset, keyBase >>> 0);
+  return out === 0xffffffff ? -1 : out;
 }
 
 /**

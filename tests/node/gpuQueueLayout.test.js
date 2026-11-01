@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { GPU_SPRITE_FLOATS, GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT, GPU_QUEUE_VERSION, GPU_HDR_SPRITE, GPU_HDR_VERSION, gpuQueueCaps, computeGpuQueueBufferSize, createGpuQueueViews, writeGpuQueueHeader, makePackContext, fillQueueIndices } from '../../src/render/gpuQueueLayout.js';
+import {
+  GPU_SPRITE_FLOATS, GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT, GPU_QUEUE_VERSION, GPU_HDR_SPRITE, GPU_HDR_VERSION, GPU_HDR_FLAGS,
+  GPU_HDR_STATIC_GEN, GPU_HDR_INDEXED_ROWS, GPU_HDR_SLOTS_GEN, GPU_HEADER_INTS, GPU_FLAG_INDEXED, GPU_POSE_FLOATS, GPU_INDEXED_SLOT_FLOATS,
+  GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW, gpuQueueCaps, gpuSpriteRegionFloats, computeGpuQueueBufferSize, createGpuQueueViews,
+  writeGpuQueueHeader, clearGpuQueueHeader, makePackContext, fillQueueIndices,
+} from '../../src/render/gpuQueueLayout.js';
+import {
+  INDEXED_SPRITES_MAX_WEBGL, INDEXED_SPRITES_MAX_WEBGPU, indexedSpritesEnabled,
+} from '../../src/render/rendererBackend.js';
 import {
   writeGpuSpriteRow,
   gatherInstancedRows,
@@ -221,4 +229,63 @@ test('rewritePackedDepth writes painter-order clip Z', () => {
   rewritePackedDepth(dst, 2, 3);
   assert.ok(Math.abs(dst[8] - (1 - 1 / 3)) < 1e-6);
   assert.ok(Math.abs(dst[GPU_SPRITE_FLOATS + 8] - (1 - 2 / 3)) < 1e-6);
+});
+
+test('E-162: caps.indexedSprites makes room for an indexed frame in the sprite region; without it the layout is as it was', () => {
+  const lighting = { enabled: true };
+  for (const n of [1, 1000, 1024, 5000, 300000]) {
+    const plain = gpuQueueCaps(n, lighting);
+    const caps = gpuQueueCaps(n, lighting, true);
+    assert.equal(plain.indexedSprites, false);
+    assert.equal(caps.indexedSprites, true);
+    assert.equal(gpuSpriteRegionFloats(n, false), n * GPU_SPRITE_FLOATS);
+    const pv = createGpuQueueViews(new ArrayBuffer(computeGpuQueueBufferSize(plain)), plain);
+    assert.equal(pv.spriteSlots.length, 0);
+    assert.equal(pv.spriteRowStatics.length, 0);
+    assert.equal(pv.glow.byteOffset, pv.spritePose.byteOffset + n * GPU_SPRITE_FLOATS * 4, 'the glow region where it was');
+    const v = createGpuQueueViews(new ArrayBuffer(computeGpuQueueBufferSize(caps)), caps);
+    const regionEnd = v.spritePose.byteOffset + gpuSpriteRegionFloats(n, true) * 4;
+    // The poses, the slot pairs right after them, then the statics in whole texture rows, every queue row's.
+    assert.equal(v.spriteSlots.byteOffset, v.spritePose.byteOffset + n * GPU_POSE_FLOATS * 4);
+    assert.equal(v.spriteSlots.length, n * GPU_INDEXED_SLOT_FLOATS);
+    assert.equal(v.spriteRowStatics.byteOffset, v.spriteSlots.byteOffset + v.spriteSlots.byteLength);
+    assert.equal(v.spriteRowStatics.length % (GPU_INDEXED_TEX_ROW * GPU_INDEXED_STATIC_FLOATS), 0);
+    assert.ok(v.spriteRowStatics.length >= n * GPU_INDEXED_STATIC_FLOATS);
+    assert.equal(v.spriteRowStaticsU32.byteOffset, v.spriteRowStatics.byteOffset);
+    assert.ok(v.spriteRowStatics.byteOffset + v.spriteRowStatics.byteLength <= regionEnd);
+    // The 15-float rows and the split streams still fit, and the glow region follows the larger region.
+    assert.ok(v.sprites.byteOffset + v.sprites.byteLength <= regionEnd);
+    assert.ok(v.spriteStatic.byteOffset + v.spriteStatic.byteLength <= regionEnd);
+    assert.equal(v.glow.byteOffset, regionEnd);
+    assert.equal(v.byteLength, computeGpuQueueBufferSize(caps));
+  }
+});
+
+test('E-162: the header carries an indexed frame\'s rows and slot pairs\' generation, and a cleared header none', () => {
+  const caps = gpuQueueCaps(8, null, true);
+  const views = createGpuQueueViews(new ArrayBuffer(computeGpuQueueBufferSize(caps)), caps);
+  writeGpuQueueHeader(views.header, { sprite: 5, staticGen: 7, indexedRows: 8, slotsGen: 0x80000003 | 0 }, GPU_FLAG_INDEXED);
+  assert.equal(views.header[GPU_HDR_INDEXED_ROWS], 8);
+  assert.equal(views.header[GPU_HDR_SLOTS_GEN] >>> 0, 0x80000003);
+  assert.equal(views.header[GPU_HDR_FLAGS], GPU_FLAG_INDEXED);
+  assert.equal(views.header[GPU_HDR_STATIC_GEN], 7);
+  clearGpuQueueHeader(views.header);
+  assert.equal(views.header[GPU_HDR_INDEXED_ROWS], 0);
+  assert.equal(views.header[GPU_HDR_SLOTS_GEN], 0);
+  assert.ok(GPU_HDR_INDEXED_ROWS < GPU_HEADER_INTS && GPU_HDR_SLOTS_GEN < GPU_HEADER_INTS);
+});
+
+test('E-162: indexed frames unless turned off, for a queue every GPU of the backend holds', () => {
+  assert.equal(indexedSpritesEnabled({ indexedSprites: true, backend: 'webgl' }, 300000), true);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgpu' }, 300000), true, 'on by default');
+  assert.equal(indexedSpritesEnabled({}, 300000), true);
+  assert.equal(indexedSpritesEnabled({ indexedSprites: false, backend: 'webgl' }, 300000), false, 'off when asked');
+  assert.equal(indexedSpritesEnabled(undefined, 300000), false);
+  // WebGPU's default storage binding holds 2 796 202 statics rows; WebGL's texture 4 096 rows of 1 024.
+  assert.equal(INDEXED_SPRITES_MAX_WEBGPU * GPU_INDEXED_STATIC_FLOATS * 4 <= 134217728, true);
+  assert.equal(INDEXED_SPRITES_MAX_WEBGL, 4096 * GPU_INDEXED_TEX_ROW);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgpu' }, INDEXED_SPRITES_MAX_WEBGPU), true);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgpu' }, INDEXED_SPRITES_MAX_WEBGPU + 1), false);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgl' }, INDEXED_SPRITES_MAX_WEBGPU + 1), true);
+  assert.equal(indexedSpritesEnabled({ backend: 'webgl' }, INDEXED_SPRITES_MAX_WEBGL + 1), false);
 });

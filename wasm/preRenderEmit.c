@@ -21,6 +21,7 @@
    walk (E-116), persist_remember is _rememberType0Set; the rows a queue buffer last held are the P_
    columns, the slots of that buffer. */
 #include <stdint.h>
+#include <wasm_simd128.h>
 
 #define INLINE static inline __attribute__((always_inline))
 #define INVALID_TEXTURE 0xffffu
@@ -68,8 +69,26 @@ enum {
      E_PARAMS[3] is the pose alpha). Their default texture is PC_WHITE_TEX. */
   LF_X, LF_Y, LF_SCALE_X, LF_SCALE_Y, LF_ALPHA, LF_BASE_ALPHA, LF_ROT_C, LF_ROT_S, LF_TINT, LF_TEXTURE,
   LF_PREV_X, LF_PREV_Y, LF_PREV_COUNT,
+  /* E-177: the queue's key column (0: a queue without one, or one whose frames are not keyed): a sprite row's entity,
+     KEY_CHANGED or-ed in when its statics changed since the emit before; KEY_NONE for every other row. */
+  Q_KEY,
+  /* E-177: SpriteRenderer.keyedDirty (set by whatever changes a sprite's statics; the emit clears it as it flags them). */
+  S_KEYED_DIRTY,
+  /* E-188: the keyed decorations' records (DECO_KEYED_WORDS u32 a decoration slot: the statics it last emitted, then the
+     epoch it emitted them in; 0: decoration rows keyless), the key of decoration slot 0 (a value: the scene's entities)
+     and the records' epoch (a value, from 1: pre-render moves it when Pixi asks for every statics again, which makes
+     every record stale). */
+  D_KEYED, D_KEY_BASE, D_KEY_EPOCH,
   SLOT_COUNT
 };
+
+/* E-177: the key of a row whose statics have no entity to stay with (rewritten every frame), and the bit of a sprite's key
+   whose statics changed since the emit before (entities stay under 2^31 - 1, so a sprite's key never reads KEY_NONE). */
+#define KEY_NONE 0xffffffffu
+#define KEY_CHANGED 0x80000000u
+/* E-188: a keyed decoration's record: scaleX, scaleY, alpha, tint, texture, anchorX, anchorY as the row got them, and the
+   epoch of that emit. */
+#define DECO_KEYED_WORDS 8u
 
 /* emitSpriteQueue's loop-invariant switches. */
 #define F_SORT_KEY 1u    /* rqSortKey && source.hasOrder */
@@ -242,6 +261,10 @@ typedef struct {
   uint8_t *qTileMode;
   uint16_t *qTileOffU, *qTileOffV;
   float *qTileMulX, *qTileMulY, *qShadowH, *qShadowOffX, *qShadowOffY;
+  uint32_t *qKey;
+  uint8_t *sKeyedDirty;
+  uint32_t *dKeyed;
+  uint32_t dKeyBase, dKeyEpoch;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
   const float *aaTime;
@@ -353,6 +376,11 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->qShadowH = PTR(float, Q_SHADOW_H);
   e->qShadowOffX = PTR(float, Q_SHADOW_OFF_X);
   e->qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
+  e->qKey = PTR(uint32_t, Q_KEY);
+  e->sKeyedDirty = PTR(uint8_t, S_KEYED_DIRTY);
+  e->dKeyed = PTR(uint32_t, D_KEYED);
+  e->dKeyBase = t[D_KEY_BASE];
+  e->dKeyEpoch = t[D_KEY_EPOCH];
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
   e->aaAsset = PTR(const uint16_t, AA_ASSET);
@@ -478,6 +506,16 @@ INLINE double order_key(const Emit *e, uint32_t i, int32_t idx) {
 /* emitSpriteQueue's sprite branch: collector row i at queue row out. */
 INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   const int32_t idx = e->cIndex[i];
+  /* E-177: whether this sprite's statics changed since the emit before: its keyed flag, taken (an atomic exchange, a full
+     barrier) before its columns are read, so a change after this sets it again for the next frame; the clock below
+     moving its frame; or its texture not the last one this emit wrote for it (frame tables rewritten, an animation or a
+     sheet written without a setter), read before the clock writes it. */
+  uint32_t changed = 0;
+  if (e->sKeyedDirty && e->sKeyedDirty[idx]) {
+    __atomic_exchange_n(&e->sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
+    changed = 1;
+  }
+  const uint32_t lastTex = e->qKey && e->aLastTex ? e->aLastTex[idx] : 0;
   if (e->sortKey) e->qSortKey[out] = (float)order_key(e, i, idx);
   const float x = e->stX[i];
   const float y = e->stY[i];
@@ -533,7 +571,10 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   if (g >= 0) {
     const int known = (uint32_t)g < e->nAnims;
     const int32_t fc = known ? e->frameCount[g] : 1;
-    if ((int32_t)e->aFrame[idx] >= fc) e->aFrame[idx] = 0;
+    if ((int32_t)e->aFrame[idx] >= fc) {
+      e->aFrame[idx] = 0;
+      changed = 1;
+    }
     if (e->sAnimated[idx] && fc > 1) {
       const float acc = (float)((double)e->aAccum[idx] + e->deltaSeconds);
       e->aAccum[idx] = acc;
@@ -548,6 +589,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
           e->nEnds++;
         } else {
           e->aFrame[idx] = (uint16_t)((cur + 1) % fc);
+          changed = 1;
           if (e->bounds) {
             /* Bounds may change (variable frame sizes). */
             const int32_t texId = (known ? e->frameStart[g] : 0) + (int32_t)e->aFrame[idx];
@@ -582,6 +624,12 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
     }
   }
   e->qTexture[out] = (uint16_t)tex;
+  /* A repeating sprite is always flagged: its local tile multiplier follows the frame size the clock changes for the
+     next frame. */
+  if (e->qKey) {
+    const uint32_t moved = e->aLastTex != 0 && lastTex != (tex & 0xffffu);
+    e->qKey[out] = (uint32_t)idx | ((changed | moved | (rx != 0) | (ry != 0)) << 31);
+  }
 }
 
 /* What emitSpriteQueue writes first on a row that is no sprite and casts no shadow (a decoration, a bullet, a
@@ -592,6 +640,30 @@ INLINE void plain_head(const Emit *e, uint32_t i, uint32_t out) {
   if (e->qShadowH) e->qShadowH[out] = 0.0f;
   if (e->qShadowOffX) e->qShadowOffX[out] = 0.0f;
   if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
+}
+
+/* E-188: a decoration row's key: its pool slot past the entities, with KEY_CHANGED when the statics the row got differ
+   from the ones the slot last emitted, or those are from an earlier epoch (a resync, or never emitted: the records start
+   at zero and the epochs at 1); the record then takes this row's. */
+INLINE uint32_t deco_key(const Emit *e, int32_t idx, uint32_t out) {
+  union { float f; uint32_t u; } sx = {e->qScaleX[out]}, sy = {e->qScaleY[out]}, al = {e->qAlpha[out]},
+                                 ax = {e->qAnchorX[out]}, ay = {e->qAnchorY[out]};
+  uint32_t *r = e->dKeyed + (uint32_t)idx * DECO_KEYED_WORDS;
+  const uint32_t tint = e->qTint[out];
+  const uint32_t tex = e->qTexture[out];
+  const uint32_t changed = (r[0] != sx.u) | (r[1] != sy.u) | (r[2] != al.u) | (r[3] != tint) | (r[4] != tex)
+                           | (r[5] != ax.u) | (r[6] != ay.u) | (r[7] != e->dKeyEpoch);
+  if (changed) {
+    r[0] = sx.u;
+    r[1] = sy.u;
+    r[2] = al.u;
+    r[3] = tint;
+    r[4] = tex;
+    r[5] = ax.u;
+    r[6] = ay.u;
+    r[7] = e->dKeyEpoch;
+  }
+  return (e->dKeyBase + (uint32_t)idx) | (changed << 31);
 }
 
 /* emitSpriteQueue's decoration branch: collector row i at queue row out. */
@@ -623,10 +695,12 @@ INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = e->dAnchorX[idx];
   e->qAnchorY[out] = e->dAnchorY[idx];
   if (e->qType) e->qType[out] = 2;
+  if (e->qKey) e->qKey[out] = e->dKeyed ? deco_key(e, idx, out) : KEY_NONE;
 }
 
 /* A bullet or trail row that draws nothing, parked off screen; its other columns keep what they held. */
 INLINE void hide_row(const Emit *e, uint32_t out) {
+  if (e->qKey) e->qKey[out] = KEY_NONE;
   e->qAlpha[out] = 0.0f;
   e->qScaleX[out] = 0.0f;
   e->qScaleY[out] = 0.0f;
@@ -664,6 +738,7 @@ INLINE void bullet_row(Emit *e, uint32_t i, uint32_t out) {
     e->qAnchorY[out] = e->bAnchorY[idx];
   }
   if (e->qType) e->qType[out] = 4;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* W4d. emitSpriteQueue's trail branch (type 5): the line from the bullet's start to where it is, in double as the
@@ -705,6 +780,7 @@ INLINE void trail_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 5;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* emitSpriteQueue's glow branch (type 3): collector row i, light entity cIndex[i], at queue row out. Its sort key
@@ -736,6 +812,7 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 3;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* emitSpriteQueue's particle branch (type 1): collector row i, particle slot cIndex[i], at queue row out. A
@@ -784,6 +861,7 @@ INLINE void particle_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 1;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* emitSpriteQueue's LiquidFun branch (type 7, queued as type 1): collector row i, LiquidFun particle cIndex[i], at
@@ -822,6 +900,7 @@ INLINE void lf_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 1;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* _resolveAdobeFrameIndex for an asset in the tables: the clip's frame at this time, or -1 when the root
@@ -922,6 +1001,7 @@ INLINE uint32_t adobe_root(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double
     e->qAnchorX[w] = pieceAnchorX[p];
     e->qAnchorY[w] = pieceAnchorY[p];
     if (e->qType) e->qType[w] = 6;
+    if (e->qKey) e->qKey[w] = KEY_NONE;
     if (e->tilesDirty) clear_tiles(e, w);
     if (e->qSortKey) e->qSortKey[w] = sk;
     if (e->qShadowH) {
@@ -1120,7 +1200,7 @@ INLINE int32_t global_anim(const int32_t *proxy, uint32_t nSheets, uint32_t shee
    the frame ends as the two JS passes leave it. The clocks, which that full emit would advance a second
    time, wait until every row has passed: the animated sprites' rows are listed in R_FOREIGN (unused on a
    persist frame) and advanced in row order after it (_advancePersistFrame, which advances on
-   !(clock < duration), where the full emit advances on clock >= duration).
+   clock >= duration, as the full emit does: a NaN speed or clock advances on neither, N-65).
    Returns PERSIST_MISS or the rows of other types; R_COUNTS gets [play-once ends ([entity, state] pairs in
    R_ENDS), sprites whose frame moved, repairs]. */
 __attribute__((export_name("persist_frame")))
@@ -1148,6 +1228,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   const uint8_t *sLoop = PTR(const uint8_t, S_LOOP);
   const int16_t *sZ = PTR(const int16_t, S_Z);
   const uint8_t *sDirty = PTR(const uint8_t, S_DIRTY);
+  uint8_t *sKeyedDirty = PTR(uint8_t, S_KEYED_DIRTY);
   const uint8_t *scActive = PTR(const uint8_t, SC_ACTIVE);
   const float *scH = PTR(const float, SC_H);
   const float *scOx = PTR(const float, SC_OFF_X);
@@ -1186,6 +1267,10 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   const int shadows = qShadowH != 0 && (flags & F_NO_CASTERS) == 0;
   /* E-98d: the collect wrote the poses into this queue's columns. */
   const int inQueue = stX == qX;
+  /* E-177: with keyed frames, a repaired or advanced texture flags its sprite (the walk may miss after a repair, and the
+     full emit then flags it), and a hit rewrites the sprites' keys below. */
+  uint32_t *qKey = PTR(uint32_t, Q_KEY);
+  const int keyed = qKey != 0 && sKeyedDirty != 0;
   /* Rows past the buffer pass the check (the JS reads undefined on both sides of each comparison there)
      and count as other types (their type reads undefined). */
   const uint32_t n = count < maxItems ? count : maxItems;
@@ -1212,6 +1297,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       const uint32_t tex = (uint32_t)(frameStart[g] + (int32_t)frame);
       qTexture[i] = (uint16_t)tex;
       if (aLastTex) aLastTex[idx] = (uint16_t)tex;
+      if (keyed) sKeyedDirty[idx] = 1;
       pFrame[i] = (uint16_t)frame;
       repaired++;
     }
@@ -1258,7 +1344,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
     const float acc = (float)((double)aAccum[idx] + deltaSeconds);
     aAccum[idx] = acc;
     const double duration = 1.0 / ((double)sSpeed[idx] * 60.0);
-    if ((double)acc < duration) continue;
+    if (!((double)acc >= duration)) continue; /* the full emit's test: a NaN clock never advances (N-65) */
     aAccum[idx] = (float)((double)acc - duration);
     const int32_t cur = aFrame[idx];
     if (sLoop[idx] != 1 && cur >= fc - 1) {
@@ -1272,6 +1358,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
     const uint32_t frame = aFrame[idx];
     const int32_t tex = frameStart[g] + (int32_t)frame;
     qTexture[i] = (uint16_t)tex;
+    if (keyed) sKeyedDirty[idx] = 1;
     if (aLastTex) aLastTex[idx] = (uint16_t)tex;
     /* This buffer now shows the new frame: its next check needs no repair (E-98g). */
     pFrame[i] = (uint16_t)frame;
@@ -1288,6 +1375,23 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       sHalfH[idx] = (float)((h * ay) * 0.5);
     }
     moved++;
+  }
+  /* E-177: a hit, so the sprites' rows stand as this buffer last held them, keys too: rewritten, a sprite flagged since
+     (a repair, an advance, a statics change) marked changed, and a repeating one too (as the full emit marks it: its
+     row's tile multiplier is the one this buffer last got, which may be older than the other buffer's). */
+  if (keyed) {
+    const uint16_t *qRepeatX = PTR(const uint16_t, Q_REPEAT_X);
+    const uint16_t *qRepeatY = PTR(const uint16_t, Q_REPEAT_Y);
+    for (uint32_t i = 0; i < n; i++) {
+      if (cType[i] != 0) continue;
+      const int32_t idx = cIndex[i];
+      uint32_t c = (qRepeatX && qRepeatX[i] != 0) | (qRepeatY && qRepeatY[i] != 0);
+      if (sKeyedDirty[idx]) {
+        __atomic_exchange_n(&sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
+        c = 1;
+      }
+      qKey[i] = (uint32_t)idx | (c << 31);
+    }
   }
   counts[0] = nEnds;
   counts[1] = moved;

@@ -88,6 +88,7 @@ import { PoolSlotArray } from '../util/poolSlotWidth.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
 import { createConsoleForward } from '../util/consoleForward.js';
+import { GpuParticles } from '../core/gpuParticles.js';
 
 /**
  * The editor's console (VISUAL_EDITOR_PLAN.md ED-18): this worker's console calls also go to the page while the
@@ -380,6 +381,8 @@ export class AbstractWorker {
     const frameStart = performance.now();
     // Absolute ms. performance.now() alone is not comparable with other workers.
     const frameStartAbs = performance.timeOrigin + frameStart;
+    // This frame's clock reads take its start (E-174): the sim clock moves by frames, and asking the wall clock is slow.
+    Time._noteFrameWall(frameStartAbs);
     this.idleTimeThisFrame = this._lastFrameEndAt > 0 ? Math.max(0, frameStart - this._lastFrameEndAt) : 0;
 
     this.frameNumber++;
@@ -591,6 +594,8 @@ export class AbstractWorker {
       data.buffers?.entityTypeHasForcedLogicWorker,
       data.buffers?.entityTypeForcedLogicWorkerCount,
       data.gridMetadata?.neighborByte | 0,
+      data.buffers?.neighborReaders,
+      data.buffers?.typeListVersions,
     );
 
     // Initialize ParticleComponent arrays (separate particle pool system)
@@ -837,6 +842,8 @@ export class AbstractWorker {
     if (data.layerData) {
       Layer.initializeFromBuffers(data.layerData);
     }
+    // GPU particle rings (LAYER_KIND.GPU_PARTICLES). Logic and particle workers take their writer slot.
+    GpuParticles.initializeFromBuffers(data.gpuParticles);
 
     // Initialize TileMap static class (SAB-backed tile data shared across workers)
     if (data.tilemapData) {

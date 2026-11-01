@@ -157,6 +157,7 @@ export function createPainterState(maxItems) {
     n: 0,
     gen: 0,
     frame: 0,
+    orderGen: 0,
     kernel: null,
     table: 0,
   };

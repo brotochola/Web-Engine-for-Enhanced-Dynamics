@@ -1,7 +1,7 @@
 import { fillQueueIndices } from './gpuQueueLayout.js';
 import { orderPainterSlotsWasm, radixSortIndicesWasm } from './painterRadixClient.js';
 
-const packResult = { sprite: 0, glow: 0, splitParticles: 0, flags: 0 };
+const packResult = { sprite: 0, glow: 0, splitParticles: 0, flags: 0, spriteIndices: null };
 
 /** The painter's order through its kernel (W10, painterRadixClient.js; a state always carries one). */
 function painterOrder(painter, idxE, n, keysU32) {
@@ -43,7 +43,7 @@ function orderSpriteIndices(opts, painter, keysU32, indices, n, dense, addSortMs
  * interpolation. The returned object is reused; read it before the next call.
  *
  * @param {object} spec
- * @returns {{ sprite: number, glow: number, splitParticles: number, flags: number }}
+ * @returns {{ sprite: number, glow: number, splitParticles: number, flags: number, spriteIndices: Uint32Array|null }}
  */
 export function packSpriteLayer(spec) {
     const count = spec.count | 0;
@@ -71,6 +71,8 @@ export function packSpriteLayer(spec) {
         }
         flags |= orderSpriteIndices(opts, painter, keysU32, idxE, ne, false, addSortMs, sortedFlag);
         const spriteN = spec.writeSprites(opts) | 0;
+        // The sprites' order (queue rows; null: row k), read by the y-sort proxies (gpuParticleProxies.js).
+        packResult.spriteIndices = opts.indices;
         if (spec.afterSprites) spec.afterSprites(spriteN, opts.indices);
         const glowOpen = spec.glowCapacity == null || spec.glowCapacity < 0 || spec.glowCapacity > 0;
         if (spec.writeGlow && glowOpen && (ng > 0 || spec.writeEmptyGlow)) {
@@ -111,6 +113,7 @@ export function packSpriteLayer(spec) {
         opts.indexCount = 0;
     }
     spriteN = spec.writeSprites(opts) | 0;
+    packResult.spriteIndices = opts.indices;
     if (spec.afterSprites) spec.afterSprites(spriteN, opts.indices);
 
     const glowType = spec.glowIncludeType | 0;

@@ -89,6 +89,35 @@ export const ENGINE_FEATURES = [
     protocolCeiling: 'Uint16 particle pool (maxParticles 65535); particle step stays ~2.2 ms',
   },
   {
+    id: 'particleLists',
+    name: 'Particle active and visible lists',
+    // particleLists.wasm's float32 build, the particle worker's default (the microbench's default variant), on 65 000
+    // live particles with the whole world in view: every full block on screen.
+    module: 'src/workers/particleListsClient.js',
+    kernel: {
+      script: 'tests/bench/particleListsWasmMicrobench.mjs',
+      opsKey: 'cases.stress.opsPerSec',
+      touches: ['wasm/particleLists.c', 'src/wasm/engine.wasm'],
+    },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
+    id: 'particleListsZoomed',
+    name: 'Particle lists, a quarter in view',
+    // The same build with about a quarter of the particles in view, in no order.
+    module: 'src/workers/particleListsClient.js',
+    kernel: {
+      script: 'tests/bench/particleListsWasmMicrobench.mjs',
+      opsKey: 'cases.zoomed.opsPerSec',
+      touches: ['wasm/particleLists.c', 'src/wasm/engine.wasm'],
+    },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'spatial',
     name: 'Spatial neighbors',
     module: 'src/workers/spatialWorker.js',
@@ -578,7 +607,12 @@ export const ENGINE_FEATURES = [
     id: 'preRenderWorker',
     name: 'Pre-render emitSpriteQueue',
     module: 'src/workers/preRenderWorker.js',
-    kernel: { script: 'tests/bench/preRenderWorkerMicrobench.mjs', opsKey: 'cases.emit.opsPerSec' },
+    // The emit kernel on Predator's mix (preRenderEmitWasmMicrobench's default variant, the shipped wasm).
+    kernel: {
+      script: 'tests/bench/preRenderEmitWasmMicrobench.mjs',
+      opsKey: 'cases.emit.opsPerSec',
+      touches: ['wasm/preRenderEmit.c', 'src/workers/preRenderEmitClient.js', 'src/wasm/engine.wasm'],
+    },
     scene: null,
     primary: ['preRender_STEP_MS'],
     load: [],

@@ -13,6 +13,8 @@
  *
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/chrome/x.mjs [--args '{"n":1}'] [--output path]
  *   node tests/bench/chromeKernel.mjs --root D:/tmp/scratch --module /q2Chrome.mjs
+ *   --headed                            a visible window on the real GPU (a WebGL or WebGPU kernel: headless
+ *                                       Chrome draws with SwiftShader or a throttled GPU process)
  *   --js-flags=--allow-natives-syntax   lets the module check tiers (%IsTurboFanFunction); like the
  *                                       bench, a run with V8 flags uses Playwright's Chromium
  */
@@ -46,6 +48,7 @@ async function main() {
   const jsFlags = typeof args['js-flags'] === 'string' ? args['js-flags'] : null;
   const runArgs = typeof args.args === 'string' ? JSON.parse(args.args) : {};
   const timeoutMs = Number(args['timeout-ms'] ?? 600000);
+  const headless = !(args.headed === true || args.headed === 'true');
 
   const server = await createStaticBenchmarkServer(root);
   // The bench's flags, so a background tab is not throttled.
@@ -55,10 +58,10 @@ async function main() {
   let browser;
   let channel = jsFlags ? 'chromium' : 'chrome';
   try {
-    browser = await chromium.launch({ headless: true, args: launchArgs, ...(jsFlags ? {} : { channel: 'chrome' }) });
+    browser = await chromium.launch({ headless, args: launchArgs, ...(jsFlags ? {} : { channel: 'chrome' }) });
   } catch {
     channel = 'chromium';
-    browser = await chromium.launch({ headless: true, args: launchArgs });
+    browser = await chromium.launch({ headless, args: launchArgs });
   }
   try {
     const page = await browser.newPage();

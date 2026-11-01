@@ -237,7 +237,7 @@ test('a plain batch (a nearest atlas) commits 15-float rows and draws a split fr
 // Frames read outside the consume/release handshake (before Pixi took its first, or a resume redrawing the last one)
 // can catch pre-render's next frame half written: the header's counts cleared while the queue holds the new rows.
 // Before the first frame nothing is drawn; on a resume the batch keeps the rows it last committed. Neither is said.
-test('a half-written frame outside the handshake keeps the last committed rows, and says nothing', async () => {
+test('a frame outside the handshake, half written or complete, keeps the last committed rows, and says nothing', async () => {
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
   const s = await quietly(() => scene());
   await quietly(() => bindPixi(px, s));
@@ -249,6 +249,7 @@ test('a half-written frame outside the handshake keeps the last committed rows, 
   const errors = [];
   const error = console.error;
   console.error = (msg) => errors.push(String(msg));
+  px.renderQueueSync = new Int32Array(new SharedArrayBuffer(8)); // the consume/release handshake pre-render keeps
   try {
     px._newQueueThisFrame = 0;
     px.lastReadFrame = 0;
@@ -270,6 +271,12 @@ test('a half-written frame outside the handshake keeps the last committed rows, 
     px.updateSpritesFromRenderQueue();
     assert.equal(px.visibleEntityCount, 300, 'a resume: the last committed rows stay');
     assert.equal(batch.mesh.visible, true);
+    assert.deepEqual(batchRows(batch, 300), rows);
+
+    // N-76: pre-render writing its next frame there, whose header already reads complete, is not committed either.
+    writeGpuFrame(px, 1, 310, true, 5, 2);
+    px.updateSpritesFromRenderQueue();
+    assert.equal(px.visibleEntityCount, 300, 'a frame Pixi did not take, complete or not, is not committed');
     assert.deepEqual(batchRows(batch, 300), rows);
   } finally {
     console.error = error;

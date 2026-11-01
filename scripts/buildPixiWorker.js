@@ -50,6 +50,12 @@ import { ViewContainer } from '../node_modules/pixi.js/lib/scene/view/ViewContai
 import { State } from '../node_modules/pixi.js/lib/rendering/renderers/shared/state/State.mjs';
 import { Bounds } from '../node_modules/pixi.js/lib/scene/container/bounds/Bounds.mjs';
 import { groupD8 } from '../node_modules/pixi.js/lib/maths/matrix/groupD8.mjs';
+// The WebGPU systems scripts/buildPixi.mjs patches, exported for tests/node/pixiDrawGarbage.test.js (the bundle has
+// them already: WebGPURenderer registers them).
+import { GpuEncoderSystem } from '../node_modules/pixi.js/lib/rendering/renderers/gpu/GpuEncoderSystem.mjs';
+import { BindGroupSystem } from '../node_modules/pixi.js/lib/rendering/renderers/gpu/BindGroupSystem.mjs';
+import { PipelineSystem } from '../node_modules/pixi.js/lib/rendering/renderers/gpu/pipeline/PipelineSystem.mjs';
+import { GpuMeshAdapter } from '../node_modules/pixi.js/lib/scene/mesh/gpu/GpuMeshAdapter.mjs';
 
 export {
   extensions,
@@ -82,4 +88,8 @@ export {
   State,
   Bounds,
   groupD8,
+  GpuEncoderSystem,
+  BindGroupSystem,
+  PipelineSystem,
+  GpuMeshAdapter,
 };

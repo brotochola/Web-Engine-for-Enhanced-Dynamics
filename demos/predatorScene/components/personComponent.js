@@ -16,14 +16,7 @@ export const DIRECTION_NAMES = ['up', 'left', 'down', 'right'];
 export class PersonComponent extends Component {
   static ARRAY_SCHEMA = {
 
-    myTeamAvgX: Float32Array,
-    myTeamAvgY: Float32Array,
-    numberOfTeamMembersICanSee: Uint8Array,
     team: Uint8Array,
-    // minSquaredDistanceToGroup, groupingForce, separationForce moved to static class properties
-    squaredDistanceToGroup: Float32Array,
-    separateX: Float32Array,
-    separateY: Float32Array,
     dead: Uint8Array, // 0 = alive, 1 = dead
     // Animation state
     facingDirection: Uint8Array, // 0=up, 1=left, 2=down, 3=right
@@ -32,7 +25,5 @@ export class PersonComponent extends Component {
     aimingAccuracy: Float32Array, // 0 = terrible aim (max spread), 1 = perfect aim (no spread)
     closestEnemyIndex: Int16Array,
     closestEnemyDistanceSq: Float32Array,
-    // Team data throttling timestamp cache
-    lastTeamDataUpdateTime: Float32Array,
   };
 }

@@ -212,11 +212,6 @@ class IdleSoldierState extends FSMState {
       return;
     }
 
-    // No enemies — flock apply (group/separate) disabled; skip updateTeamData neighbor walk
-    // owner.updateTeamData();
-    // owner.groupWithMyTeam();
-    // owner.separateFromTeam();
-
   }
 
 }
@@ -233,10 +228,6 @@ class GoingToDestinationState extends FSMState {
       this.fsm.changeState(i, this.fsm.states.IDLE);
       return;
     }
-
-    // owner.updateTeamData();
-    // // owner.groupWithMyTeam();
-    // owner.separateFromTeam();
 
     // Check if reached destination
     const distSqToDest = distanceSq2D(owner.x, owner.y, dest.x, dest.y);
@@ -295,9 +286,6 @@ class GoingToEnemyState extends FSMState {
       }
 
       // Chase toward stored target
-      // owner.groupWithMyTeam();
-      // owner.separateFromTeam();
-
       const chaseStrength = owner.constructor.chaseStrength;
       // 1/r, no sqrt: |a| = chaseStrength / dist. Floor distSq so close range can't rocket.
       if (distSq > 1) {

@@ -3,6 +3,8 @@
  * Error messages are full sentences for scene authors.
  */
 
+import { GPU_INDEXED_STATIC_FLOATS, GPU_INDEXED_TEX_ROW } from './gpuQueueLayout.js';
+
 export const RENDERER_BACKEND_WEBGL = 'webgl';
 export const RENDERER_BACKEND_WEBGPU = 'webgpu';
 
@@ -146,6 +148,60 @@ export function normalizeRendererBackend(value) {
   throw new Error(
     `WeedJS: config.renderer.backend must be "webgl" or "webgpu". Got "${value}". Set renderer.backend on the scene.`
   );
+}
+
+/** WebGPU's default maxStorageBufferBindingSize: every device binds this much. */
+export const WEBGPU_DEFAULT_STORAGE_BINDING = 134217728;
+
+/**
+ * E-162: the most queue rows indexed frames take, where every GPU the engine draws on holds their statics: on WebGPU
+ * the rows of the default storage binding (2 796 202), on WebGL a texture of 4 096 rows of GPU_INDEXED_TEX_ROW statics
+ * rows each, 3 072 texels wide (4 194 304; WebGL2 GPUs allow 4 096 texels a side and more). Past it the frames go split.
+ */
+export const INDEXED_SPRITES_MAX_WEBGPU = Math.floor(WEBGPU_DEFAULT_STORAGE_BINDING / (GPU_INDEXED_STATIC_FLOATS * 4));
+export const INDEXED_SPRITES_MAX_WEBGL = 4096 * GPU_INDEXED_TEX_ROW;
+
+/**
+ * E-162: whether the main sprites go to the renderer as indexed frames when the painter's order moved: unless
+ * renderer.indexedSprites is false, for a queue of `maxSprites` rows the backend surely holds.
+ * @param {object} [renderer] config.renderer
+ * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
+ * @returns {boolean}
+ */
+export function indexedSpritesEnabled(renderer, maxSprites) {
+  if (!renderer || renderer.indexedSprites === false) return false;
+  const webgpu = normalizeRendererBackend(renderer.backend) === RENDERER_BACKEND_WEBGPU;
+  return (maxSprites | 0) <= (webgpu ? INDEXED_SPRITES_MAX_WEBGPU : INDEXED_SPRITES_MAX_WEBGL);
+}
+
+/**
+ * E-177: whether Pixi draws the main sprites as keyed frames (their statics kept by entity on the GPU, the changed
+ * ones scattered there): where Pixi packs them (preRender.packGpuSprites 'pixi') without pose interpolation, on WebGL
+ * (the scatter is a draw; WebGPU keeps split frames), unless renderer.indexedSprites is false, and when a texture holds
+ * a statics row for every entity and every queue row.
+ * @param {object} [config] the scene's config
+ * @param {number} entities the scene's entities
+ * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
+ * @returns {boolean}
+ */
+export function keyedSpritesEnabled(config, entities, maxSprites) {
+  const renderer = config?.renderer;
+  if (!renderer || renderer.indexedSprites === false || renderer.interpolation === true) return false;
+  if (config.preRender?.packGpuSprites !== 'pixi') return false;
+  if (normalizeRendererBackend(renderer.backend) !== RENDERER_BACKEND_WEBGL) return false;
+  return (entities | 0) + (maxSprites | 0) <= INDEXED_SPRITES_MAX_WEBGL;
+}
+
+/**
+ * E-188: whether a scene whose sprites go keyed (keyedSpritesEnabled) keys its decorations too, by pool slot past the
+ * entities: when the statics texture also holds a row for every decoration slot.
+ * @param {number} entities the scene's entities
+ * @param {number} decorations decoration.maxDecorations
+ * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
+ * @returns {boolean}
+ */
+export function keyedDecorationsFit(entities, decorations, maxSprites) {
+  return (decorations | 0) > 0 && (entities | 0) + (decorations | 0) + (maxSprites | 0) <= INDEXED_SPRITES_MAX_WEBGL;
 }
 
 export function pixiRendererTypeName(type, RendererType) {

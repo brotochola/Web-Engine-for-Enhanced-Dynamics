@@ -42,6 +42,7 @@
  * tint tween on every particle, so the C sin/cos and the tint lerp run per particle.
  */
 import { ParticleComponent } from '../../src/components/particleComponent.js';
+import { PARTICLE_EASE } from '../../src/util/configDefaults.js';
 import { ParticleEmitter } from '../../src/core/particleEmitter.js';
 import { buildActiveListBuffers, updateParticlePhysicsBuffers } from '../reference/particleIntegrate.mjs';
 import { seededRandom } from '../../src/util/utils.js';
@@ -54,7 +55,8 @@ const MAX_PARTICLES = 65535;
 const INITIAL_BURST = 60000;
 const TOPUP_PER_FRAME = 4000;
 const DT = 1000 / 60;
-const EASES = ['lerp', 'quad.out', 'cubic.in', 'quad.inout', 'expo.out', 'back.in', 'bounce.out'];
+const E = PARTICLE_EASE;
+const EASES = [E.LERP, E.QUAD_OUT, E.CUBIC_IN, E.QUAD_INOUT, E.EXPO_OUT, E.BACK_IN, E.BOUNCE_OUT];
 export const PARTICLE_EASES = EASES;
 
 /** The float32 kernel of the shipped module (wasm/particleIntegrate.c), by variant name. */
@@ -76,6 +78,22 @@ export function emitConfig(mix, count, ease, area) {
     scale: { from: { min: 0.4, max: 1 }, to: 0.2, ease },
     alpha: { from: 1, to: 0, ease },
   };
+  if (mix === 'bounce') {
+    // Low enough to land within a test run, with floor bounces before the despawn.
+    cfg.z = { min: -300, max: -20 };
+    cfg.bounces = { min: 1, max: 3 };
+    cfg.bounciness = { min: 0.3, max: 0.8 };
+    cfg.bounceFriction = { min: 0.4, max: 0.9 };
+  }
+  if (mix === 'mixed') {
+    // A different ease on every tweened property (PARTICLE_TWEEN.MIXED_EASE): the scale and alpha ones from
+    // `ease`, the others fixed, and a turning half that eases its rotation and spin on their own.
+    cfg.scale = { from: { min: 0.4, max: 1 }, to: 1.8, ease };
+    cfg.alpha = { from: 1, to: 0, ease: ease === E.QUAD_IN ? E.CUBIC_OUT : E.QUAD_IN };
+    cfg.tint = { from: 0xff2040, to: 0x20ff80, ease: E.EXPO_INOUT };
+    cfg.rotation = { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease: E.BACK_OUT };
+    cfg.angularVelocity = { from: -90, to: 90, ease: E.BOUNCE_OUT };
+  }
   if (mix === 'spin') {
     cfg.rotation = { from: { min: 0, max: 360 }, to: { min: -360, max: 720 }, ease };
     cfg.angularVelocity = { from: -90, to: 90, ease };
@@ -112,6 +130,8 @@ export function checksum(indices, count) {
     f32(pc.rotC[i]);
     f32(pc.rotS[i]);
     mix(pc.tint[i]);
+    f32(pc.vx[i]);
+    mix(pc.bounces[i]);
   }
   return h >>> 0;
 }
@@ -145,7 +165,7 @@ export function integrateF32Tolerance(frames = 1) {
   const tween = Object.freeze({ abs: 1e-6, ulps: 8 });
   const turn = Object.freeze({ abs: 2.5e-7, ulps: 0 });
   return Object.freeze({
-    exact: ['active', 'currentLife', 'timeOnFloor', 'textureId'],
+    exact: ['active', 'currentLife', 'timeOnFloor', 'textureId', 'bounces'],
     float: {
       x: drift, y: drift, z: drift, vx: drift, vy: drift, vz: drift,
       alpha: tween, initialAlpha: tween, scaleX: tween, scaleY: tween,

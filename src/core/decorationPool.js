@@ -16,12 +16,13 @@ import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { randomRange } from '../util/utils.js';
 import { Layer } from './layer.js';
 import { evictDecorationFacade, clearAllDecorationFacades } from '../util/decorationFacades.js';
-import { DecorationSpatial } from './decorationSpatial.js';
+import { DECORATION_LIST_EPOCH, DECORATION_MOVE_EPOCH, DecorationSpatial } from './decorationSpatial.js';
 import {
   DECORATION_Y_SORT_SCALE,
   DECORATION_INNER_Z_MIN,
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
+  PARTICLE_SORT_BIAS,
 } from '../util/configDefaults.js';
 import { entityIdNone } from '../util/entityIdWidth.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
@@ -32,6 +33,7 @@ export {
   DECORATION_INNER_Z_MIN,
   DECORATION_INNER_Z_MAX,
   ENTITY_GLOW_SORT_BIAS,
+  PARTICLE_SORT_BIAS,
 };
 /** Sentinel: decoration not parented. Width 16 = 0xffff; width 32 = 0xffffffff. */
 export function decorationNoParent() {
@@ -100,6 +102,24 @@ export class DecorationPool extends SharedAtomicPool {
 
   static _unlockActiveList() {
     if (this._activeListLock) Atomics.store(this._activeListLock, 0, 0);
+  }
+
+  /** E-179c: one more change of the active list, under its lock (a reader that saw the old count copies it again). */
+  static _countListChange() {
+    const lock = this._activeListLock;
+    if (lock !== null && lock.length > DECORATION_LIST_EPOCH) Atomics.add(lock, DECORATION_LIST_EPOCH, 1);
+  }
+
+  /** E-179c: how many times the active list has changed; -1 without the counters (a lock buffer with no room). */
+  static listEpoch() {
+    const lock = this._activeListLock;
+    return lock !== null && lock.length > DECORATION_LIST_EPOCH ? Atomics.load(lock, DECORATION_LIST_EPOCH) : -1;
+  }
+
+  /** E-179c: how many times a world-owned decoration has moved; -1 without the counters. */
+  static moveEpoch() {
+    const lock = this._activeListLock;
+    return lock !== null && lock.length > DECORATION_MOVE_EPOCH ? Atomics.load(lock, DECORATION_MOVE_EPOCH) : -1;
   }
 
   static copyActiveSnapshot(out) {
@@ -256,6 +276,7 @@ export class DecorationPool extends SharedAtomicPool {
             this.activeDecorationsData[1 + i] = this.activeDecorationsData[1 + last];
             this.activeDecorationsData[1 + last] = 0;
             this.activeDecorationsData[0] = last;
+            this._countListChange();
             break;
           }
         }
@@ -445,6 +466,7 @@ export class DecorationPool extends SharedAtomicPool {
         const slot = this.activeDecorationsData[0];
         this.activeDecorationsData[1 + slot] = i;
         this.activeDecorationsData[0] = slot + 1;
+        this._countListChange();
       } finally {
         this._unlockActiveList();
       }
@@ -589,6 +611,7 @@ export class DecorationPool extends SharedAtomicPool {
       this._lockActiveList();
       try {
         this.activeDecorationsData[0] = 0;
+        this._countListChange();
       } finally {
         this._unlockActiveList();
       }
@@ -610,6 +633,9 @@ export class DecorationPool extends SharedAtomicPool {
       this.activeDecorationsData = new (PoolSlotArray(this.maxCount))(buffer);
     }
     this._activeListLock = lockBuffer ? new Int32Array(lockBuffer) : null;
+    // E-179c: moves count in the same header, when it has room for them.
+    const lock = this._activeListLock;
+    DecorationSpatial._epochs = lock !== null && lock.length > DECORATION_MOVE_EPOCH ? lock : null;
   }
 
   /**
@@ -620,6 +646,7 @@ export class DecorationPool extends SharedAtomicPool {
     super.reset();
     this.activeDecorationsData = null;
     this._activeListLock = null;
+    DecorationSpatial._epochs = null;
     clearAllDecorationFacades();
     this._attachedDecorationCount = null;
     this._attachedDecorationIndices = null;

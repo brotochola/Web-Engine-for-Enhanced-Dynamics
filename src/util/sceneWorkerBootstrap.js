@@ -15,6 +15,7 @@ import { frameClockSlot } from './frameClock.js';
 import { definesBelow } from './listenerTags.js';
 import { GameObject } from '../core/gameObject.js';
 import { box2dMemoryPages } from '../box2d/box2dMemory.js';
+import { GpuParticles } from '../core/gpuParticles.js';
 import { installDecalMemory } from './decalMemory.js';
 import { box2dBlockError, box2dBlockParts, box2dBlockPlan, requestBox2dBlock, standaloneBlock } from './box2dEngineBlock.js';
 export { collectSceneWorkerScriptUrls } from './sceneScript.js';
@@ -169,7 +170,8 @@ function buildSharedResourcesInit(scene) {
 }
 
 
-function buildSceneSharedBuffers(scene) {
+/** The SharedArrayBuffers every worker's init gets (exported for tests). */
+export function buildSceneSharedBuffers(scene) {
   return {
     neighborData: scene.buffers.neighborData,
     activeEntitiesData: scene.buffers.activeEntitiesData,
@@ -202,6 +204,8 @@ function buildSceneSharedBuffers(scene) {
     forceProcessOnLogicWorkerData: scene.buffers.forceProcessOnLogicWorkerData || null,
     entityTypeHasForcedLogicWorker: scene.buffers.entityTypeHasForcedLogicWorker || null,
     entityTypeForcedLogicWorkerCount: scene.buffers.entityTypeForcedLogicWorkerCount || null,
+    neighborReaders: scene.buffers.neighborReaders || null,
+    typeListVersions: scene.buffers.typeListVersions || null,
     mouseData: scene.buffers.mouseData,
     gamepadData: scene.buffers.gamepadData,
     queryEntityMetadata: scene.buffers.queryEntityMetadata,
@@ -211,6 +215,8 @@ function buildSceneSharedBuffers(scene) {
     bodyDirtyFlags: scene.buffers.bodyDirtyFlags,
     bodyDirtyWords: scene.buffers.bodyDirtyWords,
     bodyGeneration: scene.buffers.bodyGeneration,
+    // A spawn bumps it with the generation; physics' pose publish skips the per-body check while it holds.
+    bodyGenEpoch: scene.buffers.bodyGenEpoch || null,
     staticSceneryGen: scene.buffers.staticSceneryGen || null,
     liquidFunRender: scene.buffers.liquidFunRender || null,
     liquidFunRenderByte: scene.buffers.liquidFunRenderByte | 0,
@@ -463,6 +469,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       channelSAB: SoundManager.getChannelSAB(),
     },
     layerData: Layer.getSerializableData(),
+    gpuParticles: GpuParticles.getSerializableData(),
     tilemapData: TileMap.getSerializableData(),
     customLayerRenderQueues: scene.customLayerRenderQueues,
     // Boot payload: pose SAB when physics is off. Workers bind once; ticks do not re-read this.

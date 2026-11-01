@@ -161,6 +161,9 @@ export function wasmPainterState(buffer, layout, kernel = null) {
     n: 0,
     gen: 0,
     frame: 0,
+    // Moves whenever the order may have changed (a full sort, or a reinsert that moved a key): a pack whose
+    // statics follow the order keeps them while it holds (preRenderWorker._sortedStaticGen).
+    orderGen: 0,
     kernel,
     table: layout.tableByte,
   };
@@ -173,6 +176,7 @@ export function resetWasmPainterState(state) {
   state.n = 0;
   state.gen = 0;
   state.frame = 0;
+  state.orderGen = (state.orderGen + 1) | 0;
 }
 
 /**
@@ -213,6 +217,7 @@ export function orderPainterSlotsWasm(state, idxE, ne, keysU32) {
   }
   if (ne <= 0) return idxE;
   if (ne < 2) {
+    state.orderGen = (state.orderGen + 1) | 0;
     if (idxE) return idxE;
     state.order[0] = 0;
     return state.order;
@@ -220,9 +225,17 @@ export function orderPainterSlotsWasm(state, idxE, ne, keysU32) {
   state.frame = (state.frame + 1) | 0;
   const keysByte = keysU32.byteOffset;
   const idxEByte = idxE !== null ? idxE.byteOffset : 0;
-  if (!painterSameSet(state, idxE, ne)) return k.painterOrder(state, idxEByte, ne, keysByte);
-  if (k.reinsert(state.table, ne, keysByte) < 0) return k.painterOrder(state, idxEByte, ne, keysByte);
-  return state.order;
+  if (painterSameSet(state, idxE, ne)) {
+    const changed = k.reinsert(state.table, ne, keysByte);
+    // No key changed on the same set: the order is last frame's.
+    if (changed === 0) return state.order;
+    if (changed > 0) {
+      state.orderGen = (state.orderGen + 1) | 0;
+      return state.order;
+    }
+  }
+  state.orderGen = (state.orderGen + 1) | 0;
+  return k.painterOrder(state, idxEByte, ne, keysByte);
 }
 
 let painterRefusedWarned = false;

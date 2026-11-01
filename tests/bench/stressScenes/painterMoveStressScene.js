@@ -2,6 +2,7 @@
  * Moving Y-sort painter. Not the catalog row.
  * 10% of sprites cross a neighbor every swing. Physics off (Box2D cap).
  * skipCull so Pixi sees N. ySorting uses reinsert.
+ * ?indexed=1 or 0: renderer.indexedSprites (E-162) on or off; without it the engine's default.
  */
 import WEED from '/src/index.js';
 
@@ -57,6 +58,11 @@ function painterBackend() {
   return 'webgl';
 }
 
+function painterIndexed() {
+  const q = queryParam('indexed');
+  return q === null ? {} : { indexedSprites: q === '1' || q === 'true' };
+}
+
 function painterMoveConfig() {
   return {
     worldWidth: 12000,
@@ -89,6 +95,7 @@ function painterMoveConfig() {
       noLimitFPS: false,
       ySort: painterYSort(),
       maxVisibleRenderables: N,
+      ...painterIndexed(),
     },
     preRender: {
       noLimitFPS: false,

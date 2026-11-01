@@ -9,8 +9,9 @@
 // W10: with a painter spec, the painter sort's state of the worker that sorts (pre-render's, Pixi's, or both).
 // W27: with emit.adobe, the AdobeAnimComponent block, the collector's pose stash and the Adobe assets' tables.
 
-import { painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
+import { EMIT_DECO_KEYED_BYTES, painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
 import { GPU_PACK_COLUMNS } from '../render/gpuPackClient.js';
+import { gpuIndexedStaticRows } from '../render/gpuQueueLayout.js';
 
 // The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
 const WASM_MAX_PAGES = 32768;
@@ -47,7 +48,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
   const pixiRows = pixiFloats > 0 ? n : 0;
-  const pixiExtra = pixiExtraSpec(emit);
+  const pixiExtra = pixiExtraSpec(emit, n);
   const map = renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiRows, collect, painter, pixiFloats || 15, pixiExtra);
   const base = place ? place.baseByte | 0 : 0;
   if (place) {
@@ -58,6 +59,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   // Every region's byte from the memory's start: the block's offset added when the regions sit in a block.
   const r = {};
   for (const [name, region] of Object.entries(map.regions)) r[name] = base ? { ...region, byte: region.byte + base } : region;
+  const keyed = Boolean(r.pixiKeyUpdates && r.pixiKeyUpdates.bytes > 0 && r.emitKeyHeader && r.emitKeyHeader.bytes > 0);
   try {
     const memory = place ? place.memory : new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
     return {
@@ -93,6 +95,15 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         pixiParticlesByte: r.pixiPackResults ? r.pixiPackResults.byte : -1,
         pixiGlowRows: r.pixiGlowRows && r.pixiGlowRows.bytes > 0 ? pixiExtra.glowRows : 0,
         pixiGlowByte: r.pixiGlowRows && r.pixiGlowRows.bytes > 0 ? r.pixiGlowRows.byte : -1,
+        // E-177: the entity batch's keyed frames (0 rows: none): the statics texture's rows (the keys past keyBase, the
+        // scene's entities, are the slots of rows without one), its updates (a row each) and the resync header.
+        pixiKeyRows: keyed ? pixiExtra.keyRows : 0,
+        // E-188: past the entities, the keyed decorations' slots.
+        pixiKeyBase: keyed ? (emit.entities | 0) + (emit.keyedDecorations | 0) : 0,
+        pixiKeyUpdatesByte: keyed ? r.pixiKeyUpdates.byte : -1,
+        pixiKeyHeaderByte: keyed ? r.emitKeyHeader.byte : -1,
+        // E-191: the keyed frames' shadow stream, -1 without keyed frames.
+        pixiKeyShadowByte: keyed && r.pixiKeyShadow && r.pixiKeyShadow.bytes > 0 ? r.pixiKeyShadow.byte : -1,
         // W10: each sorting worker's painter state (null: that worker sorts in JS on arrays of its own).
         preRenderPainter: painter?.preRender ? painterStateLayout(r, 'preRenderPainter', n) : null,
         pixiPainter: painter?.pixi ? painterStateLayout(r, 'pixiPainter', n) : null,
@@ -105,12 +116,15 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
 
 /**
  * Pixi's pack scratch beyond its entity rows (close-out group B), with the emit's regions: a column table for each
- * queue buffer it packs (the entities' two, each custom layer's two, two to spare) and the glow batch's rows.
+ * queue buffer it packs (the entities' two, each custom layer's two, two to spare) and the glow batch's rows; with
+ * emit.pixiKeyed (E-177) the keyed frames' table rows: one a key, the scene's entities and then a row each, in whole
+ * statics texture rows.
  */
-function pixiExtraSpec(emit) {
+function pixiExtraSpec(emit, maxItems) {
   if (!emit) return null;
   const tableSlots = GPU_PACK_TABLE_SLOTS + 2 * ((emit.customLayers && emit.customLayers.length) | 0);
-  return { glowRows: emit.pixiGlowRows | 0, tableSlots, tableBytes: tableSlots * GPU_PACK_COLUMNS.length * 4 };
+  const keyRows = emit.pixiKeyed ? gpuIndexedStaticRows((emit.entities | 0) + (emit.keyedDecorations | 0) + (maxItems | 0)) : 0;
+  return { glowRows: emit.pixiGlowRows | 0, tableSlots, tableBytes: tableSlots * GPU_PACK_COLUMNS.length * 4, keyRows };
 }
 
 /** Byte offsets of the emit's regions; -1 for a component block the scene does not have. */
@@ -168,6 +182,11 @@ function emitLayout(r, entities, rows, customLayers) {
     persistEntityByte: r.emitPersistEntity.byte,
     persistFrameByte: r.emitPersistFrame.byte,
     persistAnimByte: r.emitPersistAnim.byte,
+    // E-177: the keyed frames' resync header, -1 without them.
+    keyHeaderByte: r.emitKeyHeader.bytes > 0 ? r.emitKeyHeader.byte : -1,
+    // E-188: the keyed decorations' records and how many (-1 and 0: decoration rows keyless).
+    decoKeyedByte: r.emitDecoKeyed.bytes > 0 ? r.emitDecoKeyed.byte : -1,
+    keyedDecorations: r.emitDecoKeyed.bytes / EMIT_DECO_KEYED_BYTES,
     // W27: the Adobe emit's regions, -1 without them (no AdobeAnimComponent).
     adobeAnimByte: r.adobeAnim ? block(r.adobeAnim) : -1,
     stashXByte: r.emitStashX ? r.emitStashX.byte : -1,
@@ -233,7 +252,7 @@ export function renderQueueMemoryBytes(maxItems, queueBytes, gpuQueueBytes, emit
   if (n <= 0) return 0;
   const tableBytes = GPU_PACK_TABLE_SLOTS * GPU_PACK_COLUMNS.length * 4;
   const pixiFloats = pixiPack === true ? 15 : pixiPack | 0;
-  return renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiFloats > 0 ? n : 0, collect, painter, pixiFloats || 15, pixiExtraSpec(emit)).bytes;
+  return renderQueueMemoryRegions(queueBytes | 0, gpuQueueBytes | 0, n, tableBytes, emit, stamp, sway, pixiFloats > 0 ? n : 0, collect, painter, pixiFloats || 15, pixiExtraSpec(emit, n)).bytes;
 }
 
 function stampLayout(r, stamp) {
@@ -251,6 +270,10 @@ function stampLayout(r, stamp) {
     nearDistByte: r.stampNearDist.byte,
     nearSlotByte: r.stampNearSlot.byte,
     nearCountByte: r.stampNearCount.byte,
+    packedXByte: r.stampPackedX.byte,
+    packedYByte: r.stampPackedY.byte,
+    cellOfByte: r.stampCellOf.byte,
+    dist64Byte: r.stampDist64.byte,
     lightsByte: r.stampLights.byte,
     tableByte: r.stampTable.byte,
     // The cookies' queue (createRenderQueueViews at cookieQueueByte, cookies rows), -1 without one.

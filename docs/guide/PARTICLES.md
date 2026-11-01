@@ -37,6 +37,23 @@ WEED.ParticleEmitter.emit({
   stayOnTheFloor: true,
 });
 
+// Debris that bounces once or twice, then stays as a decal
+WEED.ParticleEmitter.emit({
+  x: this.x,
+  y: this.y,
+  z: -8,
+  texture: 'rock',
+  count: 12,
+  angleXY: { min: 0, max: 360 },
+  speed: { min: 1, max: 5 },
+  vz: { min: -6, max: -3 },
+  gravity: 0.3,
+  bounces: { min: 1, max: 2 },
+  bounciness: 0.35,
+  bounceFriction: 0.6,
+  stayOnTheFloor: true,
+});
+
 // Zenithal: same physics, height → scale (scene zenithal* knobs)
 WEED.ParticleEmitter.emitZenithal({
   x: Mouse.x,
@@ -79,9 +96,9 @@ Particle `gravity` is px/frame² (`dtRatio ≈ 1` at 60fps), **not** Box2D scene
 | `{ from, to, ease }` | Same + ease id (`PARTICLE_EASE.LERP` default) |
 | Nested | `from` / `to` may themselves be `number` or `{ min, max }` |
 
-Aliases: `start`/`end` ≡ `from`/`to`. Ease: numeric id or `'lerp'` / `'quad.out'` / `'cubic.in'` / `'expo.inout'` / `'back.out'` / `'bounce.out'` (no sine).
+Aliases: `start`/`end` ≡ `from`/`to`. Ease: a `PARTICLE_EASE` value: `LERP`, `QUAD_IN` / `QUAD_OUT` / `QUAD_INOUT`, the same three for `CUBIC`, `EXPO` and `BACK`, and `BOUNCE_OUT` (no sine). Anything else, a name such as `'quad.out'` included, throws a `TypeError`.
 
-Props that accept over-life ops: `alpha`, `scale` / `scaleX` / `scaleY`, `tint`, `rotation`. Also `angularVelocity` (deg/ms). Frame cycle: `frame: [0,1,2]` + `spritesheet`/`animation` (+ optional `anim: 'cycle'|'random'`).
+Props that accept over-life ops: `alpha`, `scale` / `scaleX` / `scaleY`, `tint`, `rotation`. Also `angularVelocity` (deg/ms). Each one eases with its own `ease`: `alpha: { from: 1, to: 0, ease: PARTICLE_EASE.QUAD_IN }` next to `scale: { from: 1, to: 3, ease: PARTICLE_EASE.QUAD_OUT }` fades in and grows out. When every tweened property names the same ease (the usual case) the worker eases once per particle. Frame cycle: `frame: [0,1,2]` + `spritesheet`/`animation` (+ optional `anim: 'cycle'|'random'`).
 
 `scale: { min, max }` samples once and writes both axes — aspect stays locked. Pass both `scaleX` and `scaleY` with no `scale` only for non-uniform stamps (decals, muzzle).
 
@@ -90,7 +107,7 @@ Props that accept over-life ops: `alpha`, `scale` / `scaleX` / `scaleY`, `tint`,
 Convention: `z < 0` = airborne, `z >= 0` = on ground.
 
 - **Flat:** `vy += gravity`; integrate `x`/`y` every step; skip ground clamp and floor flags. Death by lifespan (and optional `alpha: { from, to: 0 }`). No collision.
-- **Heighted:** `vz += gravity`; while airborne integrate `x`/`y`/`z`; on ground zero velocity then:
+- **Heighted:** `vz += gravity`; while airborne integrate `x`/`y`/`z`. On ground contact while falling, a particle with `bounces` left rebounds instead: `vz = -vz * bounciness`, `vx` and `vy` keep `bounceFriction` of themselves, and one bounce is used. A rebound weaker than two frames of gravity (`2 * gravity`, or 0.05 px/frame when gravity is under 0.025) counts as a landing. On a landing, zero velocity then:
   - `despawnOnGroundContact` → return to pool
   - `stayOnTheFloor` → queue decal stamp → return to pool
   - `fadeOnTheFloor` → fade alpha over time → return when alpha ≤ 0
@@ -105,11 +122,13 @@ The sweep before it runs in WebAssembly too. It lists the live particles and tes
 
 Reads per-particle `viewMode` / `flat`:
 
-| Mode | `rqY` | Scale / alpha |
-| --- | --- | --- |
-| Zenithal (`viewMode === ZENITHAL`, not flat) | `y` | `scale *= 1 + (-z / zenithalMaxHeight) * zenithalScaleFactor`; optional alpha fade |
-| Flat | `y` | unchanged |
-| Topdown / side (`emit`) | `y + z` | unchanged |
+| Mode | `rqY` (drawn at) | Y-sort key | Scale / alpha |
+| --- | --- | --- | --- |
+| Zenithal (`viewMode === ZENITHAL`, not flat) | `y` | height (`-z`) | `scale *= 1 + (-z / zenithalMaxHeight) * zenithalScaleFactor`; optional alpha fade |
+| Flat | `y` | ground row | unchanged |
+| Topdown / side (`emit`) | `y + z` | ground row | unchanged |
+
+With `renderer.ySort`, heighted and flat particles sort by their **ground row**, `round(y) * DECORATION_Y_SORT_SCALE + PARTICLE_SORT_BIAS`, the way a sprite sorts by its feet. A spark 60 px in the air is drawn 60 px up the screen, but it sorts where its shadow would be: in front of the trees north of that point, behind the ones south of it. `PARTICLE_SORT_BIAS` puts a particle in front of a body whose feet are on the same pixel row (a muzzle spark in front of its shooter), behind that body's light glow.
 
 ## Scene config (`particle`)
 
@@ -154,4 +173,5 @@ pixiWorker
 - [`particleComponent.js`](../../src/components/particleComponent.js)
 - [`particleWorker.js`](../../src/workers/particleWorker.js)
 - [LiquidFun (Box2D fluids)](./LIQUIDFUN.md)
+- [GPU particles](./GPU_PARTICLES.md): `ParticleEmitter.emitGpu`, particles computed in the vertex shader (no CPU cost per frame, nothing reads them back)
 - Demo: [`zenithalParticleTestScene.js`](../../demos/zenithalParticleTestScene/zenithalParticleTestScene.js), [`bluePlatformerPlayer.js`](../../demos/platformerGameScene/gameObjects/bluePlatformerPlayer.js), [`liquidFunDemoScene.js`](../../demos/liquidFunDemoScene/liquidFunDemoScene.js)
