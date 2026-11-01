@@ -1358,7 +1358,7 @@ scene.getMemoryUsageReport();  // summary + per-component allocation metadata
   }
   ```
 - Do not write an empty `tick(){}`. If the type has no tick override, or `static tickInterval = 0`, logic workers skip that type's active list. `CameraInOutListener` still visits. Collision / hit / impact callbacks still run. Do not assign `this.tick` on an instance.
-- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. If both `tick` and `tickAll` exist, instance `tick` wins.
+- Optional batch: define `static tickAll(list, count, dtRatio)` and do **not** override `tick()`. The logic worker packs this worker's live indices and calls `tickAll` once. Write SoA (`SpriteRenderer.alpha[list[i]]`), not `this.spriteRenderer`. A sprite whose statics you write that way (alpha, tint, scale, anchor, sprite, animation, tiles) needs `SpriteRenderer.renderDirty[i] = 1` and `SpriteRenderer.keyedDirty[i] = 1`, what `markDirty()` sets: without them, frames that reuse the last queue draw the old values. Positions need nothing. If both `tick` and `tickAll` exist, instance `tick` wins.
 - Use particles/decorations for short-lived or static visuals instead of full entities.
 - Particle and bullet pools are finite. Exhaustion warnings are one-shot per scene/init; increase `particle.maxParticles` or `bullet.maxBullets` when they appear.
 - Entity pools (`static entities`) and the joint pool are finite too. A spawn into a full pool returns `null` (a joint returns `-1`); the first one warns once per scene, from whichever thread hit it, and the rest are counted in `getPoolStats(Type).dropped`.
