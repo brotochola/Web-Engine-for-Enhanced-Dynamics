@@ -9477,7 +9477,8 @@
       "records": [
         "R-0770",
         "R-0771",
-        "R-0774"
+        "R-0774",
+        "R-0782"
       ],
       "status": "kept",
       "date": "2026-10-29",
@@ -9515,7 +9516,8 @@
       "aliases": [],
       "records": [
         "R-0752",
-        "R-0778"
+        "R-0778",
+        "R-0782"
       ],
       "status": "kept-kernel",
       "date": "2026-10-29",
@@ -9534,7 +9536,8 @@
       "aliases": [],
       "records": [
         "R-0772",
-        "R-0776"
+        "R-0776",
+        "R-0782"
       ],
       "status": "kept",
       "date": "2026-10-29",
@@ -9552,7 +9555,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0777"
+        "R-0777",
+        "R-0782"
       ],
       "status": "kept",
       "date": "2026-10-29",
@@ -9571,7 +9575,8 @@
       "aliases": [],
       "records": [
         "R-0775",
-        "R-0779"
+        "R-0779",
+        "R-0782"
       ],
       "status": "kept",
       "date": "2026-11-01",
@@ -9589,7 +9594,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0779"
+        "R-0779",
+        "R-0782"
       ],
       "status": "kept-kernel",
       "date": "2026-11-01",
@@ -17002,6 +17008,15 @@
       "title": "E-177 step 0: Predator keeps 95 % of its sprite rows' statics a frame and rewrites all of them",
       "verdict": "answered",
       "text": "**E-177 step 0: in Predator 95 % of the sprite rows keep their statics frame to frame, and all of them are written\nagain every frame.** 2026-11-01, 05:08 to 05:09 (the result files' times), Chrome, headed, source, detailed stats off; pre-render\ninstrumented in an overlay worktree (not committed): after each emit, every sprite row's scale, anchor, tint and\ntexture against the ones the same entity carried when last drawn, logged every 120 frames.\n\n| scene | sprite rows a frame | statics changed | staticGen moved |\n| --- | --- | --- | --- |\n| predatorScene | 13 380 to 13 560 | 640 to 760 (4.8 to 5.6 %) | 120 of 120 frames |\n| littleCity | 270 to 315 | 31 to 44 (11 to 15 %) | 120 of 120 frames |\n| adobeAnimateScene, min zoom | 214 000 | not measurable this way | 120 of 120 frames |\n\n- Rows matched their entities in Predator and littleCity (no row's x off its entity's); adobe's rows are its\n  characters' expanded pieces, several per entity, so the row-to-entity reading does not apply (E-145's ground).\n- Today the queue's static generation moves on every frame of a scrolling scene, so the statics of every row are\n  packed and uploaded again; per entity, Predator would upload about 700 rows' statics a frame instead of 13 500\n  (about 30 KB instead of 590 KB at 44 bytes).\n- Verdict for the plan: build E-177 where Predator draws, as the plan says (\"only where most rows keep theirs\")."
+    },
+    {
+      "id": "R-0782",
+      "date": "2026-11-01",
+      "time": "05:43",
+      "timeFrom": "recorded",
+      "title": "wave11's gate passed: Predator and spawnStormScene neutral (main against wave11)",
+      "verdict": "passed",
+      "text": "**wave11's gate passed: Predator and spawnStormScene neutral, main against wave11.** 2026-11-01, 05:11 to 05:43 (the\nresult files' times), Chrome, headed, source, detailed stats off, `--vs main --hyp-rev 674ceb04` (wave11's src: E-176,\nE-176b, E-178, E-179's seventh form, E-180, E-181 with its LiquidFun fix, E-182, N-96 to N-101).\n\n- **predatorScene, 4 pairs: NEUTRAL.** Logic 3.558 -> 3.573 ms (+0.3 %, 3/4), spatial 5.287 -> 5.148 ms (-3.9 %, 1/4),\n  physics 6.047 -> 6.401 ms (+0.7 % paired, 2/4, cv 9/5 %), renderer 3.578 -> 3.448 ms (-3.1 %, 1/4), pre-render\n  4.067 -> 4.077 ms (+0.3 %); load keys within 1.2 %.\n- **spawnStormScene, 4 pairs:** at the default storm (1 800 a tick) every worker is under the 3 ms floor (logic 2.773 ->\n  2.862 ms, not judged); at `?storm=2600`, logic 3.625 -> 3.632 ms, **+0.6 %, 2/4: NEUTRAL** (E-180's Atomics.add on\n  every spawn and despawn does not show)."
     }
   ],
   "leads": [
