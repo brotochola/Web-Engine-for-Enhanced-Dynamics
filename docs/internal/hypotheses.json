@@ -9566,6 +9566,40 @@
     },
     {
       "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "result": "",
+      "refs": [
+        "EXECUTION_PLAN.md#E-181"
+      ],
+      "statusText": "open: Wave 11 candidates (2026-11-01), found measuring E-176b",
+      "id": "E-181",
+      "rank": 8,
+      "area": "physics",
+      "kind": "speed",
+      "title": "Every awake body is \"moved\", still or not: spatial rebuilds for bodies that never move",
+      "next": "In the glue, a move event whose transform equals the state channels exports the velocities only and is not listed (unless it fell asleep). Owner adobeAnimateScene spatial (Moved 20 000 still bodies, sleeping off); Predator neutral. EXECUTION_PLAN.md#E-181."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "result": "",
+      "refs": [
+        "EXECUTION_PLAN.md#E-179c"
+      ],
+      "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
+      "id": "E-179c",
+      "rank": 14,
+      "area": "particle",
+      "kind": "speed",
+      "title": "Decorations' screen test skipped while the camera and the decorations hold",
+      "next": "Step 0: frames a second with a still camera in the demos. Then a stamp of the bounds and of the pool's spawns, despawns and moves; skip when both hold. EXECUTION_PLAN.md#E-179c."
+    },
+    {
+      "aliases": [],
       "refs": [
         "REVIEW_PLAN.md#N-96"
       ],
