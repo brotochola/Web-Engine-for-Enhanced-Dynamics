@@ -3089,6 +3089,13 @@ Predator's particle worker, beside the sway kernel (`sway_decorations_f32x4`, 23
 decoration moved. Owner: decorationSwayStressScene's particle worker.
 **2026-10-31 (R-0772):** the branchless test, alone, is rejected: x2-3 on Predator's random order, worse where the
 order is predictable (the grid stress scene +18 %). Next: both loops, picked per frame from the last frame's flips.
+**Kept 2026-11-01 (R-0776), the seventh form (9e0d8e58):** `updateDecorationScreenVisibility` stays the shipped method,
+byte for byte; `updateDecorationScreen`, which `update()` calls, runs it or the branchless copy (its own functions, the
+candidates in the worker's scratch) and samples the flips on a 512-entry window one frame in 16. decorationSwayStressScene
+(`?order=random`, a19bd027), 4 pairs: random order with a third on screen, particle -10.0 % (0/4); the grid at 400 000,
++2.5 % (4/4, under the bar). On the way: counting the flips inside a loop, a whole branchless probe frame and moving the
+shipped loop into a function of its own each cost the predictable case 3 to 10 %, and the shipped loop's own deopt loop
+on stale OSR code became E-183.
 
 ### E-180 Interval tick buckets rebuilt for every type when any query moves
 
