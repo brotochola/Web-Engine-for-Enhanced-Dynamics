@@ -3159,6 +3159,10 @@ code, so the function deopts at that statement on every call. The shipped `updat
 **Plan:** step 0, Chrome's deopt log (`--js-flags="--log-deopt"`, summarizeV8Deopt.mjs, steady state only) on
 Predator and the stress scenes: the functions that deopt at the same bytecode every frame. Then each loop in a function
 of its own that returns right after it (E-179's form), one change per worker. Owners: the workers it finds.
+**Answered 2026-11-01 (R-0780):** Chrome's deopt logs of six scenes (Predator, adobeAnimateScene, BunnyMark, the
+decoration grid, ballsHeavy, spawnStorm) show nothing deopting after the warm-up beyond one to three a site in cold
+code; the stale-OSR sites deopt while a scene starts and stop. The every-call loop is a kernel's (back-to-back calls):
+HOW_WE_MEASURE's "Which tier it timed" says how to read such a kernel.
 
 ### E-184 The particle cull's two copies, picked per frame
 

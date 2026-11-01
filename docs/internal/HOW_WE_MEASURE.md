@@ -147,6 +147,12 @@ compile. Warm the function through short calls first (`warmNormalCompile` in `mi
 and say which tier the number is. `node tests/bench/kernelTierAudit.mjs [names]` lists kernels whose
 timed function only ever ran as OSR.
 
+A kernel can also be **bimodal from run to run** when the timed function is a whole frame's pass around one long loop
+(E-179, E-178, R-0780): called back to back, V8 can keep entering the loop's cached OSR code and deopt at the first
+statement after the loop on every call ("Insufficient type feedback ..."), 2 to 3 times slower than the runs that got a
+normal compile. A frame's single call does not do it (no scene showed it in Chrome). Read such a kernel's rounds side
+by side, not only its median, and count `--trace-deopt` bailouts of the function when the rounds split.
+
 Two things change what a kernel measures, apart from the code under test:
 
 - **Imports in hot code.** In Chrome, a native ES module reads an import from a cell with a TDZ check that
