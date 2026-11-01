@@ -10397,6 +10397,307 @@
         "preventDefaultKeys",
         "typing in a field"
       ]
+    },
+    {
+      "id": "ED-82",
+      "title": "Visual editor: the template starts with a level the editor can edit",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "npm create weed-game's game spawns its walls in create(), with no scene file and no spawnParams, so the editor opens it read-only: every entity runtime, nothing to place into.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-82"
+      ],
+      "aliases": [
+        "template level",
+        "create-weed-game editor"
+      ],
+      "next": "levels/1.scene.json with the walls and the player placed, GameScene.defaultSceneFile, spawnParams on Wall and Player; editorTemplateSmoke.mjs.",
+      "records": [],
+      "rank": 101
+    },
+    {
+      "id": "ED-83",
+      "title": "Visual editor: the guide and the README cover what the editor does",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "EDITOR.md and the editor package's README stop at ED-80: wrong grid steps, and no word of rotate, copy and paste, frame, box select, groups, unlit, the brush, joints, export or the atlas.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-83"
+      ],
+      "aliases": [
+        "editor docs",
+        "key table"
+      ],
+      "next": "EDITOR.md's Stage 4 and 6 tools; one key table checked against shortcuts.js by a node test; SCENE_FILES.md's new APIs; a 'your first level' page.",
+      "records": [],
+      "rank": 102
+    },
+    {
+      "id": "ED-84",
+      "title": "Visual editor: a game from zero, as a developer would (dogfood)",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "The editor's only user so far is the author, and each session found something big (ED-80, ED-81, N-82, item 47).",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-84"
+      ],
+      "aliases": [
+        "dogfood",
+        "developer test"
+      ],
+      "next": "Pack the engine and the editor, scaffold outside the repo, make a two-level game with the editor; file every finding.",
+      "records": [],
+      "rank": 103
+    },
+    {
+      "id": "ED-85",
+      "title": "Visual editor: a level from a scene built in code",
+      "status": "blocked",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started; waits for the author: open decision 6 (save as level, add to level)",
+      "date": "2026-11-01",
+      "result": "3 of the 32 demo scenes have a scene file and every existing game spawns from code; a scene with no file cannot be saved, placed into or painted.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-85"
+      ],
+      "aliases": [
+        "save as level",
+        "add to scene",
+        "promote runtime entity"
+      ],
+      "next": "Decide 'Save as level' (capture the live entities of classes with params) and 'Add to level'; then the writer and a parity test.",
+      "records": [],
+      "rank": 104
+    },
+    {
+      "id": "ED-86",
+      "title": "Visual editor (engine): an edit respawns in its own slot",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "An edit despawns and spawns at once, so a class whose pool its level fills has no free slot and the entity vanishes until Stop (item 47): a [Player, 1] pool.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-86"
+      ],
+      "aliases": [
+        "respawn in place",
+        "pool full edit"
+      ],
+      "next": "logic0 respawns at the same index in one step (spawn generation bumped, body made again); the editor uses it; a worker-harness test with a pool of one; the spawn kernel unchanged.",
+      "records": [],
+      "rank": 105
+    },
+    {
+      "id": "ED-87",
+      "title": "Visual editor: spawn params typed for the IDE",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "onSpawned's params are typed any: no completion for a class's own params, no error for a misspelt one.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-87"
+      ],
+      "aliases": [
+        "SpawnParamsOf",
+        "typed params"
+      ],
+      "next": "SpawnParamsOf<typeof X.spawnParams> in weed.d.ts, mapped from each entry's value; JSDoc in the template; check:types on a JS sample.",
+      "records": [],
+      "rank": 106
+    },
+    {
+      "id": "ED-88",
+      "title": "Visual editor: merge into main and release @weed.js/editor and create-weed-game",
+      "status": "blocked",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started; waits for the author: when to merge and release (the npm login is the author’s)",
+      "date": "2026-11-01",
+      "result": "Neither package is on npm (404, 2026-11-01) and the branch is not on main: a developer cannot get the editor.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-88"
+      ],
+      "aliases": [
+        "release editor",
+        "publish editor"
+      ],
+      "next": "main's merge checklist (bundles, the editor's build and smokes, a Predator gate, the prod bundle against its sources), npm run release -- minor, a clean-folder check from npm.",
+      "records": [],
+      "rank": 107
+    },
+    {
+      "id": "ED-89",
+      "title": "Visual editor: variants, a named set of a class’s params placed from the palette",
+      "status": "blocked",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started; waits for the author: open decision 12 (where variants live, links)",
+      "date": "2026-11-01",
+      "result": "No prefabs: a BigPlatform is a Platform with its width typed again each time.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-89"
+      ],
+      "aliases": [
+        "prefab",
+        "variant"
+      ],
+      "next": "Decide where variants live and whether a placed one keeps a link (overrides only); then the format key, the palette, the bold overrides and Revert.",
+      "records": [],
+      "rank": 108
+    },
+    {
+      "id": "ED-90",
+      "title": "Visual editor: groups placed many times",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "A selection can be copied and pasted (ED-59) but not kept as something to place again, such as a house with its trees.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-90"
+      ],
+      "aliases": [
+        "group asset",
+        "prefab group"
+      ],
+      "next": "Save a selection as a group (classes, params, offsets, joints by name); the palette places it under free names.",
+      "records": [],
+      "rank": 109
+    },
+    {
+      "id": "ED-91",
+      "title": "Visual editor: scene settings in the inspector",
+      "status": "blocked",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started; waits for the author: open decision 13 (a level’s settings)",
+      "date": "2026-11-01",
+      "result": "A level cannot set its gravity, ambient light or background: the class's static config is code.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-91"
+      ],
+      "aliases": [
+        "level settings",
+        "scene config in file"
+      ],
+      "next": "Decide a scene file 'settings' section (setup keys force a full load); the inspector shows it with nothing selected.",
+      "records": [],
+      "rank": 110
+    },
+    {
+      "id": "ED-92",
+      "title": "Visual editor: jump to code",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "The inspector names an entity's class and the console its errors, but neither opens the source.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-92"
+      ],
+      "aliases": [
+        "open in editor",
+        "vscode link"
+      ],
+      "next": "vscode:// links from the class name and from error stacks, through a dev-server route that maps a site path to its file.",
+      "records": [],
+      "rank": 111
+    },
+    {
+      "id": "ED-93",
+      "title": "Visual editor: the particle lab as a panel (was ED-23)",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "Deferred 2026-10-26: the particle lab is a scene of its own (demos/particleLabScene).",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-93"
+      ],
+      "aliases": [
+        "particle lab",
+        "ED-23"
+      ],
+      "next": "An emitter's settings as inspector fields; where its look is saved, decided with the author.",
+      "records": [],
+      "rank": 112
+    },
+    {
+      "id": "ED-94",
+      "title": "Visual editor: fast swap to another scene class with the same setup (was ED-35b)",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "Deferred 2026-10-26: a level of another class (a BossLevel subclass) loads fully.",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-94"
+      ],
+      "aliases": [
+        "cross-class swap",
+        "ED-35b"
+      ],
+      "next": "The setup fingerprint, the module imported everywhere, the class changed without a new scene instance; ED-35's tests across two classes.",
+      "records": [],
+      "rank": 113
+    },
+    {
+      "id": "ED-95",
+      "title": "Visual editor (engine): a scene-ready hook after the load’s spawns",
+      "status": "blocked",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started; waits for the author: the hook’s name (open decision 14)",
+      "date": "2026-11-01",
+      "result": "A load's spawns are not in getAllActive() until the flush after create(), and nothing runs after it: littleCity's nav grid sees no house (item 13).",
+      "area": "editor",
+      "kind": "dx",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-95"
+      ],
+      "aliases": [
+        "onReady",
+        "after flush hook"
+      ],
+      "next": "A hook after _flushCreateSpawns and after a fast swap; the guide's lifecycle; littleCity's grid in it, in its own commit.",
+      "records": [],
+      "rank": 114
+    },
+    {
+      "id": "ED-96",
+      "title": "Visual editor (engine): a held world skips the spatial rebuild",
+      "status": "open",
+      "statusText": "opened 2026-11-01 (Stage 7, usable by developers), not started",
+      "date": "2026-11-01",
+      "result": "littleCity's spatial worker rebuilds a grid nothing moves in: 2.8 ms a frame in edit mode (item 34).",
+      "area": "editor",
+      "kind": "speed",
+      "refs": [
+        "VISUAL_EDITOR_PLAN.md#ED-96"
+      ],
+      "aliases": [
+        "held spatial",
+        "edit mode spatial"
+      ],
+      "next": "Skip the rebuild while Time.held unless the editor's respawns flag a change; a culling test; editorIdleCost.mjs before and after.",
+      "records": [],
+      "rank": 115
     }
   ],
   "records": [
