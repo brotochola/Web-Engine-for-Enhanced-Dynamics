@@ -3305,6 +3305,9 @@ SpriteRenderer's block (the columns after it moved by 42 KB), and the emit's key
 **Plan:** the plain emit kernel on both trees (preRenderEmitWasmMicrobench's wasm variant); if it ties, the layouts:
 the key column at the queue's end, then keyedDirty at the block's end. Owner: Predator's pre-render, or a stress scene
 whose pre-render is the emit.
+**Answered 2026-11-01 (R-0795): no cost to find.** The emit kernel ties main (1 966 -> 1 950 ops/s, -0.8 %), and
+painterMoveStressScene, whose pre-render is the emit of 300 000 rows, reads -0.9 % (2/4) against main: neither the
+emit's code nor the queue's layout costs there. Predator's +2 % is within its spread for pre-render.
 
 ---
 
