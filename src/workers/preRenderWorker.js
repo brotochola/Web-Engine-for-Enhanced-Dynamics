@@ -394,6 +394,8 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = EMPTY_U16;
         this.renderQueueAnchorX = EMPTY_F32;
         this.renderQueueAnchorY = EMPTY_F32;
+        // E-177: the rows' statics keys (renderQueueLayout's key).
+        this.renderQueueKey = EMPTY_U32;
         /** The main queue's staticGen column (renderQueueLayout.js), and the count written there. */
         this.renderQueueStaticGen = EMPTY_U32;
         this._staticGen = 1;
@@ -1400,6 +1402,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = buffer.textureId;
         this.renderQueueAnchorX = buffer.anchorX;
         this.renderQueueAnchorY = buffer.anchorY;
+        this.renderQueueKey = buffer.key || EMPTY_U32;
         this.renderQueueType = buffer.type;
         this.renderQueueSortKey = buffer.sortKey;
         this.renderQueueSortKeyU32 = buffer.sortKeyU32;
@@ -1584,6 +1587,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = views.textureId;
         this.renderQueueAnchorX = views.anchorX;
         this.renderQueueAnchorY = views.anchorY;
+        this.renderQueueKey = views.key || EMPTY_U32;
         this.renderQueueType = views.type;
         this.renderQueueSortKey = views.sortKey;
         this.renderQueueSortKeyU32 = views.sortKeyU32;
@@ -1613,6 +1617,7 @@ class PreRenderWorker extends AbstractWorker {
         saved.textureId = this.renderQueueTextureId;
         saved.anchorX = this.renderQueueAnchorX;
         saved.anchorY = this.renderQueueAnchorY;
+        saved.key = this.renderQueueKey;
         saved.type = this.renderQueueType;
         saved.sortKey = this.renderQueueSortKey;
         saved.sortKeyU32 = this.renderQueueSortKeyU32;
@@ -3019,6 +3024,7 @@ class PreRenderWorker extends AbstractWorker {
         v.shadowOffX = this.renderQueueShadowOffX;
         v.shadowOffY = this.renderQueueShadowOffY;
         v.type = this.renderQueueType;
+        v.key = this.renderQueueKey;
         return this._gpuSoAFromViews(v);
     }
 

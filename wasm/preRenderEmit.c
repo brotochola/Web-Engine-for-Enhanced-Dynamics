@@ -68,8 +68,13 @@ enum {
      E_PARAMS[3] is the pose alpha). Their default texture is PC_WHITE_TEX. */
   LF_X, LF_Y, LF_SCALE_X, LF_SCALE_Y, LF_ALPHA, LF_BASE_ALPHA, LF_ROT_C, LF_ROT_S, LF_TINT, LF_TEXTURE,
   LF_PREV_X, LF_PREV_Y, LF_PREV_COUNT,
+  /* E-177: the queue's key column (0: a queue without one): a sprite row's entity, KEY_NONE for every other row. */
+  Q_KEY,
   SLOT_COUNT
 };
+
+/* E-177: the key of a row whose statics have no entity to stay with (rewritten every frame). */
+#define KEY_NONE 0xffffffffu
 
 /* emitSpriteQueue's loop-invariant switches. */
 #define F_SORT_KEY 1u    /* rqSortKey && source.hasOrder */
@@ -242,6 +247,7 @@ typedef struct {
   uint8_t *qTileMode;
   uint16_t *qTileOffU, *qTileOffV;
   float *qTileMulX, *qTileMulY, *qShadowH, *qShadowOffX, *qShadowOffY;
+  uint32_t *qKey;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
   const float *aaTime;
@@ -353,6 +359,7 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->qShadowH = PTR(float, Q_SHADOW_H);
   e->qShadowOffX = PTR(float, Q_SHADOW_OFF_X);
   e->qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
+  e->qKey = PTR(uint32_t, Q_KEY);
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
   e->aaAsset = PTR(const uint16_t, AA_ASSET);
@@ -525,6 +532,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = e->sAnchorX[idx];
   e->qAnchorY[out] = e->sAnchorY[idx];
   if (e->qType) e->qType[out] = 0;
+  if (e->qKey) e->qKey[out] = (uint32_t)idx;
 
   const uint32_t sheet = e->sSheet[idx];
   const uint32_t anim = e->sAnim[idx];
@@ -623,10 +631,12 @@ INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = e->dAnchorX[idx];
   e->qAnchorY[out] = e->dAnchorY[idx];
   if (e->qType) e->qType[out] = 2;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* A bullet or trail row that draws nothing, parked off screen; its other columns keep what they held. */
 INLINE void hide_row(const Emit *e, uint32_t out) {
+  if (e->qKey) e->qKey[out] = KEY_NONE;
   e->qAlpha[out] = 0.0f;
   e->qScaleX[out] = 0.0f;
   e->qScaleY[out] = 0.0f;
@@ -664,6 +674,7 @@ INLINE void bullet_row(Emit *e, uint32_t i, uint32_t out) {
     e->qAnchorY[out] = e->bAnchorY[idx];
   }
   if (e->qType) e->qType[out] = 4;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* W4d. emitSpriteQueue's trail branch (type 5): the line from the bullet's start to where it is, in double as the
@@ -705,6 +716,7 @@ INLINE void trail_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 5;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* emitSpriteQueue's glow branch (type 3): collector row i, light entity cIndex[i], at queue row out. Its sort key
@@ -736,6 +748,7 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 3;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* emitSpriteQueue's particle branch (type 1): collector row i, particle slot cIndex[i], at queue row out. A
@@ -784,6 +797,7 @@ INLINE void particle_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 1;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* emitSpriteQueue's LiquidFun branch (type 7, queued as type 1): collector row i, LiquidFun particle cIndex[i], at
@@ -822,6 +836,7 @@ INLINE void lf_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = 0.5f;
   e->qAnchorY[out] = 0.5f;
   if (e->qType) e->qType[out] = 1;
+  if (e->qKey) e->qKey[out] = KEY_NONE;
 }
 
 /* _resolveAdobeFrameIndex for an asset in the tables: the clip's frame at this time, or -1 when the root
@@ -922,6 +937,7 @@ INLINE uint32_t adobe_root(Emit *e, uint32_t i, uint32_t w, uint32_t cap, double
     e->qAnchorX[w] = pieceAnchorX[p];
     e->qAnchorY[w] = pieceAnchorY[p];
     if (e->qType) e->qType[w] = 6;
+    if (e->qKey) e->qKey[w] = KEY_NONE;
     if (e->tilesDirty) clear_tiles(e, w);
     if (e->qSortKey) e->qSortKey[w] = sk;
     if (e->qShadowH) {

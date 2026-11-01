@@ -46,6 +46,7 @@ export const EMIT_SLOTS = [
   'pcTexture', 'pcFlat', 'pcView', 'pcWhiteTexture', 'eParams',
   'lfX', 'lfY', 'lfScaleX', 'lfScaleY', 'lfAlpha', 'lfBaseAlpha', 'lfRotC', 'lfRotS', 'lfTint', 'lfTexture',
   'lfPrevX', 'lfPrevY', 'lfPrevCount',
+  'qKey',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -140,6 +141,7 @@ export const EMIT_OPTIONAL_QUEUE_COLUMNS = [
   ['qRepeatY', 'renderQueueRepeatY'], ['qTileMode', 'renderQueueTileMode'], ['qTileOffU', 'renderQueueTileOffsetU'],
   ['qTileOffV', 'renderQueueTileOffsetV'], ['qTileMulX', 'renderQueueTileMulX'], ['qTileMulY', 'renderQueueTileMulY'],
   ['qShadowH', 'renderQueueShadowH'], ['qShadowOffX', 'renderQueueShadowOffX'], ['qShadowOffY', 'renderQueueShadowOffY'],
+  ['qKey', 'renderQueueKey'],
 ];
 
 /**
