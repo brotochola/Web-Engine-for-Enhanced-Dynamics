@@ -1,11 +1,13 @@
 # Visual editor plan
 
-**Opened:** 2026-10-22. **Updated:** 2026-10-27. **Status:** Stages 1 to 5 done on branch
+**Opened:** 2026-10-22. **Updated:** 2026-11-01. **Status:** Stages 1 to 5 done on branch
 `visual_editor`, but three items deferred with their reasons: ED-19 (pause only the simulation
 workers; now ED-71), ED-23 (the particle lab as a panel), ED-35b (a fast swap to another scene
 class). Stage 4 and ED-31/32 were built in parallel by four agents in worktrees, on the editor
 tools extension point (2ab97e45), and merged. **Stage 6 (a useful editor) opened 2026-10-27**
 after the author's review: it grows as the work finds more.
+**Stage 7 (usable by developers) opened 2026-11-01:** fifteen tasks, ED-82 to ED-96, each an entry of the register
+(area `editor`, ranks from 101), their subtasks here.
 
 **Final test pass, 2026-10-27 00:04** (one run, on the merged tree): node 2,233/2,233; demos
 105/105; check:types; editorM1Smoke 17/17, editorShellSmoke 11/11, editorHandlesSmoke 10/10,
@@ -711,6 +713,9 @@ Written 2026-10-26, before ED-15.
 12. Milestone M1.
 
 Stages 3 to 5 follow in item order, unless the author reorders them.
+
+**Stage 7** follows its ranks in the register (101 on: ED-82, ED-83, ED-84, …), unless the author reorders them; a
+blocked task waits for its decision while the next one goes on.
 
 ## Stages and items
 
@@ -1798,6 +1803,198 @@ layout, tree, console, export, session) all pass; dist/ put back.
 - [x] **ED-75 Selecting costs less** Done 2026-10-27 (92b1f989): a selection in littleCity 9.8 → 0.6 ms (houses), 9.1 → 1.6 (trees), median: the scene list read the layout right after the inspector rebuilt (a forced layout of the page), and the folded Joints section built a 1,307-option select. editorFormatSmoke opens the section first. (found item 28): profile an inspector rebuild in littleCity; build what a folded
   section holds only when it opens (the Joints row lists every entity of the file), keep rows across selections.
 
+### Stage 7: usable by developers (opened 2026-11-01)
+
+The author asked (2026-11-01) what the editor lacks to be usable by developers who install WeedJS, and for a plan
+broken into tasks. The goal: a developer who has never seen WeedJS makes a game from `npm create weed-game`, then
+places, tunes, plays and saves its levels in the editor, without reading the engine's source.
+
+**The review (2026-11-01), after merging main into this branch (266f74fe, 824e1de9):**
+
+- **What works:** Stages 1 to 6 (the loop, Play and Stop, handles, joints, decorations, groups, copy and paste,
+  the fast swap, export), on three scenes (the platformer, littleCity, Predator), with 11 smokes. The editor keeps
+  the engine's rules: nothing allocated per frame, its idle cost measured (ED-70), a selection in littleCity 0.8 to
+  2 ms (item 37).
+- **What stops a developer:**
+  - Not installable. `@weed.js/editor` and `create-weed-game` are not on npm (404, checked 2026-11-01), and this
+    branch is not on main.
+  - The template's game opens read-only. Its `create()` spawns the walls, with no scene file and no `spawnParams`:
+    every entity is runtime, and placing says "This scene was not loaded from a scene file: there is no file to
+    place into".
+  - A scene built in code cannot become a level (open decision 6). 3 of the 32 demo scenes have a scene file, and
+    every existing game spawns from code.
+  - The guide stops at ED-80. EDITOR.md and the package README give G's steps as 1, 8, 16, 32, and leave out
+    rotate, copy and paste, F, the box select, groups, unlit, the brush, joints, export and the atlas.
+  - An edit of an entity whose pool its level fills makes it vanish until Stop (item 47): a `[Player, 1]` pool is
+    the first thing a developer edits.
+  - `onSpawned`'s params are typed `any`: no completion for a class's own params.
+  - No prefabs: no reusable variant of a class, no group placed many times.
+- **Its user so far is the author,** and each real session found something big (ED-80, ED-81, N-82, item 47).
+  Dogfooding as a developer (ED-84) is the stage's test, and it files what it finds here.
+- Open engine bugs met by the editor: REVIEW_PLAN.md N-79 (blendMode without a render target) and N-81 (a held
+  world makes no body).
+
+**How the work is tracked:**
+
+- Each task below is an entry of the register (`docs/internal/hypotheses.json`): area `editor`, kind `dx` (`speed`
+  for ED-96), refs naming its row here.
+- Ranks from 101 make the editor's own queue, after the engine's; the page's Worker filter set to `editor` shows it
+  alone.
+- A task waiting for the author's decision is `blocked`, with the decision in its status.
+- Its subtasks are the checklist under it, ticked here (with the commit) as they land. A subtask that needs a sitting
+  of its own takes an id of its own (ED-86a) and an entry.
+- Since 6e0c9dce the register merges by key between this branch and main (`scripts/mergeRegister.mjs`). Engine bugs
+  found here go to main's review plan and register too, as N-79 to N-82 and N-106 to N-108 did.
+
+**Before release (ranks 101 to 107):**
+
+- [ ] **ED-82 The template starts with a level the editor can edit** (rank 101). Today the editor opens
+  `npm create weed-game`'s game read-only.
+  - [ ] `levels/1.scene.json` in the template: the four walls and the player, placed and named. The player is
+    the level's, as the platformer's is (ED-81).
+  - [ ] `GameScene.defaultSceneFile`; `create()` keeps the rules and spawns no walls.
+  - [ ] `Wall` declares `static spawnParams` (`width`, `height` with ranges, `tint` as a color), and `Player`
+    declares its speed and dash, so the inspector shows sliders.
+  - [ ] `npm run build` and Export carry `levels/`. Export already registers them (`registerSceneFile`, ED-32);
+    check the plain build.
+  - [ ] The template's README: open `/editor`, drag a wall, Ctrl+S, reload.
+  - [ ] Tests: `createWeedGame.test.js` (the scaffold names its level and the level parses), and
+    `editorTemplateSmoke.mjs`, new: scaffold, install the local packs, open `/editor`, select a wall, drag it,
+    save, reload, and find the file changed.
+  - Done when: a fresh scaffold opens in the editor with every wall selectable and saved by Ctrl+S, with no
+    code change.
+- [ ] **ED-83 The guide and the README cover what the editor does** (rank 102).
+  - [ ] EDITOR.md: Stage 4's and Stage 6's tools:
+    - the rotate handle, copy and paste, F and Shift+F, the box select and groups, Space+drag;
+    - L (unlit), the scatter brush, joints, the light and emitter handles, Tiled tilemaps;
+    - points and entity params in the view, the palette's pictures and drag to place;
+    - the scene list's filter and menu, the console's filter, Export and the atlas bake;
+    - G and Shift+G with today's steps.
+  - [ ] One key table: EDITOR.md's and `packages/editor/README.md`'s tables come from `shortcuts.js`
+    (`SHORTCUTS`), and a node test fails when a key there is missing from them.
+  - [ ] SCENE_FILES.md:
+    - `loadScene(url, { sceneFile })` (item 14) and `registerSceneFile` (item 15);
+    - `static decorations` and `spawnMany`'s arrays (item 18);
+    - an entity record's rotation and scale (ED-53), and the seed of its own (item 24).
+  - [ ] "Your first level": a guide page from the template (after ED-82), about ten minutes, with screenshots the
+    smoke takes.
+  - [ ] Every example in these pages runs (CLAUDE.md: the guide's examples are user-facing).
+  - Done when: every toolbar button, key and panel is in the guide, and the key test passes.
+- [ ] **ED-84 A game from zero, as a developer would** (rank 103). The stage's test; done once now and again before
+  ED-88.
+  - [ ] Pack the engine and the editor from this branch (`npm pack`), scaffold with `create-weed-game` in a folder
+    outside the repo, and install from the packs.
+  - [ ] Make a small game of two levels with the editor and the classes' code only:
+    - platforms, an enemy with a points route, a pickup;
+    - a goal to the next level, a rope (joints), decorations.
+    - Note the time to the first saved level.
+  - [ ] Each friction or bug: a found item below, and an ED task or an N bug in the register.
+  - [ ] Screenshots at 1920, 1366 and 1100 px wide.
+  - Done when: the game plays from its first level to its last, and every finding is filed.
+- [ ] **ED-85 A level from a scene built in code** (rank 104; blocked: open decision 6, the author's).
+  - [ ] Decide what it takes:
+    - (a) "Save as level" for a scene with no file: every live entity of a class with spawnParams, its params
+      read from the live entity as Copy to scene does (ED-17), with x, y, rotation and scale. A class without
+      params goes by x and y, with a warning. Classes the code spawns at runtime (bullets, particles) are left out,
+      by a list the developer edits before saving.
+    - (b) "Add to level" on a runtime entity, in a scene that has a file.
+  - [ ] The editor writes `levels/<name>.scene.json` and says the two code changes it cannot make: `static
+    defaultSceneFile`, and taking the classes the file now places out of `create()` (it names them).
+  - [ ] Tests:
+    - a capture of the template's code-built walls (before ED-82) loads back to the same positions and params, a
+      parity test as ED-3's;
+    - a smoke on one code-built demo.
+  - Done when: a code-built scene becomes a level with one action and the code changes it names.
+- [ ] **ED-86 (engine) An edit respawns in its own slot** (rank 105). Item 47: an edit despawns and spawns at once,
+  so a class whose pool the level fills has no free slot, and the entity vanishes until Stop.
+  - [ ] logic0 respawns an entity in its slot: the despawn and the spawn at the same index in one step, the spawn
+    generation bumped (`getByName` follows it), the body made again, and `onSpawned` run with the new params.
+    Internal, for debug builds, unless the author wants a public `Class.respawn`.
+  - [ ] The editor's set-param, move, rotate and scale use it, so no edit needs a free slot; 061dd811's message
+    goes.
+  - [ ] Tests: a worker-harness test with a pool of one, where an edit keeps the entity, its index and its name;
+    editorSessionSmoke edits the platformer's player.
+  - [ ] Measure: the spawn kernel (ED-40) shows ordinary spawns unchanged, since the new path is apart.
+  - Done when: the template's player and the platformer's take every edit.
+- [ ] **ED-87 Params typed for the IDE** (rank 106).
+  - [ ] `types/weed.d.ts`: `SpawnParamsOf<typeof Wall.spawnParams>`, the params `onSpawned` gets, mapped from each
+    entry's `value`, which JS infers without literal types:
+    - number → `number`, boolean → `boolean`, string → `string`;
+    - `null` (an entity) → `number | null`, an array (points) → `Float64Array`;
+    - plus `x` and `y`.
+  - [ ] The template's classes and the guide use it in JSDoc (`@param {SpawnParamsOf<…>} p`).
+  - [ ] `npm run check:types` checks a JS sample with checkJs, so a wrong key fails.
+  - Done when: VS Code completes `p.width` in the template's `onSpawned` and flags `p.widht`.
+- [ ] **ED-88 Merge and release** (rank 107; blocked: the author's call).
+  - [ ] Merge into main with main's checklist:
+    - make_bundle, check:dist, test:bundle and test:node:bundle;
+    - buildEditor, smokeEditorBundle, the editor smokes and sceneCycleSmoke;
+    - one Predator gate for the engine changes the branch carries on shared paths (`Time.held` in the logic frame,
+      spawn params on the spawn path);
+    - the prod bundle timed against its sources.
+  - [ ] `npm run release -- minor` (the author's npm login) publishes `@weed.js/engine` and `@weed.js/editor`;
+    `create-weed-game` after them.
+  - [ ] In a clean folder: `npm create weed-game` from npm, then `npm run dev` and `/editor` work, as
+    editorTemplateSmoke checks against the registry.
+  - [ ] The README and the landing page show the editor.
+  - Done when: a developer gets the editor from npm.
+
+**After release (ranks 108 on):**
+
+- [ ] **ED-89 Variants** (rank 108; blocked: their format, the author's). A class with params is almost a prefab;
+  a variant is a named set of its params (BigPlatform: Platform with width 600) placed from the palette.
+  - [ ] Decide:
+    - where variants live: a scene class's `static variants`, or a file beside the levels;
+    - whether a placed variant keeps a link (the record names the variant and saves only its overrides, as
+      Godot's instanced scenes do), so a change to the variant reaches every one placed.
+  - [ ] The format: a record's `variant` key (the loader expands it before the record's own config).
+  - [ ] The palette: variants under their class, with pictures; drag to place.
+  - [ ] The inspector: a param the record overrides in bold, with Revert; "Apply to variant" from a placed one.
+  - [ ] Tests: a record with a variant loads as its expanded record (parity); an editor smoke.
+- [ ] **ED-90 Groups placed many times** (rank 109; after ED-89's link decision).
+  - [ ] Save a selection (ED-28) as a group: its classes, params, offsets from the group's origin, and the joints
+    between its members, by name.
+  - [ ] The palette lists groups. Placing one expands it into placed entities under free names, their joints
+    renamed as paste does (ED-59).
+  - [ ] Optional: a link, so editing the group reaches every copy (ED-89's decision).
+  - [ ] Tests: a placed group's entities and joints match the source selection's, offset.
+- [ ] **ED-91 Scene settings in the inspector** (rank 110; blocked: the author's; Decision 9 says not to restructure
+  `static config`).
+  - [ ] Decide a `settings` section of the scene file: a few keys a level may set over the class's config
+    (gravity, ambient light, background). A key that changes the setup (world size, pools) makes a full load (D3's
+    dirty rules).
+  - [ ] The inspector with nothing selected shows them; each change is one undo; Ctrl+S saves.
+  - [ ] Tests: a level's gravity at load and after a fast swap; a world size change loads fully.
+- [ ] **ED-92 Jump to code** (rank 111).
+  - [ ] The inspector's class name opens its source in the developer's code editor (`vscode://file/…:line`, a
+    setting for VS Code, Cursor or none), from the class's module and the line of its `class`.
+  - [ ] The console's errors link the same way, to their stack's file and line.
+  - [ ] The dev server maps a site path to its file (a route that answers this machine only, as devRoutes.js's).
+  - [ ] Tests: the route; the link built for a class of the template.
+- [ ] **ED-93 (was ED-23) The particle lab as a panel** (rank 112).
+  - [ ] An emitter's settings as inspector fields, from `demos/particleLabScene`'s controls.
+  - [ ] Where an emitter's look is saved (a scene file section, or a JSON the code loads): decided with the
+    author.
+  - [ ] Live preview at the pointer while editing; tests.
+- [ ] **ED-94 (was ED-35b) Fast swap to another scene class with the same setup** (rank 113): a `BossLevel`
+  subclass.
+  - [ ] The setup fingerprint (D3, a WeakMap per class).
+  - [ ] The new module imported on the page and in every worker.
+  - [ ] The class changed without building a new scene instance (item 8: the constructor's global side effects).
+  - [ ] Tests: ED-35's parity, no-leftovers and no-leak tests across two classes.
+- [ ] **ED-95 (engine) A scene-ready hook** (rank 114; blocked: the API's name, the author's). Item 13: a load's
+  spawns are not in `getAllActive()` until the flush after `create()`, and nothing runs after it.
+  - [ ] A hook after `_flushCreateSpawns`, and after a fast swap's content lifecycle; its name decided.
+  - [ ] The guide's lifecycle section.
+  - [ ] littleCity builds its nav grid there, in its own commit: it changes the scene's workload as a benchmark,
+    so its baselines move.
+  - [ ] Tests: the hook sees the file's entities.
+- [ ] **ED-96 (engine) A held world skips the spatial rebuild** (rank 115). Item 34: littleCity's spatial worker
+  spends 2.8 ms a frame in edit mode rebuilding a grid nothing moves in.
+  - [ ] Skip the rebuild while `Time.held`, unless the editor changed something (a flag its respawns set).
+  - [ ] A test that culling and picking stay right after an edit while held.
+  - [ ] Measure: editorIdleCost.mjs on littleCity, before and after; record it.
+
 ---
 
 ## Working rules for these items
@@ -1831,7 +2028,8 @@ layout, tree, console, export, session) all pass; dist/ put back.
 4. ~~Editor page for npm users~~ **Decided 2026-10-26:** the editor ships as its own npm
    package, `@weed.js/editor`, with the file `weed.editor` (ED-29).
 5. ~~Hot reload.~~ **Decided:** fast swap to the same file (ED-4b).
-6. Whether a runtime-spawned entity can be promoted to authored ("add to scene").
+6. Whether a runtime-spawned entity can be promoted to authored ("add to scene"). Since 2026-11-01 with a level
+   made from a scene built in code: ED-85.
 7. ~~Which level a save starts in.~~ **Decided:** the save records the scene file
    (ED-36).
 8. ~~An empty world with no level.~~ **Dropped:** a menu is a scene.
@@ -1841,6 +2039,11 @@ layout, tree, console, export, session) all pass; dist/ put back.
     `spawnParams`.
 11. **Dirty strictness:** start strict (runtime layer, tilemap or nav-shape changes
     force a full load), and relax each rule only once its reset has a test.
+12. **Variants and groups** (ED-89, ED-90, opened 2026-11-01): where they live, and whether a placed one keeps a
+    link to its source and saves only its overrides.
+13. **A level's settings** (ED-91, opened 2026-11-01): which keys a scene file may set over its class's config.
+14. **New API names** (opened 2026-11-01): the scene-ready hook (ED-95), and whether the in-place respawn is public
+    (ED-86).
 
 ## Risks
 
