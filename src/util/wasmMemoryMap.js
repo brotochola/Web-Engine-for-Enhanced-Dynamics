@@ -414,9 +414,10 @@ export const PIXI_KEYED_SHADOW_BYTES = 12;
  * E-177: the keyed frames' resync header, u32 words. Pixi raises REQUEST when its statics texture may miss a change (its
  * first keyed frame, a frame it did not draw keyed); pre-render, seeing it, flags every sprite for its next emit
  * (SpriteRenderer.keyedDirty) and sets SERVED, and after each emit of the main queue stores SERVED into that queue
- * buffer's word, so Pixi draws a buffer keyed only once it carries the request it made.
+ * buffer's word, so Pixi draws a buffer keyed only once it carries the request it made. E-191: LIVE is the queue frame of
+ * Pixi's last keyed upload with shadow terms (0: none); pre-render writes keyed caster rows while it is recent.
  */
-export const PIXI_KEYED_HEADER = Object.freeze({ REQUEST: 0, SERVED: 1, BUFFER0: 2, BUFFER1: 3 });
+export const PIXI_KEYED_HEADER = Object.freeze({ REQUEST: 0, SERVED: 1, BUFFER0: 2, BUFFER1: 3, LIVE: 4 });
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its

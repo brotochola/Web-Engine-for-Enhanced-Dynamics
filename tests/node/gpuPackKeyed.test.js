@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 
 import {
   GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_SPACE_SCREEN, GPU_SPACE_WORLD,
-  GPU_STATIC_FLOATS, makePackContext,
+  GPU_KEYED_CASTER_FLOATS, GPU_STATIC_FLOATS, makePackContext,
 } from '../../src/render/gpuQueueLayout.js';
 import {
-  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack, packKeyedRowsWasm, packSplitRowsWasm,
+  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack, packKeyedCastersWasm, packKeyedRowsWasm,
+  packSplitRowsWasm,
 } from '../../src/render/gpuPackClient.js';
 
 // E-177: the keyed pack writes, for each draw slot, the pose the split pack writes there and the slot pair (the row's
@@ -198,4 +199,40 @@ test('the keyed pack writes each slot\'s shadow terms when asked, zeros for a gl
     }
   }
   assert.ok(glows > 0, 'some glow rows');
+});
+
+// E-191 step 2: keyed caster rows for a list of queue rows: x, y, the key (without the changed bit) as a float and a
+// zero, the shadow terms; a listed row without a key (none, or one at or past keyBase) declines the call.
+test('pack_casters_keyed writes a pose, a key and the shadow terms a listed row, and declines a row without a key', async () => {
+  const s = await setup(192);
+  const { q, b } = s;
+  for (let i = 0; i < N; i++) {
+    q.shadowH[i] = s.rng() * 2;
+    q.shadowOffX[i] = s.rng() * 4 - 2;
+    q.shadowOffY[i] = s.rng() * 4 - 2;
+  }
+  const keyed = [];
+  let keyless = -1;
+  for (let i = 0; i < N; i++) {
+    const k = (q.key[i] & ~GPU_KEYED_CHANGED) >>> 0;
+    if (k < KEY_BASE) keyed.push(i);
+    else if (keyless < 0) keyless = i;
+  }
+  const list = Uint32Array.from(keyed.slice(0, 3000).sort(() => s.rng() - 0.5));
+  const dst = new Float32Array(b.buffer, s.slots.byteOffset, list.length * GPU_KEYED_CASTER_FLOATS);
+  dst.fill(-7);
+  assert.equal(packKeyedCastersWasm(b, q, list, list.length, dst, KEY_BASE, N), list.length);
+  for (let k = 0; k < list.length; k++) {
+    const i = list[k];
+    const want = [q.x[i], q.y[i], (q.key[i] & ~GPU_KEYED_CHANGED) >>> 0, 0, q.shadowH[i], q.shadowOffX[i], q.shadowOffY[i]];
+    for (let j = 0; j < GPU_KEYED_CASTER_FLOATS; j++) {
+      if (dst[k * GPU_KEYED_CASTER_FLOATS + j] !== Math.fround(want[j])) assert.fail(`row ${k} (queue row ${i}) float ${j}`);
+    }
+  }
+  assert.ok(keyless >= 0);
+  const withKeyless = Uint32Array.from([...list.slice(0, 10), keyless]);
+  assert.equal(packKeyedCastersWasm(b, q, withKeyless, withKeyless.length, dst, KEY_BASE, N), -1, 'a row without a key');
+  assert.equal(packKeyedCastersWasm(b, { ...q, key: new Uint32Array(N) }, list, list.length, dst, KEY_BASE, N), -1,
+    'a key column outside the memory');
+  assert.equal(packKeyedCastersWasm(b, q, list, 0, dst, KEY_BASE, N), 0);
 });

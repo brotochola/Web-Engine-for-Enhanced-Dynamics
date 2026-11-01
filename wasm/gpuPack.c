@@ -385,6 +385,38 @@ uint32_t pack_sprites_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, 
   return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0);
 }
 
+/* E-191: a keyed caster row (KEYED_CASTER_FLOATS) for each queue row listed at indices: its x and y, its key as a float
+   and a zero (the slot pair the shadow program reads the row's statics by, from the keyed frames' statics texture), and
+   its shadow terms (shadowH, offX, offY). 0xffffffff, and the rows not to be trusted, when a listed row has no key below
+   keyBase: its statics are not in the texture. */
+#define KEYED_CASTER_FLOATS 7
+
+__attribute__((export_name("pack_casters_keyed")))
+uint32_t pack_casters_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap, uint32_t dst,
+                            uint32_t keyBase) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
+  const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
+  const float *X = F32(t, COL_X), *Y = F32(t, COL_Y);
+  const float *SH = F32(t, COL_SHADOW_H), *SOX = F32(t, COL_SHADOW_OFF_X), *SOY = F32(t, COL_SHADOW_OFF_Y);
+  float *d = (float *)(uintptr_t)dst;
+  const uint32_t n = count < cap ? count : cap;
+  for (uint32_t k = 0; k < n; k++) {
+    const uint32_t i = idx[k];
+    const uint32_t s = key[i] & ~KEY_CHANGED;
+    if (s >= keyBase) return 0xffffffffu;
+    float *r = d + k * KEYED_CASTER_FLOATS;
+    r[0] = X[i];
+    r[1] = Y[i];
+    r[2] = (float)s;
+    r[3] = 0.0f;
+    r[4] = SH[i];
+    r[5] = SOX[i];
+    r[6] = SOY[i];
+  }
+  return n;
+}
+
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags
    (screen 1, a turned camera 2, pixel snap 4, a type filter 8, an include type 16), the camera's x and y, the screen
    scale, the turn's cos and sin, its focus x and y, half the canvas in pixels, the snap camera's x and y and zoom,

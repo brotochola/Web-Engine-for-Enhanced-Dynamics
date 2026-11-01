@@ -33,7 +33,7 @@ export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', engineWasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
-    'pack_sprites_indexed_scatter', 'pack_sprites_keyed',
+    'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed',
   ]);
   return {
     buffer: memory.buffer,
@@ -47,6 +47,8 @@ export async function bindGpuPack(memory, layout) {
     spritesIndexedScatter: k.pack_sprites_indexed_scatter,
     // E-177: the pose and the statics' key in draw order, the statics that changed as updates of a table by key.
     spritesKeyed: k.pack_sprites_keyed,
+    // E-191: keyed caster rows (a pose, a key, the shadow terms) of a list of queue rows.
+    castersKeyed: k.pack_casters_keyed,
     // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
@@ -291,6 +293,33 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   ctx.particleCount = b.u32[r];
   keyed.updates = b.u32[r + 1];
   return out;
+}
+
+/**
+ * E-191: keyed caster rows (GPU_KEYED_CASTER_FLOATS: x, y, the key as a float and a zero, shadowH, offX, offY) for the
+ * queue rows listed in `indices` (the first `count`, at most `capacity`), into `dst`; the queue's key and shadow columns
+ * must be in the memory. -1 when the call is not one the kernel takes, or when a listed row has no key below
+ * `keyBase` (its statics are not in the keyed texture): the caller packs the full rows.
+ * @returns {number} the rows written, or -1
+ */
+export function packKeyedCastersWasm(b, q, indices, count, dst, keyBase, capacity) {
+  if (!b || !b.castersKeyed || !q || !dst || !indices) return -1;
+  const key = q.key;
+  if (!key || key.buffer !== b.buffer || dst.buffer !== b.buffer || !q.shadowH || q.shadowH.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const n = Math.min(count | 0, capacity | 0, indices.length);
+  if (n <= 0) return 0;
+  let indexByte;
+  if (indices.buffer === b.buffer) {
+    indexByte = indices.byteOffset;
+  } else {
+    if (n > b.indexCap) return -1;
+    b.u32.set(indices.subarray(0, n), b.indexByte >> 2);
+    indexByte = b.indexByte;
+  }
+  const out = b.castersKeyed(table, key.byteOffset, indexByte, n, n, dst.byteOffset, keyBase >>> 0);
+  return out === 0xffffffff ? -1 : out;
 }
 
 /**
