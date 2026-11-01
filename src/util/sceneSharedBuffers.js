@@ -256,6 +256,8 @@ function initializeCoreEntityAndComponentBuffers(scene) {
   );
   // E-176: which entity types read their neighbours (Grid.neighborReaders).
   buffers.neighborReaders = new SharedArrayBuffer(GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT);
+  // E-180: each entity type's active list version (GameObject.typeListVersions).
+  buffers.typeListVersions = new SharedArrayBuffer(GameObject.ENTITY_TYPE_FORCE_PROCESS_FLAG_COUNT * 4);
 
   GameObject.initializeArrays(
     totalEntityCount,
@@ -266,6 +268,7 @@ function initializeCoreEntityAndComponentBuffers(scene) {
     buffers.entityTypeForcedLogicWorkerCount,
     scene.spatialPublish ? scene.spatialPublish.neighborByte : 0,
     buffers.neighborReaders,
+    buffers.typeListVersions,
   );
 
   for (const [componentName, pool] of Object.entries(componentPools)) {

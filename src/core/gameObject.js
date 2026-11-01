@@ -255,6 +255,10 @@ export class GameObject {
   // Decremented each frame; entity ticks when it reaches 0, then resets to tickInterval
   static nextTick = null;
 
+  // E-180: per entity type, a version its active list's edits bump (Int32Array, shared): the tickInterval buckets
+  // are rebuilt when their own type's list changed, not on every query version.
+  static typeListVersions = null;
+
   // Camera data (shared with main thread)
   static cameraData = null; // Float32Array Camera.FLOAT_COUNT (zoom, x, y, follow, targetZoom, followEntity stamp)
 
@@ -306,6 +310,7 @@ export class GameObject {
    * @param {SharedArrayBuffer} [entityTypeForcedLogicWorkerCountBuffer] - Uint16 per entityType
    * @param {number} [neighborByte] - the neighbour rows' offset in neighborBuffer
    * @param {SharedArrayBuffer} [neighborReadersBuffer] - Uint8 per entityType: reads neighbours (E-176, Grid.neighborReaders)
+   * @param {SharedArrayBuffer} [typeListVersionsBuffer] - Int32 per entityType: its active list's version (E-180)
    */
   static initializeArrays(
     count,
@@ -315,7 +320,8 @@ export class GameObject {
     entityTypeHasForcedLogicWorkerBuffer = null,
     entityTypeForcedLogicWorkerCountBuffer = null,
     neighborByte = 0,
-    neighborReadersBuffer = null
+    neighborReadersBuffer = null,
+    typeListVersionsBuffer = null
   ) {
     this.globalEntityCount = count;
 
@@ -342,6 +348,7 @@ export class GameObject {
       ? new Uint16Array(entityTypeForcedLogicWorkerCountBuffer)
       : null;
     Grid.neighborReaders = neighborReadersBuffer ? new Uint8Array(neighborReadersBuffer) : null;
+    this.typeListVersions = typeListVersionsBuffer ? new Int32Array(typeListVersionsBuffer) : null;
   }
 
   /**
@@ -455,6 +462,7 @@ export class GameObject {
    */
   static _removeFromTypeActiveList(EntityClass, entityIndex) {
     removeFromTypeActiveList(EntityClass._activeList, entityIndex);
+    GameObject._typeListChanged(EntityClass);
   }
 
   /**
@@ -464,6 +472,7 @@ export class GameObject {
    */
   static _clearTypeActiveList(EntityClass) {
     clearTypeActiveList(EntityClass._activeList);
+    GameObject._typeListChanged(EntityClass);
   }
 
   /**
@@ -474,6 +483,17 @@ export class GameObject {
    */
   static _addToTypeActiveList(EntityClass, entityIndex) {
     addToTypeActiveList(EntityClass._activeList, entityIndex);
+    GameObject._typeListChanged(EntityClass);
+  }
+
+  /**
+   * E-180: the type's active list changed; its version moves after the list's own writes (Atomics.add), so a logic
+   * worker that reads the new version reads the new list.
+   * @param {Class} EntityClass
+   */
+  static _typeListChanged(EntityClass) {
+    const versions = GameObject.typeListVersions;
+    if (versions !== null) Atomics.add(versions, EntityClass.entityType, 1);
   }
 
   /**

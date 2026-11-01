@@ -774,6 +774,7 @@ class LogicWorker extends AbstractWorker {
           runEnd - runStart,
           scratch,
         );
+        GameObject._typeListChanged(EntityClass);
       }
       runStart = runEnd;
     }
@@ -1282,7 +1283,8 @@ class LogicWorker extends AbstractWorker {
   /**
    * tickInterval > 1 without per-frame screen callbacks: one prebuilt id list per phase.
    * Phase matches the old countdown: first frame is frameNumber 1, entity i starts at (i % interval) + 1.
-   * Rebuild only when the active count or query version changes. No alloc on the steady frame.
+   * Rebuild only when the active count or the type's own list version changes (E-180: the global query version
+   * moves with every spawn and despawn of any type, and every interval type rebuilt). No alloc on the steady frame.
    */
   /** The tickInterval buckets of a type no entity of which is forced onto a worker (update() sends forced ones elsewhere). */
   _tickIntervalBucket(
@@ -1290,7 +1292,13 @@ class LogicWorker extends AbstractWorker {
     dtRatio, deltaTime, accTime, transformActive, gameObjects,
     rbAx, rbAy, rbAa, totalWorkers, myIndex
   ) {
-    const ver = this.queryVersionData ? Atomics.load(this.queryVersionData, 0) : 0;
+    const versions = GameObject.typeListVersions;
+    const ver =
+      versions !== null
+        ? Atomics.load(versions, typeInfo.entityType)
+        : this.queryVersionData
+          ? Atomics.load(this.queryVersionData, 0)
+          : 0;
     if (
       !typeInfo._buckets ||
       typeInfo._bucketStampCount !== count ||
