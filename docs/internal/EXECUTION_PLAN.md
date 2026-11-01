@@ -3299,6 +3299,12 @@ slots that hold an occupant for many frames.
 **Plan:** keys past the entities by type and pool slot (particle, decoration, LiquidFun ranges), and a change mark for
 each type (flags of its own, or the emit comparing the few statics a type has), so those rows send their poses only.
 Owner: liquidFunQueryStressScene's renderer; pre-render pays the marks.
+**Decorations kept 2026-11-01 (3c31583a, R-0810): renderer -38.2 % zoomed in.** A keyed scene keys its decorations by
+pool slot past the entities (keyedDecorationsFit: the texture holds them too); the emit marks one changed when the
+statics its row got differ from the ones its slot last emitted (a 32-byte record a slot) or the record is from an earlier
+epoch (a resync). Predator crowd 1.5 zoom 0.6, 4 pairs: renderer 4.075 -> 2.604 ms (-38.2 %, 0/4), pre-render -8.3 %:
+the keyed frames and E-191's keyed caster rows no longer pause there. Particles (their alpha fades every frame) and
+LiquidFun stay keyless: liquidFunQueryStressScene is the next owner if its rows come up.
 
 ### E-189 Keyed frames: an animated sprite whose frame moved sends its texture alone
 
