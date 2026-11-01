@@ -9588,6 +9588,23 @@
       "date": "2026-11-01",
       "result": "",
       "refs": [
+        "EXECUTION_PLAN.md#E-182"
+      ],
+      "statusText": "open: Wave 11 candidates (2026-11-01), found building E-181",
+      "id": "E-182",
+      "rank": 9,
+      "area": "physics",
+      "kind": "speed",
+      "title": "Every moved body's state exported twice a step (the solver's finalize and the glue)",
+      "next": "The glue re-exports a listed body only when the move event's pose differs from the channels (continuous collision). Owner ballsHeavyStressScene physics; Predator physics next. EXECUTION_PLAN.md#E-182."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "result": "",
+      "refs": [
         "EXECUTION_PLAN.md#E-179c"
       ],
       "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
