@@ -9965,21 +9965,23 @@
     {
       "aliases": [],
       "records": [
-        "R-0803"
+        "R-0803",
+        "R-0804",
+        "R-0805",
+        "R-0806"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
       ],
       "id": "N-105",
       "title": "wave13's prod bundle runs Predator's spatial and pre-render 5 to 10 % slower than its sources (two sittings)",
-      "status": "open",
-      "statusText": "open: found 2026-11-01 at wave13's merge (R-0803)",
+      "status": "answered",
+      "statusText": "answered 2026-11-01 (R-0804 to R-0806): no regression; wave13's bundle is faster than wave12's",
       "date": "2026-11-01",
-      "rank": 10,
       "area": "engine",
       "kind": "bug",
-      "result": "",
-      "next": "At wave12's merge the bundle ran spatial -2.8 % and pre-render -4.0 % against src; at wave13's, +9.6 / +5.8 % and +9.3 / +4.6 % in two sittings, the load on either side. First: wave12's bundle against wave13's, both bundles (a worktree with the rev's dist, not only its src). If wave13's is slower, bisect its modules that those workers bundle (decorationPool, decorationSpatial, sceneSharedBuffers, wasmMemoryMap, gpuQueueLayout, gpuPackClient); an import read through webpack's getters in a hot loop was E-77. Before the next npm release."
+      "result": "answered 2026-11-01: wave13 does not slow the bundle (its bundle against wave12's: spatial -8.3 %, pre-render -3.5 %); its bundle against its sources moved +2.4 to +9.6 % over three sittings, at the edge of the spread",
+      "next": "The next merge's bundle sitting watches the bundle's ratio to its sources in spatial and pre-render."
     }
   ],
   "records": [
@@ -17484,6 +17486,36 @@
       "commits": [
         "f16192a3"
       ]
+    },
+    {
+      "id": "R-0804",
+      "date": "2026-11-01",
+      "time": "12:32",
+      "timeFrom": "recorded",
+      "title": "N-105: wave12's shipped bundle against wave13's, NEUTRAL, wave13's no slower (spatial -8.3 %, pre-render -3.5 %)",
+      "verdict": "answered",
+      "text": "**N-105, wave12's shipped bundle against wave13's: NEUTRAL, wave13's no slower (spatial -8.3 %, pre-render -3.5 %).**\n2026-11-01, 12:27 to 12:32 (the result files' times), Chrome, headed, detailed stats off, Predator,\n`runPredatorAbab --vs 4db42575 --hyp-rev HEAD --full-rev --query weedBundle=weed.prod.bundle.esm.min.js` (58785429's\n--full-rev: each side its whole revision, so A runs wave12's dist bundle and B wave13's), 4 pairs.\n\n- spatial 4.710 -> 4.322 ms (-8.3 %, worse 1/4), pre-render 3.872 -> 3.723 (-3.5 %, 2/4), physics -9.9 %, renderer\n  3.061 -> 2.467 (-17.6 %, 0/4: E-191's sun pass, in the bundle too), logic -0.3 %; load keys equal (BODY_COUNT\n  17 546 / 17 540); the B side moved 12 % fewer bodies (5 289 against 6 042).\n- So wave13's changes do not slow the bundle's spatial or pre-render: what read slower at the merge was the bundle\n  against the sources in this afternoon's sittings, which the next sitting tests on wave12's tree.",
+      "commits": [
+        "58785429"
+      ]
+    },
+    {
+      "id": "R-0805",
+      "date": "2026-11-01",
+      "time": "12:38",
+      "timeFrom": "recorded",
+      "title": "N-105: wave12's bundle against its sources this afternoon, NEUTRAL (spatial -1.2 %, pre-render -2.2 %)",
+      "verdict": "passed",
+      "text": "**N-105, wave12's bundle against wave12's sources this afternoon: NEUTRAL (spatial -1.2 %, pre-render -2.2 %).**\n2026-11-01, 12:33 to 12:38 (the result files' times), Chrome, headed, detailed stats off, Predator,\n`runPredatorAbab --vs 4db42575 --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js` (one build: both sides\nwave12's whole tree, A its sources, B its bundle), 4 pairs.\n\n- spatial 5.011 -> 5.000 ms (-1.2 %, worse 1/4), pre-render 4.094 -> 4.005 (-2.2 %, 1/4), logic -7.5 % (0/4), physics\n  -4.2 %, renderer +0.7 %; load keys within 0.2 % (the bundle's side moved 14 % fewer bodies, 6 478 against 7 534).\n- As this morning (R-0794): wave12's bundle is no slower than its sources. With the bundle against bundle sitting\n  (wave13's no slower than wave12's) and wave13's gate (its sources no slower than main's), the two readings of\n  wave13's bundle against its sources (+5 to +10 %) do not compose with the other three beyond the spread of four\n  pairs; a third reading decides whether they are a pattern."
+    },
+    {
+      "id": "R-0806",
+      "date": "2026-11-01",
+      "time": "12:45",
+      "timeFrom": "recorded",
+      "title": "N-105 answered: wave13 does not slow the bundle; a third reading against its sources is neutral (+2.6 / +2.4 %)",
+      "verdict": "answered",
+      "text": "**N-105 answered: wave13 does not slow the bundle's spatial or pre-render; a third reading of its bundle against its\nsources is NEUTRAL (spatial +2.6 %, pre-render +2.4 %).** 2026-11-01, 12:40 to 12:45 (the result files' times),\nChrome, headed, detailed stats off, Predator, `runPredatorAbab --vs f16192a3 --full-rev --query-b\nweedBundle=weed.prod.bundle.esm.min.js` (one build: wave13's merge, A its sources, B its bundle), 4 pairs.\n\n- spatial 5.106 -> 5.238 ms (+2.6 %, 3/4), pre-render 4.312 -> 4.353 (+2.4 %, 3/4), logic -7.4 %, physics -4.3 %; load\n  keys within 0.4 % (the bundle's side moved 17 % fewer bodies).\n- The five sittings together: wave13's bundle against wave12's, spatial -8.3 % and pre-render -3.5 % (R-0804);\n  wave13's sources against main's, -2.5 and +0.7 % (R-0802); wave12's bundle against its sources, -2.8 / -1.2 % and\n  -4.0 / -2.2 % (R-0794, R-0805); wave13's bundle against its sources, +9.6 / +5.8 / +2.6 % and +9.3 / +4.6 / +2.4 %\n  (R-0803 and this one). The shipped bundle got no slower; what moved, by four to six points and shrinking, is the\n  bundle's ratio to its sources in these two workers, at the edge of the spread of four pairs. Nothing to take out;\n  the next merge's bundle sitting watches the ratio."
     }
   ],
   "leads": [
