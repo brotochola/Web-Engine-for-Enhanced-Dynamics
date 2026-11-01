@@ -16,13 +16,14 @@ function queryTablesMB() {
 }
 const TABLES_MB = queryTablesMB();
 
-// `?adobeCharacters=<n>`: the characters spawned (default 10 000), the bench's load knob; the pool holds twice as many.
+// `?adobeCharacters=<n>`: the characters spawned, the bench's load knob. The default, 20 000, is the count the scene
+// drew until 2026-11-01, when create() also spawned 10 000 twice (N-101).
 const CHARACTERS = (() => {
   try {
     const n = parseInt(new URLSearchParams(globalThis.location?.search || '').get('adobeCharacters'), 10);
-    return n > 0 ? Math.min(n, 100000) : 10000;
+    return n > 0 ? Math.min(n, 100000) : 20000;
   } catch {
-    return 10000;
+    return 20000;
   }
 })();
 
@@ -85,7 +86,7 @@ export class AdobeAnimateScene extends Scene {
     },
   };
 
-  static entities = [[AdobeAnimateCharacter, Math.max(20000, CHARACTERS * 2)]];
+  static entities = [[AdobeAnimateCharacter, CHARACTERS]];
 
   constructor(game) {
     super(game);
@@ -99,8 +100,8 @@ export class AdobeAnimateScene extends Scene {
     Camera.setFreeTarget(cx, cy);
     Camera.centerOn(cx, cy);
     Camera.setZoom(1.4);
-
-    this.createNewGame();
+    // No createNewGame() here: the engine calls it after create() for a new game. Calling it here too spawned every
+    // character twice, in pairs on the same spot that pushed each other apart every frame (N-101).
   }
 
   createNewGame() {
