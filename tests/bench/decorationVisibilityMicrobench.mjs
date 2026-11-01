@@ -8,7 +8,10 @@
  * The frame's camera bounds are the worker's own (_cameraBounds, filled by calculateCameraScreenBounds) and marked valid
  * before each call, as update() leaves them after the particle lists. Checksum: the visible list and the flags.
  *
- *   node tests/bench/decorationVisibilityMicrobench.mjs [--on-screen 0.51] [--output path]
+ * --order sorted puts the snapshot in x order, so the blades on screen are one run of it: the outcome of the screen
+ * test is as predictable as in decorationSwayStressScene's grid, against Predator's random order (the default).
+ *
+ *   node tests/bench/decorationVisibilityMicrobench.mjs [--on-screen 0.51] [--order random|sorted] [--output path]
  */
 import { calculateCameraScreenBounds } from '../../src/util/utils.js';
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
@@ -18,11 +21,20 @@ import { setupSwayKernel } from './decorationSwayWasmMicrobench.mjs';
 
 const args = parseArgs();
 const ON_SCREEN = Number(args['on-screen'] ?? 0.51);
+const ORDER = String(args.order ?? 'random');
+if (ORDER !== 'random' && ORDER !== 'sorted') throw new Error(`--order random or sorted, not ${ORDER}`);
 const WORLD_W = 10000;
 const WORLD_H = 5000;
 
 const { worker, n } = await setupSwayKernel();
 if (!worker.cameraData) worker.cameraData = new Float32Array(16);
+if (ORDER === 'sorted') {
+  const x = DecorationComponent.x;
+  const snapshot = worker._activeDecorationSnapshot;
+  const ids = Array.from(snapshot.subarray(0, n));
+  ids.sort((a, b) => (x[a] < x[b] ? -1 : x[a] > x[b] ? 1 : a - b));
+  snapshot.set(ids);
+}
 // The list pre-render reads, as abstractWorker binds it from the scene's buffers.
 const SlotArray = PoolSlotArray(n);
 worker.visibleDecorationsData = new SlotArray(new SharedArrayBuffer((n + 1) * SlotArray.BYTES_PER_ELEMENT));
@@ -48,6 +60,7 @@ if (checksum() !== sum) throw new Error('the checksum moved between calls');
 const report = {
   kernel: 'decorationVisibility',
   decorations: n,
+  order: ORDER,
   onScreen: visible,
   checksum: sum,
   ms: r.ms,
@@ -55,7 +68,7 @@ const report = {
   nsPerDecoration: 1e9 / r.opsPerSec / n,
 };
 console.log(
-  `decorations ${n}, on screen ${visible}, checksum ${sum}: ${r.opsPerSec.toFixed(1)} calls/s, ` +
+  `decorations ${n} (${ORDER}), on screen ${visible}, checksum ${sum}: ${r.opsPerSec.toFixed(1)} calls/s, ` +
     `${report.nsPerDecoration.toFixed(2)} ns a decoration`,
 );
 if (args.output) writeReport(String(args.output), report);
