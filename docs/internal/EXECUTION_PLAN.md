@@ -3249,6 +3249,12 @@ change gives the same list and flags.
 **Plan:** step 0, how many frames a second hold the camera still in the demos (Predator's follows a player and moves
 nearly every frame). Then a stamp of the bounds and of DecorationPool's spawns, despawns and moves; skip when both
 hold. Owner: a scene with a still camera and many decorations.
+**Kept 2026-11-01 (f890c16a, R-0796): particle -50.9 % with a still camera.** Step 0 from the code: bichos centres its
+camera once, littleCity and proceduralTree hold a free camera between pans, Predator and carScene move every frame.
+The pool's list header (now a cache line) counts the active list's changes and the world-owned decorations' moves;
+the particle worker copies the snapshot only when the list moved and tests only when a count, the camera bounds or an
+attached decoration it placed changed. decorationSwayStressScene (320 000, random order, a third on screen): particle
+4.927 -> 2.424 ms (0/4).
 
 ## Wave 12 candidates (2026-11-01)
 
