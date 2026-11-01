@@ -9972,7 +9972,8 @@
         "R-0804",
         "R-0805",
         "R-0806",
-        "R-0807"
+        "R-0807",
+        "R-0812"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -17593,6 +17594,15 @@
       "title": "wave14's gate against main: KEPT (product), Predator pre-render -23.6 % (0/4)",
       "verdict": "passed",
       "text": "**wave14's gate against main: KEPT (product), pre-render -23.6 % (0/4).** 2026-11-01, 14:47 to 14:52 (the result files' times), Chrome, headed, source, detailed\nstats off, Predator at its defaults, `runPredatorAbab --vs cd6183bb --hyp-rev e2abbb91 --owner preRender`, 4 pairs:\nmain against wave14 (E-191 step 2's keyed caster rows, E-192's scan, E-188's keyed decorations).\n\n- pre-render 4.408 -> 3.302 ms (-23.6 %, worse 0/4, cv 8/6 %; -16.6 % against the others), pairs -21.7 / -29.3 / -25.5 /\n  -19.9 %; renderer 2.794 -> 2.450 (under the floor, not judged; pairs -12.2 / -20.1 / -12.6 / -0.8 %); spatial -8.4 %,\n  physics -14.0 % (-3.9 % against the others), logic -3.8 %; load keys within 0.1 %.\n- No worker reads worse: the batch merges. At Predator's defaults the keyed frames hold (zoom under 0.5), so E-191 step\n  2 and E-192 carry the pre-render saving there; E-188 acts zoomed in (R-0810)."
+    },
+    {
+      "id": "R-0812",
+      "date": "2026-11-01",
+      "time": "15:15",
+      "timeFrom": "recorded",
+      "title": "The prod bundle against its sources at wave14's merge: Boids NEUTRAL (8 pairs); Predator's physics and spatial follow its moved bodies",
+      "verdict": "passed",
+      "text": "**The prod bundle against its sources at wave14's merge (b2ecdd42): Boids NEUTRAL with 8 pairs; Predator's physics and\nspatial follow the bodies its bundle side moved.** 2026-11-01, 14:59 to 15:14 (the result files' times), Chrome, headed,\ndetailed stats off, one build (`--vs b2ecdd42 --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`): A its\nsources, B `weed.prod.bundle.esm.min.js`. The bundles were rebuilt from the merge (3532f414), check:dist fresh, the\nsmokes OK on all 8, the node suite on the bundle 259/259.\n\n- **Boids** (fixed load, owner spatial, 8 pairs, 15:04 to 15:14): **NEUTRAL.** spatial 7.147 -> 7.020 ms (+0.1 %, worse\n  6/8, cv 5/8 %; -0.4 % against the others), physics +0.1 % (4/8), pre-render -0.7 % (4/8); logic 2.059 -> 1.684 (under\n  the floor). The same code at the same speed, as R-0807 read.\n- **Predator** (4 pairs, 14:59 to 15:04): REGRESSION by the rule: spatial 4.404 -> 4.590 ms (+3.3 %, 3/4, cv 1/3 %),\n  physics 4.717 -> 5.291 (+10.1 %, 3/4, cv 3/10 %); pre-render -1.9 % (lower 4/4 against the others), logic -5.5 %\n  (0/4 worse). The bundle's side moved more bodies in every pair (the runs' end counts 1 970 -> 7 615, 2 198 -> 2 387,\n  2 167 -> 2 242, 2 140 -> 2 409), and its physics and spatial follow them: pair 1, with 3.9 times the moved bodies,\n  reads physics +27.6 % and spatial +6.4 %; pair 2, +9 % bodies, -2.6 % and -0.8 %. Predator's load is emergent (N-105:\n  the moved bodies swung from -32 % to +29 % across the bundle sittings), so Boids decides the code: the bundle equals\n  its sources, pre-render and logic a little better."
     }
   ],
   "leads": [
