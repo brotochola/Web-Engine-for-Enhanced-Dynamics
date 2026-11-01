@@ -9507,7 +9507,8 @@
         "R-0791",
         "R-0792",
         "R-0793",
-        "R-0794"
+        "R-0794",
+        "R-0798"
       ],
       "status": "kept",
       "date": "2026-10-29",
@@ -17367,6 +17368,18 @@
       "text": "**E-184 kept as a kernel change (e7111409): the WASM list build already writes the visible list without a branch, so\nthe shortcuts went the other way, for whole blocks; +6.1 and +4.4 % in the kernel, the scene neutral.** 2026-11-01,\n10:20 to 10:30 (the result files' times), Node and Chrome (headed, source, detailed stats off).\n\n- E-65's branchless write (a store every lane, the count advanced by the flag) is what particleLists.wasm has done\n  since the migration, so the pick between E-65's two JS copies has nothing to pick. What runs in branch-friendly\n  scenes is the per-lane loop on blocks whose 16 flags agree: particles from one emitter sit at neighbouring slots and\n  on screen together. A full block all on screen now writes its visible entries as its active ones (two u16x8 or four\n  u32x4 stores), one all off writes none; mixed blocks keep the loop.\n- Kernel (d129cffc put particleListsWasmMicrobench in the catalog; runKernelsVsRev --vs HEAD, 9 rounds a side, 65 000\n  live, the shipped float32 build), 10:24: the whole world in view (79 % on screen) 10 543 -> 11 187 ops/s (+6.1 %,\n  rounds won 96 %); a quarter in view in no order 10 745 -> 11 221 (+4.4 %, 100 %). 5 rounds first read +5.5 and\n  +1.8 % (84 and 64 %): undecided, so 9.\n- particleIntegrateStressScene `maxParticles=200000` (u32 lists, 198 000 live), 10:27 to 10:30, `--vs HEAD~1\n  --hyp-rev HEAD`, owner particle, 4 pairs: particle 3.211 -> 3.199 ms (-0.2 %, 2/4), pre-render -1.3 %; NEUTRAL.\n  The build is about 0.3 ms of that worker's 3.2 here, so 6 % of it is under the scene's reach: kept (kernel,\n  product-neutral).",
       "commits": [
         "d129cffc",
+        "e7111409"
+      ]
+    },
+    {
+      "id": "R-0798",
+      "date": "2026-11-01",
+      "time": "10:35",
+      "timeFrom": "recorded",
+      "title": "E-177 in a still scene (renderQueueStressScene): renderer 1.30 -> 0.83 ms, pre-render 1.21 -> 1.21 ms, under the floor",
+      "verdict": "passed",
+      "text": "**E-177 in a still scene: renderQueueStressScene NEUTRAL, renderer 1.30 -> 0.83 ms, pre-render 1.21 -> 1.21 ms (all\nunder the floor).** 2026-11-01, 10:32 to 10:35 (the result files' times), Chrome, headed, source, detailed stats off,\n`runPredatorAbab --vs 3910ee3a --hyp-rev HEAD` (main before wave12's merge against wave13's e7111409), 4 pairs.\n\n- 48 000 still sprites, 18 880 on screen, WebGL, Pixi packs and sorts: keyed frames, and a persist hit every frame, so\n  persist_frame rewrites every sprite's key each frame. renderer 1.299 -> 0.829 ms (-36 %), pre-render 1.206 -> 1.213\n  ms (+0.6 %); load keys equal (VISIBLE_ENTITIES 18 880). Every worker sits under the 3 ms floor: no verdict, but the\n  persist frames' key pass costs pre-render nothing it shows, and nothing needs to go faster there.",
+      "commits": [
         "e7111409"
       ]
     }
