@@ -87,7 +87,7 @@ import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_S
 import { Layer } from '../core/layer.js';
 import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
 import {
-    bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersWasm, packSplitRowsWasm,
+    bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersScanWasm, packSplitRowsWasm,
 } from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
@@ -3216,17 +3216,18 @@ class PreRenderWorker extends AbstractWorker {
         const opts = this._gpuPackOpts;
         const typeArr = q.type || this.renderQueueType;
         const count = q.count | 0;
-        let sunN = compactShadowCasterIndices(q.shadowH, typeArr, count, this._gpuCasterIdx);
-        if (sunN > caps.maxSun) sunN = caps.maxSun;
-        if (sunN > 0 && this._keyedCastersLive()) {
-            // E-191 step 2: a pose, a key and the shadow terms a caster; -1 when a caster has no entity key (its statics
-            // are not in Pixi's texture), and the frame packs the full rows.
-            const keyedN = packKeyedCastersWasm(this._gpuPackWasm, q, this._gpuCasterIdx, sunN, dst.sun, this._keyedKeyBase, caps.maxSun);
+        if (count > 0 && this._keyedCastersLive()) {
+            // E-191 step 2: a pose, a key and the shadow terms a caster, for the casters the kernel finds in the queue
+            // (E-192); -1 when a caster has no entity key (its statics are not in Pixi's texture), and the frame lists
+            // the casters and packs the full rows.
+            const keyedN = packKeyedCastersScanWasm(this._gpuPackWasm, q, count, dst.sun, this._keyedKeyBase, caps.maxSun);
             if (keyedN >= 0) {
                 this._gpuSunKeyed = true;
                 return keyedN;
             }
         }
+        let sunN = compactShadowCasterIndices(q.shadowH, typeArr, count, this._gpuCasterIdx);
+        if (sunN > caps.maxSun) sunN = caps.maxSun;
         if (sunN > 0) {
             this._resetGpuPackOpts(opts);
             opts.indices = this._gpuCasterIdx;

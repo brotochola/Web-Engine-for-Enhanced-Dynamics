@@ -6,9 +6,10 @@ import {
   GPU_KEYED_CASTER_FLOATS, GPU_STATIC_FLOATS, makePackContext,
 } from '../../src/render/gpuQueueLayout.js';
 import {
-  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack, packKeyedCastersWasm, packKeyedRowsWasm,
-  packSplitRowsWasm,
+  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack, packKeyedCastersScanWasm, packKeyedCastersWasm,
+  packKeyedRowsWasm, packSplitRowsWasm,
 } from '../../src/render/gpuPackClient.js';
+import { compactShadowCasterIndices } from '../../src/render/gpuShadowCasters.js';
 
 // E-177: the keyed pack writes, for each draw slot, the pose the split pack writes there and the slot pair (the row's
 // key, its entity without the changed bit, or for a row without one the slot past the entities, and the depth the split
@@ -235,4 +236,57 @@ test('pack_casters_keyed writes a pose, a key and the shadow terms a listed row,
   assert.equal(packKeyedCastersWasm(b, { ...q, key: new Uint32Array(N) }, list, list.length, dst, KEY_BASE, N), -1,
     'a key column outside the memory');
   assert.equal(packKeyedCastersWasm(b, q, list, 0, dst, KEY_BASE, N), 0);
+});
+
+// E-192: the scan finds the casters itself (shadowH above 0, not a glow: compactShadowCasterIndices' test) and writes
+// what the compaction and pack_casters_keyed write, up to its cap; a caster without a key declines it, a row that casts
+// nothing does not.
+test('pack_casters_keyed_scan writes the compaction\'s keyed rows, and declines a caster without a key', async () => {
+  const s = await setup(193);
+  const { q, b } = s;
+  for (let i = 0; i < N; i++) {
+    const r = s.rng();
+    q.shadowH[i] = r < 0.1 ? 0 : r < 0.12 ? NaN : r < 0.14 ? -1 : s.rng() * 2;
+    q.shadowOffX[i] = s.rng() * 4 - 2;
+    q.shadowOffY[i] = s.rng() * 4 - 2;
+  }
+  // The rows without a key cast nothing, but for one.
+  let keyless = -1;
+  for (let i = 0; i < N; i++) {
+    if (((q.key[i] & ~GPU_KEYED_CHANGED) >>> 0) < KEY_BASE) continue;
+    if (keyless < 0) keyless = i;
+    else q.shadowH[i] = 0;
+  }
+  q.shadowH[keyless] = 0;
+  const idx = new Uint32Array(N);
+  // Two regions of their own, at the memory's end (the setup's are smaller than N keyed rows).
+  const rowsBytes = N * GPU_KEYED_CASTER_FLOATS * 4;
+  const end = b.buffer.byteLength - 2 * rowsBytes;
+  assert.ok(end > s.pose.byteOffset + s.pose.byteLength, 'room past the regions of the setup');
+  const want = new Float32Array(b.buffer, end, N * GPU_KEYED_CASTER_FLOATS);
+  const got = new Float32Array(b.buffer, end + rowsBytes, N * GPU_KEYED_CASTER_FLOATS);
+  for (const [label, count, cap, type] of [
+    ['every row', N, N, q.type],
+    ['a cap under the casters', N, 1000, q.type],
+    ['a prefix of the queue', 1777, N, q.type],
+    ['no type column', N, N, null],
+  ]) {
+    const qq = type ? q : { ...q, type: null };
+    let n = compactShadowCasterIndices(qq.shadowH, qq.type, count, idx);
+    if (n > cap) n = cap;
+    want.fill(-7);
+    got.fill(-9);
+    assert.equal(packKeyedCastersWasm(b, qq, idx, n, want, KEY_BASE, cap), n, `${label}: the compaction's rows`);
+    assert.equal(packKeyedCastersScanWasm(b, qq, count, got, KEY_BASE, cap), n, `${label}: as many`);
+    for (let w = 0; w < n * GPU_KEYED_CASTER_FLOATS; w++) {
+      if (!Object.is(got[w], want[w])) assert.fail(`${label}: float ${w}`);
+    }
+    if (type) assert.ok(q.type.subarray(0, count).includes(3), `${label}: glow rows among them`);
+  }
+  q.shadowH[keyless] = 1;
+  assert.equal(packKeyedCastersScanWasm(b, q, N, got, KEY_BASE, N), -1, 'a caster without a key');
+  assert.equal(packKeyedCastersScanWasm(b, q, keyless, got, KEY_BASE, N) > 0, true, 'the rows before it');
+  assert.equal(packKeyedCastersScanWasm(b, { ...q, key: new Uint32Array(N) }, N, got, KEY_BASE, N), -1,
+    'a key column outside the memory');
+  assert.equal(packKeyedCastersScanWasm(b, q, 0, got, KEY_BASE, N), 0);
 });
