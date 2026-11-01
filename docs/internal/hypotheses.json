@@ -9566,20 +9566,21 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0775"
+      ],
+      "status": "kept",
       "date": "2026-11-01",
-      "result": "",
+      "result": "kept: adobe 40 000 still characters, physics 5.235 -> 3.965 ms (-24.0 %, 0/4), spatial 2.651 -> 0.431 ms (-84 %, under the floor); Moved 40 000 -> 0",
       "refs": [
         "EXECUTION_PLAN.md#E-181"
       ],
-      "statusText": "open: Wave 11 candidates (2026-11-01), found measuring E-176b",
+      "statusText": "kept 2026-11-01 (R-0775)",
       "id": "E-181",
-      "rank": 8,
       "area": "physics",
       "kind": "speed",
       "title": "Every awake body is \"moved\", still or not: spatial rebuilds for bodies that never move",
-      "next": "In the glue, a move event whose transform equals the state channels exports the velocities only and is not listed (unless it fell asleep). Owner adobeAnimateScene spatial (Moved 20 000 still bodies, sleeping off); Predator neutral. EXECUTION_PLAN.md#E-181."
+      "next": "Nothing pending; Predator in wave11's gate."
     },
     {
       "aliases": [],
@@ -16897,6 +16898,18 @@
       "title": "E-176b re-sat on a quiet machine: kept, spatial -29.2 %, logic -2.2 %; adobe ran twice its characters (N-101)",
       "verdict": "kept",
       "text": "**E-176b kept on a quiet machine: spatial -29.2 %, logic -2.2 % (86fbee25).** 2026-11-01, 03:08 to 03:17 (the result\nfiles' times), Chrome, headed, source, detailed stats off; no other bench or search process running (checked before\neach run).\n\n- **CPU profile pair first** (one run a side, `--trace-cpu`, adobeAnimateScene `?adobeCharacters=20000`, src from\n  1f15095c and 86fbee25): logic0 STEP 3.606 -> 3.528 ms, busy 224 -> 217 ms/s, its functions' shares the same\n  (`_tickNonDecimatedOne` 23.7 -> 21.1 %); spatial busy 241 -> 175 ms/s, `_findNeighbors` 37.2 -> 10.8 % of it. No\n  sign of logic paying for E-176b.\n- **Re-sit, 4 pairs**, `--vs 1f15095c --hyp-rev 86fbee25 --owner spatial` (src from those commits, the rest from\n  HEAD): **KEPT (product)**. Spatial **3.780 -> 2.673 ms, -29.2 %, worse 0/4** (cv 2/3 %), logic 3.011 -> 3.066 ms,\n  paired **-2.2 %, worse 1/4** (cv 7/5 %), physics +0.3 % (2/4); the others under the 3 ms floor.\n\nR-0771's logic +5.7 % (7/8) does not come back: that evening's machine also ran another session's search (R-0770).\nE-176b can go to main with E-176.\n\n**The scene was not what its knob said (N-101, found here):** ENTITIES_PROCESSED and BODY_COUNT read 40 000 at\n`?adobeCharacters=20000`. adobeAnimateScene's `create()` called `createNewGame()`, which the engine calls after\n`create()` anyway, so it spawned every character twice, in pairs on the same spot that pushed each other apart every\nframe (all 40 000 bodies awake and moved). Every adobeAnimateScene sitting so far, R-0770 and R-0771 included, ran\ntwice the characters it named, with that physics. The demo is fixed separately; this sitting's numbers are for the\nold scene, both sides alike."
+    },
+    {
+      "id": "R-0775",
+      "date": "2026-11-01",
+      "time": "04:09",
+      "timeFrom": "recorded",
+      "title": "E-181 kept: awake still bodies not listed as moved; adobe 40k physics -24.0 %, spatial -84 %",
+      "verdict": "kept",
+      "text": "**E-181 kept: an awake body whose pose did not change is not listed as moved (c21c860a, Box2D 37b75c0); physics\n-24.0 %, spatial -84 % (under the floor).** 2026-11-01, 04:04 to 04:09 (the result files' times), Chrome, headed, source, detailed\nstats off.\n\n- **Where the export happens:** WeedJS's Box2D exports each awake body's state in the solver's finalize task, and the\n  glue's move-event export ran a second time for every moved body. A first form that compared poses in the glue found\n  nothing still (finalize had written the channels already: its test failed on the moving body); the comparison now\n  happens in the finalize export, which notes a still body for the glue.\n- **adobeAnimateScene `?adobeCharacters=40000`** (N-101 fixed: 40 000 distinct, still characters, sleeping off), 4\n  pairs, `--vs 0ad7f294 --hyp-rev c21c860a`, decided with `--owner physics` (`--decide-only`; the sitting ran with\n  spatial as owner, whose base is under the floor at 40 000): **KEPT (product)**: physics **5.235 -> 3.965 ms, -24.0 %, worse 0/4** (cv 2/3 %); spatial 2.651 -> 0.431 ms (-84 %, its base under the 3 ms floor, not judged); logic 2.716 -> 2.673 ms, pre-render 2.352 -> 2.231 ms (both under the floor).\n  Moved 40 000 -> 0 a frame.\n- **Tests:** stillBodiesNotMoved.wasm.test.js (an awake still body is not listed, a moving one is, a still one is listed\n  once on the step it falls asleep; both failed on the old build); node suite 2148/2148, demos 100/100.\n\nPredator's bodies move and sleep when they rest, so it has few awake still bodies; it goes in wave11's Predator gate.",
+      "commits": [
+        "c21c860a"
+      ]
     }
   ],
   "leads": [
