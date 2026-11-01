@@ -9669,11 +9669,11 @@
       "refs": [
         "EXECUTION_PLAN.md#E-185"
       ],
-      "statusText": "open: after E-177's verdict; E-188 covers the same rows by pool slot",
+      "statusText": "open: E-188 keyed the decorations (R-0810); particles, glows and bullets remain",
       "rank": 19,
       "area": "render",
       "result": "",
-      "next": "Particles, glows and decorations in the main queue (about 200 rows a Predator frame) go up every frame at keyBase + their slot. A slot-indexed fingerprint, read in slot order (so in cache), would send only the slots whose occupant changed; small (about 13 KB a frame) unless a scene puts thousands of such rows in the main queue (then E-188)."
+      "next": "The rows still without a key (particles, glows, bullets: about 200 a Predator frame) go up every frame at keyBase plus their slot. A slot-indexed fingerprint, read in slot order, would send only the slots whose occupant changed: about 13 KB a frame at most, small unless a scene puts thousands of such rows in the main queue (LiquidFun: E-194)."
     },
     {
       "aliases": [],
@@ -9703,11 +9703,11 @@
       "refs": [
         "EXECUTION_PLAN.md#E-187"
       ],
-      "statusText": "open: after E-177's verdict on WebGL",
+      "statusText": "open: E-177 kept on WebGL (R-0792); E-191's keyed shadows and E-188 ride on it, WebGL only",
       "rank": 18,
       "area": "render",
       "result": "",
-      "next": "If E-177 keeps on WebGL: the scatter as a compute pass over the statics storage buffer (raw device, as computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU; owner a WebGPU scene that packs in Pixi (Predator with ?backend=webgpu, or BunnyMark)."
+      "next": "The scatter as a compute pass over the statics storage buffer (raw device, as computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU, then the keyed shadow programs' WGSL forms (E-191) and the keyed decorations (E-188). Owner: a WebGPU scene that packs in Pixi (Predator with ?backend=webgpu, or BunnyMark)."
     },
     {
       "aliases": [],
@@ -9730,7 +9730,9 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0813"
+      ],
       "status": "open",
       "date": "2026-11-01",
       "kind": "speed",
@@ -9739,11 +9741,11 @@
       "refs": [
         "EXECUTION_PLAN.md#E-189"
       ],
-      "statusText": "open: after E-177's verdict",
+      "statusText": "open: step 0 answered 2026-11-01 (R-0813): every steady mark is a texture alone",
       "rank": 17,
       "area": "render",
       "result": "",
-      "next": "Most of a Predator frame's marks are frame advances (about 700 rows): each sends 64 bytes for a 2-byte texture change, and the pack reads the row's eleven statics columns. A texture-only update (key and texture, 8 bytes) into a per-key texture-id texture the indexed program reads would cut the updates' bytes about 8 times. Count the marks by cause in Predator first; then the kernel and Predator's renderer."
+      "next": "Predator marks 657 of 13 477 sprites a frame, all changing their texture alone: a texture-only update (key and texture, 8 bytes, into a per-key texture-id texture the indexed program reads) would send 5 KB a frame instead of 42. Its share of the pack is open while the pack's gather costs ten times its kernel (E-193, first); gpuPackKeyedMicrobench needs a case of marked rows to size it. Then Predator's renderer."
     },
     {
       "aliases": [],
@@ -10023,6 +10025,57 @@
       "result": "",
       "next": "Planet demo with the covering ranges (the chunks around the shaft). A fill lit only near its visible surface (a depth falloff from the polygon edge, in Pixi's self-lit shader) would hide the seams.",
       "rank": 20
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "kind": "speed",
+      "id": "E-193",
+      "title": "Pixi's keyed pack costs about ten times its kernel in the worker",
+      "refs": [
+        "EXECUTION_PLAN.md#E-193"
+      ],
+      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "area": "render",
+      "result": "",
+      "next": "pack_sprites_keyed reads 42 ms/s at Predator's defaults and 91 to 118 ms/s at crowd 1.5 (0.7 and 1.5 to 2 ms a frame); its kernel packs 13 500 rows in 0.070 to 0.080 ms in Chrome. Likely the gather: rows read in the painter's order from columns pre-render just wrote on another core. Step 0: the call timed in the worker against a two-worker kernel (the columns written by another worker first), in random, near and queue order. Then the queue's order with an inverse made in C (W9c lost in JavaScript), a prefetch ahead, or the pose and slot streams written by pre-render. Owner: Predator's renderer at crowd 1.5.",
+      "rank": 12
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "kind": "speed",
+      "id": "E-194",
+      "title": "LiquidFun rows keyed by slot (the rest of E-188)",
+      "refs": [
+        "EXECUTION_PLAN.md#E-194"
+      ],
+      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "area": "render",
+      "result": "",
+      "next": "A LiquidFun particle drawn as a sprite is still a row without a key, 64 bytes every keyed frame; liquidFunQueryStressScene draws up to 16 000. Step 0: whether that scene draws keyed (Pixi packs, WebGL) and how often its particles' statics change. Then keys past the decorations by particle index, marked as E-188 marks a decoration. Particles stay keyless: their alpha fades every frame. Owner: liquidFunQueryStressScene's renderer.",
+      "rank": 21
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "kind": "wasm",
+      "id": "E-195",
+      "title": "The shadow stamp's candidate test in float32x4, decided in Chrome",
+      "refs": [
+        "EXECUTION_PLAN.md#E-195"
+      ],
+      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "area": "pre-render",
+      "result": "",
+      "next": "stamp_light_range is pre-render's largest function at Predator crowd 1.5 (108 of 380 ms/s, R-0808). Its f32x4 form read +7.3 % in Node (R-0571, 23/25; shadowStampF32.test.js holds the tolerance) and was never decided in Chrome. shadowStampWasmMicrobench wasm against wasm-f32x4 through chromeKernel.mjs, with the keyed rows (7 and 11 floats) and the full ones; into engine.wasm if faster, Predator crowd 1.5's pre-render not 3 % worse.",
+      "rank": 14
     }
   ],
   "records": [
@@ -17620,6 +17673,15 @@
       "title": "The prod bundle against its sources at wave14's merge: Boids NEUTRAL (8 pairs); Predator's physics and spatial follow its moved bodies",
       "verdict": "passed",
       "text": "**The prod bundle against its sources at wave14's merge (b2ecdd42): Boids NEUTRAL with 8 pairs; Predator's physics and\nspatial follow the bodies its bundle side moved.** 2026-11-01, 14:59 to 15:14 (the result files' times), Chrome, headed,\ndetailed stats off, one build (`--vs b2ecdd42 --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`): A its\nsources, B `weed.prod.bundle.esm.min.js`. The bundles were rebuilt from the merge (3532f414), check:dist fresh, the\nsmokes OK on all 8, the node suite on the bundle 259/259.\n\n- **Boids** (fixed load, owner spatial, 8 pairs, 15:04 to 15:14): **NEUTRAL.** spatial 7.147 -> 7.020 ms (+0.1 %, worse\n  6/8, cv 5/8 %; -0.4 % against the others), physics +0.1 % (4/8), pre-render -0.7 % (4/8); logic 2.059 -> 1.684 (under\n  the floor). The same code at the same speed, as R-0807 read.\n- **Predator** (4 pairs, 14:59 to 15:04): REGRESSION by the rule: spatial 4.404 -> 4.590 ms (+3.3 %, 3/4, cv 1/3 %),\n  physics 4.717 -> 5.291 (+10.1 %, 3/4, cv 3/10 %); pre-render -1.9 % (lower 4/4 against the others), logic -5.5 %\n  (0/4 worse). The bundle's side moved more bodies in every pair (the runs' end counts 1 970 -> 7 615, 2 198 -> 2 387,\n  2 167 -> 2 242, 2 140 -> 2 409), and its physics and spatial follow them: pair 1, with 3.9 times the moved bodies,\n  reads physics +27.6 % and spatial +6.4 %; pair 2, +9 % bodies, -2.6 % and -0.8 %. Predator's load is emergent (N-105:\n  the moved bodies swung from -32 % to +29 % across the bundle sittings), so Boids decides the code: the bundle equals\n  its sources, pre-render and logic a little better."
+    },
+    {
+      "id": "R-0813",
+      "date": "2026-11-01",
+      "time": "15:47",
+      "timeFrom": "recorded",
+      "title": "E-189 step 0 answered: every keyed mark of a steady Predator frame is a texture alone; Pixi's keyed pack costs about ten times its kernel (E-193)",
+      "verdict": "answered",
+      "text": "**E-189 step 0 answered: every keyed mark of a steady Predator frame is a texture alone; and Pixi's keyed pack costs\nabout ten times its kernel in the worker (E-193 filed).** 2026-11-01, 15:40 to 15:45 (the probe's result file, then the\nkernels' runs, printed only), Chrome, headed, source, detailed stats off, Predator at its defaults.\n\n- **Marks by cause.** A temporary probe in pre-render compared, after each emit of the main queue, every sprite row\n  whose key carried the changed bit with what Pixi's keyed texture holds for that key (a mirror written on marked rows\n  only, as the texture is). Frames 600 to 1 200: 13 477 sprites a frame, 657 marked, all 657 changing their texture\n  alone; none changed nothing, none changed anything else. Frames 1 to 600 (spawns, the first resync): 878 marked, 831\n  texture alone, 23 unchanged, 23 more. E-189's premise holds: a texture-only update would send 8 bytes instead of 64,\n  the updates' 42 KB a frame about 5 KB.\n- **The pack's kernel cannot size it yet.** gpuPackKeyedMicrobench sets no changed bits (its 200 updates a frame are its\n  rows without a key, whatever `--dirty` says): 13 500 rows, keyed 0.075 to 0.079 ms in Node at dirty 0 and 0.05 alike.\n- **The pack in the worker against its kernel.** In Chrome (chromeKernel.mjs, 13 500 rows) the keyed pack takes 0.080 ms\n  with the painter's order random and 0.070 ms near the queue's order (the split pack 0.195 and 0.145). In the worker\n  it reads 42 ms/s at Predator's defaults (R-0791's trace, about 0.7 ms a frame) and 91 to 118 ms/s at crowd 1.5\n  (R-0808's traces): about ten times the kernel. Filed as E-193: the gather walks rows pre-render just wrote on another\n  core, in the painter's order, where the kernel reads its own warm cache; W9c (R-0473) lost with the queue's order in\n  the JavaScript pack.\n- Also filed: E-194 (LiquidFun rows keyed by slot, the rest of E-188's scope) and E-195 (the stamp's f32x4 form, +7.3 %\n  in Node in R-0571, never decided in Chrome; the stamp is pre-render's largest function at crowd 1.5)."
     }
   ],
   "leads": [
