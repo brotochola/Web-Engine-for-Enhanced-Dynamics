@@ -76,6 +76,8 @@ enum {
      - 1), its head (a u32 this emit advances and stores atomically after a frame's pushes) and the store's entities (a
      value). */
   K_STORE, K_RING, K_RING_MASK, K_RING_HEAD, K_ENTITIES,
+  /* E-177: SpriteRenderer.keyedDirty (set by whatever changes a sprite's statics; the emit clears it as it sends them). */
+  S_KEYED_DIRTY,
   SLOT_COUNT
 };
 
@@ -84,9 +86,6 @@ enum {
 
 /* E-177: an entity's row of the statics store: the statics texture's row, three RGBA32UI texels. */
 #define K_STORE_WORDS 12
-/* SpriteRenderer.renderDirty's flags (spriteRenderer.js SPRITE_DIRTY_*): the persist path's and the keyed frames'. */
-#define DIRTY_PERSIST 1u
-#define DIRTY_KEYED 2u
 
 /* emitSpriteQueue's loop-invariant switches. */
 #define F_SORT_KEY 1u    /* rqSortKey && source.hasOrder */
@@ -347,7 +346,7 @@ typedef struct {
   float *qTileMulX, *qTileMulY, *qShadowH, *qShadowOffX, *qShadowOffY;
   uint32_t *qKey;
   KeyStore ks;
-  uint8_t *sDirty;
+  uint8_t *sKeyedDirty;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
   const float *aaTime;
@@ -461,7 +460,7 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
   e->qKey = PTR(uint32_t, Q_KEY);
   load_key_store(&e->ks, t);
-  e->sDirty = PTR(uint8_t, S_DIRTY);
+  e->sKeyedDirty = PTR(uint8_t, S_KEYED_DIRTY);
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
   e->aaAsset = PTR(const uint16_t, AA_ASSET);
@@ -587,15 +586,15 @@ INLINE double order_key(const Emit *e, uint32_t i, int32_t idx) {
 /* emitSpriteQueue's sprite branch: collector row i at queue row out. */
 INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   const int32_t idx = e->cIndex[i];
-  /* E-177: whether this sprite's statics go to the store: its keyed flag, taken before its columns are read (so a change
-     after this sets it again for the next frame), or its texture moving below. Without the flags or the last textures
-     the row is compared with the store instead. */
-  const int signals = e->ks.store && e->sDirty && e->aLastTex;
+  /* E-177: whether this sprite's statics go to the store: its keyed flag, taken (an atomic exchange, a full barrier)
+     before its columns are read, so a change after this sets it again for the next frame; or its texture moving below.
+     Without the flags or the last textures the row is compared with the store instead. */
+  const int signals = e->ks.store && e->sKeyedDirty && e->aLastTex;
   uint32_t keyed = 0;
   uint32_t lastTex = INVALID_TEXTURE;
   if (signals) {
-    if (e->sDirty[idx] & DIRTY_KEYED) {
-      __atomic_fetch_and(&e->sDirty[idx], (uint8_t)~DIRTY_KEYED, __ATOMIC_SEQ_CST);
+    if (e->sKeyedDirty[idx]) {
+      __atomic_exchange_n(&e->sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
       keyed = 1;
     }
     lastTex = e->aLastTex[idx];
@@ -1286,7 +1285,8 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
   const float *sSpeed = PTR(const float, S_SPEED);
   const uint8_t *sLoop = PTR(const uint8_t, S_LOOP);
   const int16_t *sZ = PTR(const int16_t, S_Z);
-  uint8_t *sDirty = PTR(uint8_t, S_DIRTY);
+  const uint8_t *sDirty = PTR(const uint8_t, S_DIRTY);
+  uint8_t *sKeyedDirty = PTR(uint8_t, S_KEYED_DIRTY);
   const uint8_t *scActive = PTR(const uint8_t, SC_ACTIVE);
   const float *scH = PTR(const float, SC_H);
   const float *scOx = PTR(const float, SC_OFF_X);
@@ -1343,7 +1343,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       others++;
       continue;
     }
-    if (sDirty && (sDirty[idx] & DIRTY_PERSIST)) return PERSIST_MISS;
+    if (sDirty && sDirty[idx]) return PERSIST_MISS;
     const uint32_t anim = sAnim[idx];
     if (pAnim[i] != anim) return PERSIST_MISS;
     const uint32_t frame = aFrame[idx];
@@ -1354,7 +1354,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       const uint32_t tex = (uint32_t)(frameStart[g] + (int32_t)frame);
       qTexture[i] = (uint16_t)tex;
       if (aLastTex) aLastTex[idx] = (uint16_t)tex;
-      if (keyedStore && sDirty) __atomic_fetch_or(&sDirty[idx], (uint8_t)DIRTY_KEYED, __ATOMIC_SEQ_CST);
+      if (keyedStore && sKeyedDirty) sKeyedDirty[idx] = 1;
       pFrame[i] = (uint16_t)frame;
       repaired++;
     }
@@ -1475,9 +1475,8 @@ uint32_t persist_remember(uint32_t table, uint32_t count, uint32_t maxItems) {
     /* frameIndex[idx] | 0 for every row; past the column it reads undefined. */
     pFrame[i] = (uint32_t)idx < nEntities ? aFrame[idx] : 0;
     pAnim[i] = ty == 0 ? sAnim[idx] : 0;
-    /* The persist flag only (the keyed one is the emit's), and atomically: a statics change landing now keeps both. */
-    if (ty == 0 && sDirty && (sDirty[idx] & DIRTY_PERSIST)) {
-      __atomic_fetch_and(&sDirty[idx], (uint8_t)~DIRTY_PERSIST, __ATOMIC_SEQ_CST);
+    if (ty == 0 && sDirty && sDirty[idx]) {
+      sDirty[idx] = 0;
       cleared = 1;
     }
   }

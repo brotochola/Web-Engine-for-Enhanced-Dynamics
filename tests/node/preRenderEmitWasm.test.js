@@ -619,10 +619,10 @@ async function runCase(t, opts) {
   for (const [, bytes] of untouched) bytes.fill(0xa5);
   const results = b.results;
   // E-177: the store and ring as the kernel leaves them each frame (they start empty), every sprite dirty at first as a
-  // spawn leaves it (SPRITE_DIRTY).
+  // spawn leaves it (keyedDirty).
   const keySt = { head: 0, store: new Uint32Array(N * 12) };
   const keyRung = [];
-  if (k.keyed) SpriteRenderer.renderDirty.fill(3);
+  if (k.keyed) SpriteRenderer.keyedDirty.fill(1);
   for (let f = 0; f < FRAMES; f++) {
     assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
@@ -1082,9 +1082,9 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
   // the test after this one has the Adobe miss.
   const prepare = persistSchedule(k, { inQueue, seed, adobe: false });
   // E-177: with the store, every sprite starts dirty (as a spawn leaves it). The keyed flags are the kernel's alone (the
-  // JS path knows none), so the comparison below leaves renderDirty out; checkKeyStore judges what they do.
-  if (k.keyed) SpriteRenderer.renderDirty.fill(3);
-  const dirtyAt = SpriteRenderer.renderDirty.byteOffset - m.layout.emit.spriteRendererByte;
+  // JS path knows none), so the comparison below leaves keyedDirty out; checkKeyStore judges what they do.
+  if (k.keyed) SpriteRenderer.keyedDirty.fill(1);
+  const dirtyAt = SpriteRenderer.keyedDirty.byteOffset - m.layout.emit.spriteRendererByte;
   const start = all.slice();
 
   /** This frame's column table, its flags, and the full emit a miss leads to (with its ends). */

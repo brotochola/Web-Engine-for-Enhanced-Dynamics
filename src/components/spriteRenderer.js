@@ -24,15 +24,6 @@ export function packTileOffset01(u) {
  */
 export const DEFAULT_ANIMATION_SPEED = 0.2;
 
-/**
- * SpriteRenderer.renderDirty's flags: the persist path's (pre-render rewrites only the poses of a queue whose sprites
- * are all clean, and clears it after a full emit) and, E-177, the keyed frames' (the emit sends the sprite's statics to
- * its store, and clears it). Whatever changes a sprite's statics sets SPRITE_DIRTY, both.
- */
-export const SPRITE_DIRTY_PERSIST = 1;
-export const SPRITE_DIRTY_KEYED = 2;
-export const SPRITE_DIRTY = SPRITE_DIRTY_PERSIST | SPRITE_DIRTY_KEYED;
-
 export function unpackTileOffset01(u16) {
   return (u16 & 65535) / 65535;
 }
@@ -94,7 +85,10 @@ export class SpriteRenderer extends Component {
 
     // Performance optimization - dirty flag
     zIndex: Int16Array, // draw order inside the layer. Larger is in front. 0 with ySort off is emit order.
-    renderDirty: Uint8Array, // SPRITE_DIRTY_* flags: visual properties changed since the persist path / the keyed store took them
+    renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
+    // E-177: 1 = the statics the GPU draws changed (scale, anchor, alpha, tint, texture, tiles) since pre-render's emit
+    // sent them to the keyed frames' store; set beside renderDirty by the setters that change them, cleared by the emit.
+    keyedDirty: Uint8Array,
     screenX: Float32Array,
     screenY: Float32Array,
     // bit 0 flipX, bit 1 flipY. The flip lives in the sign of scaleX / scaleY
@@ -180,7 +174,8 @@ export class SpriteRenderer extends Component {
   set repeatX(value) {
     const v = value | 0;
     SpriteRenderer.repeatX[this.index] = v < 0 ? 0 : v > 65535 ? 65535 : v;
-    SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
+    SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   get repeatY() {
@@ -189,7 +184,8 @@ export class SpriteRenderer extends Component {
   set repeatY(value) {
     const v = value | 0;
     SpriteRenderer.repeatY[this.index] = v < 0 ? 0 : v > 65535 ? 65535 : v;
-    SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
+    SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   get tileMode() {
@@ -203,7 +199,8 @@ export class SpriteRenderer extends Component {
         : v >= SPRITE_TILE_MODE.LOCAL
           ? SPRITE_TILE_MODE.LOCAL
           : v;
-    SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
+    SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   get tileOffsetU() {
@@ -211,7 +208,8 @@ export class SpriteRenderer extends Component {
   }
   set tileOffsetU(value) {
     SpriteRenderer.tileOffsetU[this.index] = packTileOffset01(value);
-    SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
+    SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   get zIndex() {
@@ -235,7 +233,8 @@ export class SpriteRenderer extends Component {
   }
   set tileOffsetV(value) {
     SpriteRenderer.tileOffsetV[this.index] = packTileOffset01(value);
-    SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
+    SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   static packTileOffset01 = packTileOffset01;

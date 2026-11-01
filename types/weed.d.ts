@@ -3306,6 +3306,7 @@ export declare class SpriteRenderer extends Component {
     renderVisible: typeof Uint8Array;
     isItOnScreen: typeof Uint8Array;
     renderDirty: typeof Uint8Array;
+    keyedDirty: typeof Uint8Array;
     screenX: typeof Float32Array;
     screenY: typeof Float32Array;
     inheritTransformRotation: typeof Uint8Array;
@@ -3339,6 +3340,8 @@ export declare class SpriteRenderer extends Component {
   static renderVisible: Uint8Array;
   static isItOnScreen: Uint8Array;
   static renderDirty: Uint8Array;
+  /** E-177: the statics the GPU draws changed since pre-render sent them to the keyed frames' store (1). */
+  static keyedDirty: Uint8Array;
   static screenX: Float32Array;
   static screenY: Float32Array;
   static inheritTransformRotation: Uint8Array;

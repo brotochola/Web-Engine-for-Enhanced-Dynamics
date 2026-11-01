@@ -700,7 +700,7 @@ function _type0PersistHit(bufIdx, count, collectorType, collectorIndex) {
         // expanded row is in the list — skip persist for that frame.
         if (type === 6) return false;
         if (type !== 0) continue;
-        if (dirty && (dirty[idx] & 1)) return false;
+        if (dirty && dirty[idx]) return false;
         if (animState && prevA[i] !== (animState[idx] | 0)) return false;
         // E-98g. The frame moved since this buffer last showed the row: the other buffer's emit or
         // persist frame advanced it. The row gets the current frame's texture; a full emit for
@@ -751,8 +751,8 @@ function _rememberType0Set(bufIdx, count, collectorType, collectorIndex) {
         prevE[i] = idx;
         prevF[i] = frameIndex ? (frameIndex[idx] | 0) : 0;
         prevA[i] = type === 0 && animState ? (animState[idx] | 0) : 0;
-        if (type === 0 && dirty && (dirty[idx] & 1)) {
-            dirty[idx] &= ~1;
+        if (type === 0 && dirty && dirty[idx]) {
+            dirty[idx] = 0;
             clearedDirty = true;
         }
     }
