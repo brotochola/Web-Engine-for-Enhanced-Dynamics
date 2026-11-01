@@ -3080,6 +3080,10 @@ JS loop with the square root written in place. Kernel against today's loop on Pr
 whose bodies opt in, past the 3 ms floor (none yet: a knob first, in its own commit).
 *Rewritten 2026-10-29 at the owner's word: computing speed on read would move the work to the logic workers, and game
 code reads the array directly.*
+**Kept on its kernel 2026-11-01 (R-0778, 647f1d6a):** the pass walks the active list of each type that sets
+deriveSpeed instead of every body's query with a type test each; the JS loop's cost was the bodies it should not have
+visited. deriveSpeedMicrobench, 20 000 bodies in Predator's mix: +76 % (5/6). No scene's pass reaches the floor;
+Predator in wave11's gate. The f32x4 kernel is not needed for this step.
 
 ### E-179 Decorations' screen visibility, every frame in JavaScript
 
