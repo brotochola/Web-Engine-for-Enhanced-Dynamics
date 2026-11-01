@@ -3112,6 +3112,11 @@ N-101) reads Moved 20 000 every frame, so spatial rebuilds the grid (2.1 ms) for
 **Plan:** in the glue, a move event whose transform equals what the state channels hold (Transform.x, y, rotC and rotS
 are those channels) exports the velocities only and is not listed, unless the body fell asleep; teleports keep their
 own list. Owner: adobeAnimateScene's spatial worker; physics there too; Predator, whose bodies move, must stay neutral.
+**Kept 2026-11-01 (R-0775; c21c860a, Box2D 37b75c0):** the comparison is in the solver's finalize export, which WeedJS's
+Box2D runs for every awake body and which had written the channels before the glue looked; the glue leaves a body the
+finalize found still out of the list and out of its second export. adobeAnimateScene at 40 000 still characters, 4
+pairs: physics 5.235 -> 3.965 ms (-24.0 %, 0/4), spatial 2.651 -> 0.431 ms (-84 %, its base under the floor), Moved
+40 000 -> 0. Predator goes in wave11's gate.
 
 ### E-182 Every moved body's state exported twice a step
 
