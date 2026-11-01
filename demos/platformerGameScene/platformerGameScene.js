@@ -134,6 +134,8 @@ export class PlatformerGameScene extends Scene {
       { x: 1500, y: 1620, width: 180, height: 32, tint: 0x7289a5 },
       { x: 3320, y: 1400, width: 170, height: 32, tint: 0x7289a5 },
       { x: 4560, y: 1650, width: 180, height: 32, tint: 0x7289a5 },
+      // A step up from the start ground: the jump rises about 245 px, the platform at 1260 needs 298.
+      { x: 960, y: 1886, width: 180, height: 32, tint: 0x7289a5 },
     ];
 
     for (let i = 0; i < defs.length; i++) {
