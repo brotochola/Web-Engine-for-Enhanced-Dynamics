@@ -62,6 +62,7 @@
         "pack_sprites_split",
         "pack_sprites_split_scatter",
         "pack_sprites_indexed_scatter",
+        "pack_sprites_keyed",
         "pack_sprites_general",
         "pack_casters_general",
         "pack_pose",
@@ -224,6 +225,7 @@
         "pack_sprites_split",
         "pack_sprites_split_scatter",
         "pack_sprites_indexed_scatter",
+        "pack_sprites_keyed",
         "pack_sprites_general",
         "pack_casters_general",
         "pack_pose"
