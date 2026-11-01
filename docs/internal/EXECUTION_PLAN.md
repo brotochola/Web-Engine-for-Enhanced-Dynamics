@@ -3115,6 +3115,25 @@ loses nothing; a ring overrun re-sends the store. Rows without a key go up every
 persist frame only the repaired textures change, through the same path. The store's rows can tear while Pixi reads one
 (pre-render writing the next frame's): the ring lists that entity again, so a torn row lasts a frame. Owners Predator's
 renderer and pre-render (whose emit pays the compare: it runs 4.9 ms in Predator, the busier of the two).
+**v4 to v6, 2026-11-01 (R-0786 to R-0790): pre-render paid for the store.** The change detection moved into the emit.
+v4 compared each sprite's statics with the entity-indexed store: in a traced run the renderer ran 3.39 against 4.42 ms,
+but emit_rows took 162 against 60 ms/s, each store read a memory read with eleven workers busy. v5 replaced the compare
+by flags the statics setters set: Predator's walkers set theirs every tick through setAnimationSpeed (pre-render
++12.2 %, 4/4); v5b took the animation speed off them (+6.0 %, 3/4); v6 gave them a column of their own,
+SpriteRenderer.keyedDirty (+7.7 %, 4/4). The renderer read 16 to 20 % lower in all three (0/4). In the kernel, v6's
+store cost the emit 12.3 %: its writes 6.5 points, the per-row checks 4.9, the ring 0.9.
+**v8, kept 2026-11-01 (ce8ad4b9, 2970ba99; R-0791 to R-0793): a changed bit in the key, no store.** The emit marks a
+sprite row's key (KEY_CHANGED) when its keyed flag was set, its clock moved its frame, its texture is not the last one
+the emit wrote for it, or it repeats; a persist hit rewrites the keys the same way. The keyed pack sends the marked
+rows' statics and every row without a key, from the queue. The marks hold for one queue frame, so Pixi draws a frame
+keyed only after a keyed frame of the one before; otherwise it raises the render-queue memory's header request and
+draws split until the queue buffer it reads carries pre-render's answer (every sprite flagged for that emit). A batch
+whose updates outweigh what they save (a main queue of rows without a key, as a LiquidFun scene that draws its
+particles as sprites) pauses its keyed frames for 1 800 frames. The keyed emit costs 2.7 % in the kernel (a tie).
+Predator, the keyed frames on against off in one build: renderer -15.7 % (0/4), pre-render -1.7 % (1/4), KEPT; against
+main (8 pairs) renderer -16.7 % (0/8), pre-render +5.7 % raw and +2.2 % against the other workers; wave12 with them off
+against main NEUTRAL, pre-render +2.1 % (the build's, followed up below). The physics rises in these sittings followed
+its load (moved bodies, r = 0.88). The follow-ups are Wave 12's candidates.
 
 ### E-178 RigidBody.speed's derive pass, cheaper where it runs (the particle worker)
 
@@ -3230,6 +3249,62 @@ change gives the same list and flags.
 **Plan:** step 0, how many frames a second hold the camera still in the demos (Predator's follows a player and moves
 nearly every frame). Then a stamp of the bounds and of DecorationPool's spawns, despawns and moves; skip when both
 hold. Owner: a scene with a still camera and many decorations.
+
+## Wave 12 candidates (2026-11-01)
+
+Found while building E-177's keyed frames (wave12).
+
+### E-185 Keyed frames: the rows without a key sent only when their slot's statics changed
+
+**Premise:** a keyed frame (E-177) sends the statics of every row without a key (particles, glows, decorations in the
+main queue) every frame, at keyBase + its slot: about 200 rows a Predator frame (13 KB). A fingerprint per slot, read
+in slot order (so in cache), would send only the slots whose occupant's statics changed.
+**Plan:** after E-177's verdict; worth it only for a scene with thousands of such rows in its main queue, where E-188
+(keys by pool slot) does the same with less guessing. Owner: that scene's renderer.
+
+### E-186 Keyed frames: the slot stream without the depth
+
+**Premise:** the entity batch draws with depthTest off, so the depth in a keyed frame's slot pair is never read. A
+4-byte key per instance (or the key in the pose stream, one buffer instead of two) saves 4 of the keyed frame's 24
+bytes a sprite (55 KB a Predator frame) and a buffer update.
+**Plan:** after E-177's verdict: the indexed program's variant without the depth (it takes the depth from the instance
+index and a uniform, or a constant), the kernel's slot stream at one word. Owner: Predator's renderer.
+
+### E-187 Keyed frames on WebGPU
+
+**Premise:** E-177 builds keyed frames for WebGL (Predator's backend): the changed statics are drawn into the statics
+texture. A WebGPU batch keeps split frames.
+**Plan:** if E-177 keeps: the scatter as a compute pass over the statics storage buffer (the raw device, as
+computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU. Owner: a WebGPU scene that packs in Pixi
+(Predator with the WebGPU backend, or BunnyMark).
+
+### E-188 Keyed frames for the main queue's other rows, by pool slot
+
+**Premise:** rows without an entity go up every frame in a keyed frame, 64 bytes an update against the 36 a keyed row
+saves. A scene that draws its LiquidFun particles as sprites (liquidFunQueryStressScene: up to 16 000 such rows) loses
+with keyed frames, which pause there (E-177's loss rule). Particles, decorations and LiquidFun particles have pool
+slots that hold an occupant for many frames.
+**Plan:** keys past the entities by type and pool slot (particle, decoration, LiquidFun ranges), and a change mark for
+each type (flags of its own, or the emit comparing the few statics a type has), so those rows send their poses only.
+Owner: liquidFunQueryStressScene's renderer; pre-render pays the marks.
+
+### E-189 Keyed frames: an animated sprite whose frame moved sends its texture alone
+
+**Premise:** most of a Predator frame's marks are frame advances (about 700 rows changed a frame, R-0781): each sends
+64 bytes for a 2-byte texture change, and the pack reads the row's eleven statics columns for it.
+**Plan:** count the marks by cause in Predator first. Then a texture-only update (key and texture, 8 bytes) into a
+per-key texture-id texture the indexed program reads, about 8 times fewer bytes for those rows. Owner: Predator's
+renderer.
+
+### E-190 Pre-render's 2 % that the keyed frames' build costs where they are off
+
+**Premise:** wave12 with its keyed frames off against main: pre-render +2.1 % (4/4, cv 3/3 %, R-0793), so every scene
+that does not key its frames pays it. What differs there: the key column in the render queue (every column after it
+moved, by 477 KB in Predator's queue, which changes how the emit's column streams alias in 4 KB), keyedDirty in
+SpriteRenderer's block (the columns after it moved by 42 KB), and the emit's keyed branches.
+**Plan:** the plain emit kernel on both trees (preRenderEmitWasmMicrobench's wasm variant); if it ties, the layouts:
+the key column at the queue's end, then keyedDirty at the block's end. Owner: Predator's pre-render, or a stress scene
+whose pre-render is the emit.
 
 ---
 
