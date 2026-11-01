@@ -9640,20 +9640,21 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0797"
+      ],
+      "status": "kept",
       "date": "2026-11-01",
-      "result": "",
+      "result": "kept (kernel, product-neutral; e7111409): whole-block shortcuts in the WASM list build, kernel +6.1 % (96 %) and +4.4 % (100 %); particleIntegrateStressScene at 200 000 neutral",
       "refs": [
         "EXECUTION_PLAN.md#E-184"
       ],
-      "statusText": "open: Wave 11 candidates (2026-11-01), E-65 reopened with E-179's form",
+      "statusText": "kept (kernel) 2026-11-01 (e7111409, R-0797): whole-block shortcuts, E-65's branchless write already shipped in WASM",
       "id": "E-184",
-      "rank": 14,
       "area": "particle",
       "kind": "speed",
       "title": "The particle cull's branch and branchless copies, picked per frame by a sample of the flips (E-65 reopened)",
-      "next": "After E-179's verdict: E-65's branchless visible-list write (kernel -16 % at 82 % visible random, +8 % all visible) as a second copy, picked as E-179 picks. EXECUTION_PLAN.md#E-184."
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -17354,6 +17355,19 @@
       "text": "**E-179c kept (f890c16a): the decoration screen test and the snapshot copy skip a frame that changed nothing; particle\n-50.9 % with a still camera.** 2026-11-01, 10:14 to 10:17 (the result files' times), Chrome, headed, source, detailed\nstats off, decorationSwayStressScene `decorations=320000&order=random` with `--camera-zoom 0.03` (E-179's regime: a\nthird on screen, the list as random as Predator's grass), `--vs HEAD~1 --hyp-rev HEAD`, owner particle, 4 pairs.\n\n- Step 0 from the code: bichos (30 000 decorations) centres its camera once; littleCity (20 000) and proceduralTree\n  (65 000) run a free camera that holds between pans; Predator and carScene follow a moving target, so they move every\n  frame and skip nothing.\n- The pool's list header (now a cache line) counts the active list's changes and the world-owned decorations' moves;\n  the particle worker copies the snapshot only when the list count moved and tests only when a count, the camera\n  bounds or an attached decoration it placed changed. tests/node/decorationScreenLoops.test.js checks each change\n  (a move, a despawn, a spawn, the camera, an attached decoration's parent) against a full test.\n- particle 4.927 -> 2.424 ms (-50.9 %, worse 0/4, cv 2/1 %), p95 about 7.0 -> 3.0 ms; ACTIVE_DECORATIONS 320 000 on\n  both sides. The other workers sit under the floor in this scene. Predator's particle worker runs under the floor\n  too (0.8 ms) and its camera moves, so it pays two atomic loads and a compare a frame.",
       "commits": [
         "f890c16a"
+      ]
+    },
+    {
+      "id": "R-0797",
+      "date": "2026-11-01",
+      "time": "10:30",
+      "timeFrom": "recorded",
+      "title": "E-184 kept (kernel): whole-block shortcuts in the WASM particle list build, +6.1 / +4.4 %, the scene neutral",
+      "verdict": "kept-kernel",
+      "text": "**E-184 kept as a kernel change (e7111409): the WASM list build already writes the visible list without a branch, so\nthe shortcuts went the other way, for whole blocks; +6.1 and +4.4 % in the kernel, the scene neutral.** 2026-11-01,\n10:20 to 10:30 (the result files' times), Node and Chrome (headed, source, detailed stats off).\n\n- E-65's branchless write (a store every lane, the count advanced by the flag) is what particleLists.wasm has done\n  since the migration, so the pick between E-65's two JS copies has nothing to pick. What runs in branch-friendly\n  scenes is the per-lane loop on blocks whose 16 flags agree: particles from one emitter sit at neighbouring slots and\n  on screen together. A full block all on screen now writes its visible entries as its active ones (two u16x8 or four\n  u32x4 stores), one all off writes none; mixed blocks keep the loop.\n- Kernel (d129cffc put particleListsWasmMicrobench in the catalog; runKernelsVsRev --vs HEAD, 9 rounds a side, 65 000\n  live, the shipped float32 build), 10:24: the whole world in view (79 % on screen) 10 543 -> 11 187 ops/s (+6.1 %,\n  rounds won 96 %); a quarter in view in no order 10 745 -> 11 221 (+4.4 %, 100 %). 5 rounds first read +5.5 and\n  +1.8 % (84 and 64 %): undecided, so 9.\n- particleIntegrateStressScene `maxParticles=200000` (u32 lists, 198 000 live), 10:27 to 10:30, `--vs HEAD~1\n  --hyp-rev HEAD`, owner particle, 4 pairs: particle 3.211 -> 3.199 ms (-0.2 %, 2/4), pre-render -1.3 %; NEUTRAL.\n  The build is about 0.3 ms of that worker's 3.2 here, so 6 % of it is under the scene's reach: kept (kernel,\n  product-neutral).",
+      "commits": [
+        "d129cffc",
+        "e7111409"
       ]
     }
   ],
