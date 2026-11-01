@@ -725,7 +725,8 @@ export class InstancedSpriteBatch {
       this._show(false);
       return null;
     }
-    const includeType = o.includeType | 0;
+    // N-102: a filter the options leave out is none (-1, as documented), not type 0.
+    const includeType = o.includeType == null ? -1 : o.includeType | 0;
     const hasInclude = includeType >= 0;
     if (!useIndices && hasInclude && !o.type) {
       this.geometry.instanceCount = 0;
@@ -754,8 +755,8 @@ export class InstancedSpriteBatch {
       }
     }
     const typeArr = o.type || null;
-    const exclude0 = o.excludeType0 | 0;
-    const exclude1 = o.excludeType1 | 0;
+    const exclude0 = o.excludeType0 == null ? -1 : o.excludeType0 | 0;
+    const exclude1 = o.excludeType1 == null ? -1 : o.excludeType1 | 0;
     const hasExclude = exclude0 >= 0 || exclude1 >= 0;
     const filterTypes = !useIndices && typeArr && (hasInclude || hasExclude);
     const ctx = this._uploadCtx;
