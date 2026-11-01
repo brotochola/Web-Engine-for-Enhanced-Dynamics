@@ -4,7 +4,9 @@
 // rows a texture row), instanced over a buffer holding the updates, into a framebuffer over the texture. Integer render
 // targets do not blend, and the rectangles of one draw land in order, so a key's last update is the one it keeps. Raw
 // GL, as the record textures are filled: every binding and switch it touches goes back as it was, since Pixi caches
-// them (the viewport and the framebuffer too).
+// them (the viewport and the framebuffer too). The color mask and the viewport come from Pixi's caches, not from GL:
+// Chrome answers either query with a round trip to the GPU process, and the first query of a frame waits there for
+// every command queued before it (1.1 ms a frame in Predator).
 
 import { GPU_KEYED_ROW_WORDS } from '../gpuPackClient.js';
 import { STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, STATICS_TEX_ROW_SHIFT } from '../spriteIndexed.js';
@@ -115,13 +117,15 @@ export function createStaticsScatterGl(gl) {
 
 /**
  * Draw `count` updates (`updates`, GPU_KEYED_ROW_WORDS u32 each, not in shared memory) into `texture`, a
- * `width` x `height` RGBA32UI texture of statics rows.
+ * `width` x `height` RGBA32UI texture of statics rows. `renderer` is Pixi's WebGL renderer, whose colorMask system and
+ * render target adaptor hold the mask and the viewport GL has.
  */
-export function scatterStaticsGl(s, texture, updates, count, width, height) {
+export function scatterStaticsGl(s, renderer, texture, updates, count, width, height) {
   const gl = s.gl;
   const fbo = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING);
   const readFbo = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
-  const viewport = gl.getParameter(gl.VIEWPORT);
+  const cached = renderer?.renderTarget?.adaptor?._viewPortCache;
+  const viewport = cached ? [cached.x, cached.y, cached.width, cached.height] : gl.getParameter(gl.VIEWPORT);
   const program = gl.getParameter(gl.CURRENT_PROGRAM);
   const vao = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
   const arrayBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
@@ -130,8 +134,9 @@ export function scatterStaticsGl(s, texture, updates, count, width, height) {
   const depth = gl.isEnabled(gl.DEPTH_TEST);
   const stencil = gl.isEnabled(gl.STENCIL_TEST);
   const cull = gl.isEnabled(gl.CULL_FACE);
-  const mask = gl.getParameter(gl.COLOR_WRITEMASK);
-  const masked = !(mask[0] && mask[1] && mask[2] && mask[3]);
+  const colorMask = renderer?.colorMask;
+  const mask = colorMask && typeof colorMask._colorMaskCache === 'number' ? colorMask._colorMaskCache : 15;
+  const masked = mask !== 15;
 
   gl.bindBuffer(gl.ARRAY_BUFFER, s.buffer);
   if (s.bufferBytes < updates.byteLength) {
@@ -150,7 +155,7 @@ export function scatterStaticsGl(s, texture, updates, count, width, height) {
   if (depth) gl.disable(gl.DEPTH_TEST);
   if (stencil) gl.disable(gl.STENCIL_TEST);
   if (cull) gl.disable(gl.CULL_FACE);
-  if (masked) gl.colorMask(true, true, true, true);
+  if (masked) colorMask.setMask(15);
   gl.useProgram(s.program);
   if (s.width !== width || s.height !== height) {
     gl.uniform2f(s.uSize, width, height);
@@ -162,7 +167,7 @@ export function scatterStaticsGl(s, texture, updates, count, width, height) {
 
   gl.bindVertexArray(vao);
   gl.useProgram(program);
-  if (masked) gl.colorMask(mask[0], mask[1], mask[2], mask[3]);
+  if (masked) colorMask.setMask(mask);
   if (cull) gl.enable(gl.CULL_FACE);
   if (stencil) gl.enable(gl.STENCIL_TEST);
   if (depth) gl.enable(gl.DEPTH_TEST);

@@ -2132,7 +2132,7 @@ class PixiRenderer extends AbstractWorker {
     const texSys = renderer?.texture;
     if (!gl || !texSys || count <= 0) return;
     if (this._staticsScatterGl === null || this._staticsScatterGl.gl !== gl) this._staticsScatterGl = createStaticsScatterGl(gl);
-    scatterStaticsGl(this._staticsScatterGl, texSys.getGlSource(source).texture, updates, count, width, height);
+    scatterStaticsGl(this._staticsScatterGl, renderer, texSys.getGlSource(source).texture, updates, count, width, height);
   }
 
   /** Every frame: new GPU particle records up, each ring's live window and clock set. */
