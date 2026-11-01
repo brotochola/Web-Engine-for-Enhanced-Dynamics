@@ -3143,6 +3143,10 @@ time of impact).
 **Plan:** the glue re-exports a listed body only when the event's pose differs from what the channels hold. Owner: the
 physics worker of a scene full of moving bodies (ballsHeavyStressScene); Predator's physics (10 ms, most bodies
 moving) next.
+**Kept on its kernel 2026-11-01 (R-0779; 900098ae, Box2D c37ccc0):** the second export also reads the velocities after
+LiquidFun's coupling changed them, so they are still read; only the pose (an atan2, five stores) waits for a change.
+moveExportMicrobench, 20 000 moving bodies: +2.2 % (6/6); ballsHeavyStressScene physics +0.1 %, neutral. On the way it
+showed E-181's still bodies exporting a push from the water a frame late, fixed in c83315e4.
 
 ### E-183 Per-frame loops stuck on stale OSR code
 
