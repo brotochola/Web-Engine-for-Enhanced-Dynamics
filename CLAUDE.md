@@ -19,7 +19,8 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   --text-file <note.md>`; `show <id>` and `log` read it, and `node scripts/buildHypothesesPage.mjs --open`
   builds the page with its timeline (`hypotheses.html`, not committed). Its links into the docs name a row
   by key, never by line (`EXECUTION_PLAN.md#E-82b`); a node test fails when a key finds no row or several.
-  `HYPOTHESIS_LOG.md` is only a pointer now: its rows are records.
+  `HYPOTHESIS_LOG.md` is only a pointer now: its rows are records. Branches merge the register by key
+  (`scripts/mergeRegister.mjs`, the merge driver `.gitattributes` names; define it once per clone, as that file says).
 - **Plans and open items:** `docs/internal/EXECUTION_PLAN.md` (speed hypotheses E-xx),
   `docs/internal/WASM_HYPOTHESES.md` (the WASM migration), `docs/internal/REVIEW_PLAN.md` (review items
   B/M/D/R/G/V/N/DOC). New findings go there. `docs/internal/README.md` indexes every internal doc;
