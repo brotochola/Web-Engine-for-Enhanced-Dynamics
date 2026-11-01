@@ -7,7 +7,7 @@ import { markEngineAccessor } from './engineAccessors.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
-import { SpriteRenderer, DEFAULT_ANIMATION_SPEED, SPRITE_DIRTY } from '../components/spriteRenderer.js';
+import { SpriteRenderer, DEFAULT_ANIMATION_SPEED, SPRITE_DIRTY, SPRITE_DIRTY_PERSIST } from '../components/spriteRenderer.js';
 import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
@@ -1120,7 +1120,8 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
-      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
+      // Which rows are drawn, not a row's statics: the persist flag, a keyed one left as it is.
+      SpriteRenderer.renderDirty[this.index] |= SPRITE_DIRTY_PERSIST;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
@@ -1363,7 +1364,8 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
-      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
+      // Which rows are drawn, not a row's statics: the persist flag, a keyed one left as it is.
+      SpriteRenderer.renderDirty[this.index] |= SPRITE_DIRTY_PERSIST;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
@@ -1421,7 +1423,8 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerMask) {
       if (SpriteRenderer.layerMask[i] !== m) {
         SpriteRenderer.layerMask[i] = m;
-        SpriteRenderer.renderDirty[i] = SPRITE_DIRTY;
+        // The layer a sprite is drawn in, not its statics.
+        SpriteRenderer.renderDirty[i] |= SPRITE_DIRTY_PERSIST;
       }
     }
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
@@ -1701,7 +1704,9 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return this;
     if (SpriteRenderer.animationSpeed[this.index] !== speed) {
       SpriteRenderer.animationSpeed[this.index] = speed;
-      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
+      // The clock's rate, not the statics (a frame it moves is a texture the emit sees move). Games set it every tick
+      // (Predator's walkers, from their speed): a keyed flag here rewrote thousands of store rows a frame.
+      SpriteRenderer.renderDirty[this.index] |= SPRITE_DIRTY_PERSIST;
     }
     return this;
   }
