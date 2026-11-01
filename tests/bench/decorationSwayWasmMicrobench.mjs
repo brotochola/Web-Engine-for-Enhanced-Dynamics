@@ -203,8 +203,9 @@ function moved(buffer, region, from, Type = from.constructor) {
 /**
  * A real particle worker whose sway arrays all live in one shared memory, Predator's grass spawned and
  * the kernel bound. `kMax` sizes the bucket tables for a grid larger than the one the worker starts with.
- * `slotBytes` 4 lays the snapshot and the chunk list out as u32 and binds the u32 sway (E-129).
- * @param {{ n?: number, k?: number, kMax?: number, listCap?: number, onScreen?: number, seed?: number, slotBytes?: number }} [opts]
+ * `slotBytes` 4 lays the snapshot and the chunk list out as u32 and binds the u32 sway (E-129). `listCounters` gives the
+ * pool's list header room for E-179c's change counts, as a scene's has (without them nothing skips).
+ * @param {{ n?: number, k?: number, kMax?: number, listCap?: number, onScreen?: number, seed?: number, slotBytes?: number, listCounters?: boolean }} [opts]
  */
 export async function setupSwayKernel(opts = {}) {
   const n = opts.n ?? GRASS;
@@ -247,7 +248,7 @@ export async function setupSwayKernel(opts = {}) {
       decorationFreeList: new SharedArrayBuffer(n * poolSlotBytes(n)),
       decorationFreeListTop: new SharedArrayBuffer(poolFreeListTopBytes(n)),
       activeDecorationsData: new SharedArrayBuffer((1 + n) * poolSlotBytes(n)),
-      activeDecorationsLock: new SharedArrayBuffer(4),
+      activeDecorationsLock: new SharedArrayBuffer(opts.listCounters ? 64 : 4),
     },
   });
   if (DecorationComponent.rotC.buffer !== buffer) throw new Error('DecorationComponent is not in the kernel memory');

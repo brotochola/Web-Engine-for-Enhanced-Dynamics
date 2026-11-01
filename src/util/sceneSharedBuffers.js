@@ -386,7 +386,8 @@ function initializeDecorationBuffers(scene) {
   DecorationPool.initializeFreeList(buffers.decorationFreeList, buffers.decorationFreeListTop);
 
   createCompactSlotListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
-  buffers.activeDecorationsLock = new SharedArrayBuffer(4);
+  // The list's lock and, past it on the same cache line, E-179c's change counts (decorationSpatial.js DECORATION_*_EPOCH).
+  buffers.activeDecorationsLock = new SharedArrayBuffer(64);
   DecorationPool.initializeActiveList(buffers.activeDecorationsData, buffers.activeDecorationsLock);
 
   const cellSize = config.spatial?.cellSize || config.cellSize;
