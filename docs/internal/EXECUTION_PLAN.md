@@ -3145,7 +3145,7 @@ code, so the function deopts at that statement on every call. The shipped `updat
 Predator and the stress scenes: the functions that deopt at the same bytecode every frame. Then each loop in a function
 of its own that returns right after it (E-179's form), one change per worker. Owners: the workers it finds.
 
-### E-184 The particle cull's two copies, picked per frame (E-65 reopened)
+### E-184 The particle cull's two copies, picked per frame
 
 **Premise:** E-65 timed a branchless visible-list write for the rotation-0 particle cull: -16 % at 82 % visible in random
 order, +8 % with all visible, and screened it because "the gain depends on the scene" (emitters' particles are
