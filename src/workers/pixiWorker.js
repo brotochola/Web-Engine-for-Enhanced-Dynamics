@@ -2460,10 +2460,11 @@ class PixiRenderer extends AbstractWorker {
           : this._gpuRecordTexture(),
       keyed,
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
-      // stream and statics rows; a keyed one's slot stream and updates (its statics are scattered on the GPU).
+      // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
+      // shadow stream of the sun's pass over its instances (3 floats a row).
       arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)
         + (keyed !== null
-          ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS)
+          ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS + 3)
           : indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)),
     });
     this.spriteMesh = this.entitiesBatch.mesh;
