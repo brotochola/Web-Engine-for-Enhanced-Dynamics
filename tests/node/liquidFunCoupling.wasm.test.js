@@ -171,6 +171,27 @@ test('WASM H23: awake mover gets LF vx same frame; position is rigid-step transf
   );
 });
 
+test('WASM E-181: an awake crate at rest in water exports the velocity LiquidFun gives it that frame', () => {
+  // E-181 leaves a body whose pose the finalize found unchanged out of the moved list; the water still pushed it after
+  // the finalize, so its velocity must be read again (sleeping off: it stays awake at rest).
+  const { memory, fn } = instantiateBox2dWasm();
+  const worldId = fn('create_world')(0, 0, 100, 30, 0.7, 3, 4000, 1);
+  assert.ok(worldId);
+  assert.ok(fn('bind_game_buffers')(CAP));
+  fn('world_enable_sleeping')(worldId, 0);
+  const crate = dynamicBox(fn, worldId, 0, 0, 16, 16, { gravityScale: 0, density: 0.25, entityIndex: 1 });
+  assert.ok(crate >= 0);
+  fn('step_world')(worldId, 1 / 60, 1);
+  const rest = readBody(memory, fn, crate);
+  assert.ok(Math.abs(rest.vx) < 1e-6 && Math.abs(rest.vy) < 1e-6, 'at rest before the water');
+  assert.ok(fn('create_particle_system')(worldId, 10, 1.0, 800));
+  // Water on the crate's left half only, so it pushes one way.
+  assert.ok(fn('create_particle_group_box')(-40, -40, 0, 40, 0, 0, 0.5, 0, 0, 0, 1, 1) >= 0);
+  fn('step_world')(worldId, 1 / 60, 1);
+  const pushed = readBody(memory, fn, crate);
+  assert.ok(Math.hypot(pushed.vx, pushed.vy) > 1e-3, `the water's push is exported the same frame: vx=${pushed.vx} vy=${pushed.vy}`);
+});
+
 test('WASM H23: sleeping crate velocity may appear next rigid step', () => {
   const { memory, fn } = instantiateBox2dWasm();
   const worldId = fn('create_world')(0, 0, 100, 30, 0.7, 3, 4000, 1);
