@@ -42,3 +42,42 @@ test('a spawn config sets x and y in its own order, and reads each other key onc
   assert.notEqual(seen[1][2], 8, 'and y after it');
   assert.equal(reads, 2, 'one getter read for each spawn');
 });
+
+// N-98: `speed` is a getter without a setter. A config that named it threw "which has only a getter" inside _spawnAt,
+// and a logic worker that set the spawn up logged FATAL ERROR and stopped.
+test('a spawn key that names a read-only property is skipped, with one warning', { concurrency: false }, () => {
+  class Car extends GameObject {
+    get horn() {
+      return 0;
+    }
+    set horn(value) {
+      throw new RangeError(`no horn ${value}`);
+    }
+  }
+  Transform.active = new Uint8Array(3);
+  Transform.x = new Float32Array(3);
+  Transform.y = new Float32Array(3);
+  Transform.rotation = new Float32Array(3);
+  GameObject.nextTick = null;
+  const top = new Int32Array(new SharedArrayBuffer(8));
+  const links = new Uint16Array(3);
+  resetFreeList(top, links, 3, 3);
+  Object.assign(Car, { startIndex: 0, poolSize: 3, entityType: 0, freeList: links, freeListTop: top });
+  GameObject._assignComponentClassMap(Car);
+  Car.instances = [0, 1, 2].map((i) => new Car(i, undefined, null, { page: true }));
+
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (...args) => warnings.push(args.join(' '));
+  try {
+    const a = Car.spawn({ speed: 2, x: 5, y: 6 });
+    const b = Car.spawn({ x: 7, speed: 3, y: 8 });
+    assert.ok(a && b && a !== b, 'both spawned');
+    assert.deepEqual([Transform.x[a.index], Transform.y[a.index], Transform.x[b.index], Transform.y[b.index]], [5, 6, 7, 8]);
+    assert.equal(warnings.length, 1, 'one warning for the class and key');
+    assert.match(warnings[0], /Car\.spawn\(\) skips the key "speed"/);
+    assert.throws(() => Car.spawn({ horn: 1 }), RangeError, 'a setter that throws still throws');
+  } finally {
+    console.warn = warn;
+  }
+});

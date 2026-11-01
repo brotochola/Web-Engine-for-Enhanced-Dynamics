@@ -136,6 +136,35 @@ function isMainThread() {
   return typeof window !== 'undefined' && typeof self.logicWorker === 'undefined';
 }
 
+/**
+ * N-98: class → the spawn config keys that name a read-only property of its instances (a getter without a setter, such
+ * as `speed`). The first spawn's write throws; the key is warned about once and skipped from then on. Null until then,
+ * so a spawn tests one variable.
+ */
+let readOnlySpawnKeys = null;
+
+/** A property the instance cannot be assigned (an accessor without a setter, or a data property not writable). */
+function isReadOnlyProperty(instance, key) {
+  for (let o = instance; o !== null; o = Object.getPrototypeOf(o)) {
+    const d = Object.getOwnPropertyDescriptor(o, key);
+    if (d !== undefined) return 'value' in d ? d.writable === false : d.set === undefined;
+  }
+  return false;
+}
+
+function skipReadOnlySpawnKey(EntityClass, key) {
+  if (readOnlySpawnKeys === null) readOnlySpawnKeys = new WeakMap();
+  let keys = readOnlySpawnKeys.get(EntityClass);
+  if (keys === undefined) {
+    keys = new Set();
+    readOnlySpawnKeys.set(EntityClass, keys);
+  }
+  keys.add(key);
+  console.warn(
+    `WeedJS: ${EntityClass.name}.spawn() skips the key "${key}": ${key} is read-only on ${EntityClass.name}.`
+  );
+}
+
 /** Classes already warned that despawn(index) got another class's entity. */
 const _warnedDespawnOtherClass = new Set();
 function warnDespawnOtherClassOnce(className, index) {
@@ -3056,6 +3085,7 @@ export class GameObject {
         if (spawnConfig.width != null) instance.width = spawnConfig.width;
         if (spawnConfig.height != null) instance.height = spawnConfig.height;
       }
+      const skipKeys = readOnlySpawnKeys !== null ? readOnlySpawnKeys.get(EntityClass) ?? null : null;
       for (const key in spawnConfig) {
         // E-169: the position, in nearly every config, by name and in its place in the config's order. A key read and
         // written through `instance[key]` goes megamorphic over the names and classes this one loop sees, and the
@@ -3081,7 +3111,13 @@ export class GameObject {
         }
         const current = instance[key];
         if (current !== undefined && typeof current !== 'function') {
-          instance[key] = spawnConfig[key];
+          if (skipKeys !== null && skipKeys.has(key)) continue;
+          try {
+            instance[key] = spawnConfig[key];
+          } catch (error) {
+            if (!isReadOnlyProperty(instance, key)) throw error;
+            skipReadOnlySpawnKey(EntityClass, key);
+          }
         }
       }
 
