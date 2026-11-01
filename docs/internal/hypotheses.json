@@ -9760,20 +9760,21 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0796"
+      ],
+      "status": "kept",
       "date": "2026-11-01",
-      "result": "",
+      "result": "kept (f890c16a): decorationSwayStressScene (320 000, random order, still camera) particle 4.927 -> 2.424 ms (-50.9 %, 0/4)",
       "refs": [
         "EXECUTION_PLAN.md#E-179c"
       ],
-      "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
+      "statusText": "kept 2026-11-01 (f890c16a, R-0796)",
       "id": "E-179c",
-      "rank": 13,
       "area": "particle",
       "kind": "speed",
       "title": "Decorations' screen test skipped while the camera and the decorations hold",
-      "next": "Step 0: frames a second with a still camera in the demos. Then a stamp of the bounds and of the pool's spawns, despawns and moves; skip when both hold. EXECUTION_PLAN.md#E-179c."
+      "next": "Predator in wave13's gate (its camera moves: two atomic loads a frame)."
     },
     {
       "aliases": [],
@@ -17341,6 +17342,18 @@
       "text": "**E-190 answered: no fixed cost of the keyed frames' build in the emit; Predator's +2 % sits within its spread.**\n2026-11-01, 09:56 to 10:01 (the result files' times), Node and Chrome (headed, source, detailed stats off).\n\n- **Kernel**, 09:56: `runKernelsVsRev --vs 3910ee3a --only preRenderWorker` (main before wave12's merge against\n  b37f07ff; the row now runs preRenderEmitWasmMicrobench's shipped wasm variant, N-104), Predator's mix of 13 532\n  sprites and 10 120 decorations, 5 rounds a side: 1 966 -> 1 950 ops/s (-0.8 %, rounds won 24 %), a tie. The queue's\n  layout is the tree's in both, key column included.\n- **painterMoveStressScene (PainterMoveReinsertScene)**, 09:57 to 10:01, `--vs 3910ee3a --hyp-rev HEAD`, 4 pairs, its\n  pre-render the emit of 300 000 rows a frame: 16.634 -> 16.248 ms (-0.9 %, worse 2/4, cv 4/4 %), logic +1.6 %\n  (3/4); NEUTRAL.\n- So neither the emit's code nor the queue's layout costs where the emit is all of pre-render. Predator's +2.1 %\n  (R-0793, cv 3/3 %) and its +2 % against the other workers are under the 3 % rule and within that scene's spread for\n  pre-render (-4.0 to +6.1 % raw between sittings this morning); no lever left to pull. Closed.",
       "commits": [
         "b37f07ff"
+      ]
+    },
+    {
+      "id": "R-0796",
+      "date": "2026-11-01",
+      "time": "10:17",
+      "timeFrom": "recorded",
+      "title": "E-179c kept: the decoration screen test and the snapshot copy skip a still frame; particle -50.9 %",
+      "verdict": "kept",
+      "text": "**E-179c kept (f890c16a): the decoration screen test and the snapshot copy skip a frame that changed nothing; particle\n-50.9 % with a still camera.** 2026-11-01, 10:14 to 10:17 (the result files' times), Chrome, headed, source, detailed\nstats off, decorationSwayStressScene `decorations=320000&order=random` with `--camera-zoom 0.03` (E-179's regime: a\nthird on screen, the list as random as Predator's grass), `--vs HEAD~1 --hyp-rev HEAD`, owner particle, 4 pairs.\n\n- Step 0 from the code: bichos (30 000 decorations) centres its camera once; littleCity (20 000) and proceduralTree\n  (65 000) run a free camera that holds between pans; Predator and carScene follow a moving target, so they move every\n  frame and skip nothing.\n- The pool's list header (now a cache line) counts the active list's changes and the world-owned decorations' moves;\n  the particle worker copies the snapshot only when the list count moved and tests only when a count, the camera\n  bounds or an attached decoration it placed changed. tests/node/decorationScreenLoops.test.js checks each change\n  (a move, a despawn, a spawn, the camera, an attached decoration's parent) against a full test.\n- particle 4.927 -> 2.424 ms (-50.9 %, worse 0/4, cv 2/1 %), p95 about 7.0 -> 3.0 ms; ACTIVE_DECORATIONS 320 000 on\n  both sides. The other workers sit under the floor in this scene. Predator's particle worker runs under the floor\n  too (0.8 ms) and its camera moves, so it pays two atomic loads and a compare a frame.",
+      "commits": [
+        "f890c16a"
       ]
     }
   ],
