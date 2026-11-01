@@ -9623,6 +9623,23 @@
       "date": "2026-11-01",
       "result": "",
       "refs": [
+        "EXECUTION_PLAN.md#E-184"
+      ],
+      "statusText": "open: Wave 11 candidates (2026-11-01), E-65 reopened with E-179's form",
+      "id": "E-184",
+      "rank": 15,
+      "area": "particle",
+      "kind": "speed",
+      "title": "The particle cull's branch and branchless copies, picked per frame by a sample of the flips (E-65 reopened)",
+      "next": "After E-179's verdict: E-65's branchless visible-list write (kernel -16 % at 82 % visible random, +8 % all visible) as a second copy, picked as E-179 picks. EXECUTION_PLAN.md#E-184."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "result": "",
+      "refs": [
         "EXECUTION_PLAN.md#E-179c"
       ],
       "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
