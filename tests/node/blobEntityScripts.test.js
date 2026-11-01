@@ -1,9 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  blobModules,
   collectBlobScriptDeps,
+  evaluateBlobModule,
   expandBlobEntityScripts,
   rewriteBlobImports,
+  transformBlobScript,
 } from '../../src/util/utils.js';
 
 const CAMERA = `import { MySoldier } from './mySoldier.js';
@@ -94,4 +97,66 @@ test('expandBlobEntityScripts DFS: deps before importer', async () => {
     'http://x/mySoldier.js',
     'http://x/cameraController.js',
   ]);
+});
+
+// N-96: `export default` reached the worker's `new Function` untouched, a syntax error the loader's quiet retries hid;
+// `import simplify2 from './vendor/simplify2.js'` then read a worker global nobody set ("simplify2 is not defined").
+test('a default export in a bundled worker: every form of it', () => {
+  const run = (src) => {
+    const exports = {};
+    new Function('exports', '__blobDefault', transformBlobScript(src, 'http://x/m.js'))(exports, null);
+    return exports;
+  };
+  assert.equal(run('export default 42;').default, 42);
+  const named = run('export default class Foo { static n() { return Foo.name; } }\nexport const k = Foo.n();\n');
+  assert.equal(named.default.name, 'Foo');
+  assert.equal(named.k, 'Foo', 'the class stays a declaration its module can name');
+  assert.equal(run('export default function twice(x) { return 2 * x; }\nexport const four = twice(2);\n').four, 4);
+  assert.equal(typeof run('export default class {}\n').default, 'function');
+  assert.equal(run('const a = 1;\nexport { a as default };\n').default, 1);
+});
+
+test('a default import reads its module\'s default export by URL, once that module has run', () => {
+  const base = 'http://x/demos/terrain/';
+  const vendor = 'const simplify = (points) => points.length;\nexport default simplify;\n';
+  const importer = "import simplify2 from './vendor/simplify2.js';\nexport const count = simplify2([1, 2, 3]);\n";
+  const error = console.error;
+  console.error = () => {};
+  try {
+    assert.throws(
+      () => evaluateBlobModule(importer, `${base}worldGrid.js`, {}),
+      /blob-dep http:\/\/x\/demos\/terrain\/vendor\/simplify2\.js/,
+      'deferred until the vendor module has run',
+    );
+  } finally {
+    console.error = error;
+  }
+  try {
+    blobModules.set(`${base}vendor/simplify2.js`, evaluateBlobModule(vendor, `${base}vendor/simplify2.js`, {}));
+    assert.equal(evaluateBlobModule(importer, `${base}worldGrid.js`, {}).count, 3);
+  } finally {
+    blobModules.delete(`${base}vendor/simplify2.js`);
+  }
+});
+
+test('a default and named imports from one module', () => {
+  assert.equal(
+    rewriteBlobImports("import Grid, { CELL as C } from './grid.js';\n", 'http://x/a/b.js'),
+    `const Grid = __blobDefault("http://x/a/grid.js");
+if (!('CELL' in globalThis)) throw new Error('blob-dep CELL');
+const C = globalThis.CELL;
+`,
+  );
+});
+
+test('a module a bundled worker cannot compile is reported by name', () => {
+  const lines = [];
+  const error = console.error;
+  console.error = (...args) => lines.push(args.map(String).join(' '));
+  try {
+    assert.throws(() => evaluateBlobModule('this is not javascript', 'http://x/broken.js', {}), SyntaxError);
+  } finally {
+    console.error = error;
+  }
+  assert.match(lines[0], /http:\/\/x\/broken\.js/);
 });
