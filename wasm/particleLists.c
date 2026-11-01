@@ -79,19 +79,29 @@ INLINE v128_t to_m16(v128_t a, v128_t b, v128_t c, v128_t d) {
   return wasm_i8x16_narrow_i16x8(wasm_i16x8_narrow_i32x4(a, b), wasm_i16x8_narrow_i32x4(c, d));
 }
 
-/* A full block's lists and flags from its 16-lane mask (bytes of 0 or -1). */
+/* A full block's lists and flags from its 16-lane mask (bytes of 0 or -1). E-184: particles from one emitter sit at
+   neighbouring slots and on screen together, so a block is often all on screen (its visible entries are its active
+   ones, two stores) or all off (none); the per-lane write without a branch is for the blocks in between. */
 INLINE void emit_full_block(uint32_t i, v128_t m16, uint8_t *on, uint16_t *al, uint16_t *vl, uint32_t *ac,
                             uint32_t *vc) {
   wasm_v128_store(on + i, wasm_v128_and(m16, wasm_i8x16_splat(1)));
   const v128_t base = wasm_i16x8_splat((int16_t)i);
-  wasm_v128_store(al + 1 + *ac, wasm_i16x8_add(base, wasm_i16x8_make(0, 1, 2, 3, 4, 5, 6, 7)));
-  wasm_v128_store(al + 1 + *ac + 8, wasm_i16x8_add(base, wasm_i16x8_make(8, 9, 10, 11, 12, 13, 14, 15)));
+  const v128_t lo = wasm_i16x8_add(base, wasm_i16x8_make(0, 1, 2, 3, 4, 5, 6, 7));
+  const v128_t hi = wasm_i16x8_add(base, wasm_i16x8_make(8, 9, 10, 11, 12, 13, 14, 15));
+  wasm_v128_store(al + 1 + *ac, lo);
+  wasm_v128_store(al + 1 + *ac + 8, hi);
   *ac += 16;
   const uint32_t vm = wasm_i8x16_bitmask(m16);
   uint32_t c = *vc;
-  for (uint32_t j = 0; j < 16; j++) {
-    vl[1 + c] = (uint16_t)(i + j);
-    c += (vm >> j) & 1u;
+  if (vm == 0xffffu) {
+    wasm_v128_store(vl + 1 + c, lo);
+    wasm_v128_store(vl + 1 + c + 8, hi);
+    c += 16;
+  } else if (vm != 0) {
+    for (uint32_t j = 0; j < 16; j++) {
+      vl[1 + c] = (uint16_t)(i + j);
+      c += (vm >> j) & 1u;
+    }
   }
   *vc = c;
 }
@@ -390,17 +400,31 @@ INLINE void emit_full_block_u32(uint32_t i, v128_t m16, uint8_t *on, uint32_t *a
                                 uint32_t *vc) {
   wasm_v128_store(on + i, wasm_v128_and(m16, wasm_i8x16_splat(1)));
   const v128_t base = wasm_i32x4_splat((int32_t)i);
+  const v128_t q0 = wasm_i32x4_add(base, wasm_i32x4_make(0, 1, 2, 3));
+  const v128_t q1 = wasm_i32x4_add(base, wasm_i32x4_make(4, 5, 6, 7));
+  const v128_t q2 = wasm_i32x4_add(base, wasm_i32x4_make(8, 9, 10, 11));
+  const v128_t q3 = wasm_i32x4_add(base, wasm_i32x4_make(12, 13, 14, 15));
   uint32_t *a = al + 1 + *ac;
-  wasm_v128_store(a, wasm_i32x4_add(base, wasm_i32x4_make(0, 1, 2, 3)));
-  wasm_v128_store(a + 4, wasm_i32x4_add(base, wasm_i32x4_make(4, 5, 6, 7)));
-  wasm_v128_store(a + 8, wasm_i32x4_add(base, wasm_i32x4_make(8, 9, 10, 11)));
-  wasm_v128_store(a + 12, wasm_i32x4_add(base, wasm_i32x4_make(12, 13, 14, 15)));
+  wasm_v128_store(a, q0);
+  wasm_v128_store(a + 4, q1);
+  wasm_v128_store(a + 8, q2);
+  wasm_v128_store(a + 12, q3);
   *ac += 16;
   const uint32_t vm = wasm_i8x16_bitmask(m16);
   uint32_t c = *vc;
-  for (uint32_t j = 0; j < 16; j++) {
-    vl[1 + c] = i + j;
-    c += (vm >> j) & 1u;
+  /* E-184: as emit_full_block, a block all on screen or all off without the per-lane loop. */
+  if (vm == 0xffffu) {
+    uint32_t *v = vl + 1 + c;
+    wasm_v128_store(v, q0);
+    wasm_v128_store(v + 4, q1);
+    wasm_v128_store(v + 8, q2);
+    wasm_v128_store(v + 12, q3);
+    c += 16;
+  } else if (vm != 0) {
+    for (uint32_t j = 0; j < 16; j++) {
+      vl[1 + c] = i + j;
+      c += (vm >> j) & 1u;
+    }
   }
   *vc = c;
 }
