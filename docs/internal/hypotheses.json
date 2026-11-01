@@ -10076,6 +10076,133 @@
       "result": "",
       "next": "stamp_light_range is pre-render's largest function at Predator crowd 1.5 (108 of 380 ms/s, R-0808). Its f32x4 form read +7.3 % in Node (R-0571, 23/25; shadowStampF32.test.js holds the tolerance) and was never decided in Chrome. shadowStampWasmMicrobench wasm against wasm-f32x4 through chromeKernel.mjs, with the keyed rows (7 and 11 floats) and the full ones; into engine.wasm if faster, Predator crowd 1.5's pre-render not 3 % worse.",
       "rank": 14
+    },
+    {
+      "id": "N-79",
+      "title": "A layer drawn without a render target ignores blendMode (fx ADD draws normal)",
+      "status": "open",
+      "statusText": "found 2026-10-26, a bug: confirmed in the code, not fixed",
+      "date": "2026-10-26",
+      "result": "A sprite layer without a look shader (and MESH and world-rect layers) is drawn straight to the stage by a mesh registered with forceContainerBlend, so it takes shader.containerBlend (normal when there is no shader) and never the layer's blendMode. The fx layers of destructibleTerrainScene, mamushkaDigScene and planetPhysicsScene ask for ADD and draw normal. Workaround: shader: { containerBlend: ADD } with no fragment (marks the layer hasShader).",
+      "area": "pixi",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-79"
+      ],
+      "aliases": [
+        "blendMode ignored",
+        "containerBlend"
+      ],
+      "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim."
+    },
+    {
+      "id": "N-80",
+      "title": "The dev server could serve any file of the machine, to anyone who reached it",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-10-26, fixed on visual_editor (dcc9cc3a, 410697f8) and on main (9fc54a2d, 79bd2500)",
+      "date": "2026-10-26",
+      "result": "server/node_server.js read the raw request path, so a raw /../ (curl --path-as-is, a socket) read outside the served folder, and it listened on every interface. The path goes through resolveInside now (403 outside the folder, 400 for bad encoding), and the dev servers, the template's too, listen on this machine's two loopback addresses; --host or WEED_HOST opens them to the network. Still open: every file answers Access-Control-Allow-Origin: *.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-80"
+      ],
+      "aliases": [
+        "path traversal",
+        "dev server",
+        "--host",
+        "WEED_HOST"
+      ]
+    },
+    {
+      "id": "N-81",
+      "title": "A paused world (time scale 0) makes no body: spawns and teleports wait for the next step to be in Box2D",
+      "status": "open",
+      "statusText": "found 2026-10-27, a bug: probed in Chromium, not visible today, a fix tried and not kept",
+      "date": "2026-10-27",
+      "result": "The physics host steps only when the scaled dt is above 0, and doStep at dt 0 only services queries: no syncBodies, command drain, joint sync, pose publish or moved list. A body spawned in a hitstop is missing from Box2D's queries until it ends (the editor's held world: until Play). Not visible: a reused slot's published pose has rotation (0, 0), read as not live, so the collect draws Transform.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-81"
+      ],
+      "aliases": [
+        "paused physics",
+        "hitstop spawn",
+        "dt 0 sync"
+      ],
+      "next": "Take it up if a game queries what it spawns during a hitstop: at dt 0, syncBodies, drainCommands and syncJoints, then the moved list of the teleports and the pose when something changed (tried: the pose right 27 ms after an edit)."
+    },
+    {
+      "id": "N-82",
+      "title": "A pause and a resume within one display frame left a worker running two loops",
+      "status": "kept-hygiene",
+      "statusText": "found and fixed 2026-10-27 (cdb6af67), a bug the author hit in the editor page",
+      "date": "2026-10-27",
+      "result": "A pause cleared the workers' timers but not the requestAnimationFrame their loop had asked for, and resume() started a loop even while one ran. A fast swap pauses and resumes in 2-6 ms, so each one (the editor's Stop, a game's next level) added a loop to logic, spatial, particle, pre-render and physics: 60, 121, 180, 237 and 300 frames/s in Chrome after 0 to 4 Stops. Each extra physics frame stepped the world 1/60 s. Now a pause cancels the frame and a resume while running does nothing: 60 after each Stop.",
+      "area": "workers",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-82"
+      ],
+      "aliases": [
+        "double loop",
+        "stop speeds up",
+        "resume twice",
+        "raf after pause"
+      ]
+    },
+    {
+      "id": "N-106",
+      "title": "A static sprite past bigAtlas index 255 drew another one",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-10-27, fixed on visual_editor (376c33f7, ED-74) and on main (aa984567)",
+      "date": "2026-10-27",
+      "result": "setSprite stored a static sprite's bigAtlas index in a Uint8Array, and the emit kernel's texture table is [sheet u8][state u8]: 20 of littleCity's 65 houses drew cars, trees or blood. bigAtlas's animations past 256 are proxy sheets of 256 each now (bigAtlas@1, …), and setSprite stores the chunk's sheet and a local index; nothing per frame changes.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-106"
+      ],
+      "aliases": [
+        "bigAtlas 255",
+        "wrong house sprite",
+        "sprite chunks"
+      ]
+    },
+    {
+      "id": "N-107",
+      "title": "Two logic workers throwing the same error showed one worker’s count",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-10-26, fixed on visual_editor (eaeacb88) and on main (4e610e46)",
+      "date": "2026-10-26",
+      "result": "Logic workers have no self.name, so each one's ErrorReporter reported as 'logic' and the scene's counts per worker overwrote each other in getEntityErrors and the debug box. The scene keys them by the name the page gave the worker (logic0, logic1, …).",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-107"
+      ],
+      "aliases": [
+        "error counts",
+        "entityError"
+      ]
+    },
+    {
+      "id": "N-108",
+      "title": "Arrows, space and Tab typed into a text field lost their default",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-10-26, fixed on visual_editor (db5b75ac) and on main (d6797d91)",
+      "date": "2026-10-26",
+      "result": "GameEngine's preventDefaultKeys took them from every keydown, a game's own HTML input too: no space, no arrow step, no Tab to the next field. A key typed into an input, textarea, select or editable element keeps its default; the game still gets it.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-108"
+      ],
+      "aliases": [
+        "preventDefaultKeys",
+        "typing in a field"
+      ]
     }
   ],
   "records": [
