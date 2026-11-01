@@ -3088,6 +3088,17 @@ and 13.4 % in the copy into its arena (W30): about 2.4 ms a frame, three quarter
    queue, over frames that change some rows' statics and the row set; both backends' upload paths.
 5. Owners: Predator's renderer (and pre-render for the key column), 4 pairs; painterMove and BunnyMark as guards.
 
+**Step 0b, 2026-11-01 (R-0784): no dirty runs.** The 700 changed rows of a Predator frame are spread over 42 600 keys:
+chunks of 16 keys would send 8 000 rows in 310 runs, of 64 keys more rows than the frame. Items 2 and 3 change: the
+kernel lists the changed rows as updates (the statics, then the key: 64 bytes, about 45 KB a frame), and the GPU
+scatters them into its copy of the table: on WebGL a draw of one 3-texel rectangle per update into the statics texture
+(raw GL around Pixi's state, as the record textures are filled), on WebGPU a compute pass. Predator draws with WebGL,
+so WebGL first; a WebGPU batch keeps split frames until its pass exists. Built: the key column (69432150), the keyed
+kernel with a stamp per key for a key two rows take (f185a8c4). The kernel costs 38 % more than the split pack in
+Chrome (0.270 against 0.195 ms), all of it the table's reads (900 KB a frame), against 36 bytes a sprite less to copy
+and upload; Predator's sitting weighs the two. If the reads cost more than they save: a statics generation per row
+written by the emit (pre-render compares in entity order, and Pixi compares a u32 a row), at pre-render's expense.
+
 ### E-178 RigidBody.speed's derive pass, cheaper where it runs (the particle worker)
 
 **Premise:** the particle worker writes `RigidBody.speed` every frame for every dynamic body of a class that sets
