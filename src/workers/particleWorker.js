@@ -30,7 +30,6 @@ import { Query as QueryImport } from '../core/query.js';
 import { Grid as GridImport } from '../core/grid.js';
 import { NavGrid as NavGridImport } from '../core/navGrid.js';
 import {
-  calculateSpeed as calculateSpeedImport,
   calculateCameraScreenBounds,
   screenBoundsToWorldBounds,
 } from '../util/utils.js';
@@ -76,7 +75,6 @@ const SpriteRenderer = SpriteRendererImport;
 const Query = QueryImport;
 const Grid = GridImport;
 const NavGrid = NavGridImport;
-const calculateSpeed = calculateSpeedImport;
 const Decal = DecalImport;
 const getColliderBounds = getColliderBoundsImport;
 const getCellRange = getCellRangeImport;
@@ -453,6 +451,9 @@ class ParticleWorker extends AbstractWorker {
     this.deriveSpeed = false;
     this.cellSleeping = false;
     this.deriveSpeedByType = null;
+    // E-178: the active lists of the types that set deriveSpeed (built at the first pass, once the lists are bound).
+    this._deriveSpeedLists = [];
+    this._deriveSpeedListsBuilt = false;
 
     this._rbActive = null;
 
@@ -726,6 +727,8 @@ class ParticleWorker extends AbstractWorker {
     for (const classInfo of registered) {
       if (classInfo.deriveSpeed === true) this.deriveSpeedByType[classInfo.entityType] = 1;
     }
+    this._deriveSpeedLists = [];
+    this._deriveSpeedListsBuilt = false;
 
     // Screen visibility config
     this.canvasWidth = this.config.canvasWidth || 800;
@@ -1773,26 +1776,41 @@ class ParticleWorker extends AbstractWorker {
   updateDerivedProperties() {
     if (!this.deriveSpeed) return;
     if (this.globalEntityCount === 0 || !RigidBody.vx || !this._queryRigidBody) return;
+    if (!this._deriveSpeedListsBuilt) this._buildDeriveSpeedLists();
 
     const rigidBodyActive = RigidBody.active;
     const vx = RigidBody.vx;
     const vy = RigidBody.vy;
     const speed = RigidBody.speed;
     const isStatic = RigidBody.static;
-    const entityType = Transform.entityType;
-    const deriveSpeedByType = this.deriveSpeedByType;
+    const lists = this._deriveSpeedLists;
 
-    const physicsEntities = Query.queryActiveEntities(this._queryRigidBody);
-
-    for (let idx = 0; idx < physicsEntities.length; idx++) {
-      const i = physicsEntities[idx];
-      if (!rigidBodyActive[i]) continue;
-      if (isStatic[i]) continue;
-      if (!deriveSpeedByType[entityType[i]]) continue;
-
-      // speed only — facing/cardinals use getDirectionFromVector(vx,vy); no per-body atan2
-      speed[i] = calculateSpeed(vx[i], vy[i]);
+    // E-178: the opted-in types' own active lists, not every body's query with a type test each (which also visited
+    // the bodies of every type that does not opt in).
+    for (let t = 0; t < lists.length; t++) {
+      const list = lists[t];
+      const n = list[0];
+      for (let k = 1; k <= n; k++) {
+        const i = list[k];
+        if (!rigidBodyActive[i] || isStatic[i]) continue;
+        const a = vx[i];
+        const b = vy[i];
+        // speed only — facing/cardinals use getDirectionFromVector(vx,vy); no per-body atan2
+        speed[i] = Math.sqrt(a * a + b * b);
+      }
     }
+  }
+
+  /** E-178: the active lists of the registered types that set deriveSpeed, as abstractWorker binds them. */
+  _buildDeriveSpeedLists() {
+    const lists = [];
+    for (const classInfo of this.registeredClasses || []) {
+      if (classInfo.deriveSpeed !== true) continue;
+      const list = self[classInfo.name]?._activeList;
+      if (list) lists.push(list);
+    }
+    this._deriveSpeedLists = lists;
+    this._deriveSpeedListsBuilt = true;
   }
 
   // ========================================
