@@ -142,6 +142,7 @@ static assets = {
   - `this.neighborCount`
   - `this.getNeighbor(i)`
   - `this.getAllNeighborIds()`
+  - Lists are built only for classes whose code reads them (and for lights, whose occluders come from theirs). The first read of a class turns its lists on: that read and the next frame or two see none. A class that reads only now and then still gets its lists every frame from then on.
 
 Lifecycle hooks:
 
@@ -347,7 +348,7 @@ Add it to `static components` and use `Query.query([MyTag])` to find entities. N
 - **`collisionGroupIndex`** (Int32, Box2D-style `b2Filter.groupIndex`): overrides layer/mask for same-group pairs.
 - **`friction`** (Float32, on `Collider`): Box2D fixture μ. Not air drag — that is `RigidBody.linearDamping`. Pair μ = `min(μi, μj)` (not Box2D √). Either side `0` → no grip.
 - Two entities collide only if both see each other: A's layer in B's mask **and** B's layer in A's mask — **unless** group index overrides.
-- Defaults: layer `0`, mask `0xFFFFFFFF` (collide with all), group index `0` (no group override), `friction` `0` (no contact grip). Mask `0` = collide with nothing.
+- Defaults: layer `0`, mask `0xFFFFFFFF` (collide with all), group index `0` (no group override), `friction` `0` (no contact grip). Mask `0` = collide with nothing; Box2D's ray casts and overlap queries skip such a body too (they test its mask against the query's category, 1 by default).
 - Hard limit: **32 collision layers**.
 - Helper: `layerMask([0, 2, 4])` converts an array of layer indices to a bitmask.
 

@@ -1117,6 +1117,8 @@ export declare class GameObject {
   static forceProcessOnLogicWorker: Int16Array | null;
   static entityTypeHasForcedLogicWorker: Uint8Array | null;
   static entityTypeForcedLogicWorkerCount: Uint16Array | null;
+  /** Each entity type's active list version, bumped on every edit of the list (shared; logic workers stamp their tickInterval buckets with it). */
+  static typeListVersions: Int32Array | null;
   static writeForceProcessOnLogicWorker(
     entityIndex: number,
     entityType: number,

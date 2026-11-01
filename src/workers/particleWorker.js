@@ -30,7 +30,6 @@ import { Query as QueryImport } from '../core/query.js';
 import { Grid as GridImport } from '../core/grid.js';
 import { NavGrid as NavGridImport } from '../core/navGrid.js';
 import {
-  calculateSpeed as calculateSpeedImport,
   calculateCameraScreenBounds,
   screenBoundsToWorldBounds,
 } from '../util/utils.js';
@@ -76,7 +75,6 @@ const SpriteRenderer = SpriteRendererImport;
 const Query = QueryImport;
 const Grid = GridImport;
 const NavGrid = NavGridImport;
-const calculateSpeed = calculateSpeedImport;
 const Decal = DecalImport;
 const getColliderBounds = getColliderBoundsImport;
 const getCellRange = getCellRangeImport;
@@ -85,6 +83,79 @@ const _cellRangeResult = _cellRangeResultImport;
 
 
 const EMPTY_SLOT = 0;
+
+/**
+ * E-179: the decoration screen test's loops, each a function of its own that returns right after its loop. Called once
+ * a frame, a loop runs on OSR code, and a statement after it that had no type feedback when that code was compiled
+ * deopted on every call while V8 kept entering the cached OSR code: the shipped test did it at
+ * `visibleData[0] = visibleCount` (bytecode 321) and ran 2.7 times slower in the kernel's slow runs.
+ */
+const DECORATION_FLIP_WINDOW = 512;
+
+/**
+ * The test without its branch: every candidate is stored and the count steps on the visible ones, into the worker's
+ * scratch, not the shared list pre-render reads (copyDecorationScratch then copies the visible prefix there).
+ */
+function decorationScreenBranchless(activeData, activeCount, scratch, cameraBounds) {
+  const x = DecorationComponent.x;
+  const y = DecorationComponent.y;
+  const active = DecorationComponent.active;
+  const isItOnScreen = DecorationComponent.isItOnScreen;
+
+  const camZoom = cameraBounds.zoom;
+  const cameraOffsetX = cameraBounds.cameraOffsetX;
+  const cameraOffsetY = cameraBounds.cameraOffsetY;
+  const minX = cameraBounds.minX;
+  const maxX = cameraBounds.maxX;
+  const minY = cameraBounds.minY;
+  const maxY = cameraBounds.maxY;
+
+  let visibleCount = 0;
+  for (let idx = 0; idx < activeCount; idx++) {
+    const i = activeData[idx];
+    if (!active[i]) continue;
+
+    const screenXVal = x[i] * camZoom - cameraOffsetX;
+    const screenYVal = y[i] * camZoom - cameraOffsetY;
+    const onScreen = (screenXVal > minX) & (screenXVal < maxX) & (screenYVal > minY) & (screenYVal < maxY);
+
+    isItOnScreen[i] = onScreen;
+    scratch[visibleCount] = i;
+    visibleCount += onScreen;
+  }
+  return visibleCount;
+}
+
+function copyDecorationScratch(visibleData, scratch, count) {
+  for (let k = 0; k < count; k++) visibleData[1 + k] = scratch[k];
+}
+
+/** How often the test's outcome flips along `count` snapshot entries from `start`. */
+function decorationScreenFlips(activeData, start, count, cameraBounds) {
+  const x = DecorationComponent.x;
+  const y = DecorationComponent.y;
+
+  const camZoom = cameraBounds.zoom;
+  const cameraOffsetX = cameraBounds.cameraOffsetX;
+  const cameraOffsetY = cameraBounds.cameraOffsetY;
+  const minX = cameraBounds.minX;
+  const maxX = cameraBounds.maxX;
+  const minY = cameraBounds.minY;
+  const maxY = cameraBounds.maxY;
+
+  let flips = 0;
+  let prev = 0;
+  const end = start + count;
+  for (let idx = start; idx < end; idx++) {
+    const i = activeData[idx];
+    const screenXVal = x[i] * camZoom - cameraOffsetX;
+    const screenYVal = y[i] * camZoom - cameraOffsetY;
+    const onScreen = (screenXVal > minX) & (screenXVal < maxX) & (screenYVal > minY) & (screenYVal < maxY);
+    flips += onScreen ^ prev;
+    prev = onScreen;
+  }
+  return flips;
+}
 const OCCUPIED_SLOT = 1;
 const TOMBSTONE_SLOT = 2;
 
@@ -380,6 +451,9 @@ class ParticleWorker extends AbstractWorker {
     this.deriveSpeed = false;
     this.cellSleeping = false;
     this.deriveSpeedByType = null;
+    // E-178: the active lists of the types that set deriveSpeed (built at the first pass, once the lists are bound).
+    this._deriveSpeedLists = [];
+    this._deriveSpeedListsBuilt = false;
 
     this._rbActive = null;
 
@@ -416,6 +490,13 @@ class ParticleWorker extends AbstractWorker {
     this._maxImpactsPerFrame = 0;
     /** Decal textures the decal memory does not hold, warned about once each (stampParticleToTile). */
     this._decalTexturesMissing = new Set();
+    // E-179: the screen test's flips at the last sample, scaled to the list (picks the loop); the frames since that
+    // sample, and where the next one starts; the branchless copy's candidates, private to this worker (sized at init).
+    // Declared last, so the worker's older fields keep their place in the object.
+    this._decorationScreenFlips = 0;
+    this._decorationScreenProbe = 0;
+    this._decorationScreenWindow = 0;
+    this._decorationScreenScratch = new Uint32Array(0);
   }
 
   /**
@@ -434,6 +515,7 @@ class ParticleWorker extends AbstractWorker {
     // Get max particles from config
     this.maxParticles = data.maxParticles || 0;
     this.maxDecorations = data.maxDecorations || 0;
+    this._decorationScreenScratch = new Uint32Array(this.maxDecorations);
     this.maxBullets = data.maxBullets || 0;
     this.globalEntityCount = data.globalEntityCount || 0;
 
@@ -645,6 +727,8 @@ class ParticleWorker extends AbstractWorker {
     for (const classInfo of registered) {
       if (classInfo.deriveSpeed === true) this.deriveSpeedByType[classInfo.entityType] = 1;
     }
+    this._deriveSpeedLists = [];
+    this._deriveSpeedListsBuilt = false;
 
     // Screen visibility config
     this.canvasWidth = this.config.canvasWidth || 800;
@@ -739,7 +823,7 @@ class ParticleWorker extends AbstractWorker {
     this.resolveAttachedDecorations(deltaTime);
 
     // Update screen visibility for decorations (entities done in pre_render_worker)
-    this.updateDecorationScreenVisibility();
+    this.updateDecorationScreen();
 
     // Bullet physics + raycast + impact events
     if (this.maxBullets > 0) {
@@ -1039,6 +1123,56 @@ class ParticleWorker extends AbstractWorker {
 
     // Write visible count to SAB
     visibleData[0] = visibleCount;
+  }
+
+  /**
+   * E-179: the decoration screen test, with its branch (updateDecorationScreenVisibility, as shipped) or without it.
+   * The branch mispredicts at each flip of the outcome along the snapshot's order: a few in a grid scene, about half
+   * the list on Predator's random grass, where the branchless copy is twice as fast (decorationVisibilityMicrobench);
+   * with few flips the branch wins, since it skips the stores for decorations off screen. One frame in 16 samples the
+   * flips on a window of the snapshot, and the branchless copy runs while they are more than an eighth of it. The
+   * shipped method is left as it was: moved into a function of its own, the same loop ran 3 to 5 % slower (R-0776).
+   */
+  updateDecorationScreen() {
+    const activeCount = this._activeDecorationSnapshotCount;
+    const scratch = this._decorationScreenScratch;
+    if (this._decorationScreenFlips * 8 > activeCount && scratch.length >= activeCount) {
+      this._updateDecorationScreenBranchless(scratch);
+    } else {
+      this.updateDecorationScreenVisibility();
+    }
+    this._decorationScreenProbe = (this._decorationScreenProbe + 1) & 15;
+    if (this._decorationScreenProbe === 0) this._sampleDecorationScreenFlips();
+  }
+
+  /** E-179: updateDecorationScreenVisibility's output without its branch (decorationScreenBranchless). */
+  _updateDecorationScreenBranchless(scratch) {
+    if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
+    const activeData = this._activeDecorationSnapshot;
+    const visibleData = this.visibleDecorationsData;
+    const activeCount = this._activeDecorationSnapshotCount;
+    if (activeCount === 0 || !this.cameraData) {
+      if (visibleData) visibleData[0] = 0;
+      return;
+    }
+    const cameraBounds = this._frameCameraBounds();
+    if (!cameraBounds) return;
+    const visibleCount = decorationScreenBranchless(activeData, activeCount, scratch, cameraBounds);
+    copyDecorationScratch(visibleData, scratch, visibleCount);
+    visibleData[0] = visibleCount;
+  }
+
+  /** E-179: the flips on the next window of the snapshot decide the next frames' copy. */
+  _sampleDecorationScreenFlips() {
+    const activeCount = this._activeDecorationSnapshotCount;
+    if (!this.maxDecorations || activeCount === 0 || !this.cameraData || !DecorationComponent.active) return;
+    const cameraBounds = this._frameCameraBounds();
+    if (!cameraBounds) return;
+    const w = activeCount < DECORATION_FLIP_WINDOW ? activeCount : DECORATION_FLIP_WINDOW;
+    const start = this._decorationScreenWindow + w > activeCount ? 0 : this._decorationScreenWindow;
+    const flips = decorationScreenFlips(this._activeDecorationSnapshot, start, w, cameraBounds);
+    this._decorationScreenWindow = start + w;
+    this._decorationScreenFlips = flips * 8 > w ? activeCount : 0;
   }
 
   /**
@@ -1642,26 +1776,41 @@ class ParticleWorker extends AbstractWorker {
   updateDerivedProperties() {
     if (!this.deriveSpeed) return;
     if (this.globalEntityCount === 0 || !RigidBody.vx || !this._queryRigidBody) return;
+    if (!this._deriveSpeedListsBuilt) this._buildDeriveSpeedLists();
 
     const rigidBodyActive = RigidBody.active;
     const vx = RigidBody.vx;
     const vy = RigidBody.vy;
     const speed = RigidBody.speed;
     const isStatic = RigidBody.static;
-    const entityType = Transform.entityType;
-    const deriveSpeedByType = this.deriveSpeedByType;
+    const lists = this._deriveSpeedLists;
 
-    const physicsEntities = Query.queryActiveEntities(this._queryRigidBody);
-
-    for (let idx = 0; idx < physicsEntities.length; idx++) {
-      const i = physicsEntities[idx];
-      if (!rigidBodyActive[i]) continue;
-      if (isStatic[i]) continue;
-      if (!deriveSpeedByType[entityType[i]]) continue;
-
-      // speed only — facing/cardinals use getDirectionFromVector(vx,vy); no per-body atan2
-      speed[i] = calculateSpeed(vx[i], vy[i]);
+    // E-178: the opted-in types' own active lists, not every body's query with a type test each (which also visited
+    // the bodies of every type that does not opt in).
+    for (let t = 0; t < lists.length; t++) {
+      const list = lists[t];
+      const n = list[0];
+      for (let k = 1; k <= n; k++) {
+        const i = list[k];
+        if (!rigidBodyActive[i] || isStatic[i]) continue;
+        const a = vx[i];
+        const b = vy[i];
+        // speed only — facing/cardinals use getDirectionFromVector(vx,vy); no per-body atan2
+        speed[i] = Math.sqrt(a * a + b * b);
+      }
     }
+  }
+
+  /** E-178: the active lists of the registered types that set deriveSpeed, as abstractWorker binds them. */
+  _buildDeriveSpeedLists() {
+    const lists = [];
+    for (const classInfo of this.registeredClasses || []) {
+      if (classInfo.deriveSpeed !== true) continue;
+      const list = self[classInfo.name]?._activeList;
+      if (list) lists.push(list);
+    }
+    this._deriveSpeedLists = lists;
+    this._deriveSpeedListsBuilt = true;
   }
 
   // ========================================

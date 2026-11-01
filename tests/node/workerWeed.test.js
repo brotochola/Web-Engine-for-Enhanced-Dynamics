@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import WEED from '../../src/index.js';
 import { WORKER_WEED } from '../../src/workers/workerWeed.js';
-import { loadEntityScripts, transformBlobScript } from '../../src/util/utils.js';
+import { BLOB_WRAPPER_PARAMS, loadEntityScripts, transformBlobScript } from '../../src/util/utils.js';
 import { bindSceneGraph } from '../../src/util/sceneScript.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -167,12 +167,7 @@ export class PackageScene extends Scene {
 });
 
 test('every demo and guide script that is a scene or entity module compiles after the blob transform', () => {
-  const utils = fs.readFileSync(path.join(ROOT, 'src/util/utils.js'), 'utf8');
-  const start = utils.indexOf('const moduleWrapper = new Function(');
-  const end = utils.indexOf('transformedScript', start + 1);
-  assert.ok(start >= 0 && end > start, 'wrapper not found');
-  const wrapper = utils.slice(start, end);
-  const params = [...wrapper.matchAll(/'([A-Za-z_$][\w$]*)'/g)].map((m) => m[1]);
+  const params = [...BLOB_WRAPPER_PARAMS];
   assert.ok(params.includes('WEED') && params.includes('GameObject'), 'wrapper params not found');
 
   const files = [];
@@ -215,4 +210,19 @@ test('registerCoreClasses keeps the worker seeded rng; WEED.rng is the wrapper t
   assert.equal(self.WEED, WORKER_WEED);
   assert.equal(self.Scene, WORKER_WEED.Scene);
   assert.equal(self.Tween, WORKER_WEED.Tween);
+});
+
+test('a scene that default-imports a vendor module loads in a blob worker (N-96)', async () => {
+  // destructibleTerrainScene's shape before 1e8e93a0: a UMD wrap with `export default`, imported by default.
+  const files = {
+    'http://x/terrain/vendor/simplify2.js': 'const simplify = (points) => points.length;\nexport default simplify;\n',
+    'http://x/terrain/scene.js': `import simplify2 from './vendor/simplify2.js';
+const { Scene } = WEED;
+export const POINTS = simplify2([1, 2, 3]);
+export class TerrainScene extends Scene {}
+`,
+  };
+  const context = await loadInBlobWorker(files, 'http://x/terrain/scene.js', WORKER_WEED);
+  assert.equal(context.POINTS, 3);
+  assert.equal(Object.getPrototypeOf(context.TerrainScene), WORKER_WEED.Scene);
 });

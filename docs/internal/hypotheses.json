@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-31",
+  "updated": "2026-11-01",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -411,7 +411,7 @@
       "aliases": [
         "Q1"
       ],
-      "next": "Reapply `set` with the clip to the room left (the edge test is in the tree); 4 pairs, logic owner, both sides from worktrees; batch with E-125 under one Predator guard.",
+      "next": "Nothing pending: R-0580 screened it at its ceiling (the copy is 2.4 % of logic, so at most 0.5 %, and set needs a subarray of the type list per call, the allocation E-104 removed).",
       "records": [
         "R-0297",
         "R-0580"
@@ -9474,90 +9474,193 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0770",
+        "R-0771",
+        "R-0774",
+        "R-0782"
+      ],
+      "status": "kept",
       "date": "2026-10-29",
-      "result": "",
+      "result": "kept: movedBodiesMixed spatial 4.361 -> 0.950 ms (-78.2 %, 0/4); Predator neutral; E-176b (row writes) kept on a quiet re-sit, adobe spatial -29.2 % (0/4), logic -2.2 %",
       "refs": [
         "EXECUTION_PLAN.md#E-176"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "statusText": "kept 2026-10-31 (R-0770); E-176b kept on a quiet re-sit 2026-11-01 (R-0774)",
       "id": "E-176",
-      "rank": 9,
       "area": "spatial",
       "kind": "speed",
       "title": "Spatial finds neighbours for types that never read them",
-      "next": "Step 0: which types read neighbours in each demo. Then the accessors mark their type in a shared byte array and spatial skips types unmarked in the last K frames. Owner adobeAnimateScene spatial (_findNeighbors 34.6 % of 184 ms/s); Predator neutral. EXECUTION_PLAN.md#E-176."
+      "next": "Nothing pending: both go to main with wave11."
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0781"
+      ],
       "status": "open",
       "date": "2026-10-29",
       "result": "",
       "refs": [
         "EXECUTION_PLAN.md#E-177"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "statusText": "open: step 0 done 2026-11-01 (R-0781): Predator keeps 95 % of the rows' statics, rewrites all",
       "id": "E-177",
       "rank": 10,
       "area": "pre-render",
       "kind": "speed",
       "title": "Sprite statics per entity on the GPU, for scenes whose camera scrolls",
-      "next": "Step 0: a counter of rows per frame whose statics changed (Predator, littleCity, Adobe). Build only where most rows keep theirs. EXECUTION_PLAN.md#E-177."
+      "next": "Build: the statics in a per-entity table on the GPU, written for the entities whose statics changed (about 700 of 13 500 rows a Predator frame); rows carry the entity index and the pose. Owners Predator's pre-render and renderer. EXECUTION_PLAN.md#E-177."
     },
     {
       "aliases": [],
       "records": [
-        "R-0752"
+        "R-0752",
+        "R-0778",
+        "R-0782"
       ],
-      "status": "open",
+      "status": "kept-kernel",
       "date": "2026-10-29",
-      "result": "",
+      "result": "kept-kernel: deriveSpeedMicrobench 9 240 -> 16 300 calls/s (+76 %, 5/6); no scene past the floor, Predator in wave11's gate",
       "refs": [
         "EXECUTION_PLAN.md#E-178"
       ],
-      "statusText": "open: rewritten 2026-10-29 at the owner's word, the derive stays in the particle worker",
+      "statusText": "kept-kernel 2026-11-01 (647f1d6a, R-0778)",
       "id": "E-178",
-      "rank": 12,
       "area": "particle",
       "kind": "speed",
       "title": "RigidBody.speed's derive pass, cheaper where it runs (the particle worker)",
-      "next": "A dense f32x4 pass over RigidBody's block (Box2D memory), masked by active, static and the class flag; else the JS loop with sqrt in place. Kernel on Predator's bodies; owner a stress scene whose bodies opt in (a knob first). EXECUTION_PLAN.md#E-178."
+      "next": "Predator in wave11's gate."
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0772",
+        "R-0776",
+        "R-0782"
+      ],
+      "status": "kept",
       "date": "2026-10-29",
-      "result": "",
+      "result": "kept (9e0d8e58): decorationSwayStressScene random order, a third on screen, particle 5.425 -> 4.877 ms (-10.0 %, 0/4); grid at 400 000 3.096 -> 3.173 ms (+2.5 %, 4/4, under the bar); kernel random +110 %",
       "refs": [
         "EXECUTION_PLAN.md#E-179"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "statusText": "kept 2026-11-01 as its seventh form (9e0d8e58, R-0776)",
       "id": "E-179",
-      "rank": 11,
       "area": "particle",
       "kind": "speed",
       "title": "Decorations' screen visibility, every frame in JavaScript",
-      "next": "The test inside the sway kernel walk, or skipped while camera and decorations hold (17.3 % of Predator particle). Owner decorationSwayStressScene particle. EXECUTION_PLAN.md#E-179."
+      "next": "Predator in wave11's gate. The grid's +2.5 % (the per-frame call around the shipped method) not found; E-183 for the stale OSR deopts."
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0777",
+        "R-0782"
+      ],
+      "status": "kept",
+      "date": "2026-10-29",
+      "result": "kept: minimalTickIntervalScene ?churn=64, logic 3.726 -> 2.997 ms (-16.8 %, 0/4); spatial -1.4 %",
+      "refs": [
+        "EXECUTION_PLAN.md#E-180"
+      ],
+      "statusText": "kept 2026-11-01 (5262c96f, R-0777)",
+      "id": "E-180",
+      "area": "logic",
+      "kind": "speed",
+      "title": "Interval tick buckets rebuilt for every type when any query moves",
+      "next": "Predator and spawnStormScene in wave11's gate."
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0775",
+        "R-0779",
+        "R-0782"
+      ],
+      "status": "kept",
+      "date": "2026-11-01",
+      "result": "kept: adobe 40 000 still characters, physics 5.235 -> 3.965 ms (-24.0 %, 0/4), spatial 2.651 -> 0.431 ms (-84 %, under the floor); Moved 40 000 -> 0",
+      "refs": [
+        "EXECUTION_PLAN.md#E-181"
+      ],
+      "statusText": "kept 2026-11-01 (R-0775)",
+      "id": "E-181",
+      "area": "physics",
+      "kind": "speed",
+      "title": "Every awake body is \"moved\", still or not: spatial rebuilds for bodies that never move",
+      "next": "Nothing pending: its LiquidFun lag (a still body's velocity a frame late in water) fixed in c83315e4 (R-0779); Predator in wave11's gate."
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0779",
+        "R-0782"
+      ],
+      "status": "kept-kernel",
+      "date": "2026-11-01",
+      "result": "kept-kernel: moveExportMicrobench 208.1 -> 212.8 steps/s (+2.2 %, 6/6); ballsHeavy physics +0.1 % (neutral); found E-181's LiquidFun lag (fixed c83315e4)",
+      "refs": [
+        "EXECUTION_PLAN.md#E-182"
+      ],
+      "statusText": "kept-kernel 2026-11-01 (900098ae, R-0779)",
+      "id": "E-182",
+      "area": "physics",
+      "kind": "speed",
+      "title": "Every moved body's state exported twice a step (the solver's finalize and the glue)",
+      "next": "Predator in wave11's gate."
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0780"
+      ],
+      "status": "answered",
+      "date": "2026-11-01",
+      "result": "answered: six scenes' deopt logs, none after warm-up past 1-3 a site; the stale-OSR deopt loop happens to kernels calling one function back to back (bimodal kernels)",
+      "refs": [
+        "EXECUTION_PLAN.md#E-183"
+      ],
+      "statusText": "answered 2026-11-01 (R-0780)",
+      "id": "E-183",
+      "area": "engine",
+      "kind": "speed",
+      "title": "Per-frame loops stuck on stale OSR code: a statement after the loop deopts every call",
+      "next": "Nothing pending in the engine; HOW_WE_MEASURE notes the bimodal kernels."
     },
     {
       "aliases": [],
       "records": [],
       "status": "open",
-      "date": "2026-10-29",
+      "date": "2026-11-01",
       "result": "",
       "refs": [
-        "EXECUTION_PLAN.md#E-180"
+        "EXECUTION_PLAN.md#E-184"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
-      "id": "E-180",
-      "rank": 13,
-      "area": "logic",
+      "statusText": "open: Wave 11 candidates (2026-11-01), E-65 reopened with E-179's form",
+      "id": "E-184",
+      "rank": 15,
+      "area": "particle",
       "kind": "speed",
-      "title": "Interval tick buckets rebuilt for every type when any query moves",
-      "next": "Step 0: rebuilds a second per type in Predator; then a per-type stamp. Owner Predator logic. EXECUTION_PLAN.md#E-180."
+      "title": "The particle cull's branch and branchless copies, picked per frame by a sample of the flips (E-65 reopened)",
+      "next": "After E-179's verdict: E-65's branchless visible-list write (kernel -16 % at 82 % visible random, +8 % all visible) as a second copy, picked as E-179 picks. EXECUTION_PLAN.md#E-184."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "result": "",
+      "refs": [
+        "EXECUTION_PLAN.md#E-179c"
+      ],
+      "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
+      "id": "E-179c",
+      "rank": 14,
+      "area": "particle",
+      "kind": "speed",
+      "title": "Decorations' screen test skipped while the camera and the decorations hold",
+      "next": "Step 0: frames a second with a still camera in the demos. Then a stamp of the bounds and of the pool's spawns, despawns and moves; skip when both hold. EXECUTION_PLAN.md#E-179c."
     },
     {
       "aliases": [],
@@ -9565,17 +9668,18 @@
         "REVIEW_PLAN.md#N-96"
       ],
       "records": [
-        "R-0767"
+        "R-0767",
+        "R-0773"
       ],
       "id": "N-96",
       "title": "A bundle's workers cannot load a module with export default; its importer fails with \"X is not defined\"",
-      "status": "open",
-      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (99c6e660)",
       "date": "2026-10-29",
       "area": "engine",
       "kind": "bug",
-      "result": "",
-      "next": "Default exports get a binding the loader registers per module URL, or the guide says \"named exports only\" and the error names the file."
+      "result": "Fixed 99c6e660: export default and default imports load in bundle workers; a module that does not compile names its URL.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -9583,17 +9687,18 @@
         "REVIEW_PLAN.md#N-97"
       ],
       "records": [
-        "R-0767"
+        "R-0767",
+        "R-0773"
       ],
       "id": "N-97",
       "title": "collider.collisionMask = 0 collides with every layer (the Box2D glue reads 0 as the default mask)",
-      "status": "open",
-      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (cb11f523)",
       "date": "2026-10-29",
       "area": "physics",
       "kind": "bug",
-      "result": "",
-      "next": "Make 0 mean \"nothing\" for bodies (queries keep their default), or document it beside collisionMask."
+      "result": "Fixed cb11f523 (Box2D 95dd9eb): a body takes its mask as given, so 0 collides with nothing; queries keep 0 as the default.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -9601,17 +9706,18 @@
         "REVIEW_PLAN.md#N-98"
       ],
       "records": [
-        "R-0767"
+        "R-0767",
+        "R-0773"
       ],
       "id": "N-98",
       "title": "A spawn key named like a read-only accessor (speed) stops the logic worker that sets the spawn up",
-      "status": "open",
-      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (04d59ca3)",
       "date": "2026-10-29",
       "area": "engine",
       "kind": "bug",
-      "result": "",
-      "next": "Skip spawn keys whose property has no setter (descriptor lookup cached per class) and warn once naming the key."
+      "result": "Fixed 04d59ca3: a read-only spawn key is warned about once per class and skipped; other setter errors still throw.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -9637,17 +9743,36 @@
         "REVIEW_PLAN.md#N-100"
       ],
       "records": [
-        "R-0768"
+        "R-0768",
+        "R-0773"
       ],
       "id": "N-100",
       "title": "Joint.getJointCount() with no argument never returns (the walk loops on undefined)",
-      "status": "open",
-      "statusText": "open: found building the GitHub Pages site (2026-10-30)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (8feba1d3)",
       "date": "2026-10-30",
       "area": "engine",
       "kind": "bug",
-      "result": "",
-      "next": "Guard non-integer entity indices in getJointCount, getJoint and the other per-entity walks."
+      "result": "Fixed 8feba1d3: the joint walks test entityIdx >>> 0 !== entityIdx; the vm-timeout test hung before.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-101"
+      ],
+      "records": [
+        "R-0774"
+      ],
+      "id": "N-101",
+      "title": "adobeAnimateScene spawned every character twice (create() called createNewGame(), which the engine calls too)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (8eb30060)",
+      "date": "2026-11-01",
+      "area": "demo",
+      "kind": "bug",
+      "result": "Fixed 8eb30060: the call is gone, the pool is the count, the default 20 000 (what the old default drew). Every adobe sitting before ran 2N characters in overlapping pairs.",
+      "next": "Nothing pending."
     }
   ],
   "records": [
@@ -16741,6 +16866,157 @@
         "492759bd",
         "079ef01d"
       ]
+    },
+    {
+      "id": "R-0770",
+      "date": "2026-10-31",
+      "time": "20:02",
+      "timeFrom": "recorded",
+      "title": "E-176: neighbour lists only for types that read them; owner movedBodiesMixed spatial -78 %",
+      "verdict": "kept",
+      "text": "**E-176 kept: spatial skips the neighbour pass for types whose code never reads neighbours (1f15095c).** 2026-10-31,\n19:11 to 20:02 (the result files' times), Chrome, headed, source, detailed stats off; another session's search\n(`buscar.js`, about one core) ran through the first sittings.\n\n- **Owner, movedBodiesMixedScene** (22 000 entities with a range of 170, none reads), 4 pairs, `--vs d9925062\n  --hyp-rev 1f15095c` (the same tree as the sitting's 18d07ddb): spatial **4.361 -> 0.950 ms, -78.2 %, worse 0/4**,\n  cv 1/2 %. KEPT (product).\n- **Predator gate**, 4 pairs with E-176b on top: NEUTRAL. Spatial -3.9 % (1/4), logic +2.1 % (3/4, cv 3/3 %), physics\n  -2.7 %, renderer -2.3 %, pre-render +1.6 %. Predator's types read their neighbours, so its accessor pays the mark\n  test: neighborAccessMicrobench (worker instances, 4 alternations) 4.40-4.60 -> 4.55-4.95 ns a read.\n- **The planned owner was wrong.** adobeAnimateScene, 4 pairs: spatial 2.581 -> 2.592 ms. Its characters have a\n  visual range of 0, which the pass already skipped; `_findNeighbors` (37 % of its spatial worker) was the skip\n  itself, writing each row's count every frame: that is E-176b. bichosScene (10 000 bugs with a range, none reads):\n  spatial 0.639 -> 0.365 ms, -43 %, under the 3 ms floor, not judged.\n\nDetection limit: the evening's A/A (adobeAnimateScene at 20 000 characters) moved every worker at most 2.1 %.",
+      "commits": [
+        "1f15095c",
+        "d9925062"
+      ]
+    },
+    {
+      "id": "R-0771",
+      "date": "2026-10-31",
+      "time": "20:13",
+      "timeFrom": "recorded",
+      "title": "E-176b: skipped rows written only when not clear; adobe spatial -30 %, logic +5.7 %",
+      "verdict": "mixed",
+      "text": "**E-176b mixed: a skipped entity's neighbour row written only when not already clear (86fbee25); spatial -30 %,\nlogic +5.7 % on a worker the code does not run in.** 2026-10-31, 19:29 to 20:13 (the result files' times), Chrome,\nheaded, source, detailed stats off.\n\n- **adobeAnimateScene, `?adobeCharacters=20000`** (the knob of d9925062; 40 000 bodies), 8 pairs (4, then 4 with\n  `--append`), `--vs 18d07ddb --hyp-rev d03847a7` (trees of 1f15095c and 86fbee25): spatial **4.530 -> 3.121 ms,\n  -30.4 %, worse 0/8**, cv 2/4 %; logic **3.411 -> 3.529 ms, +5.7 %, worse 7/8**, cv 6/8 %; physics -0.1 % (4/8),\n  pre-render +0.0 % (4/8). The runner says REGRESSION.\n- **A/A**, same scene and knob, 4 pairs on 86fbee25's tree (20:03 to 20:07): logic +2.1 % (2/4), spatial -0.4 %, physics\n  -0.7 %, pre-render -0.7 %. Logic's move is past it.\n- At the default 10 000 characters, 4 pairs: spatial 2.436 -> 1.784 ms (-26.8 %, 0/4, under the floor), logic 1.160 ->\n  1.144 ms.\n\nThe change runs only in the spatial worker and writes less shared memory, not more; logic moved only at 20 000\ncharacters, with physics at 10 ms. Most likely contention between the busy workers (spatial now idles sooner), not\ncode logic runs, but nothing here shows it. Open: a logic fit against its load, or a second scene where both workers\nare past the floor, before E-176b goes to main.",
+      "commits": [
+        "86fbee25"
+      ]
+    },
+    {
+      "id": "R-0772",
+      "date": "2026-10-31",
+      "time": "20:26",
+      "timeFrom": "recorded",
+      "title": "E-179: branchless decoration screen test, x2-3 on random grass, +18 % on the grid scene",
+      "verdict": "rejected",
+      "text": "**E-179 rejected as built: the decoration screen test without a branch (e1e54e01, not kept) wins on Predator's\nrandom grass and loses where the order is predictable.** 2026-10-31, 20:16 to 20:30.\n\n- **Kernel** (decorationVisibilityMicrobench, bbd5cd74: the shipped method on Predator's 20 000 blades, Node, 4\n  alternations, same checksum): with 51 % on screen in random order, **4 084-6 420 -> 12 826-13 149 calls/s**\n  (7.8-12.2 -> 3.8-3.9 ns a decoration). All on screen: 12 194 -> 14 075. Almost none on screen: **18 353 -> 13 021**:\n  the `&&` stops at the first failed test and nothing goes into the list, which the branchless loop always does.\n- **Owner, decorationSwayStressScene** (40 000 decorations on a grid in spawn order, about a quarter on screen),\n  4 pairs, `--vs bbd5cd74 --hyp-rev e1e54e01`, 20:22 to 20:26: particle **0.756 -> 0.892 ms, +18 %, worse 3/4**, under\n  the 3 ms floor and not judged, but the wrong way, and more than the kernel's +1.1 ns a decoration predicts.\n\nNext: one loop copy each and a pick per frame from the last frame's on/off flips (the branchless loop counts them\nfor two integer operations; the branched one is retried every so many frames), so the predictable order keeps the\nbranch.",
+      "commits": [
+        "bbd5cd74"
+      ]
+    },
+    {
+      "id": "R-0773",
+      "date": "2026-11-01",
+      "time": "03:04",
+      "timeFrom": "commit",
+      "title": "Four open engine bugs fixed: getJointCount() hang, read-only spawn keys, collision mask 0, bundle default exports",
+      "verdict": "kept-hygiene",
+      "text": "**Four open engine bugs fixed, each with a test that failed before (wave11).** 2026-11-01, 02:40 to 03:04 (the\ncommits' times); `npm run test:node` 2145/2145 and `npm run test:demos` 100/100 after the last one. Hygiene: none\nruns on a hot path a scene times except N-98's line in the spawn loop (one null test per spawn until a class needs it),\nso no sitting.\n\n- **N-100, `8feba1d3`:** `Joint.getJointCount()` with no argument never returned (`undefined < 0` is false and\n  `head[undefined]` is not INVALID_INDEX). `getJointCount`, `getJoint` and `forEachOnEntity` now test\n  `entityIdx >>> 0 !== entityIdx`; the test runs them under a vm timeout, so a regression fails instead of hanging.\n- **N-98, `04d59ca3`:** `X.spawn({ speed: 2 })` threw \"which has only a getter\" inside `_spawnAt` and stopped the\n  logic worker. The first write's throw checks the property's descriptor: a read-only key is warned about once per\n  class and skipped from then on (a WeakMap, null until needed); any other setter error still throws.\n- **N-97, Box2D `95dd9eb` and `cb11f523`:** `collider.collisionMask = 0` collided with every layer\n  (`normalize_mask_bits` read 0 as the default for bodies). Bodies take their mask as given; queries keep 0 as the\n  default. Rebuilt with `build_for_weed.bat` (SIMD copied, no-SIMD checked SIMD-free); the guide already said 0\n  collides with nothing and now adds that Box2D's queries skip such a body. `collisionMaskZero.wasm.test.js`.\n- **N-96, `99c6e660`:** a bundle's workers could not load a module with `export default`. The transform turns it\n  into `exports.default` (a named class or function stays a declaration); a default import reads the module's\n  default export by its resolved URL (`__blobDefault`, retried like named imports until that module ran); a module\n  that does not compile is reported with its URL.",
+      "commits": [
+        "8feba1d3",
+        "04d59ca3",
+        "cb11f523",
+        "99c6e660"
+      ]
+    },
+    {
+      "id": "R-0774",
+      "date": "2026-11-01",
+      "time": "03:17",
+      "timeFrom": "recorded",
+      "title": "E-176b re-sat on a quiet machine: kept, spatial -29.2 %, logic -2.2 %; adobe ran twice its characters (N-101)",
+      "verdict": "kept",
+      "text": "**E-176b kept on a quiet machine: spatial -29.2 %, logic -2.2 % (86fbee25).** 2026-11-01, 03:08 to 03:17 (the result\nfiles' times), Chrome, headed, source, detailed stats off; no other bench or search process running (checked before\neach run).\n\n- **CPU profile pair first** (one run a side, `--trace-cpu`, adobeAnimateScene `?adobeCharacters=20000`, src from\n  1f15095c and 86fbee25): logic0 STEP 3.606 -> 3.528 ms, busy 224 -> 217 ms/s, its functions' shares the same\n  (`_tickNonDecimatedOne` 23.7 -> 21.1 %); spatial busy 241 -> 175 ms/s, `_findNeighbors` 37.2 -> 10.8 % of it. No\n  sign of logic paying for E-176b.\n- **Re-sit, 4 pairs**, `--vs 1f15095c --hyp-rev 86fbee25 --owner spatial` (src from those commits, the rest from\n  HEAD): **KEPT (product)**. Spatial **3.780 -> 2.673 ms, -29.2 %, worse 0/4** (cv 2/3 %), logic 3.011 -> 3.066 ms,\n  paired **-2.2 %, worse 1/4** (cv 7/5 %), physics +0.3 % (2/4); the others under the 3 ms floor.\n\nR-0771's logic +5.7 % (7/8) does not come back: that evening's machine also ran another session's search (R-0770).\nE-176b can go to main with E-176.\n\n**The scene was not what its knob said (N-101, found here):** ENTITIES_PROCESSED and BODY_COUNT read 40 000 at\n`?adobeCharacters=20000`. adobeAnimateScene's `create()` called `createNewGame()`, which the engine calls after\n`create()` anyway, so it spawned every character twice, in pairs on the same spot that pushed each other apart every\nframe (all 40 000 bodies awake and moved). Every adobeAnimateScene sitting so far, R-0770 and R-0771 included, ran\ntwice the characters it named, with that physics. The demo is fixed separately; this sitting's numbers are for the\nold scene, both sides alike."
+    },
+    {
+      "id": "R-0775",
+      "date": "2026-11-01",
+      "time": "04:09",
+      "timeFrom": "recorded",
+      "title": "E-181 kept: awake still bodies not listed as moved; adobe 40k physics -24.0 %, spatial -84 %",
+      "verdict": "kept",
+      "text": "**E-181 kept: an awake body whose pose did not change is not listed as moved (c21c860a, Box2D 37b75c0); physics\n-24.0 %, spatial -84 % (under the floor).** 2026-11-01, 04:04 to 04:09 (the result files' times), Chrome, headed, source, detailed\nstats off.\n\n- **Where the export happens:** WeedJS's Box2D exports each awake body's state in the solver's finalize task, and the\n  glue's move-event export ran a second time for every moved body. A first form that compared poses in the glue found\n  nothing still (finalize had written the channels already: its test failed on the moving body); the comparison now\n  happens in the finalize export, which notes a still body for the glue.\n- **adobeAnimateScene `?adobeCharacters=40000`** (N-101 fixed: 40 000 distinct, still characters, sleeping off), 4\n  pairs, `--vs 0ad7f294 --hyp-rev c21c860a`, decided with `--owner physics` (`--decide-only`; the sitting ran with\n  spatial as owner, whose base is under the floor at 40 000): **KEPT (product)**: physics **5.235 -> 3.965 ms, -24.0 %, worse 0/4** (cv 2/3 %); spatial 2.651 -> 0.431 ms (-84 %, its base under the 3 ms floor, not judged); logic 2.716 -> 2.673 ms, pre-render 2.352 -> 2.231 ms (both under the floor).\n  Moved 40 000 -> 0 a frame.\n- **Tests:** stillBodiesNotMoved.wasm.test.js (an awake still body is not listed, a moving one is, a still one is listed\n  once on the step it falls asleep; both failed on the old build); node suite 2148/2148, demos 100/100.\n\nPredator's bodies move and sleep when they rest, so it has few awake still bodies; it goes in wave11's Predator gate.",
+      "commits": [
+        "c21c860a"
+      ]
+    },
+    {
+      "id": "R-0776",
+      "date": "2026-11-01",
+      "time": "04:38",
+      "timeFrom": "recorded",
+      "title": "E-179 kept as its seventh form: the branchless screen test picked by sampled flips; random order -10.0 %, grid +2.5 %",
+      "verdict": "kept",
+      "text": "**E-179: the decoration screen test without its branch when its outcome flips often; kept (the seventh form, 9e0d8e58): particle -10.0 % in Predator's regime, +2.5 % in a grid.** 2026-11-01, 03:20\nto 04:38 (the result files' times), Node kernels and Chrome sittings, headed, source, detailed stats off.\n\nForms, each measured against the shipped loop (a19bd027's src):\n\n- **Second form, 0ad7f294:** the branchless copy counts the flips and runs while they are more than an eighth of the\n  list, and one frame in 16 as a probe. Kernel, 4 rounds, calls/s over 20 000 blades: random order, 51 % on screen\n  6 359 -> 12 920 (+103 %, 4/4). decorationSwayStressScene (a19bd027's knobs), 4 pairs: `decorations=320000&order=random`\n  particle 4.916 -> 4.783 ms (-2.7 %, 0/4, NEUTRAL: the default zoom shows about 3 % of that grid, so both sides ran the\n  branch loop); grid at 320 000 2.655 -> 2.928 ms (+10.3 %, 4/4, under the floor). A CPU profile pair of the grid put\n  it in the screen test, 52 -> 60.5 ms/s: the probe frames wrote the shared visible list for every decoration.\n- **Fourth form (not committed):** the probe a window of 512 entries, the branchless copy into a private scratch.\n  Kernel: x order 51 % 17 924 -> 7 173 (-60 %), all on screen 11 343 -> 5 922 (-48 %). `--trace-deopt`: the function\n  deopted every call, \"Insufficient type feedback for compare operation\", on the same OSR code.\n- **The shipped loop does it too (E-183):** in some kernel runs it deopts 490 to 588 times at bytecode 321,\n  `visibleData[0] = visibleCount` after the loop (\"Insufficient type feedback for generic keyed access\"), and runs at\n  8 000 calls/s against 23 000 in the runs with 20 deopts: called once a frame, the loop runs on OSR code from the\n  first call, the statement after it had no feedback when that code was compiled, and V8 kept entering the cached OSR\n  code.\n- **Fifth form, c19d3e31:** each loop a function of its own that returns right after it (no deopt in 3 traced runs).\n  Kernel, 4 rounds: random 51 % 6 522 -> 12 867 (+97 %, 4/4); x order 5 % 9 097 -> 22 272 (+145 %: the shipped loop's\n  deopts); x order 51 % -6.7 %, random 5 % -6.8 %, all on screen -7.4 % (base in its fast runs). Sittings, 4 pairs:\n  **`decorations=320000&order=random`, `--camera-zoom 0.03`** (about a third on screen, Predator's regime): particle\n  **5.353 -> 4.887 ms, -8.7 %, worse 0/4**, cv 1/1 %: KEPT; **grid at 400 000**: 3.112 -> 3.230 ms, **+3.5 %, worse\n  4/4**: REGRESSION.\n- **Sixth form (not committed):** the shipped loop back inline, the sample and the branchless dispatch before it.\n  Kernel: the shipped loop's slow runs came back (all on screen 5 500 in 3 of 4 runs).\n- **The separate function costs:** a dispatch that only calls the branch loop, in its own function, ran 3 to 5 % slower\n  than the method in the method's fast runs (and never fell into the slow ones); moving the new fields to the end of\n  the constructor did not change it; an A/A of the shipped loop from both folders matched.\n- **Seventh form, 9e0d8e58: updateDecorationScreenVisibility is a19bd027's byte for byte;** updateDecorationScreen,\n  which update() calls, runs it or the branchless path (its own functions, the worker's scratch) and samples the flips\n  one frame in 16. Kernel (b8d2f43c), 4 rounds: random 51 % 6 271 -> 13 161 (+110 %, 4/4); x order 51 % 17 927 ->\n  19 288 (+7.6 %, 4/4); all on screen +1.9 % (3/4); x order 5 % -1.8 %. Sittings, 4 pairs, `--vs a19bd027 --hyp-rev\n  9e0d8e58 --owner particle`: **random order at 320 000, `--camera-zoom 0.03`: particle 5.425 -> 4.877 ms, -10.0 %,\n  worse 0/4**, cv 1/2 %: KEPT (product); **grid at 400 000: 3.096 -> 3.173 ms, +2.5 %, worse 4/4**, cv 1/2 %: NEUTRAL\n  (under the 3 % bar). The grid's cost, with the shipped method unchanged, is in the per-frame call around it; not\n  found.\n\nE-183 opened from this: per-frame loops stuck on stale OSR code.",
+      "commits": [
+        "0ad7f294",
+        "c19d3e31",
+        "9e0d8e58"
+      ]
+    },
+    {
+      "id": "R-0777",
+      "date": "2026-11-01",
+      "time": "04:43",
+      "timeFrom": "recorded",
+      "title": "E-180 kept: interval buckets rebuilt on their own type's list version; churn scene logic -16.8 %",
+      "verdict": "kept",
+      "text": "**E-180 kept: tickInterval buckets rebuilt when their own type's list changes (5262c96f); logic -16.8 %.**\n2026-11-01, 04:38 to 04:43 (the result files' times), Chrome, headed, source, detailed stats off.\n\n- **Built without step 0:** only logic0 edits the type lists, through three helpers and the spawn batch's merge, so a\n  version per type (GameObject.typeListVersions, a shared Int32 per entity type) is a few lines; Predator's rebuilds\n  are at most 2 to 3 % of a logic worker, under its noise, so the owner is a scene made for it.\n- **minimalTickIntervalScene's bucket scene, `?churn=64`** (e7363cf7: 160 000 props on a tickInterval of 4 while a\n  driver despawns and spawns 64 props of another type every frame), 4 pairs, `--vs e7363cf7 --hyp-rev 5262c96f\n  --owner logic`: **KEPT (product)**, logic **3.726 -> 2.997 ms, -16.8 %, worse 0/4** (cv 5/6 %); spatial 5.544 ->\n  5.518 ms (-1.4 %, 2/4); pre-render 1.893 -> 1.889 ms (under the floor). Per pair, logic A/B: 3.822/2.930,\n  3.630/3.064, 3.472/2.871, 3.914/3.280.\n- **Tests:** tickBucketTypeVersion.test.js (another type's churn rebuilds nothing; a same-count swap in the type\n  rebuilds once and its new entity ticks; the helpers move the version); node suite 2150/2150.\n\nEach despawn and spawn now does one Atomics.add on its type's version; spawnStormScene (thousands a frame) goes in\nwave11's batch gate with Predator.",
+      "commits": [
+        "5262c96f"
+      ]
+    },
+    {
+      "id": "R-0778",
+      "date": "2026-11-01",
+      "time": "04:55",
+      "timeFrom": "recorded",
+      "title": "E-178 kept on its kernel: speed derived over the opted-in types' lists, +76 %",
+      "verdict": "kept-kernel",
+      "text": "**E-178 kept on its kernel: the speed derive pass over the opted-in types' own active lists (647f1d6a), +76 %.**\n2026-11-01 (the kernel's result files), Node.\n\n- **The change:** updateDerivedProperties walked every body's RigidBody query and tested each one's type; it now\n  walks the active list of each type that sets deriveSpeed (as every worker binds them), skipping the other types'\n  bodies and the type lookups. The plan's f32x4 kernel over the RigidBody block was not needed for this step: the JS\n  loop's cost was the bodies it should not have visited and the per-body type test.\n- **deriveSpeedMicrobench** (cee8ae83: a real particle worker, 20 000 bodies in Predator's mix, 14 000 opting in),\n  HEAD's src against 647f1d6a, 6 alternating rounds: **9 240 -> 16 300 calls/s median, +76 %, new won 5/6**; both\n  sides are bimodal from run to run (about 9 000 / 16 000 or 19 000 / 32 500, an E-183 candidate), the gain the same\n  in both; checksums equal.\n- **No scene past the floor:** a scene's whole derive pass is under a millisecond (Predator's ~0.17 ms), so the\n  verdict is the kernel's; wave11's Predator gate checks the scene is not 3 % worse.\n- **Test:** deriveSpeedLists.test.js (the opted-in, active, non-static bodies' speeds only, as before); node suite\n  2153/2153, demos 100/100.",
+      "commits": [
+        "647f1d6a"
+      ]
+    },
+    {
+      "id": "R-0779",
+      "date": "2026-11-01",
+      "time": "05:02",
+      "timeFrom": "recorded",
+      "title": "E-182 kept on its kernel: a moved body's pose exported once a step; ballsHeavy neutral",
+      "verdict": "kept-kernel",
+      "text": "**E-182 kept on its kernel: a moved body's pose exported once a step unless continuous collision moved it after the\nfinalize (900098ae, Box2D c37ccc0); the scene neutral.** 2026-11-01, Node kernel and a Chrome sitting.\n\n- **First form, not kept:** the glue skipped the second export of a moved body whose pose the finalize had written.\n  liquidFunCoupling.wasm.test.js's H23 test failed: that export is also where the velocities are read after\n  LiquidFun's coupling changes them. The same test idea then showed E-181's still bodies exporting the water's push a\n  frame late, fixed first on its own (c83315e4, Box2D 5331b8c).\n- **The form kept:** the velocities are read again for every listed body; the pose (an atan2, five stores) only when\n  the move event's pose differs from what the finalize wrote or the body fell asleep.\n- **moveExportMicrobench** (cee8ae83: 20 000 moving bodies, one thread), HEAD's wasm against this, 6 alternating\n  rounds: **208.1 -> 212.8 steps/s, +2.2 %, new won 6/6**, checksums equal (the first form: +6.2 %, 4/4).\n- **ballsHeavyStressScene**, 4 pairs, `--vs c83315e4 --hyp-rev 900098ae --owner physics`: physics 8.609 -> 8.611 ms\n  (+0.1 %, 3/4): NEUTRAL. The export runs on the physics thread after a step its solver threads share, and its saving is\n  inside the scene's noise.\n- **Tests:** toiPoseExport.wasm.test.js (a fast ball stopped by continuous collision exports the pose it stopped at),\n  liquidFunCoupling's H23; node suite 2153/2153.",
+      "commits": [
+        "c83315e4",
+        "900098ae"
+      ]
+    },
+    {
+      "id": "R-0780",
+      "date": "2026-11-01",
+      "time": "05:06",
+      "timeFrom": "recorded",
+      "title": "E-183 answered: no steady deopt loop in Chrome (six scenes); the stale-OSR loop is a kernel's",
+      "verdict": "answered",
+      "text": "**E-183 answered: no per-frame loop is stuck on stale OSR code in Chrome; the deopt loop is a kernel's.** 2026-11-01,\n05:03 to 05:06 (the result files' times), Chrome, headed, source, detailed stats off, `--js-flags=--log-deopt`, 10 s\nof warm-up and 10 s measured a scene; summarizeV8Deopt.mjs.\n\n- **Six scenes:** predatorScene (1 125 deopts in the whole run), adobeAnimateScene (383), bunnyMarkStressScene (194),\n  decorationSwayStressScene at 320 000 (679), ballsHeavyStressScene (139), spawnStormScene (56).\n- **After the warm-up every scene's deopts are one to three a site, in cold code** (the camera's and the sound\n  manager's dependency changes, the bench page's own). Nothing deopts every frame.\n- **The warm-up's:** Predator's biggest sites are logicWorker.js:749 and :760 (the spawn batch's sort, 126 each,\n  \"insufficient type feedback\" for a named access and a compare), decorationPool.js:105 (copyActiveSnapshot, 126) and\n  particleWorker.js:1125 (`visibleData[0] = visibleCount` after the decoration screen test, 16): the stale-OSR shape\n  E-179 found, deopting while the scene starts and stopping once V8 compiles the function normally.\n- **The loop E-179's kernel fell into is the kernel's:** called back to back thousands of times, a function around one\n  long loop kept entering its cached OSR code and deopted at the statement after the loop on every call (490 to 588\n  deopts a run, 2.7 times slower). A frame's single call does not. Kernels that time such a function are bimodal from\n  run to run (decorationVisibilityMicrobench, deriveSpeedMicrobench): read their rounds side by side, or count\n  `--trace-deopt` lines, before calling a few percent.\n\nNo change to make in the engine; the kernel caveat goes to HOW_WE_MEASURE."
+    },
+    {
+      "id": "R-0781",
+      "date": "2026-11-01",
+      "time": "05:09",
+      "timeFrom": "recorded",
+      "title": "E-177 step 0: Predator keeps 95 % of its sprite rows' statics a frame and rewrites all of them",
+      "verdict": "answered",
+      "text": "**E-177 step 0: in Predator 95 % of the sprite rows keep their statics frame to frame, and all of them are written\nagain every frame.** 2026-11-01, 05:08 to 05:09 (the result files' times), Chrome, headed, source, detailed stats off; pre-render\ninstrumented in an overlay worktree (not committed): after each emit, every sprite row's scale, anchor, tint and\ntexture against the ones the same entity carried when last drawn, logged every 120 frames.\n\n| scene | sprite rows a frame | statics changed | staticGen moved |\n| --- | --- | --- | --- |\n| predatorScene | 13 380 to 13 560 | 640 to 760 (4.8 to 5.6 %) | 120 of 120 frames |\n| littleCity | 270 to 315 | 31 to 44 (11 to 15 %) | 120 of 120 frames |\n| adobeAnimateScene, min zoom | 214 000 | not measurable this way | 120 of 120 frames |\n\n- Rows matched their entities in Predator and littleCity (no row's x off its entity's); adobe's rows are its\n  characters' expanded pieces, several per entity, so the row-to-entity reading does not apply (E-145's ground).\n- Today the queue's static generation moves on every frame of a scrolling scene, so the statics of every row are\n  packed and uploaded again; per entity, Predator would upload about 700 rows' statics a frame instead of 13 500\n  (about 30 KB instead of 590 KB at 44 bytes).\n- Verdict for the plan: build E-177 where Predator draws, as the plan says (\"only where most rows keep theirs\")."
+    },
+    {
+      "id": "R-0782",
+      "date": "2026-11-01",
+      "time": "05:27",
+      "timeFrom": "recorded",
+      "title": "wave11's gate passed: Predator and spawnStormScene neutral (main against wave11)",
+      "verdict": "passed",
+      "text": "**wave11's gate passed: Predator and spawnStormScene neutral, main against wave11.** 2026-11-01, 05:11 to 05:27 (the\nresult files' times), Chrome, headed, source, detailed stats off, `--vs main --hyp-rev 674ceb04` (wave11's src: E-176,\nE-176b, E-178, E-179's seventh form, E-180, E-181 with its LiquidFun fix, E-182, N-96 to N-101).\n\n- **predatorScene, 4 pairs: NEUTRAL.** Logic 3.558 -> 3.573 ms (+0.3 %, 3/4), spatial 5.287 -> 5.148 ms (-3.9 %, 1/4),\n  physics 6.047 -> 6.401 ms (+0.7 % paired, 2/4, cv 9/5 %), renderer 3.578 -> 3.448 ms (-3.1 %, 1/4), pre-render\n  4.067 -> 4.077 ms (+0.3 %); load keys within 1.2 %.\n- **spawnStormScene, 4 pairs:** at the default storm (1 800 a tick) every worker is under the 3 ms floor (logic 2.773 ->\n  2.862 ms, not judged); at `?storm=2600`, logic 3.625 -> 3.632 ms, **+0.6 %, 2/4: NEUTRAL** (E-180's Atomics.add on\n  every spawn and despawn does not show)."
     }
   ],
   "leads": [

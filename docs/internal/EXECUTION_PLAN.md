@@ -3049,6 +3049,13 @@ spatial skips the neighbour pass for an entity whose type was not marked in the 
 gets its lists a frame later (written in the guide). The accessors' extra store is checked with E-141's
 neighborAccessMicrobench. Owner: adobeAnimateScene's spatial worker; Predator, which reads neighbours, must stay
 neutral.
+**Result (2026-10-31, R-0770, R-0771):** kept on movedBodiesMixedScene, spatial -78 %; Predator neutral. The premise
+was wrong about adobeAnimateScene: its characters have a range of 0, and the cost was the skip writing each row's
+count every frame. E-176b writes a row only when it is not clear: spatial -30 % there at 20 000 characters, logic
++5.7 % (7/8, A/A 2.1 %), mixed; it waits for a logic fit or a second scene before main.
+**Re-sat 2026-11-01 (R-0774), kept:** on a quiet machine spatial -29.2 % (0/4), logic -2.2 %, and a CPU profile pair put
+logic's busy time at -3 %. Those sittings ran twice the characters the knob named: the demo's `create()` called
+`createNewGame()` too (N-101, fixed in 8eb30060).
 
 ### E-177 Sprite statics per entity on the GPU, for scenes whose camera scrolls
 
@@ -3059,6 +3066,11 @@ statics changed, a frame would carry an index and a pose per row (about 20 bytes
 **Plan:** step 0, a counter of the rows per frame whose statics changed, in Predator, littleCity and adobeAnimateScene
 (an animated sprite changes its frame often, and Adobe's statics move every frame: R-0626). Build only where most rows
 keep theirs. Owners: the pre-render and renderer workers of the scene the counter picks; a Predator gate.
+**Step 0, 2026-11-01 (R-0781):** an instrumented pre-render counted each frame's sprite rows whose statics differ from
+the ones their entity carried when last drawn. Predator: about 13 500 rows a frame, 4.8 to 5.6 % changed, and the
+queue's static generation moved on every frame, so all of them are packed and uploaded again; littleCity: about 290
+rows, 11 to 15 % changed. Build it for Predator: about 700 rows' statics a frame instead of 13 500 (about 30 KB instead
+of 590 KB). adobeAnimateScene's rows are expanded pieces, several per entity: E-145's ground.
 
 ### E-178 RigidBody.speed's derive pass, cheaper where it runs (the particle worker)
 
@@ -3073,6 +3085,10 @@ JS loop with the square root written in place. Kernel against today's loop on Pr
 whose bodies opt in, past the 3 ms floor (none yet: a knob first, in its own commit).
 *Rewritten 2026-10-29 at the owner's word: computing speed on read would move the work to the logic workers, and game
 code reads the array directly.*
+**Kept on its kernel 2026-11-01 (R-0778, 647f1d6a):** the pass walks the active list of each type that sets
+deriveSpeed instead of every body's query with a type test each; the JS loop's cost was the bodies it should not have
+visited. deriveSpeedMicrobench, 20 000 bodies in Predator's mix: +76 % (5/6). No scene's pass reaches the floor;
+Predator in wave11's gate. The f32x4 kernel is not needed for this step.
 
 ### E-179 Decorations' screen visibility, every frame in JavaScript
 
@@ -3080,6 +3096,15 @@ code reads the array directly.*
 Predator's particle worker, beside the sway kernel (`sway_decorations_f32x4`, 23.4 %) that reads the same positions.
 **Plan:** the test inside the sway kernel's walk of the same arrays, or skipped while neither the camera nor a
 decoration moved. Owner: decorationSwayStressScene's particle worker.
+**2026-10-31 (R-0772):** the branchless test, alone, is rejected: x2-3 on Predator's random order, worse where the
+order is predictable (the grid stress scene +18 %). Next: both loops, picked per frame from the last frame's flips.
+**Kept 2026-11-01 (R-0776), the seventh form (9e0d8e58):** `updateDecorationScreenVisibility` stays the shipped method,
+byte for byte; `updateDecorationScreen`, which `update()` calls, runs it or the branchless copy (its own functions, the
+candidates in the worker's scratch) and samples the flips on a 512-entry window one frame in 16. decorationSwayStressScene
+(`?order=random`, a19bd027), 4 pairs: random order with a third on screen, particle -10.0 % (0/4); the grid at 400 000,
++2.5 % (4/4, under the bar). On the way: counting the flips inside a loop, a whole branchless probe frame and moving the
+shipped loop into a function of its own each cost the predictable case 3 to 10 %, and the shipped loop's own deopt loop
+on stale OSR code became E-183.
 
 ### E-180 Interval tick buckets rebuilt for every type when any query moves
 
@@ -3088,6 +3113,79 @@ decoration moved. Owner: decorationSwayStressScene's particle worker.
 so any spawn or despawn of any type rebuilds the buckets of every type that ticks on an interval.
 **Plan:** step 0, rebuilds a second per type in Predator. If most are of types whose own list did not change, stamp
 the buckets with the type's own list (a per-type version). Owner: Predator's logic.
+*2026-11-01:* built without step 0 (5262c96f): only logic0 edits the type lists, through three helpers and the spawn
+batch's merge, so a per-type version is a few lines; the bucket rebuild is at most 2 to 3 % of a Predator logic worker,
+under Predator's noise, so the owner is minimalTickIntervalScene with `?churn=64` (e7363cf7): 160 000 props on a
+tickInterval of 4 while another type's 64 props come and go every frame.
+
+## Wave 11 candidates (2026-11-01)
+
+Found while measuring E-176b and E-179 (wave11).
+
+### E-181 Every awake body is "moved", still or not
+
+**Premise:** Box2D 3 writes a move event for every awake body every step (`b2FinalizeBodiesTask` sizes the array to the
+awake count), and the glue's `export_body_move_events` lists each one as moved and exports its state, an `atan2`
+included. A body that is awake and did not move (sleeping off, a body held awake, a kinematic body at rest) costs the
+export and puts its rows in spatial's moved list: adobeAnimateScene (sleeping off, 20 000 still characters after
+N-101) reads Moved 20 000 every frame, so spatial rebuilds the grid (2.1 ms) for bodies that never move.
+**Plan:** in the glue, a move event whose transform equals what the state channels hold (Transform.x, y, rotC and rotS
+are those channels) exports the velocities only and is not listed, unless the body fell asleep; teleports keep their
+own list. Owner: adobeAnimateScene's spatial worker; physics there too; Predator, whose bodies move, must stay neutral.
+**Kept 2026-11-01 (R-0775; c21c860a, Box2D 37b75c0):** the comparison is in the solver's finalize export, which WeedJS's
+Box2D runs for every awake body and which had written the channels before the glue looked; the glue leaves a body the
+finalize found still out of the list and out of its second export. adobeAnimateScene at 40 000 still characters, 4
+pairs: physics 5.235 -> 3.965 ms (-24.0 %, 0/4), spatial 2.651 -> 0.431 ms (-84 %, its base under the floor), Moved
+40 000 -> 0. Predator goes in wave11's gate.
+
+### E-182 Every moved body's state exported twice a step
+
+**Premise:** WeedJS's Box2D exports each awake body's state in the solver's finalize task (`b2ExportBodyState`: x, y, an
+`atan2` for the rotation, rotC, rotS, the velocities), and the glue's `export_body_move_events` exports it again for
+every moved body from the move event, with `b2Body_GetLinearVelocity` and `b2Body_GetAngularVelocity` calls. The second
+export only matters for a body whose pose changed after the finalize, which is continuous collision's (a fast body's
+time of impact).
+**Plan:** the glue re-exports a listed body only when the event's pose differs from what the channels hold. Owner: the
+physics worker of a scene full of moving bodies (ballsHeavyStressScene); Predator's physics (10 ms, most bodies
+moving) next.
+**Kept on its kernel 2026-11-01 (R-0779; 900098ae, Box2D c37ccc0):** the second export also reads the velocities after
+LiquidFun's coupling changed them, so they are still read; only the pose (an atan2, five stores) waits for a change.
+moveExportMicrobench, 20 000 moving bodies: +2.2 % (6/6); ballsHeavyStressScene physics +0.1 %, neutral. On the way it
+showed E-181's still bodies exporting a push from the water a frame late, fixed in c83315e4.
+
+### E-183 Per-frame loops stuck on stale OSR code
+
+**Premise:** found building E-179. A worker function called once a frame around one long loop runs that loop on OSR
+code from its first call. A statement after the loop that had no type feedback when the OSR code was compiled deopts
+when reached ("Insufficient type feedback for generic keyed access"), and V8 can keep entering the same cached OSR
+code, so the function deopts at that statement on every call. The shipped `updateDecorationScreenVisibility` did it at
+`visibleData[0] = visibleCount` in some runs of its kernel: 490 to 588 deopts and 8 000 calls/s, against 20 deopts and
+23 000 in the others. The same shape (a long loop, then a count stored into a shared list) is in many workers.
+**Plan:** step 0, Chrome's deopt log (`--js-flags="--log-deopt"`, summarizeV8Deopt.mjs, steady state only) on
+Predator and the stress scenes: the functions that deopt at the same bytecode every frame. Then each loop in a function
+of its own that returns right after it (E-179's form), one change per worker. Owners: the workers it finds.
+**Answered 2026-11-01 (R-0780):** Chrome's deopt logs of six scenes (Predator, adobeAnimateScene, BunnyMark, the
+decoration grid, ballsHeavy, spawnStorm) show nothing deopting after the warm-up beyond one to three a site in cold
+code; the stale-OSR sites deopt while a scene starts and stop. The every-call loop is a kernel's (back-to-back calls):
+HOW_WE_MEASURE's "Which tier it timed" says how to read such a kernel.
+
+### E-184 The particle cull's two copies, picked per frame
+
+**Premise:** E-65 timed a branchless visible-list write for the rotation-0 particle cull: -16 % at 82 % visible in random
+order, +8 % with all visible, and screened it because "the gain depends on the scene" (emitters' particles are
+clustered by index, so the branch usually predicts). E-179 picks between the two forms per frame from a sample of the
+outcome's flips, which takes the gain where it exists and keeps the branch where it predicts.
+**Plan:** after E-179's verdict, E-65's branchless write as a second copy, picked the same way; E-179's lesson kept (the
+shipped loop left as it was, the dispatch outside it). Owner: a particle stress scene with random emission.
+
+### E-179c Decorations' screen test skipped while nothing it reads changed
+
+**Premise:** the test's output depends only on the camera bounds and the active decorations' positions; decorations
+sway (rotation) but rarely move. A frame whose bounds equal the last frame's and whose snapshot and positions did not
+change gives the same list and flags.
+**Plan:** step 0, how many frames a second hold the camera still in the demos (Predator's follows a player and moves
+nearly every frame). Then a stamp of the bounds and of DecorationPool's spawns, despawns and moves; skip when both
+hold. Owner: a scene with a still camera and many decorations.
 
 ---
 

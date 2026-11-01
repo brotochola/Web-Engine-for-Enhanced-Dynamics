@@ -16,6 +16,21 @@ function queryTablesMB() {
 }
 const TABLES_MB = queryTablesMB();
 
+// `?adobeCharacters=<n>`: the characters spawned, the bench's load knob. The default, 20 000, is the count the scene
+// drew until 2026-11-01, when create() also spawned 10 000 twice (N-101).
+const CHARACTERS = (() => {
+  try {
+    const n = parseInt(new URLSearchParams(globalThis.location?.search || '').get('adobeCharacters'), 10);
+    return n > 0 ? Math.min(n, 100000) : 20000;
+  } catch {
+    return 20000;
+  }
+})();
+
+export const stressSceneConfig = {
+  requested: { adobeCharacters: CHARACTERS },
+};
+
 export class AdobeAnimateScene extends Scene {
   static config = {
     worldWidth: 20600,
@@ -71,7 +86,7 @@ export class AdobeAnimateScene extends Scene {
     },
   };
 
-  static entities = [[AdobeAnimateCharacter, 20000]];
+  static entities = [[AdobeAnimateCharacter, CHARACTERS]];
 
   constructor(game) {
     super(game);
@@ -85,15 +100,15 @@ export class AdobeAnimateScene extends Scene {
     Camera.setFreeTarget(cx, cy);
     Camera.centerOn(cx, cy);
     Camera.setZoom(1.4);
-
-    this.createNewGame();
+    // No createNewGame() here: the engine calls it after create() for a new game. Calling it here too spawned every
+    // character twice, in pairs on the same spot that pushed each other apart every frame (N-101).
   }
 
   createNewGame() {
     const cx = this.config.worldWidth * 0.5;
     const cy = this.config.worldHeight * 0.5;
-    const totalCharacters = 10000;
-    const gridCols = Math.sqrt(totalCharacters);
+    const totalCharacters = CHARACTERS;
+    const gridCols = Math.round(Math.sqrt(totalCharacters));
     const spacingX = 50;
     const spacingY = 50;
     const startX = cx;

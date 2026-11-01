@@ -41,6 +41,7 @@ import { debugWorkerLog } from '../util/debugLog.js';
 import { RigidBody as RigidBodyImport } from '../components/rigidBody.js';
 import { Collider as ColliderImport } from '../components/collider.js';
 import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
+import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { Grid as GridImport } from '../core/grid.js';
 import {
@@ -63,6 +64,7 @@ const Transform = TransformImport;
 const RigidBody = RigidBodyImport;
 const Collider = ColliderImport;
 const SpriteRenderer = SpriteRendererImport;
+const LightEmitter = LightEmitterImport;
 const Grid = GridImport;
 const getColliderBounds = getColliderBoundsImport;
 const getCellRange = getCellRangeImport;
@@ -1293,6 +1295,10 @@ class SpatialWorker extends AbstractWorker {
   _findNeighbors() {
     const visualRange = Collider.visualRange;
     const active = Transform.active;
+    // E-176: lists only for types whose code reads them, and for active lights (pre-render reads theirs).
+    const readers = Grid.neighborReaders;
+    const entityType = Transform.entityType;
+    const lightActive = LightEmitter.active || null; // null: the scene has no lights
     const maxNeighbors = Grid.maxNeighbors;
     const stride = Grid._stride;
     const skinFrac = this._neighborReuseSkin;
@@ -1309,6 +1315,7 @@ class SpatialWorker extends AbstractWorker {
     // E-136: read before the publish reads a pose (update() adds to it after this worker's poses).
     const poseGen = Atomics.load(this._poseGen, 0);
     const rowPoseGen = this._rowPoseGen;
+    const sharedRows = this.totalSpatialWorkers > 1;
 
     this._processedFrameCounter++;
     if (this._processedFrameCounter > SPATIAL_STAMP_FRAME_MASK) {
@@ -1332,9 +1339,19 @@ class SpatialWorker extends AbstractWorker {
       this.entitiesProcessedThisFrame++;
 
       const myVisualRange = visualRange[entityA];
-      if (myVisualRange <= 0) {
-        neighborData[entityA * stride] = 0;
-        rowPoseGen[entityA] = POSE_GEN_NONE;
+      if (
+        myVisualRange <= 0 ||
+        (readers !== null && readers[entityType[entityA]] === 0 && !(lightActive !== null && lightActive[entityA]))
+      ) {
+        // A row this worker cleared stays clear: only its publish writes it. Its own write each frame
+        // dirtied a cache line per entity (130 bytes a row at maxNeighbors 64). With other spatial
+        // workers, one of them may have published the row before this one took the entity over.
+        if (rowPoseGen[entityA] !== POSE_GEN_NONE) {
+          neighborData[entityA * stride] = 0;
+          rowPoseGen[entityA] = POSE_GEN_NONE;
+        } else if (sharedRows && neighborData[entityA * stride] !== 0) {
+          neighborData[entityA * stride] = 0;
+        }
         continue;
       }
 

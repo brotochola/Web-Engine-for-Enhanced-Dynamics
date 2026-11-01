@@ -1246,7 +1246,7 @@ const BLOB_SCRIPT_PARAM_NAMES = new Set([
   'getDirectionFromAngle', 'getDirection8FromVector', 'containerRadius', 'SpriteSheetRegistry',
   'Keyboard', 'SoundManager', 'CollisionListener', 'CameraInOutListener', 'JointBreakListener',
   'Grab', 'BLEND_MODES', 'DEFAULT_LAYERS', 'CAMERA_TYPES', 'DECAL_STAMPS_BLEND_MODE',
-  'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET',
+  'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET', '__blobDefault',
 ]);
 
 function isEngineImportSpec(spec) {
@@ -1274,30 +1274,61 @@ function blobImportBinding(imported, local) {
 const ${local} = globalThis.${from};`;
 }
 
+function blobNamedBindings(names) {
+  return names
+    .split(',')
+    .map((part) => {
+      const bits = part.trim().split(/\s+as\s+/);
+      const imported = bits[0].trim();
+      const local = bits[bits.length - 1].trim();
+      return blobImportBinding(imported, local);
+    })
+    .filter(Boolean)
+    .join('\n');
+}
+
+/**
+ * N-96: a default import reads the default export of the module at the spec's
+ * URL (resolved against the importer's, as expandBlobEntityScripts resolves it),
+ * not a worker global, where two modules' defaults would share one name. Before
+ * that module has run it throws, and the loader retries the importer next pass.
+ */
+function blobDefaultBinding(local, spec, scriptPath) {
+  if (!/^[A-Za-z_$][\w$]*$/.test(local) || BLOB_SCRIPT_PARAM_NAMES.has(local)) return '';
+  let url = spec;
+  if (scriptPath) {
+    try {
+      url = new URL(spec, scriptPath).href;
+    } catch {
+      /* keep the spec */
+    }
+  }
+  return `const ${local} = __blobDefault(${JSON.stringify(url)});`;
+}
+
 /**
  * Blob eval cannot `import()`. Devs still write `import { MySoldier }`.
  * Engine specs are dropped (wrapper params). Sibling/demo imports read the
- * worker global the loader registers each export on (see blobImportBinding).
+ * worker global the loader registers each export on (see blobImportBinding);
+ * a default import reads its module's default export (blobDefaultBinding).
+ * @param {string} scriptText
+ * @param {string} [scriptPath] the importer's URL, which default imports resolve against
  */
-export function rewriteBlobImports(scriptText) {
+export function rewriteBlobImports(scriptText, scriptPath = '') {
   return scriptText
     .replace(/import\s+\{([^}]+)\}\s+from\s+['"]([^'"]+)['"]\s*;?/g, (match, names, spec) => {
       if (isEngineImportSpec(spec)) return '';
-      return names
-        .split(',')
-        .map((part) => {
-          const bits = part.trim().split(/\s+as\s+/);
-          const imported = bits[0].trim();
-          const local = bits[bits.length - 1].trim();
-          return blobImportBinding(imported, local);
-        })
-        .filter(Boolean)
-        .join('\n');
+      return blobNamedBindings(names);
     })
     .replace(/import\s+\*\s+as\s+\w+\s+from\s+['"][^'"]+['"]\s*;?/g, '')
+    .replace(/import\s+([A-Za-z_$][\w$]*)\s*,\s*\{([^}]+)\}\s*from\s+['"]([^'"]+)['"]\s*;?/g, (match, name, names, spec) => {
+      if (isEngineImportSpec(spec)) return '';
+      const bindings = [name === 'WEED' ? '' : blobDefaultBinding(name, spec, scriptPath), blobNamedBindings(names)];
+      return bindings.filter(Boolean).join('\n');
+    })
     .replace(/import\s+(\w+)\s+from\s+['"]([^'"]+)['"]\s*;?/g, (match, name, spec) => {
       if (isEngineImportSpec(spec) || name === 'WEED') return '';
-      return blobImportBinding(name, name);
+      return blobDefaultBinding(name, spec, scriptPath);
     })
     .replace(/import\s+['"][^'"]+['"]\s*;?/g, '');
 }
@@ -1319,21 +1350,30 @@ export function transformBlobScript(scriptText, scriptPath) {
   // name it (`export const UP = 1; const MASK = 1 << UP;`); `exports` is filled
   // at the end, once the whole module has run (the loader reads it then).
   const exported = [];
-  const body = rewriteBlobImports(scriptText)
+  let defaultName = '';
+  const body = rewriteBlobImports(scriptText, scriptPath)
     .replace(BLOB_WEED_DESTRUCTURE, 'var$1')
     .replace(/import\.meta\.url/g, `'${scriptPath}'`)
     .replace(/export\s+(class|(?:async\s+)?function\s*\*?|const|let|var)\s*([A-Za-z_$][\w$]*)/g, (match, kind, name) => {
       exported.push(name);
       return `${kind.trim()} ${name}`;
     })
+    // N-96: a named default declaration stays one (the module's code may call
+    // it); any other default is an expression.
+    .replace(/export\s+default\s+(class|(?:async\s+)?function\s*\*?)\s*([A-Za-z_$][\w$]*)/g, (match, kind, name) => {
+      defaultName = name;
+      return `${kind.trim()} ${name}`;
+    })
+    .replace(/export\s+default\s+/g, 'exports.default = ')
     .replace(/export\s+\{\s*([^}]+)\s*\}/g, (match, names) => {
       return names.split(',').map(n => {
         const name = n.trim().split(/\s+as\s+/);
         return `exports.${name[name.length - 1].trim()} = ${name[0].trim()};`;
       }).join('\n');
     });
-  const tail = exported.map((name) => `exports.${name} = ${name};`).join('\n');
-  return "'use strict';\n" + body + (tail ? `\n${tail}\n` : '');
+  const tail = exported.map((name) => `exports.${name} = ${name};`);
+  if (defaultName) tail.push(`exports.default = ${defaultName};`);
+  return "'use strict';\n" + body + (tail.length > 0 ? `\n${tail.join('\n')}\n` : '');
 }
 
 /**
@@ -1500,6 +1540,26 @@ export async function loadEntityScripts(scriptsToLoad, globalContext = null, ver
  */
 export const blobModules = new Map();
 
+/** The parameters of a bundled worker's module body, in the order evaluateBlobModule passes their values. */
+export const BLOB_WRAPPER_PARAMS = Object.freeze([
+  'exports', 'WEED',
+  'GameObject', 'Component', 'SharedResource', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
+  'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter', 'FlashComponent',
+  'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration', 'Mouse', 'Camera',
+  'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle', 'getDirection8FromVector',
+  'containerRadius', 'SpriteSheetRegistry', 'Keyboard', 'SoundManager',
+  'CollisionListener', 'CameraInOutListener', 'JointBreakListener', 'Grab',
+  'BLEND_MODES', 'DEFAULT_LAYERS', 'CAMERA_TYPES', 'DECAL_STAMPS_BLEND_MODE',
+  'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET', '__blobDefault',
+]);
+
+/** A blob module's default import: the default export of the module at `url`, once that module has run (N-96). */
+function blobDefault(url) {
+  const module = blobModules.get(url);
+  if (module === undefined || !('default' in module)) throw new Error(`blob-dep ${url}`);
+  return module.default;
+}
+
 /**
  * Evaluate a scene or entity script in a bundled (blob) worker, which cannot
  * import(): rewrite it as a function body and run it with the engine names.
@@ -1518,18 +1578,15 @@ export function evaluateBlobModule(scriptText, scriptPath, globalContext) {
 
   // Build the wrapper with WEED globals as function parameters, for
   // scripts that use engine names without destructuring them.
-  const moduleWrapper = new Function(
-    'exports', 'WEED',
-    'GameObject', 'Component', 'SharedResource', 'FSM', 'FSMState', 'Transform', 'RigidBody', 'Collider',
-    'SpriteRenderer', 'ParticleComponent', 'ShadowCaster', 'LightEmitter', 'FlashComponent',
-    'DecorationComponent', 'ParticleEmitter', 'DecorationPool', 'Flash', 'Box2d', 'Decal', 'Query', 'LiquidFun', 'Decoration', 'Mouse', 'Camera',
-    'NavGrid', 'Ray', 'ShapeType', 'rng', 'randomColor', 'distanceSq2D', 'getDirectionFromAngle', 'getDirection8FromVector',
-    'containerRadius', 'SpriteSheetRegistry', 'Keyboard', 'SoundManager',
-    'CollisionListener', 'CameraInOutListener', 'JointBreakListener', 'Grab',
-    'BLEND_MODES', 'DEFAULT_LAYERS', 'CAMERA_TYPES', 'DECAL_STAMPS_BLEND_MODE',
-    'DEBUG_FLAGS', 'DEBUG_SELECTED_ENTITY_OFFSET',
-    transformedScript
-  );
+  let moduleWrapper;
+  try {
+    moduleWrapper = new Function(...BLOB_WRAPPER_PARAMS, transformedScript);
+  } catch (compileError) {
+    // N-96: a syntax the transform left (it was `export default`) failed here, outside the evaluation's report, and
+    // the loader's retries are quiet in workers: the first sign was an importer's "X is not defined".
+    console.error(`  ✗ Error compiling ${scriptPath} for a bundled worker:`, compileError);
+    throw compileError;
+  }
 
   // Workers set self.WEED (workerWeed.js) and the same names on self.
   const WEED = globalContext.WEED || globalContext;
@@ -1584,7 +1641,8 @@ export function evaluateBlobModule(scriptText, scriptPath, globalContext) {
       e.CAMERA_TYPES,
       e.DECAL_STAMPS_BLEND_MODE,
       e.DEBUG_FLAGS,
-      e.DEBUG_SELECTED_ENTITY_OFFSET
+      e.DEBUG_SELECTED_ENTITY_OFFSET,
+      blobDefault
     );
   } catch (evalError) {
     console.error(`  ✗ Error evaluating ${scriptPath}:`, evalError);

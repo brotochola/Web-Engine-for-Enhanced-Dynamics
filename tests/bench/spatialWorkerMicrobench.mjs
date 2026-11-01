@@ -22,6 +22,7 @@ import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { Grid } from '../../src/core/grid.js';
 import { ShapeType } from '../../src/util/configDefaults.js';
 import { bindEntityIdWidth, EntityIdArray, packSpatialPairStamp, SPATIAL_STAMP_FRAME_MASK } from '../../src/util/entityIdWidth.js';
@@ -58,6 +59,7 @@ export const SCOPE = {
   RigidBody,
   Collider,
   SpriteRenderer,
+  LightEmitter,
   Grid,
   EntityIdArray,
   packSpatialPairStamp,

@@ -91,8 +91,20 @@ export const SWAY_BUCKETS = (() => {
  * A flat line across a sweep is exactly what a sweep that never ran looks like,
  * which is why this declaration is now mandatory for parameterised scenes.
  */
+/**
+ * `?order=random`: the same grid, spawned in a shuffled order (a fixed seed), so the pool's active list is as random
+ * against the camera as Predator's grass (E-179: the screen test's branch is predictable in grid order, not there).
+ */
+export const SPAWN_ORDER = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('order') === 'random' ? 'random' : 'grid';
+  } catch {
+    return 'grid';
+  }
+})();
+
 export const stressSceneConfig = {
-  requested: { decorations: DECORATION_COUNT },
+  requested: { decorations: DECORATION_COUNT, order: SPAWN_ORDER },
 };
 export const WORLD_W = 20000;
 export const WORLD_H = 20000;
@@ -144,9 +156,25 @@ export class DecorationSwayStressScene extends Scene {
     // is trying to measure.
     const skewCount = Math.floor(DECORATION_COUNT * SKEW_SHARE);
 
+    // Grid cell of spawn i: itself, or a shuffled one (Fisher-Yates over a fixed-seed xorshift).
+    const cell = new Int32Array(DECORATION_COUNT);
+    for (let i = 0; i < DECORATION_COUNT; i++) cell[i] = i;
+    if (SPAWN_ORDER === 'random') {
+      let s = 0x9e3779b9;
+      for (let i = DECORATION_COUNT - 1; i > 0; i--) {
+        s ^= s << 13;
+        s ^= s >>> 17;
+        s ^= s << 5;
+        const j = (s >>> 0) % (i + 1);
+        const t = cell[i];
+        cell[i] = cell[j];
+        cell[j] = t;
+      }
+    }
+
     for (let i = 0; i < DECORATION_COUNT; i++) {
-      const col = i % cols;
-      const row = (i / cols) | 0;
+      const col = cell[i] % cols;
+      const row = (cell[i] / cols) | 0;
       Decoration.spawn({
         x: startX + col * spacing,
         y: startY + row * spacing,

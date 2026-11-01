@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import vm from 'node:vm';
 import {
   BODY_DIRTY,
   bindBodySyncBuffers,
@@ -209,6 +210,32 @@ test('joint revision: bumps on add, update, remove; slot reuse gets new rev', ()
   assert.equal(idx2, idx);
   const revReuse = Atomics.load(Joint.revision, idx2);
   assert.ok(revReuse > revAfterRemove);
+
+  Joint.reset();
+});
+
+test('joint walks: a missing or fractional entity index returns at once (N-100)', () => {
+  const maxJoints = 8;
+  Joint.reset();
+  Joint.initializeArrays(new SharedArrayBuffer(Joint.getBufferSize(maxJoints, 8)), maxJoints, 8);
+  const freeListSab = new SharedArrayBuffer(maxJoints * 2);
+  const freeListTopSab = new SharedArrayBuffer(8);
+  resetFreeList(new Int32Array(freeListTopSab), new Uint16Array(freeListSab), maxJoints, 1);
+  Joint.initialize(maxJoints);
+  Joint.initializeFreeList(freeListSab, freeListTopSab);
+  const idx = Joint.addDistance({ entityA: 1, entityB: 2, length: 10 });
+
+  // A walk that never ends is stopped by the watchdog: the test fails instead of hanging the suite.
+  const bounded = (fn) => vm.runInNewContext('fn()', { fn }, { timeout: 1000 });
+  for (const bad of [undefined, 1.5, NaN, -1]) {
+    assert.equal(bounded(() => Joint.getJointCount(bad)), 0, String(bad));
+    assert.equal(bounded(() => Joint.getJoint(bad, 0)), -1, String(bad));
+    let calls = 0;
+    bounded(() => Joint.forEachOnEntity(bad, () => calls++));
+    assert.equal(calls, 0, String(bad));
+  }
+  assert.equal(Joint.getJointCount(1), 1);
+  assert.equal(Joint.getJoint(1, 0), idx);
 
   Joint.reset();
 });
