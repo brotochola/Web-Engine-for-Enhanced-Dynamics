@@ -9506,7 +9506,8 @@
         "R-0790",
         "R-0791",
         "R-0792",
-        "R-0793"
+        "R-0793",
+        "R-0794"
       ],
       "status": "kept",
       "date": "2026-10-29",
@@ -17298,6 +17299,19 @@
       "text": "**E-177 v8 kept: wave12 with its keyed frames off against main is NEUTRAL (pre-render +2.1 %, renderer +1.1 %); the\nphysics \"regressions\" of these sittings are its load.** 2026-11-01, 09:24 to 09:27 (the result files' times), Chrome,\nheaded, source, detailed stats off, `runPredatorAbab --vs main --hyp-rev HEAD --query-b indexedSprites=0` (2970ba99),\nno owner, 4 pairs.\n\n- renderer 3.582 -> 3.538 ms (+1.1 %, worse 3/4, cv 4/5 %); pre-render 3.839 -> 3.970 ms (+2.1 %, worse 4/4, cv 3/3 %;\n  +2.0 % against the others); logic +1.3 %, spatial -0.3 %, physics +10.6 % (3/4, cv 5/14 %, not blocking);\n  VISIBLE_ENTITIES 13 420 / 13 488 (0.5 %).\n- Physics, fitted against its own load key over the three v8 sittings' 32 runs: STEP 3.69 ms + 0.35 ms per 1 000\n  moved bodies (r = 0.88). Its residuals agree within a point between the sides of every sitting (against main -0.3 /\n  -0.7 %, on and off -3.0 / -4.3 %, off against main +1.8 / +2.4 %): Predator's battle moved more bodies on the B\n  sides of two of them (6 769 against 5 581, 7 618 against 6 122), none of it the change. Pre-render does not follow\n  that key (r = 0.16).\n- So the build costs pre-render about 2 % with or without its keyed frames (this sitting +2.1 %; on against off -1.7 %\n  paired, +1.9 % against the others; v8 against main +2.2 % against the others), under the 3 % rule, and the keyed\n  frames take 16 to 19 % off the renderer (0/8 and 0/4). Kept. What the 2 % is (the key column and keyedDirty in the\n  layouts, or the emit's branches) is E-190's.",
       "commits": [
         "2970ba99"
+      ]
+    },
+    {
+      "id": "R-0794",
+      "date": "2026-11-01",
+      "time": "09:48",
+      "timeFrom": "recorded",
+      "title": "The prod bundle against its sources at wave12's merge (4db42575): equal or better",
+      "verdict": "passed",
+      "text": "**The prod bundle against its sources at wave12's merge (4db42575): equal or better.** 2026-11-01, 09:39 to 09:48 (the\nresult files' times), Chrome, headed, detailed stats off, one worktree for both sides: A `--src`, B\n`weed.prod.bundle.esm.min.js` (npm's default import) through the bench's `weedBundle` key, 4 pairs each.\n\n- **Predator: NEUTRAL.** Logic 3.419 -> 3.041 ms (-12.9 %, worse 0/4), spatial -2.8 %, physics -12.9 % (cv 6/11 %),\n  pre-render -4.0 % (1/4); load keys within 0.7 % (BODY_COUNT 17 536 / 17 546, VISIBLE_ENTITIES 13 503 / 13 409). The\n  renderer runs under the 3 ms floor now (2.87 ms on the sources): with E-177's keyed frames Predator cannot judge a\n  renderer change without more load.\n- **painterMoveStressScene (PainterMoveReinsertScene): NEUTRAL.** Logic 6.183 -> 6.123 ms (-0.8 %), pre-render 16.584\n  -> 16.595 ms (+0.1 %); the renderer under its floor.\n\nAs at wave10's and wave11's merges (R-0764, R-0783): the shipped bundle runs as fast as the sources, logic faster.",
+      "commits": [
+        "1f8d9aab",
+        "4db42575"
       ]
     }
   ],
