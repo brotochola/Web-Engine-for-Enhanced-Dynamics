@@ -1,5 +1,5 @@
 {
-  "updated": "2026-10-31",
+  "updated": "2026-11-01",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -9476,20 +9476,21 @@
       "aliases": [],
       "records": [
         "R-0770",
-        "R-0771"
+        "R-0771",
+        "R-0774"
       ],
       "status": "kept",
       "date": "2026-10-29",
-      "result": "kept: movedBodiesMixed spatial 4.361 -> 0.950 ms (-78.2 %, 0/4); Predator neutral; E-176b (row writes) mixed",
+      "result": "kept: movedBodiesMixed spatial 4.361 -> 0.950 ms (-78.2 %, 0/4); Predator neutral; E-176b (row writes) kept on a quiet re-sit, adobe spatial -29.2 % (0/4), logic -2.2 %",
       "refs": [
         "EXECUTION_PLAN.md#E-176"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "statusText": "kept 2026-10-31 (R-0770); E-176b kept on a quiet re-sit 2026-11-01 (R-0774)",
       "id": "E-176",
       "area": "spatial",
       "kind": "speed",
       "title": "Spatial finds neighbours for types that never read them",
-      "next": "Step 0: which types read neighbours in each demo. Then the accessors mark their type in a shared byte array and spatial skips types unmarked in the last K frames. Owner adobeAnimateScene spatial (_findNeighbors 34.6 % of 184 ms/s); Predator neutral. EXECUTION_PLAN.md#E-176."
+      "next": "Nothing pending: both go to main with wave11."
     },
     {
       "aliases": [],
@@ -9655,6 +9656,24 @@
       "area": "engine",
       "kind": "bug",
       "result": "Fixed 8feba1d3: the joint walks test entityIdx >>> 0 !== entityIdx; the vm-timeout test hung before.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-101"
+      ],
+      "records": [
+        "R-0774"
+      ],
+      "id": "N-101",
+      "title": "adobeAnimateScene spawned every character twice (create() called createNewGame(), which the engine calls too)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (8eb30060)",
+      "date": "2026-11-01",
+      "area": "demo",
+      "kind": "bug",
+      "result": "Fixed 8eb30060: the call is gone, the pool is the count, the default 20 000 (what the old default drew). Every adobe sitting before ran 2N characters in overlapping pairs.",
       "next": "Nothing pending."
     }
   ],
@@ -16801,6 +16820,15 @@
         "cb11f523",
         "99c6e660"
       ]
+    },
+    {
+      "id": "R-0774",
+      "date": "2026-11-01",
+      "time": "03:17",
+      "timeFrom": "recorded",
+      "title": "E-176b re-sat on a quiet machine: kept, spatial -29.2 %, logic -2.2 %; adobe ran twice its characters (N-101)",
+      "verdict": "kept",
+      "text": "**E-176b kept on a quiet machine: spatial -29.2 %, logic -2.2 % (86fbee25).** 2026-11-01, 03:08 to 03:17 (the result\nfiles' times), Chrome, headed, source, detailed stats off; no other bench or search process running (checked before\neach run).\n\n- **CPU profile pair first** (one run a side, `--trace-cpu`, adobeAnimateScene `?adobeCharacters=20000`, src from\n  1f15095c and 86fbee25): logic0 STEP 3.606 -> 3.528 ms, busy 224 -> 217 ms/s, its functions' shares the same\n  (`_tickNonDecimatedOne` 23.7 -> 21.1 %); spatial busy 241 -> 175 ms/s, `_findNeighbors` 37.2 -> 10.8 % of it. No\n  sign of logic paying for E-176b.\n- **Re-sit, 4 pairs**, `--vs 1f15095c --hyp-rev 86fbee25 --owner spatial` (src from those commits, the rest from\n  HEAD): **KEPT (product)**. Spatial **3.780 -> 2.673 ms, -29.2 %, worse 0/4** (cv 2/3 %), logic 3.011 -> 3.066 ms,\n  paired **-2.2 %, worse 1/4** (cv 7/5 %), physics +0.3 % (2/4); the others under the 3 ms floor.\n\nR-0771's logic +5.7 % (7/8) does not come back: that evening's machine also ran another session's search (R-0770).\nE-176b can go to main with E-176.\n\n**The scene was not what its knob said (N-101, found here):** ENTITIES_PROCESSED and BODY_COUNT read 40 000 at\n`?adobeCharacters=20000`. adobeAnimateScene's `create()` called `createNewGame()`, which the engine calls after\n`create()` anyway, so it spawned every character twice, in pairs on the same spot that pushed each other apart every\nframe (all 40 000 bodies awake and moved). Every adobeAnimateScene sitting so far, R-0770 and R-0771 included, ran\ntwice the characters it named, with that physics. The demo is fixed separately; this sitting's numbers are for the\nold scene, both sides alike."
     }
   ],
   "leads": [
