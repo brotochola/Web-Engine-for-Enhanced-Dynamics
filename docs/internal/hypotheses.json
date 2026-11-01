@@ -9494,20 +9494,22 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0781"
+      ],
       "status": "open",
       "date": "2026-10-29",
       "result": "",
       "refs": [
         "EXECUTION_PLAN.md#E-177"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "statusText": "open: step 0 done 2026-11-01 (R-0781): Predator keeps 95 % of the rows' statics, rewrites all",
       "id": "E-177",
       "rank": 10,
       "area": "pre-render",
       "kind": "speed",
       "title": "Sprite statics per entity on the GPU, for scenes whose camera scrolls",
-      "next": "Step 0: a counter of rows per frame whose statics changed (Predator, littleCity, Adobe). Build only where most rows keep theirs. EXECUTION_PLAN.md#E-177."
+      "next": "Build: the statics in a per-entity table on the GPU, written for the entities whose statics changed (about 700 of 13 500 rows a Predator frame); rows carry the entity index and the pose. Owners Predator's pre-render and renderer. EXECUTION_PLAN.md#E-177."
     },
     {
       "aliases": [],
@@ -16991,6 +16993,15 @@
       "title": "E-183 answered: no steady deopt loop in Chrome (six scenes); the stale-OSR loop is a kernel's",
       "verdict": "answered",
       "text": "**E-183 answered: no per-frame loop is stuck on stale OSR code in Chrome; the deopt loop is a kernel's.** 2026-11-01,\n05:03 to 05:06 (the result files' times), Chrome, headed, source, detailed stats off, `--js-flags=--log-deopt`, 10 s\nof warm-up and 10 s measured a scene; summarizeV8Deopt.mjs.\n\n- **Six scenes:** predatorScene (1 125 deopts in the whole run), adobeAnimateScene (383), bunnyMarkStressScene (194),\n  decorationSwayStressScene at 320 000 (679), ballsHeavyStressScene (139), spawnStormScene (56).\n- **After the warm-up every scene's deopts are one to three a site, in cold code** (the camera's and the sound\n  manager's dependency changes, the bench page's own). Nothing deopts every frame.\n- **The warm-up's:** Predator's biggest sites are logicWorker.js:749 and :760 (the spawn batch's sort, 126 each,\n  \"insufficient type feedback\" for a named access and a compare), decorationPool.js:105 (copyActiveSnapshot, 126) and\n  particleWorker.js:1125 (`visibleData[0] = visibleCount` after the decoration screen test, 16): the stale-OSR shape\n  E-179 found, deopting while the scene starts and stopping once V8 compiles the function normally.\n- **The loop E-179's kernel fell into is the kernel's:** called back to back thousands of times, a function around one\n  long loop kept entering its cached OSR code and deopted at the statement after the loop on every call (490 to 588\n  deopts a run, 2.7 times slower). A frame's single call does not. Kernels that time such a function are bimodal from\n  run to run (decorationVisibilityMicrobench, deriveSpeedMicrobench): read their rounds side by side, or count\n  `--trace-deopt` lines, before calling a few percent.\n\nNo change to make in the engine; the kernel caveat goes to HOW_WE_MEASURE."
+    },
+    {
+      "id": "R-0781",
+      "date": "2026-11-01",
+      "time": "05:11",
+      "timeFrom": "recorded",
+      "title": "E-177 step 0: Predator keeps 95 % of its sprite rows' statics a frame and rewrites all of them",
+      "verdict": "answered",
+      "text": "**E-177 step 0: in Predator 95 % of the sprite rows keep their statics frame to frame, and all of them are written\nagain every frame.** 2026-11-01, about 05:08 to 05:11, Chrome, headed, source, detailed stats off; pre-render\ninstrumented in an overlay worktree (not committed): after each emit, every sprite row's scale, anchor, tint and\ntexture against the ones the same entity carried when last drawn, logged every 120 frames.\n\n| scene | sprite rows a frame | statics changed | staticGen moved |\n| --- | --- | --- | --- |\n| predatorScene | 13 380 to 13 560 | 640 to 760 (4.8 to 5.6 %) | 120 of 120 frames |\n| littleCity | 270 to 315 | 31 to 44 (11 to 15 %) | 120 of 120 frames |\n| adobeAnimateScene, min zoom | 214 000 | not measurable this way | 120 of 120 frames |\n\n- Rows matched their entities in Predator and littleCity (no row's x off its entity's); adobe's rows are its\n  characters' expanded pieces, several per entity, so the row-to-entity reading does not apply (E-145's ground).\n- Today the queue's static generation moves on every frame of a scrolling scene, so the statics of every row are\n  packed and uploaded again; per entity, Predator would upload about 700 rows' statics a frame instead of 13 500\n  (about 30 KB instead of 590 KB at 44 bytes).\n- Verdict for the plan: build E-177 where Predator draws, as the plan says (\"only where most rows keep theirs\")."
     }
   ],
   "leads": [
