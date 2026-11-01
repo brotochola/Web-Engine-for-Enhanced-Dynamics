@@ -9568,7 +9568,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0775"
+        "R-0775",
+        "R-0779"
       ],
       "status": "kept",
       "date": "2026-11-01",
@@ -9581,24 +9582,25 @@
       "area": "physics",
       "kind": "speed",
       "title": "Every awake body is \"moved\", still or not: spatial rebuilds for bodies that never move",
-      "next": "Nothing pending; Predator in wave11's gate."
+      "next": "Nothing pending: its LiquidFun lag (a still body's velocity a frame late in water) fixed in c83315e4 (R-0779); Predator in wave11's gate."
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0779"
+      ],
+      "status": "kept-kernel",
       "date": "2026-11-01",
-      "result": "",
+      "result": "kept-kernel: moveExportMicrobench 208.1 -> 212.8 steps/s (+2.2 %, 6/6); ballsHeavy physics +0.1 % (neutral); found E-181's LiquidFun lag (fixed c83315e4)",
       "refs": [
         "EXECUTION_PLAN.md#E-182"
       ],
-      "statusText": "open: Wave 11 candidates (2026-11-01), found building E-181",
+      "statusText": "kept-kernel 2026-11-01 (900098ae, R-0779)",
       "id": "E-182",
-      "rank": 9,
       "area": "physics",
       "kind": "speed",
       "title": "Every moved body's state exported twice a step (the solver's finalize and the glue)",
-      "next": "The glue re-exports a listed body only when the move event's pose differs from the channels (continuous collision). Owner ballsHeavyStressScene physics; Predator physics next. EXECUTION_PLAN.md#E-182."
+      "next": "Predator in wave11's gate."
     },
     {
       "aliases": [],
@@ -16965,6 +16967,19 @@
       "text": "**E-178 kept on its kernel: the speed derive pass over the opted-in types' own active lists (647f1d6a), +76 %.**\n2026-11-01 (the kernel's result files), Node.\n\n- **The change:** updateDerivedProperties walked every body's RigidBody query and tested each one's type; it now\n  walks the active list of each type that sets deriveSpeed (as every worker binds them), skipping the other types'\n  bodies and the type lookups. The plan's f32x4 kernel over the RigidBody block was not needed for this step: the JS\n  loop's cost was the bodies it should not have visited and the per-body type test.\n- **deriveSpeedMicrobench** (cee8ae83: a real particle worker, 20 000 bodies in Predator's mix, 14 000 opting in),\n  HEAD's src against 647f1d6a, 6 alternating rounds: **9 240 -> 16 300 calls/s median, +76 %, new won 5/6**; both\n  sides are bimodal from run to run (about 9 000 / 16 000 or 19 000 / 32 500, an E-183 candidate), the gain the same\n  in both; checksums equal.\n- **No scene past the floor:** a scene's whole derive pass is under a millisecond (Predator's ~0.17 ms), so the\n  verdict is the kernel's; wave11's Predator gate checks the scene is not 3 % worse.\n- **Test:** deriveSpeedLists.test.js (the opted-in, active, non-static bodies' speeds only, as before); node suite\n  2153/2153, demos 100/100.",
       "commits": [
         "647f1d6a"
+      ]
+    },
+    {
+      "id": "R-0779",
+      "date": "2026-11-01",
+      "time": "05:02",
+      "timeFrom": "recorded",
+      "title": "E-182 kept on its kernel: a moved body's pose exported once a step; ballsHeavy neutral",
+      "verdict": "kept-kernel",
+      "text": "**E-182 kept on its kernel: a moved body's pose exported once a step unless continuous collision moved it after the\nfinalize (900098ae, Box2D c37ccc0); the scene neutral.** 2026-11-01, Node kernel and a Chrome sitting.\n\n- **First form, not kept:** the glue skipped the second export of a moved body whose pose the finalize had written.\n  liquidFunCoupling.wasm.test.js's H23 test failed: that export is also where the velocities are read after\n  LiquidFun's coupling changes them. The same test idea then showed E-181's still bodies exporting the water's push a\n  frame late, fixed first on its own (c83315e4, Box2D 5331b8c).\n- **The form kept:** the velocities are read again for every listed body; the pose (an atan2, five stores) only when\n  the move event's pose differs from what the finalize wrote or the body fell asleep.\n- **moveExportMicrobench** (cee8ae83: 20 000 moving bodies, one thread), HEAD's wasm against this, 6 alternating\n  rounds: **208.1 -> 212.8 steps/s, +2.2 %, new won 6/6**, checksums equal (the first form: +6.2 %, 4/4).\n- **ballsHeavyStressScene**, 4 pairs, `--vs c83315e4 --hyp-rev 900098ae --owner physics`: physics 8.609 -> 8.611 ms\n  (+0.1 %, 3/4): NEUTRAL. The export runs on the physics thread after a step its solver threads share, and its saving is\n  inside the scene's noise.\n- **Tests:** toiPoseExport.wasm.test.js (a fast ball stopped by continuous collision exports the pose it stopped at),\n  liquidFunCoupling's H23; node suite 2153/2153.",
+      "commits": [
+        "c83315e4",
+        "900098ae"
       ]
     }
   ],
