@@ -9720,10 +9720,10 @@
         "EXECUTION_PLAN.md#E-188"
       ],
       "statusText": "open: after E-177's verdict",
-      "rank": 16,
+      "rank": 13,
       "area": "render",
       "result": "",
-      "next": "Rows without an entity go up every frame (64 bytes an update against the 36 a keyed row saves): a LiquidFun scene that draws its particles as sprites (liquidFunQueryStressScene: up to 16 000 such rows) loses with keyed frames, which pause there. Keys by pool slot past the entities (particle, decoration, LiquidFun ranges) and a change mark for each type (its own flags, or the emit comparing the few statics a type has) would send those rows' poses only. Owner: liquidFunQueryStressScene's renderer; pre-render pays the marks."
+      "next": "Rows without an entity go up every frame (64 bytes an update against the 36 a keyed row saves). Predator zoomed in past 0.5 shows its grass (20 000 decorations, rows without a key in the main queue): its keyed frames pause there after 10 losing frames (2026-11-01 probe at zoom 1.6), and liquidFunQueryStressScene draws up to 16 000 LiquidFun particles as such rows. Keys by pool slot past the entities (particle, decoration, LiquidFun ranges) and a change mark for each type (flags of its own, or the emit comparing the few statics a type has) would send those rows' poses only. Owner: Predator at zoom 1.6 (its renderer), and liquidFunQueryStressScene; pre-render pays the marks."
     },
     {
       "aliases": [],
