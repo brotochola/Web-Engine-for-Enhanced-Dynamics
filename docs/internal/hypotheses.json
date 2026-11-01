@@ -9531,21 +9531,21 @@
     {
       "aliases": [],
       "records": [
-        "R-0772"
+        "R-0772",
+        "R-0776"
       ],
-      "status": "open",
+      "status": "kept",
       "date": "2026-10-29",
-      "result": "rejected as built: kernel x2-3 on Predator's random grass, but the grid stress scene's particle +18 % (0.756 -> 0.892 ms, under the floor); next a per-frame pick between both loops",
+      "result": "kept (9e0d8e58): decorationSwayStressScene random order, a third on screen, particle 5.425 -> 4.877 ms (-10.0 %, 0/4); grid at 400 000 3.096 -> 3.173 ms (+2.5 %, 4/4, under the bar); kernel random +110 %",
       "refs": [
         "EXECUTION_PLAN.md#E-179"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "statusText": "kept 2026-11-01 as its seventh form (9e0d8e58, R-0776)",
       "id": "E-179",
-      "rank": 11,
       "area": "particle",
       "kind": "speed",
       "title": "Decorations' screen visibility, every frame in JavaScript",
-      "next": "The test inside the sway kernel walk, or skipped while camera and decorations hold (17.3 % of Predator particle). Owner decorationSwayStressScene particle. EXECUTION_PLAN.md#E-179."
+      "next": "Predator in wave11's gate. The grid's +2.5 % (the per-frame call around the shipped method) not found; E-183 for the stale OSR deopts."
     },
     {
       "aliases": [],
@@ -16926,6 +16926,20 @@
       "text": "**E-181 kept: an awake body whose pose did not change is not listed as moved (c21c860a, Box2D 37b75c0); physics\n-24.0 %, spatial -84 % (under the floor).** 2026-11-01, 04:04 to 04:09 (the result files' times), Chrome, headed, source, detailed\nstats off.\n\n- **Where the export happens:** WeedJS's Box2D exports each awake body's state in the solver's finalize task, and the\n  glue's move-event export ran a second time for every moved body. A first form that compared poses in the glue found\n  nothing still (finalize had written the channels already: its test failed on the moving body); the comparison now\n  happens in the finalize export, which notes a still body for the glue.\n- **adobeAnimateScene `?adobeCharacters=40000`** (N-101 fixed: 40 000 distinct, still characters, sleeping off), 4\n  pairs, `--vs 0ad7f294 --hyp-rev c21c860a`, decided with `--owner physics` (`--decide-only`; the sitting ran with\n  spatial as owner, whose base is under the floor at 40 000): **KEPT (product)**: physics **5.235 -> 3.965 ms, -24.0 %, worse 0/4** (cv 2/3 %); spatial 2.651 -> 0.431 ms (-84 %, its base under the 3 ms floor, not judged); logic 2.716 -> 2.673 ms, pre-render 2.352 -> 2.231 ms (both under the floor).\n  Moved 40 000 -> 0 a frame.\n- **Tests:** stillBodiesNotMoved.wasm.test.js (an awake still body is not listed, a moving one is, a still one is listed\n  once on the step it falls asleep; both failed on the old build); node suite 2148/2148, demos 100/100.\n\nPredator's bodies move and sleep when they rest, so it has few awake still bodies; it goes in wave11's Predator gate.",
       "commits": [
         "c21c860a"
+      ]
+    },
+    {
+      "id": "R-0776",
+      "date": "2026-11-01",
+      "time": "04:38",
+      "timeFrom": "recorded",
+      "title": "E-179 kept as its seventh form: the branchless screen test picked by sampled flips; random order -10.0 %, grid +2.5 %",
+      "verdict": "kept",
+      "text": "**E-179: the decoration screen test without its branch when its outcome flips often; kept (the seventh form, 9e0d8e58): particle -10.0 % in Predator's regime, +2.5 % in a grid.** 2026-11-01, 03:20\nto 04:38 (the result files' times), Node kernels and Chrome sittings, headed, source, detailed stats off.\n\nForms, each measured against the shipped loop (a19bd027's src):\n\n- **Second form, 0ad7f294:** the branchless copy counts the flips and runs while they are more than an eighth of the\n  list, and one frame in 16 as a probe. Kernel, 4 rounds, calls/s over 20 000 blades: random order, 51 % on screen\n  6 359 -> 12 920 (+103 %, 4/4). decorationSwayStressScene (a19bd027's knobs), 4 pairs: `decorations=320000&order=random`\n  particle 4.916 -> 4.783 ms (-2.7 %, 0/4, NEUTRAL: the default zoom shows about 3 % of that grid, so both sides ran the\n  branch loop); grid at 320 000 2.655 -> 2.928 ms (+10.3 %, 4/4, under the floor). A CPU profile pair of the grid put\n  it in the screen test, 52 -> 60.5 ms/s: the probe frames wrote the shared visible list for every decoration.\n- **Fourth form (not committed):** the probe a window of 512 entries, the branchless copy into a private scratch.\n  Kernel: x order 51 % 17 924 -> 7 173 (-60 %), all on screen 11 343 -> 5 922 (-48 %). `--trace-deopt`: the function\n  deopted every call, \"Insufficient type feedback for compare operation\", on the same OSR code.\n- **The shipped loop does it too (E-183):** in some kernel runs it deopts 490 to 588 times at bytecode 321,\n  `visibleData[0] = visibleCount` after the loop (\"Insufficient type feedback for generic keyed access\"), and runs at\n  8 000 calls/s against 23 000 in the runs with 20 deopts: called once a frame, the loop runs on OSR code from the\n  first call, the statement after it had no feedback when that code was compiled, and V8 kept entering the cached OSR\n  code.\n- **Fifth form, c19d3e31:** each loop a function of its own that returns right after it (no deopt in 3 traced runs).\n  Kernel, 4 rounds: random 51 % 6 522 -> 12 867 (+97 %, 4/4); x order 5 % 9 097 -> 22 272 (+145 %: the shipped loop's\n  deopts); x order 51 % -6.7 %, random 5 % -6.8 %, all on screen -7.4 % (base in its fast runs). Sittings, 4 pairs:\n  **`decorations=320000&order=random`, `--camera-zoom 0.03`** (about a third on screen, Predator's regime): particle\n  **5.353 -> 4.887 ms, -8.7 %, worse 0/4**, cv 1/1 %: KEPT; **grid at 400 000**: 3.112 -> 3.230 ms, **+3.5 %, worse\n  4/4**: REGRESSION.\n- **Sixth form (not committed):** the shipped loop back inline, the sample and the branchless dispatch before it.\n  Kernel: the shipped loop's slow runs came back (all on screen 5 500 in 3 of 4 runs).\n- **The separate function costs:** a dispatch that only calls the branch loop, in its own function, ran 3 to 5 % slower\n  than the method in the method's fast runs (and never fell into the slow ones); moving the new fields to the end of\n  the constructor did not change it; an A/A of the shipped loop from both folders matched.\n- **Seventh form, 9e0d8e58: updateDecorationScreenVisibility is a19bd027's byte for byte;** updateDecorationScreen,\n  which update() calls, runs it or the branchless path (its own functions, the worker's scratch) and samples the flips\n  one frame in 16. Kernel (b8d2f43c), 4 rounds: random 51 % 6 271 -> 13 161 (+110 %, 4/4); x order 51 % 17 927 ->\n  19 288 (+7.6 %, 4/4); all on screen +1.9 % (3/4); x order 5 % -1.8 %. Sittings, 4 pairs, `--vs a19bd027 --hyp-rev\n  9e0d8e58 --owner particle`: **random order at 320 000, `--camera-zoom 0.03`: particle 5.425 -> 4.877 ms, -10.0 %,\n  worse 0/4**, cv 1/2 %: KEPT (product); **grid at 400 000: 3.096 -> 3.173 ms, +2.5 %, worse 4/4**, cv 1/2 %: NEUTRAL\n  (under the 3 % bar). The grid's cost, with the shipped method unchanged, is in the per-frame call around it; not\n  found.\n\nE-183 opened from this: per-frame loops stuck on stale OSR code.",
+      "commits": [
+        "0ad7f294",
+        "c19d3e31",
+        "9e0d8e58"
       ]
     }
   ],
