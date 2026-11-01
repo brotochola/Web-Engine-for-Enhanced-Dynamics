@@ -3240,6 +3240,11 @@ clustered by index, so the branch usually predicts). E-179 picks between the two
 outcome's flips, which takes the gain where it exists and keeps the branch where it predicts.
 **Plan:** after E-179's verdict, E-65's branchless write as a second copy, picked the same way; E-179's lesson kept (the
 shipped loop left as it was, the dispatch outside it). Owner: a particle stress scene with random emission.
+**Kept as a kernel change 2026-11-01 (e7111409, R-0797).** The WASM list build has written the visible list without a
+branch since the migration, so there was no pair of copies to pick between; the shortcut went the other way: a full
+block all on screen writes its visible entries as its active ones (vector stores), one all off writes none. Kernel
+(the catalog's new particleLists rows, 9 rounds): +6.1 % with the whole world in view, +4.4 % with a quarter in no
+order. particleIntegrateStressScene at 200 000 particles: neutral (the build is about 0.3 ms of the 3.2).
 
 ### E-179c Decorations' screen test skipped while nothing it reads changed
 
