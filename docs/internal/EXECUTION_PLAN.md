@@ -3293,7 +3293,8 @@ computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU. Owner: 
 
 **Premise:** rows without an entity go up every frame in a keyed frame, 64 bytes an update against the 36 a keyed row
 saves. A scene that draws its LiquidFun particles as sprites (liquidFunQueryStressScene: up to 16 000 such rows) loses
-with keyed frames, which pause there (E-177's loss rule). Particles, decorations and LiquidFun particles have pool
+with keyed frames, which pause there (E-177's loss rule); so does Predator zoomed in past 0.5, where its 20 000 grass
+decorations come into the main queue (a probe at zoom 1.6: 10 keyed frames, then split). Particles, decorations and LiquidFun particles have pool
 slots that hold an occupant for many frames.
 **Plan:** keys past the entities by type and pool slot (particle, decoration, LiquidFun ranges), and a change mark for
 each type (flags of its own, or the emit comparing the few statics a type has), so those rows send their poses only.
