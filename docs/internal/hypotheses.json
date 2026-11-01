@@ -9742,8 +9742,10 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0795"
+      ],
+      "status": "answered",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-190",
@@ -9751,11 +9753,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-190"
       ],
-      "statusText": "open: found 2026-11-01 in E-177's hygiene sitting",
-      "rank": 12,
+      "statusText": "answered 2026-11-01 (R-0795)",
       "area": "preRender",
-      "result": "",
-      "next": "wave12 with its keyed frames off against main: pre-render +2.1 % (4/4, cv 3/3 %), in every scene that does not key its frames. Candidates: the key column in the render queue (every column after it moved by 477 KB in Predator's queue, which changes their 4 KB aliasing), keyedDirty in SpriteRenderer's block (the columns after it moved by 42 KB), the emit's keyed branches. The plain emit kernel on both trees first (preRenderEmitWasmMicrobench's wasm variant); if it ties, the layouts (the key column at the queue's end). Owner: Predator's pre-render, or a stress scene whose pre-render is the emit."
+      "result": "answered 2026-11-01: the emit kernel ties main (-0.8 %), painterMove's emit-bound pre-render -0.9 %; Predator's +2 % is within its spread",
+      "next": "Nothing pending: the emit pays nothing for the build where it is all of pre-render."
     },
     {
       "aliases": [],
@@ -9916,6 +9917,22 @@
       "statusText": "fixed 2026-11-01 (3e363fec)",
       "area": "render",
       "result": "Fixed 3e363fec: the guide now says a tickAll that writes a sprite's statics through SoA sets renderDirty and keyedDirty, as markDirty() does. Pre-render's persist frames rewrite poses and textures only, so such a change showed only on the frames the emit ran in full (on main too), and E-177's keyed frames send statics only where keyedDirty marks them. No drawn sprite in the engine or demos was written that way.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-104"
+      ],
+      "records": [],
+      "id": "N-104",
+      "title": "The catalog's pre-render emit kernel (preRenderWorkerMicrobench) failed on every tree since the emit moved to WASM",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (b37f07ff)",
+      "date": "2026-11-01",
+      "area": "harness",
+      "kind": "bug",
+      "result": "Fixed b37f07ff: the preRenderWorker row runs preRenderEmitWasmMicrobench, whose default variant is now the shipped wasm kernel, and names the kernel's sources for --changed; the broken bench is gone. Found when runKernelsVsRev --only preRenderWorker failed its preflight on both sides (E-190).",
       "next": "Nothing pending."
     }
   ],
@@ -17312,6 +17329,18 @@
       "commits": [
         "1f8d9aab",
         "4db42575"
+      ]
+    },
+    {
+      "id": "R-0795",
+      "date": "2026-11-01",
+      "time": "10:01",
+      "timeFrom": "recorded",
+      "title": "E-190 answered: no fixed cost of the keyed frames' build in the emit (kernel -0.8 %, painterMove -0.9 %)",
+      "verdict": "answered",
+      "text": "**E-190 answered: no fixed cost of the keyed frames' build in the emit; Predator's +2 % sits within its spread.**\n2026-11-01, 09:56 to 10:01 (the result files' times), Node and Chrome (headed, source, detailed stats off).\n\n- **Kernel**, 09:56: `runKernelsVsRev --vs 3910ee3a --only preRenderWorker` (main before wave12's merge against\n  b37f07ff; the row now runs preRenderEmitWasmMicrobench's shipped wasm variant, N-104), Predator's mix of 13 532\n  sprites and 10 120 decorations, 5 rounds a side: 1 966 -> 1 950 ops/s (-0.8 %, rounds won 24 %), a tie. The queue's\n  layout is the tree's in both, key column included.\n- **painterMoveStressScene (PainterMoveReinsertScene)**, 09:57 to 10:01, `--vs 3910ee3a --hyp-rev HEAD`, 4 pairs, its\n  pre-render the emit of 300 000 rows a frame: 16.634 -> 16.248 ms (-0.9 %, worse 2/4, cv 4/4 %), logic +1.6 %\n  (3/4); NEUTRAL.\n- So neither the emit's code nor the queue's layout costs where the emit is all of pre-render. Predator's +2.1 %\n  (R-0793, cv 3/3 %) and its +2 % against the other workers are under the 3 % rule and within that scene's spread for\n  pre-render (-4.0 to +6.1 % raw between sittings this morning); no lever left to pull. Closed.",
+      "commits": [
+        "b37f07ff"
       ]
     }
   ],
