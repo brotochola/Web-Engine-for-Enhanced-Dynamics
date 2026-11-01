@@ -10006,6 +10006,23 @@
       "area": "render",
       "result": "kept 2026-11-01 (acac4bb7): pack_casters_keyed_scan; kernel -53 % in Chrome, Predator crowd 1.5 pre-render -6.5 % (0/4)",
       "next": "Done."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-38"
+      ],
+      "id": "N-38",
+      "title": "A solid the light sees is lit over its whole fill: a lit chunk's square edges show inside the rock",
+      "status": "open",
+      "statusText": "open (render, low): in REVIEW_PLAN since its review, not in the register until 2026-11-01",
+      "date": "2026-11-01",
+      "area": "render",
+      "kind": "bug",
+      "result": "",
+      "next": "Planet demo with the covering ranges (the chunks around the shaft). A fill lit only near its visible surface (a depth falloff from the polygon edge, in Pixi's self-lit shader) would hide the seams.",
+      "rank": 20
     }
   ],
   "records": [
