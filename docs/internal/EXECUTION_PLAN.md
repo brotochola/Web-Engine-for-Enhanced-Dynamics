@@ -3099,6 +3099,23 @@ Chrome (0.270 against 0.195 ms), all of it the table's reads (900 KB a frame), a
 and upload; Predator's sitting weighs the two. If the reads cost more than they save: a statics generation per row
 written by the emit (pre-render compares in entity order, and Pixi compares a u32 a row), at pre-render's expense.
 
+**Built and traced, 2026-11-01 (R-0785): the compare cannot be in Pixi.** Steps 2b to 2d (e6dc7781, 23956a85,
+0d72905b) draw right, and Predator's renderer ran 30 to 44 % slower (single runs and CPU traces, no pairs). The keyed
+pack took 181 ms of the Pixi worker a second against the split pack's 62; a fingerprint a key (8c378075) 164; the copy
+and upload fell only 23 %. Kernel variants traced the same way located it: the pose, key and slot alone cost 23, the
+stamps 62: a per-key array read at the address of a key read from the queue is two misses in a chain (about 40 ms/s
+each in Predator, whose other workers fill the caches), where the split pack's column reads run in parallel. Fixed on
+the way: the scatter's gl.getParameter(COLOR_WRITEMASK) waited for the GPU process (1.1 ms a frame; Pixi's caches now,
+1b230b05).
+**v4, next:** the change detection moves to pre-render's emit, whose per-entity reads are one level deep (the collector
+gives the entity): each sprite row's statics against an entity-indexed store in the render-queue memory (64 bytes an
+entity), and on a change the store row is written and the entity appended to a ring. Pixi packs the pose and the key
+(23 ms/s measured) and scatters the store rows of the entities the ring lists since its last frame, so a skipped frame
+loses nothing; a ring overrun re-sends the store. Rows without a key go up every frame from the queue, as now. On a
+persist frame only the repaired textures change, through the same path. The store's rows can tear while Pixi reads one
+(pre-render writing the next frame's): the ring lists that entity again, so a torn row lasts a frame. Owners Predator's
+renderer and pre-render (whose emit pays the compare: it runs 4.9 ms in Predator, the busier of the two).
+
 ### E-178 RigidBody.speed's derive pass, cheaper where it runs (the particle worker)
 
 **Premise:** the particle worker writes `RigidBody.speed` every frame for every dynamic body of a class that sets
