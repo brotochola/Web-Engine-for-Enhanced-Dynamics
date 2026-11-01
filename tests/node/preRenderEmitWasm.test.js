@@ -23,7 +23,7 @@ import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { BulletComponent } from '../../src/components/bulletComponent.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { Layer } from '../../src/core/layer.js';
-import { computeBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
+import { computeBufferSize, createViews, RENDER_QUEUE_CAMERA_BYTES } from '../../src/render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../../src/render/gpuQueueLayout.js';
 import { createRenderQueueMemory } from '../../src/util/renderQueueMemory.js';
 import { createParticleMemory, particleMemoryBytes } from '../../src/util/particleMemory.js';
@@ -120,7 +120,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -143,6 +143,8 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     particleBytes: particles ? particleMemoryBytes(POOL, ParticleComponent.getBufferSize(POOL)) : 0,
     liquidFun: liquidFun ? { maxCount: LFN, renderBytes: liquidFunRenderByteSize(LFN) } : null,
     customLayers: customLayer ? [{ layerId: CL, maxItems: CLMAX, queueBytes: computeBufferSize(CLMAX) }] : [],
+    // E-177: with `keyed`, the keyed frames' resync header (and the main queue's key column and flags bound).
+    pixiKeyed: keyed,
   }, null, null, false, collect);
   const e = m.layout.emit;
   // With `particles`, the particle memory in its region of this one, as the scene places it.
@@ -373,9 +375,17 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
   let other = 0;
   let pnext = 0;
   let lfnext = 0;
+  // E-177: with `keyed`, each sprite an entity of its own, as the emit writes one row an entity (the same draws, so the
+  // other rows are the same).
+  const unique = keyed ? Array.from({ length: N }, (_, i) => (i * 389) % N) : null;
+  let un = 0;
   for (let k = 0; k < count; k++) {
     const pick = r();
-    if (pick < (bullets ? 0.55 : 0.62)) { types.push(0); indices.push(Math.floor(r() * N)); }
+    if (pick < (bullets ? 0.55 : 0.62)) {
+      const pickEntity = Math.floor(r() * N);
+      types.push(0);
+      indices.push(keyed ? unique[un++ % N] : pickEntity);
+    }
     else if (pick < (bullets ? 0.75 : 0.92)) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
     else if (particles && k % 3 === 1) { types.push(1); indices.push(pnext++ % POOL); }
     else if (liquidFun && k % 3 === 2) { types.push(7); indices.push(lfnext++ % LFN); }
@@ -416,7 +426,64 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
 
   const b = await bindPreRenderEmit(m.memory, e);
   assert.ok(writeEmitTextures(b, meta), 'the metadata fits the tables');
-  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights, particles, liquidFun, interpolate, customLayer };
+  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights, particles, liquidFun, interpolate, customLayer, keyed };
+}
+
+/** E-177: queue row r's statics as gpuPack.c packs them for an indexed frame (depth 0, a zero after). */
+function rowStatics(w, r) {
+  const f = new Float32Array(12);
+  const u = new Uint32Array(f.buffer);
+  f[0] = w.renderQueueScaleX[r];
+  f[1] = w.renderQueueScaleY[r];
+  f[2] = w.renderQueueAnchorX[r];
+  f[3] = w.renderQueueAnchorY[r];
+  let a = w.renderQueueAlpha[r];
+  if (!(a >= 0)) a = 0;
+  else if (a > 1) a = 1;
+  u[5] = ((((a * 255 + 0.5) | 0) & 255) << 24 | (w.renderQueueTint[r] & 0xffffff)) >>> 0;
+  f[6] = w.renderQueueTextureId[r];
+  f[7] = w.renderQueueTileMulX ? w.renderQueueTileMulX[r] : 0;
+  f[8] = w.renderQueueTileMulY ? w.renderQueueTileMulY[r] : 0;
+  f[9] = (w.renderQueueTileOffsetU ? w.renderQueueTileOffsetU[r] : 0) * (1 / 65535);
+  f[10] = (w.renderQueueTileOffsetV ? w.renderQueueTileOffsetV[r] : 0) * (1 / 65535);
+  return u;
+}
+
+/** E-177: the bit of a sprite's key that says its statics changed since the emit before (preRenderEmit.c KEY_CHANGED). */
+const KEY_CHANGED = 0x80000000;
+
+/**
+ * E-177: Pixi's statics texture as the keys build it: a sprite row whose key carries the changed bit sends its statics to
+ * its entity's row. After every frame each drawn sprite's key is its entity, and its entity's row holds the row's
+ * statics, marked or not. `st.tex` carries the texture between frames.
+ */
+function checkKeys(k, n, label, st) {
+  const w = k.worker;
+  const keys = w.renderQueueKey;
+  let sprites = 0;
+  let marked = 0;
+  for (let r = 0; r < n; r++) {
+    if (w._renderableType[r] !== 0) continue;
+    sprites++;
+    const raw = keys[r];
+    const e = (raw & ~KEY_CHANGED) >>> 0;
+    if (e !== w._renderableIndex[r]) assert.fail(`${label}: row ${r}'s key ${raw} is not its entity ${w._renderableIndex[r]}`);
+    if (raw >= KEY_CHANGED) {
+      st.tex.set(rowStatics(w, r), e * 12);
+      marked++;
+    }
+  }
+  for (let r = 0; r < n; r++) {
+    if (w._renderableType[r] !== 0) continue;
+    const e = (keys[r] & ~KEY_CHANGED) >>> 0;
+    const want = rowStatics(w, r);
+    for (let j = 0; j < 12; j++) {
+      if (st.tex[e * 12 + j] !== want[j]) {
+        assert.fail(`${label}: row ${r}'s entity ${e} (${keys[r] >= KEY_CHANGED ? 'marked' : 'not marked'}), statics word ${j}: ${st.tex[e * 12 + j]} vs ${want[j]}`);
+      }
+    }
+  }
+  return { sprites, marked };
 }
 
 /** The queue columns a row has. */
@@ -537,8 +604,14 @@ async function runCase(t, opts) {
   ].map(([name, at, bytes]) => [name, new Uint8Array(k.m.buffer, at, bytes)]);
   for (const [, bytes] of untouched) bytes.fill(0xa5);
   const results = b.results;
+  // E-177: Pixi's statics texture as the keys build it (empty at first), every sprite flagged at first as a spawn leaves
+  // it (keyedDirty); the main queue's source (persist marks it) binds the key column and the flags.
+  const keySt = { tex: new Uint32Array(N * 12) };
+  const keyMarks = [];
+  const kernelSource = k.keyed ? { ...source, persist: true } : source;
+  if (k.keyed) SpriteRenderer.keyedDirty.fill(1);
   for (let f = 0; f < FRAMES; f++) {
-    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
+    assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
     assert.equal(writeEmitGlowColumns(b, LightEmitter, Transform, worker._resolveBuiltinTextureId('_lightGradient')), k.lights, 'the glow columns');
     assert.equal(writeEmitParticleColumns(b, ParticleComponent, worker._resolveBuiltinTextureId('_whiteCircle'),
@@ -552,6 +625,7 @@ async function runCase(t, opts) {
     assert.notEqual(written, EMIT_DECLINED);
     assert.equal(written, n, `frame ${f}: rows written`);
     if (results[2] && worker.renderQueueTileMode !== null) worker._tiledTileColumns.add(worker.renderQueueTileMode);
+    if (k.keyed) keyMarks.push(checkKeys(k, n, `frame ${f}`, keySt));
     const js = jsFrames[f];
     // State: every entity, every frame.
     const now = k.snapshot();
@@ -600,6 +674,14 @@ async function runCase(t, opts) {
     assert.equal(at, -1, `the kernel wrote ${name} (byte ${at})`);
   }
   t.diagnostic(`${n} rows, ${jsFrames.reduce((s, x) => s + x.ends.length, 0)} ends, ${jsFrames[0].warns.length} warnings a frame`);
+  if (k.keyed) {
+    // The first frame marks every sprite (every flag set); after it, the ones whose frame or texture moved and the
+    // repeating ones.
+    assert.equal(keyMarks[0].marked, keyMarks[0].sprites, 'the first frame marks every sprite');
+    assert.ok(keyMarks.slice(1).some((x) => x.marked > 0), 'later frames mark the animated sprites');
+    assert.ok(keyMarks.slice(1).every((x) => x.marked < x.sprites), 'later frames mark fewer than all');
+    t.diagnostic(`marked a frame: ${keyMarks.map((x) => x.marked).join(' ')}`);
+  }
 }
 
 /** The key the JS warns under, for a kernel warning. */
@@ -622,6 +704,10 @@ test('the emit kernel writes what emitSpriteQueue writes, Y-sorted', async (t) =
 
 test('the emit kernel writes what emitSpriteQueue writes, without Y-sort', async (t) => {
   await runCase(t, { ySort: false, seed: 0xbeef });
+});
+
+test("E-177: the emit marks a sprite's key when its statics changed since the emit before", async (t) => {
+  await runCase(t, { ySort: true, keyed: true });
 });
 
 test('the emit kernel fills a queue to its capacity', async (t) => {
@@ -964,8 +1050,8 @@ function persistSchedule(k, { inQueue, seed, adobe, casters = true }) {
   };
 }
 
-async function runPersistCase(t, { ySort, inQueue, seed }) {
-  const k = await setup({ ySort, seed, persist: true });
+async function runPersistCase(t, { ySort, inQueue, seed, keyed = false }) {
+  const k = await setup({ ySort, seed, persist: true, keyed });
   await withPersistOrder(ySort, () => persistFrames(t, k, { ySort, inQueue, seed }));
 }
 
@@ -982,6 +1068,12 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
   // No Adobe root: emit_rows declines a frame with one (the worker's JS loop then rewrites every row);
   // the test after this one has the Adobe miss.
   const prepare = persistSchedule(k, { inQueue, seed, adobe: false });
+  // E-177: with keyed frames, every sprite starts flagged (as a spawn leaves it). The flags and the marks in the key
+  // column are the kernel's alone (the JS persist path knows neither), so the comparison below leaves keyedDirty and the
+  // queues' key columns out; checkKeys judges what they do.
+  if (k.keyed) SpriteRenderer.keyedDirty.fill(1);
+  const dirtyAt = SpriteRenderer.keyedDirty.byteOffset - m.layout.emit.spriteRendererByte;
+  const keyAt = createViews(m.buffer, maxItems, m.layout.queueAByte).key.byteOffset - m.layout.queueAByte;
   const start = all.slice();
 
   /** This frame's column table, its flags, and the full emit a miss leads to (with its ends). */
@@ -1007,7 +1099,12 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
   };
   const record = (hit, others, moved, repaired, ends) => ({
     hit, others, moved, repaired, ends, counts: [...worker._persistCount],
-    mem: regions.map(([, at, bytes]) => all.slice(at, at + bytes)),
+    mem: regions.map(([name, at, bytes]) => {
+      const copy = all.slice(at, at + bytes);
+      if (k.keyed && name === 'spriteRenderer') copy.fill(0, dirtyAt, dirtyAt + N);
+      if (k.keyed && (name === 'queueA' || name === 'queueB')) copy.fill(0, keyAt, keyAt + 4 * maxItems);
+      return copy;
+    }),
   });
 
   // The JS persist path.
@@ -1033,6 +1130,9 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
   worker._persistCount = [0, 0];
   worker._tiledTileColumns = new Set();
   const kinds = { hit: 0, repaired: 0, moved: 0, ends: 0 };
+  // E-177: Pixi's statics texture as the keys build it, after each frame, persist frames among them (a persisted sprite's
+  // statics move only with a repaired or advanced texture, or a flag).
+  const keySt = { tex: new Uint32Array(N * 12) };
   for (let f = 0; f < PERSIST_FRAMES; f++) {
     const { buf, st } = prepare(f);
     const flags = frameTable(buf, st);
@@ -1057,6 +1157,7 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
       worker._persistCount[buf] = count;
       if (cleared) worker._persistCount[buf ^ 1] = -1;
     }
+    if (k.keyed) checkKeys(k, Math.min(count, maxItems), `frame ${f} (${hit ? 'persist' : 'full'})`, keySt);
     const got = record(hit, others, moved, repaired, ends);
     const want = js[f];
     assert.deepEqual({ hit: got.hit, others: got.others, moved: got.moved, repaired: got.repaired, counts: got.counts },
@@ -1079,6 +1180,10 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
 
 test('the persist path in the kernel does what the JS persist path does, Y-sorted', async (t) => {
   await runPersistCase(t, { ySort: true, inQueue: true, seed: 0x9e1 });
+});
+
+test("E-177: persist frames mark the keys as the full emit does: the repaired and advanced textures, the flagged sprites", async (t) => {
+  await runPersistCase(t, { ySort: true, inQueue: true, seed: 0x9e1, keyed: true });
 });
 
 test('the persist path in the kernel does what the JS persist path does, without Y-sort', async (t) => {

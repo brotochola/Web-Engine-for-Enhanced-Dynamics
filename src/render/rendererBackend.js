@@ -174,6 +174,24 @@ export function indexedSpritesEnabled(renderer, maxSprites) {
   return (maxSprites | 0) <= (webgpu ? INDEXED_SPRITES_MAX_WEBGPU : INDEXED_SPRITES_MAX_WEBGL);
 }
 
+/**
+ * E-177: whether Pixi draws the main sprites as keyed frames (their statics kept by entity on the GPU, the changed
+ * ones scattered there): where Pixi packs them (preRender.packGpuSprites 'pixi') without pose interpolation, on WebGL
+ * (the scatter is a draw; WebGPU keeps split frames), unless renderer.indexedSprites is false, and when a texture holds
+ * a statics row for every entity and every queue row.
+ * @param {object} [config] the scene's config
+ * @param {number} entities the scene's entities
+ * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
+ * @returns {boolean}
+ */
+export function keyedSpritesEnabled(config, entities, maxSprites) {
+  const renderer = config?.renderer;
+  if (!renderer || renderer.indexedSprites === false || renderer.interpolation === true) return false;
+  if (config.preRender?.packGpuSprites !== 'pixi') return false;
+  if (normalizeRendererBackend(renderer.backend) !== RENDERER_BACKEND_WEBGL) return false;
+  return (entities | 0) + (maxSprites | 0) <= INDEXED_SPRITES_MAX_WEBGL;
+}
+
 export function pixiRendererTypeName(type, RendererType) {
   if (RendererType) {
     if (type === RendererType.WEBGPU) return 'WEBGPU';

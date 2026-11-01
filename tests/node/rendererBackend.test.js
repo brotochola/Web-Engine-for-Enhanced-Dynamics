@@ -234,3 +234,16 @@ test('fetch failure message names the asset and HTTP status', () => {
     /Failed to load shader asset "metaball" from \/demos\/shaders\/metaball\.frag \(HTTP 404\)/
   );
 });
+
+test('E-177: keyed sprite frames where Pixi packs on WebGL without interpolation, unless indexedSprites is off', async () => {
+  const { keyedSpritesEnabled, INDEXED_SPRITES_MAX_WEBGL } = await import('../../src/render/rendererBackend.js');
+  const config = (renderer, packGpuSprites = 'pixi') => ({ renderer, preRender: { packGpuSprites } });
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }), 40000, 20000), true);
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgpu' }), 40000, 20000), false, 'WebGPU keeps split frames');
+  assert.equal(keyedSpritesEnabled(config({}), 40000, 20000), false, 'the default backend is WebGPU');
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }, 'prerender'), 40000, 20000), false, 'pre-render packs');
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgl', interpolation: true }), 40000, 20000), false, 'pose batches');
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgl', indexedSprites: false }), 40000, 20000), false, 'switched off');
+  assert.equal(keyedSpritesEnabled(config({ backend: 'webgl' }), INDEXED_SPRITES_MAX_WEBGL, 1), false, 'past the texture');
+  assert.equal(keyedSpritesEnabled(null, 1, 1), false);
+});

@@ -146,3 +146,12 @@ test('a pose batch and a caster batch keep their own rows', async () => {
   assert.equal(pose._sharedRows.length, 0);
   assert.equal(pose._gpuPack, null);
 });
+
+test('N-102: an upload whose options leave out the type filter packs every row, as the documented -1 says', async () => {
+  const s = await setup(11);
+  const { wasm } = batches(s);
+  const opts = { space: BATCH_SPACE.WORLD, type: s.q.type, depthDenom: N };
+  assert.ok(s.q.type.some((t) => t !== 0), 'the queue has rows of other types');
+  assert.equal(wasm.upload(s.q, opts), N, 'not only the type 0 rows');
+  assert.equal(wasm.upload(s.q, { ...opts, includeType: 0 }), s.q.type.filter((t) => t === 0).length, 'an include filter still filters');
+});

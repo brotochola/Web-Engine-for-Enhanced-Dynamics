@@ -447,6 +447,7 @@ export class Tween {
       if (mask & PAINT_SCALEY) SpriteRenderer.scaleY[ent] = scaleY;
       if (mask & PAINT_TINT) SpriteRenderer.tint[ent] = tint;
       if (SpriteRenderer.renderDirty) SpriteRenderer.renderDirty[ent] = 1;
+      if (SpriteRenderer.keyedDirty) SpriteRenderer.keyedDirty[ent] = 1;
     } else if (on === ON_MESH) {
       if (mask & PAINT_ALPHA) MeshRenderer.alpha[ent] = alpha;
       if (mask & PAINT_TINT) MeshRenderer.tint[ent] = tint;
@@ -578,6 +579,7 @@ export class Tween {
       else if (meshOn) MeshRenderer.tint[ent] = c;
     }
     if (spriteOn && SpriteRenderer.renderDirty) SpriteRenderer.renderDirty[ent] = 1;
+    if (spriteOn && SpriteRenderer.keyedDirty) SpriteRenderer.keyedDirty[ent] = 1;
     if (meshOn && MeshRenderer.renderDirty && !MeshRenderer.renderDirty[ent]) {
       MeshRenderer.renderDirty[ent] = 1;
       const ep = MeshRenderer.paintEpoch;

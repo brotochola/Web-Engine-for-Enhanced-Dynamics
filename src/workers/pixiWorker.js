@@ -259,7 +259,8 @@ import {
 } from '../render/rendererBackend.js';
 import { requestWeedGpu } from '../render/webgpu/requestGpuDevice.js';
 import { packSpriteLayer } from '../render/packSpriteLayer.js';
-import { bindGpuPack } from '../render/gpuPackClient.js';
+import { GPU_KEYED_ROW_WORDS, bindGpuPack } from '../render/gpuPackClient.js';
+import { createStaticsScatterGl, scatterStaticsGl } from '../render/webgl/staticsScatterGl.js';
 import { createPrivateArena } from '../render/sharedCopy.js';
 import { GpuFramePacer } from '../render/gpuFramePacer.js';
 
@@ -534,6 +535,10 @@ class PixiRenderer extends AbstractWorker {
     // render-queue memory (the view below) and gpuPack.wasm packs them, on Pixi's own scratch.
     this._pixiGpuPack = null;
     this._pixiInstanceRows = null;
+    // E-177: the render-queue memory's keyed regions for the entity batch (renderQueueMemory.js pixiKey*), or null.
+    this._pixiKeyed = null;
+    // The statics scatter's GL objects (_scatterStaticsGl), made on its first call.
+    this._staticsScatterGl = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
     this._pixiGlowRows = null;
     // W30. The batches Pixi fills from the render-queue memory keep their arrays in private WebAssembly.Memories, copied
@@ -1029,6 +1034,8 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueShadowOffX = null;
     this.renderQueueShadowOffY = null;
     this.renderQueueStaticGen = null;
+    // E-177: the rows' statics keys (renderQueueLayout's key), which the keyed frames pack by.
+    this.renderQueueKey = null;
     this._poseSnapX = null;
     this._poseSnapY = null;
     this._poseSnapRotC = null;
@@ -1100,6 +1107,7 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueShadowOffX = buffer.shadowOffX;
     this.renderQueueShadowOffY = buffer.shadowOffY;
     this.renderQueueStaticGen = buffer.staticGen || null;
+    this.renderQueueKey = buffer.key || null;
     this.renderQueueType = buffer.type;
     this.renderQueueSortKey = buffer.sortKey;
     this._sortKeyU32 = this._sortKeyU32ByBuf[bufferIdx];
@@ -1577,6 +1585,7 @@ class PixiRenderer extends AbstractWorker {
     q.shadowOffX = src.shadowOffX || null;
     q.shadowOffY = src.shadowOffY || null;
     q.staticGen = src.staticGen || null;
+    q.key = src.key || null;
   }
 
   _bindRenderQueueTo(q, count) {
@@ -1606,6 +1615,7 @@ class PixiRenderer extends AbstractWorker {
     src.shadowOffX = this.renderQueueShadowOffX;
     src.shadowOffY = this.renderQueueShadowOffY;
     src.staticGen = this.renderQueueStaticGen;
+    src.key = this.renderQueueKey;
     this._bindSpriteQueue(q, src, count);
   }
 
@@ -1637,6 +1647,9 @@ class PixiRenderer extends AbstractWorker {
         packOpts.prevY = this._latchedPrevY;
         packOpts.snap = this._poseSnap;
       }
+      // E-177: a keyed batch takes the queue frame it draws (its changed marks are that frame's) and its buffer.
+      this.entitiesBatch.keyedFrame = this.lastReadFrame;
+      this.entitiesBatch.keyedBuffer = (this.lastReadFrame - 1) & 1;
       const n = this.entitiesBatch.upload(this._packQ, packOpts);
       packOpts.prevX = null;
       packOpts.prevY = null;
@@ -2080,6 +2093,8 @@ class PixiRenderer extends AbstractWorker {
         return source;
       },
       upload: (source, bits, width, height, y0, rows) => this._gpuRecordRowsGl(source, bits, width, height, y0, rows),
+      // E-177: a keyed batch's changed statics into its texture.
+      scatter: (source, updates, count, width, height) => this._scatterStaticsGl(source, updates, count, width, height),
     };
     return this._gpuRecordTextureOps;
   }
@@ -2108,6 +2123,19 @@ class PixiRenderer extends AbstractWorker {
       gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, y0, width, rows, gl.RGBA_INTEGER, gl.UNSIGNED_INT, bits, y0 * width * 4);
     }
     gl.bindTexture(gl.TEXTURE_2D, prev);
+  }
+
+  /**
+   * E-177: `count` updates of a keyed batch's statics (GPU_KEYED_ROW_WORDS u32 each) into its texture, `width` x
+   * `height` (staticsScatterGl.js), the scatter's GL objects made on the first call.
+   */
+  _scatterStaticsGl(source, updates, count, width, height) {
+    const renderer = this.pixiApp?.renderer;
+    const gl = renderer?.gl;
+    const texSys = renderer?.texture;
+    if (!gl || !texSys || count <= 0) return;
+    if (this._staticsScatterGl === null || this._staticsScatterGl.gl !== gl) this._staticsScatterGl = createStaticsScatterGl(gl);
+    scatterStaticsGl(this._staticsScatterGl, renderer, texSys.getGlSource(source).texture, updates, count, width, height);
   }
 
   /** Every frame: new GPU particle records up, each ring's live window and clock set. */
@@ -2380,6 +2408,15 @@ class PixiRenderer extends AbstractWorker {
     if ((layout.pixiGlowRows | 0) >= (this.renderQueueMaxItems | 0) && layout.pixiGlowByte >= 0) {
       this._pixiGlowRows = new Float32Array(memory.buffer, layout.pixiGlowByte, (this.renderQueueMaxItems | 0) * INSTANCED_SPRITE_FLOATS);
     }
+    // E-177: the keyed frames' updates and resync header, for a scene whose sprites go keyed (keyedSpritesEnabled).
+    this._pixiKeyed = (layout.pixiKeyRows | 0) > 0 && layout.pixiKeyHeaderByte >= 0
+      ? {
+          keyBase: layout.pixiKeyBase | 0,
+          keyRows: layout.pixiKeyRows | 0,
+          updatesByte: layout.pixiKeyUpdatesByte,
+          headerByte: layout.pixiKeyHeaderByte,
+        }
+      : null;
   }
 
   createEntitiesInstancedBatch(maxItems) {
@@ -2388,7 +2425,9 @@ class PixiRenderer extends AbstractWorker {
     this._rqIdxGlow = painterWasm ? painterSlotList(painterWasm, 'glow', maxItems) : new Uint32Array(maxItems);
     this._painter = this._ySort ? this._newEntityPainter() : null;
     const gpuCaps = this.gpuQueueBuffers && this.gpuQueueBuffers[0] ? this.gpuQueueBuffers[0].caps : null;
-    const indexed = !!(gpuCaps && gpuCaps.indexedSprites);
+    // E-177: keyed frames where Pixi packs into the render-queue memory and the scene laid out their regions (WebGL).
+    const keyed = this._pixiKeyed !== null && this._pixiInstanceRows !== null && !this._useWebGpu ? this._pixiKeyed : null;
+    const indexed = !!(gpuCaps && gpuCaps.indexedSprites) || keyed !== null;
     this.entitiesBatch = new InstancedSpriteBatch({
       capacity: maxItems,
       label: 'entities-instanced',
@@ -2414,10 +2453,13 @@ class PixiRenderer extends AbstractWorker {
         : this._useWebGpu
           ? { maxStorageBytes: this.pixiApp?.renderer?.gpu?.device?.limits?.maxStorageBufferBindingSize ?? WEBGPU_DEFAULT_STORAGE_BINDING }
           : this._gpuRecordTexture(),
+      keyed,
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
-      // stream and statics rows.
+      // stream and statics rows; a keyed one's slot stream and updates (its statics are scattered on the GPU).
       arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)
-        + (indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)),
+        + (keyed !== null
+          ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS)
+          : indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)),
     });
     this.spriteMesh = this.entitiesBatch.mesh;
 

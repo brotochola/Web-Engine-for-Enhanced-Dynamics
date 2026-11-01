@@ -46,7 +46,7 @@ import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
-import { SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, ySortEnabled } from '../render/rendererBackend.js';
+import { SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, keyedSpritesEnabled, ySortEnabled } from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
@@ -812,6 +812,8 @@ function emitBlocks(scene) {
       && (config.lighting?.lightGlow ?? LIGHTING_DEFAULTS.lightGlow) !== 'sprite'
       ? resolveMaxVisibleRenderables(scene) : 0,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
+    // E-177: the entity batch's keyed frames' table and updates, for a scene with sprites whose frames go keyed.
+    pixiKeyed: Boolean(pools.SpriteRenderer?.ComponentClass) && keyedSpritesEnabled(config, n, resolveMaxVisibleRenderables(scene)),
   };
 }
 

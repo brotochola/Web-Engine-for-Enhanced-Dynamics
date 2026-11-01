@@ -513,6 +513,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
   SpriteRenderer.flip = new Uint8Array(2);
   SpriteRenderer.scaleY = new Float32Array([1, 1]);
   SpriteRenderer.renderDirty = new Uint8Array([0, 0]);
+  SpriteRenderer.keyedDirty = new Uint8Array([0, 0]);
   SpriteRenderer.isItOnScreen = new Uint8Array([0, 1]);
   SpriteRenderer.layerMask = new Uint16Array([0, 1 << 1]);
   SpriteRenderer.updateBounds = (index) => spriteBoundsUpdates.push(index);
@@ -597,6 +598,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
     assert.deepEqual(spriteBoundsUpdates, [1]);
     assert.deepEqual(adobeBoundsUpdates, [0, 0, 1]);
     assert.equal(SpriteRenderer.renderDirty[1], 1);
+    assert.equal(SpriteRenderer.keyedDirty[1], 1, 'E-177: the statics setters flag the keyed frames');
   } finally {
     SpriteRenderer.alpha = previousSpriteAlpha;
     SpriteRenderer.baseTint = previousSpriteBaseTint;
@@ -665,6 +667,7 @@ test('setLayer(fire) keeps ENTITIES sprite bit and packs collider into fire', ()
     const entities = Layer.entitiesMask();
     SpriteRenderer.layerMask = new Uint16Array(2);
     SpriteRenderer.renderDirty = new Uint8Array(2);
+    SpriteRenderer.keyedDirty = new Uint8Array(2);
     Collider.layerMask = new Uint16Array(2);
     const go = Object.create(GameObject.prototype);
     go.index = 0;
@@ -674,6 +677,7 @@ test('setLayer(fire) keeps ENTITIES sprite bit and packs collider into fire', ()
     assert.equal(SpriteRenderer.layerMask[0] & (1 << fireId), 1 << fireId);
     assert.equal(Collider.layerMask[0] & (1 << fireId), 1 << fireId);
     assert.equal(go.layerName, 'entities');
+    assert.equal(SpriteRenderer.keyedDirty[0], 0, 'E-177: a layer is no static');
   } finally {
     Layer.reset();
     SpriteRenderer.layerMask = previousSpriteMask;

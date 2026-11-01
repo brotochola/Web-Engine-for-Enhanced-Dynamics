@@ -1075,6 +1075,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.alpha[this.index] = value;
@@ -1098,6 +1099,7 @@ export class GameObject {
       if (SpriteRenderer.tint[this.index] !== value) {
         SpriteRenderer.tint[this.index] = value;
         SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.keyedDirty[this.index] = 1;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1120,6 +1122,7 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
+      // Which rows are drawn, not a row's statics (E-177: no keyed flag).
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1155,6 +1158,7 @@ export class GameObject {
         SpriteRenderer.scaleX[this.index] = v;
         SpriteRenderer.updateBounds(this.index);
         SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.keyedDirty[this.index] = 1;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1185,6 +1189,7 @@ export class GameObject {
         SpriteRenderer.scaleY[this.index] = v;
         SpriteRenderer.updateBounds(this.index);
         SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.keyedDirty[this.index] = 1;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1235,6 +1240,7 @@ export class GameObject {
       else SpriteRenderer.scaleY[i] = -SpriteRenderer.scaleY[i];
       SpriteRenderer.updateBounds(i);
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
     }
     if (this._hasComponents.adobeAnimComponent && ((AdobeAnimComponent.flip[i] & bit) !== 0) !== on) {
       AdobeAnimComponent.flip[i] ^= bit;
@@ -1308,6 +1314,7 @@ export class GameObject {
   markDirty() {
     if (this._hasComponents.SpriteRenderer) {
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
   }
 
@@ -1320,6 +1327,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
       AdobeAnimComponent.alpha[this.index] = value;
@@ -1342,6 +1350,7 @@ export class GameObject {
       if (SpriteRenderer.tint[this.index] !== value) {
         SpriteRenderer.tint[this.index] = value;
         SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.keyedDirty[this.index] = 1;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1363,6 +1372,7 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
+      // Which rows are drawn, not a row's statics (E-177: no keyed flag).
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1421,6 +1431,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerMask) {
       if (SpriteRenderer.layerMask[i] !== m) {
         SpriteRenderer.layerMask[i] = m;
+        // The layer a sprite is drawn in, not its statics (E-177: no keyed flag).
         SpriteRenderer.renderDirty[i] = 1;
       }
     }
@@ -1482,6 +1493,7 @@ export class GameObject {
       SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
       SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = rx;
@@ -1515,6 +1527,7 @@ export class GameObject {
       SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
       SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = rx;
@@ -1537,6 +1550,7 @@ export class GameObject {
       SpriteRenderer.tileOffsetU[i] = 0;
       SpriteRenderer.tileOffsetV[i] = 0;
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = 0;
@@ -1574,6 +1588,7 @@ export class GameObject {
           );
         }
         SpriteRenderer.renderDirty[i] = 1;
+        SpriteRenderer.keyedDirty[i] = 1;
       }
     }
     if (this._hasComponents.MeshRenderer) {
@@ -1625,6 +1640,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && changed) {
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
       const flip = AdobeAnimComponent.flip[this.index];
@@ -1667,6 +1683,7 @@ export class GameObject {
       SpriteRenderer.anchorX[this.index] = x;
       SpriteRenderer.anchorY[this.index] = y;
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.anchorX[this.index] = x;
@@ -1687,6 +1704,7 @@ export class GameObject {
       SpriteRenderer.animationState[this.index] = state;
       SpriteRenderer.updateBounds(this.index);
       SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.keyedDirty[this.index] = 1;
     }
     return this;
   }
@@ -1701,6 +1719,8 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return this;
     if (SpriteRenderer.animationSpeed[this.index] !== speed) {
       SpriteRenderer.animationSpeed[this.index] = speed;
+      // The clock's rate, not the statics (a frame it moves is a texture the emit sees move). Games set it every tick
+      // (Predator's walkers, from their speed): a keyed flag here rewrote thousands of store rows a frame (E-177).
       SpriteRenderer.renderDirty[this.index] = 1;
     }
     return this;
@@ -3062,6 +3082,7 @@ export class GameObject {
       SpriteRenderer.loop[i] = 1; // Default: animations loop
       SpriteRenderer.animationSpeed[i] = DEFAULT_ANIMATION_SPEED;
       SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.keyedDirty[i] = 1;
       SpriteRenderer.layerMask[i] = 0;
     }
 

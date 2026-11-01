@@ -170,6 +170,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitPersistEntity', owner: 'pre-render', bytes: 2 * n * 4 },
       { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },
       { name: 'emitPersistAnim', owner: 'pre-render', bytes: 2 * n * 2 },
+      // E-177: the keyed frames' resync header on a line of its own (PIXI_KEYED_HEADER: Pixi asks, pre-render answers).
+      { name: 'emitKeyHeader', owner: 'pre-render and Pixi', bytes: emit.pixiKeyed ? CACHE_LINE_BYTES : 0 },
     );
     // Each custom sprite layer's two queue buffers (pre-render writes, Pixi reads) and its collector: y and index
     // (u32 each), the pose stash x, y, rotC, rotS (f32 each), then type (u8) per row: CUSTOM_COLLECTOR_ROW_BYTES.
@@ -252,6 +254,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackIndices', owner: 'Pixi', bytes: n * 4 },
       { name: 'pixiPackTables', owner: 'Pixi', bytes: pixiExtra ? pixiExtra.tableBytes | 0 : tableBytes },
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
+      // E-177: the entity batch's keyed frames' updates (gpuPack.c KEYED_ROW_WORDS each), as many as its rows.
+      { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
     );
   }
   if (collect) {
@@ -398,6 +402,16 @@ export const CUSTOM_COLLECTOR_ROW_BYTES = 25;
 /** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
 export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;
+/** E-177: the bytes of a keyed frame's update (gpuPack.c KEYED_ROW_WORDS u32). */
+export const PIXI_KEYED_ROW_BYTES = 64;
+
+/**
+ * E-177: the keyed frames' resync header, u32 words. Pixi raises REQUEST when its statics texture may miss a change (its
+ * first keyed frame, a frame it did not draw keyed); pre-render, seeing it, flags every sprite for its next emit
+ * (SpriteRenderer.keyedDirty) and sets SERVED, and after each emit of the main queue stores SERVED into that queue
+ * buffer's word, so Pixi draws a buffer keyed only once it carries the request it made.
+ */
+export const PIXI_KEYED_HEADER = Object.freeze({ REQUEST: 0, SERVED: 1, BUFFER0: 2, BUFFER1: 3 });
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its

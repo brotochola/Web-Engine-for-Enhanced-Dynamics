@@ -24,6 +24,7 @@ function sprite(n = 1) {
   SpriteRenderer.scaleY = new Float32Array(n);
   SpriteRenderer.scaleY.fill(1);
   SpriteRenderer.renderDirty = new Uint8Array(n);
+  SpriteRenderer.keyedDirty = new Uint8Array(n);
 }
 
 test('TWEEN_DEFAULTS.maxTweens is the pool size', () => {
@@ -38,6 +39,7 @@ test('tween writes sprite alpha and refuses a dynamic body', { concurrency: fals
     scaleX: SpriteRenderer.scaleX,
     scaleY: SpriteRenderer.scaleY,
     renderDirty: SpriteRenderer.renderDirty,
+    keyedDirty: SpriteRenderer.keyedDirty,
     tx: Transform.x,
     ty: Transform.y,
     rbA: RigidBody.active,
@@ -52,6 +54,7 @@ test('tween writes sprite alpha and refuses a dynamic body', { concurrency: fals
     Tween.tick(100);
     assert.equal(SpriteRenderer.alpha[0], 0);
     assert.equal(SpriteRenderer.renderDirty[0], 1);
+    assert.equal(SpriteRenderer.keyedDirty[0], 1, 'E-177: alpha is a static the keyed frames take');
 
     Transform.x = new Float32Array([5]);
     Transform.y = new Float32Array([6]);
@@ -82,6 +85,7 @@ test('tween writes sprite alpha and refuses a dynamic body', { concurrency: fals
     SpriteRenderer.scaleX = prev.scaleX;
     SpriteRenderer.scaleY = prev.scaleY;
     SpriteRenderer.renderDirty = prev.renderDirty;
+    SpriteRenderer.keyedDirty = prev.keyedDirty;
     Transform.x = prev.tx;
     Transform.y = prev.ty;
     RigidBody.active = prev.rbA;
@@ -162,6 +166,7 @@ test('zero duration tween applies immediately without claiming SAB slot', { conc
   assert.equal(Transform.x[0], 99);
   assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.1) < 1e-5);
   assert.equal(SpriteRenderer.renderDirty[0], 1);
+  assert.equal(SpriteRenderer.keyedDirty[0], 1);
   // No slots claimed in SAB pool
   assert.equal(Tween.active[0], 0);
   assert.equal(Tween.active[1], 0);

@@ -35,10 +35,13 @@ import {
 import {
   GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
-import { packInstancedRowsWasm, packPoseRowsWasm, packSplitRowsWasm } from './gpuPackClient.js';
+import {
+  GPU_KEYED_ROW_WORDS, packInstancedRowsWasm, packKeyedRowsWasm, packPoseRowsWasm, packSplitRowsWasm,
+} from './gpuPackClient.js';
 import {
   STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, spriteIndexedWgsl, staticsTextureHeight,
 } from './spriteIndexed.js';
+import { PIXI_KEYED_HEADER } from '../util/wasmMemoryMap.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -58,6 +61,14 @@ export const SPLIT_POSE_FLOATS = GPU_POSE_FLOATS;
 
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
 export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
+
+// E-177. A keyed frame saves KEYED_SAVED_BYTES a row against a split one (the slot pair instead of the statics) and
+// spends an update's bytes on each row it sends. When the updates outweigh the saving for KEYED_LOSS_FRAMES frames in a
+// row (rows without a key, as a LiquidFun scene's sprites, or statics that all move), the batch draws split for
+// KEYED_PAUSE_FRAMES frames, then resyncs and tries again.
+export const KEYED_SAVED_BYTES = (GPU_STATIC_FLOATS - GPU_INDEXED_SLOT_FLOATS) * 4;
+export const KEYED_LOSS_FRAMES = 10;
+export const KEYED_PAUSE_FRAMES = 1800;
 
 const EMPTY_UPLOAD_OPTS = Object.freeze({
   space: BATCH_SPACE.WORLD,
@@ -220,6 +231,11 @@ export class InstancedSpriteBatch {
    * @param {object|null} [opts.statics] - E-162, a split batch: what it keeps indexed frames' statics in, with which it
    *   also commits them (commitIndexed). WebGL: Pixi's RGBA32UI texture helper (`maxSize`, `make`, `upload`:
    *   pixiWorker._gpuRecordTexture); WebGPU: `{ maxStorageBytes }`, the device's storage binding size
+   * @param {object|null} [opts.keyed] - E-177, a split batch with `statics` whose helper scatters (`scatter`) and that
+   *   packs through the kernel: the render-queue memory's keyed regions (renderQueueMemory.js pixiKey*: `keyBase`,
+   *   `keyRows`, `updatesByte`, `headerByte`), so its frames go keyed: the poses and the slot pairs in draw order, the
+   *   sprites' statics by entity in the texture, sent when the emit marked them changed. Each upload then needs the
+   *   queue's frame number and buffer (`keyedFrame`, `keyedBuffer`, set by the caller)
    */
   constructor({
     capacity,
@@ -241,6 +257,7 @@ export class InstancedSpriteBatch {
     split = false,
     arena = null,
     statics = null,
+    keyed = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
@@ -290,10 +307,42 @@ export class InstancedSpriteBatch {
     // E-162: the slot stream's CPU copy, the statics rows' (whole texture rows), and the generation and rows the
     // statics texture holds (_ixRows -1: nothing yet).
     const slotFloats = this.indexed ? this.capacity * GPU_INDEXED_SLOT_FLOATS : 0;
-    const staticFloats = this.indexed ? gpuIndexedStaticRows(this.capacity) * GPU_INDEXED_STATIC_FLOATS : 0;
+    // E-177: a keyed batch's statics texture holds a row for every key: the scene's entities, then a slot per row.
+    this.keyed = this.indexed && keyed !== null && (keyed.keyRows | 0) > 0 && this._gpuPack !== null
+      && typeof statics.scatter === 'function' && keyed.headerByte >= 0;
+    const staticRows = this.indexed
+      ? Math.max(gpuIndexedStaticRows(this.capacity), this.keyed ? keyed.keyRows | 0 : 0)
+      : 0;
+    const staticFloats = staticRows * GPU_INDEXED_STATIC_FLOATS;
     this._slotData = (this.indexed && arena && arena.f32(slotFloats)) || new Float32Array(slotFloats);
-    this._rowStatics = (this.indexed && arena && arena.f32(staticFloats)) || new Float32Array(staticFloats);
+    // A keyed batch's statics never pass through this copy (the texture is made from its zeros, then scattered into), so
+    // it stays out of the arena.
+    this._rowStatics = (this.indexed && !this.keyed && arena && arena.f32(staticFloats)) || new Float32Array(staticFloats);
     this._rowStaticsU32 = new Uint32Array(this._rowStatics.buffer, this._rowStatics.byteOffset, staticFloats);
+    // E-177: the keyed pack's regions (gpuPackClient.packKeyedRowsWasm's `keyed`), the slot pairs it writes over the
+    // static stream's half of the shared rows, its updates and their copy, and the resync header.
+    const k = this.keyed ? keyed : null;
+    const buf = this._sharedStatic.buffer;
+    this._keyedPack = {
+      keyBase: k ? k.keyBase | 0 : 0,
+      updatesByte: k ? k.updatesByte | 0 : 0,
+      updates: 0,
+    };
+    this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
+    const updateWords = k ? this.capacity * GPU_KEYED_ROW_WORDS : 0;
+    this._sharedUpdates = k ? new Uint32Array(buf, k.updatesByte, updateWords) : new Uint32Array(0);
+    const updateCopy = (k && arena && arena.f32(updateWords)) || new Float32Array(updateWords);
+    this._keyUpdates = new Uint32Array(updateCopy.buffer, updateCopy.byteOffset, updateWords);
+    this._keyHeader = k ? new Uint32Array(buf, k.headerByte, 4) : new Uint32Array(4);
+    // The queue frame and buffer of the next upload (the caller's), the last frame the texture took keyed (-1: none since
+    // it last missed one), and the resync request this batch made (0: none outstanding).
+    this.keyedFrame = 0;
+    this.keyedBuffer = 0;
+    this._keyFrame = -1;
+    this._keyRequest = 0;
+    // The keyed frames in a row whose updates outweighed their saving, and the split frames left of a pause.
+    this._keyLosses = 0;
+    this._keyPause = 0;
     this._ixGen = 0;
     this._ixRows = -1;
     // The slot pairs' generation and slots the CPU copy holds, its version, and each ring slot's GPU copy's (-1: none).
@@ -560,7 +609,7 @@ export class InstancedSpriteBatch {
   _makeIndexedShader(name) {
     if (this._useWebGpu) return this._makeIndexedGpuShader(name);
     const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
-    const height = staticsTextureHeight(this.capacity);
+    const height = staticsTextureHeight(this._rowStatics.length / GPU_INDEXED_STATIC_FLOATS);
     const max = this._statics.maxSize | 0;
     if (width > max || height > max) {
       throw new Error(
@@ -688,7 +737,8 @@ export class InstancedSpriteBatch {
       this._show(false);
       return null;
     }
-    const includeType = o.includeType | 0;
+    // N-102: a filter the options leave out is none (-1, as documented), not type 0.
+    const includeType = o.includeType == null ? -1 : o.includeType | 0;
     const hasInclude = includeType >= 0;
     if (!useIndices && hasInclude && !o.type) {
       this.geometry.instanceCount = 0;
@@ -717,8 +767,8 @@ export class InstancedSpriteBatch {
       }
     }
     const typeArr = o.type || null;
-    const exclude0 = o.excludeType0 | 0;
-    const exclude1 = o.excludeType1 | 0;
+    const exclude0 = o.excludeType0 == null ? -1 : o.excludeType0 | 0;
+    const exclude1 = o.excludeType1 == null ? -1 : o.excludeType1 | 0;
     const hasExclude = exclude0 >= 0 || exclude1 >= 0;
     const filterTypes = !useIndices && typeArr && (hasInclude || hasExclude);
     const ctx = this._uploadCtx;
@@ -899,6 +949,10 @@ export class InstancedSpriteBatch {
   _uploadSplit(q, opts) {
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
+    if (this.keyed) {
+      const n = this._uploadKeyed(q, ctx);
+      if (n >= 0) return n;
+    }
     const current = this._staticsCurrent(q, ctx);
     const out = this._gpuPack !== null
       ? packSplitRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity)
@@ -909,6 +963,60 @@ export class InstancedSpriteBatch {
       if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
     }
     return this._finishUpload(out, SPLIT_POSE_FLOATS * 4);
+  }
+
+  /**
+   * E-177. A keyed batch's frame: the poses and the slot pairs (each row's key and depth) in draw order, and the statics
+   * of the sprites the emit marked changed and of the rows without a key, scattered into the texture by key (the statics
+   * helper's scatter): 24 bytes a sprite and 64 an update, against 60 a sprite for a split frame. The marks say what
+   * changed since the emit before, so the texture is right only after a keyed frame of every queue frame: on its first
+   * frame, after a frame it did not take keyed (a gap in the queue's frames, a frame drawn split), the batch asks
+   * pre-render for every sprite again (the header's request; pre-render flags every sprite for its next emit) and draws
+   * split until the queue buffer it reads answers that request. Frames whose updates outweigh their saving pause the
+   * keyed frames (KEYED_LOSS_FRAMES). Returns -1 for a frame drawn split.
+   */
+  _uploadKeyed(q, ctx) {
+    if (this._keyPause > 0) {
+      this._keyPause--;
+      this._keyFrame = -1;
+      return -1;
+    }
+    const H = this._keyHeader;
+    const frame = this.keyedFrame;
+    const last = this._keyFrame;
+    if (last < 0 || (frame !== last && frame !== last + 1)) {
+      this._keyFrame = -1;
+      if (this._keyRequest === 0) {
+        this._keyRequest = (Atomics.load(H, PIXI_KEYED_HEADER.REQUEST) + 1) >>> 0 || 1;
+        Atomics.store(H, PIXI_KEYED_HEADER.REQUEST, this._keyRequest);
+      }
+      if (Atomics.load(H, PIXI_KEYED_HEADER.BUFFER0 + (this.keyedBuffer & 1)) !== this._keyRequest) return -1;
+    }
+    const k = this._keyedPack;
+    const out = packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
+    if (out < 0) {
+      this._keyFrame = -1;
+      return -1;
+    }
+    this._keyFrame = frame;
+    this._keyRequest = 0;
+    const n = k.updates;
+    if (n * (GPU_KEYED_ROW_WORDS * 4) <= out * KEYED_SAVED_BYTES) {
+      this._keyLosses = 0;
+    } else if (++this._keyLosses >= KEYED_LOSS_FRAMES) {
+      this._keyLosses = 0;
+      this._keyPause = KEYED_PAUSE_FRAMES;
+    }
+    if (n > 0) {
+      this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
+      this._statics.scatter(this._staticsSource, this._keyUpdates, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight);
+    }
+    if (out > 0) {
+      this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
+      this.copyIn(this._slotData, this._sharedSlots, out * GPU_INDEXED_SLOT_FLOATS);
+      this._slotsVersion++;
+    }
+    return this._finishUpload(out, SPLIT_POSE_FLOATS * 4, true);
   }
 
   /**

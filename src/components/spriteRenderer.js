@@ -86,6 +86,9 @@ export class SpriteRenderer extends Component {
     // Performance optimization - dirty flag
     zIndex: Int16Array, // draw order inside the layer. Larger is in front. 0 with ySort off is emit order.
     renderDirty: Uint8Array, // 1 = visual properties changed, needs update this frame
+    // E-177: 1 = the statics the GPU draws changed (scale, anchor, alpha, tint, texture, tiles) since pre-render's emit
+    // marked them for the keyed frames; set beside renderDirty by the setters that change them, cleared by the emit.
+    keyedDirty: Uint8Array,
     screenX: Float32Array,
     screenY: Float32Array,
     // bit 0 flipX, bit 1 flipY. The flip lives in the sign of scaleX / scaleY
@@ -172,6 +175,7 @@ export class SpriteRenderer extends Component {
     const v = value | 0;
     SpriteRenderer.repeatX[this.index] = v < 0 ? 0 : v > 65535 ? 65535 : v;
     SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   get repeatY() {
@@ -181,6 +185,7 @@ export class SpriteRenderer extends Component {
     const v = value | 0;
     SpriteRenderer.repeatY[this.index] = v < 0 ? 0 : v > 65535 ? 65535 : v;
     SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   get tileMode() {
@@ -195,6 +200,7 @@ export class SpriteRenderer extends Component {
           ? SPRITE_TILE_MODE.LOCAL
           : v;
     SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   get tileOffsetU() {
@@ -203,6 +209,7 @@ export class SpriteRenderer extends Component {
   set tileOffsetU(value) {
     SpriteRenderer.tileOffsetU[this.index] = packTileOffset01(value);
     SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   get zIndex() {
@@ -227,6 +234,7 @@ export class SpriteRenderer extends Component {
   set tileOffsetV(value) {
     SpriteRenderer.tileOffsetV[this.index] = packTileOffset01(value);
     SpriteRenderer.renderDirty[this.index] = 1;
+    SpriteRenderer.keyedDirty[this.index] = 1;
   }
 
   static packTileOffset01 = packTileOffset01;

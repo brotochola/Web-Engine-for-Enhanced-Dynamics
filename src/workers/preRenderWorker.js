@@ -55,6 +55,7 @@ import {
     unbindSolidSegments,
 } from '../render/visibility/solidSegmentsClient.js';
 import { VISIBILITY_MAX_OCCLUDERS, createVisibilityMemory, visibilityMemoryOpts } from '../util/visibilityMemory.js';
+import { PIXI_KEYED_HEADER } from '../util/wasmMemoryMap.js';
 import { Grid as GridImport } from '../core/grid.js';
 import { Sun } from '../core/sun.js';
 import {
@@ -394,6 +395,8 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = EMPTY_U16;
         this.renderQueueAnchorX = EMPTY_F32;
         this.renderQueueAnchorY = EMPTY_F32;
+        // E-177: the rows' statics keys (renderQueueLayout's key).
+        this.renderQueueKey = EMPTY_U32;
         /** The main queue's staticGen column (renderQueueLayout.js), and the count written there. */
         this.renderQueueStaticGen = EMPTY_U32;
         this._staticGen = 1;
@@ -446,6 +449,10 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuPainterWasm = null;
         /** The emit kernel (E-112), bound when the emit's columns live in the render-queue memory. */
         this._emitWasm = null;
+        /** E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column. */
+        this._keyedFrames = false;
+        /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
+        this._keyedHeader = EMPTY_U32;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
@@ -982,6 +989,8 @@ class PreRenderWorker extends AbstractWorker {
             }
             try {
                 this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
+                this._keyedFrames = emitLayout.keyHeaderByte >= 0;
+                if (this._keyedFrames) this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, 4);
             } catch (err) {
                 throw new Error(`[PRE_RENDER] preRenderEmit.wasm did not load: ${err?.message ?? err}`, { cause: err });
             }
@@ -1400,6 +1409,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = buffer.textureId;
         this.renderQueueAnchorX = buffer.anchorX;
         this.renderQueueAnchorY = buffer.anchorY;
+        this.renderQueueKey = buffer.key || EMPTY_U32;
         this.renderQueueType = buffer.type;
         this.renderQueueSortKey = buffer.sortKey;
         this.renderQueueSortKeyU32 = buffer.sortKeyU32;
@@ -1584,6 +1594,7 @@ class PreRenderWorker extends AbstractWorker {
         this.renderQueueTextureId = views.textureId;
         this.renderQueueAnchorX = views.anchorX;
         this.renderQueueAnchorY = views.anchorY;
+        this.renderQueueKey = views.key || EMPTY_U32;
         this.renderQueueType = views.type;
         this.renderQueueSortKey = views.sortKey;
         this.renderQueueSortKeyU32 = views.sortKeyU32;
@@ -1613,6 +1624,7 @@ class PreRenderWorker extends AbstractWorker {
         saved.textureId = this.renderQueueTextureId;
         saved.anchorX = this.renderQueueAnchorX;
         saved.anchorY = this.renderQueueAnchorY;
+        saved.key = this.renderQueueKey;
         saved.type = this.renderQueueType;
         saved.sortKey = this.renderQueueSortKey;
         saved.sortKeyU32 = this.renderQueueSortKeyU32;
@@ -2704,6 +2716,16 @@ class PreRenderWorker extends AbstractWorker {
         const ySort = !!source.ySort;
         // -1 when off: buffer 0 is a valid persist target (it used to read as false).
         const persistBuf = source.persist ? this._queueBuf : -1;
+        // E-177: Pixi asked for every keyed statics again (its texture may miss changes): every sprite flagged for this emit,
+        // the request served.
+        const keyHeader = source.persist && this._keyedFrames ? this._keyedHeader : null;
+        if (keyHeader !== null) {
+            const request = Atomics.load(keyHeader, PIXI_KEYED_HEADER.REQUEST);
+            if (request !== keyHeader[PIXI_KEYED_HEADER.SERVED]) {
+                SpriteRenderer.keyedDirty.fill(1);
+                keyHeader[PIXI_KEYED_HEADER.SERVED] = request;
+            }
+        }
         if (!this._writeEmitTable(source, this._resolveBuiltinTextureId('_bulletTrail'))) {
             return this._emitRefused('a column it reads is outside the render-queue memory');
         }
@@ -2740,6 +2762,10 @@ class PreRenderWorker extends AbstractWorker {
                 this._staticGen = ((this._staticGen + 1) >>> 0) || 1;
             }
             if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;
+        }
+        // E-177: this queue buffer's keys answer the request served (Pixi draws it keyed once they answer its own).
+        if (keyHeader !== null) {
+            Atomics.store(keyHeader, PIXI_KEYED_HEADER.BUFFER0 + this._queueBuf, keyHeader[PIXI_KEYED_HEADER.SERVED]);
         }
         return writeCount;
     }
@@ -3019,6 +3045,7 @@ class PreRenderWorker extends AbstractWorker {
         v.shadowOffX = this.renderQueueShadowOffX;
         v.shadowOffY = this.renderQueueShadowOffY;
         v.type = this.renderQueueType;
+        v.key = this.renderQueueKey;
         return this._gpuSoAFromViews(v);
     }
 

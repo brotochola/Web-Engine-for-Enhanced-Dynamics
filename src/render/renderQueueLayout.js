@@ -44,6 +44,9 @@ const FIELDS = [
     ['shadowH',     Float32Array,           4,   0],
     ['shadowOffX',  Float32Array,           4,   0],
     ['shadowOffY',  Float32Array,           4,   0],
+    // E-177: the row's statics key: a sprite row's entity index, 0xFFFFFFFF for a row whose statics have no entity
+    // to stay with (written by the emit for every row of the main queue).
+    ['key',         Uint32Array,            4,   0],
     // E-82: pre-render's count of full rewrites of the main queue's sprite statics (scale, anchor,
     // tint, alpha, texture, tile terms, row set and order). Unchanged across frames that only moved
     // poses, so Pixi can keep the statics it uploaded. 0: unknown (a layer queue), always rewrite.
