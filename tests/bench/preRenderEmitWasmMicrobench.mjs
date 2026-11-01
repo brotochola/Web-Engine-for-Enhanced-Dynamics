@@ -25,7 +25,7 @@
  * props; 10 200 of 20 000 grass blades after them; shadow casters on every sprite; Y-sort on.
  *
  * One variant per process, through runKernelVariants.mjs, which rejects a variant whose checksum
- * differs. The checksum covers every queue column of every written row and the animation state
+ * differs; without --variant it times wasm, the shipped kernel (runKernelsVsRev.mjs passes none). The checksum covers every queue column of every written row and the animation state
  * (frame, clock, last texture, bounds) after each of 45 frames.
  *
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/preRenderEmitWasmMicrobench.mjs --variants js,wasm --rounds 5
@@ -459,7 +459,7 @@ function hashBytes(h, bytes) {
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'js');
+  const variant = String(args.variant || 'wasm');
   if (!['js', 'wasm', 'wasmKeyed'].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const kernel = variant !== 'js';
   const k = await setupEmitKernel({ seed: Number(args.seed ?? 0x5e1d), keyed: variant === 'wasmKeyed' });

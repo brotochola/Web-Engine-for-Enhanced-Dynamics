@@ -578,7 +578,12 @@ export const ENGINE_FEATURES = [
     id: 'preRenderWorker',
     name: 'Pre-render emitSpriteQueue',
     module: 'src/workers/preRenderWorker.js',
-    kernel: { script: 'tests/bench/preRenderWorkerMicrobench.mjs', opsKey: 'cases.emit.opsPerSec' },
+    // The emit kernel on Predator's mix (preRenderEmitWasmMicrobench's default variant, the shipped wasm).
+    kernel: {
+      script: 'tests/bench/preRenderEmitWasmMicrobench.mjs',
+      opsKey: 'cases.emit.opsPerSec',
+      touches: ['wasm/preRenderEmit.c', 'src/workers/preRenderEmitClient.js', 'src/wasm/engine.wasm'],
+    },
     scene: null,
     primary: ['preRender_STEP_MS'],
     load: [],
