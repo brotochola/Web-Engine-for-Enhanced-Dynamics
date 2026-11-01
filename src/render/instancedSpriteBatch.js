@@ -35,7 +35,9 @@ import {
 import {
   GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
-import { packInstancedRowsWasm, packPoseRowsWasm, packSplitRowsWasm } from './gpuPackClient.js';
+import {
+  GPU_KEYED_ROW_WORDS, packInstancedRowsWasm, packKeyedRowsWasm, packPoseRowsWasm, packSplitRowsWasm,
+} from './gpuPackClient.js';
 import {
   STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, spriteIndexedWgsl, staticsTextureHeight,
 } from './spriteIndexed.js';
@@ -220,6 +222,10 @@ export class InstancedSpriteBatch {
    * @param {object|null} [opts.statics] - E-162, a split batch: what it keeps indexed frames' statics in, with which it
    *   also commits them (commitIndexed). WebGL: Pixi's RGBA32UI texture helper (`maxSize`, `make`, `upload`:
    *   pixiWorker._gpuRecordTexture); WebGPU: `{ maxStorageBytes }`, the device's storage binding size
+   * @param {object|null} [opts.keyed] - E-177, a split batch with `statics` whose helper scatters (`scatter`) and that
+   *   packs through the kernel: the render-queue memory's keyed regions (renderQueueMemory.js pixiKey*: `tableByte`,
+   *   `stampByte`, `updatesByte`, `keyBase`, `keyRows`), so its frames go keyed: the poses and the slot pairs in draw
+   *   order, the statics by key in the texture, the changed ones scattered there
    */
   constructor({
     capacity,
@@ -241,6 +247,7 @@ export class InstancedSpriteBatch {
     split = false,
     arena = null,
     statics = null,
+    keyed = null,
   }) {
     this.capacity = Math.max(1, capacity | 0);
     this.poseInterp = !!poseInterp;
@@ -290,10 +297,39 @@ export class InstancedSpriteBatch {
     // E-162: the slot stream's CPU copy, the statics rows' (whole texture rows), and the generation and rows the
     // statics texture holds (_ixRows -1: nothing yet).
     const slotFloats = this.indexed ? this.capacity * GPU_INDEXED_SLOT_FLOATS : 0;
-    const staticFloats = this.indexed ? gpuIndexedStaticRows(this.capacity) * GPU_INDEXED_STATIC_FLOATS : 0;
+    // E-177: a keyed batch's statics texture holds a row for every key: the scene's entities, then a slot per row.
+    this.keyed = this.indexed && keyed !== null && (keyed.keyRows | 0) > 0 && this._gpuPack !== null
+      && typeof statics.scatter === 'function';
+    const staticRows = this.indexed
+      ? Math.max(gpuIndexedStaticRows(this.capacity), this.keyed ? keyed.keyRows | 0 : 0)
+      : 0;
+    const staticFloats = staticRows * GPU_INDEXED_STATIC_FLOATS;
     this._slotData = (this.indexed && arena && arena.f32(slotFloats)) || new Float32Array(slotFloats);
-    this._rowStatics = (this.indexed && arena && arena.f32(staticFloats)) || new Float32Array(staticFloats);
+    // A keyed batch's statics never pass through this copy (the texture is made from its zeros and then scattered
+    // into), so it stays out of the arena.
+    this._rowStatics = (this.indexed && !this.keyed && arena && arena.f32(staticFloats)) || new Float32Array(staticFloats);
     this._rowStaticsU32 = new Uint32Array(this._rowStatics.buffer, this._rowStatics.byteOffset, staticFloats);
+    // E-177: the keyed pack's regions (gpuPackClient.packKeyedRowsWasm's `keyed`, the epoch counting its frames), the
+    // slot pairs it writes over the static stream's half of the shared rows, its updates there and their copy.
+    const k = this.keyed ? keyed : null;
+    this._keyedPack = {
+      tableByte: k ? k.tableByte | 0 : 0,
+      stampByte: k ? k.stampByte | 0 : 0,
+      keyBase: k ? k.keyBase | 0 : 0,
+      epoch: 0,
+      updatesByte: k ? k.updatesByte | 0 : 0,
+      updates: 0,
+    };
+    this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
+    const updateWords = k ? this.capacity * GPU_KEYED_ROW_WORDS : 0;
+    this._sharedUpdates = k ? new Uint32Array(this._sharedStatic.buffer, k.updatesByte, updateWords) : new Uint32Array(0);
+    const updateCopy = (k && arena && arena.f32(updateWords)) || new Float32Array(updateWords);
+    this._keyUpdates = new Uint32Array(updateCopy.buffer, updateCopy.byteOffset, updateWords);
+    if (k) {
+      // The table starts as the texture does, all zeros; so do the stamps (a batch made again forgets the last one's).
+      new Uint32Array(this._sharedStatic.buffer, k.tableByte, (k.keyRows | 0) * GPU_KEYED_ROW_WORDS).fill(0);
+      new Uint32Array(this._sharedStatic.buffer, k.stampByte, k.keyRows | 0).fill(0);
+    }
     this._ixGen = 0;
     this._ixRows = -1;
     // The slot pairs' generation and slots the CPU copy holds, its version, and each ring slot's GPU copy's (-1: none).
@@ -560,7 +596,7 @@ export class InstancedSpriteBatch {
   _makeIndexedShader(name) {
     if (this._useWebGpu) return this._makeIndexedGpuShader(name);
     const width = STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW;
-    const height = staticsTextureHeight(this.capacity);
+    const height = staticsTextureHeight(this._rowStatics.length / GPU_INDEXED_STATIC_FLOATS);
     const max = this._statics.maxSize | 0;
     if (width > max || height > max) {
       throw new Error(
@@ -899,6 +935,10 @@ export class InstancedSpriteBatch {
   _uploadSplit(q, opts) {
     const ctx = this._beginUpload(q, opts);
     if (!ctx) return 0;
+    if (this.keyed) {
+      const n = this._uploadKeyed(q, ctx);
+      if (n >= 0) return n;
+    }
     const current = this._staticsCurrent(q, ctx);
     const out = this._gpuPack !== null
       ? packSplitRowsWasm(this._gpuPack, q, ctx, this._sharedPose, current ? null : this._sharedStatic, this.capacity)
@@ -909,6 +949,31 @@ export class InstancedSpriteBatch {
       if (!current) this.copyIn(this.staticData, this._sharedStatic, out * POSE_STATIC_FLOATS);
     }
     return this._finishUpload(out, SPLIT_POSE_FLOATS * 4);
+  }
+
+  /**
+   * E-177. A keyed batch's frame: the poses and the slot pairs (each row's key and depth) in draw order, and the
+   * statics that changed since their key last went up, scattered into the texture by key (the statics helper's
+   * scatter). 24 bytes a sprite and 64 an update, against 60 a sprite for a split frame. Returns -1 for a frame the
+   * kernel does not take (no key column in the memory): the caller packs it split, and the keyed frames after it find
+   * the table and the texture as they were.
+   */
+  _uploadKeyed(q, ctx) {
+    const k = this._keyedPack;
+    k.epoch = (k.epoch + 1) >>> 0 || 1;
+    const out = packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);
+    if (out < 0) return -1;
+    if (out > 0) {
+      this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
+      this.copyIn(this._slotData, this._sharedSlots, out * GPU_INDEXED_SLOT_FLOATS);
+      this._slotsVersion++;
+      const n = k.updates;
+      if (n > 0) {
+        this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
+        this._statics.scatter(this._staticsSource, this._keyUpdates, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight);
+      }
+    }
+    return this._finishUpload(out, SPLIT_POSE_FLOATS * 4, true);
   }
 
   /**
