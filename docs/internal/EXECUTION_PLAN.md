@@ -3097,6 +3097,10 @@ order is predictable (the grid stress scene +18 %). Next: both loops, picked per
 so any spawn or despawn of any type rebuilds the buckets of every type that ticks on an interval.
 **Plan:** step 0, rebuilds a second per type in Predator. If most are of types whose own list did not change, stamp
 the buckets with the type's own list (a per-type version). Owner: Predator's logic.
+*2026-11-01:* built without step 0 (5262c96f): only logic0 edits the type lists, through three helpers and the spawn
+batch's merge, so a per-type version is a few lines; the bucket rebuild is at most 2 to 3 % of a Predator logic worker,
+under Predator's noise, so the owner is minimalTickIntervalScene with `?churn=64` (e7363cf7): 160 000 props on a
+tickInterval of 4 while another type's 64 props come and go every frame.
 
 ## Wave 11 candidates (2026-11-01)
 
