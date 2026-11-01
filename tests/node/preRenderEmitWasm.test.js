@@ -43,6 +43,7 @@ import {
   EMIT_WARN_PARTICLE_START,
   EMIT_WARN_LF_START,
   EMIT_Y_SORT,
+  bumpEmitDecorationEpoch,
   writeEmitBulletColumns,
   writeEmitColumns,
   writeEmitGlowColumns,
@@ -120,7 +121,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -145,6 +146,8 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     customLayers: customLayer ? [{ layerId: CL, maxItems: CLMAX, queueBytes: computeBufferSize(CLMAX) }] : [],
     // E-177: with `keyed`, the keyed frames' resync header (and the main queue's key column and flags bound).
     pixiKeyed: keyed,
+    // E-188: with `keyedDecorations` too, the decorations' records (their rows keyed by pool slot past the entities).
+    keyedDecorations: keyed && keyedDecorations ? DECOS : 0,
   }, null, null, false, collect);
   const e = m.layout.emit;
   // With `particles`, the particle memory in its region of this one, as the scene places it.
@@ -1305,4 +1308,58 @@ test('emitSpriteQueue through the kernel takes the persist frames the JS takes a
 
 test('without ShadowCaster the kernel leaves the shadow terms the full emit wrote (E-117)', async (t) => {
   await runWiredPersist(t, [{ ySort: true, seed: 0xa13 }], false);
+});
+
+// E-188: with the keyed decorations' records laid out, a decoration row's key is its pool slot past the entities, marked
+// when the statics the row got differ from the ones its slot last emitted (a texture, an alpha, a tint, the zoom's fade),
+// or its record is from an earlier epoch (pre-render moves it when Pixi asks for every statics again). The first
+// emit of a slot marks it; its rows later in the same frame do not need to.
+test('E-188: the emit keys a decoration by its pool slot, marked when its statics moved', async () => {
+  const k = await setup({ ySort: true, keyed: true, keyedDecorations: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  assert.ok(b.decoKeyedByte >= 0, 'the records are laid out');
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  SpriteRenderer.keyedDirty.fill(1);
+  const frame = () => {
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+    // Each decoration slot drawn this frame: whether its first row was marked; and every row's key.
+    const marked = new Map();
+    for (let r = 0; r < n; r++) {
+      const raw = w.renderQueueKey[r];
+      const key = (raw & ~KEY_CHANGED) >>> 0;
+      if (w._renderableType[r] === 0) {
+        assert.equal(key, w._renderableIndex[r], `row ${r}: a sprite keeps its entity's key`);
+        continue;
+      }
+      if (w._renderableType[r] !== 2) continue;
+      const d = w._renderableIndex[r];
+      assert.equal(key, N + d, `row ${r}: decoration ${d}'s key is its slot past the entities`);
+      if (!marked.has(d)) marked.set(d, raw >= KEY_CHANGED);
+      else assert.ok(raw < KEY_CHANGED, `row ${r}: decoration ${d}'s later row is not marked again`);
+    }
+    return marked;
+  };
+  const all = (m) => [...m.values()].every(Boolean);
+  const none = (m) => [...m.values()].every((x) => !x);
+  let m = frame();
+  assert.ok(m.size > 50, `decorations drawn (${m.size})`);
+  assert.ok(all(m), 'the first emit marks every decoration');
+  assert.ok(none(frame()), 'statics that held mark none');
+  const drawn = [...m.keys()];
+  const [d0, d1, d2] = drawn;
+  DecorationComponent.textureId[d0] = (DecorationComponent.textureId[d0] + 1) % 12;
+  DecorationComponent.alpha[d1] *= 0.5;
+  DecorationComponent.tint[d2] = (DecorationComponent.tint[d2] ^ 0x00ff00) >>> 0;
+  m = frame();
+  assert.deepEqual(drawn.filter((d) => m.get(d)), [d0, d1, d2], 'a texture, an alpha and a tint mark their slot alone');
+  assert.ok(none(frame()));
+  w._decorationZoomAlpha = 0.5;
+  assert.ok(all(frame()), 'the zoom\'s fade moves every decoration\'s alpha');
+  assert.ok(none(frame()));
+  bumpEmitDecorationEpoch(b);
+  assert.ok(all(frame()), 'a new epoch marks every decoration');
+  assert.ok(none(frame()));
 });

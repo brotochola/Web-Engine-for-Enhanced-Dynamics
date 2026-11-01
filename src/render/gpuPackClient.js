@@ -33,7 +33,7 @@ export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', engineWasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
-    'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed',
+    'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
   ]);
   return {
     buffer: memory.buffer,
@@ -49,6 +49,8 @@ export async function bindGpuPack(memory, layout) {
     spritesKeyed: k.pack_sprites_keyed,
     // E-191: keyed caster rows (a pose, a key, the shadow terms) of a list of queue rows.
     castersKeyed: k.pack_casters_keyed,
+    // E-192: the same rows for the casters it finds in the queue itself.
+    castersKeyedScan: k.pack_casters_keyed_scan,
     // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
@@ -319,6 +321,26 @@ export function packKeyedCastersWasm(b, q, indices, count, dst, keyBase, capacit
     indexByte = b.indexByte;
   }
   const out = b.castersKeyed(table, key.byteOffset, indexByte, n, n, dst.byteOffset, keyBase >>> 0);
+  return out === 0xffffffff ? -1 : out;
+}
+
+/**
+ * E-192: packKeyedCastersWasm's rows for the casters of the queue's first `count` rows (shadowH above 0, not a glow: the
+ * test of compactShadowCasterIndices, in the queue's order), at most `capacity`, without a list of them. -1 when the call
+ * is not one the kernel takes or a caster has no key below `keyBase`: the caller lists the casters and packs the full
+ * rows.
+ * @returns {number} the rows written, or -1
+ */
+export function packKeyedCastersScanWasm(b, q, count, dst, keyBase, capacity) {
+  if (!b || !b.castersKeyedScan || !q || !dst) return -1;
+  const key = q.key;
+  if (!key || key.buffer !== b.buffer || dst.buffer !== b.buffer || !q.shadowH || q.shadowH.buffer !== b.buffer) return -1;
+  const type = q.type;
+  if (type && type.buffer !== b.buffer) return -1;
+  const table = tableFor(b, q);
+  if (table < 0) return -1;
+  const out = b.castersKeyedScan(table, key.byteOffset, type ? type.byteOffset : 0, count >>> 0, capacity >>> 0,
+    dst.byteOffset, keyBase >>> 0);
   return out === 0xffffffff ? -1 : out;
 }
 

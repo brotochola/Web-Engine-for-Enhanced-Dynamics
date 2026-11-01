@@ -33,7 +33,8 @@ import {
   pickInstancedSpriteFragmentGlsl,
 } from './webgl/instancedSpriteGlsl.js';
 import {
-  GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_POSE_FLOATS, GPU_STATIC_FLOATS, gpuIndexedStaticRows,
+  GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, GPU_POSE_FLOATS,
+  GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
 import {
   GPU_KEYED_ROW_WORDS, packInstancedRowsWasm, packKeyedRowsWasm, packPoseRowsWasm, packSplitRowsWasm,
@@ -41,7 +42,7 @@ import {
 import {
   STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, spriteIndexedWgsl, staticsTextureHeight,
 } from './spriteIndexed.js';
-import { PIXI_KEYED_HEADER } from '../util/wasmMemoryMap.js';
+import { PIXI_KEYED_HEADER, PIXI_KEYED_HEADER_WORDS } from '../util/wasmMemoryMap.js';
 
 /** Compact instance floats: xy, scale, anchor, rotCS, depth, packedARGB, texId, tileInv, tileOff.
  *  tileInv sign: + WORLD (1/period), - LOCAL (worldVis/period), 0 stretch. tileOff is UV 0..1.
@@ -337,7 +338,7 @@ export class InstancedSpriteBatch {
     this._sharedUpdates = k ? new Uint32Array(buf, k.updatesByte, updateWords) : new Uint32Array(0);
     const updateCopy = (k && arena && arena.f32(updateWords)) || new Float32Array(updateWords);
     this._keyUpdates = new Uint32Array(updateCopy.buffer, updateCopy.byteOffset, updateWords);
-    this._keyHeader = k ? new Uint32Array(buf, k.headerByte, 4) : new Uint32Array(4);
+    this._keyHeader = k ? new Uint32Array(buf, k.headerByte, PIXI_KEYED_HEADER_WORDS) : new Uint32Array(PIXI_KEYED_HEADER_WORDS);
     // The queue frame and buffer of the next upload (the caller's), the last frame the texture took keyed (-1: none since
     // it last missed one), and the resync request this batch made (0: none outstanding).
     this.keyedFrame = 0;
@@ -359,6 +360,13 @@ export class InstancedSpriteBatch {
     this.keyedShadows = false;
     this.keyedShadowReady = false;
     this.keyedShadowGeometry = null;
+    // E-191 step 2: once the caller draws keyed caster rows (enableKeyedCasters), each keyed upload stores its queue
+    // frame in the header's LIVE word, and pre-render writes such rows while it is recent. The programs that draw them
+    // (makeKeyedCasterShader: the sun's rows, then the stamps' with their light) on an entity batch; on a caster batch,
+    // its geometries over each ring slot for those rows (commitKeyedCasterRows: the sun's, then the stamps').
+    this.keyedCasters = false;
+    this._keyedCasterShaders = [null, null];
+    this._keyedCasterGeometries = null;
     this._ixGen = 0;
     this._ixRows = -1;
     // The slot pairs' generation and slots the CPU copy holds, its version, and each ring slot's GPU copy's (-1: none).
@@ -1062,6 +1070,8 @@ export class InstancedSpriteBatch {
       this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
       this._statics.scatter(this._staticsSource, this._keyUpdates, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight);
     }
+    // E-191: the texture holds this queue frame's statics now; pre-render writes keyed caster rows while it is recent.
+    if (this.keyedCasters) Atomics.store(H, PIXI_KEYED_HEADER.LIVE, frame >>> 0);
     if (out > 0) {
       this.copyIn(this.data, this._sharedPose, out * SPLIT_POSE_FLOATS);
       this.copyIn(this._slotData, this._sharedSlots, out * GPU_INDEXED_SLOT_FLOATS);
@@ -1135,6 +1145,89 @@ export class InstancedSpriteBatch {
       });
     }
     return this._keyedSunShader;
+  }
+
+  /**
+   * E-191 step 2: the program of a shadow pass over keyed caster rows (pre-render's sun rows, GPU_KEYED_CASTER_FLOATS;
+   * with `light`, its stamp rows, GPU_KEYED_STAMP_FLOATS): instancedSpriteShadow.vert.glsl reading the statics by key
+   * from this batch's statics texture, with no rotation (a shadow's angle is the sun's or the light's) and, for a stamp,
+   * the row's own light; the fragment program and the resources of `sun`, as makeKeyedSunShader's. Null where the keyed
+   * frames are off, on WebGPU, or without the shadow vertex source.
+   * @param {Shader|null} sun
+   * @param {boolean} light
+   * @returns {Shader|null}
+   */
+  makeKeyedCasterShader(sun, light) {
+    if (!this.keyed || !sun || this._useWebGpu) return null;
+    const shaders = this._engineShaders;
+    if (!shaders?.shadowVert) return null;
+    const i = light ? 1 : 0;
+    if (this._keyedCasterShaders[i] === null) {
+      const glProgram = instancedSpriteGlProgram(
+        GlProgram,
+        spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light }),
+        pickInstancedSpriteFragmentGlsl(true, false, shaders),
+        `${this._label}-keyed-${light ? 'stamp' : 'sun'}-rows`
+      );
+      const r = sun.resources;
+      this._keyedCasterShaders[i] = new Shader({
+        glProgram,
+        resources: {
+          uTexture: r.uTexture,
+          uSampler: r.uSampler,
+          uTexLut: r.uTexLut,
+          uniforms: r.uniforms,
+          uStatics: this._staticsSource,
+        },
+      });
+    }
+    return this._keyedCasterShaders[i];
+  }
+
+  /**
+   * E-191 step 2: `count` keyed caster rows of `floats` floats (GPU_KEYED_CASTER_FLOATS, or GPU_KEYED_STAMP_FLOATS with
+   * the light) from `src` into this batch's next ring slot, and their geometry (makeKeyedCasterShader's attributes over
+   * them), or null for none or more than the batch holds. The batch's own mesh and geometry stay as they were.
+   * @returns {Geometry|null}
+   */
+  commitKeyedCasterRows(src, count, floats) {
+    const f = floats | 0;
+    const n = count | 0;
+    const keep = n > this.capacity ? this.capacity : n;
+    if (keep <= 0 || !src || keep * f > this.data.length) return null;
+    this.copyIn(this.data, src, keep * f);
+    const ring = this._ring;
+    this._ring = ring ^ 1;
+    this._buffers[ring].update(keep * f * 4);
+    const geometry = this.keyedCasterGeometry(f > GPU_KEYED_CASTER_FLOATS, ring);
+    geometry.instanceCount = keep;
+    return geometry;
+  }
+
+  /** E-191 step 2: a ring slot's geometry for keyed caster rows (the stamps' with `light`), made on first use. */
+  keyedCasterGeometry(light, ring = 0) {
+    if (this._keyedCasterGeometries === null) {
+      this._keyedCasterGeometries = this._buffers.map((buf) => [
+        this._keyedCasterGeometryFor(buf, GPU_KEYED_CASTER_FLOATS, false),
+        this._keyedCasterGeometryFor(buf, GPU_KEYED_STAMP_FLOATS, true),
+      ]);
+    }
+    return this._keyedCasterGeometries[ring & 1][light ? 1 : 0];
+  }
+
+  /** E-191 step 2: a ring slot's keyed caster rows of `floats` floats: x and y, the key's slot pair, the shadow terms. */
+  _keyedCasterGeometryFor(buf, floats, light) {
+    const ds = floats * 4;
+    const attributes = {
+      aQuad: { buffer: this._quad, format: 'float32x2' },
+      aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
+      aInstSlot: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
+      aInstShadow: { buffer: buf, format: 'float32x3', stride: ds, offset: 16, instance: true },
+    };
+    if (light) attributes.aInstLight = { buffer: buf, format: 'float32x4', stride: ds, offset: GPU_KEYED_CASTER_FLOATS * 4, instance: true };
+    const geometry = new Geometry({ attributes, indexBuffer: this._index });
+    geometry.instanceCount = 0;
+    return geometry;
   }
 
   /**

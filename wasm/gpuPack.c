@@ -417,6 +417,38 @@ uint32_t pack_casters_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, 
   return n;
 }
 
+/* E-192: pack_casters_keyed over the casters it finds itself: the queue rows whose shadowH is above 0 and whose type is
+   not a glow's (compactShadowCasterIndices' test), in the queue's order, until cap rows; the same rows the compaction
+   and pack_casters_keyed write. 0xffffffff at a caster with no key below keyBase. typeByte 0: no type column. */
+__attribute__((export_name("pack_casters_keyed_scan")))
+uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t typeByte, uint32_t count, uint32_t cap,
+                                 uint32_t dst, uint32_t keyBase) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *key = (const uint32_t *)(uintptr_t)keyByte;
+  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
+  const float *X = F32(t, COL_X), *Y = F32(t, COL_Y);
+  const float *SH = F32(t, COL_SHADOW_H), *SOX = F32(t, COL_SHADOW_OFF_X), *SOY = F32(t, COL_SHADOW_OFF_Y);
+  float *d = (float *)(uintptr_t)dst;
+  uint32_t n = 0;
+  for (uint32_t i = 0; i < count && n < cap; i++) {
+    if (type && type[i] == 3) continue;
+    const float sh = SH[i];
+    if (!(sh > 0.0f)) continue;
+    const uint32_t s = key[i] & ~KEY_CHANGED;
+    if (s >= keyBase) return 0xffffffffu;
+    float *r = d + n * KEYED_CASTER_FLOATS;
+    r[0] = X[i];
+    r[1] = Y[i];
+    r[2] = (float)s;
+    r[3] = 0.0f;
+    r[4] = sh;
+    r[5] = SOX[i];
+    r[6] = SOY[i];
+    n++;
+  }
+  return n;
+}
+
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags
    (screen 1, a turned camera 2, pixel snap 4, a type filter 8, an include type 16), the camera's x and y, the screen
    scale, the turn's cos and sin, its focus x and y, half the canvas in pixels, the snap camera's x and y and zoom,

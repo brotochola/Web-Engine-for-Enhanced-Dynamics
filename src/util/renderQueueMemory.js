@@ -9,7 +9,7 @@
 // W10: with a painter spec, the painter sort's state of the worker that sorts (pre-render's, Pixi's, or both).
 // W27: with emit.adobe, the AdobeAnimComponent block, the collector's pose stash and the Adobe assets' tables.
 
-import { painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
+import { EMIT_DECO_KEYED_BYTES, painterStateLayout, renderQueueMemoryRegions, SWAY_LIST_CAP } from './wasmMemoryMap.js';
 import { GPU_PACK_COLUMNS } from '../render/gpuPackClient.js';
 import { gpuIndexedStaticRows } from '../render/gpuQueueLayout.js';
 
@@ -98,7 +98,8 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         // E-177: the entity batch's keyed frames (0 rows: none): the statics texture's rows (the keys past keyBase, the
         // scene's entities, are the slots of rows without one), its updates (a row each) and the resync header.
         pixiKeyRows: keyed ? pixiExtra.keyRows : 0,
-        pixiKeyBase: keyed ? emit.entities | 0 : 0,
+        // E-188: past the entities, the keyed decorations' slots.
+        pixiKeyBase: keyed ? (emit.entities | 0) + (emit.keyedDecorations | 0) : 0,
         pixiKeyUpdatesByte: keyed ? r.pixiKeyUpdates.byte : -1,
         pixiKeyHeaderByte: keyed ? r.emitKeyHeader.byte : -1,
         // E-191: the keyed frames' shadow stream, -1 without keyed frames.
@@ -122,7 +123,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
 function pixiExtraSpec(emit, maxItems) {
   if (!emit) return null;
   const tableSlots = GPU_PACK_TABLE_SLOTS + 2 * ((emit.customLayers && emit.customLayers.length) | 0);
-  const keyRows = emit.pixiKeyed ? gpuIndexedStaticRows((emit.entities | 0) + (maxItems | 0)) : 0;
+  const keyRows = emit.pixiKeyed ? gpuIndexedStaticRows((emit.entities | 0) + (emit.keyedDecorations | 0) + (maxItems | 0)) : 0;
   return { glowRows: emit.pixiGlowRows | 0, tableSlots, tableBytes: tableSlots * GPU_PACK_COLUMNS.length * 4, keyRows };
 }
 
@@ -183,6 +184,9 @@ function emitLayout(r, entities, rows, customLayers) {
     persistAnimByte: r.emitPersistAnim.byte,
     // E-177: the keyed frames' resync header, -1 without them.
     keyHeaderByte: r.emitKeyHeader.bytes > 0 ? r.emitKeyHeader.byte : -1,
+    // E-188: the keyed decorations' records and how many (-1 and 0: decoration rows keyless).
+    decoKeyedByte: r.emitDecoKeyed.bytes > 0 ? r.emitDecoKeyed.byte : -1,
+    keyedDecorations: r.emitDecoKeyed.bytes / EMIT_DECO_KEYED_BYTES,
     // W27: the Adobe emit's regions, -1 without them (no AdobeAnimComponent).
     adobeAnimByte: r.adobeAnim ? block(r.adobeAnim) : -1,
     stashXByte: r.emitStashX ? r.emitStashX.byte : -1,

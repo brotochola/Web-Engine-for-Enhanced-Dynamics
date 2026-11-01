@@ -142,6 +142,8 @@ export function stampLightRangeWasm(b, spec) {
   }
   t[STAMP] = stamp.byteOffset;
   t[STAMP_FLOATS] = spec.stampFloats | 0;
+  // E-191 step 2: a keyed stamp row's light follows its caster row's seven floats; a full row's, its 18.
+  t[LIGHT_FLOAT] = spec.lightFloat > 0 ? spec.lightFloat | 0 : GPU_CASTER_LIGHT_FLOAT;
   t[STAMP_CAP] = spec.stampCap | 0;
   t[STAMP_BASE] = base;
   t[STAMP_LIGHT_IDX] = lightIdx ? lightIdx.byteOffset : 0;

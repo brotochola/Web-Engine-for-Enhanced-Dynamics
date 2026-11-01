@@ -80,6 +80,9 @@ import {
   GPU_FLAG_SORTED,
   GPU_FLAG_SPLIT,
   GPU_FLAG_INDEXED,
+  GPU_FLAG_KEYED_CASTERS,
+  GPU_KEYED_CASTER_FLOATS,
+  GPU_KEYED_STAMP_FLOATS,
   GPU_HDR_INDEXED_ROWS,
   GPU_HDR_SLOTS_GEN,
   GPU_INDEXED_SLOT_FLOATS,
@@ -541,6 +544,12 @@ class PixiRenderer extends AbstractWorker {
     // it; null where it cannot be), and whether that was tried.
     this._keyedSunMesh = null;
     this._keyedSunTried = false;
+    // E-191 step 2: the shadow passes over pre-render's keyed caster rows (the sun's, the stamps'), made with the keyed
+    // sun pass; whether that was tried; and whether a frame of such rows was refused for want of them (said once).
+    this._keyedSunRowsMesh = null;
+    this._keyedStampRowsMesh = null;
+    this._keyedCastersTried = false;
+    this._keyedRowsRefusedWarned = false;
     // The statics scatter's GL objects (_scatterStaticsGl), made on its first call.
     this._staticsScatterGl = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
@@ -4768,6 +4777,44 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return this._keyedSunMesh;
   }
 
+  /**
+   * E-191 step 2: the shadow passes over pre-render's keyed caster rows, made once: the sun rows' and the stamp rows'
+   * programs (the entity batch's statics by key) on the caster batch's geometries for such rows. Once both are made the
+   * entity batch's keyed uploads tell pre-render (its header's LIVE word), which then writes such rows.
+   */
+  _ensureKeyedCasters(sunShader) {
+    if (this._keyedCastersTried) return;
+    this._keyedCastersTried = true;
+    const b = this.entitiesBatch;
+    const casters = this.gpuCasterBatch;
+    if (!b || !b.keyed || this._useWebGpu || !casters || !casters.mesh) return;
+    const sun = b.makeKeyedCasterShader(sunShader, false);
+    const stamp = b.makeKeyedCasterShader(sunShader, true);
+    if (sun === null || stamp === null) return;
+    const state = casters.mesh.state;
+    this._keyedSunRowsMesh = new PIXI.Mesh({ geometry: casters.keyedCasterGeometry(false), shader: sun, state, label: 'keyed-sun-rows' });
+    this._keyedStampRowsMesh = new PIXI.Mesh({ geometry: casters.keyedCasterGeometry(true), shader: stamp, state, label: 'keyed-stamp-rows' });
+    b.keyedCasters = true;
+  }
+
+  /**
+   * E-191 step 2: `mesh` over this frame's `count` keyed caster rows of `floats` floats from `src` (committed to the caster
+   * batch), or null: none, or no such pass (a frame of keyed rows Pixi cannot draw is left out, and that said once).
+   */
+  _keyedRowsMesh(mesh, src, count, floats) {
+    if (mesh === null) {
+      if (!this._keyedRowsRefusedWarned) {
+        this._keyedRowsRefusedWarned = true;
+        console.error('PIXI WORKER: keyed caster rows without their shadow passes: those shadows are not drawn');
+      }
+      return null;
+    }
+    const geometry = this.gpuCasterBatch.commitKeyedCasterRows(src, count, floats);
+    if (geometry === null) return null;
+    mesh.geometry = geometry;
+    return mesh;
+  }
+
   _drawGpuCasterShadows() {
     this._gpuSunDrew = false;
     this._gpuPassesThisFrame = 0;
@@ -4781,10 +4828,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const u = group && group.uniforms;
     if (!u || !u.uCam || !u.uSun || !u.uLight) return;
 
+    this._ensureKeyedCasters(shader);
     const gpu = this._gpuQueueRead;
     const sunN = gpu && gpu.header ? (gpu.header[GPU_HDR_SUN] | 0) : 0;
     const stampN = gpu && gpu.header ? (gpu.header[GPU_HDR_STAMP] | 0) : 0;
     const cookieN = gpu && gpu.header ? (gpu.header[GPU_HDR_COOKIE] | 0) : 0;
+    // E-191 step 2: pre-render's sun and stamp rows are keyed caster rows (a pose, a key, the shadow terms; a stamp's
+    // light) when it found Pixi's statics recent.
+    const keyedRows = gpu && gpu.header ? ((gpu.header[GPU_HDR_FLAGS] | 0) & GPU_FLAG_KEYED_CASTERS) !== 0 : false;
     this._gpuCastersThisFrame = sunN;
     this._gpuShadowLightsThisFrame = cookieN;
 
@@ -4823,6 +4874,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const keyedSun = this._keyedSunFor(shader);
       if (keyedSun !== null) {
         this._drawGpuCasterPass(keyedSun, group, true);
+      } else if (keyedRows) {
+        const rows = this._keyedRowsMesh(this._keyedSunRowsMesh, gpu.sun, sunN, GPU_KEYED_CASTER_FLOATS);
+        if (rows !== null) this._drawGpuCasterPass(rows, group, true);
       } else {
         this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
         this._drawGpuCasterPass(mesh, group, true);
@@ -4853,8 +4907,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       u.uLight[1] = 0;
       u.uLight[2] = 0;
       u.uLight[3] = 0;
-      this._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
-      this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
+      if (keyedRows) {
+        const rows = this._keyedRowsMesh(this._keyedStampRowsMesh, gpu.stamp, stampN, GPU_KEYED_STAMP_FLOATS);
+        if (rows !== null) this._drawGpuCasterPass(rows, group, !this._gpuSunDrew);
+      } else {
+        this._commitPackedBatch(batch, gpu.stamp, stampN, GPU_CASTER_FLOATS);
+        this._drawGpuCasterPass(mesh, group, !this._gpuSunDrew);
+      }
     }
 
     if (!this._gpuSunDrew) {

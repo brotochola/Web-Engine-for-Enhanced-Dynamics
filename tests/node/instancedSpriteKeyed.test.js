@@ -9,7 +9,9 @@ import {
   BATCH_SPACE, INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch, KEYED_LOSS_FRAMES, KEYED_PAUSE_FRAMES, POSE_STATIC_FLOATS,
   SPLIT_POSE_FLOATS,
 } from '../../src/render/instancedSpriteBatch.js';
-import { GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, gpuIndexedStaticRows } from '../../src/render/gpuQueueLayout.js';
+import {
+  GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, gpuIndexedStaticRows,
+} from '../../src/render/gpuQueueLayout.js';
 import { GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack } from '../../src/render/gpuPackClient.js';
 import { STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW } from '../../src/render/spriteIndexed.js';
 import { PIXI_KEYED_HEADER as H } from '../../src/util/wasmMemoryMap.js';
@@ -434,4 +436,49 @@ test('keyed shadows: a keyed frame carries each slot\'s shadow terms and the sun
   k.upload(s.q, sortedOpts(s));
   s.q.key = key;
   assert.equal(k.keyedShadowReady, false, 'a frame drawn split leaves none ready');
+});
+
+// E-191 step 2: once its caller draws keyed caster rows (keyedCasters), each keyed frame stores its queue frame in the
+// header's LIVE word, and a frame drawn split stores nothing; the programs for those rows read the statics texture, and a
+// batch commits such rows through its ring with their own attributes (a stamp row's light too).
+test('keyed casters: a keyed frame stores its queue frame in LIVE, and the caster rows go up with their own attributes', async () => {
+  const s = await setup(192);
+  const { keyed: k, header: h } = s;
+  assignKeys(s);
+  emit(s);
+  draw(s, 'first frame', sortedOpts(s));
+  emit(s);
+  assert.equal(draw(s, 'answered', sortedOpts(s)), N);
+  assert.equal(Atomics.load(h, H.LIVE), 0, 'no word before the caller draws keyed caster rows');
+  k.keyedCasters = true;
+  emit(s);
+  draw(s, 'keyed', sortedOpts(s));
+  assert.equal(Atomics.load(h, H.LIVE), s.frame, 'the queue frame the texture now holds');
+  emit(s);
+  const key = s.q.key;
+  s.q.key = null;
+  k.keyedFrame = s.frame;
+  k.upload(s.q, sortedOpts(s));
+  s.q.key = key;
+  assert.equal(Atomics.load(h, H.LIVE), s.frame - 1, 'a frame drawn split stores nothing');
+
+  assert.equal(s.split.makeKeyedCasterShader(k.shader, false), null, 'a batch that is not keyed has no such program');
+  const sun = k.makeKeyedCasterShader(k.shader, false);
+  const stamp = k.makeKeyedCasterShader(k.shader, true);
+  assert.ok(sun && stamp && sun !== stamp);
+  assert.ok(sun.resources.uStatics === k._staticsSource && stamp.resources.uniforms === k.shader.resources.uniforms);
+  assert.equal(k.makeKeyedCasterShader(k.shader, true), stamp, 'made once');
+
+  const rows = new Float32Array(5 * GPU_KEYED_STAMP_FLOATS).map((_, i) => i + 0.25);
+  const g = s.split.commitKeyedCasterRows(rows, 5, GPU_KEYED_STAMP_FLOATS);
+  assert.equal(g.instanceCount, 5);
+  assert.deepEqual(Object.keys(g.attributes).sort(), ['aInstLight', 'aInstShadow', 'aInstSlot', 'aInstXY', 'aQuad']);
+  assert.deepEqual([g.attributes.aInstSlot.offset, g.attributes.aInstShadow.offset, g.attributes.aInstLight.offset], [8, 16, 28]);
+  assert.equal(g.attributes.aInstXY.stride, GPU_KEYED_STAMP_FLOATS * 4);
+  assert.deepEqual(Array.from(s.split.data.subarray(0, rows.length)), Array.from(rows), 'the rows as given');
+  const g2 = s.split.commitKeyedCasterRows(rows, 3, GPU_KEYED_CASTER_FLOATS);
+  assert.deepEqual(Object.keys(g2.attributes).sort(), ['aInstShadow', 'aInstSlot', 'aInstXY', 'aQuad'], 'a sun row has no light');
+  assert.equal(g2.attributes.aInstXY.stride, GPU_KEYED_CASTER_FLOATS * 4);
+  assert.notEqual(g2.attributes.aInstXY.buffer, g.attributes.aInstXY.buffer, 'the other ring slot');
+  assert.equal(s.split.commitKeyedCasterRows(rows, 0, GPU_KEYED_CASTER_FLOATS), null, 'none');
 });

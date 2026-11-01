@@ -296,3 +296,33 @@ test("E-177: with emit.pixiKeyed, the keyed frames' resync header and Pixi's upd
     if (k > 0) assert.ok(at >= spans[k - 1][1] + spans[k - 1][2], `${name} overlaps ${spans[k - 1][0]}`);
   }
 });
+
+// E-188: with emit.keyedDecorations the decorations' slots follow the entities in the keyed texture (the slots of rows
+// without a key after them), and their records are a region of their own.
+test('E-188: keyed decorations take the keys past the entities and a record each', () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const entities = 3000;
+  const decorations = 2000;
+  const spec = (keyedDecorations) => ({
+    entities, spriteBytes: SpriteRenderer.getBufferSize(entities), casterBytes: 0,
+    decorationBytes: DecorationComponent.getBufferSize(decorations), pixiKeyed: true, keyedDecorations,
+  });
+  const plain = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(0), null, null, true).layout;
+  assert.equal(plain.pixiKeyBase, entities);
+  assert.equal(plain.emit.decoKeyedByte, -1);
+  assert.equal(plain.emit.keyedDecorations, 0);
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, spec(decorations), null, null, true);
+  const L = m.layout;
+  assert.equal(L.pixiKeyBase, entities + decorations, 'the decorations\' slots past the entities');
+  assert.equal(L.pixiKeyRows, Math.ceil((entities + decorations + MAX) / 1024) * 1024);
+  assert.equal(L.emit.keyedDecorations, decorations);
+  const records = L.emit.decoKeyedByte;
+  assert.ok(records > 0 && records % 64 === 0, 'the records start on a line');
+  assert.ok(records + decorations * 32 <= m.buffer.byteLength);
+  assert.ok(new Uint32Array(m.buffer, records, decorations * 8).every((x) => x === 0), 'stale from the start (epoch 0)');
+  for (const [name, at] of [['header', L.emit.keyHeaderByte], ['updates', L.pixiKeyUpdatesByte]]) {
+    assert.ok(at + 64 <= records || at >= records + decorations * 32, `the records do not overlap the ${name}`);
+  }
+});

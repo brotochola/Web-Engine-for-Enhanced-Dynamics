@@ -3299,6 +3299,12 @@ slots that hold an occupant for many frames.
 **Plan:** keys past the entities by type and pool slot (particle, decoration, LiquidFun ranges), and a change mark for
 each type (flags of its own, or the emit comparing the few statics a type has), so those rows send their poses only.
 Owner: liquidFunQueryStressScene's renderer; pre-render pays the marks.
+**Decorations kept 2026-11-01 (3c31583a, R-0810): renderer -38.2 % zoomed in.** A keyed scene keys its decorations by
+pool slot past the entities (keyedDecorationsFit: the texture holds them too); the emit marks one changed when the
+statics its row got differ from the ones its slot last emitted (a 32-byte record a slot) or the record is from an earlier
+epoch (a resync). Predator crowd 1.5 zoom 0.6, 4 pairs: renderer 4.075 -> 2.604 ms (-38.2 %, 0/4), pre-render -8.3 %:
+the keyed frames and E-191's keyed caster rows no longer pause there. Particles (their alpha fades every frame) and
+LiquidFun stay keyless: liquidFunQueryStressScene is the next owner if its rows come up.
 
 ### E-189 Keyed frames: an animated sprite whose frame moved sends its texture alone
 
@@ -3363,6 +3369,30 @@ the keyed stamp rows, both with the shadow program reading the statics by key (a
 whose light is an attribute for the stamps). A texture behind by a frame or two (a resync, a pause starting) draws
 shadows from the statics it holds; an empty one (the first frames) draws none. Without the word (a pause, a scene not
 keyed) pre-render writes the 22-float rows as now.
+**Step 2 kept 2026-11-01 (de71ce66, R-0808): keyed caster rows, pre-render -16.8 %.** Built as designed: Pixi's entity
+batch stores each keyed upload's queue frame in the LIVE word once Pixi has the keyed caster passes; pre-render, within
+two frames of it, packs 7-float keyed sun rows (pack_casters_keyed) and 11-float stamp rows, flagged
+GPU_FLAG_KEYED_CASTERS; Pixi draws the sun from the instances (step 1) or those rows, and the stamps from theirs, with
+the shadow program reading the statics by key (spriteIndexedVertex's casterRows form). Its first build never ran: the
+GPU pack's view of the main queue dropped the key column (a probe: 22 860 of 22 860 casters keyless). Predator
+?crowd=1.5, 4 pairs: pre-render 6.226 -> 5.207 ms (-16.8 %, 0/4), renderer +1.2 % (-4.4 % against the others); traces:
+pack_casters_scatter's 48.6 ms/s become pack_casters_keyed's 13.0, the stamp 135 -> 108 ms/s. Zoomed in, the keyed
+frames pause (E-188) and the full rows return. E-191 is done; what is left of the sun pack is E-192.
+
+### E-192 The keyed sun pack scans the queue itself
+
+**Premise:** after E-191 step 2, pre-render's keyed sun rows cost compactShadowCasterIndices (JavaScript, 8.6 ms/s at
+Predator crowd 1.5), the copy of its index list into the memory (packKeyedCastersWasm, 2.4) and pack_casters_keyed
+(13.0), which reads the queue rows that list names (R-0808's trace).
+**Plan:** one kernel scans the queue's shadow and type columns and writes a keyed row for each caster as it finds it
+(the compaction's test, then pack_casters_keyed's row), returning the count, or -1 at the first caster without an entity
+key; the full rows then take the compaction and pack_casters_scatter as now. Kernel against compaction plus
+pack_casters_keyed on the Predator fixture, then Predator ?crowd=1.5's pre-render. About 11 ms/s (3 % of pre-render
+there) at most.
+**Kept 2026-11-01 (acac4bb7, R-0809): pre-render -6.5 %.** pack_casters_keyed_scan writes the keyed rows as it finds the
+casters; the compaction and the full rows stay the fallback. Kernel (gpuPackCastersKeyedMicrobench) in Chrome 0.140 ->
+0.070 ms a frame (-53 %); Predator ?crowd=1.5, 4 pairs: pre-render 5.066 -> 4.718 ms (-6.5 %, 0/4), more than the
+kernel's saving: in the worker the JavaScript compaction cost twice the kernel's.
 
 ---
 

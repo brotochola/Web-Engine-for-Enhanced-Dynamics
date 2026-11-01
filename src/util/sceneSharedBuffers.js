@@ -46,7 +46,9 @@ import { Layer } from '../core/layer.js';
 import { TileMap } from '../core/tileMap.js';
 import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_BYTES } from '../render/renderQueueLayout.js';
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
-import { SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, keyedSpritesEnabled, ySortEnabled } from '../render/rendererBackend.js';
+import {
+  SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, keyedDecorationsFit, keyedSpritesEnabled, ySortEnabled,
+} from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
 import { NavGrid } from '../core/navGrid.js';
 import { Grid } from '../core/grid.js';
@@ -795,6 +797,8 @@ function emitBlocks(scene) {
   const adobeOn = Boolean(pools.AdobeAnimComponent?.ComponentClass);
   const tablesMB = config.preRender?.adobeTablesMB ?? PRE_RENDER_DEFAULTS.adobeTablesMB;
   if (adobeOn) assertIntegerInRange('preRender.adobeTablesMB', tablesMB, 0, 1024);
+  const maxSprites = resolveMaxVisibleRenderables(scene);
+  const pixiKeyed = Boolean(pools.SpriteRenderer?.ComponentClass) && keyedSpritesEnabled(config, n, maxSprites);
   return {
     entities: n,
     spriteBytes: pools.SpriteRenderer?.ComponentClass ? SpriteRenderer.getBufferSize(n) : 0,
@@ -814,7 +818,9 @@ function emitBlocks(scene) {
       ? resolveMaxVisibleRenderables(scene) : 0,
     adobe: adobeOn ? { animBytes: AdobeAnimComponent.getBufferSize(n), tableBytes: tablesMB * 1048576 } : null,
     // E-177: the entity batch's keyed frames' table and updates, for a scene with sprites whose frames go keyed.
-    pixiKeyed: Boolean(pools.SpriteRenderer?.ComponentClass) && keyedSpritesEnabled(config, n, resolveMaxVisibleRenderables(scene)),
+    pixiKeyed,
+    // E-188: and its decorations, keyed by pool slot past the entities, where the statics texture holds them.
+    keyedDecorations: pixiKeyed && keyedDecorationsFit(n, maxDecorations, maxSprites) ? maxDecorations : 0,
   };
 }
 
