@@ -1,6 +1,6 @@
-// E-179: the particle worker's decoration screen test has two copies, with and without its branch. One frame in 16
-// samples the flips of the outcome on a window of the snapshot, and the branchless copy runs while they are many.
-// Both copies must give the same visible list and flags.
+// E-179: the particle worker's decoration screen test has two copies: updateDecorationScreenVisibility, as shipped,
+// and one without its branch. One frame in 16 samples the flips of the outcome on a window of the snapshot, and the
+// branchless copy runs while they are many. Both copies must give the same visible list and flags.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -18,12 +18,12 @@ test('the branch and branchless screen loops give the same list and flags; a sam
   calculateCameraScreenBounds(1, 0, 0, 5100, 5000, 0, worker._cameraBounds, 0);
   assert.ok(worker._decorationScreenScratch.length >= n, 'the scratch is sized at init');
 
-  /** One frame's test; the call steps the sample counter, so 15 makes it a sample frame. */
+  /** One frame's test (the update loop's call); it steps the sample counter after the test, so 15 samples. */
   const run = (flipsBefore, probeBefore = 0) => {
     worker._frameCamValid = true;
     worker._decorationScreenFlips = flipsBefore;
     worker._decorationScreenProbe = probeBefore;
-    worker.updateDecorationScreenVisibility();
+    worker.updateDecorationScreen();
     const visible = worker.visibleDecorationsData;
     return {
       list: Array.from(visible.subarray(1, 1 + visible[0])),
