@@ -3383,6 +3383,10 @@ Predator crowd 1.5), the copy of its index list into the memory (packKeyedCaster
 key; the full rows then take the compaction and pack_casters_scatter as now. Kernel against compaction plus
 pack_casters_keyed on the Predator fixture, then Predator ?crowd=1.5's pre-render. About 11 ms/s (3 % of pre-render
 there) at most.
+**Kept 2026-11-01 (acac4bb7, R-0809): pre-render -6.5 %.** pack_casters_keyed_scan writes the keyed rows as it finds the
+casters; the compaction and the full rows stay the fallback. Kernel (gpuPackCastersKeyedMicrobench) in Chrome 0.140 ->
+0.070 ms a frame (-53 %); Predator ?crowd=1.5, 4 pairs: pre-render 5.066 -> 4.718 ms (-6.5 %, 0/4), more than the
+kernel's saving: in the worker the JavaScript compaction cost twice the kernel's.
 
 ---
 
