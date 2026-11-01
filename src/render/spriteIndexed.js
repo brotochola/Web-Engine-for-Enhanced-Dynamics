@@ -44,18 +44,22 @@ function replaceOnce(source, from, to, what) {
  * uintBitsToFloat, a bitcast; the tint's bits are read as the uint they are, with no float between that could change a
  * NaN pattern (an opaque white tint is one). `aInstSlot` is the slot stream's pair (the row, as a float, and the
  * depth), per instance, so a chunk drawn from any first instance reads its own, whatever the backend's range draw
- * (instanceRangeDraw.js).
- * @param {string} source instancedSprite.vert.glsl
+ * (instanceRangeDraw.js). E-191: `shadow` rewrites instancedSpriteShadow.vert.glsl for the sun's pass instead: no light
+ * of its own (the pass's uLight decides), and the tint read nowhere but the line that keeps the attributes compiled in.
+ * @param {string} source instancedSprite.vert.glsl (instancedSpriteShadow.vert.glsl with `shadow`)
+ * @param {{ shadow?: boolean }} [opts]
  * @returns {string}
  */
-export function spriteIndexedVertex(source) {
+export function spriteIndexedVertex(source, { shadow = false } = {}) {
   let out = source;
   for (const [type, name] of STATIC_ATTRIBUTES) {
     const declaration = new RegExp(`^in ${type} ${name};`, 'm');
     if (!declaration.test(out)) throw new Error(`WeedJS: the sprite vertex shader has no "in ${type} ${name};"`);
     out = out.replace(declaration, `${type} ${name};`);
   }
-  out = replaceOnce(out, 'uint tintBits = floatBitsToUint(aInstTintBits);', 'uint tintBits = weedS1.y;', 'vertex shader');
+  out = shadow
+    ? replaceOnce(out, 'in vec4 aInstLight;', 'const vec4 aInstLight = vec4(0.0);', 'shadow vertex shader')
+    : replaceOnce(out, 'uint tintBits = floatBitsToUint(aInstTintBits);', 'uint tintBits = weedS1.y;', 'vertex shader');
   const main = 'void main() {\n';
   const at = out.indexOf(main);
   if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: the sprite vertex shader needs one "void main() {"');
@@ -65,6 +69,7 @@ export function spriteIndexedVertex(source) {
     "uniform highp usampler2D uStatics; // the statics in the queue's row order, three texels a row\n\n" +
     main +
     '  aInstDepth = aInstSlot.y;\n' +
+    (shadow ? '  aInstTintBits = 0.0;\n' : '') +
     '  int weedRow = int(aInstSlot.x + 0.5);\n' +
     `  ivec2 weedTexel = ivec2((weedRow & ${STATICS_TEX_ROW - 1}) * ${STATICS_TEXELS_PER_ROW}, weedRow >> ${STATICS_TEX_ROW_SHIFT});\n` +
     '  uvec4 weedS0 = texelFetch(uStatics, weedTexel, 0);\n' +

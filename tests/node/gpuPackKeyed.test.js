@@ -85,6 +85,7 @@ async function setup(seed) {
   const pose = alloc(Float32Array, N * GPU_POSE_FLOATS);
   const slots = alloc(Float32Array, N * GPU_INDEXED_SLOT_FLOATS);
   const updates = alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS);
+  const shadow = alloc(Float32Array, N * 3);
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
   const indexByte = (top = (top + 63) & ~63);
@@ -94,7 +95,7 @@ async function setup(seed) {
   if (top > buf.byteLength) throw new Error('the test memory is too small');
   const b = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
   const keyed = { keyBase: KEY_BASE, updatesByte: updates.byteOffset, updates: 0 };
-  return { rng, q, b, order, splitPose, splitStat, pose, slots, updates, keyed };
+  return { rng, q, b, order, splitPose, splitStat, pose, slots, updates, shadow, keyed };
 }
 
 const words = (f32, n) => new Uint32Array(f32.buffer, f32.byteOffset, n);
@@ -165,4 +166,36 @@ test('the keyed pack declines what it does not take', async () => {
     'a key column outside the memory');
   assert.equal(run({ space: GPU_SPACE_WORLD, indices: order, indexCount: N }, q, new Float32Array(N * 4)), -1, 'poses outside');
   assert.equal(run({ space: GPU_SPACE_WORLD, indices: order, indexCount: N }, q, pose, new Float32Array(N * 2)), -1, 'slots outside');
+});
+
+// E-191: with a shadow destination the pack also writes each slot's shadow terms, from its queue row (zeros for a glow
+// row, type 3, which casts none), and says it did; the rest of its output is the same.
+test('the keyed pack writes each slot\'s shadow terms when asked, zeros for a glow row', async () => {
+  const s = await setup(191);
+  const { q } = s;
+  for (let i = 0; i < N; i++) {
+    q.shadowH[i] = s.rng() < 0.3 ? 0 : s.rng() * 2;
+    q.shadowOffX[i] = s.rng() * 4 - 2;
+    q.shadowOffY[i] = s.rng() * 4 - 2;
+  }
+  const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N, type: q.type };
+  checkPack(s, 'without shadows', opts, N);
+  assert.equal(s.keyed.shadowed, false, 'no destination, no shadow terms');
+  const plainPose = Uint32Array.from(new Uint32Array(s.pose.buffer, s.pose.byteOffset, N * 4));
+  s.keyed.shadowByte = s.shadow.byteOffset;
+  s.shadow.fill(-7);
+  checkPack(s, 'with shadows', opts, N);
+  assert.equal(s.keyed.shadowed, true);
+  assert.deepEqual(new Uint32Array(s.pose.buffer, s.pose.byteOffset, N * 4), plainPose, 'the poses as without');
+  let glows = 0;
+  for (let k = 0; k < N; k++) {
+    const i = s.order[k];
+    const glow = q.type[i] === 3;
+    glows += glow;
+    const want = glow ? [0, 0, 0] : [q.shadowH[i], q.shadowOffX[i], q.shadowOffY[i]];
+    for (let j = 0; j < 3; j++) {
+      if (s.shadow[k * 3 + j] !== want[j]) assert.fail(`slot ${k} (row ${i}, type ${q.type[i]}) shadow term ${j}: ${s.shadow[k * 3 + j]}`);
+    }
+  }
+  assert.ok(glows > 0, 'some glow rows');
 });

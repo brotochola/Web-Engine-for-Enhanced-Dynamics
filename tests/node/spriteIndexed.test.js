@@ -18,6 +18,7 @@ import {
 
 const shipped = readFileSync(new URL('../../src/shaders/instancedSprite.vert.glsl', import.meta.url), 'utf8');
 const shippedWgsl = readFileSync(new URL('../../src/shaders/instancedSprite.wgsl', import.meta.url), 'utf8');
+const shippedShadow = readFileSync(new URL('../../src/shaders/instancedSpriteShadow.vert.glsl', import.meta.url), 'utf8');
 const STATICS = ['aInstScale', 'aInstAnchor', 'aInstDepth', 'aInstTexId', 'aInstTileInv', 'aInstTileOff'];
 
 test('a statics row is three RGBA texels: the 11 words of the split statics and a zero', () => {
@@ -68,4 +69,23 @@ test('the indexed WGSL reads the slot pair and the storage buffer, the statics a
   assert.equal(out.split('fn mainVert(').length, 2, 'one vertex entry');
   assert.throws(() => spriteIndexedWgsl(shippedWgsl.replace('  @location(9) aInstTileOff: vec2<f32>,\n', '')), /aInstTileOff/);
   assert.throws(() => spriteIndexedWgsl(shippedWgsl.replace('bitcast<u32>(aInstTintBits)', 'bitcast<u32>(aInstTexId)')), /tintBits/);
+});
+
+// E-191: the shadow vertex shader for the sun's pass over keyed instances: the statics from the texture as the sprite's,
+// the shadow terms still an attribute, no light of its own (the pass's uLight decides) and the tint set, read nowhere.
+test('the shadow form reads the statics by key, keeps the shadow terms, and has no light of its own', () => {
+  const out = spriteIndexedVertex(shippedShadow, { shadow: true });
+  for (const name of [...STATICS, 'aInstTintBits']) {
+    assert.doesNotMatch(out, new RegExp(`^in \\w+ ${name};`, 'm'), `${name} is no attribute`);
+  }
+  for (const name of STATICS) assert.match(out, new RegExp(`^\\s+${name} = `, 'm'), `${name} is filled in main`);
+  assert.match(out, /^\s+aInstTintBits = 0\.0;/m);
+  assert.match(out, /^in vec3 aInstShadow;/m, 'the shadow terms, an attribute');
+  assert.match(out, /^const vec4 aInstLight = vec4\(0\.0\);/m, 'no light of its own');
+  assert.doesNotMatch(out, /^in vec4 aInstLight;/m);
+  assert.match(out, /^in vec2 aInstSlot;/m);
+  assert.match(out, /aInstDepth = aInstSlot\.y;/);
+  assert.equal(out.split('void main() {').length, 2, 'one main');
+  assert.throws(() => spriteIndexedVertex(shippedShadow.replace('in vec4 aInstLight;', ''), { shadow: true }), /aInstLight/);
+  assert.throws(() => spriteIndexedVertex(shippedShadow), /tintBits/, 'the sprite form refuses the shadow shader');
 });

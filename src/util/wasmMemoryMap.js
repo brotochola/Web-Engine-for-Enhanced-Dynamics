@@ -256,6 +256,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
       // E-177: the entity batch's keyed frames' updates (gpuPack.c KEYED_ROW_WORDS each), as many as its rows.
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
+      // E-191: their shadow stream (shadowH, offX, offY a draw slot), for the sun's pass over the entity batch.
+      { name: 'pixiKeyShadow', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_SHADOW_BYTES },
     );
   }
   if (collect) {
@@ -404,6 +406,9 @@ export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;
 /** E-177: the bytes of a keyed frame's update (gpuPack.c KEYED_ROW_WORDS u32). */
 export const PIXI_KEYED_ROW_BYTES = 64;
+
+/** E-191: the bytes of a keyed frame's shadow terms a draw slot (shadowH, offX, offY). */
+export const PIXI_KEYED_SHADOW_BYTES = 12;
 
 /**
  * E-177: the keyed frames' resync header, u32 words. Pixi raises REQUEST when its statics texture may miss a change (its

@@ -239,15 +239,20 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
    sends its statics.
    What goes up is the indexed frame's statics (INDEXED_STATIC_FLOATS: sprite_static's, the depth term 0, a zero), as an
    update of KEYED_ROW_WORDS u32 (the statics, then the key). results[0] is the particle count (type 1 rows), results[1]
-   the update count. */
+   the update count. E-191: withShadow (a constant, so each form is a copy of its own) also writes each slot's shadow
+   terms at shadow (shadowH, offX, offY; zeros for a glow row, which casts none), for the sun's pass over these
+   instances. */
 #define KEYED_ROW_WORDS 16
 #define KEY_NONE 0xffffffffu
 #define KEY_CHANGED 0x80000000u
 
 INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count, uint32_t cap,
                            double invDepthDenom, float *pose, float *slots, uint32_t keyBase, uint32_t *updates,
-                           uint32_t typeByte, uint32_t *results) {
+                           uint32_t typeByte, uint32_t *results, float *shadow, const int withShadow) {
   const double inv65535 = 1.0 / 65535.0;
+  const float *SH = withShadow ? F32(t, COL_SHADOW_H) : 0;
+  const float *SOX = withShadow ? F32(t, COL_SHADOW_OFF_X) : 0;
+  const float *SOY = withShadow ? F32(t, COL_SHADOW_OFF_Y) : 0;
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
   const float *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y), *AX = F32(t, COL_ANCHOR_X), *AY = F32(t, COL_ANCHOR_Y);
@@ -281,6 +286,13 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
     }
     slots[k * SLOT_FLOATS] = (float)s;
     slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
+    if (withShadow) {
+      float *sh = shadow + k * 3;
+      const int glow = type && type[i] == 3;
+      sh[0] = glow ? 0.0f : SH[i];
+      sh[1] = glow ? 0.0f : SOX[i];
+      sh[2] = glow ? 0.0f : SOY[i];
+    }
   }
   results[0] = p;
   results[1] = u;
@@ -359,10 +371,18 @@ uint32_t pack_sprites_indexed_scatter(uint32_t table, uint32_t indices, uint32_t
 __attribute__((export_name("pack_sprites_keyed")))
 uint32_t pack_sprites_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                             double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
-                            uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte) {
-  return pack_keyed((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count, cap,
-                    invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots, keyBase,
-                    (uint32_t *)(uintptr_t)updatesByte, typeByte, (uint32_t *)(uintptr_t)resultsByte);
+                            uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow) {
+  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
+  const uint32_t *k = (const uint32_t *)(uintptr_t)keyByte;
+  float *pose = (float *)(uintptr_t)dstPose;
+  float *slots = (float *)(uintptr_t)dstSlots;
+  uint32_t *updates = (uint32_t *)(uintptr_t)updatesByte;
+  uint32_t *results = (uint32_t *)(uintptr_t)resultsByte;
+  if (dstShadow) {
+    return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results,
+                      (float *)(uintptr_t)dstShadow, 1);
+  }
+  return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0);
 }
 
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags

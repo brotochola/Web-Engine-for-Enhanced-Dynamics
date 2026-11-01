@@ -261,7 +261,9 @@ export const GPU_KEYED_CHANGED = 0x80000000;
  * its statics changed since the emit before; a row without one, or with one at or past `keyed.keyBase`, takes keyBase
  * plus its slot. The changed rows and the rows without a key list their statics as updates at `keyed.updatesByte` (room
  * for capacity updates of GPU_KEYED_ROW_WORDS: the statics, then the key at GPU_KEYED_KEY_WORD); the update count goes
- * to `keyed.updates`. The queue's `key` column must be in the memory too.
+ * to `keyed.updates`. The queue's `key` column must be in the memory too. E-191: with `keyed.shadowByte` (0 for none) and
+ * the queue's shadow columns in the memory, each slot's shadow terms (shadowH, offX, offY; zeros for a glow row) go there
+ * too, and `keyed.shadowed` says whether they did.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
@@ -279,8 +281,12 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   if (indexByte < 0) return -1;
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
+  // E-191: the slots' shadow terms too where the caller asks for them (a byte, 0 for none) and the queue has them.
+  const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
   const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte);
+    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+    shadowByte);
+  keyed.shadowed = shadowByte > 0;
   const r = b.particlesByte >> 2;
   ctx.particleCount = b.u32[r];
   keyed.updates = b.u32[r + 1];

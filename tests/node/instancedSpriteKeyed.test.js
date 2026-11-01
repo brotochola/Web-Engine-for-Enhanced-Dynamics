@@ -35,6 +35,7 @@ const shaders = {
   spriteFrag: read('instancedSprite.frag.glsl'),
   spriteFragAdd: read('instancedSpriteAdditive.frag.glsl'),
   spriteFragBlend: read('instancedSpriteBlend.frag.glsl'),
+  shadowVert: read('instancedSpriteShadow.vert.glsl'),
 };
 
 const N = 2500;
@@ -100,6 +101,9 @@ async function setup(seed) {
     q.rotC[i] = rng() * 2 - 1;
     q.rotS[i] = rng() * 2 - 1;
     q.type[i] = rng() < 0.1 ? 1 : 0;
+    q.shadowH[i] = rng() < 0.2 ? 0 : rng() * 2;
+    q.shadowOffX[i] = rng() - 0.5;
+    q.shadowOffY[i] = rng() - 0.5;
   }
   // The world: each entity's statics, and its keyed flag (set, as spawns leave it).
   const world = {
@@ -118,6 +122,7 @@ async function setup(seed) {
     keyRows: KEY_ROWS,
     updatesByte: alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS).byteOffset,
     headerByte: header.byteOffset,
+    shadowByte: alloc(Float32Array, N * 3).byteOffset,
   };
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
@@ -386,4 +391,47 @@ test('keyed frames whose updates outweigh what they save pause, drawn split, the
   assert.equal(Atomics.load(h, H.REQUEST), 2);
   emit(s);
   assert.equal(draw(s, 'answered', sortedOpts(s)), N, 'keyed again');
+});
+
+// E-191: with keyed shadows on, a keyed frame also carries each draw slot's shadow terms (its queue row's, in draw order),
+// and its geometry for the sun's pass (the pose, slot and shadow streams) is ready; a frame drawn split is not.
+test('keyed shadows: a keyed frame carries each slot\'s shadow terms and the sun pass\'s geometry', async () => {
+  const s = await setup(191);
+  const k = s.keyed;
+  assert.equal(k.makeKeyedSunShader(k.shader), null, 'no program before keyed shadows are on');
+  assert.equal(k.enableKeyedShadows(), true);
+  assert.equal(s.split.enableKeyedShadows(), false, 'a batch that is not keyed has none');
+  assignKeys(s);
+  emit(s);
+  assert.equal(draw(s, 'first frame', sortedOpts(s)), -1);
+  assert.equal(k.keyedShadowReady, false, 'a frame drawn split carries none');
+  emit(s);
+  const opts = sortedOpts(s);
+  assert.equal(draw(s, 'answered', opts), N);
+  assert.equal(k.keyedShadowReady, true);
+  const g = k.keyedShadowGeometry;
+  assert.equal(g.instanceCount, N);
+  assert.deepEqual(Object.keys(g.attributes).sort(), ['aInstRotCS', 'aInstShadow', 'aInstSlot', 'aInstXY', 'aQuad']);
+  for (let slot = 0; slot < N; slot++) {
+    const i = opts.indices[slot];
+    for (const [j, col] of [[0, 'shadowH'], [1, 'shadowOffX'], [2, 'shadowOffY']]) {
+      if (k._shadowData[slot * 3 + j] !== s.q[col][i]) assert.fail(`slot ${slot}'s ${col}`);
+    }
+  }
+  assert.ok(!(k._shadowData.buffer instanceof SharedArrayBuffer), 'uploaded from a private copy (E-123)');
+  const sun = k.makeKeyedSunShader(k.shader);
+  assert.ok(sun && sun.resources.uStatics === k._staticsSource && sun.resources.uniforms === k.shader.resources.uniforms,
+    'the program reads the statics texture and shares the given uniforms');
+  assert.equal(k.makeKeyedSunShader(k.shader), sun, 'made once');
+  // The next keyed frame takes the other ring slot's geometry; one drawn split leaves none ready.
+  emit(s);
+  draw(s, 'next', sortedOpts(s));
+  assert.equal(k.keyedShadowReady, true);
+  assert.notEqual(k.keyedShadowGeometry, g, 'the other ring slot');
+  emit(s);
+  const key = s.q.key;
+  s.q.key = null;
+  k.upload(s.q, sortedOpts(s));
+  s.q.key = key;
+  assert.equal(k.keyedShadowReady, false, 'a frame drawn split leaves none ready');
 });
