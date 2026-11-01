@@ -9711,8 +9711,10 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0810"
+      ],
+      "status": "kept",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-188",
@@ -9720,11 +9722,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-188"
       ],
-      "statusText": "open: after E-177's verdict",
-      "rank": 13,
+      "statusText": "kept 2026-11-01 (R-0810) for decorations: renderer -38.2 % zoomed in",
       "area": "render",
-      "result": "",
-      "next": "Rows without an entity go up every frame (64 bytes an update against the 36 a keyed row saves). Predator zoomed in past 0.5 shows its grass (20 000 decorations, rows without a key in the main queue): its keyed frames pause there after 10 losing frames (2026-11-01 probe at zoom 1.6), and liquidFunQueryStressScene draws up to 16 000 LiquidFun particles as such rows. Keys by pool slot past the entities (particle, decoration, LiquidFun ranges) and a change mark for each type (flags of its own, or the emit comparing the few statics a type has) would send those rows' poses only. Owner: Predator at zoom 1.6 (its renderer), and liquidFunQueryStressScene; pre-render pays the marks."
+      "result": "kept 2026-11-01 (3c31583a): decorations keyed by pool slot past the entities; Predator crowd 1.5 zoom 0.6 renderer -38.2 % (0/4), pre-render -8.3 %",
+      "next": "Particles and LiquidFun stay keyless (a particle's alpha fades every frame); liquidFunQueryStressScene would own LiquidFun rows keyed by slot."
     },
     {
       "aliases": [],
@@ -17567,6 +17568,18 @@
       "text": "**E-192 kept (acac4bb7; sat as 17ec1ca6, the same tree): the keyed sun rows from one scan of the queue; kernel -53 % in\nChrome, Predator crowd 1.5 pre-render -6.5 % (0/4).** 2026-11-01, 14:18 to 14:28 (the kernel's runs, printed only, and the\nsitting's result files), Chrome, headed, source, detailed stats off.\n\n- **What it does.** pack_casters_keyed_scan finds the casters itself (shadowH above 0, not a glow: the test of\n  compactShadowCasterIndices, in the queue's order) and writes each one's keyed row as it finds it, -1 at a caster\n  without an entity key; pre-render's keyed frames take it instead of the JavaScript compaction, the copy of its list\n  into the memory and pack_casters_keyed, and fall back to them and the full rows as before.\n- **Kernel** (gpuPackCastersKeyedMicrobench, 05212be4: Predator crowd 1.5's shape, 23 400 rows, 22 829 casters, a tenth\n  moved a frame; the compaction warmed through short calls): Chrome 156, three runs, compactKeyed 0.170 / 0.140 / 0.140\n  ms a frame, scan 0.080 / 0.070 / 0.070 (-53 %); Node 0.136 -> 0.061; the same rows (one checksum on the same frame).\n- **Test.** gpuPackKeyed: the scan writes the compaction's rows bit for bit with every row, a cap under the casters, a\n  prefix of the queue and no type column (glows, zero, negative and NaN heights among them); a caster without a key\n  declines it, the rows before it do not.\n- **Sitting** (`--vs 05212be4 --hyp-rev 17ec1ca6 --owner preRender --query crowd=1.5`, 14:23 to 14:28, 4 pairs): **KEPT\n  (product).** pre-render 5.066 -> 4.718 ms (-6.5 %, worse 0/4, cv 4/1 %; -5.1 % against the others), pairs -6.0 / -5.0 /\n  -13.6 / -7.0 % (pair 3 ran every worker high on its A side); renderer -1.9 %, logic -3.5 %, spatial +0.1 %, physics\n  -0.9 %; load keys within 0.1 %. More than the kernel's 0.07 to 0.09 ms: in the worker the compaction read 8.6 ms/s in\n  R-0808's trace (0.14 ms a frame), the kernel's JavaScript under half of it.",
       "commits": [
         "acac4bb7"
+      ]
+    },
+    {
+      "id": "R-0810",
+      "date": "2026-11-01",
+      "time": "14:45",
+      "timeFrom": "recorded",
+      "title": "E-188 kept: decorations keyed by pool slot, Predator crowd 1.5 zoom 0.6 renderer -38.2 % (0/4)",
+      "verdict": "kept",
+      "text": "**E-188 kept (3c31583a): keyed frames key the decorations by pool slot; Predator crowd 1.5 zoom 0.6 renderer -38.2 % (0/4),\npre-render -8.3 % (0/4).** 2026-11-01, 14:35 to 14:44 (the result files' times), Chrome, headed, source, detailed\nstats off.\n\n- **What it does.** A scene whose sprites go keyed keys its decorations too, where the statics texture also holds a row\n  for every decoration slot (keyedDecorationsFit): a decoration row's key is its slot past the entities, so Pixi's\n  texture keeps its statics there and a frame sends its pose alone. The emit marks the key changed when the statics the\n  row got (scale, alpha with the zoom's fade, tint, texture, anchor) differ from the ones its slot last emitted, kept in\n  a record a slot (32 bytes), or when the record is from an earlier epoch, which pre-render moves when Pixi asks for every\n  statics again. Before it, Predator zoomed in past 0.5 drew its 20 000 grass decorations as rows without a key, which\n  went up every frame (64 bytes each) and paused the keyed frames after ten losing frames, and E-191's keyed caster rows\n  with them.\n- **Probe** (14:35, zoom 1.6): 599 keyed frames of 600, none paused, 1 416 updates a keyed frame of 5 886 rows (the\n  animated sprites' marks and the rows that still have no key).\n- **Tests.** preRenderEmitWasm: a decoration row's key is its slot past the entities; the first emit of a slot marks it,\n  its later rows that frame do not; held statics mark none; a texture, an alpha and a tint mark their slot alone; the\n  zoom's fade and a new epoch mark every one. renderQueueMemory: the keys past the entities, the texture's rows, the\n  records' region (zero, so stale from the start).\n- **Sitting** (`--vs 86978293 --hyp-rev 3c31583a --owner renderer --query \"crowd=1.5&zoom=0.6\"`, 14:39 to 14:44, 4 pairs):\n  **KEPT (product).** renderer 4.075 -> 2.604 ms (-38.2 %, worse 0/4, cv 6/3 %; -32.0 % against the others), pairs -42.4 /\n  -37.1 / -32.9 / -39.2 %; pre-render 4.450 -> 4.079 (-8.3 %, 0/4: E-191's keyed caster rows on again); spatial -7.7 %,\n  physics -5.4 %, logic -4.0 % (the machine's relief, small against the others); load keys within 0.6 %. At zoom 0.6\n  the base paused its keyed frames after about 80 frames (R-0808's probe), so this is E-177 and E-191 coming back.",
+      "commits": [
+        "3c31583a"
       ]
     }
   ],
