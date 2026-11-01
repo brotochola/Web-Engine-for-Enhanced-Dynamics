@@ -62,6 +62,14 @@ export const SPLIT_POSE_FLOATS = GPU_POSE_FLOATS;
 export const BATCH_SPACE = Object.freeze({ WORLD: 0, SCREEN: 1 });
 export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
 
+// E-177. A keyed frame saves KEYED_SAVED_BYTES a row against a split one (the slot pair instead of the statics) and
+// spends an update's bytes on each row it sends. When the updates outweigh the saving for KEYED_LOSS_FRAMES frames in a
+// row (rows without a key, as a LiquidFun scene's sprites, or statics that all move), the batch draws split for
+// KEYED_PAUSE_FRAMES frames, then resyncs and tries again.
+export const KEYED_SAVED_BYTES = (GPU_STATIC_FLOATS - GPU_INDEXED_SLOT_FLOATS) * 4;
+export const KEYED_LOSS_FRAMES = 10;
+export const KEYED_PAUSE_FRAMES = 1800;
+
 const EMPTY_UPLOAD_OPTS = Object.freeze({
   space: BATCH_SPACE.WORLD,
   zoom: 1,
@@ -332,6 +340,9 @@ export class InstancedSpriteBatch {
     this.keyedBuffer = 0;
     this._keyFrame = -1;
     this._keyRequest = 0;
+    // The keyed frames in a row whose updates outweighed their saving, and the split frames left of a pause.
+    this._keyLosses = 0;
+    this._keyPause = 0;
     this._ixGen = 0;
     this._ixRows = -1;
     // The slot pairs' generation and slots the CPU copy holds, its version, and each ring slot's GPU copy's (-1: none).
@@ -961,9 +972,15 @@ export class InstancedSpriteBatch {
    * changed since the emit before, so the texture is right only after a keyed frame of every queue frame: on its first
    * frame, after a frame it did not take keyed (a gap in the queue's frames, a frame drawn split), the batch asks
    * pre-render for every sprite again (the header's request; pre-render flags every sprite for its next emit) and draws
-   * split until the queue buffer it reads answers that request. Returns -1 for a frame drawn split.
+   * split until the queue buffer it reads answers that request. Frames whose updates outweigh their saving pause the
+   * keyed frames (KEYED_LOSS_FRAMES). Returns -1 for a frame drawn split.
    */
   _uploadKeyed(q, ctx) {
+    if (this._keyPause > 0) {
+      this._keyPause--;
+      this._keyFrame = -1;
+      return -1;
+    }
     const H = this._keyHeader;
     const frame = this.keyedFrame;
     const last = this._keyFrame;
@@ -984,6 +1001,12 @@ export class InstancedSpriteBatch {
     this._keyFrame = frame;
     this._keyRequest = 0;
     const n = k.updates;
+    if (n * (GPU_KEYED_ROW_WORDS * 4) <= out * KEYED_SAVED_BYTES) {
+      this._keyLosses = 0;
+    } else if (++this._keyLosses >= KEYED_LOSS_FRAMES) {
+      this._keyLosses = 0;
+      this._keyPause = KEYED_PAUSE_FRAMES;
+    }
     if (n > 0) {
       this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
       this._statics.scatter(this._staticsSource, this._keyUpdates, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight);

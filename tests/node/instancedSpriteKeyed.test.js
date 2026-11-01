@@ -5,7 +5,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { TextureSource } from '../../src/vendor/pixi.min.js';
-import { BATCH_SPACE, INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch, POSE_STATIC_FLOATS, SPLIT_POSE_FLOATS } from '../../src/render/instancedSpriteBatch.js';
+import {
+  BATCH_SPACE, INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch, KEYED_LOSS_FRAMES, KEYED_PAUSE_FRAMES, POSE_STATIC_FLOATS,
+  SPLIT_POSE_FLOATS,
+} from '../../src/render/instancedSpriteBatch.js';
 import { GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, gpuIndexedStaticRows } from '../../src/render/gpuQueueLayout.js';
 import { GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack } from '../../src/render/gpuPackClient.js';
 import { STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW } from '../../src/render/spriteIndexed.js';
@@ -18,7 +21,8 @@ import { PIXI_KEYED_HEADER as H } from '../../src/util/wasmMemoryMap.js';
 // lands) are the split batch's statics at that slot, over frames whose order, rows and statics move. The texture is right
 // only after a keyed frame of every queue frame, so the batch draws split, the split batch's rows, on its first frame and
 // after a gap or a frame it did not take keyed, and asks pre-render (the header) to flag every sprite; it draws keyed
-// again from the queue buffer that carries the answer.
+// again from the queue buffer that carries the answer. Keyed frames whose updates outweigh their saving pause the keyed
+// frames for a while.
 
 // GlProgram.from probes shader precision on a canvas; Node has none, and a context of null is enough.
 globalThis.document ??= { createElement: () => ({ getContext: () => null }) };
@@ -351,4 +355,35 @@ test('a gap in the queue\'s frames asks for every sprite again; an answer counts
   assert.ok(sent < N / 4);
   assert.equal(draw(s, 'and on', sortedOpts(s)), sent);
   assert.equal(Atomics.load(h, H.REQUEST), 2);
+});
+
+test('keyed frames whose updates outweigh what they save pause, drawn split, then ask for every sprite again', async () => {
+  const s = await setup(179);
+  const h = s.header;
+  // Every row without a key (a LiquidFun scene's sprites, say): a keyed frame sends them all, 64 bytes a row against
+  // the 36 it saves.
+  s.q.type.fill(1);
+  assignKeys(s);
+  emit(s);
+  assert.equal(draw(s, 'first frame', sortedOpts(s)), -1);
+  for (let f = 0; f < KEYED_LOSS_FRAMES; f++) {
+    emit(s);
+    assert.equal(draw(s, `losing frame ${f}`, sortedOpts(s)), N, 'drawn keyed, every row sent');
+  }
+  // The pause: drawn split, nothing asked.
+  const opts = sortedOpts(s);
+  const k = s.keyed;
+  for (let f = 0; f < KEYED_PAUSE_FRAMES; f++) {
+    emit(s);
+    k.keyedFrame = s.frame;
+    k.keyedBuffer = bufferOf(s.frame);
+    assert.equal(k.upload(s.q, { ...opts }), N);
+    if (k.mesh.shader !== k.shader) assert.fail(`pause frame ${f}: drawn keyed`);
+  }
+  assert.equal(Atomics.load(h, H.REQUEST), 1, 'no request while paused');
+  emit(s);
+  assert.equal(draw(s, 'after the pause', sortedOpts(s)), -1, 'the frame after the pause asks for every sprite');
+  assert.equal(Atomics.load(h, H.REQUEST), 2);
+  emit(s);
+  assert.equal(draw(s, 'answered', sortedOpts(s)), N, 'keyed again');
 });
