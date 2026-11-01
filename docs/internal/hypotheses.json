@@ -9986,8 +9986,10 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0809"
+      ],
+      "status": "kept",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-192",
@@ -9995,11 +9997,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-192"
       ],
-      "statusText": "open: filed with E-191 step 2 (R-0808)",
-      "rank": 20,
+      "statusText": "kept 2026-11-01 (R-0809): pre-render -6.5 % at Predator crowd 1.5",
       "area": "render",
-      "result": "",
-      "next": "After E-191 step 2 the keyed sun rows cost compactShadowCasterIndices (8.6 ms/s at Predator crowd 1.5), the index list copied into the memory (2.4) and pack_casters_keyed (13.0). One kernel scanning the shadow and type columns writes each caster's keyed row as it finds it, -1 at a caster without an entity key (then the compaction and the full rows as now). Kernel on the Predator fixture, then Predator ?crowd=1.5 pre-render; about 11 ms/s at most."
+      "result": "kept 2026-11-01 (acac4bb7): pack_casters_keyed_scan; kernel -53 % in Chrome, Predator crowd 1.5 pre-render -6.5 % (0/4)",
+      "next": "Done."
     }
   ],
   "records": [
@@ -17554,6 +17555,18 @@
       "text": "**E-191 step 2 kept (de71ce66; sat as 1c4db31c, the same tree): keyed caster rows, Predator crowd 1.5 pre-render -16.8 % (0/4), renderer +1.2 %\n(-4.4 % against the others).** 2026-11-01, 13:48 to 14:08 (the result files' times; the first probe's file was overwritten), Chrome, headed, source, detailed\nstats off, Predator `?crowd=1.5`.\n\n- **What it does.** Pixi's entity batch stores each keyed upload's queue frame in the keyed header's LIVE word once Pixi\n  has the keyed caster passes; while the word is within two frames of the one being written, pre-render packs the sun\n  casters as keyed rows (pack_casters_keyed: x, y, the key and a zero, the shadow terms; 7 floats instead of 22) and the\n  stamps copy them with their light (11 floats), with GPU_FLAG_KEYED_CASTERS in the GPU queue's header. Pixi draws the\n  sun from the entity batch's instances (step 1) or from those rows, and the stamps from theirs, with the shadow program\n  reading the statics by key (spriteIndexedVertex's casterRows form: no rotation; a stamp row's light). A caster without\n  an entity key, a stale word or a scene not keyed packs the full rows; a skipped shadow frame republishes keyed rows\n  only while the word holds.\n- **The first build never ran.** The first probe counted keyed rows on 0 frames, and a diagnosis (13:48) found why: the GPU pack's view of the main queue\n  (`_gpuSoAFromViews`) dropped the key column, so every caster read as keyless (22 860 of 22 860) and each frame packed\n  the full rows. Fixed in the same commit, with a test. Then (13:50): keyed rows on 595 and 600 frames of 600, the\n  stamps drawn from them (595, 600), the sun from the instances (597, 600) and from keyed rows once. Zoomed in (0.6, 1.2)\n  the keyed frames pause after about 80 frames (E-188's grass) and the full rows come back, as built. Screenshots against\n  cd6183bb's at the default zoom (13:49 and 13:50, 13:55 and 13:56) show the same shadows, no stray quad.\n- **Correctness tests.** shadowStampKeyed: on 60 random stamp frames, the keyed rows stamp the full rows' (light, caster)\n  pairs in the same order, each row the caster's keyed row and the same light bit for bit. spriteIndexed: the casterRows\n  forms. instancedSpriteKeyed: LIVE stored on keyed frames only, the caster rows' geometries. shadowIntervalRepublish:\n  the LIVE window, the keyed republish, a stale word packing again.\n- **Sitting** (`--vs cd6183bb --hyp-rev 1c4db31c --owner preRender --query crowd=1.5`, 13:58 to 14:06, 4 pairs):\n  **KEPT (product).** pre-render 6.226 -> 5.207 ms (-16.8 %, worse 0/4, cv 2/9 %; -17.5 % against the others), pairs\n  -19.4 / -20.5 / -14.3 / -1.9 %; renderer 3.794 -> 3.822 (+1.2 %, 2/4; -4.4 % against the others), pairs -10.0 / -1.8 /\n  +4.2 / +8.0 %; logic +1.1 %, spatial -0.5 %, physics +0.1 %; load keys within 0.9 %. Pair 4's B side ran logic,\n  spatial and physics 17 to 19 % high (the owner's own Chrome used 0.5 to 0.7 cores that afternoon).\n- **Traces** (one a side, 14:07 and 14:08), pre-render in ms a second: busy 483.8 -> 379.5 (-21.6 %);\n  pack_casters_scatter 48.6 gone, pack_casters_keyed 13.0 and its client 2.4; stamp_light_range 135.0 -> 108.4 (rows of\n  11 floats copied instead of 22); compactShadowCasterIndices 7.9 -> 8.6. Pixi: the copy kernel 24.6 -> 19.8 and\n  updateBuffer 23.9 -> 21.2 (the stamps' smaller upload); pack_sprites_keyed 91.1 -> 117.7, which step 2 does not touch\n  (its updates vary with the run).\n- Filed: E-192, the keyed sun pack scanning the queue itself (compactShadowCasterIndices and the index copy, about 11\n  ms/s at crowd 1.5).",
       "commits": [
         "de71ce66"
+      ]
+    },
+    {
+      "id": "R-0809",
+      "date": "2026-11-01",
+      "time": "14:29",
+      "timeFrom": "recorded",
+      "title": "E-192 kept: the keyed sun rows from one scan of the queue, Predator crowd 1.5 pre-render -6.5 % (0/4)",
+      "verdict": "kept",
+      "text": "**E-192 kept (acac4bb7; sat as 17ec1ca6, the same tree): the keyed sun rows from one scan of the queue; kernel -53 % in\nChrome, Predator crowd 1.5 pre-render -6.5 % (0/4).** 2026-11-01, 14:18 to 14:28 (the kernel's runs, printed only, and the\nsitting's result files), Chrome, headed, source, detailed stats off.\n\n- **What it does.** pack_casters_keyed_scan finds the casters itself (shadowH above 0, not a glow: the test of\n  compactShadowCasterIndices, in the queue's order) and writes each one's keyed row as it finds it, -1 at a caster\n  without an entity key; pre-render's keyed frames take it instead of the JavaScript compaction, the copy of its list\n  into the memory and pack_casters_keyed, and fall back to them and the full rows as before.\n- **Kernel** (gpuPackCastersKeyedMicrobench, 05212be4: Predator crowd 1.5's shape, 23 400 rows, 22 829 casters, a tenth\n  moved a frame; the compaction warmed through short calls): Chrome 156, three runs, compactKeyed 0.170 / 0.140 / 0.140\n  ms a frame, scan 0.080 / 0.070 / 0.070 (-53 %); Node 0.136 -> 0.061; the same rows (one checksum on the same frame).\n- **Test.** gpuPackKeyed: the scan writes the compaction's rows bit for bit with every row, a cap under the casters, a\n  prefix of the queue and no type column (glows, zero, negative and NaN heights among them); a caster without a key\n  declines it, the rows before it do not.\n- **Sitting** (`--vs 05212be4 --hyp-rev 17ec1ca6 --owner preRender --query crowd=1.5`, 14:23 to 14:28, 4 pairs): **KEPT\n  (product).** pre-render 5.066 -> 4.718 ms (-6.5 %, worse 0/4, cv 4/1 %; -5.1 % against the others), pairs -6.0 / -5.0 /\n  -13.6 / -7.0 % (pair 3 ran every worker high on its A side); renderer -1.9 %, logic -3.5 %, spatial +0.1 %, physics\n  -0.9 %; load keys within 0.1 %. More than the kernel's 0.07 to 0.09 ms: in the worker the compaction read 8.6 ms/s in\n  R-0808's trace (0.14 ms a frame), the kernel's JavaScript under half of it.",
+      "commits": [
+        "acac4bb7"
       ]
     }
   ],
