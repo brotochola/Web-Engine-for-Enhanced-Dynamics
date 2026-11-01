@@ -9605,6 +9605,23 @@
       "date": "2026-11-01",
       "result": "",
       "refs": [
+        "EXECUTION_PLAN.md#E-183"
+      ],
+      "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
+      "id": "E-183",
+      "rank": 6,
+      "area": "engine",
+      "kind": "speed",
+      "title": "Per-frame loops stuck on stale OSR code: a statement after the loop deopts every call",
+      "next": "Step 0: Chrome deopt logs (--log-deopt, summarizeV8Deopt.mjs, steady state) on Predator and the stress scenes, the functions that deopt at one bytecode every frame. Then each loop in a function of its own that returns right after it. EXECUTION_PLAN.md#E-183."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "result": "",
+      "refs": [
         "EXECUTION_PLAN.md#E-179c"
       ],
       "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
