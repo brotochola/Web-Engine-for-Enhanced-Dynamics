@@ -9549,20 +9549,21 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0777"
+      ],
+      "status": "kept",
       "date": "2026-10-29",
-      "result": "",
+      "result": "kept: minimalTickIntervalScene ?churn=64, logic 3.726 -> 2.997 ms (-16.8 %, 0/4); spatial -1.4 %",
       "refs": [
         "EXECUTION_PLAN.md#E-180"
       ],
-      "statusText": "open: Wave 10 candidates, STEP_MS headroom (2026-10-29, R-0751)",
+      "statusText": "kept 2026-11-01 (5262c96f, R-0777)",
       "id": "E-180",
-      "rank": 13,
       "area": "logic",
       "kind": "speed",
       "title": "Interval tick buckets rebuilt for every type when any query moves",
-      "next": "Step 0: rebuilds a second per type in Predator; then a per-type stamp. Owner Predator logic. EXECUTION_PLAN.md#E-180."
+      "next": "Predator and spawnStormScene in wave11's gate."
     },
     {
       "aliases": [],
@@ -16940,6 +16941,18 @@
         "0ad7f294",
         "c19d3e31",
         "9e0d8e58"
+      ]
+    },
+    {
+      "id": "R-0777",
+      "date": "2026-11-01",
+      "time": "04:43",
+      "timeFrom": "recorded",
+      "title": "E-180 kept: interval buckets rebuilt on their own type's list version; churn scene logic -16.8 %",
+      "verdict": "kept",
+      "text": "**E-180 kept: tickInterval buckets rebuilt when their own type's list changes (5262c96f); logic -16.8 %.**\n2026-11-01, 04:38 to 04:43 (the result files' times), Chrome, headed, source, detailed stats off.\n\n- **Built without step 0:** only logic0 edits the type lists, through three helpers and the spawn batch's merge, so a\n  version per type (GameObject.typeListVersions, a shared Int32 per entity type) is a few lines; Predator's rebuilds\n  are at most 2 to 3 % of a logic worker, under its noise, so the owner is a scene made for it.\n- **minimalTickIntervalScene's bucket scene, `?churn=64`** (e7363cf7: 160 000 props on a tickInterval of 4 while a\n  driver despawns and spawns 64 props of another type every frame), 4 pairs, `--vs e7363cf7 --hyp-rev 5262c96f\n  --owner logic`: **KEPT (product)**, logic **3.726 -> 2.997 ms, -16.8 %, worse 0/4** (cv 5/6 %); spatial 5.544 ->\n  5.518 ms (-1.4 %, 2/4); pre-render 1.893 -> 1.889 ms (under the floor). Per pair, logic A/B: 3.822/2.930,\n  3.630/3.064, 3.472/2.871, 3.914/3.280.\n- **Tests:** tickBucketTypeVersion.test.js (another type's churn rebuilds nothing; a same-count swap in the type\n  rebuilds once and its new entity ticks; the helpers move the version); node suite 2150/2150.\n\nEach despawn and spawn now does one Atomics.add on its type's version; spawnStormScene (thousands a frame) goes in\nwave11's batch gate with Predator.",
+      "commits": [
+        "5262c96f"
       ]
     }
   ],
