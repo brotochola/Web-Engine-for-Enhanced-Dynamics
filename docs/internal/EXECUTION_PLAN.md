@@ -3345,6 +3345,13 @@ must know which rows to write), the caster terms by key, and the casters' cull r
 just off screen whose shadow falls on it). (e) first: the largest saving and no new row format for the sun.
 **Knob:** `?crowd=1.5` (c5003321) loads Predator's renderer to 4.0 ms, pre-render 6.3, physics 9.0, spatial 7.3,
 logic 4.7: every worker past the floor.
+**Step 1 kept 2026-11-01 (efce1f5e, ebb4693c; R-0800, R-0801): the sun pass over the keyed instances, renderer
+-4.4 %.** On a keyed frame the sun pass draws the entity batch's own instances (their pose and slot streams, a
+shadow stream of three floats a slot from the keyed pack, the statics by key), the sprites drawn before the shadows;
+otherwise pre-render's sun rows. Predator ?crowd=1.5, 8 pairs: renderer -4.4 % (6/8), pre-render -0.1 %. The first
+sitting read +0.0 %: its shadow stream fell outside the arena and went word by word (ebb4693c). Step 2: the stamps as
+rows of a pose, a key, the shadow terms and a light, and pre-render's sun pack skipped where Pixi says its keyed
+texture is current.
 
 ---
 
