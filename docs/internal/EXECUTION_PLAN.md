@@ -3053,6 +3053,9 @@ neutral.
 was wrong about adobeAnimateScene: its characters have a range of 0, and the cost was the skip writing each row's
 count every frame. E-176b writes a row only when it is not clear: spatial -30 % there at 20 000 characters, logic
 +5.7 % (7/8, A/A 2.1 %), mixed; it waits for a logic fit or a second scene before main.
+**Re-sat 2026-11-01 (R-0774), kept:** on a quiet machine spatial -29.2 % (0/4), logic -2.2 %, and a CPU profile pair put
+logic's busy time at -3 %. Those sittings ran twice the characters the knob named: the demo's `create()` called
+`createNewGame()` too (N-101, fixed in 8eb30060).
 
 ### E-177 Sprite statics per entity on the GPU, for scenes whose camera scrolls
 
@@ -3094,6 +3097,30 @@ order is predictable (the grid stress scene +18 %). Next: both loops, picked per
 so any spawn or despawn of any type rebuilds the buckets of every type that ticks on an interval.
 **Plan:** step 0, rebuilds a second per type in Predator. If most are of types whose own list did not change, stamp
 the buckets with the type's own list (a per-type version). Owner: Predator's logic.
+
+## Wave 11 candidates (2026-11-01)
+
+Found while measuring E-176b and E-179 (wave11).
+
+### E-181 Every awake body is "moved", still or not
+
+**Premise:** Box2D 3 writes a move event for every awake body every step (`b2FinalizeBodiesTask` sizes the array to the
+awake count), and the glue's `export_body_move_events` lists each one as moved and exports its state, an `atan2`
+included. A body that is awake and did not move (sleeping off, a body held awake, a kinematic body at rest) costs the
+export and puts its rows in spatial's moved list: adobeAnimateScene (sleeping off, 20 000 still characters after
+N-101) reads Moved 20 000 every frame, so spatial rebuilds the grid (2.1 ms) for bodies that never move.
+**Plan:** in the glue, a move event whose transform equals what the state channels hold (Transform.x, y, rotC and rotS
+are those channels) exports the velocities only and is not listed, unless the body fell asleep; teleports keep their
+own list. Owner: adobeAnimateScene's spatial worker; physics there too; Predator, whose bodies move, must stay neutral.
+
+### E-179c Decorations' screen test skipped while nothing it reads changed
+
+**Premise:** the test's output depends only on the camera bounds and the active decorations' positions; decorations
+sway (rotation) but rarely move. A frame whose bounds equal the last frame's and whose snapshot and positions did not
+change gives the same list and flags.
+**Plan:** step 0, how many frames a second hold the camera still in the demos (Predator's follows a player and moves
+nearly every frame). Then a stamp of the bounds and of DecorationPool's spawns, despawns and moves; skip when both
+hold. Owner: a scene with a still camera and many decorations.
 
 ---
 
