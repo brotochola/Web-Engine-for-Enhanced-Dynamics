@@ -9968,7 +9968,8 @@
         "R-0803",
         "R-0804",
         "R-0805",
-        "R-0806"
+        "R-0806",
+        "R-0807"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -9976,12 +9977,12 @@
       "id": "N-105",
       "title": "wave13's prod bundle runs Predator's spatial and pre-render 5 to 10 % slower than its sources (two sittings)",
       "status": "answered",
-      "statusText": "answered 2026-11-01 (R-0804 to R-0806): no regression; wave13's bundle is faster than wave12's",
+      "statusText": "answered 2026-11-01 (R-0804 to R-0807): no regression; the bundle runs spatial's code as fast as source",
       "date": "2026-11-01",
       "area": "engine",
       "kind": "bug",
-      "result": "answered 2026-11-01: wave13 does not slow the bundle (its bundle against wave12's: spatial -8.3 %, pre-render -3.5 %); its bundle against its sources moved +2.4 to +9.6 % over three sittings, at the edge of the spread",
-      "next": "The next merge's bundle sitting watches the bundle's ratio to its sources in spatial and pre-render."
+      "result": "answered 2026-11-01: wave13 does not slow the bundle (its bundle against wave12's: spatial -8.3 %, pre-render -3.5 %), and the bundle runs the same code as fast as source function by function (Boids traces: spatial 454 against 469 ms/s); its bundle against its sources moved +2.4 to +9.6 % in Predator, Boids with 8 pairs NEUTRAL (spatial +1.5 %)",
+      "next": "Each merge's bundle sitting runs Boids (a fixed load) with 8 pairs as well as Predator, on a machine checked for other busy processes."
     }
   ],
   "records": [
@@ -17516,6 +17517,15 @@
       "title": "N-105 answered: wave13 does not slow the bundle; a third reading against its sources is neutral (+2.6 / +2.4 %)",
       "verdict": "answered",
       "text": "**N-105 answered: wave13 does not slow the bundle's spatial or pre-render; a third reading of its bundle against its\nsources is NEUTRAL (spatial +2.6 %, pre-render +2.4 %).** 2026-11-01, 12:40 to 12:45 (the result files' times),\nChrome, headed, detailed stats off, Predator, `runPredatorAbab --vs f16192a3 --full-rev --query-b\nweedBundle=weed.prod.bundle.esm.min.js` (one build: wave13's merge, A its sources, B its bundle), 4 pairs.\n\n- spatial 5.106 -> 5.238 ms (+2.6 %, 3/4), pre-render 4.312 -> 4.353 (+2.4 %, 3/4), logic -7.4 %, physics -4.3 %; load\n  keys within 0.4 % (the bundle's side moved 17 % fewer bodies).\n- The five sittings together: wave13's bundle against wave12's, spatial -8.3 % and pre-render -3.5 % (R-0804);\n  wave13's sources against main's, -2.5 and +0.7 % (R-0802); wave12's bundle against its sources, -2.8 / -1.2 % and\n  -4.0 / -2.2 % (R-0794, R-0805); wave13's bundle against its sources, +9.6 / +5.8 / +2.6 % and +9.3 / +4.6 / +2.4 %\n  (R-0803 and this one). The shipped bundle got no slower; what moved, by four to six points and shrinking, is the\n  bundle's ratio to its sources in these two workers, at the edge of the spread of four pairs. Nothing to take out;\n  the next merge's bundle sitting watches the ratio."
+    },
+    {
+      "id": "R-0807",
+      "date": "2026-11-01",
+      "time": "13:29",
+      "timeFrom": "recorded",
+      "title": "N-105, the bundle against its sources function by function: as fast as source; Boids 8 pairs NEUTRAL (spatial +1.5 %)",
+      "verdict": "answered",
+      "text": "**N-105, the bundle against its sources function by function: the bundle runs spatial's code as fast as source;\nBoids, 8 pairs, NEUTRAL (spatial +1.5 %).** 2026-11-01, 12:50 to 13:28 (the result files' times), Chrome 156, headed,\nsource and `weed.prod.bundle.esm.min.js` at 8d008cd7 (wave13's merge plus docs), detailed stats off.\n\n- **Packaging unchanged.** The spatial and pre-render chunks of wave12's and wave13's shipped bundles (4db42575,\n  f16192a3), pulled out of `workerSources`, differ in one constant (PIXI_KEYED_HEADER's `LIVE: 4`, unused there); their\n  shared `worker_common` chunk only in renamed locals and in the decoration epochs (decorationPool, decorationSpatial).\n  The engine.wasm the bundle inlines is source's byte for byte (SHA-1 fe686929).\n- **Boids, one CPU trace a side (13:13, 13:14).** Spatial in ms a second, each of its two workers: busy 469.8 / 467.8\n  (source) against 454.0 / 455.0 (bundle); `gather_batch` 190.9 / 189.5 against 182.6 / 180.7, `rebuildOwnedRows`\n  147.2 / 149.2 against 139.2 / 141.2, `publish_batch` 57.8 / 57.2 against 58.7 / 58.7, `_findNeighbors` 48.1 / 45.2\n  against 47.5 / 49.9, getCellRange 12.8 / 11.5 against 13.0 / 11.1; physics' thread 433.4 against 420.5. Boids\n  processes the same 20 000 entities a frame on both sides, so these rank code: the same speed.\n- **Boids, ABAB, owner spatial** (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=…`), 13:04 to 13:09 and,\n  appended, 13:21 to 13:26: **NEUTRAL** with 8 pairs. spatial 6.914 -> 7.087 ms (+1.5 %, worse 6/8, cv 8/8 %; +1.9 %\n  against the others), physics +2.8 % (6/8, cv 6/7 %), pre-render 3.104 -> 3.106 (+2.1 %, 5/8), logic 2.009 -> 1.667\n  (-17 %, under the floor); load keys within 2.1 %. The first 4 pairs had read spatial +4.0 % (3/4); pairs 5 and 6 read\n  the bundle faster (-2.5, -1.6 %). Pair 7 ran both sides at 8.3 to 8.5 ms against 6.9 for the others: the owner's own\n  Chrome (not the bench's) used about 1.7 cores during the sitting (a renderer 0.9, its GPU process 0.45).\n- **Predator, one trace a side (12:50, 12:51).** `rebuildOwnedRows` read 66.6 (source) against 83.9 ms/s (bundle), and\n  pre-render's emit_rows and collect_sprites (WASM, the same bytes) moved in opposite directions (80.9 / 66.7 and\n  47.8 / 64.7): Predator's load differs from run to run, so its single traces cannot rank code.\n- **Terser's single-use inlining.** The bundle writes a module function called once as an IIFE inside its caller\n  (`reduce_funcs`): 32 in pre-render's chunk, 11 in particle's, 3 in spatial's (none on its frame path), among them\n  E-179's decoration screen loops, which source keeps in functions of their own. Predator's particle trace read that\n  IIFE at 17.0 ms/s against 9.7 for source's function, with the sway kernel +29 % on the same side (more decoration\n  work in that run). A probe in Chrome of both shapes (source's functions and the bundle's method as terser wrote it;\n  20 000 blades in random order, one call a frame, a panning camera; `chromeKernel.mjs`, 13:27 to 13:28, three runs):\n  145 / 145 / 150 µs a call for each, 130 to 135 in the first third. The shape costs nothing in Chrome, so\n  `reduce_funcs: false` was not made.\n- So nothing in the bundle's code makes spatial or pre-render slower than source, and nothing is taken out. Bundle\n  against source for the same code has read -2.8 to +9.6 % over seven sittings. From the next merge the bundle sitting\n  also runs Boids (a fixed load) with 8 pairs, and the machine is checked for other busy processes first."
     }
   ],
   "leads": [
