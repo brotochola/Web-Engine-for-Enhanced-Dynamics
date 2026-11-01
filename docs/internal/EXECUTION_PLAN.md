@@ -3066,6 +3066,11 @@ statics changed, a frame would carry an index and a pose per row (about 20 bytes
 **Plan:** step 0, a counter of the rows per frame whose statics changed, in Predator, littleCity and adobeAnimateScene
 (an animated sprite changes its frame often, and Adobe's statics move every frame: R-0626). Build only where most rows
 keep theirs. Owners: the pre-render and renderer workers of the scene the counter picks; a Predator gate.
+**Step 0, 2026-11-01 (R-0781):** an instrumented pre-render counted each frame's sprite rows whose statics differ from
+the ones their entity carried when last drawn. Predator: about 13 500 rows a frame, 4.8 to 5.6 % changed, and the
+queue's static generation moved on every frame, so all of them are packed and uploaded again; littleCity: about 290
+rows, 11 to 15 % changed. Build it for Predator: about 700 rows' statics a frame instead of 13 500 (about 30 KB instead
+of 590 KB). adobeAnimateScene's rows are expanded pieces, several per entity: E-145's ground.
 
 ### E-178 RigidBody.speed's derive pass, cheaper where it runs (the particle worker)
 
