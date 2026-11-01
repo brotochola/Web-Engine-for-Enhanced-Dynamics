@@ -3352,6 +3352,17 @@ otherwise pre-render's sun rows. Predator ?crowd=1.5, 8 pairs: renderer -4.4 % (
 sitting read +0.0 %: its shadow stream fell outside the arena and went word by word (ebb4693c). Step 2: the stamps as
 rows of a pose, a key, the shadow terms and a light, and pre-render's sun pack skipped where Pixi says its keyed
 texture is current.
+**Step 2, the design (2026-11-01):** the prize is pre-render's sun pack (pack_casters_scatter reads 18 columns and
+writes 22 floats a caster: about 45 ms/s at crowd 1.5) and the stamps' append (E-160: what is left of the stamp).
+(1) Pixi writes, in the keyed header's next word, the queue frame of its last keyed upload with shadows. (2) Pre-render,
+when that frame is within two of the one it writes, packs keyed caster rows instead: the pose, the key as a slot pair
+(key, 0) and the shadow terms (7 floats, no statics read), and the stamps copy them with the light (11 floats; copy_row
+already takes any strides), and it sets a flag in the GPU queue's header. (3) Pixi, on a flagged frame, draws the sun
+over the entity batch's instances (step 1) or, when its upload went split, over the keyed sun rows, and the stamps over
+the keyed stamp rows, both with the shadow program reading the statics by key (a form whose aInstRotCS is a constant and
+whose light is an attribute for the stamps). A texture behind by a frame or two (a resync, a pause starting) draws
+shadows from the statics it holds; an empty one (the first frames) draws none. Without the word (a pause, a scene not
+keyed) pre-render writes the 22-float rows as now.
 
 ---
 
