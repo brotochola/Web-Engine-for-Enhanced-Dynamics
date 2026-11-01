@@ -285,7 +285,7 @@ test('E-177: with emit.pixiKeyed, the keyed frames\' table, stamps and updates a
     ['queueB', L.queueBByte, queueBytes],
     ['pixiInstances', L.pixiInstanceByte, MAX * 15 * 4],
     ['pixiTables', L.pixiTableByte, L.pixiTableSlots * GPU_PACK_COLUMNS.length * 4],
-    ['keyTable', L.pixiKeyTableByte, L.pixiKeyRows * 64],
+    ['keyTable', L.pixiKeyTableByte, L.pixiKeyRows * 8],
     ['keyStamps', L.pixiKeyStampByte, L.pixiKeyRows * 4],
     ['keyUpdates', L.pixiKeyUpdatesByte, MAX * 64],
   ].sort((a, b) => a[1] - b[1]);

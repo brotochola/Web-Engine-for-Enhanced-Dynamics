@@ -252,9 +252,9 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackIndices', owner: 'Pixi', bytes: n * 4 },
       { name: 'pixiPackTables', owner: 'Pixi', bytes: pixiExtra ? pixiExtra.tableBytes | 0 : tableBytes },
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
-      // E-177: the entity batch's keyed frames (gpuPack.c pack_sprites_keyed): the statics it last listed for each key
-      // (KEYED_ROW_WORDS u32 a key), each key's stamp, and a frame's updates (as many as its rows).
-      { name: 'pixiKeyTable', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * PIXI_KEYED_ROW_BYTES },
+      // E-177: the entity batch's keyed frames (gpuPack.c pack_sprites_keyed): the fingerprint of the statics it last
+      // listed for each key, each key's stamp, and a frame's updates (as many as its rows).
+      { name: 'pixiKeyTable', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * PIXI_KEYED_PRINT_BYTES },
       { name: 'pixiKeyStamps', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * 4 },
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
     );
@@ -403,8 +403,9 @@ export const CUSTOM_COLLECTOR_ROW_BYTES = 25;
 /** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
 export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;
-/** E-177: the bytes of a keyed frame's table row and of an update (gpuPack.c KEYED_ROW_WORDS u32). */
+/** E-177: the bytes of a keyed frame's update (gpuPack.c KEYED_ROW_WORDS u32) and of a key's fingerprint (u64). */
 export const PIXI_KEYED_ROW_BYTES = 64;
+export const PIXI_KEYED_PRINT_BYTES = 8;
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its

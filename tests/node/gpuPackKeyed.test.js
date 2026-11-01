@@ -79,7 +79,7 @@ async function setup(seed) {
   const splitStat = alloc(Float32Array, N * GPU_STATIC_FLOATS);
   const pose = alloc(Float32Array, N * GPU_POSE_FLOATS);
   const slots = alloc(Float32Array, N * GPU_INDEXED_SLOT_FLOATS);
-  const table = alloc(Uint32Array, KEY_ROWS * GPU_KEYED_ROW_WORDS);
+  const table = alloc(Uint32Array, KEY_ROWS * 2);
   const stamps = alloc(Uint32Array, KEY_ROWS);
   const updates = alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS);
   const tableByte = (top = (top + 63) & ~63);

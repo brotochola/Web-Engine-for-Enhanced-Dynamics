@@ -256,8 +256,8 @@ export const GPU_KEYED_KEY_WORD = 12;
  * E-177: a split frame whose statics stay with their key, through the kernel. Each drawn row's pose (GPU_POSE_FLOATS)
  * and slot pair (GPU_INDEXED_SLOT_FLOATS: its key's table row, as a float, and the slot's depth, as the split pack
  * writes it) at its draw slot; a row whose statics differ from its key's table row writes them there and lists them as
- * an update. `keyed`: `tableByte` (keyBase + capacity rows of GPU_KEYED_ROW_WORDS, zeroed at first), `stampByte` (as
- * many u32, zeroed at first: the frame that last took each row), `keyBase` (the keys
+ * an update. `keyed`: `tableByte` (keyBase + capacity u64, zeroed at first: each key's fingerprint of the statics it last
+ * listed), `stampByte` (as many u32, zeroed at first: the frame that last took each key), `keyBase` (the keys
  * the queue's sprites take: a row without one, past it, or whose key a row before it took this frame takes keyBase plus
  * its slot), `epoch` (one no call on that table took before, never 0) and `updatesByte` (room for capacity updates of
  * GPU_KEYED_ROW_WORDS: the statics, then the key at GPU_KEYED_KEY_WORD); the update count goes to `keyed.updates`. The

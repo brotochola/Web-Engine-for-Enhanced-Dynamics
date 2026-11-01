@@ -88,7 +88,7 @@ async function setup(seed) {
   const splitRows = alloc(Float32Array, N * INSTANCED_SPRITE_FLOATS);
   const keyedRows = alloc(Float32Array, N * INSTANCED_SPRITE_FLOATS);
   const keyed = {
-    tableByte: alloc(Uint32Array, KEY_ROWS * GPU_KEYED_ROW_WORDS).byteOffset,
+    tableByte: alloc(Uint32Array, KEY_ROWS * 2).byteOffset,
     stampByte: alloc(Uint32Array, KEY_ROWS).byteOffset,
     updatesByte: alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS).byteOffset,
     keyBase: ENTITIES,

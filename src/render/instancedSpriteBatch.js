@@ -326,8 +326,9 @@ export class InstancedSpriteBatch {
     const updateCopy = (k && arena && arena.f32(updateWords)) || new Float32Array(updateWords);
     this._keyUpdates = new Uint32Array(updateCopy.buffer, updateCopy.byteOffset, updateWords);
     if (k) {
-      // The table starts as the texture does, all zeros; so do the stamps (a batch made again forgets the last one's).
-      new Uint32Array(this._sharedStatic.buffer, k.tableByte, (k.keyRows | 0) * GPU_KEYED_ROW_WORDS).fill(0);
+      // The fingerprints start as the texture's zeros print (none matches but a print of 0); the stamps at zero too (a
+      // batch made again forgets the last one's).
+      new Uint32Array(this._sharedStatic.buffer, k.tableByte, (k.keyRows | 0) * 2).fill(0);
       new Uint32Array(this._sharedStatic.buffer, k.stampByte, k.keyRows | 0).fill(0);
     }
     this._ixGen = 0;
