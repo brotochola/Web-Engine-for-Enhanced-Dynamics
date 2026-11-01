@@ -411,6 +411,14 @@ class ParticleWorker extends AbstractWorker {
     this._swayFrameCounter = 0;
     this._activeDecorationSnapshot = null;
     this._activeDecorationSnapshotCount = 0;
+    // E-179c: the list count (DecorationPool.listEpoch) the snapshot was copied at (-1: none); the screen test's last
+    // inputs: the list and move counts and the camera bounds it ran with; and whether this frame's attached
+    // decorations moved.
+    this._decoSnapshotEpoch = -1;
+    this._decoScreenListEpoch = -1;
+    this._decoScreenMoveEpoch = -1;
+    this._decoScreenBounds = new Float64Array(7).fill(NaN);
+    this._decoAttachedMoved = true;
     // W22: the sway kernel on the render-queue memory, or null in a scene without decorations.
     this._swayWasm = null;
     // _swayRefused said its reason.
@@ -879,7 +887,11 @@ class ParticleWorker extends AbstractWorker {
       this._activeDecorationSnapshotCount = 0;
       return 0;
     }
+    // E-179c: an active list that has not changed since the last copy (its count holds) leaves the copy as it is.
+    const epoch = DecorationPool.listEpoch();
+    if (epoch >= 0 && epoch === this._decoSnapshotEpoch) return this._activeDecorationSnapshotCount;
     this._activeDecorationSnapshotCount = DecorationPool.copyActiveSnapshot(this._activeDecorationSnapshot);
+    this._decoSnapshotEpoch = epoch;
     return this._activeDecorationSnapshotCount;
   }
 
@@ -965,6 +977,8 @@ class ParticleWorker extends AbstractWorker {
    * Runs every frame before culling. Orphan parent → despawn.
    */
   resolveAttachedDecorations(deltaTime = 0) {
+    // E-179c: whether a decoration this pass places moved (the screen test runs again then).
+    this._decoAttachedMoved = false;
     if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
 
     const activeData = this._activeDecorationSnapshot;
@@ -1021,6 +1035,8 @@ class ParticleWorker extends AbstractWorker {
       const ly = localY[i];
       const bc = baseRotC[i];
       const bs = baseRotS[i];
+      const ox = x[i];
+      const oy = y[i];
 
       let wc;
       let ws;
@@ -1035,6 +1051,7 @@ class ParticleWorker extends AbstractWorker {
         wc = bc;
         ws = bs;
       }
+      if (x[i] !== ox || y[i] !== oy) this._decoAttachedMoved = true;
 
       const mode = sway[i];
       let delta = 0;
@@ -1134,6 +1151,7 @@ class ParticleWorker extends AbstractWorker {
    * shipped method is left as it was: moved into a function of its own, the same loop ran 3 to 5 % slower (R-0776).
    */
   updateDecorationScreen() {
+    if (this._decorationScreenHolds()) return;
     const activeCount = this._activeDecorationSnapshotCount;
     const scratch = this._decorationScreenScratch;
     if (this._decorationScreenFlips * 8 > activeCount && scratch.length >= activeCount) {
@@ -1143,6 +1161,35 @@ class ParticleWorker extends AbstractWorker {
     }
     this._decorationScreenProbe = (this._decorationScreenProbe + 1) & 15;
     if (this._decorationScreenProbe === 0) this._sampleDecorationScreenFlips();
+  }
+
+  /**
+   * E-179c: whether the screen test would write what it wrote last: the camera bounds it ran with, and since then no
+   * decoration spawned or despawned (the pool's list count), moved (its move count) or, attached, was placed elsewhere
+   * this frame. Otherwise the test's inputs are kept for the next frame and it runs.
+   */
+  _decorationScreenHolds() {
+    const listEpoch = DecorationPool.listEpoch();
+    const moveEpoch = DecorationPool.moveEpoch();
+    if (listEpoch < 0 || moveEpoch < 0 || !this.cameraData) return false;
+    const b = this._frameCameraBounds();
+    if (!b) return false;
+    const k = this._decoScreenBounds;
+    if (!this._decoAttachedMoved && listEpoch === this._decoScreenListEpoch && moveEpoch === this._decoScreenMoveEpoch && b.zoom === k[0]
+      && b.cameraOffsetX === k[1] && b.cameraOffsetY === k[2] && b.minX === k[3] && b.maxX === k[4]
+      && b.minY === k[5] && b.maxY === k[6]) {
+      return true;
+    }
+    this._decoScreenListEpoch = listEpoch;
+    this._decoScreenMoveEpoch = moveEpoch;
+    k[0] = b.zoom;
+    k[1] = b.cameraOffsetX;
+    k[2] = b.cameraOffsetY;
+    k[3] = b.minX;
+    k[4] = b.maxX;
+    k[5] = b.minY;
+    k[6] = b.maxY;
+    return false;
   }
 
   /** E-179: updateDecorationScreenVisibility's output without its branch (decorationScreenBranchless). */

@@ -40,6 +40,13 @@ function predatorNumberParam(name, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+// E-191: `?crowd=<f>` scales the civilians and soldiers spawned (1 by default; their pools hold 1.5 times as many), so
+// the renderer can be loaded past the 3 ms floor.
+function predatorCrowd() {
+  const f = predatorNumberParam('crowd', 1);
+  return f > 0 ? Math.min(f, 1.5) : 1;
+}
+
 function predatorHourPin() {
   const q = predatorSearchParam('hour');
   if (q == null || q === '') return null;
@@ -466,8 +473,9 @@ export class PredatorScene extends WEED.Scene {
     const map = this.spawnRocksTreesAndHouses();
     this.spawnLights(100);
     this.spawnTrash(100);
-    this.spawnCivilians(10000);
-    this.spawnMySoldiers(6000);
+    const crowd = predatorCrowd();
+    this.spawnCivilians(Math.round(10000 * crowd));
+    this.spawnMySoldiers(Math.round(6000 * crowd));
     this.spawnDestination();
     await map;
   }

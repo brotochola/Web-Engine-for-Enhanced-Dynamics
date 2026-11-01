@@ -50,6 +50,15 @@ export const GPU_FLAG_SPLIT = 2;
  * row order; GPU_HDR_STATIC_GEN names those statics' generation and GPU_HDR_INDEXED_ROWS how many queue rows they cover.
  */
 export const GPU_FLAG_INDEXED = 4;
+/**
+ * E-191. With GPU_FLAG_KEYED_CASTERS the sun and stamp regions hold keyed caster rows: x, y, the key as a float and a
+ * zero (the slot pair the shadow program reads the statics by, from the keyed frames' statics texture) and the shadow
+ * terms (GPU_KEYED_CASTER_FLOATS); a stamp row adds the light vec4 at GPU_KEYED_CASTER_FLOATS
+ * (GPU_KEYED_STAMP_FLOATS). Pre-render writes them while Pixi's keyed texture is live (PIXI_KEYED_HEADER.LIVE).
+ */
+export const GPU_FLAG_KEYED_CASTERS = 8;
+export const GPU_KEYED_CASTER_FLOATS = 7;
+export const GPU_KEYED_STAMP_FLOATS = GPU_KEYED_CASTER_FLOATS + 4;
 export const GPU_HDR_INDEXED_ROWS = 9;
 /**
  * E-162. An indexed frame's slot pairs' generation: the same while the painter's order, the slots and the depth

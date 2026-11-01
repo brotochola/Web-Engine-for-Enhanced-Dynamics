@@ -8,6 +8,14 @@ import { PoolSlotArray, poolSlotNone } from '../util/poolSlotWidth.js';
 
 const NOT_IN_GRID = -1;
 
+/**
+ * E-179c: the words of the decoration pool's list header (its lock's buffer, a cache line) past the lock: how many times
+ * the active list changed (spawns, despawns, a clear) and how many times a world-owned decoration moved, so a reader
+ * can tell a frame that changed neither. Readers take -1 where the header has no room for them.
+ */
+export const DECORATION_LIST_EPOCH = 1;
+export const DECORATION_MOVE_EPOCH = 2;
+
 export class DecorationSpatial {
   static cellSize = 0;
   static invCellSize = 0;
@@ -28,6 +36,8 @@ export class DecorationSpatial {
   static cellOf = null;
   /** @type {Int32Array|null} */
   static _lock = null;
+  /** @type {Int32Array|null} E-179c: the pool's list header (DECORATION_MOVE_EPOCH counts the moves), when it has room. */
+  static _epochs = null;
 
   /**
    * @param {Object} buffers
@@ -202,6 +212,12 @@ export class DecorationSpatial {
     this.cellOf[decoIdx] = NOT_IN_GRID;
   }
 
+  /** E-179c: one more move in the list header, after the position is written (a reader that saw the old count runs again). */
+  static _countMove() {
+    const e = this._epochs;
+    if (e !== null) Atomics.add(e, DECORATION_MOVE_EPOCH, 1);
+  }
+
   /**
    * Update world position arrays then re-index (same cell = no list surgery).
    * @param {number} decoIdx
@@ -213,6 +229,7 @@ export class DecorationSpatial {
       if (DecorationComponent.x) {
         DecorationComponent.x[decoIdx] = x;
         DecorationComponent.y[decoIdx] = y;
+        this._countMove();
       }
       return;
     }
@@ -222,6 +239,7 @@ export class DecorationSpatial {
     try {
       DecorationComponent.x[decoIdx] = x;
       DecorationComponent.y[decoIdx] = y;
+      this._countMove();
 
       const newCell = this.getCellIndex(x, y);
       const oldCell = this.cellOf[decoIdx];

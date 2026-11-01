@@ -3240,6 +3240,11 @@ clustered by index, so the branch usually predicts). E-179 picks between the two
 outcome's flips, which takes the gain where it exists and keeps the branch where it predicts.
 **Plan:** after E-179's verdict, E-65's branchless write as a second copy, picked the same way; E-179's lesson kept (the
 shipped loop left as it was, the dispatch outside it). Owner: a particle stress scene with random emission.
+**Kept as a kernel change 2026-11-01 (e7111409, R-0797).** The WASM list build has written the visible list without a
+branch since the migration, so there was no pair of copies to pick between; the shortcut went the other way: a full
+block all on screen writes its visible entries as its active ones (vector stores), one all off writes none. Kernel
+(the catalog's new particleLists rows, 9 rounds): +6.1 % with the whole world in view, +4.4 % with a quarter in no
+order. particleIntegrateStressScene at 200 000 particles: neutral (the build is about 0.3 ms of the 3.2).
 
 ### E-179c Decorations' screen test skipped while nothing it reads changed
 
@@ -3249,6 +3254,12 @@ change gives the same list and flags.
 **Plan:** step 0, how many frames a second hold the camera still in the demos (Predator's follows a player and moves
 nearly every frame). Then a stamp of the bounds and of DecorationPool's spawns, despawns and moves; skip when both
 hold. Owner: a scene with a still camera and many decorations.
+**Kept 2026-11-01 (f890c16a, R-0796): particle -50.9 % with a still camera.** Step 0 from the code: bichos centres its
+camera once, littleCity and proceduralTree hold a free camera between pans, Predator and carScene move every frame.
+The pool's list header (now a cache line) counts the active list's changes and the world-owned decorations' moves;
+the particle worker copies the snapshot only when the list moved and tests only when a count, the camera bounds or an
+attached decoration it placed changed. decorationSwayStressScene (320 000, random order, a third on screen): particle
+4.927 -> 2.424 ms (0/4).
 
 ## Wave 12 candidates (2026-11-01)
 
@@ -3282,7 +3293,8 @@ computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU. Owner: 
 
 **Premise:** rows without an entity go up every frame in a keyed frame, 64 bytes an update against the 36 a keyed row
 saves. A scene that draws its LiquidFun particles as sprites (liquidFunQueryStressScene: up to 16 000 such rows) loses
-with keyed frames, which pause there (E-177's loss rule). Particles, decorations and LiquidFun particles have pool
+with keyed frames, which pause there (E-177's loss rule); so does Predator zoomed in past 0.5, where its 20 000 grass
+decorations come into the main queue (a probe at zoom 1.6: 10 keyed frames, then split). Particles, decorations and LiquidFun particles have pool
 slots that hold an occupant for many frames.
 **Plan:** keys past the entities by type and pool slot (particle, decoration, LiquidFun ranges), and a change mark for
 each type (flags of its own, or the emit comparing the few statics a type has), so those rows send their poses only.
@@ -3305,6 +3317,52 @@ SpriteRenderer's block (the columns after it moved by 42 KB), and the emit's key
 **Plan:** the plain emit kernel on both trees (preRenderEmitWasmMicrobench's wasm variant); if it ties, the layouts:
 the key column at the queue's end, then keyedDirty at the block's end. Owner: Predator's pre-render, or a stress scene
 whose pre-render is the emit.
+**Answered 2026-11-01 (R-0795): no cost to find.** The emit kernel ties main (1 966 -> 1 950 ops/s, -0.8 %), and
+painterMoveStressScene, whose pre-render is the emit of 300 000 rows, reads -0.9 % (2/4) against main: neither the
+emit's code nor the queue's layout costs there. Predator's +2 % is within its spread for pre-render.
+
+### E-191 Shadow casters keyed by entity
+
+**Premise:** step 0 (R-0799): in Predator the casters are 80 % of what the Pixi worker copies and uploads a frame:
+13 460 sun rows and 5 500 to 12 000 point-light stamps of GPU_CASTER_FLOATS (22 floats, 88 bytes), 1.6 to 2.1 MB,
+against 0.38 MB for the keyed entities. Each caster is a sprite of an entity whose statics E-177's keyed frames already
+keep in the entity batch's statics texture.
+**Plan:** a caster row of its pose, its key and its caster and light terms (48 bytes or less), the caster programs
+reading the sprite statics by key from that texture where the keyed frames are on; pre-render's caster pack writes the
+shorter row. First a knob for Predator's crowd (its renderer runs 2.9 ms, under the floor), then the kernel and
+Predator's renderer and pre-render.
+**Options, 2026-11-01 (from the code):** the shadow program reads 18 of a row's 22 floats (rotC/rotS, depth and the
+tint only appear in a line that keeps them from being compiled out; the shadow's angle is the sun's or the light's),
+and the sun rows' light vec4 is zero. The stamp rows are copies of sun rows (shadowStamp.c copy_row) with a light.
+(a) A slim row of the 18 floats read: -20 % of the casters' bytes (about 340 KB a frame), every caster user touched
+(both kernels, the layout, the batch's geometry, GLSL and WGSL, seven tests). (b) Keyed rows (pose, key, caster and
+light terms, about 10 floats): -55 %. (e) The sun pass draws the entity batch's own instances (its pose and slot
+streams, already uploaded) with a shadow program that reads the statics and the caster terms by key: the sun rows'
+1.2 MB a frame go, and so does pre-render's sun pack (29 ms/s); the stamp rows shrink to a pose, a key and a light.
+(b) and (e) need the shadow passes after the entity batch's upload (updateShadowSprites runs before
+updateSpritesFromRenderQueue today), a fallback where the keyed texture is not current (a resync, a pause: pre-render
+must know which rows to write), the caster terms by key, and the casters' cull region against the sprites' (a caster
+just off screen whose shadow falls on it). (e) first: the largest saving and no new row format for the sun.
+**Knob:** `?crowd=1.5` (c5003321) loads Predator's renderer to 4.0 ms, pre-render 6.3, physics 9.0, spatial 7.3,
+logic 4.7: every worker past the floor.
+**Step 1 kept 2026-11-01 (efce1f5e, ebb4693c; R-0800, R-0801): the sun pass over the keyed instances, renderer
+-4.4 %.** On a keyed frame the sun pass draws the entity batch's own instances (their pose and slot streams, a
+shadow stream of three floats a slot from the keyed pack, the statics by key), the sprites drawn before the shadows;
+otherwise pre-render's sun rows. Predator ?crowd=1.5, 8 pairs: renderer -4.4 % (6/8), pre-render -0.1 %. The first
+sitting read +0.0 %: its shadow stream fell outside the arena and went word by word (ebb4693c). Step 2: the stamps as
+rows of a pose, a key, the shadow terms and a light, and pre-render's sun pack skipped where Pixi says its keyed
+texture is current.
+**Step 2, the design (2026-11-01):** the prize is pre-render's sun pack (pack_casters_scatter reads 18 columns and
+writes 22 floats a caster: about 45 ms/s at crowd 1.5) and the stamps' append (E-160: what is left of the stamp).
+(1) Pixi writes, in the keyed header's next word, the queue frame of its last keyed upload with shadows. (2) Pre-render,
+when that frame is within two of the one it writes, packs keyed caster rows instead: the pose, the key as a slot pair
+(key, 0) and the shadow terms (7 floats, no statics read), and the stamps copy them with the light (11 floats; copy_row
+already takes any strides), and it sets a flag in the GPU queue's header. (3) Pixi, on a flagged frame, draws the sun
+over the entity batch's instances (step 1) or, when its upload went split, over the keyed sun rows, and the stamps over
+the keyed stamp rows, both with the shadow program reading the statics by key (a form whose aInstRotCS is a constant and
+whose light is an attribute for the stamps). A texture behind by a frame or two (a resync, a pause starting) draws
+shadows from the statics it holds; an empty one (the first frames) draws none. Without the word (a pause, a scene not
+keyed) pre-render writes the 22-float rows as now.
 
 ---
 

@@ -256,6 +256,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
       // E-177: the entity batch's keyed frames' updates (gpuPack.c KEYED_ROW_WORDS each), as many as its rows.
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
+      // E-191: their shadow stream (shadowH, offX, offY a draw slot), for the sun's pass over the entity batch.
+      { name: 'pixiKeyShadow', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_SHADOW_BYTES },
     );
   }
   if (collect) {
@@ -405,13 +407,17 @@ export const EMIT_ADOBE_ASSET_BYTES = 160;
 /** E-177: the bytes of a keyed frame's update (gpuPack.c KEYED_ROW_WORDS u32). */
 export const PIXI_KEYED_ROW_BYTES = 64;
 
+/** E-191: the bytes of a keyed frame's shadow terms a draw slot (shadowH, offX, offY). */
+export const PIXI_KEYED_SHADOW_BYTES = 12;
+
 /**
  * E-177: the keyed frames' resync header, u32 words. Pixi raises REQUEST when its statics texture may miss a change (its
  * first keyed frame, a frame it did not draw keyed); pre-render, seeing it, flags every sprite for its next emit
  * (SpriteRenderer.keyedDirty) and sets SERVED, and after each emit of the main queue stores SERVED into that queue
- * buffer's word, so Pixi draws a buffer keyed only once it carries the request it made.
+ * buffer's word, so Pixi draws a buffer keyed only once it carries the request it made. E-191: LIVE is the queue frame of
+ * Pixi's last keyed upload with shadow terms (0: none); pre-render writes keyed caster rows while it is recent.
  */
-export const PIXI_KEYED_HEADER = Object.freeze({ REQUEST: 0, SERVED: 1, BUFFER0: 2, BUFFER1: 3 });
+export const PIXI_KEYED_HEADER = Object.freeze({ REQUEST: 0, SERVED: 1, BUFFER0: 2, BUFFER1: 3, LIVE: 4 });
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its

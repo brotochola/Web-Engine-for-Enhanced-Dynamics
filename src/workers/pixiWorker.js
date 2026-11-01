@@ -537,6 +537,10 @@ class PixiRenderer extends AbstractWorker {
     this._pixiInstanceRows = null;
     // E-177: the render-queue memory's keyed regions for the entity batch (renderQueueMemory.js pixiKey*), or null.
     this._pixiKeyed = null;
+    // E-191: the sun's shadow pass over the entity batch's keyed instances (made on the first shadow pass that can use
+    // it; null where it cannot be), and whether that was tried.
+    this._keyedSunMesh = null;
+    this._keyedSunTried = false;
     // The statics scatter's GL objects (_scatterStaticsGl), made on its first call.
     this._staticsScatterGl = null;
     // The glow batch's rows in the render-queue memory (pixi pack mode), or null.
@@ -2415,6 +2419,7 @@ class PixiRenderer extends AbstractWorker {
           keyRows: layout.pixiKeyRows | 0,
           updatesByte: layout.pixiKeyUpdatesByte,
           headerByte: layout.pixiKeyHeaderByte,
+          shadowByte: layout.pixiKeyShadowByte ?? -1,
         }
       : null;
   }
@@ -2455,10 +2460,11 @@ class PixiRenderer extends AbstractWorker {
           : this._gpuRecordTexture(),
       keyed,
       // W30: room for its two streams at their widest (a pose batch's 17 floats a row), and an indexed frame's slot
-      // stream and statics rows; a keyed one's slot stream and updates (its statics are scattered on the GPU).
+      // stream and statics rows; a keyed one's slot stream, updates (its statics are scattered on the GPU) and, E-191, the
+      // shadow stream of the sun's pass over its instances (3 floats a row).
       arena: this._batchArena(maxItems * (POSE_DYN_FLOATS + POSE_STATIC_FLOATS)
         + (keyed !== null
-          ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS)
+          ? maxItems * (GPU_INDEXED_SLOT_FLOATS + GPU_KEYED_ROW_WORDS + 3)
           : indexed ? maxItems * GPU_INDEXED_SLOT_FLOATS + gpuIndexedStaticRows(maxItems) * GPU_INDEXED_STATIC_FLOATS : 0)),
     });
     this.spriteMesh = this.entitiesBatch.mesh;
@@ -2742,8 +2748,10 @@ class PixiRenderer extends AbstractWorker {
         this.syncLayerResolutionFromSharedState();
         this.uploadTextureLookupIfNeeded();
         this.drawFrameLights();
-        this.drawFrameShadows();
+        // E-191: the sprites first, so a keyed frame's statics texture and instances are this frame's when the sun's
+        // shadow pass draws them.
         this.drawFrameSprites();
+        this.drawFrameShadows();
         this.drawFrameCustomLayers();
         this.renderLightingToTexture();
       }
@@ -4733,6 +4741,33 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return true;
   }
 
+  /**
+   * E-191: the sun pass's mesh over the entity batch's keyed instances of this frame, or null (no keyed frame this
+   * frame, WebGPU, or no shadow stream). Made on first use: the shadow program reading the statics by key, the caster
+   * shader's resources and uniform group, the caster batch's state.
+   */
+  _keyedSunFor(sunShader) {
+    const b = this.entitiesBatch;
+    if (!this._keyedSunTried) {
+      this._keyedSunTried = true;
+      const casters = this.gpuCasterBatch;
+      if (b && b.keyed && !this._useWebGpu && casters && casters.mesh && b.enableKeyedShadows()) {
+        const shader = b.makeKeyedSunShader(sunShader);
+        if (shader) {
+          this._keyedSunMesh = new PIXI.Mesh({
+            geometry: b.keyedShadowGeometry,
+            shader,
+            state: casters.mesh.state,
+            label: 'keyed-sun-casters',
+          });
+        }
+      }
+    }
+    if (this._keyedSunMesh === null || !b || !b.keyedShadowReady) return null;
+    this._keyedSunMesh.geometry = b.keyedShadowGeometry;
+    return this._keyedSunMesh;
+  }
+
   _drawGpuCasterShadows() {
     this._gpuSunDrew = false;
     this._gpuPassesThisFrame = 0;
@@ -4783,8 +4818,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     batch.setTargetSpace(false, 0, 0, 1);
     if (u.uSun[3] > 0 && sunN > 0) {
-      this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
-      this._drawGpuCasterPass(mesh, group, true);
+      // E-191: on a keyed frame the sun's casters are the entity batch's own instances (a sprite that casts none has
+      // no height), already uploaded with their shadow terms; else pre-render's sun rows.
+      const keyedSun = this._keyedSunFor(shader);
+      if (keyedSun !== null) {
+        this._drawGpuCasterPass(keyedSun, group, true);
+      } else {
+        this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
+        this._drawGpuCasterPass(mesh, group, true);
+      }
     }
 
     const sunI = sunOn ? Sun.intensity : 0;

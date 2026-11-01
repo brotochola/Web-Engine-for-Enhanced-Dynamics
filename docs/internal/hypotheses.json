@@ -9507,7 +9507,8 @@
         "R-0791",
         "R-0792",
         "R-0793",
-        "R-0794"
+        "R-0794",
+        "R-0798"
       ],
       "status": "kept",
       "date": "2026-10-29",
@@ -9640,20 +9641,21 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0797"
+      ],
+      "status": "kept",
       "date": "2026-11-01",
-      "result": "",
+      "result": "kept (kernel, product-neutral; e7111409): whole-block shortcuts in the WASM list build, kernel +6.1 % (96 %) and +4.4 % (100 %); particleIntegrateStressScene at 200 000 neutral",
       "refs": [
         "EXECUTION_PLAN.md#E-184"
       ],
-      "statusText": "open: Wave 11 candidates (2026-11-01), E-65 reopened with E-179's form",
+      "statusText": "kept (kernel) 2026-11-01 (e7111409, R-0797): whole-block shortcuts, E-65's branchless write already shipped in WASM",
       "id": "E-184",
-      "rank": 14,
       "area": "particle",
       "kind": "speed",
       "title": "The particle cull's branch and branchless copies, picked per frame by a sample of the flips (E-65 reopened)",
-      "next": "After E-179's verdict: E-65's branchless visible-list write (kernel -16 % at 82 % visible random, +8 % all visible) as a second copy, picked as E-179 picks. EXECUTION_PLAN.md#E-184."
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -9718,10 +9720,10 @@
         "EXECUTION_PLAN.md#E-188"
       ],
       "statusText": "open: after E-177's verdict",
-      "rank": 16,
+      "rank": 13,
       "area": "render",
       "result": "",
-      "next": "Rows without an entity go up every frame (64 bytes an update against the 36 a keyed row saves): a LiquidFun scene that draws its particles as sprites (liquidFunQueryStressScene: up to 16 000 such rows) loses with keyed frames, which pause there. Keys by pool slot past the entities (particle, decoration, LiquidFun ranges) and a change mark for each type (its own flags, or the emit comparing the few statics a type has) would send those rows' poses only. Owner: liquidFunQueryStressScene's renderer; pre-render pays the marks."
+      "next": "Rows without an entity go up every frame (64 bytes an update against the 36 a keyed row saves). Predator zoomed in past 0.5 shows its grass (20 000 decorations, rows without a key in the main queue): its keyed frames pause there after 10 losing frames (2026-11-01 probe at zoom 1.6), and liquidFunQueryStressScene draws up to 16 000 LiquidFun particles as such rows. Keys by pool slot past the entities (particle, decoration, LiquidFun ranges) and a change mark for each type (flags of its own, or the emit comparing the few statics a type has) would send those rows' poses only. Owner: Predator at zoom 1.6 (its renderer), and liquidFunQueryStressScene; pre-render pays the marks."
     },
     {
       "aliases": [],
@@ -9742,8 +9744,10 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0795"
+      ],
+      "status": "answered",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-190",
@@ -9751,28 +9755,49 @@
       "refs": [
         "EXECUTION_PLAN.md#E-190"
       ],
-      "statusText": "open: found 2026-11-01 in E-177's hygiene sitting",
-      "rank": 12,
+      "statusText": "answered 2026-11-01 (R-0795)",
       "area": "preRender",
-      "result": "",
-      "next": "wave12 with its keyed frames off against main: pre-render +2.1 % (4/4, cv 3/3 %), in every scene that does not key its frames. Candidates: the key column in the render queue (every column after it moved by 477 KB in Predator's queue, which changes their 4 KB aliasing), keyedDirty in SpriteRenderer's block (the columns after it moved by 42 KB), the emit's keyed branches. The plain emit kernel on both trees first (preRenderEmitWasmMicrobench's wasm variant); if it ties, the layouts (the key column at the queue's end). Owner: Predator's pre-render, or a stress scene whose pre-render is the emit."
+      "result": "answered 2026-11-01: the emit kernel ties main (-0.8 %), painterMove's emit-bound pre-render -0.9 %; Predator's +2 % is within its spread",
+      "next": "Nothing pending: the emit pays nothing for the build where it is all of pre-render."
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0799",
+        "R-0800",
+        "R-0801"
+      ],
+      "refs": [
+        "EXECUTION_PLAN.md#E-191"
+      ],
+      "id": "E-191",
+      "title": "Shadow casters keyed by entity: their sprite statics from E-177's statics texture, a pose and a key a row",
       "status": "open",
+      "statusText": "open: step 1 kept 2026-11-01 (ebb4693c, R-0801), the sun pass over the keyed instances, renderer -4.4 %",
       "date": "2026-11-01",
-      "result": "",
+      "rank": 11,
+      "area": "render",
+      "kind": "speed",
+      "result": "step 1 kept (efce1f5e, ebb4693c): the sun pass draws the entity batch's keyed instances; Predator crowd 1.5 renderer -4.4 % (6/8)",
+      "next": "Step 2: the point-light stamps as rows of a pose, a key, the shadow terms and a light (10 floats instead of 22), and pre-render's sun pack skipped where Pixi's keyed texture is current: a header word from Pixi saying so, the 22-float rows written otherwise (a resync, a pause). Owner Predator ?crowd=1.5, renderer and pre-render."
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0796"
+      ],
+      "status": "kept",
+      "date": "2026-11-01",
+      "result": "kept (f890c16a): decorationSwayStressScene (320 000, random order, still camera) particle 4.927 -> 2.424 ms (-50.9 %, 0/4)",
       "refs": [
         "EXECUTION_PLAN.md#E-179c"
       ],
-      "statusText": "open: Wave 11 candidates (2026-11-01), found building E-179",
+      "statusText": "kept 2026-11-01 (f890c16a, R-0796)",
       "id": "E-179c",
-      "rank": 13,
       "area": "particle",
       "kind": "speed",
       "title": "Decorations' screen test skipped while the camera and the decorations hold",
-      "next": "Step 0: frames a second with a still camera in the demos. Then a stamp of the bounds and of the pool's spawns, despawns and moves; skip when both hold. EXECUTION_PLAN.md#E-179c."
+      "next": "Predator in wave13's gate (its camera moves: two atomic loads a frame)."
     },
     {
       "aliases": [],
@@ -9916,6 +9941,22 @@
       "statusText": "fixed 2026-11-01 (3e363fec)",
       "area": "render",
       "result": "Fixed 3e363fec: the guide now says a tickAll that writes a sprite's statics through SoA sets renderDirty and keyedDirty, as markDirty() does. Pre-render's persist frames rewrite poses and textures only, so such a change showed only on the frames the emit ran in full (on main too), and E-177's keyed frames send statics only where keyedDirty marks them. No drawn sprite in the engine or demos was written that way.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-104"
+      ],
+      "records": [],
+      "id": "N-104",
+      "title": "The catalog's pre-render emit kernel (preRenderWorkerMicrobench) failed on every tree since the emit moved to WASM",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (b37f07ff)",
+      "date": "2026-11-01",
+      "area": "harness",
+      "kind": "bug",
+      "result": "Fixed b37f07ff: the preRenderWorker row runs preRenderEmitWasmMicrobench, whose default variant is now the shipped wasm kernel, and names the kernel's sources for --changed; the broken bench is gone. Found when runKernelsVsRev --only preRenderWorker failed its preflight on both sides (E-190).",
       "next": "Nothing pending."
     }
   ],
@@ -17312,6 +17353,89 @@
       "commits": [
         "1f8d9aab",
         "4db42575"
+      ]
+    },
+    {
+      "id": "R-0795",
+      "date": "2026-11-01",
+      "time": "10:01",
+      "timeFrom": "recorded",
+      "title": "E-190 answered: no fixed cost of the keyed frames' build in the emit (kernel -0.8 %, painterMove -0.9 %)",
+      "verdict": "answered",
+      "text": "**E-190 answered: no fixed cost of the keyed frames' build in the emit; Predator's +2 % sits within its spread.**\n2026-11-01, 09:56 to 10:01 (the result files' times), Node and Chrome (headed, source, detailed stats off).\n\n- **Kernel**, 09:56: `runKernelsVsRev --vs 3910ee3a --only preRenderWorker` (main before wave12's merge against\n  b37f07ff; the row now runs preRenderEmitWasmMicrobench's shipped wasm variant, N-104), Predator's mix of 13 532\n  sprites and 10 120 decorations, 5 rounds a side: 1 966 -> 1 950 ops/s (-0.8 %, rounds won 24 %), a tie. The queue's\n  layout is the tree's in both, key column included.\n- **painterMoveStressScene (PainterMoveReinsertScene)**, 09:57 to 10:01, `--vs 3910ee3a --hyp-rev HEAD`, 4 pairs, its\n  pre-render the emit of 300 000 rows a frame: 16.634 -> 16.248 ms (-0.9 %, worse 2/4, cv 4/4 %), logic +1.6 %\n  (3/4); NEUTRAL.\n- So neither the emit's code nor the queue's layout costs where the emit is all of pre-render. Predator's +2.1 %\n  (R-0793, cv 3/3 %) and its +2 % against the other workers are under the 3 % rule and within that scene's spread for\n  pre-render (-4.0 to +6.1 % raw between sittings this morning); no lever left to pull. Closed.",
+      "commits": [
+        "b37f07ff"
+      ]
+    },
+    {
+      "id": "R-0796",
+      "date": "2026-11-01",
+      "time": "10:17",
+      "timeFrom": "recorded",
+      "title": "E-179c kept: the decoration screen test and the snapshot copy skip a still frame; particle -50.9 %",
+      "verdict": "kept",
+      "text": "**E-179c kept (f890c16a): the decoration screen test and the snapshot copy skip a frame that changed nothing; particle\n-50.9 % with a still camera.** 2026-11-01, 10:14 to 10:17 (the result files' times), Chrome, headed, source, detailed\nstats off, decorationSwayStressScene `decorations=320000&order=random` with `--camera-zoom 0.03` (E-179's regime: a\nthird on screen, the list as random as Predator's grass), `--vs HEAD~1 --hyp-rev HEAD`, owner particle, 4 pairs.\n\n- Step 0 from the code: bichos (30 000 decorations) centres its camera once; littleCity (20 000) and proceduralTree\n  (65 000) run a free camera that holds between pans; Predator and carScene follow a moving target, so they move every\n  frame and skip nothing.\n- The pool's list header (now a cache line) counts the active list's changes and the world-owned decorations' moves;\n  the particle worker copies the snapshot only when the list count moved and tests only when a count, the camera\n  bounds or an attached decoration it placed changed. tests/node/decorationScreenLoops.test.js checks each change\n  (a move, a despawn, a spawn, the camera, an attached decoration's parent) against a full test.\n- particle 4.927 -> 2.424 ms (-50.9 %, worse 0/4, cv 2/1 %), p95 about 7.0 -> 3.0 ms; ACTIVE_DECORATIONS 320 000 on\n  both sides. The other workers sit under the floor in this scene. Predator's particle worker runs under the floor\n  too (0.8 ms) and its camera moves, so it pays two atomic loads and a compare a frame.",
+      "commits": [
+        "f890c16a"
+      ]
+    },
+    {
+      "id": "R-0797",
+      "date": "2026-11-01",
+      "time": "10:30",
+      "timeFrom": "recorded",
+      "title": "E-184 kept (kernel): whole-block shortcuts in the WASM particle list build, +6.1 / +4.4 %, the scene neutral",
+      "verdict": "kept-kernel",
+      "text": "**E-184 kept as a kernel change (e7111409): the WASM list build already writes the visible list without a branch, so\nthe shortcuts went the other way, for whole blocks; +6.1 and +4.4 % in the kernel, the scene neutral.** 2026-11-01,\n10:20 to 10:30 (the result files' times), Node and Chrome (headed, source, detailed stats off).\n\n- E-65's branchless write (a store every lane, the count advanced by the flag) is what particleLists.wasm has done\n  since the migration, so the pick between E-65's two JS copies has nothing to pick. What runs in branch-friendly\n  scenes is the per-lane loop on blocks whose 16 flags agree: particles from one emitter sit at neighbouring slots and\n  on screen together. A full block all on screen now writes its visible entries as its active ones (two u16x8 or four\n  u32x4 stores), one all off writes none; mixed blocks keep the loop.\n- Kernel (d129cffc put particleListsWasmMicrobench in the catalog; runKernelsVsRev --vs HEAD, 9 rounds a side, 65 000\n  live, the shipped float32 build), 10:24: the whole world in view (79 % on screen) 10 543 -> 11 187 ops/s (+6.1 %,\n  rounds won 96 %); a quarter in view in no order 10 745 -> 11 221 (+4.4 %, 100 %). 5 rounds first read +5.5 and\n  +1.8 % (84 and 64 %): undecided, so 9.\n- particleIntegrateStressScene `maxParticles=200000` (u32 lists, 198 000 live), 10:27 to 10:30, `--vs HEAD~1\n  --hyp-rev HEAD`, owner particle, 4 pairs: particle 3.211 -> 3.199 ms (-0.2 %, 2/4), pre-render -1.3 %; NEUTRAL.\n  The build is about 0.3 ms of that worker's 3.2 here, so 6 % of it is under the scene's reach: kept (kernel,\n  product-neutral).",
+      "commits": [
+        "d129cffc",
+        "e7111409"
+      ]
+    },
+    {
+      "id": "R-0798",
+      "date": "2026-11-01",
+      "time": "10:35",
+      "timeFrom": "recorded",
+      "title": "E-177 in a still scene (renderQueueStressScene): renderer 1.30 -> 0.83 ms, pre-render 1.21 -> 1.21 ms, under the floor",
+      "verdict": "passed",
+      "text": "**E-177 in a still scene: renderQueueStressScene NEUTRAL, renderer 1.30 -> 0.83 ms, pre-render 1.21 -> 1.21 ms (all\nunder the floor).** 2026-11-01, 10:32 to 10:35 (the result files' times), Chrome, headed, source, detailed stats off,\n`runPredatorAbab --vs 3910ee3a --hyp-rev HEAD` (main before wave12's merge against wave13's e7111409), 4 pairs.\n\n- 48 000 still sprites, 18 880 on screen, WebGL, Pixi packs and sorts: keyed frames, and a persist hit every frame, so\n  persist_frame rewrites every sprite's key each frame. renderer 1.299 -> 0.829 ms (-36 %), pre-render 1.206 -> 1.213\n  ms (+0.6 %); load keys equal (VISIBLE_ENTITIES 18 880). Every worker sits under the 3 ms floor: no verdict, but the\n  persist frames' key pass costs pre-render nothing it shows, and nothing needs to go faster there.",
+      "commits": [
+        "e7111409"
+      ]
+    },
+    {
+      "id": "R-0799",
+      "date": "2026-11-01",
+      "time": "10:41",
+      "timeFrom": "recorded",
+      "title": "E-191 step 0: Predator's shadow casters are 80 % of the Pixi worker's copy and upload (1.6-2.1 MB a frame)",
+      "verdict": "answered",
+      "text": "**E-191 step 0: Predator's shadow casters are 80 % of what the Pixi worker copies and uploads a frame.** 2026-11-01,\n10:41 (the result file's time), Chrome, headed, source, detailed stats off, Predator (WebGL, Pixi packs and sorts, keyed\nframes on), one run (6 s warm-up, 4 s); pixiWorker.js and the batch's copyIn instrumented in the main folder for the run\n(rows per pass, bytes per batch, averaged over 120 frames) and reverted.\n\n| frames | sun casters | point-light stamps | cookies | copied: casters | keyed entities | glow |\n| --- | --- | --- | --- | --- | --- | --- |\n| first 120 | 13 292 | 11 871 | 48 | 2 145 KB | 1 086 KB (the resync's full send) | 4 KB |\n| then | 13 456 to 13 462 | 5 523 to 8 041 | 48 | 1 633 to 1 851 KB | 377 to 467 KB | 4 KB |\n\n- A caster row is GPU_CASTER_FLOATS, 22 floats (88 bytes): a sprite row's 15, three caster terms and four light\n  terms. The same bytes go through updateBuffer, so the casters are most of the Pixi worker's arena copy (34 ms/s in\n  the morning's trace) and of its upload (37 ms/s), and pre-render's pack_casters_scatter (29 ms/s) writes them.\n- The casters are sprites of entities the keyed frames already keep by entity: their statics could come from the\n  entity batch's statics texture, the rows carrying a pose, a key and the caster and light terms."
+    },
+    {
+      "id": "R-0800",
+      "date": "2026-11-01",
+      "time": "11:22",
+      "timeFrom": "recorded",
+      "title": "E-191 step 1's first sitting: renderer +0.0 % at crowd 1.5; the traces found the shadow stream copied word by word",
+      "verdict": "tie",
+      "text": "**E-191 step 1, the sun's pass over the entity batch's keyed instances (efce1f5e): renderer +0.0 % (2/4) at crowd 1.5;\nthe traces show the copy and the upload it removed, and a shadow stream copied word by word.** 2026-11-01, 11:02 to\n11:22 (the result files' times), Chrome, headed, source, detailed stats off, Predator `?crowd=1.5` (c5003321's knob:\n23 300 casters, every worker past the floor).\n\n- Before it, at default crowd: a probe (11:03, zoom 0.45, hour 9) counted the keyed sun pass on 599 of 600 frames\n  (the first is drawn split); screenshots against 1587def3's (11:04) show the same shadows. At zoom 1.6 (11:02) the keyed frames\n  pause (Predator's grass comes into the main queue: E-188), and the pass falls back to the sun rows, as built.\n- Sitting, `--vs HEAD~1 --hyp-rev HEAD` (1587def3 against efce1f5e), owner renderer, 4 pairs: renderer 3.434 -> 3.431\n  ms (+0.0 %, worse 2/4, cv 2/3 %; -2.0 % against the others); logic +4.1 % (3/4) and spatial +3.8 % (3/4), which the\n  change cannot reach, flagged it REGRESSION; pre-render -0.2 %, physics -0.9 %; load keys within 0.3 %.\n- A probe at crowd 1.5 (11:20) counted the keyed sun pass on 599 of 600 frames: it ran. Traces of both sides\n  (11:21, 11:22; single runs), the Pixi worker in ms a second: busy 336 -> 307, updateBuffer 40.7 -> 25.2, the arena\n  copy 37.6 -> 18.7, pack_sprites_keyed 66 -> 78 (it writes the shadow stream), and copyIn 6.2 new: the shadow\n  stream's copy fell outside the batch's arena (sized for its slots and updates only) and went word by word through\n  TypedArray.set. ebb4693c sizes the arena for it; the next sitting reads that.",
+      "commits": [
+        "efce1f5e"
+      ]
+    },
+    {
+      "id": "R-0801",
+      "date": "2026-11-01",
+      "time": "11:38",
+      "timeFrom": "recorded",
+      "title": "E-191 step 1 kept: the sun pass over the keyed instances, Predator's renderer -4.4 % at crowd 1.5 (6/8)",
+      "verdict": "kept",
+      "text": "**E-191 step 1 kept with the shadow stream in the arena (ebb4693c): Predator's renderer -4.4 % at crowd 1.5 (6/8).**\n2026-11-01, 11:27 to 11:38 (the result files' times), Chrome, headed, source, detailed stats off, Predator\n`?crowd=1.5`, `runPredatorAbab --vs 1587def3 --hyp-rev HEAD` (before E-191 against ebb4693c), owner renderer, 4 pairs\nand 4 appended (the first four alone read -9.1 %, cv 9/10 %).\n\n- renderer 3.547 -> 3.382 ms (-4.4 %, worse 2/8, cv 7/7 %; -3.2 % against the others, lower 7/8); pre-render -0.1 %,\n  physics -3.5 % (1/8), spatial -1.0 %, logic -0.7 %; load keys within 0.4 % (GPU_CASTERS 23 232 / 23 144,\n  VISIBLE_ENTITIES 23 352 / 23 263).\n- What the step leaves: pre-render still packs the sun rows (pack_casters_scatter, the fallback's and the stamps'\n  source) and the point-light stamps still go up at 88 bytes (5 500 to 12 000 a frame). Step 2: stamp rows of a pose,\n  a key, the shadow terms and a light (10 floats), and pre-render's sun pack skipped where Pixi's keyed texture is\n  current, which needs a word from Pixi saying so (a resync or a pause falls back).",
+      "commits": [
+        "efce1f5e",
+        "ebb4693c"
       ]
     }
   ],

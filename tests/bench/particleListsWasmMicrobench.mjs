@@ -37,6 +37,8 @@
  *   node tests/bench/runKernelVariants.mjs --script tests/bench/particleListsWasmMicrobench.mjs --variants wasm,wasm-f32x4 --rounds 5
  *   node tests/bench/particleListsWasmMicrobench.mjs --variant wasm [--check] [--output path]
  *
+ * Without --variant it times wasm-f32x4, what the particle worker binds (runKernelsVsRev.mjs passes none).
+ *
  * --check builds each case once and prints the checksum: no warm-up, no timing.
  */
 import { ParticleComponent } from '../../src/components/particleComponent.js';
@@ -246,7 +248,7 @@ const CASES = {
 
 async function main() {
   const args = parseArgs();
-  const variant = String(args.variant || 'base');
+  const variant = String(args.variant || 'wasm-f32x4');
   if (!['base', 'wasm', ...Object.keys(LISTS_F32_EXPORTS)].includes(variant)) throw new Error(`unknown variant ${variant}`);
   const f32 = variant in LISTS_F32_EXPORTS;
 

@@ -235,7 +235,8 @@ export class InstancedSpriteBatch {
    *   packs through the kernel: the render-queue memory's keyed regions (renderQueueMemory.js pixiKey*: `keyBase`,
    *   `keyRows`, `updatesByte`, `headerByte`), so its frames go keyed: the poses and the slot pairs in draw order, the
    *   sprites' statics by entity in the texture, sent when the emit marked them changed. Each upload then needs the
-   *   queue's frame number and buffer (`keyedFrame`, `keyedBuffer`, set by the caller)
+   *   queue's frame number and buffer (`keyedFrame`, `keyedBuffer`, set by the caller). E-191: `shadowByte` (-1 for none),
+   *   the shadow stream's region, which enableKeyedShadows turns on for the sun's pass over these instances
    */
   constructor({
     capacity,
@@ -327,6 +328,9 @@ export class InstancedSpriteBatch {
       keyBase: k ? k.keyBase | 0 : 0,
       updatesByte: k ? k.updatesByte | 0 : 0,
       updates: 0,
+      // E-191: the shadow stream's byte (0 until enableKeyedShadows) and whether the last pack wrote it.
+      shadowByte: 0,
+      shadowed: false,
     };
     this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
     const updateWords = k ? this.capacity * GPU_KEYED_ROW_WORDS : 0;
@@ -343,6 +347,18 @@ export class InstancedSpriteBatch {
     // The keyed frames in a row whose updates outweighed their saving, and the split frames left of a pause.
     this._keyLosses = 0;
     this._keyPause = 0;
+    // E-191: the sun's shadow pass over these instances (enableKeyedShadows): each draw slot's shadow terms in the
+    // render-queue memory and their copy, a buffer and a geometry (pose, slot and shadow streams) per ring slot, the
+    // program (makeKeyedSunShader), and this frame's geometry once a keyed upload carried them (keyedShadowReady).
+    const shadowFloats = k && k.shadowByte >= 0 ? this.capacity * 3 : 0;
+    this._sharedShadow = shadowFloats > 0 ? new Float32Array(buf, k.shadowByte, shadowFloats) : new Float32Array(0);
+    this._shadowData = (shadowFloats > 0 && arena && arena.f32(shadowFloats)) || new Float32Array(shadowFloats);
+    this._shadowBuffers = null;
+    this._keyedShadowGeometries = null;
+    this._keyedSunShader = null;
+    this.keyedShadows = false;
+    this.keyedShadowReady = false;
+    this.keyedShadowGeometry = null;
     this._ixGen = 0;
     this._ixRows = -1;
     // The slot pairs' generation and slots the CPU copy holds, its version, and each ring slot's GPU copy's (-1: none).
@@ -492,6 +508,32 @@ export class InstancedSpriteBatch {
       usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
       label,
     });
+  }
+
+  /** E-191: a ring slot's buffer of the keyed frames' shadow terms. */
+  _makeShadowBuffer(label) {
+    return new Buffer({
+      data: this._shadowData,
+      usage: BufferUsage.VERTEX | BufferUsage.COPY_DST,
+      label,
+    });
+  }
+
+  /** E-191: the sun's pass over a ring slot's keyed instances: the shadow program's attributes and no other. */
+  _keyedShadowGeometryFor(buf, slotBuf, shadowBuf) {
+    const ds = this._floats * 4;
+    const geometry = new Geometry({
+      attributes: {
+        aQuad: { buffer: this._quad, format: 'float32x2' },
+        aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
+        aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
+        aInstSlot: { buffer: slotBuf, format: 'float32x2', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
+        aInstShadow: { buffer: shadowBuf, format: 'float32x3', stride: 12, offset: 0, instance: true },
+      },
+      indexBuffer: this._index,
+    });
+    geometry.instanceCount = 0;
+    return geometry;
   }
 
   _geometryFor(buf, staticBuf) {
@@ -687,6 +729,11 @@ export class InstancedSpriteBatch {
       ix.resources.uTexture = source;
       ix.resources.uSampler = source.style;
     }
+    const ks = this._keyedSunShader;
+    if (ks) {
+      ks.resources.uTexture = source;
+      ks.resources.uSampler = source.style;
+    }
   }
 
   setLutSource(source) {
@@ -694,6 +741,7 @@ export class InstancedSpriteBatch {
     this.shader.resources.uTexLut = source;
     if (this.shadowShader) this.shadowShader.resources.uTexLut = source;
     if (this._indexedShader) this._indexedShader.resources.uTexLut = source;
+    if (this._keyedSunShader) this._keyedSunShader.resources.uTexLut = source;
   }
 
   /** Match `_beginUpload` tileWorld when committing pre-packed rows. */
@@ -881,6 +929,7 @@ export class InstancedSpriteBatch {
    * @param {number} [opts.indexCount]
    */
   upload(q, opts) {
+    this.keyedShadowReady = false;
     if (this.poseInterp) return this._uploadPose(q, opts);
     if (this.split) return this._uploadSplit(q, opts);
     const ctx = this._beginUpload(q, opts);
@@ -1000,6 +1049,8 @@ export class InstancedSpriteBatch {
     }
     this._keyFrame = frame;
     this._keyRequest = 0;
+    const shadowed = this.keyedShadows && k.shadowed;
+    if (shadowed && out > 0) this.copyIn(this._shadowData, this._sharedShadow, out * 3);
     const n = k.updates;
     if (n * (GPU_KEYED_ROW_WORDS * 4) <= out * KEYED_SAVED_BYTES) {
       this._keyLosses = 0;
@@ -1016,7 +1067,74 @@ export class InstancedSpriteBatch {
       this.copyIn(this._slotData, this._sharedSlots, out * GPU_INDEXED_SLOT_FLOATS);
       this._slotsVersion++;
     }
-    return this._finishUpload(out, SPLIT_POSE_FLOATS * 4, true);
+    const drawn = this._finishUpload(out, SPLIT_POSE_FLOATS * 4, true);
+    if (shadowed && out > 0) {
+      // The ring slot _finishUpload just took.
+      const ring = this._ring ^ 1;
+      this._shadowBuffers[ring].update(out * 12);
+      const g = this._keyedShadowGeometries[ring];
+      g.instanceCount = out;
+      this.keyedShadowGeometry = g;
+      this.keyedShadowReady = true;
+    }
+    return drawn;
+  }
+
+  /**
+   * E-191: the sun's shadow pass draws this batch's keyed instances. From now on a keyed frame also packs each draw
+   * slot's shadow terms and uploads them, and keyedShadowGeometry is that frame's geometry over its pose, slot and
+   * shadow buffers (keyedShadowReady). False when the batch is not keyed or the render-queue memory has no shadow
+   * region for it.
+   * @returns {boolean}
+   */
+  enableKeyedShadows() {
+    if (!this.keyed || this._sharedShadow.length === 0) return false;
+    if (this._shadowBuffers === null) {
+      this._shadowBuffers = [
+        this._makeShadowBuffer(this._label + '-shadow'),
+        this._makeShadowBuffer(this._label + '-shadow-ring'),
+      ];
+      this._keyedShadowGeometries = this._buffers.map((b, r) =>
+        this._keyedShadowGeometryFor(b, this._slotBuffers[r], this._shadowBuffers[r]));
+      this.keyedShadowGeometry = this._keyedShadowGeometries[0];
+    }
+    this._keyedPack.shadowByte = this._sharedShadow.byteOffset;
+    this.keyedShadows = true;
+    return true;
+  }
+
+  /**
+   * E-191: the program of the sun's shadow pass over these instances: instancedSpriteShadow.vert.glsl reading its
+   * statics by key from this batch's statics texture (spriteIndexedVertex's shadow form), with the fragment program
+   * and the resources of `sun` (the caster batch's shadow shader: its atlas, its LUT and the uniform group that pass
+   * fills). Null without keyed shadows, on WebGPU, or without the shadow vertex source.
+   * @param {Shader|null} sun
+   * @returns {Shader|null}
+   */
+  makeKeyedSunShader(sun) {
+    if (!this.keyedShadows || !sun || this._useWebGpu) return null;
+    const shaders = this._engineShaders;
+    if (!shaders?.shadowVert) return null;
+    if (this._keyedSunShader === null) {
+      const glProgram = instancedSpriteGlProgram(
+        GlProgram,
+        spriteIndexedVertex(shaders.shadowVert, { shadow: true }),
+        pickInstancedSpriteFragmentGlsl(true, false, shaders),
+        `${this._label}-keyed-sun`
+      );
+      const r = sun.resources;
+      this._keyedSunShader = new Shader({
+        glProgram,
+        resources: {
+          uTexture: r.uTexture,
+          uSampler: r.uSampler,
+          uTexLut: r.uTexLut,
+          uniforms: r.uniforms,
+          uStatics: this._staticsSource,
+        },
+      });
+    }
+    return this._keyedSunShader;
   }
 
   /**
