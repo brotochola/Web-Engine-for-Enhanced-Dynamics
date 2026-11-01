@@ -18,6 +18,10 @@
  * edits in the main folder while the sitting runs (another session's, an agent's) cannot reach it;
  * `--vs X --hyp-rev X` is an A/A of two directories.
  *
+ * --full-rev: the --vs and --hyp-rev worktrees check out their whole revision (its dist/, its runner and scenes)
+ * instead of its src/ alone, so with weedBundle in --query one revision's shipped bundle is timed against another's
+ * (`--vs <rev> --hyp-rev HEAD --full-rev --query weedBundle=weed.prod.bundle.esm.min.js`).
+ *
  * --query-a <q>, --query-b <q>: scene parameters for one side only, on top of --query (a key the side names
  * replaces the shared one). Without --hyp-rev, both sides then run the --vs worktree: one build, one
  * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=particleIntegrateF32` times the
@@ -340,6 +344,7 @@ function sittingStamp(scene, opts, args, baseline, hypSide = null) {
     },
     vs: args.vs ? { rev: String(args.vs), sha: baseline.sha } : null,
     hypRev: hypSide ? { rev: hypSide.rev, sha: hypSide.sha } : null,
+    fullRev: Boolean(args['full-rev']),
     overrides: baseline.overrides ?? null,
     // B is the working tree, and A is built from its HEAD: both change with these.
     tree: {
@@ -699,12 +704,13 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     return;
   }
   // --vs <rev>: A = src/ from that revision, everything else from the working tree.
+  const fullRev = Boolean(args['full-rev']);
   const baseline = args.vs
-    ? ensureRevWorktree(String(args.vs))
+    ? ensureRevWorktree(String(args.vs), { srcOnly: !fullRev })
     : ensureOverlayWorktree(name, parseOverrides(rawOverrides));
   console.log(`baseline worktree ${baseline.root}`);
   // --hyp-rev <rev>: B from its own worktree, apart from the main folder (see the header).
-  const hypSide = args['hyp-rev'] ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b' }) : null;
+  const hypSide = args['hyp-rev'] ? ensureRevWorktree(String(args['hyp-rev']), { tag: 'b', srcOnly: !fullRev }) : null;
   // Per-side queries without --hyp-rev: B runs A's worktree, so the two sides are one build.
   const perSide = opts.queryA !== opts.queryB;
   if (perSide && !hypSide && !args.vs) {
