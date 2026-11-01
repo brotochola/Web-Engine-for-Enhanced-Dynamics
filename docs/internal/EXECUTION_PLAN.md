@@ -3320,6 +3320,17 @@ whose pre-render is the emit.
 painterMoveStressScene, whose pre-render is the emit of 300 000 rows, reads -0.9 % (2/4) against main: neither the
 emit's code nor the queue's layout costs there. Predator's +2 % is within its spread for pre-render.
 
+### E-191 Shadow casters keyed by entity
+
+**Premise:** step 0 (R-0799): in Predator the casters are 80 % of what the Pixi worker copies and uploads a frame:
+13 460 sun rows and 5 500 to 12 000 point-light stamps of GPU_CASTER_FLOATS (22 floats, 88 bytes), 1.6 to 2.1 MB,
+against 0.38 MB for the keyed entities. Each caster is a sprite of an entity whose statics E-177's keyed frames already
+keep in the entity batch's statics texture.
+**Plan:** a caster row of its pose, its key and its caster and light terms (48 bytes or less), the caster programs
+reading the sprite statics by key from that texture where the keyed frames are on; pre-render's caster pack writes the
+shorter row. First a knob for Predator's crowd (its renderer runs 2.9 ms, under the floor), then the kernel and
+Predator's renderer and pre-render.
+
 ---
 
 ## Not doing (read the log first)
