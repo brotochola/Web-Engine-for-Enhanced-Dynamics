@@ -349,6 +349,12 @@ verdict reads the median of those deltas.
   built yet.
 - **Gates run headed.** Worker primaries would be as valid headless and leave the screen free; that is
   checked once before it changes.
+- **Bundle against source reads Predator's load, not the code (N-105, 2026-11-01).** The same code read -2.8
+  to +9.6 % in spatial and pre-render over seven bundle-against-source sittings: Predator's moved bodies swing
+  by a third between runs, and spatial and physics follow them. Each merge's bundle sitting therefore also
+  runs Boids, a fixed load, with 8 pairs (owner spatial), and a gap is chased first in per-function traces of
+  Boids, not in Predator's. A sitting starts only after a look at every process's CPU, the owner's own browser
+  included: once it held about 1.7 cores, and that pair read 20 % high on both sides (planned tool 5).
 
 Planned tools, each in its own commit before the measurements that use it:
 
