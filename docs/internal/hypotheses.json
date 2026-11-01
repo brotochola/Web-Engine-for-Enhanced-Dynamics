@@ -9642,7 +9642,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0797"
+        "R-0797",
+        "R-0802"
       ],
       "status": "kept",
       "date": "2026-11-01",
@@ -9765,7 +9766,8 @@
       "records": [
         "R-0799",
         "R-0800",
-        "R-0801"
+        "R-0801",
+        "R-0802"
       ],
       "refs": [
         "EXECUTION_PLAN.md#E-191"
@@ -9784,7 +9786,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0796"
+        "R-0796",
+        "R-0802"
       ],
       "status": "kept",
       "date": "2026-11-01",
@@ -9958,6 +9961,25 @@
       "kind": "bug",
       "result": "Fixed b37f07ff: the preRenderWorker row runs preRenderEmitWasmMicrobench, whose default variant is now the shipped wasm kernel, and names the kernel's sources for --changed; the broken bench is gone. Found when runKernelsVsRev --only preRenderWorker failed its preflight on both sides (E-190).",
       "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "records": [
+        "R-0803"
+      ],
+      "refs": [
+        "REVIEW_PLAN.md#N-105"
+      ],
+      "id": "N-105",
+      "title": "wave13's prod bundle runs Predator's spatial and pre-render 5 to 10 % slower than its sources (two sittings)",
+      "status": "open",
+      "statusText": "open: found 2026-11-01 at wave13's merge (R-0803)",
+      "date": "2026-11-01",
+      "rank": 10,
+      "area": "engine",
+      "kind": "bug",
+      "result": "",
+      "next": "At wave12's merge the bundle ran spatial -2.8 % and pre-render -4.0 % against src; at wave13's, +9.6 / +5.8 % and +9.3 / +4.6 % in two sittings, the load on either side. First: wave12's bundle against wave13's, both bundles (a worktree with the rev's dist, not only its src). If wave13's is slower, bisect its modules that those workers bundle (decorationPool, decorationSpatial, sceneSharedBuffers, wasmMemoryMap, gpuQueueLayout, gpuPackClient); an import read through webpack's getters in a hot loop was E-77. Before the next npm release."
     }
   ],
   "records": [
@@ -17436,6 +17458,31 @@
       "commits": [
         "efce1f5e",
         "ebb4693c"
+      ]
+    },
+    {
+      "id": "R-0802",
+      "date": "2026-11-01",
+      "time": "11:53",
+      "timeFrom": "recorded",
+      "title": "wave13's gate passed: Predator NEUTRAL against main, renderer -12.4 % (0/4)",
+      "verdict": "passed",
+      "text": "**wave13's gate passed: Predator NEUTRAL against main, renderer -12.4 % (0/4).** 2026-11-01, 11:48 to 11:53 (the result\nfiles' times), Chrome, headed, source, detailed stats off, `runPredatorAbab --vs main --hyp-rev HEAD` (13307765, main\nafter wave12's merge, against wave13's 6e0a7008), 4 pairs.\n\n- wave13 holds E-179c (the decoration screen test and the snapshot copy skip a still frame), E-184 (the particle\n  lists' whole-block shortcuts), E-191 step 1 (the sun's shadow pass over the keyed instances, the sprites drawn\n  before the shadows), N-104 (the catalog's emit row), Predator's ?crowd knob, and E-191 step 2's caster kernel\n  (unused yet).\n- renderer 3.084 -> 2.682 ms (-12.4 %, worse 0/4; -13.3 % against the others); physics -9.6 % (1/4, cv 15/8 %),\n  spatial -2.5 %, pre-render +0.7 % (2/4), logic +4.2 % (3/4, cv 12/4 %, not blocking: nothing in wave13 runs in the\n  logic workers but a counter a decoration spawn adds); load keys within 0.7 % (VISIBLE_ENTITIES 13 378 / 13 475).\n  Merged (08b607e5), the bundles rebuilt from it (f16192a3).",
+      "commits": [
+        "08b607e5",
+        "f16192a3"
+      ]
+    },
+    {
+      "id": "R-0803",
+      "date": "2026-11-01",
+      "time": "12:15",
+      "timeFrom": "recorded",
+      "title": "The prod bundle against src at wave13's merge: painterMove neutral, Predator's spatial and pre-render slower on the bundle (two sittings)",
+      "verdict": "fail",
+      "text": "**The prod bundle against its sources at wave13's merge (f16192a3): painterMove NEUTRAL; Predator reads spatial and\npre-render 5 to 10 % slower on the bundle, in two sittings (N-105).** 2026-11-01, 11:58 to 12:15 (the result files'\ntimes), Chrome, headed, detailed stats off, one worktree for both sides: A `--src`, B `weed.prod.bundle.esm.min.js`\nthrough the bench's `weedBundle` key, 4 pairs each.\n\n- **Predator, 11:58 to 12:04: REGRESSION by the rule.** spatial 4.856 -> 5.296 ms (+9.6 %, 4/4), pre-render 4.054 ->\n  4.449 (+9.3 %, 4/4), physics +13.5 % (4/4, cv 9/10 %), logic -4.3 %; against the others spatial +0.6 %, pre-render\n  +2.6 %, physics +4.7 %, logic -11.2 %. The bundle's side moved 29 % more bodies (7 270 against 5 644); fitted\n  against them physics keeps +4.3 against -5.5 % (r = 0.77), and spatial and pre-render do not follow them (r = 0.21\n  and 0.11).\n- **Predator again, 12:11 to 12:15: REGRESSION by the rule,** with fewer bodies moved on the bundle's side (5 196\n  against 7 596): spatial +5.8 % (3/4; +5.0 % against the others, lower 0/4), pre-render +4.6 % (3/4; +7.0 % against\n  the others), physics -3.7 %, logic -1.0 %; load keys within 0.4 %.\n- **painterMoveStressScene, 12:04 to 12:09: NEUTRAL.** logic -4.2 %, pre-render 16.978 -> 16.693 ms (-1.3 %).\n- At wave12's merge this morning (R-0794) the bundle ran spatial -2.8 % and pre-render -4.0 % against its sources.\n  Two sittings now read both slower on the bundle with the load on either side, so it is filed as N-105 to find\n  before the next release: what wave13 changed in modules the spatial and pre-render workers bundle (decorationPool,\n  decorationSpatial, sceneSharedBuffers, wasmMemoryMap, gpuQueueLayout, gpuPackClient), or a session's drift.",
+      "commits": [
+        "f16192a3"
       ]
     }
   ],
