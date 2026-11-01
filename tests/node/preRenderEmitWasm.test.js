@@ -375,9 +375,17 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
   let other = 0;
   let pnext = 0;
   let lfnext = 0;
+  // E-177: with `keyed`, each sprite an entity of its own, as the emit writes one row an entity (the same draws, so the
+  // other rows are the same).
+  const unique = keyed ? Array.from({ length: N }, (_, i) => (i * 389) % N) : null;
+  let un = 0;
   for (let k = 0; k < count; k++) {
     const pick = r();
-    if (pick < (bullets ? 0.55 : 0.62)) { types.push(0); indices.push(Math.floor(r() * N)); }
+    if (pick < (bullets ? 0.55 : 0.62)) {
+      const pickEntity = Math.floor(r() * N);
+      types.push(0);
+      indices.push(keyed ? unique[un++ % N] : pickEntity);
+    }
     else if (pick < (bullets ? 0.75 : 0.92)) { types.push(2); indices.push(Math.floor(r() * DECOS)); }
     else if (particles && k % 3 === 1) { types.push(1); indices.push(pnext++ % POOL); }
     else if (liquidFun && k % 3 === 2) { types.push(7); indices.push(lfnext++ % LFN); }
@@ -442,10 +450,9 @@ function rowStatics(w, r) {
 }
 
 /**
- * E-177: after a frame, each entity's row of the store holds the statics of its last sprite row (this collector lists
- * some entities twice, and the second row's clock moves its frame again), and the ring entries since the last check
- * are the entities whose store row changed: each once, or once a row for an entity of several rows. `st` carries the
- * last check's head and store.
+ * E-177: after a frame, each drawn entity's row of the store holds its sprite row's statics, and the ring entries since
+ * the last check are drawn entities, among them every one whose store row changed (each at most once a row of it).
+ * `st` carries the last check's head and store.
  */
 function checkKeyStore(k, n, label, st) {
   const L = k.m.layout.emit;
@@ -479,14 +486,12 @@ function checkKeyStore(k, n, label, st) {
       }
     }
   }
-  // Every entity whose row changed is rung; an entity of one row is rung only when its row changed (one of several rows
-  // can change it and the next change it back).
+  // Every entity whose row changed is rung. The emit rings a sprite whose keyed flag was set or whose texture moved,
+  // without comparing, so an entity can be rung with its row the same (a persist frame's pass wrote it first): an upload
+  // more, never one missing.
   const rungSet = new Set(rung);
   for (const e of changed) if (!rungSet.has(e)) assert.fail(`${label}: entity ${e}'s statics changed and it was not rung`);
-  const changedSet = new Set(changed);
-  for (const e of rungSet) {
-    if (!changedSet.has(e) && (rows.get(e) || 0) < 2) assert.fail(`${label}: entity ${e} rung, its statics the same`);
-  }
+  for (const e of rungSet) if (!last.has(e)) assert.fail(`${label}: entity ${e} rung and not drawn`);
   const times = new Map();
   for (const e of rung) times.set(e, (times.get(e) || 0) + 1);
   for (const [e, c] of times) if (c > (rows.get(e) || 0)) assert.fail(`${label}: entity ${e} rung ${c} times for ${rows.get(e) || 0} rows`);
@@ -613,9 +618,11 @@ async function runCase(t, opts) {
   ].map(([name, at, bytes]) => [name, new Uint8Array(k.m.buffer, at, bytes)]);
   for (const [, bytes] of untouched) bytes.fill(0xa5);
   const results = b.results;
-  // E-177: the store and ring as the kernel leaves them each frame (they start empty).
+  // E-177: the store and ring as the kernel leaves them each frame (they start empty), every sprite dirty at first as a
+  // spawn leaves it (SPRITE_DIRTY).
   const keySt = { head: 0, store: new Uint32Array(N * 12) };
   const keyRung = [];
+  if (k.keyed) SpriteRenderer.renderDirty.fill(3);
   for (let f = 0; f < FRAMES; f++) {
     assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
@@ -1074,6 +1081,10 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
   // No Adobe root: emit_rows declines a frame with one (the worker's JS loop then rewrites every row);
   // the test after this one has the Adobe miss.
   const prepare = persistSchedule(k, { inQueue, seed, adobe: false });
+  // E-177: with the store, every sprite starts dirty (as a spawn leaves it). The keyed flags are the kernel's alone (the
+  // JS path knows none), so the comparison below leaves renderDirty out; checkKeyStore judges what they do.
+  if (k.keyed) SpriteRenderer.renderDirty.fill(3);
+  const dirtyAt = SpriteRenderer.renderDirty.byteOffset - m.layout.emit.spriteRendererByte;
   const start = all.slice();
 
   /** This frame's column table, its flags, and the full emit a miss leads to (with its ends). */
@@ -1099,7 +1110,11 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
   };
   const record = (hit, others, moved, repaired, ends) => ({
     hit, others, moved, repaired, ends, counts: [...worker._persistCount],
-    mem: regions.map(([, at, bytes]) => all.slice(at, at + bytes)),
+    mem: regions.map(([name, at, bytes]) => {
+      const copy = all.slice(at, at + bytes);
+      if (k.keyed && name === 'spriteRenderer') copy.fill(0, dirtyAt, dirtyAt + N);
+      return copy;
+    }),
   });
 
   // The JS persist path.

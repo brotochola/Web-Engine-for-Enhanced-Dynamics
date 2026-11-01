@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { Tween, tweenBufferBytes, resetTweenFullWarn } from '../../src/core/tween.js';
 import { PARTICLE_EASE, TWEEN_DEFAULTS } from '../../src/util/configDefaults.js';
-import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { SPRITE_DIRTY, SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
 import { Camera } from '../../src/core/camera.js';
@@ -51,7 +51,7 @@ test('tween writes sprite alpha and refuses a dynamic body', { concurrency: fals
     assert.equal(slot, 0);
     Tween.tick(100);
     assert.equal(SpriteRenderer.alpha[0], 0);
-    assert.equal(SpriteRenderer.renderDirty[0], 1);
+    assert.equal(SpriteRenderer.renderDirty[0], SPRITE_DIRTY);
 
     Transform.x = new Float32Array([5]);
     Transform.y = new Float32Array([6]);
@@ -161,7 +161,7 @@ test('zero duration tween applies immediately without claiming SAB slot', { conc
   assert.equal(slot, -1);
   assert.equal(Transform.x[0], 99);
   assert.ok(Math.abs(SpriteRenderer.alpha[0] - 0.1) < 1e-5);
-  assert.equal(SpriteRenderer.renderDirty[0], 1);
+  assert.equal(SpriteRenderer.renderDirty[0], SPRITE_DIRTY);
   // No slots claimed in SAB pool
   assert.equal(Tween.active[0], 0);
   assert.equal(Tween.active[1], 0);

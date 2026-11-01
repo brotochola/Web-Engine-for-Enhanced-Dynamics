@@ -9,7 +9,7 @@ import { LAYER_FEEDER_KIND } from '../../src/util/configDefaults.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { Transform } from '../../src/components/transform.js';
 import { RigidBody } from '../../src/components/rigidBody.js';
-import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
+import { SPRITE_DIRTY, SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { AdobeAnimComponent } from '../../src/components/adobeAnimComponent.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { Collider } from '../../src/components/collider.js';
@@ -596,7 +596,7 @@ test('render facade works for Adobe-only entities and fan-outs method updates wh
     assert.equal(both.layerName, 'layer-9');
     assert.deepEqual(spriteBoundsUpdates, [1]);
     assert.deepEqual(adobeBoundsUpdates, [0, 0, 1]);
-    assert.equal(SpriteRenderer.renderDirty[1], 1);
+    assert.equal(SpriteRenderer.renderDirty[1], SPRITE_DIRTY);
   } finally {
     SpriteRenderer.alpha = previousSpriteAlpha;
     SpriteRenderer.baseTint = previousSpriteBaseTint;

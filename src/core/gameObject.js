@@ -7,7 +7,7 @@ import { markEngineAccessor } from './engineAccessors.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
 import { Collider } from '../components/collider.js';
-import { SpriteRenderer, DEFAULT_ANIMATION_SPEED } from '../components/spriteRenderer.js';
+import { SpriteRenderer, DEFAULT_ANIMATION_SPEED, SPRITE_DIRTY } from '../components/spriteRenderer.js';
 import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
@@ -1074,7 +1074,7 @@ export class GameObject {
   set alpha(value) {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.alpha[this.index] = value;
@@ -1097,7 +1097,7 @@ export class GameObject {
       SpriteRenderer.baseTint[this.index] = value;
       if (SpriteRenderer.tint[this.index] !== value) {
         SpriteRenderer.tint[this.index] = value;
-        SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1120,7 +1120,7 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
@@ -1154,7 +1154,7 @@ export class GameObject {
       if (SpriteRenderer.scaleX[this.index] !== v) {
         SpriteRenderer.scaleX[this.index] = v;
         SpriteRenderer.updateBounds(this.index);
-        SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1184,7 +1184,7 @@ export class GameObject {
       if (SpriteRenderer.scaleY[this.index] !== v) {
         SpriteRenderer.scaleY[this.index] = v;
         SpriteRenderer.updateBounds(this.index);
-        SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1234,7 +1234,7 @@ export class GameObject {
       if (bit === 1) SpriteRenderer.scaleX[i] = -SpriteRenderer.scaleX[i];
       else SpriteRenderer.scaleY[i] = -SpriteRenderer.scaleY[i];
       SpriteRenderer.updateBounds(i);
-      SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.renderDirty[i] = SPRITE_DIRTY;
     }
     if (this._hasComponents.adobeAnimComponent && ((AdobeAnimComponent.flip[i] & bit) !== 0) !== on) {
       AdobeAnimComponent.flip[i] ^= bit;
@@ -1307,7 +1307,7 @@ export class GameObject {
    */
   markDirty() {
     if (this._hasComponents.SpriteRenderer) {
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
   }
 
@@ -1319,7 +1319,7 @@ export class GameObject {
   setAlpha(value) {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.alpha[this.index] !== value) {
       SpriteRenderer.alpha[this.index] = value;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.alpha[this.index] !== value) {
       AdobeAnimComponent.alpha[this.index] = value;
@@ -1341,7 +1341,7 @@ export class GameObject {
       SpriteRenderer.baseTint[this.index] = value;
       if (SpriteRenderer.tint[this.index] !== value) {
         SpriteRenderer.tint[this.index] = value;
-        SpriteRenderer.renderDirty[this.index] = 1;
+        SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
       }
     }
     if (this._hasComponents.adobeAnimComponent) {
@@ -1363,7 +1363,7 @@ export class GameObject {
     const v = value ? 1 : 0;
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.renderVisible[this.index] !== v) {
       SpriteRenderer.renderVisible[this.index] = v;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.renderVisible[this.index] = v;
@@ -1421,7 +1421,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer && SpriteRenderer.layerMask) {
       if (SpriteRenderer.layerMask[i] !== m) {
         SpriteRenderer.layerMask[i] = m;
-        SpriteRenderer.renderDirty[i] = 1;
+        SpriteRenderer.renderDirty[i] = SPRITE_DIRTY;
       }
     }
     if (this._hasComponents.adobeAnimComponent && AdobeAnimComponent.layerMask) {
@@ -1481,7 +1481,7 @@ export class GameObject {
       SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.WORLD;
       SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
       SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
-      SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.renderDirty[i] = SPRITE_DIRTY;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = rx;
@@ -1514,7 +1514,7 @@ export class GameObject {
       SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.LOCAL;
       SpriteRenderer.tileOffsetU[i] = SpriteRenderer.packTileOffset01(u0);
       SpriteRenderer.tileOffsetV[i] = SpriteRenderer.packTileOffset01(v0);
-      SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.renderDirty[i] = SPRITE_DIRTY;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = rx;
@@ -1536,7 +1536,7 @@ export class GameObject {
       SpriteRenderer.tileMode[i] = SPRITE_TILE_MODE.STRETCH;
       SpriteRenderer.tileOffsetU[i] = 0;
       SpriteRenderer.tileOffsetV[i] = 0;
-      SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.renderDirty[i] = SPRITE_DIRTY;
     }
     if (this._hasComponents.MeshRenderer) {
       MeshRenderer.repeatX[i] = 0;
@@ -1573,7 +1573,7 @@ export class GameObject {
             SpriteRenderer.bakeLocalOffsetFromWorld(this.y, py, visY)
           );
         }
-        SpriteRenderer.renderDirty[i] = 1;
+        SpriteRenderer.renderDirty[i] = SPRITE_DIRTY;
       }
     }
     if (this._hasComponents.MeshRenderer) {
@@ -1624,7 +1624,7 @@ export class GameObject {
     }
     if (this._hasComponents.SpriteRenderer && changed) {
       SpriteRenderer.updateBounds(this.index);
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
     if (this._hasComponents.adobeAnimComponent) {
       const flip = AdobeAnimComponent.flip[this.index];
@@ -1666,7 +1666,7 @@ export class GameObject {
     if (this._hasComponents.SpriteRenderer) {
       SpriteRenderer.anchorX[this.index] = x;
       SpriteRenderer.anchorY[this.index] = y;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.anchorX[this.index] = x;
@@ -1686,7 +1686,7 @@ export class GameObject {
     if (SpriteRenderer.animationState[this.index] !== state) {
       SpriteRenderer.animationState[this.index] = state;
       SpriteRenderer.updateBounds(this.index);
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
     return this;
   }
@@ -1701,7 +1701,7 @@ export class GameObject {
     if (!this._hasComponents.SpriteRenderer) return this;
     if (SpriteRenderer.animationSpeed[this.index] !== speed) {
       SpriteRenderer.animationSpeed[this.index] = speed;
-      SpriteRenderer.renderDirty[this.index] = 1;
+      SpriteRenderer.renderDirty[this.index] = SPRITE_DIRTY;
     }
     return this;
   }
@@ -3061,7 +3061,7 @@ export class GameObject {
       SpriteRenderer.spritesheetId[i] = 0;
       SpriteRenderer.loop[i] = 1; // Default: animations loop
       SpriteRenderer.animationSpeed[i] = DEFAULT_ANIMATION_SPEED;
-      SpriteRenderer.renderDirty[i] = 1;
+      SpriteRenderer.renderDirty[i] = SPRITE_DIRTY;
       SpriteRenderer.layerMask[i] = 0;
     }
 

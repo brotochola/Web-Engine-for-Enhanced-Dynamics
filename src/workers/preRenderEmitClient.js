@@ -430,6 +430,8 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   if (!putSlot(b, 'aFrame', w.entityFrameIndex) || !putSlot(b, 'aAccum', w.entityFrameAccumulator)) return false;
   b.table[SLOT.aEntities] = w.entityFrameIndex.length;
   if (!putSlot(b, 'aLastTex', w.entityLastTextureId, true)) return false;
+  // E-177: with the statics store, the sprites' dirty flags, whose keyed flag (and a moved texture) sends a sprite there.
+  if (b.table[SLOT.kStore] !== 0 && !putSlot(b, 'sDirty', SpriteRenderer.renderDirty, true)) return false;
   for (let k = 0; k < EMIT_QUEUE_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_QUEUE_COLUMNS[k][0], w[EMIT_QUEUE_COLUMNS[k][1]])) return false;
   }
