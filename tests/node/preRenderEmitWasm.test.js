@@ -120,7 +120,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -143,6 +143,8 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     particleBytes: particles ? particleMemoryBytes(POOL, ParticleComponent.getBufferSize(POOL)) : 0,
     liquidFun: liquidFun ? { maxCount: LFN, renderBytes: liquidFunRenderByteSize(LFN) } : null,
     customLayers: customLayer ? [{ layerId: CL, maxItems: CLMAX, queueBytes: computeBufferSize(CLMAX) }] : [],
+    // E-177: with `keyed`, the statics store and its ring.
+    pixiKeyed: keyed,
   }, null, null, false, collect);
   const e = m.layout.emit;
   // With `particles`, the particle memory in its region of this one, as the scene places it.
@@ -416,7 +418,81 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
 
   const b = await bindPreRenderEmit(m.memory, e);
   assert.ok(writeEmitTextures(b, meta), 'the metadata fits the tables');
-  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights, particles, liquidFun, interpolate, customLayer };
+  return { worker, m, b, source, types, indices, count, maxItems, snapshot, restore, ySort, bullets, lights, particles, liquidFun, interpolate, customLayer, keyed };
+}
+
+/** E-177: queue row r's statics as gpuPack.c packs them for an indexed frame (depth 0, a zero after). */
+function rowStatics(w, r) {
+  const f = new Float32Array(12);
+  const u = new Uint32Array(f.buffer);
+  f[0] = w.renderQueueScaleX[r];
+  f[1] = w.renderQueueScaleY[r];
+  f[2] = w.renderQueueAnchorX[r];
+  f[3] = w.renderQueueAnchorY[r];
+  let a = w.renderQueueAlpha[r];
+  if (!(a >= 0)) a = 0;
+  else if (a > 1) a = 1;
+  u[5] = ((((a * 255 + 0.5) | 0) & 255) << 24 | (w.renderQueueTint[r] & 0xffffff)) >>> 0;
+  f[6] = w.renderQueueTextureId[r];
+  f[7] = w.renderQueueTileMulX ? w.renderQueueTileMulX[r] : 0;
+  f[8] = w.renderQueueTileMulY ? w.renderQueueTileMulY[r] : 0;
+  f[9] = (w.renderQueueTileOffsetU ? w.renderQueueTileOffsetU[r] : 0) * (1 / 65535);
+  f[10] = (w.renderQueueTileOffsetV ? w.renderQueueTileOffsetV[r] : 0) * (1 / 65535);
+  return u;
+}
+
+/**
+ * E-177: after a frame, each entity's row of the store holds the statics of its last sprite row (this collector lists
+ * some entities twice, and the second row's clock moves its frame again), and the ring entries since the last check
+ * are the entities whose store row changed: each once, or once a row for an entity of several rows. `st` carries the
+ * last check's head and store.
+ */
+function checkKeyStore(k, n, label, st) {
+  const L = k.m.layout.emit;
+  const w = k.worker;
+  const store = new Uint32Array(k.m.buffer, L.keyStoreByte, N * 12);
+  const ring = new Uint32Array(k.m.buffer, L.keyRingByte, L.keyRingEntries);
+  const head = Atomics.load(new Uint32Array(k.m.buffer, L.keyRingHeadByte, 1), 0);
+  const last = new Map();
+  const rows = new Map();
+  // The collector's types: a row of a type left to the JS holds whatever it held (zeros here) until the JS writes it.
+  for (let r = 0; r < n; r++) {
+    if (w._renderableType[r] !== 0) continue;
+    last.set(w.renderQueueKey[r], r);
+    rows.set(w.renderQueueKey[r], (rows.get(w.renderQueueKey[r]) || 0) + 1);
+  }
+  const sprites = last.size;
+  for (const [e, r] of last) {
+    const want = rowStatics(w, r);
+    for (let j = 0; j < 12; j++) {
+      if (store[e * 12 + j] !== want[j]) assert.fail(`${label}: row ${r}'s entity ${e}, store word ${j}: ${store[e * 12 + j]} vs ${want[j]}`);
+    }
+  }
+  const rung = [];
+  for (let h = st.head; h !== head; h = (h + 1) >>> 0) rung.push(ring[h & (L.keyRingEntries - 1)]);
+  const changed = [];
+  for (let e = 0; e < N; e++) {
+    for (let j = 0; j < 12; j++) {
+      if (store[e * 12 + j] !== st.store[e * 12 + j]) {
+        changed.push(e);
+        break;
+      }
+    }
+  }
+  // Every entity whose row changed is rung; an entity of one row is rung only when its row changed (one of several rows
+  // can change it and the next change it back).
+  const rungSet = new Set(rung);
+  for (const e of changed) if (!rungSet.has(e)) assert.fail(`${label}: entity ${e}'s statics changed and it was not rung`);
+  const changedSet = new Set(changed);
+  for (const e of rungSet) {
+    if (!changedSet.has(e) && (rows.get(e) || 0) < 2) assert.fail(`${label}: entity ${e} rung, its statics the same`);
+  }
+  const times = new Map();
+  for (const e of rung) times.set(e, (times.get(e) || 0) + 1);
+  for (const [e, c] of times) if (c > (rows.get(e) || 0)) assert.fail(`${label}: entity ${e} rung ${c} times for ${rows.get(e) || 0} rows`);
+  st.head = head;
+  st.store = Uint32Array.from(store);
+  return { sprites, rung: new Set(rung).size };
 }
 
 /** The queue columns a row has. */
@@ -537,6 +613,9 @@ async function runCase(t, opts) {
   ].map(([name, at, bytes]) => [name, new Uint8Array(k.m.buffer, at, bytes)]);
   for (const [, bytes] of untouched) bytes.fill(0xa5);
   const results = b.results;
+  // E-177: the store and ring as the kernel leaves them each frame (they start empty).
+  const keySt = { head: 0, store: new Uint32Array(N * 12) };
+  const keyRung = [];
   for (let f = 0; f < FRAMES; f++) {
     assert.ok(writeEmitColumns(b, worker, SpriteRenderer, ShadowCaster, DecorationComponent, source), 'every column is in the memory');
     assert.equal(writeEmitBulletColumns(b, BulletComponent, worker._resolveBuiltinTextureId('_bulletTrail')), k.bullets, 'the bullet columns');
@@ -552,6 +631,7 @@ async function runCase(t, opts) {
     assert.notEqual(written, EMIT_DECLINED);
     assert.equal(written, n, `frame ${f}: rows written`);
     if (results[2] && worker.renderQueueTileMode !== null) worker._tiledTileColumns.add(worker.renderQueueTileMode);
+    if (k.keyed) keyRung.push(checkKeyStore(k, n, `frame ${f}`, keySt));
     const js = jsFrames[f];
     // State: every entity, every frame.
     const now = k.snapshot();
@@ -600,6 +680,14 @@ async function runCase(t, opts) {
     assert.equal(at, -1, `the kernel wrote ${name} (byte ${at})`);
   }
   t.diagnostic(`${n} rows, ${jsFrames.reduce((s, x) => s + x.ends.length, 0)} ends, ${jsFrames[0].warns.length} warnings a frame`);
+  if (k.keyed) {
+    // The first frame rings every entity it draws; after it, the ones whose animation moved (and none on a frame
+    // that changed nothing).
+    assert.ok(keyRung[0].rung > keyRung[0].sprites * 0.5, `the first frame rings most sprites (${keyRung[0].rung} of ${keyRung[0].sprites})`);
+    assert.ok(keyRung.slice(1).some((x) => x.rung > 0), 'later frames ring the animated sprites');
+    assert.ok(keyRung.slice(1).every((x) => x.rung < x.sprites), 'later frames ring fewer than all');
+    t.diagnostic(`rung a frame: ${keyRung.map((x) => x.rung).join(' ')}`);
+  }
 }
 
 /** The key the JS warns under, for a kernel warning. */
@@ -622,6 +710,10 @@ test('the emit kernel writes what emitSpriteQueue writes, Y-sorted', async (t) =
 
 test('the emit kernel writes what emitSpriteQueue writes, without Y-sort', async (t) => {
   await runCase(t, { ySort: false, seed: 0xbeef });
+});
+
+test("E-177: the emit keeps each sprite's statics in the store by entity and rings the entities whose statics changed", async (t) => {
+  await runCase(t, { ySort: true, keyed: true });
 });
 
 test('the emit kernel fills a queue to its capacity', async (t) => {
@@ -964,8 +1056,8 @@ function persistSchedule(k, { inQueue, seed, adobe, casters = true }) {
   };
 }
 
-async function runPersistCase(t, { ySort, inQueue, seed }) {
-  const k = await setup({ ySort, seed, persist: true });
+async function runPersistCase(t, { ySort, inQueue, seed, keyed = false }) {
+  const k = await setup({ ySort, seed, persist: true, keyed });
   await withPersistOrder(ySort, () => persistFrames(t, k, { ySort, inQueue, seed }));
 }
 
@@ -1033,6 +1125,9 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
   worker._persistCount = [0, 0];
   worker._tiledTileColumns = new Set();
   const kinds = { hit: 0, repaired: 0, moved: 0, ends: 0 };
+  // E-177: the store and ring after each frame, persist frames among them (only a repaired or advanced texture moves a
+  // persisted sprite's statics).
+  const keySt = { head: 0, store: new Uint32Array(N * 12) };
   for (let f = 0; f < PERSIST_FRAMES; f++) {
     const { buf, st } = prepare(f);
     const flags = frameTable(buf, st);
@@ -1057,6 +1152,7 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
       worker._persistCount[buf] = count;
       if (cleared) worker._persistCount[buf ^ 1] = -1;
     }
+    if (k.keyed) checkKeyStore(k, Math.min(count, maxItems), `frame ${f} (${hit ? 'persist' : 'full'})`, keySt);
     const got = record(hit, others, moved, repaired, ends);
     const want = js[f];
     assert.deepEqual({ hit: got.hit, others: got.others, moved: got.moved, repaired: got.repaired, counts: got.counts },
@@ -1079,6 +1175,10 @@ async function persistFrames(t, k, { ySort, inQueue, seed }) {
 
 test('the persist path in the kernel does what the JS persist path does, Y-sorted', async (t) => {
   await runPersistCase(t, { ySort: true, inQueue: true, seed: 0x9e1 });
+});
+
+test("E-177: persist frames keep the store as the full emit does: the repaired and advanced textures rung", async (t) => {
+  await runPersistCase(t, { ySort: true, inQueue: true, seed: 0x9e1, keyed: true });
 });
 
 test('the persist path in the kernel does what the JS persist path does, without Y-sort', async (t) => {

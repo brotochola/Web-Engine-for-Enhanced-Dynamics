@@ -47,6 +47,8 @@ export const EMIT_SLOTS = [
   'lfX', 'lfY', 'lfScaleX', 'lfScaleY', 'lfAlpha', 'lfBaseAlpha', 'lfRotC', 'lfRotS', 'lfTint', 'lfTexture',
   'lfPrevX', 'lfPrevY', 'lfPrevCount',
   'qKey',
+  // E-177: the keyed frames' statics store, its ring, the ring's mask (a value), its head, the store's entities (a value).
+  'kStore', 'kRing', 'kRingMask', 'kRingHead', 'kEntities',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -163,6 +165,14 @@ export async function bindPreRenderEmit(memory, emit) {
   table[SLOT.tFrameW] = emit.frameWidthByte;
   table[SLOT.tFrameH] = emit.frameHeightByte;
   table[SLOT.eParams] = emit.paramsByte;
+  // E-177: the statics store and its ring, where the scene lays them out (keyed frames), written by every sprite row.
+  if (emit.keyStoreByte >= 0) {
+    table[SLOT.kStore] = emit.keyStoreByte;
+    table[SLOT.kRing] = emit.keyRingByte;
+    table[SLOT.kRingMask] = emit.keyRingEntries - 1;
+    table[SLOT.kRingHead] = emit.keyRingHeadByte;
+    table[SLOT.kEntities] = emit.entities;
+  }
   return {
     buffer,
     emitRows: k.emit_rows,

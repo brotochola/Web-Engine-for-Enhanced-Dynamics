@@ -21,6 +21,7 @@
    walk (E-116), persist_remember is _rememberType0Set; the rows a queue buffer last held are the P_
    columns, the slots of that buffer. */
 #include <stdint.h>
+#include <wasm_simd128.h>
 
 #define INLINE static inline __attribute__((always_inline))
 #define INVALID_TEXTURE 0xffffu
@@ -70,11 +71,19 @@ enum {
   LF_PREV_X, LF_PREV_Y, LF_PREV_COUNT,
   /* E-177: the queue's key column (0: a queue without one): a sprite row's entity, KEY_NONE for every other row. */
   Q_KEY,
+  /* E-177: the keyed frames' statics store (K_STORE_WORDS u32 an entity: each sprite's statics as Pixi draws them, as
+     this emit last wrote them; 0: none), the ring of entities whose statics changed, its mask (a value: its entries
+     - 1), its head (a u32 this emit advances and stores atomically after a frame's pushes) and the store's entities (a
+     value). */
+  K_STORE, K_RING, K_RING_MASK, K_RING_HEAD, K_ENTITIES,
   SLOT_COUNT
 };
 
 /* E-177: the key of a row whose statics have no entity to stay with (rewritten every frame). */
 #define KEY_NONE 0xffffffffu
+
+/* E-177: an entity's row of the statics store: the statics texture's row, three RGBA32UI texels. */
+#define K_STORE_WORDS 12
 
 /* emitSpriteQueue's loop-invariant switches. */
 #define F_SORT_KEY 1u    /* rqSortKey && source.hasOrder */
@@ -203,6 +212,75 @@ INLINE int32_t js_toint32(double v) {
   return (int32_t)(uint32_t)m;
 }
 
+/* E-177: the statics store and its ring, and the queue columns a sprite row's statics come from. */
+typedef struct {
+  uint32_t *store, *ring, *headPtr;
+  uint32_t mask, entities, head;
+  const float *qScaleX, *qScaleY, *qAnchorX, *qAnchorY, *qAlpha, *qTileMulX, *qTileMulY;
+  const uint32_t *qTint;
+  const uint16_t *qTexture, *qTileOffU, *qTileOffV;
+} KeyStore;
+
+INLINE void load_key_store(KeyStore *k, const uint32_t *t) {
+  k->store = PTR(uint32_t, K_STORE);
+  k->ring = PTR(uint32_t, K_RING);
+  k->headPtr = PTR(uint32_t, K_RING_HEAD);
+  if (!k->ring || !k->headPtr) k->store = 0;
+  k->mask = t[K_RING_MASK];
+  k->entities = t[K_ENTITIES];
+  k->head = k->store ? *k->headPtr : 0;
+  k->qScaleX = PTR(const float, Q_SCALE_X);
+  k->qScaleY = PTR(const float, Q_SCALE_Y);
+  k->qAnchorX = PTR(const float, Q_ANCHOR_X);
+  k->qAnchorY = PTR(const float, Q_ANCHOR_Y);
+  k->qAlpha = PTR(const float, Q_ALPHA);
+  k->qTileMulX = PTR(const float, Q_TILE_MUL_X);
+  k->qTileMulY = PTR(const float, Q_TILE_MUL_Y);
+  k->qTint = PTR(const uint32_t, Q_TINT);
+  k->qTexture = PTR(const uint16_t, Q_TEXTURE);
+  k->qTileOffU = PTR(const uint16_t, Q_TILE_OFF_U);
+  k->qTileOffV = PTR(const uint16_t, Q_TILE_OFF_V);
+}
+
+/* gpuPack.c packed_tint: alpha clamped and rounded in double, over the tint's rgb. */
+INLINE uint32_t key_packed_tint(double a, uint32_t tint) {
+  if (!(a >= 0)) a = 0;
+  else if (a > 1) a = 1;
+  const int32_t a8 = (int32_t)(a * 255.0 + 0.5);
+  return ((uint32_t)(a8 & 255) << 24) | (tint & 0xffffff);
+}
+
+/* Queue row out's statics as gpuPack.c packs them for an indexed frame (scale, anchor; the depth term 0, the packed
+   tint, the texture, the tile multiplier's x; its y, the tile offsets, a zero), from the columns as the row holds them,
+   against entity idx's row of the store: a change is written there and the entity rung. */
+INLINE void key_store(KeyStore *k, uint32_t idx, uint32_t out) {
+  if (idx >= k->entities) return;
+  const double inv65535 = 1.0 / 65535.0;
+  const float tmx = k->qTileMulX ? k->qTileMulX[out] : 0.0f;
+  const float tmy = k->qTileMulY ? k->qTileMulY[out] : 0.0f;
+  const double tou = k->qTileOffU ? (double)k->qTileOffU[out] : 0.0;
+  const double tov = k->qTileOffV ? (double)k->qTileOffV[out] : 0.0;
+  const v128_t s0 = wasm_f32x4_make(k->qScaleX[out], k->qScaleY[out], k->qAnchorX[out], k->qAnchorY[out]);
+  const v128_t s1 = wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)k->qTexture[out], tmx), 1,
+                                            (int32_t)key_packed_tint((double)k->qAlpha[out], k->qTint[out]));
+  const v128_t s2 = wasm_f32x4_make(tmy, (float)(tou * inv65535), (float)(tov * inv65535), 0.0f);
+  uint32_t *row = k->store + idx * K_STORE_WORDS;
+  const v128_t d = wasm_v128_or(wasm_v128_or(wasm_v128_xor(s0, wasm_v128_load(row)), wasm_v128_xor(s1, wasm_v128_load(row + 4))),
+                                wasm_v128_xor(s2, wasm_v128_load(row + 8)));
+  if (wasm_v128_any_true(d)) {
+    wasm_v128_store(row, s0);
+    wasm_v128_store(row + 4, s1);
+    wasm_v128_store(row + 8, s2);
+    k->ring[k->head & k->mask] = idx;
+    k->head++;
+  }
+}
+
+/* The frame's pushes, published: the store rows and ring entries written before the head moves. */
+INLINE void publish_key_store(const KeyStore *k) {
+  if (k->store) __atomic_store_n(k->headPtr, k->head, __ATOMIC_SEQ_CST);
+}
+
 /* Everything emit_rows reads, loaded from the table once (the stores may alias the table as far as the
    compiler knows); the row writers below are inlined into each of its loops. */
 typedef struct {
@@ -248,6 +326,7 @@ typedef struct {
   uint16_t *qTileOffU, *qTileOffV;
   float *qTileMulX, *qTileMulY, *qShadowH, *qShadowOffX, *qShadowOffY;
   uint32_t *qKey;
+  KeyStore ks;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
   const float *aaTime;
@@ -360,6 +439,7 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->qShadowOffX = PTR(float, Q_SHADOW_OFF_X);
   e->qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
   e->qKey = PTR(uint32_t, Q_KEY);
+  load_key_store(&e->ks, t);
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
   e->aaAsset = PTR(const uint16_t, AA_ASSET);
@@ -590,6 +670,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
     }
   }
   e->qTexture[out] = (uint16_t)tex;
+  if (e->ks.store) key_store(&e->ks, (uint32_t)idx, out);
 }
 
 /* What emitSpriteQueue writes first on a row that is no sprite and casts no shadow (a decoration, a bullet, a
@@ -1068,6 +1149,7 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
   counts[2] = e.tiled;
   counts[3] = nForeign;
   counts[4] = overflow;
+  publish_key_store(&e.ks);
   return w;
 }
 
@@ -1304,6 +1386,16 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       sHalfH[idx] = (float)((h * ay) * 0.5);
     }
     moved++;
+  }
+  /* E-177: a repair or an advance changed an animated row's texture; with no miss left, their statics go to the store. */
+  KeyStore ks;
+  load_key_store(&ks, t);
+  if (ks.store) {
+    for (uint32_t a = 0; a < nAnimated; a++) {
+      const uint32_t i = animated[a];
+      key_store(&ks, (uint32_t)cIndex[i], i);
+    }
+    publish_key_store(&ks);
   }
   counts[0] = nEnds;
   counts[1] = moved;

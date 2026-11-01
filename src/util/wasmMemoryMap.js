@@ -170,6 +170,12 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitPersistEntity', owner: 'pre-render', bytes: 2 * n * 4 },
       { name: 'emitPersistFrame', owner: 'pre-render', bytes: 2 * n * 2 },
       { name: 'emitPersistAnim', owner: 'pre-render', bytes: 2 * n * 2 },
+      // E-177: the keyed frames' statics store (each sprite's statics as Pixi draws them, as the emit last wrote them:
+      // PIXI_KEYED_STORE_BYTES an entity), the ring of entities whose statics changed, and its head on a line of its
+      // own (the emit advances it after a frame's rows; Pixi reads it).
+      { name: 'emitKeyStore', owner: 'pre-render writes; Pixi reads', bytes: emit.pixiKeyed ? e * PIXI_KEYED_STORE_BYTES : 0 },
+      { name: 'emitKeyRing', owner: 'pre-render writes; Pixi reads', bytes: emit.pixiKeyed ? keyRingEntries(n) * 4 : 0 },
+      { name: 'emitKeyRingHead', owner: 'pre-render writes; Pixi reads', bytes: emit.pixiKeyed ? CACHE_LINE_BYTES : 0 },
     );
     // Each custom sprite layer's two queue buffers (pre-render writes, Pixi reads) and its collector: y and index
     // (u32 each), the pose stash x, y, rotC, rotS (f32 each), then type (u8) per row: CUSTOM_COLLECTOR_ROW_BYTES.
@@ -253,7 +259,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackTables', owner: 'Pixi', bytes: pixiExtra ? pixiExtra.tableBytes | 0 : tableBytes },
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
       // E-177: the entity batch's keyed frames (gpuPack.c pack_sprites_keyed): the fingerprint of the statics it last
-      // listed for each key, each key's stamp, and a frame's updates (as many as its rows).
+      // listed for each key, each key's stamp, and a frame's updates (gpuPack.c KEYED_ROW_WORDS each, as many as its rows).
       { name: 'pixiKeyTable', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * PIXI_KEYED_PRINT_BYTES },
       { name: 'pixiKeyStamps', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * 4 },
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
@@ -403,9 +409,19 @@ export const CUSTOM_COLLECTOR_ROW_BYTES = 25;
 /** W27: the Adobe assets the emit kernel's directory holds (asset ids 0 … 255), and the bytes of a record. */
 export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;
-/** E-177: the bytes of a keyed frame's update (gpuPack.c KEYED_ROW_WORDS u32) and of a key's fingerprint (u64). */
+/** E-177: the bytes of a keyed frame's update (gpuPack.c KEYED_ROW_WORDS u32) and of an entity's row of the statics store
+ * (the statics texture's row: three RGBA32UI texels). */
 export const PIXI_KEYED_ROW_BYTES = 64;
+export const PIXI_KEYED_STORE_BYTES = 48;
+/** E-177: the bytes of a key's fingerprint (u64) in Pixi's table. */
 export const PIXI_KEYED_PRINT_BYTES = 8;
+
+/** E-177: the statics ring's entries for a queue of `maxItems` rows: a power of two, two frames of every row changing. */
+export function keyRingEntries(maxItems) {
+  let n = 1024;
+  while (n < 2 * (maxItems | 0)) n *= 2;
+  return n;
+}
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its

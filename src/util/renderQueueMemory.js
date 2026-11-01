@@ -59,6 +59,7 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
   // Every region's byte from the memory's start: the block's offset added when the regions sit in a block.
   const r = {};
   for (const [name, region] of Object.entries(map.regions)) r[name] = base ? { ...region, byte: region.byte + base } : region;
+  const keyed = Boolean(r.pixiKeyUpdates && r.pixiKeyUpdates.bytes > 0 && r.emitKeyStore && r.emitKeyStore.bytes > 0);
   try {
     const memory = place ? place.memory : new WebAssembly.Memory({ initial: map.pages, maximum: map.pages, shared: true });
     return {
@@ -94,13 +95,18 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         pixiParticlesByte: r.pixiPackResults ? r.pixiPackResults.byte : -1,
         pixiGlowRows: r.pixiGlowRows && r.pixiGlowRows.bytes > 0 ? pixiExtra.glowRows : 0,
         pixiGlowByte: r.pixiGlowRows && r.pixiGlowRows.bytes > 0 ? r.pixiGlowRows.byte : -1,
-        // E-177: the entity batch's keyed frames (0 rows: none): its table and stamps, keyRows each (the keys past
-        // keyBase, the scene's entities, are the slots of rows without one), and its updates, a row each.
-        pixiKeyRows: r.pixiKeyTable && r.pixiKeyTable.bytes > 0 ? pixiExtra.keyRows : 0,
-        pixiKeyBase: r.pixiKeyTable && r.pixiKeyTable.bytes > 0 ? emit.entities | 0 : 0,
-        pixiKeyTableByte: r.pixiKeyTable && r.pixiKeyTable.bytes > 0 ? r.pixiKeyTable.byte : -1,
-        pixiKeyStampByte: r.pixiKeyStamps && r.pixiKeyStamps.bytes > 0 ? r.pixiKeyStamps.byte : -1,
-        pixiKeyUpdatesByte: r.pixiKeyUpdates && r.pixiKeyUpdates.bytes > 0 ? r.pixiKeyUpdates.byte : -1,
+        // E-177: the entity batch's keyed frames (0 rows: none): the statics texture's rows (the keys past keyBase, the
+        // scene's entities, are the slots of rows without one), its updates (a row each), and the emit's statics store,
+        // ring and ring head, which it reads.
+        pixiKeyRows: keyed ? pixiExtra.keyRows : 0,
+        pixiKeyBase: keyed ? emit.entities | 0 : 0,
+        pixiKeyUpdatesByte: keyed ? r.pixiKeyUpdates.byte : -1,
+        pixiKeyTableByte: keyed ? r.pixiKeyTable.byte : -1,
+        pixiKeyStampByte: keyed ? r.pixiKeyStamps.byte : -1,
+        pixiKeyStoreByte: keyed ? r.emitKeyStore.byte : -1,
+        pixiKeyRingByte: keyed ? r.emitKeyRing.byte : -1,
+        pixiKeyRingEntries: keyed ? r.emitKeyRing.bytes / 4 : 0,
+        pixiKeyRingHeadByte: keyed ? r.emitKeyRingHead.byte : -1,
         // W10: each sorting worker's painter state (null: that worker sorts in JS on arrays of its own).
         preRenderPainter: painter?.preRender ? painterStateLayout(r, 'preRenderPainter', n) : null,
         pixiPainter: painter?.pixi ? painterStateLayout(r, 'pixiPainter', n) : null,
@@ -179,6 +185,11 @@ function emitLayout(r, entities, rows, customLayers) {
     persistEntityByte: r.emitPersistEntity.byte,
     persistFrameByte: r.emitPersistFrame.byte,
     persistAnimByte: r.emitPersistAnim.byte,
+    // E-177: the keyed frames' statics store, ring and ring head, -1 (0 entries) without them.
+    keyStoreByte: r.emitKeyStore.bytes > 0 ? r.emitKeyStore.byte : -1,
+    keyRingByte: r.emitKeyRing.bytes > 0 ? r.emitKeyRing.byte : -1,
+    keyRingEntries: r.emitKeyRing.bytes / 4,
+    keyRingHeadByte: r.emitKeyRingHead.bytes > 0 ? r.emitKeyRingHead.byte : -1,
     // W27: the Adobe emit's regions, -1 without them (no AdobeAnimComponent).
     adobeAnimByte: r.adobeAnim ? block(r.adobeAnim) : -1,
     stashXByte: r.emitStashX ? r.emitStashX.byte : -1,
