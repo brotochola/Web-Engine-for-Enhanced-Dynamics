@@ -9497,7 +9497,8 @@
       "aliases": [],
       "records": [
         "R-0781",
-        "R-0784"
+        "R-0784",
+        "R-0785"
       ],
       "status": "open",
       "date": "2026-10-29",
@@ -9505,13 +9506,13 @@
       "refs": [
         "EXECUTION_PLAN.md#E-177"
       ],
-      "statusText": "open: building; step 0b 2026-11-01 (R-0784): the changed statics are spread over the keys, so a scatter",
+      "statusText": "open: building; the keyed frames as built regress Predator's renderer (R-0785): the compare moves to the emit (v4)",
       "id": "E-177",
       "rank": 10,
       "area": "pre-render",
       "kind": "speed",
       "title": "Sprite statics per entity on the GPU, for scenes whose camera scrolls",
-      "next": "Built: the key column (69432150), pack_sprites_keyed (f185a8c4). Next: the keyed region of the render-queue memory; the batch's keyed frames with the WebGL scatter (Predator is WebGL); Pixi's wiring; then Predator's renderer, 4 pairs, painterMove and BunnyMark as guards. EXECUTION_PLAN.md#E-177."
+      "next": "v4: pre-render's emit compares each sprite's statics with an entity-indexed store and rings the entities that changed; Pixi packs pose and key only and scatters the ringed store rows. Then Predator's renderer and pre-render, 4 pairs; painterMove and BunnyMark as guards. The keyed frames are on in wave12 meanwhile: do not merge it as it is. EXECUTION_PLAN.md#E-177."
     },
     {
       "aliases": [],
@@ -9773,6 +9774,22 @@
       "area": "demo",
       "kind": "bug",
       "result": "Fixed 8eb30060: the call is gone, the pool is the count, the default 20 000 (what the old default drew). Every adobe sitting before ran 2N characters in overlapping pairs.",
+      "next": "Nothing pending."
+    },
+    {
+      "aliases": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-102"
+      ],
+      "records": [],
+      "id": "N-102",
+      "title": "An instanced sprite upload whose options left out the type filter filtered to type 0 (| 0 on a missing includeType)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (ad223dd6)",
+      "date": "2026-11-01",
+      "area": "render",
+      "kind": "bug",
+      "result": "Fixed ad223dd6: a missing includeType or excludeType reads -1, as documented and as makePackContext reads it. Every engine caller set all three, so nothing drew wrong.",
       "next": "Nothing pending."
     }
   ],
@@ -17042,6 +17059,20 @@
       "text": "**E-177 step 0b: Predator's changed statics are spread over the keys, so they go up as a list the GPU scatters, not\nas dirty runs.** 2026-11-01, 06:04 to 06:05 (the result files' times), Chrome, headed, source, detailed stats off;\npre-render instrumented in an overlay worktree (HEAD 69432150, with the key column; not committed): after each emit,\nevery sprite row's statics against its key's row of a table, and the dirty keys counted in chunks of 1 to 1 024 keys,\nlogged every 120 frames.\n\n- About 13 800 sprite rows and 120 to 250 rows without a key a frame; 670 to 765 changed (4.9 to 5.5 %), their keys\n  spread over 42 634 entities (the largest drawn, 42 632).\n- An upload by chunk sends: chunks of 16 keys, 8 000 rows in 310 runs; of 64 keys, 19 000 rows (more than the frame)\n  in 70 runs; texture rows of 1 024 keys, 26 of the 42. Single rows, 650 runs a frame. None pays.\n- So the changed rows go up as a list, 64 bytes each (about 45 KB a frame against 590 KB of statics today), that the\n  GPU scatters into its copy of the table: a draw into the statics texture on WebGL (Predator's backend, so the first\n  one built), a compute pass on WebGPU.\n\nThe kernel (f185a8c4, gpuPackKeyedMicrobench in Chrome, Predator's shape): split 0.195 ms, keyed 0.270 ms a pack,\npainter's order random; 0.135 against 0.22 to 0.31 ms with the queue's order nearly kept. A variant that builds and\ncompares the statics without the table's reads ties the split pack, so the extra is those reads (900 KB a frame).\nPredator's trace (step 0's) runs the Pixi worker's memory-bound work at about 5 times its kernel time (pack_sprites_split\n1.0 ms a frame against 0.195 ms; the arena copy at 1.2 GB/s), so the table's reads may cost much of what the smaller\ncopy and upload save (60 to 24 bytes a sprite): the sitting decides. If they do, the next lever is a generation per\nrow written by the emit, which compares in entity order; pre-render runs 4.07 ms in Predator against the renderer's 3.5\n(R-0782), so that is not free either.",
       "commits": [
         "f185a8c4"
+      ]
+    },
+    {
+      "id": "R-0785",
+      "date": "2026-11-01",
+      "time": "06:59",
+      "timeFrom": "recorded",
+      "title": "E-177 keyed frames as built: Predator's renderer 30-44 % slower; the compare must leave Pixi (v4: the emit lists the changes)",
+      "verdict": "fail",
+      "text": "**E-177, keyed frames as built (Pixi compares the statics by key): Predator's renderer 30 to 44 % slower; the\ncompare must leave Pixi.** 2026-11-01, 06:45 to 06:59 (the result files' times), Chrome, headed, source, detailed stats\noff, Predator (WebGL, Pixi packs and sorts); single runs and CPU traces of the Pixi worker (8 s warm-up, 6 s window),\nnot a sitting: the build is a regression, so no pairs were spent on it.\n\n- It draws right: screenshots of wave12 (0d72905b) and main side by side show the same scene.\n- First look, one run each: renderer STEP - WAIT 4.164 ms on main, 5.987 ms keyed (+44 %).\n- The trace (keyed, 0d72905b) against main's, ms of the Pixi worker a second: pack_sprites_keyed 181 against\n  pack_sprites_split 62; the arena copy 30 against 39 and updateBuffer 28 against 43 (the bytes went from 60 to 24 a\n  sprite, but the copy and upload fell 23 %, not 60 %); scatterStaticsGl 66, of which 92 % on\n  gl.getParameter(COLOR_WRITEMASK): a query the GPU process answers, the first of a frame waiting there for every\n  command before it. Fixed by reading Pixi's caches (1b230b05): 5.5.\n- A fingerprint a key instead of the statics (8c378075, 8 bytes a key instead of 64): 164. With `--no-liftoff`: 162,\n  so not the WASM tier.\n- Variants of the kernel, traced the same way (built into engine.wasm, never committed): pose, key and slot alone (no\n  stamp, no compare; the statics loads then dead) 23; with the stamps 62. A per-key array read at the address of a key\n  read from the queue is a chain of two misses (idx -> key -> stamp), about 40 ms/s each in Predator, where the split\n  pack's fifteen column reads depend on one load and run in parallel. The statics loads, the fingerprint and its\n  per-key read make the rest (about 100).\n\nSo the per-row compare cannot be in Pixi. Next (v4): pre-render's emit, whose per-entity reads are one level deep\n(the collector gives the entity), compares each sprite's statics with an entity-indexed store it keeps in the\nrender-queue memory and, when they changed, writes the store's row and appends the entity to a ring; Pixi packs the\npose and the key only (23 ms/s measured) and scatters the store rows of the entities the ring lists since its last\nframe (skipped frames are covered; a ring overrun re-sends the store). On a persist frame only the repaired textures\nchange, through the same path. The keyed frames stay on in wave12 (WebGL, Pixi pack mode) until v4 replaces the\ncompare; the branch is not merged as it is.",
+      "commits": [
+        "0d72905b",
+        "1b230b05",
+        "8c378075"
       ]
     }
   ],
