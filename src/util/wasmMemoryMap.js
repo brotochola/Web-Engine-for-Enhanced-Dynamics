@@ -418,6 +418,8 @@ export const PIXI_KEYED_SHADOW_BYTES = 12;
  * Pixi's last keyed upload with shadow terms (0: none); pre-render writes keyed caster rows while it is recent.
  */
 export const PIXI_KEYED_HEADER = Object.freeze({ REQUEST: 0, SERVED: 1, BUFFER0: 2, BUFFER1: 3, LIVE: 4 });
+/** The header's words, the view each worker takes of its line. */
+export const PIXI_KEYED_HEADER_WORDS = 5;
 
 /**
  * The navigation memory (W14 `navFlowfield.wasm`, created by navigationMemory.js). NavGrid reads its

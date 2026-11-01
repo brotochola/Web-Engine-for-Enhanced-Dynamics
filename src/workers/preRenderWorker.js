@@ -55,7 +55,7 @@ import {
     unbindSolidSegments,
 } from '../render/visibility/solidSegmentsClient.js';
 import { VISIBILITY_MAX_OCCLUDERS, createVisibilityMemory, visibilityMemoryOpts } from '../util/visibilityMemory.js';
-import { PIXI_KEYED_HEADER } from '../util/wasmMemoryMap.js';
+import { PIXI_KEYED_HEADER, PIXI_KEYED_HEADER_WORDS } from '../util/wasmMemoryMap.js';
 import { Grid as GridImport } from '../core/grid.js';
 import { Sun } from '../core/sun.js';
 import {
@@ -86,7 +86,9 @@ import {
 import { ySortEnabled, resolveSpritePipeline, PACK_GPU_SPRITES_PRERENDER, SORT_SPRITES_PRERENDER } from '../render/rendererBackend.js';
 import { Layer } from '../core/layer.js';
 import { computeBufferSize, createViews as createRenderQueueViews, createRenderQueueCameraViews } from '../render/renderQueueLayout.js';
-import { bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packSplitRowsWasm } from '../render/gpuPackClient.js';
+import {
+    bindGpuPack, packIndexedRowsWasm, packInstancedRowsWasm, packKeyedCastersWasm, packSplitRowsWasm,
+} from '../render/gpuPackClient.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, radixSortIndicesWasm } from '../render/painterRadixClient.js';
 import { bindShadowStamp, stampLightRangeWasm } from '../render/shadowStampClient.js';
 import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './preRenderCollectClient.js';
@@ -120,11 +122,15 @@ import {
 import {
     GPU_SPRITE_FLOATS,
     GPU_CASTER_FLOATS,
+    GPU_CASTER_LIGHT_FLOAT,
+    GPU_KEYED_CASTER_FLOATS,
+    GPU_KEYED_STAMP_FLOATS,
     GPU_SPACE_WORLD,
     GPU_SPACE_SCREEN,
     GPU_FLAG_SORTED,
     GPU_FLAG_SPLIT,
     GPU_FLAG_INDEXED,
+    GPU_FLAG_KEYED_CASTERS,
     createGpuQueueViews,
     clearGpuQueueHeader,
     writeGpuQueueHeader,
@@ -163,6 +169,12 @@ const Grid = GridImport;
 
 const INVALID_TEXTURE_ID = 0xFFFF;
 const EMPTY_OWNED_IDS = new Uint32Array(0);
+/**
+ * E-191 step 2: how many queue frames Pixi's keyed statics may trail the frame being written for keyed caster rows. Pixi
+ * reads a frame while the next is written (one), and a frame it draws split leaves the texture one more behind; a
+ * texture that far behind draws those frames' shadows from the statics it holds.
+ */
+const KEYED_CASTERS_LAG = 2;
 // Placeholders for render-queue columns until initialize() binds the real views.
 const EMPTY_F32 = new Float32Array(0);
 const EMPTY_U8 = new Uint8Array(0);
@@ -453,6 +465,12 @@ class PreRenderWorker extends AbstractWorker {
         this._keyedFrames = false;
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
         this._keyedHeader = EMPTY_U32;
+        /**
+         * E-191 step 2: the keys Pixi's statics texture holds by entity (the scene's entities; renderQueueLayout's
+         * pixiKeyBase), and whether this frame's sun rows, and so its stamp rows, are keyed caster rows.
+         */
+        this._keyedKeyBase = 0;
+        this._gpuSunKeyed = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
@@ -990,7 +1008,10 @@ class PreRenderWorker extends AbstractWorker {
             try {
                 this._emitWasm = await bindPreRenderEmit(data.renderQueueMemory, emitLayout);
                 this._keyedFrames = emitLayout.keyHeaderByte >= 0;
-                if (this._keyedFrames) this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, 4);
+                if (this._keyedFrames) {
+                    this._keyedHeader = new Uint32Array(data.renderQueueMemory.buffer, emitLayout.keyHeaderByte, PIXI_KEYED_HEADER_WORDS);
+                    this._keyedKeyBase = data.renderQueueLayout.pixiKeyBase | 0;
+                }
             } catch (err) {
                 throw new Error(`[PRE_RENDER] preRenderEmit.wasm did not load: ${err?.message ?? err}`, { cause: err });
             }
@@ -3016,6 +3037,8 @@ class PreRenderWorker extends AbstractWorker {
         q.shadowOffX = views.shadowOffX;
         q.shadowOffY = views.shadowOffY;
         q.type = views.type;
+        // E-191 step 2: the main queue's keys (the keyed caster rows read them), undefined for a queue without.
+        q.key = views.key;
         return q;
     }
 
@@ -3175,7 +3198,19 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    /**
+     * E-191 step 2: whether Pixi's statics texture holds a queue frame near enough to the one being written
+     * (KEYED_CASTERS_LAG) for keyed caster rows: Pixi stores the frame of each keyed upload in the keyed header's LIVE
+     * word once it draws such rows. A pause, WebGPU or a scene not keyed leaves the word stale or zero.
+     */
+    _keyedCastersLive() {
+        if (!this._keyedFrames || this._keyedKeyBase <= 0) return false;
+        const live = Atomics.load(this._keyedHeader, PIXI_KEYED_HEADER.LIVE);
+        return live !== 0 && ((this.renderQueueFrame + 1 - live) >>> 0) <= KEYED_CASTERS_LAG;
+    }
+
     _packGpuSun(dst, q) {
+        this._gpuSunKeyed = false;
         const caps = this.gpuQueueCaps;
         if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) return 0;
         const opts = this._gpuPackOpts;
@@ -3183,6 +3218,15 @@ class PreRenderWorker extends AbstractWorker {
         const count = q.count | 0;
         let sunN = compactShadowCasterIndices(q.shadowH, typeArr, count, this._gpuCasterIdx);
         if (sunN > caps.maxSun) sunN = caps.maxSun;
+        if (sunN > 0 && this._keyedCastersLive()) {
+            // E-191 step 2: a pose, a key and the shadow terms a caster; -1 when a caster has no entity key (its statics
+            // are not in Pixi's texture), and the frame packs the full rows.
+            const keyedN = packKeyedCastersWasm(this._gpuPackWasm, q, this._gpuCasterIdx, sunN, dst.sun, this._keyedKeyBase, caps.maxSun);
+            if (keyedN >= 0) {
+                this._gpuSunKeyed = true;
+                return keyedN;
+            }
+        }
         if (sunN > 0) {
             this._resetGpuPackOpts(opts);
             opts.indices = this._gpuCasterIdx;
@@ -3280,8 +3324,14 @@ class PreRenderWorker extends AbstractWorker {
                 stampBase: 0,
                 stampLightIdx: null,
                 lightVec: null,
+                lightFloat: GPU_CASTER_LIGHT_FLOAT,
             };
         }
+        // E-191 step 2: keyed sun rows make keyed stamp rows, their light after the caster row's seven floats.
+        const keyed = this._gpuSunKeyed;
+        spec.sunFloats = keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_FLOATS;
+        spec.stampFloats = keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS;
+        spec.lightFloat = keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_LIGHT_FLOAT;
         spec.sun = sun;
         spec.sunN = sunN;
         spec.lights = lights;
@@ -3359,17 +3409,19 @@ class PreRenderWorker extends AbstractWorker {
 
     _packGpuShadows(dst, q) {
         const caps = this.gpuQueueCaps;
-        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, cookie: 0 });
+        const res = this._gpuShadowsResult || (this._gpuShadowsResult = { sun: 0, stamp: 0, cookie: 0, keyed: false });
         if (!this.shadowsEnabled || !caps || !(caps.maxSun > 0)) {
             res.sun = 0;
             res.stamp = 0;
             res.cookie = 0;
+            res.keyed = false;
             return res;
         }
         const interval = this.shadowUpdateInterval | 0;
         const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
         this._shadowUpdateTick++;
-        if (skip) {
+        // E-191 step 2: keyed rows are republished only while Pixi's statics are still recent enough to draw them.
+        if (skip && !(res.keyed && !this._keyedCastersLive())) {
             this._republishGpuShadows(dst, res);
             return res;
         }
@@ -3379,6 +3431,7 @@ class PreRenderWorker extends AbstractWorker {
         res.sun = sunN;
         res.stamp = stamp;
         res.cookie = cookie;
+        res.keyed = this._gpuSunKeyed;
         this._gpuShadowsFrom = dst;
         return res;
     }
@@ -3392,8 +3445,8 @@ class PreRenderWorker extends AbstractWorker {
     _republishGpuShadows(dst, res) {
         const src = this._gpuShadowsFrom;
         if (!src || src === dst) return;
-        copyF32(dst.sun, src.sun, (res.sun | 0) * GPU_CASTER_FLOATS);
-        copyF32(dst.stamp, src.stamp, (res.stamp | 0) * GPU_CASTER_FLOATS);
+        copyF32(dst.sun, src.sun, (res.sun | 0) * (res.keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_FLOATS));
+        copyF32(dst.stamp, src.stamp, (res.stamp | 0) * (res.keyed ? GPU_KEYED_STAMP_FLOATS : GPU_CASTER_FLOATS));
         const stampN = res.stamp | 0;
         const di = dst.stampLightIdx;
         const si = src.stampLightIdx;
@@ -3660,7 +3713,7 @@ class PreRenderWorker extends AbstractWorker {
         counts.sun = shadows.sun | 0;
         counts.stamp = shadows.stamp | 0;
         counts.cookie = shadows.cookie | 0;
-        counts.flags = sprites.flags | 0;
+        counts.flags = (sprites.flags | 0) | (shadows.keyed ? GPU_FLAG_KEYED_CASTERS : 0);
         counts.staticGen = sprites.staticGen | 0;
         counts.indexedRows = sprites.indexedRows | 0;
         counts.slotsGen = sprites.slotsGen | 0;

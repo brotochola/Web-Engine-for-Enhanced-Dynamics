@@ -89,3 +89,25 @@ test('the shadow form reads the statics by key, keeps the shadow terms, and has 
   assert.throws(() => spriteIndexedVertex(shippedShadow.replace('in vec4 aInstLight;', ''), { shadow: true }), /aInstLight/);
   assert.throws(() => spriteIndexedVertex(shippedShadow), /tintBits/, 'the sprite form refuses the shadow shader');
 });
+
+// E-191 step 2: keyed caster rows (a pose, a key, the shadow terms; a stamp row adds its light) carry no rotation: the
+// rotation is a constant, the light a stamp row's attribute and the sun row's constant zero.
+test('the caster rows\' forms have no rotation, and the stamp form keeps the row\'s light', () => {
+  const sun = spriteIndexedVertex(shippedShadow, { shadow: true, casterRows: true });
+  const stamp = spriteIndexedVertex(shippedShadow, { shadow: true, casterRows: true, light: true });
+  for (const out of [sun, stamp]) {
+    assert.match(out, /^const vec2 aInstRotCS = vec2\(1\.0, 0\.0\);/m, 'no rotation attribute');
+    assert.doesNotMatch(out, /^in vec2 aInstRotCS;/m);
+    assert.match(out, /^in vec2 aInstXY;/m);
+    assert.match(out, /^in vec2 aInstSlot;/m);
+    assert.match(out, /^in vec3 aInstShadow;/m);
+    for (const name of STATICS) assert.match(out, new RegExp(`^\\s+${name} = `, 'm'), `${name} is filled in main`);
+  }
+  assert.match(sun, /^const vec4 aInstLight = vec4\(0\.0\);/m, 'a sun row has no light');
+  assert.match(stamp, /^in vec4 aInstLight;/m, 'a stamp row\'s light is an attribute');
+  assert.match(spriteIndexedVertex(shippedShadow, { shadow: true }), /^in vec2 aInstRotCS;/m, 'the instances\' form keeps it');
+  assert.throws(
+    () => spriteIndexedVertex(shippedShadow.replace('in vec2 aInstRotCS;', ''), { shadow: true, casterRows: true }),
+    /aInstRotCS/
+  );
+});

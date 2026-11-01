@@ -46,20 +46,27 @@ function replaceOnce(source, from, to, what) {
  * depth), per instance, so a chunk drawn from any first instance reads its own, whatever the backend's range draw
  * (instanceRangeDraw.js). E-191: `shadow` rewrites instancedSpriteShadow.vert.glsl for the sun's pass instead: no light
  * of its own (the pass's uLight decides), and the tint read nowhere but the line that keeps the attributes compiled in.
+ * E-191 step 2: `casterRows` (with `shadow`) for keyed caster rows, which carry no rotation (a shadow's angle is the
+ * sun's or the light's): aInstRotCS a constant; `light` keeps the row's own light attribute (a stamp row's).
  * @param {string} source instancedSprite.vert.glsl (instancedSpriteShadow.vert.glsl with `shadow`)
- * @param {{ shadow?: boolean }} [opts]
+ * @param {{ shadow?: boolean, casterRows?: boolean, light?: boolean }} [opts]
  * @returns {string}
  */
-export function spriteIndexedVertex(source, { shadow = false } = {}) {
+export function spriteIndexedVertex(source, { shadow = false, casterRows = false, light = false } = {}) {
   let out = source;
   for (const [type, name] of STATIC_ATTRIBUTES) {
     const declaration = new RegExp(`^in ${type} ${name};`, 'm');
     if (!declaration.test(out)) throw new Error(`WeedJS: the sprite vertex shader has no "in ${type} ${name};"`);
     out = out.replace(declaration, `${type} ${name};`);
   }
-  out = shadow
-    ? replaceOnce(out, 'in vec4 aInstLight;', 'const vec4 aInstLight = vec4(0.0);', 'shadow vertex shader')
-    : replaceOnce(out, 'uint tintBits = floatBitsToUint(aInstTintBits);', 'uint tintBits = weedS1.y;', 'vertex shader');
+  if (!shadow) {
+    out = replaceOnce(out, 'uint tintBits = floatBitsToUint(aInstTintBits);', 'uint tintBits = weedS1.y;', 'vertex shader');
+  } else if (!light) {
+    out = replaceOnce(out, 'in vec4 aInstLight;', 'const vec4 aInstLight = vec4(0.0);', 'shadow vertex shader');
+  }
+  if (shadow && casterRows) {
+    out = replaceOnce(out, 'in vec2 aInstRotCS;', 'const vec2 aInstRotCS = vec2(1.0, 0.0);', 'shadow vertex shader');
+  }
   const main = 'void main() {\n';
   const at = out.indexOf(main);
   if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: the sprite vertex shader needs one "void main() {"');
