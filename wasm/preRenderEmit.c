@@ -74,6 +74,11 @@ enum {
   Q_KEY,
   /* E-177: SpriteRenderer.keyedDirty (set by whatever changes a sprite's statics; the emit clears it as it flags them). */
   S_KEYED_DIRTY,
+  /* E-188: the keyed decorations' records (DECO_KEYED_WORDS u32 a decoration slot: the statics it last emitted, then the
+     epoch it emitted them in; 0: decoration rows keyless), the key of decoration slot 0 (a value: the scene's entities)
+     and the records' epoch (a value, from 1: pre-render moves it when Pixi asks for every statics again, which makes
+     every record stale). */
+  D_KEYED, D_KEY_BASE, D_KEY_EPOCH,
   SLOT_COUNT
 };
 
@@ -81,6 +86,9 @@ enum {
    whose statics changed since the emit before (entities stay under 2^31 - 1, so a sprite's key never reads KEY_NONE). */
 #define KEY_NONE 0xffffffffu
 #define KEY_CHANGED 0x80000000u
+/* E-188: a keyed decoration's record: scaleX, scaleY, alpha, tint, texture, anchorX, anchorY as the row got them, and the
+   epoch of that emit. */
+#define DECO_KEYED_WORDS 8u
 
 /* emitSpriteQueue's loop-invariant switches. */
 #define F_SORT_KEY 1u    /* rqSortKey && source.hasOrder */
@@ -255,6 +263,8 @@ typedef struct {
   float *qTileMulX, *qTileMulY, *qShadowH, *qShadowOffX, *qShadowOffY;
   uint32_t *qKey;
   uint8_t *sKeyedDirty;
+  uint32_t *dKeyed;
+  uint32_t dKeyBase, dKeyEpoch;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
   const float *aaTime;
@@ -368,6 +378,9 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->qShadowOffY = PTR(float, Q_SHADOW_OFF_Y);
   e->qKey = PTR(uint32_t, Q_KEY);
   e->sKeyedDirty = PTR(uint8_t, S_KEYED_DIRTY);
+  e->dKeyed = PTR(uint32_t, D_KEYED);
+  e->dKeyBase = t[D_KEY_BASE];
+  e->dKeyEpoch = t[D_KEY_EPOCH];
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
   e->aaAsset = PTR(const uint16_t, AA_ASSET);
@@ -629,6 +642,30 @@ INLINE void plain_head(const Emit *e, uint32_t i, uint32_t out) {
   if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
 }
 
+/* E-188: a decoration row's key: its pool slot past the entities, with KEY_CHANGED when the statics the row got differ
+   from the ones the slot last emitted, or those are from an earlier epoch (a resync, or never emitted: the records start
+   at zero and the epochs at 1); the record then takes this row's. */
+INLINE uint32_t deco_key(const Emit *e, int32_t idx, uint32_t out) {
+  union { float f; uint32_t u; } sx = {e->qScaleX[out]}, sy = {e->qScaleY[out]}, al = {e->qAlpha[out]},
+                                 ax = {e->qAnchorX[out]}, ay = {e->qAnchorY[out]};
+  uint32_t *r = e->dKeyed + (uint32_t)idx * DECO_KEYED_WORDS;
+  const uint32_t tint = e->qTint[out];
+  const uint32_t tex = e->qTexture[out];
+  const uint32_t changed = (r[0] != sx.u) | (r[1] != sy.u) | (r[2] != al.u) | (r[3] != tint) | (r[4] != tex)
+                           | (r[5] != ax.u) | (r[6] != ay.u) | (r[7] != e->dKeyEpoch);
+  if (changed) {
+    r[0] = sx.u;
+    r[1] = sy.u;
+    r[2] = al.u;
+    r[3] = tint;
+    r[4] = tex;
+    r[5] = ax.u;
+    r[6] = ay.u;
+    r[7] = e->dKeyEpoch;
+  }
+  return (e->dKeyBase + (uint32_t)idx) | (changed << 31);
+}
+
 /* emitSpriteQueue's decoration branch: collector row i at queue row out. */
 INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
   const int32_t idx = e->cIndex[i];
@@ -658,7 +695,7 @@ INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorX[out] = e->dAnchorX[idx];
   e->qAnchorY[out] = e->dAnchorY[idx];
   if (e->qType) e->qType[out] = 2;
-  if (e->qKey) e->qKey[out] = KEY_NONE;
+  if (e->qKey) e->qKey[out] = e->dKeyed ? deco_key(e, idx, out) : KEY_NONE;
 }
 
 /* A bullet or trail row that draws nothing, parked off screen; its other columns keep what they held. */

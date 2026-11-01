@@ -192,6 +192,18 @@ export function keyedSpritesEnabled(config, entities, maxSprites) {
   return (entities | 0) + (maxSprites | 0) <= INDEXED_SPRITES_MAX_WEBGL;
 }
 
+/**
+ * E-188: whether a scene whose sprites go keyed (keyedSpritesEnabled) keys its decorations too, by pool slot past the
+ * entities: when the statics texture also holds a row for every decoration slot.
+ * @param {number} entities the scene's entities
+ * @param {number} decorations decoration.maxDecorations
+ * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
+ * @returns {boolean}
+ */
+export function keyedDecorationsFit(entities, decorations, maxSprites) {
+  return (decorations | 0) > 0 && (entities | 0) + (decorations | 0) + (maxSprites | 0) <= INDEXED_SPRITES_MAX_WEBGL;
+}
+
 export function pixiRendererTypeName(type, RendererType) {
   if (RendererType) {
     if (type === RendererType.WEBGPU) return 'WEBGPU';

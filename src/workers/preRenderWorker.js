@@ -95,6 +95,7 @@ import { bindPreRenderCollect, writeCollectColumns, writeCollectList } from './p
 import {
     bindEmitAdobe,
     bindPreRenderEmit,
+    bumpEmitDecorationEpoch,
     writeEmitAdobeAssets,
     writeEmitAdobeColumns,
     writeEmitBulletColumns,
@@ -2744,6 +2745,8 @@ class PreRenderWorker extends AbstractWorker {
             const request = Atomics.load(keyHeader, PIXI_KEYED_HEADER.REQUEST);
             if (request !== keyHeader[PIXI_KEYED_HEADER.SERVED]) {
                 SpriteRenderer.keyedDirty.fill(1);
+                // E-188: and every keyed decoration's.
+                bumpEmitDecorationEpoch(this._emitWasm);
                 keyHeader[PIXI_KEYED_HEADER.SERVED] = request;
             }
         }

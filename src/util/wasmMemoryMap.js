@@ -172,6 +172,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitPersistAnim', owner: 'pre-render', bytes: 2 * n * 2 },
       // E-177: the keyed frames' resync header on a line of its own (PIXI_KEYED_HEADER: Pixi asks, pre-render answers).
       { name: 'emitKeyHeader', owner: 'pre-render and Pixi', bytes: emit.pixiKeyed ? CACHE_LINE_BYTES : 0 },
+      // E-188: the keyed decorations' records (EMIT_DECO_KEYED_BYTES a decoration slot: the statics it last emitted).
+      { name: 'emitDecoKeyed', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedDecorations | 0) * EMIT_DECO_KEYED_BYTES : 0 },
     );
     // Each custom sprite layer's two queue buffers (pre-render writes, Pixi reads) and its collector: y and index
     // (u32 each), the pose stash x, y, rotC, rotS (f32 each), then type (u8) per row: CUSTOM_COLLECTOR_ROW_BYTES.
@@ -406,6 +408,9 @@ export const EMIT_ADOBE_MAX_ASSETS = 256;
 export const EMIT_ADOBE_ASSET_BYTES = 160;
 /** E-177: the bytes of a keyed frame's update (gpuPack.c KEYED_ROW_WORDS u32). */
 export const PIXI_KEYED_ROW_BYTES = 64;
+
+/** E-188: the bytes of a keyed decoration's record (preRenderEmit.c DECO_KEYED_WORDS u32). */
+export const EMIT_DECO_KEYED_BYTES = 32;
 
 /** E-191: the bytes of a keyed frame's shadow terms a draw slot (shadowH, offX, offY). */
 export const PIXI_KEYED_SHADOW_BYTES = 12;
