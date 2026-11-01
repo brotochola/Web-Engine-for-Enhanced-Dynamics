@@ -17012,11 +17012,11 @@
     {
       "id": "R-0782",
       "date": "2026-11-01",
-      "time": "05:43",
+      "time": "05:27",
       "timeFrom": "recorded",
       "title": "wave11's gate passed: Predator and spawnStormScene neutral (main against wave11)",
       "verdict": "passed",
-      "text": "**wave11's gate passed: Predator and spawnStormScene neutral, main against wave11.** 2026-11-01, 05:11 to 05:43 (the\nresult files' times), Chrome, headed, source, detailed stats off, `--vs main --hyp-rev 674ceb04` (wave11's src: E-176,\nE-176b, E-178, E-179's seventh form, E-180, E-181 with its LiquidFun fix, E-182, N-96 to N-101).\n\n- **predatorScene, 4 pairs: NEUTRAL.** Logic 3.558 -> 3.573 ms (+0.3 %, 3/4), spatial 5.287 -> 5.148 ms (-3.9 %, 1/4),\n  physics 6.047 -> 6.401 ms (+0.7 % paired, 2/4, cv 9/5 %), renderer 3.578 -> 3.448 ms (-3.1 %, 1/4), pre-render\n  4.067 -> 4.077 ms (+0.3 %); load keys within 1.2 %.\n- **spawnStormScene, 4 pairs:** at the default storm (1 800 a tick) every worker is under the 3 ms floor (logic 2.773 ->\n  2.862 ms, not judged); at `?storm=2600`, logic 3.625 -> 3.632 ms, **+0.6 %, 2/4: NEUTRAL** (E-180's Atomics.add on\n  every spawn and despawn does not show)."
+      "text": "**wave11's gate passed: Predator and spawnStormScene neutral, main against wave11.** 2026-11-01, 05:11 to 05:27 (the\nresult files' times), Chrome, headed, source, detailed stats off, `--vs main --hyp-rev 674ceb04` (wave11's src: E-176,\nE-176b, E-178, E-179's seventh form, E-180, E-181 with its LiquidFun fix, E-182, N-96 to N-101).\n\n- **predatorScene, 4 pairs: NEUTRAL.** Logic 3.558 -> 3.573 ms (+0.3 %, 3/4), spatial 5.287 -> 5.148 ms (-3.9 %, 1/4),\n  physics 6.047 -> 6.401 ms (+0.7 % paired, 2/4, cv 9/5 %), renderer 3.578 -> 3.448 ms (-3.1 %, 1/4), pre-render\n  4.067 -> 4.077 ms (+0.3 %); load keys within 1.2 %.\n- **spawnStormScene, 4 pairs:** at the default storm (1 800 a tick) every worker is under the 3 ms floor (logic 2.773 ->\n  2.862 ms, not judged); at `?storm=2600`, logic 3.625 -> 3.632 ms, **+0.6 %, 2/4: NEUTRAL** (E-180's Atomics.add on\n  every spawn and despawn does not show)."
     }
   ],
   "leads": [
