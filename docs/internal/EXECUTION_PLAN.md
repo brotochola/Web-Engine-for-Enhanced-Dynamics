@@ -3330,6 +3330,20 @@ keep in the entity batch's statics texture.
 reading the sprite statics by key from that texture where the keyed frames are on; pre-render's caster pack writes the
 shorter row. First a knob for Predator's crowd (its renderer runs 2.9 ms, under the floor), then the kernel and
 Predator's renderer and pre-render.
+**Options, 2026-11-01 (from the code):** the shadow program reads 18 of a row's 22 floats (rotC/rotS, depth and the
+tint only appear in a line that keeps them from being compiled out; the shadow's angle is the sun's or the light's),
+and the sun rows' light vec4 is zero. The stamp rows are copies of sun rows (shadowStamp.c copy_row) with a light.
+(a) A slim row of the 18 floats read: -20 % of the casters' bytes (about 340 KB a frame), every caster user touched
+(both kernels, the layout, the batch's geometry, GLSL and WGSL, seven tests). (b) Keyed rows (pose, key, caster and
+light terms, about 10 floats): -55 %. (e) The sun pass draws the entity batch's own instances (its pose and slot
+streams, already uploaded) with a shadow program that reads the statics and the caster terms by key: the sun rows'
+1.2 MB a frame go, and so does pre-render's sun pack (29 ms/s); the stamp rows shrink to a pose, a key and a light.
+(b) and (e) need the shadow passes after the entity batch's upload (updateShadowSprites runs before
+updateSpritesFromRenderQueue today), a fallback where the keyed texture is not current (a resync, a pause: pre-render
+must know which rows to write), the caster terms by key, and the casters' cull region against the sprites' (a caster
+just off screen whose shadow falls on it). (e) first: the largest saving and no new row format for the sun.
+**Knob:** `?crowd=1.5` (c5003321) loads Predator's renderer to 4.0 ms, pre-render 6.3, physics 9.0, spatial 7.3,
+logic 4.7: every worker past the floor.
 
 ---
 
