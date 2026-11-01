@@ -9767,21 +9767,21 @@
         "R-0799",
         "R-0800",
         "R-0801",
-        "R-0802"
+        "R-0802",
+        "R-0808"
       ],
       "refs": [
         "EXECUTION_PLAN.md#E-191"
       ],
       "id": "E-191",
       "title": "Shadow casters keyed by entity: their sprite statics from E-177's statics texture, a pose and a key a row",
-      "status": "open",
-      "statusText": "open: step 1 kept 2026-11-01 (ebb4693c, R-0801), the sun pass over the keyed instances, renderer -4.4 %",
+      "status": "kept",
+      "statusText": "kept 2026-11-01 (R-0801, R-0808): the sun pass over the keyed instances (step 1), keyed caster rows (step 2)",
       "date": "2026-11-01",
-      "rank": 11,
       "area": "render",
       "kind": "speed",
-      "result": "step 1 kept (efce1f5e, ebb4693c): the sun pass draws the entity batch's keyed instances; Predator crowd 1.5 renderer -4.4 % (6/8)",
-      "next": "Step 2: the point-light stamps as rows of a pose, a key, the shadow terms and a light (10 floats instead of 22), and pre-render's sun pack skipped where Pixi's keyed texture is current: a header word from Pixi saying so, the 22-float rows written otherwise (a resync, a pause). Owner Predator ?crowd=1.5, renderer and pre-render."
+      "result": "kept 2026-11-01: step 1 (efce1f5e, ebb4693c) the sun pass over the keyed instances, renderer -4.4 %; step 2 (de71ce66) keyed caster rows, Predator crowd 1.5 pre-render -16.8 % (0/4), renderer +1.2 % (-4.4 % against the others)",
+      "next": "Done. What is left of the sun pack is E-192."
     },
     {
       "aliases": [],
@@ -9983,6 +9983,23 @@
       "kind": "bug",
       "result": "answered 2026-11-01: wave13 does not slow the bundle (its bundle against wave12's: spatial -8.3 %, pre-render -3.5 %), and the bundle runs the same code as fast as source function by function (Boids traces: spatial 454 against 469 ms/s); its bundle against its sources moved +2.4 to +9.6 % in Predator, Boids with 8 pairs NEUTRAL (spatial +1.5 %)",
       "next": "Each merge's bundle sitting runs Boids (a fixed load) with 8 pairs as well as Predator, on a machine checked for other busy processes."
+    },
+    {
+      "aliases": [],
+      "records": [],
+      "status": "open",
+      "date": "2026-11-01",
+      "kind": "speed",
+      "id": "E-192",
+      "title": "The keyed sun pack scans the queue itself (no JavaScript compaction, no index copy)",
+      "refs": [
+        "EXECUTION_PLAN.md#E-192"
+      ],
+      "statusText": "open: filed with E-191 step 2 (R-0808)",
+      "rank": 20,
+      "area": "render",
+      "result": "",
+      "next": "After E-191 step 2 the keyed sun rows cost compactShadowCasterIndices (8.6 ms/s at Predator crowd 1.5), the index list copied into the memory (2.4) and pack_casters_keyed (13.0). One kernel scanning the shadow and type columns writes each caster's keyed row as it finds it, -1 at a caster without an entity key (then the compaction and the full rows as now). Kernel on the Predator fixture, then Predator ?crowd=1.5 pre-render; about 11 ms/s at most."
     }
   ],
   "records": [
@@ -17526,6 +17543,18 @@
       "title": "N-105, the bundle against its sources function by function: as fast as source; Boids 8 pairs NEUTRAL (spatial +1.5 %)",
       "verdict": "answered",
       "text": "**N-105, the bundle against its sources function by function: the bundle runs spatial's code as fast as source;\nBoids, 8 pairs, NEUTRAL (spatial +1.5 %).** 2026-11-01, 12:50 to 13:28 (the result files' times), Chrome 156, headed,\nsource and `weed.prod.bundle.esm.min.js` at 8d008cd7 (wave13's merge plus docs), detailed stats off.\n\n- **Packaging unchanged.** The spatial and pre-render chunks of wave12's and wave13's shipped bundles (4db42575,\n  f16192a3), pulled out of `workerSources`, differ in one constant (PIXI_KEYED_HEADER's `LIVE: 4`, unused there); their\n  shared `worker_common` chunk only in renamed locals and in the decoration epochs (decorationPool, decorationSpatial).\n  The engine.wasm the bundle inlines is source's byte for byte (SHA-1 fe686929).\n- **Boids, one CPU trace a side (13:13, 13:14).** Spatial in ms a second, each of its two workers: busy 469.8 / 467.8\n  (source) against 454.0 / 455.0 (bundle); `gather_batch` 190.9 / 189.5 against 182.6 / 180.7, `rebuildOwnedRows`\n  147.2 / 149.2 against 139.2 / 141.2, `publish_batch` 57.8 / 57.2 against 58.7 / 58.7, `_findNeighbors` 48.1 / 45.2\n  against 47.5 / 49.9, getCellRange 12.8 / 11.5 against 13.0 / 11.1; physics' thread 433.4 against 420.5. Boids\n  processes the same 20 000 entities a frame on both sides, so these rank code: the same speed.\n- **Boids, ABAB, owner spatial** (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=…`), 13:04 to 13:09 and,\n  appended, 13:21 to 13:26: **NEUTRAL** with 8 pairs. spatial 6.914 -> 7.087 ms (+1.5 %, worse 6/8, cv 8/8 %; +1.9 %\n  against the others), physics +2.8 % (6/8, cv 6/7 %), pre-render 3.104 -> 3.106 (+2.1 %, 5/8), logic 2.009 -> 1.667\n  (-17 %, under the floor); load keys within 2.1 %. The first 4 pairs had read spatial +4.0 % (3/4); pairs 5 and 6 read\n  the bundle faster (-2.5, -1.6 %). Pair 7 ran both sides at 8.3 to 8.5 ms against 6.9 for the others: the owner's own\n  Chrome (not the bench's) used about 1.7 cores during the sitting (a renderer 0.9, its GPU process 0.45).\n- **Predator, one trace a side (12:50, 12:51).** `rebuildOwnedRows` read 66.6 (source) against 83.9 ms/s (bundle), and\n  pre-render's emit_rows and collect_sprites (WASM, the same bytes) moved in opposite directions (80.9 / 66.7 and\n  47.8 / 64.7): Predator's load differs from run to run, so its single traces cannot rank code.\n- **Terser's single-use inlining.** The bundle writes a module function called once as an IIFE inside its caller\n  (`reduce_funcs`): 32 in pre-render's chunk, 11 in particle's, 3 in spatial's (none on its frame path), among them\n  E-179's decoration screen loops, which source keeps in functions of their own. Predator's particle trace read that\n  IIFE at 17.0 ms/s against 9.7 for source's function, with the sway kernel +29 % on the same side (more decoration\n  work in that run). A probe in Chrome of both shapes (source's functions and the bundle's method as terser wrote it;\n  20 000 blades in random order, one call a frame, a panning camera; `chromeKernel.mjs`, 13:27 to 13:28, three runs):\n  145 / 145 / 150 µs a call for each, 130 to 135 in the first third. The shape costs nothing in Chrome, so\n  `reduce_funcs: false` was not made.\n- So nothing in the bundle's code makes spatial or pre-render slower than source, and nothing is taken out. Bundle\n  against source for the same code has read -2.8 to +9.6 % over seven sittings. From the next merge the bundle sitting\n  also runs Boids (a fixed load) with 8 pairs, and the machine is checked for other busy processes first."
+    },
+    {
+      "id": "R-0808",
+      "date": "2026-11-01",
+      "time": "14:11",
+      "timeFrom": "recorded",
+      "title": "E-191 step 2 kept: keyed caster rows, Predator crowd 1.5 pre-render -16.8 % (0/4)",
+      "verdict": "kept",
+      "text": "**E-191 step 2 kept (de71ce66; sat as 1c4db31c, the same tree): keyed caster rows, Predator crowd 1.5 pre-render -16.8 % (0/4), renderer +1.2 %\n(-4.4 % against the others).** 2026-11-01, 13:48 to 14:08 (the result files' times; the first probe's file was overwritten), Chrome, headed, source, detailed\nstats off, Predator `?crowd=1.5`.\n\n- **What it does.** Pixi's entity batch stores each keyed upload's queue frame in the keyed header's LIVE word once Pixi\n  has the keyed caster passes; while the word is within two frames of the one being written, pre-render packs the sun\n  casters as keyed rows (pack_casters_keyed: x, y, the key and a zero, the shadow terms; 7 floats instead of 22) and the\n  stamps copy them with their light (11 floats), with GPU_FLAG_KEYED_CASTERS in the GPU queue's header. Pixi draws the\n  sun from the entity batch's instances (step 1) or from those rows, and the stamps from theirs, with the shadow program\n  reading the statics by key (spriteIndexedVertex's casterRows form: no rotation; a stamp row's light). A caster without\n  an entity key, a stale word or a scene not keyed packs the full rows; a skipped shadow frame republishes keyed rows\n  only while the word holds.\n- **The first build never ran.** The first probe counted keyed rows on 0 frames, and a diagnosis (13:48) found why: the GPU pack's view of the main queue\n  (`_gpuSoAFromViews`) dropped the key column, so every caster read as keyless (22 860 of 22 860) and each frame packed\n  the full rows. Fixed in the same commit, with a test. Then (13:50): keyed rows on 595 and 600 frames of 600, the\n  stamps drawn from them (595, 600), the sun from the instances (597, 600) and from keyed rows once. Zoomed in (0.6, 1.2)\n  the keyed frames pause after about 80 frames (E-188's grass) and the full rows come back, as built. Screenshots against\n  cd6183bb's at the default zoom (13:49 and 13:50, 13:55 and 13:56) show the same shadows, no stray quad.\n- **Correctness tests.** shadowStampKeyed: on 60 random stamp frames, the keyed rows stamp the full rows' (light, caster)\n  pairs in the same order, each row the caster's keyed row and the same light bit for bit. spriteIndexed: the casterRows\n  forms. instancedSpriteKeyed: LIVE stored on keyed frames only, the caster rows' geometries. shadowIntervalRepublish:\n  the LIVE window, the keyed republish, a stale word packing again.\n- **Sitting** (`--vs cd6183bb --hyp-rev 1c4db31c --owner preRender --query crowd=1.5`, 13:58 to 14:06, 4 pairs):\n  **KEPT (product).** pre-render 6.226 -> 5.207 ms (-16.8 %, worse 0/4, cv 2/9 %; -17.5 % against the others), pairs\n  -19.4 / -20.5 / -14.3 / -1.9 %; renderer 3.794 -> 3.822 (+1.2 %, 2/4; -4.4 % against the others), pairs -10.0 / -1.8 /\n  +4.2 / +8.0 %; logic +1.1 %, spatial -0.5 %, physics +0.1 %; load keys within 0.9 %. Pair 4's B side ran logic,\n  spatial and physics 17 to 19 % high (the owner's own Chrome used 0.5 to 0.7 cores that afternoon).\n- **Traces** (one a side, 14:07 and 14:08), pre-render in ms a second: busy 483.8 -> 379.5 (-21.6 %);\n  pack_casters_scatter 48.6 gone, pack_casters_keyed 13.0 and its client 2.4; stamp_light_range 135.0 -> 108.4 (rows of\n  11 floats copied instead of 22); compactShadowCasterIndices 7.9 -> 8.6. Pixi: the copy kernel 24.6 -> 19.8 and\n  updateBuffer 23.9 -> 21.2 (the stamps' smaller upload); pack_sprites_keyed 91.1 -> 117.7, which step 2 does not touch\n  (its updates vary with the run).\n- Filed: E-192, the keyed sun pack scanning the queue itself (compactShadowCasterIndices and the index copy, about 11\n  ms/s at crowd 1.5).",
+      "commits": [
+        "de71ce66"
+      ]
     }
   ],
   "leads": [
