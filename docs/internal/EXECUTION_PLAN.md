@@ -3113,6 +3113,17 @@ N-101) reads Moved 20 000 every frame, so spatial rebuilds the grid (2.1 ms) for
 are those channels) exports the velocities only and is not listed, unless the body fell asleep; teleports keep their
 own list. Owner: adobeAnimateScene's spatial worker; physics there too; Predator, whose bodies move, must stay neutral.
 
+### E-182 Every moved body's state exported twice a step
+
+**Premise:** WeedJS's Box2D exports each awake body's state in the solver's finalize task (`b2ExportBodyState`: x, y, an
+`atan2` for the rotation, rotC, rotS, the velocities), and the glue's `export_body_move_events` exports it again for
+every moved body from the move event, with `b2Body_GetLinearVelocity` and `b2Body_GetAngularVelocity` calls. The second
+export only matters for a body whose pose changed after the finalize, which is continuous collision's (a fast body's
+time of impact).
+**Plan:** the glue re-exports a listed body only when the event's pose differs from what the channels hold. Owner: the
+physics worker of a scene full of moving bodies (ballsHeavyStressScene); Predator's physics (10 ms, most bodies
+moving) next.
+
 ### E-179c Decorations' screen test skipped while nothing it reads changed
 
 **Premise:** the test's output depends only on the camera bounds and the active decorations' positions; decorations
