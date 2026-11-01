@@ -127,7 +127,7 @@ async function bindPixi(px, scene, webgpu) {
     px.renderQueueCameraBuffers[b] = null;
     px.renderQueuePoseReadyBuffers[b] = null;
   }
-  const tex = { made: [], texels: null, scattered: 0 };
+  const tex = { made: [], texels: null, scattered: 0, uploads: 0 };
   px._gpuRecordTexture = () => ({
     maxSize: 16384,
     make(bits, width, height, label) {
@@ -135,8 +135,9 @@ async function bindPixi(px, scene, webgpu) {
       tex.texels = Uint32Array.from(bits.subarray(0, width * height * 4));
       return new TextureSource({ width, height, label });
     },
-    upload() {
-      throw new Error('a keyed batch sends no statics rows');
+    upload(source, bits, width, height, y0, rows) {
+      tex.texels.set(bits.subarray(y0 * width * 4, (y0 + rows) * width * 4), y0 * width * 4);
+      tex.uploads++;
     },
     scatter(source, updates, count) {
       for (let u = 0; u < count; u++) {
@@ -196,6 +197,28 @@ function writeQueue(q, w, n, r) {
   for (const c of COLUMNS) q[c].set(w[c].subarray(0, n));
 }
 
+/**
+ * What pre-render's emit does after writing the queue (preRenderEmit.c key_store): each sprite's statics into its
+ * entity's row of the store, a change rung, the head stored after the frame's pushes.
+ */
+function emitStore(m, q, n, st) {
+  const L = m.layout.emit;
+  const store = new Uint32Array(m.buffer, L.keyStoreByte, ENTITIES * 12);
+  const ring = new Uint32Array(m.buffer, L.keyRingByte, L.keyRingEntries);
+  for (let i = 0; i < n; i++) {
+    const e = q.key[i];
+    if (e >= ENTITIES) continue;
+    const row = rowStatics(q, i);
+    let same = true;
+    for (let j = 0; j < 12; j++) if (store[e * 12 + j] !== row[j]) same = false;
+    if (same) continue;
+    store.set(row, e * 12);
+    ring[st.head & (L.keyRingEntries - 1)] = e;
+    st.head = (st.head + 1) >>> 0;
+  }
+  Atomics.store(new Uint32Array(m.buffer, L.keyRingHeadByte, 1), 0, st.head);
+}
+
 /** The statics words gpuPack.c sprite_static writes for queue row i, in the indexed layout (depth 0, a zero). */
 function rowStatics(q, i) {
   const f = new Float32Array(GPU_INDEXED_STATIC_FLOATS);
@@ -234,10 +257,12 @@ test('Pixi draws a WebGL scene\'s sprites as keyed frames: poses in the painter\
   const r = rng(177);
   const world = makeWorld(r);
   const scattered = [];
+  const emit = { head: 0 };
   for (let f = 0; f < 8; f++) {
     const b = f & 1;
     const q = px.renderQueueBuffers[b];
     writeQueue(q, world, f < 6 ? MAX - 100 : MAX - 300, r);
+    emitStore(scene.renderQueueMemory, q, q.count[0], emit);
     px._setReadBuffer(b);
     const before = tex.scattered;
     px.updateSpritesFromRenderQueue();
@@ -264,10 +289,10 @@ test('Pixi draws a WebGL scene\'s sprites as keyed frames: poses in the painter\
       }
     }
   }
-  // The first frame sends nearly every row; after it a frame sends the twentieth that changed and the rows without a
-  // key whose slot another row held.
-  assert.ok(scattered[0] > MAX * 0.9, `the first frame: ${scattered[0]}`);
-  for (let f = 1; f < 8; f++) assert.ok(scattered[f] < MAX / 6, `frame ${f}: ${scattered[f]} scattered`);
+  // The first frame sends the whole store; every frame scatters the rows without a key and the sprites whose statics
+  // changed (a twentieth).
+  assert.equal(tex.uploads, 1, 'the store went up once');
+  for (let f = 1; f < 8; f++) assert.ok(scattered[f] < MAX / 5, `frame ${f}: ${scattered[f]} scattered`);
 });
 
 test('on WebGPU the entity batch stays split', async () => {

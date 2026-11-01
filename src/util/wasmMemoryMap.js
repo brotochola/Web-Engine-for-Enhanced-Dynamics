@@ -258,10 +258,7 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiPackIndices', owner: 'Pixi', bytes: n * 4 },
       { name: 'pixiPackTables', owner: 'Pixi', bytes: pixiExtra ? pixiExtra.tableBytes | 0 : tableBytes },
       { name: 'pixiPackResults', owner: 'Pixi', bytes: 144 },
-      // E-177: the entity batch's keyed frames (gpuPack.c pack_sprites_keyed): the fingerprint of the statics it last
-      // listed for each key, each key's stamp, and a frame's updates (gpuPack.c KEYED_ROW_WORDS each, as many as its rows).
-      { name: 'pixiKeyTable', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * PIXI_KEYED_PRINT_BYTES },
-      { name: 'pixiKeyStamps', owner: 'Pixi', bytes: (pixiExtra ? pixiExtra.keyRows | 0 : 0) * 4 },
+      // E-177: the entity batch's keyed frames' updates (gpuPack.c KEYED_ROW_WORDS each), as many as its rows.
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
     );
   }
@@ -413,8 +410,6 @@ export const EMIT_ADOBE_ASSET_BYTES = 160;
  * (the statics texture's row: three RGBA32UI texels). */
 export const PIXI_KEYED_ROW_BYTES = 64;
 export const PIXI_KEYED_STORE_BYTES = 48;
-/** E-177: the bytes of a key's fingerprint (u64) in Pixi's table. */
-export const PIXI_KEYED_PRINT_BYTES = 8;
 
 /** E-177: the statics ring's entries for a queue of `maxItems` rows: a power of two, two frames of every row changing. */
 export function keyRingEntries(maxItems) {

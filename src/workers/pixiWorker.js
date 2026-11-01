@@ -2405,14 +2405,17 @@ class PixiRenderer extends AbstractWorker {
     if ((layout.pixiGlowRows | 0) >= (this.renderQueueMaxItems | 0) && layout.pixiGlowByte >= 0) {
       this._pixiGlowRows = new Float32Array(memory.buffer, layout.pixiGlowByte, (this.renderQueueMaxItems | 0) * INSTANCED_SPRITE_FLOATS);
     }
-    // E-177: the keyed frames' table, stamps and updates, for a scene whose sprites go keyed (keyedSpritesEnabled).
-    this._pixiKeyed = (layout.pixiKeyRows | 0) > 0 && layout.pixiKeyTableByte >= 0
+    // E-177: the keyed frames' updates and the emit's statics store, ring and head, for a scene whose sprites go keyed
+    // (keyedSpritesEnabled).
+    this._pixiKeyed = (layout.pixiKeyRows | 0) > 0 && layout.pixiKeyStoreByte >= 0
       ? {
-          tableByte: layout.pixiKeyTableByte,
-          stampByte: layout.pixiKeyStampByte,
-          updatesByte: layout.pixiKeyUpdatesByte,
           keyBase: layout.pixiKeyBase | 0,
           keyRows: layout.pixiKeyRows | 0,
+          updatesByte: layout.pixiKeyUpdatesByte,
+          storeByte: layout.pixiKeyStoreByte,
+          ringByte: layout.pixiKeyRingByte,
+          ringEntries: layout.pixiKeyRingEntries | 0,
+          ringHeadByte: layout.pixiKeyRingHeadByte,
         }
       : null;
   }

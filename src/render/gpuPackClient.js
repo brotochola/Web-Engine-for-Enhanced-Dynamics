@@ -33,7 +33,7 @@ export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', engineWasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
-    'pack_sprites_indexed_scatter', 'pack_sprites_keyed',
+    'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'keyed_ring_updates',
   ]);
   return {
     buffer: memory.buffer,
@@ -47,6 +47,7 @@ export async function bindGpuPack(memory, layout) {
     spritesIndexedScatter: k.pack_sprites_indexed_scatter,
     // E-177: the pose and the statics' key in draw order, the statics that changed as updates of a table by key.
     spritesKeyed: k.pack_sprites_keyed,
+    keyedRing: k.keyed_ring_updates,
     // Close-out group B: packInstancedRows' slow path (a type filter, screen space, pixel snap), its parameters 16
     // bytes into the results region (GENERAL_PARAMS doubles).
     spritesGeneral: k.pack_sprites_general,
@@ -247,21 +248,21 @@ export function packIndexedRowsWasm(b, q, ctx, pose, slots, stat, capacity) {
   return out;
 }
 
-/** E-177: the words of a key table row and of an update (gpuPack.c KEYED_ROW_WORDS): the statics, then the epoch or the key. */
+/** E-177: the words of an update (gpuPack.c KEYED_ROW_WORDS): the statics, then the key. */
 export const GPU_KEYED_ROW_WORDS = 16;
 /** E-177: the word of an update that holds its key. */
 export const GPU_KEYED_KEY_WORD = 12;
+/** E-177: the words of an entity's row of the emit's statics store (gpuPack.c KEYED_STORE_WORDS): a statics texture row. */
+export const GPU_KEYED_STORE_WORDS = 12;
 
 /**
  * E-177: a split frame whose statics stay with their key, through the kernel. Each drawn row's pose (GPU_POSE_FLOATS)
- * and slot pair (GPU_INDEXED_SLOT_FLOATS: its key's table row, as a float, and the slot's depth, as the split pack
- * writes it) at its draw slot; a row whose statics differ from its key's table row writes them there and lists them as
- * an update. `keyed`: `tableByte` (keyBase + capacity u64, zeroed at first: each key's fingerprint of the statics it last
- * listed), `stampByte` (as many u32, zeroed at first: the frame that last took each key), `keyBase` (the keys
- * the queue's sprites take: a row without one, past it, or whose key a row before it took this frame takes keyBase plus
- * its slot), `epoch` (one no call on that table took before, never 0) and `updatesByte` (room for capacity updates of
- * GPU_KEYED_ROW_WORDS: the statics, then the key at GPU_KEYED_KEY_WORD); the update count goes to `keyed.updates`. The
- * queue's `key` column must be in the memory too.
+ * and slot pair (GPU_INDEXED_SLOT_FLOATS: its key's row of the statics texture, as a float, and the slot's depth, as the
+ * split pack writes it) at its draw slot. A sprite row's key is its entity, whose statics the renderer keeps from the
+ * emit's store (keyedRingUpdatesWasm); a row without one, or with one at or past `keyed.keyBase`, takes keyBase plus its
+ * slot and lists its statics as an update at `keyed.updatesByte` (room for capacity updates of GPU_KEYED_ROW_WORDS: the
+ * statics, then the key at GPU_KEYED_KEY_WORD); the update count goes to `keyed.updates`. The queue's `key` column must
+ * be in the memory too.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
@@ -280,12 +281,24 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   const depthDenom = ctx.depthDenom || 1;
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-    slots.byteOffset, keyed.tableByte, keyed.stampByte, keyed.keyBase >>> 0, keyed.epoch >>> 0, keyed.updatesByte,
-    typeArr ? typeArr.byteOffset : 0, b.particlesByte);
+    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte);
   const r = b.particlesByte >> 2;
   ctx.particleCount = b.u32[r];
   keyed.updates = b.u32[r + 1];
   return out;
+}
+
+/**
+ * E-177: the emit's store rows of the entities rung at ring positions `from` to `to` (`keyed`: `storeByte`,
+ * `keyBase` the store's entities, `ringByte`, `ringEntries` a power of two), appended as updates at
+ * `keyed.updatesByte` from update `at` while they fit under `cap`. The ring position reached goes to `keyed.ringAt`.
+ * @returns {number} the updates written
+ */
+export function keyedRingUpdatesWasm(b, keyed, from, to, at, cap) {
+  const n = b.keyedRing(keyed.storeByte, keyed.keyBase >>> 0, keyed.ringByte, (keyed.ringEntries - 1) >>> 0, from >>> 0,
+    to >>> 0, keyed.updatesByte, at >>> 0, cap >>> 0, b.particlesByte);
+  keyed.ringAt = b.u32[(b.particlesByte >> 2) + 2];
+  return n;
 }
 
 /**

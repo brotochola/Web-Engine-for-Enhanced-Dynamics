@@ -101,8 +101,6 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         pixiKeyRows: keyed ? pixiExtra.keyRows : 0,
         pixiKeyBase: keyed ? emit.entities | 0 : 0,
         pixiKeyUpdatesByte: keyed ? r.pixiKeyUpdates.byte : -1,
-        pixiKeyTableByte: keyed ? r.pixiKeyTable.byte : -1,
-        pixiKeyStampByte: keyed ? r.pixiKeyStamps.byte : -1,
         pixiKeyStoreByte: keyed ? r.emitKeyStore.byte : -1,
         pixiKeyRingByte: keyed ? r.emitKeyRing.byte : -1,
         pixiKeyRingEntries: keyed ? r.emitKeyRing.bytes / 4 : 0,

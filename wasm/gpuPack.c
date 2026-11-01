@@ -232,39 +232,21 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
 }
 
 /* E-177: a split frame whose statics stay with their key, so only the ones that changed go to the GPU. Each drawn row's
-   pose goes to its draw slot, and its slot pair: its key's table row, as a float, and the depth the split pack writes at
-   that slot. The key is the queue's key column (a sprite row's entity); a row without one (KEY_NONE), a key at or past
-   keyBase, or one a row before it took this frame takes keyBase + its draw slot (a stamp a key: the frame that last took
-   it). The row's statics (the indexed frame's INDEXED_STATIC_FLOATS: sprite_static's, the depth term 0, a zero) are
-   fingerprinted (statics_print) and compared with the key's fingerprint, 8 bytes a key, so the keys' state stays in a
-   core's cache where the statics themselves (64 bytes a key) went to memory on every row in Predator. When they differ
-   the key takes the new fingerprint and an update is appended, KEYED_ROW_WORDS u32 (the statics, then the key), which
-   the renderer scatters into its own copy of the statics. results[0] is the particle count (type 1 rows), results[1] the
-   update count. */
+   pose goes to its draw slot, and its slot pair: its key's row of the statics texture, as a float, and the depth the
+   split pack writes at that slot. The key is the queue's key column (a sprite row's entity): such a row's statics are
+   the renderer's copy of pre-render's statics store, which keyed_ring_updates brings up to date from the ring of the
+   entities whose statics changed, so this pass reads nothing per key. A row without one (KEY_NONE, or a key at or past
+   keyBase) takes keyBase + its draw slot, and its statics (the indexed frame's INDEXED_STATIC_FLOATS: sprite_static's,
+   the depth term 0, a zero) go up as an update every frame, KEYED_ROW_WORDS u32 (the statics, then the key).
+   results[0] is the particle count (type 1 rows), results[1] the update count. */
 #define KEYED_ROW_WORDS 16
-
-/* A 64-bit fingerprint of three v128s: their six 64-bit halves, each xored in and mixed by an odd multiply and a
-   shift, a bijection of the running value; so statics that differ in one half always print differently, and any other
-   difference with odds of one in 2^64. The empty table's fingerprint, 0, is what a row whose print is 0 matches. */
-INLINE uint64_t mix_half(uint64_t h, uint64_t m, uint64_t k, uint32_t shift) {
-  h = (h ^ m) * k;
-  return h ^ (h >> shift);
-}
-
-INLINE uint64_t statics_print(v128_t s0, v128_t s1, v128_t s2) {
-  uint64_t h = 0x9e3779b97f4a7c15ull;
-  h = mix_half(h, (uint64_t)wasm_i64x2_extract_lane(s0, 0), 0xbf58476d1ce4e5b9ull, 31);
-  h = mix_half(h, (uint64_t)wasm_i64x2_extract_lane(s0, 1), 0x94d049bb133111ebull, 29);
-  h = mix_half(h, (uint64_t)wasm_i64x2_extract_lane(s1, 0), 0xbf58476d1ce4e5b9ull, 31);
-  h = mix_half(h, (uint64_t)wasm_i64x2_extract_lane(s1, 1), 0x94d049bb133111ebull, 29);
-  h = mix_half(h, (uint64_t)wasm_i64x2_extract_lane(s2, 0), 0xbf58476d1ce4e5b9ull, 31);
-  return mix_half(h, (uint64_t)wasm_i64x2_extract_lane(s2, 1), 0x94d049bb133111ebull, 32);
-}
 #define KEY_NONE 0xffffffffu
+/* The emit's store row (preRenderEmit.c K_STORE_WORDS): the statics texture's row. */
+#define KEYED_STORE_WORDS 12
 
 INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count, uint32_t cap,
-                           double invDepthDenom, float *pose, float *slots, uint64_t *prints, uint32_t *stamp,
-                           uint32_t keyBase, uint32_t epoch, uint32_t *updates, uint32_t typeByte, uint32_t *results) {
+                           double invDepthDenom, float *pose, float *slots, uint32_t keyBase, uint32_t *updates,
+                           uint32_t typeByte, uint32_t *results) {
   const double inv65535 = 1.0 / 65535.0;
   const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
   const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
@@ -280,21 +262,15 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
     if (type) p += type[i] == 1;
     sprite_pose(t, i, pose + k * POSE_FLOATS);
     uint32_t s = key[i];
-    if (s >= keyBase || stamp[s] == epoch) s = keyBase + k;
-    stamp[s] = epoch;
-    /* sprite_static's words in the indexed order: scale, anchor; the depth term 0, the packed tint, the texture, the
-       tile multiplier's x; its y, the tile offsets, a zero. */
-    const v128_t s0 = wasm_f32x4_make(SX[i], SY[i], AX[i], AY[i]);
-    const v128_t s1 = wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)TEX[i], TMX[i]), 1,
-                                              (int32_t)packed_tint((double)A[i], TINT[i]));
-    const v128_t s2 = wasm_f32x4_make(TMY[i], (float)((double)TOU[i] * inv65535), (float)((double)TOV[i] * inv65535), 0.0f);
-    const uint64_t print = statics_print(s0, s1, s2);
-    if (print != prints[s]) {
-      prints[s] = print;
+    if (s >= keyBase) {
+      s = keyBase + k;
+      /* sprite_static's words in the indexed order: scale, anchor; the depth term 0, the packed tint, the texture, the
+         tile multiplier's x; its y, the tile offsets, a zero. */
       uint32_t *up = updates + u * KEYED_ROW_WORDS;
-      wasm_v128_store(up, s0);
-      wasm_v128_store(up + 4, s1);
-      wasm_v128_store(up + 8, s2);
+      wasm_v128_store(up, wasm_f32x4_make(SX[i], SY[i], AX[i], AY[i]));
+      wasm_v128_store(up + 4, wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)TEX[i], TMX[i]), 1,
+                                                       (int32_t)packed_tint((double)A[i], TINT[i])));
+      wasm_v128_store(up + 8, wasm_f32x4_make(TMY[i], (float)((double)TOU[i] * inv65535), (float)((double)TOV[i] * inv65535), 0.0f));
       wasm_v128_store(up + 12, wasm_i32x4_make((int32_t)s, 0, 0, 0));
       u++;
     }
@@ -373,18 +349,42 @@ uint32_t pack_sprites_indexed_scatter(uint32_t table, uint32_t indices, uint32_t
                               rowCount, 0);
 }
 
-/* E-177: the pose and slot streams at dstPose and dstSlots, the keys' fingerprints at keyTable (u64) and stamps at stampByte
-   (u32; keyBase + cap of each), the updates at updatesByte (room for cap), the two results at resultsByte; the queue's
-   key column at keyByte. */
+/* E-177: the pose and slot streams at dstPose and dstSlots, the rows without a key's updates at updatesByte (room for cap),
+   the two results at resultsByte; the queue's key column at keyByte. */
 __attribute__((export_name("pack_sprites_keyed")))
 uint32_t pack_sprites_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
-                            double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyTable,
-                            uint32_t stampByte, uint32_t keyBase, uint32_t epoch, uint32_t updatesByte,
-                            uint32_t typeByte, uint32_t resultsByte) {
+                            double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
+                            uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte) {
   return pack_keyed((const uint32_t *)(uintptr_t)table, (const uint32_t *)(uintptr_t)keyByte, indices, count, cap,
-                    invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots,
-                    (uint64_t *)(uintptr_t)keyTable, (uint32_t *)(uintptr_t)stampByte, keyBase, epoch,
+                    invDepthDenom, (float *)(uintptr_t)dstPose, (float *)(uintptr_t)dstSlots, keyBase,
                     (uint32_t *)(uintptr_t)updatesByte, typeByte, (uint32_t *)(uintptr_t)resultsByte);
+}
+
+/* E-177: the store rows (KEYED_STORE_WORDS u32 an entity, at storeByte) of the entities rung from ring position `from` to
+   `to` (positions counted mod mask + 1; entries past `entities` skipped), appended to the updates at updatesByte from
+   update `at`, while they fit under `cap`. results[2] gets the ring position reached; returns the updates written.
+   An entity rung twice goes up twice, the later last, as the scatter draws them in order. */
+__attribute__((export_name("keyed_ring_updates")))
+uint32_t keyed_ring_updates(uint32_t storeByte, uint32_t entities, uint32_t ringByte, uint32_t mask, uint32_t from,
+                            uint32_t to, uint32_t updatesByte, uint32_t at, uint32_t cap, uint32_t resultsByte) {
+  const uint32_t *store = (const uint32_t *)(uintptr_t)storeByte;
+  const uint32_t *ring = (const uint32_t *)(uintptr_t)ringByte;
+  uint32_t *updates = (uint32_t *)(uintptr_t)updatesByte;
+  uint32_t u = at;
+  uint32_t r = from;
+  for (; r != to && u < cap; r++) {
+    const uint32_t e = ring[r & mask];
+    if (e >= entities) continue;
+    const uint32_t *row = store + e * KEYED_STORE_WORDS;
+    uint32_t *up = updates + u * KEYED_ROW_WORDS;
+    wasm_v128_store(up, wasm_v128_load(row));
+    wasm_v128_store(up + 4, wasm_v128_load(row + 4));
+    wasm_v128_store(up + 8, wasm_v128_load(row + 8));
+    wasm_v128_store(up + 12, wasm_i32x4_make((int32_t)e, 0, 0, 0));
+    u++;
+  }
+  ((uint32_t *)(uintptr_t)resultsByte)[2] = r;
+  return u - at;
 }
 
 /* packInstancedRows' slow path, its parameters as doubles at `params` (gpuPackClient.js GENERAL_PARAMS): flags
