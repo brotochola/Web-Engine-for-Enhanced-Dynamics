@@ -41,9 +41,15 @@ worker.visibleDecorationsData = new SlotArray(new SharedArrayBuffer((n + 1) * Sl
 // Zoom 1, the camera at the origin, a canvas as wide as the view: no margin.
 calculateCameraScreenBounds(1, 0, 0, WORLD_W * ON_SCREEN, WORLD_H, 0, worker._cameraBounds, 0);
 
+// The worker's per-frame entry: E-179's updateDecorationScreen where the tree has it (it picks the copy and samples
+// the flips), else the shipped method.
+const test = typeof worker.updateDecorationScreen === 'function'
+  ? () => worker.updateDecorationScreen()
+  : () => worker.updateDecorationScreenVisibility();
+
 function call() {
   worker._frameCamValid = true;
-  worker.updateDecorationScreenVisibility();
+  test();
 }
 
 function checksum() {
