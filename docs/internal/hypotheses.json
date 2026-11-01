@@ -9496,7 +9496,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0781"
+        "R-0781",
+        "R-0784"
       ],
       "status": "open",
       "date": "2026-10-29",
@@ -9504,13 +9505,13 @@
       "refs": [
         "EXECUTION_PLAN.md#E-177"
       ],
-      "statusText": "open: step 0 done 2026-11-01 (R-0781): Predator keeps 95 % of the rows' statics, rewrites all",
+      "statusText": "open: building; step 0b 2026-11-01 (R-0784): the changed statics are spread over the keys, so a scatter",
       "id": "E-177",
       "rank": 10,
       "area": "pre-render",
       "kind": "speed",
       "title": "Sprite statics per entity on the GPU, for scenes whose camera scrolls",
-      "next": "Build: the statics in a per-entity table on the GPU, written for the entities whose statics changed (about 700 of 13 500 rows a Predator frame); rows carry the entity index and the pose. Owners Predator's pre-render and renderer. EXECUTION_PLAN.md#E-177."
+      "next": "Built: the key column (69432150), pack_sprites_keyed (f185a8c4). Next: the keyed region of the render-queue memory; the batch's keyed frames with the WebGL scatter (Predator is WebGL); Pixi's wiring; then Predator's renderer, 4 pairs, painterMove and BunnyMark as guards. EXECUTION_PLAN.md#E-177."
     },
     {
       "aliases": [],
@@ -17029,6 +17030,18 @@
       "commits": [
         "9f4fe1d0",
         "7df6f6d9"
+      ]
+    },
+    {
+      "id": "R-0784",
+      "date": "2026-11-01",
+      "time": "06:05",
+      "timeFrom": "recorded",
+      "title": "E-177 step 0b: Predator's changed statics are spread over the keys; a scatter, not dirty runs",
+      "verdict": "answered",
+      "text": "**E-177 step 0b: Predator's changed statics are spread over the keys, so they go up as a list the GPU scatters, not\nas dirty runs.** 2026-11-01, 06:04 to 06:05 (the result files' times), Chrome, headed, source, detailed stats off;\npre-render instrumented in an overlay worktree (HEAD 69432150, with the key column; not committed): after each emit,\nevery sprite row's statics against its key's row of a table, and the dirty keys counted in chunks of 1 to 1 024 keys,\nlogged every 120 frames.\n\n- About 13 800 sprite rows and 120 to 250 rows without a key a frame; 670 to 765 changed (4.9 to 5.5 %), their keys\n  spread over 42 634 entities (the largest drawn, 42 632).\n- An upload by chunk sends: chunks of 16 keys, 8 000 rows in 310 runs; of 64 keys, 19 000 rows (more than the frame)\n  in 70 runs; texture rows of 1 024 keys, 26 of the 42. Single rows, 650 runs a frame. None pays.\n- So the changed rows go up as a list, 64 bytes each (about 45 KB a frame against 590 KB of statics today), that the\n  GPU scatters into its copy of the table: a draw into the statics texture on WebGL (Predator's backend, so the first\n  one built), a compute pass on WebGPU.\n\nThe kernel (f185a8c4, gpuPackKeyedMicrobench in Chrome, Predator's shape): split 0.195 ms, keyed 0.270 ms a pack,\npainter's order random; 0.135 against 0.22 to 0.31 ms with the queue's order nearly kept. A variant that builds and\ncompares the statics without the table's reads ties the split pack, so the extra is those reads (900 KB a frame).\nPredator's trace (step 0's) runs the Pixi worker's memory-bound work at about 5 times its kernel time (pack_sprites_split\n1.0 ms a frame against 0.195 ms; the arena copy at 1.2 GB/s), so the table's reads may cost much of what the smaller\ncopy and upload save (60 to 24 bytes a sprite): the sitting decides. If they do, the next lever is a generation per\nrow written by the emit, which compares in entity order; pre-render runs 4.07 ms in Predator against the renderer's 3.5\n(R-0782), so that is not free either.",
+      "commits": [
+        "f185a8c4"
       ]
     }
   ],
