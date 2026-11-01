@@ -9763,6 +9763,25 @@
     {
       "aliases": [],
       "records": [
+        "R-0799"
+      ],
+      "refs": [
+        "EXECUTION_PLAN.md#E-191"
+      ],
+      "id": "E-191",
+      "title": "Shadow casters keyed by entity: their sprite statics from E-177's statics texture, a pose and a key a row",
+      "status": "open",
+      "statusText": "open: step 0 done 2026-11-01 (R-0799)",
+      "date": "2026-11-01",
+      "rank": 11,
+      "area": "render",
+      "kind": "speed",
+      "result": "",
+      "next": "Predator's casters are 80 % of what Pixi copies and uploads a frame (sun 13 460 rows and point-light stamps 5 500 to 12 000, 88 bytes each: 1.6 to 2.1 MB, against the keyed entities' 0.38). A caster is a sprite of an entity the keyed frames already keep: its row could carry the pose, the key and the caster and light terms, its statics read by key from the entity batch's statics texture (48 bytes or less instead of 88), and pre-render's pack_casters_scatter would write less. Needs a renderer owner over the floor (Predator's renderer runs 2.9 ms: a knob for its crowd first)."
+    },
+    {
+      "aliases": [],
+      "records": [
         "R-0796"
       ],
       "status": "kept",
@@ -17382,6 +17401,15 @@
       "commits": [
         "e7111409"
       ]
+    },
+    {
+      "id": "R-0799",
+      "date": "2026-11-01",
+      "time": "10:41",
+      "timeFrom": "recorded",
+      "title": "E-191 step 0: Predator's shadow casters are 80 % of the Pixi worker's copy and upload (1.6-2.1 MB a frame)",
+      "verdict": "answered",
+      "text": "**E-191 step 0: Predator's shadow casters are 80 % of what the Pixi worker copies and uploads a frame.** 2026-11-01,\n10:41 (the result file's time), Chrome, headed, source, detailed stats off, Predator (WebGL, Pixi packs and sorts, keyed\nframes on), one run (6 s warm-up, 4 s); pixiWorker.js and the batch's copyIn instrumented in the main folder for the run\n(rows per pass, bytes per batch, averaged over 120 frames) and reverted.\n\n| frames | sun casters | point-light stamps | cookies | copied: casters | keyed entities | glow |\n| --- | --- | --- | --- | --- | --- | --- |\n| first 120 | 13 292 | 11 871 | 48 | 2 145 KB | 1 086 KB (the resync's full send) | 4 KB |\n| then | 13 456 to 13 462 | 5 523 to 8 041 | 48 | 1 633 to 1 851 KB | 377 to 467 KB | 4 KB |\n\n- A caster row is GPU_CASTER_FLOATS, 22 floats (88 bytes): a sprite row's 15, three caster terms and four light\n  terms. The same bytes go through updateBuffer, so the casters are most of the Pixi worker's arena copy (34 ms/s in\n  the morning's trace) and of its upload (37 ms/s), and pre-render's pack_casters_scatter (29 ms/s) writes them.\n- The casters are sprites of entities the keyed frames already keep by entity: their statics could come from the\n  entity batch's statics texture, the rows carrying a pose, a key and the caster and light terms."
     }
   ],
   "leads": [
