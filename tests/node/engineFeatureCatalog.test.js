@@ -14,6 +14,8 @@ const REQUIRED = [
   'decals',
   'emit',
   'integrate',
+  'particleLists',
+  'particleListsZoomed',
   'spatial',
   'box2d',
   'liquidfun',
