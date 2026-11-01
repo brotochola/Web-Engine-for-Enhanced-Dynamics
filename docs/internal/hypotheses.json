@@ -9512,21 +9512,21 @@
     {
       "aliases": [],
       "records": [
-        "R-0752"
+        "R-0752",
+        "R-0778"
       ],
-      "status": "open",
+      "status": "kept-kernel",
       "date": "2026-10-29",
-      "result": "",
+      "result": "kept-kernel: deriveSpeedMicrobench 9 240 -> 16 300 calls/s (+76 %, 5/6); no scene past the floor, Predator in wave11's gate",
       "refs": [
         "EXECUTION_PLAN.md#E-178"
       ],
-      "statusText": "open: rewritten 2026-10-29 at the owner's word, the derive stays in the particle worker",
+      "statusText": "kept-kernel 2026-11-01 (647f1d6a, R-0778)",
       "id": "E-178",
-      "rank": 12,
       "area": "particle",
       "kind": "speed",
       "title": "RigidBody.speed's derive pass, cheaper where it runs (the particle worker)",
-      "next": "A dense f32x4 pass over RigidBody's block (Box2D memory), masked by active, static and the class flag; else the JS loop with sqrt in place. Kernel on Predator's bodies; owner a stress scene whose bodies opt in (a knob first). EXECUTION_PLAN.md#E-178."
+      "next": "Predator in wave11's gate."
     },
     {
       "aliases": [],
@@ -16953,6 +16953,18 @@
       "text": "**E-180 kept: tickInterval buckets rebuilt when their own type's list changes (5262c96f); logic -16.8 %.**\n2026-11-01, 04:38 to 04:43 (the result files' times), Chrome, headed, source, detailed stats off.\n\n- **Built without step 0:** only logic0 edits the type lists, through three helpers and the spawn batch's merge, so a\n  version per type (GameObject.typeListVersions, a shared Int32 per entity type) is a few lines; Predator's rebuilds\n  are at most 2 to 3 % of a logic worker, under its noise, so the owner is a scene made for it.\n- **minimalTickIntervalScene's bucket scene, `?churn=64`** (e7363cf7: 160 000 props on a tickInterval of 4 while a\n  driver despawns and spawns 64 props of another type every frame), 4 pairs, `--vs e7363cf7 --hyp-rev 5262c96f\n  --owner logic`: **KEPT (product)**, logic **3.726 -> 2.997 ms, -16.8 %, worse 0/4** (cv 5/6 %); spatial 5.544 ->\n  5.518 ms (-1.4 %, 2/4); pre-render 1.893 -> 1.889 ms (under the floor). Per pair, logic A/B: 3.822/2.930,\n  3.630/3.064, 3.472/2.871, 3.914/3.280.\n- **Tests:** tickBucketTypeVersion.test.js (another type's churn rebuilds nothing; a same-count swap in the type\n  rebuilds once and its new entity ticks; the helpers move the version); node suite 2150/2150.\n\nEach despawn and spawn now does one Atomics.add on its type's version; spawnStormScene (thousands a frame) goes in\nwave11's batch gate with Predator.",
       "commits": [
         "5262c96f"
+      ]
+    },
+    {
+      "id": "R-0778",
+      "date": "2026-11-01",
+      "time": "04:55",
+      "timeFrom": "recorded",
+      "title": "E-178 kept on its kernel: speed derived over the opted-in types' lists, +76 %",
+      "verdict": "kept-kernel",
+      "text": "**E-178 kept on its kernel: the speed derive pass over the opted-in types' own active lists (647f1d6a), +76 %.**\n2026-11-01 (the kernel's result files), Node.\n\n- **The change:** updateDerivedProperties walked every body's RigidBody query and tested each one's type; it now\n  walks the active list of each type that sets deriveSpeed (as every worker binds them), skipping the other types'\n  bodies and the type lookups. The plan's f32x4 kernel over the RigidBody block was not needed for this step: the JS\n  loop's cost was the bodies it should not have visited and the per-body type test.\n- **deriveSpeedMicrobench** (cee8ae83: a real particle worker, 20 000 bodies in Predator's mix, 14 000 opting in),\n  HEAD's src against 647f1d6a, 6 alternating rounds: **9 240 -> 16 300 calls/s median, +76 %, new won 5/6**; both\n  sides are bimodal from run to run (about 9 000 / 16 000 or 19 000 / 32 500, an E-183 candidate), the gain the same\n  in both; checksums equal.\n- **No scene past the floor:** a scene's whole derive pass is under a millisecond (Predator's ~0.17 ms), so the\n  verdict is the kernel's; wave11's Predator gate checks the scene is not 3 % worse.\n- **Test:** deriveSpeedLists.test.js (the opted-in, active, non-static bodies' speeds only, as before); node suite\n  2153/2153, demos 100/100.",
+      "commits": [
+        "647f1d6a"
       ]
     }
   ],
