@@ -9569,17 +9569,18 @@
         "REVIEW_PLAN.md#N-96"
       ],
       "records": [
-        "R-0767"
+        "R-0767",
+        "R-0773"
       ],
       "id": "N-96",
       "title": "A bundle's workers cannot load a module with export default; its importer fails with \"X is not defined\"",
-      "status": "open",
-      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (99c6e660)",
       "date": "2026-10-29",
       "area": "engine",
       "kind": "bug",
-      "result": "",
-      "next": "Default exports get a binding the loader registers per module URL, or the guide says \"named exports only\" and the error names the file."
+      "result": "Fixed 99c6e660: export default and default imports load in bundle workers; a module that does not compile names its URL.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -9587,17 +9588,18 @@
         "REVIEW_PLAN.md#N-97"
       ],
       "records": [
-        "R-0767"
+        "R-0767",
+        "R-0773"
       ],
       "id": "N-97",
       "title": "collider.collisionMask = 0 collides with every layer (the Box2D glue reads 0 as the default mask)",
-      "status": "open",
-      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (cb11f523)",
       "date": "2026-10-29",
       "area": "physics",
       "kind": "bug",
-      "result": "",
-      "next": "Make 0 mean \"nothing\" for bodies (queries keep their default), or document it beside collisionMask."
+      "result": "Fixed cb11f523 (Box2D 95dd9eb): a body takes its mask as given, so 0 collides with nothing; queries keep 0 as the default.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -9605,17 +9607,18 @@
         "REVIEW_PLAN.md#N-98"
       ],
       "records": [
-        "R-0767"
+        "R-0767",
+        "R-0773"
       ],
       "id": "N-98",
       "title": "A spawn key named like a read-only accessor (speed) stops the logic worker that sets the spawn up",
-      "status": "open",
-      "statusText": "open: found building the GitHub Pages site (2026-10-29)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (04d59ca3)",
       "date": "2026-10-29",
       "area": "engine",
       "kind": "bug",
-      "result": "",
-      "next": "Skip spawn keys whose property has no setter (descriptor lookup cached per class) and warn once naming the key."
+      "result": "Fixed 04d59ca3: a read-only spawn key is warned about once per class and skipped; other setter errors still throw.",
+      "next": "Nothing pending."
     },
     {
       "aliases": [],
@@ -9641,17 +9644,18 @@
         "REVIEW_PLAN.md#N-100"
       ],
       "records": [
-        "R-0768"
+        "R-0768",
+        "R-0773"
       ],
       "id": "N-100",
       "title": "Joint.getJointCount() with no argument never returns (the walk loops on undefined)",
-      "status": "open",
-      "statusText": "open: found building the GitHub Pages site (2026-10-30)",
+      "status": "kept",
+      "statusText": "fixed 2026-11-01 (8feba1d3)",
       "date": "2026-10-30",
       "area": "engine",
       "kind": "bug",
-      "result": "",
-      "next": "Guard non-integer entity indices in getJointCount, getJoint and the other per-entity walks."
+      "result": "Fixed 8feba1d3: the joint walks test entityIdx >>> 0 !== entityIdx; the vm-timeout test hung before.",
+      "next": "Nothing pending."
     }
   ],
   "records": [
@@ -16781,6 +16785,21 @@
       "text": "**E-179 rejected as built: the decoration screen test without a branch (e1e54e01, not kept) wins on Predator's\nrandom grass and loses where the order is predictable.** 2026-10-31, 20:16 to 20:30.\n\n- **Kernel** (decorationVisibilityMicrobench, bbd5cd74: the shipped method on Predator's 20 000 blades, Node, 4\n  alternations, same checksum): with 51 % on screen in random order, **4 084-6 420 -> 12 826-13 149 calls/s**\n  (7.8-12.2 -> 3.8-3.9 ns a decoration). All on screen: 12 194 -> 14 075. Almost none on screen: **18 353 -> 13 021**:\n  the `&&` stops at the first failed test and nothing goes into the list, which the branchless loop always does.\n- **Owner, decorationSwayStressScene** (40 000 decorations on a grid in spawn order, about a quarter on screen),\n  4 pairs, `--vs bbd5cd74 --hyp-rev e1e54e01`, 20:22 to 20:26: particle **0.756 -> 0.892 ms, +18 %, worse 3/4**, under\n  the 3 ms floor and not judged, but the wrong way, and more than the kernel's +1.1 ns a decoration predicts.\n\nNext: one loop copy each and a pick per frame from the last frame's on/off flips (the branchless loop counts them\nfor two integer operations; the branched one is retried every so many frames), so the predictable order keeps the\nbranch.",
       "commits": [
         "bbd5cd74"
+      ]
+    },
+    {
+      "id": "R-0773",
+      "date": "2026-11-01",
+      "time": "03:04",
+      "timeFrom": "commit",
+      "title": "Four open engine bugs fixed: getJointCount() hang, read-only spawn keys, collision mask 0, bundle default exports",
+      "verdict": "kept-hygiene",
+      "text": "**Four open engine bugs fixed, each with a test that failed before (wave11).** 2026-11-01, 02:40 to 03:04 (the\ncommits' times); `npm run test:node` 2145/2145 and `npm run test:demos` 100/100 after the last one. Hygiene: none\nruns on a hot path a scene times except N-98's line in the spawn loop (one null test per spawn until a class needs it),\nso no sitting.\n\n- **N-100, `8feba1d3`:** `Joint.getJointCount()` with no argument never returned (`undefined < 0` is false and\n  `head[undefined]` is not INVALID_INDEX). `getJointCount`, `getJoint` and `forEachOnEntity` now test\n  `entityIdx >>> 0 !== entityIdx`; the test runs them under a vm timeout, so a regression fails instead of hanging.\n- **N-98, `04d59ca3`:** `X.spawn({ speed: 2 })` threw \"which has only a getter\" inside `_spawnAt` and stopped the\n  logic worker. The first write's throw checks the property's descriptor: a read-only key is warned about once per\n  class and skipped from then on (a WeakMap, null until needed); any other setter error still throws.\n- **N-97, Box2D `95dd9eb` and `cb11f523`:** `collider.collisionMask = 0` collided with every layer\n  (`normalize_mask_bits` read 0 as the default for bodies). Bodies take their mask as given; queries keep 0 as the\n  default. Rebuilt with `build_for_weed.bat` (SIMD copied, no-SIMD checked SIMD-free); the guide already said 0\n  collides with nothing and now adds that Box2D's queries skip such a body. `collisionMaskZero.wasm.test.js`.\n- **N-96, `99c6e660`:** a bundle's workers could not load a module with `export default`. The transform turns it\n  into `exports.default` (a named class or function stays a declaration); a default import reads the module's\n  default export by its resolved URL (`__blobDefault`, retried like named imports until that module ran); a module\n  that does not compile is reported with its URL.",
+      "commits": [
+        "8feba1d3",
+        "04d59ca3",
+        "cb11f523",
+        "99c6e660"
       ]
     }
   ],
