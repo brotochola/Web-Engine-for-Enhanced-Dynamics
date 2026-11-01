@@ -3124,6 +3124,18 @@ time of impact).
 physics worker of a scene full of moving bodies (ballsHeavyStressScene); Predator's physics (10 ms, most bodies
 moving) next.
 
+### E-183 Per-frame loops stuck on stale OSR code
+
+**Premise:** found building E-179. A worker function called once a frame around one long loop runs that loop on OSR
+code from its first call. A statement after the loop that had no type feedback when the OSR code was compiled deopts
+when reached ("Insufficient type feedback for generic keyed access"), and V8 can keep entering the same cached OSR
+code, so the function deopts at that statement on every call. The shipped `updateDecorationScreenVisibility` did it at
+`visibleData[0] = visibleCount` in some runs of its kernel: 490 to 588 deopts and 8 000 calls/s, against 20 deopts and
+23 000 in the others. The same shape (a long loop, then a count stored into a shared list) is in many workers.
+**Plan:** step 0, Chrome's deopt log (`--js-flags="--log-deopt"`, summarizeV8Deopt.mjs, steady state only) on
+Predator and the stress scenes: the functions that deopt at the same bytecode every frame. Then each loop in a function
+of its own that returns right after it (E-179's form), one change per worker. Owners: the workers it finds.
+
 ### E-179c Decorations' screen test skipped while nothing it reads changed
 
 **Premise:** the test's output depends only on the camera bounds and the active decorations' positions; decorations
