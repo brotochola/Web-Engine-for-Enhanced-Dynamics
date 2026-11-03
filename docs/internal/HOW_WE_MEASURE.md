@@ -364,6 +364,9 @@ Planned tools, each in its own commit before the measurements that use it:
 2. Per-side queries (`--query-a`, `--query-b`): **built 2026-10-24**. Left: multi-arm sittings on one build
    (all off, kernel 1, kernel 2, all on), which also measure whether gains add up.
 3. Headless gates for worker owners, once a same-build sitting per scene shows headless and headed agree.
+   `runPredatorAbab --headless` exists (2026-11-03); Chrome's headless mode draws on this machine's GPU (a GTX 1650
+   through D3D11 at 60 fps), not SwiftShader. Its first sitting (R-0815) read pre-render +4.1 % where the headed one
+   read -1.2 %, on different windows and with the owner at work: the same-build check is still to do.
 4. The sequential decision of [How a sitting decides](#how-a-sitting-decides) in the runner, reading the
    session's A/A for the detection limits, with a threshold for each look so that the rate of false keeps
    over the looks is the one chosen.
