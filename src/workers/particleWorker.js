@@ -975,6 +975,7 @@ class ParticleWorker extends AbstractWorker {
   /**
    * Resolve world position/facing for decorations parented to entities.
    * Runs every frame before culling. Orphan parent → despawn.
+   * One that was off screen last frame is placed but not swayed (E-196).
    */
   resolveAttachedDecorations(deltaTime = 0) {
     // E-179c: whether a decoration this pass places moved (the screen test runs again then).
@@ -1002,6 +1003,7 @@ class ParticleWorker extends AbstractWorker {
     const swayAmplitude = DecorationComponent.swayAmplitude;
     const swayFrequency = DecorationComponent.swayFrequency;
     const swayPhase = DecorationComponent.swayPhase;
+    const onScreen = DecorationComponent.isItOnScreen;
     const tx = Transform.x;
     const ty = Transform.y;
     const tActive = Transform.active;
@@ -1052,6 +1054,15 @@ class ParticleWorker extends AbstractWorker {
         ws = bs;
       }
       if (x[i] !== ox || y[i] !== oy) this._decoAttachedMoved = true;
+
+      // E-196. Off screen last frame (the screen test runs after this pass, on the position placed above): its facing
+      // without the sway and no sine, an impulse holding its phase, as the world-owned sway skips those. The frame it
+      // comes on screen it is drawn unswayed, inside the cull margin.
+      if (onScreen[i] === 0) {
+        rotC[i] = wc;
+        rotS[i] = ws;
+        continue;
+      }
 
       const mode = sway[i];
       let delta = 0;

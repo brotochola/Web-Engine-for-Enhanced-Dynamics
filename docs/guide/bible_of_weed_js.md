@@ -192,6 +192,8 @@ d.setPosition(400, 300);
 
 Positions outside world bounds are not inserted (same OOB rule as entity `Grid`).
 
+Sway (`sway: true`) turns a decoration about its own anchor (`anchorX`/`anchorY`), on top of its `rotation` and, when attached with `inheritParentRotation`, its parent's: a branch anchored at its base sways about its base. `swaySkew: true` shears the sprite instead and ignores both rotations, so use `sway` for sprites drawn turned. Decorations sway only while on screen: world-owned ones in the particle worker's sway kernel, attached ones in its attachment pass, which still places the off-screen ones every frame (the cull needs where they are) but skips their sine. An impulse waits off screen, and a decoration that comes on screen sways from its second frame there.
+
 One-shot nudge (half sine 0→π, then settle): `Decoration.get(i).impulseSway(amplitude, frequency)` — same frequency scale as continuous sway (`dPhase/dt_ms = 0.002 * freq`). No-op if already looping or mid-impulse. Modes: `SWAY_OFF` / `SWAY_LOOP` / `SWAY_IMPULSE`.
 
 ```javascript
