@@ -7,6 +7,7 @@ import { UniformGroup } from '../../node_modules/pixi.js/lib/rendering/renderers
 import { BufferResource } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/buffer/BufferResource.mjs';
 import { Buffer } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/buffer/Buffer.mjs';
 import { TextureSource } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/texture/sources/TextureSource.mjs';
+import { TextureView } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/texture/TextureView.mjs';
 import { syncShader } from '../../scripts/pixi-stubs/shaderSyncPolyfill.mjs';
 import { BindGroup as BundledBindGroup } from '../../src/vendor/pixi.min.js';
 
@@ -86,6 +87,51 @@ test('a BindGroup swapped into a slot, or a resource slot added, rebuilds the pl
   assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'new slot');
   groups[0].setResource(uniforms(9), 1);
   assert.deepEqual(run(syncShader, shader), run(upstream, shader), 'a slot replaced');
+});
+
+// N-109: Pixi's batcher declares sixteen float samplers and binds only the units its batch uses; WebGL2 drops a draw
+// whose sampler finds an integer texture in its unit. Integer textures take the top units, counting down, and leave the
+// low ones to float textures, numbered as before.
+test('integer textures take the top texture units, float ones the low units in order', () => {
+  const MAX_COMBINED = 0x8b4d;
+  const calls = [];
+  const renderer = {
+    gl: {
+      MAX_COMBINED_TEXTURE_IMAGE_UNITS: MAX_COMBINED,
+      getParameter: (name) => (name === MAX_COMBINED ? 32 : null),
+      uniform1i: (location, unit) => calls.push(['uniform1i', location, unit]),
+    },
+    texture: { bind: (source, unit) => calls.push(['texture', source.label, unit]) },
+    shader: {
+      _getProgramData: () => ({
+        uniformData: Object.fromEntries(['uA', 'uB', 'uC', 'uD'].map((n) => [n, { location: 'loc' + n.slice(1), value: -1 }])),
+      }),
+    },
+  };
+  const integerView = new TextureView(new TextureSource({ width: 1, height: 1, format: 'r8uint' }), {});
+  integerView.label = 'C';
+  const groups = {
+    1: new PatchedBindGroup({
+      a: texture('A'),
+      b: Object.assign(new TextureSource({ width: 1, height: 1, format: 'rgba32uint' }), { label: 'B' }),
+      c: integerView,
+      d: texture('D'),
+    }),
+  };
+  const shader = shaderOf(groups, { 1: { 0: 'uA', 1: 'uB', 2: 'uC', 3: 'uD' } });
+  const expected = [
+    ['texture', 'A', 0], ['uniform1i', 'locA', 0],
+    ['texture', 'B', 31], ['uniform1i', 'locB', 31],
+    ['texture', 'C', 30], ['uniform1i', 'locC', 30],
+    ['texture', 'D', 1], ['uniform1i', 'locD', 1],
+  ];
+  for (const bind of ['first bind', 'from the plan']) {
+    calls.length = 0;
+    const syncData = { textureCount: 0, blockIndex: 0 };
+    syncShader(renderer, shader, syncData);
+    assert.deepEqual(calls, expected, bind);
+    assert.equal(syncData.textureCount, 2, 'the float textures counted');
+  }
 });
 
 test('the bundled BindGroup counts the resource slots it gains, not the ones it replaces', () => {

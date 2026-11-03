@@ -6,7 +6,14 @@
 // This walks a per-shader plan of [group, binding] pairs instead, built once with for…in, as Pixi's generated sync
 // (its default where eval is allowed) bakes them per program at the first bind. The plan is rebuilt when a group
 // slot holds another BindGroup or a BindGroup gained a resource slot (`_weedKeys`, counted by the BindGroup patch
-// in scripts/buildPixi.mjs). The body per resource is upstream's, in upstream's order.
+// in scripts/buildPixi.mjs). The body per resource is upstream's, in upstream's order, but for integer textures.
+//
+// N-109: an integer texture (a `…uint` or `…sint` format: the statics of indexed and keyed sprites, the GPU particle
+// rings) goes to the top texture units, counting down from the last one, not to the next unit up. WebGL2 checks every
+// active sampler of a program against the texture its unit holds, read or not, and drops the draw on a mismatch
+// ("Mismatch between texture format and sampler type"). Pixi's batcher declares sixteen float samplers and binds only
+// the units its batch uses, so an integer texture left in another of the low units dropped its draws: the lighting
+// sprite after the entities, every frame. WebGL2 has at least 32 units and the batcher reads the first 16.
 import { BufferResource } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/buffer/BufferResource.mjs';
 import { UniformGroup } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/shader/UniformGroup.mjs';
 import { TextureSource } from '../../node_modules/pixi.js/lib/rendering/renderers/shared/texture/sources/TextureSource.mjs';
@@ -52,6 +59,24 @@ function planMatches(plan, shader) {
   return true;
 }
 
+/** The last texture unit of `gl`'s context, where integer textures start (N-109). */
+const topUnits = new WeakMap();
+
+function topTextureUnit(gl) {
+  let unit = topUnits.get(gl);
+  if (unit === undefined) {
+    unit = gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS) - 1;
+    topUnits.set(gl, unit);
+  }
+  return unit;
+}
+
+/** A texture sampled as integers: a `…uint` or `…sint` format (no other format ends in "int"). */
+function isIntegerTexture(resource) {
+  const format = resource.source.format;
+  return typeof format === 'string' && format.endsWith('int');
+}
+
 function syncShader(renderer, shader, syncData) {
   const gl = renderer.gl;
   const shaderSystem = renderer.shader;
@@ -63,6 +88,8 @@ function syncShader(renderer, shader, syncData) {
   }
   const groups = shader.groups;
   const pairs = plan.pairs;
+  // The unit the next integer texture takes; -1 until the shader has one.
+  let integerUnit = -1;
   for (let k = 0; k < plan.count; k++) {
     const i = pairs[k * 2];
     const j = pairs[k * 2 + 1];
@@ -76,14 +103,18 @@ function syncShader(renderer, shader, syncData) {
     } else if (resource instanceof BufferResource) {
       shaderSystem.bindUniformBlock(resource, shader._uniformBindMap[i][j], syncData.blockIndex++);
     } else if (resource instanceof TextureSource || resource instanceof TextureView) {
-      renderer.texture.bind(resource, syncData.textureCount);
+      const integer = isIntegerTexture(resource);
+      if (integer && integerUnit < 0) integerUnit = topTextureUnit(gl);
+      const unit = integer ? integerUnit : syncData.textureCount;
+      renderer.texture.bind(resource, unit);
       const uniformName = shader._uniformBindMap[i][j];
       const uniformData = programData.uniformData[uniformName];
       if (uniformData) {
-        if (uniformData.value !== syncData.textureCount) {
-          gl.uniform1i(uniformData.location, syncData.textureCount);
+        if (uniformData.value !== unit) {
+          gl.uniform1i(uniformData.location, unit);
         }
-        syncData.textureCount++;
+        if (integer) integerUnit--;
+        else syncData.textureCount++;
       }
     }
   }

@@ -2090,6 +2090,10 @@ class PixiRenderer extends AbstractWorker {
     this._gpuRecordTextureOps = {
       // A layer whose rings need more falls back to instance attributes (gpuRecordTexturesFit).
       maxSize: gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 0,
+      // N-109: the unit an upload binds them in, the last one, where the shader sync puts integer textures
+      // (scripts/pixi-stubs/shaderSyncPolyfill.mjs): Pixi's batcher checks units 0 to 15 and drops a draw that finds
+      // one there.
+      unit: gl ? gl.getParameter(gl.MAX_COMBINED_TEXTURE_IMAGE_UNITS) - 1 : 0,
       make: (bits, width, height, label) => {
         const source = PIXI.TextureSource.from({
           resource: bits,
@@ -2118,7 +2122,7 @@ class PixiRenderer extends AbstractWorker {
     const gl = renderer?.gl;
     const texSys = renderer?.texture;
     if (!gl || !texSys) return;
-    texSys.bind(source, 0);
+    texSys.bind(source, this._gpuRecordTextureOps.unit);
     const glSource = texSys.getGlSource(source);
     // N-94: the active unit's binding goes back after the upload (see _uploadRgba32FloatGl).
     const prev = gl.getParameter(gl.TEXTURE_BINDING_2D);
