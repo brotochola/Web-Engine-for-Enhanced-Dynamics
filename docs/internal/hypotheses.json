@@ -10227,6 +10227,70 @@
         "R-0814",
         "R-0815"
       ]
+    },
+    {
+      "id": "DX-DECOSORT",
+      "title": "Decorations: sortOffsetY, a sort point apart from the drawn and the culled one",
+      "status": "kept-hygiene",
+      "statusText": "asked 2026-11-03 (Conurbano-weed), done the same day (6d417363); gate NEUTRAL with E-196 (R-0818)",
+      "date": "2026-11-03",
+      "result": "A DecorationComponent column, Float32: world px added to the y a decoration sorts at (its parent's when attached), not the y it is drawn or culled at. collectVisibleDecorations is the one place a decoration's key is made; spawn, spawnMany (one value or one per decoration, ported from visual_editor), addDecoration's extra and the facade take it. At 0 every key is the old one, bit for bit (test). Kernel decorationCollect 535 -> 538 ops/s, +0.6 %, a tie; Predator's gate NEUTRAL, no worker 3 % worse.",
+      "next": "visual_editor: sortOffsetY as a column of the scene file's decorations section (DECORATION_VALUE_KEYS in sceneFileDecorations.js) when that branch takes main.",
+      "area": "pre-render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-DECOSORT"
+      ],
+      "aliases": [
+        "sortOffsetY",
+        "Franja",
+        "wall pieces"
+      ],
+      "records": [
+        "R-0816",
+        "R-0818"
+      ]
+    },
+    {
+      "id": "N-110",
+      "title": "Under Y-sort an attached decoration's innerZ does not decide whether it draws in front of its parent",
+      "status": "open",
+      "statusText": "found 2026-11-03 reading the decoration key for DX-DECOSORT; open, for a batch of its own",
+      "date": "2026-11-03",
+      "result": "",
+      "next": "The attached key from the parent's own sort line (its display pose rounded, plus its foot offset), with a parity test against the entity key and decorationCollect for the cost. It changes the order existing scenes draw in.",
+      "area": "pre-render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-110"
+      ],
+      "aliases": [
+        "innerZ",
+        "attached decoration sort"
+      ],
+      "records": [],
+      "rank": 8
+    },
+    {
+      "id": "E-196",
+      "title": "Attached decorations swayed off screen: a sine each, every frame, in the particle worker",
+      "status": "kept",
+      "statusText": "KEPT 2026-11-03 (eb2dc672)",
+      "date": "2026-11-03",
+      "result": "resolveAttachedDecorations still places every attached decoration but sways only the ones on screen last frame, as the world-owned sway does. Kernel attachedSway 663 -> 1157 ops/s, +74.4 %; decorationSwayStressScene ?decorations=150000&attached=200 particle 6.685 -> 2.805 ms, paired -57.5 %, 4/4.",
+      "area": "particle",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-196"
+      ],
+      "aliases": [
+        "resolveAttachedDecorations",
+        "attached sway"
+      ],
+      "records": [
+        "R-0817",
+        "R-0818"
+      ]
     }
   ],
   "records": [
@@ -17857,6 +17921,44 @@
       "commits": [
         "ffa862bd",
         "bc8cab8b"
+      ]
+    },
+    {
+      "id": "R-0816",
+      "date": "2026-11-03",
+      "time": "02:33",
+      "timeFrom": "recorded",
+      "title": "DX-DECOSORT: sortOffsetY enters the decoration key (6d417363); kernel decorationCollect +0.6 %, a tie",
+      "verdict": "tie",
+      "text": "**DX-DECOSORT: sortOffsetY enters the decoration key (6d417363); its kernel ties.**\n2026-11-03, 02:32 to 02:33 (the result files' times), Node, `runKernelsVsRev.mjs --vs 80c45232 --only decorationCollect`: decorationCollectMicrobench (80c45232), `collectVisibleDecorations` on the shipped pre-render worker, 40 000 visible decorations, half attached to 400 stand-in parents, the visible list in no order; 5 rounds a side, alternating, after one warm-up process.\n\n- collect **535 → 538 ops/s, +0.6 %**, rounds won 52 %: a tie (1.8 ms a collect of 40 000).\n- The same checksum on both sides, 2559082416 (the keys and the collected poses): with the column at its default every key is the old one, as `decorationSortOffset.test.js` also holds bit for bit.\n\nThe change is one Float32 column read and one add a visible decoration, in a loop whose rows go through `collectRenderable` and `_writeRenderable`. A component's layout changed, so the batch's Predator gate is its scene guard.",
+      "commits": [
+        "6d417363",
+        "80c45232"
+      ]
+    },
+    {
+      "id": "R-0817",
+      "date": "2026-11-03",
+      "time": "02:57",
+      "timeFrom": "recorded",
+      "title": "E-196 kept: attached decorations off screen not swayed; particle -57.5 % in its scene (4/4), kernel +74.4 %",
+      "verdict": "kept",
+      "text": "**E-196 kept: attached decorations off screen are placed but not swayed; particle −57.5 % in its scene, kernel +74.4 %.**\n2026-11-03, 02:50 to 02:57 (the result files' times), commit `eb2dc672` (worded with these numbers after the sitting; `2e2dca53` before, the same tree).\n\n- **Kernel** (02:50, Node, `runKernelsVsRev.mjs --vs 7239cdee --only attachedSway`, 5 rounds a side): attachedSwayMicrobench, `resolveAttachedDecorations` on a real particle worker, 40 000 decorations under 400 stand-in parents swaying as proceduralTreeScene's leaves (SWAY_LOOP, 0.16 to 0.2 rad, base rotations up to 0.8 rad), 13 700 of them on screen. **663 → 1157 ops/s, +74.4 %**, rounds won 100 % (1.51 → 0.86 ms a pass). The same checksum both sides, 1001287749 (every position, the on-screen facings).\n- **Scene** (02:52 to 02:57, Chrome headed, source, detailed stats off, `runPredatorAbab --scene /tests/bench/stressScenes/decorationSwayStressScene.js --scene-export DecorationSwayStressScene --query decorations=150000&attached=200 --owner particle --vs 7239cdee --hyp-rev 2e2dca53`, 4 pairs, 10 s windows): **particle 6.685 → 2.805 ms, paired −57.5 %**, worse 0/4 (pairs −56.6 / −57.2 / −58.9 / −57.9 %), cv 2/4 %. ACTIVE_DECORATIONS 150 000 both sides; presented frames 60.0 both; every other worker under the 3 ms floor. KEPT (product). One run was measured again (its window minimized for 250 ms). No A/A of this scene: a 57 % change with a 2 to 4 % cv is past any limit it could have.\n\nWhat it does: one whose on-screen flag is 0 (last frame's; the screen test runs after the pass, on the position it places) gets its facing without the sway and no sine, and an impulse holds its phase, as the world-owned sway does since Skip-work K. A decoration coming on screen is drawn unswayed for one frame, inside the cull margin. `attachedSwayOffScreen.test.js`.",
+      "commits": [
+        "eb2dc672",
+        "7239cdee"
+      ]
+    },
+    {
+      "id": "R-0818",
+      "date": "2026-11-03",
+      "time": "03:03",
+      "timeFrom": "recorded",
+      "title": "The batch's gate (DX-DECOSORT, the attachment warning, the types, E-196): NEUTRAL on Predator crowd 1.5",
+      "verdict": "passed",
+      "text": "**The batch's Predator gate (DX-DECOSORT's column, the attachment-row warning, the types, E-196): NEUTRAL, no worker 3 % worse.**\n2026-11-03, 02:59 to 03:03 (the result files' times), Chrome headed, source, detailed stats off, Predator `?crowd=1.5`, `runPredatorAbab --name decosort-e196-gate --vs ac3b4d9a --hyp-rev eb2dc672`, 4 pairs, 10 s windows, every kind judged (no owner). One run was measured again (its window minimized for 250 ms).\n\n- logic +0.9 % (worse 2/4, cv 6/10 %), spatial +1.7 % (2/4), physics +2.8 % (3/4, cv 7/10 %; +1.4 % against the others), renderer −1.1 % (1/4), pre-render +1.0 % (3/4; −2.3 % against the others), particle 0.83 → 0.85 ms (under the 3 ms floor). Presented frames 60.0 both. Load keys within 0.8 % (GPU_CASTERS, VISIBLE_ENTITIES and RENDER_QUEUE_SIZE +0.8 %, BODY_COUNT +0.1 %, ACTIVE_DECORATIONS 20 000 both).\n- The pairs follow their order: the AB pairs (0 and 2) read every worker slower on B, the BA pairs (1 and 3) faster (logic +5.2 / −4.1 / +6.6 / −3.5 %, physics +5.4 / +1.2 / +4.5 / −3.1 %, pre-render +0.5 / −3.7 / +1.4 / +2.9 %): the second run of a pair was the slower one, drift the counterbalanced order cancels in the median. Physics, which nothing in the batch reaches, moved most.\n- No A/A this session. R-0815's sitting of the same scene this morning read pairs 15 % apart, so four pairs cannot resolve 3 % on any worker here either; what the sitting shows is that none is consistently worse. The pre-render change is one column read a visible decoration (its kernel ties, R-0816), and Predator's grass is world-owned, so E-196's pass has nothing to skip there.\n\nHygiene keep for DX-DECOSORT, the warning and the types; E-196's keep stands on its own scene (R-0817).",
+      "commits": [
+        "eb2dc672"
       ]
     }
   ],
