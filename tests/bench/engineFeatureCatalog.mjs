@@ -637,6 +637,16 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'attachedSway',
+    name: 'Attached decorations placed and swayed',
+    module: 'src/workers/particleWorker.js',
+    // resolveAttachedDecorations on a real worker: 40 000 swaying leaves under 400 parents, a third in view.
+    kernel: { script: 'tests/bench/attachedSwayMicrobench.mjs', opsKey: 'cases.resolve.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'textureUpload',
     name: 'Shared picture upload',
     module: 'src/render/sharedTextureUpload.js',

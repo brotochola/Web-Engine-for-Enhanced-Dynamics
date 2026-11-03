@@ -38,13 +38,20 @@ const { Scene, Camera, Decoration, GameObject } = WEED;
  * no tick and no sprite, so it costs one pool slot and nothing per frame - its
  * only job is to satisfy that precondition. Every other worker in this scene is
  * meant to be idle, and this keeps it that way.
+ *
+ * With `?attached=K` the anchors also hold the decorations: spawns `first` to
+ * `first + count - 1` of the grid hang from the anchor, which stands at the first
+ * one's cell, with the look the world-owned spawn gives them.
  */
 class SwaySceneAnchor extends GameObject {
   static components = [];
 
-  onSpawned({ x = 0, y = 0 } = {}) {
+  onSpawned({ x = 0, y = 0, first = 0, count = 0 } = {}) {
     this.x = x;
     this.y = y;
+    for (let i = first; i < first + count; i++) {
+      this.addDecoration(null, spawnX(i) - x, spawnY(i) - y, 1, 1, 0, spawnLook(i));
+    }
   }
 }
 
@@ -103,14 +110,82 @@ export const SPAWN_ORDER = (() => {
   }
 })();
 
+/**
+ * `?attached=K` (E-196; default 0, world-owned): every decoration attached instead, each run of K of them in spawn
+ * order to an anchor entity (1 to 255, the scene's decoration.maxAttachedDecorationsPerEntity), at the same cells
+ * and with the same look. Attached decorations sway in the particle worker's resolveAttachedDecorations (JS), not
+ * in the sway kernel, which takes world-owned ones only.
+ */
+export const ATTACHED_PER_ANCHOR = (() => {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get('attached');
+    const n = raw ? parseInt(raw, 10) : NaN;
+    return Number.isFinite(n) && n > 0 ? Math.min(255, n) : 0;
+  } catch {
+    return 0;
+  }
+})();
+const ANCHORS = ATTACHED_PER_ANCHOR > 0 ? Math.ceil(DECORATION_COUNT / ATTACHED_PER_ANCHOR) : 0;
+
 export const stressSceneConfig = {
-  requested: { decorations: DECORATION_COUNT, order: SPAWN_ORDER },
+  requested: { decorations: DECORATION_COUNT, order: SPAWN_ORDER, attached: ATTACHED_PER_ANCHOR },
 };
 export const WORLD_W = 20000;
 export const WORLD_H = 20000;
 
 /** Fractions of the population given to each sway mode. */
 const SKEW_SHARE = 0.25;
+
+const COLS = Math.max(1, Math.ceil(Math.sqrt(DECORATION_COUNT)));
+const SPACING = 100;
+const START_X = 100;
+const START_Y = 100;
+const SKEW_COUNT = Math.floor(DECORATION_COUNT * SKEW_SHARE);
+let spawnCellList = null;
+
+/** Grid cell of spawn i: itself, or a shuffled one (Fisher-Yates over a fixed-seed xorshift). */
+function spawnCells() {
+  if (spawnCellList) return spawnCellList;
+  const cell = new Int32Array(DECORATION_COUNT);
+  for (let i = 0; i < DECORATION_COUNT; i++) cell[i] = i;
+  if (SPAWN_ORDER === 'random') {
+    let s = 0x9e3779b9;
+    for (let i = DECORATION_COUNT - 1; i > 0; i--) {
+      s ^= s << 13;
+      s ^= s >>> 17;
+      s ^= s << 5;
+      const j = (s >>> 0) % (i + 1);
+      const t = cell[i];
+      cell[i] = cell[j];
+      cell[j] = t;
+    }
+  }
+  spawnCellList = cell;
+  return cell;
+}
+
+function spawnX(i) {
+  return START_X + (spawnCells()[i] % COLS) * SPACING;
+}
+
+function spawnY(i) {
+  return START_Y + ((spawnCells()[i] / COLS) | 0) * SPACING;
+}
+
+/**
+ * Spawn i's sway. The frequency varies across the whole 1..3 grid: identical frequencies would let the worker skip
+ * whole buckets, which is not the case this scene is trying to measure.
+ */
+function spawnLook(i) {
+  return {
+    sway: true,
+    swaySkew: i < SKEW_COUNT,
+    // 1.0 .. 3.0, stepped so all three buckets are populated.
+    swayFrequency: 1 + (i % 3) * 0.5,
+    swayAmplitude: 0.02 + (i % 5) * 0.005,
+    tint: 0x88cc88,
+  };
+}
 
 export class DecorationSwayStressScene extends Scene {
   static config = {
@@ -127,7 +202,7 @@ export class DecorationSwayStressScene extends Scene {
     // maxDecorations at its default of 0 and the scene spawns nothing - which
     // looks exactly like a working scene, because the workers just report a
     // near-zero step and nobody notices.
-    decoration: { maxDecorations: DECORATION_COUNT, swayDecimation: 1 },
+    decoration: { maxDecorations: DECORATION_COUNT, swayDecimation: 1, maxAttachedDecorationsPerEntity: ATTACHED_PER_ANCHOR || 32 },
     particle: {
       maxParticles: 0,
       decals: false,
@@ -141,50 +216,20 @@ export class DecorationSwayStressScene extends Scene {
 
   static assets = { textures: {} };
 
-  static entities = [[SwaySceneAnchor, 1]];
+  static entities = [[SwaySceneAnchor, 1 + ANCHORS]];
 
   create() {
     SwaySceneAnchor.spawn({ x: WORLD_W * 0.5, y: WORLD_H * 0.5 });
 
-    const cols = Math.max(1, Math.ceil(Math.sqrt(DECORATION_COUNT)));
-    const spacing = 100;
-    const startX = 100;
-    const startY = 100;
-
-    // Vary the sway frequency across the whole 1..3 grid. Identical frequencies
-    // would let the worker skip whole buckets, which is not the case this scene
-    // is trying to measure.
-    const skewCount = Math.floor(DECORATION_COUNT * SKEW_SHARE);
-
-    // Grid cell of spawn i: itself, or a shuffled one (Fisher-Yates over a fixed-seed xorshift).
-    const cell = new Int32Array(DECORATION_COUNT);
-    for (let i = 0; i < DECORATION_COUNT; i++) cell[i] = i;
-    if (SPAWN_ORDER === 'random') {
-      let s = 0x9e3779b9;
-      for (let i = DECORATION_COUNT - 1; i > 0; i--) {
-        s ^= s << 13;
-        s ^= s >>> 17;
-        s ^= s << 5;
-        const j = (s >>> 0) % (i + 1);
-        const t = cell[i];
-        cell[i] = cell[j];
-        cell[j] = t;
+    if (ATTACHED_PER_ANCHOR > 0) {
+      for (let first = 0; first < DECORATION_COUNT; first += ATTACHED_PER_ANCHOR) {
+        const count = Math.min(ATTACHED_PER_ANCHOR, DECORATION_COUNT - first);
+        SwaySceneAnchor.spawn({ x: spawnX(first), y: spawnY(first), first, count });
       }
-    }
-
-    for (let i = 0; i < DECORATION_COUNT; i++) {
-      const col = cell[i] % cols;
-      const row = (cell[i] / cols) | 0;
-      Decoration.spawn({
-        x: startX + col * spacing,
-        y: startY + row * spacing,
-        sway: true,
-        swaySkew: i < skewCount,
-        // 1.0 .. 3.0, stepped so all three buckets are populated.
-        swayFrequency: 1 + (i % 3) * 0.5,
-        swayAmplitude: 0.02 + (i % 5) * 0.005,
-        tint: 0x88cc88,
-      });
+    } else {
+      for (let i = 0; i < DECORATION_COUNT; i++) {
+        Decoration.spawn({ x: spawnX(i), y: spawnY(i), ...spawnLook(i) });
+      }
     }
 
     Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);
