@@ -10234,7 +10234,7 @@
       "status": "kept-hygiene",
       "statusText": "asked 2026-11-03 (Conurbano-weed), done the same day (6d417363); gate NEUTRAL with E-196 (R-0818)",
       "date": "2026-11-03",
-      "result": "A DecorationComponent column, Float32: world px added to the y a decoration sorts at (its parent's when attached), not the y it is drawn or culled at. collectVisibleDecorations is the one place a decoration's key is made; spawn, spawnMany (one value or one per decoration, ported from visual_editor), addDecoration's extra and the facade take it. At 0 every key is the old one, bit for bit (test). Kernel decorationCollect 535 -> 538 ops/s, +0.6 %, a tie; Predator's gate NEUTRAL, no worker 3 % worse.",
+      "result": "A DecorationComponent column, Float32: world px added to the y a decoration sorts at (its parent's sort line when attached, since N-110), not the y it is drawn or culled at. collectVisibleDecorations is the one place a decoration's key is made; spawn, spawnMany (one value or one per decoration, ported from visual_editor), addDecoration's extra and the facade take it. At 0 every key is the old one, bit for bit (test). Kernel decorationCollect 535 -> 538 ops/s, +0.6 %, a tie; Predator's gate NEUTRAL, no worker 3 % worse.",
       "next": "visual_editor: sortOffsetY as a column of the scene file's decorations section (DECORATION_VALUE_KEYS in sceneFileDecorations.js) when that branch takes main.",
       "area": "pre-render",
       "kind": "dx",
@@ -10254,11 +10254,11 @@
     {
       "id": "N-110",
       "title": "Under Y-sort an attached decoration's innerZ does not decide whether it draws in front of its parent",
-      "status": "open",
-      "statusText": "found 2026-11-03 reading the decoration key for DX-DECOSORT; open, for a batch of its own",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-03 reading the decoration key for DX-DECOSORT; fixed the same day (d5525f8f, R-0819)",
       "date": "2026-11-03",
-      "result": "",
-      "next": "The attached key from the parent's own sort line (its display pose rounded, plus its foot offset), with a parity test against the entity key and decorationCollect for the cost. It changes the order existing scenes draw in.",
+      "result": "Under Y-sort an attached decoration sorts at its parent's own key (the parent sprite's foot line on the drawn pose, rounded, in its zIndex band; the drawn y for a parent with no sprite), plus sortOffsetY and innerZ, so innerZ orders it against its parent. World-owned keys unchanged; no Y-sort, no keys. Kernel (worktrees): half attached Y-sorted -5.8 %, world-owned a tie, no Y-sort +17 %.",
+      "next": "Left: without Y-sort a decoration has no key, so one attached to an entity with a zIndex draws in collect order, not in its parent's band (the emit gives decorations no zIndex).",
       "area": "pre-render",
       "kind": "bug",
       "refs": [
@@ -10268,8 +10268,9 @@
         "innerZ",
         "attached decoration sort"
       ],
-      "records": [],
-      "rank": 8
+      "records": [
+        "R-0819"
+      ]
     },
     {
       "id": "E-196",
@@ -17959,6 +17960,19 @@
       "text": "**The batch's Predator gate (DX-DECOSORT's column, the attachment-row warning, the types, E-196): NEUTRAL, no worker 3 % worse.**\n2026-11-03, 02:59 to 03:03 (the result files' times), Chrome headed, source, detailed stats off, Predator `?crowd=1.5`, `runPredatorAbab --name decosort-e196-gate --vs ac3b4d9a --hyp-rev eb2dc672`, 4 pairs, 10 s windows, every kind judged (no owner). One run was measured again (its window minimized for 250 ms).\n\n- logic +0.9 % (worse 2/4, cv 6/10 %), spatial +1.7 % (2/4), physics +2.8 % (3/4, cv 7/10 %; +1.4 % against the others), renderer −1.1 % (1/4), pre-render +1.0 % (3/4; −2.3 % against the others), particle 0.83 → 0.85 ms (under the 3 ms floor). Presented frames 60.0 both. Load keys within 0.8 % (GPU_CASTERS, VISIBLE_ENTITIES and RENDER_QUEUE_SIZE +0.8 %, BODY_COUNT +0.1 %, ACTIVE_DECORATIONS 20 000 both).\n- The pairs follow their order: the AB pairs (0 and 2) read every worker slower on B, the BA pairs (1 and 3) faster (logic +5.2 / −4.1 / +6.6 / −3.5 %, physics +5.4 / +1.2 / +4.5 / −3.1 %, pre-render +0.5 / −3.7 / +1.4 / +2.9 %): the second run of a pair was the slower one, drift the counterbalanced order cancels in the median. Physics, which nothing in the batch reaches, moved most.\n- No A/A this session. R-0815's sitting of the same scene this morning read pairs 15 % apart, so four pairs cannot resolve 3 % on any worker here either; what the sitting shows is that none is consistently worse. The pre-render change is one column read a visible decoration (its kernel ties, R-0816), and Predator's grass is world-owned, so E-196's pass has nothing to skip there.\n\nHygiene keep for DX-DECOSORT, the warning and the types; E-196's keep stands on its own scene (R-0817).",
       "commits": [
         "eb2dc672"
+      ]
+    },
+    {
+      "id": "R-0819",
+      "date": "2026-11-03",
+      "time": "03:49",
+      "timeFrom": "recorded",
+      "title": "N-110 fixed: an attached decoration takes its parent's own key; y-sorted collect -5.8 % with half attached, no Y-sort +17 %",
+      "verdict": "kept-hygiene",
+      "text": "**N-110 fixed (d5525f8f): an attached decoration takes its parent's own key; the y-sorted collect pays about 5 % where half the decorations are attached.**\n2026-11-03, 03:36 to 03:49 (the result files' times), Node, at the owner's ask the same day. Kernel decorationCollectMicrobench (its y-sorted case from 67e8892f) against 67e8892f.\n\n- The fix: under Y-sort an attached decoration's key is its parent's own key (`_storeAttachedParentKey`: `_storeEntitySortY` on the `_displayPose`, then the zIndex band as `_orderKey` adds it; the drawn y rounded for a parent with no sprite), plus `sortOffsetY * 128` and `innerZ`. The last parent's key is kept (an entity's decorations come in runs). A world-owned key is unchanged bit for bit. With no layer y-sorting, decorations take one key and none is made (the particles' rule).\n- **runKernelsVsRev** (03:36 to 03:40, the KEEP side from the main folder): no Y-sort 505 → 586 ops/s, +16.0 % (100 % of rounds); Y-sorted 260 → 273 on a first pass whose rounds were disturbed by another process (the same base read 612 and 260 in two rounds), then 620 → 577, −6.9 % (12 %) on a quiet one.\n- **Both sides from worktrees** (03:41 to 03:49, 6 pairs alternating, `setupDecorationCollect` one case a process): half of 40 000 attached in runs of 50 under 400 parents, Y-sorted, 764 → 743 ops/s, paired −5.8 %, 5/6 slower (about 60 µs a collect: the 400 parents' keys); world-owned only, Y-sorted (Predator's grass) 1043 → 1046, a tie, the same keys; no Y-sort 505 → 592, +17 %, 6/6. The same world-owned case read −3.6 % with one side in the main folder and +4.3 % worktree against worktree: M13's bias, or noise of that size.\n- Rounding `sortOffsetY` to whole px cost 4 to 8 % of the y-sorted collect by itself (variants in a scratch worktree): it is added as given. A variant with a trivial parent key located the rest in the parents' keys.\n\nPredator has no attached decorations and its grass path ties, so its gate would read drift only: not run. Hygiene keep. Left: without Y-sort a decoration has no key, so one attached to an entity with a zIndex draws in collect order (the emit gives decorations no zIndex).",
+      "commits": [
+        "d5525f8f",
+        "67e8892f"
       ]
     }
   ],
