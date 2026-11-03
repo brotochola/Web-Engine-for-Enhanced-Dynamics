@@ -51,6 +51,7 @@ const REQUIRED = [
   'preRenderWorker',
   'swayBuckets',
   'decorationCollect',
+  'decorationCollectYSort',
   'attachedSway',
   'textureUpload',
 ];

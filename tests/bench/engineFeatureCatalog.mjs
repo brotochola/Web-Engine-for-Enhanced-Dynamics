@@ -637,6 +637,16 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'decorationCollectYSort',
+    name: 'Pre-render decoration collect, Y-sorted',
+    module: 'src/workers/preRenderWorker.js',
+    // The same 40 000 with the entities layer y-sorting: parents with sprites, each one's decorations in a run.
+    kernel: { script: 'tests/bench/decorationCollectMicrobench.mjs', opsKey: 'cases.ysort.opsPerSec' },
+    scene: null,
+    primary: ['preRender_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'attachedSway',
     name: 'Attached decorations placed and swayed',
     module: 'src/workers/particleWorker.js',
