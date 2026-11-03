@@ -10208,7 +10208,7 @@
       "id": "N-109",
       "title": "An integer texture left in a low texture unit made WebGL drop Pixi's batched draws: the lighting went off",
       "status": "kept-hygiene",
-      "statusText": "found 2026-11-03 (Conurbano-weed, then Predator), fixed the same day (ffa862bd)",
+      "statusText": "found 2026-11-03 (Conurbano-weed, then Predator), fixed the same day (ffa862bd); gate NEUTRAL (R-0815)",
       "date": "2026-11-03",
       "result": "The shader sync gave the integer textures (indexed and keyed statics, GPU particle rings, rgba32uint) the next unit up; Pixi's batcher declares sixteen float samplers and binds only the ones it uses, and WebGL 2 drops a draw whose sampler finds an integer texture: the lighting sprite after the entities, every frame in Predator. Integer textures take the top units now (MAX_COMBINED_TEXTURE_IMAGE_UNITS - 1 down); Predator ?hour=23 drops no draw (one a frame before).",
       "area": "pixi",
@@ -10224,7 +10224,8 @@
         "texture unit"
       ],
       "records": [
-        "R-0814"
+        "R-0814",
+        "R-0815"
       ]
     }
   ],
@@ -17843,6 +17844,19 @@
       "text": "**N-109 fixed: an integer texture left in a low texture unit made WebGL drop Pixi's batched draws, the lighting\nsprite among them.** 2026-11-03, found in Conurbano-weed (a game on the 0.13.0 bundle: at night, zoomed out past 0.5,\nthe lighting went off), reproduced in Predator, fixed in ffa862bd.\n\n- **Cause:** WebGL 2 checks every active sampler of a program against the texture its unit holds, read or not, and\n  drops the draw on a mismatch (`GL_INVALID_OPERATION: Mismatch between texture format and sampler type`). Pixi's\n  batcher declares sixteen float samplers (`uTextures`) and binds only the units its batch uses. The shader sync\n  (`scripts/pixi-stubs/shaderSyncPolyfill.mjs`) gave the integer textures (`rgba32uint`: E-162's and E-177's\n  statics, E-157's GPU particle rings) the next unit up, so after an indexed or keyed entity batch unit 2 held the\n  statics, and the next batched draw, `lightingDisplaySprite`'s multiply, was dropped: night looked like day.\n  Predator's entities go keyed at any zoom, so Predator lost that draw every frame, by day too (where it shows less).\n  A batched draw costs the Pixi worker the same CPU whether the GPU drops it or not.\n- **Fix:** integer textures take the top units, counting down from `MAX_COMBINED_TEXTURE_IMAGE_UNITS - 1` (at least\n  31 in WebGL 2; the batcher reads 0 to 15); float textures keep units 0 up, numbered as before. The record-texture\n  uploads (`_gpuRecordRowsGl`) bind there too, not on unit 0. The rebuilt vendor differs from HEAD's only there (an\n  unchanged rebuild is HEAD's byte for byte). WebGPU binds by layout, not by unit: not affected.\n- **Check:** headless Chrome (SwiftShader), a GL spy prepended to the Pixi worker (each draw's GL error and, on the\n  first ones, the sampler that mismatched; the draws made while units 0 to 15 held an integer texture), counted\n  from the start of each load to its end (about 45 s: a 25 s warm-up, two 10 s windows; headless draws a few frames a\n  second, so before the fix one draw a frame was dropped: 30 in the last 10 s at zoom 1, 14 at zoom 0.3):\n\n  | load | before: dropped draws, draws with an int texture in 0-15 | after |\n  |---|---|---|\n  | Predator `?hour=23&zoom=1` | 177, 1943 (every one `batch-vertex`, `uTextures[2]` on RGBA32UI) | 0, 0 |\n  | Predator `?hour=23&zoom=0.3` | 51, 735 | 0, 0 |\n  | Predator `?hour=23&zoom=0.3&indexedSprites=0` | 0, 0 | 0, 0 |\n  | gpuParticlesStressScene (no batched draw after the rings) | 0, 10165 | 0, 0 |\n\n  Mean screenshot brightness in the second window (the hour advances after its pin): before 121.6 (zoom 1) and 112.5\n  (zoom 0.3), after 79.1 and 82.0, with `indexedSprites=0` (no bug) 78.7 and 86.3.\n- No speed sitting: the sync adds a format test per texture binding (a few hundred a frame in Predator, microseconds\n  against the Pixi worker's milliseconds), a 3 % change it cannot make.\n- `pixiShaderSync.test.js` (integer textures on the top units, float ones in order); test:node 2200/2200, test:demos 100/100.",
       "commits": [
         "ffa862bd"
+      ]
+    },
+    {
+      "id": "R-0815",
+      "date": "2026-11-03",
+      "time": "01:45",
+      "timeFrom": "recorded",
+      "title": "N-109's gate: NEUTRAL headed (renderer +0.9 %, pre-render -1.2 %); headless read pre-render +4.1 %, drift-shaped",
+      "verdict": "passed",
+      "text": "**N-109's gate: NEUTRAL headed, no worker 3 % worse; the headless sitting's pre-render +4.1 % did not repeat.**\n2026-11-03, 01:32 to 01:45 (the result files' times), Chrome, source, detailed stats off, Predator `?crowd=1.5` (the\nrenderer over the 3 ms floor), `runPredatorAbab --vs fe0d12b6 --hyp-rev ffa862bd --owner renderer`, 4 pairs each.\nThe owner was using the machine through both.\n\n- **Headless** (01:32 to 01:37; `--headless`, bc8cab8b: Chrome's headless mode draws on the GTX 1650 through D3D11 at\n  60 fps, not SwiftShader; 10 s windows): REGRESSION on pre-render, a worker the change cannot reach.\n  logic +1.9 % (4/4), spatial +2.8 % (4/4), physics +1.3 % (3/4), renderer +0.4 % (2/4, cv 5/5 %, pairs -13.7 / +3.9 /\n  +7.9 / -3.1 %), pre-render +4.1 % (3/4, pairs -2.5 / +4.3 / +3.9 / +4.6 %); against the others pre-render +1.3 %,\n  the rest -0.7 to -2.2 %: every worker moved the same way, B a little slower, the pattern of drift or side bias.\n  Load keys within 0.6 %.\n- An A/A of fe0d12b6 headless, for the detection limit, was stopped after one pair (01:39) for the headed sitting\n  the owner asked for.\n- **Headed, quick** (01:40 to 01:45; 5 s warm-up and window to keep it short): NEUTRAL. logic +3.5 % (2/4, cv 4/8 %),\n  spatial -2.8 % (1/4), physics +0.3 % (2/4), renderer +0.9 % (3/4, cv 8/10 %, pairs +1.0 / +0.8 / -15.7 / +13.6 %),\n  pre-render -1.2 % (1/4); load keys within 0.6 %. Noisy: pair 2 read logic, spatial, physics and the renderer 8 to 16 % faster\n  on B, pair 3 every worker 3 to 14 % slower; one run was measured again (its window minimized for 250 ms). Without an A/A that day, the pairs'\n  spread says the renderer could not resolve 3 % on either sitting; what both say is that no worker is consistently\n  worse, and the change adds a format test per texture binding, microseconds a frame.\n- Headless against headed (planned tool 3): not a same-build comparison and not the same windows, so it does not\n  decide; levels read headless lower (renderer 3.05 against 3.94 ms, pre-render 4.13 against 4.93), with the owner's\n  work on the machine during the headed one.",
+      "commits": [
+        "ffa862bd",
+        "bc8cab8b"
       ]
     }
   ],
