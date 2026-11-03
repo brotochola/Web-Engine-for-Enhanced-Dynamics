@@ -308,6 +308,9 @@ const Y_SORT_K = DECORATION_Y_SORT_SCALE;
 // heap number per visible particle, bullet, decoration and glow. Callers write it here first.
 // Sprites (types 0 and 6) need none: _writeRenderable stores their drawn Y.
 const COLLECT_Y = new Float64Array(1);
+// N-110: the key an attached decoration's parent sorts at, from _storeAttachedParentKey (a store, not a returned
+// double, which a call TurboFan does not inline boxes).
+const PARENT_SORT_KEY = new Float64Array(1);
 /**
  * PreRenderWorker - Handles all visual pre-calculations before rendering
  *
@@ -2077,8 +2080,11 @@ class PreRenderWorker extends AbstractWorker {
      * Uses visibleDecorationsData SAB from particle_worker.
      * (Grid membership is maintained for light queries; collect stays on the
      * particle visible list so decoration load matches the linear path.)
-     * The key's y is the parent's when attached, else the decoration's, plus its
-     * sortOffsetY (0 unless set): where it sorts, not where it is drawn or culled.
+     * A world-owned decoration sorts at its y plus its sortOffsetY (0 unless set). An
+     * attached one sorts at its parent's own key (N-110: the parent sprite's foot line
+     * on the drawn pose, rounded, in its zIndex band), plus its sortOffsetY, so its
+     * innerZ orders it against its parent's body. Where it sorts, not where it is drawn
+     * or culled.
      */
     collectVisibleDecorations() {
         if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
@@ -2088,19 +2094,36 @@ class PreRenderWorker extends AbstractWorker {
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
+        if (!Layer.anyYSorting()) {
+            // A key orders a decoration only in a layer that y-sorts (the emit writes none otherwise): with none this
+            // frame they all take one key and none is made, in a loop of its own, as the particles do.
+            COLLECT_Y[0] = 0;
+            for (let idx = 0; idx < visibleCount; idx++) {
+                this.collectRenderable(2, visibleData[1 + idx]);
+                this.visibleDecorationsCount++;
+            }
+            return;
+        }
         const y = DecorationComponent.y;
         const parentEntityIndex = DecorationComponent.parentEntityIndex;
         const innerZ = DecorationComponent.innerZ;
         const sortOffsetY = DecorationComponent.sortOffsetY;
-        const ty = Transform.y;
         const tActive = Transform.active;
+        const parentKey = PARENT_SORT_KEY;
+        // An entity's decorations are spawned together and come in runs: the last parent's key is kept.
+        let lastParent = -1;
 
         for (let idx = 0; idx < visibleCount; idx++) {
             const i = visibleData[1 + idx];
             const p = parentEntityIndex[i];
             let sortY;
             if (p !== this._noParent && tActive[p]) {
-                sortY = (ty[p] + sortOffsetY[i]) * Y_SORT_K + innerZ[i];
+                if (p !== lastParent) {
+                    this._storeAttachedParentKey(p, parentKey);
+                    lastParent = p;
+                }
+                // The offset as given (rounding it to whole px cost the y-sorted collect 4 to 8 %).
+                sortY = parentKey[0] + sortOffsetY[i] * Y_SORT_K + innerZ[i];
             } else {
                 sortY = (y[i] + sortOffsetY[i]) * Y_SORT_K + innerZ[i];
             }
@@ -2108,6 +2131,21 @@ class PreRenderWorker extends AbstractWorker {
             this.collectRenderable(2, i);
             this.visibleDecorationsCount++;
         }
+    }
+
+    /**
+     * N-110. The key the parent of an attached decoration sorts at, into out[0]: the one its sprite gets
+     * (_storeEntitySortY on the drawn pose, the foot line rounded to a pixel) in its zIndex band (_orderKey's), or
+     * its drawn y rounded when it has no sprite, as an Adobe root's line is.
+     */
+    _storeAttachedParentKey(p, out) {
+        const pose = this._displayPoseOut;
+        this._displayPose(p, pose);
+        const sr = SpriteRenderer;
+        if (sr.active && sr.active[p]) this._storeEntitySortY(0, p, pose, out, 0);
+        else out[0] = spriteYSortKey(pose[1], Y_SORT_K);
+        const z = sr.zIndex ? sr.zIndex[p] | 0 : 0;
+        if (z !== 0) out[0] += z * this._zBand;
     }
 
     /**

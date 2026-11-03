@@ -918,8 +918,8 @@ export interface DecorationSpawnConfig {
   /** Draw offset: the sprite draws at y + offsetY; it sorts and culls at y. */
   offsetY?: number;
   /**
-   * World px added to the y it sorts at (its y, or its parent's y when attached), not to the y it draws or culls at,
-   * and not turned with the parent. Default 0.
+   * World px added to the y it sorts at (its y, or its parent's sort line when attached: the parent's y without a
+   * sprite or with a feet-anchored one), not to the y it draws or culls at, and not turned with the parent. Default 0.
    */
   sortOffsetY?: number;
   sway?: boolean;
@@ -4061,7 +4061,7 @@ export declare class Decoration {
   set offsetX(v: number);
   get offsetY(): number;
   set offsetY(v: number);
-  /** World px added to the y it sorts at (its own, or its parent's when attached); not where it draws or culls. */
+  /** World px added to the y it sorts at (its own, or its parent's sort line when attached); not where it draws or culls. */
   get sortOffsetY(): number;
   set sortOffsetY(v: number);
   get sway(): boolean;

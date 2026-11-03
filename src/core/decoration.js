@@ -196,7 +196,7 @@ export class Decoration {
     if (this._isCurrent()) DecorationComponent.offsetY[this.index] = v;
   }
 
-  /** World px added to the y it sorts at (its own, or its parent's when attached); not where it draws or culls. */
+  /** World px added to the y it sorts at (its own, or its parent's sort line when attached); not where it draws or culls. */
   get sortOffsetY() {
     return this._isCurrent() ? DecorationComponent.sortOffsetY[this.index] : 0;
   }

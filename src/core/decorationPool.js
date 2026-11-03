@@ -334,8 +334,8 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {number} [config.anchorY=1] - Anchor Y (0-1)
    * @param {number} [config.offsetX=0] - Draw offset X: the sprite draws at x + offsetX; it sorts and culls at x
    * @param {number} [config.offsetY=0] - Draw offset Y: the sprite draws at y + offsetY; it sorts and culls at y
-   * @param {number} [config.sortOffsetY=0] - World px added to the y it sorts at (its y, or its parent's y when
-   *   attached), not to the y it draws or culls at, and not turned with the parent: a tall piece sorts at its foot
+   * @param {number} [config.sortOffsetY=0] - World px added to the y it sorts at (its y, or its parent's sort line
+   *   when attached), not to the y it draws or culls at, and not turned with the parent: a tall piece sorts at its foot
    * @param {boolean} [config.sway=false] - Enable sway animation
    * @param {boolean} [config.swaySkew=false] - Shear the sway instead of rotating it
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)

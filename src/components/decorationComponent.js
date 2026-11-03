@@ -54,8 +54,8 @@ export class DecorationComponent extends Component {
     innerZ: Int8Array, // signed; clamp to DECORATION_INNER_Z_MIN..MAX; composite = worldY*SCALE + innerZ
 
     // === Sort point ===
-    // World px added to the y the decoration sorts at (its own y, or its parent's when attached); the y it is drawn
-    // and culled at stays. Lets a tall piece sort at its foot and cull at its centre.
+    // World px added to the y the decoration sorts at (its own y, or its parent's sort line when attached); the y it
+    // is drawn and culled at stays. Lets a tall piece sort at its foot and cull at its centre.
     sortOffsetY: Float32Array,
   };
 

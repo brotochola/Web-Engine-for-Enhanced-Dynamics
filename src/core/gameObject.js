@@ -2288,7 +2288,7 @@ export class GameObject {
    * @param {number} scaleY
    * @param {number} zIndex - signed inner sort (DECORATION_INNER_Z_MIN..DECORATION_INNER_Z_MAX); negative draws behind entity sprite (body is 0)
    * @param {Object} [extra] - optional DecorationPool.spawn fields; `sortOffsetY` moves the y it sorts at from this
-   *   entity's y (a wall piece drawn at localY sorts at its foot), not where it draws or culls
+   *   entity's sort line (a wall piece drawn at localY sorts at its foot), not where it draws or culls
    * @returns {number} decoration index or -1
    */
   addDecoration(texture, localX, localY, scaleX, scaleY, zIndex, extra = {}) {
