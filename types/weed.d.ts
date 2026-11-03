@@ -923,9 +923,14 @@ export interface DecorationSpawnConfig {
    */
   sortOffsetY?: number;
   sway?: boolean;
+  /** Shear the sway instead of turning the sprite (it then ignores `rotation` and the parent's). */
+  swaySkew?: boolean;
   swayAmplitude?: number;
   swayFrequency?: number;
-  layerId?: number;
+  /** Layer name or id to render on. Omitted (and no `layers`) = the entities layer. */
+  layer?: string | number;
+  /** Layer names / ids; wins over `layer`. */
+  layers?: string | number | Array<string | number>;
   innerZ?: number;
   zIndex?: number;
   parent?: number | null;
@@ -971,7 +976,10 @@ export interface BulletSpawnConfig {
   anchorX?: number;
   anchorY?: number;
   offsetY?: number;
-  layerId?: number;
+  /** Layer name or id to render on. Omitted (and no `layers`) = the entities layer. */
+  layer?: string | number;
+  /** Layer names / ids; wins over `layer`. */
+  layers?: string | number | Array<string | number>;
   trailWidth?: number;
 }
 
@@ -3325,7 +3333,7 @@ export declare class SpriteRenderer extends Component {
     boundsHalfH: typeof Float32Array;
     anchorX: typeof Float32Array;
     anchorY: typeof Float32Array;
-    layerId: typeof Uint8Array;
+    layerMask: typeof Uint16Array;
     renderVisible: typeof Uint8Array;
     isItOnScreen: typeof Uint8Array;
     renderDirty: typeof Uint8Array;
@@ -3359,7 +3367,8 @@ export declare class SpriteRenderer extends Component {
   static boundsHalfH: Float32Array;
   static anchorX: Float32Array;
   static anchorY: Float32Array;
-  static layerId: Uint8Array;
+  /** Bit i = subscribed to layer id i (Layer.resolveSubscriptions). */
+  static layerMask: Uint16Array;
   static renderVisible: Uint8Array;
   static isItOnScreen: Uint8Array;
   static renderDirty: Uint8Array;
@@ -3426,7 +3435,7 @@ export declare class AdobeAnimComponent extends Component {
     rotS: typeof Float32Array;
     alpha: typeof Float32Array;
     tint: typeof Uint32Array;
-    layerId: typeof Uint8Array;
+    layerMask: typeof Uint16Array;
     renderVisible: typeof Uint8Array;
     isItOnScreen: typeof Uint8Array;
     boundsHalfW: typeof Float32Array;
@@ -3451,7 +3460,8 @@ export declare class AdobeAnimComponent extends Component {
   static rotS: Float32Array;
   static alpha: Float32Array;
   static tint: Uint32Array;
-  static layerId: Uint8Array;
+  /** Bit i = subscribed to layer id i (Layer.resolveSubscriptions). */
+  static layerMask: Uint16Array;
   static renderVisible: Uint8Array;
   static isItOnScreen: Uint8Array;
   static boundsHalfW: Float32Array;
@@ -3521,7 +3531,7 @@ export declare class ParticleComponent extends Component {
     animMode: typeof Uint8Array;
     animFrames: typeof Uint16Array;    isItOnScreen: typeof Uint8Array;
     blendMode: typeof Uint8Array;
-    layerId: typeof Uint8Array;
+    layerMask: typeof Uint16Array;
     flat: typeof Uint8Array;
     viewMode: typeof Uint8Array;
   };
@@ -3569,7 +3579,8 @@ export declare class ParticleComponent extends Component {
   static animMode: Uint8Array;
   static animFrames: Uint16Array;  static isItOnScreen: Uint8Array;
   static blendMode: Uint8Array;
-  static layerId: Uint8Array;
+  /** Bit i = subscribed to layer id i (Layer.resolveSubscriptions). */
+  static layerMask: Uint16Array;
   static flat: Uint8Array;
   static viewMode: Uint8Array;
   static particleCount: number;
@@ -3599,7 +3610,7 @@ export declare class DecorationComponent extends Component {
     swayAmplitude: typeof Float32Array;
     swayFrequency: typeof Float32Array;
     swayPhase: typeof Float32Array;
-    layerId: typeof Uint8Array;
+    layerMask: typeof Uint16Array;
     parentEntityIndex: typeof Uint16Array;
     localX: typeof Float32Array;
     localY: typeof Float32Array;
@@ -3629,7 +3640,8 @@ export declare class DecorationComponent extends Component {
   static swayAmplitude: Float32Array;
   static swayFrequency: Float32Array;
   static swayPhase: Float32Array;
-  static layerId: Uint8Array;
+  /** Bit i = subscribed to layer id i (Layer.resolveSubscriptions). */
+  static layerMask: Uint16Array;
   static parentEntityIndex: Uint16Array;
   static localX: Float32Array;
   static localY: Float32Array;
@@ -3767,7 +3779,7 @@ export declare class BulletComponent extends Component {
     anchorY: typeof Float32Array;
     offsetY: typeof Float32Array;
     isItOnScreen: typeof Uint8Array;
-    layerId: typeof Uint8Array;
+    layerMask: typeof Uint16Array;
   };
   static active: Uint8Array;
   static startX: Float32Array;
@@ -3794,7 +3806,8 @@ export declare class BulletComponent extends Component {
   static anchorY: Float32Array;
   static offsetY: Float32Array;
   static isItOnScreen: Uint8Array;
-  static layerId: Uint8Array;
+  /** Bit i = subscribed to layer id i (Layer.resolveSubscriptions). */
+  static layerMask: Uint16Array;
   static bulletCount: number;
 }
 
