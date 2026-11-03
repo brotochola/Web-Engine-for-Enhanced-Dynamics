@@ -732,6 +732,9 @@ class PreRenderWorker extends AbstractWorker {
         // worker was handed one list (a kernel or a test), which the collect then reads as it is.
         this.visibleDecorationsCtl = new Int32Array(0);
         this.visibleDecorationsCopies = [];
+        // N-112: the visible bullets' published list, the same way.
+        this.visibleBulletsCtl = new Int32Array(0);
+        this.visibleBulletsCopies = [];
     }
 
     _warnOnce(flagName, message) {
@@ -2149,6 +2152,13 @@ class PreRenderWorker extends AbstractWorker {
         return this.visibleDecorationsCopies[takePublishedList(ctl)];
     }
 
+    /** N-112. The visible bullet list to collect, as _takeVisibleDecorations takes the decorations'. */
+    _takeVisibleBullets() {
+        const ctl = this.visibleBulletsCtl;
+        if (ctl.length === 0) return this.visibleBulletsData;
+        return this.visibleBulletsCopies[takePublishedList(ctl)];
+    }
+
     /**
      * N-110. The key the parent of an attached decoration sorts at, into out[0]: the one its sprite gets
      * (_storeEntitySortY on the drawn pose, the foot line rounded to a pixel) in its zIndex band (_orderKey's), or
@@ -2171,11 +2181,11 @@ class PreRenderWorker extends AbstractWorker {
     collectVisibleBullets() {
         if (!this.maxBullets || this.maxBullets === 0 || !BulletComponent.active) return;
 
-        const visibleData = this.visibleBulletsData;
-        if (!visibleData) return;
-
         // collectRenderable queues nothing then.
         if (!this.renderQueueEnabled) return;
+
+        const visibleData = this._takeVisibleBullets();
+        if (!visibleData) return;
 
         const visibleCount = visibleData[0];
         const y = BulletComponent.y;

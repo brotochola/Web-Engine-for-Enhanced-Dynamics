@@ -467,7 +467,7 @@ function initializeBulletBuffers(scene) {
   );
   resetFreeList(freeListTop, freeList, maxBullets, 1);
 
-  createCompactSlotListPair(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
+  createActiveAndPublishedLists(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
 
   // Header: [0]=count (Int32), [1]=batch sequence (Int32). Impact data starts at byte 8.
   // The sequence lets logic workers detect new batches and avoid double-processing

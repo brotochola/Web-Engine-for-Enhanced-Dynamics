@@ -716,8 +716,12 @@ export class AbstractWorker {
       if (data.activeBulletsData) {
         this.activeBulletsData = new BulletSlots(data.activeBulletsData);
       }
+      // A published list of three copies, as the visible decorations' (N-112).
       if (data.visibleBulletsData) {
-        this.visibleBulletsData = new BulletSlots(data.visibleBulletsData);
+        const visible = bindPublishedList(data.visibleBulletsData, data.maxBullets | 0);
+        this.visibleBulletsCtl = visible.ctl;
+        this.visibleBulletsCopies = visible.copies;
+        this.visibleBulletsData = visible.copies[0];
       }
       if (data.impactBuffer) {
         this.impactBuffer = data.impactBuffer;

@@ -510,6 +510,9 @@ class ParticleWorker extends AbstractWorker {
     // was handed one list (a kernel or a test): the screen test then writes visibleDecorationsData in place.
     this.visibleDecorationsCtl = new Int32Array(0);
     this.visibleDecorationsCopies = [];
+    // N-112: the visible bullets' published list, the same way (tickAllBullets writes it each frame).
+    this.visibleBulletsCtl = new Int32Array(0);
+    this.visibleBulletsCopies = [];
   }
 
   /**
@@ -1254,6 +1257,10 @@ class ParticleWorker extends AbstractWorker {
     const isItOnScreen = BulletComponent.isItOnScreen;
 
     const activeData = this.activeBulletsData;
+    // N-112: the visible list goes to a copy pre-render does not hold, published at each way out once it is whole.
+    const ctl = this.visibleBulletsCtl;
+    const copy = ctl.length === 0 ? -1 : backPublishedList(ctl);
+    if (copy >= 0) this.visibleBulletsData = this.visibleBulletsCopies[copy];
     const visibleData = this.visibleBulletsData;
 
     const { activeCount } = BulletPool.tick(
@@ -1266,12 +1273,14 @@ class ParticleWorker extends AbstractWorker {
 
     if (activeCount <= 0 || !this.cameraData || !visibleData) {
       if (visibleData) visibleData[0] = 0;
+      if (copy >= 0) publishList(ctl, copy);
       return;
     }
 
     const cameraBounds = this._frameCameraBounds();
     if (!cameraBounds) {
       visibleData[0] = 0;
+      if (copy >= 0) publishList(ctl, copy);
       return;
     }
     const camZoom = cameraBounds.zoom;
@@ -1294,6 +1303,7 @@ class ParticleWorker extends AbstractWorker {
       }
     }
     visibleData[0] = visibleCount;
+    if (copy >= 0) publishList(ctl, copy);
   }
 
   clearParticleStampList() {
