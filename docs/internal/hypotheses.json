@@ -10292,6 +10292,28 @@
         "R-0817",
         "R-0818"
       ]
+    },
+    {
+      "id": "N-111",
+      "title": "A bigAtlas with more frames than MAX_TEXTURE_SIZE draws no sprite, silently: the texture LUT has one row per frame",
+      "status": "open",
+      "statusText": "found 2026-11-03 in Conurbano-weed (9 020 frames; SwiftShader's limit 8 192); open",
+      "date": "2026-11-03",
+      "result": "",
+      "next": "Fold uTexLut into 2D (3·K texels wide, ceil(N / K) rows; the 12 shaders fetch (3·(id % K) + col, id / K)), K from MAX_TEXTURE_SIZE as gpuParticleBatch folds its rings; at the least an error naming the frame count and the limit. Test: a LUT of more rows than the limit packs and reads back every frame's texels.",
+      "area": "pixi",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-111"
+      ],
+      "aliases": [
+        "uTexLut",
+        "TEX_LUT_RGBA_WIDTH",
+        "rebuildInstancedTextureLut",
+        "texture LUT"
+      ],
+      "records": [],
+      "rank": 5
     }
   ],
   "records": [
