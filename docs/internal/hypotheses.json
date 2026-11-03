@@ -10314,6 +10314,28 @@
       "records": [
         "R-0820"
       ]
+    },
+    {
+      "id": "N-112",
+      "title": "Pre-render reads the visible decoration list while the particle worker writes the next one: a torn read draws a mix, and the missing decorations blink",
+      "status": "open",
+      "statusText": "found 2026-11-03 in Conurbano-weed (decorations blink while the camera pans or zooms); open",
+      "date": "2026-11-03",
+      "result": "",
+      "next": "A published list (src/util/publishedList.js): three copies of [count, index ...] and a header (published, reading); the particle worker fills a copy pre-render does not hold and publishes it, pre-render marks the published copy and reads it whole. Test: a real particle worker in a thread writes two views' lists as fast as it goes while a real pre-render collects them; every collect must be one list whole. The same for visibleBulletsData; visibleParticlesData is written by the list kernel into the particle memory and needs the copies there.",
+      "area": "preRender",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-112"
+      ],
+      "aliases": [
+        "visibleDecorationsData",
+        "collectVisibleDecorations",
+        "torn visible list",
+        "published list"
+      ],
+      "records": [],
+      "rank": 5
     }
   ],
   "records": [
