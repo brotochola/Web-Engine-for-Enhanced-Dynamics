@@ -10,6 +10,28 @@ const WORLD_H = 3000;
 const MAX_DECORATIONS = 65535;
 const PLANT = 64000;
 
+/** A number from the page's query, or `fallback`. */
+function queryNumber(key, fallback) {
+  try {
+    const raw = new URLSearchParams(globalThis.location?.search || '').get(key);
+    const n = raw ? Number(raw) : NaN;
+    return Number.isFinite(n) && n > 0 ? n : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * `?pan=1` (N-112; default 0, the camera still): the camera orbits 600 px around the world's centre and its zoom
+ * swings 10 % either way, every frame, as a player pans and zooms. The particle worker's screen test then writes a
+ * new visible list each frame (a still camera holds it, E-179c) and pre-render collects a new one each frame.
+ * `?zoom=` (default 1.5): the zoom it holds or swings around; 0.8 shows about 18 000 of the 64 000.
+ */
+export const PAN = queryNumber('pan', 0) === 1 ? 1 : 0;
+export const ZOOM = queryNumber('zoom', 1.5);
+
+export const stressSceneConfig = { requested: { pan: PAN, zoom: ZOOM } };
+
 function decoFixedConfig(numberOfLogicWorkers) {
   return {
     worldWidth: WORLD_W,
@@ -62,7 +84,16 @@ function plantFixedDecos(scene) {
     });
   }
   Camera.centerOn(WORLD_W * 0.5, WORLD_H * 0.5);
-  Camera.setZoom(1.5);
+  Camera.setZoom(ZOOM);
+  scene._orbT = 0;
+}
+
+/** One frame of `?pan=1`'s orbit (the scene's update, on the main thread): a turn every 140 frames. */
+function panCamera(scene) {
+  if (!PAN) return;
+  const t = (scene._orbT += 0.045);
+  Camera.setZoom(ZOOM * (1 + 0.1 * Math.sin(t * 0.7)));
+  Camera.centerOn(WORLD_W * 0.5 + Math.cos(t) * 600, WORLD_H * 0.5 + Math.sin(t * 1.37) * 600);
 }
 
 export class DecoFixedStressScene1W extends Scene {
@@ -72,6 +103,10 @@ export class DecoFixedStressScene1W extends Scene {
   create() {
     plantFixedDecos(this);
   }
+
+  update() {
+    panCamera(this);
+  }
 }
 
 export class DecoFixedStressScene3W extends Scene {
@@ -80,5 +115,9 @@ export class DecoFixedStressScene3W extends Scene {
   static entities = [[DecoFixedAnchor, 1]];
   create() {
     plantFixedDecos(this);
+  }
+
+  update() {
+    panCamera(this);
   }
 }
