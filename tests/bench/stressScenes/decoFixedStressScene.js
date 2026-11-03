@@ -25,7 +25,8 @@ function queryNumber(key, fallback) {
  * `?pan=1` (N-112; default 0, the camera still): the camera orbits 600 px around the world's centre and its zoom
  * swings 10 % either way, every frame, as a player pans and zooms. The particle worker's screen test then writes a
  * new visible list each frame (a still camera holds it, E-179c) and pre-render collects a new one each frame.
- * `?zoom=` (default 1.5): the zoom it holds or swings around; 0.8 shows about 18 000 of the 64 000.
+ * `?zoom=` (default 1.5): the zoom it holds or swings around; 0.8 puts about 24 000 of the 64 000 in the culled view,
+ * 0.55 about 41 000.
  */
 export const PAN = queryNumber('pan', 0) === 1 ? 1 : 0;
 export const ZOOM = queryNumber('zoom', 1.5);
