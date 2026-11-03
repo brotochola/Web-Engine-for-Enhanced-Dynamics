@@ -50,6 +50,7 @@ const REQUIRED = [
   'publishPose',
   'preRenderWorker',
   'swayBuckets',
+  'decorationCollect',
   'textureUpload',
 ];
 

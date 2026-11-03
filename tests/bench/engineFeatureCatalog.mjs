@@ -627,6 +627,16 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'decorationCollect',
+    name: 'Pre-render decoration collect',
+    module: 'src/workers/preRenderWorker.js',
+    // collectVisibleDecorations on a real worker: 40 000 visible, half attached, in no order.
+    kernel: { script: 'tests/bench/decorationCollectMicrobench.mjs', opsKey: 'cases.collect.opsPerSec' },
+    scene: null,
+    primary: ['preRender_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'textureUpload',
     name: 'Shared picture upload',
     module: 'src/render/sharedTextureUpload.js',
