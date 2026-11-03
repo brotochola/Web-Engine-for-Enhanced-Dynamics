@@ -96,8 +96,33 @@ const EMPTY_UPLOAD_OPTS = Object.freeze({
  * Per-textureId LUT: origW, origH, u0, v0, u1, v1, trimX, trimY, trimW, trimH
  */
 export const TEX_LUT_FLOATS = 10;
-/** RGBA32F texels per LUT row (12 floats; last two unused). */
+/** RGBA32F texels per textureId in the LUT (12 floats; last two unused). */
 export const TEX_LUT_RGBA_WIDTH = 3;
+/**
+ * N-111. The LUT's most rows: WebGL 2's promised MAX_TEXTURE_SIZE, so the texture uploads on every GPU (SwiftShader's
+ * limit is 8 192, a phone's often 4 096). Past it each row holds several textureIds; the shaders read
+ * textureSize(uTexLut).x / TEX_LUT_RGBA_WIDTH of them a row.
+ */
+export const TEX_LUT_MAX_ROWS = 2048;
+
+/**
+ * N-111. The LUT texture for `count` textureIds: `perRow` of them a row (1 until count passes `maxRows`), `width` texels
+ * (TEX_LUT_RGBA_WIDTH each) and `height` rows. textureId t is at texel (TEX_LUT_RGBA_WIDTH * (t % perRow), t / perRow).
+ * @param {number} count
+ * @param {number} [maxRows]
+ * @returns {{ perRow: number, width: number, height: number }}
+ */
+export function textureLutLayout(count, maxRows = TEX_LUT_MAX_ROWS) {
+  const n = Math.max(1, count | 0);
+  const perRow = Math.ceil(n / maxRows);
+  const width = perRow * TEX_LUT_RGBA_WIDTH;
+  if (width > maxRows) {
+    throw new Error(
+      `WeedJS: the atlas has ${n} frames; its texture table holds at most ${Math.floor(maxRows / TEX_LUT_RGBA_WIDTH) * maxRows} (${maxRows} x ${maxRows} texels)`
+    );
+  }
+  return { perRow, width, height: Math.ceil(n / perRow) };
+}
 
 function writeLutSlot(lut, base, tex) {
   if (typeof tex.updateUvs === 'function') tex.updateUvs();
@@ -160,13 +185,17 @@ export function buildTextureLut(flatTextures, fallbackTexture) {
   return lut;
 }
 
-/** Pack CPU LUT (10 floats/id) into RGBA32F rows for vertex texelFetch. */
-export function packTextureLutRgba(lut, count) {
+/**
+ * Pack CPU LUT (10 floats/id) into the RGBA32F texture of textureLutLayout(count, maxRows) for vertex texelFetch.
+ * A layout of one id a row is the rows it always was; the slots past `count` in the last row stay 0 (a zero size).
+ */
+export function packTextureLutRgba(lut, count, maxRows = TEX_LUT_MAX_ROWS) {
   const n = Math.max(1, count | 0);
-  const out = new Float32Array(n * TEX_LUT_RGBA_WIDTH * 4);
+  const { perRow, width, height } = textureLutLayout(n, maxRows);
+  const out = new Float32Array(width * height * 4);
   const srcN = lut ? (lut.length / TEX_LUT_FLOATS) | 0 : 0;
   for (let i = 0; i < n; i++) {
-    const dst = i * 12;
+    const dst = ((((i / perRow) | 0) * width) + (i % perRow) * TEX_LUT_RGBA_WIDTH) * 4;
     if (i < srcN) {
       const s = i * TEX_LUT_FLOATS;
       out[dst] = lut[s];

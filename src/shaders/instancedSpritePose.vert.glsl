@@ -27,13 +27,16 @@ out vec2 vTileOff;
 void main() {
   int tid = int(aInstTexId + 0.5);
   ivec2 lutSize = textureSize(uTexLut, 0);
+  // N-111: lutPerRow textureIds a row, so no side of the LUT passes MAX_TEXTURE_SIZE (instancedSpriteBatch.js).
+  int lutPerRow = lutSize.x / 3;
   vec2 aInstSize = vec2(0.0);
   vec4 aInstUV = vec4(0.0);
   vec4 aInstTrim = vec4(0.0);
-  if (tid >= 0 && tid < lutSize.y) {
-    vec4 t0 = texelFetch(uTexLut, ivec2(0, tid), 0);
-    vec4 t1 = texelFetch(uTexLut, ivec2(1, tid), 0);
-    vec4 t2 = texelFetch(uTexLut, ivec2(2, tid), 0);
+  if (tid >= 0 && tid < lutPerRow * lutSize.y) {
+    ivec2 lutAt = ivec2(3 * (tid % lutPerRow), tid / lutPerRow);
+    vec4 t0 = texelFetch(uTexLut, lutAt, 0);
+    vec4 t1 = texelFetch(uTexLut, lutAt + ivec2(1, 0), 0);
+    vec4 t2 = texelFetch(uTexLut, lutAt + ivec2(2, 0), 0);
     aInstSize = t0.xy;
     aInstUV = vec4(t0.zw, t1.xy);
     aInstTrim = vec4(t1.zw, t2.xy);

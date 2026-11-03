@@ -59,11 +59,14 @@ void main() {
 
   int tid = int(aInstTexId + 0.5);
   ivec2 lutSize = textureSize(uTexLut, 0);
+  // N-111: lutPerRow textureIds a row, so no side of the LUT passes MAX_TEXTURE_SIZE (instancedSpriteBatch.js).
+  int lutPerRow = lutSize.x / 3;
   vec2 orig = vec2(0.0);
   vec4 atlasUV = vec4(0.0);
-  if (aInstTexId >= 0.0 && tid >= 0 && tid < lutSize.y) {
-    vec4 t0 = texelFetch(uTexLut, ivec2(0, tid), 0);
-    vec4 t1 = texelFetch(uTexLut, ivec2(1, tid), 0);
+  if (aInstTexId >= 0.0 && tid >= 0 && tid < lutPerRow * lutSize.y) {
+    ivec2 lutAt = ivec2(3 * (tid % lutPerRow), tid / lutPerRow);
+    vec4 t0 = texelFetch(uTexLut, lutAt, 0);
+    vec4 t1 = texelFetch(uTexLut, lutAt + ivec2(1, 0), 0);
     orig = t0.xy;
     atlasUV = vec4(t0.zw, t1.xy);
     vHasTex = 1.0;

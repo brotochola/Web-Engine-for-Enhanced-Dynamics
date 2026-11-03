@@ -84,12 +84,15 @@ fn mainVert(
 
   let tid = i32(aInstTexId + 0.5);
   let lutSize = textureDimensions(uTexLut);
+  // N-111: lutPerRow textureIds a row, so no side of the LUT passes the device's limit (instancedSpriteBatch.js).
+  let lutPerRow = i32(lutSize.x) / 3;
   var orig = vec2<f32>(0.0);
   var atlasUV = vec4<f32>(0.0);
   var hasTex = 0.0;
-  if (aInstTexId >= 0.0 && tid >= 0 && tid < i32(lutSize.y)) {
-    let t0 = textureLoad(uTexLut, vec2<i32>(0, tid), 0);
-    let t1 = textureLoad(uTexLut, vec2<i32>(1, tid), 0);
+  if (aInstTexId >= 0.0 && tid >= 0 && tid < lutPerRow * i32(lutSize.y)) {
+    let lutAt = vec2<i32>(3 * (tid % lutPerRow), tid / lutPerRow);
+    let t0 = textureLoad(uTexLut, lutAt, 0);
+    let t1 = textureLoad(uTexLut, lutAt + vec2<i32>(1, 0), 0);
     orig = t0.xy;
     atlasUV = vec4<f32>(t0.zw, t1.xy);
     hasTex = 1.0;

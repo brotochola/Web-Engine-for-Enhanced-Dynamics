@@ -111,6 +111,7 @@ import {
   BATCH_DEPTH,
   buildTextureLut,
   packTextureLutRgba,
+  textureLutLayout,
   TEX_LUT_RGBA_WIDTH,
 } from '../render/instancedSpriteBatch.js';
 import { bindPainterRadix, createWasmPainterState, painterSlotList, wasmPainterState } from '../render/painterRadixClient.js';
@@ -590,6 +591,9 @@ class PixiRenderer extends AbstractWorker {
     this._texLutCount = 0;
     this._texLutSource = null;
     this._texLutRgba = null;
+    // N-111: the LUT texture's size (textureLutLayout), folded past TEX_LUT_MAX_ROWS textureIds.
+    this._texLutWidth = TEX_LUT_RGBA_WIDTH;
+    this._texLutHeight = 1;
     this._texLutNeedsGpuUpload = false;
     // GPU particle layers (LAYER_KIND.GPU_PARTICLES): animation index -> atlas lookup id, as RGBA32F (red).
     this._gpuAnimStartSource = null;
@@ -1935,14 +1939,14 @@ class PixiRenderer extends AbstractWorker {
         renderer,
         source,
         data,
-        TEX_LUT_RGBA_WIDTH,
-        Math.max(1, this._texLutCount),
+        this._texLutWidth,
+        this._texLutHeight,
         'weed-tex-lut'
       );
       this._texLutNeedsGpuUpload = false;
       return;
     }
-    this._uploadRgba32FloatGl(source, data, TEX_LUT_RGBA_WIDTH, Math.max(1, this._texLutCount));
+    this._uploadRgba32FloatGl(source, data, this._texLutWidth, this._texLutHeight);
     this._texLutNeedsGpuUpload = false;
   }
 
@@ -2014,12 +2018,17 @@ class PixiRenderer extends AbstractWorker {
     const fallback = this.textures?.['_white'] || PIXI.Texture.WHITE;
     this._texLut = buildTextureLut(this.flatTextures || [], fallback);
     this._texLutCount = this.flatTextures?.length || 0;
+    // N-111: one textureId a row would pass MAX_TEXTURE_SIZE with a big atlas (9 020 frames drew nothing on
+    // SwiftShader's 8 192): past TEX_LUT_MAX_ROWS the rows hold several.
+    const layout = textureLutLayout(this._texLutCount);
+    this._texLutWidth = layout.width;
+    this._texLutHeight = layout.height;
     const rgba = packTextureLutRgba(this._texLut, Math.max(1, this._texLutCount));
     this._texLutRgba = rgba;
     this._texLutSource = PIXI.TextureSource.from({
       resource: rgba,
-      width: TEX_LUT_RGBA_WIDTH,
-      height: Math.max(1, this._texLutCount),
+      width: layout.width,
+      height: layout.height,
       format: 'rgba32float',
       scaleMode: 'nearest',
       addressMode: 'clamp-to-edge',
