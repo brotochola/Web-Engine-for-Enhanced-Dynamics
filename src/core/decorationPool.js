@@ -290,9 +290,9 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {number|{min,max}} [config.alpha=1] - Alpha (opacity) or range
    * @param {number} [config.tint=0xFFFFFF] - Color tint (0xRRGGBB)
    * @param {number} [config.anchorX=0.5] - Anchor X (0-1)
-   * @param {number} [config.anchorY=0.5] - Anchor Y (0-1)
-   * @param {number} [config.offsetX=0] - Offset X for depth sorting (sprite renders at x, sorts at x+offsetX)
-   * @param {number} [config.offsetY=0] - Offset Y for depth sorting (sprite renders at y, sorts at y+offsetY)
+   * @param {number} [config.anchorY=1] - Anchor Y (0-1)
+   * @param {number} [config.offsetX=0] - Draw offset X: the sprite draws at x + offsetX; it sorts and culls at x
+   * @param {number} [config.offsetY=0] - Draw offset Y: the sprite draws at y + offsetY; it sorts and culls at y
    * @param {boolean} [config.sway=false] - Enable sway animation
    * @param {boolean} [config.swaySkew=false] - Shear the sway instead of rotating it
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
@@ -391,7 +391,7 @@ export class DecorationPool extends SharedAtomicPool {
     // New generation invalidates stale Decoration facades held across despawn/reuse.
     generation[i] = (generation[i] + 1) >>> 0;
 
-    // Offset for depth sorting (defaults to 0)
+    // Draw offset (defaults to 0): moves the sprite, not the point it sorts or culls at
     offsetX[i] = config.offsetX ?? 0;
     offsetY[i] = config.offsetY ?? 0;
 
