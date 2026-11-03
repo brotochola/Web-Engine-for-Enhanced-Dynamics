@@ -18,6 +18,7 @@ import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from
 import { AbstractWorker } from './abstractWorker.js';
 import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { Camera } from '../core/camera.js';
+import { takePublishedList } from '../util/publishedList.js';
 import { Query as QueryImport } from '../core/query.js';
 import {
     bindPolarBins,
@@ -727,6 +728,10 @@ class PreRenderWorker extends AbstractWorker {
         this._packParticles = 0;
         this._packDst = null;
         this._packQ = null;
+        // N-112: the visible decorations' published list (header and three copies, bound at init); empty when the
+        // worker was handed one list (a kernel or a test), which the collect then reads as it is.
+        this.visibleDecorationsCtl = new Int32Array(0);
+        this.visibleDecorationsCopies = [];
     }
 
     _warnOnce(flagName, message) {
@@ -2090,7 +2095,7 @@ class PreRenderWorker extends AbstractWorker {
         if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
         if (this._decorationZoomAlpha <= 0) return;
 
-        const visibleData = this.visibleDecorationsData;
+        const visibleData = this._takeVisibleDecorations();
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
@@ -2131,6 +2136,17 @@ class PreRenderWorker extends AbstractWorker {
             this.collectRenderable(2, i);
             this.visibleDecorationsCount++;
         }
+    }
+
+    /**
+     * N-112. The visible decoration list to collect: the copy the particle worker published last, held until the
+     * next take, so the particle worker writes the next lists elsewhere; the one list it was handed when nothing is
+     * published (a kernel or a test).
+     */
+    _takeVisibleDecorations() {
+        const ctl = this.visibleDecorationsCtl;
+        if (ctl.length === 0) return this.visibleDecorationsData;
+        return this.visibleDecorationsCopies[takePublishedList(ctl)];
     }
 
     /**

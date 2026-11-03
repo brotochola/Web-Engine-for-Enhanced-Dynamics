@@ -94,6 +94,7 @@ import { bindStaticSceneryGen, bindStaticTypes } from '../core/staticScenery.js'
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
 import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } from './poolSlotWidth.js';
+import { createPublishedList } from './publishedList.js';
 import { visibilityMemoryBytes, visibilityMemoryOpts } from './visibilityMemory.js';
 import { Messages } from '../core/messages.js';
 
@@ -211,6 +212,17 @@ function createCompactSlotListPair(buffers, activeKey, visibleKey, maxEntries) {
   buffers[visibleKey] = new SharedArrayBuffer(size);
   new Slot(buffers[activeKey])[0] = 0;
   new Slot(buffers[visibleKey])[0] = 0;
+}
+
+/**
+ * A slot pool's active list, and its visible list as a published list (N-112): three copies, so the reader never
+ * reads the one the particle worker is writing.
+ */
+function createActiveAndPublishedLists(buffers, activeKey, visibleKey, maxEntries) {
+  const Slot = PoolSlotArray(maxEntries);
+  buffers[activeKey] = new SharedArrayBuffer((1 + maxEntries) * Slot.BYTES_PER_ELEMENT);
+  new Slot(buffers[activeKey])[0] = 0;
+  buffers[visibleKey] = createPublishedList(maxEntries);
 }
 
 function clearActiveFlags(array, count) {
@@ -387,7 +399,7 @@ function initializeDecorationBuffers(scene) {
   DecorationPool.swayFrequencyBuckets = config.particle?.swayFrequencyBuckets | 0;
   DecorationPool.initializeFreeList(buffers.decorationFreeList, buffers.decorationFreeListTop);
 
-  createCompactSlotListPair(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
+  createActiveAndPublishedLists(buffers, 'activeDecorationsData', 'visibleDecorationsData', maxDecorations);
   // The list's lock and, past it on the same cache line, E-179c's change counts (decorationSpatial.js DECORATION_*_EPOCH).
   buffers.activeDecorationsLock = new SharedArrayBuffer(64);
   DecorationPool.initializeActiveList(buffers.activeDecorationsData, buffers.activeDecorationsLock);

@@ -35,6 +35,7 @@ import {
 } from '../util/utils.js';
 import { Decal as DecalImport } from '../core/decal.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
+import { backPublishedList, publishList } from '../util/publishedList.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
 import { bindDecorationSway, writeSwayColumns } from './decorationSwayClient.js';
@@ -505,6 +506,10 @@ class ParticleWorker extends AbstractWorker {
     this._decorationScreenProbe = 0;
     this._decorationScreenWindow = 0;
     this._decorationScreenScratch = new Uint32Array(0);
+    // N-112: the visible decorations' published list (header and three copies, bound at init). Empty when the worker
+    // was handed one list (a kernel or a test): the screen test then writes visibleDecorationsData in place.
+    this.visibleDecorationsCtl = new Int32Array(0);
+    this.visibleDecorationsCopies = [];
   }
 
   /**
@@ -1163,6 +1168,11 @@ class ParticleWorker extends AbstractWorker {
    */
   updateDecorationScreen() {
     if (this._decorationScreenHolds()) return;
+    // N-112: the test writes a copy of the list pre-render does not hold, published once it is whole. A frame the
+    // test holds writes nothing, and the published copy stands.
+    const ctl = this.visibleDecorationsCtl;
+    const copy = ctl.length === 0 ? -1 : backPublishedList(ctl);
+    if (copy >= 0) this.visibleDecorationsData = this.visibleDecorationsCopies[copy];
     const activeCount = this._activeDecorationSnapshotCount;
     const scratch = this._decorationScreenScratch;
     if (this._decorationScreenFlips * 8 > activeCount && scratch.length >= activeCount) {
@@ -1170,6 +1180,7 @@ class ParticleWorker extends AbstractWorker {
     } else {
       this.updateDecorationScreenVisibility();
     }
+    if (copy >= 0) publishList(ctl, copy);
     this._decorationScreenProbe = (this._decorationScreenProbe + 1) & 15;
     if (this._decorationScreenProbe === 0) this._sampleDecorationScreenFlips();
   }

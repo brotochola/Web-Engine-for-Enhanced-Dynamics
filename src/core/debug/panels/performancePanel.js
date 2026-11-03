@@ -7,6 +7,7 @@ import { BulletPool } from '../../bulletPool.js';
 import { ParticleEmitter } from '../../particleEmitter.js';
 import { GameObject } from '../../gameObject.js';
 import { PoolSlotArray } from '../../../util/poolSlotWidth.js';
+import { bindPublishedList, peekPublishedCount } from '../../../util/publishedList.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -419,11 +420,17 @@ export class PerformancePanel {
     this._visibleParticles = listView(buffers?.visibleParticlesData, buffers?.visibleParticlesByte, particles);
     this._activeBullets = listView(buffers?.activeBulletsData, 0, bullets);
     this._visibleBullets = listView(buffers?.visibleBulletsData, 0, bullets);
-    this._visibleDecorations = listView(buffers?.visibleDecorationsData, 0, config?.decoration?.maxDecorations);
+    // The visible decorations are a published list (N-112): the count of the copy published last.
+    const decorations = buffers?.visibleDecorationsData;
+    this._visibleDecorations = decorations ? bindPublishedList(decorations, config?.decoration?.maxDecorations | 0) : null;
   }
 
   _listCount(list) {
     return list ? list[0] | 0 : 0;
+  }
+
+  _publishedCount(published) {
+    return published ? peekPublishedCount(published.ctl, published.copies) | 0 : 0;
   }
 
   _preRenderVisible(views) {
@@ -498,7 +505,7 @@ export class PerformancePanel {
       'Decorations',
       DecorationPool.getActiveCount() | 0,
       DecorationPool.maxCount | 0,
-      this._listCount(this._visibleDecorations),
+      this._publishedCount(this._visibleDecorations),
     );
 
     this._writePoolLine(
