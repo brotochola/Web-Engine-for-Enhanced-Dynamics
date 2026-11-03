@@ -10296,11 +10296,10 @@
     {
       "id": "N-111",
       "title": "A bigAtlas with more frames than MAX_TEXTURE_SIZE draws no sprite, silently: the texture LUT has one row per frame",
-      "status": "open",
-      "statusText": "found 2026-11-03 in Conurbano-weed (9 020 frames; SwiftShader's limit 8 192); open",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-03 in Conurbano-weed (9 020 frames; SwiftShader's limit 8 192); fixed the same day (f47a2e86, R-0820)",
       "date": "2026-11-03",
-      "result": "",
-      "next": "Fold uTexLut into 2D (3·K texels wide, ceil(N / K) rows; the 12 shaders fetch (3·(id % K) + col, id / K)), K from MAX_TEXTURE_SIZE as gpuParticleBatch folds its rings; at the least an error naming the frame count and the limit. Test: a LUT of more rows than the limit packs and reads back every frame's texels.",
+      "result": "The texture LUT keeps one frame a row up to 2048 (WebGL 2's promised MAX_TEXTURE_SIZE) and folds past it, K = ceil(N / 2048) frames a row, so neither side passes 2048 up to 1 396 736 frames; the 12 shaders fetch (3*(id % K), id / K). Below 2048 the texture is bit for bit the old one. Lockstep exact scenes 0 pixels differ, also forced folded; WebGPU folded draws (BunnyMark, GpuGalaxy, MeshGallery, BadPiggies, Predator).",
       "area": "pixi",
       "kind": "bug",
       "refs": [
@@ -10312,8 +10311,9 @@
         "rebuildInstancedTextureLut",
         "texture LUT"
       ],
-      "records": [],
-      "rank": 5
+      "records": [
+        "R-0820"
+      ]
     }
   ],
   "records": [
@@ -17995,6 +17995,18 @@
       "commits": [
         "d5525f8f",
         "67e8892f"
+      ]
+    },
+    {
+      "id": "R-0820",
+      "date": "2026-11-03",
+      "time": "04:14",
+      "timeFrom": "recorded",
+      "title": "N-111 fixed: the texture LUT folds past 2048 frames; the seven exact scenes match pixel for pixel, folded too; WebGPU draws",
+      "verdict": "kept-hygiene",
+      "text": "**N-111 fixed (f47a2e86): the texture LUT folds into rows of several frames past 2 048, so an atlas of any practical size draws.**\n2026-11-03, at the owner's ask, the bug reported the same morning from Conurbano-weed (9 020 frames drew nothing on SwiftShader's 8 192-texel limit; 7 938 drew). The WebGPU runs 04:12 to 04:14 (their screenshots' times); the lockstep runs just before them (a passing run deletes its files).\n\n- The fix: `textureLutLayout(count)` keeps one frame a row up to `TEX_LUT_MAX_ROWS` (2 048, WebGL 2's promised `MAX_TEXTURE_SIZE`) and past it puts K = ceil(N / 2 048) frames a row: 3·K texels wide, ceil(N / K) rows, neither side past 2 048 up to 1 396 736 frames (past that an error names the frame count and the limit). `packTextureLutRgba` writes the layout, the Pixi worker sizes and uploads the texture by it (`_texLutWidth`, `_texLutHeight`), and the 12 shaders that read `uTexLut` take K from the texture's width and fetch frame t at (3·(t % K), t / K). Up to 2 048 frames the texture is the one it was, bit for bit.\n- **WebGL, pixel for pixel** (the lockstep visual suite, headed, its seven `exact` scenes: balls, liquidfun, particles, oriented, lfstress, vispoly, compoundvis; baseline saved on the code before the fix): the new shaders draw 0 of 921 600 pixels differently in every scene; with every LUT forced to fold (3 frames a row, a temporary edit) again 0 of 921 600.\n- **WebGPU, folded** (forced fold, headed runs with screenshots): BunnyMark `?backend=webgpu` (250 000 sprites), GpuGalaxy (GPU particles), MeshGallery (mesh UV fills), BadPiggies, and Predator switched to WebGPU for one run (sun shadows, 13 452 casters) all draw, with no shader, page or uncaptured GPU error.\n- Cost: an integer division and remainder per vertex beside the three texel fetches, on the GPU; the CPU packs once per atlas load. No sitting: no worker's step changes, and the extra vertex arithmetic is far from what a frame's presented rate could show.\n\nHygiene keep. `textureLutFold.test.js` (layout, bit-identity below the limit, every frame at the texel the shaders compute, every reader folded).",
+      "commits": [
+        "f47a2e86"
       ]
     }
   ],
