@@ -166,7 +166,7 @@ Decorations parented to an entity are tracked in a **shared attachment table** (
 - `getAttachedDecorationIndex(slot)` → pool index at `slot` (`0` .. count−1), or `-1`.
 - `getAttachedDecoration(slot)` → `Decoration` facade for that slot, or `null` (same underlying data as `Decoration.get(poolIndex)`).
 
-Scene config: `decoration.maxAttachedDecorationsPerEntity` caps attachments per entity (default clamped by the engine). To remove one decoration early, call `Decoration.despawn(poolIndex)` (it detaches from the parent automatically).
+Scene config: `decoration.maxAttachedDecorationsPerEntity` caps attachments per entity: default 32, 1 to 255 (a larger value is cut to 255, with a warning). Its table costs shared memory only, every entity slot × the cap × 2 bytes (4 past 65 535 decorations), and no work per frame: a cap of 128 over 10 000 entity slots is 2.6 MB. Past the cap, `addDecoration` returns `-1` and the first refusal is logged. To remove one decoration early, call `Decoration.despawn(poolIndex)` (it detaches from the parent automatically).
 
 `Decoration.get(poolIndex)` returns a lightweight facade for the current pool slot generation. If you keep a facade after its decoration despawns and that pool index is reused, the old facade becomes inactive and will not mutate the new decoration. Store pool indices for long-lived references, and call `Decoration.get(index)` again when you need the current facade.
 

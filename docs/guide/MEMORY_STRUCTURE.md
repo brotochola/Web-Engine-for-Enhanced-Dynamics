@@ -137,6 +137,8 @@ Entity active lists use the scene id width: `[count, idx0, idx1, ...]` with `ent
 | `visibleParticlesData`         | `(1 + maxParticles) * slotBytes`   | Particle worker                  | Pre_render                    |
 | `activeDecorationsData`        | `(1 + maxDecorations) * slotBytes` | DecorationPool + particle worker | Pre_render                    |
 | `visibleDecorationsData`       | `(1 + maxDecorations) * slotBytes` | Particle worker                  | Pre_render                    |
+| `attachedDecorationCount`      | `totalEntityCount` bytes (`Uint8`)  | `addDecoration`, despawns        | Logic workers                 |
+| `attachedDecorationIndices`    | `totalEntityCount * maxAttachedDecorationsPerEntity * slotBytes` | `addDecoration`, despawns | Logic workers |
 | `activeBulletsData`            | `(1 + maxBullets) * slotBytes`     | Logic worker                     | Pre_render                    |
 | `visibleBulletsData`           | `(1 + maxBullets) * slotBytes`     | Particle worker                  | Pre_render                    |
 

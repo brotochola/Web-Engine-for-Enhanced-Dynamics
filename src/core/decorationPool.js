@@ -79,6 +79,8 @@ export class DecorationPool extends SharedAtomicPool {
   static _attachedDecorationIndices = null; // Uint16Array (Uint32Array past 65 535) length entityCount * maxAttached
   static _attachmentEntityCount = 0;
   static _maxAttachedPerEntity = 0;
+  /** canAttach said once that an entity could take no more attached decorations. */
+  static _attachRefusedWarned = false;
 
   /** From particle.swayFrequencyBuckets. >1 snaps spawn swayFrequency onto the 1..3 grid. */
   static swayFrequencyBuckets = 0;
@@ -192,6 +194,34 @@ export class DecorationPool extends SharedAtomicPool {
     const c = countArr[entityIdx];
     if (slot < 0 || slot >= c) return -1;
     return idxArr[entityIdx * maxA + slot];
+  }
+
+  /**
+   * Whether entity `entityIdx` can take one more attached decoration. When it cannot (its row holds
+   * maxAttachedDecorationsPerEntity already, or the scene has no attachment table) it says why, once per worker.
+   * @param {number} entityIdx
+   * @param {string} [who] - the entity's class, for the message
+   * @returns {boolean}
+   */
+  static canAttach(entityIdx, who = 'entity') {
+    const countArr = this._attachedDecorationCount;
+    const maxA = this._maxAttachedPerEntity;
+    if (countArr && maxA > 0 && entityIdx >= 0 && entityIdx < this._attachmentEntityCount) {
+      if (countArr[entityIdx] < maxA) return true;
+      this._warnAttachRefused(
+        who,
+        `entity ${entityIdx} has ${maxA} attached decorations, as many as decoration.maxAttachedDecorationsPerEntity allows (raise it, up to 255)`
+      );
+      return false;
+    }
+    this._warnAttachRefused(who, `entity ${entityIdx} has no attachment row here (decoration.maxDecorations is 0?)`);
+    return false;
+  }
+
+  static _warnAttachRefused(who, why) {
+    if (this._attachRefusedWarned) return;
+    this._attachRefusedWarned = true;
+    console.warn(`WeedJS: ${who}.addDecoration returned -1: ${why}.`);
   }
 
   static pushAttached(entityIdx, decoIdx) {
@@ -656,6 +686,7 @@ export class DecorationPool extends SharedAtomicPool {
     this._attachedDecorationIndices = null;
     this._attachmentEntityCount = 0;
     this._maxAttachedPerEntity = 0;
+    this._attachRefusedWarned = false;
     this.swayFrequencyBuckets = 0;
     DecorationSpatial.reset();
   }

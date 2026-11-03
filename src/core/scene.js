@@ -765,6 +765,9 @@ class Scene {
       ...(this.config.decoration || {}),
     };
     const ma = this.config.decoration.maxAttachedDecorationsPerEntity | 0;
+    if (ma > 255) {
+      console.warn(`WeedJS: decoration.maxAttachedDecorationsPerEntity is ${ma}; an entity holds at most 255 attached decorations, so the scene uses 255.`);
+    }
     this.config.decoration.maxAttachedDecorationsPerEntity = ma < 1 ? 1 : ma > 255 ? 255 : ma;
 
     // Bullet defaults from centralized config

@@ -7,6 +7,9 @@ import { DecorationPool } from '../../src/core/decorationPool.js';
 import { DecorationSpatial } from '../../src/core/decorationSpatial.js';
 import { resetFreeList } from '../../src/util/atomicFreeList.js';
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
+import { GameObject } from '../../src/core/gameObject.js';
+import { Scene } from '../../src/core/scene.js';
+import { buildPoolScene } from '../helpers/poolScene.mjs';
 
 function assertApprox(actual, expected, epsilon = 0.00001) {
   assert.ok(Math.abs(actual - expected) <= epsilon, `expected ${actual} to be close to ${expected}`);
@@ -242,4 +245,56 @@ test('spawnMany takes one value per decoration from arrays, and reports their po
     SpriteSheetRegistry.spritesheets.delete('bigAtlas');
     restore();
   }
+});
+
+/** Run `fn` with console.warn collected; returns the warnings. */
+function collectWarnings(fn) {
+  const warnings = [];
+  const warn = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    fn();
+  } finally {
+    console.warn = warn;
+  }
+  return warnings;
+}
+
+test('addDecoration past maxAttachedDecorationsPerEntity returns -1 without spending a slot, and says so once', { concurrency: false }, () => {
+  buildPoolScene({ decorations: 16, maxAttached: 2 });
+  class Casa extends GameObject {}
+  const casa = Object.create(Casa.prototype);
+  casa.index = 4;
+  const add = () => casa.addDecoration(null, 0, -10, 1, 1, 0);
+  try {
+    let refused = [];
+    const warnings = collectWarnings(() => {
+      assert.ok(add() >= 0);
+      assert.ok(add() >= 0);
+      const active = DecorationPool.getActiveCount();
+      refused = [add(), add()];
+      assert.equal(DecorationPool.getActiveCount(), active, 'no pool slot spent on a refused one');
+    });
+    assert.deepEqual(refused, [-1, -1]);
+    assert.equal(DecorationPool.getAttachedCount(4), 2);
+    assert.equal(warnings.length, 1, warnings.join('\n'));
+    assert.match(warnings[0], /Casa\.addDecoration returned -1: entity 4 has 2 attached decorations/);
+    assert.match(warnings[0], /maxAttachedDecorationsPerEntity/);
+  } finally {
+    DecorationPool.reset();
+  }
+});
+
+test('a scene asking for more than 255 attachments per entity gets 255, with a warning', () => {
+  const run = (asked) => {
+    const scene = { config: { decoration: { maxAttachedDecorationsPerEntity: asked } } };
+    const warnings = collectWarnings(() => Scene.prototype._applyConfigDefaults.call(scene));
+    return { got: scene.config.decoration.maxAttachedDecorationsPerEntity, warnings: warnings.filter((w) => w.includes('maxAttachedDecorationsPerEntity')) };
+  };
+  const big = run(300);
+  assert.equal(big.got, 255);
+  assert.equal(big.warnings.length, 1);
+  assert.match(big.warnings[0], /is 300; an entity holds at most 255/);
+  assert.deepEqual(run(128), { got: 128, warnings: [] });
+  assert.deepEqual(run(0), { got: 1, warnings: [] });
 });

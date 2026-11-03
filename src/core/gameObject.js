@@ -2292,6 +2292,8 @@ export class GameObject {
    * @returns {number} decoration index or -1
    */
   addDecoration(texture, localX, localY, scaleX, scaleY, zIndex, extra = {}) {
+    // A full attachment row says so (once) before a pool slot is spent on it.
+    if (!DecorationPool.canAttach(this.index, this.constructor.name)) return -1;
     const decoIndex = DecorationPool.spawn({
       parent: this.index,
       localX,
