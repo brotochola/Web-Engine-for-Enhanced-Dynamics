@@ -22,6 +22,8 @@
  * instead of its src/ alone, so with weedBundle in --query one revision's shipped bundle is timed against another's
  * (`--vs <rev> --hyp-rev HEAD --full-rev --query weedBundle=weed.prod.bundle.esm.min.js`).
  *
+ * --headless: every run without a window (headed is the protocol; see opts.headed).
+ *
  * --query-a <q>, --query-b <q>: scene parameters for one side only, on top of --query (a key the side names
  * replaces the shared one). Without --hyp-rev, both sides then run the --vs worktree: one build, one
  * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=particleIntegrateF32` times the
@@ -630,7 +632,10 @@ async function main() {
   const owner = args.owner ? String(args.owner) : null;
   const nPairs = Number(args.pairs ?? 4);
   const opts = {
-    headed: true,
+    // --headless: no window (Chrome's headless mode draws on the GPU here: a GTX 1650 through D3D11 at 60 fps,
+    // 2026-11-03). Not the protocol yet: HOW_WE_MEASURE's planned tool 3 wants a same-build sitting showing headless
+    // and headed agree. The stamp records it, so --append never pools the two.
+    headed: !args.headless,
     // Detailed stats are required whenever a hypothesis probe is in play.
     //
     // `preRenderWorker.reportFPS` ends with `if (!this.collectDetailedStats) return;`
