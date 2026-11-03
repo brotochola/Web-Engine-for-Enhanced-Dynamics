@@ -10337,6 +10337,53 @@
       "records": [
         "R-0821"
       ]
+    },
+    {
+      "id": "N-113",
+      "title": "Pre-render reads the visible particle list while the particle worker writes the next one (N-112's race, left for particles)",
+      "status": "open",
+      "statusText": "found 2026-11-03 while fixing N-112 (left in its row and in PR #6); read in the code, not seen yet; open",
+      "date": "2026-11-03",
+      "result": "",
+      "next": "N-112's published list for visibleParticlesData: the header and three copies as regions of the particle memory (wasmMemoryMap.js visibleList), the list kernel (buildParticleListsWasm) given the copy's byte offset each frame, collectVisibleParticles taking the published copy. Test with visibleListTear.test.js's harness (tests/helpers/visibleListWriter.mjs): torn collects before, 0 after. The list changes every frame (no hold), so every overlap can tear; cost on the particle and pre-render workers in a particle stress scene.",
+      "area": "preRender",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-113"
+      ],
+      "aliases": [
+        "visibleParticlesData",
+        "collectVisibleParticles",
+        "torn visible list",
+        "published list",
+        "particle list race"
+      ],
+      "records": [],
+      "rank": 8
+    },
+    {
+      "id": "N-114",
+      "title": "The create-weed-game template's dev server refuses less than the engine's: a backslash path answers 404 on Linux and macOS (createWeedGame.test.js fails there), and a symlink out of the folder is served",
+      "status": "open",
+      "statusText": "found 2026-11-03 by the session that made PR #6 (a Linux container: the node suite's one failure); open",
+      "date": "2026-11-03",
+      "result": "",
+      "next": "packages/create-weed-game/template/scripts/dev.mjs takes server/staticFiles.js resolveInside's rule (refuse \\, : and NUL; check the real path of the nearest existing parent), copied since the template ships alone; createWeedGame.test.js then reads 403 on every system. A test for the symlink case.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-114"
+      ],
+      "aliases": [
+        "dev.mjs",
+        "template dev server",
+        "path traversal",
+        "createWeedGame",
+        "backslash",
+        "Linux"
+      ],
+      "records": [],
+      "rank": 22
     }
   ],
   "records": [
