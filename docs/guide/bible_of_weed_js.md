@@ -161,6 +161,7 @@ Decorations parented to an entity are tracked in a **shared attachment table** (
 
 - `addDecoration(texture, localX, localY, scaleX, scaleY, innerZ, extra?)` → decoration **pool index** (or `-1` if spawn/attach failed). Order of attachment is the order of successful `addDecoration` calls while spawned.
 - **innerZ** is signed, clamped to **`DECORATION_INNER_Z_MIN`..`DECORATION_INNER_Z_MAX`** (default scale **128** → **−127..126**). The entity sprite sorts at implicit **0**; **negative** `innerZ` draws **behind** the parent body. Constants live in `configDefaults.js` / `WEED` exports (`DECORATION_Y_SORT_SCALE`, `DECORATION_INNER_Z_*`). Light glow sprites use a **separate** render path with `ENTITY_GLOW_SORT_BIAS`; the very top slot in the band is reserved for glow, not child decorations.
+- **sortOffsetY** (`extra.sortOffsetY`; any `Decoration.spawn` config too): world px added to the y the decoration sorts at, which is its parent's y when attached (its own y when world-owned). It does not move where it is drawn (`localX`/`localY`, `offsetX`/`offsetY`) or the point it is culled at (its own position, parent + local, with the `preRender.cullingRatio` margin), and it does not turn with the parent. A tall sprite cut into pieces can then cull each piece at its centre and sort it at its foot: hang each piece of a wall column at its centre and give it `sortOffsetY` = the column's base y − the entity's y. Default 0 (sorts at the parent's y, as before). `Decoration.get(i).sortOffsetY` reads or changes it; the next frame sorts by it.
 - `getAttachedDecorationCount()` → how many are attached to this entity.
 - `getAttachedDecorationIndex(slot)` → pool index at `slot` (`0` .. count−1), or `-1`.
 - `getAttachedDecoration(slot)` → `Decoration` facade for that slot, or `null` (same underlying data as `Decoration.get(poolIndex)`).
@@ -196,6 +197,8 @@ One-shot nudge (half sine 0→π, then settle): `Decoration.get(i).impulseSway(a
 ```javascript
 onSpawned() {
   this.addDecoration('_whiteCircle', 0, -16, 0.25, 0.25, -32, { alpha: 0.35 }); // negative innerZ: behind parent sprite
+  // A wall piece drawn (and culled) 90 px above the entity, sorted at its column's base, 12 px below the entity's y
+  this.addDecoration('_white', -40, -90, 0.25, 1, 0, { anchorY: 0.5, sortOffsetY: 12 });
 }
 
 tick() {

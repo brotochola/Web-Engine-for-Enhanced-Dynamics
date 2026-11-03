@@ -2077,6 +2077,8 @@ class PreRenderWorker extends AbstractWorker {
      * Uses visibleDecorationsData SAB from particle_worker.
      * (Grid membership is maintained for light queries; collect stays on the
      * particle visible list so decoration load matches the linear path.)
+     * The key's y is the parent's when attached, else the decoration's, plus its
+     * sortOffsetY (0 unless set): where it sorts, not where it is drawn or culled.
      */
     collectVisibleDecorations() {
         if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
@@ -2089,6 +2091,7 @@ class PreRenderWorker extends AbstractWorker {
         const y = DecorationComponent.y;
         const parentEntityIndex = DecorationComponent.parentEntityIndex;
         const innerZ = DecorationComponent.innerZ;
+        const sortOffsetY = DecorationComponent.sortOffsetY;
         const ty = Transform.y;
         const tActive = Transform.active;
 
@@ -2097,9 +2100,9 @@ class PreRenderWorker extends AbstractWorker {
             const p = parentEntityIndex[i];
             let sortY;
             if (p !== this._noParent && tActive[p]) {
-                sortY = ty[p] * Y_SORT_K + innerZ[i];
+                sortY = (ty[p] + sortOffsetY[i]) * Y_SORT_K + innerZ[i];
             } else {
-                sortY = y[i] * Y_SORT_K + innerZ[i];
+                sortY = (y[i] + sortOffsetY[i]) * Y_SORT_K + innerZ[i];
             }
             COLLECT_Y[0] = sortY;
             this.collectRenderable(2, i);

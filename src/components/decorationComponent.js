@@ -52,6 +52,11 @@ export class DecorationComponent extends Component {
     localY: Float32Array,
     inheritParentRotation: Uint8Array, // 1 = add parent Transform.rotation to baseRotation for display
     innerZ: Int8Array, // signed; clamp to DECORATION_INNER_Z_MIN..MAX; composite = worldY*SCALE + innerZ
+
+    // === Sort point ===
+    // World px added to the y the decoration sorts at (its own y, or its parent's when attached); the y it is drawn
+    // and culled at stays. Lets a tall piece sort at its foot and cull at its centre.
+    sortOffsetY: Float32Array,
   };
 
   // Static pool tracking (set during initialization)

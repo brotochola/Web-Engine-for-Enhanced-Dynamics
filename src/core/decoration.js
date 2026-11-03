@@ -196,6 +196,14 @@ export class Decoration {
     if (this._isCurrent()) DecorationComponent.offsetY[this.index] = v;
   }
 
+  /** World px added to the y it sorts at (its own, or its parent's when attached); not where it draws or culls. */
+  get sortOffsetY() {
+    return this._isCurrent() ? DecorationComponent.sortOffsetY[this.index] : 0;
+  }
+  set sortOffsetY(v) {
+    if (this._isCurrent()) DecorationComponent.sortOffsetY[this.index] = v;
+  }
+
   get sway() {
     return this._isCurrent() ? DecorationComponent.sway[this.index] !== 0 : false;
   }

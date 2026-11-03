@@ -913,8 +913,15 @@ export interface DecorationSpawnConfig {
   tint?: number;
   anchorX?: number;
   anchorY?: number;
+  /** Draw offset: the sprite draws at x + offsetX; it sorts and culls at x. */
   offsetX?: number;
+  /** Draw offset: the sprite draws at y + offsetY; it sorts and culls at y. */
   offsetY?: number;
+  /**
+   * World px added to the y it sorts at (its y, or its parent's y when attached), not to the y it draws or culls at,
+   * and not turned with the parent. Default 0.
+   */
+  sortOffsetY?: number;
   sway?: boolean;
   swayAmplitude?: number;
   swayFrequency?: number;
@@ -928,11 +935,11 @@ export interface DecorationSpawnConfig {
 }
 
 /**
- * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha and tint may also be arrays
- * (or typed arrays) with one value per decoration. count then defaults to the first array's length.
+ * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha, tint and sortOffsetY may also be
+ * arrays (or typed arrays) with one value per decoration. count then defaults to the first array's length.
  */
 export interface DecorationSpawnManyConfig
-  extends Omit<DecorationSpawnConfig, 'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint'> {
+  extends Omit<DecorationSpawnConfig, 'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint' | 'sortOffsetY'> {
   count?: number;
   x?: WeedNumOrRange | ArrayLike<number>;
   y?: WeedNumOrRange | ArrayLike<number>;
@@ -942,6 +949,7 @@ export interface DecorationSpawnManyConfig
   rotation?: number | ArrayLike<number>;
   alpha?: WeedNumOrRange | ArrayLike<number>;
   tint?: number | ArrayLike<number>;
+  sortOffsetY?: number | ArrayLike<number>;
   /** With per-decoration arrays: receives each spawned decoration's pool index, in order. */
   out?: Int32Array | Uint32Array | number[];
 }
@@ -3597,6 +3605,7 @@ export declare class DecorationComponent extends Component {
     localY: typeof Float32Array;
     inheritParentRotation: typeof Uint8Array;
     innerZ: typeof Int8Array;
+    sortOffsetY: typeof Float32Array;
   };
   static active: Uint8Array;
   static generation: Uint32Array;
@@ -3626,6 +3635,8 @@ export declare class DecorationComponent extends Component {
   static localY: Float32Array;
   static inheritParentRotation: Uint8Array;
   static innerZ: Int8Array;
+  /** World px added to the y the decoration sorts at; not the y it draws or culls at. */
+  static sortOffsetY: Float32Array;
   static decorationCount: number;
   static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
 }
@@ -4037,6 +4048,9 @@ export declare class Decoration {
   set offsetX(v: number);
   get offsetY(): number;
   set offsetY(v: number);
+  /** World px added to the y it sorts at (its own, or its parent's when attached); not where it draws or culls. */
+  get sortOffsetY(): number;
+  set sortOffsetY(v: number);
   get sway(): boolean;
   set sway(v: boolean);
   get swayAmplitude(): number;

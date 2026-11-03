@@ -206,7 +206,7 @@ Reads visibility lists, advances animations, builds the render queues that pixi 
    - ENTITIES bit → main render queue
    - other sprite-queue bits → per-layer custom collector
    - density bits skip sprite collect
-5. Build main render queue (SoA packed via `renderQueueLayout.js`). Each item gets a `sortKey` (`worldY * 128`, plus `innerZ` for decorations). No CPU sort here.
+5. Build main render queue (SoA packed via `renderQueueLayout.js`). Each item gets a `sortKey` (`worldY * 128`; a decoration's worldY is its parent's when attached, plus its `sortOffsetY`, and its `innerZ` is added to the key). No CPU sort here.
 6. Build per-layer custom render queues (same `sortKey`, no CPU sort). Emits `console.warn` if a layer's queue overflows `maxItems`
 7. Write each caster row's `shadowH` / `shadowOffX` / `shadowOffY`; the GPU sun and point-light caster lists are packed from them, with the `maxShadowsPerEntity` budget applied there
 8. If more than 1 frame ahead of pixi, skip this pre-render tick and let pixi reuse the latest complete queue

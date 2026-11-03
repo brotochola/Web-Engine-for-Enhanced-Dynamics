@@ -52,7 +52,7 @@ export {
 } from '../util/decorationSway.js';
 
 /** The spawn config keys spawnMany also takes as arrays, one value per decoration. */
-const PER_DECORATION_KEYS = Object.freeze(['x', 'y', 'texture', 'scaleX', 'scaleY', 'rotation', 'alpha', 'tint']);
+const PER_DECORATION_KEYS = Object.freeze(['x', 'y', 'texture', 'scaleX', 'scaleY', 'rotation', 'alpha', 'tint', 'sortOffsetY']);
 
 const isValueList = (value) => Array.isArray(value) || ArrayBuffer.isView(value);
 
@@ -304,6 +304,8 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {number} [config.anchorY=1] - Anchor Y (0-1)
    * @param {number} [config.offsetX=0] - Draw offset X: the sprite draws at x + offsetX; it sorts and culls at x
    * @param {number} [config.offsetY=0] - Draw offset Y: the sprite draws at y + offsetY; it sorts and culls at y
+   * @param {number} [config.sortOffsetY=0] - World px added to the y it sorts at (its y, or its parent's y when
+   *   attached), not to the y it draws or culls at, and not turned with the parent: a tall piece sorts at its foot
    * @param {boolean} [config.sway=false] - Enable sway animation
    * @param {boolean} [config.swaySkew=false] - Shear the sway instead of rotating it
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
@@ -405,6 +407,8 @@ export class DecorationPool extends SharedAtomicPool {
     // Draw offset (defaults to 0): moves the sprite, not the point it sorts or culls at
     offsetX[i] = config.offsetX ?? 0;
     offsetY[i] = config.offsetY ?? 0;
+    // Sort offset (defaults to 0): moves the point it sorts at, not the sprite or the point it culls at
+    DecorationComponent.sortOffsetY[i] = config.sortOffsetY ?? 0;
 
     // Visual properties
     scaleX[i] = randomRange(config.scaleX, 1);
@@ -483,7 +487,7 @@ export class DecorationPool extends SharedAtomicPool {
   /**
    * Spawn multiple decorations at once (batch spawn)
    *
-   * Any of x, y, texture, scaleX, scaleY, rotation, alpha and tint may be an array or a typed array instead: one
+   * Any of x, y, texture, scaleX, scaleY, rotation, alpha, tint and sortOffsetY may be an array or a typed array instead: one
    * value per decoration, decoration i taking element i (a scene file's decorations load this way, one call per
    * class). count then defaults to the first such array's length, and `out`, when given, receives each decoration's
    * pool index (the first `spawned` of its entries).
