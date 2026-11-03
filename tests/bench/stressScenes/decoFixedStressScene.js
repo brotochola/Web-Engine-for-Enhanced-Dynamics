@@ -30,7 +30,20 @@ function queryNumber(key, fallback) {
 export const PAN = queryNumber('pan', 0) === 1 ? 1 : 0;
 export const ZOOM = queryNumber('zoom', 1.5);
 
-export const stressSceneConfig = { requested: { pan: PAN, zoom: ZOOM } };
+/**
+ * `?backpressure=0` (default 1): pre-render does not skip a frame while Pixi is behind (preRender.backpressure).
+ * Where Pixi draws slowly (SwiftShader: a few frames a second) pre-render then still does every frame's work, so its
+ * step is measured over every frame of the window, not over the few Pixi let through.
+ */
+export const BACKPRESSURE = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('backpressure') === '0' ? 0 : 1;
+  } catch {
+    return 1;
+  }
+})();
+
+export const stressSceneConfig = { requested: { pan: PAN, zoom: ZOOM, backpressure: BACKPRESSURE } };
 
 function decoFixedConfig(numberOfLogicWorkers) {
   return {
@@ -62,6 +75,7 @@ function decoFixedConfig(numberOfLogicWorkers) {
       maxVisibleRenderables: 20000,
     },
     lighting: { enabled: false },
+    ...(BACKPRESSURE ? {} : { preRender: { backpressure: false } }),
   };
 }
 
