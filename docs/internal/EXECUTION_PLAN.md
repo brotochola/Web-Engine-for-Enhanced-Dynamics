@@ -3440,6 +3440,20 @@ pass, the stamp's was never decided in Chrome.
 rows (7-float sun rows, 11-float stamp rows) as well as the full ones; into engine.wasm if faster, and Predator crowd
 1.5's pre-render not 3 % worse. Owner: the kernel, Predator's pre-render the guard.
 
+### E-196 Attached decorations swayed off screen: a sine each, every frame, in the particle worker
+
+**Premise:** `resolveAttachedDecorations` placed and swayed every attached decoration each frame, on screen or not: a
+`Math.sin` each, and `Math.cos` and `Math.sin` past 0.08 rad. The world-owned ones' sway (decorationSway.wasm) skips
+those off screen since Skip-work K (R-0058). A game whose trees sway as attached branches (Conurbano-weed after
+DX-DECOSORT, proceduralTreeScene's leaves) paid for every tree of its map.
+**Plan:** an attached decoration off screen last frame (the screen test runs after the pass, on the position it places)
+gets its facing without the sway, no sine, and an impulse holds its phase, as the world-owned sway does. Its position
+is still placed every frame. Owner: the particle worker; kernel `attachedSway` (40 000 leaves under 400 parents, a
+third in view), then decorationSwayStressScene `?decorations=150000&attached=200` (particle 6.5 ms), 4 pairs.
+**Result:** kept 2026-11-03 (`eb2dc672`, R-0817; Predator's gate NEUTRAL, R-0818). Kernel 663 → 1157 ops/s, +74.4 % (1.51 → 0.86 ms a pass), the same
+checksum; scene particle 6.685 → 2.805 ms, paired −57.5 %, 4/4 pairs (−56.6 to −58.9 %), the load the same. A
+decoration that comes on screen is drawn unswayed for one frame, inside the cull margin.
+
 ---
 
 ## Not doing (read the log first)
