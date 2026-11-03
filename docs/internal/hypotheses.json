@@ -10314,6 +10314,29 @@
       "records": [
         "R-0820"
       ]
+    },
+    {
+      "id": "N-112",
+      "title": "Pre-render reads the visible decoration list while the particle worker writes the next one: a torn read draws a mix, and the missing decorations blink",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-03 in Conurbano-weed (decorations blink while the camera pans or zooms); fixed the same day (1ecc2eba, 3f995964, R-0821)",
+      "date": "2026-11-03",
+      "result": "Published lists (src/util/publishedList.js): three copies and a header [published, reading]; the particle worker fills a copy pre-render does not hold, pre-render takes the published one. Node race test 19 621 of 19 673 decoration collects torn before, 0 after (bullets 254 of 1 444, 0); Chromium probe, decoFixed ?pan=1&zoom=0.55, 35 of 3 800 frames torn, 0 after. Cost in a 2-vCPU container on SwiftShader (a screen): kernels tie; pre-render +1.3 %, particle -1.5 % (A/A spread 1.1 / 1.7 %). Left: visibleParticlesData, in the particle memory.",
+      "next": "visibleParticlesData has the same race: the list kernel writes it into the particle memory (wasmMemoryMap.js visibleList), where the three copies and the header would be regions of their own, the kernel given the copy's byte each frame. The headed sittings on the reference machine (R-0821).",
+      "area": "preRender",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-112"
+      ],
+      "aliases": [
+        "visibleDecorationsData",
+        "collectVisibleDecorations",
+        "torn visible list",
+        "published list"
+      ],
+      "records": [
+        "R-0821"
+      ]
     }
   ],
   "records": [
@@ -18007,6 +18030,21 @@
       "text": "**N-111 fixed (f47a2e86): the texture LUT folds into rows of several frames past 2 048, so an atlas of any practical size draws.**\n2026-11-03, at the owner's ask, the bug reported the same morning from Conurbano-weed (9 020 frames drew nothing on SwiftShader's 8 192-texel limit; 7 938 drew). The WebGPU runs 04:12 to 04:14 (their screenshots' times); the lockstep runs just before them (a passing run deletes its files).\n\n- The fix: `textureLutLayout(count)` keeps one frame a row up to `TEX_LUT_MAX_ROWS` (2 048, WebGL 2's promised `MAX_TEXTURE_SIZE`) and past it puts K = ceil(N / 2 048) frames a row: 3·K texels wide, ceil(N / K) rows, neither side past 2 048 up to 1 396 736 frames (past that an error names the frame count and the limit). `packTextureLutRgba` writes the layout, the Pixi worker sizes and uploads the texture by it (`_texLutWidth`, `_texLutHeight`), and the 12 shaders that read `uTexLut` take K from the texture's width and fetch frame t at (3·(t % K), t / K). Up to 2 048 frames the texture is the one it was, bit for bit.\n- **WebGL, pixel for pixel** (the lockstep visual suite, headed, its seven `exact` scenes: balls, liquidfun, particles, oriented, lfstress, vispoly, compoundvis; baseline saved on the code before the fix): the new shaders draw 0 of 921 600 pixels differently in every scene; with every LUT forced to fold (3 frames a row, a temporary edit) again 0 of 921 600.\n- **WebGPU, folded** (forced fold, headed runs with screenshots): BunnyMark `?backend=webgpu` (250 000 sprites), GpuGalaxy (GPU particles), MeshGallery (mesh UV fills), BadPiggies, and Predator switched to WebGPU for one run (sun shadows, 13 452 casters) all draw, with no shader, page or uncaptured GPU error.\n- Cost: an integer division and remainder per vertex beside the three texel fetches, on the GPU; the CPU packs once per atlas load. No sitting: no worker's step changes, and the extra vertex arithmetic is far from what a frame's presented rate could show.\n\nHygiene keep. `textureLutFold.test.js` (layout, bit-identity below the limit, every frame at the texel the shaders compute, every reader folded).",
       "commits": [
         "f47a2e86"
+      ]
+    },
+    {
+      "id": "R-0821",
+      "date": "2026-11-03",
+      "time": "17:20",
+      "timeFrom": "recorded",
+      "title": "N-112 fixed: the visible decoration and bullet lists are published in three copies; 0 torn collects in Node and Chromium; a screen in a 2-vCPU container shows no cost",
+      "verdict": "kept-hygiene",
+      "text": "**N-112 fixed (1ecc2eba decorations, 3f995964 bullets): the visible decoration and bullet lists are published in three copies, so pre-render never reads one the particle worker is writing. Hygiene keep.**\n2026-11-03, at the owner's ask, the bug reported the same morning from Conurbano-weed (decorations blinked while the camera panned or zoomed). Measured the same afternoon in a cloud container: 2 vCPUs, headless Chromium, WebGL on SwiftShader. That is not the reference machine: every sitting below is a screen, and the headed sittings to run there are at the end.\n\n- **The fix:** `src/util/publishedList.js`: a 64-byte header [published, reading] and three copies of the `[count, index …]` list, each from a cache line, at the pool's slot width. The particle worker (`updateDecorationScreen`, `tickAllBullets`) fills a copy that is neither published nor held by pre-render and publishes it once whole; pre-render (`collectVisibleDecorations`, `collectVisibleBullets`) marks the published copy, checks it is still the published one, and reads it. Neither side waits. A frame the screen test holds (E-179c) writes nothing.\n- **Correctness, Node** (`visibleListTear.test.js`): a real particle worker in a thread writes two views' lists as fast as it goes while a real pre-render, bound by its own init path, collects on the main thread; every collect must be one view's list whole. Decorations: 19 621 of 19 673 collects torn before, 0 after (the reader saw the view change 300 times). Bullets: 254 of 1 444 torn on 1ecc2eba, 0 after.\n- **Correctness, Chromium**: decoFixedStressScene `?pan=1` (18bcb7b3: the camera orbits 600 px and its zoom swings 10 % every frame), pre-render's backpressure off, a probe (not committed) counting repeated indices in each collect. Zoom 0.8 (about 24 000 in view), 30 s: 3 of 2 000 frames torn (141 repeated) before, 0 of 2 000 after. Zoom 0.55 (about 41 000 in view), 60 s: 35 of 3 800 torn (7 651 repeated) before, 0 of 3 800 after.\n- **Kernels** (`runKernelsVsRev --vs 18bcb7b --changed`, 5 rounds a side): preRender cull 583.5M → 568.7M ops/s (−2.5 %, info), emit +3.4 %, swayBuckets −0.2 %, decorationCollect −2.0 %, decorationCollectYSort +0.2 %, attachedSway −2.6 %: all ties (attachedSway's code did not change: the container moves a kernel 2 to 3 % by itself).\n- **Owner scene, the reader** (decoFixedStressScene1W `?pan=1&zoom=0.55&backpressure=0`; `?backpressure=0`, 89986dc4, lets pre-render work every frame where Pixi draws a few a second; 4 pairs, both sides from worktrees, `--vs 18bcb7b --hyp-rev 3f99596`, owner preRender): pre-render 1.344 → 1.372 ms, paired median +1.3 % (+15.8, +3.9, −1.3, −2.0; 2 of 4 dearer); particle 2.134 → 2.107 ms, −1.5 % (2 of 4). The A/A in the same session and scene (`--vs 3f99596 --hyp-rev 3f99596`): pre-render −1.9 %, paired spread 1.1 % (a limit near 1.4 % at 4 pairs); particle +0.8 %, spread 1.7 % (about 2.1 %). Loads matched (ACTIVE_DECORATIONS 64 000, RENDER_QUEUE_SIZE 20 000 both sides). Both primaries are under the 3 ms floor, so the gate does not judge them; neither reads 3 % worse in 3 of 4 pairs.\n- **Owner scene with backpressure on** (the same scene and pairs, owner particle): particle 2.039 → 2.040 ms, −0.4 % (1 of 4 dearer); the A/A +0.3 %, spread 2.0 %. Pre-render ran 26 frames a window there (A/A spread 11 %): no reading.\n- **Bullets** (bulletStressScene, 4 pairs, owner particle): particle 2.833 → 2.821 ms, −0.7 % (2 of 4).\n- **Predator's gate** (`--vs 18bcb7b --hyp-rev 3f99596`, owner preRender): loads matched (BODY_COUNT +0.3 %, GPU_CASTERS +1.3 %, VISIBLE_ENTITIES +0.6 %, RENDER_QUEUE_SIZE +1.0 %), NEUTRAL; spatial −2.3 %, logic −2.9 %, physics +0.6 %; Pixi drew under one frame a second on SwiftShader, so pre-render's step was the mean of 2 to 4 frames a window (+9.0 %, one pair +54 %) and says nothing.\n- **Every scene boots**: `profileSceneSweep.mjs --pass boot --set all` under Xvfb, 59 of 65 run with no page error; the other six (badPiggies, burningBoxes, destructibleTerrain, gearChain, meshGallery, computeStress) ask for WebGPU, which the container has not.\n\nHygiene keep: no primary worker 3 % worse. To confirm on the reference machine (headed, quiet, one at a time): the A/A and the owner pair in decoFixedStressScene1W `--query \"pan=1&zoom=0.55\"` (owner particle, then preRender), bulletStressScene `--vs 18bcb7b --hyp-rev 3f99596 --owner particle`, and Predator's gate `--vs 18bcb7b --hyp-rev 3f99596 --owner preRender`. Left: `visibleParticlesData` has the same race (the list kernel writes it into the particle memory; the copies would be regions there).",
+      "commits": [
+        "1ecc2eba",
+        "3f995964",
+        "18bcb7b3",
+        "89986dc4"
       ]
     }
   ],

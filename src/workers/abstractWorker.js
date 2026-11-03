@@ -84,6 +84,7 @@ import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { bindPoolExhaustion } from '../util/poolExhaustion.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
+import { bindPublishedList } from '../util/publishedList.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
 import { GpuParticles } from '../core/gpuParticles.js';
@@ -640,9 +641,14 @@ export class AbstractWorker {
         this.reportLog(`initialized DecorationPool activeDecorationsData`);
       }
 
-      // Initialize visibleDecorationsData compact list (written by particle_worker, read by pre_render_worker)
+      // The visible decorations, written by particle_worker, read by pre_render_worker: a published list of three
+      // copies (N-112), so pre-render never reads the one being written. visibleDecorationsData is the copy the
+      // particle worker wrote last; pre-render takes the published one each frame.
       if (data.visibleDecorationsData) {
-        this.visibleDecorationsData = new (PoolSlotArray(data.maxDecorations | 0))(data.visibleDecorationsData);
+        const visible = bindPublishedList(data.visibleDecorationsData, data.maxDecorations | 0);
+        this.visibleDecorationsCtl = visible.ctl;
+        this.visibleDecorationsCopies = visible.copies;
+        this.visibleDecorationsData = visible.copies[0];
         this.reportLog(`initialized visibleDecorationsData`);
       }
 
@@ -710,8 +716,12 @@ export class AbstractWorker {
       if (data.activeBulletsData) {
         this.activeBulletsData = new BulletSlots(data.activeBulletsData);
       }
+      // A published list of three copies, as the visible decorations' (N-112).
       if (data.visibleBulletsData) {
-        this.visibleBulletsData = new BulletSlots(data.visibleBulletsData);
+        const visible = bindPublishedList(data.visibleBulletsData, data.maxBullets | 0);
+        this.visibleBulletsCtl = visible.ctl;
+        this.visibleBulletsCopies = visible.copies;
+        this.visibleBulletsData = visible.copies[0];
       }
       if (data.impactBuffer) {
         this.impactBuffer = data.impactBuffer;

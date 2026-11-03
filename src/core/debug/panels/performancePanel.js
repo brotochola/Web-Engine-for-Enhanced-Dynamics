@@ -7,6 +7,7 @@ import { BulletPool } from '../../bulletPool.js';
 import { ParticleEmitter } from '../../particleEmitter.js';
 import { GameObject } from '../../gameObject.js';
 import { PoolSlotArray } from '../../../util/poolSlotWidth.js';
+import { bindPublishedList, peekPublishedCount } from '../../../util/publishedList.js';
 import {
   RENDERER_STATS,
   PARTICLE_STATS,
@@ -418,12 +419,18 @@ export class PerformancePanel {
     this._activeParticles = listView(buffers?.activeParticlesData, buffers?.activeParticlesByte, particles);
     this._visibleParticles = listView(buffers?.visibleParticlesData, buffers?.visibleParticlesByte, particles);
     this._activeBullets = listView(buffers?.activeBulletsData, 0, bullets);
-    this._visibleBullets = listView(buffers?.visibleBulletsData, 0, bullets);
-    this._visibleDecorations = listView(buffers?.visibleDecorationsData, 0, config?.decoration?.maxDecorations);
+    // The visible bullets and decorations are published lists (N-112): the count of the copy published last.
+    const published = (sab, max) => (sab ? bindPublishedList(sab, max | 0) : null);
+    this._visibleBullets = published(buffers?.visibleBulletsData, bullets);
+    this._visibleDecorations = published(buffers?.visibleDecorationsData, config?.decoration?.maxDecorations);
   }
 
   _listCount(list) {
     return list ? list[0] | 0 : 0;
+  }
+
+  _publishedCount(published) {
+    return published ? peekPublishedCount(published.ctl, published.copies) | 0 : 0;
   }
 
   _preRenderVisible(views) {
@@ -498,7 +505,7 @@ export class PerformancePanel {
       'Decorations',
       DecorationPool.getActiveCount() | 0,
       DecorationPool.maxCount | 0,
-      this._listCount(this._visibleDecorations),
+      this._publishedCount(this._visibleDecorations),
     );
 
     this._writePoolLine(
@@ -510,7 +517,7 @@ export class PerformancePanel {
       'Bullets',
       this._listCount(this._activeBullets),
       BulletPool.maxCount | 0,
-      this._listCount(this._visibleBullets),
+      this._publishedCount(this._visibleBullets),
     );
 
     if (particleView && this.elements.perfFlash) {

@@ -1,6 +1,7 @@
 // E-129: the bullet pool sizes its slot ids from bullet.maxBullets. On a scene's shared buffers
 // (createSceneSharedBuffers, tests/helpers/poolScene.mjs) and a real particle worker booted on them:
-// - at 65 535 bullets the 16-bit free list and [count, index, ...] lists it always had, viewed as Uint16Array;
+// - at 65 535 bullets the 16-bit free list and [count, index, ...] lists it always had, viewed as Uint16Array (the
+//   visible list in three copies since N-112);
 // - at 200 000: FL4 and u32 lists; every slot spawns once, the particle worker's tick lists all 200 000 live
 //   bullets and culls a visible list past 65 535 (what pre-render draws), despawned slots spawn again;
 // - past MAX_POOL_SLOTS the scene refuses the pool.
@@ -12,6 +13,7 @@ import { BulletPool } from '../../src/core/bulletPool.js';
 import { Camera } from '../../src/core/camera.js';
 import { popFl4, popU16 } from '../../src/util/atomicFreeList.js';
 import { MAX_POOL_SLOTS } from '../../src/util/poolSlotWidth.js';
+import { publishedListBytes } from '../../src/util/publishedList.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
@@ -42,7 +44,7 @@ test('at 65 535 bullets the pool keeps its 16-bit free list and lists', async ()
   assert.equal(b.bulletFreeList.byteLength, n * 2);
   assert.equal(b.bulletFreeListTop.byteLength, 8);
   assert.equal(b.activeBulletsData.byteLength, (1 + n) * 2);
-  assert.equal(b.visibleBulletsData.byteLength, (1 + n) * 2);
+  assert.equal(b.visibleBulletsData.byteLength, publishedListBytes(n), 'the visible list: three copies (N-112)');
   assert.ok(BulletPool.freeList instanceof Uint16Array && BulletPool._popSlot === popU16);
   const worker = await bootWorker(scene);
   assert.ok(worker.activeBulletsData instanceof Uint16Array && worker.visibleBulletsData instanceof Uint16Array);
@@ -87,6 +89,7 @@ test('200 000 bullets: 32-bit slots through the pool, the tick and the visible l
   };
   tick();
   const active = worker.activeBulletsData;
+  // The copy this tick wrote (N-112: each tick writes a copy pre-render does not hold).
   const visible = worker.visibleBulletsData;
   assert.equal(active[0], n, 'every bullet in the active list');
   const listed = new Uint8Array(n);
@@ -109,7 +112,7 @@ test('200 000 bullets: 32-bit slots through the pool, the tick and the visible l
   assert.ok([...again].every((i) => i >= 65536 && i < n), 'the returned slots');
   tick();
   assert.equal(active[0], n);
-  t.diagnostic(`${visible[0]} of ${n} in view, up to slot ${maxVisible}`);
+  t.diagnostic(`${worker.visibleBulletsData[0]} of ${n} in view, up to slot ${maxVisible}`);
 });
 
 test('the scene refuses a bullet pool past MAX_POOL_SLOTS', () => {

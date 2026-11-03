@@ -18,6 +18,7 @@ import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from
 import { AbstractWorker } from './abstractWorker.js';
 import { poseRotationLive } from '../box2d/box2dBodySync.js';
 import { Camera } from '../core/camera.js';
+import { takePublishedList } from '../util/publishedList.js';
 import { Query as QueryImport } from '../core/query.js';
 import {
     bindPolarBins,
@@ -727,6 +728,13 @@ class PreRenderWorker extends AbstractWorker {
         this._packParticles = 0;
         this._packDst = null;
         this._packQ = null;
+        // N-112: the visible decorations' published list (header and three copies, bound at init); empty when the
+        // worker was handed one list (a kernel or a test), which the collect then reads as it is.
+        this.visibleDecorationsCtl = new Int32Array(0);
+        this.visibleDecorationsCopies = [];
+        // N-112: the visible bullets' published list, the same way.
+        this.visibleBulletsCtl = new Int32Array(0);
+        this.visibleBulletsCopies = [];
     }
 
     _warnOnce(flagName, message) {
@@ -2090,7 +2098,7 @@ class PreRenderWorker extends AbstractWorker {
         if (!this.maxDecorations || this.maxDecorations === 0 || !DecorationComponent.active) return;
         if (this._decorationZoomAlpha <= 0) return;
 
-        const visibleData = this.visibleDecorationsData;
+        const visibleData = this._takeVisibleDecorations();
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
@@ -2134,6 +2142,24 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     /**
+     * N-112. The visible decoration list to collect: the copy the particle worker published last, held until the
+     * next take, so the particle worker writes the next lists elsewhere; the one list it was handed when nothing is
+     * published (a kernel or a test).
+     */
+    _takeVisibleDecorations() {
+        const ctl = this.visibleDecorationsCtl;
+        if (ctl.length === 0) return this.visibleDecorationsData;
+        return this.visibleDecorationsCopies[takePublishedList(ctl)];
+    }
+
+    /** N-112. The visible bullet list to collect, as _takeVisibleDecorations takes the decorations'. */
+    _takeVisibleBullets() {
+        const ctl = this.visibleBulletsCtl;
+        if (ctl.length === 0) return this.visibleBulletsData;
+        return this.visibleBulletsCopies[takePublishedList(ctl)];
+    }
+
+    /**
      * N-110. The key the parent of an attached decoration sorts at, into out[0]: the one its sprite gets
      * (_storeEntitySortY on the drawn pose, the foot line rounded to a pixel) in its zIndex band (_orderKey's), or
      * its drawn y rounded when it has no sprite, as an Adobe root's line is.
@@ -2155,11 +2181,11 @@ class PreRenderWorker extends AbstractWorker {
     collectVisibleBullets() {
         if (!this.maxBullets || this.maxBullets === 0 || !BulletComponent.active) return;
 
-        const visibleData = this.visibleBulletsData;
-        if (!visibleData) return;
-
         // collectRenderable queues nothing then.
         if (!this.renderQueueEnabled) return;
+
+        const visibleData = this._takeVisibleBullets();
+        if (!visibleData) return;
 
         const visibleCount = visibleData[0];
         const y = BulletComponent.y;

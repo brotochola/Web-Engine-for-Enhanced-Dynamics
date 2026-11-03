@@ -1,8 +1,9 @@
 // E-129: the decoration pool sizes its slot ids from decoration.maxDecorations. On a scene's shared buffers
 // (createSceneSharedBuffers, tests/helpers/poolScene.mjs) and a real particle worker booted on them:
 // - at 65 535 decorations: the 16-bit buffers it always had (free list, active and visible lists, the spatial
-//   hash, the attachment table, the sway snapshot and chunk list), views of Uint16Array, the spatial hash's 0xffff,
-//   and the worker binds the 16-bit sway with the trig list's impulse at bit 16;
+//   hash, the attachment table, the sway snapshot and chunk list; the visible list in three copies since N-112),
+//   views of Uint16Array, the spatial hash's 0xffff, and the worker binds the 16-bit sway with the trig list's
+//   impulse at bit 16;
 // - at 200 000 decorations: FL4, u32 lists, links and table, 0xffffffff; every slot spawns once, the spatial hash
 //   finds, moves and drops decorations past 65 535, attachments name them, despawns keep the active list right;
 //   the worker views the lists at 32 bits, culls into a visible list past 65 535, binds the _u32 sway (float32 by
@@ -19,6 +20,7 @@ import { Camera } from '../../src/core/camera.js';
 import { popFl4, popU16 } from '../../src/util/atomicFreeList.js';
 import { SWAY_IMPULSE, SWAY_LOOP } from '../../src/util/decorationSway.js';
 import { MAX_POOL_SLOTS } from '../../src/util/poolSlotWidth.js';
+import { publishedListBytes } from '../../src/util/publishedList.js';
 import { alignToLine, SWAY_LIST_CAP } from '../../src/util/wasmMemoryMap.js';
 import { TRIG_IMPULSE, TRIG_IMPULSE_U32 } from '../../src/workers/decorationSwayClient.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';
@@ -72,7 +74,7 @@ test('at 65 535 decorations the pool keeps the 16-bit buffers, links and sway', 
   assert.equal(b.decorationFreeList.byteLength, n * 2);
   assert.equal(b.decorationFreeListTop.byteLength, 8);
   assert.equal(b.activeDecorationsData.byteLength, (1 + n) * 2);
-  assert.equal(b.visibleDecorationsData.byteLength, (1 + n) * 2);
+  assert.equal(b.visibleDecorationsData.byteLength, publishedListBytes(n), 'the visible list: three copies (N-112)');
   assert.equal(b.decorationSpatialHead.byteLength, cells * 2);
   assert.equal(b.decorationSpatialNext.byteLength, n * 2);
   assert.equal(b.decorationSpatialPrev.byteLength, n * 2);
