@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-03",
+  "updated": "2026-11-04",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -10384,6 +10384,30 @@
       ],
       "records": [],
       "rank": 22
+    },
+    {
+      "id": "DX-DECOSKEW",
+      "title": "Decorations: skewX and skewY, a shear of the sprite drawn in its facing",
+      "status": "kept-hygiene",
+      "statusText": "asked 2026-11-04 (Conurbano-weed: houses from flat pieces, one texture for every heading), done the same day (7ab3153); kernels tie (R-0822); scene pair and Predator gate left for the reference machine",
+      "date": "2026-11-04",
+      "result": "skewX / skewY shear a decoration's scaled sprite about its anchor (x += skewX·y, y += skewY·x). Drawn in the facing as a shear sway was: baseRotC = rotC = skewMarkerC (1.5 + 0.4995·skewY/(1+|skewY|)), rotS = skewX; the four sprite shaders read a cosine in (1, 2) as a shear, skewY back with one division. A sheared decoration does not turn or sway and hangs unturned, so pre-render and the particle worker are unchanged and no pass reads the new columns. Kernels against main: attachedSway +8.7 % (code unchanged), attachedWalls -1.3 %, decorationCollectYSort -0.8 %: ties. A first design reading a skewC column in the collect cost decorationCollect -24 % unsheared.",
+      "next": "Reference machine, headed: decoSkewStressScene ?skew=1 against main (owners renderer, preRender: the shader's added division) and Predator's gate (the sprite shader is shared).",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-DECOSKEW"
+      ],
+      "aliases": [
+        "skewX",
+        "skewY",
+        "skewMarkerC",
+        "wall pieces",
+        "shear"
+      ],
+      "records": [
+        "R-0822"
+      ]
     }
   ],
   "records": [
@@ -18092,6 +18116,19 @@
         "3f995964",
         "18bcb7b3",
         "89986dc4"
+      ]
+    },
+    {
+      "id": "R-0822",
+      "date": "2026-11-04",
+      "time": "15:13",
+      "timeFrom": "recorded",
+      "title": "DX-DECOSKEW: skewX / skewY drawn in the facing (7ab3153); CPU passes unchanged, kernels tie against main",
+      "verdict": "kept-hygiene",
+      "text": "**DX-DECOSKEW: a decoration's skewX / skewY, drawn in its facing (7ab3153); the CPU passes are unchanged and the kernels tie against main.**\n2026-11-04, at the owner's ask, for Conurbano-weed (houses drawn from flat pieces). A cloud container, 2 vCPUs, Node and headless Chromium (SwiftShader), not the reference machine: every reading below is a screen. `runKernelsVsRev.mjs --vs origin/main` (3c564ed), 7 rounds a side, after one warm-up process; both sides' checksums equal.\n\n- **Shipped design** (the shear in baseRotC/rotC and baseRotS/rotS, written at spawn and by the facade; sheared decorations hang unturned and do not sway): `preRenderWorker.js` and `particleWorker.js` are main's byte for byte. attachedSway 563 → 612 ops/s (+8.7 %, rounds won 57 %, the code identical: the container's spread), attachedWalls (8087b4d: 40 000 still pieces, every other one sheared and hung unturned; main draws them unsheared) 915 → 903 (−1.3 %, 47 %), decorationCollectYSort 360 → 357 (−0.8 %, 49 %): ties.\n- **First design, dropped:** a third column `skewC` read in `_writeRenderable` for every collected decoration. decorationCollect (40 000 visible, the list shuffled) 386 → 294 ops/s with none sheared (−24 %, rounds won 22 %; a TIE only by the base's 222–440 spread), decorationCollectYSort −2.6 %, the all-sheared case −12.5 % (WORSE): in random order the extra column is a cache miss per decoration. A `bc > 1` branch in the attachment pass (to keep a sheared facing under a turned parent) then cost attachedWalls −4.0 % (rounds won 29 %) where sheared and unsheared pieces alternate without a pattern; hanging sheared decorations unturned removed it.\n- **Shader:** skewY comes back with one division (t = (c − 1.5) / 0.4995, ky = t / (1 − |t|)), no tan: a first version used tan((c − 1.5)·π), and the vertex shader runs for every sprite.\n- **Drawn:** decoSkewStressScene (8087b4d) `?zoom=2.2`, WebGL on SwiftShader: rows of sheared pieces meet without a seam, vertical edges stay vertical, the leaning rows are parallelograms. WebGPU: both instancedSprite.wgsl and instancedSpritePose.wgsl compile on a main-thread device with no message; the scene's WebGPU run loses its device in the renderer worker on main as on the branch (the container), so it draws nothing here.\n- **Tests:** decorationSkew.test.js (marker round trip within 2.5e-7·(1+|ky|)², spawn/spawnMany/addDecoration/facade, rotation and sway left alone, hung unturned under a turned parent, the collect's copy read as the shear). Node suite: 2218 pass; 3 fail as on main or under load (createWeedGame's dev server, N-114; queryWake and waitMeterParity pass alone on both sides).\n\nHygiene keep (a feature with no CPU cost). To run on the reference machine, headed and one at a time: `runPredatorAbab --scene /tests/bench/stressScenes/decoSkewStressScene.js --scene-export DecoSkewStressScene --query skew=1 --vs 3c564ed --hyp-rev 7ab3153` (owners renderer, then preRender) with its A/A, and Predator's gate (the shared sprite shader).",
+      "commits": [
+        "7ab3153",
+        "8087b4d"
       ]
     }
   ],
