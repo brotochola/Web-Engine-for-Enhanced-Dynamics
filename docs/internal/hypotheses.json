@@ -10414,14 +10414,13 @@
     {
       "id": "N-115",
       "title": "The debug bundle built in a Linux container (pnpm: webpack 5.109.2, terser 5.49.0) draws no attached decoration in Conurbano-weed",
-      "status": "open",
-      "statusText": "found 2026-11-04 building DX-DECOSKEW's dist; not seen on the reference machine (terser 5.46.0), where dist was rebuilt; open",
+      "status": "rejected",
+      "statusText": "found 2026-11-04 building DX-DECOSKEW's dist; closed the same day: the premise did not hold, the failing bytes draw on the owner's machine (R-0825)",
       "date": "2026-11-04",
-      "result": "",
-      "next": "pnpm-lock.yaml pins the failing toolchain (terser 5.49.0, webpack 5.109.2) and this machine builds dist with terser 5.46.0, webpack 5.105.0 from an untracked lock: build the debug bundle with the tracked lock's versions here to show it, then bisect or pin. Add a browser smoke test with an attached decoration.",
+      "result": "Not a build bug. 675e3421's debug bundle, the bytes that failed, draws every attached decoration in the real game here, also at 2 CPUs with the game's two-core config (3 of 3); the tracked lock's toolchain built here gives identical captures to the sources in 8 attached scenes. What drew nothing in the container is unknown. Added: smokeBundleBrowser.mjs runs an attached-only scene through the 4 ESM bundles (32 768 pixels each, 0 and a failure at alpha 0).",
+      "next": "",
       "area": "build",
       "kind": "bug",
-      "rank": 6,
       "refs": [
         "REVIEW_PLAN.md#N-115"
       ],
@@ -10431,7 +10430,9 @@
         "attached decorations not drawn",
         "make_bundle"
       ],
-      "records": []
+      "records": [
+        "R-0825"
+      ]
     },
     {
       "id": "N-116",
@@ -18204,6 +18205,19 @@
       "commits": [
         "16264972"
       ]
+    },
+    {
+      "id": "R-0825",
+      "date": "2026-11-04",
+      "time": "19:48",
+      "timeFrom": "recorded",
+      "title": "N-115's premise did not hold: the exact debug bundle that failed in the container draws every attached decoration here, in the real game",
+      "verdict": "rejected",
+      "text": "**N-115's premise did not hold: the exact debug bundle that failed in the container draws every attached decoration here, in the real game.**\n2026-11-04, the owner's machine, Windows, Chromium headless on SwiftShader as in the container. The game is `buenos-aires` at 519fc18 on GitHub (Conurbano-weed), cloned to a scratch folder; its folder is not on this machine, which is why R-0823 and the row's earlier note could not run it.\n\n- **The bytes that failed:** 675e3421 is the container's dist, committed before fff2501 reverted it, so `git show 675e3421:dist/weed.bundle.esm.min.js` is the file N-115 is about. In the game with `?debug`: houses' wall pieces, trees' branches, people, the ground, 0 console errors. Same bundle with a CPU mask of 2 cores and the game's two-core config (HC = 2: 2 logic workers, 2 physics, 1 spatial, against 3, 4 and 2 at 16 threads), 3 runs of 3: the same. The page still reports hardwareConcurrency 16, so the game's own HC constant was edited in the scratch clone.\n- **The tracked lock's toolchain:** `pnpm install --frozen-lockfile` in a scratch worktree gives webpack 5.109.2, terser 5.49.0, terser-webpack-plugin 5.6.1 (dist on this machine comes from an untracked package-lock.json: 5.105.0, 5.46.0, 5.3.16). Built from 1348c4e8, same build inputs as main's dist, 2.5 KB smaller. Its debug bundle in the game draws everything, and against the sources in 8 still scenes of attached pieces (decoration slots and entity ids 16 and 32 bits, parents with and without a sprite, pieces behind and in front, sheared and plain) the canvas captures are identical bytes, 8 of 8.\n- **So this note withdraws what e62ac27d and 1348c4e8 said** (the tracked lock pins a failing toolchain, the toolchain is the likely cause). No bundle has been shown broken. What drew nothing in the container is not known: its Linux, its 2 vCPUs for real, or the game at that day's commit, none of which can be run here. The row's other readings (prod, unminified debug and the committed dist drawing in the same runs) stand as that session's.\n- **What the builds do differ in:** a method-by-method comparison of the debug bundles, mangled names normalised, changes 44 methods on the main thread, 41 in Pixi, 22 in pre-render, 3 in the particle worker. Read in the attached path (`resolveAttachedDecorations`, `updateDecorationSway`, the pool's `spawn`) each change is a literal where an imported constant was read: webpack 5.109.2 inlines exported constants across modules, strings too (a GLSL source moved into `_scatterStaticsGl`). Elsewhere `??` survives where the older build wrote `null == x ?`, from a newer browser list. `entityIdNone`, an `export let`, is still read live. Filed as a lead.\n- **The gap N-115 did show:** nothing tested that a bundle draws an attached decoration. `smokeBundleBrowser.mjs` now runs `attachedDecorationSmokeScene.js` (864d585f), whose only sprites are attached decorations on a black canvas, through the 4 ESM bundles: 32 768 pixels on each (8 squares of 64 × 64); with the pieces at alpha 0 all 4 read 0 and the smoke fails. `scripts/bundle-test` is a build input, so the page was left alone: dist's hash is unchanged (1c2a369c8e28452e), no rebuild, and no new sitting.\n- **For the game:** its two bundles at 519fc18 are this PR's before review: its prod bundle is 675e3421's byte for byte, its debug one is the unminified build, and both hold `2.002002`, N-116's shader. It wants main's dist.",
+      "commits": [
+        "675e3421",
+        "864d585f"
+      ]
     }
   ],
   "leads": [
@@ -18306,6 +18320,11 @@
       "source": "Renderer layer split and sweep inventory (R-0751, 2026-10-29)",
       "finding": "Adobe's logic: Mouse.isDownAt 5.1 %, the game's Mouse.isButton0Down read for 20 000 characters a tick.",
       "next": "A button state noted once a frame and read as a field; a kernel of the getter."
+    },
+    {
+      "source": "N-115's build comparison (R-0825, 2026-11-04)",
+      "finding": "webpack 5.109.2 (the tracked pnpm-lock.yaml's) inlines exported constants across modules, numbers and strings; 5.105.0 (the untracked package-lock.json that builds dist here) reads them through webpack's getters, the cost E-77 worked around by hand. The two locks also give different browser lists, so babel's output differs.",
+      "next": "Time a prod bundle built with the tracked lock against main's dist (--full-rev), then pick one lock for dist. That changes how the bundles are made: every bundle test and the bundle sittings run again."
     }
   ],
   "howToFindNew": [
