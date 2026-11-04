@@ -18218,6 +18218,18 @@
         "675e3421",
         "864d585f"
       ]
+    },
+    {
+      "id": "R-0826",
+      "date": "2026-11-04",
+      "time": "20:34",
+      "timeFrom": "recorded",
+      "title": "PR #8's review, not merged: the default path draws main's pixels; Predator's gate moves every worker alike, the unreachable ones too",
+      "verdict": "answered",
+      "text": "**PR #8's review, not merged: the default path draws main's pixels, and Predator's gate moves every worker alike, the unreachable ones too.**\n2026-11-04, PR #8 (`lighting-ground-projection`, head 7febf1c0, branched from 1348c4e8): `config.lighting.groundScaleY` and `LightEmitter.sourceHeight`. Reviewed at the owner's ask (\"chequeá\"); no commit of mine on that branch. The owner's Chrome read 0 cores just before the sittings.\n\n- **Suites here:** node 2230 of 2230, demos 100 of 100 (its note names failures of its container; none here).\n- **Default path against main, canvas captures byte for byte:** the raycast scene (visPolyStressScene) and a still scene of 6 point lights over sprites, each on WebGL and on WebGPU (NVIDIA Turing, headed): 4 of 4 identical. That scene drew no cast shadow of its sprites, so the shadow shader's default is not covered by it: there it stands on reading (`floorD = d` at scale 1, and `invScreenDist` equals `invDist` past `distSq >= 1`).\n- **groundScaleY 0.5:** ellipses, turning with a rotated camera; WebGL against WebGPU differ by at most 1 of 255 over every pixel. The raycast scene draws squashed pools with its occluders' shadows. Predator with the whole PR draws without artefacts. Not drawn here: particle and LiquidFun lights at scale under 1; `_drawLightSplat`'s axes were read against the camera matrix (a = z cos, b = z sin, c = -z sin, d = z cos) and agree.\n- **Read:** the five uniform groups list their new uniform where the WGSL structs do (Pixi lays the buffer out in that order), one writer of the light texture, `_groundInvScaleY` set (line 7002) before the shaders are made (7039), new fields declared as doubles.\n- **Predator's gate, engine only (the same demo on both sides), 8 pairs (20:09 to 20:17, 20:29 to 20:34): the runner's REGRESSION, on a worker the change cannot reach.** spatial 4.559 → 4.671 ms (paired +3.6 %, 7/8 worse, +0.7 % against the others), physics 5.269 → 5.610 (+3.8 %, 6/8, +2.8 %), logic 3.272 → 3.380 (+2.8 %, 6/8, 0.0 %), preRender 3.070 → 3.138 (+2.7 %, 6/8, −1.7 %); renderer, the owner, under the floor 2.479 → 2.382; 60.0 fps; loads within 0.2 %. The first 4 pairs alone read spatial +6.7 % (4/4).\n- **A/A, the PR against itself, 4 pairs (20:23 to 20:29), this session's noise:** physics −9.3 %, logic −3.9 %, preRender −2.4 %, spatial −0.9 % (renderer 2.574 → 2.548); NEUTRAL.\n- **The whole PR (Predator at 0.7, lamp posts at sourceHeight 110), 4 pairs (20:17 to 20:22):** spatial −0.0 % (2/4), physics −5.2 %, preRender −0.2 %, logic +3.3 % (4/4), renderer under the floor 2.580 → 2.481; loads within 0.3 %. The runner's REGRESSION is logic, also unreachable.\n\nReading: every worker moves about +3 % in one sitting and not in the other, the unreachable alike, so it is read as drift, with a detection limit of about 4 % on the workers that matter here and 9 % on physics. A common +3 % is not ruled out by 8 pairs; no code the PR changed runs on spatial or logic. No cost on the owner. Open when it merges: an entry here and a review row (the PR adds neither), and the bundles, which it leaves as they are. Predator's default look changes (the gate scene), with `?groundScaleY=1` for round pools; its lamp posts keep sourceHeight 110.",
+      "commits": [
+        "7febf1c0"
+      ]
     }
   ],
   "leads": [
