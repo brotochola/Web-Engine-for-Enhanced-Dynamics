@@ -1,28 +1,41 @@
 // DX-DECOSKEW: a decoration's skewX / skewY shear its scaled sprite about its anchor (x += skewX·y, y += skewY·x).
-// The shear is the decoration's facing, as a shear sway's already was: rotC in (1, 2) says "shear", its distance from
+// The shear is the decoration's facing, as a shear sway's already was: rotC past SKEW_C_MIN says "shear", its distance from
 // 1.5 carries skewY (t = skewY / (1 + |skewY|), read back with one division in the sprite shader), rotS carries skewX. Pre-render copies the facing
 // to the render queue as it always did. A sheared decoration does not turn or sway. Conurbano-weed draws a house's
 // walls from flat pieces this way, one texture for every heading.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { Transform } from '../../src/components/transform.js';
 import { Decoration } from '../../src/core/decoration.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { GameObject } from '../../src/core/gameObject.js';
-import { SKEW_C_SPAN, skewMarkerC, SWAY_LOOP, SWAY_OFF, SWAY_SKEW_C } from '../../src/util/decorationSway.js';
+import { SKEW_C_MIN, SKEW_C_SPAN, skewMarkerC, SWAY_LOOP, SWAY_OFF, SWAY_SKEW_C } from '../../src/util/decorationSway.js';
 import { setupAttachedSway } from '../bench/attachedSwayMicrobench.mjs';
 import { setupDecorationCollect } from '../bench/decorationCollectMicrobench.mjs';
+import { setupSwayKernel, swayDecorationsWasm } from '../bench/decorationSwayWasmMicrobench.mjs';
 import { buildPoolScene } from '../helpers/poolScene.mjs';
 
 const D = DecorationComponent;
 const f = Math.fround;
 
+/** The two numbers each sprite shader decides a shear by, read from the shader as it ships. */
+const SHADER_NUMBERS = ['instancedSprite.vert.glsl', 'instancedSpritePose.vert.glsl', 'instancedSprite.wgsl', 'instancedSpritePose.wgsl'].map((name) => {
+  const source = fs.readFileSync(new URL(`../../src/shaders/${name}`, import.meta.url), 'utf8');
+  const isShear = source.match(/isShear = c > ([\d.]+);/);
+  const scale = source.match(/t = \(c - 1\.5\) \* ([\d.]+);/);
+  assert.ok(isShear && scale, `${name}: the shear's numbers`);
+  return { name, min: Number(isShear[1]), scale: Number(scale[1]) };
+});
+const SHADER_MIN = SHADER_NUMBERS[0].min;
+const SHADER_SCALE = SHADER_NUMBERS[0].scale;
+
 /** The sprite shader's reading of a facing pair (instancedSprite.vert.glsl): where the local point (x, y) is drawn. */
 function drawn(c, s, x, y) {
-  if (c > 1) {
-    const t = f((f(c) - 1.5) * 2.002002);
+  if (f(c) > f(SHADER_MIN)) {
+    const t = f((f(c) - 1.5) * f(SHADER_SCALE));
     const ky = t / (1 - Math.abs(t));
     return [x + y * s, y + x * ky];
   }
@@ -32,16 +45,23 @@ function drawn(c, s, x, y) {
 /** The facing a sheared decoration holds: the marker and skewX, in the base and drawn columns alike. */
 function assertSheared(i, kx, ky, label) {
   const c = f(skewMarkerC(kx, ky));
-  assert.ok(c > 1 && c < 2, `${label}: c ${c}`);
+  assert.ok(c > SKEW_C_MIN && c < 2, `${label}: c ${c}`);
   assert.deepEqual([D.baseRotC[i], D.baseRotS[i], D.rotC[i], D.rotS[i]], [c, f(kx), c, f(kx)], label);
 }
+
+test('the four sprite shaders decide a shear by the same numbers as skewMarkerC', () => {
+  for (const { name, min, scale } of SHADER_NUMBERS) {
+    assert.equal(min, SKEW_C_MIN, `${name}: where a shear starts`);
+    assert.ok(Math.abs(scale * SKEW_C_SPAN - 1) < 1e-7, `${name}: ${scale} is 1 / SKEW_C_SPAN`);
+  }
+});
 
 test('skewMarkerC: 0 without a shear, the shear sway marker without a vertical one, and one division reads skewY back', () => {
   assert.equal(skewMarkerC(0, 0), 0);
   assert.equal(skewMarkerC(0.4, 0), SWAY_SKEW_C);
   for (const ky of [-40, -3.2, -1, -0.31, -1e-3, 1e-3, 0.17, 0.5, 1, 2.75, 12]) {
     const c = f(skewMarkerC(0, ky));
-    assert.ok(c > 1 && c < 2, `ky ${ky}: c ${c} must say "shear" and stay under the shadow discard`);
+    assert.ok(c > SKEW_C_MIN && c < 2, `ky ${ky}: c ${c} must say "shear" and stay under the shadow discard`);
     // The shader's reading (float32 math there; doubles here bound it from the same float32 c).
     const t = (c - 1.5) / SKEW_C_SPAN;
     const back = t / (1 - Math.abs(t));
@@ -52,7 +72,7 @@ test('skewMarkerC: 0 without a shear, the shear sway marker without a vertical o
   // Huge or infinite shears are held, short of c = 1 or 2.
   for (const ky of [1e9, Infinity, -1e9, -Infinity]) {
     const c = f(skewMarkerC(0, ky));
-    assert.ok(c > 1 && c < 2, `ky ${ky}: c ${c}`);
+    assert.ok(c > SKEW_C_MIN && c < 2, `ky ${ky}: c ${c}`);
     const t = (c - 1.5) / SKEW_C_SPAN;
     assert.ok(Math.abs(t / (1 - Math.abs(t))) > 1e5, `ky ${ky}`);
   }
@@ -151,6 +171,52 @@ test('an attached sheared decoration hangs unturned under a turned parent, on sc
   assert.equal(D.x[0], f(Transform.x[0] + D.localX[0]), 'hung at parent + local, unturned');
   assert.equal(D.y[0], f(Transform.y[0] + D.localY[0]));
   assert.equal(D.rotC[16], f(f(Math.cos(0.6)) * D.baseRotC[16] - f(Math.sin(0.6)) * D.baseRotS[16]));
+});
+
+/** Nearly upright swaying decorations: base angles of ±0.05 rad, so the sway crosses upright under the small angle. */
+function nearlyUpright(n) {
+  for (let i = 0; i < n; i++) {
+    const r = ((i % 41) - 20) * 0.0025;
+    D.baseRotC[i] = Math.cos(r);
+    D.baseRotS[i] = Math.sin(r);
+    D.swayAmplitude[i] = 0.075;
+    D.swayFrequency[i] = 1;
+    D.sway[i] = SWAY_LOOP;
+    D.isItOnScreen[i] = 1;
+  }
+}
+
+/** Each facing drawn by the shader must be that facing read as a turn. Returns how many passed a cosine of 1. */
+function assertTurned(n, label) {
+  let overUnit = 0;
+  for (let i = 0; i < n; i++) {
+    const c = D.rotC[i];
+    const s = D.rotS[i];
+    if (c > 1) overUnit++;
+    const [x, y] = drawn(c, s, 10, -100);
+    assert.ok(Math.abs(x - (10 * c + 100 * s)) < 1e-4 && Math.abs(y - (10 * s - 100 * c)) < 1e-4, `${label} ${i}: c ${c}, s ${s}, drawn ${x}, ${y}`);
+  }
+  return overUnit;
+}
+
+test('a swayed facing past 1 is a turn, not a shear: the attached pass', async () => {
+  const s = await setupAttachedSway({ n: 400, parents: 8 });
+  nearlyUpright(s.n);
+  s.frame();
+  // The small angle composes (1, delta), not a unit pair: the case exists, or this test tests nothing.
+  assert.ok(assertTurned(s.n, 'attached') > 0, 'no facing passed 1');
+});
+
+test('a swayed facing past 1 is a turn, not a shear: the world-owned sway kernel', async () => {
+  const { worker, b } = await setupSwayKernel({ n: 400 });
+  nearlyUpright(400);
+  let overUnit = 0;
+  for (let frame = 0; frame < 60; frame++) {
+    worker.accumulatedTime += 1000 / 60;
+    swayDecorationsWasm(b, worker, 1000 / 60);
+    overUnit += assertTurned(400, `frame ${frame}`);
+  }
+  assert.ok(overUnit > 0, 'no facing passed 1');
 });
 
 test('the collect copies a sheared facing to the queue, and the shader reads it as the shear', async () => {

@@ -55,12 +55,14 @@ void main() {
   float c = aInstRotCS.x;
   float s = aInstRotCS.y;
   vec2 spun = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  // A shear (c in (1, 2)): x += s * y, y += ky * x, t = (c - 1.5) / 0.4995, ky = t / (1 - |t|) (DX-DECOSKEW: skewMarkerC).
-  float t = (c - 1.5) * 2.002002;
-  float ky = c > 1.0 ? t / (1.0 - abs(t)) : 0.0;
+  // A shear (c past 1.005, which a swayed facing never reaches and every marker does: SKEW_C_MIN): x += s * y, y += ky * x,
+  // t = (c - 1.5) / 0.49, ky = t / (1 - |t|) (DX-DECOSKEW: skewMarkerC).
+  bool isShear = c > 1.005;
+  float t = (c - 1.5) * 2.0408163;
+  float ky = isShear ? t / (1.0 - abs(t)) : 0.0;
   vec2 sheared = vec2(local.x + local.y * s, local.y + local.x * ky);
   vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);
-  vec2 world = (c > 1.0 ? sheared : spun) + xy;
+  vec2 world = (isShear ? sheared : spun) + xy;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(world, 1.0);
   gl_Position = vec4(clip.xy, aInstDepth, 1.0);
