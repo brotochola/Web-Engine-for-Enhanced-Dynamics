@@ -4,10 +4,13 @@ in vec2 vWorldPos;
 flat in vec4 vLight; // x, y, intensity, radius
 flat in vec4 vColor; // r, g, b, attenuation scale
 out vec4 finalColor;
+// 1 / config.lighting.groundScaleY: distances to the light are measured on the floor.
+uniform float uGroundInvScaleY;
 
 // The per-light visibility fan shader (removed in E-96b) with the light's terms from the vertex (E-96).
 void main() {
   vec2 delta = vWorldPos - vLight.xy;
+  delta.y *= uGroundInvScaleY;
   float dist = length(delta);
   // Soft clip oversized free-arc fan verts (FREE_OVERSIZE). Hard discard made
   // the rim look like an opaque black polygon edge.

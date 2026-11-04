@@ -20,6 +20,8 @@ uniform vec4 uSun;
 uniform vec4 uLight;
 uniform vec4 uCam;
 uniform float uPointScale;
+// 1 / config.lighting.groundScaleY: a point light's falloff and range are measured on the floor.
+uniform float uGroundInvScaleY;
 
 out vec2 vLocal;
 out vec4 vColor;
@@ -66,7 +68,8 @@ void main() {
   vec4 light = aInstLight.w > 0.0 ? aInstLight : uLight;
   if (light.w > 0.0) {
     vec2 d = aInstXY - light.xy;
-    float distSq = dot(d, d);
+    vec2 floorD = vec2(d.x, d.y * uGroundInvScaleY);
+    float distSq = dot(floorD, floorD);
     float rangeSq = light.w;
     if (distSq < 1.0 || distSq > rangeSq) {
       gl_Position = vec4(2.0, 2.0, 0.0, 1.0);
@@ -81,8 +84,10 @@ void main() {
     float invDist = inversesqrt(distSq);
     float distRatio = clamp(distSq * invDist * 0.00390625, 0.0, 1.0);
     sy = -(0.3 + distRatio * 0.9) * abs(aInstScale.y) * height;
-    c = d.y * invDist;
-    s = -d.x * invDist;
+    // The shadow points away from the light on screen (the floor's projection keeps straight lines).
+    float invScreenDist = inversesqrt(max(dot(d, d), 1e-6));
+    c = d.y * invScreenDist;
+    s = -d.x * invScreenDist;
     float fade = 1.0 - distSq / rangeSq;
     alpha = light.z / (light.z + distSq);
     alpha = clamp(alpha, 0.0, 1.0) * uPointScale * fade;

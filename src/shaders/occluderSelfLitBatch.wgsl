@@ -20,6 +20,8 @@ struct VisUniforms {
   uZoom: f32,
   uCanvasSize: vec2<f32>,
   uCameraRot: vec2<f32>,
+  // 1 / config.lighting.groundScaleY: distances to the light are measured on the floor.
+  uGroundInvScaleY: f32,
 }
 @group(2) @binding(0) var<uniform> uniforms: VisUniforms;
 
@@ -78,7 +80,8 @@ fn facingMask(world: vec2<f32>, center: vec2<f32>, bodyR: f32, lightPos: vec2<f3
 
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
-  let delta = in.vWorldPos - in.vLight.xy;
+  var delta = in.vWorldPos - in.vLight.xy;
+  delta.y *= uniforms.uGroundInvScaleY;
   let dist = length(delta);
   let radial = 1.0 - smoothstep(in.vLight.w * 0.96, in.vLight.w, dist);
   if (radial <= 0.0) {

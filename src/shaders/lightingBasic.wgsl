@@ -29,6 +29,8 @@ struct LightingUniforms {
   uSunB: f32,
   uFlipY: f32,
   uShadowComposite: f32,
+  // 1 / config.lighting.groundScaleY: the lights' y arrive in floor units, the fragment's is scaled here once.
+  uGroundInvScaleY: f32,
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
@@ -65,7 +67,8 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   if (uniforms.uFlipY > 0.5) { y = vp.y - y; }
   let normCoord = vec2<f32>(in.position.x, y) / vp;
   let screenPos = normCoord * uniforms.uFullCanvasSize;
-  let fragWorld = weedScreenToWorld(screenPos);
+  var fragWorld = weedScreenToWorld(screenPos);
+  fragWorld.y *= uniforms.uGroundInvScaleY;
   var totalLight = vec3<f32>(uniforms.uBaseAmbient);
   totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
   let nLights = uniforms.uLightCount;

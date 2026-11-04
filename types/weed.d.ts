@@ -3694,6 +3694,7 @@ export declare class LightEmitter extends Component {
   /**
    * The source's height above the floor, in px. Widens and softens the pool without moving it or
    * changing its reach: falloff I / (I + h² + d²). 0 = a light on the floor (I / (I + d²)).
+   * The floor's foreshortening is `config.lighting.groundScaleY`.
    */
   static sourceHeight: Float32Array;
   static hasGlowSprite: Float32Array;

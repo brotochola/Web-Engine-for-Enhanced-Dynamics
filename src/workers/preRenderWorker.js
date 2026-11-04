@@ -64,6 +64,7 @@ import {
     screenBoundsToWorldBounds,
     lightInfluenceRadius,
     lightCookieScale,
+    resolveGroundScaleY,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
@@ -3448,6 +3449,8 @@ class PreRenderWorker extends AbstractWorker {
         const room = cq.x.length;
         const shadowRes = this.config.lighting?.shadowResolution;
         const res = rtPixelScale(this.canvasWidth, rtPixelSize(this.canvasWidth, shadowRes));
+        // The cookie covers the light's pool on the floor: R across, R * groundScaleY tall.
+        const groundY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
         for (let i = 0; i < capL && n < room; i++) {
             const L = lights[i];
             if (!(L.rangeSq > 0) || !(L.intensity > 0)) continue;
@@ -3455,7 +3458,7 @@ class PreRenderWorker extends AbstractWorker {
             cq.y[n] = L.y;
             const scale = lightCookieScale(L.sqrtI);
             cq.scaleX[n] = scale;
-            cq.scaleY[n] = scale;
+            cq.scaleY[n] = scale * groundY;
             cq.alpha[n] = L.intensity / 50000;
             cq.textureId[n] = texId;
             n++;

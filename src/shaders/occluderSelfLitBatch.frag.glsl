@@ -6,6 +6,8 @@ in float vRadius;
 flat in vec4 vLight; // x, y, intensity, radius
 flat in vec4 vColor; // r, g, b, attenuation scale
 out vec4 finalColor;
+// 1 / config.lighting.groundScaleY: distances to the light are measured on the floor.
+uniform float uGroundInvScaleY;
 
 // The self-lit collider fill with the light's terms from the vertex (E-96b). A wedge vertex carries a
 // radius past any light's distance, so its facing term is 1 and it is the visibility fan's fragment.
@@ -23,6 +25,7 @@ float facingMask(vec2 world, vec2 center, float bodyR) {
 
 void main() {
   vec2 delta = vWorldPos - vLight.xy;
+  delta.y *= uGroundInvScaleY;
   float dist = length(delta);
   float radial = 1.0 - smoothstep(vLight.w * 0.96, vLight.w, dist);
   if (radial <= 0.0) discard;

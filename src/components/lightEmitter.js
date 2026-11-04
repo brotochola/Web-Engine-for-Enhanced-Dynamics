@@ -10,6 +10,8 @@ import { lightInfluenceRadius } from '../util/lightRadius.js';
  * - `sourceHeight` lifts the source off the floor without moving its pool: the falloff uses
  *   I / (I + h² + d²), so a lamp post lights a wider, flatter pool than a torch on the ground,
  *   with the same reach. 0 (the default) is the old I / (I + d²).
+ * The floor's foreshortening (an ellipse instead of a circle) is config.lighting.groundScaleY.
+ *
  * Shadow casters and raycasted occluders come from this entity's Collider.visualRange
  * neighbors (not from lightIntensity): an occluder past visualRange does not block
  * the light. Tune visualRange for that reach / cost (`influenceRadius` is the light's

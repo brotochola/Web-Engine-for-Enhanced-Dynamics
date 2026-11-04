@@ -17,6 +17,8 @@ uniform float uSunB;
 uniform float uFlipY;
 uniform sampler2D uShadowMap;
 uniform float uShadowComposite;
+// 1 / config.lighting.groundScaleY: the lights' y arrive in floor units, the fragment's is scaled here once.
+uniform float uGroundInvScaleY;
 
 vec2 weedScreenToWorld(vec2 screenPos) {
   vec2 focus = uCameraPos + uFullCanvasSize / (2.0 * uZoom);
@@ -33,6 +35,7 @@ void main() {
   vec2 normCoord = vec2(gl_FragCoord.x, y) / uViewport;
   vec2 screenPos = normCoord * uFullCanvasSize;
   vec2 fragWorld = weedScreenToWorld(screenPos);
+  fragWorld.y *= uGroundInvScaleY;
   vec3 totalLight = vec3(uBaseAmbient);
   vec3 sunColor = vec3(uSunR, uSunG, uSunB);
   totalLight += sunColor * uSunIntensity;

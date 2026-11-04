@@ -19,6 +19,8 @@ struct ShadowUniforms {
   uLight: vec4<f32>,
   uCam: vec4<f32>,
   uPointScale: f32,
+  // 1 / config.lighting.groundScaleY: a point light's falloff and range are measured on the floor.
+  uGroundInvScaleY: f32,
 }
 @group(2) @binding(0) var uTexture: texture_2d<f32>;
 @group(2) @binding(1) var uSampler: sampler;
@@ -99,7 +101,8 @@ fn mainVert(
   let light = select(uniforms.uLight, aInstLight, aInstLight.w > 0.0);
   if (light.w > 0.0) {
     let d = aInstXY - light.xy;
-    let distSq = dot(d, d);
+    let floorD = vec2<f32>(d.x, d.y * uniforms.uGroundInvScaleY);
+    let distSq = dot(floorD, floorD);
     let rangeSq = light.w;
     if (distSq < 1.0 || distSq > rangeSq) {
       clipOff(&out, aQuad, aInstXY, aInstUV, aInstTileInv, aInstTileOff);
@@ -108,8 +111,10 @@ fn mainVert(
     let invDist = inverseSqrt(distSq);
     let distRatio = clamp(distSq * invDist * 0.00390625, 0.0, 1.0);
     sy = -(0.3 + distRatio * 0.9) * abs(aInstScale.y) * height;
-    c = d.y * invDist;
-    s = -d.x * invDist;
+    // The shadow points away from the light on screen (the floor's projection keeps straight lines).
+    let invScreenDist = inverseSqrt(max(dot(d, d), 1e-6));
+    c = d.y * invScreenDist;
+    s = -d.x * invScreenDist;
     let fade = 1.0 - distSq / rangeSq;
     alpha = clamp(light.z / (light.z + distSq), 0.0, 1.0) * uniforms.uPointScale * fade;
     if (alpha < 0.003) {

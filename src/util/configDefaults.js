@@ -705,6 +705,13 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.
    */
   lightGlow: 'add',
+  /**
+   * How much the floor is foreshortened vertically on screen, in (0, 1]. Light pools are measured on
+   * the floor, so a light reaches R across and R * groundScaleY up and down: an ellipse.
+   * 1 = straight down (round pools), ~0.7 = a 3/4 top-down view, 0.5 = 2:1 isometric.
+   * Applies to point lights, raycasted lights, particle / LiquidFun lights and point-light shadows.
+   */
+  groundScaleY: 1,
   /** Additive radial quads for ParticleEmitter `lightIntensity`. Off unless a scene opts in. */
   particleLights: Object.freeze({
     enabled: false,
