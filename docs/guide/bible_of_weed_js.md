@@ -1158,6 +1158,38 @@ What a turned camera changes:
 - A `setDeadzone` box is measured in the turned view.
 - Spatial `SoundManager.play` pans and fades by screen position, so it follows the turn.
 
+### Light pools on the floor: `groundScaleY` and `sourceHeight`
+
+A light's falloff is `I / (I + d²)`, with `d` measured in world px. Two knobs make that `d` a distance on the floor of a top-down or isometric game.
+
+`config.lighting.groundScaleY` (default `1`) is how much the floor is foreshortened vertically on screen. A circle on the floor is drawn `groundScaleY` times as tall as it is wide, so a light reaches `R` across and `R * groundScaleY` up and down: an ellipse.
+
+| View | `groundScaleY` |
+| --- | --- |
+| Straight down (zenithal) | `1` (round pools, the old behaviour) |
+| 3/4 top-down (people and walls drawn from the front) | about `0.7` |
+| 2:1 isometric / dimetric | `0.5` |
+
+It is one number for the scene, read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point lights, raycasted lights (`lighting.raycasted`), LiquidFun and particle lights, the cookies of shadow-casting lights, and the fade and reach of point-light shadows. The reach `R = 10 * sqrt(I)` and every cull built on it do not change (the ellipse fits inside the old circle). Glow sprites stay round: they are the bulb, not the floor.
+
+`LightEmitter.sourceHeight` (default `0`, world px) is how high the source sits above the floor. The falloff becomes `I / (I + h² + d²)`: the pool keeps its centre and its reach, but it is flatter, like a lamp post rather than a torch on the ground. A floor light is at full strength at its foot; a raised one peaks at `I / (I + h²)` (`I = 4h²` gives 0.8), so raise `lightIntensity` when the foot gets too dim. The three heights do different things:
+
+- `height` moves the whole light, pool included, up the screen.
+- `glowHeightOffset` moves only the glow sprite (put it on the bulb).
+- `sourceHeight` lifts the source without moving anything.
+
+```javascript
+// Scene config: a 3/4 top-down view.
+static config = { lighting: { enabled: true, groundScaleY: 0.7 } };
+
+// A street lamp whose bulb is 110 px above its foot.
+this.lightEmitter.glowHeightOffset = 110; // the glow on the bulb
+this.lightEmitter.sourceHeight = 110;     // the pool lit from up there
+this.lightEmitter.lightIntensity = 30000;  // peaks at 30000 / (30000 + 110²) ≈ 0.71 at the foot
+```
+
+Costs: `groundScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `sourceHeight` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `groundScaleY` makes that gradient steeper; a `sourceHeight` flattens it.
+
 ### Raycasted lighting occluders
 
 With `lighting.raycasted: true` each visible light gets a visibility polygon. A body blocks a light only if both are true:
