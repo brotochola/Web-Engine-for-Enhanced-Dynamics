@@ -219,6 +219,9 @@ export class PredatorScene extends WEED.Scene {
       lightGlow: 'add',
       enabled: true,
       baseAmbient: 0, // Minimum light at night (pitch black without lights)
+      // A 3/4 top-down view: the floor is drawn ~0.7 as tall as it is deep, so light pools are ellipses.
+      // `?groundScaleY=1` shows the round pools of a straight-down view.
+      groundScaleY: predatorPositiveParam('groundScaleY', 0.7),
 
       shadowsEnabled: true,
 
