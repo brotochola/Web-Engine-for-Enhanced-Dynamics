@@ -3797,6 +3797,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightIntensityArr = LightEmitter.lightIntensity;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
     const lightHeight = LightEmitter.height;
+    const sourceHeight = LightEmitter.sourceHeight;
 
     // E-96. Each light's umbra disc, then its visibility fan (the order the per-light meshes were
     // added to the container in, so the additive blend sums in the same sequence), into one mesh.
@@ -3826,12 +3827,21 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const xStart = baseIndex + 4;
       const yStart = xStart + maxVerts;
       const lightY = ly - (lightHeight[lightIdx] || 0);
-      const intensity = lightIntensityArr[lightIdx];
+      // The reach stays the floor-level light's (sourceHeight only lowers the pool): culls and the rim use it.
       const radius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
+      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
+      let intensity = lightIntensityArr[lightIdx];
+      let colorScale = 1;
+      const h = sourceHeight ? sourceHeight[lightIdx] : 0;
+      if (h > 0) {
+        const raised = intensity + h * h;
+        colorScale = intensity / raised;
+        intensity = raised;
+      }
       const color = lightColor[lightIdx];
-      const r = ((color >> 16) & 0xff) / 255;
-      const g = ((color >> 8) & 0xff) / 255;
-      const b = (color & 0xff) / 255;
+      const r = (((color >> 16) & 0xff) / 255) * colorScale;
+      const g = (((color >> 8) & 0xff) / 255) * colorScale;
+      const b = ((color & 0xff) / 255) * colorScale;
 
       // The umbra disc: a quad around the light at the umbra floor.
       const disc = vtx;
@@ -3948,6 +3958,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightIntensityArr = LightEmitter.lightIntensity;
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
+    const sourceHeight = LightEmitter.sourceHeight;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
     const maxVerts = this._selfLitMaxFillVerts;
     const segs = this._selfLitCircleSegs;
@@ -3985,11 +3996,19 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       // Light center: baked into visibility poly; here Transform is fine (lights rarely have RB)
       const lx = Transform.x[light];
       const ly = Transform.y[light] - (lightHeight[light] || 0);
-      const intensity = lightIntensityArr[light];
+      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
+      let intensity = lightIntensityArr[light];
+      let colorScale = 1;
+      const srcH = sourceHeight ? sourceHeight[light] : 0;
+      if (srcH > 0) {
+        const raised = intensity + srcH * srcH;
+        colorScale = intensity / raised;
+        intensity = raised;
+      }
       const color = lightColor[light];
-      const cr = ((color >> 16) & 0xff) / 255;
-      const cg = ((color >> 8) & 0xff) / 255;
-      const cb = (color & 0xff) / 255;
+      const cr = (((color >> 16) & 0xff) / 255) * colorScale;
+      const cg = (((color >> 8) & 0xff) / 255) * colorScale;
+      const cb = ((color & 0xff) / 255) * colorScale;
       const lightR = lightInfluenceRadius(sqrtLightIntensity ? sqrtLightIntensity[light] : 0);
 
       if (vtx + lightVerts > batch.vertCap || iCount + lightIndices > batch.idxCap) {
@@ -4240,6 +4259,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightIntensityArr = LightEmitter.lightIntensity;
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
+    const sourceHeight = LightEmitter.sourceHeight;
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
@@ -4256,11 +4276,19 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
       const lx = Transform.x[lightIdx];
       const ly = Transform.y[lightIdx] - (lightHeight[lightIdx] || 0);
-      const intensity = lightIntensityArr[lightIdx];
+      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
+      let intensity = lightIntensityArr[lightIdx];
+      let colorScale = 1;
+      const srcH = sourceHeight ? sourceHeight[lightIdx] : 0;
+      if (srcH > 0) {
+        const raised = intensity + srcH * srcH;
+        colorScale = intensity / raised;
+        intensity = raised;
+      }
       const color = lightColor[lightIdx];
-      const cr = ((color >> 16) & 0xff) / 255;
-      const cg = ((color >> 8) & 0xff) / 255;
-      const cb = (color & 0xff) / 255;
+      const cr = (((color >> 16) & 0xff) / 255) * colorScale;
+      const cg = (((color >> 8) & 0xff) / 255) * colorScale;
+      const cb = ((color & 0xff) / 255) * colorScale;
 
       // --- Sprite mask fills for this light ---
       if (this._selfLitSpriteProgramOpts) {
@@ -4581,6 +4609,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
     const lightHeight = LightEmitter.height;
+    const sourceHeight = LightEmitter.sourceHeight;
 
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
@@ -4606,18 +4635,29 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const color = lightColor[entityIndex];
       const range = vr ? (vr[entityIndex] || 0) : 0;
 
+      // A source h above the floor: I / (I + h² + d²) = k * I' / (I' + d²) with I' = I + h², k = I / I'.
+      // So the shader keeps one formula: it gets I' and the colour scaled by k.
+      let intensity = lightIntensity[entityIndex];
+      let colorScale = 1;
+      const h = sourceHeight ? sourceHeight[entityIndex] : 0;
+      if (h > 0) {
+        const raised = intensity + h * h;
+        colorScale = intensity / raised;
+        intensity = raised;
+      }
+
       // packLightDataTexel's layout, written here (E-109): where TurboFan left that call out, each of its seven
       // doubles was a heap number per light per frame. World coordinates (the shader converts screen to world),
       // the light raised by its height.
       const i0 = i * 4;
       lightData[i0] = worldX[entityIndex];
       lightData[i0 + 1] = worldY[entityIndex] - (lightHeight[entityIndex] || 0);
-      lightData[i0 + 2] = lightIntensity[entityIndex];
+      lightData[i0 + 2] = intensity;
       lightData[i0 + 3] = range * range;
       const i1 = row1 + i0;
-      lightData[i1] = ((color >> 16) & 0xff) / 255;
-      lightData[i1 + 1] = ((color >> 8) & 0xff) / 255;
-      lightData[i1 + 2] = (color & 0xff) / 255;
+      lightData[i1] = (((color >> 16) & 0xff) / 255) * colorScale;
+      lightData[i1 + 1] = (((color >> 8) & 0xff) / 255) * colorScale;
+      lightData[i1 + 2] = ((color & 0xff) / 255) * colorScale;
       lightData[i1 + 3] = 0;
     }
 

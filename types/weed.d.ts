@@ -3679,6 +3679,7 @@ export declare class LightEmitter extends Component {
     sqrtLightIntensity: typeof Float32Array;
     height: typeof Float32Array;
     glowHeightOffset: typeof Float32Array;
+    sourceHeight: typeof Float32Array;
     hasGlowSprite: typeof Float32Array;
     layerIdOfGlowSprite: typeof Uint8Array;
   };
@@ -3686,8 +3687,15 @@ export declare class LightEmitter extends Component {
   static lightColor: Uint32Array;
   static lightIntensity: Float32Array;
   static sqrtLightIntensity: Float32Array;
+  /** Moves the whole light (pool centre included) up the screen by this many px. */
   static height: Float32Array;
+  /** Moves only the glow sprite up (put it on the bulb). */
   static glowHeightOffset: Float32Array;
+  /**
+   * The source's height above the floor, in px. Widens and softens the pool without moving it or
+   * changing its reach: falloff I / (I + h² + d²). 0 = a light on the floor (I / (I + d²)).
+   */
+  static sourceHeight: Float32Array;
   static hasGlowSprite: Float32Array;
   static layerIdOfGlowSprite: Uint8Array;
   get lightIntensity(): number;

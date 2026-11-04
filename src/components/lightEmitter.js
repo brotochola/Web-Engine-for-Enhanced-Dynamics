@@ -3,6 +3,13 @@ import { lightInfluenceRadius } from '../util/lightRadius.js';
 
 /**
  * Point / glow light on an entity.
+ *
+ * Three heights, three jobs:
+ * - `height` moves the whole light up the screen (pool centre included).
+ * - `glowHeightOffset` moves only the glow sprite (put it on the bulb).
+ * - `sourceHeight` lifts the source off the floor without moving its pool: the falloff uses
+ *   I / (I + h² + d²), so a lamp post lights a wider, flatter pool than a torch on the ground,
+ *   with the same reach. 0 (the default) is the old I / (I + d²).
  * Shadow casters and raycasted occluders come from this entity's Collider.visualRange
  * neighbors (not from lightIntensity): an occluder past visualRange does not block
  * the light. Tune visualRange for that reach / cost (`influenceRadius` is the light's
@@ -14,8 +21,9 @@ export class LightEmitter extends Component {
     lightColor: Uint32Array,
     lightIntensity: Float32Array,
     sqrtLightIntensity: Float32Array,
-    height: Float32Array,
+    height: Float32Array, // moves the light (and its pool) up the screen by this many px
     glowHeightOffset: Float32Array,
+    sourceHeight: Float32Array, // the source's height above the floor: widens and softens the pool, does not move it
     hasGlowSprite: Float32Array, // 0 = no glow; 0.5 = intensity/50000 (default); 1 = twice that alpha
     layerIdOfGlowSprite: Uint8Array, // 0 = inherit entity layerMask; non-zero = that layer id bit only
   };
