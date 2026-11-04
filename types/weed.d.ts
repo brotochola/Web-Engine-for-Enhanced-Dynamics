@@ -3630,6 +3630,8 @@ export declare class DecorationComponent extends Component {
     inheritParentRotation: typeof Uint8Array;
     innerZ: typeof Int8Array;
     sortOffsetY: typeof Float32Array;
+    skewX: typeof Float32Array;
+    skewY: typeof Float32Array;
   };
   static active: Uint8Array;
   static generation: Uint32Array;
@@ -3662,6 +3664,9 @@ export declare class DecorationComponent extends Component {
   static innerZ: Int8Array;
   /** World px added to the y the decoration sorts at; not the y it draws or culls at. */
   static sortOffsetY: Float32Array;
+  /** The shear as set (DX-DECOSKEW); what is drawn is in the facing columns. */
+  static skewX: Float32Array;
+  static skewY: Float32Array;
   static decorationCount: number;
   static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
 }
