@@ -9,6 +9,8 @@ import { BOX2D_MEMORY_MB_DEFAULT } from '../src/box2d/box2dMemory.js';
 import { box2dBlockPages } from '../src/util/box2dEngineBlock.js';
 
 const MB = 1024 * 1024;
+/** Of the 8 squares of attachedDecorationSmokeScene.js, 64 world px each: half of one, whatever the canvas scale. */
+const ATTACHED_SMOKE_MIN_PIXELS = 2000;
 
 /**
  * Box2D's own share of its memory on the page: the whole memory less the pages Phase 4 grew it by for the engine's
@@ -169,6 +171,32 @@ try {
     }
     await page.close();
     console.log(`${sized} ?physicsMemoryMB=${mb}: ${detail} ${ok ? 'OK' : 'FAIL'}`);
+    if (!ok) failed = true;
+  }
+
+  // N-115: the scene above draws no decoration. Here the only sprites are decorations attached to entities, so a
+  // bundle that loses them reads black. Through the bench page, which maps /src/index.js to a dist ESM bundle.
+  for (const bundle of BUNDLE_ARTIFACTS.filter((name) => name.includes('.esm.'))) {
+    const page = await browser.newPage();
+    const url = `http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html?weedBundle=${encodeURIComponent(bundle)}`;
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60000 });
+    await page.waitForFunction(() => Boolean(window.__WEED_BENCHMARK__), undefined, { timeout: 60000 });
+    await page.evaluate(() =>
+      window.__WEED_BENCHMARK__.prepare({
+        warmupMs: 1500,
+        durationMs: 500,
+        sampleIntervalMs: 100,
+        sceneModule: '/tests/helpers/attachedDecorationSmokeScene.js',
+        sceneExport: 'AttachedDecorationSmokeScene',
+        canvasWidth: 640,
+        canvasHeight: 360,
+      }),
+    );
+    await page.waitForTimeout(2500);
+    const { nonBlack } = await analyzePng(page, await captureCanvasPng(page));
+    await page.close();
+    const ok = nonBlack >= ATTACHED_SMOKE_MIN_PIXELS;
+    console.log(`${bundle} attached decorations: ${nonBlack} pixels ${ok ? 'OK' : 'FAIL'}`);
     if (!ok) failed = true;
   }
 } finally {
