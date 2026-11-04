@@ -10407,17 +10407,18 @@
       ],
       "records": [
         "R-0822",
-        "R-0823"
+        "R-0823",
+        "R-0824"
       ]
     },
     {
       "id": "N-115",
       "title": "The debug bundle built in a Linux container (pnpm: webpack 5.109.2, terser 5.49.0) draws no attached decoration in Conurbano-weed",
       "status": "open",
-      "statusText": "found 2026-11-04 building DX-DECOSKEW's dist; open",
+      "statusText": "found 2026-11-04 building DX-DECOSKEW's dist; not seen on the reference machine (terser 5.46.0), where dist was rebuilt; open",
       "date": "2026-11-04",
       "result": "",
-      "next": "Bisect the minified debug bundle (main-thread bundle and worker sources apart) or pin terser to the committed dist's version; add a browser smoke test with an attached decoration.",
+      "next": "pnpm-lock.yaml pins the failing toolchain (terser 5.49.0, webpack 5.109.2) and this machine builds dist with terser 5.46.0, webpack 5.105.0 from an untracked lock: build the debug bundle with the tracked lock's versions here to show it, then bisect or pin. Add a browser smoke test with an attached decoration.",
       "area": "build",
       "kind": "bug",
       "rank": 6,
@@ -18190,6 +18191,18 @@
         "2aec88f7",
         "6ddf857c",
         "225c4b1e"
+      ]
+    },
+    {
+      "id": "R-0824",
+      "date": "2026-11-04",
+      "time": "18:46",
+      "timeFrom": "recorded",
+      "title": "The prod bundle against its sources at PR #7's merge (16264972): equal or better; Boids' sitting failed its load key",
+      "verdict": "passed",
+      "text": "**The prod bundle against its sources at PR #7's merge (16264972, built from c0f84bbb): equal or better; Boids' sitting failed its load key.**\n2026-11-04, 18:24 to 18:46 (the sitting log's stamps), Chrome, headed, detailed stats off, `--full-rev`, one worktree for both sides: A `--src`, B `weed.prod.bundle.esm.min.js` through the bench's `weedBundle` key. The owner's Chrome read 0.6 cores just before the sitting. Pushed before this sitting ended, by the owner: nothing below asks for a correction.\n\n- **Predator, 4 pairs, 18:24 to 18:31: NEUTRAL.** logic 3.375 → 2.898 ms (−13.2 %, 0/4 worse), preRender 3.192 → 2.921 (−9.6 %, 0/4), physics 5.646 → 5.169 (−8.4 %, 1/4), spatial 4.590 → 4.412 (−4.7 %, 1/4), renderer under the floor; loads within 0.4 %, 60.0 fps. Against the others spatial +4.4 % and physics +2.7 %: the workers fell together, and moved bodies split the pairs (the A side 4 751 to 7 549, the B side 5 379 to 7 559), so the two read as ties, not wins.\n- **painterMove, 4 pairs, 18:31 to 18:36: the runner's KEPT.** preRender 16.594 → 15.951 ms (−4.2 %, 0/4 worse), logic 6.502 → 6.044 (−7.1 %, 0/4), renderer 2.077 → 2.072 under the floor; loads equal, 60.0 fps.\n- **Boids, 8 pairs, 18:36 to 18:46: FAIL (load), so it does not count.** VISIBLE_ENTITIES and RENDER_QUEUE_SIZE 5.9 % lower on the bundle's side, past the 5 % gate, with a cv of 14 %: the scene's load is emergent. spatial 6.452 → 6.398 (−0.5 %, 3/8 worse), physics 6.091 → 6.026 (−0.2 %, 4/8), neither of which follows what is on screen; preRender 2.977 → 2.738 under the floor, and that one does follow it. 56.1 → 56.2 fps. Not rerun: it would not change what is asked here, since no scene reads the bundle slower.\n\nThe same sittings do not weigh the shader's division (both sides are this merge): that is R-0823.",
+      "commits": [
+        "16264972"
       ]
     }
   ],
