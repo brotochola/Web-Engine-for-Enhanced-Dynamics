@@ -53,6 +53,7 @@ const REQUIRED = [
   'decorationCollect',
   'decorationCollectYSort',
   'attachedSway',
+  'attachedWalls',
   'textureUpload',
 ];
 
