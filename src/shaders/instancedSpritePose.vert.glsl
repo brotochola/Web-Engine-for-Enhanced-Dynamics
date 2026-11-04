@@ -55,7 +55,10 @@ void main() {
   float c = aInstRotCS.x;
   float s = aInstRotCS.y;
   vec2 spun = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  vec2 sheared = vec2(local.x + local.y * s, local.y);
+  // A shear (c in (1, 2)): x += s * y, y += ky * x, t = (c - 1.5) / 0.4995, ky = t / (1 - |t|) (DX-DECOSKEW: skewMarkerC).
+  float t = (c - 1.5) * 2.002002;
+  float ky = c > 1.0 ? t / (1.0 - abs(t)) : 0.0;
+  vec2 sheared = vec2(local.x + local.y * s, local.y + local.x * ky);
   vec2 xy = mix(aInstPrevXY, aInstXY, uPoseAlpha);
   vec2 world = (c > 1.0 ? sheared : spun) + xy;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;

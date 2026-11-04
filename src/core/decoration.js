@@ -5,7 +5,7 @@ import { ensureDecorationFacade, evictDecorationFacade } from '../util/decoratio
 import { DECORATION_INNER_Z_MIN, DECORATION_INNER_Z_MAX } from '../util/configDefaults.js';
 import { DecorationSpatial } from './decorationSpatial.js';
 import { DecorationPool, decorationNoParent } from './decorationPool.js';
-import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE } from '../util/decorationSway.js';
+import { SWAY_OFF, SWAY_LOOP, SWAY_IMPULSE, skewMarkerC } from '../util/decorationSway.js';
 
 export { SWAY_OFF, SWAY_LOOP, SWAY_LOOP_SKEW, SWAY_IMPULSE } from '../util/decorationSway.js';
 
@@ -204,11 +204,58 @@ export class Decoration {
     if (this._isCurrent()) DecorationComponent.sortOffsetY[this.index] = v;
   }
 
+  /** DX-DECOSKEW. Horizontal shear of the scaled sprite about its anchor: x += skewX·y. 0 = none. */
+  get skewX() {
+    return this._isCurrent() ? DecorationComponent.skewX[this.index] : 0;
+  }
+  set skewX(v) {
+    if (this._isCurrent()) this.setSkew(v, DecorationComponent.skewY[this.index]);
+  }
+
+  /** DX-DECOSKEW. Vertical shear: y += skewY·x (a wall seen at an angle). A sheared decoration does not turn or sway. */
+  get skewY() {
+    return this._isCurrent() ? DecorationComponent.skewY[this.index] : 0;
+  }
+  set skewY(v) {
+    if (this._isCurrent()) this.setSkew(DecorationComponent.skewX[this.index], v);
+  }
+
+  /**
+   * Both shears at once (DX-DECOSKEW). A shear stops the decoration's sway and, attached, its turning with the parent
+   * (inheritParentRotation off); (0, 0) draws it unturned (set its rotation again to turn it).
+   * @param {number} skewX
+   * @param {number} skewY
+   */
+  setSkew(skewX, skewY) {
+    if (!this._isCurrent()) return;
+    const i = this.index;
+    DecorationComponent.skewX[i] = skewX;
+    DecorationComponent.skewY[i] = skewY;
+    const sheared = skewX !== 0 || skewY !== 0;
+    const c = sheared ? skewMarkerC(skewX, skewY) : 1;
+    const s = sheared ? skewX : 0;
+    DecorationComponent.baseRotC[i] = c;
+    DecorationComponent.baseRotS[i] = s;
+    DecorationComponent.rotC[i] = c;
+    DecorationComponent.rotS[i] = s;
+    if (sheared) {
+      DecorationComponent.sway[i] = SWAY_OFF;
+      DecorationComponent.swayPhase[i] = 0;
+      DecorationComponent.inheritParentRotation[i] = 0;
+    }
+  }
+
+  /** Whether a shear stands for this decoration's facing (it then does not turn or sway). */
+  _sheared() {
+    const i = this.index;
+    return DecorationComponent.skewX[i] !== 0 || DecorationComponent.skewY[i] !== 0;
+  }
+
   get sway() {
     return this._isCurrent() ? DecorationComponent.sway[this.index] !== 0 : false;
   }
   set sway(v) {
-    if (!this._isCurrent()) return;
+    if (!this._isCurrent() || this._sheared()) return;
     DecorationComponent.sway[this.index] = v ? SWAY_LOOP : SWAY_OFF;
     if (!v) DecorationComponent.swayPhase[this.index] = 0;
   }
@@ -235,7 +282,7 @@ export class Decoration {
    * @param {number} frequency - Speed multiplier (same as continuous swayFrequency)
    */
   impulseSway(amplitude, frequency) {
-    if (!this._isCurrent()) return;
+    if (!this._isCurrent() || this._sheared()) return;
     const i = this.index;
     if (DecorationComponent.sway[i] !== SWAY_OFF) return;
 
@@ -246,12 +293,12 @@ export class Decoration {
   }
 
   get rotation() {
-    if (!this._isCurrent()) return 0;
+    if (!this._isCurrent() || this._sheared()) return 0;
     const i = this.index;
     return Math.atan2(DecorationComponent.rotS[i], DecorationComponent.rotC[i]);
   }
   set rotation(v) {
-    if (!this._isCurrent()) return;
+    if (!this._isCurrent() || this._sheared()) return;
     const i = this.index;
     DecorationComponent.rotC[i] = Math.cos(v);
     DecorationComponent.rotS[i] = Math.sin(v);
@@ -260,12 +307,12 @@ export class Decoration {
   }
 
   get baseRotation() {
-    if (!this._isCurrent()) return 0;
+    if (!this._isCurrent() || this._sheared()) return 0;
     const i = this.index;
     return Math.atan2(DecorationComponent.baseRotS[i], DecorationComponent.baseRotC[i]);
   }
   set baseRotation(v) {
-    if (!this._isCurrent()) return;
+    if (!this._isCurrent() || this._sheared()) return;
     const i = this.index;
     DecorationComponent.baseRotC[i] = Math.cos(v);
     DecorationComponent.baseRotS[i] = Math.sin(v);
@@ -275,7 +322,7 @@ export class Decoration {
 
   /** Facing as unit complex (no atan2/cos/sin). */
   setBaseRotCS(c, s) {
-    if (!this._isCurrent()) return;
+    if (!this._isCurrent() || this._sheared()) return;
     const i = this.index;
     DecorationComponent.baseRotC[i] = c;
     DecorationComponent.baseRotS[i] = s;

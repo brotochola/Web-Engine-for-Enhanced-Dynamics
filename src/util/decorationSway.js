@@ -11,6 +11,27 @@ export const SWAY_LOOP_SKEW = 3;
 /** Not a cosine (|c| ≤ 1) and under the shadow discard (|c| > 2). */
 export const SWAY_SKEW_C = 1.5;
 
+/** DX-DECOSKEW: how far the marker goes from SWAY_SKEW_C, short of 1 and 2. */
+export const SKEW_C_SPAN = 0.4995;
+/** A larger shear than this is held here (the marker is then 2^-23 from its end). */
+const SKEW_MAX = 1e6;
+
+/**
+ * DX-DECOSKEW. The facing a sheared decoration is drawn with: rotC (c) in (1, 2) says "shear, not turn", as a shear
+ * sway's SWAY_SKEW_C does, and its distance from SWAY_SKEW_C carries the vertical shear, c = 1.5 + SPAN · t with
+ * t = skewY / (1 + |skewY|) in (−1, 1). The sprite shader reads it back with one division and no trigonometry:
+ * t = (c − 1.5) / SPAN, skewY = t / (1 − |t|). rotS carries the horizontal one (skewX). At skewY 0 it is SWAY_SKEW_C
+ * itself. 0 when there is no shear at all.
+ * @param {number} skewX
+ * @param {number} skewY
+ * @returns {number}
+ */
+export function skewMarkerC(skewX, skewY) {
+  if (skewX === 0 && skewY === 0) return 0;
+  const ky = skewY > SKEW_MAX ? SKEW_MAX : skewY < -SKEW_MAX ? -SKEW_MAX : skewY;
+  return SWAY_SKEW_C + (SKEW_C_SPAN * ky) / (1 + (ky < 0 ? -ky : ky));
+}
+
 /** Same scale as continuous: sin(accumulatedTimeMs * 0.002 * freq) */
 export const SWAY_ANGLE_PER_MS = 0.002;
 
