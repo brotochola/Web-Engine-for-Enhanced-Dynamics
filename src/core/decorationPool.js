@@ -26,7 +26,7 @@ import {
 } from '../util/configDefaults.js';
 import { entityIdNone } from '../util/entityIdWidth.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
-import { bucketFromSwayFrequency, swayFrequencyForBucket, SWAY_LOOP, SWAY_LOOP_SKEW } from '../util/decorationSway.js';
+import { bucketFromSwayFrequency, swayFrequencyForBucket, skewMarkerC, SWAY_LOOP, SWAY_LOOP_SKEW } from '../util/decorationSway.js';
 
 export {
   DECORATION_Y_SORT_SCALE,
@@ -52,7 +52,7 @@ export {
 } from '../util/decorationSway.js';
 
 /** The spawn config keys spawnMany also takes as arrays, one value per decoration. */
-const PER_DECORATION_KEYS = Object.freeze(['x', 'y', 'texture', 'scaleX', 'scaleY', 'rotation', 'alpha', 'tint', 'sortOffsetY']);
+const PER_DECORATION_KEYS = Object.freeze(['x', 'y', 'texture', 'scaleX', 'scaleY', 'rotation', 'alpha', 'tint', 'sortOffsetY', 'skewX', 'skewY']);
 
 const isValueList = (value) => Array.isArray(value) || ArrayBuffer.isView(value);
 
@@ -336,6 +336,9 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {number} [config.offsetY=0] - Draw offset Y: the sprite draws at y + offsetY; it sorts and culls at y
    * @param {number} [config.sortOffsetY=0] - World px added to the y it sorts at (its y, or its parent's sort line
    *   when attached), not to the y it draws or culls at, and not turned with the parent: a tall piece sorts at its foot
+   * @param {number} [config.skewX=0] - Horizontal shear of the scaled sprite about its anchor: x += skewX·y (DX-DECOSKEW)
+   * @param {number} [config.skewY=0] - Vertical shear: y += skewY·x. A sheared decoration does not turn or sway: its
+   *   rotation and sway are left out, and attached it hangs at parent + local, unturned (inheritParentRotation off)
    * @param {boolean} [config.sway=false] - Enable sway animation
    * @param {boolean} [config.swaySkew=false] - Shear the sway instead of rotating it
    * @param {number} [config.swayAmplitude=0.025] - Sway rotation in radians (~1.4°)
@@ -468,6 +471,21 @@ export class DecorationPool extends SharedAtomicPool {
       rotC[i] = c;
       rotS[i] = s;
     }
+    // DX-DECOSKEW: a sheared decoration's facing is its shear (skewMarkerC, skewX), not a rotation, and it hangs
+    // unturned (no parent rotation, no sway), so the attachment pass and the sway leave the facing as written here.
+    const kx = config.skewX ?? 0;
+    const ky = config.skewY ?? 0;
+    DecorationComponent.skewX[i] = kx;
+    DecorationComponent.skewY[i] = ky;
+    const sheared = kx !== 0 || ky !== 0;
+    if (sheared) {
+      const c = skewMarkerC(kx, ky);
+      baseRotC[i] = c;
+      baseRotS[i] = kx;
+      rotC[i] = c;
+      rotS[i] = kx;
+      inheritParentRotation[i] = 0;
+    }
     alpha[i] = randomRange(config.alpha, 1);
     tint[i] = config.tint ?? 0xffffff;
     anchorX[i] = config.anchorX ?? 0.5;
@@ -475,7 +493,7 @@ export class DecorationPool extends SharedAtomicPool {
     decorationTextureId[i] = textureId;
 
     // Sway animation. Buckets > 1: store the grid frequency the particle worker already uses.
-    sway[i] = config.swaySkew ? SWAY_LOOP_SKEW : config.sway ? SWAY_LOOP : 0;
+    sway[i] = sheared ? 0 : config.swaySkew ? SWAY_LOOP_SKEW : config.sway ? SWAY_LOOP : 0;
     swayAmplitude[i] = config.swayAmplitude ?? 0.025;
     {
       const freq = config.swayFrequency ?? 1.0;
@@ -517,7 +535,7 @@ export class DecorationPool extends SharedAtomicPool {
   /**
    * Spawn multiple decorations at once (batch spawn)
    *
-   * Any of x, y, texture, scaleX, scaleY, rotation, alpha, tint and sortOffsetY may be an array or a typed array instead: one
+   * Any of x, y, texture, scaleX, scaleY, rotation, alpha, tint, sortOffsetY, skewX and skewY may be an array or a typed array instead: one
    * value per decoration, decoration i taking element i (a scene file's decorations load this way, one call per
    * class). count then defaults to the first such array's length, and `out`, when given, receives each decoration's
    * pool index (the first `spawned` of its entries).

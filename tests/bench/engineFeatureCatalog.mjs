@@ -657,6 +657,17 @@ export const ENGINE_FEATURES = [
     load: [],
   },
   {
+    id: 'attachedWalls',
+    name: 'Attached wall pieces placed, half sheared',
+    module: 'src/workers/particleWorker.js',
+    // DX-DECOSKEW: the same pass over 40 000 still, unturned pieces, every other one sheared (skewY) where the columns
+    // exist; a rev without them places the same pieces unsheared.
+    kernel: { script: 'tests/bench/attachedSwayMicrobench.mjs', opsKey: 'cases.walls.opsPerSec' },
+    scene: null,
+    primary: ['particle_STEP_MS'],
+    load: [],
+  },
+  {
     id: 'textureUpload',
     name: 'Shared picture upload',
     module: 'src/render/sharedTextureUpload.js',

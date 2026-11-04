@@ -10,12 +10,17 @@
  * The checksum is every decoration's x and y and the on-screen ones' rotC and rotS: a revision that leaves the
  * off-screen ones unswayed writes the same.
  *
+ * Case `walls` (DX-DECOSKEW): the same pass over a house's wall pieces as Conurbano-weed hangs them: no sway, no base
+ * rotation, unturned parents, half of them sheared (skewY, a wall at a heading; hung unturned, as spawn does) where
+ * DecorationComponent has the shear columns; on a rev without them none is, which is the baseline a sheared piece is
+ * weighed against. Its checksum is the positions.
+ *
  *   node tests/bench/attachedSwayMicrobench.mjs [--n 40000] [--check] [--output path]
  *   node tests/bench/runKernelsVsRev.mjs --vs <rev> --only attachedSway
  */
 import { DecorationComponent } from '../../src/components/decorationComponent.js';
 import { Transform } from '../../src/components/transform.js';
-import { SWAY_LOOP } from '../../src/util/decorationSway.js';
+import * as decorationSway from '../../src/util/decorationSway.js';
 import { setupSwayKernel } from './decorationSwayWasmMicrobench.mjs';
 import { checksumFloats, isCli, mulberry32, parseArgs, timeIt, warmNormalCompile, writeReport } from './microbenchHelpers.mjs';
 
@@ -61,7 +66,7 @@ export async function setupAttachedSway(opts = {}) {
     D.inheritParentRotation[i] = 1;
     D.baseRotC[i] = Math.cos(rotation);
     D.baseRotS[i] = Math.sin(rotation);
-    D.sway[i] = SWAY_LOOP;
+    D.sway[i] = decorationSway.SWAY_LOOP;
     D.swayAmplitude[i] = 0.16 + Math.abs(rotation) * 0.05;
     D.swayFrequency[i] = 0.85 + (i % 8) * 0.15;
     D.swayPhase[i] = 0;
@@ -70,6 +75,19 @@ export async function setupAttachedSway(opts = {}) {
   }
   const onScreen = Int32Array.from(shown);
   const facing = new Float32Array(onScreen.length * 2);
+  if (opts.walls) {
+    // Wall pieces: unturned and still, every other one sheared where the columns exist.
+    const shear = Boolean(D.ARRAY_SCHEMA.skewX);
+    for (let i = 0; i < n; i++) {
+      D.sway[i] = 0;
+      const ky = shear && i % 2 === 0 ? ((i % 13) - 6) * 0.25 : 0;
+      D.baseRotC[i] = ky === 0 ? 1 : decorationSway.skewMarkerC(0, ky);
+      D.baseRotS[i] = 0;
+      // As spawn hangs them: a sheared piece unturned by its parent.
+      D.inheritParentRotation[i] = ky === 0 ? 1 : 0;
+      if (shear) D.skewY[i] = ky;
+    }
+  }
 
   const frame = () => worker.resolveAttachedDecorations(DT);
   const checksum = () => {
@@ -77,42 +95,57 @@ export async function setupAttachedSway(opts = {}) {
       facing[2 * k] = D.rotC[onScreen[k]];
       facing[2 * k + 1] = D.rotS[onScreen[k]];
     }
+    if (opts.walls) return (checksumFloats(D.x, n) ^ checksumFloats(D.y, n)) >>> 0;
     return (checksumFloats(D.x, n) ^ checksumFloats(D.y, n) ^ checksumFloats(facing)) >>> 0;
   };
   return { worker, n, parents, onScreen: onScreen.length, frame, checksum };
 }
 
-async function main() {
-  const args = parseArgs();
-  const s = await setupAttachedSway({ n: Number(args.n ?? DECOS) });
+/** One case, timed after short passes over the first 64 decorations (normal compiles, not OSR). */
+async function timeCase(label, opts) {
+  const s = await setupAttachedSway(opts);
   s.frame();
   const checksum = s.checksum();
-  if (args.check) {
-    console.log(`checksum ${checksum} decorations ${s.n} on screen ${s.onScreen}`);
-    return;
-  }
-  // Normal compiles, not OSR: short passes over the first 64 decorations of the snapshot.
   const { worker } = s;
   const count = worker._activeDecorationSnapshotCount;
   worker._activeDecorationSnapshotCount = 64;
   warmNormalCompile(s.frame);
   worker._activeDecorationSnapshotCount = count;
-  const cases = {
-    resolve: timeIt(`attached sway (${s.n} decorations, ${s.onScreen} on screen)`, s.frame, { iterations: 20, warmup: 5 }),
-  };
+  const timed = timeIt(`${label} (${s.n} decorations, ${s.onScreen} on screen)`, s.frame, { iterations: 20, warmup: 5 });
   s.frame();
-  if (s.checksum() !== checksum) throw new Error('the timed passes wrote other values');
+  if (s.checksum() !== checksum) throw new Error(`${label}: the timed passes wrote other values`);
+  return { s, checksum, timed };
+}
+
+async function main() {
+  const args = parseArgs();
+  const n = Number(args.n ?? DECOS);
+  if (args.check) {
+    for (const walls of [false, true]) {
+      const s = await setupAttachedSway({ n, walls });
+      s.frame();
+      console.log(`${walls ? 'walls' : 'resolve'}: checksum ${s.checksum()} decorations ${s.n} on screen ${s.onScreen}`);
+    }
+    return;
+  }
+  const resolve = await timeCase('attached sway', { n });
+  const walls = await timeCase('attached walls', { n, walls: true });
   const report = {
     feature: 'attached-decoration-sway',
     functions: ['ParticleWorker.resolveAttachedDecorations'],
-    decorations: s.n,
-    parents: s.parents,
-    onScreen: s.onScreen,
-    checksum,
-    cases,
+    decorations: resolve.s.n,
+    parents: resolve.s.parents,
+    onScreen: resolve.s.onScreen,
+    checksum: (resolve.checksum ^ walls.checksum) >>> 0,
+    cases: { resolve: resolve.timed, walls: walls.timed },
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${checksum} ${cases.resolve.opsPerSec.toFixed(1)} ops/s (${(1000 / cases.resolve.opsPerSec).toFixed(3)} ms a pass)`);
+  else {
+    for (const [name, c] of Object.entries(report.cases)) {
+      console.log(`${name}: ${c.opsPerSec.toFixed(1)} ops/s (${(1000 / c.opsPerSec).toFixed(3)} ms a pass)`);
+    }
+    console.log(`checksum ${report.checksum}`);
+  }
 }
 
 if (isCli(import.meta.url)) await main();

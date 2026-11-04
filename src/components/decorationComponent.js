@@ -57,6 +57,15 @@ export class DecorationComponent extends Component {
     // World px added to the y the decoration sorts at (its own y, or its parent's sort line when attached); the y it
     // is drawn and culled at stays. Lets a tall piece sort at its foot and cull at its centre.
     sortOffsetY: Float32Array,
+
+    // === Shear (DX-DECOSKEW) ===
+    // The scaled sprite, about its anchor: x += skewX·y, y += skewY·x (a wall seen at an angle: vertical lines stay
+    // vertical, the horizontal ones slant). As set; what is drawn is in the facing columns: a sheared decoration does
+    // not turn or sway (attached, it hangs unturned: inheritParentRotation 0), and its baseRotC/rotC hold skewMarkerC
+    // (in (1.01, 1.99), which the sprite shader reads as a shear) and its baseRotS/rotS skewX, copied to the render queue
+    // like any facing. No pass reads these two columns.
+    skewX: Float32Array,
+    skewY: Float32Array,
   };
 
   // Static pool tracking (set during initialization)

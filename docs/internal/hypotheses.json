@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-03",
+  "updated": "2026-11-04",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -10384,6 +10384,77 @@
       ],
       "records": [],
       "rank": 22
+    },
+    {
+      "id": "DX-DECOSKEW",
+      "title": "Decorations: skewX and skewY, a shear of the sprite drawn in its facing",
+      "status": "kept-hygiene",
+      "statusText": "asked 2026-11-04 (Conurbano-weed: houses from flat pieces, one texture for every heading), done the same day (7ab3153), fixed in its review (N-116, 6ddf857c); kernels tie (R-0822); the scene pair under the floor and Predator neutral on the reference machine (R-0823)",
+      "date": "2026-11-04",
+      "result": "skewX / skewY shear a decoration's scaled sprite about its anchor (x += skewX·y, y += skewY·x). Drawn in the facing as a shear sway was: baseRotC = rotC = skewMarkerC (1.5 + 0.49·skewY/(1+|skewY|)), rotS = skewX; the four sprite shaders read a cosine past 1.005 as a shear, skewY back with one division. A sheared decoration does not turn or sway and hangs unturned, so pre-render and the particle worker are unchanged and no pass reads the new columns. Kernels against main: attachedSway +8.7 % (code unchanged), attachedWalls -1.3 %, decorationCollectYSort -0.8 %: ties. A first design reading a skewC column in the collect cost decorationCollect -24 % unsheared.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-DECOSKEW"
+      ],
+      "aliases": [
+        "skewX",
+        "skewY",
+        "skewMarkerC",
+        "wall pieces",
+        "shear"
+      ],
+      "records": [
+        "R-0822",
+        "R-0823"
+      ]
+    },
+    {
+      "id": "N-115",
+      "title": "The debug bundle built in a Linux container (pnpm: webpack 5.109.2, terser 5.49.0) draws no attached decoration in Conurbano-weed",
+      "status": "open",
+      "statusText": "found 2026-11-04 building DX-DECOSKEW's dist; open",
+      "date": "2026-11-04",
+      "result": "",
+      "next": "Bisect the minified debug bundle (main-thread bundle and worker sources apart) or pin terser to the committed dist's version; add a browser smoke test with an attached decoration.",
+      "area": "build",
+      "kind": "bug",
+      "rank": 6,
+      "refs": [
+        "REVIEW_PLAN.md#N-115"
+      ],
+      "aliases": [
+        "terser",
+        "debug bundle",
+        "attached decorations not drawn",
+        "make_bundle"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-116",
+      "title": "PR #7's sprite shaders read a swayed facing past 1 as a shear: plain swaying decorations drew as lines across the screen, with no skew in the scene",
+      "status": "kept-hygiene",
+      "statusText": "found 2026-11-04 reviewing PR #7, fixed the same day before it merged (6ddf857c)",
+      "date": "2026-11-04",
+      "result": "A swayed facing is not a unit pair: under 0.08 rad the sway composes (1, delta), so c reaches 1.0032, and 7ab3153 read c past 1 through t/(1-|t|), a slope from -185 to infinite. 1.73 % of attachedSway's on-screen decorations, 41.75 % with base angles of ±0.05 rad. Fixed: marker in (1.01, 1.99), shaders decide at SKEW_C_MIN = 1.005; the tests read the numbers from the shaders and run the real attached pass and sway kernel.",
+      "next": "",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-116"
+      ],
+      "aliases": [
+        "SKEW_C_MIN",
+        "SKEW_C_SPAN",
+        "swayed facing past 1",
+        "lines across the screen",
+        "small angle"
+      ],
+      "records": [
+        "R-0823"
+      ]
     }
   ],
   "records": [
@@ -18092,6 +18163,33 @@
         "3f995964",
         "18bcb7b3",
         "89986dc4"
+      ]
+    },
+    {
+      "id": "R-0822",
+      "date": "2026-11-04",
+      "time": "15:13",
+      "timeFrom": "recorded",
+      "title": "DX-DECOSKEW: skewX / skewY drawn in the facing (7ab3153); CPU passes unchanged, kernels tie against main",
+      "verdict": "kept-hygiene",
+      "text": "**DX-DECOSKEW: a decoration's skewX / skewY, drawn in its facing (7ab3153); the CPU passes are unchanged and the kernels tie against main.**\n2026-11-04, at the owner's ask, for Conurbano-weed (houses drawn from flat pieces). A cloud container, 2 vCPUs, Node and headless Chromium (SwiftShader), not the reference machine: every reading below is a screen. `runKernelsVsRev.mjs --vs origin/main` (3c564ed), 7 rounds a side, after one warm-up process; both sides' checksums equal.\n\n- **Shipped design** (the shear in baseRotC/rotC and baseRotS/rotS, written at spawn and by the facade; sheared decorations hang unturned and do not sway): `preRenderWorker.js` and `particleWorker.js` are main's byte for byte. attachedSway 563 → 612 ops/s (+8.7 %, rounds won 57 %, the code identical: the container's spread), attachedWalls (8087b4d: 40 000 still pieces, every other one sheared and hung unturned; main draws them unsheared) 915 → 903 (−1.3 %, 47 %), decorationCollectYSort 360 → 357 (−0.8 %, 49 %): ties.\n- **First design, dropped:** a third column `skewC` read in `_writeRenderable` for every collected decoration. decorationCollect (40 000 visible, the list shuffled) 386 → 294 ops/s with none sheared (−24 %, rounds won 22 %; a TIE only by the base's 222–440 spread), decorationCollectYSort −2.6 %, the all-sheared case −12.5 % (WORSE): in random order the extra column is a cache miss per decoration. A `bc > 1` branch in the attachment pass (to keep a sheared facing under a turned parent) then cost attachedWalls −4.0 % (rounds won 29 %) where sheared and unsheared pieces alternate without a pattern; hanging sheared decorations unturned removed it.\n- **Shader:** skewY comes back with one division (t = (c − 1.5) / 0.4995, ky = t / (1 − |t|)), no tan: a first version used tan((c − 1.5)·π), and the vertex shader runs for every sprite.\n- **Drawn:** decoSkewStressScene (8087b4d) `?zoom=2.2`, WebGL on SwiftShader: rows of sheared pieces meet without a seam, vertical edges stay vertical, the leaning rows are parallelograms. WebGPU: both instancedSprite.wgsl and instancedSpritePose.wgsl compile on a main-thread device with no message; the scene's WebGPU run loses its device in the renderer worker on main as on the branch (the container), so it draws nothing here.\n- **Tests:** decorationSkew.test.js (marker round trip within 2.5e-7·(1+|ky|)², spawn/spawnMany/addDecoration/facade, rotation and sway left alone, hung unturned under a turned parent, the collect's copy read as the shear). Node suite: 2218 pass; 3 fail as on main or under load (createWeedGame's dev server, N-114; queryWake and waitMeterParity pass alone on both sides).\n\nHygiene keep (a feature with no CPU cost). To run on the reference machine, headed and one at a time: `runPredatorAbab --scene /tests/bench/stressScenes/decoSkewStressScene.js --scene-export DecoSkewStressScene --query skew=1 --vs 3c564ed --hyp-rev 7ab3153` (owners renderer, then preRender) with its A/A, and Predator's gate (the shared sprite shader).",
+      "commits": [
+        "7ab3153",
+        "8087b4d"
+      ]
+    },
+    {
+      "id": "R-0823",
+      "date": "2026-11-04",
+      "time": "18:12",
+      "timeFrom": "recorded",
+      "title": "PR #7's review: N-116 fixed before the merge (6ddf857c); DX-DECOSKEW's scene pair under the floor, Predator's gate neutral",
+      "verdict": "kept-hygiene",
+      "text": "**PR #7's review on the reference machine: N-116 found and fixed before the merge; DX-DECOSKEW's scene pair under the floor, Predator's gate neutral.**\n2026-11-04, the PR's head 805f50cd reviewed, the fixes 2aec88f7, 6ddf857c, 225c4b1e added on the branch. Windows, 16 threads, NVIDIA Turing, Chrome headed. The owner's Chrome held a steady 2.8 to 2.9 cores in the 12 s just before the sitting (one process at 2.4); it was not sampled during it.\n\n- **N-116, at the PR's head, on the real passes, no skew in the scene:** the sway composes an angle under 0.08 rad as (1, delta), so a swayed facing passes c = 1 (max 1.0032), and the PR's shaders read c past 1 as a marker. `attachedSwayMicrobench`'s setup (40 000 decorations, base angles to ±0.8 rad, one clock time, read over 600 frames): 1.73 % of the on-screen ones past 1, |slope| 100 to 493 449. Base angles of ±0.05 rad, amplitude 0.06: 41.75 % past 1, |slope| 100 to 8 388 609. Drawn in Chromium (a scene of 120 world-owned and 180 attached bars, no skew): main draws bars; the PR draws bars with lines through the whole canvas, on both paths. After the fix the scene draws as main.\n- **The fix:** marker in (1.01, 1.99) (SKEW_C_SPAN 0.49), shaders decide at SKEW_C_MIN = 1.005. `decorationSkew.test.js`: 8 tests, reading the numbers from the four shaders; the attached-pass and sway-kernel tests fail with the threshold back at 1.\n- **Suites:** at 805f50cd the node suite failed 1 of 2221, deterministically: `attachedWalls` in the catalog and not in `engineFeatureCatalog.test.js`'s list (not among the three the PR named). After the fixes 2224 of 2224, demos 100 of 100.\n- **Drawn:** `decoSkewStressScene` `?zoom=2.2&n=6000` on the fix: WebGL seamless, and WebGPU seamless on the real adapter (page reads backend webgpu, adapter nvidia turing, no uncaptured error, no device lost, no shader message). The container could not run this one.\n- **Scene pair, 4 pairs, ABAB from worktrees, headed, 17:52 to 17:59** (`decoSkewStressScene` `?skew=1&n=60000`, 60 400 decorations, 3c564ed3 against 225c4b1e, owner renderer): every worker under the 3 ms floor, not judged. Renderer 0.784 → 0.812 ms (pairs 0.754/0.754, 0.793/0.810, 0.849/0.820, 0.830/0.806), preRender 2.880 → 2.882, particle 0.595 → 0.595, presented 60.0 fps both sides. `n` is at the scene's cap, so the floor cannot be met by its knob: the shader's added division lands on the GPU, which STEP_MS does not see; what can be said is that no frame was lost.\n- **A/A, 4 pairs, 17:59 to 18:05:** renderer 0.800 → 0.800, preRender 2.658 → 2.574 (−3.2 %), particle 0.640 → 0.710 (+11 %), all under the floor: the detection limit on this scene tonight is wider than the pair's moves.\n- **Predator's gate, 4 pairs, 18:05 to 18:11 (shared sprite shader):** NEUTRAL, loads within 0.1 % (ACTIVE_PARTICLES −5.0 % under its floor), 60.0 fps both sides. logic 4.189 → 4.133 (paired +3.5 %, 2 of 4 worse), spatial 5.939 → 5.876 (+0.5 %), physics 6.758 → 6.708 (−0.3 %), renderer 3.176 → 3.106 (paired +4.6 %, 3 of 4 worse, cv 17 %, +0.6 % against the other workers), preRender 4.175 → 4.119 (+1.7 %, 3 of 4). The runner: not blocking. The workers move together (cv 15 to 21 %), and logic and spatial cannot be reached by a vertex shader: drift, the gate's 8 to 13 % run to run.\n\nHygiene keep stands for DX-DECOSKEW (nothing primary 3 % worse past the drift); N-116 is a bug fix before the merge.",
+      "commits": [
+        "2aec88f7",
+        "6ddf857c",
+        "225c4b1e"
       ]
     }
   ],

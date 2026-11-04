@@ -82,8 +82,13 @@ fn mainVert(
   let c = aInstRotCS.x;
   let s = aInstRotCS.y;
   let spun = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
-  let sheared = vec2<f32>(local.x + local.y * s, local.y);
-  let world = select(spun, sheared, c > 1.0) + aInstXY;
+  // A shear (c past 1.005, which a swayed facing never reaches and every marker does: SKEW_C_MIN): x += s * y, y += ky * x,
+  // t = (c - 1.5) / 0.49, ky = t / (1 - |t|) (DX-DECOSKEW: skewMarkerC).
+  let isShear = c > 1.005;
+  let t = (c - 1.5) * 2.0408163;
+  let ky = select(0.0, t / (1.0 - abs(t)), isShear);
+  let sheared = vec2<f32>(local.x + local.y * s, local.y + local.x * ky);
+  let world = select(spun, sheared, isShear) + aInstXY;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(world, 1.0);
   out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);

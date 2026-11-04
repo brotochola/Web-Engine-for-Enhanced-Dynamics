@@ -922,6 +922,14 @@ export interface DecorationSpawnConfig {
    * sprite or with a feet-anchored one), not to the y it draws or culls at, and not turned with the parent. Default 0.
    */
   sortOffsetY?: number;
+  /**
+   * Horizontal shear of the scaled sprite about its anchor, x += skewX·y (DX-DECOSKEW). Default 0. A sheared decoration
+   * does not turn or sway: its `rotation` and `sway` are left out, and attached it hangs at parent + local, unturned
+   * (`inheritParentRotation` off).
+   */
+  skewX?: number;
+  /** Vertical shear, y += skewY·x: a wall seen at an angle (vertical lines stay vertical). Default 0. */
+  skewY?: number;
   sway?: boolean;
   /** Shear the sway instead of turning the sprite (it then ignores `rotation` and the parent's). */
   swaySkew?: boolean;
@@ -940,11 +948,14 @@ export interface DecorationSpawnConfig {
 }
 
 /**
- * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha, tint and sortOffsetY may also be
- * arrays (or typed arrays) with one value per decoration. count then defaults to the first array's length.
+ * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha, tint, sortOffsetY, skewX and skewY
+ * may also be arrays (or typed arrays) with one value per decoration. count then defaults to the first array's length.
  */
 export interface DecorationSpawnManyConfig
-  extends Omit<DecorationSpawnConfig, 'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint' | 'sortOffsetY'> {
+  extends Omit<
+    DecorationSpawnConfig,
+    'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint' | 'sortOffsetY' | 'skewX' | 'skewY'
+  > {
   count?: number;
   x?: WeedNumOrRange | ArrayLike<number>;
   y?: WeedNumOrRange | ArrayLike<number>;
@@ -955,6 +966,8 @@ export interface DecorationSpawnManyConfig
   alpha?: WeedNumOrRange | ArrayLike<number>;
   tint?: number | ArrayLike<number>;
   sortOffsetY?: number | ArrayLike<number>;
+  skewX?: number | ArrayLike<number>;
+  skewY?: number | ArrayLike<number>;
   /** With per-decoration arrays: receives each spawned decoration's pool index, in order. */
   out?: Int32Array | Uint32Array | number[];
 }
@@ -3617,6 +3630,8 @@ export declare class DecorationComponent extends Component {
     inheritParentRotation: typeof Uint8Array;
     innerZ: typeof Int8Array;
     sortOffsetY: typeof Float32Array;
+    skewX: typeof Float32Array;
+    skewY: typeof Float32Array;
   };
   static active: Uint8Array;
   static generation: Uint32Array;
@@ -3649,6 +3664,9 @@ export declare class DecorationComponent extends Component {
   static innerZ: Int8Array;
   /** World px added to the y the decoration sorts at; not the y it draws or culls at. */
   static sortOffsetY: Float32Array;
+  /** The shear as set (DX-DECOSKEW); what is drawn is in the facing columns. */
+  static skewX: Float32Array;
+  static skewY: Float32Array;
   static decorationCount: number;
   static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
 }
@@ -4064,6 +4082,14 @@ export declare class Decoration {
   /** World px added to the y it sorts at (its own, or its parent's sort line when attached); not where it draws or culls. */
   get sortOffsetY(): number;
   set sortOffsetY(v: number);
+  /** Horizontal shear about the anchor, x += skewX·y (DX-DECOSKEW). A sheared decoration does not turn or sway. */
+  get skewX(): number;
+  set skewX(v: number);
+  /** Vertical shear about the anchor, y += skewY·x. */
+  get skewY(): number;
+  set skewY(v: number);
+  /** Both shears (a shear stops its sway); (0, 0) draws it unturned, and its rotation can be set again. */
+  setSkew(skewX: number, skewY: number): void;
   get sway(): boolean;
   set sway(v: boolean);
   get swayAmplitude(): number;
