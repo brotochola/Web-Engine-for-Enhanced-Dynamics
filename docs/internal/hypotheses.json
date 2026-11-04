@@ -10408,6 +10408,28 @@
       "records": [
         "R-0822"
       ]
+    },
+    {
+      "id": "N-115",
+      "title": "The debug bundle built in a Linux container (pnpm: webpack 5.109.2, terser 5.49.0) draws no attached decoration in Conurbano-weed",
+      "status": "open",
+      "statusText": "found 2026-11-04 building DX-DECOSKEW's dist; open",
+      "date": "2026-11-04",
+      "result": "",
+      "next": "Bisect the minified debug bundle (main-thread bundle and worker sources apart) or pin terser to the committed dist's version; add a browser smoke test with an attached decoration.",
+      "area": "build",
+      "kind": "bug",
+      "rank": 6,
+      "refs": [
+        "REVIEW_PLAN.md#N-115"
+      ],
+      "aliases": [
+        "terser",
+        "debug bundle",
+        "attached decorations not drawn",
+        "make_bundle"
+      ],
+      "records": []
     }
   ],
   "records": [
