@@ -79,6 +79,8 @@ enum {
      and the records' epoch (a value, from 1: pre-render moves it when Pixi asks for every statics again, which makes
      every record stale). */
   D_KEYED, D_KEY_BASE, D_KEY_EPOCH,
+  /* DX-LIGHTOFFSET: the glow rows' light offset (local px) and the light entity's facing that turns it. */
+  L_OFFSET_X, L_OFFSET_Y, T_ROT_C, T_ROT_S,
   SLOT_COUNT
 };
 
@@ -280,7 +282,7 @@ typedef struct {
   const float *bSpriteRc, *bSpriteRs, *bRc, *bRs, *bTrailW, *bAnchorX, *bAnchorY;
   uint32_t bTrailTex;
   const uint32_t *lColor;
-  const float *lIntensity, *lSqrt, *lGlowOff, *lGlow, *tX, *tY;
+  const float *lIntensity, *lSqrt, *lGlowOff, *lGlow, *tX, *tY, *lOffX, *lOffY, *tRc, *tRs;
   uint32_t lGradientTex;
   const float *pcX, *pcY, *pcZ, *pcScaleX, *pcScaleY;
   const uint8_t *pcFlipX, *pcFlipY;
@@ -422,6 +424,10 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->lGlow = PTR(const float, L_GLOW);
   e->tX = PTR(const float, T_X);
   e->tY = PTR(const float, T_Y);
+  e->lOffX = PTR(const float, L_OFFSET_X);
+  e->lOffY = PTR(const float, L_OFFSET_Y);
+  e->tRc = PTR(const float, T_ROT_C);
+  e->tRs = PTR(const float, T_ROT_S);
   e->lGradientTex = t[L_GRADIENT_TEX];
   e->pcX = PTR(const float, PC_X);
   e->pcY = PTR(const float, PC_Y);
@@ -799,8 +805,12 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   if (scale < 0.1 || glowAlpha < 0.001) {
     hide_row(e, out);
   } else {
-    e->qX[out] = e->tX[idx];
-    e->qY[out] = (float)((double)e->tY[idx] - (double)or0(e->lGlowOff[idx]));
+    const double ox = (double)e->lOffX[idx];
+    const double oy = (double)e->lOffY[idx];
+    const double c = (double)e->tRc[idx];
+    const double s = (double)e->tRs[idx];
+    e->qX[out] = (float)((double)e->tX[idx] + ox * c - oy * s);
+    e->qY[out] = (float)((double)e->tY[idx] + ox * s + oy * c - (double)or0(e->lGlowOff[idx]));
     e->qScaleX[out] = (float)scale;
     e->qScaleY[out] = (float)scale;
     e->qAlpha[out] = (float)glowAlpha;

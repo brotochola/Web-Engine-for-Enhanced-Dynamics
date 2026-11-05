@@ -3734,6 +3734,8 @@ export declare class LightEmitter extends Component {
     glowHeightOffset: typeof Float32Array;
     sourceHeight: typeof Float32Array;
     hasGlowSprite: typeof Float32Array;
+    offsetX: typeof Float32Array;
+    offsetY: typeof Float32Array;
     layerIdOfGlowSprite: typeof Uint8Array;
   };
   static active: Uint8Array;
@@ -3751,6 +3753,9 @@ export declare class LightEmitter extends Component {
    */
   static sourceHeight: Float32Array;
   static hasGlowSprite: Float32Array;
+  /** Local px from the entity's centre; the entity's rotation turns them. Pool, glow, shadows and culling follow. */
+  static offsetX: Float32Array;
+  static offsetY: Float32Array;
   static layerIdOfGlowSprite: Uint8Array;
   get lightIntensity(): number;
   set lightIntensity(value: number);

@@ -2407,6 +2407,10 @@ export class GameObject {
       LightEmitter.height[i] = 0;
       LightEmitter.glowHeightOffset[i] = 0;
       if (LightEmitter.sourceHeight) LightEmitter.sourceHeight[i] = 0;
+      if (LightEmitter.offsetX) {
+        LightEmitter.offsetX[i] = 0;
+        LightEmitter.offsetY[i] = 0;
+      }
       LightEmitter.hasGlowSprite[i] = 0.5;
       LightEmitter.layerIdOfGlowSprite[i] = 0;
     }
@@ -3021,6 +3025,10 @@ export class GameObject {
       LightEmitter.height[i] = 0;
       LightEmitter.glowHeightOffset[i] = 0;
       if (LightEmitter.sourceHeight) LightEmitter.sourceHeight[i] = 0;
+      if (LightEmitter.offsetX) {
+        LightEmitter.offsetX[i] = 0;
+        LightEmitter.offsetY[i] = 0;
+      }
       LightEmitter.hasGlowSprite[i] = 0.5;
       LightEmitter.layerIdOfGlowSprite[i] = 0;
     }

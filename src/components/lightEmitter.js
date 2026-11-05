@@ -12,6 +12,9 @@ import { lightInfluenceRadius } from '../util/lightRadius.js';
  *   with the same reach. 0 (the default) is the old I / (I + d²).
  * The floor's foreshortening (an ellipse instead of a circle) is config.lighting.groundScaleY.
  *
+ * `offsetX` / `offsetY` move the light off the entity's centre, in local px: the entity's rotation turns them, and
+ * `height` then lifts the result. Pool, glow, shadows and culling all follow.
+ *
  * Shadow casters and raycasted occluders come from this entity's Collider.visualRange
  * neighbors (not from lightIntensity): an occluder past visualRange does not block
  * the light. Tune visualRange for that reach / cost (`influenceRadius` is the light's
@@ -28,6 +31,8 @@ export class LightEmitter extends Component {
     sourceHeight: Float32Array, // the source's height above the floor: widens and softens the pool, does not move it
     hasGlowSprite: Float32Array, // 0 = no glow; 0.5 = intensity/50000 (default); 1 = twice that alpha
     layerIdOfGlowSprite: Uint8Array, // 0 = inherit entity layerMask; non-zero = that layer id bit only
+    offsetX: Float32Array, // local px from the entity's centre, turns with it (a car's headlights ahead of it)
+    offsetY: Float32Array,
   };
 
   /**

@@ -4058,6 +4058,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightHeight = LightEmitter.height;
     const sourceHeight = LightEmitter.sourceHeight;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     const maxVerts = this._selfLitMaxFillVerts;
     const segs = this._selfLitCircleSegs;
     const fanCos = this._selfLitCircleCos;
@@ -4092,8 +4096,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
 
       // Light center: baked into visibility poly; here Transform is fine (lights rarely have RB)
-      const lx = Transform.x[light];
-      const ly = Transform.y[light] - (lightHeight[light] || 0);
+      const ox = offsetX[light];
+      const oy = offsetY[light];
+      const lx = Transform.x[light] + ox * rotC[light] - oy * rotS[light];
+      const ly = Transform.y[light] + ox * rotS[light] + oy * rotC[light] - (lightHeight[light] || 0);
       // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
       let intensity = lightIntensityArr[light];
       let colorScale = 1;
@@ -4358,6 +4364,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
     const sourceHeight = LightEmitter.sourceHeight;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
@@ -4372,8 +4382,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         j++;
       }
 
-      const lx = Transform.x[lightIdx];
-      const ly = Transform.y[lightIdx] - (lightHeight[lightIdx] || 0);
+      const ox = offsetX[lightIdx];
+      const oy = offsetY[lightIdx];
+      const lx = Transform.x[lightIdx] + ox * rotC[lightIdx] - oy * rotS[lightIdx];
+      const ly = Transform.y[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx] - (lightHeight[lightIdx] || 0);
       // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
       let intensity = lightIntensityArr[lightIdx];
       let colorScale = 1;
@@ -4599,6 +4611,10 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const lightEnabled = LightEmitter.active;
     const lightHeight = LightEmitter.height;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
 
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
@@ -4636,8 +4652,10 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
 
       // World-space light position from Transform SAB, same source as
       // updateLighting/updateShadowSprites/renderVisibilityLighting use.
-      const x = worldX[i];
-      const yForLight = worldY[i] - (lightHeight[i] || 0);
+      const ox = offsetX[i];
+      const oy = offsetY[i];
+      const x = worldX[i] + ox * rotC[i] - oy * rotS[i];
+      const yForLight = worldY[i] + ox * rotS[i] + oy * rotC[i] - (lightHeight[i] || 0);
 
       // Viewport culling: shared lightInfluenceRadius(sqrtIntensity)
       const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[i]);
@@ -4709,6 +4727,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightIntensity = LightEmitter.lightIntensity;
     const lightHeight = LightEmitter.height;
     const sourceHeight = LightEmitter.sourceHeight;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     // The floor's foreshortening: the shader scales the fragment's world y by this once, the lights' y here.
     const groundInvY = this._groundInvScaleY || 1;
 
@@ -4751,8 +4773,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // doubles was a heap number per light per frame. World coordinates (the shader converts screen to world),
       // the light raised by its height, y in floor units (times 1 / groundScaleY).
       const i0 = i * 4;
-      lightData[i0] = worldX[entityIndex];
-      lightData[i0 + 1] = (worldY[entityIndex] - (lightHeight[entityIndex] || 0)) * groundInvY;
+      const ox = offsetX[entityIndex];
+      const oy = offsetY[entityIndex];
+      lightData[i0] = worldX[entityIndex] + ox * rotC[entityIndex] - oy * rotS[entityIndex];
+      lightData[i0 + 1] = (worldY[entityIndex] + ox * rotS[entityIndex] + oy * rotC[entityIndex] - (lightHeight[entityIndex] || 0)) * groundInvY;
       lightData[i0 + 2] = intensity;
       lightData[i0 + 3] = range * range;
       const i1 = row1 + i0;

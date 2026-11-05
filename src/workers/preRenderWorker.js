@@ -1941,14 +1941,20 @@ class PreRenderWorker extends AbstractWorker {
                 const skipCull = this.skipCull;
                 const glowHalfW = SpriteRenderer.boundsHalfW;
                 const glowHalfH = SpriteRenderer.boundsHalfH;
+                const glowOffsetX = LightEmitter.offsetX;
+                const glowOffsetY = LightEmitter.offsetY;
+                const glowRotC = Transform.rotC;
+                const glowRotS = Transform.rotS;
                 for (let li = 0; li < lights.length; li++) {
                     const i = lights[li];
                     if (!leActive[i] || !leGlow[i]) continue;
                     if (leIntensity[i] < MIN_GLOW_INTENSITY) continue;
                     if ((visualRange[i] || leSqrt[i] || 200) < MIN_GLOW_RANGE) continue;
                     if (!skipCull) {
-                        const sx = x[i] * camZoom - cameraOffsetX;
-                        const sy = y[i] * camZoom - cameraOffsetY;
+                        const ox = glowOffsetX[i];
+                        const oy = glowOffsetY[i];
+                        const sx = (x[i] + ox * glowRotC[i] - oy * glowRotS[i]) * camZoom - cameraOffsetX;
+                        const sy = (y[i] + ox * glowRotS[i] + oy * glowRotC[i]) * camZoom - cameraOffsetY;
                         let halfExtent = 0;
                         const halfW = glowHalfW ? (glowHalfW[i] ?? 0) : 0;
                         const halfH = glowHalfH ? (glowHalfH[i] ?? 0) : 0;
@@ -3178,6 +3184,10 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtI = LightEmitter.sqrtLightIntensity;
         const lightHeight = LightEmitter.height;
+        const offsetX = LightEmitter.offsetX;
+        const offsetY = LightEmitter.offsetY;
+        const rotC = Transform.rotC;
+        const rotS = Transform.rotS;
         const vr = Collider.visualRange;
         const zoom = this._frameCameraZoom || 1;
         const camX = this._frameCameraX || 0;
@@ -3199,8 +3209,10 @@ class PreRenderWorker extends AbstractWorker {
             const id = raw[i];
             if (!lightEnabled[id]) continue;
             if (!(sqrtI[id] > 0)) continue;
-            const x = worldX[id];
-            const y = worldY[id] - (lightHeight[id] || 0);
+            const ox = offsetX[id];
+            const oy = offsetY[id];
+            const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
+            const y = worldY[id] + ox * rotS[id] + oy * rotC[id] - (lightHeight[id] || 0);
             const influence = lightInfluenceRadius(sqrtI[id]);
             if (
                 x + influence < viewLeft ||
@@ -3846,6 +3858,10 @@ class PreRenderWorker extends AbstractWorker {
         if (lightEnabled && this._queryLightEmitter) {
             const worldX = Transform.x;
             const worldY = Transform.y;
+            const offsetX = LightEmitter.offsetX;
+            const offsetY = LightEmitter.offsetY;
+            const rotC = Transform.rotC;
+            const rotS = Transform.rotS;
             const lightIntensity = LightEmitter.lightIntensity;
             const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
             const flashActive = FlashComponent.active;
@@ -3879,8 +3895,10 @@ class PreRenderWorker extends AbstractWorker {
                 const intensity = lightIntensity[lightIdx];
                 if (!(intensity > 0)) continue;
 
-                const lightX = worldX[lightIdx];
-                const lightY = worldY[lightIdx];
+                const ox = offsetX[lightIdx];
+                const oy = offsetY[lightIdx];
+                const lightX = worldX[lightIdx] + ox * rotC[lightIdx] - oy * rotS[lightIdx];
+                const lightY = worldY[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx];
                 const lightInfluenceR = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
                 if (lightX + lightInfluenceR < viewMinX || lightX - lightInfluenceR > viewMaxX ||
                     lightY + lightInfluenceR < viewMinY || lightY - lightInfluenceR > viewMaxY) {
@@ -4001,6 +4019,10 @@ class PreRenderWorker extends AbstractWorker {
         const i32 = buf.i32;
         const f32 = buf.f32;
         const pose = this._displayPoseOut;
+        const lightOffsetX = LightEmitter.offsetX;
+        const lightOffsetY = LightEmitter.offsetY;
+        const lightRotC = Transform.rotC;
+        const lightRotS = Transform.rotS;
         const sweepK = this._visSweep;
         const sweepLight = sweepK.sweep;
         const sweepTable = sweepK.table;
@@ -4054,8 +4076,10 @@ class PreRenderWorker extends AbstractWorker {
 
             // Same display pose as sprites (post-step publish), not live Transform
             this._displayPose(lightIdx, pose);
-            const lx = pose[0];
-            const ly = pose[1];
+            const ox = lightOffsetX[lightIdx];
+            const oy = lightOffsetY[lightIdx];
+            const lx = pose[0] + ox * lightRotC[lightIdx] - oy * lightRotS[lightIdx];
+            const ly = pose[1] + ox * lightRotS[lightIdx] + oy * lightRotC[lightIdx];
             const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
             SOLID_ARGS[6] = lx;
             SOLID_ARGS[7] = ly;
