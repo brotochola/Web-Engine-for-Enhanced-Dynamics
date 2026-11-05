@@ -970,6 +970,18 @@ export class ColliderFillBatch {
   }
 
   /**
+   * Send only rows [first, past), which an upload(count) of the same layout already placed. Mesh edits touch a few rows
+   * of a big layer: DX-MESHUPLOAD.
+   * @param {number} first
+   * @param {number} past
+   */
+  uploadRange(first, past) {
+    const from = first * COLLIDER_FILL_FLOATS;
+    if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * COLLIDER_FILL_FLOATS), from);
+    this.buffer.update((past - first) * COLLIDER_FILL_STRIDE, first * COLLIDER_FILL_STRIDE);
+  }
+
+  /**
    * One texel per body: xy in rg, rot cs in ba. The fat VBO stays resident.
    * @returns {number} instance count left on the mesh
    */

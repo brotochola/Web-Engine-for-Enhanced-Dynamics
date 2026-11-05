@@ -22,6 +22,8 @@ export const MESH_CORNER_SLOTS = [
   'vertOffset', 'vertCount', 'indexOffset', 'indexCount', 'geomN',
   'vertexX', 'vertexY', 'uvU', 'uvV', 'vertCap', 'indices', 'indexCap',
   'uvGen', 'uvGenLen', 'lastUv', 'lastUvLen',
+  // DX-MESHUPLOAD, written by the kernel: the rows the call rewrote, [firstRow, pastRow).
+  'firstRow', 'pastRow',
 ];
 if (MESH_CORNER_SLOTS.length > MESH_CORNER_TABLE_SLOTS) throw new Error('meshCorners: the column table outgrew its region');
 
@@ -50,6 +52,8 @@ const UV_GEN = 21;
 const UV_GEN_LEN = 22;
 const LAST_UV = 23;
 const LAST_UV_LEN = 24;
+const FIRST_ROW = 25;
+const PAST_ROW = 26;
 
 /** The MeshGeometry columns the kernel reads, with the class each must have, in a 16-bit arena. */
 const GEOMETRY_COLUMNS = {
@@ -108,6 +112,16 @@ export async function bindMeshCorners(memory, tableByte, geom) {
   const bound = {};
   for (const name of Object.keys(columns)) bound[name] = geom[name];
   return { buffer, table, tableByte, rewrite, geom: bound, calls: 0, indexWidth: wide ? 32 : 16 };
+}
+
+/** The first row the last rewriteCornersWasm that returned above 0 wrote. */
+export function rewrittenFirstRow(b) {
+  return b.table[FIRST_ROW];
+}
+
+/** One past the last row that call wrote. first >= past: it wrote none. */
+export function rewrittenPastRow(b) {
+  return b.table[PAST_ROW];
 }
 
 /** A Uint32Array in the kernel's memory holding at least `n` values. */

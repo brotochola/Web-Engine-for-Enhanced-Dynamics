@@ -132,7 +132,7 @@ import {
   COLLIDER_FILL_FLOATS,
   MESH_UV_FILL_FLOATS,
 } from '../render/colliderFillBatch.js';
-import { bindMeshCorners, rewriteCornersWasm } from '../render/meshCornersClient.js';
+import { bindMeshCorners, rewriteCornersWasm, rewrittenFirstRow, rewrittenPastRow } from '../render/meshCornersClient.js';
 import { meshLayerCapacities } from '../util/meshMemory.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
@@ -749,6 +749,8 @@ class PixiRenderer extends AbstractWorker {
     this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
     this._customLayerList = []; // Cached array of custom layer objects, set once during init
     this._layerRuntime = Object.create(null); // layerName -> display object
+    this._cornerFirstRow = 0; // the rows the last corner rewrite wrote: [first, past)
+    this._cornerPastRow = 0;
     this._sunLayers = []; // layers with alphaBySun: { layerId, name, spec }
     this._layerSunFactor = new Float32Array(0); // by layer id: the sun's factor on its alpha (1 without alphaBySun)
     this.layerRefs = {};
@@ -5548,7 +5550,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _rewriteMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow) {
     const b = this._meshCornersWasm;
     if (b === null) throw new Error('meshCorners: a corner rewrite without the mesh memory');
-    return rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+    const result = rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+    this._cornerFirstRow = result > 0 ? rewrittenFirstRow(b) : 0;
+    this._cornerPastRow = result > 0 ? rewrittenPastRow(b) : 0;
+    return result;
   }
 
   _ensureMeshUvBatch(cl) {
@@ -8008,7 +8013,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const genNow = full || vertsMoved ? this._captureVertGen(skip, views) : null;
           // E-118: the UV generations right after, for the same reads.
           const uvGenNow = genNow ? this._captureUvGen(skip, views) : null;
+          // The rows of each batch this frame's rewrite touched: a mesh edit anywhere moves the one vertex epoch.
+          let fillFirst = 0;
+          let fillPast = lastPacked;
+          let uvFirst = 0;
+          let uvPast = cl.uvPrevCount | 0;
           if (!full && vertsMoved) {
+            this._cornerFirstRow = 0;
+            this._cornerPastRow = lastPacked;
             const fillRewrite = this._rewriteMeshCorners(
               cl.fillBatch.rows,
               lastPacked,
@@ -8018,7 +8030,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               skip.lastVertGen,
               genNow,
             );
+            fillFirst = this._cornerFirstRow;
+            fillPast = this._cornerPastRow;
             const uvCount = cl.uvPrevCount | 0;
+            this._cornerFirstRow = 0;
+            this._cornerPastRow = !cl.uvFillBatch ? 0 : uvCount;
             const uvRewrite = !cl.uvFillBatch || uvCount <= 0
               ? 1
               : this._rewriteMeshCorners(
@@ -8032,8 +8048,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 skip.lastUvGen,
                 uvGenNow,
               );
+            uvFirst = this._cornerFirstRow;
+            uvPast = this._cornerPastRow;
             if (fillRewrite < 0 || uvRewrite < 0) full = true;
           }
+          const noRowMoved = !full && vertsMoved && !paintMoved && !poseMoved && fillPast <= fillFirst && uvPast <= uvFirst;
           if (full) {
             views.instanceEntity = skip.instanceEntity;
             views.outU32 = cl.fillBatch.rowsU32;
@@ -8049,7 +8068,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             this._commitVertGen(skip, views);
             this._commitUvGen(skip, views);
           } else {
-            const touchVbo = vertsMoved || paintMoved;
             if (paintMoved) {
               if (lastPacked > 0) {
                 views.outU32 = cl.fillBatch.rowsU32;
@@ -8074,10 +8092,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 );
               }
             }
-            if (touchVbo) {
+            if (paintMoved) {
               if (lastPacked > 0) cl.fillBatch.upload(lastPacked);
               const uvCount = cl.uvPrevCount | 0;
               if (cl.uvFillBatch && uvCount > 0) cl.uvFillBatch.upload(uvCount);
+            } else if (vertsMoved) {
+              // Only the rows the rewrite wrote; none on a layer the edit did not reach.
+              if (fillPast > fillFirst) cl.fillBatch.uploadRange(fillFirst, fillPast);
+              if (cl.uvFillBatch && uvPast > uvFirst) cl.uvFillBatch.uploadRange(uvFirst, uvPast);
             }
             if (poseMoved) {
               if (lastPacked > 0) {
@@ -8102,7 +8124,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           skip.lastOutsetEpoch = outsetRev;
           skip.lastVertEpoch = vertEpoch;
           clearMeshFillPaintDirty(views);
-          packedThisFrame = true;
+          // An edit on another layer draws nothing new here: an RT layer keeps the picture it has.
+          packedThisFrame = !noRowMoved;
         }
         densityMesh = cl.fillBatch.mesh;
         this._meshFillInstancesThisFrame += (cl.prevCount | 0) + (cl.uvPrevCount | 0);

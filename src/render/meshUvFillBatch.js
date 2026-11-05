@@ -145,6 +145,13 @@ export class MeshUvFillBatch {
     return n;
   }
 
+  /** ColliderFillBatch.uploadRange for the UV rows. */
+  uploadRange(first, past) {
+    const from = first * MESH_UV_FILL_FLOATS;
+    if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from);
+    this.buffer.update((past - first) * MESH_UV_FILL_STRIDE, first * MESH_UV_FILL_STRIDE);
+  }
+
   uploadPoseTable(instanceEntity, count, views) {
     const n = count | 0;
     if (n <= 0 || !instanceEntity) return 0;

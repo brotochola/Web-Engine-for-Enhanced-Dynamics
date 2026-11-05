@@ -31,6 +31,8 @@ enum {
   T_VX, T_VY, T_U, T_V, T_VERT_CAP, T_INDICES, T_INDEX_CAP,
   /* E-118: the UV generations captured this frame and drawn, and their lengths. */
   T_UV_GEN, T_UV_GEN_LEN, T_LAST_UV, T_LAST_UV_LEN,
+  /* DX-MESHUPLOAD, written back: the rows this call rewrote, [first, past). first >= past: none. */
+  T_FIRST_ROW, T_PAST_ROW,
   SLOT_COUNT
 };
 
@@ -260,6 +262,8 @@ int32_t rewrite_corners(uint32_t table) {
 
   if (n == 0) return 0;
   uint32_t k = 0;
+  uint32_t firstRow = n;
+  uint32_t pastRow = 0;
   while (k < n) {
     const uint32_t id = ent[k];
     const uint32_t end = run_end(ent, k, n);
@@ -273,6 +277,8 @@ int32_t rewrite_corners(uint32_t table) {
       if (id >= geomN) return -1;
       const int32_t vOff = vertOffset[id];
       if (vOff >= 0) {
+        if (k < firstRow) firstRow = k;
+        pastRow = end;
         const uint32_t vN = vertCount[id];
         const int32_t iAt = indexOffset[id];
         const uint32_t need = iAt >= 0 ? indexCount[id] / 3u : (vN >= 3 ? vN - 2 : 0u);
@@ -304,6 +310,8 @@ int32_t rewrite_corners(uint32_t table) {
     }
     k = end;
   }
+  ((uint32_t *)(uintptr_t)table)[T_FIRST_ROW] = firstRow;
+  ((uint32_t *)(uintptr_t)table)[T_PAST_ROW] = pastRow;
   return 1;
 }
 
@@ -343,6 +351,8 @@ int32_t rewrite_corners_u32(uint32_t table) {
 
   if (n == 0) return 0;
   uint32_t k = 0;
+  uint32_t firstRow = n;
+  uint32_t pastRow = 0;
   while (k < n) {
     const uint32_t id = ent[k];
     const uint32_t end = run_end(ent, k, n);
@@ -356,6 +366,8 @@ int32_t rewrite_corners_u32(uint32_t table) {
       if (id >= geomN) return -1;
       const int32_t vOff = vertOffset[id];
       if (vOff >= 0) {
+        if (k < firstRow) firstRow = k;
+        pastRow = end;
         const uint32_t vN = vertCount[id];
         const int32_t iAt = indexOffset[id];
         const uint32_t need = iAt >= 0 ? indexCount[id] / 3u : (vN >= 3 ? vN - 2 : 0u);
@@ -388,5 +400,7 @@ int32_t rewrite_corners_u32(uint32_t table) {
     }
     k = end;
   }
+  ((uint32_t *)(uintptr_t)table)[T_FIRST_ROW] = firstRow;
+  ((uint32_t *)(uintptr_t)table)[T_PAST_ROW] = pastRow;
   return 1;
 }

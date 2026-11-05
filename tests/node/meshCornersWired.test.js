@@ -61,7 +61,10 @@ async function quietly(fn) {
 }
 
 /** The main thread's shared buffers for a scene of N mesh entities on one MESH layer. */
-function buildScene(renderer = { maxVisibleRenderables: 100, maxMeshVerts: MAX_VERTS, maxMeshIndices: MAX_INDICES }) {
+function buildScene(
+  renderer = { maxVisibleRenderables: 100, maxMeshVerts: MAX_VERTS, maxMeshIndices: MAX_INDICES },
+  layers = { mesh: { kind: LAYER_KIND.MESH, zIndex: 2 } },
+) {
   Query.reset();
   const scene = {
     totalEntityCount: N,
@@ -88,7 +91,7 @@ function buildScene(renderer = { maxVisibleRenderables: 100, maxMeshVerts: MAX_V
       debug: { maxDebugDrawEntries: 1 },
       navigation: { enabled: false },
       renderer,
-      layers: { mesh: { kind: LAYER_KIND.MESH, zIndex: 2 } },
+      layers,
       wasm: { ...WASM_DEFAULTS },
     },
     buffers: { componentData: {} },
@@ -328,6 +331,84 @@ test('Pixi draws the same mesh rows on the mesh memory through the kernel as the
   }
   assert.ok(rewrites > FRAMES / 2, `${rewrites} frames kept their topology`);
   assert.ok(uvRows > FRAMES * 100, `${uvRows} UV rows compared`);
+});
+
+test('a mesh edit uploads nothing on another MESH layer, and only the rows it touched on its own', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const scene = await quietly(() =>
+    buildScene(undefined, {
+      still: { kind: LAYER_KIND.MESH, zIndex: 2 },
+      moving: { kind: LAYER_KIND.MESH, zIndex: 3 },
+    }),
+  );
+  await quietly(() => initPixi(px, scene));
+  const still = px._customLayers[Layer.get('still').id];
+  const moving = px._customLayers[Layer.get('moving').id];
+  const api = [];
+  for (let i = 0; i < N; i++) {
+    const mr = new MeshRenderer(i);
+    api.push(mr);
+    MeshRenderer.active[i] = 1;
+    MeshRenderer.layerMask[i] = 1 << (i < 40 ? Layer.get('still').id : Layer.get('moving').id);
+    Transform.x[i] = 100 + (i % 8) * 80;
+    Transform.y[i] = 100 + ((i / 8) | 0) * 80;
+    Transform.rotC[i] = 1;
+    Transform.rotS[i] = 0;
+    mr.setPlane(40, 30, 3, 2);
+  }
+  const spy = (batch) => {
+    const log = { whole: 0, ranges: [] };
+    const { upload, uploadRange } = batch;
+    batch.upload = function (n) {
+      log.whole++;
+      return upload.call(this, n);
+    };
+    batch.uploadRange = function (first, past) {
+      log.ranges.push([first, past]);
+      return uploadRange.call(this, first, past);
+    };
+    return log;
+  };
+  await quietly(() => {
+    px.updateCustomLayers();
+    px.updateCustomLayers();
+  });
+  // setPlane's meshes carry UVs, so their rows are the UV batch's.
+  const stillLog = spy(still.uvFillBatch);
+  const movingLog = spy(moving.uvFillBatch);
+  const planeTris = 3 * 2 * 2;
+  const plane = (v) => {
+    const xy = [];
+    for (let j = 0; j <= 2; j++) for (let i = 0; i <= 3; i++) xy.push(-20 + (40 * i) / 3 + v, -15 + 15 * j);
+    return xy;
+  };
+
+  // One mesh on the moving layer: entity 42, the third of its eight.
+  api[42].setVertices(plane(3));
+  await quietly(() => px.updateCustomLayers());
+  assert.deepEqual(stillLog, { whole: 0, ranges: [] }, 'the still layer sends nothing');
+  assert.deepEqual(movingLog, { whole: 0, ranges: [[2 * planeTris, 3 * planeTris]] }, 'the moving layer sends one mesh');
+  const at = 2 * planeTris * MESH_UV_FILL_FLOATS;
+  const end = at + planeTris * MESH_UV_FILL_FLOATS;
+  assert.equal(
+    firstDiff(moving.uvFillBatch.dataU32.subarray(at, end), moving.uvFillBatch.rowsU32.subarray(at, end)),
+    -1,
+    'and the Buffer holds the new rows',
+  );
+
+  // Two meshes far apart in the row order: the range spans them.
+  api[41].setVertices(plane(1));
+  api[46].setVertices(plane(2));
+  await quietly(() => px.updateCustomLayers());
+  assert.deepEqual(movingLog.ranges[1], [1 * planeTris, 7 * planeTris]);
+  assert.deepEqual(stillLog, { whole: 0, ranges: [] });
+
+  // A frame with no edit sends nothing, and a repaint still sends the layer whole.
+  await quietly(() => px.updateCustomLayers());
+  assert.equal(movingLog.ranges.length, 2);
+  api[42].tint = 0x123456;
+  await quietly(() => px.updateCustomLayers());
+  assert.equal(movingLog.whole, 1);
 });
 
 test('a MESH layer without MeshGeometry fills its collider shapes in arrays of its own', async () => {
