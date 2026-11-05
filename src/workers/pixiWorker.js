@@ -2638,6 +2638,9 @@ class PixiRenderer extends AbstractWorker {
       if (Layer._alpha[i] !== 1) this._ensureMeshLookComposite(this._customLayers[i]);
       const displayObject = name ? this._layerRuntime[name] : null;
       if (displayObject) displayObject.alpha = Layer._alpha[i];
+      // On the stage a MESH layer's textured rows are a mesh of their own. Through an RT, the Sprite holds the alpha.
+      const cl = this._customLayers[i];
+      if (cl && cl.uvFillBatch && !cl.rt) cl.uvFillBatch.mesh.alpha = Layer._alpha[i];
     }
     this.syncSunLayerAlpha();
   }
@@ -5592,6 +5595,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         batch.mesh.y = fill.y;
         batch.mesh.scale.set(fill.scale.x, fill.scale.y);
         batch.mesh.zIndex = fill.zIndex;
+        batch.mesh.alpha = fill.alpha;
       }
     }
     return batch;

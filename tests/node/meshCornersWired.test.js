@@ -476,6 +476,34 @@ test('a look set at run time on a plain MESH layer stays on the stage', async ()
   assert.equal(px._layerRuntime.shade, cl.shaderMesh);
 });
 
+test('layer.alpha reaches the textured rows of a plain MESH layer, set before them or after', async () => {
+  const { px, cl } = await lookLayer({});
+  const layer = Layer.get('shade');
+  layer.alpha = 0.3;
+  px.syncLayerAlphaFromSharedState();
+
+  const mr = new MeshRenderer(0);
+  MeshRenderer.active[0] = 1;
+  MeshRenderer.layerMask[0] = 1 << cl.layerId;
+  Transform.x[0] = 100;
+  Transform.y[0] = 100;
+  Transform.rotC[0] = 1;
+  Transform.rotS[0] = 0;
+  mr.setPlane(40, 30, 3, 2);
+  await quietly(() => {
+    px.updateCustomLayers();
+    px.updateCustomLayers();
+  });
+  assert.ok(cl.uvFillBatch, 'a plane has UVs: rows of their own');
+  assert.ok(Math.abs(cl.uvFillBatch.mesh.alpha - 0.3) < 1e-6, 'made after the alpha was set');
+
+  layer.alpha = 0.6;
+  px.syncLayerAlphaFromSharedState();
+  assert.ok(Math.abs(cl.fillBatch.mesh.alpha - 0.6) < 1e-6);
+  assert.ok(Math.abs(cl.uvFillBatch.mesh.alpha - 0.6) < 1e-6, 'and when it changes');
+  layer.alpha = 1;
+});
+
 /** A sunProjected layer of one still plane, drawn once, with its RT draws counted. */
 async function sunLayer() {
   const { px, cl } = await lookLayer({ sunProjected: true });
