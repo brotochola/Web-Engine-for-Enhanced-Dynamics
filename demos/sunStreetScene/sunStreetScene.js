@@ -98,7 +98,9 @@ export class SunStreetScene extends Scene {
       sun: {
         enabled: true,
         startHour: START_HOUR,
-        shadowAlpha: 0.6,
+        shadowAlpha: 0.7,
+        shadowMinLengthRatio: 0.35, // a car stands out at noon too
+        shadowStretchAlphaFactor: 0.2, // and a long shadow keeps its dark
         dayCycle: { enabled: true, speed: 1, dayDurationMinutes: DAY_MINUTES },
         night: { intensity: NIGHT_INTENSITY, color: 0x4a6cff, from: 0.4, to: 0.1 },
         colors: [
@@ -182,7 +184,7 @@ export class SunStreetScene extends Scene {
   createNewGame() {
     GrassTufts.spawn({ x: WORLD_W * 0.5, y: WORLD_H * 0.5, count: TUFTS });
     RoadBand.spawn({ x: ROAD_CX, y: ROAD_CY, layer: 'sidewalk', width: ROAD_WIDTH + 36, tint: 0xb4b0a4 });
-    RoadBand.spawn({ x: ROAD_CX, y: ROAD_CY, layer: 'street', width: ROAD_WIDTH, tint: 0x4b4d52 });
+    RoadBand.spawn({ x: ROAD_CX, y: ROAD_CY, layer: 'street', width: ROAD_WIDTH, tint: 0x6a6c72 });
     RoadDashes.spawn({ x: ROAD_CX, y: ROAD_CY });
 
     let house = 0;

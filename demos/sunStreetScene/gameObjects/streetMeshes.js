@@ -89,13 +89,14 @@ export class RoadDashes extends GameObject {
   }
 }
 
-/** Adds a prism to a mesh: `outline` at height `h0`, the same outline at `h1`, the floor, the top and a quad up each side. */
-function addPrism(mesh, outline, h0, h1) {
+/** Adds a prism to a mesh: `outline` at height `h0`, `top` at `h1`, the floor, the top and a quad up each side. */
+function addPrism(mesh, outline, h0, h1, top = outline) {
   const n = outline.length / 2;
   const first = mesh.heights.length;
   for (let level = 0; level < 2; level++) {
+    const ring = level === 0 ? outline : top;
     for (let i = 0; i < n; i++) {
-      mesh.xy.push(outline[i * 2], outline[i * 2 + 1]);
+      mesh.xy.push(ring[i * 2], ring[i * 2 + 1]);
       mesh.heights.push(level === 0 ? h0 : h1);
     }
   }
@@ -135,27 +136,57 @@ export class HouseShadow extends GameObject {
   }
 }
 
-/** A car's shadow, a low box that follows its car: the moving mesh on the layer of the houses' shadows. */
+// A car as a volume, x forward: the body, and on it a cabin whose roof is smaller than its base.
+const CAR_BODY = [39, -19, 39, 19, -39, 19, -39, -19];
+const CAR_BODY_HEIGHT = 13;
+const CAR_CABIN = [16, -17, 16, 17, -30, 17, -30, -17];
+const CAR_ROOF = [2, -13, 2, 13, -22, 13, -22, -13];
+const CAR_ROOF_HEIGHT = 27;
+// carScene's pictures flatten the floor, so a car drawn head-on is shorter than one drawn side-on, and the sprite's
+// centre sits above the floor's. A rigid box would poke out of the picture: the footprint is rebuilt as the car turns.
+const CAR_FLOOR_SQUASH = 0.7;
+const CAR_FLOOR_DROP = 7;
+const CAR_TURN_COS = Math.cos((3 * Math.PI) / 180);
+
+/** A car's shadow, a volume that follows its car: the moving mesh on the layer of the houses' shadows. */
 export class CarShadow extends GameObject {
   static components = [MeshRenderer];
 
   carIndex = 0;
+  headingC = NaN; // no comparison holds, so the first tick builds the footprint
+  headingS = NaN;
+  local = new Float32Array(0);
+  xy = new Float32Array(0);
 
   onSpawned(config = {}) {
     this.carIndex = config.carIndex;
     this.setLayer('houseShadows');
     this.meshRenderer.tint = 0x000000;
     const mesh = { xy: [], heights: [], indices: [] };
-    addPrism(mesh, [-36, -16, 36, -16, 36, 16, -36, 16], 0, 26);
+    addPrism(mesh, CAR_BODY, 0, CAR_BODY_HEIGHT);
+    addPrism(mesh, CAR_CABIN, CAR_BODY_HEIGHT, CAR_ROOF_HEIGHT, CAR_ROOF);
+    this.local = Float32Array.from(mesh.xy);
+    this.xy = new Float32Array(mesh.xy.length);
     this.meshRenderer.setMesh(mesh.xy, mesh.indices);
     this.meshRenderer.setHeights(mesh.heights);
   }
 
   tick() {
-    const c = this.carIndex;
-    this.x = Transform.x[c];
-    this.y = Transform.y[c];
-    this.rotation = Transform.rotation[c];
+    const i = this.carIndex;
+    this.x = Transform.x[i];
+    this.y = Transform.y[i] + CAR_FLOOR_DROP;
+    const c = Transform.rotC[i];
+    const s = Transform.rotS[i];
+    if (c * this.headingC + s * this.headingS > CAR_TURN_COS) return;
+    this.headingC = c;
+    this.headingS = s;
+    const local = this.local;
+    const xy = this.xy;
+    for (let p = 0; p < local.length; p += 2) {
+      xy[p] = local[p] * c - local[p + 1] * s;
+      xy[p + 1] = (local[p] * s + local[p + 1] * c) * CAR_FLOOR_SQUASH;
+    }
+    this.meshRenderer.setVertices(xy);
   }
 }
 
