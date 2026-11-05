@@ -476,6 +476,60 @@ test('a look set at run time on a plain MESH layer stays on the stage', async ()
   assert.equal(px._layerRuntime.shade, cl.shaderMesh);
 });
 
+/** A sunProjected layer of one still plane, drawn once, with its RT draws counted. */
+async function sunLayer() {
+  const { px, cl } = await lookLayer({ sunProjected: true });
+  const mr = new MeshRenderer(0);
+  MeshRenderer.active[0] = 1;
+  MeshRenderer.layerMask[0] = 1 << cl.layerId;
+  Transform.x[0] = 100;
+  Transform.y[0] = 100;
+  Transform.rotC[0] = 1;
+  Transform.rotS[0] = 0;
+  mr.setPlane(40, 30, 3, 2);
+  let draws = 0;
+  px._renderMeshFillToRt = () => {
+    draws++;
+  };
+  await quietly(() => {
+    px.updateCustomLayers();
+    px.updateCustomLayers();
+  });
+  draws = 0;
+  return { px, cl, mr, frame: () => quietly(() => px.updateCustomLayers()), draws: () => draws };
+}
+
+test('a mesh that changed while the sun showed nothing is drawn when the sun comes back', async () => {
+  const { px, cl, mr, frame, draws } = await sunLayer();
+  await frame();
+  assert.equal(draws(), 0, 'nothing moved, nothing drawn');
+
+  px._layerSunFactor[cl.layerId] = 0;
+  mr.setPlane(60, 30, 3, 2);
+  await frame();
+  await frame();
+  assert.equal(draws(), 0, 'at factor 0 it draws nothing, though the rows moved');
+
+  px._layerSunFactor[cl.layerId] = 0.5;
+  await frame();
+  assert.equal(draws(), 1, 'the same sun, but the RT is old');
+  await frame();
+  assert.equal(draws(), 1, 'and then it rests');
+});
+
+test('a still MESH layer draws again after its RT is rebuilt', async () => {
+  const { px, cl, frame, draws } = await sunLayer();
+  px._releaseTextureBindGroups = () => {};
+  px._unbindLookShaderTexture = () => {};
+  const rt = cl.rt;
+  await quietly(() => px._resizeCustomLayerRTs(cl, 1024, 768));
+  assert.notEqual(cl.rt, rt);
+  await frame();
+  assert.equal(draws(), 1, 'the new RT is empty');
+  await frame();
+  assert.equal(draws(), 1);
+});
+
 test('a MESH layer without MeshGeometry fills its collider shapes in arrays of its own', async () => {
   // renderer.maxMeshVerts 0 (the destructible terrain scenes): no mesh memory and no corner to rewrite, so the
   // layer's batch keeps arrays of its own and Pixi binds no kernel.

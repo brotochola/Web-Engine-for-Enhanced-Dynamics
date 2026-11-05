@@ -6101,6 +6101,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   _resizeCustomLayerRTs(cl, width, height) {
     if (!Layer.customLayerNeedsViewportResize(cl)) return;
+    // The new RT is empty: a still layer would otherwise keep showing it.
+    const skip = this._colliderFillSkip[cl.layerId];
+    if (skip) skip.rtReady = false;
     const resolution = cl.resolution || 1.0;
     const lw = width * resolution;
     const lh = height * resolution;
@@ -7989,6 +7992,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             zoom: NaN,
             camRot: NaN,
             rtReady: false,
+            // Rows changed while a sunProjected layer showed nothing: its RT is old when the sun comes back.
+            rtStale: false,
             uvLocalsReady: false,
           };
           if (cl.meshRegion) this._bindMeshSkipRegions(skip, cl.meshRegion);
@@ -8147,7 +8152,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           skip.camY !== this._renderCameraY ||
           skip.zoom !== this._renderZoom ||
           skip.camRot !== (this._renderCameraRot || 0);
-        skip._skipRt = !packedThisFrame && !camChanged && skip.rtReady;
+        if (packedThisFrame) skip.rtStale = true;
+        skip._skipRt = !skip.rtStale && !camChanged && skip.rtReady;
         if (cl.sunProjected) {
           // The sun moves the shadows on the GPU: a new position redraws the layer's RT, no pack. With nothing to show
           // (night, or the sun's factor at 0), it draws nothing.
@@ -8175,6 +8181,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               skipRt.zoom = this._renderZoom;
               skipRt.camRot = this._renderCameraRot || 0;
               skipRt.rtReady = true;
+              skipRt.rtStale = false;
               skipRt._skipRt = false;
             }
           }
