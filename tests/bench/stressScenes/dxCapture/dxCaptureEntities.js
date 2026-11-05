@@ -13,8 +13,13 @@ export class DxCaptureProp extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 16;
     this.collider.visualRange = 64;
-    this.setSprite(config.texture || 'barrel1');
+    // `?propSprite=`, `?propAlpha=`, and `?propShadow=` the frame its ShadowCaster casts (a revision without it ignores the key).
+    this.setSprite(WEED.params?.get('propSprite') || config.texture || 'barrel1');
     this.setScale(config.scale || 2);
+    const alpha = WEED.params?.get('propAlpha');
+    if (alpha !== null && alpha !== undefined) this.spriteRenderer.alpha = Number(alpha);
+    const shadow = WEED.params?.get('propShadow');
+    if (shadow) this.shadowCaster.setTexture?.(shadow);
   }
 }
 
