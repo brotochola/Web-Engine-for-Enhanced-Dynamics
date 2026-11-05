@@ -28,6 +28,9 @@ export class DxCaptureShade extends GameObject {
     this.meshRenderer.tint = 0x000000;
     this.meshRenderer.alpha = config.alpha ?? 1;
     this.meshRenderer.setMesh([-s, -s, s, -s, s, s, -s, s], [0, 1, 2, 0, 2, 3]);
+    // `?shadeHeight=`: a height on the far corners, on a sunProjected layer.
+    const h = WEED.params?.get('shadeHeight');
+    if (h !== null && h !== undefined) this.meshRenderer.setHeights?.([0, 0, Number(h), Number(h)]);
   }
 }
 

@@ -13,7 +13,7 @@ const { Scene, Camera, Sun, Decoration, LAYER_KIND, BLEND_MODES } = WEED;
  * `?colors=1` (lighting.sun.colors). `?shade=1`: overlapping black squares on a MESH layer, `?shadeLook=1` with a look
  * shader that passes its RT through, `?shadeAlpha=` (default 1) the layer's alpha, `?shadeMeshAlpha=` (default 1) each
  * mesh's, `?shadeSun=` its alphaBySun (shadow, night, or ramp for { from: 0.1, to: 0.4 }). `?deco=1`: decorations on a
- * sprite layer, `?decoAlpha=` (default 1) the layer's alpha, `?decoLook=1` through a look, `?decoSun=` its alphaBySun.
+ * sprite layer, `?shadeHeight=` the squares' far corners at that height on a sunProjected layer, `?decoAlpha=` (default 1) the layer's alpha, `?decoLook=1` through a look, `?decoSun=` its alphaBySun.
  */
 const SEED = 0xd7ca;
 const WORLD_W = 1280;
@@ -96,6 +96,7 @@ export class DxCaptureScene extends Scene {
         zIndex: 1.5,
         alpha: SHADE_ALPHA,
         ...(sunSpec('shadeSun') ? { alphaBySun: sunSpec('shadeSun') } : {}),
+        ...(query('shadeHeight') !== null ? { sunProjected: true } : {}),
         ...(SHADE_LOOK ? { shader: { fragment: 'dxPass', containerBlend: BLEND_MODES.NORMAL } } : {}),
       },
     },
