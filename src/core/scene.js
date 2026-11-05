@@ -405,6 +405,8 @@ class Scene {
     LightEmitter.clearArrays();
     ShadowCaster.componentId = null;
     ShadowCaster.clearArrays();
+    // Workers set it from their init message; a page may call setTexture too.
+    ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     FlashComponent.componentId = null;
     FlashComponent.clearArrays();
     LightOccluder.componentId = null;

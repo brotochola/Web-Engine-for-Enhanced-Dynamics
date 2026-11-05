@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ShadowCaster } from '../../src/components/shadowCaster.js';
+import { Scene } from '../../src/core/scene.js';
 import { GPU_CASTER_FLOATS } from '../../src/render/gpuQueueLayout.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
 
@@ -100,6 +101,24 @@ test('the keyed caster paths stay off in a scene with shadow textures', async ()
   assert.equal(pre._keyedCastersLive(), false);
   pre._shadowTextures = false;
   pre._keyedFrames = false;
+});
+
+test('the page knows a scene has shadow textures, so setTexture from Scene.update does not warn', () => {
+  const on = class extends Scene {
+    static config = { lighting: { shadowTextures: true } };
+  };
+  const off = class extends Scene {
+    static config = { lighting: {} };
+  };
+  const saved = ShadowCaster.texturesEnabled;
+  try {
+    new on({});
+    assert.equal(ShadowCaster.texturesEnabled, true);
+    new off({});
+    assert.equal(ShadowCaster.texturesEnabled, false);
+  } finally {
+    ShadowCaster.texturesEnabled = saved;
+  }
 });
 
 test('setTexture writes the columns, with the frame + 1; clearTexture goes back to the sprite', () => {
