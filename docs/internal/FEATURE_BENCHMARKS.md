@@ -47,6 +47,7 @@ hypothesis names. Demos stay in `demos/`. By area:
 - **Lighting and visibility:** `visPolyStressScene`, `compoundVisPolyStressScene` (`boxes`, `remeshEvery`,
   `ringSegments`).
 - **Sun and shadows:** `sunOverrideScene` (a scene over the day cycle, with its torn reads counted), `sunMeshStressScene` and `sunMeshParityScene` (`sunMeshParity.mjs`: a ShadowCaster against a `sunProjected` mesh), `dxCaptureScene` (a still scene for `compareCaptures.mjs`).
+- **Rotation of a Collider without a RigidBody:** `colliderRotationScene` (prints `[bench] colliderRotation`: reads that went backwards, the worst step, a posed box).
 - **Meshes and collider fills:** `meshLayerOrderScene` (two overlapping MESH layers: a picture, not a timing), `meshUploadStressScene`, `meshApiStressScene`, `meshFillStaticScene`, `meshFillMovingScene`,
   `meshFillPanScene`, `meshFillLookPanScene`, `meshFillMixedScene`.
 - **Textures, decals and scenery:** `textureUploadStressScene`, `decalStampStressScene`,
