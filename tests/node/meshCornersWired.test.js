@@ -411,6 +411,71 @@ test('a mesh edit uploads nothing on another MESH layer, and only the rows it to
   assert.equal(movingLog.whole, 1);
 });
 
+/** A worker on one MESH layer with a look it can swap at run time: no shader to compile in Node, and every render logged. */
+async function lookLayer(options) {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const scene = await quietly(() => buildScene(undefined, { shade: { kind: LAYER_KIND.MESH, zIndex: 2, ...options } }));
+  await quietly(() => initPixi(px, scene));
+  px.canvasWidth = 800;
+  px.canvasHeight = 600;
+  px._collectSunLayers();
+  const cl = px._customLayers[Layer.get('shade').id];
+  const look = cl.fillBatch.shader;
+  px._createLookShader = () => look;
+  // The mesh's destroy would take the fill batch's shader with it.
+  const destroy = px._destroyCustomLayerPostProcess;
+  px._destroyCustomLayerPostProcess = function (layer) {
+    if (layer.shaderMesh) layer.shaderMesh.shader = null;
+    return destroy.call(this, layer);
+  };
+  const drawn = [];
+  px._submitRender = (opts) => drawn.push(opts.container);
+  px._renderMeshFillToRt = () => {};
+  return { px, cl, drawn };
+}
+
+test('a composed look on a MESH layer can be taken off and put back', async () => {
+  const { px, cl, drawn } = await lookLayer({});
+  await quietly(() => {
+    px._setCustomLayerShader('shade', 'look', 'look');
+    Layer._alpha[cl.layerId] = 0.5;
+    px._ensureMeshLookComposite(cl);
+  });
+  const composed = cl.rtOut;
+  assert.ok(composed, 'the alpha made it compose');
+
+  await quietly(() => {
+    px._setCustomLayerShader('shade', null, null);
+    px.updateCustomLayers();
+  });
+  assert.equal(cl.shaderMesh, null);
+  assert.ok(!drawn.includes(null), 'no render of a look that is gone');
+  assert.equal(cl.displaySprite.texture, cl.rt, 'the raw layer shows');
+
+  await quietly(() => px._setCustomLayerShader('shade', 'look', 'look'));
+  assert.equal(cl.displaySprite.texture, composed, 'the look shows again');
+  assert.ok(cl.displaySprite.visible);
+  Layer._alpha[cl.layerId] = 1;
+});
+
+for (const [name, options] of [['alphaBySun', { alphaBySun: 'night' }], ['sunProjected', { sunProjected: true }]]) {
+  test(`a look set at run time on a MESH layer with ${name} composes, so the sun still reaches it`, async () => {
+    const { px, cl } = await lookLayer(options);
+    assert.equal(cl.rtOut, null);
+    await quietly(() => px._setCustomLayerShader('shade', 'look', 'look'));
+    assert.ok(cl.rtOut, 'it goes through rtOut');
+    assert.equal(cl.displaySprite.texture, cl.rtOut);
+    assert.equal(px._layerRuntime.shade, cl.displaySprite, 'the alpha lands on the sprite, which every look obeys');
+  });
+}
+
+test('a look set at run time on a plain MESH layer stays on the stage', async () => {
+  const { px, cl } = await lookLayer({});
+  await quietly(() => px._setCustomLayerShader('shade', 'look', 'look'));
+  assert.equal(cl.rtOut, null);
+  assert.equal(px._layerRuntime.shade, cl.shaderMesh);
+});
+
 test('a MESH layer without MeshGeometry fills its collider shapes in arrays of its own', async () => {
   // renderer.maxMeshVerts 0 (the destructible terrain scenes): no mesh memory and no corner to rewrite, so the
   // layer's batch keeps arrays of its own and Pixi binds no kernel.

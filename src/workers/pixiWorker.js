@@ -2669,6 +2669,11 @@ class PixiRenderer extends AbstractWorker {
     }
   }
 
+  /** A MESH layer whose look cannot go straight to the stage: its alpha, or the sun's on it, has to apply. */
+  _meshLookMustCompose(cl) {
+    return Layer._alpha[cl.layerId] !== 1 || !!Layer._metadata?.layers?.[cl.layerId]?.alphaBySun;
+  }
+
   /**
    * A look on a MESH layer draws to the screen directly from a user shader, which cannot hear the layer's alpha. A
    * layer that needs one goes through rtOut and a Sprite instead, as sprite look layers always do, and composes once.
@@ -6024,6 +6029,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (cl.fillBatch && cl.rtOut) {
       cl.meshLook = true;
       cl.shaderMesh.geometry = this._createLayerFullscreenGeometry(false);
+      cl.displaySprite.texture = cl.rtOut; // (none) left it on cl.rt
+      cl.displaySprite.visible = true;
       this._registerLayerDisplayObject(layerName, cl.displaySprite);
     } else if (cl.fillBatch) {
       cl.meshLook = true;
@@ -6033,6 +6040,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       if (!cl.shaderMesh.parent) this.pixiApp.stage.addChild(cl.shaderMesh);
       this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
+      if (this._meshLookMustCompose(cl)) this._ensureMeshLookComposite(cl);
     } else {
       cl.displaySprite.texture = cl.rtOut;
       cl.displaySprite.scale.set(1.0 / resolution);
@@ -8169,7 +8177,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             }
           }
           // A composed look (_ensureMeshLookComposite) runs every frame, as a look on the stage does.
-          if (cl.meshLook && cl.rtOut) {
+          if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
             rtOpts.transform = null;
             rtOpts.container = cl.shaderMesh;
             rtOpts.target = cl.rtOut;
