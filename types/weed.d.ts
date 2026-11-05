@@ -2455,6 +2455,11 @@ export interface SunOffsets {
   readonly SHADOW_DIR_Y: 48;
   readonly SHADOW_LENGTH_RATIO: 52;
   readonly SHADOW_ANGLE: 56;
+  readonly NIGHT_FACTOR: 60;
+  readonly NIGHT_COLOR: 64;
+  readonly NIGHT_INTENSITY: 68;
+  readonly NIGHT_FROM: 72;
+  readonly NIGHT_TO: 76;
 }
 
 /** Float32 slot indices (byte offset / 4) for Sun SAB. */
@@ -2472,11 +2477,28 @@ export interface SunF32Indices {
   readonly SHADOW_DIR_Y: 12;
   readonly SHADOW_LENGTH_RATIO: 13;
   readonly SHADOW_ANGLE: 14;
+  readonly NIGHT_FACTOR: 15;
+  readonly NIGHT_INTENSITY: 17;
+  readonly NIGHT_FROM: 18;
+  readonly NIGHT_TO: 19;
 }
 
 /** Uint32 slot indices (byte offset / 4) for Sun SAB. */
 export interface SunU32Indices {
   readonly COLOR: 4;
+  readonly NIGHT_COLOR: 16;
+}
+
+/** `lighting.sun.night`: the night's own light, added to the scene's without touching `Sun.intensity`. */
+export interface SunNightConfig {
+  /** Strength at factor 1 (0-1). Default 0, no night light. */
+  intensity?: number;
+  /** 0xRRGGBB. */
+  color?: number;
+  /** Sun intensity at which the light starts. Default 0.4. */
+  from?: number;
+  /** Sun intensity at which it is full. Default 0.1. */
+  to?: number;
 }
 
 /** Merged scene sun config (after `SUN_DEFAULTS`); passed to {@link Sun.initFromConfig}. */
@@ -2492,6 +2514,9 @@ export interface SunInitConfig {
   shadowMinLengthRatio?: number;
   shadowMaxLengthRatio?: number;
   shadowStretchAlphaFactor?: number;
+  night?: SunNightConfig;
+  /** This scene's hour-to-color table, instead of {@link Sun.DEFAULT_COLORS}. */
+  colors?: readonly SunHourColorKeyframe[] | null;
 }
 
 /**
@@ -2499,7 +2524,7 @@ export interface SunInitConfig {
  * All members are static; there are no instances.
  */
 export declare class Sun {
-  static readonly BYTE_LENGTH: 64;
+  static readonly BYTE_LENGTH: 96;
   static readonly OFFSETS: SunOffsets;
   static readonly F32: SunF32Indices;
   static readonly U32: SunU32Indices;
@@ -2531,6 +2556,22 @@ export declare class Sun {
   static set shadowMaxLengthRatio(value: number);
   static get shadowStretchAlphaFactor(): number;
   static set shadowStretchAlphaFactor(value: number);
+  /** 0 by day, 1 by night, from `Sun.intensity` and {@link Sun.nightFrom} / {@link Sun.nightTo}. */
+  static get nightFactor(): number;
+  /** The night light's strength at factor 1 (0-1); adds to the scene's light, leaves `Sun.intensity` alone. */
+  static get nightIntensity(): number;
+  static set nightIntensity(value: number);
+  /** The night light's color, 0xRRGGBB. */
+  static get nightColor(): number;
+  static set nightColor(value: number);
+  static get nightFrom(): number;
+  static set nightFrom(value: number);
+  static get nightTo(): number;
+  static set nightTo(value: number);
+  /** The night light as it adds to the scene now (color × strength × factor), written into `out` as 0-1 rgb. */
+  static nightLightRGB(out: Float32Array): void;
+  /** This scene's hour-to-color table instead of {@link Sun.DEFAULT_COLORS}; nothing goes back to the default. */
+  static setColors(colors?: readonly SunHourColorKeyframe[] | null): void;
 
   static get shadowDirX(): number;
   static get shadowDirY(): number;

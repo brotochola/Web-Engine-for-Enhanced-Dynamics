@@ -19,6 +19,10 @@ uniform sampler2D uShadowMap;
 uniform float uShadowComposite;
 // 1 / config.lighting.groundScaleY: the lights' y arrive in floor units, the fragment's is scaled here once.
 uniform float uGroundInvScaleY;
+// The night light, color already multiplied by its strength and Sun.nightFactor.
+uniform float uNightR;
+uniform float uNightG;
+uniform float uNightB;
 
 vec2 weedScreenToWorld(vec2 screenPos) {
   vec2 focus = uCameraPos + uFullCanvasSize / (2.0 * uZoom);
@@ -39,6 +43,7 @@ void main() {
   vec3 totalLight = vec3(uBaseAmbient);
   vec3 sunColor = vec3(uSunR, uSunG, uSunB);
   totalLight += sunColor * uSunIntensity;
+  totalLight += vec3(uNightR, uNightG, uNightB);
 
   for (int i = 0; i < MAX_LIGHTS; i++) {
     if (i >= uLightCount) break;

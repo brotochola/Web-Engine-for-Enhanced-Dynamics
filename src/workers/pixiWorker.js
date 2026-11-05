@@ -801,6 +801,7 @@ class PixiRenderer extends AbstractWorker {
     this.lightingMesh = null; // PIXI.Mesh with lighting shader
     this.lightingShader = null; // Shader instance for updating uniforms
     this.baseAmbient = 0.05; // Base ambient light level (0-1), read from config (night/minimum light)
+    this._nightRGB = new Float32Array(3); // Sun.nightLightRGB, once a frame
     this.maxLights = 128; // Light-data texture width / capacity (config.lighting.maxLights)
     this.maxShadowCastingLights = LIGHTING_DEFAULTS.maxShadowCastingLights;
     this.maxShadowsPerLight = LIGHTING_DEFAULTS.maxShadowsPerLight;
@@ -3181,6 +3182,9 @@ LIGHTING SYSTEM SETUP
         uFlipY: { value: 0, type: 'f32' },
         uShadowComposite: { value: 0, type: 'f32' },
         uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
+        uNightR: { value: 0, type: 'f32' },
+        uNightG: { value: 0, type: 'f32' },
+        uNightB: { value: 0, type: 'f32' },
       },
       ...this._lightingShadowResources(),
     };
@@ -3944,9 +3948,18 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     // Render to the visibility RT
     // Clear with base ambient + sun (same as what the full-screen shader starts with)
-    const sunIntensity = (Sun.isInitialized && Sun.enabled) ? Sun.intensity : 0;
+    const sunOn = Sun.isInitialized && Sun.enabled;
+    const sunIntensity = sunOn ? Sun.intensity : 0;
     const ambient = this.baseAmbient + sunIntensity;
-    const clampedAmbient = Math.min(ambient, 1.0);
+    const night = this._nightRGB;
+    if (sunOn) Sun.nightLightRGB(night);
+    else night.fill(0);
+    const clearColor = [
+      Math.min(ambient + night[0], 1.0),
+      Math.min(ambient + night[1], 1.0),
+      Math.min(ambient + night[2], 1.0),
+      1.0,
+    ];
 
     // Restore unoccluded light under occluder footprints (no self-darken), after the fans.
     const spriteMasks = this._buildSelfLitBatch(readBufferIdx);
@@ -3955,7 +3968,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       container,
       target: this._visPolyRT,
       clear: true,
-      clearColor: [clampedAmbient, clampedAmbient, clampedAmbient, 1.0],
+      clearColor,
     });
 
     if (spriteMasks) this._renderSelfLitSpriteMasks(readBufferIdx);
@@ -4714,9 +4727,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       uniformGroup.uniforms.uSunR = rgb.r;
       uniformGroup.uniforms.uSunG = rgb.g;
       uniformGroup.uniforms.uSunB = rgb.b;
+
+      // Night light: its own term, so Sun.intensity (shadows, game logic) never hears of it
+      const night = this._nightRGB;
+      Sun.nightLightRGB(night);
+      uniformGroup.uniforms.uNightR = night[0];
+      uniformGroup.uniforms.uNightG = night[1];
+      uniformGroup.uniforms.uNightB = night[2];
     } else {
       // Sun disabled - no sun contribution
       uniformGroup.uniforms.uSunIntensity = 0;
+      uniformGroup.uniforms.uNightR = 0;
+      uniformGroup.uniforms.uNightG = 0;
+      uniformGroup.uniforms.uNightB = 0;
     }
 
     if (typeof uniformGroup.update === 'function') uniformGroup.update();

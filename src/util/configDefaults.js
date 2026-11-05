@@ -674,6 +674,19 @@ export const SUN_DEFAULTS = Object.freeze({
     speed: 1,
     dayDurationMinutes: 5,
   }),
+  /**
+   * The night's own light: scene light = ambient + sun · I + color · intensity · f + lights, with
+   * f = clamp((from − I) / (from − to)) for I the sun's intensity. It leaves Sun.intensity alone, so sun shadows and
+   * point-light shadows keep reading the sun. intensity 0 = none.
+   */
+  night: Object.freeze({
+    intensity: 0,
+    color: 0x8aa0d8,
+    from: 0.4,
+    to: 0.1,
+  }),
+  /** Hour-to-color table for this scene, [{ hour, color }, …]; null = Sun.DEFAULT_COLORS. */
+  colors: null,
 });
 
 export const LIGHTING_DEFAULTS = Object.freeze({

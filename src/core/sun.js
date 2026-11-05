@@ -15,8 +15,8 @@
  * because they would be "drowned out" by sunlight in real life.
  */
 export class Sun {
-    // SAB layout (64 bytes total, 4-byte aligned)
-    static BYTE_LENGTH = 64;
+    // SAB layout (96 bytes total, 4-byte aligned)
+    static BYTE_LENGTH = 96;
 
     // Offsets in bytes
     static OFFSETS = {
@@ -38,7 +38,12 @@ export class Sun {
         SHADOW_DIR_Y: 48, // Float32 (sin of shadow angle)
         SHADOW_LENGTH_RATIO: 52, // Float32 (current length ratio based on elevation)
         SHADOW_ANGLE: 56, // Float32 (radians, for sprite rotation)
-        // reserved: 60-63
+        NIGHT_FACTOR: 60, // Float32 (0 by day, 1 by night; computed from INTENSITY)
+        NIGHT_COLOR: 64, // Uint32 (0xRRGGBB)
+        NIGHT_INTENSITY: 68, // Float32 (0-1, the night light at factor 1; 0 = no night light)
+        NIGHT_FROM: 72, // Float32 (sun intensity at which the night light starts)
+        NIGHT_TO: 76, // Float32 (sun intensity at which it is full)
+        // reserved: 80-95
     };
 
     // Float32 indices (offset / 4)
@@ -56,11 +61,16 @@ export class Sun {
         SHADOW_DIR_Y: 12,
         SHADOW_LENGTH_RATIO: 13,
         SHADOW_ANGLE: 14,
+        NIGHT_FACTOR: 15,
+        NIGHT_INTENSITY: 17,
+        NIGHT_FROM: 18,
+        NIGHT_TO: 19,
     };
 
     // Uint32 indices (offset / 4)
     static U32 = {
         COLOR: 4,
+        NIGHT_COLOR: 16,
     };
 
     // Default sun colors for different times of day
@@ -78,6 +88,9 @@ export class Sun {
         { hour: 21, color: 0x2d4a6e }, // Dusk - deep blue
         { hour: 24, color: 0x1a1a2e }, // Midnight - dark blue
     ];
+
+    // The hour-to-color table in use: DEFAULT_COLORS, or the scene's lighting.sun.colors (see setColors)
+    static _colors = Sun.DEFAULT_COLORS;
 
     // Field views: the SAB on a worker, the private stage on the main thread (see initializeStaged)
     static _sab = null;
@@ -162,8 +175,9 @@ export class Sun {
         this._written = -1;
     }
 
-    /** Forget the buffers (a scene's teardown). */
+    /** Forget the buffers and the scene's color table (a scene's teardown). */
     static unbind() {
+        this._colors = Sun.DEFAULT_COLORS;
         this._sab = null;
         this._uint8 = null;
         this._float32 = null;
@@ -223,6 +237,7 @@ export class Sun {
         if (this._float32) {
             this._float32[Sun.F32.INTENSITY] = Math.max(0, Math.min(1, v));
             this._written |= 1 << Sun.F32.INTENSITY;
+            this._updateNightFactor();
         }
     }
 
@@ -257,6 +272,81 @@ export class Sun {
             this._float32[Sun.F32.HOUR] = ((v % 24) + 24) % 24;
             this._written |= 1 << Sun.F32.HOUR;
         } // Wrap to 0-24
+    }
+
+    // ============ Night Light ============
+
+    /** 0 by day, 1 by night, from the sun's intensity and nightFrom / nightTo. Computed; follows Sun.intensity. */
+    static get nightFactor() {
+        return this._float32 ? this._float32[Sun.F32.NIGHT_FACTOR] : 0;
+    }
+
+    /** The night light's strength at factor 1 (0-1). It adds to the scene's light and leaves Sun.intensity alone. */
+    static get nightIntensity() {
+        return this._float32 ? this._float32[Sun.F32.NIGHT_INTENSITY] : 0;
+    }
+    static set nightIntensity(v) {
+        if (this._float32) {
+            this._float32[Sun.F32.NIGHT_INTENSITY] = Math.max(0, Math.min(1, v));
+            this._written |= 1 << Sun.F32.NIGHT_INTENSITY;
+        }
+    }
+
+    /** The night light's color as 0xRRGGBB */
+    static get nightColor() {
+        return this._uint32 ? this._uint32[Sun.U32.NIGHT_COLOR] : 0xffffff;
+    }
+    static set nightColor(v) {
+        if (this._uint32) {
+            this._uint32[Sun.U32.NIGHT_COLOR] = v;
+            this._written |= 1 << Sun.U32.NIGHT_COLOR;
+        }
+    }
+
+    /** Sun intensity at which the night light starts (factor 0) */
+    static get nightFrom() {
+        return this._float32 ? this._float32[Sun.F32.NIGHT_FROM] : 0;
+    }
+    static set nightFrom(v) {
+        if (this._float32) {
+            this._float32[Sun.F32.NIGHT_FROM] = v;
+            this._written |= 1 << Sun.F32.NIGHT_FROM;
+            this._updateNightFactor();
+        }
+    }
+
+    /** Sun intensity at which the night light is full (factor 1) */
+    static get nightTo() {
+        return this._float32 ? this._float32[Sun.F32.NIGHT_TO] : 0;
+    }
+    static set nightTo(v) {
+        if (this._float32) {
+            this._float32[Sun.F32.NIGHT_TO] = v;
+            this._written |= 1 << Sun.F32.NIGHT_TO;
+            this._updateNightFactor();
+        }
+    }
+
+    /**
+     * The night light as it adds to the scene now: color × strength × factor, 0-1 per channel.
+     * @param {Float32Array} out - rgb
+     */
+    static nightLightRGB(out) {
+        const k = this.nightIntensity * this.nightFactor;
+        const c = this.nightColor;
+        out[0] = (((c >> 16) & 255) / 255) * k;
+        out[1] = (((c >> 8) & 255) / 255) * k;
+        out[2] = ((c & 255) / 255) * k;
+    }
+
+    /** clamp((from - I) / (from - to)): a step at to when the two meet. */
+    static _updateNightFactor() {
+        const from = this._float32[Sun.F32.NIGHT_FROM];
+        const to = this._float32[Sun.F32.NIGHT_TO];
+        const i = this._float32[Sun.F32.INTENSITY];
+        const f = from === to ? (i <= to ? 1 : 0) : (from - i) / (from - to);
+        this._float32[Sun.F32.NIGHT_FACTOR] = f < 0 ? 0 : f > 1 ? 1 : f;
+        this._written |= 1 << Sun.F32.NIGHT_FACTOR;
     }
 
     // ============ Shadow Config (set once from config) ============
@@ -401,7 +491,7 @@ export class Sun {
      * @private
      */
     static _getColorForHour(hour) {
-        const colors = Sun.DEFAULT_COLORS;
+        const colors = this._colors;
 
         // Find surrounding keyframes
         let prevIdx = 0;
@@ -439,6 +529,22 @@ export class Sun {
     }
 
     /**
+     * Use the scene's hour-to-color table instead of DEFAULT_COLORS. Keyframes in any order; hours outside the table
+     * wrap around midnight. Nothing or an empty table goes back to DEFAULT_COLORS.
+     * @param {{hour: number, color: number}[]} [colors]
+     */
+    static setColors(colors) {
+        if (!Array.isArray(colors) || colors.length === 0) {
+            this._colors = Sun.DEFAULT_COLORS;
+            return;
+        }
+        const sorted = [...colors].sort((a, b) => (a.hour < b.hour ? -1 : a.hour > b.hour ? 1 : 0));
+        const first = sorted[0];
+        const last = sorted[sorted.length - 1];
+        this._colors = [{ hour: last.hour - 24, color: last.color }, ...sorted, { hour: first.hour + 24, color: first.color }];
+    }
+
+    /**
      * Initialize sun properties from a config object
      * Config should be pre-merged with SUN_DEFAULTS by Scene
      * @param {Object} config - Sun configuration (merged with defaults)
@@ -451,6 +557,15 @@ export class Sun {
         this.color = config.color;
         this.shadowAlpha = config.shadowAlpha;
         this.hour = config.startHour;
+        this.setColors(config.colors);
+
+        const night = config.night;
+        if (night) {
+            this.nightIntensity = night.intensity;
+            this.nightColor = night.color;
+            this.nightFrom = night.from;
+            this.nightTo = night.to;
+        }
 
         // Shadow config
         this.shadowAngleOffset = config.shadowAngleOffset;

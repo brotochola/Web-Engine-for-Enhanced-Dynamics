@@ -31,6 +31,10 @@ struct LightingUniforms {
   uShadowComposite: f32,
   // 1 / config.lighting.groundScaleY: the lights' y arrive in floor units, the fragment's is scaled here once.
   uGroundInvScaleY: f32,
+  // The night light, color already multiplied by its strength and Sun.nightFactor.
+  uNightR: f32,
+  uNightG: f32,
+  uNightB: f32,
 }
 @group(2) @binding(0) var uLightData: texture_2d<f32>;
 @group(2) @binding(1) var<uniform> uniforms: LightingUniforms;
@@ -71,6 +75,7 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   fragWorld.y *= uniforms.uGroundInvScaleY;
   var totalLight = vec3<f32>(uniforms.uBaseAmbient);
   totalLight += vec3<f32>(uniforms.uSunR, uniforms.uSunG, uniforms.uSunB) * uniforms.uSunIntensity;
+  totalLight += vec3<f32>(uniforms.uNightR, uniforms.uNightG, uniforms.uNightB);
   let nLights = uniforms.uLightCount;
   let texW = i32(uniforms.uLightTexWidth);
   for (var i = 0; i < MAX_LIGHTS; i++) {

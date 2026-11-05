@@ -838,6 +838,10 @@ class Scene {
         ...SUN_DEFAULTS.dayCycle,
         ...(userSun.dayCycle || {}),
       },
+      night: {
+        ...SUN_DEFAULTS.night,
+        ...(userSun.night || {}),
+      },
     };
     // Compute maxShadowSprites unless the scene explicitly provides a global cap.
     if (userLightingConfig.maxShadowSprites == null) {

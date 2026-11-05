@@ -837,6 +837,8 @@ export class AbstractWorker {
     // Initialize Sun static class (directional light shared across workers)
     if (data.sunData) {
       Sun.initialize(data.sunData);
+      // A tick may call Sun.setTimeOfDay: it reads the scene's table, as the main thread does.
+      Sun.setColors(this.config.lighting?.sun?.colors);
     }
 
     // Initialize Layer static class (rendering layers shared across workers)
