@@ -146,7 +146,7 @@ export class CarShadow extends GameObject {
     this.setLayer('houseShadows');
     this.meshRenderer.tint = 0x000000;
     const mesh = { xy: [], heights: [], indices: [] };
-    addPrism(mesh, [-20, -46, 20, -46, 20, 46, -20, 46], 0, 24);
+    addPrism(mesh, [-36, -16, 36, -16, 36, 16, -36, 16], 0, 26);
     this.meshRenderer.setMesh(mesh.xy, mesh.indices);
     this.meshRenderer.setHeights(mesh.heights);
   }

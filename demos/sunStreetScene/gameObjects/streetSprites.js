@@ -11,6 +11,9 @@ const CAR_SPEED = Number(WEED.params?.get('carSpeed') ?? 4);
 const LANE = -28; // inside of the centre line
 const LAMP_INTENSITY = 9000;
 const HEADLIGHT_INTENSITY = 9000;
+// carScene's cars: a drawn frame every 7.5 degrees, named by its heading, instead of one picture that turns.
+const CAR_FRAMES = Array.from({ length: 48 }, (_, i) => String(i * 7.5));
+const CAR_FRAME_STEP = (Math.PI * 2) / CAR_FRAMES.length;
 
 const point = new Float64Array(3);
 
@@ -100,26 +103,37 @@ export class StreetCar extends GameObject {
   static components = [Collider, SpriteRenderer, LightEmitter];
 
   distance = 0.5;
+  frame = -1;
 
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 20;
     this.collider.visualRange = 400;
     this.distance = config.distance + 0.5;
-    this.setSprite('car');
-    this.setScale(0.55);
+    this.setSpritesheet(config.sheet);
+    this.setAnimation(CAR_FRAMES[0]);
+    this.spriteRenderer.anchorX = 0.5;
+    this.spriteRenderer.anchorY = 0.5;
+    // The frame shows the heading: the entity turns, the picture does not.
+    this.spriteRenderer.inheritTransformRotation = 0;
+    this.spriteRenderer.spriteRotation = 0;
     this.lightEmitter.lightColor = 0xfff1c4;
     this.lightEmitter.lightIntensity = 0;
-    this.lightEmitter.offsetY = -config.offset;
+    this.lightEmitter.offsetX = config.offset;
   }
 
   tick(dtRatio) {
     this.distance = (this.distance + CAR_SPEED * dtRatio) % LAP;
     roadPoint(this.distance, LANE, point);
     // The rotation first: set x and set y send the body the rotation they find.
-    this.rotation = point[2] + Math.PI / 2; // the picture points up the screen
+    this.rotation = point[2];
     this.x = point[0];
     this.y = point[1];
+    const frame = Math.round(point[2] / CAR_FRAME_STEP) % CAR_FRAMES.length;
+    if (frame !== this.frame) {
+      this.frame = frame;
+      this.setAnimation(CAR_FRAMES[frame]);
+    }
     this.lightEmitter.lightIntensity = HEADLIGHT_INTENSITY * Sun.nightFactor;
   }
 }

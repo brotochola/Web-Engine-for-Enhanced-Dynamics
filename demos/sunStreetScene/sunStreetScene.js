@@ -9,13 +9,13 @@
 //   layer.alpha            L, on a sprite layer and a MESH layer
 //   sunProjected           each house's shadow is a mesh with a height per vertex (setHeights), sent once and moved
 //                          by the GPU; trees and people use ShadowCaster, and the shadows agree
-//   LightEmitter.offsetY   the headlights sit ahead of the car and turn with it (O)
+//   LightEmitter.offsetX   the headlights sit ahead of the car and turn with it (O); the cars are carScene's
 //   setTexture             T: the trees cast another tree's silhouette, their sprite stays
 //   mesh range uploads     the flag rewrites its vertices every frame and the still tufts are not sent again: the
 //                          renderer's time in the panel does not grow with ?tufts=
 //   WEED.params            ?carSpeed= is read on the logic worker
 //
-// URL: ?hour=20 (start hour), ?paused=1, ?dayMinutes=1 (a whole day), ?cars=4, ?carSpeed=4, ?tufts=60000, ?backend=webgpu.
+// URL: ?hour=20 (start hour), ?paused=1, ?dayMinutes=1 (a whole day), ?cars=6, ?carSpeed=4, ?tufts=60000, ?backend=webgpu.
 // WASD or arrows pan, the wheel zooms, H hides the panel.
 
 import WEED from '/src/index.js';
@@ -29,7 +29,7 @@ const { Scene, Camera, Decoration, Keyboard, Layer, Sun, Transform, BLEND_MODES,
 const param = (key, fallback) => Number(WEED.params?.get(key) ?? fallback);
 const START_HOUR = param('hour', 16.5);
 const DAY_MINUTES = param('dayMinutes', 1);
-const CARS = Math.max(0, Math.floor(param('cars', 4)));
+const CARS = Math.max(0, Math.floor(param('cars', 6)));
 const TUFTS = Math.max(1, Math.floor(param('tufts', 60000)));
 const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 
@@ -58,6 +58,7 @@ const CLOUDS = [
 ];
 const WALKERS = 8;
 const WALKER_SHEETS = ['amarillo_01', 'female_01', 'amarillo_02', 'female_03'];
+const CAR_SHEETS = ['red', 'yellow', 'blue', 'white', 'black', 'poli'];
 
 export class SunStreetScene extends Scene {
   static config = {
@@ -124,12 +125,12 @@ export class SunStreetScene extends Scene {
       tree1: '/demos/img/tree1.png',
       tree2: '/demos/img/tree2.png',
       tallLight: '/demos/img/tallLight.png',
-      car: '/demos/img/zenithal_car.png',
       cloud: '/demos/img/cloud.png',
       halo: '/demos/sunStreetScene/halo.png',
       square: '/demos/img/10_10_square.png',
     },
     spritesheets: {
+      ...Object.fromEntries(CAR_SHEETS.map((name) => [`car_${name}`, { json: `/demos/img/cars/${name}.json`, png: `/demos/img/cars/${name}.png` }])),
       ...Object.fromEntries(WALKER_SHEETS.map((name) => [name, { json: '/demos/img/civil1.json', png: `/demos/img/people/${name}.png` }])),
     },
   };
@@ -171,7 +172,7 @@ export class SunStreetScene extends Scene {
       { key: ' ', keyName: 'Space', label: 'Clock', note: 'Z and X move the hour, held. H hides this panel', press: () => this._togglePause() },
       { key: 'n', keyName: 'N', label: 'Night light', note: 'A blue light of its own: Sun.intensity, lamps and shadows stay', press: () => this._toggleNight() },
       { key: 'e', keyName: 'E', label: 'Eclipse', note: 'update overrides Sun.intensity after the cycle, every frame: it must not flicker', press: () => this._toggleEclipse() },
-      { key: 'o', keyName: 'O', label: 'Headlights', note: 'At night. LightEmitter.offsetY: the pool ahead of the car, through the bends', press: () => this._toggleHeadlights() },
+      { key: 'o', keyName: 'O', label: 'Headlights', note: 'At night. LightEmitter.offsetX: the pool ahead of the car, through the bends', press: () => this._toggleHeadlights() },
       { key: 't', keyName: 'T', label: 'Tree shadows', note: 'ShadowCaster.setTexture: another silhouette, the same sprite', press: () => this._toggleTreeShadows() },
       { key: 'l', keyName: 'L', label: 'layer.alpha', note: 'On the road (MESH layers) and the clouds (a sprite layer)', press: () => this._toggleFade() },
     ]);
@@ -210,7 +211,7 @@ export class SunStreetScene extends Scene {
       StreetWalker.spawn({ x: 300 + i * 170, y, sheet: WALKER_SHEETS[i % WALKER_SHEETS.length], from: 280, to: 1520, direction: i % 2 === 0 ? 1 : -1 });
     }
     for (let i = 0; i < CARS; i++) {
-      const car = StreetCar.spawn({ x: ROAD_CX, y: ROAD_CY, distance: (i / CARS) * LAP, offset: HEADLIGHT_OFFSET });
+      const car = StreetCar.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: `car_${CAR_SHEETS[i % CAR_SHEETS.length]}`, distance: (i / CARS) * LAP, offset: HEADLIGHT_OFFSET });
       CarShadow.spawn({ x: ROAD_CX, y: ROAD_CY, carIndex: car.index });
     }
     for (const cloud of CLOUDS) StreetCloud.spawn(cloud);
@@ -269,7 +270,7 @@ export class SunStreetScene extends Scene {
   _toggleHeadlights() {
     this._headlightsAhead = !this._headlightsAhead;
     for (const car of StreetCar.instances) {
-      if (Transform.active[car.index]) car.lightEmitter.offsetY = this._headlightsAhead ? -HEADLIGHT_OFFSET : 0;
+      if (Transform.active[car.index]) car.lightEmitter.offsetX = this._headlightsAhead ? HEADLIGHT_OFFSET : 0;
     }
     this._showStates();
   }
