@@ -10783,6 +10783,29 @@
         "oblique occlusion"
       ],
       "records": []
+    },
+    {
+      "id": "N-120",
+      "title": "Ten findings of the code review of dx/sun-lights-meshes",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/sun-lights-meshes (55c1c03f to bb270b61), not merged",
+      "date": "2026-11-05",
+      "result": "Ten of ten confirmed and fixed; replayed on a real page; bundle against source not measured, the machine was on battery.",
+      "next": "Bundle against source again, on AC power: dist fa61f733 is not measured.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-120"
+      ],
+      "aliases": [
+        "code review",
+        "rtStale",
+        "updateBuffer",
+        "Scene.params"
+      ],
+      "records": [
+        "R-0838"
+      ]
     }
   ],
   "records": [
@@ -18688,6 +18711,25 @@
       "text": "The DX batch's bundles (dist e2d47490, committed and pushed to dx/sun-lights-meshes by the owner; built from 8a164b74, 0.13.0, inputs a331a201bda06379). `check:dist` fresh, embed and browser smokes OK on all 8, `test:node:bundle` 271 of 271.\n\nThe new options inside the bundle: nine dxCaptureScene captures, prod bundle against source, with night, colours, sunProjected heights, alphaBySun, light offset and a shadow texture, WebGL and WebGPU: 0 of 921 600 pixels differ, no page errors, and each side checked to be what it says (BUNDLE_MODE).\n\nProd bundle against source, one build, on AC power, no power change between 18:10 and 18:48:\n- Predator, 4 pairs, 18:16 to 18:23: NEUTRAL. logic 3.250 → 3.073 ms (-5.9 %, 1/4), spatial 4.588 → 4.622 (+0.7 %), physics 5.440 → 5.283 (-3.4 %), pre-render 3.064 → 3.154 (+1.7 %, 3/4), 60.0 fps; loads within 0.5 %.\n- painterMove, 4 pairs, 18:23 to 18:29: NEUTRAL. pre-render 16.518 → 16.718 ms (+0.5 %, 3/4), logic 6.325 → 6.407 (+0.5 %), 60.0 fps, 300 000 entities on both.\n- Boids, 8 pairs, 18:29 to 18:41: REGRESSION by the runner, spatial 6.912 → 6.990 (+3.4 %, 6/8), physics +2.5 % (6/8). Then the chunk diff against main's bundle, with mangled names normalised: the spatial chunk differs in one webpack module id, Box2D's is identical, and worker_common's changes are the sun, shadows, config and the engine's wasm, none of it on spatial's path. 4 more pairs, 18:43 to 18:48: 12 pairs NEUTRAL, spatial 6.872 → 6.876 (+2.9 % paired, 7/12, pairs from -7.1 % to +6.4 %, +1.9 % against the others), physics 6.514 → 6.574 (+2.3 %, 8/12), pre-render 3.165 → 3.016 (-2.2 %), 60.0 fps. Visible entities -3.3 %, within the gate. Main's bundle read spatial -1.0 % at R-0827. Detection limit of the pooled row: its cv, 5 %.",
       "commits": [
         "e2d47490"
+      ]
+    },
+    {
+      "id": "R-0838",
+      "date": "2026-11-05",
+      "time": "20:38",
+      "timeFrom": "recorded",
+      "title": "The review's ten findings, fixed, each with a test that fails without it",
+      "verdict": "kept-hygiene",
+      "text": "`/code-review high` of the branch, before a merge, gave ten findings. All ten held against the code, and each fix has a test that fails on the code before it: `meshCornersWired.test.js`, `meshUploadRanges.test.js`, `shadowTexture.test.js`, `weedParams.test.js`. The review's list is in REVIEW_PLAN.md#N-120.\n\nReplayed on a real page in Sun Street, WebGL, with no error or warning: a look on, off and back on a sunProjected layer; a whole night with cars moving, then the morning, their shadows under them; the tree shadow key; a resize of a still scene, its shadows back; the flags layer at 0.25, pole and textured flag together.\n\nSuites: node 2292 of 2292, demos 100 of 100, embed and browser smokes on all 8 bundles, `test:node:bundle` 271 of 271. dist fa61f733, built from bb270b61, fresh. Byte for byte against main at 8c3d8380, before these fixes: dxCaptureScene at 12 h, 22 h on WebGPU and raycast, MeshFillStaticScene, 0 of 921 600 pixels.\n\nNot measured. When the fixes were ready the machine was on battery with the owner's Chrome at 1.36 cores, so the one run taken there (meshUploadStressScene, renderer 0.92 ms) proves nothing and no verdict rests on it. Prod bundle against source waits for a sitting on AC: Predator, painterMove, Boids.",
+      "commits": [
+        "55c1c03f",
+        "19cefb0e",
+        "7dba168f",
+        "75f362e4",
+        "a6b874db",
+        "2ec95a86",
+        "bb270b61",
+        "fa61f733"
       ]
     }
   ],
