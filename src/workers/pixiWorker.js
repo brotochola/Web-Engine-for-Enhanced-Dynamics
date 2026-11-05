@@ -7657,6 +7657,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uniformStore: null,
         shaderBypass: false,
         meshLook: false,
+        sunProjected: isMesh && config.sunProjected === true,
         compute: null,
         lookSource: null,
         // LAYER_KIND.GPU_PARTICLES: the layer's GpuParticleLayerBatch, or null.
@@ -7791,7 +7792,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             `PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h}${densLabel})`
           );
         }
-      } else if (fillBatch && config.alphaBySun) {
+      } else if (fillBatch && (config.alphaBySun || config.sunProjected)) {
         // The sun's factor is one alpha over the whole layer: an RT composed once, or overlaps would darken twice.
         cl.shaderBypass = true;
         this._ensureCustomLayerDensityRT(cl);
@@ -8135,6 +8136,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           skip.zoom !== this._renderZoom ||
           skip.camRot !== (this._renderCameraRot || 0);
         skip._skipRt = !packedThisFrame && !camChanged && skip.rtReady;
+        if (cl.sunProjected) {
+          // The sun moves the shadows on the GPU: a new position redraws the layer's RT, no pack. With nothing to show
+          // (night, or the sun's factor at 0), it draws nothing.
+          const sunFactors = this._layerSunFactor;
+          if (cl.layerId < sunFactors.length && sunFactors[cl.layerId] === 0) {
+            if (skip.rtReady) skip._skipRt = true;
+          } else if (cl.uvFillBatch) {
+            const len = Sun.isInitialized ? Sun.shadowLengthRatio : 0;
+            if (cl.uvFillBatch.setSunShadow(len * Sun.shadowDirX, len * Sun.shadowDirY)) skip._skipRt = false;
+          }
+        }
       } else {
         continue;
       }

@@ -1,6 +1,7 @@
 import { gpuStageF, gpuStageVF } from './pixiMeshWgsl.js';
 
-export function colliderFillGpuProgram(GpuProgram, source, name) {
+/** @param {boolean} [sunShadow] the UV batch's shader, which has one more uniform group entry (DX-SUNMESH) */
+export function colliderFillGpuProgram(GpuProgram, source, name, sunShadow = false) {
   if (!source) {
     throw new Error(
       'WeedJS: Collider fill WGSL was not loaded before GpuProgram creation.'
@@ -15,7 +16,7 @@ export function colliderFillGpuProgram(GpuProgram, source, name) {
     layout: {
       0: { globalUniforms: 0 },
       1: { localUniforms: 0 },
-      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uPoseTable: 3 },
+      2: { uTexture: 0, uSampler: 1, uTexLut: 2, uPoseTable: 3, ...(sunShadow ? { sunShadow: 4 } : {}) },
     },
     gpuLayout: [
       [{ binding: 0, visibility: vf, buffer: { type: 'uniform' } }],
@@ -31,6 +32,7 @@ export function colliderFillGpuProgram(GpuProgram, source, name) {
           binding: 3,
           visibility: vf,
           texture: { sampleType: 'unfilterable-float', viewDimension: '2d', multisampled: false } },
+        ...(sunShadow ? [{ binding: 4, visibility: vf, buffer: { type: 'uniform' } }] : []),
       ],
     ],
   });

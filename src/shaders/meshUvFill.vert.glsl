@@ -21,6 +21,8 @@ uniform mat3 uTransformMatrix;
 uniform vec4 uColor; // the mesh's group color, premultiplied: its alpha is the layer's
 uniform sampler2D uTexLut;
 uniform sampler2D uPoseTable;
+// DX-SUNMESH: L · (shadowDirX, shadowDirY) on a sunProjected layer, whose U holds each vertex's height; 0 on any other.
+uniform vec2 uSunShadow;
 
 out vec4 vColor;
 out vec2 vLocal;
@@ -44,7 +46,7 @@ void main() {
   float c = cs.x;
   float s = cs.y;
   vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  vec2 world = rotated + xy;
+  vec2 world = rotated + xy + (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(world, 1.0);
   gl_Position = vec4(clip.xy, aInstDepth, 1.0);

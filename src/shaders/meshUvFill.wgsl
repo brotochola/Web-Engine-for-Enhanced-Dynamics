@@ -18,6 +18,12 @@ struct LocalUniforms {
 @group(2) @binding(2) var uTexLut: texture_2d<f32>;
 @group(2) @binding(3) var uPoseTable: texture_2d<f32>;
 
+// DX-SUNMESH: L · (shadowDirX, shadowDirY) on a sunProjected layer, whose U holds each vertex's height; 0 on any other.
+struct SunShadowUniforms {
+  uSunShadow: vec2<f32>,
+}
+@group(2) @binding(4) var<uniform> sunShadow: SunShadowUniforms;
+
 struct VertexOut {
   @builtin(position) position: vec4<f32>,
   @location(0) vColor: vec4<f32>,
@@ -65,7 +71,8 @@ fn mainVert(
   let c = cs.x;
   let s = cs.y;
   let rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
-  let world = rotated + xy;
+  let height = aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x);
+  let world = rotated + xy + height * sunShadow.uSunShadow;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(world, 1.0);
   let tintBits = bitcast<u32>(aInstTintBits);

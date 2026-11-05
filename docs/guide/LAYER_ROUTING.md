@@ -239,6 +239,22 @@ layers: {
 
 A MESH layer with `alphaBySun` draws into one render texture at the layer's `resolution` and composes it once, so overlapping meshes do not darken twice. A sprite layer fades per sprite.
 
+### Volumes the sun projects
+
+A `ShadowCaster` flips a sprite from its foot, which suits something standing. A house or a car seen from above is a volume: give it a mesh with a height per vertex on a `sunProjected` layer, and the vertex shader moves each vertex by its height and the sun, every frame, with nothing packed or uploaded after the first.
+
+```javascript
+layers: { houseShadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, sunProjected: true } } // alphaBySun defaults to 'shadow'
+
+// A box: the floor stays, the roof slides, the walls stretch. What gets painted is its shadow.
+this.setLayer('houseShadows');
+this.meshRenderer.tint = 0x000000;
+this.meshRenderer.setMesh(corners, triangles);   // floor and roof corners, in the entity's frame
+this.meshRenderer.setHeights(heights);           // 0 on the floor, the box's height in screen px on the roof
+```
+
+The sun moves a vertex `h · Sun.shadowLengthRatio · (Sun.shadowDirX, Sun.shadowDirY)`, exactly what it does to the point that high on a `ShadowCaster`'s sprite, so houses, people and trees agree. Heights share the mesh's UV column, so such a mesh has no texture coordinates; `setMesh` without UVs drops them.
+
 ## Layer Resolution (Cross-Worker)
 
 A look layer (a layer with a shader) draws into render textures the size of the viewport times its `resolution`.

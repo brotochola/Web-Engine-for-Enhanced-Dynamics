@@ -81,16 +81,18 @@ export class MeshUvFillBatch {
     });
     this._poseSource.uploadMethodId = 'external';
     this.poseTable = new Float32Array(256 * 4);
+    this._sunShadow = new Float32Array(2);
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
       uTexLut: lut,
       uPoseTable: this._poseSource,
+      sunShadow: { uSunShadow: { value: this._sunShadow, type: 'vec2<f32>' } },
     };
 
     const name = label || 'mesh-uv-fill';
     if (useWebGpu) {
-      const gpuProgram = colliderFillGpuProgram(GpuProgram, shaders?.meshUvFill, name);
+      const gpuProgram = colliderFillGpuProgram(GpuProgram, shaders?.meshUvFill, name, true);
       this.shader = new Shader({ gpuProgram, resources });
     } else {
       const glProgram = colliderFillGlProgram(
@@ -143,6 +145,20 @@ export class MeshUvFillBatch {
     this.buffer.update(n * MESH_UV_FILL_STRIDE);
     this.geometry.instanceCount = n;
     return n;
+  }
+
+  /**
+   * DX-SUNMESH: how far a vertex moves per px of height this frame.
+   * @returns {boolean} whether it differs from the last frame's
+   */
+  setSunShadow(x, y) {
+    const s = this._sunShadow;
+    if (s[0] === Math.fround(x) && s[1] === Math.fround(y)) return false;
+    s[0] = x;
+    s[1] = y;
+    const group = this.shader.resources.sunShadow;
+    if (group && typeof group.update === 'function') group.update();
+    return true;
   }
 
   /** ColliderFillBatch.uploadRange for the UV rows. */

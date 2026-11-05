@@ -2641,6 +2641,11 @@ export interface LayerSceneConfigEntry {
    * `from` and 1 at `to` (from > to runs it backwards). `layer.alpha` stays yours. A MESH layer with it composes once.
    */
   alphaBySun?: 'shadow' | 'night' | { from: number; to: number } | null;
+  /**
+   * `kind: LAYER_KIND.MESH`: the GPU moves each vertex by its height ({@link MeshRenderer.setHeights}) and the sun, as a
+   * ShadowCaster's sprite moves: a box's mesh is its shadow, uploaded once. Composes once; `alphaBySun` defaults to `'shadow'`.
+   */
+  sunProjected?: boolean;
   layerType?: string;
   maxItems?: number;
   dynamicResolution?: Record<string, unknown> | null;
@@ -3365,6 +3370,11 @@ export declare class MeshRenderer extends Component {
   ): this;
   /** Rewrite local positions. Count must match the current mesh. */
   setVertices(positions: ArrayLike<number>): this;
+  /**
+   * Height of each vertex, in screen px, on a `sunProjected` layer: the sun moves a vertex as far as it moves the point
+   * that high on a ShadowCaster's sprite. After `setMesh`, one per vertex; `setMesh` without UVs drops them.
+   */
+  setHeights(heights: ArrayLike<number>): this;
   /** Drop the explicit mesh and fall back to collider fill. */
   clearMesh(): this;
   /**

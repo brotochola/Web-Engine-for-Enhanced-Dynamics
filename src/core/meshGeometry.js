@@ -572,6 +572,44 @@ export class MeshGeometry {
     return true;
   }
 
+  /**
+   * DX-SUNMESH: per-vertex heights in the mesh's U column (V 0), read by a sunProjected layer's shader. The mesh takes
+   * the UV batch's rows from here; a later setMesh without UVs drops them.
+   * @param {number} entity
+   * @param {ArrayLike<number>} heights one per vertex
+   * @returns {boolean}
+   */
+  static writeHeights(entity, heights) {
+    if (!this.vertOffset || !this.lock) return false;
+    const i = entity | 0;
+    if (i < 0 || i >= (this.entityCount | 0)) return false;
+    if (!heights || heights.length == null) return false;
+    const n = this.vertCount[i] | 0;
+    if ((this.vertOffset[i] | 0) < 0 || (heights.length | 0) !== n) return false;
+    for (let v = 0; v < n; v++) if (!Number.isFinite(heights[v])) return false;
+    if (!this._lock()) return false;
+    const off = this.vertOffset[i] | 0;
+    if (off < 0 || (this.vertCount[i] | 0) !== n) {
+      this._unlock();
+      return false;
+    }
+    const u = this.uvU;
+    const w = this.uvV;
+    for (let v = 0; v < n; v++) {
+      u[off + v] = +heights[v];
+      w[off + v] = 0;
+    }
+    if (this.hasUv[i]) {
+      this._publishUv(i);
+      this._publishVert(i);
+    } else {
+      this.hasUv[i] = 1;
+      this.bumpRevision();
+    }
+    this._unlock();
+    return true;
+  }
+
   static clearEntity(entity) {
     const off = this.vertOffset;
     if (!off || !this.lock) return;
