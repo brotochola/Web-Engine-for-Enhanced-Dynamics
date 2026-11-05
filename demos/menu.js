@@ -43,6 +43,7 @@ const scenes = [
   { name: 'platformer game', url: '/demos/platformerGameScene/platformerGameScene.js' },
   { name: '🐺 Predators', url: '/demos/predatorScene/predatorScene.js' },
   { name: '🌳 Tree', url: '/demos/proceduralTreeScene/proceduralTreeScene.js' },
+  { name: '🌇 Sun Street', url: '/demos/sunStreetScene/sunStreetScene.js', export: 'SunStreetScene' },
   { name: '🐍 U Chain', url: '/demos/uChainScene/uChainScene.js' },
   { name: '💧 Water & Boxes', url: '/demos/waterAndBoxesScene/waterAndBoxesScene.js' },
   { name: 'Weld Break', url: '/demos/weldBreakScene/weldBreakScene.js' },
