@@ -38,6 +38,7 @@ export class DxCaptureLamp extends GameObject {
     this.collider.radius = 4;
     this.collider.visualRange = 400;
     this.lightEmitter.lightColor = config.color ?? 0xffcc88;
-    this.lightEmitter.lightIntensity = config.intensity ?? 20000;
+    // Read on the logic worker: `?lampIntensity=` reaches it through WEED.params (a revision without it ignores the key).
+    this.lightEmitter.lightIntensity = Number(WEED.params?.get('lampIntensity') ?? config.intensity ?? 20000);
   }
 }
