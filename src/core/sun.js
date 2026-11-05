@@ -3,8 +3,8 @@
  * Backed by SharedArrayBuffer for cross-worker access
  * Pattern follows Camera, Mouse, Keyboard static classes
  *
- * Main thread: read/write via setters (controls day cycle)
- * Workers: read-only via getters (consume state)
+ * Main thread: reads and writes a private copy, published to the SAB once a frame (see initializeStaged)
+ * Workers: read and write the SAB directly
  *
  * The sun provides:
  * - Directional ambient light (intensity varies with time of day)
@@ -79,11 +79,15 @@ export class Sun {
         { hour: 24, color: 0x1a1a2e }, // Midnight - dark blue
     ];
 
-    // SharedArrayBuffer views (set during initialization)
+    // Field views: the SAB on a worker, the private stage on the main thread (see initializeStaged)
     static _sab = null;
     static _uint8 = null;
     static _float32 = null;
     static _uint32 = null;
+
+    // Main thread only: the SAB's words, and bit i set when word i of the stage was written since the last publish.
+    static _sharedU32 = null;
+    static _written = 0;
 
     /** cos(phase * 2π); phase in turns. One sun/scene — plain Math.cos. */
     static _cosTau(phase01) {
@@ -110,6 +114,65 @@ export class Sun {
     }
 
     /**
+     * Main thread's initialize: the getters and setters work on a private copy, which publish() puts in the SAB once
+     * a frame, so a worker never sees a value the frame later overwrites (a day cycle's, under a scene's override).
+     * @param {SharedArrayBuffer} sharedArrayBuffer - SAB of at least Sun.BYTE_LENGTH bytes
+     */
+    static initializeStaged(sharedArrayBuffer) {
+        this.initialize(sharedArrayBuffer);
+        const stage = new ArrayBuffer(Sun.BYTE_LENGTH);
+        this._sharedU32 = this._uint32;
+        this._uint8 = new Uint8Array(stage);
+        this._float32 = new Float32Array(stage);
+        this._uint32 = new Uint32Array(stage);
+        this._written = 0;
+    }
+
+    /**
+     * Start of the main thread's frame: the stage takes what the workers wrote, except the fields written since the
+     * last publish (a handler's, between two frames), which are still on their way out. No-op on a worker.
+     */
+    static beginFrame() {
+        const shared = this._sharedU32;
+        if (shared === null) return;
+        const stage = this._uint32;
+        const written = this._written;
+        for (let i = 0; i < stage.length; i++) {
+            if ((written & (1 << i)) === 0) stage[i] = shared[i];
+        }
+    }
+
+    /**
+     * End of the main thread's frame: the fields written since the last publish go to the SAB, and only those, so a
+     * worker's write to a field the main thread did not touch stands. No-op on a worker.
+     */
+    static publish() {
+        const shared = this._sharedU32;
+        const written = this._written;
+        if (shared === null || written === 0) return;
+        const stage = this._uint32;
+        for (let i = 0; i < stage.length; i++) {
+            if ((written & (1 << i)) !== 0) shared[i] = stage[i];
+        }
+        this._written = 0;
+    }
+
+    /** A wholesale restore wrote the views directly: every field goes out on the next publish. */
+    static markAllWritten() {
+        this._written = -1;
+    }
+
+    /** Forget the buffers (a scene's teardown). */
+    static unbind() {
+        this._sab = null;
+        this._uint8 = null;
+        this._float32 = null;
+        this._uint32 = null;
+        this._sharedU32 = null;
+        this._written = 0;
+    }
+
+    /**
      * Check if Sun is initialized
      * @returns {boolean}
      */
@@ -124,7 +187,10 @@ export class Sun {
         return this._uint8 ? this._uint8[Sun.OFFSETS.ENABLED] === 1 : false;
     }
     static set enabled(v) {
-        if (this._uint8) this._uint8[Sun.OFFSETS.ENABLED] = v ? 1 : 0;
+        if (this._uint8) {
+            this._uint8[Sun.OFFSETS.ENABLED] = v ? 1 : 0;
+            this._written |= 1;
+        }
     }
 
     /** Sun angle in degrees (0=East, 90=South, 180=West, 270=North) */
@@ -132,7 +198,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.ANGLE] : 0;
     }
     static set angle(v) {
-        if (this._float32) this._float32[Sun.F32.ANGLE] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.ANGLE] = v;
+            this._written |= 1 << Sun.F32.ANGLE;
+        }
     }
 
     /** Sun elevation in degrees (0=horizon, 90=directly overhead) */
@@ -140,7 +209,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.ELEVATION] : 0;
     }
     static set elevation(v) {
-        if (this._float32) this._float32[Sun.F32.ELEVATION] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.ELEVATION] = v;
+            this._written |= 1 << Sun.F32.ELEVATION;
+        }
     }
 
     /** Sun intensity (0-1), affects ambient light and point light shadow suppression */
@@ -148,7 +220,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.INTENSITY] : 0;
     }
     static set intensity(v) {
-        if (this._float32) this._float32[Sun.F32.INTENSITY] = Math.max(0, Math.min(1, v));
+        if (this._float32) {
+            this._float32[Sun.F32.INTENSITY] = Math.max(0, Math.min(1, v));
+            this._written |= 1 << Sun.F32.INTENSITY;
+        }
     }
 
     /** Sun color as 0xRRGGBB */
@@ -156,7 +231,10 @@ export class Sun {
         return this._uint32 ? this._uint32[Sun.U32.COLOR] : 0xffffff;
     }
     static set color(v) {
-        if (this._uint32) this._uint32[Sun.U32.COLOR] = v;
+        if (this._uint32) {
+            this._uint32[Sun.U32.COLOR] = v;
+            this._written |= 1 << Sun.U32.COLOR;
+        }
     }
 
     /** Base shadow alpha for sun-cast shadows (0-1) */
@@ -164,7 +242,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_ALPHA] : 0;
     }
     static set shadowAlpha(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_ALPHA] = Math.max(0, Math.min(1, v));
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_ALPHA] = Math.max(0, Math.min(1, v));
+            this._written |= 1 << Sun.F32.SHADOW_ALPHA;
+        }
     }
 
     /** Current hour of day (0-24) */
@@ -172,7 +253,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.HOUR] : 12;
     }
     static set hour(v) {
-        if (this._float32) this._float32[Sun.F32.HOUR] = ((v % 24) + 24) % 24; // Wrap to 0-24
+        if (this._float32) {
+            this._float32[Sun.F32.HOUR] = ((v % 24) + 24) % 24;
+            this._written |= 1 << Sun.F32.HOUR;
+        } // Wrap to 0-24
     }
 
     // ============ Shadow Config (set once from config) ============
@@ -182,7 +266,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] : Math.PI;
     }
     static set shadowAngleOffset(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] = v;
+            this._written |= 1 << Sun.F32.SHADOW_ANGLE_OFFSET;
+        }
     }
 
     /** Shadow length multiplier at zenith (noon) - shortest shadows */
@@ -190,7 +277,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] : 0.1;
     }
     static set shadowMinLengthRatio(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] = v;
+            this._written |= 1 << Sun.F32.SHADOW_MIN_LENGTH_RATIO;
+        }
     }
 
     /** Shadow length multiplier at horizon (sunrise/sunset) - longest shadows */
@@ -198,7 +288,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] : 1.0;
     }
     static set shadowMaxLengthRatio(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] = v;
+            this._written |= 1 << Sun.F32.SHADOW_MAX_LENGTH_RATIO;
+        }
     }
 
     /** Alpha fade compensation when shadows stretch (0=none, 1=full) */
@@ -206,7 +299,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] : 0.5;
     }
     static set shadowStretchAlphaFactor(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] = Math.max(0, Math.min(1, v));
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] = Math.max(0, Math.min(1, v));
+            this._written |= 1 << Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR;
+        }
     }
 
     // ============ Shadow Computed (read-only for workers) ============
@@ -291,6 +387,11 @@ export class Sun {
         const minRatio = this.shadowMinLengthRatio;
         const maxRatio = this.shadowMaxLengthRatio;
         this._float32[Sun.F32.SHADOW_LENGTH_RATIO] = maxRatio + t * (minRatio - maxRatio);
+        this._written |=
+            (1 << Sun.F32.SHADOW_ANGLE) |
+            (1 << Sun.F32.SHADOW_DIR_X) |
+            (1 << Sun.F32.SHADOW_DIR_Y) |
+            (1 << Sun.F32.SHADOW_LENGTH_RATIO);
     }
 
     /**

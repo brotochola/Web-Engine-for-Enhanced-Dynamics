@@ -1118,6 +1118,9 @@ class Scene {
     this._loadStep('world');
     this._spawnBatchOpen = false;
 
+    // create() may have set the sun; the workers' first frame comes before the main loop's first publish.
+    Sun.publish();
+
     // LIFECYCLE PHASE 3: Start everything.
     // Main thread loop first (for input handling), then worker game loops.
     // Workers see a fully populated scene with infrastructure ready on frame 1.
@@ -2595,6 +2598,9 @@ class Scene {
         if (clock) {
           stampStep(clock, mainSlot, frameAbs, performance.timeOrigin + performance.now());
         }
+      } else {
+        // updateInternal does not run; a handler's write to the sun still goes out.
+        Sun.publish();
       }
 
       // DebugUI reads mainFPS from this field
@@ -2619,8 +2625,8 @@ class Scene {
     // Camera pose comes from Camera SAB getters (workers call Camera.follow*).
     this.updateCameraBuffer();
 
-    // Update sun day cycle (if enabled)
-    // Sun writes to SharedArrayBuffer, workers read it
+    // The cycle and update write the sun's private copy; workers see it once, at Sun.publish() below.
+    Sun.beginFrame();
     this.updateSunDayCycle(simMs);
 
     // Update input edge flags on the main thread so Scene.update() can use them
@@ -2637,6 +2643,8 @@ class Scene {
 
     // Free-cam after scene.update so scenes can setFreeTarget / pauseFreeZoom first
     Camera.updateFree(wallRatio);
+
+    Sun.publish();
 
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;
