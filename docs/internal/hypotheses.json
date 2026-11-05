@@ -10691,7 +10691,7 @@
       "status": "kept-hygiene",
       "statusText": "Fixed on dx/sun-lights-meshes (3474aac0), not merged",
       "date": "2026-11-05",
-      "result": "colliderRotationScene: 59 of 600 reads backwards to 12, worst step 0.28 to 0.06 rad, a rotation from onSpawned holds; Predator NEUTRAL.",
+      "result": "colliderRotationScene: 59 of 600 reads backwards to 12, worst step 0.28 to 0.06 rad, a rotation from onSpawned holds; Predator NEUTRAL on AC power.",
       "next": "",
       "area": "engine",
       "kind": "bug",
@@ -10700,7 +10700,9 @@
       ],
       "aliases": [],
       "records": [
-        "R-0835"
+        "R-0835",
+        "R-0836",
+        "R-0837"
       ]
     },
     {
@@ -10758,7 +10760,8 @@
         "mesh layer order"
       ],
       "records": [
-        "R-0834"
+        "R-0834",
+        "R-0837"
       ]
     }
   ],
@@ -18641,6 +18644,30 @@
       "text": "Reported by the owner as Sun Street's cars vibrating between two rotations through a bend; the same cause as N-118. `set x` and `set y` send every body the rotation they read, physics exports it back over the channels, and `set rotation` told only RigidBody bodies, so on a Collider alone an old rotation went round and the true one showed for a frame now and then. Sampled on the page every frame: the channels held 1.7180 for a dozen frames while x and y moved, with one frame of the true value. `set rotation` and `setRotationCS` now tell any body; a rotated static collider also rotates in Box2D, which it did not. The RigidBody path of `setRotationCS` stays as it was.\n\n`colliderRotationScene`, an angle advancing 0.02 rad a tick: 59 of 600 reads backwards, worst step 0.28 rad, box posed at 1 read 0.000; after, 12 of 600, worst 0.06, posed 1.000. The rest is a tick writing x and y before rotation when physics drains between them; Sun Street writes rotation first: 0 of 139 reads in the bends.\n\nPredator gate, 4 pairs, 238a4154 against 3474aac0: NEUTRAL. logic 4.379 → 4.817 ms (+6.3 %, 3/4, cv 20/6 %), spatial 6.258 → 7.011 (+5.4 %), physics 6.654 → 7.777 (+6.0 %, 2/4), renderer 3.015 → 3.356 (+6.9 %), pre-render 4.586 → 5.112 (+4.1 %), presented 60.0 → 60.0. Renderer and pre-render cannot be reached by the change, so this is drift; against the others logic -2.7 %, physics -2.9 %. Load keys within 0.5 %. Detection limit: the A side's cv of 20 %, about 6 % here.",
       "commits": [
         "3474aac0"
+      ]
+    },
+    {
+      "id": "R-0836",
+      "date": "2026-11-05",
+      "time": "18:16",
+      "timeFrom": "recorded",
+      "title": "N-118's Predator gate repeated on AC power: the first one crossed the unplugged laptop",
+      "verdict": "kept-hygiene",
+      "text": "R-0835's Predator gate does not count, and its \"drift\" was wrong. The owner mentioned unplugging the laptop; Kernel-Power 105 puts it at 17:57:15, plugged back at 18:06:32, and the run files put A-p0 on AC (done 17:56:46), B-p0 ending at 17:57:26 and the other six on battery. That is the +4 to +7 % on every worker, and the A side's cv of 20 %.\n\nRepeated on AC power, 4 pairs, 238a4154 against 3474aac0, 18:10 to 18:16, the owner's Chrome at 0.36 cores: NEUTRAL. logic 3.304 → 3.267 ms (+1.5 %, 3/4, cv 10/6 %), spatial 4.806 → 4.609 (+0.3 %, 2/4), pre-render 3.084 → 3.091 (+0.8 %, 2/4), 60.0 fps, entities within 0.1 %. physics 5.256 → 5.471 (+7.8 % paired, 3/4, cv 11/6 %): the change cannot reach it here. No Predator entity with a Collider alone writes rotation through the setter (boid and player are RigidBody, cloud has no body), and the boids' path of setRotationCS is unchanged, so physics gets no new command; side A alone ran 4.82 to 6.04 ms, covering side B's 5.22 to 5.99. Detection limit: the cv, about 10 %.\n\nEvery other sitting of the day ran on AC: dx-aa to dx-lights720 between 14:25 and 15:01, n119 at 17:28.",
+      "commits": [
+        "3474aac0"
+      ]
+    },
+    {
+      "id": "R-0837",
+      "date": "2026-11-05",
+      "time": "18:48",
+      "timeFrom": "recorded",
+      "title": "The DX batch's bundles (e2d47490): tested, and the prod bundle equals its sources",
+      "verdict": "passed",
+      "text": "The DX batch's bundles (dist e2d47490, committed and pushed to dx/sun-lights-meshes by the owner; built from 8a164b74, 0.13.0, inputs a331a201bda06379). `check:dist` fresh, embed and browser smokes OK on all 8, `test:node:bundle` 271 of 271.\n\nThe new options inside the bundle: nine dxCaptureScene captures, prod bundle against source, with night, colours, sunProjected heights, alphaBySun, light offset and a shadow texture, WebGL and WebGPU: 0 of 921 600 pixels differ, no page errors, and each side checked to be what it says (BUNDLE_MODE).\n\nProd bundle against source, one build, on AC power, no power change between 18:10 and 18:48:\n- Predator, 4 pairs, 18:16 to 18:23: NEUTRAL. logic 3.250 → 3.073 ms (-5.9 %, 1/4), spatial 4.588 → 4.622 (+0.7 %), physics 5.440 → 5.283 (-3.4 %), pre-render 3.064 → 3.154 (+1.7 %, 3/4), 60.0 fps; loads within 0.5 %.\n- painterMove, 4 pairs, 18:23 to 18:29: NEUTRAL. pre-render 16.518 → 16.718 ms (+0.5 %, 3/4), logic 6.325 → 6.407 (+0.5 %), 60.0 fps, 300 000 entities on both.\n- Boids, 8 pairs, 18:29 to 18:41: REGRESSION by the runner, spatial 6.912 → 6.990 (+3.4 %, 6/8), physics +2.5 % (6/8). Then the chunk diff against main's bundle, with mangled names normalised: the spatial chunk differs in one webpack module id, Box2D's is identical, and worker_common's changes are the sun, shadows, config and the engine's wasm, none of it on spatial's path. 4 more pairs, 18:43 to 18:48: 12 pairs NEUTRAL, spatial 6.872 → 6.876 (+2.9 % paired, 7/12, pairs from -7.1 % to +6.4 %, +1.9 % against the others), physics 6.514 → 6.574 (+2.3 %, 8/12), pre-render 3.165 → 3.016 (-2.2 %), 60.0 fps. Visible entities -3.3 %, within the gate. Main's bundle read spatial -1.0 % at R-0827. Detection limit of the pooled row: its cv, 5 %.",
+      "commits": [
+        "e2d47490"
       ]
     }
   ],
