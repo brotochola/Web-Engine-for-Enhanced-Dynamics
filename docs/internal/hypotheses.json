@@ -10457,6 +10457,32 @@
       "records": [
         "R-0823"
       ]
+    },
+    {
+      "id": "DX-LIGHTFLOOR",
+      "title": "Lighting: groundScaleY and sourceHeight, light pools on a foreshortened floor, lit from a raised source",
+      "status": "kept-hygiene",
+      "statusText": "PR #8, merged 2026-11-04 (d6479c70): a feature off by default; default captures equal main, no cost on the owner in Predator (R-0826)",
+      "date": "2026-11-04",
+      "result": "config.lighting.groundScaleY measures falloff on the floor, sqrt(dx² + (dy/g)²), an ellipse R wide and R·g tall; LightEmitter.sourceHeight folds into I/(I + h² + d²) with no shader work. Default captures byte-identical to main for raycast, point and particle lights; at g 0.5 WebGL and WebGPU differ by at most 1 of 255. Sprite shadows are not proven by pixels (the still scene's pass reached no pixel): the default stands on reading.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-LIGHTFLOOR"
+      ],
+      "aliases": [
+        "groundScaleY",
+        "sourceHeight",
+        "uGroundInvScaleY",
+        "uGroundAxes",
+        "light pools",
+        "isometric lighting",
+        "foreshortened floor"
+      ],
+      "records": [
+        "R-0826"
+      ]
     }
   ],
   "records": [
