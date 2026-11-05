@@ -10688,10 +10688,10 @@
     {
       "id": "N-118",
       "title": "A rotation set in onSpawned on a Collider-only entity is lost",
-      "status": "open",
-      "statusText": "Found 2026-11-05, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/sun-lights-meshes (3474aac0), not merged",
       "date": "2026-11-05",
-      "result": "Transform.rotation reads 0 after create() spawns; the same write from tick holds.",
+      "result": "colliderRotationScene: 59 of 600 reads backwards to 12, worst step 0.28 to 0.06 rad, a rotation from onSpawned holds; Predator NEUTRAL.",
       "next": "",
       "area": "engine",
       "kind": "bug",
@@ -10699,7 +10699,9 @@
         "REVIEW_PLAN.md#N-118"
       ],
       "aliases": [],
-      "records": []
+      "records": [
+        "R-0835"
+      ]
     },
     {
       "id": "DX-SUNMASK",
@@ -18627,6 +18629,18 @@
       "text": "Found building the Sun Street demo: 60 000 grass tufts on a MESH layer at zIndex 0.4 painted over the road at 0.5 and a flag's pole at 3. Fill and UV batches tested and wrote a depth numbered from 0 on every layer, in one depth buffer nothing clears between layers, so a lower layer's late rows beat a higher layer's first ones. On main too, WebGL and WebGPU. Both batches now neither test nor write depth.\n\n`meshLayerOrderScene`, upper half: red over the square on 456 442 of 460 800 pixels at 20 000 triangles and 101 at one; 0 at both after. A first probe read a false threshold at 20 000 because it took `?tris=` from `location` on the worker; `WEED.params` removed it.\n\nByte for byte against the previous commit: `MeshFillStaticScene`, `DxCaptureScene` shade on WebGL and WebGPU, with heights: 0 of 921 600 pixels. `MeshFillMixedScene` spins: A/A 715 to 1 430 pixels, A/B 0 to 1 430.\n\n`MeshFillStaticScene`, 4 pairs, 4d522e32 against 3581c6a9: renderer 1.502 → 1.493 ms, physics 1.454 → 1.441, presented 60.0 → 60.0 fps. Under the 3 ms floor, so no speed verdict; a state flag reaches no CPU path, and the hygiene rule asks only that no primary worker be 3 % worse. Detection limit: none set, the row was not judged.",
       "commits": [
         "3581c6a9"
+      ]
+    },
+    {
+      "id": "R-0835",
+      "date": "2026-11-05",
+      "time": "18:02",
+      "timeFrom": "recorded",
+      "title": "N-118: a rotation reaches the body of a Collider with no RigidBody",
+      "verdict": "kept-hygiene",
+      "text": "Reported by the owner as Sun Street's cars vibrating between two rotations through a bend; the same cause as N-118. `set x` and `set y` send every body the rotation they read, physics exports it back over the channels, and `set rotation` told only RigidBody bodies, so on a Collider alone an old rotation went round and the true one showed for a frame now and then. Sampled on the page every frame: the channels held 1.7180 for a dozen frames while x and y moved, with one frame of the true value. `set rotation` and `setRotationCS` now tell any body; a rotated static collider also rotates in Box2D, which it did not. The RigidBody path of `setRotationCS` stays as it was.\n\n`colliderRotationScene`, an angle advancing 0.02 rad a tick: 59 of 600 reads backwards, worst step 0.28 rad, box posed at 1 read 0.000; after, 12 of 600, worst 0.06, posed 1.000. The rest is a tick writing x and y before rotation when physics drains between them; Sun Street writes rotation first: 0 of 139 reads in the bends.\n\nPredator gate, 4 pairs, 238a4154 against 3474aac0: NEUTRAL. logic 4.379 → 4.817 ms (+6.3 %, 3/4, cv 20/6 %), spatial 6.258 → 7.011 (+5.4 %), physics 6.654 → 7.777 (+6.0 %, 2/4), renderer 3.015 → 3.356 (+6.9 %), pre-render 4.586 → 5.112 (+4.1 %), presented 60.0 → 60.0. Renderer and pre-render cannot be reached by the change, so this is drift; against the others logic -2.7 %, physics -2.9 %. Load keys within 0.5 %. Detection limit: the A side's cv of 20 %, about 6 % here.",
+      "commits": [
+        "3474aac0"
       ]
     }
   ],
