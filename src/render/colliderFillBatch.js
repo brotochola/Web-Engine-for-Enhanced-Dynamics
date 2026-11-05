@@ -925,8 +925,10 @@ export class ColliderFillBatch {
     const state = new State();
     state.blend = true;
     state.blendMode = 'normal';
-    state.depthTest = true;
-    state.depthMask = true;
+    // Rows paint in order and layers by zIndex. Every layer numbers its depth from 0 in one depth buffer: a test here
+    // let a lower layer's late rows beat a higher layer's first ones (N-119).
+    state.depthTest = false;
+    state.depthMask = false;
     state.culling = false;
 
     this.mesh = new Mesh({
