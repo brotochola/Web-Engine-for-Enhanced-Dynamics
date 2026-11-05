@@ -10736,6 +10736,28 @@
         "normal maps"
       ],
       "records": []
+    },
+    {
+      "id": "N-119",
+      "title": "MESH layers did not keep their zIndex where they overlapped",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/sun-lights-meshes (3581c6a9), not merged",
+      "date": "2026-11-05",
+      "result": "Red over the high layer: 456 442 of 460 800 pixels at 20 000 triangles, 0 after, both backends; one-layer captures unchanged; renderer 1.502 to 1.493 ms.",
+      "next": "",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-119"
+      ],
+      "aliases": [
+        "mesh depth test",
+        "aInstDepth",
+        "mesh layer order"
+      ],
+      "records": [
+        "R-0834"
+      ]
     }
   ],
   "records": [
@@ -18593,6 +18615,18 @@
       "text": "**DX-SUNPUBLISH: torn sun reads on a worker, 75 of 360 to 0 of 360.**\n2026-11-05, `sunOverrideScene`, headless, 2 ms of main-thread work inside `update` before the override, a logic worker reading `Sun.intensity` each tick: 75 of 360 reads saw the day cycle's value on main, 0 of 360 with the change. The Predator gate of the batch covers its cost (R-0829).",
       "commits": [
         "ef53038a"
+      ]
+    },
+    {
+      "id": "R-0834",
+      "date": "2026-11-05",
+      "time": "17:28",
+      "timeFrom": "recorded",
+      "title": "N-119: MESH batches stop testing depth, layers keep their zIndex",
+      "verdict": "kept-hygiene",
+      "text": "Found building the Sun Street demo: 60 000 grass tufts on a MESH layer at zIndex 0.4 painted over the road at 0.5 and a flag's pole at 3. Fill and UV batches tested and wrote a depth numbered from 0 on every layer, in one depth buffer nothing clears between layers, so a lower layer's late rows beat a higher layer's first ones. On main too, WebGL and WebGPU. Both batches now neither test nor write depth.\n\n`meshLayerOrderScene`, upper half: red over the square on 456 442 of 460 800 pixels at 20 000 triangles and 101 at one; 0 at both after. A first probe read a false threshold at 20 000 because it took `?tris=` from `location` on the worker; `WEED.params` removed it.\n\nByte for byte against the previous commit: `MeshFillStaticScene`, `DxCaptureScene` shade on WebGL and WebGPU, with heights: 0 of 921 600 pixels. `MeshFillMixedScene` spins: A/A 715 to 1 430 pixels, A/B 0 to 1 430.\n\n`MeshFillStaticScene`, 4 pairs, 4d522e32 against 3581c6a9: renderer 1.502 → 1.493 ms, physics 1.454 → 1.441, presented 60.0 → 60.0 fps. Under the 3 ms floor, so no speed verdict; a state flag reaches no CPU path, and the hygiene rule asks only that no primary worker be 3 % worse. Detection limit: none set, the row was not judged.",
+      "commits": [
+        "3581c6a9"
       ]
     }
   ],
