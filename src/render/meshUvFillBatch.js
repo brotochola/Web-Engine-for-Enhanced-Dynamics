@@ -28,8 +28,9 @@ export class MeshUvFillBatch {
    * ColliderFillBatch, the Pixi Buffer uploads an array of its own (E-123), and upload copies into it the
    * rows it sends.
    */
-  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null }) {
+  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null, bufferSystem = null }) {
     this.capacity = Math.max(1, capacity | 0);
+    this._bufferSystem = bufferSystem;
     const floats = this.capacity * MESH_UV_FILL_FLOATS;
     this.data = new Float32Array(floats);
     this.dataU32 = new Uint32Array(this.data.buffer);
@@ -145,8 +146,14 @@ export class MeshUvFillBatch {
     // E-123: the rows this upload sends, out of the mesh memory into the Buffer's own array.
     if (this.rows !== this.data) this.data.set(this.rows.subarray(0, n * MESH_UV_FILL_FLOATS));
     this.buffer.update(n * MESH_UV_FILL_STRIDE);
+    this._send();
     this.geometry.instanceCount = n;
     return n;
+  }
+
+  /** ColliderFillBatch._send. */
+  _send() {
+    if (this._bufferSystem) this._bufferSystem.updateBuffer(this.buffer);
   }
 
   /**
@@ -168,6 +175,7 @@ export class MeshUvFillBatch {
     const from = first * MESH_UV_FILL_FLOATS;
     if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * MESH_UV_FILL_FLOATS), from);
     this.buffer.update((past - first) * MESH_UV_FILL_STRIDE, first * MESH_UV_FILL_STRIDE);
+    this._send();
   }
 
   uploadPoseTable(instanceEntity, count, views) {

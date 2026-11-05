@@ -5570,6 +5570,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // E-76 W11: the rows in the mesh memory when the layer has its regions there.
     const region = cl.meshRegion;
     const batch = new MeshUvFillBatch({
+      bufferSystem: this.pixiApp?.renderer?.buffer ?? null,
       capacity: cap,
       label: `mesh-uv-${cl.layerId}`,
       useWebGpu: this._useWebGpu,
@@ -7547,6 +7548,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           throw new Error(`MESH layer "${layerName}": its rows are not in the mesh memory (sized apart from meshLayerCapacities)`);
         }
         fillBatch = new ColliderFillBatch({
+          bufferSystem: this.pixiApp?.renderer?.buffer ?? null,
           capacity: caps.fill,
           label: `mesh-layer-${layerName}`,
           useWebGpu: this._useWebGpu,

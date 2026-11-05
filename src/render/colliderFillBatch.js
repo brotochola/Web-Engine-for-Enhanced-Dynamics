@@ -845,9 +845,11 @@ export class ColliderFillBatch {
    * @param {import('../vendor/pixi.min.js').TextureSource} [opts.lutSource]
    * @param {Float32Array|null} [opts.data] where the rows are written, capacity × COLLIDER_FILL_FLOATS: a region of
    *   the mesh memory (meshMemory.js, E-76 W11), where the corner kernel rewrites them; any other length, none
+   * @param {{ updateBuffer: (buffer: object) => unknown }|null} [opts.bufferSystem] the renderer's: see _send
    */
-  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null }) {
+  constructor({ capacity, label, useWebGpu = true, shaders = null, atlasSource = null, lutSource = null, data = null, bufferSystem = null }) {
     this.capacity = Math.max(1, capacity | 0);
+    this._bufferSystem = bufferSystem;
     const floats = this.capacity * COLLIDER_FILL_FLOATS;
     // What the Pixi Buffer uploads: always an array of its own. Uploading every frame from a view on shared
     // memory made every other worker slower in Chrome (E-123).
@@ -967,8 +969,17 @@ export class ColliderFillBatch {
     // E-123: the rows this upload sends, out of the mesh memory into the Buffer's own array.
     if (this.rows !== this.data) this.data.set(this.rows.subarray(0, n * COLLIDER_FILL_FLOATS));
     this.buffer.update(n * COLLIDER_FILL_STRIDE);
+    this._send();
     this.geometry.instanceCount = n;
     return n;
+  }
+
+  /**
+   * Now, not at the next draw. WebGL's buffer system holds one range and sends it when the mesh binds, so a layer that
+   * skips a draw would lose every range but the last, and with them the rows those ranges held.
+   */
+  _send() {
+    if (this._bufferSystem) this._bufferSystem.updateBuffer(this.buffer);
   }
 
   /**
@@ -981,6 +992,7 @@ export class ColliderFillBatch {
     const from = first * COLLIDER_FILL_FLOATS;
     if (this.rows !== this.data) this.data.set(this.rows.subarray(from, past * COLLIDER_FILL_FLOATS), from);
     this.buffer.update((past - first) * COLLIDER_FILL_STRIDE, first * COLLIDER_FILL_STRIDE);
+    this._send();
   }
 
   /**
