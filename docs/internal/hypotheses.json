@@ -10763,6 +10763,26 @@
         "R-0834",
         "R-0837"
       ]
+    },
+    {
+      "id": "DX-VOLUME",
+      "title": "VolumeShadowCaster: a component that declares an object's volume, for the sun and point lights",
+      "status": "open",
+      "statusText": "The owner likes the idea (2026-11-05); design to write, with DX-SUNMASK",
+      "date": "2026-11-05",
+      "result": "LightOccluder fits zenithal and side views, not an oblique one, where a wall is drawn over the floor behind it.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-VOLUME"
+      ],
+      "aliases": [
+        "VolumeShadowCaster",
+        "volume component",
+        "oblique occlusion"
+      ],
+      "records": []
     }
   ],
   "records": [
