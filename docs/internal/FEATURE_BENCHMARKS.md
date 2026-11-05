@@ -46,7 +46,8 @@ hypothesis names. Demos stay in `demos/`. By area:
   `painterAdobeStressScene`, `ySortOverlayScene`, `gpuYSortProbeScene`, `tweenStressScene`.
 - **Lighting and visibility:** `visPolyStressScene`, `compoundVisPolyStressScene` (`boxes`, `remeshEvery`,
   `ringSegments`).
-- **Meshes and collider fills:** `meshApiStressScene`, `meshFillStaticScene`, `meshFillMovingScene`,
+- **Sun and shadows:** `sunOverrideScene` (a scene over the day cycle, with its torn reads counted), `sunMeshStressScene` and `sunMeshParityScene` (`sunMeshParity.mjs`: a ShadowCaster against a `sunProjected` mesh), `dxCaptureScene` (a still scene for `compareCaptures.mjs`).
+- **Meshes and collider fills:** `meshUploadStressScene`, `meshApiStressScene`, `meshFillStaticScene`, `meshFillMovingScene`,
   `meshFillPanScene`, `meshFillLookPanScene`, `meshFillMixedScene`.
 - **Textures, decals and scenery:** `textureUploadStressScene`, `decalStampStressScene`,
   `decalBlitStressScene`, `sceneryCamStressScene`, `tilemapCullStressScene`.
