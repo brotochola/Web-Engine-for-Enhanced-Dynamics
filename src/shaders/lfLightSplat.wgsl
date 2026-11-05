@@ -15,6 +15,9 @@ struct LocalUniforms {
 
 struct LightSplatUniforms {
   uInvScreenScale: f32,
+  // The world's x and y axes on screen, y times config.lighting.groundScaleY: the quad (and its falloff,
+  // which reads vLocal) covers the light's pool on the floor, an ellipse when the floor is foreshortened.
+  uGroundAxes: vec4<f32>,
 }
 @group(2) @binding(0) var<uniform> uniforms: LightSplatUniforms;
 
@@ -33,7 +36,8 @@ fn mainVert(
   @location(3) aInstColor: vec4<f32>,
 ) -> VertexOut {
   var out: VertexOut;
-  let world = aInstXY + aQuad * aInstRadius;
+  let axes = uniforms.uGroundAxes;
+  let world = aInstXY + (axes.xy * aQuad.x + axes.zw * aQuad.y) * aInstRadius;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(world, 1.0);
   out.position = vec4<f32>(clip.xy, 0.0, 1.0);

@@ -24,6 +24,8 @@ struct SelfLitUniforms {
   uBodyCenter: vec2<f32>,
   uBodyRadius: f32,
   uAttenScale: f32,
+  // 1 / config.lighting.groundScaleY: distances to the light are measured on the floor.
+  uGroundInvScaleY: f32,
 }
 @group(2) @binding(0) var<uniform> uniforms: SelfLitUniforms;
 @group(2) @binding(1) var uTexture: texture_2d<f32>;
@@ -65,7 +67,8 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   if (a < 0.01) {
     discard;
   }
-  let delta = in.vWorldPos - uniforms.uLightPos;
+  var delta = in.vWorldPos - uniforms.uLightPos;
+  delta.y *= uniforms.uGroundInvScaleY;
   let DISTANCE_SCALE = 1.0 / 1024.0;
   let deltaScaled = delta * DISTANCE_SCALE;
   let d2Scaled = dot(deltaScaled, deltaScaled);

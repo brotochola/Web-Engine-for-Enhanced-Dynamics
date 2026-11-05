@@ -8,7 +8,7 @@ import { GameObject } from '../core/gameObject.js';
 import { debugWorkerLog } from './debugLog.js';
 import { WEED_LOGO_ART } from './weedLogo.js';
 import { rotatedHalfExtents } from './viewBounds.js';
-import { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius } from './lightRadius.js';
+import { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius, resolveGroundScaleY } from './lightRadius.js';
 export {
   packPair as collisionPairKey,
   unpackPair as collisionPairUnpack,
@@ -266,7 +266,7 @@ export function calculateCameraScreenBounds(
 export const LIGHT_GRADIENT_TEXTURE_RADIUS = 100;
 /** Soft-disk for fluid / metaball density splat (smaller than light glow). */
 export const METABALL_TEXTURE_RADIUS = 32;
-export { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius };
+export { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius, resolveGroundScaleY };
 
 /** Rows in the lighting data texture: 0 = xy+intensity, 1 = rgb. */
 export const LIGHT_DATA_TEX_HEIGHT = 2;

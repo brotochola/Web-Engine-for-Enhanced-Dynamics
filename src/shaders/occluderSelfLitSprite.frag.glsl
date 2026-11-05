@@ -7,12 +7,15 @@ uniform vec3 uLightColor;
 uniform vec2 uBodyCenter;
 uniform float uBodyRadius;
 uniform float uAttenScale;
+// 1 / config.lighting.groundScaleY: distances to the light are measured on the floor.
+uniform float uGroundInvScaleY;
 uniform sampler2D uTexture;
 
 void main() {
   float a = texture2D(uTexture, vUV).a;
   if (a < 0.01) discard;
   vec2 delta = vWorldPos - uLightPos;
+  delta.y *= uGroundInvScaleY;
   const float DISTANCE_SCALE = 1.0 / 1024.0;
   vec2 deltaScaled = delta * DISTANCE_SCALE;
   float d2Scaled = dot(deltaScaled, deltaScaled);

@@ -26,8 +26,11 @@ export class TallLight extends GameObject {
       max: 0xffffff,
     });
 
+    // The bulb is 110 px above the post's foot: the glow sits on it, and the pool is lit from up there
+    // (centred on the foot, flatter than a light on the ground). `height` stays 0: the pool does not move.
     this.lightEmitter.height = 0;
     this.lightEmitter.glowHeightOffset = 110;
+    this.lightEmitter.sourceHeight = 110;
     this.lightEmitter.lightIntensity = 20000;
     this.lightEmitter.active = 1;
     this.lightEmitter.hasGlowSprite = 0.6// 0.5; // TallLights show the glowing sprite

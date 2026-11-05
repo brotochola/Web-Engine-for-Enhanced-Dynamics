@@ -95,6 +95,7 @@ import {
   normalizeAngleDifference,
   extractRGBNormalizedMut,
   lightInfluenceRadius,
+  resolveGroundScaleY,
   lightDataTextureFloatCount,
   clearUnusedLightDataTexels,
   LIGHT_DATA_TEX_HEIGHT,
@@ -810,6 +811,10 @@ class PixiRenderer extends AbstractWorker {
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
     this._lightDataFloats = null; // Float32Array RGBA32F payload (maxLights x 2)
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
+    // config.lighting.groundScaleY and its inverse: light falloff measures the floor distance
+    // sqrt(dx² + (dy / groundScaleY)²). Doubles from the start (NaN until the config is read).
+    this._groundScaleY = NaN;
+    this._groundInvScaleY = NaN;
     this.liquidFunMaxCount = 0;
     this._lfLightSplat = null;
 
@@ -3175,6 +3180,7 @@ LIGHTING SYSTEM SETUP
         uSunB: { value: 1.0, type: 'f32' },
         uFlipY: { value: 0, type: 'f32' },
         uShadowComposite: { value: 0, type: 'f32' },
+        uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
       },
       ...this._lightingShadowResources(),
     };
@@ -3255,6 +3261,7 @@ LIGHTING SYSTEM SETUP
       shaderResources: {
         uniforms: {
           uInvScreenScale: { value: 1.0, type: 'f32' },
+          uGroundAxes: { value: new Float32Array([1, 0, 0, 1]), type: 'vec4<f32>' },
         },
       },
     });
@@ -3266,7 +3273,21 @@ LIGHTING SYSTEM SETUP
   _drawLightSplat(splat, resolution) {
     const screenScale = (this._renderZoom || 1) * (resolution || 1);
     const u = splat.shader?.resources?.uniforms?.uniforms;
-    if (u) u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
+    if (u) {
+      u.uInvScreenScale = screenScale > 0 ? 1 / screenScale : 0;
+      // The splat is packed on screen: world x is (cos, sin) there and world y (-sin, cos), y foreshortened.
+      const axes = u.uGroundAxes;
+      if (axes) {
+        const rot = this._renderCameraRot || 0;
+        const c = rot ? Math.cos(rot) : 1;
+        const s = rot ? Math.sin(rot) : 0;
+        const g = this._groundScaleY || 1;
+        axes[0] = c;
+        axes[1] = s;
+        axes[2] = -s * g;
+        axes[3] = c * g;
+      }
+    }
     const rtOpts = this._rtRenderOptsNoClear;
     rtOpts.container = splat.mesh;
     rtOpts.target = this.lightingRT;
@@ -3512,6 +3533,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         uZoom: { value: 1.0, type: 'f32' },
         uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
         uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
+        uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
       },
     };
     const shader = new PIXI.Shader({ ...this._visBatchProgramOpts, resources });
@@ -3575,6 +3597,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         uZoom: { value: 1.0, type: 'f32' },
         uCanvasSize: { value: new Float32Array([this.canvasWidth, this.canvasHeight]), type: 'vec2<f32>' },
         uCameraRot: { value: new Float32Array([1, 0]), type: 'vec2<f32>' },
+        uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
       },
     };
     const shader = new PIXI.Shader({ ...this._selfLitBatchProgramOpts, resources });
@@ -3797,6 +3820,9 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightIntensityArr = LightEmitter.lightIntensity;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
     const lightHeight = LightEmitter.height;
+    const sourceHeight = LightEmitter.sourceHeight;
+    // The pool is R across and R * groundScaleY tall: the umbra quad needs no more rows than that.
+    const groundY = this._groundScaleY || 1;
 
     // E-96. Each light's umbra disc, then its visibility fan (the order the per-light meshes were
     // added to the container in, so the additive blend sums in the same sequence), into one mesh.
@@ -3826,19 +3852,29 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const xStart = baseIndex + 4;
       const yStart = xStart + maxVerts;
       const lightY = ly - (lightHeight[lightIdx] || 0);
-      const intensity = lightIntensityArr[lightIdx];
+      // The reach stays the floor-level light's (sourceHeight only lowers the pool): culls and the rim use it.
       const radius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
+      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
+      let intensity = lightIntensityArr[lightIdx];
+      let colorScale = 1;
+      const h = sourceHeight ? sourceHeight[lightIdx] : 0;
+      if (h > 0) {
+        const raised = intensity + h * h;
+        colorScale = intensity / raised;
+        intensity = raised;
+      }
       const color = lightColor[lightIdx];
-      const r = ((color >> 16) & 0xff) / 255;
-      const g = ((color >> 8) & 0xff) / 255;
-      const b = (color & 0xff) / 255;
+      const r = (((color >> 16) & 0xff) / 255) * colorScale;
+      const g = (((color >> 8) & 0xff) / 255) * colorScale;
+      const b = ((color & 0xff) / 255) * colorScale;
+      const radiusY = radius * groundY;
 
       // The umbra disc: a quad around the light at the umbra floor.
       const disc = vtx;
       for (let c = 0; c < 4; c++) {
         const o = (vtx++) * VIS_BATCH_FLOATS;
         data[o] = c === 0 || c === 3 ? lx - radius : lx + radius;
-        data[o + 1] = c < 2 ? lightY - radius : lightY + radius;
+        data[o + 1] = c < 2 ? lightY - radiusY : lightY + radiusY;
         data[o + 2] = lx;
         data[o + 3] = lightY;
         data[o + 4] = intensity;
@@ -3948,6 +3984,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightIntensityArr = LightEmitter.lightIntensity;
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
+    const sourceHeight = LightEmitter.sourceHeight;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
     const maxVerts = this._selfLitMaxFillVerts;
     const segs = this._selfLitCircleSegs;
@@ -3985,11 +4022,19 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       // Light center: baked into visibility poly; here Transform is fine (lights rarely have RB)
       const lx = Transform.x[light];
       const ly = Transform.y[light] - (lightHeight[light] || 0);
-      const intensity = lightIntensityArr[light];
+      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
+      let intensity = lightIntensityArr[light];
+      let colorScale = 1;
+      const srcH = sourceHeight ? sourceHeight[light] : 0;
+      if (srcH > 0) {
+        const raised = intensity + srcH * srcH;
+        colorScale = intensity / raised;
+        intensity = raised;
+      }
       const color = lightColor[light];
-      const cr = ((color >> 16) & 0xff) / 255;
-      const cg = ((color >> 8) & 0xff) / 255;
-      const cb = (color & 0xff) / 255;
+      const cr = (((color >> 16) & 0xff) / 255) * colorScale;
+      const cg = (((color >> 8) & 0xff) / 255) * colorScale;
+      const cb = ((color & 0xff) / 255) * colorScale;
       const lightR = lightInfluenceRadius(sqrtLightIntensity ? sqrtLightIntensity[light] : 0);
 
       if (vtx + lightVerts > batch.vertCap || iCount + lightIndices > batch.idxCap) {
@@ -4240,6 +4285,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightIntensityArr = LightEmitter.lightIntensity;
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
+    const sourceHeight = LightEmitter.sourceHeight;
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
@@ -4256,11 +4302,19 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
       const lx = Transform.x[lightIdx];
       const ly = Transform.y[lightIdx] - (lightHeight[lightIdx] || 0);
-      const intensity = lightIntensityArr[lightIdx];
+      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
+      let intensity = lightIntensityArr[lightIdx];
+      let colorScale = 1;
+      const srcH = sourceHeight ? sourceHeight[lightIdx] : 0;
+      if (srcH > 0) {
+        const raised = intensity + srcH * srcH;
+        colorScale = intensity / raised;
+        intensity = raised;
+      }
       const color = lightColor[lightIdx];
-      const cr = ((color >> 16) & 0xff) / 255;
-      const cg = ((color >> 8) & 0xff) / 255;
-      const cb = (color & 0xff) / 255;
+      const cr = (((color >> 16) & 0xff) / 255) * colorScale;
+      const cg = (((color >> 8) & 0xff) / 255) * colorScale;
+      const cb = ((color & 0xff) / 255) * colorScale;
 
       // --- Sprite mask fills for this light ---
       if (this._selfLitSpriteProgramOpts) {
@@ -4434,6 +4488,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             uBodyCenter: { value: new Float32Array(2), type: 'vec2<f32>' },
             uBodyRadius: { value: 0, type: 'f32' },
             uAttenScale: { value: VIS_REST, type: 'f32' },
+            uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
           },
           uTexture: texture.source,
           uSampler: texture.source.style,
@@ -4581,6 +4636,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightColor = LightEmitter.lightColor;
     const lightIntensity = LightEmitter.lightIntensity;
     const lightHeight = LightEmitter.height;
+    const sourceHeight = LightEmitter.sourceHeight;
+    // The floor's foreshortening: the shader scales the fragment's world y by this once, the lights' y here.
+    const groundInvY = this._groundInvScaleY || 1;
 
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
@@ -4606,18 +4664,29 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const color = lightColor[entityIndex];
       const range = vr ? (vr[entityIndex] || 0) : 0;
 
+      // A source h above the floor: I / (I + h² + d²) = k * I' / (I' + d²) with I' = I + h², k = I / I'.
+      // So the shader keeps one formula: it gets I' and the colour scaled by k.
+      let intensity = lightIntensity[entityIndex];
+      let colorScale = 1;
+      const h = sourceHeight ? sourceHeight[entityIndex] : 0;
+      if (h > 0) {
+        const raised = intensity + h * h;
+        colorScale = intensity / raised;
+        intensity = raised;
+      }
+
       // packLightDataTexel's layout, written here (E-109): where TurboFan left that call out, each of its seven
       // doubles was a heap number per light per frame. World coordinates (the shader converts screen to world),
-      // the light raised by its height.
+      // the light raised by its height, y in floor units (times 1 / groundScaleY).
       const i0 = i * 4;
       lightData[i0] = worldX[entityIndex];
-      lightData[i0 + 1] = worldY[entityIndex] - (lightHeight[entityIndex] || 0);
-      lightData[i0 + 2] = lightIntensity[entityIndex];
+      lightData[i0 + 1] = (worldY[entityIndex] - (lightHeight[entityIndex] || 0)) * groundInvY;
+      lightData[i0 + 2] = intensity;
       lightData[i0 + 3] = range * range;
       const i1 = row1 + i0;
-      lightData[i1] = ((color >> 16) & 0xff) / 255;
-      lightData[i1 + 1] = ((color >> 8) & 0xff) / 255;
-      lightData[i1 + 2] = (color & 0xff) / 255;
+      lightData[i1] = (((color >> 16) & 0xff) / 255) * colorScale;
+      lightData[i1 + 1] = (((color >> 8) & 0xff) / 255) * colorScale;
+      lightData[i1 + 2] = ((color & 0xff) / 255) * colorScale;
       lightData[i1 + 3] = 0;
     }
 
@@ -4901,6 +4970,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     let pointScale = 0.33 * (1 - sunI * 0.9);
     if (pointScale < 0.2) pointScale = 0.2;
     u.uPointScale = pointScale;
+    u.uGroundInvScaleY = this._groundInvScaleY || 1;
 
     if (cookieN > 0 && this.shadowBatch && gpu.cookie) {
       const screenScale = zoom * res;
@@ -6929,6 +6999,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightingConfig = this.config.lighting || {};
     if (lightingConfig.enabled && data.buffers.componentData.LightEmitter) {
       this.lightingEnabled = true;
+      this._groundScaleY = resolveGroundScaleY(lightingConfig.groundScaleY);
+      this._groundInvScaleY = 1 / this._groundScaleY;
       this.visibleLightsData = data.buffers.visibleLightsData
         ? new Uint16Array(data.buffers.visibleLightsData)
         : null;

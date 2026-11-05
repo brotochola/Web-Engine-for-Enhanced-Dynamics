@@ -454,6 +454,7 @@ export class InstancedSpriteBatch {
         uLight: { value: new Float32Array([-1, 0, 0, 0]), type: 'vec4<f32>' },
         uCam: { value: new Float32Array(4), type: 'vec4<f32>' },
         uPointScale: { value: 0, type: 'f32' },
+        uGroundInvScaleY: { value: 1, type: 'f32' },
       };
       this._sunUniforms = sunUniforms;
       const resources = {
