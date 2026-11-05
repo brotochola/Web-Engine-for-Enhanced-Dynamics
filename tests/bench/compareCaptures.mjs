@@ -59,7 +59,13 @@ async function capture(browser, root, opts, sideQuery) {
     if (msg.type() === 'error') errors.push(msg.text());
   });
   try {
-    const query = ['src=1', ...opts.query, ...sideQuery].join('&');
+    // A side's key replaces the shared one.
+    const params = new URLSearchParams('src=1');
+    for (const pair of [...opts.query, ...sideQuery]) {
+      const [key, value = ''] = pair.split('=');
+      params.set(key, value);
+    }
+    const query = params.toString();
     await page.goto(`http://127.0.0.1:${server.port}/tests/bench/integratedWorkerBenchmark.html?${query}`, {
       waitUntil: 'networkidle',
     });
