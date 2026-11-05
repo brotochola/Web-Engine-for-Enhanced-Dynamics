@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import WEED from '../../src/index.js';
 import { GameEngine } from '../../src/core/gameEngine.js';
 import { Scene } from '../../src/core/scene.js';
+import { SaveStore, encodeSave } from '../../src/core/save/saveGame.js';
 import { pageQuery, sceneParams, setSceneParams } from '../../src/core/sceneParams.js';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
@@ -76,10 +77,40 @@ test('loadScene sets them before it imports the scene, from { params } or else t
   assert.equal(seen.length, 2, 'both stopped on the bad source');
 });
 
-test('scene.params reads the same object WEED.params does', () => {
+test('a scene may keep a field of its own called params', () => {
+  class Level extends Scene {
+    create() {
+      this.params = { hard: true };
+    }
+  }
+  const scene = Object.create(Level.prototype);
+  scene.create();
+  assert.deepEqual(scene.params, { hard: true });
+});
+
+test('a scene remounted from a save keeps the params it was loaded with, even with a field of that name', async () => {
+  const blob = await encodeSave({
+    sceneName: 'Level',
+    engineVersion: '0',
+    layout: { types: [], totalEntityCount: 0 },
+    camera: null,
+    sun: null,
+    entities: [],
+    joints: [],
+  });
+  const realGet = SaveStore.get;
+  SaveStore.get = async () => blob;
+  let options = null;
   const scene = Object.create(Scene.prototype);
+  scene.game = { loadScene: async (_, o) => ((options = o), true) };
+  scene.data = null;
+  scene.params = { hard: true };
   setSceneParams('lvl=7');
-  assert.equal(scene.params, WEED.params);
-  assert.equal(scene.params.get('lvl'), '7');
+  try {
+    await scene.loadGame('slot1');
+  } finally {
+    SaveStore.get = realGet;
+  }
+  assert.equal(options.params.get('lvl'), '7');
   setSceneParams('');
 });

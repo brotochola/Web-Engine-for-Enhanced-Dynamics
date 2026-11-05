@@ -1641,8 +1641,6 @@ export declare class Decal {
 }
 
 export declare class Scene {
-  /** {@link WeedNamespace.params}, as this scene was loaded with it. */
-  readonly params: URLSearchParams;
   static WORKER_INDICES: Readonly<Record<string, number>>;
   static config: SceneConfig;
   static assets: SceneAssetsManifest;

@@ -347,13 +347,13 @@ export function applySavePayloadToScene(scene, payload, options = {}) {
  * @param {object} gameEngine
  * @param {Function|string} SceneClassOrUrl
  * @param {string} slotId
- * @param {{ data?: unknown }} [options] - loadScene data for the remounted scene
+ * @param {{ data?: unknown, params?: URLSearchParams|string }} [options] - loadScene data and params for the remounted scene
  */
 export async function loadGame(gameEngine, SceneClassOrUrl, slotId, options = {}) {
   const blob = await SaveStore.get(slotId);
   if (!blob) throw new Error(`SaveGame: slot not found: ${slotId}`);
   const payload = await decodeSave(blob);
-  const ok = await gameEngine.loadScene(SceneClassOrUrl, { restorePayload: payload, data: options.data });
+  const ok = await gameEngine.loadScene(SceneClassOrUrl, { restorePayload: payload, data: options.data, params: options.params });
   if (!ok) throw new Error('SaveGame: scene transition busy');
   return payload;
 }

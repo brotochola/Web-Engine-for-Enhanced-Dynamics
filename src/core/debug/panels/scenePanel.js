@@ -1,6 +1,7 @@
 // ScenePanel.js — Scene switching, play/pause and restart controls
 
 import { createPanel, createRow, createStat, createButton } from '../ui/debugDom.js';
+import { sceneParams } from '../../sceneParams.js';
 
 function sceneEntryIsActive(scene, entry) {
   if (!scene) return false;
@@ -121,6 +122,7 @@ export class ScenePanel {
     if (!gameEngine || !scene) return;
     await gameEngine.loadScene(scene.constructor, {
       data: scene.data,
+      params: sceneParams(),
       scriptUrl: scene.sceneScriptUrl || undefined,
     });
   }

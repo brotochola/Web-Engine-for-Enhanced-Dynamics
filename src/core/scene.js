@@ -2855,20 +2855,15 @@ class Scene {
     return saveGame(this, slotId);
   }
 
-  /** WEED.params, as this scene was loaded with it. */
-  get params() {
-    return sceneParams();
-  }
-
   /**
    * Load a save slot by remounting this scene class with restore payload.
    * @param {string} slotId
    */
   async loadGame(slotId) {
     const { loadGame } = await import('./save/saveGame.js');
-    // The remount keeps this scene's loadScene data; state that must come
-    // from the save belongs in onSaveGame.
-    return loadGame(this.game, this.constructor, slotId, { data: this.data, params: this.params });
+    // The remount keeps this scene's loadScene data and params; state that
+    // must come from the save belongs in onSaveGame.
+    return loadGame(this.game, this.constructor, slotId, { data: this.data, params: sceneParams() });
   }
 
   /**
