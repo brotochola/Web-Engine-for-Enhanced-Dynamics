@@ -116,9 +116,10 @@ export class StreetCar extends GameObject {
   tick(dtRatio) {
     this.distance = (this.distance + CAR_SPEED * dtRatio) % LAP;
     roadPoint(this.distance, LANE, point);
+    // The rotation first: set x and set y send the body the rotation they find.
+    this.rotation = point[2] + Math.PI / 2; // the picture points up the screen
     this.x = point[0];
     this.y = point[1];
-    this.rotation = point[2] + Math.PI / 2; // the picture points up the screen
     this.lightEmitter.lightIntensity = HEADLIGHT_INTENSITY * Sun.nightFactor;
   }
 }
