@@ -28,6 +28,8 @@ tried, what is planned, and the journal of building the engine. They are not the
 | [`EXECUTION_PLAN.md`](./EXECUTION_PLAN.md) | The speed hypotheses E-xx: what each claims, how it is measured, its outcome. |
 | [`WASM_HYPOTHESES.md`](./WASM_HYPOTHESES.md) | The WebAssembly migration (E-76): the candidates W1 to W28, the premises, the phases and the order. |
 | [`REVIEW_PLAN.md`](./REVIEW_PLAN.md) | Review items (bugs, cleanups, docs: B, M, D, R, G, V, N, DOC), open and closed. |
+| [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) | A design, not built: the sun's shadow inside the light sum, for the owner to decide. |
+| [`DX_NORMALS_DESIGN.md`](./DX_NORMALS_DESIGN.md) | A design, not built: light by the way a surface faces (normal maps), for the owner to decide. |
 | [`VISUAL_EDITOR_PLAN.md`](./VISUAL_EDITOR_PLAN.md) | The visual editor: goals, design, stages and items (ED-xx), open decisions. |
 | [`ISOLATION_SERVICE_WORKER_PLAN.md`](./ISOLATION_SERVICE_WORKER_PLAN.md) | SharedArrayBuffer without COOP/COEP headers: our own service worker, test plan, items (SW-xx), open decisions. |
 | [`ADOBE_GPU_PLAN.md`](./ADOBE_GPU_PLAN.md) | E-145: Adobe Animate pieces expanded on the GPU, the design note and the prototype's order of work. |
