@@ -73,6 +73,9 @@ export class Sun {
         NIGHT_COLOR: 16,
     };
 
+    // Sun intensity at or under which the sun casts no shadow
+    static SHADOW_MIN_INTENSITY = 0.1;
+
     // Default sun colors for different times of day
     static DEFAULT_COLORS = [
         { hour: 0, color: 0x1a1a2e }, // Midnight - dark blue
@@ -415,6 +418,32 @@ export class Sun {
     /** Shadow angle in radians (for sprite rotation) */
     static get shadowAngle() {
         return this._float32 ? this._float32[Sun.F32.SHADOW_ANGLE] : 0;
+    }
+
+    /**
+     * How dark a sun-cast shadow is now: 0 with the sun off or under SHADOW_MIN_INTENSITY. The ShadowCaster pass and
+     * alphaBySun: 'shadow' both read this, so a layer drawn in black is exactly as dark as a person's shadow.
+     */
+    static get shadowOpacity() {
+        if (!this.enabled) return 0;
+        const si = this.intensity;
+        if (!(si > Sun.SHADOW_MIN_INTENSITY)) return 0;
+        const len = this.shadowLengthRatio || 1;
+        return this.shadowAlpha * si * (1 - this.shadowStretchAlphaFactor * (1 - this.shadowMinLengthRatio / len));
+    }
+
+    /**
+     * The factor a layer's alphaBySun multiplies its alpha by.
+     * @param {'shadow'|'night'|{from: number, to: number}} spec
+     * @returns {number} 0-1
+     */
+    static alphaFactor(spec) {
+        if (spec === 'shadow') return this.shadowOpacity;
+        if (spec === 'night') return this.nightFactor;
+        const { from, to } = spec;
+        const i = this.intensity;
+        const f = from === to ? (i >= to ? 1 : 0) : (i - from) / (to - from);
+        return f < 0 ? 0 : f > 1 ? 1 : f;
     }
 
     // ============ Convenience Methods ============

@@ -221,6 +221,24 @@ layers: {
 }
 ```
 
+### Alpha that follows the sun
+
+`alphaBySun` multiplies a layer's alpha by the sun in the renderer, each frame, with no code in `update`. `layer.alpha` stays yours.
+
+```javascript
+layers: {
+  shadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, alphaBySun: 'shadow' },   // meshes drawn in opaque black
+  nightGlows: { zIndex: 5.6, blendMode: BLEND_MODES.ADD, alphaBySun: 'night' },
+  dawnMist: { zIndex: 3, alphaBySun: { from: 0.1, to: 0.4 } },              // up as the sun rises; from > to runs it backwards
+}
+```
+
+- `'shadow'` is the factor of the sun shadows themselves (`Sun.shadowOpacity`), so a layer drawn in opaque black is exactly as dark as a `ShadowCaster`'s shadow, and 0 when the sun casts none.
+- `'night'` is `Sun.nightFactor` (`lighting.sun.night`).
+- `{ from, to }` is a ramp on `Sun.intensity`, 0 at `from` and 1 at `to`.
+
+A MESH layer with `alphaBySun` draws into one render texture at the layer's `resolution` and composes it once, so overlapping meshes do not darken twice. A sprite layer fades per sprite.
+
 ## Layer Resolution (Cross-Worker)
 
 A look layer (a layer with a shader) draws into render textures the size of the viewport times its `resolution`.

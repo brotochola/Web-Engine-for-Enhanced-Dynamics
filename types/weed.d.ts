@@ -2568,6 +2568,10 @@ export declare class Sun {
   static set nightFrom(value: number);
   static get nightTo(): number;
   static set nightTo(value: number);
+  /** How dark a sun-cast shadow is now: 0 with the sun off or at intensity 0.1 or less. */
+  static get shadowOpacity(): number;
+  /** The factor a layer's `alphaBySun` multiplies its alpha by, 0-1. */
+  static alphaFactor(spec: 'shadow' | 'night' | { from: number; to: number }): number;
   /** The night light as it adds to the scene now (color × strength × factor), written into `out` as 0-1 rgb. */
   static nightLightRGB(out: Float32Array): void;
   /** This scene's hour-to-color table instead of {@link Sun.DEFAULT_COLORS}; nothing goes back to the default. */
@@ -2629,6 +2633,12 @@ export interface LayerSceneConfigEntry {
   /** Pixi upsample filter when resolution &lt; 1. Default {@link LAYER_SCALE_MODE}.LINEAR. */
   scaleMode?: LayerScaleMode;
   alpha?: number;
+  /**
+   * Multiplies the layer's alpha by the sun, each frame: `'shadow'` exactly as dark as a ShadowCaster's sun shadow
+   * (draw the layer in opaque black), `'night'` by {@link Sun.nightFactor}, `{ from, to }` a ramp on Sun.intensity, 0 at
+   * `from` and 1 at `to` (from > to runs it backwards). `layer.alpha` stays yours. A MESH layer with it composes once.
+   */
+  alphaBySun?: 'shadow' | 'night' | { from: number; to: number } | null;
   layerType?: string;
   maxItems?: number;
   dynamicResolution?: Record<string, unknown> | null;

@@ -1638,6 +1638,7 @@ export class Layer {
                     : (config.maxItems || LAYER_DEFAULTS.maxItemsPerLayer),
                 uniformMap: this._uniformMaps[layer.id] || null,
                 shaderFragment: config.shader?.fragment || null,
+                alphaBySun: normalizeAlphaBySun(name, config.alphaBySun),
                 shaderName: null,
                 dynamicResolution: config.dynamicResolution || null,
                 uniformTypes: null,
@@ -1949,6 +1950,14 @@ export class Layer {
         this._postToRenderer = null;
         this._nextContentRequestId = 1;
     }
+}
+
+/** A layer's alphaBySun as the renderer reads it: 'shadow', 'night', { from, to } or null. */
+export function normalizeAlphaBySun(layerName, raw) {
+  if (raw === undefined || raw === null) return null;
+  if (raw === 'shadow' || raw === 'night') return raw;
+  if (raw && Number.isFinite(raw.from) && Number.isFinite(raw.to)) return { from: raw.from, to: raw.to };
+  throw new Error(`WeedJS: layer "${layerName}" alphaBySun must be 'shadow', 'night' or { from, to } (got ${raw})`);
 }
 
 function sourceName(from) {

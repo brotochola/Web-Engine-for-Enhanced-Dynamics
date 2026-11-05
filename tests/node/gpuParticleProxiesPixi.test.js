@@ -82,6 +82,7 @@ function setup() {
     _entityChunks: new EntityChunks({ batch: entitiesBatch, root: entitiesRoot }),
     _proxyLayers: [],
     _proxyLayerList: [pl],
+    _layerSunFactor: new Float32Array(0),
     _proxyHalves: null,
     _proxyReadHalf: 0,
     _proxyLocal: localProxyHalf(),

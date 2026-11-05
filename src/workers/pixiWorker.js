@@ -749,6 +749,8 @@ class PixiRenderer extends AbstractWorker {
     this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
     this._customLayerList = []; // Cached array of custom layer objects, set once during init
     this._layerRuntime = Object.create(null); // layerName -> display object
+    this._sunLayers = []; // layers with alphaBySun: { layerId, name, spec }
+    this._layerSunFactor = new Float32Array(0); // by layer id: the sun's factor on its alpha (1 without alphaBySun)
     this.layerRefs = {};
 
     // ========================================
@@ -2287,11 +2289,12 @@ class PixiRenderer extends AbstractWorker {
     }
     const list = this._proxyLayerList;
     const alphas = Layer._alpha;
+    const sunFactors = this._layerSunFactor;
     let view = false;
     for (let i = 0; i < list.length; i++) {
       const pl = list[i];
       // The layer's alpha for this frame's group meshes and regions, set once here rather than passed per entry.
-      const alpha = alphas ? alphas[pl.layerId] : 1;
+      const alpha = alphas ? alphas[pl.layerId] * (pl.layerId < sunFactors.length ? sunFactors[pl.layerId] : 1) : 1;
       pl.batch.alpha = alpha;
       pl.batch.beginGroups();
       if (pl.regions !== null) {
@@ -2633,6 +2636,34 @@ class PixiRenderer extends AbstractWorker {
       if (Layer._alpha[i] !== 1) this._ensureMeshLookComposite(this._customLayers[i]);
       const displayObject = name ? this._layerRuntime[name] : null;
       if (displayObject) displayObject.alpha = Layer._alpha[i];
+    }
+    this.syncSunLayerAlpha();
+  }
+
+  /** Layers with alphaBySun, from layer metadata (one short list, so the general layer loops carry no branch). */
+  _collectSunLayers() {
+    const metas = Layer._metadata?.layers || [];
+    const list = [];
+    for (let i = 0; i < metas.length; i++) {
+      const spec = metas[i]?.alphaBySun;
+      if (!spec) continue;
+      list.push({ layerId: i, name: Layer.getName(i), spec });
+      this._ensureMeshLookComposite(this._customLayers[i]);
+    }
+    this._sunLayers = list;
+    this._layerSunFactor = new Float32Array(Layer.count).fill(1);
+  }
+
+  /** alphaBySun: the layer's alpha times the sun's factor, each frame. layer.alpha stays the game's own. */
+  syncSunLayerAlpha() {
+    const list = this._sunLayers;
+    const factors = this._layerSunFactor;
+    for (let i = 0; i < list.length; i++) {
+      const sl = list[i];
+      const factor = Sun.alphaFactor(sl.spec);
+      factors[sl.layerId] = factor;
+      const displayObject = this._layerRuntime[sl.name];
+      if (displayObject) displayObject.alpha = Layer._alpha[sl.layerId] * factor;
     }
   }
 
@@ -4983,9 +5014,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       u.uSun[0] = Sun.shadowDirY;
       u.uSun[1] = -Sun.shadowDirX;
       u.uSun[2] = Sun.shadowLengthRatio;
-      const si = Sun.intensity;
-      const len = Sun.shadowLengthRatio || 1;
-      u.uSun[3] = Sun.shadowAlpha * si * (1 - Sun.shadowStretchAlphaFactor * (1 - Sun.shadowMinLengthRatio / len));
+      u.uSun[3] = Sun.shadowOpacity;
     } else {
       u.uSun[3] = 0;
     }
@@ -7733,6 +7762,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             `PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h}${densLabel})`
           );
         }
+      } else if (fillBatch && config.alphaBySun) {
+        // The sun's factor is one alpha over the whole layer: an RT composed once, or overlaps would darken twice.
+        cl.shaderBypass = true;
+        this._ensureCustomLayerDensityRT(cl);
+        this._registerLayerDisplayObject(layerName, cl.displaySprite);
+        debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized (composed, alphaBySun)`);
       } else if (fillBatch) {
         this._registerLayerDisplayObject(layerName, fillBatch.mesh, true);
         this.pixiApp.stage.addChild(fillBatch.mesh);
@@ -7757,6 +7792,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._customLayerList = Object.values(this._customLayers);
     this._bindLutToBatches();
     this._initProxies();
+    this._collectSunLayers();
 
     if (this._customLayerList.length > 0) {
       this.pixiApp.stage.sortChildren();
