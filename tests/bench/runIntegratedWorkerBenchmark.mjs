@@ -633,6 +633,8 @@ async function main() {
         text.includes('PIXI WORKER') ||
         text.includes('uncaptured') ||
         text.includes('ComputeLayer') ||
+        // A stress scene's own report (sunOverrideScene's torn reads, say).
+        text.includes('[bench]') ||
         // The physics host's own warnings (a body Box2D would not create, a full pool): a run that hits them is not
         // the scene it was asked to be.
         text.includes('[weedjs-box2d]')
