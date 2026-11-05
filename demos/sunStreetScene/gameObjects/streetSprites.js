@@ -3,7 +3,7 @@
 import WEED from '/src/index.js';
 import { LAP, WORLD_W, roadPoint } from '../streetLayout.js';
 
-const { GameObject, Collider, SpriteRenderer, ShadowCaster, LightEmitter, Sun, enums } = WEED;
+const { GameObject, Collider, SpriteRenderer, ShadowCaster, LightEmitter, LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE, Sun, enums } = WEED;
 const { ShapeType } = enums;
 
 // ?carSpeed= reaches this module on the logic worker through WEED.params: `location` there is the worker script's.
@@ -11,20 +11,34 @@ const CAR_SPEED = Number(WEED.params?.get('carSpeed') ?? 4);
 const LANE = -28; // inside of the centre line
 const LAMP_INTENSITY = 9000;
 const HEADLIGHT_INTENSITY = 9000;
+// A light's occluders come from its neighbours: its visualRange must cover all it reaches (LightEmitter.influenceRadius).
+const LAMP_REACH = Math.sqrt(LAMP_INTENSITY) * 10;
+const HEADLIGHT_REACH = Math.sqrt(HEADLIGHT_INTENSITY) * 10;
 // carScene's cars: a drawn frame every 7.5 degrees, named by its heading, instead of one picture that turns.
 const CAR_FRAMES = Array.from({ length: 48 }, (_, i) => String(i * 7.5));
 const CAR_FRAME_STEP = (Math.PI * 2) / CAR_FRAMES.length;
 
 const point = new Float64Array(3);
 
-/** A house seen from the front, its roof going up the screen. A ShadowCaster would flip this picture: see HouseShadow. */
+/**
+ * A house seen from the front, its roof going up the screen. A ShadowCaster would flip this picture: see HouseShadow.
+ * It blocks lamps and headlights with its whole picture, not its footprint: lights work on the floor, and in this view a
+ * wall and a roof are drawn over the floor behind the house, so with the footprint the wall facing a lamp falls in the
+ * footprint's own shadow, and the wall facing away is lit.
+ */
 export class StreetHouse extends GameObject {
-  static components = [SpriteRenderer];
+  static components = [Collider, SpriteRenderer, LightOccluder];
 
   onSpawned(config = {}) {
+    this.collider.shapeType = ShapeType.Box;
+    this.collider.width = 176;
+    this.collider.height = 180;
+    this.collider.offsetY = -90;
+    this.collider.visualRange = 120;
     this.setSprite(config.texture);
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1;
+    this.lightOccluder.maskMode = LIGHT_OCCLUDER_MASK_SPRITE;
   }
 }
 
@@ -50,7 +64,7 @@ export class StreetLamp extends GameObject {
   onSpawned() {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 6;
-    this.collider.visualRange = 520;
+    this.collider.visualRange = LAMP_REACH;
     this.setSprite('tallLight');
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1;
@@ -98,17 +112,18 @@ export class StreetWalker extends GameObject {
   }
 }
 
-/** A car on the road. Its one light sits ahead of it, off the entity's centre: the panel's O. */
+/** A car on the road. Its one light sits ahead of it, off the entity's centre: the panel's O. It blocks other lights. */
 export class StreetCar extends GameObject {
-  static components = [Collider, SpriteRenderer, LightEmitter];
+  static components = [Collider, SpriteRenderer, LightEmitter, LightOccluder];
 
   distance = 0.5;
   frame = -1;
 
   onSpawned(config = {}) {
-    this.collider.shapeType = ShapeType.Circle;
-    this.collider.radius = 20;
-    this.collider.visualRange = 400;
+    this.collider.shapeType = ShapeType.Box;
+    this.collider.width = 78;
+    this.collider.height = 38;
+    this.collider.visualRange = HEADLIGHT_REACH;
     this.distance = config.distance + 0.5;
     this.setSpritesheet(config.sheet);
     this.setAnimation(CAR_FRAMES[0]);
@@ -120,6 +135,7 @@ export class StreetCar extends GameObject {
     this.lightEmitter.lightColor = 0xfff1c4;
     this.lightEmitter.lightIntensity = 0;
     this.lightEmitter.offsetX = config.offset;
+    this.lightOccluder.maskMode = LIGHT_OCCLUDER_MASK_SPRITE;
   }
 
   tick(dtRatio) {
