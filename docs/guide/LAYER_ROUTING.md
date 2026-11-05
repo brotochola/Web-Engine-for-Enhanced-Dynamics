@@ -207,6 +207,8 @@ tick(dtRatio, deltaTime, accumulatedTime) {
 
 Under the hood, `set alpha(v)` writes to a `Float32Array` slot in the shared config SAB and sets a per-layer `Int32` dirty flag via `Atomics.store`. The renderer polls dirty flags once per frame, applies changed values to the PIXI display object, and clears the flag.
 
+Sprite and MESH layers apply it per instance, so overlapping pieces each fade on their own. A look layer applies it once, to the composed picture (a MESH look then goes through one more render texture, from the first alpha under 1).
+
 Default alpha is `1.0` (fully opaque). It can also be set in scene config:
 
 ```javascript

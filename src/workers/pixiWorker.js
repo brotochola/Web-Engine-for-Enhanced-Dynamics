@@ -2630,9 +2630,37 @@ class PixiRenderer extends AbstractWorker {
       if (Atomics.load(Layer._alphaDirty, i) !== 1) continue;
       Atomics.store(Layer._alphaDirty, i, 0);
       const name = Layer.getName(i);
+      if (Layer._alpha[i] !== 1) this._ensureMeshLookComposite(this._customLayers[i]);
       const displayObject = name ? this._layerRuntime[name] : null;
       if (displayObject) displayObject.alpha = Layer._alpha[i];
     }
+  }
+
+  /**
+   * A look on a MESH layer draws to the screen directly from a user shader, which cannot hear the layer's alpha. A
+   * layer that needs one goes through rtOut and a Sprite instead, as sprite look layers always do, and composes once.
+   */
+  _ensureMeshLookComposite(cl) {
+    if (!cl || !cl.meshLook || cl.rtOut || !cl.shaderMesh) return;
+    const resolution = cl.resolution || 1.0;
+    cl.rtOut = PIXI.RenderTexture.create({ width: this.canvasWidth * resolution, height: this.canvasHeight * resolution });
+    this._applyCustomLayerScaleMode(cl);
+    // Look-to-rtOut + Sprite already flips V (_createLayerFullscreenGeometry).
+    cl.shaderMesh.geometry = this._createLayerFullscreenGeometry(false);
+    if (cl.shaderMesh.parent) cl.shaderMesh.parent.removeChild(cl.shaderMesh);
+    if (cl.displaySprite) {
+      cl.displaySprite.texture = cl.rtOut;
+      cl.displaySprite.visible = true;
+    } else {
+      cl.displaySprite = new PIXI.Sprite(cl.rtOut);
+      cl.displaySprite.anchor.set(0, 0);
+      cl.displaySprite.position.set(0, 0);
+    }
+    cl.displaySprite.scale.set(1.0 / resolution);
+    if (!cl.displaySprite.parent) this.pixiApp.stage.addChild(cl.displaySprite);
+    this._registerLayerDisplayObject(Layer.getName(cl.layerId), cl.displaySprite);
+    this.pixiApp.stage.sortChildren();
+    this._syncLayerRefsFromRuntime();
   }
 
   /**
@@ -5933,7 +5961,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       throw errorCompileFailed('look', shaderName || 'look', layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
     }
 
-    if (cl.fillBatch) {
+    if (cl.fillBatch && cl.rtOut) {
+      cl.meshLook = true;
+      cl.shaderMesh.geometry = this._createLayerFullscreenGeometry(false);
+      this._registerLayerDisplayObject(layerName, cl.displaySprite);
+    } else if (cl.fillBatch) {
       cl.meshLook = true;
       if (cl.displaySprite) {
         cl.displaySprite.visible = false;
@@ -8038,6 +8070,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               skipRt.rtReady = true;
               skipRt._skipRt = false;
             }
+          }
+          // A composed look (_ensureMeshLookComposite) runs every frame, as a look on the stage does.
+          if (cl.meshLook && cl.rtOut) {
+            rtOpts.transform = null;
+            rtOpts.container = cl.shaderMesh;
+            rtOpts.target = cl.rtOut;
+            rtOpts.clear = true;
+            rtOpts.clearColor = this._clearTransparent;
+            this._submitRender(rtOpts);
           }
         } else {
           rtOpts.transform = null;

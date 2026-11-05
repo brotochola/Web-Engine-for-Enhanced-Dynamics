@@ -12,6 +12,7 @@ in vec2 aInstTileOff;
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
 uniform mat3 uTransformMatrix;
+uniform vec4 uColor; // the mesh's group color, premultiplied: its alpha is the layer's
 uniform sampler2D uTexLut;
 uniform vec4 uTileWorld;
 
@@ -64,7 +65,7 @@ void main() {
   vec3 clip = mvp * vec3(world, 1.0);
   gl_Position = vec4(clip.xy, aInstDepth, 1.0);
   vLocal = aQuad;
-  vColor = vec4(rgb, instA);
+  vColor = vec4(rgb, instA * uColor.a);
   vWorld = uTileWorld.w > 0.5 ? world * uTileWorld.z + uTileWorld.xy : world;
   vAtlasUV = aInstUV;
   vTileInv = aInstTileInv;

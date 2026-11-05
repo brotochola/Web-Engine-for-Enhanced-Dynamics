@@ -18,6 +18,7 @@ in vec2 aUV2;
 uniform mat3 uProjectionMatrix;
 uniform mat3 uWorldTransformMatrix;
 uniform mat3 uTransformMatrix;
+uniform vec4 uColor; // the mesh's group color, premultiplied: its alpha is the layer's
 uniform sampler2D uTexLut;
 uniform sampler2D uPoseTable;
 
@@ -55,7 +56,7 @@ void main() {
     float(tintBits & 255u)
   ) / 255.0;
   float instA = float((tintBits >> 24u) & 255u) / 255.0;
-  vColor = vec4(rgb, instA);
+  vColor = vec4(rgb, instA * uColor.a);
 
   int tid = int(aInstTexId + 0.5);
   ivec2 lutSize = textureSize(uTexLut, 0);

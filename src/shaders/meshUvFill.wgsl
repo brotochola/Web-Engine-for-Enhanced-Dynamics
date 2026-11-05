@@ -76,7 +76,7 @@ fn mainVert(
   ) / 255.0;
   let instA = f32((tintBits >> 24u) & 255u) / 255.0;
   out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);
-  out.vColor = vec4<f32>(rgb, instA);
+  out.vColor = vec4<f32>(rgb, instA * localUniforms.uColor.a); // the layer's alpha
   out.vLocal = local;
   out.vWorld = world;
   out.vTileOff = aInstTileOff;
