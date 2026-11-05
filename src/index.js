@@ -3,6 +3,7 @@
 // Main entry point for the engine
 // ============================================================================
 
+import { sceneParams } from './core/sceneParams.js';
 import { VERSION } from './version.js';
 
 // ============================================================================
@@ -327,8 +328,13 @@ const SaveGame = Object.freeze({
 });
 
 export { SaveGame };
+export { sceneParams } from './core/sceneParams.js';
 
 const WEED = Object.freeze({
+  /** The page's URL parameters (or loadScene's { params }), the same on every thread. */
+  get params() {
+    return sceneParams();
+  },
   author: 'Facundo Saiegh',
   github: 'https://github.com/brotochola/Web-Engine-for-Enhanced-Dynamics',
   ...enums,

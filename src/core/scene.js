@@ -100,6 +100,7 @@ import {
 } from '../util/configDefaults.js';
 import { setVerboseWorkers, debugWorkerLog } from '../util/debugLog.js';
 import { Sun } from './sun.js';
+import { sceneParams } from './sceneParams.js';
 import { Layer } from './layer.js';
 import { TileMap } from './tileMap.js';
 import {
@@ -2852,6 +2853,11 @@ class Scene {
     return saveGame(this, slotId);
   }
 
+  /** WEED.params, as this scene was loaded with it. */
+  get params() {
+    return sceneParams();
+  }
+
   /**
    * Load a save slot by remounting this scene class with restore payload.
    * @param {string} slotId
@@ -2860,7 +2866,7 @@ class Scene {
     const { loadGame } = await import('./save/saveGame.js');
     // The remount keeps this scene's loadScene data; state that must come
     // from the save belongs in onSaveGame.
-    return loadGame(this.game, this.constructor, slotId, { data: this.data });
+    return loadGame(this.game, this.constructor, slotId, { data: this.data, params: this.params });
   }
 
   /**

@@ -1,6 +1,7 @@
 // GameEngine.js - Lightweight scene orchestrator
 // Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
 
+import { pageQuery, setSceneParams } from './sceneParams.js';
 import { DebugUI } from './debug/debugUi.js';
 import { HotReload } from './debug/hotReload.js';
 import { Mouse } from './mouse.js';
@@ -310,9 +311,10 @@ class GameEngine {
    * and workers load that same file (entity graph, no per-entity scriptUrl).
    * Class: same as today; engine infers the file from loaded JS when it can.
    * @param {string|Function} source
-   * @param {{ data?: unknown, onProgress?: (done: number, total: number, stage: string) => void, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
+   * @param {{ data?: unknown, params?: string|URLSearchParams|Record<string, string>, onProgress?: (done: number, total: number, stage: string) => void, restorePayload?: object, restoreSlot?: string, export?: string, scriptUrl?: string }} [options]
    *   data: handed to the scene as scene.data and as the argument of preload / create /
    *   createNewGame (level number, a menu choice, …).
+   *   params: what WEED.params reads on every thread, instead of the page's query.
    *   onProgress(done, total, stage): the same calls as Scene.onLoadProgress, for a
    *   loading screen the caller owns.
    * @returns {boolean} - true if scene change accepted, false if busy
@@ -332,6 +334,8 @@ class GameEngine {
     this.state = GameEngine.states.TRANSITIONING;
 
     try {
+      // Before the import: a scene module may read WEED.params at its top level.
+      setSceneParams(options.params !== undefined ? options.params : pageQuery());
       const origin = typeof location !== 'undefined' ? location.origin : '';
       let SceneClass;
       let sceneScriptUrl = null;

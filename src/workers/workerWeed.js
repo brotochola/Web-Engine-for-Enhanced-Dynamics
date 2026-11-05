@@ -7,6 +7,7 @@
  * Scene: `class MyScene extends Scene` extends the empty stand-in below, and
  * the worker only reads its statics (`entities`, `sharedResources`).
  */
+import { sceneParams } from '../core/sceneParams.js';
 import { VERSION } from '../version.js';
 import { GameObject, Keyboard, SceneBridge } from '../core/gameObject.js';
 import { Component } from '../core/component.js';
@@ -147,6 +148,10 @@ const enums = Object.freeze({
 });
 
 export const WORKER_WEED = Object.freeze({
+  /** The page's URL parameters: `location` here is this worker's script. */
+  get params() {
+    return sceneParams();
+  },
   ...enums,
   DECORATION_Y_SORT_SCALE,
   DECORATION_INNER_Z_MIN,

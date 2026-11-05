@@ -1641,6 +1641,8 @@ export declare class Decal {
 }
 
 export declare class Scene {
+  /** {@link WeedNamespace.params}, as this scene was loaded with it. */
+  readonly params: URLSearchParams;
   static WORKER_INDICES: Readonly<Record<string, number>>;
   static config: SceneConfig;
   static assets: SceneAssetsManifest;
@@ -4307,6 +4309,8 @@ export interface WeedEnums {
 }
 
 export interface WeedNamespace extends WeedEnums {
+  /** The page's URL parameters (or `loadScene`'s `params`), the same on the main thread and in every worker. */
+  readonly params: URLSearchParams;
   mixSeed: typeof import('./utils').mixSeed;
   seededRandom: typeof import('./utils').seededRandom;
   collisionPairKey: typeof import('./utils').collisionPairKey;
@@ -4414,6 +4418,9 @@ export interface WeedNamespace extends WeedEnums {
   github: string;
   VERSION: typeof VERSION;
 }
+
+/** {@link WeedNamespace.params} as a function. */
+export declare function sceneParams(): URLSearchParams;
 
 declare const WEED: Readonly<WeedNamespace>;
 export default WEED;

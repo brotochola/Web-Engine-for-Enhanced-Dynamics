@@ -215,6 +215,13 @@ Reads visibility lists, advances animations, builds the render queues that pixi 
 
 Visibility polygon generation uses bounded event/active pools. If those caps overflow, the engine now falls back to full-circle visibility for that light instead of emitting a silently corrupted polygon.
 
+**URL parameters in a scene.** Inside a worker `location` is the worker script's URL, not the page's: a scene that reads `location.search` works on the main thread and reads nothing in `tick`. Use `WEED.params`, a `URLSearchParams` that is the same on every thread and already set when a module's top level runs:
+
+```javascript
+const hour = Number(WEED.params.get('hour') ?? 12);
+game.loadScene('/game/menu.js', { params: { level: 3 } }); // instead of the page's query
+```
+
 **Custom layer iteration** is pre-cached at init time as a flat array (`_customLayerEntries`), avoiding `Object.entries()` allocations in the hot path.
 
 | Buffer                     | Access         | Notes                                                                                 |

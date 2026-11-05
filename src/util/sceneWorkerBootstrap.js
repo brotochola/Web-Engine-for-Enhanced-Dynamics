@@ -1,5 +1,6 @@
 import { getPortTransferables, postWorkerInitMessage } from './utils.js';
 import { debugWorkerLog } from './debugLog.js';
+import { sceneParams } from '../core/sceneParams.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Query } from '../core/query.js';
@@ -278,6 +279,7 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
     frameRateStride: 16,
     globalEntityCount: scene.totalEntityCount,
     config: scene.config,
+    sceneParams: sceneParams().toString(),
     gridMetadata: scene.gridMetadata,
     maxDebugDrawEntries: scene.maxDebugDrawEntries,
     scriptsToLoad,
