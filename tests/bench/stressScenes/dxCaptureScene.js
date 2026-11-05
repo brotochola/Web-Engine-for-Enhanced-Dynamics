@@ -51,6 +51,8 @@ const sunSpec = (key) => {
   const raw = query(key);
   return raw === 'ramp' ? { from: 0.1, to: 0.4 } : raw;
 };
+/** Moves the lamps down, for a picture to hold `?lampOffset=` against. */
+export const LAMP_SHIFT = queryNumber('lampShift', 0);
 export const stressSceneConfig = {
   requested: {
     hour: HOUR,
@@ -139,7 +141,7 @@ export class DxCaptureScene extends Scene {
       DxCaptureProp.spawn({ x: 40 + rng() * (WORLD_W - 80), y: 40 + rng() * (WORLD_H - 80) });
     }
     for (let i = 0; i < LIGHTS; i++) {
-      DxCaptureLamp.spawn({ x: 80 + rng() * (WORLD_W - 160), y: 80 + rng() * (WORLD_H - 160) });
+      DxCaptureLamp.spawn({ x: 80 + rng() * (WORLD_W - 160), y: 80 + rng() * (WORLD_H - 160) + LAMP_SHIFT });
     }
     if (DECO) {
       for (let i = 0; i < 4; i++) {
