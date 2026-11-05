@@ -76,7 +76,7 @@ function copyPointList(points) {
   return n;
 }
 
-function resolveMeshTextureId(name) {
+export function resolveMeshTextureId(name) {
   if (!name) return MESH_NO_TEXTURE;
   const atlas = SpriteSheetRegistry.spritesheets?.get?.('bigAtlas');
   const anim = atlas?.animations?.[name];

@@ -255,6 +255,21 @@ this.meshRenderer.setHeights(heights);           // 0 on the floor, the box's he
 
 The sun moves a vertex `h · Sun.shadowLengthRatio · (Sun.shadowDirX, Sun.shadowDirY)`, exactly what it does to the point that high on a `ShadowCaster`'s sprite, so houses, people and trees agree. Heights share the mesh's UV column, so such a mesh has no texture coordinates; `setMesh` without UVs drops them.
 
+### A shadow with its own texture
+
+A `ShadowCaster` casts its entity's sprite. When the sprite is only a piece of what you see (a tree's trunk, its branches decorations that sway), give it the whole silhouette to cast:
+
+```javascript
+static config = { lighting: { shadowsEnabled: true, shadowTextures: true } };
+
+onSpawned() {
+  this.setSprite('trunk');
+  this.shadowCaster.setTexture('treeSilhouette', { anchorX: 0.5, anchorY: 1, scaleX: 1.2, scaleY: 1.2 });
+}
+```
+
+The silhouette casts for the sun and for point lights. Options left out stay the sprite's. `config.lighting.shadowTextures` turns on one pass over the caster rows and turns off the keyed caster paths, so a scene without it pays nothing; a frame with Adobe animations in it keeps the sprites' own shadows.
+
 ## Layer Resolution (Cross-Worker)
 
 A look layer (a layer with a shader) draws into render textures the size of the viewport times its `resolution`.

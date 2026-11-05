@@ -3779,6 +3779,13 @@ export declare class LightEmitter extends Component {
 }
 
 export declare class ShadowCaster extends Component {
+  /**
+   * Cast this frame's shadow instead of the sprite's. Needs `config.lighting.shadowTextures: true`. Options left out
+   * stay the sprite's.
+   */
+  setTexture(name: string, options?: { anchorX?: number; anchorY?: number; scaleX?: number; scaleY?: number }): this;
+  /** Back to the sprite's shadow. */
+  clearTexture(): this;
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
     heightMultiplier: typeof Float32Array;

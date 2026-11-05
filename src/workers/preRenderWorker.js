@@ -184,6 +184,10 @@ const EMPTY_U8 = new Uint8Array(0);
 const EMPTY_U16 = new Uint16Array(0);
 const EMPTY_U32 = new Uint32Array(0);
 const EMPTY_I32 = new Int32Array(0);
+// A caster row's terms DX-SHADOWTEX changes, by float: the sprite row of wasm/gpuPack.c sprite_row.
+const GPU_ROW_SCALE_X = 2;
+const GPU_ROW_ANCHOR_X = 4;
+const GPU_ROW_TEXTURE = 10;
 
 /**
  * E-07. Kinds of animation-row source, as numeric tags.
@@ -469,6 +473,8 @@ class PreRenderWorker extends AbstractWorker {
         this._emitWasm = null;
         /** E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column. */
         this._keyedFrames = false;
+        this._shadowTextures = false; // config.lighting.shadowTextures
+        this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
         this._keyedHeader = EMPTY_U32;
         /**
@@ -1231,6 +1237,7 @@ class PreRenderWorker extends AbstractWorker {
             data.buffers?.componentData?.ShadowCaster
         ) {
             this.shadowsEnabled = true;
+            this._shadowTextures = this.config?.lighting?.shadowTextures === true;
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
             this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
             this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0;
@@ -2681,6 +2688,7 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         const count = this._renderableCount;
+        this._collectedRows = count;
         const hasOrder = this._queueHasOrder();
         this._queuePresorted = hasOrder && this._presortCollector(count, this._entityYSort());
         this._emitPresorted = this._queuePresorted;
@@ -3287,7 +3295,7 @@ class PreRenderWorker extends AbstractWorker {
      * word once it draws such rows. A pause, WebGPU or a scene not keyed leaves the word stale or zero.
      */
     _keyedCastersLive() {
-        if (!this._keyedFrames || this._keyedKeyBase <= 0) return false;
+        if (!this._keyedFrames || this._keyedKeyBase <= 0 || this._shadowTextures) return false;
         const live = Atomics.load(this._keyedHeader, PIXI_KEYED_HEADER.LIVE);
         return live !== 0 && ((this.renderQueueFrame + 1 - live) >>> 0) <= KEYED_CASTERS_LAG;
     }
@@ -3320,8 +3328,44 @@ class PreRenderWorker extends AbstractWorker {
             sunN = sctx
                 ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
                 : 0;
+            if (this._shadowTextures && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
         }
         return sunN;
+    }
+
+    /**
+     * DX-SHADOWTEX. A caster row is its sprite's row and its shadow terms; a ShadowCaster with a texture of its own
+     * changes the row's frame, scale and anchor here, once, and the stamp copies the row for every light. A pass of its
+     * own, so a scene without shadow textures never reaches it. Queue rows are the collector's, one to one, except when
+     * Adobe roots expanded in the frame: those frames keep the sprites' shadows.
+     */
+    _applyShadowTextures(q, rows, sunN) {
+        if ((q.count | 0) !== this._collectedRows) return;
+        const casters = this._gpuCasterIdx;
+        const types = this._renderableType;
+        const entities = this._renderableIndex;
+        const textureId = ShadowCaster.textureId;
+        const scaleX = ShadowCaster.textureScaleX;
+        const scaleY = ShadowCaster.textureScaleY;
+        const anchorX = ShadowCaster.textureAnchorX;
+        const anchorY = ShadowCaster.textureAnchorY;
+        for (let k = 0; k < sunN; k++) {
+            const row = casters[k];
+            if (types[row] !== 0) continue;
+            const e = entities[row];
+            const id = textureId[e];
+            if (id === 0) continue;
+            const at = k * GPU_CASTER_FLOATS;
+            const sx = scaleX[e];
+            const sy = scaleY[e];
+            if (sx !== 0) rows[at + GPU_ROW_SCALE_X] = rows[at + GPU_ROW_SCALE_X] < 0 ? -sx : sx;
+            if (sy !== 0) rows[at + GPU_ROW_SCALE_X + 1] = rows[at + GPU_ROW_SCALE_X + 1] < 0 ? -sy : sy;
+            const ax = anchorX[e];
+            const ay = anchorY[e];
+            if (ax === ax) rows[at + GPU_ROW_ANCHOR_X] = ax;
+            if (ay === ay) rows[at + GPU_ROW_ANCHOR_X + 1] = ay;
+            rows[at + GPU_ROW_TEXTURE] = id - 1;
+        }
     }
 
     _ensureStampScratch(sunN) {

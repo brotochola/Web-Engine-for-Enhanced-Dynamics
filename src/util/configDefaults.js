@@ -713,6 +713,11 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   /** Cap for self-lit occluder fills per frame (collider/sprite into lighting RT). */
   maxOccluderSelfLit: 512,
   /**
+   * ShadowCaster.setTexture works: a pass over the caster rows each frame, and the keyed caster paths off (E-191), since
+   * those read a sprite's own statics. Off, a scene pays nothing.
+   */
+  shadowTextures: false,
+  /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh.
    * 'sprite' — same quads join the entity list (sort bias already above the body).
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.

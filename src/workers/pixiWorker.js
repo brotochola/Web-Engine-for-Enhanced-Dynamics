@@ -4947,6 +4947,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * shader's resources and uniform group, the caster batch's state.
    */
   _keyedSunFor(sunShader) {
+    // Those instances are the sprites': a ShadowCaster's own texture is only in pre-render's rows.
+    if (this.config?.lighting?.shadowTextures === true) return null;
     const b = this.entitiesBatch;
     if (!this._keyedSunTried) {
       this._keyedSunTried = true;

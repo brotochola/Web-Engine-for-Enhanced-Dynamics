@@ -512,6 +512,7 @@ export class AbstractWorker {
 
     // Store config for worker access
     this.config = data.config || {};
+    ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     bindEntityIdWidth(resolveEntityIdWidth(this.config));
     this._noParent = entityIdNone;
 
