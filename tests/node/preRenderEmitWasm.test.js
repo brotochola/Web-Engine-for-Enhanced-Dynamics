@@ -121,7 +121,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, faces = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -284,7 +284,11 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     DecorationComponent.textureId[d] = d % 47 === 0 ? meta2.animationFrameStart.length + 9 : d % 12;
     DecorationComponent.anchorX[d] = r();
     DecorationComponent.anchorY[d] = r();
+    // DX-FACES: every third one is no face.
+    DecorationComponent.faceOct[d] = faces && d % 3 !== 0 ? 0x0101 + ((r() * 0xfafa) | 0) : 0;
+    DecorationComponent.faceZ[d] = faces && d % 3 !== 0 ? (r() * 0xffff) | 0 : 0;
   }
+  worker._faces = faces;
 
   // Bullets (W4d), from a generator of their own: inactive ones, trails of no length (start at the bullet), shorter
   // than 0.1, with a -0 difference (x -0, start +0), muzzle offsets, a texture past the animations.
@@ -630,11 +634,23 @@ async function runCase(t, opts) {
     const lfPrev = worker.interpolatePhysicsPose && worker._prevLfX ? worker._prevLfCount : 0;
     assert.equal(writeEmitLiquidFunColumns(b, worker.liquidFun, worker._prevLfX, worker._prevLfY, lfPrev, worker._poseAlpha,
       worker._resolveBuiltinTextureId('_whiteCircle')), k.liquidFun, 'the LiquidFun columns');
-    const tilesDirty = worker.renderQueueTileMode !== null && worker._tiledTileColumns.has(worker.renderQueueTileMode);
+    const tilesDirty = worker.renderQueueTileMode !== null && (worker._faces || worker._tiledTileColumns.has(worker.renderQueueTileMode));
     const flags = EMIT_SORT_KEY | (k.ySort ? EMIT_Y_SORT : 0) | (tilesDirty ? EMIT_TILES_DIRTY : 0) | EMIT_BOUNDS;
     const written = b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, worker._decorationZoomAlpha, worker._zBand);
     assert.notEqual(written, EMIT_DECLINED);
     assert.equal(written, n, `frame ${f}: rows written`);
+    if (worker._faces) {
+      // The face in the row, from the component: the JS side mirrors the kernel, so the two could be wrong together.
+      let faces = 0;
+      for (let r = 0; r < n; r++) {
+        if (worker._renderableType[r] !== 2) continue;
+        const d = worker._renderableIndex[r];
+        assert.equal(worker.renderQueueTileOffsetU[r], DecorationComponent.faceOct[d], `frame ${f} row ${r}: the normal`);
+        assert.equal(worker.renderQueueTileOffsetV[r], DecorationComponent.faceZ[d], `frame ${f} row ${r}: the height`);
+        if (DecorationComponent.faceOct[d] !== 0) faces++;
+      }
+      assert.ok(faces > 50, `frame ${f}: ${faces} faces drawn`);
+    }
     if (results[2] && worker.renderQueueTileMode !== null) worker._tiledTileColumns.add(worker.renderQueueTileMode);
     if (k.keyed) keyMarks.push(checkKeys(k, n, `frame ${f}`, keySt));
     const js = jsFrames[f];
@@ -715,6 +731,10 @@ test('the emit kernel writes what emitSpriteQueue writes, Y-sorted', async (t) =
 
 test('the emit kernel writes what emitSpriteQueue writes, without Y-sort', async (t) => {
   await runCase(t, { ySort: false, seed: 0xbeef });
+});
+
+test('DX-FACES: a decoration\'s row carries its face in the tile offsets, and a sprite\'s row stays untiled', async (t) => {
+  await runCase(t, { ySort: true, faces: true });
 });
 
 test("E-177: the emit marks a sprite's key when its statics changed since the emit before", async (t) => {
@@ -1322,6 +1342,34 @@ test('without ShadowCaster the kernel leaves the shadow terms the full emit wrot
 // when the statics the row got differ from the ones its slot last emitted (a texture, an alpha, a tint, the zoom's fade),
 // or its record is from an earlier epoch (pre-render moves it when Pixi asks for every statics again). The first
 // emit of a slot marks it; its rows later in the same frame do not need to.
+test('DX-FACES: a decoration keyed by its slot is marked when its face changes', async () => {
+  const k = await setup({ ySort: true, keyed: true, keyedDecorations: true, faces: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  SpriteRenderer.keyedDirty.fill(1);
+  const frame = () => {
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS | EMIT_TILES_DIRTY;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+    const marked = new Map();
+    for (let r = 0; r < n; r++) {
+      if (w._renderableType[r] !== 2) continue;
+      const d = w._renderableIndex[r];
+      if (!marked.has(d)) marked.set(d, w.renderQueueKey[r] >= KEY_CHANGED);
+    }
+    return marked;
+  };
+  const drawn = [...frame().keys()];
+  assert.ok(drawn.length > 50, 'decorations drawn');
+  assert.ok([...frame().values()].every((x) => !x), 'faces that held mark none');
+  const [d0, d1] = drawn;
+  DecorationComponent.faceOct[d0] = (DecorationComponent.faceOct[d0] ^ 0x0102) || 0x0101;
+  DecorationComponent.faceZ[d1] = (DecorationComponent.faceZ[d1] + 8) & 0xffff;
+  const m = frame();
+  assert.deepEqual(drawn.filter((d) => m.get(d)), [d0, d1], 'a normal and a height mark their slot alone');
+});
+
 test('E-188: the emit keys a decoration by its pool slot, marked when its statics moved', async () => {
   const k = await setup({ ySort: true, keyed: true, keyedDecorations: true });
   const { worker: w, b, source, count, maxItems } = k;

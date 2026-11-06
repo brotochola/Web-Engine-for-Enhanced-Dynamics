@@ -1,6 +1,7 @@
 # DX-NORMALS: light by the way a surface faces
 
-A design for the owner to decide on. Nothing here is built. Written 2026-11-05 on `dx/sun-lights-meshes`.
+A design for the owner to decide on, written 2026-11-05 on `dx/sun-lights-meshes`. Normal maps are not built. What was
+built for flat faces, without them, is **DX-FACES**: see [the last section](#what-was-built-dx-faces).
 
 ## What is wrong today
 
@@ -81,6 +82,32 @@ A prototype in a small scene, at the owner's word:
 - The second pass's GPU time with Conurbano's house count.
 - The final composite's full-screen term.
 - The look, by eye, of a lamp's soft corner.
+
+## What was built: DX-FACES
+
+The owner asked, 2026-11-05, for a lamp that lights the wall it faces, on Conurbano's houses, and for the game to be the
+tester. A house is flat faces, and the editor knows each one's normal: no normal map is needed, so nothing above about
+the atlas applies. [`src/render/faceMap.js`](../../src/render/faceMap.js) holds the format.
+
+- A decoration says where its face looks and how high it is (`Decoration.spawn`: `faceNormalX/Y/Z`, `faceHeight`): two u16
+  columns that reach the GPU in the row's tile offsets, which a decoration does not use. No row format changed.
+- Every instance of the entities batch is drawn a second time into the **face map**, at the light pass's size, in painter
+  order: normal and height per pixel, 0 for a sprite that is no face, so a person in front of a wall takes the wall out.
+- The light pass reads the map: a face's pixel gets `N · L` and its real 3D distance to each light, and the sun by its
+  angle; any other pixel keeps the old formula. Without `lighting.faces` the blocks are cut from the shader.
+
+Against the questions above: **1.** The normal is read in the ¼ pass, so the edge between two faces is as soft as that pass
+(option A, on the owner's scene ¼ read fine, and `lighting.resolution` is the knob). **2.** A second pass over all the
+instances, not a list of the ones with normals: the ones without are what cuts the holes. **3.** The plane's height at each
+corner comes from the normal in the vertex shader, so a shear needs nothing more. **4.** DX-SUNMASK stays open; a face skips
+the shadow composite, so it does not take a lamp's shadows. **5.** No atlas change.
+
+The sun needed two things from the scene, both found on the game: `shadowAngleOffset: 0`, since with the default the sun is
+on the far side of the picture and every wall a camera sees is against the light all day; and a new `sun.maxElevation`,
+since the day cycle takes the sun to 90 degrees and no wall gets any at noon.
+
+`tests/bench/faceLightCheck.mjs` compares white faces with an independent formula, on both backends and every sprite path
+(worst sample 2.1 of 255). What stays out: normal maps for sprites that are not flat, one volume shadowing another's wall.
 
 ## Order, if approved
 

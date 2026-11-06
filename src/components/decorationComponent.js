@@ -66,6 +66,12 @@ export class DecorationComponent extends Component {
     // like any facing. No pass reads these two columns.
     skewX: Float32Array,
     skewY: Float32Array,
+
+    // === Face (DX-FACES) ===
+    // A flat face of a volume, lit as a surface: its normal (octahedral, 0 = no face) and the height of its position
+    // above the floor, in 1/FACE_Z_UNITS px (src/render/faceMap.js).
+    faceOct: Uint16Array,
+    faceZ: Uint16Array,
   };
 
   // Static pool tracking (set during initialization)

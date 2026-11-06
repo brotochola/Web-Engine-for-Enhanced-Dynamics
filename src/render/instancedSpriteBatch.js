@@ -39,6 +39,7 @@ import {
 import {
   GPU_KEYED_ROW_WORDS, packInstancedRowsWasm, packKeyedRowsWasm, packPoseRowsWasm, packSplitRowsWasm,
 } from './gpuPackClient.js';
+import { faceMapVertex, faceMapWgsl } from './faceMap.js';
 import {
   STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, spriteIndexedVertex, spriteIndexedWgsl, staticsTextureHeight,
 } from './spriteIndexed.js';
@@ -395,6 +396,10 @@ export class InstancedSpriteBatch {
     // its geometries over each ring slot for those rows (commitKeyedCasterRows: the sun's, then the stamps').
     this.keyedCasters = false;
     this._keyedCasterShaders = [null, null];
+    // DX-FACES: the face map's mesh and its programs (faceMesh).
+    this._faceMesh = null;
+    this._faceShader = null;
+    this._faceIndexedShader = null;
     this._keyedCasterGeometries = null;
     this._ixGen = 0;
     this._ixRows = -1;
@@ -767,6 +772,12 @@ export class InstancedSpriteBatch {
       ix.resources.uTexture = source;
       ix.resources.uSampler = source.style;
     }
+    for (const face of [this._faceShader, this._faceIndexedShader]) {
+      if (face !== null) {
+        face.resources.uTexture = source;
+        face.resources.uSampler = source.style;
+      }
+    }
     const ks = this._keyedSunShader;
     if (ks) {
       ks.resources.uTexture = source;
@@ -780,6 +791,8 @@ export class InstancedSpriteBatch {
     if (this.shadowShader) this.shadowShader.resources.uTexLut = source;
     if (this._indexedShader) this._indexedShader.resources.uTexLut = source;
     if (this._keyedSunShader) this._keyedSunShader.resources.uTexLut = source;
+    if (this._faceShader !== null) this._faceShader.resources.uTexLut = source;
+    if (this._faceIndexedShader !== null) this._faceIndexedShader.resources.uTexLut = source;
   }
 
   /** Match `_beginUpload` tileWorld when committing pre-packed rows. */
@@ -1118,6 +1131,72 @@ export class InstancedSpriteBatch {
       this.keyedShadowReady = true;
     }
     return drawn;
+  }
+
+  /**
+   * DX-FACES: this batch's instances for the face map, over this frame's geometry: the same rows, in the same order, drawn
+   * again with a program that writes what each pixel is. Made on first use; WebGL only for now.
+   * @param {number} heightScaleY
+   * @param {number} groundScaleY
+   * @returns {Mesh|null}
+   */
+  faceMesh(heightScaleY, groundScaleY) {
+    if (this._faceMesh === null) {
+      const shaders = this._engineShaders;
+      if (!(this._useWebGpu ? shaders?.sprite : shaders?.faceFrag)) return null;
+      const uniforms = {
+        uTileWorld: { value: this._tileWorld, type: 'vec4<f32>' },
+        uFaceSpace: { value: new Float32Array([heightScaleY, groundScaleY, 0, 0]), type: 'vec4<f32>' },
+      };
+      if (this._twoStreams) uniforms.uPoseAlpha = { value: 1, type: 'f32' };
+      const r = this.shader.resources;
+      const resources = { uTexture: r.uTexture, uSampler: r.uSampler, uTexLut: r.uTexLut, uniforms };
+      const name = `${this._label}-face`;
+      if (this._useWebGpu) {
+        const source = faceMapWgsl(this._twoStreams ? shaders.spritePose : shaders.sprite);
+        this._faceShader = new Shader({ gpuProgram: instancedSpriteGpuProgram(GpuProgram, source, 'mainFragFace', name), resources });
+      } else {
+        const vertex = faceMapVertex(this._twoStreams ? shaders.spriteVertPose : shaders.spriteVert);
+        this._faceShader = new Shader({ glProgram: instancedSpriteGlProgram(GlProgram, vertex, shaders.faceFrag, name), resources });
+      }
+      if (this._indexedShader !== null) {
+        const indexedResources = { ...resources, uStatics: this._indexedShader.resources.uStatics };
+        const indexedName = `${name}-indexed`;
+        this._faceIndexedShader = new Shader(
+          this._useWebGpu
+            ? {
+                gpuProgram: instancedSpriteIndexedGpuProgram(
+                  GpuProgram,
+                  spriteIndexedWgsl(faceMapWgsl(shaders.sprite)),
+                  'mainFragFace',
+                  indexedName,
+                ),
+                resources: indexedResources,
+              }
+            : {
+                glProgram: instancedSpriteGlProgram(
+                  GlProgram,
+                  spriteIndexedVertex(faceMapVertex(shaders.spriteVert)),
+                  shaders.faceFrag,
+                  indexedName,
+                ),
+                resources: indexedResources,
+              },
+        );
+      }
+      const state = new State();
+      state.blendMode = 'none';
+      state.depthTest = false;
+      state.depthMask = false;
+      state.culling = false;
+      this._faceMesh = new Mesh({ geometry: this.mesh.geometry, shader: this._faceShader, state, label: `${this._label}-face` });
+      this._faceMesh.cullable = false;
+    }
+    const mesh = this._faceMesh;
+    if (mesh.geometry !== this.mesh.geometry) mesh.geometry = this.mesh.geometry;
+    const shader = this.mesh.shader === this._indexedShader ? this._faceIndexedShader : this._faceShader;
+    if (mesh.shader !== shader) mesh.shader = shader;
+    return mesh;
   }
 
   /**

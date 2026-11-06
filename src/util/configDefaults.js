@@ -720,6 +720,12 @@ export const LIGHTING_DEFAULTS = Object.freeze({
    */
   shadowTextures: false,
   /**
+   * DX-FACES: decorations with a normal are lit as surfaces (Decoration.spawn's faceNormalX, ...). A second draw of the
+   * entity batch into a map at `resolution`, and the light pass reads it. Off, a scene pays nothing.
+   * { enabled, heightScaleY, wrap, gain, sunDirect }: src/render/faceMap.js. Not with raycasted lighting.
+   */
+  faces: Object.freeze({ enabled: false }),
+  /**
    * 'add' — type 3 glows go to the lightGlows ADD mesh.
    * 'sprite' — same quads join the entity list (sort bias already above the body).
    * Source-over, so the soft edge can gray, and lighting multiply sits on top.

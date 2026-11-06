@@ -55,6 +55,7 @@ import {
 import { Layer } from '../core/layer.js';
 import { coverBackgroundTransform } from '../render/coverBackground.js';
 import { meshLookFullscreenUvs } from '../render/meshLookUv.js';
+import { resolveFaces, shaderWithFlag } from '../render/faceMap.js';
 import { TileMap } from '../core/tileMap.js';
 import {
   listGidPages,
@@ -813,6 +814,10 @@ class PixiRenderer extends AbstractWorker {
     this._lightGradientTexId = 0xffff;
     this.lightingResolution = 1.0; // Resolution multiplier for lighting (e.g. 0.5 for half res)
     this.lightingRT = null; // RenderTexture for low-res lighting
+    this.faceRT = null; // DX-FACES: the face map (src/render/faceMap.js)
+    this._faces = resolveFaces(null);
+    this._faceSun = new Float32Array(4); // towards the sun, once a frame
+    this._faceRtLayer = { resolution: 1 }; // _writeCameraRtTransform's layer for the face map
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
     this._lightDataFloats = null; // Float32Array RGBA32F payload (maxLights x 2)
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
@@ -2762,6 +2767,7 @@ class PixiRenderer extends AbstractWorker {
     if (this._visPolyEnabled) {
       this.renderVisibilityLighting();
     } else if (this.lightingRT && this.lightingMesh && layerIsVisible(Layer.lighting?.id)) {
+      if (this.faceRT !== null) this._renderFaceMap();
       const renderOptions = this._rtRenderOpts;
       renderOptions.transform = null;
       renderOptions.container = this.lightingMesh;
@@ -2773,6 +2779,28 @@ class PixiRenderer extends AbstractWorker {
       this._renderParticleLightingField();
     }
     if (started) this.lightsTimeThisFrame += performance.now() - started;
+  }
+
+  /** DX-FACES: the face map's texture, nearest (its texels are codes), at the light pass's size. */
+  _createFaceMap(width, height) {
+    this.faceRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
+    this._faceRtLayer.resolution = this.lightingResolution;
+    const res = this.lightingShader?.resources;
+    if (res) res.uFaceMap = this.faceRT.source;
+  }
+
+  /** DX-FACES: what each pixel of this frame is, in painter order, for the light pass. */
+  _renderFaceMap() {
+    const batch = this.entitiesBatch;
+    const mesh = batch !== null ? batch.faceMesh(this._faces.heightScaleY, this._groundScaleY || 1) : null;
+    const opts = this._rtRenderOpts;
+    opts.container = mesh !== null && batch.mesh.visible ? mesh : this._rtEmptyContainer;
+    opts.target = this.faceRT;
+    opts.clear = true;
+    opts.clearColor = this._clearTransparent;
+    opts.transform = this._writeCameraRtTransform(this._meshRtTransform, this._faceRtLayer);
+    this._submitRender(opts);
+    opts.transform = null;
   }
 
   applyLayerVisibility() {
@@ -3258,7 +3286,16 @@ LIGHTING SYSTEM SETUP
       ...this._lightingShadowResources(),
     };
 
-    const lightingSrc = (this._engineShaders?.lightingFrag || '').replace(
+    const facesOn = this._faces.enabled;
+    if (facesOn) {
+      lightingResources.uniforms.uFaceLight = {
+        value: new Float32Array([this._faces.heightScaleY, this._faces.wrap, this._faces.gain, this._faces.sunDirect]),
+        type: 'vec4<f32>',
+      };
+      lightingResources.uniforms.uFaceSun = { value: this._faceSun, type: 'vec4<f32>' };
+      lightingResources.uFaceMap = PIXI.Texture.EMPTY.source;
+    }
+    const lightingSrc = shaderWithFlag(this._engineShaders?.lightingFrag || '', 'FACES', facesOn).replace(
       /MAX_LIGHTS/g,
       String(this.maxLights | 0 || 64)
     );
@@ -3266,7 +3303,7 @@ LIGHTING SYSTEM SETUP
       if (!lightingSrc) {
         throw new Error('WeedJS: Failed to compile look shader "lighting_basic" for layer "LIGHTING" on WebGPU: lighting_basic.wgsl is missing.');
       }
-      const gpuProgram = lightingGpuProgram(GpuProgram, lightingSrc, 'lighting-basic');
+      const gpuProgram = lightingGpuProgram(GpuProgram, lightingSrc, 'lighting-basic', facesOn);
       this.lightingShader = new PIXI.Shader({ gpuProgram, resources: lightingResources });
     } else {
       if (!lightingSrc) {
@@ -3290,11 +3327,12 @@ LIGHTING SYSTEM SETUP
     });
 
     // Low-res lighting, liquid field splats, or particle lights need an RT target.
-    const needRt = this.lightingResolution < 1.0 || this.liquidFunMaxCount > 0 || this._particleLightsEnabled;
+    const needRt = this.lightingResolution < 1.0 || this.liquidFunMaxCount > 0 || this._particleLightsEnabled || facesOn;
     if (needRt) {
       const lw = rtPixelSize(this.canvasWidth, this.lightingResolution);
       const lh = rtPixelSize(this.canvasHeight, this.lightingResolution);
       this.lightingRT = PIXI.RenderTexture.create({ width: lw, height: lh });
+      if (facesOn) this._createFaceMap(lw, lh);
       this.lightingDisplaySprite = new PIXI.Sprite(this.lightingRT);
       this.lightingDisplaySprite.anchor.set(0, 0); // Ensure top-left anchor
       this.lightingDisplaySprite.position.set(0, 0); // Position at top-left of screen
@@ -4793,7 +4831,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightData[i1] = (((color >> 16) & 0xff) / 255) * colorScale;
       lightData[i1 + 1] = (((color >> 8) & 0xff) / 255) * colorScale;
       lightData[i1 + 2] = ((color & 0xff) / 255) * colorScale;
-      lightData[i1 + 3] = 0;
+      lightData[i1 + 3] = h; // DX-FACES: a face needs the source's height itself
     }
 
     clearUnusedLightDataTexels(lightData, maxLights, countToRender);
@@ -4817,6 +4855,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
       // Extract sun color RGB
       extractRGBNormalizedMut(sunColor, rgb);
+      if (this.faceRT !== null) this._writeFaceSun();
       uniformGroup.uniforms.uSunR = rgb.r;
       uniformGroup.uniforms.uSunG = rgb.g;
       uniformGroup.uniforms.uSunB = rgb.b;
@@ -5850,6 +5889,21 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     return this.shadowRT?.source || PIXI.Texture.EMPTY.source;
   }
 
+  /** DX-FACES: towards the sun in the floor's space, from the shadows' direction on the screen and its elevation. */
+  _writeFaceSun() {
+    const a = (Sun.elevation * Math.PI) / 180;
+    const sinE = Math.sin(a);
+    const cosE = Math.cos(a);
+    const dirX = Sun.shadowDirX;
+    const dirY = Sun.shadowDirY / (this._groundScaleY || 1);
+    const len = Math.sqrt(dirX * dirX + dirY * dirY) || 1;
+    const sun = this._faceSun;
+    sun[0] = (-dirX / len) * cosE;
+    sun[1] = (-dirY / len) * cosE;
+    sun[2] = sinE;
+    sun[3] = 1 / (sinE > 0.25 ? sinE : 0.25);
+  }
+
   _lightingShadowResources() {
     const src = this._lightingShadowSource();
     return { uShadowMap: src, uShadowSampler: src.style };
@@ -6178,6 +6232,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (this.lightingRT) {
       const lw = rtPixelSize(width, this.lightingResolution);
       const lh = rtPixelSize(height, this.lightingResolution);
+      if (this.faceRT !== null) {
+        this.lightingShader.resources.uFaceMap = PIXI.Texture.EMPTY.source;
+        this.faceRT.destroy(true);
+        this._createFaceMap(lw, lh);
+      }
       this.lightingRT = this._replaceRT(
         this.lightingRT,
         lw,
@@ -6714,6 +6773,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         fetchEngineShader('/src/shaders/fullscreenLook.vert.glsl').then((s) => {
           sh.lookVert = s;
         }),
+        fetchEngineShader('/src/shaders/faceMap.frag.glsl').then((s) => {
+          sh.faceFrag = s;
+        }),
         fetchEngineShader('/src/shaders/lightingBasic.frag.glsl').then((s) => {
           sh.lightingFrag = s;
         }),
@@ -7136,6 +7198,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         ? new Uint16Array(data.buffers.visibleLightsData)
         : null;
       this.lightingResolution = lightingConfig.resolution || 1.0;
+      this._faces = resolveFaces(lightingConfig);
+      if (lightingConfig.faces?.enabled && !this._faces.enabled) {
+        console.warn('WeedJS: lighting.faces does not work with raycasted lighting yet: faces are off');
+      }
       // baseAmbient is the night/minimum light level (when sun is down)
       this.baseAmbient = lightingConfig.baseAmbient !== undefined ? lightingConfig.baseAmbient : 0.05;
       this.maxLights = lightingConfig.maxLights !== undefined ? lightingConfig.maxLights : 128;
