@@ -2525,6 +2525,8 @@ export interface SunInitConfig {
  */
 export declare class Sun {
   static readonly BYTE_LENGTH: 96;
+  /** Degrees the sun reaches at noon on a day cycle. Default 90: overhead. */
+  maxElevation?: number;
   static readonly OFFSETS: SunOffsets;
   static readonly F32: SunF32Indices;
   static readonly U32: SunU32Indices;
@@ -2563,6 +2565,8 @@ export declare class Sun {
   static set nightIntensity(value: number);
   /** The night light's color, 0xRRGGBB. */
   static get nightColor(): number;
+  static get maxElevation(): number;
+  static set maxElevation(value: number);
   static set nightColor(value: number);
   static get nightFrom(): number;
   static set nightFrom(value: number);

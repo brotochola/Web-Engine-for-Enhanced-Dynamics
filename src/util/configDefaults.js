@@ -665,6 +665,8 @@ export const SUN_DEFAULTS = Object.freeze({
   color: 0xffffff,
   shadowAlpha: 0.4,
   startHour: 12,
+  /** Degrees the sun reaches at noon on a day cycle. 90 = overhead, walls get no sun then (lighting.faces). */
+  maxElevation: 90,
   shadowAngleOffset: Math.PI,
   shadowMinLengthRatio: 0.2,
   shadowMaxLengthRatio: 2.0,

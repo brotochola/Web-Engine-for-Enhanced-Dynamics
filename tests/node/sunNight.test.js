@@ -131,6 +131,22 @@ test('with no table the default one stands, unchanged, and teardown forgets a sc
 });
 
 test('both lighting shaders add the night term, and the WGSL struct lists what the uniform group does, in order', () => {
+test('sun.maxElevation is how high the day cycle takes the sun; left out, the old 90', () => {
+  bootSun();
+  Sun.setTimeOfDay(12);
+  assert.equal(Sun.elevation, 90);
+  const high = Sun.shadowLengthRatio;
+  Sun.setTimeOfDay(15);
+  assert.ok(Math.abs(Sun.elevation - 90 * Math.SQRT1_2) < 1e-4);
+  Sun.unbind();
+  bootSun({ maxElevation: 60 });
+  Sun.setTimeOfDay(12);
+  assert.ok(Math.abs(Sun.elevation - 60) < 1e-4);
+  assert.ok(Sun.shadowLengthRatio > high, 'a lower sun casts longer shadows');
+  Sun.setTimeOfDay(15);
+  assert.ok(Math.abs(Sun.elevation - 60 * Math.SQRT1_2) < 1e-4);
+});
+
   const glsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.frag.glsl', import.meta.url), 'utf8');
   const wgsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.wgsl', import.meta.url), 'utf8');
   const pixi = fs.readFileSync(new URL('../../src/workers/pixiWorker.js', import.meta.url), 'utf8');
