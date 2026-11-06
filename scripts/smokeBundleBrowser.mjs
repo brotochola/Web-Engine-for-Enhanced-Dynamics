@@ -104,6 +104,17 @@ try {
       } else {
         console.log('  named exports OK');
       }
+      // WEED.params follows loadScene's { params }: a getter, or the bundle's frozen copy keeps the page's query.
+      const liveParams = await page.evaluate(async (file) => {
+        const { default: WEED } = await import(`/dist/${file}`);
+        return typeof Object.getOwnPropertyDescriptor(WEED, 'params')?.get === 'function';
+      }, bundle).catch(() => false);
+      if (!liveParams) {
+        result.ok = false;
+        result.text = `${result.text || ''} (WEED.params is not a getter)`;
+      } else {
+        console.log('  WEED.params live');
+      }
     }
 
     // Box2D's memory size travels in the physics worker's name (physics.wasmMemoryMB); a bundle that

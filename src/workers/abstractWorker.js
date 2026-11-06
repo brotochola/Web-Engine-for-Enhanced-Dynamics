@@ -1,6 +1,7 @@
 // AbstractWorker.js - Base class for all game engine workers
 // Provides common functionality: frame timing,  FPS tracking, pause state, message handling
 
+import { setSceneParams } from '../core/sceneParams.js';
 import { GameObject } from '../core/gameObject.js';
 import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import Keyboard from '../core/keyboard.js';
@@ -481,6 +482,7 @@ export class AbstractWorker {
    * @param {Object} data - Initialization data from Scene
    */
   async initializeCommonBuffers(data) {
+    setSceneParams(data.sceneParams);
     // console.log(
     //   `${this.constructor.name}: initializeCommonBuffers called, needsGameScripts=${this.needsGameScripts}`
     // );
@@ -510,6 +512,7 @@ export class AbstractWorker {
 
     // Store config for worker access
     this.config = data.config || {};
+    ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     bindEntityIdWidth(resolveEntityIdWidth(this.config));
     this._noParent = entityIdNone;
 
@@ -837,6 +840,8 @@ export class AbstractWorker {
     // Initialize Sun static class (directional light shared across workers)
     if (data.sunData) {
       Sun.initialize(data.sunData);
+      // A tick may call Sun.setTimeOfDay: it reads the scene's table, as the main thread does.
+      Sun.setColors(this.config.lighting?.sun?.colors);
     }
 
     // Initialize Layer static class (rendering layers shared across workers)
@@ -1067,6 +1072,8 @@ export class AbstractWorker {
       // self.rng is this worker's seeded generator (initSeededRandom). WEED.rng
       // is the wrapper that calls it: on self it would call itself forever.
       if (names[i] === 'rng') continue;
+      // WEED.params changes with the scene; a global would keep the first value.
+      if (names[i] === 'params') continue;
       self[names[i]] = WORKER_WEED[names[i]];
     }
   }

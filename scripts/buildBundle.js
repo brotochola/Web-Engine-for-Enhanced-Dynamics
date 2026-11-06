@@ -435,6 +435,8 @@ function ensureEmbeddedSources() {
 
 const WEED = Object.freeze({
   ...WEED_BASE,
+  // The spread would freeze the value of the moment: loadScene's { params } changes it.
+  get params() { return WEED_BASE.params; },
   get WorkerSources() { return workerSources; },
   get WorkerCommonSource() { return workerCommonSource; },
   get Box2dWorkerSource() { return box2dWorkerSource; },

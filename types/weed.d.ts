@@ -2455,6 +2455,11 @@ export interface SunOffsets {
   readonly SHADOW_DIR_Y: 48;
   readonly SHADOW_LENGTH_RATIO: 52;
   readonly SHADOW_ANGLE: 56;
+  readonly NIGHT_FACTOR: 60;
+  readonly NIGHT_COLOR: 64;
+  readonly NIGHT_INTENSITY: 68;
+  readonly NIGHT_FROM: 72;
+  readonly NIGHT_TO: 76;
 }
 
 /** Float32 slot indices (byte offset / 4) for Sun SAB. */
@@ -2472,11 +2477,28 @@ export interface SunF32Indices {
   readonly SHADOW_DIR_Y: 12;
   readonly SHADOW_LENGTH_RATIO: 13;
   readonly SHADOW_ANGLE: 14;
+  readonly NIGHT_FACTOR: 15;
+  readonly NIGHT_INTENSITY: 17;
+  readonly NIGHT_FROM: 18;
+  readonly NIGHT_TO: 19;
 }
 
 /** Uint32 slot indices (byte offset / 4) for Sun SAB. */
 export interface SunU32Indices {
   readonly COLOR: 4;
+  readonly NIGHT_COLOR: 16;
+}
+
+/** `lighting.sun.night`: the night's own light, added to the scene's without touching `Sun.intensity`. */
+export interface SunNightConfig {
+  /** Strength at factor 1 (0-1). Default 0, no night light. */
+  intensity?: number;
+  /** 0xRRGGBB. */
+  color?: number;
+  /** Sun intensity at which the light starts. Default 0.4. */
+  from?: number;
+  /** Sun intensity at which it is full. Default 0.1. */
+  to?: number;
 }
 
 /** Merged scene sun config (after `SUN_DEFAULTS`); passed to {@link Sun.initFromConfig}. */
@@ -2492,6 +2514,9 @@ export interface SunInitConfig {
   shadowMinLengthRatio?: number;
   shadowMaxLengthRatio?: number;
   shadowStretchAlphaFactor?: number;
+  night?: SunNightConfig;
+  /** This scene's hour-to-color table, instead of {@link Sun.DEFAULT_COLORS}. */
+  colors?: readonly SunHourColorKeyframe[] | null;
 }
 
 /**
@@ -2499,7 +2524,7 @@ export interface SunInitConfig {
  * All members are static; there are no instances.
  */
 export declare class Sun {
-  static readonly BYTE_LENGTH: 64;
+  static readonly BYTE_LENGTH: 96;
   static readonly OFFSETS: SunOffsets;
   static readonly F32: SunF32Indices;
   static readonly U32: SunU32Indices;
@@ -2531,6 +2556,26 @@ export declare class Sun {
   static set shadowMaxLengthRatio(value: number);
   static get shadowStretchAlphaFactor(): number;
   static set shadowStretchAlphaFactor(value: number);
+  /** 0 by day, 1 by night, from `Sun.intensity` and {@link Sun.nightFrom} / {@link Sun.nightTo}. */
+  static get nightFactor(): number;
+  /** The night light's strength at factor 1 (0-1); adds to the scene's light, leaves `Sun.intensity` alone. */
+  static get nightIntensity(): number;
+  static set nightIntensity(value: number);
+  /** The night light's color, 0xRRGGBB. */
+  static get nightColor(): number;
+  static set nightColor(value: number);
+  static get nightFrom(): number;
+  static set nightFrom(value: number);
+  static get nightTo(): number;
+  static set nightTo(value: number);
+  /** How dark a sun-cast shadow is now: 0 with the sun off or at intensity 0.1 or less. */
+  static get shadowOpacity(): number;
+  /** The factor a layer's `alphaBySun` multiplies its alpha by, 0-1. */
+  static alphaFactor(spec: 'shadow' | 'night' | { from: number; to: number }): number;
+  /** The night light as it adds to the scene now (color × strength × factor), written into `out` as 0-1 rgb. */
+  static nightLightRGB(out: Float32Array): void;
+  /** This scene's hour-to-color table instead of {@link Sun.DEFAULT_COLORS}; nothing goes back to the default. */
+  static setColors(colors?: readonly SunHourColorKeyframe[] | null): void;
 
   static get shadowDirX(): number;
   static get shadowDirY(): number;
@@ -2588,6 +2633,17 @@ export interface LayerSceneConfigEntry {
   /** Pixi upsample filter when resolution &lt; 1. Default {@link LAYER_SCALE_MODE}.LINEAR. */
   scaleMode?: LayerScaleMode;
   alpha?: number;
+  /**
+   * Multiplies the layer's alpha by the sun, each frame: `'shadow'` exactly as dark as a ShadowCaster's sun shadow
+   * (draw the layer in opaque black), `'night'` by {@link Sun.nightFactor}, `{ from, to }` a ramp on Sun.intensity, 0 at
+   * `from` and 1 at `to` (from > to runs it backwards). `layer.alpha` stays yours. A MESH layer with it composes once.
+   */
+  alphaBySun?: 'shadow' | 'night' | { from: number; to: number } | null;
+  /**
+   * `kind: LAYER_KIND.MESH`: the GPU moves each vertex by its height ({@link MeshRenderer.setHeights}) and the sun, as a
+   * ShadowCaster's sprite moves: a box's mesh is its shadow, uploaded once. Composes once; `alphaBySun` defaults to `'shadow'`.
+   */
+  sunProjected?: boolean;
   layerType?: string;
   maxItems?: number;
   dynamicResolution?: Record<string, unknown> | null;
@@ -3312,6 +3368,11 @@ export declare class MeshRenderer extends Component {
   ): this;
   /** Rewrite local positions. Count must match the current mesh. */
   setVertices(positions: ArrayLike<number>): this;
+  /**
+   * Height of each vertex, in screen px, on a `sunProjected` layer: the sun moves a vertex as far as it moves the point
+   * that high on a ShadowCaster's sprite. After `setMesh`, one per vertex; `setMesh` without UVs drops them.
+   */
+  setHeights(heights: ArrayLike<number>): this;
   /** Drop the explicit mesh and fall back to collider fill. */
   clearMesh(): this;
   /**
@@ -3681,6 +3742,8 @@ export declare class LightEmitter extends Component {
     glowHeightOffset: typeof Float32Array;
     sourceHeight: typeof Float32Array;
     hasGlowSprite: typeof Float32Array;
+    offsetX: typeof Float32Array;
+    offsetY: typeof Float32Array;
     layerIdOfGlowSprite: typeof Uint8Array;
   };
   static active: Uint8Array;
@@ -3698,6 +3761,9 @@ export declare class LightEmitter extends Component {
    */
   static sourceHeight: Float32Array;
   static hasGlowSprite: Float32Array;
+  /** Local px from the entity's centre; the entity's rotation turns them. Pool, glow, shadows and culling follow. */
+  static offsetX: Float32Array;
+  static offsetY: Float32Array;
   static layerIdOfGlowSprite: Uint8Array;
   get lightIntensity(): number;
   set lightIntensity(value: number);
@@ -3711,6 +3777,13 @@ export declare class LightEmitter extends Component {
 }
 
 export declare class ShadowCaster extends Component {
+  /**
+   * Cast this frame's shadow instead of the sprite's. Needs `config.lighting.shadowTextures: true`. Options left out
+   * stay the sprite's.
+   */
+  setTexture(name: string, options?: { anchorX?: number; anchorY?: number; scaleX?: number; scaleY?: number }): this;
+  /** Back to the sprite's shadow. */
+  clearTexture(): this;
   static readonly ARRAY_SCHEMA: {
     active: typeof Uint8Array;
     heightMultiplier: typeof Float32Array;
@@ -4256,6 +4329,8 @@ export interface WeedEnums {
 }
 
 export interface WeedNamespace extends WeedEnums {
+  /** The page's URL parameters (or `loadScene`'s `params`), the same on the main thread and in every worker. */
+  readonly params: URLSearchParams;
   mixSeed: typeof import('./utils').mixSeed;
   seededRandom: typeof import('./utils').seededRandom;
   collisionPairKey: typeof import('./utils').collisionPairKey;
@@ -4363,6 +4438,9 @@ export interface WeedNamespace extends WeedEnums {
   github: string;
   VERSION: typeof VERSION;
 }
+
+/** {@link WeedNamespace.params} as a function. */
+export declare function sceneParams(): URLSearchParams;
 
 declare const WEED: Readonly<WeedNamespace>;
 export default WEED;

@@ -40,6 +40,10 @@ function bindComponents() {
   LightEmitter.sqrtLightIntensity = new Float32Array(N);
   LightEmitter.lightColor = new Uint32Array(N);
   LightEmitter.height = new Float32Array(N);
+  LightEmitter.offsetX = new Float32Array(N);
+  LightEmitter.offsetY = new Float32Array(N);
+  Transform.rotC = new Float32Array(N).fill(1);
+  Transform.rotS = new Float32Array(N);
   ColliderFixture.head = new Uint16Array(N).fill(NONE);
   ColliderFixture.next = new Uint16Array(FIXTURES).fill(NONE);
   ColliderFixture.active = new Uint8Array(FIXTURES);

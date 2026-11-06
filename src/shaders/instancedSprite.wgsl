@@ -93,7 +93,7 @@ fn mainVert(
   let clip = mvp * vec3<f32>(world, 1.0);
   out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);
   out.vLocal = aQuad;
-  out.vColor = vec4<f32>(rgb, instA);
+  out.vColor = vec4<f32>(rgb, instA * localUniforms.uColor.a); // the layer's alpha
   out.vWorld = select(world, world * uniforms.uTileWorld.z + uniforms.uTileWorld.xy, uniforms.uTileWorld.w > 0.5);
   out.vAtlasUV = aInstUV;
   out.vTileInv = aInstTileInv;

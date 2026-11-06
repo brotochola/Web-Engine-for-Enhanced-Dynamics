@@ -20,12 +20,16 @@ function bindComponents() {
   Transform.active = new Uint8Array(N);
   Transform.x = new Float32Array(N);
   Transform.y = new Float32Array(N);
+  Transform.rotC = new Float32Array(N).fill(1);
+  Transform.rotS = new Float32Array(N);
   Collider.visualRange = new Float32Array(N);
   LightEmitter.active = new Uint8Array(N);
   LightEmitter.lightColor = new Uint32Array(N);
   LightEmitter.lightIntensity = new Float32Array(N);
   LightEmitter.sqrtLightIntensity = new Float32Array(N);
   LightEmitter.height = new Float32Array(N);
+  LightEmitter.offsetX = new Float32Array(N);
+  LightEmitter.offsetY = new Float32Array(N);
   LightEmitter.sourceHeight = new Float32Array(N);
 }
 

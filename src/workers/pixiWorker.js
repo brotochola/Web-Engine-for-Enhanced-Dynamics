@@ -132,7 +132,7 @@ import {
   COLLIDER_FILL_FLOATS,
   MESH_UV_FILL_FLOATS,
 } from '../render/colliderFillBatch.js';
-import { bindMeshCorners, rewriteCornersWasm } from '../render/meshCornersClient.js';
+import { bindMeshCorners, rewriteCornersWasm, rewrittenFirstRow, rewrittenPastRow } from '../render/meshCornersClient.js';
 import { meshLayerCapacities } from '../util/meshMemory.js';
 import { LiquidFun } from '../core/liquidFun.js';
 import { ComputeLayer } from '../render/webgpu/computeLayer.js';
@@ -749,6 +749,10 @@ class PixiRenderer extends AbstractWorker {
     this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
     this._customLayerList = []; // Cached array of custom layer objects, set once during init
     this._layerRuntime = Object.create(null); // layerName -> display object
+    this._cornerFirstRow = 0; // the rows the last corner rewrite wrote: [first, past)
+    this._cornerPastRow = 0;
+    this._sunLayers = []; // layers with alphaBySun: { layerId, name, spec }
+    this._layerSunFactor = new Float32Array(0); // by layer id: the sun's factor on its alpha (1 without alphaBySun)
     this.layerRefs = {};
 
     // ========================================
@@ -801,6 +805,7 @@ class PixiRenderer extends AbstractWorker {
     this.lightingMesh = null; // PIXI.Mesh with lighting shader
     this.lightingShader = null; // Shader instance for updating uniforms
     this.baseAmbient = 0.05; // Base ambient light level (0-1), read from config (night/minimum light)
+    this._nightRGB = new Float32Array(3); // Sun.nightLightRGB, once a frame
     this.maxLights = 128; // Light-data texture width / capacity (config.lighting.maxLights)
     this.maxShadowCastingLights = LIGHTING_DEFAULTS.maxShadowCastingLights;
     this.maxShadowsPerLight = LIGHTING_DEFAULTS.maxShadowsPerLight;
@@ -2286,11 +2291,12 @@ class PixiRenderer extends AbstractWorker {
     }
     const list = this._proxyLayerList;
     const alphas = Layer._alpha;
+    const sunFactors = this._layerSunFactor;
     let view = false;
     for (let i = 0; i < list.length; i++) {
       const pl = list[i];
       // The layer's alpha for this frame's group meshes and regions, set once here rather than passed per entry.
-      const alpha = alphas ? alphas[pl.layerId] : 1;
+      const alpha = alphas ? alphas[pl.layerId] * (pl.layerId < sunFactors.length ? sunFactors[pl.layerId] : 1) : 1;
       pl.batch.alpha = alpha;
       pl.batch.beginGroups();
       if (pl.regions !== null) {
@@ -2629,9 +2635,73 @@ class PixiRenderer extends AbstractWorker {
       if (Atomics.load(Layer._alphaDirty, i) !== 1) continue;
       Atomics.store(Layer._alphaDirty, i, 0);
       const name = Layer.getName(i);
+      if (Layer._alpha[i] !== 1) this._ensureMeshLookComposite(this._customLayers[i]);
       const displayObject = name ? this._layerRuntime[name] : null;
       if (displayObject) displayObject.alpha = Layer._alpha[i];
+      // On the stage a MESH layer's textured rows are a mesh of their own. Through an RT, the Sprite holds the alpha.
+      const cl = this._customLayers[i];
+      if (cl && cl.uvFillBatch && !cl.rt) cl.uvFillBatch.mesh.alpha = Layer._alpha[i];
     }
+    this.syncSunLayerAlpha();
+  }
+
+  /** Layers with alphaBySun, from layer metadata (one short list, so the general layer loops carry no branch). */
+  _collectSunLayers() {
+    const metas = Layer._metadata?.layers || [];
+    const list = [];
+    for (let i = 0; i < metas.length; i++) {
+      const spec = metas[i]?.alphaBySun;
+      if (!spec) continue;
+      list.push({ layerId: i, name: Layer.getName(i), spec });
+      this._ensureMeshLookComposite(this._customLayers[i]);
+    }
+    this._sunLayers = list;
+    this._layerSunFactor = new Float32Array(Layer.count).fill(1);
+  }
+
+  /** alphaBySun: the layer's alpha times the sun's factor, each frame. layer.alpha stays the game's own. */
+  syncSunLayerAlpha() {
+    const list = this._sunLayers;
+    const factors = this._layerSunFactor;
+    for (let i = 0; i < list.length; i++) {
+      const sl = list[i];
+      const factor = Sun.alphaFactor(sl.spec);
+      factors[sl.layerId] = factor;
+      const displayObject = this._layerRuntime[sl.name];
+      if (displayObject) displayObject.alpha = Layer._alpha[sl.layerId] * factor;
+    }
+  }
+
+  /** A MESH layer whose look cannot go straight to the stage: its alpha, or the sun's on it, has to apply. */
+  _meshLookMustCompose(cl) {
+    return Layer._alpha[cl.layerId] !== 1 || !!Layer._metadata?.layers?.[cl.layerId]?.alphaBySun;
+  }
+
+  /**
+   * A look on a MESH layer draws to the screen directly from a user shader, which cannot hear the layer's alpha. A
+   * layer that needs one goes through rtOut and a Sprite instead, as sprite look layers always do, and composes once.
+   */
+  _ensureMeshLookComposite(cl) {
+    if (!cl || !cl.meshLook || cl.rtOut || !cl.shaderMesh) return;
+    const resolution = cl.resolution || 1.0;
+    cl.rtOut = PIXI.RenderTexture.create({ width: this.canvasWidth * resolution, height: this.canvasHeight * resolution });
+    this._applyCustomLayerScaleMode(cl);
+    // Look-to-rtOut + Sprite already flips V (_createLayerFullscreenGeometry).
+    cl.shaderMesh.geometry = this._createLayerFullscreenGeometry(false);
+    if (cl.shaderMesh.parent) cl.shaderMesh.parent.removeChild(cl.shaderMesh);
+    if (cl.displaySprite) {
+      cl.displaySprite.texture = cl.rtOut;
+      cl.displaySprite.visible = true;
+    } else {
+      cl.displaySprite = new PIXI.Sprite(cl.rtOut);
+      cl.displaySprite.anchor.set(0, 0);
+      cl.displaySprite.position.set(0, 0);
+    }
+    cl.displaySprite.scale.set(1.0 / resolution);
+    if (!cl.displaySprite.parent) this.pixiApp.stage.addChild(cl.displaySprite);
+    this._registerLayerDisplayObject(Layer.getName(cl.layerId), cl.displaySprite);
+    this.pixiApp.stage.sortChildren();
+    this._syncLayerRefsFromRuntime();
   }
 
   /**
@@ -3181,6 +3251,9 @@ LIGHTING SYSTEM SETUP
         uFlipY: { value: 0, type: 'f32' },
         uShadowComposite: { value: 0, type: 'f32' },
         uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
+        uNightR: { value: 0, type: 'f32' },
+        uNightG: { value: 0, type: 'f32' },
+        uNightB: { value: 0, type: 'f32' },
       },
       ...this._lightingShadowResources(),
     };
@@ -3944,9 +4017,18 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     // Render to the visibility RT
     // Clear with base ambient + sun (same as what the full-screen shader starts with)
-    const sunIntensity = (Sun.isInitialized && Sun.enabled) ? Sun.intensity : 0;
+    const sunOn = Sun.isInitialized && Sun.enabled;
+    const sunIntensity = sunOn ? Sun.intensity : 0;
     const ambient = this.baseAmbient + sunIntensity;
-    const clampedAmbient = Math.min(ambient, 1.0);
+    const night = this._nightRGB;
+    if (sunOn) Sun.nightLightRGB(night);
+    else night.fill(0);
+    const clearColor = [
+      Math.min(ambient + night[0], 1.0),
+      Math.min(ambient + night[1], 1.0),
+      Math.min(ambient + night[2], 1.0),
+      1.0,
+    ];
 
     // Restore unoccluded light under occluder footprints (no self-darken), after the fans.
     const spriteMasks = this._buildSelfLitBatch(readBufferIdx);
@@ -3955,7 +4037,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       container,
       target: this._visPolyRT,
       clear: true,
-      clearColor: [clampedAmbient, clampedAmbient, clampedAmbient, 1.0],
+      clearColor,
     });
 
     if (spriteMasks) this._renderSelfLitSpriteMasks(readBufferIdx);
@@ -3986,6 +4068,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightHeight = LightEmitter.height;
     const sourceHeight = LightEmitter.sourceHeight;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     const maxVerts = this._selfLitMaxFillVerts;
     const segs = this._selfLitCircleSegs;
     const fanCos = this._selfLitCircleCos;
@@ -4020,8 +4106,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
 
       // Light center: baked into visibility poly; here Transform is fine (lights rarely have RB)
-      const lx = Transform.x[light];
-      const ly = Transform.y[light] - (lightHeight[light] || 0);
+      const ox = offsetX[light];
+      const oy = offsetY[light];
+      const lx = Transform.x[light] + ox * rotC[light] - oy * rotS[light];
+      const ly = Transform.y[light] + ox * rotS[light] + oy * rotC[light] - (lightHeight[light] || 0);
       // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
       let intensity = lightIntensityArr[light];
       let colorScale = 1;
@@ -4286,6 +4374,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const lightColor = LightEmitter.lightColor;
     const lightHeight = LightEmitter.height;
     const sourceHeight = LightEmitter.sourceHeight;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
@@ -4300,8 +4392,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         j++;
       }
 
-      const lx = Transform.x[lightIdx];
-      const ly = Transform.y[lightIdx] - (lightHeight[lightIdx] || 0);
+      const ox = offsetX[lightIdx];
+      const oy = offsetY[lightIdx];
+      const lx = Transform.x[lightIdx] + ox * rotC[lightIdx] - oy * rotS[lightIdx];
+      const ly = Transform.y[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx] - (lightHeight[lightIdx] || 0);
       // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
       let intensity = lightIntensityArr[lightIdx];
       let colorScale = 1;
@@ -4527,6 +4621,10 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const lightEnabled = LightEmitter.active;
     const lightHeight = LightEmitter.height;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
 
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
@@ -4564,8 +4662,10 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
 
       // World-space light position from Transform SAB, same source as
       // updateLighting/updateShadowSprites/renderVisibilityLighting use.
-      const x = worldX[i];
-      const yForLight = worldY[i] - (lightHeight[i] || 0);
+      const ox = offsetX[i];
+      const oy = offsetY[i];
+      const x = worldX[i] + ox * rotC[i] - oy * rotS[i];
+      const yForLight = worldY[i] + ox * rotS[i] + oy * rotC[i] - (lightHeight[i] || 0);
 
       // Viewport culling: shared lightInfluenceRadius(sqrtIntensity)
       const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[i]);
@@ -4637,6 +4737,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const lightIntensity = LightEmitter.lightIntensity;
     const lightHeight = LightEmitter.height;
     const sourceHeight = LightEmitter.sourceHeight;
+    const offsetX = LightEmitter.offsetX;
+    const offsetY = LightEmitter.offsetY;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
     // The floor's foreshortening: the shader scales the fragment's world y by this once, the lights' y here.
     const groundInvY = this._groundInvScaleY || 1;
 
@@ -4679,8 +4783,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // doubles was a heap number per light per frame. World coordinates (the shader converts screen to world),
       // the light raised by its height, y in floor units (times 1 / groundScaleY).
       const i0 = i * 4;
-      lightData[i0] = worldX[entityIndex];
-      lightData[i0 + 1] = (worldY[entityIndex] - (lightHeight[entityIndex] || 0)) * groundInvY;
+      const ox = offsetX[entityIndex];
+      const oy = offsetY[entityIndex];
+      lightData[i0] = worldX[entityIndex] + ox * rotC[entityIndex] - oy * rotS[entityIndex];
+      lightData[i0 + 1] = (worldY[entityIndex] + ox * rotS[entityIndex] + oy * rotC[entityIndex] - (lightHeight[entityIndex] || 0)) * groundInvY;
       lightData[i0 + 2] = intensity;
       lightData[i0 + 3] = range * range;
       const i1 = row1 + i0;
@@ -4714,9 +4820,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       uniformGroup.uniforms.uSunR = rgb.r;
       uniformGroup.uniforms.uSunG = rgb.g;
       uniformGroup.uniforms.uSunB = rgb.b;
+
+      // Night light: its own term, so Sun.intensity (shadows, game logic) never hears of it
+      const night = this._nightRGB;
+      Sun.nightLightRGB(night);
+      uniformGroup.uniforms.uNightR = night[0];
+      uniformGroup.uniforms.uNightG = night[1];
+      uniformGroup.uniforms.uNightB = night[2];
     } else {
       // Sun disabled - no sun contribution
       uniformGroup.uniforms.uSunIntensity = 0;
+      uniformGroup.uniforms.uNightR = 0;
+      uniformGroup.uniforms.uNightG = 0;
+      uniformGroup.uniforms.uNightB = 0;
     }
 
     if (typeof uniformGroup.update === 'function') uniformGroup.update();
@@ -4839,6 +4955,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * shader's resources and uniform group, the caster batch's state.
    */
   _keyedSunFor(sunShader) {
+    // Those instances are the sprites': a ShadowCaster's own texture is only in pre-render's rows.
+    if (this.config?.lighting?.shadowTextures === true) return null;
     const b = this.entitiesBatch;
     if (!this._keyedSunTried) {
       this._keyedSunTried = true;
@@ -4932,9 +5050,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       u.uSun[0] = Sun.shadowDirY;
       u.uSun[1] = -Sun.shadowDirX;
       u.uSun[2] = Sun.shadowLengthRatio;
-      const si = Sun.intensity;
-      const len = Sun.shadowLengthRatio || 1;
-      u.uSun[3] = Sun.shadowAlpha * si * (1 - Sun.shadowStretchAlphaFactor * (1 - Sun.shadowMinLengthRatio / len));
+      u.uSun[3] = Sun.shadowOpacity;
     } else {
       u.uSun[3] = 0;
     }
@@ -5444,7 +5560,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   _rewriteMeshCorners(out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow) {
     const b = this._meshCornersWasm;
     if (b === null) throw new Error('meshCorners: a corner rewrite without the mesh memory');
-    return rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+    const result = rewriteCornersWasm(b, out, count, entityOfInstance, views, stride, lastVertGen, genNow, lastUvGen, uvGenNow);
+    this._cornerFirstRow = result > 0 ? rewrittenFirstRow(b) : 0;
+    this._cornerPastRow = result > 0 ? rewrittenPastRow(b) : 0;
+    return result;
   }
 
   _ensureMeshUvBatch(cl) {
@@ -5454,6 +5573,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // E-76 W11: the rows in the mesh memory when the layer has its regions there.
     const region = cl.meshRegion;
     const batch = new MeshUvFillBatch({
+      bufferSystem: this.pixiApp?.renderer?.buffer ?? null,
       capacity: cap,
       label: `mesh-uv-${cl.layerId}`,
       useWebGpu: this._useWebGpu,
@@ -5475,6 +5595,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         batch.mesh.y = fill.y;
         batch.mesh.scale.set(fill.scale.x, fill.scale.y);
         batch.mesh.zIndex = fill.zIndex;
+        batch.mesh.alpha = fill.alpha;
       }
     }
     return batch;
@@ -5910,7 +6031,13 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       throw errorCompileFailed('look', shaderName || 'look', layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
     }
 
-    if (cl.fillBatch) {
+    if (cl.fillBatch && cl.rtOut) {
+      cl.meshLook = true;
+      cl.shaderMesh.geometry = this._createLayerFullscreenGeometry(false);
+      cl.displaySprite.texture = cl.rtOut; // (none) left it on cl.rt
+      cl.displaySprite.visible = true;
+      this._registerLayerDisplayObject(layerName, cl.displaySprite);
+    } else if (cl.fillBatch) {
       cl.meshLook = true;
       if (cl.displaySprite) {
         cl.displaySprite.visible = false;
@@ -5918,6 +6045,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
       if (!cl.shaderMesh.parent) this.pixiApp.stage.addChild(cl.shaderMesh);
       this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
+      if (this._meshLookMustCompose(cl)) this._ensureMeshLookComposite(cl);
     } else {
       cl.displaySprite.texture = cl.rtOut;
       cl.displaySprite.scale.set(1.0 / resolution);
@@ -5977,6 +6105,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
   _resizeCustomLayerRTs(cl, width, height) {
     if (!Layer.customLayerNeedsViewportResize(cl)) return;
+    // The new RT is empty: a still layer would otherwise keep showing it.
+    const skip = this._colliderFillSkip[cl.layerId];
+    if (skip) skip.rtReady = false;
     const resolution = cl.resolution || 1.0;
     const lw = width * resolution;
     const lh = height * resolution;
@@ -7424,6 +7555,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           throw new Error(`MESH layer "${layerName}": its rows are not in the mesh memory (sized apart from meshLayerCapacities)`);
         }
         fillBatch = new ColliderFillBatch({
+          bufferSystem: this.pixiApp?.renderer?.buffer ?? null,
           capacity: caps.fill,
           label: `mesh-layer-${layerName}`,
           useWebGpu: this._useWebGpu,
@@ -7544,6 +7676,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         uniformStore: null,
         shaderBypass: false,
         meshLook: false,
+        sunProjected: isMesh && config.sunProjected === true,
         compute: null,
         lookSource: null,
         // LAYER_KIND.GPU_PARTICLES: the layer's GpuParticleLayerBatch, or null.
@@ -7678,6 +7811,12 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             `PIXI WORKER: Custom shader layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h}${densLabel})`
           );
         }
+      } else if (fillBatch && (config.alphaBySun || config.sunProjected)) {
+        // The sun's factor is one alpha over the whole layer: an RT composed once, or overlaps would darken twice.
+        cl.shaderBypass = true;
+        this._ensureCustomLayerDensityRT(cl);
+        this._registerLayerDisplayObject(layerName, cl.displaySprite);
+        debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized (composed, alphaBySun)`);
       } else if (fillBatch) {
         this._registerLayerDisplayObject(layerName, fillBatch.mesh, true);
         this.pixiApp.stage.addChild(fillBatch.mesh);
@@ -7702,6 +7841,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._customLayerList = Object.values(this._customLayers);
     this._bindLutToBatches();
     this._initProxies();
+    this._collectSunLayers();
 
     if (this._customLayerList.length > 0) {
       this.pixiApp.stage.sortChildren();
@@ -7856,6 +7996,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             zoom: NaN,
             camRot: NaN,
             rtReady: false,
+            // Rows changed while a sunProjected layer showed nothing: its RT is old when the sun comes back.
+            rtStale: false,
             uvLocalsReady: false,
           };
           if (cl.meshRegion) this._bindMeshSkipRegions(skip, cl.meshRegion);
@@ -7893,7 +8035,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           const genNow = full || vertsMoved ? this._captureVertGen(skip, views) : null;
           // E-118: the UV generations right after, for the same reads.
           const uvGenNow = genNow ? this._captureUvGen(skip, views) : null;
+          // The rows of each batch this frame's rewrite touched: a mesh edit anywhere moves the one vertex epoch.
+          let fillFirst = 0;
+          let fillPast = lastPacked;
+          let uvFirst = 0;
+          let uvPast = cl.uvPrevCount | 0;
           if (!full && vertsMoved) {
+            this._cornerFirstRow = 0;
+            this._cornerPastRow = lastPacked;
             const fillRewrite = this._rewriteMeshCorners(
               cl.fillBatch.rows,
               lastPacked,
@@ -7903,7 +8052,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               skip.lastVertGen,
               genNow,
             );
+            fillFirst = this._cornerFirstRow;
+            fillPast = this._cornerPastRow;
             const uvCount = cl.uvPrevCount | 0;
+            this._cornerFirstRow = 0;
+            this._cornerPastRow = !cl.uvFillBatch ? 0 : uvCount;
             const uvRewrite = !cl.uvFillBatch || uvCount <= 0
               ? 1
               : this._rewriteMeshCorners(
@@ -7917,8 +8070,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 skip.lastUvGen,
                 uvGenNow,
               );
+            uvFirst = this._cornerFirstRow;
+            uvPast = this._cornerPastRow;
             if (fillRewrite < 0 || uvRewrite < 0) full = true;
           }
+          const noRowMoved = !full && vertsMoved && !paintMoved && !poseMoved && fillPast <= fillFirst && uvPast <= uvFirst;
           if (full) {
             views.instanceEntity = skip.instanceEntity;
             views.outU32 = cl.fillBatch.rowsU32;
@@ -7934,7 +8090,6 @@ UPDATE LIGHTING (NO ZOOM SCALING)
             this._commitVertGen(skip, views);
             this._commitUvGen(skip, views);
           } else {
-            const touchVbo = vertsMoved || paintMoved;
             if (paintMoved) {
               if (lastPacked > 0) {
                 views.outU32 = cl.fillBatch.rowsU32;
@@ -7959,10 +8114,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
                 );
               }
             }
-            if (touchVbo) {
+            if (paintMoved) {
               if (lastPacked > 0) cl.fillBatch.upload(lastPacked);
               const uvCount = cl.uvPrevCount | 0;
               if (cl.uvFillBatch && uvCount > 0) cl.uvFillBatch.upload(uvCount);
+            } else if (vertsMoved) {
+              // Only the rows the rewrite wrote; none on a layer the edit did not reach.
+              if (fillPast > fillFirst) cl.fillBatch.uploadRange(fillFirst, fillPast);
+              if (cl.uvFillBatch && uvPast > uvFirst) cl.uvFillBatch.uploadRange(uvFirst, uvPast);
             }
             if (poseMoved) {
               if (lastPacked > 0) {
@@ -7987,7 +8146,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           skip.lastOutsetEpoch = outsetRev;
           skip.lastVertEpoch = vertEpoch;
           clearMeshFillPaintDirty(views);
-          packedThisFrame = true;
+          // An edit on another layer draws nothing new here: an RT layer keeps the picture it has.
+          packedThisFrame = !noRowMoved;
         }
         densityMesh = cl.fillBatch.mesh;
         this._meshFillInstancesThisFrame += (cl.prevCount | 0) + (cl.uvPrevCount | 0);
@@ -7996,7 +8156,19 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           skip.camY !== this._renderCameraY ||
           skip.zoom !== this._renderZoom ||
           skip.camRot !== (this._renderCameraRot || 0);
-        skip._skipRt = !packedThisFrame && !camChanged && skip.rtReady;
+        if (packedThisFrame) skip.rtStale = true;
+        skip._skipRt = !skip.rtStale && !camChanged && skip.rtReady;
+        if (cl.sunProjected) {
+          // The sun moves the shadows on the GPU: a new position redraws the layer's RT, no pack. With nothing to show
+          // (night, or the sun's factor at 0), it draws nothing.
+          const sunFactors = this._layerSunFactor;
+          if (cl.layerId < sunFactors.length && sunFactors[cl.layerId] === 0) {
+            if (skip.rtReady) skip._skipRt = true;
+          } else if (cl.uvFillBatch) {
+            const len = Sun.isInitialized ? Sun.shadowLengthRatio : 0;
+            if (cl.uvFillBatch.setSunShadow(len * Sun.shadowDirX, len * Sun.shadowDirY)) skip._skipRt = false;
+          }
+        }
       } else {
         continue;
       }
@@ -8013,8 +8185,18 @@ UPDATE LIGHTING (NO ZOOM SCALING)
               skipRt.zoom = this._renderZoom;
               skipRt.camRot = this._renderCameraRot || 0;
               skipRt.rtReady = true;
+              skipRt.rtStale = false;
               skipRt._skipRt = false;
             }
+          }
+          // A composed look (_ensureMeshLookComposite) runs every frame, as a look on the stage does.
+          if (!cl.shaderBypass && cl.shaderMesh && cl.rtOut) {
+            rtOpts.transform = null;
+            rtOpts.container = cl.shaderMesh;
+            rtOpts.target = cl.rtOut;
+            rtOpts.clear = true;
+            rtOpts.clearColor = this._clearTransparent;
+            this._submitRender(rtOpts);
           }
         } else {
           rtOpts.transform = null;

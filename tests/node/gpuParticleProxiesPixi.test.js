@@ -82,6 +82,7 @@ function setup() {
     _entityChunks: new EntityChunks({ batch: entitiesBatch, root: entitiesRoot }),
     _proxyLayers: [],
     _proxyLayerList: [pl],
+    _layerSunFactor: new Float32Array(0),
     _proxyHalves: null,
     _proxyReadHalf: 0,
     _proxyLocal: localProxyHalf(),
@@ -265,6 +266,7 @@ test('a resize moves a look layer\'s regions onto its new look target, with thei
   // The real resize path, as a canvas resize or a Layer.resolution change runs it; no renderer, so no texture hash.
   const ctx = {
     _proxyLayers: [],
+    _colliderFillSkip: [],
     pixiApp: null,
     _unbindLookShaderTexture: Pixi._unbindLookShaderTexture,
     _releaseTextureBindGroups: Pixi._releaseTextureBindGroups,

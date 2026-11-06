@@ -100,6 +100,7 @@ import {
 } from '../util/configDefaults.js';
 import { setVerboseWorkers, debugWorkerLog } from '../util/debugLog.js';
 import { Sun } from './sun.js';
+import { sceneParams } from './sceneParams.js';
 import { Layer } from './layer.js';
 import { TileMap } from './tileMap.js';
 import {
@@ -404,6 +405,8 @@ class Scene {
     LightEmitter.clearArrays();
     ShadowCaster.componentId = null;
     ShadowCaster.clearArrays();
+    // Workers set it from their init message; a page may call setTexture too.
+    ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     FlashComponent.componentId = null;
     FlashComponent.clearArrays();
     LightOccluder.componentId = null;
@@ -838,6 +841,10 @@ class Scene {
         ...SUN_DEFAULTS.dayCycle,
         ...(userSun.dayCycle || {}),
       },
+      night: {
+        ...SUN_DEFAULTS.night,
+        ...(userSun.night || {}),
+      },
     };
     // Compute maxShadowSprites unless the scene explicitly provides a global cap.
     if (userLightingConfig.maxShadowSprites == null) {
@@ -1117,6 +1124,9 @@ class Scene {
     }
     this._loadStep('world');
     this._spawnBatchOpen = false;
+
+    // create() may have set the sun; the workers' first frame comes before the main loop's first publish.
+    Sun.publish();
 
     // LIFECYCLE PHASE 3: Start everything.
     // Main thread loop first (for input handling), then worker game loops.
@@ -2595,6 +2605,9 @@ class Scene {
         if (clock) {
           stampStep(clock, mainSlot, frameAbs, performance.timeOrigin + performance.now());
         }
+      } else {
+        // updateInternal does not run; a handler's write to the sun still goes out.
+        Sun.publish();
       }
 
       // DebugUI reads mainFPS from this field
@@ -2619,8 +2632,8 @@ class Scene {
     // Camera pose comes from Camera SAB getters (workers call Camera.follow*).
     this.updateCameraBuffer();
 
-    // Update sun day cycle (if enabled)
-    // Sun writes to SharedArrayBuffer, workers read it
+    // The cycle and update write the sun's private copy; workers see it once, at Sun.publish() below.
+    Sun.beginFrame();
     this.updateSunDayCycle(simMs);
 
     // Update input edge flags on the main thread so Scene.update() can use them
@@ -2637,6 +2650,8 @@ class Scene {
 
     // Free-cam after scene.update so scenes can setFreeTarget / pauseFreeZoom first
     Camera.updateFree(wallRatio);
+
+    Sun.publish();
 
     // Reset per-frame input state (after update so devs can read it)
     Mouse.wheel = 0;
@@ -2846,9 +2861,9 @@ class Scene {
    */
   async loadGame(slotId) {
     const { loadGame } = await import('./save/saveGame.js');
-    // The remount keeps this scene's loadScene data; state that must come
-    // from the save belongs in onSaveGame.
-    return loadGame(this.game, this.constructor, slotId, { data: this.data });
+    // The remount keeps this scene's loadScene data and params; state that
+    // must come from the save belongs in onSaveGame.
+    return loadGame(this.game, this.constructor, slotId, { data: this.data, params: sceneParams() });
   }
 
   /**

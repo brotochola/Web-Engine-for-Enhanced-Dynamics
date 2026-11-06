@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-04",
+  "updated": "2026-11-05",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -10484,6 +10484,353 @@
         "R-0826",
         "R-0827"
       ]
+    },
+    {
+      "id": "DX-SUNPUBLISH",
+      "title": "Sun: a private copy on the main thread, published to the SAB once a frame",
+      "status": "kept-hygiene",
+      "statusText": "On dx/sun-lights-meshes (ef53038a), not merged: a fix; no cost in Predator (R-0829)",
+      "date": "2026-11-05",
+      "result": "Torn reads on a worker in sunOverrideScene: 75 of 360 on main, 0 of 360 with the change.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-SUNPUBLISH"
+      ],
+      "aliases": [
+        "Sun.publish",
+        "initializeStaged",
+        "sun flashing"
+      ],
+      "records": [
+        "R-0828",
+        "R-0829",
+        "R-0833"
+      ]
+    },
+    {
+      "id": "DX-SUNNIGHT",
+      "title": "lighting.sun.night and lighting.sun.colors: the night has its own light, a scene its own colours",
+      "status": "kept-hygiene",
+      "statusText": "On dx/sun-lights-meshes (5537dc15), not merged: a feature off by default; default captures equal main (R-0828)",
+      "date": "2026-11-05",
+      "result": "A term of its own in the light sum, leaving Sun.intensity and every shadow alone; the sun buffer grows to 96 bytes, appended.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-SUNNIGHT"
+      ],
+      "aliases": [
+        "nightFactor",
+        "moonlight",
+        "uNight"
+      ],
+      "records": [
+        "R-0828",
+        "R-0829"
+      ]
+    },
+    {
+      "id": "N-117",
+      "title": "layer.alpha did nothing on sprite and MESH layers",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/sun-lights-meshes (0b95f8db), not merged",
+      "date": "2026-11-05",
+      "result": "The instanced shaders read uColor.a now; a look on a MESH layer composes through rtOut from the first alpha under 1.",
+      "next": "",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-117"
+      ],
+      "aliases": [
+        "layer alpha",
+        "uColor"
+      ],
+      "records": [
+        "R-0828"
+      ]
+    },
+    {
+      "id": "DX-LAYERSUN",
+      "title": "alphaBySun: a layer's alpha follows the sun",
+      "status": "kept-hygiene",
+      "statusText": "On dx/sun-lights-meshes (45196634), not merged: a feature off by default; default captures equal main (R-0828)",
+      "date": "2026-11-05",
+      "result": "shadow, night or a ramp, in the renderer each frame; Sun.shadowOpacity is the one formula; a MESH layer with it composes once.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-LAYERSUN"
+      ],
+      "aliases": [
+        "Sun.shadowOpacity"
+      ],
+      "records": [
+        "R-0828",
+        "R-0829"
+      ]
+    },
+    {
+      "id": "DX-SCENEPARAMS",
+      "title": "WEED.params: the page's URL parameters on every thread",
+      "status": "kept-hygiene",
+      "statusText": "On dx/sun-lights-meshes (86da3012), not merged: start-up only, nothing to measure",
+      "date": "2026-11-05",
+      "result": "Set by loadScene before the import and carried by the workers' init before their scripts load.",
+      "next": "",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-SCENEPARAMS"
+      ],
+      "aliases": [
+        "loadScene params",
+        "location.search in a worker"
+      ],
+      "records": []
+    },
+    {
+      "id": "DX-LIGHTOFFSET",
+      "title": "LightEmitter.offsetX / offsetY: a light off its entity's centre",
+      "status": "kept-hygiene",
+      "statusText": "On dx/sun-lights-meshes (67b7d9ee), not merged: a feature off by default; no cost on the owner (R-0830)",
+      "date": "2026-11-05",
+      "result": "An offset draws byte for byte a light moved to that spot, WebGL, WebGPU and raycast. visPoly at 720 lights: pre-render 4.959 to 4.986 ms, +1.4 %, a tie.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-LIGHTOFFSET"
+      ],
+      "aliases": [
+        "headlights",
+        "light offset"
+      ],
+      "records": [
+        "R-0828",
+        "R-0829",
+        "R-0830"
+      ]
+    },
+    {
+      "id": "DX-MESHUPLOAD",
+      "title": "Mesh layers: an edit uploads only the rows it rewrote",
+      "status": "kept",
+      "statusText": "On dx/sun-lights-meshes (47d9b660), not merged",
+      "date": "2026-11-05",
+      "result": "meshUploadStressScene: renderer 29.11 to 0.68 ms (-97.7 %, 0/4 worse); movers on the big layer 32.25 to 0.66 ms (-98.0 %). Presented -2.4 %, under the guard.",
+      "next": "",
+      "area": "render",
+      "kind": "speed",
+      "refs": [
+        "REVIEW_PLAN.md#DX-MESHUPLOAD"
+      ],
+      "aliases": [
+        "uploadRange",
+        "vertEpoch"
+      ],
+      "records": [
+        "R-0828",
+        "R-0829",
+        "R-0831",
+        "R-0839"
+      ]
+    },
+    {
+      "id": "DX-SUNMESH",
+      "title": "sunProjected layers: meshes with a height per vertex that the GPU moves with the sun",
+      "status": "kept-hygiene",
+      "statusText": "On dx/sun-lights-meshes (255926fc), not merged: a feature off by default; default captures equal main (R-0828)",
+      "date": "2026-11-05",
+      "result": "Heights in the U column, so rows, kernel and uploads carry them. Shadow ends within 1.35 px of a ShadowCaster's, 7 h to 17 h, both backends. 20 000 boxes: renderer 1.43 ms, sun or not.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-SUNMESH"
+      ],
+      "aliases": [
+        "setHeights",
+        "uSunShadow",
+        "volume shadows"
+      ],
+      "records": [
+        "R-0828",
+        "R-0829",
+        "R-0832"
+      ]
+    },
+    {
+      "id": "DX-SHADOWTEX",
+      "title": "ShadowCaster.setTexture: a shadow with a frame of its own",
+      "status": "kept-hygiene",
+      "statusText": "On dx/sun-lights-meshes (1c14561c), not merged: a feature off by default; default captures equal main (R-0828)",
+      "date": "2026-11-05",
+      "result": "One pass after the pack with lighting.shadowTextures, no kernel changed; the keyed caster paths stay off in such a scene.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-SHADOWTEX"
+      ],
+      "aliases": [
+        "shadowTextures",
+        "tree silhouette"
+      ],
+      "records": [
+        "R-0828",
+        "R-0829"
+      ]
+    },
+    {
+      "id": "N-118",
+      "title": "A rotation set in onSpawned on a Collider-only entity is lost",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/sun-lights-meshes (3474aac0), not merged",
+      "date": "2026-11-05",
+      "result": "colliderRotationScene: 59 of 600 reads backwards to 12, worst step 0.28 to 0.06 rad, a rotation from onSpawned holds; Predator NEUTRAL on AC power.",
+      "next": "",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-118"
+      ],
+      "aliases": [],
+      "records": [
+        "R-0835",
+        "R-0836",
+        "R-0837"
+      ]
+    },
+    {
+      "id": "DX-SUNMASK",
+      "title": "The sun's shadow inside the light sum",
+      "status": "open",
+      "statusText": "A design for the owner to decide on: docs/internal/DX_SUNMASK_DESIGN.md",
+      "date": "2026-11-05",
+      "result": "",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-SUNMASK"
+      ],
+      "aliases": [
+        "shadowMode"
+      ],
+      "records": []
+    },
+    {
+      "id": "DX-NORMALS",
+      "title": "Light by the way a surface faces",
+      "status": "open",
+      "statusText": "A design for the owner to decide on: docs/internal/DX_NORMALS_DESIGN.md",
+      "date": "2026-11-05",
+      "result": "",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-NORMALS"
+      ],
+      "aliases": [
+        "normal maps"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-119",
+      "title": "MESH layers did not keep their zIndex where they overlapped",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/sun-lights-meshes (3581c6a9), not merged",
+      "date": "2026-11-05",
+      "result": "Red over the high layer: 456 442 of 460 800 pixels at 20 000 triangles, 0 after, both backends; one-layer captures unchanged; renderer 1.502 to 1.493 ms.",
+      "next": "",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-119"
+      ],
+      "aliases": [
+        "mesh depth test",
+        "aInstDepth",
+        "mesh layer order"
+      ],
+      "records": [
+        "R-0834",
+        "R-0837"
+      ]
+    },
+    {
+      "id": "DX-VOLUME",
+      "title": "VolumeShadowCaster: a component that declares an object's volume, for the sun and point lights",
+      "status": "open",
+      "statusText": "The owner likes the idea (2026-11-05); plan in DX_VOLUME_DESIGN.md, for the owner to decide on",
+      "date": "2026-11-05",
+      "result": "LightOccluder fits zenithal and side views, not an oblique one, where a wall is drawn over the floor behind it.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-VOLUME"
+      ],
+      "aliases": [
+        "VolumeShadowCaster",
+        "volume component",
+        "oblique occlusion"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-120",
+      "title": "Ten findings of the code review of dx/sun-lights-meshes",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/sun-lights-meshes (55c1c03f to bb270b61), not merged",
+      "date": "2026-11-05",
+      "result": "Ten of ten confirmed and fixed; replayed on a real page; bundle against source not measured, the machine was on battery.",
+      "next": "",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-120"
+      ],
+      "aliases": [
+        "code review",
+        "rtStale",
+        "updateBuffer",
+        "Scene.params"
+      ],
+      "records": [
+        "R-0838",
+        "R-0839",
+        "R-0840"
+      ]
+    },
+    {
+      "id": "N-121",
+      "title": "The runner's presented guard reads MAIN_FPS, not frames drawn",
+      "status": "open",
+      "statusText": "Found 2026-11-05, not fixed",
+      "date": "2026-11-05",
+      "result": "meshUploadStressScene: frames drawn +22 %, presented -12 %, verdict REGRESSION: a GPU-bound scene that draws more.",
+      "next": "",
+      "area": "tools",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-121"
+      ],
+      "aliases": [
+        "presented guard",
+        "MAIN_FPS",
+        "frames drawn"
+      ],
+      "records": [
+        "R-0839"
+      ]
     }
   ],
   "records": [
@@ -18269,6 +18616,169 @@
       "commits": [
         "d6479c70",
         "c66a5f6d"
+      ]
+    },
+    {
+      "id": "R-0828",
+      "date": "2026-11-05",
+      "time": "12:45",
+      "timeFrom": "recorded",
+      "title": "The DX batch against main, canvas captures byte for byte: every default draws main's pixels",
+      "verdict": "passed",
+      "text": "**The DX batch against main, canvas captures byte for byte: every default draws main's pixels.**\n2026-11-05, `compareCaptures.mjs` on `dxCaptureScene`, a still seeded scene with sprites that cast, point lights, a ground, the sun stopped; headed Chrome, the owner's GPU.\n\n- **Default against main, 0 of 921 600 pixels:** 12 h, 22 h and 9 h on WebGL and WebGPU; 22 h raycast; with a sprite layer and a MESH layer on both backends, and with looks on them.\n- **Sprite sun shadows are proven by pixels here,** which R-0827 left open: the picture at noon shows them and the comparison covers them.\n- **Each feature on, against its own absence or a picture that must equal it:** the night light changes 710 344 pixels on both backends; layer alpha 0.5 changes 55 980 (sprites) and 102 898 (MESH), where main changed none; a look MESH at 0.5 equals a plain MESH with alphaBySun at 0.5; a light's offset equals a light moved there, three modes; heights 0 equal a plain composed layer; a shadow texture equals a sprite of that texture, sun and point lights, both backends.\n\nSaved captures run from 12:45 to 14:15.",
+      "commits": [
+        "1c14561c"
+      ]
+    },
+    {
+      "id": "R-0829",
+      "date": "2026-11-05",
+      "time": "14:19",
+      "timeFrom": "recorded",
+      "title": "Predator gate of the DX batch, main against the branch, with an A/A: neutral",
+      "verdict": "passed",
+      "text": "**Predator gate of the DX batch, main against the branch, with an A/A: neutral.**\n2026-11-05, 4663391a (the batch's last code, before the commit messages were reworded) against main 0c2219ff, both from worktrees, headed; the owner's Chrome at 0 cores before them.\n\n- **A/A, 4 pairs, 14:19 to 14:25, this session's noise:** physics −5.0 %, spatial −1.1 %; logic, renderer and pre-render under the floor (2.106 → 2.141, 2.658 → 2.680); presented 56.1 both.\n- **Gate, 4 pairs, 14:25 to 14:32: NEUTRAL.** spatial 3.998 → 3.983 ms (paired +1.1 %, 2/4), physics 4.988 → 5.132 (+4.2 %, 2/4, cv 9 %, inside the A/A's 5 %), renderer 2.061 → 2.057, pre-render 2.628 → 2.671, logic 2.811 → 2.858 under the floor; presented 56.1 → 56.2; loads within 0.3 %.\n\nDetection limit about 1 % on spatial and 5 % on physics. No cost on the batch's workers.",
+      "commits": [
+        "1c14561c"
+      ]
+    },
+    {
+      "id": "R-0830",
+      "date": "2026-11-05",
+      "time": "14:55",
+      "timeFrom": "recorded",
+      "title": "DX-LIGHTOFFSET at twice the lights: a tie on pre-render, the owner",
+      "verdict": "tie",
+      "text": "**DX-LIGHTOFFSET at twice the lights: a tie on pre-render, the owner.**\n2026-11-05, `visPolyStressScene`, main against the branch, worktrees, 4 pairs each.\n\n- **360 lights, 14:43 to 14:48:** pre-render 2.863 → 2.819 ms, under the 3 ms floor, not judged; so the scene gained its load knob.\n- **`?lights=720`, 14:55 to 15:01:** pre-render 4.959 → 4.986 ms (+1.4 %, 3/4 worse, cv 1 %), renderer 1.221 → 1.170 under the floor, presented 56.5 both: NEUTRAL.\n- **Kernel, `preRenderEmitWasmMicrobench`, three runs each, 14:51:** 2 049.9 / 2 053.7 / 2 006.8 → 2 046.3 / 2 042.8 / 2 000.7 ops/s, same checksum: a tie.",
+      "commits": [
+        "67b7d9ee"
+      ]
+    },
+    {
+      "id": "R-0831",
+      "date": "2026-11-05",
+      "time": "14:32",
+      "timeFrom": "recorded",
+      "title": "DX-MESHUPLOAD: renderer 29.11 to 0.68 ms on the owner scene, KEPT",
+      "verdict": "kept",
+      "text": "**DX-MESHUPLOAD: renderer 29.11 to 0.68 ms on the owner scene, KEPT.**\n2026-11-05, `meshUploadStressScene`, 400 000 still triangles beside 8 meshes rewritten each frame, main against the branch, worktrees, 4 pairs each. The runner printed NEUTRAL because the sitting named `--owner pixi`, while the row is `renderer`; `redecide(summary, 'renderer')` on the same pairs reads KEPT (product) on both.\n\n- **The movers on a layer of their own, 14:32 to 14:37:** renderer 29.110 → 0.678 ms (paired −97.7 %, 0/4 worse, cv 9/3 %). Presented 43.8 → 42.7 fps (−2.4 %, 4/4), under the guard's 3 %.\n- **The movers on the big layer, 14:37 to 14:43:** renderer 32.250 → 0.657 ms (−98.0 %, 0/4, cv 2/2 %). Presented 42.8 → 42.4 fps (−0.8 %, 3/4).\n- **Kernel, `meshCornersWasmMicrobench`, three runs each, 14:52:** 693.8 / 688.1 / 691.0 → 688.2 / 682.8 / 678.5 ops/s, same checksum: about −1 %, the two stores of the range, a tie.\n\nThe scene is GPU-bound at about 43 fps, so the frames do not rise with the CPU the renderer got back, and the small drop is what E-82 describes: a full GPU handed more. The claim stands on the renderer's step.",
+      "commits": [
+        "47d9b660"
+      ]
+    },
+    {
+      "id": "R-0832",
+      "date": "2026-11-05",
+      "time": "14:48",
+      "timeFrom": "recorded",
+      "title": "DX-SUNMESH: parity with ShadowCaster within 1.35 px; the sun adds nothing the renderer can see",
+      "verdict": "passed",
+      "text": "**DX-SUNMESH: parity with ShadowCaster within 1.35 px; the sun adds nothing the renderer can see.**\n2026-11-05.\n\n- **`sunMeshParity`, headed, WebGL and WebGPU the same to the pixel:** a 200 px sprite's shadow and a 2 px post's: 7 h 0.24 px apart, 9 h 1.30, 11 h 0.69, 14 h 0.56, 16 h 1.35, 17 h 0.24, inside the post's half diagonal of 1.41; darkest pixel within 1 of 255 at every hour. A flat wall fails at 7 h and 17 h only because it is edge on to a low sun, thinner than a pixel; the runner's scene uses a post.\n- **Scale, `sunMeshStressScene`, one run each side, sun moving against no sun, 14:48 to 14:51 and 15:02:** renderer 5 000 boxes 0.721 / 0.664 ms, 56 fps both; 20 000, 1.425 / 1.432 ms, 44.6 / 44.7 fps; 45 000, 2.354 / 2.270 ms, 18.7 / 17.8 fps. The step grows with N on both sides (the pose scan of a MESH layer, not this change), and the frames are the GPU's limit with 28 triangles a box, sun or not. The limits are `maxMeshVerts` 1 048 576 and `maxMeshIndices` 4 194 304: 45 000 of these boxes is the last that fits.",
+      "commits": [
+        "255926fc"
+      ]
+    },
+    {
+      "id": "R-0833",
+      "date": "2026-11-05",
+      "time": "12:39",
+      "timeFrom": "recorded",
+      "title": "DX-SUNPUBLISH: torn sun reads on a worker, 75 of 360 to 0 of 360",
+      "verdict": "kept",
+      "text": "**DX-SUNPUBLISH: torn sun reads on a worker, 75 of 360 to 0 of 360.**\n2026-11-05, `sunOverrideScene`, headless, 2 ms of main-thread work inside `update` before the override, a logic worker reading `Sun.intensity` each tick: 75 of 360 reads saw the day cycle's value on main, 0 of 360 with the change. The Predator gate of the batch covers its cost (R-0829).",
+      "commits": [
+        "ef53038a"
+      ]
+    },
+    {
+      "id": "R-0834",
+      "date": "2026-11-05",
+      "time": "17:28",
+      "timeFrom": "recorded",
+      "title": "N-119: MESH batches stop testing depth, layers keep their zIndex",
+      "verdict": "kept-hygiene",
+      "text": "Found building the Sun Street demo: 60 000 grass tufts on a MESH layer at zIndex 0.4 painted over the road at 0.5 and a flag's pole at 3. Fill and UV batches tested and wrote a depth numbered from 0 on every layer, in one depth buffer nothing clears between layers, so a lower layer's late rows beat a higher layer's first ones. On main too, WebGL and WebGPU. Both batches now neither test nor write depth.\n\n`meshLayerOrderScene`, upper half: red over the square on 456 442 of 460 800 pixels at 20 000 triangles and 101 at one; 0 at both after. A first probe read a false threshold at 20 000 because it took `?tris=` from `location` on the worker; `WEED.params` removed it.\n\nByte for byte against the previous commit: `MeshFillStaticScene`, `DxCaptureScene` shade on WebGL and WebGPU, with heights: 0 of 921 600 pixels. `MeshFillMixedScene` spins: A/A 715 to 1 430 pixels, A/B 0 to 1 430.\n\n`MeshFillStaticScene`, 4 pairs, 4d522e32 against 3581c6a9: renderer 1.502 → 1.493 ms, physics 1.454 → 1.441, presented 60.0 → 60.0 fps. Under the 3 ms floor, so no speed verdict; a state flag reaches no CPU path, and the hygiene rule asks only that no primary worker be 3 % worse. Detection limit: none set, the row was not judged.",
+      "commits": [
+        "3581c6a9"
+      ]
+    },
+    {
+      "id": "R-0835",
+      "date": "2026-11-05",
+      "time": "18:02",
+      "timeFrom": "recorded",
+      "title": "N-118: a rotation reaches the body of a Collider with no RigidBody",
+      "verdict": "kept-hygiene",
+      "text": "Reported by the owner as Sun Street's cars vibrating between two rotations through a bend; the same cause as N-118. `set x` and `set y` send every body the rotation they read, physics exports it back over the channels, and `set rotation` told only RigidBody bodies, so on a Collider alone an old rotation went round and the true one showed for a frame now and then. Sampled on the page every frame: the channels held 1.7180 for a dozen frames while x and y moved, with one frame of the true value. `set rotation` and `setRotationCS` now tell any body; a rotated static collider also rotates in Box2D, which it did not. The RigidBody path of `setRotationCS` stays as it was.\n\n`colliderRotationScene`, an angle advancing 0.02 rad a tick: 59 of 600 reads backwards, worst step 0.28 rad, box posed at 1 read 0.000; after, 12 of 600, worst 0.06, posed 1.000. The rest is a tick writing x and y before rotation when physics drains between them; Sun Street writes rotation first: 0 of 139 reads in the bends.\n\nPredator gate, 4 pairs, 238a4154 against 3474aac0: NEUTRAL. logic 4.379 → 4.817 ms (+6.3 %, 3/4, cv 20/6 %), spatial 6.258 → 7.011 (+5.4 %), physics 6.654 → 7.777 (+6.0 %, 2/4), renderer 3.015 → 3.356 (+6.9 %), pre-render 4.586 → 5.112 (+4.1 %), presented 60.0 → 60.0. Renderer and pre-render cannot be reached by the change, so this is drift; against the others logic -2.7 %, physics -2.9 %. Load keys within 0.5 %. Detection limit: the A side's cv of 20 %, about 6 % here.",
+      "commits": [
+        "3474aac0"
+      ]
+    },
+    {
+      "id": "R-0836",
+      "date": "2026-11-05",
+      "time": "18:16",
+      "timeFrom": "recorded",
+      "title": "N-118's Predator gate repeated on AC power: the first one crossed the unplugged laptop",
+      "verdict": "kept-hygiene",
+      "text": "R-0835's Predator gate does not count, and its \"drift\" was wrong. The owner mentioned unplugging the laptop; Kernel-Power 105 puts it at 17:57:15, plugged back at 18:06:32, and the run files put A-p0 on AC (done 17:56:46), B-p0 ending at 17:57:26 and the other six on battery. That is the +4 to +7 % on every worker, and the A side's cv of 20 %.\n\nRepeated on AC power, 4 pairs, 238a4154 against 3474aac0, 18:10 to 18:16, the owner's Chrome at 0.36 cores: NEUTRAL. logic 3.304 → 3.267 ms (+1.5 %, 3/4, cv 10/6 %), spatial 4.806 → 4.609 (+0.3 %, 2/4), pre-render 3.084 → 3.091 (+0.8 %, 2/4), 60.0 fps, entities within 0.1 %. physics 5.256 → 5.471 (+7.8 % paired, 3/4, cv 11/6 %): the change cannot reach it here. No Predator entity with a Collider alone writes rotation through the setter (boid and player are RigidBody, cloud has no body), and the boids' path of setRotationCS is unchanged, so physics gets no new command; side A alone ran 4.82 to 6.04 ms, covering side B's 5.22 to 5.99. Detection limit: the cv, about 10 %.\n\nEvery other sitting of the day ran on AC: dx-aa to dx-lights720 between 14:25 and 15:01, n119 at 17:28.",
+      "commits": [
+        "3474aac0"
+      ]
+    },
+    {
+      "id": "R-0837",
+      "date": "2026-11-05",
+      "time": "18:48",
+      "timeFrom": "recorded",
+      "title": "The DX batch's bundles (e2d47490): tested, and the prod bundle equals its sources",
+      "verdict": "passed",
+      "text": "The DX batch's bundles (dist e2d47490, committed and pushed to dx/sun-lights-meshes by the owner; built from 8a164b74, 0.13.0, inputs a331a201bda06379). `check:dist` fresh, embed and browser smokes OK on all 8, `test:node:bundle` 271 of 271.\n\nThe new options inside the bundle: nine dxCaptureScene captures, prod bundle against source, with night, colours, sunProjected heights, alphaBySun, light offset and a shadow texture, WebGL and WebGPU: 0 of 921 600 pixels differ, no page errors, and each side checked to be what it says (BUNDLE_MODE).\n\nProd bundle against source, one build, on AC power, no power change between 18:10 and 18:48:\n- Predator, 4 pairs, 18:16 to 18:23: NEUTRAL. logic 3.250 → 3.073 ms (-5.9 %, 1/4), spatial 4.588 → 4.622 (+0.7 %), physics 5.440 → 5.283 (-3.4 %), pre-render 3.064 → 3.154 (+1.7 %, 3/4), 60.0 fps; loads within 0.5 %.\n- painterMove, 4 pairs, 18:23 to 18:29: NEUTRAL. pre-render 16.518 → 16.718 ms (+0.5 %, 3/4), logic 6.325 → 6.407 (+0.5 %), 60.0 fps, 300 000 entities on both.\n- Boids, 8 pairs, 18:29 to 18:41: REGRESSION by the runner, spatial 6.912 → 6.990 (+3.4 %, 6/8), physics +2.5 % (6/8). Then the chunk diff against main's bundle, with mangled names normalised: the spatial chunk differs in one webpack module id, Box2D's is identical, and worker_common's changes are the sun, shadows, config and the engine's wasm, none of it on spatial's path. 4 more pairs, 18:43 to 18:48: 12 pairs NEUTRAL, spatial 6.872 → 6.876 (+2.9 % paired, 7/12, pairs from -7.1 % to +6.4 %, +1.9 % against the others), physics 6.514 → 6.574 (+2.3 %, 8/12), pre-render 3.165 → 3.016 (-2.2 %), 60.0 fps. Visible entities -3.3 %, within the gate. Main's bundle read spatial -1.0 % at R-0827. Detection limit of the pooled row: its cv, 5 %.",
+      "commits": [
+        "e2d47490"
+      ]
+    },
+    {
+      "id": "R-0838",
+      "date": "2026-11-05",
+      "time": "20:38",
+      "timeFrom": "recorded",
+      "title": "The review's ten findings, fixed, each with a test that fails without it",
+      "verdict": "kept-hygiene",
+      "text": "`/code-review high` of the branch, before a merge, gave ten findings. All ten held against the code, and each fix has a test that fails on the code before it: `meshCornersWired.test.js`, `meshUploadRanges.test.js`, `shadowTexture.test.js`, `weedParams.test.js`. The review's list is in REVIEW_PLAN.md#N-120.\n\nReplayed on a real page in Sun Street, WebGL, with no error or warning: a look on, off and back on a sunProjected layer; a whole night with cars moving, then the morning, their shadows under them; the tree shadow key; a resize of a still scene, its shadows back; the flags layer at 0.25, pole and textured flag together.\n\nSuites: node 2292 of 2292, demos 100 of 100, embed and browser smokes on all 8 bundles, `test:node:bundle` 271 of 271. dist fa61f733, built from bb270b61, fresh. Byte for byte against main at 8c3d8380, before these fixes: dxCaptureScene at 12 h, 22 h on WebGPU and raycast, MeshFillStaticScene, 0 of 921 600 pixels.\n\nNot measured. When the fixes were ready the machine was on battery with the owner's Chrome at 1.36 cores, so the one run taken there (meshUploadStressScene, renderer 0.92 ms) proves nothing and no verdict rests on it. Prod bundle against source waits for a sitting on AC: Predator, painterMove, Boids.",
+      "commits": [
+        "55c1c03f",
+        "19cefb0e",
+        "7dba168f",
+        "75f362e4",
+        "a6b874db",
+        "2ec95a86",
+        "bb270b61",
+        "fa61f733"
+      ]
+    },
+    {
+      "id": "R-0839",
+      "date": "2026-11-05",
+      "time": "21:47",
+      "timeFrom": "recorded",
+      "title": "The branch against main on a quiet machine: Predator NEUTRAL, the mesh upload still -98.0 %",
+      "verdict": "passed",
+      "text": "The branch at 20fabdfc against main, on AC power, with the owner's Chrome at 0 before each sitting and no power change after 20:40:25.\n\nA first round, 20:43 to 21:28, does not count where an outside load spoiled it. From 20:52:30 to 21:09:20 every worker read about 45 % higher on both sides, with Chrome at 4.8 to 7.5 cores before those sittings: A-p3 of the Predator gate, the whole A/A, the whole mesh upload and four runs of the bundle's Predator sitting. Its REGRESSION on the mesh upload and its A/A at physics -14 % say nothing about the code. Those four sittings were repeated, 21:29 to 21:52.\n\nA/A, 4 pairs: logic -0.2 %, spatial +2.1 %, pre-render +0.7 %, physics +4.9 % with 12.5 % more moved bodies on one side by chance; fitted against BODY_MOVED_COUNT (r2 0.98), -0.4 % at equal load. That physics row is the day's limit in Predator: about 5 % before the fit.\n\nPredator, main against the branch, 4 pairs: NEUTRAL. logic 3.293 → 3.277 ms (-1.9 %, 0/4), spatial 4.587 → 4.695 (+1.7 %, 2/4), physics 5.679 → 5.214 (-4.5 %, 0/4), pre-render 2.920 → 3.061 and renderer 2.218 → 2.250 under the floor, 60.0 → 60.1 fps. Moved bodies -22.9 %; physics at equal load 0.0 % (r2 0.98). The spatial row reads +7.4 % against the others only because physics fell with its load.\n\nMesh upload, main against the branch, 4 pairs: renderer 32.31 → 0.665 ms (-98.0 %, 0/4, cv 8/3 %), the same as R-0831's -97.7 %, so sending ranges at once (N-120) costs it nothing. Frames drawn in 10 s: 241 to 247 on main, 300 in all four on the branch, +22 %. The runner printed REGRESSION on its presented guard, 53.6 → 47.2 fps (-12.0 %, 4/4), but that key is MAIN_FPS, the main thread's rate, not frames drawn: the scene is GPU-bound and the GPU now draws 22 % more. N-121 files the guard.",
+      "commits": [
+        "20fabdfc"
+      ]
+    },
+    {
+      "id": "R-0840",
+      "date": "2026-11-05",
+      "time": "21:58",
+      "timeFrom": "recorded",
+      "title": "The bundles of fa61f733: tested, and the prod bundle equals its sources",
+      "verdict": "passed",
+      "text": "dist fa61f733, built from bb270b61: the prod ESM bundle against its sources, one build, on AC power. `check:dist` fresh, embed and browser smokes OK on all 8, the getter of WEED.params checked on every ESM bundle, `test:node:bundle` 271 of 271.\n\n- painterMove, 4 pairs, 21:12 to 21:17, Chrome at 0: NEUTRAL. pre-render 16.251 → 16.550 ms (+1.8 %, 3/4, cv 1/1 %), logic 7.045 → 7.104 (+1.3 %), 300 000 entities on both, 60.0 fps.\n- Boids, 8 pairs, 21:17 to 21:27, Chrome at 0: NEUTRAL. spatial 7.059 → 7.073 ms (-0.2 %, 4/8, cv 1/2 %), physics 6.953 → 6.904 (-0.5 %, 2/8), pre-render 3.118 → 3.057 (-0.3 %), 60.0 fps.\n- Predator, 8 pairs, 21:47 to 21:58, Chrome at 0 (the first round's sitting was spoiled: see the gate's record). At 4 pairs the runner printed REGRESSION on physics, +6.2 % (3/4); with 4 more, NEUTRAL: logic 3.224 → 2.971 ms (-8.5 %, 0/8), spatial 4.656 → 4.822 (+2.8 %, 6/8, cv 10/10 %), physics 5.559 → 5.977 (+7.8 % paired, 6/8, cv 14/11 %), 60.0 fps. The bundle's side had 11.8 % more moved bodies, an emergent load; physics fitted against BODY_MOVED_COUNT (r2 0.64) is -0.6 % at equal load, and Boids, with its fixed load, reads physics -0.5 %. Box2D's chunk is byte for byte main's.\n\nSo the bundle equals its sources. Spatial's +2.8 % in Predator is inside that row's cv of 10 %, and Boids, its owner scene, ties at cv 2 %.",
+      "commits": [
+        "fa61f733"
       ]
     }
   ],

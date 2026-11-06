@@ -304,6 +304,8 @@ export function applySunGlobals(sun) {
     for (let i = 0; i < n; i++) Sun._float32[i] = sun.f32[i];
   }
   if (Sun._uint32 && sun.color != null) Sun._uint32[Sun.U32.COLOR] = sun.color >>> 0;
+  Sun.markAllWritten();
+  Sun.publish();
 }
 
 /**

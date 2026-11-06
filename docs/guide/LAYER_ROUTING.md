@@ -84,6 +84,8 @@ Sprite-queue bits: collect **once per bit**. Density bits: splat pose, no type-7
 
 `kind: LAYER_KIND.MESH` (`'mesh'`) is a custom slot with **no sprite queue**. `setLayer('terrain')` writes `MeshRenderer.layerMask` (and still ORs the entities bit for any sprite). Pixi draws an explicit mesh when `setMesh` / `setPolygon` / `setPlane` / `setRope` stored one (`renderer.maxMeshVerts`, default 0). Otherwise it packs `ColliderFixture` fans, else the primary polygon / box / display regular 8-gon for a physics circle, into one instanced `PIXI.Mesh` per MESH layer (18 floats per triangle). Per-vertex UVs are a second instanced mesh on that layer, created on first use. Color is `MeshRenderer.tint` / `alpha`. Atlas paint is `meshRenderer.setTexture(name)` plus `setTileWorld` / `setTileLocal` / `clearTile` (same as sprites) when the mesh has no UVs. `meshRenderer.visualOutset` inflates collider-fill verts in world px; physics stays the collider, and an explicit mesh ignores outset. A look-shader MESH layer uses **one** fill RT (`cl.rt`) and puts the NDC fullscreen look mesh on the stage — no `rtOut`. Both fill meshes render into that RT. Fill verts stay in world space; camera is the reused RT render transform. A fixture-pool of 0 is enough for primary-shape fill or an explicit mesh. Skip pack when fixtures, mesh revision, pose, and `paintEpoch` match; if only pose/paint moved, refill those floats and upload the same VBO. Look `shader.fragment` can be a dual map `{ webgl, webgpu }` — one scene, two dialects.
 
+MESH layers draw by `zIndex`, like any layer. Inside one layer rows paint in entity-slot order, which is not spawn order: what must sit on top of another mesh goes on a higher layer. Textured meshes draw after solid ones of their layer.
+
 `kind: LAYER_KIND.GPU_PARTICLES` (`'gpuParticles'`) has **no sprite queue** and takes no subscriptions: only `ParticleEmitter.emitGpu({ layer })` writes it, into rings per writer thread, and the vertex shader draws each particle from its spawn record ([GPU_PARTICLES.md](./GPU_PARTICLES.md)). With a `shader`, the particles are the density pass of the layer's look shader. With `sortWithEntities` (and `renderer.ySort`) each emit call is drawn among the entities at its ground y instead of at the layer's zIndex.
 
 **LiquidFun / CPU particles** are the same mask inputs. Density splat and compute pack both. Only the simulator differs.
@@ -207,6 +209,8 @@ tick(dtRatio, deltaTime, accumulatedTime) {
 
 Under the hood, `set alpha(v)` writes to a `Float32Array` slot in the shared config SAB and sets a per-layer `Int32` dirty flag via `Atomics.store`. The renderer polls dirty flags once per frame, applies changed values to the PIXI display object, and clears the flag.
 
+Sprite and MESH layers apply it per instance, so overlapping pieces each fade on their own. A look layer applies it once, to the composed picture (a MESH look then goes through one more render texture, from the first alpha under 1).
+
 Default alpha is `1.0` (fully opaque). It can also be set in scene config:
 
 ```javascript
@@ -218,6 +222,55 @@ layers: {
   }
 }
 ```
+
+### Alpha that follows the sun
+
+`alphaBySun` multiplies a layer's alpha by the sun in the renderer, each frame, with no code in `update`. `layer.alpha` stays yours.
+
+```javascript
+layers: {
+  shadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, alphaBySun: 'shadow' },   // meshes drawn in opaque black
+  nightGlows: { zIndex: 5.6, blendMode: BLEND_MODES.ADD, alphaBySun: 'night' },
+  dawnMist: { zIndex: 3, alphaBySun: { from: 0.1, to: 0.4 } },              // up as the sun rises; from > to runs it backwards
+}
+```
+
+- `'shadow'` is the factor of the sun shadows themselves (`Sun.shadowOpacity`), so a layer drawn in opaque black is exactly as dark as a `ShadowCaster`'s shadow, and 0 when the sun casts none.
+- `'night'` is `Sun.nightFactor` (`lighting.sun.night`).
+- `{ from, to }` is a ramp on `Sun.intensity`, 0 at `from` and 1 at `to`.
+
+A MESH layer with `alphaBySun` draws into one render texture at the layer's `resolution` and composes it once, so overlapping meshes do not darken twice. A sprite layer fades per sprite.
+
+### Volumes the sun projects
+
+A `ShadowCaster` flips a sprite from its foot, which suits something standing. A house or a car seen from above is a volume: give it a mesh with a height per vertex on a `sunProjected` layer, and the vertex shader moves each vertex by its height and the sun, every frame, with nothing packed or uploaded after the first.
+
+```javascript
+layers: { houseShadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, sunProjected: true } } // alphaBySun defaults to 'shadow'
+
+// A box: the floor stays, the roof slides, the walls stretch. What gets painted is its shadow.
+this.setLayer('houseShadows');
+this.meshRenderer.tint = 0x000000;
+this.meshRenderer.setMesh(corners, triangles);   // floor and roof corners, in the entity's frame
+this.meshRenderer.setHeights(heights);           // 0 on the floor, the box's height in screen px on the roof
+```
+
+The sun moves a vertex `h · Sun.shadowLengthRatio · (Sun.shadowDirX, Sun.shadowDirY)`, exactly what it does to the point that high on a `ShadowCaster`'s sprite, so houses, people and trees agree. Heights share the mesh's UV column, so such a mesh has no texture coordinates; `setMesh` without UVs drops them.
+
+### A shadow with its own texture
+
+A `ShadowCaster` casts its entity's sprite. When the sprite is only a piece of what you see (a tree's trunk, its branches decorations that sway), give it the whole silhouette to cast:
+
+```javascript
+static config = { lighting: { shadowsEnabled: true, shadowTextures: true } };
+
+onSpawned() {
+  this.setSprite('trunk');
+  this.shadowCaster.setTexture('treeSilhouette', { anchorX: 0.5, anchorY: 1, scaleX: 1.2, scaleY: 1.2 });
+}
+```
+
+The silhouette casts for the sun and for point lights. Options left out stay the sprite's. `config.lighting.shadowTextures` turns on one pass over the caster rows and turns off the keyed caster paths, so a scene without it pays nothing; a frame with Adobe animations in it keeps the sprites' own shadows.
 
 ## Layer Resolution (Cross-Worker)
 

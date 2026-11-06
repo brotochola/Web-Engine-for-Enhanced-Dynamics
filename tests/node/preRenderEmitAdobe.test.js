@@ -273,6 +273,8 @@ async function setup({
   // Transform's pose where a scene without physics keeps it: the collect's pose block (x, y, rotation, rotC, rotS).
   Transform.x = new Float32Array(m.buffer, m.layout.collect.poseByte, N);
   Transform.y = new Float32Array(m.buffer, m.layout.collect.poseByte + 4 * N, N);
+  Transform.rotC = new Float32Array(m.buffer, m.layout.collect.poseByte + 12 * N, N);
+  Transform.rotS = new Float32Array(m.buffer, m.layout.collect.poseByte + 16 * N, N);
   for (const C of [LightEmitter, ParticleComponent, BulletComponent]) assert.equal(Object.values(C).find(ArrayBuffer.isView)?.buffer, m.buffer, `${C.name} is in the memory`);
   assert.equal(AdobeAnimComponent.scaleX.buffer, m.buffer, 'AdobeAnimComponent is in the memory');
   assert.equal(worker._renderablePx.buffer, m.buffer, 'the pose stash is in the memory');

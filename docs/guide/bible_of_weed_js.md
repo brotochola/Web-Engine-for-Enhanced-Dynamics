@@ -1190,6 +1190,39 @@ this.lightEmitter.lightIntensity = 30000;  // peaks at 30000 / (30000 + 110Â²) â
 
 Costs: `groundScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `sourceHeight` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `groundScaleY` makes that gradient steeper; a `sourceHeight` flattens it.
 
+### A light off its entity's centre: `offsetX` and `offsetY`
+
+`LightEmitter.offsetX` / `offsetY` (default 0, local px) move a light off its entity's centre, and the entity's rotation turns them: a car's headlights stay ahead of it through a bend, with no second entity. `height` then lifts the result. The pool, the glow, the shadows, the raycast sweep and every cull follow it. A shadow's casters still come from the entity's `Collider.visualRange`, so keep that wider than the offset.
+
+```javascript
+onSpawned() {
+  this.lightEmitter.lightIntensity = 40000;
+  this.lightEmitter.offsetX = 60;   // 60 px ahead of the car, wherever it points
+}
+```
+
+### The sun and the night
+
+`lighting.sun` lights the scene with the time of day. Two options shape the night, and neither touches `Sun.intensity`, so sun shadows, point-light shadows and your game logic keep reading the real sun:
+
+```javascript
+static config = {
+  lighting: {
+    enabled: true,
+    sun: {
+      enabled: true,
+      dayCycle: { enabled: true, dayDurationMinutes: 8 },
+      // The night's own light, added to the scene as the sun goes: 0 above `from`, full at `to` (sun intensities).
+      night: { intensity: 0.3, color: 0x5473f2, from: 0.4, to: 0.1 },
+      // This scene's colours by hour, in any order, wrapping midnight. Left out: Sun.DEFAULT_COLORS.
+      colors: [{ hour: 6, color: 0xff7744 }, { hour: 12, color: 0xffffff }, { hour: 19, color: 0xff6633 }],
+    },
+  },
+};
+```
+
+`Sun.nightFactor` reads 0 by day and 1 by night, for glows, layers or music; `Sun.nightIntensity` and `Sun.nightColor` change the light at run time. The main thread writes the sun on its own copy and publishes it once a frame, after `update`, so a scene that overrides the day cycle in `update` never shows the cycle's value: workers read what you left there, one frame later than the write.
+
 ### Raycasted lighting occluders
 
 With `lighting.raycasted: true` each visible light gets a visibility polygon. A body blocks a light only if both are true:

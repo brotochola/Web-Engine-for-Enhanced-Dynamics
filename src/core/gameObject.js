@@ -898,7 +898,11 @@ export class GameObject {
     }
   }
 
-  /** Rotation in radians (HEAP channel written by WASM via b2Atan2; set syncs CS + cmd). */
+  /**
+   * Rotation in radians (HEAP channel written by WASM via b2Atan2; set syncs CS + cmd). The command goes to any body,
+   * an implicit static one too: set x and set y send the rotation they read, and physics exports it back over this
+   * channel, so a body that was never told would keep handing out an old rotation (N-118).
+   */
   get rotation() {
     return Transform.rotation[this.index];
   }
@@ -907,7 +911,7 @@ export class GameObject {
     if (Transform.rotation && Transform.rotation[i] === value) return;
     if (Transform.rotation) Transform.rotation[i] = value;
     syncRotCSFromAngle(i, value);
-    if (isCommandRingBound() && this._hasComponents.RigidBody) {
+    if (isCommandRingBound() && this._hasBox2dBody()) {
       enqueueSetRotCS(
         i,
         Transform.rotC ? Transform.rotC[i] : Math.cos(value),
@@ -919,7 +923,7 @@ export class GameObject {
   /**
    * Face along a unit direction (cos, sin), with no trig: the rotation setter
    * without its cos/sin. For a body, `rotation` (the angle) follows after the
-   * next physics step, as physics writes it; without a body it is set here.
+   * next physics step, as physics writes it; without a RigidBody it is set here.
    * @param {number} c cos of the angle (unit vector x)
    * @param {number} s sin of the angle (unit vector y)
    */
@@ -931,9 +935,10 @@ export class GameObject {
     }
     if (isCommandRingBound() && this._hasComponents.RigidBody) {
       enqueueSetRotCS(i, c, s);
-    } else if (Transform.rotation) {
-      Transform.rotation[i] = Math.atan2(s, c);
+      return;
     }
+    if (Transform.rotation) Transform.rotation[i] = Math.atan2(s, c);
+    if (isCommandRingBound() && this._hasComponents.Collider) enqueueSetRotCS(i, c, s);
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -2407,6 +2412,10 @@ export class GameObject {
       LightEmitter.height[i] = 0;
       LightEmitter.glowHeightOffset[i] = 0;
       if (LightEmitter.sourceHeight) LightEmitter.sourceHeight[i] = 0;
+      if (LightEmitter.offsetX) {
+        LightEmitter.offsetX[i] = 0;
+        LightEmitter.offsetY[i] = 0;
+      }
       LightEmitter.hasGlowSprite[i] = 0.5;
       LightEmitter.layerIdOfGlowSprite[i] = 0;
     }
@@ -3021,6 +3030,10 @@ export class GameObject {
       LightEmitter.height[i] = 0;
       LightEmitter.glowHeightOffset[i] = 0;
       if (LightEmitter.sourceHeight) LightEmitter.sourceHeight[i] = 0;
+      if (LightEmitter.offsetX) {
+        LightEmitter.offsetX[i] = 0;
+        LightEmitter.offsetY[i] = 0;
+      }
       LightEmitter.hasGlowSprite[i] = 0.5;
       LightEmitter.layerIdOfGlowSprite[i] = 0;
     }
@@ -3028,6 +3041,7 @@ export class GameObject {
     if (has.ShadowCaster) {
       ShadowCaster.active[i] = 1;
       ShadowCaster.heightMultiplier[i] = 1; // Default: normal shadow (0 = no shadow)
+      if (ShadowCaster.textureId) ShadowCaster.textureId[i] = 0;
     }
 
     if (has.FlashComponent) {

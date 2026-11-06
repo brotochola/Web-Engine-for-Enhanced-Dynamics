@@ -156,6 +156,10 @@ function emitSpriteQueue(deltaTime, source) {
     const lightIntensity = LightEmitter.lightIntensity;
     const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
     const glowHeightOffset = LightEmitter.glowHeightOffset;
+    const lightOffsetX = LightEmitter.offsetX;
+    const lightOffsetY = LightEmitter.offsetY;
+    const entityRotC = Transform.rotC;
+    const entityRotS = Transform.rotS;
     const glowSprite = LightEmitter.hasGlowSprite;
     const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
     const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
@@ -597,7 +601,8 @@ function emitSpriteQueue(deltaTime, source) {
                 rqY[out] = -10000;
             } else {
                 rqX[out] = entityX[idx];
-                rqY[out] = entityY[idx] - (glowHeightOffset[idx] || 0);
+                rqX[out] = entityX[idx] + lightOffsetX[idx] * entityRotC[idx] - lightOffsetY[idx] * entityRotS[idx];
+                rqY[out] = entityY[idx] + lightOffsetX[idx] * entityRotS[idx] + lightOffsetY[idx] * entityRotC[idx] - (glowHeightOffset[idx] || 0);
                 rqScaleX[out] = scale;
                 rqScaleY[out] = scale;
                 rqAlpha[out] = glowAlpha;

@@ -51,6 +51,8 @@ export const EMIT_SLOTS = [
   'sKeyedDirty',
   // E-188: the keyed decorations' records, the key of decoration slot 0 and the records' epoch.
   'dKeyed', 'dKeyBase', 'dKeyEpoch',
+  // DX-LIGHTOFFSET: the glow rows' light offset, and the light entity's facing that turns it.
+  'lOffsetX', 'lOffsetY', 'tRotC', 'tRotS',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -110,10 +112,10 @@ export const EMIT_BULLET_COLUMNS = [
   ['bSpriteRotS', 'spriteRotS'], ['bRotC', 'bulletRotC'], ['bRotS', 'bulletRotS'], ['bTrailWidth', 'trailWidth'],
   ['bAnchorX', 'anchorX'], ['bAnchorY', 'anchorY'],
 ];
-/** The glow rows' LightEmitter columns, by slot; with Transform's x and y (tX, tY) of the light's entity. */
+/** The glow rows' LightEmitter columns, by slot; with Transform's x, y and facing (tX, tY, tRotC, tRotS) of the light's entity. */
 export const EMIT_GLOW_COLUMNS = [
   ['lColor', 'lightColor'], ['lIntensity', 'lightIntensity'], ['lSqrt', 'sqrtLightIntensity'],
-  ['lGlowOffset', 'glowHeightOffset'], ['lGlow', 'hasGlowSprite'],
+  ['lGlowOffset', 'glowHeightOffset'], ['lGlow', 'hasGlowSprite'], ['lOffsetX', 'offsetX'], ['lOffsetY', 'offsetY'],
 ];
 /** The particle rows' ParticleComponent columns, by slot; flat and viewMode may be missing (emitSpriteQueue tests them). */
 export const EMIT_PARTICLE_COLUMNS = [
@@ -482,7 +484,8 @@ export function writeEmitBulletColumns(b, BulletComponent, trailTexture) {
  * @returns {boolean} whether the kernel writes the glow rows this frame
  */
 export function writeEmitGlowColumns(b, LightEmitter, Transform, gradientTexture) {
-  let ok = putSlot(b, 'tX', Transform.x) && putSlot(b, 'tY', Transform.y);
+  let ok = putSlot(b, 'tX', Transform.x) && putSlot(b, 'tY', Transform.y)
+    && putSlot(b, 'tRotC', Transform.rotC) && putSlot(b, 'tRotS', Transform.rotS);
   for (let k = 0; ok && k < EMIT_GLOW_COLUMNS.length; k++) ok = putSlot(b, EMIT_GLOW_COLUMNS[k][0], LightEmitter[EMIT_GLOW_COLUMNS[k][1]]);
   b.table[SLOT.lGradientTexture] = gradientTexture;
   if (!ok) b.table[SLOT.lColor] = 0;

@@ -3,8 +3,8 @@
  * Backed by SharedArrayBuffer for cross-worker access
  * Pattern follows Camera, Mouse, Keyboard static classes
  *
- * Main thread: read/write via setters (controls day cycle)
- * Workers: read-only via getters (consume state)
+ * Main thread: reads and writes a private copy, published to the SAB once a frame (see initializeStaged)
+ * Workers: read and write the SAB directly
  *
  * The sun provides:
  * - Directional ambient light (intensity varies with time of day)
@@ -15,8 +15,8 @@
  * because they would be "drowned out" by sunlight in real life.
  */
 export class Sun {
-    // SAB layout (64 bytes total, 4-byte aligned)
-    static BYTE_LENGTH = 64;
+    // SAB layout (96 bytes total, 4-byte aligned)
+    static BYTE_LENGTH = 96;
 
     // Offsets in bytes
     static OFFSETS = {
@@ -38,7 +38,12 @@ export class Sun {
         SHADOW_DIR_Y: 48, // Float32 (sin of shadow angle)
         SHADOW_LENGTH_RATIO: 52, // Float32 (current length ratio based on elevation)
         SHADOW_ANGLE: 56, // Float32 (radians, for sprite rotation)
-        // reserved: 60-63
+        NIGHT_FACTOR: 60, // Float32 (0 by day, 1 by night; computed from INTENSITY)
+        NIGHT_COLOR: 64, // Uint32 (0xRRGGBB)
+        NIGHT_INTENSITY: 68, // Float32 (0-1, the night light at factor 1; 0 = no night light)
+        NIGHT_FROM: 72, // Float32 (sun intensity at which the night light starts)
+        NIGHT_TO: 76, // Float32 (sun intensity at which it is full)
+        // reserved: 80-95
     };
 
     // Float32 indices (offset / 4)
@@ -56,12 +61,20 @@ export class Sun {
         SHADOW_DIR_Y: 12,
         SHADOW_LENGTH_RATIO: 13,
         SHADOW_ANGLE: 14,
+        NIGHT_FACTOR: 15,
+        NIGHT_INTENSITY: 17,
+        NIGHT_FROM: 18,
+        NIGHT_TO: 19,
     };
 
     // Uint32 indices (offset / 4)
     static U32 = {
         COLOR: 4,
+        NIGHT_COLOR: 16,
     };
+
+    // Sun intensity at or under which the sun casts no shadow
+    static SHADOW_MIN_INTENSITY = 0.1;
 
     // Default sun colors for different times of day
     static DEFAULT_COLORS = [
@@ -79,11 +92,18 @@ export class Sun {
         { hour: 24, color: 0x1a1a2e }, // Midnight - dark blue
     ];
 
-    // SharedArrayBuffer views (set during initialization)
+    // The hour-to-color table in use: DEFAULT_COLORS, or the scene's lighting.sun.colors (see setColors)
+    static _colors = Sun.DEFAULT_COLORS;
+
+    // Field views: the SAB on a worker, the private stage on the main thread (see initializeStaged)
     static _sab = null;
     static _uint8 = null;
     static _float32 = null;
     static _uint32 = null;
+
+    // Main thread only: the SAB's words, and bit i set when word i of the stage was written since the last publish.
+    static _sharedU32 = null;
+    static _written = 0;
 
     /** cos(phase * 2π); phase in turns. One sun/scene — plain Math.cos. */
     static _cosTau(phase01) {
@@ -110,6 +130,66 @@ export class Sun {
     }
 
     /**
+     * Main thread's initialize: the getters and setters work on a private copy, which publish() puts in the SAB once
+     * a frame, so a worker never sees a value the frame later overwrites (a day cycle's, under a scene's override).
+     * @param {SharedArrayBuffer} sharedArrayBuffer - SAB of at least Sun.BYTE_LENGTH bytes
+     */
+    static initializeStaged(sharedArrayBuffer) {
+        this.initialize(sharedArrayBuffer);
+        const stage = new ArrayBuffer(Sun.BYTE_LENGTH);
+        this._sharedU32 = this._uint32;
+        this._uint8 = new Uint8Array(stage);
+        this._float32 = new Float32Array(stage);
+        this._uint32 = new Uint32Array(stage);
+        this._written = 0;
+    }
+
+    /**
+     * Start of the main thread's frame: the stage takes what the workers wrote, except the fields written since the
+     * last publish (a handler's, between two frames), which are still on their way out. No-op on a worker.
+     */
+    static beginFrame() {
+        const shared = this._sharedU32;
+        if (shared === null) return;
+        const stage = this._uint32;
+        const written = this._written;
+        for (let i = 0; i < stage.length; i++) {
+            if ((written & (1 << i)) === 0) stage[i] = shared[i];
+        }
+    }
+
+    /**
+     * End of the main thread's frame: the fields written since the last publish go to the SAB, and only those, so a
+     * worker's write to a field the main thread did not touch stands. No-op on a worker.
+     */
+    static publish() {
+        const shared = this._sharedU32;
+        const written = this._written;
+        if (shared === null || written === 0) return;
+        const stage = this._uint32;
+        for (let i = 0; i < stage.length; i++) {
+            if ((written & (1 << i)) !== 0) shared[i] = stage[i];
+        }
+        this._written = 0;
+    }
+
+    /** A wholesale restore wrote the views directly: every field goes out on the next publish. */
+    static markAllWritten() {
+        this._written = -1;
+    }
+
+    /** Forget the buffers and the scene's color table (a scene's teardown). */
+    static unbind() {
+        this._colors = Sun.DEFAULT_COLORS;
+        this._sab = null;
+        this._uint8 = null;
+        this._float32 = null;
+        this._uint32 = null;
+        this._sharedU32 = null;
+        this._written = 0;
+    }
+
+    /**
      * Check if Sun is initialized
      * @returns {boolean}
      */
@@ -124,7 +204,10 @@ export class Sun {
         return this._uint8 ? this._uint8[Sun.OFFSETS.ENABLED] === 1 : false;
     }
     static set enabled(v) {
-        if (this._uint8) this._uint8[Sun.OFFSETS.ENABLED] = v ? 1 : 0;
+        if (this._uint8) {
+            this._uint8[Sun.OFFSETS.ENABLED] = v ? 1 : 0;
+            this._written |= 1;
+        }
     }
 
     /** Sun angle in degrees (0=East, 90=South, 180=West, 270=North) */
@@ -132,7 +215,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.ANGLE] : 0;
     }
     static set angle(v) {
-        if (this._float32) this._float32[Sun.F32.ANGLE] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.ANGLE] = v;
+            this._written |= 1 << Sun.F32.ANGLE;
+        }
     }
 
     /** Sun elevation in degrees (0=horizon, 90=directly overhead) */
@@ -140,7 +226,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.ELEVATION] : 0;
     }
     static set elevation(v) {
-        if (this._float32) this._float32[Sun.F32.ELEVATION] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.ELEVATION] = v;
+            this._written |= 1 << Sun.F32.ELEVATION;
+        }
     }
 
     /** Sun intensity (0-1), affects ambient light and point light shadow suppression */
@@ -148,7 +237,11 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.INTENSITY] : 0;
     }
     static set intensity(v) {
-        if (this._float32) this._float32[Sun.F32.INTENSITY] = Math.max(0, Math.min(1, v));
+        if (this._float32) {
+            this._float32[Sun.F32.INTENSITY] = Math.max(0, Math.min(1, v));
+            this._written |= 1 << Sun.F32.INTENSITY;
+            this._updateNightFactor();
+        }
     }
 
     /** Sun color as 0xRRGGBB */
@@ -156,7 +249,10 @@ export class Sun {
         return this._uint32 ? this._uint32[Sun.U32.COLOR] : 0xffffff;
     }
     static set color(v) {
-        if (this._uint32) this._uint32[Sun.U32.COLOR] = v;
+        if (this._uint32) {
+            this._uint32[Sun.U32.COLOR] = v;
+            this._written |= 1 << Sun.U32.COLOR;
+        }
     }
 
     /** Base shadow alpha for sun-cast shadows (0-1) */
@@ -164,7 +260,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_ALPHA] : 0;
     }
     static set shadowAlpha(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_ALPHA] = Math.max(0, Math.min(1, v));
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_ALPHA] = Math.max(0, Math.min(1, v));
+            this._written |= 1 << Sun.F32.SHADOW_ALPHA;
+        }
     }
 
     /** Current hour of day (0-24) */
@@ -172,7 +271,85 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.HOUR] : 12;
     }
     static set hour(v) {
-        if (this._float32) this._float32[Sun.F32.HOUR] = ((v % 24) + 24) % 24; // Wrap to 0-24
+        if (this._float32) {
+            this._float32[Sun.F32.HOUR] = ((v % 24) + 24) % 24;
+            this._written |= 1 << Sun.F32.HOUR;
+        } // Wrap to 0-24
+    }
+
+    // ============ Night Light ============
+
+    /** 0 by day, 1 by night, from the sun's intensity and nightFrom / nightTo. Computed; follows Sun.intensity. */
+    static get nightFactor() {
+        return this._float32 ? this._float32[Sun.F32.NIGHT_FACTOR] : 0;
+    }
+
+    /** The night light's strength at factor 1 (0-1). It adds to the scene's light and leaves Sun.intensity alone. */
+    static get nightIntensity() {
+        return this._float32 ? this._float32[Sun.F32.NIGHT_INTENSITY] : 0;
+    }
+    static set nightIntensity(v) {
+        if (this._float32) {
+            this._float32[Sun.F32.NIGHT_INTENSITY] = Math.max(0, Math.min(1, v));
+            this._written |= 1 << Sun.F32.NIGHT_INTENSITY;
+        }
+    }
+
+    /** The night light's color as 0xRRGGBB */
+    static get nightColor() {
+        return this._uint32 ? this._uint32[Sun.U32.NIGHT_COLOR] : 0xffffff;
+    }
+    static set nightColor(v) {
+        if (this._uint32) {
+            this._uint32[Sun.U32.NIGHT_COLOR] = v;
+            this._written |= 1 << Sun.U32.NIGHT_COLOR;
+        }
+    }
+
+    /** Sun intensity at which the night light starts (factor 0) */
+    static get nightFrom() {
+        return this._float32 ? this._float32[Sun.F32.NIGHT_FROM] : 0;
+    }
+    static set nightFrom(v) {
+        if (this._float32) {
+            this._float32[Sun.F32.NIGHT_FROM] = v;
+            this._written |= 1 << Sun.F32.NIGHT_FROM;
+            this._updateNightFactor();
+        }
+    }
+
+    /** Sun intensity at which the night light is full (factor 1) */
+    static get nightTo() {
+        return this._float32 ? this._float32[Sun.F32.NIGHT_TO] : 0;
+    }
+    static set nightTo(v) {
+        if (this._float32) {
+            this._float32[Sun.F32.NIGHT_TO] = v;
+            this._written |= 1 << Sun.F32.NIGHT_TO;
+            this._updateNightFactor();
+        }
+    }
+
+    /**
+     * The night light as it adds to the scene now: color × strength × factor, 0-1 per channel.
+     * @param {Float32Array} out - rgb
+     */
+    static nightLightRGB(out) {
+        const k = this.nightIntensity * this.nightFactor;
+        const c = this.nightColor;
+        out[0] = (((c >> 16) & 255) / 255) * k;
+        out[1] = (((c >> 8) & 255) / 255) * k;
+        out[2] = ((c & 255) / 255) * k;
+    }
+
+    /** clamp((from - I) / (from - to)): a step at to when the two meet. */
+    static _updateNightFactor() {
+        const from = this._float32[Sun.F32.NIGHT_FROM];
+        const to = this._float32[Sun.F32.NIGHT_TO];
+        const i = this._float32[Sun.F32.INTENSITY];
+        const f = from === to ? (i <= to ? 1 : 0) : (from - i) / (from - to);
+        this._float32[Sun.F32.NIGHT_FACTOR] = f < 0 ? 0 : f > 1 ? 1 : f;
+        this._written |= 1 << Sun.F32.NIGHT_FACTOR;
     }
 
     // ============ Shadow Config (set once from config) ============
@@ -182,7 +359,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] : Math.PI;
     }
     static set shadowAngleOffset(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_ANGLE_OFFSET] = v;
+            this._written |= 1 << Sun.F32.SHADOW_ANGLE_OFFSET;
+        }
     }
 
     /** Shadow length multiplier at zenith (noon) - shortest shadows */
@@ -190,7 +370,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] : 0.1;
     }
     static set shadowMinLengthRatio(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] = v;
+            this._written |= 1 << Sun.F32.SHADOW_MIN_LENGTH_RATIO;
+        }
     }
 
     /** Shadow length multiplier at horizon (sunrise/sunset) - longest shadows */
@@ -198,7 +381,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] : 1.0;
     }
     static set shadowMaxLengthRatio(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] = v;
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_MAX_LENGTH_RATIO] = v;
+            this._written |= 1 << Sun.F32.SHADOW_MAX_LENGTH_RATIO;
+        }
     }
 
     /** Alpha fade compensation when shadows stretch (0=none, 1=full) */
@@ -206,7 +392,10 @@ export class Sun {
         return this._float32 ? this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] : 0.5;
     }
     static set shadowStretchAlphaFactor(v) {
-        if (this._float32) this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] = Math.max(0, Math.min(1, v));
+        if (this._float32) {
+            this._float32[Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR] = Math.max(0, Math.min(1, v));
+            this._written |= 1 << Sun.F32.SHADOW_STRETCH_ALPHA_FACTOR;
+        }
     }
 
     // ============ Shadow Computed (read-only for workers) ============
@@ -229,6 +418,32 @@ export class Sun {
     /** Shadow angle in radians (for sprite rotation) */
     static get shadowAngle() {
         return this._float32 ? this._float32[Sun.F32.SHADOW_ANGLE] : 0;
+    }
+
+    /**
+     * How dark a sun-cast shadow is now: 0 with the sun off or under SHADOW_MIN_INTENSITY. The ShadowCaster pass and
+     * alphaBySun: 'shadow' both read this, so a layer drawn in black is exactly as dark as a person's shadow.
+     */
+    static get shadowOpacity() {
+        if (!this.enabled) return 0;
+        const si = this.intensity;
+        if (!(si > Sun.SHADOW_MIN_INTENSITY)) return 0;
+        const len = this.shadowLengthRatio || 1;
+        return this.shadowAlpha * si * (1 - this.shadowStretchAlphaFactor * (1 - this.shadowMinLengthRatio / len));
+    }
+
+    /**
+     * The factor a layer's alphaBySun multiplies its alpha by.
+     * @param {'shadow'|'night'|{from: number, to: number}} spec
+     * @returns {number} 0-1
+     */
+    static alphaFactor(spec) {
+        if (spec === 'shadow') return this.shadowOpacity;
+        if (spec === 'night') return this.nightFactor;
+        const { from, to } = spec;
+        const i = this.intensity;
+        const f = from === to ? (i >= to ? 1 : 0) : (i - from) / (to - from);
+        return f < 0 ? 0 : f > 1 ? 1 : f;
     }
 
     // ============ Convenience Methods ============
@@ -291,6 +506,11 @@ export class Sun {
         const minRatio = this.shadowMinLengthRatio;
         const maxRatio = this.shadowMaxLengthRatio;
         this._float32[Sun.F32.SHADOW_LENGTH_RATIO] = maxRatio + t * (minRatio - maxRatio);
+        this._written |=
+            (1 << Sun.F32.SHADOW_ANGLE) |
+            (1 << Sun.F32.SHADOW_DIR_X) |
+            (1 << Sun.F32.SHADOW_DIR_Y) |
+            (1 << Sun.F32.SHADOW_LENGTH_RATIO);
     }
 
     /**
@@ -300,7 +520,7 @@ export class Sun {
      * @private
      */
     static _getColorForHour(hour) {
-        const colors = Sun.DEFAULT_COLORS;
+        const colors = this._colors;
 
         // Find surrounding keyframes
         let prevIdx = 0;
@@ -338,6 +558,22 @@ export class Sun {
     }
 
     /**
+     * Use the scene's hour-to-color table instead of DEFAULT_COLORS. Keyframes in any order; hours outside the table
+     * wrap around midnight. Nothing or an empty table goes back to DEFAULT_COLORS.
+     * @param {{hour: number, color: number}[]} [colors]
+     */
+    static setColors(colors) {
+        if (!Array.isArray(colors) || colors.length === 0) {
+            this._colors = Sun.DEFAULT_COLORS;
+            return;
+        }
+        const sorted = [...colors].sort((a, b) => (a.hour < b.hour ? -1 : a.hour > b.hour ? 1 : 0));
+        const first = sorted[0];
+        const last = sorted[sorted.length - 1];
+        this._colors = [{ hour: last.hour - 24, color: last.color }, ...sorted, { hour: first.hour + 24, color: first.color }];
+    }
+
+    /**
      * Initialize sun properties from a config object
      * Config should be pre-merged with SUN_DEFAULTS by Scene
      * @param {Object} config - Sun configuration (merged with defaults)
@@ -350,6 +586,15 @@ export class Sun {
         this.color = config.color;
         this.shadowAlpha = config.shadowAlpha;
         this.hour = config.startHour;
+        this.setColors(config.colors);
+
+        const night = config.night;
+        if (night) {
+            this.nightIntensity = night.intensity;
+            this.nightColor = night.color;
+            this.nightFrom = night.from;
+            this.nightTo = night.to;
+        }
 
         // Shadow config
         this.shadowAngleOffset = config.shadowAngleOffset;

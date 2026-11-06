@@ -61,7 +61,10 @@ async function quietly(fn) {
 }
 
 /** The main thread's shared buffers for a scene of N mesh entities on one MESH layer. */
-function buildScene(renderer = { maxVisibleRenderables: 100, maxMeshVerts: MAX_VERTS, maxMeshIndices: MAX_INDICES }) {
+function buildScene(
+  renderer = { maxVisibleRenderables: 100, maxMeshVerts: MAX_VERTS, maxMeshIndices: MAX_INDICES },
+  layers = { mesh: { kind: LAYER_KIND.MESH, zIndex: 2 } },
+) {
   Query.reset();
   const scene = {
     totalEntityCount: N,
@@ -88,7 +91,7 @@ function buildScene(renderer = { maxVisibleRenderables: 100, maxMeshVerts: MAX_V
       debug: { maxDebugDrawEntries: 1 },
       navigation: { enabled: false },
       renderer,
-      layers: { mesh: { kind: LAYER_KIND.MESH, zIndex: 2 } },
+      layers,
       wasm: { ...WASM_DEFAULTS },
     },
     buffers: { componentData: {} },
@@ -328,6 +331,231 @@ test('Pixi draws the same mesh rows on the mesh memory through the kernel as the
   }
   assert.ok(rewrites > FRAMES / 2, `${rewrites} frames kept their topology`);
   assert.ok(uvRows > FRAMES * 100, `${uvRows} UV rows compared`);
+});
+
+test('a mesh edit uploads nothing on another MESH layer, and only the rows it touched on its own', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const scene = await quietly(() =>
+    buildScene(undefined, {
+      still: { kind: LAYER_KIND.MESH, zIndex: 2 },
+      moving: { kind: LAYER_KIND.MESH, zIndex: 3 },
+    }),
+  );
+  await quietly(() => initPixi(px, scene));
+  const still = px._customLayers[Layer.get('still').id];
+  const moving = px._customLayers[Layer.get('moving').id];
+  const api = [];
+  for (let i = 0; i < N; i++) {
+    const mr = new MeshRenderer(i);
+    api.push(mr);
+    MeshRenderer.active[i] = 1;
+    MeshRenderer.layerMask[i] = 1 << (i < 40 ? Layer.get('still').id : Layer.get('moving').id);
+    Transform.x[i] = 100 + (i % 8) * 80;
+    Transform.y[i] = 100 + ((i / 8) | 0) * 80;
+    Transform.rotC[i] = 1;
+    Transform.rotS[i] = 0;
+    mr.setPlane(40, 30, 3, 2);
+  }
+  const spy = (batch) => {
+    const log = { whole: 0, ranges: [] };
+    const { upload, uploadRange } = batch;
+    batch.upload = function (n) {
+      log.whole++;
+      return upload.call(this, n);
+    };
+    batch.uploadRange = function (first, past) {
+      log.ranges.push([first, past]);
+      return uploadRange.call(this, first, past);
+    };
+    return log;
+  };
+  await quietly(() => {
+    px.updateCustomLayers();
+    px.updateCustomLayers();
+  });
+  // setPlane's meshes carry UVs, so their rows are the UV batch's.
+  const stillLog = spy(still.uvFillBatch);
+  const movingLog = spy(moving.uvFillBatch);
+  const planeTris = 3 * 2 * 2;
+  const plane = (v) => {
+    const xy = [];
+    for (let j = 0; j <= 2; j++) for (let i = 0; i <= 3; i++) xy.push(-20 + (40 * i) / 3 + v, -15 + 15 * j);
+    return xy;
+  };
+
+  // One mesh on the moving layer: entity 42, the third of its eight.
+  api[42].setVertices(plane(3));
+  await quietly(() => px.updateCustomLayers());
+  assert.deepEqual(stillLog, { whole: 0, ranges: [] }, 'the still layer sends nothing');
+  assert.deepEqual(movingLog, { whole: 0, ranges: [[2 * planeTris, 3 * planeTris]] }, 'the moving layer sends one mesh');
+  const at = 2 * planeTris * MESH_UV_FILL_FLOATS;
+  const end = at + planeTris * MESH_UV_FILL_FLOATS;
+  assert.equal(
+    firstDiff(moving.uvFillBatch.dataU32.subarray(at, end), moving.uvFillBatch.rowsU32.subarray(at, end)),
+    -1,
+    'and the Buffer holds the new rows',
+  );
+
+  // Two meshes far apart in the row order: the range spans them.
+  api[41].setVertices(plane(1));
+  api[46].setVertices(plane(2));
+  await quietly(() => px.updateCustomLayers());
+  assert.deepEqual(movingLog.ranges[1], [1 * planeTris, 7 * planeTris]);
+  assert.deepEqual(stillLog, { whole: 0, ranges: [] });
+
+  // A frame with no edit sends nothing, and a repaint still sends the layer whole.
+  await quietly(() => px.updateCustomLayers());
+  assert.equal(movingLog.ranges.length, 2);
+  api[42].tint = 0x123456;
+  await quietly(() => px.updateCustomLayers());
+  assert.equal(movingLog.whole, 1);
+});
+
+/** A worker on one MESH layer with a look it can swap at run time: no shader to compile in Node, and every render logged. */
+async function lookLayer(options) {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  const scene = await quietly(() => buildScene(undefined, { shade: { kind: LAYER_KIND.MESH, zIndex: 2, ...options } }));
+  await quietly(() => initPixi(px, scene));
+  px.canvasWidth = 800;
+  px.canvasHeight = 600;
+  px._collectSunLayers();
+  const cl = px._customLayers[Layer.get('shade').id];
+  const look = cl.fillBatch.shader;
+  px._createLookShader = () => look;
+  // The mesh's destroy would take the fill batch's shader with it.
+  const destroy = px._destroyCustomLayerPostProcess;
+  px._destroyCustomLayerPostProcess = function (layer) {
+    if (layer.shaderMesh) layer.shaderMesh.shader = null;
+    return destroy.call(this, layer);
+  };
+  const drawn = [];
+  px._submitRender = (opts) => drawn.push(opts.container);
+  px._renderMeshFillToRt = () => {};
+  return { px, cl, drawn };
+}
+
+test('a composed look on a MESH layer can be taken off and put back', async () => {
+  const { px, cl, drawn } = await lookLayer({});
+  await quietly(() => {
+    px._setCustomLayerShader('shade', 'look', 'look');
+    Layer._alpha[cl.layerId] = 0.5;
+    px._ensureMeshLookComposite(cl);
+  });
+  const composed = cl.rtOut;
+  assert.ok(composed, 'the alpha made it compose');
+
+  await quietly(() => {
+    px._setCustomLayerShader('shade', null, null);
+    px.updateCustomLayers();
+  });
+  assert.equal(cl.shaderMesh, null);
+  assert.ok(!drawn.includes(null), 'no render of a look that is gone');
+  assert.equal(cl.displaySprite.texture, cl.rt, 'the raw layer shows');
+
+  await quietly(() => px._setCustomLayerShader('shade', 'look', 'look'));
+  assert.equal(cl.displaySprite.texture, composed, 'the look shows again');
+  assert.ok(cl.displaySprite.visible);
+  Layer._alpha[cl.layerId] = 1;
+});
+
+for (const [name, options] of [['alphaBySun', { alphaBySun: 'night' }], ['sunProjected', { sunProjected: true }]]) {
+  test(`a look set at run time on a MESH layer with ${name} composes, so the sun still reaches it`, async () => {
+    const { px, cl } = await lookLayer(options);
+    assert.equal(cl.rtOut, null);
+    await quietly(() => px._setCustomLayerShader('shade', 'look', 'look'));
+    assert.ok(cl.rtOut, 'it goes through rtOut');
+    assert.equal(cl.displaySprite.texture, cl.rtOut);
+    assert.equal(px._layerRuntime.shade, cl.displaySprite, 'the alpha lands on the sprite, which every look obeys');
+  });
+}
+
+test('a look set at run time on a plain MESH layer stays on the stage', async () => {
+  const { px, cl } = await lookLayer({});
+  await quietly(() => px._setCustomLayerShader('shade', 'look', 'look'));
+  assert.equal(cl.rtOut, null);
+  assert.equal(px._layerRuntime.shade, cl.shaderMesh);
+});
+
+test('layer.alpha reaches the textured rows of a plain MESH layer, set before them or after', async () => {
+  const { px, cl } = await lookLayer({});
+  const layer = Layer.get('shade');
+  layer.alpha = 0.3;
+  px.syncLayerAlphaFromSharedState();
+
+  const mr = new MeshRenderer(0);
+  MeshRenderer.active[0] = 1;
+  MeshRenderer.layerMask[0] = 1 << cl.layerId;
+  Transform.x[0] = 100;
+  Transform.y[0] = 100;
+  Transform.rotC[0] = 1;
+  Transform.rotS[0] = 0;
+  mr.setPlane(40, 30, 3, 2);
+  await quietly(() => {
+    px.updateCustomLayers();
+    px.updateCustomLayers();
+  });
+  assert.ok(cl.uvFillBatch, 'a plane has UVs: rows of their own');
+  assert.ok(Math.abs(cl.uvFillBatch.mesh.alpha - 0.3) < 1e-6, 'made after the alpha was set');
+
+  layer.alpha = 0.6;
+  px.syncLayerAlphaFromSharedState();
+  assert.ok(Math.abs(cl.fillBatch.mesh.alpha - 0.6) < 1e-6);
+  assert.ok(Math.abs(cl.uvFillBatch.mesh.alpha - 0.6) < 1e-6, 'and when it changes');
+  layer.alpha = 1;
+});
+
+/** A sunProjected layer of one still plane, drawn once, with its RT draws counted. */
+async function sunLayer() {
+  const { px, cl } = await lookLayer({ sunProjected: true });
+  const mr = new MeshRenderer(0);
+  MeshRenderer.active[0] = 1;
+  MeshRenderer.layerMask[0] = 1 << cl.layerId;
+  Transform.x[0] = 100;
+  Transform.y[0] = 100;
+  Transform.rotC[0] = 1;
+  Transform.rotS[0] = 0;
+  mr.setPlane(40, 30, 3, 2);
+  let draws = 0;
+  px._renderMeshFillToRt = () => {
+    draws++;
+  };
+  await quietly(() => {
+    px.updateCustomLayers();
+    px.updateCustomLayers();
+  });
+  draws = 0;
+  return { px, cl, mr, frame: () => quietly(() => px.updateCustomLayers()), draws: () => draws };
+}
+
+test('a mesh that changed while the sun showed nothing is drawn when the sun comes back', async () => {
+  const { px, cl, mr, frame, draws } = await sunLayer();
+  await frame();
+  assert.equal(draws(), 0, 'nothing moved, nothing drawn');
+
+  px._layerSunFactor[cl.layerId] = 0;
+  mr.setPlane(60, 30, 3, 2);
+  await frame();
+  await frame();
+  assert.equal(draws(), 0, 'at factor 0 it draws nothing, though the rows moved');
+
+  px._layerSunFactor[cl.layerId] = 0.5;
+  await frame();
+  assert.equal(draws(), 1, 'the same sun, but the RT is old');
+  await frame();
+  assert.equal(draws(), 1, 'and then it rests');
+});
+
+test('a still MESH layer draws again after its RT is rebuilt', async () => {
+  const { px, cl, frame, draws } = await sunLayer();
+  px._releaseTextureBindGroups = () => {};
+  px._unbindLookShaderTexture = () => {};
+  const rt = cl.rt;
+  await quietly(() => px._resizeCustomLayerRTs(cl, 1024, 768));
+  assert.notEqual(cl.rt, rt);
+  await frame();
+  assert.equal(draws(), 1, 'the new RT is empty');
+  await frame();
+  assert.equal(draws(), 1);
 });
 
 test('a MESH layer without MeshGeometry fills its collider shapes in arrays of its own', async () => {

@@ -222,6 +222,8 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     const pose = m.layout.collect.poseByte;
     Transform.x = new Float32Array(m.buffer, pose, N);
     Transform.y = new Float32Array(m.buffer, pose + 4 * N, N);
+    Transform.rotC = new Float32Array(m.buffer, pose + 12 * N, N);
+    Transform.rotS = new Float32Array(m.buffer, pose + 16 * N, N);
   }
   assert.equal(SpriteRenderer.scaleX.buffer, m.buffer, 'SpriteRenderer is in the memory');
   assert.equal(LightEmitter.lightColor.buffer === m.buffer, lights, `LightEmitter is ${lights ? '' : 'not '}in the memory`);
@@ -321,6 +323,12 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     le.lightColor[i] = (rl() * 0xffffffff) >>> 0;
     Transform.x[i] = i % 23 === 0 ? -0 : rl() * 4000;
     Transform.y[i] = rl() * 3000;
+    // DX-LIGHTOFFSET: an offset on some lights, turned by the light's facing.
+    le.offsetX[i] = i % 3 === 0 ? rl() * 40 - 20 : 0;
+    le.offsetY[i] = i % 3 === 0 ? rl() * 40 - 20 : 0;
+    const facing = rl() * 6.283;
+    Transform.rotC[i] = Math.cos(facing);
+    Transform.rotS[i] = Math.sin(facing);
   }
 
   // Particles: zenithal (heights above and below the floor, -0, NaN), zenithal and flat, flat, plain; flipped either way;

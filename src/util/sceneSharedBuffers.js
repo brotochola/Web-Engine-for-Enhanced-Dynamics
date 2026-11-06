@@ -1139,11 +1139,12 @@ function initializeCollisionConstraintSunAndTrackingBuffers(scene) {
   const sunConfig = { ...SUN_DEFAULTS, ...config.lighting?.sun };
   if (sunConfig.enabled) {
     buffers.sunData = new SharedArrayBuffer(Sun.BYTE_LENGTH);
-    Sun.initialize(buffers.sunData);
+    Sun.initializeStaged(buffers.sunData);
     Sun.initFromConfig(sunConfig);
     if (sunConfig.dayCycle?.enabled) {
       Sun.setTimeOfDay(sunConfig.startHour);
     }
+    Sun.publish();
   }
 
   const idBytes = entityIdBytes();
@@ -1479,12 +1480,7 @@ export function teardownSceneSharedState(scene) {
   GameObject._globalAnimationCache = Object.create(null);
   GameObject._animIndexBySheet = [];
 
-  if (Sun.isInitialized) {
-    Sun._sab = null;
-    Sun._uint8 = null;
-    Sun._float32 = null;
-    Sun._uint32 = null;
-  }
+  Sun.unbind();
 
   Camera._data = null;
   Time.unbind();

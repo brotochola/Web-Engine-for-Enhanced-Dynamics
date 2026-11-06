@@ -76,7 +76,7 @@ function copyPointList(points) {
   return n;
 }
 
-function resolveMeshTextureId(name) {
+export function resolveMeshTextureId(name) {
   if (!name) return MESH_NO_TEXTURE;
   const atlas = SpriteSheetRegistry.spritesheets?.get?.('bigAtlas');
   const anim = atlas?.animations?.[name];
@@ -271,6 +271,17 @@ export class MeshRenderer extends Component {
    */
   setVertices(positions) {
     MeshGeometry.writeVertices(this.index, positions);
+    return this;
+  }
+
+  /**
+   * Height of each vertex, in screen px, on a `sunProjected` layer: the sun moves a vertex as far as it moves the point
+   * that high on a ShadowCaster's sprite. Call after setMesh, with one height per vertex; setMesh without UVs drops them.
+   * @param {ArrayLike<number>} heights
+   * @returns {this}
+   */
+  setHeights(heights) {
+    MeshGeometry.writeHeights(this.index, heights);
     return this;
   }
 

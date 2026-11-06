@@ -184,6 +184,10 @@ const EMPTY_U8 = new Uint8Array(0);
 const EMPTY_U16 = new Uint16Array(0);
 const EMPTY_U32 = new Uint32Array(0);
 const EMPTY_I32 = new Int32Array(0);
+// A caster row's terms DX-SHADOWTEX changes, by float: the sprite row of wasm/gpuPack.c sprite_row.
+const GPU_ROW_SCALE_X = 2;
+const GPU_ROW_ANCHOR_X = 4;
+const GPU_ROW_TEXTURE = 10;
 
 /**
  * E-07. Kinds of animation-row source, as numeric tags.
@@ -469,6 +473,8 @@ class PreRenderWorker extends AbstractWorker {
         this._emitWasm = null;
         /** E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column. */
         this._keyedFrames = false;
+        this._shadowTextures = false; // config.lighting.shadowTextures
+        this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
         this._keyedHeader = EMPTY_U32;
         /**
@@ -1231,6 +1237,7 @@ class PreRenderWorker extends AbstractWorker {
             data.buffers?.componentData?.ShadowCaster
         ) {
             this.shadowsEnabled = true;
+            this._shadowTextures = this.config?.lighting?.shadowTextures === true;
             this.maxShadowCastingLights = data.shadows.maxShadowCastingLights;
             this.maxShadowsPerLight = data.shadows.maxShadowsPerLight;
             this.maxShadowsPerEntity = data.shadows.maxShadowsPerEntity || 0;
@@ -1941,14 +1948,20 @@ class PreRenderWorker extends AbstractWorker {
                 const skipCull = this.skipCull;
                 const glowHalfW = SpriteRenderer.boundsHalfW;
                 const glowHalfH = SpriteRenderer.boundsHalfH;
+                const glowOffsetX = LightEmitter.offsetX;
+                const glowOffsetY = LightEmitter.offsetY;
+                const glowRotC = Transform.rotC;
+                const glowRotS = Transform.rotS;
                 for (let li = 0; li < lights.length; li++) {
                     const i = lights[li];
                     if (!leActive[i] || !leGlow[i]) continue;
                     if (leIntensity[i] < MIN_GLOW_INTENSITY) continue;
                     if ((visualRange[i] || leSqrt[i] || 200) < MIN_GLOW_RANGE) continue;
                     if (!skipCull) {
-                        const sx = x[i] * camZoom - cameraOffsetX;
-                        const sy = y[i] * camZoom - cameraOffsetY;
+                        const ox = glowOffsetX[i];
+                        const oy = glowOffsetY[i];
+                        const sx = (x[i] + ox * glowRotC[i] - oy * glowRotS[i]) * camZoom - cameraOffsetX;
+                        const sy = (y[i] + ox * glowRotS[i] + oy * glowRotC[i]) * camZoom - cameraOffsetY;
                         let halfExtent = 0;
                         const halfW = glowHalfW ? (glowHalfW[i] ?? 0) : 0;
                         const halfH = glowHalfH ? (glowHalfH[i] ?? 0) : 0;
@@ -2675,6 +2688,7 @@ class PreRenderWorker extends AbstractWorker {
         }
 
         const count = this._renderableCount;
+        this._collectedRows = count;
         const hasOrder = this._queueHasOrder();
         this._queuePresorted = hasOrder && this._presortCollector(count, this._entityYSort());
         this._emitPresorted = this._queuePresorted;
@@ -3178,6 +3192,10 @@ class PreRenderWorker extends AbstractWorker {
         const lightIntensity = LightEmitter.lightIntensity;
         const sqrtI = LightEmitter.sqrtLightIntensity;
         const lightHeight = LightEmitter.height;
+        const offsetX = LightEmitter.offsetX;
+        const offsetY = LightEmitter.offsetY;
+        const rotC = Transform.rotC;
+        const rotS = Transform.rotS;
         const vr = Collider.visualRange;
         const zoom = this._frameCameraZoom || 1;
         const camX = this._frameCameraX || 0;
@@ -3199,8 +3217,10 @@ class PreRenderWorker extends AbstractWorker {
             const id = raw[i];
             if (!lightEnabled[id]) continue;
             if (!(sqrtI[id] > 0)) continue;
-            const x = worldX[id];
-            const y = worldY[id] - (lightHeight[id] || 0);
+            const ox = offsetX[id];
+            const oy = offsetY[id];
+            const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
+            const y = worldY[id] + ox * rotS[id] + oy * rotC[id] - (lightHeight[id] || 0);
             const influence = lightInfluenceRadius(sqrtI[id]);
             if (
                 x + influence < viewLeft ||
@@ -3275,7 +3295,7 @@ class PreRenderWorker extends AbstractWorker {
      * word once it draws such rows. A pause, WebGPU or a scene not keyed leaves the word stale or zero.
      */
     _keyedCastersLive() {
-        if (!this._keyedFrames || this._keyedKeyBase <= 0) return false;
+        if (!this._keyedFrames || this._keyedKeyBase <= 0 || this._shadowTextures) return false;
         const live = Atomics.load(this._keyedHeader, PIXI_KEYED_HEADER.LIVE);
         return live !== 0 && ((this.renderQueueFrame + 1 - live) >>> 0) <= KEYED_CASTERS_LAG;
     }
@@ -3308,8 +3328,44 @@ class PreRenderWorker extends AbstractWorker {
             sunN = sctx
                 ? this._packRows(q, sctx, dst.sun, dst.sunU32, GPU_CASTER_FLOATS, caps.maxSun, true)
                 : 0;
+            if (this._shadowTextures && sunN > 0) this._applyShadowTextures(q, dst.sun, sunN);
         }
         return sunN;
+    }
+
+    /**
+     * DX-SHADOWTEX. A caster row is its sprite's row and its shadow terms; a ShadowCaster with a texture of its own
+     * changes the row's frame, scale and anchor here, once, and the stamp copies the row for every light. A pass of its
+     * own, so a scene without shadow textures never reaches it. Queue rows are the collector's, one to one, except when
+     * Adobe roots expanded in the frame: those frames keep the sprites' shadows.
+     */
+    _applyShadowTextures(q, rows, sunN) {
+        if ((q.count | 0) !== this._collectedRows) return;
+        const casters = this._gpuCasterIdx;
+        const types = this._renderableType;
+        const entities = this._renderableIndex;
+        const textureId = ShadowCaster.textureId;
+        const scaleX = ShadowCaster.textureScaleX;
+        const scaleY = ShadowCaster.textureScaleY;
+        const anchorX = ShadowCaster.textureAnchorX;
+        const anchorY = ShadowCaster.textureAnchorY;
+        for (let k = 0; k < sunN; k++) {
+            const row = casters[k];
+            if (types[row] !== 0) continue;
+            const e = entities[row];
+            const id = textureId[e];
+            if (id === 0) continue;
+            const at = k * GPU_CASTER_FLOATS;
+            const sx = scaleX[e];
+            const sy = scaleY[e];
+            if (sx !== 0) rows[at + GPU_ROW_SCALE_X] = rows[at + GPU_ROW_SCALE_X] < 0 ? -sx : sx;
+            if (sy !== 0) rows[at + GPU_ROW_SCALE_X + 1] = rows[at + GPU_ROW_SCALE_X + 1] < 0 ? -sy : sy;
+            const ax = anchorX[e];
+            const ay = anchorY[e];
+            if (ax === ax) rows[at + GPU_ROW_ANCHOR_X] = ax;
+            if (ay === ay) rows[at + GPU_ROW_ANCHOR_X + 1] = ay;
+            rows[at + GPU_ROW_TEXTURE] = id - 1;
+        }
     }
 
     _ensureStampScratch(sunN) {
@@ -3846,6 +3902,10 @@ class PreRenderWorker extends AbstractWorker {
         if (lightEnabled && this._queryLightEmitter) {
             const worldX = Transform.x;
             const worldY = Transform.y;
+            const offsetX = LightEmitter.offsetX;
+            const offsetY = LightEmitter.offsetY;
+            const rotC = Transform.rotC;
+            const rotS = Transform.rotS;
             const lightIntensity = LightEmitter.lightIntensity;
             const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
             const flashActive = FlashComponent.active;
@@ -3879,8 +3939,10 @@ class PreRenderWorker extends AbstractWorker {
                 const intensity = lightIntensity[lightIdx];
                 if (!(intensity > 0)) continue;
 
-                const lightX = worldX[lightIdx];
-                const lightY = worldY[lightIdx];
+                const ox = offsetX[lightIdx];
+                const oy = offsetY[lightIdx];
+                const lightX = worldX[lightIdx] + ox * rotC[lightIdx] - oy * rotS[lightIdx];
+                const lightY = worldY[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx];
                 const lightInfluenceR = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
                 if (lightX + lightInfluenceR < viewMinX || lightX - lightInfluenceR > viewMaxX ||
                     lightY + lightInfluenceR < viewMinY || lightY - lightInfluenceR > viewMaxY) {
@@ -4001,6 +4063,10 @@ class PreRenderWorker extends AbstractWorker {
         const i32 = buf.i32;
         const f32 = buf.f32;
         const pose = this._displayPoseOut;
+        const lightOffsetX = LightEmitter.offsetX;
+        const lightOffsetY = LightEmitter.offsetY;
+        const lightRotC = Transform.rotC;
+        const lightRotS = Transform.rotS;
         const sweepK = this._visSweep;
         const sweepLight = sweepK.sweep;
         const sweepTable = sweepK.table;
@@ -4054,8 +4120,10 @@ class PreRenderWorker extends AbstractWorker {
 
             // Same display pose as sprites (post-step publish), not live Transform
             this._displayPose(lightIdx, pose);
-            const lx = pose[0];
-            const ly = pose[1];
+            const ox = lightOffsetX[lightIdx];
+            const oy = lightOffsetY[lightIdx];
+            const lx = pose[0] + ox * lightRotC[lightIdx] - oy * lightRotS[lightIdx];
+            const ly = pose[1] + ox * lightRotS[lightIdx] + oy * lightRotC[lightIdx];
             const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
             SOLID_ARGS[6] = lx;
             SOLID_ARGS[7] = ly;

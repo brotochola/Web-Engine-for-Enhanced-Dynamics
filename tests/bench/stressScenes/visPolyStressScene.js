@@ -6,7 +6,15 @@ import { VisPolyOccluder } from './visPoly/visPolyOccluder.js';
 const { Scene, Camera } = WEED;
 
 const SEED = 0x51f01;
-const LIGHTS = 360;
+/** `?lights=` (default 360): the scene's load knob, for a sitting that needs pre-render above the 3 ms floor. */
+export const LIGHTS = (() => {
+  try {
+    const n = Number(new URLSearchParams(globalThis.location?.search || '').get('lights'));
+    return n > 0 ? Math.floor(n) : 360;
+  } catch {
+    return 360;
+  }
+})();
 const OCCLUDERS = 700;
 
 /** `?occluderShape=circle`: round occluders, which Pixi draws as a self-lit fan (E-60). Default box. */
@@ -46,7 +54,7 @@ export const BLOCK = (() => {
 })();
 
 export const stressSceneConfig = {
-  requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK },
+  requested: { occluderShape: OCCLUDER_SHAPE, selfLit: SELF_LIT, block: BLOCK, lights: LIGHTS },
 };
 
 /** Bench scene: raycasted lights + occluders. Predator default leaves this path off. */
@@ -74,7 +82,7 @@ export class VisPolyStressScene extends Scene {
     lighting: {
       enabled: true,
       baseAmbient: 0.2,
-      maxLights: 360,
+      maxLights: LIGHTS,
       shadowsEnabled: true,
       raycasted: true,
       maxPolygonVertices: 5000,

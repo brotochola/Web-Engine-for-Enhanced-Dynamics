@@ -12,11 +12,19 @@ import {
 // setRotationCS faces an entity along a unit direction without trig (the
 // boids face their velocity this way, 40k of them).
 
-function entity(index, hasBody) {
+function entity(index, hasBody, components = hasBody ? { RigidBody: true } : {}) {
   const go = Object.create(GameObject.prototype);
   go.index = index;
-  go._hasComponents = hasBody ? { RigidBody: true } : {};
+  go._hasComponents = components;
   return go;
+}
+
+function sentRotations(sab) {
+  const sent = [];
+  drainCommandRing(new Int32Array(sab), new Float32Array(sab), {
+    setRotCS: (i, rc, rs) => sent.push([i, rc, rs]),
+  });
+  return sent;
 }
 
 function withTransform(fn) {
@@ -48,6 +56,27 @@ test('a body gets the cos/sin and one SET_ROT_CS command; physics writes the ang
     assert.equal(sent.length, 1);
     assert.equal(sent[0][0], 2);
     assert.ok(Math.abs(sent[0][1] - c) < 1e-6 && Math.abs(sent[0][2] - s) < 1e-6);
+  });
+});
+
+// N-118: a Collider alone makes an implicit static body. set x and set y send it the rotation they read, and physics
+// exports that back over the channels, so a body not told of a new rotation hands out the old one.
+test('a Collider without a RigidBody tells its body of a new rotation, and keeps its angle', () => {
+  withTransform(() => {
+    const sab = createCommandRingSab(16);
+    bindCommandRing(sab);
+    const go = entity(3, false, { Collider: true });
+    go.rotation = 1;
+    assert.ok(Math.abs(Transform.rotation[3] - 1) < 1e-6);
+    let sent = sentRotations(sab);
+    assert.equal(sent.length, 1);
+    assert.ok(Math.abs(sent[0][1] - Math.cos(1)) < 1e-6 && Math.abs(sent[0][2] - Math.sin(1)) < 1e-6);
+
+    go.setRotationCS(0, 1);
+    assert.ok(Math.abs(Transform.rotation[3] - Math.PI / 2) < 1e-6);
+    sent = sentRotations(sab);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0][0], 3);
   });
 });
 
