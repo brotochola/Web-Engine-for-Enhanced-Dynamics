@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-05",
+  "updated": "2026-11-06",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -10832,6 +10832,28 @@
       "records": [
         "R-0839"
       ]
+    },
+    {
+      "id": "DX-FACES",
+      "title": "lighting.faces: a decoration lights as a flat surface in 3D, by its normal and height",
+      "status": "kept-hygiene",
+      "statusText": "On dx/face-normals (3733cab3, 63c8914c), not merged: a feature off by default; no cost on the owner",
+      "date": "2026-11-06",
+      "result": "Against a formula written apart from the shader, worst sample 2.1 of 255 on both backends and every sprite path; off, 0 of 921 600 pixels against main; Predator NEUTRAL at 8 pairs.",
+      "next": "",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-FACES"
+      ],
+      "aliases": [
+        "face map",
+        "per-face light",
+        "face normals"
+      ],
+      "records": [
+        "R-0842"
+      ]
     }
   ],
   "records": [
@@ -18792,6 +18814,21 @@
       "text": "Merged to main at 4c9e6225 with --no-ff, main having not moved since 0c2219ff. On main before the push: check:dist fresh, node 2292 of 2292, demos 100 of 100, embed and browser smokes on all 8 bundles, test:node:bundle 271 of 271. The numbers are R-0839 and R-0840.",
       "commits": [
         "4c9e6225"
+      ]
+    },
+    {
+      "id": "R-0842",
+      "date": "2026-11-06",
+      "time": "01:49",
+      "timeFrom": "recorded",
+      "title": "lighting.faces on Conurbano: correct to 2.1 of 255, neutral off, and Pixi's pass without garbage",
+      "verdict": "kept-hygiene",
+      "text": "**DX-FACES: a decoration lights as a flat surface in 3D, on `dx/face-normals` (`3733cab3`, `63c8914c`), not merged.** Asked\n2026-11-05 by the owner with Conurbano as its tester; written and measured 2026-11-05 and 06, on AC, Chrome quiet.\n\n`lighting.faces`: a decoration says where its face looks and how high it is (`faceNormalX/Y/Z`, `faceHeight`), the entities\nbatch draws again into a face map at the light pass's size, and the light pass lights a face's pixel with `N · L` and its\nreal 3D distance, the sun by its angle. `DX_NORMALS_DESIGN.md` says what was built and what was left out.\n\n**Correctness.** `faceLightCheck.mjs`, white faces against a formula written apart from the shader: worst sample 1.4 of 255\nat five hours and settings, on WebGL and WebGPU; 2.1 of 255 over every sprite path (ySort off, indexed off, interpolation,\nnearest, keyed). A 45-degree normal fell between two bytes and read 3.7 until the code moved to 1..253 with ±1/2 on a byte.\nDefault captures against main: 0 of 921 600 pixels on WebGL, WebGPU and raycast, day and night (one run of `night=1` read\n3 pixels at 1 of 255; five reruns, two of them against itself, read 0).\n\n**Kernel, faces off, against main (`preRenderWorker`).** 1959 → 1870 (−4.5 %, TIE) with a test in `deco_row`; with the\nfaces moved to a loop of their own, 1907 → 1868 (−2.0 %, 7 rounds, TIE). Moving two struct fields changed no byte of\nengine.wasm and then read 1803 → 1899 (+5.3 %, TIE): on one binary the row moves ±5 %, so that is this kernel's limit.\n\n**In the game, Parque Chas, zoom 2.2, 12 000 people, 22 h, prod bundle, `?caras=0` against faces, 4 pairs.** Renderer\n3.88 → 3.70 ms (−4.6 %, faster in 4 of 4), pre-render 1.41 → 1.45 ms, logic 7.79 → 7.61 ms, 60 fps both. The game's\nmain-thread tint pass is gone with it.\n\n**Load, faces off against on, `faceLightScene` with 20 000 faces and 48 lamps.** Light pass at ¼: renderer 0.717 → 0.761 ms\n(below the floor), the same frames. At full size with 56 lamps: renderer 0.687 → 0.737 ms, pre-render 1.985 → 2.099 ms\n(the faces' own loop), frames 565 against 565: no frame lost, so the GPU is not what limits it here.\n\n**Garbage (the owner's point 3).** `heapSampleWorkers`, Pixi worker, `faceLightScene` town 8000, lamps 24, ¼. The feature's\ncode allocates nothing a frame. The pass is one more `renderer.render`, and Pixi made garbage in each: 138.4 KB/s without\nfaces, 209.7 with. Pixi's pass patched (`1eabb76a`): 88.0 and 145.8. A mesh per ring geometry and the camera's transform\nworked out only when it moves (`63c8914c`): 140.2 with faces, no site of the feature in the list. Faces on now make what the\nsame scene made on main with them off, and every scene without them makes 36 % less.\n\n**Predator, the branch against main (b6f0997d, 8 pairs, AC, Chrome quiet).** NEUTRAL: renderer 2.084 → 2.035 ms, spatial\n−1.5 %, physics +3.4 % (5 of 8, not blocking). The first 4 pairs printed REGRESSION on spatial, +5.4 %: Predator has two\nregimes, 2 200 and 7 700 bodies moved a frame, and side B drew the high one 3 times of 4 against 1. Over the 8, fitted against\nBODY_MOVED_COUNT, every worker reads −0.2 to −2.1 % at equal load. A sitting before that shared the machine with a second\nPredator, a run TaskStop had not killed, and was thrown away.\n\n**Found on the game.** The sun's default `shadowAngleOffset` is π: every wall a camera sees is against the light all day, and\nthe day cycle's 90 degrees leave no sun on any wall at noon. Scene settings, not bugs: `shadowAngleOffset: 0` and the new\n`maxElevation` (`e5453d2f`). Roofs above a lamp stay dark: right, and darker at night than the floor's pool made them.\n\nNot done: one wall shadowing another; faces on layers other than the entities'; `raycasted` turns faces off.",
+      "commits": [
+        "3733cab3",
+        "63c8914c",
+        "1eabb76a",
+        "e5453d2f"
       ]
     }
   ],
