@@ -1233,7 +1233,7 @@ The normal is in the floor's space: x along the screen, y across the floor towar
 - Light does not stop at a volume: a lamp behind a house lights nothing on the side you see (those walls look away from it), but one wall does not shadow another. The floor keeps its shadows.
 - The picture of the faces has the light pass's size, so `lighting.resolution` also sets how sharp the edge between two faces is.
 - `raycasted: true` turns faces off, with a warning.
-- Without `lighting.faces` the light pass is the same shader as ever, and each decoration row costs one test.
+- Without `lighting.faces` the light pass is the same shader as ever, and a frame costs one test. With it, the entities batch draws once more at the light pass's size and each decoration row writes two more numbers: on a scene with 20 000 faces, 56 lamps and the light pass at full size, 0.05 ms of the renderer's time and 0.1 ms of pre-render's, no frame lost.
 
 ### A light off its entity's centre: `offsetX` and `offsetY`
 
