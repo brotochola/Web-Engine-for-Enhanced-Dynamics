@@ -10636,7 +10636,8 @@
       "records": [
         "R-0828",
         "R-0829",
-        "R-0831"
+        "R-0831",
+        "R-0839"
       ]
     },
     {
@@ -10791,7 +10792,7 @@
       "statusText": "Fixed on dx/sun-lights-meshes (55c1c03f to bb270b61), not merged",
       "date": "2026-11-05",
       "result": "Ten of ten confirmed and fixed; replayed on a real page; bundle against source not measured, the machine was on battery.",
-      "next": "Bundle against source again, on AC power: dist fa61f733 is not measured.",
+      "next": "",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -10804,7 +10805,31 @@
         "Scene.params"
       ],
       "records": [
-        "R-0838"
+        "R-0838",
+        "R-0839",
+        "R-0840"
+      ]
+    },
+    {
+      "id": "N-121",
+      "title": "The runner's presented guard reads MAIN_FPS, not frames drawn",
+      "status": "open",
+      "statusText": "Found 2026-11-05, not fixed",
+      "date": "2026-11-05",
+      "result": "meshUploadStressScene: frames drawn +22 %, presented -12 %, verdict REGRESSION: a GPU-bound scene that draws more.",
+      "next": "",
+      "area": "tools",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-121"
+      ],
+      "aliases": [
+        "presented guard",
+        "MAIN_FPS",
+        "frames drawn"
+      ],
+      "records": [
+        "R-0839"
       ]
     }
   ],
@@ -18729,6 +18754,30 @@
         "a6b874db",
         "2ec95a86",
         "bb270b61",
+        "fa61f733"
+      ]
+    },
+    {
+      "id": "R-0839",
+      "date": "2026-11-05",
+      "time": "21:47",
+      "timeFrom": "recorded",
+      "title": "The branch against main on a quiet machine: Predator NEUTRAL, the mesh upload still -98.0 %",
+      "verdict": "passed",
+      "text": "The branch at 20fabdfc against main, on AC power, with the owner's Chrome at 0 before each sitting and no power change after 20:40:25.\n\nA first round, 20:43 to 21:28, does not count where an outside load spoiled it. From 20:52:30 to 21:09:20 every worker read about 45 % higher on both sides, with Chrome at 4.8 to 7.5 cores before those sittings: A-p3 of the Predator gate, the whole A/A, the whole mesh upload and four runs of the bundle's Predator sitting. Its REGRESSION on the mesh upload and its A/A at physics -14 % say nothing about the code. Those four sittings were repeated, 21:29 to 21:52.\n\nA/A, 4 pairs: logic -0.2 %, spatial +2.1 %, pre-render +0.7 %, physics +4.9 % with 12.5 % more moved bodies on one side by chance; fitted against BODY_MOVED_COUNT (r2 0.98), -0.4 % at equal load. That physics row is the day's limit in Predator: about 5 % before the fit.\n\nPredator, main against the branch, 4 pairs: NEUTRAL. logic 3.293 → 3.277 ms (-1.9 %, 0/4), spatial 4.587 → 4.695 (+1.7 %, 2/4), physics 5.679 → 5.214 (-4.5 %, 0/4), pre-render 2.920 → 3.061 and renderer 2.218 → 2.250 under the floor, 60.0 → 60.1 fps. Moved bodies -22.9 %; physics at equal load 0.0 % (r2 0.98). The spatial row reads +7.4 % against the others only because physics fell with its load.\n\nMesh upload, main against the branch, 4 pairs: renderer 32.31 → 0.665 ms (-98.0 %, 0/4, cv 8/3 %), the same as R-0831's -97.7 %, so sending ranges at once (N-120) costs it nothing. Frames drawn in 10 s: 241 to 247 on main, 300 in all four on the branch, +22 %. The runner printed REGRESSION on its presented guard, 53.6 → 47.2 fps (-12.0 %, 4/4), but that key is MAIN_FPS, the main thread's rate, not frames drawn: the scene is GPU-bound and the GPU now draws 22 % more. N-121 files the guard.",
+      "commits": [
+        "20fabdfc"
+      ]
+    },
+    {
+      "id": "R-0840",
+      "date": "2026-11-05",
+      "time": "21:58",
+      "timeFrom": "recorded",
+      "title": "The bundles of fa61f733: tested, and the prod bundle equals its sources",
+      "verdict": "passed",
+      "text": "dist fa61f733, built from bb270b61: the prod ESM bundle against its sources, one build, on AC power. `check:dist` fresh, embed and browser smokes OK on all 8, the getter of WEED.params checked on every ESM bundle, `test:node:bundle` 271 of 271.\n\n- painterMove, 4 pairs, 21:12 to 21:17, Chrome at 0: NEUTRAL. pre-render 16.251 → 16.550 ms (+1.8 %, 3/4, cv 1/1 %), logic 7.045 → 7.104 (+1.3 %), 300 000 entities on both, 60.0 fps.\n- Boids, 8 pairs, 21:17 to 21:27, Chrome at 0: NEUTRAL. spatial 7.059 → 7.073 ms (-0.2 %, 4/8, cv 1/2 %), physics 6.953 → 6.904 (-0.5 %, 2/8), pre-render 3.118 → 3.057 (-0.3 %), 60.0 fps.\n- Predator, 8 pairs, 21:47 to 21:58, Chrome at 0 (the first round's sitting was spoiled: see the gate's record). At 4 pairs the runner printed REGRESSION on physics, +6.2 % (3/4); with 4 more, NEUTRAL: logic 3.224 → 2.971 ms (-8.5 %, 0/8), spatial 4.656 → 4.822 (+2.8 %, 6/8, cv 10/10 %), physics 5.559 → 5.977 (+7.8 % paired, 6/8, cv 14/11 %), 60.0 fps. The bundle's side had 11.8 % more moved bodies, an emergent load; physics fitted against BODY_MOVED_COUNT (r2 0.64) is -0.6 % at equal load, and Boids, with its fixed load, reads physics -0.5 %. Box2D's chunk is byte for byte main's.\n\nSo the bundle equals its sources. Spatial's +2.8 % in Predator is inside that row's cv of 10 %, and Boids, its owner scene, ties at cv 2 %.",
+      "commits": [
         "fa61f733"
       ]
     }
