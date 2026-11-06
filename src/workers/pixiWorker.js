@@ -818,6 +818,8 @@ class PixiRenderer extends AbstractWorker {
     this._faces = resolveFaces(null);
     this._faceSun = new Float32Array(4); // towards the sun, once a frame
     this._faceRtLayer = { resolution: 1 }; // _writeCameraRtTransform's layer for the face map
+    this._faceRtTransform = new Matrix();
+    this._faceCamera = new Float64Array(4).fill(NaN); // the camera _faceRtTransform was written for
     this.lightingDisplaySprite = null; // Sprite to display the lightingRT on stage
     this._lightDataFloats = null; // Float32Array RGBA32F payload (maxLights x 2)
     this._lightDataSource = null; // BufferImageSource uploading _lightDataFloats
@@ -2785,6 +2787,7 @@ class PixiRenderer extends AbstractWorker {
   _createFaceMap(width, height) {
     this.faceRT = PIXI.RenderTexture.create({ width, height, scaleMode: 'nearest' });
     this._faceRtLayer.resolution = this.lightingResolution;
+    this._faceCamera[0] = NaN; // a turned camera's transform holds the canvas's size
     const res = this.lightingShader?.resources;
     if (res) res.uFaceMap = this.faceRT.source;
   }
@@ -2798,7 +2801,18 @@ class PixiRenderer extends AbstractWorker {
     opts.target = this.faceRT;
     opts.clear = true;
     opts.clearColor = this._clearTransparent;
-    opts.transform = this._writeCameraRtTransform(this._meshRtTransform, this._faceRtLayer);
+    // Once a frame this stays in the baseline tiers, where every double it works out is a heap number: a still camera
+    // works out none.
+    const seen = this._faceCamera;
+    const rot = this._renderCameraRot || 0;
+    if (seen[0] !== this._renderCameraX || seen[1] !== this._renderCameraY || seen[2] !== this._renderZoom || seen[3] !== rot) {
+      seen[0] = this._renderCameraX;
+      seen[1] = this._renderCameraY;
+      seen[2] = this._renderZoom;
+      seen[3] = rot;
+      this._writeCameraRtTransform(this._faceRtTransform, this._faceRtLayer);
+    }
+    opts.transform = this._faceRtTransform;
     this._submitRender(opts);
     opts.transform = null;
   }
@@ -5764,17 +5778,20 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   /** World px -> RT px of a viewport-sized layer RT at `resolution`, rotation included, into `mx`. */
   _writeCameraRtTransform(mx, cl) {
     // The layer's RT resolution (null: the screen, 1). Read here and written field by field: doubles passed to a
-    // call TurboFan does not inline (this one, or Matrix.set) are boxed.
+    // call TurboFan does not inline (this one, or Matrix.set) are boxed. A Matrix's fields are tagged, so each double
+    // written is a heap number: a camera that holds still writes none.
     const resolution = cl !== null ? cl.resolution || 1 : 1;
     const z = this._renderZoom * resolution;
     const rot = this._renderCameraRot || 0;
     if (!rot) {
-      mx.a = z;
-      mx.b = 0;
-      mx.c = 0;
-      mx.d = z;
-      mx.tx = -this._renderCameraX * z;
-      mx.ty = -this._renderCameraY * z;
+      const tx = -this._renderCameraX * z;
+      const ty = -this._renderCameraY * z;
+      if (mx.a !== z) mx.a = z;
+      if (mx.b !== 0) mx.b = 0;
+      if (mx.c !== 0) mx.c = 0;
+      if (mx.d !== z) mx.d = z;
+      if (mx.tx !== tx) mx.tx = tx;
+      if (mx.ty !== ty) mx.ty = ty;
       return mx;
     }
     const c = Math.cos(rot);

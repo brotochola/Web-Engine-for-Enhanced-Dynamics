@@ -396,8 +396,9 @@ export class InstancedSpriteBatch {
     // its geometries over each ring slot for those rows (commitKeyedCasterRows: the sun's, then the stamps').
     this.keyedCasters = false;
     this._keyedCasterShaders = [null, null];
-    // DX-FACES: the face map's mesh and its programs (faceMesh).
-    this._faceMesh = null;
+    // DX-FACES: the face map's programs, and a mesh per geometry this batch draws (faceMesh).
+    this._faceMeshes = [];
+    this._faceState = null;
     this._faceShader = null;
     this._faceIndexedShader = null;
     this._keyedCasterGeometries = null;
@@ -1135,13 +1136,19 @@ export class InstancedSpriteBatch {
 
   /**
    * DX-FACES: this batch's instances for the face map, over this frame's geometry: the same rows, in the same order, drawn
-   * again with a program that writes what each pixel is. Made on first use; WebGL only for now.
+   * again with a program that writes what each pixel is. Made on first use.
    * @param {number} heightScaleY
    * @param {number} groundScaleY
    * @returns {Mesh|null}
    */
   faceMesh(heightScaleY, groundScaleY) {
-    if (this._faceMesh === null) {
+    // One mesh a geometry, none swapped: the ring swaps the geometry every frame, and Mesh's setter makes garbage.
+    const geometry = this.mesh.geometry;
+    const meshes = this._faceMeshes;
+    for (let i = 0; i < meshes.length; i++) {
+      if (meshes[i].geometry === geometry) return meshes[i];
+    }
+    if (this._faceState === null) {
       const shaders = this._engineShaders;
       if (!(this._useWebGpu ? shaders?.sprite : shaders?.faceFrag)) return null;
       const uniforms = {
@@ -1189,13 +1196,12 @@ export class InstancedSpriteBatch {
       state.depthTest = false;
       state.depthMask = false;
       state.culling = false;
-      this._faceMesh = new Mesh({ geometry: this.mesh.geometry, shader: this._faceShader, state, label: `${this._label}-face` });
-      this._faceMesh.cullable = false;
+      this._faceState = state;
     }
-    const mesh = this._faceMesh;
-    if (mesh.geometry !== this.mesh.geometry) mesh.geometry = this.mesh.geometry;
     const shader = this.mesh.shader === this._indexedShader ? this._faceIndexedShader : this._faceShader;
-    if (mesh.shader !== shader) mesh.shader = shader;
+    const mesh = new Mesh({ geometry, shader, state: this._faceState, label: `${this._label}-face` });
+    mesh.cullable = false;
+    meshes.push(mesh);
     return mesh;
   }
 
