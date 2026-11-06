@@ -1370,6 +1370,43 @@ test('DX-FACES: a decoration keyed by its slot is marked when its face changes',
   assert.deepEqual(drawn.filter((d) => m.get(d)), [d0, d1], 'a normal and a height mark their slot alone');
 });
 
+// A row belongs to whatever sorts there next: a zoom changes what is on screen, and every row after that changes hands.
+test('DX-FACES: a sprite that sorts into a row a face held carries no face', async () => {
+  const k = await setup({ ySort: true, faces: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  const n = Math.min(count, maxItems);
+  const emit = () => {
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, source));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS | EMIT_TILES_DIRTY;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+  };
+  emit();
+  const faces = [];
+  const plain = [];
+  for (let r = 0; r < n; r++) {
+    const e = w._renderableIndex[r];
+    if (w._renderableType[r] === 2 && w.renderQueueTileOffsetU[r] !== 0) faces.push(r);
+    if (w._renderableType[r] === 0 && SpriteRenderer.repeatX[e] === 0 && SpriteRenderer.repeatY[e] === 0) plain.push(r);
+  }
+  const pairs = Math.min(faces.length, plain.length);
+  assert.ok(pairs > 50, `${pairs} rows change hands`);
+  for (let p = 0; p < pairs; p++) {
+    const [a, c] = [faces[p], plain[p]];
+    const [type, index] = [w._renderableType[a], w._renderableIndex[a]];
+    w._renderableType[a] = w._renderableType[c];
+    w._renderableIndex[a] = w._renderableIndex[c];
+    w._renderableType[c] = type;
+    w._renderableIndex[c] = index;
+  }
+  emit();
+  for (let p = 0; p < pairs; p++) {
+    assert.equal(w.renderQueueTileOffsetU[faces[p]], 0, `row ${faces[p]}: a sprite is no face`);
+    assert.equal(w.renderQueueTileOffsetV[faces[p]], 0, `row ${faces[p]}: and has no face's height`);
+    const d = w._renderableIndex[plain[p]];
+    assert.equal(w.renderQueueTileOffsetU[plain[p]], DecorationComponent.faceOct[d], `row ${plain[p]}: the face that moved there`);
+  }
+});
+
 test('E-188: the emit keys a decoration by its pool slot, marked when its statics moved', async () => {
   const k = await setup({ ySort: true, keyed: true, keyedDecorations: true });
   const { worker: w, b, source, count, maxItems } = k;

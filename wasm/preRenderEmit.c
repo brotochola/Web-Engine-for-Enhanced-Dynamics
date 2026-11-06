@@ -561,6 +561,9 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   } else if (e->tilesDirty) {
     if (e->qRepeatX) e->qRepeatX[out] = 0;
     if (e->qRepeatY) e->qRepeatY[out] = 0;
+    /* DX-FACES: a decoration that held this row left its face in the offsets. */
+    if (e->qTileOffU) e->qTileOffU[out] = 0;
+    if (e->qTileOffV) e->qTileOffV[out] = 0;
     if (e->qTileMulX) e->qTileMulX[out] = 0.0f;
     if (e->qTileMulY) e->qTileMulY[out] = 0.0f;
   }

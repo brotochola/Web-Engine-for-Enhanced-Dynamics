@@ -339,6 +339,8 @@ function emitSpriteQueue(deltaTime, source) {
             } else if (tilesDirty) {
                 if (rqRepeatX) rqRepeatX[out] = 0;
                 if (rqRepeatY) rqRepeatY[out] = 0;
+                if (rqTileOffsetU) rqTileOffsetU[out] = 0;
+                if (rqTileOffsetV) rqTileOffsetV[out] = 0;
                 if (rqTileMulX) rqTileMulX[out] = 0;
                 if (rqTileMulY) rqTileMulY[out] = 0;
             }
