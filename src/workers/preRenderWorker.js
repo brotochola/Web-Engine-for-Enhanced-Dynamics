@@ -17,6 +17,7 @@ import { FlashComponent as FlashComponentImport } from '../components/flashCompo
 import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { AbstractWorker } from './abstractWorker.js';
 import { poseRotationLive } from '../box2d/box2dBodySync.js';
+import { resolveFaces } from '../render/faceMap.js';
 import { Camera } from '../core/camera.js';
 import { takePublishedList } from '../util/publishedList.js';
 import { Query as QueryImport } from '../core/query.js';
@@ -474,6 +475,7 @@ class PreRenderWorker extends AbstractWorker {
         /** E-177: the scene keys its main queue's frames (the resync header laid out): the emit writes the key column. */
         this._keyedFrames = false;
         this._shadowTextures = false; // config.lighting.shadowTextures
+        this._faces = false; // config.lighting.faces: decoration rows carry their face in the tile offsets
         this._collectedRows = 0; // the rows the last sprite queue's collect held
         /** E-177: the keyed frames' resync header (wasmMemoryMap.js PIXI_KEYED_HEADER), empty without them. */
         this._keyedHeader = EMPTY_U32;
@@ -1230,6 +1232,7 @@ class PreRenderWorker extends AbstractWorker {
         // so it can never outlive them (a cached null would silently pin every
         // sort line to the pose for the rest of the session).
         this._spriteSortArrays = null;
+        this._faces = resolveFaces(this.config?.lighting).enabled;
 
         if (
             data.shadows &&
@@ -2815,7 +2818,8 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) this.sortTimeThisFrame = 0;
         const tEmit = detail ? performance.now() : 0;
         const rqTileMode = this.renderQueueTileMode;
-        const tilesDirty = rqTileMode !== null && this._tiledTileColumns.has(rqTileMode);
+        // DX-FACES: decorations write the tile offsets, so every other row must clear what a face left in its slot.
+        const tilesDirty = rqTileMode !== null && (this._faces || this._tiledTileColumns.has(rqTileMode));
         const writeSortKey = !!(this.renderQueueSortKey && source.hasOrder);
         const ySort = !!source.ySort;
         // -1 when off: buffer 0 is a valid persist target (it used to read as false).

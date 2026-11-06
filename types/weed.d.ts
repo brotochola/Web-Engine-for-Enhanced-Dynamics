@@ -930,6 +930,15 @@ export interface DecorationSpawnConfig {
   skewX?: number;
   /** Vertical shear, y += skewY·x: a wall seen at an angle (vertical lines stay vertical). Default 0. */
   skewY?: number;
+  /**
+   * With faceNormalY and faceNormalZ, under `lighting.faces`: this sprite is a flat face that looks that way, in the
+   * floor's space (x along the screen, y across the floor towards the camera, z up), and lights as a surface in 3D.
+   */
+  faceNormalX?: number;
+  faceNormalY?: number;
+  faceNormalZ?: number;
+  /** Px above the floor of the face at this decoration's position. Default 0. */
+  faceHeight?: number;
   sway?: boolean;
   /** Shear the sway instead of turning the sprite (it then ignores `rotation` and the parent's). */
   swaySkew?: boolean;
@@ -948,13 +957,15 @@ export interface DecorationSpawnConfig {
 }
 
 /**
- * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha, tint, sortOffsetY, skewX and skewY
- * may also be arrays (or typed arrays) with one value per decoration. count then defaults to the first array's length.
+ * spawnMany's config: spawn()'s, where x, y, texture, scaleX, scaleY, rotation, alpha, tint, sortOffsetY, skewX, skewY,
+ * faceNormalX, faceNormalY, faceNormalZ and faceHeight may also be arrays (or typed arrays) with one value per decoration.
+ * count then defaults to the first array's length.
  */
 export interface DecorationSpawnManyConfig
   extends Omit<
     DecorationSpawnConfig,
-    'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint' | 'sortOffsetY' | 'skewX' | 'skewY'
+    | 'x' | 'y' | 'texture' | 'scaleX' | 'scaleY' | 'rotation' | 'alpha' | 'tint' | 'sortOffsetY' | 'skewX' | 'skewY'
+    | 'faceNormalX' | 'faceNormalY' | 'faceNormalZ' | 'faceHeight'
   > {
   count?: number;
   x?: WeedNumOrRange | ArrayLike<number>;
@@ -968,6 +979,10 @@ export interface DecorationSpawnManyConfig
   sortOffsetY?: number | ArrayLike<number>;
   skewX?: number | ArrayLike<number>;
   skewY?: number | ArrayLike<number>;
+  faceNormalX?: number | ArrayLike<number>;
+  faceNormalY?: number | ArrayLike<number>;
+  faceNormalZ?: number | ArrayLike<number>;
+  faceHeight?: number | ArrayLike<number>;
   /** With per-decoration arrays: receives each spawned decoration's pool index, in order. */
   out?: Int32Array | Uint32Array | number[];
 }
@@ -2510,6 +2525,8 @@ export interface SunInitConfig {
   color?: number;
   shadowAlpha?: number;
   startHour?: number;
+  /** Degrees the sun reaches at noon on a day cycle. Default 90: overhead. */
+  maxElevation?: number;
   shadowAngleOffset?: number;
   shadowMinLengthRatio?: number;
   shadowMaxLengthRatio?: number;
@@ -2548,6 +2565,8 @@ export declare class Sun {
   static get hour(): number;
   static set hour(value: number);
 
+  static get maxElevation(): number;
+  static set maxElevation(value: number);
   static get shadowAngleOffset(): number;
   static set shadowAngleOffset(value: number);
   static get shadowMinLengthRatio(): number;
@@ -3693,6 +3712,8 @@ export declare class DecorationComponent extends Component {
     sortOffsetY: typeof Float32Array;
     skewX: typeof Float32Array;
     skewY: typeof Float32Array;
+    faceOct: typeof Uint16Array;
+    faceZ: typeof Uint16Array;
   };
   static active: Uint8Array;
   static generation: Uint32Array;
@@ -3728,6 +3749,9 @@ export declare class DecorationComponent extends Component {
   /** The shear as set (DX-DECOSKEW); what is drawn is in the facing columns. */
   static skewX: Float32Array;
   static skewY: Float32Array;
+  /** A face's normal, octahedral, and its height in 1/8 px (lighting.faces, src/render/faceMap.js); 0 = no face. */
+  static faceOct: Uint16Array;
+  static faceZ: Uint16Array;
   static decorationCount: number;
   static initializeArrays(buffer: SharedArrayBuffer, count: number): void;
 }

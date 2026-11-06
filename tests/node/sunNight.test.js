@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 import { Sun } from '../../src/core/sun.js';
+import { shaderWithFlag } from '../../src/render/faceMap.js';
 import { Scene } from '../../src/core/scene.js';
 import { SUN_DEFAULTS } from '../../src/util/configDefaults.js';
 
@@ -130,14 +131,32 @@ test('with no table the default one stands, unchanged, and teardown forgets a sc
   assert.equal(Sun._colors, Sun.DEFAULT_COLORS);
 });
 
+test('sun.maxElevation is how high the day cycle takes the sun; left out, the old 90', () => {
+  bootSun();
+  Sun.setTimeOfDay(12);
+  assert.equal(Sun.elevation, 90);
+  const high = Sun.shadowLengthRatio;
+  Sun.setTimeOfDay(15);
+  assert.ok(Math.abs(Sun.elevation - 90 * Math.SQRT1_2) < 1e-4);
+  Sun.unbind();
+  bootSun({ maxElevation: 60 });
+  Sun.setTimeOfDay(12);
+  assert.ok(Math.abs(Sun.elevation - 60) < 1e-4);
+  assert.ok(Sun.shadowLengthRatio > high, 'a lower sun casts longer shadows');
+  Sun.setTimeOfDay(15);
+  assert.ok(Math.abs(Sun.elevation - 60 * Math.SQRT1_2) < 1e-4);
+});
+
 test('both lighting shaders add the night term, and the WGSL struct lists what the uniform group does, in order', () => {
   const glsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.frag.glsl', import.meta.url), 'utf8');
   const wgsl = fs.readFileSync(new URL('../../src/shaders/lightingBasic.wgsl', import.meta.url), 'utf8');
   const pixi = fs.readFileSync(new URL('../../src/workers/pixiWorker.js', import.meta.url), 'utf8');
   assert.match(glsl, /totalLight \+= vec3\(uNightR, uNightG, uNightB\)/);
   assert.match(wgsl, /totalLight \+= vec3<f32>\(uniforms\.uNightR, uniforms\.uNightG, uniforms\.uNightB\)/);
-  const struct = wgsl.match(/struct LightingUniforms \{([^}]*)\}/)[1];
-  const names = [...struct.matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);
+  const fields = (source) => [...source.match(/struct LightingUniforms \{([^}]*)\}/)[1].matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);
+  const names = fields(shaderWithFlag(wgsl, 'FACES', false));
+  // lighting.faces adds its two at the end of the group, as the worker does.
+  assert.deepEqual(fields(shaderWithFlag(wgsl, 'FACES', true)), [...names, 'uFaceLight', 'uFaceSun']);
   const end = pixi.indexOf('...this._lightingShadowResources()');
   const start = pixi.lastIndexOf('uCameraPos:', end);
   const declared = [...pixi.slice(start, end).matchAll(/^\s*(u\w+):/gm)].map((m) => m[1]);

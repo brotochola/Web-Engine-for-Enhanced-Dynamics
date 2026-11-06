@@ -213,7 +213,7 @@ function emitSpriteQueue(deltaTime, source) {
     ref.repeatX = rqRepeatX; ref.repeatY = rqRepeatY;
     ref.tileMode = rqTileMode; ref.tileOffsetU = rqTileOffsetU; ref.tileOffsetV = rqTileOffsetV;
     ref.tileMulX = rqTileMulX; ref.tileMulY = rqTileMulY;
-    const tilesDirty = rqTileMode !== null && this._tiledTileColumns.has(rqTileMode);
+    const tilesDirty = rqTileMode !== null && (this._faces || this._tiledTileColumns.has(rqTileMode));
     ref.tilesDirty = tilesDirty;
     let tiledRows = false;
     const rqShadowH = this.renderQueueShadowH;
@@ -339,6 +339,8 @@ function emitSpriteQueue(deltaTime, source) {
             } else if (tilesDirty) {
                 if (rqRepeatX) rqRepeatX[out] = 0;
                 if (rqRepeatY) rqRepeatY[out] = 0;
+                if (rqTileOffsetU) rqTileOffsetU[out] = 0;
+                if (rqTileOffsetV) rqTileOffsetV[out] = 0;
                 if (rqTileMulX) rqTileMulX[out] = 0;
                 if (rqTileMulY) rqTileMulY[out] = 0;
             }
@@ -505,6 +507,10 @@ function emitSpriteQueue(deltaTime, source) {
                 decoWorldY = stashPose[1];
                 decoRotCos = decoRotC[idx];
                 decoRotSin = decoRotS[idx];
+            }
+            if (this._faces) {
+                ref.tileOffsetU[out] = DecorationComponent.faceOct[idx];
+                ref.tileOffsetV[out] = DecorationComponent.faceZ[idx];
             }
             rqX[out] = decoWorldX;
             rqY[out] = decoWorldY;

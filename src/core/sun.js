@@ -43,7 +43,8 @@ export class Sun {
         NIGHT_INTENSITY: 68, // Float32 (0-1, the night light at factor 1; 0 = no night light)
         NIGHT_FROM: 72, // Float32 (sun intensity at which the night light starts)
         NIGHT_TO: 76, // Float32 (sun intensity at which it is full)
-        // reserved: 80-95
+        MAX_ELEVATION: 80, // Float32 (degrees at noon on a day cycle; set once from config)
+        // reserved: 84-95
     };
 
     // Float32 indices (offset / 4)
@@ -65,6 +66,7 @@ export class Sun {
         NIGHT_INTENSITY: 17,
         NIGHT_FROM: 18,
         NIGHT_TO: 19,
+        MAX_ELEVATION: 20,
     };
 
     // Uint32 indices (offset / 4)
@@ -365,6 +367,17 @@ export class Sun {
         }
     }
 
+    /** Degrees the sun reaches at noon on a day cycle: 90 = overhead */
+    static get maxElevation() {
+        return this._float32 ? this._float32[Sun.F32.MAX_ELEVATION] : 90;
+    }
+    static set maxElevation(v) {
+        if (this._float32) {
+            this._float32[Sun.F32.MAX_ELEVATION] = v;
+            this._written |= 1 << Sun.F32.MAX_ELEVATION;
+        }
+    }
+
     /** Shadow length multiplier at zenith (noon) - shortest shadows */
     static get shadowMinLengthRatio() {
         return this._float32 ? this._float32[Sun.F32.SHADOW_MIN_LENGTH_RATIO] : 0.1;
@@ -465,7 +478,7 @@ export class Sun {
 
         // Elevation: cos(π * noonOffset) = cos(2π * noonOffset/2)
         const noonOffset = Math.abs(h - 12) / 12; // 0 at noon, 1 at midnight
-        const elevation = Math.max(0, this._cosTau(noonOffset * 0.5) * 90);
+        const elevation = Math.max(0, this._cosTau(noonOffset * 0.5) * (this.maxElevation || 90));
         this.elevation = elevation;
 
         // Intensity: (1 - cos(2π dayProgress)) / 2
@@ -597,6 +610,7 @@ export class Sun {
         }
 
         // Shadow config
+        this.maxElevation = config.maxElevation;
         this.shadowAngleOffset = config.shadowAngleOffset;
         this.shadowMinLengthRatio = config.shadowMinLengthRatio;
         this.shadowMaxLengthRatio = config.shadowMaxLengthRatio;

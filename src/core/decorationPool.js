@@ -10,6 +10,7 @@
 // - activeDecorationsData compact-list mutation is protected by a tiny SAB lock
 // - Any worker or the main thread can safely spawn/despawn decorations
 
+import { encodeFaceHeight, encodeFaceNormal } from '../render/faceMap.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
 import { SpriteSheetRegistry } from './spriteSheetRegistry.js';
 import { SharedAtomicPool } from './sharedAtomicPool.js';
@@ -52,7 +53,10 @@ export {
 } from '../util/decorationSway.js';
 
 /** The spawn config keys spawnMany also takes as arrays, one value per decoration. */
-const PER_DECORATION_KEYS = Object.freeze(['x', 'y', 'texture', 'scaleX', 'scaleY', 'rotation', 'alpha', 'tint', 'sortOffsetY', 'skewX', 'skewY']);
+const PER_DECORATION_KEYS = Object.freeze([
+  'x', 'y', 'texture', 'scaleX', 'scaleY', 'rotation', 'alpha', 'tint', 'sortOffsetY', 'skewX', 'skewY',
+  'faceNormalX', 'faceNormalY', 'faceNormalZ', 'faceHeight',
+]);
 
 const isValueList = (value) => Array.isArray(value) || ArrayBuffer.isView(value);
 
@@ -334,6 +338,10 @@ export class DecorationPool extends SharedAtomicPool {
    * @param {number} [config.anchorY=1] - Anchor Y (0-1)
    * @param {number} [config.offsetX=0] - Draw offset X: the sprite draws at x + offsetX; it sorts and culls at x
    * @param {number} [config.offsetY=0] - Draw offset Y: the sprite draws at y + offsetY; it sorts and culls at y
+   * @param {number} [config.faceNormalX] - With faceNormalY and faceNormalZ: this sprite is a flat face that looks that way, in the floor's space (x along the screen, y towards the camera, z up), lit as a surface where config.lighting.faces is on
+   * @param {number} [config.faceNormalY]
+   * @param {number} [config.faceNormalZ]
+   * @param {number} [config.faceHeight=0] - Px above the floor of the face at this decoration's position
    * @param {number} [config.sortOffsetY=0] - World px added to the y it sorts at (its y, or its parent's sort line
    *   when attached), not to the y it draws or culls at, and not turned with the parent: a tall piece sorts at its foot
    * @param {number} [config.skewX=0] - Horizontal shear of the scaled sprite about its anchor: x += skewX·y (DX-DECOSKEW)
@@ -442,6 +450,13 @@ export class DecorationPool extends SharedAtomicPool {
     offsetY[i] = config.offsetY ?? 0;
     // Sort offset (defaults to 0): moves the point it sorts at, not the sprite or the point it culls at
     DecorationComponent.sortOffsetY[i] = config.sortOffsetY ?? 0;
+    // A face (DX-FACES): a slot from the pool must not keep the last one's
+    if (config.faceNormalX === undefined) {
+      DecorationComponent.faceOct[i] = 0;
+    } else {
+      DecorationComponent.faceOct[i] = encodeFaceNormal(config.faceNormalX, config.faceNormalY, config.faceNormalZ);
+      DecorationComponent.faceZ[i] = encodeFaceHeight(config.faceHeight ?? 0);
+    }
 
     // Visual properties
     scaleX[i] = randomRange(config.scaleX, 1);
@@ -535,7 +550,8 @@ export class DecorationPool extends SharedAtomicPool {
   /**
    * Spawn multiple decorations at once (batch spawn)
    *
-   * Any of x, y, texture, scaleX, scaleY, rotation, alpha, tint, sortOffsetY, skewX and skewY may be an array or a typed array instead: one
+   * Any of x, y, texture, scaleX, scaleY, rotation, alpha, tint, sortOffsetY, skewX, skewY, faceNormalX, faceNormalY,
+   * faceNormalZ and faceHeight may be an array or a typed array instead: one
    * value per decoration, decoration i taking element i (a scene file's decorations load this way, one call per
    * class). count then defaults to the first such array's length, and `out`, when given, receives each decoration's
    * pool index (the first `spawned` of its entries).

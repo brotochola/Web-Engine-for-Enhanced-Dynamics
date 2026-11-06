@@ -35,6 +35,192 @@ function patchModule(build, filter, patch) {
 }
 
 /**
+ * Pixi's per-pass paths without garbage: renderer.render, which the engine calls once per RT pass. A top-level bind of
+ * the global uniforms made a Matrix, a Point and two objects, the bind stack an object per entry, startRenderPass a
+ * closure, Color.toArray and the GC tick's loop an array iterator. The objects stay, one per stack depth. A Matrix's
+ * fields are tagged, so each double written to one is a heap number: the uniforms' matrix and the projection are written
+ * field by field, only where they change.
+ */
+function patchPixiPassGarbage() {
+  return {
+    name: 'patch-pixi-pass-garbage',
+    setup(build) {
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]shared[\\/]renderTarget[\\/]GlobalUniformSystem\.mjs$/, (src, file) => {
+        src = replaceOnce(
+          src,
+          '    this._renderer = renderer;\n  }\n  reset() {\n',
+          '    this._renderer = renderer;\n' +
+            '    this._weedRoot = { worldTransformMatrix: new Matrix(), worldColor: 4294967295, offset: new Point() };\n' +
+            '    this._weedData = [];\n' +
+            '  }\n  reset() {\n',
+          file,
+        );
+        src = replaceOnce(
+          src,
+          `    uniforms.uWorldTransformMatrix.copyFrom(globalUniformData.worldTransformMatrix);
+    uniforms.uWorldTransformMatrix.tx -= globalUniformData.offset.x;
+    uniforms.uWorldTransformMatrix.ty -= globalUniformData.offset.y;
+`,
+          `    const weedTo = uniforms.uWorldTransformMatrix;
+    const weedFrom = globalUniformData.worldTransformMatrix;
+    const weedTx = weedFrom.tx - globalUniformData.offset.x;
+    const weedTy = weedFrom.ty - globalUniformData.offset.y;
+    if (weedTo.a !== weedFrom.a) weedTo.a = weedFrom.a;
+    if (weedTo.b !== weedFrom.b) weedTo.b = weedFrom.b;
+    if (weedTo.c !== weedFrom.c) weedTo.c = weedFrom.c;
+    if (weedTo.d !== weedFrom.d) weedTo.d = weedFrom.d;
+    if (weedTo.tx !== weedTx) weedTo.tx = weedTx;
+    if (weedTo.ty !== weedTy) weedTo.ty = weedTy;
+`,
+          file,
+        );
+        return replaceOnce(
+          src,
+          `    const currentGlobalUniformData = this._stackIndex ? this._globalUniformDataStack[this._stackIndex - 1] : {
+      projectionData: renderTarget,
+      worldTransformMatrix: new Matrix(),
+      worldColor: 4294967295,
+      offset: new Point()
+    };
+    const globalUniformData = {
+      projectionMatrix: projectionMatrix || this._renderer.renderTarget.projectionMatrix,
+      resolution: size || renderTarget.size,
+      worldTransformMatrix: worldTransformMatrix || currentGlobalUniformData.worldTransformMatrix,
+      worldColor: worldColor || currentGlobalUniformData.worldColor,
+      offset: offset || currentGlobalUniformData.offset,
+      bindGroup: null
+    };
+`,
+          `    const currentGlobalUniformData = this._stackIndex ? this._globalUniformDataStack[this._stackIndex - 1] : this._weedRoot;
+    const depth = this._stackIndex;
+    const globalUniformData = this._weedData[depth] || (this._weedData[depth] = {
+      projectionMatrix: null,
+      resolution: null,
+      worldTransformMatrix: null,
+      worldColor: 0,
+      offset: null,
+      bindGroup: null
+    });
+    globalUniformData.projectionMatrix = projectionMatrix || this._renderer.renderTarget.projectionMatrix;
+    globalUniformData.resolution = size || renderTarget.size;
+    globalUniformData.worldTransformMatrix = worldTransformMatrix || currentGlobalUniformData.worldTransformMatrix;
+    globalUniformData.worldColor = worldColor || currentGlobalUniformData.worldColor;
+    globalUniformData.offset = offset || currentGlobalUniformData.offset;
+`,
+          file,
+        );
+      });
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]shared[\\/]renderTarget[\\/]RenderTargetSystem\.mjs$/, (src, file) => {
+        src = replaceOnce(
+          src,
+          '    this._renderTargetStack = [];\n',
+          '    this._renderTargetStack = [];\n    this._weedStackEntries = [];\n',
+          file,
+        );
+        return replaceOnce(
+          src,
+          `    this._renderTargetStack.push({
+      target: options.target,
+      clear: false,
+      clearColor: void 0,
+      frame: options.frame ? options.frame.clone() : void 0,
+      mipLevel: options.mipLevel,
+      layer: options.layer,
+      flipY: options.flipY
+    });
+`,
+          `    const weedDepth = this._renderTargetStack.length;
+    const weedEntry = this._weedStackEntries[weedDepth] || (this._weedStackEntries[weedDepth] = {
+      target: null,
+      clear: false,
+      clearColor: void 0,
+      frame: void 0,
+      mipLevel: void 0,
+      layer: void 0,
+      flipY: void 0
+    });
+    weedEntry.target = options.target;
+    weedEntry.frame = options.frame ? options.frame.clone() : void 0;
+    weedEntry.mipLevel = options.mipLevel;
+    weedEntry.layer = options.layer;
+    weedEntry.flipY = options.flipY;
+    this._renderTargetStack.push(weedEntry);
+`,
+          file,
+        );
+      });
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gl[\\/]renderTarget[\\/]GlRenderTargetAdaptor\.mjs$/, (src, file) =>
+        replaceOnce(
+          src,
+          `    renderTarget.colorAttachments.forEach((attachment) => {
+      this._renderer.texture.unbind(attachment.texture);
+    });
+    const gl = this._renderer.gl;
+    this.bindFramebuffer(gpuRenderTarget.framebuffer);
+`,
+          `    const weedAttachments = renderTarget.colorAttachments;
+    for (let i = 0; i < weedAttachments.length; i++) this._renderer.texture.unbind(weedAttachments[i].texture);
+    const gl = this._renderer.gl;
+    this.bindFramebuffer(gpuRenderTarget.framebuffer);
+`,
+          file,
+        ));
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]gpu[\\/]renderTarget[\\/]calculateProjection\.mjs$/, (src, file) =>
+        replaceOnce(
+          src,
+          `  pm.identity();
+  pm.a = 1 / width * 2;
+  pm.d = sign * (1 / height * 2);
+  pm.tx = -1 - x * pm.a;
+  pm.ty = -sign - y * pm.d;
+`,
+          `  const a = 1 / width * 2;
+  const d = sign * (1 / height * 2);
+  const tx = -1 - x * a;
+  const ty = -sign - y * d;
+  if (pm.a !== a) pm.a = a;
+  if (pm.b !== 0) pm.b = 0;
+  if (pm.c !== 0) pm.c = 0;
+  if (pm.d !== d) pm.d = d;
+  if (pm.tx !== tx) pm.tx = tx;
+  if (pm.ty !== ty) pm.ty = ty;
+`,
+          file,
+        ));
+      patchModule(build, /[\\/]rendering[\\/]renderers[\\/]shared[\\/]GCSystem\.mjs$/, (src, file) =>
+        replaceOnce(
+          src,
+          `    for (const child of renderGroup.renderGroupChildren) {
+      this._updateInstructionGCTick(child, gcTick);
+    }
+`,
+          `    const weedChildren = renderGroup.renderGroupChildren;
+    for (let i = 0; i < weedChildren.length; i++) this._updateInstructionGCTick(weedChildren[i], gcTick);
+`,
+          file,
+        ));
+      patchModule(build, /[\\/]color[\\/]Color\.mjs$/, (src, file) =>
+        replaceOnce(
+          src,
+          `    const [r, g, b, a] = this._components;
+    out[0] = r;
+    out[1] = g;
+    out[2] = b;
+    out[3] = a;
+`,
+          `    const c = this._components;
+    out[0] = c[0];
+    out[1] = c[1];
+    out[2] = c[2];
+    out[3] = c[3];
+`,
+          file,
+        ));
+    },
+  };
+}
+
+/**
  * Pixi's per-draw paths without garbage. Each draw walked integer-keyed objects with for…in (V8 builds a key array
  * for every such loop), built a string key, or made an options object.
  * - WebGL: the shader sync walks a per-shader plan (scripts/pixi-stubs/shaderSyncPolyfill.mjs). BindGroup counts the
@@ -226,7 +412,7 @@ const result = await esbuild.build({
   format: 'esm',
   minify: true,
   outfile: path.join(root, 'src', 'vendor', 'pixi.min.js'),
-  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiIntegerFormats()],
+  plugins: [stubPixiBackends(), patchPixiDrawGarbage(), patchPixiPassGarbage(), patchPixiIntegerFormats()],
   logLevel: 'info',
 });
 

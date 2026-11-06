@@ -53,6 +53,8 @@ export const EMIT_SLOTS = [
   'dKeyed', 'dKeyBase', 'dKeyEpoch',
   // DX-LIGHTOFFSET: the glow rows' light offset, and the light entity's facing that turns it.
   'lOffsetX', 'lOffsetY', 'tRotC', 'tRotS',
+  // DX-FACES: a decoration's normal and height, for its row's tile offsets (0: a scene without faces).
+  'dFaceOct', 'dFaceZ',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -429,6 +431,8 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   for (let k = 0; k < EMIT_DECORATION_COLUMNS.length; k++) {
     if (!putSlot(b, EMIT_DECORATION_COLUMNS[k][0], DecorationComponent[EMIT_DECORATION_COLUMNS[k][1]], true)) return false;
   }
+  if (!putSlot(b, 'dFaceOct', w._faces ? DecorationComponent.faceOct : null, true)) return false;
+  if (!putSlot(b, 'dFaceZ', w._faces ? DecorationComponent.faceZ : null, true)) return false;
   if (!putSlot(b, 'aFrame', w.entityFrameIndex) || !putSlot(b, 'aAccum', w.entityFrameAccumulator)) return false;
   b.table[SLOT.aEntities] = w.entityFrameIndex.length;
   if (!putSlot(b, 'aLastTex', w.entityLastTextureId, true)) return false;

@@ -1190,6 +1190,51 @@ this.lightEmitter.lightIntensity = 30000;  // peaks at 30000 / (30000 + 110Â²) â
 
 Costs: `groundScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `sourceHeight` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `groundScaleY` makes that gradient steeper; a `sourceHeight` flattens it.
 
+### Faces that light as surfaces: `lighting.faces`
+
+In an oblique or isometric view a wall is a sprite, and the light pass reads each pixel as the floor under it: a lamp's pool climbs every wall alike, and a roof lights up when a lamp stands behind the house. With `lighting.faces` a decoration can say it is a flat face of a volume: where it looks and how high it is. Each of its pixels is then lit as that point in 3D. A lamp lights the wall that looks at it and not the one past the corner, a wall no light reaches stays dark, a roof above the lamp stays dark, and the sun lights each face by its own angle as the day goes by.
+
+```javascript
+static config = {
+  lighting: {
+    enabled: true,
+    groundScaleY: 0.5,
+    faces: {
+      enabled: true,
+      heightScaleY: 0.866, // screen px that a px of height rises. Default 1.
+      wrap: 0.15,          // a lamp's light past the terminator: 0 stops hard, 1 is half-Lambert. Default 0.
+      gain: 1.3,           // a lamp's strength on a face against the floor's. Default 1.
+      sunDirect: 0.5,      // how much of the sun's light depends on where a face looks; the rest is sky. Default 0.6.
+    },
+    sun: {
+      enabled: true,
+      dayCycle: { enabled: true, dayDurationMinutes: 8 },
+      shadowAngleOffset: 0, // the sun on the camera's side: with the default a camera only ever sees walls against the light
+      maxElevation: 60,     // degrees at noon on a day cycle. Default 90: overhead, and no wall gets any sun then.
+    },
+  },
+};
+
+create() {
+  // A wall facing the camera, 80 px tall, its foot at y 400 on the screen. x, y is the sprite's centre.
+  Decoration.spawn({
+    x: 300, y: 400 - 40 * 0.866, texture: 'wall', anchorX: 0.5, anchorY: 0.5,
+    faceNormalX: 0, faceNormalY: 1, faceNormalZ: 0, // it looks across the floor, towards the camera
+    faceHeight: 40,                                 // the height of the wall at x, y
+  });
+}
+```
+
+The normal is in the floor's space: x along the screen, y across the floor towards the camera, z up. It need not be unit length. `faceHeight` is the height, in px, of the point of the face at the decoration's position; the rest of the sprite follows from the plane, so a pitched roof takes one number, and so does a wall sheared with `skewX` and `skewY`. Leave `faceNormalX` out and the decoration is no face. `spawnMany` takes all four as arrays.
+
+- The light comes from `LightEmitter.sourceHeight`: a face above it gets none. That height also shapes the pool on the floor.
+- A face takes the place of its sprite's light, not of its colour: its texture should hold no light of its own.
+- Faces need the entities layer. Decorations on other layers are lit as the floor, and a sprite that is no face in front of a wall, like a person, takes the wall's place where it covers it, and is lit as before.
+- Light does not stop at a volume: a lamp behind a house lights nothing on the side you see (those walls look away from it), but one wall does not shadow another. The floor keeps its shadows.
+- The picture of the faces has the light pass's size, so `lighting.resolution` also sets how sharp the edge between two faces is.
+- `raycasted: true` turns faces off, with a warning.
+- Without `lighting.faces` the light pass is the same shader as ever, and a frame costs one test. With it, the entities batch draws once more at the light pass's size and each decoration row writes two more numbers: on a scene with 20 000 faces, 56 lamps and the light pass at full size, 0.05 ms of the renderer's time and 0.1 ms of pre-render's, no frame lost.
+
 ### A light off its entity's centre: `offsetX` and `offsetY`
 
 `LightEmitter.offsetX` / `offsetY` (default 0, local px) move a light off its entity's centre, and the entity's rotation turns them: a car's headlights stay ahead of it through a bend, with no second entity. `height` then lifts the result. The pool, the glow, the shadows, the raycast sweep and every cull follow it. A shadow's casters still come from the entity's `Collider.visualRange`, so keep that wider than the offset.

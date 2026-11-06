@@ -81,6 +81,8 @@ enum {
   D_KEYED, D_KEY_BASE, D_KEY_EPOCH,
   /* DX-LIGHTOFFSET: the glow rows' light offset (local px) and the light entity's facing that turns it. */
   L_OFFSET_X, L_OFFSET_Y, T_ROT_C, T_ROT_S,
+  /* DX-FACES: a decoration's normal and height (0: a scene without faces), written to its row's tile offsets. */
+  D_FACE_OCT, D_FACE_Z,
   SLOT_COUNT
 };
 
@@ -242,6 +244,7 @@ typedef struct {
   const float *scH, *scOx, *scOy;
   const float *dScaleX, *dScaleY, *dAlpha;
   const uint32_t *dTint;
+  const uint16_t *dFaceOct, *dFaceZ;
   const uint16_t *dTexture;
   const float *dAnchorX, *dAnchorY;
   uint16_t *aFrame;
@@ -341,6 +344,8 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->dScaleY = PTR(const float, D_SCALE_Y);
   e->dAlpha = PTR(const float, D_ALPHA);
   e->dTint = PTR(const uint32_t, D_TINT);
+  e->dFaceOct = PTR(const uint16_t, D_FACE_OCT);
+  e->dFaceZ = PTR(const uint16_t, D_FACE_Z);
   e->dTexture = PTR(const uint16_t, D_TEXTURE);
   e->dAnchorX = PTR(const float, D_ANCHOR_X);
   e->dAnchorY = PTR(const float, D_ANCHOR_Y);
@@ -556,6 +561,9 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
   } else if (e->tilesDirty) {
     if (e->qRepeatX) e->qRepeatX[out] = 0;
     if (e->qRepeatY) e->qRepeatY[out] = 0;
+    /* DX-FACES: a decoration that held this row left its face in the offsets. */
+    if (e->qTileOffU) e->qTileOffU[out] = 0;
+    if (e->qTileOffV) e->qTileOffV[out] = 0;
     if (e->qTileMulX) e->qTileMulX[out] = 0.0f;
     if (e->qTileMulY) e->qTileMulY[out] = 0.0f;
   }
@@ -655,7 +663,9 @@ INLINE uint32_t deco_key(const Emit *e, int32_t idx, uint32_t out) {
   union { float f; uint32_t u; } sx = {e->qScaleX[out]}, sy = {e->qScaleY[out]}, al = {e->qAlpha[out]},
                                  ax = {e->qAnchorX[out]}, ay = {e->qAnchorY[out]};
   uint32_t *r = e->dKeyed + (uint32_t)idx * DECO_KEYED_WORDS;
-  const uint32_t tint = e->qTint[out];
+  /* DX-FACES: a slot's face is a static too. It joins the tint's word, so a record needs no room for it. */
+  const uint32_t face = e->dFaceOct ? (uint32_t)e->dFaceOct[idx] * 65599u + (uint32_t)e->dFaceZ[idx] : 0u;
+  const uint32_t tint = e->qTint[out] ^ face;
   const uint32_t tex = e->qTexture[out];
   const uint32_t changed = (r[0] != sx.u) | (r[1] != sy.u) | (r[2] != al.u) | (r[3] != tint) | (r[4] != tex)
                            | (r[5] != ax.u) | (r[6] != ay.u) | (r[7] != e->dKeyEpoch);
@@ -702,6 +712,21 @@ INLINE void deco_row(Emit *e, uint32_t i, uint32_t out) {
   e->qAnchorY[out] = e->dAnchorY[idx];
   if (e->qType) e->qType[out] = 2;
   if (e->qKey) e->qKey[out] = e->dKeyed ? deco_key(e, idx, out) : KEY_NONE;
+}
+
+/* DX-FACES: a decoration's face in its row's tile offsets. */
+INLINE void deco_face(const Emit *e, uint32_t i, uint32_t out) {
+  const int32_t idx = e->cIndex[i];
+  e->qTileOffU[out] = e->dFaceOct[idx];
+  e->qTileOffV[out] = e->dFaceZ[idx];
+}
+
+/* The rows of a frame without Adobe roots, where row i is collector row i: a loop of their own, so that a scene without
+   faces pays one test a frame and deco_row none (it is on every decoration's path). */
+static void deco_faces(const Emit *e, const uint8_t *cType, uint32_t n) {
+  for (uint32_t i = 0; i < n; i++) {
+    if (cType[i] == 2) deco_face(e, i, i);
+  }
 }
 
 /* A bullet or trail row that draws nothing, parked off screen; its other columns keep what they held. */
@@ -1080,6 +1105,7 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         nForeign++;
       }
     }
+    if (e.dFaceOct) deco_faces(&e, cType, n);
     w = n;
   } else if (!roots) {
     for (uint32_t i = 0; i < n; i++) {
@@ -1104,6 +1130,7 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         nForeign++;
       }
     }
+    if (e.dFaceOct) deco_faces(&e, cType, n);
     w = n;
   } else {
     /* emitSpriteQueue's loop: until the collector or the queue runs out (the collector holds at most maxItems). */
@@ -1119,6 +1146,7 @@ uint32_t emit_rows(uint32_t table, uint32_t count, uint32_t maxItems, uint32_t f
         sprite_row(&e, i, w);
       } else if (ty == 2) {
         deco_row(&e, i, w);
+        if (e.dFaceOct) deco_face(&e, i, w);
       } else if (ty == 4 && e.bActive) {
         bullet_row(&e, i, w);
       } else if (ty == 5 && e.bActive) {
