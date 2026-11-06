@@ -10852,7 +10852,8 @@
         "face normals"
       ],
       "records": [
-        "R-0842"
+        "R-0842",
+        "R-0843"
       ]
     }
   ],
@@ -18829,6 +18830,18 @@
         "63c8914c",
         "1eabb76a",
         "e5453d2f"
+      ]
+    },
+    {
+      "id": "R-0843",
+      "date": "2026-11-06",
+      "time": "09:21",
+      "timeFrom": "recorded",
+      "title": "A sprite in a face's row read as that face: people and cars dark for a frame on a zoom",
+      "verdict": "kept-hygiene",
+      "text": "**A sprite that sorted into a face's row read as that face.** The owner, on the game, 2026-11-06: people and cars went dark and came back, frame by frame, when zooming. None of the sittings before saw it: they were still pictures, and at a still camera no row changes hands.\n\nA decoration's face travels in the row's tile offsets. An untiled sprite's row cleared its repeat and multipliers but not the offsets, which nothing read until DX-FACES, so a person or a car in a row a face held was drawn into the face map with that wall's normal and height. Next to a lamp it went nearly black for that frame. The parity test could not see it: the JS reference left the same offsets alone, and its rows never change hands. The new test swaps faces and sprites between two frames, and failed with a sprite holding code 9034.\n\n**Measured on the game in motion**, Parque Chas at 22 h, 23 000 people, Chrome on the GPU, filmed through the compositor at 55 fps, each walker tracked from the published queue and its body's brightness followed. A person has no reason to change brightness from one frame to the next, so a step is flicker.\n\nSlow zoom (2.4 to 3.8 and back, 7 s, about 55 000 person-frames, one spot):\n\n| | step ≥ 6 | ≥ 10 | ≥ 16 | people with 3 steps ≥ 10 |\n|---|---|---|---|---|\n| before | 0.400 % | 0.263 % | 0.163 % | 19 |\n| fixed, sources | 0.107 % | 0.025 % | 0.013 % | 1 |\n| fixed, prod bundle | 0.116 % | 0.029 % | 0.011 % | 2 |\n| faces off | 0.111 % | 0.020 % | 0.005 % | 0 |\n\nFast zoom (1.8 to 4 and back, 1.8 s, about 16 600 person-frames): sprite rows carrying a face 41.7 a frame, up to 170, to 0 in every run; step ≥ 10 5.07 % → 1.30 % (1.42 % on the bundle), people blinking 99 → 35 (40); faces off 1.05 % and 29. What is left there is the camera's own motion against the rectangle followed: the worst strip, at the screen's edge, shows no change of light. At 17 h on the bundle, 1.01 % and 19.\n\nKernel `preRenderWorker`, faces off: 1945 → 1967 (+1.1 %, TIE). Only a row that takes the `tilesDirty` branch does more. Node suite 2306 pass, demos 100, bundles 271 and smoke OK.\n\nTwo false trails on the way, worth keeping: a whole-screen flicker count was ruled by the asphalt's speckles and by how bright the walls are, and read no change; people planted still read none either, even before the fix, and nothing here says why. Follow the ones that walk.\n\nSeen once in 177 walkers, not a matter of light: one person drawn in front of a car and behind it in turn over six frames. A still camera in the same spot, 10 s, reads no flip against a still car with faces on or off; a car that moves falls outside that count.",
+      "commits": [
+        "b8eeba97"
       ]
     }
   ],

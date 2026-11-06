@@ -90,7 +90,9 @@ tester. A house is flat faces, and the editor knows each one's normal: no normal
 the atlas applies. [`src/render/faceMap.js`](../../src/render/faceMap.js) holds the format.
 
 - A decoration says where its face looks and how high it is (`Decoration.spawn`: `faceNormalX/Y/Z`, `faceHeight`): two u16
-  columns that reach the GPU in the row's tile offsets, which a decoration does not use. No row format changed.
+  columns that reach the GPU in the row's tile offsets, which a decoration does not use. No row format changed. Rows are
+  reused by whatever sorts there next, so **every row that is no face clears the offsets**: a person in a row a wall held
+  lit as that wall for a frame, which only a camera in motion shows (R-0843).
 - Every instance of the entities batch is drawn a second time into the **face map**, at the light pass's size, in painter
   order: normal and height per pixel, 0 for a sprite that is no face, so a person in front of a wall takes the wall out.
 - The light pass reads the map: a face's pixel gets `N · L` and its real 3D distance to each light, and the sun by its
