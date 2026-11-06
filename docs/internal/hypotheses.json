@@ -10807,7 +10807,8 @@
       "records": [
         "R-0838",
         "R-0839",
-        "R-0840"
+        "R-0840",
+        "R-0841"
       ]
     },
     {
@@ -18779,6 +18780,18 @@
       "text": "dist fa61f733, built from bb270b61: the prod ESM bundle against its sources, one build, on AC power. `check:dist` fresh, embed and browser smokes OK on all 8, the getter of WEED.params checked on every ESM bundle, `test:node:bundle` 271 of 271.\n\n- painterMove, 4 pairs, 21:12 to 21:17, Chrome at 0: NEUTRAL. pre-render 16.251 → 16.550 ms (+1.8 %, 3/4, cv 1/1 %), logic 7.045 → 7.104 (+1.3 %), 300 000 entities on both, 60.0 fps.\n- Boids, 8 pairs, 21:17 to 21:27, Chrome at 0: NEUTRAL. spatial 7.059 → 7.073 ms (-0.2 %, 4/8, cv 1/2 %), physics 6.953 → 6.904 (-0.5 %, 2/8), pre-render 3.118 → 3.057 (-0.3 %), 60.0 fps.\n- Predator, 8 pairs, 21:47 to 21:58, Chrome at 0 (the first round's sitting was spoiled: see the gate's record). At 4 pairs the runner printed REGRESSION on physics, +6.2 % (3/4); with 4 more, NEUTRAL: logic 3.224 → 2.971 ms (-8.5 %, 0/8), spatial 4.656 → 4.822 (+2.8 %, 6/8, cv 10/10 %), physics 5.559 → 5.977 (+7.8 % paired, 6/8, cv 14/11 %), 60.0 fps. The bundle's side had 11.8 % more moved bodies, an emergent load; physics fitted against BODY_MOVED_COUNT (r2 0.64) is -0.6 % at equal load, and Boids, with its fixed load, reads physics -0.5 %. Box2D's chunk is byte for byte main's.\n\nSo the bundle equals its sources. Spatial's +2.8 % in Predator is inside that row's cv of 10 %, and Boids, its owner scene, ties at cv 2 %.",
       "commits": [
         "fa61f733"
+      ]
+    },
+    {
+      "id": "R-0841",
+      "date": "2026-11-05",
+      "time": "22:48",
+      "timeFrom": "recorded",
+      "title": "The DX batch on main",
+      "verdict": "note",
+      "text": "Merged to main at 4c9e6225 with --no-ff, main having not moved since 0c2219ff. On main before the push: check:dist fresh, node 2292 of 2292, demos 100 of 100, embed and browser smokes on all 8 bundles, test:node:bundle 271 of 271. The numbers are R-0839 and R-0840.",
+      "commits": [
+        "4c9e6225"
       ]
     }
   ],
