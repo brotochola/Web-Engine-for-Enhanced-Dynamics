@@ -7,8 +7,8 @@
 //                          what the main thread leaves at the end of its frame
 //   alphaBySun             windows and lamp halos come up with 'night', clouds go with a ramp, no code in update
 //   layer.alpha            L, on a sprite layer and a MESH layer
-//   sunProjected           each house's shadow is a mesh with a height per vertex (setHeights), sent once and moved
-//                          by the GPU; trees and people use ShadowCaster, and the shadows agree
+//   VolumeShadowCaster     houses and cars say what they are (setBox, addLevel), and the GPU moves their shadows with
+//                          the sun; trees and people use ShadowCaster, and the shadows agree
 //   LightOccluder          R: houses and cars stop the lamps and headlights (lighting.raycasted; ?raycast=0 turns it off)
 //   LightEmitter.offsetX   the headlights sit ahead of the car and turn with it (O); the cars are carScene's
 //   setTexture             T: the trees cast another tree's silhouette, their sprite stays
@@ -21,7 +21,7 @@
 
 import WEED from '/src/index.js';
 import { LAP, ROAD_CX, ROAD_CY, ROAD_WIDTH, WORLD_H, WORLD_W } from './streetLayout.js';
-import { CarShadow, FlagPole, GrassTufts, HouseShadow, RoadBand, RoadDashes, StreetFlag } from './gameObjects/streetMeshes.js';
+import { FlagPole, GrassTufts, RoadBand, RoadDashes, StreetFlag } from './gameObjects/streetMeshes.js';
 import { StreetCar, StreetCloud, StreetHouse, StreetLamp, StreetTree, StreetWalker } from './gameObjects/streetSprites.js';
 import { SunPanel } from './sunPanel.js';
 
@@ -84,7 +84,6 @@ export class SunStreetScene extends Scene {
       tufts: { kind: LAYER_KIND.MESH, zIndex: 0.4 },
       sidewalk: { kind: LAYER_KIND.MESH, zIndex: 0.45 },
       street: { kind: LAYER_KIND.MESH, zIndex: 0.5 },
-      houseShadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, sunProjected: true },
       flags: { kind: LAYER_KIND.MESH, zIndex: 3 },
       clouds: { zIndex: 4, ySorting: false, alpha: CLOUD_ALPHA, alphaBySun: { from: 0.15, to: 0.5 } },
       nightGlows: { zIndex: 5.6, ySorting: false, blendMode: BLEND_MODES.ADD, alphaBySun: 'night' },
@@ -145,12 +144,10 @@ export class SunStreetScene extends Scene {
     [RoadBand, 2],
     [RoadDashes, 1],
     [StreetHouse, HOUSES],
-    [HouseShadow, HOUSES],
     [StreetTree, 10],
     [StreetLamp, LAMPS.length],
     [StreetWalker, WALKERS],
     [StreetCar, CARS],
-    [CarShadow, CARS],
     [StreetCloud, CLOUDS.length],
     [StreetFlag, 1],
     [FlagPole, 1],
@@ -197,7 +194,6 @@ export class SunStreetScene extends Scene {
       for (const x of row.xs) {
         const texture = house++ % 2 === 0 ? 'house1' : 'house2';
         StreetHouse.spawn({ x, y: row.y, texture });
-        HouseShadow.spawn({ x, y: row.y });
         Decoration.spawn({ x: x + (texture === 'house1' ? 40 : 34), y: row.y - 51, texture: 'square', layer: 'nightGlows', tint: 0xffb648, scaleX: 6.4, scaleY: 3.8, anchorY: 0.5, alpha: 0.6 });
       }
     }
@@ -218,8 +214,7 @@ export class SunStreetScene extends Scene {
       StreetWalker.spawn({ x: 300 + i * 170, y, sheet: WALKER_SHEETS[i % WALKER_SHEETS.length], from: 280, to: 1520, direction: i % 2 === 0 ? 1 : -1 });
     }
     for (let i = 0; i < CARS; i++) {
-      const car = StreetCar.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: `car_${CAR_SHEETS[i % CAR_SHEETS.length]}`, distance: (i / CARS) * LAP, offset: HEADLIGHT_OFFSET });
-      CarShadow.spawn({ x: ROAD_CX, y: ROAD_CY, carIndex: car.index });
+      StreetCar.spawn({ x: ROAD_CX, y: ROAD_CY, sheet: `car_${CAR_SHEETS[i % CAR_SHEETS.length]}`, distance: (i / CARS) * LAP, offset: HEADLIGHT_OFFSET });
     }
     for (const cloud of CLOUDS) StreetCloud.spawn(cloud);
     FlagPole.spawn({ x: FLAG.x, y: FLAG.y });
