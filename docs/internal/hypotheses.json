@@ -10769,9 +10769,9 @@
       "id": "DX-VOLUME",
       "title": "VolumeShadowCaster: a component that declares an object's volume, for the sun and point lights",
       "status": "open",
-      "statusText": "The owner likes the idea (2026-11-05); plan in DX_VOLUME_DESIGN.md, for the owner to decide on",
+      "statusText": "Phases 0 and 1 built on dx/volume-shadow-caster, not merged; phases 2 to 4 are a plan",
       "date": "2026-11-05",
-      "result": "LightOccluder fits zenithal and side views, not an oblique one, where a wall is drawn over the floor behind it.",
+      "result": "As many frames as meshes by hand and renderer -5.0 % at 20 000 houses; in the game, renderer -14.7 % by day. The pictures are equal to the pixel.",
       "next": "",
       "area": "render",
       "kind": "dx",
@@ -10783,7 +10783,9 @@
         "volume component",
         "oblique occlusion"
       ],
-      "records": []
+      "records": [
+        "R-0845"
+      ]
     },
     {
       "id": "N-120",
@@ -18855,6 +18857,19 @@
       "text": "dist 8a9453b6, built from b8eeba97, in the merge 3f96230d: the prod ESM bundle against its sources, one build (`--full-rev`), on AC, the machine quiet (Chrome and Code under 0.1 core before each). `check:dist` fresh, node 2306 of 2306, demos 100 of 100, embed and browser smokes OK on all 8, `test:node:bundle` 271 of 271.\n\n- painterMove, 4 pairs, 21:55 to 22:01: NEUTRAL. pre-render 16.531 → 16.583 ms (+0.1 %, 2/4, cv 4/3 %), logic 7.010 → 6.864 (-3.6 %, 1/4), 300 000 entities on both, 60.0 fps.\n- Boids, 8 pairs, 22:01 to 22:12: NEUTRAL. spatial 6.667 → 6.784 ms (+2.2 %, 6/8, cv 1/1 %), physics 6.472 → 6.484 (+0.9 %, 5/8), pre-render 3.093 → 3.096 (+0.3 %), 60.0 fps.\n- Predator, 8 pairs, 22:12 to 22:22: NEUTRAL. logic 3.305 → 3.099 ms (-6.0 %, 3/8), spatial 4.394 → 4.452 (+0.7 %, 6/8, cv 2/5 %), physics 5.699 → 5.784 (-0.9 %, 4/8), 60.0 fps, bodies equal.\n\nSo the bundle equals its sources. A first sitting the same day, 15:11 to 15:36, is thrown away and was the reason for this one. painterMove stopped on a window minimized three runs in a row; Boids printed REGRESSION on spatial, +4.5 %, at cv 8/7 % with Chrome at 0.5 core; Predator stopped when the machine went to sleep at 15:36 and woke on battery. Spatial's code did not change in the merge, and at cv 1 % the same 8 pairs read +2.2 %.\n\nThe sitting's script also pinned nothing past `--vs` the first time: with the main folder on another branch, `--query-b weedBundle=` without `--full-rev` serves that branch's dist against the merge's sources. This one passes `--full-rev`.",
       "commits": [
         "3f96230d"
+      ]
+    },
+    {
+      "id": "R-0845",
+      "date": "2026-11-06",
+      "time": "22:52",
+      "timeFrom": "recorded",
+      "title": "VolumeShadowCaster, phases 0 and 1: pictures equal, the renderer 5 % under meshes by hand, the game faster",
+      "verdict": "kept",
+      "text": "**VolumeShadowCaster, phases 0 and 1: kept.** The owner took the plan's five recommendations on 2026-11-06: the name, no `castsLights` by default (not built yet), a per-volume `floorScaleY`, a mesh of its own refused with a warning, phases 0 and 1 first. `DX_VOLUME_DESIGN.md` says what was built and where it left the plan.\n\n**Pictures.** The town of `volumeStressScene`, cars at 60 headings, written by hand against the component: 0 of 921 600 pixels on WebGL and WebGPU, floors of 0.7 and 0.6 on the cars, 1 and 0.5 on the houses. The hand-written side is the game's `cajaAuto` on the CPU, so the shader equals it. Default captures against main: 0 pixels on both backends, with and without a sunProjected layer. `sunMeshParity --bar volume`: a volume's shadow ends within 1.35 px of a ShadowCaster's, five hours, both backends. In the game, moved to the component: the houses' shadows do not appear in a difference of captures at gain 4, and `sombras.html`, every model at every heading, reads 0 pixels past 8 of 255 at 9 and 15 h, against the code before.\n\n**Speed, `volumeStressScene`, 20 000 houses, 200 cars, the sun moving, 4 pairs, Chrome and Code under 0.25 core.** The first sitting printed REGRESSION: 238 frames drawn in 5 s by hand against 223 as volumes, in all 4 pairs. GPU-bound, and real: the shader normalized a heading for 1.5 million vertices a frame. With the heading worked out only for what turns on a flattened floor (`c32dbc59`), 22:34 to 22:40: frames 48.0 → 48.0 fps (238 to 241 on both sides), renderer 3.537 → 3.340 ms (-5.0 %, better in 4 of 4, cv 3/1 %): KEPT.\n\n**The game, Parque Chas, 12 000 people, prod bundle, 4 pairs, before the move (`c8343af`) against after, both at the committed `lighting.resolution` 0.25.** By day, zoom 2.2, 22:40 to 22:46: renderer 4.11 → 3.50 ms (-14.7 %, 4 of 4), logic 8.41 → 7.80 (-7.3 %, 4 of 4), pre-render 1.36 → 1.33 (-2.2 %). At dusk, zoom 1.6, 22:46 to 22:52: renderer 3.89 → 3.58 (-8.1 %, 4 of 4), pre-render 1.83 → 1.68 (-7.9 %, 4 of 4), logic 7.79 → 7.60 (-2.6 %, 2 of 4). The move takes 4 092 entities out of the scene and a car's `setVertices` out of every turn.\n\n**In motion.** A car followed by day through its turns: its shadow stays under it. A walker's frame-to-frame brightness through a zoom at 10 h: steps of 10 of 255 or more, 0.427 % → 0.273 %, and no sprite row carries a face. The biggest step on the new side is a person crossing a table.\n\n**Found on the way, each with its test.** `addLevel` left a hole per level, and the last entities lost their volumes with room to spare: only the mesh-against-volume capture showed it, as cars missing. An entity on the layer with no mesh would fill its collider in black, so `clear`, a refused mesh and `setLayer` keep it off. `GameObject.tint` reaches a volume's row, so the layer paints black.\n\nOpen: lamps and headlights ignore a volume (phase 3), and the sun's mask (phase 2). The person seen drawn in front of a moving car and behind it in turn (R-0843) was not looked at.",
+      "commits": [
+        "efc38cc1",
+        "c32dbc59"
       ]
     }
   ],
