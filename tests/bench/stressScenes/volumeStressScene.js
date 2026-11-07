@@ -1,29 +1,25 @@
 import WEED from '/src/index.js';
 import { mulberry32 } from '../benchMath.js';
 
-const { Scene, Camera, GameObject, MeshRenderer, LightEmitter, Collider, Sun, LAYER_KIND, enums } = WEED;
+const { Scene, Camera, GameObject, MeshRenderer, VolumeShadowCaster, LightEmitter, Collider, Sun, LAYER_KIND, enums } = WEED;
 const { ShapeType } = enums;
 
 /**
  * DX-VOLUME's ruler: a town of volumes, the same picture written two ways. `?api=mesh` is what a game writes by hand: a mesh
  * with heights per house on a sunProjected layer, a car rebuilt on the CPU as it turns, at most every 2 degrees. `?api=volume`
- * is the component, when the revision has it. Houses have a tank on the roof, cars a cabin on a body.
+ * is the component. Houses have a tank on the roof, cars a cabin on a body.
  *
  * `?n=` (default 20000) houses, `?cars=` (default 200) cars that go round, `?lights=` (default 0) lamps, `?hour=` (default 9),
  * `?dayMinutes=` (default 1, 0 stops the sun), `?still=1` stops the cars at spread headings, for byte comparisons,
- * `?backend=webgpu`. Primary: the renderer's STEP_MS. Load: MESH_RT_DRAWS.
+ * `?floor=` (default 0.7) how tall the cars' floor is drawn, `?backend=webgpu`. Primary: the renderer's STEP_MS. Load: MESH_RT_DRAWS.
  */
 const SEED = 0x701;
 const WORLD_W = 6000;
 const WORLD_H = 4000;
-const CAR_FLOOR = 0.7;
 
+// WEED.params, not location: a worker's location is its script's, and the classes must agree on every thread.
 function query(key) {
-  try {
-    return new URLSearchParams(globalThis.location?.search || '').get(key);
-  } catch {
-    return null;
-  }
+  return WEED.params?.get(key) ?? null;
 }
 
 function queryNumber(key, fallback) {
@@ -40,6 +36,7 @@ export const DAY_MINUTES = queryNumber('dayMinutes', 1);
 export const STILL = queryNumber('still', 0) === 1;
 export const API = query('api') === 'volume' ? 'volume' : 'mesh';
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+const CAR_FLOOR = queryNumber('floor', 0.7);
 export const stressSceneConfig = {
   requested: { n: N, cars: CARS, lights: LIGHTS, hour: HOUR, dayMinutes: DAY_MINUTES, still: STILL ? 1 : 0, api: API, backend: BACKEND },
 };
@@ -149,6 +146,47 @@ class MeshCar extends GameObject {
   }
 }
 
+class VolumeHouse extends GameObject {
+  static components = [VolumeShadowCaster];
+
+  onSpawned(config = {}) {
+    this.x = config.x;
+    this.y = config.y;
+    for (const [outline, bottom, height, top] of houseLevels(config.hw, config.hd, config.h)) {
+      this.volumeShadowCaster.addLevel(outline, bottom, height, top);
+    }
+  }
+}
+
+class VolumeCar extends GameObject {
+  static components = [VolumeShadowCaster];
+
+  angle = 0;
+  radius = 0;
+  cx = 0;
+  cy = 0;
+  speed = 0;
+
+  onSpawned(config = {}) {
+    Object.assign(this, config);
+    this.volumeShadowCaster.floorScaleY = CAR_FLOOR;
+    for (const [outline, bottom, height, top] of CAR_LEVELS) this.volumeShadowCaster.addLevel(outline, bottom, height, top);
+    this.place();
+  }
+
+  place() {
+    this.x = this.cx + Math.cos(this.angle) * this.radius;
+    this.y = this.cy + Math.sin(this.angle) * this.radius * 0.6;
+    this.rotation = this.angle + Math.PI / 2;
+  }
+
+  tick(dtRatio) {
+    if (STILL) return;
+    this.angle += this.speed * dtRatio;
+    this.place();
+  }
+}
+
 class StressLamp extends GameObject {
   static components = [Collider, LightEmitter];
 
@@ -164,8 +202,8 @@ class StressLamp extends GameObject {
   }
 }
 
-const houseClass = () => MeshHouse;
-const carClass = () => MeshCar;
+const houseClass = () => (API === 'volume' ? VolumeHouse : MeshHouse);
+const carClass = () => (API === 'volume' ? VolumeCar : MeshCar);
 
 export class VolumeStressScene extends Scene {
   static config = {
@@ -179,17 +217,17 @@ export class VolumeStressScene extends Scene {
     renderer: {
       backend: BACKEND,
       noLimitFPS: false,
-      maxMeshVerts: N * 20 + CARS * 16 + 64,
-      maxMeshIndices: N * 72 + CARS * 96 + 64,
+      ...(API === 'mesh' ? { maxMeshVerts: N * 20 + CARS * 16 + 64, maxMeshIndices: N * 72 + CARS * 96 + 64 } : {}),
     },
     layers: {
       ground: { kind: LAYER_KIND.COVER, texture: '_white', zIndex: 0 },
-      shadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, sunProjected: true },
+      ...(API === 'mesh' ? { shadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, sunProjected: true } } : {}),
     },
     lighting: {
       enabled: true,
       baseAmbient: 0.3,
       maxLights: Math.max(10, LIGHTS),
+      ...(API === 'volume' ? { maxVolumeVerts: 20 } : {}),
       sun: { enabled: true, startHour: HOUR, shadowAlpha: 0.6, dayCycle: { enabled: DAY_MINUTES > 0, speed: 1, dayDurationMinutes: DAY_MINUTES || 1 } },
     },
   };

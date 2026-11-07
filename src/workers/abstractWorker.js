@@ -81,6 +81,8 @@ import { MeshGeometry } from '../core/meshGeometry.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
+import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
+import { resolveGroundScaleY } from '../util/lightRadius.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { bindPoolExhaustion } from '../util/poolExhaustion.js';
@@ -513,6 +515,7 @@ export class AbstractWorker {
     // Store config for worker access
     this.config = data.config || {};
     ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
+    VolumeShadowCaster.defaultFloorScaleY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
     bindEntityIdWidth(resolveEntityIdWidth(this.config));
     this._noParent = entityIdNone;
 
@@ -1136,6 +1139,7 @@ export class AbstractWorker {
       AdobeAnimComponent,
       LightEmitter,
       ShadowCaster,
+      VolumeShadowCaster,
       FlashComponent,
       LightOccluder,
     ];

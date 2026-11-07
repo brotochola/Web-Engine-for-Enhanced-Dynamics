@@ -21,8 +21,9 @@ uniform mat3 uTransformMatrix;
 uniform vec4 uColor; // the mesh's group color, premultiplied: its alpha is the layer's
 uniform sampler2D uTexLut;
 uniform sampler2D uPoseTable;
-// DX-SUNMESH: L · (shadowDirX, shadowDirY) on a sunProjected layer, whose U holds each vertex's height; 0 on any other.
-uniform vec2 uSunShadow;
+// DX-SUNMESH: xy, L · (shadowDirX, shadowDirY) on a sunProjected layer, whose U holds each vertex's height; 0 on any other.
+// DX-VOLUME: z, 1 on the volumes' layer.
+uniform vec4 uSunShadow;
 
 out vec4 vColor;
 out vec2 vLocal;
@@ -46,7 +47,18 @@ void main() {
   float c = cs.x;
   float s = cs.y;
   vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  vec2 world = rotated + xy + (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow;
+  if (uSunShadow.z > 0.0) {
+    // A volume's floor is drawn f as tall as it is wide. Its entity's rotation is what the screen shows, so on the floor it
+    // looks along (f·c, s), and its long side stays on its path once the floor is flattened.
+    float f = aInstTileOff.x > 0.0 ? aInstTileOff.x : 1.0;
+    vec2 heading = vec2(f * c, s);
+    float length2 = dot(heading, heading);
+    if (length2 > 0.0) {
+      heading /= sqrt(length2);
+      rotated = vec2(local.x * heading.x - local.y * heading.y, f * (local.x * heading.y + local.y * heading.x));
+    }
+  }
+  vec2 world = rotated + xy + (aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x)) * uSunShadow.xy;
   mat3 mvp = uProjectionMatrix * uWorldTransformMatrix * uTransformMatrix;
   vec3 clip = mvp * vec3(world, 1.0);
   gl_Position = vec4(clip.xy, aInstDepth, 1.0);
@@ -58,6 +70,8 @@ void main() {
     float(tintBits & 255u)
   ) / 255.0;
   float instA = float((tintBits >> 24u) & 255u) / 255.0;
+  // A volume's shadow is black whatever its entity's tint: GameObject.tint reaches the mesh too.
+  if (uSunShadow.z > 0.0) rgb = vec3(0.0);
   vColor = vec4(rgb, instA * uColor.a);
 
   int tid = int(aInstTexId + 0.5);

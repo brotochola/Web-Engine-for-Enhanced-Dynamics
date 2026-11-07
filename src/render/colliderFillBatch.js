@@ -760,6 +760,7 @@ export function packMeshUvFill(out, cap, layerId, views) {
   const mu = views.meshUvU;
   const mv = views.meshUvV;
   const indices = views.meshIndices;
+  const floorScale = views.meshFloorScale || null;
   let written = 0;
   let base = 0;
 
@@ -775,6 +776,8 @@ export function packMeshUvFill(out, cap, layerId, views) {
     if (vcount < 3 || !mu || !mv) continue;
 
     bindMeshPaint(i, views);
+    // DX-VOLUME: a volume has no tiles, and its floor scale goes to the shader in the row's tile offset.
+    if (floorScale !== null && floorScale[i] > 0) _paint.tou = floorScale[i];
     const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
     const rc = pose.c;
     const rs = pose.s;

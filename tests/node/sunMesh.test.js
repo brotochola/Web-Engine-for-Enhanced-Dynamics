@@ -68,13 +68,13 @@ test('MeshRenderer.setHeights is the geometry call, on this entity, and chains',
 test('both UV shaders move the vertex by height times the uniform, and it starts at 0 for every other layer', () => {
   assert.match(
     read('meshUvFill.vert.glsl'),
-    /vec2 world = rotated \+ xy \+ \(aUV0\.x \+ aTri\.x \* \(aUV1\.x - aUV0\.x\) \+ aTri\.y \* \(aUV2\.x - aUV0\.x\)\) \* uSunShadow;/,
+    /vec2 world = rotated \+ xy \+ \(aUV0\.x \+ aTri\.x \* \(aUV1\.x - aUV0\.x\) \+ aTri\.y \* \(aUV2\.x - aUV0\.x\)\) \* uSunShadow\.xy;/,
   );
   const wgsl = read('meshUvFill.wgsl');
   assert.match(wgsl, /let height = aUV0\.x \+ aTri\.x \* \(aUV1\.x - aUV0\.x\) \+ aTri\.y \* \(aUV2\.x - aUV0\.x\);/);
-  assert.match(wgsl, /let world = rotated \+ xy \+ height \* sunShadow\.uSunShadow;/);
+  assert.match(wgsl, /let world = rotated \+ xy \+ height \* sunShadow\.uSunShadow\.xy;/);
   const batch = fs.readFileSync(new URL('../../src/render/meshUvFillBatch.js', import.meta.url), 'utf8');
-  assert.match(batch, /this\._sunShadow = new Float32Array\(2\);/);
+  assert.match(batch, /this\._sunShadow = new Float32Array\(4\);/);
 });
 
 test('a sunProjected layer defaults its alpha to the sun shadow’s', () => {

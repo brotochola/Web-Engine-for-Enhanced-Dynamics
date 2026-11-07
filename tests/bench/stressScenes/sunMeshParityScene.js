@@ -1,11 +1,11 @@
 import WEED from '/src/index.js';
 
-const { Scene, Camera, GameObject, MeshRenderer, Collider, SpriteRenderer, ShadowCaster, Sun, LAYER_KIND, enums } = WEED;
+const { Scene, Camera, GameObject, MeshRenderer, Collider, SpriteRenderer, ShadowCaster, VolumeShadowCaster, Sun, LAYER_KIND, enums } = WEED;
 const { ShapeType } = enums;
 
 /**
  * DX-SUNMESH's parity: one thin vertical bar, `?bar=sprite` as a ShadowCaster with an invisible sprite, `?bar=mesh` as a
- * post on a sunProjected layer, on a plain ground, the sun stopped at `?hour=`. sunMeshParity.mjs reads where each
+ * post on a sunProjected layer, `?bar=volume` as a VolumeShadowCaster's box, on a plain ground, the sun stopped at `?hour=`. sunMeshParity.mjs reads where each
  * shadow ends: houses and people must agree. `?height=` (default 200), `?backend=webgpu`.
  */
 function query(key) {
@@ -18,9 +18,9 @@ function query(key) {
 
 const HOUR = Number(query('hour') ?? 9);
 const HEIGHT = Number(query('height') ?? 200);
-const MESH = query('bar') === 'mesh';
+const BAR = query('bar') || 'sprite';
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
-export const stressSceneConfig = { requested: { hour: HOUR, height: HEIGHT, bar: MESH ? 'mesh' : 'sprite', backend: BACKEND } };
+export const stressSceneConfig = { requested: { hour: HOUR, height: HEIGHT, bar: BAR, backend: BACKEND } };
 
 const HALF_WIDTH = 1;
 const X = 640;
@@ -60,6 +60,14 @@ class ParityWall extends GameObject {
   }
 }
 
+class ParityVolume extends GameObject {
+  static components = [VolumeShadowCaster];
+
+  onSpawned() {
+    this.volumeShadowCaster.setBox(HALF_WIDTH * 2, HALF_WIDTH * 2, HEIGHT);
+  }
+}
+
 export class SunMeshParityScene extends Scene {
   static config = {
     worldWidth: 1280,
@@ -90,11 +98,13 @@ export class SunMeshParityScene extends Scene {
   static entities = [
     [ParitySprite, 1],
     [ParityWall, 1],
+    [ParityVolume, 1],
   ];
 
   create() {
     Sun.setTimeOfDay(HOUR);
-    if (MESH) ParityWall.spawn({ x: X, y: Y });
+    if (BAR === 'mesh') ParityWall.spawn({ x: X, y: Y });
+    else if (BAR === 'volume') ParityVolume.spawn({ x: X, y: Y });
     else ParitySprite.spawn({ x: X, y: Y });
     Camera.centerOn(640, 360);
   }

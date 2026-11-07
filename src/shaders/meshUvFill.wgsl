@@ -18,9 +18,10 @@ struct LocalUniforms {
 @group(2) @binding(2) var uTexLut: texture_2d<f32>;
 @group(2) @binding(3) var uPoseTable: texture_2d<f32>;
 
-// DX-SUNMESH: L · (shadowDirX, shadowDirY) on a sunProjected layer, whose U holds each vertex's height; 0 on any other.
+// DX-SUNMESH: xy, L · (shadowDirX, shadowDirY) on a sunProjected layer, whose U holds each vertex's height; 0 on any other.
+// DX-VOLUME: z, 1 on the volumes' layer.
 struct SunShadowUniforms {
-  uSunShadow: vec2<f32>,
+  uSunShadow: vec4<f32>,
 }
 @group(2) @binding(4) var<uniform> sunShadow: SunShadowUniforms;
 
@@ -70,19 +71,33 @@ fn mainVert(
   }
   let c = cs.x;
   let s = cs.y;
-  let rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
+  var rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
+  if (sunShadow.uSunShadow.z > 0.0) {
+    // meshUvFill.vert.glsl: the floor under a volume, and its heading on it.
+    let f = select(1.0, aInstTileOff.x, aInstTileOff.x > 0.0);
+    var heading = vec2<f32>(f * c, s);
+    let length2 = dot(heading, heading);
+    if (length2 > 0.0) {
+      heading /= sqrt(length2);
+      rotated = vec2<f32>(local.x * heading.x - local.y * heading.y, f * (local.x * heading.y + local.y * heading.x));
+    }
+  }
   let height = aUV0.x + aTri.x * (aUV1.x - aUV0.x) + aTri.y * (aUV2.x - aUV0.x);
-  let world = rotated + xy + height * sunShadow.uSunShadow;
+  let world = rotated + xy + height * sunShadow.uSunShadow.xy;
   let mvp = globalUniforms.uProjectionMatrix * globalUniforms.uWorldTransformMatrix * localUniforms.uTransformMatrix;
   let clip = mvp * vec3<f32>(world, 1.0);
   let tintBits = bitcast<u32>(aInstTintBits);
-  let rgb = vec3<f32>(
+  var rgb = vec3<f32>(
     f32((tintBits >> 16u) & 255u),
     f32((tintBits >> 8u) & 255u),
     f32(tintBits & 255u)
   ) / 255.0;
   let instA = f32((tintBits >> 24u) & 255u) / 255.0;
   out.position = vec4<f32>(clip.xy, aInstDepth, 1.0);
+  // A volume's shadow is black whatever its entity's tint: GameObject.tint reaches the mesh too.
+  if (sunShadow.uSunShadow.z > 0.0) {
+    rgb = vec3<f32>(0.0);
+  }
   out.vColor = vec4<f32>(rgb, instA * localUniforms.uColor.a); // the layer's alpha
   out.vLocal = local;
   out.vWorld = world;

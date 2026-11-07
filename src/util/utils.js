@@ -739,6 +739,11 @@ export function collectComponents(EntityClass, BaseClass = GameObject, DefaultCo
     components.add(DefaultComponent);
   }
 
+  // What a listed component needs comes with it. A Set visits what is added while it is walked, so this goes all the way down.
+  for (const component of components) {
+    if (component.requires) component.requires.forEach((c) => components.add(c));
+  }
+
   return Array.from(components);
 }
 

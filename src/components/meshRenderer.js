@@ -14,6 +14,7 @@ import { packTileOffset01, unpackTileOffset01 } from './spriteRenderer.js';
 export const MESH_NO_TEXTURE = 0xffff;
 
 let _warnedDrawable = false;
+let _warnedVolume = false;
 
 export function resetMeshRendererFixtureWarn() {
   _warnedDrawable = false;
@@ -103,6 +104,20 @@ function markPaint(i) {
   bumpPaintEpoch();
 }
 
+/** This entity's row needs packing again: a column the row reads changed. */
+export const markMeshPaint = markPaint;
+
+/** MeshGeometry holds one mesh an entity, and on a class that lists VolumeShadowCaster it is the volume's (DX-VOLUME). */
+function heldByVolume(i) {
+  const held = MeshRenderer.volumeColumn;
+  if (held === null || !(held[i] > 0)) return false;
+  if (!_warnedVolume) {
+    _warnedVolume = true;
+    console.warn('WeedJS: an entity with a VolumeShadowCaster has no mesh of its own to set: its one mesh is its volume');
+  }
+  return true;
+}
+
 export class MeshRenderer extends Component {
   static ARRAY_SCHEMA = {
     active: Uint8Array,
@@ -119,6 +134,9 @@ export class MeshRenderer extends Component {
     tileOffsetV: Uint16Array,
     visualOutset: Float32Array,
   };
+
+  /** VolumeShadowCaster.floorScaleY while that component is bound: above 0 where the mesh is a volume's. */
+  static volumeColumn = null;
 
   static getBufferSize(count) {
     return super.getBufferSize(count) + 8;
@@ -260,6 +278,7 @@ export class MeshRenderer extends Component {
    * @returns {this}
    */
   setMesh(positions, indices, uvs) {
+    if (heldByVolume(this.index)) return this;
     MeshGeometry.replace(this.index, positions, indices || null, uvs || null);
     return this;
   }
@@ -270,6 +289,7 @@ export class MeshRenderer extends Component {
    * @returns {this}
    */
   setVertices(positions) {
+    if (heldByVolume(this.index)) return this;
     MeshGeometry.writeVertices(this.index, positions);
     return this;
   }
@@ -281,12 +301,14 @@ export class MeshRenderer extends Component {
    * @returns {this}
    */
   setHeights(heights) {
+    if (heldByVolume(this.index)) return this;
     MeshGeometry.writeHeights(this.index, heights);
     return this;
   }
 
   /** Drop the explicit mesh and fall back to collider fill. */
   clearMesh() {
+    if (heldByVolume(this.index)) return this;
     MeshGeometry.clearEntity(this.index);
     return this;
   }
@@ -297,6 +319,7 @@ export class MeshRenderer extends Component {
    * @returns {this}
    */
   setPlane(width, height, segX, segY) {
+    if (heldByVolume(this.index)) return this;
     const w = +width;
     const h = +height;
     let sx = segX | 0;
@@ -355,6 +378,7 @@ export class MeshRenderer extends Component {
    * @returns {this}
    */
   setRope(points, halfWidth) {
+    if (heldByVolume(this.index)) return this;
     const hw = +halfWidth;
     if (!(hw > 0) || !Number.isFinite(hw)) return this;
     const n = copyPointList(points);
@@ -429,6 +453,7 @@ export class MeshRenderer extends Component {
    * @returns {this}
    */
   setPolygon(points) {
+    if (heldByVolume(this.index)) return this;
     const n = copyPointList(points);
     if (n < 3) return this;
     const xy = _pointXY;

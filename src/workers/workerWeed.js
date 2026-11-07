@@ -57,6 +57,7 @@ import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
+import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import {
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
@@ -194,6 +195,7 @@ export const WORKER_WEED = Object.freeze({
   ParticleComponent,
   LightEmitter,
   ShadowCaster,
+  VolumeShadowCaster,
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
   LIGHT_OCCLUDER_MASK_SPRITE,
