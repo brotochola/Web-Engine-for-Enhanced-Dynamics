@@ -249,6 +249,18 @@ test('a full arena warns about the knob that widens it', () => {
   assert.ok(seen.some((m) => m.includes('lighting.maxVolumeVerts')), seen.join(' | '));
   assert.equal(MeshGeometry.vertCount[1], 8);
   assert.equal(MeshGeometry.vertCount[2], 0);
+  assert.equal(MeshRenderer.layerMask[2], 0, 'no mesh, not on the layer');
+});
+
+test('a volume that no longer fits leaves the layer with its mesh', () => {
+  setup({ verts: 14, indices: 90 });
+  const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
+  const v = volume(1);
+  v.setBox(10, 10, 10);
+  assert.ok(MeshRenderer.layerMask[1] & bit);
+  warnings(() => v.addLevel([-1, -1, 1, -1, 1, 1, -1, 1], 10, 20));
+  assert.equal(MeshGeometry.vertCount[1], 0);
+  assert.equal(MeshRenderer.layerMask[1] & bit, 0);
 });
 
 test('the row carries a volume\'s floor scale in its tile offset, and a plain mesh keeps its own', () => {

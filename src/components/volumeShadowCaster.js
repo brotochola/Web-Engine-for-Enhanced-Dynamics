@@ -69,6 +69,8 @@ function readRing(points, into) {
 /** Writes the mesh and joins the layer. `xy`, `heights` and `indices` are scratch this file owns or MeshGeometry's. */
 function publish(i, xy, heights, indices, vertN, indexN) {
   if (!MeshGeometry.replace(i, xy, indices, heights, vertN, indexN)) {
+    // A refused mesh leaves the slot empty, and an empty slot on the layer would fill its collider.
+    VolumeShadowCaster.leaveLayer(i);
     warnFull();
     return false;
   }
@@ -164,6 +166,14 @@ export class VolumeShadowCaster extends Component {
     const bit = VolumeShadowCaster.layerBit();
     if ((MeshRenderer.layerMask[i] & bit) === bit) return;
     MeshRenderer.layerMask[i] |= bit;
+    markMeshPaint(i);
+  }
+
+  /** Off the layer: a MeshRenderer with no mesh there would fill its collider, in black. */
+  static leaveLayer(i) {
+    const bit = VolumeShadowCaster.layerBit();
+    if (!(MeshRenderer.layerMask[i] & bit)) return;
+    MeshRenderer.layerMask[i] &= ~bit;
     markMeshPaint(i);
   }
 
@@ -291,14 +301,8 @@ export class VolumeShadowCaster extends Component {
 
   /** No volume: the entity casts nothing until it is given one again. */
   clear() {
-    const i = this.index;
-    MeshGeometry.clearEntity(i);
-    // Off the layer too: a MeshRenderer with no mesh there would fill its collider, in black.
-    const bit = VolumeShadowCaster.layerBit();
-    if (MeshRenderer.layerMask[i] & bit) {
-      MeshRenderer.layerMask[i] &= ~bit;
-      markMeshPaint(i);
-    }
+    MeshGeometry.clearEntity(this.index);
+    VolumeShadowCaster.leaveLayer(this.index);
     return this;
   }
 }
