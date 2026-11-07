@@ -11,7 +11,7 @@ const { ShapeType } = enums;
  *
  * `?n=` (default 20000) houses, `?cars=` (default 200) cars that go round, `?lights=` (default 0) lamps, `?hour=` (default 9),
  * `?dayMinutes=` (default 1, 0 stops the sun), `?still=1` stops the cars at spread headings, for byte comparisons,
- * `?floor=` (default 0.7) how tall the cars' floor is drawn, `?backend=webgpu`. Primary: the renderer's STEP_MS. Load: MESH_RT_DRAWS.
+ * `?floor=` (default 0.7) how tall the cars' floor is drawn, `?houseFloor=` (default 1) the houses', `?backend=webgpu`. Primary: the renderer's STEP_MS. Load: MESH_RT_DRAWS.
  */
 const SEED = 0x701;
 const WORLD_W = 6000;
@@ -37,6 +37,7 @@ export const STILL = queryNumber('still', 0) === 1;
 export const API = query('api') === 'volume' ? 'volume' : 'mesh';
 export const BACKEND = query('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 const CAR_FLOOR = queryNumber('floor', 0.7);
+const HOUSE_FLOOR = queryNumber('houseFloor', 1);
 export const stressSceneConfig = {
   requested: { n: N, cars: CARS, lights: LIGHTS, hour: HOUR, dayMinutes: DAY_MINUTES, still: STILL ? 1 : 0, api: API, backend: BACKEND },
 };
@@ -85,6 +86,7 @@ class MeshHouse extends GameObject {
     this.setLayer('shadows');
     this.meshRenderer.tint = 0x000000;
     const { xy, heights, indices } = meshOf(houseLevels(config.hw, config.hd, config.h));
+    for (let p = 1; p < xy.length; p += 2) xy[p] *= HOUSE_FLOOR;
     this.meshRenderer.setMesh(xy, indices);
     this.meshRenderer.setHeights(heights);
   }
@@ -152,6 +154,7 @@ class VolumeHouse extends GameObject {
   onSpawned(config = {}) {
     this.x = config.x;
     this.y = config.y;
+    this.volumeShadowCaster.floorScaleY = HOUSE_FLOOR;
     for (const [outline, bottom, height, top] of houseLevels(config.hw, config.hd, config.h)) {
       this.volumeShadowCaster.addLevel(outline, bottom, height, top);
     }
