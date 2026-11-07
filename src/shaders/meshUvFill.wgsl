@@ -72,13 +72,13 @@ fn mainVert(
   let c = cs.x;
   let s = cs.y;
   var rotated = vec2<f32>(local.x * c - local.y * s, local.x * s + local.y * c);
-  if (sunShadow.uSunShadow.z > 0.0) {
+  let f = aInstTileOff.x;
+  if (sunShadow.uSunShadow.z > 0.0 && f > 0.0 && f != 1.0) {
     // meshUvFill.vert.glsl: the floor under a volume, and its heading on it.
-    let f = select(1.0, aInstTileOff.x, aInstTileOff.x > 0.0);
-    var heading = vec2<f32>(f * c, s);
-    let length2 = dot(heading, heading);
-    if (length2 > 0.0) {
-      heading /= sqrt(length2);
+    if (s == 0.0) {
+      rotated.y *= f;
+    } else {
+      let heading = normalize(vec2<f32>(f * c, s));
       rotated = vec2<f32>(local.x * heading.x - local.y * heading.y, f * (local.x * heading.y + local.y * heading.x));
     }
   }

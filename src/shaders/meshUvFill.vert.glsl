@@ -47,14 +47,15 @@ void main() {
   float c = cs.x;
   float s = cs.y;
   vec2 rotated = vec2(local.x * c - local.y * s, local.x * s + local.y * c);
-  if (uSunShadow.z > 0.0) {
+  float f = aInstTileOff.x;
+  if (uSunShadow.z > 0.0 && f > 0.0 && f != 1.0) {
     // A volume's floor is drawn f as tall as it is wide. Its entity's rotation is what the screen shows, so on the floor it
-    // looks along (f·c, s), and its long side stays on its path once the floor is flattened.
-    float f = aInstTileOff.x > 0.0 ? aInstTileOff.x : 1.0;
-    vec2 heading = vec2(f * c, s);
-    float length2 = dot(heading, heading);
-    if (length2 > 0.0) {
-      heading /= sqrt(length2);
+    // looks along (f·c, s), and its long side stays on its path once the floor is flattened. A town is a million of these
+    // vertices that do not turn, and the normalize shows: 6 % of the frames drawn at 20 000 houses.
+    if (s == 0.0) {
+      rotated.y *= f;
+    } else {
+      vec2 heading = normalize(vec2(f * c, s));
       rotated = vec2(local.x * heading.x - local.y * heading.y, f * (local.x * heading.y + local.y * heading.x));
     }
   }
