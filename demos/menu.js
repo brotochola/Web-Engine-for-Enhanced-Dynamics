@@ -20,6 +20,7 @@ const scenes = [
   { name: '🐜 Ants', url: '/demos/bichosScene/bichosScene.js' },
   { name: '🐷 Bad Piggies', url: '/demos/badPiggiesScene/badPiggiesScene.js' },
   { name: '⚽ Balls', url: '/demos/ballsScene/ballsScene.js' },
+  { name: '🏘️ Buenos Aires', url: '/demos/buenosAiresScene/buenosAiresScene.js', export: 'BuenosAiresScene' },
   { name: '💥 Blastforge', url: '/demos/blastforgeScene/blastforgeScene.js', export: 'BlastforgeScene' },
   { name: '🐦 Boids', url: '/demos/boidsScene/boidsScene.js' },
   { name: 'Box2D QueryAABB', url: '/demos/box2dQueryAabbScene/box2dQueryAabbScene.js' },
