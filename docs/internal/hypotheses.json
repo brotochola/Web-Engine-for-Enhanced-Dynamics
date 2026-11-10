@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-06",
+  "updated": "2026-11-10",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -10784,7 +10784,8 @@
         "oblique occlusion"
       ],
       "records": [
-        "R-0845"
+        "R-0845",
+        "R-0846"
       ]
     },
     {
@@ -10857,6 +10858,30 @@
         "R-0842",
         "R-0843",
         "R-0844"
+      ]
+    },
+    {
+      "id": "N-122",
+      "title": "Four edge cases of VolumeShadowCaster's review: a wrong volume, or none, in silence",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/volume-shadow-caster (541d5667 to 64395cf1), not merged",
+      "date": "2026-11-10",
+      "result": "Four of four confirmed and fixed, each test failing on a448ebea; pictures unchanged against meshes by hand and a ShadowCaster.",
+      "next": "",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-122"
+      ],
+      "aliases": [
+        "setHull NaN",
+        "topScale 0",
+        "pyramid",
+        "gabled roof",
+        "warn once"
+      ],
+      "records": [
+        "R-0846"
       ]
     }
   ],
@@ -18870,6 +18895,21 @@
       "commits": [
         "efc38cc1",
         "c32dbc59"
+      ]
+    },
+    {
+      "id": "R-0846",
+      "date": "2026-11-10",
+      "time": "12:49",
+      "timeFrom": "recorded",
+      "title": "VolumeShadowCaster's review closed: four edge cases fixed, pictures unchanged",
+      "verdict": "kept-hygiene",
+      "text": "**A review of `dx/volume-shadow-caster` at `a448ebea`, closed: four fixes, kept as hygiene.** The review was a reading and probes in Node, by another session, with nothing timed. Each fix has a test that fails on `a448ebea`, written and seen failing before the fix.\n\n- `541d5667`: a point, size or offset that is not finite is refused, with a warning that says so. A box with one x of NaN drew 4 vertices and 4 triangles, the first tetrahedron, since a NaN made `convexHull3D`'s tolerances NaN. A NaN corner in `addLevel` warned about the corner count. Not in the review: a size, an offset or a topScale that is not finite in `setBox` reached the arena, and its warning said the arena was full.\n- `33ab1e18`: `setHull` refuses more than 4 096 points instead of hulling the first 4 096. On the code before, 5 000 points on a sphere took 21 s and drew 4 096 vertices; the hull test of 4 097 points took 134 s.\n- `4fde4d5c`: a top that closes on a point or a line is a pyramid or a gabled roof, with no row of zero area: `topScale: 0` gives 4 triangles, a gable over 4 corners 6. The review's recipe, \"the doubled signed area under an epsilon\", would have let a top that crosses itself evenly through: its signed area is 0 too. Flat means all corners on one line within a millionth of the base's size, and a test keeps the crossed top refused. A topScale below 0 is refused.\n- `64395cf1`: each kind of mistake warns once. At `a448ebea` one flag covered six call sites with five texts (the review said six messages).\n\nChecks at the end, 2026-11-10: node 2342 of 2342, `check:types` and `check:dist` pass, bundles `1897910a` (embed and browser smokes on all 8, `test:node:bundle` 271 of 271). `sunMeshParity --bar volume`: 0.24 to 1.35 px at six hours on WebGL and WebGPU, as before. `volumeStressScene` by hand against volumes, cars on floors of 0.7 and 0.6, houses on 1 and 0.5: 0 of 921 600 pixels on both. Sun Street and the game use neither `topScale: 0` nor more than 16 points.\n\n**Not built, on record (section 4 of the review).** A hull of boxes that share planes keeps a point on an edge or face of the final hull when it was outside the partial hull at its turn: the review's synthetic cases, two boxes side by side at one height 11 vertices for 8, three in a row 14 for 8, four in 2×2 14 for 8. Keeping only true corners and hulling again would fix it, and saves nothing here. The branch's hull over every house of the game's three barrios, re-counted for this record: Parque Chas 3 484 houses, 36 997 vertices; Carabobo 4 698, 50 351; Barrio 1 119, 11 862; at most 16 a house, none over the 16 the arena keeps for each. The review's \"corners only\" column (the same totals, no house smaller) was not re-run: the exports already hold corners.\n\nFor the owner, not touched: an `addLevel` that does not fit takes the whole volume off the layer (it could publish the mesh it had), and an `addBox`.",
+      "commits": [
+        "541d5667",
+        "33ab1e18",
+        "4fde4d5c",
+        "64395cf1"
       ]
     }
   ],
