@@ -43,12 +43,15 @@ URL parameters: `hour` (17.5), `dayMinutes` (8; 0 stops the clock), `people` (40
 
 - `buenosAiresScene.js`: the scene, the camera and the panel. `town.js`: what the rest shares (the barrio's numbers, the
   panel's switches, the components the entities read of each other, the lights' hours). `townObjects.js`: houses, street
-  props, trees. `walkers.js`: the people. `cars.js`: the cars.
+  props, trees. `walkers.js`: the people. `cars.js`: the cars. `loadingLine.js`: the loading screen, fed by
+  `Scene.onLoadProgress` and kept until the renderer has drawn its first frame.
 - `barrio/`: the editor's export, as it came (`meta.js`, `mundo.json`, `piso.bin`, the flowfields `ff_*.json`, the sheets in
   `img/`). Its `META.knobs` and `META.seed` are the editor's settings: to export it again, put the knobs in the editor's
   `localStorage.editor_barrios_cfg`, open `editor/index.html?semilla=<seed>` and press Export.
 - `img/cars/`: the car sheets the barrio uses; `carModels.js` their sizes, from the game's tables.
-- `floor.frag`: the game's `shaders/piso.frag`, the same code.
+- `floor.frag` and `floor.wgsl`: the game's `shaders/piso.frag`, written to decide what each pixel is and then draw it
+  once (D3D's compiler inlines every call, and the game's version takes 6 s to link on Windows), and with sidewalks and
+  yards that meet along lines instead of along the 0.5 m cells.
 
 The map and its pictures are about 15 MB, the car sheets 1.2 MB.
 

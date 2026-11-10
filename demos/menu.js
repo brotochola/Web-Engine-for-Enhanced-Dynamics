@@ -56,14 +56,22 @@ const scenes = [
 const sceneSortName = (entry) => entry.name.replace(/^[^\p{L}\p{N}]+/u, '');
 scenes.sort((a, b) => sceneSortName(a).localeCompare(sceneSortName(b), 'en', { sensitivity: 'base' }));
 
-async function startScene(entry) {
+// Every scene load hides the start page and keeps the scene in the URL, so a reload (or a hot reload) comes back to
+// it: the list's buttons, the debug bar's Scene menu and game.loadScene from the console all come through here. Only
+// the buttons did, and a scene picked from the debug bar ran under the list.
+const engineLoadScene = game.loadScene.bind(game);
+game.loadScene = (source, options) => {
   document.getElementById('scene_list').style.display = 'none';
-  // Keep the scene in the URL, so a reload (or a hot reload) comes back to it.
-  const key = sceneKeys(entry).values().next().value;
+  const entry = typeof source === 'string' ? scenes.find((s) => s.url === source) : null;
+  const key = entry ? sceneKeys(entry).values().next().value : null;
   if (key && params.get('scene') !== key) {
     params.set('scene', key);
     history.replaceState(null, '', `${location.pathname}?${params}`);
   }
+  return engineLoadScene(source, options);
+};
+
+async function startScene(entry) {
   await game.loadScene(entry.url, { export: entry.export });
 }
 

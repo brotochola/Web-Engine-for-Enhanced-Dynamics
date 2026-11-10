@@ -10907,6 +10907,52 @@
       "records": [
         "R-0847"
       ]
+    },
+    {
+      "id": "N-124",
+      "title": "The bigAtlas packer pruned every pair of free rectangles after each placement: 19 s of the Buenos Aires demo's load",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/fast-load (6dcef423), not merged",
+      "date": "2026-11-10",
+      "result": "Only the rectangles a placement cuts are pruned, in the old order: the same placements; kernel 17 873 -> 177 ms a pack, the demo's atlas step 21.1 -> 2.2 s.",
+      "next": "Trimming still reads each frame back on the main thread (about 0.6 s for 4 386 frames); a worker or one getImageData a sheet would take it off.",
+      "area": "assets",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-124"
+      ],
+      "aliases": [
+        "MaxRectsPacker",
+        "pruneFreeList",
+        "slow load",
+        "bigAtlas",
+        "atlas packing"
+      ],
+      "records": [
+        "R-0849"
+      ]
+    },
+    {
+      "id": "N-125",
+      "title": "A scene loaded from outside the demos' start page buttons ran under the list",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/fast-load (4e3b772a), not merged",
+      "date": "2026-11-10",
+      "result": "demos/menu.js wraps its page's game.loadScene: every load hides the list and keeps ?scene= in the URL.",
+      "next": "",
+      "area": "demos",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-125"
+      ],
+      "aliases": [
+        "menu over scene",
+        "scene_list",
+        "debug bar Scene menu"
+      ],
+      "records": [
+        "R-0849"
+      ]
     }
   ],
   "records": [
@@ -18962,6 +19008,22 @@
       "commits": [
         "e54f701f",
         "77284c15"
+      ]
+    },
+    {
+      "id": "R-0849",
+      "date": "2026-11-10",
+      "time": "17:17",
+      "timeFrom": "recorded",
+      "title": "The Buenos Aires demo's load: 28.5 s to its first frame, 6.1 s after the packer, the floor and a loading screen",
+      "verdict": "kept-hygiene",
+      "text": "**Why the Buenos Aires demo took 28 s to draw its first frame, and three fixes, kept.** Measured from `game.loadScene` in Chrome (WebGL, GTX 1650, ANGLE D3D11), with load-step times from `onProgress`, a main-thread CPU profile and a trace of every thread; the first drawn frame is the first screenshot that is not black.\n\nOn main (40f5d2f3): the atlas step finished at 21 058 ms, the world at 21 802, the first frame at 28 501. The main thread spent 19.2 s in `MaxRectsPacker.insert`: `isContainedIn` 12.1 s and `pruneFreeList` 7.0 s (N-124). After that fix the atlas came at 2 180 ms and the first frame at 10 358, the main thread idle: the renderer worker spent 8.0 s in Pixi's program link (`rh`) inside the first `_presentStage`. A trivial floor shader took that to 0.18 s and the first frame to 4 927 ms, so it was the floor: linked alone it took 6.1 s, 1.3 s with grass and dirt emptied, 2.1 s without the tree pits' loop.\n\n- `53f789c9` (tool): `atlasPackMicrobench` on the 4 386 sizes the demo's load gives the packer, checksum 3981242099 (equal to the browser's placements); 17 873 ms a pack on main, free list peaking at 2 307.\n- `6dcef423` (N-124): the prune tests only the parts a placement cuts, in the old order. 177 ms a pack, the same checksum; random packs equal to the old packer, with all four heuristics.\n- `14022ad0` (demo): the floor decides what a pixel is, then draws it once; the tree-pit loop decides after it. Linked alone 6 177 -> 1 740 ms. The barrio's data in 8 views against the old shader: 7 identical, the whole-map view 10 of 589 824 pixels on a threshold. WebGL and WebGPU floors equal in the demo.\n- `e6cd4905` (demo): a loading screen from `Scene.onLoadProgress`, kept until the renderer's STEP_MS is above 0.\n- `4e3b772a` (N-125): the menu hides its list for any load.\n\nResult, from loadScene: WebGL first frame 28 501 -> 6 081 ms, WebGPU 4 636 ms; opened as a user does, the screen comes up 3.3 s after navigation (the dev page's modules) and goes 5.5 s later with the barrio drawn. Node 2345 of 2345, demos 100 of 100. Not done: the game's own `shaders/piso.frag` still links in about 6 s on Windows; trimming stays on the main thread (0.6 s); Box2D's three task threads spin at a full core each during the load (9.9 s busy each in the trace), which this did not look into.",
+      "commits": [
+        "53f789c9",
+        "6dcef423",
+        "14022ad0",
+        "e6cd4905",
+        "4e3b772a"
       ]
     }
   ],
