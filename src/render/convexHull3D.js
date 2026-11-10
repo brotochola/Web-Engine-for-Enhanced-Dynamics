@@ -3,7 +3,7 @@
  * for tens of points, never in a frame. Its faces come out looking away from the hull, so a test can check them.
  */
 
-/** The most points a hull takes: an edge's key is two point numbers. */
+/** The most points a hull takes: an edge's key is two point numbers. Past it, no hull: the first ones' is not the one asked for. */
 export const MAX_HULL_POINTS = 4096;
 
 const makeFace = (x, y, z, i, j, k) => {
@@ -31,8 +31,8 @@ const makeFace = (x, y, z, i, j, k) => {
  * @returns {number[]|null} three point numbers a triangle, or null when the points enclose no volume
  */
 export function convexHull3D(x, y, z, n) {
-  const count = Math.min(n | 0, MAX_HULL_POINTS);
-  if (count < 4) return null;
+  const count = n | 0;
+  if (count < 4 || count > MAX_HULL_POINTS) return null;
   let extent = 0;
   for (let p = 1; p < count; p++) {
     extent = Math.max(extent, Math.abs(x[p] - x[0]), Math.abs(y[p] - y[0]), Math.abs(z[p] - z[0]));

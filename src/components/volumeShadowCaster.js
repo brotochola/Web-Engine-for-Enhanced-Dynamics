@@ -264,7 +264,11 @@ export class VolumeShadowCaster extends Component {
    */
   setHull(points, { floorScaleY } = {}) {
     const objects = points?.[0] != null && typeof points[0] === 'object';
-    const n = Math.min(objects ? points.length | 0 : (points?.length | 0) / 3 | 0, MAX_HULL_POINTS);
+    const n = objects ? points.length | 0 : (points?.length | 0) / 3 | 0;
+    if (n > MAX_HULL_POINTS) {
+      warnShape(`setHull takes at most ${MAX_HULL_POINTS} points`);
+      return this;
+    }
     const x = new Float64Array(n);
     const y = new Float64Array(n);
     const z = new Float64Array(n);

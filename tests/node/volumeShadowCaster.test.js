@@ -411,3 +411,20 @@ test('setBox: an offset, a size or a topScale that is not finite is refused as s
   assert.ok(!seen.some((m) => /arena/.test(m)), seen.join(' | '));
   assert.ok(seen.length >= 1);
 });
+
+test('setHull: more points than a hull takes leave the volume as it was, and warn', () => {
+  setup({ verts: 4096 * 2, indices: 4096 * 12 });
+  const v = volume(1);
+  v.setBox(10, 10, 10);
+  const before = mesh(1);
+  const points = [];
+  for (let i = 0; i < 5000; i++) {
+    const a = i * 2.399963;
+    const h = 1 - (2 * (i + 0.5)) / 5000;
+    const r = Math.sqrt(1 - h * h);
+    points.push(Math.cos(a) * r * 100, Math.sin(a) * r * 100, 100 + h * 100);
+  }
+  const seen = warnings(() => v.setHull(points));
+  assert.deepEqual(mesh(1), before);
+  assert.ok(seen.some((m) => /4096/.test(m)), seen.join(' | '));
+});

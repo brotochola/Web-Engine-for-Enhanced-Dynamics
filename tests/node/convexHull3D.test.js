@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { convexHull3D } from '../../src/render/convexHull3D.js';
+import { convexHull3D, MAX_HULL_POINTS } from '../../src/render/convexHull3D.js';
 
 function seeded(seed) {
   let s = seed >>> 0;
@@ -109,4 +109,17 @@ test('a point that is not finite gives no hull', () => {
       assert.equal(convexHull3D(...args, 8), null, `${bad} in a column`);
     }
   }
+});
+
+test('more points than a hull takes give no hull, not the hull of the first ones', () => {
+  const n = MAX_HULL_POINTS + 1;
+  const x = new Float64Array(n);
+  const y = new Float64Array(n);
+  const z = new Float64Array(n);
+  for (let p = 0; p < n; p++) {
+    x[p] = Math.cos(p) * 50;
+    y[p] = Math.sin(p) * 50;
+    z[p] = p % 7;
+  }
+  assert.equal(convexHull3D(x, y, z, n), null);
 });
