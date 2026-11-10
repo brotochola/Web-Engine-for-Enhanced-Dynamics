@@ -10929,7 +10929,8 @@
         "atlas packing"
       ],
       "records": [
-        "R-0849"
+        "R-0849",
+        "R-0850"
       ]
     },
     {
@@ -19024,6 +19025,19 @@
         "14022ad0",
         "e6cd4905",
         "4e3b772a"
+      ]
+    },
+    {
+      "id": "R-0850",
+      "date": "2026-11-10",
+      "time": "17:35",
+      "timeFrom": "recorded",
+      "title": "The bundles of 1e5fdbc3: tested; the workers' code is R-0848's",
+      "verdict": "passed",
+      "text": "dist 1969bf1e, built from the merge 1e5fdbc3 (`dx/fast-load`: N-124's packer, the Buenos Aires demo's floor and loading screen, N-125's menu). On main: node 2345 of 2345, demos 100 of 100, `check:types` and `check:dist` pass, embed and browser smokes OK on all 8, `test:node:bundle` 273 of 273 on all 8.\n\nNot timed against its sources, on purpose: the prod ESM bundle's worker chunks, against dist 77284c15 (the one R-0848 timed equal to its sources, NEUTRAL on painterMove, neutral for the owner on Boids, Predator's spatial within its known swing), are byte-identical in six of seven, and the seventh, the shared chunk, differs only in MaxRectsPacker, which runs at load on the main thread and in no worker's frame. No frame of any worker runs other code than in R-0848's bundle, so no sitting could change that verdict.",
+      "commits": [
+        "1e5fdbc3",
+        "1969bf1e"
       ]
     }
   ],
