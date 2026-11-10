@@ -10785,7 +10785,8 @@
       ],
       "records": [
         "R-0845",
-        "R-0846"
+        "R-0846",
+        "R-0847"
       ]
     },
     {
@@ -10882,6 +10883,28 @@
       ],
       "records": [
         "R-0846"
+      ]
+    },
+    {
+      "id": "N-123",
+      "title": "A VolumeShadowCaster with no volume yet took the \"requires setLayer\" warning",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/volume-shadow-caster (83ef3072), not merged",
+      "date": "2026-11-10",
+      "result": "The collider-fill packer skips the warning where VolumeShadowCaster.floorScaleY is above 0; any other MeshRenderer with no MESH layer still warns.",
+      "next": "",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-123"
+      ],
+      "aliases": [
+        "requires setLayer",
+        "wooden posts",
+        "Buenos Aires demo"
+      ],
+      "records": [
+        "R-0847"
       ]
     }
   ],
@@ -18910,6 +18933,21 @@
         "33ab1e18",
         "4fde4d5c",
         "64395cf1"
+      ]
+    },
+    {
+      "id": "R-0847",
+      "date": "2026-11-10",
+      "time": "15:22",
+      "timeFrom": "recorded",
+      "title": "The Buenos Aires demo, and N-123: a VolumeShadowCaster with no volume yet warned",
+      "verdict": "kept-hygiene",
+      "text": "**The Buenos Aires demo, built for DX-VOLUME and DX-FACES, and the bug it found (N-123), kept as hygiene.** Nothing timed.\n\nThe owner asked for buenos-aires as a demo in the engine repo: a small barrio made by the game's editor, with its people and cars, to try faces, volume shadows and lamps under control. The barrio is a new export (200 × 160 m, seed 385919651, no plaza; 191 houses, 1 234 props, 91 trees, 25 cars; 15 MB, `e8e5d2e9`). The demo (`a2848ced`) ports the game's houses, props, trees, people and cars without its traffic rules, with Sun Street's panel: clock, jump to an hour, night light, volume and sprite shadows hidden, lamps and headlights off, cars and people stopped, and reloads for faces, `lighting.resolution` and raycasted lighting. The floor is the game's shader, and `floor.wgsl` the same lines for WebGPU.\n\nChecked in Chrome on this machine's GPU: no page errors on WebGL and WebGPU; WebGPU's floor equals WebGL's (the diff is the swaying plants); hiding the volume layer takes the houses' and cars' shadows; 312 of 400 people and 11 of 12 driving cars moved in 4 s, and with both switches off 4 people (0.2 px mean) and 4 cars (2 px, pushed). Read from the panel, not a sitting: renderer about 1.1 ms, pre-render 1.1 ms, logic 0.3 to 0.5 ms with 400 people. Eleven people sheets keep the packed atlas within 4 096 px (fourteen made 4 392 × 4 094).\n\n**N-123** (`83ef3072`): every load printed \"MeshRenderer requires setLayer on a LAYER_KIND.MESH layer\". The game's wooden posts are houses with no shadow points (21 of 191 here), so their MeshRenderer, which VolumeShadowCaster brings, never joins the volume layer, and the collider-fill packer took them for a forgotten `setLayer`. It now skips entities with `VolumeShadowCaster.floorScaleY` above 0; the test (one such entity: no warning; a plain MeshRenderer next to it: one) failed before the fix. Node 2343 of 2343, demos 100 of 100, bundles `77284c15` (embed and browser smokes on all 8), `check:dist` fresh.",
+      "commits": [
+        "83ef3072",
+        "e8e5d2e9",
+        "a2848ced",
+        "77284c15"
       ]
     }
   ],
