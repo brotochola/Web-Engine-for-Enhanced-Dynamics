@@ -10786,7 +10786,8 @@
       "records": [
         "R-0845",
         "R-0846",
-        "R-0847"
+        "R-0847",
+        "R-0848"
       ]
     },
     {
@@ -18947,6 +18948,19 @@
         "83ef3072",
         "e8e5d2e9",
         "a2848ced",
+        "77284c15"
+      ]
+    },
+    {
+      "id": "R-0848",
+      "date": "2026-11-10",
+      "time": "16:44",
+      "timeFrom": "recorded",
+      "title": "The bundles of e54f701f: tested, and the prod bundle equals its sources",
+      "verdict": "passed",
+      "text": "dist 77284c15, built from 83ef3072, in the merge e54f701f (the tree equals `dx/volume-shadow-caster`'s; a rebuild on main changed no byte): the prod ESM bundle against its sources, one build (`--full-rev`), on AC, Chrome and Code under 0.5 core before each scene. On main: node 2343 of 2343, demos 100 of 100, `check:types` and `check:dist` pass, embed and browser smokes OK on all 8, `test:node:bundle` 271 of 271.\n\n- painterMove, 4 pairs, 16:17 to 16:21: NEUTRAL. pre-render 16.678 → 15.948 ms (-2.5 %, worse 1/4, cv 2/5 %), logic 6.519 → 6.340 (-0.4 %), 300 000 entities on both, 60.0 fps.\n- Boids, 8 pairs, 16:22 to 16:32: the runner printed FAIL (load) for VISIBLE_ENTITIES -6.0 % (cv 9/4 %; the flock goes where it goes), renderer and pre-render below the 3 ms floor. The owner, spatial: 6.611 → 6.748 ms (+0.7 %, worse 4/8, cv 6/3 %); physics 6.443 → 6.478 (-0.4 %), 40 000 bodies on both. Neutral for the owner.\n- Predator, 8 pairs, 16:33 to 16:44: the runner printed REGRESSION for spatial 4.594 → 4.723 ms (+4.3 %, worse 6/8, cv 5/8 %), physics +10.6 % (not blocking), logic 3.325 → 3.156 (-4.8 %), pre-render +1.4 %, bodies and casters equal. Physics is load: the bundle's side moved 6.8 % more bodies (6 301 against 5 900 a run), and per moved body it was 2.1 % faster.\n\nNot repeated: the bundled spatial worker differs from the faces merge's (R-0844, NEUTRAL there) only in `collectComponents` adding `requires`, which runs at load; the source side's spatial code did not change either, and Boids at a fixed load reads +0.7 %. Predator read the same code -3 to +10 % before (N-105); four more pairs could not change what is shipped. So the bundle equals its sources, and main was pushed.",
+      "commits": [
+        "e54f701f",
         "77284c15"
       ]
     }
