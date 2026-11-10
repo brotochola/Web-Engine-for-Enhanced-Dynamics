@@ -449,6 +449,8 @@ export function packColliderFill(out, cap, layerId, views) {
   const primaryWidth = views.primaryWidth;
   const primaryHeight = views.primaryHeight;
   const primaryRadius = views.primaryRadius;
+  // Above 0 on an entity whose class lists VolumeShadowCaster: its MeshRenderer joins the volume layer with a volume.
+  const volume = views.meshFloorScale || null;
   const outU32 = packOutU32(out, views);
   _instanceEntity = views.instanceEntity || null;
   views.layerHasVertexUv = 0;
@@ -465,7 +467,7 @@ export function packColliderFill(out, cap, layerId, views) {
     const meshAt = explicitMeshOffset(i, views);
     const drawable = meshAt >= 0 || entityHasDrawableCollider(i, views);
     if (!(mask & meshBits)) {
-      if (!_warnedMeshLayer && drawable) {
+      if (!_warnedMeshLayer && drawable && !(volume !== null && volume[i] > 0)) {
         _warnedMeshLayer = true;
         console.warn('WeedJS: MeshRenderer requires setLayer on a LAYER_KIND.MESH layer');
       }
