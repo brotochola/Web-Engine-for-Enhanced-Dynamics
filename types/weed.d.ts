@@ -3817,14 +3817,20 @@ export declare class VolumeShadowCaster extends Component {
    * entity's rotation stays what the screen shows: a car keeps its long side on its path, and a turn rewrites no vertex.
    */
   floorScaleY: number;
-  /** A box. Replaces the volume. `offsetX` and `offsetY` are its centre; `topScale` shrinks the roof about it. */
+  /**
+   * A box. Replaces the volume. `offsetX` and `offsetY` are its centre; `topScale` shrinks the roof about it, from 0 up (0: a
+   * pyramid). A value that is not finite, or a topScale below 0, is refused with a warning and leaves the volume as it was.
+   */
   setBox(
     width: number,
     depth: number,
     height: number,
     options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
   ): this;
-  /** One more level on what the volume has. `topOutline`, as many corners, makes its top another shape. */
+  /**
+   * One more level on what the volume has. `topOutline`, as many corners, makes its top another shape: one that closes on a
+   * point is a pyramid, on a line a gabled roof; one that crosses itself is refused. A corner that is not finite is refused.
+   */
   addLevel(
     outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
     bottom: number,
@@ -3832,7 +3838,11 @@ export declare class VolumeShadowCaster extends Component {
     topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
     options?: { floorScaleY?: number },
   ): this;
-  /** The convex volume around points: flat x, y, z or objects, z the height. Runs once, when called. Replaces the volume. */
+  /**
+   * The convex volume around points: flat x, y, z or objects, z the height. Runs once, when called. Replaces the volume. At most
+   * 4 096 points, all finite; otherwise it warns and leaves the volume as it was. Convex: it fills an L and joins a tower to a
+   * low annex with a slope, so give such boxes an addLevel each.
+   */
   setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
   /** No volume: the entity casts nothing until it is given one again. */
   clear(): this;

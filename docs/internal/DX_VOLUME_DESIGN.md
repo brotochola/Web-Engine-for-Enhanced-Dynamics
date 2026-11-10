@@ -136,6 +136,12 @@ the plan has them, and `volumeStressScene`. Sun Street and the game moved to it.
 - **`addLevel` frees before it asks.** The arena is first fit: asked for the bigger span first, it left each level's old span as a
   hole no later volume fitted, and the last entities of a scene lost their volume with room to spare.
 - **Scenes.** `Scene._applyVolumeConfig`, from `static entities`, adds the layer and the arena, so a scene's config names neither.
+- **Refusals, after a review (N-122).** A point, size or offset that is not finite is refused as such: before, a hull of a
+  NaN came back as its first tetrahedron, and setBox's warning blamed a full arena. setHull refuses more than 4 096 points
+  instead of hulling the first 4 096. Each kind of mistake warns once, not the first of them for all.
+- **A top that closes on a point or a line** is a pyramid or a gabled roof: no roof, and a side whose top corners meet is one
+  triangle. Flat means all corners on one line within a millionth of the base's size, not a signed area of 0, which a top
+  crossing itself evenly also has.
 
 The done list, all met (R-0845): a volume draws the picture of the same mesh on both backends, 0 of 921 600 pixels; `sunMeshParity`
 passes, 1.35 px at worst; Sun Street dropped `HouseShadow` and `CarShadow`, 80 lines; and the renderer is 5.0 % under `?api=mesh`,

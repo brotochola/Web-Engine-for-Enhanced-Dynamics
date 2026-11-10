@@ -257,10 +257,14 @@ onSpawned() {
 
 It moves and turns with its entity. There is no second entity, no `tick`, no layer in the config and no mesh code.
 
-- `setBox(width, depth, height, { offsetX, offsetY, topScale, floorScaleY })` is a box; `topScale` makes its roof smaller about its centre. It replaces the volume.
-- `addLevel(outline, bottom, top, topOutline, { floorScaleY })` adds a level on what the volume has: a cabin on a car's body, a tank on a roof. The outline is flat `x, y` or `{ x, y }[]`, and need not be convex. `topOutline`, with as many corners, gives the level another top.
-- `setHull(points, { floorScaleY })` is the convex volume around points, flat `x, y, z` or `{ x, y, z }[]`, for a house from an editor. It runs when you call it, so call it once. It replaces the volume.
+- `setBox(width, depth, height, { offsetX, offsetY, topScale, floorScaleY })` is a box; `topScale` makes its roof smaller about its centre. It goes from 0 up, and 0 is a pyramid. It replaces the volume.
+- `addLevel(outline, bottom, top, topOutline, { floorScaleY })` adds a level on what the volume has: a cabin on a car's body, a tank on a roof. The outline is flat `x, y` or `{ x, y }[]`, and need not be convex. `topOutline`, with as many corners, gives the level another top; a top that closes on a point is a pyramid and one that closes on a line a gabled roof. A top that crosses itself is refused.
+- `setHull(points, { floorScaleY })` is the convex volume around points, flat `x, y, z` or `{ x, y, z }[]`, for a house from an editor. It runs when you call it, so call it once. It replaces the volume. It takes at most 4 096 points.
 - `clear()` leaves no volume.
+
+A hull is convex. It fills an L, joins a tall tower to a low annex with a slope, and turns a tank on a roof into a wedge. Where that shows, give each box its own `addLevel`: the layer composes once, so where they overlap they do not darken twice. A box takes 8 vertices, so raise `lighting.maxVolumeVerts` for a house of many.
+
+A call that cannot make a volume warns once for each kind of mistake and leaves the volume as it was: a point, a size or an offset that is not finite, a hull of more than 4 096 points, points that enclose nothing, a top below its bottom.
 
 x looks the way the entity looks and y goes across it, both on the floor, in world px. Heights are in screen px, as on a `ShadowCaster`'s sprite, so houses, people and trees cast to the same point.
 
