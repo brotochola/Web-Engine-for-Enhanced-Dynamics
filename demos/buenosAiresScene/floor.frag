@@ -2,7 +2,8 @@
 // The barrio's floor, painted on the GPU pixel by pixel: buenos-aires' shaders/piso.frag, the algorithm of its editor's
 // ground.js. Data: 0.5 m cells with up to 3 candidate streets, the sidewalk and yard kind, a table of streets, wealth and noise.
 // Its comments are left out of this copy; the game has them. Unlike the game's, it decides what each pixel is first
-// (pixelMat) and draws that once (paint), the same pixels: it links in 1.8 s instead of 6.2 on ANGLE's D3D11 (GTX 1650).
+// (pixelMat) and draws that once (paint): it links in about 2.2 s instead of 6.2 on ANGLE's D3D11 (GTX 1650). And its
+// sidewalks and yards meet along lines (smoothKinds), where the game's follow the 0.5 m cells.
 precision highp float;
 precision highp int;
 precision highp sampler2D;
