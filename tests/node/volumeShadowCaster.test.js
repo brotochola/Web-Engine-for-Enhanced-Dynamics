@@ -482,3 +482,16 @@ test('addLevel: a top that crosses itself evenly is still refused', () => {
   assert.equal(MeshGeometry.vertOffset[2], -1);
   assert.equal(crossed.length, 1);
 });
+
+test('two different mistakes warn once each', () => {
+  const v = volume(1);
+  const seen = warnings(() => {
+    v.addLevel([0, 0, 1, 0, 1, 1], 0, 9, [0, 0, 1, 0]);
+    v.addLevel([0, 0, 1, 0, 1, 1], 0, 9, [0, 0, 1, 0]);
+    v.addLevel([0, 0, 1, 0, 1, 1], 9, 0);
+    v.addLevel([0, 0, 1, 0, 1, 1], 9, 0);
+  });
+  assert.equal(seen.length, 2, seen.join(' | '));
+  resetVolumeShadowCasterWarns();
+  assert.equal(warnings(() => v.addLevel([0, 0, 1, 0, 1, 1], 9, 0)).length, 1, 'a reset warns again');
+});

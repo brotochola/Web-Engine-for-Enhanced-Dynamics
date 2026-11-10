@@ -21,11 +21,12 @@ import { MeshRenderer, markMeshPaint } from './meshRenderer.js';
 const HEIGHT_ON_THE_FLOOR = 1e-3;
 
 let _warnedFull = false;
-let _warnedShape = false;
+/** The shape warnings given, by text: each mistake once, so a second kind still says what it is. */
+const _warnedShapes = new Set();
 
 export function resetVolumeShadowCasterWarns() {
   _warnedFull = false;
-  _warnedShape = false;
+  _warnedShapes.clear();
 }
 
 function warnFull() {
@@ -35,8 +36,8 @@ function warnFull() {
 }
 
 function warnShape(what) {
-  if (_warnedShape) return;
-  _warnedShape = true;
+  if (_warnedShapes.has(what)) return;
+  _warnedShapes.add(what);
   console.warn(`WeedJS: VolumeShadowCaster: ${what}`);
 }
 
