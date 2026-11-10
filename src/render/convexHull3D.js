@@ -37,6 +37,8 @@ export function convexHull3D(x, y, z, n) {
   for (let p = 1; p < count; p++) {
     extent = Math.max(extent, Math.abs(x[p] - x[0]), Math.abs(y[p] - y[0]), Math.abs(z[p] - z[0]));
   }
+  // A point that is not finite makes every tolerance NaN, and every test below false: no hull, rather than a wrong one.
+  if (!Number.isFinite(extent)) return null;
   const eps = 1e-6 * Math.max(1, extent);
 
   // The first tetrahedron: the leftmost point, the farthest from it, the farthest from that line, the farthest from that plane.

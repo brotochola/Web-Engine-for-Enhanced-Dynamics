@@ -96,3 +96,17 @@ test('points that enclose nothing give no hull', () => {
   assert.equal(convexHull3D([0, 1, 2, 3], [0, 1, 2, 3], [0, 1, 2, 3], 4), null, 'a line');
   assert.equal(convexHull3D([0, 1, 1, 0], [0, 0, 1, 1], [0, 0, 0, 0], 4), null, 'a plane');
 });
+
+test('a point that is not finite gives no hull', () => {
+  const x = [0, 10, 10, 0, 0, 10, 10, 0];
+  const y = [0, 0, 5, 5, 0, 0, 5, 5];
+  const z = [0, 0, 0, 0, 7, 7, 7, 7];
+  for (const bad of [NaN, Infinity, -Infinity]) {
+    for (const column of [x, y, z]) {
+      const c = column.slice();
+      c[6] = bad;
+      const args = column === x ? [c, y, z] : column === y ? [x, c, z] : [x, y, c];
+      assert.equal(convexHull3D(...args, 8), null, `${bad} in a column`);
+    }
+  }
+});

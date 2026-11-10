@@ -46,7 +46,10 @@ let _ringA = new Float32Array(64);
 let _ringB = new Float32Array(64);
 let _cap = new Uint32Array(64);
 
-/** Flat x,y or {x,y}[] into `into`, grown if it must. Returns the array that holds them; its corner count is ringCount. */
+/**
+ * Flat x,y or {x,y}[] into `into`, grown if it must. Returns the array that holds them; its corner count is ringCount, -1 when
+ * a corner is not finite.
+ */
 let ringCount = 0;
 function readRing(points, into) {
   ringCount = 0;
@@ -58,7 +61,10 @@ function readRing(points, into) {
   for (let p = 0; p < n; p++) {
     const x = objects ? +points[p].x : +points[p * 2];
     const y = objects ? +points[p].y : +points[p * 2 + 1];
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return out;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      ringCount = -1;
+      return out;
+    }
     out[p * 2] = x;
     out[p * 2 + 1] = y;
   }
@@ -198,6 +204,10 @@ export class VolumeShadowCaster extends Component {
    * @returns {this}
    */
   setBox(width, depth, height, { offsetX = 0, offsetY = 0, topScale = 1, floorScaleY } = {}) {
+    if (![width, depth, height, offsetX, offsetY, topScale].every(Number.isFinite)) {
+      warnShape('setBox needs finite sizes, offsets and topScale');
+      return this;
+    }
     const hw = width * 0.5;
     const hd = depth * 0.5;
     if (!(hw > 0) || !(hd > 0) || !(height > 0)) {
@@ -229,6 +239,10 @@ export class VolumeShadowCaster extends Component {
     _ringA = readRing(outline, _ringA);
     const n = ringCount;
     _ringB = readRing(topOutline, _ringB);
+    if (n < 0 || ringCount < 0 || !Number.isFinite(bottom) || !Number.isFinite(top)) {
+      warnShape('a level needs finite corners and heights');
+      return this;
+    }
     if (n < 3 || ringCount !== n) {
       warnShape('a level needs at least 3 corners, as many on its top');
       return this;
@@ -258,6 +272,10 @@ export class VolumeShadowCaster extends Component {
       x[p] = objects ? +points[p].x : +points[p * 3];
       y[p] = objects ? +points[p].y : +points[p * 3 + 1];
       const h = objects ? +points[p].z : +points[p * 3 + 2];
+      if (!Number.isFinite(x[p]) || !Number.isFinite(y[p]) || !Number.isFinite(h)) {
+        warnShape('setHull needs finite points');
+        return this;
+      }
       z[p] = h > 0 ? h : 0;
     }
     const triangles = convexHull3D(x, y, z, n);

@@ -368,3 +368,46 @@ test('a scene with no volume is left alone', () => {
   assert.equal(config.layers?.[VOLUME_LAYER], undefined);
   assert.equal(config.renderer.maxMeshVerts | 0, 0);
 });
+
+// A point that is not finite: the hull's tolerances go NaN, every test fails and the first tetrahedron comes back.
+test('setHull: a point that is not finite leaves the volume as it was, and warns', () => {
+  const v = volume(1);
+  v.setBox(10, 10, 10);
+  const before = mesh(1);
+  const box = [0, 0, 0, 10, 0, 0, 10, 10, 0, 0, 10, 0, 0, 0, 20, 10, 0, 20, 10, 10, 20, 0, 10, 20];
+  const seen = warnings(() => {
+    for (const [at, bad] of [[18, NaN], [19, Infinity], [20, NaN], [5, -Infinity]]) {
+      const points = box.slice();
+      points[at] = bad;
+      v.setHull(points);
+    }
+    v.setHull([{ x: 0, y: 0, z: 0 }, { x: 10, y: 0, z: 0 }, { x: 0, y: NaN, z: 0 }, { x: 0, y: 0, z: 10 }]);
+  });
+  assert.deepEqual(mesh(1), before);
+  assert.ok(seen.length >= 1 && seen.every((m) => /finite/.test(m)), seen.join(' | '));
+});
+
+test('addLevel: an outline with a point that is not finite says so', () => {
+  const v = volume(2);
+  const seen = warnings(() => {
+    v.addLevel([0, 0, 10, 0, NaN, 10, 0, 10], 0, 9);
+    v.addLevel([0, 0, 10, 0, 10, 10, 0, 10], 0, 9, [0, 0, 10, 0, 10, Infinity, 0, 10]);
+    v.addLevel([0, 0, 10, 0, 10, 10, 0, 10], 0, Infinity);
+  });
+  assert.equal(MeshGeometry.vertOffset[2], -1, 'nothing written');
+  assert.ok(seen.length >= 1 && seen.every((m) => /finite/.test(m)), seen.join(' | '));
+});
+
+test('setBox: an offset, a size or a topScale that is not finite is refused as such, not as a full arena', () => {
+  const v = volume(1);
+  v.setBox(10, 10, 10);
+  const before = mesh(1);
+  const seen = warnings(() => {
+    v.setBox(10, 10, 10, { offsetX: NaN });
+    v.setBox(10, 10, Infinity);
+    v.setBox(10, 10, 10, { topScale: Infinity });
+  });
+  assert.deepEqual(mesh(1), before);
+  assert.ok(!seen.some((m) => /arena/.test(m)), seen.join(' | '));
+  assert.ok(seen.length >= 1);
+});
