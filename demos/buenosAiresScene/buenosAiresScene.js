@@ -19,6 +19,7 @@ import { META, BARRIO, param, FACES, RAYCAST, OFF, TOWN_SWITCHES, TownSwitches }
 import { House, StreetProp, Tree, hiddenLamps } from './townObjects.js';
 import { Walker, PEOPLE_SHEETS, LPC_EXCLUDE, WALK_FIELDS } from './walkers.js';
 import { DrivingCar, ParkedCar, WreckedCar } from './cars.js';
+import { LoadingLine } from './loadingLine.js';
 
 const { Scene, Camera, Decoration, Keyboard, Mouse, Layer, LightEmitter, NavGrid, SharedResource, Sun, BLEND_MODES, rng } = WEED;
 
@@ -31,6 +32,11 @@ const BACKEND = WEED.params?.get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
 const NIGHT_LIGHT = 0.25;
 const SCRUB_HOURS = 0.04; // a frame, while Z or X is held
 const HOURS = [12, 18.6, 22, 6.2]; // J: noon, dusk, night, dawn
+/** The engine's load steps (Scene.LOAD_STEPS), as the loading screen names them. */
+const STEP_NAMES = {
+  audio: 'audio', scripts: 'scripts', buffers: 'shared memory', adobe: 'animations', atlas: 'sprite atlas', tilemaps: 'tile maps',
+  flowfields: 'flowfields', shaders: 'shader sources', sounds: 'sounds', workers: 'workers', world: 'the barrio',
+};
 
 /** The floor's baked data (piso.bin), for the floor layer's textures. */
 export class FloorData extends SharedResource {}
@@ -201,6 +207,8 @@ export class BuenosAiresScene extends Scene {
   people = 0;
   cars = 0;
   nextReadout = 0;
+  /** Until the renderer has drawn its first frame (update), which comes after the last load step: it compiles the shaders. */
+  loading = typeof document !== 'undefined' ? new LoadingLine('Buenos Aires') : null;
 
   async preload() {
     // The floor: baked data, into shared memory, into the shader's textures.
@@ -351,7 +359,18 @@ export class BuenosAiresScene extends Scene {
     this.showStates();
   }
 
+  /** One of the engine's load steps finished (on the main thread, in the order they finish). */
+  onLoadProgress(done, total, stage) {
+    this.loading?.show((0.9 * done) / total, `${STEP_NAMES[stage] || stage} ready (${done} of ${total})`);
+  }
+
   update(dtRatio = 1) {
+    if (this.loading !== null) {
+      if (this.readWorkerStepMs().renderer > 0) {
+        this.loading.remove();
+        this.loading = null;
+      } else this.loading.show(0.95, 'the renderer compiles its shaders and draws the first frame');
+    }
     if (Keyboard.isPressed(' ')) this.togglePause();
     if (Keyboard.isPressed('j')) this.jumpHour();
     if (Keyboard.isPressed('n')) this.toggleNight();
@@ -399,6 +418,8 @@ export class BuenosAiresScene extends Scene {
 
   async destroy() {
     this.panel?.remove();
+    this.loading?.remove();
+    this.loading = null;
     this.panel = null;
     await super.destroy();
   }
