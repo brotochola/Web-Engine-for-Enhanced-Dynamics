@@ -93,6 +93,27 @@ Mat cazuelaM(float wx, float wy, int ix, int iy) {
 }
 float wealthAt(float x, float y) { return texelFetch(wealth, ivec2(clamp(int(x / 10.0), 0, int(uWG) - 1), clamp(int(y / 10.0), 0, int(uHG) - 1)), 0).r; }
 
+// The sidewalk's and the yard's kind (cellB's b and a), not those of the one cell under the pixel: each is the kind of one
+// of the four nearest cells, the one held by the largest share of the 4 x 4 cells around, weighted by a tent of 1.5 cells.
+// Kinds then meet along straight lines near the lots' own edges instead of along the cells' edges, in 0.5 m steps. A 0
+// has no vote in the sidewalk's kind (it is the cell's other side), and does in the yard's (no yard).
+ivec2 smoothKinds(float wx, float wy) {
+  vec2 g = vec2(wx, wy) / uGC - .5; ivec2 c0 = ivec2(floor(g)); vec2 f = g - vec2(c0);
+  ivec2 hi = ivec2(int(uCW) - 1, int(uCH) - 1);
+  ivec4 kb, ka;
+  for (int c = 0; c < 4; c++) { vec4 t = texelFetch(cellB, clamp(c0 + ivec2(c & 1, c >> 1), ivec2(0), hi), 0); kb[c] = b8(t.b); ka[c] = b8(t.a); }
+  vec4 sb = vec4(0.0), sa = vec4(0.0);
+  for (int n = 0; n < 16; n++) {
+    int i = (n & 3) - 1, j = (n >> 2) - 1;
+    vec4 t = texelFetch(cellB, clamp(c0 + ivec2(i, j), ivec2(0), hi), 0); int b = b8(t.b), a = b8(t.a);
+    float w = max(0.0, 1.5 - abs(float(i) - f.x)) * max(0.0, 1.5 - abs(float(j) - f.y));
+    if (b != 0) sb += w * vec4(equal(kb, ivec4(b)));
+    sa += w * vec4(equal(ka, ivec4(a)));
+  }
+  int bestB = 0, bestA = ka.x; float vb = 0.0, va = sa.x;
+  for (int c = 0; c < 4; c++) { if (sb[c] > vb) { vb = sb[c]; bestB = kb[c]; } if (sa[c] > va) { va = sa[c]; bestA = ka[c]; } }
+  return ivec2(bestB, bestA);
+}
 struct Seg { vec2 a; vec2 dir; vec2 n; float len, hw, sw, med, cls, w; int type, mat; bool cant; };
 float u16(int id, int m) { vec4 t = texelFetch(segs, ivec2(m >> 1, id), 0); return (m & 1) == 0 ? float(b8(t.r) + b8(t.g) * 256) : float(b8(t.b) + b8(t.a) * 256); }
 float dPos(float q) { return q / 50.0 - 20.0; }
@@ -157,6 +178,7 @@ Mat pixelMat(float wx, float wy, int ix, int iy) {
     else if (s.mat == 0 && s.w > .3 && ad < .07 && fmod_(rt, 5.0) < 2.5) return rgbM(s.w > .6 ? vec3(230, 200, 80) : vec3(214, 212, 204));
     return col;
   }
+  ivec2 sk = smoothKinds(wx, wy);
   if (wid >= 0) {
     Seg s = loadSeg(wid); float dd = wd - s.hw;
     if (s.mat == 2) { if (dd < .6) return grassM(.7); }
@@ -164,11 +186,11 @@ Mat pixelMat(float wx, float wy, int ix, int iy) {
     Mat cz = cazuelaM(wx, wy, ix, iy); if (cz.m != M_NONE) return cz;
     bool cant = s.cant && dd < 1.0 && !nearCross(wid, wt, 1.6);
     if (cant) return grassM(.2);
-    int vk = b8(B.b); int kind = vk & 15; bool dmg = (vk & 16) != 0;
+    int vk = sk.x; int kind = vk & 15; bool dmg = (vk & 16) != 0;
     if (kind == 0) { kind = s.w < .3 ? 1 : 2; dmg = s.w < .45; }
     return tilesM(wt, dd, kind, dmg);
   }
-  int pk = b8(B.a);
+  int pk = sk.y;
   if (pk > 0) { int k = pk & 15; bool d = (pk & 16) != 0;
     if (k == 1) return grassM(.3); if (k == 2) { if (NB(ix, iy) > .6) return grassM(.8); return dirtM(1.0); }
     if (k == 3) return yuyoM(ix, iy); if (k == 4) return tilesM(wx, wy, 6, false); return tilesM(wx, wy, 4, d); }

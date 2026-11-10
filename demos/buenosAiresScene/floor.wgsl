@@ -128,6 +128,42 @@ fn wealthAt(x: f32, y: f32) -> f32 {
   return textureLoad(wealth, p, 0).r;
 }
 
+// The sidewalk's and the yard's kind by a vote over the 4 x 4 cells around the pixel (floor.frag says why).
+fn smoothKinds(wx: f32, wy: f32) -> vec2<i32> {
+  let U = customUniforms;
+  let g = vec2f(wx, wy) / U.uGC - 0.5;
+  let c0 = vec2<i32>(floor(g));
+  let f = g - vec2f(c0);
+  let hi = vec2<i32>(i32(U.uCW) - 1, i32(U.uCH) - 1);
+  var kb = vec4<i32>(0);
+  var ka = vec4<i32>(0);
+  for (var c = 0; c < 4; c++) {
+    let t = textureLoad(cellB, clamp(c0 + vec2<i32>(c & 1, c >> 1u), vec2<i32>(0), hi), 0);
+    kb[c] = b8(t.b);
+    ka[c] = b8(t.a);
+  }
+  var sb = vec4f(0.0);
+  var sa = vec4f(0.0);
+  for (var n = 0; n < 16; n++) {
+    let i = (n & 3) - 1;
+    let j = (n >> 2u) - 1;
+    let t = textureLoad(cellB, clamp(c0 + vec2<i32>(i, j), vec2<i32>(0), hi), 0);
+    let b = b8(t.b);
+    let a = b8(t.a);
+    let w = max(0.0, 1.5 - abs(f32(i) - f.x)) * max(0.0, 1.5 - abs(f32(j) - f.y));
+    if (b != 0) { sb += w * select(vec4f(0.0), vec4f(1.0), kb == vec4<i32>(b)); }
+    sa += w * select(vec4f(0.0), vec4f(1.0), ka == vec4<i32>(a));
+  }
+  var bestB = 0;
+  var bestA = ka.x;
+  var vb = 0.0;
+  var va = sa.x;
+  for (var c = 0; c < 4; c++) {
+    if (sb[c] > vb) { vb = sb[c]; bestB = kb[c]; }
+    if (sa[c] > va) { va = sa[c]; bestA = ka[c]; }
+  }
+  return vec2<i32>(bestB, bestA);
+}
 struct Seg { a: vec2f, dir: vec2f, n: vec2f, len: f32, hw: f32, sw: f32, med: f32, cls: f32, w: f32, rtype: i32, mat: i32, cant: bool }
 fn u16(id: i32, m: i32) -> f32 {
   let t = textureLoad(segs, vec2<i32>(m >> 1u, id), 0);
@@ -268,6 +304,7 @@ fn pixelMat(wx: f32, wy: f32, ix: i32, iy: i32) -> Mat {
     }
     return col;
   }
+  let sk = smoothKinds(wx, wy);
   if (wid >= 0) {
     let s = loadSeg(wid);
     let dd = wd - s.hw;
@@ -281,7 +318,7 @@ fn pixelMat(wx: f32, wy: f32, ix: i32, iy: i32) -> Mat {
     if (cz.m != M_NONE) { return cz; }
     let cant = s.cant && dd < 1.0 && !nearCross(wid, wt, 1.6);
     if (cant) { return grassM(0.2); }
-    let vk = b8(B.b);
+    let vk = sk.x;
     var kind = vk & 15;
     var dmg = (vk & 16) != 0;
     if (kind == 0) {
@@ -290,7 +327,7 @@ fn pixelMat(wx: f32, wy: f32, ix: i32, iy: i32) -> Mat {
     }
     return tilesM(wt, dd, kind, dmg);
   }
-  let pk = b8(B.a);
+  let pk = sk.y;
   if (pk > 0) {
     let k = pk & 15;
     let d = (pk & 16) != 0;
