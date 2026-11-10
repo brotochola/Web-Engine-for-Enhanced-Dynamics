@@ -428,3 +428,57 @@ test('setHull: more points than a hull takes leave the volume as it was, and war
   assert.deepEqual(mesh(1), before);
   assert.ok(seen.some((m) => /4096/.test(m)), seen.join(' | '));
 });
+
+/** Each triangle's doubled area in (x, y, height): no row should draw nothing. */
+function areas(m) {
+  const out = [];
+  for (let t = 0; t < m.indices.length; t += 3) {
+    const [a, b, c] = [m.indices[t], m.indices[t + 1], m.indices[t + 2]];
+    const p = (k) => [m.xy[k * 2], m.xy[k * 2 + 1], m.heights[k]];
+    const [pa, pb, pc] = [p(a), p(b), p(c)];
+    const u = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+    const w = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+    const n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]];
+    out.push(Math.sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]));
+  }
+  return out;
+}
+
+test('setBox: topScale 0 is a pyramid, four sides and no roof', () => {
+  const seen = warnings(() => volume(1).setBox(100, 50, 40, { topScale: 0 }));
+  assert.deepEqual(seen, []);
+  const m = mesh(1);
+  assert.equal(m.n, 8, 'both rings kept');
+  assert.equal(m.indices.length, 12);
+  for (let t = 0; t < 12; t += 3) {
+    const roof = m.indices.slice(t, t + 3).filter((k) => m.heights[k] > 0).length;
+    assert.equal(roof, 1, 'a side: two floor corners and the apex');
+  }
+  assert.ok(areas(m).every((a) => a > 0));
+});
+
+test('addLevel: a top that closes on a line is a gabled roof', () => {
+  const v = volume(2);
+  const seen = warnings(() => v.addLevel([-50, -25, 50, -25, 50, 25, -50, 25], 0, 40, [-50, 0, 50, 0, 50, 0, -50, 0]));
+  assert.deepEqual(seen, []);
+  const m = mesh(2);
+  assert.equal(m.n, 8);
+  assert.equal(m.indices.length, 18, 'six triangles for a base of four corners');
+  assert.ok(areas(m).every((a) => a > 0));
+});
+
+test('setBox: a topScale below 0 is refused', () => {
+  const v = volume(1);
+  v.setBox(10, 10, 10);
+  const before = mesh(1);
+  const seen = warnings(() => v.setBox(10, 10, 10, { topScale: -1 }));
+  assert.deepEqual(mesh(1), before);
+  assert.equal(seen.length, 1);
+});
+
+// Its signed area is 0, as a flat top's is: flat means on one line, not without area.
+test('addLevel: a top that crosses itself evenly is still refused', () => {
+  const crossed = warnings(() => volume(2).addLevel([0, 0, 10, 0, 10, 10, 0, 10], 0, 9, [0, 0, 10, 10, 10, 0, 0, 10]));
+  assert.equal(MeshGeometry.vertOffset[2], -1);
+  assert.equal(crossed.length, 1);
+});

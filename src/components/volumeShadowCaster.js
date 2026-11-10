@@ -84,16 +84,64 @@ function publish(i, xy, heights, indices, vertN, indexN) {
   return true;
 }
 
+/** How far apart, against the base's size, two corners must be to be two. */
+const SAME_CORNER = 1e-6;
+
+/**
+ * Whether `top` closes on a point or on a line: a pyramid, a gabled roof. All its corners on one line, within `near`. Its
+ * signed area would not do: a top that crosses itself evenly has none either, and that one is refused.
+ */
+function topIsFlat(top, n, near) {
+  const x0 = top[0];
+  const y0 = top[1];
+  let far = 0;
+  let fx = 0;
+  let fy = 0;
+  for (let p = 1; p < n; p++) {
+    const dx = top[p * 2] - x0;
+    const dy = top[p * 2 + 1] - y0;
+    const d = dx * dx + dy * dy;
+    if (d > far) {
+      far = d;
+      fx = dx;
+      fy = dy;
+    }
+  }
+  if (far <= near * near) return true;
+  const length = Math.sqrt(far);
+  for (let p = 1; p < n; p++) {
+    const off = (fx * (top[p * 2 + 1] - y0) - fy * (top[p * 2] - x0)) / length;
+    if (off > near || off < -near) return false;
+  }
+  return true;
+}
+
 /**
  * One level: `base` at height `bottom`, `top` at height `height`, the roof and a quad up each side, after the mesh the entity
- * holds when `keep`.
+ * holds when `keep`. A top that closes on a point or a line has no roof, and a side whose two top corners meet is one
+ * triangle: no row draws nothing.
  */
 function writeLevel(i, base, top, n, bottom, height, keep) {
-  if (_cap.length < (n - 2) * 3) _cap = new Uint32Array((n - 2) * 3);
-  const capN = triangulateSimplePolygon(top, n, _cap, MeshGeometry.vertLimit);
-  if (capN < 0) {
-    warnShape('a level needs a simple outline');
-    return false;
+  let minX = base[0];
+  let maxX = base[0];
+  let minY = base[1];
+  let maxY = base[1];
+  for (let p = 1; p < n; p++) {
+    minX = Math.min(minX, base[p * 2]);
+    maxX = Math.max(maxX, base[p * 2]);
+    minY = Math.min(minY, base[p * 2 + 1]);
+    maxY = Math.max(maxY, base[p * 2 + 1]);
+  }
+  const near = SAME_CORNER * Math.max(maxX - minX, maxY - minY);
+  const flat = topIsFlat(top, n, near);
+  let capN = 0;
+  if (!flat) {
+    if (_cap.length < (n - 2) * 3) _cap = new Uint32Array((n - 2) * 3);
+    capN = triangulateSimplePolygon(top, n, _cap, MeshGeometry.vertLimit);
+    if (capN < 0) {
+      warnShape('a level needs a simple outline');
+      return false;
+    }
   }
   const at = keep ? MeshGeometry.vertOffset[i] | 0 : -1;
   const hadV = at >= 0 ? MeshGeometry.vertCount[i] | 0 : 0;
@@ -132,11 +180,14 @@ function writeLevel(i, base, top, n, bottom, height, keep) {
     idx[w++] = floorRing + p;
     idx[w++] = floorRing + q;
     idx[w++] = roofRing + q;
+    const dx = top[q * 2] - top[p * 2];
+    const dy = top[q * 2 + 1] - top[p * 2 + 1];
+    if (dx * dx + dy * dy <= near * near) continue;
     idx[w++] = floorRing + p;
     idx[w++] = roofRing + q;
     idx[w++] = roofRing + p;
   }
-  return publish(i, xy, uv, idx, vertN, indexN);
+  return publish(i, xy, uv, idx, vertN, w);
 }
 
 export class VolumeShadowCaster extends Component {
@@ -206,6 +257,10 @@ export class VolumeShadowCaster extends Component {
   setBox(width, depth, height, { offsetX = 0, offsetY = 0, topScale = 1, floorScaleY } = {}) {
     if (![width, depth, height, offsetX, offsetY, topScale].every(Number.isFinite)) {
       warnShape('setBox needs finite sizes, offsets and topScale');
+      return this;
+    }
+    if (!(topScale >= 0)) {
+      warnShape('setBox needs a topScale of 0 or more: 0 is a pyramid');
       return this;
     }
     const hw = width * 0.5;
