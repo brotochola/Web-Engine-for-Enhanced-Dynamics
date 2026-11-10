@@ -82,13 +82,13 @@ export class MeshUvFillBatch {
     });
     this._poseSource.uploadMethodId = 'external';
     this.poseTable = new Float32Array(256 * 4);
-    this._sunShadow = new Float32Array(2);
+    this._sunShadow = new Float32Array(4);
     const resources = {
       uTexture: atlas,
       uSampler: atlas.style,
       uTexLut: lut,
       uPoseTable: this._poseSource,
-      sunShadow: { uSunShadow: { value: this._sunShadow, type: 'vec2<f32>' } },
+      sunShadow: { uSunShadow: { value: this._sunShadow, type: 'vec4<f32>' } },
     };
 
     const name = label || 'mesh-uv-fill';
@@ -168,6 +168,13 @@ export class MeshUvFillBatch {
     const group = this.shader.resources.sunShadow;
     if (group && typeof group.update === 'function') group.update();
     return true;
+  }
+
+  /** DX-VOLUME: this batch draws the volumes' layer: rows that carry a floor scale, in black. */
+  setVolumes() {
+    this._sunShadow[2] = 1;
+    const group = this.shader.resources.sunShadow;
+    if (group && typeof group.update === 'function') group.update();
   }
 
   /** ColliderFillBatch.uploadRange for the UV rows. */

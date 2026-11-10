@@ -1,7 +1,8 @@
 # DX-VOLUME: an object's volume, for the sun and for point lights
 
-A plan for the owner to decide on. Nothing here is built. Written 2026-11-05 on `dx/sun-lights-meshes`, after Sun Street
-tried volumes and occluders side by side. It goes with [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) and
+Phases 0 and 1 are built, on `dx/volume-shadow-caster`: see [What was built](#what-was-built-phases-0-and-1). The owner took the
+recommended answers to the decisions below on 2026-11-06. Phases 2 to 4 are still a plan: a lamp's shadow needs its prototype first. Written 2026-11-05 on
+`dx/sun-lights-meshes`, after Sun Street tried volumes and occluders side by side. It goes with [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) and
 [`DX_NORMALS_DESIGN.md`](./DX_NORMALS_DESIGN.md).
 
 ## What is wrong today
@@ -114,11 +115,44 @@ keeps point-light shadows in `'layer'`: taking one lamp out of the sum needs a t
 Its own sessions migrate it after phase 1 and a new bundle in `weed/`: `SombraCasa` and `Auto._sombra` give way to the
 component, and `sombraAuto.js` keeps only its per-model data. Nothing is changed in that repo from here.
 
+## What was built: phases 0 and 1
+
+`VolumeShadowCaster` (`src/components/volumeShadowCaster.js`) with `setBox`, `addLevel`, `setHull`, `clear` and `floorScaleY`, as
+the plan has them, and `volumeStressScene`. Sun Street and the game moved to it. Where it left the plan, and why:
+
+- **The floor is not "turn, then flatten".** An entity's rotation is what the screen shows: physics runs in screen px. Turning a
+  footprint by that angle and then flattening it puts a car's long side about 10 degrees off its path at 45 degrees on a floor
+  of 0.7. The shader turns by the floor's heading, `(f·c, s)` normalized, and then flattens, which is what the game's `cajaAuto`
+  did on the CPU: the two pictures are equal to the pixel. A volume that does not turn, or whose floor is 1, skips that: at a
+  million vertices a frame the normalize cost 6 % of the frames drawn.
+- **`floorScaleY` is a column of the component**, not the `MeshRenderer.tileOffsetU` it could have borrowed, which
+  `GameObject.setTileWorld` writes. The pack puts it in the row's tile offset, which a volume does not use, so no row format
+  changed. `uSunShadow.z`, 1 on this layer's batch alone, says the row holds one, and that the layer paints black.
+- **Only the roof and the sides are drawn.** A ray from a point in shadow up to the sun leaves the volume through one of them,
+  so a floor face adds nothing. `setHull` drops the faces on the floor for the same reason.
+- **`Component.requires`** brings `MeshRenderer` to a class that lists the component (`collectComponents`).
+- **An entity on the layer needs a mesh.** A `MeshRenderer` with none fills its collider, so `clear` and a mesh the arena refuses
+  both take the entity off the layer, and `setLayer` keeps the layer's bit only if the entity has it.
+- **`addLevel` frees before it asks.** The arena is first fit: asked for the bigger span first, it left each level's old span as a
+  hole no later volume fitted, and the last entities of a scene lost their volume with room to spare.
+- **Scenes.** `Scene._applyVolumeConfig`, from `static entities`, adds the layer and the arena, so a scene's config names neither.
+- **Refusals, after a review (N-122).** A point, size or offset that is not finite is refused as such: before, a hull of a
+  NaN came back as its first tetrahedron, and setBox's warning blamed a full arena. setHull refuses more than 4 096 points
+  instead of hulling the first 4 096. Each kind of mistake warns once, not the first of them for all.
+- **A top that closes on a point or a line** is a pyramid or a gabled roof: no roof, and a side whose top corners meet is one
+  triangle. Flat means all corners on one line within a millionth of the base's size, not a signed area of 0, which a top
+  crossing itself evenly also has.
+
+The done list, all met (R-0845): a volume draws the picture of the same mesh on both backends, 0 of 921 600 pixels; `sunMeshParity`
+passes, 1.35 px at worst; Sun Street dropped `HouseShadow` and `CarShadow`, 80 lines; and the renderer is 5.0 % under `?api=mesh`,
+with as many frames drawn. In the game, by day, renderer 4.11 → 3.50 ms and logic 8.41 → 7.80 ms.
+
 ## What this does not fix
 
-A wall's light. The light pass still reads the floor under each pixel, so a lamp behind a house lights its front wall. That
-is DX-NORMALS, and it stays a separate decision. Soft shadow edges, and shadows that climb a wall, are also out: this is a
-shadow on one floor. If those matter later, a per-pixel height buffer would solve walls, roofs and lights at once, but it
+A wall's light is DX-FACES now, but the two do not know each other: a house declares its hull for the sun and a normal on each
+piece of picture for the light. The normals could come from the volume, once something says which piece is which face. Lamps
+and headlights ignore a volume until phase 3, and with `lighting.faces` a wall lit by a lamp is lit through the house in front
+of it. Soft shadow edges, and shadows that climb a wall, are also out: this is a shadow on one floor. If those matter later, a per-pixel height buffer would solve walls, roofs and lights at once, but it
 is a different renderer and nobody has measured it.
 
 ## Decisions for the owner

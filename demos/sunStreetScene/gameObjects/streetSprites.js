@@ -3,7 +3,7 @@
 import WEED from '/src/index.js';
 import { LAP, WORLD_W, roadPoint } from '../streetLayout.js';
 
-const { GameObject, Collider, SpriteRenderer, ShadowCaster, LightEmitter, LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE, Sun, enums } = WEED;
+const { GameObject, Collider, SpriteRenderer, ShadowCaster, VolumeShadowCaster, LightEmitter, LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE, Sun, enums } = WEED;
 const { ShapeType } = enums;
 
 // ?carSpeed= reaches this module on the logic worker through WEED.params: `location` there is the worker script's.
@@ -18,16 +18,39 @@ const HEADLIGHT_REACH = Math.sqrt(HEADLIGHT_INTENSITY) * 10;
 const CAR_FRAMES = Array.from({ length: 48 }, (_, i) => String(i * 7.5));
 const CAR_FRAME_STEP = (Math.PI * 2) / CAR_FRAMES.length;
 
+// A house sprite (186 px, its foot at the bottom edge) shows a front wall 104 px high and a roof 72 px deep.
+const HOUSE_WIDTH = 176;
+const HOUSE_DEPTH = 72;
+const HOUSE_HEIGHT = 104;
+const TANK_HEIGHT = 140;
+const TANK = [];
+for (let i = 0; i < 6; i++) {
+  const a = (i / 6) * Math.PI * 2;
+  TANK.push(-50 + Math.cos(a) * 20, -46 + Math.sin(a) * 12);
+}
+
+// A car as a volume, x forward: the body, and on it a cabin whose roof is smaller than its base.
+const CAR_BODY = [39, -19, 39, 19, -39, 19, -39, -19];
+const CAR_BODY_HEIGHT = 13;
+const CAR_CABIN = [16, -17, 16, 17, -30, 17, -30, -17];
+const CAR_ROOF = [2, -13, 2, 13, -22, 13, -22, -13];
+const CAR_ROOF_HEIGHT = 27;
+// carScene's pictures flatten the floor, so a car drawn head-on is shorter than one drawn side-on, and the picture's centre
+// sits above the floor's: the entity stands on the floor, and its picture is drawn that much higher.
+const CAR_FLOOR_SCALE = 0.7;
+const CAR_FLOOR_DROP = 7;
+
 const point = new Float64Array(3);
 
 /**
- * A house seen from the front, its roof going up the screen. A ShadowCaster would flip this picture: see HouseShadow.
+ * A house seen from the front, its roof going up the screen. A ShadowCaster would flip this picture, so it says what it is
+ * instead: a box with a water tank on it.
  * It blocks lamps and headlights with its whole picture, not its footprint: lights work on the floor, and in this view a
  * wall and a roof are drawn over the floor behind the house, so with the footprint the wall facing a lamp falls in the
  * footprint's own shadow, and the wall facing away is lit.
  */
 export class StreetHouse extends GameObject {
-  static components = [Collider, SpriteRenderer, LightOccluder];
+  static components = [Collider, SpriteRenderer, LightOccluder, VolumeShadowCaster];
 
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Box;
@@ -39,6 +62,8 @@ export class StreetHouse extends GameObject {
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1;
     this.lightOccluder.maskMode = LIGHT_OCCLUDER_MASK_SPRITE;
+    this.volumeShadowCaster.setBox(HOUSE_WIDTH, HOUSE_DEPTH, HOUSE_HEIGHT, { offsetY: -HOUSE_DEPTH / 2 });
+    this.volumeShadowCaster.addLevel(TANK, HOUSE_HEIGHT, TANK_HEIGHT);
   }
 }
 
@@ -114,7 +139,7 @@ export class StreetWalker extends GameObject {
 
 /** A car on the road. Its one light sits ahead of it, off the entity's centre: the panel's O. It blocks other lights. */
 export class StreetCar extends GameObject {
-  static components = [Collider, SpriteRenderer, LightEmitter, LightOccluder];
+  static components = [Collider, SpriteRenderer, LightEmitter, LightOccluder, VolumeShadowCaster];
 
   distance = 0.5;
   frame = -1;
@@ -128,7 +153,7 @@ export class StreetCar extends GameObject {
     this.setSpritesheet(config.sheet);
     this.setAnimation(CAR_FRAMES[0]);
     this.spriteRenderer.anchorX = 0.5;
-    this.spriteRenderer.anchorY = 0.5;
+    this.spriteRenderer.anchorY = 0.5 + CAR_FLOOR_DROP / this.spriteRenderer.originalHeight;
     // The frame shows the heading: the entity turns, the picture does not.
     this.spriteRenderer.inheritTransformRotation = 0;
     this.spriteRenderer.spriteRotation = 0;
@@ -136,6 +161,8 @@ export class StreetCar extends GameObject {
     this.lightEmitter.lightIntensity = 0;
     this.lightEmitter.offsetX = config.offset;
     this.lightOccluder.maskMode = LIGHT_OCCLUDER_MASK_SPRITE;
+    this.volumeShadowCaster.addLevel(CAR_BODY, 0, CAR_BODY_HEIGHT, CAR_BODY, { floorScaleY: CAR_FLOOR_SCALE });
+    this.volumeShadowCaster.addLevel(CAR_CABIN, CAR_BODY_HEIGHT, CAR_ROOF_HEIGHT, CAR_ROOF);
   }
 
   tick(dtRatio) {
@@ -144,7 +171,7 @@ export class StreetCar extends GameObject {
     // The rotation first: set x and set y send the body the rotation they find.
     this.rotation = point[2];
     this.x = point[0];
-    this.y = point[1];
+    this.y = point[1] + CAR_FLOOR_DROP;
     const frame = Math.round(point[2] / CAR_FRAME_STEP) % CAR_FRAMES.length;
     if (frame !== this.frame) {
       this.frame = frame;

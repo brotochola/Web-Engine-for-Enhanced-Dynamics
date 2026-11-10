@@ -316,6 +316,34 @@ test('packer warns once when MeshRenderer has no MESH layer bit', () => {
   }
 });
 
+test('packer does not warn for a VolumeShadowCaster still without a volume, and still warns for the others', () => {
+  // A wooden post spawned as a house: its class lists VolumeShadowCaster, so it has a MeshRenderer, which joins the volume
+  // layer only when the post is given a volume. Until then it is no forgotten setLayer.
+  resetColliderFillMeshLayerWarn();
+  const views = makeViews({ entities: 2, fixtures: 2 });
+  views.meshFloorScale = new Float32Array([1, 0]);
+  views.meshActive[0] = 1;
+  views.meshBits = 1;
+  addTri(views, 0, 0, 0, 0, 2, 0, 0, 2);
+
+  const warnings = [];
+  const prev = console.warn;
+  console.warn = (msg) => warnings.push(String(msg));
+  try {
+    const out = new Float32Array(4 * COLLIDER_FILL_FLOATS);
+    assert.equal(packColliderFill(out, 4, 0, views), 0);
+    assert.equal(warnings.length, 0);
+    views.meshActive[1] = 1;
+    addTri(views, 1, 1, 0, 0, 2, 0, 0, 2);
+    assert.equal(packColliderFill(out, 4, 0, views), 0);
+    assert.equal(warnings.length, 1);
+    assert.match(warnings[0], /WeedJS: MeshRenderer requires setLayer on a LAYER_KIND.MESH layer/);
+  } finally {
+    console.warn = prev;
+    resetColliderFillMeshLayerWarn();
+  }
+});
+
 test('packer skips spawn-in-progress MeshRenderer (active, no layer, no fixtures)', () => {
   resetColliderFillMeshLayerWarn();
   const views = makeViews({ entities: 1, fixtures: 1 });

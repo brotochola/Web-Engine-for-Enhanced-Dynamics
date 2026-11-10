@@ -5,7 +5,7 @@
  * farthest from the bar's foot) and prints both, with the distance between them. Exit 1 past --limit px (default 1.5: the
  * 2 px post's half diagonal, since the sprite's end is a turned edge and the post's a square corner).
  *
- *   node tests/bench/sunMeshParity.mjs [--backend webgl|webgpu] [--limit 1.5] [--hours 7,9,11,14,16,17]
+ *   node tests/bench/sunMeshParity.mjs [--backend webgl|webgpu] [--limit 1.5] [--hours 7,9,11,14,16,17] [--bar mesh|volume]
  */
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +26,7 @@ function option(name, fallback) {
 const BACKEND = option('backend', 'webgl');
 const LIMIT = Number(option('limit', 1.5));
 const HOURS = option('hours', '7,9,11,14,16,17').split(',').map(Number);
+const BAR = option('bar', 'mesh');
 
 async function shadowEnd(browser, server, bar, hour) {
   const page = await browser.newPage({ viewport: VIEWPORT });
@@ -110,7 +111,7 @@ let failed = false;
 try {
   for (const hour of HOURS) {
     const sprite = await shadowEnd(browser, server, 'sprite', hour);
-    const mesh = await shadowEnd(browser, server, 'mesh', hour);
+    const mesh = await shadowEnd(browser, server, BAR, hour);
     const dx = sprite.x - mesh.x;
     const dy = sprite.y - mesh.y;
     const gap = Math.sqrt(dx * dx + dy * dy);
@@ -119,7 +120,7 @@ try {
     if (!ok) failed = true;
     console.log(
       `${ok ? 'PASS' : 'FAIL'} ${BACKEND} ${hour} h: sprite end (${sprite.x.toFixed(1)}, ${sprite.y.toFixed(1)}), ` +
-        `mesh end (${mesh.x.toFixed(1)}, ${mesh.y.toFixed(1)}), ${gap.toFixed(2)} px apart; ` +
+        `${BAR} end (${mesh.x.toFixed(1)}, ${mesh.y.toFixed(1)}), ${gap.toFixed(2)} px apart; ` +
         `dark ${sprite.dark}/${mesh.dark} px, darkest ${sprite.darkest}/${mesh.darkest}` +
         (errors.length ? `; ${errors.slice(0, 2).join(' | ')}` : ''),
     );

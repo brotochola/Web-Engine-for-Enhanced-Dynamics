@@ -449,6 +449,8 @@ export function packColliderFill(out, cap, layerId, views) {
   const primaryWidth = views.primaryWidth;
   const primaryHeight = views.primaryHeight;
   const primaryRadius = views.primaryRadius;
+  // Above 0 on an entity whose class lists VolumeShadowCaster: its MeshRenderer joins the volume layer with a volume.
+  const volume = views.meshFloorScale || null;
   const outU32 = packOutU32(out, views);
   _instanceEntity = views.instanceEntity || null;
   views.layerHasVertexUv = 0;
@@ -465,7 +467,7 @@ export function packColliderFill(out, cap, layerId, views) {
     const meshAt = explicitMeshOffset(i, views);
     const drawable = meshAt >= 0 || entityHasDrawableCollider(i, views);
     if (!(mask & meshBits)) {
-      if (!_warnedMeshLayer && drawable) {
+      if (!_warnedMeshLayer && drawable && !(volume !== null && volume[i] > 0)) {
         _warnedMeshLayer = true;
         console.warn('WeedJS: MeshRenderer requires setLayer on a LAYER_KIND.MESH layer');
       }
@@ -760,6 +762,7 @@ export function packMeshUvFill(out, cap, layerId, views) {
   const mu = views.meshUvU;
   const mv = views.meshUvV;
   const indices = views.meshIndices;
+  const floorScale = views.meshFloorScale || null;
   let written = 0;
   let base = 0;
 
@@ -775,6 +778,8 @@ export function packMeshUvFill(out, cap, layerId, views) {
     if (vcount < 3 || !mu || !mv) continue;
 
     bindMeshPaint(i, views);
+    // DX-VOLUME: a volume has no tiles, and its floor scale goes to the shader in the row's tile offset.
+    if (floorScale !== null && floorScale[i] > 0) _paint.tou = floorScale[i];
     const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
     const rc = pose.c;
     const rs = pose.s;

@@ -1640,6 +1640,7 @@ export class Layer {
                 shaderFragment: config.shader?.fragment || null,
                 alphaBySun: normalizeAlphaBySun(name, config.alphaBySun ?? (config.sunProjected ? 'shadow' : null)),
                 sunProjected: config.sunProjected === true,
+                volumeFloor: config.volumeFloor === true,
                 shaderName: null,
                 dynamicResolution: config.dynamicResolution || null,
                 uniformTypes: null,

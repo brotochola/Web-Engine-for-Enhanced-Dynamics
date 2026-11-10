@@ -408,6 +408,7 @@ export interface QuerySystemPrecomputeComponentMap {
   AdobeAnimComponent: typeof AdobeAnimComponent;
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
+  VolumeShadowCaster: typeof VolumeShadowCaster;
   FlashComponent: typeof FlashComponent;
   LightOccluder: typeof LightOccluder;
   LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
@@ -1200,6 +1201,7 @@ export declare class GameObject {
   get lightEmitter(): LightEmitter | null;
   get flashComponent(): FlashComponent | null;
   get shadowCaster(): ShadowCaster | null;
+  get volumeShadowCaster(): VolumeShadowCaster | null;
   get sceneBridge(): typeof SceneBridge;
   sendMessageToScene(data: unknown): boolean;
   get active(): number;
@@ -3800,6 +3802,52 @@ export declare class LightEmitter extends Component {
   set hasGlowSprite(value: number);
 }
 
+/**
+ * Says what an object is, and the engine works out its shadow: a box, levels or a hull of points, in the entity's frame. It
+ * moves and turns with the entity, with no second entity, no layer in the config and no mesh code. x looks the way the entity
+ * looks, y across it, both on the floor; heights are in screen px, as on a ShadowCaster's sprite. The sun casts it; lamps do not
+ * yet. Its class has a MeshRenderer, whose one mesh is the volume: `setMesh` and the like are refused.
+ */
+export declare class VolumeShadowCaster extends Component {
+  static readonly ARRAY_SCHEMA: { floorScaleY: typeof Float32Array };
+  static readonly requires: readonly [typeof MeshRenderer];
+  static floorScaleY: Float32Array;
+  /**
+   * How tall the floor is drawn against its width, in (0, 1]; `config.lighting.groundScaleY` unless a volume says. The
+   * entity's rotation stays what the screen shows: a car keeps its long side on its path, and a turn rewrites no vertex.
+   */
+  floorScaleY: number;
+  /**
+   * A box. Replaces the volume. `offsetX` and `offsetY` are its centre; `topScale` shrinks the roof about it, from 0 up (0: a
+   * pyramid). A value that is not finite, or a topScale below 0, is refused with a warning and leaves the volume as it was.
+   */
+  setBox(
+    width: number,
+    depth: number,
+    height: number,
+    options?: { offsetX?: number; offsetY?: number; topScale?: number; floorScaleY?: number },
+  ): this;
+  /**
+   * One more level on what the volume has. `topOutline`, as many corners, makes its top another shape: one that closes on a
+   * point is a pyramid, on a line a gabled roof; one that crosses itself is refused. A corner that is not finite is refused.
+   */
+  addLevel(
+    outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    bottom: number,
+    top: number,
+    topOutline?: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,
+    options?: { floorScaleY?: number },
+  ): this;
+  /**
+   * The convex volume around points: flat x, y, z or objects, z the height. Runs once, when called. Replaces the volume. At most
+   * 4 096 points, all finite; otherwise it warns and leaves the volume as it was. Convex: it fills an L and joins a tower to a
+   * low annex with a slope, so give such boxes an addLevel each.
+   */
+  setHull(points: ArrayLike<number> | ReadonlyArray<{ x: number; y: number; z: number }>, options?: { floorScaleY?: number }): this;
+  /** No volume: the entity casts nothing until it is given one again. */
+  clear(): this;
+}
+
 export declare class ShadowCaster extends Component {
   /**
    * Cast this frame's shadow instead of the sprite's. Needs `config.lighting.shadowTextures: true`. Options left out
@@ -4402,6 +4450,7 @@ export interface WeedNamespace extends WeedEnums {
   ParticleComponent: typeof ParticleComponent;
   LightEmitter: typeof LightEmitter;
   ShadowCaster: typeof ShadowCaster;
+  VolumeShadowCaster: typeof VolumeShadowCaster;
   LightOccluder: typeof LightOccluder;
   LIGHT_OCCLUDER_MASK_COLLIDER: typeof LIGHT_OCCLUDER_MASK_COLLIDER;
   LIGHT_OCCLUDER_MASK_SPRITE: typeof LIGHT_OCCLUDER_MASK_SPRITE;

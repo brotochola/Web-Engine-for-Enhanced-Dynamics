@@ -241,9 +241,53 @@ layers: {
 
 A MESH layer with `alphaBySun` draws into one render texture at the layer's `resolution` and composes it once, so overlapping meshes do not darken twice. A sprite layer fades per sprite.
 
-### Volumes the sun projects
+### Volumes: `VolumeShadowCaster`
 
-A `ShadowCaster` flips a sprite from its foot, which suits something standing. A house or a car seen from above is a volume: give it a mesh with a height per vertex on a `sunProjected` layer, and the vertex shader moves each vertex by its height and the sun, every frame, with nothing packed or uploaded after the first.
+A `ShadowCaster` flips a sprite from its foot, which suits something standing. A house or a car seen from above is a volume: list `VolumeShadowCaster` and say what it is. The engine works out the shadow.
+
+```javascript
+static components = [SpriteRenderer, VolumeShadowCaster];
+
+onSpawned() {
+  this.setSprite('house');
+  this.volumeShadowCaster.setBox(176, 72, 104, { offsetY: -36 }); // width, depth, height, and its centre on the entity
+  this.volumeShadowCaster.addLevel(tankOutline, 104, 140);        // a water tank on the roof
+}
+```
+
+It moves and turns with its entity. There is no second entity, no `tick`, no layer in the config and no mesh code.
+
+- `setBox(width, depth, height, { offsetX, offsetY, topScale, floorScaleY })` is a box; `topScale` makes its roof smaller about its centre. It goes from 0 up, and 0 is a pyramid. It replaces the volume.
+- `addLevel(outline, bottom, top, topOutline, { floorScaleY })` adds a level on what the volume has: a cabin on a car's body, a tank on a roof. The outline is flat `x, y` or `{ x, y }[]`, and need not be convex. `topOutline`, with as many corners, gives the level another top; a top that closes on a point is a pyramid and one that closes on a line a gabled roof. A top that crosses itself is refused.
+- `setHull(points, { floorScaleY })` is the convex volume around points, flat `x, y, z` or `{ x, y, z }[]`, for a house from an editor. It runs when you call it, so call it once. It replaces the volume. It takes at most 4 096 points.
+- `clear()` leaves no volume.
+
+A hull is convex. It fills an L, joins a tall tower to a low annex with a slope, and turns a tank on a roof into a wedge. Where that shows, give each box its own `addLevel`: the layer composes once, so where they overlap they do not darken twice. A box takes 8 vertices, so raise `lighting.maxVolumeVerts` for a house of many.
+
+A call that cannot make a volume warns once for each kind of mistake and leaves the volume as it was: a point, a size or an offset that is not finite, a hull of more than 4 096 points, points that enclose nothing, a top below its bottom.
+
+x looks the way the entity looks and y goes across it, both on the floor, in world px. Heights are in screen px, as on a `ShadowCaster`'s sprite, so houses, people and trees cast to the same point.
+
+`floorScaleY` (default `lighting.groundScaleY`) is how tall the floor is drawn against its width. A car whose pictures flatten the floor to 0.7 says so on a floor of 0.5. The shader applies it, so a car that turns rewrites no vertex, and it keeps the entity's rotation as what the screen shows: the car's long side stays on its path at every heading. Points already measured on the screen take `floorScaleY: 1`.
+
+```javascript
+// A car, x forward. Its cabin's roof is smaller than its base.
+this.volumeShadowCaster.addLevel(BODY, 0, 13, BODY, { floorScaleY: 0.7 });
+this.volumeShadowCaster.addLevel(CABIN, 13, 27, ROOF);
+```
+
+The rest takes care of itself:
+
+- **The layer.** A scene with such a class gets a `volumeShadows` layer at `zIndex` 1.5, composed once with `alphaBySun: 'shadow'`, so two shadows that cross do not darken twice. `layers: { volumeShadows: { zIndex: 2.5 } }` moves it. `setLayer` moves the entity's sprite, not its volume.
+- **The room.** The scene keeps `lighting.maxVolumeVerts` vertices (default 16) for each entity of such a class, on top of `renderer.maxMeshVerts`. A box takes 8, a body with a cabin 16, and a hull as many as its corners. It is a share of one arena, so one volume may take more if another takes less; when it is full, a volume warns and does not draw.
+- **Its entity's paint.** The shadow is black whatever `tint` the entity has. `alpha` and `visible` reach it, so a car that fades takes its shadow along.
+- **The cost.** A volume draws what the mesh it replaces would, and a turn rewrites nothing. On a town of 20 000 houses and 200 cars, as many frames as meshes written by hand, and 5 % less of the renderer's time.
+
+An entity of such a class has a `MeshRenderer`, listed or not, and its one mesh is the volume: `setMesh` and the like are refused with a warning. The sun casts a volume; lamps do not yet.
+
+### Volumes by hand: `sunProjected`
+
+`VolumeShadowCaster` is built on this, and it stays public for what the component does not cover. Give an entity a mesh with a height per vertex on a `sunProjected` layer, and the vertex shader moves each vertex by its height and the sun, every frame, with nothing packed or uploaded after the first.
 
 ```javascript
 layers: { houseShadows: { kind: LAYER_KIND.MESH, zIndex: 1.5, sunProjected: true } } // alphaBySun defaults to 'shadow'

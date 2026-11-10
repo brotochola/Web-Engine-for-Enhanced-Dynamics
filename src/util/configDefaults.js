@@ -691,6 +691,10 @@ export const SUN_DEFAULTS = Object.freeze({
   colors: null,
 });
 
+/** DX-VOLUME: the layer Scene adds for VolumeShadowCaster, and its place: over the decals, under castedShadows. */
+export const VOLUME_LAYER = 'volumeShadows';
+export const VOLUME_LAYER_Z = 1.5;
+
 export const LIGHTING_DEFAULTS = Object.freeze({
   enabled: false,
   baseAmbient: 0.05,
@@ -704,6 +708,11 @@ export const LIGHTING_DEFAULTS = Object.freeze({
   maxShadowsPerEntity: 0,
   maxShadowSprites: 1000,
   maxFlashes: 0,
+  /**
+   * Mesh arena vertices kept for each entity of a class that lists VolumeShadowCaster, added to renderer.maxMeshVerts: 16
+   * holds a box with a cabin, or a hull of 16 points. It is a share of one arena, so a volume may take more if others take less.
+   */
+  maxVolumeVerts: 16,
   resolution: 0.25,
   shadowResolution: 0.5,
   /** 1 = update shadowRT every frame; N > 1 reuses last shadowRT for N-1 frames. */

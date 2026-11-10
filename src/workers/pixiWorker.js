@@ -26,6 +26,7 @@ import { bindCommandRing } from '../box2d/box2dCommandRing.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
+import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
 import { MeshGeometry } from '../core/meshGeometry.js';
 import { MeshUvFillBatch } from '../render/meshUvFillBatch.js';
@@ -1464,6 +1465,7 @@ class PixiRenderer extends AbstractWorker {
       v.meshRepeatY = MeshRenderer.repeatY;
       v.meshTileOffU = MeshRenderer.tileOffsetU;
       v.meshTileOffV = MeshRenderer.tileOffsetV;
+      v.meshFloorScale = VolumeShadowCaster.floorScaleY || null;
       v.meshVisualOutset = MeshRenderer.visualOutset;
       v.fixtureCount = Collider.fixtureCount;
       v.fixtureHead = ColliderFixture.head;
@@ -5639,6 +5641,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     });
     batch.mesh.blendMode = cl.fillBatch?.mesh?.blendMode || cl.containerBlend || 'normal';
     cl.uvFillBatch = batch;
+    if (cl.volumeFloor) batch.setVolumes();
     if (!cl.rt && !cl.meshLook) {
       const fill = cl.fillBatch?.mesh;
       if (fill?.parent) fill.parent.addChild(batch.mesh);
@@ -7760,6 +7763,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         shaderBypass: false,
         meshLook: false,
         sunProjected: isMesh && config.sunProjected === true,
+        volumeFloor: isMesh && config.volumeFloor === true,
         compute: null,
         lookSource: null,
         // LAYER_KIND.GPU_PARTICLES: the layer's GpuParticleLayerBatch, or null.

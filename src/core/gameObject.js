@@ -12,6 +12,7 @@ import { MeshRenderer, MESH_NO_TEXTURE } from '../components/meshRenderer.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
+import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightOccluder } from '../components/lightOccluder.js';
 import { SpriteSheetRegistry, BIG_ATLAS_CHUNK, bigAtlasChunkName } from './spriteSheetRegistry.js';
@@ -1444,8 +1445,10 @@ export class GameObject {
       AdobeAnimComponent.layerMask[i] = m;
     }
     if (this._hasComponents.MeshRenderer && MeshRenderer.layerMask) {
-      if (MeshRenderer.layerMask[i] !== m) {
-        MeshRenderer.layerMask[i] = m;
+      // A volume stays on its layer, wherever the entity's sprite goes; an entity of such a class with no volume stays off it.
+      const meshMask = this._hasComponents.VolumeShadowCaster ? m | (MeshRenderer.layerMask[i] & VolumeShadowCaster.layerBit()) : m;
+      if (MeshRenderer.layerMask[i] !== meshMask) {
+        MeshRenderer.layerMask[i] = meshMask;
         MeshRenderer.renderDirty[i] = 1;
       }
     }
@@ -3043,6 +3046,8 @@ export class GameObject {
       ShadowCaster.heightMultiplier[i] = 1; // Default: normal shadow (0 = no shadow)
       if (ShadowCaster.textureId) ShadowCaster.textureId[i] = 0;
     }
+
+    if (has.VolumeShadowCaster) VolumeShadowCaster.floorScaleY[i] = VolumeShadowCaster.defaultFloorScaleY;
 
     if (has.FlashComponent) {
       FlashComponent.active[i] = 1;

@@ -23,6 +23,7 @@ import { bindLiquidFunUserDataListSab } from '../box2d/liquidFunUserDataList.js'
 import { bindMovedBodies } from '../box2d/box2dMovedBodies.js';
 import { SpriteRenderer } from '../components/spriteRenderer.js';
 import { MeshRenderer } from '../components/meshRenderer.js';
+import { resolveGroundScaleY } from '../util/lightRadius.js';
 import { AdobeAnimComponent } from '../components/adobeAnimComponent.js';
 import { ParticleComponent } from '../components/particleComponent.js';
 import { DecorationComponent } from '../components/decorationComponent.js';
@@ -30,6 +31,7 @@ import { BulletComponent } from '../components/bulletComponent.js';
 import { DecorationPool } from './decorationPool.js';
 import { BulletPool } from './bulletPool.js';
 import { ShadowCaster } from '../components/shadowCaster.js';
+import { VolumeShadowCaster } from '../components/volumeShadowCaster.js';
 import { FlashComponent } from '../components/flashComponent.js';
 import { LightEmitter } from '../components/lightEmitter.js';
 import { LightOccluder } from '../components/lightOccluder.js';
@@ -92,6 +94,9 @@ import {
   PRE_RENDER_DEFAULTS,
   AUDIO_DEFAULTS,
   LIGHTING_DEFAULTS,
+  LAYER_KIND,
+  VOLUME_LAYER,
+  VOLUME_LAYER_Z,
   NAVIGATION_DEFAULTS,
   DEBUG_DEFAULTS,
   SUN_DEFAULTS,
@@ -208,6 +213,7 @@ class Scene {
 
     // Apply all default config values
     this._applyConfigDefaults();
+    this._applyVolumeConfig();
     // The id width before any pool registers ('auto': from every entity the scene declares), written back so
     // the shared buffers and every worker bind the same one.
     this.config.entityIdWidth = resolveEntityIdWidth(
@@ -407,6 +413,9 @@ class Scene {
     ShadowCaster.clearArrays();
     // Workers set it from their init message; a page may call setTexture too.
     ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
+    VolumeShadowCaster.componentId = null;
+    VolumeShadowCaster.clearArrays();
+    VolumeShadowCaster.defaultFloorScaleY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
     FlashComponent.componentId = null;
     FlashComponent.clearArrays();
     LightOccluder.componentId = null;
@@ -600,6 +609,36 @@ class Scene {
       // Raycasted lighting needs LightEmitter for light sources
       this._ensureComponentPool(LightEmitter);
     }
+  }
+
+  /**
+   * DX-VOLUME: with a class that lists VolumeShadowCaster, its layer and its share of the mesh arena, so a scene's config says
+   * nothing about either. config.layers.volumeShadows, if the scene has it, moves the layer. A hull's triangles are at most
+   * six indices a vertex.
+   */
+  _applyVolumeConfig() {
+    let volumes = 0;
+    for (const entry of this.constructor.entities || []) {
+      if (!(entry[1] > 0)) continue;
+      if (GameObject._collectComponents(entry[0]).includes(VolumeShadowCaster)) volumes += entry[1] | 0;
+    }
+    if (volumes === 0) return;
+    const verts = volumes * (this.config.lighting?.maxVolumeVerts ?? LIGHTING_DEFAULTS.maxVolumeVerts);
+    this.config.renderer = {
+      ...this.config.renderer,
+      maxMeshVerts: (this.config.renderer?.maxMeshVerts | 0) + verts,
+      maxMeshIndices: (this.config.renderer?.maxMeshIndices | 0) + verts * 6,
+    };
+    this.config.layers = {
+      ...this.config.layers,
+      [VOLUME_LAYER]: {
+        zIndex: VOLUME_LAYER_Z,
+        ...this.config.layers?.[VOLUME_LAYER],
+        kind: LAYER_KIND.MESH,
+        sunProjected: true,
+        volumeFloor: true,
+      },
+    };
   }
 
   /**

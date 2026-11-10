@@ -75,6 +75,7 @@ export { ParticleComponent } from './components/particleComponent.js';
 export { DecorationComponent } from './components/decorationComponent.js';
 export { LightEmitter } from './components/lightEmitter.js';
 export { ShadowCaster } from './components/shadowCaster.js';
+export { VolumeShadowCaster } from './components/volumeShadowCaster.js';
 export {
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
@@ -257,6 +258,7 @@ import { DecorationComponent } from './components/decorationComponent.js';
 import { BulletComponent } from './components/bulletComponent.js';
 import { LightEmitter } from './components/lightEmitter.js';
 import { ShadowCaster } from './components/shadowCaster.js';
+import { VolumeShadowCaster } from './components/volumeShadowCaster.js';
 import {
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
@@ -395,6 +397,7 @@ const WEED = Object.freeze({
   ParticleComponent,
   LightEmitter,
   ShadowCaster,
+  VolumeShadowCaster,
   LightOccluder,
   LIGHT_OCCLUDER_MASK_COLLIDER,
   LIGHT_OCCLUDER_MASK_SPRITE,
