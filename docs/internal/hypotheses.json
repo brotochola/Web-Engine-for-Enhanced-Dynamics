@@ -11004,11 +11004,11 @@
     {
       "id": "N-127",
       "title": "A worldRect layer's float pictures do not upload in WebGL",
-      "status": "open",
-      "statusText": "Confirmed in the code, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (7a9b646a, R-0878)",
       "date": "2026-11-10",
-      "result": "uploadSharedImage hands texSubImage2D a Uint8Array with type FLOAT, which WebGL 2 refuses, and sends r32float as RGBA; WebGPU is right. Conurbano avoids it with RGBA8 in fixed point.",
-      "next": "A Float32Array view over the same bytes (offset in floats) and RED for r32float, on its own branch, with a browser test that reads a float picture back on WebGL.",
+      "result": "fixed 2026-11-11 (7a9b646a, R-0878): Float32Array uploads and first contents; a WebGL2 Pixi probe read both float formats back empty before (INVALID_OPERATION), exact after",
+      "next": "Done.",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -11022,7 +11022,8 @@
         "sharedTextureUpload"
       ],
       "records": [
-        "R-0851"
+        "R-0851",
+        "R-0878"
       ]
     },
     {
@@ -20221,6 +20222,16 @@
       "text": "**N-129's second half fixed (`54cc6109`): bullet impacts reach the logic workers through a ring, so a logic worker that misses a particle frame keeps its impacts. Hygiene keep.** 2026-11-11, from 16:02 (the sitting's first result file) to 16:05. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug.** The particle worker's bullet tick wrote each frame's impacts over the last ones, in one shared batch, and moved a sequence number. A logic worker took the batch whose number it had not seen. So:\n- one that missed a particle frame (two particle frames between its reads) lost that frame's impacts;\n- one reading while the next batch was written could read a mix of the two.\n\n**The fix.** The ring is in the transport. The bullet tick (JS or bulletTick.wasm) is unchanged.\n- The tick writes the frame's impacts as one batch into a private buffer.\n- The particle worker appends them to a ring in the impact buffer and publishes the count. The ring (`src/util/impactRing.js`) holds eight frames of `maxImpactsPerFrame`, a power of two, after a header.\n- Each logic worker runs every impact published since its own last read (`_pollImpacts`, then `processImpacts(from, to)` over the ring).\n- A logic worker further behind than the ring holds runs the newest the ring still has and warns once.\n\n**Tests** (`impactPins.test.js`, the real logic worker):\n- The pins as before.\n- Two particle frames before one logic frame: all three impacts run, and nothing runs twice.\n- Three times around the ring, polled each frame: every impact once, in order.\n- More than the ring holds between two polls: the newest ring's worth runs, from the oldest it still has, with one warning that counts the impacts lost.\n\n**Cost.** bulletStressScene, 4 pairs (`--vs 6949e097 --hyp-rev 54cc6109 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.230 → 3.196 ms (-0.6 %, worse 1/4, cv 1/1 %).\n- Logic 0.497 → 0.503 ms (below the floor).\n\nN-129 is done.",
       "commits": [
         "54cc6109"
+      ]
+    },
+    {
+      "id": "R-0878",
+      "date": "2026-11-11",
+      "title": "N-127 fixed: a worldRect layer's float pictures are made and go up as floats on WebGL, r32float as RED",
+      "verdict": "kept-hygiene",
+      "text": "**N-127 fixed (`7a9b646a`): a worldRect layer's float pictures are made and go up as floats on WebGL, and r32float as RED.** 2026-11-11.\n\n**The bug.** On WebGL a float picture (`r32float`, `rgba32float`) never reached the GPU, for three reasons:\n- `uploadSharedImage` handed `texSubImage2D` the picture's bytes, a `Uint8Array`, with type `FLOAT`;\n- it picked `RED` only for 1-byte texels, so `r32float` went as `RGBA`;\n- `createSharedTextureSource` made the picture from a `Uint8Array` too, so Pixi's first `texImage2D` (FLOAT) was refused the same way and the texture was never allocated.\n\nWebGPU writes bytes and was right. Conurbano avoids the bug with RGBA8 in fixed point.\n\n**The fix.**\n- A float picture's upload passes a `Float32Array` over the same memory, with its offset in floats.\n- A one-channel picture goes as `RED`, `r32float` included.\n- A float picture starts as a `Float32Array`.\n\n**Evidence.** A probe on a real WebGL2 Pixi renderer in Chrome 157 (through `chromeKernel.mjs`, not committed): pictures made as the engine makes them, a rectangle of shared floats uploaded twice, then read back.\n- Before: `INVALID_OPERATION: texImage2D: type FLOAT but ArrayBufferView not Float32Array`, and the same for `texSubImage2D`. The framebuffer over the picture was incomplete (an attachment of zero size), and 36 of the r32float picture's floats and 144 of the rgba32float one's read back wrong.\n- After: both read back exact, with no GL error.\n\n**Tests.** `sharedTextureUploadGl.test.js` holds the call's format, type, view and offset for every format, and the first contents' type. With the old code its two float tests fail and the byte test passes.\n\nNo timing: no scene that is timed draws a float picture on WebGL. The byte path is the same call as before.",
+      "commits": [
+        "7a9b646a"
       ]
     }
   ],
