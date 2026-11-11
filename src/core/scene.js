@@ -144,7 +144,7 @@ import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
 import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
-import { darkLightingText } from '../util/sceneGuards.js';
+import { darkLightingText, smallWorldText } from '../util/sceneGuards.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
@@ -648,6 +648,15 @@ class Scene {
   }
 
   /**
+   * DX-GUARDS C9: no world size and a canvas bigger than the default world, so the camera cannot zoom out to the
+   * canvas. Once the game has set config.canvasWidth/Height (GameEngine.loadScene does, before init).
+   */
+  _warnSmallWorld() {
+    const text = smallWorldText(this.constructor.name, this.constructor.config, this.config.canvasWidth, this.config.canvasHeight);
+    if (text) warnOnce(this.constructor.name, 'small-world', text);
+  }
+
+  /**
    * Register an entity class
    */
   registerEntityClass(EntityClass, count, scriptPath = null) {
@@ -1129,6 +1138,8 @@ class Scene {
     // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
     // render-queue regions the shared buffers make are laid in it.
     await reserveBox2dBlock(this);
+
+    this._warnSmallWorld();
 
     // Create shared buffers
 

@@ -45,3 +45,42 @@ test('C8: an ambient set by the scene, a sun, or lighting off is silent', () => 
   }
   assert.deepEqual(warningsOf(() => new (sceneWith({}))({})), [], 'no lighting key');
 });
+
+test('C9: no world size and a canvas bigger than the default world is named, once the canvas is known', () => {
+  const Open = class Open extends Scene {
+    static entities = [[Lamp, 4]];
+    static config = {};
+  };
+  const lines = warningsOf(() => {
+    const scene = new Open({});
+    scene.config.canvasWidth = 1280;
+    scene.config.canvasHeight = 720;
+    scene._warnSmallWorld();
+  });
+  assert.deepEqual(lines, [
+    'WeedJS: Open sets no worldWidth, so the world is the default 1000 × 1000, smaller than the 1280 × 720 canvas: ' +
+      'the camera cannot zoom out past 1.28. Set config.worldWidth to the size of the world.',
+  ]);
+  const both = warningsOf(() => {
+    const scene = new Open({});
+    scene.config.canvasWidth = 1920;
+    scene.config.canvasHeight = 1080;
+    scene._warnSmallWorld();
+  });
+  assert.match(both[0], /sets no worldWidth and worldHeight, .* past 1\.92\. Set config\.worldWidth and worldHeight to/);
+});
+
+test('C9: a world size the scene sets, or a canvas inside the default world, is silent', () => {
+  for (const [config, w, h] of [[WORLD, 1920, 1080], [{ worldWidth: 800, worldHeight: 600 }, 1920, 1080], [{}, 800, 600]]) {
+    const S = class Sized extends Scene {
+      static entities = [[Lamp, 4]];
+      static config = config;
+    };
+    assert.deepEqual(warningsOf(() => {
+      const scene = new S({});
+      scene.config.canvasWidth = w;
+      scene.config.canvasHeight = h;
+      scene._warnSmallWorld();
+    }), [], JSON.stringify(config));
+  }
+});
