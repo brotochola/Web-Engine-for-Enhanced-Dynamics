@@ -225,6 +225,8 @@ export function buildSceneSharedBuffers(scene) {
     decalStampRing: scene.buffers.decalStampRing || null,
     spawnCommandRing: scene.buffers.spawnCommandRing || null,
     listUpdateRings: scene.buffers.listUpdateRings || null,
+    meshPoseLists: scene.buffers.meshPoseLists || null,
+    meshPoseCapacity: scene.buffers.meshPoseCapacity | 0,
     decalsTilesRGBA: scene.buffers.decalsTilesRGBA || null,
     perTypeActiveLists: scene.buffers.perTypeActiveLists,
     entityFreeLists: scene.buffers.entityFreeLists,

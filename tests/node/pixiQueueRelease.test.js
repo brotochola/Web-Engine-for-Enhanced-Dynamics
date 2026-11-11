@@ -61,6 +61,7 @@ function makeContext({ sync, gpuLive, presenting = true, backpressure = true }) 
     renderQueueCount: null,
     renderQueueCamera: null,
     renderQueuePoseReady: null,
+    _meshPoseLists: [],
     _newQueueThisFrame: 0,
     _latchedPrevX: null,
     _latchedPrevY: null,
