@@ -4,3 +4,5 @@ export function devChecksOn() {
   return false;
 }
 export function checkFirstInstance() {}
+export function noteSpawned() {}
+export function auditFields() {}

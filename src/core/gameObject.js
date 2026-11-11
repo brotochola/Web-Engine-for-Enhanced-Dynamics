@@ -20,6 +20,7 @@ import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
+import { noteSpawned } from './debug/devChecks.js';
 import { ColliderFixture } from './colliderFixture.js';
 import { ChainPoints } from './chainPoints.js';
 import { MeshGeometry } from './meshGeometry.js';
@@ -3212,6 +3213,8 @@ export class GameObject {
           reportWorkerError(error, 'onSpawned', EntityClass.name, i);
         }
       }
+      // DX-GUARDS E2 (debug build): what the instance holds now is its shape; a field first written later is named.
+      noteSpawned(instance);
 
       if (has.RigidBody && RigidBody.active[i]) {
         RigidBody.syncMassFromCollider(i);

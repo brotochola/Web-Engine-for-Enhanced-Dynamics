@@ -81,6 +81,10 @@ import {
 import { collectInstanceFields, applyInstanceFields } from '../core/save/instanceFields.js';
 import { GpuParticles } from '../core/gpuParticles.js';
 import { gpuLogicWriterSlot } from '../util/gpuParticleLayout.js';
+import { auditFields } from '../core/debug/devChecks.js';
+
+/** DX-GUARDS E2: the instance devChecks audits for a class. */
+const firstActiveInstance = (EntityClass) => EntityClass.getFirstActiveInstance();
 
 /** This worker's instance of the entity at `index` (hot reload field carry). */
 function instanceAtIndex(index) {
@@ -888,6 +892,8 @@ class LogicWorker extends AbstractWorker {
 
   update(deltaTime, dtRatio, resuming) {
     if (this.collectDetailedStats) this.frameStartTime = performance.now();
+    // DX-GUARDS E2 (debug build): once a second, a field first written after onSpawned.
+    auditFields(firstActiveInstance);
     Tween.tick(deltaTime, this.workerIndex, this.totalLogicWorkers);
     this._latchDisplayPose();
 

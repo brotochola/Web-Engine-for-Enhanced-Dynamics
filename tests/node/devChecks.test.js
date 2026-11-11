@@ -122,3 +122,72 @@ test('E1: off, nothing is said', () => {
   });
   assert.deepEqual(lines, []);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E2: a field first written after onSpawned.
+// ---------------------------------------------------------------------------------------------------------------------
+
+import { Transform } from '../../src/components/transform.js';
+import { resetFreeList } from '../../src/util/atomicFreeList.js';
+
+/** A one-slot pool for `C` at index 0, its instance made by the class itself, as a logic worker makes it. */
+function onePool(C) {
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(1)), 1);
+  Transform.x = new Float32Array(1);
+  Transform.y = new Float32Array(1);
+  Transform.rotation = new Float32Array(1);
+  const top = new Int32Array(new SharedArrayBuffer(8));
+  const links = new Uint16Array(1);
+  resetFreeList(top, links, 1, 1);
+  C.startIndex = 0;
+  C.endIndex = 1;
+  C.poolSize = 1;
+  C.entityType = 0;
+  C.freeList = links;
+  C.freeListTop = top;
+  C._componentClassMap = {};
+  const instance = Object.create(C.prototype);
+  instance.index = 0;
+  instance._hasComponents = {};
+  instance._spawnAborted = false;
+  C.instances = [instance];
+  C._activeList = new Int32Array([1, 0]);
+  Transform.active[0] = 0;
+  return instance;
+}
+
+test('E2: a field first written after onSpawned is named by the audit, once; one written in onSpawned is not', () => {
+  class Runner extends GameObject {
+    onSpawned() {
+      this.lane = 2;
+    }
+  }
+  const runner = onePool(Runner);
+  const lines = warningsOf(() => {
+    Runner.spawn({});
+    runner.target = 7; // what a tick would do
+    real.auditFields((C) => C.getFirstActiveInstance(), 1e9);
+    real.auditFields((C) => C.getFirstActiveInstance(), 2e9);
+  });
+  assert.deepEqual(lines, [
+    "WeedJS: Runner's field target is first written after onSpawned: the object changes shape, every method that saw " +
+      'the old one deoptimizes, and the field lives only in this worker. Declare it in the constructor (this.target = …).',
+  ]);
+});
+
+test('E2: the audit runs once a second at most, and not when the checks are off', () => {
+  class Jumper extends GameObject {}
+  const jumper = onePool(Jumper);
+  const lines = warningsOf(() => {
+    Jumper.spawn({});
+    real.auditFields((C) => C.getFirstActiveInstance(), 3e9);
+    jumper.height = 1;
+    real.auditFields((C) => C.getFirstActiveInstance(), 3e9 + 500);
+  });
+  assert.deepEqual(lines, [], 'half a second later: not yet');
+  const off = warningsOf(() => {
+    real.setDevChecks(false);
+    real.auditFields((C) => C.getFirstActiveInstance(), 5e9);
+  });
+  assert.deepEqual(off, []);
+});
