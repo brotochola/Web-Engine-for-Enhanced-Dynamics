@@ -268,6 +268,22 @@ test('a level that does not fit leaves the volume it had, on the layer, and warn
   assert.equal(MeshGeometry.vertCount[2], 6);
 });
 
+test('a hull that does not fit replaces the volume with none: the old one would be a wrong shadow', () => {
+  setup({ verts: 14, indices: 90 });
+  const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
+  const v = volume(1);
+  v.setBox(10, 10, 10);
+  assert.ok(MeshRenderer.layerMask[1] & bit);
+  const prism = [];
+  for (const z of [0, 20]) {
+    for (let k = 0; k < 8; k++) prism.push(10 * Math.cos((k * Math.PI) / 4), 10 * Math.sin((k * Math.PI) / 4), z);
+  }
+  const seen = warnings(() => v.setHull(prism));
+  assert.ok(seen.some((m) => m.includes('lighting.maxVolumeVerts')), seen.join(' | '));
+  assert.equal(MeshGeometry.vertCount[1], 0);
+  assert.equal(MeshRenderer.layerMask[1] & bit, 0);
+});
+
 test('a volume the arena refuses outright leaves the layer with no mesh', () => {
   setup({ verts: 7, indices: 90 });
   const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
