@@ -9985,7 +9985,8 @@
         "R-0886",
         "R-0888",
         "R-0891",
-        "R-0896"
+        "R-0896",
+        "R-0902"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -20687,6 +20688,18 @@
       "text": "**E-209 (`b93ab8ee`): entity instances made on a slot's first use, not one per slot at boot.** 2026-11-11.\n\n**Premise (R-0897).** Every logic worker made `new EntityClass` for every pool slot at boot, and the page a frozen copy of each, whether or not a slot was ever spawned. Per 100 000 slots: about 40 ms and 11.7 MB per logic worker, and 27 ms and 13.7 MB on the page.\n\n**The change.**\n- A slot's instance is made on its first use: a spawn, a tick, a callback, `GameObject.get`.\n- At boot the logic worker writes every slot's type and \"not active\" for the pool at once (what each constructor wrote).\n- Its maker, `_makeInstance`, builds an instance without touching the slot's Transform (the slot may be live, spawned by another worker or the page) and then calls `start()`.\n- Every instance read in logicWorker.js (21: ticks, impacts, collision, joint and message dispatch, the page's despawn) goes through the maker when the slot has none. `GameObject._at` and `_instanceOf` do the same for the global and per-class lists.\n- The page has its own maker: frozen instances, with the DX-GUARDS check once per class.\n- `start()`, undocumented for entities and defined by no demo, now runs at a slot's first use instead of at boot.\n- `lazyInstances.test.js`, on a real logic worker:\n  - no instance at boot, and the pool typed and not active;\n  - a slot made live elsewhere gets its instance on its first tick, with `start()` once and its Transform left alone;\n  - `GameObject.get` makes one; an index outside the pools gives none;\n  - the page makes none until asked, frozen.\n\n**Boot** (`entityInstanceBootMicrobench`, 100 000 slots, Node 22, two runs of 5):\n- logic: 40.6 / 37.5 → 4.5 / 4.7 ms; 11.7 → 1.5 MB (16 B a slot: the index arrays);\n- page: 26.6 / 27.7 → 1.4 / 1.3 ms; 13.7 → 1.5 MB.\n\n**Per frame: Predator's gate**, 4 pairs, 20:30 to 20:34 (`--vs 504d9bdf --hyp-rev b93ab8ee --full-rev`): **NEUTRAL.**\n- Logic -7.5 % (worse 0/4; -7.8 % against the others, lower 4/4).\n- Spatial +2.7 % (3/4), pre-render +0.1 %, physics +4.5 % (2/4): workers the change does not reach.\n- No page error.\n\nThe tick paths' `??` costs nothing while a slot has its instance.\n\nKept for boot and memory. Per 100 000 slots, each logic worker saves about 36 ms and 10 MB and the page 26 ms and 12 MB; at the largest pools, over 250 MB with four logic workers. Instances are now made as slots are used, a spawn burst paying them then.",
       "commits": [
         "b93ab8ee"
+      ]
+    },
+    {
+      "id": "R-0902",
+      "date": "2026-11-11",
+      "time": "20:54",
+      "timeFrom": "recorded",
+      "title": "The bundles of 4b5cfe94 (E-209) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of 4b5cfe94 (E-209 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `e1fc4b27`, built from 4b5cfe94.\n\n- Node 2477 of 2477, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 20:39 to 20:44: NEUTRAL.** Logic -7.7 % (0/4 worse), spatial +0.6 % (2/4), physics -1.4 %, pre-render -2.0 %.\n- **Boids, 8 pairs, 20:44 to 20:54: NEUTRAL.** Spatial 5.667 → 5.703 ms (+0.7 %, worse 7/8, cv 1/1 %; under the 3 %), physics -0.1 % (4/8).\n\nMain pushed.",
+      "commits": [
+        "e1fc4b27"
       ]
     }
   ],
