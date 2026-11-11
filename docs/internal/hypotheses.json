@@ -11240,7 +11240,8 @@
         "steering"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0898"
       ],
       "rank": 28
     },
@@ -11961,6 +11962,30 @@
       "records": [
         "R-0894"
       ]
+    },
+    {
+      "id": "E-215",
+      "title": "The tick loops look up each entity's tick in a call site every type shares",
+      "status": "open",
+      "statusText": "filed 2026-11-11 from Predator's CPU trace on main (R-0898); not measured",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "Step 0: a kernel on the real _tickIntervalBucket with Predator's type mix, the type's tick looked up once per bucket against today's per-entity load; the scene only if the kernel moves. Owner: Predator logic.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-215"
+      ],
+      "aliases": [
+        "_tickIntervalBucket",
+        "megamorphic",
+        "tick loop",
+        "obj.tick"
+      ],
+      "records": [
+        "R-0898"
+      ],
+      "rank": 5
     }
   ],
   "records": [
@@ -20618,6 +20643,15 @@
       "commits": [
         "83e02a98"
       ]
+    },
+    {
+      "id": "R-0898",
+      "date": "2026-11-11",
+      "time": "20:18",
+      "timeFrom": "recorded",
+      "title": "Predator's CPU trace on main after the day's work: logic 20 % in neighbour reads, 8.4 % in the shared tick loop (E-215 filed)",
+      "verdict": "note",
+      "text": "**Predator's CPU trace on main after the day's work (`d299da1e`, src, headless, `--trace-cpu`, 5 s after 8 s of warm-up).** 2026-11-11.\n\nSTEP_MS: spatial 4.59, physics 5.97, renderer 2.44, particle 0.64, logic 3.25, pre-render 3.88 ms. Garbage collection is 0 to 3 ms/s on every worker, nothing to take.\n\n**Spatial (282 ms/s):** `gather_batch` 38.5 %, `publish_batch` 24.0 %, `rebuildOwnedRows` 18.7 % (W6 screened, a 1.4 % ceiling), `_findNeighbors` 12.5 %.\n\n**Logic (two workers, about 215 ms/s each):**\n- `findACivilianToShoot` 14.0 % (demo);\n- `get neighborCount` 11.3 % and `getNeighbor` 8.7 %: neighbour reads, E-199's premise;\n- `fsm.tick` 10.1 %, `person.tick` 9.9 %;\n- `_tickIntervalBucket` 8.4 % by self time: filed as E-215;\n- `_processBox2dCollisionCallbacks` 4.3 %.\n\n**Pre-render (234 ms/s):** `emit_rows` 32.1 %, `stamp_light_range` 23.5 % (worked on through E-133, E-191; E-195 dropped today), `collect_sprites` 18.1 %.\n\n**Pixi (185 ms/s):** `pack_sprites_keyed` 12.6 % (E-193), `updateBuffer` 7.5 %, `radix_simd` 5.4 %.\n\nThe physics threads read 1000 ms/s busy: Box2D's workers waiting in `Atomics.wait`, which a V8 profile counts as busy (see the memory note on it), not work."
     }
   ],
   "leads": [

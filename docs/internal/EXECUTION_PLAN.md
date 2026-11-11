@@ -3735,6 +3735,17 @@ the same PATHS_COMPUTED.
 moving hand. astarStressScene `?agents=0&slots=8000`, 4 pairs, 19:31 to 19:36: **KEPT (product)**, particle 7.045 →
 2.450 ms (-65.3 %, worse 0/4), PATHS_COMPUTED 60.0 both.
 
+### E-215 The tick loops look up each entity's tick in a call site every type shares
+
+**Premise:** Predator's CPU trace on main, 2026-11-11 20:2x (R-0898): `_tickIntervalBucket` (logicWorker.js) is 8.4 % of
+both logic workers by self time, beside the ticks it calls (person 9.9 %, the FSMs 10.1 %). Every type's staggered
+bucket runs through that one loop, so `obj.tick` and `typeof obj.tick` are loads at a megamorphic site, once per entity
+per frame, and `rbAx/rbAy/rbAa` are written per entity whatever the type.
+**Plan:** step 0, a kernel on the real loop (workerHarness) with Predator's type mix: the loop as it is against the
+type's `tick` looked up once per bucket (`EntityClass.prototype.tick`, called with `.call`), checking that no instance
+owns a `tick` and that a hot reload refreshes the cached one. Only if the kernel moves, the scene. Owner: Predator's
+logic; tick semantics unchanged (an own-property `tick` still wins).
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
