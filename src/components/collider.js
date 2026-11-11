@@ -14,8 +14,8 @@ import { RigidBody } from './rigidBody.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
 import { ChainPoints } from '../core/chainPoints.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
-import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
-import { lateBodyWrite } from '../core/debug/devChecks.js';
+import { BODY_DIRTY, markBodyDirty, remakeBody } from '../box2d/box2dBodySync.js';
+import { Transform } from './transform.js';
 import { SpriteRenderer } from './spriteRenderer.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
@@ -503,13 +503,18 @@ class Collider extends Component {
     markBodyDirty(this.index, BODY_DIRTY.FRICTION);
   }
 
-  /** Box2D reads it when it makes the body; a write after that does not reach the body (DX-GUARDS E3 names it). */
+  /**
+   * A sensor: events, no physical response. Box2D reads it when it makes the body, so a change makes the body again
+   * (N-131: a write after the body existed did nothing).
+   */
   get isTrigger() {
     return Collider.isTrigger[this.index];
   }
   set isTrigger(value) {
-    Collider.isTrigger[this.index] = value;
-    lateBodyWrite(this.index, 'collider.isTrigger');
+    const next = value ? 1 : 0;
+    if (Collider.isTrigger[this.index] === next) return;
+    Collider.isTrigger[this.index] = next;
+    remakeBody(this.index, Transform.active?.[this.index] === 1);
   }
 
   get enableHitEvents() {

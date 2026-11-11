@@ -128,14 +128,13 @@ export function auditFields(liveInstanceOf, nowMs) {
 
 /** What to do instead, by property. */
 const BODY_FLAG_FIX = {
-  'collider.isTrigger': 'Set it before the body exists: in onSpawned or the spawn config',
   'rigidBody.fixedRotation': 'Use this.setFixedRotation(v) (or this.fixedRotation = v), which updates the body',
 };
 
 /**
  * A component property Box2D reads only when it makes the body, written when the body is already made.
  * @param {number} index the entity
- * @param {string} what 'collider.isTrigger' or 'rigidBody.fixedRotation'
+ * @param {string} what 'rigidBody.fixedRotation'
  */
 export function lateBodyWrite(index, what) {
   if (!on || !bodyMade(index)) return;

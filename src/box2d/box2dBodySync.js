@@ -242,6 +242,19 @@ export function advanceBodyGeneration(entityIndex) {
   return next;
 }
 
+/**
+ * A property Box2D reads only when it makes the body (a shape's sensor flag, its hit events) changed. LIFECYCLE alone
+ * does nothing to a body that exists (syncBodySlot remakes one only for a new generation), so a live slot gets a new
+ * generation and the next step makes its body again, with its velocity; before the entity is live, the creation reads
+ * the property anyway (N-131).
+ * @param {number} entityIndex
+ * @param {boolean} live the entity is active (Transform.active)
+ */
+export function remakeBody(entityIndex, live) {
+  if (live) bumpBodyGeneration(entityIndex);
+  else markBodyDirty(entityIndex, BODY_DIRTY.LIFECYCLE);
+}
+
 export function bumpBodyGeneration(entityIndex) {
   const i = entityIndex | 0;
   if (!generation || i < 0 || i >= generation.length) return 0;
