@@ -47,6 +47,8 @@ import {
   LIST_UPDATE_DESPAWN, bindListUpdateRing, listUpdateRecordOffset, listUpdatesPending, listUpdatesRead,
   markListUpdatesRead, pushListUpdates,
 } from '../util/listUpdateRing.js';
+import { bindNavRequestRing } from '../util/navRequestRing.js';
+import { NavGrid } from '../core/navGrid.js';
 import { collisionPairKey } from '../util/utils.js';
 import { EntityIdArray } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
@@ -377,6 +379,10 @@ class LogicWorker extends AbstractWorker {
 
     // Get total logic workers count from config
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
+
+    // E-213: this worker's nav request ring.
+    const navRings = data.buffers?.navRequestRings || null;
+    if (navRings !== null) NavGrid.setNavRequestRing(bindNavRequestRing(navRings, this.workerIndex | 0));
 
     // E-208: the list update rings (listUpdateRing.js), with more than one logic worker.
     const listRings = data.buffers?.listUpdateRings || null;
