@@ -13,6 +13,7 @@ import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.j
 import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
 import { AdobeAnimComponent as AdobeAnimComponentImport } from '../components/adobeAnimComponent.js';
 import { ShadowCaster as ShadowCasterImport } from '../components/shadowCaster.js';
+import { MeshRenderer } from '../components/meshRenderer.js';
 import { FlashComponent as FlashComponentImport } from '../components/flashComponent.js';
 import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { AbstractWorker } from './abstractWorker.js';
@@ -152,6 +153,7 @@ import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
 import { staticSceneryGen } from '../core/staticScenery.js';
 import { StaticSceneryGrid } from '../render/staticSceneryGrid.js';
+import { bindMeshPoseList, writeMeshPoseList } from '../util/meshPoseList.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -487,6 +489,8 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuSunKeyed = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
+        /** N-138: per queue buffer, the poses of the sprites whose entity has a mesh (empty when no class has both). */
+        this._meshPoseLists = [];
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
         this._stampWasm = null;
         /** Whether the kernel's last frame wrote a repeating sprite (emitSpriteQueue's tiledRows). */
@@ -908,6 +912,11 @@ class PreRenderWorker extends AbstractWorker {
         this.liquidFunMaxCount = data.liquidFunMaxCount || 0;
         if (data.buffers?.liquidFunRender && this.liquidFunMaxCount > 0) {
             this.liquidFun = bindLiquidFunRender(data.buffers.liquidFunRender, this.liquidFunMaxCount, data.buffers.liquidFunRenderByte | 0);
+        }
+        const meshPoses = data.buffers?.meshPoseLists;
+        if (meshPoses && meshPoses.length === 2) {
+            const cap = data.buffers.meshPoseCapacity | 0;
+            this._meshPoseLists = [bindMeshPoseList(meshPoses[0], cap), bindMeshPoseList(meshPoses[1], cap)];
         }
         this.maxDecorations = data.maxDecorations || 0;
         this.maxBullets = data.maxBullets || 0;
@@ -1593,8 +1602,10 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) started = performance.now();
         this.collectVisibleParticles();
         this.collectVisibleLiquidFun();
+        const meshPoseFrom = this._renderableCount;
         this.collectVisibleEntities();
         this.collectVisibleAdobeAnimations();
+        if (this._meshPoseLists.length !== 0) this._writeMeshPoses(meshPoseFrom);
         this.collectVisibleDecorations();
         this.collectVisibleBullets();
         if (detail) this.collectTimeThisFrame = performance.now() - started;
@@ -2338,6 +2349,22 @@ class PreRenderWorker extends AbstractWorker {
      * E-98d. An Adobe root is the only row the emit expands into several; without one, the emit
      * writes queue row i from collector row i, so the collect can write poses there directly.
      */
+    /**
+     * N-138. The pose each sprite whose entity has a mesh was collected at, into this queue buffer's list: Pixi fills the
+     * mesh at it, so a volume shadow follows its sprite. Read before the emit, which writes the queue columns the
+     * collect poses may share.
+     */
+    _writeMeshPoses(from) {
+        const list = this._meshPoseLists[this._queueBuf];
+        if (!list) return;
+        if (!MeshRenderer.active || !this._renderableType) {
+            list.count[0] = 0;
+            return;
+        }
+        writeMeshPoseList(list, from, this._renderableCount, this._renderableType, this._renderableIndex,
+            MeshRenderer.active, this._collectPx, this._collectPy, this._collectRotC, this._collectRotS);
+    }
+
     _bindCollectPoses() {
         const adobe = this._frameAdobeEntities;
         const inQueue = (adobe === null || adobe.length === 0) && this._renderablePx !== null

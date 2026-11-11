@@ -279,26 +279,44 @@ export function ensureMeshFillPoseScratch(prevPose, entityCount) {
  */
 const MESH_LIVE_POSE_SLACK_SQ = 48 * 48;
 
-function meshFillUsesLive(i, views) {
-  if (!views.liveX || !views.liveY) return false;
-  if (views.rbStatic && views.rbStatic[i]) return true;
+/** Where a mesh's pose comes from: the latched (published) pose, the live Transform, or its sprite's this frame. */
+const POSE_LATCHED = 0;
+const POSE_LIVE = 1;
+const POSE_QUEUE = 2;
+
+function meshFillPoseSource(i, views) {
+  // N-138: the pose its sprite was drawn at this frame, so a volume shadow does not run ahead of its sprite. The
+  // frame is -1 (or absent) in a scene without the lists, whose stamps are empty.
+  const frame = views.queueFrame;
+  if (frame > 0 && views.queueStamp[i] === frame) return POSE_QUEUE;
+  if (!views.liveX || !views.liveY) return POSE_LATCHED;
+  if (views.rbStatic && views.rbStatic[i]) return POSE_LIVE;
   const c = views.rotC ? views.rotC[i] : 1;
   const s = views.rotS ? views.rotS[i] : 0;
   // Same gate as poseRotationLive: zeros mean this life has not been published.
-  if (c * c + s * s <= 0.25) return true;
+  if (c * c + s * s <= 0.25) return POSE_LIVE;
   const dx = views.liveX[i] - views.x[i];
   const dy = views.liveY[i] - views.y[i];
-  return dx * dx + dy * dy > MESH_LIVE_POSE_SLACK_SQ;
+  return dx * dx + dy * dy > MESH_LIVE_POSE_SLACK_SQ ? POSE_LIVE : POSE_LATCHED;
 }
 
 const _livePose = { x: 0, y: 0, c: 1, s: 0 };
 
 export function sampleMeshFillPose(i, views) {
-  return readMeshFillPose(i, views, meshFillUsesLive(i, views));
+  return readMeshFillPose(i, views, meshFillPoseSource(i, views));
 }
 
-function readMeshFillPose(i, views, live) {
-  const useLive = live === true;
+function readMeshFillPose(i, views, source) {
+  if (source === POSE_QUEUE) {
+    const q = views.queuePose;
+    const o = i * 4;
+    _livePose.x = q[o];
+    _livePose.y = q[o + 1];
+    _livePose.c = q[o + 2];
+    _livePose.s = q[o + 3];
+    return _livePose;
+  }
+  const useLive = source === POSE_LIVE;
   _livePose.x = useLive ? views.liveX[i] : views.x[i];
   _livePose.y = useLive ? views.liveY[i] : views.y[i];
   if (useLive && views.liveRotC) _livePose.c = views.liveRotC[i];
@@ -320,7 +338,7 @@ export function copyMeshFillPoseScratch(views, prevPose) {
   const active = views.meshActive;
   const visible = views.meshVisible;
   for (let i = 0; i < n; i++) {
-    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
     px[i] = pose.x;
     py[i] = pose.y;
     pc[i] = pose.c;
@@ -351,7 +369,7 @@ export function meshFillPoseOrPresenceChanged(views, prevPose) {
     const vis = visible[i] | 0;
     if ((pa[i] | 0) !== a || (pv[i] | 0) !== vis) return true;
     if (!a || !vis) continue;
-    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
     if (pose.x !== px[i] || pose.y !== py[i] || pose.c !== pc[i] || pose.s !== ps[i]) return true;
   }
   return false;
@@ -484,7 +502,7 @@ export function packColliderFill(out, cap, layerId, views) {
 
     bindMeshPaint(i, views);
     const outset = _outset;
-    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
     const c = pose.c;
     const s = pose.s;
     const ox = offsetX ? offsetX[i] : 0;
@@ -678,7 +696,7 @@ export function packColliderFillPoseOnly(out, cap, count, entityOfInstance, view
   for (let k = 0; k < n; k++) {
     const i = entityOfInstance[k] | 0;
     bindMeshPaint(i, views);
-    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
     const c = pose.c;
     const s = pose.s;
     const explicit = explicitMeshOffset(i, views) >= 0;
@@ -780,7 +798,7 @@ export function packMeshUvFill(out, cap, layerId, views) {
     bindMeshPaint(i, views);
     // DX-VOLUME: a volume has no tiles, and its floor scale goes to the shader in the row's tile offset.
     if (floorScale !== null && floorScale[i] > 0) _paint.tou = floorScale[i];
-    const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+    const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
     const rc = pose.c;
     const rs = pose.s;
     let a = meshAlpha ? meshAlpha[i] : 1;
@@ -1025,7 +1043,7 @@ export class ColliderFillBatch {
       k = end;
       if (i < 0 || i >= entityCount || gen[i] === stamp) continue;
       gen[i] = stamp;
-      const pose = readMeshFillPose(i, views, meshFillUsesLive(i, views));
+      const pose = readMeshFillPose(i, views, meshFillPoseSource(i, views));
       const o = i * 4;
       table[o] = pose.x;
       table[o + 1] = pose.y;

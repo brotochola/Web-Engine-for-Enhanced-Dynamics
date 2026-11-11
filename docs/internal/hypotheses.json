@@ -11835,11 +11835,11 @@
     {
       "id": "N-138",
       "title": "A moving entity's volume shadow leads its sprite by a varying 1 to 3 frames (Sun Street's cars)",
-      "status": "open",
-      "statusText": "found 2026-11-11 by the owner in Sun Street; filmed the same day; open",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (00b383fc, R-0885)",
       "date": "2026-11-11",
-      "result": "",
-      "next": "The mesh of an entity with a sprite takes the pose its sprite is drawn at this frame (the render queue's), not the live Transform; a test that a moved volume's mesh and its sprite share the pose, and a film of Sun Street's cars.",
+      "result": "fixed 2026-11-11 (00b383fc, R-0885): the mesh takes its sprite's queue pose; filmed shadow edge -8..-17 px on main, -14/-15 px fixed; Sun Street 10 000 cars KEPT, renderer -9.0 % (4/4)",
+      "next": "Done. With renderer.interpolation the mesh is at the newer of the two queue frames the sprite is drawn between (not measured).",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -11853,8 +11853,9 @@
         "Sun Street",
         "shadow lag"
       ],
-      "records": [],
-      "rank": 1
+      "records": [
+        "R-0885"
+      ]
     }
   ],
   "records": [
@@ -20354,6 +20355,18 @@
       "text": "**N-134 fixed (`5f1520ff`): raycasted lighting keeps the sun's casted shadows, and pre-render makes no lamp stamps or cookies for it.** 2026-11-11.\n\n**The bug.** `initVisibilityPolygonSystem` (pixiWorker.js), which runs after `createCastedShadowsSystem`, hid the casted shadows: the shadow display sprite, `shadowSpritesEnabled` and `Layer.castedShadows.visible`. The aim was to keep the light cookies from crushing the visibility fans' umbra to black. The sun's sprite shadows went with them, so under raycasted lighting trees and people cast nothing. Sun Street runs raycasted by default. Pre-render still made the sun rows, the lamps' stamps and the cookies every frame, for nothing.\n\n**The fix.**\n- Pixi keeps the casted shadows shown under raycasted lighting and draws the sun's casters alone into them (`_castedShadowsSunOnly`): no cookie pass, no stamp pass. The fans are the lamps' shadows.\n- At night, with no sun pass, the target is cleared as before.\n- Pre-render makes no stamps or cookies when its visibility polygons are on.\n\n**Evidence.** Sun Street at noon, paused (`?hour=12&paused=1`), the post-warm-up frame:\n- main with `raycast=1`: houses' and cars' volume shadows only; trees, lamps and people cast nothing;\n- main with `raycast=0`: every shadow;\n- the fix with `raycast=1`: the same trees', lamps' and people's shadows as `raycast=0`, on WebGL and on WebGPU (`backend=webgpu`).\n\n**Cost.** visPolyStressScene, 4 pairs, 17:21 to 17:24 (`--vs 180524cb --hyp-rev 5f1520ff --full-rev --owner preRender`): NEUTRAL, every worker below the floor. Pre-render 2.943 → 2.903 ms (-1.4 %). That scene has no casters, so the stamps it saves are not its load. In Sun Street, pre-render is 0.3 ms.",
       "commits": [
         "5f1520ff"
+      ]
+    },
+    {
+      "id": "R-0885",
+      "date": "2026-11-11",
+      "time": "17:56",
+      "timeFrom": "recorded",
+      "title": "N-138 fixed: a mesh is filled at the pose its sprite was drawn at, so Sun Street's cars' volume shadows stay under them",
+      "verdict": "kept-hygiene",
+      "text": "**N-138 fixed (`00b383fc`): a mesh is filled at the pose its sprite was drawn at, so a moving car's volume shadow stays under it.** 2026-11-11, the owner's report the same day (\"the cars' shadows shake, they do not follow the cars\").\n\n**The bug.** Sun Street's cars cast with `VolumeShadowCaster`, a mesh on its own layer. The car's sprite is drawn at the pose pre-render collected into the render queue. The mesh was filled at the live Transform (`meshFillUsesLive`: a body that is static or has none, as the cars are), which logic had moved on since pre-render read it, by however many frames the workers were apart that frame: 1 to 3.\n\n**The fix.**\n- Pre-render lists, per render-queue buffer, the pose each sprite row was collected at when its entity has an active mesh (`meshPoseList.js`, written after the collect and before the emit). Only scenes with a class that has both a sprite and a mesh get the lists.\n- Pixi copies the list into per-entity columns when it takes the frame, before it hands the buffer back to pre-render, stamped with the frame.\n- The mesh fill (`meshFillPoseSource`) takes that pose while its stamp is the frame drawn; otherwise the latched or live pose as before (a car whose sprite was culled).\n- With `renderer.interpolation` on, Pixi draws the sprite between the last two queue frames and the mesh at the newer one: a fraction of a frame apart, not measured.\n\n**Evidence.** Sun Street filmed on main and on the fix (`?dayMinutes=60`, 16 screenshots about 200 ms apart, 16:33). Measured from the pixels: on the two rows under the white car, where the shadow box's left edge sits against the car's left edge.\n- main: from −8 to −17 px over six frames (a 9 px swing, about three frames of the car's motion);\n- the fix: −14 or −15 px over seven frames.\n\nA node test with the real workers (`meshPoseFollowsSprite.test.js`): pre-render lists the car's collected pose, Pixi takes the frame, logic moves the car on, and the fill packs the sprite's pose; a frame whose list did not hold the car packs the live Transform.\n\n**Cost.** Sun Street with 10 000 cars (`?cars=10000&dayMinutes=60`: every car a sprite with a volume, so the list holds 10 000 poses a frame), 4 pairs, 17:53 to 17:56 (`--vs 8bbdf1fe --hyp-rev 7b10560b --full-rev --owner renderer`; `00b383fc` is that commit reworded): KEPT.\n- Renderer 4.348 → 3.956 ms (−9.0 %, lower in 4 of 4 pairs, cv 10/3 %). Not explained by a probe. Probably the mesh's pose now changes only with a new queue frame, so the fill's pose skip holds on the steps Pixi draws again while logic moves the Transform (Pixi drew 34 frames a second and presented 56).\n- Pre-render 1.974 → 2.083 ms (+5.5 %), below the 3 ms floor and not judged: the list of 10 000 poses each frame.\n- Logic, spatial and physics within 2.2 %. No A/A this sitting. Sun Street's own 6 cars write 6 entries a frame.",
+      "commits": [
+        "00b383fc"
       ]
     }
   ],

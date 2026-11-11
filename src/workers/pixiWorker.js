@@ -106,6 +106,7 @@ import {
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { takePublishedList } from '../util/publishedList.js';
+import { bindMeshPoseList, takeMeshPoseList, MESH_POSE_FLOATS } from '../util/meshPoseList.js';
 import {
   InstancedSpriteBatch,
   INSTANCED_SPRITE_FLOATS,
@@ -708,6 +709,11 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueEnabled = false;
     this._queueBackpressure = true;
     this._queueInterp = false;
+    /** N-138: pre-render's lists of the poses its sprites that have a mesh were drawn at, one per queue buffer. */
+    this._meshPoseLists = [];
+    /** Per entity, the frame whose sprite pose _meshQueuePose holds (x, y, rotC, rotS); the mesh fill takes it. */
+    this._meshQueueStamp = new Int32Array(0);
+    this._meshQueuePose = new Float32Array(0);
     this._latchedPrevX = null;
     this._latchedPrevY = null;
     this._latchedPrevCount = 0;
@@ -1512,7 +1518,12 @@ class PixiRenderer extends AbstractWorker {
       v.meshVertGen = MeshGeometry.vertGen;
       v.meshVertEpoch = MeshGeometry.vertEpoch;
       v.meshUvGen = MeshGeometry.uvGen;
+      v.queueStamp = this._meshQueueStamp;
+      v.queuePose = this._meshQueuePose;
+      v.queueFrame = -1;
     }
+    // N-138: a mesh whose sprite was drawn this frame takes its sprite's pose.
+    v.queueFrame = this._meshPoseLists.length !== 0 && this.lastReadFrame > 0 ? this.lastReadFrame : -1;
     v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
     v.animationFrameStart = this.animationFrameStart;
     if (this._poseX) {
@@ -2606,6 +2617,10 @@ class PixiRenderer extends AbstractWorker {
         if (layer.sortKeyU32ByBuf) layer.sortKeyU32 = layer.sortKeyU32ByBuf[readBufferIndex];
       }
       this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
+      // N-138: before the buffer goes back to pre-render.
+      if (this._meshPoseLists.length !== 0) {
+        takeMeshPoseList(this._meshPoseLists[readBufferIndex], readyFrame, this._meshQueueStamp, this._meshQueuePose);
+      }
       this._snapshotComputePose();
       this.lastReadFrame = readyFrame;
       if (this._presenting) this._deferredRenderQueueRelease = readyFrame;
@@ -7018,6 +7033,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // This includes Transform, RigidBody, SpriteRenderer, and all custom components
 
     // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
+    const meshPoses = data.buffers.meshPoseLists;
+    if (meshPoses && meshPoses.length === 2) {
+      const cap = data.buffers.meshPoseCapacity | 0;
+      const n = this.globalEntityCount | 0;
+      this._meshPoseLists = [bindMeshPoseList(meshPoses[0], cap), bindMeshPoseList(meshPoses[1], cap)];
+      this._meshQueueStamp = new Int32Array(n);
+      this._meshQueuePose = new Float32Array(n * MESH_POSE_FLOATS);
+    }
     this.maxParticles = data.maxParticles || 0;
     if (data.buffers.componentData.ParticleComponent && this.maxParticles > 0) {
       debugWorkerLog(`PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`);
