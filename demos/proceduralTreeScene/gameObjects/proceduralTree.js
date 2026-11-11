@@ -193,7 +193,7 @@ export class ProceduralTree extends GameObject {
 
   tick(dtRatio, deltaTime) {
     let scale = readTimeScale();
-    if (Keyboard.isPressed('=') || Keyboard.isPressed('+')) scale *= 2;
+    if (Keyboard.isPressed('=')) scale *= 2; // the + key: '=' unshifted (the engine reads no '+')
     if (Keyboard.isPressed('-')) scale *= 0.5;
     scale = clampTimeScale(scale);
     const speedChanged = scale !== this.timeScale;
