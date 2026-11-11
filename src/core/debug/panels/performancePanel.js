@@ -417,12 +417,16 @@ export class PerformancePanel {
     const particles = config?.particle?.maxParticles;
     const bullets = config?.bullet?.maxBullets;
     this._activeParticles = listView(buffers?.activeParticlesData, buffers?.activeParticlesByte, particles);
-    this._visibleParticles = listView(buffers?.visibleParticlesData, buffers?.visibleParticlesByte, particles);
     this._activeBullets = listView(buffers?.activeBulletsData, 0, bullets);
     // The visible bullets and decorations are published lists (N-112): the count of the copy published last.
     const published = (sab, max) => (sab ? bindPublishedList(sab, max | 0) : null);
     this._visibleBullets = published(buffers?.visibleBulletsData, bullets);
     this._visibleDecorations = published(buffers?.visibleDecorationsData, config?.decoration?.maxDecorations);
+    // N-113: the visible particles' published list, in the particle memory at a byte, each copy a slot longer.
+    const visibleParticles = buffers?.visibleParticlesData;
+    this._visibleParticles = visibleParticles
+      ? bindPublishedList(visibleParticles, particles | 0, buffers.visibleParticlesByte | 0, 1)
+      : null;
   }
 
   _listCount(list) {
@@ -493,7 +497,7 @@ export class PerformancePanel {
       'Particles',
       this._listCount(this._activeParticles),
       ParticleEmitter.maxCount | 0,
-      this._listCount(this._visibleParticles),
+      this._publishedCount(this._visibleParticles),
     );
 
     this._writePoolLine(

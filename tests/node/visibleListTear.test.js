@@ -3,11 +3,13 @@
 // were not drawn that frame: in Conurbano-weed decorations blinked while the camera moved. A real particle worker in
 // a thread of its own writes the decoration list (or the bullet list) with the camera alternating between two views,
 // as fast as it goes; a real pre-render on the main thread, bound by its own init path, collects it as fast as it
-// goes, and every collect must be one view's list whole: the same indices, each once.
+// goes, and every collect must be one view's list whole: the same indices, each once. N-113: the visible particle
+// list had the same race (the list kernel writes it in the particle memory); it is published the same way.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Worker } from 'node:worker_threads';
 
+import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { BulletPool } from '../../src/core/bulletPool.js';
 import { DecorationPool } from '../../src/core/decorationPool.js';
 import { Layer } from '../../src/core/layer.js';
@@ -41,20 +43,64 @@ function classify(pre, marks, sizes, seen, gen) {
   return in0 ? 0 : in1 ? 1 : -1;
 }
 
+function componentOf(kind) {
+  return kind === 'decorations' ? 'DecorationComponent' : kind === 'particles' ? 'ParticleComponent' : 'BulletComponent';
+}
+
+/** The writer's buffers for `kind`, as sceneWorkerBootstrap hands them over. */
+function writerBuffers(scene, kind) {
+  const b = scene.buffers;
+  const Component = componentOf(kind);
+  const common = { component: b.componentData[Component], componentByte: b.componentDataByte?.[Component] | 0 };
+  if (kind === 'decorations') {
+    return {
+      ...common,
+      freeList: b.decorationFreeList,
+      freeListTop: b.decorationFreeListTop,
+      active: b.activeDecorationsData,
+      activeLock: b.activeDecorationsLock,
+      visible: b.visibleDecorationsData,
+    };
+  }
+  if (kind === 'particles') {
+    return {
+      ...common,
+      freeList: b.particleFreeList,
+      freeListTop: b.particleFreeListTop,
+      active: b.activeParticlesData,
+      visible: b.visibleParticlesData,
+      activeByte: b.activeParticlesByte | 0,
+      visibleByte: b.visibleParticlesByte | 0,
+      memory: scene.particleMemory.memory,
+      layout: scene.particleMemory.layout,
+    };
+  }
+  return {
+    ...common,
+    freeList: b.bulletFreeList,
+    freeListTop: b.bulletFreeListTop,
+    active: b.activeBulletsData,
+    visible: b.visibleBulletsData,
+    impact: b.impactBuffer,
+  };
+}
+
 /** A pre-render worker bound to the scene's `kind` buffers by its own init path, with an empty collector of `n` rows. */
 async function bootReader(scene, kind, n) {
   const b = scene.buffers;
   Layer.reset();
   Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: { ySorting: false }, lighting: {} }, true);
   const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
-  const Component = kind === 'decorations' ? 'DecorationComponent' : 'BulletComponent';
+  const Component = componentOf(kind);
   await quietly(() =>
     pre.initializeCommonBuffers({
       config: scene.config,
       globalEntityCount: scene.totalEntityCount,
       ...(kind === 'decorations'
         ? { maxDecorations: n, visibleDecorationsData: b.visibleDecorationsData }
-        : { maxBullets: n, visibleBulletsData: b.visibleBulletsData }),
+        : kind === 'particles'
+          ? { maxParticles: n, visibleParticlesData: b.visibleParticlesData, visibleParticlesByte: b.visibleParticlesByte }
+          : { maxBullets: n, visibleBulletsData: b.visibleBulletsData }),
       buffers: {
         componentData: { [Component]: b.componentData[Component] },
         componentDataByte: { [Component]: b.componentDataByte?.[Component] | 0 },
@@ -62,6 +108,8 @@ async function bootReader(scene, kind, n) {
     }),
   );
   pre.renderQueueEnabled = true;
+  // The particle collect's pool size, which pre-render's own init takes (initializeCommonBuffers does not).
+  if (kind === 'particles') pre.maxParticles = n;
   pre._decorationZoomAlpha = 1;
   pre._customLayerCollectors = null;
   pre._spriteSortArrays = null;
@@ -78,9 +126,6 @@ async function bootReader(scene, kind, n) {
 
 /** The race for one pool: the writer thread, then the reader here until CHANGES or RACE_MS; what it saw. */
 async function race(t, kind, scene) {
-  const b = scene.buffers;
-  const decorations = kind === 'decorations';
-  const Component = decorations ? 'DecorationComponent' : 'BulletComponent';
   const stop = new SharedArrayBuffer(4);
   const writer = new Worker(new URL('../helpers/visibleListWriter.mjs', import.meta.url), {
     workerData: {
@@ -89,16 +134,7 @@ async function race(t, kind, scene) {
       n: N,
       views: VIEWS,
       stop,
-      buffers: {
-        component: b.componentData[Component],
-        componentByte: b.componentDataByte?.[Component] | 0,
-        freeList: decorations ? b.decorationFreeList : b.bulletFreeList,
-        freeListTop: decorations ? b.decorationFreeListTop : b.bulletFreeListTop,
-        active: decorations ? b.activeDecorationsData : b.activeBulletsData,
-        activeLock: decorations ? b.activeDecorationsLock : null,
-        visible: decorations ? b.visibleDecorationsData : b.visibleBulletsData,
-        impact: decorations ? null : b.impactBuffer,
-      },
+      buffers: writerBuffers(scene, kind),
     },
   });
   const next = () =>
@@ -118,12 +154,18 @@ async function race(t, kind, scene) {
     });
 
     const pre = await bootReader(scene, kind, N);
-    const collect = decorations
-      ? () => {
-          pre.visibleDecorationsCount = 0;
-          pre.collectVisibleDecorations();
-        }
-      : () => pre.collectVisibleBullets();
+    const collect =
+      kind === 'decorations'
+        ? () => {
+            pre.visibleDecorationsCount = 0;
+            pre.collectVisibleDecorations();
+          }
+        : kind === 'particles'
+          ? () => {
+              pre.visibleParticlesCount = 0;
+              pre.collectVisibleParticles();
+            }
+          : () => pre.collectVisibleBullets();
     const seen = new Uint32Array(N);
     const done = next();
     writer.postMessage('go');
@@ -169,6 +211,24 @@ test('pre-render collects one whole bullet list while the particle worker ticks 
     assert.ok(BulletPool.spawn({ x: 5 + k * 2, y: 100, vx: 0, vy: 0, damage: 1, ownerId: 0 }) >= 0);
   }
   const { reads, torn, switches, frames } = await race(t, 'bullets', scene);
+  assert.equal(torn, 0, `${torn} of ${reads} collects were no view's list whole (${frames} writes)`);
+  assert.ok(switches >= 30, `the reader saw the list change under it (${switches} times in ${reads} reads, ${frames} writes)`);
+});
+
+test('pre-render collects one whole particle list while the particle worker writes the next (N-113)', async (t) => {
+  const scene = buildPoolScene({ particles: N, world: [9000, 2000] });
+  // Particles that stand still: nothing integrates them, and the list kernel lists them against the camera. Each on
+  // the entities layer, as an emit puts it (the collect skips a particle on none), in the reader's layer setup.
+  Layer.reset();
+  Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: { ySorting: false }, lighting: {} }, true);
+  const entities = Layer.entitiesMask();
+  for (let k = 0; k < N; k++) {
+    ParticleComponent.active[k] = 1;
+    ParticleComponent.x[k] = 5 + k * 2;
+    ParticleComponent.y[k] = 100;
+    ParticleComponent.layerMask[k] = entities;
+  }
+  const { reads, torn, switches, frames } = await race(t, 'particles', scene);
   assert.equal(torn, 0, `${torn} of ${reads} collects were no view's list whole (${frames} writes)`);
   assert.ok(switches >= 30, `the reader saw the list change under it (${switches} times in ${reads} reads, ${frames} writes)`);
 });

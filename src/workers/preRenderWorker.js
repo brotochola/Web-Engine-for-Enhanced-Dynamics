@@ -744,6 +744,9 @@ class PreRenderWorker extends AbstractWorker {
         // N-112: the visible bullets' published list, the same way.
         this.visibleBulletsCtl = new Int32Array(0);
         this.visibleBulletsCopies = [];
+        // N-113: the visible particles' published list, the same way.
+        this.visibleParticlesCtl = new Int32Array(0);
+        this.visibleParticlesCopies = [];
     }
 
     _warnOnce(flagName, message) {
@@ -1710,7 +1713,7 @@ class PreRenderWorker extends AbstractWorker {
     collectVisibleParticles() {
         if (this.maxParticles === 0) return;
 
-        const visibleData = this.visibleParticlesData;
+        const visibleData = this._takeVisibleParticles();
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
@@ -2167,6 +2170,13 @@ class PreRenderWorker extends AbstractWorker {
         const ctl = this.visibleDecorationsCtl;
         if (ctl.length === 0) return this.visibleDecorationsData;
         return this.visibleDecorationsCopies[takePublishedList(ctl)];
+    }
+
+    /** N-113. The visible particle list to collect, as _takeVisibleDecorations takes the decorations'. */
+    _takeVisibleParticles() {
+        const ctl = this.visibleParticlesCtl;
+        if (ctl.length === 0) return this.visibleParticlesData;
+        return this.visibleParticlesCopies[takePublishedList(ctl)];
     }
 
     /** N-112. The visible bullet list to collect, as _takeVisibleDecorations takes the decorations'. */
