@@ -1,4 +1,4 @@
-// A scene's shared buffers for the pool-width tests (E-129): createSceneSharedBuffers on a scene of 16 entities
+// A scene's shared buffers for the pool-width tests (E-129): createSceneSharedBuffers on a scene of 16 entities (or `entities`)
 // with the particle, decoration and bullet pools asked for, the default WASM switches unless `wasm` says
 // otherwise, and the stated decoration attachments, sway grid and world. The main thread's statics
 // (ParticleEmitter, DecorationPool, DecorationSpatial, BulletPool and the components) end up bound to them.
@@ -8,12 +8,13 @@ import { GameObject } from '../../src/core/gameObject.js';
 import { Query } from '../../src/core/query.js';
 import { WASM_DEFAULTS } from '../../src/util/configDefaults.js';
 import { createSceneSharedBuffers } from '../../src/util/sceneSharedBuffers.js';
+import { bindEntityIdWidth, resolveEntityIdWidth } from '../../src/util/entityIdWidth.js';
 
 class Holder extends GameObject {}
 Holder.components = [SpriteRenderer];
 
 /**
- * @param {{ particles?: number, decorations?: number, bullets?: number, wasm?: object, maxAttached?: number,
+ * @param {{ entities?: number, particles?: number, decorations?: number, bullets?: number, wasm?: object, maxAttached?: number,
  *   swayBuckets?: number, world?: [number, number], cellSize?: number }} [opts]
  */
 export function buildPoolScene(opts = {}) {
@@ -22,10 +23,11 @@ export function buildPoolScene(opts = {}) {
   try {
     Query.reset();
     const [worldWidth, worldHeight] = opts.world ?? [4000, 3000];
+    const entities = opts.entities ?? 16;
     const scene = {
-      totalEntityCount: 16,
+      totalEntityCount: entities,
       nextComponentId: 2,
-      registeredClasses: [{ class: Holder, count: 16, startIndex: 0, entityType: 0, components: Holder.components }],
+      registeredClasses: [{ class: Holder, count: entities, startIndex: 0, entityType: 0, components: Holder.components }],
       componentPools: { Transform: { ComponentClass: Transform }, SpriteRenderer: { ComponentClass: SpriteRenderer } },
       config: {
         worldWidth,
@@ -44,6 +46,8 @@ export function buildPoolScene(opts = {}) {
         renderer: { maxVisibleRenderables: 0 },
         layers: {},
         wasm: { ...WASM_DEFAULTS, ...(opts.wasm || {}) },
+        // 'auto', as a scene resolves it: 32-bit ids past 65 535 entities.
+        entityIdWidth: resolveEntityIdWidth({}, entities),
       },
       buffers: { componentData: {} },
       views: {},
@@ -54,6 +58,7 @@ export function buildPoolScene(opts = {}) {
       preInitializeEntityTypeArrays() {},
       constructor: { queries: [] },
     };
+    bindEntityIdWidth(scene.config.entityIdWidth);
     createSceneSharedBuffers(scene);
     return scene;
   } finally {
