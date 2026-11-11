@@ -3417,6 +3417,18 @@ another worker first (a two-worker kernel), and the gather's order (random, near
 step says: the queue read in its own order with an inverse made in C (W9c's order, without the JavaScript passes), a
 prefetch of the rows a few slots ahead, or the pose and slot streams written by pre-render, which holds those rows warm.
 Owner: Predator's renderer at crowd 1.5.
+**Step 1 dropped 2026-11-11 (b442ba45, reverted in 3167b9ee; R-0864): the queue read in its own order does not make
+the pack cheaper.** `pack_sprites_keyed_scatter` (W9b's inverse in C, the same frame as the gather, parity-tested) on an
+inverse of Pixi's own. Kernels (ef08b5d4, kept): warm and single-threaded the gather 0.085 ms and the scatter 0.093 at
+14 000 rows; with every queue column rewritten on another thread before each pack (`gpuPackKeyedCrossCoreMicrobench
+--writer other`, Node) the gather reads 0.12 to 0.23 ms and the scatter the same, against 0.08 to 0.10 with the
+columns written on the pack's own thread: another core's writes cost something, not ten times. Predator `?crowd=1.5`, 4
+pairs: renderer 3.290 → 3.389 ms (+2.6 %, worse 3/4, +4.1 % against the others), load within 0.7 %. One CPU trace a
+side: `pack_sprites_keyed` 94 ms/s (31 % of Pixi's 300 ms/s busy), `pack_sprites_keyed_scatter` 102 (32 % of 316).
+The pack still costs about 1.5 ms a frame there against 0.15 for its kernel at that size, and the read order is not
+why. Left: whether that time is the thread's CPU at all (a sampled profile counts a preempted thread's stack, as it
+counts Atomics.wait: check the Pixi thread's CPU time on Windows), then the streams written by pre-render, or E-201
+(poses read by key on the GPU, no gather).
 
 ### E-194 LiquidFun rows keyed by slot
 
