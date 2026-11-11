@@ -1575,20 +1575,8 @@ class ParticleWorker extends AbstractWorker {
 
   _findExistingPathSlot(fromCell, toCell) {
     if (!NavGrid._initialized || !this._navDataView) return -1;
-    const dv = this._navDataView;
-    const headerOffset = NavGrid._pathHeadersOffset;
-    const slotSize = NavGrid._pathSlotSize; // interleaved: header + data per slot
-    const maxPaths = NavGrid._maxPaths;
-
-    for (let i = 0; i < maxPaths; i++) {
-      const offset = headerOffset + i * slotSize;
-      // Read header: [fromCell, toCell, lastUsedFrame, length, status]
-      const slotFrom = dv.getUint32(offset, true);
-      const slotTo = dv.getUint32(offset + 4, true);
-      const slotStatus = dv.getUint32(offset + 16, true);
-      if (slotFrom === fromCell && slotTo === toCell && slotStatus === 2) return i;
-    }
-    return -1;
+    // E-212: the ready slot for the pair, by the index.
+    return NavGrid._findPathSlot(fromCell, toCell);
   }
 
   _updatePathLRU(slotIndex) {
