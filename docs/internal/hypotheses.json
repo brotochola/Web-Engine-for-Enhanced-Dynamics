@@ -11117,11 +11117,11 @@
     {
       "id": "N-129",
       "title": "onGotShot ignores pins, and a frame's impacts are lost when logic misses one",
-      "status": "open",
-      "statusText": "pins fixed 2026-11-11 (7ddc9590, R-0863); the lost impacts open",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11: the pins (7ddc9590, R-0863), the lost impacts (54cc6109, R-0877)",
       "date": "2026-11-10",
-      "result": "processImpacts runs onGotShot on targetId % workers, where ticks and collision callbacks honour forceProcessOnLogicWorker; the particle worker overwrites each frame's impacts, so logic loses a frame it did not read.",
-      "next": "The lost impacts: a ring of impacts in wasm/bulletTick.c with a write cursor, each logic worker reading from its own cursor; a test where the particle worker runs two frames before logic reads.",
+      "result": "fixed 2026-11-11: the pins (7ddc9590, R-0863), the lost impacts (54cc6109, R-0877: a ring each logic worker reads from its own cursor); bulletStressScene particle -0.6 %, NEUTRAL",
+      "next": "Done.",
       "area": "logic",
       "kind": "bug",
       "refs": [
@@ -11137,9 +11137,9 @@
       "records": [
         "R-0854",
         "R-0863",
-        "R-0866"
-      ],
-      "rank": 24
+        "R-0866",
+        "R-0877"
+      ]
     },
     {
       "id": "N-130",
@@ -20209,6 +20209,18 @@
       "text": "**N-114 fixed: the create-weed-game template's dev server refuses what the engine's refuses.** 2026-11-11.\n\n**The bug.** `packages/create-weed-game/template/scripts/dev.mjs` served `path.join(root, decoded path)` when it started with the folder.\n- On Linux and macOS, `/..%5c..%5cpackage.json` was a file name inside the folder, so the server answered 404, and the test's 403 failed there.\n- A link inside the game folder pointing out of it was served.\n\nThe engine's server (`server/staticFiles.js`, `resolveInside`, N-80) refuses both.\n\n**The fix.** `dev.mjs` takes `resolveInside`'s rule, copied because the template ships alone. It answers 403 to:\n- a path holding `\\`, `:` or NUL;\n- a path that leaves the folder once `..` resolves;\n- a path that leaves it through a link (the real path of the nearest existing part).\n\n**The test** (`createWeedGame.test.js`):\n- the dev server now gets `\\`, `:` and NUL paths;\n- a new case puts a link out of the game folder in it (a junction on Windows, a symlink elsewhere) and asks for a file behind it, and for one that is not there. The link alone is removed before the folder.\n\nWith the old server both checks fail on Windows too. With the fix the file passes, 9 of 9.\n\nNo timing: the template's dev server is not the engine's frame. Games get the fix with the next create-weed-game release.",
       "commits": [
         "27269ef5"
+      ]
+    },
+    {
+      "id": "R-0877",
+      "date": "2026-11-11",
+      "time": "16:05",
+      "timeFrom": "recorded",
+      "title": "N-129 fixed: bullet impacts reach logic through a ring, a logic worker that misses a particle frame keeps them; bulletStressScene NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**N-129's second half fixed (`54cc6109`): bullet impacts reach the logic workers through a ring, so a logic worker that misses a particle frame keeps its impacts. Hygiene keep.** 2026-11-11, from 16:02 (the sitting's first result file) to 16:05. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug.** The particle worker's bullet tick wrote each frame's impacts over the last ones, in one shared batch, and moved a sequence number. A logic worker took the batch whose number it had not seen. So:\n- one that missed a particle frame (two particle frames between its reads) lost that frame's impacts;\n- one reading while the next batch was written could read a mix of the two.\n\n**The fix.** The ring is in the transport. The bullet tick (JS or bulletTick.wasm) is unchanged.\n- The tick writes the frame's impacts as one batch into a private buffer.\n- The particle worker appends them to a ring in the impact buffer and publishes the count. The ring (`src/util/impactRing.js`) holds eight frames of `maxImpactsPerFrame`, a power of two, after a header.\n- Each logic worker runs every impact published since its own last read (`_pollImpacts`, then `processImpacts(from, to)` over the ring).\n- A logic worker further behind than the ring holds runs the newest the ring still has and warns once.\n\n**Tests** (`impactPins.test.js`, the real logic worker):\n- The pins as before.\n- Two particle frames before one logic frame: all three impacts run, and nothing runs twice.\n- Three times around the ring, polled each frame: every impact once, in order.\n- More than the ring holds between two polls: the newest ring's worth runs, from the oldest it still has, with one warning that counts the impacts lost.\n\n**Cost.** bulletStressScene, 4 pairs (`--vs 6949e097 --hyp-rev 54cc6109 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.230 → 3.196 ms (-0.6 %, worse 1/4, cv 1/1 %).\n- Logic 0.497 → 0.503 ms (below the floor).\n\nN-129 is done.",
+      "commits": [
+        "54cc6109"
       ]
     }
   ],
