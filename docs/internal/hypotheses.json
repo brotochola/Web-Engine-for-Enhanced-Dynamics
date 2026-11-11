@@ -11563,7 +11563,7 @@
         "uScene"
       ],
       "records": [
-        "R-0855"
+        "R-0858"
       ]
     }
   ],
@@ -19702,7 +19702,7 @@
       "text": "**Twenty entries filed from a code review's list of what would pay most: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK and DX-AUTOQUALITY.** Nothing timed: each premise is a reading of the code and the register, checked against the code on 2026-11-10 where it names one.\n\n- **The five the review ranked first:** the wake chain (E-198, which needs the latency stamp E-197 first), neighbour aggregates in the spatial kernel (E-199), neighbour lists refreshed with each entity's tick bucket (E-200), keyed poses read by key on the GPU (E-201, the other road for E-193) and decals stamped on the GPU (E-202).\n- **GPU:** sway in the vertex shader (E-203), fill rate's step 0 with GPU timestamps, overdraw and mipmaps zoomed out (E-204: the register had no entry on any of them), the light pass's loop over every light (E-205), and visibility as a polar shadow map (E-206, a big bet with a counting step 0).\n- **WASM:** A* in C (E-207; the flowfield gained 16× there, E-122).\n- **GC:** listUpdates through a SAB ring (E-208), entity instances made at spawn (E-209), eslint-plugin-weed in create-weed-game (DX-LINT).\n- **DX:** config validation and a size advisor (DX-CONFIGCHECK), workers 'auto' and a quality governor (DX-AUTOQUALITY).\n- **Bugs, confirmed in the code:** `fixedFps` truncated to whole milliseconds by `setInterval`, 62.5 Hz at 60 (N-128, to confirm by counting frames); `onGotShot` dispatched by `targetId % workers` where ticks and collision callbacks honour pins, and impacts overwritten frame by frame (N-129); despawn leaves Weed's joint rows active, since nothing calls `Joint.removeAllForEntity` (N-130).\n- **Measuring:** Predator's gate from a save, both sides from the same mid-battle snapshot (E-210).\n\nRanked after the queue's 22: the three bugs 23 to 25, then E-197 to E-202 26 to 31. The rest unranked.\n\n**Not filed:** animation in the shader for keyed sprites. Predator's walkers change their animation speed every tick, so E-189 (a texture-only update) stays the lever there."
     },
     {
-      "id": "R-0855",
+      "id": "R-0858",
       "date": "2026-11-11",
       "time": "00:56",
       "timeFrom": "recorded",
