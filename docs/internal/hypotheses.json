@@ -11808,6 +11808,28 @@
       "records": [
         "R-0870"
       ]
+    },
+    {
+      "id": "N-137",
+      "title": "A* lowers a node's cost in the open set without moving it in the heap, so a path may not be the shortest",
+      "status": "open",
+      "statusText": "found 2026-11-11 reading computePath for E-207; read in the code, not seen yet",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "Lazy heap entries, each with its own f (a cell pushed again when its cost falls, a stale pop skipped by the closed stamp), and a test grid where the first way to a cell is not the shortest; with E-207 if a game starts asking for paths.",
+      "area": "nav",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-137"
+      ],
+      "aliases": [
+        "computePath",
+        "A*",
+        "decrease-key",
+        "heapFCost",
+        "pathfinding"
+      ],
+      "records": []
     }
   ],
   "records": [
