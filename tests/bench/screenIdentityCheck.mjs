@@ -3,7 +3,8 @@
  * screenPassStressScene (Bunny Mark C) in lockstep (the same steps, so the same poses: the transform hash is compared
  * too), on WebGL and WebGPU: no pass, one copy (`?post=1&amount=0`), two copies chained (`?post=2&amount=0`). Every
  * capture with a pass must differ from the one without in 0 pixels. A vignette (`amount=0.6`) must differ, so the
- * passes are known to run.
+ * passes are known to run; a vignette then a pass that returns uScene (`last=scene`) must not: uScene is the frame
+ * before the first pass.
  *
  *   node tests/bench/screenIdentityCheck.mjs [--headless] [--backend webgl|webgpu] [--bunnies 3000] [--steps 30]
  *
@@ -30,7 +31,7 @@ const backends = arg('backend', '') ? [arg('backend', '')] : ['webgl', 'webgpu']
 const bunnies = arg('bunnies', '3000');
 const steps = arg('steps', '30');
 
-function url(port, backend, post, amount) {
+function url(port, backend, post, amount, last = '') {
   const q = new URLSearchParams({
     scene: 'screenPass',
     module: '/tests/bench/stressScenes/screenPassStressScene.js',
@@ -46,6 +47,7 @@ function url(port, backend, post, amount) {
     amount: String(amount),
     backend,
     bunnies,
+    ...(last ? { last } : {}),
   });
   return `http://127.0.0.1:${port}/tests/bench/lockstepVisual.html?${q}`;
 }
@@ -83,21 +85,21 @@ const outDir = path.join(repoRoot, 'tests', 'results', 'screen-identity');
 try {
   for (const backend of backends) {
     const base = await capture(browser, url(server.port, backend, 0, 0));
-    for (const [post, amount, expect] of [[1, 0, 'exact'], [2, 0, 'exact'], [1, 0.6, 'differs']]) {
-      const run = await capture(browser, url(server.port, backend, post, amount));
+    for (const [post, amount, expect, last] of [[1, 0, 'exact'], [2, 0, 'exact'], [1, 0.6, 'differs'], [2, 0.6, 'exact', 'scene']]) {
+      const run = await capture(browser, url(server.port, backend, post, amount, last));
       const diff = await diffPngs(run.page, base.png, run.png);
       await run.page.close();
       const sameState = run.snap?.transforms?.hash === base.snap?.transforms?.hash;
       const ok = expect === 'exact' ? sameState && diff.sameSize !== false && diff.differing === 0 : diff.differing > 0;
       console.log(
-        `${backend} post=${post} amount=${amount}: ${diff.differing} of ${diff.pixels} pixels differ (max delta ${diff.maxDelta}), ` +
+        `${backend} post=${post} amount=${amount}${last ? ` last=${last}` : ''}: ${diff.differing} of ${diff.pixels} pixels differ (max delta ${diff.maxDelta}), ` +
           `poses ${sameState ? 'equal' : 'DIFFER'} → ${ok ? 'OK' : 'FAIL'} (${expect})`,
       );
       if (!ok) {
         failed = true;
         await fs.mkdir(outDir, { recursive: true });
         await fs.writeFile(path.join(outDir, `${backend}-base.png`), base.png);
-        await fs.writeFile(path.join(outDir, `${backend}-post${post}-amount${amount}.png`), run.png);
+        await fs.writeFile(path.join(outDir, `${backend}-post${post}-amount${amount}${last ? `-${last}` : ''}.png`), run.png);
       }
     }
     await base.page.close();
