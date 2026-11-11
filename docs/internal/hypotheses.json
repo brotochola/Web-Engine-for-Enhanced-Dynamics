@@ -10080,10 +10080,10 @@
     {
       "id": "N-79",
       "title": "A layer drawn without a render target ignores blendMode (fx ADD draws normal)",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "found 2026-10-26, a bug: confirmed in the code, not fixed",
       "date": "2026-10-26",
-      "result": "A sprite layer without a look shader (and MESH and world-rect layers) is drawn straight to the stage by a mesh registered with forceContainerBlend, so it takes shader.containerBlend (normal when there is no shader) and never the layer's blendMode. The fx layers of destructibleTerrainScene, mamushkaDigScene and planetPhysicsScene ask for ADD and draw normal. Workaround: shader: { containerBlend: ADD } with no fragment (marks the layer hasShader).",
+      "result": "Fixed 2026-11-10 (0d490b4b): a batch, MESH fill or world-rect mesh drawn in one pass takes blendMode unless shader.containerBlend is set; a MESH look composes with blendMode. Four demo layers change; Destructible Terrain's beam retuned.",
       "area": "pixi",
       "kind": "bug",
       "refs": [
@@ -10093,7 +10093,10 @@
         "blendMode ignored",
         "containerBlend"
       ],
-      "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim."
+      "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim.",
+      "records": [
+        "R-0855"
+      ]
     },
     {
       "id": "N-80",
@@ -11122,10 +11125,10 @@
     {
       "id": "N-130",
       "title": "Despawn leaves the entity's joints in Weed's joint pool",
-      "status": "open",
+      "status": "kept-hygiene",
       "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
       "date": "2026-11-10",
-      "result": "Physics destroys the Box2D joints (destroyWasmJointsForEntity), but nothing calls Joint.removeAllForEntity on despawn: the row stays active, the partner still counts it, the slot is not freed.",
+      "result": "Fixed 2026-11-10 (422b6b1b): despawn and despawnAll remove the entity's joints after onDespawned; before, the index spawned again was born with the old joints. Gate on spawnStormScene left to the owner.",
       "next": "Joint.removeAllForEntity on despawn; a test with a jointed pair, one despawned, the other's count, and the index respawned (does it get the old joint back?).",
       "area": "physics",
       "kind": "bug",
@@ -11138,9 +11141,9 @@
         "Joint.removeAllForEntity"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 25
+        "R-0854",
+        "R-0856"
+      ]
     },
     {
       "id": "E-197",
@@ -11539,6 +11542,28 @@
       "records": [
         "R-0854"
       ]
+    },
+    {
+      "id": "DX-GUARDS",
+      "title": "The engine says the mistakes a game makes, or fixes them",
+      "status": "open",
+      "statusText": "The owner's plan of 2026-11-10, being built on dx/guards",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Load guards C1, C3 to C6, C8 to C10; devChecks and E1 to E7; the guide's common mistakes page; bundles.",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-GUARDS"
+      ],
+      "aliases": [
+        "guards",
+        "validation",
+        "devChecks",
+        "common mistakes",
+        "config keys"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -19674,6 +19699,33 @@
       "title": "Twenty entries filed from a code review: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK, DX-AUTOQUALITY",
       "verdict": "note",
       "text": "**Twenty entries filed from a code review's list of what would pay most: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK and DX-AUTOQUALITY.** Nothing timed: each premise is a reading of the code and the register, checked against the code on 2026-11-10 where it names one.\n\n- **The five the review ranked first:** the wake chain (E-198, which needs the latency stamp E-197 first), neighbour aggregates in the spatial kernel (E-199), neighbour lists refreshed with each entity's tick bucket (E-200), keyed poses read by key on the GPU (E-201, the other road for E-193) and decals stamped on the GPU (E-202).\n- **GPU:** sway in the vertex shader (E-203), fill rate's step 0 with GPU timestamps, overdraw and mipmaps zoomed out (E-204: the register had no entry on any of them), the light pass's loop over every light (E-205), and visibility as a polar shadow map (E-206, a big bet with a counting step 0).\n- **WASM:** A* in C (E-207; the flowfield gained 16× there, E-122).\n- **GC:** listUpdates through a SAB ring (E-208), entity instances made at spawn (E-209), eslint-plugin-weed in create-weed-game (DX-LINT).\n- **DX:** config validation and a size advisor (DX-CONFIGCHECK), workers 'auto' and a quality governor (DX-AUTOQUALITY).\n- **Bugs, confirmed in the code:** `fixedFps` truncated to whole milliseconds by `setInterval`, 62.5 Hz at 60 (N-128, to confirm by counting frames); `onGotShot` dispatched by `targetId % workers` where ticks and collision callbacks honour pins, and impacts overwritten frame by frame (N-129); despawn leaves Weed's joint rows active, since nothing calls `Joint.removeAllForEntity` (N-130).\n- **Measuring:** Predator's gate from a save, both sides from the same mid-battle snapshot (E-210).\n\nRanked after the queue's 22: the three bugs 23 to 25, then E-197 to E-202 26 to 31. The rest unranked.\n\n**Not filed:** animation in the shader for keyed sprites. Predator's walkers change their animation speed every tick, so E-189 (a texture-only update) stays the lever there."
+    },
+    {
+      "id": "R-0855",
+      "date": "2026-11-10",
+      "time": "23:03",
+      "timeFrom": "recorded",
+      "title": "N-79 fixed: a layer drawn in one pass takes its blendMode; one demo's beam retuned",
+      "verdict": "kept-hygiene",
+      "text": "**N-79 fixed (DX-GUARDS F1, approved by the owner on 2026-11-10): kept as hygiene.** Nothing timed: the change is in the layers' init (which blend a display object takes), not in a frame.\n\n- `0d490b4b`: a batch, a MESH fill or a world-rect mesh that is the layer's only pass takes `blendMode`, unless the config sets `shader.containerBlend` (Layer's worker metadata carries `containerBlendSet`). A MESH look's mesh composes with `blendMode`, like a look layer's display sprite; before, it did only when alpha or alphaBySun sent it through a sprite. `buildLayerRefsMap` picks the same blend. `tests/node/layerBlendSinglePass.test.js`, through the Pixi worker's real `initializeCustomLayers`: fails before ('normal' for 'add'), and the layers panel's select still changes the blend live.\n- `852f5850`: the guide's table of which key each kind of layer reads; `NEXT_RELEASE.md` holds the change in behaviour for the next notes.\n- The demos: four layers change, the `fx` layers of destructibleTerrainScene, mamushkaDigScene and planetPhysicsScene and sunStreetScene's `nightGlows`. landingScene's two ADD layers are GPU particle layers, which already took `blendMode`. Captured before and after with the effects driven by keys and the mouse: Destructible Terrain's beam summed to a white bar and was retuned to a cyan beam with a white core (`0aae7477`); Mamushka's beam and jet sparks, and Sun Street's lit windows and lamps, look right additive; Planet Physics' `fx` layer draws nothing.",
+      "commits": [
+        "0d490b4b",
+        "852f5850",
+        "0aae7477"
+      ]
+    },
+    {
+      "id": "R-0856",
+      "date": "2026-11-10",
+      "time": "23:03",
+      "timeFrom": "recorded",
+      "title": "N-130 fixed: despawn removes the entity's joints",
+      "verdict": "kept-hygiene",
+      "text": "**N-130 fixed (DX-GUARDS F2, approved by the owner on 2026-11-10): kept as hygiene, the gate to the owner.** `422b6b1b`: `_releaseSlotResources`, which despawn and despawnAll call after `onDespawned`, removes the entity's joints when the head of its joint list is set. An entity with none pays one read.\n\nThe row's \"to check\" holds: before the fix, the index spawned again still had both joints of the despawned entity, and the partner still counted them (`tests/node/despawnJoints.test.js`, which fails before on three of its four tests). `onDespawned` still reads the joints, and one that removes them itself still works (landingScene's ropes, mamushkaDigScene and badPiggiesScene do). The guide never asked games to remove them by hand (the plan said it did); PHYSICS.md now says despawn does (`b7672e2d`).\n\ndespawn is on spawnStormScene's path. Not timed here; the gate for the owner:\n`MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name N-130 --vs 0aae7477 --hyp-rev 422b6b1b --scene /tests/bench/stressScenes/spawnStormScene.js --scene-export SpawnStormScene --owner logic --pairs 4`",
+      "commits": [
+        "422b6b1b",
+        "b7672e2d"
+      ]
     }
   ],
   "leads": [
