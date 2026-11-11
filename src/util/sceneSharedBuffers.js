@@ -93,6 +93,7 @@ import {
 } from '../box2d/box2dBodySync.js';
 import { bindStaticSceneryGen, bindStaticTypes } from '../core/staticScenery.js';
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
+import { createListUpdateRings } from './listUpdateRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
 import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } from './poolSlotWidth.js';
 import { impactRingBytes } from './impactRing.js';
@@ -1365,6 +1366,8 @@ export function createSceneSharedBuffers(scene) {
   initializeSharedResourceBuffers(scene);
   scene.buffers.spawnCommandRing = createSpawnCommandRingSab(scene.totalEntityCount);
   bindSpawnCommandRing(scene.buffers.spawnCommandRing);
+  // E-208: the list update rings of logic workers 1..N (null with one).
+  scene.buffers.listUpdateRings = createListUpdateRings(scene.config?.logic?.numberOfLogicWorkers | 0, scene.totalEntityCount);
 }
 
 function initializeSharedResourceBuffers(scene) {
