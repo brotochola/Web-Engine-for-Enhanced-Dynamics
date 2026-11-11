@@ -8,3 +8,6 @@ export function noteSpawned() {}
 export function auditFields() {}
 export function setDevLookups() {}
 export function lateBodyWrite() {}
+export function massSetByHand() {}
+export function massFromCollider() {}
+export function slotReleased() {}

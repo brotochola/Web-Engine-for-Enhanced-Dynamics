@@ -145,3 +145,47 @@ export function lateBodyWrite(index, what) {
     `${name} writes ${what} after its Box2D body exists, so the body does not change. ${BODY_FLAG_FIX[what] || ''}.`,
   );
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E4: a mass set by hand, replaced by the collider's.
+// ---------------------------------------------------------------------------------------------------------------------
+
+let handMass = new Uint8Array(0);
+
+/** rigidBody.mass was set: remember it until the slot is released or the mass is synced from the collider. */
+export function massSetByHand(index) {
+  if (!on) return;
+  if (index >= handMass.length) {
+    const grown = new Uint8Array(Math.max(index + 1, handMass.length * 2, 1024));
+    grown.set(handMass);
+    handMass = grown;
+  }
+  handMass[index] = 1;
+}
+
+/**
+ * RigidBody.syncMassFromCollider gave the entity its collider's mass.
+ * @param {number} index
+ * @param {number} before the mass before
+ * @param {number} after the mass now
+ * @param {boolean} fromSpawn the spawn's sync, right after onSpawned
+ */
+export function massFromCollider(index, before, after, fromSpawn) {
+  if (!on || index >= handMass.length || handMass[index] === 0) return;
+  handMass[index] = 0;
+  if (before === after) return;
+  const name = classNameOf(index);
+  const fix = fromSpawn
+    ? 'spawn sets the mass from the collider after onSpawned (PHYSICS.md, "Mass"). Set it after the spawn returns'
+    : 'a change of the collider\'s shape sets the mass from it again. Set the mass after the shape';
+  warnOnce(
+    name,
+    fromSpawn ? 'mass-spawn' : 'mass-shape',
+    `${name}'s rigidBody.mass, set by hand to ${+before.toFixed(3)}, was replaced by its collider's ${+after.toFixed(3)}: ${fix}.`,
+  );
+}
+
+/** The slot is free: its next entity has set no mass. */
+export function slotReleased(index) {
+  if (index < handMass.length) handMass[index] = 0;
+}

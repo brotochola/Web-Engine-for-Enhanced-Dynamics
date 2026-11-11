@@ -253,3 +253,66 @@ test('E3: without physics, or with the body still to be made, nothing is said', 
   });
   assert.deepEqual(lines, []);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E4: a mass set by hand, replaced by the collider's.
+// ---------------------------------------------------------------------------------------------------------------------
+
+import { ShapeType } from '../../src/util/configDefaults.js';
+
+/** Entity 0 and 1, circles of radius 10 (mass 100π), dynamic. */
+function circles(C) {
+  bodies(C);
+  bindBodySyncBuffers(null);
+  for (const i of [0, 1]) {
+    Collider.shapeType[i] = ShapeType.Circle;
+    Collider.radius[i] = 10;
+    RigidBody.static[i] = 0;
+    RigidBody.syncMassFromCollider(i);
+  }
+  real.slotReleased(0);
+  real.slotReleased(1);
+}
+
+test('E4: a mass set in onSpawned, replaced by the spawn\'s sync from the collider, is named', () => {
+  class Boulder extends GameObject {}
+  circles(Boulder);
+  const lines = warningsOf(() => {
+    new RigidBody(0).mass = 50; // in onSpawned
+    RigidBody.syncMassFromCollider(0, true); // GameObject.spawn, after onSpawned
+  });
+  assert.deepEqual(lines, [
+    "WeedJS: Boulder's rigidBody.mass, set by hand to 50, was replaced by its collider's 314.159: spawn sets the mass " +
+      'from the collider after onSpawned (PHYSICS.md, "Mass"). Set it after the spawn returns.',
+  ]);
+});
+
+test('E4: a mass set by hand, replaced when the collider\'s shape changes, is named', () => {
+  class Ball extends GameObject {}
+  circles(Ball);
+  const lines = warningsOf(() => {
+    new RigidBody(0).mass = 2;
+    new Collider(0).radius = 20;
+  });
+  assert.deepEqual(lines, [
+    "WeedJS: Ball's rigidBody.mass, set by hand to 2, was replaced by its collider's 1256.637: a change of the " +
+      "collider's shape sets the mass from it again. Set the mass after the shape.",
+  ]);
+});
+
+test('E4: a mass set after the shape, the same mass, a static body, or a released slot are silent', () => {
+  class Rock extends GameObject {}
+  circles(Rock);
+  const lines = warningsOf(() => {
+    new Collider(0).radius = 20;
+    new RigidBody(0).mass = 2; // after the shape: kept
+    new RigidBody(1).mass = Math.fround(Math.PI * 100);
+    RigidBody.syncMassFromCollider(1, true); // the same mass back
+    RigidBody.static[0] = 1;
+    new Collider(0).radius = 30; // a static body's mass does not move it
+    new RigidBody(1).mass = 7;
+    real.slotReleased(1); // despawned: the next entity in the slot set nothing
+    RigidBody.syncMassFromCollider(1, true);
+  });
+  assert.deepEqual(lines, []);
+});

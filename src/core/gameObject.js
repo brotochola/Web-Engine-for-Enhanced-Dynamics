@@ -20,7 +20,7 @@ import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
-import { noteSpawned, setDevLookups } from './debug/devChecks.js';
+import { noteSpawned, setDevLookups, slotReleased } from './debug/devChecks.js';
 import { ColliderFixture } from './colliderFixture.js';
 import { ChainPoints } from './chainPoints.js';
 import { MeshGeometry } from './meshGeometry.js';
@@ -2384,6 +2384,7 @@ export class GameObject {
     // N-130: the joints too, or the next entity spawned into this index is born jointed to the old partner. One read
     // for an entity with none: the head of its joint list.
     if (Joint.head && Joint.head[i] !== Joint.INVALID_INDEX) Joint.removeAllForEntity(i);
+    slotReleased(i);
     if (ChainPoints.begin && ChainPoints.begin[i] >= 0) ChainPoints.clearForEntity(i);
     MeshGeometry.clearEntity(i);
   }
@@ -3218,7 +3219,7 @@ export class GameObject {
       noteSpawned(instance);
 
       if (has.RigidBody && RigidBody.active[i]) {
-        RigidBody.syncMassFromCollider(i);
+        RigidBody.syncMassFromCollider(i, true);
       }
       if (spawnConfig.layers) {
         instance.setLayers(spawnConfig.layers);

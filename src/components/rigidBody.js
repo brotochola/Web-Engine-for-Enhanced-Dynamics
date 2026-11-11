@@ -10,7 +10,7 @@ import { Transform } from './transform.js';
 import { updateMassFromCircle, updateMassFromBox } from '../util/utils.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
-import { lateBodyWrite } from '../core/debug/devChecks.js';
+import { lateBodyWrite, massFromCollider, massSetByHand } from '../core/debug/devChecks.js';
 
 let _warnedDynamicChain = false;
 
@@ -109,10 +109,12 @@ export class RigidBody extends Component {
    * dimensions change later.
    *
    * @param {number} index - Entity index
+   * @param {boolean} [fromSpawn] GameObject.spawn's sync, after onSpawned (DX-GUARDS E4's text)
    * @returns {boolean} True when collider geometry supplied mass, false when unit mass was used
    */
-  static syncMassFromCollider(index) {
+  static syncMassFromCollider(index, fromSpawn = false) {
     if (!RigidBody.active || !RigidBody.active[index]) return false;
+    const massBefore = RigidBody.mass[index];
 
     let isStatic = RigidBody.static[index] !== 0;
     let massInitialized = false;
@@ -191,6 +193,8 @@ export class RigidBody extends Component {
     }
 
     RigidBody.syncInertiaFromCollider(index, shapeType, isStatic);
+    // DX-GUARDS E4 (debug build): a mass set by hand, replaced by the collider's.
+    if (massInitialized && !isStatic) massFromCollider(index, massBefore, RigidBody.mass[index], fromSpawn);
     return massInitialized;
   }
 
@@ -326,6 +330,7 @@ export class RigidBody extends Component {
   set mass(value) {
     const m = value > 0 ? value : 0;
     RigidBody.mass[this.index] = m;
+    massSetByHand(this.index);
     const isStatic = RigidBody.static[this.index] !== 0;
     RigidBody.invMass[this.index] = isStatic || !(m > 0) ? 0 : 1 / m;
     RigidBody.syncInertiaFromCollider(this.index, -1, isStatic);
