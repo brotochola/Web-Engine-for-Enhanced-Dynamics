@@ -520,9 +520,12 @@ class Collider extends Component {
   get enableHitEvents() {
     return Collider.enableHitEvents[this.index] !== 0;
   }
+  /** A shape's hit events: Box2D reads them when it makes the body, so a change makes it again (N-135). */
   set enableHitEvents(value) {
-    Collider.enableHitEvents[this.index] = value ? 1 : 0;
-    markBodyDirty(this.index, BODY_DIRTY.LIFECYCLE);
+    const next = value ? 1 : 0;
+    if (Collider.enableHitEvents[this.index] === next) return;
+    Collider.enableHitEvents[this.index] = next;
+    remakeBody(this.index, Transform.active?.[this.index] === 1);
   }
 
   addLayerToMask(layer) {

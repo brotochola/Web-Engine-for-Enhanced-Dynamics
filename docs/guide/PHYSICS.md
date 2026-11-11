@@ -302,7 +302,7 @@ See [Collision Filtering](./bible_of_weed_js.md#collision-filtering) in the bibl
 ### Restitution & contact hits
 
 - **`Collider.restitution`** — Box2D bounce coefficient (`0..1`, typically). Synced via `body_set_restitution` on create and whenever `Collider.friction`/`restitution` marks the body dirty (`BODY_DIRTY.FRICTION`).
-- **`Collider.enableHitEvents`** — opt-in per-shape hard-impact events (creation-time property; toggling it marks `BODY_DIRTY.LIFECYCLE`, so the body is re-created). When enabled and the impact speed exceeds the world **hit-event threshold** (`physics.hitEventThreshold`, `PhysicsWorld.setHitEventThreshold`), Box2D emits a contact-hit event.
+- **`Collider.enableHitEvents`** — opt-in per-shape hard-impact events (creation-time property: changing it on a live entity makes the body again, with its velocity; so does `Collider.isTrigger`). When enabled and the impact speed exceeds the world **hit-event threshold** (`physics.hitEventThreshold`, `PhysicsWorld.setHitEventThreshold`), Box2D emits a contact-hit event.
 - Hits are drained from a dedicated **contact-hit ring** (`box2dContactHitRing`, separate from the begin/end contact ring) by each logic worker and dispatched to `GameObject.onCollisionHit(otherIndex, px, py, nx, ny, approachSpeed)` on entities with a `CollisionListener`. Same worker-partition + generation-validation rules as begin/end contacts.
 
 ### Per-body sleep threshold

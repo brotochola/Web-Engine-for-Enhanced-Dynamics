@@ -277,6 +277,21 @@ test('N-131: collider.isTrigger changed after the body is made makes the body ag
   assert.equal(flags[0], 0, 'the same value again');
 });
 
+test('N-135: collider.enableHitEvents changed after the body is made makes the body again; before, it marks only', () => {
+  class Shell extends GameObject {}
+  const flags = bodies(Shell);
+  Transform.active[1] = 0; // slot 1 is not live yet: its creation reads the flag
+  flags[0] = 0;
+  new Collider(0).enableHitEvents = true;
+  assert.equal(flags.generation[0], 1, 'a live body is made again, with hit events');
+  new Collider(0).enableHitEvents = true;
+  assert.equal(flags.generation[0], 1, 'the same value again: nothing');
+  flags[1] = 0;
+  new Collider(1).enableHitEvents = true;
+  assert.equal(flags.generation[1], 0);
+  assert.equal(flags[1] & BODY_DIRTY.LIFECYCLE, BODY_DIRTY.LIFECYCLE, 'not live: marked for its creation');
+});
+
 // ---------------------------------------------------------------------------------------------------------------------
 // E4: a mass set by hand, replaced by the collider's.
 // ---------------------------------------------------------------------------------------------------------------------
