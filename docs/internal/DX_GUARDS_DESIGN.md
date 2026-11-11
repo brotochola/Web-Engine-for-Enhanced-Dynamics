@@ -97,6 +97,12 @@ for free.
 - A probe scene that makes each run-time mistake on purpose (`scratch/`, not committed), from source: each of E1 to E7
   (and C4) said once, from the thread that sees it: E1 on the page, E2 from the logic worker's audit, E3 with Box2D's
   body made, E4 from the spawn's sync, E5 to E7 from a tick.
+- The probe on the built bundles (`1a8ef3b4`): the debug bundle says each of E1 to E7 once, like the sources; the
+  production bundle only the load-time guard the probe trips (C4). It took two build fixes, found by that probe: the
+  workers are built by `webpack.config.js`, which dropped every console call in the debug bundle too (no worker
+  warning or error ever reached the console; now the debug build drops only `console.log` and `console.debug`,
+  `334b5e77`), and whose own stub list lacked devChecks, so the production workers ran the checks, silently
+  (`56b2e3d8`).
 - Every demo (37 scenes), from source, with the checks on (`devChecks: true` on the bench page), 8 to 9 s each,
   headless and, for the 9 WebGPU ones, in a window. Besides the kept C4 lines and the pool-full warnings the engine
   already gave, the run-time guards named:

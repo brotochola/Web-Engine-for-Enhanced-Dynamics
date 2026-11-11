@@ -21,3 +21,6 @@ empties it.
   are ignored, unknown key names.
 - **Errors that say what happened** (DX-GUARDS): an asset that does not load names its URL and the HTTP status; a
   scene file a worker cannot import, or one that imports a second copy of the engine, says so.
+- **The debug bundle's workers print their warnings and errors.** Their build dropped every console call, so a
+  worker's `console.warn` and `console.error` never reached the console with `@weed.js/engine/debug`; now only
+  `console.log` and `console.debug` are dropped there. The production bundle is as before.
