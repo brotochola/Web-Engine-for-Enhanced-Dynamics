@@ -7,9 +7,20 @@
  * - run: chromeKernel.mjs's entry, the shipped kernel against stampLightRange in alternating rounds.
  * shadowStampMicrobench.mjs and shadowStampWasmMicrobench.mjs time the same setup in Node.
  *
+ * E-195: `variants` picks the sides (`wasm`, `js`, and the float32 test module's `wasm-f32` and `wasm-f32x4`,
+ * tests/fixtures/wasm/shadowStampF32.wasm), and `keyed` packs the casters as E-191 step 2's keyed rows (7 floats, the
+ * stamp's 11, the light after the seventh), which pre-render stamps in Predator; the JS reads full rows only.
+ *
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/shadowStampKernel.mjs [--args '{"rounds":7}']
+ *   node tests/bench/chromeKernel.mjs --module /tests/bench/shadowStampKernel.mjs \
+ *     --args '{"variants":"wasm,wasm-f32x4","keyed":true}'
  */
-import { GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
+import {
+  GPU_CASTER_FLOATS,
+  GPU_CASTER_LIGHT_FLOAT,
+  GPU_KEYED_CASTER_FLOATS,
+  GPU_KEYED_STAMP_FLOATS,
+} from '../../src/render/gpuQueueLayout.js';
 import { stampLightRange } from '../reference/shadowStamp.mjs';
 import { STAMP_SLOTS } from '../../src/render/shadowStampClient.js';
 import { loadWasmKernel } from '../../src/util/wasmKernel.js';
@@ -22,7 +33,10 @@ const SLOT = Object.fromEntries(STAMP_SLOTS.map((name, k) => [name, k]));
 export function setupStamp(fx, opts = {}) {
   const { x, y, active, shadowActive, shadowH, lightActive, visualRange } = fx.arrays;
   const n = fx.meta.n;
-  const sf = GPU_CASTER_FLOATS;
+  // E-195: keyed rows are x, y, the key, a zero and the shadow terms; a full row's x and y lead it too.
+  const keyed = opts.keyed === true;
+  const sf = keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_FLOATS;
+  const stampFloats = keyed ? GPU_KEYED_STAMP_FLOATS : sf;
   const casters = [];
   for (let i = 0; i < n; i++) if (active[i] && shadowActive[i] && shadowH[i] > 0) casters.push(i);
   const sunN = casters.length;
@@ -33,8 +47,13 @@ export function setupStamp(fx, opts = {}) {
     const i = casters[c];
     sun[c * sf] = x[i];
     sun[c * sf + 1] = y[i];
-    sun[c * sf + 2] = 1;
-    sun[c * sf + 3] = 1;
+    if (keyed) {
+      sun[c * sf + 2] = i;
+      sun[c * sf + 4] = shadowH[i];
+    } else {
+      sun[c * sf + 2] = 1;
+      sun[c * sf + 3] = 1;
+    }
     cx += x[i];
     cy += y[i];
   }
@@ -69,8 +88,9 @@ export function setupStamp(fx, opts = {}) {
     gridCounts: new Int32Array(128 * 128),
     gridStarts: new Int32Array(128 * 128 + 1),
     gridItems: new Uint32Array(sunN),
-    stamp: new Float32Array(stampCap * sf),
-    stampFloats: sf,
+    stamp: new Float32Array(stampCap * stampFloats),
+    stampFloats,
+    lightFloat: keyed ? GPU_KEYED_CASTER_FLOATS : GPU_CASTER_LIGHT_FLOAT,
     stampCap,
     stampBase: 0,
     stampLightIdx: new Uint16Array(stampCap),
@@ -151,7 +171,7 @@ export async function createStampKernel(fx, opts, kernelUrl) {
   put('stampCap', spec.stampCap);
   put('stampBase', spec.stampBase);
   put('stampLightIdx', spec.stampLightIdx.byteOffset);
-  put('lightFloat', GPU_CASTER_LIGHT_FLOAT);
+  put('lightFloat', spec.lightFloat);
   put('nearDist', R.nearDist.byte);
   put('nearSlot', R.nearSlot.byte);
   put('nearCount', R.nearCount.byte);
@@ -210,8 +230,22 @@ export async function run(args = {}) {
   const minMs = Number(args.minMs ?? 200);
   const opts = args.maxPerEntity !== undefined ? { maxPerEntity: Number(args.maxPerEntity) } : {};
   const bytes = new Uint8Array(await (await fetch(new URL('../fixtures/predator-frame.bin', import.meta.url))).arrayBuffer());
+  if (args.keyed === true) opts.keyed = true;
   const k = await createStampKernel(parsePredatorFixture(bytes), opts, new URL('../../src/wasm/engine.wasm', import.meta.url));
-  const sides = { wasm: k.stampWasm, js: () => stampLightRange(k.spec) };
+  const f32Url = new URL('../fixtures/wasm/shadowStampF32.wasm', import.meta.url);
+  const variants = String(args.variants ?? 'wasm,js').split(',');
+  const sides = {};
+  for (const v of variants) {
+    if (v === 'wasm') sides.wasm = k.stampWasm;
+    else if (v === 'js') {
+      if (opts.keyed) throw new Error('the JS stamps full rows only');
+      sides.js = () => stampLightRange(k.spec);
+    } else if (v === 'wasm-f32' || v === 'wasm-f32x4') {
+      const fn = v === 'wasm-f32' ? 'stamp_light_range_f32' : 'stamp_light_range_f32x4';
+      const m = await loadWasmKernel('shadowStampF32', f32Url, k.memory, [fn]);
+      sides[v] = () => k.stampWith(m[fn]);
+    } else throw new Error(`unknown variant ${v}`);
+  }
   const checksums = {};
   const written = {};
   for (const [name, op] of Object.entries(sides)) {
@@ -240,9 +274,12 @@ export async function run(args = {}) {
     casters: k.sunN,
     lights: k.lights.length,
     maxPerEntity: k.spec.maxPerEntity,
+    keyed: opts.keyed === true,
     written,
     checksums,
-    checksumsOk: checksums.wasm === checksums.js,
+    // A float32 side may keep another caster where two distances tie within float rounding (shadowStampF32.test.js
+    // holds that tolerance in Node): a differing checksum here is reported, not refused.
+    checksumsOk: Object.values(checksums).every((c) => c === checksums[variants[0]]),
     rounds,
     cases: Object.fromEntries(names.map((n) => [n, { opsPerSec: medianOf(samples[n]), samples: samples[n] }])),
   };
