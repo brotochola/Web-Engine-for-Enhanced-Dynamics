@@ -9733,9 +9733,10 @@
     {
       "aliases": [],
       "records": [
-        "R-0813"
+        "R-0813",
+        "R-0874"
       ],
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-189",
@@ -9743,11 +9744,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-189"
       ],
-      "statusText": "open: step 0 answered 2026-11-01 (R-0813): every steady mark is a texture alone",
-      "rank": 17,
+      "statusText": "kept 2026-11-11 (R-0874)",
       "area": "render",
-      "result": "",
-      "next": "Predator marks 657 of 13 477 sprites a frame, all changing their texture alone: a texture-only update (key and texture, 8 bytes, into a per-key texture-id texture the indexed program reads) would send 5 KB a frame instead of 42. Its share of the pack is open while the pack's gather costs ten times its kernel (E-193, first); gpuPackKeyedMicrobench needs a case of marked rows to size it. Then Predator's renderer."
+      "result": "kept 2026-11-11 (16fe185c, R-0874): texture-only marks go up as 8-byte texture updates drawn into one texel; kernel -12 %; Predator crowd 1.5 renderer -10.7 % (0/4), pre-render -0.9 %",
+      "next": "Done."
     },
     {
       "aliases": [],
@@ -10036,7 +10036,8 @@
         "R-0866",
         "R-0867",
         "R-0868",
-        "R-0872"
+        "R-0872",
+        "R-0874"
       ],
       "status": "open",
       "date": "2026-11-01",
@@ -10046,10 +10047,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-193"
       ],
-      "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867); the shadow terms gone (E-211, R-0868), the slot depth gone (E-186, R-0872)",
+      "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867); the shadow terms gone (E-211, R-0868), the slot depth gone (E-186, R-0872), texture-only updates (E-189, R-0874)",
       "area": "render",
       "result": "E-211 (R-0868): the shadow terms out of the keyed pack, pack_sprites_keyed 79-119 -> 57-59 ms/s, renderer -4.5 % at Predator crowd 1.5",
-      "next": "Fewer bytes a row still: a pose only for a row that moved; the statics updates (E-189). Owner: Predator crowd 1.5's renderer.",
+      "next": "Fewer bytes a row still: a pose only for a row that moved. Owner: Predator crowd 1.5's renderer.",
       "rank": 12
     },
     {
@@ -20171,6 +20172,19 @@
       "text": "**The bundles of 184f27a5 (E-211, N-113, N-136 and E-186 merged; E-195 dropped): tested, and the prod bundle equals its sources.** dist `fe072be0`, built from 184f27a5.\n\n**On main:**\n- Node 2438 of 2438, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, nothing else running:\n\n- **Predator, 4 pairs, 15:08 to 15:13: NEUTRAL.**\n  - Logic 3.215 → 2.962 ms (-6.0 %, worse 0/4).\n  - Spatial -0.3 %, physics +4.2 % (worse 2/4, cv 8/10 %), pre-render -1.6 %.\n  - Load within 0.4 %.\n- **Boids, 8 pairs, 15:13 to 15:23: NEUTRAL.**\n  - Spatial 5.849 → 5.864 ms (+0.1 %, worse 5/8, cv 3/3 %).\n  - Physics +0.3 % (worse 4/8).\n  - 40 000 bodies on both sides.\n\nPredator's physics +4.2 % in 2 of 4 pairs is its emergent load (N-105). Boids' physics reads +0.3 %. Main pushed.",
       "commits": [
         "fe072be0"
+      ]
+    },
+    {
+      "id": "R-0874",
+      "date": "2026-11-11",
+      "time": "15:36",
+      "timeFrom": "recorded",
+      "title": "E-189 kept: a sprite whose texture alone changed sends its row and texture (8 bytes, not 64); Predator crowd 1.5 renderer -10.7 % (0/4)",
+      "verdict": "kept",
+      "text": "**E-189 kept: a sprite whose texture alone changed sends its row and texture, 8 bytes instead of 64. Predator `?crowd=1.5` renderer -10.7 % (worse 0/4).** 2026-11-11, from 15:33 (the sitting's first result file) to 15:36. Chrome, headed, source, detailed stats off, AC power.\n\n**The premise** (R-0813). Every keyed mark of a steady Predator frame is an animation's step, which changes the texture alone. Each sent a 64-byte update, and to write it the pack gathered the row's eleven statics columns. At crowd 1.5 that is about 1 100 rows a frame.\n\n**The change** (`16fe185c`).\n- **The emit** marks such a sprite with KEY_TEX_ONLY beside KEY_CHANGED. Causes: the clock's step, a wrapped frame, a texture that moved since the emit before.\n- **keyedDirty** carries two bits: 1 (what the setters write: every static), and 2 (the persist path's clock and repairs: the texture alone, an atomic or beside the setters' stores).\n- **A repeating sprite** still sends its row whole, since its tile multiplier follows the frame's size.\n- **The keyed pack** writes a texture-only row as a texture update (its row, its texture's float bits) into a region of its own (`pixiKeyTexUpdates`). Without that region, the row goes up whole as before.\n- **Pixi's statics scatter** draws each texture update as one texel, the second of its row, with the blue channel alone written. The indexed program is untouched.\n- **Every key reader** masks both bits.\n\n**Kernel** (`5aae5fe6`: `gpuPackKeyedMicrobench`'s `marked: 'texture'`). 23 500 rows, 42 633 entities, a twentieth of the rows changed a frame. Chrome 157, main with the tool against the change, 3 runs each:\n- keyed 0.170 / 0.165 / 0.180 → 0.145 / 0.155 / 0.155 ms;\n- 1 336 whole updates a frame → 199 whole and 1 137 texture updates.\n\n**The scatter on WebGL2** (a one-off probe through `chromeKernel.mjs`, not committed). A statics texture of known words takes full and texture updates, then is read back: 0 of 49 152 words wrong, the color mask back to all four channels, no GL error.\n\n**Correctness in Node.** `preRenderEmitWasm.test.js` replays Pixi's texture from the keys, writing a texture-only mark's word alone, and finds every row's statics there. In its animated case, 143 to 234 of a frame's 196 to 287 marks are the texture alone. `gpuPackKeyed`, `instancedSpriteKeyed` and `gpuPackKeyedPixi` cover the pack, the batch and Pixi's path.\n\n**Predator `?crowd=1.5`, 4 pairs** (`--vs 5aae5fe6 --hyp-rev 16fe185c --full-rev --owner renderer`): **KEPT (product).**\n- Renderer 3.315 → 2.969 ms (-10.7 %, worse 0/4, cv 4/3 %; -8.2 % against the others, lower 4/4). Pairs: -12.7, -4.6, -8.8, -16.3 %.\n- Pre-render 4.906 → 4.952 ms (-0.9 %, worse 2/4).\n- Logic -4.0 %, spatial -2.8 %, physics -2.4 %.\n- Load within 0.5 %.\n\n**Not the plan's form.** The plan named a per-key texture-id texture that the indexed program would read. The masked texel write keeps the program as it was and adds no texture fetch.",
+      "commits": [
+        "16fe185c",
+        "5aae5fe6"
       ]
     }
   ],

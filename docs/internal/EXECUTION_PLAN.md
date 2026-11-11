@@ -3328,6 +3328,18 @@ one of them changed its texture alone (frames 600 to 1 200; in the first 600, 95
 premise holds: the updates' 42 KB a frame would be 5 KB. Their share of the pack is the open question, since the pack
 gathers every sprite's pose and slot too (E-193); gpuPackKeyedMicrobench sets no marks (its 200 updates are its rows
 without a key), so it needs a case of marked rows before it can size this.
+**Result:** kept 2026-11-11 (`16fe185c`, R-0874): Predator `?crowd=1.5`'s renderer -10.7 % (0/4). The emit marks a
+sprite whose texture alone changed (an animation's step, a wrapped frame, a repair) with KEY_TEX_ONLY beside
+KEY_CHANGED: keyedDirty's bit 1 is the setters' (every static), bit 2 the persist path's clock and repairs (the texture
+alone, an atomic or); a repeating sprite still sends its row whole. The keyed pack writes such a row as a texture update
+(its row, its texture's float bits, 8 bytes) into a region of its own, and Pixi's statics scatter draws those as one
+texel each with the blue channel alone written, not the per-key texture-id texture the plan named: the indexed program
+is untouched. Kernel (`5aae5fe6`: gpuPackKeyedMicrobench `marked: 'texture'`, 23 500 rows, a twentieth marked, Chrome,
+3 runs a side): keyed 0.170 / 0.165 / 0.180 → 0.145 / 0.155 / 0.155 ms, 1 336 whole updates a frame → 199 whole and
+1 137 texture updates. The scatter on a real WebGL2 context (a one-off probe): 0 of 49 152 words wrong, the color mask
+back to all four. Predator `?crowd=1.5`, 4 pairs: renderer 3.315 → 2.969 ms (-10.7 %, worse 0/4; -8.2 % against the
+others, lower 4/4), pre-render -0.9 %, load within 0.5 %. The emit's test replays the texture from the keys and finds
+every row's statics there; in its animated case three marks in four are the texture alone.
 
 ### E-190 Pre-render's 2 % that the keyed frames' build costs where they are off
 

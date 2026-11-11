@@ -2147,7 +2147,9 @@ class PixiRenderer extends AbstractWorker {
       },
       upload: (source, bits, width, height, y0, rows) => this._gpuRecordRowsGl(source, bits, width, height, y0, rows),
       // E-177: a keyed batch's changed statics into its texture.
-      scatter: (source, updates, count, width, height) => this._scatterStaticsGl(source, updates, count, width, height),
+      // E-189: and its texture updates.
+      scatter: (source, updates, count, width, height, texUpdates, texCount) =>
+        this._scatterStaticsGl(source, updates, count, width, height, texUpdates, texCount),
     };
     return this._gpuRecordTextureOps;
   }
@@ -2182,13 +2184,14 @@ class PixiRenderer extends AbstractWorker {
    * E-177: `count` updates of a keyed batch's statics (GPU_KEYED_ROW_WORDS u32 each) into its texture, `width` x
    * `height` (staticsScatterGl.js), the scatter's GL objects made on the first call.
    */
-  _scatterStaticsGl(source, updates, count, width, height) {
+  _scatterStaticsGl(source, updates, count, width, height, texUpdates = null, texCount = 0) {
     const renderer = this.pixiApp?.renderer;
     const gl = renderer?.gl;
     const texSys = renderer?.texture;
-    if (!gl || !texSys || count <= 0) return;
+    if (!gl || !texSys || (count <= 0 && texCount <= 0)) return;
     if (this._staticsScatterGl === null || this._staticsScatterGl.gl !== gl) this._staticsScatterGl = createStaticsScatterGl(gl);
-    scatterStaticsGl(this._staticsScatterGl, renderer, texSys.getGlSource(source).texture, updates, count, width, height);
+    const texture = texSys.getGlSource(source).texture;
+    scatterStaticsGl(this._staticsScatterGl, renderer, texture, updates, count, width, height, texUpdates, texCount);
   }
 
   /** Every frame: new GPU particle records up, each ring's live window and clock set. */
@@ -2470,6 +2473,7 @@ class PixiRenderer extends AbstractWorker {
           updatesByte: layout.pixiKeyUpdatesByte,
           headerByte: layout.pixiKeyHeaderByte,
           shadowByte: layout.pixiKeyShadowByte ?? -1,
+          texUpdatesByte: layout.pixiKeyTexUpdatesByte ?? -1,
         }
       : null;
   }

@@ -70,9 +70,12 @@ enum {
   LF_X, LF_Y, LF_SCALE_X, LF_SCALE_Y, LF_ALPHA, LF_BASE_ALPHA, LF_ROT_C, LF_ROT_S, LF_TINT, LF_TEXTURE,
   LF_PREV_X, LF_PREV_Y, LF_PREV_COUNT,
   /* E-177: the queue's key column (0: a queue without one, or one whose frames are not keyed): a sprite row's entity,
-     KEY_CHANGED or-ed in when its statics changed since the emit before; KEY_NONE for every other row. */
+     KEY_CHANGED or-ed in when its statics changed since the emit before (E-189: with KEY_TEX_ONLY too when its texture
+     alone did); KEY_NONE for every other row. */
   Q_KEY,
-  /* E-177: SpriteRenderer.keyedDirty (set by whatever changes a sprite's statics; the emit clears it as it flags them). */
+  /* E-177: SpriteRenderer.keyedDirty (set by whatever changes a sprite's statics; the emit clears it as it flags them).
+     E-189: bit 1 (KEYED_DIRTY_STATICS, what the setters write) any static, bit 2 (KEYED_DIRTY_TEXTURE, the persist
+     path's clock and repairs) the texture alone. */
   S_KEYED_DIRTY,
   /* E-188: the keyed decorations' records (DECO_KEYED_WORDS u32 a decoration slot: the statics it last emitted, then the
      epoch it emitted them in; 0: decoration rows keyless), the key of decoration slot 0 (a value: the scene's entities)
@@ -90,6 +93,11 @@ enum {
    whose statics changed since the emit before (entities stay under 2^31 - 1, so a sprite's key never reads KEY_NONE). */
 #define KEY_NONE 0xffffffffu
 #define KEY_CHANGED 0x80000000u
+/* E-189: with KEY_CHANGED, the texture alone changed (an animation's frame): the renderer's copy needs that word only.
+   Entities and decoration keys stay under 2^30. */
+#define KEY_TEX_ONLY 0x40000000u
+#define KEYED_DIRTY_STATICS 1u
+#define KEYED_DIRTY_TEXTURE 2u
 /* E-188: a keyed decoration's record: scaleX, scaleY, alpha, tint, texture, anchorX, anchorY as the row got them, and the
    epoch of that emit. */
 #define DECO_KEYED_WORDS 8u
@@ -522,9 +530,12 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
      moving its frame; or its texture not the last one this emit wrote for it (frame tables rewritten, an animation or a
      sheet written without a setter), read before the clock writes it. */
   uint32_t changed = 0;
+  /* E-189: whether the texture alone changed (the clock, a wrapped frame, the texture the emit before wrote). */
+  uint32_t texMoved = 0;
   if (e->sKeyedDirty && e->sKeyedDirty[idx]) {
-    __atomic_exchange_n(&e->sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
-    changed = 1;
+    const uint32_t d = __atomic_exchange_n(&e->sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
+    changed = d & KEYED_DIRTY_STATICS;
+    texMoved = (d & KEYED_DIRTY_TEXTURE) != 0;
   }
   const uint32_t lastTex = e->qKey && e->aLastTex ? e->aLastTex[idx] : 0;
   if (e->sortKey) e->qSortKey[out] = (float)order_key(e, i, idx);
@@ -587,7 +598,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
     const int32_t fc = known ? e->frameCount[g] : 1;
     if ((int32_t)e->aFrame[idx] >= fc) {
       e->aFrame[idx] = 0;
-      changed = 1;
+      texMoved = 1;
     }
     if (e->sAnimated[idx] && fc > 1) {
       const float acc = (float)((double)e->aAccum[idx] + e->deltaSeconds);
@@ -603,7 +614,7 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
           e->nEnds++;
         } else {
           e->aFrame[idx] = (uint16_t)((cur + 1) % fc);
-          changed = 1;
+          texMoved = 1;
           if (e->bounds) {
             /* Bounds may change (variable frame sizes). */
             const int32_t texId = (known ? e->frameStart[g] : 0) + (int32_t)e->aFrame[idx];
@@ -642,7 +653,10 @@ INLINE void sprite_row(Emit *e, uint32_t i, uint32_t out) {
      next frame. */
   if (e->qKey) {
     const uint32_t moved = e->aLastTex != 0 && lastTex != (tex & 0xffffu);
-    e->qKey[out] = (uint32_t)idx | ((changed | moved | (rx != 0) | (ry != 0)) << 31);
+    /* E-189: a repeating sprite's tile multiplier follows its frame's size, so it always sends every static. */
+    const uint32_t full = changed | (rx != 0) | (ry != 0);
+    const uint32_t texOnly = !full && (texMoved | moved);
+    e->qKey[out] = (uint32_t)idx | (full << 31) | (texOnly ? (KEY_CHANGED | KEY_TEX_ONLY) : 0u);
   }
 }
 
@@ -1335,7 +1349,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       const uint32_t tex = (uint32_t)(frameStart[g] + (int32_t)frame);
       qTexture[i] = (uint16_t)tex;
       if (aLastTex) aLastTex[idx] = (uint16_t)tex;
-      if (keyed) sKeyedDirty[idx] = 1;
+      if (keyed) __atomic_fetch_or(&sKeyedDirty[idx], (uint8_t)KEYED_DIRTY_TEXTURE, __ATOMIC_SEQ_CST);
       pFrame[i] = (uint16_t)frame;
       repaired++;
     }
@@ -1396,7 +1410,7 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
     const uint32_t frame = aFrame[idx];
     const int32_t tex = frameStart[g] + (int32_t)frame;
     qTexture[i] = (uint16_t)tex;
-    if (keyed) sKeyedDirty[idx] = 1;
+    if (keyed) __atomic_fetch_or(&sKeyedDirty[idx], (uint8_t)KEYED_DIRTY_TEXTURE, __ATOMIC_SEQ_CST);
     if (aLastTex) aLastTex[idx] = (uint16_t)tex;
     /* This buffer now shows the new frame: its next check needs no repair (E-98g). */
     pFrame[i] = (uint16_t)frame;
@@ -1424,11 +1438,13 @@ uint32_t persist_frame(uint32_t table, uint32_t count, uint32_t maxItems, uint32
       if (cType[i] != 0) continue;
       const int32_t idx = cIndex[i];
       uint32_t c = (qRepeatX && qRepeatX[i] != 0) | (qRepeatY && qRepeatY[i] != 0);
+      uint32_t texOnly = 0;
       if (sKeyedDirty[idx]) {
-        __atomic_exchange_n(&sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
-        c = 1;
+        const uint32_t d = __atomic_exchange_n(&sKeyedDirty[idx], (uint8_t)0, __ATOMIC_SEQ_CST);
+        c |= d & KEYED_DIRTY_STATICS;
+        texOnly = !c && (d & KEYED_DIRTY_TEXTURE) != 0;
       }
-      qKey[i] = (uint32_t)idx | (c << 31);
+      qKey[i] = (uint32_t)idx | (c << 31) | (texOnly ? (KEY_CHANGED | KEY_TEX_ONLY) : 0u);
     }
   }
   counts[0] = nEnds;

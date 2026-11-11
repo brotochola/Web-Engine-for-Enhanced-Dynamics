@@ -256,6 +256,10 @@ export const GPU_KEYED_ROW_WORDS = 16;
 export const GPU_KEYED_KEY_WORD = 12;
 /** E-177: the bit of a sprite row's key that says its statics changed since the emit before (preRenderEmit.c KEY_CHANGED). */
 export const GPU_KEYED_CHANGED = 0x80000000;
+/** E-189: with GPU_KEYED_CHANGED, the bit that says the texture alone changed (preRenderEmit.c KEY_TEX_ONLY). */
+export const GPU_KEYED_TEX_ONLY = 0x40000000;
+/** E-189: a texture update's u32 words (gpuPack.c KEYED_TEX_WORDS): the statics row, then the texture's float bits. */
+export const GPU_KEYED_TEX_WORDS = 2;
 
 /**
  * E-177: a split frame whose statics stay with their key, through the kernel. Each drawn row's pose (GPU_POSE_FLOATS)
@@ -266,7 +270,8 @@ export const GPU_KEYED_CHANGED = 0x80000000;
  * for capacity updates of GPU_KEYED_ROW_WORDS: the statics, then the key at GPU_KEYED_KEY_WORD); the update count goes
  * to `keyed.updates`. The queue's `key` column must be in the memory too. E-191: with `keyed.shadowByte` (0 for none) and
  * the queue's shadow columns in the memory, each slot's shadow terms (shadowH, offX, offY; zeros for a glow row) go there
- * too, and `keyed.shadowed` says whether they did.
+ * too, and `keyed.shadowed` says whether they did. E-189: with `keyed.texUpdatesByte` (0 for none), a row whose key also
+ * carries GPU_KEYED_TEX_ONLY goes there as a texture update (GPU_KEYED_TEX_WORDS) instead, counted in `keyed.texUpdates`.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs
  */
 export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
@@ -288,11 +293,12 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
   const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
     slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
-    shadowByte);
+    shadowByte, keyed.texUpdatesByte > 0 ? keyed.texUpdatesByte : 0);
   keyed.shadowed = shadowByte > 0;
   const r = b.particlesByte >> 2;
   ctx.particleCount = b.u32[r];
   keyed.updates = b.u32[r + 1];
+  keyed.texUpdates = keyed.texUpdatesByte > 0 ? b.u32[r + 2] : 0;
   return out;
 }
 
