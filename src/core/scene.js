@@ -146,6 +146,7 @@ import { warnOnce } from '../util/dxWarn.js';
 import { fetchAsset, fetchAssetJson } from '../util/fetchAsset.js';
 import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
 import { darkLightingText, smallWorldText } from '../util/sceneGuards.js';
+import { setDevChecks } from './debug/devChecks.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
@@ -932,6 +933,7 @@ class Scene {
       ...(this.config.debug || {}),
     };
     setVerboseWorkers(!!this.config.debug.verboseWorkers);
+    setDevChecks(this.config.debug.checks !== false);
 
     // Layers defaults (custom layers are user-defined, empty by default)
     if (!this.config.layers) {

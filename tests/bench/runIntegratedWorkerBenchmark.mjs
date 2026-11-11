@@ -282,6 +282,8 @@ function buildBenchmarkOptions(cliArgs) {
   const collectDetailedStats = !cliArgs['no-collect-detailed-stats'];
   // GPU timestamps are extra submits. Off unless this campaign asks.
   const collectGpuStats = !!cliArgs['collect-gpu-stats'];
+  // DX-GUARDS: the debug build's run-time checks are off in a measurement; --dev-checks keeps them on.
+  const devChecks = !!cliArgs['dev-checks'];
   // --camera-zoom min|<zoom>: set once the scene's create() has run. min is Camera.minZoom, the
   // zoom that shows the whole world (every entity in view, for a scene whose load is what it draws).
   let cameraZoom = null;
@@ -306,6 +308,7 @@ function buildBenchmarkOptions(cliArgs) {
     debug: Boolean(cliArgs.debug),
     collectDetailedStats,
     collectGpuStats,
+    devChecks,
     ...(cameraZoom != null ? { cameraZoom } : {}),
     ...(canvasWidth != null ? { canvasWidth } : {}),
     ...(canvasHeight != null ? { canvasHeight } : {}),
