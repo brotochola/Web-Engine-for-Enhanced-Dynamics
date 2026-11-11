@@ -10769,7 +10769,7 @@
       "id": "DX-VOLUME",
       "title": "VolumeShadowCaster: a component that declares an object's volume, for the sun and point lights",
       "status": "open",
-      "statusText": "Phases 0 and 1 built on dx/volume-shadow-caster, not merged; phases 2 to 4 are a plan",
+      "statusText": "Phases 0 and 1 merged to main (e54f701f), released in 0.14.0; phases 2 to 4 are a plan",
       "date": "2026-11-05",
       "result": "As many frames as meshes by hand and renderer -5.0 % at 20 000 houses; in the game, renderer -14.7 % by day. The pictures are equal to the pixel.",
       "next": "",
@@ -10787,7 +10787,8 @@
         "R-0845",
         "R-0846",
         "R-0847",
-        "R-0848"
+        "R-0848",
+        "R-0853"
       ]
     },
     {
@@ -10977,7 +10978,8 @@
       ],
       "records": [
         "R-0851",
-        "R-0852"
+        "R-0852",
+        "R-0853"
       ]
     },
     {
@@ -11002,6 +11004,71 @@
       ],
       "records": [
         "R-0851"
+      ]
+    },
+    {
+      "id": "DX-ADDBOX",
+      "title": "VolumeShadowCaster.addBox: a setBox that adds a box instead of replacing the volume",
+      "status": "blocked",
+      "statusText": "nice to have (owner, 2026-11-10): a feature, not speed; waits until a game asks for it",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "addBox(width, depth, bottom, top, { offsetX, offsetY, topScale }) as writeLevel with keep; types, guide and tests.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-ADDBOX"
+      ],
+      "aliases": [
+        "D2",
+        "addBox"
+      ],
+      "records": [
+        "R-0853"
+      ]
+    },
+    {
+      "id": "DX-VOLRECEIVE",
+      "title": "Sprites receive a volume's shadow",
+      "status": "open",
+      "statusText": "An idea from the volume review (B2), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "One sample of the volume shadow texture at the sprite's foot, in the vertex shader, darkening the whole sprite; crosses DX-SUNMASK.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-VOLRECEIVE"
+      ],
+      "aliases": [
+        "B2",
+        "walker in a house shadow",
+        "volumeShadows under the entities"
+      ],
+      "records": [
+        "R-0853"
+      ]
+    },
+    {
+      "id": "DX-SUNTARGET",
+      "title": "One render target for all the sun's shadows (a step 0 for DX-SUNMASK)",
+      "status": "open",
+      "statusText": "An idea from the volume review (B3), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Sprites, volumes and baked layers draw their sun shadows into one target, so crossings count once, with the light pass untouched.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-SUNTARGET"
+      ],
+      "aliases": [
+        "B3",
+        "shadows multiply twice",
+        "ShadowCaster and volume cross"
+      ],
+      "records": [
+        "R-0853"
       ]
     }
   ],
@@ -19115,6 +19182,19 @@
         "e6e1d8eb",
         "40ddb8b4",
         "b7699e54"
+      ]
+    },
+    {
+      "id": "R-0853",
+      "date": "2026-11-10",
+      "time": "22:17",
+      "timeFrom": "recorded",
+      "title": "The volume review's plan closed: D1's replacement test, D2, B2 and B3 filed, pictures unchanged",
+      "verdict": "kept-hygiene",
+      "text": "**The plan that closed the review of `dx/volume-shadow-caster` is done; the last of it filed.** Nothing timed.\n\nThe owner handed back the review's plan (\"dale\"). Where each part stands:\n\n- **Part A** (A1 to A6): done on 2026-11-10 before the merge, in R-0846 (N-122: `541d5667`, `33ab1e18`, `4fde4d5c`, `64395cf1`), merged in `e54f701f` and released in 0.14.0. Section 4's note (hull corners on shared planes, not built) is in R-0846.\n- **D1**: N-126 (`3874fe59`, merged `40ddb8b4`, R-0851). The plan asks for a second test, the replacement: `33971553` sets a box, then a hull of 16 corners in an arena of 14, and the entity ends with no mesh and off the layer (the old box would be a wrong shadow). The plan's other test, a first volume refused, was already in `3874fe59`.\n- **D2**: filed as DX-ADDBOX, blocked until a game asks, like DX-GPCLEAR and DX-GPWIND.\n- **Part B**: B1 is N-127 (open, R-0851); B2 is DX-VOLRECEIVE and B3 is DX-SUNTARGET, ideas, not measured.\n\nSection 7's checks on main at `33971553`: Node 2349 of 2349; `sunMeshParity --bar volume` passes on WebGL and WebGPU with the same numbers as R-0846, 0.24 to 1.35 px over 7, 9, 11, 14, 16 and 17 h (limit 1.5). Sun Street uses neither `topScale: 0` nor `setHull`. Where the plan was wrong, from R-0846: its flat-top recipe (the doubled signed area) would have let a top that crosses itself evenly through, and its \"six messages\" were five texts on six call sites.",
+      "commits": [
+        "33971553",
+        "b21ca076"
       ]
     }
   ],
