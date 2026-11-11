@@ -24,30 +24,6 @@ const EXPECTED = {
   ],
 };
 
-/**
- * Classes whose class-guard warnings (DX-GUARDS C3, C4) are right and kept: the stress scenes' tickIntervals and empty
- * ticks are part of the load they measure, Predator's (House, Barrel, TallLight) part of the gate's, and Floor and
- * TallLight are shared with stress scenes and Predator. Deleting them changes what those scenes measure: the owner's
- * call, not a guard's.
- */
-const KEPT = {
-  tickInterval: new Set(['ComputeStressBox', 'ContactDrainBody', 'RayStressBusyBall', 'RayStressEntity', 'SpawnStormEntity']),
-  emptyTick: new Set([
-    'Barrel', 'Blower', 'Box2dQueryAabbTarget', 'BoxPart', 'CityHouse', 'CityTree', 'CompoundSpatialIsland',
-    'ComputeStressBox', 'ContactDrainBody', 'Floor', 'GhostMachineBox', 'GhostMachineWheel', 'House', 'MachineBox',
-    'MachineWheel', 'OrientedBox', 'QueryChurnEntity', 'RayStressBusyBall', 'RayStressEntity', 'RenderQueueStressEntity',
-    'SpawnStormEntity', 'StationarySpatialEntity', 'TallLight',
-  ]),
-};
-
-function kept(line) {
-  const interval = /^W WeedJS: (\w+) has static tickInterval = \d+, but the scene's logic\.staggeredUpdates is off/.exec(line);
-  if (interval) return KEPT.tickInterval.has(interval[1]);
-  const empty = /^W WeedJS: (\w+)'s tick\(\)(?: \(from \w+\))? is empty/.exec(line);
-  if (empty) return KEPT.emptyTick.has(empty[1]);
-  return false;
-}
-
 function sceneFiles() {
   const out = [];
   const demos = join(root, 'demos');
@@ -95,7 +71,7 @@ test('every demo and stress scene builds with only the warnings it gives on purp
           pageChecked++;
           checkFirstInstance(instance);
         }
-        const left = lines.splice(0).filter((l) => !kept(l));
+        const left = lines.splice(0);
         if (left.length) got[`${rel} ${name}`] = left;
       }
     }
