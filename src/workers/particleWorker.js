@@ -689,6 +689,7 @@ class ParticleWorker extends AbstractWorker {
         gridWidth: this.gridWidth,
         gridHeight: this.gridHeight,
         maxDistance: this.scratch.maxDistance,
+        maxPathLength: navConfig.maxPathLength || 128,
       });
 
       const flowfieldQueueCapacity = Math.max(32, this.maxFlowfields * 8);
@@ -1628,11 +1629,11 @@ class ParticleWorker extends AbstractWorker {
 
   computePath(fromCell, toCell) {
     const willUseEmptySlot = this._hasEmptyPathSlot();
-    const scratch = this.scratch;
-    // N-137: navAstar.js, with the open set's decrease-key.
-    const pathLength = searchAstar(scratch, NavGrid.getWalkabilityArray(), this.gridWidth, this.gridHeight, fromCell, toCell);
+    // E-207: navFlowfield.wasm's astar_path, navAstar.js's search (N-137's decrease-key) ported cell for cell.
+    const wasm = this._flowWasm;
+    const pathLength = wasm.astar(wasm.tableByte, fromCell, toCell);
     const slot = NavGrid.allocatePathSlot(fromCell, toCell);
-    NavGrid.writePathData(slot, scratch.pathResult, pathLength);
+    NavGrid.writePathData(slot, wasm.path, pathLength);
 
     if (willUseEmptySlot) {
       this.cachedPathsCount++;

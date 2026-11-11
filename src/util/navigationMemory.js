@@ -48,6 +48,14 @@ export function createNavigationMemory(navBytes, cells) {
       quotientByte: r.quotient.byte,
       vectorsByte: r.vectors.byte,
       tableByte: r.table.byte,
+      aGByte: r.aG.byte,
+      aFByte: r.aF.byte,
+      aCameByte: r.aCame.byte,
+      aGenByte: r.aGen.byte,
+      aHeapByte: r.aHeap.byte,
+      aPosByte: r.aPos.byte,
+      aPathByte: r.aPath.byte,
+      aKeyByte: r.aKey.byte,
     },
   };
 }

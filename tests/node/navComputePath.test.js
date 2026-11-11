@@ -2,21 +2,21 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NavGrid } from '../../src/core/navGrid.js';
-import { NavScratch } from '../../src/core/navAstar.js';
-import { loadWorker } from '../bench/workerHarness.mjs';
+import { createNavigationMemory } from '../../src/util/navigationMemory.js';
+import { initWorker, loadWorker, quietly } from '../bench/workerHarness.mjs';
 
 // N-137: the particle worker's computePath, on the grid where the old open-set rule wrote a path 62 long instead of
-// the shortest, 54, into the path slot the logic workers read.
+// the shortest, 54, into the path slot the logic workers read. Its search is navFlowfield.wasm's since E-207, on a
+// navigation memory as a scene makes it.
 const ROWS = ['...#..', '....#T', 'S....#', '....#.'];
 const W = ROWS[0].length;
 const H = ROWS.length;
-const CONFIG = { cellSize: 1, maxFlowfields: 2, maxPaths: 4, maxPathLength: 32 };
+const CONFIG = { enabled: true, cellSize: 1, maxFlowfields: 2, maxPaths: 4, maxPathLength: 32, maxProcessingMsPerFrame: 8 };
 
 test("the particle worker writes the shortest A* path into the path slot", { concurrency: false }, async () => {
-  const sab = new SharedArrayBuffer(NavGrid.calculateSABSize(CONFIG, W, H));
-  NavGrid.writeHeader(sab, CONFIG, W, H);
-  NavGrid.initialize(sab, { worldWidth: W, worldHeight: H });
-  const walk = NavGrid.getWalkabilityArray();
+  const nm = createNavigationMemory(NavGrid.calculateSABSize(CONFIG, W, H), W * H);
+  NavGrid.writeHeader(nm.buffer, CONFIG, W, H);
+  const walk = new Uint8Array(nm.buffer, NavGrid._HEADER_SIZE, W * H);
   let from = -1;
   let to = -1;
   for (let y = 0; y < H; y++) {
@@ -29,10 +29,14 @@ test("the particle worker writes the shortest A* path into the path slot", { con
   }
 
   const pw = await loadWorker('particleWorker.js', 'particleWorker');
-  pw.gridWidth = W;
-  pw.gridHeight = H;
-  pw.maxPaths = CONFIG.maxPaths;
-  pw.scratch = new NavScratch(W * H, CONFIG.maxPathLength, W, H);
+  await quietly(() =>
+    initWorker(pw, {
+      config: { worldWidth: W, worldHeight: H, navigation: CONFIG, particle: { maxParticles: 0, decals: false } },
+      globalEntityCount: 0,
+      buffers: { navigationData: nm.buffer },
+      extra: { navigationMemory: nm.memory, navigationLayout: nm.layout },
+    }),
+  );
   pw.computePath(from, to);
 
   let cells = null;

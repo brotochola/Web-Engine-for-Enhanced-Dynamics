@@ -439,7 +439,9 @@ export const PIXI_KEYED_HEADER_WORDS = 5;
  * - next, prev: the distance buckets' lists (i32 per cell); head: the buckets' heads (i32, 65 536 at most:
  *   NavScratch.maxDistance is capped at 65 535);
  * - sums: the smoothing's row sums (u32 per cell); quotient: its rounded quotients (NAV_QUOTIENT_BYTES);
- * - vectors: the smoothed Int8 pairs the slot is filled from; table: the kernel's column table.
+ * - vectors: the smoothed Int8 pairs the slot is filled from; table: the kernel's column table;
+ * - aG, aF, aCame, aGen, aHeap, aPos: astar_path's columns (E-207), u32 per cell; aPath: its path, u32 per cell (a
+ *   path is never longer than the grid); aKey: the heap's keys beside its cells.
  * @param {number} navBytes NavGrid.calculateSABSize(...)
  * @param {number} cells gridWidth * gridHeight
  */
@@ -457,6 +459,14 @@ export function navigationMemoryRegions(navBytes, cells) {
     { name: 'quotient', owner: 'particle', bytes: NAV_QUOTIENT_BYTES },
     { name: 'vectors', owner: 'particle', bytes: n * 2 },
     { name: 'table', owner: 'particle', bytes: NAV_TABLE_SLOTS * 4 },
+    { name: 'aG', owner: 'particle', bytes: n * 4 },
+    { name: 'aF', owner: 'particle', bytes: n * 4 },
+    { name: 'aCame', owner: 'particle', bytes: n * 4 },
+    { name: 'aGen', owner: 'particle', bytes: n * 4 },
+    { name: 'aHeap', owner: 'particle', bytes: n * 4 },
+    { name: 'aPos', owner: 'particle', bytes: n * 4 },
+    { name: 'aPath', owner: 'particle', bytes: n * 4 },
+    { name: 'aKey', owner: 'particle', bytes: n * 4 },
   ]);
 }
 
@@ -464,8 +474,8 @@ export function navigationMemoryRegions(navBytes, cells) {
 export const NAV_MAX_BUCKETS = 65536;
 /** navFlowfield.c's QUOTIENT_BYTES: the 19 x 10 (sum, count) pairs of the smoothing. */
 export const NAV_QUOTIENT_BYTES = 190;
-/** Room for the flowfield kernel's column table (navFlowfieldClient.js FLOWFIELD_SLOTS). */
-export const NAV_TABLE_SLOTS = 16;
+/** Room for the nav kernel's column table (navFlowfieldClient.js FLOWFIELD_SLOTS). */
+export const NAV_TABLE_SLOTS = 24;
 
 /**
  * The particle memory (E-79 `particleIntegrate.wasm`, E-80 `particleLists.wasm`, created by

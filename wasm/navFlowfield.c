@@ -33,6 +33,17 @@ enum {
   T_SUMS,     /* u32 per cell: the smoothing's row sums */
   T_QUOTIENT, /* i8, QUOTIENT_BYTES: the smoothing's rounded quotients */
   T_OUT,      /* i8 pairs per cell: the smoothed vectors (scratch.smoothedVectors) */
+  /* E-207: astar_path's (navAstar.js's searchAstar) */
+  T_A_G,        /* u32 per cell: the cost from the start (heapGCost) */
+  T_A_F,        /* u32 per cell: g plus the octile estimate (heapFCost) */
+  T_A_CAME,     /* u32 per cell: the cell it was reached from (cameFrom) */
+  T_A_GEN,      /* u32 per cell: 2 * search open, 2 * search + 1 closed (stamp, inOpenSet) */
+  T_A_HEAP,     /* u32 per cell: the open set's heap (heapCell) */
+  T_A_POS,      /* u32 per cell: a cell's place in the heap (heapPos) */
+  T_A_PATH,     /* u32 per path cell: the path, origin first (pathResult) */
+  T_A_PATH_MAX, /* the path's room: maxPathLength */
+  T_A_SEARCH,   /* the search counter the generations come from (written here) */
+  T_A_KEY,      /* u32 per heap place: the f of the cell there, so the sifts compare without a second load */
   T_SLOTS
 };
 
@@ -258,4 +269,180 @@ uint32_t compute_flowfield(uint32_t table, uint32_t target) {
     }
   }
   return settled;
+}
+
+/* ------------------------------------------------------------------------------------------------------------------
+   E-207: the A* search behind NavGrid paths, navAstar.js's searchAstar (N-137's decrease-key heap) ported cell for
+   cell: 8 directions in NAV_DX/NAV_DY order at 10 and 14, the octile estimate, the same heap moves and the same ties,
+   so it writes the same paths. A cell's open and closed marks are one generation word (2 * search open,
+   2 * search + 1 closed) instead of the JS's stamp and its fill of inOpenSet over the grid. Returns the path's length
+   in T_A_PATH (origin first; a path past its room keeps its last cells, as the JS does), 0 when the target cannot be
+   reached or either cell is off the grid. */
+
+/* searchAstar's octile(): 10 a straight step, 14 a diagonal one. */
+INLINE uint32_t octile(uint32_t cell, uint32_t gw, uint32_t tx, uint32_t ty) {
+  const uint32_t cx = cell % gw;
+  const uint32_t cy = cell / gw;
+  const uint32_t dx = cx > tx ? cx - tx : tx - cx;
+  const uint32_t dy = cy > ty ? cy - ty : ty - cy;
+  return dx > dy ? 10u * dx + 4u * dy : 10u * dy + 4u * dx;
+}
+
+/* siftUp: the entry at i (cell, key) moves up while its key is below its parent's. */
+INLINE void a_sift_up(uint32_t *heap, uint32_t *hkey, uint32_t *pos, uint32_t i, uint32_t cell, uint32_t key) {
+  while (i > 0) {
+    const uint32_t parent = (i - 1u) >> 1;
+    const uint32_t upKey = hkey[parent];
+    if (key >= upKey) break;
+    const uint32_t up = heap[parent];
+    heap[i] = up;
+    hkey[i] = upKey;
+    pos[up] = i;
+    i = parent;
+  }
+  heap[i] = cell;
+  hkey[i] = key;
+  pos[cell] = i;
+}
+
+/* heapPop: the root out, the last entry sifted down from it. */
+INLINE uint32_t a_pop(uint32_t *heap, uint32_t *hkey, uint32_t *pos, uint32_t size) {
+  const uint32_t result = heap[0];
+  if (size > 0) {
+    const uint32_t cell = heap[size];
+    const uint32_t key = hkey[size];
+    uint32_t i = 0;
+    for (;;) {
+      const uint32_t left = 2u * i + 1u;
+      if (left >= size) break;
+      const uint32_t right = left + 1u;
+      uint32_t child = left;
+      uint32_t childKey = hkey[left];
+      if (right < size && hkey[right] < childKey) {
+        child = right;
+        childKey = hkey[right];
+      }
+      if (childKey >= key) break;
+      const uint32_t moved = heap[child];
+      heap[i] = moved;
+      hkey[i] = childKey;
+      pos[moved] = i;
+      i = child;
+    }
+    heap[i] = cell;
+    hkey[i] = key;
+    pos[cell] = i;
+  }
+  return result;
+}
+
+/* One neighbour of the expanded cell. Returns the heap's size after it. */
+INLINE uint32_t a_relax(const uint8_t *walk, uint32_t *g, uint32_t *f, uint32_t *came, uint32_t *gen, uint32_t *heap,
+                        uint32_t *hkey, uint32_t *pos, uint32_t size, uint32_t open, uint32_t current, uint32_t n, uint32_t tentative,
+                        uint32_t gw, uint32_t tx, uint32_t ty) {
+  if (walk[n] == 0) return size;
+  const uint32_t mark = gen[n];
+  if (mark == open + 1u) return size; /* closed */
+  if (mark != open) {
+    came[n] = current;
+    g[n] = tentative;
+    f[n] = tentative + octile(n, gw, tx, ty);
+    gen[n] = open;
+    a_sift_up(heap, hkey, pos, size, n, f[n]);
+    return size + 1u;
+  }
+  if (tentative < g[n]) {
+    /* A shorter way to a cell already waiting: its f falls, so it moves up. */
+    came[n] = current;
+    f[n] -= g[n] - tentative;
+    g[n] = tentative;
+    a_sift_up(heap, hkey, pos, pos[n], n, f[n]);
+  }
+  return size;
+}
+
+__attribute__((export_name("astar_path")))
+uint32_t astar_path(uint32_t table, uint32_t from, uint32_t to) {
+  uint32_t *t = (uint32_t *)(uintptr_t)table;
+  const uint8_t *walk = (const uint8_t *)(uintptr_t)t[T_WALK];
+  const uint32_t gw = t[T_WIDTH];
+  const uint32_t gh = t[T_HEIGHT];
+  uint32_t *g = (uint32_t *)(uintptr_t)t[T_A_G];
+  uint32_t *f = (uint32_t *)(uintptr_t)t[T_A_F];
+  uint32_t *came = (uint32_t *)(uintptr_t)t[T_A_CAME];
+  uint32_t *gen = (uint32_t *)(uintptr_t)t[T_A_GEN];
+  uint32_t *heap = (uint32_t *)(uintptr_t)t[T_A_HEAP];
+  uint32_t *pos = (uint32_t *)(uintptr_t)t[T_A_POS];
+  uint32_t *hkey = (uint32_t *)(uintptr_t)t[T_A_KEY];
+  uint32_t *out = (uint32_t *)(uintptr_t)t[T_A_PATH];
+  const uint32_t room = t[T_A_PATH_MAX];
+  const uint32_t cells = gw * gh;
+  if (from >= cells || to >= cells) return 0;
+
+  /* The search's generation: open and closed marks no earlier search wrote. Wrapping, every mark is cleared. */
+  uint32_t search = t[T_A_SEARCH] + 1u;
+  if (search >= 0x7fffffffu) {
+    for (uint32_t c = 0; c < cells; c++) gen[c] = 0;
+    search = 1;
+  }
+  t[T_A_SEARCH] = search;
+  const uint32_t open = search * 2u;
+
+  const uint32_t tx = to % gw;
+  const uint32_t ty = to / gw;
+  g[from] = 0;
+  f[from] = octile(from, gw, tx, ty);
+  came[from] = from;
+  gen[from] = open;
+  heap[0] = from;
+  hkey[0] = f[from];
+  pos[from] = 0;
+  uint32_t size = 1;
+
+  uint32_t found = 0;
+  while (size > 0) {
+    size--;
+    const uint32_t current = a_pop(heap, hkey, pos, size);
+    if (current == to) {
+      found = 1;
+      break;
+    }
+    /* Closed (each cell is in the heap once, so it is never popped closed; the JS keeps the test). */
+    if (gen[current] == open + 1u) continue;
+    gen[current] = open + 1u;
+    const uint32_t cg = g[current];
+    const uint32_t x = current % gw;
+    const uint32_t y = current / gw;
+    const uint32_t s = cg + 10u;
+    const uint32_t d = cg + 14u;
+    const int up = y > 0;
+    const int down = y + 1u < gh;
+    const int left = x > 0;
+    const int right = x + 1u < gw;
+    /* NAV_DX/NAV_DY order: N, NE, E, SE, S, SW, W, NW. */
+    if (up) size = a_relax(walk, g, f, came, gen, heap, hkey, pos, size, open, current, current - gw, s, gw, tx, ty);
+    if (up && right) size = a_relax(walk, g, f, came, gen, heap, hkey, pos, size, open, current, current - gw + 1u, d, gw, tx, ty);
+    if (right) size = a_relax(walk, g, f, came, gen, heap, hkey, pos, size, open, current, current + 1u, s, gw, tx, ty);
+    if (down && right) size = a_relax(walk, g, f, came, gen, heap, hkey, pos, size, open, current, current + gw + 1u, d, gw, tx, ty);
+    if (down) size = a_relax(walk, g, f, came, gen, heap, hkey, pos, size, open, current, current + gw, s, gw, tx, ty);
+    if (down && left) size = a_relax(walk, g, f, came, gen, heap, hkey, pos, size, open, current, current + gw - 1u, d, gw, tx, ty);
+    if (left) size = a_relax(walk, g, f, came, gen, heap, hkey, pos, size, open, current, current - 1u, s, gw, tx, ty);
+    if (up && left) size = a_relax(walk, g, f, came, gen, heap, hkey, pos, size, open, current, current - gw - 1u, d, gw, tx, ty);
+  }
+  if (!found || room == 0) return 0;
+
+  /* Back from the target, then reversed: origin first. */
+  uint32_t n = 0;
+  uint32_t c = to;
+  while (c != from && n < room) {
+    out[n++] = c;
+    c = came[c];
+  }
+  if (n < room) out[n++] = from;
+  for (uint32_t i = 0, j = n - 1u; i < j; i++, j--) {
+    const uint32_t tmp = out[i];
+    out[i] = out[j];
+    out[j] = tmp;
+  }
+  return n;
 }

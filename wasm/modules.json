@@ -84,6 +84,7 @@
         "rewrite_corners",
         "rewrite_corners_u32",
         "compute_flowfield",
+        "astar_path",
         "collect_sprites",
         "collect_sprites_turned",
         "bullet_tick",
@@ -318,7 +319,8 @@
       "source": "wasm/navFlowfield.c",
       "output": "tests/fixtures/wasm/navFlowfield.wasm",
       "exports": [
-        "compute_flowfield"
+        "compute_flowfield",
+        "astar_path"
       ],
       "maxMemoryPages": 32768,
       "test": true,
