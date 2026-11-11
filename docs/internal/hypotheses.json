@@ -10033,7 +10033,8 @@
       "records": [
         "R-0864",
         "R-0866",
-        "R-0867"
+        "R-0867",
+        "R-0868"
       ],
       "status": "open",
       "date": "2026-11-01",
@@ -10043,10 +10044,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-193"
       ],
-      "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867): the pack is Pixi's CPU and pays for bytes",
+      "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867); the shadow terms gone (E-211, R-0868)",
       "area": "render",
-      "result": "",
-      "next": "Fewer bytes a row: the slot pair without its depth (E-186), the shadow terms only for the rows that cast (and none on a frame without the sun pass), a pose only for a row that moved. Owner: Predator crowd 1.5's renderer.",
+      "result": "E-211 (R-0868): the shadow terms out of the keyed pack, pack_sprites_keyed 79-119 -> 57-59 ms/s, renderer -4.5 % at Predator crowd 1.5",
+      "next": "Fewer bytes a row still: the slot pair without its depth (E-186), a pose only for a row that moved. Owner: Predator crowd 1.5's renderer.",
       "rank": 12
     },
     {
@@ -11746,6 +11747,30 @@
       ],
       "records": [
         "R-0861"
+      ]
+    },
+    {
+      "id": "E-211",
+      "title": "The sun pass draws pre-render's keyed rows, and Pixi's keyed pack writes no shadow terms for it",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (R-0868)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-11 (f508c2ed, R-0868): Predator crowd 1.5 renderer -4.5 % (worse 1/4, -3.9 % against the others 4/4); pack_sprites_keyed 79-119 -> 57-59 ms/s in traces",
+      "next": "Done.",
+      "area": "render",
+      "kind": "speed",
+      "refs": [
+        "EXECUTION_PLAN.md#E-211"
+      ],
+      "aliases": [
+        "pack_sprites_keyed",
+        "shadow stream",
+        "keyed sun rows",
+        "enableKeyedShadows",
+        "setKeyedShadowStream"
+      ],
+      "records": [
+        "R-0868"
       ]
     }
   ],
@@ -20047,6 +20072,18 @@
       "title": "E-193 step 0: the keyed pack's time is Pixi's CPU (284 of 317 ms/s), and it pays for bytes (about 28 000 lines a frame), not their order",
       "verdict": "answered",
       "text": "**E-193 step 0 answered: Pixi's keyed pack time is the thread's own CPU, and what it pays for is bytes, not their order.** 2026-11-11, 04:55 (the trace file's time). Predator `?crowd=1.5` on main (58c61264), headed, source, detailed stats off, a timeline trace (`--trace`): an 8 s warm-up, then a 5 s window.\n\n**CPU against wall.** For each worker thread, the top-level tasks' `tdur` (the thread's CPU) against their `dur` (wall), over the last 5 s:\n- Pixi's thread (2 388 tasks): 284 of 317 ms/s.\n- Every other worker: 90 to 94 %. For example, 545 of 587 ms/s, 414 of 437, 338 of 366.\n\nSo a sampled CPU profile's busy time here is CPU, and the keyed pack's 94 ms/s (R-0864) is CPU too.\n\n**Why then ten times its kernel.** The machine is a Ryzen 7 4800H: 8 cores in two complexes of 4, each with 4 MB of L3. Per frame, at 23 500 rows, `pack_sprites_keyed`:\n- reads about 21 bytes a row that pre-render has just written: x, y, rotC, rotS, key, type, about 0.5 MB;\n- writes 36: the pose 16, the slot pair 8 and E-191's shadow terms 12, about 0.85 MB, over lines that other work has evicted since the frame before.\n\nThat is about 28 000 lines from outside Pixi's caches. At about 50 ns each, that is about 1.4 ms, whatever the order: the scatter (R-0864) changed the order and not the time. The kernel repeats one frame with everything in its own cache.\n\n**What would pay is fewer bytes:**\n- the slot pair without its depth (E-186);\n- the shadow terms only for the rows that cast, and none on a frame whose sun pass does not run;\n- a pose only for a row that moved.\n\nPre-render cannot write these streams in Predator: Pixi sorts the painter's order there (`sortSprites: 'pixi'`, `packGpuSprites: 'pixi'`)."
+    },
+    {
+      "id": "R-0868",
+      "date": "2026-11-11",
+      "time": "14:02",
+      "timeFrom": "recorded",
+      "title": "E-211 kept: the sun pass draws pre-render's keyed rows, Pixi's keyed pack writes no shadow terms for it; Predator crowd 1.5 renderer -4.5 % (1/4)",
+      "verdict": "kept",
+      "text": "**E-211 kept: the sun pass draws pre-render's keyed rows, and Pixi's keyed pack writes the shadow terms only for a sun pass that will draw its instances. Predator `?crowd=1.5` renderer -4.5 % (worse 1/4).** 2026-11-11, from 13:57 (the sitting's first result file) to 14:02. Chrome, headed, source, detailed stats off, AC power. The owner's Chrome used about 0.4 of a core throughout. No other session was benching.\n\n**Why.** R-0867 found that the keyed pack pays for bytes. E-191's step 1 had the sun pass draw the entity batch's keyed instances. So every frame the pack:\n- gathered each sprite's shadowH, offX and offY in the painter's order;\n- wrote 12 bytes a slot, which were then copied and uploaded.\n\nPre-render meanwhile packs keyed sun rows every frame anyway (E-191 step 2, E-192), because the stamps are cut from them: 28 bytes a caster, read in the queue's order. In Predator Pixi left those rows unused.\n\n**The change** (`f508c2ed`; sat as 9d507cc6, the same tree):\n- The sun pass draws pre-render's keyed rows when the frame has them.\n- It draws the instances only on frames without them.\n- The pack writes their shadow terms only when the next frame's sun pass will draw the instances: no keyed rows, the pass not skipped by `shadowUpdateInterval`, the layer shown.\n\n**Probe first** (f3b22400: the instances never drawn).\n- 4 pairs, 13:28 to 13:35: two pairs ran every worker 10 to 15 % high on the B side (drift). In the other two the renderer read -1.7 and -5.6 % while the other workers rose.\n- One CPU trace a side, twice (8 s warm-up, 6 s):\n  - `pack_sprites_keyed` 79 and 119 → 59 and 57 ms/s;\n  - `updateBuffer` 20 and 25 → 27 and 26 ms/s (the rows go up at 28 bytes a caster).\n\n**The change, Predator `?crowd=1.5`, 4 pairs** (`--vs e75004cb --hyp-rev 9d507cc6 --full-rev --owner renderer`): **KEPT (product).**\n- Renderer 3.390 → 3.275 ms (-4.5 %, worse 1/4, cv 5/2 %; -3.9 % against the others, lower 4/4). Pairs: -11.4, -3.5, -5.5, +0.8 %; in pair 1 every worker ran lower on B.\n- Logic -3.7 %, spatial +0.1 %, physics -1.0 %, pre-render -0.3 %.\n- Load keys within 0.2 %.\n\n**Checks.**\n- The sun shadows look the same on both sides (`?hour=10&zoom=1`, the post-warm-up frame).\n- `keyedSunStream.test.js`: the stream is on only before a pass that will draw the instances, including with `shadowUpdateInterval` 2 and the layer hidden.\n- `instancedSpriteKeyed.test.js`: the keyed batch's stream turned off writes nothing; turned back on, it writes the slots' terms.\n\nLeft in E-193: the slot pair's depth (E-186), and a pose only for a row that moved.",
+      "commits": [
+        "f508c2ed"
+      ]
     }
   ],
   "leads": [

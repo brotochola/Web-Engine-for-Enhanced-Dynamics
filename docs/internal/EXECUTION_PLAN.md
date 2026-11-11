@@ -1063,6 +1063,28 @@ lighting scenes always merge edges, the `Infinity` branch never runs and the dou
 ray per light (E-85). One `const INF`; measure with a heap pass of a lighting scene first
 (`visPolyStressScene`), and keep it only if the site shows up.
 
+
+### E-211 The sun pass draws pre-render's keyed rows, and Pixi's keyed pack writes no shadow terms for it
+
+**Premise:** E-193 step 0 (R-0867): Pixi's keyed pack pays for bytes. E-191's step 1 had the sun pass draw the entity
+batch's keyed instances, so the pack also gathered each sprite's shadow terms (shadowH, offX, offY: three more queue
+columns read in the painter's order) and wrote 12 bytes a slot, copied and uploaded every frame. Meanwhile pre-render
+packs keyed sun rows every frame anyway (E-191 step 2, E-192: x, y, the key, the shadow terms; 28 bytes a caster, read
+in the queue's order): the stamps are cut from them. In Predator Pixi drew the instances and left those rows unused.
+**Plan:** the sun pass draws pre-render's keyed rows when the frame has them; the instances only on frames without
+(full rows from pre-render: a caster without a key, the first frames), and the pack writes their shadow terms only for
+a frame whose sun pass will draw them (no keyed rows the frame before, the pass not skipped by shadowUpdateInterval, the
+casted-shadows layer shown). Owner: Predator `?crowd=1.5`'s renderer.
+**Result:** kept 2026-11-11 (`f508c2ed`, sat as 9d507cc6, the same tree; R-0868).
+- Probe (f3b22400, the instances never drawn), one CPU trace a side, twice: `pack_sprites_keyed` 79 and 119 → 59 and
+  57 ms/s; `updateBuffer` 20 and 25 → 27 and 26 ms/s (the rows go up at 28 bytes a caster).
+- The change, 4 pairs, 13:57 to 14:02: **KEPT (product).** Renderer 3.390 → 3.275 ms (-4.5 %, worse 1/4, cv 5/2 %;
+  -3.9 % against the others, lower 4/4), logic -3.7 %, spatial +0.1 %, physics -1.0 %, pre-render -0.3 %; load keys
+  within 0.2 %. The owner's Chrome used about 0.4 of a core through it.
+- The sun shadows look the same (`?hour=10&zoom=1`, both sides).
+- `keyedSunStream.test.js` (the stream on only before a pass that will draw the instances), the keyed batch's stream
+  turned off and on (`instancedSpriteKeyed.test.js`).
+
 ---
 
 ## Not doing (read the log first)
@@ -3439,6 +3461,9 @@ each, about 1.4 ms, in either order. The kernel repeats one frame with everythin
 fewer bytes: the slot pair without its depth (E-186), the shadow terms only for the rows that cast (and none on a frame
 whose sun pass does not run), a pose only for a row that moved. Pre-render cannot write the streams in Predator: there
 Pixi sorts the painter's order (`sortSprites: 'pixi'`, `packGpuSprites: 'pixi'`).
+**The shadow terms went first (E-211, kept 2026-11-11, R-0868):** the sun pass draws pre-render's keyed sun rows, and
+the pack writes the 12 bytes only for a sun pass that will draw the instances; the pack went from 79 and 119 to 59 and
+57 ms/s, the renderer -4.5 %. Left: the slot pair's depth (E-186), a pose only for a row that moved.
 
 ### E-194 LiquidFun rows keyed by slot
 
