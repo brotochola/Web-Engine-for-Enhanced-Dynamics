@@ -63,7 +63,10 @@ export function lightingGpuProgram(GpuProgram, source, name, faces = false) {
   });
 }
 
-export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource) {
+/**
+ * @param {boolean} [scene] DX-POST: a SCREEN pass that reads uScene too, at binding 3 of group 2 (wgslPrelude)
+ */
+export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource, scene = false) {
   if (!vertexSource) {
     throw new Error(
       'WeedJS: Fullscreen look vertex WGSL was not loaded before look program creation.'
@@ -78,7 +81,7 @@ export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource) {
     layout: {
       0: { globalUniforms: 0 },
       1: { localUniforms: 0 },
-      2: { customUniforms: 0, uTexture: 1, uSampler: 2 },
+      2: scene ? { customUniforms: 0, uTexture: 1, uSampler: 2, uScene: 3 } : { customUniforms: 0, uTexture: 1, uSampler: 2 },
     },
     gpuLayout: [
       ...meshUniformGroups(vf),
@@ -86,6 +89,7 @@ export function lookGpuProgram(GpuProgram, fragmentSource, name, vertexSource) {
         { binding: 0, visibility: vf, buffer: { type: 'uniform' } },
         { binding: 1, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } },
         { binding: 2, visibility: f, sampler: { type: 'filtering' } },
+        ...(scene ? [{ binding: 3, visibility: f, texture: { sampleType: 'float', viewDimension: '2d', multisampled: false } }] : []),
       ],
     ],
   });

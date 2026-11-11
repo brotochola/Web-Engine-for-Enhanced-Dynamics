@@ -3049,9 +3049,12 @@ class PixiRenderer extends AbstractWorker {
     const layerName = config.name;
     const name = config.shaderName || layerName;
     const uniformDefs = this._buildCustomLayerUniformDefs(layerId, config.uniformMap, config.uniformTypes);
+    // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it).
+    const usesScene = typeof config.shaderFragment === 'string' && /\buScene\b/.test(config.shaderFragment);
     let shader;
     try {
-      shader = this._createLookShader(config.shaderFragment, PIXI.Texture.EMPTY.source, uniformDefs, name, layerName);
+      const empty = PIXI.Texture.EMPTY.source;
+      shader = this._createLookShader(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null);
     } catch (err) {
       if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
       throw errorCompileFailed('look', name, layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
@@ -3068,6 +3071,7 @@ class PixiRenderer extends AbstractWorker {
       uniformStore: shader.resources?.customUniforms?.uniforms || null,
       uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
       mesh: this._makeLookShaderMesh(shader, false),
+      usesScene,
       // Its output when it is not the last visible pass: the canvas's size times its resolution.
       target: null,
     });
@@ -3079,7 +3083,7 @@ class PixiRenderer extends AbstractWorker {
     const layers = this._screenLayers;
     for (let i = 0; i < layers.length; i++) {
       const cl = layers[i];
-      this._unbindLookShaderTexture(cl.shader);
+      this._unbindScreenLayerTextures(cl);
       if (cl.target) {
         this._releaseTextureBindGroups(cl.target);
         cl.target.destroy(true);
@@ -3102,7 +3106,7 @@ class PixiRenderer extends AbstractWorker {
     if (rt && rt.width === width && rt.height === height) return rt;
     if (rt) {
       const layers = this._screenLayers;
-      for (let i = 0; i < layers.length; i++) this._unbindLookShaderTexture(layers[i].shader);
+      for (let i = 0; i < layers.length; i++) this._unbindScreenLayerTextures(layers[i]);
       this._releaseTextureBindGroups(rt);
       rt.destroy(true);
     }
@@ -3167,6 +3171,7 @@ class PixiRenderer extends AbstractWorker {
       const res = cl.shader.resources;
       if (res.uTexture !== input) res.uTexture = input;
       if (res.uSampler !== undefined && res.uSampler !== input.style) res.uSampler = input.style;
+      if (cl.usesScene && res.uScene !== this._screenSceneRT.source) res.uScene = this._screenSceneRT.source;
       if (i === last) {
         // The canvas, cleared to its background first: a pass that copies gives the frame the stage would have.
         this._submitRender(cl.mesh);
@@ -3184,6 +3189,11 @@ class PixiRenderer extends AbstractWorker {
     opts.target = null;
     opts.clearColor = this._clearTransparent;
     return true;
+  }
+
+  _unbindScreenLayerTextures(cl) {
+    this._unbindLookShaderTexture(cl.shader);
+    if (cl.usesScene) cl.shader.resources.uScene = PIXI.Texture.EMPTY.source;
   }
 
   /** A SCREEN layer's uniforms written from any thread (Layer.x.setUniform), as updateCustomLayers does for looks. */
@@ -7490,7 +7500,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Standard fullscreen quad vertex shader for post-processing meshes.
    * Maps NDC quad to UV space so the fragment shader can sample a RenderTexture.
    */
-  _createLookShader(fragmentSource, textureSource, uniformDefs, name, layerName) {
+  /**
+   * @param {TextureSource|null} [sceneSource] DX-POST: a SCREEN pass that reads uScene (the frame before the first pass)
+   */
+  _createLookShader(fragmentSource, textureSource, uniformDefs, name, layerName, sceneSource = null) {
     const asset = name || 'look';
     const layer = layerName || name || 'look';
     const backend = this._useWebGpu ? 'webgpu' : 'webgl';
@@ -7513,7 +7526,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           wgslSource = prependLookPrelude(
             wgslSource,
             Layer._uniformMaps[lid] || null,
-            Layer._metadata?.layers?.[lid]?.uniformTypes || null
+            Layer._metadata?.layers?.[lid]?.uniformTypes || null,
+            { scene: sceneSource !== null }
           );
         }
         const earlyLook = findWgslUseBeforeDeclare(wgslSource);
@@ -7526,15 +7540,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           GpuProgram,
           wgslSource,
           asset,
-          this._engineShaders.lookVert
+          this._engineShaders.lookVert,
+          sceneSource !== null
         );
         return new Shader({
           gpuProgram,
-          resources: {
-            customUniforms: uniformDefs,
-            uTexture: textureSource,
-            uSampler: textureSource.style,
-          },
+          resources: sceneSource !== null
+            ? { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style, uScene: sceneSource }
+            : { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style },
         });
       }
       const lookVert = this._engineShaders.lookVert;
@@ -7550,10 +7563,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       });
       return new Shader({
         glProgram,
-        resources: {
-          customUniforms: uniformDefs,
-          uTexture: textureSource,
-        },
+        resources: sceneSource !== null
+          ? { customUniforms: uniformDefs, uTexture: textureSource, uScene: sceneSource }
+          : { customUniforms: uniformDefs, uTexture: textureSource },
       });
     } catch (err) {
       throw errorCompileFailed('look', asset, layer, backendLabel, err);
