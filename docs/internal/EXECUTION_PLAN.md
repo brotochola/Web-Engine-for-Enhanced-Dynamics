@@ -3728,6 +3728,9 @@ with many agents needs many slots, and pays per path for each.
 ones, and an eviction that does not read every slot (a clock hand over the stamps, second chance). With N-139's finer
 clock. Owner: astarStressScene `?agents=0` with `maxPaths` raised (a scene knob, in its own commit); the particle worker at
 the same PATHS_COMPUTED.
+**Result:** kept 2026-11-11 (`8d28ef5b`, R-0894). A stack of the free slots and an eviction over eight slots from a
+moving hand. astarStressScene `?agents=0&slots=8000`, 4 pairs, 19:31 to 19:36: **KEPT (product)**, particle 7.045 →
+2.450 ms (-65.3 %, worse 0/4), PATHS_COMPUTED 60.0 both.
 
 ## Not doing (read the log first)
 
