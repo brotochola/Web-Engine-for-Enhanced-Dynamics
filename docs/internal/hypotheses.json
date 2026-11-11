@@ -11911,6 +11911,50 @@
       ],
       "records": [],
       "rank": 2
+    },
+    {
+      "id": "N-139",
+      "title": "A path in use is evicted when more paths than slots are made within one second (the LRU clock counts seconds)",
+      "status": "open",
+      "statusText": "found 2026-11-11 building astarStressScene's planners; confirmed in Node",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "A millisecond shared clock for the path and flowfield slots, and a test that a touched slot outlives untouched ones made the same second; with E-214.",
+      "area": "nav",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-139"
+      ],
+      "aliases": [
+        "lruNow",
+        "allocatePathSlot",
+        "path slot eviction",
+        "LRU"
+      ],
+      "records": [],
+      "rank": 3
+    },
+    {
+      "id": "E-214",
+      "title": "Path slots allocated without a scan of every slot",
+      "status": "open",
+      "statusText": "filed 2026-11-11 from an astarStressScene probe with 8000 slots; not measured",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "A count and a free list of empty slots, an eviction that does not read every slot (clock hand), with N-139's clock; owner astarStressScene agents=0 with maxPaths raised.",
+      "area": "nav",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-214"
+      ],
+      "aliases": [
+        "allocatePathSlot",
+        "_hasEmptyPathSlot",
+        "path slot",
+        "LRU"
+      ],
+      "records": [],
+      "rank": 4
     }
   ],
   "records": [

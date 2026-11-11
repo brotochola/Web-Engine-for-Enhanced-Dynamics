@@ -3713,6 +3713,17 @@ traffic (list updates) with a single-writer SAB ring per logic worker and cut it
 flag), drained by the particle worker at the top of its nav step; the pending map keeps its dedup. Owner:
 astarStressScene's particle worker, at the same PATHS_COMPUTED; logic not 3 % worse.
 
+### E-214 Path slots allocated without a scan of every slot
+
+**Premise:** astarStressScene with 8000 path slots (2026-11-11 probe): the particle worker spent about 0.5 ms a path,
+against about 0.07 ms with 1600 slots. Each new path scans every slot twice: `_hasEmptyPathSlot` (a DataView read a
+slot, to count cached paths) and `allocatePathSlot`'s search for an empty slot or the least recently used one. A game
+with many agents needs many slots, and pays per path for each.
+**Plan:** a count of empty slots kept as slots fill and clear (no `_hasEmptyPathSlot` scan), a free list for the empty
+ones, and an eviction that does not read every slot (a clock hand over the stamps, second chance). With N-139's finer
+clock. Owner: astarStressScene `?agents=0` with `maxPaths` raised (a scene knob, in its own commit); the particle worker at
+the same PATHS_COMPUTED.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
