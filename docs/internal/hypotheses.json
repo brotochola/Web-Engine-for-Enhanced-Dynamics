@@ -11430,11 +11430,11 @@
     {
       "id": "E-208",
       "title": "listUpdates through a SAB ring",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (R-0881)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Logic 1..N send spawns to logic0 by postMessage, an object and a className string per record, and _receiveListUpdates allocates another. A SAB ring per worker drained by logic0; also a frame less of spawn latency. Owner: logic0 in spawnStormScene with 2+ logic workers (KB/s and STEP_MS).",
+      "result": "kept 2026-11-11 (33732b3b, R-0881): a single-writer ring per worker drained by logic0; spawnStormScene ?logicWorkers=2: logic -25.7 % (0/4), logic0 33 554 → 35 KB/s sampled",
+      "next": "Done.",
       "area": "logic",
       "kind": "js",
       "refs": [
@@ -11447,7 +11447,8 @@
         "spawnStorm"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0881"
       ]
     },
     {
@@ -20256,6 +20257,19 @@
       "text": "**The bundles of 8c3075fc (N-129's ring, N-127, N-121 merged): tested, and the prod bundle equals its sources.** dist `8c6222f3`, built from 8c3075fc.\n\n**On main:**\n- Node 2449 of 2449, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, nothing else running:\n\n- **Predator, 4 pairs, 16:19 to 16:22: NEUTRAL.**\n  - Logic -6.6 % (worse 0/4), spatial -0.4 %, physics +0.4 %, pre-render -2.4 %.\n  - Presented 59.8 → 59.6 fps; drawn 59.7 → 59.5 fps (N-121's line, reported).\n- **Boids, 8 pairs, 16:22 to 16:29: NEUTRAL.**\n  - Spatial 6.121 → 6.183 ms (+0.9 %, worse 6/8, cv 1/1 %).\n  - Physics +0.3 %.\n  - 40 000 bodies on both sides.\n\nMain pushed.",
       "commits": [
         "8c6222f3"
+      ]
+    },
+    {
+      "id": "R-0881",
+      "date": "2026-11-11",
+      "time": "16:39",
+      "timeFrom": "recorded",
+      "title": "E-208 kept: list updates through a ring per logic worker; spawnStormScene with two logic workers logic -25.7 % (0/4), logic0's garbage 33 554 → 35 KB/s",
+      "verdict": "kept",
+      "text": "**E-208 kept: logic workers 1..N hand logic0 their list updates through a ring each, not a message a frame. spawnStormScene with two logic workers: logic -25.7 % (worse 0/4), logic0's garbage 33 554 → 35 KB/s.** 2026-11-11, from 16:36 (the sitting's first result file) to 16:39. Chrome, headed, source, detailed stats off, AC power.\n\n**Step 0** (the scene's `?logicWorkers=N`, `3c0b5f5d`: the driver on logic1 when there are more than one, so its spawns and despawns reach logic0 as list updates). `heapSampleWorkers.mjs` on `spawnStormScene ?logicWorkers=2` (storm 1 800 a tick):\n- logic0 allocated 33 554 KB/s sampled: 25 809 in `port.onmessage` (the messages' clones) and 7 705 in `_receiveListUpdates` (an object a record);\n- logic1 allocated 2 157 KB/s, its driver's queries.\n\n**The change** (`33732b3b`).\n- `src/util/listUpdateRing.js` gives each worker other than logic0 a single-writer ring in shared memory: two words a record, the entity (its high bit a despawn) and its type.\n- At the end of its frame the worker writes the frame's updates there and publishes them.\n- logic0 drains every ring at the start of its frame into the same queues, each class from `GameObject.classByType`.\n- A frame the ring has no room for goes by message as before. logic0's passes skip an index alive again or no longer alive, so the two roads' order does not matter.\n- A ring holds a record for every entity (at least 4 096, a power of two): 512 KB a worker at Predator's 42 633.\n\n**After:** logic0 allocates 35 KB/s sampled; no message and no `_receiveListUpdates` among its sites.\n\n**Tests** (`listUpdateRing.test.js`, the real logic worker):\n- as worker 1, a frame's updates go into its ring with no message;\n- logic0 queues them in order, each with its class;\n- nothing is read twice, around the ring three times;\n- a frame with no room goes by message, and the ring keeps the frame before it.\n\n**spawnStormScene `?logicWorkers=2`, 4 pairs** (`--vs 3c0b5f5d --hyp-rev 33732b3b --full-rev --owner logic`): **KEPT (product).**\n- Logic (the worst worker, logic1) 3.160 → 2.321 ms (-25.7 %, worse 0/4, cv 2/2 %). logic1 by pair: -29.7, -26.2, -24.7, -25.2 %. The message's serialization was the writer's cost.\n- logic0 0.94–1.03 → 1.01–1.11 ms (+2 to +15 %, below the floor). It now drains the rings inside its frame; the messages it used to take arrived between frames, where its step did not count them.\n- Physics 2.878 → 2.942 ms (below the floor).\n- BODY_COUNT +4.9 % (cv 10/16 %, the storm's emergent bodies), within the band.",
+      "commits": [
+        "33732b3b",
+        "3c0b5f5d"
       ]
     }
   ],
