@@ -35,6 +35,7 @@ import {
 } from '../util/utils.js';
 import { Decal as DecalImport } from '../core/decal.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
+import { IMPACT_FLOATS, bindImpactRing, publishImpacts } from '../util/impactRing.js';
 import { backPublishedList, publishList } from '../util/publishedList.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
@@ -494,9 +495,12 @@ class ParticleWorker extends AbstractWorker {
 
     // Bullets
     this.maxBullets = 0;
-    this._impactHeader = null; // Int32Array view: [0]=count, [1]=batch sequence
+    // N-129: the bullet tick writes a frame's impacts here ([0] their count, then IMPACT_FLOATS a record), and the
+    // worker appends them to the ring the logic workers read (impactRing.js).
+    this._impactHeader = null;
     this._impactData = null;
     this._maxImpactsPerFrame = 0;
+    this._impactRing = null;
     /** Decal textures the decal memory does not hold, warned about once each (stampParticleToTile). */
     this._decalTexturesMissing = new Set();
     // E-179: the screen test's flips at the last sample, scaled to the list (picks the loop); the frames since that
@@ -547,8 +551,9 @@ class ParticleWorker extends AbstractWorker {
       // Sizes derive from config (buffer is allocated as 8 + maxImpactsPerFrame * 24)
       const maxImpacts = data.config?.bullet?.maxImpactsPerFrame ?? 64;
       this._maxImpactsPerFrame = maxImpacts;
-      this._impactHeader = new Int32Array(data.impactBuffer, 0, 2);
-      this._impactData = new Float32Array(data.impactBuffer, 8, maxImpacts * 6);
+      this._impactHeader = new Int32Array(2);
+      this._impactData = new Float32Array(maxImpacts * IMPACT_FLOATS);
+      this._impactRing = bindImpactRing(data.impactBuffer, maxImpacts);
     }
 
     // console.log(`[PARTICLE WORKER] Max particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}, Entities: ${this.globalEntityCount}`);
@@ -1320,6 +1325,8 @@ class ParticleWorker extends AbstractWorker {
       this._impactData,
       this._maxImpactsPerFrame
     );
+    // N-129: this frame's impacts after the ones the logic workers have not all read.
+    if (this._impactRing !== null) publishImpacts(this._impactRing, this._impactData, this._impactHeader[0]);
 
     if (activeCount <= 0 || !this.cameraData || !visibleData) {
       if (visibleData) visibleData[0] = 0;

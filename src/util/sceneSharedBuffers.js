@@ -95,6 +95,7 @@ import { bindStaticSceneryGen, bindStaticTypes } from '../core/staticScenery.js'
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
 import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } from './poolSlotWidth.js';
+import { impactRingBytes } from './impactRing.js';
 import { createPublishedList } from './publishedList.js';
 import { visibilityMemoryBytes, visibilityMemoryOpts } from './visibilityMemory.js';
 import { Messages } from '../core/messages.js';
@@ -454,11 +455,9 @@ function initializeBulletBuffers(scene) {
 
   createActiveAndPublishedLists(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
 
-  // Header: [0]=count (Int32), [1]=batch sequence (Int32). Impact data starts at byte 8.
-  // The sequence lets logic workers detect new batches and avoid double-processing
-  // the same impacts when their frame rate differs from the particle worker's.
-  const impactStride = 24;
-  buffers.impactBuffer = new SharedArrayBuffer(8 + maxImpactsPerFrame * impactStride);
+  // N-129: the impacts go to the logic workers through a ring (impactRing.js): each reads what the particle worker
+  // published since its last read, so a logic worker that misses a particle frame keeps that frame's impacts.
+  buffers.impactBuffer = new SharedArrayBuffer(impactRingBytes(maxImpactsPerFrame));
 
   BulletPool.initialize(maxBullets);
   BulletPool.initializeFreeList(buffers.bulletFreeList, buffers.bulletFreeListTop);
