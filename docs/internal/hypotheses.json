@@ -11465,11 +11465,11 @@
     {
       "id": "E-209",
       "title": "Entity instances made at spawn",
-      "status": "open",
-      "statusText": "open: step 0 answered 2026-11-11 (R-0897)",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (b93ab8ee, R-0901)",
       "date": "2026-11-10",
-      "result": "step 0 (R-0897): ~40 ms and 11.7 MB per logic worker per 100 000 slots, the page 27 ms and 13.7 MB; nothing per frame",
-      "next": "The design: instanceAt(index) making the instance on first use (start() at a slot's first use), the tick loops' null test timed in a kernel; worth it past ~200 000 slots.",
+      "result": "kept 2026-11-11 (b93ab8ee, R-0901): boot per 100 000 slots logic 40.6 -> 4.5 ms, 11.7 -> 1.5 MB; page 26.6 -> 1.4 ms, 13.7 -> 1.5 MB; Predator NEUTRAL",
+      "next": "Done. Pools without a fixed size can build on it.",
       "area": "logic",
       "kind": "js",
       "refs": [
@@ -11483,7 +11483,8 @@
       ],
       "records": [
         "R-0854",
-        "R-0897"
+        "R-0897",
+        "R-0901"
       ]
     },
     {
@@ -20675,6 +20676,18 @@
       "title": "E-194 step 0: the LiquidFun scene's keyed frames are paused 589 of 600 frames (16 000 keyless rows each); it draws split",
       "verdict": "answered",
       "text": "**E-194 step 0: liquidFunQueryStressScene's batch is keyed, but its keyed frames are paused 98 % of the time: each sends all 16 000 LiquidFun rows as updates, so the loss heuristic stops them and the scene draws split.** 2026-11-11.\n\n**Probe.** A logging patch, not committed, in `InstancedSpriteBatch`'s upload on current main, src, headless WebGL, 6 s warm-up then 4 s. Every 120 uploads it printed whether the batch is keyed, whether keyed frames were paused (`_keyPause`), and the keyed frames' updates and rows. At 600 uploads:\n- keyed batch: 600 of 600;\n- paused: 589 of 600;\n- keyed frames taken: 10, all early, with 160 000 updates for 160 000 rows (16 000 a frame, every row);\n- scan: 16 000 rows a frame.\n\n**What it means.** A LiquidFun particle drawn as a sprite has no key, so a keyed frame sends its statics every frame (64 bytes) on top of its pose and slot. With 16 000 of them the keyed frames lose, pause, and the scene uploads split frames (60 bytes a sprite, about 960 KB a frame).\n\nWith keys by particle index and change marks, a frame would send about 24 bytes a sprite (384 KB) plus the slots whose particle changed. The renderer here is 1.07 ms, so the gain is a few tenths of a millisecond, below the floor unless the scene's load is raised.\n\n**Next:** how often a LiquidFun slot's statics change (the churn re-emits particles), then decide. Kept open, ranked after the larger items."
+    },
+    {
+      "id": "R-0901",
+      "date": "2026-11-11",
+      "time": "20:34",
+      "timeFrom": "recorded",
+      "title": "E-209 kept: instances made on first use; boot per 100 000 slots logic 40.6 -> 4.5 ms and 11.7 -> 1.5 MB; Predator NEUTRAL",
+      "verdict": "kept",
+      "text": "**E-209 (`b93ab8ee`): entity instances made on a slot's first use, not one per slot at boot.** 2026-11-11.\n\n**Premise (R-0897).** Every logic worker made `new EntityClass` for every pool slot at boot, and the page a frozen copy of each, whether or not a slot was ever spawned. Per 100 000 slots: about 40 ms and 11.7 MB per logic worker, and 27 ms and 13.7 MB on the page.\n\n**The change.**\n- A slot's instance is made on its first use: a spawn, a tick, a callback, `GameObject.get`.\n- At boot the logic worker writes every slot's type and \"not active\" for the pool at once (what each constructor wrote).\n- Its maker, `_makeInstance`, builds an instance without touching the slot's Transform (the slot may be live, spawned by another worker or the page) and then calls `start()`.\n- Every instance read in logicWorker.js (21: ticks, impacts, collision, joint and message dispatch, the page's despawn) goes through the maker when the slot has none. `GameObject._at` and `_instanceOf` do the same for the global and per-class lists.\n- The page has its own maker: frozen instances, with the DX-GUARDS check once per class.\n- `start()`, undocumented for entities and defined by no demo, now runs at a slot's first use instead of at boot.\n- `lazyInstances.test.js`, on a real logic worker:\n  - no instance at boot, and the pool typed and not active;\n  - a slot made live elsewhere gets its instance on its first tick, with `start()` once and its Transform left alone;\n  - `GameObject.get` makes one; an index outside the pools gives none;\n  - the page makes none until asked, frozen.\n\n**Boot** (`entityInstanceBootMicrobench`, 100 000 slots, Node 22, two runs of 5):\n- logic: 40.6 / 37.5 → 4.5 / 4.7 ms; 11.7 → 1.5 MB (16 B a slot: the index arrays);\n- page: 26.6 / 27.7 → 1.4 / 1.3 ms; 13.7 → 1.5 MB.\n\n**Per frame: Predator's gate**, 4 pairs, 20:30 to 20:34 (`--vs 504d9bdf --hyp-rev b93ab8ee --full-rev`): **NEUTRAL.**\n- Logic -7.5 % (worse 0/4; -7.8 % against the others, lower 4/4).\n- Spatial +2.7 % (3/4), pre-render +0.1 %, physics +4.5 % (2/4): workers the change does not reach.\n- No page error.\n\nThe tick paths' `??` costs nothing while a slot has its instance.\n\nKept for boot and memory. Per 100 000 slots, each logic worker saves about 36 ms and 10 MB and the page 26 ms and 12 MB; at the largest pools, over 250 MB with four logic workers. Instances are now made as slots are used, a spawn burst paying them then.",
+      "commits": [
+        "b93ab8ee"
+      ]
     }
   ],
   "leads": [
