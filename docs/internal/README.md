@@ -32,6 +32,7 @@ tried, what is planned, and the journal of building the engine. They are not the
 | [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) | A design, not built: the sun's shadow inside the light sum, for the owner to decide. |
 | [`DX_NORMALS_DESIGN.md`](./DX_NORMALS_DESIGN.md) | A design, not built: light by the way a surface faces (normal maps), for the owner to decide. |
 | [`DX_VOLUME_DESIGN.md`](./DX_VOLUME_DESIGN.md) | A plan, not built: `VolumeShadowCaster`, an object's volume for the sun and for point lights, in phases, for the owner to decide on. |
+| [`DX_GUARDS_DESIGN.md`](./DX_GUARDS_DESIGN.md) | DX-GUARDS: the mistakes a game makes that the engine now says or fixes, the inventory with each "today" and its test. |
 | [`VISUAL_EDITOR_PLAN.md`](./VISUAL_EDITOR_PLAN.md) | The visual editor: goals, design, stages and items (ED-xx), open decisions. |
 | [`ISOLATION_SERVICE_WORKER_PLAN.md`](./ISOLATION_SERVICE_WORKER_PLAN.md) | SharedArrayBuffer without COOP/COEP headers: our own service worker, test plan, items (SW-xx), open decisions. |
 | [`ADOBE_GPU_PLAN.md`](./ADOBE_GPU_PLAN.md) | E-145: Adobe Animate pieces expanded on the GPU, the design note and the prototype's order of work. |
