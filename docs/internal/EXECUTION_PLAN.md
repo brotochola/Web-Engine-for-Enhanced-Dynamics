@@ -3657,6 +3657,10 @@ bounded.
 **Plan:** step 0: boot time and heap per 100 000 slots. Then instances made at the first spawn of a slot and kept, the
 tick loop testing for null. Risk: that test in the tick loop. Owner: boot ms and heap; Predator's logic must not get
 3 % worse.
+**Result:** kept 2026-11-11 (`b93ab8ee`, R-0901; step 0 R-0897). Instances made on a slot's first use (`_makeInstance`,
+the page's `_makePageInstance`); boot writes the pool's types and "not active" at once; `start()` at first use. Boot,
+100 000 slots: logic 40.6 → 4.5 ms and 11.7 → 1.5 MB, page 26.6 → 1.4 ms and 13.7 → 1.5 MB. Predator's gate NEUTRAL
+(logic -7.5 %, 0/4 worse).
 
 ### E-210 Predator's gate from a save
 

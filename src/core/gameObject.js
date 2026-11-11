@@ -273,6 +273,13 @@ export class GameObject {
   static instances = [];
 
   /**
+   * E-209: this realm's maker of the instance at an entity index on its first use (a logic worker's, the page's), or
+   * null where entity code does not run. Instances are no longer made one per pool slot at boot.
+   * @type {((entityIndex: number) => GameObject|null)|null}
+   */
+  static _makeAt = null;
+
+  /**
    * Main thread only: current `Scene` reference, set in `Scene.exposeGlobalReferences()`.
    * Stays `null` in workers so `GameObject.get` keeps using the dense pool array there.
    * @type {Object|null}
@@ -299,7 +306,23 @@ export class GameObject {
    * @returns {GameObject|undefined}
    */
   static get(entityIndex) {
-    return GameObject.instances[entityIndex];
+    return GameObject._at(entityIndex);
+  }
+
+  /** E-209: the instance at an entity index, made on its first use where this realm makes them. */
+  static _at(entityIndex) {
+    const instance = GameObject.instances[entityIndex];
+    if (instance !== undefined && instance !== null) return instance;
+    const make = GameObject._makeAt;
+    return make !== null ? make(entityIndex) : instance;
+  }
+
+  /** E-209: class C's instance at entity index i (one of C's slots), made on its first use. */
+  static _instanceOf(C, i) {
+    const instance = C.instances[i - C.startIndex];
+    if (instance !== undefined && instance !== null) return instance;
+    const make = GameObject._makeAt;
+    return make !== null ? make(i) : instance;
   }
 
   /**
@@ -611,7 +634,7 @@ export class GameObject {
     if (fields > 5) this._c5 = null;
     if (fields > 6) this._c6 = null;
     if (fields > 7) this._c7 = null;
-    this.bindToEntitySlot({ page: options.page === true });
+    this.bindToEntitySlot({ page: options.page === true, lazy: options.lazy === true });
   }
 
   /**
@@ -621,8 +644,10 @@ export class GameObject {
    * @param {Object} opts
    * @param {boolean} [opts.page=false] - The page's instance: attach the
    *   component accessors only; do not reset Transform or push into pools.
+   * @param {boolean} [opts.lazy=false] - E-209: made on the slot's first use, which may be a live entity: leave its
+   *   Transform alone (the logic worker wrote every slot's type and "not active" at boot).
    */
-  bindToEntitySlot({ page = false } = {}) {
+  bindToEntitySlot({ page = false, lazy = false } = {}) {
     const index = this.index;
     const Ctor = this.constructor;
 
@@ -646,10 +671,14 @@ export class GameObject {
     if (!Object.prototype.hasOwnProperty.call(Ctor.prototype, '_hasComponents')) Ctor.prototype._hasComponents = flags;
 
     if (!page) {
-      Transform.entityType[index] = Ctor.entityType || 0;
-      Transform.active[index] = 0;
-      GameObject.instances.push(this);
-      Ctor.instances.push(this);
+      if (!lazy) {
+        Transform.entityType[index] = Ctor.entityType || 0;
+        Transform.active[index] = 0;
+      }
+      // E-209: at its index (instances are made on first use, in any order).
+      GameObject.instances[index] = this;
+      if (Ctor.startIndex === undefined || Ctor.startIndex === null) Ctor.instances.push(this);
+      else Ctor.instances[index - Ctor.startIndex] = this;
     }
 
     if (Grid._stride && Grid.neighborData) {
@@ -2527,8 +2556,8 @@ export class GameObject {
 
     if (Transform.active[i] !== 1) return false;
     const C = GameObject.classByType[types[i]];
-    const instance = C !== undefined ? C.instances[i - C.startIndex] : undefined;
-    if (instance === undefined) return false;
+    const instance = C !== undefined ? GameObject._instanceOf(C, i) : undefined;
+    if (instance === undefined || instance === null) return false;
     instance.despawn();
     return true;
   }
@@ -2587,11 +2616,10 @@ export class GameObject {
   getAllNeighborInstances() {
     const count = this.neighborCount;
     const result = new Array(count);
-    const entities = GameObject.instances;
     const neighbors = this._neighborView();
 
     for (let i = 0; i < count; i++) {
-      result[i] = entities[neighbors[i]];
+      result[i] = GameObject._at(neighbors[i]);
     }
 
     return result;
@@ -2605,11 +2633,10 @@ export class GameObject {
    */
   getAllNeighborInstancesMut(out) {
     const count = this.neighborCount;
-    const entities = GameObject.instances;
     const neighbors = this._neighborView();
 
     for (let i = 0; i < count; i++) {
-      out[i] = entities[neighbors[i]];
+      out[i] = GameObject._at(neighbors[i]);
     }
     out.length = count;
     return out;
@@ -2857,7 +2884,7 @@ export class GameObject {
         return null;
       }
       const index = scene._spawnFromPage(EntityClass, spawnConfig);
-      return index < 0 ? null : EntityClass.instances[index - EntityClass.startIndex];
+      return index < 0 ? null : GameObject._instanceOf(EntityClass, index);
     }
     return GameObject._spawnAt(EntityClass, spawnConfig, -1);
   }
@@ -2909,8 +2936,8 @@ export class GameObject {
       }
     }
 
-    // Get the instance (already created during initialization)
-    const instance = EntityClass.instances[i - EntityClass.startIndex];
+    // The slot's instance, made on its first use (E-209)
+    const instance = GameObject._instanceOf(EntityClass, i);
 
     if (!instance) {
       console.error(`No instance found at index ${i} for ${EntityClass.name}`);
@@ -3421,7 +3448,7 @@ export class GameObject {
       if (isAnyComponentActive) {
         const hadPhysicsBody =
           !!(rigidBodyActive?.[i] || colliderActive?.[i]);
-        const instance = EntityClass.instances[i - startIndex];
+        const instance = GameObject._instanceOf(EntityClass, i);
 
         // Call lifecycle hook (same as individual despawn)
         if (instance?.onDespawned) {
@@ -3471,7 +3498,7 @@ export class GameObject {
   static getFirstActiveInstance() {
     const index = this.getFirstActiveIndex();
     if (index === null) return null;
-    return this.instances[index - this.startIndex];
+    return GameObject._instanceOf(this, index);
   }
 
   /**
@@ -3509,13 +3536,10 @@ export class GameObject {
     const activeIndices = this.getAllActive();
     if (!activeIndices) return [];
 
-    const instances = this.instances;
-    const startIndex = this.startIndex;
     const result = [];
 
     for (let i = 0; i < activeIndices.length; i++) {
-      const entityIndex = activeIndices[i];
-      result.push(instances[entityIndex - startIndex]);
+      result.push(GameObject._instanceOf(this, activeIndices[i]));
     }
     return result;
   }

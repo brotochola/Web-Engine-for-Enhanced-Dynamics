@@ -96,7 +96,7 @@ const firstActiveInstance = (EntityClass) => EntityClass.getFirstActiveInstance(
 /** This worker's instance of the entity at `index` (hot reload field carry). */
 function instanceAtIndex(index) {
   const EntityClass = GameObject.classByType[Transform.entityType[index]];
-  return EntityClass && EntityClass.instances ? EntityClass.instances[index - EntityClass.startIndex] : undefined;
+  return EntityClass && EntityClass.instances ? GameObject._instanceOf(EntityClass, index) : undefined;
 }
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
@@ -139,6 +139,8 @@ class LogicWorker extends AbstractWorker {
 
     // Game objects - one per entity
     this.gameObjects = new Array(this.globalEntityCount).fill(null);
+    // E-209: GameObject._makeAt in this realm, made once.
+    this._makeAtFn = (index) => this._makeInstance(index);
 
     // Worker identification
     this.workerIndex = 0; // Which worker am I? (0, 1, 2, ...)
@@ -440,8 +442,36 @@ class LogicWorker extends AbstractWorker {
    * DENSE ALLOCATION: entityIndex === componentIndex for all components
    * Call after pose bind (box2dReady HEAP, or weed pose at init when physics is off).
    */
+  /**
+   * E-209: the instance at `index` on its first use in this worker: its class from the slot's type, made without
+   * touching the slot's Transform (it may be live, spawned by another worker or the page), then start(). Null for an
+   * index no registered pool holds.
+   */
+  _makeInstance(index) {
+    if (!(index >= 0) || index >= this.gameObjects.length) return null;
+    const made = this.gameObjects[index];
+    if (made !== null && made !== undefined) return made;
+    const EntityClass = this._entityClassByType[Transform.entityType[index]];
+    if (EntityClass === undefined || !(index >= EntityClass.startIndex && index < EntityClass.startIndex + EntityClass.poolSize)) {
+      return null;
+    }
+    const instance = new EntityClass(index, this.config, this, { lazy: true });
+    this.gameObjects[index] = instance;
+    if (instance.start) {
+      try {
+        instance.start();
+      } catch (error) {
+        this._entityThrew(error, index, 'start');
+      }
+    }
+    return instance;
+  }
+
   createGameObjectInstances() {
     const numTypes = this.registeredClasses.length;
+    // E-209: the instances, by index, made on first use.
+    GameObject.instances = new Array(this.globalEntityCount | 0).fill(null);
+    GameObject._makeAt = this._makeAtFn;
     this.collisionListenerByType = new Uint8Array(numTypes);
     this.collisionStayByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
@@ -514,18 +544,14 @@ class LogicWorker extends AbstractWorker {
           EntityClass.initialize(poolSize);
         }
 
-        for (let i = 0; i < poolSize; i++) {
-          const index = startIndex + i;
-
-          // DENSE ALLOCATION: entityIndex === componentIndex for all components
-          // Create instance - GameObject will use entity index for all component access
-          const instance = new EntityClass(index, this.config, this);
-          this.gameObjects[index] = instance;
-
-          // Call start() lifecycle method (one-time initialization)
-          if (instance.start) {
-            instance.start();
-          }
+        // E-209: no instance per slot here. A slot's instance is made on its first use (_makeInstance): a spawn, a
+        // tick, a callback. What each constructor wrote for its slot, the type and "not active", is written for the
+        // pool at once. DENSE ALLOCATION: entityIndex === componentIndex for all components.
+        EntityClass.instances = new Array(poolSize).fill(null);
+        EntityClass._ensureComponentAccessors();
+        if (poolSize > 0) {
+          Transform.entityType.fill(entityType, startIndex, startIndex + poolSize);
+          Transform.active.fill(0, startIndex, startIndex + poolSize);
         }
 
         // ========================================
@@ -1400,7 +1426,7 @@ class LogicWorker extends AbstractWorker {
         for (; i < to; i++) {
           const entityIndex = list[i];
           if (transformActive[entityIndex] === 0) continue;
-          const obj = gameObjects[entityIndex];
+          const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
           if (!obj || typeof obj.tick !== 'function') continue;
           rbAx[entityIndex] = 0;
           rbAy[entityIndex] = 0;
@@ -1453,7 +1479,7 @@ class LogicWorker extends AbstractWorker {
         for (; i < to; i++) {
           const entityIndex = list[i];
           if (transformActive[entityIndex] === 0) continue;
-          const obj = gameObjects[entityIndex];
+          const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
           if (!obj || typeof obj.tick !== 'function') continue;
           obj.tick(dtRatio, deltaTime, accTime, frameNum);
           visited++;
@@ -1548,7 +1574,7 @@ class LogicWorker extends AbstractWorker {
   ) {
     if (collectDetailed) this._lastTickMs = 0;
     if (transformActive[entityIndex] === 0) return 0;
-    const obj = gameObjects[entityIndex];
+    const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
     if (!obj || typeof obj.tick !== 'function') return 0;
     if (collectDetailed) {
       const tTick0 = performance.now();
@@ -1577,7 +1603,7 @@ class LogicWorker extends AbstractWorker {
   ) {
     if (collectDetailed) this._lastTickMs = 0;
     if (transformActive[entityIndex] === 0) return 0;
-    const obj = gameObjects[entityIndex];
+    const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
     if (!obj || typeof obj.tick !== 'function') return 0;
     rbAx[entityIndex] = 0;
     rbAy[entityIndex] = 0;
@@ -1614,7 +1640,7 @@ class LogicWorker extends AbstractWorker {
       this._lastDecimateMs = 0;
     }
     if (transformActive[entityIndex] === 0) return 0;
-    const obj = gameObjects[entityIndex];
+    const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
     if (!obj || typeof obj.tick !== 'function') return 0;
     const tVisit0 = collectDetailed ? performance.now() : 0;
     if (--nextTick[entityIndex] > 0) {
@@ -1681,7 +1707,7 @@ class LogicWorker extends AbstractWorker {
       const ownerId = impactData[base + 4] | 0;
       const shooterEntityType = impactData[base + 5] | 0;
 
-      const obj = gameObjects[targetId];
+      const obj = gameObjects[targetId] ?? this._makeInstance(targetId);
       if (obj && obj.onGotShot) {
         try {
           obj.onGotShot(damage, hitX, hitY, ownerId, shooterEntityType);
@@ -1743,14 +1769,14 @@ class LogicWorker extends AbstractWorker {
     // A throw is caught per call so the ring drain still advances its cursor.
     if (aListens) {
       try {
-        gameObjects[a]?.onCollisionHit(b, px, py, nx, ny, speed);
+        (gameObjects[a] ?? this._makeInstance(a))?.onCollisionHit(b, px, py, nx, ny, speed);
       } catch (error) {
         this._entityThrew(error, a, 'onCollisionHit');
       }
     }
     if (bListens) {
       try {
-        gameObjects[b]?.onCollisionHit(a, px, py, -nx, -ny, speed);
+        (gameObjects[b] ?? this._makeInstance(b))?.onCollisionHit(a, px, py, -nx, -ny, speed);
       } catch (error) {
         this._entityThrew(error, b, 'onCollisionHit');
       }
@@ -1785,14 +1811,14 @@ class LogicWorker extends AbstractWorker {
     if (!aListens && !bListens) return;
     if (aListens) {
       try {
-        gameObjects[entityA]?.onJointBreak(jointIndex, entityA, entityB);
+        (gameObjects[entityA] ?? this._makeInstance(entityA))?.onJointBreak(jointIndex, entityA, entityB);
       } catch (error) {
         this._entityThrew(error, entityA, 'onJointBreak');
       }
     }
     if (bListens) {
       try {
-        gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
+        (gameObjects[entityB] ?? this._makeInstance(entityB))?.onJointBreak(jointIndex, entityA, entityB);
       } catch (error) {
         this._entityThrew(error, entityB, 'onJointBreak');
       }
@@ -1802,7 +1828,7 @@ class LogicWorker extends AbstractWorker {
   /** One inbox message: dropped if its target despawned since it was sent. */
   _onMessageEvent(target, from, nameId, gen, a, b, c, d) {
     if (Transform.active[target] === 0 || Messages.spawnGen[target] !== gen) return;
-    const obj = this.gameObjects[target];
+    const obj = this.gameObjects[target] ?? this._makeInstance(target);
     if (!obj) return;
     if (nameId === MESSAGE_ANIMATION_END) {
       this._deliverAnimationEnd(obj, target, a, b);
@@ -1973,14 +1999,14 @@ class LogicWorker extends AbstractWorker {
     const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
     if (aListens) {
       try {
-        gameObjects[minE]?.onCollisionExit(maxE);
+        (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionExit(maxE);
       } catch (error) {
         this._entityThrew(error, minE, 'onCollisionExit');
       }
     }
     if (bListens) {
       try {
-        gameObjects[maxE]?.onCollisionExit(minE);
+        (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionExit(minE);
       } catch (error) {
         this._entityThrew(error, maxE, 'onCollisionExit');
       }
@@ -2038,14 +2064,14 @@ class LogicWorker extends AbstractWorker {
     if (!aListens && !bListens) return;
     if (aListens) {
       try {
-        gameObjects[rawA]?.onCollisionEnter(rawB);
+        (gameObjects[rawA] ?? this._makeInstance(rawA))?.onCollisionEnter(rawB);
       } catch (error) {
         this._entityThrew(error, rawA, 'onCollisionEnter');
       }
     }
     if (bListens) {
       try {
-        gameObjects[rawB]?.onCollisionEnter(rawA);
+        (gameObjects[rawB] ?? this._makeInstance(rawB))?.onCollisionEnter(rawA);
       } catch (error) {
         this._entityThrew(error, rawB, 'onCollisionEnter');
       }
@@ -2131,9 +2157,9 @@ class LogicWorker extends AbstractWorker {
           const aListens = (sides & 1) !== 0 && stayFlags[entityType[minE]];
           const bListens = (sides & 2) !== 0 && stayFlags[entityType[maxE]];
           calling = minE;
-          if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
+          if (aListens) (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionStay(maxE);
           calling = maxE;
-          if (bListens) gameObjects[maxE]?.onCollisionStay(minE);
+          if (bListens) (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionStay(minE);
         }
         break;
       } catch (error) {
@@ -2633,7 +2659,7 @@ class LogicWorker extends AbstractWorker {
 
   _mainThreadDespawn(entityIndex) {
     if (entityIndex < 0 || entityIndex >= this.globalEntityCount) return;
-    const instance = this.gameObjects[entityIndex];
+    const instance = this.gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
     if (instance && instance.despawn) instance.despawn();
   }
 

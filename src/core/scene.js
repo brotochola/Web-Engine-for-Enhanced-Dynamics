@@ -748,21 +748,41 @@ class Scene {
    * and the component objects.
    */
   _createPageInstances() {
-    const all = new Array(this.totalEntityCount);
+    // E-209: made on a slot's first use (_makePageInstance), not one per pool slot here.
+    const all = new Array(this.totalEntityCount | 0).fill(null);
     for (let r = 0; r < this.registeredClasses.length; r++) {
-      const { class: EntityClass, count, startIndex } = this.registeredClasses[r];
-      const own = new Array(count);
-      for (let k = 0; k < count; k++) {
-        const instance = Object.freeze(new EntityClass(startIndex + k, this.config, null, { page: true }));
-        // DX-GUARDS E1 (debug build): a field that hides an accessor. The class's fields are the same in every
-        // thread, so the page's first instance is enough.
-        if (k === 0) checkFirstInstance(instance);
-        own[k] = instance;
-        all[startIndex + k] = instance;
-      }
-      EntityClass.instances = own;
+      const { class: EntityClass, count } = this.registeredClasses[r];
+      EntityClass.instances = new Array(count | 0).fill(null);
+      EntityClass._pageChecked = false;
     }
     GameObject.instances = all;
+    const scene = this;
+    GameObject._makeAt = (index) => Scene.prototype._makePageInstance.call(scene, index);
+  }
+
+  /**
+   * E-209: the page's frozen instance at `index` on its first use: its class from the registered pools (the page
+   * does not wait for a logic worker's Transform), checked once per class (DX-GUARDS E1). Null for an index no pool
+   * holds.
+   */
+  _makePageInstance(index) {
+    const made = GameObject.instances[index];
+    if (made !== null && made !== undefined) return made;
+    for (let r = 0; r < this.registeredClasses.length; r++) {
+      const { class: EntityClass, count, startIndex } = this.registeredClasses[r];
+      if (index < startIndex || index >= startIndex + count) continue;
+      const instance = Object.freeze(new EntityClass(index, this.config, null, { page: true }));
+      // DX-GUARDS E1 (debug build): a field that hides an accessor. The class's fields are the same in every
+      // thread, so the page's first instance is enough.
+      if (!EntityClass._pageChecked) {
+        EntityClass._pageChecked = true;
+        checkFirstInstance(instance);
+      }
+      EntityClass.instances[index - startIndex] = instance;
+      GameObject.instances[index] = instance;
+      return instance;
+    }
+    return null;
   }
 
   /**
