@@ -11,10 +11,17 @@
  * `--still` (setupSpatialKernel's `still`) leaves every entity where it spawned: the stationary regime of
  * E-136, with the reuse settings from `--skin`, `--max-frames` and `--tick` (the engine's defaults, which
  * stationarySpatialWideScene runs on, are 0.04, 15 and 1).
+ * `--types boids|predator` (setupSpatialKernel's `types`, E-200) gives the slots classes whose logic ticks every
+ * few frames, with `logic.staggeredUpdates` on and logic 0's frame number in frameRateData, which each kernel frame
+ * advances: `boids` is one class ticking every 30 frames (the Boids scene's), `predator` civilians every 4,
+ * soldiers every 6, boids every 30 and the rest every frame, in contiguous pools as a scene lays them out. A tree
+ * that does not read these inputs runs as without them. The report adds the lists rebuilt (gathered) and published
+ * a frame.
  *
  *   node tests/bench/spatialWorkerMicrobench.mjs
  *   node tests/bench/spatialWorkerMicrobench.mjs --n 16500 --output tests/results/spatial-worker.json
  *   node tests/bench/spatialWorkerMicrobench.mjs --still --skin 0.04 --max-frames 15 --tick 1
+ *   node tests/bench/spatialWorkerMicrobench.mjs --types boids
  */
 import assert from 'node:assert/strict';
 
@@ -52,6 +59,45 @@ const PREDATOR_SPATIAL = {
   neighborReuseMaxFrames: 30,
   neighborTickInterval: 15,
 };
+
+/**
+ * E-200: the kernel's classes, as fractions of the slots in pool order, with their logic tickInterval. A class
+ * whose interval is 1 ticks every frame. Every class has a tick.
+ */
+const TYPE_PRESETS = {
+  boids: [{ name: 'Boid', share: 1, tickInterval: 30 }],
+  predator: [
+    { name: 'Civilian', share: 0.45, tickInterval: 4 },
+    { name: 'Soldier', share: 0.3, tickInterval: 6 },
+    { name: 'Boid', share: 0.05, tickInterval: 30 },
+    { name: 'Prop', share: 0.2, tickInterval: 1 },
+  ],
+};
+
+/** registeredClasses entries (sceneWorkerBootstrap's shape) for preset `name` over `n` slots. */
+export function kernelClasses(name, n) {
+  const preset = TYPE_PRESETS[name];
+  if (!preset) throw new Error(`unknown --types ${name} (${Object.keys(TYPE_PRESETS).join(', ')})`);
+  const out = [];
+  let start = 0;
+  for (let t = 0; t < preset.length; t++) {
+    const end = t === preset.length - 1 ? n : Math.min(n, start + Math.round(preset[t].share * n));
+    out.push({
+      name: preset[t].name,
+      poolSize: end - start,
+      startIndex: start,
+      endIndex: end,
+      entityType: t,
+      tickInterval: preset[t].tickInterval,
+      ticks: true,
+      // The worker asks its global for each class by name; a spatial worker reads only these fields.
+      engineProvided: true,
+      components: ['Transform', 'RigidBody', 'Collider', 'SpriteRenderer'],
+    });
+    start = end;
+  }
+  return out;
+}
 
 /** Module identifiers the SpatialWorker methods use (for methodVariant patches). */
 export const SCOPE = {
@@ -114,6 +160,16 @@ export async function setupSpatialKernel(opts = {}) {
   const jsMake = opts.js ? (Base) => spatialJsClass(Base, opts.js) : null;
   const make = jsMake && opts.make ? (Base) => opts.make(jsMake(Base)) : jsMake || opts.make;
   const workers = await loadSpatialWorkers(workersCount, opts.variant || 'base', make);
+  // E-200: classes with logic tick intervals, and logic 0's frame number where the scene publishes it (slot 1 of
+  // its frameRateData row, after the spatial workers' rows).
+  const classes = opts.types ? kernelClasses(opts.types, n) : [];
+  const FRAME_RATE_STRIDE = 16;
+  const logicRow = workersCount;
+  let logicFrames = null;
+  if (opts.types) {
+    buffers.frameRateData = new SharedArrayBuffer((workersCount + 1) * FRAME_RATE_STRIDE * 4);
+    logicFrames = new Float32Array(buffers.frameRateData);
+  }
   for (let w = 0; w < workers.length; w++) {
     await initWorker(workers[w], {
       config: {
@@ -121,6 +177,7 @@ export async function setupSpatialKernel(opts = {}) {
         worldHeight: cfg.worldHeight,
         spatial: cfg,
         entityIdWidth: idWidth,
+        ...(opts.types ? { logic: { staggeredUpdates: true } } : {}),
         ...(opts.wasm ? { wasm: opts.wasm } : {}),
       },
       globalEntityCount: n,
@@ -130,10 +187,13 @@ export async function setupSpatialKernel(opts = {}) {
         workerIndex: w,
         totalSpatialWorkers: workers.length,
         frameRateIndex: w,
+        frameRateStride: FRAME_RATE_STRIDE,
         spatialPublishMemory: mem.memory,
+        ...(opts.types ? { registeredClasses: classes, logicFrameRateIndex: logicRow } : {}),
       },
     });
   }
+  let logicFrame = 0;
 
   bindPoseColumns(n);
   const rng = mulberry32(seed);
@@ -172,6 +232,7 @@ export async function setupSpatialKernel(opts = {}) {
     Collider.visualRange[i] = kind < 0.7 ? 150 : kind < 0.8 ? 250 : kind < 0.97 ? 0 : 400;
     SpriteRenderer.active[i] = 1;
     RigidBody.active[i] = kind < 0.8 ? 1 : 0;
+    for (const c of classes) if (i >= c.startIndex && i < c.endIndex) Transform.entityType[i] = c.entityType;
     vx[i] = kind < 0.8 && !opts.still ? (rng() - 0.5) * 2 : 0;
     vy[i] = kind < 0.8 && !opts.still ? (rng() - 0.5) * 2 : 0;
     ids.push(i);
@@ -201,9 +262,25 @@ export async function setupSpatialKernel(opts = {}) {
 
   function frame() {
     drift();
+    // Logic's frame for this vsync (a logic worker publishes it as its frame starts).
+    if (logicFrames !== null) logicFrames[logicRow * FRAME_RATE_STRIDE + 1] = ++logicFrame;
     // update() is the shipped per-frame entry: resets the counters, then
     // rebuildOwnedRows + the neighbour search.
     for (let w = 0; w < workers.length; w++) workers[w].update(16.67, 1, false);
+  }
+
+  /** Lists gathered and published a frame, averaged over `frames` kernel frames (the frames run). */
+  function listRates(frames) {
+    let rebuilt = 0;
+    let published = 0;
+    for (let f = 0; f < frames; f++) {
+      frame();
+      for (const w of workers) {
+        rebuilt += w.neighborsRebuiltThisFrame;
+        published += w.neighborsPublishedThisFrame;
+      }
+    }
+    return { rebuiltPerFrame: rebuilt / frames, publishedPerFrame: published / frames };
   }
 
   function checksum() {
@@ -227,7 +304,7 @@ export async function setupSpatialKernel(opts = {}) {
     return h >>> 0;
   }
 
-  return { n, workers, frame, checksum, cfg, mem, gridMetadata };
+  return { n, workers, frame, checksum, listRates, cfg, mem, gridMetadata, classes };
 }
 
 async function main() {
@@ -238,21 +315,27 @@ async function main() {
   if (args.skin !== undefined) spatial.neighborReuseSkin = Number(args.skin);
   if (args['max-frames'] !== undefined) spatial.neighborReuseMaxFrames = Number(args['max-frames']);
   if (args.tick !== undefined) spatial.neighborTickInterval = Number(args.tick);
-  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial });
+  const types = args.types !== undefined ? String(args.types) : null;
+  const k = await setupSpatialKernel({ n: Number(args.n ?? 16500), seed: Number(args.seed ?? 0x5a71a1), variant, still, spatial, types });
   // 45 frames: every entity passes a full rebuild and the stagger at least twice.
   for (let f = 0; f < 45; f++) k.frame();
   const checksum = k.checksum();
   let pairs = 0;
   for (let i = 0; i < k.n; i++) pairs += Grid.neighborData[i * Grid._stride];
   assert.ok(pairs > 0, 'no neighbors published');
+  // 60 frames: a whole number of every preset's periods (4, 6, 15, 30, and their multiples up to 30).
+  const rates = k.listRates(60);
 
+  const label = `spatial frame ${variant}${still ? ' still' : ''}${types ? ` types=${types}` : ''}`;
   const cases = {
-    frame: timeIt(`spatial frame ${variant}${still ? ' still' : ''} (${k.workers.length} workers, n=${k.n})`, () => k.frame(), { iterations: 20, warmup: 30 }),
+    frame: timeIt(`${label} (${k.workers.length} workers, n=${k.n})`, () => k.frame(), { iterations: 20, warmup: 30 }),
   };
   const report = {
     feature: 'spatial-worker-frame',
     variant,
     still,
+    types,
+    rates,
     spatial: k.cfg,
     functions: ['SpatialWorker.rebuildOwnedRows', 'SpatialWorker._findNeighbors (spatialGather, spatialPublish)'],
     n: k.n,
@@ -264,7 +347,7 @@ async function main() {
     cases,
   };
   if (args.output) writeReport(String(args.output), report);
-  else console.log(`checksum ${checksum} pairs ${pairs}`);
+  else console.log(`checksum ${checksum} pairs ${pairs} rebuilt/frame ${rates.rebuiltPerFrame.toFixed(1)} published/frame ${rates.publishedPerFrame.toFixed(1)} ${cases.frame.opsPerSec?.toFixed?.(1) ?? ""} frames/s`);
 }
 
 if (isCli(import.meta.url)) await main();

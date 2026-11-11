@@ -3500,6 +3500,18 @@ up to 15 frames old.
 `tickInterval`; `neighborTickInterval` stays for the types without one. Boids then does about half of today's spatial
 work and civilians read fresh lists (their behaviour changes: the demo must still look right). Owner: spatial in Boids
 and Predator.
+**Result:** kept 2026-11-11 (79065acc, sat as 7d19810e, the same tree; R-0865): Boids at a fixed load, spatial -15.0 % (0/4). The spatial worker reads
+logic 0's frame number from frameRateData and gives a class that ticks every T frames (`logic.staggeredUpdates`, a
+`tick`) its list two logic frames before each tick, every P frames, P the smallest multiple of T not under
+`neighborTickInterval`; the test is stateless (logic's frame modulo P per class, an offset per slot), so a row that
+changes owner keeps its phase. Lights and classes that tick every frame keep the old stagger. Kernel
+(`spatialWorkerMicrobench --types`, A B A B in Node, 4 pairs): boids +30.5 % frames/s (4/4, lists gathered 936 → 504 a
+frame), Predator's mix +17.1 % (4/4), no typed class +5.1 % (2/4, the same code: the kernel's noise). On the flocking
+demo spatial read -17.4 % but the flock changed (VISIBLE_ENTITIES -29 %: fresher lists pull a flock less towards
+boids that have left), so the load did: `?steer=0` (ecaa2051) keeps every neighbour read and drops their pull. There,
+4 pairs, spatial 7.186 → 5.828 ms (-15.0 %, 0/4, cv 10/10 %), load within 0.2 %; the session's A/A +0.5 % (cv 3/5 %).
+Predator's gate NEUTRAL: spatial -4.8 % (0/4), physics +10.2 % from load (27 % more bodies moved, 17 % cheaper per
+moved body).
 
 ### E-201 Keyed poses read by key on the GPU
 

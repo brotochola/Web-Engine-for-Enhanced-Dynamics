@@ -4,6 +4,9 @@ import WEED from '/src/index.js';
 
 const { enums, GameObject, RigidBody, Collider, SpriteRenderer, Mouse, Transform } = WEED;
 const { ShapeType } = enums;
+// ?steer=0: every boid reads and weighs its neighbours as before, but their pull is scaled by 1e-9, so the flock's
+// path no longer depends on how fresh a list is. A fixed load for spatial sittings (E-200), not a look.
+const STEER = WEED.params?.get('steer') === '0' ? 1e-9 : 1;
 class Boid extends GameObject {
   static deriveSpeed = true;
 
@@ -103,6 +106,9 @@ class Boid extends GameObject {
       ax += (avgVX * inv - rbVX[i]) * Boid.matchingFactor;
       ay += (avgVY * inv - rbVY[i]) * Boid.matchingFactor;
     }
+
+    ax *= STEER;
+    ay *= STEER;
 
     if (Mouse.isDown && Mouse.isPresent) {
       const mdx = Mouse.x - myX;

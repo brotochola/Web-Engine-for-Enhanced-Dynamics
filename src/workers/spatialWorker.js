@@ -56,6 +56,7 @@ import { bindSpatialGather, bindSpatialPublish } from './spatialPublishClient.js
 import { SPATIAL_MAX_CELL_RADIUS } from '../util/spatialPublishMemory.js';
 import { getColliderBounds as getColliderBoundsImport, getCellRange as getCellRangeImport, _boundsResult as _boundsResultImport, _cellRangeResult as _cellRangeResultImport, SHAPE_CIRCLE as SHAPE_CIRCLEImport } from '../util/colliderUtils.js';
 import { readMovedBodiesHeader, copyMovedBodies } from '../box2d/box2dMovedBodies.js';
+import { tickBucketPhase } from '../util/logicOwner.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -88,6 +89,9 @@ const MV_IN_GRID = 2; // binned, with the cell range in _mvRange
 const MV_OWNED = 4; // home row owned here: in _ownedEntityList
 const MV_LOOSE = 8; // no collider, so no physics list reports it: compared every frame
 const MV_SPRITE = 16; // a loose entity's SpriteRenderer.active when it was binned
+// E-200: a typed list comes this many logic frames before its tick. Logic publishes the frame it ticks as it
+// starts, before or after this worker reads it on the same vsync; two frames ahead is before the tick either way.
+const TYPED_NEIGHBOR_LEAD = 2;
 // E-136. The pose generation moves by 2, so it is always even: a row marked with this was cleared and
 // is published again.
 const POSE_GEN_NONE = 1;
@@ -173,6 +177,21 @@ class SpatialWorker extends AbstractWorker {
     this._gatherCellOrder = false;
     /** Countdown to next full rebuild when neighborTickInterval > 1. */
     this._entityNeighborNextTick = null;
+    /**
+     * E-200: per slot, 1 + the index of its class in the typed stagger (0: the stagger above). A typed list comes
+     * on the logic frames f with f % period === its offset.
+     */
+    this._typedNeighborClass = new Uint8Array(0);
+    /** E-200: per slot, its refresh frame within its class's period. */
+    this._typedNeighborOffset = new Uint16Array(0);
+    /** E-200: per class (from 1), its refresh period in logic frames. */
+    this._typedNeighborPeriods = new Int32Array(1);
+    /** E-200: per class (from 1), logic's frame modulo its period, for this search. */
+    this._typedNeighborNow = new Int32Array(1);
+    /** E-200: index of logic 0's frame number in frameRateData (-1: no typed stagger). */
+    this._logicFrameSlot = -1;
+    /** E-200: logic's frame at this worker's last search (-1: none yet). */
+    this._lastLogicFrame = -1;
     /** Per-entity expanded candidate lists: [count, id0, ...] stride = 1+maxNeighbors */
     this._neighborCandidateData = null;
     /** Dense copy of each list's count: the stagger skip reads this, not the head of a 1+maxNeighbors row. */
@@ -324,6 +343,7 @@ class SpatialWorker extends AbstractWorker {
         nextTick[i] = (i % interval) + 1;
       }
       this._entityNeighborNextTick = nextTick;
+      this._setupTypedNeighborStagger(data);
     } else {
       this._entityNeighborNextTick = null;
     }
@@ -1286,6 +1306,51 @@ class SpatialWorker extends AbstractWorker {
   }
 
   /**
+   * E-200. A class whose logic ticks every T frames (`logic.staggeredUpdates`, a `tick`, `tickInterval` > 1) reads
+   * its neighbours when it ticks, so its list comes TYPED_NEIGHBOR_LEAD logic frames before a tick, and at most
+   * every neighborTickInterval frames: every P frames, P the smallest multiple of T not under the interval. A
+   * boid that ticks every 30 frames under an interval of 15 gets one list where it had two, fresh when it ticks;
+   * a civilian that ticks every 4 gets one every 16 frames instead of 15. Lights keep the stagger above (pre-render
+   * reads their lists every frame). The countdowns align with logic 0's frame number, which logic publishes in
+   * frameRateData as its frame starts.
+   */
+  _setupTypedNeighborStagger(data) {
+    const n = this.globalEntityCount;
+    this._typedNeighborClass = new Uint8Array(n);
+    this._typedNeighborOffset = new Uint16Array(n);
+    this._typedNeighborPeriods = new Int32Array(1);
+    this._typedNeighborNow = new Int32Array(1);
+    this._logicFrameSlot = -1;
+    this._lastLogicFrame = -1;
+    const logicRow = data.logicFrameRateIndex;
+    const stride = data.frameRateStride | 0;
+    if (this.config?.logic?.staggeredUpdates !== true || !Number.isInteger(logicRow) || logicRow < 0 || stride < 2) return;
+    const slot = logicRow * stride + 1;
+    if (!this.frameRateData || slot >= this.frameRateData.length) return;
+    const N = this._neighborTickInterval;
+    const periods = [0];
+    for (const r of data.registeredClasses || []) {
+      const T = r.tickInterval | 0;
+      if (T <= 1 || r.ticks !== true || periods.length > 255) continue;
+      const period = Math.ceil(N / T) * T;
+      const start = Math.max(0, r.startIndex | 0);
+      const end = Math.min(n, r.endIndex | 0);
+      if (period > 0xffff || end <= start) continue;
+      const c = periods.length;
+      periods.push(period);
+      for (let i = start; i < end; i++) {
+        this._typedNeighborClass[i] = c;
+        // Logic ticks slot i on the frames f with f % T === its phase; its list comes on f - LEAD.
+        this._typedNeighborOffset[i] = (((tickBucketPhase(i, T) - TYPED_NEIGHBOR_LEAD) % period) + period) % period;
+      }
+    }
+    if (periods.length === 1) return;
+    this._typedNeighborPeriods = Int32Array.from(periods);
+    this._typedNeighborNow = new Int32Array(periods.length);
+    this._logicFrameSlot = slot;
+  }
+
+  /**
    * The neighbour search of the owned entities (E-76 W5, E-78). The per-entity decisions (stagger, skin
    * reuse) stay here; every list to rebuild goes to one gather_batch call (wasm/spatialGather.c: the JS
    * arithmetic in double, this worker's circle patterns in order); then the bookkeeping, then the publish
@@ -1316,6 +1381,23 @@ class SpatialWorker extends AbstractWorker {
     const poseGen = Atomics.load(this._poseGen, 0);
     const rowPoseGen = this._rowPoseGen;
     const sharedRows = this.totalSpatialWorkers > 1;
+    // E-200: logic frames since this worker's last search (0 until logic publishes one, or if it has not moved),
+    // and each typed class's place in its period. A list is due when its refresh frame fell in those frames.
+    const typedClass = this._typedNeighborClass;
+    const typedOffset = this._typedNeighborOffset;
+    const typedPeriods = this._typedNeighborPeriods;
+    const typedNow = this._typedNeighborNow;
+    let logicStep = 0;
+    if (this._logicFrameSlot >= 0) {
+      const logicFrame = this.frameRateData[this._logicFrameSlot] | 0;
+      if (logicFrame > 0) {
+        const last = this._lastLogicFrame;
+        // The first frame, or logic's counter going back (a restart): this frame alone.
+        logicStep = last < 0 || logicFrame < last ? 1 : logicFrame - last;
+        this._lastLogicFrame = logicFrame;
+        for (let c = 1; c < typedPeriods.length; c++) typedNow[c] = logicFrame % typedPeriods[c];
+      }
+    }
 
     this._processedFrameCounter++;
     if (this._processedFrameCounter > SPATIAL_STAMP_FRAME_MASK) {
@@ -1358,7 +1440,14 @@ class SpatialWorker extends AbstractWorker {
       // Schedule stagger: only ~1/tickInterval entities rebuild per frame.
       let scheduleSkipRebuild = false;
       if (tickInterval > 1) {
-        if (--nextTick[entityA] > 0) {
+        const tc = typedClass[entityA];
+        if (tc !== 0 && (lightActive === null || lightActive[entityA] === 0)) {
+          // E-200: logic frames since this slot's last refresh frame (_setupTypedNeighborStagger); due if that
+          // frame came since the last search. Stateless, so a slot whose row changed owner keeps its phase.
+          let since = typedNow[tc] - typedOffset[entityA];
+          if (since < 0) since += typedPeriods[tc];
+          scheduleSkipRebuild = since >= logicStep;
+        } else if (--nextTick[entityA] > 0) {
           scheduleSkipRebuild = true;
         } else {
           nextTick[entityA] = tickInterval;

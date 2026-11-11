@@ -242,6 +242,9 @@ function buildRegisteredClassesInfo(scene) {
     deriveSpeed: r.class.deriveSpeed === true,
     isStatic: r.class.isStatic === true,
     animationEnd: definesBelow(r.class, GameObject, 'onAnimationEnd'),
+    // E-200: the spatial worker gives a class that ticks every few frames its lists before its ticks.
+    tickInterval: r.class.tickInterval == null ? 1 : r.class.tickInterval | 0,
+    ticks: GameObject.typeNeedsLogicTick(r.class),
     engineProvided: r.class.scriptUrl === null,
     components: r.components.map((c) => c.name),
   }));
@@ -502,6 +505,8 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     debugWorkerLog(`[Scene]   → Initializing spatial worker ${i}...`);
     postWorkerInitMessage(scene.workers.spatialWorkers[i], initData, {
       frameRateIndex: spatialStartIndex + i,
+      // E-200: where logic 0 publishes its frame number (its frameRateData row).
+      logicFrameRateIndex: logicStartIndex,
       workerIndex: i,
       totalSpatialWorkers: numberOfSpatialWorkers,
       frameClockSlot: frameClockSlot('spatial', i),

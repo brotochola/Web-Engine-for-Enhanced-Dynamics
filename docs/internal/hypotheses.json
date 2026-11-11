@@ -11219,10 +11219,10 @@
     {
       "id": "E-200",
       "title": "Neighbour lists refreshed with each entity's tick bucket",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (79065acc, R-0865)",
       "date": "2026-11-10",
-      "result": "",
+      "result": "kept 2026-11-11 (79065acc): Boids ?steer=0 spatial 7.186 -> 5.828 ms (-15.0 %, 0/4; A/A +0.5 %); kernel boids +30.5 %; Predator NEUTRAL (spatial -4.8 %); the flocking demo's flock gathers in clouds (the owner prefers it)",
       "next": "Predator uses neighborTickInterval 15 for all, but Boid ticks every 30, the soldier 6, the civilian 4. Refresh a list on the frame before its staggeredUpdates bucket, per type with a tickInterval; Boids does about half the spatial work and civilians read fresh lists. Owner: spatial in Boids and Predator.",
       "area": "spatial",
       "kind": "js",
@@ -11236,9 +11236,9 @@
         "neighbor lists"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 29
+        "R-0854",
+        "R-0865"
+      ]
     },
     {
       "id": "E-201",
@@ -19803,6 +19803,20 @@
       "title": "DX-VOLLIGHTS planned (lamps cast a volume's shadow, basic and raycasted lighting) and N-134 filed (raycasted lighting hides every sprite shadow)",
       "verdict": "note",
       "text": "**DX-VOLLIGHTS planned and N-134 filed: lamps do not see a volume in either lighting mode, and raycasted lighting hides every sprite shadow.** Nothing timed. Read from the code at 99e39b8b.\n\nThe owner asked whether Sun Street's raycasted lamps interact with its volumes. They do not:\n- `VolumeShadowCaster`'s rows sit in the `volumeShadows` MESH layer, which only the sun moves.\n- Raycasted lighting stops a lamp with pre-render's 2D sweep over `LightOccluder` shapes.\n- Basic lighting stops it only with `ShadowCaster` stamps.\n\nSun Street puts a `LightOccluder` on every house and car. In its oblique view, that wedge darkens the wall that faces the lamp and runs to the reach whatever the object's height.\n\nThe owner then asked for a plan that pins down the API, the developer experience and the picture. It is `DX_VOLLIGHTS_DESIGN.md`, which works out DX-VOLUME's phase 3:\n- **The shadow:** `p + (p − l) · h / (H − h)`, with `H` the bulb's `sourceHeight`. It runs to the reach where the object is taller than the bulb, fades with the lamp's falloff, and never falls on the object's own picture.\n- **The cases:** each one with Sun Street's sizes. A car 100 px from a 40 px bulb throws 48 and 208 px (body and cabin); under a 150 px bulb, 9 and 22 px. A house 100 px from a 150 px bulb throws 226 px.\n- **The API:** `castsLights`, as decided for DX-VOLUME, and the existing shadow-casting lights. A light skips its own entity's volume and any footprint it stands in. A class with both `LightOccluder` and a volume that casts lights warns at load.\n- **Two ways to draw it:**\n  - Basic lighting: into `shadowRT`, one draw per light, MAX within a light.\n  - Raycasted lighting: a mask of four lights per pass that cuts each fan, with the volumes' own pictures cleared, because `visPolyRT` multiplies over the whole frame.\n- **Phases 0 to 4** and **eight decisions**, recommended: basic lighting first; Sun Street on basic lighting with volumes, `R` comparing.\n\nN-134 came out of that reading. `initVisibilityPolygonSystem` (pixiWorker.js) runs after `createCastedShadowsSystem` and hides `castedShadows`, because the cookies crushed the fans' umbra. The sun's sprite shadows and the lamps' stamps go with it. Conurbano's notes saw it (\"turns off the projected shadows of people and trees\"), and Sun Street runs raycasted by default. Confirmed in the code, not yet seen on screen.\n\nRanked 32 (N-134) and 33 (DX-VOLLIGHTS), after the queue's 31."
+    },
+    {
+      "id": "R-0865",
+      "date": "2026-11-11",
+      "time": "02:26",
+      "timeFrom": "recorded",
+      "title": "E-200 kept: lists two logic frames before each tick; Boids at a fixed load spatial -15.0 % (0/4), Predator NEUTRAL",
+      "verdict": "kept",
+      "text": "**E-200 kept (79065acc, sat as 7d19810e, the same tree): a class that ticks every few frames gets its neighbour lists two logic frames before its ticks. Boids at a fixed load, spatial -15.0 % (0/4).** 2026-11-11, 01:59 to 02:26 (the result files' times), Chrome, headed, source, detailed stats off, AC power, no other bench Chromium. Every sitting ran `runPredatorAbab.mjs --full-rev` from the main folder, so each side served its own revision's src and scenes.\n\n**The change.** Spatial's stagger refreshed every list every `neighborTickInterval` frames (15 in Boids and Predator), whatever its entity's logic interval. Boid ticks every 30, so half its lists were never read. A soldier ticks every 6 and a civilian every 4; they read lists up to 14 frames old.\n\nThe spatial worker now reads logic 0's frame number. Logic publishes it in frameRateData as its frame starts, and `sceneWorkerBootstrap` passes its row as `logicFrameRateIndex`, with each class's `tickInterval` and whether it ticks. A class that ticks every T frames (`logic.staggeredUpdates`, a `tick`) gets its list on the logic frames f with f % P equal to the slot's offset:\n- P is the smallest multiple of T not under the interval.\n- The offset is (tickBucketPhase − 2) mod P: two frames ahead lands before the tick whether logic started this vsync before or after spatial.\n\nThe test is stateless: logic's frame modulo P once per class a frame, and one compare per slot. A first, countdown version missed phases when a row changed spatial worker, because the new owner's countdown was stale. Lights and classes that tick every frame keep the old countdown.\n\n**Tests.** `spatialTypedStagger.test.js` checks lists against logic's tick phases: boids every 30, then a mixed scene (civilians every 16, soldiers every 18, boids every 30, props on the plain 15). It fails on main and passes here. Node 2355 of 2357 in the branch's worktree; the two failures are pixi tests that need node_modules, which that worktree does not have.\n\n**Kernel.** `spatialWorkerMicrobench --types`, a tool commit of its own (eae26c6b), A B A B in Node, 4 pairs, n = 16 500, 3 workers:\n- `boids`: 299.4 → 388.8 frames/s, +30.5 %, 4/4. Lists gathered 936 → 504 a frame, published 981 → 535.\n- `predator` (civilians, soldiers, boids, props): 266.2 → 312.9, +17.1 %, 4/4. Gathered 936 → 850.\n- No typed class: +5.1 %, 2/4. The same checksum and rates as main, so this is the kernel's noise.\n\n**Boids, flocking (the demo as it is), 4 pairs: FAIL (load).** Spatial 8.403 → 7.322 ms (-17.4 %, worse 1/4, cv 12/9 %), physics -8.1 %, VISIBLE_ENTITIES -29.1 % (cv 9/1 %). Fresher lists changed the flock. A list up to 14 frames old still holds boids that have left, and pulls the flock together; a fresh one does not, and the flock spreads. B gathered 1 511 to 2 007 lists a frame against an expected 1 333: the 0.5 to 2 % of boids with no neighbour are searched every frame.\n\n**Boids `?steer=0`, 4 pairs: KEPT (product).** A demo knob, its own commit before the change (ecaa2051): every neighbour is read and weighed, and their pull is scaled by 1e-9, so the flock's path does not depend on a list's age. Spatial 7.186 → 5.828 ms, -15.0 %, worse 0/4, cv 10/10 %. Physics -1.9 % (1/4). VISIBLE_ENTITIES +0.2 %, ENTITIES_PROCESSED +0.1 %.\n\n**The session's A/A, Boids `?steer=0`, ecaa2051 against itself, 4 pairs: NEUTRAL.** Spatial +0.5 % (worse 2/4, cv 3/5 %), physics -1.1 %. The detection limit is about 3 to 5 %.\n\n**Predator's gate, 4 pairs: NEUTRAL.**\n- Spatial 4.905 → 4.511 ms (-4.8 %, worse 0/4; -6.4 % against the others, 4/4).\n- Logic +1.1 %, pre-render +1.6 %, presented 60.0 both.\n- Physics +10.2 % (worse 3/4, cv 15/4 %, not blocking) is load. B moved 27 % more bodies a frame (6 664 against 5 244 on average): fresher lists make the AI react. Per thousand moved bodies, B is 17 % cheaper (0.873 against 1.057 ms).\n- Load keys within 0.5 %.\n\n**The look, judged by the owner on 2026-11-11.** Side by side, 20 s after load with the whole world in view, main's flock draws thin streams and the branch's gathers into thick clouds: a list read when it is 0 to 14 frames old against one read at 2. Logic's four workers were on the same frame (frameRateData: 269, 592, 951, 1440 on all four), so the phase is as designed. The owner: the branch's looks better. Spreading the lists' ages like main's (an offset per slot) would have kept main's look with the same saving; not done.",
+      "commits": [
+        "eae26c6b",
+        "ecaa2051",
+        "79065acc"
+      ]
     }
   ],
   "leads": [
