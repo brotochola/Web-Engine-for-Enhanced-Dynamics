@@ -44,6 +44,7 @@ import { bindBulletTick } from '../core/bulletTickClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
 import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
 import { GpuParticles } from '../core/gpuParticles.js';
+import { NavScratch, searchAstar } from '../core/navAstar.js';
 import {
   getColliderBounds as getColliderBoundsImport,
   getCellRange as getCellRangeImport,
@@ -161,9 +162,6 @@ function decorationScreenFlips(activeData, start, count, cameraBounds) {
 const OCCUPIED_SLOT = 1;
 const TOMBSTONE_SLOT = 2;
 
-const NAV_DX = Object.freeze([0, 1, 1, 1, 0, -1, -1, -1]);
-const NAV_DY = Object.freeze([-1, -1, 0, 1, 1, 1, 0, -1]);
-const NAV_COST = Object.freeze([10, 14, 10, 14, 10, 14, 10, 14]);
 
 function nextPowerOfTwo(value) {
   let n = 1;
@@ -326,45 +324,6 @@ class PathRequestQueue {
 
   get size() {
     return this.count;
-  }
-}
-
-/**
- * NavScratch: reusable buffers for the A* search (computePath). The flowfield searches in the navigation memory
- * (navFlowfield.wasm).
- */
-class NavScratch {
-  constructor(totalCells, maxPathLength, gridWidth, gridHeight) {
-    this.stamp = new Uint32Array(totalCells);
-    this.currentStamp = 0;
-
-    // The flowfield's distance cap, which navFlowfield.wasm takes (bindNavFlowfield).
-    this.maxDistance = Math.min(65535, (gridWidth + gridHeight) * 14);
-
-    this.heapCell = new Uint32Array(totalCells);
-    this.heapFCost = new Uint32Array(totalCells);
-    this.heapGCost = new Uint32Array(totalCells);
-    this.heapSize = 0;
-    this.cameFrom = new Uint32Array(totalCells);
-    this.inOpenSet = new Uint8Array(totalCells);
-    this.pathResult = new Uint32Array(maxPathLength);
-  }
-
-  reset() {
-    this.currentStamp++;
-    if (this.currentStamp === 0) {
-      this.stamp.fill(0);
-      this.currentStamp = 1;
-    }
-    this.heapSize = 0;
-  }
-
-  isVisited(cell) {
-    return this.stamp[cell] === this.currentStamp;
-  }
-
-  markVisited(cell) {
-    this.stamp[cell] = this.currentStamp;
   }
 }
 
@@ -1681,149 +1640,9 @@ class ParticleWorker extends AbstractWorker {
 
   computePath(fromCell, toCell) {
     const willUseEmptySlot = this._hasEmptyPathSlot();
-
     const scratch = this.scratch;
-    scratch.reset();
-
-    const walkability = NavGrid.getWalkabilityArray();
-    const gridWidth = this.gridWidth;
-    const gridHeight = this.gridHeight;
-
-    scratch.inOpenSet.fill(0);
-
-    const targetX = toCell % gridWidth;
-    const targetY = Math.floor(toCell / gridWidth);
-
-    const heuristic = (cell) => {
-      const cx = cell % gridWidth;
-      const cy = Math.floor(cell / gridWidth);
-      const dx = Math.abs(cx - targetX);
-      const dy = Math.abs(cy - targetY);
-      return 10 * Math.max(dx, dy) + 4 * Math.min(dx, dy);
-    };
-
-    scratch.heapGCost[fromCell] = 0;
-    const startH = heuristic(fromCell);
-    scratch.heapFCost[fromCell] = startH;
-    scratch.cameFrom[fromCell] = fromCell;
-
-    const heapPush = (cell) => {
-      const idx = scratch.heapSize++;
-      scratch.heapCell[idx] = cell;
-      let i = idx;
-      while (i > 0) {
-        const parent = (i - 1) >> 1;
-        if (scratch.heapFCost[scratch.heapCell[i]] < scratch.heapFCost[scratch.heapCell[parent]]) {
-          const tmp = scratch.heapCell[i];
-          scratch.heapCell[i] = scratch.heapCell[parent];
-          scratch.heapCell[parent] = tmp;
-          i = parent;
-        } else {
-          break;
-        }
-      }
-    };
-
-    const heapPop = () => {
-      if (scratch.heapSize === 0) return -1;
-      const result = scratch.heapCell[0];
-      scratch.heapSize--;
-      if (scratch.heapSize > 0) {
-        scratch.heapCell[0] = scratch.heapCell[scratch.heapSize];
-        let i = 0;
-        while (true) {
-          const left = 2 * i + 1;
-          const right = 2 * i + 2;
-          let smallest = i;
-          if (left < scratch.heapSize && scratch.heapFCost[scratch.heapCell[left]] < scratch.heapFCost[scratch.heapCell[smallest]]) {
-            smallest = left;
-          }
-          if (right < scratch.heapSize && scratch.heapFCost[scratch.heapCell[right]] < scratch.heapFCost[scratch.heapCell[smallest]]) {
-            smallest = right;
-          }
-          if (smallest !== i) {
-            const tmp = scratch.heapCell[i];
-            scratch.heapCell[i] = scratch.heapCell[smallest];
-            scratch.heapCell[smallest] = tmp;
-            i = smallest;
-          } else {
-            break;
-          }
-        }
-      }
-      return result;
-    };
-
-    heapPush(fromCell);
-    scratch.inOpenSet[fromCell] = 1;
-
-    let found = false;
-
-    while (scratch.heapSize > 0) {
-      const current = heapPop();
-      scratch.inOpenSet[current] = 0;
-
-      if (current === toCell) {
-        found = true;
-        break;
-      }
-
-      if (scratch.isVisited(current)) continue;
-      scratch.markVisited(current);
-
-      const currentG = scratch.heapGCost[current];
-      const currentX = current % gridWidth;
-      const currentY = Math.floor(current / gridWidth);
-
-      for (let dir = 0; dir < 8; dir++) {
-        const nx = currentX + NAV_DX[dir];
-        const ny = currentY + NAV_DY[dir];
-
-        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
-
-        const neighbor = ny * gridWidth + nx;
-
-        if (walkability[neighbor] === 0) continue;
-        if (scratch.isVisited(neighbor)) continue;
-
-        const tentativeG = currentG + NAV_COST[dir];
-
-        if (!scratch.inOpenSet[neighbor] || tentativeG < scratch.heapGCost[neighbor]) {
-          scratch.cameFrom[neighbor] = current;
-          scratch.heapGCost[neighbor] = tentativeG;
-          scratch.heapFCost[neighbor] = tentativeG + heuristic(neighbor);
-
-          if (!scratch.inOpenSet[neighbor]) {
-            heapPush(neighbor);
-            scratch.inOpenSet[neighbor] = 1;
-          }
-        }
-      }
-    }
-
-    let pathLength = 0;
-    if (found) {
-      let current = toCell;
-      while (current !== fromCell && pathLength < scratch.pathResult.length) {
-        scratch.pathResult[pathLength++] = current;
-        current = scratch.cameFrom[current];
-      }
-      // Only append the origin when there is room. Writing past the end of a
-      // typed array is a silent no-op, but pathLength would still advance and
-      // writePathData would then read one element beyond the array, getting
-      // undefined -> 0, which is a real cell id and lands in the path as a
-      // phantom waypoint.
-      if (pathLength < scratch.pathResult.length) {
-        scratch.pathResult[pathLength++] = fromCell;
-      }
-
-      for (let i = 0; i < pathLength / 2; i++) {
-        const tmp = scratch.pathResult[i];
-        scratch.pathResult[i] = scratch.pathResult[pathLength - 1 - i];
-        scratch.pathResult[pathLength - 1 - i] = tmp;
-      }
-    }
-
+    // N-137: navAstar.js, with the open set's decrease-key.
+    const pathLength = searchAstar(scratch, NavGrid.getWalkabilityArray(), this.gridWidth, this.gridHeight, fromCell, toCell);
     const slot = NavGrid.allocatePathSlot(fromCell, toCell);
     NavGrid.writePathData(slot, scratch.pathResult, pathLength);
 
