@@ -34,6 +34,10 @@ export class MySoldier extends Person {
   outQueryDecorationIndices = new Uint16Array(64);
   /** The logic frame of the tick running now (its FSM reads it); declared here so every soldier keeps one shape. */
   _logicFrame = 0;
+  /** The FSM's line-of-sight cache (canShootTarget): the target it holds, whether it was clear, until which frame. */
+  _losCacheTarget = -1;
+  _losCacheClear = 0;
+  _losCacheUntilFrame = 0;
 
   onSpawned(spawnConfig = {}) {
     // Set spritesheet and animation before super.onSpawned()
