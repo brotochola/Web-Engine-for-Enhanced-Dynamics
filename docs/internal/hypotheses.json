@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-10",
+  "updated": "2026-11-11",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -11547,10 +11547,10 @@
       "id": "DX-GUARDS",
       "title": "The engine says the mistakes a game makes, or fixes them",
       "status": "open",
-      "statusText": "The owner's plan of 2026-11-10, being built on dx/guards",
+      "statusText": "Built 2026-11-10 on dx/guards, not merged; the Predator gate is the owner's",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Load guards C1, C3 to C6, C8 to C10; devChecks and E1 to E7; the guide's common mistakes page; bundles.",
+      "result": "Built 2026-11-10 on dx/guards: load guards C1, C3 to C6, C8 to C10; debug-build guards E1 to E7 with devChecks and debug.checks; F1, F2; the debug bundle's workers speak. Not merged; the Predator gate is the owner's.",
+      "next": "The owner: the Predator gate (hygiene), the demos' empty ticks (C4), N-131, N-132; then merge with bundles.",
       "area": "engine",
       "kind": "dx",
       "refs": [
@@ -11563,7 +11563,53 @@
         "common mistakes",
         "config keys"
       ],
-      "records": []
+      "records": [
+        "R-0857"
+      ]
+    },
+    {
+      "id": "N-131",
+      "title": "collider.isTrigger written after the body exists does nothing",
+      "status": "open",
+      "statusText": "Found 2026-11-10 by DX-GUARDS E3, confirmed in the code, not fixed",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "The setter marks LIFECYCLE (the body made again, as enableHitEvents does) or a sensor command; a test that a trigger set after the body exists reaches Box2D. Predator's money drops then become triggers: its gate's scene changes.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-131"
+      ],
+      "aliases": [
+        "isTrigger",
+        "sensor",
+        "trigger after creation"
+      ],
+      "records": [
+        "R-0857"
+      ]
+    },
+    {
+      "id": "N-132",
+      "title": "A mass set in onSpawned never holds on an entity whose collider has a shape",
+      "status": "open",
+      "statusText": "Found 2026-11-10 by DX-GUARDS E4, confirmed in the code, not fixed",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "The owner's call (a change in behaviour): the spawn's sync keeps a mass set by hand during the spawn. The landing page's Floater and HungCrate then weigh what their comment says.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-132"
+      ],
+      "aliases": [
+        "mass",
+        "onSpawned",
+        "syncMassFromCollider"
+      ],
+      "records": [
+        "R-0857"
+      ]
     }
   ],
   "records": [
@@ -19725,6 +19771,21 @@
       "commits": [
         "422b6b1b",
         "b7672e2d"
+      ]
+    },
+    {
+      "id": "R-0857",
+      "date": "2026-11-11",
+      "time": "00:19",
+      "timeFrom": "recorded",
+      "title": "DX-GUARDS built: guards at load and in the debug build, two fixes, bundles; N-131 and N-132 found",
+      "verdict": "note",
+      "text": "**DX-GUARDS built on `dx/guards` (from `f7860aa2`), not merged; nothing timed, the gates are the owner's.** The owner's plan of 2026-11-10. The engine now names, once and in one line, mistakes a game made in silence, or fixes them. `DX_GUARDS_DESIGN.md` has the inventory (each \"today\" with the test that shows it) and `docs/guide/COMMON_MISTAKES.md` the game author's side.\n\n- **Fixes (approved):** F1 = N-79 (R-0855), F2 = N-130 (R-0856).\n- **At load, both builds:** C1 unknown config keys with the nearest one (`28bdb729`; a schema from the defaults, held by a test to every `config.<section>.<key>` the source reads; takes DX-CONFIGCHECK's unknown-keys part), C3 tickInterval without staggeredUpdates (`98895c48`, DX-CONFIGCHECK's other part, warned rather than turned on), C4 an empty tick (`eeb623da`), C5 a skipped class says why (`f12d73a9`), C6 an asset's URL and HTTP status (`3fb665bf`), C8 lighting almost black (`a8f966ac`), C9 a world smaller than the canvas (`caaec8d2`), C10 a scene file that imports the engine (`71d4ec25`). C2 existed (DX 1.2).\n- **Run time, debug build only:** `devChecks` with a stub for production and `debug.checks` (`d248ccaa`, `56b2e3d8`), E1 a field that hides an accessor (`a42418d5`), E2 a field first written after onSpawned (`0943bdfd`), E3 body flags after the body exists (`5eb51691`), E4 a hand-set mass replaced (`852264f9`), E5 particles born on the floor (`8891968e`), E6 emit keys that are ignored (`577967e3`), E7 unknown key names (`d35084a5`). The bench page turns them off unless `--dev-checks`.\n- **Build:** the debug bundle's workers dropped every console call (no worker warning or error ever reached the console with the debug bundle); now only log and debug (`334b5e77`). Bundles `1a8ef3b4`: the production bundle holds none of the run-time texts, the debug bundle all (a test reads them).\n\n**Checks.** Each guard has a test with the mistake, run on the code before to see it fail, and one in silence. `demos/tests/demosQuiet.test.js` builds the 37 demo scenes and the 78 stress scene files and runs E1 on a page instance of every class. In Chromium: a probe scene that makes each mistake says each line once from source and from the debug bundle, and only the load-time one from the production bundle; every demo with the checks on (WebGPU ones in a window). Suites at `780294e4`: test:node 2406 pass, test:demos 101, test:node:bundle 279, test:bundle 8 of 8, check:types clean, check:dist fresh.\n\n**Found.** Two dead config keys (Bichos, gpuYSortProbeScene) and three fields hiding engine accessors (Sun Street, volumeStressScene) fixed; Planet Physics' ship fields declared and Procedural Tree's unread '+' key replaced. Left, the owner's call: 23 empty ticks in 17 demos and 26 stress scenes (Predator's House, Barrel and TallLight among them), Predator's `MySoldier._logicFrame` (E2), the landing page's page keys (E7). New: N-131 (`isTrigger` after the body exists: Predator's money never becomes a trigger) and N-132 (a mass set in onSpawned never holds: the landing page's floating crates weigh twice what their comment says).\n\n**The plan against the code.** C2 existed; E6 was misdescribed (spritesheet + animation + frame do resolve; what is ignored is a key without its partner); E3's `enableHitEvents` already reaches the body; the guide never asked games to remove joints by hand; C10's bundle case already worked.\n\n**Gates for the owner.** Hygiene keep for the branch, Predator: `MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name DX-GUARDS --vs f7860aa2 --hyp-rev dx/guards --pairs 4`. F2 on spawnStormScene: in R-0856.",
+      "commits": [
+        "28bdb729",
+        "d248ccaa",
+        "334b5e77",
+        "1a8ef3b4"
       ]
     }
   ],
