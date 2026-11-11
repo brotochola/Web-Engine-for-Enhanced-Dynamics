@@ -144,6 +144,7 @@ import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
 import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
+import { darkLightingText } from '../util/sceneGuards.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
@@ -901,6 +902,9 @@ class Scene {
       this.config.lighting.maxShadowSprites =
         this.config.lighting.maxShadowCastingLights * this.config.lighting.maxShadowsPerLight;
     }
+    // DX-GUARDS C8: lighting on, the default ambient and no sun: what no light reaches is almost black.
+    const dark = darkLightingText(sceneName, this.constructor.config);
+    if (dark) warnOnce(sceneName, 'dark-lighting', dark);
     // Compute shadowsEnabled (requires both enabled and shadowsEnabled)
     this.config.lighting.shadowsEnabled =
       this.config.lighting.enabled && this.config.lighting.shadowsEnabled !== false;
