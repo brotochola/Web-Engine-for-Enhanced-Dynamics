@@ -3745,6 +3745,9 @@ per frame, and `rbAx/rbAy/rbAa` are written per entity whatever the type.
 type's `tick` looked up once per bucket (`EntityClass.prototype.tick`, called with `.call`), checking that no instance
 owns a `tick` and that a hot reload refreshes the cached one. Only if the kernel moves, the scene. Owner: Predator's
 logic; tick semantics unchanged (an own-property `tick` still wins).
+**Result:** dropped 2026-11-11 at step 0 (R-0899): `tickLoopKernel.mjs`, the shipped loop 7.1 to 7.8 ns a tick, the
+per-type lookup with `.call` 46 % slower. The dispatch is about 0.04 ms of a Predator frame; the loop's self time there
+is not it.
 
 ## Not doing (read the log first)
 
