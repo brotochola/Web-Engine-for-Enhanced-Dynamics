@@ -14,6 +14,7 @@ import '../../tests/helpers/registerWebRoot.mjs';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const WEED = (await import('../../src/index.js')).default;
 const { resetWarnOnce } = await import('../../src/util/dxWarn.js');
+const { checkFirstInstance } = await import('../../src/core/debug/devChecks.js');
 globalThis.WEED = WEED; // landingScene reads the global, as a page that imported the engine has it
 
 /** scene file (from the repo root) and export → the lines it gives on purpose. */
@@ -65,6 +66,7 @@ test('every demo and stress scene builds with only the warnings it gives on purp
   const saved = { warn: console.warn, error: console.error, log: console.log, info: console.info };
   const got = {};
   let built = 0;
+  let pageChecked = 0;
   try {
     for (const file of files) {
       const rel = relative(root, file).replace(/\\/g, '/');
@@ -78,8 +80,21 @@ test('every demo and stress scene builds with only the warnings it gives on purp
         if (typeof value !== 'function' || !(value.prototype instanceof WEED.Scene)) continue;
         resetWarnOnce();
         lines.length = 0;
-        new value({});
+        const scene = new value({});
         built++;
+        // E1 (a field that hides an accessor) on each class's first page instance, as Scene._createPageInstances does.
+        // A constructor that needs the shared buffers (not made here) is skipped.
+        for (const r of scene.registeredClasses) {
+          if (!(r.count > 0)) continue;
+          let instance = null;
+          try {
+            instance = new r.class(r.startIndex, scene.config, null, { page: true });
+          } catch {
+            continue;
+          }
+          pageChecked++;
+          checkFirstInstance(instance);
+        }
         const left = lines.splice(0).filter((l) => !kept(l));
         if (left.length) got[`${rel} ${name}`] = left;
       }
@@ -88,5 +103,6 @@ test('every demo and stress scene builds with only the warnings it gives on purp
     Object.assign(console, saved);
   }
   assert.ok(built > 120, `only ${built} scenes built`);
+  assert.ok(pageChecked > 150, `only ${pageChecked} page instances checked`);
   assert.deepEqual(got, EXPECTED);
 });

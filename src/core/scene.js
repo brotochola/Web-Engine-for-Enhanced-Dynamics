@@ -146,7 +146,7 @@ import { warnOnce } from '../util/dxWarn.js';
 import { fetchAsset, fetchAssetJson } from '../util/fetchAsset.js';
 import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
 import { darkLightingText, smallWorldText } from '../util/sceneGuards.js';
-import { setDevChecks } from './debug/devChecks.js';
+import { checkFirstInstance, setDevChecks } from './debug/devChecks.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
@@ -749,6 +749,9 @@ class Scene {
       const own = new Array(count);
       for (let k = 0; k < count; k++) {
         const instance = Object.freeze(new EntityClass(startIndex + k, this.config, null, { page: true }));
+        // DX-GUARDS E1 (debug build): a field that hides an accessor. The class's fields are the same in every
+        // thread, so the page's first instance is enough.
+        if (k === 0) checkFirstInstance(instance);
         own[k] = instance;
         all[startIndex + k] = instance;
       }

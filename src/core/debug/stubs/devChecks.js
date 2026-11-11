@@ -3,3 +3,4 @@ export function setDevChecks() {}
 export function devChecksOn() {
   return false;
 }
+export function checkFirstInstance() {}
