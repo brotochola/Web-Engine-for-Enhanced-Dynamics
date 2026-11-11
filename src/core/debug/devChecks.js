@@ -271,7 +271,7 @@ export function unknownKey(key, keyIndexMap, aliases) {
   keysSaid.add(key);
   const tracked =
     'It reads the letters, digits, punctuation, arrows (arrowleft …), f1 to f12, space, enter, escape, tab, backspace, ' +
-    'delete, shift, control, alt and meta: KeyboardEvent.key, in any case.';
+    'delete, shift, control, alt, meta, pageup, pagedown, home and end: KeyboardEvent.key, in any case.';
   if (typeof key !== 'string') {
     warnOnce(`key:${String(key)}`, 'unknown-key', `Keyboard: a key is asked for by ${typeof key} ${String(key)}, never down: it takes a key's name ('a', 'space'). ${tracked}`);
     return;

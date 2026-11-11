@@ -54,7 +54,7 @@ A few mistakes are not warned about: the engine does the right thing instead. Th
 
 | Mistake | What happened | What the engine says |
 | --- | --- | --- |
-| `Keyboard.isDown('spacee')`, or a key the engine does not read (`pageup`) | Always false | The nearest key it reads, and the keys it reads. Names are `KeyboardEvent.key` in any case, plus `space`, `ctrl`, `return`. (Run time.) |
+| `Keyboard.isDown('spacee')`, or a key the engine does not read (`insert`; it reads the letters, digits, punctuation, arrows, f1 to f12, space, enter, escape, tab, backspace, delete, shift, control, alt, meta, pageup, pagedown, home and end) | Always false | The nearest key it reads, and the keys it reads. Names are `KeyboardEvent.key` in any case, plus `space`, `ctrl`, `return`. (Run time.) |
 
 ## Assets and scene files
 

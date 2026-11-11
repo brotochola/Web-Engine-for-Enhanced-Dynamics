@@ -521,6 +521,11 @@ class Scene {
       this.keyMap[char] = keyIndex++;
     });
 
+    // Page keys, after the rest so every other key keeps its index (the landing page's chapters read pageup and pagedown).
+    for (const name of ['pageup', 'pagedown', 'home', 'end']) {
+      this.keyMap[name] = keyIndex++;
+    }
+
     this.inputBufferSize = keyIndex;
 
     // H-01. `updateKeyboardBuffer` walked `Object.entries(this.keyMap)` on every

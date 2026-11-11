@@ -389,14 +389,14 @@ test('E7: a key name the engine does not read is named once, with the nearest it
     assert.equal(Keyboard.isDown('spacee'), false);
     assert.equal(Keyboard.isDown('spacee'), false);
     assert.equal(Keyboard.isPressed('arowleft'), false);
-    assert.equal(Keyboard.isDown('pageup'), false);
+    assert.equal(Keyboard.isDown('insert'), false);
   });
   const reads = 'It reads the letters, digits, punctuation, arrows (arrowleft …), f1 to f12, space, enter, escape, tab, ' +
-    'backspace, delete, shift, control, alt and meta: KeyboardEvent.key, in any case.';
+    'backspace, delete, shift, control, alt, meta, pageup, pagedown, home and end: KeyboardEvent.key, in any case.';
   assert.deepEqual(lines, [
     `WeedJS: Keyboard: "spacee" is not a key the engine reads, so it is never down. Did you mean "space"? ${reads}`,
     `WeedJS: Keyboard: "arowleft" is not a key the engine reads, so it is never down. Did you mean "arrowleft"? ${reads}`,
-    `WeedJS: Keyboard: "pageup" is not a key the engine reads, so it is never down. ${reads}`,
+    `WeedJS: Keyboard: "insert" is not a key the engine reads, so it is never down. ${reads}`,
   ]);
 });
 
