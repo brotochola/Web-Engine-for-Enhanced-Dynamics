@@ -81,6 +81,9 @@ const FLOWFIELD_STATUS = {
 /**
  * Path slot status values
  */
+/** E-214: the slots an eviction compares. */
+const PATH_EVICT_SAMPLE = 8;
+
 const PATH_STATUS = {
   EMPTY: 0,
   COMPUTING: 1,
@@ -204,6 +207,11 @@ export class NavGrid {
   static _pathIndexOffset = 0;
   static _pathIndex = new Int32Array(0);
   static _pathIndexMask = 0;
+  // E-214 (the particle worker's, which alone allocates): the slots never given a path since the last invalidate, as a
+  // stack (slot 0 on top), and the hand the eviction samples from once they are gone.
+  static _pathFree = new Int32Array(0);
+  static _pathFreeCount = 0;
+  static _pathHand = 0;
 
   /**
    * Shared LRU clock: wall-clock 16 ms ticks (about a frame), the same in every worker (frame counters are per worker
@@ -311,6 +319,8 @@ export class NavGrid {
     const indexEntries = this._pathIndexEntries(this._maxPaths);
     this._pathIndex = new Int32Array(sab, this._pathIndexOffset, indexEntries);
     this._pathIndexMask = indexEntries - 1;
+    this._pathFree = new Int32Array(this._maxPaths);
+    this._resetPathFree();
 
     this._initialized = true;
   }
@@ -820,6 +830,16 @@ export class NavGrid {
       this._clearPathSlot(i);
     }
     this._pathIndex.fill(0);
+    this._resetPathFree();
+  }
+
+  /** E-214: every slot free again, slot 0 first. */
+  static _resetPathFree() {
+    const free = this._pathFree;
+    const n = free.length;
+    for (let i = 0; i < n; i++) free[i] = n - 1 - i;
+    this._pathFreeCount = n;
+    this._pathHand = 0;
   }
 
   // =========================================================
@@ -1222,29 +1242,29 @@ export class NavGrid {
     const existing = this._indexedPathSlot(fromCell, toCell);
     if (existing >= 0) return existing;
 
-    let emptySlot = -1;
-    let lruSlot = 0;
-    let lruAge = -1;
-    const now = this.lruNow();
-
-    for (let i = 0; i < this._maxPaths; i++) {
-      const idx = baseIndex + i * slotStride;
-
-      // Empty slot?
-      if (u32[idx + 4] === PATH_STATUS.EMPTY && emptySlot < 0) {
-        emptySlot = i;
+    // E-214: a slot never given a path since the last invalidate, else the oldest stamp (by age, N-139) of a few
+    // slots from a moving hand: an approximate LRU that reads PATH_EVICT_SAMPLE slots, not every one. A slot an agent
+    // walks is touched every tick, so it is young wherever the hand finds it. Slots another worker cleared (a save's
+    // invalidate) hold stamp 0, the oldest there is.
+    let slot = 0;
+    if (this._pathFreeCount > 0) {
+      slot = this._pathFree[--this._pathFreeCount];
+    } else {
+      const max = this._maxPaths;
+      const sample = max < PATH_EVICT_SAMPLE ? max : PATH_EVICT_SAMPLE;
+      const now = this.lruNow();
+      let hand = this._pathHand;
+      let oldest = -1;
+      for (let k = 0; k < sample; k++) {
+        const age = (now - u32[baseIndex + hand * slotStride + 2]) >>> 0;
+        if (age > oldest) {
+          oldest = age;
+          slot = hand;
+        }
+        hand = hand + 1 === max ? 0 : hand + 1;
       }
-
-      // Track LRU: the oldest stamp, by age (N-139)
-      const age = (now - u32[idx + 2]) >>> 0;
-      if (age > lruAge) {
-        lruAge = age;
-        lruSlot = i;
-      }
+      this._pathHand = hand;
     }
-
-    // Use empty slot if available, otherwise evict LRU
-    const slot = emptySlot >= 0 ? emptySlot : lruSlot;
 
     // Initialize slot header. Status first (Atomics) so readers never see
     // READY while the slot is being repurposed.
