@@ -548,6 +548,9 @@ class PixiRenderer extends AbstractWorker {
     // it; null where it cannot be), and whether that was tried.
     this._keyedSunMesh = null;
     this._keyedSunTried = false;
+    // E-211: whether the last sun pass would have drawn those instances (it had no keyed caster rows from pre-render),
+    // so the keyed pack writes their shadow terms for the next one.
+    this._keyedSunWanted = false;
     // E-191 step 2: the shadow passes over pre-render's keyed caster rows (the sun's, the stamps'), made with the keyed
     // sun pass; whether that was tried; and whether a frame of such rows was refused for want of them (said once).
     this._keyedSunRowsMesh = null;
@@ -4907,13 +4910,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   updateShadowSprites() {
     if (!this.shadowSpritesEnabled) return;
     if (!this.shadowBatch || !this.shadowRT) return;
-    if (!layerIsVisible(Layer.castedShadows?.id)) return;
+    if (!layerIsVisible(Layer.castedShadows?.id)) {
+      this._setKeyedSunStream(false);
+      return;
+    }
     const interval = this.shadowUpdateInterval | 0;
     const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
     this._shadowUpdateTick++;
     if (!skip) {
       this._drawGpuCasterShadows();
     }
+    // E-211: the next frame's keyed pack writes the instances' shadow terms only when that frame's sun pass runs and
+    // would draw them.
+    const nextSkip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
+    this._setKeyedSunStream(this._keyedSunWanted && !nextSkip);
+  }
+
+  /** E-211: whether the entity batch's next keyed packs write its instances' shadow terms (once it has them). */
+  _setKeyedSunStream(on) {
+    const b = this.entitiesBatch;
+    if (b && b.keyedShadows) b.setKeyedShadowStream(on);
   }
 
   createShadowSpriteSystem() {
@@ -5072,6 +5088,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _drawGpuCasterShadows() {
+    this._keyedSunWanted = false;
     this._gpuSunDrew = false;
     this._gpuPassesThisFrame = 0;
     this._gpuCastersThisFrame = 0;
@@ -5123,14 +5140,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     batch.setTargetSpace(false, 0, 0, 1);
     if (u.uSun[3] > 0 && sunN > 0) {
-      // E-191: on a keyed frame the sun's casters are the entity batch's own instances (a sprite that casts none has
-      // no height), already uploaded with their shadow terms; else pre-render's sun rows.
-      const keyedSun = this._keyedSunFor(shader);
-      if (keyedSun !== null) {
-        this._drawGpuCasterPass(keyedSun, group, true);
-      } else if (keyedRows) {
+      // E-211: pre-render's keyed sun rows when it wrote them (it packs them for the stamps in any case): 28 bytes a
+      // caster, read in order, where the instances cost the keyed pack 12 bytes a sprite gathered from three more
+      // queue columns and 12 more written. Else (E-191) the entity batch's own instances, when this frame's pack wrote
+      // their shadow terms (a sprite that casts none has no height); else pre-render's full sun rows.
+      this._keyedSunWanted = !keyedRows;
+      const keyedSun = keyedRows ? null : this._keyedSunFor(shader);
+      if (keyedRows) {
         const rows = this._keyedRowsMesh(this._keyedSunRowsMesh, gpu.sun, sunN, GPU_KEYED_CASTER_FLOATS);
         if (rows !== null) this._drawGpuCasterPass(rows, group, true);
+      } else if (keyedSun !== null) {
+        this._drawGpuCasterPass(keyedSun, group, true);
       } else {
         this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
         this._drawGpuCasterPass(mesh, group, true);

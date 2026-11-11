@@ -1229,6 +1229,16 @@ export class InstancedSpriteBatch {
   }
 
   /**
+   * E-211: whether the next keyed packs write the slots' shadow terms (after enableKeyedShadows, which turns them on).
+   * Off, a keyed frame reads and writes none and leaves keyedShadowReady false, for a sun pass that draws other rows.
+   * @param {boolean} on
+   */
+  setKeyedShadowStream(on) {
+    if (!this.keyedShadows) return;
+    this._keyedPack.shadowByte = on ? this._sharedShadow.byteOffset : 0;
+  }
+
+  /**
    * E-191: the program of the sun's shadow pass over these instances: instancedSpriteShadow.vert.glsl reading its
    * statics by key from this batch's statics texture (spriteIndexedVertex's shadow form), with the fragment program
    * and the resources of `sun` (the caster batch's shadow shader: its atlas, its LUT and the uniform group that pass

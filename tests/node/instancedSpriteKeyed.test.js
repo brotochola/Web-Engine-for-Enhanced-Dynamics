@@ -438,6 +438,41 @@ test('keyed shadows: a keyed frame carries each slot\'s shadow terms and the sun
   assert.equal(k.keyedShadowReady, false, 'a frame drawn split leaves none ready');
 });
 
+// E-211: the caller turns the shadow stream off while the sun pass draws pre-render's keyed rows: a keyed frame then
+// writes no shadow terms and leaves none ready, and turned on again the next one carries them.
+test('keyed shadows: the stream turned off, a keyed frame writes no shadow terms; on again, it does', async () => {
+  const s = await setup(211);
+  const k = s.keyed;
+  k.setKeyedShadowStream(true);
+  assert.equal(k._keyedPack.shadowByte, 0, 'nothing to turn on before enableKeyedShadows');
+  assert.equal(k.enableKeyedShadows(), true);
+  assignKeys(s);
+  emit(s);
+  draw(s, 'first frame', sortedOpts(s));
+  emit(s);
+  assert.equal(draw(s, 'answered', sortedOpts(s)), N);
+  assert.equal(k.keyedShadowReady, true);
+  k.setKeyedShadowStream(false);
+  // The test's shadow region holds N slots; the batch's view spans its capacity.
+  const shared = k._sharedShadow.subarray(0, N * 3);
+  const copy = k._shadowData.subarray(0, N * 3);
+  shared.fill(-7);
+  copy.fill(-7);
+  emit(s);
+  assert.notEqual(draw(s, 'off', sortedOpts(s)), -1, 'still a keyed frame');
+  assert.equal(k.keyedShadowReady, false, 'no shadow terms ready');
+  assert.ok(shared.every((v) => v === -7) && copy.every((v) => v === -7), 'none written or copied');
+  k.setKeyedShadowStream(true);
+  emit(s);
+  const opts = sortedOpts(s);
+  assert.notEqual(draw(s, 'on again', opts), -1);
+  assert.equal(k.keyedShadowReady, true);
+  for (let slot = 0; slot < N; slot++) {
+    const i = opts.indices[slot];
+    if (k._shadowData[slot * 3] !== s.q.shadowH[i]) assert.fail(`slot ${slot}'s shadowH`);
+  }
+});
+
 // E-191 step 2: once its caller draws keyed caster rows (keyedCasters), each keyed frame stores its queue frame in the
 // header's LIVE word, and a frame drawn split stores nothing; the programs for those rows read the statics texture, and a
 // batch commits such rows through its ring with their own attributes (a stamp row's light too).
