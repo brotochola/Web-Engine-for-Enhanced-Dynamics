@@ -12,6 +12,7 @@ import {
 } from '../util/utils.js';
 import { ASSETS_DEFAULTS } from '../util/configDefaults.js';
 import { debugWorkerLog } from '../util/debugLog.js';
+import { fetchAsset, fetchAssetJson, imageLoadError } from '../util/fetchAsset.js';
 
 /**
  * MaxRectsPacker - Rectangle packing algorithm for texture atlas generation
@@ -1397,17 +1398,15 @@ class SpriteSheetRegistry {
   static async _loadImage(url) {
     // Workers (and some environments) have no HTMLImageElement — use fetch + ImageBitmap.
     if (typeof Image === 'undefined') {
-      const response = await fetch(url);
-      if (!response.ok) {
-        throw new Error(`Failed to load image: ${url}`);
-      }
+      const response = await fetchAsset(url, 'image');
       return createImageBitmap(await response.blob());
     }
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.onload = () => resolve(img);
-      img.onerror = reject;
+      // DX-GUARDS C6: an <img> error carries no status; the error names the URL and asks the server for it.
+      img.onerror = () => imageLoadError(url).then(reject);
       img.src = url;
     });
   }
@@ -1573,8 +1572,8 @@ class SpriteSheetRegistry {
       throw new Error(`Invalid spritesheet config for "${name}": missing json or png`);
     }
 
-    const jsonResponse = await fetch(config.json);
-    const jsonData = await jsonResponse.json();
+    // DX-GUARDS C6: a 404 used to reach .json() and read "Unexpected token '<'".
+    const jsonData = await fetchAssetJson(config.json, `spritesheet "${name}" JSON`);
     const img = await this._loadImage(config.png);
 
     return { img, jsonData };

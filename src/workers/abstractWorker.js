@@ -91,6 +91,7 @@ import { bindPublishedList } from '../util/publishedList.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
 import { GpuParticles } from '../core/gpuParticles.js';
+import { setDevChecks } from '../core/debug/devChecks.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -514,6 +515,7 @@ export class AbstractWorker {
 
     // Store config for worker access
     this.config = data.config || {};
+    setDevChecks(this.config.debug?.checks !== false);
     ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     VolumeShadowCaster.defaultFloorScaleY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
     bindEntityIdWidth(resolveEntityIdWidth(this.config));

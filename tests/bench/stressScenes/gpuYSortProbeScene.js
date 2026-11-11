@@ -49,7 +49,7 @@ export class GpuYSortProbeScene extends Scene {
     spatial: { numberOfSpatialWorkers: 0, cellSize: 256, maxNeighbors: 0 },
     logic: { numberOfLogicWorkers: 1, staggeredUpdates: false },
     physics: { enabled: false, gravity: { x: 0, y: 0 } },
-    particle: { maxParticles: 0, maxDecorations: 4, decals: false },
+    particle: { maxParticles: 0, decals: false },
     renderer: {
       backend: 'webgl',
       ySort: true,

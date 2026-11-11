@@ -39,6 +39,8 @@ const debugStubAliases = isProd ? {
         path.resolve(__dirname, 'src/core/debug/stubs/debugFlags.js'),
     [path.resolve(__dirname, 'src/core/debug/hotSwap.js')]:
         path.resolve(__dirname, 'src/core/debug/stubs/hotSwap.js'),
+    [path.resolve(__dirname, 'src/core/debug/devChecks.js')]:
+        path.resolve(__dirname, 'src/core/debug/stubs/devChecks.js'),
 } : {};
 
 // Obfuscator options
@@ -80,7 +82,9 @@ const optimization = {
             terserOptions: {
                 keep_classnames: true,
                 compress: {
-                    drop_console: true,
+                    // The debug build's workers keep console.warn and console.error: the engine's warnings and
+                    // DX-GUARDS' run-time checks speak from the workers. Production drops every console call.
+                    drop_console: isProd,
                     drop_debugger: true,
                     pure_funcs: ['console.debug', 'console.log']
                 },

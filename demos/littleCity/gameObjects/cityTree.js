@@ -34,6 +34,4 @@ export class CityTree extends GameObject {
     this.collider.radius = radius;
     this.collider.visualRange = radius * 10;
   }
-
-  tick() {}
 }

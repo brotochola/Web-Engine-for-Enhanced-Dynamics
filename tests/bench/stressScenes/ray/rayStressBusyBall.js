@@ -6,7 +6,6 @@ const { ShapeType } = enums;
 /** Dynamic ball pile to saturate Box2D under L2 busy-physics A/B. */
 export class RayStressBusyBall extends GameObject {
   static components = [RigidBody, Collider, SpriteRenderer];
-  static tickInterval = 16;
 
   onSpawned({ x = 0, y = 0, radius = 10 } = {}) {
     this.x = x;
@@ -24,6 +23,4 @@ export class RayStressBusyBall extends GameObject {
     this.setScale((radius * 2) / 14);
     this.setAlpha(0.55);
   }
-
-  tick() {}
 }

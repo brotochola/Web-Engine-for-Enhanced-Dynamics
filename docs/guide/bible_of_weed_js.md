@@ -567,6 +567,17 @@ If `fragment` contains `/` or `.` it's treated as a direct URL (backward compat)
 
 Layers **without** a `shader` block are one instanced sprite batch at their own zIndex. With `ySorting`, they share ENTITIES' CPU painter (`orderPainterSlots` + one blend). Layers **with** a `shader` use the two-RT pipeline (density pass + fragment shader post-process).
 
+Which blend a layer draws with depends on how many passes it takes. `blendMode` is always the blend of what lands on the screen:
+
+| Layer | How it draws | `blendMode` | `shader.containerBlend` |
+| --- | --- | --- | --- |
+| Sprite layer without a look, MESH layer without a look, world-rect layer | one pass, straight to the screen | that pass | that pass instead, when the config sets it |
+| Sprite or LiquidFun layer with a look, MESH layer with a look | the contents into the layer's render texture, then the look over the screen | the look's pass | the contents' pass (default normal) |
+| MESH layer with `alphaBySun` or `sunProjected` and no look | the fill into a render texture, composed once | the composite | the fill (default normal) |
+| GPU particle layer | one pass | that pass | — |
+
+So `fx: { blendMode: BLEND_MODES.ADD }` is an additive sprite layer, and `shader: { containerBlend }` is only for the pass into a render texture. (Up to 0.14, a layer drawn in one pass ignored `blendMode` and drew with `containerBlend`, normal by default.)
+
 The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh; `'sprite'` leaves them in the entity list.
 
 ### LiquidFun buffer density (`LAYER_DENSITY_SOURCE`)

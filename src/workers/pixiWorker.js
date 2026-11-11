@@ -6118,7 +6118,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl.displaySprite.parent) cl.displaySprite.parent.removeChild(cl.displaySprite);
       }
       if (!cl.shaderMesh.parent) this.pixiApp.stage.addChild(cl.shaderMesh);
-      this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
+      this._registerLayerDisplayObject(layerName, cl.shaderMesh, false);
       if (this._meshLookMustCompose(cl)) this._ensureMeshLookComposite(cl);
     } else {
       cl.displaySprite.texture = cl.rtOut;
@@ -6163,6 +6163,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!layerName || !displayObject) return;
     this._applyLayerPresentation(layerName, displayObject, forceContainerBlend);
     this._layerRuntime[layerName] = displayObject;
+  }
+
+  /**
+   * N-79: whether a custom layer's display object draws with the container blend. A batch or a world-rect mesh on
+   * the stage is the layer's only pass: it takes blendMode, unless the config set shader.containerBlend. A display
+   * sprite or a look mesh composes the layer's picture, which its batches drew with the container blend: blendMode.
+   */
+  _customLayerForcesContainerBlend(cl, displayObject) {
+    const onePass = displayObject === cl.batch?.mesh || displayObject === cl.fillBatch?.mesh || displayObject === cl.worldMesh;
+    return onePass && cl.containerBlendSet === true;
   }
 
   _syncLayerRefsFromRuntime() {
@@ -7499,9 +7509,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     cl.shader = built.shader;
     cl.uniformStore = built.shader.resources?.customUniforms?.uniforms || null;
     cl.uniformEntries = config.uniformMap ? Object.entries(config.uniformMap) : null;
-    this._registerLayerDisplayObject(cl.layerName, built.mesh, true);
+    this._registerLayerDisplayObject(cl.layerName, built.mesh, cl.containerBlendSet);
     this.pixiApp.stage.addChild(built.mesh);
-    this._applyLayerPresentation(cl.layerName, built.mesh, true);
     debugWorkerLog(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}`);
   }
 
@@ -7753,6 +7762,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         splatRadius: splatCfg?.radius ?? 48,
         scaleMode: Layer._normalizeScaleMode(config.scaleMode),
         containerBlend,
+        // N-79: the config set shader.containerBlend (a batch drawn in one pass takes it over blendMode).
+        containerBlendSet: config.containerBlendSet === true,
         rt: null,
         rtOut: null,
         shaderMesh: null,
@@ -7880,7 +7891,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
         if (isMesh) {
           cl.meshLook = true;
-          this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
+          // The look mesh composes the layer's picture: blendMode, as a look layer's display sprite (N-79).
+          this._registerLayerDisplayObject(layerName, cl.shaderMesh, false);
           this.pixiApp.stage.addChild(cl.shaderMesh);
           debugWorkerLog(
             `PIXI WORKER: Custom MESH look layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h})`
@@ -7905,11 +7917,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._registerLayerDisplayObject(layerName, cl.displaySprite);
         debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized (composed, alphaBySun)`);
       } else if (fillBatch) {
-        this._registerLayerDisplayObject(layerName, fillBatch.mesh, true);
+        this._registerLayerDisplayObject(layerName, fillBatch.mesh, cl.containerBlendSet);
         this.pixiApp.stage.addChild(fillBatch.mesh);
         debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized`);
       } else if (batch) {
-        this._registerLayerDisplayObject(layerName, batch.mesh, true);
+        this._registerLayerDisplayObject(layerName, batch.mesh, cl.containerBlendSet);
         this.pixiApp.stage.addChild(batch.mesh);
         debugWorkerLog(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
       } else if (gpuBatch) {
@@ -8330,11 +8342,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     else if (this.lightingMesh) this._registerLayerDisplayObject('lighting', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
-      this._registerLayerDisplayObject(
-        cl.layerName,
-        cl.displaySprite || cl.shaderMesh || cl.batch?.mesh || cl.fillBatch?.mesh,
-        !cl.displaySprite
-      );
+      const displayObject = cl.displaySprite || cl.shaderMesh || cl.batch?.mesh || cl.fillBatch?.mesh;
+      if (!displayObject) continue;
+      this._registerLayerDisplayObject(cl.layerName, displayObject, this._customLayerForcesContainerBlend(cl, displayObject));
     }
     this._syncLayerRefsFromRuntime();
 

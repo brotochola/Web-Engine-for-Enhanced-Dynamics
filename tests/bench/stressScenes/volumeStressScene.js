@@ -96,10 +96,10 @@ class MeshCar extends GameObject {
   static components = [MeshRenderer];
 
   angle = 0;
-  radius = 0;
+  orbit = 0;
   cx = 0;
   cy = 0;
-  speed = 0;
+  turn = 0;
   headingC = NaN;
   headingS = NaN;
   xy = new Float32Array(carMesh.xy.length);
@@ -116,8 +116,8 @@ class MeshCar extends GameObject {
   place() {
     const c = Math.cos(this.angle);
     const s = Math.sin(this.angle);
-    this.x = this.cx + c * this.radius;
-    this.y = this.cy + s * this.radius * 0.6;
+    this.x = this.cx + c * this.orbit;
+    this.y = this.cy + s * this.orbit * 0.6;
     this.rotation = this.angle + Math.PI / 2;
     this.face(Math.cos(this.rotation), Math.sin(this.rotation));
   }
@@ -143,7 +143,7 @@ class MeshCar extends GameObject {
 
   tick(dtRatio) {
     if (STILL) return;
-    this.angle += this.speed * dtRatio;
+    this.angle += this.turn * dtRatio;
     this.place();
   }
 }
@@ -165,10 +165,10 @@ class VolumeCar extends GameObject {
   static components = [VolumeShadowCaster];
 
   angle = 0;
-  radius = 0;
+  orbit = 0;
   cx = 0;
   cy = 0;
-  speed = 0;
+  turn = 0;
 
   onSpawned(config = {}) {
     Object.assign(this, config);
@@ -178,14 +178,14 @@ class VolumeCar extends GameObject {
   }
 
   place() {
-    this.x = this.cx + Math.cos(this.angle) * this.radius;
-    this.y = this.cy + Math.sin(this.angle) * this.radius * 0.6;
+    this.x = this.cx + Math.cos(this.angle) * this.orbit;
+    this.y = this.cy + Math.sin(this.angle) * this.orbit * 0.6;
     this.rotation = this.angle + Math.PI / 2;
   }
 
   tick(dtRatio) {
     if (STILL) return;
-    this.angle += this.speed * dtRatio;
+    this.angle += this.turn * dtRatio;
     this.place();
   }
 }
@@ -245,7 +245,7 @@ export class VolumeStressScene extends Scene {
       House.spawn({ x: rng() * WORLD_W, y: rng() * WORLD_H, hw: 14 + rng() * 40, hd: 10 + rng() * 26, h: 20 + rng() * 80 });
     }
     for (let i = 0; i < CARS; i++) {
-      Car.spawn({ cx: rng() * WORLD_W, cy: rng() * WORLD_H, radius: 80 + rng() * 300, angle: (i / Math.max(1, CARS)) * Math.PI * 2, speed: 0.004 + rng() * 0.01 });
+      Car.spawn({ cx: rng() * WORLD_W, cy: rng() * WORLD_H, orbit: 80 + rng() * 300, angle: (i / Math.max(1, CARS)) * Math.PI * 2, turn: 0.004 + rng() * 0.01 });
     }
     for (let i = 0; i < LIGHTS; i++) StressLamp.spawn({ x: rng() * WORLD_W, y: rng() * WORLD_H });
     Sun.setTimeOfDay(HOUR);

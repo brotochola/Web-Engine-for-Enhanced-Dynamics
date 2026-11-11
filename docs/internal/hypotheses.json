@@ -10080,10 +10080,10 @@
     {
       "id": "N-79",
       "title": "A layer drawn without a render target ignores blendMode (fx ADD draws normal)",
-      "status": "open",
-      "statusText": "found 2026-10-26, a bug: confirmed in the code, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-10 on dx/guards (DX-GUARDS F1, R-0855)",
       "date": "2026-10-26",
-      "result": "A sprite layer without a look shader (and MESH and world-rect layers) is drawn straight to the stage by a mesh registered with forceContainerBlend, so it takes shader.containerBlend (normal when there is no shader) and never the layer's blendMode. The fx layers of destructibleTerrainScene, mamushkaDigScene and planetPhysicsScene ask for ADD and draw normal. Workaround: shader: { containerBlend: ADD } with no fragment (marks the layer hasShader).",
+      "result": "Fixed 2026-11-10 (0d490b4b): a batch, MESH fill or world-rect mesh drawn in one pass takes blendMode unless shader.containerBlend is set; a MESH look composes with blendMode. Four demo layers change; Destructible Terrain's beam retuned.",
       "area": "pixi",
       "kind": "bug",
       "refs": [
@@ -10093,7 +10093,10 @@
         "blendMode ignored",
         "containerBlend"
       ],
-      "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim."
+      "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim.",
+      "records": [
+        "R-0855"
+      ]
     },
     {
       "id": "N-80",
@@ -11124,10 +11127,10 @@
     {
       "id": "N-130",
       "title": "Despawn leaves the entity's joints in Weed's joint pool",
-      "status": "open",
-      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-10 on dx/guards (DX-GUARDS F2, R-0856); the gate on spawnStormScene is the owner's",
       "date": "2026-11-10",
-      "result": "Physics destroys the Box2D joints (destroyWasmJointsForEntity), but nothing calls Joint.removeAllForEntity on despawn: the row stays active, the partner still counts it, the slot is not freed.",
+      "result": "Fixed 2026-11-10 (422b6b1b): despawn and despawnAll remove the entity's joints after onDespawned; before, the index spawned again was born with the old joints. Gate on spawnStormScene left to the owner.",
       "next": "Joint.removeAllForEntity on despawn; a test with a jointed pair, one despawned, the other's count, and the index respawned (does it get the old joint back?).",
       "area": "physics",
       "kind": "bug",
@@ -11140,9 +11143,9 @@
         "Joint.removeAllForEntity"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 25
+        "R-0854",
+        "R-0856"
+      ]
     },
     {
       "id": "E-197",
@@ -11641,6 +11644,98 @@
         "R-0860"
       ],
       "rank": 33
+    },
+    {
+      "id": "DX-GUARDS",
+      "title": "The engine says the mistakes a game makes, or fixes them",
+      "status": "open",
+      "statusText": "Built 2026-11-10 on dx/guards and its leftovers fixed 2026-11-11 (R-0861), not merged; the Predator gate is the owner's",
+      "date": "2026-11-10",
+      "result": "Built 2026-11-10 on dx/guards: load guards C1, C3 to C6, C8 to C10; debug-build guards E1 to E7 with devChecks and debug.checks; F1, F2; the debug bundle's workers speak. 2026-11-11, the owner's word: N-131, N-132, N-135 fixed, the demos' empty ticks deleted, Predator's late fields declared, the page keys read; no demo warns. Not merged; the Predator gate is the owner's.",
+      "next": "The owner: the Predator gate (hygiene, command in R-0857), F2 on spawnStormScene (R-0856); then merge with bundles.",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-GUARDS"
+      ],
+      "aliases": [
+        "guards",
+        "validation",
+        "devChecks",
+        "common mistakes",
+        "config keys"
+      ],
+      "records": [
+        "R-0857",
+        "R-0861"
+      ]
+    },
+    {
+      "id": "N-131",
+      "title": "collider.isTrigger written after the body exists does nothing",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
+      "date": "2026-11-10",
+      "result": "Fixed 2026-11-11 (5b860316): the setter makes the body again (a new generation for a live slot); Predator's money becomes a trigger. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
+      "next": "The setter marks LIFECYCLE (the body made again, as enableHitEvents does) or a sensor command; a test that a trigger set after the body exists reaches Box2D. Predator's money drops then become triggers: its gate's scene changes.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-131"
+      ],
+      "aliases": [
+        "isTrigger",
+        "sensor",
+        "trigger after creation"
+      ],
+      "records": [
+        "R-0857",
+        "R-0861"
+      ]
+    },
+    {
+      "id": "N-132",
+      "title": "A mass set in onSpawned never holds on an entity whose collider has a shape",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
+      "date": "2026-11-10",
+      "result": "Fixed 2026-11-11 (baa4183d): a mass set in onSpawned holds through the spawn's sync; the landing page's crates float. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
+      "next": "The owner's call (a change in behaviour): the spawn's sync keeps a mass set by hand during the spawn. The landing page's Floater and HungCrate then weigh what their comment says.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-132"
+      ],
+      "aliases": [
+        "mass",
+        "onSpawned",
+        "syncMassFromCollider"
+      ],
+      "records": [
+        "R-0857",
+        "R-0861"
+      ]
+    },
+    {
+      "id": "N-135",
+      "title": "collider.enableHitEvents changed after the body exists does nothing",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
+      "date": "2026-11-11",
+      "result": "Fixed 2026-11-11 (77c81f77): the setter makes the body again, as N-131. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
+      "next": "Make the body again, as N-131 does for isTrigger; a test that hit events turned on after the body exists reach Box2D.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-135"
+      ],
+      "aliases": [
+        "enableHitEvents",
+        "hit events after creation"
+      ],
+      "records": [
+        "R-0861"
+      ]
     }
   ],
   "records": [
@@ -19816,6 +19911,69 @@
         "eae26c6b",
         "ecaa2051",
         "79065acc"
+      ]
+    },
+    {
+      "id": "R-0855",
+      "date": "2026-11-10",
+      "time": "23:03",
+      "timeFrom": "recorded",
+      "title": "N-79 fixed: a layer drawn in one pass takes its blendMode; one demo's beam retuned",
+      "verdict": "kept-hygiene",
+      "text": "**N-79 fixed (DX-GUARDS F1, approved by the owner on 2026-11-10): kept as hygiene.** Nothing timed: the change is in the layers' init (which blend a display object takes), not in a frame.\n\n- `0d490b4b`: a batch, a MESH fill or a world-rect mesh that is the layer's only pass takes `blendMode`, unless the config sets `shader.containerBlend` (Layer's worker metadata carries `containerBlendSet`). A MESH look's mesh composes with `blendMode`, like a look layer's display sprite; before, it did only when alpha or alphaBySun sent it through a sprite. `buildLayerRefsMap` picks the same blend. `tests/node/layerBlendSinglePass.test.js`, through the Pixi worker's real `initializeCustomLayers`: fails before ('normal' for 'add'), and the layers panel's select still changes the blend live.\n- `852f5850`: the guide's table of which key each kind of layer reads; `NEXT_RELEASE.md` holds the change in behaviour for the next notes.\n- The demos: four layers change, the `fx` layers of destructibleTerrainScene, mamushkaDigScene and planetPhysicsScene and sunStreetScene's `nightGlows`. landingScene's two ADD layers are GPU particle layers, which already took `blendMode`. Captured before and after with the effects driven by keys and the mouse: Destructible Terrain's beam summed to a white bar and was retuned to a cyan beam with a white core (`0aae7477`); Mamushka's beam and jet sparks, and Sun Street's lit windows and lamps, look right additive; Planet Physics' `fx` layer draws nothing.",
+      "commits": [
+        "0d490b4b",
+        "852f5850",
+        "0aae7477"
+      ]
+    },
+    {
+      "id": "R-0856",
+      "date": "2026-11-10",
+      "time": "23:03",
+      "timeFrom": "recorded",
+      "title": "N-130 fixed: despawn removes the entity's joints",
+      "verdict": "kept-hygiene",
+      "text": "**N-130 fixed (DX-GUARDS F2, approved by the owner on 2026-11-10): kept as hygiene, the gate to the owner.** `422b6b1b`: `_releaseSlotResources`, which despawn and despawnAll call after `onDespawned`, removes the entity's joints when the head of its joint list is set. An entity with none pays one read.\n\nThe row's \"to check\" holds: before the fix, the index spawned again still had both joints of the despawned entity, and the partner still counted them (`tests/node/despawnJoints.test.js`, which fails before on three of its four tests). `onDespawned` still reads the joints, and one that removes them itself still works (landingScene's ropes, mamushkaDigScene and badPiggiesScene do). The guide never asked games to remove them by hand (the plan said it did); PHYSICS.md now says despawn does (`b7672e2d`).\n\ndespawn is on spawnStormScene's path. Not timed here; the gate for the owner:\n`MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name N-130 --vs 0aae7477 --hyp-rev 422b6b1b --scene /tests/bench/stressScenes/spawnStormScene.js --scene-export SpawnStormScene --owner logic --pairs 4`",
+      "commits": [
+        "422b6b1b",
+        "b7672e2d"
+      ]
+    },
+    {
+      "id": "R-0857",
+      "date": "2026-11-11",
+      "time": "00:19",
+      "timeFrom": "recorded",
+      "title": "DX-GUARDS built: guards at load and in the debug build, two fixes, bundles; N-131 and N-132 found",
+      "verdict": "note",
+      "text": "**DX-GUARDS built on `dx/guards` (from `f7860aa2`), not merged; nothing timed, the gates are the owner's.** The owner's plan of 2026-11-10. The engine now names, once and in one line, mistakes a game made in silence, or fixes them. `DX_GUARDS_DESIGN.md` has the inventory (each \"today\" with the test that shows it) and `docs/guide/COMMON_MISTAKES.md` the game author's side.\n\n- **Fixes (approved):** F1 = N-79 (R-0855), F2 = N-130 (R-0856).\n- **At load, both builds:** C1 unknown config keys with the nearest one (`28bdb729`; a schema from the defaults, held by a test to every `config.<section>.<key>` the source reads; takes DX-CONFIGCHECK's unknown-keys part), C3 tickInterval without staggeredUpdates (`98895c48`, DX-CONFIGCHECK's other part, warned rather than turned on), C4 an empty tick (`eeb623da`), C5 a skipped class says why (`f12d73a9`), C6 an asset's URL and HTTP status (`3fb665bf`), C8 lighting almost black (`a8f966ac`), C9 a world smaller than the canvas (`caaec8d2`), C10 a scene file that imports the engine (`71d4ec25`). C2 existed (DX 1.2).\n- **Run time, debug build only:** `devChecks` with a stub for production and `debug.checks` (`d248ccaa`, `56b2e3d8`), E1 a field that hides an accessor (`a42418d5`), E2 a field first written after onSpawned (`0943bdfd`), E3 body flags after the body exists (`5eb51691`), E4 a hand-set mass replaced (`852264f9`), E5 particles born on the floor (`8891968e`), E6 emit keys that are ignored (`577967e3`), E7 unknown key names (`d35084a5`). The bench page turns them off unless `--dev-checks`.\n- **Build:** the debug bundle's workers dropped every console call (no worker warning or error ever reached the console with the debug bundle); now only log and debug (`334b5e77`). Bundles `1a8ef3b4`: the production bundle holds none of the run-time texts, the debug bundle all (a test reads them).\n\n**Checks.** Each guard has a test with the mistake, run on the code before to see it fail, and one in silence. `demos/tests/demosQuiet.test.js` builds the 37 demo scenes and the 78 stress scene files and runs E1 on a page instance of every class. In Chromium: a probe scene that makes each mistake says each line once from source and from the debug bundle, and only the load-time one from the production bundle; every demo with the checks on (WebGPU ones in a window). Suites at `780294e4`: test:node 2406 pass, test:demos 101, test:node:bundle 279, test:bundle 8 of 8, check:types clean, check:dist fresh.\n\n**Found.** Two dead config keys (Bichos, gpuYSortProbeScene) and three fields hiding engine accessors (Sun Street, volumeStressScene) fixed; Planet Physics' ship fields declared and Procedural Tree's unread '+' key replaced. Left, the owner's call: 23 empty ticks in 17 demos and 26 stress scenes (Predator's House, Barrel and TallLight among them), Predator's `MySoldier._logicFrame` (E2), the landing page's page keys (E7). New: N-131 (`isTrigger` after the body exists: Predator's money never becomes a trigger) and N-132 (a mass set in onSpawned never holds: the landing page's floating crates weigh twice what their comment says).\n\n**The plan against the code.** C2 existed; E6 was misdescribed (spritesheet + animation + frame do resolve; what is ignored is a key without its partner); E3's `enableHitEvents` already reaches the body; the guide never asked games to remove joints by hand; C10's bundle case already worked.\n\n**Gates for the owner.** Hygiene keep for the branch, Predator: `MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name DX-GUARDS --vs f7860aa2 --hyp-rev dx/guards --pairs 4`. F2 on spawnStormScene: in R-0856.",
+      "commits": [
+        "28bdb729",
+        "d248ccaa",
+        "334b5e77",
+        "1a8ef3b4"
+      ]
+    },
+    {
+      "id": "R-0861",
+      "date": "2026-11-11",
+      "time": "02:37",
+      "timeFrom": "recorded",
+      "title": "N-131, N-132 and N-135 fixed with DX-GUARDS's other leftovers: empty ticks, Predator's late fields, page keys",
+      "verdict": "kept-hygiene",
+      "text": "**N-131, N-132 and N-135 fixed with the rest DX-GUARDS had left for the owner (the owner, 2026-11-11: \"arreglalos todos\"): kept as hygiene on `dx/guards`, nothing timed, the gate to the owner.**\n\n- **N-131** (`5b860316`): `collider.isTrigger` changed on a live entity makes its body again. Marking LIFECYCLE was not enough: `syncBodySlot` makes an existing body again only for a new generation, so `box2dBodySync.remakeBody` gives a live slot one (and marks LIFECYCLE before the entity is live). In Chromium, with Box2D: a ball dropped on a platform and turned into a trigger 20 frames after its spawn rested on it at y 480 before, and falls through after. Predator's money, turned into a trigger a second after it drops, now is one.\n- **N-135** (`77c81f77`), found while fixing N-131: `collider.enableHitEvents` had the same hole. Its setter marked LIFECYCLE and PHYSICS.md said the body was made again; it was not, and R-0857's \"enableHitEvents already reaches the body\" was wrong. Same fix.\n- **N-132** (`baa4183d`): a mass set with `rigidBody.mass` in `onSpawned` holds through the spawn's sync from the collider. The slot is marked; a shape setter's sync still replaces the mass and clears the mark; a spawn clears it first. The landing page's Floater and HungCrate weigh 0.45 of their area (they float, as their comments say) and weldBreakScene's dropper weighs HEAVY_MASS.\n- **Page keys** (`a0c61aac`): the key map reads pageup, pagedown, home and end, after the 73 keys before (their indices stay). The landing page's chapters answer them.\n- **Empty ticks** (`72b4b669` Predator's House, Barrel and TallLight; `acbf1c8f` nine demo classes, Floor among them; `db5553fe` nine stress scene classes and their tickIntervals): the logic workers no longer visit those types. Predator's logic and the logic of spawnStorm, stationarySpatial*, rayStress*, rayVsBox2d*, contactDrain*, computeStress, queryChurn, renderQueueStress and compoundFixtureSpatial do less: their numbers move against sittings before these commits.\n- **Predator's fields** (E2): `MySoldier._logicFrame` (`bb98e09d`) and its FSM's line-of-sight cache, `_losCacheTarget`, `_losCacheClear` and `_losCacheUntilFrame` (`c0acf4ac`), declared in the class. The audit reads one live soldier a second, so it named the cache fields only once `_logicFrame` was declared.\n- The demos test keeps no warning now (`7430c78f`); docs (`c06b17d8`, `7a0d2226`).\n\n- Bundles `d438e90f`: check:dist fresh, test:node:bundle 279 of 279 on each of the 8, test:bundle 8 of 8; the production bundle still holds none of the run-time texts.\n\n**Checks.** Each engine fix has a test that fails without it. Suites at `7a0d2226`: test:node 2410 of 2410, test:demos 101 of 101. Every demo again from source with the checks on, 8 to 9 s each, the 9 WebGPU ones in a window, and Predator once more for 30 s: no guard warns. The pool-full warnings the engine gave before are left: Blastforge's Prop pool, ConstraintBox's joint pool and Predator's Flash pool.\n\n**Gate for the owner.** The branch's Predator gate in R-0857 takes `src/` from each revision and the scene from the folder (no `--full-rev`), so both sides run one scene and it reads the engine alone.",
+      "commits": [
+        "5b860316",
+        "77c81f77",
+        "baa4183d",
+        "a0c61aac",
+        "72b4b669",
+        "acbf1c8f",
+        "db5553fe",
+        "bb98e09d",
+        "c0acf4ac",
+        "d438e90f"
       ]
     }
   ],

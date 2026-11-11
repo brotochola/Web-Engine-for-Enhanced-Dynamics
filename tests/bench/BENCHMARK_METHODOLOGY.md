@@ -42,6 +42,7 @@ then reads every worker's stats for the measured window and writes one JSON repo
 | `--trace-cpu` | A CPU-only trace (profiler and thread names) for `pnpm trace:summary`. `--trace` records the full timeline, which costs every task. |
 | `--js-flags "<flags>"`, `--v8-log-dir <dir>` | V8 flags for the page and its workers (`--log-deopt --log-ic`, `--trace-turbo-inlining`), and where V8 writes its logs. |
 | `--collect-gpu-stats` | GPU timings where the backend has timestamp queries. |
+| `--dev-checks` | Keeps the debug build's run-time checks on (DX-GUARDS, `config.debug.checks`). The page turns them off by default, so a measurement does not time them. |
 | `--allow-throttle` | Lets Chromium throttle background timers (off by default, so a covered window keeps its pace). |
 
 ## The gate

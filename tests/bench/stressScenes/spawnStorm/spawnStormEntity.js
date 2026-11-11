@@ -4,7 +4,6 @@ const { GameObject, Collider, SpriteRenderer } = WEED;
 
 export class SpawnStormEntity extends GameObject {
   static components = [Collider, SpriteRenderer];
-  static tickInterval = 8;
 
   onSpawned({ x = 0, y = 0 } = {}) {
     this.x = x;
@@ -14,6 +13,4 @@ export class SpawnStormEntity extends GameObject {
     this.setScale(0.8);
     this.setAnchor(0.5, 0.5);
   }
-
-  tick() {}
 }

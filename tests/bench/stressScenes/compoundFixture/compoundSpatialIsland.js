@@ -26,6 +26,4 @@ export class CompoundSpatialIsland extends GameObject {
     const polys = makeIslandPolys(triangles, cell);
     if (!this.collider.replacePolygons(polys)) this.despawn();
   }
-
-  tick() {}
 }

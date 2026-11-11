@@ -44,6 +44,4 @@ export class MachineWheel extends GameObject {
     this.setTint(spawnConfig.tint ?? 0x333333);
     this.setAlpha(ghost ? 0.4 : 1);
   }
-
-  tick() {}
 }

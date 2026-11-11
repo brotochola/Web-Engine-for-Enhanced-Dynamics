@@ -1657,6 +1657,27 @@ export function evaluateBlobModule(scriptText, scriptPath, globalContext) {
   return exports;
 }
 
+/**
+ * DX-GUARDS C10: the line for a scene or entity file a worker could not import because it names a module by a bare
+ * specifier ('@weed.js/engine'): the page's import map resolves it, a worker has none. Null for any other error.
+ * @param {unknown} error
+ * @param {string} scriptPath
+ * @returns {string|null}
+ */
+export function unresolvedImportText(error, scriptPath) {
+  const message = String(error?.message || error || '');
+  const m =
+    /resolve module specifier ["'“]([^"'”]+)["'”]/.exec(message) ||
+    /specifier ["'“]([^"'”]+)["'”] was a bare specifier/.exec(message) ||
+    /Cannot find package '([^']+)'/.exec(message);
+  if (!m) return null;
+  return (
+    `WeedJS: ${scriptPath} imports "${m[1]}", which a worker cannot resolve: workers do not see the page's import ` +
+    'map. A scene or entity file does not import the engine; every worker defines WEED, so take the names from it ' +
+    '(const { Scene, GameObject } = WEED), as docs/guide/FIRST_GAME.md does.'
+  );
+}
+
 async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlobWorker, contextName, verbose) {
   try {
     let module;
@@ -1693,6 +1714,10 @@ async function loadSingleScript(scriptPath, loadedClasses, globalContext, isBlob
       }
       return false;
     }
+    // DX-GUARDS C10: an import a worker cannot resolve stops the load with what to do, instead of the later
+    // "entity classes not loaded".
+    const unresolved = contextName === 'Worker' ? unresolvedImportText(error, scriptPath) : null;
+    if (unresolved) throw new Error(unresolved);
     console.error(`${contextName}: failed to load ${scriptPath}`, error);
     return false;
   }

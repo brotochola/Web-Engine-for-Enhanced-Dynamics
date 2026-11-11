@@ -54,9 +54,9 @@ const LAMPS = [
 ];
 const FLAG = { x: 1020, y: 680 };
 const CLOUDS = [
-  { x: 200, y: 220, scale: 1.1, speed: 0.5 },
-  { x: 900, y: 620, scale: 0.8, speed: 0.35 },
-  { x: 1500, y: 900, scale: 1, speed: 0.42 },
+  { x: 200, y: 220, scale: 1.1, drift: 0.5 },
+  { x: 900, y: 620, scale: 0.8, drift: 0.35 },
+  { x: 1500, y: 900, scale: 1, drift: 0.42 },
 ];
 const WALKERS = 8;
 const WALKER_SHEETS = ['amarillo_01', 'female_01', 'amarillo_02', 'female_03'];

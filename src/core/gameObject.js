@@ -20,6 +20,7 @@ import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
+import { noteSpawned, setDevLookups, slotReleased } from './debug/devChecks.js';
 import { ColliderFixture } from './colliderFixture.js';
 import { ChainPoints } from './chainPoints.js';
 import { MeshGeometry } from './meshGeometry.js';
@@ -61,6 +62,7 @@ import {
   BODY_DIRTY,
   advanceBodyGeneration,
   bumpBodyGeneration,
+  bodyLifecyclePending,
   markBodyDirty,
   beginBodyDirtyDeferred,
   endBodyDirtyDeferred,
@@ -2362,7 +2364,7 @@ export class GameObject {
    */
   /**
    * Pools a slot holds besides its component flags: collider layer feeds,
-   * attached decorations, extra fixtures, chain points, custom mesh. despawn
+   * attached decorations, extra fixtures, joints, chain points, custom mesh. despawn
    * and despawnAll both call this after onDespawned. despawnAll had drifted and
    * freed neither fixtures nor feeds (a save restore leaked the terrain's
    * fixtures on every load), and neither path freed chain points (a recycled
@@ -2379,6 +2381,10 @@ export class GameObject {
     }
     DecorationPool.clearAttachedAndDespawnAll(i);
     ColliderFixture.removeAllForEntity(i);
+    // N-130: the joints too, or the next entity spawned into this index is born jointed to the old partner. One read
+    // for an entity with none: the head of its joint list.
+    if (Joint.head && Joint.head[i] !== Joint.INVALID_INDEX) Joint.removeAllForEntity(i);
+    slotReleased(i);
     if (ChainPoints.begin && ChainPoints.begin[i] >= 0) ChainPoints.clearForEntity(i);
     MeshGeometry.clearEntity(i);
   }
@@ -2978,6 +2984,7 @@ export class GameObject {
       }
       RigidBody.angularAccel[i] = 0;
       RigidBody.mass[i] = 0;
+      RigidBody.clearMassByHand(i);
       RigidBody.invMass[i] = 0;
       RigidBody.inertia[i] = 0;
       RigidBody.invInertia[i] = 0;
@@ -3209,9 +3216,11 @@ export class GameObject {
           reportWorkerError(error, 'onSpawned', EntityClass.name, i);
         }
       }
+      // DX-GUARDS E2 (debug build): what the instance holds now is its shape; a field first written later is named.
+      noteSpawned(instance);
 
       if (has.RigidBody && RigidBody.active[i]) {
-        RigidBody.syncMassFromCollider(i);
+        RigidBody.syncMassFromCollider(i, true);
       }
       if (spawnConfig.layers) {
         instance.setLayers(spawnConfig.layers);
@@ -3526,3 +3535,9 @@ export class GameObject {
 // E-167: the realm's config and LogicWorker before the first entity binds them (and on the page, which has no worker).
 GameObject.prototype.config = EMPTY_CONFIG;
 GameObject.prototype.logicWorker = null;
+
+// DX-GUARDS (debug build): devChecks names an entity's class, and knows whether its Box2D body is made, through these.
+setDevLookups(
+  (i) => GameObject.classByType[Transform.entityType?.[i]]?.name ?? 'An entity',
+  (i) => Transform.active?.[i] === 1 && !!(RigidBody.active?.[i] || Collider.active?.[i]) && !bodyLifecyclePending(i),
+);

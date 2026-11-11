@@ -71,11 +71,4 @@ export class Barrel extends GameObject {
       hasGlowSprite: 0.5,
     });
   }
-
-  tick(dtRatio) {
-    // Solo loggear la primera TallLight para no spamear
-    // console.log(
-    //   `House[${this.index}] neighbors: ${this.neighborCount}, visualRange: ${this.collider.visualRange}, active: ${this.collider.active}`
-    // );
-  }
 }

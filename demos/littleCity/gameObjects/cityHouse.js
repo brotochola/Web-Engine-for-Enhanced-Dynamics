@@ -43,6 +43,4 @@ export class CityHouse extends GameObject {
   }
 
   onDespawned() {}
-
-  tick() {}
 }

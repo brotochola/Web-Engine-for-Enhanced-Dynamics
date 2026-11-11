@@ -46,6 +46,7 @@ function buildKeyMap() {
   for (const k of ['arrowup', 'arrowdown', 'arrowleft', 'arrowright']) keyMap[k] = keyIndex++;
   for (let i = 1; i <= 12; i++) keyMap[`f${i}`] = keyIndex++;
   for (const c of ['-', '=', '[', ']', '\\', ';', "'", ',', '.', '/', '`']) keyMap[c] = keyIndex++;
+  for (const k of ['pageup', 'pagedown', 'home', 'end']) keyMap[k] = keyIndex++;
   return { keyMap, size: keyIndex };
 }
 
@@ -235,4 +236,13 @@ test('H-01: with no views.input the method is a silent no-op', { concurrency: fa
   scene.views = { input: null };
   assert.doesNotThrow(() => shipped.call(scene, 'a'));
   assert.doesNotThrow(() => shipped.call(scene));
+});
+test('the copy above is the scene\'s own key map, and the page keys come after the rest', { concurrency: false }, () => {
+  class Keys extends Scene {
+    static config = { worldWidth: 2000, worldHeight: 2000 };
+  }
+  const scene = new Keys({});
+  assert.deepEqual(scene.keyMap, keyMap);
+  assert.equal(scene.inputBufferSize, KEY_COUNT);
+  assert.deepEqual(['pageup', 'pagedown', 'home', 'end'].map((k) => scene.keyMap[k]), [0, 1, 2, 3].map((d) => KEY_COUNT - 4 + d));
 });

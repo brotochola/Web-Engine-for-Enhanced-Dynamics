@@ -34,6 +34,4 @@ export class Blower extends GameObject {
     this.setLayer('fire');
     this.setFeedBits(BLOW);
   }
-
-  tick() {}
 }

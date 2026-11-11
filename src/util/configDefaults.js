@@ -869,6 +869,11 @@ export const DEBUG_DEFAULTS = Object.freeze({
   verboseWorkers: false,
   /** Warn when cmd-ring / Ray get non-unit (rotC,rotS) or dir. Off in prod. */
   assertRotCSUnit: false,
+  /**
+   * DX-GUARDS: the run-time checks (src/core/debug/devChecks.js) that name a game's mistakes while it runs. On from
+   * source and in the debug bundle; the production bundle has none. false turns them off (the bench page does).
+   */
+  checks: true,
   /** DebugUI poll ms. GameEngine constructor override: debugUpdateInterval. */
   updateInterval: 100,
   /** DebugUI accordion section id, or null. Override: debugDefaultOpen. */

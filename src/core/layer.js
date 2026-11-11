@@ -1621,6 +1621,8 @@ export class Layer {
                 zIndex: this._zIndex[i],
                 blendMode: this._BLEND_MODE_STRINGS[this._blendModeId[i]] || 'normal',
                 containerBlendMode: this._BLEND_MODE_STRINGS[this._containerBlendId[i]] || 'normal',
+                // N-79: a layer drawn in one pass takes blendMode unless its config sets this.
+                containerBlendSet: config.shader?.containerBlend != null,
                 hasShader: this._hasShader[i] === 1,
                 ySorting: this._ySorting[i] === 1,
                 resolution: this._resolution[i],

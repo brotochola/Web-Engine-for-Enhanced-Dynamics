@@ -192,8 +192,8 @@ export class Ship extends GameObject {
       gravity: -0.1,
       lifespan: { min: 150, max: 320 },
       scale: { from: { min: 1.0, max: 1.4 }, to: { min: 1.5, max: 2 } },
-      tint: { min: 0x7ef9ff, max: 0xddffff },
-      alpha: { from: { min: 0.55, max: 0.95 }, to: 0 },
+      tint: { min: 0x1ec8ff, max: 0x6ef0ff },
+      alpha: { from: { min: 0.07, max: 0.16 }, to: 0 },
       lightIntensity: 10,
       layer: 'fx',
     });

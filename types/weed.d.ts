@@ -299,6 +299,13 @@ export type SceneConfig = Record<string, unknown> & {
     /** @deprecated one-release alias of maxFixturePoolSize */
     maxFixtures?: number;
   };
+  debug?: Record<string, unknown> & {
+    /**
+     * The debug build's run-time checks (default true): they name a game's mistakes in the console while it runs
+     * (docs/guide/COMMON_MISTAKES.md). false turns them off. The production bundle has none.
+     */
+    checks?: boolean;
+  };
   preRender?: Record<string, unknown> & {
     /**
      * Room in MB, whole, 0..1024 (default 4), for the Adobe Animate assets' tables in the render-queue memory
@@ -4360,6 +4367,7 @@ export declare class Joint extends SharedAtomicPool {
   static getEntities(idx: number): { entityA: number; entityB: number };
   static update(idx: number, props: Record<string, number | boolean>): void;
   static isActive(idx: number): boolean;
+  /** Every joint at the entity. Despawn calls it for you, after onDespawned. */
   static removeAllForEntity(entityIdx: number): void;
   static hasBetween(entityA: number, entityB: number): boolean;
   static getJointCount(entityIdx: number): number;
