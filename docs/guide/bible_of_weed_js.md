@@ -154,7 +154,7 @@ The main thread fetches them at boot (the `flowfields` step of `onLoadProgress`)
 | 16     | f64   | cell size in world px                                                                    |
 | 24     | cells | width × height × 2 bytes, row by row from the top: x then y as Int8, -127..127 for -1..1 |
 
-With compression 1 the cells are one gzip stream (write it with `CompressionStream('gzip')`). The browser opens it with `DecompressionStream`, so the download is small whatever the server does, and the cells are then used as they are: nothing is parsed. The ten fields of the Buenos Aires demo's barrio take 3.7 MB as JSON and 116 KB in this format, and 5 to 6 ms of the main thread at boot instead of 18 to 21 (Chromium).
+With compression 1 the cells are one gzip stream (write it with `CompressionStream('gzip')`, or convert JSON fields with `node scripts/flowfieldToBinary.mjs ff_*.json` in the engine's repo; `--raw` leaves the cells uncompressed). The browser opens it with `DecompressionStream`, so the download is small whatever the server does, and the cells are then used as they are: nothing is parsed. The ten fields of the Buenos Aires demo's barrio take 3.7 MB as JSON and 116 KB in this format, and 5 to 6 ms of the main thread at boot instead of 18 to 21 (Chromium).
 
 **JSON**: `{ "metadata": { "widthCells", "heightCells", "cellSizePx" }, "data": [...] }`, where `data` holds rows of `[x, y]` or `null`. Each component becomes `Math.round(clamp(v, -1, 1) * 127)`, so a JSON field and its binary copy sample the same.
 
