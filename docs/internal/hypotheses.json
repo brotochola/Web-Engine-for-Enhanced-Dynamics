@@ -9982,7 +9982,8 @@
         "R-0875",
         "R-0880",
         "R-0883",
-        "R-0886"
+        "R-0886",
+        "R-0888"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -20395,6 +20396,18 @@
       ],
       "time": "18:19",
       "timeFrom": "recorded"
+    },
+    {
+      "id": "R-0888",
+      "date": "2026-11-11",
+      "time": "18:24",
+      "timeFrom": "recorded",
+      "title": "The bundles of 3304007e (N-137) tested; not timed (no timed scene reaches A*)",
+      "verdict": "passed",
+      "text": "**The bundles of 3304007e (N-137 merged): tested; not timed against src.** dist `bdb71872`, built from 3304007e.\n\n- Node 2456 of 2456, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 277 of 277 on all 8 bundles. Two fewer than R-0886: `astarHeap.test.js`'s two old tests ran a copy of the old A* rule; its new ones import `src/core/navAstar.js`.\n\nNo sitting: N-137 changes only the A* search, which neither Predator nor Boids reaches (no scene requested paths), so bundle against src could not read anything R-0886 did not. Main pushed.",
+      "commits": [
+        "bdb71872"
+      ]
     }
   ],
   "leads": [
