@@ -202,6 +202,14 @@ const SUB_TIMERS = [
  * submitted than it could finish. No worker's STEP_MS shows that.
  */
 const PRESENTED_KEY = 'MAIN_FPS';
+/**
+ * N-121: frames drawn, Pixi's frames over the window's length. In a scene the GPU bounds Pixi draws fewer frames than
+ * the page runs, and the page's own frames wait on the GPU: meshUploadStressScene drew 22 % more frames while MAIN_FPS
+ * fell 12 % and the guard printed REGRESSION. Where Pixi draws under GPU_BOUND of the page's rate the guard judges the
+ * frames drawn; at the page's rate (E-82's case: the page fell while Pixi kept up) it judges MAIN_FPS as before.
+ */
+const DRAWN_KEY = 'DRAWN_FPS';
+const GPU_BOUND = 0.9;
 
 const LOAD_GATE_MIN = { ACTIVE_PARTICLES: 1000, DECAL_TILES_DIRTY: 8, FLOWFIELDS_COMPUTED: 1, FLOWFIELDS_SERVICED: 1, PATHS_COMPUTED: 1 };
 /**
@@ -292,6 +300,9 @@ export function predatorMetrics(report) {
   if (Number.isFinite(mainFpsExact)) out[`${PRESENTED_KEY}_EXACT`] = mainFpsExact;
   if (Number.isFinite(mainFpsExact)) out[PRESENTED_KEY] = mainFpsExact;
   else if (Number.isFinite(mainFps)) out[PRESENTED_KEY] = mainFps;
+  // N-121: Pixi's frames drawn over the window.
+  const windowMs = report.measurementDurationMs;
+  if (Number.isFinite(out.renderer_FRAMES) && windowMs > 0) out[DRAWN_KEY] = out.renderer_FRAMES / (windowMs / 1000);
 
   // Sub-timers, namespaced by worker kind so two workers can publish the same
   // one without colliding (`preRender_EMIT_MS` is not `renderer_EMIT_MS`).
@@ -531,12 +542,35 @@ export function decideAbab(pairs, owner, metric = null) {
   // Higher is better here. Judged only when every pair has it (sittings written
   // before it was collected are re-decided without it).
   let presented = null;
-  const presentedKey = sittingKey(pairs, PRESENTED_KEY);
+  let presentedOther = null;
+  const mainKey = sittingKey(pairs, PRESENTED_KEY);
+  const everyPair = (key) => pairs.length > 0 && pairs.every((p) => Number.isFinite(p.A?.[key]) && Number.isFinite(p.B?.[key]));
+  // N-121: frames drawn decide where Pixi draws under GPU_BOUND of the page's rate on either side.
+  const gpuBound = everyPair(DRAWN_KEY) && everyPair(mainKey.key)
+    && Math.min(median(pairs.map((p) => p.A[DRAWN_KEY] / p.A[mainKey.key])),
+      median(pairs.map((p) => p.B[DRAWN_KEY] / p.B[mainKey.key]))) < GPU_BOUND;
+  const presentedKey = gpuBound ? { key: DRAWN_KEY, source: 'drawn' } : mainKey;
+  const otherKey = gpuBound ? mainKey : (everyPair(DRAWN_KEY) ? { key: DRAWN_KEY, source: 'drawn' } : null);
+  const framesOf = (key) => {
+    const deltas = pairs.map((p) => pctDelta(p.B[key.key], p.A[key.key]));
+    return {
+      key: key.key,
+      source: key.source,
+      baseMedian: median(pairs.map((p) => p.A[key.key])),
+      hypMedian: median(pairs.map((p) => p.B[key.key])),
+      pairedDeltaPct: median(deltas),
+      deltas,
+      lowerFraction: deltas.filter((d) => d < 0).length / deltas.length,
+      higherFraction: deltas.filter((d) => d > 0).length / deltas.length,
+    };
+  };
+  if (otherKey !== null && everyPair(otherKey.key)) presentedOther = framesOf(otherKey);
   const fa = pairs.map((p) => p.A?.[presentedKey.key]).filter(Number.isFinite);
   const fb = pairs.map((p) => p.B?.[presentedKey.key]).filter(Number.isFinite);
   if (pairs.length && fa.length === pairs.length && fb.length === pairs.length) {
     const deltas = pairs.map((p) => pctDelta(p.B[presentedKey.key], p.A[presentedKey.key]));
     presented = {
+      key: presentedKey.key,
       source: presentedKey.source,
       baseMedian: median(fa),
       hypMedian: median(fb),
@@ -549,7 +583,7 @@ export function decideAbab(pairs, owner, metric = null) {
     };
     if (presented.pairedDeltaPct <= -3 && presented.lowerFraction >= CONSISTENT) {
       regress.push(
-        `presented frames ${presented.pairedDeltaPct.toFixed(1)}% (${Math.round(presented.lowerFraction * deltas.length)}/${deltas.length} pairs fewer)`,
+        `${gpuBound ? 'drawn' : 'presented'} frames ${presented.pairedDeltaPct.toFixed(1)}% (${Math.round(presented.lowerFraction * deltas.length)}/${deltas.length} pairs fewer)`,
       );
     }
   }
@@ -622,7 +656,7 @@ export function decideAbab(pairs, owner, metric = null) {
     }
   }
 
-  return { verdict, owner, ownerJudged, metric, attributed, kinds, presented, throughput, load, reasons, muted, regress, noisy, belowFloor };
+  return { verdict, owner, ownerJudged, metric, attributed, kinds, presented, presentedOther, throughput, load, reasons, muted, regress, noisy, belowFloor };
 }
 
 async function main() {
@@ -861,11 +895,21 @@ function printDecision(name, decision) {
   }
   if (decision.presented) {
     const pr = decision.presented;
+    const drawn = pr.source === 'drawn';
     console.log(
-      `${'presented'.padEnd(10)} ${pr.baseMedian.toFixed(1)} → ${pr.hypMedian.toFixed(1)} fps  ` +
+      `${(drawn ? 'drawn' : 'presented').padEnd(10)} ${pr.baseMedian.toFixed(1)} → ${pr.hypMedian.toFixed(1)} fps  ` +
         `paired ${pr.pairedDeltaPct >= 0 ? '+' : ''}${pr.pairedDeltaPct.toFixed(1)}%  ` +
         `fewer ${Math.round(pr.lowerFraction * pr.deltas.length)}/${pr.deltas.length}  ` +
-        `cv ${(pr.cvBase * 100).toFixed(0)}/${(pr.cvHyp * 100).toFixed(0)}%`,
+        `cv ${(pr.cvBase * 100).toFixed(0)}/${(pr.cvHyp * 100).toFixed(0)}%` +
+        (drawn ? '  (judged: Pixi draws under the page\'s rate)' : ''),
+    );
+  }
+  // N-121: the other count, reported, not judged.
+  if (decision.presentedOther) {
+    const po = decision.presentedOther;
+    console.log(
+      `${(po.source === 'drawn' ? 'drawn' : 'presented').padEnd(10)} ${po.baseMedian.toFixed(1)} → ${po.hypMedian.toFixed(1)} fps  ` +
+        `paired ${po.pairedDeltaPct >= 0 ? '+' : ''}${po.pairedDeltaPct.toFixed(1)}%  (reported, not judged)`,
     );
   }
   // E-32. A muted key prints its numbers, its cv and the band it was measured
