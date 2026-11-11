@@ -143,6 +143,7 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
+import { fetchAsset, fetchAssetJson } from '../util/fetchAsset.js';
 import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
 import { darkLightingText, smallWorldText } from '../util/sceneGuards.js';
 import { Messages } from './messages.js';
@@ -1483,22 +1484,10 @@ class Scene {
     await Promise.all(
       Object.entries(adobeConfigs).map(async ([assetName, config]) => {
         try {
-          const [atlasResponse, animationResponse, image] = await Promise.all([
-            fetch(config.atlas),
-            fetch(config.animation),
+          const [atlasData, animationData, image] = await Promise.all([
+            fetchAssetJson(config.atlas, `Adobe asset "${assetName}" atlas JSON`),
+            fetchAssetJson(config.animation, `Adobe asset "${assetName}" animation JSON`),
             SpriteSheetRegistry._loadImage(config.png),
-          ]);
-
-          if (!atlasResponse.ok) {
-            throw new Error(`Failed to load Adobe atlas JSON: ${config.atlas}`);
-          }
-          if (!animationResponse.ok) {
-            throw new Error(`Failed to load Adobe animation JSON: ${config.animation}`);
-          }
-
-          const [atlasData, animationData] = await Promise.all([
-            atlasResponse.json(),
-            animationResponse.json(),
           ]);
 
           spritesheetConfigs[assetName] = {
@@ -1599,17 +1588,10 @@ class Scene {
   }
 
   async _loadBakedBigAtlas(bigAtlasAsset) {
-    const [jsonResponse, pngResponse] = await Promise.all([
-      fetch(bigAtlasAsset.json),
-      fetch(bigAtlasAsset.png),
+    const [json, pngResponse] = await Promise.all([
+      fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON'),
+      fetchAsset(bigAtlasAsset.png, 'baked bigAtlas PNG'),
     ]);
-    if (!jsonResponse.ok) {
-      throw new Error(`Failed to load baked bigAtlas JSON: ${bigAtlasAsset.json}`);
-    }
-    if (!pngResponse.ok) {
-      throw new Error(`Failed to load baked bigAtlas PNG: ${bigAtlasAsset.png}`);
-    }
-    const json = await jsonResponse.json();
     const imageBitmap = await createImageBitmap(await pngResponse.blob());
     const canvas = this._canvasFromImageBitmap(imageBitmap);
     return { json, imageBitmap, canvas };
@@ -1627,16 +1609,8 @@ class Scene {
     await Promise.all(
       entries.map(async ([tilemapId, tilemapConfig]) => {
         try {
-          const jsonResponse = await fetch(tilemapConfig.json);
-          if (!jsonResponse.ok) {
-            throw new Error(`Failed to load tilemap JSON: ${tilemapConfig.json}`);
-          }
-          const tilemapData = await jsonResponse.json();
-
-          const tilesetResponse = await fetch(tilemapConfig.png);
-          if (!tilesetResponse.ok) {
-            throw new Error(`Failed to load tileset image: ${tilemapConfig.png}`);
-          }
+          const tilemapData = await fetchAssetJson(tilemapConfig.json, `tilemap "${tilemapId}" JSON`);
+          const tilesetResponse = await fetchAsset(tilemapConfig.png, `tilemap "${tilemapId}" tileset`);
           const tilesetBitmap = await createImageBitmap(await tilesetResponse.blob());
 
           this.loadedTilemaps[tilemapId] = {
