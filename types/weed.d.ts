@@ -3830,6 +3830,7 @@ export declare class VolumeShadowCaster extends Component {
   /**
    * One more level on what the volume has. `topOutline`, as many corners, makes its top another shape: one that closes on a
    * point is a pyramid, on a line a gabled roof; one that crosses itself is refused. A corner that is not finite is refused.
+   * A level the arena has no room for warns and leaves the volume as it was.
    */
   addLevel(
     outline: ArrayLike<number> | ReadonlyArray<{ x: number; y: number }>,

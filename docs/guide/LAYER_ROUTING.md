@@ -279,7 +279,7 @@ this.volumeShadowCaster.addLevel(CABIN, 13, 27, ROOF);
 The rest takes care of itself:
 
 - **The layer.** A scene with such a class gets a `volumeShadows` layer at `zIndex` 1.5, composed once with `alphaBySun: 'shadow'`, so two shadows that cross do not darken twice. `layers: { volumeShadows: { zIndex: 2.5 } }` moves it. `setLayer` moves the entity's sprite, not its volume.
-- **The room.** The scene keeps `lighting.maxVolumeVerts` vertices (default 16) for each entity of such a class, on top of `renderer.maxMeshVerts`. A box takes 8, a body with a cabin 16, and a hull as many as its corners. It is a share of one arena, so one volume may take more if another takes less; when it is full, a volume warns and does not draw.
+- **The room.** The scene keeps `lighting.maxVolumeVerts` vertices (default 16) for each entity of such a class, on top of `renderer.maxMeshVerts`. A box takes 8, a body with a cabin 16, and a hull as many as its corners. It is a share of one arena, so one volume may take more if another takes less; when it is full, a volume warns: a box or a hull that does not fit draws nothing, and a level that does not fit leaves the volume as it was.
 - **Its entity's paint.** The shadow is black whatever `tint` the entity has. `alpha` and `visible` reach it, so a car that fades takes its shadow along.
 - **The cost.** A volume draws what the mesh it replaces would, and a turn rewrites nothing. On a town of 20 000 houses and 200 cars, as many frames as meshes written by hand, and 5 % less of the renderer's time.
 
