@@ -224,6 +224,7 @@ export function buildSceneSharedBuffers(scene) {
     liquidFunGroups: scene.buffers.liquidFunGroups || null,
     decalStampRing: scene.buffers.decalStampRing || null,
     spawnCommandRing: scene.buffers.spawnCommandRing || null,
+    listUpdateRings: scene.buffers.listUpdateRings || null,
     decalsTilesRGBA: scene.buffers.decalsTilesRGBA || null,
     perTypeActiveLists: scene.buffers.perTypeActiveLists,
     entityFreeLists: scene.buffers.entityFreeLists,

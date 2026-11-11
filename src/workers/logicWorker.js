@@ -43,6 +43,10 @@ import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.
 import { Ray } from '../core/ray.js';
 import { Box2d } from '../core/box2d.js';
 import { IMPACT_FLOATS, bindImpactRing } from '../util/impactRing.js';
+import {
+  LIST_UPDATE_DESPAWN, bindListUpdateRing, listUpdateRecordOffset, listUpdatesPending, listUpdatesRead,
+  markListUpdatesRead, pushListUpdates,
+} from '../util/listUpdateRing.js';
 import { collisionPairKey } from '../util/utils.js';
 import { EntityIdArray } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
@@ -295,6 +299,10 @@ class LogicWorker extends AbstractWorker {
     /** @internal Reused by sendListUpdatesToLogic0 to avoid .map() allocation */
     this._spawnSerializedBuffer = [];
     this._despawnSerializedBuffer = [];
+    // E-208: a worker other than logic0 writes its list updates into a ring of its own (null: none, or logic0);
+    // logic0 reads every other worker's.
+    this._listUpdateRing = null;
+    this._listUpdateRings = [];
     this._spawnCap = 256;
     this._spawnIdx = new Int32Array(256);
     this._spawnType = new Int32Array(256);
@@ -369,6 +377,17 @@ class LogicWorker extends AbstractWorker {
 
     // Get total logic workers count from config
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
+
+    // E-208: the list update rings (listUpdateRing.js), with more than one logic worker.
+    const listRings = data.buffers?.listUpdateRings || null;
+    if (listRings !== null && this.totalLogicWorkers > 1) {
+      const entities = data.globalEntityCount | 0;
+      if (this.workerIndex === 0) {
+        for (let k = 1; k < this.totalLogicWorkers; k++) this._listUpdateRings.push(bindListUpdateRing(listRings, k, entities));
+      } else {
+        this._listUpdateRing = bindListUpdateRing(listRings, this.workerIndex, entities);
+      }
+    }
 
     if (data.impactBuffer) {
       // N-129: the impacts the particle worker publishes (impactRing.js), read from where this worker stopped.
@@ -671,6 +690,31 @@ class LogicWorker extends AbstractWorker {
   }
 
   /**
+   * E-208 (logic0): every other worker's list updates from its ring into this frame's queues, each class from its
+   * type, in the order the worker wrote them.
+   */
+  _drainListUpdateRings() {
+    const rings = this._listUpdateRings;
+    for (let k = 0; k < rings.length; k++) {
+      const ring = rings[k];
+      const to = listUpdatesPending(ring);
+      let at = listUpdatesRead(ring);
+      if (at === to) continue;
+      const h = ring.i32;
+      const classByType = GameObject.classByType;
+      for (; at !== to; at = (at + 1) | 0) {
+        const o = listUpdateRecordOffset(ring, at);
+        const raw = h[o];
+        const type = h[o + 1];
+        const EntityClass = classByType[type];
+        if ((raw & LIST_UPDATE_DESPAWN) !== 0) this.queueDespawnListUpdate(raw & 0x7fffffff, type, EntityClass);
+        else this.queueSpawnListUpdate(raw, type, EntityClass);
+      }
+      markListUpdatesRead(ring, to);
+    }
+  }
+
+  /**
    * Process all pending list updates (logic0 only, called at start of frame)
    * This ensures all list operations happen single-threaded, avoiding race conditions.
    */
@@ -825,6 +869,16 @@ class LogicWorker extends AbstractWorker {
       return true;
     }
 
+    // E-208: through this worker's ring when it has room for the frame's updates, else by message as before.
+    const ring = this._listUpdateRing;
+    if (ring !== null && pushListUpdates(
+      ring, this._despawnIdx, this._despawnType, this._despawnN, this._spawnIdx, this._spawnType, this._spawnN,
+    )) {
+      this._spawnN = 0;
+      this._despawnN = 0;
+      return true;
+    }
+
     this._serializeListUpdates();
     const sent = this.sendDataToWorker('logic0', {
       msg: 'listUpdates',
@@ -934,6 +988,7 @@ class LogicWorker extends AbstractWorker {
     // This ensures single-threaded list operations, avoiding race conditions.
     if (this.workerIndex === 0) {
       this._drainSpawnCommandRing();
+      this._drainListUpdateRings();
       this.processListUpdates();
     }
 

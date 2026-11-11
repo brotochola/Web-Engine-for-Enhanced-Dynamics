@@ -3636,6 +3636,13 @@ className string per record, and `_receiveListUpdates` allocates one more: garba
 logic0's lists a frame late.
 **Plan:** a SAB ring per worker (entity index, type id), drained by logic0 at the start of its frame. Owner: logic0 in
 spawnStormScene with 2+ logic workers, KB/s (heapSampleWorkers) and STEP_MS; the frame of spawn latency is a side gain.
+**Result:** kept 2026-11-11 (`33732b3b`, R-0881). Step 0 (`3c0b5f5d`: `spawnStormScene ?logicWorkers=N`, the driver on
+logic1): logic0 allocated 33 554 KB/s sampled, 25 809 in `port.onmessage` and 7 705 in `_receiveListUpdates`. The
+change: `src/util/listUpdateRing.js`, a single-writer ring per worker, two words a record (the entity with a despawn bit,
+the type), drained by logic0 into the same queues, each class from `GameObject.classByType`; a frame without room goes by
+message as before. After: logic0 allocates 35 KB/s. `?logicWorkers=2`, 4 pairs: logic (logic1, the writer) 3.160 →
+2.321 ms (-25.7 %, worse 0/4); logic0 +2 to +15 % below the floor, the drain now inside its frame where the messages
+used to land between frames.
 
 ### E-209 Entity instances made at spawn
 
