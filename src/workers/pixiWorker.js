@@ -1010,6 +1010,8 @@ class PixiRenderer extends AbstractWorker {
     // RAYCASTED LIGHT OCCLUSION (visibility polygons)
     // ========================================
     this._visPolyEnabled = false;
+    // N-134: raycasted lighting draws the sun's casters alone into the casted shadows (no cookies, no lamp stamps).
+    this._castedShadowsSunOnly = false;
     this._visPolyBuffers = [null, null]; // Double-buffered typed views + header pairs
     this._visPolyMaxVerts = 128;
     this._visPolyMaxLights = 10;
@@ -3599,13 +3601,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     // Visibility polygons already do attenuation + occlusion. CASTED_SHADOWS
     // light cookies multiply on top and crush umbra to pitch black (cookies clear
-    // to black outside the gradient; soft shadow sprites used ~0.33 alpha).
-    if (this.shadowDisplaySprite) {
-      this.shadowDisplaySprite.visible = false;
-    }
-    this.shadowSpritesEnabled = false;
-    // Keep Layer flag off so _applyLayerVisibility does not re-show an empty cookie RT.
-    if (Layer.castedShadows) Layer.castedShadows.visible = false;
+    // to black outside the gradient; soft shadow sprites used ~0.33 alpha), and the
+    // fans are the lamps' shadows. N-134: the sun's casters still draw there (they
+    // used to go with the rest, so trees and people cast nothing under raycasted
+    // lighting); the cookies and the lamps' stamps do not.
+    this._castedShadowsSunOnly = true;
 
     if (this._useWebGpu) {
       this._visBatchProgramOpts = { gpuProgram: gpuFromWgsl(this._visBatchWgsl, 'visibility-polygon-batch') };
@@ -5183,7 +5183,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     u.uPointScale = pointScale;
     u.uGroundInvScaleY = this._groundInvScaleY || 1;
 
-    if (cookieN > 0 && this.shadowBatch && gpu.cookie) {
+    if (cookieN > 0 && !this._castedShadowsSunOnly && this.shadowBatch && gpu.cookie) {
       const screenScale = zoom * res;
       this.shadowBatch.setTargetSpace(true, this._renderCameraX, this._renderCameraY, screenScale);
       if (this._commitPackedBatch(this.shadowBatch, gpu.cookie, cookieN, GPU_SPRITE_FLOATS)) {
@@ -5197,7 +5197,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
-    if (stampN > 0) {
+    if (stampN > 0 && !this._castedShadowsSunOnly) {
       u.uLight[0] = 0;
       u.uLight[1] = 0;
       u.uLight[2] = 0;
