@@ -65,6 +65,11 @@ export const LAYER_KIND: Readonly<{
   MESH: 'mesh';
   /** Particles computed in the vertex shader ({@link ParticleEmitter.emitGpu}). */
   GPU_PARTICLES: 'gpuParticles';
+  /**
+   * A pass over the whole frame: its look's `uTexture` is everything drawn under it (and `uScene`, when the look names
+   * it, the frame before the first pass). SCREEN layers chain in zIndex order and draw over every other layer.
+   */
+  SCREEN: 'screen';
   DECALS: 'decals';
   SHADOWS: 'shadows';
   LIGHTING: 'lighting';
