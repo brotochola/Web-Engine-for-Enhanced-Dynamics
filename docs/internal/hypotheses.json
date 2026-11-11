@@ -11547,10 +11547,10 @@
       "id": "DX-GUARDS",
       "title": "The engine says the mistakes a game makes, or fixes them",
       "status": "open",
-      "statusText": "Built 2026-11-10 on dx/guards, not merged; the Predator gate is the owner's",
+      "statusText": "Built 2026-11-10 on dx/guards and its leftovers fixed 2026-11-11 (R-0861), not merged; the Predator gate is the owner's",
       "date": "2026-11-10",
-      "result": "Built 2026-11-10 on dx/guards: load guards C1, C3 to C6, C8 to C10; debug-build guards E1 to E7 with devChecks and debug.checks; F1, F2; the debug bundle's workers speak. Not merged; the Predator gate is the owner's.",
-      "next": "The owner: the Predator gate (hygiene), the demos' empty ticks (C4), N-131, N-132; then merge with bundles.",
+      "result": "Built 2026-11-10 on dx/guards: load guards C1, C3 to C6, C8 to C10; debug-build guards E1 to E7 with devChecks and debug.checks; F1, F2; the debug bundle's workers speak. 2026-11-11, the owner's word: N-131, N-132, N-135 fixed, the demos' empty ticks deleted, Predator's late fields declared, the page keys read; no demo warns. Not merged; the Predator gate is the owner's.",
+      "next": "The owner: the Predator gate (hygiene, command in R-0857), F2 on spawnStormScene (R-0856); then merge with bundles.",
       "area": "engine",
       "kind": "dx",
       "refs": [
@@ -11564,16 +11564,17 @@
         "config keys"
       ],
       "records": [
-        "R-0857"
+        "R-0857",
+        "R-0861"
       ]
     },
     {
       "id": "N-131",
       "title": "collider.isTrigger written after the body exists does nothing",
-      "status": "open",
-      "statusText": "Found 2026-11-10 by DX-GUARDS E3, confirmed in the code, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
       "date": "2026-11-10",
-      "result": "",
+      "result": "Fixed 2026-11-11 (5b860316): the setter makes the body again (a new generation for a live slot); Predator's money becomes a trigger. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
       "next": "The setter marks LIFECYCLE (the body made again, as enableHitEvents does) or a sensor command; a test that a trigger set after the body exists reaches Box2D. Predator's money drops then become triggers: its gate's scene changes.",
       "area": "physics",
       "kind": "bug",
@@ -11586,16 +11587,17 @@
         "trigger after creation"
       ],
       "records": [
-        "R-0857"
+        "R-0857",
+        "R-0861"
       ]
     },
     {
       "id": "N-132",
       "title": "A mass set in onSpawned never holds on an entity whose collider has a shape",
-      "status": "open",
-      "statusText": "Found 2026-11-10 by DX-GUARDS E4, confirmed in the code, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
       "date": "2026-11-10",
-      "result": "",
+      "result": "Fixed 2026-11-11 (baa4183d): a mass set in onSpawned holds through the spawn's sync; the landing page's crates float. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
       "next": "The owner's call (a change in behaviour): the spawn's sync keeps a mass set by hand during the spawn. The landing page's Floater and HungCrate then weigh what their comment says.",
       "area": "physics",
       "kind": "bug",
@@ -11608,7 +11610,29 @@
         "syncMassFromCollider"
       ],
       "records": [
-        "R-0857"
+        "R-0857",
+        "R-0861"
+      ]
+    },
+    {
+      "id": "N-135",
+      "title": "collider.enableHitEvents changed after the body exists does nothing",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
+      "date": "2026-11-11",
+      "result": "Fixed 2026-11-11 (77c81f77): the setter makes the body again, as N-131. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
+      "next": "Make the body again, as N-131 does for isTrigger; a test that hit events turned on after the body exists reach Box2D.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-135"
+      ],
+      "aliases": [
+        "enableHitEvents",
+        "hit events after creation"
+      ],
+      "records": [
+        "R-0861"
       ]
     }
   ],
@@ -19786,6 +19810,27 @@
         "d248ccaa",
         "334b5e77",
         "1a8ef3b4"
+      ]
+    },
+    {
+      "id": "R-0861",
+      "date": "2026-11-11",
+      "time": "02:37",
+      "timeFrom": "recorded",
+      "title": "N-131, N-132 and N-135 fixed with DX-GUARDS's other leftovers: empty ticks, Predator's late fields, page keys",
+      "verdict": "kept-hygiene",
+      "text": "**N-131, N-132 and N-135 fixed with the rest DX-GUARDS had left for the owner (the owner, 2026-11-11: \"arreglalos todos\"): kept as hygiene on `dx/guards`, nothing timed, the gate to the owner.**\n\n- **N-131** (`5b860316`): `collider.isTrigger` changed on a live entity makes its body again. Marking LIFECYCLE was not enough: `syncBodySlot` makes an existing body again only for a new generation, so `box2dBodySync.remakeBody` gives a live slot one (and marks LIFECYCLE before the entity is live). In Chromium, with Box2D: a ball dropped on a platform and turned into a trigger 20 frames after its spawn rested on it at y 480 before, and falls through after. Predator's money, turned into a trigger a second after it drops, now is one.\n- **N-135** (`77c81f77`), found while fixing N-131: `collider.enableHitEvents` had the same hole. Its setter marked LIFECYCLE and PHYSICS.md said the body was made again; it was not, and R-0857's \"enableHitEvents already reaches the body\" was wrong. Same fix.\n- **N-132** (`baa4183d`): a mass set with `rigidBody.mass` in `onSpawned` holds through the spawn's sync from the collider. The slot is marked; a shape setter's sync still replaces the mass and clears the mark; a spawn clears it first. The landing page's Floater and HungCrate weigh 0.45 of their area (they float, as their comments say) and weldBreakScene's dropper weighs HEAVY_MASS.\n- **Page keys** (`a0c61aac`): the key map reads pageup, pagedown, home and end, after the 73 keys before (their indices stay). The landing page's chapters answer them.\n- **Empty ticks** (`72b4b669` Predator's House, Barrel and TallLight; `acbf1c8f` nine demo classes, Floor among them; `db5553fe` nine stress scene classes and their tickIntervals): the logic workers no longer visit those types. Predator's logic and the logic of spawnStorm, stationarySpatial*, rayStress*, rayVsBox2d*, contactDrain*, computeStress, queryChurn, renderQueueStress and compoundFixtureSpatial do less: their numbers move against sittings before these commits.\n- **Predator's fields** (E2): `MySoldier._logicFrame` (`bb98e09d`) and its FSM's line-of-sight cache, `_losCacheTarget`, `_losCacheClear` and `_losCacheUntilFrame` (`c0acf4ac`), declared in the class. The audit reads one live soldier a second, so it named the cache fields only once `_logicFrame` was declared.\n- The demos test keeps no warning now (`7430c78f`); docs (`c06b17d8`, `7a0d2226`).\n\n- Bundles `d438e90f`: check:dist fresh, test:node:bundle 279 of 279 on each of the 8, test:bundle 8 of 8; the production bundle still holds none of the run-time texts.\n\n**Checks.** Each engine fix has a test that fails without it. Suites at `7a0d2226`: test:node 2410 of 2410, test:demos 101 of 101. Every demo again from source with the checks on, 8 to 9 s each, the 9 WebGPU ones in a window, and Predator once more for 30 s: no guard warns. The pool-full warnings the engine gave before are left: Blastforge's Prop pool, ConstraintBox's joint pool and Predator's Flash pool.\n\n**Gate for the owner.** The branch's Predator gate in R-0857 takes `src/` from each revision and the scene from the folder (no `--full-rev`), so both sides run one scene and it reads the engine alone.",
+      "commits": [
+        "5b860316",
+        "77c81f77",
+        "baa4183d",
+        "a0c61aac",
+        "72b4b669",
+        "acbf1c8f",
+        "db5553fe",
+        "bb98e09d",
+        "c0acf4ac",
+        "d438e90f"
       ]
     }
   ],
