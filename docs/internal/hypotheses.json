@@ -10769,14 +10769,15 @@
       "id": "DX-VOLUME",
       "title": "VolumeShadowCaster: a component that declares an object's volume, for the sun and point lights",
       "status": "open",
-      "statusText": "Phases 0 and 1 merged to main (e54f701f), released in 0.14.0; phases 2 to 4 are a plan",
+      "statusText": "Phases 0 and 1 merged to main (e54f701f), released in 0.14.0; phases 2 to 4 are a plan, phase 3 worked out as DX-VOLLIGHTS",
       "date": "2026-11-05",
       "result": "As many frames as meshes by hand and renderer -5.0 % at 20 000 houses; in the game, renderer -14.7 % by day. The pictures are equal to the pixel.",
       "next": "",
       "area": "render",
       "kind": "dx",
       "refs": [
-        "REVIEW_PLAN.md#DX-VOLUME"
+        "REVIEW_PLAN.md#DX-VOLUME",
+        "DX_VOLLIGHTS_DESIGN.md"
       ],
       "aliases": [
         "VolumeShadowCaster",
@@ -10788,7 +10789,8 @@
         "R-0846",
         "R-0847",
         "R-0848",
-        "R-0853"
+        "R-0853",
+        "R-0860"
       ]
     },
     {
@@ -11586,6 +11588,59 @@
       "records": [
         "R-0859"
       ]
+    },
+    {
+      "id": "N-134",
+      "title": "Raycasted lighting hides every ShadowCaster shadow, the sun's included",
+      "status": "open",
+      "statusText": "Confirmed in the code (2026-11-11), not yet seen on screen, not fixed",
+      "date": "2026-11-11",
+      "result": "initVisibilityPolygonSystem runs after createCastedShadowsSystem and hides castedShadows (shadowSpritesEnabled false), for the cookies that crushed the umbra; the sun's sprite shadows and the lamps' stamps go with them. Sun Street runs raycasted by default.",
+      "next": "Under raycasted, draw the sun casters into shadowRT without the cookies and show the layer; a capture at noon with raycast on and off, both backends.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-134"
+      ],
+      "aliases": [
+        "raycasted",
+        "castedShadows",
+        "shadowSpritesEnabled",
+        "initVisibilityPolygonSystem",
+        "ShadowCaster",
+        "Sun Street"
+      ],
+      "records": [
+        "R-0860"
+      ],
+      "rank": 32
+    },
+    {
+      "id": "DX-VOLLIGHTS",
+      "title": "Lamps and headlights cast a VolumeShadowCaster's shadow, in basic and raycasted lighting",
+      "status": "open",
+      "statusText": "A plan for the owner to decide (DX_VOLLIGHTS_DESIGN.md), not built",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "Decisions first (eight, in the design). Then step 0 (volumeStressScene ?castsLights= ?raycast=, a reference outline, vertices × casting lights at Sun Street's and Conurbano's sizes), basic lighting into shadowRT, raycasted lighting as a mask on each fan, receivers, Sun Street without LightOccluder.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-VOLLIGHTS",
+        "DX_VOLLIGHTS_DESIGN.md"
+      ],
+      "aliases": [
+        "castsLights",
+        "volume lamp shadows",
+        "raycasted volumes",
+        "LightOccluder oblique",
+        "sourceHeight",
+        "DX-VOLUME phase 3"
+      ],
+      "records": [
+        "R-0860"
+      ],
+      "rank": 33
     }
   ],
   "records": [
@@ -19739,6 +19794,15 @@
         "62c0e1e0",
         "06064018"
       ]
+    },
+    {
+      "id": "R-0860",
+      "date": "2026-11-11",
+      "time": "01:27",
+      "timeFrom": "recorded",
+      "title": "DX-VOLLIGHTS planned (lamps cast a volume's shadow, basic and raycasted lighting) and N-134 filed (raycasted lighting hides every sprite shadow)",
+      "verdict": "note",
+      "text": "**DX-VOLLIGHTS planned and N-134 filed: lamps do not see a volume in either lighting mode, and raycasted lighting hides every sprite shadow.** Nothing timed. Read from the code at 99e39b8b.\n\nThe owner asked whether Sun Street's raycasted lamps interact with its volumes. They do not:\n- `VolumeShadowCaster`'s rows sit in the `volumeShadows` MESH layer, which only the sun moves.\n- Raycasted lighting stops a lamp with pre-render's 2D sweep over `LightOccluder` shapes.\n- Basic lighting stops it only with `ShadowCaster` stamps.\n\nSun Street puts a `LightOccluder` on every house and car. In its oblique view, that wedge darkens the wall that faces the lamp and runs to the reach whatever the object's height.\n\nThe owner then asked for a plan that pins down the API, the developer experience and the picture. It is `DX_VOLLIGHTS_DESIGN.md`, which works out DX-VOLUME's phase 3:\n- **The shadow:** `p + (p − l) · h / (H − h)`, with `H` the bulb's `sourceHeight`. It runs to the reach where the object is taller than the bulb, fades with the lamp's falloff, and never falls on the object's own picture.\n- **The cases:** each one with Sun Street's sizes. A car 100 px from a 40 px bulb throws 48 and 208 px (body and cabin); under a 150 px bulb, 9 and 22 px. A house 100 px from a 150 px bulb throws 226 px.\n- **The API:** `castsLights`, as decided for DX-VOLUME, and the existing shadow-casting lights. A light skips its own entity's volume and any footprint it stands in. A class with both `LightOccluder` and a volume that casts lights warns at load.\n- **Two ways to draw it:**\n  - Basic lighting: into `shadowRT`, one draw per light, MAX within a light.\n  - Raycasted lighting: a mask of four lights per pass that cuts each fan, with the volumes' own pictures cleared, because `visPolyRT` multiplies over the whole frame.\n- **Phases 0 to 4** and **eight decisions**, recommended: basic lighting first; Sun Street on basic lighting with volumes, `R` comparing.\n\nN-134 came out of that reading. `initVisibilityPolygonSystem` (pixiWorker.js) runs after `createCastedShadowsSystem` and hides `castedShadows`, because the cookies crushed the fans' umbra. The sun's sprite shadows and the lamps' stamps go with it. Conurbano's notes saw it (\"turns off the projected shadows of people and trees\"), and Sun Street runs raycasted by default. Confirmed in the code, not yet seen on screen.\n\nRanked 32 (N-134) and 33 (DX-VOLLIGHTS), after the queue's 31."
     }
   ],
   "leads": [
