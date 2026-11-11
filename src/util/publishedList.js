@@ -35,6 +35,11 @@ export function publishedListBytes(maxEntries, extra = 0) {
   return HEADER_BYTES + PUBLISHED_LIST_COPIES * copyBytes(maxEntries, extra);
 }
 
+/** The byte of copy `k` of a published list whose header is at `byte` (bindPublishedList's copies[k].byteOffset). */
+export function publishedListCopyByte(byte, maxEntries, k, extra = 0) {
+  return byte + HEADER_BYTES + k * copyBytes(maxEntries, extra);
+}
+
 /** A published list's header at `byte` of `buffer`: copy 0 published, none held. */
 export function initPublishedList(buffer, byte = 0) {
   const ctl = new Int32Array(buffer, byte, 2);

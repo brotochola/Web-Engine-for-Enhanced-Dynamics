@@ -32,12 +32,13 @@ function boot(workerData) {
 
 /**
  * The particle memory's layout as the 16-bit code laid it out (wasmMemoryMap.js before E-129), for n slots; since N-113
- * the visible list is a published list: a 64-byte header and three copies of its old size, each from a cache line.
+ * the visible list, and since N-136 the active one, are published lists: a 64-byte header and three copies of their old
+ * size, each from a cache line; the integrate's indices are copy 0's.
  */
 function oldLayout(n) {
   const map = layoutRegions([
     { name: 'component', owner: '', bytes: ParticleComponent.getBufferSize(n) },
-    { name: 'activeList', owner: '', bytes: (n + 2) * 2 },
+    { name: 'activeList', owner: '', bytes: 64 + 3 * Math.ceil(((n + 2) * 2) / 64) * 64 },
     { name: 'visibleList', owner: '', bytes: 64 + 3 * Math.ceil(((n + 2) * 2) / 64) * 64 },
     { name: 'stamp', owner: '', bytes: n * 2 },
     { name: 'flat', owner: '', bytes: 65536 * 2 },
@@ -56,7 +57,7 @@ function oldLayout(n) {
       activeListByte: r.activeList.byte,
       visibleListByte: r.visibleList.byte,
       slotBytes: 2,
-      indicesByte: r.activeList.byte + 2,
+      indicesByte: r.activeList.byte + 64 + 2,
       stampByte: r.stamp.byte,
       flatByte: r.flat.byte,
       heightedByte: r.heighted.byte,
@@ -94,7 +95,7 @@ test('a 200 000-particle pool boots with 32-bit slot ids and the stress driver f
   assert.equal(wasm.made.freeListTopBytes, 16, 'the FL4 head');
   assert.equal(wasm.made.links, 'Uint32Array');
   assert.equal(wasm.made.layout.slotBytes, 4);
-  assert.equal(wasm.made.layout.indicesByte, wasm.made.layout.activeListByte + 4);
+  assert.equal(wasm.made.layout.indicesByte, wasm.made.layout.activeListByte + 64 + 4, "copy 0's indices");
   assert.deepEqual(wasm.bound.lists, { slotBytes: 4, f32: true }, 'the _u32 list builds, float32');
   assert.deepEqual(wasm.bound.integrate, { slotBytes: 4, f32: true }, 'the _u32 integrate, float32');
   for (const side of [wasm, js]) {

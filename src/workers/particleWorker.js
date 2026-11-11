@@ -516,6 +516,11 @@ class ParticleWorker extends AbstractWorker {
     // N-113: the visible particles' published list, the same way (the list kernel writes a copy given its byte).
     this.visibleParticlesCtl = new Int32Array(0);
     this.visibleParticlesCopies = [];
+    // N-136: the active particles' published list, the same way; the integrate reads the indices of the copy the kernel
+    // wrote that frame (a view of each copy's indices, made at init).
+    this.activeParticlesCtl = new Int32Array(0);
+    this.activeParticlesCopies = [];
+    this._activeIndexViews = [];
   }
 
   /**
@@ -555,6 +560,9 @@ class ParticleWorker extends AbstractWorker {
       if (!data.particleMemory || !data.particleLayout) throw new Error('particles without the particle memory (createParticleMemory)');
       // E-80: the integrate's input is the published active list, which is in the particle memory.
       this.activeParticleIndices = new ParticleSlots(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
+      // N-136: each published copy's indices, after its count.
+      const slotBytes = ParticleSlots.BYTES_PER_ELEMENT;
+      this._activeIndexViews = this.activeParticlesCopies.map((c) => new ParticleSlots(c.buffer, c.byteOffset + slotBytes, this.maxParticles));
       // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
       // wasm.particleIntegrateF32 (default on) takes the kernel's float32 integrate, chosen once here.
       this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles, {
@@ -948,8 +956,10 @@ class ParticleWorker extends AbstractWorker {
 
     // Camera not ready: the active list alone (no visibility to test), and an empty visible list.
     if (!this.cameraData) {
+      const active = this._backActiveParticles();
       const copy = this._backVisibleParticles();
       this.activeParticleCount = buildActiveParticleListWasm(this._wasmLists, maxParticles);
+      if (active >= 0) publishList(this.activeParticlesCtl, active);
       if (copy >= 0) publishList(this.visibleParticlesCtl, copy);
       return;
     }
@@ -960,6 +970,7 @@ class ParticleWorker extends AbstractWorker {
     // _frameCameraBounds filled _drawnCam this frame. A turned camera tests each
     // particle in view space, not in the box around the view (E-51b).
     const rotation = this._drawnCam.rotation;
+    const active = this._backActiveParticles();
     const copy = this._backVisibleParticles();
     this.activeParticleCount = buildParticleListsWasm(
       this._wasmLists,
@@ -970,6 +981,7 @@ class ParticleWorker extends AbstractWorker {
       this.canvasHeight,
       this.cullingRatio,
     );
+    if (active >= 0) publishList(this.activeParticlesCtl, active);
     if (copy >= 0) publishList(this.visibleParticlesCtl, copy);
     // if (activeCount !== this._lastLoggedActiveCount) {
     //   this._lastLoggedActiveCount = activeCount;
@@ -977,6 +989,23 @@ class ParticleWorker extends AbstractWorker {
     //   const y0 = ParticleComponent.y ? ParticleComponent.y[0] : 0;
     //   console.log(`[particle_worker] Active particles: ${activeCount}, Visible: ${visibleData ? visibleData[0] : 0}, particle[0]=(${x0}, ${y0}), cam=(${cameraX.toFixed(1)}, ${cameraY.toFixed(1)}, z=${zoom.toFixed(2)})`);
     // }
+  }
+
+  /**
+   * N-136: the active particle list's copy the kernel writes this frame, one Pixi does not hold, published once the
+   * kernel returns; the integrate then reads that copy's indices. -1 when the worker was handed one list.
+   */
+  _backActiveParticles() {
+    const ctl = this.activeParticlesCtl;
+    if (ctl.length === 0) return -1;
+    const copy = backPublishedList(ctl);
+    const list = this.activeParticlesCopies[copy];
+    const indices = this._activeIndexViews[copy];
+    this.activeParticlesData = list;
+    this.activeParticleIndices = indices;
+    this._wasmLists.activeListByte = list.byteOffset;
+    this._wasmIntegrate.indicesByte = indices.byteOffset;
+    return copy;
   }
 
   /**

@@ -105,6 +105,7 @@ import {
   takePendingResize,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
+import { takePublishedList } from '../util/publishedList.js';
 import {
   InstancedSpriteBatch,
   INSTANCED_SPRITE_FLOATS,
@@ -674,6 +675,10 @@ class PixiRenderer extends AbstractWorker {
     // (see updateSpritesFromRenderQueue). Animation/texture selection happens in
     // pre_render_worker, which writes resolved textureIds into the queue.
     this.maxParticles = 0;
+    // N-136: the active particles' published list (header and three copies, bound at init); empty when the worker was
+    // handed one list.
+    this.activeParticlesCtl = new Int32Array(0);
+    this.activeParticlesCopies = [];
     this.maxDecorations = 0;
     this.visibleDecorationCount = 0;
 
@@ -3454,10 +3459,21 @@ LIGHTING SYSTEM SETUP
     this._drawLightSplat(splat, o.resolution);
   }
 
+  /**
+   * N-136. The active particle list the light field walks: the copy the particle worker published last, held until
+   * the next take, so the particle worker writes the next lists elsewhere; the one list it was handed when nothing is
+   * published (a test).
+   */
+  _takeActiveParticles() {
+    const ctl = this.activeParticlesCtl;
+    if (ctl.length === 0) return this.activeParticlesData;
+    return this.activeParticlesCopies[takePublishedList(ctl)];
+  }
+
   _renderParticleLightingField() {
     const splat = this._particleLightSplat;
     if (!splat || !this.lightingRT || this._visPolyEnabled) return;
-    const active = this.activeParticlesData;
+    const active = this._takeActiveParticles();
     const lightSqrt = ParticleComponent.lightSqrt;
     if (!active || !(active[0] > 0) || !lightSqrt) return;
     const o = this._particleLightOpts;

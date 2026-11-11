@@ -2,17 +2,21 @@
 // bullet or particle buffers, as sceneWorkerBootstrap hands them over, that writes the pool's visible list as fast as
 // it goes with the camera alternating between two views, until the test sets `stop`: the decorations' screen test
 // (updateDecorationScreen), the bullet tick (tickAllBullets, on bullets that stand still) or the particle lists'
-// kernel (buildActiveAndVisibleParticleLists, on particles nothing moves). It first posts each view's list as the
-// worker writes it alone, then, on 'go', loops and posts how many lists it wrote.
+// kernel (buildActiveAndVisibleParticleLists, on particles nothing moves). `activeParticles` (N-136) writes the active
+// particle list instead: view v makes the particles whose slot has parity v the live ones, so the list changes whole
+// every frame. It first posts each view's list as the worker writes it alone, then, on 'go', loops and posts how many
+// lists it wrote.
 import { parentPort, workerData } from 'node:worker_threads';
 
+import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { calculateCameraScreenBounds } from '../../src/util/utils.js';
 import { initWorker, loadWorker } from '../bench/workerHarness.mjs';
 
 const { kind, config, n, buffers, views, stop } = workerData;
 const halt = new Int32Array(stop);
 const decorations = kind === 'decorations';
-const particles = kind === 'particles';
+const activeParticles = kind === 'activeParticles';
+const particles = kind === 'particles' || activeParticles;
 const Component = decorations ? 'DecorationComponent' : particles ? 'ParticleComponent' : 'BulletComponent';
 
 function extra() {
@@ -71,6 +75,10 @@ function frame(v) {
     worker.refreshActiveDecorationSnapshot();
     worker.updateDecorationScreen();
   } else if (particles) {
+    if (activeParticles) {
+      const active = ParticleComponent.active;
+      for (let k = 0; k < n; k++) active[k] = (k & 1) === v ? 1 : 0;
+    }
     worker.buildActiveAndVisibleParticleLists();
   } else {
     worker.tickAllBullets(1000 / 60, 1);
@@ -79,7 +87,13 @@ function frame(v) {
 
 /** The list the worker wrote last: its indices as they stand. */
 function lastList() {
-  const list = decorations ? worker.visibleDecorationsData : particles ? worker.visibleParticlesData : worker.visibleBulletsData;
+  const list = decorations
+    ? worker.visibleDecorationsData
+    : activeParticles
+      ? worker.activeParticlesData
+      : particles
+        ? worker.visibleParticlesData
+        : worker.visibleBulletsData;
   return Array.from(list.subarray(1, 1 + list[0]));
 }
 
