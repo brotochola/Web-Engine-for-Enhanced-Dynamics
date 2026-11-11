@@ -11070,6 +11070,475 @@
       "records": [
         "R-0853"
       ]
+    },
+    {
+      "id": "N-128",
+      "title": "fixedFps runs fast: setInterval(1000 / fps) takes whole milliseconds (60 becomes 62.5 Hz)",
+      "status": "open",
+      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "date": "2026-11-10",
+      "result": "abstractWorker.js scheduleNextFrame and physicsHostImpl.js pass 16.67 ms, which the timer API truncates to 16: 62.5 Hz with dt fixed at 1/60, the simulation about 4 % fast.",
+      "next": "Count frames over 10 s to confirm; then schedule each frame for the next multiple of 1000 / fps from a start time (setTimeout to a deadline).",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-128"
+      ],
+      "aliases": [
+        "fixedFps",
+        "setInterval",
+        "62.5 Hz"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 23
+    },
+    {
+      "id": "N-129",
+      "title": "onGotShot ignores pins, and a frame's impacts are lost when logic misses one",
+      "status": "open",
+      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "date": "2026-11-10",
+      "result": "processImpacts runs onGotShot on targetId % workers, where ticks and collision callbacks honour forceProcessOnLogicWorker; the particle worker overwrites each frame's impacts, so logic loses a frame it did not read.",
+      "next": "The pin rule in processImpacts, and impacts appended to a ring logic drains; a test for each.",
+      "area": "logic",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-129"
+      ],
+      "aliases": [
+        "onGotShot",
+        "processImpacts",
+        "impacts",
+        "forceProcessOnLogicWorker",
+        "pins"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 24
+    },
+    {
+      "id": "N-130",
+      "title": "Despawn leaves the entity's joints in Weed's joint pool",
+      "status": "open",
+      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "date": "2026-11-10",
+      "result": "Physics destroys the Box2D joints (destroyWasmJointsForEntity), but nothing calls Joint.removeAllForEntity on despawn: the row stays active, the partner still counts it, the slot is not freed.",
+      "next": "Joint.removeAllForEntity on despawn; a test with a jointed pair, one despawned, the other's count, and the index respawned (does it get the old joint back?).",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-130"
+      ],
+      "aliases": [
+        "joints",
+        "despawn",
+        "Joint.removeAllForEntity"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 25
+    },
+    {
+      "id": "E-197",
+      "title": "Input-to-screen latency stamp",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Nothing measures frames from an input to its picture; by the code (E-24, Pixi never waits) it is 3 to 4. A stamp main writes on input, carried by logic, physics, pre-render and the render queue; Pixi records submit time minus stamp; the runner prints median and p95 in ms and frames. A tool, its own commit, before E-198.",
+      "area": "harness",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-197"
+      ],
+      "aliases": [
+        "latency",
+        "input lag",
+        "stamp"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 26
+    },
+    {
+      "id": "E-198",
+      "title": "The wake chain: each stage waits for this vsync's output of the one before it",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Needs E-197. Pixi waits for this vsync's queue with Atomics.wait and a timeout (the frame minus its STEP_MS), the oldest unread queue on a timeout; then pre-render on the pose and physics on logic, each only while the chain fits the frame. Judged by latency, not STEP_MS: STEP_MS - WAIT_MS not 3 % worse, frames drawn held. Owner: latency in Boids and Predator.",
+      "area": "engine",
+      "kind": "speed",
+      "refs": [
+        "EXECUTION_PLAN.md#E-198"
+      ],
+      "aliases": [
+        "latency",
+        "Atomics.wait",
+        "wake chain",
+        "vsync"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 27
+    },
+    {
+      "id": "E-199",
+      "title": "Neighbour aggregates published by the spatial kernel",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Boid, soldier and civilian read Transform.x[j] per neighbour (3.9 ns a read, E-141). publish_batch already has d² per candidate: it also writes, opt-in by type, separation, centroid and the nearest of a type; average velocity needs vx/vy in the kernel (second step). Kernel, then the demos' ticks on it. Owner: logic in Predator and Boids.",
+      "area": "spatial",
+      "kind": "wasm",
+      "refs": [
+        "EXECUTION_PLAN.md#E-199"
+      ],
+      "aliases": [
+        "getNeighbor",
+        "publish_batch",
+        "separation",
+        "centroid",
+        "steering"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 28
+    },
+    {
+      "id": "E-200",
+      "title": "Neighbour lists refreshed with each entity's tick bucket",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Predator uses neighborTickInterval 15 for all, but Boid ticks every 30, the soldier 6, the civilian 4. Refresh a list on the frame before its staggeredUpdates bucket, per type with a tickInterval; Boids does about half the spatial work and civilians read fresh lists. Owner: spatial in Boids and Predator.",
+      "area": "spatial",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-200"
+      ],
+      "aliases": [
+        "neighborTickInterval",
+        "tickInterval",
+        "staggeredUpdates",
+        "neighbor lists"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 29
+    },
+    {
+      "id": "E-201",
+      "title": "Keyed poses read by key on the GPU (a pose texture indexed by entity)",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "E-193's gather costs 42 to 118 ms/s; colliderFillBatch already reads a uPoseTable. Step 0: bytes a frame, the whole pool's poses against today's rows, by fraction visible. Then the pose block as a texture, rows carry only the key, interpolation a lerp of two pose textures; a switch by fraction visible. Owner: BunnyMark's and Predator crowd 1.5's renderer.",
+      "area": "render",
+      "kind": "gpu",
+      "refs": [
+        "EXECUTION_PLAN.md#E-201"
+      ],
+      "aliases": [
+        "uPoseTable",
+        "pack_pose",
+        "pose texture",
+        "pack_sprites_keyed",
+        "BunnyMark"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 30
+    },
+    {
+      "id": "E-202",
+      "title": "Decals stamped on the GPU",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "decalBlitStressScene spends 228 ms/s in Pixi uploading CPU-blended tiles. The stamp ring goes to Pixi, which draws instanced quads into a render target per tile. Open: save becomes a readback, context loss, stamps across tiles. Owner: decalBlitStressScene's Pixi.",
+      "area": "render",
+      "kind": "gpu",
+      "refs": [
+        "EXECUTION_PLAN.md#E-202"
+      ],
+      "aliases": [
+        "decal",
+        "render target",
+        "decalBlitStressScene"
+      ],
+      "records": [
+        "R-0854"
+      ],
+      "rank": 31
+    },
+    {
+      "id": "E-203",
+      "title": "Decoration sway in the vertex shader",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Sway is amp·sin(t·freq + phase) and an impulse the same with a t0: closed forms. The row carries them, the shader computes the facing, decorations become static keyed rows and decorationSway.wasm goes (about 23 % of Predator's particle worker by the review). Attached ones (E-196) are a step of their own. Owner: Predator's particle worker.",
+      "area": "particle",
+      "kind": "gpu",
+      "refs": [
+        "EXECUTION_PLAN.md#E-203"
+      ],
+      "aliases": [
+        "sway",
+        "decorationSway",
+        "vertex shader",
+        "W22"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "E-204",
+      "title": "Fill rate, step 0: GPU time, overdraw and mipmaps zoomed out",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "No entry yet on mipmaps, overdraw or the light loop; autoGenerateMipmaps is off and never measured zoomed out. In BunnyMark: GPU time per pass by timestamp query and overdraw, at zoom 1 and zoomed out; then atlas mipmaps zoomed out by GPU time and frames drawn.",
+      "area": "render",
+      "kind": "gpu",
+      "refs": [
+        "EXECUTION_PLAN.md#E-204"
+      ],
+      "aliases": [
+        "fill rate",
+        "mipmaps",
+        "autoGenerateMipmaps",
+        "overdraw",
+        "GPU timestamp"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "E-205",
+      "title": "The light pass loops over every light for every pixel",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "lightingBasic (frag and wgsl) loops over all lights per pixel, two fetches each. After E-204's timestamps: a light list per 16×16 screen tile, or each light as a quad bounded by its radius, additive. Owner: GPU time with many lights, Predator's renderer the guard.",
+      "area": "render",
+      "kind": "gpu",
+      "refs": [
+        "EXECUTION_PLAN.md#E-205"
+      ],
+      "aliases": [
+        "lightingBasic",
+        "light loop",
+        "tiled lighting"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "E-206",
+      "title": "Visibility as a polar shadow map on the GPU",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Step 0: segments × lights per frame in Predator and the compound-occluder scenes. Then segments rasterised into a 512-bin row per light (nearest hit), sampled by the light pass, instead of the CPU sweep. A big bet. Owner: pre-render where the sweep is largest.",
+      "area": "pre-render",
+      "kind": "gpu",
+      "refs": [
+        "EXECUTION_PLAN.md#E-206"
+      ],
+      "aliases": [
+        "polar shadow map",
+        "visibility",
+        "angularSweep",
+        "1D shadow map"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "E-207",
+      "title": "A* in C",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "computePath is the last search in JavaScript: three closures a call, inOpenSet.fill(0) over the grid, a JavaScript heap; the flowfield gained 16× in C (E-122). In C beside the flowfield, the open set cleared by a generation stamp; kernel with the same paths (golden), then a path-heavy scene. Owner: PATHS_COMPUTED.",
+      "area": "nav",
+      "kind": "wasm",
+      "refs": [
+        "EXECUTION_PLAN.md#E-207"
+      ],
+      "aliases": [
+        "A*",
+        "computePath",
+        "pathfinding",
+        "nav"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "E-208",
+      "title": "listUpdates through a SAB ring",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Logic 1..N send spawns to logic0 by postMessage, an object and a className string per record, and _receiveListUpdates allocates another. A SAB ring per worker drained by logic0; also a frame less of spawn latency. Owner: logic0 in spawnStormScene with 2+ logic workers (KB/s and STEP_MS).",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-208"
+      ],
+      "aliases": [
+        "listUpdates",
+        "_receiveListUpdates",
+        "postMessage",
+        "spawnStorm"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "E-209",
+      "title": "Entity instances made at spawn",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Every logic worker makes new EntityClass per pool slot, and main keeps a frozen copy. Step 0: boot time and heap per 100 000 slots; then instances at a slot's first spawn, the tick loop testing for null. Unblocks pools without a fixed size. Owner: boot ms and heap; Predator's logic not 3 % worse.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-209"
+      ],
+      "aliases": [
+        "lazy instances",
+        "pool size",
+        "boot",
+        "heap"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "E-210",
+      "title": "Predator's gate from a save",
+      "status": "open",
+      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Predator reads 8 to 13 % run to run per worker. Both sides restore the same mid-battle snapshot and measure a short window, so the load is paired. Step 0: an A/A from the save against today's A/A, the detection limit per worker. A tool. Owner: runPredatorAbab.mjs.",
+      "area": "harness",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-210"
+      ],
+      "aliases": [
+        "Predator gate",
+        "snapshot",
+        "save",
+        "noise",
+        "A/A"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "DX-LINT",
+      "title": "eslint-plugin-weed, shipped with create-weed-game",
+      "status": "open",
+      "statusText": "An idea from a code review (R-0854), not built",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Rules: no allocation in a tick, fields declared in the constructor, no Math.hypot, named exports. Game code is where garbage comes from (painterMoveStressScene's tick, 21 MB/s, the E-85 lead).",
+      "area": "tools",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-LINT"
+      ],
+      "aliases": [
+        "eslint",
+        "lint",
+        "create-weed-game"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "DX-CONFIGCHECK",
+      "title": "Config validation and a size advisor",
+      "status": "open",
+      "statusText": "An idea from a code review (R-0854), not built",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "Unknown keys warned with the nearest known one; tickInterval without staggeredUpdates turns it on or warns; a visible counter for every silent truncation (cells, neighbours, impacts); a suggested config at the end of a session.",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-CONFIGCHECK"
+      ],
+      "aliases": [
+        "config validation",
+        "unknown keys",
+        "truncation",
+        "caps"
+      ],
+      "records": [
+        "R-0854"
+      ]
+    },
+    {
+      "id": "DX-AUTOQUALITY",
+      "title": "Workers 'auto' and a quality governor",
+      "status": "open",
+      "statusText": "An idea from a code review (R-0854), not built",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "src/ reads neither hardwareConcurrency nor devicePixelRatio and renders at DPR 1. Worker counts from hardwareConcurrency, a DPR option, and a governor that moves light resolution, shadow interval and DPR from STEP_MS.",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-AUTOQUALITY"
+      ],
+      "aliases": [
+        "hardwareConcurrency",
+        "devicePixelRatio",
+        "DPR",
+        "governor",
+        "auto workers"
+      ],
+      "records": [
+        "R-0854"
+      ]
     }
   ],
   "records": [
@@ -19196,6 +19665,15 @@
         "33971553",
         "b21ca076"
       ]
+    },
+    {
+      "id": "R-0854",
+      "date": "2026-11-10",
+      "time": "22:29",
+      "timeFrom": "recorded",
+      "title": "Twenty entries filed from a code review: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK, DX-AUTOQUALITY",
+      "verdict": "note",
+      "text": "**Twenty entries filed from a code review's list of what would pay most: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK and DX-AUTOQUALITY.** Nothing timed: each premise is a reading of the code and the register, checked against the code on 2026-11-10 where it names one.\n\n- **The five the review ranked first:** the wake chain (E-198, which needs the latency stamp E-197 first), neighbour aggregates in the spatial kernel (E-199), neighbour lists refreshed with each entity's tick bucket (E-200), keyed poses read by key on the GPU (E-201, the other road for E-193) and decals stamped on the GPU (E-202).\n- **GPU:** sway in the vertex shader (E-203), fill rate's step 0 with GPU timestamps, overdraw and mipmaps zoomed out (E-204: the register had no entry on any of them), the light pass's loop over every light (E-205), and visibility as a polar shadow map (E-206, a big bet with a counting step 0).\n- **WASM:** A* in C (E-207; the flowfield gained 16× there, E-122).\n- **GC:** listUpdates through a SAB ring (E-208), entity instances made at spawn (E-209), eslint-plugin-weed in create-weed-game (DX-LINT).\n- **DX:** config validation and a size advisor (DX-CONFIGCHECK), workers 'auto' and a quality governor (DX-AUTOQUALITY).\n- **Bugs, confirmed in the code:** `fixedFps` truncated to whole milliseconds by `setInterval`, 62.5 Hz at 60 (N-128, to confirm by counting frames); `onGotShot` dispatched by `targetId % workers` where ticks and collision callbacks honour pins, and impacts overwritten frame by frame (N-129); despawn leaves Weed's joint rows active, since nothing calls `Joint.removeAllForEntity` (N-130).\n- **Measuring:** Predator's gate from a save, both sides from the same mid-battle snapshot (E-210).\n\nRanked after the queue's 22: the three bugs 23 to 25, then E-197 to E-202 26 to 31. The rest unranked.\n\n**Not filed:** animation in the shader for keyed sprites. Predator's walkers change their animation speed every tick, so E-189 (a texture-only update) stays the lever there."
     }
   ],
   "leads": [
