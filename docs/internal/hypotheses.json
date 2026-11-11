@@ -11081,11 +11081,11 @@
     {
       "id": "N-128",
       "title": "fixedFps runs fast: setInterval(1000 / fps) takes whole milliseconds (60 becomes 62.5 Hz)",
-      "status": "open",
-      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (01842774, R-0863)",
       "date": "2026-11-10",
-      "result": "abstractWorker.js scheduleNextFrame and physicsHostImpl.js pass 16.67 ms, which the timer API truncates to 16: 62.5 Hz with dt fixed at 1/60, the simulation about 4 % fast.",
-      "next": "Count frames over 10 s to confirm; then schedule each frame for the next multiple of 1000 / fps from a start time (setTimeout to a deadline).",
+      "result": "Each frame is set for a deadline one period after the last (src/util/fixedRate.js; the physics host its copy): 600 frames under whole-ms timers firing up to 3 ms late run at 60 a second, where setInterval read 62.5.",
+      "next": "",
       "area": "engine",
       "kind": "bug",
       "refs": [
@@ -11097,18 +11097,18 @@
         "62.5 Hz"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 23
+        "R-0854",
+        "R-0863"
+      ]
     },
     {
       "id": "N-129",
       "title": "onGotShot ignores pins, and a frame's impacts are lost when logic misses one",
       "status": "open",
-      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "statusText": "pins fixed 2026-11-11 (7ddc9590, R-0863); the lost impacts open",
       "date": "2026-11-10",
       "result": "processImpacts runs onGotShot on targetId % workers, where ticks and collision callbacks honour forceProcessOnLogicWorker; the particle worker overwrites each frame's impacts, so logic loses a frame it did not read.",
-      "next": "The pin rule in processImpacts, and impacts appended to a ring logic drains; a test for each.",
+      "next": "The lost impacts: a ring of impacts in wasm/bulletTick.c with a write cursor, each logic worker reading from its own cursor; a test where the particle worker runs two frames before logic reads.",
       "area": "logic",
       "kind": "bug",
       "refs": [
@@ -11122,7 +11122,8 @@
         "pins"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0863"
       ],
       "rank": 24
     },
@@ -20005,6 +20006,19 @@
         "ef08b5d4",
         "b442ba45",
         "3167b9ee"
+      ]
+    },
+    {
+      "id": "R-0863",
+      "date": "2026-11-11",
+      "time": "04:17",
+      "timeFrom": "recorded",
+      "title": "N-128 fixed (fixedFps by deadline) and N-129's pins fixed; its lost impacts open",
+      "verdict": "kept-hygiene",
+      "text": "**N-128 fixed and N-129's first half fixed, on `fix/n128-n129`.** Nothing timed: bug fixes, each with a test that fails before it.\n\n- **N-128 (01842774).** fixedFps scheduled `setInterval(loop, 1000 / fps)`, and timers take whole milliseconds (WebIDL `long`). 60 asked for 16 ms and ran at 62.5 frames a second, with dt fixed at 1/60: the simulation ran about 4 % fast.\n  - A worker's `scheduleNextFrame` and the physics host's loop now set a timer to a deadline one period after the last frame's (`src/util/fixedRate.js` `nextFixedDeadline`; the classic host script has its own copy).\n  - A timer that fires late is caught up. The first frame, a resume, or a loop more than a frame behind start one period from now, with no burst.\n  - Only one frame is pending at a time, as with the interval. `setPresenting` may ask twice.\n  - `fixedRate.test.js`: 600 frames under fake timers that take whole ms and fire 0 to 3 ms late run at 60 a second. It fails before the change (setInterval).\n  - Not counted in a browser: the rounding is the spec's.\n- **N-129, the pins (7ddc9590).** `processImpacts` sent each impact to logic worker `targetId % workers`, while ticks and collision callbacks honour `GameObject.forceProcessOnLogicWorker`. A pinned entity is now shot on its pin's worker; the rest go by the modulo. `impactPins.test.js` runs on the real logic worker and fails before the change.\n- **N-129's other half stays open.** The particle worker writes each frame's impacts over the last, and when logic misses a frame those impacts are lost. They need a ring in `wasm/bulletTick.c`, which writes them.\n\nNode 2421 of 2423 in the branch's worktree; the two failures are pixi tests that need node_modules.",
+      "commits": [
+        "01842774",
+        "7ddc9590"
       ]
     }
   ],

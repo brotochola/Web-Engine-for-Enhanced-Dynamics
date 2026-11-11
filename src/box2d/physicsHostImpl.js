@@ -519,7 +519,8 @@
     messageTimeThisFrame: 0,
     noLimitFPS: false,
     fixedFps: 0,
-    intervalId: 0,
+    // N-128: the fixed-rate loop's next deadline (performance.now() ms; NaN: none since the last start or pause).
+    fixedNextAt: NaN,
     posePublish: null,
     workerPorts: new Map(),
     timeoutId: 0,
@@ -1198,6 +1199,12 @@
   }
   // b7-split-end
 
+  /** N-128: the fixed-rate frame's timer, which clears its id before the loop asks for the next one. */
+  function fixedTick() {
+    state.timeoutId = 0;
+    gameLoop();
+  }
+
   function gameLoop() {
     if (state.isPaused) return;
 
@@ -1268,8 +1275,16 @@
     state.messageTimeThisFrame = 0;
 
     if (state.fixedFps > 0) {
-      if (!state.intervalId) {
-        state.intervalId = setInterval(gameLoop, 1000 / state.fixedFps);
+      // N-128: each frame at the deadline one period after the last (src/util/fixedRate.js's nextFixedDeadline, which
+      // this classic script cannot import), not setInterval(1000 / fps): timers take whole ms, so 60 ran at 62.5 with
+      // dt 1/60, the world about 4 % fast. First frame, a pause or more than a frame behind: one period from now.
+      if (!state.timeoutId) {
+        var fixedNow = performance.now();
+        var fixedPeriod = 1000 / state.fixedFps;
+        var fixedNext = state.fixedNextAt + fixedPeriod;
+        state.fixedNextAt = fixedNext > fixedNow - fixedPeriod ? fixedNext : fixedNow + fixedPeriod;
+        var fixedWait = state.fixedNextAt - fixedNow;
+        state.timeoutId = setTimeout(fixedTick, fixedWait > 0 ? fixedWait : 0);
       }
     } else if (state.noLimitFPS) {
       state.timeoutId = setTimeout(gameLoop, 2);
@@ -1319,10 +1334,8 @@
       clearTimeout(state.timeoutId);
       state.timeoutId = 0;
     }
-    if (state.intervalId) {
-      clearInterval(state.intervalId);
-      state.intervalId = 0;
-    }
+    // A resume starts the fixed-rate loop one period from then, not from a deadline before the pause.
+    state.fixedNextAt = NaN;
   }
 
   // Phase 4 (WASM_HYPOTHESES): a block of Box2D's memory for the engine's regions (the render-queue memory),

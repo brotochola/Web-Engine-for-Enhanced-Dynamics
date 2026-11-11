@@ -1572,7 +1572,9 @@ class LogicWorker extends AbstractWorker {
 
   /**
    * Process bullet impact events from particle_worker.
-   * Partitioned by targetId % totalWorkers - each worker processes impacts for its entities.
+   * Partitioned by targetId % totalWorkers - each worker processes impacts for its entities. N-129: an entity pinned
+   * to a worker (forceProcessOnLogicWorker) is shot on that worker, the one that ticks it and runs its other callbacks
+   * (_runsCallbacksOf); the modulo sent it to another, whose instance of it is not the one that ticks.
    */
   processImpacts(count) {
     if (!count || !this._impactData || count <= 0) return;
@@ -1580,11 +1582,13 @@ class LogicWorker extends AbstractWorker {
     const totalWorkers = this.totalLogicWorkers;
     const myIndex = this.workerIndex;
     const gameObjects = this.gameObjects;
+    const pins = GameObject.forceProcessOnLogicWorker;
 
     for (let i = 0; i < count; i++) {
       const base = i * 6;
       const targetId = impactData[base] | 0;
-      if (targetId % totalWorkers !== myIndex) continue;
+      const pin = pins !== null ? pins[targetId] : -1;
+      if (pin >= 0 ? pin !== myIndex : targetId % totalWorkers !== myIndex) continue;
 
       const damage = impactData[base + 1];
       const hitX = impactData[base + 2];
