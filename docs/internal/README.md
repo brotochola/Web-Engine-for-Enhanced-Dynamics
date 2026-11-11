@@ -28,6 +28,7 @@ tried, what is planned, and the journal of building the engine. They are not the
 | [`EXECUTION_PLAN.md`](./EXECUTION_PLAN.md) | The speed hypotheses E-xx: what each claims, how it is measured, its outcome. |
 | [`WASM_HYPOTHESES.md`](./WASM_HYPOTHESES.md) | The WebAssembly migration (E-76): the candidates W1 to W28, the premises, the phases and the order. |
 | [`REVIEW_PLAN.md`](./REVIEW_PLAN.md) | Review items (bugs, cleanups, docs: B, M, D, R, G, V, N, DOC), open and closed. |
+| [`NEXT_RELEASE.md`](./NEXT_RELEASE.md) | What a game will see change in behaviour at the next release, for its notes. |
 | [`DX_SUNMASK_DESIGN.md`](./DX_SUNMASK_DESIGN.md) | A design, not built: the sun's shadow inside the light sum, for the owner to decide. |
 | [`DX_NORMALS_DESIGN.md`](./DX_NORMALS_DESIGN.md) | A design, not built: light by the way a surface faces (normal maps), for the owner to decide. |
 | [`DX_VOLUME_DESIGN.md`](./DX_VOLUME_DESIGN.md) | A plan, not built: `VolumeShadowCaster`, an object's volume for the sun and for point lights, in phases, for the owner to decide on. |
