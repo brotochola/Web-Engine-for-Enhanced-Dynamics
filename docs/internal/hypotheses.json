@@ -11814,11 +11814,11 @@
     {
       "id": "N-137",
       "title": "A* lowers a node's cost in the open set without moving it in the heap, so a path may not be the shortest",
-      "status": "open",
-      "statusText": "found 2026-11-11 reading computePath for E-207; read in the code, not seen yet",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (f9cd5675, R-0887)",
       "date": "2026-11-11",
-      "result": "",
-      "next": "Lazy heap entries, each with its own f (a cell pushed again when its cost falls, a stale pop skipped by the closed stamp), and a test grid where the first way to a cell is not the shortest; with E-207 if a game starts asking for paths.",
+      "result": "fixed 2026-11-11 (f9cd5675, R-0887): decrease-key in navAstar.js; old rule longer than Dijkstra on 5 of 9093 random grids (62 vs 54 kept in the tests); not timed, no scene asks for A* paths",
+      "next": "Done. A* in C stays E-207, for a game that asks for paths.",
       "area": "nav",
       "kind": "bug",
       "refs": [
@@ -11831,7 +11831,9 @@
         "heapFCost",
         "pathfinding"
       ],
-      "records": []
+      "records": [
+        "R-0887"
+      ]
     },
     {
       "id": "N-138",
@@ -20381,6 +20383,18 @@
       "commits": [
         "94d790f0"
       ]
+    },
+    {
+      "id": "R-0887",
+      "date": "2026-11-11",
+      "title": "N-137 fixed: A* moves a cell up the heap when its cost falls; the old rule was longer than Dijkstra on 5 of 9093 grids",
+      "verdict": "kept-hygiene",
+      "text": "**N-137 fixed (`f9cd5675`): A* moves a cell up the heap when a shorter way reaches it, so its paths are the shortest.** 2026-11-11.\n\n**The bug.** `computePath` (particleWorker.js) kept one f a cell. When a shorter way reached a cell already waiting in the open set, it lowered that f in place and did not sift the cell up, so the heap's order broke: the cell popped late, cells reached through it meanwhile could close on a longer way, and the path could be longer than the shortest.\n\n**Seen.** The old rule against an exact Dijkstra on 20 000 random grids of 4 to 8 by 3 to 6 cells, 70 % walkable (9093 reachable pairs): longer on 5. One of them, 6 by 4, came out 62 instead of 54; the tests keep it.\n\n**The fix.** The search moved to `src/core/navAstar.js`, `NavScratch` with it. The heap keeps each cell's position (`heapPos`) and sifts a cell up when its cost falls (decrease-key). Each cell is in the heap once, so no extra entries, unlike the lazy entries the row planned. The heap helpers are module functions, not three closures made per path.\n\n**Tests.**\n- `astarHeap.test.js` (it tested a copy of the old rule) runs the shipped search: the grid above at 54, and 20 000 random grids against Dijkstra.\n- `navComputePath.test.js`: the particle worker's `computePath` writes a 54-long path into the slot the logic workers read. On the old code it fails.\n\n**Cost.** Not timed: no demo or stress scene requests A* paths (E-207 is waiting for a game that does), and the particle worker's frame code is the same.",
+      "commits": [
+        "f9cd5675"
+      ],
+      "time": "18:19",
+      "timeFrom": "recorded"
     }
   ],
   "leads": [
