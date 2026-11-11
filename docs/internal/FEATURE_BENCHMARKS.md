@@ -44,6 +44,7 @@ hypothesis names. Demos stay in `demos/`. By area:
   32-bit-id variants), `spritePackStressScene` (`camRot`, `spacing`), `renderQueueStressScene`,
   `animatedSpriteStressScene`, `painterSortStressScene`, `painterMoveStressScene`,
   `painterAdobeStressScene`, `ySortOverlayScene`, `gpuYSortProbeScene`, `tweenStressScene`.
+- **Full-screen passes:** `screenPassStressScene` (`post`, the number of LAYER_KIND.SCREEN passes over Bunny Mark C, 0 by default; `amount`, 0 for copies; `backend`).
 - **Lighting and visibility:** `visPolyStressScene`, `compoundVisPolyStressScene` (`boxes`, `remeshEvery`,
   `ringSegments`).
 - **Sun and shadows:** `sunOverrideScene` (a scene over the day cycle, with its torn reads counted), `sunMeshStressScene` and `sunMeshParityScene` (`sunMeshParity.mjs`: a ShadowCaster against a `sunProjected` mesh), `dxCaptureScene` (a still scene for `compareCaptures.mjs`).
