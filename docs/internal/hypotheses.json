@@ -11777,11 +11777,11 @@
     {
       "id": "N-136",
       "title": "Pixi reads the active particle list while the particle worker writes the next one (N-113's race, for the particle light field)",
-      "status": "open",
-      "statusText": "found 2026-11-11 fixing N-113 (R-0869); read in the code, not seen yet; open",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (9edb59f6, R-0870); found the same day fixing N-113",
       "date": "2026-11-11",
-      "result": "",
-      "next": "N-113's fix for the active list: three published copies in the particle memory, the kernel and the integrate given this frame's copy (indicesByte follows it), Pixi's _renderParticleLightingField taking the published one. Test with visibleListTear.test.js's harness, Pixi's read in place of pre-render's.",
+      "result": "fixed 2026-11-11 (9edb59f6, R-0870): published in three copies; Pixi's take 1 420 of 3 324 torn before, 0 after; particleIntegrateStressScene 200 000: particle -0.5 %, NEUTRAL",
+      "next": "Done.",
       "area": "renderer",
       "kind": "bug",
       "refs": [
@@ -11794,8 +11794,9 @@
         "torn active list",
         "published list"
       ],
-      "records": [],
-      "rank": 23
+      "records": [
+        "R-0870"
+      ]
     }
   ],
   "records": [
@@ -20119,6 +20120,18 @@
       "text": "**N-113 fixed (`e9d9aa08`): the visible particle list is published in three copies, so pre-render never reads one the particle worker is writing. Hygiene keep.** 2026-11-11, from 14:22 (the sitting's first result file) to 14:27. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug.** The list kernel rewrote `visibleParticlesData` in the particle memory every frame, while pre-render's `collectVisibleParticles` walked it on its own loop. A read that overlapped a write mixed the two lists: an index twice, another missing. A missing particle is not drawn that frame, and an additive one drawn twice flashes.\n\n**The fix.** N-112's published list (`publishedList.js`), as a region of the particle memory:\n- a header and three copies, each with room for the kernel's slot past the count (`bindPublishedList` takes a byte and the extra room);\n- the particle worker gives the kernel the byte of a copy pre-render does not hold, and publishes that copy once the kernel returns;\n- pre-render takes the published copy each frame;\n- the debug panel peeks at its count.\n\n**Correctness.** `visibleListTear.test.js` gains a particle case. A real particle worker in its own thread writes the list as fast as it goes, with the camera alternating between two views. A real pre-render, bound by its own init path, collects it as fast as it goes. Every collect must be one view's list whole.\n- Before (the same test on main's `src`): 24 048 of 24 055 collects torn (374 936 lists written).\n- After: 0 of 486 torn (8 518 lists written, 300 changes of view seen).\n\nThe tests that handed pre-render one list now hand it a published one: `particleSortKey`, `renderOnlyQueueRows`, the lists parity and the wide pool layout.\n\n**Cost.** particleIntegrateStressScene `?maxParticles=200000`, 4 pairs (`--vs b5859a00 --hyp-rev e9d9aa08 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.242 → 3.204 ms (-1.6 %, worse 1/4, cv 1/1 %). Pairs: -3.0, -0.6, -2.5, +2.9 %.\n- Pre-render 6.969 → 6.982 ms (+0.7 %, worse 3/4, cv 2/3 %). Pairs: -7.6, +1.3, +0.4, +1.0 %.\n- 198 000 particles live on both sides; render queue within 0.1 %.\n\nNo primary is 3 % worse: a hygiene keep.\n\n**Found on the way: N-136.** Pixi's particle light field reads the active list the same way.",
       "commits": [
         "e9d9aa08"
+      ]
+    },
+    {
+      "id": "R-0870",
+      "date": "2026-11-11",
+      "time": "14:41",
+      "timeFrom": "recorded",
+      "title": "N-136 fixed: the active particle list published in three copies; 1 420 of 3 324 takes torn before, 0 after; particleIntegrateStressScene NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**N-136 fixed (`9edb59f6`): the active particle list is published in three copies, so Pixi's particle light field never reads one the particle worker is writing. Hygiene keep.** 2026-11-11, from 14:36 (the sitting's first result file) to 14:41. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug** (found fixing N-113). The list kernel rewrote `activeParticlesData` every frame. Pixi's `_renderParticleLightingField` walked it on its own loop to splat the lit particles. A read that overlapped a write dropped a particle's light, or drew it twice, for one frame.\n\n**The fix.** N-113's published list, for the active list:\n- the particle worker gives the kernel the byte of a copy Pixi does not hold, and points the integrate at that copy's indices (`binding.indicesByte`);\n- it publishes the copy once the kernel returns;\n- Pixi takes the published copy;\n- the debug panel peeks at its count;\n- `layout.indicesByte` is copy 0's;\n- the scene's plain-SAB branch goes: with particles the particle memory always exists.\n\n**Correctness.** `activeParticleListTear.test.js`: a real particle worker writes the active list as fast as it goes, the live particles alternating between the even slots and the odd ones. A real Pixi worker takes it as the light field does.\n- With the old read (the same test on main's `src`, reading `activeParticlesData`): 1 420 of 3 324 takes torn.\n- After: 0 of 2 757 (302 lists written, 300 changes seen).\n\n**Cost.** particleIntegrateStressScene `?maxParticles=200000`, 4 pairs (`--vs 171dd61a --hyp-rev 9edb59f6 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.152 → 3.118 ms (-0.5 %, worse 1/4, cv 2/2 %). Pairs: -0.3, -0.6, -5.5, +1.8 %.\n- Pre-render 6.896 → 6.973 ms (+1.0 %, worse 3/4). Pre-render does not read this list.\n- Renderer 2.432 → 2.390 ms (below the floor).\n\nNo primary is 3 % worse: a hygiene keep.",
+      "commits": [
+        "9edb59f6"
       ]
     }
   ],
