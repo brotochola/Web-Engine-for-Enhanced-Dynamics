@@ -221,8 +221,7 @@ export function packSplitRowsWasm(b, q, ctx, pose, stat, capacity) {
 
 /**
  * E-162: a painter-sorted frame's indexed streams through the kernel: each drawn row's pose (GPU_POSE_FLOATS) and its
- * slot pair (GPU_INDEXED_SLOT_FLOATS: its row, as a float, and the slot's depth, as the split pack writes it) at its
- * draw slot, and, unless `stat` is null, every queue row's statics at its row (GPU_INDEXED_STATIC_FLOATS a row, the
+ * slot (GPU_INDEXED_SLOT_FLOATS: its row, as a float; E-186: no depth, which nothing read) at its draw slot, and, unless `stat` is null, every queue row's statics at its row (GPU_INDEXED_STATIC_FLOATS a row, the
  * depth term 0). Only for an index list over most of the queue, as packSplitRowsWasm's scatter takes it, and a queue
  * whose rows `stat` holds.
  * @returns {number} the rows written, or -1 when this call is not one the kernel packs (the caller packs it split)
@@ -260,8 +259,8 @@ export const GPU_KEYED_CHANGED = 0x80000000;
 
 /**
  * E-177: a split frame whose statics stay with their key, through the kernel. Each drawn row's pose (GPU_POSE_FLOATS)
- * and slot pair (GPU_INDEXED_SLOT_FLOATS: its key's row of the statics texture, as a float, and the slot's depth, as the
- * split pack writes it) at its draw slot. A sprite row's key is its entity, with GPU_KEYED_CHANGED set when the emit found
+ * and slot (GPU_INDEXED_SLOT_FLOATS: its key's row of the statics texture, as a float; E-186: no depth) at its draw
+ * slot. A sprite row's key is its entity, with GPU_KEYED_CHANGED set when the emit found
  * its statics changed since the emit before; a row without one, or with one at or past `keyed.keyBase`, takes keyBase
  * plus its slot. The changed rows and the rows without a key list their statics as updates at `keyed.updatesByte` (room
  * for capacity updates of GPU_KEYED_ROW_WORDS: the statics, then the key at GPU_KEYED_KEY_WORD); the update count goes

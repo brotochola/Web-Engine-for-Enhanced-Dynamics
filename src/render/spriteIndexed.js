@@ -40,10 +40,11 @@ function replaceOnce(source, from, to, what) {
 /**
  * instancedSprite.vert.glsl reading its statics from the statics texture: the static attributes become globals the
  * shader fills first, from the three texels of the statics row (the words of gpuPack.c sprite_static: scale, anchor,
- * an unused depth, tint bits, texture, tile terms, and a zero) and the slot pair. The words go through
+ * an unused depth, tint bits, texture, tile terms, and a zero) and the slot. The words go through
  * uintBitsToFloat, a bitcast; the tint's bits are read as the uint they are, with no float between that could change a
- * NaN pattern (an opaque white tint is one). `aInstSlot` is the slot stream's pair (the row, as a float, and the
- * depth), per instance, so a chunk drawn from any first instance reads its own, whatever the backend's range draw
+ * NaN pattern (an opaque white tint is one). `aInstSlot` is the slot stream's row, as a float (E-186: the depth it
+ * carried went, as no batch draws with a depth test), per instance, so a chunk drawn from any first instance reads its
+ * own, whatever the backend's range draw
  * (instanceRangeDraw.js). E-191: `shadow` rewrites instancedSpriteShadow.vert.glsl for the sun's pass instead: no light
  * of its own (the pass's uLight decides), and the tint read nowhere but the line that keeps the attributes compiled in.
  * E-191 step 2: `casterRows` (with `shadow`) for keyed caster rows, which carry no rotation (a shadow's angle is the
@@ -72,12 +73,12 @@ export function spriteIndexedVertex(source, { shadow = false, casterRows = false
   if (at < 0 || out.indexOf(main, at + 1) >= 0) throw new Error('WeedJS: the sprite vertex shader needs one "void main() {"');
   return (
     out.slice(0, at) +
-    "in vec2 aInstSlot; // this instance's statics row and depth (E-162)\n" +
+    "in float aInstSlot; // this instance's statics row (E-162; E-186: no depth, nothing draws with a depth test)\n" +
     "uniform highp usampler2D uStatics; // the statics in the queue's row order, three texels a row\n\n" +
     main +
-    '  aInstDepth = aInstSlot.y;\n' +
+    '  aInstDepth = 0.0;\n' +
     (shadow ? '  aInstTintBits = 0.0;\n' : '') +
-    '  int weedRow = int(aInstSlot.x + 0.5);\n' +
+    '  int weedRow = int(aInstSlot + 0.5);\n' +
     `  ivec2 weedTexel = ivec2((weedRow & ${STATICS_TEX_ROW - 1}) * ${STATICS_TEXELS_PER_ROW}, weedRow >> ${STATICS_TEX_ROW_SHIFT});\n` +
     '  uvec4 weedS0 = texelFetch(uStatics, weedTexel, 0);\n' +
     '  uvec4 weedS1 = texelFetch(uStatics, weedTexel + ivec2(1, 0), 0);\n' +
@@ -97,7 +98,7 @@ const WGSL_TYPES = { float: 'f32', vec2: 'vec2<f32>' };
 /**
  * instancedSprite.wgsl reading its statics from a storage buffer (WebGPU): the static vertex inputs leave mainVert's
  * parameters for `let`s of the same names at the top of its body, from the three vec4<u32> of the statics row (the
- * words spriteIndexedVertex reads) and the slot pair, `aInstSlot` taking a free location; the tint's bits are read as
+ * words spriteIndexedVertex reads) and the slot's row, `aInstSlot` taking a free location; the tint's bits are read as
  * the u32 they are. `uStatics` is group 2's binding 4 (instancedSpriteIndexedGpuProgram).
  * @param {string} source instancedSprite.wgsl
  * @returns {string}
@@ -117,7 +118,7 @@ export function spriteIndexedWgsl(source) {
       '@group(2) @binding(4) var<storage, read> uStatics: array<vec4<u32>>;\n',
     'WGSL'
   );
-  out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstRotCS: vec2<f32>,\n  @location(2) aInstSlot: vec2<f32>,\n', 'WGSL');
+  out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstRotCS: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'WGSL');
   out = replaceOnce(out, '  let tintBits = bitcast<u32>(aInstTintBits);\n', '  let tintBits = weedS1.y;\n', 'WGSL');
   const body = ') -> VertexOut {\n';
   const vert = out.indexOf('fn mainVert(');
@@ -126,13 +127,13 @@ export function spriteIndexedWgsl(source) {
   const head = at + body.length;
   return (
     out.slice(0, head) +
-    '  let weedRow = u32(aInstSlot.x + 0.5) * 3u;\n' +
+    '  let weedRow = u32(aInstSlot + 0.5) * 3u;\n' +
     '  let weedS0 = uStatics[weedRow];\n' +
     '  let weedS1 = uStatics[weedRow + 1u];\n' +
     '  let weedS2 = uStatics[weedRow + 2u];\n' +
     '  let aInstScale = bitcast<vec2<f32>>(weedS0.xy);\n' +
     '  let aInstAnchor = bitcast<vec2<f32>>(weedS0.zw);\n' +
-    '  let aInstDepth = aInstSlot.y;\n' +
+    '  let aInstDepth = 0.0;\n' +
     '  let aInstTexId = bitcast<f32>(weedS1.z);\n' +
     '  let aInstTileInv = bitcast<vec2<f32>>(vec2<u32>(weedS1.w, weedS2.x));\n' +
     '  let aInstTileOff = bitcast<vec2<f32>>(weedS2.yz);\n' +

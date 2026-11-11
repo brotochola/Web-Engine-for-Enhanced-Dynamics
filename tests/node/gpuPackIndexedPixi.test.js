@@ -163,7 +163,6 @@ function writeIndexedFrame(px, b, n, rows, gen, frame, slotsGen = 0, orderSeed =
   for (let k = 0; k < n; k++) {
     for (let j = 0; j < GPU_POSE_FLOATS; j++) pose[k * GPU_POSE_FLOATS + j] = k * 4 + j + frame * 0.5;
     slots[k * GPU_INDEXED_SLOT_FLOATS] = order[k];
-    slots[k * GPU_INDEXED_SLOT_FLOATS + 1] = 1 - (k + 1) / (MAX + 2);
   }
   for (let r = 0; r < rows; r++) {
     for (let j = 0; j < GPU_STATIC_FLOATS; j++) stat[r * GPU_INDEXED_STATIC_FLOATS + j] = r + j * 0.01 + gen * 100;

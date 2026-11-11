@@ -571,7 +571,7 @@ export class InstancedSpriteBatch {
         aQuad: { buffer: this._quad, format: 'float32x2' },
         aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
         aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-        aInstSlot: { buffer: slotBuf, format: 'float32x2', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
+        aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
         aInstShadow: { buffer: shadowBuf, format: 'float32x3', stride: 12, offset: 0, instance: true },
       },
       indexBuffer: this._index,
@@ -634,7 +634,7 @@ export class InstancedSpriteBatch {
         aQuad: { buffer: this._quad, format: 'float32x2' },
         aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
         aInstRotCS: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
-        aInstSlot: { buffer: slotBuf, format: 'float32x2', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
+        aInstSlot: { buffer: slotBuf, format: 'float32', stride: GPU_INDEXED_SLOT_FLOATS * 4, offset: 0, instance: true },
       },
       indexBuffer: this._index,
     });
@@ -1346,7 +1346,7 @@ export class InstancedSpriteBatch {
     const attributes = {
       aQuad: { buffer: this._quad, format: 'float32x2' },
       aInstXY: { buffer: buf, format: 'float32x2', stride: ds, offset: 0, instance: true },
-      aInstSlot: { buffer: buf, format: 'float32x2', stride: ds, offset: 8, instance: true },
+      aInstSlot: { buffer: buf, format: 'float32', stride: ds, offset: 8, instance: true },
       aInstShadow: { buffer: buf, format: 'float32x3', stride: ds, offset: 16, instance: true },
     };
     if (light) attributes.aInstLight = { buffer: buf, format: 'float32x4', stride: ds, offset: GPU_KEYED_CASTER_FLOATS * 4, instance: true };
