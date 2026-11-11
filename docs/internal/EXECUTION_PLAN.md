@@ -3717,6 +3717,9 @@ traffic (list updates) with a single-writer SAB ring per logic worker and cut it
 **Plan:** a ring per logic worker in the navigation memory (two words a record: from and to, or a flowfield target with a
 flag), drained by the particle worker at the top of its nav step; the pending map keeps its dedup. Owner:
 astarStressScene's particle worker, at the same PATHS_COMPUTED; logic not 3 % worse.
+**Result:** kept as hygiene 2026-11-11 (`62eebf89`, R-0895). astarStressScene `?agents=0&plans=180`, 4 pairs: NEUTRAL,
+particle +0.5 % (the trace's 10 % was the handler's slot scan, gone with E-212); logic 0.881 → 0.353 ms, below the floor
+(about 2.9 µs a request). No worker worse, no object or clone a request.
 
 ### E-214 Path slots allocated without a scan of every slot
 
