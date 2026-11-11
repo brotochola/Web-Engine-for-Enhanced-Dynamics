@@ -9984,7 +9984,8 @@
         "R-0883",
         "R-0886",
         "R-0888",
-        "R-0891"
+        "R-0891",
+        "R-0896"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -20591,6 +20592,18 @@
       "text": "**E-213 kept as hygiene (`62eebf89`): path and flowfield requests go through a ring per logic worker, not a postMessage each.** 2026-11-11.\n\n**Premise (R-0889).** In astarStressScene's first trace, `port.onmessage` was 10 % of the particle worker, and each request cost the logic side a clone and a message.\n\n**The change.**\n- `navRequestRing.js`: a ring per logic worker in shared memory, one writer and one reader. Two words a record: a path's from and to cells, or a flowfield's target with the high bit set.\n- `NavGrid._requestPath` and `_requestFlowfield` write the ring; a full ring leaves the request to the message, so nothing is dropped. The pending map keeps its dedup.\n- The particle worker drains every ring at the start of its nav step, through the handlers the messages use (now methods).\n- `navRequestRing.test.js`: the ring in order and full; NavGrid on the ring and on the message when full; the worker draining into its queues.\n\n**Sittings.** astarStressScene `?agents=0`, `--vs 2bce2571 --hyp-rev 62eebf89 --full-rev --owner particle`, 4 pairs each:\n- 60 paths a frame, 19:42 to 19:46: below the floor. Particle 2.419 → 2.430 ms; logic 0.422 → 0.145 ms.\n- 180 paths a frame (`&plans=180`), 19:48 to 19:52: **NEUTRAL.**\n  - Particle 6.418 → 6.448 ms (+0.5 %, worse 3/4, cv 1/0 %).\n  - Logic 0.881 → 0.353 ms (-60 %), below the floor and not judged: about 2.9 µs a request.\n  - PATHS_COMPUTED 180.0 → 180.1.\n\nThe particle worker's 10 % in that trace was the handler's work, mostly the slot scan E-212 removed, not the message. The logic side's message cost is real, small, and below the floor. Kept as hygiene: no worker 3 % worse, and no object or clone a request.",
       "commits": [
         "62eebf89"
+      ]
+    },
+    {
+      "id": "R-0896",
+      "date": "2026-11-11",
+      "time": "20:14",
+      "timeFrom": "recorded",
+      "title": "The bundles of f86b11ab (E-207, N-139, E-214, E-213) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of f86b11ab (E-207, N-139, E-214, E-213 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `9e69d5aa`, built from f86b11ab.\n\n- Node 2473 of 2473, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n- engine.wasm carries `astar_path`.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 19:58 to 20:03: NEUTRAL.** Logic -7.7 % (1/4 worse), spatial -2.5 %, physics -10.9 % (1/4), pre-render -4.2 % (1/4).\n- **Boids, 8 pairs, 20:03 to 20:14: NEUTRAL.** Spatial 5.696 → 5.664 ms (-0.3 %, worse 3/8), physics -0.4 % (2/8).\n\nMain pushed.",
+      "commits": [
+        "9e69d5aa"
       ]
     }
   ],
