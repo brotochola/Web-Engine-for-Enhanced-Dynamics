@@ -5,8 +5,10 @@
  * sprites change a static every frame, E-177 step 0), through gpuPack.wasm on one shared memory, as Pixi packs it (a
  * gather: Pixi's binding has no inverse, W9c):
  *   - split: today's frame, pack_sprites_split: the pose and the statics in draw order (60 bytes a sprite);
- *   - keyed: E-177's, pack_sprites_keyed: the pose and the slot pair in draw order (24 bytes a sprite), the statics
+ *   - keyed: E-177's, pack_sprites_keyed (gathering in the painter's order): the pose and the slot pair in draw order (24 bytes a sprite), the statics
  *            compared with the key table and the changed ones listed as updates (64 bytes each).
+ *   - keyedScatter: E-193's, the same through the inverse of the painter's list (the queue read in order), where the
+ *            tree's gpuPack has pack_sprites_keyed_scatter.
  * Each frame changes its rows' textures outside the timed call. `order` is `random` (the painter's order unrelated to
  * the queue's, Predator's) or `near` (the queue's order with a tenth of the rows moved a little).
  *
@@ -35,7 +37,7 @@ function mulberry32(seed) {
   };
 }
 
-async function setup(rows, entities, orderKind) {
+export async function setup(rows, entities, orderKind) {
   const keyRows = entities + rows;
   const bytes = rows * 160 + keyRows * ROW_WORDS * 4 + rows * ROW_WORDS * 4 + (2 << 20);
   const memory = new WebAssembly.Memory({ initial: Math.ceil(bytes / 65536) + 16, maximum: 32768, shared: true });
@@ -109,6 +111,10 @@ async function setup(rows, entities, orderKind) {
   const keyTable = alloc(Uint32Array, keyRows * ROW_WORDS);
   const stamps = alloc(Uint32Array, keyRows);
   const updates = alloc(Uint32Array, rows * ROW_WORDS);
+  // E-193: the keyed pack's inverse of the painter's list, for a tree whose kernel reads the queue through it.
+  const inverse = alloc(Uint32Array, rows);
+  // E-191: the slots' shadow terms, for a caller that asks the keyed pack for them (the tests).
+  const shadow = alloc(Float32Array, rows * 3);
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
   const indexByte = (top = (top + 63) & ~63);
@@ -117,8 +123,10 @@ async function setup(rows, entities, orderKind) {
   top += 16 + 16 * 8;
   if (top > buf.byteLength) throw new Error('gpuPackKeyedMicrobench: the memory is too small');
   // Pixi's binding: no inverse, so every pack gathers in the painter's order.
-  const b = await client.bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: rows, particlesByte, inverseByte: 0 });
-  return { q, b, order, splitPose, splitStat, pose, slots, keyTable, stamps, updates, rng };
+  const b = await client.bindGpuPack(memory, {
+    tableByte, tableSlots: 4, indexByte, indexCap: rows, particlesByte, inverseByte: 0, keyedInverseByte: inverse.byteOffset,
+  });
+  return { q, b, order, splitPose, splitStat, pose, slots, keyTable, stamps, updates, shadow, rng };
 }
 
 function poseSum(pose, n) {
@@ -128,7 +136,7 @@ function poseSum(pose, n) {
 }
 
 /** The median ms of `pack` over `frames` frames after `warm` more, each frame's change made before its timed call. */
-function framesMs(change, pack, frames, warm = 20) {
+export function framesMs(change, pack, frames, warm = 20) {
   for (let f = 0; f < warm; f++) {
     change();
     pack();
@@ -176,8 +184,21 @@ export async function run({ rows = 14000, entities = 42600, dirty = 0.05, order 
     if (pack() !== rows) throw new Error('the keyed pack did not take the frame');
     updates = 0;
     calls = 0;
+    // keyed gathers in the painter's order (the binding without its inverse); E-193's keyedScatter, where the tree has
+    // it, reads the queue in order through the inverse. Both write the same pose stream.
+    const scatterB = s.b;
+    const gatherB = { ...s.b, keyedInverseByte: 0 };
+    s.b = gatherB;
     cases.keyed = { ms: framesMs(change, pack, frames), check: poseSum(s.pose, rows), updatesPerFrame: updates / calls };
     if (cases.keyed.check !== cases.split.check) throw new Error('the keyed pose stream is not the split one');
+    if (scatterB.spritesKeyedScatter) {
+      s.b = scatterB;
+      updates = 0;
+      calls = 0;
+      cases.keyedScatter = { ms: framesMs(change, pack, frames), check: poseSum(s.pose, rows), updatesPerFrame: updates / calls };
+      if (cases.keyedScatter.check !== cases.split.check) throw new Error('the keyed scatter pose stream is not the split one');
+    }
+    s.b = scatterB;
   }
   return { feature: 'gpu-pack-keyed', rows, entities, dirty, order, frames, cases };
 }
