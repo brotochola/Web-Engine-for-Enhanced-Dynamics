@@ -11463,10 +11463,10 @@
       "id": "E-209",
       "title": "Entity instances made at spawn",
       "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "statusText": "open: step 0 answered 2026-11-11 (R-0897)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Every logic worker makes new EntityClass per pool slot, and main keeps a frozen copy. Step 0: boot time and heap per 100 000 slots; then instances at a slot's first spawn, the tick loop testing for null. Unblocks pools without a fixed size. Owner: boot ms and heap; Predator's logic not 3 % worse.",
+      "result": "step 0 (R-0897): ~40 ms and 11.7 MB per logic worker per 100 000 slots, the page 27 ms and 13.7 MB; nothing per frame",
+      "next": "The design: instanceAt(index) making the instance on first use (start() at a slot's first use), the tick loops' null test timed in a kernel; worth it past ~200 000 slots.",
       "area": "logic",
       "kind": "js",
       "refs": [
@@ -11479,7 +11479,8 @@
         "heap"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0897"
       ]
     },
     {
@@ -20604,6 +20605,18 @@
       "text": "**The bundles of f86b11ab (E-207, N-139, E-214, E-213 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `9e69d5aa`, built from f86b11ab.\n\n- Node 2473 of 2473, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n- engine.wasm carries `astar_path`.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 19:58 to 20:03: NEUTRAL.** Logic -7.7 % (1/4 worse), spatial -2.5 %, physics -10.9 % (1/4), pre-render -4.2 % (1/4).\n- **Boids, 8 pairs, 20:03 to 20:14: NEUTRAL.** Spatial 5.696 → 5.664 ms (-0.3 %, worse 3/8), physics -0.4 % (2/8).\n\nMain pushed.",
       "commits": [
         "9e69d5aa"
+      ]
+    },
+    {
+      "id": "R-0897",
+      "date": "2026-11-11",
+      "time": "20:16",
+      "timeFrom": "recorded",
+      "title": "E-209 step 0: instances cost ~40 ms and 12 MB per logic worker per 100 000 slots at boot; the page 27 ms and 14 MB",
+      "verdict": "answered",
+      "text": "**E-209 step 0 (`83e02a98`): a pool's instances cost about 40 ms and 12 MB per logic worker per 100 000 slots at boot, and the page's frozen copies 27 ms and 14 MB.** 2026-11-11.\n\n`entityInstanceBootMicrobench.mjs`: the real paths (`LogicWorker.createGameObjectInstances`, `Scene._createPageInstances`) on a pool of 100 000 slots of a class with two fields and a tick, a fresh class each run (cold, as a boot is). Heap is the growth after a full GC with the instances held. Node 22, two runs of 5 (medians):\n- logic worker: 40.6 and 37.5 ms; 11.7 MB, 122.5 B a slot;\n- page: 26.6 and 27.7 ms; 13.7 MB, 144 B a slot.\n\n**What it means.** Per frame nothing changes. At the largest pools (524 287 slots): about 200 ms and 61 MB per logic worker, and 140 ms and 72 MB on the page. With four logic workers that is over 300 MB for slots that may never be spawned. A typical demo (10 000 to 60 000 slots) pays 5 to 25 ms and a few MB a worker.\n\n**The change** touches 33 index reads: 21 in logicWorker.js (ticks, collision, joint and message dispatch) and 6 in gameObject.js, plus the page's API. `start()` would run at a slot's first use instead of at boot. Worth doing for scenes past about 200 000 slots. Next: the design (an `instanceAt(index)` that makes the instance on first use, the tick loops' null test measured in a kernel), queued behind cheaper items.",
+      "commits": [
+        "83e02a98"
       ]
     }
   ],
