@@ -10380,11 +10380,11 @@
     {
       "id": "N-114",
       "title": "The create-weed-game template's dev server refuses less than the engine's: a backslash path answers 404 on Linux and macOS (createWeedGame.test.js fails there), and a symlink out of the folder is served",
-      "status": "open",
-      "statusText": "found 2026-11-03 by the session that made PR #6 (a Linux container: the node suite's one failure); open",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (R-0876); found 2026-11-03 by the session that made PR #6",
       "date": "2026-11-03",
-      "result": "",
-      "next": "packages/create-weed-game/template/scripts/dev.mjs takes server/staticFiles.js resolveInside's rule (refuse \\, : and NUL; check the real path of the nearest existing parent), copied since the template ships alone; createWeedGame.test.js then reads 403 on every system. A test for the symlink case.",
+      "result": "fixed 2026-11-11 (27269ef5, R-0876): resolveInside's rule in the template's dev.mjs; createWeedGame.test.js asks for \\, :, NUL and a link out (9 of 9; the old server fails both checks)",
+      "next": "Done. The template reaches games with the next create-weed-game release.",
       "area": "engine",
       "kind": "bug",
       "refs": [
@@ -10398,8 +10398,9 @@
         "backslash",
         "Linux"
       ],
-      "records": [],
-      "rank": 22
+      "records": [
+        "R-0876"
+      ]
     },
     {
       "id": "DX-DECOSKEW",
@@ -20198,6 +20199,16 @@
       "text": "**The bundles of 340061f0 (E-189 merged): tested, and the prod bundle equals its sources.** dist `39110dc0`, built from 340061f0.\n\n**On main:**\n- Node 2440 of 2440, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, nothing else running:\n\n- **Predator, 4 pairs, 15:42 to 15:46: NEUTRAL.**\n  - Logic -8.2 % (worse 0/4), spatial -2.6 %, physics -7.5 % (cv 7/17 %).\n  - Pre-render 3.107 → 3.132 ms (+1.4 %, worse 2/4).\n  - Load within 0.6 %.\n- **Boids, 8 pairs, 15:46 to 15:55: NEUTRAL.**\n  - Spatial 5.853 → 5.913 ms (+0.9 %, worse 5/8, cv 3/3 %).\n  - Physics +0.3 % (worse 6/8).\n  - 40 000 bodies on both sides.\n\nMain pushed.",
       "commits": [
         "39110dc0"
+      ]
+    },
+    {
+      "id": "R-0876",
+      "date": "2026-11-11",
+      "title": "N-114 fixed: the template's dev server refuses \\, : and NUL paths and links out of the folder, as the engine's does",
+      "verdict": "kept-hygiene",
+      "text": "**N-114 fixed: the create-weed-game template's dev server refuses what the engine's refuses.** 2026-11-11.\n\n**The bug.** `packages/create-weed-game/template/scripts/dev.mjs` served `path.join(root, decoded path)` when it started with the folder.\n- On Linux and macOS, `/..%5c..%5cpackage.json` was a file name inside the folder, so the server answered 404, and the test's 403 failed there.\n- A link inside the game folder pointing out of it was served.\n\nThe engine's server (`server/staticFiles.js`, `resolveInside`, N-80) refuses both.\n\n**The fix.** `dev.mjs` takes `resolveInside`'s rule, copied because the template ships alone. It answers 403 to:\n- a path holding `\\`, `:` or NUL;\n- a path that leaves the folder once `..` resolves;\n- a path that leaves it through a link (the real path of the nearest existing part).\n\n**The test** (`createWeedGame.test.js`):\n- the dev server now gets `\\`, `:` and NUL paths;\n- a new case puts a link out of the game folder in it (a junction on Windows, a symlink elsewhere) and asks for a file behind it, and for one that is not there. The link alone is removed before the folder.\n\nWith the old server both checks fail on Windows too. With the fix the file passes, 9 of 9.\n\nNo timing: the template's dev server is not the engine's frame. Games get the fix with the next create-weed-game release.",
+      "commits": [
+        "27269ef5"
       ]
     }
   ],

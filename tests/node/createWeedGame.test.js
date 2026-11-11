@@ -141,6 +141,10 @@ test('the dev server sends the isolation headers, guards the root and pings on s
     assert.match((await get(server.port, '/src/gameScene.js')).headers['content-type'], /text\/javascript/);
     assert.equal((await get(server.port, '/..%2f..%2fpackage.json')).status, 403); // %2f survives URL parsing
     assert.equal((await get(server.port, '/..%5c..%5cpackage.json')).status, 403);
+    // N-114: a backslash, a colon or a NUL is refused on every system, not read as a name inside the folder.
+    assert.equal((await get(server.port, '/src%5cgameScene.js')).status, 403);
+    assert.equal((await get(server.port, '/index.html:stream')).status, 403);
+    assert.equal((await get(server.port, '/index.html%00')).status, 403);
     assert.equal((await get(server.port, '/nope.js')).status, 404);
 
     const ping = await new Promise((resolve, reject) => {
@@ -163,6 +167,29 @@ test('the dev server sends the isolation headers, guards the root and pings on s
     assert.equal(ping.file, 'src/gameScene.js');
   } finally {
     await server.stop();
+    removeDir(parent);
+  }
+});
+
+// N-114: a link inside the game folder that points out of it serves nothing (a junction on Windows, which needs no
+// rights; a symlink elsewhere). The link alone is removed before the folder, so nothing follows it.
+test('the dev server refuses a link out of the game folder', async () => {
+  const parent = tempDir();
+  const { dir } = scaffold(parent, 'game');
+  const outside = path.join(parent, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(path.join(outside, 'secret.txt'), 'secret');
+  const link = path.join(dir, 'peek');
+  fs.symlinkSync(outside, link, process.platform === 'win32' ? 'junction' : 'dir');
+  const server = await startServer(dir, []);
+  try {
+    assert.equal(fs.readFileSync(path.join(link, 'secret.txt'), 'utf8'), 'secret', 'the link reaches the file');
+    assert.equal((await get(server.port, '/peek/secret.txt')).status, 403);
+    assert.equal((await get(server.port, '/peek/nope.txt')).status, 403, 'nor anything that would be there');
+    assert.equal((await get(server.port, '/src/gameScene.js')).status, 200, 'the folder itself is served');
+  } finally {
+    await server.stop();
+    fs.unlinkSync(link);
     removeDir(parent);
   }
 });
