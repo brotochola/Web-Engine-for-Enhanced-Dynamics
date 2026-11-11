@@ -104,6 +104,8 @@ export function createRenderQueueMemory(maxItems, queueBytes, gpuQueueBytes, emi
         pixiKeyHeaderByte: keyed ? r.emitKeyHeader.byte : -1,
         // E-191: the keyed frames' shadow stream, -1 without keyed frames.
         pixiKeyShadowByte: keyed && r.pixiKeyShadow && r.pixiKeyShadow.bytes > 0 ? r.pixiKeyShadow.byte : -1,
+        // E-193: the keyed pack's inverse, -1 without keyed frames.
+        pixiKeyInverseByte: keyed && r.pixiKeyInverse && r.pixiKeyInverse.bytes > 0 ? r.pixiKeyInverse.byte : -1,
         // W10: each sorting worker's painter state (null: that worker sorts in JS on arrays of its own).
         preRenderPainter: painter?.preRender ? painterStateLayout(r, 'preRenderPainter', n) : null,
         pixiPainter: painter?.pixi ? painterStateLayout(r, 'pixiPainter', n) : null,

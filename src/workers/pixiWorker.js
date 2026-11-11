@@ -2440,6 +2440,8 @@ class PixiRenderer extends AbstractWorker {
         indexCap: layout.indexCap,
         particlesByte: layout.pixiParticlesByte,
         inverseByte: 0,
+        // E-193: the keyed pack's own inverse (the other packs keep gathering here, W9c).
+        keyedInverseByte: layout.pixiKeyInverseByte > 0 ? layout.pixiKeyInverseByte : 0,
       });
     } catch (err) {
       throw new Error(`[PIXI WORKER] gpuPack.wasm did not load: ${err?.message ?? err}`, { cause: err });
