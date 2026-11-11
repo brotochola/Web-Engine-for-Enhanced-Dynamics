@@ -559,7 +559,7 @@ class Scene {
     }
     // A hook without its tag never runs, silently: say so once, here.
     warnMissingListenerTags(this.registeredClasses, GameObject);
-    // DX-GUARDS C3: a tickInterval that needs staggeredUpdates.
+    // DX-GUARDS C3, C4: a tickInterval that needs staggeredUpdates, an empty tick the workers still call.
     warnEntityClassMistakes(this.registeredClasses, GameObject, this.config);
     const messageNames = this.constructor.messages || [];
     for (const r of this.registeredClasses) {

@@ -1,11 +1,51 @@
 /**
- * DX-GUARDS C3: entity classes written in a way that does not do what it says. Checked once, when the scene
+ * DX-GUARDS C3, C4: entity classes written in a way that does not do what it says. Checked once, when the scene
  * registers its classes (main thread, both builds), and said once per class and rule.
  */
 import { warnOnce } from './dxWarn.js';
 
+/** The class (Entity itself or a game base class below Base) that defines `name`, or null. */
+function definer(EntityClass, BaseClass, name) {
+  let proto = EntityClass.prototype;
+  const stop = BaseClass.prototype;
+  while (proto && proto !== stop) {
+    if (Object.prototype.hasOwnProperty.call(proto, name)) return proto.constructor;
+    proto = Object.getPrototypeOf(proto);
+  }
+  return null;
+}
+
+/**
+ * True when a method's body holds nothing but whitespace and comments: `tick() {}`, `tick(dt) { // later }`.
+ * @param {Function} fn
+ */
+export function isEmptyMethod(fn) {
+  if (typeof fn !== 'function') return false;
+  const src = Function.prototype.toString.call(fn);
+  const open = src.indexOf('{');
+  const close = src.lastIndexOf('}');
+  if (open < 0 || close <= open) return false;
+  // A parameter's default may hold a brace (`tick(o = {})`): the body is what follows the parameter list.
+  const params = src.indexOf('(');
+  const paramsEnd = params >= 0 ? matchingParen(src, params) : -1;
+  const start = paramsEnd > 0 ? src.indexOf('{', paramsEnd) : open;
+  if (start < 0) return false;
+  const body = src.slice(start + 1, close).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+  return body.trim() === '';
+}
+
+function matchingParen(src, at) {
+  let depth = 0;
+  for (let i = at; i < src.length; i++) {
+    if (src[i] === '(') depth++;
+    else if (src[i] === ')' && --depth === 0) return i;
+  }
+  return -1;
+}
+
 /**
  * C3: `static tickInterval > 1` needs `logic.staggeredUpdates`; without it the type ticks every frame.
+ * C4: an empty `tick() {}` still has the logic workers call it on every entity of the type, every frame.
  * @param {{ class: Function, count: number }[]} registered
  * @param {Function} BaseClass GameObject
  * @param {{ logic?: { staggeredUpdates?: boolean } }} config the scene's config, defaults applied
@@ -23,6 +63,16 @@ export function warnEntityClassMistakes(registered, BaseClass, config) {
         'tick-interval',
         `${name} has static tickInterval = ${interval}, but the scene's logic.staggeredUpdates is off, so it ticks ` +
           'every frame. Set logic: { staggeredUpdates: true } in the scene\'s config.',
+      );
+    }
+    if (isEmptyMethod(C.prototype.tick)) {
+      const owner = definer(C, BaseClass, 'tick');
+      const where = owner && owner !== C ? ` (from ${owner.name})` : '';
+      warnOnce(
+        name,
+        'empty-tick',
+        `${name}'s tick()${where} is empty, yet the logic workers call it on every ${name} each frame. Delete it, ` +
+          'or set static tickInterval = 0 if it is there to stop a parent\'s tick.',
       );
     }
   }
