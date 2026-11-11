@@ -32,6 +32,8 @@ export class MySoldier extends Person {
 
   static components = [...Person.components, SoldierBehaviorFSM];
   outQueryDecorationIndices = new Uint16Array(64);
+  /** The logic frame of the tick running now (its FSM reads it); declared here so every soldier keeps one shape. */
+  _logicFrame = 0;
 
   onSpawned(spawnConfig = {}) {
     // Set spritesheet and animation before super.onSpawned()
