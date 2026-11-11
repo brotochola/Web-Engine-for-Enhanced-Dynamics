@@ -82,6 +82,9 @@ It answers the question phase 4 rests on and touches no public API.
 
 ### Phase 3: point lights (large)
 
+Worked out on 2026-11-11 in [`DX_VOLLIGHTS_DESIGN.md`](./DX_VOLLIGHTS_DESIGN.md): what a game writes, the picture case by case,
+and how basic and raycasted lighting each draw it. The sketch below is where it started.
+
 `castsLights` draws the volume's shadow on the floor for each shadow-casting light. A vertex at height `h`, under a light at
 floor point `l` and height `H`, lands at `p + (p − l) · h / (H − h)`. That is the sun's formula with a direction per vertex
 and, unlike the sweep's wedge, a shadow that ends. `H` is `LightEmitter.sourceHeight`. Where `H ≤ h`, it runs out to the
