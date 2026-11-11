@@ -185,17 +185,17 @@ export class StreetCar extends GameObject {
 export class StreetCloud extends GameObject {
   static components = [SpriteRenderer];
 
-  speed = 0.5;
+  drift = 0.5;
 
   onSpawned(config = {}) {
     this.setLayer('clouds');
     this.setSprite('cloud');
     this.setScale(config.scale);
-    this.speed = config.speed;
+    this.drift = config.drift;
   }
 
   tick(dtRatio) {
-    this.x += this.speed * dtRatio;
+    this.x += this.drift * dtRatio;
     if (this.x > WORLD_W + 300) this.x = -300;
   }
 }
