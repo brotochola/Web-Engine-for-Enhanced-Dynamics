@@ -107,7 +107,8 @@ for free.
   headless and, for the 9 WebGPU ones, in a window. Besides the kept C4 lines and the pool-full warnings the engine
   already gave, the run-time guards named:
   - E2: Planet Physics' ship `_rollReady` and `_camAngle` (declared in the class, `9d1ca826`); Predator's
-    `MySoldier._logicFrame`.
+    `MySoldier._logicFrame` and, once that was declared, its FSM's `_losCacheTarget`, `_losCacheClear` and
+    `_losCacheUntilFrame` (the audit reads one live soldier a second: a field it meets late is named late).
   - E7: Procedural Tree's `'+'` (it reads `'='`, `5ba4063b`); the landing page's `pageup` and `pagedown`, keys the
     engine does not track, so its chapter keys work only with the arrows.
   - E3: Predator's `Drop` sets `collider.isTrigger = 1` in a `setTimeout` a second after its spawn: it never becomes a
@@ -116,8 +117,9 @@ for free.
     floats when it falls in the pond": the spawn's sync replaces it, so they weigh about twice what their comment says
     (N-132).
   Predator's and the landing page's were left at first; on 2026-11-11 the owner had them all fixed: N-131 (and N-135,
-  the same for `enableHitEvents`), N-132, the page keys in the engine's key map (`a0c61aac`), `_logicFrame` declared
-  (`bb98e09d`).
+  the same for `enableHitEvents`), N-132, the page keys in the engine's key map (`a0c61aac`), `_logicFrame` and the
+  line-of-sight cache fields declared (`bb98e09d`, `c0acf4ac`). The sweep again after them (2026-11-11, every demo,
+  WebGPU ones in a window, Predator once more for 30 s): only the pool-full warnings are left.
 
 ## For the owner
 
@@ -126,5 +128,6 @@ for free.
   `MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name DX-GUARDS --vs f7860aa2 --hyp-rev dx/guards --pairs 4`.
   spawnStormScene for F2 (despawn's joint read): the command is in R-0856.
 - **Done since, the owner's call of 2026-11-11:** N-131, N-132, N-135, the demos' empty ticks, Predator's
-  `_logicFrame`, the page keys. Predator's and the stress scenes' numbers move with them: a gate run after this branch
-  merges is against a different scene.
+  fields, the page keys. Predator's and the stress scenes' numbers move with them: a sitting after this branch merges
+  is against a different scene. The gate above takes `src/` from each revision and the scene from the folder (no
+  `--full-rev`), so both sides run one scene and it reads the engine alone.
