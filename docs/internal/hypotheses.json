@@ -10062,7 +10062,9 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0900"
+      ],
       "status": "open",
       "date": "2026-11-01",
       "kind": "speed",
@@ -10071,10 +10073,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-194"
       ],
-      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "statusText": "open: step 0 answered 2026-11-11 (R-0900)",
       "area": "render",
-      "result": "",
-      "next": "A LiquidFun particle drawn as a sprite is still a row without a key, 64 bytes every keyed frame; liquidFunQueryStressScene draws up to 16 000. Step 0: whether that scene draws keyed (Pixi packs, WebGL) and how often its particles' statics change. Then keys past the decorations by particle index, marked as E-188 marks a decoration. Particles stay keyless: their alpha fades every frame. Owner: liquidFunQueryStressScene's renderer.",
+      "result": "step 0 (R-0900): keyed batch, keyed frames paused 589/600, each sent all 16 000 rows as updates; the scene draws split",
+      "next": "How often a LiquidFun slot's statics change under the churn; then keys by particle index with change marks (E-188's way). Gain about 0.2-0.3 ms of a 1.07 ms renderer: raise the scene's load to judge it.",
       "rank": 21
     },
     {
@@ -20664,6 +20666,15 @@
       "commits": [
         "54682d5f"
       ]
+    },
+    {
+      "id": "R-0900",
+      "date": "2026-11-11",
+      "time": "20:23",
+      "timeFrom": "recorded",
+      "title": "E-194 step 0: the LiquidFun scene's keyed frames are paused 589 of 600 frames (16 000 keyless rows each); it draws split",
+      "verdict": "answered",
+      "text": "**E-194 step 0: liquidFunQueryStressScene's batch is keyed, but its keyed frames are paused 98 % of the time: each sends all 16 000 LiquidFun rows as updates, so the loss heuristic stops them and the scene draws split.** 2026-11-11.\n\n**Probe.** A logging patch, not committed, in `InstancedSpriteBatch`'s upload on current main, src, headless WebGL, 6 s warm-up then 4 s. Every 120 uploads it printed whether the batch is keyed, whether keyed frames were paused (`_keyPause`), and the keyed frames' updates and rows. At 600 uploads:\n- keyed batch: 600 of 600;\n- paused: 589 of 600;\n- keyed frames taken: 10, all early, with 160 000 updates for 160 000 rows (16 000 a frame, every row);\n- scan: 16 000 rows a frame.\n\n**What it means.** A LiquidFun particle drawn as a sprite has no key, so a keyed frame sends its statics every frame (64 bytes) on top of its pose and slot. With 16 000 of them the keyed frames lose, pause, and the scene uploads split frames (60 bytes a sprite, about 960 KB a frame).\n\nWith keys by particle index and change marks, a frame would send about 24 bytes a sprite (384 KB) plus the slots whose particle changed. The renderer here is 1.07 ms, so the gain is a few tenths of a millisecond, below the floor unless the scene's load is raised.\n\n**Next:** how often a LiquidFun slot's statics change (the churn re-emits particles), then decide. Kept open, ranked after the larger items."
     }
   ],
   "leads": [
