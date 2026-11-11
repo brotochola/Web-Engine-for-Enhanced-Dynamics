@@ -3703,6 +3703,16 @@ the particle worker there), and A* in C (E-207, half the particle worker).
 particle 3.545 → 3.073 ms (-13.8 %, 0/4: its own scan per request is gone), PATHS_COMPUTED 42.9 → 41.0 (-4.4 %); every
 other worker below the floor. Left in the particle worker: the LRU scan for a new slot and `_hasEmptyPathSlot`.
 
+### E-213 Path and flowfield requests through a SAB ring, not a postMessage each
+
+**Premise:** astarStressScene's trace (R-0889): every path request is a `postMessage` from a logic worker to the
+particle worker (`NavGrid._requestPath`), and `port.onmessage` is 10 % of the particle worker; the logic side pays the
+structured clone, a `performance.now()` and a pending-map entry object per request. E-208 replaced the same kind of
+traffic (list updates) with a single-writer SAB ring per logic worker and cut its garbage from 33 MB/s to 35 KB/s.
+**Plan:** a ring per logic worker in the navigation memory (two words a record: from and to, or a flowfield target with a
+flag), drained by the particle worker at the top of its nav step; the pending map keeps its dedup. Owner:
+astarStressScene's particle worker, at the same PATHS_COMPUTED; logic not 3 % worse.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

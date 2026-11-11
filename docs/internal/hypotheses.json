@@ -11887,6 +11887,29 @@
         "R-0889",
         "R-0890"
       ]
+    },
+    {
+      "id": "E-213",
+      "title": "Path and flowfield requests through a SAB ring, not a postMessage each",
+      "status": "open",
+      "statusText": "filed 2026-11-11 from astarStressScene's trace (R-0889); not measured",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "A single-writer ring per logic worker in the navigation memory, drained by the particle worker; owner astarStressScene particle (port.onmessage 10 %), logic not 3 % worse.",
+      "area": "nav",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-213"
+      ],
+      "aliases": [
+        "_requestPath",
+        "REQUEST_PATH",
+        "postMessage",
+        "astarStressScene",
+        "ring"
+      ],
+      "records": [],
+      "rank": 2
     }
   ],
   "records": [
