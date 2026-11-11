@@ -252,13 +252,30 @@ test('a full arena warns about the knob that widens it', () => {
   assert.equal(MeshRenderer.layerMask[2], 0, 'no mesh, not on the layer');
 });
 
-test('a volume that no longer fits leaves the layer with its mesh', () => {
+test('a level that does not fit leaves the volume it had, on the layer, and warns', () => {
   setup({ verts: 14, indices: 90 });
   const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
   const v = volume(1);
   v.setBox(10, 10, 10);
+  const box = mesh(1);
   assert.ok(MeshRenderer.layerMask[1] & bit);
-  warnings(() => v.addLevel([-1, -1, 1, -1, 1, 1, -1, 1], 10, 20));
+  const seen = warnings(() => v.addLevel([-1, -1, 1, -1, 1, 1, -1, 1], 10, 20));
+  assert.ok(seen.some((m) => m.includes('lighting.maxVolumeVerts')), seen.join(' | '));
+  assert.deepEqual(mesh(1), box);
+  assert.ok(MeshRenderer.layerMask[1] & bit);
+  // Nothing leaked: the 6 vertices the box leaves still hold a three-cornered volume.
+  assert.deepEqual(warnings(() => volume(2).addLevel([-1, -1, 1, -1, 1, 1], 0, 20)), []);
+  assert.equal(MeshGeometry.vertCount[2], 6);
+});
+
+test('a volume the arena refuses outright leaves the layer with no mesh', () => {
+  setup({ verts: 7, indices: 90 });
+  const bit = Layer.bit(Layer.get(VOLUME_LAYER).id);
+  const v = volume(1);
+  warnings(() => v.setBox(10, 10, 10));
+  assert.equal(MeshGeometry.vertCount[1], 0);
+  assert.equal(MeshRenderer.layerMask[1] & bit, 0);
+  warnings(() => v.addLevel([-1, -1, 1, -1, 1, 1, -1, 1], 0, 20));
   assert.equal(MeshGeometry.vertCount[1], 0);
   assert.equal(MeshRenderer.layerMask[1] & bit, 0);
 });

@@ -132,7 +132,8 @@ the plan has them, and `volumeStressScene`. Sun Street and the game moved to it.
   so a floor face adds nothing. `setHull` drops the faces on the floor for the same reason.
 - **`Component.requires`** brings `MeshRenderer` to a class that lists the component (`collectComponents`).
 - **An entity on the layer needs a mesh.** A `MeshRenderer` with none fills its collider, so `clear` and a mesh the arena refuses
-  both take the entity off the layer, and `setLayer` keeps the layer's bit only if the entity has it.
+  both take the entity off the layer, and `setLayer` keeps the layer's bit only if the entity has it. A level the arena refuses
+  puts back the volume the entity had, on the layer: a car that cannot add its cabin keeps its body's shadow.
 - **`addLevel` frees before it asks.** The arena is first fit: asked for the bigger span first, it left each level's old span as a
   hole no later volume fitted, and the last entities of a scene lost their volume with room to spare.
 - **Scenes.** `Scene._applyVolumeConfig`, from `static entities`, adds the layer and the arena, so a scene's config names neither.

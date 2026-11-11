@@ -188,7 +188,11 @@ function writeLevel(i, base, top, n, bottom, height, keep) {
     idx[w++] = roofRing + q;
     idx[w++] = roofRing + p;
   }
-  return publish(i, xy, uv, idx, vertN, w);
+  if (publish(i, xy, uv, idx, vertN, w)) return true;
+  // The arena refused the bigger volume (publish warned): the one the entity had is still at the start of the scratch, and
+  // its spans were just freed, so it goes back, on the layer. A car that cannot add its cabin keeps its body's shadow.
+  if (hadV >= 3 && MeshGeometry.replace(i, xy, hadI > 0 ? idx : null, uv, hadV, hadI)) VolumeShadowCaster.joinLayer(i);
+  return false;
 }
 
 export class VolumeShadowCaster extends Component {
@@ -283,7 +287,8 @@ export class VolumeShadowCaster extends Component {
   }
 
   /**
-   * One more level on top of what the volume has: a body, a cabin on it, a tank on a roof. Its outline need not be convex.
+   * One more level on top of what the volume has: a body, a cabin on it, a tank on a roof. Its outline need not be convex. One
+   * the arena has no room for warns and leaves the volume as it was.
    * @param {ArrayLike<number>|Array<{x:number,y:number}>} outline on the entity's frame
    * @param {number} bottom height of the outline, screen px
    * @param {number} top height of the level's top

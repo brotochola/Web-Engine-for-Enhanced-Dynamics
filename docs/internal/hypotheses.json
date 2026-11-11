@@ -10890,7 +10890,7 @@
       "id": "N-123",
       "title": "A VolumeShadowCaster with no volume yet took the \"requires setLayer\" warning",
       "status": "kept-hygiene",
-      "statusText": "Fixed on dx/volume-shadow-caster (83ef3072), not merged",
+      "statusText": "Fixed (83ef3072), merged to main (e54f701f), released in 0.14.0",
       "date": "2026-11-10",
       "result": "The collider-fill packer skips the warning where VolumeShadowCaster.floorScaleY is above 0; any other MeshRenderer with no MESH layer still warns.",
       "next": "",
@@ -10912,7 +10912,7 @@
       "id": "N-124",
       "title": "The bigAtlas packer pruned every pair of free rectangles after each placement: 19 s of the Buenos Aires demo's load",
       "status": "kept-hygiene",
-      "statusText": "Fixed on dx/fast-load (6dcef423), not merged",
+      "statusText": "Fixed (6dcef423), merged to main (1e5fdbc3), released in 0.14.0",
       "date": "2026-11-10",
       "result": "Only the rectangles a placement cuts are pruned, in the old order: the same placements; kernel 17 873 -> 177 ms a pack, the demo's atlas step 21.1 -> 2.2 s.",
       "next": "Trimming still reads each frame back on the main thread (about 0.6 s for 4 386 frames); a worker or one getImageData a sheet would take it off.",
@@ -10937,7 +10937,7 @@
       "id": "N-125",
       "title": "A scene loaded from outside the demos' start page buttons ran under the list",
       "status": "kept-hygiene",
-      "statusText": "Fixed on dx/fast-load (4e3b772a), not merged",
+      "statusText": "Fixed (4e3b772a), merged to main (1e5fdbc3), released in 0.14.0",
       "date": "2026-11-10",
       "result": "demos/menu.js wraps its page's game.loadScene: every load hides the list and keeps ?scene= in the URL.",
       "next": "",
@@ -10953,6 +10953,53 @@
       ],
       "records": [
         "R-0849"
+      ]
+    },
+    {
+      "id": "N-126",
+      "title": "A level the volume arena had no room for took the whole volume",
+      "status": "kept-hygiene",
+      "statusText": "Fixed on dx/volume-keeps-mesh (3874fe59), not merged",
+      "date": "2026-11-10",
+      "result": "VolumeShadowCaster.addLevel puts back the mesh the entity had, on the layer, when the arena refuses the bigger one: a car whose cabin does not fit keeps its body's shadow. A box or a hull refused outright still leaves the layer.",
+      "next": "",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-126"
+      ],
+      "aliases": [
+        "D1",
+        "addLevel does not fit",
+        "maxVolumeVerts",
+        "volume arena full"
+      ],
+      "records": [
+        "R-0851"
+      ]
+    },
+    {
+      "id": "N-127",
+      "title": "A worldRect layer's float pictures do not upload in WebGL",
+      "status": "open",
+      "statusText": "Confirmed in the code, not fixed",
+      "date": "2026-11-10",
+      "result": "uploadSharedImage hands texSubImage2D a Uint8Array with type FLOAT, which WebGL 2 refuses, and sends r32float as RGBA; WebGPU is right. Conurbano avoids it with RGBA8 in fixed point.",
+      "next": "A Float32Array view over the same bytes (offset in floats) and RED for r32float, on its own branch, with a browser test that reads a float picture back on WebGL.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-127"
+      ],
+      "aliases": [
+        "B1",
+        "r32float",
+        "rgba32float",
+        "shaderTextures",
+        "sharedTextureUpload"
+      ],
+      "records": [
+        "R-0851"
       ]
     }
   ],
@@ -19038,6 +19085,19 @@
       "commits": [
         "1e5fdbc3",
         "1969bf1e"
+      ]
+    },
+    {
+      "id": "R-0851",
+      "date": "2026-11-10",
+      "time": "21:54",
+      "timeFrom": "recorded",
+      "title": "D1 and B1 of the volume review: a level that does not fit keeps the volume; WebGL float pictures filed",
+      "verdict": "kept-hygiene",
+      "text": "**N-126, kept as hygiene; N-127 filed; 0.14.0 released.** Nothing timed.\n\nThe owner said yes to two items of the `dx/volume-shadow-caster` review: D1 (a level that does not fit keeps the volume) and B1 (file the WebGL float upload bug).\n\n**N-126** (`3874fe59` on `dx/volume-keeps-mesh`): `addLevel` frees the entity's spans before it asks for the bigger mesh, so a refused level left the entity with no mesh and off the layer. The old mesh is still at the start of the scratch and fits the spans just freed, so it now goes back, on the layer, with the same warning about `lighting.maxVolumeVerts`. The test that held the old behaviour (`a volume that no longer fits leaves the layer with its mesh`) holds the new one, fails before the fix, and checks that the six free vertices still hold a three-cornered volume; a new test keeps a first volume's refusal. Guide, types and `DX_VOLUME_DESIGN.md` say so. Node 2346 of 2346, demos 100 of 100, check:types.\n\n**N-127**, filed open: `uploadSharedImage` gives `texSubImage2D` a `Uint8Array` with type `FLOAT` and sends `r32float` as `RGBA`, so a worldRect layer's float pictures never reach the GPU in WebGL. Read in the code, not yet seen in a browser.\n\n**0.14.0** is on npm (`7f7b5f00`, tag `v0.14.0`, pushed with main). The release script's own `npm publish` timed out on the browser approval (five minutes, nobody approved); two authenticator codes were refused within seconds with the clock right; a visible console ran `npm publish` with a TTY and the owner approved in the browser.",
+      "commits": [
+        "3874fe59",
+        "724e0df6"
       ]
     }
   ],
