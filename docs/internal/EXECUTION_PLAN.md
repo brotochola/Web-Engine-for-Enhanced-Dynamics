@@ -3698,6 +3698,10 @@ stale or moving entry costs a miss, never a wrong path. The particle worker's lo
 numeric key, built only while it holds requests. Owner: astarStressScene's logic; the particle worker must not get 3 %
 worse. Next to it, not in it: requests through a SAB ring instead of a postMessage each (`port.onmessage` is 10 % of
 the particle worker there), and A* in C (E-207, half the particle worker).
+**Result:** kept 2026-11-11 (`501fe3ac`, sat as 36ce347c, the same tree; R-0890). astarStressScene, 4 pairs, 18:35 to
+18:38 (`--vs 16c1d66e --owner logic`): **KEPT (product).** Logic 11.792 → 1.328 ms (-88.8 %, worse 0/4, cv 4/3 %),
+particle 3.545 → 3.073 ms (-13.8 %, 0/4: its own scan per request is gone), PATHS_COMPUTED 42.9 → 41.0 (-4.4 %); every
+other worker below the floor. Left in the particle worker: the LRU scan for a new slot and `_hasEmptyPathSlot`.
 
 ## Not doing (read the log first)
 

@@ -199,6 +199,11 @@ export class NavGrid {
   static _flowfieldSlotSize = 0; // 12-byte header + aligned vector data, interleaved
   static _pathHeadersOffset = 0;
   static _pathSlotSize = 0; // 20-byte header + maxPathLength*4 data, interleaved
+  // E-212: (fromCell, toCell) -> slot + 1 (0 empty), open addressing, after the path slots. The particle worker alone
+  // writes it; readers check the slot's header, so a stale or moving entry is a miss, never a wrong path.
+  static _pathIndexOffset = 0;
+  static _pathIndex = new Int32Array(0);
+  static _pathIndexMask = 0;
 
   /**
    * Shared LRU clock: wall-clock seconds. Consistent across ALL workers
@@ -240,8 +245,15 @@ export class NavGrid {
     const pathSlotSize = this._PATH_HEADER_SIZE + maxPathLength * 4;
     const pathsSize = maxPaths * pathSlotSize;
 
-    // Total size from flowfield headers offset
-    return flowfieldHeadersOffset + flowfieldsSize + pathsSize;
+    // Total size from flowfield headers offset, then the path index (E-212)
+    return flowfieldHeadersOffset + flowfieldsSize + pathsSize + this._pathIndexEntries(maxPaths) * 4;
+  }
+
+  /** E-212: the path index's entries, a power of two at least twice the slots (the probes stay short). */
+  static _pathIndexEntries(maxPaths) {
+    let n = 16;
+    while (n < (maxPaths | 0) * 2) n *= 2;
+    return n;
   }
 
   /**
@@ -293,6 +305,10 @@ export class NavGrid {
     // All slot header/data offsets are 4-byte aligned by construction.
     this._u32 = new Uint32Array(sab, 0, sab.byteLength >> 2);
     this._i8 = new Int8Array(sab);
+    this._pathIndexOffset = this._pathHeadersOffset + this._maxPaths * this._pathSlotSize;
+    const indexEntries = this._pathIndexEntries(this._maxPaths);
+    this._pathIndex = new Int32Array(sab, this._pathIndexOffset, indexEntries);
+    this._pathIndexMask = indexEntries - 1;
 
     this._initialized = true;
   }
@@ -452,8 +468,9 @@ export class NavGrid {
     this._staticFlowfields.clear();
   }
 
+  /** A number, not a string: no allocation on the per-agent path calls (E-212). Exact below 2^53 cells squared. */
   static _makePathRequestKey(fromCell, toCell) {
-    return `${fromCell}_${toCell}`;
+    return fromCell * this._totalCells + toCell;
   }
 
   static _isPendingRequestFresh(entry, currentVersion) {
@@ -570,12 +587,11 @@ export class NavGrid {
       return;
     }
 
-    const requestKey = this._makePathRequestKey(fromCell, toCell);
     // Find path slot
     const slotIndex = this._findPathSlot(fromCell, toCell);
 
     if (slotIndex >= 0) {
-      this._pendingPathRequests.delete(requestKey);
+      if (this._pendingPathRequests.size !== 0) this._pendingPathRequests.delete(this._makePathRequestKey(fromCell, toCell));
       // Path exists - get next cell
       const nextCell = this._getPathNextCell(slotIndex, fromCell);
       if (nextCell >= 0) {
@@ -627,11 +643,10 @@ export class NavGrid {
       return;
     }
 
-    const requestKey = this._makePathRequestKey(fromCell, toCell);
     const slotIndex = this._findPathSlot(fromCell, toCell);
 
     if (slotIndex >= 0) {
-      this._pendingPathRequests.delete(requestKey);
+      if (this._pendingPathRequests.size !== 0) this._pendingPathRequests.delete(this._makePathRequestKey(fromCell, toCell));
       // Path exists - copy to outPath
       this._copyPathToArray(slotIndex, outPath);
       // Refresh LRU on read so actively-used paths are not evicted
@@ -798,10 +813,11 @@ export class NavGrid {
       this._clearFlowfieldSlot(i);
     }
 
-    // Clear all path slots
+    // Clear all path slots, and their index
     for (let i = 0; i < this._maxPaths; i++) {
       this._clearPathSlot(i);
     }
+    this._pathIndex.fill(0);
   }
 
   // =========================================================
@@ -918,22 +934,102 @@ export class NavGrid {
    * @returns {number} - Slot index, or -1 if not found
    */
   static _findPathSlot(fromCell, toCell) {
+    // E-212: through the index; the slot's header decides. Status first (Atomics) = publication gate; see
+    // _findFlowfieldSlot.
     const u32 = this._u32;
+    const index = this._pathIndex;
+    const mask = this._pathIndexMask;
     const baseIndex = this._pathHeadersOffset >> 2;
     const slotStride = this._pathSlotSize >> 2;
-
-    for (let i = 0; i < this._maxPaths; i++) {
-      const idx = baseIndex + i * slotStride;
-      // Status first (Atomics) = publication gate; see _findFlowfieldSlot
+    let i = this._pathHash(fromCell, toCell);
+    for (let probes = 0; probes <= mask; probes++) {
+      const entry = index[i];
+      if (entry === 0) return -1;
+      const idx = baseIndex + (entry - 1) * slotStride;
       if (
         Atomics.load(u32, idx + 4) === PATH_STATUS.READY &&
         u32[idx] === fromCell &&
         u32[idx + 1] === toCell
       ) {
-        return i;
+        return entry - 1;
       }
+      i = (i + 1) & mask;
     }
     return -1;
+  }
+
+  /** E-212: the index's home entry for a (from, to) pair. */
+  static _pathHash(fromCell, toCell) {
+    let h = Math.imul(fromCell ^ Math.imul(toCell, 0x45d9f3b), 0x9e3779b1);
+    h ^= h >>> 15;
+    return h & this._pathIndexMask;
+  }
+
+  /** E-212 (particle worker): the slot holding (from, to) whatever its status, by the index, or -1. */
+  static _indexedPathSlot(fromCell, toCell) {
+    const u32 = this._u32;
+    const index = this._pathIndex;
+    const mask = this._pathIndexMask;
+    const baseIndex = this._pathHeadersOffset >> 2;
+    const slotStride = this._pathSlotSize >> 2;
+    let i = this._pathHash(fromCell, toCell);
+    for (let probes = 0; probes <= mask; probes++) {
+      const entry = index[i];
+      if (entry === 0) return -1;
+      const idx = baseIndex + (entry - 1) * slotStride;
+      if (u32[idx] === fromCell && u32[idx + 1] === toCell) return entry - 1;
+      i = (i + 1) & mask;
+    }
+    return -1;
+  }
+
+  /** E-212 (particle worker): list a slot under (from, to). Each slot has at most one entry. */
+  static _pathIndexInsert(fromCell, toCell, slot) {
+    const index = this._pathIndex;
+    const mask = this._pathIndexMask;
+    let i = this._pathHash(fromCell, toCell);
+    for (let probes = 0; probes <= mask; probes++) {
+      const entry = index[i];
+      if (entry === slot + 1) return;
+      if (entry === 0) {
+        index[i] = slot + 1;
+        return;
+      }
+      i = (i + 1) & mask;
+    }
+  }
+
+  /**
+   * E-212 (particle worker): take a slot's entry out under its old (from, to), and move the entries after it back
+   * toward their homes (no tombstones). A reader probing meanwhile may miss an entry for a moment: a miss, never a
+   * wrong slot. Every listed slot's header holds the key it was listed under, which gives each entry's home.
+   */
+  static _pathIndexRemove(fromCell, toCell, slot) {
+    const index = this._pathIndex;
+    const mask = this._pathIndexMask;
+    const u32 = this._u32;
+    const baseIndex = this._pathHeadersOffset >> 2;
+    const slotStride = this._pathSlotSize >> 2;
+    let i = this._pathHash(fromCell, toCell);
+    let probes = 0;
+    while (index[i] !== slot + 1) {
+      if (index[i] === 0 || ++probes > mask) return;
+      i = (i + 1) & mask;
+    }
+    index[i] = 0;
+    let j = i;
+    for (;;) {
+      j = (j + 1) & mask;
+      const entry = index[j];
+      if (entry === 0) return;
+      const idx = baseIndex + (entry - 1) * slotStride;
+      const home = this._pathHash(u32[idx], u32[idx + 1]);
+      if (((j - home) & mask) >= ((j - i) & mask)) {
+        index[i] = entry;
+        index[j] = 0;
+        i = j;
+      }
+    }
   }
 
   /**
@@ -1118,17 +1214,16 @@ export class NavGrid {
     const baseIndex = this._pathHeadersOffset >> 2;
     const slotStride = this._pathSlotSize >> 2;
 
+    // Already exists for this path? (E-212: by the index)
+    const existing = this._indexedPathSlot(fromCell, toCell);
+    if (existing >= 0) return existing;
+
     let emptySlot = -1;
     let lruSlot = 0;
     let lruFrame = Infinity;
 
     for (let i = 0; i < this._maxPaths; i++) {
       const idx = baseIndex + i * slotStride;
-
-      // Already exists for this path?
-      if (u32[idx] === fromCell && u32[idx + 1] === toCell) {
-        return i;
-      }
 
       // Empty slot?
       if (u32[idx + 4] === PATH_STATUS.EMPTY && emptySlot < 0) {
@@ -1149,10 +1244,13 @@ export class NavGrid {
     // READY while the slot is being repurposed.
     const idx = baseIndex + slot * slotStride;
     Atomics.store(u32, idx + 4, PATH_STATUS.COMPUTING);
+    // E-212: off the index under the pair it held (a cleared slot holds none listed), then on it under the new one.
+    this._pathIndexRemove(u32[idx], u32[idx + 1], slot);
     u32[idx] = fromCell;
     u32[idx + 1] = toCell;
     u32[idx + 2] = this.lruNow();
     u32[idx + 3] = 0; // length
+    this._pathIndexInsert(fromCell, toCell, slot);
 
     return slot;
   }
