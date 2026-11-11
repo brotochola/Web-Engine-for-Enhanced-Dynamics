@@ -3628,6 +3628,11 @@ the renderer as the guard.
 **Plan:** `computePath` in C beside the flowfield, the open set cleared by a generation stamp instead of a fill. Kernel
 against today's on Predator's map, with the same paths (a golden test); then the scene. Owner: `PATHS_COMPUTED` (E-37)
 and the particle worker's time on a path-heavy scene.
+**Result:** kept 2026-11-11 (`a01fc243`; the JS left src in `bcbdac0f`; R-0892). `astar_path` in navFlowfield.wasm is
+the JS search ported cell for cell (same paths: `navAstarWasm.test.js`), with generation marks instead of the fill and
+the heap keys beside its cells. Kernel (`astarKernel.mjs`, Chrome): 109.1 → 34 µs a path (3.3×). astarStressScene
+`?agents=0` (a fixed 60 paths a frame), 4 pairs, 19:21 to 19:25: **KEPT (product)**, particle 6.770 → 2.523 ms (-63.1 %,
+worse 0/4). Found on the way: N-139 and E-214 (the slots, not the search).
 
 ### E-208 listUpdates through a SAB ring
 

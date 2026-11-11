@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { NavScratch, searchAstar, NAV_DX, NAV_DY, NAV_COST } from '../../src/core/navAstar.js';
+import { NavScratch, searchAstar, NAV_DX, NAV_DY, NAV_COST } from '../reference/navAstar.mjs';
 import { mulberry32 } from '../bench/benchMath.js';
 
 // N-137. The particle worker's A* (navAstar.js since) lowered a waiting cell's f in place without moving it in the

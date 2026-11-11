@@ -10,7 +10,9 @@ import { engineWasmUrl } from '../wasm/engine.js';
 
 
 /** wasm/navFlowfield.c's column table, slot for slot. */
-export const FLOWFIELD_SLOTS = ['walk', 'width', 'height', 'maxDist', 'state', 'dist', 'dir', 'next', 'prev', 'head', 'sums', 'quotient', 'out'];
+export const FLOWFIELD_SLOTS = ['walk', 'width', 'height', 'maxDist', 'state', 'dist', 'dir', 'next', 'prev', 'head', 'sums', 'quotient', 'out',
+  // E-207: astar_path's
+  'aG', 'aF', 'aCame', 'aGen', 'aHeap', 'aPos', 'aPath', 'aPathMax', 'aSearch', 'aKey'];
 if (FLOWFIELD_SLOTS.length > NAV_TABLE_SLOTS) throw new Error('navFlowfield: the column table outgrew its region');
 const SLOT = Object.fromEntries(FLOWFIELD_SLOTS.map((name, k) => [name, k]));
 
@@ -19,14 +21,14 @@ const SLOT = Object.fromEntries(FLOWFIELD_SLOTS.map((name, k) => [name, k]));
  * walkability NavGrid views, the grid, the last distance bucket and the scratch regions.
  * @param {WebAssembly.Memory} memory
  * @param {Record<string, number>} nav createNavigationMemory's layout
- * @param {{ walkability: Uint8Array, gridWidth: number, gridHeight: number, maxDistance: number }} grid
+ * @param {{ walkability: Uint8Array, gridWidth: number, gridHeight: number, maxDistance: number, maxPathLength?: number }} grid
  */
 export async function bindNavFlowfield(memory, nav, grid) {
   const buffer = memory.buffer;
   if (!grid.walkability || grid.walkability.buffer !== buffer) throw new Error('navFlowfield: the walkability is not in the memory');
   if (grid.gridWidth * grid.gridHeight !== nav.cells) throw new Error('navFlowfield: the grid does not match the memory');
   if (!(grid.maxDistance >= 0 && grid.maxDistance < NAV_MAX_BUCKETS)) throw new Error('navFlowfield: the distance buckets outgrow their region');
-  const k = await loadWasmKernel('navFlowfield', engineWasmUrl, memory, ['compute_flowfield']);
+  const k = await loadWasmKernel('navFlowfield', engineWasmUrl, memory, ['compute_flowfield', 'astar_path']);
   const t = new Uint32Array(buffer, nav.tableByte, FLOWFIELD_SLOTS.length);
   t[SLOT.walk] = grid.walkability.byteOffset;
   t[SLOT.width] = grid.gridWidth;
@@ -41,9 +43,23 @@ export async function bindNavFlowfield(memory, nav, grid) {
   t[SLOT.sums] = nav.sumsByte;
   t[SLOT.quotient] = nav.quotientByte;
   t[SLOT.out] = nav.vectorsByte;
+  // E-207: the A* search's columns; a path keeps maxPathLength cells at most, as the slot does.
+  const room = Math.max(0, Math.min(nav.cells, grid.maxPathLength ?? nav.cells)) | 0;
+  t[SLOT.aG] = nav.aGByte;
+  t[SLOT.aF] = nav.aFByte;
+  t[SLOT.aCame] = nav.aCameByte;
+  t[SLOT.aGen] = nav.aGenByte;
+  t[SLOT.aHeap] = nav.aHeapByte;
+  t[SLOT.aPos] = nav.aPosByte;
+  t[SLOT.aPath] = nav.aPathByte;
+  t[SLOT.aPathMax] = room;
+  t[SLOT.aSearch] = 0;
+  t[SLOT.aKey] = nav.aKeyByte;
   return {
     compute: k.compute_flowfield,
+    astar: k.astar_path,
     tableByte: nav.tableByte,
     vectors: new Int8Array(buffer, nav.vectorsByte, nav.cells * 2),
+    path: new Uint32Array(buffer, nav.aPathByte, room),
   };
 }

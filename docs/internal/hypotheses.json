@@ -11411,11 +11411,11 @@
     {
       "id": "E-207",
       "title": "A* in C",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (a01fc243, R-0892)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "computePath is the last search in JavaScript (navAstar.js since N-137): a JavaScript heap, inOpenSet.fill(0) over the grid; the flowfield gained 16x in C (E-122). In C beside the flowfield, the open set cleared by a generation stamp; kernel with the same paths (golden), then astarStressScene (R-0889: the search is about half the particle worker). Owner: the particle worker at a fixed PATHS_COMPUTED.",
+      "result": "kept 2026-11-11 (a01fc243, R-0892): kernel 109 -> 34 us a path; astarStressScene agents=0 particle 6.770 -> 2.523 ms (-63.1 %, 4/4)",
+      "next": "Done. The path slots around it are E-214 and N-139; the requests E-213.",
       "area": "nav",
       "kind": "wasm",
       "refs": [
@@ -11429,7 +11429,8 @@
       ],
       "records": [
         "R-0854",
-        "R-0889"
+        "R-0889",
+        "R-0892"
       ]
     },
     {
@@ -20538,6 +20539,19 @@
       "text": "**The bundles of b58e84df (E-212 merged): tested, and the prod bundle equals its sources: Boids and Predator both NEUTRAL.** dist `827b64a7`, built from b58e84df.\n\n- Node 2459 of 2459, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 280 of 280 on all 8 bundles (the path index's three tests are new).\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 18:44 to 18:47: NEUTRAL.** Logic -6.3 % (1/4 worse), spatial -2.5 %, physics -1.2 %, pre-render +1.4 % (2/4).\n- **Boids, 8 pairs, 18:47 to 18:54: NEUTRAL.** Spatial 6.051 → 6.019 ms (-1.6 %, worse 3/8), physics -1.2 % (3/8).\n\nMain pushed.",
       "commits": [
         "827b64a7"
+      ]
+    },
+    {
+      "id": "R-0892",
+      "date": "2026-11-11",
+      "time": "19:25",
+      "timeFrom": "recorded",
+      "title": "E-207 kept: A* in navFlowfield.wasm (same paths); kernel 3.3x, astarStressScene particle 6.770 -> 2.523 ms (-63.1 %)",
+      "verdict": "kept",
+      "text": "**E-207 kept (`a01fc243`): A* runs in navFlowfield.wasm, `astar_path` beside the flowfield, the same paths as the JS.** 2026-11-11.\n\n**Premise.** `computePath` was the last nav search in JavaScript. In astarStressScene the search is about half of the particle worker (R-0889). The flowfield gained 16× in C (E-122).\n\n**The kernel.** `astar_path` is navAstar.js's search (N-137's decrease-key heap) ported cell for cell: the same heap moves and the same ties, so it writes the same paths.\n- A cell's open and closed marks are one generation word (2 × search open, + 1 closed) instead of the JS's stamp and its fill of `inOpenSet` over the whole grid. On the counter's wrap the marks are cleared.\n- The heap keeps each place's f beside its cell, so the sifts compare without a second load.\n- Its columns follow the flowfield's in the navigation memory: g, f, came-from, generation, heap, heap keys, heap places, the path. The particle worker calls it and copies the path into the slot as before.\n\n**Parity.** `navAstarWasm.test.js`: the worker's paths equal the JS's, via a real particle worker on a scene's navigation memory.\n- astarStressScene's maze, 400 pairs.\n- Rubble at densities 0.2 and 0.4 with walkability 1 to 255, 300 pairs each, unreachable targets and walls included.\n- Paths cut at 16 cells.\n- Across the generation counter's wrap.\n\n**Kernel** (`astarKernel.mjs`, Chrome, the maze, 2000 walkable pairs, 9 reps, one checksum for both):\n- JS 109.1 µs a path.\n- The first port: 36.7 µs (2.97×).\n- Variants:\n  - column and row passed down instead of a division per neighbour: 36.8 and 37.4 µs, a tie, not kept;\n  - the heap keys beside the cells: 34.2 and 33.8 µs (3.3×), kept.\n- Flags are pinned engine-wide (`-O3 -msimd128`; engine.wasm holds every kernel). SIMD and float32 do not apply to an integer heap search.\n- Node screened the same: JS 109.8, WASM 37.2 µs.\n\n**Sittings.** astarStressScene, particle worker the owner, `--full-rev`, 4 pairs each:\n- Before the scene had a fixed load (`--vs d8d51e43 --hyp-rev 4f580ddc`):\n  - 800 agents, 19:04 to 19:08: particle 2.764 → 1.318 ms, but its baseline was below the 3 ms floor (E-212 had cut it);\n  - 1200 agents, 19:09 to 19:13: particle 4.157 → 1.995 ms (-52.0 %, 0/4), and FAIL (load), PATHS_COMPUTED 57.5 → 62.8 (+9.3 %). The agents wait for their paths, so a faster search raised their demand. Per path that sitting read 72 → 32 µs.\n- The scene's fixed load since (`73dc2c45`): planners each ask for a new random pair every tick. With `?agents=0` the load is theirs alone.\n- **`?agents=0`, 19:21 to 19:25 (`--vs 013b0e72 --hyp-rev a01fc243`): KEPT (product).**\n  - Particle 6.770 → 2.523 ms (-63.1 %, worse 0/4, cv 1/2 %).\n  - PATHS_COMPUTED 60.0 → 60.0.\n  - Every other worker below the floor.\n\n**Then the JS left src (`bcbdac0f`).** `searchAstar` moved to `tests/reference/navAstar.mjs`, the parity reference. The particle worker no longer makes NavScratch: seven per-cell arrays that neither search used, about 25 bytes a cell. It keeps the flowfield's distance cap.\n\n**Found on the way.**\n- N-139: with more paths made in one second than slots, the seconds clock evicts the path an agent is walking.\n- E-214: each new path scans every slot (8000 slots: about 0.5 ms a path).",
+      "commits": [
+        "a01fc243",
+        "bcbdac0f"
       ]
     }
   ],
