@@ -123,10 +123,11 @@ for free.
 
 ## For the owner
 
-- **Gates, not run here:** Predator, the hygiene keep for the whole branch (the guards are calls to empty functions in
-  production and, from source with the checks off, a test of a flag):
-  `MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name DX-GUARDS --vs f7860aa2 --hyp-rev dx/guards --pairs 4`.
-  spawnStormScene for F2 (despawn's joint read): the command is in R-0856.
+- **Gates, run at the merge (2026-11-11, R-0862):** Predator, main before the merge against it, 8 pairs: pre-render
+  +3.5 % as the median of the pairs (+2.5 % their mean), in a worker whose per-frame code the branch does not touch.
+  On painterMove, pre-render's owner scene, the same reading; a trace pair there gave the same time per frame in every
+  pre-render function (the thread -0.3 %), so it is noise and the branch stays as hygiene. spawnStormScene for F2 was
+  not run: one typed-array read per despawn.
 - **Done since, the owner's call of 2026-11-11:** N-131, N-132, N-135, the demos' empty ticks, Predator's
   fields, the page keys. Predator's and the stress scenes' numbers move with them: a sitting after this branch merges
   is against a different scene. The gate above takes `src/` from each revision and the scene from the folder (no
