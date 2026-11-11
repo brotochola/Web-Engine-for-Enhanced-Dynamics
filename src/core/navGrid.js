@@ -206,12 +206,14 @@ export class NavGrid {
   static _pathIndexMask = 0;
 
   /**
-   * Shared LRU clock: wall-clock seconds. Consistent across ALL workers
-   * (frame counters are per-worker and would corrupt LRU ordering).
-   * Fits in u32 until year 2106.
+   * Shared LRU clock: wall-clock 16 ms ticks (about a frame), the same in every worker (frame counters are per worker
+   * and would corrupt LRU ordering). N-139: it counted seconds, and when more paths than slots were made in one second
+   * every slot held the same stamp and the eviction took slot 0, a path an agent was walking. It wraps the u32 every
+   * 2.2 years: evictions compare ages, (now - stamp) >>> 0, which the wrap does not upset. A touch still writes its slot
+   * at most once a tick.
    */
   static lruNow() {
-    return (Date.now() / 1000) >>> 0;
+    return Math.floor(Date.now() / 16) >>> 0;
   }
 
   // =========================================================
@@ -1141,7 +1143,8 @@ export class NavGrid {
 
     let emptySlot = -1;
     let lruSlot = 0;
-    let lruFrame = Infinity;
+    let lruAge = -1;
+    const now = this.lruNow();
 
     const u32 = this._u32;
     const baseIndex = this._flowfieldHeadersOffset >> 2;
@@ -1163,9 +1166,10 @@ export class NavGrid {
         emptySlot = i;
       }
 
-      // Track LRU (only for non-empty slots)
-      if (slotStatus !== FLOWFIELD_STATUS.EMPTY && slotLru < lruFrame) {
-        lruFrame = slotLru;
+      // Track LRU (only for non-empty slots): the oldest stamp, by age (N-139)
+      const age = (now - slotLru) >>> 0;
+      if (slotStatus !== FLOWFIELD_STATUS.EMPTY && age > lruAge) {
+        lruAge = age;
         lruSlot = i;
       }
     }
@@ -1220,7 +1224,8 @@ export class NavGrid {
 
     let emptySlot = -1;
     let lruSlot = 0;
-    let lruFrame = Infinity;
+    let lruAge = -1;
+    const now = this.lruNow();
 
     for (let i = 0; i < this._maxPaths; i++) {
       const idx = baseIndex + i * slotStride;
@@ -1230,9 +1235,10 @@ export class NavGrid {
         emptySlot = i;
       }
 
-      // Track LRU
-      if (u32[idx + 2] < lruFrame) {
-        lruFrame = u32[idx + 2];
+      // Track LRU: the oldest stamp, by age (N-139)
+      const age = (now - u32[idx + 2]) >>> 0;
+      if (age > lruAge) {
+        lruAge = age;
         lruSlot = i;
       }
     }
