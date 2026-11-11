@@ -3464,6 +3464,13 @@ pass, the stamp's was never decided in Chrome.
 **Plan:** shadowStampWasmMicrobench's wasm against wasm-f32x4 in Chrome (chromeKernel.mjs), with E-191 step 2's keyed
 rows (7-float sun rows, 11-float stamp rows) as well as the full ones; into engine.wasm if faster, and Predator crowd
 1.5's pre-render not 3 % worse. Owner: the kernel, Predator's pre-render the guard.
+**Result:** dropped 2026-11-11 (R-0871): in Chrome both float32 forms are slower than the shipped double kernel.
+shadowStampKernel.mjs through chromeKernel.mjs (`d6a50344`: any variant, full or keyed rows), Chrome 157, the Predator
+fixture (16 424 casters, 48 lights, 7 877 stamp rows written by every variant, the same checksum):
+- `stamp_light_range_f32x4` against the shipped kernel, 3 runs a row form, 9 rounds each: full rows -8.5, -9.8, -9.9 %;
+  keyed rows -7.3, -9.2, -8.8 %.
+- `stamp_light_range_f32` (scalar float32), 2 runs a row form: full -11.5, -7.5 %; keyed -9.4, -10.3 %.
+Node's +7.3 % (R-0571) was Node's V8; Chrome decides, and the kernel stays in double.
 
 ### E-196 Attached decorations swayed off screen: a sine each, every frame, in the particle worker
 
