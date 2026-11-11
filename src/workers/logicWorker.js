@@ -42,6 +42,7 @@ import { logicBlockRange, logicWorkerThatShouldTick, tickBucketPhase } from '../
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
 import { Box2d } from '../core/box2d.js';
+import { IMPACT_FLOATS, bindImpactRing } from '../util/impactRing.js';
 import { collisionPairKey } from '../util/utils.js';
 import { EntityIdArray } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
@@ -138,6 +139,14 @@ class LogicWorker extends AbstractWorker {
 
     // Multi-worker coordination
     this.totalLogicWorkers = 1; // Total number of logic workers
+
+    // N-129: the bullet impact ring (impactRing.js; null without bullets), its records and mask, where this worker's
+    // reading stopped (a published count), and whether it said it fell behind.
+    this._impactRing = null;
+    this._impactData = null;
+    this._impactMask = 0;
+    this._impactRead = 0;
+    this._impactsLostWarned = false;
 
     // Performance tracking
     this.activeEntityCount = 0; // Number of active entities this worker is processing
@@ -362,11 +371,12 @@ class LogicWorker extends AbstractWorker {
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
 
     if (data.impactBuffer) {
-      // Sizes derive from config (buffer is allocated as 8 + maxImpactsPerFrame * 24)
+      // N-129: the impacts the particle worker publishes (impactRing.js), read from where this worker stopped.
       const maxImpacts = data.config?.bullet?.maxImpactsPerFrame ?? 64;
-      this._impactHeader = new Int32Array(data.impactBuffer, 0, 2); // [0]=count, [1]=batch sequence
-      this._impactData = new Float32Array(data.impactBuffer, 8, maxImpacts * 6);
-      this._lastImpactSeq = 0;
+      this._impactRing = bindImpactRing(data.impactBuffer, maxImpacts);
+      this._impactData = this._impactRing.data;
+      this._impactMask = this._impactRing.mask;
+      this._impactRead = Atomics.load(this._impactRing.header, 0);
     }
 
     // console.log("LOGIC WORKER: Initializing with component system");
@@ -913,18 +923,9 @@ class LogicWorker extends AbstractWorker {
       Box2d.beginFrame();
     }
 
-    // Process bullet impacts from particle_worker (SAB poll - no message needed)
-    // Gated on the batch sequence so each batch is processed exactly once,
-    // regardless of logic/particle frame-rate differences (no double damage,
-    // no reprocessing of stale batches).
-    if (this._impactHeader) {
-      const seq = Atomics.load(this._impactHeader, 1);
-      if (seq !== this._lastImpactSeq) {
-        this._lastImpactSeq = seq;
-        const count = Atomics.load(this._impactHeader, 0);
-        if (count > 0) this.processImpacts(count);
-      }
-    }
+    // Bullet impacts from particle_worker (SAB poll, no message): every one published since this worker's last read,
+    // each once, however the two workers' frames fall (N-129).
+    if (this._impactRing !== null) this._pollImpacts();
 
     // ========================================
     // PHASE 0: PROCESS LIST UPDATES (logic0 only)
@@ -1576,16 +1577,39 @@ class LogicWorker extends AbstractWorker {
    * to a worker (forceProcessOnLogicWorker) is shot on that worker, the one that ticks it and runs its other callbacks
    * (_runsCallbacksOf); the modulo sent it to another, whose instance of it is not the one that ticks.
    */
-  processImpacts(count) {
-    if (!count || !this._impactData || count <= 0) return;
+  /**
+   * N-129: the impacts published since the last poll. A worker further behind than the ring holds (impactRing.js) runs
+   * the newest the ring still has, and says once that it lost the others.
+   */
+  _pollImpacts() {
+    const ring = this._impactRing;
+    const end = Atomics.load(ring.header, 0);
+    let from = this._impactRead;
+    if (end === from) return;
+    const pending = (end - from) | 0;
+    if (pending > ring.slots || pending < 0) {
+      if (!this._impactsLostWarned) {
+        this._impactsLostWarned = true;
+        console.warn(`[logic] ${pending - ring.slots} bullet impacts lost: this worker fell more than ${ring.slots} impacts behind the particle worker`);
+      }
+      from = (end - ring.slots) | 0;
+    }
+    this._impactRead = end;
+    this.processImpacts(from, end);
+  }
+
+  /** Impacts `from` up to `to` (published counts, int32 that wrap) of the ring at `_impactData`. */
+  processImpacts(from, to) {
+    if (!this._impactData || from === to) return;
     const impactData = this._impactData;
+    const mask = this._impactMask;
     const totalWorkers = this.totalLogicWorkers;
     const myIndex = this.workerIndex;
     const gameObjects = this.gameObjects;
     const pins = GameObject.forceProcessOnLogicWorker;
 
-    for (let i = 0; i < count; i++) {
-      const base = i * 6;
+    for (let c = from; c !== to; c = (c + 1) | 0) {
+      const base = (c & mask) * IMPACT_FLOATS;
       const targetId = impactData[base] | 0;
       const pin = pins !== null ? pins[targetId] : -1;
       if (pin >= 0 ? pin !== myIndex : targetId % totalWorkers !== myIndex) continue;
