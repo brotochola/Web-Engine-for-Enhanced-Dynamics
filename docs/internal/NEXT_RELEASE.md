@@ -12,3 +12,12 @@ empties it.
 - **Despawn removes the entity's joints** (N-130), after `onDespawned`. They used to stay in the joint pool, and the
   entity spawned next into that index was born jointed to the old partner. A game that calls
   `Joint.removeAllForEntity(this.index)` in `onDespawned` keeps working; the call is no longer needed.
+- **New warnings** (DX-GUARDS, `docs/guide/COMMON_MISTAKES.md`): a game that was quiet may now see `WeedJS:` lines,
+  each once, naming a mistake it already had. At load, in both builds: config keys the engine does not read, a
+  `tickInterval` without `staggeredUpdates`, an empty `tick()`, a skipped entity class, `lighting` with the default
+  ambient and no sun, no world size under a bigger canvas. While the game runs, in the debug build only, with
+  `debug: { checks: false }` to turn them off: a field that hides an accessor, a field first written after
+  `onSpawned`, body flags or a hand-set mass that do not reach the body, particles born on the floor, emit keys that
+  are ignored, unknown key names.
+- **Errors that say what happened** (DX-GUARDS): an asset that does not load names its URL and the HTTP status; a
+  scene file a worker cannot import, or one that imports a second copy of the engine, says so.
