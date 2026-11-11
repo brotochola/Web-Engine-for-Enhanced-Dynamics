@@ -11619,11 +11619,11 @@
     {
       "id": "N-134",
       "title": "Raycasted lighting hides every ShadowCaster shadow, the sun's included",
-      "status": "open",
-      "statusText": "Confirmed in the code (2026-11-11), not yet seen on screen, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (5f1520ff, R-0884)",
       "date": "2026-11-11",
-      "result": "initVisibilityPolygonSystem runs after createCastedShadowsSystem and hides castedShadows (shadowSpritesEnabled false), for the cookies that crushed the umbra; the sun's sprite shadows and the lamps' stamps go with them. Sun Street runs raycasted by default.",
-      "next": "Under raycasted, draw the sun casters into shadowRT without the cookies and show the layer; a capture at noon with raycast on and off, both backends.",
+      "result": "fixed 2026-11-11 (5f1520ff, R-0884): the sun's casters alone under raycasted lighting; Sun Street noon captures on both backends; visPolyStressScene NEUTRAL",
+      "next": "Done. Lamps casting volume shadows stay DX-VOLLIGHTS.",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -11638,9 +11638,9 @@
         "Sun Street"
       ],
       "records": [
-        "R-0860"
-      ],
-      "rank": 32
+        "R-0860",
+        "R-0884"
+      ]
     },
     {
       "id": "DX-VOLLIGHTS",
@@ -20318,6 +20318,18 @@
       "text": "**The bundles of 8c04d8da (E-208 merged): tested, and the prod bundle equals its sources by Boids' 8 pairs. Predator's 4 read every worker high on the bundle's side, N-105's noise.** dist `6d7abe3b`, built from 8c04d8da.\n\n**On main:**\n- Node 2451 of 2451, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, the owner's Chrome open (about 0.4 of a core):\n\n- **Predator, 4 pairs, 16:55 to 17:00: REGRESSION by the runner.** Every worker read higher on the bundle's side:\n  - logic +3.5 % (3/4; -1.5 % against the others, lower 4/4);\n  - spatial +4.7 % (4/4);\n  - physics +13.7 % (4/4);\n  - pre-render +3.3 % (3/4);\n  - load within 0.1 %.\n\n  Physics does not differ between the two bundles timed today. The last one (R-0880, before E-208, which touches logic alone) read NEUTRAL in the same scene.\n- **Boids, 8 pairs, 17:00 to 17:10: NEUTRAL.** Spatial 5.888 → 5.947 ms (+1.2 %, worse 6/8, cv 5/8 %), physics +1.4 % (5/8), 40 000 bodies on both sides.\n\nN-105: Predator reads the same code -3 to +10 % bundle against source, so Boids' 8 pairs decide (the rule since). The bundle equals its sources. Main pushed.",
       "commits": [
         "6d7abe3b"
+      ]
+    },
+    {
+      "id": "R-0884",
+      "date": "2026-11-11",
+      "time": "17:24",
+      "timeFrom": "recorded",
+      "title": "N-134 fixed: raycasted lighting keeps the sun's casted shadows (Sun Street's trees and people), pre-render makes no lamp stamps or cookies for it",
+      "verdict": "kept-hygiene",
+      "text": "**N-134 fixed (`5f1520ff`): raycasted lighting keeps the sun's casted shadows, and pre-render makes no lamp stamps or cookies for it.** 2026-11-11.\n\n**The bug.** `initVisibilityPolygonSystem` (pixiWorker.js), which runs after `createCastedShadowsSystem`, hid the casted shadows: the shadow display sprite, `shadowSpritesEnabled` and `Layer.castedShadows.visible`. The aim was to keep the light cookies from crushing the visibility fans' umbra to black. The sun's sprite shadows went with them, so under raycasted lighting trees and people cast nothing. Sun Street runs raycasted by default. Pre-render still made the sun rows, the lamps' stamps and the cookies every frame, for nothing.\n\n**The fix.**\n- Pixi keeps the casted shadows shown under raycasted lighting and draws the sun's casters alone into them (`_castedShadowsSunOnly`): no cookie pass, no stamp pass. The fans are the lamps' shadows.\n- At night, with no sun pass, the target is cleared as before.\n- Pre-render makes no stamps or cookies when its visibility polygons are on.\n\n**Evidence.** Sun Street at noon, paused (`?hour=12&paused=1`), the post-warm-up frame:\n- main with `raycast=1`: houses' and cars' volume shadows only; trees, lamps and people cast nothing;\n- main with `raycast=0`: every shadow;\n- the fix with `raycast=1`: the same trees', lamps' and people's shadows as `raycast=0`, on WebGL and on WebGPU (`backend=webgpu`).\n\n**Cost.** visPolyStressScene, 4 pairs, 17:21 to 17:24 (`--vs 180524cb --hyp-rev 5f1520ff --full-rev --owner preRender`): NEUTRAL, every worker below the floor. Pre-render 2.943 → 2.903 ms (-1.4 %). That scene has no casters, so the stamps it saves are not its load. In Sun Street, pre-render is 0.3 ms.",
+      "commits": [
+        "5f1520ff"
       ]
     }
   ],
