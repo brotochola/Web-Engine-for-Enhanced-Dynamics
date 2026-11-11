@@ -15,6 +15,8 @@
 //   mesh range uploads     the flag rewrites its vertices every frame and the still tufts are not sent again: the
 //                          renderer's time in the panel does not grow with ?tufts=
 //   WEED.params            ?carSpeed= is read on the logic worker
+//   LAYER_KIND.SCREEN      P: two passes over the whole frame, a grading by the hour (warm at dusk, cool at night)
+//                          and a vignette, their uniforms set from update with Layer.x.setUniform
 //
 // URL: ?hour=20 (start hour), ?paused=1, ?dayMinutes=1 (a whole day), ?cars=6, ?carSpeed=4, ?tufts=60000, ?raycast=0, ?backend=webgpu.
 // WASD or arrows pan, the wheel zooms, H hides the panel.
@@ -41,6 +43,14 @@ const FADED_ALPHA = 0.3;
 const CLOUD_ALPHA = 0.55;
 const HEADLIGHT_OFFSET = 110;
 const SCRUB_HOURS = 0.06; // per frame
+const VIGNETTE = 0.4;
+const shaderUrl = (file) => new URL(`./shaders/${file}`, import.meta.url).href;
+
+/** 1 at `at`, 0 from `width` hours away. */
+function near(hour, at, width) {
+  const d = Math.abs(hour - at);
+  return d >= width ? 0 : 1 - d / width;
+}
 
 const HOUSE_ROWS = [
   { y: 320, xs: [330, 630, 930, 1230, 1530] },
@@ -87,6 +97,17 @@ export class SunStreetScene extends Scene {
       flags: { kind: LAYER_KIND.MESH, zIndex: 3 },
       clouds: { zIndex: 4, ySorting: false, alpha: CLOUD_ALPHA, alphaBySun: { from: 0.15, to: 0.5 } },
       nightGlows: { zIndex: 5.6, ySorting: false, blendMode: BLEND_MODES.ADD, alphaBySun: 'night' },
+      // Over everything: each reads the whole frame drawn under it.
+      grade: {
+        kind: LAYER_KIND.SCREEN,
+        zIndex: 100,
+        shader: { fragment: 'streetGrade', uniforms: { uWarm: { value: 0, type: 'f32' }, uNight: { value: 0, type: 'f32' } } },
+      },
+      vignette: {
+        kind: LAYER_KIND.SCREEN,
+        zIndex: 101,
+        shader: { fragment: 'streetVignette', uniforms: { uAmount: { value: VIGNETTE, type: 'f32' } } },
+      },
     },
     lighting: {
       enabled: true,
@@ -133,6 +154,10 @@ export class SunStreetScene extends Scene {
       halo: '/demos/sunStreetScene/halo.png',
       square: '/demos/img/10_10_square.png',
     },
+    shaders: {
+      streetGrade: { webgl: shaderUrl('grade.frag'), webgpu: shaderUrl('grade.wgsl') },
+      streetVignette: { webgl: shaderUrl('vignette.frag'), webgpu: shaderUrl('vignette.wgsl') },
+    },
     spritesheets: {
       ...Object.fromEntries(CAR_SHEETS.map((name) => [`car_${name}`, { json: `/demos/img/cars/${name}.json`, png: `/demos/img/cars/${name}.png` }])),
       ...Object.fromEntries(WALKER_SHEETS.map((name) => [name, { json: '/demos/img/civil1.json', png: `/demos/img/people/${name}.png` }])),
@@ -161,6 +186,9 @@ export class SunStreetScene extends Scene {
   _treeShadows = false;
   _faded = false;
   _occluders = true;
+  _post = true;
+  _warm = -1;
+  _night = -1;
   _nextReadout = 0;
 
   create() {
@@ -179,6 +207,7 @@ export class SunStreetScene extends Scene {
       { key: 'r', keyName: 'R', label: 'Light occluders', note: 'At night. Houses and cars stop the lamps and headlights', press: () => this._toggleOccluders() },
       { key: 't', keyName: 'T', label: 'Tree shadows', note: 'ShadowCaster.setTexture: another silhouette, the same sprite', press: () => this._toggleTreeShadows() },
       { key: 'l', keyName: 'L', label: 'layer.alpha', note: 'On the road (MESH layers) and the clouds (a sprite layer)', press: () => this._toggleFade() },
+      { key: 'p', keyName: 'P', label: 'Post', note: 'LAYER_KIND.SCREEN: a grading by the hour, then a vignette, over the whole frame', press: () => this._togglePost() },
     ]);
     this._showStates();
   }
@@ -229,11 +258,13 @@ export class SunStreetScene extends Scene {
     if (Keyboard.isPressed('r')) this._toggleOccluders();
     if (Keyboard.isPressed('t')) this._toggleTreeShadows();
     if (Keyboard.isPressed('l')) this._toggleFade();
+    if (Keyboard.isPressed('p')) this._togglePost();
     if (Keyboard.isPressed('h')) this._panel.toggle();
     if (Keyboard.z) Sun.setTimeOfDay((Sun.hour + 24 - SCRUB_HOURS * dtRatio) % 24);
     if (Keyboard.x) Sun.setTimeOfDay((Sun.hour + SCRUB_HOURS * dtRatio) % 24);
     // After the cycle, as a game overrides the sun. Workers read this value, never the cycle's.
     if (this._eclipse) Sun.intensity = ECLIPSE_INTENSITY;
+    this._gradeByHour();
 
     const now = performance.now();
     if (now >= this._nextReadout) {
@@ -250,6 +281,28 @@ export class SunStreetScene extends Scene {
 
   _applyClock() {
     this.config.lighting.sun.dayCycle.enabled = !this._paused;
+  }
+
+  /** The grading follows the hour: warm around dawn and dusk, cool with the night. Written only when it moves. */
+  _gradeByHour() {
+    const hour = Sun.hour;
+    const warm = Math.round(Math.max(near(hour, 19, 1.6), 0.6 * near(hour, 6.5, 1.2)) * 100) / 100;
+    const night = Math.round(Sun.nightFactor * 100) / 100;
+    if (warm !== this._warm) {
+      this._warm = warm;
+      Layer.grade.setUniform('uWarm', warm);
+    }
+    if (night !== this._night) {
+      this._night = night;
+      Layer.grade.setUniform('uNight', night);
+    }
+  }
+
+  _togglePost() {
+    this._post = !this._post;
+    Layer.grade.visible = this._post;
+    Layer.vignette.visible = this._post;
+    this._showStates();
   }
 
   _togglePause() {
@@ -315,6 +368,7 @@ export class SunStreetScene extends Scene {
     panel.show('r', !RAYCAST ? 'needs lighting.raycasted' : this._occluders ? 'on' : 'off');
     panel.show('t', this._treeShadows ? 'a big tree' : "the sprite's");
     panel.show('l', this._faded ? String(FADED_ALPHA) : '1');
+    panel.show('p', this._post ? 'on' : 'off');
   }
 
   _showReadout() {
