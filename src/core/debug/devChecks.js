@@ -8,6 +8,7 @@
  * scene's config: the page (Scene) and each worker (AbstractWorker).
  */
 import { warnOnce } from '../../util/dxWarn.js';
+import { keyDistance } from '../../util/configKeys.js';
 
 let on = false;
 /** (entity index) → its class's name; gameObject.js sets it (this module cannot import it: a cycle). */
@@ -254,4 +255,43 @@ export function checkEmit(cfg, flat) {
         `ignored and the particles draw ${drawn}. Add animation: 'name'.`,
     );
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E7: a key name the keyboard map does not have.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const keysSaid = new Set();
+
+/**
+ * Keyboard.isDown / isPressed with a name the engine's key map does not have: always false.
+ * @param {unknown} key what the game asked for
+ * @param {Record<string, number>} keyIndexMap the map (' ' is the space bar)
+ * @param {Record<string, string>} aliases the names Keyboard also takes (space, ctrl, return, …)
+ */
+export function unknownKey(key, keyIndexMap, aliases) {
+  if (!on || keysSaid.has(key)) return;
+  keysSaid.add(key);
+  const tracked =
+    'It reads the letters, digits, punctuation, arrows (arrowleft …), f1 to f12, space, enter, escape, tab, backspace, ' +
+    'delete, shift, control, alt and meta: KeyboardEvent.key, in any case.';
+  if (typeof key !== 'string') {
+    warnOnce(`key:${String(key)}`, 'unknown-key', `Keyboard: a key is asked for by ${typeof key} ${String(key)}, never down: it takes a key's name ('a', 'space'). ${tracked}`);
+    return;
+  }
+  const names = [...Object.keys(keyIndexMap).map((k) => (k === ' ' ? 'space' : k)), ...Object.keys(aliases || {})];
+  let near = null;
+  let best = 3;
+  for (const n of names) {
+    const d = keyDistance(key, n);
+    if (d < best) {
+      best = d;
+      near = n;
+    }
+  }
+  warnOnce(
+    `key:${key}`,
+    'unknown-key',
+    `Keyboard: "${key}" is not a key the engine reads, so it is never down.${near ? ` Did you mean "${near}"?` : ''} ${tracked}`,
+  );
 }

@@ -316,3 +316,40 @@ test('E4: a mass set after the shape, the same mass, a static body, or a release
   });
   assert.deepEqual(lines, []);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E7: a key name the keyboard map does not have.
+// ---------------------------------------------------------------------------------------------------------------------
+
+import { Keyboard } from '../../src/core/keyboard.js';
+
+function keyboard() {
+  const map = { a: 0, s: 1, ' ': 2, shift: 3, arrowleft: 4, f1: 5 };
+  Keyboard.initialize(new Uint8Array(12), map);
+  return map;
+}
+
+test('E7: a key name the engine does not read is named once, with the nearest it reads', () => {
+  keyboard();
+  const lines = warningsOf(() => {
+    assert.equal(Keyboard.isDown('spacee'), false);
+    assert.equal(Keyboard.isDown('spacee'), false);
+    assert.equal(Keyboard.isPressed('arowleft'), false);
+    assert.equal(Keyboard.isDown('pageup'), false);
+  });
+  const reads = 'It reads the letters, digits, punctuation, arrows (arrowleft …), f1 to f12, space, enter, escape, tab, ' +
+    'backspace, delete, shift, control, alt and meta: KeyboardEvent.key, in any case.';
+  assert.deepEqual(lines, [
+    `WeedJS: Keyboard: "spacee" is not a key the engine reads, so it is never down. Did you mean "space"? ${reads}`,
+    `WeedJS: Keyboard: "arowleft" is not a key the engine reads, so it is never down. Did you mean "arrowleft"? ${reads}`,
+    `WeedJS: Keyboard: "pageup" is not a key the engine reads, so it is never down. ${reads}`,
+  ]);
+});
+
+test('E7: keys it reads, in any case and by their other names, are silent', () => {
+  keyboard();
+  const lines = warningsOf(() => {
+    for (const k of ['a', 'A', 'space', 'Space', 'spacebar', ' ', 'Shift', 'ArrowLeft', 'F1']) Keyboard.isDown(k);
+  });
+  assert.deepEqual(lines, []);
+});
