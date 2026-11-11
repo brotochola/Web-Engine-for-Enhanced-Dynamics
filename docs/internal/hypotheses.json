@@ -9980,7 +9980,8 @@
         "R-0812",
         "R-0873",
         "R-0875",
-        "R-0880"
+        "R-0880",
+        "R-0883"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -20305,6 +20306,18 @@
       "text": "**E-208's Predator gate: NEUTRAL at 8 pairs.** 2026-11-11, 16:43 to 16:51. Main before (`228f0106`) against main after (`8c04d8da`), Predator at its defaults (two logic workers), owner logic. Chrome, headed, source, detailed stats off, AC power.\n\n**At 4 pairs, the runner printed REGRESSION**, though not for the owner:\n- logic +1.2 % (worse 2/4);\n- spatial +3.1 % and pre-render +3.5 % (3/4 each). E-208 reaches neither.\n- Pair 0 ran every worker 5 to 17 % high on its B side.\n\n**At 8 pairs** (`--append`, the same stamp): **NEUTRAL.**\n- Logic 3.251 → 3.204 ms (-1.0 %, worse 2/8).\n- Spatial -0.0 % (4/8), physics -2.0 % (cv 13/8 %), pre-render -1.2 % (3/8).\n- Load within 0.2 %.\n\nThe first sitting's flags were the drift of its early pairs.",
       "commits": [
         "8c04d8da"
+      ]
+    },
+    {
+      "id": "R-0883",
+      "date": "2026-11-11",
+      "time": "17:10",
+      "timeFrom": "recorded",
+      "title": "The bundles of 8c04d8da (E-208) tested; Boids NEUTRAL (8 pairs), Predator every worker high on the bundle's side (N-105's noise)",
+      "verdict": "passed",
+      "text": "**The bundles of 8c04d8da (E-208 merged): tested, and the prod bundle equals its sources by Boids' 8 pairs. Predator's 4 read every worker high on the bundle's side, N-105's noise.** dist `6d7abe3b`, built from 8c04d8da.\n\n**On main:**\n- Node 2451 of 2451, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, the owner's Chrome open (about 0.4 of a core):\n\n- **Predator, 4 pairs, 16:55 to 17:00: REGRESSION by the runner.** Every worker read higher on the bundle's side:\n  - logic +3.5 % (3/4; -1.5 % against the others, lower 4/4);\n  - spatial +4.7 % (4/4);\n  - physics +13.7 % (4/4);\n  - pre-render +3.3 % (3/4);\n  - load within 0.1 %.\n\n  Physics does not differ between the two bundles timed today. The last one (R-0880, before E-208, which touches logic alone) read NEUTRAL in the same scene.\n- **Boids, 8 pairs, 17:00 to 17:10: NEUTRAL.** Spatial 5.888 → 5.947 ms (+1.2 %, worse 6/8, cv 5/8 %), physics +1.4 % (5/8), 40 000 bodies on both sides.\n\nN-105: Predator reads the same code -3 to +10 % bundle against source, so Boids' 8 pairs decide (the rule since). The bundle equals its sources. Main pushed.",
+      "commits": [
+        "6d7abe3b"
       ]
     }
   ],
