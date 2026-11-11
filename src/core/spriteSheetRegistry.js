@@ -998,15 +998,22 @@ class SpriteSheetRegistry {
               indexToName: {},
             };
 
-            // Reusable canvas for frame extraction (sized to max frame)
-            let maxW = 0, maxH = 0;
-            for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
-              if (!requiredFrames.has(frameName)) continue;
-              maxW = Math.max(maxW, frameData.frame.w);
-              maxH = Math.max(maxH, frameData.frame.h);
+            // The sheet's pixels under the frames it keeps, read back once: each frame's trim is found in them, and a trimmed
+            // frame is drawn into the atlas straight from the sheet, through its trimmed rectangle. A readback and a canvas a
+            // frame cost 0.6 s of main thread for the Buenos Aires demo's 4 386 frames.
+            let sheetPixels = null;
+            if (trimImages) {
+              let rx0 = Infinity, ry0 = Infinity, rx1 = -Infinity, ry1 = -Infinity;
+              for (const [frameName, frameData] of Object.entries(jsonData.frames)) {
+                if (!requiredFrames.has(frameName)) continue;
+                const fr = frameData.frame;
+                if (fr.x < rx0) rx0 = fr.x;
+                if (fr.y < ry0) ry0 = fr.y;
+                if (fr.x + fr.w > rx1) rx1 = fr.x + fr.w;
+                if (fr.y + fr.h > ry1) ry1 = fr.y + fr.h;
+              }
+              if (rx1 > rx0) sheetPixels = this._readImagePixels(img, rx0, ry0, rx1 - rx0, ry1 - ry0);
             }
-            const extractCanvas = create2dCanvas(maxW, maxH);
-            const extractCtx = extractCanvas.getContext('2d', { willReadFrequently: true });
 
             // Stats for logging
             let trimmedCount = 0;
@@ -1026,32 +1033,17 @@ class SpriteSheetRegistry {
               let packedHeight = originalH;
               let trimOffsetX = 0;
               let trimOffsetY = 0;
-              let trimmedCanvas = null;
+              let trimmed = false;
 
-              if (trimImages) {
-                // Extract frame to canvas for trimming analysis
-                extractCtx.clearRect(0, 0, originalW, originalH);
-                extractCtx.drawImage(img, frame.x, frame.y, originalW, originalH, 0, 0, originalW, originalH);
-
-                // Get trim bounds within this frame
-                const trimBounds = this._getTrimBoundsFromCanvas(extractCtx, originalW, originalH, trimAlphaThreshold);
+              if (sheetPixels) {
+                const trimBounds = this._getTrimBoundsInPixels(sheetPixels, frame.x, frame.y, originalW, originalH, trimAlphaThreshold);
 
                 if (trimBounds && (trimBounds.width < originalW || trimBounds.height < originalH)) {
-                  // Frame can be trimmed!
                   packedWidth = trimBounds.width;
                   packedHeight = trimBounds.height;
                   trimOffsetX = trimBounds.x;
                   trimOffsetY = trimBounds.y;
-
-                  // Create trimmed canvas for this frame
-                  trimmedCanvas = create2dCanvas(packedWidth, packedHeight);
-                  const trimmedCtx = trimmedCanvas.getContext('2d');
-                  trimmedCtx.drawImage(
-                    extractCanvas,
-                    trimOffsetX, trimOffsetY, packedWidth, packedHeight,
-                    0, 0, packedWidth, packedHeight
-                  );
-
+                  trimmed = true;
                   trimmedCount++;
                   savedPixels += (originalW * originalH) - (packedWidth * packedHeight);
                 }
@@ -1059,9 +1051,11 @@ class SpriteSheetRegistry {
 
               imagesToPack.push({
                 name: prefixedName,
-                // For trimmed frames: use trimmed canvas; otherwise draw from source
-                sourceImg: trimmedCanvas || img,
-                sourceRect: trimmedCanvas ? null : frame,  // null = use entire sourceImg
+                // A frame is drawn from the sheet: the trimmed part of it, when it was trimmed
+                sourceImg: img,
+                sourceRect: trimmed
+                  ? { x: frame.x + trimOffsetX, y: frame.y + trimOffsetY, w: packedWidth, h: packedHeight }
+                  : frame,
                 width: packedWidth,
                 height: packedHeight,
                 // PixiJS trim metadata: offset within original frame
@@ -1071,7 +1065,7 @@ class SpriteSheetRegistry {
                 sourceHeight: originalH,
                 pivot: frameData.pivot,
                 isSpritesheetFrame: true,
-                isTrimmed: trimmedCanvas !== null,
+                isTrimmed: trimmed,
               });
             }
 
@@ -1490,16 +1484,40 @@ class SpriteSheetRegistry {
    * @param {number} alphaThreshold - Pixels with alpha <= this are considered transparent
    * @returns {{x: number, y: number, width: number, height: number} | null}
    */
-  static _getTrimBoundsFromCanvas(ctx, width, height, alphaThreshold = 0) {
-    const imageData = ctx.getImageData(0, 0, width, height);
-    const data = imageData.data;
+  /**
+   * An image's RGBA pixels in a rectangle, clamped to the image, read back once: { data, x, y, width, height }, where
+   * data holds the rows of the clamped rectangle.
+   */
+  static _readImagePixels(img, rx = 0, ry = 0, rw = img.width, rh = img.height) {
+    const x = Math.max(0, Math.floor(rx));
+    const y = Math.max(0, Math.floor(ry));
+    const width = Math.max(1, Math.min(img.width, Math.ceil(rx + rw)) - x);
+    const height = Math.max(1, Math.min(img.height, Math.ceil(ry + rh)) - y);
+    const canvas = create2dCanvas(width, height);
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, x, y, width, height, 0, 0, width, height);
+    return { data: ctx.getImageData(0, 0, width, height).data, x, y, width, height };
+  }
 
+  /**
+   * The visible part of a frame (alpha above the threshold) in an image's pixels, relative to the frame; outside the
+   * image counts as transparent, as a frame drawn on its own canvas would. Null when the frame is all transparent.
+   */
+  static _getTrimBoundsInPixels(pixels, fx, fy, width, height, alphaThreshold = 0) {
+    const data = pixels.data;
+    const iw = pixels.width;
+    // The frame's origin in the read rectangle; what lies outside it lies outside the image.
+    const ox = fx - pixels.x;
+    const oy = fy - pixels.y;
+    const x0 = Math.max(0, -ox);
+    const y0 = Math.max(0, -oy);
+    const x1 = Math.min(width, iw - ox);
+    const y1 = Math.min(height, pixels.height - oy);
     let minX = width, minY = height, maxX = -1, maxY = -1;
-
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const alpha = data[(y * width + x) * 4 + 3];
-        if (alpha > alphaThreshold) {
+    for (let y = y0; y < y1; y++) {
+      const row = ((oy + y) * iw + ox) * 4 + 3;
+      for (let x = x0; x < x1; x++) {
+        if (data[row + x * 4] > alphaThreshold) {
           if (x < minX) minX = x;
           if (x > maxX) maxX = x;
           if (y < minY) minY = y;
@@ -1507,15 +1525,8 @@ class SpriteSheetRegistry {
         }
       }
     }
-
-    if (maxX < 0 || maxY < 0) return null; // Fully transparent
-
-    return {
-      x: minX,
-      y: minY,
-      width: maxX - minX + 1,
-      height: maxY - minY + 1,
-    };
+    if (maxX < 0 || maxY < 0) return null;
+    return { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 };
   }
 
   /**
