@@ -2362,7 +2362,7 @@ export class GameObject {
    */
   /**
    * Pools a slot holds besides its component flags: collider layer feeds,
-   * attached decorations, extra fixtures, chain points, custom mesh. despawn
+   * attached decorations, extra fixtures, joints, chain points, custom mesh. despawn
    * and despawnAll both call this after onDespawned. despawnAll had drifted and
    * freed neither fixtures nor feeds (a save restore leaked the terrain's
    * fixtures on every load), and neither path freed chain points (a recycled
@@ -2379,6 +2379,9 @@ export class GameObject {
     }
     DecorationPool.clearAttachedAndDespawnAll(i);
     ColliderFixture.removeAllForEntity(i);
+    // N-130: the joints too, or the next entity spawned into this index is born jointed to the old partner. One read
+    // for an entity with none: the head of its joint list.
+    if (Joint.head && Joint.head[i] !== Joint.INVALID_INDEX) Joint.removeAllForEntity(i);
     if (ChainPoints.begin && ChainPoints.begin[i] >= 0) ChainPoints.clearForEntity(i);
     MeshGeometry.clearEntity(i);
   }
