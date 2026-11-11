@@ -333,8 +333,8 @@ export class NavGrid {
   /**
    * Load static flowfields from URLs (main thread only). A file is WeedJS's binary format (it
    * starts with "WEFF", see staticFlowfieldFile.js), whose cells are used as they come, or the
-   * JSON one. Each field keeps the cells the scene's world touches and goes into _staticFlowfields;
-   * one that fails to load is logged and left out.
+   * JSON one. All are fetched at once. Each field keeps the cells the scene's world touches and goes
+   * into _staticFlowfields in the order of the URLs; one that fails to load is logged and left out.
    *
    * @param {Object} flowfieldUrls - Map of name → URL (e.g. { roads: '/data/roads.bin' })
    * @param {number} sceneWorldWidth - Scene world width in pixels
@@ -344,32 +344,38 @@ export class NavGrid {
     const worldW = sceneWorldWidth || Infinity;
     const worldH = sceneWorldHeight || Infinity;
 
-    debugWorkerLog(`[NavGrid] Loading ${Object.keys(flowfieldUrls).length} static flowfields...`);
+    const entries = Object.entries(flowfieldUrls);
 
-    for (const [name, url] of Object.entries(flowfieldUrls)) {
-      try {
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`Failed to fetch flowfield: ${url}`);
-        const bytes = new Uint8Array(await resp.arrayBuffer());
-        let ff;
-        // Every cell the world touches, the last partial column and row too.
-        if (isStaticFlowfieldBinary(bytes)) {
-          const file = await decodeStaticFlowfield(bytes);
-          const cell = file.cellSize;
-          ff = clipStaticFlowfield(file, Math.ceil(worldW / cell), Math.ceil(worldH / cell));
-        } else {
-          const json = JSON.parse(new TextDecoder().decode(bytes));
-          const cell = json.metadata.cellSizePx;
-          ff = staticFlowfieldFromJSON(json, Math.ceil(worldW / cell), Math.ceil(worldH / cell));
+    debugWorkerLog(`[NavGrid] Loading ${entries.length} static flowfields...`);
+
+    const loaded = await Promise.all(
+      entries.map(async ([name, url]) => {
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error(`Failed to fetch flowfield: ${url}`);
+          const bytes = new Uint8Array(await resp.arrayBuffer());
+          let ff;
+          // Every cell the world touches, the last partial column and row too.
+          if (isStaticFlowfieldBinary(bytes)) {
+            const file = await decodeStaticFlowfield(bytes);
+            const cell = file.cellSize;
+            ff = clipStaticFlowfield(file, Math.ceil(worldW / cell), Math.ceil(worldH / cell));
+          } else {
+            const json = JSON.parse(new TextDecoder().decode(bytes));
+            const cell = json.metadata.cellSizePx;
+            ff = staticFlowfieldFromJSON(json, Math.ceil(worldW / cell), Math.ceil(worldH / cell));
+          }
+          debugWorkerLog(
+            `[NavGrid]   Loaded flowfield: ${name} (${ff.gridWidth}x${ff.gridHeight}, cellSize=${ff.cellSize})`
+          );
+          return [name, ff];
+        } catch (error) {
+          console.error(`[NavGrid] Failed to load flowfield "${name}":`, error);
+          return null;
         }
-        this._staticFlowfields.set(name, ff);
-        debugWorkerLog(
-          `[NavGrid]   Loaded flowfield: ${name} (${ff.gridWidth}x${ff.gridHeight}, cellSize=${ff.cellSize})`
-        );
-      } catch (error) {
-        console.error(`[NavGrid] Failed to load flowfield "${name}":`, error);
-      }
-    }
+      })
+    );
+    for (const entry of loaded) if (entry) this._staticFlowfields.set(entry[0], entry[1]);
   }
 
   /** @deprecated The old name of loadStaticFlowfields (which reads binary files as well as JSON). */

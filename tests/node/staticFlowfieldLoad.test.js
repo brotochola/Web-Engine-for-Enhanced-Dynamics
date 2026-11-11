@@ -28,12 +28,28 @@ function jsonField(widthCells, heightCells, cellSizePx, seed = 1) {
   return { name: 'test', metadata: { widthCells, heightCells, cellSizePx }, data };
 }
 
-/** Serves `files` (url → string or bytes) until `restore` is called. */
-function serve(files) {
+/** Serves `files` (url → string or bytes); with `hold`, answers only when a release is called. */
+function serve(files, { hold = false } = {}) {
+  const calls = [];
+  const waiting = [];
   const previous = globalThis.fetch;
-  globalThis.fetch = (url) =>
-    Promise.resolve(url in files ? new Response(files[url]) : new Response('', { status: 404 }));
-  return { restore: () => (globalThis.fetch = previous) };
+  globalThis.fetch = (url) => {
+    calls.push(url);
+    const answer = () =>
+      url in files ? new Response(files[url]) : new Response('', { status: 404 });
+    return hold
+      ? new Promise((resolve) => waiting.push(() => resolve(answer())))
+      : Promise.resolve(answer());
+  };
+  return {
+    calls,
+    releaseInReverse: () =>
+      waiting
+        .splice(0)
+        .reverse()
+        .forEach((go) => go()),
+    restore: () => (globalThis.fetch = previous),
+  };
 }
 
 const cells = (name) => {
@@ -131,7 +147,7 @@ test('a field keeps every cell the world touches, its last partial column and ro
   }
 });
 
-test('a field that fails to load is logged and left out; the others load', async () => {
+test('a field that fails to load is logged and left out; the others load in the order of the URLs', async () => {
   NavGrid.reset();
   const json = jsonField(3, 3, 8, 2);
   const good = await encodeStaticFlowfield(staticFlowfieldFromJSON(json));
@@ -167,6 +183,32 @@ test('a field that fails to load is logged and left out; the others load', async
     /version 9/
   );
   assert.ok(errors.some((e) => e.includes('"junk"')));
+});
+
+test('every file is requested before any of them arrives, and the fields keep the order of the URLs', async () => {
+  NavGrid.reset();
+  const files = {};
+  const urls = {};
+  for (let i = 0; i < 4; i++) {
+    const json = jsonField(2 + i, 2, 16, i + 1);
+    files[`/f${i}.bin`] = await encodeStaticFlowfield(staticFlowfieldFromJSON(json));
+    urls[`f${i}`] = `/f${i}.bin`;
+  }
+  const server = serve(files, { hold: true });
+  try {
+    const loading = NavGrid.loadStaticFlowfields(urls, 1000, 1000);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(server.calls.length, 4, 'all four fetches are out before the first answer');
+    server.releaseInReverse();
+    await loading;
+  } finally {
+    server.restore();
+  }
+  assert.deepEqual([...NavGrid._staticFlowfields.keys()], ['f0', 'f1', 'f2', 'f3']);
+  assert.deepEqual(
+    [0, 1, 2, 3].map((i) => cells(`f${i}`).gridWidth),
+    [2, 3, 4, 5]
+  );
 });
 
 test('a binary field reaches a worker as it is and samples there as on the main thread', async () => {

@@ -2346,7 +2346,7 @@ export declare class NavGrid {
   static setNavWorkerPort(port: MessagePort | null): void;
 
   static registerStaticFlowfield(name: string, data: NavGridStaticFlowfieldInput): void;
-  /** Loads binary ("WEFF") and JSON flowfields; main thread only. */
+  /** Loads binary ("WEFF") and JSON flowfields, all at once; main thread only. */
   static loadStaticFlowfields(
     flowfieldUrls: Record<string, string>,
     sceneWorldWidth: number,

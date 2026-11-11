@@ -139,7 +139,7 @@ static assets = {
 };
 ```
 
-The main thread fetches them at boot (the `flowfields` step of `onLoadProgress`) and keeps the cells the world touches; every worker gets a copy. A file's format is read from its first bytes, not from its name.
+The main thread fetches them all at once at boot (the `flowfields` step of `onLoadProgress`) and keeps the cells the world touches; every worker gets a copy. A file's format is read from its first bytes, not from its name.
 
 **Binary**, the one to ship. Little-endian: a 24-byte header, never compressed, then the cells.
 
