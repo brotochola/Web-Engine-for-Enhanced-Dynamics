@@ -44,7 +44,6 @@ import { bindBulletTick } from '../core/bulletTickClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
 import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
 import { GpuParticles } from '../core/gpuParticles.js';
-import { NavScratch, searchAstar } from '../core/navAstar.js';
 import {
   getColliderBounds as getColliderBoundsImport,
   getCellRange as getCellRangeImport,
@@ -673,12 +672,9 @@ class ParticleWorker extends AbstractWorker {
         ? navConfig.maxProcessingMsPerFrame
         : NAVIGATION_DEFAULTS.maxProcessingMsPerFrame;
 
-      this.scratch = new NavScratch(
-        this.totalCells,
-        navConfig.maxPathLength || 128,
-        this.gridWidth,
-        this.gridHeight
-      );
+      // The flowfield's distance cap, which navFlowfield.wasm takes; both searches keep their columns in the
+      // navigation memory (E-76 W14, E-207).
+      this.scratch = { maxDistance: Math.min(65535, (this.gridWidth + this.gridHeight) * 14) };
 
       // W14: the flowfield search in navFlowfield.wasm, on the navigation memory the nav buffer lives in.
       if (!data.navigationMemory || !data.navigationLayout || data.navigationMemory.buffer !== data.buffers.navigationData) {
@@ -1629,7 +1625,7 @@ class ParticleWorker extends AbstractWorker {
 
   computePath(fromCell, toCell) {
     const willUseEmptySlot = this._hasEmptyPathSlot();
-    // E-207: navFlowfield.wasm's astar_path, navAstar.js's search (N-137's decrease-key) ported cell for cell.
+    // E-207: navFlowfield.wasm's astar_path, the JS search (tests/reference/navAstar.mjs, N-137's decrease-key) ported.
     const wasm = this._flowWasm;
     const pathLength = wasm.astar(wasm.tableByte, fromCell, toCell);
     const slot = NavGrid.allocatePathSlot(fromCell, toCell);

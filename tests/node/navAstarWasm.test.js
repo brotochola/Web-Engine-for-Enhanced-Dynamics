@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { NavGrid } from '../../src/core/navGrid.js';
-import { NavScratch, searchAstar } from '../../src/core/navAstar.js';
+import { NavScratch, searchAstar } from '../reference/navAstar.mjs';
 import { createNavigationMemory } from '../../src/util/navigationMemory.js';
 import { FLOWFIELD_SLOTS } from '../../src/workers/navFlowfieldClient.js';
 import { mulberry32 } from '../bench/microbenchHelpers.mjs';

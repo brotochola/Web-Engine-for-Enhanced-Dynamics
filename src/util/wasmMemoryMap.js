@@ -437,7 +437,7 @@ export const PIXI_KEYED_HEADER_WORDS = 5;
  * (no table slot is 0: the walkability is at byte 32). After it, the particle worker's flowfield scratch:
  * - state: a byte per cell (wall, settled, grid edges), dist (u16) and dir (u8) per cell;
  * - next, prev: the distance buckets' lists (i32 per cell); head: the buckets' heads (i32, 65 536 at most:
- *   NavScratch.maxDistance is capped at 65 535);
+ *   the particle worker's scratch.maxDistance is capped at 65 535);
  * - sums: the smoothing's row sums (u32 per cell); quotient: its rounded quotients (NAV_QUOTIENT_BYTES);
  * - vectors: the smoothed Int8 pairs the slot is filled from; table: the kernel's column table;
  * - aG, aF, aCame, aGen, aHeap, aPos: astar_path's columns (E-207), u32 per cell; aPath: its path, u32 per cell (a
@@ -470,7 +470,7 @@ export function navigationMemoryRegions(navBytes, cells) {
   ]);
 }
 
-/** The flowfield's distance buckets: NavScratch.maxDistance + 1 at most. */
+/** The flowfield's distance buckets: the particle worker's scratch.maxDistance + 1 at most. */
 export const NAV_MAX_BUCKETS = 65536;
 /** navFlowfield.c's QUOTIENT_BYTES: the 19 x 10 (sum, count) pairs of the smoothing. */
 export const NAV_QUOTIENT_BYTES = 190;

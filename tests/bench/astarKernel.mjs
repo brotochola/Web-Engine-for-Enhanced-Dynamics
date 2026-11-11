@@ -7,7 +7,7 @@
 //   node tests/bench/astarKernel.mjs [--pairs 2000] [--reps 7] [--output path]
 // Each side is warmed through short calls first (normal compile, not OSR), then timed over the whole list.
 import { NavGrid } from '../../src/core/navGrid.js';
-import { NavScratch, searchAstar } from '../../src/core/navAstar.js';
+import { NavScratch, searchAstar } from '../reference/navAstar.mjs';
 import { createNavigationMemory } from '../../src/util/navigationMemory.js';
 import { bindNavFlowfield } from '../../src/workers/navFlowfieldClient.js';
 import { buildMaze, COLS, ROWS } from './stressScenes/astarStress/astarMaze.js';

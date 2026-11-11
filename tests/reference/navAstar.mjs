@@ -1,4 +1,8 @@
 /**
+ * The A* search in JavaScript: navAstar.js (src/core) as it ran from N-137 until navFlowfield.wasm's astar_path
+ * (E-207) became the only search, with the scratch it searched in. Kept as the parity reference the kernel is tested
+ * against (navAstarWasm.test.js, astarKernel.mjs); the engine does not use it.
+ *
  * The A* search behind NavGrid paths (the particle worker's computePath): 8 directions, costs 10 and 14, the octile
  * heuristic, on the walkability grid. The flowfield searches in navFlowfield.wasm.
  *
