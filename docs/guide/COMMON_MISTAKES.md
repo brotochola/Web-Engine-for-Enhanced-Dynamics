@@ -38,9 +38,7 @@ A few mistakes are not warned about: the engine does the right thing instead. Th
 
 | Mistake | What happened | What the engine says |
 | --- | --- | --- |
-| `this.collider.isTrigger = …` after the body exists | Nothing: Box2D read it when it made the body | Set it in `onSpawned` or the spawn config. (Run time.) |
 | `this.rigidBody.fixedRotation = …` after the body exists | Nothing | Use `this.setFixedRotation(v)` or `this.fixedRotation = v`. (Run time.) |
-| `this.rigidBody.mass = 50` in `onSpawned`, on an entity whose collider has a shape | Spawn sets the mass from the collider right after `onSpawned`, so it does not hold ([PHYSICS.md](./PHYSICS.md#mass-invmass-and-invinertia)) | Set it after the spawn returns. (Run time.) |
 | A mass set by hand, then a change of the collider's shape (`collider.radius = 20`) | The shape setter sets the mass from the new shape | Set the mass after the shape. (Run time.) |
 
 ## Particles
@@ -70,3 +68,5 @@ A few mistakes are not warned about: the engine does the right thing instead. Th
 | --- | --- |
 | `blendMode` on a layer drawn in one pass (a sprite layer without a look, a MESH layer, a world-rect layer) | The layer draws with it, unless its config sets `shader.containerBlend` ([which blend each layer reads](./bible_of_weed_js.md#defining-custom-layers)). It used to draw normal. |
 | Despawning an entity with joints | Despawn removes its joints, after `onDespawned`. They used to stay, and the entity spawned next into that index was born jointed to the old partner. |
+| Changing `this.collider.isTrigger` or `this.collider.enableHitEvents` on a live entity | The body is made again with it, keeping its velocity. Box2D read them only when it made the body, so the change did nothing. |
+| `this.rigidBody.mass = 50` in `onSpawned`, on an entity whose collider has a shape | The mass holds. The spawn used to set it from the collider right after `onSpawned`. A shape set after the mass still replaces it (warned, above). |

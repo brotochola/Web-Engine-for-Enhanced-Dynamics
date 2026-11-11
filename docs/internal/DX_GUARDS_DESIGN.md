@@ -64,7 +64,7 @@ is `docs/guide/COMMON_MISTAKES.md`.
 | --- | --- | --- | --- | --- |
 | E1 | a class field named like a component or an engine accessor (`health = 3`, `x = 0`) | hidden, silently | the page's first instance of each class (the fields are the same in every thread): own names against the prototype chain's accessors | `a42418d5`, `devChecks.test.js` |
 | E2 | a field first written after `onSpawned` | a deopt, and state in one worker | `GameObject.spawn` notes the own names after `onSpawned`; once a second each logic worker compares one live instance of each class | `0943bdfd`, `devChecks.test.js` |
-| E3 | `collider.isTrigger` or `rigidBody.fixedRotation` written when the body exists | nothing (plain column writes) | accessors of their own tell devChecks; "the body exists" is: active, a body, no LIFECYCLE waiting (`bodyLifecyclePending`). `enableHitEvents` and the entity's `fixedRotation` already reach the body. `isTrigger` has no call that does: N-131 | `5eb51691`, `devChecks.test.js` |
+| E3 | `rigidBody.fixedRotation` written when the body exists (`collider.isTrigger` too, until N-131 made it remake the body) | nothing (plain column writes) | accessors of their own tell devChecks; "the body exists" is: active, a body, no LIFECYCLE waiting (`bodyLifecyclePending`). `enableHitEvents` and the entity's `fixedRotation` already reach the body. `isTrigger` has no call that does: N-131 | `5eb51691`, `devChecks.test.js` |
 | E4 | a mass set by hand, replaced by the collider's | `GameObject.spawn` syncs the mass from the collider right after `onSpawned`, so a mass set there never holds; a shape setter syncs it again | the mass setter and the sync tell devChecks (the spawn's sync and a shape's say different things) | `852264f9`, `devChecks.test.js` |
 | E5 | `emit()` with `z` 0 or unset and a velocity | the integrate lands the particle on its first step: it never moves (shown on the shipped float32 kernel) | a warning, only when every particle starts on the floor and has a velocity (speed counts with a direction, as `_spawn` reads it) | `8891968e`, `devChecksEmit.test.js` |
 | E6 | the plan read "CPU emit with `frame` or `animation`: ignored". Not so: spritesheet + animation + frame resolve to a frame, a frame list cycles. What is ignored is `animation` or `frame` without `spritesheet`, and a `spritesheet` without `animation` | the particles draw the texture (id 0 without one) | a warning for each | `577967e3`, `devChecksEmit.test.js` |
@@ -84,10 +84,10 @@ for free.
   (removed, `961a4cf4`, `196fbdb4`).
 - **Fields that hid an engine accessor:** Sun Street's cloud `speed` and volumeStressScene's car `radius` and `speed`
   (renamed, `1d873eb0`, `9fc15437`).
-- **Empty ticks (C4) and tickIntervals without staggered updates (C3), kept:** 23 classes in 17 demos and 26 stress
-  scenes, among them Predator's House, Barrel and TallLight (their ticks are commented out) and the Floor 12 demos and
-  4 stress scenes share. They are right; deleting them changes the load the stress scenes and the gate measure, which
-  is the owner's call. The demos test keeps them by class.
+- **Empty ticks (C4) and tickIntervals without staggered updates (C3):** 23 classes in 17 demos and 26 stress scenes,
+  among them Predator's House, Barrel and TallLight (their ticks commented out) and the Floor 12 demos and 4 stress
+  scenes share. Kept at first (they change what the stress scenes and the gate measure), deleted on 2026-11-11 at the
+  owner's word (`72b4b669`, `acbf1c8f`, `db5553fe`): those scenes' logic numbers move against sittings before.
 - **The plan, against the code:** C2 existed (DX 1.2). E6 was misdescribed (above). E3: `enableHitEvents` already
   reaches the body. F2: the guide never asked games to remove joints by hand (three demos do it in `onDespawned`, and
   still may). C10: the bundle case already worked.
@@ -115,7 +115,9 @@ for free.
   - E4: the landing page's `Floater` and `HungCrate` set `rigidBody.mass` in `onSpawned`, "after the geometry: it
     floats when it falls in the pond": the spawn's sync replaces it, so they weigh about twice what their comment says
     (N-132).
-  Predator's and the landing page's are left: changing them changes the gate's scene or the landing page's physics.
+  Predator's and the landing page's were left at first; on 2026-11-11 the owner had them all fixed: N-131 (and N-135,
+  the same for `enableHitEvents`), N-132, the page keys in the engine's key map (`a0c61aac`), `_logicFrame` declared
+  (`bb98e09d`).
 
 ## For the owner
 
@@ -123,6 +125,6 @@ for free.
   production and, from source with the checks off, a test of a flag):
   `MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name DX-GUARDS --vs f7860aa2 --hyp-rev dx/guards --pairs 4`.
   spawnStormScene for F2 (despawn's joint read): the command is in R-0856.
-- **Open:** N-131 (`isTrigger` after the body exists, which also leaves Predator's money solid); N-132 (a mass set in
-  `onSpawned` replaced by the spawn's sync, which the landing page meets); whether to delete the demos' empty ticks (C4),
-  Predator's `_logicFrame` (E2) and the landing page's page keys (E7).
+- **Done since, the owner's call of 2026-11-11:** N-131, N-132, N-135, the demos' empty ticks, Predator's
+  `_logicFrame`, the page keys. Predator's and the stress scenes' numbers move with them: a gate run after this branch
+  merges is against a different scene.

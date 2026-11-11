@@ -24,3 +24,8 @@ empties it.
 - **The debug bundle's workers print their warnings and errors.** Their build dropped every console call, so a
   worker's `console.warn` and `console.error` never reached the console with `@weed.js/engine/debug`; now only
   `console.log` and `console.debug` are dropped there. The production bundle is as before.
+- **Body flags and hand-set masses reach the body** (N-131, N-135, N-132). Changing `collider.isTrigger` or
+  `collider.enableHitEvents` on a live entity makes its body again with the new flag (it used to do nothing); a mass set
+  with `rigidBody.mass` in `onSpawned` holds (the spawn used to replace it with the collider's area). Predator's money
+  becomes a trigger a second after it drops, the landing page's crates float, weldBreakScene's dropper is heavy.
+- **The key map reads pageup, pagedown, home and end.**
