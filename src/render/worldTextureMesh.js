@@ -10,6 +10,7 @@ import {
   TextureSource,
 } from '../vendor/pixi.min.js';
 import { bytesPerTexel } from '../core/layerTextureUpload.js';
+import { isFloatFormat } from './sharedTextureUpload.js';
 import { gpuStageF, gpuStageVF } from './webgpu/pixiMeshWgsl.js';
 import { pinGpuTexture } from './webgpu/pinGpuTexture.js';
 import { buildWorldRectWgsl, findWgslUseBeforeDeclare } from './webgpu/wgslPrelude.js';
@@ -37,8 +38,10 @@ export function createSharedTextureSource(spec, renderer, useWebGpu) {
   const w = spec.width | 0;
   const h = spec.height | 0;
   const bpp = bytesPerTexel(spec.format);
+  // N-127: a float picture's first contents are floats: WebGL allocates it with a FLOAT upload, which takes no bytes.
+  const bytes = Math.max(4, w * h * bpp);
   const source = TextureSource.from({
-    resource: new Uint8Array(Math.max(4, w * h * bpp)),
+    resource: isFloatFormat(spec.format) ? new Float32Array(bytes >> 2) : new Uint8Array(bytes),
     width: Math.max(1, w),
     height: Math.max(1, h),
     format: spec.format || 'r8unorm',

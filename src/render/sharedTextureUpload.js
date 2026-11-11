@@ -1,5 +1,7 @@
 // Copy a rectangle of a shared array into a picture.
 // WebGL 2 uses texSubImage2D. WebGPU packs rows when the card requires it.
+// N-127: on WebGL a float picture's bytes go up as floats (a FLOAT upload takes a Float32Array, its offset in floats),
+// and a one-channel picture as RED whatever its texel's size (r32float too).
 
 import { bytesPerTexel } from '../core/layerTextureUpload.js';
 
@@ -27,6 +29,16 @@ export function packTextureRows(bytes, width, bpp, x, y, w, h, scratchIn) {
     dst.set(bytes.subarray(src, src + tight), row * bytesPerRow);
   }
   return { packed: dst.subarray(0, need), bytesPerRow, buffer: dst };
+}
+
+/** N-127: whether a picture's texels are floats. */
+export function isFloatFormat(format) {
+  return format === 'r32float' || format === 'rgba32float';
+}
+
+/** N-127: the picture's bytes as floats, the same memory (a float picture's bytes start on a float). */
+function floatView(bytes) {
+  return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength >> 2);
 }
 
 /**
@@ -106,8 +118,9 @@ export function uploadSharedImage(opts) {
   gl.bindTexture(gl.TEXTURE_2D, glSource.texture);
   gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
   gl.pixelStorei(gl.UNPACK_ROW_LENGTH, width);
-  const type = opts.format === 'r32float' || opts.format === 'rgba32float' ? gl.FLOAT : gl.UNSIGNED_BYTE;
-  const format = bpp === 1 ? gl.RED : gl.RGBA;
+  const float = isFloatFormat(opts.format);
+  const oneChannel = opts.format === 'r32float' || bpp === 1;
+  const offset = rowOffset(width, y, x, bpp);
   gl.texSubImage2D(
     gl.TEXTURE_2D,
     0,
@@ -115,10 +128,10 @@ export function uploadSharedImage(opts) {
     y,
     w,
     h,
-    format,
-    type,
-    bytes,
-    rowOffset(width, y, x, bpp),
+    oneChannel ? gl.RED : gl.RGBA,
+    float ? gl.FLOAT : gl.UNSIGNED_BYTE,
+    float ? floatView(bytes) : bytes,
+    float ? offset >> 2 : offset,
   );
   gl.pixelStorei(gl.UNPACK_ROW_LENGTH, 0);
   gl.bindTexture(gl.TEXTURE_2D, prev);
