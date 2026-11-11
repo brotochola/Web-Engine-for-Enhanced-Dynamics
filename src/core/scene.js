@@ -143,7 +143,7 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
-import { warnEntityClassMistakes } from '../util/classGuards.js';
+import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
@@ -666,7 +666,8 @@ class Scene {
       (r) => r.class === EntityClass || r.class.name === EntityClass.name
     );
     if (existing) {
-      console.warn(`⚠️ ${EntityClass.name} is already registered. Skipping duplicate.`);
+      // DX-GUARDS C5: say which mistake it is (a second class of the same name has no pool and cannot spawn).
+      warnOnce(EntityClass.name, 'duplicate-entity', duplicateEntityClassText(existing, EntityClass, count, this.registeredClasses));
       return;
     }
 

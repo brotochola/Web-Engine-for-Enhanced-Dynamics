@@ -1,5 +1,5 @@
 /**
- * DX-GUARDS C3, C4: entity classes written in a way that does not do what it says. Checked once, when the scene
+ * DX-GUARDS C3, C4, C5: entity classes written in a way that does not do what it says. Checked once, when the scene
  * registers its classes (main thread, both builds), and said once per class and rule.
  */
 import { warnOnce } from './dxWarn.js';
@@ -76,4 +76,27 @@ export function warnEntityClassMistakes(registered, BaseClass, config) {
       );
     }
   }
+}
+
+/**
+ * C5: the line for a class the scene skips because one with its name is registered already.
+ * @param {{ class: Function, count: number }} existing the registered one
+ * @param {Function} EntityClass the one being skipped
+ * @param {number} count the pool asked for it
+ * @param {{ class: Function }[]} registered every class registered so far
+ */
+export function duplicateEntityClassText(existing, EntityClass, count, registered) {
+  const name = EntityClass.name;
+  if (existing.class !== EntityClass) {
+    return `two entity classes are named ${name}: the second is not registered, so it has no pool and cannot spawn ` +
+      '(the workers find entity classes by name). Rename one.';
+  }
+  if (existing.count === 0 && count > 0) {
+    const child = registered.find((r) => r.class !== EntityClass && r.class.prototype instanceof EntityClass);
+    const by = child ? `${child.class.name}, which extends it, registered it first` : 'a subclass registered it first';
+    return `${name} is listed in static entities after its subclasses: ${by} with no pool, so [${name}, ${count}] ` +
+      `is ignored and ${name}.spawn() finds no slot. List ${name} before the classes that extend it.`;
+  }
+  return `${name} is listed twice in static entities: the entry [${name}, ${count}] is ignored and its pool stays ` +
+    `${existing.count}. List it once.`;
 }

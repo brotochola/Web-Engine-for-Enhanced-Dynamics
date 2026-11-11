@@ -1,4 +1,4 @@
-// DX-GUARDS C3, C4: entity classes that do not do what they say, named once when the scene registers them.
+// DX-GUARDS C3, C4, C5: entity classes that do not do what they say, named once when the scene registers them.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -102,4 +102,44 @@ test('isEmptyMethod reads the body, not a brace in a parameter', () => {
   assert.equal(isEmptyMethod(o.c), false);
   assert.equal(isEmptyMethod(o.d), true);
   assert.equal(isEmptyMethod(o.e), false);
+});
+
+test('C5: a class listed twice, two classes with one name, a parent after its child: each says what happened', () => {
+  class Tank extends GameObject {}
+  class Twice extends Scene {
+    static entities = [[Tank, 4], [Tank, 8]];
+    static config = { ...WORLD };
+  }
+  assert.deepEqual(warningsOf(() => new Twice({})), [
+    'WeedJS: Tank is listed twice in static entities: the entry [Tank, 8] is ignored and its pool stays 4. List it once.',
+  ]);
+
+  const makeTwin = () => class Twin extends GameObject {};
+  const TwinA = makeTwin();
+  const TwinB = makeTwin();
+  class Twins extends Scene {
+    static entities = [[TwinA, 4], [TwinB, 4]];
+    static config = { ...WORLD };
+  }
+  assert.deepEqual(warningsOf(() => new Twins({})), [
+    'WeedJS: two entity classes are named Twin: the second is not registered, so it has no pool and cannot spawn ' +
+      '(the workers find entity classes by name). Rename one.',
+  ]);
+
+  class Enemy extends GameObject {}
+  class Grunt extends Enemy {}
+  class Backwards extends Scene {
+    static entities = [[Grunt, 4], [Enemy, 6]];
+    static config = { ...WORLD };
+  }
+  assert.deepEqual(warningsOf(() => new Backwards({})), [
+    'WeedJS: Enemy is listed in static entities after its subclasses: Grunt, which extends it, registered it first ' +
+      'with no pool, so [Enemy, 6] is ignored and Enemy.spawn() finds no slot. List Enemy before the classes that extend it.',
+  ]);
+  class Forwards extends Scene {
+    static entities = [[Enemy, 6], [Grunt, 4]];
+    static config = { ...WORLD };
+  }
+  assert.deepEqual(warningsOf(() => new Forwards({})), []);
+  assert.equal(Enemy.poolSize, 6, 'listed first, the parent has its pool');
 });
