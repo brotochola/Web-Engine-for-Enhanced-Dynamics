@@ -11414,7 +11414,7 @@
       "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
       "date": "2026-11-10",
       "result": "",
-      "next": "computePath is the last search in JavaScript: three closures a call, inOpenSet.fill(0) over the grid, a JavaScript heap; the flowfield gained 16× in C (E-122). In C beside the flowfield, the open set cleared by a generation stamp; kernel with the same paths (golden), then a path-heavy scene. Owner: PATHS_COMPUTED.",
+      "next": "computePath is the last search in JavaScript (navAstar.js since N-137): a JavaScript heap, inOpenSet.fill(0) over the grid; the flowfield gained 16x in C (E-122). In C beside the flowfield, the open set cleared by a generation stamp; kernel with the same paths (golden), then astarStressScene (R-0889: the search is about half the particle worker). Owner: the particle worker at a fixed PATHS_COMPUTED.",
       "area": "nav",
       "kind": "wasm",
       "refs": [
@@ -11427,7 +11427,8 @@
         "nav"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0889"
       ]
     },
     {
@@ -11833,7 +11834,8 @@
         "pathfinding"
       ],
       "records": [
-        "R-0887"
+        "R-0887",
+        "R-0889"
       ]
     },
     {
@@ -11860,6 +11862,31 @@
       "records": [
         "R-0885"
       ]
+    },
+    {
+      "id": "E-212",
+      "title": "Path slots found by an index, not a scan of every slot",
+      "status": "open",
+      "statusText": "filed 2026-11-11 from astarStressScene's first trace; not measured",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "An index from (from, to) to slot in the nav buffer, written by the particle worker, probed by logic with the slot header as the check; numeric pending keys. Owner: astarStressScene logic (10-13 ms, 79.5 % in _findPathSlot); particle not 3 % worse.",
+      "area": "nav",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-212"
+      ],
+      "aliases": [
+        "_findPathSlot",
+        "getNextAStarPosition",
+        "path slot",
+        "astarStressScene",
+        "NavGrid"
+      ],
+      "records": [
+        "R-0889"
+      ],
+      "rank": 1
     }
   ],
   "records": [
@@ -20407,6 +20434,18 @@
       "text": "**The bundles of 3304007e (N-137 merged): tested; not timed against src.** dist `bdb71872`, built from 3304007e.\n\n- Node 2456 of 2456, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 277 of 277 on all 8 bundles. Two fewer than R-0886: `astarHeap.test.js`'s two old tests ran a copy of the old A* rule; its new ones import `src/core/navAstar.js`.\n\nNo sitting: N-137 changes only the A* search, which neither Predator nor Boids reaches (no scene requested paths), so bundle against src could not read anything R-0886 did not. Main pushed.",
       "commits": [
         "bdb71872"
+      ]
+    },
+    {
+      "id": "R-0889",
+      "date": "2026-11-11",
+      "time": "18:32",
+      "timeFrom": "recorded",
+      "title": "astarStressScene built: 800 agents walking a maze by A*; logic 79.5 % in _findPathSlot (E-212), the particle worker half in the search (E-207)",
+      "verdict": "note",
+      "text": "**astarStressScene (`671dc08e`), the owner's ask: a scene that runs A* under load, which no scene did.** 2026-11-11.\n\n**The scene.** 800 agents (`?agents=`) walk a 96 by 96 cell maze to random cells by `NavGrid.getNextAStarPosition`, one after another.\n- The maze: rooms of 12 cells with a 2-cell door in each wall and 2 by 2 pillars, as 384 static wall boxes the nav grid reads.\n- Each cell an agent enters is a new (from, to) pair, so the particle worker runs A* for it. `PATHS_COMPUTED` is the load key.\n- Path slots are twice the agents; every request is served the frame it arrives (`maxProcessingMsPerFrame` 50).\n\n**Probes, src, headless, one run each:**\n- 600 agents: particle 2.63 ms (27.4 paths a frame), logic 6.0 ms.\n- 800 agents: particle 3.62 ms (42.2 paths), logic 10.35 ms. 800 became the default.\n\n**The trace (800 agents, `--trace-cpu`).**\n- Logic is 79.5 % `NavGrid._findPathSlot` (689 ms/s), a scan of all 1600 slot headers for every agent every tick, and 8.4 % `_requestPath`. Filed as E-212.\n- The particle worker (348 ms/s):\n  - the search itself, about half: `searchAstar` 29.6 %, `heapPop` 9.4 %, `siftUp`, `isVisited`, `octile`;\n  - `_findExistingPathSlot` 11.1 %, another full scan;\n  - `port.onmessage` 10.1 %: one postMessage for each request;\n  - `allocatePathSlot` 5.0 %.\n\nE-207 (A* in C) has its owner scene now.",
+      "commits": [
+        "671dc08e"
       ]
     }
   ],

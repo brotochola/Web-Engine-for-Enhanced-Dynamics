@@ -3685,6 +3685,20 @@ casted-shadows layer shown). Owner: Predator `?crowd=1.5`'s renderer.
 
 ---
 
+### E-212 Path slots found by an index, not a scan of every slot
+
+**Premise:** astarStressScene (800 agents, 1600 path slots, 2026-11-11 trace): logic spends 79.5 % of its time in
+`NavGrid._findPathSlot`, which `getNextAStarPosition` and `getPathAStar` call for every agent every tick and which reads
+every slot's header (logic 10 to 13 ms). The particle worker scans the slots again for each request
+(`_findExistingPathSlot`, 11 %) and for each new path (`allocatePathSlot`, 5 %). Each found call also builds a string
+key (`${from}_${to}`) for the pending map.
+**Plan:** an open-addressing index from (from, to) to slot at the end of NavGrid's buffer, written by the particle worker
+alone when it gives a slot a path or clears it; readers probe it and check the slot's header (READY, from, to), so a
+stale or moving entry costs a miss, never a wrong path. The particle worker's lookups use it; the pending map takes a
+numeric key, built only while it holds requests. Owner: astarStressScene's logic; the particle worker must not get 3 %
+worse. Next to it, not in it: requests through a SAB ring instead of a postMessage each (`port.onmessage` is 10 % of
+the particle worker there), and A* in C (E-207, half the particle worker).
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
