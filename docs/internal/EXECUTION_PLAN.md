@@ -3429,6 +3429,16 @@ The pack still costs about 1.5 ms a frame there against 0.15 for its kernel at t
 why. Left: whether that time is the thread's CPU at all (a sampled profile counts a preempted thread's stack, as it
 counts Atomics.wait: check the Pixi thread's CPU time on Windows), then the streams written by pre-render, or E-201
 (poses read by key on the GPU, no gather).
+**Step 0 answered 2026-11-11 (R-0867): the time is the thread's, and it is bytes.** A timeline trace of Predator
+`?crowd=1.5` on main (tdur, the thread's CPU, against dur): every worker's tasks ran 90 to 94 % of their wall time on a
+core, Pixi's 284 of 317 ms/s, so the pack's 94 ms/s is CPU. The machine (a Ryzen 7 4800H) has two 4-core complexes
+with 4 MB of L3 each, and per frame the pack reads about 21 bytes a row (x, y, rotC, rotS, key, type: 0.5 MB at 23 500
+rows) that pre-render has just written, and writes 36 (the pose 16, the slot pair 8, E-191's shadow terms 12: 0.85
+MB) over lines other work has evicted since the frame before: about 28 000 lines from outside Pixi's caches, about 50 ns
+each, about 1.4 ms, in either order. The kernel repeats one frame with everything in its own cache. So what pays is
+fewer bytes: the slot pair without its depth (E-186), the shadow terms only for the rows that cast (and none on a frame
+whose sun pass does not run), a pose only for a row that moved. Pre-render cannot write the streams in Predator: there
+Pixi sorts the painter's order (`sortSprites: 'pixi'`, `packGpuSprites: 'pixi'`).
 
 ### E-194 LiquidFun rows keyed by slot
 
