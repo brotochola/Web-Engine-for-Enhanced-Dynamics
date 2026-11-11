@@ -10028,7 +10028,9 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0864"
+      ],
       "status": "open",
       "date": "2026-11-01",
       "kind": "speed",
@@ -10037,10 +10039,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-193"
       ],
-      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "statusText": "open: step 1 (the queue read in order) dropped 2026-11-11 (R-0864); the pack still 94 ms/s in the worker",
       "area": "render",
       "result": "",
-      "next": "pack_sprites_keyed reads 42 ms/s at Predator's defaults and 91 to 118 ms/s at crowd 1.5 (0.7 and 1.5 to 2 ms a frame); its kernel packs 13 500 rows in 0.070 to 0.080 ms in Chrome. Likely the gather: rows read in the painter's order from columns pre-render just wrote on another core. Step 0: the call timed in the worker against a two-worker kernel (the columns written by another worker first), in random, near and queue order. Then the queue's order with an inverse made in C (W9c lost in JavaScript), a prefetch ahead, or the pose and slot streams written by pre-render. Owner: Predator's renderer at crowd 1.5.",
+      "next": "First whether the pack time is the Pixi thread's CPU (a sampled profile counts a preempted thread): its CPU time on Windows during Predator crowd 1.5. Then the pose and slot streams written by pre-render, or E-201.",
       "rank": 12
     },
     {
@@ -19816,6 +19818,20 @@
         "eae26c6b",
         "ecaa2051",
         "79065acc"
+      ]
+    },
+    {
+      "id": "R-0864",
+      "date": "2026-11-11",
+      "time": "04:23",
+      "timeFrom": "recorded",
+      "title": "E-193 step 1 dropped: the keyed pack read in order costs the same in Pixi's worker; Predator crowd 1.5 renderer +2.6 %",
+      "verdict": "dropped",
+      "text": "**E-193 step 1 dropped: the keyed pack read in the queue's own order (an inverse in C) costs the same in Pixi's worker, and Predator crowd 1.5's renderer reads +2.6 %.** 2026-11-11, from 04:17 (the sitting's first result file) to 04:23 (the second trace). Chrome, headed, source, detailed stats off, AC power. Nothing else ran on the machine: b3's sittings had ended.\n\n**What was tried.** `pack_sprites_keyed_scatter` (b442ba45) is `pack_sprites_keyed` through W9b's inverse: `inv[queue row] = draw slot`, then the queue read in order, each drawn row's pose, slot pair and shadow terms written at its draw slot. The updates list in queue order; keys are unique a row. A repeated or out-of-range row declines it and the gather packs the frame. Pixi got an inverse for the keyed pack alone (`pixiKeyInverse`). `gpuPackKeyedScatter.test.js` checks the same frame as the gather (random and near order, with and without shadow terms, a repeated row).\n\n**Kernels** (ef08b5d4, kept; Node, n = 14 000 rows, entities 42 600, run while b3 built bundles, so these are a screen):\n- `gpuPackKeyedMicrobench`, warm, one thread: keyed 0.085 ms, keyedScatter 0.093 ms.\n- `gpuPackKeyedCrossCoreMicrobench`, every queue column rewritten before each pack, three reps:\n  - on the pack's own thread: gather 0.08 to 0.10 ms, scatter 0.10 to 0.12;\n  - on a worker thread: gather 0.12 to 0.23 ms, scatter 0.12 to 0.23.\n- Another core's writes cost +50 to +150 %, not ten times, and reading in order does not take that cost away.\n\n**Predator `?crowd=1.5`, 4 pairs** (`--vs ef08b5d4 --hyp-rev b442ba45 --full-rev --owner renderer`): NEUTRAL by the runner, a loss by the rule.\n- Renderer 3.290 → 3.389 ms (+2.6 %, worse 3/4, cv 3/3 %; +4.1 % against the others, lower 0/4).\n- Pre-render -2.5 % (2/4), logic +2.4 %, spatial -2.1 %, physics -0.6 %.\n- Load keys within 0.7 %.\n\n**One CPU trace a side** (8 s warm-up, a 6 s window, the same tree as each side):\n- A: `pack_sprites_keyed` 94 ms/s, 31 % of Pixi's 300 ms/s busy; `updateBuffer` 20 ms/s.\n- B: `pack_sprites_keyed_scatter` 102 ms/s, 32 % of 316.\n- At crowd 1.5 (23 500 rows) the pack takes about 1.5 ms a frame in the worker against about 0.15 ms for its kernel at that size. The read order is not why.\n\n**Reverted** in 3167b9ee. What is left of E-193:\n- Whether that time is the Pixi thread's CPU at all. A sampled profile counts a preempted thread's stack, as it counts Atomics.wait; check the thread's CPU time on Windows.\n- Then the pose and slot streams written by pre-render, or E-201 (poses read by key on the GPU, no gather).",
+      "commits": [
+        "ef08b5d4",
+        "b442ba45",
+        "3167b9ee"
       ]
     }
   ],
