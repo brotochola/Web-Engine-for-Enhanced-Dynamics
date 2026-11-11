@@ -11,3 +11,4 @@ export function lateBodyWrite() {}
 export function massSetByHand() {}
 export function massFromCollider() {}
 export function slotReleased() {}
+export function checkEmit() {}

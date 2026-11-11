@@ -189,3 +189,52 @@ export function massFromCollider(index, before, after, fromSpawn) {
 export function slotReleased(index) {
   if (index < handMass.length) handMass[index] = 0;
 }
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E5: particle emits.
+// ---------------------------------------------------------------------------------------------------------------------
+
+const isNum = (v) => typeof v === 'number' && v === v;
+/** The largest value a number or a { min, max } range gives; undefined when unset. */
+function maxOf(v) {
+  if (isNum(v)) return v;
+  if (v && typeof v === 'object' && (isNum(v.min) || isNum(v.max))) return Math.max(isNum(v.min) ? v.min : -Infinity, isNum(v.max) ? v.max : -Infinity);
+  return undefined;
+}
+function minOf(v) {
+  if (isNum(v)) return v;
+  if (v && typeof v === 'object' && (isNum(v.min) || isNum(v.max))) return Math.min(isNum(v.min) ? v.min : Infinity, isNum(v.max) ? v.max : Infinity);
+  return undefined;
+}
+const moves = (v) => {
+  const lo = minOf(v);
+  const hi = maxOf(v);
+  return (lo !== undefined && lo !== 0) || (hi !== undefined && hi !== 0);
+};
+
+/**
+ * A CPU emit's config. E5: heighted particles all born on the floor (z ≥ 0, or unset) with a velocity stop on their
+ * first step: the integrate lands them.
+ * @param {object} cfg the merged config
+ * @param {boolean} flat emitFlat's particles (no floor)
+ */
+export function checkEmit(cfg, flat) {
+  if (!on || !cfg) return;
+  const subject = `emit:${cfg.texture ?? ''}:${cfg.spritesheet ?? ''}:${cfg.animation ?? ''}`;
+  if (!flat) {
+    const zMin = minOf(cfg.z);
+    const onFloor = cfg.z == null || (zMin !== undefined && zMin >= 0);
+    // speed counts with a direction (dirX and dirY, or angleXY), as _spawn reads it; otherwise vx and vy do.
+    const aimed = (cfg.dirX != null && cfg.dirY != null) || cfg.angleXY !== undefined;
+    const flies = aimed ? moves(cfg.speed) : moves(cfg.vx) || moves(cfg.vy);
+    if (onFloor && (flies || moves(cfg.vz))) {
+      warnOnce(
+        subject,
+        'emit-on-floor',
+        `ParticleEmitter: an emit${cfg.texture ? ` of ${cfg.texture}` : cfg.spritesheet ? ` of ${cfg.spritesheet}` : ''} ` +
+          `has z ${cfg.z == null ? 'unset (0)' : '0 or more'}: a heighted particle at z >= 0 is on the floor, so it ` +
+          'stops on its first step. Give z a value below 0 (in the air), or use emitFlat for particles in the screen plane.',
+      );
+    }
+  }
+}
