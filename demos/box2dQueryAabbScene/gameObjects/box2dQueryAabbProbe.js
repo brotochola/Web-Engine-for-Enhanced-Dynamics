@@ -22,8 +22,6 @@ export class Box2dQueryAabbTarget extends GameObject {
     this.setScale(size / 100);
     this.setAnchor(0.5, 0.5);
   }
-
-  tick() {}
 }
 
 /**

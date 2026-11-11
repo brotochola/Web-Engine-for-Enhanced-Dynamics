@@ -37,9 +37,5 @@ export class OrientedBox extends GameObject {
         this.setAlpha(1);
         this.setTint(spawnConfig.tint ?? 0xffffff);
     }
-
-    tick(_dtRatio) {
-        // Physics owns position + rotation
-    }
 }
 

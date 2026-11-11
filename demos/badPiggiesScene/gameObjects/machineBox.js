@@ -46,6 +46,4 @@ export class MachineBox extends GameObject {
     this.setTint(spawnConfig.tint ?? 0xc8a06a);
     this.setAlpha(ghost ? 0.4 : 1);
   }
-
-  tick() { }
 }
