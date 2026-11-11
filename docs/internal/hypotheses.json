@@ -10069,8 +10069,10 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0871"
+      ],
+      "status": "dropped",
       "date": "2026-11-01",
       "kind": "wasm",
       "id": "E-195",
@@ -10078,11 +10080,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-195"
       ],
-      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "statusText": "dropped 2026-11-11 (R-0871): slower in Chrome",
       "area": "pre-render",
-      "result": "",
-      "next": "stamp_light_range is pre-render's largest function at Predator crowd 1.5 (108 of 380 ms/s, R-0808). Its f32x4 form read +7.3 % in Node (R-0571, 23/25; shadowStampF32.test.js holds the tolerance) and was never decided in Chrome. shadowStampWasmMicrobench wasm against wasm-f32x4 through chromeKernel.mjs, with the keyed rows (7 and 11 floats) and the full ones; into engine.wasm if faster, Predator crowd 1.5's pre-render not 3 % worse.",
-      "rank": 14
+      "result": "dropped 2026-11-11 (R-0871): Chrome 157, the Predator fixture, same rows: f32x4 -7.3 to -9.9 %, scalar f32 -7.5 to -11.5 % against the shipped double kernel",
+      "next": "Done: the stamp stays in double."
     },
     {
       "id": "N-79",
@@ -20132,6 +20133,18 @@
       "text": "**N-136 fixed (`9edb59f6`): the active particle list is published in three copies, so Pixi's particle light field never reads one the particle worker is writing. Hygiene keep.** 2026-11-11, from 14:36 (the sitting's first result file) to 14:41. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug** (found fixing N-113). The list kernel rewrote `activeParticlesData` every frame. Pixi's `_renderParticleLightingField` walked it on its own loop to splat the lit particles. A read that overlapped a write dropped a particle's light, or drew it twice, for one frame.\n\n**The fix.** N-113's published list, for the active list:\n- the particle worker gives the kernel the byte of a copy Pixi does not hold, and points the integrate at that copy's indices (`binding.indicesByte`);\n- it publishes the copy once the kernel returns;\n- Pixi takes the published copy;\n- the debug panel peeks at its count;\n- `layout.indicesByte` is copy 0's;\n- the scene's plain-SAB branch goes: with particles the particle memory always exists.\n\n**Correctness.** `activeParticleListTear.test.js`: a real particle worker writes the active list as fast as it goes, the live particles alternating between the even slots and the odd ones. A real Pixi worker takes it as the light field does.\n- With the old read (the same test on main's `src`, reading `activeParticlesData`): 1 420 of 3 324 takes torn.\n- After: 0 of 2 757 (302 lists written, 300 changes seen).\n\n**Cost.** particleIntegrateStressScene `?maxParticles=200000`, 4 pairs (`--vs 171dd61a --hyp-rev 9edb59f6 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.152 → 3.118 ms (-0.5 %, worse 1/4, cv 2/2 %). Pairs: -0.3, -0.6, -5.5, +1.8 %.\n- Pre-render 6.896 → 6.973 ms (+1.0 %, worse 3/4). Pre-render does not read this list.\n- Renderer 2.432 → 2.390 ms (below the floor).\n\nNo primary is 3 % worse: a hygiene keep.",
       "commits": [
         "9edb59f6"
+      ]
+    },
+    {
+      "id": "R-0871",
+      "date": "2026-11-11",
+      "time": "14:48",
+      "timeFrom": "recorded",
+      "title": "E-195 dropped: the stamp's float32 candidate test is 7 to 11 % slower than the double kernel in Chrome (f32x4 and scalar, full and keyed rows)",
+      "verdict": "dropped",
+      "text": "**E-195 dropped: in Chrome the shadow stamp's float32 candidate test is slower than the shipped double kernel, in both its forms, on full and keyed rows.** 2026-11-11, 14:44 to 14:48 (the result files' times). Chrome 157, headless, nothing else running.\n\n**Why it was open.** `stamp_light_range` is pre-render's largest function at Predator crowd 1.5 (108 of 380 ms/s, R-0808). Its f32x4 form read +7.3 % in Node (R-0571) and had never been decided in Chrome.\n\n**The tool** (`d6a50344`). `shadowStampKernel.mjs`'s Chrome entry now:\n- times any variant: `wasm`, `js`, and the float32 test module's `wasm-f32` and `wasm-f32x4`;\n- runs on full rows or on E-191 step 2's keyed rows (`keyed`: 7-float caster rows, 11-float stamp rows, the light after the seventh float), which Predator stamps.\n\n**Kernel** (`chromeKernel.mjs --module /tests/bench/shadowStampKernel.mjs`). The Predator fixture: 16 424 casters and 48 lights. Every variant wrote the same 7 877 stamp rows with the same checksum. Nine rounds a run, alternating sides.\n\n| Variant against the shipped kernel | Full rows | Keyed rows |\n|---|---|---|\n| `wasm-f32x4`, 3 runs a form | -8.5, -9.8, -9.9 % (wasm 2 389 / 2 404 / 2 313 ops/s) | -7.3, -9.2, -8.8 % |\n| `wasm-f32` (scalar), 2 runs a form | -11.5, -7.5 % | -9.4, -10.3 % |\n\n**Verdict.** Node's V8 favoured the float32 test, but Chrome's does not, and Chrome decides (HOW_WE_MEASURE). The kernel stays in double, and nothing goes into engine.wasm. With every form slower in the kernel, no scene sitting was needed.",
+      "commits": [
+        "d6a50344"
       ]
     }
   ],
