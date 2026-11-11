@@ -114,7 +114,6 @@ function checkPack(s, label, opts, cap) {
   const sp = words(s.splitPose, n * GPU_POSE_FLOATS);
   const ss = words(s.splitStat, n * GPU_STATIC_FLOATS);
   const kp = words(s.pose, n * GPU_POSE_FLOATS);
-  const kSlot = words(s.slots, n * GPU_INDEXED_SLOT_FLOATS);
   let u = 0;
   for (let k = 0; k < n; k++) {
     const i = opts.indices ? opts.indices[k] : k;
@@ -123,8 +122,7 @@ function checkPack(s, label, opts, cap) {
     const keyless = key >= KEY_BASE;
     const slot = keyless ? KEY_BASE + k : key;
     const send = keyless || (raw & GPU_KEYED_CHANGED) !== 0;
-    if (s.slots[k * GPU_INDEXED_SLOT_FLOATS] !== slot) assert.fail(`${label}: slot ${k} takes row ${s.slots[k * 2]}, not ${slot}`);
-    if (kSlot[k * GPU_INDEXED_SLOT_FLOATS + 1] !== ss[k * GPU_STATIC_FLOATS + DEPTH]) assert.fail(`${label}: slot ${k}'s depth`);
+    if (s.slots[k * GPU_INDEXED_SLOT_FLOATS] !== slot) assert.fail(`${label}: slot ${k} takes row ${s.slots[k * GPU_INDEXED_SLOT_FLOATS]}, not ${slot}`);
     for (let j = 0; j < GPU_POSE_FLOATS; j++) {
       if (kp[k * GPU_POSE_FLOATS + j] !== sp[k * GPU_POSE_FLOATS + j]) assert.fail(`${label}: slot ${k} pose ${j}`);
     }

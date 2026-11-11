@@ -198,7 +198,9 @@ INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t
    shader fetches them from. The draw slots' statics are statics[slots[2k]]. Refuses, as the scatter does, indices
    that are not distinct rows below rowCount. */
 #define INDEXED_STATIC_FLOATS 12
-#define SLOT_FLOATS 2
+/* E-186: a slot is its statics row alone. Every batch that reads the slot stream draws without a depth test, so the
+   slot's depth was never read; invDepthDenom stays in the exports' signatures and goes unused. */
+#define SLOT_FLOATS 1
 
 INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap,
                                      double invDepthDenom, float *pose, float *slots, float *stat, uint32_t typeByte,
@@ -225,8 +227,8 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
     if (type) p += type[i] == 1;
     sprite_pose(t, i, pose + k * POSE_FLOATS);
     slots[k * SLOT_FLOATS] = (float)i;
-    slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
   }
+  (void)invDepthDenom;
   *particles = p;
   return n;
 }
@@ -285,7 +287,6 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
       u++;
     }
     slots[k * SLOT_FLOATS] = (float)s;
-    slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
     if (withShadow) {
       float *sh = shadow + k * 3;
       const int glow = type && type[i] == 3;

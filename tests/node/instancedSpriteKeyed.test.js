@@ -266,11 +266,9 @@ function draw(s, label, opts, frame = s.frame) {
     return -1;
   }
   assert.ok(k._indexedGeometries.includes(k.mesh.geometry), `${label}: an indexed geometry`);
-  const slotWords = new Uint32Array(k._slotData.buffer, k._slotData.byteOffset, n * GPU_INDEXED_SLOT_FLOATS);
   const texels = s.tex.texels;
   for (let slot = 0; slot < n; slot++) {
     const row = k._slotData[slot * GPU_INDEXED_SLOT_FLOATS];
-    if (slotWords[slot * GPU_INDEXED_SLOT_FLOATS + 1] !== ss[slot * POSE_STATIC_FLOATS + DEPTH]) assert.fail(`${label}: slot ${slot}'s depth`);
     for (let j = 0; j < POSE_STATIC_FLOATS; j++) {
       const want = j === DEPTH ? 0 : ss[slot * POSE_STATIC_FLOATS + j];
       if (texels[row * GPU_INDEXED_STATIC_FLOATS + j] !== want) assert.fail(`${label}: slot ${slot} (key row ${row}) static ${j}`);

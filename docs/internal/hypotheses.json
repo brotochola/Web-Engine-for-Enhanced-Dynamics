@@ -9678,9 +9678,10 @@
     {
       "aliases": [],
       "records": [
-        "R-0867"
+        "R-0867",
+        "R-0872"
       ],
-      "status": "open",
+      "status": "kept-hygiene",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-186",
@@ -9688,11 +9689,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-186"
       ],
-      "statusText": "open: after E-177's verdict",
-      "rank": 15,
+      "statusText": "kept as hygiene 2026-11-11 (R-0872)",
       "area": "render",
-      "result": "",
-      "next": "The entity batch draws with depthTest off, so the slot pair's depth is never read: a 4-byte key per instance (or the key in the pose stream, one buffer instead of two) saves 4 of the keyed frame's 24 bytes a sprite (55 KB a Predator frame) and one buffer update. Kernel bytes, then Predator's renderer."
+      "result": "kept as hygiene 2026-11-11 (29a6cf35, R-0872): a slot is its statics row alone; keyed and indexed packs write 20 bytes a sprite instead of 24; Predator crowd 1.5 renderer -2.3 % (1/4), NEUTRAL",
+      "next": "Done."
     },
     {
       "aliases": [],
@@ -10034,7 +10034,8 @@
         "R-0864",
         "R-0866",
         "R-0867",
-        "R-0868"
+        "R-0868",
+        "R-0872"
       ],
       "status": "open",
       "date": "2026-11-01",
@@ -10044,10 +10045,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-193"
       ],
-      "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867); the shadow terms gone (E-211, R-0868)",
+      "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867); the shadow terms gone (E-211, R-0868), the slot depth gone (E-186, R-0872)",
       "area": "render",
       "result": "E-211 (R-0868): the shadow terms out of the keyed pack, pack_sprites_keyed 79-119 -> 57-59 ms/s, renderer -4.5 % at Predator crowd 1.5",
-      "next": "Fewer bytes a row still: the slot pair without its depth (E-186), a pose only for a row that moved. Owner: Predator crowd 1.5's renderer.",
+      "next": "Fewer bytes a row still: a pose only for a row that moved; the statics updates (E-189). Owner: Predator crowd 1.5's renderer.",
       "rank": 12
     },
     {
@@ -20145,6 +20146,18 @@
       "text": "**E-195 dropped: in Chrome the shadow stamp's float32 candidate test is slower than the shipped double kernel, in both its forms, on full and keyed rows.** 2026-11-11, 14:44 to 14:48 (the result files' times). Chrome 157, headless, nothing else running.\n\n**Why it was open.** `stamp_light_range` is pre-render's largest function at Predator crowd 1.5 (108 of 380 ms/s, R-0808). Its f32x4 form read +7.3 % in Node (R-0571) and had never been decided in Chrome.\n\n**The tool** (`d6a50344`). `shadowStampKernel.mjs`'s Chrome entry now:\n- times any variant: `wasm`, `js`, and the float32 test module's `wasm-f32` and `wasm-f32x4`;\n- runs on full rows or on E-191 step 2's keyed rows (`keyed`: 7-float caster rows, 11-float stamp rows, the light after the seventh float), which Predator stamps.\n\n**Kernel** (`chromeKernel.mjs --module /tests/bench/shadowStampKernel.mjs`). The Predator fixture: 16 424 casters and 48 lights. Every variant wrote the same 7 877 stamp rows with the same checksum. Nine rounds a run, alternating sides.\n\n| Variant against the shipped kernel | Full rows | Keyed rows |\n|---|---|---|\n| `wasm-f32x4`, 3 runs a form | -8.5, -9.8, -9.9 % (wasm 2 389 / 2 404 / 2 313 ops/s) | -7.3, -9.2, -8.8 % |\n| `wasm-f32` (scalar), 2 runs a form | -11.5, -7.5 % | -9.4, -10.3 % |\n\n**Verdict.** Node's V8 favoured the float32 test, but Chrome's does not, and Chrome decides (HOW_WE_MEASURE). The kernel stays in double, and nothing goes into engine.wasm. With every form slower in the kernel, no scene sitting was needed.",
       "commits": [
         "d6a50344"
+      ]
+    },
+    {
+      "id": "R-0872",
+      "date": "2026-11-11",
+      "time": "15:03",
+      "timeFrom": "recorded",
+      "title": "E-186 kept as hygiene: a slot is its statics row alone, the depth no batch read gone; Predator crowd 1.5 renderer -2.3 % (NEUTRAL)",
+      "verdict": "kept-hygiene",
+      "text": "**E-186 kept as hygiene: a keyed or indexed frame's slot is its statics row alone, without the depth no batch read.** 2026-11-11, from 14:59 (the sitting's first result file) to 15:03. Chrome, headed, source, detailed stats off, AC power.\n\n**The premise.** Every InstancedSpriteBatch Pixi makes draws with `depthTest: false`: the entities, their glow, the cookie and caster batches, and the custom layers'. So the depth in the slot pair only reached `gl_Position.z`, inside the clip volume. Every frame:\n- Pixi's keyed pack wrote it (4 of its 24 bytes a sprite), and so did pre-render's indexed pack;\n- it was copied and uploaded.\n\n**The change** (`29a6cf35`):\n- `SLOT_FLOATS` 1 in gpuPack.c, with the depth stores gone (`invDepthDenom` stays in the exports' signatures, unused).\n- `GPU_INDEXED_SLOT_FLOATS` 1.\n- `in float aInstSlot`, with `aInstDepth` a constant 0 (GLSL and WGSL).\n- The slot attributes as `float32`, the keyed caster rows' too (their key at offset 8).\n- The kernels' and batches' tests now check the row alone.\n\n**Kernel**, in Chrome 157 (`chromeKernel.mjs --module /tests/bench/gpuPackKeyedMicrobench.mjs`, 23 500 rows, 42 633 entities, 121 frames, main and the branch alternating, 3 runs each): keyed 0.14 / 0.15 / 0.14 ms → 0.14 / 0.14 / 0.14 ms. With everything in cache the bytes do not show, as E-193 found.\n\n**Predator `?crowd=1.5`, 4 pairs** (`--vs 597b30e6 --hyp-rev 29a6cf35 --full-rev --owner renderer`): NEUTRAL.\n- Renderer 3.310 → 3.237 ms (-2.3 %, worse 1/4, cv 6/6 %; -1.0 % against the others). Pairs: -0.5, -4.2, +6.0, -7.6 %.\n- Pair 3 ran every worker 6 to 10 % high on its B side.\n- Pre-render -0.7 %, logic +1.2 %, spatial -5.4 %, physics -2.2 %.\n\nDead data gone and no primary 3 % worse: a hygiene keep.",
+      "commits": [
+        "29a6cf35"
       ]
     }
   ],

@@ -3280,6 +3280,13 @@ in slot order (so in cache), would send only the slots whose occupant's statics 
 bytes a sprite (55 KB a Predator frame) and a buffer update.
 **Plan:** after E-177's verdict: the indexed program's variant without the depth (it takes the depth from the instance
 index and a uniform, or a constant), the kernel's slot stream at one word. Owner: Predator's renderer.
+**Result:** kept as hygiene 2026-11-11 (`29a6cf35`, R-0872): a slot is its statics row alone (GPU_INDEXED_SLOT_FLOATS
+1, `in float aInstSlot`, the depth a constant 0); every batch that reads the slot stream draws without a depth test
+(the five InstancedSpriteBatch Pixi makes). Pixi's keyed pack writes 20 bytes a sprite instead of 24, pre-render's
+indexed pack 20 too; the copy and the upload follow. Kernel in Chrome (gpuPackKeyedMicrobench, 23 500 rows, 3 runs a
+side): keyed 0.14 / 0.15 / 0.14 → 0.14 / 0.14 / 0.14 ms (in cache, as E-193 found, the bytes do not show). Predator
+`?crowd=1.5`, 4 pairs: renderer 3.310 → 3.237 ms (-2.3 %, worse 1/4; -1.0 % against the others), NEUTRAL; dead data
+gone, a hygiene keep.
 
 ### E-187 Keyed frames on WebGPU
 
