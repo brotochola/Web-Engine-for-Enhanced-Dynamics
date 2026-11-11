@@ -10839,11 +10839,11 @@
     {
       "id": "N-121",
       "title": "The runner's presented guard reads MAIN_FPS, not frames drawn",
-      "status": "open",
-      "statusText": "Found 2026-11-05, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (84ad58d6, R-0879)",
       "date": "2026-11-05",
-      "result": "meshUploadStressScene: frames drawn +22 %, presented -12 %, verdict REGRESSION: a GPU-bound scene that draws more.",
-      "next": "",
+      "result": "fixed 2026-11-11 (84ad58d6, R-0879): DRAWN_FPS judged where Pixi draws under 0.9 of the page's rate, MAIN_FPS elsewhere; the other printed beside",
+      "next": "Done.",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -10855,7 +10855,8 @@
         "frames drawn"
       ],
       "records": [
-        "R-0839"
+        "R-0839",
+        "R-0879"
       ]
     },
     {
@@ -20232,6 +20233,16 @@
       "text": "**N-127 fixed (`7a9b646a`): a worldRect layer's float pictures are made and go up as floats on WebGL, and r32float as RED.** 2026-11-11.\n\n**The bug.** On WebGL a float picture (`r32float`, `rgba32float`) never reached the GPU, for three reasons:\n- `uploadSharedImage` handed `texSubImage2D` the picture's bytes, a `Uint8Array`, with type `FLOAT`;\n- it picked `RED` only for 1-byte texels, so `r32float` went as `RGBA`;\n- `createSharedTextureSource` made the picture from a `Uint8Array` too, so Pixi's first `texImage2D` (FLOAT) was refused the same way and the texture was never allocated.\n\nWebGPU writes bytes and was right. Conurbano avoids the bug with RGBA8 in fixed point.\n\n**The fix.**\n- A float picture's upload passes a `Float32Array` over the same memory, with its offset in floats.\n- A one-channel picture goes as `RED`, `r32float` included.\n- A float picture starts as a `Float32Array`.\n\n**Evidence.** A probe on a real WebGL2 Pixi renderer in Chrome 157 (through `chromeKernel.mjs`, not committed): pictures made as the engine makes them, a rectangle of shared floats uploaded twice, then read back.\n- Before: `INVALID_OPERATION: texImage2D: type FLOAT but ArrayBufferView not Float32Array`, and the same for `texSubImage2D`. The framebuffer over the picture was incomplete (an attachment of zero size), and 36 of the r32float picture's floats and 144 of the rgba32float one's read back wrong.\n- After: both read back exact, with no GL error.\n\n**Tests.** `sharedTextureUploadGl.test.js` holds the call's format, type, view and offset for every format, and the first contents' type. With the old code its two float tests fail and the byte test passes.\n\nNo timing: no scene that is timed draws a float picture on WebGL. The byte path is the same call as before.",
       "commits": [
         "7a9b646a"
+      ]
+    },
+    {
+      "id": "R-0879",
+      "date": "2026-11-11",
+      "title": "N-121 fixed: the ABAB runner judges a GPU-bound scene by the frames Pixi draws, the page's rate where Pixi keeps it",
+      "verdict": "kept-hygiene",
+      "text": "**N-121 fixed (`84ad58d6`): the ABAB runner judges a GPU-bound scene by the frames Pixi draws, and the page's rate where Pixi keeps it.** 2026-11-11.\n\n**The bug.** The runner's presented guard read MAIN_FPS, the main thread's rate. In meshUploadStressScene, a GPU-bound scene:\n- the branch drew 22 % more frames (241 to 247 → 300 in 10 s);\n- the page's own frames, waiting on the GPU, fell 12 % (53.6 → 47.2 fps, 4 of 4 pairs);\n- the runner printed REGRESSION.\n\n**The fix.**\n- `predatorMetrics` keeps `DRAWN_FPS`: Pixi's frames over the window.\n- Where Pixi draws under 0.9 of the page's rate on either side (the median over pairs), the guard judges the frames drawn, printed as `drawn`.\n- Elsewhere it judges MAIN_FPS as before. E-82's case stays caught: there Pixi kept up and the page fell.\n- The other count prints on its own line, reported, not judged.\n\n**Tests** (`decideAbab.test.js`):\n- meshUploadStressScene's numbers are no longer a regression;\n- fewer frames drawn in such a scene are one;\n- E-82's numbers, with Pixi at the page's rate, are still one;\n- `DRAWN_FPS` is the frames over the window, and is absent without a window.\n\nThe old runner fails all three new tests; with the fix the file passes, 22 of 22.",
+      "commits": [
+        "84ad58d6"
       ]
     }
   ],
