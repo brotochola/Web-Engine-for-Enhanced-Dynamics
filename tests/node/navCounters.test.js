@@ -116,10 +116,10 @@ test('the LRU hit path the premise depends on still exists', () => {
   const src = code(worker);
   const proc = src.slice(src.indexOf('_processNextFlowfieldRequest()'), src.indexOf('_findExistingFlowfieldSlot(targetCell) {'));
   assert.match(proc, /if \(existingSlot >= 0\)[\s\S]*?return true;/, 'the processing-stage LRU early-out is gone');
-  // And the message handler checks it too, so most hits never even enqueue.
-  const handler = src.slice(src.indexOf("case 'REQUEST_FLOWFIELD'"), src.indexOf("case 'REQUEST_PATH'"));
-  assert.match(handler, /_findExistingFlowfieldSlot/, 'the message handler no longer filters hits before enqueueing');
-  assert.match(handler, /flowfieldRequests\.enqueue/, 'the message handler no longer enqueues misses');
+  // And the request handler (a message or, since E-213, a ring record) checks it too, so most hits never even enqueue.
+  const handler = src.slice(src.indexOf('_requestFlowfieldCell(targetCell) {'), src.indexOf('_requestPathCells(fromCell, toCell) {'));
+  assert.match(handler, /_findExistingFlowfieldSlot/, 'the request handler no longer filters hits before enqueueing');
+  assert.match(handler, /flowfieldRequests\.enqueue/, 'the request handler no longer enqueues misses');
 });
 
 test('all three counters are zeroed in the constructor AND per frame', () => {

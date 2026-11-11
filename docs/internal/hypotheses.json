@@ -11893,11 +11893,11 @@
     {
       "id": "E-213",
       "title": "Path and flowfield requests through a SAB ring, not a postMessage each",
-      "status": "open",
-      "statusText": "filed 2026-11-11 from astarStressScene's trace (R-0889); not measured",
+      "status": "kept-hygiene",
+      "statusText": "kept as hygiene 2026-11-11 (62eebf89, R-0895)",
       "date": "2026-11-11",
-      "result": "",
-      "next": "A single-writer ring per logic worker in the navigation memory, drained by the particle worker; owner astarStressScene particle (port.onmessage 10 %), logic not 3 % worse.",
+      "result": "kept-hygiene 2026-11-11 (62eebf89, R-0895): astarStressScene 180 paths a frame particle +0.5 % (neutral), logic -60 % below the floor",
+      "next": "Done.",
       "area": "nav",
       "kind": "js",
       "refs": [
@@ -11910,8 +11910,9 @@
         "astarStressScene",
         "ring"
       ],
-      "records": [],
-      "rank": 2
+      "records": [
+        "R-0895"
+      ]
     },
     {
       "id": "N-139",
@@ -20578,6 +20579,18 @@
       "text": "**E-214 kept (`8d28ef5b`): path slots allocated without a scan of every slot.** 2026-11-11.\n\n**Premise.** astarStressScene with 8000 path slots: about 0.5 ms a path in the particle worker against about 0.07 ms with 1600 slots. Each new path read every slot twice: `_hasEmptyPathSlot` (a DataView read a slot) and `allocatePathSlot`'s search for an empty slot or the least recently used one. A game with many agents needs many slots.\n\n**The change.**\n- NavGrid keeps the slots never given a path since the last invalidate as a stack (slot 0 on top, refilled by `invalidate`), with their count. `_hasEmptyPathSlot` reads the count.\n- Once the free slots are gone, the eviction takes the oldest stamp, by age (N-139), of eight slots from a moving hand: an approximate LRU.\n- A path an agent walks is touched every tick, so it is young wherever the hand finds it. Slots another worker cleared (a save's invalidate) hold stamp 0, the oldest there is.\n- `navSlotAlloc.test.js`: free slots in order and invalidate; the oldest of the sample; a path touched every tick surviving 20 000 new ones in 4000 slots.\n\n**Sitting.** astarStressScene `?agents=0&slots=8000` (60 new paths a frame), 4 pairs, 19:31 to 19:36 (`--vs 108d649f --hyp-rev 8d28ef5b --full-rev --owner particle`; `108d649f` adds the `?slots=` knob): **KEPT (product).**\n- Particle 7.045 → 2.450 ms (-65.3 %, worse 0/4, cv 1/1 %).\n- PATHS_COMPUTED 60.0 → 60.0.\n- Every other worker below the floor.",
       "commits": [
         "8d28ef5b"
+      ]
+    },
+    {
+      "id": "R-0895",
+      "date": "2026-11-11",
+      "time": "19:52",
+      "timeFrom": "recorded",
+      "title": "E-213 kept as hygiene: nav requests through a ring; particle NEUTRAL, logic 0.881 -> 0.353 ms below the floor",
+      "verdict": "kept-hygiene",
+      "text": "**E-213 kept as hygiene (`62eebf89`): path and flowfield requests go through a ring per logic worker, not a postMessage each.** 2026-11-11.\n\n**Premise (R-0889).** In astarStressScene's first trace, `port.onmessage` was 10 % of the particle worker, and each request cost the logic side a clone and a message.\n\n**The change.**\n- `navRequestRing.js`: a ring per logic worker in shared memory, one writer and one reader. Two words a record: a path's from and to cells, or a flowfield's target with the high bit set.\n- `NavGrid._requestPath` and `_requestFlowfield` write the ring; a full ring leaves the request to the message, so nothing is dropped. The pending map keeps its dedup.\n- The particle worker drains every ring at the start of its nav step, through the handlers the messages use (now methods).\n- `navRequestRing.test.js`: the ring in order and full; NavGrid on the ring and on the message when full; the worker draining into its queues.\n\n**Sittings.** astarStressScene `?agents=0`, `--vs 2bce2571 --hyp-rev 62eebf89 --full-rev --owner particle`, 4 pairs each:\n- 60 paths a frame, 19:42 to 19:46: below the floor. Particle 2.419 → 2.430 ms; logic 0.422 → 0.145 ms.\n- 180 paths a frame (`&plans=180`), 19:48 to 19:52: **NEUTRAL.**\n  - Particle 6.418 → 6.448 ms (+0.5 %, worse 3/4, cv 1/0 %).\n  - Logic 0.881 → 0.353 ms (-60 %), below the floor and not judged: about 2.9 µs a request.\n  - PATHS_COMPUTED 180.0 → 180.1.\n\nThe particle worker's 10 % in that trace was the handler's work, mostly the slot scan E-212 removed, not the message. The logic side's message cost is real, small, and below the floor. Kept as hygiene: no worker 3 % worse, and no object or clone a request.",
+      "commits": [
+        "62eebf89"
       ]
     }
   ],

@@ -4,6 +4,7 @@ import { createParticleMemory, particleMemoryBytes } from './particleMemory.js';
 import { createRenderQueueMemory, renderQueueMemoryBytes } from './renderQueueMemory.js';
 import { createNavigationMemory } from './navigationMemory.js';
 import { createMeshPoseLists, meshPoseCapacity } from './meshPoseList.js';
+import { createNavRequestRings } from './navRequestRing.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -1372,6 +1373,10 @@ export function createSceneSharedBuffers(scene) {
   // N-138: per render-queue buffer, the poses of the sprites whose entity has a mesh (null when no class has both).
   scene.buffers.meshPoseCapacity = meshPoseCapacity(scene.registeredClasses, SpriteRenderer, MeshRenderer);
   scene.buffers.meshPoseLists = createMeshPoseLists(scene.buffers.meshPoseCapacity);
+  // E-213: a nav request ring per logic worker, with navigation on.
+  scene.buffers.navRequestRings = scene.config?.navigation?.enabled
+    ? createNavRequestRings(scene.config?.logic?.numberOfLogicWorkers | 0)
+    : null;
 }
 
 function initializeSharedResourceBuffers(scene) {

@@ -42,6 +42,7 @@ import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '.
 import { bindDecorationSway, writeSwayColumns } from './decorationSwayClient.js';
 import { bindBulletTick } from '../core/bulletTickClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
+import { bindNavRequestRings, drainNavRequests, NAV_REQUEST_FLOWFIELD } from '../util/navRequestRing.js';
 import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
 import { GpuParticles } from '../core/gpuParticles.js';
 import {
@@ -389,6 +390,9 @@ class ParticleWorker extends AbstractWorker {
     this.scratch = null;
     // W14: navFlowfield.wasm on the navigation memory, bound with navigation.
     this._flowWasm = null;
+    // E-213: the logic workers' nav request rings, drained at the start of each nav step.
+    this._navRings = [];
+    this._onNavRingRecord = (a, b) => this._onNavRecord(a, b);
     this.flowfieldRequests = null;
     /** W26: the decal stamp kernel, on the decal memory the tiles live in; stamps queue as records. */
     this._decalWasm = null;
@@ -692,6 +696,7 @@ class ParticleWorker extends AbstractWorker {
       const pathQueueCapacity = Math.max(64, this.maxPaths * 8);
       this.flowfieldRequests = new FlowfieldRequestQueue(this.totalCells, flowfieldQueueCapacity);
       this.pathRequests = new PathRequestQueue(this.totalCells, pathQueueCapacity);
+      if (data.buffers?.navRequestRings) this._navRings = bindNavRequestRings(data.buffers.navRequestRings);
 
       // GC OPTIMIZATION: Pre-allocate DataView for nav header reads
       this._navDataView = new DataView(NavGrid._sab);
@@ -735,36 +740,12 @@ class ParticleWorker extends AbstractWorker {
 
     switch (type) {
       case 'REQUEST_FLOWFIELD': {
-        if (!this.flowfieldRequests) break;
-        const { targetCell } = data;
-        // console.log(`[PARTICLE WORKER] REQUEST_FLOWFIELD for targetCell: ${targetCell}`);
-        if (targetCell >= 0 && targetCell < this.totalCells) {
-          // E-37. Every request counts here, hits included: a cached target is
-          // answered below and a pending one is coalesced by the queue, so
-          // neither reaches the processing loop. COMPUTED / SERVICED is the
-          // LRU miss rate; counting at dequeue saw only misses and read 1.
-          this.flowfieldsServicedThisFrame++;
-          const existingSlot = this._findExistingFlowfieldSlot(targetCell);
-          if (existingSlot >= 0) {
-            this._updateFlowfieldLRU(existingSlot);
-          } else {
-            this.flowfieldRequests.enqueue(targetCell);
-          }
-        }
+        this._requestFlowfieldCell(data.targetCell);
         break;
       }
 
       case 'REQUEST_PATH': {
-        if (!this.pathRequests) break;
-        const { fromCell, toCell } = data;
-        if (fromCell >= 0 && fromCell < this.totalCells && toCell >= 0 && toCell < this.totalCells) {
-          const existingSlot = this._findExistingPathSlot(fromCell, toCell);
-          if (existingSlot >= 0) {
-            this._updatePathLRU(existingSlot);
-          } else {
-            this.pathRequests.enqueue(fromCell, toCell);
-          }
-        }
+        this._requestPathCells(data.fromCell, data.toCell);
         break;
       }
 
@@ -1500,8 +1481,48 @@ class ParticleWorker extends AbstractWorker {
   // NAVIGATION
   // ========================================
 
+  /** A flowfield request, by message or ring: answered from the cache or queued. */
+  _requestFlowfieldCell(targetCell) {
+    if (!this.flowfieldRequests) return;
+    if (targetCell >= 0 && targetCell < this.totalCells) {
+      // E-37. Every request counts here, hits included: a cached target is
+      // answered below and a pending one is coalesced by the queue, so
+      // neither reaches the processing loop. COMPUTED / SERVICED is the
+      // LRU miss rate; counting at dequeue saw only misses and read 1.
+      this.flowfieldsServicedThisFrame++;
+      const existingSlot = this._findExistingFlowfieldSlot(targetCell);
+      if (existingSlot >= 0) {
+        this._updateFlowfieldLRU(existingSlot);
+      } else {
+        this.flowfieldRequests.enqueue(targetCell);
+      }
+    }
+  }
+
+  /** A path request, by message or ring: answered from the cache or queued. */
+  _requestPathCells(fromCell, toCell) {
+    if (!this.pathRequests) return;
+    if (fromCell >= 0 && fromCell < this.totalCells && toCell >= 0 && toCell < this.totalCells) {
+      const existingSlot = this._findExistingPathSlot(fromCell, toCell);
+      if (existingSlot >= 0) {
+        this._updatePathLRU(existingSlot);
+      } else {
+        this.pathRequests.enqueue(fromCell, toCell);
+      }
+    }
+  }
+
+  /** E-213: one ring record: a flowfield target with the high bit set, else a path's from and to. */
+  _onNavRecord(a, b) {
+    if ((a & NAV_REQUEST_FLOWFIELD) !== 0) this._requestFlowfieldCell(a & 0x7fffffff);
+    else this._requestPathCells(a, b);
+  }
+
   processNavigationRequests() {
     if (!this.navEnabled || !this.scratch) return;
+    // E-213: the requests the logic workers put in their rings since the last step.
+    const rings = this._navRings;
+    for (let k = 0; k < rings.length; k++) drainNavRequests(rings[k], this._onNavRingRecord);
 
     const deadline = performance.now() + this.navigationMaxProcessingMsPerFrame;
 

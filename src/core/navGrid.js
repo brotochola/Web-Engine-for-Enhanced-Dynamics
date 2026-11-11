@@ -135,6 +135,7 @@ const DIR_TO_VEC = Object.freeze([
  * - Particle worker computes in background, next frame will have data
  */
 import { debugWorkerLog } from '../util/debugLog.js';
+import { NAV_REQUEST_FLOWFIELD, pushNavRequest } from '../util/navRequestRing.js';
 import {
   clipStaticFlowfield,
   decodeStaticFlowfield,
@@ -170,6 +171,8 @@ export class NavGrid {
 
   // Communication port to particle worker (set by logic workers)
   static _navWorkerPort = null;
+  // E-213: this logic worker's request ring (navRequestRing.js); a request goes by message only when it is full or absent.
+  static _navRing = null;
 
   // Request deduplication (avoid spamming particle worker)
   // Maps store targetCell/key -> { version, requestedAt }
@@ -330,6 +333,11 @@ export class NavGrid {
    * Called by logic workers during initialization
    * @param {MessagePort} port - Port to particle worker
    */
+  /** E-213: the logic worker's request ring, set at its init. */
+  static setNavRequestRing(ring) {
+    this._navRing = ring || null;
+  }
+
   static setNavWorkerPort(port) {
     this._navWorkerPort = port;
   }
@@ -939,6 +947,7 @@ export class NavGrid {
 
     // Send new request (either no pending, version changed, or pending went stale)
     this._rememberPendingRequest(this._pendingFlowfieldRequests, targetCell, currentVersion);
+    if (this._navRing !== null && pushNavRequest(this._navRing, targetCell | NAV_REQUEST_FLOWFIELD, 0)) return;
     this._navWorkerPort.postMessage({
       type: 'REQUEST_FLOWFIELD',
       targetCell,
@@ -1136,6 +1145,7 @@ export class NavGrid {
 
     // Send new request (either no pending, version changed, or pending went stale)
     this._rememberPendingRequest(this._pendingPathRequests, key, currentVersion);
+    if (this._navRing !== null && pushNavRequest(this._navRing, fromCell, toCell)) return;
     this._navWorkerPort.postMessage({
       type: 'REQUEST_PATH',
       fromCell,
