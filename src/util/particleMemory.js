@@ -10,6 +10,7 @@
 
 import { PARTICLE_DEFAULTS } from './configDefaults.js';
 import { MAX_POOL_SLOTS, poolSlotBytes } from './poolSlotWidth.js';
+import { initPublishedList } from './publishedList.js';
 import { particleMemoryRegions } from './wasmMemoryMap.js';
 
 // The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
@@ -63,6 +64,7 @@ export function createParticleMemory(maxParticles, componentBytes, place = null)
       throw new Error(`particle memory: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
     }
   }
+  initPublishedList(memory.buffer, r.visibleList.byte);
   return {
     memory,
     buffer: memory.buffer,
@@ -71,6 +73,7 @@ export function createParticleMemory(maxParticles, componentBytes, place = null)
       // ParticleComponent's columns start here (buffers.componentDataByte.ParticleComponent).
       componentByte: r.component.byte,
       activeListByte: r.activeList.byte,
+      // N-113: the visible list's header; its three copies follow (publishedList.js, `extra` 1).
       visibleListByte: r.visibleList.byte,
       // Bytes per slot id in every list: 2, or 4 past 65 535 slots.
       slotBytes,

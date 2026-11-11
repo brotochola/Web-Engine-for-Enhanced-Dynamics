@@ -801,9 +801,15 @@ export class AbstractWorker {
         this.activeParticlesData = new ParticleSlots(data.activeParticlesData, data.activeParticlesByte | 0, listLength);
         this.reportLog(`initialized activeParticlesData`);
       }
-      // visibleParticlesData: subset of active particles that are on-screen
+      // visibleParticlesData: the active particles on screen, written by particle_worker, read by pre_render_worker:
+      // a published list (N-113, as the decorations' N-112), its header at visibleParticlesByte and three copies with
+      // room for the kernel's one slot past the count. visibleParticlesData is the copy the particle worker wrote
+      // last; pre-render takes the published one each frame.
       if (data.visibleParticlesData) {
-        this.visibleParticlesData = new ParticleSlots(data.visibleParticlesData, data.visibleParticlesByte | 0, listLength);
+        const visible = bindPublishedList(data.visibleParticlesData, data.maxParticles | 0, data.visibleParticlesByte | 0, 1);
+        this.visibleParticlesCtl = visible.ctl;
+        this.visibleParticlesCopies = visible.copies;
+        this.visibleParticlesData = visible.copies[0];
         this.reportLog(`initialized visibleParticlesData`);
       }
     }

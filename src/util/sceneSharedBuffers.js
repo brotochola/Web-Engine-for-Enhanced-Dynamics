@@ -205,25 +205,15 @@ function createSlotFreeListBuffers(buffers, freeListKey, freeListTopKey, count) 
   };
 }
 
-/** A slot pool's [count, index, ...] list pair, at its slot width (E-129: u32 past 65 535). */
-function createCompactSlotListPair(buffers, activeKey, visibleKey, maxEntries) {
-  const Slot = PoolSlotArray(maxEntries);
-  const size = (1 + maxEntries) * Slot.BYTES_PER_ELEMENT;
-  buffers[activeKey] = new SharedArrayBuffer(size);
-  buffers[visibleKey] = new SharedArrayBuffer(size);
-  new Slot(buffers[activeKey])[0] = 0;
-  new Slot(buffers[visibleKey])[0] = 0;
-}
-
 /**
  * A slot pool's active list, and its visible list as a published list (N-112): three copies, so the reader never
- * reads the one the particle worker is writing.
+ * reads the one the particle worker is writing; each copy `extra` slots longer.
  */
-function createActiveAndPublishedLists(buffers, activeKey, visibleKey, maxEntries) {
+function createActiveAndPublishedLists(buffers, activeKey, visibleKey, maxEntries, extra = 0) {
   const Slot = PoolSlotArray(maxEntries);
-  buffers[activeKey] = new SharedArrayBuffer((1 + maxEntries) * Slot.BYTES_PER_ELEMENT);
+  buffers[activeKey] = new SharedArrayBuffer((1 + maxEntries + extra) * Slot.BYTES_PER_ELEMENT);
   new Slot(buffers[activeKey])[0] = 0;
-  buffers[visibleKey] = createPublishedList(maxEntries);
+  buffers[visibleKey] = createPublishedList(maxEntries, extra);
 }
 
 function clearActiveFlags(array, count) {
@@ -336,15 +326,15 @@ function initializeParticleBuffers(scene) {
   ParticleEmitter.initialize(maxParticles);
   ParticleEmitter.initializeFreeList(buffers.particleFreeList, buffers.particleFreeListTop);
 
-  // The published lists. In the particle memory they are two of its regions (the list kernel writes
-  // them there); readers view them at these byte offsets.
+  // The lists. In the particle memory they are two of its regions (the list kernel writes them there); readers view
+  // them at these byte offsets. The visible one is a published list (N-113): the byte is its header's.
   if (scene.particleMemory) {
     buffers.activeParticlesData = scene.particleMemory.buffer;
     buffers.visibleParticlesData = scene.particleMemory.buffer;
     buffers.activeParticlesByte = scene.particleMemory.layout.activeListByte;
     buffers.visibleParticlesByte = scene.particleMemory.layout.visibleListByte;
   } else {
-    createCompactSlotListPair(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles);
+    createActiveAndPublishedLists(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles, 1);
     buffers.activeParticlesByte = 0;
     buffers.visibleParticlesByte = 0;
   }

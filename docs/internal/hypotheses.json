@@ -10351,11 +10351,11 @@
     {
       "id": "N-113",
       "title": "Pre-render reads the visible particle list while the particle worker writes the next one (N-112's race, left for particles)",
-      "status": "open",
-      "statusText": "found 2026-11-03 while fixing N-112 (left in its row and in PR #6); read in the code, not seen yet; open",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (e9d9aa08, R-0869); found 2026-11-03 while fixing N-112",
       "date": "2026-11-03",
-      "result": "",
-      "next": "N-112's published list for visibleParticlesData: the header and three copies as regions of the particle memory (wasmMemoryMap.js visibleList), the list kernel (buildParticleListsWasm) given the copy's byte offset each frame, collectVisibleParticles taking the published copy. Test with visibleListTear.test.js's harness (tests/helpers/visibleListWriter.mjs): torn collects before, 0 after. The list changes every frame (no hold), so every overlap can tear; cost on the particle and pre-render workers in a particle stress scene.",
+      "result": "fixed 2026-11-11 (e9d9aa08, R-0869): published in three copies in the particle memory; tear harness 24 048 of 24 055 torn before, 0 after; particleIntegrateStressScene 200 000: particle -1.6 %, pre-render +0.7 %, NEUTRAL",
+      "next": "Done. The active list Pixi reads: N-136.",
       "area": "preRender",
       "kind": "bug",
       "refs": [
@@ -10368,8 +10368,9 @@
         "published list",
         "particle list race"
       ],
-      "records": [],
-      "rank": 8
+      "records": [
+        "R-0869"
+      ]
     },
     {
       "id": "N-114",
@@ -11772,6 +11773,29 @@
       "records": [
         "R-0868"
       ]
+    },
+    {
+      "id": "N-136",
+      "title": "Pixi reads the active particle list while the particle worker writes the next one (N-113's race, for the particle light field)",
+      "status": "open",
+      "statusText": "found 2026-11-11 fixing N-113 (R-0869); read in the code, not seen yet; open",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "N-113's fix for the active list: three published copies in the particle memory, the kernel and the integrate given this frame's copy (indicesByte follows it), Pixi's _renderParticleLightingField taking the published one. Test with visibleListTear.test.js's harness, Pixi's read in place of pre-render's.",
+      "area": "renderer",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-136"
+      ],
+      "aliases": [
+        "activeParticlesData",
+        "_renderParticleLightingField",
+        "particle light field",
+        "torn active list",
+        "published list"
+      ],
+      "records": [],
+      "rank": 23
     }
   ],
   "records": [
@@ -20083,6 +20107,18 @@
       "text": "**E-211 kept: the sun pass draws pre-render's keyed rows, and Pixi's keyed pack writes the shadow terms only for a sun pass that will draw its instances. Predator `?crowd=1.5` renderer -4.5 % (worse 1/4).** 2026-11-11, from 13:57 (the sitting's first result file) to 14:02. Chrome, headed, source, detailed stats off, AC power. The owner's Chrome used about 0.4 of a core throughout. No other session was benching.\n\n**Why.** R-0867 found that the keyed pack pays for bytes. E-191's step 1 had the sun pass draw the entity batch's keyed instances. So every frame the pack:\n- gathered each sprite's shadowH, offX and offY in the painter's order;\n- wrote 12 bytes a slot, which were then copied and uploaded.\n\nPre-render meanwhile packs keyed sun rows every frame anyway (E-191 step 2, E-192), because the stamps are cut from them: 28 bytes a caster, read in the queue's order. In Predator Pixi left those rows unused.\n\n**The change** (`f508c2ed`; sat as 9d507cc6, the same tree):\n- The sun pass draws pre-render's keyed rows when the frame has them.\n- It draws the instances only on frames without them.\n- The pack writes their shadow terms only when the next frame's sun pass will draw the instances: no keyed rows, the pass not skipped by `shadowUpdateInterval`, the layer shown.\n\n**Probe first** (f3b22400: the instances never drawn).\n- 4 pairs, 13:28 to 13:35: two pairs ran every worker 10 to 15 % high on the B side (drift). In the other two the renderer read -1.7 and -5.6 % while the other workers rose.\n- One CPU trace a side, twice (8 s warm-up, 6 s):\n  - `pack_sprites_keyed` 79 and 119 → 59 and 57 ms/s;\n  - `updateBuffer` 20 and 25 → 27 and 26 ms/s (the rows go up at 28 bytes a caster).\n\n**The change, Predator `?crowd=1.5`, 4 pairs** (`--vs e75004cb --hyp-rev 9d507cc6 --full-rev --owner renderer`): **KEPT (product).**\n- Renderer 3.390 → 3.275 ms (-4.5 %, worse 1/4, cv 5/2 %; -3.9 % against the others, lower 4/4). Pairs: -11.4, -3.5, -5.5, +0.8 %; in pair 1 every worker ran lower on B.\n- Logic -3.7 %, spatial +0.1 %, physics -1.0 %, pre-render -0.3 %.\n- Load keys within 0.2 %.\n\n**Checks.**\n- The sun shadows look the same on both sides (`?hour=10&zoom=1`, the post-warm-up frame).\n- `keyedSunStream.test.js`: the stream is on only before a pass that will draw the instances, including with `shadowUpdateInterval` 2 and the layer hidden.\n- `instancedSpriteKeyed.test.js`: the keyed batch's stream turned off writes nothing; turned back on, it writes the slots' terms.\n\nLeft in E-193: the slot pair's depth (E-186), and a pose only for a row that moved.",
       "commits": [
         "f508c2ed"
+      ]
+    },
+    {
+      "id": "R-0869",
+      "date": "2026-11-11",
+      "time": "14:27",
+      "timeFrom": "recorded",
+      "title": "N-113 fixed: the visible particle list published in three copies; 24 048 of 24 055 collects torn before, 0 after; particleIntegrateStressScene NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**N-113 fixed (`e9d9aa08`): the visible particle list is published in three copies, so pre-render never reads one the particle worker is writing. Hygiene keep.** 2026-11-11, from 14:22 (the sitting's first result file) to 14:27. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug.** The list kernel rewrote `visibleParticlesData` in the particle memory every frame, while pre-render's `collectVisibleParticles` walked it on its own loop. A read that overlapped a write mixed the two lists: an index twice, another missing. A missing particle is not drawn that frame, and an additive one drawn twice flashes.\n\n**The fix.** N-112's published list (`publishedList.js`), as a region of the particle memory:\n- a header and three copies, each with room for the kernel's slot past the count (`bindPublishedList` takes a byte and the extra room);\n- the particle worker gives the kernel the byte of a copy pre-render does not hold, and publishes that copy once the kernel returns;\n- pre-render takes the published copy each frame;\n- the debug panel peeks at its count.\n\n**Correctness.** `visibleListTear.test.js` gains a particle case. A real particle worker in its own thread writes the list as fast as it goes, with the camera alternating between two views. A real pre-render, bound by its own init path, collects it as fast as it goes. Every collect must be one view's list whole.\n- Before (the same test on main's `src`): 24 048 of 24 055 collects torn (374 936 lists written).\n- After: 0 of 486 torn (8 518 lists written, 300 changes of view seen).\n\nThe tests that handed pre-render one list now hand it a published one: `particleSortKey`, `renderOnlyQueueRows`, the lists parity and the wide pool layout.\n\n**Cost.** particleIntegrateStressScene `?maxParticles=200000`, 4 pairs (`--vs b5859a00 --hyp-rev e9d9aa08 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.242 → 3.204 ms (-1.6 %, worse 1/4, cv 1/1 %). Pairs: -3.0, -0.6, -2.5, +2.9 %.\n- Pre-render 6.969 → 6.982 ms (+0.7 %, worse 3/4, cv 2/3 %). Pairs: -7.6, +1.3, +0.4, +1.0 %.\n- 198 000 particles live on both sides; render queue within 0.1 %.\n\nNo primary is 3 % worse: a hygiene keep.\n\n**Found on the way: N-136.** Pixi's particle light field reads the active list the same way.",
+      "commits": [
+        "e9d9aa08"
       ]
     }
   ],

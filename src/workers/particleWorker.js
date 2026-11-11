@@ -513,6 +513,9 @@ class ParticleWorker extends AbstractWorker {
     // N-112: the visible bullets' published list, the same way (tickAllBullets writes it each frame).
     this.visibleBulletsCtl = new Int32Array(0);
     this.visibleBulletsCopies = [];
+    // N-113: the visible particles' published list, the same way (the list kernel writes a copy given its byte).
+    this.visibleParticlesCtl = new Int32Array(0);
+    this.visibleParticlesCopies = [];
   }
 
   /**
@@ -943,9 +946,11 @@ class ParticleWorker extends AbstractWorker {
     // CPU emitter pool only. LiquidFun lives on its own render SAB.
     const maxParticles = this.maxParticles;
 
-    // Camera not ready: the active list alone (no visibility to test).
+    // Camera not ready: the active list alone (no visibility to test), and an empty visible list.
     if (!this.cameraData) {
+      const copy = this._backVisibleParticles();
       this.activeParticleCount = buildActiveParticleListWasm(this._wasmLists, maxParticles);
+      if (copy >= 0) publishList(this.visibleParticlesCtl, copy);
       return;
     }
 
@@ -955,6 +960,7 @@ class ParticleWorker extends AbstractWorker {
     // _frameCameraBounds filled _drawnCam this frame. A turned camera tests each
     // particle in view space, not in the box around the view (E-51b).
     const rotation = this._drawnCam.rotation;
+    const copy = this._backVisibleParticles();
     this.activeParticleCount = buildParticleListsWasm(
       this._wasmLists,
       maxParticles,
@@ -964,12 +970,27 @@ class ParticleWorker extends AbstractWorker {
       this.canvasHeight,
       this.cullingRatio,
     );
+    if (copy >= 0) publishList(this.visibleParticlesCtl, copy);
     // if (activeCount !== this._lastLoggedActiveCount) {
     //   this._lastLoggedActiveCount = activeCount;
     //   const x0 = ParticleComponent.x ? ParticleComponent.x[0] : 0;
     //   const y0 = ParticleComponent.y ? ParticleComponent.y[0] : 0;
     //   console.log(`[particle_worker] Active particles: ${activeCount}, Visible: ${visibleData ? visibleData[0] : 0}, particle[0]=(${x0}, ${y0}), cam=(${cameraX.toFixed(1)}, ${cameraY.toFixed(1)}, z=${zoom.toFixed(2)})`);
     // }
+  }
+
+  /**
+   * N-113: the visible particle list's copy the kernel writes this frame, one pre-render does not hold (the binding
+   * told its byte), published once the kernel returns; -1 when the worker was handed one list.
+   */
+  _backVisibleParticles() {
+    const ctl = this.visibleParticlesCtl;
+    if (ctl.length === 0) return -1;
+    const copy = backPublishedList(ctl);
+    const list = this.visibleParticlesCopies[copy];
+    this.visibleParticlesData = list;
+    this._wasmLists.visibleListByte = list.byteOffset;
+    return copy;
   }
 
   /**

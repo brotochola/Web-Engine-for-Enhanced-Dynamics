@@ -30,12 +30,15 @@ function boot(workerData) {
   });
 }
 
-/** The particle memory's layout as the 16-bit code laid it out (wasmMemoryMap.js before E-129), for n slots. */
+/**
+ * The particle memory's layout as the 16-bit code laid it out (wasmMemoryMap.js before E-129), for n slots; since N-113
+ * the visible list is a published list: a 64-byte header and three copies of its old size, each from a cache line.
+ */
 function oldLayout(n) {
   const map = layoutRegions([
     { name: 'component', owner: '', bytes: ParticleComponent.getBufferSize(n) },
     { name: 'activeList', owner: '', bytes: (n + 2) * 2 },
-    { name: 'visibleList', owner: '', bytes: (n + 2) * 2 },
+    { name: 'visibleList', owner: '', bytes: 64 + 3 * Math.ceil(((n + 2) * 2) / 64) * 64 },
     { name: 'stamp', owner: '', bytes: n * 2 },
     { name: 'flat', owner: '', bytes: 65536 * 2 },
     { name: 'heighted', owner: '', bytes: 65536 * 2 },
