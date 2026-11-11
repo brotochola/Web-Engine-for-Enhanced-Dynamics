@@ -23,6 +23,20 @@ const EXPECTED = {
   ],
 };
 
+/**
+ * Classes whose class-guard warnings (DX-GUARDS C3) are right and kept: the stress scenes' tickIntervals are part of
+ * the load they measure. Changing them changes what those scenes measure: the owner's call, not a guard's.
+ */
+const KEPT = {
+  tickInterval: new Set(['ComputeStressBox', 'ContactDrainBody', 'RayStressBusyBall', 'RayStressEntity', 'SpawnStormEntity']),
+};
+
+function kept(line) {
+  const interval = /^W WeedJS: (\w+) has static tickInterval = \d+, but the scene's logic\.staggeredUpdates is off/.exec(line);
+  if (interval) return KEPT.tickInterval.has(interval[1]);
+  return false;
+}
+
 function sceneFiles() {
   const out = [];
   const demos = join(root, 'demos');
@@ -56,7 +70,8 @@ test('every demo and stress scene builds with only the warnings it gives on purp
         lines.length = 0;
         new value({});
         built++;
-        if (lines.length) got[`${rel} ${name}`] = lines.splice(0);
+        const left = lines.splice(0).filter((l) => !kept(l));
+        if (left.length) got[`${rel} ${name}`] = left;
       }
     }
   } finally {

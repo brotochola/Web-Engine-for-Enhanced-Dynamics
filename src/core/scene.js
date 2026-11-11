@@ -143,6 +143,7 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
+import { warnEntityClassMistakes } from '../util/classGuards.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
@@ -558,6 +559,8 @@ class Scene {
     }
     // A hook without its tag never runs, silently: say so once, here.
     warnMissingListenerTags(this.registeredClasses, GameObject);
+    // DX-GUARDS C3: a tickInterval that needs staggeredUpdates.
+    warnEntityClassMistakes(this.registeredClasses, GameObject, this.config);
     const messageNames = this.constructor.messages || [];
     for (const r of this.registeredClasses) {
       const onMessage = definesBelow(r.class, GameObject, 'onMessage');
