@@ -9677,7 +9677,9 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0867"
+      ],
       "status": "open",
       "date": "2026-11-01",
       "kind": "speed",
@@ -10030,7 +10032,8 @@
       "aliases": [],
       "records": [
         "R-0864",
-        "R-0866"
+        "R-0866",
+        "R-0867"
       ],
       "status": "open",
       "date": "2026-11-01",
@@ -10040,10 +10043,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-193"
       ],
-      "statusText": "open: step 1 (the queue read in order) dropped 2026-11-11 (R-0864); the pack still 94 ms/s in the worker",
+      "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867): the pack is Pixi's CPU and pays for bytes",
       "area": "render",
       "result": "",
-      "next": "First whether the pack time is the Pixi thread's CPU (a sampled profile counts a preempted thread): its CPU time on Windows during Predator crowd 1.5. Then the pose and slot streams written by pre-render, or E-201.",
+      "next": "Fewer bytes a row: the slot pair without its depth (E-186), the shadow terms only for the rows that cast (and none on a frame without the sun pass), a pose only for a row that moved. Owner: Predator crowd 1.5's renderer.",
       "rank": 12
     },
     {
@@ -20035,6 +20038,15 @@
       "commits": [
         "a8158d8d"
       ]
+    },
+    {
+      "id": "R-0867",
+      "date": "2026-11-11",
+      "time": "04:55",
+      "timeFrom": "recorded",
+      "title": "E-193 step 0: the keyed pack's time is Pixi's CPU (284 of 317 ms/s), and it pays for bytes (about 28 000 lines a frame), not their order",
+      "verdict": "answered",
+      "text": "**E-193 step 0 answered: Pixi's keyed pack time is the thread's own CPU, and what it pays for is bytes, not their order.** 2026-11-11, 04:55 (the trace file's time). Predator `?crowd=1.5` on main (58c61264), headed, source, detailed stats off, a timeline trace (`--trace`): an 8 s warm-up, then a 5 s window.\n\n**CPU against wall.** For each worker thread, the top-level tasks' `tdur` (the thread's CPU) against their `dur` (wall), over the last 5 s:\n- Pixi's thread (2 388 tasks): 284 of 317 ms/s.\n- Every other worker: 90 to 94 %. For example, 545 of 587 ms/s, 414 of 437, 338 of 366.\n\nSo a sampled CPU profile's busy time here is CPU, and the keyed pack's 94 ms/s (R-0864) is CPU too.\n\n**Why then ten times its kernel.** The machine is a Ryzen 7 4800H: 8 cores in two complexes of 4, each with 4 MB of L3. Per frame, at 23 500 rows, `pack_sprites_keyed`:\n- reads about 21 bytes a row that pre-render has just written: x, y, rotC, rotS, key, type, about 0.5 MB;\n- writes 36: the pose 16, the slot pair 8 and E-191's shadow terms 12, about 0.85 MB, over lines that other work has evicted since the frame before.\n\nThat is about 28 000 lines from outside Pixi's caches. At about 50 ns each, that is about 1.4 ms, whatever the order: the scatter (R-0864) changed the order and not the time. The kernel repeats one frame with everything in its own cache.\n\n**What would pay is fewer bytes:**\n- the slot pair without its depth (E-186);\n- the shadow terms only for the rows that cast, and none on a frame whose sun pass does not run;\n- a pose only for a row that moved.\n\nPre-render cannot write these streams in Predator: Pixi sorts the painter's order there (`sortSprites: 'pixi'`, `packGpuSprites: 'pixi'`)."
     }
   ],
   "leads": [
