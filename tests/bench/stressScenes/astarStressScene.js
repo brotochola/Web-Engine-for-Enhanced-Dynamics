@@ -12,8 +12,10 @@ const { Scene, Camera } = WEED;
 //   ?agents=400  walking agents (0 for a load that is the planners' alone)
 //   ?plans=60    planners: new paths asked for each frame, whatever the answers (the load knob)
 //   ?speed=2     px a tick
+//   ?slots=N     path slots (default: the agents' two and eight frames of planners); more slots time the slot search (E-214)
 const AGENTS = Math.max(0, Math.floor(Number(WEED.params?.get('agents') ?? 400)));
 const PLANS = Math.max(0, Math.floor(Number(WEED.params?.get('plans') ?? 60)));
+const SLOTS = Math.max(0, Math.floor(Number(WEED.params?.get('slots') ?? 0)));
 const MAZE = buildMaze(207);
 const WORLD_W = COLS * NAV_CELL;
 const WORLD_H = ROWS * NAV_CELL;
@@ -33,7 +35,7 @@ export class AstarStressScene extends Scene {
       maxFlowfields: 1,
       // A slot for every agent's live pair and its last one, and eight frames of the planners' (never asked for again).
       // Each new path scans every slot for the one to evict (E-214), so more slots time that scan, not A*.
-      maxPaths: Math.max(16, AGENTS * 2 + PLANS * 8),
+      maxPaths: SLOTS > 0 ? SLOTS : Math.max(16, AGENTS * 2 + PLANS * 8),
       // Longer than any path across the maze, so none is cut.
       maxPathLength: 512,
       // Every request served the frame it arrives: the time is the owner's, not capped.
