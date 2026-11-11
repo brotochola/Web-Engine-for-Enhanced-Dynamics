@@ -102,3 +102,31 @@ test('E5: off, nothing is said', () => {
   });
   assert.deepEqual(lines, []);
 });
+
+test('E6: animation or frame without spritesheet, or a spritesheet without animation, is named; it draws texture 0', { concurrency: false }, async () => {
+  const k = await kernel();
+  try {
+    const { lines, value } = warningsOf(() => [
+      emitOne((c) => ParticleEmitter.emitFlat(c), { animation: 'walk', frame: 1 }),
+      emitOne((c) => ParticleEmitter.emitFlat(c), { spritesheet: 'hero', frame: 2 }),
+    ]);
+    assert.deepEqual(lines, [
+      "WeedJS: ParticleEmitter: an emit sets animation without spritesheet, so it is ignored and the particles draw " +
+        "texture id 0. Add spritesheet: 'name'.",
+      'WeedJS: ParticleEmitter: an emit of hero sets no animation, so the spritesheet and frame are ignored and the ' +
+        "particles draw texture id 0. Add animation: 'name'.",
+    ]);
+    for (const i of value) assert.equal(ParticleComponent.textureId[i], 0, 'drawn with no frame of the sheet');
+  } finally {
+    k.restore();
+  }
+});
+
+test('E6: spritesheet and animation together are silent', () => {
+  const { lines } = warningsOf(() => {
+    checkEmit({ spritesheet: 'hero', animation: 'walk', frame: 0 }, true);
+    checkEmit({ spritesheet: 'hero', animation: 'walk', frame: [0, 1, 2] }, true);
+    checkEmit({ texture: 'spark' }, true);
+  });
+  assert.deepEqual(lines, []);
+});

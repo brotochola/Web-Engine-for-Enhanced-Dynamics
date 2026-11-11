@@ -191,7 +191,7 @@ export function slotReleased(index) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
-// E5: particle emits.
+// E5, E6: particle emits.
 // ---------------------------------------------------------------------------------------------------------------------
 
 const isNum = (v) => typeof v === 'number' && v === v;
@@ -214,7 +214,7 @@ const moves = (v) => {
 
 /**
  * A CPU emit's config. E5: heighted particles all born on the floor (z ≥ 0, or unset) with a velocity stop on their
- * first step: the integrate lands them.
+ * first step: the integrate lands them. E6: animation or frame without what they need are ignored.
  * @param {object} cfg the merged config
  * @param {boolean} flat emitFlat's particles (no floor)
  */
@@ -236,5 +236,22 @@ export function checkEmit(cfg, flat) {
           'stops on its first step. Give z a value below 0 (in the air), or use emitFlat for particles in the screen plane.',
       );
     }
+  }
+  // _spawn draws a spritesheet frame only with spritesheet and animation both set; otherwise the texture.
+  const drawn = cfg.texture ? `texture ${cfg.texture}` : 'texture id 0';
+  if ((cfg.animation !== undefined || cfg.frame !== undefined) && !cfg.spritesheet) {
+    warnOnce(
+      subject,
+      'emit-frame-no-sheet',
+      `ParticleEmitter: an emit sets ${cfg.animation !== undefined ? 'animation' : 'frame'} without spritesheet, so it ` +
+        `is ignored and the particles draw ${drawn}. Add spritesheet: 'name'.`,
+    );
+  } else if (cfg.spritesheet && cfg.animation === undefined) {
+    warnOnce(
+      subject,
+      'emit-sheet-no-anim',
+      `ParticleEmitter: an emit of ${cfg.spritesheet} sets no animation, so the spritesheet${cfg.frame !== undefined ? ' and frame are' : ' is'} ` +
+        `ignored and the particles draw ${drawn}. Add animation: 'name'.`,
+    );
   }
 }
