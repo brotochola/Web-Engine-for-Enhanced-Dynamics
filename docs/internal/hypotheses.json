@@ -10930,7 +10930,8 @@
       ],
       "records": [
         "R-0849",
-        "R-0850"
+        "R-0850",
+        "R-0852"
       ]
     },
     {
@@ -10959,7 +10960,7 @@
       "id": "N-126",
       "title": "A level the volume arena had no room for took the whole volume",
       "status": "kept-hygiene",
-      "statusText": "Fixed on dx/volume-keeps-mesh (3874fe59), not merged",
+      "statusText": "Fixed (3874fe59), merged to main (40ddb8b4), not released",
       "date": "2026-11-10",
       "result": "VolumeShadowCaster.addLevel puts back the mesh the entity had, on the layer, when the arena refuses the bigger one: a car whose cabin does not fit keeps its body's shadow. A box or a hull refused outright still leaves the layer.",
       "next": "",
@@ -10975,7 +10976,8 @@
         "volume arena full"
       ],
       "records": [
-        "R-0851"
+        "R-0851",
+        "R-0852"
       ]
     },
     {
@@ -19098,6 +19100,21 @@
       "commits": [
         "3874fe59",
         "724e0df6"
+      ]
+    },
+    {
+      "id": "R-0852",
+      "date": "2026-11-10",
+      "time": "22:01",
+      "timeFrom": "recorded",
+      "title": "The atlas trim and N-126 merged with bundles; Box2D's threads do not spin during the load",
+      "verdict": "kept-hygiene",
+      "text": "**The atlas trim (N-124's follow-up) and N-126 merged to main, with bundles; no bundle sitting, by chunk identity.** Two items left open by R-0849 are closed here.\n\n**The trim** (`487e9a8a`, merged in `e6e1d8eb`): `SpriteSheetRegistry` trimmed each frame of a spritesheet from its own `getImageData`; it now reads the bounding box of the frames it needs once per sheet (`_readImagePixels`) and finds each frame's bounds in that one array (`_getTrimBoundsInPixels`), and a trimmed frame is drawn from the sheet with an offset source rect instead of a canvas of its own. In the Buenos Aires demo's load, `createBigAtlas` went from 1.53 to 1.69 s (runs before) to about 1.25 s, with the same packed atlas: the same hash of its pixels and of its JSON in both. `tests/node/atlasTrim.test.js` checks the bounds against the old canvas code (kept as `tests/reference/atlasTrim.mjs`) on random sheets, frames and thresholds, and the edges.\n\n**Box2D's threads do not spin during the load.** A Chrome trace showed its three task threads busy for the whole load. Windows' per-thread counters (`TotalProcessorTime`, two snapshots) showed none of them near a core: the V8 sampler counts a wasm thread blocked in `Atomics.wait` (Box2D's scheduler spins 0.05 ms, then sleeps on a semaphore) as running. Nothing to fix.\n\n**The merge** (`40ddb8b4`, with N-126's `3874fe59`) and bundles `b7699e54`: make_bundle, check:dist fresh, test:bundle (embed and browser smokes on all 8), test:node:bundle 275 of 275, Node 2348 of 2348, demos 100 of 100. No bundle-vs-src sitting: in the prod ESM bundle, six of the seven worker chunks are byte-identical to `7f7b5f00`'s, and the seventh differs only in `addLevel`'s refusal path and the atlas trim, which run at setup and load, not per frame; a sitting could not change a verdict.",
+      "commits": [
+        "487e9a8a",
+        "e6e1d8eb",
+        "40ddb8b4",
+        "b7699e54"
       ]
     }
   ],
