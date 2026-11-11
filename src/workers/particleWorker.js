@@ -1598,17 +1598,8 @@ class ParticleWorker extends AbstractWorker {
   }
 
   _hasEmptyPathSlot() {
-    if (!NavGrid._initialized || !this._navDataView) return false;
-    const dv = this._navDataView;
-    const headerOffset = NavGrid._pathHeadersOffset;
-    const slotSize = NavGrid._pathSlotSize; // interleaved: header + data per slot
-
-    for (let i = 0; i < this.maxPaths; i++) {
-      const offset = headerOffset + i * slotSize;
-      const slotStatus = dv.getUint32(offset + 16, true); // status at offset 16
-      if (slotStatus === 0) return true;
-    }
-    return false;
+    // E-214: NavGrid counts the slots never given a path since the last invalidate.
+    return NavGrid._initialized && NavGrid._pathFreeCount > 0;
   }
 
   /** W14: the search, the walls' pass and the smoothing in navFlowfield.wasm, then the slot. */

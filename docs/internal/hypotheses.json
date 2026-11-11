@@ -11916,11 +11916,11 @@
     {
       "id": "N-139",
       "title": "A path in use is evicted when more paths than slots are made within one second (the LRU clock counts seconds)",
-      "status": "open",
-      "statusText": "found 2026-11-11 building astarStressScene's planners; confirmed in Node",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (407ea152, R-0893)",
       "date": "2026-11-11",
-      "result": "",
-      "next": "A millisecond shared clock for the path and flowfield slots, and a test that a touched slot outlives untouched ones made the same second; with E-214.",
+      "result": "fixed 2026-11-11 (407ea152, R-0893): 16 ms clock, evictions by age (wrap-safe); not timed",
+      "next": "Done.",
       "area": "nav",
       "kind": "bug",
       "refs": [
@@ -11932,17 +11932,18 @@
         "path slot eviction",
         "LRU"
       ],
-      "records": [],
-      "rank": 3
+      "records": [
+        "R-0893"
+      ]
     },
     {
       "id": "E-214",
       "title": "Path slots allocated without a scan of every slot",
-      "status": "open",
-      "statusText": "filed 2026-11-11 from an astarStressScene probe with 8000 slots; not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (8d28ef5b, R-0894)",
       "date": "2026-11-11",
-      "result": "",
-      "next": "A count and a free list of empty slots, an eviction that does not read every slot (clock hand), with N-139's clock; owner astarStressScene agents=0 with maxPaths raised.",
+      "result": "kept 2026-11-11 (8d28ef5b, R-0894): astarStressScene agents=0 slots=8000 particle 7.045 -> 2.450 ms (-65.3 %, 4/4)",
+      "next": "Done. The flowfield slots still scan (few of them).",
       "area": "nav",
       "kind": "js",
       "refs": [
@@ -11954,8 +11955,9 @@
         "path slot",
         "LRU"
       ],
-      "records": [],
-      "rank": 4
+      "records": [
+        "R-0894"
+      ]
     }
   ],
   "records": [
@@ -20552,6 +20554,30 @@
       "commits": [
         "a01fc243",
         "bcbdac0f"
+      ]
+    },
+    {
+      "id": "R-0893",
+      "date": "2026-11-11",
+      "time": "19:36",
+      "timeFrom": "recorded",
+      "title": "N-139 fixed: the nav slots' LRU clock counts 16 ms ticks and evictions compare ages",
+      "verdict": "kept-hygiene",
+      "text": "**N-139 fixed (`407ea152`): the nav slots' LRU clock counts 16 ms ticks and evictions compare ages, so a path an agent walks is not evicted by a burst of new ones.** 2026-11-11.\n\n**The bug.** `NavGrid.lruNow()` counted whole seconds. With more paths made in one second than slots, every slot held the same stamp, and `allocatePathSlot` evicted the first one, slot 0, whatever an agent was reading. Seen in Node: four slots, an agent's path in slot 0 touched, three paths nobody reads, and a fifth path the same second evicted slot 0. `allocateFlowfieldSlot` had the same clock.\n\n**The fix.**\n- `lruNow()` counts 16 ms ticks, the same in every worker. A touch still writes its slot at most once a tick (the compare-first stays).\n- Path and flowfield evictions take the largest age, `(now - stamp) >>> 0`, which the u32's wrap every 2.2 years does not upset.\n\n**Tests.** `navSlotClock.test.js`: the clock moves within a second; a touched path outlives untouched ones made the same second; both evictions across the wrap. Three of its four fail on the old code.\n\n**Cost.** Not timed: one subtraction a slot, in the scan E-214 replaced next.",
+      "commits": [
+        "407ea152"
+      ]
+    },
+    {
+      "id": "R-0894",
+      "date": "2026-11-11",
+      "time": "19:36",
+      "timeFrom": "recorded",
+      "title": "E-214 kept: path slots allocated without a scan; astarStressScene 8000 slots particle 7.045 -> 2.450 ms (-65.3 %)",
+      "verdict": "kept",
+      "text": "**E-214 kept (`8d28ef5b`): path slots allocated without a scan of every slot.** 2026-11-11.\n\n**Premise.** astarStressScene with 8000 path slots: about 0.5 ms a path in the particle worker against about 0.07 ms with 1600 slots. Each new path read every slot twice: `_hasEmptyPathSlot` (a DataView read a slot) and `allocatePathSlot`'s search for an empty slot or the least recently used one. A game with many agents needs many slots.\n\n**The change.**\n- NavGrid keeps the slots never given a path since the last invalidate as a stack (slot 0 on top, refilled by `invalidate`), with their count. `_hasEmptyPathSlot` reads the count.\n- Once the free slots are gone, the eviction takes the oldest stamp, by age (N-139), of eight slots from a moving hand: an approximate LRU.\n- A path an agent walks is touched every tick, so it is young wherever the hand finds it. Slots another worker cleared (a save's invalidate) hold stamp 0, the oldest there is.\n- `navSlotAlloc.test.js`: free slots in order and invalidate; the oldest of the sample; a path touched every tick surviving 20 000 new ones in 4000 slots.\n\n**Sitting.** astarStressScene `?agents=0&slots=8000` (60 new paths a frame), 4 pairs, 19:31 to 19:36 (`--vs 108d649f --hyp-rev 8d28ef5b --full-rev --owner particle`; `108d649f` adds the `?slots=` knob): **KEPT (product).**\n- Particle 7.045 → 2.450 ms (-65.3 %, worse 0/4, cv 1/1 %).\n- PATHS_COMPUTED 60.0 → 60.0.\n- Every other worker below the floor.",
+      "commits": [
+        "8d28ef5b"
       ]
     }
   ],
