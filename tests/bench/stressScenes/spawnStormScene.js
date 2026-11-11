@@ -18,8 +18,21 @@ export const STORM = (() => {
   }
 })();
 
+/**
+ * `?logicWorkers=N`: logic workers (default 1, at most 4). With more than one, the driver's spawns and despawns reach
+ * logic0 as list updates from another worker (E-208's load).
+ */
+export const LOGIC_WORKERS = (() => {
+  try {
+    const n = Number(new URLSearchParams(globalThis.location?.search || '').get('logicWorkers'));
+    return n > 0 ? Math.min(n | 0, 4) : 1;
+  } catch {
+    return 1;
+  }
+})();
+
 export const stressSceneConfig = {
-  requested: { storm: STORM },
+  requested: { storm: STORM, logicWorkers: LOGIC_WORKERS },
 };
 
 export class SpawnStormScene extends Scene {
@@ -35,7 +48,7 @@ export class SpawnStormScene extends Scene {
     },
     logic: {
       noLimitFPS: false,
-      numberOfLogicWorkers: 1,
+      numberOfLogicWorkers: LOGIC_WORKERS,
     },
     physics: {
       subStepCount: 1,
@@ -63,7 +76,9 @@ export class SpawnStormScene extends Scene {
   static queries = [[SpriteRenderer]];
 
   create() {
-    SpawnStormDriver.spawn({ perTick: STORM });
+    // With more than one logic worker the driver runs on logic1, so its spawns and despawns reach logic0 as list
+    // updates (E-208).
+    SpawnStormDriver.spawn(LOGIC_WORKERS > 1 ? { perTick: STORM, forceProcessOnLogicWorker: 1 } : { perTick: STORM });
     for (let i = 0; i < 2000; i++) {
       SpawnStormEntity.spawn({
         x: 200 + (i % 32) * 36,
