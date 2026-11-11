@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-10",
+  "updated": "2026-11-11",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -11539,6 +11539,53 @@
       "records": [
         "R-0854"
       ]
+    },
+    {
+      "id": "N-133",
+      "title": "A static flowfield lost the world's last partial column and row",
+      "status": "kept-hygiene",
+      "statusText": "Fixed (95b9f4c1), merged to main (62c0e1e0), not released",
+      "date": "2026-11-11",
+      "result": "The loader clips to Math.ceil(world / cell) cells, not floor: every cell the world touches stays, in both formats. Conurbano lost a column and a row in its barrio (959 x 323 cells), a column in Carabobo (1119), a row in Parque Chas (713); the demo's barrio is a whole number of cells.",
+      "next": "",
+      "area": "nav",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-133"
+      ],
+      "aliases": [
+        "flowfield clip",
+        "Math.floor worldW / cellSize",
+        "last column"
+      ],
+      "records": [
+        "R-0859"
+      ]
+    },
+    {
+      "id": "DX-FFBIN",
+      "title": "Static flowfields in a binary file (WEFF), gzipped and opened by the browser, used as they come",
+      "status": "kept",
+      "statusText": "Built 2026-11-11 on dx/flowfield-bin, merged to main (62c0e1e0), not released; the barrio editor exports it and Conurbano uses it",
+      "date": "2026-11-11",
+      "result": "The demo's barrio: 3 709 849 bytes of JSON, 116 092 binary, every cell equal; main-thread time to turn the bytes into cells in Chromium 17.9-20.9 ms -> 5.0-6.1 ms the first time. Conurbano's three barrios: 163.6 MB of JSON -> 6.0 MB. The fields are fetched all at once.",
+      "next": "",
+      "area": "nav",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-FFBIN"
+      ],
+      "aliases": [
+        "binary flowfields",
+        "WEFF",
+        "ff_*.bin",
+        "flowfieldToBinary",
+        "DecompressionStream",
+        "loadStaticFlowfields"
+      ],
+      "records": [
+        "R-0859"
+      ]
     }
   ],
   "records": [
@@ -19674,6 +19721,24 @@
       "title": "Twenty entries filed from a code review: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK, DX-AUTOQUALITY",
       "verdict": "note",
       "text": "**Twenty entries filed from a code review's list of what would pay most: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK and DX-AUTOQUALITY.** Nothing timed: each premise is a reading of the code and the register, checked against the code on 2026-11-10 where it names one.\n\n- **The five the review ranked first:** the wake chain (E-198, which needs the latency stamp E-197 first), neighbour aggregates in the spatial kernel (E-199), neighbour lists refreshed with each entity's tick bucket (E-200), keyed poses read by key on the GPU (E-201, the other road for E-193) and decals stamped on the GPU (E-202).\n- **GPU:** sway in the vertex shader (E-203), fill rate's step 0 with GPU timestamps, overdraw and mipmaps zoomed out (E-204: the register had no entry on any of them), the light pass's loop over every light (E-205), and visibility as a polar shadow map (E-206, a big bet with a counting step 0).\n- **WASM:** A* in C (E-207; the flowfield gained 16× there, E-122).\n- **GC:** listUpdates through a SAB ring (E-208), entity instances made at spawn (E-209), eslint-plugin-weed in create-weed-game (DX-LINT).\n- **DX:** config validation and a size advisor (DX-CONFIGCHECK), workers 'auto' and a quality governor (DX-AUTOQUALITY).\n- **Bugs, confirmed in the code:** `fixedFps` truncated to whole milliseconds by `setInterval`, 62.5 Hz at 60 (N-128, to confirm by counting frames); `onGotShot` dispatched by `targetId % workers` where ticks and collision callbacks honour pins, and impacts overwritten frame by frame (N-129); despawn leaves Weed's joint rows active, since nothing calls `Joint.removeAllForEntity` (N-130).\n- **Measuring:** Predator's gate from a save, both sides from the same mid-battle snapshot (E-210).\n\nRanked after the queue's 22: the three bugs 23 to 25, then E-197 to E-202 26 to 31. The rest unranked.\n\n**Not filed:** animation in the shader for keyed sprites. Predator's walkers change their animation speed every tick, so E-189 (a texture-only update) stays the lever there."
+    },
+    {
+      "id": "R-0859",
+      "date": "2026-11-11",
+      "time": "01:23",
+      "timeFrom": "recorded",
+      "title": "Static flowfields in a binary file (DX-FFBIN), merged with their bundles; the last partial column and row they lost (N-133)",
+      "verdict": "kept",
+      "text": "**Static flowfields in a binary file (DX-FFBIN), and the last partial column and row they lost (N-133).** Asked by the owner on 2026-11-11 after reading the Buenos Aires demo's `ff_peaton0.json`: the barrio editor exports binary flowfields, WeedJS reads them with nothing to convert, JSON still loads, and the compression is ours (gzip that the browser opens), not the server's.\n\n- **The format, WEFF version 1:** a 24-byte little-endian header, never compressed (\"WEFF\", version, compression 0 none or 1 gzip, a reserved u16, width and height in cells as u32, cell size as f64), then the cells as NavGrid holds them, x and y as Int8 per cell, row by row. The loader reads the format from the first bytes; a raw file is a view of the fetched bytes and a gzipped one inflates through `DecompressionStream` into the Int8Array itself. `src/core/staticFlowfieldFile.js`; `NavGrid.loadStaticFlowfields` (the old `loadStaticFlowfieldsFromJSON` is a deprecated alias); the guide's \"Static flowfields\" has the table.\n- **Equal cells:** the editor's export of the demo barrio and `scripts/flowfieldToBinary.mjs` write the same bytes, and all 10 fields decode to exactly the JSON loader's cells (all 122 400 cell bytes each). Conurbano's 30 fields too (0 differ).\n- **Sizes:** the demo's barrio 3 709 849 → 116 092 bytes (3.1 %); Conurbano's barrio 19.97 → 0.76 MB, Carabobo 58.65 → 1.90 MB, Parque Chas 84.99 → 3.39 MB.\n- **Main-thread time** to turn the fetched bytes into cells, the demo barrio's 10 fields, headless Chromium, three fresh pages of seven rounds: JSON (decode, parse, quantize) 17.9 to 20.9 ms the first time, median 13.5 to 15.8; binary gunzipped one by one 8 to 10 ms; all at once 5.0 to 6.1 ms the first time, median 4.9 to 7.3. Node's web streams are slow and not representative (binary 52 ms the first time there).\n- **All at once:** the loader awaited each fetch before the next; now the fetches go out together and the fields keep the order of the URLs (a test holds the answers and releases them in reverse; it fails on the old loader).\n- **N-133:** the JSON loader clipped to `Math.floor(world / cell)`; `Math.ceil` keeps every cell the world touches. Conurbano had lost a column and a row in its barrio (958 x 322 of 959 x 323), a column in Carabobo, a row in Parque Chas. The demo's barrio, 408 x 150 whole cells, was not touched.\n- **Checked in the demo** (headless Chromium, `/src`): the ten `.bin` files requested, each field 408 x 150, no errors, 390 of 400 walkers moved in 8 s.\n- **Not measured:** STEP_MS. Nothing per frame changed (the sampler, `requestVectorFromStaticFlowfield`, is the same code), so no scene pair, and no bundle-vs-src sitting for this merge: the bundles were rebuilt and passed their smokes and the node suite.",
+      "commits": [
+        "95b9f4c1",
+        "8d71beac",
+        "cb2eeb7d",
+        "2522d5d0",
+        "26d88616",
+        "62c0e1e0",
+        "06064018"
+      ]
     }
   ],
   "leads": [
