@@ -350,8 +350,9 @@ export class NavGrid {
         const srcH = metadata.heightCells;
         const cellSize = metadata.cellSizePx;
 
-        const clippedW = Math.min(srcW, Math.floor(worldW / cellSize));
-        const clippedH = Math.min(srcH, Math.floor(worldH / cellSize));
+        // Every cell the world touches, the last partial column and row too.
+        const clippedW = Math.min(srcW, Math.ceil(worldW / cellSize));
+        const clippedH = Math.min(srcH, Math.ceil(worldH / cellSize));
         const vectors = new Int8Array(clippedW * clippedH * 2);
 
         for (let row = 0; row < clippedH; row++) {
