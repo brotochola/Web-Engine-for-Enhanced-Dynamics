@@ -6,7 +6,8 @@ import {
   GPU_KEYED_CASTER_FLOATS, GPU_STATIC_FLOATS, makePackContext,
 } from '../../src/render/gpuQueueLayout.js';
 import {
-  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack, packKeyedCastersScanWasm, packKeyedCastersWasm,
+  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_ONLY, GPU_KEYED_TEX_WORDS, bindGpuPack,
+  packKeyedCastersScanWasm, packKeyedCastersWasm,
   packKeyedRowsWasm, packSplitRowsWasm,
 } from '../../src/render/gpuPackClient.js';
 import { compactShadowCasterIndices } from '../../src/render/gpuShadowCasters.js';
@@ -20,6 +21,8 @@ const N = 5000;
 const ENTITIES = 12000;
 const KEY_BASE = ENTITIES;
 const DEPTH = 4; // the depth's float in the statics (gpuPack.c sprite_static)
+const TEX = 6; // the texture's float in the statics
+const KEY_FLAGS = (GPU_KEYED_CHANGED | GPU_KEYED_TEX_ONLY) >>> 0;
 const KEY_NONE = 0xffffffff;
 
 function mulberry32(seed) {
@@ -69,10 +72,16 @@ async function setup(seed) {
     q.tileOffsetU[i] = (rng() * 65535) | 0;
     q.tileOffsetV[i] = (rng() * 65535) | 0;
     q.type[i] = (rng() * 7) | 0;
-    // Sprites keyed by entity, a tenth marked changed; a few rows without a key or past the entities.
+    // Sprites keyed by entity, a tenth marked changed and a tenth their texture alone (E-189); a few rows without a key
+    // or past the entities.
     const r = rng();
     const e = (rng() * ENTITIES) | 0;
-    q.key[i] = r < 0.05 ? KEY_NONE : r < 0.07 ? KEY_BASE + ((rng() * 100) | 0) : rng() < 0.1 ? (e | GPU_KEYED_CHANGED) >>> 0 : e;
+    const c = rng();
+    q.key[i] = r < 0.05 ? KEY_NONE
+      : r < 0.07 ? KEY_BASE + ((rng() * 100) | 0)
+        : c < 0.1 ? (e | GPU_KEYED_CHANGED) >>> 0
+          : c < 0.2 ? (e | KEY_FLAGS) >>> 0
+            : e;
   }
   const order = alloc(Uint32Array, N);
   for (let i = 0; i < N; i++) order[i] = i;
@@ -87,6 +96,7 @@ async function setup(seed) {
   const pose = alloc(Float32Array, N * GPU_POSE_FLOATS);
   const slots = alloc(Float32Array, N * GPU_INDEXED_SLOT_FLOATS);
   const updates = alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS);
+  const texUpdates = alloc(Uint32Array, N * GPU_KEYED_TEX_WORDS);
   const shadow = alloc(Float32Array, N * 3);
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
@@ -97,7 +107,7 @@ async function setup(seed) {
   if (top > buf.byteLength) throw new Error('the test memory is too small');
   const b = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
   const keyed = { keyBase: KEY_BASE, updatesByte: updates.byteOffset, updates: 0 };
-  return { rng, q, b, order, splitPose, splitStat, pose, slots, updates, shadow, keyed };
+  return { rng, q, b, order, splitPose, splitStat, pose, slots, updates, texUpdates, shadow, keyed };
 }
 
 const words = (f32, n) => new Uint32Array(f32.buffer, f32.byteOffset, n);
@@ -114,11 +124,14 @@ function checkPack(s, label, opts, cap) {
   const sp = words(s.splitPose, n * GPU_POSE_FLOATS);
   const ss = words(s.splitStat, n * GPU_STATIC_FLOATS);
   const kp = words(s.pose, n * GPU_POSE_FLOATS);
+  // E-189: with room for texture updates, a row marked for its texture alone goes up as one.
+  const texOn = s.keyed.texUpdatesByte > 0;
   let u = 0;
+  let tu = 0;
   for (let k = 0; k < n; k++) {
     const i = opts.indices ? opts.indices[k] : k;
     const raw = s.q.key[i];
-    const key = (raw & ~GPU_KEYED_CHANGED) >>> 0;
+    const key = (raw & ~KEY_FLAGS) >>> 0;
     const keyless = key >= KEY_BASE;
     const slot = keyless ? KEY_BASE + k : key;
     const send = keyless || (raw & GPU_KEYED_CHANGED) !== 0;
@@ -127,6 +140,14 @@ function checkPack(s, label, opts, cap) {
       if (kp[k * GPU_POSE_FLOATS + j] !== sp[k * GPU_POSE_FLOATS + j]) assert.fail(`${label}: slot ${k} pose ${j}`);
     }
     if (!send) continue;
+    if (texOn && !keyless && (raw & GPU_KEYED_TEX_ONLY) !== 0) {
+      // Its row and its texture's float bits, as the split pack packs the texture.
+      const rec = s.texUpdates.subarray(tu * GPU_KEYED_TEX_WORDS, (tu + 1) * GPU_KEYED_TEX_WORDS);
+      if (rec[0] !== slot) assert.fail(`${label}: slot ${k}'s texture update row ${rec[0]}, not ${slot}`);
+      if (rec[1] !== ss[k * GPU_STATIC_FLOATS + TEX]) assert.fail(`${label}: slot ${k}'s texture update`);
+      tu++;
+      continue;
+    }
     // A changed row or a row without a key: its statics, as the split pack packs them, go up as the next update.
     const rec = s.updates.subarray(u * GPU_KEYED_ROW_WORDS, (u + 1) * GPU_KEYED_ROW_WORDS);
     for (let j = 0; j < GPU_STATIC_FLOATS; j++) {
@@ -138,7 +159,8 @@ function checkPack(s, label, opts, cap) {
     u++;
   }
   assert.equal(s.keyed.updates, u, `${label}: one update a changed row or a row without a key`);
-  return u;
+  assert.equal(s.keyed.texUpdates, tu, `${label}: one texture update a row marked for its texture alone`);
+  return u + tu;
 }
 
 test('the keyed pack is the split pack: the pose and depth at each slot, the key, the changed and keyless rows\' statics', async () => {
@@ -152,6 +174,24 @@ test('the keyed pack is the split pack: the pose and depth at each slot, the key
     checkPack(s, 'no type column', { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N }, N);
     checkPack(s, 'indices copied', { space: GPU_SPACE_WORLD, indices: Uint32Array.from(s.order), indexCount: N, type: s.q.type }, N);
   }
+});
+
+// E-189: given room for texture updates, a row marked for its texture alone goes up as its row and its texture (8
+// bytes), every other marked or keyless row whole, and the rest of the output is the same; without, it goes up whole.
+test('the keyed pack sends a texture-only row as a texture update when it has room for them, else whole', async () => {
+  const s = await setup(189);
+  const sorted = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: N, type: s.q.type };
+  let texOnly = 0;
+  for (let i = 0; i < N; i++) if (s.q.key[i] !== KEY_NONE && ((s.q.key[i] & KEY_FLAGS) >>> 0) === KEY_FLAGS) texOnly++;
+  assert.ok(texOnly > N * 0.05, `rows marked for their texture alone (${texOnly})`);
+  const whole = checkPack(s, 'no texture updates', sorted, N);
+  assert.equal(s.keyed.texUpdates, 0);
+  s.keyed.texUpdatesByte = s.texUpdates.byteOffset;
+  s.texUpdates.fill(0xdeadbeef);
+  assert.equal(checkPack(s, 'texture updates', sorted, N), whole, 'as many rows go up, fewer of them whole');
+  assert.ok(s.keyed.texUpdates > 0 && s.keyed.updates < whole, `${s.keyed.texUpdates} texture updates, ${s.keyed.updates} whole`);
+  checkPack(s, 'texture updates, capacity under count', sorted, 3210);
+  checkPack(s, 'texture updates, no list', { space: GPU_SPACE_WORLD, type: s.q.type }, N);
 });
 
 test('the keyed pack declines what it does not take', async () => {
@@ -213,7 +253,7 @@ test('pack_casters_keyed writes a pose, a key and the shadow terms a listed row,
   const keyed = [];
   let keyless = -1;
   for (let i = 0; i < N; i++) {
-    const k = (q.key[i] & ~GPU_KEYED_CHANGED) >>> 0;
+    const k = (q.key[i] & ~KEY_FLAGS) >>> 0;
     if (k < KEY_BASE) keyed.push(i);
     else if (keyless < 0) keyless = i;
   }
@@ -223,7 +263,7 @@ test('pack_casters_keyed writes a pose, a key and the shadow terms a listed row,
   assert.equal(packKeyedCastersWasm(b, q, list, list.length, dst, KEY_BASE, N), list.length);
   for (let k = 0; k < list.length; k++) {
     const i = list[k];
-    const want = [q.x[i], q.y[i], (q.key[i] & ~GPU_KEYED_CHANGED) >>> 0, 0, q.shadowH[i], q.shadowOffX[i], q.shadowOffY[i]];
+    const want = [q.x[i], q.y[i], (q.key[i] & ~KEY_FLAGS) >>> 0, 0, q.shadowH[i], q.shadowOffX[i], q.shadowOffY[i]];
     for (let j = 0; j < GPU_KEYED_CASTER_FLOATS; j++) {
       if (dst[k * GPU_KEYED_CASTER_FLOATS + j] !== Math.fround(want[j])) assert.fail(`row ${k} (queue row ${i}) float ${j}`);
     }
@@ -251,7 +291,7 @@ test('pack_casters_keyed_scan writes the compaction\'s keyed rows, and declines 
   // The rows without a key cast nothing, but for one.
   let keyless = -1;
   for (let i = 0; i < N; i++) {
-    if (((q.key[i] & ~GPU_KEYED_CHANGED) >>> 0) < KEY_BASE) continue;
+    if (((q.key[i] & ~KEY_FLAGS) >>> 0) < KEY_BASE) continue;
     if (keyless < 0) keyless = i;
     else q.shadowH[i] = 0;
   }

@@ -37,7 +37,8 @@ import {
   GPU_STATIC_FLOATS, gpuIndexedStaticRows,
 } from './gpuQueueLayout.js';
 import {
-  GPU_KEYED_ROW_WORDS, packInstancedRowsWasm, packKeyedRowsWasm, packPoseRowsWasm, packSplitRowsWasm,
+  GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS, packInstancedRowsWasm, packKeyedRowsWasm, packPoseRowsWasm,
+  packSplitRowsWasm,
 } from './gpuPackClient.js';
 import { faceMapVertex, faceMapWgsl } from './faceMap.js';
 import {
@@ -362,12 +363,20 @@ export class InstancedSpriteBatch {
       // E-191: the shadow stream's byte (0 until enableKeyedShadows) and whether the last pack wrote it.
       shadowByte: 0,
       shadowed: false,
+      // E-189: the texture updates' byte (0: none, the texture-only rows go up whole) and the last pack's count.
+      texUpdatesByte: k && k.texUpdatesByte > 0 ? k.texUpdatesByte | 0 : 0,
+      texUpdates: 0,
     };
     this._sharedSlots = k ? this._sharedStatic.subarray(0, this.capacity * GPU_INDEXED_SLOT_FLOATS) : new Float32Array(0);
     const updateWords = k ? this.capacity * GPU_KEYED_ROW_WORDS : 0;
     this._sharedUpdates = k ? new Uint32Array(buf, k.updatesByte, updateWords) : new Uint32Array(0);
     const updateCopy = (k && arena && arena.f32(updateWords)) || new Float32Array(updateWords);
     this._keyUpdates = new Uint32Array(updateCopy.buffer, updateCopy.byteOffset, updateWords);
+    // E-189: the texture updates, in the render-queue memory and their copy (WebGL takes no shared view).
+    const texWords = this._keyedPack.texUpdatesByte > 0 ? this.capacity * GPU_KEYED_TEX_WORDS : 0;
+    this._sharedTexUpdates = texWords > 0 ? new Uint32Array(buf, this._keyedPack.texUpdatesByte, texWords) : new Uint32Array(0);
+    const texCopy = (texWords > 0 && arena && arena.f32(texWords)) || new Float32Array(texWords);
+    this._keyTexUpdates = new Uint32Array(texCopy.buffer, texCopy.byteOffset, texWords);
     this._keyHeader = k ? new Uint32Array(buf, k.headerByte, PIXI_KEYED_HEADER_WORDS) : new Uint32Array(PIXI_KEYED_HEADER_WORDS);
     // The queue frame and buffer of the next upload (the caller's), the last frame the texture took keyed (-1: none since
     // it last missed one), and the resync request this batch made (0: none outstanding).
@@ -1104,15 +1113,20 @@ export class InstancedSpriteBatch {
     const shadowed = this.keyedShadows && k.shadowed;
     if (shadowed && out > 0) this.copyIn(this._shadowData, this._sharedShadow, out * 3);
     const n = k.updates;
-    if (n * (GPU_KEYED_ROW_WORDS * 4) <= out * KEYED_SAVED_BYTES) {
+    const nt = k.texUpdates;
+    if (n * (GPU_KEYED_ROW_WORDS * 4) + nt * (GPU_KEYED_TEX_WORDS * 4) <= out * KEYED_SAVED_BYTES) {
       this._keyLosses = 0;
     } else if (++this._keyLosses >= KEYED_LOSS_FRAMES) {
       this._keyLosses = 0;
       this._keyPause = KEYED_PAUSE_FRAMES;
     }
-    if (n > 0) {
-      this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
-      this._statics.scatter(this._staticsSource, this._keyUpdates, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight);
+    if (n > 0 || nt > 0) {
+      if (n > 0) this.copyIn(this._keyUpdates, this._sharedUpdates, n * GPU_KEYED_ROW_WORDS);
+      if (nt > 0) this.copyIn(this._keyTexUpdates, this._sharedTexUpdates, nt * GPU_KEYED_TEX_WORDS);
+      this._statics.scatter(
+        this._staticsSource, this._keyUpdates, n, STATICS_TEX_ROW * STATICS_TEXELS_PER_ROW, this._staticsHeight,
+        this._keyTexUpdates, nt,
+      );
     }
     // E-191: the texture holds this queue frame's statics now; pre-render writes keyed caster rows while it is recent.
     if (this.keyedCasters) Atomics.store(H, PIXI_KEYED_HEADER.LIVE, frame >>> 0);

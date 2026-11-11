@@ -12,7 +12,9 @@ import {
 import {
   GPU_INDEXED_SLOT_FLOATS, GPU_INDEXED_STATIC_FLOATS, GPU_KEYED_CASTER_FLOATS, GPU_KEYED_STAMP_FLOATS, gpuIndexedStaticRows,
 } from '../../src/render/gpuQueueLayout.js';
-import { GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, bindGpuPack } from '../../src/render/gpuPackClient.js';
+import {
+  GPU_KEYED_CHANGED, GPU_KEYED_KEY_WORD, GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_ONLY, GPU_KEYED_TEX_WORDS, bindGpuPack,
+} from '../../src/render/gpuPackClient.js';
 import { STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW } from '../../src/render/spriteIndexed.js';
 import { PIXI_KEYED_HEADER as H } from '../../src/util/wasmMemoryMap.js';
 
@@ -48,6 +50,8 @@ const KEY_NONE = 0xffffffff;
 // What Pixi's upload options say for no type filter (pixiWorker._resetSpriteUploadOpts).
 const NO_FILTER = { includeType: -1, excludeType0: -1, excludeType1: -1 };
 // The queue columns a sprite's statics are.
+// E-189: the texture's word in a statics row (the second texel's blue channel).
+const TEX_WORD = 6;
 const STATIC_COLUMNS = ['scaleX', 'scaleY', 'alpha', 'tint', 'textureId', 'anchorX', 'anchorY', 'tileMulX', 'tileMulY',
   'tileOffsetU', 'tileOffsetV'];
 
@@ -116,6 +120,8 @@ async function setup(seed) {
   };
   for (let e = 0; e < ENTITIES; e++) statics(world, e, rng);
   const dirty = new Uint8Array(ENTITIES).fill(1);
+  // E-189: the entities whose texture alone changed since the emit before (an animation's step).
+  const texDirty = new Uint8Array(ENTITIES);
   const splitRows = alloc(Float32Array, N * INSTANCED_SPRITE_FLOATS);
   const keyedRows = alloc(Float32Array, N * INSTANCED_SPRITE_FLOATS);
   const header = alloc(Uint32Array, 16);
@@ -125,6 +131,8 @@ async function setup(seed) {
     updatesByte: alloc(Uint32Array, N * GPU_KEYED_ROW_WORDS).byteOffset,
     headerByte: header.byteOffset,
     shadowByte: alloc(Float32Array, N * 3).byteOffset,
+    // E-189: room for the texture updates.
+    texUpdatesByte: alloc(Uint32Array, N * GPU_KEYED_TEX_WORDS).byteOffset,
   };
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
@@ -135,7 +143,7 @@ async function setup(seed) {
   if (top > buf.byteLength) throw new Error('the test memory is too small');
   const pack = await bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: N, particlesByte, inverseByte: 0 });
   // The statics texture: a stand-in that keeps its texels and scatters each update into its key's row, in order.
-  const tex = { made: [], texels: null, scatters: [], uploads: [] };
+  const tex = { made: [], texels: null, scatters: [], uploads: [], texScattered: 0 };
   const ops = {
     maxSize: 16384,
     make(bits, width, height, label) {
@@ -146,14 +154,21 @@ async function setup(seed) {
     upload(source, bits, width, height, y0, rows) {
       tex.uploads.push([y0, rows]);
     },
-    scatter(source, updates, count, width, height) {
+    scatter(source, updates, count, width, height, texUpdates, texCount) {
       assert.deepEqual([width, height], [tex.made[0].width, tex.made[0].height], 'the scatter targets the texture');
       assert.ok(!(updates.buffer instanceof SharedArrayBuffer), 'the scatter reads a private copy (E-123)');
+      assert.ok(!(texUpdates.buffer instanceof SharedArrayBuffer), 'and the texture updates too');
       for (let u = 0; u < count; u++) {
         const at = u * GPU_KEYED_ROW_WORDS;
         tex.texels.set(updates.subarray(at, at + GPU_INDEXED_STATIC_FLOATS), updates[at + GPU_KEYED_KEY_WORD] * GPU_INDEXED_STATIC_FLOATS);
       }
-      tex.scatters.push(count);
+      // E-189: a texture update writes its row's texture word alone (the second texel's blue channel).
+      for (let u = 0; u < texCount; u++) {
+        const at = u * GPU_KEYED_TEX_WORDS;
+        tex.texels[texUpdates[at] * GPU_INDEXED_STATIC_FLOATS + TEX_WORD] = texUpdates[at + 1];
+      }
+      tex.scatters.push(count + texCount);
+      tex.texScattered += texCount;
     },
   };
   const opts = { capacity: N, label: 'e177', useWebGpu: false, shaders, gpuPack: pack, split: true };
@@ -163,7 +178,7 @@ async function setup(seed) {
     for (const x of [...b._buffers, ...(b._staticBuffers || []), ...(b._slotBuffers || [])]) x.update = () => {};
   }
   return {
-    rng, q, world, dirty, header, split, keyed: keyedBatch, tex, frame: 0,
+    rng, q, world, dirty, texDirty, header, split, keyed: keyedBatch, tex, frame: 0,
     rowEntity: new Int32Array(N), queued: [], unqueued: [],
   };
 }
@@ -195,6 +210,15 @@ function assignKeys(s) {
   }
   s.unqueued = [];
   for (let x = 0; x < ENTITIES; x++) if (inQueue[x] === 0) s.unqueued.push(x);
+}
+
+/** E-189: a new texture alone for `count` entities in the queue's rows, flagged as an animation's step flags them. */
+function changeTexture(s, count) {
+  for (let m = 0; m < count; m++) {
+    const e = s.queued[(s.rng() * s.queued.length) | 0];
+    s.world.textureId[e] = (s.world.textureId[e] + 1 + ((s.rng() * 1000) | 0)) & 0xffff;
+    s.texDirty[e] = 1;
+  }
 }
 
 /** New statics for `count` entities in the queue's rows (or out of them), flagged as a setter flags them. */
@@ -230,9 +254,12 @@ function emit(s) {
       continue;
     }
     for (const c of STATIC_COLUMNS) q[c][i] = world[c][e];
-    q.key[i] = (e | (dirty[e] << 31)) >>> 0;
-    sent += dirty[e];
+    // E-189: a texture alone changed marks the key for it, as preRenderEmit.c does; any other change, the whole row.
+    const texOnly = dirty[e] === 0 && s.texDirty[e] !== 0;
+    q.key[i] = (e | (dirty[e] << 31) | (texOnly ? GPU_KEYED_CHANGED | GPU_KEYED_TEX_ONLY : 0)) >>> 0;
+    sent += dirty[e] | (texOnly ? 1 : 0);
     dirty[e] = 0;
+    s.texDirty[e] = 0;
   }
   Atomics.store(h, H.BUFFER0 + bufferOf(s.frame), Atomics.load(h, H.SERVED));
   return sent;
@@ -468,6 +495,31 @@ test('keyed shadows: the stream turned off, a keyed frame writes no shadow terms
   for (let slot = 0; slot < N; slot++) {
     const i = opts.indices[slot];
     if (k._shadowData[slot * 3] !== s.q.shadowH[i]) assert.fail(`slot ${slot}'s shadowH`);
+  }
+});
+
+// E-189: a sprite whose texture alone changed (an animation's step) goes up as a texture update, its row and texture,
+// and the texture then holds its new texture beside its other statics; a sprite changed otherwise goes up whole.
+test('keyed frames send a texture-only change as a texture update, and draw the new texture', async () => {
+  const s = await setup(189);
+  const k = s.keyed;
+  assignKeys(s);
+  emit(s);
+  draw(s, 'first frame', sortedOpts(s));
+  emit(s);
+  assert.notEqual(draw(s, 'answered', sortedOpts(s)), -1);
+  assert.equal(s.tex.texScattered, 0, 'the answer sends every sprite whole');
+  const keyless = s.q.type.filter((x) => x === 1).length;
+  for (let f = 0; f < 4; f++) {
+    changeTexture(s, 400);
+    change(s, 30);
+    emit(s);
+    const before = s.tex.texScattered;
+    assert.notEqual(draw(s, `frame ${f}`, sortedOpts(s)), -1, `frame ${f}: keyed`);
+    const tu = s.tex.texScattered - before;
+    assert.equal(k._keyedPack.texUpdates, tu);
+    assert.ok(tu > 300, `frame ${f}: ${tu} texture updates`);
+    assert.ok(k._keyedPack.updates >= keyless && k._keyedPack.updates <= keyless + 30, `frame ${f}: ${k._keyedPack.updates} whole`);
   }
 });
 

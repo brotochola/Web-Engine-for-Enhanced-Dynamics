@@ -7,8 +7,11 @@
 // them (the viewport and the framebuffer too). The color mask and the viewport come from Pixi's caches, not from GL:
 // Chrome answers either query with a round trip to the GPU process, and the first query of a frame waits there for
 // every command queued before it (1.1 ms a frame in Predator).
+// E-189: the texture updates (gpuPack.c KEYED_TEX_WORDS: a key's row, then its texture's float bits) are a second draw,
+// a 1 x 1 rectangle at the row's second texel with only its blue channel written (the texture's word, spriteIndexed.js
+// weedS1.z): an animated sprite's new frame sends 8 bytes instead of 64.
 
-import { GPU_KEYED_ROW_WORDS } from '../gpuPackClient.js';
+import { GPU_KEYED_ROW_WORDS, GPU_KEYED_TEX_WORDS } from '../gpuPackClient.js';
 import { STATICS_TEXELS_PER_ROW, STATICS_TEX_ROW, STATICS_TEX_ROW_SHIFT } from '../spriteIndexed.js';
 
 const VERTEX = `#version 300 es
@@ -51,6 +54,33 @@ void main() {
 }
 `;
 
+const TEX_VERTEX = `#version 300 es
+precision highp float;
+precision highp int;
+layout(location = 0) in uvec2 aTex;
+layout(location = 1) in vec2 aCorner;
+uniform vec2 uSize;
+flat out uint vTex;
+void main() {
+  int row = int(aTex.x);
+  int x0 = (row & ${STATICS_TEX_ROW - 1}) * ${STATICS_TEXELS_PER_ROW} + 1;
+  int y0 = row >> ${STATICS_TEX_ROW_SHIFT};
+  vec2 p = vec2(float(x0), float(y0)) + aCorner;
+  gl_Position = vec4(p / uSize * 2.0 - 1.0, 0.0, 1.0);
+  vTex = aTex.y;
+}
+`;
+
+const TEX_FRAGMENT = `#version 300 es
+precision highp float;
+precision highp int;
+flat in uint vTex;
+out uvec4 outValue;
+void main() {
+  outValue = uvec4(0u, 0u, vTex, 0u);
+}
+`;
+
 function compile(gl, type, source) {
   const shader = gl.createShader(type);
   gl.shaderSource(shader, source);
@@ -69,10 +99,10 @@ function compile(gl, type, source) {
  * the draw has one that is not instanced), and a framebuffer.
  * @param {WebGL2RenderingContext} gl
  */
-export function createStaticsScatterGl(gl) {
+function link(gl, vertex, fragment) {
   const program = gl.createProgram();
-  const vs = compile(gl, gl.VERTEX_SHADER, VERTEX);
-  const fs = compile(gl, gl.FRAGMENT_SHADER, FRAGMENT);
+  const vs = compile(gl, gl.VERTEX_SHADER, vertex);
+  const fs = compile(gl, gl.FRAGMENT_SHADER, fragment);
   gl.attachShader(program, vs);
   gl.attachShader(program, fs);
   gl.linkProgram(program);
@@ -81,6 +111,12 @@ export function createStaticsScatterGl(gl) {
   if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
     throw new Error(`WeedJS: the keyed sprites' statics scatter did not link: ${gl.getProgramInfoLog(program)}`);
   }
+  return program;
+}
+
+export function createStaticsScatterGl(gl) {
+  const program = link(gl, VERTEX, FRAGMENT);
+  const texProgram = link(gl, TEX_VERTEX, TEX_FRAGMENT);
   const prevVao = gl.getParameter(gl.VERTEX_ARRAY_BINDING);
   const prevBuffer = gl.getParameter(gl.ARRAY_BUFFER_BINDING);
   const vao = gl.createVertexArray();
@@ -98,6 +134,17 @@ export function createStaticsScatterGl(gl) {
     gl.vertexAttribIPointer(a, 4, gl.UNSIGNED_INT, stride, a * 16);
     gl.vertexAttribDivisor(a, 1);
   }
+  // E-189: the texture updates' vertex array, over the same corners.
+  const texVao = gl.createVertexArray();
+  const texBuffer = gl.createBuffer();
+  gl.bindVertexArray(texVao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, corners);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 8, 0);
+  gl.bindBuffer(gl.ARRAY_BUFFER, texBuffer);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribIPointer(0, 2, gl.UNSIGNED_INT, GPU_KEYED_TEX_WORDS * 4, 0);
+  gl.vertexAttribDivisor(0, 1);
   gl.bindVertexArray(prevVao);
   gl.bindBuffer(gl.ARRAY_BUFFER, prevBuffer);
   return {
@@ -107,6 +154,13 @@ export function createStaticsScatterGl(gl) {
     corners,
     buffer,
     bufferBytes: 0,
+    texProgram,
+    texVao,
+    texBuffer,
+    texBufferBytes: 0,
+    texSize: gl.getUniformLocation(texProgram, 'uSize'),
+    texWidth: 0,
+    texHeight: 0,
     framebuffer: gl.createFramebuffer(),
     attached: null,
     uSize: gl.getUniformLocation(program, 'uSize'),
@@ -117,10 +171,11 @@ export function createStaticsScatterGl(gl) {
 
 /**
  * Draw `count` updates (`updates`, GPU_KEYED_ROW_WORDS u32 each, not in shared memory) into `texture`, a
- * `width` x `height` RGBA32UI texture of statics rows. `renderer` is Pixi's WebGL renderer, whose colorMask system and
- * render target adaptor hold the mask and the viewport GL has.
+ * `width` x `height` RGBA32UI texture of statics rows, then E-189's `texCount` texture updates (`texUpdates`,
+ * GPU_KEYED_TEX_WORDS u32 each). `renderer` is Pixi's WebGL renderer, whose colorMask system and render target adaptor
+ * hold the mask and the viewport GL has.
  */
-export function scatterStaticsGl(s, renderer, texture, updates, count, width, height) {
+export function scatterStaticsGl(s, renderer, texture, updates, count, width, height, texUpdates = null, texCount = 0) {
   const gl = s.gl;
   const fbo = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING);
   const readFbo = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
@@ -138,12 +193,23 @@ export function scatterStaticsGl(s, renderer, texture, updates, count, width, he
   const mask = colorMask && typeof colorMask._colorMaskCache === 'number' ? colorMask._colorMaskCache : 15;
   const masked = mask !== 15;
 
-  gl.bindBuffer(gl.ARRAY_BUFFER, s.buffer);
-  if (s.bufferBytes < updates.byteLength) {
-    gl.bufferData(gl.ARRAY_BUFFER, updates.byteLength, gl.DYNAMIC_DRAW);
-    s.bufferBytes = updates.byteLength;
+  if (count > 0) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, s.buffer);
+    if (s.bufferBytes < updates.byteLength) {
+      gl.bufferData(gl.ARRAY_BUFFER, updates.byteLength, gl.DYNAMIC_DRAW);
+      s.bufferBytes = updates.byteLength;
+    }
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, updates, 0, count * GPU_KEYED_ROW_WORDS);
   }
-  gl.bufferSubData(gl.ARRAY_BUFFER, 0, updates, 0, count * GPU_KEYED_ROW_WORDS);
+  const texDraw = texCount > 0 && texUpdates !== null;
+  if (texDraw) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, s.texBuffer);
+    if (s.texBufferBytes < texUpdates.byteLength) {
+      gl.bufferData(gl.ARRAY_BUFFER, texUpdates.byteLength, gl.DYNAMIC_DRAW);
+      s.texBufferBytes = texUpdates.byteLength;
+    }
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, texUpdates, 0, texCount * GPU_KEYED_TEX_WORDS);
+  }
   gl.bindFramebuffer(gl.FRAMEBUFFER, s.framebuffer);
   if (s.attached !== texture) {
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
@@ -156,14 +222,30 @@ export function scatterStaticsGl(s, renderer, texture, updates, count, width, he
   if (stencil) gl.disable(gl.STENCIL_TEST);
   if (cull) gl.disable(gl.CULL_FACE);
   if (masked) colorMask.setMask(15);
-  gl.useProgram(s.program);
-  if (s.width !== width || s.height !== height) {
-    gl.uniform2f(s.uSize, width, height);
-    s.width = width;
-    s.height = height;
+  if (count > 0) {
+    gl.useProgram(s.program);
+    if (s.width !== width || s.height !== height) {
+      gl.uniform2f(s.uSize, width, height);
+      s.width = width;
+      s.height = height;
+    }
+    gl.bindVertexArray(s.vao);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
   }
-  gl.bindVertexArray(s.vao);
-  gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, count);
+  if (texDraw) {
+    gl.useProgram(s.texProgram);
+    if (s.texWidth !== width || s.texHeight !== height) {
+      gl.uniform2f(s.texSize, width, height);
+      s.texWidth = width;
+      s.texHeight = height;
+    }
+    gl.bindVertexArray(s.texVao);
+    // The blue channel alone: the rest of the texel is the row's own. GL's mask goes back to all four (what Pixi's
+    // cache holds here) below.
+    gl.colorMask(false, false, true, false);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 6, texCount);
+    gl.colorMask(true, true, true, true);
+  }
 
   gl.bindVertexArray(vao);
   gl.useProgram(program);
