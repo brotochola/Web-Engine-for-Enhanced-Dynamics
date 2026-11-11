@@ -3454,6 +3454,143 @@ third in view), then decorationSwayStressScene `?decorations=150000&attached=200
 checksum; scene particle 6.685 → 2.805 ms, paired −57.5 %, 4/4 pairs (−56.6 to −58.9 %), the load the same. A
 decoration that comes on screen is drawn unswayed for one frame, inside the cull margin.
 
+E-197 to E-210 were filed together on 2026-11-10 from a code review's list (R-0854). Each premise is a reading of the
+code and the register, not a measurement, unless it names a record.
+
+### E-197 Input-to-screen latency stamp
+
+**Premise:** nothing measures how many frames lie between an input and the picture that shows it. Every worker starts
+its frame on the same vsync (E-24) and Pixi takes the oldest unread queue without waiting (`swapRenderQueue` in
+pixiWorker.js: "Pixi never waits"), so each stage reads what the one before it published on the previous vsync. By that
+reading an input reaches the screen 3 to 4 frames later.
+**Plan:** a stamp that travels with the frame. Main writes an input's time and frame number into a SAB word; logic
+copies the stamp it consumed into what it publishes, physics, pre-render and the render queue carry the newest one they
+read, and Pixi records its submit time minus the stamp, in ms and frames. The runner prints median and p95. A tool, in
+its own commit before E-198, the first change it measures. Owner: the bench runner.
+
+### E-198 The wake chain: each stage waits for this vsync's output of the one before it
+
+**Premise:** the frame is a chain (logic → physics → pre-render → Pixi), yet every link reads the previous vsync's
+output (E-197's premise). Where the chain's STEP_MS adds up to less than a frame, waiting for this vsync's output takes
+a frame of lag off each link.
+**Plan:** needs E-197. Pixi waits for this vsync's queue with `Atomics.wait` and a timeout (the frame minus its own
+STEP_MS), and on a timeout takes the oldest unread queue as now. Then pre-render on the pose and physics on logic, the
+same way. Each link waits only while the measured chain fits the frame, a switch fed by the STEP_MS the workers already
+publish. The wait counts in WAIT_MS. The judge is latency (E-197), not STEP_MS: STEP_MS − WAIT_MS must not get 3 %
+worse and the frames drawn must hold. Risk: a link that waits and misses its vsync drops a frame; the timeout bounds it.
+Owner: latency in Boids and Predator, Predator's gate for the workers.
+
+### E-199 Neighbour aggregates published by the spatial kernel
+
+**Premise:** Boid, soldier and civilian walk `getNeighbor(n)` and read `Transform.x[j]` and `y[j]` for each neighbour,
+scattered over the columns. E-141 measured 3.9 ns a read: the cost is the number of reads, not the accessor.
+`publish_batch` already computes d² for every candidate.
+**Plan:** `publish_batch` also writes per entity, opt-in by type, what a steering rule reads: separation (offsets
+weighted by 1/d²) and the centroid within a radius, and the nearest neighbour of a given type with its d². Average
+velocity needs vx and vy copied into the kernel's memory: a second step. Game code reads one row instead of n
+neighbours. Kernel: the publish with and without the aggregates, then the demos' ticks rewritten on them (demo code).
+Owner: logic in Predator and Boids; spatial must not get 3 % worse.
+
+### E-200 Neighbour lists refreshed with each entity's tick bucket
+
+**Premise:** Predator sets `neighborTickInterval: 15` for every type, but Boid ticks every 30 frames, the soldier
+every 6 and the civilian every 4. A boid's list is refreshed twice for each tick that reads it; a civilian reads lists
+up to 15 frames old.
+**Plan:** refresh an entity's list on the frame before its tick bucket (its `staggeredUpdates` slot), per type with a
+`tickInterval`; `neighborTickInterval` stays for the types without one. Boids then does about half of today's spatial
+work and civilians read fresh lists (their behaviour changes: the demo must still look right). Owner: spatial in Boids
+and Predator.
+
+### E-201 Keyed poses read by key on the GPU
+
+**Premise:** E-193 (open): the keyed pack costs 42 to 118 ms/s in Pixi, about ten times its kernel, likely the gather
+in the painter's order. colliderFillBatch already reads poses from a `uPoseTable` in its vertex shader. In BunnyMark
+the pose pack (`pack_pose`, W9e, R-0626) is the largest part of the renderer by the review's reading.
+**Plan:** step 0: bytes sent a frame, the whole pool's poses against today's rows, by fraction on screen. Then the
+contiguous pose block goes up as a texture indexed by entity, a keyed row carries only its key, and the vertex shader
+fetches the pose; interpolation is a lerp between the previous and the current pose texture. Risk: it uploads the
+whole pool however little is on screen, so it pays only with many visible: a switch by fraction visible. WebGL and
+WebGPU. Owner: BunnyMark's and Predator crowd 1.5's renderer.
+
+### E-202 Decals stamped on the GPU
+
+**Premise:** the particle worker blends each stamp into CPU tiles (WASM since E-120), premultiplies them, and Pixi
+uploads each dirty tile: decalBlitStressScene spends 228 ms/s in Pixi.
+**Plan:** the stamp ring goes to Pixi, which draws the stamps as instanced quads into a render target per tile. Open
+problems: a save becomes a GPU readback; context loss loses the tiles (replay the stamps since the last readback, or
+keep a CPU copy written lazily); a stamp that crosses tiles is drawn into each. Owner: decalBlitStressScene's Pixi,
+Predator's decals as the guard.
+
+### E-203 Decoration sway in the vertex shader
+
+**Premise:** the sway is `amp · sin(t · freq + phase)` and an impulse is the same with its own t0: closed forms of
+time. The sway kernel (decorationSway.wasm, W22) is about 23 % of Predator's particle worker by the review's reading.
+**Plan:** the decoration's row carries amp, freq, phase and the impulse's t0 and amplitude; the vertex shader computes
+the facing from the frame's time, the decorations become static rows (keyed since E-188), and the sway kernel goes.
+Attached decorations (E-196) still follow a parent's pose: a step of their own. Owner: Predator's particle worker;
+decorationSwayStressScene's renderer must not get 3 % worse.
+
+### E-204 Fill rate, step 0: GPU time, overdraw and mipmaps zoomed out
+
+**Premise:** the register has no entry on mipmaps, overdraw or the light loop. `autoGenerateMipmaps` exists and is off
+(instancedSpriteBatch.js, colliderFillBatch.js), and was never measured with the camera zoomed out, where a minified
+atlas reads scattered texels.
+**Plan:** in a GPU-bound scene (BunnyMark), GPU time per pass by timestamp query (WebGL's disjoint timer query,
+WebGPU's timestamp-query) and overdraw (pixels written per screen pixel), at zoom 1 and zoomed out. Then mipmaps on the
+atlas zoomed out, judged by GPU time and frames drawn (the renderer's FPS can read 60 while fewer are drawn). Owner:
+BunnyMark's GPU time and frames drawn.
+
+### E-205 The light pass loops over every light for every pixel
+
+**Premise:** lightingBasic (`src/shaders/lightingBasic.frag.glsl`, `.wgsl`) loops over every light at every pixel, two
+fetches each: the cost is lights × screen pixels.
+**Plan:** after E-204's timestamps: a light list per screen tile (16×16 px, built on the CPU or by a compute pass), or
+each light drawn as a quad bounded by its radius with additive blending. Owner: GPU time in a scene with many lights,
+Predator's renderer as the guard.
+
+### E-206 Visibility as a polar shadow map on the GPU
+
+**Premise:** each light's visibility is a CPU sweep (angularSweep, W1 and W2a in WASM). A GPU can rasterise the
+segments into a 512-bin row per light (the nearest hit per bin) and the light pass can sample it.
+**Plan:** step 0: segments × lights per frame in the scenes that use visibility (Predator, the compound-occluder
+scenes), to size what the sweep does. Then a prototype: the segments rasterised into one row per light, sampled by the
+light pass. A big bet: pre-render loses the sweep and Pixi gains a pass. Owner: pre-render where the sweep is largest,
+the renderer as the guard.
+
+### E-207 A* in C
+
+**Premise:** `computePath` (particleWorker.js) is the last search in JavaScript: it makes three closures a call, clears
+`inOpenSet` over the whole grid with `fill(0)` and keeps its heap in JavaScript. The flowfield gained 16× in C (E-122).
+"A* without re-push" was dropped in JavaScript.
+**Plan:** `computePath` in C beside the flowfield, the open set cleared by a generation stamp instead of a fill. Kernel
+against today's on Predator's map, with the same paths (a golden test); then the scene. Owner: `PATHS_COMPUTED` (E-37)
+and the particle worker's time on a path-heavy scene.
+
+### E-208 listUpdates through a SAB ring
+
+**Premise:** logic workers 1..N send their spawns to logic0 by `postMessage` (`msg: 'listUpdates'`), an object and a
+className string per record, and `_receiveListUpdates` allocates one more: garbage per spawn, and a spawn reaches
+logic0's lists a frame late.
+**Plan:** a SAB ring per worker (entity index, type id), drained by logic0 at the start of its frame. Owner: logic0 in
+spawnStormScene with 2+ logic workers, KB/s (heapSampleWorkers) and STEP_MS; the frame of spawn latency is a side gain.
+
+### E-209 Entity instances made at spawn
+
+**Premise:** every logic worker makes `new EntityClass` for every pool slot, and main keeps a frozen copy of each class
+registration (scene.js). Boot time and heap grow with the pool, not with live entities, which is what keeps pools
+bounded.
+**Plan:** step 0: boot time and heap per 100 000 slots. Then instances made at the first spawn of a slot and kept, the
+tick loop testing for null. Risk: that test in the tick loop. Owner: boot ms and heap; Predator's logic must not get
+3 % worse.
+
+### E-210 Predator's gate from a save
+
+**Premise:** Predator reads 8 to 13 % run to run per worker, so its gate cannot see 3 %: the battle's load is emergent
+and differs between the sides.
+**Plan:** both sides restore the same snapshot in mid-battle and measure a short window from it, so the load is paired.
+Step 0: an A/A from the save against today's A/A, the detection limit per worker. A tool, in its own commit. Owner:
+runPredatorAbab.mjs.
+
 ---
 
 ## Not doing (read the log first)
