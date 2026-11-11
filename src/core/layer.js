@@ -843,6 +843,7 @@ export class Layer {
                 || compute
                 || kind === LAYER_KIND.MESH
                 || kind === LAYER_KIND.GPU_PARTICLES
+                || kind === LAYER_KIND.SCREEN
                 || hasSharedPictures(config)
                 || isSceneryKind(kind)
             ) ? 0 : 1;
@@ -886,11 +887,42 @@ export class Layer {
             }
         }
 
+        this._assertScreenLayers(layersConfig);
         this.initialized = true;
         for (let i = 0; i < this.count; i++) this._writeFeederKind(i);
         this._computeSpriteQueueBits();
         this._buildMetadata(layersConfig, builtInLayers);
         return this;
+    }
+
+    /**
+     * DX-POST: a SCREEN layer is a look over the frame below it, so it needs a fragment, and it draws over every other
+     * layer (the frame it reads is all of them). Thrown at load, both builds: the scene cannot draw as written.
+     */
+    static _assertScreenLayers(layersConfig) {
+        let lowestScreen = null;
+        for (let i = 0; i < this.count; i++) {
+            const layer = this._byId[i];
+            if (layer._kind !== LAYER_KIND.SCREEN) continue;
+            if (!layersConfig[layer.name]?.shader?.fragment) {
+                throw new Error(
+                    `WeedJS: layer "${layer.name}" is LAYER_KIND.SCREEN and has no shader.fragment: a SCREEN layer is a look ` +
+                    'over the frame below it. Give it shader: { fragment }.'
+                );
+            }
+            if (lowestScreen === null || this._zIndex[i] < this._zIndex[lowestScreen.id]) lowestScreen = layer;
+        }
+        if (lowestScreen === null) return;
+        const floor = this._zIndex[lowestScreen.id];
+        for (let i = 0; i < this.count; i++) {
+            const layer = this._byId[i];
+            if (layer._kind === LAYER_KIND.SCREEN || this._zIndex[i] < floor) continue;
+            throw new Error(
+                `WeedJS: layer "${layer.name}" (zIndex ${this._zIndex[i]}) is not under the SCREEN layer "${lowestScreen.name}" ` +
+                `(zIndex ${floor}). SCREEN layers draw over every other layer: give "${layer.name}" a zIndex under ${floor} ` +
+                "(a HUD can live in the page's DOM)."
+            );
+        }
     }
 
     /**
@@ -921,6 +953,7 @@ export class Layer {
             || kind === LAYER_KIND.SPRITES || kind === LAYER_KIND.DENSITY
             || kind === LAYER_KIND.COMPUTE || kind === LAYER_KIND.MESH
             || kind === LAYER_KIND.GPU_PARTICLES
+            || kind === LAYER_KIND.SCREEN
             || kind === LAYER_KIND.DECALS
             || kind === LAYER_KIND.SHADOWS || kind === LAYER_KIND.LIGHTING) {
             if (isSceneryKind(kind) && builtIn) {
@@ -1632,6 +1665,7 @@ export class Layer {
                     || densitySource === LAYER_DENSITY_SOURCE.LIQUID_FUN
                     || layer._kind === LAYER_KIND.MESH
                     || layer._kind === LAYER_KIND.GPU_PARTICLES
+                    || layer._kind === LAYER_KIND.SCREEN
                     || hasSharedPictures(config)
                     || isSceneryKind(layer._kind)
                     ? 0

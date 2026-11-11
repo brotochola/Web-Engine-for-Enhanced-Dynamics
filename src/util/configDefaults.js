@@ -124,6 +124,11 @@ export const LAYER_KIND = Object.freeze({
   MESH: 'mesh',
   /** Particles computed in the vertex shader (ParticleEmitter.emitGpu). No render queue: rings per writer thread. */
   GPU_PARTICLES: 'gpuParticles',
+  /**
+   * DX-POST: a pass over the whole frame. Its shader is a look whose uTexture is everything drawn under it; several
+   * SCREEN layers chain in zIndex order. They draw over every other layer. No render queue.
+   */
+  SCREEN: 'screen',
   DECALS: 'decals',
   SHADOWS: 'shadows',
   LIGHTING: 'lighting',
@@ -138,6 +143,7 @@ const SCENERY_KIND_SET = new Set([
 
 const SKIP_SUBSCRIBE_KIND_SET = new Set([
   LAYER_KIND.GPU_PARTICLES,
+  LAYER_KIND.SCREEN,
   LAYER_KIND.COVER,
   LAYER_KIND.STATIC,
   LAYER_KIND.TILING,
