@@ -126,6 +126,38 @@ static assets = {
 
 `bigAtlas.json` `meta.proxySheets` (and `meta.individualTextures`) are written by `createBigAtlas` / the bake tool. Boot also overlaps atlas load with audio, tilemaps, flowfields, and shaders; unbaked scenes pack on the main thread at boot.
 
+### Static flowfields
+
+A static flowfield is one direction per cell, baked once (by an editor or a script) and sampled by game code: `NavGrid.requestVectorFromStaticFlowfield(name, x, y, out)` fills `out` with x and y in -1..1, and with 0, 0 where the field has no direction or outside it. List the files in `static assets`:
+
+```javascript
+static assets = {
+  flowfields: {
+    sidewalks: '/game/data/ff_sidewalks.bin', // WeedJS's binary format
+    roads: '/game/data/ff_roads.json', // or JSON
+  },
+};
+```
+
+The main thread fetches them at boot (the `flowfields` step of `onLoadProgress`) and keeps the cells the world touches; every worker gets a copy. A file's format is read from its first bytes, not from its name.
+
+**Binary**, the one to ship. Little-endian: a 24-byte header, never compressed, then the cells.
+
+| Offset | Type  | Field                                                                                    |
+| ------ | ----- | ---------------------------------------------------------------------------------------- |
+| 0      | 4 B   | `"WEFF"`                                                                                 |
+| 4      | u8    | version: 1                                                                               |
+| 5      | u8    | compression: 0 none, 1 gzip                                                              |
+| 6      | u16   | reserved: 0                                                                              |
+| 8      | u32   | width in cells                                                                           |
+| 12     | u32   | height in cells                                                                          |
+| 16     | f64   | cell size in world px                                                                    |
+| 24     | cells | width × height × 2 bytes, row by row from the top: x then y as Int8, -127..127 for -1..1 |
+
+With compression 1 the cells are one gzip stream (write it with `CompressionStream('gzip')`). The browser opens it with `DecompressionStream`, so the download is small whatever the server does, and the cells are then used as they are: nothing is parsed. The ten fields of the Buenos Aires demo's barrio take 3.7 MB as JSON and 116 KB in this format, and 5 to 6 ms of the main thread at boot instead of 18 to 21 (Chromium).
+
+**JSON**: `{ "metadata": { "widthCells", "heightCells", "cellSizePx" }, "data": [...] }`, where `data` holds rows of `[x, y]` or `null`. Each component becomes `Math.round(clamp(v, -1, 1) * 127)`, so a JSON field and its binary copy sample the same.
+
 ---
 
 ## Entity Model

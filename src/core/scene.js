@@ -1735,7 +1735,7 @@ class Scene {
     })();
 
     const flowfieldsPromise = imageUrls?.flowfields
-      ? NavGrid.loadStaticFlowfieldsFromJSON(
+      ? NavGrid.loadStaticFlowfields(
         imageUrls.flowfields,
         this.config.worldWidth,
         this.config.worldHeight
