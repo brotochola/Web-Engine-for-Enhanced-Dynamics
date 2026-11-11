@@ -34,9 +34,15 @@ test('the stub has every export of the real module, and does nothing', () => {
   assert.equal(stub.devChecksOn(), false);
 });
 
-test('the production bundle takes the stub', () => {
-  const config = readFileSync(new URL('../../webpack.bundle.config.js', import.meta.url), 'utf8');
-  assert.match(config, /src\/core\/debug\/devChecks\.js'\)\]:\s*\r?\n\s*path\.resolve\(__dirname, 'src\/core\/debug\/stubs\/devChecks\.js'\)/);
+test('the production bundle takes the stub, on the page and in the workers', () => {
+  for (const file of ['webpack.bundle.config.js', 'webpack.config.js']) {
+    const config = readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
+    assert.match(
+      config,
+      /src\/core\/debug\/devChecks\.js'\)\]:\s*\r?\n\s*path\.resolve\(__dirname, 'src\/core\/debug\/stubs\/devChecks\.js'\)/,
+      file,
+    );
+  }
 });
 
 test('every worker turns them on or off from the scene config', () => {
