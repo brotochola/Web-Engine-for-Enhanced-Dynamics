@@ -10398,7 +10398,7 @@
         "Linux"
       ],
       "records": [
-        "R-0875"
+        "R-0876"
       ]
     },
     {
@@ -20189,7 +20189,7 @@
       ]
     },
     {
-      "id": "R-0875",
+      "id": "R-0876",
       "date": "2026-11-11",
       "title": "N-114 fixed: the template's dev server refuses \\, : and NUL paths and links out of the folder, as the engine's does",
       "verdict": "kept-hygiene",
