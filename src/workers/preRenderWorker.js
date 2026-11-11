@@ -3570,8 +3570,10 @@ class PreRenderWorker extends AbstractWorker {
             return res;
         }
         const sunN = this._packGpuSun(dst, q);
-        const stamp = this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
-        const cookie = this._packGpuCookies(dst);
+        // N-134: under raycasted lighting the fans are the lamps' shadows and Pixi draws the sun's casters alone, so
+        // the lamps' stamps and cookies are not made.
+        const stamp = this.visibilityPolygonsEnabled ? 0 : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
+        const cookie = this.visibilityPolygonsEnabled ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;
         res.stamp = stamp;
         res.cookie = cookie;
