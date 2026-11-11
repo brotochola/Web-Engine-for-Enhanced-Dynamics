@@ -85,6 +85,40 @@ export class AstarAgent extends GameObject {
   }
 }
 
+/**
+ * The scene's fixed load: each tick it asks for the path between two new random walkable cells, whether or not the
+ * last one came back. Every pair is new, so each is one A* search, and how many it asks for does not depend on how fast
+ * the particle worker answers (the walkers wait for their paths, so theirs does).
+ */
+export class AstarPlanner extends GameObject {
+  static components = [];
+
+  onSpawned({ seed = 1 } = {}) {
+    this._rng = (seed * 2246822519) >>> 0 || 1;
+    this._from = { x: 0.5, y: 0.5 };
+    this._to = { x: 0.5, y: 0.5 };
+    this._next = { x: 0.5, y: 0.5 };
+  }
+
+  _randomCell(out) {
+    const info = NavGrid.getGridInfo();
+    if (!info || !(info.totalCells > 0)) return false;
+    for (let tries = 0; tries < 32; tries++) {
+      this._rng = (Math.imul(this._rng, 1664525) + 1013904223) >>> 0;
+      const cell = Math.floor((this._rng / 4294967296) * info.totalCells);
+      if (!NavGrid.isCellWalkable(cell)) continue;
+      NavGrid.getCellCenter(cell, out);
+      return true;
+    }
+    return false;
+  }
+
+  tick() {
+    if (!this._randomCell(this._from) || !this._randomCell(this._to)) return;
+    NavGrid.getNextAStarPosition(this._from.x, this._from.y, this._to.x, this._to.y, this._next);
+  }
+}
+
 /** Hands the walls to the nav grid once a logic worker sees them all active (a page spawn is set up a frame later). */
 export class AstarMazeBuilder extends GameObject {
   static components = [];
