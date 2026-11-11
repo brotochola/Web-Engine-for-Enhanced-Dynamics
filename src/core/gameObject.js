@@ -2984,6 +2984,7 @@ export class GameObject {
       }
       RigidBody.angularAccel[i] = 0;
       RigidBody.mass[i] = 0;
+      RigidBody.clearMassByHand(i);
       RigidBody.invMass[i] = 0;
       RigidBody.inertia[i] = 0;
       RigidBody.invInertia[i] = 0;

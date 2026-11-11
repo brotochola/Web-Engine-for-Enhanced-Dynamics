@@ -363,7 +363,8 @@ Box2D owns contacts and the mass it solves with: the physics host turns `RigidBo
 
 **Invariant:** For every **dynamic** body that participates in physics, `mass` and `invMass` must be valid after spawn / `onSpawned`:
 
-- Mass derived from collider geometry when a collider can supply it.
+- A mass set with `this.rigidBody.mass` during the spawn (in `onSpawned`) is kept: the spawn's sync does not replace it. A collider shape set after it (`collider.radius = …`) does: set the mass after the shape.
+- Otherwise mass derived from collider geometry when a collider can supply it.
 - Otherwise an explicit custom `mass` is respected, or **unit mass** (`mass = 1`, `invMass = 1`) is set once by `RigidBody.syncMassFromCollider()`.
 
 **Static bodies:** `invMass` is `0` (infinite mass). Collider size changes also go through `RigidBody.syncMassFromCollider()`, so a static body keeps `invMass = 0` even if its collider geometry changes later.

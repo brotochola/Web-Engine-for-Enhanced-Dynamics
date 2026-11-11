@@ -312,17 +312,33 @@ function circles(C) {
   real.slotReleased(1);
 }
 
-test('E4: a mass set in onSpawned, replaced by the spawn\'s sync from the collider, is named', () => {
+test('N-132: a mass set in onSpawned holds through the spawn\'s sync from the collider, in silence', () => {
   class Boulder extends GameObject {}
   circles(Boulder);
   const lines = warningsOf(() => {
     new RigidBody(0).mass = 50; // in onSpawned
     RigidBody.syncMassFromCollider(0, true); // GameObject.spawn, after onSpawned
   });
-  assert.deepEqual(lines, [
-    "WeedJS: Boulder's rigidBody.mass, set by hand to 50, was replaced by its collider's 314.159: spawn sets the mass " +
-      'from the collider after onSpawned (PHYSICS.md, "Mass"). Set it after the spawn returns.',
-  ]);
+  assert.deepEqual(lines, []);
+  assert.equal(RigidBody.mass[0], 50, 'the hand-set mass');
+  assert.equal(RigidBody.invMass[0], Math.fround(1 / 50));
+  // The next spawn of the slot starts over: the collider's mass again.
+  RigidBody.clearMassByHand(0);
+  RigidBody.syncMassFromCollider(0, true);
+  assert.equal(RigidBody.mass[0], Math.fround(Math.PI * 100));
+});
+
+test('N-132: a mass set and then a shape changed in onSpawned takes the shape\'s mass (E4 names it)', () => {
+  class Rocker extends GameObject {}
+  circles(Rocker);
+  const lines = warningsOf(() => {
+    new RigidBody(0).mass = 50;
+    new Collider(0).radius = 20; // the shape's sync replaces it
+    RigidBody.syncMassFromCollider(0, true);
+  });
+  assert.equal(RigidBody.mass[0], Math.fround(Math.PI * 400));
+  assert.equal(lines.length, 1);
+  assert.match(lines[0], /^WeedJS: Rocker's rigidBody\.mass, set by hand to 50, was replaced by its collider's 1256\.637: a change of the collider's shape/);
 });
 
 test('E4: a mass set by hand, replaced when the collider\'s shape changes, is named', () => {

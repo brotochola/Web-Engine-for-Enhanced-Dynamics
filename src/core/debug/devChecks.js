@@ -164,23 +164,21 @@ export function massSetByHand(index) {
 }
 
 /**
- * RigidBody.syncMassFromCollider gave the entity its collider's mass.
+ * RigidBody.syncMassFromCollider gave the entity its collider's mass (a shape's setter: the spawn's sync keeps a mass
+ * set by hand, N-132).
  * @param {number} index
  * @param {number} before the mass before
  * @param {number} after the mass now
- * @param {boolean} fromSpawn the spawn's sync, right after onSpawned
  */
-export function massFromCollider(index, before, after, fromSpawn) {
+export function massFromCollider(index, before, after) {
   if (!on || index >= handMass.length || handMass[index] === 0) return;
   handMass[index] = 0;
   if (before === after) return;
   const name = classNameOf(index);
-  const fix = fromSpawn
-    ? 'spawn sets the mass from the collider after onSpawned (PHYSICS.md, "Mass"). Set it after the spawn returns'
-    : 'a change of the collider\'s shape sets the mass from it again. Set the mass after the shape';
+  const fix = "a change of the collider's shape sets the mass from it again. Set the mass after the shape";
   warnOnce(
     name,
-    fromSpawn ? 'mass-spawn' : 'mass-shape',
+    'mass-shape',
     `${name}'s rigidBody.mass, set by hand to ${+before.toFixed(3)}, was replaced by its collider's ${+after.toFixed(3)}: ${fix}.`,
   );
 }
