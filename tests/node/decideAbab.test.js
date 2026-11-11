@@ -167,6 +167,53 @@ test('--owner presented keeps a consistent rise in presented frames', () => {
   assert.ok(d.presented.pairedDeltaPct > 8);
 });
 
+// N-121: meshUploadStressScene, a GPU-bound scene: Pixi drew 22 % more frames while the page's own frames, waiting on
+// the GPU, fell 12 %, and the guard printed REGRESSION. Where Pixi draws under the page's rate, the frames drawn decide.
+test('a GPU-bound scene is judged by the frames Pixi draws, not the page\'s rate (N-121)', () => {
+  const pairs = pairsWith('renderer', [9.1, 9.3, 9.0, 9.2], [9.0, 9.1, 9.2, 9.0]);
+  [53.6, 53.9, 53.4, 53.7].forEach((f, i) => { pairs[i].A.MAIN_FPS = f; });
+  [47.2, 47.5, 47.0, 47.3].forEach((f, i) => { pairs[i].B.MAIN_FPS = f; });
+  [24.1, 24.7, 24.4, 24.5].forEach((f, i) => { pairs[i].A.DRAWN_FPS = f; });
+  [30.0, 29.8, 30.1, 30.0].forEach((f, i) => { pairs[i].B.DRAWN_FPS = f; });
+  const d = decideAbab(pairs, 'renderer');
+  assert.notEqual(d.verdict, 'REGRESSION', JSON.stringify(d.regress));
+  assert.equal(d.presented.source, 'drawn');
+  assert.ok(d.presented.pairedDeltaPct > 20);
+  assert.equal(d.presentedOther.key, 'MAIN_FPS', 'the page\'s rate reported beside');
+  assert.ok(d.presentedOther.pairedDeltaPct < -10);
+  // Fewer frames drawn there is the regression.
+  for (const p of pairs) [p.A.DRAWN_FPS, p.B.DRAWN_FPS] = [p.B.DRAWN_FPS, p.A.DRAWN_FPS];
+  const worse = decideAbab(pairs, 'renderer');
+  assert.equal(worse.verdict, 'REGRESSION');
+  assert.ok(worse.regress.some((r) => r.startsWith('drawn frames -')), JSON.stringify(worse.regress));
+});
+
+test('where Pixi keeps the page\'s rate, the page\'s rate decides, as in E-82', () => {
+  const pairs = pairsWith('renderer', [13.6, 14.4, 11.7, 16.1], [3.4, 3.0, 2.9, 3.8]);
+  [55.1, 54.2, 55.4, 54.8].forEach((f, i) => { pairs[i].A.MAIN_FPS = f; });
+  [44.2, 43.7, 44.4, 44.2].forEach((f, i) => { pairs[i].B.MAIN_FPS = f; });
+  [54.9, 54.0, 55.2, 54.6].forEach((f, i) => { pairs[i].A.DRAWN_FPS = f; });
+  [56.0, 55.8, 56.1, 55.9].forEach((f, i) => { pairs[i].B.DRAWN_FPS = f; });
+  const d = decideAbab(pairs, 'renderer');
+  assert.equal(d.verdict, 'REGRESSION');
+  assert.notEqual(d.presented.source, 'drawn');
+  assert.equal(d.presented.key, 'MAIN_FPS');
+  assert.ok(d.regress.some((r) => r.startsWith('presented frames -')), JSON.stringify(d.regress));
+  assert.equal(d.presentedOther.key, 'DRAWN_FPS');
+});
+
+test('predatorMetrics: frames drawn are Pixi\'s frames over the window (N-121)', () => {
+  const ex = (frames) => ({ frames, stepMs: 9, waitMs: 0, extraMs: 0, workMs: 9, p50Ms: 9, p95Ms: 12 });
+  const m = predatorMetrics({
+    measurementDurationMs: 10000,
+    workers: [{ type: 'pixi', statsSamplesAverage: { STEP_MS: 9 }, exact: ex(300) }],
+    mainThread: { averageFPS: 47.2 },
+  });
+  assert.equal(m.DRAWN_FPS, 30);
+  assert.equal('DRAWN_FPS' in predatorMetrics({ workers: [{ type: 'pixi', statsSamplesAverage: {}, exact: ex(300) }] }), false,
+    'no window, no rate');
+});
+
 test('presented frames are judged only when every pair has them', () => {
   const pairs = pairsWith('renderer', [13.6, 14.4, 11.7, 16.1], [3.4, 3.0, 2.9, 3.8]);
   pairs[0].A.MAIN_FPS = 55;
