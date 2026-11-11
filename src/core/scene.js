@@ -141,6 +141,8 @@ import {
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
+import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
+import { warnOnce } from '../util/dxWarn.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
@@ -745,6 +747,11 @@ class Scene {
    * Access config via this.config.section.property (e.g., this.config.lighting.maxFlashes)
    */
   _applyConfigDefaults() {
+    // DX-GUARDS C1: a key the engine does not read does nothing. Name it once, with the key the game may have meant.
+    const sceneName = this.constructor.name;
+    for (const item of unknownConfigKeys(this.config)) {
+      warnOnce(`${sceneName}.config.${item.path}`, 'config-key', unknownConfigKeyText(sceneName, item));
+    }
     const userLightingConfig = this.config.lighting || {};
 
     // Top-level defaults from centralized config
