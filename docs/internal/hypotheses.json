@@ -9978,7 +9978,8 @@
         "R-0806",
         "R-0807",
         "R-0812",
-        "R-0873"
+        "R-0873",
+        "R-0875"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -20185,6 +20186,18 @@
       "commits": [
         "16fe185c",
         "5aae5fe6"
+      ]
+    },
+    {
+      "id": "R-0875",
+      "date": "2026-11-11",
+      "time": "15:55",
+      "timeFrom": "recorded",
+      "title": "The bundles of 340061f0 (E-189) tested and timed against src (Predator and Boids NEUTRAL)",
+      "verdict": "passed",
+      "text": "**The bundles of 340061f0 (E-189 merged): tested, and the prod bundle equals its sources.** dist `39110dc0`, built from 340061f0.\n\n**On main:**\n- Node 2440 of 2440, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, nothing else running:\n\n- **Predator, 4 pairs, 15:42 to 15:46: NEUTRAL.**\n  - Logic -8.2 % (worse 0/4), spatial -2.6 %, physics -7.5 % (cv 7/17 %).\n  - Pre-render 3.107 → 3.132 ms (+1.4 %, worse 2/4).\n  - Load within 0.6 %.\n- **Boids, 8 pairs, 15:46 to 15:55: NEUTRAL.**\n  - Spatial 5.853 → 5.913 ms (+0.9 %, worse 5/8, cv 3/3 %).\n  - Physics +0.3 % (worse 6/8).\n  - 40 000 bodies on both sides.\n\nMain pushed.",
+      "commits": [
+        "39110dc0"
       ]
     }
   ],
