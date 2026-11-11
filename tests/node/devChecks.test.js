@@ -191,3 +191,65 @@ test('E2: the audit runs once a second at most, and not when the checks are off'
   });
   assert.deepEqual(off, []);
 });
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E3: a body flag written after the body exists.
+// ---------------------------------------------------------------------------------------------------------------------
+
+import { RigidBody } from '../../src/components/rigidBody.js';
+import { Collider } from '../../src/components/collider.js';
+import { BODY_DIRTY, bindBodySyncBuffers } from '../../src/box2d/box2dBodySync.js';
+
+/** Two physics entities of class `C`, the body-sync buffers bound; slot 0's body waits to be made. */
+function bodies(C) {
+  const N = 2;
+  Transform.initializeArrays(new SharedArrayBuffer(Transform.getBufferSize(N)), N);
+  RigidBody.initializeArrays(new SharedArrayBuffer(RigidBody.getBufferSize(N)), N);
+  Collider.initializeArrays(new SharedArrayBuffer(Collider.getBufferSize(N)), N);
+  const flags = bindBodySyncBuffers({
+    bodyDirtyFlags: new SharedArrayBuffer(N * 4),
+    bodyDirtyWords: new SharedArrayBuffer(4),
+    bodyGeneration: new SharedArrayBuffer(N * 4),
+  }).dirtyFlags;
+  GameObject.classByType[5] = C;
+  for (let i = 0; i < N; i++) {
+    Transform.entityType[i] = 5;
+    Transform.active[i] = 1;
+    RigidBody.active[i] = 1;
+    Collider.active[i] = 1;
+  }
+  flags[0] = BODY_DIRTY.LIFECYCLE;
+  return flags;
+}
+
+test('E3: collider.isTrigger and rigidBody.fixedRotation written after the body is made are named', () => {
+  class Crate extends GameObject {}
+  const flags = bodies(Crate);
+  const lines = warningsOf(() => {
+    new Collider(0).isTrigger = 1; // the body is still to be made: it reads this
+    new RigidBody(0).fixedRotation = 1;
+    flags[0] = 0; // the physics step made it
+    new Collider(0).isTrigger = 0;
+    new RigidBody(0).fixedRotation = 0;
+    new Collider(1).isTrigger = 1; // once per class
+  });
+  assert.deepEqual(lines, [
+    'WeedJS: Crate writes collider.isTrigger after its Box2D body exists, so the body does not change. Set it before ' +
+      'the body exists: in onSpawned or the spawn config.',
+    'WeedJS: Crate writes rigidBody.fixedRotation after its Box2D body exists, so the body does not change. Use ' +
+      'this.setFixedRotation(v) (or this.fixedRotation = v), which updates the body.',
+  ]);
+  assert.equal(Collider.isTrigger[0], 0, 'the column is still written');
+  assert.equal(RigidBody.fixedRotation[0], 0);
+});
+
+test('E3: without physics, or with the body still to be made, nothing is said', () => {
+  class Barrel extends GameObject {}
+  bodies(Barrel);
+  const lines = warningsOf(() => {
+    new Collider(0).isTrigger = 1;
+    bindBodySyncBuffers(null); // physics off
+    new Collider(1).isTrigger = 1;
+  });
+  assert.deepEqual(lines, []);
+});

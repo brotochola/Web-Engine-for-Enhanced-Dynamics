@@ -15,6 +15,7 @@ import { ColliderFixture } from '../core/colliderFixture.js';
 import { ChainPoints } from '../core/chainPoints.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
+import { lateBodyWrite } from '../core/debug/devChecks.js';
 import { SpriteRenderer } from './spriteRenderer.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
@@ -500,6 +501,15 @@ class Collider extends Component {
   set restitution(value) {
     Collider.restitution[this.index] = Math.max(0, Number(value) || 0);
     markBodyDirty(this.index, BODY_DIRTY.FRICTION);
+  }
+
+  /** Box2D reads it when it makes the body; a write after that does not reach the body (DX-GUARDS E3 names it). */
+  get isTrigger() {
+    return Collider.isTrigger[this.index];
+  }
+  set isTrigger(value) {
+    Collider.isTrigger[this.index] = value;
+    lateBodyWrite(this.index, 'collider.isTrigger');
   }
 
   get enableHitEvents() {

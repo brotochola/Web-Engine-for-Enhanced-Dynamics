@@ -20,7 +20,7 @@ import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
-import { noteSpawned } from './debug/devChecks.js';
+import { noteSpawned, setDevLookups } from './debug/devChecks.js';
 import { ColliderFixture } from './colliderFixture.js';
 import { ChainPoints } from './chainPoints.js';
 import { MeshGeometry } from './meshGeometry.js';
@@ -62,6 +62,7 @@ import {
   BODY_DIRTY,
   advanceBodyGeneration,
   bumpBodyGeneration,
+  bodyLifecyclePending,
   markBodyDirty,
   beginBodyDirtyDeferred,
   endBodyDirtyDeferred,
@@ -3532,3 +3533,9 @@ export class GameObject {
 // E-167: the realm's config and LogicWorker before the first entity binds them (and on the page, which has no worker).
 GameObject.prototype.config = EMPTY_CONFIG;
 GameObject.prototype.logicWorker = null;
+
+// DX-GUARDS (debug build): devChecks names an entity's class, and knows whether its Box2D body is made, through these.
+setDevLookups(
+  (i) => GameObject.classByType[Transform.entityType?.[i]]?.name ?? 'An entity',
+  (i) => Transform.active?.[i] === 1 && !!(RigidBody.active?.[i] || Collider.active?.[i]) && !bodyLifecyclePending(i),
+);

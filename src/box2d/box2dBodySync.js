@@ -192,6 +192,18 @@ function publishBodyDirty(i, flags) {
 }
 
 /**
+ * DX-GUARDS E3: the slot waits for the physics step to make (or remake) its body: LIFECYCLE published and not yet
+ * taken, or held in a spawn window. True without physics (nothing to make, nothing too late).
+ * @param {number} entityIndex
+ */
+export function bodyLifecyclePending(entityIndex) {
+  const i = entityIndex | 0;
+  if (!dirtyFlags || i < 0 || i >= dirtyFlags.length) return true;
+  if (pendingFlags && i < pendingFlags.length && (pendingFlags[i] & BODY_DIRTY.LIFECYCLE) !== 0) return true;
+  return (Atomics.load(dirtyFlags, i) & BODY_DIRTY.LIFECYCLE) !== 0;
+}
+
+/**
  * `force` publishes even inside `withBodyDirtyDeferred` (child bump while
  * the parent spawn window is still open). Game code does not pass `force`.
  */

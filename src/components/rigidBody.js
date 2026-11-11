@@ -10,6 +10,7 @@ import { Transform } from './transform.js';
 import { updateMassFromCircle, updateMassFromBox } from '../util/utils.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
+import { lateBodyWrite } from '../core/debug/devChecks.js';
 
 let _warnedDynamicChain = false;
 
@@ -307,6 +308,18 @@ export class RigidBody extends Component {
   /**
    * Mass — keeps invMass + rotational inertia in sync when set at runtime.
    */
+  /**
+   * The column only: once the body is made, GameObject.setFixedRotation (or this.fixedRotation = v on the entity) is
+   * what reaches Box2D (DX-GUARDS E3 names a write here then).
+   */
+  get fixedRotation() {
+    return RigidBody.fixedRotation[this.index];
+  }
+  set fixedRotation(value) {
+    RigidBody.fixedRotation[this.index] = value;
+    lateBodyWrite(this.index, 'rigidBody.fixedRotation');
+  }
+
   get mass() {
     return RigidBody.mass[this.index];
   }

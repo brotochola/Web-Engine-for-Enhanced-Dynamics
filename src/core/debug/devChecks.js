@@ -10,6 +10,10 @@
 import { warnOnce } from '../../util/dxWarn.js';
 
 let on = false;
+/** (entity index) → its class's name; gameObject.js sets it (this module cannot import it: a cycle). */
+let classNameOf = () => 'An entity';
+/** (entity index) → its Box2D body is made, no creation waiting; gameObject.js sets it. */
+let bodyMade = () => false;
 /** Turn the checks on or off in this thread. */
 export function setDevChecks(enabled) {
   on = enabled === true;
@@ -18,6 +22,12 @@ export function setDevChecks(enabled) {
 /** True while the checks are on in this thread. */
 export function devChecksOn() {
   return on;
+}
+
+/** gameObject.js gives the lookups from an entity index to its class's name and to whether its body is made. */
+export function setDevLookups(className, isBodyMade) {
+  classNameOf = typeof className === 'function' ? className : () => 'An entity';
+  bodyMade = typeof isBodyMade === 'function' ? isBodyMade : () => false;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -109,4 +119,29 @@ export function auditFields(liveInstanceOf, nowMs) {
       );
     }
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// E3: a body flag written after the body exists.
+// ---------------------------------------------------------------------------------------------------------------------
+
+/** What to do instead, by property. */
+const BODY_FLAG_FIX = {
+  'collider.isTrigger': 'Set it before the body exists: in onSpawned or the spawn config',
+  'rigidBody.fixedRotation': 'Use this.setFixedRotation(v) (or this.fixedRotation = v), which updates the body',
+};
+
+/**
+ * A component property Box2D reads only when it makes the body, written when the body is already made.
+ * @param {number} index the entity
+ * @param {string} what 'collider.isTrigger' or 'rigidBody.fixedRotation'
+ */
+export function lateBodyWrite(index, what) {
+  if (!on || !bodyMade(index)) return;
+  const name = classNameOf(index);
+  warnOnce(
+    name,
+    `late-${what}`,
+    `${name} writes ${what} after its Box2D body exists, so the body does not change. ${BODY_FLAG_FIX[what] || ''}.`,
+  );
 }

@@ -6,3 +6,5 @@ export function devChecksOn() {
 export function checkFirstInstance() {}
 export function noteSpawned() {}
 export function auditFields() {}
+export function setDevLookups() {}
+export function lateBodyWrite() {}
