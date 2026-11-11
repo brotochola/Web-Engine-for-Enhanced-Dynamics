@@ -714,6 +714,11 @@ export interface SceneAssetsManifest {
   spritesheets?: Record<string, Record<string, unknown>>;
   AdobeAnimateAnimations?: Record<string, Record<string, unknown>>;
   tilemaps?: Record<string, { json: string; png: string }>;
+  /**
+   * Static flowfields: name → URL of a binary flowfield (`.bin`, WeedJS's "WEFF" format, used as it
+   * comes) or a JSON one. The format is read from the file's first bytes. See the guide's
+   * "Static flowfields".
+   */
   flowfields?: Record<string, string>;
   shaders?: Record<string, string>;
   [key: string]: unknown;
@@ -2341,6 +2346,13 @@ export declare class NavGrid {
   static setNavWorkerPort(port: MessagePort | null): void;
 
   static registerStaticFlowfield(name: string, data: NavGridStaticFlowfieldInput): void;
+  /** Loads binary ("WEFF") and JSON flowfields, all at once; main thread only. */
+  static loadStaticFlowfields(
+    flowfieldUrls: Record<string, string>,
+    sceneWorldWidth: number,
+    sceneWorldHeight: number
+  ): Promise<void>;
+  /** @deprecated The old name of {@link NavGrid.loadStaticFlowfields}, which reads binary files too. */
   static loadStaticFlowfieldsFromJSON(
     flowfieldUrls: Record<string, string>,
     sceneWorldWidth: number,
