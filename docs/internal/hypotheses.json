@@ -11448,7 +11448,8 @@
       ],
       "records": [
         "R-0854",
-        "R-0881"
+        "R-0881",
+        "R-0882"
       ]
     },
     {
@@ -20270,6 +20271,18 @@
       "commits": [
         "33732b3b",
         "3c0b5f5d"
+      ]
+    },
+    {
+      "id": "R-0882",
+      "date": "2026-11-11",
+      "time": "16:51",
+      "timeFrom": "recorded",
+      "title": "E-208's Predator gate: NEUTRAL at 8 pairs (4 pairs flagged spatial and pre-render, drift)",
+      "verdict": "passed",
+      "text": "**E-208's Predator gate: NEUTRAL at 8 pairs.** 2026-11-11, 16:43 to 16:51. Main before (`228f0106`) against main after (`8c04d8da`), Predator at its defaults (two logic workers), owner logic. Chrome, headed, source, detailed stats off, AC power.\n\n**At 4 pairs, the runner printed REGRESSION**, though not for the owner:\n- logic +1.2 % (worse 2/4);\n- spatial +3.1 % and pre-render +3.5 % (3/4 each). E-208 reaches neither.\n- Pair 0 ran every worker 5 to 17 % high on its B side.\n\n**At 8 pairs** (`--append`, the same stamp): **NEUTRAL.**\n- Logic 3.251 → 3.204 ms (-1.0 %, worse 2/8).\n- Spatial -0.0 % (4/8), physics -2.0 % (cv 13/8 %), pre-render -1.2 % (3/8).\n- Load within 0.2 %.\n\nThe first sitting's flags were the drift of its early pairs.",
+      "commits": [
+        "8c04d8da"
       ]
     }
   ],
