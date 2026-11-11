@@ -468,10 +468,10 @@ export const NAV_TABLE_SLOTS = 16;
  * particleMemory.js). The ParticleComponent lays its columns out from byte 0 of its buffer in every
  * worker (Component.initializeArrays), so this memory starts with the component and has no guard:
  * the kernels take every column's offset from JS. After it:
- * - activeList: u16 [count, index …] with room for one index past the count; Pixi reads it, and the
- *   integrate reads its indices;
- * - visibleList: a published list (publishedList.js, N-113): its header, then three copies of the
- *   same shape, the kernel writing one pre-render does not hold; pre-render takes the published one;
+ * - activeList, visibleList: published lists (publishedList.js; N-113, N-136): a header, then three
+ *   copies of u16 [count, index …] with room for one index past the count; the kernel writes a copy
+ *   their reader does not hold, Pixi takes the published active one, pre-render the visible one,
+ *   and the integrate reads the indices of the active copy the kernel wrote that frame;
  * - stamp: stayOnTheFloor particles to stamp (u16);
  * - flat, heighted: the integrate's scratch lists (u16, 65 536 each);
  * - dead: the indices JS returns to the pool after the call, in order (u16);
@@ -490,7 +490,7 @@ export function particleMemoryRegions(maxParticles, componentBytes, lutFloats) {
   const scratch = s === 2 ? 65536 : n;
   return layoutRegions([
     { name: 'component', owner: 'every worker (the ParticleComponent views)', bytes: componentBytes },
-    { name: 'activeList', owner: 'particle; Pixi reads', bytes: (n + 2) * s },
+    { name: 'activeList', owner: 'particle; Pixi reads', bytes: publishedListBytes(n, 1) },
     { name: 'visibleList', owner: 'particle; pre-render reads', bytes: publishedListBytes(n, 1) },
     { name: 'stamp', owner: 'particle', bytes: n * s },
     { name: 'flat', owner: 'particle', bytes: scratch * s },

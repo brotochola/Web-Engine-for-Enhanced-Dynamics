@@ -207,13 +207,13 @@ function createSlotFreeListBuffers(buffers, freeListKey, freeListTopKey, count) 
 
 /**
  * A slot pool's active list, and its visible list as a published list (N-112): three copies, so the reader never
- * reads the one the particle worker is writing; each copy `extra` slots longer.
+ * reads the one the particle worker is writing.
  */
-function createActiveAndPublishedLists(buffers, activeKey, visibleKey, maxEntries, extra = 0) {
+function createActiveAndPublishedLists(buffers, activeKey, visibleKey, maxEntries) {
   const Slot = PoolSlotArray(maxEntries);
-  buffers[activeKey] = new SharedArrayBuffer((1 + maxEntries + extra) * Slot.BYTES_PER_ELEMENT);
+  buffers[activeKey] = new SharedArrayBuffer((1 + maxEntries) * Slot.BYTES_PER_ELEMENT);
   new Slot(buffers[activeKey])[0] = 0;
-  buffers[visibleKey] = createPublishedList(maxEntries, extra);
+  buffers[visibleKey] = createPublishedList(maxEntries);
 }
 
 function clearActiveFlags(array, count) {
@@ -326,18 +326,12 @@ function initializeParticleBuffers(scene) {
   ParticleEmitter.initialize(maxParticles);
   ParticleEmitter.initializeFreeList(buffers.particleFreeList, buffers.particleFreeListTop);
 
-  // The lists. In the particle memory they are two of its regions (the list kernel writes them there); readers view
-  // them at these byte offsets. The visible one is a published list (N-113): the byte is its header's.
-  if (scene.particleMemory) {
-    buffers.activeParticlesData = scene.particleMemory.buffer;
-    buffers.visibleParticlesData = scene.particleMemory.buffer;
-    buffers.activeParticlesByte = scene.particleMemory.layout.activeListByte;
-    buffers.visibleParticlesByte = scene.particleMemory.layout.visibleListByte;
-  } else {
-    createActiveAndPublishedLists(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles, 1);
-    buffers.activeParticlesByte = 0;
-    buffers.visibleParticlesByte = 0;
-  }
+  // The lists: two regions of the particle memory (the list kernel writes them there), published lists (N-136,
+  // N-113) whose readers view them at these bytes, their headers'.
+  buffers.activeParticlesData = scene.particleMemory.buffer;
+  buffers.visibleParticlesData = scene.particleMemory.buffer;
+  buffers.activeParticlesByte = scene.particleMemory.layout.activeListByte;
+  buffers.visibleParticlesByte = scene.particleMemory.layout.visibleListByte;
 }
 
 function initializeLiquidFunRenderBuffer(scene) {

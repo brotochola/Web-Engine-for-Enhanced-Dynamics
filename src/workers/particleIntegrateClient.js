@@ -54,6 +54,8 @@ export async function bindParticleIntegrate(memory, layout, pc, maxParticles, { 
     layout,
     lutSize: PARTICLE_LUT_ENTRIES - 1,
     indices: new Slot(buffer, layout.indicesByte, n),
+    // N-136: the input list's byte, copy 0's (`indices`) until the particle worker points it at the copy it wrote.
+    indicesByte: layout.indicesByte,
     stamp: new Slot(buffer, layout.stampByte, n),
     dead: new Slot(buffer, layout.deadByte, n),
     trig: new Slot(buffer, layout.trigByte, n),
@@ -71,7 +73,7 @@ export function integrateParticlesWasm(binding, pc, count, deltaTime, dtRatio, s
   const L = binding.layout;
   const skipRenderOnly = pc.renderOnlyLive && Atomics.load(pc.renderOnlyLive, 0) > 0 ? 1 : 0;
   binding.integrate(
-    L.columnsByte, L.indicesByte, count, deltaTime, dtRatio, stampEnabled ? 1 : 0, skipRenderOnly,
+    L.columnsByte, binding.indicesByte, count, deltaTime, dtRatio, stampEnabled ? 1 : 0, skipRenderOnly,
     L.stampByte, L.flatByte, L.heightedByte, L.deadByte, L.trigByte, L.trigAngleByte,
     L.lutByte, binding.lutSize, L.resultsByte,
   );

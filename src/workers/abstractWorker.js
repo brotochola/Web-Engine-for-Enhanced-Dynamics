@@ -793,12 +793,14 @@ export class AbstractWorker {
 
     // Initialize particle compact lists (for optimized iteration)
     if (data.maxParticles && data.maxParticles > 0) {
-      // activeParticlesData: rebuilt each frame by particle_worker. In the particle memory (E-80)
-      // both lists sit at a byte offset; a plain SAB starts at 0. E-129: u32 past 65 535 particles.
-      const listLength = (data.maxParticles | 0) + 1;
-      const ParticleSlots = PoolSlotArray(data.maxParticles | 0);
+      // activeParticlesData: rebuilt each frame by particle_worker, in the particle memory (E-80) at a byte offset, at
+      // the pool's slot width (E-129: u32 past 65 535 particles). N-136: a published list as the visible one below;
+      // Pixi takes the published copy for the particle light field.
       if (data.activeParticlesData) {
-        this.activeParticlesData = new ParticleSlots(data.activeParticlesData, data.activeParticlesByte | 0, listLength);
+        const active = bindPublishedList(data.activeParticlesData, data.maxParticles | 0, data.activeParticlesByte | 0, 1);
+        this.activeParticlesCtl = active.ctl;
+        this.activeParticlesCopies = active.copies;
+        this.activeParticlesData = active.copies[0];
         this.reportLog(`initialized activeParticlesData`);
       }
       // visibleParticlesData: the active particles on screen, written by particle_worker, read by pre_render_worker:
