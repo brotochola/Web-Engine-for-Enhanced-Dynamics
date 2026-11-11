@@ -6,7 +6,6 @@ const { ShapeType } = enums;
 /** Static collider + RigidBody obstacle for Ray vs Box2D stress (circle or box). */
 export class RayStressEntity extends GameObject {
   static components = [RigidBody, Collider, SpriteRenderer];
-  static tickInterval = 16;
 
   onSpawned({
     x = 0,
@@ -39,9 +38,5 @@ export class RayStressEntity extends GameObject {
     this.setSprite('ball');
     this.setAnchor(0.5, 0.5);
     this.setAlpha(0.75);
-  }
-
-  tick() {
-    // Static obstacles — driver owns the ray workload.
   }
 }
