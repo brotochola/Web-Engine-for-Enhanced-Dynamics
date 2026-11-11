@@ -77,11 +77,4 @@ export class House extends GameObject {
   onDespawned() {
     // Could save stats, play death effects, etc.
   }
-
-  tick(dtRatio) {
-    // Solo loggear la primera TallLight para no spamear
-    // console.log(
-    //   `House[${this.index}] neighbors: ${this.neighborCount}, visualRange: ${this.collider.visualRange}, active: ${this.collider.active}`
-    // );
-  }
 }
