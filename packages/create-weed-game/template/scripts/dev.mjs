@@ -84,6 +84,29 @@ if (hotReload) {
   }
 }
 
+// The file a site path (`/src/x.js`) names in the served folder, or null when it names none: a path holding `\`, `:` or
+// NUL (on Windows `\` is a separator and `a:b` a file's stream), one that leaves the folder once `..` is resolved, or
+// one that leaves it through a link (for the part of the path that exists). The engine's server/staticFiles.js
+// resolveInside, copied: the template ships alone.
+const isInside = (base, p) => {
+  const rel = path.relative(base, p);
+  return rel === '' || (rel !== '..' && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+};
+
+function resolveInside(base, sitePath) {
+  if (!sitePath.startsWith('/') || /[\\:\0]/.test(sitePath)) return null;
+  const baseReal = fs.realpathSync(base);
+  const abs = path.resolve(baseReal, `.${sitePath}`);
+  if (!isInside(baseReal, abs)) return null;
+  let existing = abs;
+  while (!fs.existsSync(existing)) {
+    const up = path.dirname(existing);
+    if (up === existing) return null;
+    existing = up;
+  }
+  return isInside(baseReal, fs.realpathSync(existing)) ? abs : null;
+}
+
 function handle(req, res) {
   const { pathname } = new URL(req.url, 'http://localhost');
 
@@ -99,14 +122,15 @@ function handle(req, res) {
     return;
   }
 
-  let file;
+  let sitePath;
   try {
-    file = path.join(root, decodeURIComponent(pathname));
+    sitePath = decodeURIComponent(pathname);
   } catch {
     res.writeHead(400, HEADERS).end();
     return;
   }
-  if (file !== root && !file.startsWith(root + path.sep)) {
+  let file = resolveInside(root, sitePath);
+  if (file === null) {
     res.writeHead(403, HEADERS).end();
     return;
   }
