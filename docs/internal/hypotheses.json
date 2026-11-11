@@ -11831,6 +11831,30 @@
         "pathfinding"
       ],
       "records": []
+    },
+    {
+      "id": "N-138",
+      "title": "A moving entity's volume shadow leads its sprite by a varying 1 to 3 frames (Sun Street's cars)",
+      "status": "open",
+      "statusText": "found 2026-11-11 by the owner in Sun Street; filmed the same day; open",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "The mesh of an entity with a sprite takes the pose its sprite is drawn at this frame (the render queue's), not the live Transform; a test that a moved volume's mesh and its sprite share the pose, and a film of Sun Street's cars.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-138"
+      ],
+      "aliases": [
+        "VolumeShadowCaster",
+        "volume shadow",
+        "colliderFillBatch",
+        "meshFillUsesLive",
+        "Sun Street",
+        "shadow lag"
+      ],
+      "records": [],
+      "rank": 1
     }
   ],
   "records": [
