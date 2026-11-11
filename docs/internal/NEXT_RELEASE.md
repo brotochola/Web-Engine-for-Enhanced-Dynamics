@@ -9,3 +9,6 @@ empties it.
   layer's look now composes with `blendMode` too. A layer that asked for `BLEND_MODES.ADD` and was tuned while it drew
   normal now draws additive: look at its alpha and tint. A game that used `shader: { containerBlend }` with no fragment
   as the workaround keeps drawing the same.
+- **Despawn removes the entity's joints** (N-130), after `onDespawned`. They used to stay in the joint pool, and the
+  entity spawned next into that index was born jointed to the old partner. A game that calls
+  `Joint.removeAllForEntity(this.index)` in `onDespawned` keeps working; the call is no longer needed.

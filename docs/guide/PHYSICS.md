@@ -388,6 +388,8 @@ A prismatic joint does not spin. `axisAngle` is stored in the weld `linearHertz`
 
 Weld create captures current relative rotation (`localFrameB.q = qB⁻¹ qA`) so angled parts stay put; identity frames would snap both bodies to the same world angle.
 
+Despawning an entity removes its joints, after `onDespawned` (which can still read them), so the entity spawned next into that index starts with none. `Joint.removeAllForEntity(i)` is for cutting them while the entity lives.
+
 ### Dense active list
 
 Physics sync iterates the dense active list (`activeIndices` / `activeCount`), not `0 .. maxJoints`.

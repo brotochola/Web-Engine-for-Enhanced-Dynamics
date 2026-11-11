@@ -4348,6 +4348,7 @@ export declare class Joint extends SharedAtomicPool {
   static getEntities(idx: number): { entityA: number; entityB: number };
   static update(idx: number, props: Record<string, number | boolean>): void;
   static isActive(idx: number): boolean;
+  /** Every joint at the entity. Despawn calls it for you, after onDespawned. */
   static removeAllForEntity(entityIdx: number): void;
   static hasBetween(entityA: number, entityB: number): boolean;
   static getJointCount(entityIdx: number): number;
