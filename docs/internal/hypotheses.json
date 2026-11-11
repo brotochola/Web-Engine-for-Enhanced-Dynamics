@@ -9981,7 +9981,8 @@
         "R-0873",
         "R-0875",
         "R-0880",
-        "R-0883"
+        "R-0883",
+        "R-0886"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -20367,6 +20368,18 @@
       "text": "**N-138 fixed (`00b383fc`): a mesh is filled at the pose its sprite was drawn at, so a moving car's volume shadow stays under it.** 2026-11-11, the owner's report the same day (\"the cars' shadows shake, they do not follow the cars\").\n\n**The bug.** Sun Street's cars cast with `VolumeShadowCaster`, a mesh on its own layer. The car's sprite is drawn at the pose pre-render collected into the render queue. The mesh was filled at the live Transform (`meshFillUsesLive`: a body that is static or has none, as the cars are), which logic had moved on since pre-render read it, by however many frames the workers were apart that frame: 1 to 3.\n\n**The fix.**\n- Pre-render lists, per render-queue buffer, the pose each sprite row was collected at when its entity has an active mesh (`meshPoseList.js`, written after the collect and before the emit). Only scenes with a class that has both a sprite and a mesh get the lists.\n- Pixi copies the list into per-entity columns when it takes the frame, before it hands the buffer back to pre-render, stamped with the frame.\n- The mesh fill (`meshFillPoseSource`) takes that pose while its stamp is the frame drawn; otherwise the latched or live pose as before (a car whose sprite was culled).\n- With `renderer.interpolation` on, Pixi draws the sprite between the last two queue frames and the mesh at the newer one: a fraction of a frame apart, not measured.\n\n**Evidence.** Sun Street filmed on main and on the fix (`?dayMinutes=60`, 16 screenshots about 200 ms apart, 16:33). Measured from the pixels: on the two rows under the white car, where the shadow box's left edge sits against the car's left edge.\n- main: from −8 to −17 px over six frames (a 9 px swing, about three frames of the car's motion);\n- the fix: −14 or −15 px over seven frames.\n\nA node test with the real workers (`meshPoseFollowsSprite.test.js`): pre-render lists the car's collected pose, Pixi takes the frame, logic moves the car on, and the fill packs the sprite's pose; a frame whose list did not hold the car packs the live Transform.\n\n**Cost.** Sun Street with 10 000 cars (`?cars=10000&dayMinutes=60`: every car a sprite with a volume, so the list holds 10 000 poses a frame), 4 pairs, 17:53 to 17:56 (`--vs 8bbdf1fe --hyp-rev 7b10560b --full-rev --owner renderer`; `00b383fc` is that commit reworded): KEPT.\n- Renderer 4.348 → 3.956 ms (−9.0 %, lower in 4 of 4 pairs, cv 10/3 %). Not explained by a probe. Probably the mesh's pose now changes only with a new queue frame, so the fill's pose skip holds on the steps Pixi draws again while logic moves the Transform (Pixi drew 34 frames a second and presented 56).\n- Pre-render 1.974 → 2.083 ms (+5.5 %), below the 3 ms floor and not judged: the list of 10 000 poses each frame.\n- Logic, spatial and physics within 2.2 %. No A/A this sitting. Sun Street's own 6 cars write 6 entries a frame.",
       "commits": [
         "00b383fc"
+      ]
+    },
+    {
+      "id": "R-0886",
+      "date": "2026-11-11",
+      "time": "18:16",
+      "timeFrom": "recorded",
+      "title": "The bundles of 1446eec9 (N-134, N-138) tested; Boids NEUTRAL (8 pairs), Predator high on the bundle's side (N-105's noise)",
+      "verdict": "passed",
+      "text": "**The bundles of 1446eec9 (N-134 and N-138 merged): tested, and the prod bundle equals its sources by Boids' 8 pairs. Predator's 4 read spatial, physics and pre-render high on the bundle's side, N-105's noise.** dist `94d790f0`, built from 1446eec9.\n\n**On main:**\n- Node 2453 of 2453, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n\n- **Predator, 4 pairs, 18:04 to 18:08: REGRESSION by the runner.**\n  - logic -5.1 % (0/4 worse);\n  - spatial +5.4 % (4/4);\n  - physics +4.0 % (2/4);\n  - pre-render +4.0 % (3/4);\n  - load within 0.1 %.\n\n  The last cycle (R-0883) read the same way, with logic high instead.\n- **Boids, 8 pairs, 18:08 to 18:16: NEUTRAL.** Spatial 6.451 → 6.733 ms (+4.2 %, worse 5/8, cv 11/7 %), physics +2.5 % (5/8), 40 000 bodies on both sides.\n\nN-105: Boids' 8 pairs decide. The bundle equals its sources. Main pushed.",
+      "commits": [
+        "94d790f0"
       ]
     }
   ],
