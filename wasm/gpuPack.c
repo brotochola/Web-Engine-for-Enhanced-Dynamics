@@ -299,73 +299,6 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
   return n;
 }
 
-/* E-193: pack_keyed through the inverse of the index list (W9b's scatter): inv[queue row] = draw slot, then the queue
-   read in its own order and each drawn row's pose, slot pair and shadow terms written at its draw slot. In Pixi's
-   worker the gather read, in the painter's order, rows that pre-render had just written on another core, at about ten
-   times this kernel's time; in order, the reads stream. The same streams as pack_keyed; only the updates list in queue
-   order instead of draw order (each carries its key, unique a row, and the statics texture takes them by key). For a
-   list with a repeated or out-of-range row nothing is written and 0xffffffff comes back: the caller gathers. inv holds
-   rowCount u32. A copy of pack_keyed's loop, not a shared helper (hot loops stay apart). */
-INLINE uint32_t pack_keyed_scatter(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count,
-                                   uint32_t cap, double invDepthDenom, float *pose, float *slots, uint32_t keyBase,
-                                   uint32_t *updates, uint32_t typeByte, uint32_t *results, float *shadow,
-                                   const int withShadow, uint32_t invByte, uint32_t rowCount) {
-  const double inv65535 = 1.0 / 65535.0;
-  const float *SH = withShadow ? F32(t, COL_SHADOW_H) : 0;
-  const float *SOX = withShadow ? F32(t, COL_SHADOW_OFF_X) : 0;
-  const float *SOY = withShadow ? F32(t, COL_SHADOW_OFF_Y) : 0;
-  const uint8_t *type = (const uint8_t *)(uintptr_t)typeByte;
-  const uint32_t *idx = (const uint32_t *)(uintptr_t)indices;
-  uint32_t *inv = (uint32_t *)(uintptr_t)invByte;
-  const float *SX = F32(t, COL_SCALE_X), *SY = F32(t, COL_SCALE_Y), *AX = F32(t, COL_ANCHOR_X), *AY = F32(t, COL_ANCHOR_Y);
-  const float *A = F32(t, COL_ALPHA), *TMX = F32(t, COL_TILE_MUL_X), *TMY = F32(t, COL_TILE_MUL_Y);
-  const uint32_t *TINT = (const uint32_t *)(uintptr_t)t[COL_TINT];
-  const uint16_t *TEX = U16(t, COL_TEXTURE), *TOU = U16(t, COL_TILE_OFF_U), *TOV = U16(t, COL_TILE_OFF_V);
-  const uint32_t n = count < cap ? count : cap;
-  for (uint32_t i = 0; i < rowCount; i++) inv[i] = 0xffffffffu;
-  for (uint32_t k = 0; k < n; k++) {
-    const uint32_t r = idx[k];
-    if (r >= rowCount || inv[r] != 0xffffffffu) return 0xffffffffu;
-    inv[r] = k;
-  }
-  uint32_t p = 0;
-  uint32_t u = 0;
-  for (uint32_t i = 0; i < rowCount; i++) {
-    const uint32_t k = inv[i];
-    if (k == 0xffffffffu) continue;
-    if (type) p += type[i] == 1;
-    sprite_pose(t, i, pose + k * POSE_FLOATS);
-    const uint32_t raw = key[i];
-    uint32_t s = raw & ~KEY_CHANGED;
-    uint32_t send = raw >> 31;
-    if (s >= keyBase) {
-      s = keyBase + k;
-      send = 1;
-    }
-    if (send) {
-      uint32_t *up = updates + u * KEYED_ROW_WORDS;
-      wasm_v128_store(up, wasm_f32x4_make(SX[i], SY[i], AX[i], AY[i]));
-      wasm_v128_store(up + 4, wasm_i32x4_replace_lane(wasm_f32x4_make(0.0f, 0.0f, (float)TEX[i], TMX[i]), 1,
-                                                       (int32_t)packed_tint((double)A[i], TINT[i])));
-      wasm_v128_store(up + 8, wasm_f32x4_make(TMY[i], (float)((double)TOU[i] * inv65535), (float)((double)TOV[i] * inv65535), 0.0f));
-      wasm_v128_store(up + 12, wasm_i32x4_make((int32_t)s, 0, 0, 0));
-      u++;
-    }
-    slots[k * SLOT_FLOATS] = (float)s;
-    slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
-    if (withShadow) {
-      float *sh = shadow + k * 3;
-      const int glow = type && type[i] == 3;
-      sh[0] = glow ? 0.0f : SH[i];
-      sh[1] = glow ? 0.0f : SOX[i];
-      sh[2] = glow ? 0.0f : SOY[i];
-    }
-  }
-  results[0] = p;
-  results[1] = u;
-  return n;
-}
-
 __attribute__((export_name("pack_sprites")))
 uint32_t pack_sprites(uint32_t table, uint32_t indices, uint32_t count, uint32_t cap, double invDepthDenom,
                       uint32_t dst, uint32_t typeByte, uint32_t particlesOut) {
@@ -450,26 +383,6 @@ uint32_t pack_sprites_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, 
                       (float *)(uintptr_t)dstShadow, 1);
   }
   return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0);
-}
-
-/* E-193: pack_sprites_keyed through the inverse at invByte (rowCount u32), the queue's rows in order. */
-__attribute__((export_name("pack_sprites_keyed_scatter")))
-uint32_t pack_sprites_keyed_scatter(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
-                                    double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
-                                    uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow,
-                                    uint32_t invByte, uint32_t rowCount) {
-  const uint32_t *t = (const uint32_t *)(uintptr_t)table;
-  const uint32_t *k = (const uint32_t *)(uintptr_t)keyByte;
-  float *pose = (float *)(uintptr_t)dstPose;
-  float *slots = (float *)(uintptr_t)dstSlots;
-  uint32_t *updates = (uint32_t *)(uintptr_t)updatesByte;
-  uint32_t *results = (uint32_t *)(uintptr_t)resultsByte;
-  if (dstShadow) {
-    return pack_keyed_scatter(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results,
-                              (float *)(uintptr_t)dstShadow, 1, invByte, rowCount);
-  }
-  return pack_keyed_scatter(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results,
-                            0, 0, invByte, rowCount);
 }
 
 /* E-191: a keyed caster row (KEYED_CASTER_FLOATS) for each queue row listed at indices: its x and y, its key as a float

@@ -33,8 +33,7 @@ export async function bindGpuPack(memory, layout) {
   const k = await loadWasmKernel('gpuPack', engineWasmUrl, memory, [
     'pack_sprites', 'pack_casters', 'pack_sprites_scatter', 'pack_casters_scatter',
     'pack_sprites_split', 'pack_sprites_split_scatter', 'pack_sprites_general', 'pack_casters_general', 'pack_pose',
-    'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_sprites_keyed_scatter', 'pack_casters_keyed',
-    'pack_casters_keyed_scan',
+    'pack_sprites_indexed_scatter', 'pack_sprites_keyed', 'pack_casters_keyed', 'pack_casters_keyed_scan',
   ]);
   return {
     buffer: memory.buffer,
@@ -48,8 +47,6 @@ export async function bindGpuPack(memory, layout) {
     spritesIndexedScatter: k.pack_sprites_indexed_scatter,
     // E-177: the pose and the statics' key in draw order, the statics that changed as updates of a table by key.
     spritesKeyed: k.pack_sprites_keyed,
-    // E-193: the same through the inverse of the index list, the queue read in its own order.
-    spritesKeyedScatter: k.pack_sprites_keyed_scatter,
     // E-191: keyed caster rows (a pose, a key, the shadow terms) of a list of queue rows.
     castersKeyed: k.pack_casters_keyed,
     // E-192: the same rows for the casters it finds in the queue itself.
@@ -63,8 +60,6 @@ export async function bindGpuPack(memory, layout) {
     params: new Float64Array(memory.buffer, layout.particlesByte + 16, GENERAL_PARAMS),
     paramsByte: layout.particlesByte + 16,
     inverseByte: layout.inverseByte | 0,
-    // E-193: the keyed pack's inverse (one u32 a queue row; 0 for none), apart from inverseByte.
-    keyedInverseByte: layout.keyedInverseByte | 0,
     u32: new Uint32Array(memory.buffer),
     tableByte: layout.tableByte,
     tableSlots: layout.tableSlots,
@@ -292,20 +287,9 @@ export function packKeyedRowsWasm(b, q, ctx, pose, slots, keyed, capacity) {
   const invDepthDenom = 1 / (depthDenom > 0 ? depthDenom : 1);
   // E-191: the slots' shadow terms too where the caller asks for them (a byte, 0 for none) and the queue has them.
   const shadowByte = keyed.shadowByte > 0 && q.shadowH && q.shadowH.buffer === b.buffer ? keyed.shadowByte : 0;
-  const typeByte = typeArr ? typeArr.byteOffset : 0;
-  let out = -1;
-  // E-193: a long list over most of the queue goes through its inverse, reading the queue in order (rows another
-  // core has just written, which the painter's order read at random). The kernel declines (-1) a list with a repeated
-  // or out-of-range row, and the gather packs it.
-  const rows = q.count | 0;
-  if (b.spritesKeyedScatter && indexByte && b.keyedInverseByte && count >= SCATTER_MIN_ROWS && count * 2 >= rows && rows <= b.indexCap) {
-    out = b.spritesKeyedScatter(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte, b.keyedInverseByte, rows);
-  }
-  if (out < 0) {
-    out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
-      slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeByte, b.particlesByte, shadowByte);
-  }
+  const out = b.spritesKeyed(table, key.byteOffset, indexByte, count, capacity | 0, invDepthDenom, pose.byteOffset,
+    slots.byteOffset, keyed.keyBase >>> 0, keyed.updatesByte, typeArr ? typeArr.byteOffset : 0, b.particlesByte,
+    shadowByte);
   keyed.shadowed = shadowByte > 0;
   const r = b.particlesByte >> 2;
   ctx.particleCount = b.u32[r];

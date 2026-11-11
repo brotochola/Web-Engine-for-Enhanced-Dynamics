@@ -260,8 +260,6 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
       // E-191: their shadow stream (shadowH, offX, offY a draw slot), for the sun's pass over the entity batch.
       { name: 'pixiKeyShadow', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_SHADOW_BYTES },
-      // E-193: the keyed pack's inverse of the painter's list (one u32 a queue row), so it reads the queue in order.
-      { name: 'pixiKeyInverse', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * 4 },
     );
   }
   if (collect) {
