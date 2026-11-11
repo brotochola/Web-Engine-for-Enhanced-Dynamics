@@ -171,7 +171,7 @@ export class Tree extends GameObject {
         continue;
       }
       this.addDecoration('arboles_' + p[0], p[1] * fl, p[2], E * fl, E, p[5], {
-        anchorX: p[3], anchorY: p[4], sway: !!p[6], swayAmplitude: 0.022 + rng() * 0.02, swayFrequency: 0.45 + rng() * 0.4,
+        anchorX: p[3], anchorY: p[4], sway: !!p[6], swayAmplitude: 0.006 + rng() * 0.006, swayFrequency: 0.35 + rng() * 0.3,
         sortOffsetY: p[5] > 0 ? CROWN_AHEAD : 0,
       });
     }
