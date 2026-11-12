@@ -11493,8 +11493,8 @@
     {
       "id": "E-210",
       "title": "Predator's gate from a save",
-      "status": "deferred",
-      "statusText": "step 0 answered 2026-11-11 (R-0908): a restored Predator does not fight; parked",
+      "status": "blocked",
+      "statusText": "blocked 2026-11-11 (R-0908): a restored Predator does not fight (its AI state is not saved)",
       "date": "2026-11-10",
       "result": "step 0 (R-0908): the save keeps components, not the FSMs' plain fields; restored, Predator goes quiet (every worker under 3 ms)",
       "next": "Needs a scene whose behaviour survives a save (Predator's AI state in components: demo work). The tools (?restore=, --restore, sceneSaveMaker) are in.",
