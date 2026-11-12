@@ -5,7 +5,8 @@
  * the stamp lights (distance, n ≤ ~20) and the visible-light lists (y, n up to
  * the light cap: the visPoly row has 360). Three input orders, because the
  * visible-light list arrives in grid-cell order, rows of cells top to bottom,
- * which is already close to y order: random, cell order, and sorted.
+ * which is already close to y order: random, cell order, and sorted. The `full` cases sort a list that fills its
+ * array (no pooled tail: every light visible at the light cap), the path that handed the array to the native sort.
  *
  *   node tests/bench/sortPrefixMicrobench.mjs [--output path]
  */
@@ -36,11 +37,11 @@ async function main() {
   const cmp = (a, b) => a.y - b.y;
   const cases = {};
   let checksum = 0;
-  for (const n of [20, 46, 128, 360]) {
+  for (const [n, full] of [[20, false], [46, false], [128, false], [360, false], [128, true], [360, true]]) {
     for (const order of ['random', 'cells', 'sorted']) {
       const src = ordered(lights(n, 0x5047 + n), order);
-      // Pooled tail past n, as the callers have.
-      const arr = src.concat(lights(8, 99).map((l) => ({ ...l, id: 10000 + l.id })));
+      // Pooled tail past n, as the callers have; or none, a list as long as its array.
+      const arr = full ? src.slice() : src.concat(lights(8, 99).map((l) => ({ ...l, id: 10000 + l.id })));
       const run = (iters) => {
         for (let k = 0; k < iters; k++) {
           for (let i = 0; i < n; i++) arr[i] = src[i];
@@ -52,7 +53,8 @@ async function main() {
       for (let i = 0; i < arr.length; i++) ids[i] = arr[i].id;
       checksum = (checksum ^ checksumInts(ids, ids.length)) >>> 0;
       run(5000);
-      cases[`n${n}_${order}`] = timeIt(`_sortPrefix n=${n} ${order}`, run, { iterations: 2000 });
+      const key = `n${n}${full ? '_full' : ''}_${order}`;
+      cases[key] = timeIt(`_sortPrefix n=${n}${full ? ' full' : ''} ${order}`, run, { iterations: 2000 });
     }
   }
   const report = { feature: 'sort-prefix', checksum, cases };
