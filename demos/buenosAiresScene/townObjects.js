@@ -4,7 +4,7 @@
 
 import WEED from '/src/index.js';
 import {
-  META, RAYCAST, HEIGHT_PX, LAMP_COLOR, LIGHT_TICK, OFF, LightHours, lightBorn, lightTick, lightReach,
+  META, RAYCAST, HEIGHT_PX, LAMP_COLOR, LIGHT_TICK, OFF, LightHours, lightBorn, lightTick,
 } from './town.js';
 
 const {
@@ -62,7 +62,8 @@ export class House extends GameObject {
     L.elevation = lamp ? 50 : 0;
     L.radius = lamp ? 574 : 0;
     L.active = lamp ? 1 : 0;
-    if (lamp && RAYCAST) this.collider.visualRange = lightReach(L.radius) || 260;
+    // Its shadows: 260 px of sprites in basic lighting (cheap); under raycast the houses stop all of it.
+    L.shadowRange = RAYCAST ? 0 : 260;
     lightBorn(this, OFF.LAMPS, 0, 0, 0, c.x, c.y);
   }
 
@@ -103,7 +104,8 @@ export class StreetProp extends GameObject {
       L.radius = kind === 'u_farol_doble' ? 756 : kind === 'u_farola' ? 696 : 629;
       L.glow = kind === 'u_farol_doble' ? 0.126 : kind === 'u_farola' ? 0.106 : 0.087;
       L.active = 1;
-      this.collider.visualRange = lightReach(L.radius) || 260;
+      // Its shadows: 260 px of sprites in basic lighting (cheap); under raycast the houses stop all of it.
+      L.shadowRange = RAYCAST ? 0 : 260;
       // A glow on each bulb, in the additive lampGlows layer, above all: a lamp whose bulb is behind a house (c.hidden) has none,
       // since that layer does not sort with the houses.
       const bulbs = c.hidden ? null : BULBS[kind] || null;

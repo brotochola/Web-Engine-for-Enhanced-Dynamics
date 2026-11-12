@@ -46,7 +46,7 @@ export class DxCaptureLamp extends GameObject {
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 4;
-    this.collider.visualRange = 900;
+    this.lightEmitter.shadowRange = 900;
     // `?lampOffset=d`: the light d px ahead of an entity turned 90 degrees (so d px down); `?lampShift=d` the same spot
     // without either. The two must draw the same picture.
     const offset = LAMP_OFFSET;

@@ -51,7 +51,7 @@ class FaceLamp extends GameObject {
   onSpawned(config = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 4;
-    this.collider.visualRange = 900;
+    this.lightEmitter.shadowRange = 900;
     this.lightEmitter.color = 0xffffff;
     this.lightEmitter.radius = config.radius ?? 630;
     this.lightEmitter.elevation = config.elevation ?? 0;

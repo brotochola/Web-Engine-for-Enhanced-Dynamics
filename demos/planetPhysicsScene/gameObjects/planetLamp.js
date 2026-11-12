@@ -24,8 +24,6 @@ export class PlanetLamp extends GameObject {
     this.setTint(0xffe0a0);
     this.lightEmitter.color = 0xffcc88;
     this.lightEmitter.radius = 1183;
-    // Occluders come from the neighbor list: cover the whole light.
-    this.collider.visualRange = this.lightEmitter.radius;
     this.lightEmitter.glowOffsetY = -8;
     this.lightEmitter.active = 1;
     this.lightEmitter.glow = 0.28;

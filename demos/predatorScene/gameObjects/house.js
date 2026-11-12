@@ -68,7 +68,7 @@ export class House extends GameObject {
     this.lightEmitter.active = 1;
 
     this.setScale(1, 1);
-    this.collider.visualRange = 300;
+    this.lightEmitter.shadowRange = 300;
 
   
   }

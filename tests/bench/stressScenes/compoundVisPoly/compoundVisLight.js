@@ -14,7 +14,7 @@ export class CompoundVisLight extends GameObject {
     this.y = y;
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 6;
-    this.collider.visualRange = 2200;
+    this.lightEmitter.shadowRange = 2200;
     this.rigidBody.static = 0;
     this.rigidBody.linearDamping = 0;
     this.rigidBody.angularDamping = 0;

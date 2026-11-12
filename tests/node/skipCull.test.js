@@ -70,13 +70,6 @@ test('entity collect uses a per-frame skipCull branch; default still AABBs; B sk
   assert.match(preRender, /const writeSortKey = !!\(this\.renderQueueSortKey && source\.hasOrder\)/);
 });
 
-test('stamp light range falls back to influence when visualRange is 0', () => {
-  const start = preRender.indexOf('_collectStampLights()');
-  const end = preRender.indexOf('_packGpuSprites(', start);
-  const body = preRender.slice(start, end);
-  assert.match(body, /vrRange > 0 \? vrRange : influence/);
-});
-
 test('gpu pack reuses one pack context', () => {
   assert.match(preRender, /makePackContext\(q, opts, cap, this\._gpuPackCtx\)/);
 });

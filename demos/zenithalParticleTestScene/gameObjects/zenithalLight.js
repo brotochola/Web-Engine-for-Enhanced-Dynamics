@@ -10,7 +10,7 @@ export class ZenithalLight extends GameObject {
   onSpawned(spawnConfig = {}) {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 1;
-    this.collider.visualRange = 700;
+    this.lightEmitter.shadowRange = 700;
 
     this.lightEmitter.color = 0xffffff;
     this.lightEmitter.radius = 1732;

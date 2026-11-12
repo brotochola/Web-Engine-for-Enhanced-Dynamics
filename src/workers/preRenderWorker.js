@@ -3315,11 +3315,11 @@ class PreRenderWorker extends AbstractWorker {
         const lightEnabled = LightEmitter.active;
         const lightRadius = LightEmitter.radius;
         const lightCasts = LightEmitter.castShadows;
+        const lightShadowRange = LightEmitter.shadowRange;
         const offsetX = LightEmitter.offsetX;
         const offsetY = LightEmitter.offsetY;
         const rotC = Transform.rotC;
         const rotS = Transform.rotS;
-        const vr = Collider.visualRange;
         const zoom = this._frameCameraZoom || 1;
         const camX = this._frameCameraX || 0;
         const camY = this._frameCameraY || 0;
@@ -3355,8 +3355,9 @@ class PreRenderWorker extends AbstractWorker {
             }
             const dx = x - cx;
             const dy = y - cy;
-            const vrRange = vr ? (vr[id] || 0) : 0;
-            const range = vrRange > 0 ? vrRange : influence;
+            // DX-LIGHTAPI: how far its shadows reach (0: its radius).
+            const shadowRange = lightShadowRange[id];
+            const range = shadowRange > 0 ? shadowRange : influence;
             const slot = out[n];
             if (!slot) break;
             slot.id = id;

@@ -18,7 +18,7 @@ function applyLight(le, spec) {
   if (spec.layer) le.glowLayer = spec.layer;
 }
 
-/** A lamp with a Collider: its `visualRange` is its shadow and occluder reach (`spec.range`, or its whole reach). */
+/** A lamp with a Collider: `spec.range` is its shadowRange (left out: its radius). */
 export class GalleryLamp extends GameObject {
   static components = [Collider, LightEmitter];
 
@@ -26,7 +26,7 @@ export class GalleryLamp extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 4;
     applyLight(this.lightEmitter, spec);
-    this.collider.visualRange = spec.range ?? this.lightEmitter.radius;
+    if (spec.range !== undefined) this.lightEmitter.shadowRange = spec.range;
     this._turn = spec.rotation ?? 0;
   }
 

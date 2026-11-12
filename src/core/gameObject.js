@@ -192,6 +192,7 @@ function resetLightEmitterRow(i) {
   LightEmitter.offsetX[i] = 0;
   LightEmitter.offsetY[i] = 0;
   LightEmitter.castShadows[i] = 1;
+  LightEmitter.shadowRange[i] = 0;
 }
 
 export class GameObject {

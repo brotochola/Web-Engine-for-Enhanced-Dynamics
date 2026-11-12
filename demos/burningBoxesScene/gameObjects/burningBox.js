@@ -7,6 +7,7 @@ const HEAT = 1;
 const IGNITE_RANGE_SQ = 80 * 80;
 /** The fire's light strength s: its reach is 10·√s, its glow s / 50000. */
 const LIGHT_BASE = 9000;
+/** How far a burning box's light finds the occluders that stop it. */
 const LIGHT_RANGE = 640;
 const HOT = new Int32Array(4096);
 const SCRATCH = new Int32Array(4096);
@@ -34,7 +35,7 @@ export class BurningBox extends GameObject {
     this.lightEmitter.color = 0xff9944;
     this.lightEmitter.radius = 10 * Math.sqrt(LIGHT_BASE);
     this.lightEmitter.glow = LIGHT_BASE / 50000;
-    this.collider.visualRange = LIGHT_RANGE;
+    this.lightEmitter.shadowRange = LIGHT_RANGE;
     this.lightOccluder.active = 0
     return this;
   }

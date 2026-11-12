@@ -37,7 +37,7 @@ export class TallLight extends GameObject {
     // Circle collider
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 17;
-    this.collider.visualRange = 400; // shadow-caster / neighbor radius (not derived from intensity)
+    this.lightEmitter.shadowRange = 400; // its shadows stop at 400 px (the light reaches 1414): cheaper
     this.collider.offsetY = -9
     // Restore the sprite in case pooled reuse changed it before this slot respawned.
     this.setSprite('tallLight');

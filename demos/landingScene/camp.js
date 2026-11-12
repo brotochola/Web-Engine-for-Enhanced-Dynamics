@@ -95,7 +95,7 @@ export class CampLight extends GameObject {
   onSpawned({ range = 600 } = {}) {
     this.collider.radius = 4;
     this.collider.isTrigger = 1;
-    this.collider.visualRange = range; // how far the light reaches
+    this.lightEmitter.shadowRange = range; // how far its shadows reach
     const light = this.lightEmitter;
     light.active = 1;
     light.color = 0xff9a40;

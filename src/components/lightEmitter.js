@@ -17,9 +17,10 @@ import { Layer } from '../core/layer.js';
  *   the pool, glow, shadows and culling follow.
  * - `castShadows` (1 by default): 0 lights the scene and casts nothing, which costs less (no shadow stamp in basic
  *   lighting, no occluder gather or sweep under raycast).
- *
- * Shadow casters and raycasted occluders come from this entity's Collider.visualRange neighbours: an occluder past
- * visualRange does not block the light.
+ * - `shadowRange` (px; 0, the default, is the radius) is how far its shadows reach: the sprite shadows it stamps in
+ *   basic lighting, the occluders it gathers under raycast. A shorter one costs less. Under raycast the light finds
+ *   its occluders by itself (a light with a sprite or a Collider is in the spatial grid): no Collider.visualRange to
+ *   set for it.
  */
 export class LightEmitter extends Component {
   static ARRAY_SCHEMA = {
@@ -34,6 +35,7 @@ export class LightEmitter extends Component {
     offsetX: Float32Array, // local px from the entity's centre, turns with it (a car's headlights ahead of it)
     offsetY: Float32Array,
     castShadows: Uint8Array, // 1 = casts point shadows (sprites in basic lighting, occluders under raycast); 0 = light only
+    shadowRange: Float32Array, // px its shadows reach; 0 = its radius
   };
 
   /** The halo's alpha, at least 0 (0 draws no halo). */

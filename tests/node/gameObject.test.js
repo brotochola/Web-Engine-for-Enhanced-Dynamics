@@ -73,6 +73,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   const previousFlashInitialRadius = FlashComponent.initialRadius;
   const previousFlashInitialGlow = FlashComponent.initialGlow;
   const previousLightCastShadows = LightEmitter.castShadows;
+  const previousLightShadowRange = LightEmitter.shadowRange;
   const previousClearAttached = DecorationPool.clearAttachedAndDespawnAll;
 
   const onDespawnedCalls = [];
@@ -97,6 +98,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   FlashComponent.initialRadius = new Float32Array([1000, 50, 600]);
   FlashComponent.initialGlow = new Float32Array([0.5, 0.25, 0.75]);
   LightEmitter.castShadows = new Uint8Array([0, 0, 0]);
+  LightEmitter.shadowRange = new Float32Array([40, 50, 60]);
 
   DecorationPool.clearAttachedAndDespawnAll = (entityIndex) => {
     clearedAttachments.push(entityIndex);
@@ -140,6 +142,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     assert.deepEqual(Array.from(FlashComponent.initialRadius), [0, 50, 0]);
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0, 0.25, 0]);
     assert.deepEqual(Array.from(LightEmitter.castShadows), [1, 0, 1], 'a reset light casts again');
+    assert.deepEqual(Array.from(LightEmitter.shadowRange), [0, 50, 0]);
   } finally {
     Transform.active = previousTransformActive;
     RigidBody.active = previousRigidBodyActive;
@@ -160,6 +163,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     FlashComponent.initialRadius = previousFlashInitialRadius;
     FlashComponent.initialGlow = previousFlashInitialGlow;
     LightEmitter.castShadows = previousLightCastShadows;
+    LightEmitter.shadowRange = previousLightShadowRange;
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
   }
 });
@@ -184,6 +188,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   const previousFlashInitialRadius = FlashComponent.initialRadius;
   const previousFlashInitialGlow = FlashComponent.initialGlow;
   const previousLightCastShadows = LightEmitter.castShadows;
+  const previousLightShadowRange = LightEmitter.shadowRange;
   const previousClearAttached = DecorationPool.clearAttachedAndDespawnAll;
 
   Transform.active = new Uint8Array([1]);
@@ -203,6 +208,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   FlashComponent.initialRadius = new Float32Array([8000]);
   FlashComponent.initialGlow = new Float32Array([0.5]);
   LightEmitter.castShadows = new Uint8Array([0]);
+  LightEmitter.shadowRange = new Float32Array([70]);
 
   DecorationPool.clearAttachedAndDespawnAll = () => {};
 
@@ -237,6 +243,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     assert.deepEqual(Array.from(FlashComponent.initialRadius), [0]);
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0]);
     assert.deepEqual(Array.from(LightEmitter.castShadows), [1]);
+    assert.deepEqual(Array.from(LightEmitter.shadowRange), [0]);
   } finally {
     Transform.active = previousTransformActive;
     LightEmitter.active = previousLightEmitterActive;
@@ -255,6 +262,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     FlashComponent.initialRadius = previousFlashInitialRadius;
     FlashComponent.initialGlow = previousFlashInitialGlow;
     LightEmitter.castShadows = previousLightCastShadows;
+    LightEmitter.shadowRange = previousLightShadowRange;
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
   }
 });
@@ -282,6 +290,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   const previousFlashInitialRadius = FlashComponent.initialRadius;
   const previousFlashInitialGlow = FlashComponent.initialGlow;
   const previousLightCastShadows = LightEmitter.castShadows;
+  const previousLightShadowRange = LightEmitter.shadowRange;
   const previousNextTick = GameObject.nextTick;
 
   Transform.active = new Uint8Array([0]);
@@ -304,6 +313,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   FlashComponent.initialRadius = new Float32Array([8000]);
   FlashComponent.initialGlow = new Float32Array([0.5]);
   LightEmitter.castShadows = new Uint8Array([0]);
+  LightEmitter.shadowRange = new Float32Array([70]);
   GameObject.nextTick = null;
 
   // Treiber-stack free list: links array + [head, count] header
@@ -351,6 +361,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     assert.deepEqual(Array.from(FlashComponent.initialRadius), [0]);
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0]);
     assert.deepEqual(Array.from(LightEmitter.castShadows), [1]);
+    assert.deepEqual(Array.from(LightEmitter.shadowRange), [0]);
     assert.equal(freeListTop[1], 0); // free count drained
     assert.equal(freeListTop[0] & 0xffff, 0); // stack head empty
   } finally {
@@ -374,6 +385,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     FlashComponent.initialRadius = previousFlashInitialRadius;
     FlashComponent.initialGlow = previousFlashInitialGlow;
     LightEmitter.castShadows = previousLightCastShadows;
+    LightEmitter.shadowRange = previousLightShadowRange;
     GameObject.nextTick = previousNextTick;
   }
 });

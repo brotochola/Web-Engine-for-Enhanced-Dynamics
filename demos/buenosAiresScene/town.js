@@ -28,8 +28,6 @@ export const HEIGHT_PX = META.CZ * META.SF;
 
 export const LAMP_COLOR = 0xffdcaa;
 export const HEADLIGHT_COLOR = 0xfff0d0;
-/** A light's reach for the shadows it casts, and with ?raycast=1 for the houses that stop it. */
-export const lightReach = (radius) => (RAYCAST ? Math.ceil(radius) : 0);
 
 /** The panel's switches, read by the workers: 1 turns a thing off, so all start at what the barrio does by itself. */
 export class TownSwitches extends SharedResource {}

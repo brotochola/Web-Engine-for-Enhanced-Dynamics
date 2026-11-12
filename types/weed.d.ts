@@ -3803,6 +3803,7 @@ export declare class LightEmitter extends Component {
     offsetX: typeof Float32Array;
     offsetY: typeof Float32Array;
     castShadows: typeof Uint8Array;
+    shadowRange: typeof Float32Array;
   };
   static active: Uint8Array;
   /** 0xRRGGBB. */
@@ -3833,6 +3834,11 @@ export declare class LightEmitter extends Component {
    * and casts nothing, which costs less.
    */
   static castShadows: Uint8Array;
+  /**
+   * How far its shadows reach, in px; 0 (the default) is its radius. Sprite shadows in basic lighting, occluders under
+   * raycast (the light finds them itself: no Collider.visualRange to set). A shorter reach costs less.
+   */
+  static shadowRange: Float32Array;
   /** The halo's alpha, at least 0. */
   get glow(): number;
   set glow(value: number);

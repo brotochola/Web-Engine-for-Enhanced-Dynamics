@@ -1328,7 +1328,7 @@ The normal is in the floor's space: x along the screen, y across the floor towar
 
 ### A light off its entity's centre: `offsetX` and `offsetY`
 
-`LightEmitter.offsetX` / `offsetY` (default 0, local px) move a light off its entity's centre, and the entity's rotation turns them: a car's headlights stay ahead of it through a bend, with no second entity. The pool, the glow, the shadows, the raycast sweep and every cull follow it. A shadow's casters still come from the entity's `Collider.visualRange`, so keep that wider than the offset.
+`LightEmitter.offsetX` / `offsetY` (default 0, local px) move a light off its entity's centre, and the entity's rotation turns them: a car's headlights stay ahead of it through a bend, with no second entity. The pool, the glow, the shadows, the raycast sweep and every cull follow it. Its shadows reach `shadowRange` (0: its radius) from the light, the offset included.
 
 ```javascript
 onSpawned() {
@@ -1364,20 +1364,16 @@ static config = {
 With `lighting.raycasted: true` each visible light gets a visibility polygon. A body blocks a light only if both are true:
 
 1. The body has `LightOccluder` in its `static components` (the engine sets `block = 1` and `maskMode = 0`) and an active `Collider`. A `LightOccluder.block` of 0 blocks nothing.
-2. The body is in the light entity's neighbor list. That list holds the entities within the **light entity's own** `Collider.visualRange`.
+2. The body is within the light's `LightEmitter.shadowRange` (0, the default, is its radius), counted from the light entity, plus the light's offset.
 
-The light's reach is a separate number: `LightEmitter.radius`, the radius the light is drawn and culled with. An occluder that is inside the influence radius but outside the light entity's `visualRange` is not in the list, so the light passes through it.
-
-So set the light entity's `visualRange` to at least its influence radius, after the intensity is set:
+The light finds those bodies by itself: there is no `Collider.visualRange` to set for it. It needs to be in the spatial grid, which an entity with a sprite or a `Collider` is; a light with neither finds no occluders. A light with `castShadows = 0` gathers none at all (its polygon is the full circle), which costs least.
 
 ```javascript
 this.lightEmitter.radius = 1183;
-this.lightEmitter.active = 1;
-// Occluders come from the neighbor list: cover the whole light.
-this.collider.visualRange = this.lightEmitter.radius;
+this.lightEmitter.shadowRange = 600; // optional: occluders farther than 600 px do not stop it (cheaper)
 ```
 
-Keep it no larger than needed: a bigger `visualRange` means a longer neighbor list and more occluders per light. Each light takes at most 1024 occluders (a one-time warning says when that is hit).
+A shorter `shadowRange` means a shorter neighbour list and fewer occluders per light. Each light takes at most 1024 occluders (a one-time warning says when that is hit).
 
 ### Raycasted lighting with compound occluders
 

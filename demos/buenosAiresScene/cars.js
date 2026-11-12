@@ -5,7 +5,7 @@
 import WEED from '/src/index.js';
 import { CAR_MODELS } from './carModels.js';
 import {
-  META, RAYCAST, HEADLIGHT_COLOR, OFF, isOff, CarState, WalkerState, LightHours, lightBorn, lightTick, lightReach,
+  META, RAYCAST, HEADLIGHT_COLOR, OFF, isOff, CarState, WalkerState, LightHours, lightBorn, lightTick,
 } from './town.js';
 
 const {
@@ -115,7 +115,6 @@ export class Car extends GameObject {
       L.offsetX = A.hl + HEADLIGHT_AHEAD;
       L.offsetY = 0;
       L.active = 1;
-      if (RAYCAST) this.collider.visualRange = lightReach(L.radius) + A.hl + HEADLIGHT_AHEAD;
       for (let k = 0; k < 2; k++) {
         this.addDecoration('_lightGradient', 0, 0, 0.18, 0.18, 1, { tint: HEADLIGHT_COLOR, alpha: 0.9, anchorX: 0.5, anchorY: 0.5, offsetY: -8 });
       }

@@ -42,7 +42,8 @@ export class Explosion extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 1; // Start at 1px
 
-    this.collider.visualRange = 250;
+    this.collider.visualRange = 250; // its neighbours (the blast reads them)
+    this.lightEmitter.shadowRange = 250;
 
     this.lightEmitter.color = randomColor({
       min: 0xffff00,

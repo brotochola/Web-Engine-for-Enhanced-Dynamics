@@ -13,9 +13,6 @@ const LANE = -28; // inside of the centre line
 const LAMP_RADIUS = 949;
 const HEADLIGHT_RADIUS = 949;
 const NIGHT_GLOW = 0.18;
-// A light's occluders come from its neighbours: its visualRange must cover all it reaches (its radius).
-const LAMP_REACH = LAMP_RADIUS;
-const HEADLIGHT_REACH = HEADLIGHT_RADIUS;
 // carScene's cars: a drawn frame every 7.5 degrees, named by its heading, instead of one picture that turns.
 const CAR_FRAMES = Array.from({ length: 48 }, (_, i) => String(i * 7.5));
 const CAR_FRAME_STEP = (Math.PI * 2) / CAR_FRAMES.length;
@@ -91,7 +88,6 @@ export class StreetLamp extends GameObject {
   onSpawned() {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 6;
-    this.collider.visualRange = LAMP_REACH;
     this.setSprite('tallLight');
     this.spriteRenderer.anchorX = 0.5;
     this.spriteRenderer.anchorY = 1;
@@ -152,7 +148,6 @@ export class StreetCar extends GameObject {
     this.collider.shapeType = ShapeType.Box;
     this.collider.width = 78;
     this.collider.height = 38;
-    this.collider.visualRange = HEADLIGHT_REACH;
     this.distance = config.distance + 0.5;
     this.setSpritesheet(config.sheet);
     this.setAnimation(CAR_FRAMES[0]);

@@ -32,7 +32,7 @@ export class Fire extends GameObject {
     // Store initial radius for fade calculations
 
     Collider.radius[this.index] = FireComponent.baseRadius[this.index] = 40 * scale;
-    this.collider.visualRange = 400;
+    this.lightEmitter.shadowRange = 400;
 
     this.lightEmitter.color = randomColor({
       min: 0xffff00,
@@ -101,8 +101,8 @@ export class Fire extends GameObject {
     // Update radius based on fade factor
     radius[this.index] = FireComponent.baseRadius[this.index] * fadeFactor;
 
-    // Update visual range so glow sprite shrinks with the fire
-    Collider.visualRange[this.index] = 400 * fadeFactor;
+    // Its shadows reach less as it dies
+    LightEmitter.shadowRange[this.index] = 400 * fadeFactor;
 
     // Update scale based on fade factor (visual shrinking) with flickering
     const currentScale = this.fireComponent.baseScale * fadeFactor;

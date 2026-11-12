@@ -18,7 +18,7 @@ export class Lamp extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = LAMP_RADIUS;
     // this.collider.isTrigger = 1;
-    this.collider.visualRange = LAMP_RANGE;
+    this.lightEmitter.shadowRange = LAMP_RANGE;
     this.setSprite('_whiteCircle');
     this.setScale(2.8, 2.8);
     this.setAnchor(0.5, 0.5);
@@ -35,7 +35,6 @@ export class Lamp extends GameObject {
     this.setScale(2.8, 2.8);
     this.lightEmitter.active = 1;
     this.lightEmitter.radius = spawnConfig.lightRadius != null ? spawnConfig.lightRadius : 1342;
-    this.collider.visualRange =
-      spawnConfig.visualRange != null ? spawnConfig.visualRange : LAMP_RANGE;
+    this.lightEmitter.shadowRange = spawnConfig.shadowRange != null ? spawnConfig.shadowRange : LAMP_RANGE;
   }
 }

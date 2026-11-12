@@ -48,7 +48,7 @@ export class Digger extends GameObject {
     this.rigidBody.static = 0;
     this.rigidBody.linearDamping = 0.12;
     this.collider.radius = BODY_RADIUS;
-    this.collider.visualRange = 700;
+    this.lightEmitter.shadowRange = 700;
     this.collider.friction = 0.5
     this.setFixedRotation(1);
     this.lightEmitter.color = 0xffe8c0;

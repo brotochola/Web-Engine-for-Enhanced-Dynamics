@@ -198,7 +198,7 @@ class StressLamp extends GameObject {
     this.y = config.y;
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 4;
-    this.collider.visualRange = 300;
+    this.lightEmitter.shadowRange = 300;
     this.lightEmitter.color = 0xffe2b0;
     this.lightEmitter.radius = 949;
     this.lightEmitter.glow = 0.18;
