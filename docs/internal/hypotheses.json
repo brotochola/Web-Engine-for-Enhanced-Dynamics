@@ -12352,12 +12352,11 @@
     {
       "id": "E-220",
       "title": "Keyed shadows on WebGPU (E-191's programs in WGSL)",
-      "status": "open",
-      "statusText": "filed 2026-11-12 from E-187 (R-0930); not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-12 (4cfde245, R-0933)",
       "date": "2026-11-12",
-      "rank": 18,
-      "result": "Filed from E-187: the entity batch is keyed on WebGPU, its keyed shadows (E-191: renderer -4.4 %, pre-render -16.8 % on WebGL) are not.",
-      "next": "A keyed form of instancedSpriteShadow.wgsl reading the statics storage buffer, its GpuProgram, then lift the four _useWebGpu checks; WebGPU captures against main. Owner: Predator ?backend=webgpu&crowd=1.5.",
+      "result": "kept 2026-11-12 (4cfde245): the keyed shadow programs in WGSL; Predator WebGPU crowd 1.5 pre-render -11.8 % (0/4), renderer -22.3 % (0/4), on a busy machine (drift +5 to +9 % on the other workers)",
+      "next": "Done. A sitting on a quiet machine would give the clean figure.",
       "area": "engine",
       "kind": "speed",
       "refs": [
@@ -12370,7 +12369,9 @@
         "keyed casters",
         "WGSL"
       ],
-      "records": []
+      "records": [
+        "R-0933"
+      ]
     }
   ],
   "records": [
@@ -21471,6 +21472,19 @@
       ],
       "time": "11:52",
       "timeFrom": "commit"
+    },
+    {
+      "id": "R-0933",
+      "date": "2026-11-12",
+      "time": "12:06",
+      "timeFrom": "recorded",
+      "title": "E-220 kept: keyed shadows on WebGPU; Predator WebGPU pre-render -11.8 %, renderer -22.3 % (a busy machine)",
+      "verdict": "kept",
+      "text": "**E-220 kept: keyed shadows on WebGPU; Predator `?backend=webgpu&crowd=1.5` pre-render -11.8 %, renderer -22.3 %, on a machine in use.** `6610ad7a` (the change), merged in `4cfde245`.\n\n- **What changed:** E-187 made the entity batch keyed on WebGPU, but E-191's keyed shadow passes (the sun pass over the keyed instances, the keyed caster rows) stayed WebGL's: only the shadow vertex program's GLSL read the statics by key. `spriteIndexedWgsl` takes `shadow`, `casterRows` and `light` as `spriteIndexedVertex` does (the slot an input at a free location, the statics from the storage buffer, constants for what a pass does not stream), `instancedSpriteShadowIndexedGpuProgram` binds the statics as group 2's binding 4, the batch builds either backend's program (`_keyedShadowProgram`), and the four WebGPU checks go. `spriteIndexed.test.js`: the three WGSL forms' inputs, locations and constants.\n- **Checks:** Predator on WebGPU makes the keyed sun mesh and both caster-row meshes, the sun pass draws, no page error (as on WebGL). `compareCaptures.mjs --vs main` on WebGPU: dxCaptureScene at 9, 17 and 22 h (night) and with prop shadows, and sunMeshParityScene: 0 pixels differ each.\n\n**Sitting, 4 pairs, `--vs main --hyp-rev speed/e220 --query \"backend=webgpu&crowd=1.5\" --owner preRender`, src, headed, AC power, 12:00 (the first result file) to 12:06 (the summary): REGRESSION by the runner on the workers it cannot reach, KEPT read against them.**\n- pre-render 6.261 → 5.370 ms (**-11.8 %, worse 0/4**, -17.5 % against the others, lower 4/4); renderer 4.602 → 3.542 ms (**-22.3 %, 0/4**, -26.2 %).\n- logic +9.0 % (3/4), spatial +5.6 % (3/4), physics +4.9 % (4/4), cv 5 to 13 %: all three together, and every worker about twice its time in E-187's Predator sitting an hour before (pre-render 2.65, physics 5.42 ms there): the owner's own Chrome was busy (about a quarter of a core when checked after), so the machine drifted. Read as CLAUDE.md says for drift, the owner against the others.\nKept (product), with the caveat: a sitting on a quiet machine would give the clean figure.",
+      "commits": [
+        "6610ad7a",
+        "4cfde245"
+      ]
     }
   ],
   "leads": [
