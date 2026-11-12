@@ -91,7 +91,13 @@ draws the radius uniformly, where `lightIntensity` drew I: no demo uses a range.
 **Glow culls today:** hidden under I = 50 (R ≈ 71) whatever `hasGlowSprite` says. With an explicit `glow` that rule
 goes (no demo has a glowing light that small); the size rule (scale under 0.1) stays.
 
-## Open for part B
+## Settled for part B: flipX
+
+Decided 2026-11-12 with the owner: **`LightEmitter.followFlip`, 0 by default.** A sprite's flip does not move its light (as in
+Godot and Unity, where flipping a sprite leaves its child lights alone); a light with `followFlip = 1` mirrors its cone and
+`offsetX` with the entity's flipX (the flashlight in a platformer hero's hand). The cars below keep working unchanged.
+
+What was open:
 
 flipX mirroring `offsetX` (the owner's choice for a flashlight in the hand) collides with two games: the cars of
 buenosAiresScene and Conurbano use `flipX` as an art trick (mirrored frames) while `rotation` is the heading and
