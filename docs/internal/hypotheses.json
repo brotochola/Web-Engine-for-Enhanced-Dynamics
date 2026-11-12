@@ -12038,6 +12038,29 @@
       ],
       "records": [],
       "rank": 3
+    },
+    {
+      "id": "E-218",
+      "title": "tickAll reads a view of the active list when every listed entity is active",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (6e0fea8d, R-0906)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-11 (6e0fea8d, R-0906): BunnyMark C 300 000 logic -20.2 % (4/4); Predator NEUTRAL",
+      "next": "Done.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-218"
+      ],
+      "aliases": [
+        "_runTickAllTypes",
+        "tickAll",
+        "_tickAllScratch",
+        "BunnyMark"
+      ],
+      "records": [
+        "R-0906"
+      ]
     }
   ],
   "records": [
@@ -20781,6 +20804,18 @@
       "text": "**The bundles of 96cf282e (E-216 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `5e3e5e86`, built from 96cf282e.\n\n- Node 2478 of 2478, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 21:17 to 21:20: NEUTRAL.** Logic -8.9 % (0/4 worse), spatial +0.6 %, physics -0.3 %, pre-render +0.3 %.\n- **Boids, 8 pairs, 21:20 to 21:27: NEUTRAL.** Spatial +0.2 % (4/8), physics -0.0 % (4/8).\n\nMain pushed.",
       "commits": [
         "5e3e5e86"
+      ]
+    },
+    {
+      "id": "R-0906",
+      "date": "2026-11-11",
+      "time": "21:36",
+      "timeFrom": "recorded",
+      "title": "E-218 kept: tickAll reads a view of the active list; BunnyMark C 300 000 logic 3.055 -> 2.425 ms (-20.2 %); Predator NEUTRAL",
+      "verdict": "kept",
+      "text": "**E-218 kept (`6e0fea8d`): tickAll reads a view of the active list when every listed entity is active.** 2026-11-11.\n\n**Premise (R-0903).** BunnyMark C at 200 000: `_runTickAllTypes` was 35.6 % of logic by self time. Every frame it copied a tickAll type's listed entities into a scratch list, checking each one active, though in a steady frame they all are.\n\n**The change.**\n- For a type without a body (no accelerations to reset), on a contiguous run of the list, a read-only pass checks the flags.\n- If all are active, tickAll gets a view of the active list from the run's first row, made once per run start.\n- If one is not (despawned this frame), the copy filters as before.\n- `tickAllView.test.js`: the view when all are active; the scratch without the despawned one; a type with a body still resets each acceleration through the scratch.\n\n**Sittings** (`--vs f204a80c --hyp-rev 6e0fea8d --full-rev`):\n- **BunnyMark C `?bunnies=300000`**, owner logic (200 000 leaves logic under the floor), 4 pairs, 21:29 to 21:32: **KEPT (product).**\n  - Logic 3.055 → 2.425 ms (-20.2 %, worse 0/4, cv 1/1 %).\n  - Pre-render -1.2 %; 300 000 entities on both sides.\n- **Predator's gate**, 4 pairs, 21:32 to 21:36: **NEUTRAL.** Logic -0.3 %, spatial +0.2 %, physics +2.2 % (2/4), pre-render +1.5 % (3/4).",
+      "commits": [
+        "6e0fea8d"
       ]
     }
   ],
