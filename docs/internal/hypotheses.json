@@ -12297,6 +12297,29 @@
       "records": [
         "R-0929"
       ]
+    },
+    {
+      "id": "E-220",
+      "title": "Keyed shadows on WebGPU (E-191's programs in WGSL)",
+      "status": "open",
+      "statusText": "filed 2026-11-12 from E-187 (R-0930); not measured",
+      "date": "2026-11-12",
+      "rank": 18,
+      "result": "Filed from E-187: the entity batch is keyed on WebGPU, its keyed shadows (E-191: renderer -4.4 %, pre-render -16.8 % on WebGL) are not.",
+      "next": "A keyed form of instancedSpriteShadow.wgsl reading the statics storage buffer, its GpuProgram, then lift the four _useWebGpu checks; WebGPU captures against main. Owner: Predator ?backend=webgpu&crowd=1.5.",
+      "area": "engine",
+      "kind": "speed",
+      "refs": [
+        "EXECUTION_PLAN.md#E-220"
+      ],
+      "aliases": [
+        "keyed shadows",
+        "webgpu shadows",
+        "sun pass",
+        "keyed casters",
+        "WGSL"
+      ],
+      "records": []
     }
   ],
   "records": [
