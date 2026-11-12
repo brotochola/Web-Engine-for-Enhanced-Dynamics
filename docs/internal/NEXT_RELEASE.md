@@ -49,3 +49,5 @@ empties it.
 - **An asset whose download fails on the network is tried once more** (N-144), past the HTTP cache: two tabs loading
   one large tilemap at once could fail one with `net::ERR_CACHE_WRITE_FAILURE`. HTTP errors and bad JSON still fail
   at once, with the same messages.
+- **A scene with no entity types loads** (N-145). A menu scene, or one with LiquidFun or decorations alone, failed
+  at load with "Cannot read properties of null (reading 'buffer')". It now keeps one entity slot nothing uses.
