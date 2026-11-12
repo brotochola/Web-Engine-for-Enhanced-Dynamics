@@ -16,7 +16,10 @@ export class SpotCar extends GameObject {
     const light = this.lightEmitter;
     light.radius = spec.radius ?? 420;
     light.color = spec.color ?? 0xfff1c4;
-    light.offsetX = 28;
+    // The car is drawn facing up its texture: its front is local -y, so the light sits 28 px up and points that way
+    // (direction -90 degrees from the entity's facing): a picture that faces up needs no other change.
+    light.offsetY = -28;
+    light.direction = -Math.PI / 2;
     light.shadowRange = spec.shadowRange ?? 0;
     if (spec.cone > 0) {
       light.coneAngle = spec.cone;
@@ -35,8 +38,9 @@ export class SpotCar extends GameObject {
     const s = Math.sin(this._t);
     this.x = this._cx + this._r * c;
     this.y = this._cy + this._r * s * 0.7;
-    // Heading along the circle (its tangent), counter-clockwise for w > 0.
-    this.rotation = this._w >= 0 ? this._t + Math.PI / 2 : this._t - Math.PI / 2;
+    // Heading along the circle (its tangent), counter-clockwise for w > 0; the picture faces up, a quarter turn more.
+    const heading = this._w >= 0 ? this._t + Math.PI / 2 : this._t - Math.PI / 2;
+    this.rotation = heading + Math.PI / 2;
   }
 
   tick(dt, deltaTime) {
