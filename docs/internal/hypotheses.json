@@ -11186,11 +11186,11 @@
     {
       "id": "E-197",
       "title": "Input-to-screen latency stamp",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept-hygiene",
+      "statusText": "built 2026-11-12 (da79c6fb, R-0924)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Nothing measures frames from an input to its picture; by the code (E-24, Pixi never waits) it is 3 to 4. A stamp main writes on input, carried by logic, physics, pre-render and the render queue; Pixi records submit time minus stamp; the runner prints median and p95 in ms and frames. A tool, its own commit, before E-198.",
+      "result": "built 2026-11-12 (da79c6fb): RENDERER_STATS.INPUT_LAG_*, --input-every; Boids 67.1 ms median (4.03 frames)",
+      "next": "Done: E-198 is judged by it.",
       "area": "harness",
       "kind": "js",
       "refs": [
@@ -11202,9 +11202,9 @@
         "stamp"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 26
+        "R-0854",
+        "R-0924"
+      ]
     },
     {
       "id": "E-198",
@@ -21220,6 +21220,18 @@
       "text": "**The bundles of b6831af8 (N-141 merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `81839865`.\n\n- Node 2519 of 2519, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 0 failures on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 05:38 to 05:45: NEUTRAL.** Spatial -0.6 %, pre-render -0.7 %; physics 4.569 → 5.223 ms (+9.0 %, worse 3/4, cv 10/8 %), the bundle-against-source swing N-105 records on Predator.\n- **Boids, 8 pairs, 05:45 to 05:58: NEUTRAL.** Spatial +0.2 % (5/8), physics +0.3 % (4/8), cv 1 %.\n\nMain pushed.",
       "commits": [
         "81839865"
+      ]
+    },
+    {
+      "id": "R-0924",
+      "date": "2026-11-12",
+      "time": "06:07",
+      "timeFrom": "recorded",
+      "title": "E-197 built: input-to-screen latency stamp; Boids 67 ms (4 frames) from an input to its frame; Predator NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**E-197 built: the input-to-screen latency stamp.** `da79c6fb`, a tool (no speed claim).\n\n- **What it measures:** for each input (keys, pointer) the time to the first frame Pixi draws with it. Main stamps the input (tenths of a ms since a base every thread shares, one Int32 in the scene's stamp buffer); logic0 publishes the input its last frame acted on; physics carries the stamp it stepped with into the pose slot it writes (`poseSync` gains a stamp a slot); pre-render writes the newer of logic's and the latched pose's into the render-queue buffer it fills (its camera SAB gains a word, 20 → 24 bytes); Pixi's `LagMeter` (the last 64 inputs drawn) publishes `RENDERER_STATS.INPUT_LAG_MS`, `INPUT_LAG_P95_MS`, `INPUT_LAG_N` (stride 39 → 42). `runIntegratedWorkerBenchmark --input-every <ms>` moves the mouse over the canvas and prints the lag on the renderer line.\n- **First reading:** Boids, headless, a move every 100 ms: **67.1 ms median, p95 68.1 ms, 4.03 frames at 60 Hz**, as E-24's reading said (each stage reads what the one before it published a vsync earlier).\n- **Checks:** `latencyStamp.test.js` (the clock, main's stamp, the meter's samples and percentiles, the queue's stamp word, the stats slots); the camera SAB and stats stride tests follow the new sizes. Node 2523 of 2523, demos 101 of 101.\n\n**Predator's gate, 4 pairs** (`--name e197-predator --vs main --hyp-rev tools/e197`, 06:01 to 06:07): NEUTRAL. Spatial -1.1 %, physics -4.3 %; logic, renderer, particle and pre-render under the floor, all lower. The stamp is a few atomic loads and stores a frame per worker.\n\n**Next:** E-198, judged by this.",
+      "commits": [
+        "da79c6fb"
       ]
     }
   ],
