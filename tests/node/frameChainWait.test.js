@@ -9,7 +9,7 @@ import { loadWorker } from '../bench/workerHarness.mjs';
 // start is its upstream's output of a vsync earlier, and an input took 3 frames to reach the screen. Pixi now waits for
 // pre-render's queue of this vsync and pre-render for physics's pose (physics for every logic worker: weedjsPost's
 // waitForLogic), each within a budget (the frame less its own step and room downstream), counted in WAIT_MS; a timeout
-// turns the stage's waits off for 120 frames.
+// turns the stage's waits off for 120 frames. E-219: logic waits for main's frame of this vsync (its inputs in).
 
 const previousSelf = globalThis.self;
 const previousPostMessage = globalThis.postMessage;
@@ -48,6 +48,36 @@ async function publisher(sab, index, value, ms) {
     go() {
       Atomics.store(go, 0, 1);
       Atomics.notify(go, 0);
+    },
+    stop: () => w.terminate(),
+  };
+}
+
+// A thread that stores `value` at `index` at a wall-clock time it is given, and notifies. The time is given 2 ms
+// ahead: a hand-off between threads here can take over a millisecond, longer than logic's sub-ms budget.
+const AT_PUBLISHER = `
+const { workerData, parentPort } = require('node:worker_threads');
+const a = new Int32Array(workerData.sab);
+const at = new Float64Array(workerData.at);
+parentPort.postMessage('ready');
+while (!(at[0] > 0));
+while (performance.timeOrigin + performance.now() < at[0]);
+Atomics.store(a, workerData.index, workerData.value);
+Atomics.notify(a, workerData.index);
+`;
+
+const wallMs = () => performance.timeOrigin + performance.now();
+
+async function publisherAt(sab, index, value) {
+  const at = new Float64Array(new SharedArrayBuffer(8));
+  const w = new Worker(AT_PUBLISHER, { eval: true, workerData: { sab, index, value, at: at.buffer } });
+  await new Promise((resolve) => w.once('message', resolve));
+  return {
+    /** The store `ms` after the call returns, which itself returns 2 ms after it was made. */
+    publishIn(ms) {
+      const d = wallMs() + 2;
+      at[0] = d + ms;
+      while (wallMs() < d);
     },
     stop: () => w.terminate(),
   };
@@ -122,4 +152,79 @@ test('pre-render waits for this vsync\'s pose, marking the one out consumed so p
   pre._poseWaitStepMs = 30;
   pre._waitForPose();
   assert.equal(pre._poseWaitOffUntil, 4 + 120);
+});
+
+/**
+ * Logic at a frame's start, main's last animation frame `mainAgo` ms ago (a frame of the 40 ms period below: this
+ * vsync's is not out yet).
+ */
+function logicAt(w, gen, mainAgo = 40) {
+  w._frameChain = new Int32Array(new SharedArrayBuffer(16));
+  Atomics.store(w._frameChain, 1, gen);
+  w._frameClock = { f64: new Float64Array([wallMs() - mainAgo]) };
+  w._inputWait = true;
+  w._inputWaitOffUntil = 0;
+  w._inputWaitMisses = 0;
+  w._inputWaitPeriodMs = 40; // a long frame: the budget is its cap, 0.95 ms
+  w._inputWaitLastStart = NaN;
+  w._injectedDeltaTime = 0;
+  w.frameNumber = 10;
+  return w._frameChain;
+}
+
+test('logic waits for main\'s frame of this vsync before it reads inputs, and counts the wait', async () => {
+  const w = await loadWorker('logicWorker.js', 'logicWorker');
+  // A loaded machine may run the publisher late: a few tries (each a miss at most; under four the waits stay on).
+  let chain = null;
+  let waited = 0;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    chain = logicAt(w, 7);
+    const p = await publisherAt(chain.buffer, 1, 8);
+    resetWaitMeter();
+    p.publishIn(0.3);
+    w.beforeUpdate();
+    await p.stop();
+    waited = waitMeterMs();
+    if (Atomics.load(chain, 1) === 8 && waited < 0.95) break;
+  }
+  assert.equal(Atomics.load(chain, 1), 8, 'main\'s frame published during the wait');
+  assert.ok(waited > 0.02, `the wait is in WAIT_MS (${waited.toFixed(2)} ms)`);
+  assert.ok(waited < 0.95, 'within the budget');
+  assert.equal(w._inputWaitOffUntil, 0, 'not turned off');
+  // Main's frame of this vsync out before this frame began (its animation frame 0.2 ms earlier): no wait.
+  logicAt(w, 9, 0.2);
+  resetWaitMeter();
+  w.beforeUpdate();
+  assert.equal(waitMeterMs(), 0);
+});
+
+test('four waits in a row that run out turn logic\'s waits off for 120 frames; lockstep frames never wait', async () => {
+  const w = await loadWorker('logicWorker.js', 'logicWorker');
+  logicAt(w, 7);
+  for (let k = 0; k < 3; k++) {
+    resetWaitMeter();
+    w.beforeUpdate();
+    assert.ok(waitMeterMs() < 2, `a miss costs under a millisecond, not Windows's timer period (${waitMeterMs().toFixed(2)} ms)`);
+    assert.equal(w._inputWaitOffUntil, 0, `miss ${k + 1}: still on`);
+    w.frameNumber++;
+  }
+  w.beforeUpdate();
+  assert.equal(w._inputWaitOffUntil, w.frameNumber + 120, 'the fourth miss in a row');
+  resetWaitMeter();
+  w.frameNumber++;
+  w.beforeUpdate();
+  assert.equal(waitMeterMs(), 0, 'off: no wait');
+
+  logicAt(w, 7);
+  w._injectedDeltaTime = 16.67; // a { msg: 'step' } frame
+  resetWaitMeter();
+  w.beforeUpdate();
+  assert.equal(waitMeterMs(), 0);
+  assert.equal(w._inputWaitOffUntil, 0);
+
+  logicAt(w, 7);
+  w._frameClock = null; // no frame clock: no wait
+  resetWaitMeter();
+  w.beforeUpdate();
+  assert.equal(waitMeterMs(), 0);
 });

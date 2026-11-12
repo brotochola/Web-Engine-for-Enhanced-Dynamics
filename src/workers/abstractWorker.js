@@ -328,6 +328,12 @@ export class AbstractWorker {
    * from the shared meter). Subclasses call it first in reportFPS().
    * @param {{ FPS: number, STEP_MS: number, IDLE_MS: number, WAIT_MS: number }} schema
    */
+  /**
+   * Before the frame's input edge flags and update, inside its step (E-219: logic waits here for the main thread's
+   * frame, so it reads the inputs of this vsync). A wait counts in WAIT_MS.
+   */
+  beforeUpdate() {}
+
   /** After the frame's update, inside its step (E-197: logic publishes its latency stamp here). */
   afterUpdate() {}
 
@@ -404,13 +410,16 @@ export class AbstractWorker {
     // after reportFPS would publish the previous frame's value.
     resetWaitMeter();
 
+    // STEP_MS = wall time of the frame's work: the input edge flags, update() and the hooks around it.
+    const t0 = performance.now();
+    this.beforeUpdate();
+
     if (this.needsGameScripts) {
       Keyboard.updateEdgeFlags();
       Gamepad.updateEdgeFlags();
     }
 
-    // Call the worker-specific update logic; STEP_MS = wall time of that work only
-    const t0 = performance.now();
+    // Call the worker-specific update logic
     this.update(timing.deltaTime, timing.dtRatio, resuming);
     this.afterUpdate();
     this.stepTimeThisFrame = performance.now() - t0;
