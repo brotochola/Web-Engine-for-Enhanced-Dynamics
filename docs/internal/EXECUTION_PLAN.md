@@ -3753,6 +3753,28 @@ logic; tick semantics unchanged (an own-property `tick` still wins).
 per-type lookup with `.call` 46 % slower. The dispatch is about 0.04 ms of a Predator frame; the loop's self time there
 is not it.
 
+### E-216 No entity list for a frame without glow rows
+
+**Premise:** BunnyMark C at 200 000 bunnies, CPU trace on main 2026-11-11 (R-0903): pre-render is 6.3 ms, and of it
+`fillQueueIndices` 6.2 %, `indexByteFor` 3.9 % and part of `packSpriteLayer`'s 2.8 %. Every frame that is not presorted
+splits the glow rows (type 3) out: the list of the other rows built, its particles counted, the list copied into the
+pack's memory, though BunnyMark has no glow row. E-138 skips the split only for presorted frames.
+**Plan:** the collect counts the glow rows it makes (`_collectEntityGlow` is their only maker); a frame with none packs
+unsplit, in queue order with no list, or with the spec's `fillAll` ordering every row when the painter sorts. A
+parity test: the same rows with and without the split, sorted and unsorted. Owner: BunnyMark C 200 000's pre-render.
+**Result:** kept 2026-11-11 (`672e8434`, R-0904). BunnyMark C 200 000, 4 pairs: **KEPT (product)**, pre-render 5.929 →
+4.951 ms (-16.5 %, worse 0/4). Predator's gate NEUTRAL, pre-render -4.6 % (0/4 worse).
+
+### E-217 The sprite query's list read where the collect reads, not copied each frame
+
+**Premise:** BunnyMark C at 200 000 (R-0903): `writeCollectList` is 7.7 % of pre-render, the sprite query's published
+snapshot (200 000 ids) copied into the collect's memory each frame. The snapshot lives in the query results' SAB; the
+collect kernel reads only its own memory.
+**Plan:** the sprite query's snapshots in the render-queue memory, so the collect points its table at the published
+copy. The snapshots rotate without a reader's mark today (`readPublishedQuerySnapshot`), and the copy is what keeps a
+long collect safe from a publish that comes back round to its copy: the query moves to N-112's published-list protocol
+(a reading mark the writer skips) for that one query. Owner: BunnyMark C 200 000's pre-render; logic not 3 % worse.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

@@ -11990,6 +11990,53 @@
         "R-0898",
         "R-0899"
       ]
+    },
+    {
+      "id": "E-216",
+      "title": "No entity list for a frame without glow rows",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (672e8434, R-0904)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-11 (672e8434, R-0904): BunnyMark C 200 000 pre-render -16.5 % (4/4); Predator pre-render -4.6 %",
+      "next": "Done.",
+      "area": "render",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-216"
+      ],
+      "aliases": [
+        "fillQueueIndices",
+        "indexByteFor",
+        "packSpriteLayer",
+        "splitGlow",
+        "BunnyMark"
+      ],
+      "records": [
+        "R-0903",
+        "R-0904"
+      ]
+    },
+    {
+      "id": "E-217",
+      "title": "The sprite query's list read where the collect reads, not copied each frame",
+      "status": "open",
+      "statusText": "filed 2026-11-11 from BunnyMark C's trace (R-0903); not measured",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "The sprite query's snapshots in the render-queue memory under the published-list protocol (a reading mark), the collect pointing at the published copy. Owner: BunnyMark C 200 000 pre-render (writeCollectList 7.7 %).",
+      "area": "render",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-217"
+      ],
+      "aliases": [
+        "writeCollectList",
+        "readPublishedQuerySnapshot",
+        "query snapshot",
+        "collect list"
+      ],
+      "records": [],
+      "rank": 3
     }
   ],
   "records": [
@@ -20700,6 +20747,27 @@
       "text": "**The bundles of 4b5cfe94 (E-209 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `e1fc4b27`, built from 4b5cfe94.\n\n- Node 2477 of 2477, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 20:39 to 20:44: NEUTRAL.** Logic -7.7 % (0/4 worse), spatial +0.6 % (2/4), physics -1.4 %, pre-render -2.0 %.\n- **Boids, 8 pairs, 20:44 to 20:54: NEUTRAL.** Spatial 5.667 → 5.703 ms (+0.7 %, worse 7/8, cv 1/1 %; under the 3 %), physics -0.1 % (4/8).\n\nMain pushed.",
       "commits": [
         "e1fc4b27"
+      ]
+    },
+    {
+      "id": "R-0903",
+      "date": "2026-11-11",
+      "time": "21:03",
+      "timeFrom": "recorded",
+      "title": "BunnyMark C 200 000's CPU trace: pre-render 6.3 ms, 10 % building and copying a glow split's entity list with no glow row (E-216 filed)",
+      "verdict": "note",
+      "text": "**BunnyMark C at 200 000 bunnies, CPU trace on main (`c75ea3c4`, src, headless, `--trace-cpu`).** 2026-11-11.\n\nSTEP_MS: renderer 1.35, logic 2.26, pre-render 6.28 ms. Pre-render is the worker that carries this scene.\n\n**Pre-render (378 ms/s):**\n- `collect_sprites` 43.9 %, `persist_frame` 17.0 %, `pack_sprites_split` 13.7 %: kernels;\n- JavaScript:\n  - `writeCollectList` 7.7 %: the sprite query's 200 000 ids copied into the collect's memory each frame;\n  - `fillQueueIndices` 6.2 % and `indexByteFor` 3.9 %: the glow split's entity list, built and copied though the scene has no glow row;\n  - `packSpriteLayer` 2.8 %.\n\n**Pixi (106 ms/s):** `updateBuffer` 28.1 % and an unnamed wasm function 27.6 %.\n\n**Logic:** `bunny.tickAll` 57.5 %, `_runTickAllTypes` 35.6 %.\n\nFiled: E-216, no entity list for a frame without glow rows. The query copy (`writeCollectList`) is the next candidate: the list could live where the collect reads it."
+    },
+    {
+      "id": "R-0904",
+      "date": "2026-11-11",
+      "time": "21:12",
+      "timeFrom": "recorded",
+      "title": "E-216 kept: no entity list without glow rows; BunnyMark C 200 000 pre-render 5.929 -> 4.951 ms (-16.5 %); Predator NEUTRAL (pre-render -4.6 %)",
+      "verdict": "kept",
+      "text": "**E-216 kept (`672e8434`): a frame without glow rows packs without the glow split's entity list.** 2026-11-11.\n\n**Premise (R-0903).** BunnyMark C at 200 000: every frame that was not presorted split the glow rows (type 3) out, though the scene has none.\n- `fillQueueIndices` built the list of the other rows: 6.2 % of pre-render.\n- A second pass counted their particles.\n- `indexByteFor` copied the list into the pack's memory: 3.9 %.\n\nE-138 skipped the split for presorted frames only.\n\n**The change.**\n- The collect counts the glow rows it makes (`_collectEntityGlow`, the only maker of type 3).\n- A frame with none packs unsplit, as E-138's presorted frames do: in queue order with no list, or with the spec's `fillAll` ordering every row when the painter sorts.\n- `painterRadixWired.test.js`: the same pose and statics rows and the same sorted flag with and without the split, sorted and unsorted, over makeFrames' frames with their glows turned to sprites. The unsorted ones are packed with no list.\n\n**Sittings** (`--vs c75ea3c4 --hyp-rev 672e8434 --full-rev`):\n- **BunnyMark C `?bunnies=200000`**, owner pre-render, 4 pairs, 21:05 to 21:07: **KEPT (product).**\n  - Pre-render 5.929 → 4.951 ms (-16.5 %, worse 0/4, cv 4/1 %).\n  - Every other worker below the floor; 200 000 entities on both sides.\n- **Predator's gate**, 4 pairs, 21:08 to 21:12: **NEUTRAL.**\n  - Pre-render 3.278 → 3.120 ms (-4.6 %, worse 0/4; -2.6 % against the others, lower 4/4).\n  - Logic -2.9 %, spatial -0.6 %, physics +0.2 %.",
+      "commits": [
+        "672e8434"
       ]
     }
   ],
