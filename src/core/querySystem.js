@@ -45,7 +45,11 @@ const ENTITY_TYPE_ENTRY_SIZE = 16;
 /** Bytes per query cache entry */
 const QUERY_CACHE_ENTRY_SIZE = 16;
 
-/** Int32 header per query: [publishedSnapshot, publishedCount, publishedFrame, reserved] */
+/**
+ * Int32 header per query: [publishedSnapshot, publishedCount, publishedFrame, publishSeq]. publishSeq counts the
+ * publishes (stored after the index), so a reader that read it before the index knows its snapshot is no older than
+ * that publish (E-217).
+ */
 const QUERY_RESULT_HEADER_INTS = 4;
 const QUERY_RESULT_HEADER_BYTES = QUERY_RESULT_HEADER_INTS * Int32Array.BYTES_PER_ELEMENT;
 
@@ -120,7 +124,7 @@ export function calculateQueryCacheSABSize(maxQueries) {
  * Calculate total size needed for queryResultsSAB
  * Layout:
  *   Per pre-computed query (calculateQueryResultBufferSize(entityCapacity) bytes each):
- *     [0-15]  Int32 header [publishedSnapshot, publishedCount, publishedFrame, reserved]
+ *     [0-15]  Int32 header [publishedSnapshot, publishedCount, publishedFrame, publishSeq]
  *     [16+]   QUERY_SNAPSHOT_COUNT snapshots, each [count, entity indices...]
  *             snapshot length = 1 + min(entityCapacity, MAX_ENTITIES)
  *
@@ -255,6 +259,7 @@ function createQuerySnapshotViews(sab, queryIndex, entityCapacity) {
     snapshots,
     cachedSnapshot: -1,
     cachedCount: -1,
+    cachedSeq: -1,
     subarray: null,
   };
 }
@@ -269,6 +274,12 @@ function readPublishedQuerySnapshot(snapshotView) {
   // actually holds. The per-snapshot count is written before the index is
   // published, so a matching pair means both loads saw the same publish. On a
   // mismatch, re-read. Bounded because the publisher always converges.
+  //
+  // E-217: the same view back means no publish since it was made, so a reader that copied it may keep its copy. The
+  // publish sequence is read first: the publisher stores it after the index, so the snapshot read next is no older
+  // than that publish, and a sequence that did not move means the contents did not either (the index alone comes
+  // back round after QUERY_SNAPSHOT_COUNT publishes).
+  const seq = Atomics.load(snapshotView.header, 3);
   for (let attempt = 0; attempt < 4; attempt++) {
     const snapshotIndex = Atomics.load(snapshotView.header, 0);
     const count = Atomics.load(snapshotView.header, 1);
@@ -278,6 +289,7 @@ function readPublishedQuerySnapshot(snapshotView) {
     if (
       snapshotView.cachedSnapshot === snapshotIndex &&
       snapshotView.cachedCount === count &&
+      snapshotView.cachedSeq === seq &&
       snapshotView.subarray !== null
     ) {
       return snapshotView.subarray;
@@ -285,6 +297,7 @@ function readPublishedQuerySnapshot(snapshotView) {
     const subarray = count === 0 ? EMPTY_QUERY_RESULT : snapshot.subarray(1, 1 + count);
     snapshotView.cachedSnapshot = snapshotIndex;
     snapshotView.cachedCount = count;
+    snapshotView.cachedSeq = seq;
     snapshotView.subarray = subarray;
     return subarray;
   }
@@ -298,6 +311,7 @@ function readPublishedQuerySnapshot(snapshotView) {
   const subarray = count === 0 ? EMPTY_QUERY_RESULT : snapshot.subarray(1, 1 + count);
   snapshotView.cachedSnapshot = snapshotIndex;
   snapshotView.cachedCount = count;
+  snapshotView.cachedSeq = seq;
   snapshotView.subarray = subarray;
   return subarray;
 }
@@ -312,6 +326,8 @@ function publishQuerySnapshot(snapshotView, count, frameNumber) {
   Atomics.store(snapshotView.header, 2, frameNumber | 0);
   // Publish the index last so readers never observe the new buffer before its data/count.
   Atomics.store(snapshotView.header, 0, nextSnapshot);
+  // E-217: then the sequence, which a reader loads before the index.
+  Atomics.add(snapshotView.header, 3, 1);
 }
 
 function getQueryComponentNames(componentClasses) {
