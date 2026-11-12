@@ -48,8 +48,10 @@ function fill(m, seed) {
     v.halfH[i] = rng() < 0.05 ? 0 : big ? 200 : rng() * 40;
     v.sheet[i] = rng() < 0.03 ? 0 : 1 + ((rng() * 3) | 0);
     if (v.visualRange) v.visualRange[i] = rng() < 0.5 ? 0 : rng() * 150;
-    v.anchorX[i] = 0.5;
-    v.anchorY[i] = 0.5;
+    // N-140: the grid widens by the largest reach from an anchor.
+    const anchor = [[0.5, 0.5], [0.5, 1], [0, 1], [1, 0], [0.45, 0.95]][(rng() * 5) | 0];
+    v.anchorX[i] = anchor[0];
+    v.anchorY[i] = anchor[1];
     v.scaleX[i] = 1;
     v.scaleY[i] = 1;
     if (v.mask) v.mask[i] = 0;

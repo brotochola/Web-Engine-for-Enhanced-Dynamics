@@ -16,6 +16,7 @@ import { Transform } from '../../src/components/transform.js';
 // sort line needs a frame not resolved yet, through collectRenderable at its place in the walk.
 
 const N = 3000;
+const CULL_ANCHORS = [[0.5, 1], [0.5, 1], [0.5, 0.5], [0, 0], [1, 1], [0.45, 0.95], [-0.5, 1.5], [NaN, 0.25]];
 
 function fill(m, seed, { masked }) {
   const rng = mulberry32(seed);
@@ -33,8 +34,10 @@ function fill(m, seed, { masked }) {
     v.halfH[i] = rng() < 0.1 ? odd() : rng() * 60;
     v.sheet[i] = rng() < 0.03 ? 0 : 1 + ((rng() * 3) | 0);
     if (v.visualRange) v.visualRange[i] = rng() < 0.3 ? odd() : rng() * 200;
-    v.anchorX[i] = 0.5;
-    v.anchorY[i] = 1;
+    // N-140: the cull pads with the reach from the anchor: feet, centre, corners, outside the sprite, NaN.
+    const [ax, ay] = CULL_ANCHORS[(rng() * CULL_ANCHORS.length) | 0];
+    v.anchorX[i] = ax;
+    v.anchorY[i] = ay;
     if (v.mask) v.mask[i] = 0;
   }
   // The bodies' two generations: unit rotations, a few never published (zeros), some unturned between them.

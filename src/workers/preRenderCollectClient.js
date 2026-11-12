@@ -105,8 +105,9 @@ export function writeCollectColumns(b, worker, Transform, SpriteRenderer, Collid
   const sortY = Boolean(worker._entitySortY);
   const emit = sortY ? worker._emitWasm : null;
   if (sortY && !emit) ok = false;
-  put('sAnchorX', sortY ? SpriteRenderer.anchorX : null, sortY);
-  put('sAnchorY', sortY ? SpriteRenderer.anchorY : null, sortY);
+  // N-140: the anchors serve the cull's reach as well as the sort line.
+  put('sAnchorX', SpriteRenderer.anchorX, sortY);
+  put('sAnchorY', SpriteRenderer.anchorY, sortY);
   put('sScaleX', sortY ? SpriteRenderer.scaleX : null, sortY);
   put('sScaleY', sortY ? SpriteRenderer.scaleY : null, sortY);
   const inherit = sortY ? SpriteRenderer.inheritTransformRotation : null;
