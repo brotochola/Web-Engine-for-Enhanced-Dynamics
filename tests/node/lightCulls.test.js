@@ -1,5 +1,6 @@
-// DX-LIGHTAPI A5 (N-150) on a real pre-render worker: a light's glow is culled by its own size (0.85 of its radius), so
-// a big glow on a light whose entity is off screen is still drawn where it reaches the view.
+// DX-LIGHTAPI A5 on a real pre-render worker: N-151, over lighting.maxLights the visible lights kept are the nearest
+// to the view's centre (they were the top of the screen's); N-150, a light's glow is culled by its own size (0.85 of
+// its radius), so a big glow on a light whose entity is off screen is still drawn where it reaches the view.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -38,6 +39,33 @@ async function withLights(ids, fn) {
     Query.queryPublishedFrame = savedFrame;
   }
 }
+
+test('N-151: over maxLights, the lights nearest the view\'s centre are kept, whatever their height on the screen', async () => {
+  // The view is 0..800 x 0..600 (centre 400, 300). Lights 0 and 1 sit at the top of the screen, far to the sides;
+  // lights 2 and 3 near the centre, lower down.
+  bind([20, 780, 410, 380, 0, 0], [10, 20, 320, 280, 0, 0]);
+  const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+  await withLights([0, 1, 2, 3], async () => {
+    pre._queryLightEmitter = 1;
+    pre.visibleLightsData = new Uint16Array(3); // [count, two lights]
+    pre._sortedLightEntities = new Array(2);
+    pre._lightPersistScratch = new Array(4);
+    pre._lightFlashScratch = new Array(4);
+    pre.cameraData = null;
+    pre.canvasWidth = 800;
+    pre.canvasHeight = 600;
+    pre.cullingRatio = 1;
+    const warn = console.warn;
+    console.warn = () => {};
+    try {
+      pre._collectVisibleLights();
+    } finally {
+      console.warn = warn;
+    }
+    assert.equal(pre.visibleLightsData[0], 2);
+    assert.deepEqual(Array.from(pre.visibleLightsData.subarray(1)).sort(), [2, 3]);
+  });
+});
 
 test('N-150: a light whose entity is off screen still has its glow collected when the glow reaches the view', async () => {
   // Light 0 is 300 px left of a 0..800 view with a radius of 1000: its glow (850 px) covers the view. Light 1 is as far

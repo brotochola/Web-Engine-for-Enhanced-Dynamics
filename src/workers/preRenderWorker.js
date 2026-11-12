@@ -284,6 +284,15 @@ function lightYOrder(a, b) {
     return d > 0 ? 1 : d < 0 ? -1 : d;
 }
 
+/** N-151: the squared distance of each candidate light to the view's centre, by entity, for lightNearOrder. */
+let LIGHT_NEAR_DIST = new Float32Array(0);
+
+/** Nearest the view's centre first (LIGHT_NEAR_DIST), then by id: a sign, not a difference. */
+function lightNearOrder(a, b) {
+    const d = LIGHT_NEAR_DIST[a] - LIGHT_NEAR_DIST[b];
+    return d > 0 ? 1 : d < 0 ? -1 : a - b;
+}
+
 /** Nearest first, then id: `a.distSq - b.distSq || a.id - b.id`, unboxed. */
 function stampLightOrder(a, b) {
     const d = a.distSq - b.distSq;
@@ -619,6 +628,9 @@ class PreRenderWorker extends AbstractWorker {
         this._lightPersistScratch = [];
         this._lightFlashScratch = [];
         this._lightYComparator = lightYOrder;
+        this._lightNearComparator = lightNearOrder;
+        /** N-151: each light's squared distance to the view's centre, by entity, on the overflow path only. */
+        this._lightNearDist = new Float32Array(0);
         this._sortPrefixTmp = null;
 
         // Stats tracking
@@ -4096,8 +4108,26 @@ class PreRenderWorker extends AbstractWorker {
                     '_warnedVisibleLightsCap',
                     `[PRE_RENDER] visible light list full (${maxWrite}). Increase lighting.maxLights or reduce visible lights.`
                 );
-                this._sortPrefix(persistScratch, persistN, this._lightYComparator);
-                this._sortPrefix(flashScratch, flashN, this._lightYComparator);
+                // N-151: keep the lights nearest the view's centre (it kept the top of the screen's), persistent first.
+                if (this._lightNearDist.length < Transform.x.length) this._lightNearDist = new Float32Array(Transform.x.length);
+                const near = this._lightNearDist;
+                const cx = (viewMinX + viewMaxX) * 0.5;
+                const cy = (viewMinY + viewMaxY) * 0.5;
+                for (let k = 0; k < persistN; k++) {
+                    const id = persistScratch[k];
+                    const dx = worldX[id] - cx;
+                    const dy = worldY[id] - cy;
+                    near[id] = dx * dx + dy * dy;
+                }
+                for (let k = 0; k < flashN; k++) {
+                    const id = flashScratch[k];
+                    const dx = worldX[id] - cx;
+                    const dy = worldY[id] - cy;
+                    near[id] = dx * dx + dy * dy;
+                }
+                LIGHT_NEAR_DIST = near;
+                this._sortPrefix(persistScratch, persistN, this._lightNearComparator);
+                this._sortPrefix(flashScratch, flashN, this._lightNearComparator);
                 const persistTake = Math.min(persistN, maxWrite);
                 for (let i = 0; i < persistTake; i++) lightEntities[written++] = persistScratch[i];
                 const flashTake = Math.min(flashN, maxWrite - written);
