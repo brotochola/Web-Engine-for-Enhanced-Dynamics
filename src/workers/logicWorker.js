@@ -139,7 +139,6 @@ class LogicWorker extends AbstractWorker {
     this._latencyActing = 0;
     // E-219: wait for main's frame of this vsync before reading inputs (logic.waitForInput; beforeUpdate).
     this._inputWait = false;
-    this._inputWaitGen = 0;
     this._inputWaitOffUntil = 0;
     this._inputWaitMisses = 0;
     this._inputWaitPeriodMs = NaN;
@@ -393,7 +392,8 @@ class LogicWorker extends AbstractWorker {
     // Get total logic workers count from config
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
     // E-219: only a frame loop on the vsync can wait for main's (fixedFps and noLimitFPS frames are not on it).
-    this._inputWait = data.config?.logic?.waitForInput !== false && !(this.fixedFps > 0) && !this.noLimitFPS;
+    this._inputWait = data.config?.logic?.waitForInput !== false && !(this.fixedFps > 0) && !this.noLimitFPS
+      && this._frameClock !== null;
 
     // E-213: this worker's nav request ring.
     const navRings = data.buffers?.navRequestRings || null;
@@ -1019,7 +1019,8 @@ class LogicWorker extends AbstractWorker {
    */
   beforeUpdate() {
     const chain = this._frameChain;
-    if (!this._inputWait || chain === null || this._injectedDeltaTime > 0) return;
+    const clock = this._frameClock;
+    if (!this._inputWait || chain === null || clock === null || this._injectedDeltaTime > 0) return;
     const now = performance.now();
     const last = this._inputWaitLastStart;
     this._inputWaitLastStart = now;
@@ -1028,20 +1029,20 @@ class LogicWorker extends AbstractWorker {
       if (gap > 0 && gap < 100) this._inputWaitPeriodMs = this._inputWaitPeriodMs === this._inputWaitPeriodMs
         ? this._inputWaitPeriodMs * 0.9 + gap * 0.1 : gap;
     }
+    const period = this._inputWaitPeriodMs === this._inputWaitPeriodMs ? this._inputWaitPeriodMs : 1000 / 60;
+    // Main's frame of this vsync is out when its animation frame began less than half a frame before this one (the
+    // frame clock's time of main's last publish, written before main adds to [1]: read the count first). A count alone
+    // cannot tell this vsync's frame from the last one's, which main made after this worker's frame began whenever it
+    // runs after the workers: the waits stopped for seconds at a time (the first sittings, lag 7 or 22 ms by turns).
     const gen = Atomics.load(chain, 1);
-    const seen = this._inputWaitGen;
-    this._inputWaitGen = gen;
-    // Main's frame of this vsync is already out, or main has published none yet.
-    if (gen !== seen || gen === 0) return;
+    if (performance.timeOrigin + now - clock.f64[0] < period * 0.5) return;
     const frame = this.frameNumber | 0;
     if (frame < this._inputWaitOffUntil) return;
-    const period = this._inputWaitPeriodMs === this._inputWaitPeriodMs ? this._inputWaitPeriodMs : 1000 / 60;
     const eighth = period * 0.125;
     const budget = eighth < 0.95 ? eighth : 0.95;
     Atomics.wait(chain, 1, gen, budget);
     const waited = performance.now() - now;
     addWaitMs(waited);
-    this._inputWaitGen = Atomics.load(chain, 1);
     if (waited < budget) {
       this._inputWaitMisses = 0;
     } else if (++this._inputWaitMisses >= 4) {

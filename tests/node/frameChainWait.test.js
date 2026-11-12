@@ -154,11 +154,15 @@ test('pre-render waits for this vsync\'s pose, marking the one out consumed so p
   assert.equal(pre._poseWaitOffUntil, 4 + 120);
 });
 
-function logicAt(w, gen) {
+/**
+ * Logic at a frame's start, main's last animation frame `mainAgo` ms ago (a frame of the 40 ms period below: this
+ * vsync's is not out yet).
+ */
+function logicAt(w, gen, mainAgo = 40) {
   w._frameChain = new Int32Array(new SharedArrayBuffer(16));
   Atomics.store(w._frameChain, 1, gen);
+  w._frameClock = { f64: new Float64Array([wallMs() - mainAgo]) };
   w._inputWait = true;
-  w._inputWaitGen = gen; // the last frame saw this one: main's frame of this vsync is not out yet
   w._inputWaitOffUntil = 0;
   w._inputWaitMisses = 0;
   w._inputWaitPeriodMs = 40; // a long frame: the budget is its cap, 0.95 ms
@@ -181,18 +185,17 @@ test('logic waits for main\'s frame of this vsync before it reads inputs, and co
     w.beforeUpdate();
     await p.stop();
     waited = waitMeterMs();
-    if (w._inputWaitGen === 8 && waited < 0.95) break;
+    if (Atomics.load(chain, 1) === 8 && waited < 0.95) break;
   }
-  assert.equal(w._inputWaitGen, 8, 'main\'s frame published during the wait');
+  assert.equal(Atomics.load(chain, 1), 8, 'main\'s frame published during the wait');
   assert.ok(waited > 0.02, `the wait is in WAIT_MS (${waited.toFixed(2)} ms)`);
   assert.ok(waited < 0.95, 'within the budget');
   assert.equal(w._inputWaitOffUntil, 0, 'not turned off');
-  // Main's next frame already out at the frame's start: no wait.
-  Atomics.store(chain, 1, 9);
+  // Main's frame of this vsync out before this frame began (its animation frame 0.2 ms earlier): no wait.
+  logicAt(w, 9, 0.2);
   resetWaitMeter();
   w.beforeUpdate();
   assert.equal(waitMeterMs(), 0);
-  assert.equal(w._inputWaitGen, 9);
 });
 
 test('four waits in a row that run out turn logic\'s waits off for 120 frames; lockstep frames never wait', async () => {
@@ -219,7 +222,8 @@ test('four waits in a row that run out turn logic\'s waits off for 120 frames; l
   assert.equal(waitMeterMs(), 0);
   assert.equal(w._inputWaitOffUntil, 0);
 
-  logicAt(w, 0); // main has published no frame yet
+  logicAt(w, 7);
+  w._frameClock = null; // no frame clock: no wait
   resetWaitMeter();
   w.beforeUpdate();
   assert.equal(waitMeterMs(), 0);
