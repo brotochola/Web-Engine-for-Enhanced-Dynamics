@@ -1537,9 +1537,12 @@ class PreRenderWorker extends AbstractWorker {
         // Physics publishes only once the last pose was consumed (posePublishBlocked): mark the one out now consumed, as
         // _latchPose(true) would, or physics holds its publish and this wait runs out.
         if (Atomics.load(sync, 1) < ready) Atomics.store(sync, 1, ready);
-        const r = Atomics.wait(sync, 0, ready, budget);
-        addWaitMs(performance.now() - now);
-        if (r === 'timed-out') this._poseWaitOffUntil = frame + 120;
+        Atomics.wait(sync, 0, ready, budget);
+        const waited = performance.now() - now;
+        addWaitMs(waited);
+        // A timeout, or a publish in the time Windows adds to one (N-146: it rounds a wait of a millisecond or more up to
+        // its timer period, about 15 ms): the chain did not fit the frame.
+        if (waited >= budget) this._poseWaitOffUntil = frame + 120;
     }
 
     latchPhysicsPose() {
