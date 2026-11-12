@@ -165,6 +165,7 @@
     var at = byte | 0;
     var off = at + 8;
     var count = new Int32Array(sab, at, 1);
+    var staticsEpoch = new Int32Array(sab, at + 4, 1);
     var x = new Float32Array(sab, off, n);
     off += n * 4;
     var y = new Float32Array(sab, off, n);
@@ -193,6 +194,7 @@
     var layerMask = new Uint16Array(sab, off, n);
     return {
       count: count,
+      staticsEpoch: staticsEpoch,
       x: x,
       y: y,
       scaleX: scaleX,
@@ -858,6 +860,7 @@
         textureId: packView(L.textureId),
         baseAlpha: packView(L.baseAlpha),
         layerMask: packView(L.layerMask),
+        staticsEpoch: L.staticsEpoch ? packView(L.staticsEpoch) : null,
       };
     }
 

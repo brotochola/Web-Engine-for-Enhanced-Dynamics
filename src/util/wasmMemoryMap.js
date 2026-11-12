@@ -175,6 +175,10 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'emitKeyHeader', owner: 'pre-render and Pixi', bytes: emit.pixiKeyed ? CACHE_LINE_BYTES : 0 },
       // E-188: the keyed decorations' records (EMIT_DECO_KEYED_BYTES a decoration slot: the statics it last emitted).
       { name: 'emitDecoKeyed', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedDecorations | 0) * EMIT_DECO_KEYED_BYTES : 0 },
+      // E-194: the keyed LiquidFun particles' records (EMIT_DECO_KEYED_BYTES a particle index, the same record).
+      { name: 'emitLfKeyed', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * EMIT_DECO_KEYED_BYTES : 0 },
+      // E-194: the compare epoch each LiquidFun particle's record was last checked at (u32 an index).
+      { name: 'emitLfChecked', owner: 'pre-render', bytes: emit.pixiKeyed ? (emit.keyedLiquidFun | 0) * 4 : 0 },
     );
     // Each custom sprite layer's two queue buffers (pre-render writes, Pixi reads) and its collector: y and index
     // (u32 each), the pose stash x, y, rotC, rotS (f32 each), then type (u8) per row: CUSTOM_COLLECTOR_ROW_BYTES.

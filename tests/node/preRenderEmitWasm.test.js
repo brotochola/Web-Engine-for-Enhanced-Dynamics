@@ -121,7 +121,7 @@ function textureMetadata() {
   };
 }
 
-async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, faces = false }) {
+async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persist = false, bullets = false, lights = false, particles = false, alphaFade = 0, liquidFun = false, interpolate = false, noBaseAlpha = false, customLayer = false, keyed = false, keyedDecorations = false, keyedLiquidFun = false, faces = false }) {
   const caps = gpuQueueCaps(maxItems, { enabled: false });
   // W4d: with `bullets`, BulletComponent in the memory where the scene puts it (the bullet tick's regions, W19).
   // With `lights`, LightEmitter in the emit's blocks and Transform's pose in the collect's (a scene without physics).
@@ -148,6 +148,8 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     pixiKeyed: keyed,
     // E-188: with `keyedDecorations` too, the decorations' records (their rows keyed by pool slot past the entities).
     keyedDecorations: keyed && keyedDecorations ? DECOS : 0,
+    // E-194: with `keyedLiquidFun` too, the LiquidFun particles' records (keyed by index past the decorations).
+    keyedLiquidFun: keyed && liquidFun && keyedLiquidFun ? LFN : 0,
   }, null, null, false, collect);
   const e = m.layout.emit;
   // With `particles`, the particle memory in its region of this one, as the scene places it.
@@ -1469,4 +1471,93 @@ test('E-188: the emit keys a decoration by its pool slot, marked when its static
   bumpEmitDecorationEpoch(b);
   assert.ok(all(frame()), 'a new epoch marks every decoration');
   assert.ok(none(frame()));
+});
+
+// E-194: with the keyed LiquidFun records laid out, a LiquidFun row's key is its particle index past the keyed
+// decorations, marked as a decoration's is: when the statics its row got differ from the ones that index last emitted
+// (LiquidFun compacts its buffers, so a particle that moved index is marked where its statics differ), or the record is
+// from an earlier epoch. Pixi's copy, replayed from the marked rows, always holds every LiquidFun row's statics.
+test('E-194: the emit keys a LiquidFun particle by its index past the keyed decorations, marked when its statics moved', async () => {
+  const k = await setup({ ySort: true, keyed: true, keyedDecorations: true, liquidFun: true, keyedLiquidFun: true });
+  const { worker: w, b, source, count, maxItems } = k;
+  assert.ok(b.lfKeyedByte >= 0, 'the records are laid out');
+  assert.equal(b.lfKeyBase, N + DECOS, 'past the keyed decorations');
+  const n = Math.min(count, maxItems);
+  const kernelSource = { ...source, persist: true };
+  const lf = w.liquidFun;
+  const white = w._resolveBuiltinTextureId('_whiteCircle');
+  SpriteRenderer.keyedDirty.fill(1);
+  // Pixi's statics texture for the LiquidFun keys, as the marked rows leave it.
+  const copy = new Uint32Array(LFN * 12);
+  // check: Pixi's copy holds every row's statics (not after a change physics did not announce, by design).
+  const frame = (check = true) => {
+    assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
+    assert.ok(writeEmitLiquidFunColumns(b, lf, w._prevLfX, w._prevLfY, 0, w._poseAlpha, white));
+    const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
+    assert.equal(b.emitRows(b.tableByte, count, maxItems, flags, DT / 1000, w._decorationZoomAlpha, w._zBand), n);
+    const marked = new Map();
+    for (let r = 0; r < n; r++) {
+      if (w._renderableType[r] !== 7) continue;
+      const raw = w.renderQueueKey[r];
+      const p = w._renderableIndex[r];
+      assert.equal((raw & ~KEY_FLAGS) >>> 0, N + DECOS + p, `row ${r}: particle ${p}'s key`);
+      assert.equal(raw & KEY_TEX_ONLY, 0, `row ${r}: a LiquidFun mark is never the texture alone`);
+      if (!marked.has(p)) marked.set(p, raw >= KEY_CHANGED);
+      else assert.ok(raw < KEY_CHANGED, `row ${r}: particle ${p}'s later row is not marked again`);
+      if (raw >= KEY_CHANGED) copy.set(rowStatics(w, r), p * 12);
+    }
+    for (let r = 0; check && r < n; r++) {
+      if (w._renderableType[r] !== 7) continue;
+      const p = w._renderableIndex[r];
+      const want = rowStatics(w, r);
+      for (let j = 0; j < 12; j++) {
+        if (copy[p * 12 + j] !== want[j]) assert.fail(`row ${r}: particle ${p}'s statics word ${j} is stale in the copy`);
+      }
+    }
+    return marked;
+  };
+  const all = (m) => [...m.values()].every(Boolean);
+  const none = (m) => [...m.values()].every((x) => !x);
+  let m = frame();
+  assert.ok(m.size > 20, `LiquidFun particles drawn (${m.size})`);
+  assert.ok(all(m), 'the first emit marks every particle');
+  // Moving changes no statics.
+  for (let s = 0; s < LFN; s++) { lf.x[s] += 3; lf.y[s] -= 2; lf.rotC[s] = Math.cos(s); lf.rotS[s] = Math.sin(s); }
+  assert.ok(none(frame()), 'a frame of moves marks none');
+  const drawn = [...m.keys()];
+  const [p0, p1, p2, p3] = drawn;
+  // Step 2: physics announces each change to the statics by moving its counter; the emit reads its records only then.
+  assert.ok(lf.staticsEpoch, 'the render buffer has the counter');
+  const announce = () => Atomics.add(lf.staticsEpoch, 0, 1);
+  lf.tint[p0] = (lf.tint[p0] ^ 0x00ff00) >>> 0;
+  lf.scaleX[p1] *= 1.5;
+  lf.alpha[p2] *= 0.5;
+  lf.textureId[p3] = lf.textureId[p3] === 2 ? 3 : 2;
+  assert.ok(none(frame(false)), 'a change physics did not announce is not looked for');
+  announce();
+  m = frame();
+  assert.deepEqual(drawn.filter((p) => m.get(p)), [p0, p1, p2, p3], 'a tint, a scale, an alpha and a texture mark their index alone');
+  assert.ok(none(frame()));
+  // A compaction moves particles to other indices: two that trade indices (and statics) mark both, nothing else.
+  const [a, c] = [drawn[4], drawn[5]];
+  for (const key of ['scaleX', 'scaleY', 'alpha', 'tint', 'textureId']) {
+    const t = lf[key][a];
+    lf[key][a] = lf[key][c];
+    lf[key][c] = t;
+  }
+  announce();
+  m = frame();
+  assert.deepEqual(drawn.filter((p) => m.get(p)), [a, c], 'two particles that traded indices mark both');
+  assert.ok(none(frame()));
+  bumpEmitDecorationEpoch(b);
+  assert.ok(all(frame()), 'a new epoch marks every particle');
+  assert.ok(none(frame()));
+  // A frame with the counter unmoved reads no record: a record made stale behind the emit's back stays unread.
+  const recs = new Uint32Array(k.m.buffer, b.lfKeyedByte, LFN * 8);
+  const saved = recs.slice();
+  recs.fill(0xdeadbeef);
+  assert.ok(none(frame()), 'the records were not read');
+  announce();
+  assert.ok(all(frame()), 'read again once physics announces a change');
+  recs.set(saved);
 });
