@@ -3753,6 +3753,16 @@ logic; tick semantics unchanged (an own-property `tick` still wins).
 per-type lookup with `.call` 46 % slower. The dispatch is about 0.04 ms of a Predator frame; the loop's self time there
 is not it.
 
+### E-216 No entity list for a frame without glow rows
+
+**Premise:** BunnyMark C at 200 000 bunnies, CPU trace on main 2026-11-11 (R-0903): pre-render is 6.3 ms, and of it
+`fillQueueIndices` 6.2 %, `indexByteFor` 3.9 % and part of `packSpriteLayer`'s 2.8 %. Every frame that is not presorted
+splits the glow rows (type 3) out: the list of the other rows built, its particles counted, the list copied into the
+pack's memory, though BunnyMark has no glow row. E-138 skips the split only for presorted frames.
+**Plan:** the collect counts the glow rows it makes (`_collectEntityGlow` is their only maker); a frame with none packs
+unsplit, in queue order with no list, or with the spec's `fillAll` ordering every row when the painter sorts. A
+parity test: the same rows with and without the split, sorted and unsorted. Owner: BunnyMark C 200 000's pre-render.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

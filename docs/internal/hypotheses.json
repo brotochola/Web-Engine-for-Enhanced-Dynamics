@@ -11990,6 +11990,31 @@
         "R-0898",
         "R-0899"
       ]
+    },
+    {
+      "id": "E-216",
+      "title": "No entity list for a frame without glow rows",
+      "status": "open",
+      "statusText": "filed 2026-11-11 from BunnyMark C's trace (R-0903); in measurement",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "Count the glow rows in the collect; a frame with none packs unsplit. Owner: BunnyMark C 200 000 pre-render.",
+      "area": "render",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-216"
+      ],
+      "aliases": [
+        "fillQueueIndices",
+        "indexByteFor",
+        "packSpriteLayer",
+        "splitGlow",
+        "BunnyMark"
+      ],
+      "records": [
+        "R-0903"
+      ],
+      "rank": 2
     }
   ],
   "records": [
@@ -20701,6 +20726,15 @@
       "commits": [
         "e1fc4b27"
       ]
+    },
+    {
+      "id": "R-0903",
+      "date": "2026-11-11",
+      "time": "21:03",
+      "timeFrom": "recorded",
+      "title": "BunnyMark C 200 000's CPU trace: pre-render 6.3 ms, 10 % building and copying a glow split's entity list with no glow row (E-216 filed)",
+      "verdict": "note",
+      "text": "**BunnyMark C at 200 000 bunnies, CPU trace on main (`c75ea3c4`, src, headless, `--trace-cpu`).** 2026-11-11.\n\nSTEP_MS: renderer 1.35, logic 2.26, pre-render 6.28 ms. Pre-render is the worker that carries this scene.\n\n**Pre-render (378 ms/s):**\n- `collect_sprites` 43.9 %, `persist_frame` 17.0 %, `pack_sprites_split` 13.7 %: kernels;\n- JavaScript:\n  - `writeCollectList` 7.7 %: the sprite query's 200 000 ids copied into the collect's memory each frame;\n  - `fillQueueIndices` 6.2 % and `indexByteFor` 3.9 %: the glow split's entity list, built and copied though the scene has no glow row;\n  - `packSpriteLayer` 2.8 %.\n\n**Pixi (106 ms/s):** `updateBuffer` 28.1 % and an unnamed wasm function 27.6 %.\n\n**Logic:** `bunny.tickAll` 57.5 %, `_runTickAllTypes` 35.6 %.\n\nFiled: E-216, no entity list for a frame without glow rows. The query copy (`writeCollectList`) is the next candidate: the list could live where the collect reads it."
     }
   ],
   "leads": [
