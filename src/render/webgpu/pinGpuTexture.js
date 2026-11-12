@@ -33,8 +33,11 @@ export function writeRgba32Float(renderer, source, data, width, height, label) {
     const need = dstFloats * height;
     if (!_padBuf || _padBuf.length < need) _padBuf = new Float32Array(need);
     const padded = _padBuf;
+    // N-152: a plain copy; data.subarray made a view object per row every frame.
     for (let y = 0; y < height; y++) {
-      padded.set(data.subarray(y * srcFloats, (y + 1) * srcFloats), y * dstFloats);
+      const from = y * srcFloats;
+      const to = y * dstFloats;
+      for (let f = 0; f < srcFloats; f++) padded[to + f] = data[from + f];
     }
     upload = padded;
   }
