@@ -10070,9 +10070,10 @@
       "aliases": [],
       "records": [
         "R-0900",
-        "R-0913"
+        "R-0913",
+        "R-0920"
       ],
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-194",
@@ -10080,11 +10081,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-194"
       ],
-      "statusText": "mixed 2026-11-12 (R-0913): renderer -56 % under the floor, pre-render +8 %; on speed/e194, not merged",
+      "statusText": "kept 2026-11-12 (84e06cc1, R-0920)",
       "area": "render",
-      "result": "step 0 (R-0900): keyed batch, keyed frames paused 589/600, each sent all 16 000 rows as updates; the scene draws split",
-      "next": "The records read only when they can have changed: a dense u16 per particle with the compare epoch it was last checked at, the epoch moved by a Pixi resync or by physics when a LiquidFun static may have changed (a paint, a count that moved, a fading group). Then sit again (liquidFunQueryStressScene ?lf=60000).",
-      "rank": 21
+      "result": "kept 2026-11-12 (84e06cc1): LiquidFun rows keyed by particle index, records read only after a statics change; liquidFunQueryStressScene lf=60000 renderer -51.7 % (0/8, under the floor), pre-render +1.1 %",
+      "next": "Done."
     },
     {
       "aliases": [],
@@ -21168,6 +21168,18 @@
       "text": "**N-145 fixed: a scene with no entity types loads.** `1a02ab49`.\n\n- **Found** writing a probe scene for N-142 (LiquidFun, `static entities = []`). In headless Chromium: \"Cannot read properties of null (reading 'buffer')\" at `initializeCoreEntityAndComponentBuffers` (sceneSharedBuffers.js): with zero entity slots `createSpatialPublishMemory` lays out nothing and returns null. With that worked around, the physics host stopped at \"init missing Transform/RigidBody/Collider buffers\".\n- **Fix:** a scene with no entity types keeps one slot no type owns and nothing spawns (`sceneEntitySlots`, applied in `Scene.init` before anything is sized), so every per-entity buffer is made.\n- **Checks:** the probe loads and draws its fluid (60 112 blue pixels). `emptyScene.test.js`: the rule, and the real buffers (the spatial memory, Transform, RigidBody, Collider) for a scene with no types. Node 2514 of 2514, demos 101 of 101.\n- Hygiene: scenes with entity types keep exactly their slots; nothing to time.",
       "commits": [
         "1a02ab49"
+      ]
+    },
+    {
+      "id": "R-0920",
+      "date": "2026-11-12",
+      "time": "05:00",
+      "timeFrom": "recorded",
+      "title": "E-194 kept: keyed LiquidFun rows; renderer 2.19 -> 1.03 ms (-51.7 %, 0/8) at 60 000 particles, pre-render +1.1 %",
+      "verdict": "kept",
+      "text": "**E-194 kept: keyed LiquidFun rows, their records read only after a change.** `7a4867ed` (step 1, the keys), `987c6f5e` (step 2), merged in `84e06cc1`; the scene's `?lf=<n>` knob `b5997496`.\n\n- **Step 1** (R-0913): a keyed scene keys its LiquidFun rows by particle index past the keyed decorations, marked against a 32-byte record an index; renderer -56 % but pre-render +8 % (the records, 7.7 ns a row).\n- **Step 2:** physics counts the changes it makes to the statics in the render buffer header's free word (`staticsEpoch`: a paint, a reorder (N-142), a clear, a restore, every step while a group fades), and the emit keeps a u32 per particle with the compare epoch its record was last checked at. A row whose particle was checked at the current epoch takes its key with no record read; the epoch moves with physics's counter, a Pixi resync and the texture tables; without a counter, every frame. The E-194 test announces its changes as physics does, and checks that a frame with the counter still reads no record (the records filled with garbage, nothing marked).\n\n**liquidFunQueryStressScene `?lf=60000`, owner renderer, `--vs b5997496 --hyp-rev 987c6f5e --full-rev`, 8 pairs** (04:38 to 04:45, then `--append` 04:53 to 05:00; src, headed, AC power): NEUTRAL (below floor) by the runner.\n- Renderer 2.192 → 1.028 ms (-51.7 %, worse 0/8; pairs -48.1, -47.1, -55.2, -48.1, -49.8, -55.8, -53.6, -56.9 %), under the 3 ms floor: the scene cannot go higher, its box leaves the world past about 70 000 particles, and physics already takes 96 ms a step.\n- Pre-render 3.304 → 3.386 ms (+1.1 %, worse 5/8, cv 3/3 %); after the first 4 pairs it read +3.1 % (3/4).\n- Physics 96.5 → 95.0 ms (-0.7 %), logic under the floor.\n\n**Verdict: kept.** The owner halves in every pair and no judged worker is 3 % worse; the floor is the scene's limit, said here. Open: the pointer at the published copy (E-217's left-over) and the `_prevLfX` interpolation by index (N-142's left-over).",
+      "commits": [
+        "987c6f5e"
       ]
     }
   ],
