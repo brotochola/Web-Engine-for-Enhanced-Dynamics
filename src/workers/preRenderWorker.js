@@ -1308,6 +1308,8 @@ class PreRenderWorker extends AbstractWorker {
             for (let i = 0; i < lightCap; i++) {
                 this._stampLights[i] = {
                     id: 0, x: NaN, y: NaN, intensity: NaN, rangeSq: NaN, sqrtI: NaN, distSq: NaN, maxShadows: 0,
+                    // DX-SPOT: the cone on the floor (coneCos -2: none), as the stamp's light table takes it.
+                    coneDirX: NaN, coneDirYW: NaN, coneCos: NaN, coneInvSpan: NaN, invG2: NaN,
                 };
             }
         }
@@ -3332,6 +3334,12 @@ class PreRenderWorker extends AbstractWorker {
         const lightRadius = LightEmitter.radius;
         const lightCasts = LightEmitter.castShadows;
         const lightShadowRange = LightEmitter.shadowRange;
+        const lightConeCos = LightEmitter.coneCos;
+        const lightConeInvSpan = LightEmitter.coneInvSpan;
+        const lightDirC = LightEmitter.dirC;
+        const lightDirS = LightEmitter.dirS;
+        // DX-SPOT: a cone is measured on the floor (y over groundScaleY).
+        const invG = 1 / resolveGroundScaleY(this.config.lighting?.groundScaleY);
         const offsetX = LightEmitter.offsetX;
         const offsetY = LightEmitter.offsetY;
         const rotC = Transform.rotC;
@@ -3385,6 +3393,26 @@ class PreRenderWorker extends AbstractWorker {
             slot.sqrtI = influence / 10;
             slot.distSq = dx * dx + dy * dy;
             slot.maxShadows = 0;
+            const coneCos = lightConeCos[id];
+            if (coneCos > -1) {
+                // The entity's facing turns the light's own direction; on the floor, unit length; its y over groundScaleY
+                // too, so the stamp's dot product takes world offsets.
+                const dc = lightDirC[id];
+                const ds = lightDirS[id];
+                const wx = rotC[id] * dc - rotS[id] * ds;
+                const wy = (rotS[id] * dc + rotC[id] * ds) * invG;
+                const len = Math.sqrt(wx * wx + wy * wy);
+                slot.coneDirX = len > 0 ? wx / len : 1;
+                slot.coneDirYW = len > 0 ? (wy / len) * invG : 0;
+                slot.coneCos = coneCos;
+                slot.coneInvSpan = lightConeInvSpan[id];
+            } else {
+                slot.coneDirX = 1;
+                slot.coneDirYW = 0;
+                slot.coneCos = -2;
+                slot.coneInvSpan = 0;
+            }
+            slot.invG2 = invG * invG;
             n++;
         }
         this._stampLightCount = n;

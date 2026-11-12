@@ -161,6 +161,13 @@ export function stampLightRangeWasm(b, spec) {
     table[at + 2] = light.intensity;
     table[at + 3] = light.rangeSq;
     table[at + 4] = light.maxShadows;
+    // DX-SPOT: the cone on the floor; a light without one (or a record without the fields) reads as none.
+    const coneCos = light.coneCos;
+    table[at + 7] = coneCos > -1 ? coneCos : -2;
+    table[at + 5] = coneCos > -1 ? light.coneDirX : 0;
+    table[at + 6] = coneCos > -1 ? light.coneDirYW : 0;
+    table[at + 8] = coneCos > -1 ? light.coneInvSpan : 0;
+    table[at + 9] = coneCos > -1 ? light.invG2 : 0;
   }
   return b.stampRange(b.tableByte);
 }

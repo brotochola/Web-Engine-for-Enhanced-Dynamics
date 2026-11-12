@@ -98,6 +98,24 @@ export function frame(r, k, caps, dst) {
       maxShadows: r() < 0.3 ? Math.floor(r() * 40) : 0,
     });
   }
+  // DX-SPOT: cone lights on odd frames, from their own generator (the frames above stay as they were): any heading,
+  // apertures past 180 degrees too, hard to fully soft edges, a floor foreshortened or not. A light left without the
+  // fields is a point light.
+  if (k % 2 === 1) {
+    const rc = rng(0xc0e5 + k);
+    const invG = 1 / [1, 0.7, 0.5][k % 3];
+    for (const L of lights) {
+      if (!L || rc() >= 0.5) continue;
+      const a = rc() * Math.PI * 2;
+      const half = 0.15 + rc() * 1.7;
+      const inner = Math.cos(half * (1 - rc()));
+      L.coneDirX = Math.cos(a);
+      L.coneDirYW = Math.sin(a) * invG;
+      L.coneCos = Math.cos(half);
+      L.coneInvSpan = 1 / Math.max(inner - L.coneCos, 0.002);
+      L.invG2 = invG * invG;
+    }
+  }
   return {
     nSun,
     lights,

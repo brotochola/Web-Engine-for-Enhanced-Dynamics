@@ -12,6 +12,8 @@ import { LightEmitter, NO_CONE } from '../../src/components/lightEmitter.js';
 import { GameObject } from '../../src/core/gameObject.js';
 import { lightDataTextureFloatCount } from '../../src/util/utils.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
+import { GPU_CASTER_FLOATS, GPU_CASTER_LIGHT_FLOAT } from '../../src/render/gpuQueueLayout.js';
+import { stampLightRange } from '../reference/shadowStamp.mjs';
 
 const N = 4;
 const MAX_LIGHTS = 4;
@@ -150,4 +152,40 @@ test('a cone light takes the first slot with its third row, on the floor; the co
   const edge = coneTerm(cone, Math.sin(0.4), Math.cos(0.4));
   assert.ok(edge > 0 && edge < 1, `the soft edge (about 23 degrees off the axis): ${edge}`);
   assert.equal(coneTerm(cone, 0, 0), 1, 'the light itself');
+});
+
+test('the shadow stamp: a cone light keeps the casters inside its cone, full inside, fainter on the soft edge', () => {
+  // One light at (0, 0) pointing +x on a floor of groundScaleY 0.5, half aperture 30 degrees, soft from 15 degrees.
+  // Casters: ahead on the axis, behind, beside (90 degrees), on the soft edge (about 23 degrees off the axis).
+  const invG = 2;
+  const half = Math.PI / 6;
+  const L = {
+    x: 0, y: 0, intensity: 900, rangeSq: 400 * 400, maxShadows: 0,
+    coneDirX: 1, coneDirYW: 0, coneCos: Math.cos(half), coneInvSpan: 1 / (Math.cos(half / 2) - Math.cos(half)),
+    invG2: invG * invG,
+  };
+  // On the floor the soft-edge caster is at 0.4 rad: x = cos, y_floor = sin, so its world y is sin / invG.
+  const casters = [[100, 0], [-100, 0], [0, 100], [100 * Math.cos(0.4), (100 * Math.sin(0.4)) / invG]];
+  const sf = GPU_CASTER_FLOATS;
+  const sun = new Float32Array(casters.length * sf);
+  casters.forEach(([x, y], c) => { sun[c * sf] = x; sun[c * sf + 1] = y; });
+  const stamp = new Float32Array(16 * sf).fill(-1);
+  const n = stampLightRange({
+    sun, sunN: casters.length, sunFloats: sf, lights: [L], lightBegin: 0, lightEnd: 1, lightStride: 1,
+    maxPerLight: 0, maxPerEntity: 0, tmpIdx: new Uint32Array(16), dist: new Float64Array(16), order: new Uint32Array(16),
+    keepIdx: new Uint32Array(16), gridCounts: null, gridStarts: null, gridItems: null,
+    stamp, stampFloats: sf, stampCap: 16, stampBase: 0, stampLightIdx: null, lightVec: new Float32Array(4),
+  });
+  assert.equal(n, 2, 'the caster ahead and the one on the soft edge, not the one behind or beside');
+  const rows = [0, 1].map((k) => ({ x: stamp[k * sf], I: stamp[k * sf + GPU_CASTER_LIGHT_FLOAT + 2] }));
+  const ahead = rows.find((r) => r.x === 100);
+  const edge = rows.find((r) => r.x !== 100);
+  assert.equal(ahead.I, 900, 'inside the full cone: the light\'s own intensity');
+  assert.ok(edge.I > 0 && edge.I < 900, `on the soft edge, fainter: ${edge.I}`);
+  // Its alpha I/(I+D²) is f times the light's at that distance (D on the floor: 100 here).
+  const t = (Math.cos(0.4) - L.coneCos) * L.coneInvSpan;
+  const f = t * t * (3 - 2 * t);
+  const want = f * (900 / (900 + 100 * 100));
+  const got = edge.I / (edge.I + 100 * 100);
+  assert.ok(Math.abs(got - want) < 1e-5, `alpha ${got} vs f × alpha ${want}`);
 });

@@ -207,6 +207,8 @@ test('the float32 stamps keep the shipped stamp\'s pairs on its random frames', 
   const tally = tallyOf();
   for (let k = 0; k < 240; k++) {
     const f = frame(r, k, s.caps, s.dst);
+    // The float32 variants predate DX-SPOT's cones: their frames are point lights only.
+    for (const L of f.lights) if (L) delete L.coneCos;
     add(tally, checkFrame(s, v, f, `frame ${k}`).cmp);
   }
   assert.ok(tally.rows > 100000, `the frames stamp something (${tally.rows} rows)`);
