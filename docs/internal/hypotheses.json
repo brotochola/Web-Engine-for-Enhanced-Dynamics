@@ -12020,6 +12020,53 @@
       "records": []
     },
     {
+      "id": "N-143",
+      "title": "A camera that follows an entity without a body goes to the world origin, and holds while nothing awake publishes",
+      "status": "open",
+      "statusText": "filed 2026-11-12; fixed on networking_cars (2dc726e3, with a test) and never brought to main; that test fails 2 of 4 on main",
+      "date": "2026-11-12",
+      "result": "followEntity holds the camera while the physics publish frame is unchanged, and the drawn camera snaps to the followed entity's latched pose slot. Only bodies have one: an entity without a body reads 0, 0 (the view at the world origin), and with every body asleep the publish frame never changes (the hold never ends).",
+      "next": "Bring 2dc726e3 to main: _alignToSnapshot and publishFrozen for bodies only, with cameraFollowBodyless.test.js; test:node and test:demos. Hygiene, nothing to time.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-143"
+      ],
+      "aliases": [
+        "followEntity",
+        "bodiless",
+        "bodyless",
+        "_alignToSnapshot",
+        "publishFrozen",
+        "networking_cars",
+        "camera follow"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-144",
+      "title": "An asset load that fails on a browser cache error is not tried again (two tabs loading a 16 MB tilemap)",
+      "status": "open",
+      "statusText": "filed 2026-11-12; fixed for tilemaps on networking_cars (36870ce0, fetchRetry.js) and never brought to main; read in the code",
+      "date": "2026-11-12",
+      "result": "Two tabs of one browser loading the 16 MB roads tilemap at once failed one with net::ERR_CACHE_WRITE_FAILURE: the body read rejected though the server answered. Main loads every asset through fetchAsset (DX-GUARDS C6), which reports the failure and does not retry.",
+      "next": "The branch's rule inside fetchAsset: on a network TypeError, fetch and read once more with cache: 'no-store' (HTTP errors and bad JSON not retried), the retry covering the body read the callers do after it returns; C6's messages kept; the branch's fetchRetry.test.js cases.",
+      "area": "assets",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-144"
+      ],
+      "aliases": [
+        "ERR_CACHE_WRITE_FAILURE",
+        "fetchAsset",
+        "fetchReadRetryUncached",
+        "no-store",
+        "tilemap load",
+        "networking_cars"
+      ],
+      "records": []
+    },
+    {
       "id": "E-214",
       "title": "Path slots allocated without a scan of every slot",
       "status": "kept",
