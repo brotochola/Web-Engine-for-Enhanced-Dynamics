@@ -194,7 +194,8 @@ export class PredatorScene extends WEED.Scene {
     },
 
     renderer: {
-      backend: 'webgl',
+      // E-187: `?backend=webgpu` draws on WebGPU (the scene's own backend is WebGL).
+      backend: predatorSearchParam('backend') === 'webgpu' ? 'webgpu' : 'webgl',
       noLimitFPS: predatorNoLimitFPS,
       ySort: true,
       autoGenerateMipmaps: false,
