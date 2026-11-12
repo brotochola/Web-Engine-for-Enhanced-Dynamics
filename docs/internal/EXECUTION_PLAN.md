@@ -3783,6 +3783,8 @@ are.
 **Plan:** for a type without a body (nothing to reset) on a contiguous run of the list, a read-only pass over the flags;
 all active, tickAll gets a view of the active list (made once per run start); one inactive, the copy as before. Owner:
 BunnyMark C's logic at 300 000 bunnies (200 000 leaves it under the floor).
+**Result:** kept 2026-11-11 (`6e0fea8d`, R-0906). BunnyMark C 300 000, 4 pairs: **KEPT (product)**, logic 3.055 → 2.425 ms
+(-20.2 %, worse 0/4). Predator's gate NEUTRAL.
 
 ## Not doing (read the log first)
 
