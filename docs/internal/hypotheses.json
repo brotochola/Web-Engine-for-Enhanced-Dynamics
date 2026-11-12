@@ -11493,11 +11493,11 @@
     {
       "id": "E-210",
       "title": "Predator's gate from a save",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "deferred",
+      "statusText": "step 0 answered 2026-11-11 (R-0908): a restored Predator does not fight; parked",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Predator reads 8 to 13 % run to run per worker. Both sides restore the same mid-battle snapshot and measure a short window, so the load is paired. Step 0: an A/A from the save against today's A/A, the detection limit per worker. A tool. Owner: runPredatorAbab.mjs.",
+      "result": "step 0 (R-0908): the save keeps components, not the FSMs' plain fields; restored, Predator goes quiet (every worker under 3 ms)",
+      "next": "Needs a scene whose behaviour survives a save (Predator's AI state in components: demo work). The tools (?restore=, --restore, sceneSaveMaker) are in.",
       "area": "harness",
       "kind": "js",
       "refs": [
@@ -11511,7 +11511,8 @@
         "A/A"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0908"
       ]
     },
     {
@@ -20829,6 +20830,18 @@
       "text": "**The bundles of af1a2c01 (E-218 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `0344a6ad`, built from af1a2c01.\n\n- Node 2481 of 2481, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 21:42 to 21:45: NEUTRAL.** Logic -10.7 % (1/4 worse), spatial -0.6 %, physics +2.0 % (2/4), pre-render +1.1 % (3/4).\n- **Boids, 8 pairs, 21:45 to 21:52: NEUTRAL.** Spatial +0.2 % (5/8), physics -0.0 % (4/8).\n\nMain pushed.",
       "commits": [
         "0344a6ad"
+      ]
+    },
+    {
+      "id": "R-0908",
+      "date": "2026-11-11",
+      "time": "21:55",
+      "timeFrom": "recorded",
+      "title": "E-210 step 0: Predator restored from a mid-battle save goes quiet (its AI state is not saved); every worker under the floor",
+      "verdict": "answered",
+      "text": "**E-210 step 0 (`5e19d6c2`): Predator restored from a mid-battle save does not fight. Its AI's state is plain JS fields a save does not carry, so a gate from the save would time a quiet world, not the battle.** 2026-11-11.\n\n**The tools** (kept, for any scene):\n- the bench page's `?restore=<url>` loads the scene with that save as `restorePayload`;\n- `runPredatorAbab --restore <file>` copies the save into both sides' trees and names it to their pages;\n- `sceneSaveMaker.mjs` makes a save: the scene played for `--seconds` in a chromeKernel page, then `scene.saveGame`.\n\n**Probe.** A save of Predator after 20 s: 17 448 entities, 3.1 MB. Then src, headless, from the save:\n- 3 s of warm-up then 4 s: spatial 2.04, physics 2.59 (716 bodies moved, 1003 awake), logic 2.85, pre-render 2.88 ms;\n- 10 s then 4 s: spatial 2.94, physics 2.38 (364 moved, 395 awake), logic 2.49, pre-render 2.56 ms;\n- for comparison, Predator from a new game (today's gates): spatial about 4.2, physics 5.1 to 5.7, logic 3.1 to 3.3, pre-render 3.1 to 3.3 ms.\n\n**What it means.** The save keeps components and poses, not the soldiers' and civilians' FSM locals (SAVE_GAME.md says so). Restored, the battle goes quiet and every worker falls under the 3 ms floor. A paired gate needs a scene whose behaviour survives a save. For Predator that means its AI state in components: demo work, not this tool's. E-210 is parked until a scene needs it; the tools stay.",
+      "commits": [
+        "5e19d6c2"
       ]
     }
   ],
