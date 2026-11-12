@@ -9,6 +9,8 @@ import { ENGINE_FEATURES, getFeature, filterFeatures } from '../bench/engineFeat
 const root = path.resolve(fileURLToPath(new URL('../..', import.meta.url)));
 
 const REQUIRED = [
+  'spotLights',
+  'flashlights',
   'ray',
   'rayVsBox2d',
   'decals',
