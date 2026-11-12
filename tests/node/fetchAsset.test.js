@@ -4,7 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { SpriteSheetRegistry } from '../../src/core/spriteSheetRegistry.js';
-import { fetchAsset, fetchAssetJson } from '../../src/util/fetchAsset.js';
+import { fetchAsset, fetchAssetJson, fetchAssetRead } from '../../src/util/fetchAsset.js';
 
 const PAGE = '<!doctype html><html><body>Not Found</body></html>';
 
@@ -81,5 +81,75 @@ test('an image that does not load names its URL and status, in a worker and on a
   } finally {
     delete globalThis.Image;
     restore();
+  }
+});
+
+// N-144: two tabs of one browser loading a 16 MB tilemap at once failed one with net::ERR_CACHE_WRITE_FAILURE (the body
+// read rejected though the server answered), and nothing tried again. A network failure of the request or of the body
+// read is tried once more past the HTTP cache; an HTTP error or a body the caller rejects is an answer.
+function fake(answer) {
+  const saved = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, init) => {
+    calls.push(init?.cache);
+    return answer(calls.length, String(url));
+  };
+  return { calls, restore: () => { globalThis.fetch = saved; } };
+}
+
+test('N-144: a failed request is tried once more with cache: no-store', async () => {
+  const f = fake((n) => {
+    if (n === 1) throw new TypeError('Failed to fetch');
+    return new Response('{"ok":1}', { status: 200 });
+  });
+  try {
+    assert.deepEqual(await fetchAssetJson('map.json', 'tilemap JSON'), { ok: 1 });
+    assert.deepEqual(f.calls, [undefined, 'no-store']);
+  } finally {
+    f.restore();
+  }
+});
+
+test('N-144: a body read that fails on the network tries the request and the read again', async () => {
+  const f = fake((n) => {
+    const r = new Response('png bytes', { status: 200 });
+    if (n === 1) r.blob = async () => { throw new TypeError('network error'); }; // the stream broke
+    return r;
+  });
+  try {
+    const { body } = await fetchAssetRead('tiles.png', 'tileset', (r) => r.blob());
+    assert.equal(await body.text(), 'png bytes');
+    assert.deepEqual(f.calls, [undefined, 'no-store']);
+  } finally {
+    f.restore();
+  }
+});
+
+test('N-144: an HTTP error and a body that is not JSON are answers, not tried again', async () => {
+  let f = fake(() => new Response(PAGE, { status: 404, statusText: 'Not Found' }));
+  try {
+    await assert.rejects(fetchAssetRead('a.png', 'image', (r) => r.blob()), { message: 'WeedJS: could not load image a.png: HTTP 404 Not Found' });
+    assert.equal(f.calls.length, 1);
+  } finally {
+    f.restore();
+  }
+  f = fake(() => new Response(PAGE, { status: 200 }));
+  try {
+    await assert.rejects(fetchAssetJson('a.json', 'tilemap JSON'), { message: /it is not JSON/ });
+    assert.equal(f.calls.length, 1);
+  } finally {
+    f.restore();
+  }
+});
+
+test('N-144: a second network failure says the URL and the reason (C6)', async () => {
+  const f = fake(() => {
+    throw new TypeError('Failed to fetch');
+  });
+  try {
+    await assert.rejects(fetchAssetRead('big.json', 'tilemap JSON', (r) => r.text()), { message: /could not load tilemap JSON big\.json: Failed to fetch$/ });
+    assert.deepEqual(f.calls, [undefined, 'no-store']);
+  } finally {
+    f.restore();
   }
 });

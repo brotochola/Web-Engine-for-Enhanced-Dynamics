@@ -12,7 +12,7 @@ import {
 } from '../util/utils.js';
 import { ASSETS_DEFAULTS } from '../util/configDefaults.js';
 import { debugWorkerLog } from '../util/debugLog.js';
-import { fetchAsset, fetchAssetJson, imageLoadError } from '../util/fetchAsset.js';
+import { fetchAssetJson, fetchAssetRead, imageLoadError } from '../util/fetchAsset.js';
 
 /**
  * MaxRectsPacker - Rectangle packing algorithm for texture atlas generation
@@ -1398,8 +1398,8 @@ class SpriteSheetRegistry {
   static async _loadImage(url) {
     // Workers (and some environments) have no HTMLImageElement — use fetch + ImageBitmap.
     if (typeof Image === 'undefined') {
-      const response = await fetchAsset(url, 'image');
-      return createImageBitmap(await response.blob());
+      const { body } = await fetchAssetRead(url, 'image', (r) => r.blob());
+      return createImageBitmap(body);
     }
     return new Promise((resolve, reject) => {
       const img = new Image();

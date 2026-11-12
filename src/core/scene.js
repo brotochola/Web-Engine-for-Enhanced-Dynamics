@@ -143,7 +143,7 @@ import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawn
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
 import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
 import { warnOnce } from '../util/dxWarn.js';
-import { fetchAsset, fetchAssetJson } from '../util/fetchAsset.js';
+import { fetchAssetJson, fetchAssetRead } from '../util/fetchAsset.js';
 import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
 import { darkLightingText, smallWorldText } from '../util/sceneGuards.js';
 import { checkFirstInstance, setDevChecks } from './debug/devChecks.js';
@@ -1620,9 +1620,9 @@ class Scene {
   async _loadBakedBigAtlas(bigAtlasAsset) {
     const [json, pngResponse] = await Promise.all([
       fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON'),
-      fetchAsset(bigAtlasAsset.png, 'baked bigAtlas PNG'),
+      fetchAssetRead(bigAtlasAsset.png, 'baked bigAtlas PNG', (r) => r.blob()),
     ]);
-    const imageBitmap = await createImageBitmap(await pngResponse.blob());
+    const imageBitmap = await createImageBitmap(pngResponse.body);
     const canvas = this._canvasFromImageBitmap(imageBitmap);
     return { json, imageBitmap, canvas };
   }
@@ -1640,8 +1640,8 @@ class Scene {
       entries.map(async ([tilemapId, tilemapConfig]) => {
         try {
           const tilemapData = await fetchAssetJson(tilemapConfig.json, `tilemap "${tilemapId}" JSON`);
-          const tilesetResponse = await fetchAsset(tilemapConfig.png, `tilemap "${tilemapId}" tileset`);
-          const tilesetBitmap = await createImageBitmap(await tilesetResponse.blob());
+          const tileset = await fetchAssetRead(tilemapConfig.png, `tilemap "${tilemapId}" tileset`, (r) => r.blob());
+          const tilesetBitmap = await createImageBitmap(tileset.body);
 
           this.loadedTilemaps[tilemapId] = {
             data: tilemapData,
