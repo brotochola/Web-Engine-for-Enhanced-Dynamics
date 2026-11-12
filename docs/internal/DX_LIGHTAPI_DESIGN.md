@@ -56,12 +56,11 @@ The public SoA columns take the new names (`LightEmitter.radius[i]`). `radius` i
 `I = r²/100` and `√I = r/10` per light, so no derived column can go stale (as `sqrtLightIntensity` did under
 `Flash.tick`).
 
-**Falloff with an honest radius:** `a(d) = max(I'/(I' + d²) − ε, 0) / (1 − ε)`, `I' = I + elevation²`, ε its value
-at `d = R` (1/101 without elevation). The CPU folds `1/(1 − ε)`, `brightness` and `I/I'` into the light's colour; ε
-goes in the light texture's `row0.w`, written today (rangeSq) and read by no shader. Two shader ops (a subtract, a max),
-no fetch. At `R = 10·√I` it differs from today by at most 1 % of the light, near the rim. The same falloff everywhere:
-basic pass (plain and faces), raycast fans and umbra (`vLight.w` becomes ε), self-lit fills, particle and LiquidFun
-splats.
+**The radius is what the engine always drew** (R-0935). A falloff that ends at the radius,
+`max(I'/(I' + d²) − ε, 0) / (1 − ε)` with ε its value at R, was tried and dropped: each light's tail is about 1 % of its
+colour across its whole pool, and the tails of overlapping lights add up to part of a lit scene's light. Taking them off
+darkened lightGalleryScene by 7.5 % in mean luma (max 25/255) and dxCaptureScene at night by up to 20/255. So a light is
+about 1 % at its radius, fades on past it, and is culled when that circle leaves the view.
 
 **Glow:** alpha `glow × brightness`, size 0.85·R as today, culled by its own size (N-150).
 
@@ -112,8 +111,7 @@ Measurement tools go in their own commit before what they measure. One change pe
   `renderVisibilityLighting`), pre-render (`_collectVisibleLights`, `_collectStampLights`, the glow cull,
   `buildVisibilityPolygons`, the glow layer), the emit kernel (`glow_row`, `EMIT_GLOW_COLUMNS`) and its JS reference,
   the debug renderer, particle and LiquidFun lights, the light helpers, the types.
-- **A2, the honest-radius falloff** in every shader, GLSL and WGSL. Captures against main with the difference per demo
-  (expected ≤ 3/255 near rims).
+- **A2, the honest-radius falloff: dropped** (R-0935, above): it darkened lit scenes.
 - **A3, `brightness` and `castShadows`:** the per-caster fold in `wasm/shadowStamp.c` (the light table 5 → 6 doubles),
   the `castShadows` filter in the stamp and the sweep, the Flash fade.
 - **A4, reach without a Collider:** `_findNeighbors` and the occupancy in the spatial worker, the stamp's range.
