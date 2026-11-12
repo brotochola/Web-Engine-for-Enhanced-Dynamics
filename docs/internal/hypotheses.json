@@ -12372,6 +12372,186 @@
       "records": [
         "R-0933"
       ]
+    },
+    {
+      "date": "2026-11-12",
+      "result": "",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#DX-LIGHTAPI",
+        "DX_LIGHTAPI_DESIGN.md"
+      ],
+      "id": "DX-LIGHTAPI",
+      "title": "A clear light API: radius and brightness for lightIntensity, color, glow, glowLayer, glowOffsetY, elevation, castShadows and shadowRange per light",
+      "status": "open",
+      "statusText": "Planned 2026-11-12 with the owner (DX_LIGHTAPI_DESIGN.md), being built on dx/light-api",
+      "next": "A0: the inventory (done), lightGalleryScene and lightMotionScene, captures and films of every lit demo before. Then A1 names and radius byte for byte, A2 the honest-radius falloff, A3 brightness and castShadows, A4 shadowRange without a Collider, A5 the quality fixes, A6 migration and docs.",
+      "area": "render",
+      "kind": "dx",
+      "aliases": [
+        "lightIntensity",
+        "radius",
+        "brightness",
+        "hasGlowSprite",
+        "glow",
+        "sourceHeight",
+        "elevation",
+        "glowHeightOffset",
+        "influenceRadius",
+        "shadowRange",
+        "castShadows",
+        "light API"
+      ],
+      "rank": 34
+    },
+    {
+      "date": "2026-11-12",
+      "result": "",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#DX-SPOT",
+        "DX_LIGHTAPI_DESIGN.md"
+      ],
+      "id": "DX-SPOT",
+      "title": "Cone lights as LightEmitter fields: direction, coneAngle, coneSoftness (headlights, flashlights)",
+      "status": "open",
+      "statusText": "Planned 2026-11-12 with the owner (DX_LIGHTAPI_DESIGN.md part B), after DX-LIGHTAPI",
+      "next": "After DX-LIGHTAPI: settle flipX against the cars that mirror frames, then B0 tools (spotLightStressScene, flashlightStressScene), the pool, the headlights' shadows in the stamp, raycast sweeping only the cone.",
+      "area": "render",
+      "kind": "dx",
+      "aliases": [
+        "spot light",
+        "cone light",
+        "headlights",
+        "flashlight",
+        "coneAngle",
+        "direction",
+        "linterna",
+        "faros"
+      ],
+      "rank": 35
+    },
+    {
+      "date": "2026-11-12",
+      "result": "",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-149"
+      ],
+      "id": "N-149",
+      "title": "Flash.spawn({ castShadows: false }) does nothing: FlashComponent.castShadows is written and never read",
+      "status": "open",
+      "statusText": "found 2026-11-12 reading the light code for DX-LIGHTAPI",
+      "area": "engine",
+      "kind": "bug",
+      "aliases": [
+        "Flash",
+        "castShadows",
+        "muzzle flash"
+      ],
+      "next": "Fixed within DX-LIGHTAPI (DX_LIGHTAPI_DESIGN.md)."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-150"
+      ],
+      "id": "N-150",
+      "title": "A light's glow is culled by its sprite's bounds, not by the glow's own size: big glows pop in at the screen's edge",
+      "status": "open",
+      "statusText": "found 2026-11-12 reading the light code for DX-LIGHTAPI",
+      "area": "render",
+      "kind": "bug",
+      "aliases": [
+        "glow cull",
+        "hasGlowSprite",
+        "pop-in"
+      ],
+      "next": "Fixed within DX-LIGHTAPI (DX_LIGHTAPI_DESIGN.md)."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-151"
+      ],
+      "id": "N-151",
+      "title": "Over lighting.maxLights, pre-render keeps lights by screen y, not by distance to the camera",
+      "status": "open",
+      "statusText": "found 2026-11-12 reading the light code for DX-LIGHTAPI",
+      "area": "render",
+      "kind": "bug",
+      "aliases": [
+        "maxLights",
+        "visible lights",
+        "overflow"
+      ],
+      "next": "Fixed within DX-LIGHTAPI (DX_LIGHTAPI_DESIGN.md)."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-152"
+      ],
+      "id": "N-152",
+      "title": "writeRgba32Float makes a subarray per row every frame (WebGPU light data upload)",
+      "status": "open",
+      "statusText": "found 2026-11-12 reading the light code for DX-LIGHTAPI",
+      "area": "render",
+      "kind": "bug",
+      "aliases": [
+        "subarray",
+        "pinGpuTexture",
+        "light data texture"
+      ],
+      "next": "Fixed within DX-LIGHTAPI (DX_LIGHTAPI_DESIGN.md)."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-153"
+      ],
+      "id": "N-153",
+      "title": "The spatial worker builds neighbour lists for every active light, but only raycasted lighting reads them",
+      "status": "open",
+      "statusText": "found 2026-11-12 reading the light code for DX-LIGHTAPI",
+      "area": "spatial",
+      "kind": "speed",
+      "aliases": [
+        "neighbour lists",
+        "E-176",
+        "lights",
+        "visualRange"
+      ],
+      "next": "Fixed within DX-LIGHTAPI (DX_LIGHTAPI_DESIGN.md)."
+    },
+    {
+      "date": "2026-11-12",
+      "result": "",
+      "records": [],
+      "refs": [
+        "REVIEW_PLAN.md#N-154"
+      ],
+      "id": "N-154",
+      "title": "The cookie pass may change no pixel: a white premultiplied cookie cancels under the MULTIPLY of castedShadows",
+      "status": "open",
+      "statusText": "found 2026-11-12 reading the light code for DX-LIGHTAPI",
+      "area": "render",
+      "kind": "bug",
+      "aliases": [
+        "cookie",
+        "_lightGradient",
+        "shadowRT",
+        "castedShadows"
+      ],
+      "next": "Fixed within DX-LIGHTAPI (DX_LIGHTAPI_DESIGN.md)."
     }
   ],
   "records": [
