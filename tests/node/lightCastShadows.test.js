@@ -99,3 +99,27 @@ test('Flash.spawn({ castShadows: false }) writes LightEmitter.castShadows 0, and
   flash.onSpawned({ x: 0, y: 0 });
   assert.equal(LightEmitter.castShadows[1], 1);
 });
+
+test('DX-SPOT: Flash.spawn({ coneAngle, coneSoftness, direction }) gives the flash a cone; a later spawn without one is round', async () => {
+  const { Flash } = await import('../../src/core/flash.js');
+  bind();
+  for (const [k, T] of Object.entries({ dirC: Float32Array, dirS: Float32Array, coneHalf: Float32Array, coneSoftness: Float32Array, coneCos: Float32Array, coneInvSpan: Float32Array, followFlip: Uint8Array })) {
+    LightEmitter[k] = new T(4);
+  }
+  const flash = Object.create(Flash.prototype);
+  Object.defineProperty(flash, 'index', { value: 1 });
+  const le = new LightEmitter(1);
+  Object.defineProperty(flash, 'lightEmitter', { value: le });
+  Object.defineProperty(flash, 'flashComponent', { value: { set lifespan(v) {}, set currentLife(v) {}, set initialRadius(v) {}, set initialGlow(v) {}, set active(v) {} } });
+  Object.defineProperty(flash, 'x', { set() {}, configurable: true });
+  Object.defineProperty(flash, 'y', { set() {}, configurable: true });
+  flash.onSpawned({ x: 0, y: 0, coneAngle: Math.PI / 2, coneSoftness: 0.5, direction: Math.PI / 3 });
+  assert.equal(LightEmitter.coneCos[1], Math.fround(Math.cos(Math.PI / 4)));
+  assert.equal(LightEmitter.dirC[1], Math.fround(Math.cos(Math.PI / 3)));
+  assert.equal(LightEmitter.dirS[1], Math.fround(Math.sin(Math.PI / 3)));
+  assert.ok(Math.abs(le.coneSoftness - 0.5) < 1e-7);
+  flash.onSpawned({ x: 0, y: 0 });
+  assert.equal(LightEmitter.coneCos[1], -2, 'round again');
+  assert.equal(LightEmitter.dirC[1], 1);
+  assert.equal(LightEmitter.dirS[1], 0);
+});

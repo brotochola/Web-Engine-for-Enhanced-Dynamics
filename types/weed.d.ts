@@ -926,6 +926,12 @@ export interface FlashCreateConfig {
   glow?: number;
   /** Point shadows. Default true. */
   castShadows?: boolean;
+  /** A cone's whole aperture in radians, as LightEmitter.coneAngle. Default 2π (round). */
+  coneAngle?: number;
+  /** 0..1, how much of the cone's edge fades. Default 0. */
+  coneSoftness?: number;
+  /** Radians, where the cone points, in the world's frame (a flash never turns). Default 0. */
+  direction?: number;
 }
 
 export interface DecorationSpawnConfig {

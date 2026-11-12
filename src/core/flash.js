@@ -38,6 +38,10 @@ export class Flash extends GameObject {
     brightness: 1,
     glow: 0.2,
     castShadows: 1,
+    // DX-SPOT: a cone. Doubles from the start (NaN until a spawn writes them), so the payload keeps one shape.
+    direction: NaN,
+    coneAngle: Math.PI * 2,
+    coneSoftness: NaN,
   };
 
   /**
@@ -80,6 +84,9 @@ export class Flash extends GameObject {
    * @param {number} [config.brightness=1] - Times the colour and the glow
    * @param {number} [config.glow=0.2] - Initial halo alpha (0 = no halo)
    * @param {boolean|number} [config.castShadows=true] - Point shadows (false/0 = lighting only)
+   * @param {number} [config.coneAngle=2π] - A cone's whole aperture in radians (2π: round), as LightEmitter's
+   * @param {number} [config.coneSoftness=0] - 0..1, how much of the cone's edge fades
+   * @param {number} [config.direction=0] - Radians, where the cone points (a flash never turns: in the world's frame)
    * @returns {Flash|null} - The spawned flash instance, or null if pool exhausted/off-screen
    *
    * @example
@@ -92,6 +99,10 @@ export class Flash extends GameObject {
    *   radius: 2000,
    *   castShadows: false,
    * });
+   *
+   * @example
+   * // A muzzle flash that lights ahead of the barrel only.
+   * Flash.spawn({ x: muzzleX, y: muzzleY, radius: 900, coneAngle: Math.PI / 2, coneSoftness: 0.6, direction: aim });
    */
   static spawn(config) {
     if (!this.initialized) {
@@ -115,6 +126,9 @@ export class Flash extends GameObject {
     s.glow = config.glow ?? 0.2;
     s.castShadows =
       config.castShadows !== 0 && config.castShadows !== false ? 1 : 0;
+    s.direction = config.direction ?? 0;
+    s.coneAngle = config.coneAngle ?? Math.PI * 2;
+    s.coneSoftness = config.coneSoftness ?? 0;
 
     return super.spawn(s);
   }
@@ -142,6 +156,10 @@ export class Flash extends GameObject {
     this.flashComponent.initialRadius = this.lightEmitter.radius;
     this.flashComponent.initialGlow = this.lightEmitter.glow;
     this.lightEmitter.castShadows = spawnConfig.castShadows !== 0 && spawnConfig.castShadows !== false ? 1 : 0;
+    // DX-SPOT: its cone (2π, the default, is round); a flash never turns, so the direction is the world's.
+    this.lightEmitter.coneAngle = spawnConfig.coneAngle ?? Math.PI * 2;
+    this.lightEmitter.coneSoftness = spawnConfig.coneSoftness ?? 0;
+    this.lightEmitter.direction = spawnConfig.direction ?? 0;
     this.flashComponent.active = 1;
   }
 
