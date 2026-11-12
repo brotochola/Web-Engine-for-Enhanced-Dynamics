@@ -9992,7 +9992,8 @@
         "R-0910",
         "R-0912",
         "R-0916",
-        "R-0921"
+        "R-0921",
+        "R-0923"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -21207,6 +21208,18 @@
       "text": "**N-141 fixed: decorations are culled with the pool's largest reach as a margin.** `594ed8a2`.\n\n- **Cause:** the particle worker's decoration screen test reads one point a decoration (its position against the view plus `cullingRatio`), so a large decoration drawn from its foot went missing at the bottom edge with its top still on screen (and at the sides for an anchor off centre). Filed fixing N-140; the guide advised cutting tall decorations into pieces.\n- **Fix:** the pool keeps the largest reach any decoration has had from its position to the far corner of its sprite (frame × |scale| from the anchor, as `spriteCullReach` does for sprites, plus the draw offset), rounded up, in word 3 of its list header (`DECORATION_MAX_REACH`): `DecorationPool.noteReach` at spawn (before the list shows the decoration) and in the facade's scale, anchor, texture and offset setters; `despawnAll` resets it. The particle worker pads the decorations' screen test with it (`_decorationCameraBounds`, all four paths: both loops, the flip sample, the hold check), so the per-decoration loops (E-179) read nothing more.\n- **Checks:** `decorationReach.test.js`: the reach (anchor, a flip, the offset); a 600 px decoration whose foot is 300 px below the view kept, one past its reach not; growing one raises the pad and the test runs again; despawnAll resets. The two screen cases fail without the pad. In Predator (a probe, the real bigAtlas sizes) the grass reaches 71 px. Node 2519 of 2519, demos 101 of 101.\n\n**Predator's gate, 4 pairs** (`--name n141-predator --vs main --hyp-rev fix/n141`, 05:26 to 05:33): NEUTRAL. Spatial -2.1 %, physics -4.2 % (0/4 worse); logic -1.5 %, renderer -2.9 %, pre-render -4.0 %, particle -5.1 % (under the floor); load keys within 0.1 %.\n\n**Verdict: kept (hygiene).** The guide's sortOffsetY paragraph says how decorations cull now.",
       "commits": [
         "594ed8a2"
+      ]
+    },
+    {
+      "id": "R-0923",
+      "date": "2026-11-12",
+      "time": "05:58",
+      "timeFrom": "recorded",
+      "title": "The bundles of b6831af8 (N-141) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of b6831af8 (N-141 merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `81839865`.\n\n- Node 2519 of 2519, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 0 failures on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 05:38 to 05:45: NEUTRAL.** Spatial -0.6 %, pre-render -0.7 %; physics 4.569 → 5.223 ms (+9.0 %, worse 3/4, cv 10/8 %), the bundle-against-source swing N-105 records on Predator.\n- **Boids, 8 pairs, 05:45 to 05:58: NEUTRAL.** Spatial +0.2 % (5/8), physics +0.3 % (4/8), cv 1 %.\n\nMain pushed.",
+      "commits": [
+        "81839865"
       ]
     }
   ],
