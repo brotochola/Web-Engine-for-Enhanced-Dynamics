@@ -3842,6 +3842,18 @@ waits off for 120 frames. Two builds that missed are in the record (a signal aft
 by a count, which a main running after the workers always moves a vsync early). Left: a Boids run that stayed at
 22.6 ms; gamepads still reach logic a frame later (main reads them in its update).
 
+### E-220 Keyed shadows on WebGPU (E-191's programs in WGSL)
+
+**Premise:** E-187 made the entity batch keyed on WebGPU, but E-191's keyed shadows stay WebGL's: the sun pass over the
+keyed instances (`makeKeyedSunShader`) and the keyed caster rows (`makeKeyedCasterShader`, pre-render writing a pose
+and a key a caster) need the shadow vertex program reading the statics by key, and only its GLSL form exists. On WebGL
+they gave the renderer -4.4 % (step 1) and Predator crowd 1.5's pre-render -16.8 % (step 2); on WebGPU the sun pass
+still draws pre-render's full caster rows.
+**Plan:** a keyed form of `instancedSpriteShadow.wgsl` (as `spriteIndexedWgsl` reads the statics storage buffer, binding
+4) and its GpuProgram, then lift the four `_useWebGpu` checks (`instancedSpriteBatch.makeKeyedSunShader` and
+`makeKeyedCasterShader`, `pixiWorker._keyedSunFor` and the keyed casters' setup); WebGPU captures of dxCaptureScene's
+sun hours and sunMeshParityScene against main. Owner: Predator `?backend=webgpu&crowd=1.5`'s pre-render and renderer.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
