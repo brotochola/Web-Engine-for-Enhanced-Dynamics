@@ -53,6 +53,7 @@ import { median, pctDelta, writeJson } from './featureTournamentLib.mjs';
 import { cv, repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
 import { ensureOverlayWorktree, ensureRevWorktree, keepRevWorktrees } from './revWorktree.mjs';
+import { pruneTestResults } from './pruneTestResults.mjs';
 
 export const PREDATOR_SCENE = {
   key: 'predator',
@@ -750,6 +751,9 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     return;
   }
   if (args['keep-worktrees']) keepRevWorktrees();
+  // Raw results not touched for a week go (they are not kept: the record holds the numbers).
+  const stale = pruneTestResults({ days: 7 });
+  if (stale.length) console.log(`removed ${stale.length} raw result entr${stale.length === 1 ? 'y' : 'ies'} older than 7 days from tests/results`);
   // --vs <rev>: A = src/ from that revision, everything else from the working tree.
   const fullRev = Boolean(args['full-rev']);
   const baseline = args.vs
