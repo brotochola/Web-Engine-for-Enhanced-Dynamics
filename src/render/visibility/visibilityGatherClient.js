@@ -46,7 +46,9 @@ export const GATHER_EVENT_F64 = GATHER_EVENT_BYTES >> 3;
  * @param {{ layout: Record<string, number> }} vm
  */
 export async function bindVisibilityGather(memory, v, vm) {
-  const k = await loadWasmKernel('visibilityGather', engineWasmUrl, memory, ['gather_light', 'gather_light_u32']);
+  const k = await loadWasmKernel('visibilityGather', engineWasmUrl, memory, [
+    'gather_light', 'gather_light_u32', 'gather_light_cone', 'gather_light_cone_u32',
+  ]);
   const buffer = memory.buffer;
   const table = new Uint32Array(buffer, v.tableByte, GATHER_SLOTS.length);
   table.fill(0);
@@ -68,6 +70,13 @@ export async function bindVisibilityGather(memory, v, vm) {
     gather32: k.gather_light_u32,
     /** gather_light(tableByte, light, lx, ly, radius, alpha): the occluders packed. The export for the rows' width. */
     gather: k.gather_light,
+    gatherCone16: k.gather_light_cone,
+    gatherCone32: k.gather_light_cone_u32,
+    /**
+     * DX-SPOT: gather_light_cone(tableByte, light, lx, ly, radius, alpha, e1x, e1y, e2x, e2y, wideCone): a cone light's
+     * gather, which also drops what lies wholly outside its wedge (edges e1 to e2 counter-clockwise, unit, world space).
+     */
+    gatherCone: k.gather_light_cone,
     table,
     tableByte: v.tableByte,
     /** [0] occluders, [1] vertices, [2] events, [3] 1 when the occluder cap stopped the walk. */
@@ -104,6 +113,7 @@ export function writeGatherColumns(b, worker, Grid, Transform, Collider, LightOc
   if (!(stride > 0) || stride - 1 > b.events) ok = false;
   t[SLOT.nStride] = stride;
   b.gather = rows instanceof Uint32Array ? b.gather32 : b.gather16;
+  b.gatherCone = rows instanceof Uint32Array ? b.gatherCone32 : b.gatherCone16;
   put('tActive', Transform.active, true);
   put('tX', Transform.x, true);
   put('tY', Transform.y, true);

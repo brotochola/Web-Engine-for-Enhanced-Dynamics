@@ -47,7 +47,7 @@ export function ringTriangles(segments, outerR, innerR) {
  */
 export function makeScene(seed, {
   lights = 48, boxes = 240, circles = 90, polygons = 60, rings = 8, ringSegments = 18,
-  radius = [150, 450], blockHalf = 0.1,
+  radius = [150, 450], blockHalf = 0.1, cones = 0,
 } = {}) {
   const rng = mulberry32(seed);
   const ents = [];
@@ -56,7 +56,15 @@ export function makeScene(seed, {
     const sqrtI = Math.fround(r / 10);
     // Every fifth light casts no shadow (LightEmitter.castShadows 0): no gather, the full circle.
     const casts = ents.length % 5 === 3 ? 0 : 1;
-    ents.push({ kind: 'light', x: 200 + rng() * (WORLD_W - 400), y: 200 + rng() * (WORLD_H - 400), sqrtI, vx: (rng() - 0.5) * 80, vy: (rng() - 0.5) * 80, casts });
+    const light = { kind: 'light', x: 200 + rng() * (WORLD_W - 400), y: 200 + rng() * (WORLD_H - 400), sqrtI, vx: (rng() - 0.5) * 80, vy: (rng() - 0.5) * 80, casts };
+    // DX-SPOT: `cones` (0..1) of the lights take a cone, its half aperture from 10 to 130 degrees (a few past 90: the
+    // wide wedge), pointing anywhere relative to the light's spinning entity.
+    if (rng() < cones) {
+      light.coneHalf = ((10 + rng() * 120) * Math.PI) / 180;
+      light.dir = rng() * Math.PI * 2;
+      light.spin = (rng() - 0.5) * 1.2;
+    }
+    ents.push(light);
   }
   const occ = (kind, extra) => ents.push({
     kind, x: 60 + rng() * (WORLD_W - 120), y: 60 + rng() * (WORLD_H - 120), angle: rng() * Math.PI * 2,
@@ -162,6 +170,7 @@ export async function bootPreRender(scene, {
  */
 export async function bootPreRenderGather(scene, {
   wasm = {}, maxVerts = 512, maxNeighbors = 256, selfLit = 4096, fixtureSlack = 16, fixtures: withPool = true,
+  groundScaleY = 1,
 } = {}) {
   const N = scene.entities;
   const maxLights = Math.max(1, scene.lights);
@@ -229,7 +238,10 @@ export async function bootPreRenderGather(scene, {
     config: {
       worldWidth: WORLD_W,
       worldHeight: WORLD_H,
-      lighting: { enabled: true, raycasted: true, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false, maxOccluderSelfLit: selfLit },
+      lighting: {
+        enabled: true, raycasted: true, maxLights, maxPolygonVertices: maxVerts, shadowsEnabled: false,
+        maxOccluderSelfLit: selfLit, groundScaleY,
+      },
       physics: { maxFixturePoolSize: withPool ? fixturePool : 0 },
       wasm: { ...wasm },
     },
@@ -298,6 +310,11 @@ export function writeFrame(boot, t, { scene = boot.scene, revision = 7 } = {}) {
       LightEmitter.active[i] = 1;
       LightEmitter.radius[i] = e.sqrtI * 10;
       LightEmitter.castShadows[i] = e.casts === 0 ? 0 : 1;
+      // DX-SPOT: a cone light's columns as LightEmitter's setters write them (no cone: coneCos -2).
+      LightEmitter.coneCos[i] = e.coneHalf > 0 ? Math.cos(e.coneHalf) : -2;
+      LightEmitter.coneInvSpan[i] = e.coneHalf > 0 ? 4 : 0;
+      LightEmitter.dirC[i] = e.coneHalf > 0 ? Math.cos(e.dir) : 1;
+      LightEmitter.dirS[i] = e.coneHalf > 0 ? Math.sin(e.dir) : 0;
       return;
     }
     LightOccluder.active[i] = 1;

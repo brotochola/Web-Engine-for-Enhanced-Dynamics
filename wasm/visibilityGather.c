@@ -10,7 +10,8 @@
    - an occluder packed while the self-lit list is on: the JS writes its self-lit item.
    The records keep the neighbour order, so the JS writes the bins and the self-lit list in the order its loop does.
    Every column is a byte offset into one shared memory (Phase 4: Box2D's block), from the table; 0 marks a column
-   the scene does not have. Arithmetic as the JS does it: in double from the float32 columns, each value stored as
+   the scene does not have. DX-SPOT: gather_light_cone and its u32 twin also drop what lies wholly outside a cone
+   light's wedge (outside_wedge); the point exports compile the walk without that test. Arithmetic as the JS does it: in double from the float32 columns, each value stored as
    the typed array stores it (`v || 0` is +0 for 0, -0 and NaN). */
 #include <stdint.h>
 
@@ -227,7 +228,18 @@ INLINE uint32_t neighbour(const cols_t *k, uint32_t at, int wide) {
   return wide ? k->rows32[at] : (uint32_t)k->rows16[at];
 }
 
-INLINE int32_t gather(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha, int wide) {
+/* DX-SPOT: whether a disc (its centre dx, dy from the light, its radius reach) lies wholly outside a cone light's wedge
+   in world space, from edge e1 counter-clockwise (increasing atan2, the sweep's order) to edge e2, both unit. A cone up
+   to 180 degrees (cone 1) is inside both edges' half-planes, a wider one (cone 2) inside either. Occlusion runs along
+   rays from the light, which stay on their side of an edge, so what lies outside shadows nothing inside. */
+INLINE int outside_wedge(double dx, double dy, double reach, int cone, double e1x, double e1y, double e2x, double e2y) {
+  const double a = e1x * dy - e1y * dx; /* cross(e1, d): its distance past e1, counter-clockwise */
+  const double b = dx * e2y - dy * e2x; /* cross(d, e2): its distance short of e2 */
+  return cone == 1 ? (a < -reach || b < -reach) : (a < -reach && b < -reach);
+}
+
+INLINE int32_t gather(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha, int wide,
+                      int cone, double e1x, double e1y, double e2x, double e2y) {
   const cols_t k = columns(table);
   const uint32_t offset = light * k.stride;
   const uint32_t count = neighbour(&k, offset, wide);
@@ -260,6 +272,7 @@ INLINE int32_t gather(uint32_t table, uint32_t light, double lx, double ly, doub
       const double cdy = centY - ly;
       const double bound = radius + reach;
       if (cdx * cdx + cdy * cdy > bound * bound) continue;
+      if (cone && outside_wedge(cdx, cdy, reach, cone, e1x, e1y, e2x, e2y)) continue;
       put_event(&k, events++, EV_SOLID, i, -1, p);
       continue;
     }
@@ -275,6 +288,7 @@ INLINE int32_t gather(uint32_t table, uint32_t light, double lx, double ly, doub
     }
     const double maxReach = radius + reach;
     if (dx * dx + dy * dy > maxReach * maxReach) continue;
+    if (cone && outside_wedge(dx, dy, reach, cone, e1x, e1y, e2x, e2y)) continue;
     if (shape == SHAPE_CIRCLE) {
       const float r = k.radius[i];
       if (!(r > 0.0f)) continue;
@@ -318,10 +332,23 @@ INLINE int32_t gather(uint32_t table, uint32_t light, double lx, double ly, doub
 
 __attribute__((export_name("gather_light")))
 int32_t gather_light(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha) {
-  return gather(table, light, lx, ly, radius, alpha, 0);
+  return gather(table, light, lx, ly, radius, alpha, 0, 0, 0.0, 0.0, 0.0, 0.0);
 }
 
 __attribute__((export_name("gather_light_u32")))
 int32_t gather_light_u32(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha) {
-  return gather(table, light, lx, ly, radius, alpha, 1);
+  return gather(table, light, lx, ly, radius, alpha, 1, 0, 0.0, 0.0, 0.0, 0.0);
+}
+
+/* DX-SPOT: a cone light's walk; wideCone 1 when its aperture passes 180 degrees. */
+__attribute__((export_name("gather_light_cone")))
+int32_t gather_light_cone(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha,
+                          double e1x, double e1y, double e2x, double e2y, int32_t wideCone) {
+  return gather(table, light, lx, ly, radius, alpha, 0, wideCone ? 2 : 1, e1x, e1y, e2x, e2y);
+}
+
+__attribute__((export_name("gather_light_cone_u32")))
+int32_t gather_light_cone_u32(uint32_t table, uint32_t light, double lx, double ly, double radius, double alpha,
+                              double e1x, double e1y, double e2x, double e2y, int32_t wideCone) {
+  return gather(table, light, lx, ly, radius, alpha, 1, wideCone ? 2 : 1, e1x, e1y, e2x, e2y);
 }

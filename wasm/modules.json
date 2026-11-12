@@ -116,6 +116,8 @@
         "collect_solid_f32x4",
         "gather_light",
         "gather_light_u32",
+        "gather_light_cone",
+        "gather_light_cone_u32",
         "premultiply_scalar",
         "premultiply_simd"
       ],
@@ -439,7 +441,9 @@
       "output": "tests/fixtures/wasm/visibilityGather.wasm",
       "exports": [
         "gather_light",
-        "gather_light_u32"
+        "gather_light_u32",
+        "gather_light_cone",
+        "gather_light_cone_u32"
       ],
       "maxMemoryPages": 32768,
       "test": true,

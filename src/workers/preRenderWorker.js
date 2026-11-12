@@ -4265,6 +4265,12 @@ class PreRenderWorker extends AbstractWorker {
         const lightOffsetY = LightEmitter.offsetY;
         const lightRotC = Transform.rotC;
         const lightRotS = Transform.rotS;
+        // DX-SPOT: a cone light gathers only what can shadow its wedge and publishes its polygon cut to the wedge.
+        const lightConeCos = LightEmitter.coneCos;
+        const lightDirC = LightEmitter.dirC;
+        const lightDirS = LightEmitter.dirS;
+        const groundY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
+        const groundInvY = 1 / groundY;
         const sweepK = this._visSweep;
         const sweepLight = sweepK.sweep;
         const sweepTable = sweepK.table;
@@ -4325,6 +4331,38 @@ class PreRenderWorker extends AbstractWorker {
             SOLID_ARGS[6] = lx;
             SOLID_ARGS[7] = ly;
             SOLID_ARGS[8] = influenceRadius * influenceRadius;
+            // DX-SPOT: a cone light's wedge in world space, as Pixi's cone shader sees it: the floor direction (the
+            // entity's facing turned by the light's own) turned by minus and plus the half aperture, then y times
+            // groundScaleY. e1 starts it and e2 ends it counter-clockwise, the sweep's increasing atan2.
+            const coneCos = lightConeCos[lightIdx];
+            const cone = coneCos > -1;
+            let e1x = 1;
+            let e1y = 0;
+            let e2x = 1;
+            let e2y = 0;
+            if (cone) {
+                const dc = lightDirC[lightIdx];
+                const ds = lightDirS[lightIdx];
+                const rc = lightRotC[lightIdx];
+                const rs = lightRotS[lightIdx];
+                const wx = rc * dc - rs * ds;
+                const wy = (rs * dc + rc * ds) * groundInvY;
+                const len = Math.sqrt(wx * wx + wy * wy);
+                const fx = len > 0 ? wx / len : 1;
+                const fy = len > 0 ? wy / len : 0;
+                const c2 = 1 - coneCos * coneCos;
+                const sinH = c2 > 0 ? Math.sqrt(c2) : 0;
+                e1x = fx * coneCos + fy * sinH;
+                e1y = (fy * coneCos - fx * sinH) * groundY;
+                e2x = fx * coneCos - fy * sinH;
+                e2y = (fy * coneCos + fx * sinH) * groundY;
+                const l1 = Math.sqrt(e1x * e1x + e1y * e1y);
+                const l2 = Math.sqrt(e2x * e2x + e2y * e2y);
+                e1x /= l1;
+                e1y /= l1;
+                e2x /= l2;
+                e2y /= l2;
+            }
 
             let occCount = 0;
             let vertPool = 0;
@@ -4341,7 +4379,9 @@ class PreRenderWorker extends AbstractWorker {
                 // The bins are cleared before the light's first solid rasters; a light with none leaves them.
                 skipPolarBins();
                 let binsCleared = false;
-                occCount = gk.gather(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha);
+                occCount = cone
+                    ? gk.gatherCone(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha, e1x, e1y, e2x, e2y, coneCos < 0 ? 1 : 0)
+                    : gk.gather(gk.tableByte, lightIdx, lx, ly, influenceRadius, this._poseAlpha);
                 occluderLimitHit = gatherRes[3] !== 0;
                 const events = gatherRes[2];
                 for (let e = 0; e < events; e++) {
@@ -4642,9 +4682,64 @@ class PreRenderWorker extends AbstractWorker {
             const xStart = baseIndex + 4;
             const yStart = xStart + maxVerts;
             const copyCount = vertCount < maxVerts ? vertCount : maxVerts; // subarray clamped too
-            for (let v = 0; v < copyCount; v++) {
-                f32[xStart + v] = outX[v];
-                f32[yStart + v] = outY[v];
+            // DX-SPOT: a cone light's polygon is cut to its wedge (the walk below), so Pixi fills the cone only.
+            let enter = -1;
+            if (cone && copyCount >= 3) {
+                // The edge where the walk enters the wedge: cross(e1, P - L) turns from negative to not there (it turns
+                // back half a turn later, behind the light).
+                let aPrev = e1x * (outY[copyCount - 1] - ly) - e1y * (outX[copyCount - 1] - lx);
+                for (let v = 0; v < copyCount; v++) {
+                    const a = e1x * (outY[v] - ly) - e1y * (outX[v] - lx);
+                    if (aPrev < 0 && a >= 0) {
+                        enter = v === 0 ? copyCount - 1 : v - 1;
+                        break;
+                    }
+                    aPrev = a;
+                }
+            }
+            if (enter < 0) {
+                for (let v = 0; v < copyCount; v++) {
+                    f32[xStart + v] = outX[v];
+                    f32[yStart + v] = outY[v];
+                }
+            } else {
+                // The light, the point where edge `enter` crosses e1, the vertices inside, and the point where the walk
+                // crosses e2 (cross(P - L, e2) turns from not negative to negative): a fan over the wedge alone, whose
+                // first and closing triangles are flat.
+                f32[xStart] = lx;
+                f32[yStart] = ly;
+                const next = enter + 1 === copyCount ? 0 : enter + 1;
+                let curX = outX[enter];
+                let curY = outY[enter];
+                const aK = e1x * (curY - ly) - e1y * (curX - lx);
+                const aN = e1x * (outY[next] - ly) - e1y * (outX[next] - lx);
+                const t = aK / (aK - aN);
+                curX += t * (outX[next] - curX);
+                curY += t * (outY[next] - curY);
+                f32[xStart + 1] = curX;
+                f32[yStart + 1] = curY;
+                let published = 2;
+                let j = next;
+                for (let step = 0; step < copyCount && published < maxVerts; step++) {
+                    const tx = outX[j];
+                    const ty = outY[j];
+                    const bc = (curX - lx) * e2y - (curY - ly) * e2x;
+                    const bt = (tx - lx) * e2y - (ty - ly) * e2x;
+                    if (bc >= 0 && bt < 0) {
+                        const s = bc / (bc - bt);
+                        f32[xStart + published] = curX + s * (tx - curX);
+                        f32[yStart + published] = curY + s * (ty - curY);
+                        published++;
+                        break;
+                    }
+                    f32[xStart + published] = tx;
+                    f32[yStart + published] = ty;
+                    published++;
+                    curX = tx;
+                    curY = ty;
+                    j = j + 1 === copyCount ? 0 : j + 1;
+                }
+                i32[baseIndex + 3] = published;
             }
 
             lightsWritten++;
