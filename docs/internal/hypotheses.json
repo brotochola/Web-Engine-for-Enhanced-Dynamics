@@ -11210,11 +11210,11 @@
     {
       "id": "E-198",
       "title": "The wake chain: each stage waits for this vsync's output of the one before it",
-      "status": "open",
-      "statusText": "step 0 answered 2026-11-12 (R-0925): no link waits in Boids; the waits built (speed/e198) change nothing",
+      "status": "kept",
+      "statusText": "kept 2026-11-12 (08a689ce, R-0927)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "A timeline of the frame clock (each worker's frame start and end) for a few frames, to see where the two frames between logic and pre-render go; then decide.",
+      "result": "kept 2026-11-12 (08a689ce): physics waits for logic, pre-render for the pose, Pixi for the queue, of the same vsync; input lag Predator 51.6 -> 24.7 ms, Boids 50.4 -> 23.3 ms (KEPT product, spatial -20.9 %)",
+      "next": "Done. Left: the input reaches logic a frame after Chrome dispatches it (about 16 ms of the 24).",
       "area": "engine",
       "kind": "speed",
       "refs": [
@@ -11228,9 +11228,9 @@
       ],
       "records": [
         "R-0854",
-        "R-0925"
-      ],
-      "rank": 27
+        "R-0925",
+        "R-0927"
+      ]
     },
     {
       "id": "E-199",
@@ -21259,6 +21259,19 @@
       "text": "**The bundles of the E-197 merge and its stamp fix: tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `25d6a873`.\n\n- Node 2523 of 2523, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 0 failures on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 06:21 to 06:27: NEUTRAL.** Spatial -0.2 %, physics -4.0 % (0/4 worse); logic and pre-render under the floor.\n- **Boids, 8 pairs, 06:28 to 06:40: NEUTRAL.** Spatial -0.5 % (3/8), physics +0.2 % (4/8), cv 1 %.\n\nMain pushed. (R-0925's time corrected to 06:16, its commits' time.)",
       "commits": [
         "25d6a873"
+      ]
+    },
+    {
+      "id": "R-0927",
+      "date": "2026-11-12",
+      "time": "07:07",
+      "timeFrom": "recorded",
+      "title": "E-198 kept: the frame chain within one vsync; input lag 51 -> 24 ms in Predator and Boids, workers' own time -20 to -36 %",
+      "verdict": "kept",
+      "text": "**E-198 kept: logic, physics, pre-render and Pixi chained within one vsync; an input reaches the screen about 27 ms (1.6 frames) sooner.** `08a689ce` (the change), `a48db56a` (its test), merged in the speed/e198 merge.\n\n- **The premise, now measured:** `runFramePhase` (`--scene`, `7ed115ad`) on Boids: every worker wakes within 0.2 ms of the others (\"wake-together\"), so each stage reads what the one before it published a vsync earlier. E-197's meter: 50.4 ms (3 frames) from an input to the frame drawn with it.\n- **Why R-0925's waits never waited:** they waited only when nothing newer than the last read was out, but when the stages wake together there always is (the upstream's output of the vsync before). The waits now wait for an output of **this** vsync: physics for every logic worker's frame end (a frame-chain counter each adds to in `afterUpdate`), pre-render for a pose newer than the one out at its start, Pixi for a queue newer than the one out at its start, then drawn. Two more found on the way: pre-render marks the pose out at its start consumed before it waits (physics holds its publish until the last pose is consumed, `posePublishBlocked`: the wait always ran out), and physics answers sync queries between 0.25 ms slices while it waits (a logic worker blocked on a ray finishes its frame only once physics answers, and the idle wake cannot run under an `Atomics.wait`).\n- **Budgets and fallbacks:** each wait at most the frame less its own step and room downstream (physics 6 ms, pre-render 4 ms); a timeout turns that stage's waits off for 120 frames. Waits go into `WAIT_MS`. `physics.waitForLogic`, `preRender.waitForPose`, `renderer.waitForQueue` (true) turn them off. On Windows an `Atomics.wait` timeout can overrun to the timer's ~15 ms: a stage whose wait runs out may miss one vsync, then waits no more for two seconds.\n- **Checks:** `frameChainWait.test.js` (Pixi and pre-render wake on their upstream's publish, the pose marked consumed, the wait in `WAIT_MS`, a timeout turns the waits off; a second thread publishes). Node 2527 of 2527, demos 101 of 101.\n\n**Sittings, 4 pairs each, `--vs main --hyp-rev speed/e198 --input-every 100`, src, headed, AC power (06:47 to 07:07):**\n- **Predator** (NEUTRAL by the runner, no owner): input lag 51.6, 51.5, 51.7, 51.5 → 27.0, 24.7, 24.7, 24.6 ms; STEP_MS − WAIT_MS spatial 3.745 → 2.897 ms (-21.1 %), physics 4.402 → 3.242 (-26.0 %), pre-render 2.877 → 1.802 (-36.3 %), renderer -30.5 %, logic -27.4 % (worse 0/4 each; particle +7.7 % under the floor); frames presented 59.99 both.\n- **Boids** (owner spatial): **KEPT (product)**: spatial 5.316 → 4.185 ms (-20.9 %, worse 0/4), physics -25.9 %; input lag 50.3 to 50.6 → 23.2 to 23.5 ms (p95 51 → 24); frames presented equal.\n- **liquidFunQueryStressScene** (sync queries every tick, owner physics): NEUTRAL, physics -1.7 %; input lag 50.4 → 35.0 ms; frames presented equal.\n\nThe workers' own time fell too: they no longer all start their work together on the vsync, so they contend less for the cores (spatial, which waits for nothing, read -21 %). A short test run overlapped part of the Predator sitting.\n\n**Verdict: kept.**",
+      "commits": [
+        "08a689ce",
+        "a48db56a"
       ]
     }
   ],
