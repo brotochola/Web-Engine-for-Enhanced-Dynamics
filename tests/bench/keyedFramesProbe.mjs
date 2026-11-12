@@ -60,6 +60,34 @@ try {
           drawsKeyed: b.mesh ? b.mesh.shader === b._indexedShader : null,
           instances: b.geometry ? b.geometry.instanceCount : null,
           scatterGpu: px._staticsScatterGpu !== null && px._staticsScatterGpu !== undefined,
+          statics: (() => {
+            // WebGL: the statics texture read back (a framebuffer over it), each drawn instance's key's scale words: a
+            // row the scatter never filled reads zeros, and its sprite draws at scale 0.
+            const r = px.pixiApp && px.pixiApp.renderer;
+            const gl = r && r.gl;
+            if (!gl || !b._staticsSource || !b.keyed) return null;
+            const tex = r.texture.getGlSource(b._staticsSource).texture;
+            const w = 3072;
+            const h = Math.max(1, b._staticsHeight | 0);
+            const fb = gl.createFramebuffer();
+            const prev = gl.getParameter(gl.FRAMEBUFFER_BINDING);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
+            gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
+            const out = new Uint32Array(w * Math.min(h, 4) * 4);
+            gl.readPixels(0, 0, w, Math.min(h, 4), gl.RGBA_INTEGER, gl.UNSIGNED_INT, out);
+            gl.bindFramebuffer(gl.FRAMEBUFFER, prev);
+            gl.deleteFramebuffer(fb);
+            const n = b.geometry ? b.geometry.instanceCount : 0;
+            let zero = 0;
+            let rowsSeen = 0;
+            for (let k = 0; k < n; k++) {
+              const key = Math.round(b._slotData[k * 2]);
+              if (key >= 1024 * 4) continue;
+              rowsSeen++;
+              if (out[key * 12] === 0 && out[key * 12 + 1] === 0) zero++;
+            }
+            return { drawn: n, read: rowsSeen, zeroScale: zero, keyRequest: b._keyRequest };
+          })(),
         };
       }).catch(() => null);
       const s = await Promise.race([ask, new Promise((resolve) => setTimeout(() => resolve(null), 500))]);
