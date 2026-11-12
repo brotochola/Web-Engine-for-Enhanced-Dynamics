@@ -268,8 +268,8 @@ export const LIGHT_GRADIENT_TEXTURE_RADIUS = 100;
 export const METABALL_TEXTURE_RADIUS = 32;
 export { LIGHT_INFLUENCE_RADIUS_SCALE, lightInfluenceRadius, resolveGroundScaleY };
 
-/** Rows in the lighting data texture: 0 = xy+intensity, 1 = rgb. */
-export const LIGHT_DATA_TEX_HEIGHT = 2;
+/** Rows in the lighting data texture: 0 = xy+intensity, 1 = rgb + the source's height, 2 = a cone (DX-SPOT). */
+export const LIGHT_DATA_TEX_HEIGHT = 3;
 
 /** Float count for an RGBA32F light-data texture of width `maxLights`. */
 export function lightDataTextureFloatCount(maxLights) {
@@ -296,14 +296,13 @@ export function packLightDataTexel(data, maxLights, lightIndex, x, y, intensity,
 
 /**
  * Zero compact slots [liveCount, maxLights) so leftover lights cannot ghost.
- * Row 0 and row 1 are contiguous; two fills, no alloc.
+ * One fill per row, no alloc.
  */
 export function clearUnusedLightDataTexels(data, maxLights, liveCount) {
   const n = maxLights | 0;
   const live = Math.max(0, Math.min(liveCount | 0, n));
   if (live >= n) return;
-  data.fill(0, live * 4, n * 4);
-  data.fill(0, n * 4 + live * 4, n * 8);
+  for (let row = 0; row < LIGHT_DATA_TEX_HEIGHT; row++) data.fill(0, row * n * 4 + live * 4, (row + 1) * n * 4);
 }
 
 /** Read back a packed light (for tests / debug). Writes into `out` and returns it. */

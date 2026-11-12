@@ -3604,6 +3604,9 @@ LIGHTING SYSTEM SETUP
         uNightR: { value: 0, type: 'f32' },
         uNightG: { value: 0, type: 'f32' },
         uNightB: { value: 0, type: 'f32' },
+        // DX-SPOT: the first uConeCount lights are cones (their third row); the shader loops them apart. A float: on
+        // WebGPU Pixi writes an i32 uniform with a float's bits (uLightCount survives that only by its loop's texW guard).
+        uConeCount: { value: 0, type: 'f32' },
       },
       ...this._lightingShadowResources(),
     };
@@ -5129,11 +5132,24 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     const rgb = this._rgbResult; // the sun's colour, once a frame
     const vr = Collider.visualRange;
     const row1 = maxLights * 4;
+    const row2 = maxLights * 8;
+    // DX-SPOT: the cone lights take the first slots, so the shader loops them apart and a point light pays nothing; with
+    // no cone in view the slots are the visible order, as before.
+    const lightConeCos = LightEmitter.coneCos;
+    const lightConeInvSpan = LightEmitter.coneInvSpan;
+    const lightDirC = LightEmitter.dirC;
+    const lightDirS = LightEmitter.dirS;
+    let coneCount = 0;
+    for (let i = 0; i < countToRender; i++) if (lightConeCos[visibleLights[i].entityId] > -1) coneCount++;
+    let coneSlot = 0;
+    let pointSlot = coneCount;
 
     for (let i = 0; i < countToRender; i++) {
       const entityIndex = visibleLights[i].entityId;
       const color = lightColor[entityIndex];
       const range = vr ? (vr[entityIndex] || 0) : 0;
+      const isCone = lightConeCos[entityIndex] > -1;
+      const slot = isCone ? coneSlot++ : pointSlot++;
 
       // A source h above the floor: I / (I + h² + d²) = k * I' / (I' + d²) with I' = I + h², k = I / I'.
       // So the shader keeps one formula: it gets I' and the colour scaled by k (and by the brightness).
@@ -5151,7 +5167,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       // packLightDataTexel's layout, written here (E-109): where TurboFan left that call out, each of its seven
       // doubles was a heap number per light per frame. World coordinates (the shader converts screen to world),
       // the light raised by its height, y in floor units (times 1 / groundScaleY).
-      const i0 = i * 4;
+      const i0 = slot * 4;
       const ox = offsetX[entityIndex];
       const oy = offsetY[entityIndex];
       lightData[i0] = worldX[entityIndex] + ox * rotC[entityIndex] - oy * rotS[entityIndex];
@@ -5163,6 +5179,22 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       lightData[i1 + 1] = (((color >> 8) & 0xff) / 255) * colorScale;
       lightData[i1 + 2] = ((color & 0xff) / 255) * colorScale;
       lightData[i1 + 3] = h; // DX-FACES: a face needs the source's height itself
+      if (isCone) {
+        // The cone's direction: the entity's facing turns the light's own (dirC, dirS); on the floor, y over
+        // groundScaleY, unit length. Then the cosine of the half aperture and 1 / the soft edge's width.
+        const dc = lightDirC[entityIndex];
+        const ds = lightDirS[entityIndex];
+        const rc = rotC[entityIndex];
+        const rs = rotS[entityIndex];
+        const wx = rc * dc - rs * ds;
+        const wy = (rs * dc + rc * ds) * groundInvY;
+        const len = Math.sqrt(wx * wx + wy * wy);
+        const i2 = row2 + i0;
+        lightData[i2] = len > 0 ? wx / len : 1;
+        lightData[i2 + 1] = len > 0 ? wy / len : 0;
+        lightData[i2 + 2] = lightConeCos[entityIndex];
+        lightData[i2 + 3] = lightConeInvSpan[entityIndex];
+      }
     }
 
     clearUnusedLightDataTexels(lightData, maxLights, countToRender);
@@ -5173,6 +5205,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     // Update light count uniform
     uniformGroup.uniforms.uLightCount = countToRender;
+    uniformGroup.uniforms.uConeCount = coneCount;
 
     // ========================================
     // SUN UNIFORMS

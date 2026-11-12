@@ -5,11 +5,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { Transform } from '../../src/components/transform.js';
+import { Collider } from '../../src/components/collider.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { LightEmitter, NO_CONE } from '../../src/components/lightEmitter.js';
 import { GameObject } from '../../src/core/gameObject.js';
+import { lightDataTextureFloatCount } from '../../src/util/utils.js';
+import { loadWorker } from '../bench/workerHarness.mjs';
 
 const N = 4;
+const MAX_LIGHTS = 4;
 
 function lights() {
   LightEmitter.initializeArrays(new SharedArrayBuffer(LightEmitter.getBufferSize(N)), N);
@@ -91,4 +96,58 @@ test('GameObject flipX mirrors a followFlip light once per change, and leaves ot
   } finally {
     SpriteRenderer.updateBounds = savedBounds;
   }
+});
+
+/** lightingBasic's cone term for a floor offset (dx, dy) from the light, as the shader writes it. */
+function coneTerm(cone, dx, dy) {
+  const len2 = dx * dx + dy * dy;
+  const cosA = len2 > 0 ? (dx * cone[0] + dy * cone[1]) / Math.sqrt(len2) : 1;
+  const t = Math.min(Math.max((cosA - cone[2]) * cone[3], 0), 1);
+  return t * t * (3 - 2 * t);
+}
+
+test('a cone light takes the first slot with its third row, on the floor; the cone is 1 inside and 0 outside', async () => {
+  lights();
+  Transform.active = new Uint8Array(N).fill(1);
+  Transform.x = new Float32Array([100, 300, 0, 0]);
+  Transform.y = new Float32Array([100, 300, 0, 0]);
+  // Light 1's entity faces down the screen (90 degrees); its own direction is 0, its cone 60 degrees, soft 0.5.
+  Transform.rotC = new Float32Array([1, 0, 1, 1]);
+  Transform.rotS = new Float32Array([0, 1, 0, 0]);
+  Collider.visualRange = new Float32Array(N);
+  LightEmitter.active.fill(1);
+  LightEmitter.radius.set([400, 400, 0, 0]);
+  LightEmitter.color.set([0xffffff, 0xffffff, 0, 0]);
+  const L = new LightEmitter(1);
+  L.coneAngle = Math.PI / 3;
+  L.coneSoftness = 0.5;
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  px.lightingEnabled = true;
+  px._groundScaleY = 0.5;
+  px._groundInvScaleY = 2;
+  px.maxLights = MAX_LIGHTS;
+  px._lightDataFloats = new Float32Array(lightDataTextureFloatCount(MAX_LIGHTS));
+  px._lightDataSource = null;
+  px._visibleLightsAll = [{ entityId: 0, distSq: 0 }, { entityId: 1, distSq: 0 }];
+  px._visibleLightsAllCount = 2;
+  px._stampLightCamera = () => {};
+  px._applyLightingViewport = () => {};
+  px.lightingShader = { resources: { uniforms: { uniforms: { uLightCount: 0, uConeCount: 0 }, update() {} } } };
+  px.updateLighting();
+  const d = px._lightDataFloats;
+  const u = px.lightingShader.resources.uniforms.uniforms;
+  assert.equal(u.uLightCount, 2);
+  assert.equal(u.uConeCount, 1);
+  assert.equal(d[0], 300, 'the cone light first');
+  assert.equal(d[4], 100, 'then the point light');
+  const cone = Array.from(d.subarray(MAX_LIGHTS * 8, MAX_LIGHTS * 8 + 4));
+  assert.ok(Math.abs(cone[0]) < 1e-6 && Math.abs(cone[1] - 1) < 1e-6, `pointing down the floor: ${cone}`);
+  assert.equal(cone[2], Math.fround(Math.cos(Math.PI / 6)));
+  // On its axis, at its edge's outside, behind it.
+  assert.equal(coneTerm(cone, 0, 50), 1);
+  assert.equal(coneTerm(cone, 50, 20), 0, 'outside the 30-degree half aperture');
+  assert.equal(coneTerm(cone, 0, -50), 0, 'behind');
+  const edge = coneTerm(cone, Math.sin(0.4), Math.cos(0.4));
+  assert.ok(edge > 0 && edge < 1, `the soft edge (about 23 degrees off the axis): ${edge}`);
+  assert.equal(coneTerm(cone, 0, 0), 1, 'the light itself');
 });

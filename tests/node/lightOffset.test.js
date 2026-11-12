@@ -24,6 +24,11 @@ function bind() {
   LightEmitter.radius = new Float32Array(N);
   LightEmitter.brightness = new Float32Array(N).fill(1);
   LightEmitter.elevation = new Float32Array(N);
+  // DX-SPOT: no cone (coneCos below every cosine).
+  LightEmitter.coneCos = new Float32Array(N).fill(-2);
+  LightEmitter.coneInvSpan = new Float32Array(N);
+  LightEmitter.dirC = new Float32Array(N).fill(1);
+  LightEmitter.dirS = new Float32Array(N);
   LightEmitter.offsetX = new Float32Array(N);
   LightEmitter.offsetY = new Float32Array(N);
 }
