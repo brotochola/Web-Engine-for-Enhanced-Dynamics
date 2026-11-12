@@ -3842,7 +3842,7 @@ waits off for 120 frames. Two builds that missed are in the record (a signal aft
 by a count, which a main running after the workers always moves a vsync early). Left: a Boids run that stayed at
 22.6 ms; gamepads still reach logic a frame later (main reads them in its update).
 
-### E-220 Keyed shadows on WebGPU (E-191's programs in WGSL)
+### E-220 Keyed shadows on WebGPU (the keyed shadow programs in WGSL)
 
 **Premise:** E-187 made the entity batch keyed on WebGPU, but E-191's keyed shadows stay WebGL's: the sun pass over the
 keyed instances (`makeKeyedSunShader`) and the keyed caster rows (`makeKeyedCasterShader`, pre-render writing a pose
