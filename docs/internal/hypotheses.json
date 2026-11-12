@@ -9696,8 +9696,10 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0930"
+      ],
+      "status": "kept",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-187",
@@ -9705,11 +9707,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-187"
       ],
-      "statusText": "open: E-177 kept on WebGL (R-0792); E-191's keyed shadows and E-188 ride on it, WebGL only",
-      "rank": 18,
+      "statusText": "kept 2026-11-12 (d9e206ff, R-0930)",
       "area": "render",
-      "result": "",
-      "next": "The scatter as a compute pass over the statics storage buffer (raw device, as computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU, then the keyed shadow programs' WGSL forms (E-191) and the keyed decorations (E-188). Owner: a WebGPU scene that packs in Pixi (Predator with ?backend=webgpu, or BunnyMark)."
+      "result": "kept 2026-11-12 (d9e206ff): the keyed scatter as a compute pass on WebGPU; liquidFunQueryStressScene ?lf=70000 renderer 3.737 -> 1.721 ms (-54.1 %), pre-render +2.9 %; Predator WebGPU NEUTRAL",
+      "next": "Done. Left: E-191's keyed shadows on WebGPU (WGSL forms of the shadow programs)."
     },
     {
       "aliases": [],
@@ -21353,6 +21354,21 @@
         "efec735c",
         "eb0c9df6",
         "4b0aceb6"
+      ]
+    },
+    {
+      "id": "R-0930",
+      "date": "2026-11-12",
+      "time": "10:42",
+      "timeFrom": "recorded",
+      "title": "E-187 kept: keyed frames on WebGPU; LiquidFun 70k renderer 3.737 -> 1.721 ms (-54.1 %), Predator NEUTRAL",
+      "verdict": "kept",
+      "text": "**E-187 kept: keyed frames on WebGPU, the changed statics scattered by a compute pass; liquidFunQueryStressScene's renderer -54.1 % on WebGPU (KEPT product), Predator NEUTRAL.** `82b6a312` and `b777d9bc` (the tools: Predator's and the LiquidFun scene's `?backend=webgpu`, `keyedFramesProbe.mjs`), `1a7c8b32` (the change), merged in `d9e206ff`.\n\n- **What changed:** WebGPU kept split frames because the keyed scatter was a draw into the statics texture. The indexed program already read the statics from a storage buffer there (E-162); `staticsScatterGpu.js` writes the updates into it with two compute dispatches (the full rows, then the texture words: S1.z, word 6 of a row) in one pass submitted before the frame's render. `keyedSpritesEnabled` and the decoration (E-188) and LiquidFun (E-194) fits take the backend's limit (`keyedStaticsMax`: 2 796 202 keys on WebGPU's default binding, 4 194 304 on WebGL). The statics buffer is out of Pixi's resource GC: a Pixi `Buffer` is collected after a minute undrawn and made again from its CPU copy, which a keyed batch leaves at zeros (textures default to no GC, so WebGL was safe). Keyed shadows (E-191) stay WebGL's.\n- **Checks:** `staticsScatterGpuCheck.mjs` on the real GPU (headed Chrome 157): 20 000 keys, 5 000 rows and 3 000 texture updates then a frame of 625 and 375, read back: 0 wrong words, no device error; a submit 0.08 ms. `compareCaptures.mjs --vs main` on WebGPU: dxCaptureScene at noon, 17 h, night and with prop shadows, and sunMeshParityScene: 0 of 921 600 pixels differ each. `keyedFramesProbe.mjs`: dxCaptureScene, Predator (12 000 to 18 000 instances) and the LiquidFun scene (19 659) draw keyed frames on WebGPU, no page error. `gpuPackKeyedPixi.test.js` runs its keyed frames on both backends.\n\n**Sittings, 4 pairs each, src, headed, AC power, base the tools commit:**\n- **Predator `?backend=webgpu&crowd=1.5`** (owner renderer), `--vs 82b6a312`, 10:20 to 10:25: NEUTRAL (below floor): renderer 1.891 → 1.896 ms (pairs -15.2 to +8.6 %), spatial and physics +0.5 %. WebGPU's split frames were cheap there already (WebGL's renderer reads 3.3 ms at that crowd).\n- **liquidFunQueryStressScene `?backend=webgpu`** (24 000 particles), `--vs b777d9bc`, 10:29 to 10:34: renderer 1.244 → 0.610 ms (-50.9 %, worse 0/4), under the floor.\n- **The same at `?lf=70000`**, 10:37 to 10:42: **KEPT (product)**: renderer 3.737 → 1.721 ms (**-54.1 %, worse 0/4**, -52.0 % against the others), pre-render 3.526 → 3.596 (+2.9 %, worse 4/4: E-194's emit, which the base does not run on WebGPU), physics -4.9 %; load keys within 0.1 %.\nLeft: E-191's keyed shadows on WebGPU (the shadow programs' WGSL forms).",
+      "commits": [
+        "82b6a312",
+        "b777d9bc",
+        "1a7c8b32",
+        "d9e206ff"
       ]
     }
   ],
