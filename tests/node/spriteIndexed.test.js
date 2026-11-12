@@ -19,6 +19,7 @@ import {
 const shipped = readFileSync(new URL('../../src/shaders/instancedSprite.vert.glsl', import.meta.url), 'utf8');
 const shippedWgsl = readFileSync(new URL('../../src/shaders/instancedSprite.wgsl', import.meta.url), 'utf8');
 const shippedShadow = readFileSync(new URL('../../src/shaders/instancedSpriteShadow.vert.glsl', import.meta.url), 'utf8');
+const shippedShadowWgsl = readFileSync(new URL('../../src/shaders/instancedSpriteShadow.wgsl', import.meta.url), 'utf8');
 const STATICS = ['aInstScale', 'aInstAnchor', 'aInstDepth', 'aInstTexId', 'aInstTileInv', 'aInstTileOff'];
 
 test('a statics row is three RGBA texels: the 11 words of the split statics and a zero', () => {
@@ -111,4 +112,35 @@ test('the caster rows\' forms have no rotation, and the stamp form keeps the row
     () => spriteIndexedVertex(shippedShadow.replace('in vec2 aInstRotCS;', ''), { shadow: true, casterRows: true }),
     /aInstRotCS/
   );
+});
+
+// E-220: the same three shadow forms in WGSL (WebGPU's keyed sun pass and keyed caster rows): the statics from the
+// storage buffer, the slot an input at a free location, the shadow terms still an input, and constants for what a form
+// has no stream for (no light of its own in the sun forms, no rotation in the caster rows').
+test('the shadow WGSL forms read the statics by key and keep what each pass streams', () => {
+  const vertHead = (out) => {
+    const from = out.indexOf('fn mainVert(');
+    return out.slice(from, out.indexOf(') -> VertexOut {', from));
+  };
+  const forms = {
+    sun: [spriteIndexedWgsl(shippedShadowWgsl, { shadow: true }), ['aQuad', 'aInstXY', 'aInstSlot', 'aInstRotCS', 'aInstShadow']],
+    sunRows: [spriteIndexedWgsl(shippedShadowWgsl, { shadow: true, casterRows: true }), ['aQuad', 'aInstXY', 'aInstSlot', 'aInstShadow']],
+    stampRows: [
+      spriteIndexedWgsl(shippedShadowWgsl, { shadow: true, casterRows: true, light: true }),
+      ['aQuad', 'aInstXY', 'aInstSlot', 'aInstShadow', 'aInstLight'],
+    ],
+  };
+  for (const [form, [out, inputs]] of Object.entries(forms)) {
+    const head = vertHead(out);
+    const names = [...head.matchAll(/@location\((\d+)\) (\w+):/g)];
+    assert.deepEqual(names.map((m) => m[2]).sort(), [...inputs].sort(), `${form}: its inputs`);
+    const locations = names.map((m) => m[1]);
+    assert.equal(new Set(locations).size, locations.length, `${form}: one input a location (${locations})`);
+    assert.match(out, /^@group\(2\) @binding\(4\) var<storage, read> uStatics: array<vec4<u32>>;/m, form);
+    for (const name of STATICS) assert.match(out, new RegExp(`^  let ${name} = `, 'm'), `${form}: ${name} is a let`);
+    assert.match(out, /^  let aInstTintBits = 0\.0;/m, `${form}: the tint read nowhere`);
+    assert.equal(/^  let aInstRotCS = /m.test(out), form !== 'sun', `${form}: the rotation`);
+    assert.equal(/^  let aInstLight = /m.test(out), form !== 'stampRows', `${form}: the light`);
+  }
+  assert.throws(() => spriteIndexedWgsl(shippedShadowWgsl), /TileUniforms|tintBits/, 'the sprite form refuses the shadow WGSL');
 });

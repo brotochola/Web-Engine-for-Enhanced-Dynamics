@@ -5345,7 +5345,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!this._keyedSunTried) {
       this._keyedSunTried = true;
       const casters = this.gpuCasterBatch;
-      if (b && b.keyed && !this._useWebGpu && casters && casters.mesh && b.enableKeyedShadows()) {
+      if (b && b.keyed && casters && casters.mesh && b.enableKeyedShadows()) {
         const shader = b.makeKeyedSunShader(sunShader);
         if (shader) {
           this._keyedSunMesh = new PIXI.Mesh({
@@ -5372,7 +5372,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     this._keyedCastersTried = true;
     const b = this.entitiesBatch;
     const casters = this.gpuCasterBatch;
-    if (!b || !b.keyed || this._useWebGpu || !casters || !casters.mesh) return;
+    if (!b || !b.keyed || !casters || !casters.mesh) return;
     const sun = b.makeKeyedCasterShader(sunShader, false);
     const stamp = b.makeKeyedCasterShader(sunShader, true);
     if (sun === null || stamp === null) return;

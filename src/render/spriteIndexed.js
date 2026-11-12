@@ -99,27 +99,47 @@ const WGSL_TYPES = { float: 'f32', vec2: 'vec2<f32>' };
  * instancedSprite.wgsl reading its statics from a storage buffer (WebGPU): the static vertex inputs leave mainVert's
  * parameters for `let`s of the same names at the top of its body, from the three vec4<u32> of the statics row (the
  * words spriteIndexedVertex reads) and the slot's row, `aInstSlot` taking a free location; the tint's bits are read as
- * the u32 they are. `uStatics` is group 2's binding 4 (instancedSpriteIndexedGpuProgram).
- * @param {string} source instancedSprite.wgsl
+ * the u32 they are. `uStatics` is group 2's binding 4 (instancedSpriteIndexedGpuProgram). E-220: `shadow`,
+ * `casterRows` and `light` as spriteIndexedVertex takes them, for instancedSpriteShadow.wgsl (E-191's keyed sun pass and
+ * keyed caster rows on WebGPU; instancedSpriteShadowIndexedGpuProgram).
+ * @param {string} source instancedSprite.wgsl (instancedSpriteShadow.wgsl with `shadow`)
+ * @param {{ shadow?: boolean, casterRows?: boolean, light?: boolean }} [opts]
  * @returns {string}
  */
-export function spriteIndexedWgsl(source) {
+export function spriteIndexedWgsl(source, { shadow = false, casterRows = false, light = false } = {}) {
   let out = source;
   for (const [type, name] of STATIC_ATTRIBUTES) {
     const param = new RegExp(`^[ \\t]*@location\\(\\d+\\) ${name}: ${WGSL_TYPES[type].replace(/[<>]/g, '\\$&')},\\n`, 'm');
     if (!param.test(out)) throw new Error(`WeedJS: the sprite WGSL has no "${name}: ${WGSL_TYPES[type]}" input`);
     out = out.replace(param, '');
   }
+  const uniforms = shadow ? 'ShadowUniforms' : 'TileUniforms';
   out = replaceOnce(
     out,
-    '@group(2) @binding(3) var<uniform> uniforms: TileUniforms;\n',
-    '@group(2) @binding(3) var<uniform> uniforms: TileUniforms;\n' +
+    `@group(2) @binding(3) var<uniform> uniforms: ${uniforms};\n`,
+    `@group(2) @binding(3) var<uniform> uniforms: ${uniforms};\n` +
       "// The statics in the queue's row order, three vec4<u32> a row (E-162).\n" +
       '@group(2) @binding(4) var<storage, read> uStatics: array<vec4<u32>>;\n',
     'WGSL'
   );
-  out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstRotCS: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'WGSL');
-  out = replaceOnce(out, '  let tintBits = bitcast<u32>(aInstTintBits);\n', '  let tintBits = weedS1.y;\n', 'WGSL');
+  // Constants for the inputs a shadow form has no stream for (E-191: a caster row carries no rotation; a sun row no
+  // light of its own, the pass's uLight decides).
+  let lets = '';
+  if (!shadow) {
+    out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '  @location(4) aInstRotCS: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'WGSL');
+    out = replaceOnce(out, '  let tintBits = bitcast<u32>(aInstTintBits);\n', '  let tintBits = weedS1.y;\n', 'WGSL');
+  } else {
+    out = replaceOnce(out, '  @location(1) aInstXY: vec2<f32>,\n', '  @location(1) aInstXY: vec2<f32>,\n  @location(2) aInstSlot: f32,\n', 'shadow WGSL');
+    lets += '  let aInstTintBits = 0.0;\n';
+    if (casterRows) {
+      out = replaceOnce(out, '  @location(4) aInstRotCS: vec2<f32>,\n', '', 'shadow WGSL');
+      lets += '  let aInstRotCS = vec2<f32>(1.0, 0.0);\n';
+    }
+    if (!light) {
+      out = replaceOnce(out, '  @location(11) aInstLight: vec4<f32>,\n', '', 'shadow WGSL');
+      lets += '  let aInstLight = vec4<f32>(0.0);\n';
+    }
+  }
   const body = ') -> VertexOut {\n';
   const vert = out.indexOf('fn mainVert(');
   const at = vert < 0 ? -1 : out.indexOf(body, vert);
@@ -127,6 +147,7 @@ export function spriteIndexedWgsl(source) {
   const head = at + body.length;
   return (
     out.slice(0, head) +
+    lets +
     '  let weedRow = u32(aInstSlot + 0.5) * 3u;\n' +
     '  let weedS0 = uStatics[weedRow];\n' +
     '  let weedS1 = uStatics[weedRow + 1u];\n' +
