@@ -3762,6 +3762,8 @@ pack's memory, though BunnyMark has no glow row. E-138 skips the split only for 
 **Plan:** the collect counts the glow rows it makes (`_collectEntityGlow` is their only maker); a frame with none packs
 unsplit, in queue order with no list, or with the spec's `fillAll` ordering every row when the painter sorts. A
 parity test: the same rows with and without the split, sorted and unsorted. Owner: BunnyMark C 200 000's pre-render.
+**Result:** kept 2026-11-11 (`672e8434`, R-0904). BunnyMark C 200 000, 4 pairs: **KEPT (product)**, pre-render 5.929 →
+4.951 ms (-16.5 %, worse 0/4). Predator's gate NEUTRAL, pre-render -4.6 % (0/4 worse).
 
 ### E-217 The sprite query's list read where the collect reads, not copied each frame
 
