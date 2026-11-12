@@ -9,7 +9,8 @@
  *     --scene-export LightMotionScene --seconds 8 --out D:/tmp/films/motion.mp4 [--vs <rev>] [--query k=v]
  *
  * --query k=v (repeatable, both sides), --query-a / --query-b (one side), --warmup-ms (default 1500), --seconds
- * (default 6), --ffmpeg <path> (default ffmpeg on PATH, else D:/ffmpeg/ffmpeg.exe), --keep-frames.
+ * (default 6), --ffmpeg <path> (default ffmpeg on PATH, else D:/ffmpeg/ffmpeg.exe), --keep-frames. --full-rev: the
+ * worktrees hold the whole revision, its scenes too, not only its src/ (an API change).
  * Audio is muted. Exit 1 on a page error.
  */
 import fs from 'node:fs';
@@ -42,6 +43,7 @@ function parseCli(argv) {
     else if (arg === '--out') opts.out = next();
     else if (arg === '--ffmpeg') opts.ffmpeg = next();
     else if (arg === '--keep-frames') opts.keepFrames = true;
+    else if (arg === '--full-rev') opts.fullRev = true;
     else throw new Error(`filmScene: unknown argument ${arg}`);
   }
   if (!opts.scene || !opts.sceneExport || !opts.out) throw new Error('filmScene: --scene, --scene-export and --out are required');
@@ -128,10 +130,11 @@ async function main() {
   const ffmpeg = findFfmpeg(opts.ffmpeg);
   const work = fs.mkdtempSync(path.join(process.env.TEMP || os.tmpdir(), 'weed-film-'));
   const sides = [];
-  if (opts.vs) sides.push({ name: 'a', root: ensureRevWorktree(opts.vs).root ?? ensureRevWorktree(opts.vs), query: opts.queryA });
+  const wt = { srcOnly: !opts.fullRev };
+  if (opts.vs) sides.push({ name: 'a', root: ensureRevWorktree(opts.vs, wt).root, query: opts.queryA });
   sides.push({
     name: 'b',
-    root: opts.hypRev ? ensureRevWorktree(opts.hypRev).root ?? ensureRevWorktree(opts.hypRev) : repoRoot,
+    root: opts.hypRev ? ensureRevWorktree(opts.hypRev, { ...wt, tag: 'hyp' }).root : repoRoot,
     query: opts.queryB,
   });
   const browser = await chromium.launch({
