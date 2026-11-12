@@ -71,3 +71,5 @@ empties it.
 - **Fixed: sprites that never changed could stay invisible** (N-148): with keyed frames (Pixi packing the sprites,
   `preRender.packGpuSprites: 'pixi'`), a scene whose sprites never changed could draw them all at scale 0, at random on
   load (more often in a browser that had loaded a page before).
+- **Keyed shadows on WebGPU too** (E-220): the sun's and the lights' shadow passes over keyed sprites, which WebGL had
+  (E-191), now run on WebGPU as well. Predator on WebGPU: pre-render about -12 %, the renderer about -22 %.
