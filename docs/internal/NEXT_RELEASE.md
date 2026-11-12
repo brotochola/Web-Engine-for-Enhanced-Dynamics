@@ -34,3 +34,7 @@ empties it.
   houses, trees and anything tall went missing at the bottom edge with their tops still on screen (at the sides too for
   an anchor off centre). The pad is now the sprite's reach from its anchor to its farthest corner. A few more sprites
   near the edges are queued each frame; `setAnchor` on a static (`isStatic`) sprite now re-bins it.
+- **LiquidFun particles keep their own tint, texture and scale after others die** (N-142). When particles died (a
+  lifespan, `destroyParticle`, leaving the world) or groups were joined, split or extracted, the survivors moved to
+  other indices and were drawn with the statics of the particle that had been there: two emits of different colours
+  traded colours. Each particle's statics now follow it. Needs the Box2D build of this release.
