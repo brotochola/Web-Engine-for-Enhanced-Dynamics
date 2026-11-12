@@ -37,7 +37,8 @@ export const AMBIENT = queryNumber('ambient', 0.05);
 
 /**
  * The lamps, one per cell of a 4 × 3 grid (320 × 240 px). `bare`: no Collider. `range`: the Collider's visualRange
- * (left out: the light's whole reach). The fields are the light API's of the revision this file belongs to.
+ * (left out: the light's whole reach). The fields are the light API's of the revision this file belongs to. Each
+ * intensity is (r/10)² for a whole r and each glow a binary fraction, so another API's radius and glow hold them exactly.
  */
 export const LAMPS = [
   { intensity: 400 },
@@ -45,13 +46,13 @@ export const LAMPS = [
   { intensity: 10000, color: 0x88ccff, glow: 1, glowHeight: 30 },
   { intensity: 40000, color: 0xff8866, glow: 0.5, height: 40, bare: true },
   { intensity: 10000, color: 0xffeecc, glow: 0.5, glowHeight: 60, sourceHeight: 60 },
-  { intensity: 20000, color: 0xffd0a0, glow: 0.6, glowHeight: 110, sourceHeight: 110, range: 200 },
-  { intensity: 5000, color: 0xccffcc, glow: 0.5, offsetX: 40, rotation: Math.PI / 2, bare: true },
-  { intensity: 9000, color: 0xfff1c4, offsetX: 30, offsetY: -20, rotation: Math.PI / 4 },
-  { intensity: 14000, color: 0xffcc88, glow: 0.5, layer: 'glows' },
-  { intensity: 700, color: 0xfff0d0 },
-  { intensity: 3000, color: 0xffe8c0, glow: 0.5, glowHeight: 10, range: 700 },
-  { intensity: 16000, color: 0xff9a40, height: -20 },
+  { intensity: 19600, color: 0xffd0a0, glow: 0.625, glowHeight: 110, sourceHeight: 110, range: 200 },
+  { intensity: 4900, color: 0xccffcc, glow: 0.5, offsetX: 40, rotation: Math.PI / 2, bare: true },
+  { intensity: 9025, color: 0xfff1c4, offsetX: 30, offsetY: -20, rotation: Math.PI / 4 },
+  { intensity: 14400, color: 0xffcc88, glow: 0.5, layer: 'glows' },
+  { intensity: 676, color: 0xfff0d0 },
+  { intensity: 3025, color: 0xffe8c0, glow: 0.5, glowHeight: 10, range: 700 },
+  { intensity: 15876, color: 0xff9a40, height: -20 },
 ];
 
 /** Barrels around each lamp (offsets from its cell's centre). */
