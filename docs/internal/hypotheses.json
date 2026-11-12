@@ -12417,7 +12417,8 @@
       "records": [
         "R-0939",
         "R-0940",
-        "R-0941"
+        "R-0941",
+        "R-0942"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-SPOT",
@@ -21828,6 +21829,19 @@
         "7f36fd4a",
         "bd8eae70",
         "d3417763"
+      ]
+    },
+    {
+      "id": "R-0942",
+      "date": "2026-11-12",
+      "time": "20:28",
+      "timeFrom": "recorded",
+      "title": "B4 on point lights (visPolyStressScene ?lights=720): NEUTRAL, pre-render 5.83 → 5.76 ms, Pixi 1.386 → 1.384",
+      "verdict": "tie",
+      "text": "**DX-SPOT B4 on point lights under raycast: NEUTRAL, the cone batches and the wedge cut cost nothing there.**\n2026-11-12, 20:28 to 20:38, `runPredatorAbab.mjs --name dxspot-b4-vispoly --vs ee220efe --hyp-rev 087a17ac --scene visPolyStressScene --query lights=720 --owner renderer --pairs 4`, headed, on AC power. ee220efe is the branch before B4: the base has no cone batch, no per-light cone check in Pixi's fan and self-lit loops, no cone check in pre-render's light loop.\n\n- **preRender** 5.832 → 5.755 ms, paired -3.4 %, worse 1/4, cv 8/18 % (pairs 5.82 → 5.45, 5.85 → 7.82, 6.68 → 5.88, 5.66 → 5.63): no regression.\n- **Pixi** (the claim's owner) 1.386 → 1.384 ms: under the 3 ms floor in this scene, so not judged; it does not move.\n- Load keys the same (BODY_COUNT 1420, ENTITIES_PROCESSED 1421); presented 60.0 both.",
+      "commits": [
+        "26f74ed2",
+        "087a17ac"
       ]
     }
   ],
