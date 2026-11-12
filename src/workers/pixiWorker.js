@@ -2637,13 +2637,12 @@ class PixiRenderer extends AbstractWorker {
     const step = this._queueWaitStepMs === this._queueWaitStepMs ? this._queueWaitStepMs : period;
     const budget = period - step - 1;
     if (!(budget > 0.5)) return readyFrame;
-    const limit = budget > period * 0.75 ? period * 0.75 : budget;
-    Atomics.wait(this.renderQueueSync, 0, readyFrame, limit);
-    const waited = performance.now() - now;
-    addWaitMs(waited);
-    // A timeout, or a publish in the time Windows adds to one (N-146: it rounds a wait of a millisecond or more up to
-    // its timer period, about 15 ms): the chain did not fit the frame.
-    if (waited >= limit) this._queueWaitOffUntil = frame + 120;
+    const r = Atomics.wait(this.renderQueueSync, 0, readyFrame, budget > period * 0.75 ? period * 0.75 : budget);
+    addWaitMs(performance.now() - now);
+    // Only a timeout turns the waits off. Windows rounds a wait of a millisecond or more up to its timer period (about
+    // 15 ms), so a queue a little past the budget is taken: turning the waits off for it cost liquidFunQueryStressScene
+    // its chain (N-146: input lag 35 -> 50 ms, the frames presented the same).
+    if (r === 'timed-out') this._queueWaitOffUntil = frame + 120;
     return Atomics.load(this.renderQueueSync, 0);
   }
 
