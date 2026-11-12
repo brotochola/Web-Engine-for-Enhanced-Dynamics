@@ -27,6 +27,7 @@ import {
   instancedSpriteGpuProgram,
   instancedSpriteIndexedGpuProgram,
   instancedSpriteShadowGpuProgram,
+  instancedSpriteShadowIndexedGpuProgram,
 } from './webgpu/instancedSpriteWgsl.js';
 import {
   instancedSpriteGlProgram,
@@ -1274,19 +1275,13 @@ export class InstancedSpriteBatch {
    * @returns {Shader|null}
    */
   makeKeyedSunShader(sun) {
-    if (!this.keyedShadows || !sun || this._useWebGpu) return null;
-    const shaders = this._engineShaders;
-    if (!shaders?.shadowVert) return null;
+    if (!this.keyedShadows || !sun) return null;
+    const program = this._keyedShadowProgram({ shadow: true }, `${this._label}-keyed-sun`);
+    if (program === null) return null;
     if (this._keyedSunShader === null) {
-      const glProgram = instancedSpriteGlProgram(
-        GlProgram,
-        spriteIndexedVertex(shaders.shadowVert, { shadow: true }),
-        pickInstancedSpriteFragmentGlsl(true, false, shaders),
-        `${this._label}-keyed-sun`
-      );
       const r = sun.resources;
       this._keyedSunShader = new Shader({
-        glProgram,
+        ...program,
         resources: {
           uTexture: r.uTexture,
           uSampler: r.uSampler,
@@ -1310,20 +1305,17 @@ export class InstancedSpriteBatch {
    * @returns {Shader|null}
    */
   makeKeyedCasterShader(sun, light) {
-    if (!this.keyed || !sun || this._useWebGpu) return null;
-    const shaders = this._engineShaders;
-    if (!shaders?.shadowVert) return null;
+    if (!this.keyed || !sun) return null;
     const i = light ? 1 : 0;
     if (this._keyedCasterShaders[i] === null) {
-      const glProgram = instancedSpriteGlProgram(
-        GlProgram,
-        spriteIndexedVertex(shaders.shadowVert, { shadow: true, casterRows: true, light }),
-        pickInstancedSpriteFragmentGlsl(true, false, shaders),
+      const program = this._keyedShadowProgram(
+        { shadow: true, casterRows: true, light },
         `${this._label}-keyed-${light ? 'stamp' : 'sun'}-rows`
       );
+      if (program === null) return null;
       const r = sun.resources;
       this._keyedCasterShaders[i] = new Shader({
-        glProgram,
+        ...program,
         resources: {
           uTexture: r.uTexture,
           uSampler: r.uSampler,
@@ -1368,6 +1360,30 @@ export class InstancedSpriteBatch {
   }
 
   /** E-191 step 2: a ring slot's keyed caster rows of `floats` floats: x and y, the key's slot pair, the shadow terms. */
+  /**
+   * E-191/E-220: a keyed shadow program, the shadow vertex shader reading the statics by key (spriteIndexed.js), as a
+   * Shader's options: `{ glProgram }` on WebGL, `{ gpuProgram }` on WebGPU (the statics a storage buffer); null without
+   * the shadow source.
+   * @param {{ shadow: boolean, casterRows?: boolean, light?: boolean }} opts
+   * @param {string} name
+   */
+  _keyedShadowProgram(opts, name) {
+    const shaders = this._engineShaders;
+    if (this._useWebGpu) {
+      if (!shaders?.shadowWgsl) return null;
+      return { gpuProgram: instancedSpriteShadowIndexedGpuProgram(GpuProgram, spriteIndexedWgsl(shaders.shadowWgsl, opts), name) };
+    }
+    if (!shaders?.shadowVert) return null;
+    return {
+      glProgram: instancedSpriteGlProgram(
+        GlProgram,
+        spriteIndexedVertex(shaders.shadowVert, opts),
+        pickInstancedSpriteFragmentGlsl(true, false, shaders),
+        name
+      ),
+    };
+  }
+
   _keyedCasterGeometryFor(buf, floats, light) {
     const ds = floats * 4;
     const attributes = {
