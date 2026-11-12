@@ -11189,7 +11189,7 @@
       "status": "kept-hygiene",
       "statusText": "built 2026-11-12 (da79c6fb, R-0924)",
       "date": "2026-11-10",
-      "result": "built 2026-11-12 (da79c6fb): RENDERER_STATS.INPUT_LAG_*, --input-every; Boids 67.1 ms median (4.03 frames)",
+      "result": "built 2026-11-12 (da79c6fb, fixed 5434da27): RENDERER_STATS.INPUT_LAG_*, --input-every; Boids 50.6 ms median (3.04 frames)",
       "next": "Done: E-198 is judged by it.",
       "area": "harness",
       "kind": "js",
@@ -11210,10 +11210,10 @@
       "id": "E-198",
       "title": "The wake chain: each stage waits for this vsync's output of the one before it",
       "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "statusText": "step 0 answered 2026-11-12 (R-0925): no link waits in Boids; the waits built (speed/e198) change nothing",
       "date": "2026-11-10",
       "result": "",
-      "next": "Needs E-197. Pixi waits for this vsync's queue with Atomics.wait and a timeout (the frame minus its STEP_MS), the oldest unread queue on a timeout; then pre-render on the pose and physics on logic, each only while the chain fits the frame. Judged by latency, not STEP_MS: STEP_MS - WAIT_MS not 3 % worse, frames drawn held. Owner: latency in Boids and Predator.",
+      "next": "A timeline of the frame clock (each worker's frame start and end) for a few frames, to see where the two frames between logic and pre-render go; then decide.",
       "area": "engine",
       "kind": "speed",
       "refs": [
@@ -11226,7 +11226,8 @@
         "vsync"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0925"
       ],
       "rank": 27
     },
@@ -21232,6 +21233,19 @@
       "text": "**E-197 built: the input-to-screen latency stamp.** `da79c6fb`, a tool (no speed claim).\n\n- **What it measures:** for each input (keys, pointer) the time to the first frame Pixi draws with it. Main stamps the input (tenths of a ms since a base every thread shares, one Int32 in the scene's stamp buffer); logic0 publishes the input its last frame acted on; physics carries the stamp it stepped with into the pose slot it writes (`poseSync` gains a stamp a slot); pre-render writes the newer of logic's and the latched pose's into the render-queue buffer it fills (its camera SAB gains a word, 20 → 24 bytes); Pixi's `LagMeter` (the last 64 inputs drawn) publishes `RENDERER_STATS.INPUT_LAG_MS`, `INPUT_LAG_P95_MS`, `INPUT_LAG_N` (stride 39 → 42). `runIntegratedWorkerBenchmark --input-every <ms>` moves the mouse over the canvas and prints the lag on the renderer line.\n- **First reading:** Boids, headless, a move every 100 ms: **67.1 ms median, p95 68.1 ms, 4.03 frames at 60 Hz**, as E-24's reading said (each stage reads what the one before it published a vsync earlier).\n- **Checks:** `latencyStamp.test.js` (the clock, main's stamp, the meter's samples and percentiles, the queue's stamp word, the stats slots); the camera SAB and stats stride tests follow the new sizes. Node 2523 of 2523, demos 101 of 101.\n\n**Predator's gate, 4 pairs** (`--name e197-predator --vs main --hyp-rev tools/e197`, 06:01 to 06:07): NEUTRAL. Spatial -1.1 %, physics -4.3 %; logic, renderer, particle and pre-render under the floor, all lower. The stamp is a few atomic loads and stores a frame per worker.\n\n**Next:** E-198, judged by this.",
       "commits": [
         "da79c6fb"
+      ]
+    },
+    {
+      "id": "R-0925",
+      "date": "2026-11-12",
+      "time": "06:45",
+      "timeFrom": "recorded",
+      "title": "E-198 step 0: no link waits in Boids; input lag 3 frames (50 ms); the waits built change nothing; the meter was a frame high",
+      "verdict": "answered",
+      "text": "**E-198 step 0 answered: in Boids no link of the frame chain waits for the one before it; the input lag is 3 frames, and the waits built for it change nothing.** Branch `speed/e198` (`3d36cfad`), not merged.\n\n- **First, the meter was a frame high.** logic0 published the input its frame had acted on at the next frame's start, so a stage that ran after logic in the same vsync read a stamp a frame old with this frame's data. Fixed on main (`5434da27`: published from `afterUpdate`, a hook abstractWorker calls right after `update()`): Boids, a move every 100 ms, **67.1 → 50.6 ms median (4.03 → 3.04 frames)**; the code drawn did not change. R-0924's figure was the meter's.\n- **Where the 3 frames are** (a temporary probe logging each stage's input age, not committed; Boids, headless): logic reads an input **16.1 ms** after it arrives (about a frame: Chrome dispatches pointer events aligned to its frame and logic's frame has started); pre-render latches a pose stepped with it **48.7 ms** after it (two frames after logic read it); Pixi draws it at **50.4 ms**, 1.7 ms after pre-render queued it (no frame lost there).\n- **The waits built** (each with a budget, the frame less its own step and room downstream, and a timeout that turns it off for 120 frames, counted in WAIT_MS): Pixi for pre-render's queue (`renderer.waitForQueue`), pre-render for physics's pose (`preRender.waitForPose`), physics for every logic worker's frame end (`physics.waitForLogic`, a frame-chain counter the logic workers add to in `afterUpdate`). In Boids **none of them waits**: each stage's upstream is out when its frame starts (no WAIT_MS on physics, pre-render or the renderer), and the lag stays **50.4 to 50.5 ms**.\n- **Reading:** the premise (each link reads the previous vsync's output because the workers start together) does not hold in Boids: the stages already run one after the other within the vsync's reach, and the two frames between logic and pre-render are not waits. Node 2523 of 2523 on the branch.\n\n**Next:** the frame clock (E-24's `frameClock`, each worker's frame start and end in wall time) laid out as a timeline for a few frames, to see each stage's phase against the vsync and where the two frames between logic and pre-render go; then decide what to change (the stages' phases, or physics's pose publish). The meter stays (E-197).",
+      "commits": [
+        "3d36cfad",
+        "5434da27"
       ]
     }
   ],
