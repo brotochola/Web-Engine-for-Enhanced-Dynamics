@@ -9995,7 +9995,8 @@
         "R-0916",
         "R-0921",
         "R-0923",
-        "R-0926"
+        "R-0926",
+        "R-0931"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -12155,6 +12156,31 @@
       ],
       "records": [
         "R-0928"
+      ]
+    },
+    {
+      "id": "N-147",
+      "title": "The prod bundle's spatial reads about 4 % slower than its sources in Boids since E-198",
+      "status": "open",
+      "statusText": "found 2026-11-12 (R-0927, R-0931); not explained",
+      "date": "2026-11-12",
+      "rank": 25,
+      "result": "Boids spatial +4.1 % (13/16) and +4.2 % (7/8) bundle against source since E-198; Windows per-thread CPU of spatial and physics 3 to 15 % more in the bundle; same wasm bytes and weedjsPost.",
+      "next": "Bisect: bundles at E-198's own commits, or one E-198 wait off at a time in both builds; then the wasm loaded by URL in the bundle (code caching, tier-up).",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-147"
+      ],
+      "aliases": [
+        "bundle vs src",
+        "prod bundle",
+        "spatial",
+        "N-105",
+        "blob workers"
+      ],
+      "records": [
+        "R-0931"
       ]
     },
     {
@@ -21392,6 +21418,18 @@
         "b777d9bc",
         "1a7c8b32",
         "d9e206ff"
+      ]
+    },
+    {
+      "id": "R-0931",
+      "date": "2026-11-12",
+      "time": "11:06",
+      "timeFrom": "recorded",
+      "title": "The bundles of the N-146, E-219 and E-187 merges tested; Predator NEUTRAL, Boids spatial +4.2 % (N-147)",
+      "verdict": "passed",
+      "text": "**The bundles of the N-146, E-219 and E-187 merges tested: Predator NEUTRAL; Boids REGRESSION by the runner, spatial +4.2 % in the prod bundle, as at E-198's check; pushed, the gap filed as N-147.** dist `6ca079bc`, built from `b8376bc8`.\n\n- **make_bundle, check:dist, test:bundle (8 bundles in the browser), test:node:bundle (298 pass):** all pass.\n- **Predator, 4 pairs, 10:50 to 10:55: NEUTRAL.** Every worker under the floor (logic -13 %, physics +13 %, cv high: N-105's spread).\n- **Boids, 8 pairs, 10:56 to 11:06: REGRESSION** by the runner: spatial 3.902 → 4.073 ms (+4.2 %, worse 7/8, cv 2/1 %), physics +1.4 % (7/8). Spatial waits nothing (WAIT_MS 0 both): its step 3.85 against 4.0 ms run by run. R-0927's check of the E-198 bundles read the same (+4.1 %, 13/16), the checks before E-198 within 2 % (R-0926: -0.5 %). It is not N-146's spin (that cv went from 4 to 6 % back to 1 to 2 %, the gap stayed).\n- **Traces** (`--trace-cpu`, 6 s each, src, bundle, src, bundle, 11:08 to 11:10): the two spatial threads' sampled busy 661 and 635 ms/s from source, 649 and 620 from the bundle; per kernel gather_batch 235 → 252 and 244 ms/s, publish_batch 157 and 140 → 128 and 125 (the same engine.wasm bytes: placement, not code).\n- **Windows's per-thread CPU** (`threadCpuProbe.mjs`, 6 s, src, bundle, src, bundle): the three busiest threads (spatial's two and physics, about 4 ms a frame each) 270/252/240 → 299/297/291 ms/s and 264/262/250 → 273/269/265: the bundle spends 3 to 15 % more CPU there.\nRead: a real cost of the bundle against its sources, small and of unknown cause, that appeared with E-198's bundles; the sources' gains (E-198, N-146, E-219, E-187) are in the bundle. Pushed. N-147 takes it up (bisect the bundle build between the E-197 and E-198 dists).",
+      "commits": [
+        "6ca079bc"
       ]
     }
   ],
