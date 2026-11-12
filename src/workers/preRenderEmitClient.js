@@ -55,6 +55,8 @@ export const EMIT_SLOTS = [
   'lOffsetX', 'lOffsetY', 'tRotC', 'tRotS',
   // DX-FACES: a decoration's normal and height, for its row's tile offsets (0: a scene without faces).
   'dFaceOct', 'dFaceZ',
+  // E-194: the keyed LiquidFun particles' records, the key of particle 0 and how many records there are.
+  'lfKeyed', 'lfKeyBase', 'lfKeyedCount',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -195,6 +197,11 @@ export async function bindPreRenderEmit(memory, emit) {
     decoKeyedByte: emit.keyHeaderByte >= 0 && emit.decoKeyedByte >= 0 ? emit.decoKeyedByte : -1,
     decoKeyBase: emit.entities | 0,
     decoKeyEpoch: 1,
+    // E-194: its LiquidFun particles, by particle index past the keyed decorations (-1: keyless); the records share the
+    // decorations' epoch.
+    lfKeyedByte: emit.keyHeaderByte >= 0 && emit.lfKeyedByte >= 0 ? emit.lfKeyedByte : -1,
+    lfKeyBase: (emit.entities | 0) + (emit.keyedDecorations | 0),
+    lfKeyedCount: emit.keyedLiquidFun | 0,
     texturesReady: false,
     // The frame sizes' length in the kernel's copy (frameWidthByte, frameHeightByte), once written.
     frames: 0,
@@ -452,12 +459,17 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   b.table[SLOT.dKeyed] = decoKeyed ? b.decoKeyedByte : 0;
   b.table[SLOT.dKeyBase] = decoKeyed ? b.decoKeyBase : 0;
   b.table[SLOT.dKeyEpoch] = b.decoKeyEpoch;
+  // E-194: and its LiquidFun rows by particle index.
+  const lfKeyed = keyed && b.lfKeyedByte >= 0;
+  b.table[SLOT.lfKeyed] = lfKeyed ? b.lfKeyedByte : 0;
+  b.table[SLOT.lfKeyBase] = lfKeyed ? b.lfKeyBase : 0;
+  b.table[SLOT.lfKeyedCount] = lfKeyed ? b.lfKeyedCount : 0;
   return true;
 }
 
 /**
  * E-188: every keyed decoration's record stale from the next emit on (Pixi asked for every statics again), so each
- * decoration row it writes is marked changed.
+ * decoration row it writes is marked changed. E-194: the keyed LiquidFun particles' records share the epoch.
  */
 export function bumpEmitDecorationEpoch(b) {
   b.decoKeyEpoch = (b.decoKeyEpoch + 1) >>> 0 || 1;

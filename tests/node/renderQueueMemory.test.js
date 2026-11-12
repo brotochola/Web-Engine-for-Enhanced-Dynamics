@@ -326,3 +326,29 @@ test('E-188: keyed decorations take the keys past the entities and a record each
     assert.ok(at + 64 <= records || at >= records + decorations * 32, `the records do not overlap the ${name}`);
   }
 });
+
+// E-194: with emit.keyedLiquidFun the LiquidFun particles' keys follow the keyed decorations (the slots of rows without
+// a key after them), and their records are a region of their own.
+test('E-194: keyed LiquidFun particles take the keys past the keyed decorations and a record each', () => {
+  const caps = gpuQueueCaps(MAX, { enabled: true });
+  const queueBytes = computeBufferSize(MAX);
+  const gpuBytes = computeGpuQueueBufferSize(caps);
+  const entities = 3000;
+  const decorations = 2000;
+  const particles = 5000;
+  const m = createRenderQueueMemory(MAX, queueBytes, gpuBytes, {
+    entities, spriteBytes: SpriteRenderer.getBufferSize(entities), casterBytes: 0,
+    decorationBytes: DecorationComponent.getBufferSize(decorations), pixiKeyed: true, keyedDecorations: decorations,
+    keyedLiquidFun: particles,
+  }, null, null, true);
+  const L = m.layout;
+  assert.equal(L.pixiKeyBase, entities + decorations + particles, 'the particles\' keys past the decorations\'');
+  assert.equal(L.pixiKeyRows, Math.ceil((entities + decorations + particles + MAX) / 1024) * 1024);
+  assert.equal(L.emit.keyedLiquidFun, particles);
+  const records = L.emit.lfKeyedByte;
+  assert.ok(records > 0 && records % 64 === 0, 'the records start on a line');
+  assert.ok(records + particles * 32 <= m.buffer.byteLength);
+  const deco = L.emit.decoKeyedByte;
+  assert.ok(records >= deco + decorations * 32 || records + particles * 32 <= deco, 'apart from the decorations\' records');
+  assert.ok(new Uint32Array(m.buffer, records, particles * 8).every((x) => x === 0), 'stale from the start (epoch 0)');
+});
