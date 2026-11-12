@@ -354,7 +354,13 @@
         }, 100);
       });
       try {
-        await Promise.race([game.loadScene(config.sceneModule, { export: config.sceneExport }), fatalDuringBoot]);
+        // ?restore=<url> (E-210): the scene starts from that save (WEED.encodeSave bytes), as scene.loadGame starts it.
+        const restoreUrl = new URLSearchParams(location.search).get('restore');
+        const restorePayload = restoreUrl
+          ? await WEED.decodeSave(new Uint8Array(await (await fetch(restoreUrl)).arrayBuffer()))
+          : null;
+        const loadOptions = restorePayload ? { export: config.sceneExport, restorePayload } : { export: config.sceneExport };
+        await Promise.race([game.loadScene(config.sceneModule, loadOptions), fatalDuringBoot]);
       } finally {
         clearInterval(fatalWatch);
       }

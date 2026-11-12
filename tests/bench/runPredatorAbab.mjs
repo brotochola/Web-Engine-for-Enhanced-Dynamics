@@ -24,6 +24,10 @@
  *
  * --headless: every run without a window (headed is the protocol; see opts.headed).
  *
+ * --restore <file>: both sides start the scene from that save (E-210; tests/bench/sceneSaveMaker.mjs makes one in
+ * mid-play), copied into each side's tree and named to the page as ?restore=, so the two measure the same moment of
+ * an emergent scene instead of two runs that drifted apart.
+ *
  * --query-a <q>, --query-b <q>: scene parameters for one side only, on top of --query (a key the side names
  * replaces the shared one). Without --hyp-rev, both sides then run the --vs worktree: one build, one
  * directory, the runtime switch the only difference (`--vs HEAD --query-a wasmOff=particleIntegrateF32` times the
@@ -757,6 +761,21 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
   }
   const hypRoot = hypSide ? hypSide.root : perSide ? baseline.root : repoRoot;
   if (hypSide) console.log(`hypothesis worktree ${hypSide.root}`);
+  // E-210: the save each side starts from, in its own tree (the page fetches it from the tree it is served from).
+  if (typeof args.restore === 'string' && args.restore) {
+    const source = path.resolve(args.restore);
+    if (!fs.existsSync(source)) throw new Error(`--restore: no such file ${source}`);
+    const served = `tests/results/restore/${path.basename(source)}`;
+    for (const root of new Set([baseline.root, hypRoot])) {
+      const dest = path.join(root, served);
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      if (path.resolve(dest) !== source) fs.copyFileSync(source, dest);
+    }
+    const restoreQuery = `restore=/${served}`;
+    opts.queryA = opts.queryA ? `${opts.queryA}&${restoreQuery}` : restoreQuery;
+    opts.queryB = opts.queryB ? `${opts.queryB}&${restoreQuery}` : restoreQuery;
+    console.log(`both sides start from ${source}`);
+  }
   else if (perSide) console.log('one build: both sides run the baseline worktree');
   if (perSide) console.log(`side A query "${opts.queryA}", side B query "${opts.queryB}"`);
   // --append: add pairs to the previous sitting of the same hypothesis, only when
