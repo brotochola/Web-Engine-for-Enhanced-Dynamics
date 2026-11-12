@@ -9989,7 +9989,8 @@
         "R-0902",
         "R-0905",
         "R-0907",
-        "R-0910"
+        "R-0910",
+        "R-0912"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -20927,6 +20928,18 @@
       "text": "**E-217 kept: the collect keeps its copy of the sprite query's list while nothing was published.** `ef03a7a1`.\n\n- **Premise (R-0903):** `writeCollectList` was 7.7 % of BunnyMark C 200 000's pre-render, the sprite query's 200 000 ids copied into the collect's memory each frame.\n- **What was done, simpler than the plan:** logic republishes a precomputed query only when the population changes. The query header's reserved int is now a publish sequence, stored after the index; `readPublishedQuerySnapshot` reads it first and hands back the same view only while it has not moved (the index alone comes back round after three publishes, with the same count when the churn evens out: the old cache's ABA, harmless before, which a test now covers). `writeCollectList(b, ids, n, true)` keeps the copy it holds of an unchanged published view; any other list (the static walk) is copied each time. `querySnapshotSeq.test.js`: two of its four fail on the old code.\n\n**BunnyMark C `?bunnies=200000`, owner pre-render, 4 pairs, 5fecdf6e vs ef03a7a1's tree (01:40 to 01:43):** **KEPT (product)**, pre-render 5.629 → 5.163 ms (-8.1 %, worse 0/4, cv 3/7 %). Logic 1.899 → 1.914 ms, below the floor.\n\n**Predator's gate, 4 pairs (01:43 to 01:47): NEUTRAL.** Logic -2.2 %, spatial -0.7 %, physics -3.3 %, pre-render +0.2 % (3/4 worse, within the session's A/A, R-0909: about 4 %).\n\nOpen: a scene whose population changes every frame still copies every frame; the plan's pointer at the published copy (with a reading mark) would cover it.",
       "commits": [
         "ef03a7a1"
+      ]
+    },
+    {
+      "id": "R-0912",
+      "date": "2026-11-12",
+      "time": "02:08",
+      "timeFrom": "recorded",
+      "title": "The bundles of bf5956eb (E-217) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of bf5956eb (E-217 merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `55fac2a4`, built from bf5956eb.\n\n- Node 2488 of 2488 on main, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 01:52 to 01:58: NEUTRAL.** Logic -7.8 % (0/4 worse), spatial -2.6 %, physics -2.8 %, pre-render -0.8 %.\n- **Boids, 8 pairs, 01:58 to 02:08: NEUTRAL.** Spatial -1.8 % (2/8), physics -2.7 % (2/8).\n\nMain pushed.",
+      "commits": [
+        "55fac2a4"
       ]
     }
   ],
