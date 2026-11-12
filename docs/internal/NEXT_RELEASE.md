@@ -65,3 +65,6 @@ empties it.
   worker now waits (under a millisecond) for the main thread's frame of the same vsync: Boids 23 → 7 ms, Predator
   25 → 9 ms from an input to the frame drawn with it. `logic.waitForInput` (true) turns it off. Gamepads still reach
   logic a frame later.
+- **Keyed frames on WebGPU too** (E-187): where Pixi packs the sprites (`preRender.packGpuSprites: 'pixi'`), the default
+  backend now keeps each sprite's statics on the GPU and sends only the changed ones, as WebGL did (a compute pass
+  writes them). A LiquidFun scene of 70 000 particles on WebGPU: the renderer worker 3.7 → 1.7 ms a frame.

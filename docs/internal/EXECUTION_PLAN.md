@@ -3288,7 +3288,7 @@ side): keyed 0.14 / 0.15 / 0.14 → 0.14 / 0.14 / 0.14 ms (in cache, as E-193 fo
 `?crowd=1.5`, 4 pairs: renderer 3.310 → 3.237 ms (-2.3 %, worse 1/4; -1.0 % against the others), NEUTRAL; dead data
 gone, a hygiene keep.
 
-### E-187 Keyed frames on WebGPU
+### E-187 Keyed frames on WebGPU — **KEPT 2026-11-12 (R-0930)**
 
 **Premise:** E-177 builds keyed frames for WebGL (Predator's backend): the changed statics are drawn into the statics
 texture. A WebGPU batch keeps split frames.
@@ -3298,6 +3298,13 @@ computeLayer.js runs its passes), keyedSpritesEnabled widened to WebGPU. Owner: 
 **Since (2026-11-01):** E-177 kept on WebGL (R-0792), and E-191's keyed shadow passes and E-188's keyed decorations
 ride on its texture, so all three stay off on WebGPU until this one: the statics storage buffer scattered by a compute
 pass, then the shadow programs' WGSL forms reading it.
+**Kept 2026-11-12 (R-0930, merge `d9e206ff`): liquidFunQueryStressScene on WebGPU at `?lf=70000`, renderer 3.737 →
+1.721 ms (-54.1 %, worse 0/4), pre-render +2.9 %; Predator `?crowd=1.5` on WebGPU NEUTRAL (its renderer 1.9 ms both).**
+`staticsScatterGpu.js`: two compute dispatches (the rows, then the texture words) into the storage buffer the indexed
+program reads, submitted before the frame's render; the fits take the backend's keys (`keyedStaticsMax`); the statics
+buffer kept out of Pixi's resource GC (its CPU copy stays at zeros). Checked on the GPU (`staticsScatterGpuCheck.mjs`,
+0 wrong words) and by WebGPU captures byte-identical to main. Left: E-191's keyed shadows on WebGPU (WGSL forms of the
+shadow programs), so the sun pass can draw the entity instances there too.
 
 ### E-188 Keyed frames for the main queue's other rows, by pool slot
 
