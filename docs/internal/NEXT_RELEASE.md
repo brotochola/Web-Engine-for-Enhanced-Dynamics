@@ -55,3 +55,8 @@ empties it.
   culled at their position, so a tree or a wall piece drawn from its foot went missing at the bottom edge. The particle
   worker now pads the decorations' test with the largest reach any decoration of the pool has: a scene with a few huge
   decorations keeps a few more small ones near the edges in its queue.
+- **An input reaches the screen about a frame and a half sooner** (E-198). Physics now waits for the logic workers'
+  frame, pre-render for physics's pose and Pixi for pre-render's queue, each of the same vsync, instead of each reading
+  what the one before it published a vsync earlier: in Boids and Predator about 51 → 24 ms from an input to the frame
+  drawn with it. Each wait has a budget and turns itself off for two seconds when the chain does not fit the frame.
+  `physics.waitForLogic`, `preRender.waitForPose` and `renderer.waitForQueue` (all true) turn them off.

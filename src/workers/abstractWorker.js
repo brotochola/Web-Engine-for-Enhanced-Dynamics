@@ -148,6 +148,8 @@ export class AbstractWorker {
     this.inputData = null;
     // E-197: the input-to-screen latency stamp buffer's views ({ base, i32 }), null without one.
     this._latency = null;
+    // E-198: the frame chain ([0] the logic workers' frames done), null without one.
+    this._frameChain = null;
     this.cameraData = null;
     this.neighborData = null;
     this.activeEntitiesData = null; // Compact list of active entity indices [count, idx0, idx1, ...]
@@ -824,6 +826,7 @@ export class AbstractWorker {
     }
 
     this._latency = bindLatencyStamp(data.buffers?.latencyStamp);
+    this._frameChain = data.buffers?.frameChain ? new Int32Array(data.buffers.frameChain) : null;
 
     // Initialize common shared buffers using Buffer->Data naming pattern
     if (data.buffers?.inputData) {

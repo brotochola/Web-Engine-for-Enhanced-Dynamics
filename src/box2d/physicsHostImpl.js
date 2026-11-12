@@ -731,6 +731,8 @@
           dataBByte: state.posePublish.dataBByte | 0,
           sync: state.posePublish.sync,
           latency: state.posePublish.latency || null,
+          chain: state.posePublish.chain || null,
+          logicWorkers: state.posePublish.logicWorkers | 0,
           capacity: state.posePublish.capacity | 0,
         }
         : null,

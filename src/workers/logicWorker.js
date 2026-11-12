@@ -1000,6 +1000,12 @@ class LogicWorker extends AbstractWorker {
    */
   afterUpdate() {
     if (this.workerIndex === 0 && this._latency !== null) Atomics.store(this._latency.i32, STAMP_LOGIC, this._latencyActing);
+    // E-198: this worker's frame is out; physics may be waiting for every logic worker's.
+    const chain = this._frameChain;
+    if (chain !== null) {
+      Atomics.add(chain, 0, 1);
+      Atomics.notify(chain, 0);
+    }
   }
 
   update(deltaTime, dtRatio, resuming) {

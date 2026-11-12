@@ -154,6 +154,7 @@ import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
 import { staticSceneryGen } from '../core/staticScenery.js';
 import { StaticSceneryGrid } from '../render/staticSceneryGrid.js';
 import { bindMeshPoseList, writeMeshPoseList } from '../util/meshPoseList.js';
+import { addWaitMs, waitMeterMs } from '../util/waitMeter.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -547,6 +548,15 @@ class PreRenderWorker extends AbstractWorker {
         this.interpolatePhysicsPose = false;
         this.skipCull = false;
         this._poseLastSeenReadyFrame = 0;
+        // E-198: whether pre-render waits for this vsync's pose (preRender.waitForPose), the frame it may wait again from
+        // after a timeout, its own step without the wait and the wall time between its frames (averages), and the pose
+        // frame it latched last.
+        this._poseWait = false;
+        this._poseWaitOffUntil = 0;
+        this._poseWaitStepMs = NaN;
+        this._poseWaitPeriodMs = NaN;
+        this._poseWaitLastStart = NaN;
+        this._poseWaitLatched = 0;
         this._poseLastChangeWallClock = 0;
         this._poseMeasuredIntervalMs = 0;
         this._poseAlpha = 1; // interpolate: 0..1 progress toward the latched frame
@@ -885,6 +895,7 @@ class PreRenderWorker extends AbstractWorker {
      */
     async initialize(data) {
         const preRenderConfig = this.config.preRender || {};
+        this._poseWait = preRenderConfig.waitForPose !== false;
 
         if (data.buffers.preRenderStats) {
             this.stats = createMultiWorkerStatsWriter(
@@ -1497,8 +1508,44 @@ class PreRenderWorker extends AbstractWorker {
         }
     }
 
+    /**
+     * E-198: wait for physics's next pose (it notifies on publishPose), at most the frame period less pre-render's own
+     * step and 4 ms for Pixi, so the queue still goes out on this vsync. Pre-render starts its frame before physics
+     * publishes (about a physics step into the vsync), so each frame drew the pose of a vsync earlier: waiting takes
+     * that frame off the input's way to the screen. The wait goes into WAIT_MS. A timeout (physics slower than the
+     * frame allows, paused, or stepping at a lower rate) turns the waits off for 120 frames.
+     */
+    _waitForPose() {
+        const sync = this.poseSync;
+        const frame = this.frameNumber | 0;
+        const now = performance.now();
+        const last = this._poseWaitLastStart;
+        this._poseWaitLastStart = now;
+        if (last === last) {
+            const gap = now - last;
+            if (gap > 0 && gap < 100) this._poseWaitPeriodMs = this._poseWaitPeriodMs === this._poseWaitPeriodMs
+                ? this._poseWaitPeriodMs * 0.9 + gap * 0.1 : gap;
+        }
+        // The workers wake together, so the pose out at this frame's start is physics's of a vsync earlier: wait for
+        // the one it publishes this vsync.
+        const ready = Atomics.load(sync, 0);
+        if (this._poseWaitLatched === 0 || frame < this._poseWaitOffUntil) return;
+        const period = this._poseWaitPeriodMs === this._poseWaitPeriodMs ? this._poseWaitPeriodMs : 1000 / 60;
+        const step = this._poseWaitStepMs === this._poseWaitStepMs ? this._poseWaitStepMs : period;
+        const budget = Math.min(period - step - 4, period * 0.6);
+        if (!(budget > 0.5)) return;
+        // Physics publishes only once the last pose was consumed (posePublishBlocked): mark the one out now consumed, as
+        // _latchPose(true) would, or physics holds its publish and this wait runs out.
+        if (Atomics.load(sync, 1) < ready) Atomics.store(sync, 1, ready);
+        const r = Atomics.wait(sync, 0, ready, budget);
+        addWaitMs(performance.now() - now);
+        if (r === 'timed-out') this._poseWaitOffUntil = frame + 120;
+    }
+
     latchPhysicsPose() {
+        if (this._poseWait && this.poseSync && this.poseBuffers[0]) this._waitForPose();
         this._latchPose();
+        if (this._poseReadyFrame > 0) this._poseWaitLatched = this._poseReadyFrame;
         if (this.renderQueuePoseReady) this.renderQueuePoseReady[0] = this._poseReadyFrame;
         // E-197: this queue shows the newer of the input logic has acted on (bodiless entities, read live) and the one
         // the latched pose was stepped with.
@@ -4581,8 +4628,9 @@ class PreRenderWorker extends AbstractWorker {
             if (this.collectDetailedStats) this.stats[PRE_RENDER_STATS.SKIPPED_FRAMES] = 1;
             return;
         }
-        // WAIT_MS stays 0 by construction here: pre-render's only wait on a
-        // sibling is the backpressure skip, counted as SKIPPED_FRAMES below.
+        // WAIT_MS: E-198's wait for this vsync's pose (the backpressure skip is counted as SKIPPED_FRAMES).
+        const own = this.stepTimeThisFrame - waitMeterMs();
+        if (own > 0) this._poseWaitStepMs = this._poseWaitStepMs === this._poseWaitStepMs ? this._poseWaitStepMs * 0.9 + own * 0.1 : own;
         this._writeFrameMeters(PRE_RENDER_STATS);
         this.stats[PRE_RENDER_STATS.VISIBLE_ENTITIES] = this.visibleEntitiesCount;
         // M1: a load key of the A/B gate, so it is published with detail off too.

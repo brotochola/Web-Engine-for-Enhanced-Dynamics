@@ -49,6 +49,11 @@ export function resetWaitMeter() {
   meter().ms = 0;
 }
 
+/** Add `ms` blocked on a sibling this frame (E-198: Pixi waiting for pre-render's queue). */
+export function addWaitMs(ms) {
+  if (ms > 0) meter().ms += ms;
+}
+
 /** This frame's accumulated blocked-on-sibling milliseconds. */
 export function waitMeterMs() {
   return meter().ms;

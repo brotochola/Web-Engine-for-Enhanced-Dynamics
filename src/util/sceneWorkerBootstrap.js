@@ -180,6 +180,8 @@ export function buildSceneSharedBuffers(scene) {
     inputData: scene.buffers.inputData,
     // E-197: the input-to-screen latency stamp.
     latencyStamp: scene.buffers.latencyStamp || null,
+    // E-198: the frame chain (the logic workers' frames done).
+    frameChain: scene.buffers.frameChain || null,
     cameraData: scene.buffers.cameraData,
     clockData: scene.buffers.clockData,
     poolExhaustionData: scene.buffers.poolExhaustionData,
@@ -376,6 +378,9 @@ function buildSceneWorkerInitData(scene, sharedBuffers, scriptsToLoad) {
       sync: scene.buffers.poseSync,
       // E-197: logic's stamp, carried into the pose slot physics writes.
       latency: scene.buffers.latencyStamp || null,
+      // E-198: physics waits for the logic workers' frame (physics.waitForLogic) through the frame chain.
+      chain: scene.config.physics?.waitForLogic === false ? null : scene.buffers.frameChain || null,
+      logicWorkers: scene.numberOfLogicWorkers | 0,
       capacity: scene.poseCapacity || scene.totalEntityCount,
     },
     textureMetadata: scene.textureMetadata,
