@@ -12184,6 +12184,31 @@
       ]
     },
     {
+      "id": "N-148",
+      "title": "Keyed frames could draw every sprite of a still scene at scale 0 (an answer taken from a buffer that did not serve the request)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (edd72682, R-0932)",
+      "date": "2026-11-12",
+      "result": "fixed 2026-11-12 (edd72682): only the queue buffer of the emit that served Pixi's request answers it, that emit a full one; Pixi asks again after 8 frames unanswered. dxCaptureScene WebGL: statics zero in about half the warm pages before, none of 15 after",
+      "next": "Done.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-148"
+      ],
+      "aliases": [
+        "invisible sprites",
+        "keyed frames",
+        "resync",
+        "statics texture",
+        "scale 0",
+        "persist frame"
+      ],
+      "records": [
+        "R-0932"
+      ]
+    },
+    {
       "id": "E-214",
       "title": "Path slots allocated without a scan of every slot",
       "status": "kept",
@@ -21430,6 +21455,19 @@
       "text": "**The bundles of the N-146, E-219 and E-187 merges tested: Predator NEUTRAL; Boids REGRESSION by the runner, spatial +4.2 % in the prod bundle, as at E-198's check; pushed, the gap filed as N-147.** dist `6ca079bc`, built from `b8376bc8`.\n\n- **make_bundle, check:dist, test:bundle (8 bundles in the browser), test:node:bundle (298 pass):** all pass.\n- **Predator, 4 pairs, 10:50 to 10:55: NEUTRAL.** Every worker under the floor (logic -13 %, physics +13 %, cv high: N-105's spread).\n- **Boids, 8 pairs, 10:56 to 11:06: REGRESSION** by the runner: spatial 3.902 → 4.073 ms (+4.2 %, worse 7/8, cv 2/1 %), physics +1.4 % (7/8). Spatial waits nothing (WAIT_MS 0 both): its step 3.85 against 4.0 ms run by run. R-0927's check of the E-198 bundles read the same (+4.1 %, 13/16), the checks before E-198 within 2 % (R-0926: -0.5 %). It is not N-146's spin (that cv went from 4 to 6 % back to 1 to 2 %, the gap stayed).\n- **Traces** (`--trace-cpu`, 6 s each, src, bundle, src, bundle, 11:08 to 11:10): the two spatial threads' sampled busy 661 and 635 ms/s from source, 649 and 620 from the bundle; per kernel gather_batch 235 → 252 and 244 ms/s, publish_batch 157 and 140 → 128 and 125 (the same engine.wasm bytes: placement, not code).\n- **Windows's per-thread CPU** (`threadCpuProbe.mjs`, 6 s, src, bundle, src, bundle): the three busiest threads (spatial's two and physics, about 4 ms a frame each) 270/252/240 → 299/297/291 ms/s and 264/262/250 → 273/269/265: the bundle spends 3 to 15 % more CPU there.\nRead: a real cost of the bundle against its sources, small and of unknown cause, that appeared with E-198's bundles; the sources' gains (E-198, N-146, E-219, E-187) are in the bundle. Pushed. N-147 takes it up (bisect the bundle build between the E-197 and E-198 dists).",
       "commits": [
         "6ca079bc"
+      ]
+    },
+    {
+      "id": "R-0932",
+      "date": "2026-11-12",
+      "title": "N-148 fixed: only the queue buffer that served Pixi's request answers it; a still scene's sprites no longer drawn at scale 0",
+      "verdict": "kept",
+      "text": "**N-148 fixed: keyed frames could draw every sprite of a still scene at scale 0 for good; only the queue buffer that served Pixi's request answers it now.** `fix/n148`: `ed8f09cd` and `90d86d35` (the tools), `ab81468a` (the fix), merged in `edd72682`.\n\n- **Found** comparing WebGL captures for E-220: `compareCaptures.mjs` on dxCaptureScene `?hour=17` read 117 897 pixels apart run to run, main against main too (1 of 3). The other picture had no sprite and no shadow. A run captured 30 times reads the same picture throughout; a browser loading the scene in five pages one after another drew it right in the first and wrong in about half of the others (two browsers: pages 1, 3, 4 and 1, 2, 3). Not the GPU program cache (`--disable-gpu-program-cache`: the same).\n- **What was wrong:** reading the statics texture back (a framebuffer over it) in the wrong pages: all 48 drawn keys' scale zero, and a log of the scatters: none at all, while the batch drew keyed. Pixi asks pre-render for every keyed statics (the request word) and draws split until a queue buffer answers it; pre-render stamped every buffer it emitted with the last request served, but only the buffer of the emit that served it carried every row (the flags all set). Pixi takes the newest queue and may skip one (since E-198, once when it starts waiting): it took a later buffer, which carried only what changed since (nothing, in a still scene), for its answer. And the serving emit could be a persist frame (E-98b), whose rows keep last frame's keys without the changed bit (that alone took the wrong pages from about half to 1 in 10).\n- **The fix:** the request is stamped only in the buffer of the emit that served it (0 in the others), that emit is a full one (no persist frame), and Pixi asks again after `KEYED_REQUEST_FRAMES` (8) frames drawn split unanswered. `instancedSpriteKeyed.test.js`: a batch that skips the answering buffer draws split, asks again and draws keyed once answered (fails on the old batch); the tests' stand-ins for pre-render stamp as it does now.\n- **Checks:** five pages one after another, three browsers (fifteen pages): no key at zero, the captures equal; Predator on WebGL (`keyedFramesProbe.mjs`, its slot stride fixed): keyed frames, no key at zero; suites green.\nHygiene keep: the change runs only on a request's frames (a resync), not on the hot path; Predator's next sitting covers it.",
+      "commits": [
+        "ed8f09cd",
+        "ab81468a",
+        "90d86d35",
+        "edd72682"
       ]
     }
   ],
