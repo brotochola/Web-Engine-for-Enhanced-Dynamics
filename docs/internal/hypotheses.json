@@ -12277,12 +12277,11 @@
     {
       "id": "E-219",
       "title": "Logic reads an input a frame after Chrome dispatches it",
-      "status": "open",
-      "statusText": "filed 2026-11-12 from E-198 (R-0927); not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-12 (4b0aceb6, R-0929)",
       "date": "2026-11-12",
-      "rank": 27,
-      "result": "Filed from E-198: of the 24 ms an input still takes to reach the screen, about 16 lie before logic reads it.",
-      "next": "Step 0: where main's input handlers run against the frame clock's vsync (the E-197 stamp and the frame clock). Then logic reads input once main has dispatched the frame's events (a word main writes, a budgeted wait), or main wakes the workers after its handlers. Owner: E-197's latency in Boids and Predator.",
+      "result": "kept 2026-11-12 (4b0aceb6): logic waits under a millisecond for main's frame of the same vsync; input lag Boids 23.2 -> 7.0 ms (3 of 4 runs), Predator 24.8 -> 8.9 ms, liquidFunQueryStressScene 35 -> 18 to 31 ms; workers NEUTRAL",
+      "next": "Done. Left: a Boids run that stayed at 22.6 ms; gamepads reach logic a frame later (main reads them in its update).",
       "area": "engine",
       "kind": "speed",
       "refs": [
@@ -12294,7 +12293,9 @@
         "pointer dispatch",
         "frame clock"
       ],
-      "records": []
+      "records": [
+        "R-0929"
+      ]
     }
   ],
   "records": [
@@ -21335,6 +21336,23 @@
         "3b7261a4",
         "28999281",
         "c977a733"
+      ]
+    },
+    {
+      "id": "R-0929",
+      "date": "2026-11-12",
+      "time": "10:15",
+      "timeFrom": "recorded",
+      "title": "E-219 kept: logic waits for main's frame of the vsync; input lag Boids 23.2 -> 7.0 ms, Predator 24.8 -> 8.9 ms",
+      "verdict": "kept",
+      "text": "**E-219 kept: logic waits for main's animation frame of the same vsync and reads its inputs that frame; input lag Boids 23.2 → 7.0 ms (3 of 4 runs), Predator 24.8 → 8.9 ms, workers' own time neutral.** `speed/e219`: `c03a193b` (the wait), `c1dc1e7b`, `2f828d34` (a sub-ms budget), `efec735c` (main signals first thing in its rAF), `eb0c9df6` (main's frame told by its time), on N-146.\n\n- **The premise, measured:** a plain page with a pointermove listener and a rAF loop, Playwright moving the mouse: Chrome dispatches the move 0.10 ms (median, max 0.20, headed) before the animation frame callback; in the engine's bench page (Boids) 0.19 to 0.27 ms before it at 7, 27 and 47 s. The workers wake about 0.16 ms before main's callback (R-0927's frame phase), so logic read each input a frame late.\n- **Windows, in Node on this machine:** a wait under 1 ms ends on time and wakes 3 to 21 µs after the store (a deadline publisher); a wait of a millisecond or more sleeps to the timer period on a timeout (N-146). So the budget is under a millisecond (0.95), a miss costs logic that at most, and four in a row turn the waits off for 120 frames.\n- **What the first sittings missed** (no record of their own; their numbers here): 09:08 to 09:27, the first build (a 2 ms budget, main's signal after Gamepad.poll, main's frame told by its count): Boids lag 23.3 → 18.1 to 23.1, Predator 24.8 → 14.7 to 24.0, workers NEUTRAL. Main signalled after Gamepad.poll, past the sub-ms budget (one run each 23.4 and 23.0 ms), and logic took main's input count having moved since its last frame for this vsync's frame: when main runs after the workers the count it sees is the last vsync's, so it stopped waiting for seconds at a time (Pixi's lag meter read every 4 s: 7 or 22 ms by turns). Now main signals right after the frame clock's publish, and logic reads the frame clock's time of main's last animation frame (under half a frame ago: this vsync's is out). Boids, a minute read every 4 s: 6.5 to 7.2 ms throughout.\n\n**Sitting, 4 pairs each, `--vs main --hyp-rev speed/e219 --input-every 100`, src, headed, AC power, 09:57 (the first result file) to 10:15 (the last summary):**\n- **Boids** (owner spatial): NEUTRAL: spatial 4.161 → 4.049 ms (-2.7 %, worse 1/4), physics -0.2 %; input lag (median / p95, ms) main 23.1/24, 23.4/25, 23.3/24, 23.2/24; branch 22.6/24, **7.0/23, 6.9/21, 7.0/13**; logic's wait 0.18 to 0.43 ms a frame (in WAIT_MS).\n- **Predator**: NEUTRAL: physics +0.8 % (worse 2/4), the rest under the floor; input lag main 24.6, 25.0, 25.0, 24.5; branch **8.2, 9.5, 9.1, 8.7** (p95 18 to 25).\n- **liquidFunQueryStressScene** (owner physics): NEUTRAL: physics +1.1 % (worse 2/4); input lag main 34.9 to 35.6; branch 18.3, 19.8, 24.4, 31.3.\nKept (product: a frame less from an input to the screen, the workers' own time unchanged). Left: the Boids run that stayed at 22.6 ms (logic's wait 0.18 ms a frame: main late past the budget for stretches, or off), and gamepads, which main reads in its update and logic sees a frame later as before.",
+      "commits": [
+        "c03a193b",
+        "c1dc1e7b",
+        "2f828d34",
+        "efec735c",
+        "eb0c9df6",
+        "4b0aceb6"
       ]
     }
   ],
