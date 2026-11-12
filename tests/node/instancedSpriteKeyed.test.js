@@ -6,7 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 import { TextureSource } from '../../src/vendor/pixi.min.js';
 import {
-  BATCH_SPACE, INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch, KEYED_LOSS_FRAMES, KEYED_PAUSE_FRAMES, POSE_STATIC_FLOATS,
+  BATCH_SPACE, INSTANCED_SPRITE_FLOATS, InstancedSpriteBatch, KEYED_LOSS_FRAMES, KEYED_PAUSE_FRAMES, KEYED_REQUEST_FRAMES,
+  POSE_STATIC_FLOATS,
   SPLIT_POSE_FLOATS,
 } from '../../src/render/instancedSpriteBatch.js';
 import {
@@ -240,9 +241,12 @@ function change(s, count, inQueue = true) {
 function emit(s) {
   const { q, header: h, world, dirty } = s;
   s.frame++;
+  // N-148: only the buffer of the emit that served a request answers it.
+  let served = 0;
   if (Atomics.load(h, H.REQUEST) !== Atomics.load(h, H.SERVED)) {
     dirty.fill(1);
     Atomics.store(h, H.SERVED, Atomics.load(h, H.REQUEST));
+    served = Atomics.load(h, H.SERVED);
   }
   let sent = 0;
   for (let i = 0; i < N; i++) {
@@ -261,7 +265,7 @@ function emit(s) {
     dirty[e] = 0;
     s.texDirty[e] = 0;
   }
-  Atomics.store(h, H.BUFFER0 + bufferOf(s.frame), Atomics.load(h, H.SERVED));
+  Atomics.store(h, H.BUFFER0 + bufferOf(s.frame), served);
   return sent;
 }
 
@@ -307,6 +311,34 @@ function draw(s, label, opts, frame = s.frame) {
 const sortedOpts = (s) => ({
   ...NO_FILTER, space: BATCH_SPACE.WORLD, type: s.q.type, indexCount: N, depthDenom: N,
   indices: Uint32Array.from({ length: N }, (_, i) => i).sort(() => s.rng() - 0.5),
+});
+
+// N-148: only the queue buffer of the emit that served a request answers it. Pixi takes the newest queue, so it may skip
+// that one; the buffers after it carry only what changed since, and taking one of them for the answer left a still
+// scene's texture empty (every sprite at scale 0). The batch draws split until a buffer answers, and asks again after
+// KEYED_REQUEST_FRAMES frames unanswered.
+test('a keyed batch that skips the queue frame answering its request asks again, and never draws keyed without it', async () => {
+  const s = await setup(148);
+  const { keyed: k, header: h } = s;
+  assignKeys(s);
+  emit(s);
+  assert.equal(draw(s, 'first frame', sortedOpts(s)), -1);
+  assert.equal(Atomics.load(h, H.REQUEST), 1, 'asked');
+  // The emit that serves the request writes every row; Pixi skips it and reads the one after (nothing changed in it).
+  assert.equal(emit(s), s.q.type.length);
+  emit(s);
+  for (let f = 0; f < KEYED_REQUEST_FRAMES - 1; f++) {
+    assert.equal(draw(s, `skipped answer, frame ${f}`, sortedOpts(s)), -1, 'drawn split: not an answer');
+    emit(s);
+  }
+  assert.equal(Atomics.load(h, H.REQUEST), 1, 'still the first request');
+  assert.equal(draw(s, 'unanswered too long', sortedOpts(s)), -1);
+  // The next frame asks again; the emit after serves it, and that frame is drawn keyed with every row.
+  assert.equal(draw(s, 'asks again', sortedOpts(s)), -1);
+  assert.equal(Atomics.load(h, H.REQUEST), 2, 'asked again');
+  const all = emit(s);
+  assert.equal(draw(s, 'answered', sortedOpts(s)), all, 'every row goes up');
+  assert.notEqual(k.mesh.shader, k.shader, 'drawn keyed');
 });
 
 test('a keyed batch draws a split batch\'s sprites, the statics the emit marks changed scattered by key', async () => {
