@@ -9993,7 +9993,8 @@
         "R-0912",
         "R-0916",
         "R-0921",
-        "R-0923"
+        "R-0923",
+        "R-0926"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -21238,7 +21239,7 @@
     {
       "id": "R-0925",
       "date": "2026-11-12",
-      "time": "06:45",
+      "time": "06:16",
       "timeFrom": "recorded",
       "title": "E-198 step 0: no link waits in Boids; input lag 3 frames (50 ms); the waits built change nothing; the meter was a frame high",
       "verdict": "answered",
@@ -21246,6 +21247,18 @@
       "commits": [
         "3d36cfad",
         "5434da27"
+      ]
+    },
+    {
+      "id": "R-0926",
+      "date": "2026-11-12",
+      "time": "06:40",
+      "timeFrom": "recorded",
+      "title": "The bundles of the E-197 merge tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of the E-197 merge and its stamp fix: tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `25d6a873`.\n\n- Node 2523 of 2523, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 0 failures on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 06:21 to 06:27: NEUTRAL.** Spatial -0.2 %, physics -4.0 % (0/4 worse); logic and pre-render under the floor.\n- **Boids, 8 pairs, 06:28 to 06:40: NEUTRAL.** Spatial -0.5 % (3/8), physics +0.2 % (4/8), cv 1 %.\n\nMain pushed. (R-0925's time corrected to 06:16, its commits' time.)",
+      "commits": [
+        "25d6a873"
       ]
     }
   ],
