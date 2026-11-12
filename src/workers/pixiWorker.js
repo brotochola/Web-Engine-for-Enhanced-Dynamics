@@ -764,6 +764,10 @@ class PixiRenderer extends AbstractWorker {
     // Custom layer rendering infrastructure (populated during initialize)
     this._customLayers = {};  // layerId -> { buffers, readRef, sprites, poolIndices, prevCount, pc, rt, displaySprite, filter }
     this._customLayerList = []; // Cached array of custom layer objects, set once during init
+    // DX-POST: the LAYER_KIND.SCREEN passes in zIndex order, and the frame they read (the stage drawn into a target).
+    this._screenLayers = [];
+    this._screenSceneRT = null;
+    this._screenClear = [0, 0, 0, 1];
     this._layerRuntime = Object.create(null); // layerName -> display object
     this._cornerFirstRow = 0; // the rows the last corner rewrite wrote: [first, past)
     this._cornerPastRow = 0;
@@ -1002,6 +1006,8 @@ class PixiRenderer extends AbstractWorker {
       transform: null,
       clear: true,
       clearColor: this._clearTransparent,
+      // DX-POST: true only while the stage is drawn into the SCREEN passes' frame on WebGL (the canvas's projection).
+      flipY: false,
     };
     this._rtRenderOptsNoClear = {
       container: null,
@@ -3039,6 +3045,8 @@ class PixiRenderer extends AbstractWorker {
   /** Weed owns the swapchain present. Skip when the document is hidden. */
   _presentStage() {
     if (!this._gpuLive()) return;
+    // DX-POST: one test a frame without SCREEN layers; the present as before.
+    if (this._screenLayers.length > 0 && this._presentThroughScreenLayers()) return;
     const present = this._pixiPresent;
     if (present) {
       present();
@@ -3056,6 +3064,187 @@ class PixiRenderer extends AbstractWorker {
     this._pixiPresent = original.bind(app);
     if (app.ticker) app.ticker.remove(original, app);
     app.render = () => this._presentStage();
+  }
+
+  /**
+   * DX-POST: a LAYER_KIND.SCREEN layer. Its look reads the frame below it (uTexture, bound each frame by
+   * _presentThroughScreenLayers), through one full-screen mesh that draws into a target or onto the canvas alike: every
+   * frame the passes read is laid out as the canvas is (on WebGL the stage is drawn into it with the canvas's
+   * projection), so the mesh copies texel for pixel, no V flip. It is not on the stage: the stage is what the passes read.
+   * @param {object} config the layer's worker metadata
+   */
+  _initScreenLayer(config) {
+    const layerId = config.id;
+    const layerName = config.name;
+    const name = config.shaderName || layerName;
+    const uniformDefs = this._buildCustomLayerUniformDefs(layerId, config.uniformMap, config.uniformTypes);
+    // A pass that names uScene reads the frame before the first pass too (a bloom adds a blurred copy to it).
+    const usesScene = typeof config.shaderFragment === 'string' && /\buScene\b/.test(config.shaderFragment);
+    let shader;
+    try {
+      const empty = PIXI.Texture.EMPTY.source;
+      shader = this._createLookShader(config.shaderFragment, empty, uniformDefs, name, layerName, usesScene ? empty : null);
+    } catch (err) {
+      if (err && typeof err.message === 'string' && err.message.startsWith('WeedJS:')) throw err;
+      throw errorCompileFailed('look', name, layerName, this._useWebGpu ? 'WebGPU' : 'WebGL', err);
+    }
+    const resolution = Layer._resolution?.[layerId];
+    this._screenLayers.push({
+      layerId,
+      layerName,
+      zIndex: Layer._zIndex?.[layerId] ?? 0,
+      resolution: resolution > 0 ? resolution : 1,
+      // How it samples the frame it reads ('linear', or 'nearest' for pixel art).
+      scaleMode: Layer.scaleModeString(Layer._normalizeScaleMode(config.scaleMode)),
+      shader,
+      uniformStore: shader.resources?.customUniforms?.uniforms || null,
+      uniformEntries: config.uniformMap ? Object.entries(config.uniformMap) : null,
+      mesh: this._makeLookShaderMesh(shader, false),
+      usesScene,
+      // Its output when it is not the last visible pass: the canvas's size times its resolution.
+      target: null,
+    });
+    this._screenLayers.sort((a, b) => a.zIndex - b.zIndex);
+    debugWorkerLog(`PIXI WORKER: SCREEN layer "${layerName}" initialized`);
+  }
+
+  _destroyScreenLayers() {
+    const layers = this._screenLayers;
+    for (let i = 0; i < layers.length; i++) {
+      const cl = layers[i];
+      this._unbindScreenLayerTextures(cl);
+      if (cl.target) {
+        this._releaseTextureBindGroups(cl.target);
+        cl.target.destroy(true);
+      }
+      cl.mesh.destroy();
+    }
+    this._screenLayers = [];
+    if (this._screenSceneRT) {
+      this._releaseTextureBindGroups(this._screenSceneRT);
+      this._screenSceneRT.destroy(true);
+      this._screenSceneRT = null;
+    }
+  }
+
+  /**
+   * A target of width × height: `rt` when it has that size, else a new one. The old one is unbound from every pass
+   * first and destroyed (a resized source keeps a stale framebuffer, as the other viewport targets found).
+   */
+  _screenTarget(rt, width, height) {
+    if (rt && rt.width === width && rt.height === height) return rt;
+    if (rt) {
+      const layers = this._screenLayers;
+      for (let i = 0; i < layers.length; i++) this._unbindScreenLayerTextures(layers[i]);
+      this._releaseTextureBindGroups(rt);
+      rt.destroy(true);
+    }
+    return PIXI.RenderTexture.create({ width, height });
+  }
+
+  /**
+   * DX-POST: with a visible SCREEN layer, the stage goes into a target the canvas's size, cleared to the canvas's
+   * background. Each visible SCREEN layer then, in zIndex order, reads what came before it and draws into its own
+   * target, and the last onto the canvas. Without a visible one: false, and the present is the stage's as before.
+   */
+  _presentThroughScreenLayers() {
+    const layers = this._screenLayers;
+    let last = -1;
+    for (let i = 0; i < layers.length; i++) if (layerIsVisible(layers[i].layerId)) last = i;
+    if (last < 0) return false;
+    const app = this.pixiApp;
+    if (!app?.renderer || !app.stage) return false;
+    const width = this.canvasWidth;
+    const height = this.canvasHeight;
+    this._screenSceneRT = this._screenTarget(this._screenSceneRT, width, height);
+
+    const opts = this._rtRenderOpts;
+    const background = app.renderer.background?.colorRgba;
+    const clear = this._screenClear;
+    if (background) {
+      clear[0] = background[0];
+      clear[1] = background[1];
+      clear[2] = background[2];
+      clear[3] = background[3];
+    }
+    opts.transform = null;
+    opts.container = app.stage;
+    opts.target = this._screenSceneRT;
+    opts.clear = true;
+    opts.clearColor = clear;
+    // WebGL draws into a texture upside down from the canvas (Pixi flips the projection): flipY undoes it, so the
+    // stage lands as on the canvas, pixel for pixel, and a copy pass is exact. WebGPU has no such flip.
+    opts.flipY = !this._useWebGpu;
+    this._submitRender(opts);
+    opts.flipY = false;
+
+    const frame = this._computeFrame;
+    frame.dt = this._lastDt || 1 / 60;
+    frame.cameraX = this._renderCameraX;
+    frame.cameraY = this._renderCameraY;
+    frame.canvasW = width;
+    frame.canvasH = height;
+    frame.zoom = this._renderZoom;
+    frame.time = (this.accumulatedTime || 0) * 0.001;
+    frame.worldW = finiteOrZero(this.worldWidth);
+    frame.worldH = finiteOrZero(this.worldHeight);
+
+    let source = this._screenSceneRT;
+    for (let i = 0; i <= last; i++) {
+      const cl = layers[i];
+      if (!layerIsVisible(cl.layerId)) continue;
+      this._syncScreenLayerUniforms(cl);
+      applyEngineLookUniforms(cl, frame);
+      const input = source.source;
+      if (input.scaleMode !== cl.scaleMode) input.scaleMode = cl.scaleMode;
+      const res = cl.shader.resources;
+      if (res.uTexture !== input) res.uTexture = input;
+      if (res.uSampler !== undefined && res.uSampler !== input.style) res.uSampler = input.style;
+      if (cl.usesScene && res.uScene !== this._screenSceneRT.source) res.uScene = this._screenSceneRT.source;
+      if (i === last) {
+        // The canvas, cleared to its background first: a pass that copies gives the frame the stage would have.
+        this._submitRender(cl.mesh);
+      } else {
+        cl.target = this._screenTarget(cl.target, rtPixelSize(width, cl.resolution), rtPixelSize(height, cl.resolution));
+        opts.container = cl.mesh;
+        opts.target = cl.target;
+        opts.clear = true;
+        opts.clearColor = this._clearTransparent;
+        this._submitRender(opts);
+        source = cl.target;
+      }
+    }
+    opts.container = null;
+    opts.target = null;
+    opts.clearColor = this._clearTransparent;
+    return true;
+  }
+
+  _unbindScreenLayerTextures(cl) {
+    this._unbindLookShaderTexture(cl.shader);
+    if (cl.usesScene) cl.shader.resources.uScene = PIXI.Texture.EMPTY.source;
+  }
+
+  /** A SCREEN layer's uniforms written from any thread (Layer.x.setUniform), as updateCustomLayers does for looks. */
+  _syncScreenLayerUniforms(cl) {
+    const dirtyRef = Layer._uniformDirty?.[cl.layerId];
+    if (!dirtyRef || Atomics.load(dirtyRef, 0) !== 1) return;
+    Atomics.store(dirtyRef, 0, 0);
+    const floats = Layer._uniformFloats[cl.layerId];
+    const entries = cl.uniformEntries;
+    const u = cl.uniformStore;
+    if (!floats || !entries || !u) return;
+    for (let ei = 0; ei < entries.length; ei++) {
+      const [uName, entry] = entries[ei];
+      if (entry.size === 1) {
+        u[uName] = floats[entry.offset];
+      } else {
+        const target = u[uName];
+        if (target && typeof target === 'object' && target.length) {
+          for (let k = 0; k < entry.size; k++) target[k] = floats[entry.offset + k];
+        }
+      }
+    }
   }
 
   /**
@@ -7384,7 +7573,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
    * Standard fullscreen quad vertex shader for post-processing meshes.
    * Maps NDC quad to UV space so the fragment shader can sample a RenderTexture.
    */
-  _createLookShader(fragmentSource, textureSource, uniformDefs, name, layerName) {
+  /**
+   * @param {TextureSource|null} [sceneSource] DX-POST: a SCREEN pass that reads uScene (the frame before the first pass)
+   */
+  _createLookShader(fragmentSource, textureSource, uniformDefs, name, layerName, sceneSource = null) {
     const asset = name || 'look';
     const layer = layerName || name || 'look';
     const backend = this._useWebGpu ? 'webgpu' : 'webgl';
@@ -7407,7 +7599,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           wgslSource = prependLookPrelude(
             wgslSource,
             Layer._uniformMaps[lid] || null,
-            Layer._metadata?.layers?.[lid]?.uniformTypes || null
+            Layer._metadata?.layers?.[lid]?.uniformTypes || null,
+            { scene: sceneSource !== null }
           );
         }
         const earlyLook = findWgslUseBeforeDeclare(wgslSource);
@@ -7420,15 +7613,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
           GpuProgram,
           wgslSource,
           asset,
-          this._engineShaders.lookVert
+          this._engineShaders.lookVert,
+          sceneSource !== null
         );
         return new Shader({
           gpuProgram,
-          resources: {
-            customUniforms: uniformDefs,
-            uTexture: textureSource,
-            uSampler: textureSource.style,
-          },
+          resources: sceneSource !== null
+            ? { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style, uScene: sceneSource }
+            : { customUniforms: uniformDefs, uTexture: textureSource, uSampler: textureSource.style },
         });
       }
       const lookVert = this._engineShaders.lookVert;
@@ -7444,10 +7636,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       });
       return new Shader({
         glProgram,
-        resources: {
-          customUniforms: uniformDefs,
-          uTexture: textureSource,
-        },
+        resources: sceneSource !== null
+          ? { customUniforms: uniformDefs, uTexture: textureSource, uScene: sceneSource }
+          : { customUniforms: uniformDefs, uTexture: textureSource },
       });
     } catch (err) {
       throw errorCompileFailed('look', asset, layer, backendLabel, err);
@@ -7641,6 +7832,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
     this._destroyAllCustomLayerCompute();
+    this._destroyScreenLayers();
     this._customLayers = {};
     this._gpuParticleBatches = [];
     await this._bindMeshMemory(data);
@@ -7669,6 +7861,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const isMesh = config.kind === LAYER_KIND.MESH;
       const isWorldRect = !!(config.worldRect && config.shaderTextures && config.shaderTextures.length);
       const isGpu = config.kind === LAYER_KIND.GPU_PARTICLES;
+      if (config.kind === LAYER_KIND.SCREEN) {
+        this._initScreenLayer(config);
+        continue;
+      }
       if (!config.hasRenderQueue && !isLfDensity && !isCompute && !isMesh && !isWorldRect && !isGpu) continue;
 
       const layerId = config.id;

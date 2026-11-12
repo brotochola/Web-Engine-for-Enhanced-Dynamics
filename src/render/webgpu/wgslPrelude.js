@@ -37,7 +37,7 @@ const COMPUTE_REDECLARE_RE =
   /struct\s+(FrameData|SimParams|Body|LfParticle|ShapeDescriptor)\s*\{|var\s*<\s*uniform\s*>\s*(frame|sim)\s*:/;
 
 const LOOK_REDECLARE_RE =
-  /struct\s+(GlobalUniforms|LocalUniforms|CustomUniforms|VertexOut)\s*\{|var\s*<\s*uniform\s*>\s*(globalUniforms|localUniforms|customUniforms)\s*:|var\s+(uTexture|uSampler)\s*:/;
+  /struct\s+(GlobalUniforms|LocalUniforms|CustomUniforms|VertexOut)\s*\{|var\s*<\s*uniform\s*>\s*(globalUniforms|localUniforms|customUniforms)\s*:|var\s+(uTexture|uSampler|uScene)\s*:/;
 
 function tailLines(uniformMap, uniformTypes, indent, skipReserved) {
   if (!uniformMap) return '';
@@ -86,7 +86,12 @@ export function buildComputePrelude(uniformMap, uniformTypes) {
  * from the uniform map, fixed group(2) bindings, VertexOut matching
  * fullscreenLook.vert.wgsl.
  */
-export function buildLookPrelude(uniformMap, uniformTypes) {
+/**
+ * @param {object|null} uniformMap
+ * @param {object|null} uniformTypes
+ * @param {{ scene?: boolean }} [options] scene: bind uScene (DX-POST: the frame before the first SCREEN pass)
+ */
+export function buildLookPrelude(uniformMap, uniformTypes, options = {}) {
   let s = 'struct GlobalUniforms {\n';
   s += '  uProjectionMatrix: mat3x3<f32>,\n';
   s += '  uWorldTransformMatrix: mat3x3<f32>,\n';
@@ -106,7 +111,9 @@ export function buildLookPrelude(uniformMap, uniformTypes) {
   s += '}\n';
   s += '@group(2) @binding(0) var<uniform> customUniforms: CustomUniforms;\n';
   s += '@group(2) @binding(1) var uTexture: texture_2d<f32>;\n';
-  s += '@group(2) @binding(2) var uSampler: sampler;\n\n';
+  s += '@group(2) @binding(2) var uSampler: sampler;\n';
+  if (options.scene === true) s += '@group(2) @binding(3) var uScene: texture_2d<f32>;\n';
+  s += '\n';
   s += 'struct VertexOut {\n';
   s += '  @builtin(position) position: vec4<f32>,\n';
   s += '  @location(0) vTextureCoord: vec2<f32>,\n';
@@ -124,14 +131,14 @@ export function prependComputePrelude(code, uniformMap, uniformTypes) {
   return buildComputePrelude(uniformMap, uniformTypes) + code;
 }
 
-export function prependLookPrelude(code, uniformMap, uniformTypes) {
+export function prependLookPrelude(code, uniformMap, uniformTypes, options = {}) {
   const m = LOOK_REDECLARE_RE.exec(code);
   if (m) {
     throw new Error(
       `WeedJS: look shader declares "${m[0]}" — the engine prelude generates GlobalUniforms, LocalUniforms, CustomUniforms, VertexOut and the customUniforms/uTexture/uSampler bindings. Delete the declaration.`
     );
   }
-  return buildLookPrelude(uniformMap, uniformTypes) + code;
+  return buildLookPrelude(uniformMap, uniformTypes, options) + code;
 }
 
 const WORLD_RECT_VERT = `struct GlobalUniforms {

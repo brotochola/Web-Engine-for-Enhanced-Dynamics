@@ -580,6 +580,53 @@ So `fx: { blendMode: BLEND_MODES.ADD }` is an additive sprite layer, and `shader
 
 The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh; `'sprite'` leaves them in the entity list.
 
+### Full-screen passes (`LAYER_KIND.SCREEN`)
+
+A look on a layer sees that layer's contents only. A `LAYER_KIND.SCREEN` layer is a pass over the finished frame:
+its look is the same kind of shader (GLSL ES 1.00 on WebGL, WGSL with the engine prelude on WebGPU, the same reserved
+uniforms, the same compile errors), and its `uTexture` is everything drawn under it. Vignettes, color grading, CRT
+masks, chromatic aberration, a blur when the game pauses, a bloom.
+
+```javascript
+static config = {
+  layers: {
+    grade: {
+      kind: LAYER_KIND.SCREEN,
+      zIndex: 100,
+      shader: { fragment: 'grade', uniforms: { uWarm: { value: 0, type: 'f32' } } },
+    },
+    crt: {
+      kind: LAYER_KIND.SCREEN,
+      zIndex: 101,
+      shader: { fragment: 'crt', uniforms: { uAmount: { value: 0.4, type: 'f32' } } },
+    },
+  },
+};
+static assets = {
+  shaders: { grade: { webgl: url('grade.frag'), webgpu: url('grade.wgsl') }, crt: { webgl: url('crt.frag'), webgpu: url('crt.wgsl') } },
+};
+
+Layer.crt.setUniform('uAmount', 0.8); // from any thread, as on any look
+Layer.crt.visible = false;            // turns that pass off
+```
+
+- **A chain:** several SCREEN layers run in `zIndex` order, each reading what the one before drew. `grade` above reads
+  the frame, `crt` reads the graded frame.
+- **`uScene`:** a pass that composes needs the frame as it was before the first pass (a bloom adds a blurred copy of
+  the bright parts to it). A look that names `uScene` gets it: in GLSL it declares `uniform sampler2D uScene;`; in WGSL
+  the prelude declares `uScene` (sample it with `uSampler`).
+- **`resolution`** makes a pass write a smaller target (0.5 for a cheap blur); the next pass reads it scaled up.
+  **`scaleMode`** (`LAYER_SCALE_MODE.NEAREST` for pixel art) is how a pass samples what it reads. The last visible pass
+  always writes the canvas. `blendMode` and `alpha` do not apply: a pass's output is the frame; mix in the shader.
+- **On top of everything:** SCREEN layers draw over every other layer. A layer with a `zIndex` at or over the lowest
+  SCREEN layer is an error at load, and so is a SCREEN layer without `shader.fragment`. A HUD belongs in the page's DOM.
+- **Cost:** without a visible SCREEN layer the frame is drawn as before (one test a frame). With them, the frame is
+  drawn into a texture the size of the canvas and each pass is one full-screen draw.
+- A pass that copies (`gl_FragColor = texture2D(uTexture, vTextureCoord)`) leaves the frame exact on both backends,
+  pixel for pixel (`tests/bench/screenIdentityCheck.mjs`).
+
+The Sun Street demo grades its frame by the hour and adds a vignette (`P` turns them off).
+
 ### LiquidFun buffer density (`LAYER_DENSITY_SOURCE`)
 
 Two ways to fill a shader layer’s density RT:

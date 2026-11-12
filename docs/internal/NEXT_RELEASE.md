@@ -38,3 +38,8 @@ empties it.
   lifespan, `destroyParticle`, leaving the world) or groups were joined, split or extracted, the survivors moved to
   other indices and were drawn with the statics of the particle that had been there: two emits of different colours
   traded colours. Each particle's statics now follow it. Needs the Box2D build of this release.
+- **Full-screen passes: `LAYER_KIND.SCREEN`** (DX-POST, new). A layer of this kind is a look over the whole finished
+  frame: its fragment's `uTexture` is everything drawn under it, `uScene` the frame before the first pass, and several
+  chain in zIndex order over every other layer (colour grading, a vignette, a blur). A scene without one draws as before.
+  A SCREEN layer without a fragment, or a layer at or over a SCREEN layer's zIndex, is an error at load. Guide:
+  "Full-screen passes" in `bible_of_weed_js.md`; Sun Street grades its frame by the hour.

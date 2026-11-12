@@ -238,3 +238,11 @@ test('prelude tail matches SAB map order (integration)', () => {
     Layer.reset();
   }
 });
+
+test('DX-POST: the look prelude binds uScene at group 2, binding 3, only when asked; a look may not declare it', () => {
+  const code = '@fragment\nfn mainFrag(in: VertexOut) -> @location(0) vec4<f32> { return textureSample(uScene, uSampler, in.vTextureCoord); }\n';
+  const withScene = prependLookPrelude(code, null, null, { scene: true });
+  assert.match(withScene, /@group\(2\) @binding\(3\) var uScene: texture_2d<f32>;/);
+  assert.doesNotMatch(prependLookPrelude(code, null, null), /uScene: texture_2d/);
+  assert.throws(() => prependLookPrelude('@group(2) @binding(3) var uScene: texture_2d<f32>;\n' + code, null, null, { scene: true }), /WeedJS:/);
+});

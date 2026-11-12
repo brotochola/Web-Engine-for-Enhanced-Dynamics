@@ -11588,6 +11588,32 @@
       ]
     },
     {
+      "id": "DX-POST",
+      "title": "Full-screen post-process: LAYER_KIND.SCREEN",
+      "status": "open",
+      "statusText": "Built 2026-11-10 on dx/post, not merged; timing it is the owner's",
+      "date": "2026-11-10",
+      "result": "",
+      "next": "The owner: the post=0 sitting against main (hygiene) and the cost of post=1 and post=2, both backends; then merge with bundles. Later: a pass that reads another layer's picture (phase 2), layers over the post (phase 3).",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-POST"
+      ],
+      "aliases": [
+        "post-process",
+        "post",
+        "SCREEN",
+        "full-screen pass",
+        "vignette",
+        "bloom",
+        "uScene"
+      ],
+      "records": [
+        "R-0858"
+      ]
+    },
+    {
       "id": "N-133",
       "title": "A static flowfield lost the world's last partial column and row",
       "status": "kept-hygiene",
@@ -20320,6 +20346,22 @@
       "title": "Twenty entries filed from a code review: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK, DX-AUTOQUALITY",
       "verdict": "note",
       "text": "**Twenty entries filed from a code review's list of what would pay most: E-197 to E-210, N-128 to N-130, DX-LINT, DX-CONFIGCHECK and DX-AUTOQUALITY.** Nothing timed: each premise is a reading of the code and the register, checked against the code on 2026-11-10 where it names one.\n\n- **The five the review ranked first:** the wake chain (E-198, which needs the latency stamp E-197 first), neighbour aggregates in the spatial kernel (E-199), neighbour lists refreshed with each entity's tick bucket (E-200), keyed poses read by key on the GPU (E-201, the other road for E-193) and decals stamped on the GPU (E-202).\n- **GPU:** sway in the vertex shader (E-203), fill rate's step 0 with GPU timestamps, overdraw and mipmaps zoomed out (E-204: the register had no entry on any of them), the light pass's loop over every light (E-205), and visibility as a polar shadow map (E-206, a big bet with a counting step 0).\n- **WASM:** A* in C (E-207; the flowfield gained 16× there, E-122).\n- **GC:** listUpdates through a SAB ring (E-208), entity instances made at spawn (E-209), eslint-plugin-weed in create-weed-game (DX-LINT).\n- **DX:** config validation and a size advisor (DX-CONFIGCHECK), workers 'auto' and a quality governor (DX-AUTOQUALITY).\n- **Bugs, confirmed in the code:** `fixedFps` truncated to whole milliseconds by `setInterval`, 62.5 Hz at 60 (N-128, to confirm by counting frames); `onGotShot` dispatched by `targetId % workers` where ticks and collision callbacks honour pins, and impacts overwritten frame by frame (N-129); despawn leaves Weed's joint rows active, since nothing calls `Joint.removeAllForEntity` (N-130).\n- **Measuring:** Predator's gate from a save, both sides from the same mid-battle snapshot (E-210).\n\nRanked after the queue's 22: the three bugs 23 to 25, then E-197 to E-202 26 to 31. The rest unranked.\n\n**Not filed:** animation in the shader for keyed sprites. Predator's walkers change their animation speed every tick, so E-189 (a texture-only update) stays the lever there."
+    },
+    {
+      "id": "R-0858",
+      "date": "2026-11-11",
+      "time": "00:56",
+      "timeFrom": "recorded",
+      "title": "DX-POST built: LAYER_KIND.SCREEN, uScene, Sun Street's grading; a copy pass exact on WebGL and WebGPU",
+      "verdict": "note",
+      "text": "**DX-POST built on `dx/post` (from `f7860aa2`), not merged; nothing timed, the sittings are the owner's.** The owner's plan of 2026-11-10, with its API approved: `LAYER_KIND.SCREEN`, a look whose `uTexture` is everything drawn under it. `DX_POST_DESIGN.md` has the design and the checks.\n\n- `df811a5c` (before the change): `screenPassStressScene`, `?post=<n>` vignette passes over Bunny Mark C, 0 by default (the scene itself), `?amount=0` for copies, `?backend=`; `?last=scene` later (`99487e20`).\n- `f6acb6fa`: the layer (no render queue, no subscriptions; a SCREEN layer without a fragment, or a layer at or over one, is an error at load) and the passes in the Pixi worker's one present point: the stage into a target the canvas's size, each pass into its own target, the last onto the canvas; without a visible SCREEN layer, one test and the present as before.\n- `b70989d8`: `uScene`, the frame before the first pass (GLSL declares it; the WGSL prelude and the look's bind group layout carry binding 3 when the look names it).\n- `236e7744`: Sun Street grades its frame by the hour (warm at dusk, cool at night, uniforms from update) and adds a vignette, `P`.\n- Guide (`e9ab77aa`), types, `48500c9f` bundles (test:node:bundle 275, test:bundle 8 of 8; the passes drawn on the production bundle in Chromium).\n\n**The deciding test** (`tests/bench/screenIdentityCheck.mjs`, lockstep, poses equal by hash, headed): a copy pass against none, 0 of 921 600 pixels on WebGL and on WebGPU; two copies chained, 0; a vignette then a pass returning `uScene`, 0; a vignette alone differs in 459 030 (the passes run). Two things it found: on WebGL a copy first differed in 357 pixels, sprite edges rasterized under the projection Pixi flips for textures (the stage now goes into the frame target with `flipY`, laid out as the canvas, so one mesh copies texel for pixel everywhere); on WebGPU the first `uScene` pass drew black, the look's hand-written bind group layout had no binding 3.\n\n**The plan's risks (B.4):** the flip and the WebGPU canvas format (exact), premultiplied alpha and the background (the frame target cleared to the renderer's background), antialiasing (the renderer has none), resize (targets remade on a size change, unbound and released first: checked 1200 × 700 → 900 × 560 → 1200 × 700 on both backends), a hidden tab and the present's ownership (unchanged paths), captures of the canvas (the identity test reads them). R-0092 (Pixi peel H3) was a speed attempt on MESH looks, not this.\n\n**Against the plan:** nothing found wrong in B.3; `resolution` and `scaleMode` per pass are in (the last pass always writes the canvas), `blendMode` and `alpha` do not apply to a pass.\n\n**Sittings for the owner** (commands in `DX_POST_DESIGN.md`): post=0 against `main`, the renderer's STEP_MS − WAIT_MS, both backends (hygiene: must tie); post=0 against post=1 and post=2 on one build (`--query-a`/`--query-b`), both backends, the feature's cost.",
+      "commits": [
+        "df811a5c",
+        "f6acb6fa",
+        "b70989d8",
+        "236e7744",
+        "48500c9f"
+      ]
     },
     {
       "id": "R-0859",
