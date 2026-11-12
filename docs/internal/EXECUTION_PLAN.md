@@ -3472,6 +3472,12 @@ so its statics change every frame.
 statics change. Then keys past the decorations by LiquidFun particle index, the change marked as E-188 marks it (a
 record of the statics a slot last emitted), the texture sized for them where it fits. Owner: liquidFunQueryStressScene's
 renderer.
+**Mixed 2026-11-12 (R-0913, branch `speed/e194`):** the keys by particle index past the keyed decorations, marked against a
+32-byte record an index. liquidFunQueryStressScene `?lf=60000` (the knob `eff1d339`), 4 pairs: renderer 2.456 → 1.084 ms
+(-56 %, under the floor), pre-render 3.411 → 3.741 ms (+8.0 %, worse 4/4); traces: Pixi 191 → 97 ms/s, `emit_rows` 75 → 103
+ms/s (the records, 7.7 ns a row, read in order). Next: a dense u16 per particle with the compare epoch it was last checked
+at, so the emit reads a record only after a Pixi resync or a LiquidFun statics change physics reports. N-142 first: the
+statics do not follow LiquidFun's compaction today.
 
 ### E-195 The shadow stamp's candidate test in float32x4, decided in Chrome
 
