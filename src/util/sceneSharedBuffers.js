@@ -667,6 +667,16 @@ function visibilityGatherSpec(scene) {
 /**
  * The spatial publish memory's arguments (createSpatialPublishMemory), or null without a spatial worker.
  */
+/**
+ * N-145: the entity slots a scene's buffers are made for. A scene with no entity types (a menu, LiquidFun or decorations
+ * alone) keeps one slot no type owns and nothing spawns: with none, the spatial publish memory and physics's Transform,
+ * RigidBody and Collider views were not made and the load failed.
+ * @param {number} registered the slots the scene's entity types take
+ */
+export function sceneEntitySlots(registered) {
+  return registered > 0 ? registered | 0 : 1;
+}
+
 export function spatialPublishSpec(scene) {
   const { config } = scene;
   const workers = config.spatial?.numberOfSpatialWorkers | 0;

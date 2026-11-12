@@ -67,7 +67,7 @@ import {
   buildSceneMemoryUsageReport,
   getSharedBufferSize as getSharedBufferSizeFromBuffers,
 } from '../util/sceneBufferMemory.js';
-import { createSceneSharedBuffers, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
+import { createSceneSharedBuffers, sceneEntitySlots, teardownSceneSharedState } from '../util/sceneSharedBuffers.js';
 import { bindEntityIdWidth, resolveEntityIdWidth, declaredEntityCount, EntityIdArray } from '../util/entityIdWidth.js';
 import { createSceneWorkers, reserveBox2dBlock } from '../util/sceneWorkerBootstrap.js';
 import {
@@ -1165,6 +1165,11 @@ class Scene {
     this._loadStep('scripts');
 
     this._preparedAdobeAssets = await adobePrepare;
+
+    // N-145: a scene with no entity types (a menu, LiquidFun or decorations alone) keeps one entity slot no type
+    // owns and nothing spawns, so every per-entity buffer is made: with none, the spatial publish memory and physics's
+    // Transform, RigidBody and Collider views were missing and the load failed.
+    this.totalEntityCount = sceneEntitySlots(this.totalEntityCount);
 
     // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
     // render-queue regions the shared buffers make are laid in it.
