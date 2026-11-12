@@ -2,6 +2,7 @@
 // Manages canvas, scene lifecycle, input listeners, browser hardening, and debug UI
 
 import { pageQuery, setSceneParams } from './sceneParams.js';
+import { stampInput } from '../util/latencyStamp.js';
 import { DebugUI } from './debug/debugUi.js';
 import { HotReload } from './debug/hotReload.js';
 import { Mouse } from './mouse.js';
@@ -157,6 +158,7 @@ class GameEngine {
 
   _setupWindowListeners() {
     this._keydownHandler = (e) => {
+      stampInput();
       const key = e.key.toLowerCase();
       // Not in a field: a space, an arrow or Tab typed there is the field's.
       if (this.preventDefaultKeys && PREVENT_DEFAULT_KEYS.has(key) && !isTypingTarget(e.target)) {
@@ -169,6 +171,7 @@ class GameEngine {
     };
 
     this._keyupHandler = (e) => {
+      stampInput();
       this.currentScene?.onKeyUp(e.key.toLowerCase());
     };
 
@@ -278,9 +281,10 @@ class GameEngine {
 
   _setupCanvasListeners() {
     const camera = () => this.currentScene?.camera;
-    this.canvas.addEventListener('pointerdown', (e) => Mouse.pointerDown(e, camera()));
-    this.canvas.addEventListener('pointermove', (e) => Mouse.pointerMove(e, camera()));
-    this.canvas.addEventListener('pointerup', (e) => Mouse.pointerUp(e, camera()));
+    // E-197: each input stamped for the latency meter.
+    this.canvas.addEventListener('pointerdown', (e) => { stampInput(); Mouse.pointerDown(e, camera()); });
+    this.canvas.addEventListener('pointermove', (e) => { stampInput(); Mouse.pointerMove(e, camera()); });
+    this.canvas.addEventListener('pointerup', (e) => { stampInput(); Mouse.pointerUp(e, camera()); });
     this.canvas.addEventListener('pointercancel', (e) => Mouse.pointerCancel(e, camera()));
     this.canvas.addEventListener('pointerleave', (e) => Mouse.pointerLeave(e));
   }

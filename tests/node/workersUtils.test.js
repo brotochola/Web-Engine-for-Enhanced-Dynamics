@@ -26,7 +26,7 @@ test('single-worker stats readers share the same buffer layout', () => {
   assert.equal(reader[RENDERER_STATS.MSG_MS], 2.5);
 });
 
-test('RENDERER_STATS peel load keys sit inside stride 39', () => {
+test('RENDERER_STATS peel load keys sit inside stride 42', () => {
   assert.equal(RENDERER_STATS.DECAL_TILES_DIRTY, 16);
   assert.equal(RENDERER_STATS.DECAL_TILES_UPLOADED, 17);
   assert.equal(RENDERER_STATS.SCENERY_COUNT, 18);
@@ -43,8 +43,11 @@ test('RENDERER_STATS peel load keys sit inside stride 39', () => {
   // E-01 took 37 (WAIT_MS) and 38 (IDLE_MS), so the stride moved 37 -> 39.
   assert.equal(RENDERER_STATS.WAIT_MS, 37);
   assert.equal(RENDERER_STATS.IDLE_MS, 38);
-  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 39);
-  assert.equal(RENDERER_STATS.BUFFER_SIZE, 39 * 4);
+  // E-197 took 39 to 41 (INPUT_LAG_MS, INPUT_LAG_P95_MS, INPUT_LAG_N), so the stride moved 39 -> 42.
+  assert.equal(RENDERER_STATS.INPUT_LAG_MS, 39);
+  assert.equal(RENDERER_STATS.INPUT_LAG_N, 41);
+  assert.equal(RENDERER_STATS.STRIDE_FLOATS, 42);
+  assert.equal(RENDERER_STATS.BUFFER_SIZE, 42 * 4);
   const buffer = new SharedArrayBuffer(RENDERER_STATS.BUFFER_SIZE);
   const writer = createStatsWriter(buffer, RENDERER_STATS);
   const reader = createStatsReader(buffer, RENDERER_STATS);

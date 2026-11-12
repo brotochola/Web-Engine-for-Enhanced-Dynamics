@@ -96,6 +96,11 @@ function formatWorkerConsoleLine(worker) {
         ` | GPU_SHADOW_LIGHTS ${Number(avg.GPU_SHADOW_LIGHTS || 0).toFixed(1)}`;
     }
     if (avg.VISIBLE_ENTITIES != null) line += ` | VISIBLE_ENTITIES ${Number(avg.VISIBLE_ENTITIES).toFixed(0)}`;
+    // E-197: input to screen (--input-every gives the inputs).
+    if (Number(avg.INPUT_LAG_N) > 0) {
+      line += ` | INPUT_LAG_MS ${Number(avg.INPUT_LAG_MS).toFixed(1)} (p95 ${Number(avg.INPUT_LAG_P95_MS).toFixed(1)}, ` +
+        `${(Number(avg.INPUT_LAG_MS) / (1000 / 60)).toFixed(2)} frames at 60 Hz)`;
+    }
   }
   return line;
 }
@@ -756,6 +761,26 @@ async function main() {
     let result;
     let screenshotPaths = [];
 
+    // E-197: --input-every <ms> moves the mouse across the canvas that often while the scene runs, so the renderer's
+    // INPUT_LAG stats (input to the first frame drawn with it) have inputs to time.
+    const inputEvery = cliArgs['input-every'] !== undefined ? Number(cliArgs['input-every']) : 0;
+    let inputStop = false;
+    const inputLoop = inputEvery > 0
+      ? (async () => {
+          for (let k = 0; !inputStop; k++) {
+            try {
+              const box = await page.locator('canvas').first().boundingBox({ timeout: 1000 });
+              if (box) {
+                await page.mouse.move(box.x + box.width * (k % 2 ? 0.6 : 0.4), box.y + box.height * (k % 3 ? 0.45 : 0.55));
+              }
+            } catch {
+              // No canvas yet.
+            }
+            await sleep(inputEvery);
+          }
+        })()
+      : null;
+
     if (usePhasedScreenshots) {
       await fs.mkdir(screenshotDir, { recursive: true });
       const prepared = await page.evaluate(
@@ -803,6 +828,8 @@ async function main() {
     } else {
       result = await page.evaluate((options) => window.__WEED_BENCHMARK__.run(options), runOptions);
     }
+    inputStop = true;
+    if (inputLoop) await inputLoop;
 
     if (trace) {
       const memoryUsage = await page.evaluate(() => {

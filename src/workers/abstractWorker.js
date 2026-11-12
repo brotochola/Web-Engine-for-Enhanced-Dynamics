@@ -93,6 +93,7 @@ import { Messages } from '../core/messages.js';
 import { GpuParticles } from '../core/gpuParticles.js';
 import { setDevChecks } from '../core/debug/devChecks.js';
 import { delayTo, nextFixedDeadline } from '../util/fixedRate.js';
+import { bindLatencyStamp } from '../util/latencyStamp.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -145,6 +146,8 @@ export class AbstractWorker {
     // Shared buffers (common to most workers)
     // Following the naming pattern: xBuffer (SharedArrayBuffer) -> xData (TypedArray view)
     this.inputData = null;
+    // E-197: the input-to-screen latency stamp buffer's views ({ base, i32 }), null without one.
+    this._latency = null;
     this.cameraData = null;
     this.neighborData = null;
     this.activeEntitiesData = null; // Compact list of active entity indices [count, idx0, idx1, ...]
@@ -815,6 +818,8 @@ export class AbstractWorker {
         this.reportLog(`initialized visibleParticlesData`);
       }
     }
+
+    this._latency = bindLatencyStamp(data.buffers?.latencyStamp);
 
     // Initialize common shared buffers using Buffer->Data naming pattern
     if (data.buffers?.inputData) {

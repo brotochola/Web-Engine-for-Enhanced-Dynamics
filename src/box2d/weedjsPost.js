@@ -204,7 +204,10 @@
   let publishContactRing = true;
 
   // Published pose double-buffer (render-queue style): visuals read post-step snapshot
-  let poseSync = null; // Int32Array [readyFrame, consumedFrame]
+  let poseSync = null; // Int32Array [readyFrame, consumedFrame, E-197 stamp of slot 0, of slot 1]
+  // E-197: the latency stamp buffer (logic's word, index 3) and the stamp the next published pose carries.
+  let latencyI32 = null;
+  let poseStamp = 0;
   let poseBuffers = [null, null]; // { x, y, rotC, rotS } Float32Array views
   let poseCapacity = 0;
   let poseFrame = 0;
@@ -494,6 +497,7 @@
     if (!(n > 0)) return;
     poseCapacity = n;
     poseSync = new Int32Array(pose.sync);
+    latencyI32 = pose.latency && pose.latency.byteLength >= 16 ? new Int32Array(pose.latency, 0, 4) : null;
     // 4 channels: x,y,rotC,rotS, from each buffer's byte (a region of Box2D's block, Phase 4; else 0).
     const bytesPerBuf = n * 4 * 4;
     for (let i = 0; i < 2; i++) {
@@ -599,6 +603,8 @@
       }
     }
     if (poseGenEpoch && skipped === 0) seenPoseGenEpoch = epoch;
+    // E-197: the slot's stamp before the frame that makes it readable.
+    if (poseSync.length >= 4) poseSync[2 + writeIdx] = poseStamp;
     poseFrame++;
     Atomics.store(poseSync, 0, poseFrame);
     Atomics.notify(poseSync, 0, 1);
@@ -2821,6 +2827,8 @@
   }
 
   function doStep() {
+    // E-197: the newest input logic had acted on before this step reads its bodies.
+    if (latencyI32 !== null) poseStamp = Atomics.load(latencyI32, 3);
     const entityCount = hostEntityCount | 0;
     // Honor scene physics.subStepCount (BallsScene = 4) — do not inflate
     const solverSteps = Math.max(1, hostSubSteps | 0);

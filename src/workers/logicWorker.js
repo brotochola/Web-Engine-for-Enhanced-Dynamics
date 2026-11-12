@@ -89,6 +89,7 @@ import { collectInstanceFields, applyInstanceFields } from '../core/save/instanc
 import { GpuParticles } from '../core/gpuParticles.js';
 import { gpuLogicWriterSlot } from '../util/gpuParticleLayout.js';
 import { auditFields } from '../core/debug/devChecks.js';
+import { STAMP_INPUT, STAMP_LOGIC } from '../util/latencyStamp.js';
 
 /** DX-GUARDS E2: the instance devChecks audits for a class. */
 const firstActiveInstance = (EntityClass) => EntityClass.getFirstActiveInstance();
@@ -133,6 +134,8 @@ const LIST_UPDATE_MAX_BATCH_PENDING = 2048;
 class LogicWorker extends AbstractWorker {
   constructor(selfRef) {
     super(selfRef);
+    // E-197: the input stamp this frame acts on (published at the next frame's start).
+    this._latencyActing = 0;
 
     // Logic worker needs to CREATE GameObject instances (all workers get scripts/components)
     this.needsGameScripts = true;
@@ -1015,6 +1018,13 @@ class LogicWorker extends AbstractWorker {
     // Bullet impacts from particle_worker (SAB poll, no message): every one published since this worker's last read,
     // each once, however the two workers' frames fall (N-129).
     if (this._impactRing !== null) this._pollImpacts();
+
+    // E-197 (logic0): the input the last frame acted on is now in what it published; take the input this frame reads.
+    if (this.workerIndex === 0 && this._latency !== null) {
+      const i32 = this._latency.i32;
+      Atomics.store(i32, STAMP_LOGIC, this._latencyActing);
+      this._latencyActing = Atomics.load(i32, STAMP_INPUT);
+    }
 
     // ========================================
     // PHASE 0: PROCESS LIST UPDATES (logic0 only)

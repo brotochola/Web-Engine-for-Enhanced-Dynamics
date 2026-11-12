@@ -730,6 +730,7 @@
           dataAByte: state.posePublish.dataAByte | 0,
           dataBByte: state.posePublish.dataBByte | 0,
           sync: state.posePublish.sync,
+          latency: state.posePublish.latency || null,
           capacity: state.posePublish.capacity | 0,
         }
         : null,

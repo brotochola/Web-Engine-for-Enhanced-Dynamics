@@ -3528,6 +3528,9 @@ reading an input reaches the screen 3 to 4 frames later.
 copies the stamp it consumed into what it publishes, physics, pre-render and the render queue carry the newest one they
 read, and Pixi records its submit time minus the stamp, in ms and frames. The runner prints median and p95. A tool, in
 its own commit before E-198, the first change it measures. Owner: the bench runner.
+**Result:** built 2026-11-12 (`da79c6fb`, R-0924): `RENDERER_STATS.INPUT_LAG_MS`, `INPUT_LAG_P95_MS`, `INPUT_LAG_N`;
+`runIntegratedWorkerBenchmark --input-every <ms>`. Boids, a move every 100 ms: 67.1 ms median, p95 68.1 ms (4.03 frames). Predator's
+gate NEUTRAL.
 
 ### E-198 The wake chain: each stage waits for this vsync's output of the one before it
 

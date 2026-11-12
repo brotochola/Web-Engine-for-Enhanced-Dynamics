@@ -95,8 +95,8 @@ test('_latchPose readyOverride pins that generation even if poseSync moved', () 
   assert.equal(ctx._poseX[0], 20);
 });
 
-test('render queue camera SAB is 20 bytes with Int32 poseReady at offset 16', () => {
-  assert.equal(RENDER_QUEUE_CAMERA_BYTES, 20);
+test('render queue camera SAB is 24 bytes with Int32 poseReady at offset 16 (and E-197\'s stamp at 20)', () => {
+  assert.equal(RENDER_QUEUE_CAMERA_BYTES, 24);
   assert.equal(RENDER_QUEUE_POSE_READY_OFFSET, 16);
   const sab = new SharedArrayBuffer(RENDER_QUEUE_CAMERA_BYTES);
   const views = createRenderQueueCameraViews(sab);
