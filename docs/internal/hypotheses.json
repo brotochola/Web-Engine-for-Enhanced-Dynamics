@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-11",
+  "updated": "2026-11-12",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -12022,11 +12022,11 @@
     {
       "id": "E-217",
       "title": "The sprite query's list read where the collect reads, not copied each frame",
-      "status": "open",
-      "statusText": "filed 2026-11-11 from BunnyMark C's trace (R-0903); not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-12 (ef03a7a1, R-0911)",
       "date": "2026-11-11",
-      "result": "",
-      "next": "The sprite query's snapshots in the render-queue memory under the published-list protocol (a reading mark), the collect pointing at the published copy. Owner: BunnyMark C 200 000 pre-render (writeCollectList 7.7 %).",
+      "result": "kept 2026-11-12 (ef03a7a1): a publish sequence lets the collect skip the copy of an unchanged list; BunnyMark C 200 000 pre-render -8.1 %",
+      "next": "Done for a steady population. A scene whose population changes every frame still copies: the pointer at the published copy (a reading mark) would cover it.",
       "area": "render",
       "kind": "js",
       "refs": [
@@ -12038,8 +12038,9 @@
         "query snapshot",
         "collect list"
       ],
-      "records": [],
-      "rank": 3
+      "records": [
+        "R-0911"
+      ]
     },
     {
       "id": "E-218",
@@ -20842,6 +20843,18 @@
       "text": "**E-210 step 0 (`5e19d6c2`): Predator restored from a mid-battle save does not fight. Its AI's state is plain JS fields a save does not carry, so a gate from the save would time a quiet world, not the battle.** 2026-11-11.\n\n**The tools** (kept, for any scene):\n- the bench page's `?restore=<url>` loads the scene with that save as `restorePayload`;\n- `runPredatorAbab --restore <file>` copies the save into both sides' trees and names it to their pages;\n- `sceneSaveMaker.mjs` makes a save: the scene played for `--seconds` in a chromeKernel page, then `scene.saveGame`.\n\n**Probe.** A save of Predator after 20 s: 17 448 entities, 3.1 MB. Then src, headless, from the save:\n- 3 s of warm-up then 4 s: spatial 2.04, physics 2.59 (716 bodies moved, 1003 awake), logic 2.85, pre-render 2.88 ms;\n- 10 s then 4 s: spatial 2.94, physics 2.38 (364 moved, 395 awake), logic 2.49, pre-render 2.56 ms;\n- for comparison, Predator from a new game (today's gates): spatial about 4.2, physics 5.1 to 5.7, logic 3.1 to 3.3, pre-render 3.1 to 3.3 ms.\n\n**What it means.** The save keeps components and poses, not the soldiers' and civilians' FSM locals (SAVE_GAME.md says so). Restored, the battle goes quiet and every worker falls under the 3 ms floor. A paired gate needs a scene whose behaviour survives a save. For Predator that means its AI state in components: demo work, not this tool's. E-210 is parked until a scene needs it; the tools stay.",
       "commits": [
         "5e19d6c2"
+      ]
+    },
+    {
+      "id": "R-0911",
+      "date": "2026-11-12",
+      "time": "01:47",
+      "timeFrom": "recorded",
+      "title": "E-217 kept: the collect keeps its copy of the sprite query's list while nothing was published",
+      "verdict": "kept",
+      "text": "**E-217 kept: the collect keeps its copy of the sprite query's list while nothing was published.** `ef03a7a1`.\n\n- **Premise (R-0903):** `writeCollectList` was 7.7 % of BunnyMark C 200 000's pre-render, the sprite query's 200 000 ids copied into the collect's memory each frame.\n- **What was done, simpler than the plan:** logic republishes a precomputed query only when the population changes. The query header's reserved int is now a publish sequence, stored after the index; `readPublishedQuerySnapshot` reads it first and hands back the same view only while it has not moved (the index alone comes back round after three publishes, with the same count when the churn evens out: the old cache's ABA, harmless before, which a test now covers). `writeCollectList(b, ids, n, true)` keeps the copy it holds of an unchanged published view; any other list (the static walk) is copied each time. `querySnapshotSeq.test.js`: two of its four fail on the old code.\n\n**BunnyMark C `?bunnies=200000`, owner pre-render, 4 pairs, 5fecdf6e vs ef03a7a1's tree (01:40 to 01:43):** **KEPT (product)**, pre-render 5.629 → 5.163 ms (-8.1 %, worse 0/4, cv 3/7 %). Logic 1.899 → 1.914 ms, below the floor.\n\n**Predator's gate, 4 pairs (01:43 to 01:47): NEUTRAL.** Logic -2.2 %, spatial -0.7 %, physics -3.3 %, pre-render +0.2 % (3/4 worse, within the session's A/A, R-0909: about 4 %).\n\nOpen: a scene whose population changes every frame still copies every frame; the plan's pointer at the published copy (with a reading mark) would cover it.",
+      "commits": [
+        "ef03a7a1"
       ]
     }
   ],
