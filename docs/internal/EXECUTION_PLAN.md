@@ -3547,6 +3547,11 @@ Owner: latency in Boids and Predator, Predator's gate for the workers.
 for the pose, physics for every logic worker) never wait in Boids: each stage's upstream is out when its frame starts,
 and the lag stays 50.4 ms (3 frames: an input reaches logic about a frame late, Chrome dispatching pointers with its
 frame; two frames lie between logic and pre-render without a wait). Next: the frame clock as a timeline.
+**Result:** kept 2026-11-12 (`08a689ce`, R-0927). runFramePhase: the workers wake together, so each wait must wait for
+an output of this vsync, not just a newer one; pre-render marks the pose out consumed before it waits, physics answers
+sync queries while it waits. 4 pairs each: Predator input lag 51.6 → 24.7 ms, STEP_MS − WAIT_MS spatial -21 %, physics
+-26 %, pre-render -36 %; Boids 50.4 → 23.3 ms, KEPT (product), spatial -20.9 %; liquidFunQueryStressScene 50.4 → 35.0 ms.
+Frames presented equal in all three.
 
 ### E-199 Neighbour aggregates published by the spatial kernel
 
