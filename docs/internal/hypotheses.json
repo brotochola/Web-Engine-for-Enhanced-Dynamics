@@ -12381,7 +12381,8 @@
         "R-0935",
         "R-0936",
         "R-0937",
-        "R-0938"
+        "R-0938",
+        "R-0941"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-LIGHTAPI",
@@ -12412,17 +12413,21 @@
     },
     {
       "date": "2026-11-12",
-      "result": "",
-      "records": [],
+      "result": "Cone lights in basic lighting (pool, sprite shadows from the casters in the cone) and under raycast (fans, discs, self-lit cut to the wedge); point lights draw what they drew. Flashlights under raycast: pre-render 12.0 → 4.8 ms with the wedge cut (R-0939).",
+      "records": [
+        "R-0939",
+        "R-0940",
+        "R-0941"
+      ],
       "refs": [
         "REVIEW_PLAN.md#DX-SPOT",
         "DX_LIGHTAPI_DESIGN.md"
       ],
       "id": "DX-SPOT",
       "title": "Cone lights as LightEmitter fields: direction, coneAngle, coneSoftness (headlights, flashlights)",
-      "status": "open",
-      "statusText": "Planned 2026-11-12 with the owner (DX_LIGHTAPI_DESIGN.md part B), after DX-LIGHTAPI",
-      "next": "After DX-LIGHTAPI: settle flipX against the cars that mirror frames, then B0 tools (spotLightStressScene, flashlightStressScene), the pool, the headlights' shadows in the stamp, raycast sweeping only the cone.",
+      "status": "running",
+      "statusText": "being built on dx/light-api: B1–B4 done 2026-11-12 (R-0939, R-0940, R-0941)",
+      "next": "The gates: visPolyStressScene ?lights=720 (Pixi and pre-render, point lights) and Predator (the stamp and the lighting pass), then the scoreboard against main; the cost of a cone (spotLightStressScene, flashlightStressScene cone 0 against 1); the engine trace on both scenes. Open: the cookie stays round (matters only for lamps under a sun); Flash.spawn's cone options; B5 only if a cone's box cull pays.",
       "area": "render",
       "kind": "dx",
       "aliases": [
@@ -12568,6 +12573,53 @@
         "castedShadows"
       ],
       "next": "Done."
+    },
+    {
+      "id": "N-155",
+      "title": "lightGalleryScene draws differently on WebGL and WebGPU: up to 52/255 on about 80 000 to 98 000 pixels",
+      "status": "open",
+      "statusText": "found 2026-11-12 checking DX-SPOT on both backends; not read in the code yet",
+      "date": "2026-11-12",
+      "area": "render",
+      "kind": "bug",
+      "rank": 30,
+      "result": "The same count with and without cones (raycast 79 499 both; basic 97 951 and 96 252); traced in the session to the lamp whose halo is on its own layer (glowLayer); predates the light API change.",
+      "next": "A capture with that lamp's glowLayer cleared on both backends; then the custom layer's composite on WebGPU (its blend or premultiplication) against WebGL's.",
+      "refs": [
+        "REVIEW_PLAN.md#N-155"
+      ],
+      "aliases": [
+        "glowLayer",
+        "WebGPU",
+        "WebGL",
+        "backend difference",
+        "custom layer"
+      ],
+      "records": [
+        "R-0940"
+      ]
+    },
+    {
+      "id": "N-156",
+      "title": "physicsChainWait.test.js's first test fails now and then under the full suite (a wall-clock budget)",
+      "status": "open",
+      "statusText": "found 2026-11-12 on dx/light-api: 1 of 2550 in two full runs, 4 of 4 alone",
+      "date": "2026-11-12",
+      "area": "tests",
+      "kind": "bug",
+      "rank": 40,
+      "result": "Its ringer thread rings at 3, 6 and 9 ms against a 16 ms budget; under the suite's load it ran late, the wait gave up and turned the chain off (121 !== 0).",
+      "next": "A wider budget (a longer period) or a deadline given ahead, as the other publish tests do.",
+      "refs": [
+        "REVIEW_PLAN.md#N-156"
+      ],
+      "aliases": [
+        "physicsChainWait",
+        "flaky test",
+        "chain wait",
+        "N-146"
+      ],
+      "records": []
     }
   ],
   "records": [
@@ -21739,6 +21791,43 @@
         "5d9fd026",
         "921a255d",
         "61779fb3"
+      ]
+    },
+    {
+      "id": "R-0939",
+      "date": "2026-11-12",
+      "time": "20:17",
+      "timeFrom": "recorded",
+      "title": "B4: a cone light gathers and publishes only its wedge under raycast: KEPT, flashlights' pre-render 12.0 → 4.8 ms",
+      "verdict": "kept",
+      "text": "**DX-SPOT B4: under raycast a cone light gathers only what can shadow its wedge and publishes its polygon cut to it. KEPT: pre-render 12.0 → 4.8 ms in flashlightStressScene.**\n2026-11-12, 20:17 to 20:26, `runPredatorAbab.mjs --name dxspot-b4-cull --vs 26f74ed2 --hyp-rev ad7a49db (the commit, reworded with these numbers as 087a17ac) --scene flashlightStressScene --query cone=1&lights=360&crates=320 --owner preRender --pairs 4`, headed, on AC power (the scene's default 120 lights put pre-render at 1.5 ms, under the 3 ms floor, so 360).\n\n- **preRender** (owner) STEP_MS 12.009 → 4.807 ms, paired -59.9 %, worse 0/4, cv 7/17 %. Pairs: 12.52 → 5.13, 11.45 → 5.12, 13.14 → 3.51, 11.50 → 4.50.\n- **Pixi** 2.238 → 1.114 ms (under the floor, not judged): the fan covers the cone alone and the occluders outside it get no self-lit fill.\n- Every load key the same (VISIBLE_ENTITIES 360, RENDER_QUEUE_SIZE 720, BODY_COUNT 320). Presented 59.9 both; drawn 59.4 → 56.0 fps (reported, not judged).\n- A slip: a 2-minute grep of a session transcript ran on one core during pair 1 (20:21 to 20:23); that pair reads as the others do.\n\nWhat changed: visibilityGather.wasm's cone exports drop occluders whose bounding disc lies wholly outside the wedge (occlusion runs along rays from the light), and pre-render cuts the swept polygon to the wedge. The picture: lightGalleryScene `?raycast=1&cones=1` against 26f74ed2, 47 pixels by 1/255 on WebGL and WebGPU; visibilityConeWired.test.js checks the cut polygons light 18 400 cone points as the full gather does (2 and 5 differ, on shadow edges).",
+      "commits": [
+        "087a17ac"
+      ]
+    },
+    {
+      "id": "R-0940",
+      "date": "2026-11-12",
+      "time": "19:50",
+      "timeFrom": "recorded",
+      "title": "B4 picture: cone lights under raycast draw as cones; point lights as before (1 pixel by 1/255, the noise)",
+      "verdict": "passed",
+      "text": "**DX-SPOT B4, the picture: cone lights under raycast draw as cones (fans, umbra discs, self-lit fills, sprite masks); point lights draw what they drew.**\n2026-11-12, 19:50 to 19:55, `compareCaptures.mjs`, headed Chrome, the owner's GPU; commit 26f74ed2 against ee220efe.\n\n- **Point lights:** lightGalleryScene `?raycast=1` against ee220efe: 1 pixel by 1/255 on WebGL and on WebGPU (the raycast's run-to-run noise, R-0938). The point programs are the batch shaders with their `// #if CONE` blocks cut, which is the old source character for character; the self-lit goldens hold.\n- **Cones:** `?raycast=1&cones=1` against ee220efe: 897 163 pixels differ, max 184 (the three cone lamps were drawn round before; looked at: wedges cut by the boxes). flashlightStressScene `?lights=24`, cone 0 against 1: the flashlights draw as cones, blocked by the crates.\n- **Backends:** WebGL against WebGPU with cones, 79 499 pixels up to 52/255; without cones the same 79 499 (N-155, the glowLayer difference): the cone passes add nothing between backends.\n\nNot timed here: Pixi's point path gains a per-light check (to measure in visPolyStressScene). R-0939 times the wedge cut that came next.",
+      "commits": [
+        "26f74ed2"
+      ]
+    },
+    {
+      "id": "R-0941",
+      "date": "2026-11-12",
+      "title": "B1–B3 and the brightness fold: cone lights in basic lighting; without cones 0 of 921 600 pixels change",
+      "verdict": "passed",
+      "text": "**DX-SPOT B1 to B3 and the brightness fold: cone lights in basic lighting, point lights unchanged.**\n2026-11-12, on dx/light-api (the captures' times are not kept: each was taken just before its commit).\n\n- **B1** (a3afb7e7): `direction`, `coneAngle`, `coneSoftness`, `followFlip` store what a frame reads (dirC/dirS, coneCos with -2 for none, coneInvSpan); followFlip (0 by default, the owner's call) mirrors offsetX and the direction once per flipX change. lightCone.test.js.\n- **B2, the pool** (7f36fd4a): a third row in the light texture, cone lights packed first and looped apart in the lighting shader (plain and faces, GLSL and WGSL); `uConeCount` a float (on WebGPU Pixi writes an i32 uniform as a float's bits: every light ran as a cone). Without cones against 5d7fa1ee: lightGalleryScene 0 of 921 600 (WebGL, WebGPU, groundScaleY 0.7), dxCaptureScene at hour 22 0, faceLightScene 0.\n- **B3, the headlights' shadows** (bd8eae70): the stamp's cone walk drops casters outside the cone before maxShadowsPerLight and folds the soft edge into each row's intensity, f·I·D²/(I + D² − f·I); the JS reference matches bit for bit on random frames. Without cones against 7f36fd4a: lightGalleryScene (WebGL, WebGPU) and dxCaptureScene ?propShadow 0 of 921 600.\n- **Brightness in shadows** (d3417763, DX-LIGHTAPI): the same fold with f = min(brightness, 1); a full light runs its old loops.\n- **spotLightStressScene** (281b7138): redrawn from straight above after the owner's look (terrain tilemap, rocks, parked cars; the headlight 9 px past the bumper so the 4 px lighting texels do not bleed onto the hood).\n\nNothing timed yet: point lights run the paths they ran; the gates (Predator for the stamp and the lighting pass, visPolyStressScene for Pixi and pre-render) come at the part's close.",
+      "commits": [
+        "a3afb7e7",
+        "7f36fd4a",
+        "bd8eae70",
+        "d3417763"
       ]
     }
   ],
