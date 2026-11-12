@@ -80,6 +80,11 @@ particle, pre-render and Pixi render workers sharing SharedArrayBuffers. `src/` 
   (`let min = maxRadius`) is typed any value, and each double assigned to it is boxed: seed it
   with `+maxRadius` (E-95). `tests/bench/heapSampleNode.mjs` shows these in Node; run the kernel
   long enough that warm-up (which boxes everything) does not dominate.
+- **Waits between workers (Windows):** V8's `Atomics.wait` under 1 ms spins a whole core until it ends, and one of
+  1 ms or more sleeps to the timer period (about 15 ms) when nobody notifies. Never wait in sub-ms slices (N-146:
+  physics burned a core); bound a wait that must stay short under 1 ms (E-219: 0.95 ms); sleep long waits on a word
+  every party notifies (the frame chain's bell). Node tests that publish from another thread time it by a wall-clock
+  deadline given ahead: a thread released from a wait took 1.5 ms to run here.
 - **Per-entity doubles in typed arrays, not object fields.** In Chrome, x and y stored into a
   scratch object allocated a heap number each (shared map transitions make such fields tagged),
   and a double returned from a callee that a big caller did not inline was boxed: pre-render made
