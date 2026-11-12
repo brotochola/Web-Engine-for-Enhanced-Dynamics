@@ -12418,7 +12418,8 @@
         "R-0939",
         "R-0940",
         "R-0941",
-        "R-0942"
+        "R-0942",
+        "R-0943"
       ],
       "refs": [
         "REVIEW_PLAN.md#DX-SPOT",
@@ -21842,6 +21843,18 @@
       "commits": [
         "26f74ed2",
         "087a17ac"
+      ]
+    },
+    {
+      "id": "R-0943",
+      "date": "2026-11-12",
+      "time": "20:41",
+      "timeFrom": "recorded",
+      "title": "Predator gate for B1–B4 and Flash's cone: NEUTRAL (owner under the floor; every worker drifted together)",
+      "verdict": "tie",
+      "text": "**DX-SPOT B1 to B4 and Flash's cone on Predator: NEUTRAL (the owner under the floor), with the whole machine drifting between runs.**\n2026-11-12, 20:41 to 20:52, `runPredatorAbab.mjs --name dxspot-predator --vs ca50fe9a --hyp-rev 5dcb45b3 --owner preRender --pairs 4` (ca50fe9a: the branch before B1; 5dcb45b3: the cone fields, the pool, the stamp's cone walk and brightness fold, the raycast cone batches and wedge cut, Flash's cone), headed, on AC power (no Kernel-Power events), the owner at the machine.\n\n- **preRender** (owner) 2.950 → 2.782 ms, **Pixi** 1.952 → 1.826 ms: both under the 3 ms floor, not judged; both medians lower.\n- **Every worker moved together, pair by pair**, the ones the change cannot reach too: pair 0 (AB) and pair 3 (BA) every worker 15 to 120 % higher on B (physics 3.53 → 4.55, 3.17 → 6.95), pair 1 (BA) every worker higher on A (physics 11.21 → 3.22). Paired: logic +11.8 % (cv 33 %), spatial +12.9 % (cv 32 %), physics +32.4 % (cv 59 %), none blocking; against the others logic -10.9 %, spatial -9.2 %, physics +20.1 % (lower 1/4). Drift, not the change: physics and spatial run no code it touched.\n- Load keys within 3 % (GPU_CASTERS +2.6 %, GPU_SHADOW_LIGHTS +2.6 %, VISIBLE_ENTITIES +0.6 %); presented 60.0 → 59.9.\n\nNo pairs appended: the scoreboard against main at the part's close times every scene together.",
+      "commits": [
+        "5dcb45b3"
       ]
     }
   ],
