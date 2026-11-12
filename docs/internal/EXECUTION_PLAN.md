@@ -3813,6 +3813,19 @@ BunnyMark C's logic at 300 000 bunnies (200 000 leaves it under the floor).
 **Result:** kept 2026-11-11 (`6e0fea8d`, R-0906). BunnyMark C 300 000, 4 pairs: **KEPT (product)**, logic 3.055 → 2.425 ms
 (-20.2 %, worse 0/4). Predator's gate NEUTRAL.
 
+### E-219 Logic reads an input a frame after Chrome dispatches it
+
+**Premise:** after E-198 (R-0927) an input takes about 24 ms to reach the screen in Boids and Predator, and about 16 ms
+of them lie before logic reads it (E-198's probe: logic read an input 16.1 ms after main stamped it). Chrome dispatches
+pointer events aligned with its frame, on the main thread, and the workers have woken for that vsync by then (they wake
+together, runFramePhase), so logic reads the input on the next one. Reading it in the same frame would take the
+latency from about 1.4 to about 0.5 frames.
+**Plan:** step 0: where the main thread's input handlers run against the frame clock's vsync (main's rAF publishes the
+clock: before or after the events), with the E-197 stamp and the frame clock's times. Then, if logic's input read can
+move: logic reads input after a short wait for main's frame (a frame-chain word main writes once it has dispatched the
+frame's events), within a budget like E-198's, or main wakes the workers after its input handlers. Owner: E-197's
+latency in Boids and Predator; Predator's gate for the workers.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any
