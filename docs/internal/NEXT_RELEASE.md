@@ -68,3 +68,6 @@ empties it.
 - **Keyed frames on WebGPU too** (E-187): where Pixi packs the sprites (`preRender.packGpuSprites: 'pixi'`), the default
   backend now keeps each sprite's statics on the GPU and sends only the changed ones, as WebGL did (a compute pass
   writes them). A LiquidFun scene of 70 000 particles on WebGPU: the renderer worker 3.7 → 1.7 ms a frame.
+- **Fixed: sprites that never changed could stay invisible** (N-148): with keyed frames (Pixi packing the sprites,
+  `preRender.packGpuSprites: 'pixi'`), a scene whose sprites never changed could draw them all at scale 0, at random on
+  load (more often in a browser that had loaded a page before).
