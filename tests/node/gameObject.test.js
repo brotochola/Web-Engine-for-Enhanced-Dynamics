@@ -22,6 +22,24 @@ import {
   SPAWN_CMD_KIND,
 } from '../../src/util/spawnCommandRing.js';
 
+/** DX-SPOT: LightEmitter's cone columns, which the pooled reset writes. */
+const CONE_COLUMNS = ["dirC","dirS","coneHalf","coneSoftness","coneCos","coneInvSpan","followFlip"];
+function bindCone(n) {
+  for (const k of CONE_COLUMNS) LightEmitter[k] = k === 'followFlip' ? new Uint8Array(n).fill(1) : new Float32Array(n).fill(9);
+}
+/** The reset rows hold the cone defaults; `untouched` (or -1) is a row left as bindCone wrote it. */
+function assertConeReset(rows, untouched) {
+  for (const i of rows) {
+    assert.equal(LightEmitter.dirC[i], 1);
+    assert.equal(LightEmitter.dirS[i], 0);
+    assert.equal(LightEmitter.coneHalf[i], Math.fround(Math.PI));
+    assert.equal(LightEmitter.coneCos[i], -2);
+    assert.equal(LightEmitter.coneInvSpan[i], 0);
+    assert.equal(LightEmitter.followFlip[i], 0);
+  }
+  if (untouched >= 0) assert.equal(LightEmitter.coneCos[untouched], 9);
+}
+
 test('Scene.preInitializeEntityTypeArrays fills registered ranges directly', { concurrency: false }, () => {
   class RangeFillA extends GameObject {}
   class RangeFillB extends GameObject {}
@@ -74,6 +92,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   const previousFlashInitialGlow = FlashComponent.initialGlow;
   const previousLightCastShadows = LightEmitter.castShadows;
   const previousLightShadowRange = LightEmitter.shadowRange;
+  const previousLightCone = CONE_COLUMNS.map((k) => LightEmitter[k]);
   const previousClearAttached = DecorationPool.clearAttachedAndDespawnAll;
 
   const onDespawnedCalls = [];
@@ -99,6 +118,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   FlashComponent.initialGlow = new Float32Array([0.5, 0.25, 0.75]);
   LightEmitter.castShadows = new Uint8Array([0, 0, 0]);
   LightEmitter.shadowRange = new Float32Array([40, 50, 60]);
+  bindCone(3);
 
   DecorationPool.clearAttachedAndDespawnAll = (entityIndex) => {
     clearedAttachments.push(entityIndex);
@@ -143,6 +163,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0, 0.25, 0]);
     assert.deepEqual(Array.from(LightEmitter.castShadows), [1, 0, 1], 'a reset light casts again');
     assert.deepEqual(Array.from(LightEmitter.shadowRange), [0, 50, 0]);
+    assertConeReset([0, 2], 1);
   } finally {
     Transform.active = previousTransformActive;
     RigidBody.active = previousRigidBodyActive;
@@ -164,6 +185,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     FlashComponent.initialGlow = previousFlashInitialGlow;
     LightEmitter.castShadows = previousLightCastShadows;
     LightEmitter.shadowRange = previousLightShadowRange;
+    CONE_COLUMNS.forEach((k, n) => { LightEmitter[k] = previousLightCone[n]; });
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
   }
 });
@@ -189,6 +211,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   const previousFlashInitialGlow = FlashComponent.initialGlow;
   const previousLightCastShadows = LightEmitter.castShadows;
   const previousLightShadowRange = LightEmitter.shadowRange;
+  const previousLightCone = CONE_COLUMNS.map((k) => LightEmitter[k]);
   const previousClearAttached = DecorationPool.clearAttachedAndDespawnAll;
 
   Transform.active = new Uint8Array([1]);
@@ -209,6 +232,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   FlashComponent.initialGlow = new Float32Array([0.5]);
   LightEmitter.castShadows = new Uint8Array([0]);
   LightEmitter.shadowRange = new Float32Array([70]);
+  bindCone(1);
 
   DecorationPool.clearAttachedAndDespawnAll = () => {};
 
@@ -244,6 +268,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0]);
     assert.deepEqual(Array.from(LightEmitter.castShadows), [1]);
     assert.deepEqual(Array.from(LightEmitter.shadowRange), [0]);
+    assertConeReset([0], -1);
   } finally {
     Transform.active = previousTransformActive;
     LightEmitter.active = previousLightEmitterActive;
@@ -263,6 +288,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     FlashComponent.initialGlow = previousFlashInitialGlow;
     LightEmitter.castShadows = previousLightCastShadows;
     LightEmitter.shadowRange = previousLightShadowRange;
+    CONE_COLUMNS.forEach((k, n) => { LightEmitter[k] = previousLightCone[n]; });
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
   }
 });
@@ -291,6 +317,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   const previousFlashInitialGlow = FlashComponent.initialGlow;
   const previousLightCastShadows = LightEmitter.castShadows;
   const previousLightShadowRange = LightEmitter.shadowRange;
+  const previousLightCone = CONE_COLUMNS.map((k) => LightEmitter[k]);
   const previousNextTick = GameObject.nextTick;
 
   Transform.active = new Uint8Array([0]);
@@ -314,6 +341,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   FlashComponent.initialGlow = new Float32Array([0.5]);
   LightEmitter.castShadows = new Uint8Array([0]);
   LightEmitter.shadowRange = new Float32Array([70]);
+  bindCone(1);
   GameObject.nextTick = null;
 
   // Treiber-stack free list: links array + [head, count] header
@@ -362,6 +390,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0]);
     assert.deepEqual(Array.from(LightEmitter.castShadows), [1]);
     assert.deepEqual(Array.from(LightEmitter.shadowRange), [0]);
+    assertConeReset([0], -1);
     assert.equal(freeListTop[1], 0); // free count drained
     assert.equal(freeListTop[0] & 0xffff, 0); // stack head empty
   } finally {
@@ -386,6 +415,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     FlashComponent.initialGlow = previousFlashInitialGlow;
     LightEmitter.castShadows = previousLightCastShadows;
     LightEmitter.shadowRange = previousLightShadowRange;
+    CONE_COLUMNS.forEach((k, n) => { LightEmitter[k] = previousLightCone[n]; });
     GameObject.nextTick = previousNextTick;
   }
 });

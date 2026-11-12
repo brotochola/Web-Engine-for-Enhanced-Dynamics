@@ -193,7 +193,13 @@ function resetLightEmitterRow(i) {
   LightEmitter.offsetY[i] = 0;
   LightEmitter.castShadows[i] = 1;
   LightEmitter.shadowRange[i] = 0;
+  LightEmitter.resetCone(i);
 }
+
+// DX-SPOT: whether entity i is flipped left-right, for LightEmitter's followFlip (it does not import the sprite modules).
+LightEmitter.isFlippedX = (i) =>
+  ((SpriteRenderer.flip ? SpriteRenderer.flip[i] : 0) & 1) !== 0 ||
+  ((AdobeAnimComponent.flip ? AdobeAnimComponent.flip[i] : 0) & 1) !== 0;
 
 export class GameObject {
   // Entity class metadata (for spawning system)
@@ -1286,6 +1292,9 @@ export class GameObject {
 
   _setFlipBit(bit, on) {
     const i = this.index;
+    // DX-SPOT: a light that follows the flip mirrors its local x when the entity's flipX changes.
+    const followsFlip = bit === 1 && this._hasComponents.LightEmitter && LightEmitter.followFlip[i] !== 0;
+    const wasFlipped = followsFlip && LightEmitter.isFlippedX(i);
     if (this._hasComponents.SpriteRenderer && ((SpriteRenderer.flip[i] & bit) !== 0) !== on) {
       SpriteRenderer.flip[i] ^= bit;
       if (bit === 1) SpriteRenderer.scaleX[i] = -SpriteRenderer.scaleX[i];
@@ -1300,6 +1309,7 @@ export class GameObject {
       else AdobeAnimComponent.scaleY[i] = -AdobeAnimComponent.scaleY[i];
       AdobeAnimComponent.applyClipBounds(i);
     }
+    if (followsFlip && LightEmitter.isFlippedX(i) !== wasFlipped) LightEmitter.mirrorX(i);
   }
 
   /** Is this entity's position inside the camera box? */
