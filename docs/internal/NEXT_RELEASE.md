@@ -29,3 +29,8 @@ empties it.
   with `rigidBody.mass` in `onSpawned` holds (the spawn used to replace it with the collider's area). Predator's money
   becomes a trigger a second after it drops, the landing page's crates float, weldBreakScene's dropper is heavy.
 - **The key map reads pageup, pagedown, home and end.**
+- **Sprites near the screen's edges are drawn while any part of them shows** (N-140). The cull padded the view with half
+  a sprite's larger side around its position, but a sprite is drawn from its anchor, by default its foot (0.5, 1), so
+  houses, trees and anything tall went missing at the bottom edge with their tops still on screen (at the sides too for
+  an anchor off centre). The pad is now the sprite's reach from its anchor to its farthest corner. A few more sprites
+  near the edges are queued each frame; `setAnchor` on a static (`isStatic`) sprite now re-bins it.
