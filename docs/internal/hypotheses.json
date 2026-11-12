@@ -9990,7 +9990,8 @@
         "R-0905",
         "R-0907",
         "R-0910",
-        "R-0912"
+        "R-0912",
+        "R-0916"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -21091,6 +21092,18 @@
       "text": "**DX-POST merged: `LAYER_KIND.SCREEN`, full-screen passes.** Branch `dx/post` (R-0858: built 2026-11-10 from `f7860aa2`), brought up to main (`853479a1`: 237 commits; only dist/ and a README line conflicted), timed and merged 2026-11-12 at the owner's request.\n\n**After the merge with main:**\n- Node 2498 of 2498, demos 101 of 101.\n- `screenIdentityCheck.mjs` (headed, both backends): a copy pass 0 of 921 600 pixels on WebGL and WebGPU; two copies chained 0; a vignette 459 030 / 459 029 pixels differ (the passes run); a vignette then a pass returning `uScene` 0.\n\n**post=0 against main, the hygiene row** (screenPassStressScene, owner renderer, 4 pairs, src, headed, AC power):\n- At its default 100 000 bunnies, both backends under the 3 ms floor and tied: WebGL renderer 0.669 → 0.690 ms (+2.3 %, worse 2/4), pre-render +1.3 %, logic +3.9 %; WebGPU renderer 1.710 → 1.740 ms (-0.6 %, 2/4), pre-render +0.2 %, logic +1.1 %. (03:20 to 03:33)\n- At 500 000 bunnies (`?bunnies=500000`, 03:59 to 04:10), the renderer still under the floor (2.1 ms, near the entity cap): WebGL logic 3.240 → 3.292 ms (+1.6 %, worse 4/4), pre-render 8.496 → 8.605 ms (+1.1 %, 4/4), renderer 2.076 → 2.109 (+1.4 %, not judged); WebGPU logic +0.1 % (2/4), pre-render 8.311 → 8.302 ms (+0.2 %, 2/4), renderer 2.059 → 2.100 (+2.7 %, not judged). No judged worker 3 % worse: a tie. Without a SCREEN layer the present is one test more than before.\n\n**The feature's cost** (one build, `--query-a post=0 --query-b post=<n>`, 4 pairs, 100 000 bunnies; the renderer's CPU, the GPU's time not counted):\n- WebGL: one pass 0.687 → 0.752 ms (+0.065 ms, worse 4/4), two 0.715 → 0.813 ms (+0.10 ms, 3/4).\n- WebGPU: one pass 1.407 → 1.601 ms (+0.19 ms, 4/4), two 1.270 → 1.523 ms (+0.25 ms, 3/4).\n- Pre-render and logic unchanged (within 3 %).\n\n**Verdict: kept (feature), merged.** A scene without a SCREEN layer draws as before; a pass costs the renderer about 0.07 ms (WebGL) to 0.2 ms (WebGPU) of CPU a frame. Next (from the design): a pass that reads another layer's picture (phase 2), layers drawn over the post (phase 3).",
       "commits": [
         "8f2e1346"
+      ]
+    },
+    {
+      "id": "R-0916",
+      "date": "2026-11-12",
+      "time": "04:35",
+      "timeFrom": "recorded",
+      "title": "The bundles of ea1dfc54 (N-142, DX-POST) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of ea1dfc54 (N-142, DX-POST and the worktree cleanup merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `99579904`.\n\n- Node 2504 of 2504, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 0 failures on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 04:16 to 04:23: NEUTRAL.** Spatial -4.7 % (1/4 worse), physics -6.9 % (1/4); logic 2.705 → 2.465 ms and pre-render 2.820 → 2.865 ms under the floor.\n- **Boids, 8 pairs, 04:23 to 04:35: NEUTRAL.** Spatial -0.7 % (3/8), physics -0.8 % (2/8).\n\nThe first sitting with the cleanup: it removed 153 raw result entries older than 7 days and 2 stale worktrees before measuring, and its own worktrees at exit; main's node_modules intact. Main pushed.",
+      "commits": [
+        "99579904"
       ]
     }
   ],
