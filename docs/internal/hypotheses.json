@@ -12376,7 +12376,10 @@
     {
       "date": "2026-11-12",
       "result": "",
-      "records": [],
+      "records": [
+        "R-0934",
+        "R-0935"
+      ],
       "refs": [
         "REVIEW_PLAN.md#DX-LIGHTAPI",
         "DX_LIGHTAPI_DESIGN.md"
@@ -21665,6 +21668,27 @@
         "6610ad7a",
         "4cfde245"
       ]
+    },
+    {
+      "id": "R-0934",
+      "date": "2026-11-12",
+      "time": "17:06",
+      "timeFrom": "recorded",
+      "title": "A1: the new light API draws the old API's pixels (gallery 0 of 921600 in four modes)",
+      "verdict": "kept",
+      "text": "**DX-LIGHTAPI A1 (names, heights and radius): the new API draws the old API's pixels.**\n2026-11-12, commit 86f3ee9f against 91248f19 (lightGalleryScene written in the old API there), `compareCaptures.mjs --vs 91248f19 --full-rev` (a new flag: each side runs its own revision's scene), headed Chrome, the owner's GPU.\n\n- **lightGalleryScene** (still: twelve lamps, every field of the API, barrels casting): 0 of 921 600 pixels differ on WebGL, WebGPU, `groundScaleY=0.7` and `lightGlow: 'sprite'` (17:06 to 17:09). The gallery's intensities are (r/10)² for whole r and its glows binary fractions, so the mapping is exact.\n- **Raycast** (17:16): 138 726 pixels differ, max 66/255, all from the two lamps with a `height`: their fan is now swept from the light's own point, where their pool is drawn (it was swept from the foot, which drew rays leaking past the boxes). No demo under raycast sets a height.\n- **dxCaptureScene**: 0 differ by default, raycast and `lampOffset=40`; 9 pixels by 1/255 at hour 22 (its I 20000 is no whole radius: 1414.21 in float32).\n- **selfLitFillTriangles golden**: the old code with I 24964 and height 12 gives the same two hashes as the new code with radius 1580 and offsetY -12 (651987311, 4154422693).\n\nNothing timed: the change moves per-light arithmetic only (I = r²/100 per light per frame), measured with the part's gate.",
+      "commits": [
+        "86f3ee9f"
+      ]
+    },
+    {
+      "id": "R-0935",
+      "date": "2026-11-12",
+      "time": "17:23",
+      "timeFrom": "recorded",
+      "title": "A2: a falloff ending at the radius darkens lit scenes (mean luma -7.5 %, max 25/255): dropped",
+      "verdict": "dropped",
+      "text": "**DX-LIGHTAPI A2 (a falloff that ends at the radius) dropped: it darkens lit scenes.**\n2026-11-12, the change on top of 86f3ee9f (not committed): the basic pass and the particle and LiquidFun splats took off each light's value at its radius, max(I/(I+d²) - ε, 0)/(1 - ε), ε = I/(I+R²) = 1/101, so a light would end at its radius instead of fading on at about 1 %.\n\n- **lightGalleryScene against 86f3ee9f** (17:23 to 17:27): 899 048 of 921 600 pixels differ, max 25/255, on WebGL and WebGPU alike; mean luma 111.9 → 103.5 (-7.5 %). `ambient=0` 909 179 pixels, max 25.\n- **dxCaptureScene at hour 22**: 731 152 pixels differ, max 20/255; by day 0 (the sun dominates).\n\nWhy: each light's tail is about 1 % of its colour across its whole pool, and the tails of every overlapping light add up to a part of the scene's light. Cutting them changes the look of every lit scene at night, against the owner's bar (no demo worse in look). The radius stays what the engine always drew: the light is about 1 % there, and it is culled when that circle leaves the view. Reverted; A3 is next."
     }
   ],
   "leads": [
