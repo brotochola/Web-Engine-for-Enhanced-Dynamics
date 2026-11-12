@@ -37,22 +37,23 @@ export const AMBIENT = queryNumber('ambient', 0.05);
 
 /**
  * The lamps, one per cell of a 4 × 3 grid (320 × 240 px). `bare`: no Collider. `range`: the Collider's visualRange
- * (left out: the light's whole reach). The fields are the light API's of the revision this file belongs to. Each
- * intensity is (r/10)² for a whole r and each glow a binary fraction, so another API's radius and glow hold them exactly.
+ * (left out: the light's whole reach). The fields are the light API's of the revision this file belongs to. They are
+ * the old API's lamps (91248f19) through DX-LIGHTAPI's exact mapping: radius 10·√I, glow I·hasGlowSprite/25000,
+ * glowOffsetY -glowHeightOffset, elevation the sourceHeight, a height h as offsetY -h and glowOffsetY +h.
  */
 export const LAMPS = [
-  { intensity: 400 },
-  { intensity: 2500, color: 0xffcc88, glow: 0.5 },
-  { intensity: 10000, color: 0x88ccff, glow: 1, glowHeight: 30 },
-  { intensity: 40000, color: 0xff8866, glow: 0.5, height: 40, bare: true },
-  { intensity: 10000, color: 0xffeecc, glow: 0.5, glowHeight: 60, sourceHeight: 60 },
-  { intensity: 19600, color: 0xffd0a0, glow: 0.625, glowHeight: 110, sourceHeight: 110, range: 200 },
-  { intensity: 4900, color: 0xccffcc, glow: 0.5, offsetX: 40, rotation: Math.PI / 2, bare: true },
-  { intensity: 9025, color: 0xfff1c4, offsetX: 30, offsetY: -20, rotation: Math.PI / 4 },
-  { intensity: 14400, color: 0xffcc88, glow: 0.5, layer: 'glows' },
-  { intensity: 676, color: 0xfff0d0 },
-  { intensity: 3025, color: 0xffe8c0, glow: 0.5, glowHeight: 10, range: 700 },
-  { intensity: 15876, color: 0xff9a40, height: -20 },
+  { radius: 200 },
+  { radius: 500, color: 0xffcc88, glow: 0.05 },
+  { radius: 1000, color: 0x88ccff, glow: 0.4, glowOffsetY: -30 },
+  { radius: 2000, color: 0xff8866, glow: 0.8, offsetY: -40, glowOffsetY: 40, bare: true },
+  { radius: 1000, color: 0xffeecc, glow: 0.2, glowOffsetY: -60, elevation: 60 },
+  { radius: 1400, color: 0xffd0a0, glow: 0.49, glowOffsetY: -110, elevation: 110, range: 200 },
+  { radius: 700, color: 0xccffcc, glow: 0.098, offsetX: 40, rotation: Math.PI / 2, bare: true },
+  { radius: 950, color: 0xfff1c4, offsetX: 30, offsetY: -20, rotation: Math.PI / 4 },
+  { radius: 1200, color: 0xffcc88, glow: 0.288, layer: 'glows' },
+  { radius: 260, color: 0xfff0d0 },
+  { radius: 550, color: 0xffe8c0, glow: 0.0605, glowOffsetY: -10, range: 700 },
+  { radius: 1260, color: 0xff9a40, offsetY: 20, glowOffsetY: -20 },
 ];
 
 /** Barrels around each lamp (offsets from its cell's centre). */

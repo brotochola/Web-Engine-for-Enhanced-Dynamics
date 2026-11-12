@@ -24,9 +24,9 @@ The mesh is drawn additively into `lightingRT` after the liquid light field, usi
 
 ## Spawn
 
-`lightIntensity` is optional on `emit`, `emitZenithal`, `emitFlat`, and `emitAlongLine`. Units match `LightEmitter`. `0` or omitted means the particle does not light.
+`lightRadius` (px) is optional on `emit`, `emitZenithal`, `emitFlat`, and `emitAlongLine`, as `LightEmitter.radius`. `0` or omitted means the particle does not light.
 
-The value must be finite and `>= 0`. Anything else is unlit. A number is square-rooted once per `_spawn` call. A `{min,max}` range uses `randomRange`, then a sqrt, per particle. `emitAlongLine` calls `_spawn` once per sample, so a numeric intensity is square-rooted once per sample. That work is on the spawn, not on the frame pack. The key is on `_cfgFieldList`, so the line emitter keeps it.
+The value must be finite and `>= 0`. Anything else is unlit. The particle stores `lightRadius / 10` (`ParticleComponent.lightSqrt`, the falloff's √I). A `{min,max}` range draws the radius uniformly per particle. That work is on the spawn, not on the frame pack. The key is on `_cfgFieldList`, so the line emitter keeps it.
 
 `lightSqrt` is written before `active` becomes 1, and cleared in `returnToPool` before the slot goes back on the free list.
 

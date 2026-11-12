@@ -5,11 +5,11 @@ const { ShapeType } = enums;
 
 /** Writes a moving lamp's light (the light API of the revision this file belongs to). */
 function applyLight(le, spec) {
-  le.lightColor = spec.color ?? 0xffffff;
-  le.lightIntensity = spec.intensity;
-  le.hasGlowSprite = spec.glow ?? 0;
-  if (spec.glowHeight !== undefined) le.glowHeightOffset = spec.glowHeight;
-  if (spec.sourceHeight !== undefined) le.sourceHeight = spec.sourceHeight;
+  le.color = spec.color ?? 0xffffff;
+  le.radius = spec.radius;
+  le.glow = spec.glow ?? 0;
+  if (spec.glowOffsetY !== undefined) le.glowOffsetY = spec.glowOffsetY;
+  if (spec.elevation !== undefined) le.elevation = spec.elevation;
 }
 
 /**
@@ -94,8 +94,8 @@ export class MotionFlasher extends GameObject {
       z: s[2],
       lifespan: 220,
       color: 0xffbb44,
-      intensity: 12000,
-      hasGlowSprite: 0.5,
+      radius: 1095,
+      glow: 0.24,
       castShadows: s[3] === 1,
     });
   }

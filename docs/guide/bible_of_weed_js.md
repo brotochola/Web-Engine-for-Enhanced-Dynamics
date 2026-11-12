@@ -821,7 +821,7 @@ WEED.BulletPool.spawn({
   layer: 'laser',
 });
 
-LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('glow');
+this.lightEmitter.glowLayer = 'glow';
 ```
 
 Omit `layer`/`layers` → entities bit. See `docs/guide/LAYER_ROUTING.md`.
@@ -1181,7 +1181,7 @@ WEED.Flash.spawn({
   z: 30,
   lifespan: 50,
   color: 0xffaa00,
-  intensity: 10000,
+  radius: 1000,
   castShadows: false, // default true; false = lighting only (cheap muzzle)
 });
 
@@ -1248,9 +1248,9 @@ What a turned camera changes:
 - A `setDeadzone` box is measured in the turned view.
 - Spatial `SoundManager.play` pans and fades by screen position, so it follows the turn.
 
-### Light pools on the floor: `groundScaleY` and `sourceHeight`
+### Light pools on the floor: `groundScaleY` and `elevation`
 
-A light's falloff is `I / (I + d²)`, with `d` measured in world px. Two knobs make that `d` a distance on the floor of a top-down or isometric game.
+A light reaches `LightEmitter.radius` px. Its falloff is `I / (I + d²)` with `I = (radius / 10)²` and `d` measured in world px: full at the centre, about 1 % at the radius. Two knobs make that `d` a distance on the floor of a top-down or isometric game.
 
 `config.lighting.groundScaleY` (default `1`) is how much the floor is foreshortened vertically on screen. A circle on the floor is drawn `groundScaleY` times as tall as it is wide, so a light reaches `R` across and `R * groundScaleY` up and down: an ellipse.
 
@@ -1260,25 +1260,26 @@ A light's falloff is `I / (I + d²)`, with `d` measured in world px. Two knobs m
 | 3/4 top-down (people and walls drawn from the front) | about `0.7` |
 | 2:1 isometric / dimetric | `0.5` |
 
-It is one number for the scene, read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point lights, raycasted lights (`lighting.raycasted`), LiquidFun and particle lights, the cookies of shadow-casting lights, and the fade and reach of point-light shadows. The reach `R = 10 * sqrt(I)` and every cull built on it do not change (the ellipse fits inside the old circle). Glow sprites stay round: they are the bulb, not the floor.
+It is one number for the scene, read when the scene loads. Values are clamped to `[0.05, 1]`; anything that is not a positive number gives `1`. It applies to every light that draws a pool: point lights, raycasted lights (`lighting.raycasted`), LiquidFun and particle lights, the cookies of shadow-casting lights, and the fade and reach of point-light shadows. The reach `R` (the radius) and every cull built on it do not change (the ellipse fits inside the circle). Glow sprites stay round: they are the bulb, not the floor.
 
-`LightEmitter.sourceHeight` (default `0`, world px) is how high the source sits above the floor. The falloff becomes `I / (I + h² + d²)`: the pool keeps its centre and its reach, but it is flatter, like a lamp post rather than a torch on the ground. A floor light is at full strength at its foot; a raised one peaks at `I / (I + h²)` (`I = 4h²` gives 0.8), so raise `lightIntensity` when the foot gets too dim. The three heights do different things:
+`LightEmitter.elevation` (default `0`, world px) is how high the source sits above the floor. The falloff becomes `I / (I + h² + d²)`: the pool keeps its centre and its reach, but it is flatter, like a lamp post rather than a torch on the ground. A floor light is at full strength at its foot; a raised one peaks at `I / (I + h²)` (a radius of 20h gives 0.8), so raise the radius when the foot gets too dim. Where things go:
 
-- `height` moves the whole light, pool included, up the screen.
-- `glowHeightOffset` moves only the glow sprite (put it on the bulb).
-- `sourceHeight` lifts the source without moving anything.
+- `offsetX` / `offsetY` move the whole light, pool included (local px, turned by the entity).
+- `glowOffsetY` moves only the halo on the screen (negative is up: put it on the bulb).
+- `elevation` lifts the source without moving anything.
 
 ```javascript
 // Scene config: a 3/4 top-down view.
 static config = { lighting: { enabled: true, groundScaleY: 0.7 } };
 
 // A street lamp whose bulb is 110 px above its foot.
-this.lightEmitter.glowHeightOffset = 110; // the glow on the bulb
-this.lightEmitter.sourceHeight = 110;     // the pool lit from up there
-this.lightEmitter.lightIntensity = 30000;  // peaks at 30000 / (30000 + 110²) ≈ 0.71 at the foot
+this.lightEmitter.radius = 1732;         // I = 30000: peaks at 30000 / (30000 + 110²) ≈ 0.71 at the foot
+this.lightEmitter.elevation = 110;       // the pool lit from up there
+this.lightEmitter.glow = 0.6;            // a halo on the bulb...
+this.lightEmitter.glowOffsetY = -110;    // ...110 px up the screen
 ```
 
-Costs: `groundScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `sourceHeight` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `groundScaleY` makes that gradient steeper; a `sourceHeight` flattens it.
+Costs: `groundScaleY` is one multiply per pixel in the lighting pass (none per light) and smaller quads for raycasted lights and splats. `elevation` is folded into the intensity and colour each light is uploaded with, so the shaders do no extra work. Both are worth knowing about for upright sprites: the lighting pass treats every pixel as floor, so the top of a tall sprite north of a light is lit as the floor further north. A smaller `groundScaleY` makes that gradient steeper; an `elevation` flattens it.
 
 ### Faces that light as surfaces: `lighting.faces`
 
@@ -1317,7 +1318,7 @@ create() {
 
 The normal is in the floor's space: x along the screen, y across the floor towards the camera, z up. It need not be unit length. `faceHeight` is the height, in px, of the point of the face at the decoration's position; the rest of the sprite follows from the plane, so a pitched roof takes one number, and so does a wall sheared with `skewX` and `skewY`. Leave `faceNormalX` out and the decoration is no face. `spawnMany` takes all four as arrays.
 
-- The light comes from `LightEmitter.sourceHeight`: a face above it gets none. That height also shapes the pool on the floor.
+- The light comes from `LightEmitter.elevation`: a face above it gets none. That height also shapes the pool on the floor.
 - A face takes the place of its sprite's light, not of its colour: its texture should hold no light of its own.
 - Faces need the entities layer. Decorations on other layers are lit as the floor, and a sprite that is no face in front of a wall, like a person, takes the wall's place where it covers it, and is lit as before.
 - Light does not stop at a volume: a lamp behind a house lights nothing on the side you see (those walls look away from it), but one wall does not shadow another. The floor keeps its shadows.
@@ -1327,11 +1328,11 @@ The normal is in the floor's space: x along the screen, y across the floor towar
 
 ### A light off its entity's centre: `offsetX` and `offsetY`
 
-`LightEmitter.offsetX` / `offsetY` (default 0, local px) move a light off its entity's centre, and the entity's rotation turns them: a car's headlights stay ahead of it through a bend, with no second entity. `height` then lifts the result. The pool, the glow, the shadows, the raycast sweep and every cull follow it. A shadow's casters still come from the entity's `Collider.visualRange`, so keep that wider than the offset.
+`LightEmitter.offsetX` / `offsetY` (default 0, local px) move a light off its entity's centre, and the entity's rotation turns them: a car's headlights stay ahead of it through a bend, with no second entity. The pool, the glow, the shadows, the raycast sweep and every cull follow it. A shadow's casters still come from the entity's `Collider.visualRange`, so keep that wider than the offset.
 
 ```javascript
 onSpawned() {
-  this.lightEmitter.lightIntensity = 40000;
+  this.lightEmitter.radius = 2000;
   this.lightEmitter.offsetX = 60;   // 60 px ahead of the car, wherever it points
 }
 ```
@@ -1365,15 +1366,15 @@ With `lighting.raycasted: true` each visible light gets a visibility polygon. A 
 1. The body has `LightOccluder` in its `static components` (the engine sets `block = 1` and `maskMode = 0`) and an active `Collider`. A `LightOccluder.block` of 0 blocks nothing.
 2. The body is in the light entity's neighbor list. That list holds the entities within the **light entity's own** `Collider.visualRange`.
 
-The light's reach is a separate number. `LightEmitter.influenceRadius` is `sqrt(lightIntensity) * 10` world px, the radius the light is drawn and culled with. An occluder that is inside the influence radius but outside the light entity's `visualRange` is not in the list, so the light passes through it.
+The light's reach is a separate number: `LightEmitter.radius`, the radius the light is drawn and culled with. An occluder that is inside the influence radius but outside the light entity's `visualRange` is not in the list, so the light passes through it.
 
 So set the light entity's `visualRange` to at least its influence radius, after the intensity is set:
 
 ```javascript
-this.lightEmitter.lightIntensity = 14000;
+this.lightEmitter.radius = 1183;
 this.lightEmitter.active = 1;
 // Occluders come from the neighbor list: cover the whole light.
-this.collider.visualRange = this.lightEmitter.influenceRadius; // about 1183 px
+this.collider.visualRange = this.lightEmitter.radius;
 ```
 
 Keep it no larger than needed: a bigger `visualRange` means a longer neighbor list and more occluders per light. Each light takes at most 1024 occluders (a one-time warning says when that is hit).

@@ -51,9 +51,12 @@ export class DxCaptureLamp extends GameObject {
     // without either. The two must draw the same picture.
     const offset = LAMP_OFFSET;
     if (offset !== 0) this.lightEmitter.offsetX = offset;
-    this.lightEmitter.lightColor = config.color ?? 0xffcc88;
+    this.lightEmitter.color = config.color ?? 0xffcc88;
     // Read on the logic worker: `?lampIntensity=` reaches it through WEED.params (a revision without it ignores the key).
-    this.lightEmitter.lightIntensity = Number(WEED.params?.get('lampIntensity') ?? config.intensity ?? 20000);
+    // The old API's intensity I: reach 10·√I, glow I / 50000.
+    const intensity = Number(WEED.params?.get('lampIntensity') ?? config.intensity ?? 20000);
+    this.lightEmitter.radius = 10 * Math.sqrt(intensity);
+    this.lightEmitter.glow = intensity / 50000;
   }
 
   /** A body's rotation is the physics worker's after it is created, so the turn goes in here. */

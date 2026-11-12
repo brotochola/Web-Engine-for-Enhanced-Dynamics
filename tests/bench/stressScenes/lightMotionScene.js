@@ -45,12 +45,12 @@ const VY = (WORLD_H - VIEW_H) / 2;
  * Lamps circling points on or near the view's edges. A big glow on a lamp with no sprite is the case N-150 is about.
  */
 const LAMPS = [
-  { intensity: 20000, color: 0xffcc88, glow: 1, cx: VX, cy: VY + 200, r: 260, w: 0.6, p: 0 },
-  { intensity: 9000, color: 0x88ccff, glow: 0.5, cx: VX + VIEW_W, cy: VY + 360, r: 300, w: -0.5, p: 1 },
-  { intensity: 40000, color: 0xff8866, glow: 0.8, cx: VX + 640, cy: VY, r: 240, w: 0.4, p: 2 },
-  { intensity: 5000, color: 0xccffcc, glow: 0.5, cx: VX + 400, cy: VY + VIEW_H, r: 200, w: 0.8, p: 3 },
-  { intensity: 14000, color: 0xffeecc, glow: 0.6, glowHeight: 60, sourceHeight: 60, cx: VX + 900, cy: VY + 420, r: 180, w: 0.7, p: 4 },
-  { intensity: 3000, color: 0xffffff, cx: VX + 300, cy: VY + 300, r: 120, w: -1.1, p: 5 },
+  { radius: 1414, color: 0xffcc88, glow: 0.8, cx: VX, cy: VY + 200, r: 260, w: 0.6, p: 0 },
+  { radius: 949, color: 0x88ccff, glow: 0.18, cx: VX + VIEW_W, cy: VY + 360, r: 300, w: -0.5, p: 1 },
+  { radius: 2000, color: 0xff8866, glow: 1.28, cx: VX + 640, cy: VY, r: 240, w: 0.4, p: 2 },
+  { radius: 707, color: 0xccffcc, glow: 0.1, cx: VX + 400, cy: VY + VIEW_H, r: 200, w: 0.8, p: 3 },
+  { radius: 1183, color: 0xffeecc, glow: 0.336, glowOffsetY: -60, elevation: 60, cx: VX + 900, cy: VY + 420, r: 180, w: 0.7, p: 4 },
+  { radius: 548, color: 0xffffff, cx: VX + 300, cy: VY + 300, r: 120, w: -1.1, p: 5 },
 ];
 
 export const stressSceneConfig = {

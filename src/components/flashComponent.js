@@ -14,7 +14,8 @@ export class FlashComponent extends Component {
     currentLife: Float32Array, // Time alive so far in ms
 
     // === Initial values (for calculating decay) ===
-    initialIntensity: Float32Array, // Starting light intensity (decays to 0)
+    initialRadius: Float32Array, // Starting reach (px)
+    initialGlow: Float32Array, // Starting halo alpha
 
     // === Shadows ===
     castShadows: Uint8Array, // 1 = cast point shadows, 0 = lighting only

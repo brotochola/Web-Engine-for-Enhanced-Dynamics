@@ -81,7 +81,8 @@ export class Player extends GameObject {
       z: 0, // height
       lifespan: 17,
       color: 0xffbb11, // orange
-      intensity: 25000,
+      radius: 1581,
+      glow: 0.5,
     });
   }
 
@@ -95,11 +96,9 @@ export class Player extends GameObject {
     this.rigidBody.linearDamping = 0.03; // Linear damping for smooth stopping
 
     if (this.lightEmitter) {
-      this.lightEmitter.lightColor = 0xffffff;
-      this.lightEmitter.lightIntensity = 2000;
-      this.lightEmitter.height = 0;
+      this.lightEmitter.color = 0xffffff;
+      this.lightEmitter.radius = 447;
       this.lightEmitter.active = 1;
-      this.lightEmitter.hasGlowSprite = 0;
     }
 
     // Initialize collider

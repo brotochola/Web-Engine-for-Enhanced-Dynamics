@@ -32,11 +32,10 @@ export class CityHouse extends GameObject {
     this.collider.offsetX = 0;
     this.collider.visualRange = 300;
 
-    this.lightEmitter.lightColor = 0xffffaa;
-    this.lightEmitter.height = 100;
-    this.lightEmitter.lightIntensity = 4000;
+    this.lightEmitter.color = 0xffffaa;
+    this.lightEmitter.offsetY = -100; // the window's light, 100 px up the house
+    this.lightEmitter.radius = 632;
     this.lightEmitter.active = 0;
-    this.lightEmitter.hasGlowSprite = 0;
 
     this.setScale(1, 1);
   

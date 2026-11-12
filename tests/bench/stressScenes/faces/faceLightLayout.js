@@ -49,7 +49,7 @@ function face(name, origin, edgeU, edgeV, groundScaleY, heightScaleY) {
   };
 }
 
-/** @returns {{ faces: object[], lamps: { x: number, y: number, height: number, intensity: number }[] }} */
+/** @returns {{ faces: object[], lamps: { x: number, y: number, elevation: number, radius: number }[] }} */
 export function faceLightLayout(groundScaleY, heightScaleY) {
   const g = groundScaleY;
   const c = heightScaleY;
@@ -65,9 +65,9 @@ export function faceLightLayout(groundScaleY, heightScaleY) {
   ];
   for (const f of faces) f.sortOffsetY = 1000;
   const lamps = [
-    { x: 320, y: 790, height: 50, intensity: 5000 },
-    { x: 760, y: 720, height: 60, intensity: 6000 },
-    { x: 1090, y: 760, height: 220, intensity: 12000 },
+    { x: 320, y: 790, elevation: 50, radius: 700 },
+    { x: 760, y: 720, elevation: 60, radius: 780 },
+    { x: 1090, y: 760, elevation: 220, radius: 1100 },
   ];
   return { faces, lamps };
 }

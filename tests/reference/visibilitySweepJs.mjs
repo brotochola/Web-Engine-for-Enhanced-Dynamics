@@ -17,7 +17,7 @@ import { Transform } from '../../src/components/transform.js';
 import { ColliderFixture } from '../../src/core/colliderFixture.js';
 import { Grid } from '../../src/core/grid.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../../src/util/configDefaults.js';
-import { lightInfluenceRadius, normalizeAngleSigned } from '../../src/util/utils.js';
+import { normalizeAngleSigned } from '../../src/util/utils.js';
 import {
   OCC_CIRCLE,
   OCC_POLY,
@@ -1075,8 +1075,7 @@ export function buildVisibilityPolygonsJs(pre) {
     const fixturePoolMax = ColliderFixture.maxCount | 0;
     const fixtureRevision = ColliderFixture.revision;
     const lightEnabled = LightEmitter.active;
-    const lightIntensity = LightEmitter.lightIntensity;
-    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const lightRadius = LightEmitter.radius;
 
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
@@ -1128,14 +1127,13 @@ export function buildVisibilityPolygonsJs(pre) {
         const lightIdx = visibleLights[1 + li];
         if (!lightEnabled[lightIdx]) continue;
 
-        const intensity = lightIntensity[lightIdx];
-        if (intensity <= 0) continue;
+        const influenceRadius = lightRadius[lightIdx];
+        if (!(influenceRadius > 0)) continue;
 
         // Same display pose as sprites (post-step publish), not live Transform
         pre._displayPose(lightIdx, pose);
         const lx = pose[0];
         const ly = pose[1];
-        const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
 
         let occCount = 0;
         let vertPool = 0;

@@ -395,8 +395,8 @@ export class Person extends Lootable {
       z: -muzzleHeightPx,
       lifespan: 18,
       color: 0xffaa00,
-      intensity: 10000,
-      hasGlowSprite: 0,
+      radius: 1000,
+      glow: 0,
     });
 
     this.shootingSparks(shotDirX, shotDirY, muzzleX, muzzleY, muzzleHeightPx)

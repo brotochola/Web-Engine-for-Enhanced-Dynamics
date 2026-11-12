@@ -62,13 +62,15 @@ export class Barrel extends GameObject {
 
     this.addVelocity((hitX - this.x) * 60, (hitY - this.y) * 60);
 
+    // A spark of strength s: reach 10·√s, glow s / 50000.
+    const strength = rng() * 1000 + 1000;
     Flash.spawn({
       x: hitX,
       y: hitY,
       lifespan: 18,
       color: 0xffee00,
-      intensity: rng() * 1000 + 1000,
-      hasGlowSprite: 0.5,
+      radius: 10 * Math.sqrt(strength),
+      glow: strength / 50000,
     });
   }
 }

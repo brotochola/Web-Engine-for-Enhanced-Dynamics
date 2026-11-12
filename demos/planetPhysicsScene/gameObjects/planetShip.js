@@ -26,16 +26,15 @@ export class PlanetShip extends Ship {
 
   onSpawned(spawnConfig = {}) {
     super.onSpawned(spawnConfig);
-    this.lightEmitter.lightIntensity = 20000;
+    this.lightEmitter.radius = 1414;
     // 14 is the radius of a circle with the same area as the 22x28 hull box,
     // so switching shapes keeps the ship's mass.
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 14;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0;
     // Raycasted occluders come from this neighbor list; Ship's 80 px let the
     // light pass through every rock past that.
-    this.collider.visualRange = this.lightEmitter.influenceRadius;
+    this.collider.visualRange = this.lightEmitter.radius;
     // Contacts must not spin the body; the hull turns only as a sprite.
     this.setFixedRotation(1);
     this.spriteRenderer.inheritTransformRotation = 0;

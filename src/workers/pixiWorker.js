@@ -96,7 +96,6 @@ import {
   sortByY,
   normalizeAngleDifference,
   extractRGBNormalizedMut,
-  lightInfluenceRadius,
   resolveGroundScaleY,
   lightDataTextureFloatCount,
   clearUnusedLightDataTexels,
@@ -4259,11 +4258,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const container = this._visPolyContainer;
 
     // LightEmitter data for color
-    const lightColor = LightEmitter.lightColor;
-    const lightIntensityArr = LightEmitter.lightIntensity;
-    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-    const lightHeight = LightEmitter.height;
-    const sourceHeight = LightEmitter.sourceHeight;
+    const lightColor = LightEmitter.color;
+    const lightRadius = LightEmitter.radius;
+    const lightBrightness = LightEmitter.brightness;
+    const lightElevation = LightEmitter.elevation;
     // The pool is R across and R * groundScaleY tall: the umbra quad needs no more rows than that.
     const groundY = this._groundScaleY || 1;
 
@@ -4294,16 +4292,16 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
       const xStart = baseIndex + 4;
       const yStart = xStart + maxVerts;
-      const lightY = ly - (lightHeight[lightIdx] || 0);
-      // The reach stays the floor-level light's (sourceHeight only lowers the pool): culls and the rim use it.
-      const radius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
-      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
-      let intensity = lightIntensityArr[lightIdx];
-      let colorScale = 1;
-      const h = sourceHeight ? sourceHeight[lightIdx] : 0;
+      const lightY = ly;
+      // The reach stays the floor-level light's (elevation only lowers the pool): culls and the rim use it.
+      const radius = lightRadius[lightIdx];
+      // elevation as in updateLighting: I' = I + h², the colour times brightness · I / I'.
+      let intensity = (radius * radius) / 100;
+      let colorScale = lightBrightness[lightIdx];
+      const h = lightElevation[lightIdx];
       if (h > 0) {
         const raised = intensity + h * h;
-        colorScale = intensity / raised;
+        colorScale = (intensity / raised) * colorScale;
         intensity = raised;
       }
       const color = lightColor[lightIdx];
@@ -4433,11 +4431,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const f32 = buf.f32;
     const u8 = buf.u8;
     const itemBytes = this._selfLitItemBytes;
-    const lightIntensityArr = LightEmitter.lightIntensity;
-    const lightColor = LightEmitter.lightColor;
-    const lightHeight = LightEmitter.height;
-    const sourceHeight = LightEmitter.sourceHeight;
-    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const lightRadius = LightEmitter.radius;
+    const lightColor = LightEmitter.color;
+    const lightBrightness = LightEmitter.brightness;
+    const lightElevation = LightEmitter.elevation;
     const offsetX = LightEmitter.offsetX;
     const offsetY = LightEmitter.offsetY;
     const rotC = Transform.rotC;
@@ -4479,21 +4476,21 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const ox = offsetX[light];
       const oy = offsetY[light];
       const lx = Transform.x[light] + ox * rotC[light] - oy * rotS[light];
-      const ly = Transform.y[light] + ox * rotS[light] + oy * rotC[light] - (lightHeight[light] || 0);
-      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
-      let intensity = lightIntensityArr[light];
-      let colorScale = 1;
-      const srcH = sourceHeight ? sourceHeight[light] : 0;
+      const ly = Transform.y[light] + ox * rotS[light] + oy * rotC[light];
+      // elevation as in updateLighting: I' = I + h², the colour times brightness · I / I'.
+      const lightR = lightRadius[light];
+      let intensity = (lightR * lightR) / 100;
+      let colorScale = lightBrightness[light];
+      const srcH = lightElevation[light];
       if (srcH > 0) {
         const raised = intensity + srcH * srcH;
-        colorScale = intensity / raised;
+        colorScale = (intensity / raised) * colorScale;
         intensity = raised;
       }
       const color = lightColor[light];
       const cr = (((color >> 16) & 0xff) / 255) * colorScale;
       const cg = (((color >> 8) & 0xff) / 255) * colorScale;
       const cb = ((color & 0xff) / 255) * colorScale;
-      const lightR = lightInfluenceRadius(sqrtLightIntensity ? sqrtLightIntensity[light] : 0);
 
       if (vtx + lightVerts > batch.vertCap || iCount + lightIndices > batch.idxCap) {
         batch = this._ensureSelfLitBatch(vtx + lightVerts, iCount + lightIndices, vtx, iCount);
@@ -4740,10 +4737,10 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const u16 = buf.u16;
     const u8 = buf.u8;
     const itemBytes = this._selfLitItemBytes;
-    const lightIntensityArr = LightEmitter.lightIntensity;
-    const lightColor = LightEmitter.lightColor;
-    const lightHeight = LightEmitter.height;
-    const sourceHeight = LightEmitter.sourceHeight;
+    const lightRadius = LightEmitter.radius;
+    const lightColor = LightEmitter.color;
+    const lightBrightness = LightEmitter.brightness;
+    const lightElevation = LightEmitter.elevation;
     const offsetX = LightEmitter.offsetX;
     const offsetY = LightEmitter.offsetY;
     const rotC = Transform.rotC;
@@ -4765,14 +4762,15 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const ox = offsetX[lightIdx];
       const oy = offsetY[lightIdx];
       const lx = Transform.x[lightIdx] + ox * rotC[lightIdx] - oy * rotS[lightIdx];
-      const ly = Transform.y[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx] - (lightHeight[lightIdx] || 0);
-      // sourceHeight as in updateLighting: I' = I + h², the colour times I / I'.
-      let intensity = lightIntensityArr[lightIdx];
-      let colorScale = 1;
-      const srcH = sourceHeight ? sourceHeight[lightIdx] : 0;
+      const ly = Transform.y[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx];
+      // elevation as in updateLighting: I' = I + h², the colour times brightness · I / I'.
+      const lightR = lightRadius[lightIdx];
+      let intensity = (lightR * lightR) / 100;
+      let colorScale = lightBrightness[lightIdx];
+      const srcH = lightElevation[lightIdx];
       if (srcH > 0) {
         const raised = intensity + srcH * srcH;
-        colorScale = intensity / raised;
+        colorScale = (intensity / raised) * colorScale;
         intensity = raised;
       }
       const color = lightColor[lightIdx];
@@ -4989,8 +4987,7 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     const worldX = Transform.x;
     const worldY = Transform.y;
     const lightEnabled = LightEmitter.active;
-    const lightHeight = LightEmitter.height;
-    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+    const lightRadius = LightEmitter.radius;
     const offsetX = LightEmitter.offsetX;
     const offsetY = LightEmitter.offsetY;
     const rotC = Transform.rotC;
@@ -5028,17 +5025,17 @@ COMPUTE VISIBLE LIGHTS (used by updateLighting shader)
     for (let idx = 0; idx < iterCount; idx++) {
       const i = useSharedBuffer ? this.visibleLightsData[1 + idx] : lightEntities[idx];
       if (!lightEnabled[i]) continue;
-      if (!(sqrtLightIntensity[i] > 0)) continue;
+      if (!(lightRadius[i] > 0)) continue;
 
       // World-space light position from Transform SAB, same source as
       // updateLighting/updateShadowSprites/renderVisibilityLighting use.
       const ox = offsetX[i];
       const oy = offsetY[i];
       const x = worldX[i] + ox * rotC[i] - oy * rotS[i];
-      const yForLight = worldY[i] + ox * rotS[i] + oy * rotC[i] - (lightHeight[i] || 0);
+      const yForLight = worldY[i] + ox * rotS[i] + oy * rotC[i];
 
-      // Viewport culling: shared lightInfluenceRadius(sqrtIntensity)
-      const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[i]);
+      // Viewport culling by the light's reach
+      const influenceRadius = lightRadius[i];
 
       if (
         x + influenceRadius < viewLeft ||
@@ -5103,10 +5100,10 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // Cache component arrays
     const worldX = Transform.x;
     const worldY = Transform.y;
-    const lightColor = LightEmitter.lightColor;
-    const lightIntensity = LightEmitter.lightIntensity;
-    const lightHeight = LightEmitter.height;
-    const sourceHeight = LightEmitter.sourceHeight;
+    const lightColor = LightEmitter.color;
+    const lightRadius = LightEmitter.radius;
+    const lightBrightness = LightEmitter.brightness;
+    const lightElevation = LightEmitter.elevation;
     const offsetX = LightEmitter.offsetX;
     const offsetY = LightEmitter.offsetY;
     const rotC = Transform.rotC;
@@ -5139,13 +5136,15 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const range = vr ? (vr[entityIndex] || 0) : 0;
 
       // A source h above the floor: I / (I + h² + d²) = k * I' / (I' + d²) with I' = I + h², k = I / I'.
-      // So the shader keeps one formula: it gets I' and the colour scaled by k.
-      let intensity = lightIntensity[entityIndex];
-      let colorScale = 1;
-      const h = sourceHeight ? sourceHeight[entityIndex] : 0;
+      // So the shader keeps one formula: it gets I' and the colour scaled by k (and by the brightness).
+      // I = (radius / 10)², divided so a whole radius gives I exactly.
+      const rad = lightRadius[entityIndex];
+      let intensity = (rad * rad) / 100;
+      let colorScale = lightBrightness[entityIndex];
+      const h = lightElevation[entityIndex];
       if (h > 0) {
         const raised = intensity + h * h;
-        colorScale = intensity / raised;
+        colorScale = (intensity / raised) * colorScale;
         intensity = raised;
       }
 
@@ -5156,7 +5155,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       const ox = offsetX[entityIndex];
       const oy = offsetY[entityIndex];
       lightData[i0] = worldX[entityIndex] + ox * rotC[entityIndex] - oy * rotS[entityIndex];
-      lightData[i0 + 1] = (worldY[entityIndex] + ox * rotS[entityIndex] + oy * rotC[entityIndex] - (lightHeight[entityIndex] || 0)) * groundInvY;
+      lightData[i0 + 1] = (worldY[entityIndex] + ox * rotS[entityIndex] + oy * rotC[entityIndex]) * groundInvY;
       lightData[i0 + 2] = intensity;
       lightData[i0 + 3] = range * range;
       const i1 = row1 + i0;

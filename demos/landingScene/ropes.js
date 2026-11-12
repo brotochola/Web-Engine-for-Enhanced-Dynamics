@@ -116,11 +116,9 @@ export class Lantern extends GameObject {
     this.setTint(0xfff0c0);
     const light = this.lightEmitter;
     light.active = 1;
-    light.lightColor = color;
-    light.lightIntensity = 14000;
-    light.height = 0;
-    light.glowHeightOffset = 0;
-    light.hasGlowSprite = 0.7;
+    light.color = color;
+    light.radius = 1183;
+    light.glow = 0.392;
   }
 
   tick() {

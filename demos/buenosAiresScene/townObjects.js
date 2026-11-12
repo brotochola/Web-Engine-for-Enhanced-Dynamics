@@ -4,7 +4,7 @@
 
 import WEED from '/src/index.js';
 import {
-  META, RAYCAST, HEIGHT_PX, LAMP_COLOR, LAMP_GAIN, LIGHT_TICK, OFF, LightHours, lightBorn, lightTick, lightReach,
+  META, RAYCAST, HEIGHT_PX, LAMP_COLOR, LIGHT_TICK, OFF, LightHours, lightBorn, lightTick, lightReach,
 } from './town.js';
 
 const {
@@ -55,14 +55,14 @@ export class House extends GameObject {
     // Houses do not light; a wooden post with a lamp (dirt streets, the villa) does.
     const L = this.lightEmitter;
     const lamp = c.k === 'poste' && !!c.l;
-    L.lightColor = LAMP_COLOR;
-    L.height = 0;
-    L.glowHeightOffset = 7 * HEIGHT_PX;
-    L.hasGlowSprite = lamp ? 0.5 : 0;
-    L.sourceHeight = lamp ? 50 : 0;
-    L.lightIntensity = lamp ? 1500 * LAMP_GAIN : 0;
+    L.color = LAMP_COLOR;
+    L.glowOffsetY = -7 * HEIGHT_PX;
+    // Lit from halfway up the post (elevation), so it reaches further, or its foot would be dark.
+    L.glow = lamp ? 0.066 : 0;
+    L.elevation = lamp ? 50 : 0;
+    L.radius = lamp ? 574 : 0;
     L.active = lamp ? 1 : 0;
-    if (lamp && RAYCAST) this.collider.visualRange = lightReach(L.lightIntensity) || 260;
+    if (lamp && RAYCAST) this.collider.visualRange = lightReach(L.radius) || 260;
     lightBorn(this, OFF.LAMPS, 0, 0, 0, c.x, c.y);
   }
 
@@ -96,15 +96,14 @@ export class StreetProp extends GameObject {
     const top = this.spriteRenderer.originalHeight * anchor[1] * e;
     const kind = c.f.endsWith('_atras') ? c.f.slice(0, -6) : c.f; // seen from behind: the same thing
     if (kind.startsWith('u_farol')) {
-      L.lightColor = LAMP_COLOR;
-      L.height = 0;
-      L.glowHeightOffset = top * (kind === 'u_farola' ? 0.97 : 0.88);
-      // The light comes from halfway up the pole (sourceHeight), so the pool is even, and stronger for it.
-      L.sourceHeight = top * 0.5;
-      L.lightIntensity = (kind === 'u_farol_doble' ? 2600 : kind === 'u_farola' ? 2200 : 1800) * LAMP_GAIN;
-      L.hasGlowSprite = 0.55;
+      L.color = LAMP_COLOR;
+      L.glowOffsetY = -top * (kind === 'u_farola' ? 0.97 : 0.88);
+      // The light comes from halfway up the pole (elevation), so the pool is even, and it reaches further for it.
+      L.elevation = top * 0.5;
+      L.radius = kind === 'u_farol_doble' ? 756 : kind === 'u_farola' ? 696 : 629;
+      L.glow = kind === 'u_farol_doble' ? 0.126 : kind === 'u_farola' ? 0.106 : 0.087;
       L.active = 1;
-      this.collider.visualRange = lightReach(L.lightIntensity) || 260;
+      this.collider.visualRange = lightReach(L.radius) || 260;
       // A glow on each bulb, in the additive lampGlows layer, above all: a lamp whose bulb is behind a house (c.hidden) has none,
       // since that layer does not sort with the houses.
       const bulbs = c.hidden ? null : BULBS[kind] || null;
@@ -120,7 +119,7 @@ export class StreetProp extends GameObject {
       }
       lightBorn(this, OFF.LAMPS, bulbs ? bulbs.length * 2 : 0, 1, 0.5, c.x, c.y);
     } else {
-      L.lightIntensity = 0;
+      L.radius = 0;
       L.active = 0;
       this.lightHours.base = 0;
       // A traffic light: a fixed red or green dot on its lamp, with no light on the floor. The game runs them by the law; this

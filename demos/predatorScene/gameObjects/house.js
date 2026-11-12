@@ -46,8 +46,8 @@ export class House extends GameObject {
       y: hitY,
       lifespan: 18,
       color: 0xffee00,
-      intensity: 5000,
-      hasGlowSprite: 0.5,
+      radius: 707,
+      glow: 0.1,
     });
   }
 
@@ -61,12 +61,11 @@ export class House extends GameObject {
     this.collider.height = 110;
     this.collider.offsetY = -50;
     this.collider.offsetX = 0;
-    this.lightEmitter.lightColor = 0xffffaa;
+    this.lightEmitter.color = 0xffffaa;
 
-    this.lightEmitter.height = 100;
-    this.lightEmitter.lightIntensity = 4000;
+    this.lightEmitter.offsetY = -100; // the window's light, 100 px up the house
+    this.lightEmitter.radius = 632;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0;
 
     this.setScale(1, 1);
     this.collider.visualRange = 300;

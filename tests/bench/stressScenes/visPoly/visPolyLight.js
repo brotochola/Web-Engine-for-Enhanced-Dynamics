@@ -10,11 +10,9 @@ export class VisPolyLight extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 2;
     this.collider.visualRange = 900;
-    this.lightEmitter.lightColor = 0xffffff;
-    this.lightEmitter.lightIntensity = 400;
-    this.lightEmitter.height = 0;
+    this.lightEmitter.color = 0xffffff;
+    this.lightEmitter.radius = 200;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0;
     this.x = x;
     this.y = y;
   }

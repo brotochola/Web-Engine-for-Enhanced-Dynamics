@@ -58,7 +58,7 @@ The keys of `emit` / `emitFlat` wherever the motion has a closed form, plus four
 | `drag` | new | air drag in 1/s: velocities decay as e^(−drag·t) |
 | `delay` | new | each particle is born this many ms after the call |
 | `sortY` | new | the group's ground y among the entities, for a layer with `sortWithEntities`. Default: the middle of `y` |
-| `fadeOnTheFloor`, `stayOnTheFloor`, `despawnOnGroundContact`, `bounces`, `lightIntensity`, `layers`, `renderOnly` | no | reported once, then ignored |
+| `fadeOnTheFloor`, `stayOnTheFloor`, `despawnOnGroundContact`, `bounces`, `lightRadius`, `layers`, `renderOnly` | no | reported once, then ignored |
 
 `emitGpu` returns the number of particles written. A call larger than the writer's ring is cut to the ring, with a warning once ([Capacity and overflow](#capacity-and-overflow)).
 

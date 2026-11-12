@@ -95,7 +95,7 @@ export class ParticleComponent extends Component {
     viewMode: Uint8Array,
     // 1 = do not integrate or sprite-emit on the CPU. A compute layer owns the look.
     renderOnly: Uint8Array,
-    // sqrt(lightIntensity). 0 = this particle does not light the scene.
+    // lightRadius / 10 (the falloff's sqrt(I)). 0 = this particle does not light the scene.
     lightSqrt: Float32Array,
 
     // === Floor bounces (heighted particles; ParticleEmitter.emit / emitZenithal `bounces`) ===

@@ -41,7 +41,7 @@ export const EMIT_SLOTS = [
   'adDir', 'adAssets', 'adList',
   'bActive', 'bX', 'bY', 'bStartX', 'bStartY', 'bOffsetY', 'bScale', 'bAlpha', 'bTint', 'bTexture',
   'bSpriteRotC', 'bSpriteRotS', 'bRotC', 'bRotS', 'bTrailWidth', 'bAnchorX', 'bAnchorY', 'bTrailTexture',
-  'lColor', 'lIntensity', 'lSqrt', 'lGlowOffset', 'lGlow', 'tX', 'tY', 'lGradientTexture',
+  'lColor', 'lBrightness', 'lRadius', 'lGlowOffset', 'lGlow', 'tX', 'tY', 'lGradientTexture',
   'pcX', 'pcY', 'pcZ', 'pcScaleX', 'pcScaleY', 'pcFlipX', 'pcFlipY', 'pcRotC', 'pcRotS', 'pcAlpha', 'pcTint',
   'pcTexture', 'pcFlat', 'pcView', 'pcWhiteTexture', 'eParams',
   'lfX', 'lfY', 'lfScaleX', 'lfScaleY', 'lfAlpha', 'lfBaseAlpha', 'lfRotC', 'lfRotS', 'lfTint', 'lfTexture',
@@ -120,8 +120,8 @@ export const EMIT_BULLET_COLUMNS = [
 ];
 /** The glow rows' LightEmitter columns, by slot; with Transform's x, y and facing (tX, tY, tRotC, tRotS) of the light's entity. */
 export const EMIT_GLOW_COLUMNS = [
-  ['lColor', 'lightColor'], ['lIntensity', 'lightIntensity'], ['lSqrt', 'sqrtLightIntensity'],
-  ['lGlowOffset', 'glowHeightOffset'], ['lGlow', 'hasGlowSprite'], ['lOffsetX', 'offsetX'], ['lOffsetY', 'offsetY'],
+  ['lColor', 'color'], ['lBrightness', 'brightness'], ['lRadius', 'radius'],
+  ['lGlowOffset', 'glowOffsetY'], ['lGlow', 'glow'], ['lOffsetX', 'offsetX'], ['lOffsetY', 'offsetY'],
 ];
 /** The particle rows' ParticleComponent columns, by slot; flat and viewMode may be missing (emitSpriteQueue tests them). */
 export const EMIT_PARTICLE_COLUMNS = [

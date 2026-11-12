@@ -1,85 +1,62 @@
 import { Component } from '../core/component.js';
-import { lightInfluenceRadius } from '../util/lightRadius.js';
+import { Layer } from '../core/layer.js';
 
 /**
- * Point / glow light on an entity.
+ * A light on an entity.
  *
- * Three heights, three jobs:
- * - `height` moves the whole light up the screen (pool centre included).
- * - `glowHeightOffset` moves only the glow sprite (put it on the bulb).
- * - `sourceHeight` lifts the source off the floor without moving its pool: the falloff uses
- *   I / (I + h² + d²), so a lamp post lights a wider, flatter pool than a torch on the ground,
- *   with the same reach. 0 (the default) is the old I / (I + d²).
- * The floor's foreshortening (an ellipse instead of a circle) is config.lighting.groundScaleY.
+ * - `radius` (px) is how far it reaches. Its falloff is I / (I + d²) with I = (radius / 10)², measured on the floor
+ *   (config.lighting.groundScaleY), so it is full at its centre and about 1 % at the radius.
+ * - `brightness` (1 by default) multiplies its colour and its glow.
+ * - `color` is 0xRRGGBB.
+ * - `elevation` lifts the source off the floor without moving its pool: the falloff becomes I / (I + h² + d²), a wider,
+ *   flatter pool with the same reach (a lamp post rather than a torch on the ground).
+ * - `glow` is the alpha of the halo drawn on the bulb (0, the default, draws none). The halo is about 0.85 of the radius
+ *   wide; `glowOffsetY` moves it on the screen (negative is up: put it on the bulb), `glowLayer` puts it on one layer
+ *   (a layer name; null keeps the entity's layers).
+ * - `offsetX` / `offsetY` move the light off the entity's centre, in local px: the entity's rotation turns them, and
+ *   the pool, glow, shadows and culling follow.
  *
- * `offsetX` / `offsetY` move the light off the entity's centre, in local px: the entity's rotation turns them, and
- * `height` then lifts the result. Pool, glow, shadows and culling all follow.
- *
- * Shadow casters and raycasted occluders come from this entity's Collider.visualRange
- * neighbors (not from lightIntensity): an occluder past visualRange does not block
- * the light. Tune visualRange for that reach / cost (`influenceRadius` is the light's
- * full reach); lightIntensity still drives lighting / cookie math.
+ * Shadow casters and raycasted occluders come from this entity's Collider.visualRange neighbours: an occluder past
+ * visualRange does not block the light.
  */
 export class LightEmitter extends Component {
   static ARRAY_SCHEMA = {
     active: Uint8Array, // 0 = entity doesn't have this component, 1 = active
-    lightColor: Uint32Array,
-    lightIntensity: Float32Array,
-    sqrtLightIntensity: Float32Array,
-    height: Float32Array, // moves the light (and its pool) up the screen by this many px
-    glowHeightOffset: Float32Array,
-    sourceHeight: Float32Array, // the source's height above the floor: widens and softens the pool, does not move it
-    hasGlowSprite: Float32Array, // 0 = no glow; 0.5 = intensity/50000 (default); 1 = twice that alpha
-    layerIdOfGlowSprite: Uint8Array, // 0 = inherit entity layerMask; non-zero = that layer id bit only
+    color: Uint32Array,
+    radius: Float32Array, // px: how far the light reaches
+    brightness: Float32Array, // times the colour and the glow
+    elevation: Float32Array, // the source's height above the floor: widens and flattens the pool, does not move it
+    glow: Float32Array, // the halo's alpha; 0 = no halo
+    glowOffsetY: Float32Array, // screen px from the light to its halo; negative is up
+    glowLayerId: Uint8Array, // 0 = the entity's layers; non-zero = that layer id only (set it by name with glowLayer)
     offsetX: Float32Array, // local px from the entity's centre, turns with it (a car's headlights ahead of it)
     offsetY: Float32Array,
   };
 
-  /**
-   * Custom getter for lightIntensity
-   * Returns the light intensity value
-   */
-  get lightIntensity() {
-    return LightEmitter.lightIntensity[this.index];
+  /** The halo's alpha, at least 0 (0 draws no halo). */
+  get glow() {
+    return LightEmitter.glow[this.index];
   }
 
-  /**
-   * Custom setter for lightIntensity
-   * OPTIMIZED: Automatically updates sqrtLightIntensity to avoid repeated sqrt calculations.
-   * Cull / cookie radius: lightInfluenceRadius(sqrtLightIntensity) in utils.js.
-   */
-  set lightIntensity(value) {
-    LightEmitter.lightIntensity[this.index] = value;
-    // Cache sqrt(intensity) to avoid recalculating it every frame in hot loops
-    LightEmitter.sqrtLightIntensity[this.index] = Math.sqrt(value);
+  set glow(value) {
+    const v = +value;
+    LightEmitter.glow[this.index] = v > 0 ? v : 0;
   }
 
-  /** World radius this light reaches. Collider.visualRange at least this occludes all of it. */
-  get influenceRadius() {
-    return lightInfluenceRadius(LightEmitter.sqrtLightIntensity[this.index]);
+  /** The layer the halo is drawn on, by name; null when it follows the entity's layers. */
+  get glowLayer() {
+    const id = LightEmitter.glowLayerId[this.index];
+    return id ? Layer.getName(id) : null;
   }
 
-  get lightColor() {
-    return LightEmitter.lightColor[this.index];
+  /** @param {string|null} name a layer's name, or null for the entity's layers */
+  set glowLayer(name) {
+    if (name === null || name === undefined || name === '') {
+      LightEmitter.glowLayerId[this.index] = 0;
+      return;
+    }
+    const id = Layer.getId(name);
+    if (!(id > 0)) throw new Error(`LightEmitter.glowLayer: no layer named '${name}'`);
+    LightEmitter.glowLayerId[this.index] = id;
   }
-
-  set lightColor(value) {
-    LightEmitter.lightColor[this.index] = value;
-  }
-
-  get hasGlowSprite() {
-    return LightEmitter.hasGlowSprite[this.index];
-  }
-
-  /**
-   * Glow-sprite strength in [0, 1].
-   * 0 hides the sprite. 0.5 is intensity/50000. 1 is twice that alpha.
-   */
-  set hasGlowSprite(value) {
-    let v = +value;
-    if (!(v >= 0)) v = 0;
-    else if (v > 1) v = 1;
-    LightEmitter.hasGlowSprite[this.index] = v;
-  }
-
 }

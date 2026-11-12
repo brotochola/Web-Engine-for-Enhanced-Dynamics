@@ -64,7 +64,6 @@ import { Sun } from '../core/sun.js';
 import {
     calculateCameraScreenBounds,
     screenBoundsToWorldBounds,
-    lightInfluenceRadius,
     lightCookieScale,
     resolveGroundScaleY,
 } from '../util/utils.js';
@@ -2027,16 +2026,13 @@ class PreRenderWorker extends AbstractWorker {
 
     _collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
         screenMinX, screenMaxX, screenMinY, screenMaxY) {
-        const MIN_GLOW_INTENSITY = 50;
-        const MIN_GLOW_RANGE = 2.5;
         this._syncGlowLayer();
-        if (this._glowEmit && this._queryLightEmitter && LightEmitter.active && LightEmitter.hasGlowSprite) {
+        if (this._glowEmit && this._queryLightEmitter && LightEmitter.active && LightEmitter.glow) {
             const lights = Query.queryActiveEntities(this._queryLightEmitter);
             if (lights && lights.length > 0) {
                 const leActive = LightEmitter.active;
-                const leGlow = LightEmitter.hasGlowSprite;
-                const leIntensity = LightEmitter.lightIntensity;
-                const leSqrt = LightEmitter.sqrtLightIntensity;
+                const leGlow = LightEmitter.glow;
+                const leRadius = LightEmitter.radius;
                 // H-19, same hoist as collectVisibleEntities, and worse here:
                 // `SpriteRenderer.boundsHalfW?.[i]` was a static property lookup
                 // plus an optional chain PER LIGHT, not just a truthiness test.
@@ -2049,9 +2045,7 @@ class PreRenderWorker extends AbstractWorker {
                 const glowRotS = Transform.rotS;
                 for (let li = 0; li < lights.length; li++) {
                     const i = lights[li];
-                    if (!leActive[i] || !leGlow[i]) continue;
-                    if (leIntensity[i] < MIN_GLOW_INTENSITY) continue;
-                    if ((visualRange[i] || leSqrt[i] || 200) < MIN_GLOW_RANGE) continue;
+                    if (!leActive[i] || !leGlow[i] || !(leRadius[i] > 0)) continue;
                     if (!skipCull) {
                         const ox = glowOffsetX[i];
                         const oy = glowOffsetY[i];
@@ -2391,7 +2385,7 @@ class PreRenderWorker extends AbstractWorker {
         else if (type === 7) mask = this.liquidFun?.layerMask?.[index] | 0;
         else if (type === 2) mask = DecorationComponent.layerMask ? DecorationComponent.layerMask[index] | 0 : 0;
         else if (type === 3) {
-            const g = LightEmitter.layerIdOfGlowSprite[index] | 0;
+            const g = LightEmitter.glowLayerId[index] | 0;
             if (g) mask = 1 << g;
             else mask = SpriteRenderer.layerMask ? SpriteRenderer.layerMask[index] | 0 : 0;
         } else if (type === 4 || type === 5) {
@@ -3319,9 +3313,7 @@ class PreRenderWorker extends AbstractWorker {
         const worldX = Transform.x;
         const worldY = Transform.y;
         const lightEnabled = LightEmitter.active;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtI = LightEmitter.sqrtLightIntensity;
-        const lightHeight = LightEmitter.height;
+        const lightRadius = LightEmitter.radius;
         const offsetX = LightEmitter.offsetX;
         const offsetY = LightEmitter.offsetY;
         const rotC = Transform.rotC;
@@ -3346,12 +3338,12 @@ class PreRenderWorker extends AbstractWorker {
         for (let i = 0; i < raw.length; i++) {
             const id = raw[i];
             if (!lightEnabled[id]) continue;
-            if (!(sqrtI[id] > 0)) continue;
+            const influence = lightRadius[id];
+            if (!(influence > 0)) continue;
             const ox = offsetX[id];
             const oy = offsetY[id];
             const x = worldX[id] + ox * rotC[id] - oy * rotS[id];
-            const y = worldY[id] + ox * rotS[id] + oy * rotC[id] - (lightHeight[id] || 0);
-            const influence = lightInfluenceRadius(sqrtI[id]);
+            const y = worldY[id] + ox * rotS[id] + oy * rotC[id];
             if (
                 x + influence < viewLeft ||
                 x - influence > viewRight ||
@@ -3369,9 +3361,10 @@ class PreRenderWorker extends AbstractWorker {
             slot.id = id;
             slot.x = x;
             slot.y = y;
-            slot.intensity = lightIntensity[id];
+            // The falloff's I = (radius / 10)², divided so a whole radius gives it exactly.
+            slot.intensity = (influence * influence) / 100;
             slot.rangeSq = range * range;
-            slot.sqrtI = sqrtI[id];
+            slot.sqrtI = influence / 10;
             slot.distSq = dx * dx + dy * dy;
             slot.maxShadows = 0;
             n++;
@@ -4043,8 +4036,7 @@ class PreRenderWorker extends AbstractWorker {
             const offsetY = LightEmitter.offsetY;
             const rotC = Transform.rotC;
             const rotS = Transform.rotS;
-            const lightIntensity = LightEmitter.lightIntensity;
-            const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+            const lightRadius = LightEmitter.radius;
             const flashActive = FlashComponent.active;
             const zoom = this.cameraData ? this._frameCameraZoom : 1;
             const camX = this.cameraData ? this._frameCameraX : 0;
@@ -4073,14 +4065,13 @@ class PreRenderWorker extends AbstractWorker {
                 const lightIdx = lightEntitiesRaw[i];
                 if (!lightEnabled[lightIdx]) continue;
 
-                const intensity = lightIntensity[lightIdx];
-                if (!(intensity > 0)) continue;
+                const lightInfluenceR = lightRadius[lightIdx];
+                if (!(lightInfluenceR > 0)) continue;
 
                 const ox = offsetX[lightIdx];
                 const oy = offsetY[lightIdx];
                 const lightX = worldX[lightIdx] + ox * rotC[lightIdx] - oy * rotS[lightIdx];
                 const lightY = worldY[lightIdx] + ox * rotS[lightIdx] + oy * rotC[lightIdx];
-                const lightInfluenceR = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
                 if (lightX + lightInfluenceR < viewMinX || lightX - lightInfluenceR > viewMaxX ||
                     lightY + lightInfluenceR < viewMinY || lightY - lightInfluenceR > viewMaxY) {
                     continue;
@@ -4177,8 +4168,7 @@ class PreRenderWorker extends AbstractWorker {
         const fixturePoolMax = ColliderFixture.maxCount | 0;
         const fixtureRevision = ColliderFixture.revision;
         const lightEnabled = LightEmitter.active;
-        const lightIntensity = LightEmitter.lightIntensity;
-        const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
+        const lightRadius = LightEmitter.radius;
 
         const neighborData = Grid.neighborData;
         const stride = Grid._stride;
@@ -4252,8 +4242,8 @@ class PreRenderWorker extends AbstractWorker {
             const lightIdx = visibleLights[1 + li];
             if (!lightEnabled[lightIdx]) continue;
 
-            const intensity = lightIntensity[lightIdx];
-            if (intensity <= 0) continue;
+            const influenceRadius = lightRadius[lightIdx];
+            if (!(influenceRadius > 0)) continue;
 
             // Same display pose as sprites (post-step publish), not live Transform
             this._displayPose(lightIdx, pose);
@@ -4261,7 +4251,6 @@ class PreRenderWorker extends AbstractWorker {
             const oy = lightOffsetY[lightIdx];
             const lx = pose[0] + ox * lightRotC[lightIdx] - oy * lightRotS[lightIdx];
             const ly = pose[1] + ox * lightRotS[lightIdx] + oy * lightRotC[lightIdx];
-            const influenceRadius = lightInfluenceRadius(sqrtLightIntensity[lightIdx]);
             SOLID_ARGS[6] = lx;
             SOLID_ARGS[7] = ly;
             SOLID_ARGS[8] = influenceRadius * influenceRadius;

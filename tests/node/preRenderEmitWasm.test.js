@@ -228,7 +228,7 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     Transform.rotS = new Float32Array(m.buffer, pose + 16 * N, N);
   }
   assert.equal(SpriteRenderer.scaleX.buffer, m.buffer, 'SpriteRenderer is in the memory');
-  assert.equal(LightEmitter.lightColor.buffer === m.buffer, lights, `LightEmitter is ${lights ? '' : 'not '}in the memory`);
+  assert.equal(LightEmitter.color.buffer === m.buffer, lights, `LightEmitter is ${lights ? '' : 'not '}in the memory`);
   assert.equal(ParticleComponent.x.buffer === m.buffer, particles, `ParticleComponent is ${particles ? '' : 'not '}in the memory`);
   worker.zenithalMaxHeight = 220;
   worker.zenithalScaleFactor = 0.5;
@@ -316,17 +316,17 @@ async function setup({ ySort, maxItems = MAX, count = MAX, seed = 0x5eed, persis
     bc.anchorY[s] = rb();
   }
 
-  // Lights: no glow (the scale's floor), too faint (the alpha's), NaN and -0 roots, NaN and -0 offsets, every strength.
+  // Lights: no glow (the scale's floor: a radius under about 12), too faint (the alpha's), NaN and -0 radii, NaN and
+  // -0 glow offsets, every strength and brightness.
   const rl = rng(seed ^ 0x9107);
   const le = LightEmitter;
   for (let i = 0; i < N; i++) {
-    // Intensity 0.5 is under both alpha floors, 6 only under the drawn one (alpha 1.2e-4 or 2.4e-4).
-    const intensity = i % 11 === 0 ? 0 : i % 13 === 0 ? (i & 1 ? 0.5 : 6) : 50 + rl() * 20000;
-    le.lightIntensity[i] = intensity;
-    le.sqrtLightIntensity[i] = i % 17 === 0 ? NaN : i % 19 === 0 ? -0 : Math.sqrt(intensity);
-    le.hasGlowSprite[i] = [0, 0.5, 1, 0.5][i % 4];
-    le.glowHeightOffset[i] = i % 7 === 0 ? NaN : i % 9 === 0 ? -0 : rl() * 60 - 10;
-    le.lightColor[i] = (rl() * 0xffffffff) >>> 0;
+    const radius = i % 11 === 0 ? 0 : i % 13 === 0 ? (i & 1 ? 5 : 11) : 70 + rl() * 1400;
+    le.radius[i] = i % 17 === 0 ? NaN : i % 19 === 0 ? -0 : radius;
+    le.glow[i] = [0, 0.4, 1.2, 0.0005][i % 4];
+    le.brightness[i] = i % 5 === 0 ? 0.5 : 1;
+    le.glowOffsetY[i] = i % 7 === 0 ? NaN : i % 9 === 0 ? -0 : rl() * 60 - 50;
+    le.color[i] = (rl() * 0xffffffff) >>> 0;
     Transform.x[i] = i % 23 === 0 ? -0 : rl() * 4000;
     Transform.y[i] = rl() * 3000;
     // DX-LIGHTOFFSET: an offset on some lights, turned by the light's facing.

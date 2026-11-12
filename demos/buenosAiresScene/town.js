@@ -28,10 +28,8 @@ export const HEIGHT_PX = META.CZ * META.SF;
 
 export const LAMP_COLOR = 0xffdcaa;
 export const HEADLIGHT_COLOR = 0xfff0d0;
-/** Lamps light from halfway up their pole (sourceHeight), so they are stronger, or their foot would be dark. */
-export const LAMP_GAIN = 2.2;
 /** A light's reach for the shadows it casts, and with ?raycast=1 for the houses that stop it. */
-export const lightReach = (intensity) => (RAYCAST ? Math.ceil(10 * Math.sqrt(intensity)) : 0);
+export const lightReach = (radius) => (RAYCAST ? Math.ceil(radius) : 0);
 
 /** The panel's switches, read by the workers: 1 turns a thing off, so all start at what the barrio does by itself. */
 export class TownSwitches extends SharedResource {}
@@ -86,7 +84,7 @@ export function lightBorn(go, kind, glows, alphaA, alphaB, x, y) {
   hoursAt(x, y, _hours);
   L.on[i] = _hours[0];
   L.off[i] = _hours[1];
-  L.base[i] = LightEmitter.lightIntensity[i];
+  L.base[i] = LightEmitter.radius[i];
   L.lit[i] = 2;
   L.kind[i] = kind;
   L.glows[i] = glows;
@@ -104,7 +102,7 @@ export function lightTick(go) {
   if (lit === L.lit[i]) return;
   L.lit[i] = lit;
   LightEmitter.active[i] = lit;
-  LightEmitter.lightIntensity[i] = lit ? L.base[i] : 0;
+  LightEmitter.radius[i] = lit ? L.base[i] : 0;
   const n = Math.min(L.glows[i], go.getAttachedDecorationCount());
   for (let q = 0; q < n; q++) {
     const d = go.getAttachedDecoration(q);

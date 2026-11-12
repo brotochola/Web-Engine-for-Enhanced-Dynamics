@@ -294,8 +294,7 @@ export function writeFrame(boot, t, { scene = boot.scene, revision = 7 } = {}) {
     pos.push([Transform.x[i], Transform.y[i]]);
     if (e.kind === 'light') {
       LightEmitter.active[i] = 1;
-      LightEmitter.lightIntensity[i] = e.sqrtI * e.sqrtI;
-      LightEmitter.sqrtLightIntensity[i] = e.sqrtI;
+      LightEmitter.radius[i] = e.sqrtI * 10;
       return;
     }
     LightOccluder.active[i] = 1;

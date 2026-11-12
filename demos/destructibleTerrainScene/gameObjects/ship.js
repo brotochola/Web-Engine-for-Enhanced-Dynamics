@@ -194,7 +194,7 @@ export class Ship extends GameObject {
       scale: { from: { min: 1.0, max: 1.4 }, to: { min: 1.5, max: 2 } },
       tint: { min: 0x1ec8ff, max: 0x6ef0ff },
       alpha: { from: { min: 0.07, max: 0.16 }, to: 0 },
-      lightIntensity: 10,
+      lightRadius: 32,
       layer: 'fx',
     });
     if (!didHit) return;
@@ -210,7 +210,7 @@ export class Ship extends GameObject {
       texture: '_whiteCircle',
       tint: { min: 0xaaffff, max: 0xffffff },
       alpha: { from: { min: 0.5, max: 0.95 }, to: 0 },
-      lightIntensity: 200,
+      lightRadius: 141,
       layer: 'fx',
     });
   }

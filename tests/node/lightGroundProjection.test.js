@@ -1,6 +1,7 @@
-// config.lighting.groundScaleY and LightEmitter.sourceHeight on a real Pixi worker: what updateLighting uploads,
-// read back through the lighting shader's formula, is I / (I + h² + dx² + (dy / groundScaleY)²); the raycasted
-// light batch carries the same terms and an umbra quad no taller than the pool. Defaults leave the old uploads.
+// config.lighting.groundScaleY and LightEmitter.elevation on a real Pixi worker: what updateLighting uploads, read
+// back through the lighting shader's formula, is I / (I + h² + dx² + (dy / groundScaleY)²) with I = (radius / 10)²;
+// the raycasted light batch carries the same terms and an umbra quad no taller than the pool. brightness scales the
+// colour.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -8,7 +9,7 @@ import { Transform } from '../../src/components/transform.js';
 import { Collider } from '../../src/components/collider.js';
 import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { LIGHTING_DEFAULTS } from '../../src/util/configDefaults.js';
-import { GROUND_SCALE_Y_MIN, lightInfluenceRadius, resolveGroundScaleY } from '../../src/util/lightRadius.js';
+import { GROUND_SCALE_Y_MIN, resolveGroundScaleY } from '../../src/util/lightRadius.js';
 import { lightDataTextureFloatCount } from '../../src/util/utils.js';
 import { loadWorker } from '../bench/workerHarness.mjs';
 
@@ -24,25 +25,24 @@ function bindComponents() {
   Transform.rotS = new Float32Array(N);
   Collider.visualRange = new Float32Array(N);
   LightEmitter.active = new Uint8Array(N);
-  LightEmitter.lightColor = new Uint32Array(N);
-  LightEmitter.lightIntensity = new Float32Array(N);
-  LightEmitter.sqrtLightIntensity = new Float32Array(N);
-  LightEmitter.height = new Float32Array(N);
+  LightEmitter.color = new Uint32Array(N);
+  LightEmitter.radius = new Float32Array(N);
+  LightEmitter.brightness = new Float32Array(N).fill(1);
+  LightEmitter.elevation = new Float32Array(N);
   LightEmitter.offsetX = new Float32Array(N);
   LightEmitter.offsetY = new Float32Array(N);
-  LightEmitter.sourceHeight = new Float32Array(N);
 }
 
-function light(e, x, y, intensity, color, { height = 0, sourceHeight = 0 } = {}) {
+function light(e, x, y, radius, color, { offsetY = 0, elevation = 0, brightness = 1 } = {}) {
   Transform.active[e] = 1;
   Transform.x[e] = x;
   Transform.y[e] = y;
   LightEmitter.active[e] = 1;
-  LightEmitter.lightColor[e] = color;
-  LightEmitter.lightIntensity[e] = intensity;
-  LightEmitter.sqrtLightIntensity[e] = Math.sqrt(intensity);
-  LightEmitter.height[e] = height;
-  LightEmitter.sourceHeight[e] = sourceHeight;
+  LightEmitter.color[e] = color;
+  LightEmitter.radius[e] = radius;
+  LightEmitter.brightness[e] = brightness;
+  LightEmitter.elevation[e] = elevation;
+  LightEmitter.offsetY[e] = offsetY;
 }
 
 /** A Pixi worker with just enough lighting state for updateLighting (no GPU: the upload is skipped). */
@@ -94,29 +94,29 @@ test('groundScaleY: a positive number up to 1, clamped below; anything else is 1
   assert.equal(resolveGroundScaleY(0.001), GROUND_SCALE_Y_MIN);
 });
 
-test('defaults upload the floor light as before: y raised by height, intensity and colour untouched', async () => {
+test('a floor light uploads I = (radius / 10)² and its colour untouched; offsetY -30 raises it 30 px', async () => {
   bindComponents();
-  light(0, 100, 200, 20000, 0xff8040, { height: 30 });
+  light(0, 100, 200, 1400, 0xff8040, { offsetY: -30 });
   const px = await lightingWorker(undefined, [0]);
   px.updateLighting();
   const d = px._lightDataFloats;
-  assert.deepEqual(Array.from(d.subarray(0, 3)), [100, 170, 20000]);
+  assert.deepEqual(Array.from(d.subarray(0, 3)), [100, 170, 19600]);
   assert.deepEqual(Array.from(d.subarray(MAX_LIGHTS * 4, MAX_LIGHTS * 4 + 3)), [1, Math.fround(0x80 / 255), Math.fround(0x40 / 255)]);
   assert.equal(px.lightingShader.resources.uniforms.uniforms.uLightCount, 1);
 });
 
 test('the uploaded light shades I / (I + h² + dx² + (dy / groundScaleY)²) through the lighting shader', async () => {
   bindComponents();
-  light(0, 300, 400, 20000, 0xff0000, { height: 0, sourceHeight: 110 });
-  light(1, -50, 80, 9000, 0xff0000, { height: 25, sourceHeight: 0 });
+  light(0, 300, 400, 1400, 0xff0000, { elevation: 110 });
+  light(1, -50, 80, 950, 0xff0000, { offsetY: -25 });
   const g = 0.5;
   const px = await lightingWorker(g, [0, 1]);
   px.updateLighting();
   for (const [slot, e] of [[0, 0], [1, 1]]) {
     const lx = Transform.x[e];
-    const ly = Transform.y[e] - LightEmitter.height[e];
-    const I = LightEmitter.lightIntensity[e];
-    const h = LightEmitter.sourceHeight[e];
+    const ly = Transform.y[e] + LightEmitter.offsetY[e];
+    const I = (LightEmitter.radius[e] * LightEmitter.radius[e]) / 100;
+    const h = LightEmitter.elevation[e];
     for (const [dx, dy] of [[0, 0], [120, 0], [0, 60], [-200, -35], [500, 250]]) {
       const got = shadeRed(px, slot, lx + dx, ly + dy);
       const want = expected(I, h, dx, dy, g);
@@ -127,7 +127,7 @@ test('the uploaded light shades I / (I + h² + dx² + (dy / groundScaleY)²) thr
 
 test('the pool is an ellipse: R across matches R * groundScaleY up and down', async () => {
   bindComponents();
-  light(0, 0, 0, 10000, 0xff0000);
+  light(0, 0, 0, 1000, 0xff0000);
   const g = 0.6;
   const px = await lightingWorker(g, [0]);
   px.updateLighting();
@@ -138,14 +138,14 @@ test('the pool is an ellipse: R across matches R * groundScaleY up and down', as
   assert.ok(shadeRed(px, 0, 0, 250) < across, 'R straight down is farther away on the floor');
 });
 
-test('sourceHeight lowers the peak to I / (I + h²) and keeps the far field', async () => {
+test('elevation lowers the peak to I / (I + h²) and keeps the far field', async () => {
   bindComponents();
-  light(0, 0, 0, 20000, 0xff0000, { sourceHeight: 110 });
-  light(1, 0, 0, 20000, 0xff0000);
+  light(0, 0, 0, 1400, 0xff0000, { elevation: 110 });
+  light(1, 0, 0, 1400, 0xff0000);
   const px = await lightingWorker(1, [0, 1]);
   px.updateLighting();
   const raisedPeak = shadeRed(px, 0, 0, 0);
-  assert.ok(Math.abs(raisedPeak - 20000 / (20000 + 110 * 110)) < 1e-6);
+  assert.ok(Math.abs(raisedPeak - 19600 / (19600 + 110 * 110)) < 1e-6);
   assert.ok(Math.abs(shadeRed(px, 1, 0, 0) - 1) < 1e-6, 'a floor light peaks at 1');
   const far = 1000;
   const ratio = shadeRed(px, 0, far, 0) / shadeRed(px, 1, far, 0);
@@ -154,7 +154,7 @@ test('sourceHeight lowers the peak to I / (I + h²) and keeps the far field', as
 
 test('the raycasted batch: an umbra quad R wide and R * groundScaleY tall, the light terms folded in', async () => {
   bindComponents();
-  light(0, 500, 300, 16900, 0x00ff00, { height: 10, sourceHeight: 60 });
+  light(0, 500, 300, 1300, 0x00ff00, { offsetY: -10, elevation: 60 });
   const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
   px._groundScaleY = 0.5;
   px._groundInvScaleY = 2;
@@ -169,7 +169,7 @@ test('the raycasted batch: an umbra quad R wide and R * groundScaleY tall, the l
   const base = 1;
   i32[base] = 0;
   f32[base + 1] = 500;
-  f32[base + 2] = 300; // pre-render's light position; Pixi raises it by `height`
+  f32[base + 2] = 290; // pre-render's light position, its offset included
   i32[base + 3] = 3;
   const xs = [400, 600, 500];
   const ys = [250, 250, 400];
@@ -201,7 +201,7 @@ test('the raycasted batch: an umbra quad R wide and R * groundScaleY tall, the l
   px._submitRender = () => {};
   px.renderVisibilityLighting();
 
-  const R = lightInfluenceRadius(Math.sqrt(16900));
+  const R = 1300;
   const I = 16900 + 60 * 60;
   const k = 16900 / I;
   const quadYs = [];
@@ -209,10 +209,23 @@ test('the raycasted batch: an umbra quad R wide and R * groundScaleY tall, the l
     const o = c * 10;
     quadYs.push(batch.data[o + 1]);
     assert.equal(batch.data[o + 2], 500);
-    assert.equal(batch.data[o + 3], 290, 'raised by height');
+    assert.equal(batch.data[o + 3], 290, 'raised by its offset');
     assert.equal(batch.data[o + 4], I, "I' = I + h²");
     assert.equal(batch.data[o + 5], R, 'the rim stays at the reach of the floor light');
     assert.ok(Math.abs(batch.data[o + 7] - k) < 1e-6, 'green times I / I\'');
   }
   assert.deepEqual([...new Set(quadYs)].sort((a, b) => a - b), [290 - R * 0.5, 290 + R * 0.5]);
+});
+
+test('brightness scales the uploaded colour and nothing else', async () => {
+  bindComponents();
+  light(0, 100, 200, 1000, 0xff8040, { brightness: 0.5 });
+  light(1, 100, 200, 1000, 0xff8040);
+  const px = await lightingWorker(undefined, [0, 1]);
+  px.updateLighting();
+  const d = px._lightDataFloats;
+  assert.deepEqual(Array.from(d.subarray(0, 3)), Array.from(d.subarray(4, 7)), 'position and I');
+  for (let c = 0; c < 3; c++) {
+    assert.equal(d[MAX_LIGHTS * 4 + c], Math.fround(d[MAX_LIGHTS * 4 + 4 + c] * 0.5));
+  }
 });

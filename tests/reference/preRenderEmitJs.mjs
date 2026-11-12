@@ -152,15 +152,15 @@ function emitSpriteQueue(deltaTime, source) {
     const particleFlat = ParticleComponent.flat;
     const particleViewMode = ParticleComponent.viewMode;
 
-    const lightColor = LightEmitter.lightColor;
-    const lightIntensity = LightEmitter.lightIntensity;
-    const sqrtLightIntensity = LightEmitter.sqrtLightIntensity;
-    const glowHeightOffset = LightEmitter.glowHeightOffset;
+    const lightColor = LightEmitter.color;
+    const lightRadius = LightEmitter.radius;
+    const lightBrightness = LightEmitter.brightness;
+    const glowOffsetY = LightEmitter.glowOffsetY;
     const lightOffsetX = LightEmitter.offsetX;
     const lightOffsetY = LightEmitter.offsetY;
     const entityRotC = Transform.rotC;
     const entityRotS = Transform.rotS;
-    const glowSprite = LightEmitter.hasGlowSprite;
+    const glowSprite = LightEmitter.glow;
     const lightGradientTextureId = this._resolveBuiltinTextureId('_lightGradient');
     const whiteCircleTextureId = this._resolveBuiltinTextureId('_whiteCircle');
 
@@ -595,9 +595,8 @@ function emitSpriteQueue(deltaTime, source) {
             this._setQueueType(ref, out, 5, idx);
         } else {
             // === LIGHT GLOW (type=3) ===
-            const scale = lightGlowScale(sqrtLightIntensity[idx]);
-            // hasGlowSprite 0.5 → /50000; 1 → /25000
-            const glowAlpha = lightIntensity[idx] * glowSprite[idx] * (1 / 25000);
+            const scale = lightGlowScale(lightRadius[idx] / 10);
+            const glowAlpha = glowSprite[idx] * lightBrightness[idx];
 
             if (scale < 0.1 || glowAlpha < 0.001) {
                 rqAlpha[out] = 0;
@@ -608,7 +607,7 @@ function emitSpriteQueue(deltaTime, source) {
             } else {
                 rqX[out] = entityX[idx];
                 rqX[out] = entityX[idx] + lightOffsetX[idx] * entityRotC[idx] - lightOffsetY[idx] * entityRotS[idx];
-                rqY[out] = entityY[idx] + lightOffsetX[idx] * entityRotS[idx] + lightOffsetY[idx] * entityRotC[idx] - (glowHeightOffset[idx] || 0);
+                rqY[out] = entityY[idx] + lightOffsetX[idx] * entityRotS[idx] + lightOffsetY[idx] * entityRotC[idx] + (glowOffsetY[idx] || 0);
                 rqScaleX[out] = scale;
                 rqScaleY[out] = scale;
                 rqAlpha[out] = glowAlpha;

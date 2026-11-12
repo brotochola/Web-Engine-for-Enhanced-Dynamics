@@ -56,8 +56,10 @@ enum {
   B_ACTIVE, B_X, B_Y, B_START_X, B_START_Y, B_OFFSET_Y, B_SCALE, B_ALPHA, B_TINT, B_TEXTURE,
   B_SPRITE_ROT_C, B_SPRITE_ROT_S, B_ROT_C, B_ROT_S, B_TRAIL_W, B_ANCHOR_X, B_ANCHOR_Y, B_TRAIL_TEX,
   /* The glow rows (type 3): LightEmitter's columns (L_COLOR 0: not in the memory, so they are listed for the JS),
-     the light entity's Transform x and y, and the gradient's texture (a value: _resolveBuiltinTextureId). */
-  L_COLOR, L_INTENSITY, L_SQRT, L_GLOW_OFFSET, L_GLOW, T_X, T_Y, L_GRADIENT_TEX,
+     the light entity's Transform x and y, and the gradient's texture (a value: _resolveBuiltinTextureId).
+     DX-LIGHTAPI: brightness, radius, glowOffsetY and glow, in the slots intensity, its root, the glow's height and
+     hasGlowSprite had (append, don't move). */
+  L_COLOR, L_BRIGHTNESS, L_RADIUS, L_GLOW_OFFSET, L_GLOW, T_X, T_Y, L_GRADIENT_TEX,
   /* The particle rows (type 1): ParticleComponent's columns (PC_X 0: not in the memory, so they are listed for the
      JS; PC_FLAT and PC_VIEW may be 0), the default texture (a value: _resolveBuiltinTextureId('_whiteCircle')) and
      the emit's doubles (E_PARAMS: zenithalMaxHeight, zenithalScaleFactor, zenithalAlphaFade). */
@@ -303,7 +305,7 @@ typedef struct {
   const float *bSpriteRc, *bSpriteRs, *bRc, *bRs, *bTrailW, *bAnchorX, *bAnchorY;
   uint32_t bTrailTex;
   const uint32_t *lColor;
-  const float *lIntensity, *lSqrt, *lGlowOff, *lGlow, *tX, *tY, *lOffX, *lOffY, *tRc, *tRs;
+  const float *lBright, *lRadius, *lGlowOff, *lGlow, *tX, *tY, *lOffX, *lOffY, *tRc, *tRs;
   uint32_t lGradientTex;
   const float *pcX, *pcY, *pcZ, *pcScaleX, *pcScaleY;
   const uint8_t *pcFlipX, *pcFlipY;
@@ -446,8 +448,8 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->bAnchorY = PTR(const float, B_ANCHOR_Y);
   e->bTrailTex = t[B_TRAIL_TEX];
   e->lColor = PTR(const uint32_t, L_COLOR);
-  e->lIntensity = PTR(const float, L_INTENSITY);
-  e->lSqrt = PTR(const float, L_SQRT);
+  e->lBright = PTR(const float, L_BRIGHTNESS);
+  e->lRadius = PTR(const float, L_RADIUS);
   e->lGlowOff = PTR(const float, L_GLOW_OFFSET);
   e->lGlow = PTR(const float, L_GLOW);
   e->tX = PTR(const float, T_X);
@@ -853,9 +855,9 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
   if (e->qShadowH) e->qShadowH[out] = 0.0f;
   if (e->qShadowOffX) e->qShadowOffX[out] = 0.0f;
   if (e->qShadowOffY) e->qShadowOffY[out] = 0.0f;
-  const double scale = ((double)or0(e->lSqrt[idx]) * GLOW_RADIUS_SCALE) / GRADIENT_RADIUS;
-  /* hasGlowSprite 0.5: intensity / 50000; 1: / 25000 */
-  const double glowAlpha = (double)e->lIntensity[idx] * (double)e->lGlow[idx] * (1.0 / 25000.0);
+  /* The glow is about 0.85 of the radius wide: sqrt(I) = radius / 10 times lightGlowScale's factor. */
+  const double scale = (((double)or0(e->lRadius[idx]) / 10.0) * GLOW_RADIUS_SCALE) / GRADIENT_RADIUS;
+  const double glowAlpha = (double)e->lGlow[idx] * (double)e->lBright[idx];
   if (scale < 0.1 || glowAlpha < 0.001) {
     hide_row(e, out);
   } else {
@@ -864,7 +866,7 @@ INLINE void glow_row(Emit *e, uint32_t i, uint32_t out) {
     const double c = (double)e->tRc[idx];
     const double s = (double)e->tRs[idx];
     e->qX[out] = (float)((double)e->tX[idx] + ox * c - oy * s);
-    e->qY[out] = (float)((double)e->tY[idx] + ox * s + oy * c - (double)or0(e->lGlowOff[idx]));
+    e->qY[out] = (float)((double)e->tY[idx] + ox * s + oy * c + (double)or0(e->lGlowOff[idx]));
     e->qScaleX[out] = (float)scale;
     e->qScaleY[out] = (float)scale;
     e->qAlpha[out] = (float)glowAlpha;

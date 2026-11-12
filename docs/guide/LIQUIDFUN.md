@@ -169,11 +169,11 @@ Emit is **explicit knobs**, not a named cookbook. `LIQUIDFUN_FLAGS` + per-call `
 
 **Viscosity:** `effective = viscousStrength * 0.5 * (scale[a] + scale[b])`. System baseline via `physics.liquidFun.viscousStrength` (default `0.25`) or `LiquidFun.setTuning`. Per-emit `viscousScale` stamps particles (default 1). Melt: `LiquidFun.setGroupViscousScale(id, scale)` bulk-stamps members.
 
-**Groups:** Kept when `ELASTIC|SPRING`, or `trackGroup: true`, or `viscousScale != 1`. `lightIntensity > 0` also forces `trackGroup` so the burst has a group id. Shape groups set `hasShapeGroups` (stats + elastic/spring). Bookkeeping viscous groups do **not**. Ungrouped create returns **`-1`** (not `0`). List via `LiquidFun.getGroups()` (thin SAB, cap 256).
+**Groups:** Kept when `ELASTIC|SPRING`, or `trackGroup: true`, or `viscousScale != 1`. `lightRadius > 0` also forces `trackGroup` so the burst has a group id. Shape groups set `hasShapeGroups` (stats + elastic/spring). Bookkeeping viscous groups do **not**. Ungrouped create returns **`-1`** (not `0`). List via `LiquidFun.getGroups()` (thin SAB, cap 256).
 
-Thin groups SAB is **one layout** (`src/util/liquidFunGroups.js`): `count` then 14 columns `id, particleCount, first, last, groupFlags, viscousScale, x, y, vx, vy, angVel, angle, lightIntensity, sqrtLightIntensity`. Physics `bindLiquidFunGroupsViews` must match. `lightIntensity` / `sqrtLightIntensity` are **by group id**. Pose / flags / first / last are dense live slots. If physics omits `groupFlags`, Pixi’s `sqrtLightIntensity` lands on zeros and the light splat packs nothing — raising emit intensity cannot help.
+Thin groups SAB is **one layout** (`src/util/liquidFunGroups.js`): `count` then 14 columns `id, particleCount, first, last, groupFlags, viscousScale, x, y, vx, vy, angVel, angle, lightIntensity, sqrtLightIntensity`. Physics `bindLiquidFunGroupsViews` must match. `lightIntensity` / `sqrtLightIntensity` (internal: the falloff's I = (lightRadius / 10)² and its root) are **by group id**. Pose / flags / first / last are dense live slots. If physics omits `groupFlags`, Pixi’s `sqrtLightIntensity` lands on zeros and the light splat packs nothing — raising the emit's lightRadius cannot help.
 
-**Lighting field:** per-emit `lightIntensity` (same units as `LightEmitter`). Reach is `10 * sqrt(I)` — same helper as entity cookies / cull. Pack skips a group unless **both** `I[gid] > 0` and `sqrtI[gid] > 0`. Pixi splats lit group slabs ADD into `lightingRT` with \(I/(I+d^2)\) (world px), not extra `uLightData` slots. No shadows. Independent of compute `maxParticles`. `tint` is the light color. Fire density splat is a different kernel (`1 - d²`). Do not put fire compute particles on the oil layer to “fix” lights.
+**Lighting field:** per-emit `lightRadius` (px, as `LightEmitter.radius`): the group's I is (lightRadius / 10)², and its reach is `lightRadius`. Pack skips a group unless **both** `I[gid] > 0` and `sqrtI[gid] > 0`. Pixi splats lit group slabs ADD into `lightingRT` with \(I/(I+d^2)\) (world px), not extra `uLightData` slots. No shadows. Independent of compute `maxParticles`. `tint` is the light color. Fire density splat is a different kernel (`1 - d²`). Do not put fire compute particles on the oil layer to “fix” lights.
 
 What is slow: a new **shape** group every mouse splash. Spray viscous blobs with `viscousScale != 1` keeps bookkeeping groups only.
 
@@ -270,7 +270,7 @@ LiquidFun.emit({
   tint: 0xc6862a,
   userData: 0, // opaque uint32 — engine never interprets (game may pack temperature)
   vx: 0, vy: 0, omega: 0,
-  lightIntensity: 150, // optional; same units as LightEmitter; reach = 10*sqrt(I)
+  lightRadius: 122, // optional; px, as LightEmitter.radius
   layer: 'oil',
   layers: ['oil', 'fire'], // density + compute; omit = entities-layer sprites only
   shape: 'circle',

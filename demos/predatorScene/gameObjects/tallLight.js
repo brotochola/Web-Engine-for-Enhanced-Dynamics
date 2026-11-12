@@ -21,19 +21,18 @@ export class TallLight extends GameObject {
     // this.rigidBody.static = 1;
     this.setSprite('tallLight');
 
-    this.lightEmitter.lightColor = randomColor({
+    this.lightEmitter.color = randomColor({
       min: 0xff0000,
       max: 0xffffff,
     });
 
     // The bulb is 110 px above the post's foot: the glow sits on it, and the pool is lit from up there
-    // (centred on the foot, flatter than a light on the ground). `height` stays 0: the pool does not move.
-    this.lightEmitter.height = 0;
-    this.lightEmitter.glowHeightOffset = 110;
-    this.lightEmitter.sourceHeight = 110;
-    this.lightEmitter.lightIntensity = 20000;
+    // (centred on the foot, flatter than a light on the ground).
+    this.lightEmitter.glowOffsetY = -110;
+    this.lightEmitter.elevation = 110;
+    this.lightEmitter.radius = 1414;
     this.lightEmitter.active = 1;
-    this.lightEmitter.hasGlowSprite = 0.6// 0.5; // TallLights show the glowing sprite
+    this.lightEmitter.glow = 0.48; // TallLights show the glowing sprite
 
     // Circle collider
     this.collider.shapeType = ShapeType.Circle;
@@ -81,8 +80,8 @@ export class TallLight extends GameObject {
       y: hitY,
       lifespan: 18,
       color: 0xffee00,
-      intensity: 5000,
-      hasGlowSprite: 0.5,
+      radius: 707,
+      glow: 0.1,
     });
   }
 }

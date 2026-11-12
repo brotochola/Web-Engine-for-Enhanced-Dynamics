@@ -1,6 +1,6 @@
 import WEED from '/src/index.js';
 
-const { GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, LightEmitter, LightOccluder, Layer, enums } = WEED;
+const { GameObject, RigidBody, Collider, SpriteRenderer, ShadowCaster, LightEmitter, LightOccluder, enums } = WEED;
 const { ShapeType } = enums;
 
 /**
@@ -8,15 +8,14 @@ const { ShapeType } = enums;
  * `spec.layer`: the glow's layer by name.
  */
 function applyLight(le, spec) {
-  le.lightColor = spec.color ?? 0xffffff;
-  le.lightIntensity = spec.intensity;
-  le.hasGlowSprite = spec.glow ?? 0;
-  if (spec.glowHeight !== undefined) le.glowHeightOffset = spec.glowHeight;
-  if (spec.height !== undefined) le.height = spec.height;
-  if (spec.sourceHeight !== undefined) le.sourceHeight = spec.sourceHeight;
+  le.color = spec.color ?? 0xffffff;
+  le.radius = spec.radius;
+  le.glow = spec.glow ?? 0;
+  if (spec.glowOffsetY !== undefined) le.glowOffsetY = spec.glowOffsetY;
+  if (spec.elevation !== undefined) le.elevation = spec.elevation;
   if (spec.offsetX !== undefined) le.offsetX = spec.offsetX;
   if (spec.offsetY !== undefined) le.offsetY = spec.offsetY;
-  if (spec.layer) LightEmitter.layerIdOfGlowSprite[le.index] = Layer.getId(spec.layer);
+  if (spec.layer) le.glowLayer = spec.layer;
 }
 
 /** A lamp with a Collider: its `visualRange` is its shadow and occluder reach (`spec.range`, or its whole reach). */
@@ -27,7 +26,7 @@ export class GalleryLamp extends GameObject {
     this.collider.shapeType = ShapeType.Circle;
     this.collider.radius = 4;
     applyLight(this.lightEmitter, spec);
-    this.collider.visualRange = spec.range ?? this.lightEmitter.influenceRadius;
+    this.collider.visualRange = spec.range ?? this.lightEmitter.radius;
     this._turn = spec.rotation ?? 0;
   }
 

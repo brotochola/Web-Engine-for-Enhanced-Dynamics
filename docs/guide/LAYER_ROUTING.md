@@ -75,7 +75,7 @@ Omit `layer`/`layers` → entities bit. `layers: []` on particles → mask 0. Ga
 | 0 | Entity | `SpriteRenderer.layerMask` (sprites) / `MeshRenderer.layerMask` (MESH fill) | entities bit (`setLayer` also ORs entities if feeder is not SPRITES) |
 | 1 | Particle | `ParticleComponent.layerMask` | entities bit |
 | 2 | Decoration | `DecorationComponent.layerMask` | entities bit |
-| 3 | Light Glow | `LightEmitter.layerIdOfGlowSprite` (legacy id) or entity `layerMask` | entities |
+| 3 | Light Glow | `LightEmitter.glowLayer` (a layer name) or entity `layerMask` | entities |
 | 4 | Bullet | `BulletComponent.layerMask` | entities bit |
 | 5 | Bullet Trail | same as parent bullet | entities bit |
 | 7 | LiquidFun | thin SAB `layerMask` | entities bit |
@@ -138,13 +138,13 @@ World vs local tiling (`setTileWorld` / `setTileLocal` / `bakeWorldTileToLocal`)
 
 **Light Glows:**
 ```javascript
-LightEmitter.layerIdOfGlowSprite[this.index] = Layer.getId('glow');
-LightEmitter.layerIdOfGlowSprite[this.index] = 0; // inherit entity layerMask
+this.lightEmitter.glowLayer = 'glow';
+this.lightEmitter.glowLayer = null; // inherit entity layerMask
 ```
 
 ### Glow Layer Inheritance
 
-1. If `LightEmitter.layerIdOfGlowSprite[i]` is non-zero, that layer id bit is used.
+1. If `LightEmitter.glowLayerId[i]` (what `glowLayer` writes) is non-zero, that layer id bit is used.
 2. If it's 0, the entity `SpriteRenderer.layerMask` is used.
 3. Mask 0 on a glow (no sprite) still draws on ENTITIES.
 
