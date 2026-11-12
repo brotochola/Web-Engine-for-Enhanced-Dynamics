@@ -1259,6 +1259,8 @@ Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, `raycasted
 | A halo on the bulb | `glow = 0.6` (default 0: none), `glowOffsetY = -40` (40 px up the screen), `glowLayer = 'glows'` |
 | A lamp post's even pool | `elevation = 110` (the bulb's height above the floor: a wider, flatter pool, same reach) |
 | The light ahead of the entity (headlights) | `offsetX = 60` (local px, turned with the entity) |
+| A cone (headlights, a flashlight) | `coneAngle = Math.PI / 3` (the whole aperture; default 2π: round), `coneSoftness = 0.3`, `direction = 0` (radians from where the entity faces) |
+| A flashlight that turns with the hero's flip | `followFlip = 1` (mirrors `offsetX` and `direction` with `flipX`) |
 | A light that casts no shadow (cheaper) | `castShadows = false` |
 | Shadows that stop short (cheaper) | `shadowRange = 400` (px; default 0: the radius) |
 | A short burst (a shot, a spark) | `Flash.spawn({ x, y, radius, color, glow, lifespan, castShadows })` (needs `lighting.maxFlashes`) |
@@ -1374,6 +1376,47 @@ onSpawned() {
   this.lightEmitter.offsetX = 60;   // 60 px ahead of the car, wherever it points
 }
 ```
+
+### Cone lights: `direction`, `coneAngle`, `coneSoftness`, `followFlip`
+
+A light with `coneAngle` under 2π lights a cone instead of a circle: car headlights seen from above, a flashlight. The cone is part of the same light, so its radius, brightness, colour, elevation, offset and shadows work as on any other.
+
+- `coneAngle` (radians) is the whole aperture: `Math.PI / 3` is 60 degrees, 30 each side of its axis. 2π, the default, is a round light.
+- `coneSoftness` (0..1, default 0) is how much of each half fades out: 0 is a hard edge, 1 fades all the way from the axis.
+- `direction` (radians, default 0) is where the cone points relative to the way the entity faces. The entity's `rotation` turns it, as it turns `offsetX`, so a car's headlights follow its heading with no code per frame. Like the pool, the cone is measured on the floor (`lighting.groundScaleY`).
+- `followFlip` (default 0): with 1, a change of the entity's `flipX` mirrors the light's `offsetX` and `direction`, so a flashlight in a hero's hand points the way the hero looks. With 0 a flip leaves the light alone (a car whose mirrored frame is only art). The getters read back what you wrote.
+
+```javascript
+class Car extends GameObject {
+  static components = [SpriteRenderer, LightEmitter];
+
+  onSpawned() {
+    this.setSprite('car');            // drawn facing +x
+    const light = this.lightEmitter;
+    light.radius = 420;
+    light.color = 0xfff1c4;
+    light.offsetX = 50;               // at the front bumper
+    light.coneAngle = Math.PI / 3;    // 60 degrees
+    light.coneSoftness = 0.3;
+  }
+}
+
+class Hero extends GameObject {
+  static components = [SpriteRenderer, LightEmitter];
+
+  onSpawned() {
+    this.setSprite('hero');
+    const light = this.lightEmitter;
+    light.radius = 500;
+    light.offsetX = 12;               // the hand
+    light.coneAngle = Math.PI / 4;
+    light.coneSoftness = 0.5;
+    light.followFlip = 1;             // flipX = true points it the other way
+  }
+}
+```
+
+In basic lighting a cone light stamps sprite shadows only from the `ShadowCaster`s inside its cone (fainter on its soft edge), so a car's headlights cast nothing behind it. Under `raycasted: true` a cone light is still drawn round for now. The halo (`glow`) stays round: it is the bulb, not the beam.
 
 ### The sun and the night
 

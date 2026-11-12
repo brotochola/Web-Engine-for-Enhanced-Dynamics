@@ -3804,6 +3804,13 @@ export declare class LightEmitter extends Component {
     offsetY: typeof Float32Array;
     castShadows: typeof Uint8Array;
     shadowRange: typeof Float32Array;
+    dirC: typeof Float32Array;
+    dirS: typeof Float32Array;
+    coneHalf: typeof Float32Array;
+    coneSoftness: typeof Float32Array;
+    coneCos: typeof Float32Array;
+    coneInvSpan: typeof Float32Array;
+    followFlip: typeof Uint8Array;
   };
   static active: Uint8Array;
   /** 0xRRGGBB. */
@@ -3842,12 +3849,46 @@ export declare class LightEmitter extends Component {
    * raycast (the light finds them itself: no Collider.visualRange to set). A shorter reach costs less.
    */
   static shadowRange: Float32Array;
+  /** The cone's direction as cosine and sine, relative to the entity (1, 0 by default). Set it with `direction`. */
+  static dirC: Float32Array;
+  static dirS: Float32Array;
+  /** Half the cone's aperture, radians (π: no cone). Set it with `coneAngle`. */
+  static coneHalf: Float32Array;
+  /** 0..1, the share of the half aperture that fades. */
+  static coneSoftness: Float32Array;
+  /** cos(coneHalf), or -2 without a cone: what the frame compares against. Written by the setters. */
+  static coneCos: Float32Array;
+  /** 1 / the soft edge's width in cosine. Written by the setters. */
+  static coneInvSpan: Float32Array;
+  /** 1: offsetX and the direction mirror with the entity's flipX. */
+  static followFlip: Uint8Array;
   /** The halo's alpha, at least 0. */
   get glow(): number;
   set glow(value: number);
   /** The layer the halo is drawn on, by name; null follows the entity's layers. */
   get glowLayer(): string | null;
   set glowLayer(name: string | null);
+  /** Local px ahead of the entity, as written (a mirrored followFlip light reads back what was set). */
+  get offsetX(): number;
+  set offsetX(value: number);
+  /**
+   * Radians, where a cone points relative to the entity's facing (0, the default: where it faces). The entity's rotation
+   * turns it, as it turns the offset; measured on the floor.
+   */
+  get direction(): number;
+  set direction(angle: number);
+  /** Radians, the cone's whole aperture; 2π (the default) is a point light, the same light it always was. */
+  get coneAngle(): number;
+  set coneAngle(angle: number);
+  /** 0..1: 0 (the default) a hard edge, 1 a cone that fades from its axis to its edge. */
+  get coneSoftness(): number;
+  set coneSoftness(value: number);
+  /**
+   * 0 (the default) leaves the light alone when the entity's flipX changes (a car whose flip is art); 1 mirrors its offsetX
+   * and direction with it (a flashlight in a platformer hero's hand).
+   */
+  get followFlip(): number;
+  set followFlip(on: number | boolean);
 }
 
 /**
