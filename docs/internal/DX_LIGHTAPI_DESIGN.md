@@ -154,8 +154,19 @@ take their own copied loop or batch.
 - **B3, the headlights' shadows (first, the owner's order):** a copy of the stamp's gather drops casters outside the
   cone without a root (`dot ≥ 0 && dot² ≥ coneCos²·d²` up to 180°) before `maxShadowsPerLight`; the soft edge reuses
   A3's fold. If the cookie survives A5: pregenerated cone frames in the atlas, rotated per row, one batch.
-- **B4, raycast:** the sweep covers only the cone's interval (`wasm/visibilitySweep.c`, `visibilityGather.c`; SIMD and
-  f32 variants); cone fans in their own 14-float batch with their own shader; self-lit takes the factor.
+- **B4, raycast.** *The picture (built):* a cone light's umbra disc and fan go into their own batch
+  (`_visConeBatch`), its self-lit fills and transmit wedges into `_selfLitConeBatch`: the same 10- and 13-float layouts
+  plus a second buffer of 4 floats a vertex (the cone's floor direction, coneCos, coneInvSpan), drawn with the batch
+  shaders' `// #if CONE` blocks kept (`shaderWithFlag`). The point lights' programs are the same shaders with the
+  blocks cut, which is the source as it was, character for character; a point light's vertices are the bits they were
+  (the self-lit goldens hold) and lightGalleryScene `?raycast=1` captures as HEAD did (1 pixel by 1/255, the
+  raycast's run-to-run noise, R-0938). Sprite-mask occluders take the cone as a uniform (`uCone`; z −2 skips it).
+  With cones, WebGL and WebGPU differ exactly as they do without (the glowLayer difference, N-155). *The sweep (open):*
+  a cone light still gathers and sweeps its whole circle; sweeping only the cone's interval
+  (`wasm/visibilitySweep.c`, `visibilityGather.c`, SIMD and f32 variants) is the saving to measure.
+- **Known limit, the cookie:** with a sun, a cone light's cookie still lightens the sun's shadows in its whole round
+  pool, behind the car too. Pregenerated cone frames in the atlas, rotated per row, would fix it; it matters only for
+  lamps under a sun.
 - **B5,** cull by the cone's box only if the headlight scene shows it pays. `Flash.spawn` takes the cone too.
 
 ## Measurement

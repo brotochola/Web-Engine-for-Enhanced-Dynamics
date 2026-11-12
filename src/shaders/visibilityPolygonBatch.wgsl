@@ -30,6 +30,9 @@ struct VertexOut {
   @location(0) vWorldPos: vec2<f32>,
   @location(1) @interpolate(flat) vLight: vec4<f32>,
   @location(2) @interpolate(flat) vColor: vec4<f32>,
+  // #if CONE
+  @location(3) @interpolate(flat) vCone: vec4<f32>,
+  // #endif CONE
 }
 
 fn weedWorldToScreen(world: vec2<f32>) -> vec2<f32> {
@@ -47,17 +50,34 @@ fn mainVert(
   @location(0) aPosition: vec2<f32>,
   @location(1) aLight: vec4<f32>,
   @location(2) aColor: vec4<f32>,
+  // #if CONE
+  @location(3) aCone: vec4<f32>,
+  // #endif CONE
 ) -> VertexOut {
   var out: VertexOut;
   out.vWorldPos = aPosition;
   out.vLight = aLight;
   out.vColor = aColor;
+  // #if CONE
+  out.vCone = aCone;
+  // #endif CONE
   let screenPos = weedWorldToScreen(aPosition);
   let clipPos = (screenPos / uniforms.uCanvasSize) * 2.0 - 1.0;
   out.position = vec4<f32>(clipPos.x, -clipPos.y, 0.0, 1.0);
   return out;
 }
 
+// #if CONE
+// DX-SPOT, as lightingBasic's: how far inside its cone a point at floor offset delta from the light is: 1 inside, 0
+// outside, smooth across the soft edge; 1 at the light itself.
+fn coneFactor(delta: vec2<f32>, cone: vec4<f32>) -> f32 {
+  let len2 = dot(delta, delta);
+  let cosA = select(1.0, dot(delta, cone.xy) * inverseSqrt(len2), len2 > 0.0);
+  let t = clamp((cosA - cone.z) * cone.w, 0.0, 1.0);
+  return t * t * (3.0 - 2.0 * t);
+}
+
+// #endif CONE
 @fragment
 fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   var delta = in.vWorldPos - in.vLight.xy;
@@ -73,5 +93,8 @@ fn mainFrag(in: VertexOut) -> @location(0) vec4<f32> {
   let intensityScaled = in.vLight.z * DISTANCE_SCALE * DISTANCE_SCALE;
   var attenuation = intensityScaled / (intensityScaled + d2Scaled);
   attenuation *= radial * in.vColor.w;
+  // #if CONE
+  attenuation *= coneFactor(delta, in.vCone);
+  // #endif CONE
   return vec4<f32>(in.vColor.rgb * attenuation, 1.0);
 }

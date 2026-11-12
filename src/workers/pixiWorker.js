@@ -373,6 +373,11 @@ const SELF_LIT_BATCH_FLOATS = 13;
 /** A transmit wedge's radius in the self-lit batch: past any light's distance, so its facing term is 1. */
 const SELF_LIT_NO_FACING = 1e30;
 /**
+ * DX-SPOT. Floats per vertex of a cone light batch's second buffer: the cone's direction on the floor (x, y), the cosine
+ * of its half aperture, 1 / its soft edge's width (the shaders' CONE variant reads them as aCone).
+ */
+const CONE_FLOATS = 4;
+/**
  * E-96c. The transmit wedge's doubles. Neither _emitTransmitWedge nor _pushWedge inlines into the
  * self-lit batch, so each double passed to them was a heap number (6.5 MB/s with every occluder
  * calling, even at block 1). The caller writes them here and passes the entity.
@@ -1048,6 +1053,9 @@ class PixiRenderer extends AbstractWorker {
     // indices, uniforms, vertCap, idxCap, idxUsed, gpuReady }. Two draws per light were ~60 % of
     // Pixi in visPolyStressScene, most of it Pixi's per-draw binding and buffer bookkeeping.
     this._visBatch = null;
+    // DX-SPOT. The cone lights' umbra discs and fans: the light batch's layout and a second buffer of CONE_FLOATS a
+    // vertex (cbuf, coneData), drawn with the shader's CONE variant, so a point light pays nothing for cones.
+    this._visConeBatch = null;
     this._visPolyRT = null;          // RenderTexture for visibility lighting
     this._visPolyDisplaySprite = null; // Sprite displaying the RT with multiply blend
     this._selfLitBuffers = [null, null];
@@ -1056,6 +1064,8 @@ class PixiRenderer extends AbstractWorker {
     // E-96b. Every light's self-lit fills and transmit wedges in one mesh, drawn in the light pass:
     // { mesh, geometry, vbuf, data, indices, uniforms, vertCap, idxCap, idxUsed, gpuReady }.
     this._selfLitBatch = null;
+    // DX-SPOT. The cone lights' self-lit fills and wedges, as _visConeBatch is to _visBatch.
+    this._selfLitConeBatch = null;
     this._selfLitSpriteMeshes = [];
     this._selfLitCircleSegs = 16;
     // The circle fan's fixed angles, cos/sin built with the loop's own expression
@@ -1136,6 +1146,9 @@ class PixiRenderer extends AbstractWorker {
     this._visBatchProgramOpts = null;
     this._selfLitSpriteProgramOpts = null;
     this._selfLitBatchProgramOpts = null;
+    // DX-SPOT: the batches' programs with their CONE blocks on.
+    this._visConeProgramOpts = null;
+    this._selfLitConeProgramOpts = null;
     this._selfLitMaxFillVerts = 0;
     this._wedgePositions = null;
     this._wedgeScales = null;
@@ -3903,18 +3916,36 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     this._castedShadowsSunOnly = true;
 
     if (this._useWebGpu) {
-      this._visBatchProgramOpts = { gpuProgram: gpuFromWgsl(this._visBatchWgsl, 'visibility-polygon-batch') };
+      // DX-SPOT: each batch shader in two variants, its CONE blocks cut (the point lights' program, the source as it was)
+      // and kept (the cone lights').
+      this._visBatchProgramOpts = {
+        gpuProgram: gpuFromWgsl(shaderWithFlag(this._visBatchWgsl, 'CONE', false), 'visibility-polygon-batch'),
+      };
+      this._visConeProgramOpts = {
+        gpuProgram: gpuFromWgsl(shaderWithFlag(this._visBatchWgsl, 'CONE', true), 'visibility-polygon-cone'),
+      };
       if (this._selfLitSpriteWgsl) {
         this._selfLitSpriteProgramOpts = {
           gpuProgram: gpuFromWgsl(this._selfLitSpriteWgsl, 'occluder-self-lit-sprite'),
         };
       }
-      this._selfLitBatchProgramOpts = { gpuProgram: gpuFromWgsl(this._selfLitBatchWgsl, 'occluder-self-lit-batch') };
+      this._selfLitBatchProgramOpts = {
+        gpuProgram: gpuFromWgsl(shaderWithFlag(this._selfLitBatchWgsl, 'CONE', false), 'occluder-self-lit-batch'),
+      };
+      this._selfLitConeProgramOpts = {
+        gpuProgram: gpuFromWgsl(shaderWithFlag(this._selfLitBatchWgsl, 'CONE', true), 'occluder-self-lit-cone'),
+      };
     } else {
       this._visBatchProgramOpts = {
         glProgram: new PIXI.GlProgram({
-          vertex: this._visBatchVertexShader,
-          fragment: this._visBatchFragmentShader,
+          vertex: shaderWithFlag(this._visBatchVertexShader, 'CONE', false),
+          fragment: shaderWithFlag(this._visBatchFragmentShader, 'CONE', false),
+        }),
+      };
+      this._visConeProgramOpts = {
+        glProgram: new PIXI.GlProgram({
+          vertex: shaderWithFlag(this._visBatchVertexShader, 'CONE', true),
+          fragment: shaderWithFlag(this._visBatchFragmentShader, 'CONE', true),
         }),
       };
       if (this._selfLitSpriteVertShader && this._selfLitSpriteFragShader) {
@@ -3927,8 +3958,14 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       }
       this._selfLitBatchProgramOpts = {
         glProgram: new PIXI.GlProgram({
-          vertex: this._selfLitBatchVertexShader,
-          fragment: this._selfLitBatchFragmentShader,
+          vertex: shaderWithFlag(this._selfLitBatchVertexShader, 'CONE', false),
+          fragment: shaderWithFlag(this._selfLitBatchFragmentShader, 'CONE', false),
+        }),
+      };
+      this._selfLitConeProgramOpts = {
+        glProgram: new PIXI.GlProgram({
+          vertex: shaderWithFlag(this._selfLitBatchVertexShader, 'CONE', true),
+          fragment: shaderWithFlag(this._selfLitBatchFragmentShader, 'CONE', true),
         }),
       };
     }
@@ -3948,10 +3985,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
   /**
    * E-96. The light batch, with room for `verts` vertices and `idx` indices. It grows to a quarter past
    * the need and stays there: Pixi draws the whole index buffer, so the tail past this frame's triangles
-   * is zeros (degenerate), as few as the high-water mark leaves.
+   * is zeros (degenerate), as few as the high-water mark leaves. DX-SPOT: `cone` is the cone lights' batch
+   * (_visConeBatch), with its second buffer and the shader's CONE variant.
    */
-  _ensureVisBatch(verts, idx) {
-    const old = this._visBatch;
+  _ensureVisBatch(verts, idx, cone) {
+    const old = cone ? this._visConeBatch : this._visBatch;
     if (old && verts <= old.vertCap && idx <= old.idxCap) return old;
     const vertCap = Math.ceil(Math.max(verts, old ? old.vertCap : 0, 64) * 1.25);
     const idxCap = Math.ceil(Math.max(idx, old ? old.idxCap : 0, 192) * 1.25);
@@ -3963,12 +4001,16 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       shrinkToFit: false,
     });
     const stride = VIS_BATCH_FLOATS * 4;
+    const attributes = {
+      aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
+      aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 8 },
+      aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 24 },
+    };
+    const coneData = cone ? new Float32Array(vertCap * CONE_FLOATS) : null;
+    const cbuf = cone ? new Buffer({ data: coneData, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST, shrinkToFit: false }) : null;
+    if (cone) attributes.aCone = { buffer: cbuf, format: 'float32x4', stride: CONE_FLOATS * 4, offset: 0 };
     const geometry = new PIXI.Geometry({
-      attributes: {
-        aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
-        aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 8 },
-        aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 24 },
-      },
+      attributes,
       indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
     });
     // The camera only, in the WGSL struct's order.
@@ -3981,7 +4023,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
       },
     };
-    const shader = new PIXI.Shader({ ...this._visBatchProgramOpts, resources });
+    const shader = new PIXI.Shader({ ...(cone ? this._visConeProgramOpts : this._visBatchProgramOpts), resources });
     const mesh = new PIXI.Mesh({ geometry, shader });
     mesh.blendMode = 'add';
     if (old) {
@@ -3989,11 +4031,13 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       old.mesh.destroy();
       old.geometry.destroy();
     }
-    this._visBatch = {
+    const batch = {
       mesh,
       geometry,
       vbuf,
       data,
+      cbuf,
+      coneData,
       indices,
       uniforms: shader.resources.uniforms.uniforms,
       vertCap,
@@ -4001,24 +4045,29 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       idxUsed: 0,
       gpuReady: false,
     };
-    return this._visBatch;
+    if (cone) this._visConeBatch = batch;
+    else this._visBatch = batch;
+    return batch;
   }
 
   /**
    * E-96b. The self-lit batch, with room for `verts` vertices and `idx` indices, grown like the light
    * batch. It may grow in the middle of a frame: the first `keepVerts` vertices and `keepIdx` indices
-   * written so far are copied into the new buffers.
+   * written so far are copied into the new buffers. DX-SPOT: `cone` is the cone lights' batch
+   * (_selfLitConeBatch), with its second buffer and the shader's CONE variant.
    */
-  _ensureSelfLitBatch(verts, idx, keepVerts, keepIdx) {
-    const old = this._selfLitBatch;
+  _ensureSelfLitBatch(verts, idx, keepVerts, keepIdx, cone) {
+    const old = cone ? this._selfLitConeBatch : this._selfLitBatch;
     if (old && verts <= old.vertCap && idx <= old.idxCap) return old;
     const vertCap = Math.ceil(Math.max(verts, old ? old.vertCap : 0, 64) * 1.25);
     const idxCap = Math.ceil(Math.max(idx, old ? old.idxCap : 0, 192) * 1.25);
     const data = new Float32Array(vertCap * SELF_LIT_BATCH_FLOATS);
     const indices = new Uint32Array(idxCap);
+    const coneData = cone ? new Float32Array(vertCap * CONE_FLOATS) : null;
     if (old) {
       data.set(old.data.subarray(0, keepVerts * SELF_LIT_BATCH_FLOATS));
       indices.set(old.indices.subarray(0, keepIdx));
+      if (cone) coneData.set(old.coneData.subarray(0, keepVerts * CONE_FLOATS));
     }
     const vbuf = new Buffer({
       data,
@@ -4026,13 +4075,16 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       shrinkToFit: false,
     });
     const stride = SELF_LIT_BATCH_FLOATS * 4;
+    const attributes = {
+      aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
+      aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 8 },
+      aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 24 },
+      aCenterRadius: { buffer: vbuf, format: 'float32x3', stride, offset: 40 },
+    };
+    const cbuf = cone ? new Buffer({ data: coneData, usage: BufferUsage.VERTEX | BufferUsage.COPY_DST, shrinkToFit: false }) : null;
+    if (cone) attributes.aCone = { buffer: cbuf, format: 'float32x4', stride: CONE_FLOATS * 4, offset: 0 };
     const geometry = new PIXI.Geometry({
-      attributes: {
-        aPosition: { buffer: vbuf, format: 'float32x2', stride, offset: 0 },
-        aLight: { buffer: vbuf, format: 'float32x4', stride, offset: 8 },
-        aColor: { buffer: vbuf, format: 'float32x4', stride, offset: 24 },
-        aCenterRadius: { buffer: vbuf, format: 'float32x3', stride, offset: 40 },
-      },
+      attributes,
       indexBuffer: this._dynBuf(indices, BufferUsage.INDEX),
     });
     // The camera only, in the WGSL struct's order.
@@ -4045,7 +4097,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
       },
     };
-    const shader = new PIXI.Shader({ ...this._selfLitBatchProgramOpts, resources });
+    const shader = new PIXI.Shader({ ...(cone ? this._selfLitConeProgramOpts : this._selfLitBatchProgramOpts), resources });
     const mesh = new PIXI.Mesh({ geometry, shader });
     mesh.blendMode = 'add';
     if (old) {
@@ -4053,11 +4105,13 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       old.mesh.destroy();
       old.geometry.destroy();
     }
-    this._selfLitBatch = {
+    const batch = {
       mesh,
       geometry,
       vbuf,
       data,
+      cbuf,
+      coneData,
       indices,
       uniforms: shader.resources.uniforms.uniforms,
       vertCap,
@@ -4066,7 +4120,48 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       idxUsed: keepIdx,
       gpuReady: false,
     };
-    return this._selfLitBatch;
+    if (cone) this._selfLitConeBatch = batch;
+    else this._selfLitBatch = batch;
+    return batch;
+  }
+
+  /**
+   * A light batch's frame (E-96, E-96b): its tail past this frame's indices back to 0 (Pixi draws the whole index
+   * buffer), its vertices uploaded, the camera set, and it shown in the light container (at its start when `first`:
+   * the point lights' fans), or hidden when it drew nothing. `floats` per vertex in its first buffer.
+   */
+  _finishLightBatch(batch, vtx, iCount, floats, first) {
+    const indices = batch.indices;
+    const prevIdx = batch.idxUsed;
+    if (iCount < prevIdx) indices.fill(0, iCount, prevIdx);
+    batch.idxUsed = iCount;
+    const mesh = batch.mesh;
+    if (iCount === 0) {
+      mesh.visible = false;
+      return;
+    }
+    const indexBuffer = batch.geometry.indexBuffer;
+    const cbuf = batch.cbuf;
+    if (!batch.gpuReady) {
+      batch.vbuf.update();
+      if (cbuf !== null) cbuf.update();
+      indexBuffer.update();
+      batch.gpuReady = true;
+    } else {
+      batch.vbuf.update(vtx * floats * 4);
+      if (cbuf !== null) cbuf.update(vtx * CONE_FLOATS * 4);
+      indexBuffer.update((iCount > prevIdx ? iCount : prevIdx) * 4);
+    }
+    const uniforms = batch.uniforms;
+    this._stampLightCamera(uniforms, this._renderCameraX, this._renderCameraY, this._renderZoom);
+    uniforms.uCanvasSize[0] = this.canvasWidth;
+    uniforms.uCanvasSize[1] = this.canvasHeight;
+    const container = this._visPolyContainer;
+    if (mesh.parent !== container) {
+      if (first) container.addChildAt(mesh, 0);
+      else container.addChild(mesh);
+    }
+    mesh.visible = true;
   }
 
   _stampLightCamera(uniforms, cameraX, cameraY, zoom) {
@@ -4254,9 +4349,6 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const maxVerts = this._visPolyMaxVerts;
     const slotBytes = this._visPolySlotBytes;
     const res = this.lightingResolution || 1.0;
-    const zoom = this._renderZoom;
-    const cameraX = this._renderCameraX;
-    const cameraY = this._renderCameraY;
 
     const container = this._visPolyContainer;
 
@@ -4270,19 +4362,42 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     // E-96. Each light's umbra disc, then its visibility fan (the order the per-light meshes were
     // added to the container in, so the additive blend sums in the same sequence), into one mesh.
+    // DX-SPOT: a cone light's go into the cone batch (the CONE shader, its cone's terms in a second buffer), in
+    // their own sequence; with no cone light the cone batch is hidden and the frame is the one it was.
+    const lightConeCos = LightEmitter.coneCos;
+    const lightConeInvSpan = LightEmitter.coneInvSpan;
+    const lightDirC = LightEmitter.dirC;
+    const lightDirS = LightEmitter.dirS;
+    const rotC = Transform.rotC;
+    const rotS = Transform.rotS;
+    const groundInvY = this._groundInvScaleY || 1;
     let needVerts = 0;
     let needIdx = 0;
+    let coneVerts = 0;
+    let coneIdx = 0;
     for (let li = 0; li < lightCount; li++) {
-      const vc = i32[((4 + li * slotBytes) >> 2) + 3];
+      const base = (4 + li * slotBytes) >> 2;
+      const vc = i32[base + 3];
       if (vc < 3) continue;
-      needVerts += vc + 5;
-      needIdx += vc * 3 + 6;
+      if (lightConeCos[i32[base]] > -1) {
+        coneVerts += vc + 5;
+        coneIdx += vc * 3 + 6;
+      } else {
+        needVerts += vc + 5;
+        needIdx += vc * 3 + 6;
+      }
     }
-    const batch = this._ensureVisBatch(needVerts, needIdx);
-    const data = batch.data;
-    const indices = batch.indices;
+    const pointBatch = this._ensureVisBatch(needVerts, needIdx, false);
+    const coneBatch = coneVerts > 0 ? this._ensureVisBatch(coneVerts, coneIdx, true) : this._visConeBatch;
+    let batch = pointBatch;
+    let data = batch.data;
+    let indices = batch.indices;
     let vtx = 0;
     let iCount = 0;
+    // The other batch's cursors while this one is written.
+    let otherVtx = 0;
+    let otherICount = 0;
+    let inCone = false;
 
     for (let li = 0; li < lightCount; li++) {
       const baseIndex = (4 + li * slotBytes) >> 2;
@@ -4292,6 +4407,19 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const vertCount = i32[baseIndex + 3];
 
       if (vertCount < 3) continue;
+      const cone = lightConeCos[lightIdx] > -1;
+      if (cone !== inCone) {
+        const v = vtx;
+        const c = iCount;
+        vtx = otherVtx;
+        iCount = otherICount;
+        otherVtx = v;
+        otherICount = c;
+        inCone = cone;
+        batch = cone ? coneBatch : pointBatch;
+        data = batch.data;
+        indices = batch.indices;
+      }
 
       const xStart = baseIndex + 4;
       const yStart = xStart + maxVerts;
@@ -4359,31 +4487,38 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       indices[iCount++] = center;
       indices[iCount++] = center + vertCount;
       indices[iCount++] = center + 1;
+
+      if (cone) {
+        // The cone's terms on its disc and fan: the entity's facing turns the light's own direction, then on the
+        // floor (y over groundScaleY), unit length; as updateLighting writes them.
+        const dc = lightDirC[lightIdx];
+        const ds = lightDirS[lightIdx];
+        const rc = rotC[lightIdx];
+        const rs = rotS[lightIdx];
+        const wx = rc * dc - rs * ds;
+        const wy = (rs * dc + rc * ds) * groundInvY;
+        const len = Math.sqrt(wx * wx + wy * wy);
+        const fx = len > 0 ? wx / len : 1;
+        const fy = len > 0 ? wy / len : 0;
+        const coneCos = lightConeCos[lightIdx];
+        const invSpan = lightConeInvSpan[lightIdx];
+        const cd = batch.coneData;
+        for (let v = disc; v < vtx; v++) {
+          const o = v * CONE_FLOATS;
+          cd[o] = fx;
+          cd[o + 1] = fy;
+          cd[o + 2] = coneCos;
+          cd[o + 3] = invSpan;
+        }
+      }
     }
 
-    // Pixi draws the whole index buffer: what the last frame used past this one's end goes back to 0.
-    const prevIdx = batch.idxUsed;
-    if (iCount < prevIdx) indices.fill(0, iCount, prevIdx);
-    batch.idxUsed = iCount;
-    const batchMesh = batch.mesh;
-    if (iCount === 0) {
-      batchMesh.visible = false;
-    } else {
-      const indexBuffer = batch.geometry.indexBuffer;
-      if (!batch.gpuReady) {
-        batch.vbuf.update();
-        indexBuffer.update();
-        batch.gpuReady = true;
-      } else {
-        batch.vbuf.update(vtx * VIS_BATCH_FLOATS * 4);
-        indexBuffer.update((iCount > prevIdx ? iCount : prevIdx) * 4);
-      }
-      const uniforms = batch.uniforms;
-      this._stampLightCamera(uniforms, cameraX, cameraY, zoom);
-      uniforms.uCanvasSize[0] = this.canvasWidth;
-      uniforms.uCanvasSize[1] = this.canvasHeight;
-      if (batchMesh.parent !== container) container.addChildAt(batchMesh, 0);
-      batchMesh.visible = true;
+    // Each batch's frame: the point lights' first in the container, as they always were.
+    const pointVtx = inCone ? otherVtx : vtx;
+    const pointIdx = inCone ? otherICount : iCount;
+    this._finishLightBatch(pointBatch, pointVtx, pointIdx, VIS_BATCH_FLOATS, true);
+    if (coneBatch !== null) {
+      this._finishLightBatch(coneBatch, inCone ? vtx : otherVtx, inCone ? iCount : otherICount, VIS_BATCH_FLOATS, false);
     }
 
     // Render to the visibility RT
@@ -4427,6 +4562,7 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const count = buf ? buf.header[0] | 0 : 0;
     if (count <= 0 || !this._visPolyRT || !LightOccluder.active || !Collider.active || !this._selfLitBatchProgramOpts) {
       if (this._selfLitBatch) this._selfLitBatch.mesh.visible = false;
+      if (this._selfLitConeBatch) this._selfLitConeBatch.mesh.visible = false;
       return false;
     }
 
@@ -4456,12 +4592,22 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const maxIdx = maxVerts * 3;
     const lightVerts = maxVerts + WEDGE_MAX_QUADS * 4;
     const lightIndices = maxIdx + WEDGE_MAX_QUADS * 6;
-    let batch = this._ensureSelfLitBatch(lightVerts, lightIndices, 0, 0);
+    let batch = this._ensureSelfLitBatch(lightVerts, lightIndices, 0, 0, false);
     let data = batch.data;
     let indices = batch.indices;
     let vtx = 0;
     let iCount = 0;
     let spriteMasks = false;
+    // DX-SPOT: a cone light's runs go into the cone batch, as in renderVisibilityLighting; the other batch's cursors
+    // while one is written.
+    const lightConeCos = LightEmitter.coneCos;
+    const lightConeInvSpan = LightEmitter.coneInvSpan;
+    const lightDirC = LightEmitter.dirC;
+    const lightDirS = LightEmitter.dirS;
+    const groundInvY = this._groundInvScaleY || 1;
+    let otherVtx = 0;
+    let otherICount = 0;
+    let inCone = false;
 
     // Process contiguous runs sharing the same lightIdx (collector writes per-light)
     let i = 0;
@@ -4495,8 +4641,22 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const cg = (((color >> 8) & 0xff) / 255) * colorScale;
       const cb = ((color & 0xff) / 255) * colorScale;
 
+      const cone = lightConeCos[light] > -1;
+      if (cone !== inCone) {
+        const v = vtx;
+        const c = iCount;
+        vtx = otherVtx;
+        iCount = otherICount;
+        otherVtx = v;
+        otherICount = c;
+        inCone = cone;
+        batch = cone ? this._selfLitConeBatch : this._selfLitBatch;
+        if (batch === null) batch = this._ensureSelfLitBatch(lightVerts, lightIndices, 0, 0, true);
+        data = batch.data;
+        indices = batch.indices;
+      }
       if (vtx + lightVerts > batch.vertCap || iCount + lightIndices > batch.idxCap) {
-        batch = this._ensureSelfLitBatch(vtx + lightVerts, iCount + lightIndices, vtx, iCount);
+        batch = this._ensureSelfLitBatch(vtx + lightVerts, iCount + lightIndices, vtx, iCount, cone);
         data = batch.data;
         indices = batch.indices;
       }
@@ -4695,36 +4855,35 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
         data[o + 7] = g;
         data[o + 8] = b;
       }
+      if (cone) {
+        // The cone's terms, as renderVisibilityLighting writes them.
+        const dc = lightDirC[light];
+        const ds = lightDirS[light];
+        const wx = rotC[light] * dc - rotS[light] * ds;
+        const wy = (rotS[light] * dc + rotC[light] * ds) * groundInvY;
+        const len = Math.sqrt(wx * wx + wy * wy);
+        const fx = len > 0 ? wx / len : 1;
+        const fy = len > 0 ? wy / len : 0;
+        const coneCos = lightConeCos[light];
+        const invSpan = lightConeInvSpan[light];
+        const cd = batch.coneData;
+        for (let v = lightBase; v < vtx; v++) {
+          const o = v * CONE_FLOATS;
+          cd[o] = fx;
+          cd[o + 1] = fy;
+          cd[o + 2] = coneCos;
+          cd[o + 3] = invSpan;
+        }
+      }
 
       i = j;
     }
 
-    // Pixi draws the whole index buffer: what the last frame used past this one's end goes back to 0.
-    const prevIdx = batch.idxUsed;
-    if (iCount < prevIdx) indices.fill(0, iCount, prevIdx);
-    batch.idxUsed = iCount;
-    const mesh = batch.mesh;
-    if (iCount === 0) {
-      mesh.visible = false;
-      return spriteMasks;
+    // After the light batch, which is the container's first child; the cone lights' after the point lights'.
+    this._finishLightBatch(this._selfLitBatch, inCone ? otherVtx : vtx, inCone ? otherICount : iCount, SELF_LIT_BATCH_FLOATS, false);
+    if (this._selfLitConeBatch !== null) {
+      this._finishLightBatch(this._selfLitConeBatch, inCone ? vtx : otherVtx, inCone ? iCount : otherICount, SELF_LIT_BATCH_FLOATS, false);
     }
-    const indexBuffer = batch.geometry.indexBuffer;
-    if (!batch.gpuReady) {
-      batch.vbuf.update();
-      indexBuffer.update();
-      batch.gpuReady = true;
-    } else {
-      batch.vbuf.update(vtx * SELF_LIT_BATCH_FLOATS * 4);
-      indexBuffer.update((iCount > prevIdx ? iCount : prevIdx) * 4);
-    }
-    const uniforms = batch.uniforms;
-    this._stampLightCamera(uniforms, this._renderCameraX, this._renderCameraY, this._renderZoom);
-    uniforms.uCanvasSize[0] = this.canvasWidth;
-    uniforms.uCanvasSize[1] = this.canvasHeight;
-    // After the light batch, which is the container's first child.
-    const container = this._visPolyContainer;
-    if (mesh.parent !== container) container.addChild(mesh);
-    mesh.visible = true;
     return spriteMasks;
   }
 
@@ -4751,6 +4910,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
     const zoom = this._renderZoom;
     const cameraX = this._renderCameraX;
     const cameraY = this._renderCameraY;
+    const lightConeCos = LightEmitter.coneCos;
+    const lightConeInvSpan = LightEmitter.coneInvSpan;
+    const lightDirC = LightEmitter.dirC;
+    const lightDirS = LightEmitter.dirS;
+    const groundInvY = this._groundInvScaleY || 1;
 
     let i = 0;
     while (i < count) {
@@ -4780,6 +4944,22 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
       const cr = (((color >> 16) & 0xff) / 255) * colorScale;
       const cg = (((color >> 8) & 0xff) / 255) * colorScale;
       const cb = ((color & 0xff) / 255) * colorScale;
+      // DX-SPOT: its cone, as renderVisibilityLighting writes it (coneCos -2: none, the shader skips it).
+      const coneCos = lightConeCos[lightIdx];
+      let coneX = 1;
+      let coneY = 0;
+      if (coneCos > -1) {
+        const dc = lightDirC[lightIdx];
+        const ds = lightDirS[lightIdx];
+        const wx = rotC[lightIdx] * dc - rotS[lightIdx] * ds;
+        const wy = (rotS[lightIdx] * dc + rotC[lightIdx] * ds) * groundInvY;
+        const len = Math.sqrt(wx * wx + wy * wy);
+        if (len > 0) {
+          coneX = wx / len;
+          coneY = wy / len;
+        }
+      }
+      const coneInvSpan = coneCos > -1 ? lightConeInvSpan[lightIdx] : 0;
 
       // --- Sprite mask fills for this light ---
       if (this._selfLitSpriteProgramOpts) {
@@ -4879,6 +5059,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
           uniforms.uLightColor[0] = cr;
           uniforms.uLightColor[1] = cg;
           uniforms.uLightColor[2] = cb;
+          const uCone = uniforms.uCone;
+          uCone[0] = coneX;
+          uCone[1] = coneY;
+          uCone[2] = coneCos;
+          uCone[3] = coneInvSpan;
           const bodyCx = ox + (Collider.offsetX[entityIdx] || 0);
           const bodyCy = oy + (Collider.offsetY[entityIdx] || 0);
           uniforms.uBodyCenter[0] = bodyCx;
@@ -4954,6 +5139,8 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
             uBodyRadius: { value: 0, type: 'f32' },
             uAttenScale: { value: VIS_REST, type: 'f32' },
             uGroundInvScaleY: { value: this._groundInvScaleY || 1, type: 'f32' },
+            // DX-SPOT: the light's cone; z -2 (the default) has none.
+            uCone: { value: new Float32Array([1, 0, -2, 0]), type: 'vec4<f32>' },
           },
           uTexture: texture.source,
           uSampler: texture.source.style,

@@ -1416,7 +1416,7 @@ class Hero extends GameObject {
 }
 ```
 
-In basic lighting a cone light stamps sprite shadows only from the `ShadowCaster`s inside its cone (fainter on its soft edge), so a car's headlights cast nothing behind it. Under `raycasted: true` a cone light is still drawn round for now. The halo (`glow`) stays round: it is the bulb, not the beam.
+In basic lighting a cone light stamps sprite shadows only from the `ShadowCaster`s inside its cone (fainter on its soft edge), so a car's headlights cast nothing behind it. Under `raycasted: true` the occluders cut the cone as they cut a round light, and the light on the occluders themselves follows the cone too. The halo (`glow`) stays round: it is the bulb, not the beam.
 
 ### The sun and the night
 

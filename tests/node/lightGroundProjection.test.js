@@ -191,6 +191,8 @@ test('the raycasted batch: an umbra quad R wide and R * groundScaleY tall, the l
   px._ensureVisBatch = (verts, idx) => {
     batch = {
       data: new Float32Array(verts * 10),
+      cbuf: null,
+      coneData: null,
       indices: new Uint32Array(idx),
       idxUsed: 0,
       gpuReady: true,
@@ -233,4 +235,85 @@ test('brightness scales the uploaded colour and nothing else', async () => {
   for (let c = 0; c < 3; c++) {
     assert.equal(d[MAX_LIGHTS * 4 + c], Math.fround(d[MAX_LIGHTS * 4 + 4 + c] * 0.5));
   }
+});
+
+test('DX-SPOT: under raycast a cone light\'s umbra disc and fan go to the cone batch, its cone on every vertex', async () => {
+  bindComponents();
+  light(0, 200, 300, 900, 0xff0000);
+  light(1, 700, 300, 1100, 0x00ff00);
+  // Light 1: a cone along the entity's facing turned by its direction, on an entity turned 90 degrees.
+  LightEmitter.coneCos[1] = Math.fround(Math.cos(0.5));
+  LightEmitter.coneInvSpan[1] = 3;
+  LightEmitter.dirC[1] = Math.cos(0.3);
+  LightEmitter.dirS[1] = Math.sin(0.3);
+  Transform.rotC[1] = 0;
+  Transform.rotS[1] = 1;
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  px._groundScaleY = 0.5;
+  px._groundInvScaleY = 2;
+  px._visPolyEnabled = true;
+  px.renderQueueSync = null;
+  const maxVerts = 8;
+  const slotBytes = (4 + maxVerts * 2) * 4;
+  const ab = new ArrayBuffer(4 + 2 * slotBytes);
+  const i32 = new Int32Array(ab);
+  const f32 = new Float32Array(ab);
+  i32[0] = 2;
+  for (const [slot, e, x, n] of [[0, 0, 200, 3], [1, 1, 700, 4]]) {
+    const base = (4 + slot * slotBytes) >> 2;
+    i32[base] = e;
+    f32[base + 1] = x;
+    f32[base + 2] = 300;
+    i32[base + 3] = n;
+    for (let v = 0; v < n; v++) {
+      f32[base + 4 + v] = x + 50 * Math.cos(v);
+      f32[base + 4 + maxVerts + v] = 300 + 50 * Math.sin(v);
+    }
+  }
+  px._visPolyBuffers = [{ header: i32, i32, f32 }];
+  px._visPolyMaxVerts = maxVerts;
+  px._visPolySlotBytes = slotBytes;
+  const children = [];
+  px._visPolyContainer = { addChildAt(m) { children.unshift(m); m.parent = this; }, addChild(m) { children.push(m); m.parent = this; } };
+  px._visPolyRT = {};
+  const made = {};
+  px._ensureVisBatch = (verts, idx, cone) => {
+    made[cone ? 'cone' : 'point'] = {
+      data: new Float32Array(verts * 10),
+      cbuf: cone ? { update() {} } : null,
+      coneData: cone ? new Float32Array(verts * 4) : null,
+      indices: new Uint32Array(idx),
+      idxUsed: 0,
+      gpuReady: true,
+      vbuf: { update() {} },
+      geometry: { indexBuffer: { update() {} } },
+      mesh: { visible: false, parent: null, cone: !!cone },
+      uniforms: { uCanvasSize: new Float32Array(2) },
+    };
+    if (cone) px._visConeBatch = made.cone;
+    else px._visBatch = made.point;
+    return made[cone ? 'cone' : 'point'];
+  };
+  px._stampLightCamera = () => {};
+  px._buildSelfLitBatch = () => false;
+  px._submitRender = () => {};
+  px.renderVisibilityLighting();
+
+  // The point light: its disc (4) and fan (1 + 3), as alone; the cone light's disc and fan (4 + 1 + 4) in the cone batch.
+  assert.equal(made.point.idxUsed, 6 + 3 * 3);
+  assert.equal(made.cone.idxUsed, 6 + 4 * 3);
+  for (let v = 0; v < 8; v++) assert.equal(made.point.data[v * 10 + 2], 200);
+  for (let v = 0; v < 9; v++) assert.equal(made.cone.data[v * 10 + 2], 700);
+  // Its direction: the entity's 90 degrees and the light's 0.3 radians, then on the floor (y times 2), unit length.
+  const wx = Math.cos(Math.PI / 2 + 0.3);
+  const wy = Math.sin(Math.PI / 2 + 0.3) * 2;
+  const len = Math.sqrt(wx * wx + wy * wy);
+  for (let v = 0; v < 9; v++) {
+    const c = made.cone.coneData.subarray(v * 4, v * 4 + 4);
+    assert.ok(Math.abs(c[0] - wx / len) < 1e-6 && Math.abs(c[1] - wy / len) < 1e-6, `direction ${c[0]}, ${c[1]}`);
+    assert.equal(c[2], Math.fround(Math.cos(0.5)));
+    assert.equal(c[3], 3);
+  }
+  assert.ok(made.point.mesh.visible && made.cone.mesh.visible);
+  assert.deepEqual(children.map((m) => m.cone), [false, true], 'the point lights\' batch first, the cone lights\' after');
 });

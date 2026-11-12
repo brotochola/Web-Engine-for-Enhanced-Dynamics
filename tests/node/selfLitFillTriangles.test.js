@@ -42,6 +42,11 @@ function bindComponents() {
   LightEmitter.color = new Uint32Array(N);
   LightEmitter.offsetX = new Float32Array(N);
   LightEmitter.offsetY = new Float32Array(N);
+  // DX-SPOT: no cone (coneCos below every cosine).
+  LightEmitter.coneCos = new Float32Array(N).fill(-2);
+  LightEmitter.coneInvSpan = new Float32Array(N);
+  LightEmitter.dirC = new Float32Array(N).fill(1);
+  LightEmitter.dirS = new Float32Array(N);
   Transform.rotC = new Float32Array(N).fill(1);
   Transform.rotS = new Float32Array(N);
   ColliderFixture.head = new Uint16Array(N).fill(NONE);
@@ -165,24 +170,29 @@ function selfLitQueue() {
   return buf;
 }
 
-/** The batch Pixi grows, with plain arrays where the GPU objects were. */
+/** The batches Pixi grows (the point lights' and DX-SPOT's cone lights'), with plain arrays where the GPU objects were. */
 function captureBatches(px) {
-  px._ensureSelfLitBatch = function ensure(verts, idx, keepVerts, keepIdx) {
-    const old = this._selfLitBatch;
+  px._ensureSelfLitBatch = function ensure(verts, idx, keepVerts, keepIdx, cone) {
+    const key = cone ? '_selfLitConeBatch' : '_selfLitBatch';
+    const old = this[key];
     if (old && verts <= old.vertCap && idx <= old.idxCap) return old;
     const vertCap = Math.ceil(Math.max(verts, old ? old.vertCap : 0, 64) * 1.25);
     const idxCap = Math.ceil(Math.max(idx, old ? old.idxCap : 0, 192) * 1.25);
     const data = new Float32Array(vertCap * FLOATS);
     const indices = new Uint32Array(idxCap);
+    const coneData = cone ? new Float32Array(vertCap * 4) : null;
     if (old) {
       data.set(old.data.subarray(0, keepVerts * FLOATS));
       indices.set(old.indices.subarray(0, keepIdx));
+      if (cone) coneData.set(old.coneData.subarray(0, keepVerts * 4));
     }
-    this._selfLitBatch = {
+    const batch = {
       mesh: { visible: false, parent: null },
       geometry: { indexBuffer: { update() {} } },
-      vbuf: { update: (bytes) => { this._selfLitBatch.uploadedBytes = bytes; } },
+      vbuf: { update: (bytes) => { batch.uploadedBytes = bytes; } },
       data,
+      cbuf: cone ? { update() {} } : null,
+      coneData,
       indices,
       uniforms: { uCanvasSize: new Float32Array(2) },
       vertCap,
@@ -191,7 +201,8 @@ function captureBatches(px) {
       gpuReady: false,
       uploadedBytes: 0,
     };
-    return this._selfLitBatch;
+    this[key] = batch;
+    return batch;
   };
   px._stampLightCamera = () => {};
   px._visPolyContainer = { addChild(m) { m.parent = this; } };
@@ -241,4 +252,66 @@ test('the self-lit batch draws the same triangles with the same attributes (gold
   assert.deepEqual(second, { triangles: 142, hash: 4154422693 }, 'golden, after the remesh');
   // E-135: each compound's shared vertices once per light (the soup wrote 352: three per fill triangle).
   assert.equal(px._selfLitBatch.uploadedBytes / (FLOATS * 4), 152, 'vertices written');
+});
+
+/** FNV over the drawn triangles of one light (its x in the vertex): their vertices' floats, by bits, in order. */
+function lightTriangles(batch, lightX) {
+  const n = batch.idxUsed;
+  const bits = new Uint32Array(batch.data.buffer);
+  let h = 2166136261;
+  let triangles = 0;
+  for (let t = 0; t + 3 <= n; t += 3) {
+    if (batch.data[batch.indices[t] * FLOATS + 2] !== lightX) continue;
+    triangles++;
+    for (let k = 0; k < 3; k++) {
+      const v = batch.indices[t + k];
+      for (let f = 0; f < FLOATS; f++) h = Math.imul(h ^ bits[v * FLOATS + f], 16777619) >>> 0;
+    }
+  }
+  return { triangles, hash: h >>> 0 };
+}
+
+test('DX-SPOT: a cone light\'s fills go to the cone batch with its cone, the same triangles; the point light\'s stay', async () => {
+  const px = await loadWorker('pixiWorker.js', 'pixiRenderer');
+  scene();
+  px._selfLitBuffers[0] = selfLitQueue();
+  px._visPolyRT = {};
+  px._selfLitBatchProgramOpts = {};
+  px._selfLitMaxFillVerts = 256 * 20;
+  px.canvasWidth = 800;
+  px.canvasHeight = 600;
+  px._groundInvScaleY = 2;
+  captureBatches(px);
+  px._buildSelfLitBatch(0);
+  const allPoint = { a: lightTriangles(px._selfLitBatch, 500), b: lightTriangles(px._selfLitBatch, 900) };
+  assert.equal(px._selfLitConeBatch, null, 'no cone light, no cone batch');
+
+  // Light 1 (x 900) becomes a cone pointing along the entity's facing turned by its direction: 30 degrees.
+  const dir = Math.PI / 6;
+  LightEmitter.coneCos[1] = Math.fround(Math.cos(0.4));
+  LightEmitter.coneInvSpan[1] = 5;
+  LightEmitter.dirC[1] = Math.cos(dir);
+  LightEmitter.dirS[1] = Math.sin(dir);
+  px._buildSelfLitBatch(0);
+  assert.deepEqual(lightTriangles(px._selfLitBatch, 500), allPoint.a, 'the point light\'s triangles as they were');
+  assert.equal(lightTriangles(px._selfLitBatch, 900).triangles, 0, 'no cone light in the point batch');
+  const cone = px._selfLitConeBatch;
+  assert.deepEqual(lightTriangles(cone, 900), allPoint.b, 'the cone light\'s triangles, the same floats');
+  assert.equal(lightTriangles(cone, 500).triangles, 0);
+  // Every vertex it drew carries the cone: the direction on the floor (y times 1 / groundScaleY, unit), cos, 1/span.
+  const wx = Math.cos(dir);
+  const wy = Math.sin(dir) * 2;
+  const len = Math.sqrt(wx * wx + wy * wy);
+  const want = [wx / len, wy / len, Math.cos(0.4), 5].map(Math.fround);
+  for (let k = 0; k < cone.idxUsed; k++) {
+    const v = cone.indices[k];
+    assert.deepEqual(Array.from(cone.coneData.subarray(v * 4, v * 4 + 4)), want);
+  }
+
+  // Back to a point light: the cone batch draws nothing and hides.
+  LightEmitter.coneCos[1] = -2;
+  px._buildSelfLitBatch(0);
+  assert.equal(px._selfLitConeBatch.idxUsed, 0);
+  assert.equal(px._selfLitConeBatch.mesh.visible, false);
+  assert.deepEqual(lightTriangles(px._selfLitBatch, 900), allPoint.b);
 });
