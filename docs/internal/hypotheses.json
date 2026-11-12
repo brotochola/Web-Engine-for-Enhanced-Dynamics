@@ -9991,7 +9991,8 @@
         "R-0907",
         "R-0910",
         "R-0912",
-        "R-0916"
+        "R-0916",
+        "R-0921"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -21180,6 +21181,18 @@
       "text": "**E-194 kept: keyed LiquidFun rows, their records read only after a change.** `7a4867ed` (step 1, the keys), `987c6f5e` (step 2), merged in `84e06cc1`; the scene's `?lf=<n>` knob `b5997496`.\n\n- **Step 1** (R-0913): a keyed scene keys its LiquidFun rows by particle index past the keyed decorations, marked against a 32-byte record an index; renderer -56 % but pre-render +8 % (the records, 7.7 ns a row).\n- **Step 2:** physics counts the changes it makes to the statics in the render buffer header's free word (`staticsEpoch`: a paint, a reorder (N-142), a clear, a restore, every step while a group fades), and the emit keeps a u32 per particle with the compare epoch its record was last checked at. A row whose particle was checked at the current epoch takes its key with no record read; the epoch moves with physics's counter, a Pixi resync and the texture tables; without a counter, every frame. The E-194 test announces its changes as physics does, and checks that a frame with the counter still reads no record (the records filled with garbage, nothing marked).\n\n**liquidFunQueryStressScene `?lf=60000`, owner renderer, `--vs b5997496 --hyp-rev 987c6f5e --full-rev`, 8 pairs** (04:38 to 04:45, then `--append` 04:53 to 05:00; src, headed, AC power): NEUTRAL (below floor) by the runner.\n- Renderer 2.192 → 1.028 ms (-51.7 %, worse 0/8; pairs -48.1, -47.1, -55.2, -48.1, -49.8, -55.8, -53.6, -56.9 %), under the 3 ms floor: the scene cannot go higher, its box leaves the world past about 70 000 particles, and physics already takes 96 ms a step.\n- Pre-render 3.304 → 3.386 ms (+1.1 %, worse 5/8, cv 3/3 %); after the first 4 pairs it read +3.1 % (3/4).\n- Physics 96.5 → 95.0 ms (-0.7 %), logic under the floor.\n\n**Verdict: kept.** The owner halves in every pair and no judged worker is 3 % worse; the floor is the scene's limit, said here. Open: the pointer at the published copy (E-217's left-over) and the `_prevLfX` interpolation by index (N-142's left-over).",
       "commits": [
         "987c6f5e"
+      ]
+    },
+    {
+      "id": "R-0921",
+      "date": "2026-11-12",
+      "time": "05:21",
+      "timeFrom": "recorded",
+      "title": "The bundles of 9d167f6c (N-143 to N-145, E-194) tested; Boids NEUTRAL, Predator's spatial +3.0 % read as N-105's noise",
+      "verdict": "passed",
+      "text": "**The bundles of 9d167f6c (N-143, N-144, N-145 and E-194 merged): tested, and the prod bundle is no slower than its sources.** dist `fab97281`.\n\n- Node 2516 of 2516, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 0 failures on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 05:03 to 05:10: REGRESSION by the runner on spatial alone,** 3.695 → 3.806 ms (+3.0 %, worse 3/4, cv 3/4 %); physics -1.6 %; logic and pre-render under the floor. Nothing in the batch touches spatial.\n- **Boids, 8 pairs, 05:10 to 05:21: NEUTRAL.** Spatial 5.392 → 5.271 ms (-2.4 %, worse 2/8), physics -1.0 % (4/8).\n\nRead as N-105 reads it: Predator's bundle-against-source rows swing -3 to +10 % on the same code, and spatial's owner scene (Boids, 8 pairs) reads the bundle 2.4 % faster. Main pushed.",
+      "commits": [
+        "fab97281"
       ]
     }
   ],
