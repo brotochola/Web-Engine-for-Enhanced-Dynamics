@@ -12131,6 +12131,32 @@
       ]
     },
     {
+      "id": "N-146",
+      "title": "Physics burned a core while it waited for logic (sub-ms Atomics.wait slices spin on Windows)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (c977a733, R-0928)",
+      "date": "2026-11-12",
+      "result": "kept 2026-11-12 (c977a733): physics sleeps on the frame chain's bell, not in sub-ms slices that spin on Windows; Boids KEPT (product), spatial -4.8 %, physics -4.0 %; Predator and liquidFunQueryStressScene NEUTRAL",
+      "next": "Done.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-146"
+      ],
+      "aliases": [
+        "Atomics.wait",
+        "spin",
+        "Windows timer",
+        "frame chain",
+        "bell",
+        "waitForLogic",
+        "timer resolution"
+      ],
+      "records": [
+        "R-0928"
+      ]
+    },
+    {
       "id": "E-214",
       "title": "Path slots allocated without a scan of every slot",
       "status": "kept",
@@ -21294,6 +21320,21 @@
       "commits": [
         "08a689ce",
         "a48db56a"
+      ]
+    },
+    {
+      "id": "R-0928",
+      "date": "2026-11-12",
+      "time": "08:30",
+      "timeFrom": "recorded",
+      "title": "N-146 kept: physics sleeps on the frame chain's bell; Boids spatial -4.8 %, physics -4.0 %",
+      "verdict": "kept",
+      "text": "**N-146 fixed and kept: physics no longer burns a core while it waits for logic; Boids KEPT (product), spatial -4.8 %, physics -4.0 %.** `7ce76e8c` (the bell), `3b7261a4` (the chain wait's bursts in wake mode), `28999281` (pre-render and Pixi back to turning off on a timeout), on `fix/n146`.\n\n- **Found** reading why the prod bundle read 4 % slower than its sources in Boids after E-198 (R-0927's bundle check: spatial +4.1 % worse 13/16, physics +2.1 % 14/16, cv 4 to 6 % against 1 % at every check before). E-198's wait for the logic workers slept in 0.25 ms slices, and below 1 ms V8's `Atomics.wait` spins on Windows. Node on this machine, a wait nobody notifies: 0.25 ms ran at 100 % of a core (500 ms of CPU in 501 ms), 0.9 ms the same, 2 ms at 0 %; and a wait of a millisecond or more sleeps to the timer period (1 ms slept 9.6 ms, 1.5 ms 12.1, 2 ms 16.7, 3 ms 15.4).\n- **The fix:** physics sleeps on the frame chain's `[2]`, rung by a logic worker at its frame's end and by `box2dSyncSlotImpl`'s `post` for each sync query a worker posts; it answers the queries each time it rings (the bell read before each pass), and those bursts end on the short spin as the idle wake's do. Physics turns its waits off when its wait ran past the budget, as its slices did (Windows's rounding lets a late ring end a wait past it without a timeout). `physicsChainWait.test.js` runs the wait as shipped; it fails on the old code.\n\n**Sitting, 4 pairs each, `--vs main --hyp-rev fix/n146 --input-every 100`, src, headed, AC power, from 08:00 (the first result file) to 08:11 (Predator's summary), the bell alone (`7ce76e8c`, with the pre-render and Pixi rule since taken back):**\n- **Boids** (owner spatial): **KEPT (product)**: spatial 4.508 → 4.255 ms (**-4.8 %, worse 0/4**, cv 3/1 %), physics 4.332 → 4.192 ms (-4.0 %, 0/4); logic, pre-render, Pixi and particle under the floor (logic -5.1 %); input lag 23.3 to 23.7 ms both sides.\n- **Predator**: NEUTRAL: physics 3.245 → 3.308 ms (-0.4 % paired, worse 2/4, cv 8/13 %); spatial 2.918 → 2.841, logic, pre-render, renderer and particle under the floor and within 3 %; input lag 24.6 to 25.2 ms both sides.\n**liquidFunQueryStressScene** (48 sync LiquidFun queries a tick, owner physics), 4 pairs:\n- `3b7261a4` (with pre-render's and Pixi's past-budget rule), 08:17 to 08:21: REGRESSION by the runner, physics +4.3 % (worse 4/4); input lag 35 ms in each of main's runs and 50 ms in 3 of the branch's: the rule turned the chain off (Pixi's queue comes about 12 ms into the vsync there, at its 12.5 ms limit). Taken back (`28999281`).\n- `28999281`, 08:26 to 08:30: **NEUTRAL**: physics +2.1 % paired (worse 4/4, cv 1/0 %), input lag 34.7 to 37.2 ms both sides, FPS 60 both. The +2.1 % is where the query work is counted: physics's whole step 11.232 → 10.692 ms (medians of the runs), its wait 3.034 → 2.471, so its own part 8.115 → 8.219 (+0.1 ms): queries it answered inside the old wait, counted as waiting, are answered by the step.\nHygiene keep (a bug: a core burned), with Boids's owner KEPT (product).",
+      "commits": [
+        "7ce76e8c",
+        "3b7261a4",
+        "28999281",
+        "c977a733"
       ]
     }
   ],
