@@ -64,13 +64,16 @@ about 1 % at its radius, fades on past it, and is culled when that circle leaves
 
 **Glow:** alpha `glow × brightness`, size 0.85·R as today, culled by its own size (N-150).
 
-**Shadows:** reach `radius`. Darkness × min(brightness, 1) is folded per caster in the stamp kernel, in a copy of its
-loop for lights with brightness under 1 (the mechanism DX-SPOT's soft edge reuses): `I'' = f·I·d²/(I + d² − f·I)` gives
-`f·alpha` in the unchanged shader; brightness 1 writes the same bits. A light with `castShadows = 0` enters neither the
-stamp nor the sweep (raycast gives it the 32-gon full circle with no gather and no sweep).
+**Shadows:** reach `shadowRange` (0: the radius). A light with `castShadows = 0` enters neither the stamp nor the sweep
+(raycast gives it the 32-gon full circle with no gather and no sweep). **Not built yet: brightness in a shadow's
+darkness.** Folding min(brightness, 1) per caster (`I'' = f·I·D²/(I + D² − f·I)` gives `f·alpha` in the unchanged shader)
+needs the floor distance D² the shader uses, so the stamp kernel needs groundScaleY: it measures screen distances
+today. A dim colour casts as dark a shadow as a bright one did before too, so this is no regression; DX-SPOT's soft edge
+needs the same fold, so it comes with B3.
 
-**Flash** fades `brightness`, not the radius (a flash dims, it does not shrink; the cull stays put). A visible change,
-decided on film; it goes back to fading the radius if it looks worse.
+**Flash** keeps fading its reach (radius·√left, glow·left), the old look: fading brightness instead would leave its
+shadows full until the fold above exists. Its glow now shrinks with its reach (it kept its spawn size before, through
+the stale `sqrtLightIntensity`).
 
 **Reach without a Collider:** a light's shadows and occluders reach `shadowRange` (0 = its radius). Today that reach is
 the light entity's `Collider.visualRange` (the stamp's `rangeSq`, the raycast neighbour list), a number the guide asks
@@ -112,13 +115,15 @@ Measurement tools go in their own commit before what they measure. One change pe
   `buildVisibilityPolygons`, the glow layer), the emit kernel (`glow_row`, `EMIT_GLOW_COLUMNS`) and its JS reference,
   the debug renderer, particle and LiquidFun lights, the light helpers, the types.
 - **A2, the honest-radius falloff: dropped** (R-0935, above): it darkened lit scenes.
-- **A3, `brightness` and `castShadows`:** the per-caster fold in `wasm/shadowStamp.c` (the light table 5 → 6 doubles),
-  the `castShadows` filter in the stamp and the sweep, the Flash fade.
-- **A4, reach without a Collider:** `_findNeighbors` and the occupancy in the spatial worker, the stamp's range.
-  Spatial in Predator and `stationarySpatialScene`, pre-render in `visPolyStressScene ?lights=720`.
-- **A5, quality fixes found reading:** the glow culled by its size (N-150); the nearest lights kept on overflow
-  (N-151); a copy loop in `writeRgba32Float` (N-152); the cookie checked off against on, deleted if it changes no pixel
-  (N-154).
+- **A3, `castShadows`** (741b616c, N-149): the filter in the stamp and the sweep. The brightness fold waits for B3 (above).
+- **A4, `shadowRange`** (5b1d716b, N-153): the stamp's range, and the spatial worker's search for a casting light under
+  raycast, (shadowRange or radius) plus its offset. A light with neither a sprite nor a Collider is not in the spatial
+  grid, so under raycast it still finds no occluder (a pre-render walk of the grid for those is open).
+- **A5, quality fixes found reading:** the glow culled by its size (N-150, 5d9fd026); the nearest lights kept on overflow
+  (N-151, 921a255d); a copy loop in `writeRgba32Float` (N-152, 61779fb3). The cookie is not dead (N-154, R-0938): it
+  lightens the sun's shadows in a lamp's pool, up to 44/255; it stays.
+- **Measured:** Predator and `visPolyStressScene ?lights=720`, the old API (91248f19) against 5b1d716b: ties (R-0936,
+  R-0937).
 - **A6, migration and docs:** demos, tests, a "Lights and shadows" section in the bible with a "what you want → what you
   write" table, FLASHES.md, PARTICLE_LIGHTS.md, COMPONENT_STORAGE.md (examples must run). Conurbano's migration diff is
   prepared; it is committed there with the owner's OK when a new bundle is copied in.
