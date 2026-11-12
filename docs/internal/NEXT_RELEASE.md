@@ -43,3 +43,9 @@ empties it.
   chain in zIndex order over every other layer (colour grading, a vignette, a blur). A scene without one draws as before.
   A SCREEN layer without a fragment, or a layer at or over a SCREEN layer's zIndex, is an error at load. Guide:
   "Full-screen passes" in `bible_of_weed_js.md`; Sun Street grades its frame by the hour.
+- **A camera that follows an entity without a body follows it** (N-143). `Camera.followEntity` on a bodiless entity
+  (a networked puppet, a sprite moved by hand) centred the view on the world origin, and froze while every body
+  slept. It now follows the entity's Transform.
+- **An asset whose download fails on the network is tried once more** (N-144), past the HTTP cache: two tabs loading
+  one large tilemap at once could fail one with `net::ERR_CACHE_WRITE_FAILURE`. HTTP errors and bad JSON still fail
+  at once, with the same messages.
