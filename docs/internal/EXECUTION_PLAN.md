@@ -3775,6 +3775,15 @@ copy. The snapshots rotate without a reader's mark today (`readPublishedQuerySna
 long collect safe from a publish that comes back round to its copy: the query moves to N-112's published-list protocol
 (a reading mark the writer skips) for that one query. Owner: BunnyMark C 200 000's pre-render; logic not 3 % worse.
 
+### E-218 tickAll reads a view of the active list when every listed entity is active
+
+**Premise:** BunnyMark C at 200 000 (R-0903): `_runTickAllTypes` is 35.6 % of logic by self time. It copies a tickAll
+type's listed entities into a scratch list each frame, checking each one active, though in a steady frame they all
+are.
+**Plan:** for a type without a body (nothing to reset) on a contiguous run of the list, a read-only pass over the flags;
+all active, tickAll gets a view of the active list (made once per run start); one inactive, the copy as before. Owner:
+BunnyMark C's logic at 300 000 bunnies (200 000 leaves it under the floor).
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

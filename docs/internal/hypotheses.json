@@ -12038,6 +12038,28 @@
       ],
       "records": [],
       "rank": 3
+    },
+    {
+      "id": "E-218",
+      "title": "tickAll reads a view of the active list when every listed entity is active",
+      "status": "open",
+      "statusText": "filed 2026-11-11 from BunnyMark C's trace (R-0903); in measurement",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "A read-only check, then a view of the active list instead of the scratch copy. Owner: BunnyMark C 300 000 logic.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-218"
+      ],
+      "aliases": [
+        "_runTickAllTypes",
+        "tickAll",
+        "_tickAllScratch",
+        "BunnyMark"
+      ],
+      "records": [],
+      "rank": 2
     }
   ],
   "records": [
