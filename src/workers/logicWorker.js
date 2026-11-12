@@ -569,6 +569,9 @@ class LogicWorker extends AbstractWorker {
               startIndex,
               entityType,
               hasRigidBody,
+              // E-218: a view of the active list from this worker's first row, and that row.
+              view: EntityClass._activeList.subarray(1),
+              viewFrom: 0,
             });
           } else if (!needsTick && !needsScreenCallbacks) {
             // Tickless: stay on active lists for queries/spatial/physics/render.
@@ -1320,6 +1323,7 @@ class LogicWorker extends AbstractWorker {
         entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
       );
       let n = 0;
+      let viewed = false;
       if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
         for (let idx = 0; idx < count; idx++) {
           const entityIndex = activeList[1 + idx];
@@ -1351,20 +1355,40 @@ class LogicWorker extends AbstractWorker {
           to = range.end;
           step = 1;
         }
-        for (let idx = from; idx < to; idx += step) {
-          const entityIndex = activeList[1 + idx];
-          if (transformActive[entityIndex] === 0) continue;
-          if (hasRigidBody) {
-            rbAx[entityIndex] = 0;
-            rbAy[entityIndex] = 0;
-            rbAa[entityIndex] = 0;
+        // E-218: without a body to reset, a run of listed entities that are all active goes to tickAll as a view of the
+        // list, not copied into the scratch (a read of each entity's flag instead of a copy: BunnyMark's 200 000). One
+        // that is not (despawned this frame) and the copy filters as before.
+        if (!hasRigidBody && step === 1) {
+          viewed = true;
+          for (let idx = from; idx < to; idx++) {
+            if (transformActive[activeList[1 + idx]] === 0) {
+              viewed = false;
+              break;
+            }
           }
-          scratch[n++] = entityIndex;
+        }
+        if (viewed) {
+          n = to - from;
+          if (typeInfo.viewFrom !== from) {
+            typeInfo.view = activeList.subarray(1 + from);
+            typeInfo.viewFrom = from;
+          }
+        } else {
+          for (let idx = from; idx < to; idx += step) {
+            const entityIndex = activeList[1 + idx];
+            if (transformActive[entityIndex] === 0) continue;
+            if (hasRigidBody) {
+              rbAx[entityIndex] = 0;
+              rbAy[entityIndex] = 0;
+              rbAa[entityIndex] = 0;
+            }
+            scratch[n++] = entityIndex;
+          }
         }
       }
       if (n > 0) {
         try {
-          typeInfo.EntityClass.tickAll(scratch, n, dtRatio);
+          typeInfo.EntityClass.tickAll(viewed ? typeInfo.view : scratch, n, dtRatio);
         } catch (error) {
           reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
         }
