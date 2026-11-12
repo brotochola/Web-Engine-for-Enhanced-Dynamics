@@ -57,6 +57,8 @@ export const EMIT_SLOTS = [
   'dFaceOct', 'dFaceZ',
   // E-194: the keyed LiquidFun particles' records, the key of particle 0 and how many records there are.
   'lfKeyed', 'lfKeyBase', 'lfKeyedCount',
+  // E-194 step 2: the compare epoch each particle's record was last checked at, and the current one (a value).
+  'lfChecked', 'lfCmpEpoch',
 ];
 if (EMIT_SLOTS.length > EMIT_TABLE_SLOTS) throw new Error('preRenderEmit: the column table outgrew its region');
 const SLOT = Object.fromEntries(EMIT_SLOTS.map((name, k) => [name, k]));
@@ -202,6 +204,11 @@ export async function bindPreRenderEmit(memory, emit) {
     lfKeyedByte: emit.keyHeaderByte >= 0 && emit.lfKeyedByte >= 0 ? emit.lfKeyedByte : -1,
     lfKeyBase: (emit.entities | 0) + (emit.keyedDecorations | 0),
     lfKeyedCount: emit.keyedLiquidFun | 0,
+    // E-194 step 2: the records are read again only once this moves (from 1; the checked epochs start at 0): physics
+    // changed a static (its counter, lfStaticsSeen), Pixi asked for every statics again, or the texture tables changed.
+    lfCheckedByte: emit.keyHeaderByte >= 0 && emit.lfCheckedByte >= 0 ? emit.lfCheckedByte : -1,
+    lfCmpEpoch: 1,
+    lfStaticsSeen: -1,
     texturesReady: false,
     // The frame sizes' length in the kernel's copy (frameWidthByte, frameHeightByte), once written.
     frames: 0,
@@ -464,6 +471,8 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
   b.table[SLOT.lfKeyed] = lfKeyed ? b.lfKeyedByte : 0;
   b.table[SLOT.lfKeyBase] = lfKeyed ? b.lfKeyBase : 0;
   b.table[SLOT.lfKeyedCount] = lfKeyed ? b.lfKeyedCount : 0;
+  b.table[SLOT.lfChecked] = lfKeyed && b.lfCheckedByte >= 0 ? b.lfCheckedByte : 0;
+  b.table[SLOT.lfCmpEpoch] = b.lfCmpEpoch;
   return true;
 }
 
@@ -473,6 +482,12 @@ export function writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationC
  */
 export function bumpEmitDecorationEpoch(b) {
   b.decoKeyEpoch = (b.decoKeyEpoch + 1) >>> 0 || 1;
+  bumpEmitLiquidFunCompare(b);
+}
+
+/** E-194 step 2: every LiquidFun record is read again from the next emit on. */
+export function bumpEmitLiquidFunCompare(b) {
+  b.lfCmpEpoch = (b.lfCmpEpoch + 1) >>> 0 || 1;
 }
 
 /**
@@ -547,6 +562,16 @@ export function writeEmitLiquidFunColumns(b, lf, prevX, prevY, prevCount, poseAl
   let ok = !!lf;
   for (let k = 0; ok && k < EMIT_LF_COLUMNS.length; k++) ok = putSlot(b, EMIT_LF_COLUMNS[k][0], lf[EMIT_LF_COLUMNS[k][1]]);
   if (ok) ok = putSlot(b, 'lfBaseAlpha', lf.baseAlpha, true);
+  // E-194 step 2: physics changed a static since the last emit (its counter moved), or has no counter: every record is
+  // read again this frame.
+  if (ok) {
+    const seen = lf.staticsEpoch ? Atomics.load(lf.staticsEpoch, 0) : NaN;
+    if (seen !== b.lfStaticsSeen) {
+      b.lfStaticsSeen = seen;
+      bumpEmitLiquidFunCompare(b);
+    }
+    b.table[SLOT.lfCmpEpoch] = b.lfCmpEpoch;
+  }
   // Without interpolation the previous positions are not read: no slots, no rows to interpolate. With it they must
   // be in the memory too, or the JS takes the frame.
   if (ok && prevCount > 0) {
@@ -580,6 +605,8 @@ export function writePersistColumns(b, w, SpriteRenderer, buf) {
  */
 export function writeEmitTextures(b, meta) {
   b.texturesReady = false;
+  // E-194 step 2: a LiquidFun row's texture comes from these tables.
+  bumpEmitLiquidFunCompare(b);
   const L = b.layout;
   const t = b.table;
   const proxy = new Int32Array(b.buffer, L.proxyByte, EMIT_PROXY_SHEETS * EMIT_PROXY_STATES);

@@ -89,6 +89,9 @@ enum {
   /* E-194: the keyed LiquidFun particles' records (DECO_KEYED_WORDS u32 a particle index, under D_KEY_EPOCH; 0: LiquidFun
      rows keyless), the key of particle 0 (a value: past the keyed decorations) and how many records (a value). */
   LF_KEYED, LF_KEY_BASE, LF_KEYED_COUNT,
+  /* E-194 step 2: the compare epoch each particle's record was last checked at (u32 an index; 0: every record read)
+     and the current one (a value, from 1): no static can have changed since a record checked at it. */
+  LF_CHECKED, LF_CMP_EPOCH,
   SLOT_COUNT
 };
 
@@ -283,6 +286,8 @@ typedef struct {
   uint32_t dKeyBase, dKeyEpoch;
   uint32_t *lfKeyed;
   uint32_t lfKeyBase, lfKeyedCount;
+  uint32_t *lfChecked;
+  uint32_t lfCmpEpoch;
   uint32_t *ends, *warns;
   const uint16_t *aaAsset, *aaClip;
   const float *aaTime;
@@ -404,6 +409,8 @@ INLINE void load_emit(Emit *e, const uint32_t *t, uint32_t flags, double deltaSe
   e->lfKeyed = PTR(uint32_t, LF_KEYED);
   e->lfKeyBase = t[LF_KEY_BASE];
   e->lfKeyedCount = t[LF_KEYED_COUNT];
+  e->lfChecked = PTR(uint32_t, LF_CHECKED);
+  e->lfCmpEpoch = t[LF_CMP_EPOCH];
   e->ends = PTR(uint32_t, R_ENDS);
   e->warns = PTR(uint32_t, R_WARNS);
   e->aaAsset = PTR(const uint16_t, AA_ASSET);
@@ -927,6 +934,8 @@ INLINE void particle_row(Emit *e, uint32_t i, uint32_t out) {
    last ones there. An index past the records goes keyless. */
 INLINE uint32_t lf_key(const Emit *e, int32_t idx, uint32_t out) {
   if ((uint32_t)idx >= e->lfKeyedCount) return KEY_NONE;
+  /* Step 2: a record checked at the current compare epoch still holds this row's statics. */
+  if (e->lfChecked && e->lfChecked[idx] == e->lfCmpEpoch) return e->lfKeyBase + (uint32_t)idx;
   union { float f; uint32_t u; } sx = {e->qScaleX[out]}, sy = {e->qScaleY[out]}, al = {e->qAlpha[out]};
   uint32_t *r = e->lfKeyed + (uint32_t)idx * DECO_KEYED_WORDS;
   const uint32_t tint = e->qTint[out];
@@ -941,6 +950,7 @@ INLINE uint32_t lf_key(const Emit *e, int32_t idx, uint32_t out) {
     r[4] = tex;
     r[7] = e->dKeyEpoch;
   }
+  if (e->lfChecked) e->lfChecked[idx] = e->lfCmpEpoch;
   return (e->lfKeyBase + (uint32_t)idx) | (changed << 31);
 }
 

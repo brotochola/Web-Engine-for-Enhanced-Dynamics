@@ -102,6 +102,8 @@
   let liquidFunAlphaFloatOffset = 0;
   /** High-water of painted thin-SAB emit slots; wipe only this range on clear. */
   let liquidFunPaintedHighWater = 0;
+  // E-194: a group made with fadeToAlpha0 and a lifespan changes its particles' alpha every step.
+  let liquidFunFading = false;
   /** Scene world AABB [0,w]×[0,h]; OOB particle centers get LF_ZOMBIE before step. */
   let liquidFunWorldW = 0;
   let liquidFunWorldH = 0;
@@ -2202,7 +2204,17 @@
       }
     }
     if (maxP > liquidFunPaintedHighWater) liquidFunPaintedHighWater = maxP;
+    if (emit.fadeToAlpha0 && emit.lifetimeMax > 0) liquidFunFading = true;
+    bumpLiquidFunStatics();
     // Native SoA pose is written at CreateParticle; no AoS→SoA seed needed.
+  }
+
+  /**
+   * E-194: the render statics changed (or may have: a fading group's alpha moves every step). Pre-render's emit reads
+   * its records of them only after this counter moved, so every writer of the statics calls it.
+   */
+  function bumpLiquidFunStatics() {
+    if (liquidFunViews && liquidFunViews.staticsEpoch) Atomics.add(liquidFunViews.staticsEpoch, 0, 1);
   }
 
   function resolveLiquidFunHeapPoseOffsets() {
@@ -2271,6 +2283,7 @@
           if (o !== i && o >= 0 && o < src.length) a[i] = src[o];
         }
       }
+      bumpLiquidFunStatics();
     }
     world.resetParticleOrigins();
   }
@@ -2327,6 +2340,7 @@
         fillLiquidFunRange(liquidFunViews.px, 0, hi, 0);
         fillLiquidFunRange(liquidFunViews.py, 0, hi, 0);
       }
+      bumpLiquidFunStatics();
     }
     if (liquidFunGroupsViews?.count) liquidFunGroupsViews.count[0] = 0;
     if (liquidFunGroupsViews?.lightIntensity) {
@@ -2644,6 +2658,7 @@
     publishJointBreaksFromWasm();
     publishMovedSabFromStep();
     followLiquidFunReorder();
+    if (liquidFunFading) bumpLiquidFunStatics();
     syncLiquidFunParticlesToSharedBuffers();
     syncLiquidFunGroupsToSharedBuffers();
   }
@@ -3144,6 +3159,9 @@
         layerMask: data.liquidFunViews.layerMask
           ? viewFromDesc(data.liquidFunViews.layerMask, Uint16Array)
           : null,
+        staticsEpoch: data.liquidFunViews.staticsEpoch
+          ? viewFromDesc(data.liquidFunViews.staticsEpoch, Int32Array)
+          : null,
       };
       liquidFunMaxCount = data.liquidFunMaxCount | 0;
       liquidFunXFloatOffset = 0;
@@ -3440,6 +3458,7 @@
       }
       liquidFunPaintedHighWater = Math.max(liquidFunPaintedHighWater | 0, n);
       if (typeof publishLiquidFunHeap === "function") publishLiquidFunHeap();
+      bumpLiquidFunStatics();
     }
     return { ok: true, count: n };
   }

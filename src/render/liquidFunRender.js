@@ -30,6 +30,9 @@ export function bindLiquidFunRender(sab, maxCount, byte = 0) {
   const at = byte | 0;
   let off = at + 8;
   const count = new Int32Array(sab, at, 1);
+  // E-194: the header's second word counts the changes physics makes to the statics (tint, texture, scale, rotation,
+  // base alpha, the fading alpha), so pre-render reads its records of them only after one.
+  const staticsEpoch = new Int32Array(sab, at + 4, 1);
   const x = new Float32Array(sab, off, n);
   off += n * 4;
   const y = new Float32Array(sab, off, n);
@@ -58,6 +61,7 @@ export function bindLiquidFunRender(sab, maxCount, byte = 0) {
   const layerMask = new Uint16Array(sab, off, n);
   return {
     count,
+    staticsEpoch,
     x,
     y,
     scaleX,

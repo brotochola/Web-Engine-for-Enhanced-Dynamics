@@ -194,6 +194,7 @@ function emitLayout(r, entities, rows, customLayers) {
     // E-194: the keyed LiquidFun particles' records and how many (-1 and 0: LiquidFun rows keyless).
     lfKeyedByte: r.emitLfKeyed.bytes > 0 ? r.emitLfKeyed.byte : -1,
     keyedLiquidFun: r.emitLfKeyed.bytes / EMIT_DECO_KEYED_BYTES,
+    lfCheckedByte: r.emitLfChecked.bytes > 0 ? r.emitLfChecked.byte : -1,
     // W27: the Adobe emit's regions, -1 without them (no AdobeAnimComponent).
     adobeAnimByte: r.adobeAnim ? block(r.adobeAnim) : -1,
     stashXByte: r.emitStashX ? r.emitStashX.byte : -1,

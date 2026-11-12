@@ -1489,7 +1489,8 @@ test('E-194: the emit keys a LiquidFun particle by its index past the keyed deco
   SpriteRenderer.keyedDirty.fill(1);
   // Pixi's statics texture for the LiquidFun keys, as the marked rows leave it.
   const copy = new Uint32Array(LFN * 12);
-  const frame = () => {
+  // check: Pixi's copy holds every row's statics (not after a change physics did not announce, by design).
+  const frame = (check = true) => {
     assert.ok(writeEmitColumns(b, w, SpriteRenderer, ShadowCaster, DecorationComponent, kernelSource));
     assert.ok(writeEmitLiquidFunColumns(b, lf, w._prevLfX, w._prevLfY, 0, w._poseAlpha, white));
     const flags = EMIT_SORT_KEY | EMIT_Y_SORT | EMIT_BOUNDS;
@@ -1505,7 +1506,7 @@ test('E-194: the emit keys a LiquidFun particle by its index past the keyed deco
       else assert.ok(raw < KEY_CHANGED, `row ${r}: particle ${p}'s later row is not marked again`);
       if (raw >= KEY_CHANGED) copy.set(rowStatics(w, r), p * 12);
     }
-    for (let r = 0; r < n; r++) {
+    for (let r = 0; check && r < n; r++) {
       if (w._renderableType[r] !== 7) continue;
       const p = w._renderableIndex[r];
       const want = rowStatics(w, r);
@@ -1525,10 +1526,15 @@ test('E-194: the emit keys a LiquidFun particle by its index past the keyed deco
   assert.ok(none(frame()), 'a frame of moves marks none');
   const drawn = [...m.keys()];
   const [p0, p1, p2, p3] = drawn;
+  // Step 2: physics announces each change to the statics by moving its counter; the emit reads its records only then.
+  assert.ok(lf.staticsEpoch, 'the render buffer has the counter');
+  const announce = () => Atomics.add(lf.staticsEpoch, 0, 1);
   lf.tint[p0] = (lf.tint[p0] ^ 0x00ff00) >>> 0;
   lf.scaleX[p1] *= 1.5;
   lf.alpha[p2] *= 0.5;
   lf.textureId[p3] = lf.textureId[p3] === 2 ? 3 : 2;
+  assert.ok(none(frame(false)), 'a change physics did not announce is not looked for');
+  announce();
   m = frame();
   assert.deepEqual(drawn.filter((p) => m.get(p)), [p0, p1, p2, p3], 'a tint, a scale, an alpha and a texture mark their index alone');
   assert.ok(none(frame()));
@@ -1539,10 +1545,19 @@ test('E-194: the emit keys a LiquidFun particle by its index past the keyed deco
     lf[key][a] = lf[key][c];
     lf[key][c] = t;
   }
+  announce();
   m = frame();
   assert.deepEqual(drawn.filter((p) => m.get(p)), [a, c], 'two particles that traded indices mark both');
   assert.ok(none(frame()));
   bumpEmitDecorationEpoch(b);
   assert.ok(all(frame()), 'a new epoch marks every particle');
   assert.ok(none(frame()));
+  // A frame with the counter unmoved reads no record: a record made stale behind the emit's back stays unread.
+  const recs = new Uint32Array(k.m.buffer, b.lfKeyedByte, LFN * 8);
+  const saved = recs.slice();
+  recs.fill(0xdeadbeef);
+  assert.ok(none(frame()), 'the records were not read');
+  announce();
+  assert.ok(all(frame()), 'read again once physics announces a change');
+  recs.set(saved);
 });
