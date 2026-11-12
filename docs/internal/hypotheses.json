@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-11",
+  "updated": "2026-11-12",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -11948,6 +11948,53 @@
       ]
     },
     {
+      "id": "N-140",
+      "title": "The cull dropped sprites whose tops were still on screen (it padded with half the sprite around a foot anchor)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (93aacc8d, R-0909)",
+      "date": "2026-11-12",
+      "result": "fixed 2026-11-12 (93aacc8d): the pad is the reach from the anchor to the farthest corner; seen in The Chaos Machine; Predator gate within the A/A (physics ±3.7 %)",
+      "next": "Done.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-140"
+      ],
+      "aliases": [
+        "cull",
+        "culling",
+        "half_extent",
+        "boundsHalfW",
+        "anchor",
+        "spriteCullReach",
+        "houses disappear"
+      ],
+      "records": [
+        "R-0909"
+      ]
+    },
+    {
+      "id": "N-141",
+      "title": "A large decoration goes missing at the screen edge while part of it shows (decorations are culled at their point)",
+      "status": "open",
+      "statusText": "filed 2026-11-12 fixing N-140; read in the code, not reproduced",
+      "date": "2026-11-12",
+      "result": "particleLists.c builds the visible list of the particle pool, decorations included, with a point test: the position against the view plus cullingRatio. A decoration drawn tall from its foot disappears once its foot is past the margin, as the sprites of N-140 did.",
+      "next": "A reach per decoration slot (spriteCullReach on its frame, scale and anchor) and the list kernel padding decoration slots by it in a copied loop, or the largest decoration reach as one margin for them. Owner: the particle worker's list build.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-141"
+      ],
+      "aliases": [
+        "decoration cull",
+        "particleLists",
+        "build_lists",
+        "tall decoration"
+      ],
+      "records": []
+    },
+    {
       "id": "E-214",
       "title": "Path slots allocated without a scan of every slot",
       "status": "kept",
@@ -20842,6 +20889,18 @@
       "text": "**E-210 step 0 (`5e19d6c2`): Predator restored from a mid-battle save does not fight. Its AI's state is plain JS fields a save does not carry, so a gate from the save would time a quiet world, not the battle.** 2026-11-11.\n\n**The tools** (kept, for any scene):\n- the bench page's `?restore=<url>` loads the scene with that save as `restorePayload`;\n- `runPredatorAbab --restore <file>` copies the save into both sides' trees and names it to their pages;\n- `sceneSaveMaker.mjs` makes a save: the scene played for `--seconds` in a chromeKernel page, then `scene.saveGame`.\n\n**Probe.** A save of Predator after 20 s: 17 448 entities, 3.1 MB. Then src, headless, from the save:\n- 3 s of warm-up then 4 s: spatial 2.04, physics 2.59 (716 bodies moved, 1003 awake), logic 2.85, pre-render 2.88 ms;\n- 10 s then 4 s: spatial 2.94, physics 2.38 (364 moved, 395 awake), logic 2.49, pre-render 2.56 ms;\n- for comparison, Predator from a new game (today's gates): spatial about 4.2, physics 5.1 to 5.7, logic 3.1 to 3.3, pre-render 3.1 to 3.3 ms.\n\n**What it means.** The save keeps components and poses, not the soldiers' and civilians' FSM locals (SAVE_GAME.md says so). Restored, the battle goes quiet and every worker falls under the 3 ms floor. A paired gate needs a scene whose behaviour survives a save. For Predator that means its AI state in components: demo work, not this tool's. E-210 is parked until a scene needs it; the tools stay.",
       "commits": [
         "5e19d6c2"
+      ]
+    },
+    {
+      "id": "R-0909",
+      "date": "2026-11-12",
+      "time": "01:18",
+      "timeFrom": "recorded",
+      "title": "N-140 fixed: the cull pads each sprite with its reach from its anchor (houses and trees no longer vanish at the edge)",
+      "verdict": "kept-hygiene",
+      "text": "**N-140 fixed: the cull pads each sprite with its reach from its anchor.** Reported 2026-11-12 by the owner from The Chaos Machine (another developer's game on 0.14.0): houses and trees disappeared at the screen's bottom edge while their tops still showed.\n\n- **Cause:** the collect padded the view with the larger half bound around the pose; a sprite anchored at its foot (the default 0.5, 1) reaches its whole height above it. A 293×262 house was dropped with 43 px of it on screen at zoom 1, 159 px at zoom 2.\n- **Fix (`93aacc8d`):** the pad is the distance from the anchor to the farthest corner (`src/util/spriteCullReach.js`, the same in `preRenderCollect.c`), turns and flips included; the kernel tests a pose inside the view first and reads the anchors only for one outside it; the static scenery grid widens by the largest reach; `setAnchor` re-bins a static sprite.\n- **Seen in the game** (headless Chromium, the game's own server, a house's foot 450 px below the edge at zoom 2): 0.14.0's bundle drew grass, the fixed one draws the house's roof and water tank and the two trees in front of it.\n- **Tests:** `cullReach.test.js` (two of its three fail on the old kernel), the collect parity tests on anchors of every kind, the turned-camera test on the reach.\n\n**Predator gate, main `5fecdf6e` vs `93aacc8d`, 4 pairs, src (01:09 to 01:13):** pre-render 3.523 → 3.481 ms (-1.2 %, worse 2/4), logic +1.8 % (2/4), spatial -0.2 % (2/4), physics 5.897 → 6.114 ms (+3.7 %, worse 3/4, cv 9 %), the runner's REGRESSION on physics alone. VISIBLE_ENTITIES 13 521 → 13 703 (+1.3 %): the sprites whose tops show at the edges, now drawn.\n\n**The session's A/A, main vs main, 4 pairs (01:14 to 01:18):** logic +3.1 % (worse 4/4, the runner's REGRESSION on identical code), spatial -2.5 %, physics 5.732 → 5.519 ms (-3.7 %), pre-render -1.3 %. Physics moves ±3.7 % with nothing changed, so the gate's +3.7 % is inside the noise, on a worker the collect cannot reach; detection limit this session about 4 % per worker in Predator.\n\n**Verdict: kept (hygiene).**",
+      "commits": [
+        "93aacc8d"
       ]
     }
   ],

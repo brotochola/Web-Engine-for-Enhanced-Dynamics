@@ -128,17 +128,31 @@ INLINE cols_t columns(uint32_t table) {
   return k;
 }
 
-/* The half extent the cull pads the view with: the larger cached half bound, else the collider's visual range. */
+/* The half extent the cull pads the view with (N-140, src/util/spriteCullReach.js): the sprite's reach from its
+   anchor to its farthest corner, so a turn or a flip stays inside; the cached half bounds are half the drawn size,
+   and a sprite anchored at its foot (the default) reaches its whole height above its pose. Without bounds, the
+   collider's visual range. */
 INLINE double half_extent(const cols_t *k, uint32_t i) {
-  float e = 0.0f;
+  float w = 0.0f, h = 0.0f;
   if (k->halfW) {
-    const float w = or0(k->halfW[i]);
-    const float h = k->halfH ? or0(k->halfH[i]) : 0.0f;
-    if (w > h) e = w;
-    else if (h > 0.0f) e = h;
+    w = or0(k->halfW[i]);
+    h = k->halfH ? or0(k->halfH[i]) : 0.0f;
+    if (!(w > 0.0f)) w = 0.0f;
+    if (!(h > 0.0f)) h = 0.0f;
   }
-  if (e <= 0.0f && k->visualRange) e = or0(k->visualRange[i]);
-  return (double)e;
+  if (w == 0.0f && h == 0.0f) {
+    const float r = k->visualRange ? k->visualRange[i] : 0.0f;
+    return r > 0.0f ? (double)r : 0.0;
+  }
+  double ax = k->anchorX ? (double)k->anchorX[i] : 0.5;
+  double ay = k->anchorY ? (double)k->anchorY[i] : 0.5;
+  if (ax != ax) ax = 0.5;
+  if (ay != ay) ay = 0.5;
+  const double mx = ax > 1.0 - ax ? ax : 1.0 - ax;
+  const double my = ay > 1.0 - ay ? ay : 1.0 - ay;
+  const double rx = 2.0 * (double)w * mx;
+  const double ry = 2.0 * (double)h * my;
+  return __builtin_sqrt(rx * rx + ry * ry);
 }
 
 /* A pose in double, as _displayPoseOut holds it (a value, so it lives in locals: the kernels have no stack). */
@@ -259,8 +273,11 @@ INLINE uint32_t walk(uint32_t table, uint32_t from, uint32_t count, uint32_t max
     if (!skipCull) {
       const double sx = (double)k.x[i] * zoom - offX;
       const double sy = (double)k.y[i] * zoom - offY;
-      const double extent = half_extent(&k, i) * zoom;
-      if (!(sx >= minX - extent && sx <= maxX + extent && sy >= minY - extent && sy <= maxY + extent)) continue;
+      /* A pose in the view needs no extent (the same answer, without its four loads). */
+      if (!(sx >= minX && sx <= maxX && sy >= minY && sy <= maxY)) {
+        const double extent = half_extent(&k, i) * zoom;
+        if (!(sx >= minX - extent && sx <= maxX + extent && sy >= minY - extent && sy <= maxY + extent)) continue;
+      }
     }
     if (!queue_sprite(&k, i, keyY, maxItems, alpha, sortK, bodies, sortY)) return idx;
   }
@@ -280,12 +297,14 @@ INLINE uint32_t walk_turned(uint32_t table, uint32_t from, uint32_t count, uint3
     if (!k.tActive[i] || !k.sActive[i]) continue;
     const double dx = (double)k.x[i] * zoom - offX - halfCw;
     const double dy = (double)k.y[i] * zoom - offY - halfCh;
-    const double extent = half_extent(&k, i) * zoom;
     const double u = rc * dx - rs * dy;
     const double v = rs * dx + rc * dy;
-    const double w = limW + extent;
-    const double h = limH + extent;
-    if (u < -w || u > w || v < -h || v > h) continue;
+    if (u < -limW || u > limW || v < -limH || v > limH) {
+      const double extent = half_extent(&k, i) * zoom;
+      const double w = limW + extent;
+      const double h = limH + extent;
+      if (u < -w || u > w || v < -h || v > h) continue;
+    }
     if (!queue_sprite(&k, i, keyY, maxItems, alpha, sortK, bodies, sortY)) return idx;
   }
   return count;

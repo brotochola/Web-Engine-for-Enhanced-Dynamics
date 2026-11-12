@@ -1915,7 +1915,8 @@ class PreRenderWorker extends AbstractWorker {
         const gen = staticSceneryGen();
         if (gen !== grid.builtGen) {
             grid.build(gen, this.config?.worldWidth || 0, this.config?.worldHeight || 0, Transform.active,
-                Transform.x, Transform.y, SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH, Collider.visualRange);
+                Transform.x, Transform.y, SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH, SpriteRenderer.anchorX,
+                SpriteRenderer.anchorY, Collider.visualRange);
         }
         const zoom = cb.zoom;
         const half = grid.maxHalf;

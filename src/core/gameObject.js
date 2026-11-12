@@ -1723,6 +1723,8 @@ export class GameObject {
       SpriteRenderer.anchorY[this.index] = y;
       SpriteRenderer.renderDirty[this.index] = 1;
       SpriteRenderer.keyedDirty[this.index] = 1;
+      // N-140: the cull's reach is from the anchor, so a static sprite's extent in pre-render's grid moved.
+      staticSceneryChangedAt(this.index);
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.anchorX[this.index] = x;

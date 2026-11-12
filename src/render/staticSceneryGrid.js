@@ -6,6 +6,7 @@
 // entities that no test could pass.
 
 import { EntityIdArray } from '../util/entityIdWidth.js';
+import { spriteCullReach } from '../util/spriteCullReach.js';
 
 /** About this many binned entities a cell. */
 const PER_CELL = 8;
@@ -62,10 +63,10 @@ export class StaticSceneryGrid {
   }
 
   /**
-   * Bin every active static entity. Its half extent is the collect's: the larger of the sprite's half bounds, else
-   * its collider's visual range.
+   * Bin every active static entity. Its half extent is the collect's: the sprite's reach from its anchor (N-140),
+   * else its collider's visual range.
    */
-  build(gen, worldWidth, worldHeight, active, x, y, halfW, halfH, visualRange) {
+  build(gen, worldWidth, worldHeight, active, x, y, halfW, halfH, anchorX, anchorY, visualRange) {
     const ranges = this.ranges;
     let count = 0;
     let maxHalf = 0;
@@ -73,12 +74,8 @@ export class StaticSceneryGrid {
       for (let i = ranges[r * 2], end = ranges[r * 2 + 1]; i < end; i++) {
         if (!active[i]) continue;
         count++;
-        let h = 0;
-        const hw = halfW ? halfW[i] || 0 : 0;
-        const hh = halfH ? halfH[i] || 0 : 0;
-        if (hw > hh) h = hw;
-        else if (hh > 0) h = hh;
-        if (h <= 0 && visualRange) h = visualRange[i] || 0;
+        const h = spriteCullReach(halfW ? halfW[i] : 0, halfW && halfH ? halfH[i] : 0, anchorX ? anchorX[i] : NaN,
+          anchorY ? anchorY[i] : NaN, visualRange ? visualRange[i] : 0);
         if (h > maxHalf) maxHalf = h;
       }
     }

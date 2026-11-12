@@ -8,6 +8,7 @@ import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { Transform } from '../../src/components/transform.js';
 import { Layer } from '../../src/core/layer.js';
 import { Query } from '../../src/core/query.js';
+import { spriteCullReach } from '../../src/util/spriteCullReach.js';
 
 /** collectVisibleEntities' JS loops on `pre` (a PreRenderWorker), for this frame. */
 export function collectVisibleEntitiesJs(pre) {
@@ -53,6 +54,9 @@ export function collectVisibleEntitiesJs(pre) {
 
     const boundsHalfW = SpriteRenderer.boundsHalfW;
     const boundsHalfH = SpriteRenderer.boundsHalfH;
+    // N-140: the cull pads with the sprite's reach from its anchor.
+    const anchorX = SpriteRenderer.anchorX;
+    const anchorY = SpriteRenderer.anchorY;
     const spritesheetId = SpriteRenderer.spritesheetId;
 
     // H-19. Everything hoisted out of the per-entity loop below.
@@ -127,14 +131,8 @@ export function collectVisibleEntitiesJs(pre) {
 
             const dx = x[i] * camZoom - cameraOffsetX - halfCw;
             const dy = y[i] * camZoom - cameraOffsetY - halfCh;
-            let halfExtent = 0;
-            if (hasHalfW) {
-                const halfW = boundsHalfW[i] || 0;
-                const halfH = hasHalfH ? (boundsHalfH[i] || 0) : 0;
-                if (halfW > halfH) halfExtent = halfW;
-                else if (halfH > 0) halfExtent = halfH;
-            }
-            if (halfExtent <= 0 && hasVisualRange) halfExtent = visualRange[i] || 0;
+            const halfExtent = spriteCullReach(hasHalfW ? boundsHalfW[i] : 0, hasHalfW && hasHalfH ? boundsHalfH[i] : 0,
+                anchorX ? anchorX[i] : NaN, anchorY ? anchorY[i] : NaN, hasVisualRange ? visualRange[i] : 0);
             const extent = halfExtent * camZoom;
             const u = rc * dx - rs * dy;
             const v = rs * dx + rc * dy;
@@ -190,14 +188,8 @@ export function collectVisibleEntitiesJs(pre) {
             const sy = y[i] * camZoom - cameraOffsetY;
 
             // Use cached bounds (updated on scale/animation change)
-            let halfExtent = 0;
-            if (hasHalfW) {
-                const halfW = boundsHalfW[i] || 0;
-                const halfH = hasHalfH ? (boundsHalfH[i] || 0) : 0;
-                if (halfW > halfH) halfExtent = halfW;
-                else if (halfH > 0) halfExtent = halfH;
-            }
-            if (halfExtent <= 0 && hasVisualRange) halfExtent = visualRange[i] || 0;
+            const halfExtent = spriteCullReach(hasHalfW ? boundsHalfW[i] : 0, hasHalfW && hasHalfH ? boundsHalfH[i] : 0,
+                anchorX ? anchorX[i] : NaN, anchorY ? anchorY[i] : NaN, hasVisualRange ? visualRange[i] : 0);
             const extent = halfExtent * camZoom;
             const onScreen = sx >= screenMinX - extent && sx <= screenMaxX + extent &&
                 sy >= screenMinY - extent && sy <= screenMaxY + extent;
