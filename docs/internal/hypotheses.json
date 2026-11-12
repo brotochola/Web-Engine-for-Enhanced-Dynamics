@@ -12101,6 +12101,30 @@
       ]
     },
     {
+      "id": "N-145",
+      "title": "A scene with no entity types does not load (zero slots: no spatial publish memory, no physics component buffers)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (1a02ab49, R-0919)",
+      "date": "2026-11-12",
+      "result": "fixed 2026-11-12 (1a02ab49): sceneEntitySlots gives a scene with no entity types one slot; emptyScene.test.js",
+      "next": "Done.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-145"
+      ],
+      "aliases": [
+        "empty scene",
+        "no entities",
+        "static entities = []",
+        "menu scene",
+        "sceneEntitySlots"
+      ],
+      "records": [
+        "R-0919"
+      ]
+    },
+    {
       "id": "E-214",
       "title": "Path slots allocated without a scan of every slot",
       "status": "kept",
@@ -21132,6 +21156,18 @@
       "text": "**N-144 fixed: an asset fetch and its body read are tried once more past the HTTP cache.** `b82561fe`, merged in the fix/n143 merge.\n\n- **Cause:** two tabs of one browser loading the 16 MB roads tilemap at once failed one with `net::ERR_CACHE_WRITE_FAILURE`: the body read rejected though the server had answered. networking_cars retried tilemaps (`36870ce0`, `fetchRetry.js`); main loads every asset through `fetchAsset` (DX-GUARDS C6), which did not retry, and its callers read the body after it returned.\n- **Fix:** `fetchAssetRead(url, what, read)` fetches and reads; on a network failure of either (a TypeError) both once more with `cache: 'no-store'`. An HTTP error and a body the caller rejects (bad JSON) are answers, not retried; the errors keep C6's wording. `fetchAssetJson` reads through it; the baked bigAtlas PNG, a tileset, a sound and a worker's image now read inside it.\n- **Checks:** `fetchAsset.test.js` (the branch's four cases: a failed request, a failed body read, an HTTP error and bad JSON not retried, a second failure named), 8 of 8. A cache write failure cannot be made in Node or headless Chromium on demand: the retry is tested with a fetch that fails as it does.\n- Hygiene, nothing to time (asset load only).",
       "commits": [
         "b82561fe"
+      ]
+    },
+    {
+      "id": "R-0919",
+      "date": "2026-11-12",
+      "time": "05:05",
+      "timeFrom": "recorded",
+      "title": "N-145 fixed: a scene with no entity types keeps one slot and loads",
+      "verdict": "kept-hygiene",
+      "text": "**N-145 fixed: a scene with no entity types loads.** `1a02ab49`.\n\n- **Found** writing a probe scene for N-142 (LiquidFun, `static entities = []`). In headless Chromium: \"Cannot read properties of null (reading 'buffer')\" at `initializeCoreEntityAndComponentBuffers` (sceneSharedBuffers.js): with zero entity slots `createSpatialPublishMemory` lays out nothing and returns null. With that worked around, the physics host stopped at \"init missing Transform/RigidBody/Collider buffers\".\n- **Fix:** a scene with no entity types keeps one slot no type owns and nothing spawns (`sceneEntitySlots`, applied in `Scene.init` before anything is sized), so every per-entity buffer is made.\n- **Checks:** the probe loads and draws its fluid (60 112 blue pixels). `emptyScene.test.js`: the rule, and the real buffers (the spatial memory, Transform, RigidBody, Collider) for a scene with no types. Node 2514 of 2514, demos 101 of 101.\n- Hygiene: scenes with entity types keep exactly their slots; nothing to time.",
+      "commits": [
+        "1a02ab49"
       ]
     }
   ],
