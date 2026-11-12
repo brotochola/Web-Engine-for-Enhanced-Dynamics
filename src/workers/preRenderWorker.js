@@ -1850,7 +1850,8 @@ class PreRenderWorker extends AbstractWorker {
         // E-127: with static scenery, the walk of the moving sprites and the static ones in the cells in view.
         const walked = this._staticSceneryWalk(spriteEntities, cb);
         const walk = walked >= 0 ? this._staticGrid.list : spriteEntities;
-        const listed = walked >= 0 ? writeCollectList(b, walk, walked) : writeCollectList(b, spriteEntities);
+        const listed =
+            walked >= 0 ? writeCollectList(b, walk, walked) : writeCollectList(b, spriteEntities, spriteEntities.length, true);
         const count = walked >= 0 ? walked : listed > 0 ? listed : this.globalEntityCount;
         const res = b.results;
         res[0] = this._renderableCount;

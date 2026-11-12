@@ -12070,11 +12070,11 @@
     {
       "id": "E-217",
       "title": "The sprite query's list read where the collect reads, not copied each frame",
-      "status": "open",
-      "statusText": "filed 2026-11-11 from BunnyMark C's trace (R-0903); not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-12 (ef03a7a1, R-0911)",
       "date": "2026-11-11",
-      "result": "",
-      "next": "The sprite query's snapshots in the render-queue memory under the published-list protocol (a reading mark), the collect pointing at the published copy. Owner: BunnyMark C 200 000 pre-render (writeCollectList 7.7 %).",
+      "result": "kept 2026-11-12 (ef03a7a1): a publish sequence lets the collect skip the copy of an unchanged list; BunnyMark C 200 000 pre-render -8.1 %",
+      "next": "Done for a steady population. A scene whose population changes every frame still copies: the pointer at the published copy (a reading mark) would cover it.",
       "area": "render",
       "kind": "js",
       "refs": [
@@ -12086,8 +12086,9 @@
         "query snapshot",
         "collect list"
       ],
-      "records": [],
-      "rank": 3
+      "records": [
+        "R-0911"
+      ]
     },
     {
       "id": "E-218",
@@ -20914,6 +20915,18 @@
       "text": "**The bundles of 2726bc31 (N-140 merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `0f8ed78c`, built from 2726bc31.\n\n- Node 2484 of 2484 on main, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 01:23 to 01:28: NEUTRAL.** Logic -14.9 % (0/4 worse), spatial -9.5 %, physics -19.9 % (cv 8/13 %), pre-render -7.2 %: the bundle side read faster on every worker, within this session's A/A spread of a few per cent plus the bundle-vs-src noise the memory notes (-3 to +10 %).\n- **Boids, 8 pairs, 01:28 to 01:38: NEUTRAL.** Spatial +0.2 % (5/8), physics -0.7 % (3/8).\n\nMain pushed.",
       "commits": [
         "0f8ed78c"
+      ]
+    },
+    {
+      "id": "R-0911",
+      "date": "2026-11-12",
+      "time": "01:47",
+      "timeFrom": "recorded",
+      "title": "E-217 kept: the collect keeps its copy of the sprite query's list while nothing was published",
+      "verdict": "kept",
+      "text": "**E-217 kept: the collect keeps its copy of the sprite query's list while nothing was published.** `ef03a7a1`.\n\n- **Premise (R-0903):** `writeCollectList` was 7.7 % of BunnyMark C 200 000's pre-render, the sprite query's 200 000 ids copied into the collect's memory each frame.\n- **What was done, simpler than the plan:** logic republishes a precomputed query only when the population changes. The query header's reserved int is now a publish sequence, stored after the index; `readPublishedQuerySnapshot` reads it first and hands back the same view only while it has not moved (the index alone comes back round after three publishes, with the same count when the churn evens out: the old cache's ABA, harmless before, which a test now covers). `writeCollectList(b, ids, n, true)` keeps the copy it holds of an unchanged published view; any other list (the static walk) is copied each time. `querySnapshotSeq.test.js`: two of its four fail on the old code.\n\n**BunnyMark C `?bunnies=200000`, owner pre-render, 4 pairs, 5fecdf6e vs ef03a7a1's tree (01:40 to 01:43):** **KEPT (product)**, pre-render 5.629 → 5.163 ms (-8.1 %, worse 0/4, cv 3/7 %). Logic 1.899 → 1.914 ms, below the floor.\n\n**Predator's gate, 4 pairs (01:43 to 01:47): NEUTRAL.** Logic -2.2 %, spatial -0.7 %, physics -3.3 %, pre-render +0.2 % (3/4 worse, within the session's A/A, R-0909: about 4 %).\n\nOpen: a scene whose population changes every frame still copies every frame; the plan's pointer at the published copy (with a reading mark) would cover it.",
+      "commits": [
+        "ef03a7a1"
       ]
     }
   ],
