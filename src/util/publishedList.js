@@ -14,41 +14,58 @@
 // published copy as held, checks that it is still the published one, and reads it whole. With three copies the
 // writer always has one to fill, so neither side waits, and the reader never holds a copy the writer is filling.
 // One reader: the reading word is pre-render's. Anyone else (the debug panel) only peeks at a count.
+//
+// N-113: the visible particle list is one too, as a region of the particle memory (at a byte, on a cache line), where
+// the list kernel writes a copy given its byte; each copy has room for `extra` more slots (the kernel's one past the
+// count).
 import { PoolSlotArray, poolSlotBytes } from './poolSlotWidth.js';
 
 export const PUBLISHED_LIST_COPIES = 3;
 const HEADER_BYTES = 64;
 const LINE = 64;
 
-/** Bytes of one copy of a list of up to `maxEntries`, rounded up to a cache line. */
-function copyBytes(maxEntries) {
-  const bytes = (1 + maxEntries) * poolSlotBytes(maxEntries);
+/** Bytes of one copy of a list of up to `maxEntries` (and `extra` slots), rounded up to a cache line. */
+function copyBytes(maxEntries, extra) {
+  const bytes = (1 + maxEntries + extra) * poolSlotBytes(maxEntries);
   return Math.ceil(bytes / LINE) * LINE;
 }
 
-/** Bytes of a published list of up to `maxEntries` indices. */
-export function publishedListBytes(maxEntries) {
-  return HEADER_BYTES + PUBLISHED_LIST_COPIES * copyBytes(maxEntries);
+/** Bytes of a published list of up to `maxEntries` indices, each copy `extra` slots longer. */
+export function publishedListBytes(maxEntries, extra = 0) {
+  return HEADER_BYTES + PUBLISHED_LIST_COPIES * copyBytes(maxEntries, extra);
+}
+
+/** The byte of copy `k` of a published list whose header is at `byte` (bindPublishedList's copies[k].byteOffset). */
+export function publishedListCopyByte(byte, maxEntries, k, extra = 0) {
+  return byte + HEADER_BYTES + k * copyBytes(maxEntries, extra);
+}
+
+/** A published list's header at `byte` of `buffer`: copy 0 published, none held. */
+export function initPublishedList(buffer, byte = 0) {
+  const ctl = new Int32Array(buffer, byte, 2);
+  ctl[0] = 0;
+  ctl[1] = -1;
 }
 
 /** A published list's buffer: every copy empty, copy 0 published, none held. */
-export function createPublishedList(maxEntries) {
-  const sab = new SharedArrayBuffer(publishedListBytes(maxEntries));
-  const ctl = new Int32Array(sab, 0, 2);
-  ctl[0] = 0;
-  ctl[1] = -1;
+export function createPublishedList(maxEntries, extra = 0) {
+  const sab = new SharedArrayBuffer(publishedListBytes(maxEntries, extra));
+  initPublishedList(sab, 0);
   return sab;
 }
 
-/** Views of a published list: `ctl` [published, reading] and its three `copies` at the pool's slot width. */
-export function bindPublishedList(sab, maxEntries) {
+/**
+ * Views of a published list at `byte` of `buffer`: `ctl` [published, reading] and its three `copies` at the pool's slot
+ * width, each 1 + maxEntries + extra slots.
+ */
+export function bindPublishedList(buffer, maxEntries, byte = 0, extra = 0) {
   const Slot = PoolSlotArray(maxEntries);
-  const stride = copyBytes(maxEntries);
+  const stride = copyBytes(maxEntries, extra);
   const copies = [];
   for (let k = 0; k < PUBLISHED_LIST_COPIES; k++) {
-    copies.push(new Slot(sab, HEADER_BYTES + k * stride, 1 + maxEntries));
+    copies.push(new Slot(buffer, byte + HEADER_BYTES + k * stride, 1 + maxEntries + extra));
   }
-  return { ctl: new Int32Array(sab, 0, 2), copies };
+  return { ctl: new Int32Array(buffer, byte, 2), copies };
 }
 
 /** The writer's copy for this frame: neither the published one nor the one the reader holds. */

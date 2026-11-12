@@ -465,7 +465,7 @@ async function createWasm() {
   // performing other necessary setup
   function receiveInstance(instance, module) {
     wasmExports = instance.exports;
-    registerTLSInit(wasmExports["ad"]);
+    registerTLSInit(wasmExports["dd"]);
     assignWasmExports(wasmExports);
     // We now have the Wasm module loaded up, keep a reference to the compiled module so we can post it to the workers.
     wasmModule = module;
@@ -1488,7 +1488,7 @@ Module["cwrap"] = cwrap;
 var proxiedFunctionTable = [ _proc_exit, exitOnMainThread, pthreadCreateProxied, __setitimer_js, _fd_write ];
 
 // Imports from the Wasm binary.
-var _create_world, _world_enable_sleeping, _bind_game_buffers, _free, _malloc, _create_body_box, _create_body_circle, _create_body, _create_body_polygon, _destroy_body, _body_set_transform, _body_set_linear_velocity, _body_set_angular_velocity, _body_set_fixed_rotation, _body_set_type, _body_apply_force, _body_apply_force_center, _body_set_linear_damping, _body_set_angular_damping, _body_set_gravity_scale, _body_apply_linear_impulse, _body_apply_linear_impulse_center, _body_apply_angular_impulse, _body_apply_torque, _bodies_apply_accelerations, _body_set_awake, _body_set_filter, _body_set_friction, _body_set_restitution, _body_set_sleep_threshold, _world_set_hit_event_threshold, _world_explode, _joint_configure, _body_set_density, _body_add_shape_box, _body_set_shape_box, _body_add_shape_circle, _body_set_shape_circle, _body_add_shape_polygon, _body_set_shape_polygon, _body_set_chain, _body_clear_shapes, _overlap_aabb_into, _overlap_aabb, _overlap_circle, _overlap_box, _cast_ray_closest, _cast_ray_all, _cast_mover, _collide_mover, _create_revolute_joint, _create_distance_joint, _create_prismatic_joint, _create_weld_joint, _create_distance_joint_local, _create_revolute_joint_local, _create_weld_joint_local, _destroy_joint, _get_joint_count, _step_world, _get_state_byte_offset, _get_sleeping_byte_offset, _get_meta_byte_offset, _get_body_capacity, _get_max_body_slots, _get_slot_count, _get_state_channel_offset, _get_meta_float_stride, _get_state_region_bytes, _get_meta_region_bytes, _get_joint_byte_offset, _get_joint_float_stride, _get_joint_region_bytes, _get_joint_capacity, _get_query_slots_byte_offset, _get_query_hits_byte_offset, _get_event_header_byte_offset, _get_contact_begin_byte_offset, _get_contact_end_byte_offset, _get_contact_hit_byte_offset, _get_sensor_begin_byte_offset, _get_sensor_end_byte_offset, _get_joint_events_byte_offset, _get_joint_event_capacity, _get_mover_planes_byte_offset, _get_query_capacity, _get_ray_hit_capacity, _get_query_hit_float_stride, _get_contact_event_capacity, _get_sensor_event_capacity, _get_contact_hit_capacity, _get_mover_plane_capacity, _get_mover_plane_float_stride, _get_event_header_int_count, _get_contact_pair_int_stride, _get_body_move_count, _get_body_move_byte_offset, _get_body_fell_asleep_byte_offset, _get_body_move_capacity, _get_awake_body_count, _get_profile_byte_offset, _get_profile_float_count, _get_counters_byte_offset, _get_counters_int_count, _create_particle_system, _destroy_particle_system, _create_particle_box, _create_particle_group_box, _create_particle_group_circle, _destroy_particle_group, _set_particle_sub_steps, _set_particle_tuning, _set_group_viscous_scale, _get_particle_group_slot_count, _get_particle_group_alive, _get_particle_group_particle_count, _get_particle_group_center_x, _get_particle_group_center_y, _get_particle_group_vx, _get_particle_group_vy, _get_particle_group_angular_velocity, _get_particle_group_angle, _get_particle_group_viscous_scale, _get_particle_group_first_index, _get_particle_group_last_index, _get_particle_group_flags, _join_particle_groups, _split_particle_group, _particle_apply_force, _particle_apply_linear_impulse, _particle_group_apply_force, _particle_group_apply_linear_impulse, _particle_query_aabb, _particle_ray_cast, _get_particle_query_hit, _get_particle_query_hits_byte_offset, _get_sync_particle_groups_max, _get_sync_particle_groups_byte_offset, _sync_active_particle_groups, _cull_particles_outside_bounds, _get_particle_weight_byte_offset, _restore_particles, _get_particle_group_index_byte_offset, _get_particle_rest_offset_byte_offset, _get_particle_pair_count, _copy_particle_group_slots, _copy_particle_pairs, _restore_particle_groups_and_pairs, _get_particle_count, _get_liquidfun_step_ms, _get_lf_worker_count, _get_lf_body_contact_count, _get_lf_query_shape_count, _get_lf_overlap_aabb_calls, _get_lf_apply_impulse_calls, _get_lf_world_point_velocity_calls, _get_lf_body_prop_calls, _set_lf_skip_body_impulse, _set_lf_skip_body_velocity, _set_lf_reuse_query_across_substeps, _get_lf_pass_ms, _get_lf_particle_contact_count, _set_lf_skip_pass, _set_lf_reuse_particle_contacts, _set_lf_pass_profile, _get_particle_capacity, _get_particle_radius, _get_particle_count_byte_offset, _get_particle_pos_byte_offset, _get_particle_vel_byte_offset, _get_particle_flags_byte_offset, _get_particle_x_byte_offset, _get_particle_alpha_byte_offset, _get_particle_y_byte_offset, _get_particle_vx_byte_offset, _get_particle_vy_byte_offset, _get_particle_user_data_byte_offset, _get_particle_color_byte_offset, _get_particle_viscous_scale_byte_offset, _set_particle_user_data, _set_particle_user_data_range, _set_particle_color, _set_particle_color_range, _set_particle_flags, _set_particle_viscous_scale, _set_particle_viscous_scale_range, _set_particle_group_flags, _destroy_particle, _create_particle, _particle_apply_force_range, _particle_apply_linear_impulse_range, _set_particle_extra_tuning, _get_extract_indices_byte_offset, _get_extract_indices_max, _extract_particles, _weedjs_heap_bytes_used, _weedjs_memory_peak_bytes, __emscripten_tls_init, _pthread_self, __emscripten_thread_init, ___set_thread_state, __emscripten_thread_crashed, __emscripten_run_js_on_main_thread_done, __emscripten_run_js_on_main_thread, __emscripten_thread_free_data, __emscripten_thread_exit, __emscripten_timeout, __emscripten_check_mailbox, _emscripten_stack_set_limits, __emscripten_stack_restore, __emscripten_stack_alloc, _emscripten_stack_get_current, __indirect_function_table, wasmTable;
+var _create_world, _world_enable_sleeping, _bind_game_buffers, _free, _malloc, _create_body_box, _create_body_circle, _create_body, _create_body_polygon, _destroy_body, _body_set_transform, _body_set_linear_velocity, _body_set_angular_velocity, _body_set_fixed_rotation, _body_set_type, _body_apply_force, _body_apply_force_center, _body_set_linear_damping, _body_set_angular_damping, _body_set_gravity_scale, _body_apply_linear_impulse, _body_apply_linear_impulse_center, _body_apply_angular_impulse, _body_apply_torque, _bodies_apply_accelerations, _body_set_awake, _body_set_filter, _body_set_friction, _body_set_restitution, _body_set_sleep_threshold, _world_set_hit_event_threshold, _world_explode, _joint_configure, _body_set_density, _body_add_shape_box, _body_set_shape_box, _body_add_shape_circle, _body_set_shape_circle, _body_add_shape_polygon, _body_set_shape_polygon, _body_set_chain, _body_clear_shapes, _overlap_aabb_into, _overlap_aabb, _overlap_circle, _overlap_box, _cast_ray_closest, _cast_ray_all, _cast_mover, _collide_mover, _create_revolute_joint, _create_distance_joint, _create_prismatic_joint, _create_weld_joint, _create_distance_joint_local, _create_revolute_joint_local, _create_weld_joint_local, _destroy_joint, _get_joint_count, _step_world, _get_state_byte_offset, _get_sleeping_byte_offset, _get_meta_byte_offset, _get_body_capacity, _get_max_body_slots, _get_slot_count, _get_state_channel_offset, _get_meta_float_stride, _get_state_region_bytes, _get_meta_region_bytes, _get_joint_byte_offset, _get_joint_float_stride, _get_joint_region_bytes, _get_joint_capacity, _get_query_slots_byte_offset, _get_query_hits_byte_offset, _get_event_header_byte_offset, _get_contact_begin_byte_offset, _get_contact_end_byte_offset, _get_contact_hit_byte_offset, _get_sensor_begin_byte_offset, _get_sensor_end_byte_offset, _get_joint_events_byte_offset, _get_joint_event_capacity, _get_mover_planes_byte_offset, _get_query_capacity, _get_ray_hit_capacity, _get_query_hit_float_stride, _get_contact_event_capacity, _get_sensor_event_capacity, _get_contact_hit_capacity, _get_mover_plane_capacity, _get_mover_plane_float_stride, _get_event_header_int_count, _get_contact_pair_int_stride, _get_body_move_count, _get_body_move_byte_offset, _get_body_fell_asleep_byte_offset, _get_body_move_capacity, _get_awake_body_count, _get_profile_byte_offset, _get_profile_float_count, _get_counters_byte_offset, _get_counters_int_count, _create_particle_system, _destroy_particle_system, _create_particle_box, _create_particle_group_box, _create_particle_group_circle, _destroy_particle_group, _set_particle_sub_steps, _set_particle_tuning, _set_group_viscous_scale, _get_particle_group_slot_count, _get_particle_group_alive, _get_particle_group_particle_count, _get_particle_group_center_x, _get_particle_group_center_y, _get_particle_group_vx, _get_particle_group_vy, _get_particle_group_angular_velocity, _get_particle_group_angle, _get_particle_group_viscous_scale, _get_particle_group_first_index, _get_particle_group_last_index, _get_particle_group_flags, _join_particle_groups, _split_particle_group, _particle_apply_force, _particle_apply_linear_impulse, _particle_group_apply_force, _particle_group_apply_linear_impulse, _particle_query_aabb, _particle_ray_cast, _get_particle_query_hit, _get_particle_query_hits_byte_offset, _get_sync_particle_groups_max, _get_sync_particle_groups_byte_offset, _sync_active_particle_groups, _cull_particles_outside_bounds, _get_particle_weight_byte_offset, _restore_particles, _get_particle_group_index_byte_offset, _get_particle_rest_offset_byte_offset, _get_particle_pair_count, _copy_particle_group_slots, _copy_particle_pairs, _restore_particle_groups_and_pairs, _get_particle_count, _get_liquidfun_step_ms, _get_lf_worker_count, _get_lf_body_contact_count, _get_lf_query_shape_count, _get_lf_overlap_aabb_calls, _get_lf_apply_impulse_calls, _get_lf_world_point_velocity_calls, _get_lf_body_prop_calls, _set_lf_skip_body_impulse, _set_lf_skip_body_velocity, _set_lf_reuse_query_across_substeps, _get_lf_pass_ms, _get_lf_particle_contact_count, _set_lf_skip_pass, _set_lf_reuse_particle_contacts, _set_lf_pass_profile, _get_particle_capacity, _get_particle_radius, _get_particle_count_byte_offset, _get_particle_pos_byte_offset, _get_particle_vel_byte_offset, _get_particle_flags_byte_offset, _get_particle_x_byte_offset, _get_particle_origin_byte_offset, _particle_reordered, _reset_particle_origins, _get_particle_alpha_byte_offset, _get_particle_y_byte_offset, _get_particle_vx_byte_offset, _get_particle_vy_byte_offset, _get_particle_user_data_byte_offset, _get_particle_color_byte_offset, _get_particle_viscous_scale_byte_offset, _set_particle_user_data, _set_particle_user_data_range, _set_particle_color, _set_particle_color_range, _set_particle_flags, _set_particle_viscous_scale, _set_particle_viscous_scale_range, _set_particle_group_flags, _destroy_particle, _create_particle, _particle_apply_force_range, _particle_apply_linear_impulse_range, _set_particle_extra_tuning, _get_extract_indices_byte_offset, _get_extract_indices_max, _extract_particles, _weedjs_heap_bytes_used, _weedjs_memory_peak_bytes, __emscripten_tls_init, _pthread_self, __emscripten_thread_init, ___set_thread_state, __emscripten_thread_crashed, __emscripten_run_js_on_main_thread_done, __emscripten_run_js_on_main_thread, __emscripten_thread_free_data, __emscripten_thread_exit, __emscripten_timeout, __emscripten_check_mailbox, _emscripten_stack_set_limits, __emscripten_stack_restore, __emscripten_stack_alloc, _emscripten_stack_get_current, __indirect_function_table, wasmTable;
 
 function assignWasmExports(wasmExports) {
   _create_world = Module["_create_world"] = wasmExports["t"];
@@ -1663,47 +1663,50 @@ function assignWasmExports(wasmExports) {
   _get_particle_vel_byte_offset = Module["_get_particle_vel_byte_offset"] = wasmExports["Ac"];
   _get_particle_flags_byte_offset = Module["_get_particle_flags_byte_offset"] = wasmExports["Bc"];
   _get_particle_x_byte_offset = Module["_get_particle_x_byte_offset"] = wasmExports["Cc"];
-  _get_particle_alpha_byte_offset = Module["_get_particle_alpha_byte_offset"] = wasmExports["Dc"];
-  _get_particle_y_byte_offset = Module["_get_particle_y_byte_offset"] = wasmExports["Ec"];
-  _get_particle_vx_byte_offset = Module["_get_particle_vx_byte_offset"] = wasmExports["Fc"];
-  _get_particle_vy_byte_offset = Module["_get_particle_vy_byte_offset"] = wasmExports["Gc"];
-  _get_particle_user_data_byte_offset = Module["_get_particle_user_data_byte_offset"] = wasmExports["Hc"];
-  _get_particle_color_byte_offset = Module["_get_particle_color_byte_offset"] = wasmExports["Ic"];
-  _get_particle_viscous_scale_byte_offset = Module["_get_particle_viscous_scale_byte_offset"] = wasmExports["Jc"];
-  _set_particle_user_data = Module["_set_particle_user_data"] = wasmExports["Kc"];
-  _set_particle_user_data_range = Module["_set_particle_user_data_range"] = wasmExports["Lc"];
-  _set_particle_color = Module["_set_particle_color"] = wasmExports["Mc"];
-  _set_particle_color_range = Module["_set_particle_color_range"] = wasmExports["Nc"];
-  _set_particle_flags = Module["_set_particle_flags"] = wasmExports["Oc"];
-  _set_particle_viscous_scale = Module["_set_particle_viscous_scale"] = wasmExports["Pc"];
-  _set_particle_viscous_scale_range = Module["_set_particle_viscous_scale_range"] = wasmExports["Qc"];
-  _set_particle_group_flags = Module["_set_particle_group_flags"] = wasmExports["Rc"];
-  _destroy_particle = Module["_destroy_particle"] = wasmExports["Sc"];
-  _create_particle = Module["_create_particle"] = wasmExports["Tc"];
-  _particle_apply_force_range = Module["_particle_apply_force_range"] = wasmExports["Uc"];
-  _particle_apply_linear_impulse_range = Module["_particle_apply_linear_impulse_range"] = wasmExports["Vc"];
-  _set_particle_extra_tuning = Module["_set_particle_extra_tuning"] = wasmExports["Wc"];
-  _get_extract_indices_byte_offset = Module["_get_extract_indices_byte_offset"] = wasmExports["Xc"];
-  _get_extract_indices_max = Module["_get_extract_indices_max"] = wasmExports["Yc"];
-  _extract_particles = Module["_extract_particles"] = wasmExports["Zc"];
-  _weedjs_heap_bytes_used = Module["_weedjs_heap_bytes_used"] = wasmExports["_c"];
-  _weedjs_memory_peak_bytes = Module["_weedjs_memory_peak_bytes"] = wasmExports["$c"];
-  __emscripten_tls_init = wasmExports["ad"];
-  _pthread_self = wasmExports["bd"];
-  __emscripten_thread_init = wasmExports["cd"];
-  ___set_thread_state = wasmExports["dd"];
-  __emscripten_thread_crashed = wasmExports["ed"];
-  __emscripten_run_js_on_main_thread_done = wasmExports["gd"];
-  __emscripten_run_js_on_main_thread = wasmExports["hd"];
-  __emscripten_thread_free_data = wasmExports["id"];
-  __emscripten_thread_exit = wasmExports["jd"];
-  __emscripten_timeout = wasmExports["kd"];
-  __emscripten_check_mailbox = wasmExports["ld"];
-  _emscripten_stack_set_limits = wasmExports["md"];
-  __emscripten_stack_restore = wasmExports["nd"];
-  __emscripten_stack_alloc = wasmExports["od"];
-  _emscripten_stack_get_current = wasmExports["pd"];
-  __indirect_function_table = wasmTable = wasmExports["fd"];
+  _get_particle_origin_byte_offset = Module["_get_particle_origin_byte_offset"] = wasmExports["Dc"];
+  _particle_reordered = Module["_particle_reordered"] = wasmExports["Ec"];
+  _reset_particle_origins = Module["_reset_particle_origins"] = wasmExports["Fc"];
+  _get_particle_alpha_byte_offset = Module["_get_particle_alpha_byte_offset"] = wasmExports["Gc"];
+  _get_particle_y_byte_offset = Module["_get_particle_y_byte_offset"] = wasmExports["Hc"];
+  _get_particle_vx_byte_offset = Module["_get_particle_vx_byte_offset"] = wasmExports["Ic"];
+  _get_particle_vy_byte_offset = Module["_get_particle_vy_byte_offset"] = wasmExports["Jc"];
+  _get_particle_user_data_byte_offset = Module["_get_particle_user_data_byte_offset"] = wasmExports["Kc"];
+  _get_particle_color_byte_offset = Module["_get_particle_color_byte_offset"] = wasmExports["Lc"];
+  _get_particle_viscous_scale_byte_offset = Module["_get_particle_viscous_scale_byte_offset"] = wasmExports["Mc"];
+  _set_particle_user_data = Module["_set_particle_user_data"] = wasmExports["Nc"];
+  _set_particle_user_data_range = Module["_set_particle_user_data_range"] = wasmExports["Oc"];
+  _set_particle_color = Module["_set_particle_color"] = wasmExports["Pc"];
+  _set_particle_color_range = Module["_set_particle_color_range"] = wasmExports["Qc"];
+  _set_particle_flags = Module["_set_particle_flags"] = wasmExports["Rc"];
+  _set_particle_viscous_scale = Module["_set_particle_viscous_scale"] = wasmExports["Sc"];
+  _set_particle_viscous_scale_range = Module["_set_particle_viscous_scale_range"] = wasmExports["Tc"];
+  _set_particle_group_flags = Module["_set_particle_group_flags"] = wasmExports["Uc"];
+  _destroy_particle = Module["_destroy_particle"] = wasmExports["Vc"];
+  _create_particle = Module["_create_particle"] = wasmExports["Wc"];
+  _particle_apply_force_range = Module["_particle_apply_force_range"] = wasmExports["Xc"];
+  _particle_apply_linear_impulse_range = Module["_particle_apply_linear_impulse_range"] = wasmExports["Yc"];
+  _set_particle_extra_tuning = Module["_set_particle_extra_tuning"] = wasmExports["Zc"];
+  _get_extract_indices_byte_offset = Module["_get_extract_indices_byte_offset"] = wasmExports["_c"];
+  _get_extract_indices_max = Module["_get_extract_indices_max"] = wasmExports["$c"];
+  _extract_particles = Module["_extract_particles"] = wasmExports["ad"];
+  _weedjs_heap_bytes_used = Module["_weedjs_heap_bytes_used"] = wasmExports["bd"];
+  _weedjs_memory_peak_bytes = Module["_weedjs_memory_peak_bytes"] = wasmExports["cd"];
+  __emscripten_tls_init = wasmExports["dd"];
+  _pthread_self = wasmExports["ed"];
+  __emscripten_thread_init = wasmExports["fd"];
+  ___set_thread_state = wasmExports["gd"];
+  __emscripten_thread_crashed = wasmExports["hd"];
+  __emscripten_run_js_on_main_thread_done = wasmExports["jd"];
+  __emscripten_run_js_on_main_thread = wasmExports["kd"];
+  __emscripten_thread_free_data = wasmExports["ld"];
+  __emscripten_thread_exit = wasmExports["md"];
+  __emscripten_timeout = wasmExports["nd"];
+  __emscripten_check_mailbox = wasmExports["od"];
+  _emscripten_stack_set_limits = wasmExports["pd"];
+  __emscripten_stack_restore = wasmExports["qd"];
+  __emscripten_stack_alloc = wasmExports["rd"];
+  _emscripten_stack_get_current = wasmExports["sd"];
+  __indirect_function_table = wasmTable = wasmExports["id"];
 }
 
 var wasmImports;

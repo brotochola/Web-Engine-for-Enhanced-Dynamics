@@ -40,6 +40,9 @@ export async function bindPreRenderCollect(memory, collect) {
     results: new Int32Array(buffer, collect.resultsByte, 4),
     list: new Uint32Array(buffer, collect.listByte, collect.entities),
     listByte: collect.listByte,
+    // E-217: the sprite query's view the list holds a copy of (null: another list, or none yet), and its length.
+    listIds: null,
+    listCount: 0,
     // This frame's COLLECT_MODE_* bits, from writeCollectColumns.
     mode: 0,
   };
@@ -105,8 +108,9 @@ export function writeCollectColumns(b, worker, Transform, SpriteRenderer, Collid
   const sortY = Boolean(worker._entitySortY);
   const emit = sortY ? worker._emitWasm : null;
   if (sortY && !emit) ok = false;
-  put('sAnchorX', sortY ? SpriteRenderer.anchorX : null, sortY);
-  put('sAnchorY', sortY ? SpriteRenderer.anchorY : null, sortY);
+  // N-140: the anchors serve the cull's reach as well as the sort line.
+  put('sAnchorX', SpriteRenderer.anchorX, sortY);
+  put('sAnchorY', SpriteRenderer.anchorY, sortY);
   put('sScaleX', sortY ? SpriteRenderer.scaleX : null, sortY);
   put('sScaleY', sortY ? SpriteRenderer.scaleY : null, sortY);
   const inherit = sortY ? SpriteRenderer.inheritTransformRotation : null;
@@ -122,10 +126,19 @@ export function writeCollectColumns(b, worker, Transform, SpriteRenderer, Collid
   return ok;
 }
 
-/** Point the table at the sprite query's list, copied into the memory, or at none (a scan of every index). */
-export function writeCollectList(b, ids, n = ids ? ids.length : 0) {
+/**
+ * Point the table at the sprite query's list, copied into the memory, or at none (a scan of every index). `published`:
+ * ids is a query's published view (Query.queryActiveEntities), which comes back the same object only while no publish
+ * came (E-217), so the copy the memory holds of it is kept: 200 000 ids a frame in BunnyMark, whose population does
+ * not change. Any other list is copied each time.
+ */
+export function writeCollectList(b, ids, n = ids ? ids.length : 0, published = false) {
   if (ids && n > 0) {
-    b.list.set(n === ids.length ? ids : ids.subarray(0, n));
+    if (!published || ids !== b.listIds || n !== b.listCount) {
+      b.list.set(n === ids.length ? ids : ids.subarray(0, n));
+      b.listIds = published ? ids : null;
+      b.listCount = n;
+    }
     b.table[SLOT.list] = b.listByte;
     return ids.length;
   }

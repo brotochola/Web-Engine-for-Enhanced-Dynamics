@@ -42,6 +42,13 @@ import { logicBlockRange, logicWorkerThatShouldTick, tickBucketPhase } from '../
 import { LOGIC_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
 import { Ray } from '../core/ray.js';
 import { Box2d } from '../core/box2d.js';
+import { IMPACT_FLOATS, bindImpactRing } from '../util/impactRing.js';
+import {
+  LIST_UPDATE_DESPAWN, bindListUpdateRing, listUpdateRecordOffset, listUpdatesPending, listUpdatesRead,
+  markListUpdatesRead, pushListUpdates,
+} from '../util/listUpdateRing.js';
+import { bindNavRequestRing } from '../util/navRequestRing.js';
+import { NavGrid } from '../core/navGrid.js';
 import { collisionPairKey } from '../util/utils.js';
 import { EntityIdArray } from '../util/entityIdWidth.js';
 import { bindBox2dHotFields } from '../box2d/box2dHotFields.js';
@@ -81,11 +88,15 @@ import {
 import { collectInstanceFields, applyInstanceFields } from '../core/save/instanceFields.js';
 import { GpuParticles } from '../core/gpuParticles.js';
 import { gpuLogicWriterSlot } from '../util/gpuParticleLayout.js';
+import { auditFields } from '../core/debug/devChecks.js';
+
+/** DX-GUARDS E2: the instance devChecks audits for a class. */
+const firstActiveInstance = (EntityClass) => EntityClass.getFirstActiveInstance();
 
 /** This worker's instance of the entity at `index` (hot reload field carry). */
 function instanceAtIndex(index) {
   const EntityClass = GameObject.classByType[Transform.entityType[index]];
-  return EntityClass && EntityClass.instances ? EntityClass.instances[index - EntityClass.startIndex] : undefined;
+  return EntityClass && EntityClass.instances ? GameObject._instanceOf(EntityClass, index) : undefined;
 }
 
 // Note: Core engine classes (GameObject, Mouse, Keyboard, etc.) and components
@@ -128,12 +139,22 @@ class LogicWorker extends AbstractWorker {
 
     // Game objects - one per entity
     this.gameObjects = new Array(this.globalEntityCount).fill(null);
+    // E-209: GameObject._makeAt in this realm, made once.
+    this._makeAtFn = (index) => this._makeInstance(index);
 
     // Worker identification
     this.workerIndex = 0; // Which worker am I? (0, 1, 2, ...)
 
     // Multi-worker coordination
     this.totalLogicWorkers = 1; // Total number of logic workers
+
+    // N-129: the bullet impact ring (impactRing.js; null without bullets), its records and mask, where this worker's
+    // reading stopped (a published count), and whether it said it fell behind.
+    this._impactRing = null;
+    this._impactData = null;
+    this._impactMask = 0;
+    this._impactRead = 0;
+    this._impactsLostWarned = false;
 
     // Performance tracking
     this.activeEntityCount = 0; // Number of active entities this worker is processing
@@ -282,6 +303,10 @@ class LogicWorker extends AbstractWorker {
     /** @internal Reused by sendListUpdatesToLogic0 to avoid .map() allocation */
     this._spawnSerializedBuffer = [];
     this._despawnSerializedBuffer = [];
+    // E-208: a worker other than logic0 writes its list updates into a ring of its own (null: none, or logic0);
+    // logic0 reads every other worker's.
+    this._listUpdateRing = null;
+    this._listUpdateRings = [];
     this._spawnCap = 256;
     this._spawnIdx = new Int32Array(256);
     this._spawnType = new Int32Array(256);
@@ -357,12 +382,28 @@ class LogicWorker extends AbstractWorker {
     // Get total logic workers count from config
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
 
+    // E-213: this worker's nav request ring.
+    const navRings = data.buffers?.navRequestRings || null;
+    if (navRings !== null) NavGrid.setNavRequestRing(bindNavRequestRing(navRings, this.workerIndex | 0));
+
+    // E-208: the list update rings (listUpdateRing.js), with more than one logic worker.
+    const listRings = data.buffers?.listUpdateRings || null;
+    if (listRings !== null && this.totalLogicWorkers > 1) {
+      const entities = data.globalEntityCount | 0;
+      if (this.workerIndex === 0) {
+        for (let k = 1; k < this.totalLogicWorkers; k++) this._listUpdateRings.push(bindListUpdateRing(listRings, k, entities));
+      } else {
+        this._listUpdateRing = bindListUpdateRing(listRings, this.workerIndex, entities);
+      }
+    }
+
     if (data.impactBuffer) {
-      // Sizes derive from config (buffer is allocated as 8 + maxImpactsPerFrame * 24)
+      // N-129: the impacts the particle worker publishes (impactRing.js), read from where this worker stopped.
       const maxImpacts = data.config?.bullet?.maxImpactsPerFrame ?? 64;
-      this._impactHeader = new Int32Array(data.impactBuffer, 0, 2); // [0]=count, [1]=batch sequence
-      this._impactData = new Float32Array(data.impactBuffer, 8, maxImpacts * 6);
-      this._lastImpactSeq = 0;
+      this._impactRing = bindImpactRing(data.impactBuffer, maxImpacts);
+      this._impactData = this._impactRing.data;
+      this._impactMask = this._impactRing.mask;
+      this._impactRead = Atomics.load(this._impactRing.header, 0);
     }
 
     // console.log("LOGIC WORKER: Initializing with component system");
@@ -401,8 +442,36 @@ class LogicWorker extends AbstractWorker {
    * DENSE ALLOCATION: entityIndex === componentIndex for all components
    * Call after pose bind (box2dReady HEAP, or weed pose at init when physics is off).
    */
+  /**
+   * E-209: the instance at `index` on its first use in this worker: its class from the slot's type, made without
+   * touching the slot's Transform (it may be live, spawned by another worker or the page), then start(). Null for an
+   * index no registered pool holds.
+   */
+  _makeInstance(index) {
+    if (!(index >= 0) || index >= this.gameObjects.length) return null;
+    const made = this.gameObjects[index];
+    if (made !== null && made !== undefined) return made;
+    const EntityClass = this._entityClassByType[Transform.entityType[index]];
+    if (EntityClass === undefined || !(index >= EntityClass.startIndex && index < EntityClass.startIndex + EntityClass.poolSize)) {
+      return null;
+    }
+    const instance = new EntityClass(index, this.config, this, { lazy: true });
+    this.gameObjects[index] = instance;
+    if (instance.start) {
+      try {
+        instance.start();
+      } catch (error) {
+        this._entityThrew(error, index, 'start');
+      }
+    }
+    return instance;
+  }
+
   createGameObjectInstances() {
     const numTypes = this.registeredClasses.length;
+    // E-209: the instances, by index, made on first use.
+    GameObject.instances = new Array(this.globalEntityCount | 0).fill(null);
+    GameObject._makeAt = this._makeAtFn;
     this.collisionListenerByType = new Uint8Array(numTypes);
     this.collisionStayByType = new Uint8Array(numTypes);
     this.jointBreakListenerByType = new Uint8Array(numTypes);
@@ -475,18 +544,14 @@ class LogicWorker extends AbstractWorker {
           EntityClass.initialize(poolSize);
         }
 
-        for (let i = 0; i < poolSize; i++) {
-          const index = startIndex + i;
-
-          // DENSE ALLOCATION: entityIndex === componentIndex for all components
-          // Create instance - GameObject will use entity index for all component access
-          const instance = new EntityClass(index, this.config, this);
-          this.gameObjects[index] = instance;
-
-          // Call start() lifecycle method (one-time initialization)
-          if (instance.start) {
-            instance.start();
-          }
+        // E-209: no instance per slot here. A slot's instance is made on its first use (_makeInstance): a spawn, a
+        // tick, a callback. What each constructor wrote for its slot, the type and "not active", is written for the
+        // pool at once. DENSE ALLOCATION: entityIndex === componentIndex for all components.
+        EntityClass.instances = new Array(poolSize).fill(null);
+        EntityClass._ensureComponentAccessors();
+        if (poolSize > 0) {
+          Transform.entityType.fill(entityType, startIndex, startIndex + poolSize);
+          Transform.active.fill(0, startIndex, startIndex + poolSize);
         }
 
         // ========================================
@@ -504,6 +569,9 @@ class LogicWorker extends AbstractWorker {
               startIndex,
               entityType,
               hasRigidBody,
+              // E-218: a view of the active list from this worker's first row, and that row.
+              view: EntityClass._activeList.subarray(1),
+              viewFrom: 0,
             });
           } else if (!needsTick && !needsScreenCallbacks) {
             // Tickless: stay on active lists for queries/spatial/physics/render.
@@ -654,6 +722,31 @@ class LogicWorker extends AbstractWorker {
       n += received[b].spawns.length + received[b].despawns.length;
     }
     return n;
+  }
+
+  /**
+   * E-208 (logic0): every other worker's list updates from its ring into this frame's queues, each class from its
+   * type, in the order the worker wrote them.
+   */
+  _drainListUpdateRings() {
+    const rings = this._listUpdateRings;
+    for (let k = 0; k < rings.length; k++) {
+      const ring = rings[k];
+      const to = listUpdatesPending(ring);
+      let at = listUpdatesRead(ring);
+      if (at === to) continue;
+      const h = ring.i32;
+      const classByType = GameObject.classByType;
+      for (; at !== to; at = (at + 1) | 0) {
+        const o = listUpdateRecordOffset(ring, at);
+        const raw = h[o];
+        const type = h[o + 1];
+        const EntityClass = classByType[type];
+        if ((raw & LIST_UPDATE_DESPAWN) !== 0) this.queueDespawnListUpdate(raw & 0x7fffffff, type, EntityClass);
+        else this.queueSpawnListUpdate(raw, type, EntityClass);
+      }
+      markListUpdatesRead(ring, to);
+    }
   }
 
   /**
@@ -811,6 +904,16 @@ class LogicWorker extends AbstractWorker {
       return true;
     }
 
+    // E-208: through this worker's ring when it has room for the frame's updates, else by message as before.
+    const ring = this._listUpdateRing;
+    if (ring !== null && pushListUpdates(
+      ring, this._despawnIdx, this._despawnType, this._despawnN, this._spawnIdx, this._spawnType, this._spawnN,
+    )) {
+      this._spawnN = 0;
+      this._despawnN = 0;
+      return true;
+    }
+
     this._serializeListUpdates();
     const sent = this.sendDataToWorker('logic0', {
       msg: 'listUpdates',
@@ -888,6 +991,8 @@ class LogicWorker extends AbstractWorker {
 
   update(deltaTime, dtRatio, resuming) {
     if (this.collectDetailedStats) this.frameStartTime = performance.now();
+    // DX-GUARDS E2 (debug build): once a second, a field first written after onSpawned.
+    auditFields(firstActiveInstance);
     Tween.tick(deltaTime, this.workerIndex, this.totalLogicWorkers);
     this._latchDisplayPose();
 
@@ -907,18 +1012,9 @@ class LogicWorker extends AbstractWorker {
       Box2d.beginFrame();
     }
 
-    // Process bullet impacts from particle_worker (SAB poll - no message needed)
-    // Gated on the batch sequence so each batch is processed exactly once,
-    // regardless of logic/particle frame-rate differences (no double damage,
-    // no reprocessing of stale batches).
-    if (this._impactHeader) {
-      const seq = Atomics.load(this._impactHeader, 1);
-      if (seq !== this._lastImpactSeq) {
-        this._lastImpactSeq = seq;
-        const count = Atomics.load(this._impactHeader, 0);
-        if (count > 0) this.processImpacts(count);
-      }
-    }
+    // Bullet impacts from particle_worker (SAB poll, no message): every one published since this worker's last read,
+    // each once, however the two workers' frames fall (N-129).
+    if (this._impactRing !== null) this._pollImpacts();
 
     // ========================================
     // PHASE 0: PROCESS LIST UPDATES (logic0 only)
@@ -927,6 +1023,7 @@ class LogicWorker extends AbstractWorker {
     // This ensures single-threaded list operations, avoiding race conditions.
     if (this.workerIndex === 0) {
       this._drainSpawnCommandRing();
+      this._drainListUpdateRings();
       this.processListUpdates();
     }
 
@@ -1226,6 +1323,7 @@ class LogicWorker extends AbstractWorker {
         entityTypeHasForcedLogicWorker && entityTypeHasForcedLogicWorker[typeInfo.entityType]
       );
       let n = 0;
+      let viewed = false;
       if (typeForced && forceProcessOnLogicWorker && totalWorkers > 1) {
         for (let idx = 0; idx < count; idx++) {
           const entityIndex = activeList[1 + idx];
@@ -1257,20 +1355,40 @@ class LogicWorker extends AbstractWorker {
           to = range.end;
           step = 1;
         }
-        for (let idx = from; idx < to; idx += step) {
-          const entityIndex = activeList[1 + idx];
-          if (transformActive[entityIndex] === 0) continue;
-          if (hasRigidBody) {
-            rbAx[entityIndex] = 0;
-            rbAy[entityIndex] = 0;
-            rbAa[entityIndex] = 0;
+        // E-218: without a body to reset, a run of listed entities that are all active goes to tickAll as a view of the
+        // list, not copied into the scratch (a read of each entity's flag instead of a copy: BunnyMark's 200 000). One
+        // that is not (despawned this frame) and the copy filters as before.
+        if (!hasRigidBody && step === 1) {
+          viewed = true;
+          for (let idx = from; idx < to; idx++) {
+            if (transformActive[activeList[1 + idx]] === 0) {
+              viewed = false;
+              break;
+            }
           }
-          scratch[n++] = entityIndex;
+        }
+        if (viewed) {
+          n = to - from;
+          if (typeInfo.viewFrom !== from) {
+            typeInfo.view = activeList.subarray(1 + from);
+            typeInfo.viewFrom = from;
+          }
+        } else {
+          for (let idx = from; idx < to; idx += step) {
+            const entityIndex = activeList[1 + idx];
+            if (transformActive[entityIndex] === 0) continue;
+            if (hasRigidBody) {
+              rbAx[entityIndex] = 0;
+              rbAy[entityIndex] = 0;
+              rbAa[entityIndex] = 0;
+            }
+            scratch[n++] = entityIndex;
+          }
         }
       }
       if (n > 0) {
         try {
-          typeInfo.EntityClass.tickAll(scratch, n, dtRatio);
+          typeInfo.EntityClass.tickAll(viewed ? typeInfo.view : scratch, n, dtRatio);
         } catch (error) {
           reportWorkerError(error, 'tickAll', typeInfo.EntityClass.name);
         }
@@ -1332,7 +1450,7 @@ class LogicWorker extends AbstractWorker {
         for (; i < to; i++) {
           const entityIndex = list[i];
           if (transformActive[entityIndex] === 0) continue;
-          const obj = gameObjects[entityIndex];
+          const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
           if (!obj || typeof obj.tick !== 'function') continue;
           rbAx[entityIndex] = 0;
           rbAy[entityIndex] = 0;
@@ -1385,7 +1503,7 @@ class LogicWorker extends AbstractWorker {
         for (; i < to; i++) {
           const entityIndex = list[i];
           if (transformActive[entityIndex] === 0) continue;
-          const obj = gameObjects[entityIndex];
+          const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
           if (!obj || typeof obj.tick !== 'function') continue;
           obj.tick(dtRatio, deltaTime, accTime, frameNum);
           visited++;
@@ -1480,7 +1598,7 @@ class LogicWorker extends AbstractWorker {
   ) {
     if (collectDetailed) this._lastTickMs = 0;
     if (transformActive[entityIndex] === 0) return 0;
-    const obj = gameObjects[entityIndex];
+    const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
     if (!obj || typeof obj.tick !== 'function') return 0;
     if (collectDetailed) {
       const tTick0 = performance.now();
@@ -1509,7 +1627,7 @@ class LogicWorker extends AbstractWorker {
   ) {
     if (collectDetailed) this._lastTickMs = 0;
     if (transformActive[entityIndex] === 0) return 0;
-    const obj = gameObjects[entityIndex];
+    const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
     if (!obj || typeof obj.tick !== 'function') return 0;
     rbAx[entityIndex] = 0;
     rbAy[entityIndex] = 0;
@@ -1546,7 +1664,7 @@ class LogicWorker extends AbstractWorker {
       this._lastDecimateMs = 0;
     }
     if (transformActive[entityIndex] === 0) return 0;
-    const obj = gameObjects[entityIndex];
+    const obj = gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
     if (!obj || typeof obj.tick !== 'function') return 0;
     const tVisit0 = collectDetailed ? performance.now() : 0;
     if (--nextTick[entityIndex] > 0) {
@@ -1566,19 +1684,46 @@ class LogicWorker extends AbstractWorker {
 
   /**
    * Process bullet impact events from particle_worker.
-   * Partitioned by targetId % totalWorkers - each worker processes impacts for its entities.
+   * Partitioned by targetId % totalWorkers - each worker processes impacts for its entities. N-129: an entity pinned
+   * to a worker (forceProcessOnLogicWorker) is shot on that worker, the one that ticks it and runs its other callbacks
+   * (_runsCallbacksOf); the modulo sent it to another, whose instance of it is not the one that ticks.
    */
-  processImpacts(count) {
-    if (!count || !this._impactData || count <= 0) return;
+  /**
+   * N-129: the impacts published since the last poll. A worker further behind than the ring holds (impactRing.js) runs
+   * the newest the ring still has, and says once that it lost the others.
+   */
+  _pollImpacts() {
+    const ring = this._impactRing;
+    const end = Atomics.load(ring.header, 0);
+    let from = this._impactRead;
+    if (end === from) return;
+    const pending = (end - from) | 0;
+    if (pending > ring.slots || pending < 0) {
+      if (!this._impactsLostWarned) {
+        this._impactsLostWarned = true;
+        console.warn(`[logic] ${pending - ring.slots} bullet impacts lost: this worker fell more than ${ring.slots} impacts behind the particle worker`);
+      }
+      from = (end - ring.slots) | 0;
+    }
+    this._impactRead = end;
+    this.processImpacts(from, end);
+  }
+
+  /** Impacts `from` up to `to` (published counts, int32 that wrap) of the ring at `_impactData`. */
+  processImpacts(from, to) {
+    if (!this._impactData || from === to) return;
     const impactData = this._impactData;
+    const mask = this._impactMask;
     const totalWorkers = this.totalLogicWorkers;
     const myIndex = this.workerIndex;
     const gameObjects = this.gameObjects;
+    const pins = GameObject.forceProcessOnLogicWorker;
 
-    for (let i = 0; i < count; i++) {
-      const base = i * 6;
+    for (let c = from; c !== to; c = (c + 1) | 0) {
+      const base = (c & mask) * IMPACT_FLOATS;
       const targetId = impactData[base] | 0;
-      if (targetId % totalWorkers !== myIndex) continue;
+      const pin = pins !== null ? pins[targetId] : -1;
+      if (pin >= 0 ? pin !== myIndex : targetId % totalWorkers !== myIndex) continue;
 
       const damage = impactData[base + 1];
       const hitX = impactData[base + 2];
@@ -1586,7 +1731,7 @@ class LogicWorker extends AbstractWorker {
       const ownerId = impactData[base + 4] | 0;
       const shooterEntityType = impactData[base + 5] | 0;
 
-      const obj = gameObjects[targetId];
+      const obj = gameObjects[targetId] ?? this._makeInstance(targetId);
       if (obj && obj.onGotShot) {
         try {
           obj.onGotShot(damage, hitX, hitY, ownerId, shooterEntityType);
@@ -1648,14 +1793,14 @@ class LogicWorker extends AbstractWorker {
     // A throw is caught per call so the ring drain still advances its cursor.
     if (aListens) {
       try {
-        gameObjects[a]?.onCollisionHit(b, px, py, nx, ny, speed);
+        (gameObjects[a] ?? this._makeInstance(a))?.onCollisionHit(b, px, py, nx, ny, speed);
       } catch (error) {
         this._entityThrew(error, a, 'onCollisionHit');
       }
     }
     if (bListens) {
       try {
-        gameObjects[b]?.onCollisionHit(a, px, py, -nx, -ny, speed);
+        (gameObjects[b] ?? this._makeInstance(b))?.onCollisionHit(a, px, py, -nx, -ny, speed);
       } catch (error) {
         this._entityThrew(error, b, 'onCollisionHit');
       }
@@ -1690,14 +1835,14 @@ class LogicWorker extends AbstractWorker {
     if (!aListens && !bListens) return;
     if (aListens) {
       try {
-        gameObjects[entityA]?.onJointBreak(jointIndex, entityA, entityB);
+        (gameObjects[entityA] ?? this._makeInstance(entityA))?.onJointBreak(jointIndex, entityA, entityB);
       } catch (error) {
         this._entityThrew(error, entityA, 'onJointBreak');
       }
     }
     if (bListens) {
       try {
-        gameObjects[entityB]?.onJointBreak(jointIndex, entityA, entityB);
+        (gameObjects[entityB] ?? this._makeInstance(entityB))?.onJointBreak(jointIndex, entityA, entityB);
       } catch (error) {
         this._entityThrew(error, entityB, 'onJointBreak');
       }
@@ -1707,7 +1852,7 @@ class LogicWorker extends AbstractWorker {
   /** One inbox message: dropped if its target despawned since it was sent. */
   _onMessageEvent(target, from, nameId, gen, a, b, c, d) {
     if (Transform.active[target] === 0 || Messages.spawnGen[target] !== gen) return;
-    const obj = this.gameObjects[target];
+    const obj = this.gameObjects[target] ?? this._makeInstance(target);
     if (!obj) return;
     if (nameId === MESSAGE_ANIMATION_END) {
       this._deliverAnimationEnd(obj, target, a, b);
@@ -1878,14 +2023,14 @@ class LogicWorker extends AbstractWorker {
     const bListens = (sides & 2) !== 0 && collisionFlags[entityType[maxE]];
     if (aListens) {
       try {
-        gameObjects[minE]?.onCollisionExit(maxE);
+        (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionExit(maxE);
       } catch (error) {
         this._entityThrew(error, minE, 'onCollisionExit');
       }
     }
     if (bListens) {
       try {
-        gameObjects[maxE]?.onCollisionExit(minE);
+        (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionExit(minE);
       } catch (error) {
         this._entityThrew(error, maxE, 'onCollisionExit');
       }
@@ -1943,14 +2088,14 @@ class LogicWorker extends AbstractWorker {
     if (!aListens && !bListens) return;
     if (aListens) {
       try {
-        gameObjects[rawA]?.onCollisionEnter(rawB);
+        (gameObjects[rawA] ?? this._makeInstance(rawA))?.onCollisionEnter(rawB);
       } catch (error) {
         this._entityThrew(error, rawA, 'onCollisionEnter');
       }
     }
     if (bListens) {
       try {
-        gameObjects[rawB]?.onCollisionEnter(rawA);
+        (gameObjects[rawB] ?? this._makeInstance(rawB))?.onCollisionEnter(rawA);
       } catch (error) {
         this._entityThrew(error, rawB, 'onCollisionEnter');
       }
@@ -2036,9 +2181,9 @@ class LogicWorker extends AbstractWorker {
           const aListens = (sides & 1) !== 0 && stayFlags[entityType[minE]];
           const bListens = (sides & 2) !== 0 && stayFlags[entityType[maxE]];
           calling = minE;
-          if (aListens) gameObjects[minE]?.onCollisionStay(maxE);
+          if (aListens) (gameObjects[minE] ?? this._makeInstance(minE))?.onCollisionStay(maxE);
           calling = maxE;
-          if (bListens) gameObjects[maxE]?.onCollisionStay(minE);
+          if (bListens) (gameObjects[maxE] ?? this._makeInstance(maxE))?.onCollisionStay(minE);
         }
         break;
       } catch (error) {
@@ -2538,7 +2683,7 @@ class LogicWorker extends AbstractWorker {
 
   _mainThreadDespawn(entityIndex) {
     if (entityIndex < 0 || entityIndex >= this.globalEntityCount) return;
-    const instance = this.gameObjects[entityIndex];
+    const instance = this.gameObjects[entityIndex] ?? this._makeInstance(entityIndex);
     if (instance && instance.despawn) instance.despawn();
   }
 

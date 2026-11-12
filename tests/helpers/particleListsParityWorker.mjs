@@ -75,8 +75,6 @@ worker.cullingRatio = 0.1;
 ParticleEmitter.resetFreeListInterleaved();
 globalThis.rng = seededRandom(0xc0de1234, 'parity');
 const rnd = seededRandom(0x5eed, 'driver');
-const activeData = worker.activeParticlesData;
-const visibleData = worker.visibleParticlesData;
 const sums = [];
 const activeSums = [];
 let visibleSeen = 0;
@@ -91,6 +89,9 @@ for (let f = 0; f < frames; f++) {
   ParticleEmitter.emit(emitConfig('tween', perFrame, PARTICLE_EASES[f % PARTICLE_EASES.length], { x: { min: cx - 200, max: cx + 200 }, y: { min: cy - 200, max: cy + 200 } }));
   worker._frameCamValid = false;
   worker.buildActiveAndVisibleParticleLists();
+  // N-113, N-136: the copies of the published lists the worker wrote this frame.
+  const activeData = worker.activeParticlesData;
+  const visibleData = worker.visibleParticlesData;
   let h = 2166136261;
   const mix = (v) => {
     h = Math.imul(h ^ (v >>> 0), 16777619) >>> 0;
@@ -114,7 +115,7 @@ parentPort.postMessage({
   lists: lists && Boolean(worker._wasmLists),
   listsF32: worker._wasmLists ? worker._wasmLists.f32 : null,
   listsSlotBytes: worker._wasmLists ? worker._wasmLists.slotBytes : null,
-  listClass: activeData.constructor.name,
+  listClass: worker.activeParticlesData.constructor.name,
   maxIndex,
   integrate: integrate && Boolean(worker._wasmIntegrate),
   active: worker.activeParticleCount,

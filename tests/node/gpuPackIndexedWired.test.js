@@ -163,9 +163,6 @@ test('pre-render sends a painter-sorted frame indexed: each slot\'s pose and row
       const row = b.slots[k * GPU_INDEXED_SLOT_FLOATS];
       if (!Number.isInteger(row) || row < 0 || row >= fr.n || seen[row]) assert.fail(`frame ${f} slot ${k}: row ${row}`);
       seen[row] = 1;
-      if (b.slotWords[k * GPU_INDEXED_SLOT_FLOATS + 1] !== a.rows[k * GPU_SPRITE_FLOATS + STATIC_FROM_ROW[DEPTH]]) {
-        assert.fail(`frame ${f} slot ${k}: depth`);
-      }
       if (poisoned) continue;
       for (let j = 0; j < GPU_STATIC_FLOATS; j++) {
         const want = j === DEPTH ? 0 : a.rows[k * GPU_SPRITE_FLOATS + STATIC_FROM_ROW[j]];

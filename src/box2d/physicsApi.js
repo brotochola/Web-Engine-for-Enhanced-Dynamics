@@ -654,6 +654,10 @@ function createPhysicsApi(Module) {
   const getParticleVxByteOffset = wrap("get_particle_vx_byte_offset", "number", []);
   const getParticleVyByteOffset = wrap("get_particle_vy_byte_offset", "number", []);
   const getParticleAlphaByteOffset = wrap("get_particle_alpha_byte_offset", "number", []);
+  // N-142: each particle's index at the last reset, carried through LiquidFun's reorders, and whether one happened.
+  const getParticleOriginByteOffset = wrap("get_particle_origin_byte_offset", "number", []);
+  const particleReorderedFn = wrap("particle_reordered", "number", []);
+  const resetParticleOriginsFn = wrap("reset_particle_origins", null, []);
   const getParticleUserDataByteOffset = wrap("get_particle_user_data_byte_offset", "number", []);
   const getParticleColorByteOffset = wrap("get_particle_color_byte_offset", "number", []);
   const getParticleViscousScaleByteOffset = wrap("get_particle_viscous_scale_byte_offset", "number", []);
@@ -2181,6 +2185,21 @@ function createPhysicsApi(Module) {
 
     getParticleAlphaByteOffset() {
       return getParticleAlphaByteOffset();
+    }
+
+    /** N-142: the byte offset of each particle's origin index (its index at the last resetParticleOrigins), 0 without. */
+    getParticleOriginByteOffset() {
+      return getParticleOriginByteOffset();
+    }
+
+    /** N-142: whether a reorder (a compaction, a join, an extraction, a split) moved particles since the last reset. */
+    particleReordered() {
+      return particleReorderedFn() | 0;
+    }
+
+    /** N-142: every origin its own index again, the reorder flag cleared. */
+    resetParticleOrigins() {
+      resetParticleOriginsFn();
     }
 
     getParticleUserDataByteOffset() {

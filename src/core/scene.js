@@ -141,6 +141,12 @@ import {
 } from '../render/rendererBackend.js';
 import { isXyOnlySpawnConfig, ringCarriesSpawnConfig } from '../util/createSpawnBatch.js';
 import { warnMissingListenerTags, definesBelow } from '../util/listenerTags.js';
+import { unknownConfigKeys, unknownConfigKeyText } from '../util/configKeys.js';
+import { warnOnce } from '../util/dxWarn.js';
+import { fetchAsset, fetchAssetJson } from '../util/fetchAsset.js';
+import { duplicateEntityClassText, warnEntityClassMistakes } from '../util/classGuards.js';
+import { darkLightingText, smallWorldText } from '../util/sceneGuards.js';
+import { checkFirstInstance, setDevChecks } from './debug/devChecks.js';
 import { Messages } from './messages.js';
 import { sharedArrayBufferMissing } from '../util/crossOriginIsolation.js';
 import { reportPoolExhausted, droppedSpawns } from '../util/poolExhaustion.js';
@@ -515,6 +521,11 @@ class Scene {
       this.keyMap[char] = keyIndex++;
     });
 
+    // Page keys, after the rest so every other key keeps its index (the landing page's chapters read pageup and pagedown).
+    for (const name of ['pageup', 'pagedown', 'home', 'end']) {
+      this.keyMap[name] = keyIndex++;
+    }
+
     this.inputBufferSize = keyIndex;
 
     // H-01. `updateKeyboardBuffer` walked `Object.entries(this.keyMap)` on every
@@ -556,6 +567,8 @@ class Scene {
     }
     // A hook without its tag never runs, silently: say so once, here.
     warnMissingListenerTags(this.registeredClasses, GameObject);
+    // DX-GUARDS C3, C4: a tickInterval that needs staggeredUpdates, an empty tick the workers still call.
+    warnEntityClassMistakes(this.registeredClasses, GameObject, this.config);
     const messageNames = this.constructor.messages || [];
     for (const r of this.registeredClasses) {
       const onMessage = definesBelow(r.class, GameObject, 'onMessage');
@@ -642,6 +655,15 @@ class Scene {
   }
 
   /**
+   * DX-GUARDS C9: no world size and a canvas bigger than the default world, so the camera cannot zoom out to the
+   * canvas. Once the game has set config.canvasWidth/Height (GameEngine.loadScene does, before init).
+   */
+  _warnSmallWorld() {
+    const text = smallWorldText(this.constructor.name, this.constructor.config, this.config.canvasWidth, this.config.canvasHeight);
+    if (text) warnOnce(this.constructor.name, 'small-world', text);
+  }
+
+  /**
    * Register an entity class
    */
   registerEntityClass(EntityClass, count, scriptPath = null) {
@@ -661,7 +683,8 @@ class Scene {
       (r) => r.class === EntityClass || r.class.name === EntityClass.name
     );
     if (existing) {
-      console.warn(`⚠️ ${EntityClass.name} is already registered. Skipping duplicate.`);
+      // DX-GUARDS C5: say which mistake it is (a second class of the same name has no pool and cannot spawn).
+      warnOnce(EntityClass.name, 'duplicate-entity', duplicateEntityClassText(existing, EntityClass, count, this.registeredClasses));
       return;
     }
 
@@ -725,18 +748,41 @@ class Scene {
    * and the component objects.
    */
   _createPageInstances() {
-    const all = new Array(this.totalEntityCount);
+    // E-209: made on a slot's first use (_makePageInstance), not one per pool slot here.
+    const all = new Array(this.totalEntityCount | 0).fill(null);
     for (let r = 0; r < this.registeredClasses.length; r++) {
-      const { class: EntityClass, count, startIndex } = this.registeredClasses[r];
-      const own = new Array(count);
-      for (let k = 0; k < count; k++) {
-        const instance = Object.freeze(new EntityClass(startIndex + k, this.config, null, { page: true }));
-        own[k] = instance;
-        all[startIndex + k] = instance;
-      }
-      EntityClass.instances = own;
+      const { class: EntityClass, count } = this.registeredClasses[r];
+      EntityClass.instances = new Array(count | 0).fill(null);
+      EntityClass._pageChecked = false;
     }
     GameObject.instances = all;
+    const scene = this;
+    GameObject._makeAt = (index) => Scene.prototype._makePageInstance.call(scene, index);
+  }
+
+  /**
+   * E-209: the page's frozen instance at `index` on its first use: its class from the registered pools (the page
+   * does not wait for a logic worker's Transform), checked once per class (DX-GUARDS E1). Null for an index no pool
+   * holds.
+   */
+  _makePageInstance(index) {
+    const made = GameObject.instances[index];
+    if (made !== null && made !== undefined) return made;
+    for (let r = 0; r < this.registeredClasses.length; r++) {
+      const { class: EntityClass, count, startIndex } = this.registeredClasses[r];
+      if (index < startIndex || index >= startIndex + count) continue;
+      const instance = Object.freeze(new EntityClass(index, this.config, null, { page: true }));
+      // DX-GUARDS E1 (debug build): a field that hides an accessor. The class's fields are the same in every
+      // thread, so the page's first instance is enough.
+      if (!EntityClass._pageChecked) {
+        EntityClass._pageChecked = true;
+        checkFirstInstance(instance);
+      }
+      EntityClass.instances[index - startIndex] = instance;
+      GameObject.instances[index] = instance;
+      return instance;
+    }
+    return null;
   }
 
   /**
@@ -745,6 +791,11 @@ class Scene {
    * Access config via this.config.section.property (e.g., this.config.lighting.maxFlashes)
    */
   _applyConfigDefaults() {
+    // DX-GUARDS C1: a key the engine does not read does nothing. Name it once, with the key the game may have meant.
+    const sceneName = this.constructor.name;
+    for (const item of unknownConfigKeys(this.config)) {
+      warnOnce(`${sceneName}.config.${item.path}`, 'config-key', unknownConfigKeyText(sceneName, item));
+    }
     const userLightingConfig = this.config.lighting || {};
 
     // Top-level defaults from centralized config
@@ -890,6 +941,9 @@ class Scene {
       this.config.lighting.maxShadowSprites =
         this.config.lighting.maxShadowCastingLights * this.config.lighting.maxShadowsPerLight;
     }
+    // DX-GUARDS C8: lighting on, the default ambient and no sun: what no light reaches is almost black.
+    const dark = darkLightingText(sceneName, this.constructor.config);
+    if (dark) warnOnce(sceneName, 'dark-lighting', dark);
     // Compute shadowsEnabled (requires both enabled and shadowsEnabled)
     this.config.lighting.shadowsEnabled =
       this.config.lighting.enabled && this.config.lighting.shadowsEnabled !== false;
@@ -907,6 +961,7 @@ class Scene {
       ...(this.config.debug || {}),
     };
     setVerboseWorkers(!!this.config.debug.verboseWorkers);
+    setDevChecks(this.config.debug.checks !== false);
 
     // Layers defaults (custom layers are user-defined, empty by default)
     if (!this.config.layers) {
@@ -1114,6 +1169,8 @@ class Scene {
     // Phase 4: with physics, the physics worker starts here and reserves a block of Box2D's memory, so the
     // render-queue regions the shared buffers make are laid in it.
     await reserveBox2dBlock(this);
+
+    this._warnSmallWorld();
 
     // Create shared buffers
 
@@ -1457,22 +1514,10 @@ class Scene {
     await Promise.all(
       Object.entries(adobeConfigs).map(async ([assetName, config]) => {
         try {
-          const [atlasResponse, animationResponse, image] = await Promise.all([
-            fetch(config.atlas),
-            fetch(config.animation),
+          const [atlasData, animationData, image] = await Promise.all([
+            fetchAssetJson(config.atlas, `Adobe asset "${assetName}" atlas JSON`),
+            fetchAssetJson(config.animation, `Adobe asset "${assetName}" animation JSON`),
             SpriteSheetRegistry._loadImage(config.png),
-          ]);
-
-          if (!atlasResponse.ok) {
-            throw new Error(`Failed to load Adobe atlas JSON: ${config.atlas}`);
-          }
-          if (!animationResponse.ok) {
-            throw new Error(`Failed to load Adobe animation JSON: ${config.animation}`);
-          }
-
-          const [atlasData, animationData] = await Promise.all([
-            atlasResponse.json(),
-            animationResponse.json(),
           ]);
 
           spritesheetConfigs[assetName] = {
@@ -1573,17 +1618,10 @@ class Scene {
   }
 
   async _loadBakedBigAtlas(bigAtlasAsset) {
-    const [jsonResponse, pngResponse] = await Promise.all([
-      fetch(bigAtlasAsset.json),
-      fetch(bigAtlasAsset.png),
+    const [json, pngResponse] = await Promise.all([
+      fetchAssetJson(bigAtlasAsset.json, 'baked bigAtlas JSON'),
+      fetchAsset(bigAtlasAsset.png, 'baked bigAtlas PNG'),
     ]);
-    if (!jsonResponse.ok) {
-      throw new Error(`Failed to load baked bigAtlas JSON: ${bigAtlasAsset.json}`);
-    }
-    if (!pngResponse.ok) {
-      throw new Error(`Failed to load baked bigAtlas PNG: ${bigAtlasAsset.png}`);
-    }
-    const json = await jsonResponse.json();
     const imageBitmap = await createImageBitmap(await pngResponse.blob());
     const canvas = this._canvasFromImageBitmap(imageBitmap);
     return { json, imageBitmap, canvas };
@@ -1601,16 +1639,8 @@ class Scene {
     await Promise.all(
       entries.map(async ([tilemapId, tilemapConfig]) => {
         try {
-          const jsonResponse = await fetch(tilemapConfig.json);
-          if (!jsonResponse.ok) {
-            throw new Error(`Failed to load tilemap JSON: ${tilemapConfig.json}`);
-          }
-          const tilemapData = await jsonResponse.json();
-
-          const tilesetResponse = await fetch(tilemapConfig.png);
-          if (!tilesetResponse.ok) {
-            throw new Error(`Failed to load tileset image: ${tilemapConfig.png}`);
-          }
+          const tilemapData = await fetchAssetJson(tilemapConfig.json, `tilemap "${tilemapId}" JSON`);
+          const tilesetResponse = await fetchAsset(tilemapConfig.png, `tilemap "${tilemapId}" tileset`);
           const tilesetBitmap = await createImageBitmap(await tilesetResponse.blob());
 
           this.loadedTilemaps[tilemapId] = {
@@ -1735,7 +1765,7 @@ class Scene {
     })();
 
     const flowfieldsPromise = imageUrls?.flowfields
-      ? NavGrid.loadStaticFlowfieldsFromJSON(
+      ? NavGrid.loadStaticFlowfields(
         imageUrls.flowfields,
         this.config.worldWidth,
         this.config.worldHeight

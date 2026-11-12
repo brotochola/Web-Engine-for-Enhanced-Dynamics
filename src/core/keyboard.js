@@ -3,6 +3,8 @@
 // Supports held-state reads and per-frame press edges via SharedArrayBuffer-backed counters
 // Supports all keys with both lowercase and uppercase access (e.g., Keyboard.a or Keyboard.A)
 
+import { unknownKey } from './debug/devChecks.js';
+
 export class Keyboard {
   static _inputData = null; // Int32Array view of shared keyboard data
   static _keyIndexMap = null; // Map of key names to input buffer indices
@@ -140,7 +142,10 @@ export class Keyboard {
   static _getKeyIndex(key) {
     if (!this._inputData || !this._keyIndexMap) return undefined;
     const keyName = this._normalizeKeyName(key);
-    return keyName == null ? undefined : this._keyIndexMap[keyName];
+    const index = keyName == null ? undefined : this._keyIndexMap[keyName];
+    // DX-GUARDS E7 (debug build): a name the map does not have is never down.
+    if (index === undefined) unknownKey(key, this._keyIndexMap, this._SPECIAL_KEYS);
+    return index;
   }
 
   /**

@@ -302,7 +302,7 @@ See [Collision Filtering](./bible_of_weed_js.md#collision-filtering) in the bibl
 ### Restitution & contact hits
 
 - **`Collider.restitution`** — Box2D bounce coefficient (`0..1`, typically). Synced via `body_set_restitution` on create and whenever `Collider.friction`/`restitution` marks the body dirty (`BODY_DIRTY.FRICTION`).
-- **`Collider.enableHitEvents`** — opt-in per-shape hard-impact events (creation-time property; toggling it marks `BODY_DIRTY.LIFECYCLE`, so the body is re-created). When enabled and the impact speed exceeds the world **hit-event threshold** (`physics.hitEventThreshold`, `PhysicsWorld.setHitEventThreshold`), Box2D emits a contact-hit event.
+- **`Collider.enableHitEvents`** — opt-in per-shape hard-impact events (creation-time property: changing it on a live entity makes the body again, with its velocity; so does `Collider.isTrigger`). When enabled and the impact speed exceeds the world **hit-event threshold** (`physics.hitEventThreshold`, `PhysicsWorld.setHitEventThreshold`), Box2D emits a contact-hit event.
 - Hits are drained from a dedicated **contact-hit ring** (`box2dContactHitRing`, separate from the begin/end contact ring) by each logic worker and dispatched to `GameObject.onCollisionHit(otherIndex, px, py, nx, ny, approachSpeed)` on entities with a `CollisionListener`. Same worker-partition + generation-validation rules as begin/end contacts.
 
 ### Per-body sleep threshold
@@ -363,7 +363,8 @@ Box2D owns contacts and the mass it solves with: the physics host turns `RigidBo
 
 **Invariant:** For every **dynamic** body that participates in physics, `mass` and `invMass` must be valid after spawn / `onSpawned`:
 
-- Mass derived from collider geometry when a collider can supply it.
+- A mass set with `this.rigidBody.mass` during the spawn (in `onSpawned`) is kept: the spawn's sync does not replace it. A collider shape set after it (`collider.radius = …`) does: set the mass after the shape.
+- Otherwise mass derived from collider geometry when a collider can supply it.
 - Otherwise an explicit custom `mass` is respected, or **unit mass** (`mass = 1`, `invMass = 1`) is set once by `RigidBody.syncMassFromCollider()`.
 
 **Static bodies:** `invMass` is `0` (infinite mass). Collider size changes also go through `RigidBody.syncMassFromCollider()`, so a static body keeps `invMass = 0` even if its collider geometry changes later.
@@ -387,6 +388,8 @@ At `entityIdWidth` 16 the pair is one packed `Uint32`: `(entityA << 16) | entity
 A prismatic joint does not spin. `axisAngle` is stored in the weld `linearHertz` column, translation limits reuse `lowerAngle` / `upperAngle`, and `maxMotorForce` reuses `maxMotorTorque`. The host calls `createPrismaticJointLocal`. Wheels stay `addRevolute` plus `motorSpeed`.
 
 Weld create captures current relative rotation (`localFrameB.q = qB⁻¹ qA`) so angled parts stay put; identity frames would snap both bodies to the same world angle.
+
+Despawning an entity removes its joints, after `onDespawned` (which can still read them), so the entity spawned next into that index starts with none. `Joint.removeAllForEntity(i)` is for cutting them while the entity lives.
 
 ### Dense active list
 

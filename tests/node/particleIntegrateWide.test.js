@@ -77,6 +77,8 @@ function binding(name, L, Slot, n) {
     layout: L,
     lutSize: PARTICLE_LUT_ENTRIES - 1,
     indices: new Slot(buffer, L.indicesByte, n),
+    // N-136: the input list's byte, as bindParticleIntegrate sets it.
+    indicesByte: L.indicesByte,
     stamp: new Slot(buffer, L.stampByte, n),
     dead: new Slot(buffer, L.deadByte, n),
     trig: new Slot(buffer, L.trigByte, n),

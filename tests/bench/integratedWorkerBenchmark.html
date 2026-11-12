@@ -112,6 +112,8 @@
             ? true
             : Boolean(options.collectDetailedStats),
         collectGpuStats: Boolean(options.collectGpuStats),
+        // DX-GUARDS: off unless the runner's --dev-checks asks (a measurement does not time them).
+        devChecks: Boolean(options.devChecks),
         // --camera-zoom: min (Camera.minZoom) or a zoom, set once the scene has been created.
         cameraZoom: options.cameraZoom === 'min' || Number(options.cameraZoom) > 0 ? options.cameraZoom : null,
       };
@@ -319,6 +321,7 @@
           ...(SceneClass.config.debug || {}),
           collectDetailedStats: config.collectDetailedStats,
           collectGpuStats: config.collectGpuStats,
+          checks: config.devChecks,
         },
         ...(wasmOff.length
           ? { wasm: { ...(SceneClass.config.wasm || {}), ...Object.fromEntries(wasmOff.map((name) => [name, false])) } }
@@ -351,7 +354,13 @@
         }, 100);
       });
       try {
-        await Promise.race([game.loadScene(config.sceneModule, { export: config.sceneExport }), fatalDuringBoot]);
+        // ?restore=<url> (E-210): the scene starts from that save (WEED.encodeSave bytes), as scene.loadGame starts it.
+        const restoreUrl = new URLSearchParams(location.search).get('restore');
+        const restorePayload = restoreUrl
+          ? await WEED.decodeSave(new Uint8Array(await (await fetch(restoreUrl)).arrayBuffer()))
+          : null;
+        const loadOptions = restorePayload ? { export: config.sceneExport, restorePayload } : { export: config.sceneExport };
+        await Promise.race([game.loadScene(config.sceneModule, loadOptions), fatalDuringBoot]);
       } finally {
         clearInterval(fatalWatch);
       }

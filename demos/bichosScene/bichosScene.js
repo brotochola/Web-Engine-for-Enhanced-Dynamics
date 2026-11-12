@@ -60,7 +60,6 @@ export class BichosScene extends WEED.Scene {
     logic: {
       noLimitFPS: false,
       numberOfLogicWorkers: 1,
-      numberOfEntitiesPerJob: 250,
       staggeredUpdates: false, // Enable tick decimation (entities tick based on their tickInterval)
     },
 

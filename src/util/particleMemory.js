@@ -10,6 +10,7 @@
 
 import { PARTICLE_DEFAULTS } from './configDefaults.js';
 import { MAX_POOL_SLOTS, poolSlotBytes } from './poolSlotWidth.js';
+import { initPublishedList, publishedListCopyByte } from './publishedList.js';
 import { particleMemoryRegions } from './wasmMemoryMap.js';
 
 // The module's import accepts up to 32768 pages (2 GB): wasm/modules.json maxMemoryPages.
@@ -63,6 +64,8 @@ export function createParticleMemory(maxParticles, componentBytes, place = null)
       throw new Error(`particle memory: the browser would not make ${mb} MB (${err?.message ?? err})`, { cause: err });
     }
   }
+  initPublishedList(memory.buffer, r.activeList.byte);
+  initPublishedList(memory.buffer, r.visibleList.byte);
   return {
     memory,
     buffer: memory.buffer,
@@ -70,12 +73,14 @@ export function createParticleMemory(maxParticles, componentBytes, place = null)
     layout: {
       // ParticleComponent's columns start here (buffers.componentDataByte.ParticleComponent).
       componentByte: r.component.byte,
+      // N-136, N-113: the lists' headers; their three copies follow (publishedList.js, `extra` 1).
       activeListByte: r.activeList.byte,
       visibleListByte: r.visibleList.byte,
       // Bytes per slot id in every list: 2, or 4 past 65 535 slots.
       slotBytes,
-      // The integrate's input: the published active list after its count.
-      indicesByte: r.activeList.byte + slotBytes,
+      // The integrate's input: the active list's indices, after its count, in copy 0 (the particle worker points the
+      // integrate at the copy it wrote each frame).
+      indicesByte: publishedListCopyByte(r.activeList.byte, n, 0, 1) + slotBytes,
       stampByte: r.stamp.byte,
       flatByte: r.flat.byte,
       heightedByte: r.heighted.byte,

@@ -6,6 +6,7 @@ import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { Layer } from '../../src/core/layer.js';
 import { CAMERA_TYPES, DECORATION_Y_SORT_SCALE, PARTICLE_SORT_BIAS } from '../../src/util/configDefaults.js';
 import { spriteYSortKey } from '../../src/util/sortIndexByKey.js';
+import { bindPublishedList, createPublishedList } from '../../src/util/publishedList.js';
 
 // A heighted particle y-sorts by its ground row (round(y)), as a sprite sorts by its feet, and is still drawn at
 // y + z. Before, it sorted by y + z: a spark in the air sorted as if it stood further north and slipped behind a
@@ -19,7 +20,8 @@ async function collectKeys(rows, { ySorting = true } = {}) {
   Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: { ySorting }, lighting: {} });
   try {
     const n = rows.length;
-    const visible = new SharedArrayBuffer(2 * (n + 1));
+    // N-113: the visible particles are a published list; copy 0 is the published one until the particle worker writes.
+    const visible = createPublishedList(n, 1);
     const { worker: w } = await bootEmitWorker(4, { maxItems: Math.max(8, n), particles: n, extra: { visibleParticlesData: visible } });
     const entities = Layer.entitiesMask();
     rows.forEach((r, i) => {
@@ -34,7 +36,7 @@ async function collectKeys(rows, { ySorting = true } = {}) {
       ParticleComponent.alpha[i] = 1;
       ParticleComponent.layerMask[i] = entities;
     });
-    new Uint16Array(visible).set([n, ...rows.map((_, i) => i)]);
+    bindPublishedList(visible, n, 0, 1).copies[0].set([n, ...rows.map((_, i) => i)]);
     w._renderableCount = 0;
     w._bindCollectPoses();
     w.collectVisibleParticles();

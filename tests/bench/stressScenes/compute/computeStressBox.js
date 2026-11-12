@@ -6,7 +6,6 @@ const { ShapeType } = enums;
 /** Fed collider for ComputeStressScene (no tick work). */
 export class ComputeStressBox extends GameObject {
   static components = [RigidBody, Collider, SpriteRenderer];
-  static tickInterval = 16;
 
   onSpawned({
     x = 0,
@@ -28,6 +27,4 @@ export class ComputeStressBox extends GameObject {
     this.setAlpha(0.7);
     this.setLayer('sim');
   }
-
-  tick() {}
 }

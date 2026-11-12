@@ -119,11 +119,9 @@ test('the indexed scatter is the split scatter: the pose and depth at each slot,
       const sp = words(s.splitPose, n * GPU_POSE_FLOATS);
       const ss = words(s.splitStat, n * GPU_STATIC_FLOATS);
       const ip = words(s.pose, n * GPU_POSE_FLOATS);
-      const iSlot = words(s.slots, n * GPU_INDEXED_SLOT_FLOATS);
       for (let k = 0; k < n; k++) {
         const row = s.slots[k * GPU_INDEXED_SLOT_FLOATS];
         if (row !== list[k]) assert.fail(`${label}: slot ${k} holds row ${row}, the list says ${list[k]}`);
-        if (iSlot[k * GPU_INDEXED_SLOT_FLOATS + 1] !== ss[k * GPU_STATIC_FLOATS + DEPTH]) assert.fail(`${label}: slot ${k}'s depth`);
         for (let j = 0; j < GPU_POSE_FLOATS; j++) {
           if (ip[k * GPU_POSE_FLOATS + j] !== sp[k * GPU_POSE_FLOATS + j]) assert.fail(`${label}: slot ${k} pose ${j}`);
         }

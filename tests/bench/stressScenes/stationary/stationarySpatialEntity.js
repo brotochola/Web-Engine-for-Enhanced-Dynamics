@@ -18,8 +18,4 @@ export class StationarySpatialEntity extends GameObject {
     this.setAnchor(0.5, 0.5);
     this.setAlpha(0.85);
   }
-
-  tick() {
-    // Intentionally empty: this benchmark isolates stationary spatial reuse.
-  }
 }

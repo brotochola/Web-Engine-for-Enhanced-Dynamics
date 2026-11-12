@@ -26,6 +26,35 @@ export function isSceneClass(value, SceneBase) {
 }
 
 /**
+ * DX-GUARDS C10: exports that extend a class named Scene which is not this engine's: the scene file imported the
+ * engine from another URL than the page, so it holds a second copy of it.
+ * @returns {string[]} their names
+ */
+export function foreignSceneExports(ns, SceneBase) {
+  if (!SceneBase || !ns || typeof ns !== 'object') return [];
+  const out = [];
+  for (const value of Object.values(ns)) {
+    if (typeof value !== 'function' || !value.prototype || isSceneClass(value, SceneBase)) continue;
+    for (let p = Object.getPrototypeOf(value); p && p !== Function.prototype; p = Object.getPrototypeOf(p)) {
+      if (p.name === 'Scene') {
+        out.push(value.name || '(anonymous)');
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+function foreignSceneError(names) {
+  const one = names.length === 1;
+  return new Error(
+    `WeedJS: the scene module exports ${names.join(', ')}, which extend${one ? 's' : ''} a Scene from another copy of ` +
+      'the engine: the scene file imports the engine from a different URL than the page does. Import it from the ' +
+      'same URL, or take the names from WEED (const { Scene, GameObject } = WEED), as docs/guide/FIRST_GAME.md does.',
+  );
+}
+
+/**
  * Pick the Scene export from a module namespace.
  * @param {string} [exportName]
  */
@@ -37,6 +66,9 @@ export function pickSceneClass(ns, exportName, SceneBase) {
     const named = ns[exportName];
     if (typeof named !== 'function') {
       throw new Error(`Scene export "${exportName}" not found`);
+    }
+    if (SceneBase && !isSceneClass(named, SceneBase) && foreignSceneExports({ named }, SceneBase).length) {
+      throw foreignSceneError([named.name || exportName]);
     }
     return named;
   }
@@ -52,6 +84,8 @@ export function pickSceneClass(ns, exportName, SceneBase) {
   const list = SceneBase ? scenes : unique.length ? unique : scenes;
   if (list.length === 1) return list[0];
   if (list.length === 0) {
+    const foreign = foreignSceneExports(ns, SceneBase);
+    if (foreign.length) throw foreignSceneError(foreign);
     throw new Error('Scene module has no Scene export');
   }
   const names = list.map((value) => value.name || '(anonymous)').join(', ');

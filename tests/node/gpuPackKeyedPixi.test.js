@@ -143,12 +143,14 @@ async function bindPixi(px, scene, webgpu) {
       tex.texels.set(bits.subarray(y0 * width * 4, (y0 + rows) * width * 4), y0 * width * 4);
       tex.uploads++;
     },
-    scatter(source, updates, count) {
+    scatter(source, updates, count, width, height, texUpdates, texCount) {
       for (let u = 0; u < count; u++) {
         const at = u * GPU_KEYED_ROW_WORDS;
         tex.texels.set(updates.subarray(at, at + GPU_INDEXED_STATIC_FLOATS), updates[at + GPU_KEYED_KEY_WORD] * GPU_INDEXED_STATIC_FLOATS);
       }
-      tex.scattered += count;
+      // E-189: a texture update writes its row's texture word alone.
+      for (let u = 0; u < (texCount | 0); u++) tex.texels[texUpdates[2 * u] * GPU_INDEXED_STATIC_FLOATS + 6] = texUpdates[2 * u + 1];
+      tex.scattered += count + (texCount | 0);
     },
   });
   await px._bindPixiGpuPack(data);

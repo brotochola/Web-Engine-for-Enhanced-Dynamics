@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-11",
+  "updated": "2026-11-12",
   "about": "The register of WeedJS's speed work, in two lists.\n\n`hypotheses`: every speed hypothesis tested or planned, plus developer-experience todos (kind `dx`), one entry each: its status, a one-line result, its rank while it is pending, its records (`records`, by id) and links into the plan docs (`refs`).\n\n`records`: every sitting, kernel run, gate and decision, with its date, its time when known, its verdict and its numbers in full. `timeFrom` says where a time comes from: `recorded` is when the record was written down, `commit` the time of a commit it names. The records up to 2026-10-24 were the rows of HYPOTHESIS_LOG.md and the WASM plan's results log; most of September's have no time, because they reached the log in batches.\n\nA ref names a row of a doc, never a line: `EXECUTION_PLAN.md#E-82b` is the one row whose title is `E-82b` or holds it as a whole token (use the id, or the start of the title when the id finds several rows); a file name alone is the whole document.\n\nRead it with `node scripts/hypotheses.mjs` (`find`, `show`, `log`) or as a page, `node scripts/buildHypothesesPage.mjs --open` (built locally, not committed). Add a record with `node scripts/hypotheses.mjs record`. Raw result files under tests/results are not kept: a record carries the numbers that decided it.",
   "statuses": {
     "running": "Being measured, or built and not yet measured.",
@@ -9677,8 +9677,11 @@
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0867",
+        "R-0872"
+      ],
+      "status": "kept-hygiene",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-186",
@@ -9686,11 +9689,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-186"
       ],
-      "statusText": "open: after E-177's verdict",
-      "rank": 15,
+      "statusText": "kept as hygiene 2026-11-11 (R-0872)",
       "area": "render",
-      "result": "",
-      "next": "The entity batch draws with depthTest off, so the slot pair's depth is never read: a 4-byte key per instance (or the key in the pose stream, one buffer instead of two) saves 4 of the keyed frame's 24 bytes a sprite (55 KB a Predator frame) and one buffer update. Kernel bytes, then Predator's renderer."
+      "result": "kept as hygiene 2026-11-11 (29a6cf35, R-0872): a slot is its statics row alone; keyed and indexed packs write 20 bytes a sprite instead of 24; Predator crowd 1.5 renderer -2.3 % (1/4), NEUTRAL",
+      "next": "Done."
     },
     {
       "aliases": [],
@@ -9731,9 +9733,10 @@
     {
       "aliases": [],
       "records": [
-        "R-0813"
+        "R-0813",
+        "R-0874"
       ],
-      "status": "open",
+      "status": "kept",
       "date": "2026-11-01",
       "kind": "speed",
       "id": "E-189",
@@ -9741,11 +9744,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-189"
       ],
-      "statusText": "open: step 0 answered 2026-11-01 (R-0813): every steady mark is a texture alone",
-      "rank": 17,
+      "statusText": "kept 2026-11-11 (R-0874)",
       "area": "render",
-      "result": "",
-      "next": "Predator marks 657 of 13 477 sprites a frame, all changing their texture alone: a texture-only update (key and texture, 8 bytes, into a per-key texture-id texture the indexed program reads) would send 5 KB a frame instead of 42. Its share of the pack is open while the pack's gather costs ten times its kernel (E-193, first); gpuPackKeyedMicrobench needs a case of marked rows to size it. Then Predator's renderer."
+      "result": "kept 2026-11-11 (16fe185c, R-0874): texture-only marks go up as 8-byte texture updates drawn into one texel; kernel -12 %; Predator crowd 1.5 renderer -10.7 % (0/4), pre-render -0.9 %",
+      "next": "Done."
     },
     {
       "aliases": [],
@@ -9975,7 +9977,20 @@
         "R-0805",
         "R-0806",
         "R-0807",
-        "R-0812"
+        "R-0812",
+        "R-0873",
+        "R-0875",
+        "R-0880",
+        "R-0883",
+        "R-0886",
+        "R-0888",
+        "R-0891",
+        "R-0896",
+        "R-0902",
+        "R-0905",
+        "R-0907",
+        "R-0910",
+        "R-0912"
       ],
       "refs": [
         "REVIEW_PLAN.md#N-105"
@@ -10028,7 +10043,14 @@
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0864",
+        "R-0866",
+        "R-0867",
+        "R-0868",
+        "R-0872",
+        "R-0874"
+      ],
       "status": "open",
       "date": "2026-11-01",
       "kind": "speed",
@@ -10037,15 +10059,18 @@
       "refs": [
         "EXECUTION_PLAN.md#E-193"
       ],
-      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "statusText": "open: step 1 dropped (R-0864); step 0 answered (R-0867); the shadow terms gone (E-211, R-0868), the slot depth gone (E-186, R-0872), texture-only updates (E-189, R-0874)",
       "area": "render",
-      "result": "",
-      "next": "pack_sprites_keyed reads 42 ms/s at Predator's defaults and 91 to 118 ms/s at crowd 1.5 (0.7 and 1.5 to 2 ms a frame); its kernel packs 13 500 rows in 0.070 to 0.080 ms in Chrome. Likely the gather: rows read in the painter's order from columns pre-render just wrote on another core. Step 0: the call timed in the worker against a two-worker kernel (the columns written by another worker first), in random, near and queue order. Then the queue's order with an inverse made in C (W9c lost in JavaScript), a prefetch ahead, or the pose and slot streams written by pre-render. Owner: Predator's renderer at crowd 1.5.",
+      "result": "E-211 (R-0868): the shadow terms out of the keyed pack, pack_sprites_keyed 79-119 -> 57-59 ms/s, renderer -4.5 % at Predator crowd 1.5",
+      "next": "Fewer bytes a row still: a pose only for a row that moved. Owner: Predator crowd 1.5's renderer.",
       "rank": 12
     },
     {
       "aliases": [],
-      "records": [],
+      "records": [
+        "R-0900",
+        "R-0913"
+      ],
       "status": "open",
       "date": "2026-11-01",
       "kind": "speed",
@@ -10054,16 +10079,18 @@
       "refs": [
         "EXECUTION_PLAN.md#E-194"
       ],
-      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "statusText": "mixed 2026-11-12 (R-0913): renderer -56 % under the floor, pre-render +8 %; on speed/e194, not merged",
       "area": "render",
-      "result": "",
-      "next": "A LiquidFun particle drawn as a sprite is still a row without a key, 64 bytes every keyed frame; liquidFunQueryStressScene draws up to 16 000. Step 0: whether that scene draws keyed (Pixi packs, WebGL) and how often its particles' statics change. Then keys past the decorations by particle index, marked as E-188 marks a decoration. Particles stay keyless: their alpha fades every frame. Owner: liquidFunQueryStressScene's renderer.",
+      "result": "step 0 (R-0900): keyed batch, keyed frames paused 589/600, each sent all 16 000 rows as updates; the scene draws split",
+      "next": "The records read only when they can have changed: a dense u16 per particle with the compare epoch it was last checked at, the epoch moved by a Pixi resync or by physics when a LiquidFun static may have changed (a paint, a count that moved, a fading group). Then sit again (liquidFunQueryStressScene ?lf=60000).",
       "rank": 21
     },
     {
       "aliases": [],
-      "records": [],
-      "status": "open",
+      "records": [
+        "R-0871"
+      ],
+      "status": "dropped",
       "date": "2026-11-01",
       "kind": "wasm",
       "id": "E-195",
@@ -10071,19 +10098,18 @@
       "refs": [
         "EXECUTION_PLAN.md#E-195"
       ],
-      "statusText": "open: filed 2026-11-01 (R-0813)",
+      "statusText": "dropped 2026-11-11 (R-0871): slower in Chrome",
       "area": "pre-render",
-      "result": "",
-      "next": "stamp_light_range is pre-render's largest function at Predator crowd 1.5 (108 of 380 ms/s, R-0808). Its f32x4 form read +7.3 % in Node (R-0571, 23/25; shadowStampF32.test.js holds the tolerance) and was never decided in Chrome. shadowStampWasmMicrobench wasm against wasm-f32x4 through chromeKernel.mjs, with the keyed rows (7 and 11 floats) and the full ones; into engine.wasm if faster, Predator crowd 1.5's pre-render not 3 % worse.",
-      "rank": 14
+      "result": "dropped 2026-11-11 (R-0871): Chrome 157, the Predator fixture, same rows: f32x4 -7.3 to -9.9 %, scalar f32 -7.5 to -11.5 % against the shipped double kernel",
+      "next": "Done: the stamp stays in double."
     },
     {
       "id": "N-79",
       "title": "A layer drawn without a render target ignores blendMode (fx ADD draws normal)",
-      "status": "open",
-      "statusText": "found 2026-10-26, a bug: confirmed in the code, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-10 on dx/guards (DX-GUARDS F1, R-0855)",
       "date": "2026-10-26",
-      "result": "A sprite layer without a look shader (and MESH and world-rect layers) is drawn straight to the stage by a mesh registered with forceContainerBlend, so it takes shader.containerBlend (normal when there is no shader) and never the layer's blendMode. The fx layers of destructibleTerrainScene, mamushkaDigScene and planetPhysicsScene ask for ADD and draw normal. Workaround: shader: { containerBlend: ADD } with no fragment (marks the layer hasShader).",
+      "result": "Fixed 2026-11-10 (0d490b4b): a batch, MESH fill or world-rect mesh drawn in one pass takes blendMode unless shader.containerBlend is set; a MESH look composes with blendMode. Four demo layers change; Destructible Terrain's beam retuned.",
       "area": "pixi",
       "kind": "bug",
       "refs": [
@@ -10093,7 +10119,10 @@
         "blendMode ignored",
         "containerBlend"
       ],
-      "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim."
+      "next": "A layer drawn in one pass takes blendMode unless shader.containerBlend is set; a worker-harness test; the guide; look at the three demos' fx once additive. A bug fix: hygiene keep, no speed claim.",
+      "records": [
+        "R-0855"
+      ]
     },
     {
       "id": "N-80",
@@ -10341,11 +10370,11 @@
     {
       "id": "N-113",
       "title": "Pre-render reads the visible particle list while the particle worker writes the next one (N-112's race, left for particles)",
-      "status": "open",
-      "statusText": "found 2026-11-03 while fixing N-112 (left in its row and in PR #6); read in the code, not seen yet; open",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (e9d9aa08, R-0869); found 2026-11-03 while fixing N-112",
       "date": "2026-11-03",
-      "result": "",
-      "next": "N-112's published list for visibleParticlesData: the header and three copies as regions of the particle memory (wasmMemoryMap.js visibleList), the list kernel (buildParticleListsWasm) given the copy's byte offset each frame, collectVisibleParticles taking the published copy. Test with visibleListTear.test.js's harness (tests/helpers/visibleListWriter.mjs): torn collects before, 0 after. The list changes every frame (no hold), so every overlap can tear; cost on the particle and pre-render workers in a particle stress scene.",
+      "result": "fixed 2026-11-11 (e9d9aa08, R-0869): published in three copies in the particle memory; tear harness 24 048 of 24 055 torn before, 0 after; particleIntegrateStressScene 200 000: particle -1.6 %, pre-render +0.7 %, NEUTRAL",
+      "next": "Done. The active list Pixi reads: N-136.",
       "area": "preRender",
       "kind": "bug",
       "refs": [
@@ -10358,17 +10387,18 @@
         "published list",
         "particle list race"
       ],
-      "records": [],
-      "rank": 8
+      "records": [
+        "R-0869"
+      ]
     },
     {
       "id": "N-114",
       "title": "The create-weed-game template's dev server refuses less than the engine's: a backslash path answers 404 on Linux and macOS (createWeedGame.test.js fails there), and a symlink out of the folder is served",
-      "status": "open",
-      "statusText": "found 2026-11-03 by the session that made PR #6 (a Linux container: the node suite's one failure); open",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (R-0876); found 2026-11-03 by the session that made PR #6",
       "date": "2026-11-03",
-      "result": "",
-      "next": "packages/create-weed-game/template/scripts/dev.mjs takes server/staticFiles.js resolveInside's rule (refuse \\, : and NUL; check the real path of the nearest existing parent), copied since the template ships alone; createWeedGame.test.js then reads 403 on every system. A test for the symlink case.",
+      "result": "fixed 2026-11-11 (27269ef5, R-0876): resolveInside's rule in the template's dev.mjs; createWeedGame.test.js asks for \\, :, NUL and a link out (9 of 9; the old server fails both checks)",
+      "next": "Done. The template reaches games with the next create-weed-game release.",
       "area": "engine",
       "kind": "bug",
       "refs": [
@@ -10382,8 +10412,9 @@
         "backslash",
         "Linux"
       ],
-      "records": [],
-      "rank": 22
+      "records": [
+        "R-0876"
+      ]
     },
     {
       "id": "DX-DECOSKEW",
@@ -10769,14 +10800,15 @@
       "id": "DX-VOLUME",
       "title": "VolumeShadowCaster: a component that declares an object's volume, for the sun and point lights",
       "status": "open",
-      "statusText": "Phases 0 and 1 merged to main (e54f701f), released in 0.14.0; phases 2 to 4 are a plan",
+      "statusText": "Phases 0 and 1 merged to main (e54f701f), released in 0.14.0; phases 2 to 4 are a plan, phase 3 worked out as DX-VOLLIGHTS",
       "date": "2026-11-05",
       "result": "As many frames as meshes by hand and renderer -5.0 % at 20 000 houses; in the game, renderer -14.7 % by day. The pictures are equal to the pixel.",
       "next": "",
       "area": "render",
       "kind": "dx",
       "refs": [
-        "REVIEW_PLAN.md#DX-VOLUME"
+        "REVIEW_PLAN.md#DX-VOLUME",
+        "DX_VOLLIGHTS_DESIGN.md"
       ],
       "aliases": [
         "VolumeShadowCaster",
@@ -10788,7 +10820,8 @@
         "R-0846",
         "R-0847",
         "R-0848",
-        "R-0853"
+        "R-0853",
+        "R-0860"
       ]
     },
     {
@@ -10820,11 +10853,11 @@
     {
       "id": "N-121",
       "title": "The runner's presented guard reads MAIN_FPS, not frames drawn",
-      "status": "open",
-      "statusText": "Found 2026-11-05, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (84ad58d6, R-0879)",
       "date": "2026-11-05",
-      "result": "meshUploadStressScene: frames drawn +22 %, presented -12 %, verdict REGRESSION: a GPU-bound scene that draws more.",
-      "next": "",
+      "result": "fixed 2026-11-11 (84ad58d6, R-0879): DRAWN_FPS judged where Pixi draws under 0.9 of the page's rate, MAIN_FPS elsewhere; the other printed beside",
+      "next": "Done.",
       "area": "tools",
       "kind": "bug",
       "refs": [
@@ -10836,7 +10869,8 @@
         "frames drawn"
       ],
       "records": [
-        "R-0839"
+        "R-0839",
+        "R-0879"
       ]
     },
     {
@@ -10985,11 +11019,11 @@
     {
       "id": "N-127",
       "title": "A worldRect layer's float pictures do not upload in WebGL",
-      "status": "open",
-      "statusText": "Confirmed in the code, not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (7a9b646a, R-0878)",
       "date": "2026-11-10",
-      "result": "uploadSharedImage hands texSubImage2D a Uint8Array with type FLOAT, which WebGL 2 refuses, and sends r32float as RGBA; WebGPU is right. Conurbano avoids it with RGBA8 in fixed point.",
-      "next": "A Float32Array view over the same bytes (offset in floats) and RED for r32float, on its own branch, with a browser test that reads a float picture back on WebGL.",
+      "result": "fixed 2026-11-11 (7a9b646a, R-0878): Float32Array uploads and first contents; a WebGL2 Pixi probe read both float formats back empty before (INVALID_OPERATION), exact after",
+      "next": "Done.",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -11003,7 +11037,8 @@
         "sharedTextureUpload"
       ],
       "records": [
-        "R-0851"
+        "R-0851",
+        "R-0878"
       ]
     },
     {
@@ -11074,11 +11109,11 @@
     {
       "id": "N-128",
       "title": "fixedFps runs fast: setInterval(1000 / fps) takes whole milliseconds (60 becomes 62.5 Hz)",
-      "status": "open",
-      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (01842774, R-0863)",
       "date": "2026-11-10",
-      "result": "abstractWorker.js scheduleNextFrame and physicsHostImpl.js pass 16.67 ms, which the timer API truncates to 16: 62.5 Hz with dt fixed at 1/60, the simulation about 4 % fast.",
-      "next": "Count frames over 10 s to confirm; then schedule each frame for the next multiple of 1000 / fps from a start time (setTimeout to a deadline).",
+      "result": "Each frame is set for a deadline one period after the last (src/util/fixedRate.js; the physics host its copy): 600 frames under whole-ms timers firing up to 3 ms late run at 60 a second, where setInterval read 62.5.",
+      "next": "",
       "area": "engine",
       "kind": "bug",
       "refs": [
@@ -11090,18 +11125,19 @@
         "62.5 Hz"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 23
+        "R-0854",
+        "R-0863",
+        "R-0866"
+      ]
     },
     {
       "id": "N-129",
       "title": "onGotShot ignores pins, and a frame's impacts are lost when logic misses one",
-      "status": "open",
-      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11: the pins (7ddc9590, R-0863), the lost impacts (54cc6109, R-0877)",
       "date": "2026-11-10",
-      "result": "processImpacts runs onGotShot on targetId % workers, where ticks and collision callbacks honour forceProcessOnLogicWorker; the particle worker overwrites each frame's impacts, so logic loses a frame it did not read.",
-      "next": "The pin rule in processImpacts, and impacts appended to a ring logic drains; a test for each.",
+      "result": "fixed 2026-11-11: the pins (7ddc9590, R-0863), the lost impacts (54cc6109, R-0877: a ring each logic worker reads from its own cursor); bulletStressScene particle -0.6 %, NEUTRAL",
+      "next": "Done.",
       "area": "logic",
       "kind": "bug",
       "refs": [
@@ -11115,17 +11151,19 @@
         "pins"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 24
+        "R-0854",
+        "R-0863",
+        "R-0866",
+        "R-0877"
+      ]
     },
     {
       "id": "N-130",
       "title": "Despawn leaves the entity's joints in Weed's joint pool",
-      "status": "open",
-      "statusText": "Confirmed in the code (2026-11-10, R-0854), not fixed",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-10 on dx/guards (DX-GUARDS F2, R-0856); the gate on spawnStormScene is the owner's",
       "date": "2026-11-10",
-      "result": "Physics destroys the Box2D joints (destroyWasmJointsForEntity), but nothing calls Joint.removeAllForEntity on despawn: the row stays active, the partner still counts it, the slot is not freed.",
+      "result": "Fixed 2026-11-10 (422b6b1b): despawn and despawnAll remove the entity's joints after onDespawned; before, the index spawned again was born with the old joints. Gate on spawnStormScene left to the owner.",
       "next": "Joint.removeAllForEntity on despawn; a test with a jointed pair, one despawned, the other's count, and the index respawned (does it get the old joint back?).",
       "area": "physics",
       "kind": "bug",
@@ -11138,9 +11176,9 @@
         "Joint.removeAllForEntity"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 25
+        "R-0854",
+        "R-0856"
+      ]
     },
     {
       "id": "E-197",
@@ -11210,17 +11248,18 @@
         "steering"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0898"
       ],
       "rank": 28
     },
     {
       "id": "E-200",
       "title": "Neighbour lists refreshed with each entity's tick bucket",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (79065acc, R-0865)",
       "date": "2026-11-10",
-      "result": "",
+      "result": "kept 2026-11-11 (79065acc): Boids ?steer=0 spatial 7.186 -> 5.828 ms (-15.0 %, 0/4; A/A +0.5 %); kernel boids +30.5 %; Predator NEUTRAL (spatial -4.8 %); the flocking demo's flock gathers in clouds (the owner prefers it)",
       "next": "Predator uses neighborTickInterval 15 for all, but Boid ticks every 30, the soldier 6, the civilian 4. Refresh a list on the frame before its staggeredUpdates bucket, per type with a tickInterval; Boids does about half the spatial work and civilians read fresh lists. Owner: spatial in Boids and Predator.",
       "area": "spatial",
       "kind": "js",
@@ -11234,9 +11273,10 @@
         "neighbor lists"
       ],
       "records": [
-        "R-0854"
-      ],
-      "rank": 29
+        "R-0854",
+        "R-0865",
+        "R-0862"
+      ]
     },
     {
       "id": "E-201",
@@ -11381,11 +11421,11 @@
     {
       "id": "E-207",
       "title": "A* in C",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (a01fc243, R-0892)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "computePath is the last search in JavaScript: three closures a call, inOpenSet.fill(0) over the grid, a JavaScript heap; the flowfield gained 16× in C (E-122). In C beside the flowfield, the open set cleared by a generation stamp; kernel with the same paths (golden), then a path-heavy scene. Owner: PATHS_COMPUTED.",
+      "result": "kept 2026-11-11 (a01fc243, R-0892): kernel 109 -> 34 us a path; astarStressScene agents=0 particle 6.770 -> 2.523 ms (-63.1 %, 4/4)",
+      "next": "Done. The path slots around it are E-214 and N-139; the requests E-213.",
       "area": "nav",
       "kind": "wasm",
       "refs": [
@@ -11398,17 +11438,19 @@
         "nav"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0889",
+        "R-0892"
       ]
     },
     {
       "id": "E-208",
       "title": "listUpdates through a SAB ring",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (R-0881)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Logic 1..N send spawns to logic0 by postMessage, an object and a className string per record, and _receiveListUpdates allocates another. A SAB ring per worker drained by logic0; also a frame less of spawn latency. Owner: logic0 in spawnStormScene with 2+ logic workers (KB/s and STEP_MS).",
+      "result": "kept 2026-11-11 (33732b3b, R-0881): a single-writer ring per worker drained by logic0; spawnStormScene ?logicWorkers=2: logic -25.7 % (0/4), logic0 33 554 → 35 KB/s sampled",
+      "next": "Done.",
       "area": "logic",
       "kind": "js",
       "refs": [
@@ -11421,17 +11463,19 @@
         "spawnStorm"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0881",
+        "R-0882"
       ]
     },
     {
       "id": "E-209",
       "title": "Entity instances made at spawn",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (b93ab8ee, R-0901)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Every logic worker makes new EntityClass per pool slot, and main keeps a frozen copy. Step 0: boot time and heap per 100 000 slots; then instances at a slot's first spawn, the tick loop testing for null. Unblocks pools without a fixed size. Owner: boot ms and heap; Predator's logic not 3 % worse.",
+      "result": "kept 2026-11-11 (b93ab8ee, R-0901): boot per 100 000 slots logic 40.6 -> 4.5 ms, 11.7 -> 1.5 MB; page 26.6 -> 1.4 ms, 13.7 -> 1.5 MB; Predator NEUTRAL",
+      "next": "Done. Pools without a fixed size can build on it.",
       "area": "logic",
       "kind": "js",
       "refs": [
@@ -11444,17 +11488,19 @@
         "heap"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0897",
+        "R-0901"
       ]
     },
     {
       "id": "E-210",
       "title": "Predator's gate from a save",
-      "status": "open",
-      "statusText": "open: filed 2026-11-10 from a code review (R-0854), not measured",
+      "status": "blocked",
+      "statusText": "blocked 2026-11-11 (R-0908): a restored Predator does not fight (its AI state is not saved)",
       "date": "2026-11-10",
-      "result": "",
-      "next": "Predator reads 8 to 13 % run to run per worker. Both sides restore the same mid-battle snapshot and measure a short window, so the load is paired. Step 0: an A/A from the save against today's A/A, the detection limit per worker. A tool. Owner: runPredatorAbab.mjs.",
+      "result": "step 0 (R-0908): the save keeps components, not the FSMs' plain fields; restored, Predator goes quiet (every worker under 3 ms)",
+      "next": "Needs a scene whose behaviour survives a save (Predator's AI state in components: demo work). The tools (?restore=, --restore, sceneSaveMaker) are in.",
       "area": "harness",
       "kind": "js",
       "refs": [
@@ -11468,7 +11514,8 @@
         "A/A"
       ],
       "records": [
-        "R-0854"
+        "R-0854",
+        "R-0908"
       ]
     },
     {
@@ -11564,6 +11611,605 @@
       ],
       "records": [
         "R-0858"
+      ]
+    },
+    {
+      "id": "N-133",
+      "title": "A static flowfield lost the world's last partial column and row",
+      "status": "kept-hygiene",
+      "statusText": "Fixed (95b9f4c1), merged to main (62c0e1e0), not released",
+      "date": "2026-11-11",
+      "result": "The loader clips to Math.ceil(world / cell) cells, not floor: every cell the world touches stays, in both formats. Conurbano lost a column and a row in its barrio (959 x 323 cells), a column in Carabobo (1119), a row in Parque Chas (713); the demo's barrio is a whole number of cells.",
+      "next": "",
+      "area": "nav",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-133"
+      ],
+      "aliases": [
+        "flowfield clip",
+        "Math.floor worldW / cellSize",
+        "last column"
+      ],
+      "records": [
+        "R-0859"
+      ]
+    },
+    {
+      "id": "DX-FFBIN",
+      "title": "Static flowfields in a binary file (WEFF), gzipped and opened by the browser, used as they come",
+      "status": "kept",
+      "statusText": "Built 2026-11-11 on dx/flowfield-bin, merged to main (62c0e1e0), not released; the barrio editor exports it and Conurbano uses it",
+      "date": "2026-11-11",
+      "result": "The demo's barrio: 3 709 849 bytes of JSON, 116 092 binary, every cell equal; main-thread time to turn the bytes into cells in Chromium 17.9-20.9 ms -> 5.0-6.1 ms the first time. Conurbano's three barrios: 163.6 MB of JSON -> 6.0 MB. The fields are fetched all at once.",
+      "next": "",
+      "area": "nav",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-FFBIN"
+      ],
+      "aliases": [
+        "binary flowfields",
+        "WEFF",
+        "ff_*.bin",
+        "flowfieldToBinary",
+        "DecompressionStream",
+        "loadStaticFlowfields"
+      ],
+      "records": [
+        "R-0859"
+      ]
+    },
+    {
+      "id": "N-134",
+      "title": "Raycasted lighting hides every ShadowCaster shadow, the sun's included",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (5f1520ff, R-0884)",
+      "date": "2026-11-11",
+      "result": "fixed 2026-11-11 (5f1520ff, R-0884): the sun's casters alone under raycasted lighting; Sun Street noon captures on both backends; visPolyStressScene NEUTRAL",
+      "next": "Done. Lamps casting volume shadows stay DX-VOLLIGHTS.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-134"
+      ],
+      "aliases": [
+        "raycasted",
+        "castedShadows",
+        "shadowSpritesEnabled",
+        "initVisibilityPolygonSystem",
+        "ShadowCaster",
+        "Sun Street"
+      ],
+      "records": [
+        "R-0860",
+        "R-0884"
+      ]
+    },
+    {
+      "id": "DX-VOLLIGHTS",
+      "title": "Lamps and headlights cast a VolumeShadowCaster's shadow, in basic and raycasted lighting",
+      "status": "open",
+      "statusText": "A plan for the owner to decide (DX_VOLLIGHTS_DESIGN.md), not built",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "Decisions first (eight, in the design). Then step 0 (volumeStressScene ?castsLights= ?raycast=, a reference outline, vertices × casting lights at Sun Street's and Conurbano's sizes), basic lighting into shadowRT, raycasted lighting as a mask on each fan, receivers, Sun Street without LightOccluder.",
+      "area": "render",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-VOLLIGHTS",
+        "DX_VOLLIGHTS_DESIGN.md"
+      ],
+      "aliases": [
+        "castsLights",
+        "volume lamp shadows",
+        "raycasted volumes",
+        "LightOccluder oblique",
+        "sourceHeight",
+        "DX-VOLUME phase 3"
+      ],
+      "records": [
+        "R-0860"
+      ],
+      "rank": 33
+    },
+    {
+      "id": "DX-GUARDS",
+      "title": "The engine says the mistakes a game makes, or fixes them",
+      "status": "kept-hygiene",
+      "statusText": "Merged 2026-11-11 (9de3fa2d), kept as hygiene (R-0862)",
+      "date": "2026-11-10",
+      "result": "Merged 2026-11-11 (9de3fa2d, bundles d0a6ce76): load guards C1, C3 to C6, C8 to C10; debug-build guards E1 to E7 with devChecks and debug.checks; F1, F2; N-131, N-132, N-135 fixed; the demos' empty ticks deleted. Predator's gate printed pre-render +3.5 %, painterMove the same; a trace pair gave the same time per frame in every pre-render function, so noise: kept as hygiene. The prod bundle equals its sources (Predator, painterMove, Boids NEUTRAL).",
+      "next": "Nothing. spawnStormScene for F2 was not run (one typed-array read per despawn).",
+      "area": "engine",
+      "kind": "dx",
+      "refs": [
+        "REVIEW_PLAN.md#DX-GUARDS"
+      ],
+      "aliases": [
+        "guards",
+        "validation",
+        "devChecks",
+        "common mistakes",
+        "config keys"
+      ],
+      "records": [
+        "R-0857",
+        "R-0861",
+        "R-0862"
+      ]
+    },
+    {
+      "id": "N-131",
+      "title": "collider.isTrigger written after the body exists does nothing",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
+      "date": "2026-11-10",
+      "result": "Fixed 2026-11-11 (5b860316): the setter makes the body again (a new generation for a live slot); Predator's money becomes a trigger. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
+      "next": "The setter marks LIFECYCLE (the body made again, as enableHitEvents does) or a sensor command; a test that a trigger set after the body exists reaches Box2D. Predator's money drops then become triggers: its gate's scene changes.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-131"
+      ],
+      "aliases": [
+        "isTrigger",
+        "sensor",
+        "trigger after creation"
+      ],
+      "records": [
+        "R-0857",
+        "R-0861"
+      ]
+    },
+    {
+      "id": "N-132",
+      "title": "A mass set in onSpawned never holds on an entity whose collider has a shape",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
+      "date": "2026-11-10",
+      "result": "Fixed 2026-11-11 (baa4183d): a mass set in onSpawned holds through the spawn's sync; the landing page's crates float. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
+      "next": "The owner's call (a change in behaviour): the spawn's sync keeps a mass set by hand during the spawn. The landing page's Floater and HungCrate then weigh what their comment says.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-132"
+      ],
+      "aliases": [
+        "mass",
+        "onSpawned",
+        "syncMassFromCollider"
+      ],
+      "records": [
+        "R-0857",
+        "R-0861"
+      ]
+    },
+    {
+      "id": "N-135",
+      "title": "collider.enableHitEvents changed after the body exists does nothing",
+      "status": "kept-hygiene",
+      "statusText": "Fixed 2026-11-11 on dx/guards at the owner's word (R-0861); the gate is the owner's",
+      "date": "2026-11-11",
+      "result": "Fixed 2026-11-11 (77c81f77): the setter makes the body again, as N-131. A test fails without it. Not timed; the branch's Predator gate is the owner's.",
+      "next": "Make the body again, as N-131 does for isTrigger; a test that hit events turned on after the body exists reach Box2D.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-135"
+      ],
+      "aliases": [
+        "enableHitEvents",
+        "hit events after creation"
+      ],
+      "records": [
+        "R-0861"
+      ]
+    },
+    {
+      "id": "E-211",
+      "title": "The sun pass draws pre-render's keyed rows, and Pixi's keyed pack writes no shadow terms for it",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (R-0868)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-11 (f508c2ed, R-0868): Predator crowd 1.5 renderer -4.5 % (worse 1/4, -3.9 % against the others 4/4); pack_sprites_keyed 79-119 -> 57-59 ms/s in traces",
+      "next": "Done.",
+      "area": "render",
+      "kind": "speed",
+      "refs": [
+        "EXECUTION_PLAN.md#E-211"
+      ],
+      "aliases": [
+        "pack_sprites_keyed",
+        "shadow stream",
+        "keyed sun rows",
+        "enableKeyedShadows",
+        "setKeyedShadowStream"
+      ],
+      "records": [
+        "R-0868"
+      ]
+    },
+    {
+      "id": "N-136",
+      "title": "Pixi reads the active particle list while the particle worker writes the next one (N-113's race, for the particle light field)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (9edb59f6, R-0870); found the same day fixing N-113",
+      "date": "2026-11-11",
+      "result": "fixed 2026-11-11 (9edb59f6, R-0870): published in three copies; Pixi's take 1 420 of 3 324 torn before, 0 after; particleIntegrateStressScene 200 000: particle -0.5 %, NEUTRAL",
+      "next": "Done.",
+      "area": "renderer",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-136"
+      ],
+      "aliases": [
+        "activeParticlesData",
+        "_renderParticleLightingField",
+        "particle light field",
+        "torn active list",
+        "published list"
+      ],
+      "records": [
+        "R-0870"
+      ]
+    },
+    {
+      "id": "N-137",
+      "title": "A* lowers a node's cost in the open set without moving it in the heap, so a path may not be the shortest",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (f9cd5675, R-0887)",
+      "date": "2026-11-11",
+      "result": "fixed 2026-11-11 (f9cd5675, R-0887): decrease-key in navAstar.js; old rule longer than Dijkstra on 5 of 9093 random grids (62 vs 54 kept in the tests); not timed, no scene asks for A* paths",
+      "next": "Done. A* in C stays E-207, for a game that asks for paths.",
+      "area": "nav",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-137"
+      ],
+      "aliases": [
+        "computePath",
+        "A*",
+        "decrease-key",
+        "heapFCost",
+        "pathfinding"
+      ],
+      "records": [
+        "R-0887",
+        "R-0889"
+      ]
+    },
+    {
+      "id": "N-138",
+      "title": "A moving entity's volume shadow leads its sprite by a varying 1 to 3 frames (Sun Street's cars)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (00b383fc, R-0885)",
+      "date": "2026-11-11",
+      "result": "fixed 2026-11-11 (00b383fc, R-0885): the mesh takes its sprite's queue pose; filmed shadow edge -8..-17 px on main, -14/-15 px fixed; Sun Street 10 000 cars KEPT, renderer -9.0 % (4/4)",
+      "next": "Done. With renderer.interpolation the mesh is at the newer of the two queue frames the sprite is drawn between (not measured).",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-138"
+      ],
+      "aliases": [
+        "VolumeShadowCaster",
+        "volume shadow",
+        "colliderFillBatch",
+        "meshFillUsesLive",
+        "Sun Street",
+        "shadow lag"
+      ],
+      "records": [
+        "R-0885"
+      ]
+    },
+    {
+      "id": "E-212",
+      "title": "Path slots found by an index, not a scan of every slot",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (501fe3ac, R-0890)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-11 (501fe3ac, R-0890): astarStressScene logic 11.792 -> 1.328 ms (-88.8 %, 4/4), particle -13.8 % (4/4)",
+      "next": "Done. Left: path requests through a SAB ring (a postMessage each, 10 % of the particle worker), the LRU scan for a new slot, and E-207.",
+      "area": "nav",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-212"
+      ],
+      "aliases": [
+        "_findPathSlot",
+        "getNextAStarPosition",
+        "path slot",
+        "astarStressScene",
+        "NavGrid"
+      ],
+      "records": [
+        "R-0889",
+        "R-0890"
+      ]
+    },
+    {
+      "id": "E-213",
+      "title": "Path and flowfield requests through a SAB ring, not a postMessage each",
+      "status": "kept-hygiene",
+      "statusText": "kept as hygiene 2026-11-11 (62eebf89, R-0895)",
+      "date": "2026-11-11",
+      "result": "kept-hygiene 2026-11-11 (62eebf89, R-0895): astarStressScene 180 paths a frame particle +0.5 % (neutral), logic -60 % below the floor",
+      "next": "Done.",
+      "area": "nav",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-213"
+      ],
+      "aliases": [
+        "_requestPath",
+        "REQUEST_PATH",
+        "postMessage",
+        "astarStressScene",
+        "ring"
+      ],
+      "records": [
+        "R-0895"
+      ]
+    },
+    {
+      "id": "N-139",
+      "title": "A path in use is evicted when more paths than slots are made within one second (the LRU clock counts seconds)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-11 (407ea152, R-0893)",
+      "date": "2026-11-11",
+      "result": "fixed 2026-11-11 (407ea152, R-0893): 16 ms clock, evictions by age (wrap-safe); not timed",
+      "next": "Done.",
+      "area": "nav",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-139"
+      ],
+      "aliases": [
+        "lruNow",
+        "allocatePathSlot",
+        "path slot eviction",
+        "LRU"
+      ],
+      "records": [
+        "R-0893"
+      ]
+    },
+    {
+      "id": "N-140",
+      "title": "The cull dropped sprites whose tops were still on screen (it padded with half the sprite around a foot anchor)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (93aacc8d, R-0909)",
+      "date": "2026-11-12",
+      "result": "fixed 2026-11-12 (93aacc8d): the pad is the reach from the anchor to the farthest corner; seen in The Chaos Machine; Predator gate within the A/A (physics ±3.7 %)",
+      "next": "Done.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-140"
+      ],
+      "aliases": [
+        "cull",
+        "culling",
+        "half_extent",
+        "boundsHalfW",
+        "anchor",
+        "spriteCullReach",
+        "houses disappear"
+      ],
+      "records": [
+        "R-0909"
+      ]
+    },
+    {
+      "id": "N-141",
+      "title": "A large decoration goes missing at the screen edge while part of it shows (decorations are culled at their point)",
+      "status": "open",
+      "statusText": "filed 2026-11-12 fixing N-140; read in the code, not reproduced",
+      "date": "2026-11-12",
+      "result": "particleLists.c builds the visible list of the particle pool, decorations included, with a point test: the position against the view plus cullingRatio. A decoration drawn tall from its foot disappears once its foot is past the margin, as the sprites of N-140 did.",
+      "next": "A reach per decoration slot (spriteCullReach on its frame, scale and anchor) and the list kernel padding decoration slots by it in a copied loop, or the largest decoration reach as one margin for them. Owner: the particle worker's list build.",
+      "area": "render",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-141"
+      ],
+      "aliases": [
+        "decoration cull",
+        "particleLists",
+        "build_lists",
+        "tall decoration"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-142",
+      "title": "A LiquidFun particle can be drawn with another particle's statics after particles die (compaction leaves the render buffer behind)",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (3cbb90eb, Box2D 7a1d29b, R-0914)",
+      "date": "2026-11-12",
+      "result": "fixed 2026-11-12 (3cbb90eb, Box2D 7a1d29b): origin indices carried through LiquidFun's reorders, the render statics moved by them; reproduced and checked in a browser probe; gates NEUTRAL",
+      "next": "Done. Left: the interpolation's previous LiquidFun positions are latched by index (one frame from another particle's position after a compaction).",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-142"
+      ],
+      "aliases": [
+        "LiquidFun compaction",
+        "SolveZombie",
+        "paintNewLiquidFunParticles",
+        "liquidFun tint",
+        "PermuteSlice"
+      ],
+      "records": [
+        "R-0914"
+      ]
+    },
+    {
+      "id": "N-143",
+      "title": "A camera that follows an entity without a body goes to the world origin, and holds while nothing awake publishes",
+      "status": "open",
+      "statusText": "filed 2026-11-12; fixed on networking_cars (2dc726e3, with a test) and never brought to main; that test fails 2 of 4 on main",
+      "date": "2026-11-12",
+      "result": "followEntity holds the camera while the physics publish frame is unchanged, and the drawn camera snaps to the followed entity's latched pose slot. Only bodies have one: an entity without a body reads 0, 0 (the view at the world origin), and with every body asleep the publish frame never changes (the hold never ends).",
+      "next": "Bring 2dc726e3 to main: _alignToSnapshot and publishFrozen for bodies only, with cameraFollowBodyless.test.js; test:node and test:demos. Hygiene, nothing to time.",
+      "area": "engine",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-143"
+      ],
+      "aliases": [
+        "followEntity",
+        "bodiless",
+        "bodyless",
+        "_alignToSnapshot",
+        "publishFrozen",
+        "networking_cars",
+        "camera follow"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-144",
+      "title": "An asset load that fails on a browser cache error is not tried again (two tabs loading a 16 MB tilemap)",
+      "status": "open",
+      "statusText": "filed 2026-11-12; fixed for tilemaps on networking_cars (36870ce0, fetchRetry.js) and never brought to main; read in the code",
+      "date": "2026-11-12",
+      "result": "Two tabs of one browser loading the 16 MB roads tilemap at once failed one with net::ERR_CACHE_WRITE_FAILURE: the body read rejected though the server answered. Main loads every asset through fetchAsset (DX-GUARDS C6), which reports the failure and does not retry.",
+      "next": "The branch's rule inside fetchAsset: on a network TypeError, fetch and read once more with cache: 'no-store' (HTTP errors and bad JSON not retried), the retry covering the body read the callers do after it returns; C6's messages kept; the branch's fetchRetry.test.js cases.",
+      "area": "assets",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-144"
+      ],
+      "aliases": [
+        "ERR_CACHE_WRITE_FAILURE",
+        "fetchAsset",
+        "fetchReadRetryUncached",
+        "no-store",
+        "tilemap load",
+        "networking_cars"
+      ],
+      "records": []
+    },
+    {
+      "id": "E-214",
+      "title": "Path slots allocated without a scan of every slot",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (8d28ef5b, R-0894)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-11 (8d28ef5b, R-0894): astarStressScene agents=0 slots=8000 particle 7.045 -> 2.450 ms (-65.3 %, 4/4)",
+      "next": "Done. The flowfield slots still scan (few of them).",
+      "area": "nav",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-214"
+      ],
+      "aliases": [
+        "allocatePathSlot",
+        "_hasEmptyPathSlot",
+        "path slot",
+        "LRU"
+      ],
+      "records": [
+        "R-0894"
+      ]
+    },
+    {
+      "id": "E-215",
+      "title": "The tick loops look up each entity's tick in a call site every type shares",
+      "status": "dropped",
+      "statusText": "dropped 2026-11-11 at step 0 (R-0899)",
+      "date": "2026-11-11",
+      "result": "dropped (R-0899): shipped 7.1-7.8 ns a tick, candidate +46 %; the 8.4 % in Predator is not the dispatch",
+      "next": "Not doing.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-215"
+      ],
+      "aliases": [
+        "_tickIntervalBucket",
+        "megamorphic",
+        "tick loop",
+        "obj.tick"
+      ],
+      "records": [
+        "R-0898",
+        "R-0899"
+      ]
+    },
+    {
+      "id": "E-216",
+      "title": "No entity list for a frame without glow rows",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (672e8434, R-0904)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-11 (672e8434, R-0904): BunnyMark C 200 000 pre-render -16.5 % (4/4); Predator pre-render -4.6 %",
+      "next": "Done.",
+      "area": "render",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-216"
+      ],
+      "aliases": [
+        "fillQueueIndices",
+        "indexByteFor",
+        "packSpriteLayer",
+        "splitGlow",
+        "BunnyMark"
+      ],
+      "records": [
+        "R-0903",
+        "R-0904"
+      ]
+    },
+    {
+      "id": "E-217",
+      "title": "The sprite query's list read where the collect reads, not copied each frame",
+      "status": "kept",
+      "statusText": "kept 2026-11-12 (ef03a7a1, R-0911)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-12 (ef03a7a1): a publish sequence lets the collect skip the copy of an unchanged list; BunnyMark C 200 000 pre-render -8.1 %",
+      "next": "Done for a steady population. A scene whose population changes every frame still copies: the pointer at the published copy (a reading mark) would cover it.",
+      "area": "render",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-217"
+      ],
+      "aliases": [
+        "writeCollectList",
+        "readPublishedQuerySnapshot",
+        "query snapshot",
+        "collect list"
+      ],
+      "records": [
+        "R-0911"
+      ]
+    },
+    {
+      "id": "E-218",
+      "title": "tickAll reads a view of the active list when every listed entity is active",
+      "status": "kept",
+      "statusText": "kept 2026-11-11 (6e0fea8d, R-0906)",
+      "date": "2026-11-11",
+      "result": "kept 2026-11-11 (6e0fea8d, R-0906): BunnyMark C 300 000 logic -20.2 % (4/4); Predator NEUTRAL",
+      "next": "Done.",
+      "area": "logic",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-218"
+      ],
+      "aliases": [
+        "_runTickAllTypes",
+        "tickAll",
+        "_tickAllScratch",
+        "BunnyMark"
+      ],
+      "records": [
+        "R-0906"
       ]
     }
   ],
@@ -19715,6 +20361,723 @@
         "b70989d8",
         "236e7744",
         "48500c9f"
+      ]
+    },
+    {
+      "id": "R-0859",
+      "date": "2026-11-11",
+      "time": "01:23",
+      "timeFrom": "recorded",
+      "title": "Static flowfields in a binary file (DX-FFBIN), merged with their bundles; the last partial column and row they lost (N-133)",
+      "verdict": "kept",
+      "text": "**Static flowfields in a binary file (DX-FFBIN), and the last partial column and row they lost (N-133).** Asked by the owner on 2026-11-11 after reading the Buenos Aires demo's `ff_peaton0.json`: the barrio editor exports binary flowfields, WeedJS reads them with nothing to convert, JSON still loads, and the compression is ours (gzip that the browser opens), not the server's.\n\n- **The format, WEFF version 1:** a 24-byte little-endian header, never compressed (\"WEFF\", version, compression 0 none or 1 gzip, a reserved u16, width and height in cells as u32, cell size as f64), then the cells as NavGrid holds them, x and y as Int8 per cell, row by row. The loader reads the format from the first bytes; a raw file is a view of the fetched bytes and a gzipped one inflates through `DecompressionStream` into the Int8Array itself. `src/core/staticFlowfieldFile.js`; `NavGrid.loadStaticFlowfields` (the old `loadStaticFlowfieldsFromJSON` is a deprecated alias); the guide's \"Static flowfields\" has the table.\n- **Equal cells:** the editor's export of the demo barrio and `scripts/flowfieldToBinary.mjs` write the same bytes, and all 10 fields decode to exactly the JSON loader's cells (all 122 400 cell bytes each). Conurbano's 30 fields too (0 differ).\n- **Sizes:** the demo's barrio 3 709 849 → 116 092 bytes (3.1 %); Conurbano's barrio 19.97 → 0.76 MB, Carabobo 58.65 → 1.90 MB, Parque Chas 84.99 → 3.39 MB.\n- **Main-thread time** to turn the fetched bytes into cells, the demo barrio's 10 fields, headless Chromium, three fresh pages of seven rounds: JSON (decode, parse, quantize) 17.9 to 20.9 ms the first time, median 13.5 to 15.8; binary gunzipped one by one 8 to 10 ms; all at once 5.0 to 6.1 ms the first time, median 4.9 to 7.3. Node's web streams are slow and not representative (binary 52 ms the first time there).\n- **All at once:** the loader awaited each fetch before the next; now the fetches go out together and the fields keep the order of the URLs (a test holds the answers and releases them in reverse; it fails on the old loader).\n- **N-133:** the JSON loader clipped to `Math.floor(world / cell)`; `Math.ceil` keeps every cell the world touches. Conurbano had lost a column and a row in its barrio (958 x 322 of 959 x 323), a column in Carabobo, a row in Parque Chas. The demo's barrio, 408 x 150 whole cells, was not touched.\n- **Checked in the demo** (headless Chromium, `/src`): the ten `.bin` files requested, each field 408 x 150, no errors, 390 of 400 walkers moved in 8 s.\n- **Not measured:** STEP_MS. Nothing per frame changed (the sampler, `requestVectorFromStaticFlowfield`, is the same code), so no scene pair, and no bundle-vs-src sitting for this merge: the bundles were rebuilt and passed their smokes and the node suite.",
+      "commits": [
+        "95b9f4c1",
+        "8d71beac",
+        "cb2eeb7d",
+        "2522d5d0",
+        "26d88616",
+        "62c0e1e0",
+        "06064018"
+      ]
+    },
+    {
+      "id": "R-0860",
+      "date": "2026-11-11",
+      "time": "01:27",
+      "timeFrom": "recorded",
+      "title": "DX-VOLLIGHTS planned (lamps cast a volume's shadow, basic and raycasted lighting) and N-134 filed (raycasted lighting hides every sprite shadow)",
+      "verdict": "note",
+      "text": "**DX-VOLLIGHTS planned and N-134 filed: lamps do not see a volume in either lighting mode, and raycasted lighting hides every sprite shadow.** Nothing timed. Read from the code at 99e39b8b.\n\nThe owner asked whether Sun Street's raycasted lamps interact with its volumes. They do not:\n- `VolumeShadowCaster`'s rows sit in the `volumeShadows` MESH layer, which only the sun moves.\n- Raycasted lighting stops a lamp with pre-render's 2D sweep over `LightOccluder` shapes.\n- Basic lighting stops it only with `ShadowCaster` stamps.\n\nSun Street puts a `LightOccluder` on every house and car. In its oblique view, that wedge darkens the wall that faces the lamp and runs to the reach whatever the object's height.\n\nThe owner then asked for a plan that pins down the API, the developer experience and the picture. It is `DX_VOLLIGHTS_DESIGN.md`, which works out DX-VOLUME's phase 3:\n- **The shadow:** `p + (p − l) · h / (H − h)`, with `H` the bulb's `sourceHeight`. It runs to the reach where the object is taller than the bulb, fades with the lamp's falloff, and never falls on the object's own picture.\n- **The cases:** each one with Sun Street's sizes. A car 100 px from a 40 px bulb throws 48 and 208 px (body and cabin); under a 150 px bulb, 9 and 22 px. A house 100 px from a 150 px bulb throws 226 px.\n- **The API:** `castsLights`, as decided for DX-VOLUME, and the existing shadow-casting lights. A light skips its own entity's volume and any footprint it stands in. A class with both `LightOccluder` and a volume that casts lights warns at load.\n- **Two ways to draw it:**\n  - Basic lighting: into `shadowRT`, one draw per light, MAX within a light.\n  - Raycasted lighting: a mask of four lights per pass that cuts each fan, with the volumes' own pictures cleared, because `visPolyRT` multiplies over the whole frame.\n- **Phases 0 to 4** and **eight decisions**, recommended: basic lighting first; Sun Street on basic lighting with volumes, `R` comparing.\n\nN-134 came out of that reading. `initVisibilityPolygonSystem` (pixiWorker.js) runs after `createCastedShadowsSystem` and hides `castedShadows`, because the cookies crushed the fans' umbra. The sun's sprite shadows and the lamps' stamps go with it. Conurbano's notes saw it (\"turns off the projected shadows of people and trees\"), and Sun Street runs raycasted by default. Confirmed in the code, not yet seen on screen.\n\nRanked 32 (N-134) and 33 (DX-VOLLIGHTS), after the queue's 31."
+    },
+    {
+      "id": "R-0865",
+      "date": "2026-11-11",
+      "time": "02:26",
+      "timeFrom": "recorded",
+      "title": "E-200 kept: lists two logic frames before each tick; Boids at a fixed load spatial -15.0 % (0/4), Predator NEUTRAL",
+      "verdict": "kept",
+      "text": "**E-200 kept (79065acc, sat as 7d19810e, the same tree): a class that ticks every few frames gets its neighbour lists two logic frames before its ticks. Boids at a fixed load, spatial -15.0 % (0/4).** 2026-11-11, 01:59 to 02:26 (the result files' times), Chrome, headed, source, detailed stats off, AC power, no other bench Chromium. Every sitting ran `runPredatorAbab.mjs --full-rev` from the main folder, so each side served its own revision's src and scenes.\n\n**The change.** Spatial's stagger refreshed every list every `neighborTickInterval` frames (15 in Boids and Predator), whatever its entity's logic interval. Boid ticks every 30, so half its lists were never read. A soldier ticks every 6 and a civilian every 4; they read lists up to 14 frames old.\n\nThe spatial worker now reads logic 0's frame number. Logic publishes it in frameRateData as its frame starts, and `sceneWorkerBootstrap` passes its row as `logicFrameRateIndex`, with each class's `tickInterval` and whether it ticks. A class that ticks every T frames (`logic.staggeredUpdates`, a `tick`) gets its list on the logic frames f with f % P equal to the slot's offset:\n- P is the smallest multiple of T not under the interval.\n- The offset is (tickBucketPhase − 2) mod P: two frames ahead lands before the tick whether logic started this vsync before or after spatial.\n\nThe test is stateless: logic's frame modulo P once per class a frame, and one compare per slot. A first, countdown version missed phases when a row changed spatial worker, because the new owner's countdown was stale. Lights and classes that tick every frame keep the old countdown.\n\n**Tests.** `spatialTypedStagger.test.js` checks lists against logic's tick phases: boids every 30, then a mixed scene (civilians every 16, soldiers every 18, boids every 30, props on the plain 15). It fails on main and passes here. Node 2355 of 2357 in the branch's worktree; the two failures are pixi tests that need node_modules, which that worktree does not have.\n\n**Kernel.** `spatialWorkerMicrobench --types`, a tool commit of its own (eae26c6b), A B A B in Node, 4 pairs, n = 16 500, 3 workers:\n- `boids`: 299.4 → 388.8 frames/s, +30.5 %, 4/4. Lists gathered 936 → 504 a frame, published 981 → 535.\n- `predator` (civilians, soldiers, boids, props): 266.2 → 312.9, +17.1 %, 4/4. Gathered 936 → 850.\n- No typed class: +5.1 %, 2/4. The same checksum and rates as main, so this is the kernel's noise.\n\n**Boids, flocking (the demo as it is), 4 pairs: FAIL (load).** Spatial 8.403 → 7.322 ms (-17.4 %, worse 1/4, cv 12/9 %), physics -8.1 %, VISIBLE_ENTITIES -29.1 % (cv 9/1 %). Fresher lists changed the flock. A list up to 14 frames old still holds boids that have left, and pulls the flock together; a fresh one does not, and the flock spreads. B gathered 1 511 to 2 007 lists a frame against an expected 1 333: the 0.5 to 2 % of boids with no neighbour are searched every frame.\n\n**Boids `?steer=0`, 4 pairs: KEPT (product).** A demo knob, its own commit before the change (ecaa2051): every neighbour is read and weighed, and their pull is scaled by 1e-9, so the flock's path does not depend on a list's age. Spatial 7.186 → 5.828 ms, -15.0 %, worse 0/4, cv 10/10 %. Physics -1.9 % (1/4). VISIBLE_ENTITIES +0.2 %, ENTITIES_PROCESSED +0.1 %.\n\n**The session's A/A, Boids `?steer=0`, ecaa2051 against itself, 4 pairs: NEUTRAL.** Spatial +0.5 % (worse 2/4, cv 3/5 %), physics -1.1 %. The detection limit is about 3 to 5 %.\n\n**Predator's gate, 4 pairs: NEUTRAL.**\n- Spatial 4.905 → 4.511 ms (-4.8 %, worse 0/4; -6.4 % against the others, 4/4).\n- Logic +1.1 %, pre-render +1.6 %, presented 60.0 both.\n- Physics +10.2 % (worse 3/4, cv 15/4 %, not blocking) is load. B moved 27 % more bodies a frame (6 664 against 5 244 on average): fresher lists make the AI react. Per thousand moved bodies, B is 17 % cheaper (0.873 against 1.057 ms).\n- Load keys within 0.5 %.\n\n**The look, judged by the owner on 2026-11-11.** Side by side, 20 s after load with the whole world in view, main's flock draws thin streams and the branch's gathers into thick clouds: a list read when it is 0 to 14 frames old against one read at 2. Logic's four workers were on the same frame (frameRateData: 269, 592, 951, 1440 on all four), so the phase is as designed. The owner: the branch's looks better. Spreading the lists' ages like main's (an offset per slot) would have kept main's look with the same saving; not done.",
+      "commits": [
+        "eae26c6b",
+        "ecaa2051",
+        "79065acc"
+      ]
+    },
+    {
+      "id": "R-0855",
+      "date": "2026-11-10",
+      "time": "23:03",
+      "timeFrom": "recorded",
+      "title": "N-79 fixed: a layer drawn in one pass takes its blendMode; one demo's beam retuned",
+      "verdict": "kept-hygiene",
+      "text": "**N-79 fixed (DX-GUARDS F1, approved by the owner on 2026-11-10): kept as hygiene.** Nothing timed: the change is in the layers' init (which blend a display object takes), not in a frame.\n\n- `0d490b4b`: a batch, a MESH fill or a world-rect mesh that is the layer's only pass takes `blendMode`, unless the config sets `shader.containerBlend` (Layer's worker metadata carries `containerBlendSet`). A MESH look's mesh composes with `blendMode`, like a look layer's display sprite; before, it did only when alpha or alphaBySun sent it through a sprite. `buildLayerRefsMap` picks the same blend. `tests/node/layerBlendSinglePass.test.js`, through the Pixi worker's real `initializeCustomLayers`: fails before ('normal' for 'add'), and the layers panel's select still changes the blend live.\n- `852f5850`: the guide's table of which key each kind of layer reads; `NEXT_RELEASE.md` holds the change in behaviour for the next notes.\n- The demos: four layers change, the `fx` layers of destructibleTerrainScene, mamushkaDigScene and planetPhysicsScene and sunStreetScene's `nightGlows`. landingScene's two ADD layers are GPU particle layers, which already took `blendMode`. Captured before and after with the effects driven by keys and the mouse: Destructible Terrain's beam summed to a white bar and was retuned to a cyan beam with a white core (`0aae7477`); Mamushka's beam and jet sparks, and Sun Street's lit windows and lamps, look right additive; Planet Physics' `fx` layer draws nothing.",
+      "commits": [
+        "0d490b4b",
+        "852f5850",
+        "0aae7477"
+      ]
+    },
+    {
+      "id": "R-0856",
+      "date": "2026-11-10",
+      "time": "23:03",
+      "timeFrom": "recorded",
+      "title": "N-130 fixed: despawn removes the entity's joints",
+      "verdict": "kept-hygiene",
+      "text": "**N-130 fixed (DX-GUARDS F2, approved by the owner on 2026-11-10): kept as hygiene, the gate to the owner.** `422b6b1b`: `_releaseSlotResources`, which despawn and despawnAll call after `onDespawned`, removes the entity's joints when the head of its joint list is set. An entity with none pays one read.\n\nThe row's \"to check\" holds: before the fix, the index spawned again still had both joints of the despawned entity, and the partner still counted them (`tests/node/despawnJoints.test.js`, which fails before on three of its four tests). `onDespawned` still reads the joints, and one that removes them itself still works (landingScene's ropes, mamushkaDigScene and badPiggiesScene do). The guide never asked games to remove them by hand (the plan said it did); PHYSICS.md now says despawn does (`b7672e2d`).\n\ndespawn is on spawnStormScene's path. Not timed here; the gate for the owner:\n`MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name N-130 --vs 0aae7477 --hyp-rev 422b6b1b --scene /tests/bench/stressScenes/spawnStormScene.js --scene-export SpawnStormScene --owner logic --pairs 4`",
+      "commits": [
+        "422b6b1b",
+        "b7672e2d"
+      ]
+    },
+    {
+      "id": "R-0857",
+      "date": "2026-11-11",
+      "time": "00:19",
+      "timeFrom": "recorded",
+      "title": "DX-GUARDS built: guards at load and in the debug build, two fixes, bundles; N-131 and N-132 found",
+      "verdict": "note",
+      "text": "**DX-GUARDS built on `dx/guards` (from `f7860aa2`), not merged; nothing timed, the gates are the owner's.** The owner's plan of 2026-11-10. The engine now names, once and in one line, mistakes a game made in silence, or fixes them. `DX_GUARDS_DESIGN.md` has the inventory (each \"today\" with the test that shows it) and `docs/guide/COMMON_MISTAKES.md` the game author's side.\n\n- **Fixes (approved):** F1 = N-79 (R-0855), F2 = N-130 (R-0856).\n- **At load, both builds:** C1 unknown config keys with the nearest one (`28bdb729`; a schema from the defaults, held by a test to every `config.<section>.<key>` the source reads; takes DX-CONFIGCHECK's unknown-keys part), C3 tickInterval without staggeredUpdates (`98895c48`, DX-CONFIGCHECK's other part, warned rather than turned on), C4 an empty tick (`eeb623da`), C5 a skipped class says why (`f12d73a9`), C6 an asset's URL and HTTP status (`3fb665bf`), C8 lighting almost black (`a8f966ac`), C9 a world smaller than the canvas (`caaec8d2`), C10 a scene file that imports the engine (`71d4ec25`). C2 existed (DX 1.2).\n- **Run time, debug build only:** `devChecks` with a stub for production and `debug.checks` (`d248ccaa`, `56b2e3d8`), E1 a field that hides an accessor (`a42418d5`), E2 a field first written after onSpawned (`0943bdfd`), E3 body flags after the body exists (`5eb51691`), E4 a hand-set mass replaced (`852264f9`), E5 particles born on the floor (`8891968e`), E6 emit keys that are ignored (`577967e3`), E7 unknown key names (`d35084a5`). The bench page turns them off unless `--dev-checks`.\n- **Build:** the debug bundle's workers dropped every console call (no worker warning or error ever reached the console with the debug bundle); now only log and debug (`334b5e77`). Bundles `1a8ef3b4`: the production bundle holds none of the run-time texts, the debug bundle all (a test reads them).\n\n**Checks.** Each guard has a test with the mistake, run on the code before to see it fail, and one in silence. `demos/tests/demosQuiet.test.js` builds the 37 demo scenes and the 78 stress scene files and runs E1 on a page instance of every class. In Chromium: a probe scene that makes each mistake says each line once from source and from the debug bundle, and only the load-time one from the production bundle; every demo with the checks on (WebGPU ones in a window). Suites at `780294e4`: test:node 2406 pass, test:demos 101, test:node:bundle 279, test:bundle 8 of 8, check:types clean, check:dist fresh.\n\n**Found.** Two dead config keys (Bichos, gpuYSortProbeScene) and three fields hiding engine accessors (Sun Street, volumeStressScene) fixed; Planet Physics' ship fields declared and Procedural Tree's unread '+' key replaced. Left, the owner's call: 23 empty ticks in 17 demos and 26 stress scenes (Predator's House, Barrel and TallLight among them), Predator's `MySoldier._logicFrame` (E2), the landing page's page keys (E7). New: N-131 (`isTrigger` after the body exists: Predator's money never becomes a trigger) and N-132 (a mass set in onSpawned never holds: the landing page's floating crates weigh twice what their comment says).\n\n**The plan against the code.** C2 existed; E6 was misdescribed (spritesheet + animation + frame do resolve; what is ignored is a key without its partner); E3's `enableHitEvents` already reaches the body; the guide never asked games to remove joints by hand; C10's bundle case already worked.\n\n**Gates for the owner.** Hygiene keep for the branch, Predator: `MSYS_NO_PATHCONV=1 node tests/bench/runPredatorAbab.mjs --name DX-GUARDS --vs f7860aa2 --hyp-rev dx/guards --pairs 4`. F2 on spawnStormScene: in R-0856.",
+      "commits": [
+        "28bdb729",
+        "d248ccaa",
+        "334b5e77",
+        "1a8ef3b4"
+      ]
+    },
+    {
+      "id": "R-0861",
+      "date": "2026-11-11",
+      "time": "02:37",
+      "timeFrom": "recorded",
+      "title": "N-131, N-132 and N-135 fixed with DX-GUARDS's other leftovers: empty ticks, Predator's late fields, page keys",
+      "verdict": "kept-hygiene",
+      "text": "**N-131, N-132 and N-135 fixed with the rest DX-GUARDS had left for the owner (the owner, 2026-11-11: \"arreglalos todos\"): kept as hygiene on `dx/guards`, nothing timed, the gate to the owner.**\n\n- **N-131** (`5b860316`): `collider.isTrigger` changed on a live entity makes its body again. Marking LIFECYCLE was not enough: `syncBodySlot` makes an existing body again only for a new generation, so `box2dBodySync.remakeBody` gives a live slot one (and marks LIFECYCLE before the entity is live). In Chromium, with Box2D: a ball dropped on a platform and turned into a trigger 20 frames after its spawn rested on it at y 480 before, and falls through after. Predator's money, turned into a trigger a second after it drops, now is one.\n- **N-135** (`77c81f77`), found while fixing N-131: `collider.enableHitEvents` had the same hole. Its setter marked LIFECYCLE and PHYSICS.md said the body was made again; it was not, and R-0857's \"enableHitEvents already reaches the body\" was wrong. Same fix.\n- **N-132** (`baa4183d`): a mass set with `rigidBody.mass` in `onSpawned` holds through the spawn's sync from the collider. The slot is marked; a shape setter's sync still replaces the mass and clears the mark; a spawn clears it first. The landing page's Floater and HungCrate weigh 0.45 of their area (they float, as their comments say) and weldBreakScene's dropper weighs HEAVY_MASS.\n- **Page keys** (`a0c61aac`): the key map reads pageup, pagedown, home and end, after the 73 keys before (their indices stay). The landing page's chapters answer them.\n- **Empty ticks** (`72b4b669` Predator's House, Barrel and TallLight; `acbf1c8f` nine demo classes, Floor among them; `db5553fe` nine stress scene classes and their tickIntervals): the logic workers no longer visit those types. Predator's logic and the logic of spawnStorm, stationarySpatial*, rayStress*, rayVsBox2d*, contactDrain*, computeStress, queryChurn, renderQueueStress and compoundFixtureSpatial do less: their numbers move against sittings before these commits.\n- **Predator's fields** (E2): `MySoldier._logicFrame` (`bb98e09d`) and its FSM's line-of-sight cache, `_losCacheTarget`, `_losCacheClear` and `_losCacheUntilFrame` (`c0acf4ac`), declared in the class. The audit reads one live soldier a second, so it named the cache fields only once `_logicFrame` was declared.\n- The demos test keeps no warning now (`7430c78f`); docs (`c06b17d8`, `7a0d2226`).\n\n- Bundles `d438e90f`: check:dist fresh, test:node:bundle 279 of 279 on each of the 8, test:bundle 8 of 8; the production bundle still holds none of the run-time texts.\n\n**Checks.** Each engine fix has a test that fails without it. Suites at `7a0d2226`: test:node 2410 of 2410, test:demos 101 of 101. Every demo again from source with the checks on, 8 to 9 s each, the 9 WebGPU ones in a window, and Predator once more for 30 s: no guard warns. The pool-full warnings the engine gave before are left: Blastforge's Prop pool, ConstraintBox's joint pool and Predator's Flash pool.\n\n**Gate for the owner.** The branch's Predator gate in R-0857 takes `src/` from each revision and the scene from the folder (no `--full-rev`), so both sides run one scene and it reads the engine alone.",
+      "commits": [
+        "5b860316",
+        "77c81f77",
+        "baa4183d",
+        "a0c61aac",
+        "72b4b669",
+        "acbf1c8f",
+        "db5553fe",
+        "bb98e09d",
+        "c0acf4ac",
+        "d438e90f"
+      ]
+    },
+    {
+      "id": "R-0862",
+      "date": "2026-11-11",
+      "time": "04:03",
+      "timeFrom": "recorded",
+      "title": "DX-GUARDS merged with E-200: kept as hygiene (the gate's pre-render +3.5 % is noise, a trace pair), the bundle equals its sources",
+      "verdict": "kept-hygiene",
+      "text": "**DX-GUARDS merged into main with E-200 (`9de3fa2d`, on `5633b882`), bundles `d0a6ce76`: kept as hygiene, since the gate's pre-render +3.5 % is noise (a trace pair gives the same time per frame); the prod bundle equals its sources.** 2026-11-11, at the owner's word (\"mergealo vos\"). The two merges share one bundle build and one set of sittings, agreed with the E-200 session. Times from the sitting logs and the result files. Chrome, headed, detailed stats off, on AC power. Before each sitting: no other bench, no node test, and the owner's Chrome and Code each under 0.5 core over 5 s.\n\n**Build.** dx/guards merged with conflicts only in `dist/`, which was rebuilt; the register merged by key (860 records, no id twice). `check:dist` fresh. test:node 2427 of 2427 once the bundles were built; before that, two tests that read the debug bundle in `dist/` failed on main's old one. test:demos 101 of 101. test:node:bundle 279 of 279 on each of the 8 bundles; embed and browser smokes OK on all 8. The production bundle holds none of the run-time guards' texts, the debug bundle all.\n\n**The DX-GUARDS gate, Predator, `--vs 5633b882 --hyp-rev 9de3fa2d` (src from each, the scene from the folder), 8 pairs, 02:54 to 03:00 and 03:38 to 03:45: REGRESSION as printed, on pre-render alone.**\n- preRender 3.430 → 3.450 ms: paired +3.5 % (the median of the pairs; their mean +2.5 %, standard error 1.3 %), worse 6/8, cv 8/7 %.\n- logic -1.3 % (2/8), spatial -0.1 % (4/8), physics -5.8 % (2/8, cv 12/14 %), presented 60.0 both. Load keys within 0.5 %.\n- The first 4 pairs alone also read preRender +3.5 % (3/4) and spatial +2.3 % (3/4).\n- Pre-render's per-frame code is the same on both sides. The worker imports `rigidBody.js`, `collider.js` and `box2dBodySync.js`, which changed, but only to read their columns and `poseRotationLive`, which did not. What differs in the scene is behaviour: Predator's money is a trigger on B (N-131), and B moved 6.4 % fewer bodies (6 285 against 6 717 a frame on average), so physics is cheaper. Pre-render's paired difference does not follow the moved bodies (fit over the pairs: +2.5 % at equal moved bodies).\n\n**The session's A/A, Predator, 5633b882 against itself in two worktrees, 4 pairs, 03:30 to 03:38: NEUTRAL.** preRender -0.1 % (2/4, cv 3/6 %), spatial +1.9 % (4/4), logic -0.8 %, physics +1.4 %. Pre-render's pairs ran from -4.3 % to +9.2 %. The detection limit is about 3 % on the mean of 8 pairs, more for one pair.\n\n**On pre-render's owner scene, painterMove (PainterMoveReinsertScene, `--owner preRender`), 5633b882 against 9de3fa2d, 8 pairs, 03:47 to 03:52 and 03:53 to 03:58: REGRESSION as printed, the same reading.**\n- preRender 16.551 → 16.600 ms: paired +3.6 % (median; mean +2.8 %), worse 6/8, cv 4/4 %. Logic +0.9 % (4/8), 300 000 entities on both.\n- The pairs run from -7.7 % to +10.3 %, and the side means differ by 0.3 %. A's runs split into fast ones (15.1 to 15.7 ms, three of eight) and the rest (16.5 to 16.9). B had one fast run. Among the rest, B averages 16.80 ms against A's 16.67 (+0.8 %, one B run of 17.98 among them).\n- Pre-render is the bottleneck here (about 100 % busy). Its time is in engine.wasm: `collect_sprites`, `reinsert_simd_inplace`, `pack_sprites_indexed_scatter`, `persist_frame`. The merge changes no WASM and none of these functions.\n\n**The trace pair that decides it: painterMove, `--trace-cpu`, A B A B from the two sittings' worktrees, 04:00 to 04:03.** The pre-render thread's time per frame:\n\n| | A-0 | A-1 | B-0 | B-1 | B/A |\n|---|---|---|---|---|---|\n| the thread, busy | 21.395 | 20.340 | 20.597 | 21.001 | -0.3 % |\n| collect_sprites | 5.753 | 5.696 | 5.725 | 5.643 | -0.7 % |\n| reinsert_simd_inplace | 5.592 | 4.975 | 5.079 | 5.655 | +1.6 % |\n| pack_sprites_indexed_scatter | 4.716 | 4.433 | 4.467 | 4.510 | -1.9 % |\n| persist_frame | 2.472 | 2.464 | 2.500 | 2.411 | -0.5 % |\n| painterSameSet | 0.743 | 0.712 | 0.745 | 0.748 | +2.6 % |\n| fillQueueIndices | 0.626 | 0.618 | 0.627 | 0.613 | -0.4 % |\n\nEvery hot function is within 4 %, and two traces of one side differ by up to 12 %. STEP_MS under the profiler: A 21.98 and 20.16 ms, B 20.57 and 21.03. So the merge does not cost pre-render: the printed REGRESSION is the pairs' spread, in two scenes. The branch stays as hygiene. spawnStormScene for F2 (R-0856) was not run: one typed-array read per despawn.\n\n**The prod bundle against its sources, one build (`--vs d0a6ce76 --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`):**\n- Predator, 8 pairs, 03:00 to 03:11: NEUTRAL. Logic 3.341 → 3.126 ms (-5.8 %, 1/8), spatial -0.8 % (3/8), physics +3.5 % (5/8, cv 10/7 %, not blocking), preRender -1.5 % (2/8), 60.0 fps, load keys within 0.4 %.\n- painterMove, 4 pairs, 03:11 to 03:17: NEUTRAL. Pre-render 16.652 → 16.792 ms (+0.7 %, 3/4, cv 2/1 %), logic -0.7 %, 300 000 entities on both.\n- Boids, 8 pairs, 03:17 to 03:29: NEUTRAL. Spatial 6.043 → 6.453 ms (+2.2 %, 5/8, cv 11/6 %), physics +1.7 % (5/8), visible entities +2.0 %.\n\nSo the bundle equals its sources, and main goes out with both merges.",
+      "commits": [
+        "9de3fa2d",
+        "d0a6ce76"
+      ]
+    },
+    {
+      "id": "R-0864",
+      "date": "2026-11-11",
+      "time": "04:23",
+      "timeFrom": "recorded",
+      "title": "E-193 step 1 dropped: the keyed pack read in order costs the same in Pixi's worker; Predator crowd 1.5 renderer +2.6 %",
+      "verdict": "dropped",
+      "text": "**E-193 step 1 dropped: the keyed pack read in the queue's own order (an inverse in C) costs the same in Pixi's worker, and Predator crowd 1.5's renderer reads +2.6 %.** 2026-11-11, from 04:17 (the sitting's first result file) to 04:23 (the second trace). Chrome, headed, source, detailed stats off, AC power. Nothing else ran on the machine: b3's sittings had ended.\n\n**What was tried.** `pack_sprites_keyed_scatter` (b442ba45) is `pack_sprites_keyed` through W9b's inverse: `inv[queue row] = draw slot`, then the queue read in order, each drawn row's pose, slot pair and shadow terms written at its draw slot. The updates list in queue order; keys are unique a row. A repeated or out-of-range row declines it and the gather packs the frame. Pixi got an inverse for the keyed pack alone (`pixiKeyInverse`). `gpuPackKeyedScatter.test.js` checks the same frame as the gather (random and near order, with and without shadow terms, a repeated row).\n\n**Kernels** (ef08b5d4, kept; Node, n = 14 000 rows, entities 42 600, run while b3 built bundles, so these are a screen):\n- `gpuPackKeyedMicrobench`, warm, one thread: keyed 0.085 ms, keyedScatter 0.093 ms.\n- `gpuPackKeyedCrossCoreMicrobench`, every queue column rewritten before each pack, three reps:\n  - on the pack's own thread: gather 0.08 to 0.10 ms, scatter 0.10 to 0.12;\n  - on a worker thread: gather 0.12 to 0.23 ms, scatter 0.12 to 0.23.\n- Another core's writes cost +50 to +150 %, not ten times, and reading in order does not take that cost away.\n\n**Predator `?crowd=1.5`, 4 pairs** (`--vs ef08b5d4 --hyp-rev b442ba45 --full-rev --owner renderer`): NEUTRAL by the runner, a loss by the rule.\n- Renderer 3.290 → 3.389 ms (+2.6 %, worse 3/4, cv 3/3 %; +4.1 % against the others, lower 0/4).\n- Pre-render -2.5 % (2/4), logic +2.4 %, spatial -2.1 %, physics -0.6 %.\n- Load keys within 0.7 %.\n\n**One CPU trace a side** (8 s warm-up, a 6 s window, the same tree as each side):\n- A: `pack_sprites_keyed` 94 ms/s, 31 % of Pixi's 300 ms/s busy; `updateBuffer` 20 ms/s.\n- B: `pack_sprites_keyed_scatter` 102 ms/s, 32 % of 316.\n- At crowd 1.5 (23 500 rows) the pack takes about 1.5 ms a frame in the worker against about 0.15 ms for its kernel at that size. The read order is not why.\n\n**Reverted** in 3167b9ee. What is left of E-193:\n- Whether that time is the Pixi thread's CPU at all. A sampled profile counts a preempted thread's stack, as it counts Atomics.wait; check the thread's CPU time on Windows.\n- Then the pose and slot streams written by pre-render, or E-201 (poses read by key on the GPU, no gather).",
+      "commits": [
+        "ef08b5d4",
+        "b442ba45",
+        "3167b9ee"
+      ]
+    },
+    {
+      "id": "R-0863",
+      "date": "2026-11-11",
+      "time": "04:17",
+      "timeFrom": "recorded",
+      "title": "N-128 fixed (fixedFps by deadline) and N-129's pins fixed; its lost impacts open",
+      "verdict": "kept-hygiene",
+      "text": "**N-128 fixed and N-129's first half fixed, on `fix/n128-n129`.** Nothing timed: bug fixes, each with a test that fails before it.\n\n- **N-128 (01842774).** fixedFps scheduled `setInterval(loop, 1000 / fps)`, and timers take whole milliseconds (WebIDL `long`). 60 asked for 16 ms and ran at 62.5 frames a second, with dt fixed at 1/60: the simulation ran about 4 % fast.\n  - A worker's `scheduleNextFrame` and the physics host's loop now set a timer to a deadline one period after the last frame's (`src/util/fixedRate.js` `nextFixedDeadline`; the classic host script has its own copy).\n  - A timer that fires late is caught up. The first frame, a resume, or a loop more than a frame behind start one period from now, with no burst.\n  - Only one frame is pending at a time, as with the interval. `setPresenting` may ask twice.\n  - `fixedRate.test.js`: 600 frames under fake timers that take whole ms and fire 0 to 3 ms late run at 60 a second. It fails before the change (setInterval).\n  - Not counted in a browser: the rounding is the spec's.\n- **N-129, the pins (7ddc9590).** `processImpacts` sent each impact to logic worker `targetId % workers`, while ticks and collision callbacks honour `GameObject.forceProcessOnLogicWorker`. A pinned entity is now shot on its pin's worker; the rest go by the modulo. `impactPins.test.js` runs on the real logic worker and fails before the change.\n- **N-129's other half stays open.** The particle worker writes each frame's impacts over the last, and when logic misses a frame those impacts are lost. They need a ring in `wasm/bulletTick.c`, which writes them.\n\nNode 2421 of 2423 in the branch's worktree; the two failures are pixi tests that need node_modules.",
+      "commits": [
+        "01842774",
+        "7ddc9590"
+      ]
+    },
+    {
+      "id": "R-0866",
+      "date": "2026-11-11",
+      "time": "04:54",
+      "timeFrom": "recorded",
+      "title": "The bundles of ff0ff582 (E-193's kernels, N-128, N-129's pins): tested, and the prod bundle equals its sources",
+      "verdict": "passed",
+      "text": "**The bundles of ff0ff582 (E-193's kernels, N-128 and N-129's pins merged): tested, and the prod bundle equals its sources.** dist a8158d8d, built from ff0ff582.\n\n**On main:**\n- Node 2432 of 2432, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, nothing else running:\n\n- **Predator, 4 pairs, 04:34 to 04:38: NEUTRAL.**\n  - logic 3.142 → 2.965 ms (-5.6 %, worse 0/4)\n  - spatial -2.0 %, physics -2.1 %\n  - pre-render 3.311 → 3.320 (+2.0 %, worse 2/4, cv 5/6 %)\n  - load within 0.3 %\n- **painterMove, 4 pairs, 04:39 to 04:43: NEUTRAL.** Pre-render, its owner: 16.509 → 16.509 ms (-0.3 %, worse 2/4), logic -1.5 %. 300 000 entities on both.\n- **Boids, 8 pairs, 04:44 to 04:53: NEUTRAL.** Spatial 5.954 → 5.960 ms (+0.4 %, worse 5/8, cv 2/4 %), physics -0.1 %, VISIBLE_ENTITIES -1.4 %.\n\nPredator's pre-render +2.0 % is the bundle-against-source noise Predator shows (N-105: the same code read -3 to +10 %). Pre-render's owner scene reads it equal. Main pushed.",
+      "commits": [
+        "a8158d8d"
+      ]
+    },
+    {
+      "id": "R-0867",
+      "date": "2026-11-11",
+      "time": "04:55",
+      "timeFrom": "recorded",
+      "title": "E-193 step 0: the keyed pack's time is Pixi's CPU (284 of 317 ms/s), and it pays for bytes (about 28 000 lines a frame), not their order",
+      "verdict": "answered",
+      "text": "**E-193 step 0 answered: Pixi's keyed pack time is the thread's own CPU, and what it pays for is bytes, not their order.** 2026-11-11, 04:55 (the trace file's time). Predator `?crowd=1.5` on main (58c61264), headed, source, detailed stats off, a timeline trace (`--trace`): an 8 s warm-up, then a 5 s window.\n\n**CPU against wall.** For each worker thread, the top-level tasks' `tdur` (the thread's CPU) against their `dur` (wall), over the last 5 s:\n- Pixi's thread (2 388 tasks): 284 of 317 ms/s.\n- Every other worker: 90 to 94 %. For example, 545 of 587 ms/s, 414 of 437, 338 of 366.\n\nSo a sampled CPU profile's busy time here is CPU, and the keyed pack's 94 ms/s (R-0864) is CPU too.\n\n**Why then ten times its kernel.** The machine is a Ryzen 7 4800H: 8 cores in two complexes of 4, each with 4 MB of L3. Per frame, at 23 500 rows, `pack_sprites_keyed`:\n- reads about 21 bytes a row that pre-render has just written: x, y, rotC, rotS, key, type, about 0.5 MB;\n- writes 36: the pose 16, the slot pair 8 and E-191's shadow terms 12, about 0.85 MB, over lines that other work has evicted since the frame before.\n\nThat is about 28 000 lines from outside Pixi's caches. At about 50 ns each, that is about 1.4 ms, whatever the order: the scatter (R-0864) changed the order and not the time. The kernel repeats one frame with everything in its own cache.\n\n**What would pay is fewer bytes:**\n- the slot pair without its depth (E-186);\n- the shadow terms only for the rows that cast, and none on a frame whose sun pass does not run;\n- a pose only for a row that moved.\n\nPre-render cannot write these streams in Predator: Pixi sorts the painter's order there (`sortSprites: 'pixi'`, `packGpuSprites: 'pixi'`)."
+    },
+    {
+      "id": "R-0868",
+      "date": "2026-11-11",
+      "time": "14:02",
+      "timeFrom": "recorded",
+      "title": "E-211 kept: the sun pass draws pre-render's keyed rows, Pixi's keyed pack writes no shadow terms for it; Predator crowd 1.5 renderer -4.5 % (1/4)",
+      "verdict": "kept",
+      "text": "**E-211 kept: the sun pass draws pre-render's keyed rows, and Pixi's keyed pack writes the shadow terms only for a sun pass that will draw its instances. Predator `?crowd=1.5` renderer -4.5 % (worse 1/4).** 2026-11-11, from 13:57 (the sitting's first result file) to 14:02. Chrome, headed, source, detailed stats off, AC power. The owner's Chrome used about 0.4 of a core throughout. No other session was benching.\n\n**Why.** R-0867 found that the keyed pack pays for bytes. E-191's step 1 had the sun pass draw the entity batch's keyed instances. So every frame the pack:\n- gathered each sprite's shadowH, offX and offY in the painter's order;\n- wrote 12 bytes a slot, which were then copied and uploaded.\n\nPre-render meanwhile packs keyed sun rows every frame anyway (E-191 step 2, E-192), because the stamps are cut from them: 28 bytes a caster, read in the queue's order. In Predator Pixi left those rows unused.\n\n**The change** (`f508c2ed`; sat as 9d507cc6, the same tree):\n- The sun pass draws pre-render's keyed rows when the frame has them.\n- It draws the instances only on frames without them.\n- The pack writes their shadow terms only when the next frame's sun pass will draw the instances: no keyed rows, the pass not skipped by `shadowUpdateInterval`, the layer shown.\n\n**Probe first** (f3b22400: the instances never drawn).\n- 4 pairs, 13:28 to 13:35: two pairs ran every worker 10 to 15 % high on the B side (drift). In the other two the renderer read -1.7 and -5.6 % while the other workers rose.\n- One CPU trace a side, twice (8 s warm-up, 6 s):\n  - `pack_sprites_keyed` 79 and 119 → 59 and 57 ms/s;\n  - `updateBuffer` 20 and 25 → 27 and 26 ms/s (the rows go up at 28 bytes a caster).\n\n**The change, Predator `?crowd=1.5`, 4 pairs** (`--vs e75004cb --hyp-rev 9d507cc6 --full-rev --owner renderer`): **KEPT (product).**\n- Renderer 3.390 → 3.275 ms (-4.5 %, worse 1/4, cv 5/2 %; -3.9 % against the others, lower 4/4). Pairs: -11.4, -3.5, -5.5, +0.8 %; in pair 1 every worker ran lower on B.\n- Logic -3.7 %, spatial +0.1 %, physics -1.0 %, pre-render -0.3 %.\n- Load keys within 0.2 %.\n\n**Checks.**\n- The sun shadows look the same on both sides (`?hour=10&zoom=1`, the post-warm-up frame).\n- `keyedSunStream.test.js`: the stream is on only before a pass that will draw the instances, including with `shadowUpdateInterval` 2 and the layer hidden.\n- `instancedSpriteKeyed.test.js`: the keyed batch's stream turned off writes nothing; turned back on, it writes the slots' terms.\n\nLeft in E-193: the slot pair's depth (E-186), and a pose only for a row that moved.",
+      "commits": [
+        "f508c2ed"
+      ]
+    },
+    {
+      "id": "R-0869",
+      "date": "2026-11-11",
+      "time": "14:27",
+      "timeFrom": "recorded",
+      "title": "N-113 fixed: the visible particle list published in three copies; 24 048 of 24 055 collects torn before, 0 after; particleIntegrateStressScene NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**N-113 fixed (`e9d9aa08`): the visible particle list is published in three copies, so pre-render never reads one the particle worker is writing. Hygiene keep.** 2026-11-11, from 14:22 (the sitting's first result file) to 14:27. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug.** The list kernel rewrote `visibleParticlesData` in the particle memory every frame, while pre-render's `collectVisibleParticles` walked it on its own loop. A read that overlapped a write mixed the two lists: an index twice, another missing. A missing particle is not drawn that frame, and an additive one drawn twice flashes.\n\n**The fix.** N-112's published list (`publishedList.js`), as a region of the particle memory:\n- a header and three copies, each with room for the kernel's slot past the count (`bindPublishedList` takes a byte and the extra room);\n- the particle worker gives the kernel the byte of a copy pre-render does not hold, and publishes that copy once the kernel returns;\n- pre-render takes the published copy each frame;\n- the debug panel peeks at its count.\n\n**Correctness.** `visibleListTear.test.js` gains a particle case. A real particle worker in its own thread writes the list as fast as it goes, with the camera alternating between two views. A real pre-render, bound by its own init path, collects it as fast as it goes. Every collect must be one view's list whole.\n- Before (the same test on main's `src`): 24 048 of 24 055 collects torn (374 936 lists written).\n- After: 0 of 486 torn (8 518 lists written, 300 changes of view seen).\n\nThe tests that handed pre-render one list now hand it a published one: `particleSortKey`, `renderOnlyQueueRows`, the lists parity and the wide pool layout.\n\n**Cost.** particleIntegrateStressScene `?maxParticles=200000`, 4 pairs (`--vs b5859a00 --hyp-rev e9d9aa08 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.242 → 3.204 ms (-1.6 %, worse 1/4, cv 1/1 %). Pairs: -3.0, -0.6, -2.5, +2.9 %.\n- Pre-render 6.969 → 6.982 ms (+0.7 %, worse 3/4, cv 2/3 %). Pairs: -7.6, +1.3, +0.4, +1.0 %.\n- 198 000 particles live on both sides; render queue within 0.1 %.\n\nNo primary is 3 % worse: a hygiene keep.\n\n**Found on the way: N-136.** Pixi's particle light field reads the active list the same way.",
+      "commits": [
+        "e9d9aa08"
+      ]
+    },
+    {
+      "id": "R-0870",
+      "date": "2026-11-11",
+      "time": "14:41",
+      "timeFrom": "recorded",
+      "title": "N-136 fixed: the active particle list published in three copies; 1 420 of 3 324 takes torn before, 0 after; particleIntegrateStressScene NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**N-136 fixed (`9edb59f6`): the active particle list is published in three copies, so Pixi's particle light field never reads one the particle worker is writing. Hygiene keep.** 2026-11-11, from 14:36 (the sitting's first result file) to 14:41. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug** (found fixing N-113). The list kernel rewrote `activeParticlesData` every frame. Pixi's `_renderParticleLightingField` walked it on its own loop to splat the lit particles. A read that overlapped a write dropped a particle's light, or drew it twice, for one frame.\n\n**The fix.** N-113's published list, for the active list:\n- the particle worker gives the kernel the byte of a copy Pixi does not hold, and points the integrate at that copy's indices (`binding.indicesByte`);\n- it publishes the copy once the kernel returns;\n- Pixi takes the published copy;\n- the debug panel peeks at its count;\n- `layout.indicesByte` is copy 0's;\n- the scene's plain-SAB branch goes: with particles the particle memory always exists.\n\n**Correctness.** `activeParticleListTear.test.js`: a real particle worker writes the active list as fast as it goes, the live particles alternating between the even slots and the odd ones. A real Pixi worker takes it as the light field does.\n- With the old read (the same test on main's `src`, reading `activeParticlesData`): 1 420 of 3 324 takes torn.\n- After: 0 of 2 757 (302 lists written, 300 changes seen).\n\n**Cost.** particleIntegrateStressScene `?maxParticles=200000`, 4 pairs (`--vs 171dd61a --hyp-rev 9edb59f6 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.152 → 3.118 ms (-0.5 %, worse 1/4, cv 2/2 %). Pairs: -0.3, -0.6, -5.5, +1.8 %.\n- Pre-render 6.896 → 6.973 ms (+1.0 %, worse 3/4). Pre-render does not read this list.\n- Renderer 2.432 → 2.390 ms (below the floor).\n\nNo primary is 3 % worse: a hygiene keep.",
+      "commits": [
+        "9edb59f6"
+      ]
+    },
+    {
+      "id": "R-0871",
+      "date": "2026-11-11",
+      "time": "14:48",
+      "timeFrom": "recorded",
+      "title": "E-195 dropped: the stamp's float32 candidate test is 7 to 11 % slower than the double kernel in Chrome (f32x4 and scalar, full and keyed rows)",
+      "verdict": "dropped",
+      "text": "**E-195 dropped: in Chrome the shadow stamp's float32 candidate test is slower than the shipped double kernel, in both its forms, on full and keyed rows.** 2026-11-11, 14:44 to 14:48 (the result files' times). Chrome 157, headless, nothing else running.\n\n**Why it was open.** `stamp_light_range` is pre-render's largest function at Predator crowd 1.5 (108 of 380 ms/s, R-0808). Its f32x4 form read +7.3 % in Node (R-0571) and had never been decided in Chrome.\n\n**The tool** (`d6a50344`). `shadowStampKernel.mjs`'s Chrome entry now:\n- times any variant: `wasm`, `js`, and the float32 test module's `wasm-f32` and `wasm-f32x4`;\n- runs on full rows or on E-191 step 2's keyed rows (`keyed`: 7-float caster rows, 11-float stamp rows, the light after the seventh float), which Predator stamps.\n\n**Kernel** (`chromeKernel.mjs --module /tests/bench/shadowStampKernel.mjs`). The Predator fixture: 16 424 casters and 48 lights. Every variant wrote the same 7 877 stamp rows with the same checksum. Nine rounds a run, alternating sides.\n\n| Variant against the shipped kernel | Full rows | Keyed rows |\n|---|---|---|\n| `wasm-f32x4`, 3 runs a form | -8.5, -9.8, -9.9 % (wasm 2 389 / 2 404 / 2 313 ops/s) | -7.3, -9.2, -8.8 % |\n| `wasm-f32` (scalar), 2 runs a form | -11.5, -7.5 % | -9.4, -10.3 % |\n\n**Verdict.** Node's V8 favoured the float32 test, but Chrome's does not, and Chrome decides (HOW_WE_MEASURE). The kernel stays in double, and nothing goes into engine.wasm. With every form slower in the kernel, no scene sitting was needed.",
+      "commits": [
+        "d6a50344"
+      ]
+    },
+    {
+      "id": "R-0872",
+      "date": "2026-11-11",
+      "time": "15:03",
+      "timeFrom": "recorded",
+      "title": "E-186 kept as hygiene: a slot is its statics row alone, the depth no batch read gone; Predator crowd 1.5 renderer -2.3 % (NEUTRAL)",
+      "verdict": "kept-hygiene",
+      "text": "**E-186 kept as hygiene: a keyed or indexed frame's slot is its statics row alone, without the depth no batch read.** 2026-11-11, from 14:59 (the sitting's first result file) to 15:03. Chrome, headed, source, detailed stats off, AC power.\n\n**The premise.** Every InstancedSpriteBatch Pixi makes draws with `depthTest: false`: the entities, their glow, the cookie and caster batches, and the custom layers'. So the depth in the slot pair only reached `gl_Position.z`, inside the clip volume. Every frame:\n- Pixi's keyed pack wrote it (4 of its 24 bytes a sprite), and so did pre-render's indexed pack;\n- it was copied and uploaded.\n\n**The change** (`29a6cf35`):\n- `SLOT_FLOATS` 1 in gpuPack.c, with the depth stores gone (`invDepthDenom` stays in the exports' signatures, unused).\n- `GPU_INDEXED_SLOT_FLOATS` 1.\n- `in float aInstSlot`, with `aInstDepth` a constant 0 (GLSL and WGSL).\n- The slot attributes as `float32`, the keyed caster rows' too (their key at offset 8).\n- The kernels' and batches' tests now check the row alone.\n\n**Kernel**, in Chrome 157 (`chromeKernel.mjs --module /tests/bench/gpuPackKeyedMicrobench.mjs`, 23 500 rows, 42 633 entities, 121 frames, main and the branch alternating, 3 runs each): keyed 0.14 / 0.15 / 0.14 ms → 0.14 / 0.14 / 0.14 ms. With everything in cache the bytes do not show, as E-193 found.\n\n**Predator `?crowd=1.5`, 4 pairs** (`--vs 597b30e6 --hyp-rev 29a6cf35 --full-rev --owner renderer`): NEUTRAL.\n- Renderer 3.310 → 3.237 ms (-2.3 %, worse 1/4, cv 6/6 %; -1.0 % against the others). Pairs: -0.5, -4.2, +6.0, -7.6 %.\n- Pair 3 ran every worker 6 to 10 % high on its B side.\n- Pre-render -0.7 %, logic +1.2 %, spatial -5.4 %, physics -2.2 %.\n\nDead data gone and no primary 3 % worse: a hygiene keep.",
+      "commits": [
+        "29a6cf35"
+      ]
+    },
+    {
+      "id": "R-0873",
+      "date": "2026-11-11",
+      "time": "15:23",
+      "timeFrom": "recorded",
+      "title": "The bundles of 184f27a5 tested and timed against src (Predator and Boids NEUTRAL)",
+      "verdict": "passed",
+      "text": "**The bundles of 184f27a5 (E-211, N-113, N-136 and E-186 merged; E-195 dropped): tested, and the prod bundle equals its sources.** dist `fe072be0`, built from 184f27a5.\n\n**On main:**\n- Node 2438 of 2438, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, nothing else running:\n\n- **Predator, 4 pairs, 15:08 to 15:13: NEUTRAL.**\n  - Logic 3.215 → 2.962 ms (-6.0 %, worse 0/4).\n  - Spatial -0.3 %, physics +4.2 % (worse 2/4, cv 8/10 %), pre-render -1.6 %.\n  - Load within 0.4 %.\n- **Boids, 8 pairs, 15:13 to 15:23: NEUTRAL.**\n  - Spatial 5.849 → 5.864 ms (+0.1 %, worse 5/8, cv 3/3 %).\n  - Physics +0.3 % (worse 4/8).\n  - 40 000 bodies on both sides.\n\nPredator's physics +4.2 % in 2 of 4 pairs is its emergent load (N-105). Boids' physics reads +0.3 %. Main pushed.",
+      "commits": [
+        "fe072be0"
+      ]
+    },
+    {
+      "id": "R-0874",
+      "date": "2026-11-11",
+      "time": "15:36",
+      "timeFrom": "recorded",
+      "title": "E-189 kept: a sprite whose texture alone changed sends its row and texture (8 bytes, not 64); Predator crowd 1.5 renderer -10.7 % (0/4)",
+      "verdict": "kept",
+      "text": "**E-189 kept: a sprite whose texture alone changed sends its row and texture, 8 bytes instead of 64. Predator `?crowd=1.5` renderer -10.7 % (worse 0/4).** 2026-11-11, from 15:33 (the sitting's first result file) to 15:36. Chrome, headed, source, detailed stats off, AC power.\n\n**The premise** (R-0813). Every keyed mark of a steady Predator frame is an animation's step, which changes the texture alone. Each sent a 64-byte update, and to write it the pack gathered the row's eleven statics columns. At crowd 1.5 that is about 1 100 rows a frame.\n\n**The change** (`16fe185c`).\n- **The emit** marks such a sprite with KEY_TEX_ONLY beside KEY_CHANGED. Causes: the clock's step, a wrapped frame, a texture that moved since the emit before.\n- **keyedDirty** carries two bits: 1 (what the setters write: every static), and 2 (the persist path's clock and repairs: the texture alone, an atomic or beside the setters' stores).\n- **A repeating sprite** still sends its row whole, since its tile multiplier follows the frame's size.\n- **The keyed pack** writes a texture-only row as a texture update (its row, its texture's float bits) into a region of its own (`pixiKeyTexUpdates`). Without that region, the row goes up whole as before.\n- **Pixi's statics scatter** draws each texture update as one texel, the second of its row, with the blue channel alone written. The indexed program is untouched.\n- **Every key reader** masks both bits.\n\n**Kernel** (`5aae5fe6`: `gpuPackKeyedMicrobench`'s `marked: 'texture'`). 23 500 rows, 42 633 entities, a twentieth of the rows changed a frame. Chrome 157, main with the tool against the change, 3 runs each:\n- keyed 0.170 / 0.165 / 0.180 → 0.145 / 0.155 / 0.155 ms;\n- 1 336 whole updates a frame → 199 whole and 1 137 texture updates.\n\n**The scatter on WebGL2** (a one-off probe through `chromeKernel.mjs`, not committed). A statics texture of known words takes full and texture updates, then is read back: 0 of 49 152 words wrong, the color mask back to all four channels, no GL error.\n\n**Correctness in Node.** `preRenderEmitWasm.test.js` replays Pixi's texture from the keys, writing a texture-only mark's word alone, and finds every row's statics there. In its animated case, 143 to 234 of a frame's 196 to 287 marks are the texture alone. `gpuPackKeyed`, `instancedSpriteKeyed` and `gpuPackKeyedPixi` cover the pack, the batch and Pixi's path.\n\n**Predator `?crowd=1.5`, 4 pairs** (`--vs 5aae5fe6 --hyp-rev 16fe185c --full-rev --owner renderer`): **KEPT (product).**\n- Renderer 3.315 → 2.969 ms (-10.7 %, worse 0/4, cv 4/3 %; -8.2 % against the others, lower 4/4). Pairs: -12.7, -4.6, -8.8, -16.3 %.\n- Pre-render 4.906 → 4.952 ms (-0.9 %, worse 2/4).\n- Logic -4.0 %, spatial -2.8 %, physics -2.4 %.\n- Load within 0.5 %.\n\n**Not the plan's form.** The plan named a per-key texture-id texture that the indexed program would read. The masked texel write keeps the program as it was and adds no texture fetch.",
+      "commits": [
+        "16fe185c",
+        "5aae5fe6"
+      ]
+    },
+    {
+      "id": "R-0875",
+      "date": "2026-11-11",
+      "time": "15:55",
+      "timeFrom": "recorded",
+      "title": "The bundles of 340061f0 (E-189) tested and timed against src (Predator and Boids NEUTRAL)",
+      "verdict": "passed",
+      "text": "**The bundles of 340061f0 (E-189 merged): tested, and the prod bundle equals its sources.** dist `39110dc0`, built from 340061f0.\n\n**On main:**\n- Node 2440 of 2440, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, nothing else running:\n\n- **Predator, 4 pairs, 15:42 to 15:46: NEUTRAL.**\n  - Logic -8.2 % (worse 0/4), spatial -2.6 %, physics -7.5 % (cv 7/17 %).\n  - Pre-render 3.107 → 3.132 ms (+1.4 %, worse 2/4).\n  - Load within 0.6 %.\n- **Boids, 8 pairs, 15:46 to 15:55: NEUTRAL.**\n  - Spatial 5.853 → 5.913 ms (+0.9 %, worse 5/8, cv 3/3 %).\n  - Physics +0.3 % (worse 6/8).\n  - 40 000 bodies on both sides.\n\nMain pushed.",
+      "commits": [
+        "39110dc0"
+      ]
+    },
+    {
+      "id": "R-0876",
+      "date": "2026-11-11",
+      "title": "N-114 fixed: the template's dev server refuses \\, : and NUL paths and links out of the folder, as the engine's does",
+      "verdict": "kept-hygiene",
+      "text": "**N-114 fixed: the create-weed-game template's dev server refuses what the engine's refuses.** 2026-11-11.\n\n**The bug.** `packages/create-weed-game/template/scripts/dev.mjs` served `path.join(root, decoded path)` when it started with the folder.\n- On Linux and macOS, `/..%5c..%5cpackage.json` was a file name inside the folder, so the server answered 404, and the test's 403 failed there.\n- A link inside the game folder pointing out of it was served.\n\nThe engine's server (`server/staticFiles.js`, `resolveInside`, N-80) refuses both.\n\n**The fix.** `dev.mjs` takes `resolveInside`'s rule, copied because the template ships alone. It answers 403 to:\n- a path holding `\\`, `:` or NUL;\n- a path that leaves the folder once `..` resolves;\n- a path that leaves it through a link (the real path of the nearest existing part).\n\n**The test** (`createWeedGame.test.js`):\n- the dev server now gets `\\`, `:` and NUL paths;\n- a new case puts a link out of the game folder in it (a junction on Windows, a symlink elsewhere) and asks for a file behind it, and for one that is not there. The link alone is removed before the folder.\n\nWith the old server both checks fail on Windows too. With the fix the file passes, 9 of 9.\n\nNo timing: the template's dev server is not the engine's frame. Games get the fix with the next create-weed-game release.",
+      "commits": [
+        "27269ef5"
+      ]
+    },
+    {
+      "id": "R-0877",
+      "date": "2026-11-11",
+      "time": "16:05",
+      "timeFrom": "recorded",
+      "title": "N-129 fixed: bullet impacts reach logic through a ring, a logic worker that misses a particle frame keeps them; bulletStressScene NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**N-129's second half fixed (`54cc6109`): bullet impacts reach the logic workers through a ring, so a logic worker that misses a particle frame keeps its impacts. Hygiene keep.** 2026-11-11, from 16:02 (the sitting's first result file) to 16:05. Chrome, headed, source, detailed stats off, AC power.\n\n**The bug.** The particle worker's bullet tick wrote each frame's impacts over the last ones, in one shared batch, and moved a sequence number. A logic worker took the batch whose number it had not seen. So:\n- one that missed a particle frame (two particle frames between its reads) lost that frame's impacts;\n- one reading while the next batch was written could read a mix of the two.\n\n**The fix.** The ring is in the transport. The bullet tick (JS or bulletTick.wasm) is unchanged.\n- The tick writes the frame's impacts as one batch into a private buffer.\n- The particle worker appends them to a ring in the impact buffer and publishes the count. The ring (`src/util/impactRing.js`) holds eight frames of `maxImpactsPerFrame`, a power of two, after a header.\n- Each logic worker runs every impact published since its own last read (`_pollImpacts`, then `processImpacts(from, to)` over the ring).\n- A logic worker further behind than the ring holds runs the newest the ring still has and warns once.\n\n**Tests** (`impactPins.test.js`, the real logic worker):\n- The pins as before.\n- Two particle frames before one logic frame: all three impacts run, and nothing runs twice.\n- Three times around the ring, polled each frame: every impact once, in order.\n- More than the ring holds between two polls: the newest ring's worth runs, from the oldest it still has, with one warning that counts the impacts lost.\n\n**Cost.** bulletStressScene, 4 pairs (`--vs 6949e097 --hyp-rev 54cc6109 --full-rev --owner particle`): NEUTRAL.\n- Particle 3.230 → 3.196 ms (-0.6 %, worse 1/4, cv 1/1 %).\n- Logic 0.497 → 0.503 ms (below the floor).\n\nN-129 is done.",
+      "commits": [
+        "54cc6109"
+      ]
+    },
+    {
+      "id": "R-0878",
+      "date": "2026-11-11",
+      "title": "N-127 fixed: a worldRect layer's float pictures are made and go up as floats on WebGL, r32float as RED",
+      "verdict": "kept-hygiene",
+      "text": "**N-127 fixed (`7a9b646a`): a worldRect layer's float pictures are made and go up as floats on WebGL, and r32float as RED.** 2026-11-11.\n\n**The bug.** On WebGL a float picture (`r32float`, `rgba32float`) never reached the GPU, for three reasons:\n- `uploadSharedImage` handed `texSubImage2D` the picture's bytes, a `Uint8Array`, with type `FLOAT`;\n- it picked `RED` only for 1-byte texels, so `r32float` went as `RGBA`;\n- `createSharedTextureSource` made the picture from a `Uint8Array` too, so Pixi's first `texImage2D` (FLOAT) was refused the same way and the texture was never allocated.\n\nWebGPU writes bytes and was right. Conurbano avoids the bug with RGBA8 in fixed point.\n\n**The fix.**\n- A float picture's upload passes a `Float32Array` over the same memory, with its offset in floats.\n- A one-channel picture goes as `RED`, `r32float` included.\n- A float picture starts as a `Float32Array`.\n\n**Evidence.** A probe on a real WebGL2 Pixi renderer in Chrome 157 (through `chromeKernel.mjs`, not committed): pictures made as the engine makes them, a rectangle of shared floats uploaded twice, then read back.\n- Before: `INVALID_OPERATION: texImage2D: type FLOAT but ArrayBufferView not Float32Array`, and the same for `texSubImage2D`. The framebuffer over the picture was incomplete (an attachment of zero size), and 36 of the r32float picture's floats and 144 of the rgba32float one's read back wrong.\n- After: both read back exact, with no GL error.\n\n**Tests.** `sharedTextureUploadGl.test.js` holds the call's format, type, view and offset for every format, and the first contents' type. With the old code its two float tests fail and the byte test passes.\n\nNo timing: no scene that is timed draws a float picture on WebGL. The byte path is the same call as before.",
+      "commits": [
+        "7a9b646a"
+      ]
+    },
+    {
+      "id": "R-0879",
+      "date": "2026-11-11",
+      "title": "N-121 fixed: the ABAB runner judges a GPU-bound scene by the frames Pixi draws, the page's rate where Pixi keeps it",
+      "verdict": "kept-hygiene",
+      "text": "**N-121 fixed (`84ad58d6`): the ABAB runner judges a GPU-bound scene by the frames Pixi draws, and the page's rate where Pixi keeps it.** 2026-11-11.\n\n**The bug.** The runner's presented guard read MAIN_FPS, the main thread's rate. In meshUploadStressScene, a GPU-bound scene:\n- the branch drew 22 % more frames (241 to 247 → 300 in 10 s);\n- the page's own frames, waiting on the GPU, fell 12 % (53.6 → 47.2 fps, 4 of 4 pairs);\n- the runner printed REGRESSION.\n\n**The fix.**\n- `predatorMetrics` keeps `DRAWN_FPS`: Pixi's frames over the window.\n- Where Pixi draws under 0.9 of the page's rate on either side (the median over pairs), the guard judges the frames drawn, printed as `drawn`.\n- Elsewhere it judges MAIN_FPS as before. E-82's case stays caught: there Pixi kept up and the page fell.\n- The other count prints on its own line, reported, not judged.\n\n**Tests** (`decideAbab.test.js`):\n- meshUploadStressScene's numbers are no longer a regression;\n- fewer frames drawn in such a scene are one;\n- E-82's numbers, with Pixi at the page's rate, are still one;\n- `DRAWN_FPS` is the frames over the window, and is absent without a window.\n\nThe old runner fails all three new tests; with the fix the file passes, 22 of 22.",
+      "commits": [
+        "84ad58d6"
+      ]
+    },
+    {
+      "id": "R-0880",
+      "date": "2026-11-11",
+      "time": "16:29",
+      "timeFrom": "recorded",
+      "title": "The bundles of 8c3075fc (N-129, N-127, N-121) tested and timed against src (Predator and Boids NEUTRAL)",
+      "verdict": "passed",
+      "text": "**The bundles of 8c3075fc (N-129's ring, N-127, N-121 merged): tested, and the prod bundle equals its sources.** dist `8c6222f3`, built from 8c3075fc.\n\n**On main:**\n- Node 2449 of 2449, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, nothing else running:\n\n- **Predator, 4 pairs, 16:19 to 16:22: NEUTRAL.**\n  - Logic -6.6 % (worse 0/4), spatial -0.4 %, physics +0.4 %, pre-render -2.4 %.\n  - Presented 59.8 → 59.6 fps; drawn 59.7 → 59.5 fps (N-121's line, reported).\n- **Boids, 8 pairs, 16:22 to 16:29: NEUTRAL.**\n  - Spatial 6.121 → 6.183 ms (+0.9 %, worse 6/8, cv 1/1 %).\n  - Physics +0.3 %.\n  - 40 000 bodies on both sides.\n\nMain pushed.",
+      "commits": [
+        "8c6222f3"
+      ]
+    },
+    {
+      "id": "R-0881",
+      "date": "2026-11-11",
+      "time": "16:39",
+      "timeFrom": "recorded",
+      "title": "E-208 kept: list updates through a ring per logic worker; spawnStormScene with two logic workers logic -25.7 % (0/4), logic0's garbage 33 554 → 35 KB/s",
+      "verdict": "kept",
+      "text": "**E-208 kept: logic workers 1..N hand logic0 their list updates through a ring each, not a message a frame. spawnStormScene with two logic workers: logic -25.7 % (worse 0/4), logic0's garbage 33 554 → 35 KB/s.** 2026-11-11, from 16:36 (the sitting's first result file) to 16:39. Chrome, headed, source, detailed stats off, AC power.\n\n**Step 0** (the scene's `?logicWorkers=N`, `3c0b5f5d`: the driver on logic1 when there are more than one, so its spawns and despawns reach logic0 as list updates). `heapSampleWorkers.mjs` on `spawnStormScene ?logicWorkers=2` (storm 1 800 a tick):\n- logic0 allocated 33 554 KB/s sampled: 25 809 in `port.onmessage` (the messages' clones) and 7 705 in `_receiveListUpdates` (an object a record);\n- logic1 allocated 2 157 KB/s, its driver's queries.\n\n**The change** (`33732b3b`).\n- `src/util/listUpdateRing.js` gives each worker other than logic0 a single-writer ring in shared memory: two words a record, the entity (its high bit a despawn) and its type.\n- At the end of its frame the worker writes the frame's updates there and publishes them.\n- logic0 drains every ring at the start of its frame into the same queues, each class from `GameObject.classByType`.\n- A frame the ring has no room for goes by message as before. logic0's passes skip an index alive again or no longer alive, so the two roads' order does not matter.\n- A ring holds a record for every entity (at least 4 096, a power of two): 512 KB a worker at Predator's 42 633.\n\n**After:** logic0 allocates 35 KB/s sampled; no message and no `_receiveListUpdates` among its sites.\n\n**Tests** (`listUpdateRing.test.js`, the real logic worker):\n- as worker 1, a frame's updates go into its ring with no message;\n- logic0 queues them in order, each with its class;\n- nothing is read twice, around the ring three times;\n- a frame with no room goes by message, and the ring keeps the frame before it.\n\n**spawnStormScene `?logicWorkers=2`, 4 pairs** (`--vs 3c0b5f5d --hyp-rev 33732b3b --full-rev --owner logic`): **KEPT (product).**\n- Logic (the worst worker, logic1) 3.160 → 2.321 ms (-25.7 %, worse 0/4, cv 2/2 %). logic1 by pair: -29.7, -26.2, -24.7, -25.2 %. The message's serialization was the writer's cost.\n- logic0 0.94–1.03 → 1.01–1.11 ms (+2 to +15 %, below the floor). It now drains the rings inside its frame; the messages it used to take arrived between frames, where its step did not count them.\n- Physics 2.878 → 2.942 ms (below the floor).\n- BODY_COUNT +4.9 % (cv 10/16 %, the storm's emergent bodies), within the band.",
+      "commits": [
+        "33732b3b",
+        "3c0b5f5d"
+      ]
+    },
+    {
+      "id": "R-0882",
+      "date": "2026-11-11",
+      "time": "16:51",
+      "timeFrom": "recorded",
+      "title": "E-208's Predator gate: NEUTRAL at 8 pairs (4 pairs flagged spatial and pre-render, drift)",
+      "verdict": "passed",
+      "text": "**E-208's Predator gate: NEUTRAL at 8 pairs.** 2026-11-11, 16:43 to 16:51. Main before (`228f0106`) against main after (`8c04d8da`), Predator at its defaults (two logic workers), owner logic. Chrome, headed, source, detailed stats off, AC power.\n\n**At 4 pairs, the runner printed REGRESSION**, though not for the owner:\n- logic +1.2 % (worse 2/4);\n- spatial +3.1 % and pre-render +3.5 % (3/4 each). E-208 reaches neither.\n- Pair 0 ran every worker 5 to 17 % high on its B side.\n\n**At 8 pairs** (`--append`, the same stamp): **NEUTRAL.**\n- Logic 3.251 → 3.204 ms (-1.0 %, worse 2/8).\n- Spatial -0.0 % (4/8), physics -2.0 % (cv 13/8 %), pre-render -1.2 % (3/8).\n- Load within 0.2 %.\n\nThe first sitting's flags were the drift of its early pairs.",
+      "commits": [
+        "8c04d8da"
+      ]
+    },
+    {
+      "id": "R-0883",
+      "date": "2026-11-11",
+      "time": "17:10",
+      "timeFrom": "recorded",
+      "title": "The bundles of 8c04d8da (E-208) tested; Boids NEUTRAL (8 pairs), Predator every worker high on the bundle's side (N-105's noise)",
+      "verdict": "passed",
+      "text": "**The bundles of 8c04d8da (E-208 merged): tested, and the prod bundle equals its sources by Boids' 8 pairs. Predator's 4 read every worker high on the bundle's side, N-105's noise.** dist `6d7abe3b`, built from 8c04d8da.\n\n**On main:**\n- Node 2451 of 2451, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power, the owner's Chrome open (about 0.4 of a core):\n\n- **Predator, 4 pairs, 16:55 to 17:00: REGRESSION by the runner.** Every worker read higher on the bundle's side:\n  - logic +3.5 % (3/4; -1.5 % against the others, lower 4/4);\n  - spatial +4.7 % (4/4);\n  - physics +13.7 % (4/4);\n  - pre-render +3.3 % (3/4);\n  - load within 0.1 %.\n\n  Physics does not differ between the two bundles timed today. The last one (R-0880, before E-208, which touches logic alone) read NEUTRAL in the same scene.\n- **Boids, 8 pairs, 17:00 to 17:10: NEUTRAL.** Spatial 5.888 → 5.947 ms (+1.2 %, worse 6/8, cv 5/8 %), physics +1.4 % (5/8), 40 000 bodies on both sides.\n\nN-105: Predator reads the same code -3 to +10 % bundle against source, so Boids' 8 pairs decide (the rule since). The bundle equals its sources. Main pushed.",
+      "commits": [
+        "6d7abe3b"
+      ]
+    },
+    {
+      "id": "R-0884",
+      "date": "2026-11-11",
+      "time": "17:24",
+      "timeFrom": "recorded",
+      "title": "N-134 fixed: raycasted lighting keeps the sun's casted shadows (Sun Street's trees and people), pre-render makes no lamp stamps or cookies for it",
+      "verdict": "kept-hygiene",
+      "text": "**N-134 fixed (`5f1520ff`): raycasted lighting keeps the sun's casted shadows, and pre-render makes no lamp stamps or cookies for it.** 2026-11-11.\n\n**The bug.** `initVisibilityPolygonSystem` (pixiWorker.js), which runs after `createCastedShadowsSystem`, hid the casted shadows: the shadow display sprite, `shadowSpritesEnabled` and `Layer.castedShadows.visible`. The aim was to keep the light cookies from crushing the visibility fans' umbra to black. The sun's sprite shadows went with them, so under raycasted lighting trees and people cast nothing. Sun Street runs raycasted by default. Pre-render still made the sun rows, the lamps' stamps and the cookies every frame, for nothing.\n\n**The fix.**\n- Pixi keeps the casted shadows shown under raycasted lighting and draws the sun's casters alone into them (`_castedShadowsSunOnly`): no cookie pass, no stamp pass. The fans are the lamps' shadows.\n- At night, with no sun pass, the target is cleared as before.\n- Pre-render makes no stamps or cookies when its visibility polygons are on.\n\n**Evidence.** Sun Street at noon, paused (`?hour=12&paused=1`), the post-warm-up frame:\n- main with `raycast=1`: houses' and cars' volume shadows only; trees, lamps and people cast nothing;\n- main with `raycast=0`: every shadow;\n- the fix with `raycast=1`: the same trees', lamps' and people's shadows as `raycast=0`, on WebGL and on WebGPU (`backend=webgpu`).\n\n**Cost.** visPolyStressScene, 4 pairs, 17:21 to 17:24 (`--vs 180524cb --hyp-rev 5f1520ff --full-rev --owner preRender`): NEUTRAL, every worker below the floor. Pre-render 2.943 → 2.903 ms (-1.4 %). That scene has no casters, so the stamps it saves are not its load. In Sun Street, pre-render is 0.3 ms.",
+      "commits": [
+        "5f1520ff"
+      ]
+    },
+    {
+      "id": "R-0885",
+      "date": "2026-11-11",
+      "time": "17:56",
+      "timeFrom": "recorded",
+      "title": "N-138 fixed: a mesh is filled at the pose its sprite was drawn at, so Sun Street's cars' volume shadows stay under them",
+      "verdict": "kept-hygiene",
+      "text": "**N-138 fixed (`00b383fc`): a mesh is filled at the pose its sprite was drawn at, so a moving car's volume shadow stays under it.** 2026-11-11, the owner's report the same day (\"the cars' shadows shake, they do not follow the cars\").\n\n**The bug.** Sun Street's cars cast with `VolumeShadowCaster`, a mesh on its own layer. The car's sprite is drawn at the pose pre-render collected into the render queue. The mesh was filled at the live Transform (`meshFillUsesLive`: a body that is static or has none, as the cars are), which logic had moved on since pre-render read it, by however many frames the workers were apart that frame: 1 to 3.\n\n**The fix.**\n- Pre-render lists, per render-queue buffer, the pose each sprite row was collected at when its entity has an active mesh (`meshPoseList.js`, written after the collect and before the emit). Only scenes with a class that has both a sprite and a mesh get the lists.\n- Pixi copies the list into per-entity columns when it takes the frame, before it hands the buffer back to pre-render, stamped with the frame.\n- The mesh fill (`meshFillPoseSource`) takes that pose while its stamp is the frame drawn; otherwise the latched or live pose as before (a car whose sprite was culled).\n- With `renderer.interpolation` on, Pixi draws the sprite between the last two queue frames and the mesh at the newer one: a fraction of a frame apart, not measured.\n\n**Evidence.** Sun Street filmed on main and on the fix (`?dayMinutes=60`, 16 screenshots about 200 ms apart, 16:33). Measured from the pixels: on the two rows under the white car, where the shadow box's left edge sits against the car's left edge.\n- main: from −8 to −17 px over six frames (a 9 px swing, about three frames of the car's motion);\n- the fix: −14 or −15 px over seven frames.\n\nA node test with the real workers (`meshPoseFollowsSprite.test.js`): pre-render lists the car's collected pose, Pixi takes the frame, logic moves the car on, and the fill packs the sprite's pose; a frame whose list did not hold the car packs the live Transform.\n\n**Cost.** Sun Street with 10 000 cars (`?cars=10000&dayMinutes=60`: every car a sprite with a volume, so the list holds 10 000 poses a frame), 4 pairs, 17:53 to 17:56 (`--vs 8bbdf1fe --hyp-rev 7b10560b --full-rev --owner renderer`; `00b383fc` is that commit reworded): KEPT.\n- Renderer 4.348 → 3.956 ms (−9.0 %, lower in 4 of 4 pairs, cv 10/3 %). Not explained by a probe. Probably the mesh's pose now changes only with a new queue frame, so the fill's pose skip holds on the steps Pixi draws again while logic moves the Transform (Pixi drew 34 frames a second and presented 56).\n- Pre-render 1.974 → 2.083 ms (+5.5 %), below the 3 ms floor and not judged: the list of 10 000 poses each frame.\n- Logic, spatial and physics within 2.2 %. No A/A this sitting. Sun Street's own 6 cars write 6 entries a frame.",
+      "commits": [
+        "00b383fc"
+      ]
+    },
+    {
+      "id": "R-0886",
+      "date": "2026-11-11",
+      "time": "18:16",
+      "timeFrom": "recorded",
+      "title": "The bundles of 1446eec9 (N-134, N-138) tested; Boids NEUTRAL (8 pairs), Predator high on the bundle's side (N-105's noise)",
+      "verdict": "passed",
+      "text": "**The bundles of 1446eec9 (N-134 and N-138 merged): tested, and the prod bundle equals its sources by Boids' 8 pairs. Predator's 4 read spatial, physics and pre-render high on the bundle's side, N-105's noise.** dist `94d790f0`, built from 1446eec9.\n\n**On main:**\n- Node 2453 of 2453, demos 101 of 101.\n- `check:dist` passes.\n- Embed and browser smokes OK on all 8.\n- `test:node:bundle` 279 of 279 on all 8 bundles.\n\nThe prod ESM bundle against its sources, one build (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n\n- **Predator, 4 pairs, 18:04 to 18:08: REGRESSION by the runner.**\n  - logic -5.1 % (0/4 worse);\n  - spatial +5.4 % (4/4);\n  - physics +4.0 % (2/4);\n  - pre-render +4.0 % (3/4);\n  - load within 0.1 %.\n\n  The last cycle (R-0883) read the same way, with logic high instead.\n- **Boids, 8 pairs, 18:08 to 18:16: NEUTRAL.** Spatial 6.451 → 6.733 ms (+4.2 %, worse 5/8, cv 11/7 %), physics +2.5 % (5/8), 40 000 bodies on both sides.\n\nN-105: Boids' 8 pairs decide. The bundle equals its sources. Main pushed.",
+      "commits": [
+        "94d790f0"
+      ]
+    },
+    {
+      "id": "R-0887",
+      "date": "2026-11-11",
+      "title": "N-137 fixed: A* moves a cell up the heap when its cost falls; the old rule was longer than Dijkstra on 5 of 9093 grids",
+      "verdict": "kept-hygiene",
+      "text": "**N-137 fixed (`f9cd5675`): A* moves a cell up the heap when a shorter way reaches it, so its paths are the shortest.** 2026-11-11.\n\n**The bug.** `computePath` (particleWorker.js) kept one f a cell. When a shorter way reached a cell already waiting in the open set, it lowered that f in place and did not sift the cell up, so the heap's order broke: the cell popped late, cells reached through it meanwhile could close on a longer way, and the path could be longer than the shortest.\n\n**Seen.** The old rule against an exact Dijkstra on 20 000 random grids of 4 to 8 by 3 to 6 cells, 70 % walkable (9093 reachable pairs): longer on 5. One of them, 6 by 4, came out 62 instead of 54; the tests keep it.\n\n**The fix.** The search moved to `src/core/navAstar.js`, `NavScratch` with it. The heap keeps each cell's position (`heapPos`) and sifts a cell up when its cost falls (decrease-key). Each cell is in the heap once, so no extra entries, unlike the lazy entries the row planned. The heap helpers are module functions, not three closures made per path.\n\n**Tests.**\n- `astarHeap.test.js` (it tested a copy of the old rule) runs the shipped search: the grid above at 54, and 20 000 random grids against Dijkstra.\n- `navComputePath.test.js`: the particle worker's `computePath` writes a 54-long path into the slot the logic workers read. On the old code it fails.\n\n**Cost.** Not timed: no demo or stress scene requests A* paths (E-207 is waiting for a game that does), and the particle worker's frame code is the same.",
+      "commits": [
+        "f9cd5675"
+      ],
+      "time": "18:19",
+      "timeFrom": "recorded"
+    },
+    {
+      "id": "R-0888",
+      "date": "2026-11-11",
+      "time": "18:24",
+      "timeFrom": "recorded",
+      "title": "The bundles of 3304007e (N-137) tested; not timed (no timed scene reaches A*)",
+      "verdict": "passed",
+      "text": "**The bundles of 3304007e (N-137 merged): tested; not timed against src.** dist `bdb71872`, built from 3304007e.\n\n- Node 2456 of 2456, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 277 of 277 on all 8 bundles. Two fewer than R-0886: `astarHeap.test.js`'s two old tests ran a copy of the old A* rule; its new ones import `src/core/navAstar.js`.\n\nNo sitting: N-137 changes only the A* search, which neither Predator nor Boids reaches (no scene requested paths), so bundle against src could not read anything R-0886 did not. Main pushed.",
+      "commits": [
+        "bdb71872"
+      ]
+    },
+    {
+      "id": "R-0889",
+      "date": "2026-11-11",
+      "time": "18:32",
+      "timeFrom": "recorded",
+      "title": "astarStressScene built: 800 agents walking a maze by A*; logic 79.5 % in _findPathSlot (E-212), the particle worker half in the search (E-207)",
+      "verdict": "note",
+      "text": "**astarStressScene (`671dc08e`), the owner's ask: a scene that runs A* under load, which no scene did.** 2026-11-11.\n\n**The scene.** 800 agents (`?agents=`) walk a 96 by 96 cell maze to random cells by `NavGrid.getNextAStarPosition`, one after another.\n- The maze: rooms of 12 cells with a 2-cell door in each wall and 2 by 2 pillars, as 384 static wall boxes the nav grid reads.\n- Each cell an agent enters is a new (from, to) pair, so the particle worker runs A* for it. `PATHS_COMPUTED` is the load key.\n- Path slots are twice the agents; every request is served the frame it arrives (`maxProcessingMsPerFrame` 50).\n\n**Probes, src, headless, one run each:**\n- 600 agents: particle 2.63 ms (27.4 paths a frame), logic 6.0 ms.\n- 800 agents: particle 3.62 ms (42.2 paths), logic 10.35 ms. 800 became the default.\n\n**The trace (800 agents, `--trace-cpu`).**\n- Logic is 79.5 % `NavGrid._findPathSlot` (689 ms/s), a scan of all 1600 slot headers for every agent every tick, and 8.4 % `_requestPath`. Filed as E-212.\n- The particle worker (348 ms/s):\n  - the search itself, about half: `searchAstar` 29.6 %, `heapPop` 9.4 %, `siftUp`, `isVisited`, `octile`;\n  - `_findExistingPathSlot` 11.1 %, another full scan;\n  - `port.onmessage` 10.1 %: one postMessage for each request;\n  - `allocatePathSlot` 5.0 %.\n\nE-207 (A* in C) has its owner scene now.",
+      "commits": [
+        "671dc08e"
+      ]
+    },
+    {
+      "id": "R-0890",
+      "date": "2026-11-11",
+      "time": "18:38",
+      "timeFrom": "recorded",
+      "title": "E-212 kept: path slots found by an index; astarStressScene logic 11.79 -> 1.33 ms (-88.8 %), particle -13.8 %",
+      "verdict": "kept",
+      "text": "**E-212 kept (`501fe3ac`, sat as 36ce347c, the same tree): path slots found through an index in NavGrid's buffer, not a scan of every slot.** 2026-11-11.\n\n**Premise (R-0889).** `getNextAStarPosition` and `getPathAStar` call `NavGrid._findPathSlot` for every agent every tick, and it read all the path slots' headers. In astarStressScene (800 agents, 1600 slots) that was 79.5 % of logic. The particle worker scanned the slots again for each request.\n\n**The change.**\n- An open-addressing index from (from, to) to slot, after the path slots in NavGrid's buffer (twice the slots, a power of two).\n- The particle worker alone writes it. It lists a slot when it gives it a pair, takes it out when the slot is evicted (backward shift, no tombstones), and `invalidate` empties it.\n- Readers probe it and check the slot's header (READY, from, to): a stale or moving entry is a miss, never a wrong path.\n- The particle worker's request check and `allocatePathSlot`'s existing check use it.\n- The pending map takes a numeric key, built only while it holds requests. A string was made on every found call.\n- `navPathIndex.test.js`: 4000 allocations with 1, 3, 8 and 24 slots against the headers after each step, each slot listed once, invalidate, and a computing slot not found.\n\n**Sitting.** astarStressScene, 4 pairs, 18:35 to 18:38 (`--vs 16c1d66e --hyp-rev 36ce347c --full-rev --owner logic`): **KEPT (product).**\n- Logic 11.792 → 1.328 ms (-88.8 %, worse 0/4, cv 4/3 %).\n- Particle 3.545 → 3.073 ms (-13.8 %, worse 0/4): its scan per request is gone.\n- PATHS_COMPUTED 42.9 → 41.0 (-4.4 %), within the 5 %.\n- Every other worker below the floor.\n\n**Left.** In the particle worker: the LRU scan for a new slot, `_hasEmptyPathSlot`, a postMessage per request (10 %) and the search itself (E-207). No timed gameplay scene asks for A* paths, so no Predator gate.",
+      "commits": [
+        "501fe3ac"
+      ]
+    },
+    {
+      "id": "R-0891",
+      "date": "2026-11-11",
+      "time": "18:54",
+      "timeFrom": "recorded",
+      "title": "The bundles of b58e84df (E-212) tested; Boids and Predator NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of b58e84df (E-212 merged): tested, and the prod bundle equals its sources: Boids and Predator both NEUTRAL.** dist `827b64a7`, built from b58e84df.\n\n- Node 2459 of 2459, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 280 of 280 on all 8 bundles (the path index's three tests are new).\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 18:44 to 18:47: NEUTRAL.** Logic -6.3 % (1/4 worse), spatial -2.5 %, physics -1.2 %, pre-render +1.4 % (2/4).\n- **Boids, 8 pairs, 18:47 to 18:54: NEUTRAL.** Spatial 6.051 → 6.019 ms (-1.6 %, worse 3/8), physics -1.2 % (3/8).\n\nMain pushed.",
+      "commits": [
+        "827b64a7"
+      ]
+    },
+    {
+      "id": "R-0892",
+      "date": "2026-11-11",
+      "time": "19:25",
+      "timeFrom": "recorded",
+      "title": "E-207 kept: A* in navFlowfield.wasm (same paths); kernel 3.3x, astarStressScene particle 6.770 -> 2.523 ms (-63.1 %)",
+      "verdict": "kept",
+      "text": "**E-207 kept (`a01fc243`): A* runs in navFlowfield.wasm, `astar_path` beside the flowfield, the same paths as the JS.** 2026-11-11.\n\n**Premise.** `computePath` was the last nav search in JavaScript. In astarStressScene the search is about half of the particle worker (R-0889). The flowfield gained 16× in C (E-122).\n\n**The kernel.** `astar_path` is navAstar.js's search (N-137's decrease-key heap) ported cell for cell: the same heap moves and the same ties, so it writes the same paths.\n- A cell's open and closed marks are one generation word (2 × search open, + 1 closed) instead of the JS's stamp and its fill of `inOpenSet` over the whole grid. On the counter's wrap the marks are cleared.\n- The heap keeps each place's f beside its cell, so the sifts compare without a second load.\n- Its columns follow the flowfield's in the navigation memory: g, f, came-from, generation, heap, heap keys, heap places, the path. The particle worker calls it and copies the path into the slot as before.\n\n**Parity.** `navAstarWasm.test.js`: the worker's paths equal the JS's, via a real particle worker on a scene's navigation memory.\n- astarStressScene's maze, 400 pairs.\n- Rubble at densities 0.2 and 0.4 with walkability 1 to 255, 300 pairs each, unreachable targets and walls included.\n- Paths cut at 16 cells.\n- Across the generation counter's wrap.\n\n**Kernel** (`astarKernel.mjs`, Chrome, the maze, 2000 walkable pairs, 9 reps, one checksum for both):\n- JS 109.1 µs a path.\n- The first port: 36.7 µs (2.97×).\n- Variants:\n  - column and row passed down instead of a division per neighbour: 36.8 and 37.4 µs, a tie, not kept;\n  - the heap keys beside the cells: 34.2 and 33.8 µs (3.3×), kept.\n- Flags are pinned engine-wide (`-O3 -msimd128`; engine.wasm holds every kernel). SIMD and float32 do not apply to an integer heap search.\n- Node screened the same: JS 109.8, WASM 37.2 µs.\n\n**Sittings.** astarStressScene, particle worker the owner, `--full-rev`, 4 pairs each:\n- Before the scene had a fixed load (`--vs d8d51e43 --hyp-rev 4f580ddc`):\n  - 800 agents, 19:04 to 19:08: particle 2.764 → 1.318 ms, but its baseline was below the 3 ms floor (E-212 had cut it);\n  - 1200 agents, 19:09 to 19:13: particle 4.157 → 1.995 ms (-52.0 %, 0/4), and FAIL (load), PATHS_COMPUTED 57.5 → 62.8 (+9.3 %). The agents wait for their paths, so a faster search raised their demand. Per path that sitting read 72 → 32 µs.\n- The scene's fixed load since (`73dc2c45`): planners each ask for a new random pair every tick. With `?agents=0` the load is theirs alone.\n- **`?agents=0`, 19:21 to 19:25 (`--vs 013b0e72 --hyp-rev a01fc243`): KEPT (product).**\n  - Particle 6.770 → 2.523 ms (-63.1 %, worse 0/4, cv 1/2 %).\n  - PATHS_COMPUTED 60.0 → 60.0.\n  - Every other worker below the floor.\n\n**Then the JS left src (`bcbdac0f`).** `searchAstar` moved to `tests/reference/navAstar.mjs`, the parity reference. The particle worker no longer makes NavScratch: seven per-cell arrays that neither search used, about 25 bytes a cell. It keeps the flowfield's distance cap.\n\n**Found on the way.**\n- N-139: with more paths made in one second than slots, the seconds clock evicts the path an agent is walking.\n- E-214: each new path scans every slot (8000 slots: about 0.5 ms a path).",
+      "commits": [
+        "a01fc243",
+        "bcbdac0f"
+      ]
+    },
+    {
+      "id": "R-0893",
+      "date": "2026-11-11",
+      "time": "19:36",
+      "timeFrom": "recorded",
+      "title": "N-139 fixed: the nav slots' LRU clock counts 16 ms ticks and evictions compare ages",
+      "verdict": "kept-hygiene",
+      "text": "**N-139 fixed (`407ea152`): the nav slots' LRU clock counts 16 ms ticks and evictions compare ages, so a path an agent walks is not evicted by a burst of new ones.** 2026-11-11.\n\n**The bug.** `NavGrid.lruNow()` counted whole seconds. With more paths made in one second than slots, every slot held the same stamp, and `allocatePathSlot` evicted the first one, slot 0, whatever an agent was reading. Seen in Node: four slots, an agent's path in slot 0 touched, three paths nobody reads, and a fifth path the same second evicted slot 0. `allocateFlowfieldSlot` had the same clock.\n\n**The fix.**\n- `lruNow()` counts 16 ms ticks, the same in every worker. A touch still writes its slot at most once a tick (the compare-first stays).\n- Path and flowfield evictions take the largest age, `(now - stamp) >>> 0`, which the u32's wrap every 2.2 years does not upset.\n\n**Tests.** `navSlotClock.test.js`: the clock moves within a second; a touched path outlives untouched ones made the same second; both evictions across the wrap. Three of its four fail on the old code.\n\n**Cost.** Not timed: one subtraction a slot, in the scan E-214 replaced next.",
+      "commits": [
+        "407ea152"
+      ]
+    },
+    {
+      "id": "R-0894",
+      "date": "2026-11-11",
+      "time": "19:36",
+      "timeFrom": "recorded",
+      "title": "E-214 kept: path slots allocated without a scan; astarStressScene 8000 slots particle 7.045 -> 2.450 ms (-65.3 %)",
+      "verdict": "kept",
+      "text": "**E-214 kept (`8d28ef5b`): path slots allocated without a scan of every slot.** 2026-11-11.\n\n**Premise.** astarStressScene with 8000 path slots: about 0.5 ms a path in the particle worker against about 0.07 ms with 1600 slots. Each new path read every slot twice: `_hasEmptyPathSlot` (a DataView read a slot) and `allocatePathSlot`'s search for an empty slot or the least recently used one. A game with many agents needs many slots.\n\n**The change.**\n- NavGrid keeps the slots never given a path since the last invalidate as a stack (slot 0 on top, refilled by `invalidate`), with their count. `_hasEmptyPathSlot` reads the count.\n- Once the free slots are gone, the eviction takes the oldest stamp, by age (N-139), of eight slots from a moving hand: an approximate LRU.\n- A path an agent walks is touched every tick, so it is young wherever the hand finds it. Slots another worker cleared (a save's invalidate) hold stamp 0, the oldest there is.\n- `navSlotAlloc.test.js`: free slots in order and invalidate; the oldest of the sample; a path touched every tick surviving 20 000 new ones in 4000 slots.\n\n**Sitting.** astarStressScene `?agents=0&slots=8000` (60 new paths a frame), 4 pairs, 19:31 to 19:36 (`--vs 108d649f --hyp-rev 8d28ef5b --full-rev --owner particle`; `108d649f` adds the `?slots=` knob): **KEPT (product).**\n- Particle 7.045 → 2.450 ms (-65.3 %, worse 0/4, cv 1/1 %).\n- PATHS_COMPUTED 60.0 → 60.0.\n- Every other worker below the floor.",
+      "commits": [
+        "8d28ef5b"
+      ]
+    },
+    {
+      "id": "R-0895",
+      "date": "2026-11-11",
+      "time": "19:52",
+      "timeFrom": "recorded",
+      "title": "E-213 kept as hygiene: nav requests through a ring; particle NEUTRAL, logic 0.881 -> 0.353 ms below the floor",
+      "verdict": "kept-hygiene",
+      "text": "**E-213 kept as hygiene (`62eebf89`): path and flowfield requests go through a ring per logic worker, not a postMessage each.** 2026-11-11.\n\n**Premise (R-0889).** In astarStressScene's first trace, `port.onmessage` was 10 % of the particle worker, and each request cost the logic side a clone and a message.\n\n**The change.**\n- `navRequestRing.js`: a ring per logic worker in shared memory, one writer and one reader. Two words a record: a path's from and to cells, or a flowfield's target with the high bit set.\n- `NavGrid._requestPath` and `_requestFlowfield` write the ring; a full ring leaves the request to the message, so nothing is dropped. The pending map keeps its dedup.\n- The particle worker drains every ring at the start of its nav step, through the handlers the messages use (now methods).\n- `navRequestRing.test.js`: the ring in order and full; NavGrid on the ring and on the message when full; the worker draining into its queues.\n\n**Sittings.** astarStressScene `?agents=0`, `--vs 2bce2571 --hyp-rev 62eebf89 --full-rev --owner particle`, 4 pairs each:\n- 60 paths a frame, 19:42 to 19:46: below the floor. Particle 2.419 → 2.430 ms; logic 0.422 → 0.145 ms.\n- 180 paths a frame (`&plans=180`), 19:48 to 19:52: **NEUTRAL.**\n  - Particle 6.418 → 6.448 ms (+0.5 %, worse 3/4, cv 1/0 %).\n  - Logic 0.881 → 0.353 ms (-60 %), below the floor and not judged: about 2.9 µs a request.\n  - PATHS_COMPUTED 180.0 → 180.1.\n\nThe particle worker's 10 % in that trace was the handler's work, mostly the slot scan E-212 removed, not the message. The logic side's message cost is real, small, and below the floor. Kept as hygiene: no worker 3 % worse, and no object or clone a request.",
+      "commits": [
+        "62eebf89"
+      ]
+    },
+    {
+      "id": "R-0896",
+      "date": "2026-11-11",
+      "time": "20:14",
+      "timeFrom": "recorded",
+      "title": "The bundles of f86b11ab (E-207, N-139, E-214, E-213) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of f86b11ab (E-207, N-139, E-214, E-213 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `9e69d5aa`, built from f86b11ab.\n\n- Node 2473 of 2473, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n- engine.wasm carries `astar_path`.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 19:58 to 20:03: NEUTRAL.** Logic -7.7 % (1/4 worse), spatial -2.5 %, physics -10.9 % (1/4), pre-render -4.2 % (1/4).\n- **Boids, 8 pairs, 20:03 to 20:14: NEUTRAL.** Spatial 5.696 → 5.664 ms (-0.3 %, worse 3/8), physics -0.4 % (2/8).\n\nMain pushed.",
+      "commits": [
+        "9e69d5aa"
+      ]
+    },
+    {
+      "id": "R-0897",
+      "date": "2026-11-11",
+      "time": "20:16",
+      "timeFrom": "recorded",
+      "title": "E-209 step 0: instances cost ~40 ms and 12 MB per logic worker per 100 000 slots at boot; the page 27 ms and 14 MB",
+      "verdict": "answered",
+      "text": "**E-209 step 0 (`83e02a98`): a pool's instances cost about 40 ms and 12 MB per logic worker per 100 000 slots at boot, and the page's frozen copies 27 ms and 14 MB.** 2026-11-11.\n\n`entityInstanceBootMicrobench.mjs`: the real paths (`LogicWorker.createGameObjectInstances`, `Scene._createPageInstances`) on a pool of 100 000 slots of a class with two fields and a tick, a fresh class each run (cold, as a boot is). Heap is the growth after a full GC with the instances held. Node 22, two runs of 5 (medians):\n- logic worker: 40.6 and 37.5 ms; 11.7 MB, 122.5 B a slot;\n- page: 26.6 and 27.7 ms; 13.7 MB, 144 B a slot.\n\n**What it means.** Per frame nothing changes. At the largest pools (524 287 slots): about 200 ms and 61 MB per logic worker, and 140 ms and 72 MB on the page. With four logic workers that is over 300 MB for slots that may never be spawned. A typical demo (10 000 to 60 000 slots) pays 5 to 25 ms and a few MB a worker.\n\n**The change** touches 33 index reads: 21 in logicWorker.js (ticks, collision, joint and message dispatch) and 6 in gameObject.js, plus the page's API. `start()` would run at a slot's first use instead of at boot. Worth doing for scenes past about 200 000 slots. Next: the design (an `instanceAt(index)` that makes the instance on first use, the tick loops' null test measured in a kernel), queued behind cheaper items.",
+      "commits": [
+        "83e02a98"
+      ]
+    },
+    {
+      "id": "R-0898",
+      "date": "2026-11-11",
+      "time": "20:18",
+      "timeFrom": "recorded",
+      "title": "Predator's CPU trace on main after the day's work: logic 20 % in neighbour reads, 8.4 % in the shared tick loop (E-215 filed)",
+      "verdict": "note",
+      "text": "**Predator's CPU trace on main after the day's work (`d299da1e`, src, headless, `--trace-cpu`, 5 s after 8 s of warm-up).** 2026-11-11.\n\nSTEP_MS: spatial 4.59, physics 5.97, renderer 2.44, particle 0.64, logic 3.25, pre-render 3.88 ms. Garbage collection is 0 to 3 ms/s on every worker, nothing to take.\n\n**Spatial (282 ms/s):** `gather_batch` 38.5 %, `publish_batch` 24.0 %, `rebuildOwnedRows` 18.7 % (W6 screened, a 1.4 % ceiling), `_findNeighbors` 12.5 %.\n\n**Logic (two workers, about 215 ms/s each):**\n- `findACivilianToShoot` 14.0 % (demo);\n- `get neighborCount` 11.3 % and `getNeighbor` 8.7 %: neighbour reads, E-199's premise;\n- `fsm.tick` 10.1 %, `person.tick` 9.9 %;\n- `_tickIntervalBucket` 8.4 % by self time: filed as E-215;\n- `_processBox2dCollisionCallbacks` 4.3 %.\n\n**Pre-render (234 ms/s):** `emit_rows` 32.1 %, `stamp_light_range` 23.5 % (worked on through E-133, E-191; E-195 dropped today), `collect_sprites` 18.1 %.\n\n**Pixi (185 ms/s):** `pack_sprites_keyed` 12.6 % (E-193), `updateBuffer` 7.5 %, `radix_simd` 5.4 %.\n\nThe physics threads read 1000 ms/s busy: Box2D's workers waiting in `Atomics.wait`, which a V8 profile counts as busy (see the memory note on it), not work."
+    },
+    {
+      "id": "R-0899",
+      "date": "2026-11-11",
+      "time": "20:20",
+      "timeFrom": "recorded",
+      "title": "E-215 dropped at step 0: the shared tick site is ~7.5 ns a tick; the per-type lookup with .call is 46 % slower",
+      "verdict": "dropped",
+      "text": "**E-215 dropped at step 0 (`54682d5f`): the staggered tick loop's shared call site costs about 7.5 ns a tick, and looking each type's tick up once is 46 % slower.** 2026-11-11.\n\n`tickLoopKernel.mjs`: `LogicWorker._tickIntervalBucket` (the shipped function, a real logic worker) on four types with ticks of their own (intervals 4, 6, 6, 30; 4000 entities each, all with a RigidBody), against a copy that takes `EntityClass.prototype.tick` once per bucket and calls it with `.call`. 600 frames, 1 480 000 ticks a run, 7 alternating rounds, the same checksum. Node 22, three runs:\n- shipped: 7.1, 7.6 and 7.8 ns a tick, the ticks' bodies included;\n- candidate: 10.4, 11.2 and 11.4 ns (+46.3, +47.9, +46.1 %).\n\nThe megamorphic `obj.tick` is cheap. The `.call` on a polymorphic function is not. At about 5000 ticks a Predator frame, the loop's dispatch is about 0.04 ms, so its 8.4 % self time in Predator's trace (R-0898) is something else: likely the scattered reads of large instances and of the per-entity arrays, which no lookup change touches. Not taken to Chrome: a loss this size in Node is not reversed by a newer V8.",
+      "commits": [
+        "54682d5f"
+      ]
+    },
+    {
+      "id": "R-0900",
+      "date": "2026-11-11",
+      "time": "20:23",
+      "timeFrom": "recorded",
+      "title": "E-194 step 0: the LiquidFun scene's keyed frames are paused 589 of 600 frames (16 000 keyless rows each); it draws split",
+      "verdict": "answered",
+      "text": "**E-194 step 0: liquidFunQueryStressScene's batch is keyed, but its keyed frames are paused 98 % of the time: each sends all 16 000 LiquidFun rows as updates, so the loss heuristic stops them and the scene draws split.** 2026-11-11.\n\n**Probe.** A logging patch, not committed, in `InstancedSpriteBatch`'s upload on current main, src, headless WebGL, 6 s warm-up then 4 s. Every 120 uploads it printed whether the batch is keyed, whether keyed frames were paused (`_keyPause`), and the keyed frames' updates and rows. At 600 uploads:\n- keyed batch: 600 of 600;\n- paused: 589 of 600;\n- keyed frames taken: 10, all early, with 160 000 updates for 160 000 rows (16 000 a frame, every row);\n- scan: 16 000 rows a frame.\n\n**What it means.** A LiquidFun particle drawn as a sprite has no key, so a keyed frame sends its statics every frame (64 bytes) on top of its pose and slot. With 16 000 of them the keyed frames lose, pause, and the scene uploads split frames (60 bytes a sprite, about 960 KB a frame).\n\nWith keys by particle index and change marks, a frame would send about 24 bytes a sprite (384 KB) plus the slots whose particle changed. The renderer here is 1.07 ms, so the gain is a few tenths of a millisecond, below the floor unless the scene's load is raised.\n\n**Next:** how often a LiquidFun slot's statics change (the churn re-emits particles), then decide. Kept open, ranked after the larger items."
+    },
+    {
+      "id": "R-0901",
+      "date": "2026-11-11",
+      "time": "20:34",
+      "timeFrom": "recorded",
+      "title": "E-209 kept: instances made on first use; boot per 100 000 slots logic 40.6 -> 4.5 ms and 11.7 -> 1.5 MB; Predator NEUTRAL",
+      "verdict": "kept",
+      "text": "**E-209 (`b93ab8ee`): entity instances made on a slot's first use, not one per slot at boot.** 2026-11-11.\n\n**Premise (R-0897).** Every logic worker made `new EntityClass` for every pool slot at boot, and the page a frozen copy of each, whether or not a slot was ever spawned. Per 100 000 slots: about 40 ms and 11.7 MB per logic worker, and 27 ms and 13.7 MB on the page.\n\n**The change.**\n- A slot's instance is made on its first use: a spawn, a tick, a callback, `GameObject.get`.\n- At boot the logic worker writes every slot's type and \"not active\" for the pool at once (what each constructor wrote).\n- Its maker, `_makeInstance`, builds an instance without touching the slot's Transform (the slot may be live, spawned by another worker or the page) and then calls `start()`.\n- Every instance read in logicWorker.js (21: ticks, impacts, collision, joint and message dispatch, the page's despawn) goes through the maker when the slot has none. `GameObject._at` and `_instanceOf` do the same for the global and per-class lists.\n- The page has its own maker: frozen instances, with the DX-GUARDS check once per class.\n- `start()`, undocumented for entities and defined by no demo, now runs at a slot's first use instead of at boot.\n- `lazyInstances.test.js`, on a real logic worker:\n  - no instance at boot, and the pool typed and not active;\n  - a slot made live elsewhere gets its instance on its first tick, with `start()` once and its Transform left alone;\n  - `GameObject.get` makes one; an index outside the pools gives none;\n  - the page makes none until asked, frozen.\n\n**Boot** (`entityInstanceBootMicrobench`, 100 000 slots, Node 22, two runs of 5):\n- logic: 40.6 / 37.5 → 4.5 / 4.7 ms; 11.7 → 1.5 MB (16 B a slot: the index arrays);\n- page: 26.6 / 27.7 → 1.4 / 1.3 ms; 13.7 → 1.5 MB.\n\n**Per frame: Predator's gate**, 4 pairs, 20:30 to 20:34 (`--vs 504d9bdf --hyp-rev b93ab8ee --full-rev`): **NEUTRAL.**\n- Logic -7.5 % (worse 0/4; -7.8 % against the others, lower 4/4).\n- Spatial +2.7 % (3/4), pre-render +0.1 %, physics +4.5 % (2/4): workers the change does not reach.\n- No page error.\n\nThe tick paths' `??` costs nothing while a slot has its instance.\n\nKept for boot and memory. Per 100 000 slots, each logic worker saves about 36 ms and 10 MB and the page 26 ms and 12 MB; at the largest pools, over 250 MB with four logic workers. Instances are now made as slots are used, a spawn burst paying them then.",
+      "commits": [
+        "b93ab8ee"
+      ]
+    },
+    {
+      "id": "R-0902",
+      "date": "2026-11-11",
+      "time": "20:54",
+      "timeFrom": "recorded",
+      "title": "The bundles of 4b5cfe94 (E-209) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of 4b5cfe94 (E-209 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `e1fc4b27`, built from 4b5cfe94.\n\n- Node 2477 of 2477, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 20:39 to 20:44: NEUTRAL.** Logic -7.7 % (0/4 worse), spatial +0.6 % (2/4), physics -1.4 %, pre-render -2.0 %.\n- **Boids, 8 pairs, 20:44 to 20:54: NEUTRAL.** Spatial 5.667 → 5.703 ms (+0.7 %, worse 7/8, cv 1/1 %; under the 3 %), physics -0.1 % (4/8).\n\nMain pushed.",
+      "commits": [
+        "e1fc4b27"
+      ]
+    },
+    {
+      "id": "R-0903",
+      "date": "2026-11-11",
+      "time": "21:03",
+      "timeFrom": "recorded",
+      "title": "BunnyMark C 200 000's CPU trace: pre-render 6.3 ms, 10 % building and copying a glow split's entity list with no glow row (E-216 filed)",
+      "verdict": "note",
+      "text": "**BunnyMark C at 200 000 bunnies, CPU trace on main (`c75ea3c4`, src, headless, `--trace-cpu`).** 2026-11-11.\n\nSTEP_MS: renderer 1.35, logic 2.26, pre-render 6.28 ms. Pre-render is the worker that carries this scene.\n\n**Pre-render (378 ms/s):**\n- `collect_sprites` 43.9 %, `persist_frame` 17.0 %, `pack_sprites_split` 13.7 %: kernels;\n- JavaScript:\n  - `writeCollectList` 7.7 %: the sprite query's 200 000 ids copied into the collect's memory each frame;\n  - `fillQueueIndices` 6.2 % and `indexByteFor` 3.9 %: the glow split's entity list, built and copied though the scene has no glow row;\n  - `packSpriteLayer` 2.8 %.\n\n**Pixi (106 ms/s):** `updateBuffer` 28.1 % and an unnamed wasm function 27.6 %.\n\n**Logic:** `bunny.tickAll` 57.5 %, `_runTickAllTypes` 35.6 %.\n\nFiled: E-216, no entity list for a frame without glow rows. The query copy (`writeCollectList`) is the next candidate: the list could live where the collect reads it."
+    },
+    {
+      "id": "R-0904",
+      "date": "2026-11-11",
+      "time": "21:12",
+      "timeFrom": "recorded",
+      "title": "E-216 kept: no entity list without glow rows; BunnyMark C 200 000 pre-render 5.929 -> 4.951 ms (-16.5 %); Predator NEUTRAL (pre-render -4.6 %)",
+      "verdict": "kept",
+      "text": "**E-216 kept (`672e8434`): a frame without glow rows packs without the glow split's entity list.** 2026-11-11.\n\n**Premise (R-0903).** BunnyMark C at 200 000: every frame that was not presorted split the glow rows (type 3) out, though the scene has none.\n- `fillQueueIndices` built the list of the other rows: 6.2 % of pre-render.\n- A second pass counted their particles.\n- `indexByteFor` copied the list into the pack's memory: 3.9 %.\n\nE-138 skipped the split for presorted frames only.\n\n**The change.**\n- The collect counts the glow rows it makes (`_collectEntityGlow`, the only maker of type 3).\n- A frame with none packs unsplit, as E-138's presorted frames do: in queue order with no list, or with the spec's `fillAll` ordering every row when the painter sorts.\n- `painterRadixWired.test.js`: the same pose and statics rows and the same sorted flag with and without the split, sorted and unsorted, over makeFrames' frames with their glows turned to sprites. The unsorted ones are packed with no list.\n\n**Sittings** (`--vs c75ea3c4 --hyp-rev 672e8434 --full-rev`):\n- **BunnyMark C `?bunnies=200000`**, owner pre-render, 4 pairs, 21:05 to 21:07: **KEPT (product).**\n  - Pre-render 5.929 → 4.951 ms (-16.5 %, worse 0/4, cv 4/1 %).\n  - Every other worker below the floor; 200 000 entities on both sides.\n- **Predator's gate**, 4 pairs, 21:08 to 21:12: **NEUTRAL.**\n  - Pre-render 3.278 → 3.120 ms (-4.6 %, worse 0/4; -2.6 % against the others, lower 4/4).\n  - Logic -2.9 %, spatial -0.6 %, physics +0.2 %.",
+      "commits": [
+        "672e8434"
+      ]
+    },
+    {
+      "id": "R-0905",
+      "date": "2026-11-11",
+      "time": "21:27",
+      "timeFrom": "recorded",
+      "title": "The bundles of 96cf282e (E-216) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of 96cf282e (E-216 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `5e3e5e86`, built from 96cf282e.\n\n- Node 2478 of 2478, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 21:17 to 21:20: NEUTRAL.** Logic -8.9 % (0/4 worse), spatial +0.6 %, physics -0.3 %, pre-render +0.3 %.\n- **Boids, 8 pairs, 21:20 to 21:27: NEUTRAL.** Spatial +0.2 % (4/8), physics -0.0 % (4/8).\n\nMain pushed.",
+      "commits": [
+        "5e3e5e86"
+      ]
+    },
+    {
+      "id": "R-0906",
+      "date": "2026-11-11",
+      "time": "21:36",
+      "timeFrom": "recorded",
+      "title": "E-218 kept: tickAll reads a view of the active list; BunnyMark C 300 000 logic 3.055 -> 2.425 ms (-20.2 %); Predator NEUTRAL",
+      "verdict": "kept",
+      "text": "**E-218 kept (`6e0fea8d`): tickAll reads a view of the active list when every listed entity is active.** 2026-11-11.\n\n**Premise (R-0903).** BunnyMark C at 200 000: `_runTickAllTypes` was 35.6 % of logic by self time. Every frame it copied a tickAll type's listed entities into a scratch list, checking each one active, though in a steady frame they all are.\n\n**The change.**\n- For a type without a body (no accelerations to reset), on a contiguous run of the list, a read-only pass checks the flags.\n- If all are active, tickAll gets a view of the active list from the run's first row, made once per run start.\n- If one is not (despawned this frame), the copy filters as before.\n- `tickAllView.test.js`: the view when all are active; the scratch without the despawned one; a type with a body still resets each acceleration through the scratch.\n\n**Sittings** (`--vs f204a80c --hyp-rev 6e0fea8d --full-rev`):\n- **BunnyMark C `?bunnies=300000`**, owner logic (200 000 leaves logic under the floor), 4 pairs, 21:29 to 21:32: **KEPT (product).**\n  - Logic 3.055 → 2.425 ms (-20.2 %, worse 0/4, cv 1/1 %).\n  - Pre-render -1.2 %; 300 000 entities on both sides.\n- **Predator's gate**, 4 pairs, 21:32 to 21:36: **NEUTRAL.** Logic -0.3 %, spatial +0.2 %, physics +2.2 % (2/4), pre-render +1.5 % (3/4).",
+      "commits": [
+        "6e0fea8d"
+      ]
+    },
+    {
+      "id": "R-0907",
+      "date": "2026-11-11",
+      "time": "21:52",
+      "timeFrom": "recorded",
+      "title": "The bundles of af1a2c01 (E-218) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of af1a2c01 (E-218 merged): tested, and the prod bundle equals its sources: Predator and Boids NEUTRAL.** dist `0344a6ad`, built from af1a2c01.\n\n- Node 2481 of 2481, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 21:42 to 21:45: NEUTRAL.** Logic -10.7 % (1/4 worse), spatial -0.6 %, physics +2.0 % (2/4), pre-render +1.1 % (3/4).\n- **Boids, 8 pairs, 21:45 to 21:52: NEUTRAL.** Spatial +0.2 % (5/8), physics -0.0 % (4/8).\n\nMain pushed.",
+      "commits": [
+        "0344a6ad"
+      ]
+    },
+    {
+      "id": "R-0908",
+      "date": "2026-11-11",
+      "time": "21:55",
+      "timeFrom": "recorded",
+      "title": "E-210 step 0: Predator restored from a mid-battle save goes quiet (its AI state is not saved); every worker under the floor",
+      "verdict": "answered",
+      "text": "**E-210 step 0 (`5e19d6c2`): Predator restored from a mid-battle save does not fight. Its AI's state is plain JS fields a save does not carry, so a gate from the save would time a quiet world, not the battle.** 2026-11-11.\n\n**The tools** (kept, for any scene):\n- the bench page's `?restore=<url>` loads the scene with that save as `restorePayload`;\n- `runPredatorAbab --restore <file>` copies the save into both sides' trees and names it to their pages;\n- `sceneSaveMaker.mjs` makes a save: the scene played for `--seconds` in a chromeKernel page, then `scene.saveGame`.\n\n**Probe.** A save of Predator after 20 s: 17 448 entities, 3.1 MB. Then src, headless, from the save:\n- 3 s of warm-up then 4 s: spatial 2.04, physics 2.59 (716 bodies moved, 1003 awake), logic 2.85, pre-render 2.88 ms;\n- 10 s then 4 s: spatial 2.94, physics 2.38 (364 moved, 395 awake), logic 2.49, pre-render 2.56 ms;\n- for comparison, Predator from a new game (today's gates): spatial about 4.2, physics 5.1 to 5.7, logic 3.1 to 3.3, pre-render 3.1 to 3.3 ms.\n\n**What it means.** The save keeps components and poses, not the soldiers' and civilians' FSM locals (SAVE_GAME.md says so). Restored, the battle goes quiet and every worker falls under the 3 ms floor. A paired gate needs a scene whose behaviour survives a save. For Predator that means its AI state in components: demo work, not this tool's. E-210 is parked until a scene needs it; the tools stay.",
+      "commits": [
+        "5e19d6c2"
+      ]
+    },
+    {
+      "id": "R-0909",
+      "date": "2026-11-12",
+      "time": "01:18",
+      "timeFrom": "recorded",
+      "title": "N-140 fixed: the cull pads each sprite with its reach from its anchor (houses and trees no longer vanish at the edge)",
+      "verdict": "kept-hygiene",
+      "text": "**N-140 fixed: the cull pads each sprite with its reach from its anchor.** Reported 2026-11-12 by the owner from The Chaos Machine (another developer's game on 0.14.0): houses and trees disappeared at the screen's bottom edge while their tops still showed.\n\n- **Cause:** the collect padded the view with the larger half bound around the pose; a sprite anchored at its foot (the default 0.5, 1) reaches its whole height above it. A 293×262 house was dropped with 43 px of it on screen at zoom 1, 159 px at zoom 2.\n- **Fix (`93aacc8d`):** the pad is the distance from the anchor to the farthest corner (`src/util/spriteCullReach.js`, the same in `preRenderCollect.c`), turns and flips included; the kernel tests a pose inside the view first and reads the anchors only for one outside it; the static scenery grid widens by the largest reach; `setAnchor` re-bins a static sprite.\n- **Seen in the game** (headless Chromium, the game's own server, a house's foot 450 px below the edge at zoom 2): 0.14.0's bundle drew grass, the fixed one draws the house's roof and water tank and the two trees in front of it.\n- **Tests:** `cullReach.test.js` (two of its three fail on the old kernel), the collect parity tests on anchors of every kind, the turned-camera test on the reach.\n\n**Predator gate, main `5fecdf6e` vs `93aacc8d`, 4 pairs, src (01:09 to 01:13):** pre-render 3.523 → 3.481 ms (-1.2 %, worse 2/4), logic +1.8 % (2/4), spatial -0.2 % (2/4), physics 5.897 → 6.114 ms (+3.7 %, worse 3/4, cv 9 %), the runner's REGRESSION on physics alone. VISIBLE_ENTITIES 13 521 → 13 703 (+1.3 %): the sprites whose tops show at the edges, now drawn.\n\n**The session's A/A, main vs main, 4 pairs (01:14 to 01:18):** logic +3.1 % (worse 4/4, the runner's REGRESSION on identical code), spatial -2.5 %, physics 5.732 → 5.519 ms (-3.7 %), pre-render -1.3 %. Physics moves ±3.7 % with nothing changed, so the gate's +3.7 % is inside the noise, on a worker the collect cannot reach; detection limit this session about 4 % per worker in Predator.\n\n**Verdict: kept (hygiene).**",
+      "commits": [
+        "93aacc8d"
+      ]
+    },
+    {
+      "id": "R-0910",
+      "date": "2026-11-12",
+      "time": "01:38",
+      "timeFrom": "recorded",
+      "title": "The bundles of 2726bc31 (N-140) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of 2726bc31 (N-140 merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `0f8ed78c`, built from 2726bc31.\n\n- Node 2484 of 2484 on main, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 01:23 to 01:28: NEUTRAL.** Logic -14.9 % (0/4 worse), spatial -9.5 %, physics -19.9 % (cv 8/13 %), pre-render -7.2 %: the bundle side read faster on every worker, within this session's A/A spread of a few per cent plus the bundle-vs-src noise the memory notes (-3 to +10 %).\n- **Boids, 8 pairs, 01:28 to 01:38: NEUTRAL.** Spatial +0.2 % (5/8), physics -0.7 % (3/8).\n\nMain pushed.",
+      "commits": [
+        "0f8ed78c"
+      ]
+    },
+    {
+      "id": "R-0911",
+      "date": "2026-11-12",
+      "time": "01:47",
+      "timeFrom": "recorded",
+      "title": "E-217 kept: the collect keeps its copy of the sprite query's list while nothing was published",
+      "verdict": "kept",
+      "text": "**E-217 kept: the collect keeps its copy of the sprite query's list while nothing was published.** `ef03a7a1`.\n\n- **Premise (R-0903):** `writeCollectList` was 7.7 % of BunnyMark C 200 000's pre-render, the sprite query's 200 000 ids copied into the collect's memory each frame.\n- **What was done, simpler than the plan:** logic republishes a precomputed query only when the population changes. The query header's reserved int is now a publish sequence, stored after the index; `readPublishedQuerySnapshot` reads it first and hands back the same view only while it has not moved (the index alone comes back round after three publishes, with the same count when the churn evens out: the old cache's ABA, harmless before, which a test now covers). `writeCollectList(b, ids, n, true)` keeps the copy it holds of an unchanged published view; any other list (the static walk) is copied each time. `querySnapshotSeq.test.js`: two of its four fail on the old code.\n\n**BunnyMark C `?bunnies=200000`, owner pre-render, 4 pairs, 5fecdf6e vs ef03a7a1's tree (01:40 to 01:43):** **KEPT (product)**, pre-render 5.629 → 5.163 ms (-8.1 %, worse 0/4, cv 3/7 %). Logic 1.899 → 1.914 ms, below the floor.\n\n**Predator's gate, 4 pairs (01:43 to 01:47): NEUTRAL.** Logic -2.2 %, spatial -0.7 %, physics -3.3 %, pre-render +0.2 % (3/4 worse, within the session's A/A, R-0909: about 4 %).\n\nOpen: a scene whose population changes every frame still copies every frame; the plan's pointer at the published copy (with a reading mark) would cover it.",
+      "commits": [
+        "ef03a7a1"
+      ]
+    },
+    {
+      "id": "R-0912",
+      "date": "2026-11-12",
+      "time": "02:08",
+      "timeFrom": "recorded",
+      "title": "The bundles of bf5956eb (E-217) tested; Predator and Boids NEUTRAL",
+      "verdict": "passed",
+      "text": "**The bundles of bf5956eb (E-217 merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `55fac2a4`, built from bf5956eb.\n\n- Node 2488 of 2488 on main, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 01:52 to 01:58: NEUTRAL.** Logic -7.8 % (0/4 worse), spatial -2.6 %, physics -2.8 %, pre-render -0.8 %.\n- **Boids, 8 pairs, 01:58 to 02:08: NEUTRAL.** Spatial -1.8 % (2/8), physics -2.7 % (2/8).\n\nMain pushed.",
+      "commits": [
+        "55fac2a4"
+      ]
+    },
+    {
+      "id": "R-0913",
+      "date": "2026-11-12",
+      "time": "02:27",
+      "timeFrom": "recorded",
+      "title": "E-194 mixed: keyed LiquidFun rows halve the renderer (2.46 -> 1.08 ms, under the floor), pre-render +8 % (4/4)",
+      "verdict": "mixed",
+      "text": "**E-194, keyed LiquidFun rows: the renderer's time halves, pre-render pays a third of it back; mixed, kept on its branch.** `speed/e194` (`eff1d339` the scene's `?lf=<n>` knob, `13f47e9c` the change).\n\n- **The change:** a keyed scene whose statics texture holds a row per LiquidFun particle keys its LiquidFun rows by particle index past the keyed decorations; the emit marks a row as E-188 marks a decoration (a 32-byte record an index: the statics it last emitted, then the epoch). `preRenderEmitWasm.test.js` (E-194: keys, marks for a tint, a scale, an alpha, a texture, two particles that trade indices, a new epoch; Pixi's copy replayed from the marks always holds every row's statics; fails on the old kernel), `renderQueueMemory.test.js` (the layout).\n- **The knob:** `?lf=<n>` sizes LiquidFun's maximum and the queue and spans the basin with the box (147 px² a particle, from y 2400 up). At 60 000 every particle is on screen (QUEUE 60 000); physics then takes about 100 ms a step.\n\n**liquidFunQueryStressScene `?lf=60000`, owner renderer, 4 pairs, `--vs eff1d339 --hyp-rev 13f47e9c --full-rev` (02:21 to 02:27):** NEUTRAL (below floor) by the runner.\n- Renderer 2.456 → 1.084 ms (-56 %), under the 3 ms floor, not judged.\n- Pre-render 3.411 → 3.741 ms (+8.0 %, worse 4/4, cv 7/5 %).\n- Physics -2.1 % (cv 65/5 %), the others under the floor.\n\n**One CPU trace a side** (headed, 8 s warm-up, 6 s, `--trace-cpu`):\n- Pixi 191 → 97 ms/s busy: `pack_sprites_split` 54.5 → `pack_sprites_keyed` 21.1 ms/s, `updateBuffer` 47.6 → 15.5.\n- Pre-render 222 → 255 ms/s: `emit_rows` 75.3 → 103.1 ms/s, about 7.7 ns for each of 3.6 million LiquidFun rows a second. The rows come in particle order, so the records are read in order: one more stream of 1.9 MB a frame on top of the dozen the emit reads, and the prefetchers do not hide it.\n\n**Verdict: mixed.** About 1 ms a frame less CPU in all, but a primary worker 8 % worse, so not merged. **Next:** the records read only when they can have changed. A dense u16 per particle (120 KB) holds the compare epoch it was last checked at; the emit skips the 32-byte record when it equals the current one, which moves when Pixi asks for every statics again or physics says a LiquidFun static may have changed (a paint, a count that moved, a fading group). Then sit again.\n\nFiled beside it: N-142 (the statics do not follow LiquidFun's compaction).",
+      "commits": [
+        "13f47e9c"
+      ]
+    },
+    {
+      "id": "R-0914",
+      "date": "2026-11-12",
+      "time": "03:09",
+      "timeFrom": "recorded",
+      "title": "N-142 fixed: LiquidFun's render statics follow the particles through compactions, joins, extractions and splits",
+      "verdict": "kept-hygiene",
+      "text": "**N-142 fixed: LiquidFun's render statics follow the particles through LiquidFun's reorders.** Engine `3cbb90eb` (branch `fix/n142`), Box2D `Box2d_3.2` `7a1d29b`.\n\n- **Reproduced first** (a probe page, not committed: headless Chromium, WebGL, two box emits of 0xff0000 and 0x00ff00, the red with a 1.5 s lifespan, no gravity). Red and green pixels in each half of the canvas:\n  - at 0.8 s: left red 3 381, right green 3 381;\n  - at 4.8 s, after the red died: left nothing, right **red 3 381, green 0**. The green particles slid down into the red ones' indices and took their tint.\n- **Cause:** LiquidFun compacts its buffers when particles die (and rotates them on a join, permutes on an extraction, copies on a split); its own buffers follow each particle, but the render buffer's tint, texture, scale, rotation, base alpha and layer mask are painted once by index when a particle is made.\n- **Fix:**\n  - Box2D: each particle's `originIndex` (its index at the last `lfParticleSystem_ResetOrigins`; a new particle its own) is carried through `CopyParticle`, `PermuteParticleRange`, `RotateBuffer` and the split's copy, with a `reordered` flag. Exports `get_particle_origin_byte_offset`, `particle_reordered`, `reset_particle_origins`. Both builds (SIMD and no-SIMD) pass `build_for_weed.bat`.\n  - Engine: `followLiquidFunReorder` in the physics host, after each frame's steps and after a join, a split or an extraction, moves the eight render-statics arrays from each particle's origin (in place for a compaction, which only moves particles down; from a copy otherwise), then resets the origins.\n- **Checks:** `liquidFunOrigins.wasm.test.js` (a compaction: every survivor's origin is where it came from, and green; a join: each particle is the one at its origin). The probe after the fix: at 4.8 s right **green 3 381, red 0**. Node 2490 of 2490, demos 101 of 101.\n- **Left:** pre-render's previous LiquidFun positions (`_prevLfX`, the interpolation) are latched by index, so a compacted particle interpolates from another's position for one frame.\n\n**Gates** (src, headed, AC power):\n- **liquidFunQueryStressScene**, owner physics, 4 pairs, main vs the branch (02:54 to 02:59): NEUTRAL. Physics 11.241 → 10.994 ms (-1.2 %, worse 2/4, cv 2/3 %); the rest under the floor. (Its queue then held 16 000 of 19 656 particles; fixed since in 00b1448f.)\n- **Predator**, 4 pairs (02:47 to 02:53): NEUTRAL by the runner, physics 5.105 → 5.786 ms (+11.4 %, worse 3/4, cv 15/9 %) on a scene without LiquidFun. The Box2D binary grew 575 bytes (the three exports), the same build as main's.\n- **Predator again, 8 pairs** (`--name n142-predator --vs d0455d75`, 03:02 to 03:09): NEUTRAL. Physics 5.682 → 5.639 ms (-4.8 %, worse 3/8, cv 22/16 %; pairs +2.3, +6.4, +23.4, -5.6, -6.5, -11.6, -12.4, -4.0), logic -4.1 %, spatial -2.3 %, pre-render -2.6 %. The first sitting's +11.4 % was noise.\n\n**Verdict: kept (hygiene).** A bug fixed, no primary worker 3 % worse.",
+      "commits": [
+        "3cbb90eb"
       ]
     }
   ],

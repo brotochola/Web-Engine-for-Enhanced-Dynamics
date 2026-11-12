@@ -19,6 +19,11 @@ const _pull = { x: 0, y: 0 };
 export class PlanetShip extends Ship {
   static components = [...Ship.components, LightEmitter];
 
+  /** The camera pose frame whose roll this ship last followed (0: none yet). */
+  _rollReady = 0;
+  /** The camera's roll as the ship eases it; NaN until the first pose. */
+  _camAngle = NaN;
+
   onSpawned(spawnConfig = {}) {
     super.onSpawned(spawnConfig);
     this.lightEmitter.lightIntensity = 20000;
@@ -49,7 +54,7 @@ export class PlanetShip extends Ship {
     if (!(ready > 0) || ready === this._rollReady) return;
     this._rollReady = ready;
     const target = radialCameraAngle(Camera.followUsedX, Camera.followUsedY);
-    if (this._camAngle === undefined) this._camAngle = Camera.rotation || 0;
+    if (Number.isNaN(this._camAngle)) this._camAngle = Camera.rotation || 0;
     // Into [-π, π] whatever the size: _camAngle accumulates over orbits.
     const diff = normalizeAngle(target - this._camAngle + Math.PI) - Math.PI;
     const dt = dtRatio > 0 ? dtRatio / 60 : 0;

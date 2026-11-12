@@ -3,6 +3,8 @@ import { createSpatialPublishMemory, spatialPublishMemoryBytes } from './spatial
 import { createParticleMemory, particleMemoryBytes } from './particleMemory.js';
 import { createRenderQueueMemory, renderQueueMemoryBytes } from './renderQueueMemory.js';
 import { createNavigationMemory } from './navigationMemory.js';
+import { createMeshPoseLists, meshPoseCapacity } from './meshPoseList.js';
+import { createNavRequestRings } from './navRequestRing.js';
 import { GameObject } from '../core/gameObject.js';
 import { Transform } from '../components/transform.js';
 import { RigidBody } from '../components/rigidBody.js';
@@ -93,8 +95,10 @@ import {
 } from '../box2d/box2dBodySync.js';
 import { bindStaticSceneryGen, bindStaticTypes } from '../core/staticScenery.js';
 import { createSpawnCommandRingSab, bindSpawnCommandRing } from './spawnCommandRing.js';
+import { createListUpdateRings } from './listUpdateRing.js';
 import { poolExhaustionBytes, bindPoolExhaustion, unbindPoolExhaustion } from './poolExhaustion.js';
 import { MAX_POOL_SLOTS, PoolSlotArray, poolFreeListTopBytes, poolSlotBytes } from './poolSlotWidth.js';
+import { impactRingBytes } from './impactRing.js';
 import { createPublishedList } from './publishedList.js';
 import { visibilityMemoryBytes, visibilityMemoryOpts } from './visibilityMemory.js';
 import { Messages } from '../core/messages.js';
@@ -203,16 +207,6 @@ function createSlotFreeListBuffers(buffers, freeListKey, freeListTopKey, count) 
     freeList: new (PoolSlotArray(count))(buffers[freeListKey]),
     freeListTop: new Int32Array(buffers[freeListTopKey]),
   };
-}
-
-/** A slot pool's [count, index, ...] list pair, at its slot width (E-129: u32 past 65 535). */
-function createCompactSlotListPair(buffers, activeKey, visibleKey, maxEntries) {
-  const Slot = PoolSlotArray(maxEntries);
-  const size = (1 + maxEntries) * Slot.BYTES_PER_ELEMENT;
-  buffers[activeKey] = new SharedArrayBuffer(size);
-  buffers[visibleKey] = new SharedArrayBuffer(size);
-  new Slot(buffers[activeKey])[0] = 0;
-  new Slot(buffers[visibleKey])[0] = 0;
 }
 
 /**
@@ -336,18 +330,12 @@ function initializeParticleBuffers(scene) {
   ParticleEmitter.initialize(maxParticles);
   ParticleEmitter.initializeFreeList(buffers.particleFreeList, buffers.particleFreeListTop);
 
-  // The published lists. In the particle memory they are two of its regions (the list kernel writes
-  // them there); readers view them at these byte offsets.
-  if (scene.particleMemory) {
-    buffers.activeParticlesData = scene.particleMemory.buffer;
-    buffers.visibleParticlesData = scene.particleMemory.buffer;
-    buffers.activeParticlesByte = scene.particleMemory.layout.activeListByte;
-    buffers.visibleParticlesByte = scene.particleMemory.layout.visibleListByte;
-  } else {
-    createCompactSlotListPair(buffers, 'activeParticlesData', 'visibleParticlesData', maxParticles);
-    buffers.activeParticlesByte = 0;
-    buffers.visibleParticlesByte = 0;
-  }
+  // The lists: two regions of the particle memory (the list kernel writes them there), published lists (N-136,
+  // N-113) whose readers view them at these bytes, their headers'.
+  buffers.activeParticlesData = scene.particleMemory.buffer;
+  buffers.visibleParticlesData = scene.particleMemory.buffer;
+  buffers.activeParticlesByte = scene.particleMemory.layout.activeListByte;
+  buffers.visibleParticlesByte = scene.particleMemory.layout.visibleListByte;
 }
 
 function initializeLiquidFunRenderBuffer(scene) {
@@ -470,11 +458,9 @@ function initializeBulletBuffers(scene) {
 
   createActiveAndPublishedLists(buffers, 'activeBulletsData', 'visibleBulletsData', maxBullets);
 
-  // Header: [0]=count (Int32), [1]=batch sequence (Int32). Impact data starts at byte 8.
-  // The sequence lets logic workers detect new batches and avoid double-processing
-  // the same impacts when their frame rate differs from the particle worker's.
-  const impactStride = 24;
-  buffers.impactBuffer = new SharedArrayBuffer(8 + maxImpactsPerFrame * impactStride);
+  // N-129: the impacts go to the logic workers through a ring (impactRing.js): each reads what the particle worker
+  // published since its last read, so a logic worker that misses a particle frame keeps that frame's impacts.
+  buffers.impactBuffer = new SharedArrayBuffer(impactRingBytes(maxImpactsPerFrame));
 
   BulletPool.initialize(maxBullets);
   BulletPool.initializeFreeList(buffers.bulletFreeList, buffers.bulletFreeListTop);
@@ -1382,6 +1368,15 @@ export function createSceneSharedBuffers(scene) {
   initializeSharedResourceBuffers(scene);
   scene.buffers.spawnCommandRing = createSpawnCommandRingSab(scene.totalEntityCount);
   bindSpawnCommandRing(scene.buffers.spawnCommandRing);
+  // E-208: the list update rings of logic workers 1..N (null with one).
+  scene.buffers.listUpdateRings = createListUpdateRings(scene.config?.logic?.numberOfLogicWorkers | 0, scene.totalEntityCount);
+  // N-138: per render-queue buffer, the poses of the sprites whose entity has a mesh (null when no class has both).
+  scene.buffers.meshPoseCapacity = meshPoseCapacity(scene.registeredClasses, SpriteRenderer, MeshRenderer);
+  scene.buffers.meshPoseLists = createMeshPoseLists(scene.buffers.meshPoseCapacity);
+  // E-213: a nav request ring per logic worker, with navigation on.
+  scene.buffers.navRequestRings = scene.config?.navigation?.enabled
+    ? createNavRequestRings(scene.config?.logic?.numberOfLogicWorkers | 0)
+    : null;
 }
 
 function initializeSharedResourceBuffers(scene) {

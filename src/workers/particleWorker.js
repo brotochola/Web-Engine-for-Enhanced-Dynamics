@@ -35,12 +35,14 @@ import {
 } from '../util/utils.js';
 import { Decal as DecalImport } from '../core/decal.js';
 import { PoolSlotArray } from '../util/poolSlotWidth.js';
+import { IMPACT_FLOATS, bindImpactRing, publishImpacts } from '../util/impactRing.js';
 import { backPublishedList, publishList } from '../util/publishedList.js';
 import { PARTICLE_STATS, createStatsWriter } from '../util/workersUtils.js';
 import { NAVIGATION_DEFAULTS, PRE_RENDER_DEFAULTS, DECORATION_DEFAULTS } from '../util/configDefaults.js';
 import { bindDecorationSway, writeSwayColumns } from './decorationSwayClient.js';
 import { bindBulletTick } from '../core/bulletTickClient.js';
 import { bindNavFlowfield } from './navFlowfieldClient.js';
+import { bindNavRequestRings, drainNavRequests, NAV_REQUEST_FLOWFIELD } from '../util/navRequestRing.js';
 import { bindDecalStamp, flushDecalStamps } from './decalStampClient.js';
 import { GpuParticles } from '../core/gpuParticles.js';
 import {
@@ -160,9 +162,6 @@ function decorationScreenFlips(activeData, start, count, cameraBounds) {
 const OCCUPIED_SLOT = 1;
 const TOMBSTONE_SLOT = 2;
 
-const NAV_DX = Object.freeze([0, 1, 1, 1, 0, -1, -1, -1]);
-const NAV_DY = Object.freeze([-1, -1, 0, 1, 1, 1, 0, -1]);
-const NAV_COST = Object.freeze([10, 14, 10, 14, 10, 14, 10, 14]);
 
 function nextPowerOfTwo(value) {
   let n = 1;
@@ -329,45 +328,6 @@ class PathRequestQueue {
 }
 
 /**
- * NavScratch: reusable buffers for the A* search (computePath). The flowfield searches in the navigation memory
- * (navFlowfield.wasm).
- */
-class NavScratch {
-  constructor(totalCells, maxPathLength, gridWidth, gridHeight) {
-    this.stamp = new Uint32Array(totalCells);
-    this.currentStamp = 0;
-
-    // The flowfield's distance cap, which navFlowfield.wasm takes (bindNavFlowfield).
-    this.maxDistance = Math.min(65535, (gridWidth + gridHeight) * 14);
-
-    this.heapCell = new Uint32Array(totalCells);
-    this.heapFCost = new Uint32Array(totalCells);
-    this.heapGCost = new Uint32Array(totalCells);
-    this.heapSize = 0;
-    this.cameFrom = new Uint32Array(totalCells);
-    this.inOpenSet = new Uint8Array(totalCells);
-    this.pathResult = new Uint32Array(maxPathLength);
-  }
-
-  reset() {
-    this.currentStamp++;
-    if (this.currentStamp === 0) {
-      this.stamp.fill(0);
-      this.currentStamp = 1;
-    }
-    this.heapSize = 0;
-  }
-
-  isVisited(cell) {
-    return this.stamp[cell] === this.currentStamp;
-  }
-
-  markVisited(cell) {
-    this.stamp[cell] = this.currentStamp;
-  }
-}
-
-/**
  * ParticleWorker - Handles particle physics, navigation, and derived properties
  *
  * Responsibilities:
@@ -430,6 +390,9 @@ class ParticleWorker extends AbstractWorker {
     this.scratch = null;
     // W14: navFlowfield.wasm on the navigation memory, bound with navigation.
     this._flowWasm = null;
+    // E-213: the logic workers' nav request rings, drained at the start of each nav step.
+    this._navRings = [];
+    this._onNavRingRecord = (a, b) => this._onNavRecord(a, b);
     this.flowfieldRequests = null;
     /** W26: the decal stamp kernel, on the decal memory the tiles live in; stamps queue as records. */
     this._decalWasm = null;
@@ -494,9 +457,12 @@ class ParticleWorker extends AbstractWorker {
 
     // Bullets
     this.maxBullets = 0;
-    this._impactHeader = null; // Int32Array view: [0]=count, [1]=batch sequence
+    // N-129: the bullet tick writes a frame's impacts here ([0] their count, then IMPACT_FLOATS a record), and the
+    // worker appends them to the ring the logic workers read (impactRing.js).
+    this._impactHeader = null;
     this._impactData = null;
     this._maxImpactsPerFrame = 0;
+    this._impactRing = null;
     /** Decal textures the decal memory does not hold, warned about once each (stampParticleToTile). */
     this._decalTexturesMissing = new Set();
     // E-179: the screen test's flips at the last sample, scaled to the list (picks the loop); the frames since that
@@ -513,6 +479,14 @@ class ParticleWorker extends AbstractWorker {
     // N-112: the visible bullets' published list, the same way (tickAllBullets writes it each frame).
     this.visibleBulletsCtl = new Int32Array(0);
     this.visibleBulletsCopies = [];
+    // N-113: the visible particles' published list, the same way (the list kernel writes a copy given its byte).
+    this.visibleParticlesCtl = new Int32Array(0);
+    this.visibleParticlesCopies = [];
+    // N-136: the active particles' published list, the same way; the integrate reads the indices of the copy the kernel
+    // wrote that frame (a view of each copy's indices, made at init).
+    this.activeParticlesCtl = new Int32Array(0);
+    this.activeParticlesCopies = [];
+    this._activeIndexViews = [];
   }
 
   /**
@@ -539,8 +513,9 @@ class ParticleWorker extends AbstractWorker {
       // Sizes derive from config (buffer is allocated as 8 + maxImpactsPerFrame * 24)
       const maxImpacts = data.config?.bullet?.maxImpactsPerFrame ?? 64;
       this._maxImpactsPerFrame = maxImpacts;
-      this._impactHeader = new Int32Array(data.impactBuffer, 0, 2);
-      this._impactData = new Float32Array(data.impactBuffer, 8, maxImpacts * 6);
+      this._impactHeader = new Int32Array(2);
+      this._impactData = new Float32Array(maxImpacts * IMPACT_FLOATS);
+      this._impactRing = bindImpactRing(data.impactBuffer, maxImpacts);
     }
 
     // console.log(`[PARTICLE WORKER] Max particles: ${this.maxParticles}, Decorations: ${this.maxDecorations}, Entities: ${this.globalEntityCount}`);
@@ -552,6 +527,9 @@ class ParticleWorker extends AbstractWorker {
       if (!data.particleMemory || !data.particleLayout) throw new Error('particles without the particle memory (createParticleMemory)');
       // E-80: the integrate's input is the published active list, which is in the particle memory.
       this.activeParticleIndices = new ParticleSlots(data.particleMemory.buffer, data.particleLayout.indicesByte, this.maxParticles);
+      // N-136: each published copy's indices, after its count.
+      const slotBytes = ParticleSlots.BYTES_PER_ELEMENT;
+      this._activeIndexViews = this.activeParticlesCopies.map((c) => new ParticleSlots(c.buffer, c.byteOffset + slotBytes, this.maxParticles));
       // E-79: the integrate in WASM on the particle memory; its stamp list is a view of it.
       // wasm.particleIntegrateF32 (default on) takes the kernel's float32 integrate, chosen once here.
       this._wasmIntegrate = await bindParticleIntegrate(data.particleMemory, data.particleLayout, ParticleComponent, this.maxParticles, {
@@ -698,12 +676,9 @@ class ParticleWorker extends AbstractWorker {
         ? navConfig.maxProcessingMsPerFrame
         : NAVIGATION_DEFAULTS.maxProcessingMsPerFrame;
 
-      this.scratch = new NavScratch(
-        this.totalCells,
-        navConfig.maxPathLength || 128,
-        this.gridWidth,
-        this.gridHeight
-      );
+      // The flowfield's distance cap, which navFlowfield.wasm takes; both searches keep their columns in the
+      // navigation memory (E-76 W14, E-207).
+      this.scratch = { maxDistance: Math.min(65535, (this.gridWidth + this.gridHeight) * 14) };
 
       // W14: the flowfield search in navFlowfield.wasm, on the navigation memory the nav buffer lives in.
       if (!data.navigationMemory || !data.navigationLayout || data.navigationMemory.buffer !== data.buffers.navigationData) {
@@ -714,12 +689,14 @@ class ParticleWorker extends AbstractWorker {
         gridWidth: this.gridWidth,
         gridHeight: this.gridHeight,
         maxDistance: this.scratch.maxDistance,
+        maxPathLength: navConfig.maxPathLength || 128,
       });
 
       const flowfieldQueueCapacity = Math.max(32, this.maxFlowfields * 8);
       const pathQueueCapacity = Math.max(64, this.maxPaths * 8);
       this.flowfieldRequests = new FlowfieldRequestQueue(this.totalCells, flowfieldQueueCapacity);
       this.pathRequests = new PathRequestQueue(this.totalCells, pathQueueCapacity);
+      if (data.buffers?.navRequestRings) this._navRings = bindNavRequestRings(data.buffers.navRequestRings);
 
       // GC OPTIMIZATION: Pre-allocate DataView for nav header reads
       this._navDataView = new DataView(NavGrid._sab);
@@ -763,36 +740,12 @@ class ParticleWorker extends AbstractWorker {
 
     switch (type) {
       case 'REQUEST_FLOWFIELD': {
-        if (!this.flowfieldRequests) break;
-        const { targetCell } = data;
-        // console.log(`[PARTICLE WORKER] REQUEST_FLOWFIELD for targetCell: ${targetCell}`);
-        if (targetCell >= 0 && targetCell < this.totalCells) {
-          // E-37. Every request counts here, hits included: a cached target is
-          // answered below and a pending one is coalesced by the queue, so
-          // neither reaches the processing loop. COMPUTED / SERVICED is the
-          // LRU miss rate; counting at dequeue saw only misses and read 1.
-          this.flowfieldsServicedThisFrame++;
-          const existingSlot = this._findExistingFlowfieldSlot(targetCell);
-          if (existingSlot >= 0) {
-            this._updateFlowfieldLRU(existingSlot);
-          } else {
-            this.flowfieldRequests.enqueue(targetCell);
-          }
-        }
+        this._requestFlowfieldCell(data.targetCell);
         break;
       }
 
       case 'REQUEST_PATH': {
-        if (!this.pathRequests) break;
-        const { fromCell, toCell } = data;
-        if (fromCell >= 0 && fromCell < this.totalCells && toCell >= 0 && toCell < this.totalCells) {
-          const existingSlot = this._findExistingPathSlot(fromCell, toCell);
-          if (existingSlot >= 0) {
-            this._updatePathLRU(existingSlot);
-          } else {
-            this.pathRequests.enqueue(fromCell, toCell);
-          }
-        }
+        this._requestPathCells(data.fromCell, data.toCell);
         break;
       }
 
@@ -943,9 +896,13 @@ class ParticleWorker extends AbstractWorker {
     // CPU emitter pool only. LiquidFun lives on its own render SAB.
     const maxParticles = this.maxParticles;
 
-    // Camera not ready: the active list alone (no visibility to test).
+    // Camera not ready: the active list alone (no visibility to test), and an empty visible list.
     if (!this.cameraData) {
+      const active = this._backActiveParticles();
+      const copy = this._backVisibleParticles();
       this.activeParticleCount = buildActiveParticleListWasm(this._wasmLists, maxParticles);
+      if (active >= 0) publishList(this.activeParticlesCtl, active);
+      if (copy >= 0) publishList(this.visibleParticlesCtl, copy);
       return;
     }
 
@@ -955,6 +912,8 @@ class ParticleWorker extends AbstractWorker {
     // _frameCameraBounds filled _drawnCam this frame. A turned camera tests each
     // particle in view space, not in the box around the view (E-51b).
     const rotation = this._drawnCam.rotation;
+    const active = this._backActiveParticles();
+    const copy = this._backVisibleParticles();
     this.activeParticleCount = buildParticleListsWasm(
       this._wasmLists,
       maxParticles,
@@ -964,12 +923,45 @@ class ParticleWorker extends AbstractWorker {
       this.canvasHeight,
       this.cullingRatio,
     );
+    if (active >= 0) publishList(this.activeParticlesCtl, active);
+    if (copy >= 0) publishList(this.visibleParticlesCtl, copy);
     // if (activeCount !== this._lastLoggedActiveCount) {
     //   this._lastLoggedActiveCount = activeCount;
     //   const x0 = ParticleComponent.x ? ParticleComponent.x[0] : 0;
     //   const y0 = ParticleComponent.y ? ParticleComponent.y[0] : 0;
     //   console.log(`[particle_worker] Active particles: ${activeCount}, Visible: ${visibleData ? visibleData[0] : 0}, particle[0]=(${x0}, ${y0}), cam=(${cameraX.toFixed(1)}, ${cameraY.toFixed(1)}, z=${zoom.toFixed(2)})`);
     // }
+  }
+
+  /**
+   * N-136: the active particle list's copy the kernel writes this frame, one Pixi does not hold, published once the
+   * kernel returns; the integrate then reads that copy's indices. -1 when the worker was handed one list.
+   */
+  _backActiveParticles() {
+    const ctl = this.activeParticlesCtl;
+    if (ctl.length === 0) return -1;
+    const copy = backPublishedList(ctl);
+    const list = this.activeParticlesCopies[copy];
+    const indices = this._activeIndexViews[copy];
+    this.activeParticlesData = list;
+    this.activeParticleIndices = indices;
+    this._wasmLists.activeListByte = list.byteOffset;
+    this._wasmIntegrate.indicesByte = indices.byteOffset;
+    return copy;
+  }
+
+  /**
+   * N-113: the visible particle list's copy the kernel writes this frame, one pre-render does not hold (the binding
+   * told its byte), published once the kernel returns; -1 when the worker was handed one list.
+   */
+  _backVisibleParticles() {
+    const ctl = this.visibleParticlesCtl;
+    if (ctl.length === 0) return -1;
+    const copy = backPublishedList(ctl);
+    const list = this.visibleParticlesCopies[copy];
+    this.visibleParticlesData = list;
+    this._wasmLists.visibleListByte = list.byteOffset;
+    return copy;
   }
 
   /**
@@ -1270,6 +1262,8 @@ class ParticleWorker extends AbstractWorker {
       this._impactData,
       this._maxImpactsPerFrame
     );
+    // N-129: this frame's impacts after the ones the logic workers have not all read.
+    if (this._impactRing !== null) publishImpacts(this._impactRing, this._impactData, this._impactHeader[0]);
 
     if (activeCount <= 0 || !this.cameraData || !visibleData) {
       if (visibleData) visibleData[0] = 0;
@@ -1487,8 +1481,48 @@ class ParticleWorker extends AbstractWorker {
   // NAVIGATION
   // ========================================
 
+  /** A flowfield request, by message or ring: answered from the cache or queued. */
+  _requestFlowfieldCell(targetCell) {
+    if (!this.flowfieldRequests) return;
+    if (targetCell >= 0 && targetCell < this.totalCells) {
+      // E-37. Every request counts here, hits included: a cached target is
+      // answered below and a pending one is coalesced by the queue, so
+      // neither reaches the processing loop. COMPUTED / SERVICED is the
+      // LRU miss rate; counting at dequeue saw only misses and read 1.
+      this.flowfieldsServicedThisFrame++;
+      const existingSlot = this._findExistingFlowfieldSlot(targetCell);
+      if (existingSlot >= 0) {
+        this._updateFlowfieldLRU(existingSlot);
+      } else {
+        this.flowfieldRequests.enqueue(targetCell);
+      }
+    }
+  }
+
+  /** A path request, by message or ring: answered from the cache or queued. */
+  _requestPathCells(fromCell, toCell) {
+    if (!this.pathRequests) return;
+    if (fromCell >= 0 && fromCell < this.totalCells && toCell >= 0 && toCell < this.totalCells) {
+      const existingSlot = this._findExistingPathSlot(fromCell, toCell);
+      if (existingSlot >= 0) {
+        this._updatePathLRU(existingSlot);
+      } else {
+        this.pathRequests.enqueue(fromCell, toCell);
+      }
+    }
+  }
+
+  /** E-213: one ring record: a flowfield target with the high bit set, else a path's from and to. */
+  _onNavRecord(a, b) {
+    if ((a & NAV_REQUEST_FLOWFIELD) !== 0) this._requestFlowfieldCell(a & 0x7fffffff);
+    else this._requestPathCells(a, b);
+  }
+
   processNavigationRequests() {
     if (!this.navEnabled || !this.scratch) return;
+    // E-213: the requests the logic workers put in their rings since the last step.
+    const rings = this._navRings;
+    for (let k = 0; k < rings.length; k++) drainNavRequests(rings[k], this._onNavRingRecord);
 
     const deadline = performance.now() + this.navigationMaxProcessingMsPerFrame;
 
@@ -1559,20 +1593,8 @@ class ParticleWorker extends AbstractWorker {
 
   _findExistingPathSlot(fromCell, toCell) {
     if (!NavGrid._initialized || !this._navDataView) return -1;
-    const dv = this._navDataView;
-    const headerOffset = NavGrid._pathHeadersOffset;
-    const slotSize = NavGrid._pathSlotSize; // interleaved: header + data per slot
-    const maxPaths = NavGrid._maxPaths;
-
-    for (let i = 0; i < maxPaths; i++) {
-      const offset = headerOffset + i * slotSize;
-      // Read header: [fromCell, toCell, lastUsedFrame, length, status]
-      const slotFrom = dv.getUint32(offset, true);
-      const slotTo = dv.getUint32(offset + 4, true);
-      const slotStatus = dv.getUint32(offset + 16, true);
-      if (slotFrom === fromCell && slotTo === toCell && slotStatus === 2) return i;
-    }
-    return -1;
+    // E-212: the ready slot for the pair, by the index.
+    return NavGrid._findPathSlot(fromCell, toCell);
   }
 
   _updatePathLRU(slotIndex) {
@@ -1597,17 +1619,8 @@ class ParticleWorker extends AbstractWorker {
   }
 
   _hasEmptyPathSlot() {
-    if (!NavGrid._initialized || !this._navDataView) return false;
-    const dv = this._navDataView;
-    const headerOffset = NavGrid._pathHeadersOffset;
-    const slotSize = NavGrid._pathSlotSize; // interleaved: header + data per slot
-
-    for (let i = 0; i < this.maxPaths; i++) {
-      const offset = headerOffset + i * slotSize;
-      const slotStatus = dv.getUint32(offset + 16, true); // status at offset 16
-      if (slotStatus === 0) return true;
-    }
-    return false;
+    // E-214: NavGrid counts the slots never given a path since the last invalidate.
+    return NavGrid._initialized && NavGrid._pathFreeCount > 0;
   }
 
   /** W14: the search, the walls' pass and the smoothing in navFlowfield.wasm, then the slot. */
@@ -1624,151 +1637,11 @@ class ParticleWorker extends AbstractWorker {
 
   computePath(fromCell, toCell) {
     const willUseEmptySlot = this._hasEmptyPathSlot();
-
-    const scratch = this.scratch;
-    scratch.reset();
-
-    const walkability = NavGrid.getWalkabilityArray();
-    const gridWidth = this.gridWidth;
-    const gridHeight = this.gridHeight;
-
-    scratch.inOpenSet.fill(0);
-
-    const targetX = toCell % gridWidth;
-    const targetY = Math.floor(toCell / gridWidth);
-
-    const heuristic = (cell) => {
-      const cx = cell % gridWidth;
-      const cy = Math.floor(cell / gridWidth);
-      const dx = Math.abs(cx - targetX);
-      const dy = Math.abs(cy - targetY);
-      return 10 * Math.max(dx, dy) + 4 * Math.min(dx, dy);
-    };
-
-    scratch.heapGCost[fromCell] = 0;
-    const startH = heuristic(fromCell);
-    scratch.heapFCost[fromCell] = startH;
-    scratch.cameFrom[fromCell] = fromCell;
-
-    const heapPush = (cell) => {
-      const idx = scratch.heapSize++;
-      scratch.heapCell[idx] = cell;
-      let i = idx;
-      while (i > 0) {
-        const parent = (i - 1) >> 1;
-        if (scratch.heapFCost[scratch.heapCell[i]] < scratch.heapFCost[scratch.heapCell[parent]]) {
-          const tmp = scratch.heapCell[i];
-          scratch.heapCell[i] = scratch.heapCell[parent];
-          scratch.heapCell[parent] = tmp;
-          i = parent;
-        } else {
-          break;
-        }
-      }
-    };
-
-    const heapPop = () => {
-      if (scratch.heapSize === 0) return -1;
-      const result = scratch.heapCell[0];
-      scratch.heapSize--;
-      if (scratch.heapSize > 0) {
-        scratch.heapCell[0] = scratch.heapCell[scratch.heapSize];
-        let i = 0;
-        while (true) {
-          const left = 2 * i + 1;
-          const right = 2 * i + 2;
-          let smallest = i;
-          if (left < scratch.heapSize && scratch.heapFCost[scratch.heapCell[left]] < scratch.heapFCost[scratch.heapCell[smallest]]) {
-            smallest = left;
-          }
-          if (right < scratch.heapSize && scratch.heapFCost[scratch.heapCell[right]] < scratch.heapFCost[scratch.heapCell[smallest]]) {
-            smallest = right;
-          }
-          if (smallest !== i) {
-            const tmp = scratch.heapCell[i];
-            scratch.heapCell[i] = scratch.heapCell[smallest];
-            scratch.heapCell[smallest] = tmp;
-            i = smallest;
-          } else {
-            break;
-          }
-        }
-      }
-      return result;
-    };
-
-    heapPush(fromCell);
-    scratch.inOpenSet[fromCell] = 1;
-
-    let found = false;
-
-    while (scratch.heapSize > 0) {
-      const current = heapPop();
-      scratch.inOpenSet[current] = 0;
-
-      if (current === toCell) {
-        found = true;
-        break;
-      }
-
-      if (scratch.isVisited(current)) continue;
-      scratch.markVisited(current);
-
-      const currentG = scratch.heapGCost[current];
-      const currentX = current % gridWidth;
-      const currentY = Math.floor(current / gridWidth);
-
-      for (let dir = 0; dir < 8; dir++) {
-        const nx = currentX + NAV_DX[dir];
-        const ny = currentY + NAV_DY[dir];
-
-        if (nx < 0 || nx >= gridWidth || ny < 0 || ny >= gridHeight) continue;
-
-        const neighbor = ny * gridWidth + nx;
-
-        if (walkability[neighbor] === 0) continue;
-        if (scratch.isVisited(neighbor)) continue;
-
-        const tentativeG = currentG + NAV_COST[dir];
-
-        if (!scratch.inOpenSet[neighbor] || tentativeG < scratch.heapGCost[neighbor]) {
-          scratch.cameFrom[neighbor] = current;
-          scratch.heapGCost[neighbor] = tentativeG;
-          scratch.heapFCost[neighbor] = tentativeG + heuristic(neighbor);
-
-          if (!scratch.inOpenSet[neighbor]) {
-            heapPush(neighbor);
-            scratch.inOpenSet[neighbor] = 1;
-          }
-        }
-      }
-    }
-
-    let pathLength = 0;
-    if (found) {
-      let current = toCell;
-      while (current !== fromCell && pathLength < scratch.pathResult.length) {
-        scratch.pathResult[pathLength++] = current;
-        current = scratch.cameFrom[current];
-      }
-      // Only append the origin when there is room. Writing past the end of a
-      // typed array is a silent no-op, but pathLength would still advance and
-      // writePathData would then read one element beyond the array, getting
-      // undefined -> 0, which is a real cell id and lands in the path as a
-      // phantom waypoint.
-      if (pathLength < scratch.pathResult.length) {
-        scratch.pathResult[pathLength++] = fromCell;
-      }
-
-      for (let i = 0; i < pathLength / 2; i++) {
-        const tmp = scratch.pathResult[i];
-        scratch.pathResult[i] = scratch.pathResult[pathLength - 1 - i];
-        scratch.pathResult[pathLength - 1 - i] = tmp;
-      }
-    }
-
+    // E-207: navFlowfield.wasm's astar_path, the JS search (tests/reference/navAstar.mjs, N-137's decrease-key) ported.
+    const wasm = this._flowWasm;
+    const pathLength = wasm.astar(wasm.tableByte, fromCell, toCell);
     const slot = NavGrid.allocatePathSlot(fromCell, toCell);
-    NavGrid.writePathData(slot, scratch.pathResult, pathLength);
+    NavGrid.writePathData(slot, wasm.path, pathLength);
 
     if (willUseEmptySlot) {
       this.cachedPathsCount++;

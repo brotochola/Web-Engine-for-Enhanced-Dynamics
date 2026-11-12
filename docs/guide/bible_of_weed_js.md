@@ -126,6 +126,38 @@ static assets = {
 
 `bigAtlas.json` `meta.proxySheets` (and `meta.individualTextures`) are written by `createBigAtlas` / the bake tool. Boot also overlaps atlas load with audio, tilemaps, flowfields, and shaders; unbaked scenes pack on the main thread at boot.
 
+### Static flowfields
+
+A static flowfield is one direction per cell, baked once (by an editor or a script) and sampled by game code: `NavGrid.requestVectorFromStaticFlowfield(name, x, y, out)` fills `out` with x and y in -1..1, and with 0, 0 where the field has no direction or outside it. List the files in `static assets`:
+
+```javascript
+static assets = {
+  flowfields: {
+    sidewalks: '/game/data/ff_sidewalks.bin', // WeedJS's binary format
+    roads: '/game/data/ff_roads.json', // or JSON
+  },
+};
+```
+
+The main thread fetches them all at once at boot (the `flowfields` step of `onLoadProgress`) and keeps the cells the world touches; every worker gets a copy. A file's format is read from its first bytes, not from its name.
+
+**Binary**, the one to ship. Little-endian: a 24-byte header, never compressed, then the cells.
+
+| Offset | Type  | Field                                                                                    |
+| ------ | ----- | ---------------------------------------------------------------------------------------- |
+| 0      | 4 B   | `"WEFF"`                                                                                 |
+| 4      | u8    | version: 1                                                                               |
+| 5      | u8    | compression: 0 none, 1 gzip                                                              |
+| 6      | u16   | reserved: 0                                                                              |
+| 8      | u32   | width in cells                                                                           |
+| 12     | u32   | height in cells                                                                          |
+| 16     | f64   | cell size in world px                                                                    |
+| 24     | cells | width × height × 2 bytes, row by row from the top: x then y as Int8, -127..127 for -1..1 |
+
+With compression 1 the cells are one gzip stream (write it with `CompressionStream('gzip')`, or convert JSON fields with `node scripts/flowfieldToBinary.mjs ff_*.json` in the engine's repo; `--raw` leaves the cells uncompressed). The browser opens it with `DecompressionStream`, so the download is small whatever the server does, and the cells are then used as they are: nothing is parsed. The ten fields of the Buenos Aires demo's barrio take 3.7 MB as JSON and 116 KB in this format, and 5 to 6 ms of the main thread at boot instead of 18 to 21 (Chromium).
+
+**JSON**: `{ "metadata": { "widthCells", "heightCells", "cellSizePx" }, "data": [...] }`, where `data` holds rows of `[x, y]` or `null`. Each component becomes `Math.round(clamp(v, -1, 1) * 127)`, so a JSON field and its binary copy sample the same.
+
 ---
 
 ## Entity Model
@@ -534,6 +566,17 @@ static config = {
 If `fragment` contains `/` or `.` it's treated as a direct URL (backward compat), but prefer named assets.
 
 Layers **without** a `shader` block are one instanced sprite batch at their own zIndex. With `ySorting`, they share ENTITIES' CPU painter (`orderPainterSlots` + one blend). Layers **with** a `shader` use the two-RT pipeline (density pass + fragment shader post-process).
+
+Which blend a layer draws with depends on how many passes it takes. `blendMode` is always the blend of what lands on the screen:
+
+| Layer | How it draws | `blendMode` | `shader.containerBlend` |
+| --- | --- | --- | --- |
+| Sprite layer without a look, MESH layer without a look, world-rect layer | one pass, straight to the screen | that pass | that pass instead, when the config sets it |
+| Sprite or LiquidFun layer with a look, MESH layer with a look | the contents into the layer's render texture, then the look over the screen | the look's pass | the contents' pass (default normal) |
+| MESH layer with `alphaBySun` or `sunProjected` and no look | the fill into a render texture, composed once | the composite | the fill (default normal) |
+| GPU particle layer | one pass | that pass | — |
+
+So `fx: { blendMode: BLEND_MODES.ADD }` is an additive sprite layer, and `shader: { containerBlend }` is only for the pass into a render texture. (Up to 0.14, a layer drawn in one pass ignored `blendMode` and drew with `containerBlend`, normal by default.)
 
 The entities list sorts by `SpriteRenderer.zIndex` (larger is in front). `renderer.ySort` (default false) orders by Y inside the same zIndex. With both off and every zIndex at 0, the queue stays in emit order. `lighting.lightGlow` (`'add'` default) keeps glows on the ADD mesh; `'sprite'` leaves them in the entity list.
 

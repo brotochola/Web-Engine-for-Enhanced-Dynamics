@@ -7,6 +7,7 @@
 // workers still interleave (each spatial worker writes the rows of the entities it owns).
 
 import { poolSlotBytes } from './poolSlotWidth.js';
+import { publishedListBytes } from './publishedList.js';
 
 export const WASM_PAGE_BYTES = 65536;
 export const CACHE_LINE_BYTES = 64;
@@ -260,6 +261,8 @@ export function renderQueueMemoryRegions(queueBytes, gpuQueueBytes, maxItems, ta
       { name: 'pixiKeyUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_ROW_BYTES },
       // E-191: their shadow stream (shadowH, offX, offY a draw slot), for the sun's pass over the entity batch.
       { name: 'pixiKeyShadow', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_SHADOW_BYTES },
+      // E-189: their texture updates (gpuPack.c KEYED_TEX_WORDS each), as many as its rows.
+      { name: 'pixiKeyTexUpdates', owner: 'Pixi', bytes: (pixiExtra && (pixiExtra.keyRows | 0) > 0 ? n : 0) * PIXI_KEYED_TEX_BYTES },
     );
   }
   if (collect) {
@@ -414,6 +417,8 @@ export const EMIT_DECO_KEYED_BYTES = 32;
 
 /** E-191: the bytes of a keyed frame's shadow terms a draw slot (shadowH, offX, offY). */
 export const PIXI_KEYED_SHADOW_BYTES = 12;
+/** E-189: a keyed frame's texture update (gpuPack.c KEYED_TEX_WORDS u32: the statics row, the texture's float bits). */
+export const PIXI_KEYED_TEX_BYTES = 8;
 
 /**
  * E-177: the keyed frames' resync header, u32 words. Pixi raises REQUEST when its statics texture may miss a change (its
@@ -432,9 +437,11 @@ export const PIXI_KEYED_HEADER_WORDS = 5;
  * (no table slot is 0: the walkability is at byte 32). After it, the particle worker's flowfield scratch:
  * - state: a byte per cell (wall, settled, grid edges), dist (u16) and dir (u8) per cell;
  * - next, prev: the distance buckets' lists (i32 per cell); head: the buckets' heads (i32, 65 536 at most:
- *   NavScratch.maxDistance is capped at 65 535);
+ *   the particle worker's scratch.maxDistance is capped at 65 535);
  * - sums: the smoothing's row sums (u32 per cell); quotient: its rounded quotients (NAV_QUOTIENT_BYTES);
- * - vectors: the smoothed Int8 pairs the slot is filled from; table: the kernel's column table.
+ * - vectors: the smoothed Int8 pairs the slot is filled from; table: the kernel's column table;
+ * - aG, aF, aCame, aGen, aHeap, aPos: astar_path's columns (E-207), u32 per cell; aPath: its path, u32 per cell (a
+ *   path is never longer than the grid); aKey: the heap's keys beside its cells.
  * @param {number} navBytes NavGrid.calculateSABSize(...)
  * @param {number} cells gridWidth * gridHeight
  */
@@ -452,24 +459,33 @@ export function navigationMemoryRegions(navBytes, cells) {
     { name: 'quotient', owner: 'particle', bytes: NAV_QUOTIENT_BYTES },
     { name: 'vectors', owner: 'particle', bytes: n * 2 },
     { name: 'table', owner: 'particle', bytes: NAV_TABLE_SLOTS * 4 },
+    { name: 'aG', owner: 'particle', bytes: n * 4 },
+    { name: 'aF', owner: 'particle', bytes: n * 4 },
+    { name: 'aCame', owner: 'particle', bytes: n * 4 },
+    { name: 'aGen', owner: 'particle', bytes: n * 4 },
+    { name: 'aHeap', owner: 'particle', bytes: n * 4 },
+    { name: 'aPos', owner: 'particle', bytes: n * 4 },
+    { name: 'aPath', owner: 'particle', bytes: n * 4 },
+    { name: 'aKey', owner: 'particle', bytes: n * 4 },
   ]);
 }
 
-/** The flowfield's distance buckets: NavScratch.maxDistance + 1 at most. */
+/** The flowfield's distance buckets: the particle worker's scratch.maxDistance + 1 at most. */
 export const NAV_MAX_BUCKETS = 65536;
 /** navFlowfield.c's QUOTIENT_BYTES: the 19 x 10 (sum, count) pairs of the smoothing. */
 export const NAV_QUOTIENT_BYTES = 190;
-/** Room for the flowfield kernel's column table (navFlowfieldClient.js FLOWFIELD_SLOTS). */
-export const NAV_TABLE_SLOTS = 16;
+/** Room for the nav kernel's column table (navFlowfieldClient.js FLOWFIELD_SLOTS). */
+export const NAV_TABLE_SLOTS = 24;
 
 /**
  * The particle memory (E-79 `particleIntegrate.wasm`, E-80 `particleLists.wasm`, created by
  * particleMemory.js). The ParticleComponent lays its columns out from byte 0 of its buffer in every
  * worker (Component.initializeArrays), so this memory starts with the component and has no guard:
  * the kernels take every column's offset from JS. After it:
- * - activeList, visibleList: the published lists, u16 [count, index …] with room for one index past
- *   the count; pre-render reads the visible one, Pixi the active one, and the integrate reads the
- *   active one's indices;
+ * - activeList, visibleList: published lists (publishedList.js; N-113, N-136): a header, then three
+ *   copies of u16 [count, index …] with room for one index past the count; the kernel writes a copy
+ *   their reader does not hold, Pixi takes the published active one, pre-render the visible one,
+ *   and the integrate reads the indices of the active copy the kernel wrote that frame;
  * - stamp: stayOnTheFloor particles to stamp (u16);
  * - flat, heighted: the integrate's scratch lists (u16, 65 536 each);
  * - dead: the indices JS returns to the pool after the call, in order (u16);
@@ -488,8 +504,8 @@ export function particleMemoryRegions(maxParticles, componentBytes, lutFloats) {
   const scratch = s === 2 ? 65536 : n;
   return layoutRegions([
     { name: 'component', owner: 'every worker (the ParticleComponent views)', bytes: componentBytes },
-    { name: 'activeList', owner: 'particle; Pixi reads', bytes: (n + 2) * s },
-    { name: 'visibleList', owner: 'particle; pre-render reads', bytes: (n + 2) * s },
+    { name: 'activeList', owner: 'particle; Pixi reads', bytes: publishedListBytes(n, 1) },
+    { name: 'visibleList', owner: 'particle; pre-render reads', bytes: publishedListBytes(n, 1) },
     { name: 'stamp', owner: 'particle', bytes: n * s },
     { name: 'flat', owner: 'particle', bytes: scratch * s },
     { name: 'heighted', owner: 'particle', bytes: scratch * s },

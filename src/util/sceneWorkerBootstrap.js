@@ -224,6 +224,10 @@ export function buildSceneSharedBuffers(scene) {
     liquidFunGroups: scene.buffers.liquidFunGroups || null,
     decalStampRing: scene.buffers.decalStampRing || null,
     spawnCommandRing: scene.buffers.spawnCommandRing || null,
+    listUpdateRings: scene.buffers.listUpdateRings || null,
+    meshPoseLists: scene.buffers.meshPoseLists || null,
+    navRequestRings: scene.buffers.navRequestRings || null,
+    meshPoseCapacity: scene.buffers.meshPoseCapacity | 0,
     decalsTilesRGBA: scene.buffers.decalsTilesRGBA || null,
     perTypeActiveLists: scene.buffers.perTypeActiveLists,
     entityFreeLists: scene.buffers.entityFreeLists,
@@ -242,6 +246,9 @@ function buildRegisteredClassesInfo(scene) {
     deriveSpeed: r.class.deriveSpeed === true,
     isStatic: r.class.isStatic === true,
     animationEnd: definesBelow(r.class, GameObject, 'onAnimationEnd'),
+    // E-200: the spatial worker gives a class that ticks every few frames its lists before its ticks.
+    tickInterval: r.class.tickInterval == null ? 1 : r.class.tickInterval | 0,
+    ticks: GameObject.typeNeedsLogicTick(r.class),
     engineProvided: r.class.scriptUrl === null,
     components: r.components.map((c) => c.name),
   }));
@@ -502,6 +509,8 @@ function initializeSceneWorkers(scene, initData, sharedBuffers, workerPorts) {
     debugWorkerLog(`[Scene]   → Initializing spatial worker ${i}...`);
     postWorkerInitMessage(scene.workers.spatialWorkers[i], initData, {
       frameRateIndex: spatialStartIndex + i,
+      // E-200: where logic 0 publishes its frame number (its frameRateData row).
+      logicFrameRateIndex: logicStartIndex,
       workerIndex: i,
       totalSpatialWorkers: numberOfSpatialWorkers,
       frameClockSlot: frameClockSlot('spatial', i),

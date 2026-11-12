@@ -198,7 +198,9 @@ INLINE uint32_t pack_split_scatter(const uint32_t *t, uint32_t indices, uint32_t
    shader fetches them from. The draw slots' statics are statics[slots[2k]]. Refuses, as the scatter does, indices
    that are not distinct rows below rowCount. */
 #define INDEXED_STATIC_FLOATS 12
-#define SLOT_FLOATS 2
+/* E-186: a slot is its statics row alone. Every batch that reads the slot stream draws without a depth test, so the
+   slot's depth was never read; invDepthDenom stays in the exports' signatures and goes unused. */
+#define SLOT_FLOATS 1
 
 INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32_t count, uint32_t cap,
                                      double invDepthDenom, float *pose, float *slots, float *stat, uint32_t typeByte,
@@ -225,8 +227,8 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
     if (type) p += type[i] == 1;
     sprite_pose(t, i, pose + k * POSE_FLOATS);
     slots[k * SLOT_FLOATS] = (float)i;
-    slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
   }
+  (void)invDepthDenom;
   *particles = p;
   return n;
 }
@@ -241,14 +243,20 @@ INLINE uint32_t pack_indexed_scatter(const uint32_t *t, uint32_t indices, uint32
    update of KEYED_ROW_WORDS u32 (the statics, then the key). results[0] is the particle count (type 1 rows), results[1]
    the update count. E-191: withShadow (a constant, so each form is a copy of its own) also writes each slot's shadow
    terms at shadow (shadowH, offX, offY; zeros for a glow row, which casts none), for the sun's pass over these
-   instances. */
+   instances. E-189: a key with KEY_TEX_ONLY too changed its texture alone (an animation's frame): with texUpdates it
+   goes up as a texture update of KEYED_TEX_WORDS (its row, then the texture as the float bits the statics hold), the
+   count at results[2]; without, as an update like any other. */
 #define KEYED_ROW_WORDS 16
+#define KEYED_TEX_WORDS 2
 #define KEY_NONE 0xffffffffu
 #define KEY_CHANGED 0x80000000u
+#define KEY_TEX_ONLY 0x40000000u
+#define KEY_FLAGS (KEY_CHANGED | KEY_TEX_ONLY)
 
 INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indices, uint32_t count, uint32_t cap,
                            double invDepthDenom, float *pose, float *slots, uint32_t keyBase, uint32_t *updates,
-                           uint32_t typeByte, uint32_t *results, float *shadow, const int withShadow) {
+                           uint32_t typeByte, uint32_t *results, float *shadow, const int withShadow,
+                           uint32_t *texUpdates) {
   const double inv65535 = 1.0 / 65535.0;
   const float *SH = withShadow ? F32(t, COL_SHADOW_H) : 0;
   const float *SOX = withShadow ? F32(t, COL_SHADOW_OFF_X) : 0;
@@ -262,16 +270,24 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
   const uint32_t n = count < cap ? count : cap;
   uint32_t p = 0;
   uint32_t u = 0;
+  uint32_t tu = 0;
   for (uint32_t k = 0; k < n; k++) {
     const uint32_t i = indices ? idx[k] : k;
     if (type) p += type[i] == 1;
     sprite_pose(t, i, pose + k * POSE_FLOATS);
     const uint32_t raw = key[i];
-    uint32_t s = raw & ~KEY_CHANGED;
+    uint32_t s = raw & ~KEY_FLAGS;
     uint32_t send = raw >> 31;
     if (s >= keyBase) {
       s = keyBase + k;
       send = 1;
+    } else if (send && texUpdates && (raw & KEY_TEX_ONLY)) {
+      uint32_t *tx = texUpdates + tu * KEYED_TEX_WORDS;
+      const float texF = (float)TEX[i];
+      tx[0] = s;
+      __builtin_memcpy(tx + 1, &texF, 4);
+      tu++;
+      send = 0;
     }
     if (send) {
       /* sprite_static's words in the indexed order: scale, anchor; the depth term 0, the packed tint, the texture, the
@@ -285,7 +301,6 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
       u++;
     }
     slots[k * SLOT_FLOATS] = (float)s;
-    slots[k * SLOT_FLOATS + 1] = (float)(1.0 - (double)(k + 1) * invDepthDenom);
     if (withShadow) {
       float *sh = shadow + k * 3;
       const int glow = type && type[i] == 3;
@@ -296,6 +311,7 @@ INLINE uint32_t pack_keyed(const uint32_t *t, const uint32_t *key, uint32_t indi
   }
   results[0] = p;
   results[1] = u;
+  results[2] = tu;
   return n;
 }
 
@@ -366,23 +382,26 @@ uint32_t pack_sprites_indexed_scatter(uint32_t table, uint32_t indices, uint32_t
                               rowCount, 0);
 }
 
-/* E-177: the pose and slot streams at dstPose and dstSlots, the updates at updatesByte (room for cap), the two results at
-   resultsByte; the queue's key column at keyByte. */
+/* E-177: the pose and slot streams at dstPose and dstSlots, the updates at updatesByte (room for cap), the results at
+   resultsByte; the queue's key column at keyByte. E-189: the texture updates at texUpdatesByte (room for cap; 0: none). */
 __attribute__((export_name("pack_sprites_keyed")))
 uint32_t pack_sprites_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, uint32_t count, uint32_t cap,
                             double invDepthDenom, uint32_t dstPose, uint32_t dstSlots, uint32_t keyBase,
-                            uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow) {
+                            uint32_t updatesByte, uint32_t typeByte, uint32_t resultsByte, uint32_t dstShadow,
+                            uint32_t texUpdatesByte) {
   const uint32_t *t = (const uint32_t *)(uintptr_t)table;
   const uint32_t *k = (const uint32_t *)(uintptr_t)keyByte;
   float *pose = (float *)(uintptr_t)dstPose;
   float *slots = (float *)(uintptr_t)dstSlots;
   uint32_t *updates = (uint32_t *)(uintptr_t)updatesByte;
   uint32_t *results = (uint32_t *)(uintptr_t)resultsByte;
+  uint32_t *texUpdates = (uint32_t *)(uintptr_t)texUpdatesByte;
   if (dstShadow) {
     return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results,
-                      (float *)(uintptr_t)dstShadow, 1);
+                      (float *)(uintptr_t)dstShadow, 1, texUpdates);
   }
-  return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0);
+  return pack_keyed(t, k, indices, count, cap, invDepthDenom, pose, slots, keyBase, updates, typeByte, results, 0, 0,
+                    texUpdates);
 }
 
 /* E-191: a keyed caster row (KEYED_CASTER_FLOATS) for each queue row listed at indices: its x and y, its key as a float
@@ -403,7 +422,7 @@ uint32_t pack_casters_keyed(uint32_t table, uint32_t keyByte, uint32_t indices, 
   const uint32_t n = count < cap ? count : cap;
   for (uint32_t k = 0; k < n; k++) {
     const uint32_t i = idx[k];
-    const uint32_t s = key[i] & ~KEY_CHANGED;
+    const uint32_t s = key[i] & ~KEY_FLAGS;
     if (s >= keyBase) return 0xffffffffu;
     float *r = d + k * KEYED_CASTER_FLOATS;
     r[0] = X[i];
@@ -434,7 +453,7 @@ uint32_t pack_casters_keyed_scan(uint32_t table, uint32_t keyByte, uint32_t type
     if (type && type[i] == 3) continue;
     const float sh = SH[i];
     if (!(sh > 0.0f)) continue;
-    const uint32_t s = key[i] & ~KEY_CHANGED;
+    const uint32_t s = key[i] & ~KEY_FLAGS;
     if (s >= keyBase) return 0xffffffffu;
     float *r = d + n * KEYED_CASTER_FLOATS;
     r[0] = X[i];

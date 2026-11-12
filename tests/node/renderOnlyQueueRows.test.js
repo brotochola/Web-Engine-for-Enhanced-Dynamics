@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { bootEmitWorker } from '../helpers/preRenderEmitBoot.mjs';
 import { ParticleComponent } from '../../src/components/particleComponent.js';
 import { Layer } from '../../src/core/layer.js';
+import { bindPublishedList, createPublishedList } from '../../src/util/publishedList.js';
 
 // B29 (renderOnly ghost rows). A renderOnly particle is drawn by its compute
 // layer, so the sprite emit skipped it, but only after reserving its queue row.
@@ -18,7 +19,8 @@ test('a renderOnly particle takes no render queue row', async () => {
   Layer.reset();
   Layer.initializeFromConfig({}, { decals: {}, castedShadows: {}, entities: {}, lighting: {} }, true);
   try {
-    const visible = new SharedArrayBuffer(2 * (NP + 1));
+    // N-113: the visible particles are a published list; copy 0 is the published one until the particle worker writes.
+    const visible = createPublishedList(NP, 1);
     const { worker: w } = await bootEmitWorker(N, { particles: NP, extra: { visibleParticlesData: visible } });
 
     const entities = Layer.entitiesMask();
@@ -33,7 +35,7 @@ test('a renderOnly particle takes no render queue row', async () => {
     }
     ParticleComponent.renderOnly[0] = 1;
     Atomics.store(ParticleComponent.renderOnlyLive, 0, 1);
-    new Uint16Array(visible).set([NP, 0, 1, 2]);
+    bindPublishedList(visible, NP, 0, 1).copies[0].set([NP, 0, 1, 2]);
 
     // Two frames fill both queue buffers with a stale marker first.
     for (let f = 0; f < 2; f++) {

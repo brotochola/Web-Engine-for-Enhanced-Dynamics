@@ -45,8 +45,4 @@ export class BoxPart extends GameObject {
     onDespawned() {
         // Cleanup handled by ConstraintBox parent
     }
-
-    tick(_dtRatio) {
-        // Physics-only node
-    }
 }

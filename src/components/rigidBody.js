@@ -10,8 +10,14 @@ import { Transform } from './transform.js';
 import { updateMassFromCircle, updateMassFromBox } from '../util/utils.js';
 import { ShapeType } from '../util/configDefaults.js';
 import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
+import { lateBodyWrite, massFromCollider, massSetByHand } from '../core/debug/devChecks.js';
 
 let _warnedDynamicChain = false;
+/**
+ * N-132: slots whose rigidBody.mass was set by hand since the last sync from the collider (this thread: a spawn and
+ * its onSpawned run on one). The spawn's sync keeps that mass; a shape setter's sync replaces it and clears the mark.
+ */
+let massByHand = new Uint8Array(0);
 
 /**
  * RigidBody.static value for a dynamic body made static only because its
@@ -108,10 +114,23 @@ export class RigidBody extends Component {
    * dimensions change later.
    *
    * @param {number} index - Entity index
+   * @param {boolean} [fromSpawn] GameObject.spawn's sync, after onSpawned (DX-GUARDS E4's text)
    * @returns {boolean} True when collider geometry supplied mass, false when unit mass was used
    */
-  static syncMassFromCollider(index) {
+  static syncMassFromCollider(index, fromSpawn = false) {
     if (!RigidBody.active || !RigidBody.active[index]) return false;
+    const massBefore = RigidBody.mass[index];
+    // N-132: the spawn's sync keeps a mass set by hand in onSpawned (or the spawn config); a chain stays static.
+    if (fromSpawn && index < massByHand.length && massByHand[index] === 1) {
+      massByHand[index] = 0;
+      const shape = Collider.active && Collider.active[index] ? Collider.shapeType[index] : -1;
+      if (shape !== ShapeType.Chain) {
+        const isStaticBody = RigidBody.static[index] !== 0;
+        RigidBody.invMass[index] = isStaticBody || !(massBefore > 0) ? 0 : 1 / massBefore;
+        RigidBody.syncInertiaFromCollider(index, shape, isStaticBody);
+        return true;
+      }
+    }
 
     let isStatic = RigidBody.static[index] !== 0;
     let massInitialized = false;
@@ -190,6 +209,9 @@ export class RigidBody extends Component {
     }
 
     RigidBody.syncInertiaFromCollider(index, shapeType, isStatic);
+    // DX-GUARDS E4 (debug build): a mass set by hand, replaced by the collider's.
+    if (massInitialized && index < massByHand.length) massByHand[index] = 0;
+    if (massInitialized && !isStatic) massFromCollider(index, massBefore, RigidBody.mass[index]);
     return massInitialized;
   }
 
@@ -307,12 +329,41 @@ export class RigidBody extends Component {
   /**
    * Mass — keeps invMass + rotational inertia in sync when set at runtime.
    */
+  /**
+   * The column only: once the body is made, GameObject.setFixedRotation (or this.fixedRotation = v on the entity) is
+   * what reaches Box2D (DX-GUARDS E3 names a write here then).
+   */
+  get fixedRotation() {
+    return RigidBody.fixedRotation[this.index];
+  }
+  set fixedRotation(value) {
+    RigidBody.fixedRotation[this.index] = value;
+    lateBodyWrite(this.index, 'rigidBody.fixedRotation');
+  }
+
+  /** N-132: rigidBody.mass was set by hand on `index`; the spawn's sync from the collider keeps it. */
+  static markMassByHand(index) {
+    if (index >= massByHand.length) {
+      const grown = new Uint8Array(Math.max(index + 1, massByHand.length * 2, 1024));
+      grown.set(massByHand);
+      massByHand = grown;
+    }
+    massByHand[index] = 1;
+  }
+
+  /** A spawn starts the slot's mass over: nothing set by hand yet. */
+  static clearMassByHand(index) {
+    if (index < massByHand.length) massByHand[index] = 0;
+  }
+
   get mass() {
     return RigidBody.mass[this.index];
   }
   set mass(value) {
     const m = value > 0 ? value : 0;
     RigidBody.mass[this.index] = m;
+    RigidBody.markMassByHand(this.index);
+    massSetByHand(this.index);
     const isStatic = RigidBody.static[this.index] !== 0;
     RigidBody.invMass[this.index] = isStatic || !(m > 0) ? 0 : 1 / m;
     RigidBody.syncInertiaFromCollider(this.index, -1, isStatic);

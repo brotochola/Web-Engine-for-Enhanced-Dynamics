@@ -466,31 +466,43 @@ function rowStatics(w, r) {
 
 /** E-177: the bit of a sprite's key that says its statics changed since the emit before (preRenderEmit.c KEY_CHANGED). */
 const KEY_CHANGED = 0x80000000;
+/** E-189: with KEY_CHANGED, the bit that says the texture alone changed (preRenderEmit.c KEY_TEX_ONLY). */
+const KEY_TEX_ONLY = 0x40000000;
+const KEY_FLAGS = (KEY_CHANGED | KEY_TEX_ONLY) >>> 0;
+const TEX_WORD = 6;
 
 /**
  * E-177: Pixi's statics texture as the keys build it: a sprite row whose key carries the changed bit sends its statics to
- * its entity's row. After every frame each drawn sprite's key is its entity, and its entity's row holds the row's
- * statics, marked or not. `st.tex` carries the texture between frames.
+ * its entity's row (E-189: its texture word alone when the key also carries KEY_TEX_ONLY). After every frame each drawn
+ * sprite's key is its entity, and its entity's row holds the row's statics, marked or not: a row marked for its texture
+ * alone whose other statics moved shows here. `st.tex` carries the texture between frames.
  */
 function checkKeys(k, n, label, st) {
   const w = k.worker;
   const keys = w.renderQueueKey;
   let sprites = 0;
   let marked = 0;
+  let texOnly = 0;
   for (let r = 0; r < n; r++) {
     if (w._renderableType[r] !== 0) continue;
     sprites++;
     const raw = keys[r];
-    const e = (raw & ~KEY_CHANGED) >>> 0;
+    const e = (raw & ~KEY_FLAGS) >>> 0;
     if (e !== w._renderableIndex[r]) assert.fail(`${label}: row ${r}'s key ${raw} is not its entity ${w._renderableIndex[r]}`);
+    if ((raw & KEY_TEX_ONLY) !== 0 && raw < KEY_CHANGED) assert.fail(`${label}: row ${r}'s texture-only bit without the changed one`);
     if (raw >= KEY_CHANGED) {
-      st.tex.set(rowStatics(w, r), e * 12);
+      if ((raw & KEY_TEX_ONLY) !== 0) {
+        st.tex[e * 12 + TEX_WORD] = rowStatics(w, r)[TEX_WORD];
+        texOnly++;
+      } else {
+        st.tex.set(rowStatics(w, r), e * 12);
+      }
       marked++;
     }
   }
   for (let r = 0; r < n; r++) {
     if (w._renderableType[r] !== 0) continue;
-    const e = (keys[r] & ~KEY_CHANGED) >>> 0;
+    const e = (keys[r] & ~KEY_FLAGS) >>> 0;
     const want = rowStatics(w, r);
     for (let j = 0; j < 12; j++) {
       if (st.tex[e * 12 + j] !== want[j]) {
@@ -498,7 +510,7 @@ function checkKeys(k, n, label, st) {
       }
     }
   }
-  return { sprites, marked };
+  return { sprites, marked, texOnly };
 }
 
 /** The queue columns a row has. */
@@ -707,7 +719,9 @@ async function runCase(t, opts) {
     assert.equal(keyMarks[0].marked, keyMarks[0].sprites, 'the first frame marks every sprite');
     assert.ok(keyMarks.slice(1).some((x) => x.marked > 0), 'later frames mark the animated sprites');
     assert.ok(keyMarks.slice(1).every((x) => x.marked < x.sprites), 'later frames mark fewer than all');
-    t.diagnostic(`marked a frame: ${keyMarks.map((x) => x.marked).join(' ')}`);
+    // E-189: an animation's step changes the texture alone, and goes up as such.
+    assert.ok(keyMarks.slice(1).some((x) => x.texOnly > 0), 'later frames mark sprites for their texture alone');
+    t.diagnostic(`marked a frame: ${keyMarks.map((x) => `${x.marked} (${x.texOnly} texture alone)`).join(' ')}`);
   }
 }
 
@@ -1422,7 +1436,7 @@ test('E-188: the emit keys a decoration by its pool slot, marked when its static
     const marked = new Map();
     for (let r = 0; r < n; r++) {
       const raw = w.renderQueueKey[r];
-      const key = (raw & ~KEY_CHANGED) >>> 0;
+      const key = (raw & ~KEY_FLAGS) >>> 0;
       if (w._renderableType[r] === 0) {
         assert.equal(key, w._renderableIndex[r], `row ${r}: a sprite keeps its entity's key`);
         continue;

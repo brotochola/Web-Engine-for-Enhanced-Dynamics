@@ -13,7 +13,7 @@ import {
 } from '../../src/render/spriteIndexed.js';
 
 // E-162: the indexed sprite vertex shader takes its statics from three texels of a statics row (WebGL) or three
-// vec4<u32> of a storage buffer (WebGPU), the row and the depth from one instance attribute (the slot pair).
+// vec4<u32> of a storage buffer (WebGPU), the row from one instance attribute (the slot; E-186: no depth, a constant 0).
 // tests/bench/spriteIndexedCompileCheck.mjs compiles both in a browser.
 
 const shipped = readFileSync(new URL('../../src/shaders/instancedSprite.vert.glsl', import.meta.url), 'utf8');
@@ -28,7 +28,7 @@ test('a statics row is three RGBA texels: the 11 words of the split statics and 
   assert.deepEqual([0, 1, 1024, 1025, 300000].map(staticsTextureHeight), [1, 1, 1, 2, 293]);
 });
 
-test('the indexed shader reads the slot pair and the texture, and fills every static', () => {
+test('the indexed shader reads the slot and the texture, and fills every static', () => {
   const out = spriteIndexedVertex(shipped);
   for (const name of [...STATICS, 'aInstTintBits']) {
     assert.doesNotMatch(out, new RegExp(`^in \\w+ ${name};`, 'm'), `${name} is no attribute`);
@@ -38,8 +38,8 @@ test('the indexed shader reads the slot pair and the texture, and fills every st
   assert.match(out, /^\s+uint tintBits = weedS1\.y;/m);
   assert.doesNotMatch(out, /floatBitsToUint\(aInstTintBits\)|aInstTintBits = /);
   for (const kept of ['aQuad', 'aInstXY', 'aInstRotCS']) assert.match(out, new RegExp(`^in vec2 ${kept};`, 'm'), `${kept} stays`);
-  assert.match(out, /^in vec2 aInstSlot;/m, 'the slot pair, an attribute of its own name');
-  assert.match(out, /aInstDepth = aInstSlot\.y;/);
+  assert.match(out, /^in float aInstSlot;/m, 'the slot, an attribute of its own name');
+  assert.match(out, /aInstDepth = 0\.0;/);
   assert.match(out, /^uniform highp usampler2D uStatics;/m);
   assert.doesNotMatch(out, /gl_InstanceID|uFirstInstance/, 'nothing depends on where a chunk starts');
   assert.equal(out.split('void main() {').length, 2, 'one main');
@@ -51,21 +51,22 @@ test('the rewrite refuses a shader it does not know', () => {
   assert.throws(() => spriteIndexedVertex(shipped.replace('floatBitsToUint(aInstTintBits)', 'floatBitsToUint(aInstTexId)')), /tintBits/);
 });
 
-test('the indexed WGSL reads the slot pair and the storage buffer, the statics as lets of their names', () => {
+test('the indexed WGSL reads the slot and the storage buffer, the statics as lets of their names', () => {
   const out = spriteIndexedWgsl(shippedWgsl);
   const from = out.indexOf('fn mainVert(');
   const head = out.slice(from, out.indexOf(') -> VertexOut {', from));
   for (const name of [...STATICS, 'aInstTintBits']) assert.doesNotMatch(head, new RegExp(`\\b${name}:`), `${name} is no input`);
   for (const name of STATICS) assert.match(out, new RegExp(`^  let ${name} = `, 'm'), `${name} is a let`);
-  for (const kept of ['aQuad', 'aInstXY', 'aInstRotCS', 'aInstSlot']) {
+  for (const kept of ['aQuad', 'aInstXY', 'aInstRotCS']) {
     assert.match(head, new RegExp(`@location\\(\\d+\\) ${kept}: vec2<f32>,`), `${kept} is an input`);
   }
+  assert.match(head, /@location\(\d+\) aInstSlot: f32,/, 'aInstSlot is an input, a float');
   const locations = [...head.matchAll(/@location\((\d+)\)/g)].map((m) => m[1]);
   assert.equal(new Set(locations).size, locations.length, `one input a location: ${locations}`);
   assert.match(out, /^@group\(2\) @binding\(4\) var<storage, read> uStatics: array<vec4<u32>>;/m);
   assert.match(out, /^  let tintBits = weedS1\.y;/m, 'the tint\'s bits as the u32 they are');
   assert.doesNotMatch(out, /aInstTintBits/);
-  assert.match(out, /let aInstDepth = aInstSlot\.y;/);
+  assert.match(out, /let aInstDepth = 0\.0;/);
   assert.equal(out.split('fn mainVert(').length, 2, 'one vertex entry');
   assert.throws(() => spriteIndexedWgsl(shippedWgsl.replace('  @location(9) aInstTileOff: vec2<f32>,\n', '')), /aInstTileOff/);
   assert.throws(() => spriteIndexedWgsl(shippedWgsl.replace('bitcast<u32>(aInstTintBits)', 'bitcast<u32>(aInstTexId)')), /tintBits/);
@@ -83,8 +84,8 @@ test('the shadow form reads the statics by key, keeps the shadow terms, and has 
   assert.match(out, /^in vec3 aInstShadow;/m, 'the shadow terms, an attribute');
   assert.match(out, /^const vec4 aInstLight = vec4\(0\.0\);/m, 'no light of its own');
   assert.doesNotMatch(out, /^in vec4 aInstLight;/m);
-  assert.match(out, /^in vec2 aInstSlot;/m);
-  assert.match(out, /aInstDepth = aInstSlot\.y;/);
+  assert.match(out, /^in float aInstSlot;/m);
+  assert.match(out, /aInstDepth = 0\.0;/);
   assert.equal(out.split('void main() {').length, 2, 'one main');
   assert.throws(() => spriteIndexedVertex(shippedShadow.replace('in vec4 aInstLight;', ''), { shadow: true }), /aInstLight/);
   assert.throws(() => spriteIndexedVertex(shippedShadow), /tintBits/, 'the sprite form refuses the shadow shader');
@@ -99,7 +100,7 @@ test('the caster rows\' forms have no rotation, and the stamp form keeps the row
     assert.match(out, /^const vec2 aInstRotCS = vec2\(1\.0, 0\.0\);/m, 'no rotation attribute');
     assert.doesNotMatch(out, /^in vec2 aInstRotCS;/m);
     assert.match(out, /^in vec2 aInstXY;/m);
-    assert.match(out, /^in vec2 aInstSlot;/m);
+    assert.match(out, /^in float aInstSlot;/m);
     assert.match(out, /^in vec3 aInstShadow;/m);
     for (const name of STATICS) assert.match(out, new RegExp(`^\\s+${name} = `, 'm'), `${name} is filled in main`);
   }

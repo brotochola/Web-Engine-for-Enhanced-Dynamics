@@ -46,8 +46,6 @@ class Floor extends GameObject {
         this.spriteRenderer.repeatX = rx | 0;
         this.spriteRenderer.repeatY = ry | 0;
     }
-
-    tick() { }
 }
 
 export { Floor };

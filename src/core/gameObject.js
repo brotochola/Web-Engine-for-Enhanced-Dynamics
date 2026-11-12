@@ -20,6 +20,7 @@ import { Layer } from './layer.js';
 import { syncColliderFeed } from '../util/layerFeed.js';
 import { Grid } from './grid.js';
 import { Joint } from './joint.js';
+import { noteSpawned, setDevLookups, slotReleased } from './debug/devChecks.js';
 import { ColliderFixture } from './colliderFixture.js';
 import { ChainPoints } from './chainPoints.js';
 import { MeshGeometry } from './meshGeometry.js';
@@ -61,6 +62,7 @@ import {
   BODY_DIRTY,
   advanceBodyGeneration,
   bumpBodyGeneration,
+  bodyLifecyclePending,
   markBodyDirty,
   beginBodyDirtyDeferred,
   endBodyDirtyDeferred,
@@ -271,6 +273,13 @@ export class GameObject {
   static instances = [];
 
   /**
+   * E-209: this realm's maker of the instance at an entity index on its first use (a logic worker's, the page's), or
+   * null where entity code does not run. Instances are no longer made one per pool slot at boot.
+   * @type {((entityIndex: number) => GameObject|null)|null}
+   */
+  static _makeAt = null;
+
+  /**
    * Main thread only: current `Scene` reference, set in `Scene.exposeGlobalReferences()`.
    * Stays `null` in workers so `GameObject.get` keeps using the dense pool array there.
    * @type {Object|null}
@@ -297,7 +306,23 @@ export class GameObject {
    * @returns {GameObject|undefined}
    */
   static get(entityIndex) {
-    return GameObject.instances[entityIndex];
+    return GameObject._at(entityIndex);
+  }
+
+  /** E-209: the instance at an entity index, made on its first use where this realm makes them. */
+  static _at(entityIndex) {
+    const instance = GameObject.instances[entityIndex];
+    if (instance !== undefined && instance !== null) return instance;
+    const make = GameObject._makeAt;
+    return make !== null ? make(entityIndex) : instance;
+  }
+
+  /** E-209: class C's instance at entity index i (one of C's slots), made on its first use. */
+  static _instanceOf(C, i) {
+    const instance = C.instances[i - C.startIndex];
+    if (instance !== undefined && instance !== null) return instance;
+    const make = GameObject._makeAt;
+    return make !== null ? make(i) : instance;
   }
 
   /**
@@ -609,7 +634,7 @@ export class GameObject {
     if (fields > 5) this._c5 = null;
     if (fields > 6) this._c6 = null;
     if (fields > 7) this._c7 = null;
-    this.bindToEntitySlot({ page: options.page === true });
+    this.bindToEntitySlot({ page: options.page === true, lazy: options.lazy === true });
   }
 
   /**
@@ -619,8 +644,10 @@ export class GameObject {
    * @param {Object} opts
    * @param {boolean} [opts.page=false] - The page's instance: attach the
    *   component accessors only; do not reset Transform or push into pools.
+   * @param {boolean} [opts.lazy=false] - E-209: made on the slot's first use, which may be a live entity: leave its
+   *   Transform alone (the logic worker wrote every slot's type and "not active" at boot).
    */
-  bindToEntitySlot({ page = false } = {}) {
+  bindToEntitySlot({ page = false, lazy = false } = {}) {
     const index = this.index;
     const Ctor = this.constructor;
 
@@ -644,10 +671,14 @@ export class GameObject {
     if (!Object.prototype.hasOwnProperty.call(Ctor.prototype, '_hasComponents')) Ctor.prototype._hasComponents = flags;
 
     if (!page) {
-      Transform.entityType[index] = Ctor.entityType || 0;
-      Transform.active[index] = 0;
-      GameObject.instances.push(this);
-      Ctor.instances.push(this);
+      if (!lazy) {
+        Transform.entityType[index] = Ctor.entityType || 0;
+        Transform.active[index] = 0;
+      }
+      // E-209: at its index (instances are made on first use, in any order).
+      GameObject.instances[index] = this;
+      if (Ctor.startIndex === undefined || Ctor.startIndex === null) Ctor.instances.push(this);
+      else Ctor.instances[index - Ctor.startIndex] = this;
     }
 
     if (Grid._stride && Grid.neighborData) {
@@ -1692,6 +1723,8 @@ export class GameObject {
       SpriteRenderer.anchorY[this.index] = y;
       SpriteRenderer.renderDirty[this.index] = 1;
       SpriteRenderer.keyedDirty[this.index] = 1;
+      // N-140: the cull's reach is from the anchor, so a static sprite's extent in pre-render's grid moved.
+      staticSceneryChangedAt(this.index);
     }
     if (this._hasComponents.adobeAnimComponent) {
       AdobeAnimComponent.anchorX[this.index] = x;
@@ -2362,7 +2395,7 @@ export class GameObject {
    */
   /**
    * Pools a slot holds besides its component flags: collider layer feeds,
-   * attached decorations, extra fixtures, chain points, custom mesh. despawn
+   * attached decorations, extra fixtures, joints, chain points, custom mesh. despawn
    * and despawnAll both call this after onDespawned. despawnAll had drifted and
    * freed neither fixtures nor feeds (a save restore leaked the terrain's
    * fixtures on every load), and neither path freed chain points (a recycled
@@ -2379,6 +2412,10 @@ export class GameObject {
     }
     DecorationPool.clearAttachedAndDespawnAll(i);
     ColliderFixture.removeAllForEntity(i);
+    // N-130: the joints too, or the next entity spawned into this index is born jointed to the old partner. One read
+    // for an entity with none: the head of its joint list.
+    if (Joint.head && Joint.head[i] !== Joint.INVALID_INDEX) Joint.removeAllForEntity(i);
+    slotReleased(i);
     if (ChainPoints.begin && ChainPoints.begin[i] >= 0) ChainPoints.clearForEntity(i);
     MeshGeometry.clearEntity(i);
   }
@@ -2521,8 +2558,8 @@ export class GameObject {
 
     if (Transform.active[i] !== 1) return false;
     const C = GameObject.classByType[types[i]];
-    const instance = C !== undefined ? C.instances[i - C.startIndex] : undefined;
-    if (instance === undefined) return false;
+    const instance = C !== undefined ? GameObject._instanceOf(C, i) : undefined;
+    if (instance === undefined || instance === null) return false;
     instance.despawn();
     return true;
   }
@@ -2581,11 +2618,10 @@ export class GameObject {
   getAllNeighborInstances() {
     const count = this.neighborCount;
     const result = new Array(count);
-    const entities = GameObject.instances;
     const neighbors = this._neighborView();
 
     for (let i = 0; i < count; i++) {
-      result[i] = entities[neighbors[i]];
+      result[i] = GameObject._at(neighbors[i]);
     }
 
     return result;
@@ -2599,11 +2635,10 @@ export class GameObject {
    */
   getAllNeighborInstancesMut(out) {
     const count = this.neighborCount;
-    const entities = GameObject.instances;
     const neighbors = this._neighborView();
 
     for (let i = 0; i < count; i++) {
-      out[i] = entities[neighbors[i]];
+      out[i] = GameObject._at(neighbors[i]);
     }
     out.length = count;
     return out;
@@ -2851,7 +2886,7 @@ export class GameObject {
         return null;
       }
       const index = scene._spawnFromPage(EntityClass, spawnConfig);
-      return index < 0 ? null : EntityClass.instances[index - EntityClass.startIndex];
+      return index < 0 ? null : GameObject._instanceOf(EntityClass, index);
     }
     return GameObject._spawnAt(EntityClass, spawnConfig, -1);
   }
@@ -2903,8 +2938,8 @@ export class GameObject {
       }
     }
 
-    // Get the instance (already created during initialization)
-    const instance = EntityClass.instances[i - EntityClass.startIndex];
+    // The slot's instance, made on its first use (E-209)
+    const instance = GameObject._instanceOf(EntityClass, i);
 
     if (!instance) {
       console.error(`No instance found at index ${i} for ${EntityClass.name}`);
@@ -2978,6 +3013,7 @@ export class GameObject {
       }
       RigidBody.angularAccel[i] = 0;
       RigidBody.mass[i] = 0;
+      RigidBody.clearMassByHand(i);
       RigidBody.invMass[i] = 0;
       RigidBody.inertia[i] = 0;
       RigidBody.invInertia[i] = 0;
@@ -3209,9 +3245,11 @@ export class GameObject {
           reportWorkerError(error, 'onSpawned', EntityClass.name, i);
         }
       }
+      // DX-GUARDS E2 (debug build): what the instance holds now is its shape; a field first written later is named.
+      noteSpawned(instance);
 
       if (has.RigidBody && RigidBody.active[i]) {
-        RigidBody.syncMassFromCollider(i);
+        RigidBody.syncMassFromCollider(i, true);
       }
       if (spawnConfig.layers) {
         instance.setLayers(spawnConfig.layers);
@@ -3412,7 +3450,7 @@ export class GameObject {
       if (isAnyComponentActive) {
         const hadPhysicsBody =
           !!(rigidBodyActive?.[i] || colliderActive?.[i]);
-        const instance = EntityClass.instances[i - startIndex];
+        const instance = GameObject._instanceOf(EntityClass, i);
 
         // Call lifecycle hook (same as individual despawn)
         if (instance?.onDespawned) {
@@ -3462,7 +3500,7 @@ export class GameObject {
   static getFirstActiveInstance() {
     const index = this.getFirstActiveIndex();
     if (index === null) return null;
-    return this.instances[index - this.startIndex];
+    return GameObject._instanceOf(this, index);
   }
 
   /**
@@ -3500,13 +3538,10 @@ export class GameObject {
     const activeIndices = this.getAllActive();
     if (!activeIndices) return [];
 
-    const instances = this.instances;
-    const startIndex = this.startIndex;
     const result = [];
 
     for (let i = 0; i < activeIndices.length; i++) {
-      const entityIndex = activeIndices[i];
-      result.push(instances[entityIndex - startIndex]);
+      result.push(GameObject._instanceOf(this, activeIndices[i]));
     }
     return result;
   }
@@ -3526,3 +3561,9 @@ export class GameObject {
 // E-167: the realm's config and LogicWorker before the first entity binds them (and on the page, which has no worker).
 GameObject.prototype.config = EMPTY_CONFIG;
 GameObject.prototype.logicWorker = null;
+
+// DX-GUARDS (debug build): devChecks names an entity's class, and knows whether its Box2D body is made, through these.
+setDevLookups(
+  (i) => GameObject.classByType[Transform.entityType?.[i]]?.name ?? 'An entity',
+  (i) => Transform.active?.[i] === 1 && !!(RigidBody.active?.[i] || Collider.active?.[i]) && !bodyLifecyclePending(i),
+);

@@ -105,6 +105,8 @@ import {
   takePendingResize,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
+import { takePublishedList } from '../util/publishedList.js';
+import { bindMeshPoseList, takeMeshPoseList, MESH_POSE_FLOATS } from '../util/meshPoseList.js';
 import {
   InstancedSpriteBatch,
   INSTANCED_SPRITE_FLOATS,
@@ -548,6 +550,9 @@ class PixiRenderer extends AbstractWorker {
     // it; null where it cannot be), and whether that was tried.
     this._keyedSunMesh = null;
     this._keyedSunTried = false;
+    // E-211: whether the last sun pass would have drawn those instances (it had no keyed caster rows from pre-render),
+    // so the keyed pack writes their shadow terms for the next one.
+    this._keyedSunWanted = false;
     // E-191 step 2: the shadow passes over pre-render's keyed caster rows (the sun's, the stamps'), made with the keyed
     // sun pass; whether that was tried; and whether a frame of such rows was refused for want of them (said once).
     this._keyedSunRowsMesh = null;
@@ -671,6 +676,10 @@ class PixiRenderer extends AbstractWorker {
     // (see updateSpritesFromRenderQueue). Animation/texture selection happens in
     // pre_render_worker, which writes resolved textureIds into the queue.
     this.maxParticles = 0;
+    // N-136: the active particles' published list (header and three copies, bound at init); empty when the worker was
+    // handed one list.
+    this.activeParticlesCtl = new Int32Array(0);
+    this.activeParticlesCopies = [];
     this.maxDecorations = 0;
     this.visibleDecorationCount = 0;
 
@@ -700,6 +709,11 @@ class PixiRenderer extends AbstractWorker {
     this.renderQueueEnabled = false;
     this._queueBackpressure = true;
     this._queueInterp = false;
+    /** N-138: pre-render's lists of the poses its sprites that have a mesh were drawn at, one per queue buffer. */
+    this._meshPoseLists = [];
+    /** Per entity, the frame whose sprite pose _meshQueuePose holds (x, y, rotC, rotS); the mesh fill takes it. */
+    this._meshQueueStamp = new Int32Array(0);
+    this._meshQueuePose = new Float32Array(0);
     this._latchedPrevX = null;
     this._latchedPrevY = null;
     this._latchedPrevCount = 0;
@@ -1008,6 +1022,8 @@ class PixiRenderer extends AbstractWorker {
     // RAYCASTED LIGHT OCCLUSION (visibility polygons)
     // ========================================
     this._visPolyEnabled = false;
+    // N-134: raycasted lighting draws the sun's casters alone into the casted shadows (no cookies, no lamp stamps).
+    this._castedShadowsSunOnly = false;
     this._visPolyBuffers = [null, null]; // Double-buffered typed views + header pairs
     this._visPolyMaxVerts = 128;
     this._visPolyMaxLights = 10;
@@ -1508,7 +1524,12 @@ class PixiRenderer extends AbstractWorker {
       v.meshVertGen = MeshGeometry.vertGen;
       v.meshVertEpoch = MeshGeometry.vertEpoch;
       v.meshUvGen = MeshGeometry.uvGen;
+      v.queueStamp = this._meshQueueStamp;
+      v.queuePose = this._meshQueuePose;
+      v.queueFrame = -1;
     }
+    // N-138: a mesh whose sprite was drawn this frame takes its sprite's pose.
+    v.queueFrame = this._meshPoseLists.length !== 0 && this.lastReadFrame > 0 ? this.lastReadFrame : -1;
     v.entityCount = MeshRenderer.active ? MeshRenderer.active.length : 0;
     v.animationFrameStart = this.animationFrameStart;
     if (this._poseX) {
@@ -2145,7 +2166,9 @@ class PixiRenderer extends AbstractWorker {
       },
       upload: (source, bits, width, height, y0, rows) => this._gpuRecordRowsGl(source, bits, width, height, y0, rows),
       // E-177: a keyed batch's changed statics into its texture.
-      scatter: (source, updates, count, width, height) => this._scatterStaticsGl(source, updates, count, width, height),
+      // E-189: and its texture updates.
+      scatter: (source, updates, count, width, height, texUpdates, texCount) =>
+        this._scatterStaticsGl(source, updates, count, width, height, texUpdates, texCount),
     };
     return this._gpuRecordTextureOps;
   }
@@ -2180,13 +2203,14 @@ class PixiRenderer extends AbstractWorker {
    * E-177: `count` updates of a keyed batch's statics (GPU_KEYED_ROW_WORDS u32 each) into its texture, `width` x
    * `height` (staticsScatterGl.js), the scatter's GL objects made on the first call.
    */
-  _scatterStaticsGl(source, updates, count, width, height) {
+  _scatterStaticsGl(source, updates, count, width, height, texUpdates = null, texCount = 0) {
     const renderer = this.pixiApp?.renderer;
     const gl = renderer?.gl;
     const texSys = renderer?.texture;
-    if (!gl || !texSys || count <= 0) return;
+    if (!gl || !texSys || (count <= 0 && texCount <= 0)) return;
     if (this._staticsScatterGl === null || this._staticsScatterGl.gl !== gl) this._staticsScatterGl = createStaticsScatterGl(gl);
-    scatterStaticsGl(this._staticsScatterGl, renderer, texSys.getGlSource(source).texture, updates, count, width, height);
+    const texture = texSys.getGlSource(source).texture;
+    scatterStaticsGl(this._staticsScatterGl, renderer, texture, updates, count, width, height, texUpdates, texCount);
   }
 
   /** Every frame: new GPU particle records up, each ring's live window and clock set. */
@@ -2468,6 +2492,7 @@ class PixiRenderer extends AbstractWorker {
           updatesByte: layout.pixiKeyUpdatesByte,
           headerByte: layout.pixiKeyHeaderByte,
           shadowByte: layout.pixiKeyShadowByte ?? -1,
+          texUpdatesByte: layout.pixiKeyTexUpdatesByte ?? -1,
         }
       : null;
   }
@@ -2598,6 +2623,10 @@ class PixiRenderer extends AbstractWorker {
         if (layer.sortKeyU32ByBuf) layer.sortKeyU32 = layer.sortKeyU32ByBuf[readBufferIndex];
       }
       this._latchPose(false, this.renderQueuePoseReady ? this.renderQueuePoseReady[0] : 0);
+      // N-138: before the buffer goes back to pre-render.
+      if (this._meshPoseLists.length !== 0) {
+        takeMeshPoseList(this._meshPoseLists[readBufferIndex], readyFrame, this._meshQueueStamp, this._meshQueuePose);
+      }
       this._snapshotComputePose();
       this.lastReadFrame = readyFrame;
       if (this._presenting) this._deferredRenderQueueRelease = readyFrame;
@@ -3640,10 +3669,21 @@ LIGHTING SYSTEM SETUP
     this._drawLightSplat(splat, o.resolution);
   }
 
+  /**
+   * N-136. The active particle list the light field walks: the copy the particle worker published last, held until
+   * the next take, so the particle worker writes the next lists elsewhere; the one list it was handed when nothing is
+   * published (a test).
+   */
+  _takeActiveParticles() {
+    const ctl = this.activeParticlesCtl;
+    if (ctl.length === 0) return this.activeParticlesData;
+    return this.activeParticlesCopies[takePublishedList(ctl)];
+  }
+
   _renderParticleLightingField() {
     const splat = this._particleLightSplat;
     if (!splat || !this.lightingRT || this._visPolyEnabled) return;
-    const active = this.activeParticlesData;
+    const active = this._takeActiveParticles();
     const lightSqrt = ParticleComponent.lightSqrt;
     if (!active || !(active[0] > 0) || !lightSqrt) return;
     const o = this._particleLightOpts;
@@ -3765,13 +3805,11 @@ RAYCASTED LIGHT OCCLUSION (visibility polygon system)
 
     // Visibility polygons already do attenuation + occlusion. CASTED_SHADOWS
     // light cookies multiply on top and crush umbra to pitch black (cookies clear
-    // to black outside the gradient; soft shadow sprites used ~0.33 alpha).
-    if (this.shadowDisplaySprite) {
-      this.shadowDisplaySprite.visible = false;
-    }
-    this.shadowSpritesEnabled = false;
-    // Keep Layer flag off so _applyLayerVisibility does not re-show an empty cookie RT.
-    if (Layer.castedShadows) Layer.castedShadows.visible = false;
+    // to black outside the gradient; soft shadow sprites used ~0.33 alpha), and the
+    // fans are the lamps' shadows. N-134: the sun's casters still draw there (they
+    // used to go with the rest, so trees and people cast nothing under raycasted
+    // lighting); the cookies and the lamps' stamps do not.
+    this._castedShadowsSunOnly = true;
 
     if (this._useWebGpu) {
       this._visBatchProgramOpts = { gpuProgram: gpuFromWgsl(this._visBatchWgsl, 'visibility-polygon-batch') };
@@ -5096,13 +5134,26 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   updateShadowSprites() {
     if (!this.shadowSpritesEnabled) return;
     if (!this.shadowBatch || !this.shadowRT) return;
-    if (!layerIsVisible(Layer.castedShadows?.id)) return;
+    if (!layerIsVisible(Layer.castedShadows?.id)) {
+      this._setKeyedSunStream(false);
+      return;
+    }
     const interval = this.shadowUpdateInterval | 0;
     const skip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
     this._shadowUpdateTick++;
     if (!skip) {
       this._drawGpuCasterShadows();
     }
+    // E-211: the next frame's keyed pack writes the instances' shadow terms only when that frame's sun pass runs and
+    // would draw them.
+    const nextSkip = interval > 1 && (this._shadowUpdateTick % interval) !== 0;
+    this._setKeyedSunStream(this._keyedSunWanted && !nextSkip);
+  }
+
+  /** E-211: whether the entity batch's next keyed packs write its instances' shadow terms (once it has them). */
+  _setKeyedSunStream(on) {
+    const b = this.entitiesBatch;
+    if (b && b.keyedShadows) b.setKeyedShadowStream(on);
   }
 
   createShadowSpriteSystem() {
@@ -5261,6 +5312,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
   }
 
   _drawGpuCasterShadows() {
+    this._keyedSunWanted = false;
     this._gpuSunDrew = false;
     this._gpuPassesThisFrame = 0;
     this._gpuCastersThisFrame = 0;
@@ -5312,14 +5364,17 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
     batch.setTargetSpace(false, 0, 0, 1);
     if (u.uSun[3] > 0 && sunN > 0) {
-      // E-191: on a keyed frame the sun's casters are the entity batch's own instances (a sprite that casts none has
-      // no height), already uploaded with their shadow terms; else pre-render's sun rows.
-      const keyedSun = this._keyedSunFor(shader);
-      if (keyedSun !== null) {
-        this._drawGpuCasterPass(keyedSun, group, true);
-      } else if (keyedRows) {
+      // E-211: pre-render's keyed sun rows when it wrote them (it packs them for the stamps in any case): 28 bytes a
+      // caster, read in order, where the instances cost the keyed pack 12 bytes a sprite gathered from three more
+      // queue columns and 12 more written. Else (E-191) the entity batch's own instances, when this frame's pack wrote
+      // their shadow terms (a sprite that casts none has no height); else pre-render's full sun rows.
+      this._keyedSunWanted = !keyedRows;
+      const keyedSun = keyedRows ? null : this._keyedSunFor(shader);
+      if (keyedRows) {
         const rows = this._keyedRowsMesh(this._keyedSunRowsMesh, gpu.sun, sunN, GPU_KEYED_CASTER_FLOATS);
         if (rows !== null) this._drawGpuCasterPass(rows, group, true);
+      } else if (keyedSun !== null) {
+        this._drawGpuCasterPass(keyedSun, group, true);
       } else {
         this._commitPackedBatch(batch, gpu.sun, sunN, GPU_CASTER_FLOATS);
         this._drawGpuCasterPass(mesh, group, true);
@@ -5332,7 +5387,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     u.uPointScale = pointScale;
     u.uGroundInvScaleY = this._groundInvScaleY || 1;
 
-    if (cookieN > 0 && this.shadowBatch && gpu.cookie) {
+    if (cookieN > 0 && !this._castedShadowsSunOnly && this.shadowBatch && gpu.cookie) {
       const screenScale = zoom * res;
       this.shadowBatch.setTargetSpace(true, this._renderCameraX, this._renderCameraY, screenScale);
       if (this._commitPackedBatch(this.shadowBatch, gpu.cookie, cookieN, GPU_SPRITE_FLOATS)) {
@@ -5346,7 +5401,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
       }
     }
 
-    if (stampN > 0) {
+    if (stampN > 0 && !this._castedShadowsSunOnly) {
       u.uLight[0] = 0;
       u.uLight[1] = 0;
       u.uLight[2] = 0;
@@ -6307,7 +6362,7 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         if (cl.displaySprite.parent) cl.displaySprite.parent.removeChild(cl.displaySprite);
       }
       if (!cl.shaderMesh.parent) this.pixiApp.stage.addChild(cl.shaderMesh);
-      this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
+      this._registerLayerDisplayObject(layerName, cl.shaderMesh, false);
       if (this._meshLookMustCompose(cl)) this._ensureMeshLookComposite(cl);
     } else {
       cl.displaySprite.texture = cl.rtOut;
@@ -6352,6 +6407,16 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     if (!layerName || !displayObject) return;
     this._applyLayerPresentation(layerName, displayObject, forceContainerBlend);
     this._layerRuntime[layerName] = displayObject;
+  }
+
+  /**
+   * N-79: whether a custom layer's display object draws with the container blend. A batch or a world-rect mesh on
+   * the stage is the layer's only pass: it takes blendMode, unless the config set shader.containerBlend. A display
+   * sprite or a look mesh composes the layer's picture, which its batches drew with the container blend: blendMode.
+   */
+  _customLayerForcesContainerBlend(cl, displayObject) {
+    const onePass = displayObject === cl.batch?.mesh || displayObject === cl.fillBatch?.mesh || displayObject === cl.worldMesh;
+    return onePass && cl.containerBlendSet === true;
   }
 
   _syncLayerRefsFromRuntime() {
@@ -7157,6 +7222,14 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     // This includes Transform, RigidBody, SpriteRenderer, and all custom components
 
     // Note: ParticleComponent is automatically initialized by AbstractWorker.initializeCommonBuffers()
+    const meshPoses = data.buffers.meshPoseLists;
+    if (meshPoses && meshPoses.length === 2) {
+      const cap = data.buffers.meshPoseCapacity | 0;
+      const n = this.globalEntityCount | 0;
+      this._meshPoseLists = [bindMeshPoseList(meshPoses[0], cap), bindMeshPoseList(meshPoses[1], cap)];
+      this._meshQueueStamp = new Int32Array(n);
+      this._meshQueuePose = new Float32Array(n * MESH_POSE_FLOATS);
+    }
     this.maxParticles = data.maxParticles || 0;
     if (data.buffers.componentData.ParticleComponent && this.maxParticles > 0) {
       debugWorkerLog(`PIXI WORKER: ParticleComponent initialized for ${this.maxParticles} particles`);
@@ -7690,9 +7763,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     cl.shader = built.shader;
     cl.uniformStore = built.shader.resources?.customUniforms?.uniforms || null;
     cl.uniformEntries = config.uniformMap ? Object.entries(config.uniformMap) : null;
-    this._registerLayerDisplayObject(cl.layerName, built.mesh, true);
+    this._registerLayerDisplayObject(cl.layerName, built.mesh, cl.containerBlendSet);
     this.pixiApp.stage.addChild(built.mesh);
-    this._applyLayerPresentation(cl.layerName, built.mesh, true);
     debugWorkerLog(`PIXI WORKER: world-rect layer "${cl.layerName}" ${rect.width}x${rect.height}`);
   }
 
@@ -7949,6 +8021,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         splatRadius: splatCfg?.radius ?? 48,
         scaleMode: Layer._normalizeScaleMode(config.scaleMode),
         containerBlend,
+        // N-79: the config set shader.containerBlend (a batch drawn in one pass takes it over blendMode).
+        containerBlendSet: config.containerBlendSet === true,
         rt: null,
         rtOut: null,
         shaderMesh: null,
@@ -8076,7 +8150,8 @@ UPDATE LIGHTING (NO ZOOM SCALING)
 
         if (isMesh) {
           cl.meshLook = true;
-          this._registerLayerDisplayObject(layerName, cl.shaderMesh, true);
+          // The look mesh composes the layer's picture: blendMode, as a look layer's display sprite (N-79).
+          this._registerLayerDisplayObject(layerName, cl.shaderMesh, false);
           this.pixiApp.stage.addChild(cl.shaderMesh);
           debugWorkerLog(
             `PIXI WORKER: Custom MESH look layer "${layerName}" initialized (resolution=${resolution}, RT=${w}x${h})`
@@ -8101,11 +8176,11 @@ UPDATE LIGHTING (NO ZOOM SCALING)
         this._registerLayerDisplayObject(layerName, cl.displaySprite);
         debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized (composed, alphaBySun)`);
       } else if (fillBatch) {
-        this._registerLayerDisplayObject(layerName, fillBatch.mesh, true);
+        this._registerLayerDisplayObject(layerName, fillBatch.mesh, cl.containerBlendSet);
         this.pixiApp.stage.addChild(fillBatch.mesh);
         debugWorkerLog(`PIXI WORKER: Custom MESH layer "${layerName}" initialized`);
       } else if (batch) {
-        this._registerLayerDisplayObject(layerName, batch.mesh, true);
+        this._registerLayerDisplayObject(layerName, batch.mesh, cl.containerBlendSet);
         this.pixiApp.stage.addChild(batch.mesh);
         debugWorkerLog(`PIXI WORKER: Custom layer "${layerName}" initialized (no shader)`);
       } else if (gpuBatch) {
@@ -8526,11 +8601,9 @@ UPDATE LIGHTING (NO ZOOM SCALING)
     else if (this.lightingMesh) this._registerLayerDisplayObject('lighting', this.lightingMesh);
     for (let i = 0; i < this._customLayerList.length; i++) {
       const cl = this._customLayerList[i];
-      this._registerLayerDisplayObject(
-        cl.layerName,
-        cl.displaySprite || cl.shaderMesh || cl.batch?.mesh || cl.fillBatch?.mesh,
-        !cl.displaySprite
-      );
+      const displayObject = cl.displaySprite || cl.shaderMesh || cl.batch?.mesh || cl.fillBatch?.mesh;
+      if (!displayObject) continue;
+      this._registerLayerDisplayObject(cl.layerName, displayObject, this._customLayerForcesContainerBlend(cl, displayObject));
     }
     this._syncLayerRefsFromRuntime();
 

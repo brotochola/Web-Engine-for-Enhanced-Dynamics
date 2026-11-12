@@ -54,8 +54,10 @@ for (const name of PEOPLE_SHEETS) {
 for (const name of new Set([...DRIVING_SHEETS, ...PARKED_SHEETS, ...WRECKED_SHEETS])) {
   SHEETS['car_' + name] = { json: `/demos/buenosAiresScene/img/cars/${name}.json`, png: `/demos/buenosAiresScene/img/cars/${name}.png` };
 }
-const FLOWFIELDS = { calles: BARRIO + 'ff_calles.json' };
-for (const name of WALK_FIELDS) FLOWFIELDS[name] = BARRIO + `ff_${name}.json`;
+// The editor writes the flowfields as .bin (WeedJS's binary format) when META.ffExt says so, as JSON otherwise.
+const FF_EXT = META.ffExt || '.json';
+const FLOWFIELDS = { calles: BARRIO + 'ff_calles' + FF_EXT };
+for (const name of WALK_FIELDS) FLOWFIELDS[name] = BARRIO + `ff_${name}${FF_EXT}`;
 
 const _v = { x: 0, y: 0 };
 const _view = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };

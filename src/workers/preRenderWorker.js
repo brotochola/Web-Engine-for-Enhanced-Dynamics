@@ -13,6 +13,7 @@ import { LightEmitter as LightEmitterImport } from '../components/lightEmitter.j
 import { SpriteRenderer as SpriteRendererImport } from '../components/spriteRenderer.js';
 import { AdobeAnimComponent as AdobeAnimComponentImport } from '../components/adobeAnimComponent.js';
 import { ShadowCaster as ShadowCasterImport } from '../components/shadowCaster.js';
+import { MeshRenderer } from '../components/meshRenderer.js';
 import { FlashComponent as FlashComponentImport } from '../components/flashComponent.js';
 import { LightOccluder as LightOccluderImport, LIGHT_OCCLUDER_MASK_SPRITE } from '../components/lightOccluder.js';
 import { AbstractWorker } from './abstractWorker.js';
@@ -152,6 +153,7 @@ import { AdobeAnimRegistry } from '../core/adobeAnimRegistry.js';
 import { Messages, MESSAGE_ANIMATION_END } from '../core/messages.js';
 import { staticSceneryGen } from '../core/staticScenery.js';
 import { StaticSceneryGrid } from '../render/staticSceneryGrid.js';
+import { bindMeshPoseList, writeMeshPoseList } from '../util/meshPoseList.js';
 
 // Hot code reads these as module consts, not imports. TurboFan folds a module
 // const (and the typed arrays its class holds); an import is a cell it reads
@@ -487,6 +489,8 @@ class PreRenderWorker extends AbstractWorker {
         this._gpuSunKeyed = false;
         /** The sprite collect kernel (W4b), bound when a scene without physics keeps Transform in that memory. */
         this._collectWasm = null;
+        /** N-138: per queue buffer, the poses of the sprites whose entity has a mesh (empty when no class has both). */
+        this._meshPoseLists = [];
         /** The shadow stamp kernel (E-114), on its regions of the render-queue memory (with shadows and sun casters). */
         this._stampWasm = null;
         /** Whether the kernel's last frame wrote a repeating sprite (emitSpriteQueue's tiledRows). */
@@ -682,6 +686,8 @@ class PreRenderWorker extends AbstractWorker {
         this._lastEmitCount = 0;
         /** The presorted collector's glow rows (type 3): with none, the pack takes every row with no slot list. */
         this._presortGlowRows = 0;
+        /** E-216: the glow rows (type 3) this frame's collect put in the queue. */
+        this._frameGlowRows = 0;
         /**
          * True only while the main queue's emit runs on a presorted frame: the kernel then leaves the sort keys and
          * the shadow terms, which nothing reads that frame (custom layers emit after it and keep theirs).
@@ -744,6 +750,9 @@ class PreRenderWorker extends AbstractWorker {
         // N-112: the visible bullets' published list, the same way.
         this.visibleBulletsCtl = new Int32Array(0);
         this.visibleBulletsCopies = [];
+        // N-113: the visible particles' published list, the same way.
+        this.visibleParticlesCtl = new Int32Array(0);
+        this.visibleParticlesCopies = [];
     }
 
     _warnOnce(flagName, message) {
@@ -905,6 +914,11 @@ class PreRenderWorker extends AbstractWorker {
         this.liquidFunMaxCount = data.liquidFunMaxCount || 0;
         if (data.buffers?.liquidFunRender && this.liquidFunMaxCount > 0) {
             this.liquidFun = bindLiquidFunRender(data.buffers.liquidFunRender, this.liquidFunMaxCount, data.buffers.liquidFunRenderByte | 0);
+        }
+        const meshPoses = data.buffers?.meshPoseLists;
+        if (meshPoses && meshPoses.length === 2) {
+            const cap = data.buffers.meshPoseCapacity | 0;
+            this._meshPoseLists = [bindMeshPoseList(meshPoses[0], cap), bindMeshPoseList(meshPoses[1], cap)];
         }
         this.maxDecorations = data.maxDecorations || 0;
         this.maxBullets = data.maxBullets || 0;
@@ -1524,6 +1538,7 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     resetFrameCounters() {
+        this._frameGlowRows = 0;
         this.visibleEntitiesCount = 0;
         this.visibleParticlesCount = 0;
         this.visibleDecorationsCount = 0;
@@ -1590,8 +1605,10 @@ class PreRenderWorker extends AbstractWorker {
         if (detail) started = performance.now();
         this.collectVisibleParticles();
         this.collectVisibleLiquidFun();
+        const meshPoseFrom = this._renderableCount;
         this.collectVisibleEntities();
         this.collectVisibleAdobeAnimations();
+        if (this._meshPoseLists.length !== 0) this._writeMeshPoses(meshPoseFrom);
         this.collectVisibleDecorations();
         this.collectVisibleBullets();
         if (detail) this.collectTimeThisFrame = performance.now() - started;
@@ -1710,7 +1727,7 @@ class PreRenderWorker extends AbstractWorker {
     collectVisibleParticles() {
         if (this.maxParticles === 0) return;
 
-        const visibleData = this.visibleParticlesData;
+        const visibleData = this._takeVisibleParticles();
         if (!visibleData) return;
 
         const visibleCount = visibleData[0];
@@ -1833,7 +1850,8 @@ class PreRenderWorker extends AbstractWorker {
         // E-127: with static scenery, the walk of the moving sprites and the static ones in the cells in view.
         const walked = this._staticSceneryWalk(spriteEntities, cb);
         const walk = walked >= 0 ? this._staticGrid.list : spriteEntities;
-        const listed = walked >= 0 ? writeCollectList(b, walk, walked) : writeCollectList(b, spriteEntities);
+        const listed =
+            walked >= 0 ? writeCollectList(b, walk, walked) : writeCollectList(b, spriteEntities, spriteEntities.length, true);
         const count = walked >= 0 ? walked : listed > 0 ? listed : this.globalEntityCount;
         const res = b.results;
         res[0] = this._renderableCount;
@@ -1898,7 +1916,8 @@ class PreRenderWorker extends AbstractWorker {
         const gen = staticSceneryGen();
         if (gen !== grid.builtGen) {
             grid.build(gen, this.config?.worldWidth || 0, this.config?.worldHeight || 0, Transform.active,
-                Transform.x, Transform.y, SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH, Collider.visualRange);
+                Transform.x, Transform.y, SpriteRenderer.boundsHalfW, SpriteRenderer.boundsHalfH, SpriteRenderer.anchorX,
+                SpriteRenderer.anchorY, Collider.visualRange);
         }
         const zoom = cb.zoom;
         const half = grid.maxHalf;
@@ -1934,6 +1953,15 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+        screenMinX, screenMaxX, screenMinY, screenMaxY) {
+        const rowsBefore = this._renderableCount;
+        this._collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+            screenMinX, screenMaxX, screenMinY, screenMaxY);
+        // E-216: the only rows of type 3 the collect makes.
+        this._frameGlowRows += this._renderableCount - rowsBefore;
+    }
+
+    _collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
         screenMinX, screenMaxX, screenMinY, screenMaxY) {
         const MIN_GLOW_INTENSITY = 50;
         const MIN_GLOW_RANGE = 2.5;
@@ -2169,6 +2197,13 @@ class PreRenderWorker extends AbstractWorker {
         return this.visibleDecorationsCopies[takePublishedList(ctl)];
     }
 
+    /** N-113. The visible particle list to collect, as _takeVisibleDecorations takes the decorations'. */
+    _takeVisibleParticles() {
+        const ctl = this.visibleParticlesCtl;
+        if (ctl.length === 0) return this.visibleParticlesData;
+        return this.visibleParticlesCopies[takePublishedList(ctl)];
+    }
+
     /** N-112. The visible bullet list to collect, as _takeVisibleDecorations takes the decorations'. */
     _takeVisibleBullets() {
         const ctl = this.visibleBulletsCtl;
@@ -2328,6 +2363,22 @@ class PreRenderWorker extends AbstractWorker {
      * E-98d. An Adobe root is the only row the emit expands into several; without one, the emit
      * writes queue row i from collector row i, so the collect can write poses there directly.
      */
+    /**
+     * N-138. The pose each sprite whose entity has a mesh was collected at, into this queue buffer's list: Pixi fills the
+     * mesh at it, so a volume shadow follows its sprite. Read before the emit, which writes the queue columns the
+     * collect poses may share.
+     */
+    _writeMeshPoses(from) {
+        const list = this._meshPoseLists[this._queueBuf];
+        if (!list) return;
+        if (!MeshRenderer.active || !this._renderableType) {
+            list.count[0] = 0;
+            return;
+        }
+        writeMeshPoseList(list, from, this._renderableCount, this._renderableType, this._renderableIndex,
+            MeshRenderer.active, this._collectPx, this._collectPy, this._collectRotC, this._collectRotS);
+    }
+
     _bindCollectPoses() {
         const adobe = this._frameAdobeEntities;
         const inQueue = (adobe === null || adobe.length === 0) && this._renderablePx !== null
@@ -3560,8 +3611,10 @@ class PreRenderWorker extends AbstractWorker {
             return res;
         }
         const sunN = this._packGpuSun(dst, q);
-        const stamp = this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
-        const cookie = this._packGpuCookies(dst);
+        // N-134: under raycasted lighting the fans are the lamps' shadows and Pixi draws the sun's casters alone, so
+        // the lamps' stamps and cookies are not made.
+        const stamp = this.visibilityPolygonsEnabled ? 0 : this._stampAgainstSun(dst, dst.sun, sunN, 0, 0, 1);
+        const cookie = this.visibilityPolygonsEnabled ? 0 : this._packGpuCookies(dst);
         res.sun = sunN;
         res.stamp = stamp;
         res.cookie = cookie;
@@ -3792,6 +3845,11 @@ class PreRenderWorker extends AbstractWorker {
         const presorted = this._queuePresorted;
         const presortedNoGlow = presorted && this._presortGlowRows === 0;
         const allowSort = !presorted && !!(allowPainter && this._gpuPainter && q.sortKey);
+        // E-216: a frame without glow rows has nothing to split out whether presorted or not. Its rows go as they are,
+        // or in the painter's order over all of them, without the entity list (built, then copied into the pack's
+        // memory: 10 % of pre-render in BunnyMark at 200 000). The spec's fillAll still orders every row when the painter
+        // sorts.
+        const noGlow = presortedNoGlow || this._frameGlowRows === 0;
         this._packDst = dst;
         this._packQ = q;
         this._packParticles = 0;
@@ -3799,10 +3857,10 @@ class PreRenderWorker extends AbstractWorker {
         spec.count = count;
         spec.type = typeArr;
         spec.opts = opts;
-        spec.splitGlow = !presortedNoGlow && !!(this._lightGlowAsSprite === false && typeArr && this._gpuIdxEntity);
+        spec.splitGlow = !noGlow && !!(this._lightGlowAsSprite === false && typeArr && this._gpuIdxEntity);
         // Unsplit, the glow rows go to the glow batch only when glows are not sprites (as Pixi's layer sets it); the
         // spec read undefined, so an unsplit frame packed its sprite rows (type 0) into the glow batch.
-        spec.glowIncludeType = !spec.splitGlow && !presortedNoGlow && this._lightGlowAsSprite === false ? 3 : -1;
+        spec.glowIncludeType = !spec.splitGlow && !noGlow && this._lightGlowAsSprite === false ? 3 : -1;
         spec.idxEntity = this._gpuIdxEntity;
         spec.idxGlow = this._gpuIdxGlow;
         spec.painter = allowSort ? this._gpuPainter : null;

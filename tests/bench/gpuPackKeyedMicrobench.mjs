@@ -5,13 +5,20 @@
  * sprites change a static every frame, E-177 step 0), through gpuPack.wasm on one shared memory, as Pixi packs it (a
  * gather: Pixi's binding has no inverse, W9c):
  *   - split: today's frame, pack_sprites_split: the pose and the statics in draw order (60 bytes a sprite);
- *   - keyed: E-177's, pack_sprites_keyed: the pose and the slot pair in draw order (24 bytes a sprite), the statics
+ *   - keyed: E-177's, pack_sprites_keyed (gathering in the painter's order): the pose and the slot pair in draw order (24 bytes a sprite), the statics
  *            compared with the key table and the changed ones listed as updates (64 bytes each).
+ *   - keyedScatter: E-193's, the same through the inverse of the painter's list (the queue read in order), where the
+ *            tree's gpuPack has pack_sprites_keyed_scatter.
  * Each frame changes its rows' textures outside the timed call. `order` is `random` (the painter's order unrelated to
- * the queue's, Predator's) or `near` (the queue's order with a tenth of the rows moved a little).
+ * the queue's, Predator's) or `near` (the queue's order with a tenth of the rows moved a little). E-189: `marked` also
+ * sets the changed bit on each frame's changed rows (clearing the frame before's), as pre-render's emit marks a sprite
+ * whose texture moved, so the keyed pack lists them as updates (without it only the keyless rows go up). `marked:
+ * 'texture'` marks them for their texture alone (with the texture-only bit, preRenderEmit.c KEY_TEX_ONLY) and gives the
+ * pack room for texture updates: a tree whose pack knows them sends 8 bytes a row, one that does not sends the row whole
+ * (its key reads as one without a key), so the two trees' times compare what a texture-only change costs each.
  *
  *   node tests/bench/gpuPackKeyedMicrobench.mjs [--rows 14000] [--entities 42600] [--dirty 0.05] [--order random|near]
- *     [--frames 61] [--output path]
+ *     [--marked [texture]] [--frames 61] [--output path]
  *   node tests/bench/chromeKernel.mjs --module /tests/bench/gpuPackKeyedMicrobench.mjs --args '{"order":"random"}'
  *
  * Reports the median ms of a pack, a checksum of the pose stream (the same on both cases) and the keyed case's updates
@@ -21,6 +28,8 @@ import { GPU_INDEXED_SLOT_FLOATS, GPU_POSE_FLOATS, GPU_SPACE_WORLD, GPU_STATIC_F
 import * as client from '../../src/render/gpuPackClient.js';
 
 const KEY_NONE = 0xffffffff;
+const KEY_CHANGED = 0x80000000;
+const KEY_TEX_ONLY = 0x40000000;
 const KEYLESS = 200;
 // The key table and the updates (gpuPack.c KEYED_ROW_WORDS), for a tree that has them.
 const ROW_WORDS = 16;
@@ -35,7 +44,7 @@ function mulberry32(seed) {
   };
 }
 
-async function setup(rows, entities, orderKind) {
+export async function setup(rows, entities, orderKind) {
   const keyRows = entities + rows;
   const bytes = rows * 160 + keyRows * ROW_WORDS * 4 + rows * ROW_WORDS * 4 + (2 << 20);
   const memory = new WebAssembly.Memory({ initial: Math.ceil(bytes / 65536) + 16, maximum: 32768, shared: true });
@@ -109,6 +118,12 @@ async function setup(rows, entities, orderKind) {
   const keyTable = alloc(Uint32Array, keyRows * ROW_WORDS);
   const stamps = alloc(Uint32Array, keyRows);
   const updates = alloc(Uint32Array, rows * ROW_WORDS);
+  // E-189: the texture updates (gpuPack.c KEYED_TEX_WORDS each), for a tree whose pack writes them.
+  const texUpdates = alloc(Uint32Array, rows * 2);
+  // E-193: the keyed pack's inverse of the painter's list, for a tree whose kernel reads the queue through it.
+  const inverse = alloc(Uint32Array, rows);
+  // E-191: the slots' shadow terms, for a caller that asks the keyed pack for them (the tests).
+  const shadow = alloc(Float32Array, rows * 3);
   const tableByte = (top = (top + 63) & ~63);
   top += 4 * 32 * 4;
   const indexByte = (top = (top + 63) & ~63);
@@ -117,8 +132,10 @@ async function setup(rows, entities, orderKind) {
   top += 16 + 16 * 8;
   if (top > buf.byteLength) throw new Error('gpuPackKeyedMicrobench: the memory is too small');
   // Pixi's binding: no inverse, so every pack gathers in the painter's order.
-  const b = await client.bindGpuPack(memory, { tableByte, tableSlots: 4, indexByte, indexCap: rows, particlesByte, inverseByte: 0 });
-  return { q, b, order, splitPose, splitStat, pose, slots, keyTable, stamps, updates, rng };
+  const b = await client.bindGpuPack(memory, {
+    tableByte, tableSlots: 4, indexByte, indexCap: rows, particlesByte, inverseByte: 0, keyedInverseByte: inverse.byteOffset,
+  });
+  return { q, b, order, splitPose, splitStat, pose, slots, keyTable, stamps, updates, texUpdates, shadow, rng };
 }
 
 function poseSum(pose, n) {
@@ -128,7 +145,7 @@ function poseSum(pose, n) {
 }
 
 /** The median ms of `pack` over `frames` frames after `warm` more, each frame's change made before its timed call. */
-function framesMs(change, pack, frames, warm = 20) {
+export function framesMs(change, pack, frames, warm = 20) {
   for (let f = 0; f < warm; f++) {
     change();
     pack();
@@ -144,15 +161,21 @@ function framesMs(change, pack, frames, warm = 20) {
   return times[(times.length / 2) | 0];
 }
 
-export async function run({ rows = 14000, entities = 42600, dirty = 0.05, order = 'random', frames = 61 } = {}) {
+export async function run({ rows = 14000, entities = 42600, dirty = 0.05, order = 'random', frames = 61, marked = false } = {}) {
   const s = await setup(rows | 0, entities | 0, order);
   const opts = { space: GPU_SPACE_WORLD, indices: s.order, indexCount: rows, type: s.q.type };
   const ctx = () => makePackContext(s.q, opts, rows, {});
   const changes = Math.round(rows * dirty);
+  // E-189: the rows the frame before marked, whose bit the next emit clears.
+  const marks = new Uint32Array(changes);
+  const markBits = marked === 'texture' ? (KEY_CHANGED | KEY_TEX_ONLY) >>> 0 : KEY_CHANGED;
   const change = () => {
+    if (marked) for (let m = 0; m < changes; m++) if (s.q.key[marks[m]] !== KEY_NONE) s.q.key[marks[m]] = (s.q.key[marks[m]] & ~markBits) >>> 0;
     for (let m = 0; m < changes; m++) {
       const i = (s.rng() * rows) | 0;
       s.q.textureId[i] = (s.q.textureId[i] + 1) & 63;
+      if (marked && s.q.key[i] !== KEY_NONE) s.q.key[i] = (s.q.key[i] | markBits) >>> 0;
+      marks[m] = i;
     }
   };
   const split = () => client.packSplitRowsWasm(s.b, s.q, ctx(), s.splitPose, s.splitStat, rows);
@@ -163,23 +186,43 @@ export async function run({ rows = 14000, entities = 42600, dirty = 0.05, order 
     const keyed = {
       tableByte: s.keyTable.byteOffset, stampByte: s.stamps.byteOffset, keyBase: entities, epoch: 0,
       updatesByte: s.updates.byteOffset, updates: 0,
+      texUpdatesByte: marked === 'texture' ? s.texUpdates.byteOffset : 0, texUpdates: 0,
     };
     let updates = 0;
+    let texUpdates = 0;
     let calls = 0;
     const pack = () => {
       keyed.epoch = (keyed.epoch + 1) >>> 0 || 1;
       const n = client.packKeyedRowsWasm(s.b, s.q, ctx(), s.pose, s.slots, keyed, rows);
       updates += keyed.updates;
+      texUpdates += keyed.texUpdates | 0;
       calls++;
       return n;
     };
     if (pack() !== rows) throw new Error('the keyed pack did not take the frame');
     updates = 0;
     calls = 0;
-    cases.keyed = { ms: framesMs(change, pack, frames), check: poseSum(s.pose, rows), updatesPerFrame: updates / calls };
+    // keyed gathers in the painter's order (the binding without its inverse); E-193's keyedScatter, where the tree has
+    // it, reads the queue in order through the inverse. Both write the same pose stream.
+    const scatterB = s.b;
+    const gatherB = { ...s.b, keyedInverseByte: 0 };
+    s.b = gatherB;
+    texUpdates = 0;
+    cases.keyed = {
+      ms: framesMs(change, pack, frames), check: poseSum(s.pose, rows), updatesPerFrame: updates / calls,
+      texUpdatesPerFrame: texUpdates / calls,
+    };
     if (cases.keyed.check !== cases.split.check) throw new Error('the keyed pose stream is not the split one');
+    if (scatterB.spritesKeyedScatter) {
+      s.b = scatterB;
+      updates = 0;
+      calls = 0;
+      cases.keyedScatter = { ms: framesMs(change, pack, frames), check: poseSum(s.pose, rows), updatesPerFrame: updates / calls };
+      if (cases.keyedScatter.check !== cases.split.check) throw new Error('the keyed scatter pose stream is not the split one');
+    }
+    s.b = scatterB;
   }
-  return { feature: 'gpu-pack-keyed', rows, entities, dirty, order, frames, cases };
+  return { feature: 'gpu-pack-keyed', rows, entities, dirty, order, frames, marked: marked || false, cases };
 }
 
 const fromCli =
@@ -196,6 +239,7 @@ if (fromCli) {
     dirty: Number(args.dirty ?? 0.05),
     order: String(args.order ?? 'random'),
     frames: Number(args.frames ?? 61),
+    marked: args.marked === 'texture' ? 'texture' : Boolean(args.marked),
   });
   for (const [name, c] of Object.entries(report.cases)) {
     const extra = c.updatesPerFrame !== undefined ? `, ${c.updatesPerFrame.toFixed(0)} updates a frame` : '';

@@ -6,12 +6,13 @@ import { bindCollect, collectMemory } from '../bench/preRenderCollectKernel.mjs'
 import { Transform } from '../../src/components/transform.js';
 import { SpriteRenderer } from '../../src/components/spriteRenderer.js';
 import { viewWorldToScreen } from '../../src/util/viewBounds.js';
+import { spriteCullReach } from '../../src/util/spriteCullReach.js';
 
 // E-51. With the camera turned, pre-render culled with the box around the
 // turned view (about 2x the view at 45 degrees on 16:9) and queued everything
 // in it. The turned path tests each sprite in view space. Kept: exactly the
 // sprites whose turned screen position is within the canvas, plus the culling
-// margin and the sprite's own extent, as viewWorldToScreen puts them. The collect is the shipped one, its kernel
+// margin and the sprite's own extent (its reach from its anchor, N-140), as viewWorldToScreen puts them. The collect is the shipped one, its kernel
 // (preRenderCollect.wasm) on a memory with every column it reads.
 
 const N = 60 * 40;
@@ -30,6 +31,8 @@ async function setup(pre, rot, zoom) {
     Transform.y[i] = ((i / 60) | 0) * 40 - 300;
     SpriteRenderer.boundsHalfW[i] = 4 + (i % 5) * 3;
     SpriteRenderer.boundsHalfH[i] = 6;
+    SpriteRenderer.anchorX[i] = [0.5, 0, 1, 0.45][i % 4];
+    SpriteRenderer.anchorY[i] = [1, 0.5, 0, 0.95][(i >> 2) % 4];
   }
   pre.globalEntityCount = N;
   pre.cameraData = {};
@@ -61,7 +64,8 @@ function expected(rot, zoom) {
   const keep = [];
   for (let i = 0; i < N; i++) {
     viewWorldToScreen(300, 150, zoom, rot, CW, CH, Transform.x[i], Transform.y[i], out);
-    const ext = Math.max(SpriteRenderer.boundsHalfW[i], SpriteRenderer.boundsHalfH[i]) * zoom;
+    const ext = spriteCullReach(SpriteRenderer.boundsHalfW[i], SpriteRenderer.boundsHalfH[i], SpriteRenderer.anchorX[i],
+      SpriteRenderer.anchorY[i], 0) * zoom;
     // Float32 positions: allow a hair for the different operation order.
     const eps = 1e-3;
     if (out.x >= -mx - ext - eps && out.x <= CW + mx + ext + eps && out.y >= -my - ext - eps && out.y <= CH + my + ext + eps) {
@@ -94,7 +98,8 @@ test('at 45 degrees the turned view keeps about half of the box around it', asyn
   for (let i = 0; i < N; i++) {
     const sx = (Transform.x[i] - 300) - CW * 0.5;
     const sy = (Transform.y[i] - 150) - CH * 0.5;
-    const ext = Math.max(SpriteRenderer.boundsHalfW[i], SpriteRenderer.boundsHalfH[i]);
+    const ext = spriteCullReach(SpriteRenderer.boundsHalfW[i], SpriteRenderer.boundsHalfH[i], SpriteRenderer.anchorX[i],
+      SpriteRenderer.anchorY[i], 0);
     const lim = boxHalf + CW * 0.05 + ext;
     const limY = boxHalf + CH * 0.05 + ext;
     if (Math.abs(sx) <= lim && Math.abs(sy) <= limY) inBox++;

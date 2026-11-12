@@ -27,7 +27,9 @@ export const GPU_STATIC_FLOATS = 11;
  */
 export const GPU_INDEXED_STATIC_FLOATS = 12;
 /** E-162. An indexed frame's slot pair, in draw order: the statics' row (a float) and the slot's depth. */
-export const GPU_INDEXED_SLOT_FLOATS = 2;
+// E-186: a slot is its statics row alone (a float); the depth it carried was never read (no batch draws with a depth
+// test).
+export const GPU_INDEXED_SLOT_FLOATS = 1;
 /** E-162. Statics rows a texture row holds: three RGBA32UI texels each, a texture 3 072 texels wide. */
 export const GPU_INDEXED_TEX_ROW = 1024;
 export const GPU_HEADER_INTS = 12;

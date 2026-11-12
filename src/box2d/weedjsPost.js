@@ -1646,10 +1646,12 @@
     joinParticleGroups(groupA, groupB) {
       if (!world || typeof world.joinParticleGroups !== 'function') return;
       world.joinParticleGroups(groupA, groupB);
+      followLiquidFunReorder();
     },
     splitParticleGroup(groupId) {
       if (!world || typeof world.splitParticleGroup !== 'function') return;
       world.splitParticleGroup(groupId);
+      followLiquidFunReorder();
     },
     particleApplyForce(index, fx, fy) {
       if (!world || typeof world.particleApplyForce !== 'function') return;
@@ -1894,7 +1896,9 @@
       if (typeof world.fillExtractIndices === 'function') {
         world.fillExtractIndices(indices, count | 0);
       }
-      return world.extractParticles(groupId, count | 0, groupFlags, trackGroup) | 0;
+      const made = world.extractParticles(groupId, count | 0, groupFlags, trackGroup) | 0;
+      followLiquidFunReorder();
+      return made;
     };
     if (typeof LiquidFunExtract.servicePendingLiquidFunExtractBurst === 'function') {
       LiquidFunExtract.servicePendingLiquidFunExtractBurst(extractFn, 1024);
@@ -2232,6 +2236,43 @@
       heap[yBase + i] = LF_CLEARED_XY;
       if (aBase) heap[aBase + i] = 0;
     }
+  }
+
+  /**
+   * N-142: LiquidFun moves particles to other indices (a compaction when particles die, a join's rotation, an
+   * extraction, a split) and its own buffers follow them; the render buffer's statics, painted once by index when a
+   * particle is made, are moved the same way here, from each particle's origin index (where it was at the last reset).
+   * Without it a particle that slid down took the tint, texture, scale and base alpha of the one that was there.
+   */
+  function followLiquidFunReorder() {
+    if (!world || !liquidFunViews || typeof world.particleReordered !== 'function') return;
+    if (!world.particleReordered()) return;
+    const n = Math.min(world.getParticleCount() | 0, liquidFunMaxCount | 0);
+    const off = typeof world.getParticleOriginByteOffset === 'function' ? world.getParticleOriginByteOffset() | 0 : 0;
+    if (off && n > 0 && typeof Module !== 'undefined' && Module.HEAP32) {
+      const origin = Module.HEAP32.subarray(off >> 2, (off >> 2) + n);
+      // A compaction only moves particles down (origin >= index), so each array is gathered in place, in index order;
+      // a rotation or an extraction may move one up, and is gathered from a copy.
+      let down = true;
+      for (let i = 0; i < n; i++) {
+        if (origin[i] < i) {
+          down = false;
+          break;
+        }
+      }
+      const v = liquidFunViews;
+      const arrays = [v.tint, v.textureId, v.scaleX, v.scaleY, v.rotC, v.rotS, v.baseAlpha, v.layerMask];
+      for (let k = 0; k < arrays.length; k++) {
+        const a = arrays[k];
+        if (!a) continue;
+        const src = down ? a : a.slice(0, a.length);
+        for (let i = 0; i < n; i++) {
+          const o = origin[i];
+          if (o !== i && o >= 0 && o < src.length) a[i] = src[o];
+        }
+      }
+    }
+    world.resetParticleOrigins();
   }
 
   function fillLiquidFunRange(arr, start, end, value) {
@@ -2602,6 +2643,7 @@
     publishHitsFromWasm();
     publishJointBreaksFromWasm();
     publishMovedSabFromStep();
+    followLiquidFunReorder();
     syncLiquidFunParticlesToSharedBuffers();
     syncLiquidFunGroupsToSharedBuffers();
   }

@@ -81,6 +81,9 @@ const FLOWFIELD_STATUS = {
 /**
  * Path slot status values
  */
+/** E-214: the slots an eviction compares. */
+const PATH_EVICT_SAMPLE = 8;
+
 const PATH_STATUS = {
   EMPTY: 0,
   COMPUTING: 1,
@@ -132,6 +135,13 @@ const DIR_TO_VEC = Object.freeze([
  * - Particle worker computes in background, next frame will have data
  */
 import { debugWorkerLog } from '../util/debugLog.js';
+import { NAV_REQUEST_FLOWFIELD, pushNavRequest } from '../util/navRequestRing.js';
+import {
+  clipStaticFlowfield,
+  decodeStaticFlowfield,
+  isStaticFlowfieldBinary,
+  staticFlowfieldFromJSON,
+} from './staticFlowfieldFile.js';
 
 export class NavGrid {
   // =========================================================
@@ -161,6 +171,8 @@ export class NavGrid {
 
   // Communication port to particle worker (set by logic workers)
   static _navWorkerPort = null;
+  // E-213: this logic worker's request ring (navRequestRing.js); a request goes by message only when it is full or absent.
+  static _navRing = null;
 
   // Request deduplication (avoid spamming particle worker)
   // Maps store targetCell/key -> { version, requestedAt }
@@ -193,14 +205,26 @@ export class NavGrid {
   static _flowfieldSlotSize = 0; // 12-byte header + aligned vector data, interleaved
   static _pathHeadersOffset = 0;
   static _pathSlotSize = 0; // 20-byte header + maxPathLength*4 data, interleaved
+  // E-212: (fromCell, toCell) -> slot + 1 (0 empty), open addressing, after the path slots. The particle worker alone
+  // writes it; readers check the slot's header, so a stale or moving entry is a miss, never a wrong path.
+  static _pathIndexOffset = 0;
+  static _pathIndex = new Int32Array(0);
+  static _pathIndexMask = 0;
+  // E-214 (the particle worker's, which alone allocates): the slots never given a path since the last invalidate, as a
+  // stack (slot 0 on top), and the hand the eviction samples from once they are gone.
+  static _pathFree = new Int32Array(0);
+  static _pathFreeCount = 0;
+  static _pathHand = 0;
 
   /**
-   * Shared LRU clock: wall-clock seconds. Consistent across ALL workers
-   * (frame counters are per-worker and would corrupt LRU ordering).
-   * Fits in u32 until year 2106.
+   * Shared LRU clock: wall-clock 16 ms ticks (about a frame), the same in every worker (frame counters are per worker
+   * and would corrupt LRU ordering). N-139: it counted seconds, and when more paths than slots were made in one second
+   * every slot held the same stamp and the eviction took slot 0, a path an agent was walking. It wraps the u32 every
+   * 2.2 years: evictions compare ages, (now - stamp) >>> 0, which the wrap does not upset. A touch still writes its slot
+   * at most once a tick.
    */
   static lruNow() {
-    return (Date.now() / 1000) >>> 0;
+    return Math.floor(Date.now() / 16) >>> 0;
   }
 
   // =========================================================
@@ -234,8 +258,15 @@ export class NavGrid {
     const pathSlotSize = this._PATH_HEADER_SIZE + maxPathLength * 4;
     const pathsSize = maxPaths * pathSlotSize;
 
-    // Total size from flowfield headers offset
-    return flowfieldHeadersOffset + flowfieldsSize + pathsSize;
+    // Total size from flowfield headers offset, then the path index (E-212)
+    return flowfieldHeadersOffset + flowfieldsSize + pathsSize + this._pathIndexEntries(maxPaths) * 4;
+  }
+
+  /** E-212: the path index's entries, a power of two at least twice the slots (the probes stay short). */
+  static _pathIndexEntries(maxPaths) {
+    let n = 16;
+    while (n < (maxPaths | 0) * 2) n *= 2;
+    return n;
   }
 
   /**
@@ -287,6 +318,12 @@ export class NavGrid {
     // All slot header/data offsets are 4-byte aligned by construction.
     this._u32 = new Uint32Array(sab, 0, sab.byteLength >> 2);
     this._i8 = new Int8Array(sab);
+    this._pathIndexOffset = this._pathHeadersOffset + this._maxPaths * this._pathSlotSize;
+    const indexEntries = this._pathIndexEntries(this._maxPaths);
+    this._pathIndex = new Int32Array(sab, this._pathIndexOffset, indexEntries);
+    this._pathIndexMask = indexEntries - 1;
+    this._pathFree = new Int32Array(this._maxPaths);
+    this._resetPathFree();
 
     this._initialized = true;
   }
@@ -296,16 +333,21 @@ export class NavGrid {
    * Called by logic workers during initialization
    * @param {MessagePort} port - Port to particle worker
    */
+  /** E-213: the logic worker's request ring, set at its init. */
+  static setNavRequestRing(ring) {
+    this._navRing = ring || null;
+  }
+
   static setNavWorkerPort(port) {
     this._navWorkerPort = port;
   }
 
   // =========================================================
-  // Static (pre-baked) flowfields from JSON
+  // Static (pre-baked) flowfields: WeedJS's binary files or JSON
   // =========================================================
 
   /**
-   * Register a pre-baked flowfield (loaded from JSON at scene startup).
+   * Register a pre-baked flowfield (loaded from a file at scene startup, see loadStaticFlowfields).
    * Called once per flowfield during worker initialization.
    *
    * @param {string} name - Unique flowfield identifier (e.g. 'roads', 'sidewalk')
@@ -325,53 +367,56 @@ export class NavGrid {
   }
 
   /**
-   * Load static flowfields from JSON URLs (main thread only).
-   * Fetches each JSON, parses direction data, clips to scene world bounds,
-   * and stores in _staticFlowfields.
+   * Load static flowfields from URLs (main thread only). A file is WeedJS's binary format (it
+   * starts with "WEFF", see staticFlowfieldFile.js), whose cells are used as they come, or the
+   * JSON one. All are fetched at once. Each field keeps the cells the scene's world touches and goes
+   * into _staticFlowfields in the order of the URLs; one that fails to load is logged and left out.
    *
-   * @param {Object} flowfieldUrls - Map of name → URL (e.g. { roads: '/data/roads.json' })
+   * @param {Object} flowfieldUrls - Map of name → URL (e.g. { roads: '/data/roads.bin' })
    * @param {number} sceneWorldWidth - Scene world width in pixels
    * @param {number} sceneWorldHeight - Scene world height in pixels
    */
-  static async loadStaticFlowfieldsFromJSON(flowfieldUrls, sceneWorldWidth, sceneWorldHeight) {
+  static async loadStaticFlowfields(flowfieldUrls, sceneWorldWidth, sceneWorldHeight) {
     const worldW = sceneWorldWidth || Infinity;
     const worldH = sceneWorldHeight || Infinity;
 
-    debugWorkerLog(`[NavGrid] Loading ${Object.keys(flowfieldUrls).length} static flowfields...`);
+    const entries = Object.entries(flowfieldUrls);
 
-    for (const [name, url] of Object.entries(flowfieldUrls)) {
-      try {
-        const resp = await fetch(url);
-        if (!resp.ok) throw new Error(`Failed to fetch flowfield: ${url}`);
-        const json = await resp.json();
+    debugWorkerLog(`[NavGrid] Loading ${entries.length} static flowfields...`);
 
-        const { metadata, data } = json;
-        const srcW = metadata.widthCells;
-        const srcH = metadata.heightCells;
-        const cellSize = metadata.cellSizePx;
-
-        const clippedW = Math.min(srcW, Math.floor(worldW / cellSize));
-        const clippedH = Math.min(srcH, Math.floor(worldH / cellSize));
-        const vectors = new Int8Array(clippedW * clippedH * 2);
-
-        for (let row = 0; row < clippedH; row++) {
-          const rowData = data[row];
-          for (let col = 0; col < clippedW; col++) {
-            const cell = rowData[col];
-            if (cell) {
-              const idx = (row * clippedW + col) * 2;
-              vectors[idx] = Math.round(Math.max(-1, Math.min(1, cell[0])) * 127);
-              vectors[idx + 1] = Math.round(Math.max(-1, Math.min(1, cell[1])) * 127);
-            }
+    const loaded = await Promise.all(
+      entries.map(async ([name, url]) => {
+        try {
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error(`Failed to fetch flowfield: ${url}`);
+          const bytes = new Uint8Array(await resp.arrayBuffer());
+          let ff;
+          // Every cell the world touches, the last partial column and row too.
+          if (isStaticFlowfieldBinary(bytes)) {
+            const file = await decodeStaticFlowfield(bytes);
+            const cell = file.cellSize;
+            ff = clipStaticFlowfield(file, Math.ceil(worldW / cell), Math.ceil(worldH / cell));
+          } else {
+            const json = JSON.parse(new TextDecoder().decode(bytes));
+            const cell = json.metadata.cellSizePx;
+            ff = staticFlowfieldFromJSON(json, Math.ceil(worldW / cell), Math.ceil(worldH / cell));
           }
+          debugWorkerLog(
+            `[NavGrid]   Loaded flowfield: ${name} (${ff.gridWidth}x${ff.gridHeight}, cellSize=${ff.cellSize})`
+          );
+          return [name, ff];
+        } catch (error) {
+          console.error(`[NavGrid] Failed to load flowfield "${name}":`, error);
+          return null;
         }
+      })
+    );
+    for (const entry of loaded) if (entry) this._staticFlowfields.set(entry[0], entry[1]);
+  }
 
-        this._staticFlowfields.set(name, { gridWidth: clippedW, gridHeight: clippedH, cellSize, vectors });
-        debugWorkerLog(`[NavGrid]   Loaded flowfield: ${name} (${clippedW}x${clippedH}, cellSize=${cellSize})`);
-      } catch (error) {
-        console.error(`[NavGrid] Failed to load flowfield "${name}":`, error);
-      }
-    }
+  /** @deprecated The old name of loadStaticFlowfields (which reads binary files as well as JSON). */
+  static loadStaticFlowfieldsFromJSON(flowfieldUrls, sceneWorldWidth, sceneWorldHeight) {
+    return this.loadStaticFlowfields(flowfieldUrls, sceneWorldWidth, sceneWorldHeight);
   }
 
   /**
@@ -443,8 +488,9 @@ export class NavGrid {
     this._staticFlowfields.clear();
   }
 
+  /** A number, not a string: no allocation on the per-agent path calls (E-212). Exact below 2^53 cells squared. */
   static _makePathRequestKey(fromCell, toCell) {
-    return `${fromCell}_${toCell}`;
+    return fromCell * this._totalCells + toCell;
   }
 
   static _isPendingRequestFresh(entry, currentVersion) {
@@ -561,12 +607,11 @@ export class NavGrid {
       return;
     }
 
-    const requestKey = this._makePathRequestKey(fromCell, toCell);
     // Find path slot
     const slotIndex = this._findPathSlot(fromCell, toCell);
 
     if (slotIndex >= 0) {
-      this._pendingPathRequests.delete(requestKey);
+      if (this._pendingPathRequests.size !== 0) this._pendingPathRequests.delete(this._makePathRequestKey(fromCell, toCell));
       // Path exists - get next cell
       const nextCell = this._getPathNextCell(slotIndex, fromCell);
       if (nextCell >= 0) {
@@ -618,11 +663,10 @@ export class NavGrid {
       return;
     }
 
-    const requestKey = this._makePathRequestKey(fromCell, toCell);
     const slotIndex = this._findPathSlot(fromCell, toCell);
 
     if (slotIndex >= 0) {
-      this._pendingPathRequests.delete(requestKey);
+      if (this._pendingPathRequests.size !== 0) this._pendingPathRequests.delete(this._makePathRequestKey(fromCell, toCell));
       // Path exists - copy to outPath
       this._copyPathToArray(slotIndex, outPath);
       // Refresh LRU on read so actively-used paths are not evicted
@@ -789,10 +833,21 @@ export class NavGrid {
       this._clearFlowfieldSlot(i);
     }
 
-    // Clear all path slots
+    // Clear all path slots, and their index
     for (let i = 0; i < this._maxPaths; i++) {
       this._clearPathSlot(i);
     }
+    this._pathIndex.fill(0);
+    this._resetPathFree();
+  }
+
+  /** E-214: every slot free again, slot 0 first. */
+  static _resetPathFree() {
+    const free = this._pathFree;
+    const n = free.length;
+    for (let i = 0; i < n; i++) free[i] = n - 1 - i;
+    this._pathFreeCount = n;
+    this._pathHand = 0;
   }
 
   // =========================================================
@@ -892,6 +947,7 @@ export class NavGrid {
 
     // Send new request (either no pending, version changed, or pending went stale)
     this._rememberPendingRequest(this._pendingFlowfieldRequests, targetCell, currentVersion);
+    if (this._navRing !== null && pushNavRequest(this._navRing, targetCell | NAV_REQUEST_FLOWFIELD, 0)) return;
     this._navWorkerPort.postMessage({
       type: 'REQUEST_FLOWFIELD',
       targetCell,
@@ -909,22 +965,102 @@ export class NavGrid {
    * @returns {number} - Slot index, or -1 if not found
    */
   static _findPathSlot(fromCell, toCell) {
+    // E-212: through the index; the slot's header decides. Status first (Atomics) = publication gate; see
+    // _findFlowfieldSlot.
     const u32 = this._u32;
+    const index = this._pathIndex;
+    const mask = this._pathIndexMask;
     const baseIndex = this._pathHeadersOffset >> 2;
     const slotStride = this._pathSlotSize >> 2;
-
-    for (let i = 0; i < this._maxPaths; i++) {
-      const idx = baseIndex + i * slotStride;
-      // Status first (Atomics) = publication gate; see _findFlowfieldSlot
+    let i = this._pathHash(fromCell, toCell);
+    for (let probes = 0; probes <= mask; probes++) {
+      const entry = index[i];
+      if (entry === 0) return -1;
+      const idx = baseIndex + (entry - 1) * slotStride;
       if (
         Atomics.load(u32, idx + 4) === PATH_STATUS.READY &&
         u32[idx] === fromCell &&
         u32[idx + 1] === toCell
       ) {
-        return i;
+        return entry - 1;
       }
+      i = (i + 1) & mask;
     }
     return -1;
+  }
+
+  /** E-212: the index's home entry for a (from, to) pair. */
+  static _pathHash(fromCell, toCell) {
+    let h = Math.imul(fromCell ^ Math.imul(toCell, 0x45d9f3b), 0x9e3779b1);
+    h ^= h >>> 15;
+    return h & this._pathIndexMask;
+  }
+
+  /** E-212 (particle worker): the slot holding (from, to) whatever its status, by the index, or -1. */
+  static _indexedPathSlot(fromCell, toCell) {
+    const u32 = this._u32;
+    const index = this._pathIndex;
+    const mask = this._pathIndexMask;
+    const baseIndex = this._pathHeadersOffset >> 2;
+    const slotStride = this._pathSlotSize >> 2;
+    let i = this._pathHash(fromCell, toCell);
+    for (let probes = 0; probes <= mask; probes++) {
+      const entry = index[i];
+      if (entry === 0) return -1;
+      const idx = baseIndex + (entry - 1) * slotStride;
+      if (u32[idx] === fromCell && u32[idx + 1] === toCell) return entry - 1;
+      i = (i + 1) & mask;
+    }
+    return -1;
+  }
+
+  /** E-212 (particle worker): list a slot under (from, to). Each slot has at most one entry. */
+  static _pathIndexInsert(fromCell, toCell, slot) {
+    const index = this._pathIndex;
+    const mask = this._pathIndexMask;
+    let i = this._pathHash(fromCell, toCell);
+    for (let probes = 0; probes <= mask; probes++) {
+      const entry = index[i];
+      if (entry === slot + 1) return;
+      if (entry === 0) {
+        index[i] = slot + 1;
+        return;
+      }
+      i = (i + 1) & mask;
+    }
+  }
+
+  /**
+   * E-212 (particle worker): take a slot's entry out under its old (from, to), and move the entries after it back
+   * toward their homes (no tombstones). A reader probing meanwhile may miss an entry for a moment: a miss, never a
+   * wrong slot. Every listed slot's header holds the key it was listed under, which gives each entry's home.
+   */
+  static _pathIndexRemove(fromCell, toCell, slot) {
+    const index = this._pathIndex;
+    const mask = this._pathIndexMask;
+    const u32 = this._u32;
+    const baseIndex = this._pathHeadersOffset >> 2;
+    const slotStride = this._pathSlotSize >> 2;
+    let i = this._pathHash(fromCell, toCell);
+    let probes = 0;
+    while (index[i] !== slot + 1) {
+      if (index[i] === 0 || ++probes > mask) return;
+      i = (i + 1) & mask;
+    }
+    index[i] = 0;
+    let j = i;
+    for (;;) {
+      j = (j + 1) & mask;
+      const entry = index[j];
+      if (entry === 0) return;
+      const idx = baseIndex + (entry - 1) * slotStride;
+      const home = this._pathHash(u32[idx], u32[idx + 1]);
+      if (((j - home) & mask) >= ((j - i) & mask)) {
+        index[i] = entry;
+        index[j] = 0;
+        i = j;
+      }
+    }
   }
 
   /**
@@ -1009,6 +1145,7 @@ export class NavGrid {
 
     // Send new request (either no pending, version changed, or pending went stale)
     this._rememberPendingRequest(this._pendingPathRequests, key, currentVersion);
+    if (this._navRing !== null && pushNavRequest(this._navRing, fromCell, toCell)) return;
     this._navWorkerPort.postMessage({
       type: 'REQUEST_PATH',
       fromCell,
@@ -1036,7 +1173,8 @@ export class NavGrid {
 
     let emptySlot = -1;
     let lruSlot = 0;
-    let lruFrame = Infinity;
+    let lruAge = -1;
+    const now = this.lruNow();
 
     const u32 = this._u32;
     const baseIndex = this._flowfieldHeadersOffset >> 2;
@@ -1058,9 +1196,10 @@ export class NavGrid {
         emptySlot = i;
       }
 
-      // Track LRU (only for non-empty slots)
-      if (slotStatus !== FLOWFIELD_STATUS.EMPTY && slotLru < lruFrame) {
-        lruFrame = slotLru;
+      // Track LRU (only for non-empty slots): the oldest stamp, by age (N-139)
+      const age = (now - slotLru) >>> 0;
+      if (slotStatus !== FLOWFIELD_STATUS.EMPTY && age > lruAge) {
+        lruAge = age;
         lruSlot = i;
       }
     }
@@ -1109,41 +1248,45 @@ export class NavGrid {
     const baseIndex = this._pathHeadersOffset >> 2;
     const slotStride = this._pathSlotSize >> 2;
 
-    let emptySlot = -1;
-    let lruSlot = 0;
-    let lruFrame = Infinity;
+    // Already exists for this path? (E-212: by the index)
+    const existing = this._indexedPathSlot(fromCell, toCell);
+    if (existing >= 0) return existing;
 
-    for (let i = 0; i < this._maxPaths; i++) {
-      const idx = baseIndex + i * slotStride;
-
-      // Already exists for this path?
-      if (u32[idx] === fromCell && u32[idx + 1] === toCell) {
-        return i;
+    // E-214: a slot never given a path since the last invalidate, else the oldest stamp (by age, N-139) of a few
+    // slots from a moving hand: an approximate LRU that reads PATH_EVICT_SAMPLE slots, not every one. A slot an agent
+    // walks is touched every tick, so it is young wherever the hand finds it. Slots another worker cleared (a save's
+    // invalidate) hold stamp 0, the oldest there is.
+    let slot = 0;
+    if (this._pathFreeCount > 0) {
+      slot = this._pathFree[--this._pathFreeCount];
+    } else {
+      const max = this._maxPaths;
+      const sample = max < PATH_EVICT_SAMPLE ? max : PATH_EVICT_SAMPLE;
+      const now = this.lruNow();
+      let hand = this._pathHand;
+      let oldest = -1;
+      for (let k = 0; k < sample; k++) {
+        const age = (now - u32[baseIndex + hand * slotStride + 2]) >>> 0;
+        if (age > oldest) {
+          oldest = age;
+          slot = hand;
+        }
+        hand = hand + 1 === max ? 0 : hand + 1;
       }
-
-      // Empty slot?
-      if (u32[idx + 4] === PATH_STATUS.EMPTY && emptySlot < 0) {
-        emptySlot = i;
-      }
-
-      // Track LRU
-      if (u32[idx + 2] < lruFrame) {
-        lruFrame = u32[idx + 2];
-        lruSlot = i;
-      }
+      this._pathHand = hand;
     }
-
-    // Use empty slot if available, otherwise evict LRU
-    const slot = emptySlot >= 0 ? emptySlot : lruSlot;
 
     // Initialize slot header. Status first (Atomics) so readers never see
     // READY while the slot is being repurposed.
     const idx = baseIndex + slot * slotStride;
     Atomics.store(u32, idx + 4, PATH_STATUS.COMPUTING);
+    // E-212: off the index under the pair it held (a cleared slot holds none listed), then on it under the new one.
+    this._pathIndexRemove(u32[idx], u32[idx + 1], slot);
     u32[idx] = fromCell;
     u32[idx + 1] = toCell;
     u32[idx + 2] = this.lruNow();
     u32[idx + 3] = 0; // length
+    this._pathIndexInsert(fromCell, toCell, slot);
 
     return slot;
   }

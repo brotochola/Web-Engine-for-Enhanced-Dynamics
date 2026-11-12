@@ -14,7 +14,8 @@ import { RigidBody } from './rigidBody.js';
 import { ColliderFixture } from '../core/colliderFixture.js';
 import { ChainPoints } from '../core/chainPoints.js';
 import { MAX_POLYGON_VERTICES, ShapeType } from '../util/configDefaults.js';
-import { BODY_DIRTY, markBodyDirty } from '../box2d/box2dBodySync.js';
+import { BODY_DIRTY, markBodyDirty, remakeBody } from '../box2d/box2dBodySync.js';
+import { Transform } from './transform.js';
 import { SpriteRenderer } from './spriteRenderer.js';
 import { SpriteSheetRegistry } from '../core/spriteSheetRegistry.js';
 
@@ -502,12 +503,29 @@ class Collider extends Component {
     markBodyDirty(this.index, BODY_DIRTY.FRICTION);
   }
 
+  /**
+   * A sensor: events, no physical response. Box2D reads it when it makes the body, so a change makes the body again
+   * (N-131: a write after the body existed did nothing).
+   */
+  get isTrigger() {
+    return Collider.isTrigger[this.index];
+  }
+  set isTrigger(value) {
+    const next = value ? 1 : 0;
+    if (Collider.isTrigger[this.index] === next) return;
+    Collider.isTrigger[this.index] = next;
+    remakeBody(this.index, Transform.active?.[this.index] === 1);
+  }
+
   get enableHitEvents() {
     return Collider.enableHitEvents[this.index] !== 0;
   }
+  /** A shape's hit events: Box2D reads them when it makes the body, so a change makes it again (N-135). */
   set enableHitEvents(value) {
-    Collider.enableHitEvents[this.index] = value ? 1 : 0;
-    markBodyDirty(this.index, BODY_DIRTY.LIFECYCLE);
+    const next = value ? 1 : 0;
+    if (Collider.enableHitEvents[this.index] === next) return;
+    Collider.enableHitEvents[this.index] = next;
+    remakeBody(this.index, Transform.active?.[this.index] === 1);
   }
 
   addLayerToMask(layer) {

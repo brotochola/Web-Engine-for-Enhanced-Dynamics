@@ -91,6 +91,8 @@ import { bindPublishedList } from '../util/publishedList.js';
 import { reportWorkerError } from '../util/errorReport.js';
 import { Messages } from '../core/messages.js';
 import { GpuParticles } from '../core/gpuParticles.js';
+import { setDevChecks } from '../core/debug/devChecks.js';
+import { delayTo, nextFixedDeadline } from '../util/fixedRate.js';
 
 /**
  * AbstractWorker - Base class for all game engine workers
@@ -130,9 +132,10 @@ export class AbstractWorker {
     // Scheduling
     this.usesCustomScheduler = false; // Override in subclass if using custom scheduler
     this.noLimitFPS = false; // Set to true to run as fast as possible (no RAF limiting)
-    this.fixedFps = 0; // >0 → setInterval at that rate AND constant sim dt; overrides noLimitFPS/RAF
+    this.fixedFps = 0; // >0 → a frame every 1000 / fixedFps ms AND constant sim dt; overrides noLimitFPS/RAF
     this.timeoutId = null; // Store timeout ID for clearing
-    this.intervalId = null; // Store interval ID for fixedFps
+    // N-128: the fixed-rate loop's next deadline (performance.now() ms; NaN: none since the last start or pause).
+    this._fixedNextAt = NaN;
     this.rafId = 0; // The pending requestAnimationFrame: a pause cancels it
 
     // Script loading (ALL workers now load scripts and initialize components)
@@ -184,6 +187,11 @@ export class AbstractWorker {
 
     // Bind methods
     this.gameLoop = this.gameLoop.bind(this);
+    // N-128: the fixed-rate frame's timer, which clears its id before the loop asks for the next one.
+    this._fixedTick = () => {
+      this.timeoutId = null;
+      this.gameLoop();
+    };
     this.handleMessage = this.handleMessage.bind(this);
     this._drainMessageQueue = this._drainMessageQueue.bind(this);
 
@@ -421,13 +429,16 @@ export class AbstractWorker {
 
   /**
    * Schedule the next frame (can be overridden for custom scheduling)
-   * fixedFps > 0 → setInterval; noLimitFPS → setTimeout(2); else requestAnimationFrame
+   * fixedFps > 0 → a timer to the next deadline; noLimitFPS → setTimeout(2); else requestAnimationFrame
    */
   scheduleNextFrame() {
     if (this.fixedFps > 0) {
-      if (this.intervalId !== null) return;
-      const ms = 1000 / this.fixedFps;
-      this.intervalId = setInterval(this.gameLoop, ms);
+      // One frame pending at a time (setPresenting may ask again). N-128: each frame at the deadline one period after
+      // the last, not setInterval(1000 / fps), which takes whole ms: 60 ran at 62.5 with dt 1/60, about 4 % fast.
+      if (this.timeoutId !== null) return;
+      const now = performance.now();
+      this._fixedNextAt = nextFixedDeadline(this._fixedNextAt, 1000 / this.fixedFps, now);
+      this.timeoutId = setTimeout(this._fixedTick, delayTo(this._fixedNextAt, now));
       return;
     }
     if (this.noLimitFPS) {
@@ -449,10 +460,8 @@ export class AbstractWorker {
       clearTimeout(this.timeoutId);
       this.timeoutId = null;
     }
-    if (this.intervalId !== null) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
-    }
+    // A resume starts the fixed-rate loop one period from then, not from a deadline before the pause.
+    this._fixedNextAt = NaN;
   }
 
   /**
@@ -514,6 +523,7 @@ export class AbstractWorker {
 
     // Store config for worker access
     this.config = data.config || {};
+    setDevChecks(this.config.debug?.checks !== false);
     ShadowCaster.texturesEnabled = this.config.lighting?.shadowTextures === true;
     VolumeShadowCaster.defaultFloorScaleY = resolveGroundScaleY(this.config.lighting?.groundScaleY);
     bindEntityIdWidth(resolveEntityIdWidth(this.config));
@@ -783,17 +793,25 @@ export class AbstractWorker {
 
     // Initialize particle compact lists (for optimized iteration)
     if (data.maxParticles && data.maxParticles > 0) {
-      // activeParticlesData: rebuilt each frame by particle_worker. In the particle memory (E-80)
-      // both lists sit at a byte offset; a plain SAB starts at 0. E-129: u32 past 65 535 particles.
-      const listLength = (data.maxParticles | 0) + 1;
-      const ParticleSlots = PoolSlotArray(data.maxParticles | 0);
+      // activeParticlesData: rebuilt each frame by particle_worker, in the particle memory (E-80) at a byte offset, at
+      // the pool's slot width (E-129: u32 past 65 535 particles). N-136: a published list as the visible one below;
+      // Pixi takes the published copy for the particle light field.
       if (data.activeParticlesData) {
-        this.activeParticlesData = new ParticleSlots(data.activeParticlesData, data.activeParticlesByte | 0, listLength);
+        const active = bindPublishedList(data.activeParticlesData, data.maxParticles | 0, data.activeParticlesByte | 0, 1);
+        this.activeParticlesCtl = active.ctl;
+        this.activeParticlesCopies = active.copies;
+        this.activeParticlesData = active.copies[0];
         this.reportLog(`initialized activeParticlesData`);
       }
-      // visibleParticlesData: subset of active particles that are on-screen
+      // visibleParticlesData: the active particles on screen, written by particle_worker, read by pre_render_worker:
+      // a published list (N-113, as the decorations' N-112), its header at visibleParticlesByte and three copies with
+      // room for the kernel's one slot past the count. visibleParticlesData is the copy the particle worker wrote
+      // last; pre-render takes the published one each frame.
       if (data.visibleParticlesData) {
-        this.visibleParticlesData = new ParticleSlots(data.visibleParticlesData, data.visibleParticlesByte | 0, listLength);
+        const visible = bindPublishedList(data.visibleParticlesData, data.maxParticles | 0, data.visibleParticlesByte | 0, 1);
+        this.visibleParticlesCtl = visible.ctl;
+        this.visibleParticlesCopies = visible.copies;
+        this.visibleParticlesData = visible.copies[0];
         this.reportLog(`initialized visibleParticlesData`);
       }
     }

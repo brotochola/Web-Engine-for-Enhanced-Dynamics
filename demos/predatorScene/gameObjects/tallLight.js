@@ -85,10 +85,4 @@ export class TallLight extends GameObject {
       hasGlowSprite: 0.5,
     });
   }
-
-  /**
-   * Main update hook. Tall lights are static, so there is nothing to do per frame.
-   */
-  tick(dtRatio) {
-  }
 }

@@ -54,6 +54,7 @@ import {
   resolveParticleOp,
   resolveParticleColorOp,
 } from '../util/particleTween.js';
+import { checkEmit } from './debug/devChecks.js';
 /** The emit's batch of acquired slots: 16-bit, or 32-bit for a pool past 65 535 slots (E-129). */
 const ACQUIRE_BATCH_U16 = new Uint16Array(256);
 
@@ -306,6 +307,8 @@ export class ParticleEmitter extends SharedAtomicPool {
 
     const cfg = modeOverrides ? this._mergeCfg(config, modeOverrides) : config;
     const flatMode = cfg.flat ? 1 : 0;
+    // DX-GUARDS E5 (debug build): an emit whose particles would stop on their first step.
+    checkEmit(cfg, flatMode === 1);
     const viewMode = cfg.viewMode ?? CAMERA_TYPES.TOPDOWN;
 
     const count = Math.round(randomRange(cfg.count, 1));

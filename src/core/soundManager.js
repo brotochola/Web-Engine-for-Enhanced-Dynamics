@@ -19,6 +19,7 @@
 import { AUDIO_DEFAULTS } from '../util/configDefaults.js';
 import { rng } from '../util/utils.js';
 import { debugWorkerLog } from '../util/debugLog.js';
+import { fetchAsset } from '../util/fetchAsset.js';
 
 export class SoundManager {
   static _enabled = true;
@@ -1357,7 +1358,8 @@ export class SoundManager {
     }
 
     try {
-      const response = await fetch(srcUrl);
+      // DX-GUARDS C6: a 404 used to reach decodeAudioData ("Unable to decode audio data").
+      const response = await fetchAsset(srcUrl, 'sound');
       const arrayBuffer = await response.arrayBuffer();
       const decoded = await this._audioCtx.decodeAudioData(arrayBuffer);
 
