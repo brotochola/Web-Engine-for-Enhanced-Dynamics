@@ -175,10 +175,22 @@ export function indexedSpritesEnabled(renderer, maxSprites) {
 }
 
 /**
+ * E-187: the most keys a keyed batch's statics hold on the scene's backend (INDEXED_SPRITES_MAX_*: the rows every GPU
+ * of that backend holds).
+ * @param {object} [config] the scene's config
+ * @returns {number}
+ */
+export function keyedStaticsMax(config) {
+  return normalizeRendererBackend(config?.renderer?.backend) === RENDERER_BACKEND_WEBGPU
+    ? INDEXED_SPRITES_MAX_WEBGPU
+    : INDEXED_SPRITES_MAX_WEBGL;
+}
+
+/**
  * E-177: whether Pixi draws the main sprites as keyed frames (their statics kept by entity on the GPU, the changed
- * ones scattered there): where Pixi packs them (preRender.packGpuSprites 'pixi') without pose interpolation, on WebGL
- * (the scatter is a draw; WebGPU keeps split frames), unless renderer.indexedSprites is false, and when a texture holds
- * a statics row for every entity and every queue row.
+ * ones scattered there: a draw into a texture on WebGL, a compute pass over a storage buffer on WebGPU, E-187): where
+ * Pixi packs them (preRender.packGpuSprites 'pixi') without pose interpolation, unless renderer.indexedSprites is false,
+ * and when the backend's statics hold a row for every entity and every queue row (keyedStaticsMax).
  * @param {object} [config] the scene's config
  * @param {number} entities the scene's entities
  * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
@@ -188,34 +200,35 @@ export function keyedSpritesEnabled(config, entities, maxSprites) {
   const renderer = config?.renderer;
   if (!renderer || renderer.indexedSprites === false || renderer.interpolation === true) return false;
   if (config.preRender?.packGpuSprites !== 'pixi') return false;
-  if (normalizeRendererBackend(renderer.backend) !== RENDERER_BACKEND_WEBGL) return false;
-  return (entities | 0) + (maxSprites | 0) <= INDEXED_SPRITES_MAX_WEBGL;
+  return (entities | 0) + (maxSprites | 0) <= keyedStaticsMax(config);
 }
 
 /**
  * E-188: whether a scene whose sprites go keyed (keyedSpritesEnabled) keys its decorations too, by pool slot past the
- * entities: when the statics texture also holds a row for every decoration slot.
+ * entities: when the statics also hold a row for every decoration slot.
  * @param {number} entities the scene's entities
  * @param {number} decorations decoration.maxDecorations
  * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
+ * @param {number} [max] the backend's keys (keyedStaticsMax; WebGL's by default)
  * @returns {boolean}
  */
-export function keyedDecorationsFit(entities, decorations, maxSprites) {
-  return (decorations | 0) > 0 && (entities | 0) + (decorations | 0) + (maxSprites | 0) <= INDEXED_SPRITES_MAX_WEBGL;
+export function keyedDecorationsFit(entities, decorations, maxSprites, max = INDEXED_SPRITES_MAX_WEBGL) {
+  return (decorations | 0) > 0 && (entities | 0) + (decorations | 0) + (maxSprites | 0) <= max;
 }
 
 /**
  * E-194: whether a keyed scene keys its LiquidFun particles too, by particle index past the keyed decorations: when the
- * statics texture also holds a row for every particle LiquidFun may have.
+ * statics also hold a row for every particle LiquidFun may have.
  * @param {number} entities the scene's entities
  * @param {number} keyedDecorations the decoration slots keyed before them (0: none)
  * @param {number} liquidFun physics.liquidFun.maxCount
  * @param {number} maxSprites the queue's rows (maxVisibleRenderables)
+ * @param {number} [max] the backend's keys (keyedStaticsMax; WebGL's by default)
  * @returns {boolean}
  */
-export function keyedLiquidFunFit(entities, keyedDecorations, liquidFun, maxSprites) {
+export function keyedLiquidFunFit(entities, keyedDecorations, liquidFun, maxSprites, max = INDEXED_SPRITES_MAX_WEBGL) {
   return (liquidFun | 0) > 0
-    && (entities | 0) + (keyedDecorations | 0) + (liquidFun | 0) + (maxSprites | 0) <= INDEXED_SPRITES_MAX_WEBGL;
+    && (entities | 0) + (keyedDecorations | 0) + (liquidFun | 0) + (maxSprites | 0) <= max;
 }
 
 export function pixiRendererTypeName(type, RendererType) {

@@ -51,6 +51,7 @@ import { computeBufferSize as computeRenderQueueBufferSize, RENDER_QUEUE_CAMERA_
 import { computeGpuQueueBufferSize, gpuQueueCaps } from '../render/gpuQueueLayout.js';
 import {
   SORT_SPRITES_PIXI, SORT_SPRITES_PRERENDER, indexedSpritesEnabled, keyedDecorationsFit, keyedLiquidFunFit, keyedSpritesEnabled,
+  keyedStaticsMax,
   ySortEnabled,
 } from '../render/rendererBackend.js';
 import { resetFreeList, resetEntity } from './atomicFreeList.js';
@@ -819,7 +820,8 @@ function emitBlocks(scene) {
   if (adobeOn) assertIntegerInRange('preRender.adobeTablesMB', tablesMB, 0, 1024);
   const maxSprites = resolveMaxVisibleRenderables(scene);
   const pixiKeyed = Boolean(pools.SpriteRenderer?.ComponentClass) && keyedSpritesEnabled(config, n, maxSprites);
-  const keyedDecorations = pixiKeyed && keyedDecorationsFit(n, maxDecorations, maxSprites) ? maxDecorations : 0;
+  const keyMax = keyedStaticsMax(config);
+  const keyedDecorations = pixiKeyed && keyedDecorationsFit(n, maxDecorations, maxSprites, keyMax) ? maxDecorations : 0;
   return {
     entities: n,
     spriteBytes: pools.SpriteRenderer?.ComponentClass ? SpriteRenderer.getBufferSize(n) : 0,
@@ -843,7 +845,7 @@ function emitBlocks(scene) {
     // E-188: and its decorations, keyed by pool slot past the entities, where the statics texture holds them.
     keyedDecorations,
     // E-194: and its LiquidFun particles, keyed by particle index past the decorations, where the texture holds them.
-    keyedLiquidFun: pixiKeyed && keyedLiquidFunFit(n, keyedDecorations, lfMax, maxSprites) ? lfMax : 0,
+    keyedLiquidFun: pixiKeyed && keyedLiquidFunFit(n, keyedDecorations, lfMax, maxSprites, keyMax) ? lfMax : 0,
   };
 }
 

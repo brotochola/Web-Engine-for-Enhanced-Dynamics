@@ -20,6 +20,13 @@ const LF_COUNT = (() => {
     return 0;
   }
 })();
+const BACKEND = (() => {
+  try {
+    return new URLSearchParams(globalThis.location?.search || '').get('backend') === 'webgpu' ? 'webgpu' : 'webgl';
+  } catch {
+    return 'webgl';
+  }
+})();
 const LF_MAX = LF_COUNT > 0 ? LF_COUNT : 24000;
 // Every particle LiquidFun may hold: at 16 000 the box's last 3 656 were not drawn (00b1448f).
 const LF_ROWS = LF_COUNT > 0 ? LF_COUNT : 24000;
@@ -56,7 +63,8 @@ export class LiquidFunQueryStressScene extends WEED.Scene {
       liquidFun: { enabled: true, radius: 8, maxCount: LF_MAX, subSteps: 1, strictContactCheck: false },
     },
     renderer: {
-      backend: 'webgl',
+      // E-187: `?backend=webgpu` draws on WebGPU.
+      backend: BACKEND,
       noLimitFPS: false,
       maxVisibleRenderables: LF_ROWS,
     },
