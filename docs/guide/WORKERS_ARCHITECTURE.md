@@ -33,6 +33,15 @@ Rebuilds the spatial hash grid and computes neighbor lists. The foundation every
 
 `numberOfSpatialWorkers === 0` creates no spatial worker and does not allocate `gridBuffer`, `neighborData`, `entityPosData`, or cell sleep/version SABs. Debug Inspect then picks with a click-time scan of `Transform` (not the hover overlay, which stays grid-only).
 
+**The frame chain (E-198):** every worker wakes on the same vsync, so what a stage finds at its frame's start is its
+upstream's output of a vsync earlier, and an input took about three frames to reach the screen. Three waits chain the
+stages inside one vsync instead: physics waits for every logic worker to finish this vsync's frame before it steps
+(`physics.waitForLogic`; it answers sync queries while it waits), pre-render waits for the pose physics publishes this
+vsync (`preRender.waitForPose`), and Pixi for the queue pre-render publishes this vsync (`renderer.waitForQueue`). Each
+waits at most the frame less its own step and room downstream; a wait that runs out turns that stage's waits off for
+120 frames, so a chain that does not fit the frame goes back to the vsync-old reads. The waits count in `WAIT_MS`. Boids
+and Predator (2026-11-12): from an input to the frame drawn with it, about 51 → 24 ms.
+
 **What it does each frame:**
 
 1. Clear owned grid rows
@@ -257,7 +266,7 @@ Consumes the render queues and draws to an OffscreenCanvas. Never touches game s
 
 **What it does each frame:**
 
-1. `Atomics.load(renderQueueSync, 0)` — check for new frame
+1. `Atomics.load(renderQueueSync, 0)` — check for new frame; with `renderer.waitForQueue` (default on, E-198) it first waits for the queue pre-render publishes this vsync and draws that one (see "The frame chain" below)
 2. If new: take the oldest unread queue (`lastReadFrame + 1`, not the newest — pre-render publishes inside the same vsync and would otherwise be skipped then repeated; with `preRender.backpressure: false` it takes the newest), switch read buffer to `(frame - 1) % 2`, latch `renderQueueCamera`. `Atomics.store(renderQueueSync, 1, readyFrame)` + notify runs after shadows, sprites, and custom layers have read that buffer. A canvas that is not presenting releases immediately so pre-render does not wait.
 3. **Stale-frame gating:** frame-locked GPU passes (visible lights, lighting/shadow RTs, main + custom sprite queue sync, offscreen lighting mesh) run only when a new queue frame arrived, on resume, or before the first frame. When pixi outpaces pre_render, it skips redundant work that would be pixel-identical. Always-on passes: camera transform, layer alpha dirty poll, decal tile upload (driven by particle_worker dirty flags). With `renderer.interpolation: true`, a quiet frame still writes `uPoseAlpha` on the entity batch (time since the last queue publish, over the smoothed gap between publishes). The entity instance record grows to 17 floats (`prevX`, `prevY`) only on that batch. Alpha 0 is the previous queue pose, alpha 1 the new one. A count change snaps. Particles, glow, shadows, and custom layers stay on the 15-float upload and simply hold still between publishes. `uPoseAlpha` is a number, not a `Float32Array`: WebGL's `f32` sync treats the same array as unchanged.
 4. When frame-locked passes run:
