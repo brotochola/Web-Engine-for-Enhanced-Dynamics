@@ -686,6 +686,8 @@ class PreRenderWorker extends AbstractWorker {
         this._lastEmitCount = 0;
         /** The presorted collector's glow rows (type 3): with none, the pack takes every row with no slot list. */
         this._presortGlowRows = 0;
+        /** E-216: the glow rows (type 3) this frame's collect put in the queue. */
+        this._frameGlowRows = 0;
         /**
          * True only while the main queue's emit runs on a presorted frame: the kernel then leaves the sort keys and
          * the shadow terms, which nothing reads that frame (custom layers emit after it and keep theirs).
@@ -1536,6 +1538,7 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     resetFrameCounters() {
+        this._frameGlowRows = 0;
         this.visibleEntitiesCount = 0;
         this.visibleParticlesCount = 0;
         this.visibleDecorationsCount = 0;
@@ -1948,6 +1951,15 @@ class PreRenderWorker extends AbstractWorker {
     }
 
     _collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+        screenMinX, screenMaxX, screenMinY, screenMaxY) {
+        const rowsBefore = this._renderableCount;
+        this._collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+            screenMinX, screenMaxX, screenMinY, screenMaxY);
+        // E-216: the only rows of type 3 the collect makes.
+        this._frameGlowRows += this._renderableCount - rowsBefore;
+    }
+
+    _collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
         screenMinX, screenMaxX, screenMinY, screenMaxY) {
         const MIN_GLOW_INTENSITY = 50;
         const MIN_GLOW_RANGE = 2.5;
@@ -3831,6 +3843,11 @@ class PreRenderWorker extends AbstractWorker {
         const presorted = this._queuePresorted;
         const presortedNoGlow = presorted && this._presortGlowRows === 0;
         const allowSort = !presorted && !!(allowPainter && this._gpuPainter && q.sortKey);
+        // E-216: a frame without glow rows has nothing to split out whether presorted or not. Its rows go as they are,
+        // or in the painter's order over all of them, without the entity list (built, then copied into the pack's
+        // memory: 10 % of pre-render in BunnyMark at 200 000). The spec's fillAll still orders every row when the painter
+        // sorts.
+        const noGlow = presortedNoGlow || this._frameGlowRows === 0;
         this._packDst = dst;
         this._packQ = q;
         this._packParticles = 0;
@@ -3838,10 +3855,10 @@ class PreRenderWorker extends AbstractWorker {
         spec.count = count;
         spec.type = typeArr;
         spec.opts = opts;
-        spec.splitGlow = !presortedNoGlow && !!(this._lightGlowAsSprite === false && typeArr && this._gpuIdxEntity);
+        spec.splitGlow = !noGlow && !!(this._lightGlowAsSprite === false && typeArr && this._gpuIdxEntity);
         // Unsplit, the glow rows go to the glow batch only when glows are not sprites (as Pixi's layer sets it); the
         // spec read undefined, so an unsplit frame packed its sprite rows (type 0) into the glow batch.
-        spec.glowIncludeType = !spec.splitGlow && !presortedNoGlow && this._lightGlowAsSprite === false ? 3 : -1;
+        spec.glowIncludeType = !spec.splitGlow && !noGlow && this._lightGlowAsSprite === false ? 3 : -1;
         spec.idxEntity = this._gpuIdxEntity;
         spec.idxGlow = this._gpuIdxGlow;
         spec.painter = allowSort ? this._gpuPainter : null;

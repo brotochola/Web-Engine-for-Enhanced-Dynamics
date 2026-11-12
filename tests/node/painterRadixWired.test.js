@@ -229,6 +229,8 @@ async function preRenderRun(pre, frames) {
   for (const fr of frames) {
     pre.selectWriteBuffers();
     writeQueue(pre.renderQueueBuffers[pre._queueBuf], fr);
+    // The glow rows the collect counts as it makes them (E-216).
+    pre._frameGlowRows = fr.type.reduce((n, t) => n + (t === 3 ? 1 : 0), 0);
     pre._emitWriteCount = 0;
     spriteOrder = new Uint32Array(0);
     glowOrder = new Uint32Array(0);
@@ -300,6 +302,7 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
     pre._emitWriteCount = 0;
     pre._queuePresorted = order !== null;
     pre._presortGlowRows = fr.type.reduce((n, t) => n + (t === 3 ? 1 : 0), 0);
+    pre._frameGlowRows = pre._presortGlowRows;
     painter.ready = false;
     pre.packSpriteAndShadowQueues();
     pre._queuePresorted = false;
@@ -353,6 +356,53 @@ test('E-138: pre-render packs a presorted queue as it is, to the rows the painte
     assert.ok(got.sorted, `no glows, frame ${f}: sorted`);
     pre.publishFrame();
   });
+});
+
+// E-216: a frame whose collect made no glow rows (type 3) has nothing to split out, presorted or not. It packs without
+// the entity list the split built and copied into the pack's memory, to the same rows as the split packs: sorted by
+// the painter over every row, and unsorted (no painter) in queue order with no list at all.
+test('E-216: a frame without glow rows packs the same rows without the glow split', async () => {
+  const frames = makeFrames(0xe216).map((fr) => ({ ...fr, type: fr.type.map((t) => (t === 3 ? 0 : t)) }));
+  for (const withPainter of [true, false]) {
+    const pre = await loadWorker('preRenderWorker.js', 'preRenderWorker');
+    await initPreRender(pre, withPainter);
+    pre._bindGpuPackWriters();
+    let listed = null;
+    pre._gpuPackSpec.afterSprites = (n, idx) => {
+      listed = idx !== null && idx !== undefined;
+    };
+    const pack = (fr, glowRows) => {
+      writeQueue(pre.renderQueueBuffers[pre._queueBuf], fr);
+      pre._emitWriteCount = 0;
+      // The old split, forced by a glow count the collect would not give, against the count it gives.
+      pre._frameGlowRows = glowRows;
+      pre.packSpriteAndShadowQueues();
+      const dst = pre.gpuQueueBuffers[pre._queueBuf];
+      const nS = dst.header[GPU_HDR_SPRITE] | 0;
+      const nG = dst.header[GPU_HDR_GLOW] | 0;
+      return {
+        pose: copyU32(dst.spritePose, nS * SPLIT_POSE_FLOATS),
+        statics: copyU32(dst.spriteStatic, nS * POSE_STATIC_FLOATS),
+        counts: [nS, nG],
+        sorted: (dst.header[GPU_HDR_FLAGS] & GPU_FLAG_SORTED) !== 0,
+        listed,
+      };
+    };
+    const label = withPainter ? 'sorted' : 'unsorted';
+    frames.forEach((fr, f) => {
+      pre.selectWriteBuffers();
+      const want = pack(fr, 1);
+      const got = pack(fr, 0);
+      assert.deepEqual(got.counts, want.counts, `${label} frame ${f}: rows`);
+      for (const part of ['pose', 'statics']) {
+        const at = firstDiff(got[part], want[part]);
+        assert.equal(at, -1, `${label} frame ${f}: ${part} differ at word ${at}`);
+      }
+      assert.equal(got.sorted, want.sorted, `${label} frame ${f}: the sorted flag`);
+      if (!withPainter) assert.equal(got.listed, false, `${label} frame ${f}: no slot list`);
+      pre.publishFrame();
+    });
+  }
 });
 
 test('pre-render\'s painter kernel orders the rows as the JS painter does, frame after frame, and the pack takes that order', async () => {
