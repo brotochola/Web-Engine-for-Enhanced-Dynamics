@@ -1248,6 +1248,44 @@ What a turned camera changes:
 - A `setDeadzone` box is measured in the turned view.
 - Spatial `SoundManager.play` pans and fades by screen position, so it follows the turn.
 
+### Lights and shadows: what you want, what you write
+
+Scene lighting is `config.lighting` (`enabled`, `baseAmbient`, `sun`, `raycasted`, `groundScaleY`, …). Each light is an entity with `LightEmitter` in its `static components`; a light turns and moves with its entity.
+
+| You want | You write |
+| --- | --- |
+| A lamp | `this.lightEmitter.radius = 300` (px it reaches) and `color = 0xffcc88` |
+| A dimmer or an overbright light | `brightness = 0.5` (default 1; it scales the colour and the halo) |
+| A halo on the bulb | `glow = 0.6` (default 0: none), `glowOffsetY = -40` (40 px up the screen), `glowLayer = 'glows'` |
+| A lamp post's even pool | `elevation = 110` (the bulb's height above the floor: a wider, flatter pool, same reach) |
+| The light ahead of the entity (headlights) | `offsetX = 60` (local px, turned with the entity) |
+| A light that casts no shadow (cheaper) | `castShadows = false` |
+| Shadows that stop short (cheaper) | `shadowRange = 400` (px; default 0: the radius) |
+| A short burst (a shot, a spark) | `Flash.spawn({ x, y, radius, color, glow, lifespan, castShadows })` (needs `lighting.maxFlashes`) |
+| A sprite that casts a shadow | `ShadowCaster` in its components (from the sun, and from lamps in basic lighting) |
+| A box or a house that casts the sun's shadow | `VolumeShadowCaster`: `setBox(w, d, h)` or `setHull(points)` |
+| A wall that stops lamps under raycast | `LightOccluder` and a `Collider` (`lighting.raycasted: true`) |
+| Particles or liquid that light the floor | `lightRadius` on an emit (`lighting.particleLights`), or on `LiquidFun.emit` |
+
+A light's falloff is `I / (I + d²)` with `I = (radius / 10)²`, on the floor: full at its centre, about 1 % at its radius, where it is culled. The two lighting modes differ in what stops a lamp: in basic lighting (the default) the sprite shadows of `ShadowCaster`s, stamped for the `lighting.maxShadowCastingLights` lights nearest the camera; under `raycasted: true` the `LightOccluder`s, through a visibility polygon per light (no sprite shadows from lamps, and no `lighting.faces`).
+
+```javascript
+class StreetLamp extends GameObject {
+  static components = [SpriteRenderer, LightEmitter];
+
+  onSpawned() {
+    this.setSprite('lamp');
+    const light = this.lightEmitter;
+    light.radius = 900;
+    light.color = 0xffd9a0;
+    light.elevation = 110;     // the bulb's height: an even pool under it
+    light.glow = 0.5;
+    light.glowOffsetY = -110;  // the halo on the bulb
+    light.shadowRange = 500;   // its sprite shadows stop at 500 px
+  }
+}
+```
+
 ### Light pools on the floor: `groundScaleY` and `elevation`
 
 A light reaches `LightEmitter.radius` px. Its falloff is `I / (I + d²)` with `I = (radius / 10)²` and `d` measured in world px: full at the centre, about 1 % at the radius. Two knobs make that `d` a distance on the floor of a top-down or isometric game.
