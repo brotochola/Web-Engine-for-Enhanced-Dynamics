@@ -84,6 +84,27 @@ test('no logic frame within the budget turns the waits off for 120 steps', () =>
   assert.ok(services <= 3, `no ring, no pass but the first (${services})`);
 });
 
+test('the wait answers queries as the idle wake does: bursts end on the short spin', () => {
+  const chain = new Int32Array(new SharedArrayBuffer(16));
+  const previous = globalThis.Box2dSyncSlot;
+  let wake = false;
+  const seen = [];
+  globalThis.Box2dSyncSlot = { setWakeService: (on) => { wake = !!on; } };
+  try {
+    // One logic frame already in: the first pass answers, then the wait ends.
+    Atomics.store(chain, 0, 0);
+    const w = loadWait()({ chainI32: chain, chainLogicWorkers: 1, stepMs: 1, periodMs: 40, service: () => {
+      seen.push(wake);
+      Atomics.store(chain, 0, 1);
+    } });
+    w.wait();
+  } finally {
+    globalThis.Box2dSyncSlot = previous;
+  }
+  assert.deepEqual(seen, [true], 'served in wake mode');
+  assert.equal(wake, false, 'wake mode off after the pass');
+});
+
 test('a sync query post rings the chain bell of the worker that posts it', async () => {
   await import('../../src/box2d/box2dSyncSlotImpl.js');
   const Slot = globalThis.Box2dSyncSlot;

@@ -2895,14 +2895,24 @@
     chainSeen = cur;
   }
 
-  /** N-146: the sync queries a logic worker may be blocked on while physics waits for its frame. */
+  /**
+   * N-146: the sync queries a logic worker may be blocked on while physics waits for its frame. Their bursts end on
+   * the short spin, as in the idle wake: the bell wakes this wait for a later request, and a step burst's timed wait for
+   * one more sleeps on the query's own word, through logic's ring (on Windows up to its timer period, about 15 ms).
+   */
   function serviceChainQueries() {
-    serviceQueryAabb();
-    serviceOverlapCircle();
-    serviceRayCast();
-    serviceCastRayAll();
-    serviceLiquidFunQuery();
-    serviceLiquidFunExtract();
+    const slot = globalThis.Box2dSyncSlot;
+    if (slot) slot.setWakeService(true);
+    try {
+      serviceQueryAabb();
+      serviceOverlapCircle();
+      serviceRayCast();
+      serviceCastRayAll();
+      serviceLiquidFunQuery();
+      serviceLiquidFunExtract();
+    } finally {
+      if (slot) slot.setWakeService(false);
+    }
   }
 
   // chain-wait-end
