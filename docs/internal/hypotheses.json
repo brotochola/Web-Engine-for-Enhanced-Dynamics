@@ -12008,11 +12008,11 @@
     {
       "id": "N-141",
       "title": "A large decoration goes missing at the screen edge while part of it shows (decorations are culled at their point)",
-      "status": "open",
-      "statusText": "filed 2026-11-12 fixing N-140; read in the code, not reproduced",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (594ed8a2, R-0922)",
       "date": "2026-11-12",
-      "result": "particleLists.c builds the visible list of the particle pool, decorations included, with a point test: the position against the view plus cullingRatio. A decoration drawn tall from its foot disappears once its foot is past the margin, as the sprites of N-140 did.",
-      "next": "A reach per decoration slot (spriteCullReach on its frame, scale and anchor) and the list kernel padding decoration slots by it in a copied loop, or the largest decoration reach as one margin for them. Owner: the particle worker's list build.",
+      "result": "fixed 2026-11-12 (594ed8a2): the pool's largest decoration reach pads the decorations' screen test; Predator NEUTRAL",
+      "next": "Done.",
       "area": "render",
       "kind": "bug",
       "refs": [
@@ -12024,7 +12024,9 @@
         "build_lists",
         "tall decoration"
       ],
-      "records": []
+      "records": [
+        "R-0922"
+      ]
     },
     {
       "id": "N-142",
@@ -21193,6 +21195,18 @@
       "text": "**The bundles of 9d167f6c (N-143, N-144, N-145 and E-194 merged): tested, and the prod bundle is no slower than its sources.** dist `fab97281`.\n\n- Node 2516 of 2516, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 0 failures on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 05:03 to 05:10: REGRESSION by the runner on spatial alone,** 3.695 → 3.806 ms (+3.0 %, worse 3/4, cv 3/4 %); physics -1.6 %; logic and pre-render under the floor. Nothing in the batch touches spatial.\n- **Boids, 8 pairs, 05:10 to 05:21: NEUTRAL.** Spatial 5.392 → 5.271 ms (-2.4 %, worse 2/8), physics -1.0 % (4/8).\n\nRead as N-105 reads it: Predator's bundle-against-source rows swing -3 to +10 % on the same code, and spatial's owner scene (Boids, 8 pairs) reads the bundle 2.4 % faster. Main pushed.",
       "commits": [
         "fab97281"
+      ]
+    },
+    {
+      "id": "R-0922",
+      "date": "2026-11-12",
+      "time": "05:33",
+      "timeFrom": "recorded",
+      "title": "N-141 fixed: decorations culled with the pool's largest reach as a margin; Predator NEUTRAL",
+      "verdict": "kept-hygiene",
+      "text": "**N-141 fixed: decorations are culled with the pool's largest reach as a margin.** `594ed8a2`.\n\n- **Cause:** the particle worker's decoration screen test reads one point a decoration (its position against the view plus `cullingRatio`), so a large decoration drawn from its foot went missing at the bottom edge with its top still on screen (and at the sides for an anchor off centre). Filed fixing N-140; the guide advised cutting tall decorations into pieces.\n- **Fix:** the pool keeps the largest reach any decoration has had from its position to the far corner of its sprite (frame × |scale| from the anchor, as `spriteCullReach` does for sprites, plus the draw offset), rounded up, in word 3 of its list header (`DECORATION_MAX_REACH`): `DecorationPool.noteReach` at spawn (before the list shows the decoration) and in the facade's scale, anchor, texture and offset setters; `despawnAll` resets it. The particle worker pads the decorations' screen test with it (`_decorationCameraBounds`, all four paths: both loops, the flip sample, the hold check), so the per-decoration loops (E-179) read nothing more.\n- **Checks:** `decorationReach.test.js`: the reach (anchor, a flip, the offset); a 600 px decoration whose foot is 300 px below the view kept, one past its reach not; growing one raises the pad and the test runs again; despawnAll resets. The two screen cases fail without the pad. In Predator (a probe, the real bigAtlas sizes) the grass reaches 71 px. Node 2519 of 2519, demos 101 of 101.\n\n**Predator's gate, 4 pairs** (`--name n141-predator --vs main --hyp-rev fix/n141`, 05:26 to 05:33): NEUTRAL. Spatial -2.1 %, physics -4.2 % (0/4 worse); logic -1.5 %, renderer -2.9 %, pre-render -4.0 %, particle -5.1 % (under the floor); load keys within 0.1 %.\n\n**Verdict: kept (hygiene).** The guide's sortOffsetY paragraph says how decorations cull now.",
+      "commits": [
+        "594ed8a2"
       ]
     }
   ],

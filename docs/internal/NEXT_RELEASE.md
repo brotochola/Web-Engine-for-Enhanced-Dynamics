@@ -51,3 +51,7 @@ empties it.
   at once, with the same messages.
 - **A scene with no entity types loads** (N-145). A menu scene, or one with LiquidFun or decorations alone, failed
   at load with "Cannot read properties of null (reading 'buffer')". It now keeps one entity slot nothing uses.
+- **Large decorations near the screen's edges are drawn while any part of them shows** (N-141). Decorations were
+  culled at their position, so a tree or a wall piece drawn from its foot went missing at the bottom edge. The particle
+  worker now pads the decorations' test with the largest reach any decoration of the pool has: a scene with a few huge
+  decorations keeps a few more small ones near the edges in its queue.
