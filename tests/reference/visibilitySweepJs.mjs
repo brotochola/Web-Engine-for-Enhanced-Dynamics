@@ -1076,6 +1076,7 @@ export function buildVisibilityPolygonsJs(pre) {
     const fixtureRevision = ColliderFixture.revision;
     const lightEnabled = LightEmitter.active;
     const lightRadius = LightEmitter.radius;
+    const lightCasts = LightEmitter.castShadows;
 
     const neighborData = Grid.neighborData;
     const stride = Grid._stride;
@@ -1141,8 +1142,10 @@ export function buildVisibilityPolygonsJs(pre) {
         clearPolarBins(influenceRadius);
         const selfLitStart = selfLitCount;
         let solidsLit = 0;
+        // A light that casts no shadow gathers nothing: its sweep is the full circle (DX-LIGHTAPI A3).
+        const casts = lightCasts[lightIdx] !== 0;
 
-        if (neighborData && stride > 0) {
+        if (casts && neighborData && stride > 0) {
             const offset = lightIdx * stride;
             const nCount = neighborData[offset];
             for (let k = 0; k < nCount; k++) {

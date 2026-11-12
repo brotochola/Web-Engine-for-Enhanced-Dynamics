@@ -191,6 +191,7 @@ function resetLightEmitterRow(i) {
   LightEmitter.glowLayerId[i] = 0;
   LightEmitter.offsetX[i] = 0;
   LightEmitter.offsetY[i] = 0;
+  LightEmitter.castShadows[i] = 1;
 }
 
 export class GameObject {
@@ -2468,7 +2469,6 @@ export class GameObject {
       FlashComponent.currentLife[i] = 0;
       FlashComponent.initialRadius[i] = 0;
       FlashComponent.initialGlow[i] = 0;
-      FlashComponent.castShadows[i] = 0;
     }
     if (LightOccluder.active) LightOccluder.active[i] = 0;
   }
@@ -3083,7 +3083,6 @@ export class GameObject {
       FlashComponent.currentLife[i] = 0;
       FlashComponent.initialRadius[i] = 0;
       FlashComponent.initialGlow[i] = 0;
-      FlashComponent.castShadows[i] = 1; // default on; Flash.onSpawned may override
     }
 
     if (has.LightOccluder) {

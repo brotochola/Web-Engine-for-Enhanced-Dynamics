@@ -3,9 +3,9 @@
 // They fade out over their lifespan and auto-despawn when expired
 // Updated via tick() like any other GameObject
 //
-// NOT in the spatial grid: Flash has no Collider, so it is never inserted into
-// grid cells and never receives neighbor data.  The pre_render_worker finds
-// shadow casters near a flash via a direct grid query instead.
+// NOT in the spatial grid: Flash has no Collider, so it is never inserted into grid cells and never receives
+// neighbor data. Its point shadows come from the shadow stamp, which grids the casters itself; castShadows: false
+// (LightEmitter.castShadows 0) keeps it out of the stamp.
 
 import { GameObject } from './gameObject.js';
 import { LightEmitter } from '../components/lightEmitter.js';
@@ -141,8 +141,7 @@ export class Flash extends GameObject {
     this.flashComponent.currentLife = 0;
     this.flashComponent.initialRadius = this.lightEmitter.radius;
     this.flashComponent.initialGlow = this.lightEmitter.glow;
-    this.flashComponent.castShadows =
-      spawnConfig.castShadows !== 0 && spawnConfig.castShadows !== false ? 1 : 0;
+    this.lightEmitter.castShadows = spawnConfig.castShadows !== 0 && spawnConfig.castShadows !== false ? 1 : 0;
     this.flashComponent.active = 1;
   }
 

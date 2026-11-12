@@ -8,6 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { LightEmitter } from '../../src/components/lightEmitter.js';
 import { bootPreRenderGather, makeScene, runFrame, writeFrame } from '../helpers/visibilityWired.mjs';
 import { collectSolidJs } from '../reference/visibilitySweepJs.mjs';
 
@@ -49,7 +50,8 @@ function sameFrames(js, k, label) {
       assert.equal(b.n, a.n, `${label} frame ${f} light ${a.idx}: vertex count`);
       assert.deepEqual(Array.from(b.x), Array.from(a.x), `${label} frame ${f} light ${a.idx}: x`);
       assert.deepEqual(Array.from(b.y), Array.from(a.y), `${label} frame ${f} light ${a.idx}: y`);
-      lights++;
+      // A light that casts no shadow (castShadows 0) gathers nothing: only the others call the kernel.
+      if (LightEmitter.castShadows[a.idx] !== 0) lights++;
     }
     assert.deepEqual(k[f].selfLit, js[f].selfLit, `${label} frame ${f}: self-lit list`);
     selfLit += js[f].selfLit.length;

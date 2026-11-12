@@ -3802,6 +3802,7 @@ export declare class LightEmitter extends Component {
     glowLayerId: typeof Uint8Array;
     offsetX: typeof Float32Array;
     offsetY: typeof Float32Array;
+    castShadows: typeof Uint8Array;
   };
   static active: Uint8Array;
   /** 0xRRGGBB. */
@@ -3827,6 +3828,11 @@ export declare class LightEmitter extends Component {
   /** Local px from the entity's centre; the entity's rotation turns them. Pool, glow, shadows and culling follow. */
   static offsetX: Float32Array;
   static offsetY: Float32Array;
+  /**
+   * 1 (the default) casts point shadows: sprite shadows in basic lighting, occluders under raycast. 0 lights the scene
+   * and casts nothing, which costs less.
+   */
+  static castShadows: Uint8Array;
   /** The halo's alpha, at least 0. */
   get glow(): number;
   set glow(value: number);
@@ -3940,14 +3946,12 @@ export declare class FlashComponent extends Component {
     currentLife: typeof Float32Array;
     initialRadius: typeof Float32Array;
     initialGlow: typeof Float32Array;
-    castShadows: typeof Uint8Array;
   };
   static active: Uint8Array;
   static lifespan: Float32Array;
   static currentLife: Float32Array;
   static initialRadius: Float32Array;
   static initialGlow: Float32Array;
-  static castShadows: Uint8Array;
 }
 
 /** Marker: enables `onScreenEnter` / `onScreenExit` on the entity class. No SoA schema. */

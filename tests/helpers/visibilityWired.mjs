@@ -54,7 +54,9 @@ export function makeScene(seed, {
   for (let i = 0; i < lights; i++) {
     const r = radius[0] + rng() * (radius[1] - radius[0]);
     const sqrtI = Math.fround(r / 10);
-    ents.push({ kind: 'light', x: 200 + rng() * (WORLD_W - 400), y: 200 + rng() * (WORLD_H - 400), sqrtI, vx: (rng() - 0.5) * 80, vy: (rng() - 0.5) * 80 });
+    // Every fifth light casts no shadow (LightEmitter.castShadows 0): no gather, the full circle.
+    const casts = ents.length % 5 === 3 ? 0 : 1;
+    ents.push({ kind: 'light', x: 200 + rng() * (WORLD_W - 400), y: 200 + rng() * (WORLD_H - 400), sqrtI, vx: (rng() - 0.5) * 80, vy: (rng() - 0.5) * 80, casts });
   }
   const occ = (kind, extra) => ents.push({
     kind, x: 60 + rng() * (WORLD_W - 120), y: 60 + rng() * (WORLD_H - 120), angle: rng() * Math.PI * 2,
@@ -295,6 +297,7 @@ export function writeFrame(boot, t, { scene = boot.scene, revision = 7 } = {}) {
     if (e.kind === 'light') {
       LightEmitter.active[i] = 1;
       LightEmitter.radius[i] = e.sqrtI * 10;
+      LightEmitter.castShadows[i] = e.casts === 0 ? 0 : 1;
       return;
     }
     LightOccluder.active[i] = 1;

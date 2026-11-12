@@ -16,8 +16,5 @@ export class FlashComponent extends Component {
     // === Initial values (for calculating decay) ===
     initialRadius: Float32Array, // Starting reach (px)
     initialGlow: Float32Array, // Starting halo alpha
-
-    // === Shadows ===
-    castShadows: Uint8Array, // 1 = cast point shadows, 0 = lighting only
   };
 }

@@ -72,7 +72,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   const previousFlashCurrentLife = FlashComponent.currentLife;
   const previousFlashInitialRadius = FlashComponent.initialRadius;
   const previousFlashInitialGlow = FlashComponent.initialGlow;
-  const previousFlashCastShadows = FlashComponent.castShadows;
+  const previousLightCastShadows = LightEmitter.castShadows;
   const previousClearAttached = DecorationPool.clearAttachedAndDespawnAll;
 
   const onDespawnedCalls = [];
@@ -96,7 +96,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
   FlashComponent.currentLife = new Float32Array([10, 3, 20]);
   FlashComponent.initialRadius = new Float32Array([1000, 50, 600]);
   FlashComponent.initialGlow = new Float32Array([0.5, 0.25, 0.75]);
-  FlashComponent.castShadows = new Uint8Array([1, 0, 1]);
+  LightEmitter.castShadows = new Uint8Array([0, 0, 0]);
 
   DecorationPool.clearAttachedAndDespawnAll = (entityIndex) => {
     clearedAttachments.push(entityIndex);
@@ -139,7 +139,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     assert.deepEqual(Array.from(FlashComponent.currentLife), [0, 3, 0]);
     assert.deepEqual(Array.from(FlashComponent.initialRadius), [0, 50, 0]);
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0, 0.25, 0]);
-    assert.deepEqual(Array.from(FlashComponent.castShadows), [0, 0, 0]);
+    assert.deepEqual(Array.from(LightEmitter.castShadows), [1, 0, 1], 'a reset light casts again');
   } finally {
     Transform.active = previousTransformActive;
     RigidBody.active = previousRigidBodyActive;
@@ -159,7 +159,7 @@ test('despawnAll clears attached decorations plus rigidbody, light, and flash po
     FlashComponent.currentLife = previousFlashCurrentLife;
     FlashComponent.initialRadius = previousFlashInitialRadius;
     FlashComponent.initialGlow = previousFlashInitialGlow;
-    FlashComponent.castShadows = previousFlashCastShadows;
+    LightEmitter.castShadows = previousLightCastShadows;
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
   }
 });
@@ -183,7 +183,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   const previousFlashCurrentLife = FlashComponent.currentLife;
   const previousFlashInitialRadius = FlashComponent.initialRadius;
   const previousFlashInitialGlow = FlashComponent.initialGlow;
-  const previousFlashCastShadows = FlashComponent.castShadows;
+  const previousLightCastShadows = LightEmitter.castShadows;
   const previousClearAttached = DecorationPool.clearAttachedAndDespawnAll;
 
   Transform.active = new Uint8Array([1]);
@@ -202,7 +202,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
   FlashComponent.currentLife = new Float32Array([45]);
   FlashComponent.initialRadius = new Float32Array([8000]);
   FlashComponent.initialGlow = new Float32Array([0.5]);
-  FlashComponent.castShadows = new Uint8Array([1]);
+  LightEmitter.castShadows = new Uint8Array([0]);
 
   DecorationPool.clearAttachedAndDespawnAll = () => {};
 
@@ -236,7 +236,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     assert.deepEqual(Array.from(FlashComponent.currentLife), [0]);
     assert.deepEqual(Array.from(FlashComponent.initialRadius), [0]);
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0]);
-    assert.deepEqual(Array.from(FlashComponent.castShadows), [0]);
+    assert.deepEqual(Array.from(LightEmitter.castShadows), [1]);
   } finally {
     Transform.active = previousTransformActive;
     LightEmitter.active = previousLightEmitterActive;
@@ -254,7 +254,7 @@ test('despawn clears LightEmitter and FlashComponent pooled state without relyin
     FlashComponent.currentLife = previousFlashCurrentLife;
     FlashComponent.initialRadius = previousFlashInitialRadius;
     FlashComponent.initialGlow = previousFlashInitialGlow;
-    FlashComponent.castShadows = previousFlashCastShadows;
+    LightEmitter.castShadows = previousLightCastShadows;
     DecorationPool.clearAttachedAndDespawnAll = previousClearAttached;
   }
 });
@@ -281,7 +281,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   const previousFlashCurrentLife = FlashComponent.currentLife;
   const previousFlashInitialRadius = FlashComponent.initialRadius;
   const previousFlashInitialGlow = FlashComponent.initialGlow;
-  const previousFlashCastShadows = FlashComponent.castShadows;
+  const previousLightCastShadows = LightEmitter.castShadows;
   const previousNextTick = GameObject.nextTick;
 
   Transform.active = new Uint8Array([0]);
@@ -303,7 +303,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
   FlashComponent.currentLife = new Float32Array([45]);
   FlashComponent.initialRadius = new Float32Array([8000]);
   FlashComponent.initialGlow = new Float32Array([0.5]);
-  FlashComponent.castShadows = new Uint8Array([0]);
+  LightEmitter.castShadows = new Uint8Array([0]);
   GameObject.nextTick = null;
 
   // Treiber-stack free list: links array + [head, count] header
@@ -350,7 +350,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     assert.deepEqual(Array.from(FlashComponent.currentLife), [0]);
     assert.deepEqual(Array.from(FlashComponent.initialRadius), [0]);
     assert.deepEqual(Array.from(FlashComponent.initialGlow), [0]);
-    assert.deepEqual(Array.from(FlashComponent.castShadows), [1]);
+    assert.deepEqual(Array.from(LightEmitter.castShadows), [1]);
     assert.equal(freeListTop[1], 0); // free count drained
     assert.equal(freeListTop[0] & 0xffff, 0); // stack head empty
   } finally {
@@ -373,7 +373,7 @@ test('spawn initializes LightEmitter and FlashComponent defaults for reused pool
     FlashComponent.currentLife = previousFlashCurrentLife;
     FlashComponent.initialRadius = previousFlashInitialRadius;
     FlashComponent.initialGlow = previousFlashInitialGlow;
-    FlashComponent.castShadows = previousFlashCastShadows;
+    LightEmitter.castShadows = previousLightCastShadows;
     GameObject.nextTick = previousNextTick;
   }
 });

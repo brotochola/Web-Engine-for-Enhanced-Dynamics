@@ -15,6 +15,8 @@ import { Layer } from '../core/layer.js';
  *   (a layer name; null keeps the entity's layers).
  * - `offsetX` / `offsetY` move the light off the entity's centre, in local px: the entity's rotation turns them, and
  *   the pool, glow, shadows and culling follow.
+ * - `castShadows` (1 by default): 0 lights the scene and casts nothing, which costs less (no shadow stamp in basic
+ *   lighting, no occluder gather or sweep under raycast).
  *
  * Shadow casters and raycasted occluders come from this entity's Collider.visualRange neighbours: an occluder past
  * visualRange does not block the light.
@@ -31,6 +33,7 @@ export class LightEmitter extends Component {
     glowLayerId: Uint8Array, // 0 = the entity's layers; non-zero = that layer id only (set it by name with glowLayer)
     offsetX: Float32Array, // local px from the entity's centre, turns with it (a car's headlights ahead of it)
     offsetY: Float32Array,
+    castShadows: Uint8Array, // 1 = casts point shadows (sprites in basic lighting, occluders under raycast); 0 = light only
   };
 
   /** The halo's alpha, at least 0 (0 draws no halo). */

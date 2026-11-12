@@ -3314,6 +3314,7 @@ class PreRenderWorker extends AbstractWorker {
         const worldY = Transform.y;
         const lightEnabled = LightEmitter.active;
         const lightRadius = LightEmitter.radius;
+        const lightCasts = LightEmitter.castShadows;
         const offsetX = LightEmitter.offsetX;
         const offsetY = LightEmitter.offsetY;
         const rotC = Transform.rotC;
@@ -3337,7 +3338,7 @@ class PreRenderWorker extends AbstractWorker {
             : Query.queryActiveEntities(this._queryLightEmitter);
         for (let i = 0; i < raw.length; i++) {
             const id = raw[i];
-            if (!lightEnabled[id]) continue;
+            if (!lightEnabled[id] || !lightCasts[id]) continue;
             const influence = lightRadius[id];
             if (!(influence > 0)) continue;
             const ox = offsetX[id];
@@ -4169,6 +4170,7 @@ class PreRenderWorker extends AbstractWorker {
         const fixtureRevision = ColliderFixture.revision;
         const lightEnabled = LightEmitter.active;
         const lightRadius = LightEmitter.radius;
+        const lightCasts = LightEmitter.castShadows;
 
         const neighborData = Grid.neighborData;
         const stride = Grid._stride;
@@ -4258,11 +4260,15 @@ class PreRenderWorker extends AbstractWorker {
             let occCount = 0;
             let vertPool = 0;
             let occluderLimitHit = false;
-            if (!gatherOn) clearPolarBins(influenceRadius);
+            // A light that casts no shadow (LightEmitter.castShadows 0) gathers nothing: its sweep is the full circle.
+            const casts = lightCasts[lightIdx] !== 0;
+            if (!gatherOn && casts) clearPolarBins(influenceRadius);
             const selfLitStart = selfLitCount;
             let solidsLit = 0;
 
-            if (gatherOn) {
+            if (!casts) {
+                skipPolarBins();
+            } else if (gatherOn) {
                 // The bins are cleared before the light's first solid rasters; a light with none leaves them.
                 skipPolarBins();
                 let binsCleared = false;
