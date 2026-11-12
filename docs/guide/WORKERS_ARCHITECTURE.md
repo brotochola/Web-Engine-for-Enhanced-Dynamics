@@ -42,8 +42,8 @@ waits at most the frame less its own step and room downstream; a wait that runs 
 120 frames, so a chain that does not fit the frame goes back to the vsync-old reads. The waits count in `WAIT_MS`. Boids
 and Predator (2026-11-12): from an input to the frame drawn with it, about 51 → 24 ms. The chain starts on the main
 thread (E-219): Chrome dispatches a frame's pointer events just before its animation frame callbacks, about 0.2 ms after
-the workers wake, so each logic worker waits for main's frame (`logic.waitForInput`, at most an eighth of the frame,
-off for 120 frames after a timeout) and reads the inputs of this vsync, not the one before.
+the workers wake, so each logic worker waits for main's frame (`logic.waitForInput`, under a millisecond, off for 120
+frames after four waits in a row run out) and reads the inputs of this vsync, not the one before.
 
 **What it does each frame:**
 

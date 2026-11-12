@@ -53,6 +53,36 @@ async function publisher(sab, index, value, ms) {
   };
 }
 
+// A thread that stores `value` at `index` at a wall-clock time it is given, and notifies. The time is given 2 ms
+// ahead: a hand-off between threads here can take over a millisecond, longer than logic's sub-ms budget.
+const AT_PUBLISHER = `
+const { workerData, parentPort } = require('node:worker_threads');
+const a = new Int32Array(workerData.sab);
+const at = new Float64Array(workerData.at);
+parentPort.postMessage('ready');
+while (!(at[0] > 0));
+while (performance.timeOrigin + performance.now() < at[0]);
+Atomics.store(a, workerData.index, workerData.value);
+Atomics.notify(a, workerData.index);
+`;
+
+const wallMs = () => performance.timeOrigin + performance.now();
+
+async function publisherAt(sab, index, value) {
+  const at = new Float64Array(new SharedArrayBuffer(8));
+  const w = new Worker(AT_PUBLISHER, { eval: true, workerData: { sab, index, value, at: at.buffer } });
+  await new Promise((resolve) => w.once('message', resolve));
+  return {
+    /** The store `ms` after the call returns, which itself returns 2 ms after it was made. */
+    publishIn(ms) {
+      const d = wallMs() + 2;
+      at[0] = d + ms;
+      while (wallMs() < d);
+    },
+    stop: () => w.terminate(),
+  };
+}
+
 function pixi() {
   const r = Object.create(PixiRenderer.prototype);
   r.renderQueueSync = new Int32Array(new SharedArrayBuffer(8));
@@ -130,7 +160,8 @@ function logicAt(w, gen) {
   w._inputWait = true;
   w._inputWaitGen = gen; // the last frame saw this one: main's frame of this vsync is not out yet
   w._inputWaitOffUntil = 0;
-  w._inputWaitPeriodMs = 40; // a long frame (a 5 ms budget): room for a slow test machine
+  w._inputWaitMisses = 0;
+  w._inputWaitPeriodMs = 40; // a long frame: the budget is its cap, 0.95 ms
   w._inputWaitLastStart = NaN;
   w._injectedDeltaTime = 0;
   w.frameNumber = 10;
@@ -139,14 +170,22 @@ function logicAt(w, gen) {
 
 test('logic waits for main\'s frame of this vsync before it reads inputs, and counts the wait', async () => {
   const w = await loadWorker('logicWorker.js', 'logicWorker');
-  const chain = logicAt(w, 7);
-  const p = await publisher(chain.buffer, 1, 8, 1);
-  resetWaitMeter();
-  p.go();
-  w.beforeUpdate();
-  await p.stop();
+  // A loaded machine may run the publisher late: a few tries (each a miss at most; under four the waits stay on).
+  let chain = null;
+  let waited = 0;
+  for (let attempt = 0; attempt < 4; attempt++) {
+    chain = logicAt(w, 7);
+    const p = await publisherAt(chain.buffer, 1, 8);
+    resetWaitMeter();
+    p.publishIn(0.3);
+    w.beforeUpdate();
+    await p.stop();
+    waited = waitMeterMs();
+    if (w._inputWaitGen === 8 && waited < 0.95) break;
+  }
   assert.equal(w._inputWaitGen, 8, 'main\'s frame published during the wait');
-  assert.ok(waitMeterMs() >= 0.5, `the wait is in WAIT_MS (${waitMeterMs().toFixed(2)} ms)`);
+  assert.ok(waited > 0.02, `the wait is in WAIT_MS (${waited.toFixed(2)} ms)`);
+  assert.ok(waited < 0.95, 'within the budget');
   assert.equal(w._inputWaitOffUntil, 0, 'not turned off');
   // Main's next frame already out at the frame's start: no wait.
   Atomics.store(chain, 1, 9);
@@ -156,13 +195,20 @@ test('logic waits for main\'s frame of this vsync before it reads inputs, and co
   assert.equal(w._inputWaitGen, 9);
 });
 
-test('a wait for main that runs out turns logic\'s waits off for 120 frames; lockstep frames never wait', async () => {
+test('four waits in a row that run out turn logic\'s waits off for 120 frames; lockstep frames never wait', async () => {
   const w = await loadWorker('logicWorker.js', 'logicWorker');
   logicAt(w, 7);
+  for (let k = 0; k < 3; k++) {
+    resetWaitMeter();
+    w.beforeUpdate();
+    assert.ok(waitMeterMs() < 2, `a miss costs under a millisecond, not Windows's timer period (${waitMeterMs().toFixed(2)} ms)`);
+    assert.equal(w._inputWaitOffUntil, 0, `miss ${k + 1}: still on`);
+    w.frameNumber++;
+  }
   w.beforeUpdate();
-  assert.equal(w._inputWaitOffUntil, 10 + 120, 'main published nothing');
+  assert.equal(w._inputWaitOffUntil, w.frameNumber + 120, 'the fourth miss in a row');
   resetWaitMeter();
-  w.frameNumber = 11;
+  w.frameNumber++;
   w.beforeUpdate();
   assert.equal(waitMeterMs(), 0, 'off: no wait');
 

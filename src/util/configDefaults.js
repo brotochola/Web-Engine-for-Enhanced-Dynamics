@@ -615,8 +615,9 @@ export const LOGIC_DEFAULTS = Object.freeze({
   maxMessages: 4096,
   /**
    * E-219: each logic worker waits, at the start of its frame, for the main thread's frame of the same vsync (at most
-   * an eighth of the frame), so it reads the pointer events Chrome dispatched with it this frame, not the next: a frame
-   * less from an input to the screen. A wait that times out turns the waits off for two seconds.
+   * an eighth of the frame and under a millisecond), so it reads the pointer events Chrome dispatched with it this
+   * frame, not the next: a frame less from an input to the screen. Four waits in a row that run out turn the waits off
+   * for two seconds.
    */
   waitForInput: true,
 });

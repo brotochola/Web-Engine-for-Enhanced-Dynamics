@@ -141,6 +141,7 @@ class LogicWorker extends AbstractWorker {
     this._inputWait = false;
     this._inputWaitGen = 0;
     this._inputWaitOffUntil = 0;
+    this._inputWaitMisses = 0;
     this._inputWaitPeriodMs = NaN;
     this._inputWaitLastStart = NaN;
 
@@ -1011,8 +1012,10 @@ class LogicWorker extends AbstractWorker {
    * E-219: every worker wakes on the vsync together, about 0.2 ms before the main thread's animation frame, and Chrome
    * dispatches a frame's pointer events just before that callback: a frame read the inputs of the vsync before, a
    * frame (16 ms) of the 24 between an input and the screen. Wait for main's frame of this vsync (the frame chain's [1],
-   * main adds one once its inputs are in), at most an eighth of the frame. A wait that runs out (main busy, or not on
-   * the vsync) turns the waits off for 120 frames. Lockstep frames do not wait.
+   * main adds one once its inputs are in), at most an eighth of the frame and under a millisecond: Windows rounds a wait
+   * of a millisecond or more up to its timer period (about 15 ms), and a shorter one ends on time (V8 spins it), so a
+   * frame main is late for costs logic at most that. Four such frames in a row (main busy, or not on the vsync) turn
+   * the waits off for 120 frames. Lockstep frames do not wait.
    */
   beforeUpdate() {
     const chain = this._frameChain;
@@ -1033,14 +1036,18 @@ class LogicWorker extends AbstractWorker {
     const frame = this.frameNumber | 0;
     if (frame < this._inputWaitOffUntil) return;
     const period = this._inputWaitPeriodMs === this._inputWaitPeriodMs ? this._inputWaitPeriodMs : 1000 / 60;
-    const budget = period * 0.125;
+    const eighth = period * 0.125;
+    const budget = eighth < 0.95 ? eighth : 0.95;
     Atomics.wait(chain, 1, gen, budget);
     const waited = performance.now() - now;
     addWaitMs(waited);
     this._inputWaitGen = Atomics.load(chain, 1);
-    // A timeout, or main's frame in the time Windows adds to one (it rounds a wait of a millisecond or more up to its
-    // timer period, about 15 ms: N-146): main is not on time for this vsync.
-    if (waited >= budget) this._inputWaitOffUntil = frame + 120;
+    if (waited < budget) {
+      this._inputWaitMisses = 0;
+    } else if (++this._inputWaitMisses >= 4) {
+      this._inputWaitMisses = 0;
+      this._inputWaitOffUntil = frame + 120;
+    }
   }
 
   afterUpdate() {
