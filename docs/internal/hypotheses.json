@@ -10068,7 +10068,8 @@
     {
       "aliases": [],
       "records": [
-        "R-0900"
+        "R-0900",
+        "R-0913"
       ],
       "status": "open",
       "date": "2026-11-01",
@@ -10078,10 +10079,10 @@
       "refs": [
         "EXECUTION_PLAN.md#E-194"
       ],
-      "statusText": "open: step 0 answered 2026-11-11 (R-0900)",
+      "statusText": "mixed 2026-11-12 (R-0913): renderer -56 % under the floor, pre-render +8 %; on speed/e194, not merged",
       "area": "render",
       "result": "step 0 (R-0900): keyed batch, keyed frames paused 589/600, each sent all 16 000 rows as updates; the scene draws split",
-      "next": "How often a LiquidFun slot's statics change under the churn; then keys by particle index with change marks (E-188's way). Gain about 0.2-0.3 ms of a 1.07 ms renderer: raise the scene's load to judge it.",
+      "next": "The records read only when they can have changed: a dense u16 per particle with the compare epoch it was last checked at, the epoch moved by a Pixi resync or by physics when a LiquidFun static may have changed (a paint, a count that moved, a fading group). Then sit again (liquidFunQueryStressScene ?lf=60000).",
       "rank": 21
     },
     {
@@ -11993,6 +11994,28 @@
         "particleLists",
         "build_lists",
         "tall decoration"
+      ],
+      "records": []
+    },
+    {
+      "id": "N-142",
+      "title": "A LiquidFun particle can be drawn with another particle's statics after particles die (compaction leaves the render buffer behind)",
+      "status": "open",
+      "statusText": "filed 2026-11-12 working on E-194; read in the code, not reproduced",
+      "date": "2026-11-12",
+      "result": "LiquidFun compacts its buffers when particles die and the native buffers (position, renderAlpha, color) follow each particle; the thin render buffer the emit draws tint, texture, scale and base alpha from is written once at creation, by index, and nothing moves it.",
+      "next": "Probe: two emits of different tints, the first with a lifetime; after it dies, do the second's rows keep their tint. Then the tint from the native colour buffer on the heap, and the other statics through a per-particle emit index compaction carries.",
+      "area": "physics",
+      "kind": "bug",
+      "refs": [
+        "REVIEW_PLAN.md#N-142"
+      ],
+      "aliases": [
+        "LiquidFun compaction",
+        "SolveZombie",
+        "paintNewLiquidFunParticles",
+        "liquidFun tint",
+        "PermuteSlice"
       ],
       "records": []
     },
@@ -20940,6 +20963,18 @@
       "text": "**The bundles of bf5956eb (E-217 merged): tested, and the prod bundle is no slower than its sources: Predator and Boids NEUTRAL.** dist `55fac2a4`, built from bf5956eb.\n\n- Node 2488 of 2488 on main, demos 101 of 101.\n- `check:dist` passes; embed and browser smokes OK on all 8.\n- `test:node:bundle` 291 of 291 on all 8 bundles.\n\nThe prod ESM bundle against its sources (`--vs HEAD --hyp-rev HEAD --full-rev --query-b weedBundle=weed.prod.bundle.esm.min.js`), on AC power:\n- **Predator, 4 pairs, 01:52 to 01:58: NEUTRAL.** Logic -7.8 % (0/4 worse), spatial -2.6 %, physics -2.8 %, pre-render -0.8 %.\n- **Boids, 8 pairs, 01:58 to 02:08: NEUTRAL.** Spatial -1.8 % (2/8), physics -2.7 % (2/8).\n\nMain pushed.",
       "commits": [
         "55fac2a4"
+      ]
+    },
+    {
+      "id": "R-0913",
+      "date": "2026-11-12",
+      "time": "02:27",
+      "timeFrom": "recorded",
+      "title": "E-194 mixed: keyed LiquidFun rows halve the renderer (2.46 -> 1.08 ms, under the floor), pre-render +8 % (4/4)",
+      "verdict": "mixed",
+      "text": "**E-194, keyed LiquidFun rows: the renderer's time halves, pre-render pays a third of it back; mixed, kept on its branch.** `speed/e194` (`eff1d339` the scene's `?lf=<n>` knob, `13f47e9c` the change).\n\n- **The change:** a keyed scene whose statics texture holds a row per LiquidFun particle keys its LiquidFun rows by particle index past the keyed decorations; the emit marks a row as E-188 marks a decoration (a 32-byte record an index: the statics it last emitted, then the epoch). `preRenderEmitWasm.test.js` (E-194: keys, marks for a tint, a scale, an alpha, a texture, two particles that trade indices, a new epoch; Pixi's copy replayed from the marks always holds every row's statics; fails on the old kernel), `renderQueueMemory.test.js` (the layout).\n- **The knob:** `?lf=<n>` sizes LiquidFun's maximum and the queue and spans the basin with the box (147 px² a particle, from y 2400 up). At 60 000 every particle is on screen (QUEUE 60 000); physics then takes about 100 ms a step.\n\n**liquidFunQueryStressScene `?lf=60000`, owner renderer, 4 pairs, `--vs eff1d339 --hyp-rev 13f47e9c --full-rev` (02:21 to 02:27):** NEUTRAL (below floor) by the runner.\n- Renderer 2.456 → 1.084 ms (-56 %), under the 3 ms floor, not judged.\n- Pre-render 3.411 → 3.741 ms (+8.0 %, worse 4/4, cv 7/5 %).\n- Physics -2.1 % (cv 65/5 %), the others under the floor.\n\n**One CPU trace a side** (headed, 8 s warm-up, 6 s, `--trace-cpu`):\n- Pixi 191 → 97 ms/s busy: `pack_sprites_split` 54.5 → `pack_sprites_keyed` 21.1 ms/s, `updateBuffer` 47.6 → 15.5.\n- Pre-render 222 → 255 ms/s: `emit_rows` 75.3 → 103.1 ms/s, about 7.7 ns for each of 3.6 million LiquidFun rows a second. The rows come in particle order, so the records are read in order: one more stream of 1.9 MB a frame on top of the dozen the emit reads, and the prefetchers do not hide it.\n\n**Verdict: mixed.** About 1 ms a frame less CPU in all, but a primary worker 8 % worse, so not merged. **Next:** the records read only when they can have changed. A dense u16 per particle (120 KB) holds the compare epoch it was last checked at; the emit skips the 32-byte record when it equals the current one, which moves when Pixi asks for every statics again or physics says a LiquidFun static may have changed (a paint, a count that moved, a fading group). Then sit again.\n\nFiled beside it: N-142 (the statics do not follow LiquidFun's compaction).",
+      "commits": [
+        "13f47e9c"
       ]
     }
   ],
