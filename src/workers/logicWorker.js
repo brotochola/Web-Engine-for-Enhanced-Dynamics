@@ -1033,10 +1033,14 @@ class LogicWorker extends AbstractWorker {
     const frame = this.frameNumber | 0;
     if (frame < this._inputWaitOffUntil) return;
     const period = this._inputWaitPeriodMs === this._inputWaitPeriodMs ? this._inputWaitPeriodMs : 1000 / 60;
-    const r = Atomics.wait(chain, 1, gen, period * 0.125);
-    addWaitMs(performance.now() - now);
-    if (r === 'timed-out') this._inputWaitOffUntil = frame + 120;
-    else this._inputWaitGen = Atomics.load(chain, 1);
+    const budget = period * 0.125;
+    Atomics.wait(chain, 1, gen, budget);
+    const waited = performance.now() - now;
+    addWaitMs(waited);
+    this._inputWaitGen = Atomics.load(chain, 1);
+    // A timeout, or main's frame in the time Windows adds to one (it rounds a wait of a millisecond or more up to its
+    // timer period, about 15 ms: N-146): main is not on time for this vsync.
+    if (waited >= budget) this._inputWaitOffUntil = frame + 120;
   }
 
   afterUpdate() {
