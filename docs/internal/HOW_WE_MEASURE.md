@@ -206,6 +206,8 @@ The two sides of a comparison differ only in the change.
 - **Both sides from worktrees:** `node tests/bench/runPredatorAbab.mjs --vs <base> --hyp-rev <rev>`. Side
   A is `src/` at the base revision and side B `src/` at the hypothesis revision, each in a worktree of its
   own under `../weed-ab/`, so edits in the main folder while the sitting runs cannot reach either side.
+  Each worktree is removed when the last process using it exits (about 260 MB each; 98 had piled up by
+  2026-11-12); `--keep-worktrees` keeps them, `tests/bench/cleanRevWorktrees.mjs` removes leftovers.
   Commit the hypothesis (on a branch if it is not kept yet) before measuring it. M13 (2026-10-24): the
   main folder served as side B ran slower than a worktree on identical code (physics +8.5 % in 4 of 4
   pairs), and other sessions were editing it during gates.
@@ -422,7 +424,8 @@ CPU samples say where time goes; they are never a speed verdict.
   story; the record links it.
 - **Raw results are not kept.** `tests/results/` is gitignored and holds thousands of files nobody keeps;
   a link into it is dead for every other reader. Put the numbers that decided it in the record, and the
-  command that produced them, never a path into `tests/results/`.
+  command that produced them, never a path into `tests/results/`. Entries not touched for a week are removed
+  before each sitting (`tests/bench/pruneTestResults.mjs`), so write the record the same day.
 
 ### Old records are evidence, not a ban
 

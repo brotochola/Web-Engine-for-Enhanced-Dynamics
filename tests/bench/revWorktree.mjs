@@ -8,6 +8,12 @@
  *
  * Run a script from the baseline by launching it from `root`: every runner
  * derives repoRoot from its own path, so it serves that tree.
+ *
+ * A worktree is gone once used: each process that makes or reuses one leaves its pid in it (.weed-ab-users), and at
+ * exit the worktrees no other live process holds are removed (about 260 MB each; 98 had piled up by 2026-11-12). The
+ * first use in a process also removes the stale ones: every holder dead (a run cut short), or made by a runner from
+ * before this (no holders) more than 12 hours ago. `--keep-worktrees` (runPredatorAbab) or WEED_KEEP_WORKTREES=1 keeps
+ * them; tests/bench/cleanRevWorktrees.mjs removes the unused ones by hand.
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -20,6 +26,10 @@ export const repoRoot = path.resolve(fileURLToPath(new URL('../..', import.meta.
 export const worktreeParent = path.join(path.dirname(repoRoot), 'weed-ab');
 
 const STAMP = '.weed-ab.json';
+/** The pids of the processes that use a worktree, one empty file each. */
+const USERS = '.weed-ab-users';
+/** A worktree from a runner without holders, unused this long, is stale. */
+const LEGACY_STALE_MS = 12 * 3600 * 1000;
 
 function git(args, cwd = repoRoot) {
   return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
@@ -121,6 +131,7 @@ function overlayWorkingTree(root, includeSrc = false) {
  */
 export function ensureRevWorktree(rev, opts = {}) {
   const srcOnly = opts.srcOnly !== false;
+  pruneOnce();
   const sha = resolveRev(rev);
   const headSha = resolveRev('HEAD');
   const root = path.join(worktreeParent, `${safeName(rev)}-${sha.slice(0, 8)}${opts.tag ? `-${safeName(opts.tag)}` : ''}`);
@@ -133,7 +144,7 @@ export function ensureRevWorktree(rev, opts = {}) {
   if (known.includes(root.toLowerCase()) && fs.existsSync(root)) {
     unlinkNodeModules(root);
     git(['checkout', '-f', '--detach', base], root);
-    git(['clean', '-fdq', '-e', STAMP], root);
+    git(['clean', '-fdq', '-e', STAMP, '-e', USERS], root);
   } else {
     if (fs.existsSync(root)) {
       unlinkNodeModules(root);
@@ -150,6 +161,7 @@ export function ensureRevWorktree(rev, opts = {}) {
 
   const info = { root, rev, sha, headSha, srcOnly, overlay, countsPatched, createdAt: new Date().toISOString() };
   fs.writeFileSync(path.join(root, STAMP), JSON.stringify(info, null, 2) + '\n');
+  holdRevWorktree(root);
   return info;
 }
 
@@ -162,6 +174,7 @@ export function ensureRevWorktree(rev, opts = {}) {
  * @param {Record<string, string>} overrides
  */
 export function ensureOverlayWorktree(name, overrides) {
+  pruneOnce();
   const headSha = resolveRev('HEAD');
   const root = path.join(worktreeParent, `wt-${safeName(name)}`);
   fs.mkdirSync(worktreeParent, { recursive: true });
@@ -171,7 +184,7 @@ export function ensureOverlayWorktree(name, overrides) {
   if (known.includes(root.toLowerCase()) && fs.existsSync(root)) {
     unlinkNodeModules(root);
     git(['checkout', '-f', '--detach', headSha], root);
-    git(['clean', '-fdq', '-e', STAMP], root);
+    git(['clean', '-fdq', '-e', STAMP, '-e', USERS], root);
   } else {
     if (fs.existsSync(root)) {
       unlinkNodeModules(root);
@@ -189,6 +202,7 @@ export function ensureOverlayWorktree(name, overrides) {
   linkNodeModules(root);
   const info = { root, name, headSha, overlay, overrides, createdAt: new Date().toISOString() };
   fs.writeFileSync(path.join(root, STAMP), JSON.stringify(info, null, 2) + '\n');
+  holdRevWorktree(root);
   return info;
 }
 
@@ -198,4 +212,114 @@ export function removeRevWorktree(root) {
   }
   unlinkNodeModules(root);
   git(['worktree', 'remove', '--force', root]);
+}
+
+const held = new Set();
+let keepWorktrees = process.env.WEED_KEEP_WORKTREES === '1';
+let exitHooked = false;
+let pruned = false;
+
+/** Whether a process is alive (signal 0 tests it; EPERM means it is, and someone else's). */
+function pidAlive(pid) {
+  if (!(pid > 0)) return false;
+  if (pid === process.pid) return true;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return e?.code === 'EPERM';
+  }
+}
+
+/** The live processes that hold `root` (this one included when it does). */
+export function worktreeHolders(root) {
+  let names = [];
+  try {
+    names = fs.readdirSync(path.join(root, USERS));
+  } catch {
+    return [];
+  }
+  return names.map(Number).filter(pidAlive);
+}
+
+/** This process uses `root`: it is removed at this process's exit unless another live one still holds it. */
+export function holdRevWorktree(root) {
+  fs.mkdirSync(path.join(root, USERS), { recursive: true });
+  fs.writeFileSync(path.join(root, USERS, String(process.pid)), '');
+  held.add(path.resolve(root));
+  if (!exitHooked) {
+    exitHooked = true;
+    process.on('exit', releaseRevWorktrees);
+  }
+}
+
+/** Keep the worktrees this process used (runPredatorAbab --keep-worktrees; WEED_KEEP_WORKTREES=1 for any runner). */
+export function keepRevWorktrees(keep = true) {
+  keepWorktrees = Boolean(keep);
+}
+
+/** Drop this process's hold on each worktree it used, and remove each one no other live process holds. */
+export function releaseRevWorktrees() {
+  for (const root of held) {
+    try {
+      fs.rmSync(path.join(root, USERS, String(process.pid)), { force: true });
+      if (keepWorktrees || worktreeHolders(root).length > 0) continue;
+      removeRevWorktree(root);
+    } catch (e) {
+      console.warn(`[revWorktree] ${root} was left: ${String(e?.message || e).split('\n')[0]}`);
+    }
+  }
+  held.clear();
+}
+
+/**
+ * The worktrees under worktreeParent no live process holds: every holder dead (a run cut short), or no holders and
+ * unused for `legacyMs` (a runner from before the holders; `legacyMs` 0 takes them all).
+ * @returns {string[]}
+ */
+export function staleRevWorktrees({ legacyMs = LEGACY_STALE_MS } = {}) {
+  const parent = path.resolve(worktreeParent).toLowerCase();
+  const roots = lines(git(['worktree', 'list', '--porcelain']))
+    .filter((l) => l.startsWith('worktree '))
+    .map((l) => path.resolve(l.slice('worktree '.length)))
+    .filter((r) => path.dirname(r).toLowerCase() === parent);
+  const now = Date.now();
+  return roots.filter((r) => {
+    if (held.has(r) || !fs.existsSync(r)) return false;
+    const users = path.join(r, USERS);
+    if (fs.existsSync(users)) return worktreeHolders(r).length === 0;
+    let used = 0;
+    try {
+      used = fs.statSync(path.join(r, STAMP)).mtimeMs;
+    } catch {
+      used = fs.statSync(r).mtimeMs;
+    }
+    return now - used >= legacyMs;
+  });
+}
+
+/** Remove the stale worktrees (staleRevWorktrees); returns the ones removed. */
+export function pruneStaleRevWorktrees(opts = {}) {
+  const removed = [];
+  for (const r of staleRevWorktrees(opts)) {
+    try {
+      removeRevWorktree(r);
+      removed.push(r);
+    } catch (e) {
+      console.warn(`[revWorktree] ${r} was left: ${String(e?.message || e).split('\n')[0]}`);
+    }
+  }
+  try {
+    git(['worktree', 'prune']);
+  } catch {
+    // Nothing to prune.
+  }
+  return removed;
+}
+
+function pruneOnce() {
+  if (pruned || keepWorktrees) return;
+  pruned = true;
+  const removed = pruneStaleRevWorktrees();
+  if (removed.length) console.log(`[revWorktree] removed ${removed.length} stale worktree(s) under ${worktreeParent}`);
 }
