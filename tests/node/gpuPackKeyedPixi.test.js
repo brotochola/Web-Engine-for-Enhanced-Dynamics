@@ -222,9 +222,12 @@ function emitFrame(px, m, w, dirty, frame, n, r) {
     }
   }
   const h = new Uint32Array(m.buffer, m.layout.emit.keyHeaderByte, 4);
+  // N-148: only the buffer of the emit that served a request answers it.
+  let served = 0;
   if (Atomics.load(h, H.REQUEST) !== Atomics.load(h, H.SERVED)) {
     dirty.fill(1);
     Atomics.store(h, H.SERVED, Atomics.load(h, H.REQUEST));
+    served = Atomics.load(h, H.SERVED);
   }
   const b = (frame - 1) & 1;
   const q = px.renderQueueBuffers[b];
@@ -235,7 +238,7 @@ function emitFrame(px, m, w, dirty, frame, n, r) {
     q.key[k] = (w.key[k] | (dirty[k] << 31)) >>> 0;
     dirty[k] = 0;
   }
-  Atomics.store(h, H.BUFFER0 + b, Atomics.load(h, H.SERVED));
+  Atomics.store(h, H.BUFFER0 + b, served);
   return b;
 }
 

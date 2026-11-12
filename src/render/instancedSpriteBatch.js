@@ -71,6 +71,8 @@ export const BATCH_DEPTH = Object.freeze({ INDEX: 0 });
 // KEYED_PAUSE_FRAMES frames, then resyncs and tries again.
 export const KEYED_SAVED_BYTES = (GPU_STATIC_FLOATS - GPU_INDEXED_SLOT_FLOATS) * 4;
 export const KEYED_LOSS_FRAMES = 10;
+/** N-148: the frames a keyed batch draws split for its request unanswered before it asks again. */
+export const KEYED_REQUEST_FRAMES = 8;
 export const KEYED_PAUSE_FRAMES = 1800;
 
 const EMPTY_UPLOAD_OPTS = Object.freeze({
@@ -384,6 +386,8 @@ export class InstancedSpriteBatch {
     this.keyedBuffer = 0;
     this._keyFrame = -1;
     this._keyRequest = 0;
+    // N-148: the frames this batch has drawn split waiting for its request's answer.
+    this._keyWaits = 0;
     // The keyed frames in a row whose updates outweighed their saving, and the split frames left of a pause.
     this._keyLosses = 0;
     this._keyPause = 0;
@@ -1102,8 +1106,14 @@ export class InstancedSpriteBatch {
       if (this._keyRequest === 0) {
         this._keyRequest = (Atomics.load(H, PIXI_KEYED_HEADER.REQUEST) + 1) >>> 0 || 1;
         Atomics.store(H, PIXI_KEYED_HEADER.REQUEST, this._keyRequest);
+        this._keyWaits = 0;
       }
-      if (Atomics.load(H, PIXI_KEYED_HEADER.BUFFER0 + (this.keyedBuffer & 1)) !== this._keyRequest) return -1;
+      if (Atomics.load(H, PIXI_KEYED_HEADER.BUFFER0 + (this.keyedBuffer & 1)) !== this._keyRequest) {
+        // N-148: only the queue buffer pre-render served the request in answers it, and Pixi takes the newest queue, so
+        // it may skip that one: ask again after a few frames unanswered.
+        if (++this._keyWaits >= KEYED_REQUEST_FRAMES) this._keyRequest = 0;
+        return -1;
+      }
     }
     const k = this._keyedPack;
     const out = packKeyedRowsWasm(this._gpuPack, q, ctx, this._sharedPose, this._sharedSlots, k, this.capacity);

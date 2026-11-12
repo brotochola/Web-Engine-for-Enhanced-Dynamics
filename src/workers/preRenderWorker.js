@@ -2938,10 +2938,12 @@ class PreRenderWorker extends AbstractWorker {
         const writeSortKey = !!(this.renderQueueSortKey && source.hasOrder);
         const ySort = !!source.ySort;
         // -1 when off: buffer 0 is a valid persist target (it used to read as false).
-        const persistBuf = source.persist ? this._queueBuf : -1;
+        let persistBuf = source.persist ? this._queueBuf : -1;
         // E-177: Pixi asked for every keyed statics again (its texture may miss changes): every sprite flagged for this emit,
         // the request served.
         const keyHeader = source.persist && this._keyedFrames ? this._keyedHeader : null;
+        // N-148: the request this emit serves (0: none), the only one this queue buffer's keys answer.
+        let served = 0;
         if (keyHeader !== null) {
             const request = Atomics.load(keyHeader, PIXI_KEYED_HEADER.REQUEST);
             if (request !== keyHeader[PIXI_KEYED_HEADER.SERVED]) {
@@ -2949,6 +2951,12 @@ class PreRenderWorker extends AbstractWorker {
                 // E-188: and every keyed decoration's.
                 bumpEmitDecorationEpoch(this._emitWasm);
                 keyHeader[PIXI_KEYED_HEADER.SERVED] = request;
+                served = request;
+                // N-148: the full emit answers it, never a persist frame: persist_frame keeps the rows it holds from the
+                // frame before, their keys without the changed bit, so in a still scene Pixi took an answer with no
+                // statics, scattered nothing and drew every sprite at scale 0 for good (a page loaded in a warm browser,
+                // whose request came once pre-render persisted).
+                persistBuf = -1;
             }
         }
         if (!this._writeEmitTable(source, this._resolveBuiltinTextureId('_bulletTrail'))) {
@@ -2988,9 +2996,12 @@ class PreRenderWorker extends AbstractWorker {
             }
             if (this.renderQueueStaticGen.length) this.renderQueueStaticGen[0] = this._staticGen;
         }
-        // E-177: this queue buffer's keys answer the request served (Pixi draws it keyed once they answer its own).
+        // E-177: this queue buffer's keys answer the request served (Pixi draws it keyed once they answer its own). N-148:
+        // only the buffer of the emit that served it: the buffers after it carry only what changed since, and every one
+        // of them stamped the request served let Pixi, which takes the newest queue and so may skip the one that answered,
+        // take one of them for its answer: nothing scattered, every sprite at scale 0 in a still scene.
         if (keyHeader !== null) {
-            Atomics.store(keyHeader, PIXI_KEYED_HEADER.BUFFER0 + this._queueBuf, keyHeader[PIXI_KEYED_HEADER.SERVED]);
+            Atomics.store(keyHeader, PIXI_KEYED_HEADER.BUFFER0 + this._queueBuf, served);
         }
         return writeCount;
     }
