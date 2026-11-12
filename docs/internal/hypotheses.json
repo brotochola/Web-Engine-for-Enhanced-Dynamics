@@ -12000,11 +12000,11 @@
     {
       "id": "N-142",
       "title": "A LiquidFun particle can be drawn with another particle's statics after particles die (compaction leaves the render buffer behind)",
-      "status": "open",
-      "statusText": "filed 2026-11-12 working on E-194; read in the code, not reproduced",
+      "status": "kept-hygiene",
+      "statusText": "fixed 2026-11-12 (3cbb90eb, Box2D 7a1d29b, R-0914)",
       "date": "2026-11-12",
-      "result": "LiquidFun compacts its buffers when particles die and the native buffers (position, renderAlpha, color) follow each particle; the thin render buffer the emit draws tint, texture, scale and base alpha from is written once at creation, by index, and nothing moves it.",
-      "next": "Probe: two emits of different tints, the first with a lifetime; after it dies, do the second's rows keep their tint. Then the tint from the native colour buffer on the heap, and the other statics through a per-particle emit index compaction carries.",
+      "result": "fixed 2026-11-12 (3cbb90eb, Box2D 7a1d29b): origin indices carried through LiquidFun's reorders, the render statics moved by them; reproduced and checked in a browser probe; gates NEUTRAL",
+      "next": "Done. Left: the interpolation's previous LiquidFun positions are latched by index (one frame from another particle's position after a compaction).",
       "area": "physics",
       "kind": "bug",
       "refs": [
@@ -12017,7 +12017,9 @@
         "liquidFun tint",
         "PermuteSlice"
       ],
-      "records": []
+      "records": [
+        "R-0914"
+      ]
     },
     {
       "id": "N-143",
@@ -21022,6 +21024,18 @@
       "text": "**E-194, keyed LiquidFun rows: the renderer's time halves, pre-render pays a third of it back; mixed, kept on its branch.** `speed/e194` (`eff1d339` the scene's `?lf=<n>` knob, `13f47e9c` the change).\n\n- **The change:** a keyed scene whose statics texture holds a row per LiquidFun particle keys its LiquidFun rows by particle index past the keyed decorations; the emit marks a row as E-188 marks a decoration (a 32-byte record an index: the statics it last emitted, then the epoch). `preRenderEmitWasm.test.js` (E-194: keys, marks for a tint, a scale, an alpha, a texture, two particles that trade indices, a new epoch; Pixi's copy replayed from the marks always holds every row's statics; fails on the old kernel), `renderQueueMemory.test.js` (the layout).\n- **The knob:** `?lf=<n>` sizes LiquidFun's maximum and the queue and spans the basin with the box (147 px² a particle, from y 2400 up). At 60 000 every particle is on screen (QUEUE 60 000); physics then takes about 100 ms a step.\n\n**liquidFunQueryStressScene `?lf=60000`, owner renderer, 4 pairs, `--vs eff1d339 --hyp-rev 13f47e9c --full-rev` (02:21 to 02:27):** NEUTRAL (below floor) by the runner.\n- Renderer 2.456 → 1.084 ms (-56 %), under the 3 ms floor, not judged.\n- Pre-render 3.411 → 3.741 ms (+8.0 %, worse 4/4, cv 7/5 %).\n- Physics -2.1 % (cv 65/5 %), the others under the floor.\n\n**One CPU trace a side** (headed, 8 s warm-up, 6 s, `--trace-cpu`):\n- Pixi 191 → 97 ms/s busy: `pack_sprites_split` 54.5 → `pack_sprites_keyed` 21.1 ms/s, `updateBuffer` 47.6 → 15.5.\n- Pre-render 222 → 255 ms/s: `emit_rows` 75.3 → 103.1 ms/s, about 7.7 ns for each of 3.6 million LiquidFun rows a second. The rows come in particle order, so the records are read in order: one more stream of 1.9 MB a frame on top of the dozen the emit reads, and the prefetchers do not hide it.\n\n**Verdict: mixed.** About 1 ms a frame less CPU in all, but a primary worker 8 % worse, so not merged. **Next:** the records read only when they can have changed. A dense u16 per particle (120 KB) holds the compare epoch it was last checked at; the emit skips the 32-byte record when it equals the current one, which moves when Pixi asks for every statics again or physics says a LiquidFun static may have changed (a paint, a count that moved, a fading group). Then sit again.\n\nFiled beside it: N-142 (the statics do not follow LiquidFun's compaction).",
       "commits": [
         "13f47e9c"
+      ]
+    },
+    {
+      "id": "R-0914",
+      "date": "2026-11-12",
+      "time": "03:09",
+      "timeFrom": "recorded",
+      "title": "N-142 fixed: LiquidFun's render statics follow the particles through compactions, joins, extractions and splits",
+      "verdict": "kept-hygiene",
+      "text": "**N-142 fixed: LiquidFun's render statics follow the particles through LiquidFun's reorders.** Engine `3cbb90eb` (branch `fix/n142`), Box2D `Box2d_3.2` `7a1d29b`.\n\n- **Reproduced first** (a probe page, not committed: headless Chromium, WebGL, two box emits of 0xff0000 and 0x00ff00, the red with a 1.5 s lifespan, no gravity). Red and green pixels in each half of the canvas:\n  - at 0.8 s: left red 3 381, right green 3 381;\n  - at 4.8 s, after the red died: left nothing, right **red 3 381, green 0**. The green particles slid down into the red ones' indices and took their tint.\n- **Cause:** LiquidFun compacts its buffers when particles die (and rotates them on a join, permutes on an extraction, copies on a split); its own buffers follow each particle, but the render buffer's tint, texture, scale, rotation, base alpha and layer mask are painted once by index when a particle is made.\n- **Fix:**\n  - Box2D: each particle's `originIndex` (its index at the last `lfParticleSystem_ResetOrigins`; a new particle its own) is carried through `CopyParticle`, `PermuteParticleRange`, `RotateBuffer` and the split's copy, with a `reordered` flag. Exports `get_particle_origin_byte_offset`, `particle_reordered`, `reset_particle_origins`. Both builds (SIMD and no-SIMD) pass `build_for_weed.bat`.\n  - Engine: `followLiquidFunReorder` in the physics host, after each frame's steps and after a join, a split or an extraction, moves the eight render-statics arrays from each particle's origin (in place for a compaction, which only moves particles down; from a copy otherwise), then resets the origins.\n- **Checks:** `liquidFunOrigins.wasm.test.js` (a compaction: every survivor's origin is where it came from, and green; a join: each particle is the one at its origin). The probe after the fix: at 4.8 s right **green 3 381, red 0**. Node 2490 of 2490, demos 101 of 101.\n- **Left:** pre-render's previous LiquidFun positions (`_prevLfX`, the interpolation) are latched by index, so a compacted particle interpolates from another's position for one frame.\n\n**Gates** (src, headed, AC power):\n- **liquidFunQueryStressScene**, owner physics, 4 pairs, main vs the branch (02:54 to 02:59): NEUTRAL. Physics 11.241 → 10.994 ms (-1.2 %, worse 2/4, cv 2/3 %); the rest under the floor. (Its queue then held 16 000 of 19 656 particles; fixed since in 00b1448f.)\n- **Predator**, 4 pairs (02:47 to 02:53): NEUTRAL by the runner, physics 5.105 → 5.786 ms (+11.4 %, worse 3/4, cv 15/9 %) on a scene without LiquidFun. The Box2D binary grew 575 bytes (the three exports), the same build as main's.\n- **Predator again, 8 pairs** (`--name n142-predator --vs d0455d75`, 03:02 to 03:09): NEUTRAL. Physics 5.682 → 5.639 ms (-4.8 %, worse 3/8, cv 22/16 %; pairs +2.3, +6.4, +23.4, -5.6, -6.5, -11.6, -12.4, -4.0), logic -4.1 %, spatial -2.3 %, pre-render -2.6 %. The first sitting's +11.4 % was noise.\n\n**Verdict: kept (hygiene).** A bug fixed, no primary worker 3 % worse.",
+      "commits": [
+        "3cbb90eb"
       ]
     }
   ],
