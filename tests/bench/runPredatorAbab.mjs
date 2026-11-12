@@ -24,6 +24,9 @@
  *
  * --headless: every run without a window (headed is the protocol; see opts.headed).
  *
+ * --keep-worktrees: the --vs and --hyp-rev worktrees stay after the sitting (by default each is removed once no live
+ * process holds it: revWorktree.mjs).
+ *
  * --restore <file>: both sides start the scene from that save (E-210; tests/bench/sceneSaveMaker.mjs makes one in
  * mid-play), copied into each side's tree and named to the page as ?restore=, so the two measure the same moment of
  * an emergent scene instead of two runs that drifted apart.
@@ -49,7 +52,7 @@ import { DEFAULT_DURATION_MS, DEFAULT_WARMUP_MS } from './benchmarkDefaults.mjs'
 import { median, pctDelta, writeJson } from './featureTournamentLib.mjs';
 import { cv, repoRoot, runIntegratedWithRetry } from './measureLib.mjs';
 import { isCli, parseArgs } from './microbenchHelpers.mjs';
-import { ensureOverlayWorktree, ensureRevWorktree } from './revWorktree.mjs';
+import { ensureOverlayWorktree, ensureRevWorktree, keepRevWorktrees } from './revWorktree.mjs';
 
 export const PREDATOR_SCENE = {
   key: 'predator',
@@ -746,6 +749,7 @@ const outDir = path.join(repoRoot, 'tests/results/predator-abab', name);
     printDecision(name, prev.decision);
     return;
   }
+  if (args['keep-worktrees']) keepRevWorktrees();
   // --vs <rev>: A = src/ from that revision, everything else from the working tree.
   const fullRev = Boolean(args['full-rev']);
   const baseline = args.vs
