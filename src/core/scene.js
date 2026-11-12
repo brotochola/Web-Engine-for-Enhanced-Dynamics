@@ -2657,6 +2657,15 @@ class Scene {
         this._phaseLog.push(readPhaseSample(clock));
       }
       if (clock) publishFrame(clock, frameAbs);
+      // E-219: this frame's pointer and key events are in: Chrome dispatches them before its animation frame callbacks.
+      // The logic workers, which wake on the same vsync about 0.2 ms before this callback, wait for it
+      // (logic.waitForInput) and read them this frame instead of the next. First thing in the callback: logic waits
+      // under a millisecond. (The gamepads are read in updateInternal below: logic sees them a frame later, as before.)
+      const chain = this._inputChain;
+      if (chain && !this.state.pause) {
+        Atomics.add(chain, 1, 1);
+        Atomics.notify(chain, 1);
+      }
 
       if (!this.state.pause) {
         const deltaTime = currentTime - this.lastFrameTime;
@@ -2716,14 +2725,6 @@ class Scene {
     // Update input edge flags on the main thread so Scene.update() can use them
     // the same way entity tick() does in workers.
     Gamepad.poll();
-    // E-219: this frame's inputs are in: Chrome dispatches the pointer events of a frame before its animation frame
-    // callbacks, and the gamepads were just read. The logic workers, which wake on the same vsync about 0.2 ms before
-    // this callback, wait for it (logic.waitForInput) and read them this frame instead of the next.
-    const chain = this._inputChain;
-    if (chain) {
-      Atomics.add(chain, 1, 1);
-      Atomics.notify(chain, 1);
-    }
     Keyboard.updateEdgeFlags();
     Mouse.updateEdgeFlags();
     Gamepad.updateEdgeFlags();
