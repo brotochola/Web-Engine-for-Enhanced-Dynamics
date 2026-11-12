@@ -40,7 +40,10 @@ stages inside one vsync instead: physics waits for every logic worker to finish 
 vsync (`preRender.waitForPose`), and Pixi for the queue pre-render publishes this vsync (`renderer.waitForQueue`). Each
 waits at most the frame less its own step and room downstream; a wait that runs out turns that stage's waits off for
 120 frames, so a chain that does not fit the frame goes back to the vsync-old reads. The waits count in `WAIT_MS`. Boids
-and Predator (2026-11-12): from an input to the frame drawn with it, about 51 → 24 ms.
+and Predator (2026-11-12): from an input to the frame drawn with it, about 51 → 24 ms. The chain starts on the main
+thread (E-219): Chrome dispatches a frame's pointer events just before its animation frame callbacks, about 0.2 ms after
+the workers wake, so each logic worker waits for main's frame (`logic.waitForInput`, at most an eighth of the frame,
+off for 120 frames after a timeout) and reads the inputs of this vsync, not the one before.
 
 **What it does each frame:**
 

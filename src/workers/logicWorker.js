@@ -90,6 +90,7 @@ import { GpuParticles } from '../core/gpuParticles.js';
 import { gpuLogicWriterSlot } from '../util/gpuParticleLayout.js';
 import { auditFields } from '../core/debug/devChecks.js';
 import { STAMP_INPUT, STAMP_LOGIC } from '../util/latencyStamp.js';
+import { addWaitMs } from '../util/waitMeter.js';
 
 /** DX-GUARDS E2: the instance devChecks audits for a class. */
 const firstActiveInstance = (EntityClass) => EntityClass.getFirstActiveInstance();
@@ -136,6 +137,12 @@ class LogicWorker extends AbstractWorker {
     super(selfRef);
     // E-197: the input stamp this frame acts on (published by afterUpdate, once the frame's work is out).
     this._latencyActing = 0;
+    // E-219: wait for main's frame of this vsync before reading inputs (logic.waitForInput; beforeUpdate).
+    this._inputWait = false;
+    this._inputWaitGen = 0;
+    this._inputWaitOffUntil = 0;
+    this._inputWaitPeriodMs = NaN;
+    this._inputWaitLastStart = NaN;
 
     // Logic worker needs to CREATE GameObject instances (all workers get scripts/components)
     this.needsGameScripts = true;
@@ -384,6 +391,8 @@ class LogicWorker extends AbstractWorker {
 
     // Get total logic workers count from config
     this.totalLogicWorkers = data.config?.logic?.numberOfLogicWorkers || 1;
+    // E-219: only a frame loop on the vsync can wait for main's (fixedFps and noLimitFPS frames are not on it).
+    this._inputWait = data.config?.logic?.waitForInput !== false && !(this.fixedFps > 0) && !this.noLimitFPS;
 
     // E-213: this worker's nav request ring.
     const navRings = data.buffers?.navRequestRings || null;
@@ -998,6 +1007,38 @@ class LogicWorker extends AbstractWorker {
    * same vsync takes this frame's stamp with this frame's data (published at the next frame's start it read one a
    * frame old, and the meter counted a frame that was not there).
    */
+  /**
+   * E-219: every worker wakes on the vsync together, about 0.2 ms before the main thread's animation frame, and Chrome
+   * dispatches a frame's pointer events just before that callback: a frame read the inputs of the vsync before, a
+   * frame (16 ms) of the 24 between an input and the screen. Wait for main's frame of this vsync (the frame chain's [1],
+   * main adds one once its inputs are in), at most an eighth of the frame. A wait that runs out (main busy, or not on
+   * the vsync) turns the waits off for 120 frames. Lockstep frames do not wait.
+   */
+  beforeUpdate() {
+    const chain = this._frameChain;
+    if (!this._inputWait || chain === null || this._injectedDeltaTime > 0) return;
+    const now = performance.now();
+    const last = this._inputWaitLastStart;
+    this._inputWaitLastStart = now;
+    if (last === last) {
+      const gap = now - last;
+      if (gap > 0 && gap < 100) this._inputWaitPeriodMs = this._inputWaitPeriodMs === this._inputWaitPeriodMs
+        ? this._inputWaitPeriodMs * 0.9 + gap * 0.1 : gap;
+    }
+    const gen = Atomics.load(chain, 1);
+    const seen = this._inputWaitGen;
+    this._inputWaitGen = gen;
+    // Main's frame of this vsync is already out, or main has published none yet.
+    if (gen !== seen || gen === 0) return;
+    const frame = this.frameNumber | 0;
+    if (frame < this._inputWaitOffUntil) return;
+    const period = this._inputWaitPeriodMs === this._inputWaitPeriodMs ? this._inputWaitPeriodMs : 1000 / 60;
+    const r = Atomics.wait(chain, 1, gen, period * 0.125);
+    addWaitMs(performance.now() - now);
+    if (r === 'timed-out') this._inputWaitOffUntil = frame + 120;
+    else this._inputWaitGen = Atomics.load(chain, 1);
+  }
+
   afterUpdate() {
     if (this.workerIndex === 0 && this._latency !== null) Atomics.store(this._latency.i32, STAMP_LOGIC, this._latencyActing);
     // E-198: this worker's frame is out; physics may be waiting for every logic worker's, asleep on the bell (N-146).

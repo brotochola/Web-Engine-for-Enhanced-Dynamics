@@ -548,6 +548,8 @@ class Scene {
     this.lastFrameTime = performance.now();
     this.updateRate = 1000 / 60;
     this.animationFrameId = null; // Store RAF ID so we can cancel it
+    // E-219: the frame chain (Int32Array, null without one): main adds one at [1] once a frame's inputs are in.
+    this._inputChain = null;
 
     // Initialization promise
     this.readyPromise = new Promise((resolve) => {
@@ -2638,6 +2640,7 @@ class Scene {
 
   startMainLoop() {
     const clock = this.buffers?.frameClock ? bindFrameClock(this.buffers.frameClock) : null;
+    this._inputChain = this.buffers?.frameChain ? new Int32Array(this.buffers.frameChain) : null;
     const totals = this.buffers?.frameTotals ? bindFrameTotals(this.buffers.frameTotals) : null;
     const mainSlot = frameClockSlot('main');
     const loop = (currentTime) => {
@@ -2713,6 +2716,14 @@ class Scene {
     // Update input edge flags on the main thread so Scene.update() can use them
     // the same way entity tick() does in workers.
     Gamepad.poll();
+    // E-219: this frame's inputs are in: Chrome dispatches the pointer events of a frame before its animation frame
+    // callbacks, and the gamepads were just read. The logic workers, which wake on the same vsync about 0.2 ms before
+    // this callback, wait for it (logic.waitForInput) and read them this frame instead of the next.
+    const chain = this._inputChain;
+    if (chain) {
+      Atomics.add(chain, 1, 1);
+      Atomics.notify(chain, 1);
+    }
     Keyboard.updateEdgeFlags();
     Mouse.updateEdgeFlags();
     Gamepad.updateEdgeFlags();

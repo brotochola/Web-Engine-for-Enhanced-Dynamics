@@ -241,8 +241,10 @@ function initializeCoreEntityAndComponentBuffers(scene) {
 
   // E-197: the input-to-screen latency stamp (main stamps inputs into it; logic, physics, pre-render and Pixi carry it).
   buffers.latencyStamp = createLatencyStampBuffer();
-  // E-198: the frame chain: [0] the logic workers' frames done (each adds one at its frame's end); [2] (N-146) the
-  // bell physics's wait for them sleeps on (a logic worker rings it at its frame's end and when it posts a sync query).
+  // E-198: the frame chain: [0] the logic workers' frames done (each adds one at its frame's end); [1] (E-219) main's
+  // frames with their inputs in (main adds one once Chrome has dispatched the frame's events and the gamepads are read);
+  // [2] (N-146) the bell physics's wait for the logic workers sleeps on (a logic worker rings it at its frame's end and
+  // when it posts a sync query).
   buffers.frameChain = new SharedArrayBuffer(16);
   bindInputStamp(buffers.latencyStamp);
 

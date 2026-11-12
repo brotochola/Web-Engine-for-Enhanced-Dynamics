@@ -9,7 +9,7 @@ import { loadWorker } from '../bench/workerHarness.mjs';
 // start is its upstream's output of a vsync earlier, and an input took 3 frames to reach the screen. Pixi now waits for
 // pre-render's queue of this vsync and pre-render for physics's pose (physics for every logic worker: weedjsPost's
 // waitForLogic), each within a budget (the frame less its own step and room downstream), counted in WAIT_MS; a timeout
-// turns the stage's waits off for 120 frames.
+// turns the stage's waits off for 120 frames. E-219: logic waits for main's frame of this vsync (its inputs in).
 
 const previousSelf = globalThis.self;
 const previousPostMessage = globalThis.postMessage;
@@ -122,4 +122,59 @@ test('pre-render waits for this vsync\'s pose, marking the one out consumed so p
   pre._poseWaitStepMs = 30;
   pre._waitForPose();
   assert.equal(pre._poseWaitOffUntil, 4 + 120);
+});
+
+function logicAt(w, gen) {
+  w._frameChain = new Int32Array(new SharedArrayBuffer(16));
+  Atomics.store(w._frameChain, 1, gen);
+  w._inputWait = true;
+  w._inputWaitGen = gen; // the last frame saw this one: main's frame of this vsync is not out yet
+  w._inputWaitOffUntil = 0;
+  w._inputWaitPeriodMs = 40; // a long frame (a 5 ms budget): room for a slow test machine
+  w._inputWaitLastStart = NaN;
+  w._injectedDeltaTime = 0;
+  w.frameNumber = 10;
+  return w._frameChain;
+}
+
+test('logic waits for main\'s frame of this vsync before it reads inputs, and counts the wait', async () => {
+  const w = await loadWorker('logicWorker.js', 'logicWorker');
+  const chain = logicAt(w, 7);
+  const p = await publisher(chain.buffer, 1, 8, 1);
+  resetWaitMeter();
+  p.go();
+  w.beforeUpdate();
+  await p.stop();
+  assert.equal(w._inputWaitGen, 8, 'main\'s frame published during the wait');
+  assert.ok(waitMeterMs() >= 0.5, `the wait is in WAIT_MS (${waitMeterMs().toFixed(2)} ms)`);
+  assert.equal(w._inputWaitOffUntil, 0, 'not turned off');
+  // Main's next frame already out at the frame's start: no wait.
+  Atomics.store(chain, 1, 9);
+  resetWaitMeter();
+  w.beforeUpdate();
+  assert.equal(waitMeterMs(), 0);
+  assert.equal(w._inputWaitGen, 9);
+});
+
+test('a wait for main that runs out turns logic\'s waits off for 120 frames; lockstep frames never wait', async () => {
+  const w = await loadWorker('logicWorker.js', 'logicWorker');
+  logicAt(w, 7);
+  w.beforeUpdate();
+  assert.equal(w._inputWaitOffUntil, 10 + 120, 'main published nothing');
+  resetWaitMeter();
+  w.frameNumber = 11;
+  w.beforeUpdate();
+  assert.equal(waitMeterMs(), 0, 'off: no wait');
+
+  logicAt(w, 7);
+  w._injectedDeltaTime = 16.67; // a { msg: 'step' } frame
+  resetWaitMeter();
+  w.beforeUpdate();
+  assert.equal(waitMeterMs(), 0);
+  assert.equal(w._inputWaitOffUntil, 0);
+
+  logicAt(w, 0); // main has published no frame yet
+  resetWaitMeter();
+  w.beforeUpdate();
+  assert.equal(waitMeterMs(), 0);
 });
