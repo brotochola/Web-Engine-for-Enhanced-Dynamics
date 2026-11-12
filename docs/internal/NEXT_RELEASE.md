@@ -60,3 +60,8 @@ empties it.
   what the one before it published a vsync earlier: in Boids and Predator about 51 → 24 ms from an input to the frame
   drawn with it. Each wait has a budget and turns itself off for two seconds when the chain does not fit the frame.
   `physics.waitForLogic`, `preRender.waitForPose` and `renderer.waitForQueue` (all true) turn them off.
+- **And about a frame sooner again** (E-219): Chrome dispatches pointer events just before the main thread's animation
+  frame, and the workers woke a fraction of a millisecond earlier, so logic read each input a frame late. Each logic
+  worker now waits (under a millisecond) for the main thread's frame of the same vsync: Boids 23 → 7 ms, Predator
+  25 → 9 ms from an input to the frame drawn with it. `logic.waitForInput` (true) turns it off. Gamepads still reach
+  logic a frame later.

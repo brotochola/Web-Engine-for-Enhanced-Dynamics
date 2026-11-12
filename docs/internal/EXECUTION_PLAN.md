@@ -3813,7 +3813,7 @@ BunnyMark C's logic at 300 000 bunnies (200 000 leaves it under the floor).
 **Result:** kept 2026-11-11 (`6e0fea8d`, R-0906). BunnyMark C 300 000, 4 pairs: **KEPT (product)**, logic 3.055 → 2.425 ms
 (-20.2 %, worse 0/4). Predator's gate NEUTRAL.
 
-### E-219 Logic reads an input a frame after Chrome dispatches it
+### E-219 Logic reads an input a frame after Chrome dispatches it — **KEPT 2026-11-12 (R-0929)**
 
 **Premise:** after E-198 (R-0927) an input takes about 24 ms to reach the screen in Boids and Predator, and about 16 ms
 of them lie before logic reads it (E-198's probe: logic read an input 16.1 ms after main stamped it). Chrome dispatches
@@ -3825,6 +3825,15 @@ clock: before or after the events), with the E-197 stamp and the frame clock's t
 move: logic reads input after a short wait for main's frame (a frame-chain word main writes once it has dispatched the
 frame's events), within a budget like E-198's, or main wakes the workers after its input handlers. Owner: E-197's
 latency in Boids and Predator; Predator's gate for the workers.
+**Kept 2026-11-12 (R-0929, merge `4b0aceb6`): input lag Boids 23.2 → 7.0 ms (3 of 4 runs), Predator 24.8 → 8.9 ms,
+liquidFunQueryStressScene 35 → 18 to 31 ms, every worker NEUTRAL.** Step 0 answered by a plain page and the engine's:
+Chrome dispatches a pointer move 0.1 to 0.27 ms before main's animation frame, and the workers wake about 0.16 ms
+before it. Main adds one to the frame chain's [1] right after the frame clock's publish; each logic worker, unless
+main's animation frame began under half a frame before its own (the frame clock's time), waits for it, at most 0.95 ms
+(under 1 ms a wait ends on time on Windows; longer ones sleep to the timer period), four misses in a row turning the
+waits off for 120 frames. Two builds that missed are in the record (a signal after Gamepad.poll, and main's frame told
+by a count, which a main running after the workers always moves a vsync early). Left: a Boids run that stayed at
+22.6 ms; gamepads still reach logic a frame later (main reads them in its update).
 
 ## Not doing (read the log first)
 
