@@ -116,14 +116,20 @@ export class Decoration {
     return this._isCurrent() ? DecorationComponent.scaleX[this.index] : 0;
   }
   set scaleX(v) {
-    if (this._isCurrent()) DecorationComponent.scaleX[this.index] = v;
+    if (this._isCurrent()) {
+      DecorationComponent.scaleX[this.index] = v;
+      DecorationPool.noteReach(this.index); // N-141
+    }
   }
 
   get scaleY() {
     return this._isCurrent() ? DecorationComponent.scaleY[this.index] : 0;
   }
   set scaleY(v) {
-    if (this._isCurrent()) DecorationComponent.scaleY[this.index] = v;
+    if (this._isCurrent()) {
+      DecorationComponent.scaleY[this.index] = v;
+      DecorationPool.noteReach(this.index); // N-141
+    }
   }
 
   get alpha() {
@@ -158,7 +164,10 @@ export class Decoration {
     return this._isCurrent() ? DecorationComponent.anchorX[this.index] : 0.5;
   }
   set anchorX(v) {
-    if (this._isCurrent()) DecorationComponent.anchorX[this.index] = v;
+    if (this._isCurrent()) {
+      DecorationComponent.anchorX[this.index] = v;
+      DecorationPool.noteReach(this.index); // N-141
+    }
   }
 
   get innerZ() {
@@ -179,21 +188,30 @@ export class Decoration {
     return this._isCurrent() ? DecorationComponent.textureId[this.index] : 0;
   }
   set textureId(v) {
-    if (this._isCurrent()) DecorationComponent.textureId[this.index] = v;
+    if (this._isCurrent()) {
+      DecorationComponent.textureId[this.index] = v;
+      DecorationPool.noteReach(this.index); // N-141
+    }
   }
 
   get offsetX() {
     return this._isCurrent() ? DecorationComponent.offsetX[this.index] : 0;
   }
   set offsetX(v) {
-    if (this._isCurrent()) DecorationComponent.offsetX[this.index] = v;
+    if (this._isCurrent()) {
+      DecorationComponent.offsetX[this.index] = v;
+      DecorationPool.noteReach(this.index); // N-141
+    }
   }
 
   get offsetY() {
     return this._isCurrent() ? DecorationComponent.offsetY[this.index] : 0;
   }
   set offsetY(v) {
-    if (this._isCurrent()) DecorationComponent.offsetY[this.index] = v;
+    if (this._isCurrent()) {
+      DecorationComponent.offsetY[this.index] = v;
+      DecorationPool.noteReach(this.index); // N-141
+    }
   }
 
   /** World px added to the y it sorts at (its own, or its parent's sort line when attached); not where it draws or culls. */

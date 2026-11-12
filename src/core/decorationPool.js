@@ -17,7 +17,7 @@ import { SharedAtomicPool } from './sharedAtomicPool.js';
 import { randomRange } from '../util/utils.js';
 import { Layer } from './layer.js';
 import { evictDecorationFacade, clearAllDecorationFacades } from '../util/decorationFacades.js';
-import { DECORATION_LIST_EPOCH, DECORATION_MOVE_EPOCH, DecorationSpatial } from './decorationSpatial.js';
+import { DECORATION_LIST_EPOCH, DECORATION_MAX_REACH, DECORATION_MOVE_EPOCH, DecorationSpatial } from './decorationSpatial.js';
 import {
   DECORATION_Y_SORT_SCALE,
   DECORATION_INNER_Z_MIN,
@@ -77,6 +77,8 @@ export class DecorationPool extends SharedAtomicPool {
   // Uint16Array, or Uint32Array past 65 535 decorations (E-129), like the attachment table.
   static activeDecorationsData = null;
   static _activeListLock = null;
+  /** N-141: bigAtlas frame sizes by decoration texture id (decorationReach). */
+  static _textureSizes = new Map();
 
   // Entity -> attached decoration indices (SAB, not ECS). Row stride = _maxAttachedPerEntity.
   static _attachedDecorationCount = null; // Uint8Array length entityCount
@@ -120,6 +122,58 @@ export class DecorationPool extends SharedAtomicPool {
   static listEpoch() {
     const lock = this._activeListLock;
     return lock !== null && lock.length > DECORATION_LIST_EPOCH ? Atomics.load(lock, DECORATION_LIST_EPOCH) : -1;
+  }
+
+  /** N-141: the bigAtlas frame size of a decoration texture (an animation index), cached; null when unknown. */
+  static _textureSize(textureId) {
+    let dims = this._textureSizes.get(textureId);
+    if (dims === undefined) {
+      const name = SpriteSheetRegistry.spritesheets?.get('bigAtlas')?.indexToName?.[textureId];
+      dims = name ? SpriteSheetRegistry.getFrameDimensions('bigAtlas', name) : null;
+      if (!dims) return null;
+      this._textureSizes.set(textureId, dims);
+    }
+    return dims;
+  }
+
+  /**
+   * N-141: slot `i`'s reach from its position to the farthest corner of its sprite: the frame scaled from its anchor
+   * (as spriteCullReach does for sprites, any rotation or sway inside) plus its draw offset. -1 when the texture's size
+   * is not known here.
+   */
+  static decorationReach(i) {
+    const dims = this._textureSize(DecorationComponent.textureId[i]);
+    if (!dims) return -1;
+    const ax = DecorationComponent.anchorX[i];
+    const ay = DecorationComponent.anchorY[i];
+    const mx = ax > 1 - ax ? ax : 1 - ax;
+    const my = ay > 1 - ay ? ay : 1 - ay;
+    const rx = dims.w * Math.abs(DecorationComponent.scaleX[i]) * mx;
+    const ry = dims.h * Math.abs(DecorationComponent.scaleY[i]) * my;
+    const ox = DecorationComponent.offsetX[i];
+    const oy = DecorationComponent.offsetY[i];
+    return Math.sqrt(rx * rx + ry * ry) + Math.sqrt(ox * ox + oy * oy);
+  }
+
+  /** N-141: raise the pool's largest reach to slot `i`'s (after a spawn, or a change of its size, anchor or offset). */
+  static noteReach(i) {
+    const lock = this._activeListLock;
+    if (lock === null || lock.length <= DECORATION_MAX_REACH) return;
+    const r = this.decorationReach(i);
+    if (!(r > 0)) return;
+    const v = Math.ceil(r);
+    let cur = Atomics.load(lock, DECORATION_MAX_REACH);
+    while (v > cur) {
+      const seen = Atomics.compareExchange(lock, DECORATION_MAX_REACH, cur, v);
+      if (seen === cur) break;
+      cur = seen;
+    }
+  }
+
+  /** N-141: the pool's largest reach (px), 0 without the header word. */
+  static maxReach() {
+    const lock = this._activeListLock;
+    return lock !== null && lock.length > DECORATION_MAX_REACH ? Atomics.load(lock, DECORATION_MAX_REACH) : 0;
   }
 
   /** E-179c: how many times a world-owned decoration has moved; -1 without the counters. */
@@ -527,6 +581,9 @@ export class DecorationPool extends SharedAtomicPool {
     DecorationComponent.active[i] = 1;
 
     // Add to activeDecorationsData compact list (append at end - O(1), atomic count increment)
+    // N-141: its reach into the pool's largest, before the list shows it to the screen test.
+    this.noteReach(i);
+
     if (this.activeDecorationsData) {
       this._lockActiveList();
       try {
@@ -679,6 +736,10 @@ export class DecorationPool extends SharedAtomicPool {
       this._lockActiveList();
       try {
         this.activeDecorationsData[0] = 0;
+        // N-141: no decoration left, no reach.
+        if (this._activeListLock !== null && this._activeListLock.length > DECORATION_MAX_REACH) {
+          Atomics.store(this._activeListLock, DECORATION_MAX_REACH, 0);
+        }
         this._countListChange();
       } finally {
         this._unlockActiveList();
@@ -714,6 +775,7 @@ export class DecorationPool extends SharedAtomicPool {
     super.reset();
     this.activeDecorationsData = null;
     this._activeListLock = null;
+    this._textureSizes = new Map();
     DecorationSpatial._epochs = null;
     clearAllDecorationFacades();
     this._attachedDecorationCount = null;

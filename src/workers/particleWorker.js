@@ -379,6 +379,8 @@ class ParticleWorker extends AbstractWorker {
     this._decoScreenListEpoch = -1;
     this._decoScreenMoveEpoch = -1;
     this._decoScreenBounds = new Float64Array(7).fill(NaN);
+    // N-141: the decorations' screen test's bounds, padded by the pool's largest reach (_decorationCameraBounds).
+    this._decoCullBounds = { zoom: NaN, cameraOffsetX: NaN, cameraOffsetY: NaN, minX: NaN, maxX: NaN, minY: NaN, maxY: NaN };
     this._decoAttachedMoved = true;
     // W22: the sway kernel on the render-queue memory, or null in a scene without decorations.
     this._swayWasm = null;
@@ -1096,6 +1098,28 @@ class ParticleWorker extends AbstractWorker {
   }
 
   /**
+   * N-141: the bounds the decorations' screen test uses: the camera's, padded by the pool's largest reach from a
+   * decoration's position to the far corner of its sprite (DecorationPool.maxReach). The test reads one point a
+   * decoration, so without the pad a large one (a tree, a wall piece drawn from its foot) went missing at the edge with
+   * part of it still on screen.
+   */
+  _decorationCameraBounds() {
+    const b = this._frameCameraBounds();
+    if (!b) return b;
+    const m = DecorationPool.maxReach() * b.zoom;
+    if (!(m > 0)) return b;
+    const d = this._decoCullBounds;
+    d.zoom = b.zoom;
+    d.cameraOffsetX = b.cameraOffsetX;
+    d.cameraOffsetY = b.cameraOffsetY;
+    d.minX = b.minX - m;
+    d.maxX = b.maxX + m;
+    d.minY = b.minY - m;
+    d.maxY = b.maxY + m;
+    return d;
+  }
+
+  /**
    * Update screen visibility for all active decorations
    * Uses the per-frame active decoration snapshot copied from DecorationPool.
    * Writes to visibleDecorationsData SAB for pre_render_worker to consume
@@ -1112,7 +1136,7 @@ class ParticleWorker extends AbstractWorker {
       return;
     }
 
-    const cameraBounds = this._frameCameraBounds();
+    const cameraBounds = this._decorationCameraBounds();
     if (!cameraBounds) return;
 
     const x = DecorationComponent.x;
@@ -1189,7 +1213,7 @@ class ParticleWorker extends AbstractWorker {
     const listEpoch = DecorationPool.listEpoch();
     const moveEpoch = DecorationPool.moveEpoch();
     if (listEpoch < 0 || moveEpoch < 0 || !this.cameraData) return false;
-    const b = this._frameCameraBounds();
+    const b = this._decorationCameraBounds();
     if (!b) return false;
     const k = this._decoScreenBounds;
     if (!this._decoAttachedMoved && listEpoch === this._decoScreenListEpoch && moveEpoch === this._decoScreenMoveEpoch && b.zoom === k[0]
@@ -1219,7 +1243,7 @@ class ParticleWorker extends AbstractWorker {
       if (visibleData) visibleData[0] = 0;
       return;
     }
-    const cameraBounds = this._frameCameraBounds();
+    const cameraBounds = this._decorationCameraBounds();
     if (!cameraBounds) return;
     const visibleCount = decorationScreenBranchless(activeData, activeCount, scratch, cameraBounds);
     copyDecorationScratch(visibleData, scratch, visibleCount);
@@ -1230,7 +1254,7 @@ class ParticleWorker extends AbstractWorker {
   _sampleDecorationScreenFlips() {
     const activeCount = this._activeDecorationSnapshotCount;
     if (!this.maxDecorations || activeCount === 0 || !this.cameraData || !DecorationComponent.active) return;
-    const cameraBounds = this._frameCameraBounds();
+    const cameraBounds = this._decorationCameraBounds();
     if (!cameraBounds) return;
     const w = activeCount < DECORATION_FLIP_WINDOW ? activeCount : DECORATION_FLIP_WINDOW;
     const start = this._decorationScreenWindow + w > activeCount ? 0 : this._decorationScreenWindow;

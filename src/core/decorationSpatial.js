@@ -15,6 +15,12 @@ const NOT_IN_GRID = -1;
  */
 export const DECORATION_LIST_EPOCH = 1;
 export const DECORATION_MOVE_EPOCH = 2;
+/**
+ * N-141: the largest reach (px, rounded up) any decoration of the pool has had from its position to the farthest
+ * corner of its sprite (its anchor, scale and draw offset), since the last despawnAll. The particle worker pads the
+ * decorations' screen test with it, so a large one is kept while any part of it shows.
+ */
+export const DECORATION_MAX_REACH = 3;
 
 export class DecorationSpatial {
   static cellSize = 0;
