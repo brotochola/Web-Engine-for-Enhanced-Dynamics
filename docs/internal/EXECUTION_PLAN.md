@@ -3763,6 +3763,16 @@ pack's memory, though BunnyMark has no glow row. E-138 skips the split only for 
 unsplit, in queue order with no list, or with the spec's `fillAll` ordering every row when the painter sorts. A
 parity test: the same rows with and without the split, sorted and unsorted. Owner: BunnyMark C 200 000's pre-render.
 
+### E-217 The sprite query's list read where the collect reads, not copied each frame
+
+**Premise:** BunnyMark C at 200 000 (R-0903): `writeCollectList` is 7.7 % of pre-render, the sprite query's published
+snapshot (200 000 ids) copied into the collect's memory each frame. The snapshot lives in the query results' SAB; the
+collect kernel reads only its own memory.
+**Plan:** the sprite query's snapshots in the render-queue memory, so the collect points its table at the published
+copy. The snapshots rotate without a reader's mark today (`readPublishedQuerySnapshot`), and the copy is what keeps a
+long collect safe from a publish that comes back round to its copy: the query moves to N-112's published-list protocol
+(a reading mark the writer skips) for that one query. Owner: BunnyMark C 200 000's pre-render; logic not 3 % worse.
+
 ## Not doing (read the log first)
 
 - `angularSweep` / `Math.hypot` / `fastSin` — absent from the Predator trace at any

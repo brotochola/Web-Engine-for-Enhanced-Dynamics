@@ -12015,6 +12015,28 @@
         "R-0903"
       ],
       "rank": 2
+    },
+    {
+      "id": "E-217",
+      "title": "The sprite query's list read where the collect reads, not copied each frame",
+      "status": "open",
+      "statusText": "filed 2026-11-11 from BunnyMark C's trace (R-0903); not measured",
+      "date": "2026-11-11",
+      "result": "",
+      "next": "The sprite query's snapshots in the render-queue memory under the published-list protocol (a reading mark), the collect pointing at the published copy. Owner: BunnyMark C 200 000 pre-render (writeCollectList 7.7 %).",
+      "area": "render",
+      "kind": "js",
+      "refs": [
+        "EXECUTION_PLAN.md#E-217"
+      ],
+      "aliases": [
+        "writeCollectList",
+        "readPublishedQuerySnapshot",
+        "query snapshot",
+        "collect list"
+      ],
+      "records": [],
+      "rank": 3
     }
   ],
   "records": [
