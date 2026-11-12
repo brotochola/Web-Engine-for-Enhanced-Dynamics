@@ -66,6 +66,7 @@ import {
     screenBoundsToWorldBounds,
     lightCookieScale,
     resolveGroundScaleY,
+    LIGHT_GLOW_EXTENT,
 } from '../util/utils.js';
 import { viewWorldBounds } from '../util/viewBounds.js';
 import { PRE_RENDER_STATS, createMultiWorkerStatsWriter } from '../util/workersUtils.js';
@@ -1962,7 +1963,7 @@ class PreRenderWorker extends AbstractWorker {
         this._renderableCount = res[0];
         if (res[2]) this._collectorFull();
         this.visibleEntitiesCount += visible + res[1];
-        this._collectEntityGlow(Transform.x, Transform.y, Collider.visualRange, zoom, cb.cameraOffsetX,
+        this._collectEntityGlow(Transform.x, Transform.y, zoom, cb.cameraOffsetX,
             cb.cameraOffsetY, cb.minX, cb.maxX, cb.minY, cb.maxY);
     }
 
@@ -2015,16 +2016,16 @@ class PreRenderWorker extends AbstractWorker {
         return grid.walk(spriteEntities, spriteEntities.length, minX, minY, maxX, maxY);
     }
 
-    _collectEntityGlow(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+    _collectEntityGlow(x, y, camZoom, cameraOffsetX, cameraOffsetY,
         screenMinX, screenMaxX, screenMinY, screenMaxY) {
         const rowsBefore = this._renderableCount;
-        this._collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+        this._collectEntityGlowRows(x, y, camZoom, cameraOffsetX, cameraOffsetY,
             screenMinX, screenMaxX, screenMinY, screenMaxY);
         // E-216: the only rows of type 3 the collect makes.
         this._frameGlowRows += this._renderableCount - rowsBefore;
     }
 
-    _collectEntityGlowRows(x, y, visualRange, camZoom, cameraOffsetX, cameraOffsetY,
+    _collectEntityGlowRows(x, y, camZoom, cameraOffsetX, cameraOffsetY,
         screenMinX, screenMaxX, screenMinY, screenMaxY) {
         this._syncGlowLayer();
         if (this._glowEmit && this._queryLightEmitter && LightEmitter.active && LightEmitter.glow) {
@@ -2041,6 +2042,7 @@ class PreRenderWorker extends AbstractWorker {
                 const glowHalfH = SpriteRenderer.boundsHalfH;
                 const glowOffsetX = LightEmitter.offsetX;
                 const glowOffsetY = LightEmitter.offsetY;
+                const glowScreenY = LightEmitter.glowOffsetY;
                 const glowRotC = Transform.rotC;
                 const glowRotS = Transform.rotS;
                 for (let li = 0; li < lights.length; li++) {
@@ -2050,12 +2052,14 @@ class PreRenderWorker extends AbstractWorker {
                         const ox = glowOffsetX[i];
                         const oy = glowOffsetY[i];
                         const sx = (x[i] + ox * glowRotC[i] - oy * glowRotS[i]) * camZoom - cameraOffsetX;
-                        const sy = (y[i] + ox * glowRotS[i] + oy * glowRotC[i]) * camZoom - cameraOffsetY;
-                        let halfExtent = 0;
+                        const sy = (y[i] + ox * glowRotS[i] + oy * glowRotC[i] + (glowScreenY[i] || 0)) * camZoom - cameraOffsetY;
+                        // N-150: the halo's own size (it was the sprite's, or the visualRange: a big halo on a small
+                        // sprite popped in at the screen's edge), at least the sprite's.
+                        let halfExtent = leRadius[i] * LIGHT_GLOW_EXTENT;
                         const halfW = glowHalfW ? (glowHalfW[i] ?? 0) : 0;
                         const halfH = glowHalfH ? (glowHalfH[i] ?? 0) : 0;
-                        if (halfW > 0 || halfH > 0) halfExtent = halfW > halfH ? halfW : halfH;
-                        if (halfExtent <= 0) halfExtent = visualRange[i] || 0;
+                        if (halfW > halfExtent) halfExtent = halfW;
+                        if (halfH > halfExtent) halfExtent = halfH;
                         const extent = halfExtent * camZoom;
                         if (
                             sx < screenMinX - extent || sx > screenMaxX + extent ||
